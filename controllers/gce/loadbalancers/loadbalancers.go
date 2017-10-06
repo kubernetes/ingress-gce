@@ -30,9 +30,9 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"k8s.io/ingress/controllers/gce/backends"
-	"k8s.io/ingress/controllers/gce/storage"
-	"k8s.io/ingress/controllers/gce/utils"
+	"k8s.io/ingress-gce/controllers/gce/backends"
+	"k8s.io/ingress-gce/controllers/gce/storage"
+	"k8s.io/ingress-gce/controllers/gce/utils"
 )
 
 const (

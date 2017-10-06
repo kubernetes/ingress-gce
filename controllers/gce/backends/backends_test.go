@@ -27,10 +27,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"k8s.io/ingress/controllers/gce/healthchecks"
-	"k8s.io/ingress/controllers/gce/instances"
-	"k8s.io/ingress/controllers/gce/storage"
-	"k8s.io/ingress/controllers/gce/utils"
+	"k8s.io/ingress-gce/controllers/gce/healthchecks"
+	"k8s.io/ingress-gce/controllers/gce/instances"
+	"k8s.io/ingress-gce/controllers/gce/storage"
+	"k8s.io/ingress-gce/controllers/gce/utils"
 )
 
 const defaultZone = "zone-a"

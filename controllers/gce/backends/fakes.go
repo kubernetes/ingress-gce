@@ -23,7 +23,7 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 
-	"k8s.io/ingress/controllers/gce/utils"
+	"k8s.io/ingress-gce/controllers/gce/utils"
 )
 
 // NewFakeBackendServices creates a new fake backend services manager.
