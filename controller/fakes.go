@@ -21,12 +21,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"k8s.io/ingress-gce/controllers/gce/backends"
-	"k8s.io/ingress-gce/controllers/gce/firewalls"
-	"k8s.io/ingress-gce/controllers/gce/healthchecks"
-	"k8s.io/ingress-gce/controllers/gce/instances"
-	"k8s.io/ingress-gce/controllers/gce/loadbalancers"
-	"k8s.io/ingress-gce/controllers/gce/utils"
+	"k8s.io/ingress-gce/backends"
+	"k8s.io/ingress-gce/firewalls"
+	"k8s.io/ingress-gce/healthchecks"
+	"k8s.io/ingress-gce/instances"
+	"k8s.io/ingress-gce/loadbalancers"
+	"k8s.io/ingress-gce/utils"
 )
 
 var (

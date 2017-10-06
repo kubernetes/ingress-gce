@@ -23,7 +23,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"k8s.io/ingress-gce/controllers/gce/utils"
+	"k8s.io/ingress-gce/utils"
 )
 
 // NewFakeInstanceGroups creates a new FakeInstanceGroups.

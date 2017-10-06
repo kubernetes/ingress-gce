@@ -3,7 +3,7 @@ package instances
 import (
 	compute "google.golang.org/api/compute/v1"
 
-	"k8s.io/ingress-gce/controllers/gce/utils"
+	"k8s.io/ingress-gce/utils"
 )
 
 // Helper method to create instance groups.

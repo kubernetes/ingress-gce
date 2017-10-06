@@ -36,7 +36,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 
-	"k8s.io/ingress-gce/controllers/gce/loadbalancers"
+	"k8s.io/ingress-gce/loadbalancers"
 )
 
 var (
