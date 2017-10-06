@@ -86,30 +86,35 @@ func TestSetNamedPorts(t *testing.T) {
 	pool := newNodePool(f, defaultZone)
 
 	testCases := []struct {
-		newPorts      []int64
+		activePorts   []int64
 		expectedPorts []int64
 	}{
 		{
-			// Verify adding a port works as expected.
+			// Verify setting a port works as expected.
 			[]int64{80},
 			[]int64{80},
 		},
 		{
-			// Verify adding multiple ports at once works as expected.
+			// Utilizing multiple new ports
 			[]int64{81, 82},
 			[]int64{80, 81, 82},
 		},
 		{
-			// Adding existing ports should have no impact.
+			// Utilizing existing ports
 			[]int64{80, 82},
 			[]int64{80, 81, 82},
+		},
+		{
+			// Utilizing a new port and an old port
+			[]int64{80, 83},
+			[]int64{80, 81, 82, 83},
 		},
 		// TODO: Add tests to remove named ports when we support that.
 	}
 	for _, test := range testCases {
-		igs, _, err := pool.AddInstanceGroup("ig", test.newPorts)
+		igs, _, err := pool.AddInstanceGroup("ig", test.activePorts)
 		if err != nil {
-			t.Fatalf("unexpected error in adding ports %v to instance group: %s", test.newPorts, err)
+			t.Fatalf("unexpected error in setting ports %v to instance group: %s", test.activePorts, err)
 		}
 		if len(igs) != 1 {
 			t.Fatalf("expected a single instance group, got: %v", igs)

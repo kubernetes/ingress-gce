@@ -63,7 +63,8 @@ func (i *Instances) Init(zl zoneLister) {
 // all of which have the exact same named ports.
 func (i *Instances) AddInstanceGroup(name string, ports []int64) ([]*compute.InstanceGroup, []*compute.NamedPort, error) {
 	igs := []*compute.InstanceGroup{}
-	namedPorts := []*compute.NamedPort{}
+
+	var namedPorts []*compute.NamedPort
 	for _, port := range ports {
 		namedPorts = append(namedPorts, utils.GetNamedPort(port))
 	}
@@ -109,14 +110,14 @@ func (i *Instances) AddInstanceGroup(name string, ports []int64) ([]*compute.Ins
 		var newPorts []*compute.NamedPort
 		for _, np := range namedPorts {
 			if existingPorts[np.Port] {
-				glog.V(3).Infof("Instance group %v already has named port %+v", ig.Name, np)
+				glog.V(5).Infof("Instance group %v already has named port %+v", ig.Name, np)
 				continue
 			}
 			newPorts = append(newPorts, np)
 		}
 		if len(newPorts) > 0 {
-			glog.V(5).Infof("Instance group %v/%v does not have ports %+v, adding them now.", zone, name, namedPorts)
-			if err := i.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, namedPorts...)); err != nil {
+			glog.V(3).Infof("Instance group %v/%v does not have ports %+v, adding them now.", zone, name, newPorts)
+			if err := i.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, newPorts...)); err != nil {
 				return nil, nil, err
 			}
 		}
