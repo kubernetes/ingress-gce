@@ -16,6 +16,16 @@ __A reminder on GCE L7__: Google Compute Engine does not have a single resource 
 
 __A reminder on Services__: A Kubernetes Service defines a set of pods and a means by which to access them, such as single stable IP address and corresponding DNS name. This IP defaults to a cluster VIP in a private address range. You can direct ingress traffic to a particular Service by setting its `Type` to NodePort or LoadBalancer. NodePort opens up a port on *every* node in your cluster and proxies traffic to the endpoints of your service, while LoadBalancer allocates an L4 cloud loadbalancer.
 
+
+### What is an Ingress Controller?
+
+Configuring a webserver or loadbalancer is harder than it should be. Most webserver configuration files are very similar. There are some applications that have weird little quirks that tend to throw a wrench in things, but for the most part you can apply the same logic to them and achieve a desired result.
+
+The Ingress resource embodies this idea, and an Ingress controller is meant to handle all the quirks associated with a specific "class" of Ingress (be it a single instance of a loadbalancer, or a more complicated setup of frontends that provide GSLB, DDoS protection, etc).
+
+An Ingress Controller is a daemon, deployed as a Kubernetes Pod, that watches the apiserver's `/ingresses` endpoint for updates to the [Ingress resource](https://kubernetes.io/docs/concepts/services-networking/ingress/). Its job is to satisfy requests for Ingresses.
+
+
 ### L7 Load balancing on Kubernetes
 
 To achieve L7 loadbalancing through Kubernetes, we employ a resource called `Ingress`. The Ingress is consumed by this loadbalancer controller, which creates the following GCE resource graph:
