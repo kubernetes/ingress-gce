@@ -172,7 +172,7 @@ func (c *ClusterManager) EnsureInstanceGroupsAndPorts(servicePorts []backends.Se
 	for _, p := range servicePorts {
 		ports = append(ports, p.Port)
 	}
-	igs, _, err := instances.EnsureInstanceGroupsAndPorts(c.instancePool, c.ClusterNamer, ports)
+	igs, err := instances.EnsureInstanceGroupsAndPorts(c.instancePool, c.ClusterNamer, ports)
 	return igs, err
 }
 

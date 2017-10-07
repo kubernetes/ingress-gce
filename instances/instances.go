@@ -48,7 +48,10 @@ type Instances struct {
 // - cloud: implements InstanceGroups, used to sync Kubernetes nodes with
 //   members of the cloud InstanceGroup.
 func NewNodePool(cloud InstanceGroups) NodePool {
-	return &Instances{cloud, storage.NewInMemoryPool(), nil}
+	return &Instances{
+		cloud:       cloud,
+		snapshotter: storage.NewInMemoryPool(),
+	}
 }
 
 // Init initializes the instance pool. The given zoneLister is used to list
@@ -58,72 +61,85 @@ func (i *Instances) Init(zl zoneLister) {
 	i.zoneLister = zl
 }
 
-// AddInstanceGroup creates or gets an instance group if it doesn't exist
+// EnsureInstanceGroupsAndPorts creates or gets an instance group if it doesn't exist
 // and adds the given ports to it. Returns a list of one instance group per zone,
 // all of which have the exact same named ports.
-func (i *Instances) AddInstanceGroup(name string, ports []int64) ([]*compute.InstanceGroup, []*compute.NamedPort, error) {
-	igs := []*compute.InstanceGroup{}
-
-	var namedPorts []*compute.NamedPort
-	for _, port := range ports {
-		namedPorts = append(namedPorts, utils.GetNamedPort(port))
-	}
-
+func (i *Instances) EnsureInstanceGroupsAndPorts(name string, ports []int64) (igs []*compute.InstanceGroup, err error) {
 	zones, err := i.ListZones()
 	if err != nil {
-		return igs, namedPorts, err
+		return nil, err
 	}
 
 	defer i.snapshotter.Add(name, struct{}{})
 	for _, zone := range zones {
-		ig, err := i.Get(name, zone)
-		if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-			glog.Errorf("Failed to get instance group %v/%v, err: %v", zone, name, err)
-			return nil, nil, err
+		ig, err := i.ensureInstanceGroupAndPorts(name, zone, ports)
+		if err != nil {
+			return nil, err
 		}
 
-		if ig == nil {
-			glog.Infof("Creating instance group %v in zone %v", name, zone)
-			if err = i.cloud.CreateInstanceGroup(&compute.InstanceGroup{Name: name}, zone); err != nil {
-				// Error may come back with StatusConflict meaning the instance group was created by another controller
-				// possibly the Service Controller for internal load balancers.
-				if utils.IsHTTPErrorCode(err, http.StatusConflict) {
-					glog.Warningf("Failed to create instance group %v/%v due to conflict status, but continuing sync. err: %v", zone, name, err)
-				} else {
-					glog.Errorf("Failed to create instance group %v/%v, err: %v", zone, name, err)
-					return nil, nil, err
-				}
-			}
-			ig, err = i.cloud.GetInstanceGroup(name, zone)
-			if err != nil {
-				glog.Errorf("Failed to get instance group %v/%v after ensuring existence, err: %v", zone, name, err)
-				return nil, nil, err
-			}
-		} else {
-			glog.V(3).Infof("Instance group %v already exists in zone %v", name, zone)
-		}
-
-		existingPorts := map[int64]bool{}
-		for _, np := range ig.NamedPorts {
-			existingPorts[np.Port] = true
-		}
-		var newPorts []*compute.NamedPort
-		for _, np := range namedPorts {
-			if existingPorts[np.Port] {
-				glog.V(5).Infof("Instance group %v already has named port %+v", ig.Name, np)
-				continue
-			}
-			newPorts = append(newPorts, np)
-		}
-		if len(newPorts) > 0 {
-			glog.V(3).Infof("Instance group %v/%v does not have ports %+v, adding them now.", zone, name, newPorts)
-			if err := i.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, newPorts...)); err != nil {
-				return nil, nil, err
-			}
-		}
 		igs = append(igs, ig)
 	}
-	return igs, namedPorts, nil
+	return igs, nil
+}
+
+func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64) (*compute.InstanceGroup, error) {
+	ig, err := i.Get(name, zone)
+	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+		glog.Errorf("Failed to get instance group %v/%v, err: %v", zone, name, err)
+		return nil, err
+	}
+
+	if ig == nil {
+		glog.V(3).Infof("Creating instance group %v/%v.", zone, name)
+		if err = i.cloud.CreateInstanceGroup(&compute.InstanceGroup{Name: name}, zone); err != nil {
+			// Error may come back with StatusConflict meaning the instance group was created by another controller
+			// possibly the Service Controller for internal load balancers.
+			if utils.IsHTTPErrorCode(err, http.StatusConflict) {
+				glog.Warningf("Failed to create instance group %v/%v due to conflict status, but continuing sync. err: %v", zone, name, err)
+			} else {
+				glog.Errorf("Failed to create instance group %v/%v, err: %v", zone, name, err)
+				return nil, err
+			}
+		}
+		ig, err = i.cloud.GetInstanceGroup(name, zone)
+		if err != nil {
+			glog.Errorf("Failed to get instance group %v/%v after ensuring existence, err: %v", zone, name, err)
+			return nil, err
+		}
+	} else {
+		glog.V(5).Infof("Instance group %v/%v already exists.", zone, name)
+	}
+
+	// Build map of existing ports
+	existingPorts := map[int64]bool{}
+	for _, np := range ig.NamedPorts {
+		existingPorts[np.Port] = true
+	}
+
+	// Determine which ports need to be added
+	var newPorts []int64
+	for _, p := range ports {
+		if existingPorts[p] {
+			glog.V(5).Infof("Instance group %v/%v already has named port %v", zone, ig.Name, p)
+			continue
+		}
+		newPorts = append(newPorts, p)
+	}
+
+	// Build slice of NamedPorts for adding
+	var newNamedPorts []*compute.NamedPort
+	for _, v := range newPorts {
+		newNamedPorts = append(newNamedPorts, utils.GetNamedPort(v))
+	}
+
+	if len(newNamedPorts) > 0 {
+		glog.V(3).Infof("Instance group %v/%v does not have ports %+v, adding them now.", zone, name, newPorts)
+		if err := i.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, newNamedPorts...)); err != nil {
+			return nil, err
+		}
+	}
+
+	return ig, nil
 }
 
 // DeleteInstanceGroup deletes the given IG by name, from all zones.

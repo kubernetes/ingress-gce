@@ -34,7 +34,7 @@ func TestNodePoolSync(t *testing.T) {
 	f := NewFakeInstanceGroups(sets.NewString(
 		[]string{"n1", "n2"}...))
 	pool := newNodePool(f, defaultZone)
-	pool.AddInstanceGroup("test", []int64{80})
+	pool.EnsureInstanceGroupsAndPorts("test", []int64{80})
 
 	// KubeNodes: n1
 	// GCENodes: n1, n2
@@ -53,7 +53,7 @@ func TestNodePoolSync(t *testing.T) {
 
 	f = NewFakeInstanceGroups(sets.NewString([]string{"n1"}...))
 	pool = newNodePool(f, defaultZone)
-	pool.AddInstanceGroup("test", []int64{80})
+	pool.EnsureInstanceGroupsAndPorts("test", []int64{80})
 
 	f.calls = []int{}
 	kubeNodes = sets.NewString([]string{"n1", "n2"}...)
@@ -69,7 +69,7 @@ func TestNodePoolSync(t *testing.T) {
 
 	f = NewFakeInstanceGroups(sets.NewString([]string{"n1", "n2"}...))
 	pool = newNodePool(f, defaultZone)
-	pool.AddInstanceGroup("test", []int64{80})
+	pool.EnsureInstanceGroupsAndPorts("test", []int64{80})
 
 	f.calls = []int{}
 	kubeNodes = sets.NewString([]string{"n1", "n2"}...)
@@ -112,7 +112,7 @@ func TestSetNamedPorts(t *testing.T) {
 		// TODO: Add tests to remove named ports when we support that.
 	}
 	for _, test := range testCases {
-		igs, _, err := pool.AddInstanceGroup("ig", test.activePorts)
+		igs, err := pool.EnsureInstanceGroupsAndPorts("ig", test.activePorts)
 		if err != nil {
 			t.Fatalf("unexpected error in setting ports %v to instance group: %s", test.activePorts, err)
 		}

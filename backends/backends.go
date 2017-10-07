@@ -223,7 +223,7 @@ func (b *Backends) Ensure(svcPorts []ServicePort, igs []*compute.InstanceGroup) 
 			ports = append(ports, p.Port)
 		}
 		var err error
-		igs, _, err = instances.EnsureInstanceGroupsAndPorts(b.nodePool, b.namer, ports)
+		igs, err = instances.EnsureInstanceGroupsAndPorts(b.nodePool, b.namer, ports)
 		if err != nil {
 			return err
 		}
