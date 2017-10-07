@@ -295,7 +295,7 @@
 			"ImportPath": "github.com/zakjan/cert-chain-resolver/certUtil",
 			"Comment": "1.0.1-2-g176864a",
 			"Rev": "176864ad3d2959f437789ea0a2cce95c92d0dc50"
-		}
+		},
 		{
 			"ImportPath": "golang.org/x/crypto/nacl/secretbox",
 			"Rev": "81e90905daefcd6fd217b62423c0908922eadb30"
