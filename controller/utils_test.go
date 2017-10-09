@@ -71,7 +71,7 @@ func TestInstancesAddedToZones(t *testing.T) {
 
 	// Create 2 igs, one per zone.
 	testIG := "test-ig"
-	lbc.CloudClusterManager.instancePool.AddInstanceGroup(testIG, []int64{int64(3001)})
+	lbc.CloudClusterManager.instancePool.EnsureInstanceGroupsAndPorts(testIG, []int64{int64(3001)})
 
 	// node pool syncs kube-nodes, this will add them to both igs.
 	lbc.CloudClusterManager.instancePool.Sync([]string{"n1", "n2", "n3"})
