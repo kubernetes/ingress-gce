@@ -262,14 +262,14 @@ func main() {
 		// However if the cloud client suddenly fails, we should try to re-create it
 		// and continue.
 		if *configFilePath != "" {
-			glog.Infof("Reading config from path %v", configFilePath)
+			glog.Infof("Reading config from path %v", *configFilePath)
 			config, err := os.Open(*configFilePath)
 			if err != nil {
 				glog.Fatalf("%v", err)
 			}
 			defer config.Close()
 			cloud = getGCEClient(config)
-			glog.Infof("Successfully loaded cloudprovider using config %q", configFilePath)
+			glog.Infof("Successfully loaded cloudprovider using config %q", *configFilePath)
 		} else {
 			// While you might be tempted to refactor so we simply assing nil to the
 			// config and only invoke getGCEClient once, that will not do the right
