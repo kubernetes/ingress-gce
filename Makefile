@@ -1,7 +1,7 @@
 all: push
 
 # 0.0 shouldn't clobber any released builds
-TAG=0.9.6
+TAG=0.9.7
 PREFIX=gcr.io/google_containers/glbc
 PKG=k8s.io/ingress-gce
 
