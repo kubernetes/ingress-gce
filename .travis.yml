@@ -1,26 +1,21 @@
 sudo: required
-
 services:
   - docker
-
 language: go
-
 notifications:
   email: true
-
 go:
   - 1.9
-
 go_import_path: k8s.io/ingress
-
 jobs:
   include:
-    - stage: Static Check
-      script: 
+    - stage: Linters
+      script:
         - go get github.com/golang/lint/golint
         - make fmt lint vet
+    - stage: Build
     - stage: Coverage
-      script: 
+      script:
         - go get github.com/mattn/goveralls
         - go get github.com/modocache/gover
         - if ! go get github.com/golang/tools/cmd/cover; then go get golang.org/x/tools/cmd/cover; fi
