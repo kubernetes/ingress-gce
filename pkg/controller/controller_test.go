@@ -33,6 +33,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/api"
 
+	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -53,7 +54,7 @@ func defaultBackendName(clusterName string) string {
 // newLoadBalancerController create a loadbalancer controller.
 func newLoadBalancerController(t *testing.T, cm *fakeClusterManager) *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
-	ctx := NewControllerContext(kubeClient, api_v1.NamespaceAll, 1*time.Second)
+	ctx := context.NewControllerContext(kubeClient, api_v1.NamespaceAll, 1*time.Second, true)
 	lb, err := NewLoadBalancerController(kubeClient, ctx, cm.ClusterManager)
 	if err != nil {
 		t.Fatalf("%v", err)
