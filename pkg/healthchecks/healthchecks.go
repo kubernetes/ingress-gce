@@ -20,10 +20,12 @@ import (
 	"net/http"
 	"time"
 
+	computealpha "google.golang.org/api/compute/v0.alpha"
 	compute "google.golang.org/api/compute/v1"
 
 	"github.com/golang/glog"
 
+	"encoding/json"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -32,14 +34,30 @@ const (
 	// We're just trying to detect if the node networking is
 	// borked, service level outages will get detected sooner
 	// by kube-proxy.
-	// DefaultHealthCheckInterval defines how frequently a probe runs
+	// DefaultHealthCheckInterval defines how frequently a probe runs with IG backends
 	DefaultHealthCheckInterval = 60 * time.Second
+	// DefaultNEGHealthCheckInterval defines how frequently a probe runs with NEG backends
+	DefaultNEGHealthCheckInterval = 15 * time.Second
 	// DefaultHealthyThreshold defines the threshold of success probes that declare a backend "healthy"
 	DefaultHealthyThreshold = 1
-	// DefaultUnhealthyThreshold defines the threshold of failure probes that declare a backend "unhealthy"
+	// DefaultUnhealthyThreshold defines the threshold of failure probes that declare a instance "unhealthy"
 	DefaultUnhealthyThreshold = 10
-	// DefaultTimeout defines the timeout of each probe
+	// DefaultNEGUnhealthyThreshold defines the threshold of failure probes that declare a network endpoint "unhealthy"
+	// In NEG mode, cloud loadbalancer health check request will no longer be loadbalanced by kube-proxy(iptables).
+	// Instead, health checks can reach endpoints directly. Hence the loadbalancer health check can get a clear signal
+	// of endpoint health status. As a result, we are able to tune down the unhealthy threshold to 2.
+	DefaultNEGUnhealthyThreshold = 2
+	// DefaultTimeout defines the timeout of each probe for IG
 	DefaultTimeout = 60 * time.Second
+	// DefaultTimeout defines the timeout of each probe for NEG
+	DefaultNEGTimeout = 15 * time.Second
+
+	// This is a constant for GCE API.
+	// USE_SERVING_PORT: For NetworkEndpointGroup, the port specified for
+	// each network endpoint is used for health checking. For other
+	// backends, the port or named port specified in the Backend Service is
+	// used for health checking.
+	UseServingPortSpecification = "USE_SERVING_PORT"
 )
 
 // HealthChecks manages health checks.
@@ -57,9 +75,17 @@ func NewHealthChecker(cloud HealthCheckProvider, defaultHealthCheckPath string, 
 }
 
 // New returns a *HealthCheck with default settings and specified port/protocol
-func (h *HealthChecks) New(port int64, protocol utils.AppProtocol) *HealthCheck {
-	hc := DefaultHealthCheck(port, protocol)
+func (h *HealthChecks) New(port int64, protocol utils.AppProtocol, enableNEG bool) *HealthCheck {
+	var hc *HealthCheck
+	if enableNEG {
+		hc = DefaultNEGHealthCheck(protocol)
+	} else {
+		hc = DefaultHealthCheck(port, protocol)
+	}
+	// port is the key for retriving existing health-check
+	// TODO: rename backend-service and health-check to not use port as key
 	hc.Name = h.namer.BeName(port)
+	hc.Port = port
 	return hc
 }
 
@@ -71,23 +97,23 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 		hc.RequestPath = h.defaultPath
 	}
 
-	existingHC, err := h.Get(hc.Port)
+	nodePort := hc.Port
+	// only use alpha API when PORT_SPECIFICATION field is specified
+	existingHC, err := h.Get(nodePort, hc.ForNEG)
 	if err != nil {
 		if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			return "", err
 		}
 
-		glog.V(2).Infof("Creating health check for port %v with protocol %v", hc.Port, hc.Type)
-		if err = h.cloud.CreateHealthCheck(hc.ToComputeHealthCheck()); err != nil {
+		if err = h.create(hc); err != nil {
 			return "", err
 		}
 
-		return h.getHealthCheckLink(hc.Port)
+		return h.getHealthCheckLink(nodePort)
 	}
 
-	if existingHC.Protocol() != hc.Protocol() {
-		glog.V(2).Infof("Updating health check %v because it has protocol %v but need %v", existingHC.Name, existingHC.Type, hc.Type)
-		err = h.cloud.UpdateHealthCheck(hc.ToComputeHealthCheck())
+	if needToUpdate(existingHC, hc) {
+		err = h.update(existingHC, hc)
 		return existingHC.SelfLink, err
 	}
 
@@ -103,8 +129,48 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 	return existingHC.SelfLink, nil
 }
 
+func (h *HealthChecks) create(hc *HealthCheck) error {
+	if hc.ForNEG {
+		glog.V(2).Infof("Creating health check with protocol %v", hc.Type)
+		return h.cloud.CreateAlphaHealthCheck(hc.ToAlphaComputeHealthCheck())
+	} else {
+		glog.V(2).Infof("Creating health check for port %v with protocol %v", hc.Port, hc.Type)
+		v1hc, err := hc.ToComputeHealthCheck()
+		if err != nil {
+			return err
+		}
+		return h.cloud.CreateHealthCheck(v1hc)
+	}
+}
+
+func (h *HealthChecks) update(oldHC, newHC *HealthCheck) error {
+	if newHC.ForNEG {
+		glog.V(2).Infof("Updating health check with protocol %v", newHC.Type)
+		return h.cloud.UpdateAlphaHealthCheck(mergeHealthcheckForNEG(oldHC, newHC).ToAlphaComputeHealthCheck())
+	} else {
+		glog.V(2).Infof("Updating health check for port %v with protocol %v", newHC.Port, newHC.Type)
+		v1hc, err := newHC.ToComputeHealthCheck()
+		if err != nil {
+			return err
+		}
+		return h.cloud.UpdateHealthCheck(v1hc)
+	}
+}
+
+// mergeHealthcheckForNEG merges old health check configuration (potentially for IG) with the new one.
+// This is to preserve the existing health check setting as much as possible.
+// WARNING: if a service backend is converted from IG mode to NEG mode,
+// the existing health check setting will be preserve, although it may not suit the customer needs.
+func mergeHealthcheckForNEG(oldHC, newHC *HealthCheck) *HealthCheck {
+	portSpec := newHC.PortSpecification
+	newHC.HTTPHealthCheck = oldHC.HTTPHealthCheck
+	newHC.Port = 0
+	newHC.PortSpecification = portSpec
+	return newHC
+}
+
 func (h *HealthChecks) getHealthCheckLink(port int64) (string, error) {
-	hc, err := h.Get(port)
+	hc, err := h.Get(port, false)
 	if err != nil {
 		return "", err
 	}
@@ -119,9 +185,19 @@ func (h *HealthChecks) Delete(port int64) error {
 }
 
 // Get returns the health check by port
-func (h *HealthChecks) Get(port int64) (*HealthCheck, error) {
+func (h *HealthChecks) Get(port int64, alpha bool) (*HealthCheck, error) {
+	var hc *computealpha.HealthCheck
+	var err error
 	name := h.namer.BeName(port)
-	hc, err := h.cloud.GetHealthCheck(name)
+	if alpha {
+		hc, err = h.cloud.GetAlphaHealthCheck(name)
+	} else {
+		v1hc, err := h.cloud.GetHealthCheck(name)
+		if err != nil {
+			return nil, err
+		}
+		hc, err = toAlphaHealthCheck(v1hc)
+	}
 	return NewHealthCheck(hc), err
 }
 
@@ -140,14 +216,14 @@ func (h *HealthChecks) DeleteLegacy(port int64) error {
 
 // DefaultHealthCheck simply returns the default health check.
 func DefaultHealthCheck(port int64, protocol utils.AppProtocol) *HealthCheck {
-	httpSettings := compute.HTTPHealthCheck{
+	httpSettings := computealpha.HTTPHealthCheck{
 		Port: port,
 		// Empty string is used as a signal to the caller to use the appropriate
 		// default.
 		RequestPath: "",
 	}
 
-	hcSettings := compute.HealthCheck{
+	hcSettings := computealpha.HealthCheck{
 		// How often to health check.
 		CheckIntervalSec: int64(DefaultHealthCheckInterval.Seconds()),
 		// How long to wait before claiming failure of a health check.
@@ -163,6 +239,36 @@ func DefaultHealthCheck(port int64, protocol utils.AppProtocol) *HealthCheck {
 	return &HealthCheck{
 		HTTPHealthCheck: httpSettings,
 		HealthCheck:     hcSettings,
+		ForNEG:          false,
+	}
+}
+
+// DefaultHealthCheck simply returns the default health check.
+func DefaultNEGHealthCheck(protocol utils.AppProtocol) *HealthCheck {
+	httpSettings := computealpha.HTTPHealthCheck{
+		PortSpecification: UseServingPortSpecification,
+		// Empty string is used as a signal to the caller to use the appropriate
+		// default.
+		RequestPath: "",
+	}
+
+	hcSettings := computealpha.HealthCheck{
+		// How often to health check.
+		CheckIntervalSec: int64(DefaultNEGHealthCheckInterval.Seconds()),
+		// How long to wait before claiming failure of a health check.
+		TimeoutSec: int64(DefaultNEGTimeout.Seconds()),
+		// Number of healthchecks to pass for a vm to be deemed healthy.
+		HealthyThreshold: DefaultHealthyThreshold,
+		// Number of healthchecks to fail before the vm is deemed unhealthy.
+		UnhealthyThreshold: DefaultNEGUnhealthyThreshold,
+		Description:        "Default kubernetes L7 Loadbalancing health check for NEG.",
+		Type:               string(protocol),
+	}
+
+	return &HealthCheck{
+		HTTPHealthCheck: httpSettings,
+		HealthCheck:     hcSettings,
+		ForNEG:          true,
 	}
 }
 
@@ -172,12 +278,13 @@ func DefaultHealthCheck(port int64, protocol utils.AppProtocol) *HealthCheck {
 // Consumers should call .Out() func to generate a compute.HealthCheck
 // with the proper child struct (.HttpHealthCheck, .HttpshealthCheck, etc).
 type HealthCheck struct {
-	compute.HTTPHealthCheck
-	compute.HealthCheck
+	computealpha.HTTPHealthCheck
+	computealpha.HealthCheck
+	ForNEG bool
 }
 
 // NewHealthCheck creates a HealthCheck which abstracts nested structs away
-func NewHealthCheck(hc *compute.HealthCheck) *HealthCheck {
+func NewHealthCheck(hc *computealpha.HealthCheck) *HealthCheck {
 	if hc == nil {
 		return nil
 	}
@@ -188,7 +295,7 @@ func NewHealthCheck(hc *compute.HealthCheck) *HealthCheck {
 		v.HTTPHealthCheck = *hc.HttpHealthCheck
 	case utils.ProtocolHTTPS:
 		// HTTPHealthCheck and HTTPSHealthChecks have identical fields
-		v.HTTPHealthCheck = compute.HTTPHealthCheck(*hc.HttpsHealthCheck)
+		v.HTTPHealthCheck = computealpha.HTTPHealthCheck(*hc.HttpsHealthCheck)
 	}
 
 	// Users should be modifying HTTP(S) specific settings on the embedded
@@ -205,7 +312,22 @@ func (hc *HealthCheck) Protocol() utils.AppProtocol {
 }
 
 // ToComputeHealthCheck returns a valid compute.HealthCheck object
-func (hc *HealthCheck) ToComputeHealthCheck() *compute.HealthCheck {
+func (hc *HealthCheck) ToComputeHealthCheck() (*compute.HealthCheck, error) {
+	hc.merge()
+	return toV1HealthCheck(&hc.HealthCheck)
+}
+
+// ToComputeHealthCheck returns a valid compute.HealthCheck object
+func (hc *HealthCheck) ToAlphaComputeHealthCheck() *computealpha.HealthCheck {
+	// Cannot specify both portSpecification and port field.
+	if len(hc.PortSpecification) > 0 {
+		hc.Port = 0
+	}
+	hc.merge()
+	return &hc.HealthCheck
+}
+
+func (hc *HealthCheck) merge() {
 	// Zeroing out child settings as a precaution. GoogleAPI throws an error
 	// if the wrong child struct is set.
 	hc.HealthCheck.HttpsHealthCheck = nil
@@ -215,9 +337,50 @@ func (hc *HealthCheck) ToComputeHealthCheck() *compute.HealthCheck {
 	case utils.ProtocolHTTP:
 		hc.HealthCheck.HttpHealthCheck = &hc.HTTPHealthCheck
 	case utils.ProtocolHTTPS:
-		https := compute.HTTPSHealthCheck(hc.HTTPHealthCheck)
+		https := computealpha.HTTPSHealthCheck(hc.HTTPHealthCheck)
 		hc.HealthCheck.HttpsHealthCheck = &https
 	}
+}
 
-	return &hc.HealthCheck
+func needToUpdate(old, new *HealthCheck) bool {
+	if old.Protocol() != new.Protocol() {
+		glog.V(2).Infof("Updating health check %v because it has protocol %v but need %v", old.Name, old.Type, new.Type)
+		return true
+	}
+
+	if old.PortSpecification != new.PortSpecification {
+		glog.V(2).Infof("Updating health check %v because it has port specification %q but need %q", old.Name, old.PortSpecification, new.PortSpecification)
+		return true
+	}
+	return false
+}
+
+// toV1HealthCheck converts alpha health check to v1 health check.
+// WARNING: alpha health check has a additional PORT_SPECIFICATION field.
+// This field will be omitted after conversion.
+func toV1HealthCheck(hc *computealpha.HealthCheck) (*compute.HealthCheck, error) {
+	ret := &compute.HealthCheck{}
+	err := copyViaJSON(ret, hc)
+	return ret, err
+}
+
+// toV1HealthCheck converts v1 health check to alpha health check.
+// There should be no information lost after conversion.
+func toAlphaHealthCheck(hc *compute.HealthCheck) (*computealpha.HealthCheck, error) {
+	ret := &computealpha.HealthCheck{}
+	err := copyViaJSON(ret, hc)
+	return ret, err
+}
+
+type jsonConvertable interface {
+	MarshalJSON() ([]byte, error)
+}
+
+func copyViaJSON(dest interface{}, src jsonConvertable) error {
+	var err error
+	bytes, err := src.MarshalJSON()
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(bytes, dest)
 }

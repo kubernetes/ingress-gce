@@ -171,7 +171,7 @@ func (b *Backends) Get(port int64) (*compute.BackendService, error) {
 }
 
 func (b *Backends) ensureHealthCheck(sp ServicePort) (string, error) {
-	hc := b.healthChecker.New(sp.Port, sp.Protocol)
+	hc := b.healthChecker.New(sp.Port, sp.Protocol, false)
 
 	existingLegacyHC, err := b.healthChecker.GetLegacy(sp.Port)
 	if err != nil && !utils.IsNotFoundError(err) {
@@ -482,10 +482,15 @@ func applyProbeSettingsToHC(p *v1.Probe, hc *healthchecks.HealthCheck) {
 			break
 		}
 	}
-
 	hc.RequestPath = healthPath
 	hc.Host = host
 	hc.Description = "Kubernetes L7 health check generated with readiness probe settings."
-	hc.CheckIntervalSec = int64(p.PeriodSeconds) + int64(healthchecks.DefaultHealthCheckInterval.Seconds())
 	hc.TimeoutSec = int64(p.TimeoutSeconds)
+	if hc.ForNEG {
+		// For NEG mode, we can support more aggresive healthcheck interval.
+		hc.CheckIntervalSec = int64(p.PeriodSeconds)
+	} else {
+		// For IG mode, short healthcheck interval may health check flooding problem.
+		hc.CheckIntervalSec = int64(p.PeriodSeconds) + int64(healthchecks.DefaultHealthCheckInterval.Seconds())
+	}
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package healthchecks
 
 import (
+	computealpha "google.golang.org/api/compute/v0.alpha"
 	compute "google.golang.org/api/compute/v1"
 
 	"k8s.io/ingress-gce/pkg/utils"
@@ -26,14 +27,14 @@ import (
 func NewFakeHealthCheckProvider() *FakeHealthCheckProvider {
 	return &FakeHealthCheckProvider{
 		http:    make(map[string]compute.HttpHealthCheck),
-		generic: make(map[string]compute.HealthCheck),
+		generic: make(map[string]computealpha.HealthCheck),
 	}
 }
 
 // FakeHealthCheckProvider fakes out health checks.
 type FakeHealthCheckProvider struct {
 	http    map[string]compute.HttpHealthCheck
-	generic map[string]compute.HealthCheck
+	generic map[string]computealpha.HealthCheck
 }
 
 // CreateHttpHealthCheck fakes out http health check creation.
@@ -77,16 +78,34 @@ func (f *FakeHealthCheckProvider) UpdateHttpHealthCheck(hc *compute.HttpHealthCh
 func (f *FakeHealthCheckProvider) CreateHealthCheck(hc *compute.HealthCheck) error {
 	v := *hc
 	v.SelfLink = "https://fake.google.com/compute/healthChecks/" + hc.Name
-	f.generic[hc.Name] = v
+	alphaHC, _ := toAlphaHealthCheck(hc)
+	f.generic[hc.Name] = *alphaHC
+	return nil
+}
+
+// CreateHealthCheck fakes out http health check creation.
+func (f *FakeHealthCheckProvider) CreateAlphaHealthCheck(hc *computealpha.HealthCheck) error {
+	v := *hc
+	v.SelfLink = "https://fake.google.com/compute/healthChecks/" + hc.Name
+	f.generic[hc.Name] = *hc
 	return nil
 }
 
 // GetHealthCheck fakes out getting a http health check from the cloud.
 func (f *FakeHealthCheckProvider) GetHealthCheck(name string) (*compute.HealthCheck, error) {
 	if hc, found := f.generic[name]; found {
-		return &hc, nil
+		v1HC, _ := toV1HealthCheck(&hc)
+		return v1HC, nil
 	}
 
+	return nil, utils.FakeGoogleAPINotFoundErr()
+}
+
+// GetHealthCheck fakes out getting a http health check from the cloud.
+func (f *FakeHealthCheckProvider) GetAlphaHealthCheck(name string) (*computealpha.HealthCheck, error) {
+	if hc, found := f.generic[name]; found {
+		return &hc, nil
+	}
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
@@ -102,6 +121,15 @@ func (f *FakeHealthCheckProvider) DeleteHealthCheck(name string) error {
 
 // UpdateHealthCheck sends the given health check as an update.
 func (f *FakeHealthCheckProvider) UpdateHealthCheck(hc *compute.HealthCheck) error {
+	if _, exists := f.generic[hc.Name]; !exists {
+		return utils.FakeGoogleAPINotFoundErr()
+	}
+	alphaHC, _ := toAlphaHealthCheck(hc)
+	f.generic[hc.Name] = *alphaHC
+	return nil
+}
+
+func (f *FakeHealthCheckProvider) UpdateAlphaHealthCheck(hc *computealpha.HealthCheck) error {
 	if _, exists := f.generic[hc.Name]; !exists {
 		return utils.FakeGoogleAPINotFoundErr()
 	}
