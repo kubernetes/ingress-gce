@@ -16,5 +16,5 @@ FROM alpine:3.6
 
 RUN apk add --no-cache ca-certificates
 
-COPY glbc glbc
-ENTRYPOINT ["/glbc"]
+ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
+ENTRYPOINT ["/ARG_BIN"]

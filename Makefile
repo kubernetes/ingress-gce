@@ -1,18 +1,44 @@
-all: push
+# Copyright 2016 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
-# 0.0 shouldn't clobber any released builds
-TAG=0.9.7
-PREFIX=gcr.io/google_containers/glbc
-PKG=k8s.io/ingress-gce
+#
+# `make help` will show commonly used targets.
+#
 
-server:
-	CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags '-w' -o glbc ${PKG}/cmd/glbc
+# Golang package.
+PKG := k8s.io/ingress-gce
 
-container: server
-	docker build --pull -t $(PREFIX):$(TAG) .
+# List of binaries to build. You must have a matching Dockerfile.BINARY
+# for each BINARY.
+CONTAINER_BINARIES := glbc
 
-push: container
-	gcloud docker -- push $(PREFIX):$(TAG)
+# Registry to push to.
+REGISTRY ?= gcr.io/google_containers
 
-clean:
-	rm -f glbc
+ARCH ?= amd64
+ALL_ARCH := amd64
+
+# Image to use for building.
+BUILD_IMAGE ?= golang:1.9-alpine
+# Containers will be named: $(CONTAINER_PREFIX)-$(BINARY)-$(ARCH):$(VERSION).
+CONTAINER_PREFIX ?= ingress-gce
+
+# This version-strategy uses git tags to set the version string
+VERSION ?= $(shell git describe --tags --always --dirty)
+
+# Set to 1 to print more verbose output from the build.
+VERBOSE ?= 0
+
+# Include standard build rules.
+include build/rules.mk

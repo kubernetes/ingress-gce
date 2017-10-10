@@ -28,3 +28,11 @@ Session.vim
 # coverage artifacts
 .coverprofile
 /gover.coverprofile
+bin/
+
+# build artifacts
+.go/
+.*-container
+.*-dockerfile
+.*-push
+bin/
