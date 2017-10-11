@@ -28,7 +28,7 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	netset "k8s.io/kubernetes/pkg/util/net/sets"
 
-	"k8s.io/ingress-gce/utils"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // Src ranges from which the GCE L7 performs health checks.

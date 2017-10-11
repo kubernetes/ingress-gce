@@ -26,7 +26,7 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	"k8s.io/ingress-gce/loadbalancers"
+	"k8s.io/ingress-gce/pkg/loadbalancers"
 )
 
 // secretLoaders returns a type containing all the secrets of an Ingress.

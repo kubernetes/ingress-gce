@@ -33,9 +33,9 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/api"
 
-	"k8s.io/ingress-gce/firewalls"
-	"k8s.io/ingress-gce/loadbalancers"
-	"k8s.io/ingress-gce/utils"
+	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const testClusterName = "testcluster"

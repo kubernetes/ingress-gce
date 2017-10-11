@@ -44,11 +44,11 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
-	"k8s.io/ingress-gce/backends"
-	"k8s.io/ingress-gce/controller"
-	"k8s.io/ingress-gce/loadbalancers"
-	"k8s.io/ingress-gce/storage"
-	"k8s.io/ingress-gce/utils"
+	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/controller"
+	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/storage"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )

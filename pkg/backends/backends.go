@@ -32,10 +32,10 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"k8s.io/ingress-gce/healthchecks"
-	"k8s.io/ingress-gce/instances"
-	"k8s.io/ingress-gce/storage"
-	"k8s.io/ingress-gce/utils"
+	"k8s.io/ingress-gce/pkg/healthchecks"
+	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/storage"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // BalancingMode represents the loadbalancing configuration of an individual
