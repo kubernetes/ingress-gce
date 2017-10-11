@@ -48,10 +48,9 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	neg "k8s.io/ingress-gce/pkg/networkendpointgroup"
 	"k8s.io/ingress-gce/pkg/storage"
 	"k8s.io/ingress-gce/pkg/utils"
-
-	neg "k8s.io/ingress-gce/networkendpointgroup"
 
 	"k8s.io/kubernetes/pkg/cloudprovider"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"

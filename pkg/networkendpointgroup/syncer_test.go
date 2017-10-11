@@ -7,7 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/ingress-gce/utils"
+	"k8s.io/ingress-gce/pkg/context"
 	"reflect"
 	"testing"
 	"time"
@@ -22,7 +22,7 @@ const (
 
 func NewTestSyncer() *syncer {
 	kubeClient := fake.NewSimpleClientset()
-	context := utils.NewControllerContext(kubeClient, apiv1.NamespaceAll, 1*time.Second, true)
+	context := context.NewControllerContext(kubeClient, apiv1.NamespaceAll, 1*time.Second, true)
 	svcPort := servicePort{
 		namespace:  ServiceNamespace,
 		name:       ServiceName,

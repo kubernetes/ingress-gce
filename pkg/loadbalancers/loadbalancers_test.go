@@ -26,9 +26,8 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/networkendpointgroup"
 	"k8s.io/ingress-gce/pkg/utils"
-
-	"k8s.io/ingress-gce/networkendpointgroup"
 )
 
 const (

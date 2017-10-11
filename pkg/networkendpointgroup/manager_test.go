@@ -24,8 +24,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/ingress-gce/context"
-	"k8s.io/ingress-gce/utils"
+	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/utils"
 	"testing"
 	"time"
 )
