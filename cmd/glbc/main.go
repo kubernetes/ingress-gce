@@ -45,6 +45,7 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/storage"
@@ -249,10 +250,11 @@ func main() {
 		SvcPort:  intstr.FromInt(int(port)),
 	}
 
+	var namer *utils.Namer
 	var cloud *gce.GCECloud
 	if *inCluster || *useRealCloud {
 		// Create cluster manager
-		namer, err := newNamer(kubeClient, *clusterName, controller.DefaultFirewallName)
+		namer, err = newNamer(kubeClient, *clusterName, controller.DefaultFirewallName)
 		if err != nil {
 			glog.Fatalf("%v", err)
 		}
@@ -287,7 +289,7 @@ func main() {
 		clusterManager = controller.NewFakeClusterManager(*clusterName, controller.DefaultFirewallName).ClusterManager
 	}
 
-	ctx := controller.NewControllerContext(kubeClient, *watchNamespace, *resyncPeriod)
+	ctx := context.NewControllerContext(kubeClient, *watchNamespace, *resyncPeriod, false)
 
 	// Start loadbalancer controller
 	lbc, err := controller.NewLoadBalancerController(kubeClient, ctx, clusterManager)

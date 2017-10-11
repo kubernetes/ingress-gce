@@ -43,7 +43,7 @@ func TestZoneListing(t *testing.T) {
 		"zone-2": {"n2"},
 	}
 	addNodes(lbc, zoneToNode)
-	zones, err := lbc.tr.ListZones()
+	zones, err := lbc.Translator.ListZones()
 	if err != nil {
 		t.Errorf("Failed to list zones: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestProbeGetter(t *testing.T) {
 	}
 	addPods(lbc, nodePortToHealthCheck, api_v1.NamespaceDefault)
 	for p, exp := range nodePortToHealthCheck {
-		got, err := lbc.tr.GetProbe(p)
+		got, err := lbc.Translator.GetProbe(p)
 		if err != nil || got == nil {
 			t.Errorf("Failed to get probe for node port %v: %v", p, err)
 		} else if getProbePath(got) != exp {
@@ -121,7 +121,7 @@ func TestProbeGetterNamedPort(t *testing.T) {
 		pod.Spec.Containers[0].ReadinessProbe.Handler.HTTPGet.Port = intstr.IntOrString{Type: intstr.String, StrVal: "test"}
 	}
 	for p, exp := range nodePortToHealthCheck {
-		got, err := lbc.tr.GetProbe(p)
+		got, err := lbc.Translator.GetProbe(p)
 		if err != nil || got == nil {
 			t.Errorf("Failed to get probe for node port %v: %v", p, err)
 		} else if getProbePath(got) != exp {
@@ -172,7 +172,7 @@ func TestProbeGetterCrossNamespace(t *testing.T) {
 	addPods(lbc, nodePortToHealthCheck, api_v1.NamespaceDefault)
 
 	for p, exp := range nodePortToHealthCheck {
-		got, err := lbc.tr.GetProbe(p)
+		got, err := lbc.Translator.GetProbe(p)
 		if err != nil || got == nil {
 			t.Errorf("Failed to get probe for node port %v: %v", p, err)
 		} else if getProbePath(got) != exp {
@@ -254,7 +254,7 @@ func addNodes(lbc *LoadBalancerController, zoneToNode map[string][]string) {
 			lbc.nodeLister.Indexer.Add(n)
 		}
 	}
-	lbc.CloudClusterManager.instancePool.Init(lbc.tr)
+	lbc.CloudClusterManager.instancePool.Init(lbc.Translator)
 }
 
 func getProbePath(p *api_v1.Probe) string {
