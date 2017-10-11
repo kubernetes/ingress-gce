@@ -59,15 +59,18 @@ var (
 type LoadBalancerController struct {
 	client kubernetes.Interface
 
-	ingressSynced cache.InformerSynced
-	serviceSynced cache.InformerSynced
-	podSynced     cache.InformerSynced
-	nodeSynced    cache.InformerSynced
-	ingLister     StoreToIngressLister
-	nodeLister    StoreToNodeLister
-	svcLister     StoreToServiceLister
+	ingressSynced  cache.InformerSynced
+	serviceSynced  cache.InformerSynced
+	podSynced      cache.InformerSynced
+	nodeSynced     cache.InformerSynced
+	endpointSynced cache.InformerSynced
+	ingLister      StoreToIngressLister
+	nodeLister     StoreToNodeLister
+	svcLister      StoreToServiceLister
 	// Health checks are the readiness probes of containers on pods.
 	podLister StoreToPodLister
+	// endpoint lister is needed when translating service target port to real endpoint target ports.
+	endpointLister StoreToEndpointLister
 	// TODO: Watch secrets
 	CloudClusterManager *ClusterManager
 	recorder            record.EventRecorder
@@ -85,6 +88,8 @@ type LoadBalancerController struct {
 	// hasSynced returns true if all associated sub-controllers have synced.
 	// Abstracted into a func for testing.
 	hasSynced func() bool
+	// negEnabled indicates whether NEG feature is enabled.
+	negEnabled bool
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
@@ -92,7 +97,7 @@ type LoadBalancerController struct {
 // - clusterManager: A ClusterManager capable of creating all cloud resources
 //	 required for L7 loadbalancing.
 // - resyncPeriod: Watchers relist from the Kubernetes API server this often.
-func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.ControllerContext, clusterManager *ClusterManager) (*LoadBalancerController, error) {
+func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.ControllerContext, clusterManager *ClusterManager, negEnabled bool) (*LoadBalancerController, error) {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
@@ -104,6 +109,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 		stopCh:              ctx.StopCh,
 		recorder: eventBroadcaster.NewRecorder(scheme.Scheme,
 			apiv1.EventSource{Component: "loadbalancer-controller"}),
+		negEnabled: negEnabled,
 	}
 	lbc.nodeQueue = NewTaskQueue(lbc.syncNodes)
 	lbc.ingQueue = NewTaskQueue(lbc.sync)
@@ -113,11 +119,17 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 	lbc.serviceSynced = ctx.ServiceInformer.HasSynced
 	lbc.podSynced = ctx.PodInformer.HasSynced
 	lbc.nodeSynced = ctx.NodeInformer.HasSynced
+	lbc.endpointSynced = func() bool { return true }
 
 	lbc.ingLister.Store = ctx.IngressInformer.GetStore()
 	lbc.svcLister.Indexer = ctx.ServiceInformer.GetIndexer()
 	lbc.podLister.Indexer = ctx.PodInformer.GetIndexer()
 	lbc.nodeLister.Indexer = ctx.NodeInformer.GetIndexer()
+	if negEnabled {
+		lbc.endpointSynced = ctx.EndpointInformer.HasSynced
+		lbc.endpointLister.Indexer = ctx.EndpointInformer.GetIndexer()
+	}
+
 	// ingress event handler
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -237,7 +249,8 @@ func (lbc *LoadBalancerController) storesSynced() bool {
 		// group just because we don't realize there are nodes in that zone.
 		lbc.nodeSynced() &&
 		// Wait for ingresses as a safety measure. We don't really need this.
-		lbc.ingressSynced())
+		lbc.ingressSynced() &&
+		lbc.endpointSynced())
 }
 
 // sync manages Ingress create/updates/deletes.
@@ -297,7 +310,7 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 
 	// Record any errors during sync and throw a single error at the end. This
 	// allows us to free up associated cloud resources ASAP.
-	igs, err := lbc.CloudClusterManager.Checkpoint(lbs, nodeNames, gceNodePorts, allNodePorts)
+	igs, err := lbc.CloudClusterManager.Checkpoint(lbs, nodeNames, gceNodePorts, allNodePorts, lbc.Translator.gatherFirewallPorts(gceNodePorts, len(lbs) > 0))
 	if err != nil {
 		if fwErr, ok := err.(*firewalls.FirewallSyncError); ok {
 			if ingExists {
@@ -331,6 +344,22 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 			return err
 		}
 		return nil
+	}
+
+	if lbc.negEnabled {
+		svcPorts := lbc.Translator.toNodePorts(&extensions.IngressList{Items: []extensions.Ingress{ing}})
+		for _, svcPort := range svcPorts {
+			if svcPort.NEGEnabled {
+
+				zones, err := lbc.Translator.ListZones()
+				if err != nil {
+					return err
+				}
+				if err := lbc.CloudClusterManager.backendPool.Link(svcPort, zones); err != nil {
+					return err
+				}
+			}
+		}
 	}
 
 	// Update the UrlMap of the single loadbalancer that came through the watch.

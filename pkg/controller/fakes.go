@@ -27,6 +27,8 @@ import (
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
+
+	"k8s.io/ingress-gce/networkendpointgroup"
 )
 
 var (
@@ -48,6 +50,7 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 	fakeBackends := backends.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString())
 	fakeHCP := healthchecks.NewFakeHealthCheckProvider()
+	fakeNEG := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")
 	namer := utils.NewNamer(clusterName, firewallName)
 
 	nodePool := instances.NewNodePool(fakeIGs)
@@ -57,6 +60,7 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 
 	backendPool := backends.NewBackendPool(
 		fakeBackends,
+		fakeNEG,
 		healthChecker, nodePool, namer, []int64{}, false)
 	l7Pool := loadbalancers.NewLoadBalancerPool(
 		fakeLbs,

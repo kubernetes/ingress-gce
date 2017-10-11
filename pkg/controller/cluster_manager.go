@@ -119,10 +119,11 @@ func (c *ClusterManager) shutdown() error {
 //   instance groups.
 // - backendServicePorts are the ports for which we require BackendServices.
 // - namedPorts are the ports which must be opened on instance groups.
+// - firewallPorts are the ports which must be opened in the firewall rule.
 // Returns the list of all instance groups corresponding to the given loadbalancers.
 // If in performing the checkpoint the cluster manager runs out of quota, a
 // googleapi 403 is returned.
-func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeNames []string, backendServicePorts []backends.ServicePort, namedPorts []backends.ServicePort) ([]*compute.InstanceGroup, error) {
+func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeNames []string, backendServicePorts []backends.ServicePort, namedPorts []backends.ServicePort, firewallPorts []int64) ([]*compute.InstanceGroup, error) {
 	if len(namedPorts) != 0 {
 		// Add the default backend node port to the list of named ports for instance groups.
 		namedPorts = append(namedPorts, c.defaultBackendNodePort)
@@ -147,24 +148,11 @@ func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeName
 		return igs, err
 	}
 
-	// TODO: Manage default backend and its firewall rule in a centralized way.
-	// DefaultBackend is managed in l7 pool, which doesn't understand instances,
-	// which the firewall rule requires.
-	fwNodePorts := backendServicePorts
-	if len(lbs) != 0 {
-		// If there are no Ingresses, we shouldn't be allowing traffic to the
-		// default backend. Equally importantly if the cluster gets torn down
-		// we shouldn't leak the firewall rule.
-		fwNodePorts = append(fwNodePorts, c.defaultBackendNodePort)
+	if err := c.firewallPool.Sync(firewallPorts, nodeNames); err != nil {
+		return igs, err
 	}
 
-	var np []int64
-	for _, p := range fwNodePorts {
-		np = append(np, p.Port)
-	}
-
-	err = c.firewallPool.Sync(np, nodeNames)
-	return igs, err
+	return igs, nil
 }
 
 func (c *ClusterManager) EnsureInstanceGroupsAndPorts(servicePorts []backends.ServicePort) ([]*compute.InstanceGroup, error) {
@@ -242,8 +230,8 @@ func NewClusterManager(
 	cluster.healthCheckers = []healthchecks.HealthChecker{healthChecker, defaultBackendHealthChecker}
 
 	// TODO: This needs to change to a consolidated management of the default backend.
-	cluster.backendPool = backends.NewBackendPool(cloud, healthChecker, cluster.instancePool, cluster.ClusterNamer, []int64{defaultBackendNodePort.Port}, true)
-	defaultBackendPool := backends.NewBackendPool(cloud, defaultBackendHealthChecker, cluster.instancePool, cluster.ClusterNamer, []int64{}, false)
+	cluster.backendPool = backends.NewBackendPool(cloud, cloud, healthChecker, cluster.instancePool, cluster.ClusterNamer, []int64{defaultBackendNodePort.Port}, true)
+	defaultBackendPool := backends.NewBackendPool(cloud, cloud, defaultBackendHealthChecker, cluster.instancePool, cluster.ClusterNamer, []int64{}, false)
 	cluster.defaultBackendNodePort = defaultBackendNodePort
 
 	// L7 pool creates targetHTTPProxy, ForwardingRules, UrlMaps, StaticIPs.

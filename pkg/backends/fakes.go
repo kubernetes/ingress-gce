@@ -17,6 +17,9 @@ limitations under the License.
 package backends
 
 import (
+	"encoding/json"
+
+	computealpha "google.golang.org/api/compute/v0.alpha"
 	compute "google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -58,6 +61,14 @@ func (f *FakeBackendServices) GetGlobalBackendService(name string) (*compute.Bac
 		return svc, nil
 	}
 	return nil, utils.FakeGoogleAPINotFoundErr()
+}
+
+func (f *FakeBackendServices) GetAlphaGlobalBackendService(name string) (*computealpha.BackendService, error) {
+	obj, err := f.GetGlobalBackendService(name)
+	if err != nil {
+		return nil, err
+	}
+	return toAlphaBackendService(obj), nil
 }
 
 // CreateGlobalBackendService fakes backend service creation.
@@ -106,6 +117,11 @@ func (f *FakeBackendServices) UpdateGlobalBackendService(be *compute.BackendServ
 	return f.backendServices.Update(be)
 }
 
+// UpdateGlobalBackendService fakes updating a backend service.
+func (f *FakeBackendServices) UpdateAlphaGlobalBackendService(be *computealpha.BackendService) error {
+	return f.UpdateGlobalBackendService(toV1BackendService(be))
+}
+
 // GetGlobalBackendServiceHealth fakes getting backend service health.
 func (f *FakeBackendServices) GetGlobalBackendServiceHealth(name, instanceGroupLink string) (*compute.BackendServiceGroupHealth, error) {
 	be, err := f.GetGlobalBackendService(name)
@@ -139,4 +155,18 @@ func (pp *FakeProbeProvider) GetProbe(port ServicePort) (*api_v1.Probe, error) {
 		return probe, nil
 	}
 	return nil, nil
+}
+
+func toV1BackendService(be *computealpha.BackendService) *compute.BackendService {
+	bytes, _ := be.MarshalJSON()
+	res := &compute.BackendService{}
+	json.Unmarshal(bytes, res)
+	return res
+}
+
+func toAlphaBackendService(be *compute.BackendService) *computealpha.BackendService {
+	bytes, _ := be.MarshalJSON()
+	res := &computealpha.BackendService{}
+	json.Unmarshal(bytes, res)
+	return res
 }
