@@ -255,12 +255,12 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 	}
 
 	// Verify existance of a backend service for the proper port, but do not specify any backends/igs
-	pName := b.namer.BeName(p.Port)
+	beName := b.namer.BeName(p.Port)
 	be, _ = b.Get(p.Port)
 	if be == nil {
 		namedPort := utils.GetNamedPort(p.Port)
 		glog.V(2).Infof("Creating backend service for port %v named port %v", p.Port, namedPort)
-		be, err = b.create(namedPort, hcLink, p, pName)
+		be, err = b.create(namedPort, hcLink, p, beName)
 		if err != nil {
 			return err
 		}
@@ -272,7 +272,7 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 		existingHCLink = be.HealthChecks[0]
 	}
 	if be.Protocol != string(p.Protocol) || existingHCLink != hcLink || be.Description != p.Description() {
-		glog.V(2).Infof("Updating backend protocol %v (%v) for change in protocol (%v) or health check", pName, be.Protocol, string(p.Protocol))
+		glog.V(2).Infof("Updating backend protocol %v (%v) for change in protocol (%v) or health check", beName, be.Protocol, string(p.Protocol))
 		be.Protocol = string(p.Protocol)
 		be.HealthChecks = []string{hcLink}
 		be.Description = p.Description()
@@ -284,7 +284,7 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 	// If previous health check was legacy type, we need to delete it.
 	if existingHCLink != hcLink && strings.Contains(existingHCLink, "/httpHealthChecks/") {
 		if err = b.healthChecker.DeleteLegacy(p.Port); err != nil {
-			glog.Warning("Failed to delete legacy HttpHealthCheck %v; Will not try again, err: %v", pName, err)
+			glog.Warning("Failed to delete legacy HttpHealthCheck %v; Will not try again, err: %v", beName, err)
 		}
 	}
 
