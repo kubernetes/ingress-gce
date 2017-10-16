@@ -32,6 +32,7 @@ go_library(
         "gce_loadbalancer_external.go",
         "gce_loadbalancer_internal.go",
         "gce_loadbalancer_naming.go",
+        "gce_networkendpointgroup.go",
         "gce_op.go",
         "gce_routes.go",
         "gce_targetpool.go",
@@ -43,6 +44,7 @@ go_library(
         "metrics.go",
         "token_source.go",
     ],
+    importpath = "k8s.io/kubernetes/pkg/cloudprovider/providers/gce",
     deps = [
         "//pkg/api/v1/service:go_default_library",
         "//pkg/cloudprovider:go_default_library",
@@ -96,6 +98,7 @@ go_test(
         "gce_test.go",
         "metrics_test.go",
     ],
+    importpath = "k8s.io/kubernetes/pkg/cloudprovider/providers/gce",
     library = ":go_default_library",
     deps = [
         "//pkg/cloudprovider:go_default_library",
