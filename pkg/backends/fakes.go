@@ -17,8 +17,6 @@ limitations under the License.
 package backends
 
 import (
-	"fmt"
-
 	compute "google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -49,7 +47,7 @@ func (f *FakeBackendServices) GetGlobalBackendService(name string) (*compute.Bac
 	f.calls = append(f.calls, utils.Get)
 	obj, exists, err := f.backendServices.GetByKey(name)
 	if !exists {
-		return nil, fmt.Errorf("backend service %v not found", name)
+		return nil, utils.FakeGoogleAPINotFoundErr()
 	}
 	if err != nil {
 		return nil, err
@@ -59,7 +57,7 @@ func (f *FakeBackendServices) GetGlobalBackendService(name string) (*compute.Bac
 	if name == svc.Name {
 		return svc, nil
 	}
-	return nil, fmt.Errorf("backend service %v not found", name)
+	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
 // CreateGlobalBackendService fakes backend service creation.
@@ -79,7 +77,7 @@ func (f *FakeBackendServices) DeleteGlobalBackendService(name string) error {
 	f.calls = append(f.calls, utils.Delete)
 	svc, exists, err := f.backendServices.GetByKey(name)
 	if !exists {
-		return fmt.Errorf("backend service %v not found", name)
+		return utils.FakeGoogleAPINotFoundErr()
 	}
 	if err != nil {
 		return err

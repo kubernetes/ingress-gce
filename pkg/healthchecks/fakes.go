@@ -18,12 +18,9 @@ package healthchecks
 
 import (
 	compute "google.golang.org/api/compute/v1"
-	"google.golang.org/api/googleapi"
-)
 
-func fakeNotFoundErr() *googleapi.Error {
-	return &googleapi.Error{Code: 404}
-}
+	"k8s.io/ingress-gce/pkg/utils"
+)
 
 // NewFakeHealthCheckProvider returns a new FakeHealthChecks.
 func NewFakeHealthCheckProvider() *FakeHealthCheckProvider {
@@ -53,13 +50,13 @@ func (f *FakeHealthCheckProvider) GetHttpHealthCheck(name string) (*compute.Http
 		return &hc, nil
 	}
 
-	return nil, fakeNotFoundErr()
+	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
 // DeleteHttpHealthCheck fakes out deleting a http health check.
 func (f *FakeHealthCheckProvider) DeleteHttpHealthCheck(name string) error {
 	if _, exists := f.http[name]; !exists {
-		return fakeNotFoundErr()
+		return utils.FakeGoogleAPINotFoundErr()
 	}
 
 	delete(f.http, name)
@@ -69,7 +66,7 @@ func (f *FakeHealthCheckProvider) DeleteHttpHealthCheck(name string) error {
 // UpdateHttpHealthCheck sends the given health check as an update.
 func (f *FakeHealthCheckProvider) UpdateHttpHealthCheck(hc *compute.HttpHealthCheck) error {
 	if _, exists := f.http[hc.Name]; !exists {
-		return fakeNotFoundErr()
+		return utils.FakeGoogleAPINotFoundErr()
 	}
 
 	f.http[hc.Name] = *hc
@@ -90,13 +87,13 @@ func (f *FakeHealthCheckProvider) GetHealthCheck(name string) (*compute.HealthCh
 		return &hc, nil
 	}
 
-	return nil, fakeNotFoundErr()
+	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
 // DeleteHealthCheck fakes out deleting a http health check.
 func (f *FakeHealthCheckProvider) DeleteHealthCheck(name string) error {
 	if _, exists := f.generic[name]; !exists {
-		return fakeNotFoundErr()
+		return utils.FakeGoogleAPINotFoundErr()
 	}
 
 	delete(f.generic, name)
@@ -106,7 +103,7 @@ func (f *FakeHealthCheckProvider) DeleteHealthCheck(name string) error {
 // UpdateHealthCheck sends the given health check as an update.
 func (f *FakeHealthCheckProvider) UpdateHealthCheck(hc *compute.HealthCheck) error {
 	if _, exists := f.generic[hc.Name]; !exists {
-		return fakeNotFoundErr()
+		return utils.FakeGoogleAPINotFoundErr()
 	}
 
 	f.generic[hc.Name] = *hc
