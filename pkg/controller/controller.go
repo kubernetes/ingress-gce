@@ -33,6 +33,7 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
@@ -122,7 +123,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*extensions.Ingress)
 			if !isGCEIngress(addIng) && !isGCEMultiClusterIngress(addIng) {
-				glog.Infof("Ignoring add for ingress %v based on annotation %v", addIng.Name, ingressClassKey)
+				glog.Infof("Ignoring add for ingress %v based on annotation %v", addIng.Name, annotations.IngressClassKey)
 				return
 			}
 			lbc.recorder.Eventf(addIng, apiv1.EventTypeNormal, "ADD", fmt.Sprintf("%s/%s", addIng.Namespace, addIng.Name))
@@ -131,7 +132,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*extensions.Ingress)
 			if !isGCEIngress(delIng) && !isGCEMultiClusterIngress(delIng) {
-				glog.Infof("Ignoring delete for ingress %v based on annotation %v", delIng.Name, ingressClassKey)
+				glog.Infof("Ignoring delete for ingress %v based on annotation %v", delIng.Name, annotations.IngressClassKey)
 				return
 			}
 			glog.Infof("Delete notification received for Ingress %v/%v", delIng.Namespace, delIng.Name)
@@ -416,10 +417,10 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ingList extensions.IngressList)
 
 		var tls *loadbalancers.TLSCerts
 
-		annotations := ingAnnotations(ing.ObjectMeta.Annotations)
+		annotations := annotations.IngAnnotations(ing.ObjectMeta.Annotations)
 		// Load the TLS cert from the API Spec if it is not specified in the annotation.
 		// TODO: enforce this with validation.
-		if annotations.useNamedTLS() == "" {
+		if annotations.UseNamedTLS() == "" {
 			tls, err = lbc.tlsLoader.load(&ing)
 			if err != nil {
 				glog.Warningf("Cannot get certs for Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
@@ -429,9 +430,9 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ingList extensions.IngressList)
 		lbs = append(lbs, &loadbalancers.L7RuntimeInfo{
 			Name:         k,
 			TLS:          tls,
-			TLSName:      annotations.useNamedTLS(),
-			AllowHTTP:    annotations.allowHTTP(),
-			StaticIPName: annotations.staticIPName(),
+			TLSName:      annotations.UseNamedTLS(),
+			AllowHTTP:    annotations.AllowHTTP(),
+			StaticIPName: annotations.StaticIPName(),
 		})
 	}
 	return lbs, nil

@@ -27,6 +27,7 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -242,7 +243,7 @@ func addNodes(lbc *LoadBalancerController, zoneToNode map[string][]string) {
 				ObjectMeta: meta_v1.ObjectMeta{
 					Name: node,
 					Labels: map[string]string{
-						zoneKey: zone,
+						annotations.ZoneKey: zone,
 					},
 				},
 				Status: api_v1.NodeStatus{
@@ -290,13 +291,13 @@ func TestAddInstanceGroupsAnnotation(t *testing.T) {
 		},
 	}
 	for _, c := range testCases {
-		annotations := map[string]string{}
-		err := setInstanceGroupsAnnotation(annotations, c.Igs)
+		ingAnnotations := map[string]string{}
+		err := setInstanceGroupsAnnotation(ingAnnotations, c.Igs)
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
 		}
-		if annotations[instanceGroupsAnnotationKey] != c.ExpectedAnnotation {
-			t.Fatalf("Unexpected annotation value: %s, expected: %s", annotations[instanceGroupsAnnotationKey], c.ExpectedAnnotation)
+		if ingAnnotations[annotations.InstanceGroupsAnnotationKey] != c.ExpectedAnnotation {
+			t.Fatalf("Unexpected annotation value: %s, expected: %s", ingAnnotations[annotations.InstanceGroupsAnnotationKey], c.ExpectedAnnotation)
 		}
 	}
 }

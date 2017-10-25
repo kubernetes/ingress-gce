@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/golang/glog"
@@ -40,135 +39,24 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-const (
-	// allowHTTPKey tells the Ingress controller to allow/block HTTP access.
-	// If either unset or set to true, the controller will create a
-	// forwarding-rule for port 80, and any additional rules based on the TLS
-	// section of the Ingress. If set to false, the controller will only create
-	// rules for port 443 based on the TLS section.
-	allowHTTPKey = "kubernetes.io/ingress.allow-http"
-
-	// staticIPNameKey tells the Ingress controller to use a specific GCE
-	// static ip for its forwarding rules. If specified, the Ingress controller
-	// assigns the static ip by this name to the forwarding rules of the given
-	// Ingress. The controller *does not* manage this ip, it is the users
-	// responsibility to create/delete it.
-	staticIPNameKey = "kubernetes.io/ingress.global-static-ip-name"
-
-	// preSharedCertKey represents the specific pre-shared SSL
-	// certicate for the Ingress controller to use. The controller *does not*
-	// manage this certificate, it is the users responsibility to create/delete it.
-	// In GCP, the Ingress controller assigns the SSL certificate with this name
-	// to the target proxies of the Ingress.
-	preSharedCertKey = "ingress.gcp.kubernetes.io/pre-shared-cert"
-
-	// serviceApplicationProtocolKey is a stringified JSON map of port names to
-	// protocol strings. Possible values are HTTP, HTTPS
-	// Example:
-	// '{"my-https-port":"HTTPS","my-http-port":"HTTP"}'
-	serviceApplicationProtocolKey = "service.alpha.kubernetes.io/app-protocols"
-
-	// ingressClassKey picks a specific "class" for the Ingress. The controller
-	// only processes Ingresses with this annotation either unset, or set
-	// to either gceIngessClass or the empty string.
-	ingressClassKey      = "kubernetes.io/ingress.class"
-	gceIngressClass      = "gce"
-	gceMultiIngressClass = "gce-multi-cluster"
-
-	// Label key to denote which GCE zone a Kubernetes node is in.
-	zoneKey     = "failure-domain.beta.kubernetes.io/zone"
-	defaultZone = ""
-
-	// instanceGroupsAnnotationKey is the annotation key used by controller to
-	// specify the name and zone of instance groups created for the ingress.
-	// This is read only for users. Controller will overrite any user updates.
-	// This is only set for ingresses with ingressClass = "gce-multi-cluster"
-	instanceGroupsAnnotationKey = "ingress.gcp.kubernetes.io/instance-groups"
-)
-
-// ingAnnotations represents Ingress annotations.
-type ingAnnotations map[string]string
-
-// allowHTTP returns the allowHTTP flag. True by default.
-func (ing ingAnnotations) allowHTTP() bool {
-	val, ok := ing[allowHTTPKey]
-	if !ok {
-		return true
-	}
-	v, err := strconv.ParseBool(val)
-	if err != nil {
-		return true
-	}
-	return v
-}
-
-// useNamedTLS returns the name of the GCE SSL certificate. Empty by default.
-func (ing ingAnnotations) useNamedTLS() string {
-	val, ok := ing[preSharedCertKey]
-	if !ok {
-		return ""
-	}
-
-	return val
-}
-
-func (ing ingAnnotations) staticIPName() string {
-	val, ok := ing[staticIPNameKey]
-	if !ok {
-		return ""
-	}
-	return val
-}
-
-func (ing ingAnnotations) ingressClass() string {
-	val, ok := ing[ingressClassKey]
-	if !ok {
-		return ""
-	}
-	return val
-}
-
-// svcAnnotations represents Service annotations.
-type svcAnnotations map[string]string
-
-func (svc svcAnnotations) ApplicationProtocols() (map[string]utils.AppProtocol, error) {
-	val, ok := svc[serviceApplicationProtocolKey]
-	if !ok {
-		return map[string]utils.AppProtocol{}, nil
-	}
-
-	var portToProtos map[string]utils.AppProtocol
-	err := json.Unmarshal([]byte(val), &portToProtos)
-
-	// Verify protocol is an accepted value
-	for _, proto := range portToProtos {
-		switch proto {
-		case utils.ProtocolHTTP, utils.ProtocolHTTPS:
-		default:
-			return nil, fmt.Errorf("invalid port application protocol: %v", proto)
-		}
-	}
-
-	return portToProtos, err
-}
-
 // isGCEIngress returns true if the given Ingress either doesn't specify the
 // ingress.class annotation, or it's set to "gce".
 func isGCEIngress(ing *extensions.Ingress) bool {
-	class := ingAnnotations(ing.ObjectMeta.Annotations).ingressClass()
-	return class == "" || class == gceIngressClass
+	class := annotations.IngAnnotations(ing.ObjectMeta.Annotations).IngressClass()
+	return class == "" || class == annotations.GceIngressClass
 }
 
 // isGCEMultiClusterIngress returns true if the given Ingress has
 // ingress.class annotation set to "gce-multi-cluster".
 func isGCEMultiClusterIngress(ing *extensions.Ingress) bool {
-	class := ingAnnotations(ing.ObjectMeta.Annotations).ingressClass()
-	return class == gceMultiIngressClass
+	class := annotations.IngAnnotations(ing.ObjectMeta.Annotations).IngressClass()
+	return class == annotations.GceMultiIngressClass
 }
 
 // errorNodePortNotFound is an implementation of error.
@@ -188,7 +76,7 @@ type errorSvcAppProtosParsing struct {
 }
 
 func (e errorSvcAppProtosParsing) Error() string {
-	return fmt.Sprintf("could not parse %v annotation on Service %v/%v, err: %v", serviceApplicationProtocolKey, e.svc.Namespace, e.svc.Name, e.origErr)
+	return fmt.Sprintf("could not parse %v annotation on Service %v/%v, err: %v", annotations.ServiceApplicationProtocolKey, e.svc.Namespace, e.svc.Name, e.origErr)
 }
 
 // taskQueue manages a work queue through an independent worker that
@@ -456,7 +344,7 @@ func (t *GCETranslator) getServiceNodePort(be extensions.IngressBackend, namespa
 		return backends.ServicePort{}, errorNodePortNotFound{be, err}
 	}
 	svc := obj.(*api_v1.Service)
-	appProtocols, err := svcAnnotations(svc.GetAnnotations()).ApplicationProtocols()
+	appProtocols, err := annotations.SvcAnnotations(svc.GetAnnotations()).ApplicationProtocols()
 	if err != nil {
 		return backends.ServicePort{}, errorSvcAppProtosParsing{svc, err}
 	}
@@ -536,9 +424,9 @@ func (t *GCETranslator) ingressToNodePorts(ing *extensions.Ingress) []backends.S
 }
 
 func getZone(n *api_v1.Node) string {
-	zone, ok := n.Labels[zoneKey]
+	zone, ok := n.Labels[annotations.ZoneKey]
 	if !ok {
-		return defaultZone
+		return annotations.DefaultZone
 	}
 	return zone
 }
@@ -688,7 +576,7 @@ func setInstanceGroupsAnnotation(existing map[string]string, igs []*compute.Inst
 	if err != nil {
 		return err
 	}
-	existing[instanceGroupsAnnotationKey] = string(jsonValue)
+	existing[annotations.InstanceGroupsAnnotationKey] = string(jsonValue)
 	return nil
 }
 
