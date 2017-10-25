@@ -110,7 +110,7 @@ func (f *FakeLoadBalancers) GetGlobalForwardingRule(name string) (*compute.Forwa
 			return f.Fw[i], nil
 		}
 	}
-	return nil, fmt.Errorf("forwarding rule %v not found", name)
+	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
 // CreateGlobalForwardingRule fakes forwarding rule creation.
@@ -170,7 +170,7 @@ func (f *FakeLoadBalancers) GetUrlMap(name string) (*compute.UrlMap, error) {
 			return f.Um[i], nil
 		}
 	}
-	return nil, fmt.Errorf("url map %v not found", name)
+	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
 // CreateUrlMap fakes url-map creation.
@@ -190,7 +190,7 @@ func (f *FakeLoadBalancers) UpdateUrlMap(urlMap *compute.UrlMap) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("url map %v not found", urlMap.Name)
+	return utils.FakeGoogleAPINotFoundErr()
 }
 
 // DeleteUrlMap fakes url-map deletion.
@@ -216,7 +216,7 @@ func (f *FakeLoadBalancers) GetTargetHttpProxy(name string) (*compute.TargetHttp
 			return f.Tp[i], nil
 		}
 	}
-	return nil, fmt.Errorf("target http proxy %v not found", name)
+	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
 // CreateTargetHttpProxy fakes creating a target http proxy.
@@ -261,7 +261,7 @@ func (f *FakeLoadBalancers) GetTargetHttpsProxy(name string) (*compute.TargetHtt
 			return f.Tps[i], nil
 		}
 	}
-	return nil, fmt.Errorf("target https proxy %v not found", name)
+	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
 // CreateTargetHttpsProxy fakes creating a target http proxy.
@@ -307,7 +307,7 @@ func (f *FakeLoadBalancers) SetSslCertificateForTargetHttpsProxy(proxy *compute.
 		}
 	}
 	if !found {
-		return fmt.Errorf("failed to find proxy %v", proxy.Name)
+		return utils.FakeGoogleAPINotFoundErr()
 	}
 	return nil
 }
@@ -392,7 +392,7 @@ func (f *FakeLoadBalancers) GetGlobalAddress(name string) (*compute.Address, err
 			return f.IP[i], nil
 		}
 	}
-	return nil, fmt.Errorf("static IP %v not found", name)
+	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
 // DeleteGlobalAddress fakes out static IP deletion.
@@ -418,7 +418,7 @@ func (f *FakeLoadBalancers) GetSslCertificate(name string) (*compute.SslCertific
 			return f.Certs[i], nil
 		}
 	}
-	return nil, fmt.Errorf("cert %v not found", name)
+	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
 // CreateSslCertificate fakes out certificate creation.
