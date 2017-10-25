@@ -33,6 +33,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/api"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
@@ -429,7 +430,7 @@ func TestLbChangeStaticIP(t *testing.T) {
 		t.Fatalf("Expected 2 forwarding rules with the same IP.")
 	}
 
-	ing.Annotations = map[string]string{staticIPNameKey: "testip"}
+	ing.Annotations = map[string]string{annotations.StaticIPNameKey: "testip"}
 	cm.fakeLbs.ReserveGlobalAddress(&compute.Address{Name: "testip", Address: "1.2.3.4"})
 
 	// Second sync reassigns 1.2.3.4 to existing forwarding rule (by recreating it)
