@@ -44,16 +44,16 @@ func (n *noOPValidator) Validate(certs *loadbalancers.TLSCerts) error {
 	return nil
 }
 
-// ApiServerTLSLoader loads TLS certs from the apiserver.
-type ApiServerTLSLoader struct {
+// TLSCertsFromSecretsLoader loads TLS certs from kubernetes secrets.
+type TLSCertsFromSecretsLoader struct {
 	noOPValidator
 	Client kubernetes.Interface
 }
 
-// Ensure that ApiServerTLSLoader implements TlsLoader interface.
-var _ TlsLoader = &ApiServerTLSLoader{}
+// Ensure that TLSCertsFromSecretsLoader implements TlsLoader interface.
+var _ TlsLoader = &TLSCertsFromSecretsLoader{}
 
-func (t *ApiServerTLSLoader) Load(ing *extensions.Ingress) (*loadbalancers.TLSCerts, error) {
+func (t *TLSCertsFromSecretsLoader) Load(ing *extensions.Ingress) (*loadbalancers.TLSCerts, error) {
 	if len(ing.Spec.TLS) == 0 {
 		return nil, nil
 	}

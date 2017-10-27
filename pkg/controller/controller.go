@@ -182,7 +182,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 	})
 
 	lbc.Translator = &GCETranslator{&lbc}
-	lbc.tlsLoader = &tls.ApiServerTLSLoader{Client: lbc.client}
+	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.client}
 	glog.V(3).Infof("Created new loadbalancer controller")
 
 	return &lbc, nil
