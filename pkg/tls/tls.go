@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package tls
 
 import (
 	"fmt"
@@ -29,26 +29,31 @@ import (
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 )
 
-// secretLoaders returns a type containing all the secrets of an Ingress.
-type tlsLoader interface {
-	load(ing *extensions.Ingress) (*loadbalancers.TLSCerts, error)
-	validate(certs *loadbalancers.TLSCerts) error
+// TlsLoader is the interface for loading the relevant TLSCerts for a given ingress.
+type TlsLoader interface {
+	// Load loads the relevant TLSCerts based on ing.Spec.TLS
+	Load(ing *extensions.Ingress) (*loadbalancers.TLSCerts, error)
+	// Validate validates the given TLSCerts and returns an error if they are invalid.
+	Validate(certs *loadbalancers.TLSCerts) error
 }
 
 // TODO: Add better cert validation.
 type noOPValidator struct{}
 
-func (n *noOPValidator) validate(certs *loadbalancers.TLSCerts) error {
+func (n *noOPValidator) Validate(certs *loadbalancers.TLSCerts) error {
 	return nil
 }
 
-// apiServerTLSLoader loads TLS certs from the apiserver.
-type apiServerTLSLoader struct {
+// TLSCertsFromSecretsLoader loads TLS certs from kubernetes secrets.
+type TLSCertsFromSecretsLoader struct {
 	noOPValidator
-	client kubernetes.Interface
+	Client kubernetes.Interface
 }
 
-func (t *apiServerTLSLoader) load(ing *extensions.Ingress) (*loadbalancers.TLSCerts, error) {
+// Ensure that TLSCertsFromSecretsLoader implements TlsLoader interface.
+var _ TlsLoader = &TLSCertsFromSecretsLoader{}
+
+func (t *TLSCertsFromSecretsLoader) Load(ing *extensions.Ingress) (*loadbalancers.TLSCerts, error) {
 	if len(ing.Spec.TLS) == 0 {
 		return nil, nil
 	}
@@ -60,7 +65,7 @@ func (t *apiServerTLSLoader) load(ing *extensions.Ingress) (*loadbalancers.TLSCe
 	secretName := ing.Spec.TLS[0].SecretName
 	// TODO: Replace this for a secret watcher.
 	glog.V(3).Infof("Retrieving secret for ing %v with name %v", ing.Name, secretName)
-	secret, err := t.client.Core().Secrets(ing.Namespace).Get(secretName, meta_v1.GetOptions{})
+	secret, err := t.Client.Core().Secrets(ing.Namespace).Get(secretName, meta_v1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -73,7 +78,7 @@ func (t *apiServerTLSLoader) load(ing *extensions.Ingress) (*loadbalancers.TLSCe
 		return nil, fmt.Errorf("secret %v has no 'tls.key'", secretName)
 	}
 	certs := &loadbalancers.TLSCerts{Key: string(key), Cert: string(cert)}
-	if err := t.validate(certs); err != nil {
+	if err := t.Validate(certs); err != nil {
 		return nil, err
 	}
 	return certs, nil
@@ -82,16 +87,19 @@ func (t *apiServerTLSLoader) load(ing *extensions.Ingress) (*loadbalancers.TLSCe
 // TODO: Add support for file loading so we can support HTTPS default backends.
 
 // fakeTLSSecretLoader fakes out TLS loading.
-type fakeTLSSecretLoader struct {
+type FakeTLSSecretLoader struct {
 	noOPValidator
-	fakeCerts map[string]*loadbalancers.TLSCerts
+	FakeCerts map[string]*loadbalancers.TLSCerts
 }
 
-func (f *fakeTLSSecretLoader) load(ing *extensions.Ingress) (*loadbalancers.TLSCerts, error) {
+// Ensure that FakeTLSSecretLoader implements TlsLoader interface.
+var _ TlsLoader = &FakeTLSSecretLoader{}
+
+func (f *FakeTLSSecretLoader) Load(ing *extensions.Ingress) (*loadbalancers.TLSCerts, error) {
 	if len(ing.Spec.TLS) == 0 {
 		return nil, nil
 	}
-	for name, cert := range f.fakeCerts {
+	for name, cert := range f.FakeCerts {
 		if ing.Spec.TLS[0].SecretName == name {
 			return cert, nil
 		}

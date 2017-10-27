@@ -37,6 +37,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -408,8 +409,8 @@ func TestLbChangeStaticIP(t *testing.T) {
 
 	// Add some certs so we get 2 forwarding rules, the changed static IP
 	// should be assigned to both the HTTP and HTTPS forwarding rules.
-	lbc.tlsLoader = &fakeTLSSecretLoader{
-		fakeCerts: map[string]*loadbalancers.TLSCerts{
+	lbc.tlsLoader = &tls.FakeTLSSecretLoader{
+		FakeCerts: map[string]*loadbalancers.TLSCerts{
 			cert.SecretName: {Key: "foo", Cert: "bar"},
 		},
 	}
