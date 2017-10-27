@@ -37,6 +37,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/tls"
 )
 
 var (
@@ -84,7 +85,7 @@ type LoadBalancerController struct {
 	stopLock sync.Mutex
 	shutdown bool
 	// tlsLoader loads secrets from the Kubernetes apiserver for Ingresses.
-	tlsLoader tlsLoader
+	tlsLoader tls.TlsLoader
 	// hasSynced returns true if all associated sub-controllers have synced.
 	// Abstracted into a func for testing.
 	hasSynced func() bool
@@ -181,7 +182,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 	})
 
 	lbc.Translator = &GCETranslator{&lbc}
-	lbc.tlsLoader = &apiServerTLSLoader{client: lbc.client}
+	lbc.tlsLoader = &tls.ApiServerTLSLoader{Client: lbc.client}
 	glog.V(3).Infof("Created new loadbalancer controller")
 
 	return &lbc, nil
@@ -450,7 +451,7 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ingList extensions.IngressList)
 		// Load the TLS cert from the API Spec if it is not specified in the annotation.
 		// TODO: enforce this with validation.
 		if annotations.UseNamedTLS() == "" {
-			tls, err = lbc.tlsLoader.load(&ing)
+			tls, err = lbc.tlsLoader.Load(&ing)
 			if err != nil {
 				glog.Warningf("Cannot get certs for Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
 			}
