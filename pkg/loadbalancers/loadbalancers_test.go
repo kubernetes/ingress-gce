@@ -26,6 +26,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/networkendpointgroup"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -41,12 +42,13 @@ func newFakeLoadBalancerPool(f LoadBalancers, t *testing.T) LoadBalancerPool {
 	fakeBackends := backends.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString())
 	fakeHCP := healthchecks.NewFakeHealthCheckProvider()
+	fakeNEG := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")
 	namer := &utils.Namer{}
 	healthChecker := healthchecks.NewHealthChecker(fakeHCP, "/", namer)
 	nodePool := instances.NewNodePool(fakeIGs)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	backendPool := backends.NewBackendPool(
-		fakeBackends, healthChecker, nodePool, namer, []int64{}, false)
+		fakeBackends, fakeNEG, healthChecker, nodePool, namer, []int64{}, false)
 	return NewLoadBalancerPool(f, backendPool, testDefaultBeNodePort, namer)
 }
 

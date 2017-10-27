@@ -17,6 +17,7 @@ limitations under the License.
 package utils
 
 import (
+	"crypto/md5"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -85,6 +86,16 @@ const (
 	ProtocolHTTP AppProtocol = "HTTP"
 	// ProtocolHTTPS protocol for a service
 	ProtocolHTTPS AppProtocol = "HTTPS"
+
+	// maxNEGDescriptiveLabel is the max length for namespace, name and port for neg name.
+	// 63 - 5 (k8s and naming schema version prefix) - 16 (cluster id) - 8 (suffix hash) - 4 (hyphen connector) = 30
+	maxNEGDescriptiveLabel = 30
+
+	// NetworkEndpointGroupAlphaAnnotation is the annotation to enable GCE NEG feature for ingress backend services
+	NetworkEndpointGroupAlphaAnnotation = "alpha.cloud.google.com/load-balancer-neg"
+
+	// schemaVersionV1 is the version 1 naming scheme for NEG
+	schemaVersionV1 = "1"
 )
 
 type AppProtocol string
@@ -267,6 +278,28 @@ func (n *Namer) LBName(key string) string {
 	return n.Truncate(fmt.Sprintf("%v%v%v", scrubbedName, clusterNameDelimiter, clusterName))
 }
 
+// NEGName returns the gce neg name based on the service namespace, name and target port.
+// NEG naming convention: k8s-{clusterid}-{namespace}-{name}-{target port}-{hash}
+// Output name is at most 63 characters. NEGName tries to keep as much information as possible.
+// WARNING: Controllers depend on the naming pattern to retrieve NEG.
+// Any modification must be backward compatible.
+func (n *Namer) NEGName(namespace, name, port string) string {
+	trimmedFields := trimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name, port)
+	trimedNamespace := trimmedFields[0]
+	trimedName := trimmedFields[1]
+	trimedPort := trimmedFields[2]
+	return fmt.Sprintf("%s-%s-%s-%s-%s", n.NEGPrefix(), trimedNamespace, trimedName, trimedPort, negSuffix(namespace, name, port))
+}
+
+func (n *Namer) NEGPrefix() string {
+	return fmt.Sprintf("k8s%s-%s", schemaVersionV1, n.GetClusterName())
+}
+
+// negSuffix returns hash code with 8 characters
+func negSuffix(namespace, name, port string) string {
+	return fmt.Sprintf("%x", md5.Sum([]byte(namespace+name+port)))[:8]
+}
+
 // GCEURLMap is a nested map of hostname->path regex->backend
 type GCEURLMap map[string]map[string]*compute.BackendService
 
@@ -368,4 +401,44 @@ type FakeIngressRuleValueMap map[string]string
 func GetNamedPort(port int64) *compute.NamedPort {
 	// TODO: move port naming to namer
 	return &compute.NamedPort{Name: fmt.Sprintf("port%v", port), Port: port}
+}
+
+func NEGEnabled(annotations map[string]string) bool {
+	v, ok := annotations[NetworkEndpointGroupAlphaAnnotation]
+	return ok && v == "true"
+}
+
+// trimFieldsEvenly trims the fields evenly and keeps the total length
+func trimFieldsEvenly(max int, fields ...string) []string {
+	if max <= 0 {
+		return fields
+	}
+	total := 0
+	for _, s := range fields {
+		total += len(s)
+	}
+	if total <= max {
+		return fields
+	}
+	// Distribute truncation evenly among the fields.
+	excess := total - max
+	remaining := max
+	var lengths []int
+	for _, s := range fields {
+		// Scale truncation to shorten longer fields more than ones that are already short.
+		l := len(s) - len(s)*excess/total - 1
+		lengths = append(lengths, l)
+		remaining -= l
+	}
+	// Add fractional space that was rounded down.
+	for i := 0; i < remaining; i++ {
+		lengths[i]++
+	}
+
+	var ret []string
+	for i, l := range lengths {
+		ret = append(ret, fields[i][:l])
+	}
+
+	return ret
 }
