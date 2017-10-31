@@ -68,6 +68,15 @@ const (
 	// This is read only for users. Controller will overrite any user updates.
 	// This is only set for ingresses with ingressClass = "gce-multi-cluster"
 	InstanceGroupsAnnotationKey = "ingress.gcp.kubernetes.io/instance-groups"
+
+	// NetworkEndpointGroupAlphaAnnotation is the annotation key to enable GCE NEG feature for ingress backend services.
+	// To enable this feature, the value of the annotation must be "true".
+	// This annotation should be specified on services that are backing ingresses.
+	// WARNING: The feature will NOT be effective in the following circumstances:
+	// 1. NEG feature is not enabled in feature gate.
+	// 2. Service is not referenced in any ingress.
+	// 3. Adding this annotation on ingress.
+	NetworkEndpointGroupAlphaAnnotation = "alpha.cloud.google.com/load-balancer-neg"
 )
 
 // IngAnnotations represents ingress annotations.
@@ -134,4 +143,9 @@ func (svc SvcAnnotations) ApplicationProtocols() (map[string]utils.AppProtocol, 
 	}
 
 	return portToProtos, err
+}
+
+func (svc SvcAnnotations) NEGEnabled() bool {
+	v, ok := svc[NetworkEndpointGroupAlphaAnnotation]
+	return ok && v == "true"
 }

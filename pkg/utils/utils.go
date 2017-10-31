@@ -91,9 +91,6 @@ const (
 	// 63 - 5 (k8s and naming schema version prefix) - 16 (cluster id) - 8 (suffix hash) - 4 (hyphen connector) = 30
 	maxNEGDescriptiveLabel = 30
 
-	// NetworkEndpointGroupAlphaAnnotation is the annotation to enable GCE NEG feature for ingress backend services
-	NetworkEndpointGroupAlphaAnnotation = "alpha.cloud.google.com/load-balancer-neg"
-
 	// schemaVersionV1 is the version 1 naming scheme for NEG
 	schemaVersionV1 = "1"
 )
@@ -401,11 +398,6 @@ type FakeIngressRuleValueMap map[string]string
 func GetNamedPort(port int64) *compute.NamedPort {
 	// TODO: move port naming to namer
 	return &compute.NamedPort{Name: fmt.Sprintf("port%v", port), Port: port}
-}
-
-func NEGEnabled(annotations map[string]string) bool {
-	v, ok := annotations[NetworkEndpointGroupAlphaAnnotation]
-	return ok && v == "true"
 }
 
 // trimFieldsEvenly trims the fields evenly and keeps the total length

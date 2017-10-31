@@ -18,6 +18,8 @@ package networkendpointgroup
 
 import (
 	"fmt"
+	"reflect"
+	"strconv"
 	"time"
 
 	"github.com/golang/glog"
@@ -31,10 +33,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/utils"
-	"reflect"
-	"strconv"
 )
 
 const (
@@ -200,7 +200,7 @@ func (c *Controller) processService(key string) error {
 	var enabled bool
 	if exists {
 		service = svc.(*apiv1.Service)
-		enabled = utils.NEGEnabled(service.Annotations)
+		enabled = annotations.SvcAnnotations(service.GetAnnotations()).NEGEnabled()
 	}
 
 	if !enabled {

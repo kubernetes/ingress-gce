@@ -423,7 +423,7 @@ PortLoop:
 		SvcName:       types.NamespacedName{Namespace: namespace, Name: be.ServiceName},
 		SvcPort:       be.ServicePort,
 		SvcTargetPort: port.TargetPort.String(),
-		NEGEnabled:    t.negEnabled && utils.NEGEnabled(svc.Annotations),
+		NEGEnabled:    t.negEnabled && annotations.SvcAnnotations(svc.GetAnnotations()).NEGEnabled(),
 	}
 	return p, nil
 }

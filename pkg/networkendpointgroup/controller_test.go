@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -265,15 +266,15 @@ func newTestIngress() *extensions.Ingress {
 }
 
 func newTestService(negEnabled bool) *apiv1.Service {
-	annotations := map[string]string{}
+	svcAnnotations := map[string]string{}
 	if negEnabled {
-		annotations[utils.NetworkEndpointGroupAlphaAnnotation] = "true"
+		svcAnnotations[annotations.NetworkEndpointGroupAlphaAnnotation] = "true"
 	}
 	return &apiv1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        ServiceName,
 			Namespace:   ServiceNamespace,
-			Annotations: annotations,
+			Annotations: svcAnnotations,
 		},
 		Spec: apiv1.ServiceSpec{
 			Ports: []apiv1.ServicePort{
