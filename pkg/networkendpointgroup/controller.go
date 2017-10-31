@@ -122,7 +122,9 @@ func NewController(
 		AddFunc:    negController.processEndpoint,
 		DeleteFunc: negController.processEndpoint,
 		UpdateFunc: func(old, cur interface{}) {
-			negController.processEndpoint(cur)
+			if !reflect.DeepEqual(old.(*apiv1.Endpoints).Subsets, cur.(*apiv1.Endpoints).Subsets) {
+				negController.processEndpoint(cur)
+			}
 		},
 	})
 	return negController, nil
