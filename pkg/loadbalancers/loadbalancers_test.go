@@ -340,7 +340,9 @@ func TestUpdateUrlMap(t *testing.T) {
 			"/bar1": "bar1svc",
 		},
 	}
-	f.CheckURLMap(t, l7, expectedMap)
+	if err := f.CheckURLMap(l7, expectedMap); err != nil {
+		t.Fatalf("%v", err)
+	}
 }
 
 func TestUpdateUrlMapNoChanges(t *testing.T) {

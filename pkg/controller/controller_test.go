@@ -233,7 +233,9 @@ func TestLbCreateDelete(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
-		cm.fakeLbs.CheckURLMap(t, l7, pm.toNodePortSvcNames(m))
+		if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(m)); err != nil {
+			t.Fatalf("%v", err)
+		}
 		ings = append(ings, newIng)
 	}
 	lbc.ingLister.Store.Delete(ings[0])
@@ -318,7 +320,9 @@ func TestLbFaultyUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	cm.fakeLbs.CheckURLMap(t, l7, pm.toNodePortSvcNames(inputMap))
+	if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(inputMap)); err != nil {
+		t.Fatalf("%v", err)
+	}
 
 	// Change the urlmap directly through the lb pool, resync, and
 	// make sure the controller corrects it.
@@ -329,7 +333,9 @@ func TestLbFaultyUpdate(t *testing.T) {
 	})
 
 	lbc.sync(ingStoreKey)
-	cm.fakeLbs.CheckURLMap(t, l7, pm.toNodePortSvcNames(inputMap))
+	if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(inputMap)); err != nil {
+		t.Fatalf("%v", err)
+	}
 }
 
 func TestLbDefaulting(t *testing.T) {
@@ -347,7 +353,9 @@ func TestLbDefaulting(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 	expectedMap := map[string]utils.FakeIngressRuleValueMap{loadbalancers.DefaultHost: {loadbalancers.DefaultPath: "foo1svc"}}
-	cm.fakeLbs.CheckURLMap(t, l7, pm.toNodePortSvcNames(expectedMap))
+	if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(expectedMap)); err != nil {
+		t.Fatalf("%v", err)
+	}
 }
 
 func TestLbNoService(t *testing.T) {
@@ -391,7 +399,9 @@ func TestLbNoService(t *testing.T) {
 		utils.DefaultBackendKey: "foo1svc",
 	}
 	expectedMap := pm.toNodePortSvcNames(inputMap)
-	cm.fakeLbs.CheckURLMap(t, l7, expectedMap)
+	if err := cm.fakeLbs.CheckURLMap(l7, expectedMap); err != nil {
+		t.Fatalf("%v", err)
+	}
 }
 
 func TestLbChangeStaticIP(t *testing.T) {

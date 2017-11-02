@@ -18,7 +18,6 @@ package loadbalancers
 
 import (
 	"fmt"
-	"testing"
 
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -315,11 +314,11 @@ func (f *FakeLoadBalancers) SetSslCertificateForTargetHttpsProxy(proxy *compute.
 // UrlMap fakes
 
 // CheckURLMap checks the URL map.
-func (f *FakeLoadBalancers) CheckURLMap(t *testing.T, l7 *L7, expectedMap map[string]utils.FakeIngressRuleValueMap) {
+func (f *FakeLoadBalancers) CheckURLMap(l7 *L7, expectedMap map[string]utils.FakeIngressRuleValueMap) error {
 	f.calls = append(f.calls, "CheckURLMap")
 	um, err := f.GetUrlMap(l7.um.Name)
 	if err != nil || um == nil {
-		t.Fatalf("%v", err)
+		return err
 	}
 	// Check the default backend
 	var d string
@@ -331,7 +330,7 @@ func (f *FakeLoadBalancers) CheckURLMap(t *testing.T, l7 *L7, expectedMap map[st
 	}
 	// The urlmap should have a default backend, and each path matcher.
 	if d != "" && l7.um.DefaultService != d {
-		t.Fatalf("Expected default backend %v found %v",
+		return fmt.Errorf("Expected default backend %v found %v",
 			d, l7.um.DefaultService)
 	}
 
@@ -341,10 +340,10 @@ func (f *FakeLoadBalancers) CheckURLMap(t *testing.T, l7 *L7, expectedMap map[st
 		for _, hostRule := range l7.um.HostRules {
 			if matcher.Name == hostRule.PathMatcher {
 				if len(hostRule.Hosts) != 1 {
-					t.Fatalf("Unexpected hosts in hostrules %+v", hostRule)
+					return fmt.Errorf("Unexpected hosts in hostrules %+v", hostRule)
 				}
 				if d != "" && matcher.DefaultService != d {
-					t.Fatalf("Expected default backend %v found %v",
+					return fmt.Errorf("Expected default backend %v found %v",
 						d, matcher.DefaultService)
 				}
 				hostname = hostRule.Hosts[0]
@@ -354,15 +353,15 @@ func (f *FakeLoadBalancers) CheckURLMap(t *testing.T, l7 *L7, expectedMap map[st
 		// These are all pathrules for a single host, found above
 		for _, rule := range matcher.PathRules {
 			if len(rule.Paths) != 1 {
-				t.Fatalf("Unexpected rule in pathrules %+v", rule)
+				return fmt.Errorf("Unexpected rule in pathrules %+v", rule)
 			}
 			pathRule := rule.Paths[0]
 			if hostMap, ok := expectedMap[hostname]; !ok {
-				t.Fatalf("Expected map for host %v: %v", hostname, hostMap)
+				return fmt.Errorf("Expected map for host %v: %v", hostname, hostMap)
 			} else if svc, ok := expectedMap[hostname][pathRule]; !ok {
-				t.Fatalf("Expected rule %v in host map", pathRule)
+				return fmt.Errorf("Expected rule %v in host map", pathRule)
 			} else if svc != rule.Service {
-				t.Fatalf("Expected service %v found %v", svc, rule.Service)
+				return fmt.Errorf("Expected service %v found %v", svc, rule.Service)
 			}
 			delete(expectedMap[hostname], pathRule)
 			if len(expectedMap[hostname]) == 0 {
@@ -371,8 +370,9 @@ func (f *FakeLoadBalancers) CheckURLMap(t *testing.T, l7 *L7, expectedMap map[st
 		}
 	}
 	if len(expectedMap) != 0 {
-		t.Fatalf("Untranslated entries %+v", expectedMap)
+		return fmt.Errorf("Untranslated entries %+v", expectedMap)
 	}
+	return nil
 }
 
 // Static IP fakes
