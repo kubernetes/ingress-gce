@@ -64,16 +64,24 @@ func TestCreateHTTPLoadBalancer(t *testing.T) {
 		t.Fatalf("Expected l7 not created")
 	}
 	um, err := f.GetUrlMap(f.umName())
-	if err != nil ||
-		um.DefaultService != pool.(*L7s).glbcDefaultBackend.SelfLink {
-		t.Fatalf("%v", err)
+	if err != nil {
+		t.Fatalf("f.GetUrlMap(%q) = _, %v, want nil", f.umName(), err)
+	}
+	if um.DefaultService != pool.(*L7s).glbcDefaultBackend.SelfLink {
+		t.Fatalf("got um.DefaultService = %v, want %v", um.DefaultService, pool.(*L7s).glbcDefaultBackend.SelfLink)
 	}
 	tp, err := f.GetTargetHttpProxy(f.tpName(false))
-	if err != nil || tp.UrlMap != um.SelfLink {
+	if err != nil {
+		t.Fatalf("f.GetTargetHttpProxy(%q) = _, %v, want nil", f.tpName(false), err)
+	}
+	if tp.UrlMap != um.SelfLink {
 		t.Fatalf("%v", err)
 	}
 	fw, err := f.GetGlobalForwardingRule(f.fwName(false))
-	if err != nil || fw.Target != tp.SelfLink {
+	if err != nil {
+		t.Fatalf("f.GetGlobalForwardingRule(%q) = _, %v, want nil", f.fwName(false), err)
+	}
+	if fw.Target != tp.SelfLink {
 		t.Fatalf("%v", err)
 	}
 }
@@ -391,14 +399,14 @@ func TestNameParsing(t *testing.T) {
 	clusterName := "123"
 	firewallName := clusterName
 	namer := utils.NewNamer(clusterName, firewallName)
-	fullName := namer.Truncate(fmt.Sprintf("%v-%v", forwardingRulePrefix, namer.LBName("testlb")))
+	fullName := namer.ForwardingRule(namer.LoadBalancer("testlb"), utils.HTTPProtocol)
 	annotationsMap := map[string]string{
 		fmt.Sprintf("%v/forwarding-rule", utils.K8sAnnotationPrefix): fullName,
 	}
 	components := namer.ParseName(GCEResourceName(annotationsMap, "forwarding-rule"))
-	t.Logf("%+v", components)
+	t.Logf("components = %+v", components)
 	if components.ClusterName != clusterName {
-		t.Errorf("Failed to parse cluster name from %v, expected %v got %v", fullName, clusterName, components.ClusterName)
+		t.Errorf("namer.ParseName(%q), got components.ClusterName == %q, want %q", fullName, clusterName, components.ClusterName)
 	}
 	resourceName := "fw"
 	if components.Resource != resourceName {
@@ -433,7 +441,7 @@ func TestClusterNameChange(t *testing.T) {
 	}
 	newName := "newName"
 	namer := pool.(*L7s).namer
-	namer.SetClusterName(newName)
+	namer.SetUID(newName)
 	f.name = fmt.Sprintf("%v--%v", lbInfo.Name, newName)
 
 	// Now the components should get renamed with the next suffix.
@@ -463,7 +471,7 @@ func TestClusterNameChange(t *testing.T) {
 
 func TestInvalidClusterNameChange(t *testing.T) {
 	namer := utils.NewNamer("test--123", "test--123")
-	if got := namer.GetClusterName(); got != "123" {
+	if got := namer.UID(); got != "123" {
 		t.Fatalf("Expected name 123, got %v", got)
 	}
 	// A name with `--` should take the last token
@@ -473,8 +481,8 @@ func TestInvalidClusterNameChange(t *testing.T) {
 		{"", ""},
 		{"foo--bar--com", "com"},
 	} {
-		namer.SetClusterName(testCase.newName)
-		if got := namer.GetClusterName(); got != testCase.expected {
+		namer.SetUID(testCase.newName)
+		if got := namer.UID(); got != testCase.expected {
 			t.Fatalf("Expected %q got %q", testCase.expected, got)
 		}
 	}

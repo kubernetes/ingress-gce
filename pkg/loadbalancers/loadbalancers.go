@@ -48,19 +48,8 @@ const (
 	// recognized by GCE.
 	DefaultPath = "/*"
 
-	// A single target proxy/urlmap/forwarding rule is created per loadbalancer.
-	// Tagged with the namespace/name of the Ingress.
-	// TODO: Move the namer to its own package out of utils and move the prefix
-	// with it. Currently the construction of the loadbalancer resources names
-	// are split between the namer and the loadbalancers package.
-	targetProxyPrefix         = "k8s-tp"
-	targetHTTPSProxyPrefix    = "k8s-tps"
-	sslCertPrefix             = "k8s-ssl"
-	forwardingRulePrefix      = "k8s-fw"
-	httpsForwardingRulePrefix = "k8s-fws"
-	urlMapPrefix              = "k8s-um"
-	httpDefaultPortRange      = "80-80"
-	httpsDefaultPortRange     = "443-443"
+	httpDefaultPortRange  = "80-80"
+	httpsDefaultPortRange = "443-443"
 )
 
 // L7s implements LoadBalancerPool.
@@ -94,7 +83,7 @@ func (l *L7s) create(ri *L7RuntimeInfo) (*L7, error) {
 	}
 	return &L7{
 		runtimeInfo:        ri,
-		Name:               l.namer.LBName(ri.Name),
+		Name:               l.namer.LoadBalancer(ri.Name),
 		cloud:              l.cloud,
 		glbcDefaultBackend: l.glbcDefaultBackend,
 		namer:              l.namer,
@@ -104,7 +93,7 @@ func (l *L7s) create(ri *L7RuntimeInfo) (*L7, error) {
 
 // Get returns the loadbalancer by name.
 func (l *L7s) Get(name string) (*L7, error) {
-	name = l.namer.LBName(name)
+	name = l.namer.LoadBalancer(name)
 	lb, exists := l.snapshotter.Get(name)
 	if !exists {
 		return nil, fmt.Errorf("loadbalancer %v not in pool", name)
@@ -115,7 +104,7 @@ func (l *L7s) Get(name string) (*L7, error) {
 // Add gets or creates a loadbalancer.
 // If the loadbalancer already exists, it checks that its edges are valid.
 func (l *L7s) Add(ri *L7RuntimeInfo) (err error) {
-	name := l.namer.LBName(ri.Name)
+	name := l.namer.LoadBalancer(ri.Name)
 
 	lb, _ := l.Get(name)
 	if lb == nil {
@@ -148,7 +137,7 @@ func (l *L7s) Add(ri *L7RuntimeInfo) (err error) {
 
 // Delete deletes a loadbalancer by name.
 func (l *L7s) Delete(name string) error {
-	name = l.namer.LBName(name)
+	name = l.namer.LoadBalancer(name)
 	lb, err := l.Get(name)
 	if err != nil {
 		return err
@@ -191,7 +180,7 @@ func (l *L7s) Sync(lbs []*L7RuntimeInfo) error {
 func (l *L7s) GC(names []string) error {
 	knownLoadBalancers := sets.NewString()
 	for _, n := range names {
-		knownLoadBalancers.Insert(l.namer.LBName(n))
+		knownLoadBalancers.Insert(l.namer.LoadBalancer(n))
 	}
 	pool := l.snapshotter.Snapshot()
 
@@ -300,7 +289,7 @@ func (l *L7) checkUrlMap(backend *compute.BackendService) (err error) {
 	if l.glbcDefaultBackend == nil {
 		return fmt.Errorf("cannot create urlmap without default backend")
 	}
-	urlMapName := l.namer.Truncate(fmt.Sprintf("%v-%v", urlMapPrefix, l.Name))
+	urlMapName := l.namer.UrlMap(l.Name)
 	urlMap, _ := l.cloud.GetUrlMap(urlMapName)
 	if urlMap != nil {
 		glog.V(3).Infof("Url map %v already exists", urlMap.Name)
@@ -328,7 +317,7 @@ func (l *L7) checkProxy() (err error) {
 	if l.um == nil {
 		return fmt.Errorf("cannot create proxy without urlmap")
 	}
-	proxyName := l.namer.Truncate(fmt.Sprintf("%v-%v", targetProxyPrefix, l.Name))
+	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPProtocol)
 	proxy, _ := l.cloud.GetTargetHttpProxy(proxyName)
 	if proxy == nil {
 		glog.Infof("Creating new http proxy for urlmap %v", l.um.Name)
@@ -358,8 +347,7 @@ func (l *L7) checkProxy() (err error) {
 }
 
 func (l *L7) deleteOldSSLCert() (err error) {
-	if l.oldSSLCert == nil || l.sslCert == nil ||
-		l.oldSSLCert.Name == l.sslCert.Name || !strings.HasPrefix(l.oldSSLCert.Name, sslCertPrefix) {
+	if l.oldSSLCert == nil || l.sslCert == nil || l.oldSSLCert.Name == l.sslCert.Name || !l.namer.IsSSLCert(l.oldSSLCert.Name) {
 		return nil
 	}
 	glog.Infof("Cleaning up old SSL Certificate %v, current name %v", l.oldSSLCert.Name, l.sslCert.Name)
@@ -426,8 +414,8 @@ func (l *L7) nextCertificateName() string {
 	// every certificate update. We don't append the index at the end so we're
 	// sure it isn't truncated.
 	// TODO: Clean this code up into a ring buffer.
-	primaryCertName := l.namer.Truncate(fmt.Sprintf("%v-%v", sslCertPrefix, l.Name))
-	secondaryCertName := l.namer.Truncate(fmt.Sprintf("%v-%d-%v", sslCertPrefix, 1, l.Name))
+	primaryCertName := l.namer.SSLCert(l.Name, true)
+	secondaryCertName := l.namer.SSLCert(l.Name, false)
 
 	if l.sslCert != nil && l.sslCert.Name == primaryCertName {
 		return secondaryCertName
@@ -487,7 +475,7 @@ func (l *L7) checkSSLCert() error {
 }
 
 func (l *L7) getSslCertLinkInUse() string {
-	proxyName := l.namer.Truncate(fmt.Sprintf("%v-%v", targetHTTPSProxyPrefix, l.Name))
+	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
 	proxy, _ := l.cloud.GetTargetHttpsProxy(proxyName)
 	if proxy != nil && len(proxy.SslCertificates) > 0 {
 		return proxy.SslCertificates[0]
@@ -503,7 +491,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 	if l.um == nil {
 		return fmt.Errorf("no UrlMap for %v, will not create HTTPS proxy", l.Name)
 	}
-	proxyName := l.namer.Truncate(fmt.Sprintf("%v-%v", targetHTTPSProxyPrefix, l.Name))
+	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
 	proxy, _ := l.cloud.GetTargetHttpsProxy(proxyName)
 	if proxy == nil {
 		glog.Infof("Creating new https proxy for urlmap %v", l.um.Name)
@@ -627,7 +615,7 @@ func (l *L7) checkHttpForwardingRule() (err error) {
 	if l.tp == nil {
 		return fmt.Errorf("cannot create forwarding rule without proxy")
 	}
-	name := l.namer.Truncate(fmt.Sprintf("%v-%v", forwardingRulePrefix, l.Name))
+	name := l.namer.ForwardingRule(l.Name, utils.HTTPProtocol)
 	address, _ := l.getEffectiveIP()
 	fw, err := l.checkForwardingRule(name, l.tp.SelfLink, address, httpDefaultPortRange)
 	if err != nil {
@@ -642,7 +630,7 @@ func (l *L7) checkHttpsForwardingRule() (err error) {
 		glog.V(3).Infof("No https target proxy for %v, not created https forwarding rule", l.Name)
 		return nil
 	}
-	name := l.namer.Truncate(fmt.Sprintf("%v-%v", httpsForwardingRulePrefix, l.Name))
+	name := l.namer.ForwardingRule(l.Name, utils.HTTPSProtocol)
 	address, _ := l.getEffectiveIP()
 	fws, err := l.checkForwardingRule(name, l.tps.SelfLink, address, httpsDefaultPortRange)
 	if err != nil {
@@ -662,7 +650,7 @@ func (l *L7) checkStaticIP() (err error) {
 		glog.V(3).Infof("Not managing user specified static IP %v", address)
 		return nil
 	}
-	staticIPName := l.namer.Truncate(fmt.Sprintf("%v-%v", forwardingRulePrefix, l.Name))
+	staticIPName := l.namer.ForwardingRule(l.Name, utils.HTTPProtocol)
 	ip, _ := l.cloud.GetGlobalAddress(staticIPName)
 	if ip == nil {
 		glog.Infof("Creating static ip %v", staticIPName)

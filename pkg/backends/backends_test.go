@@ -89,7 +89,7 @@ func TestBackendPoolAdd(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Did not find expect error when adding a nodeport: %v, err: %v", nodePort, err)
 			}
-			beName := namer.BeName(nodePort.Port)
+			beName := namer.Backend(nodePort.Port)
 
 			// Check that the new backend has the right port
 			be, err := f.GetGlobalBackendService(beName)
@@ -101,7 +101,7 @@ func TestBackendPoolAdd(t *testing.T) {
 			}
 
 			// Check that the instance group has the new port.
-			ig, err := fakeIGs.GetInstanceGroup(namer.IGName(), defaultZone)
+			ig, err := fakeIGs.GetInstanceGroup(namer.InstanceGroup(), defaultZone)
 			var found bool
 			for _, port := range ig.NamedPorts {
 				if port.Port == nodePort.Port {
@@ -139,7 +139,7 @@ func TestHealthCheckMigration(t *testing.T) {
 
 	// Create a legacy health check and insert it into the HC provider.
 	legacyHC := &compute.HttpHealthCheck{
-		Name:               namer.BeName(p.Port),
+		Name:               namer.Backend(p.Port),
 		RequestPath:        "/my-healthz-path",
 		Host:               "k8s.io",
 		Description:        "My custom HC",
@@ -175,7 +175,7 @@ func TestBackendPoolUpdate(t *testing.T) {
 
 	p := ServicePort{Port: 3000, Protocol: utils.ProtocolHTTP}
 	pool.Ensure([]ServicePort{p}, nil)
-	beName := namer.BeName(p.Port)
+	beName := namer.Backend(p.Port)
 
 	be, err := f.GetGlobalBackendService(beName)
 	if err != nil {
@@ -221,7 +221,7 @@ func TestBackendPoolChaosMonkey(t *testing.T) {
 
 	nodePort := ServicePort{Port: 8080, Protocol: utils.ProtocolHTTP}
 	pool.Ensure([]ServicePort{nodePort}, nil)
-	beName := namer.BeName(nodePort.Port)
+	beName := namer.Backend(nodePort.Port)
 
 	be, _ := f.GetGlobalBackendService(beName)
 
@@ -243,9 +243,9 @@ func TestBackendPoolChaosMonkey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to find a backend with name %v: %v", beName, err)
 	}
-	gotGroup, err := fakeIGs.GetInstanceGroup(namer.IGName(), defaultZone)
+	gotGroup, err := fakeIGs.GetInstanceGroup(namer.InstanceGroup(), defaultZone)
 	if err != nil {
-		t.Fatalf("Failed to find instance group %v", namer.IGName())
+		t.Fatalf("Failed to find instance group %v", namer.InstanceGroup())
 	}
 	backendLinks := sets.NewString()
 	for _, be := range gotBackend.Backends {
@@ -307,7 +307,7 @@ func TestBackendPoolSync(t *testing.T) {
 
 	namer := &utils.Namer{}
 	// This backend should get deleted again since it is managed by this cluster.
-	f.CreateGlobalBackendService(&compute.BackendService{Name: namer.BeName(deletedPorts[0].Port)})
+	f.CreateGlobalBackendService(&compute.BackendService{Name: namer.Backend(deletedPorts[0].Port)})
 
 	// TODO: Avoid casting.
 	// Repopulate the pool with a cloud list, which now includes the 82 port
@@ -323,7 +323,7 @@ func TestBackendPoolSync(t *testing.T) {
 		currSet.Insert(b.Name)
 	}
 	// Port 81 still exists because it's an in-use service NodePort.
-	knownBe := namer.BeName(81)
+	knownBe := namer.Backend(81)
 	if !currSet.Has(knownBe) {
 		t.Fatalf("Expected %v to exist in backend pool", knownBe)
 	}
@@ -347,7 +347,7 @@ func TestBackendPoolDeleteLegacyHealthChecks(t *testing.T) {
 	bp.Init(NewFakeProbeProvider(probes))
 
 	// Create a legacy HTTP health check
-	beName := namer.BeName(80)
+	beName := namer.Backend(80)
 	if err := hcp.CreateHttpHealthCheck(&compute.HttpHealthCheck{
 		Name: beName,
 		Port: 80,
@@ -397,7 +397,7 @@ func TestBackendPoolShutdown(t *testing.T) {
 	// Add a backend-service and verify that it doesn't exist after Shutdown()
 	pool.Ensure([]ServicePort{{Port: 80}}, nil)
 	pool.Shutdown()
-	if _, err := f.GetGlobalBackendService(namer.BeName(80)); err == nil {
+	if _, err := f.GetGlobalBackendService(namer.Backend(80)); err == nil {
 		t.Fatalf("%v", err)
 	}
 }
@@ -411,7 +411,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	// This will add the instance group k8s-ig to the instance pool
 	pool.Ensure([]ServicePort{{Port: 80}}, nil)
 
-	be, err := f.GetGlobalBackendService(namer.BeName(80))
+	be, err := f.GetGlobalBackendService(namer.Backend(80))
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -428,7 +428,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 
 	// Make sure repeated adds don't clobber the inserted instance group
 	pool.Ensure([]ServicePort{{Port: 80}}, nil)
-	be, err = f.GetGlobalBackendService(namer.BeName(80))
+	be, err = f.GetGlobalBackendService(namer.Backend(80))
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -470,7 +470,7 @@ func TestBackendCreateBalancingMode(t *testing.T) {
 		}
 
 		pool.Ensure([]ServicePort{nodePort}, nil)
-		be, err := f.GetGlobalBackendService(namer.BeName(nodePort.Port))
+		be, err := f.GetGlobalBackendService(namer.Backend(nodePort.Port))
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
@@ -542,7 +542,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	}
 
 	for _, zone := range zones {
-		err := fakeNEG.CreateNetworkEndpointGroup(&computealpha.NetworkEndpointGroup{Name: namer.NEGName(namespace, name, port)}, zone)
+		err := fakeNEG.CreateNetworkEndpointGroup(&computealpha.NetworkEndpointGroup{Name: namer.NEG(namespace, name, port)}, zone)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -552,7 +552,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 		t.Fatalf("Failed to link backend service to NEG: %v", err)
 	}
 
-	bs, err := f.GetGlobalBackendService(namer.BeName(svcPort.Port))
+	bs, err := f.GetGlobalBackendService(namer.Backend(svcPort.Port))
 	if err != nil {
 		t.Fatalf("Failed to retrieve backend service: %v", err)
 	}

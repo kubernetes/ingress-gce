@@ -174,7 +174,7 @@ func TestGarbageCollectionNEG(t *testing.T) {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}
 
-	negName := manager.namer.NEGName("test", "test", "80")
+	negName := manager.namer.NEG("test", "test", "80")
 	manager.cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 		Name: negName,
 	}, TestZone1)

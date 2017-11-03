@@ -161,7 +161,7 @@ func (p *nodePortManager) toNodePortSvcNames(inputMap map[string]utils.FakeIngre
 	for host, rules := range inputMap {
 		ruleMap := utils.FakeIngressRuleValueMap{}
 		for path, svc := range rules {
-			ruleMap[path] = p.namer.BeName(int64(p.portMap[svc]))
+			ruleMap[path] = p.namer.Backend(int64(p.portMap[svc]))
 		}
 		expectedMap[host] = ruleMap
 	}
@@ -247,8 +247,8 @@ func TestLbCreateDelete(t *testing.T) {
 	unexpected := []int{pm.portMap["foo2svc"], pm.portMap["bar2svc"]}
 	expected := []int{pm.portMap["foo1svc"], pm.portMap["bar1svc"]}
 	firewallPorts := sets.NewString()
-	pm.namer.SetFirewallName(testFirewallName)
-	firewallName := pm.namer.FrName(pm.namer.FrSuffix())
+	pm.namer.SetFirewall(testFirewallName)
+	firewallName := pm.namer.FirewallRule()
 
 	if firewallRule, err := cm.firewallPool.(*firewalls.FirewallRules).GetFirewall(firewallName); err != nil {
 		t.Fatalf("%v", err)

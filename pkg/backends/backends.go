@@ -151,7 +151,7 @@ func NewBackendPool(
 			if !namer.NameBelongsToCluster(bs.Name) {
 				return "", fmt.Errorf("unrecognized name %v", bs.Name)
 			}
-			port, err := namer.BePort(bs.Name)
+			port, err := namer.BackendPort(bs.Name)
 			if err != nil {
 				return "", err
 			}
@@ -170,7 +170,7 @@ func (b *Backends) Init(pp probeProvider) {
 
 // Get returns a single backend.
 func (b *Backends) Get(port int64) (*compute.BackendService, error) {
-	be, err := b.cloud.GetGlobalBackendService(b.namer.BeName(port))
+	be, err := b.cloud.GetGlobalBackendService(b.namer.Backend(port))
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +262,7 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 	}
 
 	// Verify existance of a backend service for the proper port, but do not specify any backends/igs
-	beName := b.namer.BeName(p.Port)
+	beName := b.namer.Backend(p.Port)
 	be, _ = b.Get(p.Port)
 	if be == nil {
 		namedPort := utils.GetNamedPort(p.Port)
@@ -318,7 +318,7 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 
 // Delete deletes the Backend for the given port.
 func (b *Backends) Delete(port int64) (err error) {
-	name := b.namer.BeName(port)
+	name := b.namer.Backend(port)
 	glog.V(2).Infof("Deleting backend service %v", name)
 	defer func() {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
@@ -501,7 +501,7 @@ func (b *Backends) Link(port ServicePort, zones []string) error {
 	if !port.NEGEnabled {
 		return nil
 	}
-	negName := b.namer.NEGName(port.SvcName.Namespace, port.SvcName.Name, port.SvcTargetPort)
+	negName := b.namer.NEG(port.SvcName.Namespace, port.SvcName.Name, port.SvcTargetPort)
 	var negs []*computealpha.NetworkEndpointGroup
 	var err error
 	for _, zone := range zones {
@@ -512,7 +512,7 @@ func (b *Backends) Link(port ServicePort, zones []string) error {
 		negs = append(negs, neg)
 	}
 
-	backendService, err := b.cloud.GetAlphaGlobalBackendService(b.namer.BeName(port.Port))
+	backendService, err := b.cloud.GetAlphaGlobalBackendService(b.namer.Backend(port.Port))
 	if err != nil {
 		return err
 	}

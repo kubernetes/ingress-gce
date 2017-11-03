@@ -161,6 +161,8 @@ func GetNamedPort(port int64) *compute.NamedPort {
 }
 
 // trimFieldsEvenly trims the fields evenly and keeps the total length
+// <= max. Truncation is spread in ratio with their original length,
+// meaning smaller fields will be truncated less than longer ones.
 func trimFieldsEvenly(max int, fields ...string) []string {
 	if max <= 0 {
 		return fields

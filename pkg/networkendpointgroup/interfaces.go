@@ -37,8 +37,8 @@ type networkEndpointGroupCloud interface {
 
 // networkEndpointGroupNamer is an interface for generating network endpoint group name.
 type networkEndpointGroupNamer interface {
-	NEGName(namespace, name, port string) string
-	NEGPrefix() string
+	NEG(namespace, name, port string) string
+	IsNEG(name string) bool
 }
 
 // zoneGetter is an interface for retrieve zone related information
