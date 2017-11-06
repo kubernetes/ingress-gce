@@ -57,11 +57,9 @@ func (fr *FirewallRules) Sync(nodePorts []int64, nodeNames []string) error {
 	if len(nodePorts) == 0 {
 		return fr.Shutdown()
 	}
-	// Firewall rule prefix must match that inserted by the gce library.
-	suffix := fr.namer.FrSuffix()
 	// TODO: Fix upstream gce cloudprovider lib so GET also takes the suffix
 	// instead of the whole name.
-	name := fr.namer.FrName(suffix)
+	name := fr.namer.FirewallRule()
 	rule, _ := fr.cloud.GetFirewall(name)
 
 	firewall, err := fr.createFirewallObject(name, "GCE L7 firewall rule", nodePorts, nodeNames)
@@ -100,7 +98,7 @@ func (fr *FirewallRules) Sync(nodePorts []int64, nodeNames []string) error {
 
 // Shutdown shuts down this firewall rules manager.
 func (fr *FirewallRules) Shutdown() error {
-	name := fr.namer.FrName(fr.namer.FrSuffix())
+	name := fr.namer.FirewallRule()
 	glog.Infof("Deleting firewall %v", name)
 	return fr.deleteFirewall(name)
 }

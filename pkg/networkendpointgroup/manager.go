@@ -18,7 +18,6 @@ package networkendpointgroup
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/golang/glog"
@@ -100,7 +99,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, targetPorts 
 					name:       name,
 					targetPort: port,
 				},
-				manager.namer.NEGName(namespace, name, port),
+				manager.namer.NEG(namespace, name, port),
 				manager.recorder,
 				manager.cloud,
 				manager.zoneGetter,
@@ -206,7 +205,7 @@ func (manager *syncerManager) garbageCollectNEG() error {
 	negNames := sets.String{}
 	for _, list := range zoneNEGList {
 		for _, neg := range list {
-			if strings.HasPrefix(neg.Name, manager.namer.NEGPrefix()) {
+			if manager.namer.IsNEG(neg.Name) {
 				negNames.Insert(neg.Name)
 			}
 		}
@@ -217,7 +216,7 @@ func (manager *syncerManager) garbageCollectNEG() error {
 		defer manager.mu.Unlock()
 		for key, ports := range manager.svcPortMap {
 			for _, port := range ports.List() {
-				name := manager.namer.NEGName(key.namespace, key.name, port)
+				name := manager.namer.NEG(key.namespace, key.name, port)
 				negNames.Delete(name)
 			}
 		}

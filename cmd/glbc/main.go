@@ -298,8 +298,8 @@ func main() {
 		glog.Fatalf("%v", err)
 	}
 
-	if clusterManager.ClusterNamer.GetClusterName() != "" {
-		glog.V(3).Infof("Cluster name %+v", clusterManager.ClusterNamer.GetClusterName())
+	if clusterManager.ClusterNamer.UID() != "" {
+		glog.V(3).Infof("Cluster name %+v", clusterManager.ClusterNamer.UID())
 	}
 	clusterManager.Init(&controller.GCETranslator{LoadBalancerController: lbc})
 
@@ -353,14 +353,14 @@ func newNamer(kubeClient kubernetes.Interface, clusterName string, fwName string
 
 				switch key {
 				case storage.UidDataKey:
-					if uid := namer.GetClusterName(); uid != val {
+					if uid := namer.UID(); uid != val {
 						glog.Infof("Cluster uid changed from %v -> %v", uid, val)
-						namer.SetClusterName(val)
+						namer.SetUID(val)
 					}
 				case storage.ProviderDataKey:
-					if fw_name := namer.GetFirewallName(); fw_name != val {
+					if fw_name := namer.Firewall(); fw_name != val {
 						glog.Infof("Cluster firewall name changed from %v -> %v", fw_name, val)
-						namer.SetFirewallName(val)
+						namer.SetFirewall(val)
 					}
 				}
 			}

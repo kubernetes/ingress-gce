@@ -48,26 +48,30 @@ type FakeLoadBalancers struct {
 	Certs []*compute.SslCertificate
 	name  string
 	calls []string // list of calls that were made
+
+	namer *utils.Namer
 }
 
 // TODO: There is some duplication between these functions and the name mungers in
 // loadbalancer file.
 func (f *FakeLoadBalancers) fwName(https bool) string {
+	proto := utils.HTTPProtocol
 	if https {
-		return fmt.Sprintf("%v-%v", httpsForwardingRulePrefix, f.name)
+		proto = utils.HTTPSProtocol
 	}
-	return fmt.Sprintf("%v-%v", forwardingRulePrefix, f.name)
+	return f.namer.ForwardingRule(f.name, proto)
 }
 
 func (f *FakeLoadBalancers) umName() string {
-	return fmt.Sprintf("%v-%v", urlMapPrefix, f.name)
+	return f.namer.UrlMap(f.name)
 }
 
 func (f *FakeLoadBalancers) tpName(https bool) string {
+	protocol := utils.HTTPProtocol
 	if https {
-		return fmt.Sprintf("%v-%v", targetHTTPSProxyPrefix, f.name)
+		protocol = utils.HTTPSProtocol
 	}
-	return fmt.Sprintf("%v-%v", targetProxyPrefix, f.name)
+	return f.namer.TargetProxy(f.name, protocol)
 }
 
 // String is the string method for FakeLoadBalancers.
@@ -447,7 +451,8 @@ func (f *FakeLoadBalancers) DeleteSslCertificate(name string) error {
 // eg: forwardingRule.SelfLink == k8-fw-name.
 func NewFakeLoadBalancers(name string) *FakeLoadBalancers {
 	return &FakeLoadBalancers{
-		Fw:   []*compute.ForwardingRule{},
-		name: name,
+		Fw:    []*compute.ForwardingRule{},
+		name:  name,
+		namer: utils.NewNamer("fake-cluster", "fake-fw"),
 	}
 }

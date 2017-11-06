@@ -96,7 +96,7 @@ func TestTrimFieldsEvenly(t *testing.T) {
 	}
 }
 
-func TestNEGName(t *testing.T) {
+func TestNEG(t *testing.T) {
 	longstring := "01234567890123456789012345678901234567890123456789"
 	testCases := []struct {
 		desc      string
@@ -145,7 +145,7 @@ func TestNEGName(t *testing.T) {
 
 	namer := NewNamer(ClusterId, "")
 	for _, tc := range testCases {
-		res := namer.NEGName(tc.namespace, tc.name, tc.port)
+		res := namer.NEG(tc.namespace, tc.name, tc.port)
 		if len(res) > 63 {
 			t.Errorf("%s: got len(res) == %v, want <= 63", tc.desc, len(res))
 		}

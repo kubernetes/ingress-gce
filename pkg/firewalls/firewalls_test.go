@@ -29,7 +29,7 @@ func TestSyncFirewallPool(t *testing.T) {
 	namer := utils.NewNamer("ABC", "XYZ")
 	fwp := NewFakeFirewallsProvider(false, false)
 	fp := NewFirewallPool(fwp, namer)
-	ruleName := namer.FrName(namer.FrSuffix())
+	ruleName := namer.FirewallRule()
 
 	// Test creating a firewall rule via Sync
 	nodePorts := []int64{80, 443, 3000}
@@ -48,7 +48,7 @@ func TestSyncFirewallPool(t *testing.T) {
 	}
 	verifyFirewallRule(fwp, ruleName, nodePorts, nodes, l7SrcRanges, t)
 
-	firewall, err := fp.(*FirewallRules).createFirewallObject(namer.FrName(namer.FrSuffix()), "", nodePorts, nodes)
+	firewall, err := fp.(*FirewallRules).createFirewallObject(namer.FirewallRule(), "", nodePorts, nodes)
 	if err != nil {
 		t.Errorf("unexpected err when creating firewall object, err: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestSyncOnXPNWithPermission(t *testing.T) {
 	namer := utils.NewNamer("ABC", "XYZ")
 	fwp := NewFakeFirewallsProvider(true, false)
 	fp := NewFirewallPool(fwp, namer)
-	ruleName := namer.FrName(namer.FrSuffix())
+	ruleName := namer.FirewallRule()
 
 	// Test creating a firewall rule via Sync
 	nodePorts := []int64{80, 443, 3000}
@@ -112,7 +112,7 @@ func TestSyncOnXPNReadOnly(t *testing.T) {
 	namer := utils.NewNamer("ABC", "XYZ")
 	fwp := NewFakeFirewallsProvider(true, true)
 	fp := NewFirewallPool(fwp, namer)
-	ruleName := namer.FrName(namer.FrSuffix())
+	ruleName := namer.FirewallRule()
 
 	// Test creating a firewall rule via Sync
 	nodePorts := []int64{80, 443, 3000}
