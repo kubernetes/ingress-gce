@@ -63,6 +63,17 @@ type L7s struct {
 	namer                  *utils.Namer
 }
 
+// GLBCDefaultBackend returns the BackendService used when no path
+// rules match.
+func (l *L7s) GLBCDefaultBackend() *compute.BackendService {
+	return l.glbcDefaultBackend
+}
+
+// Namer returns the namer associated with the L7s.
+func (l *L7s) Namer() *utils.Namer {
+	return l.namer
+}
+
 // NewLoadBalancerPool returns a new loadbalancer pool.
 // - cloud: implements LoadBalancers. Used to sync L7 loadbalancer resources
 //	 with the cloud.
@@ -283,6 +294,11 @@ type L7 struct {
 	glbcDefaultBackend *compute.BackendService
 	// namer is used to compute names of the various sub-components of an L7.
 	namer *utils.Namer
+}
+
+// UrlMap returns the UrlMap associated with the L7 load balancer.
+func (l *L7) UrlMap() *compute.UrlMap {
+	return l.um
 }
 
 func (l *L7) checkUrlMap(backend *compute.BackendService) (err error) {

@@ -27,11 +27,11 @@ import (
 )
 
 // NewFakeInstanceGroups creates a new FakeInstanceGroups.
-func NewFakeInstanceGroups(nodes sets.String) *FakeInstanceGroups {
+func NewFakeInstanceGroups(nodes sets.String, namer *utils.Namer) *FakeInstanceGroups {
 	return &FakeInstanceGroups{
 		instances:        nodes,
 		listResult:       getInstanceList(nodes),
-		namer:            utils.Namer{},
+		namer:            namer,
 		zonesToInstances: map[string][]string{},
 	}
 }
@@ -63,7 +63,7 @@ type FakeInstanceGroups struct {
 	getResult        *compute.InstanceGroup
 	listResult       *compute.InstanceGroupsListInstances
 	calls            []int
-	namer            utils.Namer
+	namer            *utils.Namer
 	zonesToInstances map[string][]string
 }
 

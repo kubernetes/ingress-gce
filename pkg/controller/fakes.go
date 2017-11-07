@@ -41,16 +41,17 @@ type fakeClusterManager struct {
 	fakeLbs      *loadbalancers.FakeLoadBalancers
 	fakeBackends *backends.FakeBackendServices
 	fakeIGs      *instances.FakeInstanceGroups
+	Namer        *utils.Namer
 }
 
 // NewFakeClusterManager creates a new fake ClusterManager.
 func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager {
-	fakeLbs := loadbalancers.NewFakeLoadBalancers(clusterName)
+	namer := utils.NewNamer(clusterName, firewallName)
+	fakeLbs := loadbalancers.NewFakeLoadBalancers(clusterName, namer)
 	fakeBackends := backends.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
-	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString())
+	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
 	fakeHCP := healthchecks.NewFakeHealthCheckProvider()
 	fakeNEG := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")
-	namer := utils.NewNamer(clusterName, firewallName)
 
 	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{"zone-a"}})
@@ -76,5 +77,5 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 		l7Pool:       l7Pool,
 		firewallPool: frPool,
 	}
-	return &fakeClusterManager{cm, fakeLbs, fakeBackends, fakeIGs}
+	return &fakeClusterManager{cm, fakeLbs, fakeBackends, fakeIGs, namer}
 }

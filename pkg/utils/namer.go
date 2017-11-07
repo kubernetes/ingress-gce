@@ -28,22 +28,24 @@ import (
 )
 
 const (
+	defaultPrefix = "k8s"
+
 	// A single target proxy/urlmap/forwarding rule is created per loadbalancer.
 	// Tagged with the namespace/name of the Ingress.
-	targetHTTPProxyPrefix  = "k8s-tp"
-	targetHTTPSProxyPrefix = "k8s-tps"
-	sslCertPrefix          = "k8s-ssl"
+	targetHTTPProxyPrefix  = "tp"
+	targetHTTPSProxyPrefix = "tps"
+	sslCertPrefix          = "ssl"
 	// TODO: this should really be "fr" and "frs".
-	forwardingRulePrefix      = "k8s-fw"
-	httpsForwardingRulePrefix = "k8s-fws"
-	urlMapPrefix              = "k8s-um"
+	forwardingRulePrefix      = "fw"
+	httpsForwardingRulePrefix = "fws"
+	urlMapPrefix              = "um"
 
 	// This allows sharing of backends across loadbalancers.
-	backendPrefix = "k8s-be"
-	backendRegex  = "k8s-be-([0-9]+).*"
+	backendPrefix = "be"
+	backendRegex  = "be-([0-9]+).*"
 
 	// Prefix used for instance groups involved in L7 balancing.
-	igPrefix = "k8s-ig"
+	igPrefix = "ig"
 
 	// Suffix used in the l7 firewall rule. There is currently only one.
 	// Note that this name is used by the cloudprovider lib that inserts
@@ -92,6 +94,10 @@ const (
 // Namer is the centralized naming policy for Ingress-related GCP
 // resources.
 type Namer struct {
+	// Prefix for all Namer generated names. By default, this is the
+	// DefaultPrefix.
+	prefix string
+
 	nameLock     sync.Mutex
 	clusterName  string
 	firewallName string
@@ -99,7 +105,12 @@ type Namer struct {
 
 // NewNamer creates a new namer with a Cluster and Firewall name.
 func NewNamer(clusterName, firewallName string) *Namer {
-	namer := &Namer{}
+	return NewNamerWithPrefix(defaultPrefix, clusterName, firewallName)
+}
+
+// NewNamerWithPrefix creates a new namer with a custom prefix.
+func NewNamerWithPrefix(prefix, clusterName, firewallName string) *Namer {
+	namer := &Namer{prefix: prefix}
 	namer.SetUID(clusterName)
 	namer.SetFirewall(firewallName)
 
@@ -142,6 +153,7 @@ func (n *Namer) SetFirewall(name string) {
 func (n *Namer) UID() string {
 	n.nameLock.Lock()
 	defer n.nameLock.Unlock()
+
 	return n.clusterName
 }
 
@@ -153,9 +165,8 @@ func (n *Namer) Firewall() string {
 	// Retain backwards compatible behavior where firewallName == clusterName.
 	if n.firewallName == "" {
 		return n.clusterName
-	} else {
-		return n.firewallName
 	}
+	return n.firewallName
 }
 
 // truncate truncates the given key to a GCE length limit.
@@ -201,7 +212,7 @@ func (n *Namer) ParseName(name string) *NameComponents {
 // NameBelongsToCluster checks if a given name is tagged with this
 // cluster's UID.
 func (n *Namer) NameBelongsToCluster(name string) bool {
-	if !strings.HasPrefix(name, "k8s-") {
+	if !strings.HasPrefix(name, n.prefix+"-") {
 		return false
 	}
 
@@ -220,29 +231,26 @@ func (n *Namer) NameBelongsToCluster(name string) bool {
 
 // BeName constructs the name for a backend.
 func (n *Namer) Backend(port int64) string {
-	return n.decorateName(fmt.Sprintf("%v-%d", backendPrefix, port))
+	return n.decorateName(fmt.Sprintf("%v-%v-%d", n.prefix, backendPrefix, port))
 }
 
 // BackendPort retrieves the port from the given backend name.
 func (n *Namer) BackendPort(beName string) (string, error) {
-	r, err := regexp.Compile(backendRegex)
-	if err != nil {
-		return "", err
-	}
+	r := regexp.MustCompile(n.prefix + "-" + backendRegex)
 	match := r.FindStringSubmatch(beName)
 	if len(match) < 2 {
-		return "", fmt.Errorf("unable to lookup port for %v", beName)
+		return "", fmt.Errorf("invalid backend name %q", beName)
 	}
-	_, err = strconv.Atoi(match[1])
+	_, err := strconv.Atoi(match[1])
 	if err != nil {
-		return "", fmt.Errorf("unexpected regex match: %v", beName)
+		return "", fmt.Errorf("invalid backend name %q", beName)
 	}
 	return match[1], nil
 }
 
 // InstanceGroup constructs the name for an Instance Group.
 func (n *Namer) InstanceGroup() string {
-	return n.decorateName(igPrefix)
+	return n.decorateName(n.prefix + "-" + igPrefix)
 }
 
 // firewallRuleSuffix constructs the glbc specific suffix for the FirewallRule.
@@ -259,7 +267,7 @@ func (n *Namer) firewallRuleSuffix() string {
 // assigned by the cloudprovider lib + suffix from glbc, so we don't
 // mix this rule with a rule created for L4 loadbalancing.
 func (n *Namer) FirewallRule() string {
-	return fmt.Sprintf("k8s-fw-%s", n.firewallRuleSuffix())
+	return fmt.Sprintf("%s-fw-%s", n.prefix, n.firewallRuleSuffix())
 }
 
 // LoadBalancer constructs a loadbalancer name from the given key. The key
@@ -282,9 +290,9 @@ func (n *Namer) LoadBalancer(key string) string {
 func (n *Namer) TargetProxy(lbName string, protocol NamerProtocol) string {
 	switch protocol {
 	case HTTPProtocol:
-		return truncate(fmt.Sprintf("%v-%v", targetHTTPProxyPrefix, lbName))
+		return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, targetHTTPProxyPrefix, lbName))
 	case HTTPSProtocol:
-		return truncate(fmt.Sprintf("%v-%v", targetHTTPSProxyPrefix, lbName))
+		return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, targetHTTPSProxyPrefix, lbName))
 	}
 	glog.Fatalf("Invalid TargetProxy protocol: %v", protocol)
 	return "invalid"
@@ -292,25 +300,25 @@ func (n *Namer) TargetProxy(lbName string, protocol NamerProtocol) string {
 
 // IsSSLCert returns true if certName is an Ingress managed name.
 func (n *Namer) IsSSLCert(name string) bool {
-	return strings.HasPrefix(name, sslCertPrefix)
+	return strings.HasPrefix(name, n.prefix+"-"+sslCertPrefix)
 }
 
 // SSLCert returns the name of the certificate. isPrimary denotes
 // whether the name is for a primary certificate or secondary.
 func (n *Namer) SSLCert(lbName string, isPrimary bool) string {
 	if isPrimary {
-		return truncate(fmt.Sprintf("%v-%v", sslCertPrefix, lbName))
+		return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, sslCertPrefix, lbName))
 	}
-	return truncate(fmt.Sprintf("%v-%d-%v", sslCertPrefix, 1, lbName))
+	return truncate(fmt.Sprintf("%v-%v-%d-%v", n.prefix, sslCertPrefix, 1, lbName))
 }
 
 // ForwardingRule returns the name of the forwarding rule prefix.
 func (n *Namer) ForwardingRule(lbName string, protocol NamerProtocol) string {
 	switch protocol {
 	case HTTPProtocol:
-		return truncate(fmt.Sprintf("%v-%v", forwardingRulePrefix, lbName))
+		return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, forwardingRulePrefix, lbName))
 	case HTTPSProtocol:
-		return truncate(fmt.Sprintf("%v-%v", httpsForwardingRulePrefix, lbName))
+		return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, httpsForwardingRulePrefix, lbName))
 	}
 	glog.Fatalf("invalid ForwardingRule protocol: %q", protocol)
 	return "invalid"
@@ -318,7 +326,7 @@ func (n *Namer) ForwardingRule(lbName string, protocol NamerProtocol) string {
 
 // UrlMap returns the name for the UrlMap for a given load balancer.
 func (n *Namer) UrlMap(lbName string) string {
-	return truncate(fmt.Sprintf("%v-%v", urlMapPrefix, lbName))
+	return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, urlMapPrefix, lbName))
 }
 
 // NamedPort returns the name for a named port.
@@ -329,7 +337,7 @@ func (n *Namer) NamedPort(port int64) string {
 // NEG returns the gce neg name based on the service namespace, name
 // and target port. NEG naming convention:
 //
-//   k8s-{clusterid}-{namespace}-{name}-{target port}-{hash}
+//   {prefix}{version}-{clusterid}-{namespace}-{name}-{target port}-{hash}
 //
 // Output name is at most 63 characters. NEG tries to keep as much
 // information as possible.
@@ -351,7 +359,7 @@ func (n *Namer) IsNEG(name string) bool {
 }
 
 func (n *Namer) negPrefix() string {
-	return fmt.Sprintf("k8s%s-%s", schemaVersionV1, n.UID())
+	return fmt.Sprintf("%s%s-%s", n.prefix, schemaVersionV1, n.UID())
 }
 
 // negSuffix returns hash code with 8 characters

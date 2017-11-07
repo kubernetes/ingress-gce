@@ -19,6 +19,8 @@ package loadbalancers
 import (
 	"fmt"
 
+	"github.com/golang/glog"
+
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -52,9 +54,11 @@ type FakeLoadBalancers struct {
 	namer *utils.Namer
 }
 
+// FWName returns the name of the firewall given the protocol.
+//
 // TODO: There is some duplication between these functions and the name mungers in
 // loadbalancer file.
-func (f *FakeLoadBalancers) fwName(https bool) string {
+func (f *FakeLoadBalancers) FWName(https bool) string {
 	proto := utils.HTTPProtocol
 	if https {
 		proto = utils.HTTPSProtocol
@@ -62,11 +66,11 @@ func (f *FakeLoadBalancers) fwName(https bool) string {
 	return f.namer.ForwardingRule(f.name, proto)
 }
 
-func (f *FakeLoadBalancers) umName() string {
+func (f *FakeLoadBalancers) UMName() string {
 	return f.namer.UrlMap(f.name)
 }
 
-func (f *FakeLoadBalancers) tpName(https bool) string {
+func (f *FakeLoadBalancers) TPName(https bool) string {
 	protocol := utils.HTTPProtocol
 	if https {
 		protocol = utils.HTTPSProtocol
@@ -99,6 +103,10 @@ func (f *FakeLoadBalancers) String() string {
 				msg += fmt.Sprintf("\t\t\t%+v\n", pathRule)
 			}
 		}
+	}
+	msg += "Certificates:\n"
+	for _, cert := range f.Certs {
+		msg += fmt.Sprintf("\t%+v\n", cert)
 	}
 	return msg
 }
@@ -178,8 +186,9 @@ func (f *FakeLoadBalancers) GetUrlMap(name string) (*compute.UrlMap, error) {
 
 // CreateUrlMap fakes url-map creation.
 func (f *FakeLoadBalancers) CreateUrlMap(urlMap *compute.UrlMap) error {
+	glog.V(4).Infof("CreateUrlMap %+v", urlMap)
 	f.calls = append(f.calls, "CreateUrlMap")
-	urlMap.SelfLink = f.umName()
+	urlMap.SelfLink = f.UMName()
 	f.Um = append(f.Um, urlMap)
 	return nil
 }
@@ -320,9 +329,9 @@ func (f *FakeLoadBalancers) SetSslCertificateForTargetHttpsProxy(proxy *compute.
 // CheckURLMap checks the URL map.
 func (f *FakeLoadBalancers) CheckURLMap(l7 *L7, expectedMap map[string]utils.FakeIngressRuleValueMap) error {
 	f.calls = append(f.calls, "CheckURLMap")
-	um, err := f.GetUrlMap(l7.um.Name)
+	um, err := f.GetUrlMap(l7.UrlMap().Name)
 	if err != nil || um == nil {
-		return err
+		return fmt.Errorf("f.GetUrlMap(%q) = %v, %v; want _, nil", l7.UrlMap().Name, um, err)
 	}
 	// Check the default backend
 	var d string
@@ -333,22 +342,20 @@ func (f *FakeLoadBalancers) CheckURLMap(l7 *L7, expectedMap map[string]utils.Fak
 		delete(expectedMap, utils.DefaultBackendKey)
 	}
 	// The urlmap should have a default backend, and each path matcher.
-	if d != "" && l7.um.DefaultService != d {
-		return fmt.Errorf("Expected default backend %v found %v",
-			d, l7.um.DefaultService)
+	if d != "" && l7.UrlMap().DefaultService != d {
+		return fmt.Errorf("default backend = %v, want %v", l7.UrlMap().DefaultService, d)
 	}
 
-	for _, matcher := range l7.um.PathMatchers {
+	for _, matcher := range l7.UrlMap().PathMatchers {
 		var hostname string
 		// There's a 1:1 mapping between pathmatchers and hosts
-		for _, hostRule := range l7.um.HostRules {
+		for _, hostRule := range l7.UrlMap().HostRules {
 			if matcher.Name == hostRule.PathMatcher {
 				if len(hostRule.Hosts) != 1 {
-					return fmt.Errorf("Unexpected hosts in hostrules %+v", hostRule)
+					return fmt.Errorf("unexpected hosts in hostrules %+v", hostRule)
 				}
 				if d != "" && matcher.DefaultService != d {
-					return fmt.Errorf("Expected default backend %v found %v",
-						d, matcher.DefaultService)
+					return fmt.Errorf("expected default backend %v found %v", d, matcher.DefaultService)
 				}
 				hostname = hostRule.Hosts[0]
 				break
@@ -449,10 +456,10 @@ func (f *FakeLoadBalancers) DeleteSslCertificate(name string) error {
 // NewFakeLoadBalancers creates a fake cloud client. Name is the name
 // inserted into the selfLink of the associated resources for testing.
 // eg: forwardingRule.SelfLink == k8-fw-name.
-func NewFakeLoadBalancers(name string) *FakeLoadBalancers {
+func NewFakeLoadBalancers(name string, namer *utils.Namer) *FakeLoadBalancers {
 	return &FakeLoadBalancers{
 		Fw:    []*compute.ForwardingRule{},
 		name:  name,
-		namer: utils.NewNamer("fake-cluster", "fake-fw"),
+		namer: namer,
 	}
 }

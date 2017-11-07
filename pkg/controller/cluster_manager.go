@@ -36,16 +36,6 @@ const (
 	defaultPort            = 80
 	defaultHealthCheckPath = "/"
 
-	// A backend is created per nodePort, tagged with the nodeport.
-	// This allows sharing of backends across loadbalancers.
-	backendPrefix = "k8s-be"
-
-	// A single target proxy/urlmap/forwarding rule is created per loadbalancer.
-	// Tagged with the namespace/name of the Ingress.
-	targetProxyPrefix    = "k8s-tp"
-	forwardingRulePrefix = "k8s-fw"
-	urlMapPrefix         = "k8s-um"
-
 	// Used in the test RunServer method to denote a delete request.
 	deleteType = "del"
 

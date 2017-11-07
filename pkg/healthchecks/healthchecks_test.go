@@ -25,8 +25,9 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+var namer = utils.NewNamer("uid1", "fw1")
+
 func TestHealthCheckAdd(t *testing.T) {
-	namer := utils.NewNamer("ABC", "XYZ")
 	hcp := NewFakeHealthCheckProvider()
 	healthChecks := NewHealthChecker(hcp, "/", namer)
 
@@ -54,7 +55,6 @@ func TestHealthCheckAdd(t *testing.T) {
 }
 
 func TestHealthCheckAddExisting(t *testing.T) {
-	namer := &utils.Namer{}
 	hcp := NewFakeHealthCheckProvider()
 	healthChecks := NewHealthChecker(hcp, "/", namer)
 
@@ -105,7 +105,6 @@ func TestHealthCheckAddExisting(t *testing.T) {
 }
 
 func TestHealthCheckDelete(t *testing.T) {
-	namer := &utils.Namer{}
 	hcp := NewFakeHealthCheckProvider()
 	healthChecks := NewHealthChecker(hcp, "/", namer)
 
@@ -142,7 +141,6 @@ func TestHealthCheckDelete(t *testing.T) {
 }
 
 func TestHealthCheckUpdate(t *testing.T) {
-	namer := &utils.Namer{}
 	hcp := NewFakeHealthCheckProvider()
 	healthChecks := NewHealthChecker(hcp, "/", namer)
 
@@ -183,7 +181,6 @@ func TestHealthCheckUpdate(t *testing.T) {
 }
 
 func TestHealthCheckDeleteLegacy(t *testing.T) {
-	namer := &utils.Namer{}
 	hcp := NewFakeHealthCheckProvider()
 	healthChecks := NewHealthChecker(hcp, "/", namer)
 
@@ -202,7 +199,6 @@ func TestHealthCheckDeleteLegacy(t *testing.T) {
 }
 
 func TestAlphaHealthCheck(t *testing.T) {
-	namer := &utils.Namer{}
 	hcp := NewFakeHealthCheckProvider()
 	healthChecks := NewHealthChecker(hcp, "/", namer)
 	hc := healthChecks.New(8000, utils.ProtocolHTTP, true)
