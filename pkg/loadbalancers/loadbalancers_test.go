@@ -45,7 +45,7 @@ func newFakeLoadBalancerPool(f LoadBalancers, t *testing.T) LoadBalancerPool {
 	fakeNEG := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")
 	namer := &utils.Namer{}
 	healthChecker := healthchecks.NewHealthChecker(fakeHCP, "/", namer)
-	nodePool := instances.NewNodePool(fakeIGs)
+	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	backendPool := backends.NewBackendPool(
 		fakeBackends, fakeNEG, healthChecker, nodePool, namer, []int64{}, false)

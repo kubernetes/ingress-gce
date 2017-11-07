@@ -20,12 +20,13 @@ import (
 	"testing"
 
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const defaultZone = "default-zone"
 
 func newNodePool(f *FakeInstanceGroups, zone string) NodePool {
-	pool := NewNodePool(f)
+	pool := NewNodePool(f, utils.NewNamer("cluster-uid", "cluster-fw"))
 	pool.Init(&FakeZoneLister{[]string{zone}})
 	return pool
 }

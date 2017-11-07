@@ -42,15 +42,17 @@ type Instances struct {
 	// TODO: we can figure this out.
 	snapshotter storage.Snapshotter
 	zoneLister
+	namer *utils.Namer
 }
 
 // NewNodePool creates a new node pool.
 // - cloud: implements InstanceGroups, used to sync Kubernetes nodes with
 //   members of the cloud InstanceGroup.
-func NewNodePool(cloud InstanceGroups) NodePool {
+func NewNodePool(cloud InstanceGroups, namer *utils.Namer) NodePool {
 	return &Instances{
 		cloud:       cloud,
 		snapshotter: storage.NewInMemoryPool(),
+		namer:       namer,
 	}
 }
 
@@ -128,8 +130,8 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 
 	// Build slice of NamedPorts for adding
 	var newNamedPorts []*compute.NamedPort
-	for _, v := range newPorts {
-		newNamedPorts = append(newNamedPorts, utils.GetNamedPort(v))
+	for _, port := range newPorts {
+		newNamedPorts = append(newNamedPorts, &compute.NamedPort{Name: i.namer.NamedPort(port), Port: port})
 	}
 
 	if len(newNamedPorts) > 0 {

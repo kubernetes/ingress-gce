@@ -20,9 +20,9 @@ import (
 	"testing"
 )
 
-const (
-	ClusterId = "0123456789abcdef"
-)
+func TestGCEURLMap(t *testing.T) {
+	// TODO
+}
 
 func TestTrimFieldsEvenly(t *testing.T) {
 	longString := "01234567890123456789012345678901234567890123456789"
@@ -92,65 +92,6 @@ func TestTrimFieldsEvenly(t *testing.T) {
 
 		if tc.max < totalLen {
 			t.Errorf("%s: expect totalLen to be less than %d, but got %d", tc.desc, tc.max, totalLen)
-		}
-	}
-}
-
-func TestNEG(t *testing.T) {
-	longstring := "01234567890123456789012345678901234567890123456789"
-	testCases := []struct {
-		desc      string
-		namespace string
-		name      string
-		port      string
-		expect    string
-	}{
-		{
-			"simple case",
-			"namespace",
-			"name",
-			"80",
-			"k8s1-0123456789abcdef-namespace-name-80-1e047e33",
-		},
-		{
-			"63 characters",
-			longstring[:10],
-			longstring[:10],
-			longstring[:10],
-			"k8s1-0123456789abcdef-0123456789-0123456789-0123456789-4f7223eb",
-		},
-		{
-			"long namespace",
-			longstring,
-			"0",
-			"0",
-			"k8s1-0123456789abcdef-01234567890123456789012345678-0--44255b67",
-		},
-
-		{
-			"long name and namespace",
-			longstring,
-			longstring,
-			"0",
-			"k8s1-0123456789abcdef-012345678901234-012345678901234--525cce3d",
-		},
-		{
-			" long name, namespace and port",
-			longstring,
-			longstring[:40],
-			longstring[:30],
-			"k8s1-0123456789abcdef-0123456789012-0123456789-0123456-71877a60",
-		},
-	}
-
-	namer := NewNamer(ClusterId, "")
-	for _, tc := range testCases {
-		res := namer.NEG(tc.namespace, tc.name, tc.port)
-		if len(res) > 63 {
-			t.Errorf("%s: got len(res) == %v, want <= 63", tc.desc, len(res))
-		}
-		if res != tc.expect {
-			t.Errorf("%s: got %q, want %q", tc.desc, res, tc.expect)
 		}
 	}
 }

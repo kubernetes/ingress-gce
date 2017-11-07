@@ -52,7 +52,7 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 	fakeNEG := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")
 	namer := utils.NewNamer(clusterName, firewallName)
 
-	nodePool := instances.NewNodePool(fakeIGs)
+	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{"zone-a"}})
 
 	healthChecker := healthchecks.NewHealthChecker(fakeHCP, "/", namer)
