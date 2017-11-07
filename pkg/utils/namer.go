@@ -311,6 +311,11 @@ func (n *Namer) UrlMap(lbName string) string {
 	return truncate(fmt.Sprintf("%v-%v", urlMapPrefix, lbName))
 }
 
+// NamedPort returns the name for a named port.
+func (n *Namer) NamedPort(port int64) string {
+	return fmt.Sprintf("port%v", port)
+}
+
 // NEG returns the gce neg name based on the service namespace,
 // name and target port.  NEG naming convention:
 // k8s-{clusterid}-{namespace}-{name}-{target port}-{hash} Output name

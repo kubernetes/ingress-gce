@@ -265,7 +265,10 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 	beName := b.namer.Backend(p.Port)
 	be, _ = b.Get(p.Port)
 	if be == nil {
-		namedPort := utils.GetNamedPort(p.Port)
+		namedPort := &compute.NamedPort{
+			Name: b.namer.NamedPort(p.Port),
+			Port: p.Port,
+		}
 		glog.V(2).Infof("Creating backend service for port %v named port %v", p.Port, namedPort)
 		be, err = b.create(namedPort, hcLink, p, beName)
 		if err != nil {

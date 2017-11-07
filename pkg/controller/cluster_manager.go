@@ -220,7 +220,7 @@ func NewClusterManager(
 	cluster := ClusterManager{ClusterNamer: namer}
 
 	// NodePool stores GCE vms that are in this Kubernetes cluster.
-	cluster.instancePool = instances.NewNodePool(cloud)
+	cluster.instancePool = instances.NewNodePool(cloud, namer)
 
 	// BackendPool creates GCE BackendServices and associated health checks.
 	healthChecker := healthchecks.NewHealthChecker(cloud, defaultHealthCheckPath, cluster.ClusterNamer)

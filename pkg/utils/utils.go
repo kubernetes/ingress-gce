@@ -154,12 +154,6 @@ func CompareLinks(l1, l2 string) bool {
 // that share the same testing methods.
 type FakeIngressRuleValueMap map[string]string
 
-// GetNamedPort creates the NamedPort API object for the given port.
-func GetNamedPort(port int64) *compute.NamedPort {
-	// TODO: move port naming to namer
-	return &compute.NamedPort{Name: fmt.Sprintf("port%v", port), Port: port}
-}
-
 // trimFieldsEvenly trims the fields evenly and keeps the total length
 // <= max. Truncation is spread in ratio with their original length,
 // meaning smaller fields will be truncated less than longer ones.
