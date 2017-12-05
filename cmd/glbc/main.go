@@ -435,7 +435,7 @@ func getClusterUID(kubeClient kubernetes.Interface, name string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	namer := utils.Namer{}
+	namer := utils.NewNamer("", "")
 	for _, ing := range ings.Items {
 		if len(ing.Status.LoadBalancer.Ingress) != 0 {
 			c := namer.ParseName(loadbalancers.GCEResourceName(ing.Annotations, "forwarding-rule"))

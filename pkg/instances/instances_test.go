@@ -25,6 +25,8 @@ import (
 
 const defaultZone = "default-zone"
 
+var defaultNamer = utils.NewNamer("uid1", "fw1")
+
 func newNodePool(f *FakeInstanceGroups, zone string) NodePool {
 	pool := NewNodePool(f, utils.NewNamer("cluster-uid", "cluster-fw"))
 	pool.Init(&FakeZoneLister{[]string{zone}})
@@ -32,8 +34,7 @@ func newNodePool(f *FakeInstanceGroups, zone string) NodePool {
 }
 
 func TestNodePoolSync(t *testing.T) {
-	f := NewFakeInstanceGroups(sets.NewString(
-		[]string{"n1", "n2"}...))
+	f := NewFakeInstanceGroups(sets.NewString([]string{"n1", "n2"}...), defaultNamer)
 	pool := newNodePool(f, defaultZone)
 	pool.EnsureInstanceGroupsAndPorts("test", []int64{80})
 
@@ -52,7 +53,7 @@ func TestNodePoolSync(t *testing.T) {
 	// GCENodes: n1
 	// Try to add n2 to the instance group.
 
-	f = NewFakeInstanceGroups(sets.NewString([]string{"n1"}...))
+	f = NewFakeInstanceGroups(sets.NewString([]string{"n1"}...), defaultNamer)
 	pool = newNodePool(f, defaultZone)
 	pool.EnsureInstanceGroupsAndPorts("test", []int64{80})
 
@@ -68,7 +69,7 @@ func TestNodePoolSync(t *testing.T) {
 	// GCENodes: n1, n2
 	// Do nothing.
 
-	f = NewFakeInstanceGroups(sets.NewString([]string{"n1", "n2"}...))
+	f = NewFakeInstanceGroups(sets.NewString([]string{"n1", "n2"}...), defaultNamer)
 	pool = newNodePool(f, defaultZone)
 	pool.EnsureInstanceGroupsAndPorts("test", []int64{80})
 
@@ -82,8 +83,7 @@ func TestNodePoolSync(t *testing.T) {
 }
 
 func TestSetNamedPorts(t *testing.T) {
-	f := NewFakeInstanceGroups(sets.NewString(
-		[]string{"ig"}...))
+	f := NewFakeInstanceGroups(sets.NewString([]string{"ig"}...), defaultNamer)
 	pool := newNodePool(f, defaultZone)
 
 	testCases := []struct {

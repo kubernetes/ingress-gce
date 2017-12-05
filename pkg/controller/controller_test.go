@@ -48,9 +48,8 @@ var (
 	testIPManager = testIP{}
 )
 
-// TODO: Use utils.Namer instead of this function.
 func defaultBackendName(clusterName string) string {
-	return fmt.Sprintf("%v-%v", backendPrefix, clusterName)
+	return fmt.Sprintf("%v-%v", "k8s-be", clusterName)
 }
 
 // newLoadBalancerController create a loadbalancer controller.
@@ -142,7 +141,7 @@ type nodePortManager struct {
 	portMap map[string]int
 	start   int
 	end     int
-	namer   utils.Namer
+	namer   *utils.Namer
 }
 
 // randPort generated pseudo random port numbers.
@@ -168,8 +167,8 @@ func (p *nodePortManager) toNodePortSvcNames(inputMap map[string]utils.FakeIngre
 	return expectedMap
 }
 
-func newPortManager(st, end int) *nodePortManager {
-	return &nodePortManager{map[string]int{}, st, end, utils.Namer{}}
+func newPortManager(st, end int, namer *utils.Namer) *nodePortManager {
+	return &nodePortManager{map[string]int{}, st, end, namer}
 }
 
 // addIngress adds an ingress to the loadbalancer controllers ingress store. If
@@ -222,7 +221,7 @@ func TestLbCreateDelete(t *testing.T) {
 			"/bar": "bar1svc",
 		},
 	}
-	pm := newPortManager(1, 65536)
+	pm := newPortManager(1, 65536, cm.Namer)
 	ings := []*extensions.Ingress{}
 	for _, m := range []map[string]utils.FakeIngressRuleValueMap{inputMap1, inputMap2} {
 		newIng := newIngress(m)
@@ -231,10 +230,10 @@ func TestLbCreateDelete(t *testing.T) {
 		lbc.sync(ingStoreKey)
 		l7, err := cm.l7Pool.Get(ingStoreKey)
 		if err != nil {
-			t.Fatalf("%v", err)
+			t.Fatalf("cm.l7Pool.Get(%q) = _, %v; want nil", ingStoreKey, err)
 		}
 		if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(m)); err != nil {
-			t.Fatalf("%v", err)
+			t.Fatalf("cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(m)) = %v, want nil", err)
 		}
 		ings = append(ings, newIng)
 	}
@@ -311,7 +310,7 @@ func TestLbFaultyUpdate(t *testing.T) {
 		},
 	}
 	ing := newIngress(inputMap)
-	pm := newPortManager(1, 65536)
+	pm := newPortManager(1, 65536, cm.Namer)
 	addIngress(lbc, ing, pm)
 
 	ingStoreKey := getKey(ing, t)
@@ -321,7 +320,7 @@ func TestLbFaultyUpdate(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 	if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(inputMap)); err != nil {
-		t.Fatalf("%v", err)
+		t.Fatalf("cm.fakeLbs.CheckURLMap(...) = %v, want nil", err)
 	}
 
 	// Change the urlmap directly through the lb pool, resync, and
@@ -334,7 +333,7 @@ func TestLbFaultyUpdate(t *testing.T) {
 
 	lbc.sync(ingStoreKey)
 	if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(inputMap)); err != nil {
-		t.Fatalf("%v", err)
+		t.Fatalf("cm.fakeLbs.CheckURLMap(...) = %v, want nil", err)
 	}
 }
 
@@ -343,7 +342,7 @@ func TestLbDefaulting(t *testing.T) {
 	lbc := newLoadBalancerController(t, cm)
 	// Make sure the controller plugs in the default values accepted by GCE.
 	ing := newIngress(map[string]utils.FakeIngressRuleValueMap{"": {"": "foo1svc"}})
-	pm := newPortManager(1, 65536)
+	pm := newPortManager(1, 65536, cm.Namer)
 	addIngress(lbc, ing, pm)
 
 	ingStoreKey := getKey(ing, t)
@@ -354,7 +353,7 @@ func TestLbDefaulting(t *testing.T) {
 	}
 	expectedMap := map[string]utils.FakeIngressRuleValueMap{loadbalancers.DefaultHost: {loadbalancers.DefaultPath: "foo1svc"}}
 	if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(expectedMap)); err != nil {
-		t.Fatalf("%v", err)
+		t.Fatalf("cm.fakeLbs.CheckURLMap(...) = %v, want nil", err)
 	}
 }
 
@@ -383,7 +382,7 @@ func TestLbNoService(t *testing.T) {
 	}
 
 	// Creates the service, next sync should have complete url map.
-	pm := newPortManager(1, 65536)
+	pm := newPortManager(1, 65536, cm.Namer)
 	addIngress(lbc, ing, pm)
 	lbc.enqueueIngressForService(&api_v1.Service{
 		ObjectMeta: meta_v1.ObjectMeta{
@@ -400,7 +399,7 @@ func TestLbNoService(t *testing.T) {
 	}
 	expectedMap := pm.toNodePortSvcNames(inputMap)
 	if err := cm.fakeLbs.CheckURLMap(l7, expectedMap); err != nil {
-		t.Fatalf("%v", err)
+		t.Fatalf("cm.fakeLbs.CheckURLMap(...) = %v, want nil", err)
 	}
 }
 
@@ -425,7 +424,7 @@ func TestLbChangeStaticIP(t *testing.T) {
 		},
 	}
 
-	pm := newPortManager(1, 65536)
+	pm := newPortManager(1, 65536, cm.Namer)
 	addIngress(lbc, ing, pm)
 	ingStoreKey := getKey(ing, t)
 

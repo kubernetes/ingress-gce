@@ -19,9 +19,18 @@ package utils
 import "testing"
 
 const (
-	longString = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-	clusterId  = "0123456789abcdef"
+	clusterId = "0123456789abcdef"
 )
+
+var (
+	longString string
+)
+
+func init() {
+	for i := 0; i < 100; i++ {
+		longString += "x"
+	}
+}
 
 func TestTruncate(t *testing.T) {
 	for i := 0; i < len(longString); i++ {
@@ -58,11 +67,18 @@ func TestNamerUID(t *testing.T) {
 }
 
 func TestNamerFirewall(t *testing.T) {
+	const uid = "cluster-uid"
 	const fw1 = "fw1"
-	namer := NewNamer("cluster-uid", fw1)
+	namer := NewNamer(uid, fw1)
 	if namer.Firewall() != fw1 {
 		t.Errorf("namer.Firewall() = %q, want %q", namer.Firewall(), fw1)
 	}
+
+	namer = NewNamer(uid, "")
+	if namer.Firewall() != uid {
+		t.Errorf("when initial firewall is empty, namer.Firewall() = %q, want %q", namer.Firewall(), uid)
+	}
+
 	const fw2 = "fw2"
 	namer.SetFirewall(fw2)
 	if namer.Firewall() != fw2 {
@@ -99,26 +115,31 @@ func TestNamerParseName(t *testing.T) {
 
 func TestNameBelongsToCluster(t *testing.T) {
 	const uid = "uid1"
-	namer := NewNamer(uid, "fw1")
-	lbName := namer.LoadBalancer("key1")
 
-	// Positive cases.
-	for _, tc := range []string{
-		namer.Backend(80),
-		namer.InstanceGroup(),
-		namer.TargetProxy(lbName, HTTPProtocol),
-		namer.TargetProxy(lbName, HTTPSProtocol),
-		namer.SSLCert(lbName, true),
-		namer.SSLCert(lbName, false),
-		namer.ForwardingRule(lbName, HTTPProtocol),
-		namer.ForwardingRule(lbName, HTTPSProtocol),
-		namer.UrlMap(lbName),
-	} {
-		if !namer.NameBelongsToCluster(tc) {
-			t.Errorf("namer.NameBelongsToCluster(%q) = false, want true", tc)
+	for _, prefix := range []string{defaultPrefix, "mci"} {
+		namer := NewNamerWithPrefix(prefix, uid, "fw1")
+		lbName := namer.LoadBalancer("key1")
+
+		// Positive cases.
+		for _, tc := range []string{
+			namer.Backend(80),
+			namer.InstanceGroup(),
+			namer.TargetProxy(lbName, HTTPProtocol),
+			namer.TargetProxy(lbName, HTTPSProtocol),
+			namer.SSLCert(lbName, true),
+			namer.SSLCert(lbName, false),
+			namer.ForwardingRule(lbName, HTTPProtocol),
+			namer.ForwardingRule(lbName, HTTPSProtocol),
+			namer.UrlMap(lbName),
+		} {
+			if !namer.NameBelongsToCluster(tc) {
+				t.Errorf("namer.NameBelongsToCluster(%q) = false, want true", tc)
+			}
 		}
 	}
+
 	// Negative cases.
+	namer := NewNamer(uid, "fw1")
 	for _, tc := range []string{"", "invalid", "not--the-right-uid"} {
 		if namer.NameBelongsToCluster(tc) {
 			t.Errorf("namer.NameBelongsToCluster(%q) = true, want false", tc)
@@ -152,6 +173,70 @@ func TestNamerBackend(t *testing.T) {
 			t.Errorf("%s: namer.Backend() = %q, want %q", tc.desc, name, tc.want)
 		}
 	}
+	// Prefix.
+	namer := NewNamerWithPrefix("mci", "uid1", "fw1")
+	name := namer.Backend(80)
+	const want = "mci-be-80--uid1"
+	if name != want {
+		t.Errorf("with prefix = %q, namer.Backend(80) = %q, want %q", "mci", name, want)
+	}
+}
+
+func TestBackendPort(t *testing.T) {
+	namer := NewNamer("uid1", "fw1")
+	for _, tc := range []struct {
+		in    string
+		port  string
+		valid bool
+	}{
+		{"", "", false},
+		{"k8s-be-80--uid1", "80", true},
+		{"k8s-be-8080--uid1", "8080", true},
+		{"k8s-be-port1--uid1", "8080", false},
+	} {
+		port, err := namer.BackendPort(tc.in)
+		if err != nil {
+			if tc.valid {
+				t.Errorf("namer.BackendPort(%q) = _, %v, want _, nil", tc.in, err)
+			}
+			continue
+		}
+		if !tc.valid {
+			t.Errorf("namer.BackendPort(%q) = _, nil, want error", tc.in)
+			continue
+		}
+		if port != tc.port {
+			t.Errorf("namer.BackendPort(%q) = %q, nil, want %q, nil", tc.in, port, tc.port)
+		}
+	}
+}
+
+func TestIsSSLCert(t *testing.T) {
+	for _, tc := range []struct {
+		prefix string
+		in     string
+		want   bool
+	}{
+		{defaultPrefix, "", false},
+		{defaultPrefix, "k8s-ssl-foo--uid", true},
+		{defaultPrefix, "k8s-tp-foo--uid", false},
+		{"mci", "mci-ssl-foo--uid", true},
+	} {
+		namer := NewNamerWithPrefix(tc.prefix, "uid", "fw")
+		res := namer.IsSSLCert(tc.in)
+		if res != tc.want {
+			t.Errorf("with prefix = %q, namer.IsSSLCert(%q) = %v, want %v", tc.prefix, tc.in, res, tc.want)
+		}
+	}
+}
+
+func TestNamedPort(t *testing.T) {
+	namer := NewNamer("uid1", "fw1")
+	name := namer.NamedPort(80)
+	const want = "port80"
+	if name != want {
+		t.Errorf("namer.NamedPort(80) = %q, want %q", name, want)
+	}
 }
 
 func TestNamerInstanceGroup(t *testing.T) {
@@ -159,6 +244,12 @@ func TestNamerInstanceGroup(t *testing.T) {
 	name := namer.InstanceGroup()
 	if name != "k8s-ig--uid1" {
 		t.Errorf("namer.InstanceGroup() = %q, want %q", name, "k8s-ig--uid1")
+	}
+	// Prefix.
+	namer = NewNamerWithPrefix("mci", "uid1", "fw1")
+	name = namer.InstanceGroup()
+	if name != "mci-ig--uid1" {
+		t.Errorf("namer.InstanceGroup() = %q, want %q", name, "mci-ig--uid1")
 	}
 }
 
@@ -171,7 +262,76 @@ func TestNamerFirewallRule(t *testing.T) {
 }
 
 func TestNamerLoadBalancer(t *testing.T) {
-	// TODO: check names for all of the resources
+	for _, tc := range []struct {
+		prefix string
+
+		lbName              string
+		targetHTTPProxy     string
+		targetHTTPSProxy    string
+		sslCertPrimary      string
+		sslCertSecondary    string
+		forwardingRuleHTTP  string
+		forwardingRuleHTTPS string
+		urlMap              string
+	}{
+		{
+			"k8s",
+			"key1--uid1",
+			"k8s-tp-key1--uid1",
+			"k8s-tps-key1--uid1",
+			"k8s-ssl-key1--uid1",
+			"k8s-ssl-1-key1--uid1",
+			"k8s-fw-key1--uid1",
+			"k8s-fws-key1--uid1",
+			"k8s-um-key1--uid1",
+		},
+		{
+			"mci",
+			"key1--uid1",
+			"mci-tp-key1--uid1",
+			"mci-tps-key1--uid1",
+			"mci-ssl-key1--uid1",
+			"mci-ssl-1-key1--uid1",
+			"mci-fw-key1--uid1",
+			"mci-fws-key1--uid1",
+			"mci-um-key1--uid1",
+		},
+	} {
+		namer := NewNamerWithPrefix(tc.prefix, "uid1", "fw1")
+		lbName := namer.LoadBalancer("key1")
+		if lbName != tc.lbName {
+			t.Errorf("lbName = %q, want %q", lbName, "key1--uid1")
+		}
+		var name string
+		name = namer.TargetProxy(lbName, HTTPProtocol)
+		if name != tc.targetHTTPProxy {
+			t.Errorf("namer.TargetProxy(%q, HTTPProtocol) = %q, want %q", lbName, name, tc.targetHTTPProxy)
+		}
+		name = namer.TargetProxy(lbName, HTTPSProtocol)
+		if name != tc.targetHTTPSProxy {
+			t.Errorf("namer.TargetProxy(%q, HTTPSProtocol) = %q, want %q", lbName, name, tc.targetHTTPSProxy)
+		}
+		name = namer.SSLCert(lbName, true)
+		if name != tc.sslCertPrimary {
+			t.Errorf("namer.SSLCert(%q, true) = %q, want %q", lbName, name, tc.sslCertPrimary)
+		}
+		name = namer.SSLCert(lbName, false)
+		if name != tc.sslCertSecondary {
+			t.Errorf("namer.SSLCert(%q, false) = %q, want %q", lbName, name, tc.sslCertSecondary)
+		}
+		name = namer.ForwardingRule(lbName, HTTPProtocol)
+		if name != tc.forwardingRuleHTTP {
+			t.Errorf("namer.ForwardingRule(%q, HTTPProtocol) = %q, want %q", lbName, name, tc.forwardingRuleHTTP)
+		}
+		name = namer.ForwardingRule(lbName, HTTPSProtocol)
+		if name != tc.forwardingRuleHTTPS {
+			t.Errorf("namer.ForwardingRule(%q, HTTPSProtocol) = %q, want %q", lbName, name, tc.forwardingRuleHTTPS)
+		}
+		name = namer.UrlMap(lbName)
+		if name != tc.urlMap {
+			t.Errorf("namer.UrlMap(%q) = %q, want %q", lbName, name, tc.urlMap)
+		}
+	}
 }
 
 func TestNamerNEG(t *testing.T) {
@@ -229,6 +389,33 @@ func TestNamerNEG(t *testing.T) {
 		}
 		if res != tc.expect {
 			t.Errorf("%s: got %q, want %q", tc.desc, res, tc.expect)
+		}
+	}
+
+	// Different prefix.
+	namer = NewNamerWithPrefix("mci", clusterId, "fw")
+	name := namer.NEG("ns", "svc", "port")
+	const want = "mci1-0123456789abcdef-ns-svc-port-16c06497"
+	if name != want {
+		t.Errorf(`with prefix %q, namer.NEG("ns", "svc", 80) = %q, want %q`, "mci", name, want)
+	}
+}
+
+func TestIsNEG(t *testing.T) {
+	for _, tc := range []struct {
+		prefix string
+		in     string
+		want   bool
+	}{
+		{defaultPrefix, "", false},
+		{defaultPrefix, "k8s-tp-key1--uid1", false},
+		{defaultPrefix, "k8s1-uid1-namespace-name-80-1e047e33", true},
+		{"mci", "mci1-uid1-ns-svc-port-16c06497", true},
+	} {
+		namer := NewNamerWithPrefix(tc.prefix, "uid1", "fw1")
+		res := namer.IsNEG(tc.in)
+		if res != tc.want {
+			t.Errorf("with prefix %q, namer.IsNEG(%q) = %v, want %v", tc.prefix, tc.in, res, tc.want)
 		}
 	}
 }

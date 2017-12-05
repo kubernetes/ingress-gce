@@ -38,48 +38,53 @@ var (
 	testDefaultBeNodePort = backends.ServicePort{Port: 3000, Protocol: utils.ProtocolHTTP}
 )
 
-func newFakeLoadBalancerPool(f LoadBalancers, t *testing.T) LoadBalancerPool {
+func newFakeLoadBalancerPool(f LoadBalancers, t *testing.T, namer *utils.Namer) LoadBalancerPool {
 	fakeBackends := backends.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
-	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString())
+	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
 	fakeHCP := healthchecks.NewFakeHealthCheckProvider()
 	fakeNEG := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")
-	namer := &utils.Namer{}
 	healthChecker := healthchecks.NewHealthChecker(fakeHCP, "/", namer)
 	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	backendPool := backends.NewBackendPool(
 		fakeBackends, fakeNEG, healthChecker, nodePool, namer, []int64{}, false)
+
 	return NewLoadBalancerPool(f, backendPool, testDefaultBeNodePort, namer)
 }
 
 func TestCreateHTTPLoadBalancer(t *testing.T) {
 	// This should NOT create the forwarding rule and target proxy
 	// associated with the HTTPS branch of this loadbalancer.
-	lbInfo := &L7RuntimeInfo{Name: "test", AllowHTTP: true}
-	f := NewFakeLoadBalancers(lbInfo.Name)
-	pool := newFakeLoadBalancerPool(f, t)
+	namer := utils.NewNamer("uid1", "fw1")
+	lbInfo := &L7RuntimeInfo{
+		Name:      namer.LoadBalancer("test"),
+		AllowHTTP: true,
+	}
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
 	pool.Sync([]*L7RuntimeInfo{lbInfo})
 	l7, err := pool.Get(lbInfo.Name)
+
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
-	um, err := f.GetUrlMap(f.umName())
+	um, err := f.GetUrlMap(f.UMName())
 	if err != nil {
-		t.Fatalf("f.GetUrlMap(%q) = _, %v, want nil", f.umName(), err)
+		t.Fatalf("f.GetUrlMap(%q) = _, %v; want nil", f.UMName(), err)
 	}
-	if um.DefaultService != pool.(*L7s).glbcDefaultBackend.SelfLink {
-		t.Fatalf("got um.DefaultService = %v, want %v", um.DefaultService, pool.(*L7s).glbcDefaultBackend.SelfLink)
+	if um.DefaultService != pool.(*L7s).GLBCDefaultBackend().SelfLink {
+		t.Fatalf("got um.DefaultService = %v; want %v", um.DefaultService, pool.(*L7s).GLBCDefaultBackend().SelfLink)
 	}
-	tp, err := f.GetTargetHttpProxy(f.tpName(false))
+	tp, err := f.GetTargetHttpProxy(f.TPName(false))
 	if err != nil {
-		t.Fatalf("f.GetTargetHttpProxy(%q) = _, %v, want nil", f.tpName(false), err)
+		t.Fatalf("f.GetTargetHttpProxy(%q) = _, %v; want nil", f.TPName(false), err)
 	}
 	if tp.UrlMap != um.SelfLink {
 		t.Fatalf("%v", err)
 	}
-	fw, err := f.GetGlobalForwardingRule(f.fwName(false))
+	fw, err := f.GetGlobalForwardingRule(f.FWName(false))
 	if err != nil {
-		t.Fatalf("f.GetGlobalForwardingRule(%q) = _, %v, want nil", f.fwName(false), err)
+		t.Fatalf("f.GetGlobalForwardingRule(%q) = _, %v, want nil", f.FWName(false), err)
 	}
 	if fw.Target != tp.SelfLink {
 		t.Fatalf("%v", err)
@@ -89,28 +94,29 @@ func TestCreateHTTPLoadBalancer(t *testing.T) {
 func TestCreateHTTPSLoadBalancer(t *testing.T) {
 	// This should NOT create the forwarding rule and target proxy
 	// associated with the HTTP branch of this loadbalancer.
+	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{
-		Name:      "test",
+		Name:      namer.LoadBalancer("test"),
 		AllowHTTP: false,
 		TLS:       &TLSCerts{Key: "key", Cert: "cert"},
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name)
-	pool := newFakeLoadBalancerPool(f, t)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
 	pool.Sync([]*L7RuntimeInfo{lbInfo})
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
-	um, err := f.GetUrlMap(f.umName())
+	um, err := f.GetUrlMap(f.UMName())
 	if err != nil ||
-		um.DefaultService != pool.(*L7s).glbcDefaultBackend.SelfLink {
+		um.DefaultService != pool.(*L7s).GLBCDefaultBackend().SelfLink {
 		t.Fatalf("%v", err)
 	}
-	tps, err := f.GetTargetHttpsProxy(f.tpName(true))
+	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
 	if err != nil || tps.UrlMap != um.SelfLink {
 		t.Fatalf("%v", err)
 	}
-	fws, err := f.GetGlobalForwardingRule(f.fwName(true))
+	fws, err := f.GetGlobalForwardingRule(f.FWName(true))
 	if err != nil || fws.Target != tps.SelfLink {
 		t.Fatalf("%v", err)
 	}
@@ -119,19 +125,22 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 // Tests that a certificate is created from the provided Key/Cert combo
 // and the proxy is updated to another cert when the provided cert changes
 func TestCertUpdate(t *testing.T) {
-	primaryCertName := "k8s-ssl-test"
-	secondaryCertName := "k8s-ssl-1-test"
+	namer := utils.NewNamer("uid1", "fw1")
+	primaryCertName := namer.SSLCert(namer.LoadBalancer("test"), true)
+	secondaryCertName := namer.SSLCert(namer.LoadBalancer("test"), false)
+
 	lbInfo := &L7RuntimeInfo{
-		Name:      "test",
+		Name:      namer.LoadBalancer("test"),
 		AllowHTTP: false,
 		TLS:       &TLSCerts{Key: "key", Cert: "cert"},
 	}
 
-	f := NewFakeLoadBalancers(lbInfo.Name)
-	pool := newFakeLoadBalancerPool(f, t)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	// Sync first cert
 	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	t.Logf("name=%q", primaryCertName)
 	verifyCertAndProxyLink(primaryCertName, lbInfo.TLS.Cert, f, t)
 
 	// Sync with different cert
@@ -142,16 +151,17 @@ func TestCertUpdate(t *testing.T) {
 
 // Tests that controller can overwrite existing, unused certificates
 func TestCertCreationWithCollision(t *testing.T) {
-	primaryCertName := "k8s-ssl-test"
-	secondaryCertName := "k8s-ssl-1-test"
+	namer := utils.NewNamer("uid1", "fw1")
+	primaryCertName := namer.SSLCert(namer.LoadBalancer("test"), true)
+	secondaryCertName := namer.SSLCert(namer.LoadBalancer("test"), false)
+
 	lbInfo := &L7RuntimeInfo{
-		Name:      "test",
+		Name:      namer.LoadBalancer("test"),
 		AllowHTTP: false,
 		TLS:       &TLSCerts{Key: "key", Cert: "cert"},
 	}
-
-	f := NewFakeLoadBalancers(lbInfo.Name)
-	pool := newFakeLoadBalancerPool(f, t)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	// Have both names already used by orphaned certs
 	f.CreateSslCertificate(&compute.SslCertificate{
@@ -176,16 +186,18 @@ func TestCertCreationWithCollision(t *testing.T) {
 }
 
 func TestCertRetentionAfterRestart(t *testing.T) {
-	primaryCertName := "k8s-ssl-test"
-	secondaryCertName := "k8s-ssl-1-test"
+	namer := utils.NewNamer("uid1", "fw1")
+	primaryCertName := namer.SSLCert(namer.LoadBalancer("test"), true)
+	secondaryCertName := namer.SSLCert(namer.LoadBalancer("test"), false)
+
 	lbInfo := &L7RuntimeInfo{
-		Name:      "test",
+		Name:      namer.LoadBalancer("test"),
 		AllowHTTP: false,
 		TLS:       &TLSCerts{Key: "key", Cert: "cert"},
 	}
 
-	f := NewFakeLoadBalancers(lbInfo.Name)
-	firstPool := newFakeLoadBalancerPool(f, t)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	firstPool := newFakeLoadBalancerPool(f, t, namer)
 
 	// Sync twice so the expected certificate uses the secondary name
 	firstPool.Sync([]*L7RuntimeInfo{lbInfo})
@@ -195,7 +207,7 @@ func TestCertRetentionAfterRestart(t *testing.T) {
 	verifyCertAndProxyLink(secondaryCertName, lbInfo.TLS.Cert, f, t)
 
 	// Restart of controller represented by a new pool
-	secondPool := newFakeLoadBalancerPool(f, t)
+	secondPool := newFakeLoadBalancerPool(f, t, namer)
 	secondPool.Sync([]*L7RuntimeInfo{lbInfo})
 
 	// Verify second name is still used
@@ -209,6 +221,10 @@ func TestCertRetentionAfterRestart(t *testing.T) {
 }
 
 func verifyCertAndProxyLink(certName, certValue string, f *FakeLoadBalancers, t *testing.T) {
+	t.Helper()
+
+	t.Logf("f =\n%s", f)
+
 	cert, err := f.GetSslCertificate(certName)
 	if err != nil {
 		t.Fatalf("expected ssl certificate to exist: %v, err: %v", certName, err)
@@ -218,7 +234,7 @@ func verifyCertAndProxyLink(certName, certValue string, f *FakeLoadBalancers, t 
 		t.Fatalf("unexpected certificate value; expected %v, actual %v", certValue, cert.Certificate)
 	}
 
-	tps, err := f.GetTargetHttpsProxy(f.tpName(true))
+	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
 	if err != nil {
 		t.Fatalf("expected https proxy to exist: %v, err: %v", certName, err)
 	}
@@ -232,31 +248,34 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 	// This should NOT create the forwarding rule and target proxy
 	// associated with the HTTP branch of this loadbalancer.
 	tlsName := "external-cert-name"
+
+	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{
-		Name:      "test",
+		Name:      namer.LoadBalancer("test"),
 		AllowHTTP: false,
 		TLSName:   tlsName,
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name)
+
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	f.CreateSslCertificate(&compute.SslCertificate{
 		Name: tlsName,
 	})
-	pool := newFakeLoadBalancerPool(f, t)
+	pool := newFakeLoadBalancerPool(f, t, namer)
 	pool.Sync([]*L7RuntimeInfo{lbInfo})
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
-	um, err := f.GetUrlMap(f.umName())
+	um, err := f.GetUrlMap(f.UMName())
 	if err != nil ||
-		um.DefaultService != pool.(*L7s).glbcDefaultBackend.SelfLink {
+		um.DefaultService != pool.(*L7s).GLBCDefaultBackend().SelfLink {
 		t.Fatalf("%v", err)
 	}
-	tps, err := f.GetTargetHttpsProxy(f.tpName(true))
+	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
 	if err != nil || tps.UrlMap != um.SelfLink {
 		t.Fatalf("%v", err)
 	}
-	fws, err := f.GetGlobalForwardingRule(f.fwName(true))
+	fws, err := f.GetGlobalForwardingRule(f.FWName(true))
 	if err != nil || fws.Target != tps.SelfLink {
 		t.Fatalf("%v", err)
 	}
@@ -266,40 +285,42 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 	// This should create 2 forwarding rules and target proxies
 	// but they should use the same urlmap, and have the same
 	// static ip.
+	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{
-		Name:      "test",
+		Name:      namer.LoadBalancer("test"),
 		AllowHTTP: true,
 		TLS:       &TLSCerts{Key: "key", Cert: "cert"},
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name)
-	pool := newFakeLoadBalancerPool(f, t)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
+
 	pool.Sync([]*L7RuntimeInfo{lbInfo})
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
-	um, err := f.GetUrlMap(f.umName())
+	um, err := f.GetUrlMap(f.UMName())
 	if err != nil ||
-		um.DefaultService != pool.(*L7s).glbcDefaultBackend.SelfLink {
+		um.DefaultService != pool.(*L7s).GLBCDefaultBackend().SelfLink {
 		t.Fatalf("%v", err)
 	}
-	tps, err := f.GetTargetHttpsProxy(f.tpName(true))
+	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
 	if err != nil || tps.UrlMap != um.SelfLink {
 		t.Fatalf("%v", err)
 	}
-	tp, err := f.GetTargetHttpProxy(f.tpName(false))
+	tp, err := f.GetTargetHttpProxy(f.TPName(false))
 	if err != nil || tp.UrlMap != um.SelfLink {
 		t.Fatalf("%v", err)
 	}
-	fws, err := f.GetGlobalForwardingRule(f.fwName(true))
+	fws, err := f.GetGlobalForwardingRule(f.FWName(true))
 	if err != nil || fws.Target != tps.SelfLink {
 		t.Fatalf("%v", err)
 	}
-	fw, err := f.GetGlobalForwardingRule(f.fwName(false))
+	fw, err := f.GetGlobalForwardingRule(f.FWName(false))
 	if err != nil || fw.Target != tp.SelfLink {
 		t.Fatalf("%v", err)
 	}
-	ip, err := f.GetGlobalAddress(f.fwName(false))
+	ip, err := f.GetGlobalAddress(f.FWName(false))
 	if err != nil || ip.Address != fw.IPAddress || ip.Address != fws.IPAddress {
 		t.Fatalf("%v", err)
 	}
@@ -322,9 +343,11 @@ func TestUpdateUrlMap(t *testing.T) {
 	}
 	um2.PutDefaultBackend(&compute.BackendService{SelfLink: "default"})
 
-	lbInfo := &L7RuntimeInfo{Name: "test", AllowHTTP: true}
-	f := NewFakeLoadBalancers(lbInfo.Name)
-	pool := newFakeLoadBalancerPool(f, t)
+	namer := utils.NewNamer("uid1", "fw1")
+	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true}
+
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
 	pool.Sync([]*L7RuntimeInfo{lbInfo})
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil {
@@ -349,7 +372,7 @@ func TestUpdateUrlMap(t *testing.T) {
 		},
 	}
 	if err := f.CheckURLMap(l7, expectedMap); err != nil {
-		t.Fatalf("%v", err)
+		t.Errorf("CheckURLMap(...) = %v, want nil", err)
 	}
 }
 
@@ -375,9 +398,10 @@ func TestUpdateUrlMapNoChanges(t *testing.T) {
 	}
 	um2.PutDefaultBackend(&compute.BackendService{SelfLink: "default"})
 
-	lbInfo := &L7RuntimeInfo{Name: "test", AllowHTTP: true}
-	f := NewFakeLoadBalancers(lbInfo.Name)
-	pool := newFakeLoadBalancerPool(f, t)
+	namer := utils.NewNamer("uid1", "fw1")
+	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true}
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
 	pool.Sync([]*L7RuntimeInfo{lbInfo})
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil {
@@ -415,32 +439,33 @@ func TestNameParsing(t *testing.T) {
 }
 
 func TestClusterNameChange(t *testing.T) {
+	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{
-		Name: "test",
+		Name: namer.LoadBalancer("test"),
 		TLS:  &TLSCerts{Key: "key", Cert: "cert"},
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name)
-	pool := newFakeLoadBalancerPool(f, t)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
 	pool.Sync([]*L7RuntimeInfo{lbInfo})
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
-	um, err := f.GetUrlMap(f.umName())
+	um, err := f.GetUrlMap(f.UMName())
 	if err != nil ||
-		um.DefaultService != pool.(*L7s).glbcDefaultBackend.SelfLink {
+		um.DefaultService != pool.(*L7s).GLBCDefaultBackend().SelfLink {
 		t.Fatalf("%v", err)
 	}
-	tps, err := f.GetTargetHttpsProxy(f.tpName(true))
+	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
 	if err != nil || tps.UrlMap != um.SelfLink {
 		t.Fatalf("%v", err)
 	}
-	fws, err := f.GetGlobalForwardingRule(f.fwName(true))
+	fws, err := f.GetGlobalForwardingRule(f.FWName(true))
 	if err != nil || fws.Target != tps.SelfLink {
 		t.Fatalf("%v", err)
 	}
 	newName := "newName"
-	namer := pool.(*L7s).namer
+	namer = pool.(*L7s).Namer()
 	namer.SetUID(newName)
 	f.name = fmt.Sprintf("%v--%v", lbInfo.Name, newName)
 
@@ -450,20 +475,20 @@ func TestClusterNameChange(t *testing.T) {
 	if err != nil || namer.ParseName(l7.Name).ClusterName != newName {
 		t.Fatalf("Expected L7 name to change.")
 	}
-	um, err = f.GetUrlMap(f.umName())
+	um, err = f.GetUrlMap(f.UMName())
 	if err != nil || namer.ParseName(um.Name).ClusterName != newName {
 		t.Fatalf("Expected urlmap name to change.")
 	}
 	if err != nil ||
-		um.DefaultService != pool.(*L7s).glbcDefaultBackend.SelfLink {
+		um.DefaultService != pool.(*L7s).GLBCDefaultBackend().SelfLink {
 		t.Fatalf("%v", err)
 	}
 
-	tps, err = f.GetTargetHttpsProxy(f.tpName(true))
+	tps, err = f.GetTargetHttpsProxy(f.TPName(true))
 	if err != nil || tps.UrlMap != um.SelfLink {
 		t.Fatalf("%v", err)
 	}
-	fws, err = f.GetGlobalForwardingRule(f.fwName(true))
+	fws, err = f.GetGlobalForwardingRule(f.FWName(true))
 	if err != nil || fws.Target != tps.SelfLink {
 		t.Fatalf("%v", err)
 	}
