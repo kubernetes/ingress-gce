@@ -31,6 +31,7 @@ type LoadBalancers interface {
 	CreateGlobalForwardingRule(rule *compute.ForwardingRule) error
 	DeleteGlobalForwardingRule(name string) error
 	SetProxyForGlobalForwardingRule(fw, proxy string) error
+	ListGlobalForwardingRules() (*compute.ForwardingRuleList, error)
 
 	// UrlMaps
 	GetUrlMap(name string) (*compute.UrlMap, error)
