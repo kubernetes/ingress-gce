@@ -9,25 +9,14 @@ Any websocket server will suffice; however, for the purpose of demonstration, we
 
 ### Containerize
 ```shell
-➜ docker build -t nicksardo/websocketexample .
-Sending build context to Docker daemon 6.134 MB
-Step 1 : FROM alpine:3.5
- ---> 4a415e366388
-Step 2 : COPY wsserver /wsserver
- ---> 8002887d752d
-Removing intermediate container 7772a3e76155
-Step 3 : CMD /wsserver
- ---> Running in 27c8ff226267
- ---> eecd0574e5d1
-Removing intermediate container 27c8ff226267
-Successfully built eecd0574e5d1
-
-➜ docker push nicksardo/websocketexample:latest
+➜ docker build -t [YOUR_IMAGE] .
+...
+➜ docker push [YOUR_IMAGE]
 ...
 ```
 
 ### Deploy
-Either update the image in the `Deployment` to your newly created image or continue using `nicksardo/websocketexample.`
+Either update the image in the `Deployment` to your newly created image.
 ```shell
 ➜ vi deployment.yaml
 # Change image to your own
@@ -49,22 +38,7 @@ NAME             HOSTS     ADDRESS          PORTS     AGE
 ws-example-ing   *         xxx.xxx.xxx.xxx   80        3m
 ```
 
-Wait for the loadbalancer to be created and functioning. When you receive a successful response, you can proceed.
-```
-➜ curl http://xxx.xxx.xxx.xxx
-Websocket example. Connect to /ws%   
-```
-
-The binary we deployed does not have any html/javascript to demonstrate the websocket, so we'll use websocket.org's client.
-
-Visit http://www.websocket.org/echo.html. It's important to use `HTTP` instead of `HTTPS` since we assembled an `HTTP` load balancer. Browsers may prevent `HTTP` websocket connections as a security feature.
-Set the `Location` to
-```
-ws://xxx.xxx.xxx.xxx/ws
-```
-Click 'Connect' and you should see messages received from server:  
-![Log screenshot](http://i.imgur.com/hlwwa0G.png)
-
+Wait for the loadbalancer to be created and functioning. Visit http://xxx.xxx.xxx.xxx and click 'Connect'. You should receive messages from server with timestamps.
 
 ### Change backend timeout
 
