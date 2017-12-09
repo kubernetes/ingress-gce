@@ -341,10 +341,7 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 		if err = setInstanceGroupsAnnotation(ing.Annotations, igs); err != nil {
 			return err
 		}
-		if err = lbc.updateAnnotations(ing.Name, ing.Namespace, ing.Annotations); err != nil {
-			return err
-		}
-		return nil
+		return lbc.updateAnnotations(ing.Name, ing.Namespace, ing.Annotations)
 	}
 
 	if lbc.negEnabled {
@@ -413,10 +410,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 		}
 	}
 	annotations := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.CloudClusterManager.backendPool)
-	if err := lbc.updateAnnotations(ing.Name, ing.Namespace, annotations); err != nil {
-		return err
-	}
-	return nil
+	return lbc.updateAnnotations(ing.Name, ing.Namespace, annotations)
 }
 
 func (lbc *LoadBalancerController) updateAnnotations(name, namespace string, annotations map[string]string) error {
@@ -475,10 +469,7 @@ func (lbc *LoadBalancerController) syncNodes(key string) error {
 	if err != nil {
 		return err
 	}
-	if err := lbc.CloudClusterManager.instancePool.Sync(nodeNames); err != nil {
-		return err
-	}
-	return nil
+	return lbc.CloudClusterManager.instancePool.Sync(nodeNames)
 }
 
 func getNodeReadyPredicate() listers.NodeConditionPredicate {

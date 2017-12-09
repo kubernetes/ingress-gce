@@ -59,7 +59,7 @@ func (f *fakeZoneGetter) GetZoneForNode(name string) (string, error) {
 			return zone, nil
 		}
 	}
-	return "", NotFoundError
+	return "", errNotFound
 }
 
 type FakeNetworkEndpointGroupCloud struct {
@@ -79,7 +79,7 @@ func NewFakeNetworkEndpointGroupCloud(subnetwork, network string) networkEndpoin
 	}
 }
 
-var NotFoundError = fmt.Errorf("Not Found")
+var errNotFound = fmt.Errorf("Not Found")
 
 func (cloud *FakeNetworkEndpointGroupCloud) GetNetworkEndpointGroup(name string, zone string) (*computealpha.NetworkEndpointGroup, error) {
 	cloud.mu.Lock()
@@ -92,7 +92,7 @@ func (cloud *FakeNetworkEndpointGroupCloud) GetNetworkEndpointGroup(name string,
 			}
 		}
 	}
-	return nil, NotFoundError
+	return nil, errNotFound
 }
 
 func networkEndpointKey(name, zone string) string {
@@ -138,7 +138,7 @@ func (cloud *FakeNetworkEndpointGroupCloud) DeleteNetworkEndpointGroup(name stri
 		newList = append(newList, neg)
 	}
 	if !found {
-		return NotFoundError
+		return errNotFound
 	}
 	cloud.NetworkEndpointGroups[zone] = newList
 	return nil
@@ -178,7 +178,7 @@ func (cloud *FakeNetworkEndpointGroupCloud) ListNetworkEndpoints(name, zone stri
 	ret := []*computealpha.NetworkEndpointWithHealthStatus{}
 	nes, ok := cloud.NetworkEndpoints[networkEndpointKey(name, zone)]
 	if !ok {
-		return nil, NotFoundError
+		return nil, errNotFound
 	}
 	for _, ne := range nes {
 		ret = append(ret, &computealpha.NetworkEndpointWithHealthStatus{NetworkEndpoint: ne})

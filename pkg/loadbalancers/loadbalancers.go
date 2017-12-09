@@ -139,11 +139,7 @@ func (l *L7s) Add(ri *L7RuntimeInfo) (err error) {
 	// The loadbalancer is a fictitious resource, it doesn't exist in gce. To
 	// make it exist we need to create a collection of gce resources, done
 	// through the edge hop.
-	if err := lb.edgeHop(); err != nil {
-		return err
-	}
-
-	return nil
+	return lb.edgeHop()
 }
 
 // Delete deletes a loadbalancer by name.
@@ -718,10 +714,7 @@ func (l *L7) edgeHopHttp() error {
 	if err := l.checkProxy(); err != nil {
 		return err
 	}
-	if err := l.checkHttpForwardingRule(); err != nil {
-		return err
-	}
-	return nil
+	return l.checkHttpForwardingRule()
 }
 
 func (l *L7) edgeHopHttps() error {
@@ -734,10 +727,7 @@ func (l *L7) edgeHopHttps() error {
 	if err := l.checkHttpsForwardingRule(); err != nil {
 		return err
 	}
-	if err := l.deleteOldSSLCert(); err != nil {
-		return err
-	}
-	return nil
+	return l.deleteOldSSLCert()
 }
 
 // GetIP returns the ip associated with the forwarding rule for this l7.

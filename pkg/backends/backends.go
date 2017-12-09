@@ -477,10 +477,7 @@ func (b *Backends) GC(svcNodePorts []ServicePort) error {
 // Shutdown deletes all backends and the default backend.
 // This will fail if one of the backends is being used by another resource.
 func (b *Backends) Shutdown() error {
-	if err := b.GC([]ServicePort{}); err != nil {
-		return err
-	}
-	return nil
+	return b.GC([]ServicePort{})
 }
 
 // Status returns the status of the given backend by name.

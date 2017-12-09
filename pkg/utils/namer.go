@@ -157,7 +157,7 @@ func (n *Namer) UID() string {
 	return n.clusterName
 }
 
-// GetFirewallName returns the firewall name of this cluster.
+// Firewall returns the firewall name of this cluster.
 func (n *Namer) Firewall() string {
 	n.nameLock.Lock()
 	defer n.nameLock.Unlock()
@@ -229,7 +229,7 @@ func (n *Namer) NameBelongsToCluster(name string) bool {
 	return parts[1] == clusterName
 }
 
-// BeName constructs the name for a backend.
+// Backend constructs the name for a backend.
 func (n *Namer) Backend(port int64) string {
 	return n.decorateName(fmt.Sprintf("%v-%v-%d", n.prefix, backendPrefix, port))
 }
