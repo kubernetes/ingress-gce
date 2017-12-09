@@ -261,7 +261,7 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 		return err
 	}
 
-	// Verify existance of a backend service for the proper port, but do not specify any backends/igs
+	// Verify existence of a backend service for the proper port, but do not specify any backends/igs
 	beName := b.namer.Backend(p.Port)
 	be, _ = b.Get(p.Port)
 	if be == nil {
@@ -570,7 +570,7 @@ func applyProbeSettingsToHC(p *v1.Probe, hc *healthchecks.HealthCheck) {
 	hc.Description = "Kubernetes L7 health check generated with readiness probe settings."
 	hc.TimeoutSec = int64(p.TimeoutSeconds)
 	if hc.ForNEG {
-		// For NEG mode, we can support more aggresive healthcheck interval.
+		// For NEG mode, we can support more aggressive healthcheck interval.
 		hc.CheckIntervalSec = int64(p.PeriodSeconds)
 	} else {
 		// For IG mode, short healthcheck interval may health check flooding problem.
