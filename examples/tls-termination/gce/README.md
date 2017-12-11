@@ -24,8 +24,8 @@ $ kubectl create -f gce-tls-ingress.yaml
 You can confirm that the Ingress works.
 
 ```console
-$ kubectl describe ing gce-test
-Name:			gce-test
+$ kubectl describe ing test
+Name:			test
 Namespace:		default
 Address:		35.186.221.137
 Default backend:	http-svc:80 (10.180.1.9:8080,10.180.3.6:8080)
@@ -36,22 +36,21 @@ Rules:
   ----	----	--------
   *	* 	http-svc:80 (10.180.1.9:8080,10.180.3.6:8080)
 Annotations:
-  target-proxy:			k8s-tp-default-gce-test--32658fa96c080068
-  url-map:			k8s-um-default-gce-test--32658fa96c080068
+  target-proxy:			k8s-tp-default-test--32658fa96c080068
+  url-map:			k8s-um-default-test--32658fa96c080068
   backends:			{"k8s-be-30301--32658fa96c080068":"Unknown"}
-  forwarding-rule:		k8s-fw-default-gce-test--32658fa96c080068
-  https-forwarding-rule:	k8s-fws-default-gce-test--32658fa96c080068
-  https-target-proxy:		k8s-tps-default-gce-test--32658fa96c080068
-  static-ip:			k8s-fw-default-gce-test--32658fa96c080068
+  forwarding-rule:		k8s-fw-default-test--32658fa96c080068
+  https-forwarding-rule:	k8s-fws-default-test--32658fa96c080068
+  https-target-proxy:		k8s-tps-default-test--32658fa96c080068
+  static-ip:			k8s-fw-default-test--32658fa96c080068
 Events:
   FirstSeen	LastSeen	Count	From				SubObjectPath	Type		Reason	Message
   ---------	--------	-----	----				-------------	--------	------	-------
-  2m		2m		1	{loadbalancer-controller }			Normal		ADD	default/gce-test
+  2m		2m		1	{loadbalancer-controller }			Normal		ADD	default/test
   1m		1m		1	{loadbalancer-controller }			Normal		CREATE	ip: 35.186.221.137
   1m		1m		3	{loadbalancer-controller }			Normal		Service	default backend set to http-svc:30301
 
-$ curl 35.186.221.137 -k
-curl 35.186.221.137 -L
+$ curl 35.186.221.137
 curl: (60) SSL certificate problem: self signed certificate
 More details here: http://curl.haxx.se/docs/sslcerts.html
 
