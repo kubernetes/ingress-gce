@@ -107,10 +107,10 @@ func root(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s := struct {
-		URL     string
+		Host    string
 		PodName string
 	}{
-		URL:     "ws://" + r.Host + "/ws",
+		Host:    r.Host,
 		PodName: podName,
 	}
 	testPage.Execute(w, s)
@@ -135,20 +135,20 @@ window.addEventListener("load", function(evt) {
             return false;
         }
 
-        socket = new WebSocket("{{.URL}}");
+        socket = new WebSocket('ws://{{.Host}}/ws');
 
-        socket.onopen = function(evt) {
+        socket.onopen = function(e) {
             htmlize("<p>Connected<p>");
-        }
-        socket.onclose = function(evt) {
-            htmlize("<p>Disconnected<p>");
-            socket = null;
         }
         socket.onmessage = function(e) {
             htmlize("Received: " + e.data);
         }
+        socket.onclose = function(e) {
+            htmlize("<p>Disconnected<p>");
+            socket = null;
+        }
         socket.onerror = function(e) {
-            print("error: " + e.data);
+            htmlize("Error: " + e.data);
         }
 
         return false;
