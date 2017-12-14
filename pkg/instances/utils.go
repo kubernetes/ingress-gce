@@ -6,7 +6,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-// Helper method to create instance groups.
+// EnsureInstanceGroupsAndPorts is a helper method to create instance groups.
 // This method exists to ensure that we are using the same logic at all places.
 func EnsureInstanceGroupsAndPorts(nodePool NodePool, namer *utils.Namer, ports []int64) ([]*compute.InstanceGroup, error) {
 	return nodePool.EnsureInstanceGroupsAndPorts(namer.InstanceGroup(), ports)

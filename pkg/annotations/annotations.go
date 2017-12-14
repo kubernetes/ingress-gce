@@ -59,7 +59,7 @@ const (
 	GceIngressClass      = "gce"
 	GceMultiIngressClass = "gce-multi-cluster"
 
-	// Label key to denote which GCE zone a Kubernetes node is in.
+	// ZoneKey denotes which GCE zone a Kubernetes node is in.
 	ZoneKey     = "failure-domain.beta.kubernetes.io/zone"
 	DefaultZone = ""
 

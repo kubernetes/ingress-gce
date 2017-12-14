@@ -37,9 +37,9 @@ import (
 )
 
 const (
-	MAX_NETWORK_ENDPOINTS_PER_BATCH = 500
-	minRetryDelay                   = 5 * time.Second
-	maxRetryDelay                   = 300 * time.Second
+	maxNetworkEndpointsPerBatch = 500
+	minRetryDelay               = 5 * time.Second
+	maxRetryDelay               = 300 * time.Second
 )
 
 // servicePort includes information to uniquely identify a NEG
@@ -355,18 +355,18 @@ func (s *syncer) retrieveExistingZoneNetworkEndpointMap() (map[string]sets.Strin
 	return zoneNetworkEndpointMap, nil
 }
 
-type ErrorList struct {
+type errorList struct {
 	errList []error
 	lock    sync.Mutex
 }
 
-func (e *ErrorList) Add(err error) {
+func (e *errorList) add(err error) {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	e.errList = append(e.errList, err)
 }
 
-func (e *ErrorList) List() []error {
+func (e *errorList) list() []error {
 	e.lock.Lock()
 	defer e.lock.Unlock()
 	return e.errList
@@ -375,7 +375,7 @@ func (e *ErrorList) List() []error {
 // syncNetworkEndpoints adds and removes endpoints for negs
 func (s *syncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]sets.String) error {
 	var wg sync.WaitGroup
-	errList := &ErrorList{}
+	errList := &errorList{}
 
 	// Detach Endpoints
 	for zone, endpointSet := range removeEndpoints {
@@ -405,13 +405,13 @@ func (s *syncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]s
 		}
 	}
 	wg.Wait()
-	return utilerrors.NewAggregate(errList.List())
+	return utilerrors.NewAggregate(errList.list())
 }
 
 // translate a endpoints set to a batch of network endpoints object
 func (s *syncer) toNetworkEndpointBatch(endpoints sets.String) ([]*compute.NetworkEndpoint, error) {
 	var ok bool
-	list := make([]string, int(math.Min(float64(endpoints.Len()), float64(MAX_NETWORK_ENDPOINTS_PER_BATCH))))
+	list := make([]string, int(math.Min(float64(endpoints.Len()), float64(maxNetworkEndpointsPerBatch))))
 	for i := range list {
 		list[i], ok = endpoints.PopAny()
 		if !ok {
@@ -434,23 +434,23 @@ func (s *syncer) toNetworkEndpointBatch(endpoints sets.String) ([]*compute.Netwo
 	return networkEndpointList, nil
 }
 
-func (s *syncer) attachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
+func (s *syncer) attachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *errorList) {
 	wg.Add(1)
 	glog.V(2).Infof("Attaching %d endpoints for %s/%s-%s into NEG %s in %s.", len(networkEndpoints), s.namespace, s.name, s.targetPort, s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.AttachNetworkEndpoints, "Attach")
 }
 
-func (s *syncer) detachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
+func (s *syncer) detachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *errorList) {
 	wg.Add(1)
 	glog.V(2).Infof("Detaching %d endpoints for %s/%s-%s into NEG %s in %s.", len(networkEndpoints), s.namespace, s.name, s.targetPort, s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.DetachNetworkEndpoints, "Detach")
 }
 
-func (s *syncer) operationInternal(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList, syncFunc func(name, zone string, endpoints []*compute.NetworkEndpoint) error, operationName string) {
+func (s *syncer) operationInternal(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *errorList, syncFunc func(name, zone string, endpoints []*compute.NetworkEndpoint) error, operationName string) {
 	defer wg.Done()
 	err := syncFunc(s.negName, zone, networkEndpoints)
 	if err != nil {
-		errList.Add(err)
+		errList.add(err)
 	}
 	if svc := getService(s.serviceLister, s.namespace, s.name); svc != nil {
 		if err == nil {

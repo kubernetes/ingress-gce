@@ -167,7 +167,7 @@ type StoreToPodLister struct {
 	cache.Indexer
 }
 
-// StoreToPodLister makes a Store that lists Endpoints.
+// StoreToEndpointLister makes a Store that lists Endpoints.
 type StoreToEndpointLister struct {
 	cache.Indexer
 }
@@ -194,7 +194,7 @@ func ListAll(store cache.Store, selector labels.Selector, appendFn cache.AppendF
 	return nil
 }
 
-// List lists all Ingress' in the store (both single and multi cluster ingresses).
+// ListAll lists all Ingress' in the store (both single and multi cluster ingresses).
 func (s *StoreToIngressLister) ListAll() (ing extensions.IngressList, err error) {
 	for _, m := range s.Store.List() {
 		newIng := m.(*extensions.Ingress)

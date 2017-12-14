@@ -117,7 +117,7 @@ func (f *FakeBackendServices) UpdateGlobalBackendService(be *compute.BackendServ
 	return f.backendServices.Update(be)
 }
 
-// UpdateGlobalBackendService fakes updating a backend service.
+// UpdateAlphaGlobalBackendService fakes updating a backend service.
 func (f *FakeBackendServices) UpdateAlphaGlobalBackendService(be *computealpha.BackendService) error {
 	return f.UpdateGlobalBackendService(toV1BackendService(be))
 }

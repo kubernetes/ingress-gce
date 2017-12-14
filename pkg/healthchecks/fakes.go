@@ -83,7 +83,7 @@ func (f *FakeHealthCheckProvider) CreateHealthCheck(hc *compute.HealthCheck) err
 	return nil
 }
 
-// CreateHealthCheck fakes out http health check creation.
+// CreateAlphaHealthCheck fakes out http health check creation.
 func (f *FakeHealthCheckProvider) CreateAlphaHealthCheck(hc *computealpha.HealthCheck) error {
 	v := *hc
 	v.SelfLink = "https://fake.google.com/compute/healthChecks/" + hc.Name
@@ -101,7 +101,7 @@ func (f *FakeHealthCheckProvider) GetHealthCheck(name string) (*compute.HealthCh
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
-// GetHealthCheck fakes out getting a http health check from the cloud.
+// GetAlphaHealthCheck fakes out getting a http health check from the cloud.
 func (f *FakeHealthCheckProvider) GetAlphaHealthCheck(name string) (*computealpha.HealthCheck, error) {
 	if hc, found := f.generic[name]; found {
 		return &hc, nil
@@ -129,6 +129,7 @@ func (f *FakeHealthCheckProvider) UpdateHealthCheck(hc *compute.HealthCheck) err
 	return nil
 }
 
+// UpdateAlphaHealthCheck sends the given health check as an update.
 func (f *FakeHealthCheckProvider) UpdateAlphaHealthCheck(hc *computealpha.HealthCheck) error {
 	if _, exists := f.generic[hc.Name]; !exists {
 		return utils.FakeGoogleAPINotFoundErr()

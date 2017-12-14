@@ -34,6 +34,7 @@ const (
 	// We're just trying to detect if the node networking is
 	// borked, service level outages will get detected sooner
 	// by kube-proxy.
+
 	// DefaultHealthCheckInterval defines how frequently a probe runs with IG backends
 	DefaultHealthCheckInterval = 60 * time.Second
 	// DefaultNEGHealthCheckInterval defines how frequently a probe runs with NEG backends
@@ -49,10 +50,10 @@ const (
 	DefaultNEGUnhealthyThreshold = 2
 	// DefaultTimeout defines the timeout of each probe for IG
 	DefaultTimeout = 60 * time.Second
-	// DefaultTimeout defines the timeout of each probe for NEG
+	// DefaultNEGTimeout defines the timeout of each probe for NEG
 	DefaultNEGTimeout = 15 * time.Second
 
-	// This is a constant for GCE API.
+	// UseServingPortSpecification is a constant for GCE API.
 	// USE_SERVING_PORT: For NetworkEndpointGroup, the port specified for
 	// each network endpoint is used for health checking. For other
 	// backends, the port or named port specified in the Backend Service is
@@ -133,28 +134,26 @@ func (h *HealthChecks) create(hc *HealthCheck) error {
 	if hc.ForNEG {
 		glog.V(2).Infof("Creating health check with protocol %v", hc.Type)
 		return h.cloud.CreateAlphaHealthCheck(hc.ToAlphaComputeHealthCheck())
-	} else {
-		glog.V(2).Infof("Creating health check for port %v with protocol %v", hc.Port, hc.Type)
-		v1hc, err := hc.ToComputeHealthCheck()
-		if err != nil {
-			return err
-		}
-		return h.cloud.CreateHealthCheck(v1hc)
 	}
+	glog.V(2).Infof("Creating health check for port %v with protocol %v", hc.Port, hc.Type)
+	v1hc, err := hc.ToComputeHealthCheck()
+	if err != nil {
+		return err
+	}
+	return h.cloud.CreateHealthCheck(v1hc)
 }
 
 func (h *HealthChecks) update(oldHC, newHC *HealthCheck) error {
 	if newHC.ForNEG {
 		glog.V(2).Infof("Updating health check with protocol %v", newHC.Type)
 		return h.cloud.UpdateAlphaHealthCheck(mergeHealthcheckForNEG(oldHC, newHC).ToAlphaComputeHealthCheck())
-	} else {
-		glog.V(2).Infof("Updating health check for port %v with protocol %v", newHC.Port, newHC.Type)
-		v1hc, err := newHC.ToComputeHealthCheck()
-		if err != nil {
-			return err
-		}
-		return h.cloud.UpdateHealthCheck(v1hc)
 	}
+	glog.V(2).Infof("Updating health check for port %v with protocol %v", newHC.Port, newHC.Type)
+	v1hc, err := newHC.ToComputeHealthCheck()
+	if err != nil {
+		return err
+	}
+	return h.cloud.UpdateHealthCheck(v1hc)
 }
 
 // mergeHealthcheckForNEG merges old health check configuration (potentially for IG) with the new one.
@@ -243,7 +242,7 @@ func DefaultHealthCheck(port int64, protocol utils.AppProtocol) *HealthCheck {
 	}
 }
 
-// DefaultHealthCheck simply returns the default health check.
+// DefaultNEGHealthCheck simply returns the default health check.
 func DefaultNEGHealthCheck(protocol utils.AppProtocol) *HealthCheck {
 	httpSettings := computealpha.HTTPHealthCheck{
 		PortSpecification: UseServingPortSpecification,
@@ -317,7 +316,7 @@ func (hc *HealthCheck) ToComputeHealthCheck() (*compute.HealthCheck, error) {
 	return toV1HealthCheck(&hc.HealthCheck)
 }
 
-// ToComputeHealthCheck returns a valid compute.HealthCheck object
+// ToAlphaComputeHealthCheck returns a valid compute.HealthCheck object
 func (hc *HealthCheck) ToAlphaComputeHealthCheck() *computealpha.HealthCheck {
 	// Cannot specify both portSpecification and port field.
 	if len(hc.PortSpecification) > 0 {
