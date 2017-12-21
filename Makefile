@@ -42,3 +42,7 @@ VERBOSE ?= 0
 
 # Include standard build rules.
 include build/rules.mk
+
+# Additional rule to build an image of glbc for e2e testing.
+push-e2e:
+	@$(MAKE) --no-print-directory CONTAINER_PREFIX=ingress-gce-e2e containers push
