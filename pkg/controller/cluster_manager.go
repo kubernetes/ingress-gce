@@ -35,15 +35,6 @@ import (
 const (
 	defaultPort            = 80
 	defaultHealthCheckPath = "/"
-
-	// Used in the test RunServer method to denote a delete request.
-	deleteType = "del"
-
-	// port 0 is used as a signal for port not found/no such port etc.
-	invalidPort = 0
-
-	// Names longer than this are truncated, because of GCE restrictions.
-	nameLenLimit = 62
 )
 
 // ClusterManager manages cluster resource pools.
