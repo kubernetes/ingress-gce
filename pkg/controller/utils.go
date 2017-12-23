@@ -33,14 +33,14 @@ import (
 // isGCEIngress returns true if the given Ingress either doesn't specify the
 // ingress.class annotation, or it's set to "gce".
 func isGCEIngress(ing *extensions.Ingress) bool {
-	class := annotations.IngAnnotations(ing.ObjectMeta.Annotations).IngressClass()
+	class := annotations.Ingress(ing.ObjectMeta.Annotations).IngressClass()
 	return class == "" || class == annotations.GceIngressClass
 }
 
 // isGCEMultiClusterIngress returns true if the given Ingress has
 // ingress.class annotation set to "gce-multi-cluster".
 func isGCEMultiClusterIngress(ing *extensions.Ingress) bool {
-	class := annotations.IngAnnotations(ing.ObjectMeta.Annotations).IngressClass()
+	class := annotations.Ingress(ing.ObjectMeta.Annotations).IngressClass()
 	return class == annotations.GceMultiIngressClass
 }
 

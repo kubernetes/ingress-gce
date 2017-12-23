@@ -79,11 +79,11 @@ const (
 	NetworkEndpointGroupAlphaAnnotation = "alpha.cloud.google.com/load-balancer-neg"
 )
 
-// IngAnnotations represents ingress annotations.
-type IngAnnotations map[string]string
+// Ingress represents ingress annotations.
+type Ingress map[string]string
 
 // AllowHTTP returns the allowHTTP flag. True by default.
-func (ing IngAnnotations) AllowHTTP() bool {
+func (ing Ingress) AllowHTTP() bool {
 	val, ok := ing[AllowHTTPKey]
 	if !ok {
 		return true
@@ -96,7 +96,7 @@ func (ing IngAnnotations) AllowHTTP() bool {
 }
 
 // UseNamedTLS returns the name of the GCE SSL certificate. Empty by default.
-func (ing IngAnnotations) UseNamedTLS() string {
+func (ing Ingress) UseNamedTLS() string {
 	val, ok := ing[PreSharedCertKey]
 	if !ok {
 		return ""
@@ -105,7 +105,7 @@ func (ing IngAnnotations) UseNamedTLS() string {
 	return val
 }
 
-func (ing IngAnnotations) StaticIPName() string {
+func (ing Ingress) StaticIPName() string {
 	val, ok := ing[StaticIPNameKey]
 	if !ok {
 		return ""
@@ -113,7 +113,7 @@ func (ing IngAnnotations) StaticIPName() string {
 	return val
 }
 
-func (ing IngAnnotations) IngressClass() string {
+func (ing Ingress) IngressClass() string {
 	val, ok := ing[IngressClassKey]
 	if !ok {
 		return ""
