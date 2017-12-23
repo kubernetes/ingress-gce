@@ -56,9 +56,9 @@ type ClusterManager struct {
 }
 
 // Init initializes the cluster manager.
-func (c *ClusterManager) Init(tr *GCETranslator) {
-	c.instancePool.Init(tr)
-	c.backendPool.Init(tr)
+func (c *ClusterManager) Init(zl instances.ZoneLister, pp backends.ProbeProvider) {
+	c.instancePool.Init(zl)
+	c.backendPool.Init(pp)
 	// TODO: Initialize other members as needed.
 }
 
@@ -152,7 +152,6 @@ func (c *ClusterManager) EnsureInstanceGroupsAndPorts(servicePorts []backends.Se
 //   for ports not in this list are deleted.
 // This method ignores googleapi 404 errors (StatusNotFound).
 func (c *ClusterManager) GC(lbNames []string, nodePorts []backends.ServicePort) error {
-
 	// On GC:
 	// * Loadbalancers need to get deleted before backends.
 	// * Backends are refcounted in a shared pool.
@@ -163,7 +162,6 @@ func (c *ClusterManager) GC(lbNames []string, nodePorts []backends.ServicePort) 
 	//   2. An update to the url map drops the refcount of a backend. This can
 	//      happen when an Ingress is updated, if we don't GC after the update
 	//      we'll leak the backend.
-
 	lbErr := c.l7Pool.GC(lbNames)
 	beErr := c.backendPool.GC(nodePorts)
 	if lbErr != nil {
@@ -184,6 +182,14 @@ func (c *ClusterManager) GC(lbNames []string, nodePorts []backends.ServicePort) 
 		return igErr
 	}
 	return nil
+}
+
+func (c *ClusterManager) BackendServiceForPort(int64 port) (*compute.BackendService, error) {
+	return c.backendPool.Get(port.Port)
+}
+
+func (c *ClusterManager) DefaultBackendNodePort() *backends.ServicePort {
+	return &c.defaultBackendNodePort
 }
 
 // NewClusterManager creates a cluster manager for shared resources.

@@ -35,6 +35,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/tls"
@@ -77,7 +78,7 @@ type LoadBalancerController struct {
 	recorder            record.EventRecorder
 	nodeQueue           *taskQueue
 	ingQueue            *taskQueue
-	Translator          *GCETranslator
+	Translator          *translator.GCETranslator
 	stopCh              chan struct{}
 	// stopLock is used to enforce only a single call to Stop is active.
 	// Needed because we allow stopping through an http endpoint and
@@ -489,22 +490,20 @@ func (lbc *LoadBalancerController) syncNodes(key string) error {
 	return nil
 }
 
-func getNodeReadyPredicate() listers.NodeConditionPredicate {
-	return func(node *apiv1.Node) bool {
-		for ix := range node.Status.Conditions {
-			condition := &node.Status.Conditions[ix]
-			if condition.Type == apiv1.NodeReady {
-				return condition.Status == apiv1.ConditionTrue
-			}
+func nodeReadyPredicate(node *apiv1.Node) bool {
+	for ix := range node.Status.Conditions {
+		condition := &node.Status.Conditions[ix]
+		if condition.Type == apiv1.NodeReady {
+			return condition.Status == apiv1.ConditionTrue
 		}
-		return false
 	}
+	return false
 }
 
 // getReadyNodeNames returns names of schedulable, ready nodes from the node lister.
 func (lbc *LoadBalancerController) getReadyNodeNames() ([]string, error) {
 	nodeNames := []string{}
-	nodes, err := listers.NewNodeLister(lbc.nodeLister.Indexer).ListWithPredicate(getNodeReadyPredicate())
+	nodes, err := listers.NewNodeLister(lbc.nodeLister.Indexer).ListWithPredicate(nodeReadyPredicate)
 	if err != nil {
 		return nodeNames, err
 	}

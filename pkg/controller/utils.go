@@ -49,23 +49,23 @@ func isGCEMultiClusterIngress(ing *extensions.Ingress) bool {
 	return class == annotations.GceMultiIngressClass
 }
 
-// errorNodePortNotFound is an implementation of error.
-type errorNodePortNotFound struct {
+// ErrNodePortNotFound is an implementation of error.
+type ErrNodePortNotFound struct {
 	backend extensions.IngressBackend
 	origErr error
 }
 
-func (e errorNodePortNotFound) Error() string {
+func (e ErrNodePortNotFound) Error() string {
 	return fmt.Sprintf("Could not find nodeport for backend %+v: %v",
 		e.backend, e.origErr)
 }
 
-type errorSvcAppProtosParsing struct {
+type ErrSvcAppProtosParsing struct {
 	svc     *api_v1.Service
 	origErr error
 }
 
-func (e errorSvcAppProtosParsing) Error() string {
+func (e ErrSvcAppProtosParsing) Error() string {
 	return fmt.Sprintf("could not parse %v annotation on Service %v/%v, err: %v", annotations.ServiceApplicationProtocolKey, e.svc.Namespace, e.svc.Name, e.origErr)
 }
 
@@ -217,19 +217,6 @@ IngressLoop:
 		err = fmt.Errorf("no ingress for service %v", svc.Name)
 	}
 	return
-}
-
-// PodsByCreationTimestamp sorts a list of Pods by creation timestamp, using their names as a tie breaker.
-type PodsByCreationTimestamp []*api_v1.Pod
-
-func (o PodsByCreationTimestamp) Len() int      { return len(o) }
-func (o PodsByCreationTimestamp) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
-
-func (o PodsByCreationTimestamp) Less(i, j int) bool {
-	if o[i].CreationTimestamp.Equal(&o[j].CreationTimestamp) {
-		return o[i].Name < o[j].Name
-	}
-	return o[i].CreationTimestamp.Before(&o[j].CreationTimestamp)
 }
 
 // setInstanceGroupsAnnotation sets the instance-groups annotation with names of the given instance groups.

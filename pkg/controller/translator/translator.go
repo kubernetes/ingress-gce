@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package controller
+package translator
 
 import (
 	"fmt"
@@ -38,14 +38,20 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/controller/errors"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+type BackendInfo interface {
+	BackendServiceForPort(port int64) (*compute.BackendService, error)
+	DefaultBackendNodePort() *backends.ServicePort
+}
+
 // GCETranslator helps with kubernetes -> gce api conversion.
 type GCETranslator struct {
 	recorder       record.EventRecorder
-	ccm            *ClusterManager
+	bi             BackendInfo
 	svcLister      cache.Indexer
 	nodeLister     cache.Indexer
 	podLister      cache.Indexer
@@ -68,8 +74,8 @@ func (t *GCETranslator) toURLMap(ing *extensions.Ingress) (utils.GCEURLMap, erro
 				// If a service doesn't have a nodeport we can still forward traffic
 				// to all other services under the assumption that the user will
 				// modify nodeport.
-				if _, ok := err.(errorNodePortNotFound); ok {
-					t.recorder.Eventf(ing, api_v1.EventTypeWarning, "Service", err.(errorNodePortNotFound).Error())
+				if _, ok := err.(errors.ErrNodePortNotFound); ok {
+					t.recorder.Eventf(ing, api_v1.EventTypeWarning, "Service", err.(errors.ErrNodePortNotFound).Error())
 					continue
 				}
 
@@ -100,7 +106,7 @@ func (t *GCETranslator) toURLMap(ing *extensions.Ingress) (utils.GCEURLMap, erro
 		defaultBackend, err = t.toGCEBackend(ing.Spec.Backend, ing.Namespace)
 		if err != nil {
 			msg := fmt.Sprintf("%v", err)
-			if _, ok := err.(errorNodePortNotFound); ok {
+			if _, ok := err.(errors.ErrNodePortNotFound); ok {
 				msg = fmt.Sprintf("couldn't find nodeport for %v/%v", ing.Namespace, ing.Spec.Backend.ServiceName)
 			}
 			t.recorder.Eventf(ing, api_v1.EventTypeWarning, "Service", fmt.Sprintf("failed to identify user specified default backend, %v, using system default", msg))
@@ -122,7 +128,7 @@ func (t *GCETranslator) toGCEBackend(be *extensions.IngressBackend, ns string) (
 	if err != nil {
 		return nil, err
 	}
-	backend, err := t.ccm.backendPool.Get(port.Port)
+	backend, err := t.bi.BackendServiceForPort(port.Port)
 	if err != nil {
 		return nil, fmt.Errorf("no GCE backend exists for port %v, kube backend %+v", port, be)
 	}
@@ -140,15 +146,15 @@ func (t *GCETranslator) getServiceNodePort(be extensions.IngressBackend, namespa
 			},
 		})
 	if !exists {
-		return backends.ServicePort{}, errorNodePortNotFound{be, fmt.Errorf("service %v/%v not found in store", namespace, be.ServiceName)}
+		return backends.ServicePort{}, errors.ErrNodePortNotFound{be, fmt.Errorf("service %v/%v not found in store", namespace, be.ServiceName)}
 	}
 	if err != nil {
-		return backends.ServicePort{}, errorNodePortNotFound{be, err}
+		return backends.ServicePort{}, errors.ErrNodePortNotFound{be, err}
 	}
 	svc := obj.(*api_v1.Service)
 	appProtocols, err := annotations.SvcAnnotations(svc.GetAnnotations()).ApplicationProtocols()
 	if err != nil {
-		return backends.ServicePort{}, errorSvcAppProtosParsing{svc, err}
+		return backends.ServicePort{}, errors.ErrSvcAppProtosParsing{svc, err}
 	}
 
 	var port *api_v1.ServicePort
@@ -170,7 +176,7 @@ PortLoop:
 	}
 
 	if port == nil {
-		return backends.ServicePort{}, errorNodePortNotFound{be, fmt.Errorf("could not find matching nodeport from service")}
+		return backends.ServicePort{}, errors.ErrNodePortNotFound{be, fmt.Errorf("could not find matching nodeport from service")}
 	}
 
 	proto := utils.ProtocolHTTP
@@ -277,7 +283,7 @@ func (t *GCETranslator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOr
 	}
 
 	// If multiple endpoints have different health checks, take the first
-	sort.Sort(PodsByCreationTimestamp(pl))
+	sort.Sort(podsByCreationTimestamp(pl))
 
 	for _, pod := range pl {
 		if pod.Namespace != svc.Namespace {
@@ -322,7 +328,7 @@ func (t *GCETranslator) gatherFirewallPorts(svcPorts []backends.ServicePort, inc
 	// DefaultBackend is managed in l7 pool, which doesn't understand instances,
 	// which the firewall rule requires.
 	if includeDefaultBackend {
-		svcPorts = append(svcPorts, t.ccm.defaultBackendNodePort)
+		svcPorts = append(svcPorts, *t.bi.DefaultBackendNodePort())
 	}
 	portMap := map[int64]bool{}
 	for _, p := range svcPorts {
@@ -440,4 +446,21 @@ func listEndpointTargetPorts(indexer cache.Indexer, namespace, name, targetPort 
 		}
 	}
 	return ret
+}
+
+// podsByCreationTimestamp sorts a list of Pods by creation timestamp, using their names as a tie breaker.
+type podsByCreationTimestamp []*api_v1.Pod
+
+func (o podsByCreationTimestamp) Len() int {
+	return len(o)
+}
+func (o podsByCreationTimestamp) Swap(i, j int) {
+	o[i], o[j] = o[j], o[i]
+}
+
+func (o podsByCreationTimestamp) Less(i, j int) bool {
+	if o[i].CreationTimestamp.Equal(&o[j].CreationTimestamp) {
+		return o[i].Name < o[j].Name
+	}
+	return o[i].CreationTimestamp.Before(&o[j].CreationTimestamp)
 }
