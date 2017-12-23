@@ -26,6 +26,8 @@ import (
 	"github.com/golang/glog"
 
 	"encoding/json"
+
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -75,7 +77,7 @@ func NewHealthChecker(cloud HealthCheckProvider, defaultHealthCheckPath string, 
 }
 
 // New returns a *HealthCheck with default settings and specified port/protocol
-func (h *HealthChecks) New(port int64, protocol utils.AppProtocol, enableNEG bool) *HealthCheck {
+func (h *HealthChecks) New(port int64, protocol annotations.AppProtocol, enableNEG bool) *HealthCheck {
 	var hc *HealthCheck
 	if enableNEG {
 		hc = DefaultNEGHealthCheck(protocol)
@@ -215,7 +217,7 @@ func (h *HealthChecks) DeleteLegacy(port int64) error {
 }
 
 // DefaultHealthCheck simply returns the default health check.
-func DefaultHealthCheck(port int64, protocol utils.AppProtocol) *HealthCheck {
+func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthCheck {
 	httpSettings := computealpha.HTTPHealthCheck{
 		Port: port,
 		// Empty string is used as a signal to the caller to use the appropriate
@@ -244,7 +246,7 @@ func DefaultHealthCheck(port int64, protocol utils.AppProtocol) *HealthCheck {
 }
 
 // DefaultHealthCheck simply returns the default health check.
-func DefaultNEGHealthCheck(protocol utils.AppProtocol) *HealthCheck {
+func DefaultNEGHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 	httpSettings := computealpha.HTTPHealthCheck{
 		PortSpecification: UseServingPortSpecification,
 		// Empty string is used as a signal to the caller to use the appropriate
@@ -290,10 +292,10 @@ func NewHealthCheck(hc *computealpha.HealthCheck) *HealthCheck {
 	}
 
 	v := &HealthCheck{HealthCheck: *hc}
-	switch utils.AppProtocol(hc.Type) {
-	case utils.ProtocolHTTP:
+	switch annotations.AppProtocol(hc.Type) {
+	case annotations.ProtocolHTTP:
 		v.HTTPHealthCheck = *hc.HttpHealthCheck
-	case utils.ProtocolHTTPS:
+	case annotations.ProtocolHTTPS:
 		// HTTPHealthCheck and HTTPSHealthChecks have identical fields
 		v.HTTPHealthCheck = computealpha.HTTPHealthCheck(*hc.HttpsHealthCheck)
 	}
@@ -307,8 +309,8 @@ func NewHealthCheck(hc *computealpha.HealthCheck) *HealthCheck {
 }
 
 // Protocol returns the type cased to AppProtocol
-func (hc *HealthCheck) Protocol() utils.AppProtocol {
-	return utils.AppProtocol(hc.Type)
+func (hc *HealthCheck) Protocol() annotations.AppProtocol {
+	return annotations.AppProtocol(hc.Type)
 }
 
 // ToComputeHealthCheck returns a valid compute.HealthCheck object
@@ -334,9 +336,9 @@ func (hc *HealthCheck) merge() {
 	hc.HealthCheck.HttpHealthCheck = nil
 
 	switch hc.Protocol() {
-	case utils.ProtocolHTTP:
+	case annotations.ProtocolHTTP:
 		hc.HealthCheck.HttpHealthCheck = &hc.HTTPHealthCheck
-	case utils.ProtocolHTTPS:
+	case annotations.ProtocolHTTPS:
 		https := computealpha.HTTPSHealthCheck(hc.HTTPHealthCheck)
 		hc.HealthCheck.HttpsHealthCheck = &https
 	}

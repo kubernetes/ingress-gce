@@ -44,6 +44,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
+	"k8s.io/kubernetes/pkg/cloudprovider"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
@@ -51,9 +55,6 @@ import (
 	neg "k8s.io/ingress-gce/pkg/networkendpointgroup"
 	"k8s.io/ingress-gce/pkg/storage"
 	"k8s.io/ingress-gce/pkg/utils"
-
-	"k8s.io/kubernetes/pkg/cloudprovider"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
 // Entrypoint of GLBC. Example invocation:
@@ -247,7 +248,7 @@ func main() {
 	// The default backend is known to be HTTP
 	defaultBackendNodePort := backends.ServicePort{
 		Port:     int64(nodePort),
-		Protocol: utils.ProtocolHTTP,
+		Protocol: annotations.ProtocolHTTP,
 		SvcName:  types.NamespacedName{Namespace: parts[0], Name: parts[1]},
 		SvcPort:  intstr.FromInt(int(port)),
 	}

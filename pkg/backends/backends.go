@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/storage"
@@ -98,7 +99,7 @@ type ServicePort struct {
 	// Port is the service node port
 	// TODO: rename it to NodePort
 	Port          int64
-	Protocol      utils.AppProtocol
+	Protocol      annotations.AppProtocol
 	SvcName       types.NamespacedName
 	SvcPort       intstr.IntOrString
 	SvcTargetPort string

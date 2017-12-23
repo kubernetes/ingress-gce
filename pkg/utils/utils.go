@@ -44,14 +44,7 @@ const (
 	AddInstances
 	// RemoveInstances used to record a call to RemoveInstances.
 	RemoveInstances
-
-	// ProtocolHTTP protocol for a service
-	ProtocolHTTP AppProtocol = "HTTP"
-	// ProtocolHTTPS protocol for a service
-	ProtocolHTTPS AppProtocol = "HTTPS"
 )
-
-type AppProtocol string
 
 // GCEURLMap is a nested map of hostname->path regex->backend
 type GCEURLMap map[string]map[string]*compute.BackendService

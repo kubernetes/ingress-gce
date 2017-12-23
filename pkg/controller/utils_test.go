@@ -28,9 +28,9 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
-	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // Pods created in loops start from this time, for routines that
@@ -96,8 +96,8 @@ func TestProbeGetter(t *testing.T) {
 	lbc := newLoadBalancerController(t, cm)
 
 	nodePortToHealthCheck := map[backends.ServicePort]string{
-		{Port: 3001, Protocol: utils.ProtocolHTTP}:  "/healthz",
-		{Port: 3002, Protocol: utils.ProtocolHTTPS}: "/foo",
+		{Port: 3001, Protocol: annotations.ProtocolHTTP}:  "/healthz",
+		{Port: 3002, Protocol: annotations.ProtocolHTTPS}: "/foo",
 	}
 	addPods(lbc, nodePortToHealthCheck, api_v1.NamespaceDefault)
 	for p, exp := range nodePortToHealthCheck {
@@ -114,7 +114,7 @@ func TestProbeGetterNamedPort(t *testing.T) {
 	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	nodePortToHealthCheck := map[backends.ServicePort]string{
-		{Port: 3001, Protocol: utils.ProtocolHTTP}: "/healthz",
+		{Port: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
 	addPods(lbc, nodePortToHealthCheck, api_v1.NamespaceDefault)
 	for _, p := range lbc.podLister.Indexer.List() {
@@ -169,7 +169,7 @@ func TestProbeGetterCrossNamespace(t *testing.T) {
 	}
 	lbc.podLister.Indexer.Add(firstPod)
 	nodePortToHealthCheck := map[backends.ServicePort]string{
-		{Port: 3001, Protocol: utils.ProtocolHTTP}: "/healthz",
+		{Port: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
 	addPods(lbc, nodePortToHealthCheck, api_v1.NamespaceDefault)
 

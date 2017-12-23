@@ -22,6 +22,7 @@ import (
 
 	compute "google.golang.org/api/compute/v1"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -31,7 +32,7 @@ func TestHealthCheckAdd(t *testing.T) {
 	hcp := NewFakeHealthCheckProvider()
 	healthChecks := NewHealthChecker(hcp, "/", namer)
 
-	hc := healthChecks.New(80, utils.ProtocolHTTP, false)
+	hc := healthChecks.New(80, annotations.ProtocolHTTP, false)
 	_, err := healthChecks.Sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -42,7 +43,7 @@ func TestHealthCheckAdd(t *testing.T) {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
 
-	hc = healthChecks.New(443, utils.ProtocolHTTPS, false)
+	hc = healthChecks.New(443, annotations.ProtocolHTTPS, false)
 	_, err = healthChecks.Sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -60,7 +61,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 	// HTTP
 	// Manually insert a health check
-	httpHC := DefaultHealthCheck(3000, utils.ProtocolHTTP)
+	httpHC := DefaultHealthCheck(3000, annotations.ProtocolHTTP)
 	httpHC.Name = namer.Backend(3000)
 	httpHC.RequestPath = "/my-probes-health"
 	v1hc, err := httpHC.ToComputeHealthCheck()
@@ -70,7 +71,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	hcp.CreateHealthCheck(v1hc)
 
 	// Should not fail adding the same type of health check
-	hc := healthChecks.New(3000, utils.ProtocolHTTP, false)
+	hc := healthChecks.New(3000, annotations.ProtocolHTTP, false)
 	_, err = healthChecks.Sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -83,7 +84,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 	// HTTPS
 	// Manually insert a health check
-	httpsHC := DefaultHealthCheck(4000, utils.ProtocolHTTPS)
+	httpsHC := DefaultHealthCheck(4000, annotations.ProtocolHTTPS)
 	httpsHC.Name = namer.Backend(4000)
 	httpsHC.RequestPath = "/my-probes-health"
 	v1hc, err = httpHC.ToComputeHealthCheck()
@@ -92,7 +93,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 	hcp.CreateHealthCheck(v1hc)
 
-	hc = healthChecks.New(4000, utils.ProtocolHTTPS, false)
+	hc = healthChecks.New(4000, annotations.ProtocolHTTPS, false)
 	_, err = healthChecks.Sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -109,7 +110,7 @@ func TestHealthCheckDelete(t *testing.T) {
 	healthChecks := NewHealthChecker(hcp, "/", namer)
 
 	// Create HTTP HC for 1234
-	hc := DefaultHealthCheck(1234, utils.ProtocolHTTP)
+	hc := DefaultHealthCheck(1234, annotations.ProtocolHTTP)
 	hc.Name = namer.Backend(1234)
 	v1hc, err := hc.ToComputeHealthCheck()
 	if err != nil {
@@ -118,7 +119,7 @@ func TestHealthCheckDelete(t *testing.T) {
 	hcp.CreateHealthCheck(v1hc)
 
 	// Create HTTPS HC for 1234)
-	v1hc.Type = string(utils.ProtocolHTTPS)
+	v1hc.Type = string(annotations.ProtocolHTTPS)
 	hcp.CreateHealthCheck(v1hc)
 
 	// Delete only HTTP 1234
@@ -146,7 +147,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 
 	// HTTP
 	// Manually insert a health check
-	hc := DefaultHealthCheck(3000, utils.ProtocolHTTP)
+	hc := DefaultHealthCheck(3000, annotations.ProtocolHTTP)
 	hc.Name = namer.Backend(3000)
 	hc.RequestPath = "/my-probes-health"
 	v1hc, err := hc.ToComputeHealthCheck()
@@ -162,7 +163,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Change to HTTPS
-	hc.Type = string(utils.ProtocolHTTPS)
+	hc.Type = string(annotations.ProtocolHTTPS)
 	_, err = healthChecks.Sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
@@ -175,7 +176,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the check is now HTTPS
-	if hc.Protocol() != utils.ProtocolHTTPS {
+	if hc.Protocol() != annotations.ProtocolHTTPS {
 		t.Fatalf("expected check to be of type HTTPS")
 	}
 }
@@ -201,7 +202,7 @@ func TestHealthCheckDeleteLegacy(t *testing.T) {
 func TestAlphaHealthCheck(t *testing.T) {
 	hcp := NewFakeHealthCheckProvider()
 	healthChecks := NewHealthChecker(hcp, "/", namer)
-	hc := healthChecks.New(8000, utils.ProtocolHTTP, true)
+	hc := healthChecks.New(8000, annotations.ProtocolHTTP, true)
 	_, err := healthChecks.Sync(hc)
 	if err != nil {
 		t.Fatalf("got %v, want nil", err)

@@ -17,11 +17,7 @@ limitations under the License.
 package annotations
 
 import (
-	"encoding/json"
-	"fmt"
 	"strconv"
-
-	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const (
@@ -123,33 +119,4 @@ func (ing IngAnnotations) IngressClass() string {
 		return ""
 	}
 	return val
-}
-
-// SvcAnnotations represents Service annotations.
-type SvcAnnotations map[string]string
-
-func (svc SvcAnnotations) ApplicationProtocols() (map[string]utils.AppProtocol, error) {
-	val, ok := svc[ServiceApplicationProtocolKey]
-	if !ok {
-		return map[string]utils.AppProtocol{}, nil
-	}
-
-	var portToProtos map[string]utils.AppProtocol
-	err := json.Unmarshal([]byte(val), &portToProtos)
-
-	// Verify protocol is an accepted value
-	for _, proto := range portToProtos {
-		switch proto {
-		case utils.ProtocolHTTP, utils.ProtocolHTTPS:
-		default:
-			return nil, fmt.Errorf("invalid port application protocol: %v", proto)
-		}
-	}
-
-	return portToProtos, err
-}
-
-func (svc SvcAnnotations) NEGEnabled() bool {
-	v, ok := svc[NetworkEndpointGroupAlphaAnnotation]
-	return ok && v == "true"
 }
