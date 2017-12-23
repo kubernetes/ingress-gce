@@ -48,8 +48,20 @@ type BackendInfo interface {
 	DefaultBackendNodePort() *backends.ServicePort
 }
 
-// GCETranslator helps with kubernetes -> gce api conversion.
-type GCETranslator struct {
+func New(recorder record.EventRecorder, bi BackendInfo, svcLister cache.Indexer, nodeLister cache.Indexer, podLister cache.Indexer, endpointLister cache.Indexer, negEnabled bool) *GCE {
+	return &GCE{
+		recorder,
+		bi,
+		svcLister,
+		nodeLister,
+		podLister,
+		endpointLister,
+		negEnabled,
+	}
+}
+
+// GCE helps with kubernetes -> gce api conversion.
+type GCE struct {
 	recorder       record.EventRecorder
 	bi             BackendInfo
 	svcLister      cache.Indexer
@@ -59,8 +71,8 @@ type GCETranslator struct {
 	negEnabled     bool
 }
 
-// toURLMap converts an ingress to a map of subdomain: url-regex: gce backend.
-func (t *GCETranslator) toURLMap(ing *extensions.Ingress) (utils.GCEURLMap, error) {
+// ToURLMap converts an ingress to a map of subdomain: url-regex: gce backend.
+func (t *GCE) ToURLMap(ing *extensions.Ingress) (utils.GCEURLMap, error) {
 	hostPathBackend := utils.GCEURLMap{}
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {
@@ -120,7 +132,7 @@ func (t *GCETranslator) toURLMap(ing *extensions.Ingress) (utils.GCEURLMap, erro
 	return hostPathBackend, nil
 }
 
-func (t *GCETranslator) toGCEBackend(be *extensions.IngressBackend, ns string) (*compute.BackendService, error) {
+func (t *GCE) toGCEBackend(be *extensions.IngressBackend, ns string) (*compute.BackendService, error) {
 	if be == nil {
 		return nil, nil
 	}
@@ -137,7 +149,7 @@ func (t *GCETranslator) toGCEBackend(be *extensions.IngressBackend, ns string) (
 
 // getServiceNodePort looks in the svc store for a matching service:port,
 // and returns the nodeport.
-func (t *GCETranslator) getServiceNodePort(be extensions.IngressBackend, namespace string) (backends.ServicePort, error) {
+func (t *GCE) getServiceNodePort(be extensions.IngressBackend, namespace string) (backends.ServicePort, error) {
 	obj, exists, err := t.svcLister.Get(
 		&api_v1.Service{
 			ObjectMeta: meta_v1.ObjectMeta{
@@ -195,8 +207,8 @@ PortLoop:
 	return p, nil
 }
 
-// toNodePorts is a helper method over ingressToNodePorts to process a list of ingresses.
-func (t *GCETranslator) toNodePorts(ings *extensions.IngressList) []backends.ServicePort {
+// ToNodePorts is a helper method over ingressToNodePorts to process a list of ingresses.
+func (t *GCE) ToNodePorts(ings *extensions.IngressList) []backends.ServicePort {
 	var knownPorts []backends.ServicePort
 	for _, ing := range ings.Items {
 		knownPorts = append(knownPorts, t.ingressToNodePorts(&ing)...)
@@ -205,7 +217,7 @@ func (t *GCETranslator) toNodePorts(ings *extensions.IngressList) []backends.Ser
 }
 
 // ingressToNodePorts converts a pathlist to a flat list of nodeports for the given ingress.
-func (t *GCETranslator) ingressToNodePorts(ing *extensions.Ingress) []backends.ServicePort {
+func (t *GCE) ingressToNodePorts(ing *extensions.Ingress) []backends.ServicePort {
 	var knownPorts []backends.ServicePort
 	defaultBackend := ing.Spec.Backend
 	if defaultBackend != nil {
@@ -242,8 +254,8 @@ func getZone(n *api_v1.Node) string {
 }
 
 // GetZoneForNode returns the zone for a given node by looking up its zone label.
-func (t *GCETranslator) GetZoneForNode(name string) (string, error) {
-	nodes, err := listers.NewNodeLister(t.nodeLister).ListWithPredicate(getNodeReadyPredicate())
+func (t *GCE) GetZoneForNode(name string) (string, error) {
+	nodes, err := listers.NewNodeLister(t.nodeLister).ListWithPredicate(utils.NodeIsReady)
 	if err != nil {
 		return "", err
 	}
@@ -258,9 +270,9 @@ func (t *GCETranslator) GetZoneForNode(name string) (string, error) {
 }
 
 // ListZones returns a list of zones this Kubernetes cluster spans.
-func (t *GCETranslator) ListZones() ([]string, error) {
+func (t *GCE) ListZones() ([]string, error) {
 	zones := sets.String{}
-	readyNodes, err := listers.NewNodeLister(t.nodeLister).ListWithPredicate(getNodeReadyPredicate())
+	readyNodes, err := listers.NewNodeLister(t.nodeLister).ListWithPredicate(utils.NodeIsReady)
 	if err != nil {
 		return zones.List(), err
 	}
@@ -272,7 +284,7 @@ func (t *GCETranslator) ListZones() ([]string, error) {
 
 // geHTTPProbe returns the http readiness probe from the first container
 // that matches targetPort, from the set of pods matching the given labels.
-func (t *GCETranslator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrString, protocol utils.AppProtocol) (*api_v1.Probe, error) {
+func (t *GCE) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrString, protocol utils.AppProtocol) (*api_v1.Probe, error) {
 	l := svc.Spec.Selector
 
 	// Lookup any container with a matching targetPort from the set of pods
@@ -283,7 +295,7 @@ func (t *GCETranslator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOr
 	}
 
 	// If multiple endpoints have different health checks, take the first
-	sort.Sort(podsByCreationTimestamp(pl))
+	sort.Sort(orderedPods(pl))
 
 	for _, pod := range pl {
 		if pod.Namespace != svc.Namespace {
@@ -321,9 +333,9 @@ func (t *GCETranslator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOr
 	return nil, nil
 }
 
-// gatherFirewallPorts returns all ports needed for open for ingress.
+// GatherFirewallPorts returns all ports needed for open for ingress.
 // It gathers both node ports (for IG backends) and target ports (for NEG backends).
-func (t *GCETranslator) gatherFirewallPorts(svcPorts []backends.ServicePort, includeDefaultBackend bool) []int64 {
+func (t *GCE) GatherFirewallPorts(svcPorts []backends.ServicePort, includeDefaultBackend bool) []int64 {
 	// TODO: Manage default backend and its firewall rule in a centralized way.
 	// DefaultBackend is managed in l7 pool, which doesn't understand instances,
 	// which the firewall rule requires.
@@ -363,7 +375,7 @@ func isSimpleHTTPProbe(probe *api_v1.Probe) bool {
 }
 
 // GetProbe returns a probe that's used for the given nodeport
-func (t *GCETranslator) GetProbe(port backends.ServicePort) (*api_v1.Probe, error) {
+func (t *GCE) GetProbe(port backends.ServicePort) (*api_v1.Probe, error) {
 	sl := t.svcLister.List()
 
 	// Find the label and target port of the one service with the given nodePort
@@ -448,17 +460,12 @@ func listEndpointTargetPorts(indexer cache.Indexer, namespace, name, targetPort 
 	return ret
 }
 
-// podsByCreationTimestamp sorts a list of Pods by creation timestamp, using their names as a tie breaker.
-type podsByCreationTimestamp []*api_v1.Pod
+// orderedPods sorts a list of Pods by creation timestamp, using their names as a tie breaker.
+type orderedPods []*api_v1.Pod
 
-func (o podsByCreationTimestamp) Len() int {
-	return len(o)
-}
-func (o podsByCreationTimestamp) Swap(i, j int) {
-	o[i], o[j] = o[j], o[i]
-}
-
-func (o podsByCreationTimestamp) Less(i, j int) bool {
+func (o orderedPods) Len() int      { return len(o) }
+func (o orderedPods) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
+func (o orderedPods) Less(i, j int) bool {
 	if o[i].CreationTimestamp.Equal(&o[j].CreationTimestamp) {
 		return o[i].Name < o[j].Name
 	}

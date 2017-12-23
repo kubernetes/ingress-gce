@@ -337,7 +337,7 @@ func TestGatherFirewallPorts(t *testing.T) {
 	lbc.endpointLister.Indexer.Add(newDefaultEndpoint(ep1))
 	lbc.endpointLister.Indexer.Add(newDefaultEndpoint(ep2))
 
-	res := lbc.Translator.gatherFirewallPorts(svcPorts, true)
+	res := lbc.Translator.GatherFirewallPorts(svcPorts, true)
 	expect := map[int64]bool{
 		int64(30000): true,
 		int64(30001): true,

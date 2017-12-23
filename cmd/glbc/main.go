@@ -301,7 +301,7 @@ func main() {
 	if clusterManager.ClusterNamer.UID() != "" {
 		glog.V(3).Infof("Cluster name %+v", clusterManager.ClusterNamer.UID())
 	}
-	clusterManager.Init(lbc.Translator)
+	clusterManager.Init(lbc.Translator, lbc.Translator)
 
 	// Start NEG controller
 	if enableNEG {

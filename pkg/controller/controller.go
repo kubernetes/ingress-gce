@@ -39,6 +39,7 @@ import (
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/tls"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 var (
@@ -78,7 +79,7 @@ type LoadBalancerController struct {
 	recorder            record.EventRecorder
 	nodeQueue           *taskQueue
 	ingQueue            *taskQueue
-	Translator          *translator.GCETranslator
+	Translator          *translator.GCE
 	stopCh              chan struct{}
 	// stopLock is used to enforce only a single call to Stop is active.
 	// Needed because we allow stopping through an http endpoint and
@@ -182,15 +183,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 		// Nodes are updated every 10s and we don't care, so no update handler.
 	})
 
-	lbc.Translator = &GCETranslator{
-		recorder:       lbc.recorder,
-		ccm:            lbc.CloudClusterManager,
-		svcLister:      lbc.svcLister,
-		nodeLister:     lbc.nodeLister,
-		podLister:      lbc.podLister,
-		endpointLister: lbc.endpointLister,
-		negEnabled:     lbc.negEnabled,
-	}
+	lbc.Translator = translator.New(lbc.recorder, lbc.CloudClusterManager, lbc.svcLister, lbc.nodeLister, lbc.podLister, lbc.endpointLister, lbc.negEnabled)
 	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.client}
 	glog.V(3).Infof("Created new loadbalancer controller")
 
@@ -280,8 +273,8 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 		return err
 	}
 
-	allNodePorts := lbc.Translator.toNodePorts(&allIngresses)
-	gceNodePorts := lbc.Translator.toNodePorts(&gceIngresses)
+	allNodePorts := lbc.Translator.ToNodePorts(&allIngresses)
+	gceNodePorts := lbc.Translator.ToNodePorts(&gceIngresses)
 	lbNames := lbc.ingLister.Store.ListKeys()
 	lbs, err := lbc.toRuntimeInfo(gceIngresses)
 	if err != nil {
@@ -320,7 +313,7 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 
 	// Record any errors during sync and throw a single error at the end. This
 	// allows us to free up associated cloud resources ASAP.
-	igs, err := lbc.CloudClusterManager.Checkpoint(lbs, nodeNames, gceNodePorts, allNodePorts, lbc.Translator.gatherFirewallPorts(gceNodePorts, len(lbs) > 0))
+	igs, err := lbc.CloudClusterManager.Checkpoint(lbs, nodeNames, gceNodePorts, allNodePorts, lbc.Translator.GatherFirewallPorts(gceNodePorts, len(lbs) > 0))
 	if err != nil {
 		if fwErr, ok := err.(*firewalls.FirewallSyncError); ok {
 			if ingExists {
@@ -357,7 +350,7 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 	}
 
 	if lbc.negEnabled {
-		svcPorts := lbc.Translator.toNodePorts(&extensions.IngressList{Items: []extensions.Ingress{ing}})
+		svcPorts := lbc.Translator.ToNodePorts(&extensions.IngressList{Items: []extensions.Ingress{ing}})
 		for _, svcPort := range svcPorts {
 			if svcPort.NEGEnabled {
 
@@ -379,7 +372,7 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 		return syncError
 	}
 
-	if urlMap, err := lbc.Translator.toURLMap(&ing); err != nil {
+	if urlMap, err := lbc.Translator.ToURLMap(&ing); err != nil {
 		syncError = fmt.Errorf("%v, convert to url map error %v", syncError, err)
 	} else if err := l7.UpdateUrlMap(urlMap); err != nil {
 		lbc.recorder.Eventf(&ing, apiv1.EventTypeWarning, "UrlMap", err.Error())
@@ -490,20 +483,10 @@ func (lbc *LoadBalancerController) syncNodes(key string) error {
 	return nil
 }
 
-func nodeReadyPredicate(node *apiv1.Node) bool {
-	for ix := range node.Status.Conditions {
-		condition := &node.Status.Conditions[ix]
-		if condition.Type == apiv1.NodeReady {
-			return condition.Status == apiv1.ConditionTrue
-		}
-	}
-	return false
-}
-
 // getReadyNodeNames returns names of schedulable, ready nodes from the node lister.
 func (lbc *LoadBalancerController) getReadyNodeNames() ([]string, error) {
 	nodeNames := []string{}
-	nodes, err := listers.NewNodeLister(lbc.nodeLister.Indexer).ListWithPredicate(nodeReadyPredicate)
+	nodes, err := listers.NewNodeLister(lbc.nodeLister.Indexer).ListWithPredicate(utils.NodeIsReady)
 	if err != nil {
 		return nodeNames, err
 	}

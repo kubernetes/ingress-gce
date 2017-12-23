@@ -184,8 +184,8 @@ func (c *ClusterManager) GC(lbNames []string, nodePorts []backends.ServicePort) 
 	return nil
 }
 
-func (c *ClusterManager) BackendServiceForPort(int64 port) (*compute.BackendService, error) {
-	return c.backendPool.Get(port.Port)
+func (c *ClusterManager) BackendServiceForPort(port int64) (*compute.BackendService, error) {
+	return c.backendPool.Get(port)
 }
 
 func (c *ClusterManager) DefaultBackendNodePort() *backends.ServicePort {
