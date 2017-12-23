@@ -19,8 +19,6 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
-	"strconv"
 	"time"
 
 	"github.com/golang/glog"
@@ -29,21 +27,12 @@ import (
 
 	api_v1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
-	"k8s.io/apimachinery/pkg/api/meta"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
-	"k8s.io/ingress-gce/pkg/loadbalancers"
-	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // isGCEIngress returns true if the given Ingress either doesn't specify the
@@ -172,28 +161,6 @@ type StoreToEndpointLister struct {
 	cache.Indexer
 }
 
-// List returns a list of all pods based on selector
-func (s *StoreToPodLister) List(selector labels.Selector) (ret []*api_v1.Pod, err error) {
-	err = ListAll(s.Indexer, selector, func(m interface{}) {
-		ret = append(ret, m.(*api_v1.Pod))
-	})
-	return ret, err
-}
-
-// ListAll iterates a store and passes selected item to a func
-func ListAll(store cache.Store, selector labels.Selector, appendFn cache.AppendFunc) error {
-	for _, m := range store.List() {
-		metadata, err := meta.Accessor(m)
-		if err != nil {
-			return err
-		}
-		if selector.Matches(labels.Set(metadata.GetLabels())) {
-			appendFn(m)
-		}
-	}
-	return nil
-}
-
 // List lists all Ingress' in the store (both single and multi cluster ingresses).
 func (s *StoreToIngressLister) ListAll() (ing extensions.IngressList, err error) {
 	for _, m := range s.Store.List() {
@@ -250,41 +217,6 @@ IngressLoop:
 		err = fmt.Errorf("no ingress for service %v", svc.Name)
 	}
 	return
-}
-
-func (s *StoreToEndpointLister) ListEndpointTargetPorts(namespace, name, targetPort string) []int {
-	// if targetPort is integer, no need to translate to endpoint ports
-	if i, err := strconv.Atoi(targetPort); err == nil {
-		return []int{i}
-	}
-
-	ep, exists, err := s.Indexer.Get(
-		&api_v1.Endpoints{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Name:      name,
-				Namespace: namespace,
-			},
-		},
-	)
-
-	if !exists {
-		glog.Errorf("Endpoint object %v/%v does not exist.", namespace, name)
-		return []int{}
-	}
-	if err != nil {
-		glog.Errorf("Failed to retrieve endpoint object %v/%v: %v", namespace, name, err)
-		return []int{}
-	}
-
-	ret := []int{}
-	for _, subset := range ep.(*api_v1.Endpoints).Subsets {
-		for _, port := range subset.Ports {
-			if port.Protocol == api_v1.ProtocolTCP && port.Name == targetPort {
-				ret = append(ret, int(port.Port))
-			}
-		}
-	}
-	return ret
 }
 
 // PodsByCreationTimestamp sorts a list of Pods by creation timestamp, using their names as a tie breaker.

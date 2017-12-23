@@ -181,7 +181,15 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 		// Nodes are updated every 10s and we don't care, so no update handler.
 	})
 
-	lbc.Translator = &GCETranslator{&lbc}
+	lbc.Translator = &GCETranslator{
+		recorder:       lbc.recorder,
+		ccm:            lbc.CloudClusterManager,
+		svcLister:      lbc.svcLister,
+		nodeLister:     lbc.nodeLister,
+		podLister:      lbc.podLister,
+		endpointLister: lbc.endpointLister,
+		negEnabled:     lbc.negEnabled,
+	}
 	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.client}
 	glog.V(3).Infof("Created new loadbalancer controller")
 

@@ -19,6 +19,7 @@ package controller
 import (
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/golang/glog"
 
@@ -26,13 +27,15 @@ import (
 
 	api_v1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
-
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
@@ -41,7 +44,13 @@ import (
 
 // GCETranslator helps with kubernetes -> gce api conversion.
 type GCETranslator struct {
-	*LoadBalancerController
+	recorder       record.EventRecorder
+	ccm            *ClusterManager
+	svcLister      cache.Indexer
+	nodeLister     cache.Indexer
+	podLister      cache.Indexer
+	endpointLister cache.Indexer
+	negEnabled     bool
 }
 
 // toURLMap converts an ingress to a map of subdomain: url-regex: gce backend.
@@ -113,7 +122,7 @@ func (t *GCETranslator) toGCEBackend(be *extensions.IngressBackend, ns string) (
 	if err != nil {
 		return nil, err
 	}
-	backend, err := t.CloudClusterManager.backendPool.Get(port.Port)
+	backend, err := t.ccm.backendPool.Get(port.Port)
 	if err != nil {
 		return nil, fmt.Errorf("no GCE backend exists for port %v, kube backend %+v", port, be)
 	}
@@ -123,7 +132,7 @@ func (t *GCETranslator) toGCEBackend(be *extensions.IngressBackend, ns string) (
 // getServiceNodePort looks in the svc store for a matching service:port,
 // and returns the nodeport.
 func (t *GCETranslator) getServiceNodePort(be extensions.IngressBackend, namespace string) (backends.ServicePort, error) {
-	obj, exists, err := t.svcLister.Indexer.Get(
+	obj, exists, err := t.svcLister.Get(
 		&api_v1.Service{
 			ObjectMeta: meta_v1.ObjectMeta{
 				Name:      be.ServiceName,
@@ -228,7 +237,7 @@ func getZone(n *api_v1.Node) string {
 
 // GetZoneForNode returns the zone for a given node by looking up its zone label.
 func (t *GCETranslator) GetZoneForNode(name string) (string, error) {
-	nodes, err := listers.NewNodeLister(t.nodeLister.Indexer).ListWithPredicate(getNodeReadyPredicate())
+	nodes, err := listers.NewNodeLister(t.nodeLister).ListWithPredicate(getNodeReadyPredicate())
 	if err != nil {
 		return "", err
 	}
@@ -245,7 +254,7 @@ func (t *GCETranslator) GetZoneForNode(name string) (string, error) {
 // ListZones returns a list of zones this Kubernetes cluster spans.
 func (t *GCETranslator) ListZones() ([]string, error) {
 	zones := sets.String{}
-	readyNodes, err := listers.NewNodeLister(t.nodeLister.Indexer).ListWithPredicate(getNodeReadyPredicate())
+	readyNodes, err := listers.NewNodeLister(t.nodeLister).ListWithPredicate(getNodeReadyPredicate())
 	if err != nil {
 		return zones.List(), err
 	}
@@ -262,7 +271,7 @@ func (t *GCETranslator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOr
 
 	// Lookup any container with a matching targetPort from the set of pods
 	// with a matching label selector.
-	pl, err := t.podLister.List(labels.SelectorFromSet(labels.Set(l)))
+	pl, err := listPodsBySelector(t.podLister, labels.SelectorFromSet(labels.Set(l)))
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +322,7 @@ func (t *GCETranslator) gatherFirewallPorts(svcPorts []backends.ServicePort, inc
 	// DefaultBackend is managed in l7 pool, which doesn't understand instances,
 	// which the firewall rule requires.
 	if includeDefaultBackend {
-		svcPorts = append(svcPorts, t.CloudClusterManager.defaultBackendNodePort)
+		svcPorts = append(svcPorts, t.ccm.defaultBackendNodePort)
 	}
 	portMap := map[int64]bool{}
 	for _, p := range svcPorts {
@@ -321,7 +330,7 @@ func (t *GCETranslator) gatherFirewallPorts(svcPorts []backends.ServicePort, inc
 			// For NEG backend, need to open firewall to all endpoint target ports
 			// TODO(mixia): refactor firewall syncing into a separate go routine with different trigger.
 			// With NEG, endpoint changes may cause firewall ports to be different if user specifies inconsistent backends.
-			endpointPorts := t.endpointLister.ListEndpointTargetPorts(p.SvcName.Namespace, p.SvcName.Name, p.SvcTargetPort)
+			endpointPorts := listEndpointTargetPorts(t.endpointLister, p.SvcName.Namespace, p.SvcName.Name, p.SvcTargetPort)
 			for _, ep := range endpointPorts {
 				portMap[int64(ep)] = true
 			}
@@ -374,4 +383,61 @@ OuterLoop:
 	}
 
 	return t.getHTTPProbe(service, svcPort.TargetPort, port.Protocol)
+}
+
+// listPodsBySelector returns a list of all pods based on selector
+func listPodsBySelector(indexer cache.Indexer, selector labels.Selector) (ret []*api_v1.Pod, err error) {
+	err = listAll(indexer, selector, func(m interface{}) {
+		ret = append(ret, m.(*api_v1.Pod))
+	})
+	return ret, err
+}
+
+// listAll iterates a store and passes selected item to a func
+func listAll(store cache.Store, selector labels.Selector, appendFn cache.AppendFunc) error {
+	for _, m := range store.List() {
+		metadata, err := meta.Accessor(m)
+		if err != nil {
+			return err
+		}
+		if selector.Matches(labels.Set(metadata.GetLabels())) {
+			appendFn(m)
+		}
+	}
+	return nil
+}
+
+func listEndpointTargetPorts(indexer cache.Indexer, namespace, name, targetPort string) []int {
+	// if targetPort is integer, no need to translate to endpoint ports
+	if i, err := strconv.Atoi(targetPort); err == nil {
+		return []int{i}
+	}
+
+	ep, exists, err := indexer.Get(
+		&api_v1.Endpoints{
+			ObjectMeta: meta_v1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+			},
+		},
+	)
+
+	if !exists {
+		glog.Errorf("Endpoint object %v/%v does not exist.", namespace, name)
+		return []int{}
+	}
+	if err != nil {
+		glog.Errorf("Failed to retrieve endpoint object %v/%v: %v", namespace, name, err)
+		return []int{}
+	}
+
+	ret := []int{}
+	for _, subset := range ep.(*api_v1.Endpoints).Subsets {
+		for _, port := range subset.Ports {
+			if port.Protocol == api_v1.ProtocolTCP && port.Name == targetPort {
+				ret = append(ret, int(port.Port))
+			}
+		}
+	}
+	return ret
 }
