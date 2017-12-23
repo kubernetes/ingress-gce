@@ -18,6 +18,8 @@ package annotations
 
 import (
 	"strconv"
+
+	extensions "k8s.io/api/extensions/v1beta1"
 )
 
 const (
@@ -46,12 +48,6 @@ const (
 	// to the target proxies of the Ingress.
 	PreSharedCertKey = "ingress.gcp.kubernetes.io/pre-shared-cert"
 
-	// ServiceApplicationProtocolKey is a stringified JSON map of port names to
-	// protocol strings. Possible values are HTTP, HTTPS
-	// Example:
-	// '{"my-https-port":"HTTPS","my-http-port":"HTTP"}'
-	ServiceApplicationProtocolKey = "service.alpha.kubernetes.io/app-protocols"
-
 	// IngressClassKey picks a specific "class" for the Ingress. The controller
 	// only processes Ingresses with this annotation either unset, or set
 	// to either gceIngessClass or the empty string.
@@ -68,23 +64,21 @@ const (
 	// This is read only for users. Controller will overrite any user updates.
 	// This is only set for ingresses with ingressClass = "gce-multi-cluster"
 	InstanceGroupsAnnotationKey = "ingress.gcp.kubernetes.io/instance-groups"
-
-	// NetworkEndpointGroupAlphaAnnotation is the annotation key to enable GCE NEG feature for ingress backend services.
-	// To enable this feature, the value of the annotation must be "true".
-	// This annotation should be specified on services that are backing ingresses.
-	// WARNING: The feature will NOT be effective in the following circumstances:
-	// 1. NEG feature is not enabled in feature gate.
-	// 2. Service is not referenced in any ingress.
-	// 3. Adding this annotation on ingress.
-	NetworkEndpointGroupAlphaAnnotation = "alpha.cloud.google.com/load-balancer-neg"
 )
 
 // Ingress represents ingress annotations.
-type Ingress map[string]string
+type Ingress struct {
+	v map[string]string
+}
+
+// FromIngress extracts the annotations from an Ingress definition.
+func FromIngress(ing *extensions.Ingress) *Ingress {
+	return &Ingress{ing.Annotations}
+}
 
 // AllowHTTP returns the allowHTTP flag. True by default.
-func (ing Ingress) AllowHTTP() bool {
-	val, ok := ing[AllowHTTPKey]
+func (ing *Ingress) AllowHTTP() bool {
+	val, ok := ing.v[AllowHTTPKey]
 	if !ok {
 		return true
 	}
@@ -96,8 +90,8 @@ func (ing Ingress) AllowHTTP() bool {
 }
 
 // UseNamedTLS returns the name of the GCE SSL certificate. Empty by default.
-func (ing Ingress) UseNamedTLS() string {
-	val, ok := ing[PreSharedCertKey]
+func (ing *Ingress) UseNamedTLS() string {
+	val, ok := ing.v[PreSharedCertKey]
 	if !ok {
 		return ""
 	}
@@ -105,16 +99,16 @@ func (ing Ingress) UseNamedTLS() string {
 	return val
 }
 
-func (ing Ingress) StaticIPName() string {
-	val, ok := ing[StaticIPNameKey]
+func (ing *Ingress) StaticIPName() string {
+	val, ok := ing.v[StaticIPNameKey]
 	if !ok {
 		return ""
 	}
 	return val
 }
 
-func (ing Ingress) IngressClass() string {
-	val, ok := ing[IngressClassKey]
+func (ing *Ingress) IngressClass() string {
+	val, ok := ing.v[IngressClassKey]
 	if !ok {
 		return ""
 	}

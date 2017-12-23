@@ -33,14 +33,14 @@ import (
 // isGCEIngress returns true if the given Ingress either doesn't specify the
 // ingress.class annotation, or it's set to "gce".
 func isGCEIngress(ing *extensions.Ingress) bool {
-	class := annotations.Ingress(ing.ObjectMeta.Annotations).IngressClass()
+	class := annotations.FromIngress(ing).IngressClass()
 	return class == "" || class == annotations.GceIngressClass
 }
 
 // isGCEMultiClusterIngress returns true if the given Ingress has
 // ingress.class annotation set to "gce-multi-cluster".
 func isGCEMultiClusterIngress(ing *extensions.Ingress) bool {
-	class := annotations.Ingress(ing.ObjectMeta.Annotations).IngressClass()
+	class := annotations.FromIngress(ing).IngressClass()
 	return class == annotations.GceMultiIngressClass
 }
 
@@ -60,8 +60,13 @@ type ErrSvcAppProtosParsing struct {
 	origErr error
 }
 
+<<<<<<< HEAD
 func (e ErrSvcAppProtosParsing) Error() string {
 	return fmt.Sprintf("could not parse %v annotation on Service %v/%v, err: %v", annotations.ServiceApplicationProtocolKey, e.svc.Namespace, e.svc.Name, e.origErr)
+=======
+func (e errorSvcAppProtosParsing) Error() string {
+	return fmt.Sprintf("could not parse Service app protocol annotation %v/%v, err: %v", e.svc.Namespace, e.svc.Name, e.origErr)
+>>>>>>> Make annotation wrapper types internal keys private; adds unit tests
 }
 
 // compareLinks returns true if the 2 self links are equal.

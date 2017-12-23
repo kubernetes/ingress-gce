@@ -200,7 +200,7 @@ func (c *Controller) processService(key string) error {
 	var enabled bool
 	if exists {
 		service = svc.(*apiv1.Service)
-		enabled = annotations.Service(service.GetAnnotations()).NEGEnabled()
+		enabled = annotations.FromService(service).NEGEnabled()
 	}
 
 	if !enabled {
