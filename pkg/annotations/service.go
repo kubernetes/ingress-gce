@@ -31,12 +31,12 @@ const (
 // AppProtocol describes the service protocol.
 type AppProtocol string
 
-// SvcAnnotations represents Service annotations.
-type SvcAnnotations map[string]string
+// Service represents Service annotations.
+type Service map[string]string
 
 // ApplicationProtocols returns a map of port (name or number) to the protocol
 // on the port.
-func (svc SvcAnnotations) ApplicationProtocols() (map[string]AppProtocol, error) {
+func (svc Service) ApplicationProtocols() (map[string]AppProtocol, error) {
 	val, ok := svc[ServiceApplicationProtocolKey]
 	if !ok {
 		return map[string]AppProtocol{}, nil
@@ -58,7 +58,7 @@ func (svc SvcAnnotations) ApplicationProtocols() (map[string]AppProtocol, error)
 }
 
 // NEGEnabled is true if the service uses NEGs.
-func (svc SvcAnnotations) NEGEnabled() bool {
+func (svc Service) NEGEnabled() bool {
 	v, ok := svc[NetworkEndpointGroupAlphaAnnotation]
 	return ok && v == "true"
 }
