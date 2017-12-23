@@ -17,6 +17,9 @@ limitations under the License.
 package networkendpointgroup
 
 import (
+	"testing"
+	"time"
+
 	compute "google.golang.org/api/compute/v0.alpha"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -26,8 +29,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/utils"
-	"testing"
-	"time"
 )
 
 const (

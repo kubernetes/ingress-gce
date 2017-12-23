@@ -292,9 +292,10 @@ func main() {
 		clusterManager = controller.NewFakeClusterManager(*clusterName, controller.DefaultFirewallName).ClusterManager
 	}
 	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
+	stopCh := make(chan struct{})
 	ctx := context.NewControllerContext(kubeClient, *watchNamespace, *resyncPeriod, enableNEG)
 	// Start loadbalancer controller
-	lbc, err := controller.NewLoadBalancerController(kubeClient, ctx, clusterManager, enableNEG)
+	lbc, err := controller.NewLoadBalancerController(kubeClient, stopCh, ctx, clusterManager, enableNEG)
 	if err != nil {
 		glog.Fatalf("%v", err)
 	}
@@ -307,13 +308,13 @@ func main() {
 	// Start NEG controller
 	if enableNEG {
 		negController, _ := neg.NewController(kubeClient, cloud, ctx, lbc.Translator, namer, *resyncPeriod)
-		go negController.Run(ctx.StopCh)
+		go negController.Run(stopCh)
 	}
 
 	go registerHandlers(lbc)
 	go handleSigterm(lbc, *deleteAllOnQuit)
 
-	ctx.Start()
+	ctx.Start(stopCh)
 	lbc.Run()
 	for {
 		glog.Infof("Handled quit, awaiting pod deletion.")

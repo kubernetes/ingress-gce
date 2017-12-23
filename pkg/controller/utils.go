@@ -66,7 +66,6 @@ type ErrSvcAppProtosParsing struct {
 
 func (e ErrSvcAppProtosParsing) Error() string {
 	return fmt.Sprintf("could not parse %v annotation on Service %v/%v, err: %v", annotations.ServiceApplicationProtocolKey, e.svc.Namespace, e.svc.Name, e.origErr)
-
 }
 
 // compareLinks returns true if the 2 self links are equal.
