@@ -20,10 +20,6 @@ import (
 	"testing"
 )
 
-func TestGCEURLMap(t *testing.T) {
-	// TODO
-}
-
 func TestTrimFieldsEvenly(t *testing.T) {
 	longString := "01234567890123456789012345678901234567890123456789"
 	testCases := []struct {
