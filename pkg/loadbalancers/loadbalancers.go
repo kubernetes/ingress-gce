@@ -30,6 +30,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/storage"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -1029,29 +1030,29 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendPool backends.B
 	if err == nil {
 		jsonBackendState = string(b)
 	}
-	existing[fmt.Sprintf("%v/url-map", utils.K8sAnnotationPrefix)] = l7.um.Name
+	existing[fmt.Sprintf("%v/url-map", annotations.StatusPrefix)] = l7.um.Name
 	// Forwarding rule and target proxy might not exist if allowHTTP == false
 	if l7.fw != nil {
-		existing[fmt.Sprintf("%v/forwarding-rule", utils.K8sAnnotationPrefix)] = l7.fw.Name
+		existing[fmt.Sprintf("%v/forwarding-rule", annotations.StatusPrefix)] = l7.fw.Name
 	}
 	if l7.tp != nil {
-		existing[fmt.Sprintf("%v/target-proxy", utils.K8sAnnotationPrefix)] = l7.tp.Name
+		existing[fmt.Sprintf("%v/target-proxy", annotations.StatusPrefix)] = l7.tp.Name
 	}
 	// HTTPs resources might not exist if TLS == nil
 	if l7.fws != nil {
-		existing[fmt.Sprintf("%v/https-forwarding-rule", utils.K8sAnnotationPrefix)] = l7.fws.Name
+		existing[fmt.Sprintf("%v/https-forwarding-rule", annotations.StatusPrefix)] = l7.fws.Name
 	}
 	if l7.tps != nil {
-		existing[fmt.Sprintf("%v/https-target-proxy", utils.K8sAnnotationPrefix)] = l7.tps.Name
+		existing[fmt.Sprintf("%v/https-target-proxy", annotations.StatusPrefix)] = l7.tps.Name
 	}
 	if l7.ip != nil {
-		existing[fmt.Sprintf("%v/static-ip", utils.K8sAnnotationPrefix)] = l7.ip.Name
+		existing[fmt.Sprintf("%v/static-ip", annotations.StatusPrefix)] = l7.ip.Name
 	}
 	if l7.sslCert != nil {
-		existing[fmt.Sprintf("%v/ssl-cert", utils.K8sAnnotationPrefix)] = l7.sslCert.Name
+		existing[fmt.Sprintf("%v/ssl-cert", annotations.StatusPrefix)] = l7.sslCert.Name
 	}
 	// TODO: We really want to know *when* a backend flipped states.
-	existing[fmt.Sprintf("%v/backends", utils.K8sAnnotationPrefix)] = jsonBackendState
+	existing[fmt.Sprintf("%v/backends", annotations.StatusPrefix)] = jsonBackendState
 	return existing
 }
 
@@ -1061,6 +1062,6 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendPool backends.B
 func GCEResourceName(ingAnnotations map[string]string, resourceName string) string {
 	// Even though this function is trivial, it exists to keep the annotation
 	// parsing logic in a single location.
-	resourceName, _ = ingAnnotations[fmt.Sprintf("%v/%v", utils.K8sAnnotationPrefix, resourceName)]
+	resourceName, _ = ingAnnotations[fmt.Sprintf("%v/%v", annotations.StatusPrefix, resourceName)]
 	return resourceName
 }

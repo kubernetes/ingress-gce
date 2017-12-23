@@ -25,6 +25,10 @@ import (
 )
 
 const (
+	// StatusPrefix is the prefix used in annotations used to record
+	// debug information in the Ingress annotations.
+	StatusPrefix = "ingress.kubernetes.io"
+
 	// AllowHTTPKey tells the Ingress controller to allow/block HTTP access.
 	// If either unset or set to true, the controller will create a
 	// forwarding-rule for port 80, and any additional rules based on the TLS

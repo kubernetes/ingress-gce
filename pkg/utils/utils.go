@@ -45,10 +45,6 @@ const (
 	// RemoveInstances used to record a call to RemoveInstances.
 	RemoveInstances
 
-	// K8sAnnotationPrefix is the prefix used in annotations used to record
-	// debug information in the Ingress annotations.
-	K8sAnnotationPrefix = "ingress.kubernetes.io"
-
 	// ProtocolHTTP protocol for a service
 	ProtocolHTTP AppProtocol = "HTTP"
 	// ProtocolHTTPS protocol for a service
