@@ -30,10 +30,7 @@ import (
 	registered "k8s.io/apimachinery/pkg/apimachinery/registered"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-
-	// This installs the legacy v1 API
-	"k8s.io/kubernetes/pkg/api"
-	_ "k8s.io/kubernetes/pkg/api/install"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 )
 
 // TODO:
@@ -74,5 +71,5 @@ func main() {
 	if err != nil {
 		log.Fatalf("%v", err)
 	}
-	fmt.Printf(runtime.EncodeOrDie(api.Codecs.LegacyCodec(arm.EnabledVersions()...), secret))
+	fmt.Printf(runtime.EncodeOrDie(legacyscheme.Codecs.LegacyCodec(arm.EnabledVersions()...), secret))
 }

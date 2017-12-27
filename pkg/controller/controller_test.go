@@ -31,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/kubernetes/pkg/api"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
@@ -100,7 +99,7 @@ func newIngress(hostRules map[string]utils.FakeIngressRuleValueMap) *extensions.
 	return &extensions.Ingress{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      fmt.Sprintf("%v", uuid.NewUUID()),
-			Namespace: api.NamespaceNone,
+			Namespace: "",
 		},
 		Spec: extensions.IngressSpec{
 			Backend: &extensions.IngressBackend{
