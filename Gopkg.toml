@@ -1,37 +1,22 @@
-
-# Gopkg.toml example
-#
-# Refer to https://github.com/golang/dep/blob/master/docs/Gopkg.toml.md
-# for detailed Gopkg.toml documentation.
-#
-# required = ["github.com/user/thing/cmd/thing"]
-# ignored = ["github.com/user/project/pkgX", "bitbucket.org/user/project/pkgA/pkgY"]
-#
-# [[constraint]]
-#   name = "github.com/user/project"
-#   version = "1.0.0"
-#
-# [[constraint]]
-#   name = "github.com/user/project2"
-#   branch = "dev"
-#   source = "github.com/myfork/project2"
-#
-# [[override]]
-#  name = "github.com/x/y"
-#  version = "2.4.0"
-
+# `dep` does not seem to like this empty directory in the Kubernetes
+# repository.
+ignored = ["k8s.io/kubernetes/pkg/api"]
 
 [[constraint]]
   name = "github.com/golang/glog"
+  revision = "23def4e6c14b4da8ac2ed8007337bc5eb5007998"
 
 [[constraint]]
   name = "github.com/gorilla/websocket"
+  version = "v1.2.0"
 
 [[constraint]]
   name = "github.com/prometheus/client_golang"
+  version = "v0.8.0"
 
 [[constraint]]
   name = "github.com/spf13/pflag"
+  version = "v1.0.0"
 
 [[constraint]]
   name = "google.golang.org/api"
@@ -39,16 +24,28 @@
 
 [[constraint]]
   name = "k8s.io/api"
-  revision = "409c3b2393cd3359f275bd8b883b4d9c5aec41f6"
+  # We are currently vendoring a non-released k8s version. This should go away
+  # once the symbol has been released.
+  revision = "02509811a0e5c1e5bb0656e31ec861da05cd801c"
 
 [[constraint]]
   name = "k8s.io/apimachinery"
-  revision = "e9a29eff7d472df0f7da9ead5ab59b74e74a07ec"
+  revision = "kubernetes-1.9.0"
 
 [[constraint]]
   name = "k8s.io/client-go"
-  revision = "076e344c86e52f088b78615f815b245f6d613537"
+  revision = "kubernetes-1.9.0"
 
 [[constraint]]
   name = "k8s.io/kubernetes"
-  revision = "88975e98d6f4a84929a243abeb772de16399a4e9"
+  revision = "99d3e21eb54cc5869679927e7783b8810f6edc50"
+
+[[constraint]]
+  name = "github.com/docker/distribution"
+  # Kubernetes is currently vendoring a non-released version. One of the
+  # symbols needed is not longer there in the released tag.
+  revision = "edc3ab29cdff8694dd6feb85cfeb4b5f1b38ed9c"
+
+[[constraint]]
+  name = "github.com/opencontainers/go-digest"
+  version = "1.0.0-rc1"
