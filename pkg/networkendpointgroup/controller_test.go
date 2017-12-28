@@ -34,7 +34,6 @@ import (
 
 func newTestController(kubeClient kubernetes.Interface) *Controller {
 	context := context.NewControllerContext(kubeClient, apiv1.NamespaceAll, 1*time.Second, true)
-
 	controller, _ := NewController(kubeClient,
 		NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		context,

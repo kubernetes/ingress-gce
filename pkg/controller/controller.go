@@ -100,7 +100,7 @@ type LoadBalancerController struct {
 // - clusterManager: A ClusterManager capable of creating all cloud resources
 //	 required for L7 loadbalancing.
 // - resyncPeriod: Watchers relist from the Kubernetes API server this often.
-func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.ControllerContext, clusterManager *ClusterManager, negEnabled bool) (*LoadBalancerController, error) {
+func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan struct{}, ctx *context.ControllerContext, clusterManager *ClusterManager, negEnabled bool) (*LoadBalancerController, error) {
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
@@ -109,7 +109,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 	lbc := LoadBalancerController{
 		client:              kubeClient,
 		CloudClusterManager: clusterManager,
-		stopCh:              ctx.StopCh,
+		stopCh:              stopCh,
 		recorder: eventBroadcaster.NewRecorder(scheme.Scheme,
 			apiv1.EventSource{Component: "loadbalancer-controller"}),
 		negEnabled: negEnabled,

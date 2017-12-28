@@ -17,11 +17,12 @@ limitations under the License.
 package context
 
 import (
+	"time"
+
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	informerv1beta1 "k8s.io/client-go/informers/extensions/v1beta1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
-	"time"
 )
 
 // ControllerContext holds
@@ -31,17 +32,15 @@ type ControllerContext struct {
 	PodInformer      cache.SharedIndexInformer
 	NodeInformer     cache.SharedIndexInformer
 	EndpointInformer cache.SharedIndexInformer
-	// Stop is the stop channel shared among controllers
-	StopCh chan struct{}
 }
 
+// NewControllerContext returns a new shared set of informers.
 func NewControllerContext(kubeClient kubernetes.Interface, namespace string, resyncPeriod time.Duration, enableEndpointsInformer bool) *ControllerContext {
 	context := &ControllerContext{
 		IngressInformer: informerv1beta1.NewIngressInformer(kubeClient, namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}),
 		ServiceInformer: informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}),
 		PodInformer:     informerv1.NewPodInformer(kubeClient, namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}),
 		NodeInformer:    informerv1.NewNodeInformer(kubeClient, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}),
-		StopCh:          make(chan struct{}),
 	}
 	if enableEndpointsInformer {
 		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
@@ -49,12 +48,13 @@ func NewControllerContext(kubeClient kubernetes.Interface, namespace string, res
 	return context
 }
 
-func (ctx *ControllerContext) Start() {
-	go ctx.IngressInformer.Run(ctx.StopCh)
-	go ctx.ServiceInformer.Run(ctx.StopCh)
-	go ctx.PodInformer.Run(ctx.StopCh)
-	go ctx.NodeInformer.Run(ctx.StopCh)
+// Start all of the informers.
+func (ctx *ControllerContext) Start(stopCh chan struct{}) {
+	go ctx.IngressInformer.Run(stopCh)
+	go ctx.ServiceInformer.Run(stopCh)
+	go ctx.PodInformer.Run(stopCh)
+	go ctx.NodeInformer.Run(stopCh)
 	if ctx.EndpointInformer != nil {
-		go ctx.EndpointInformer.Run(ctx.StopCh)
+		go ctx.EndpointInformer.Run(stopCh)
 	}
 }
