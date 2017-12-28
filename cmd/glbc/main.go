@@ -28,7 +28,6 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
 	neg "k8s.io/ingress-gce/pkg/networkendpointgroup"
-	"k8s.io/ingress-gce/pkg/utils"
 
 	"k8s.io/ingress-gce/cmd/glbc/app"
 )
@@ -54,52 +53,47 @@ func main() {
 	}
 
 	glog.V(0).Infof("Starting GLBC image: %q, cluster name %q", imageVersion, app.Flags.ClusterName)
+	for i, a := range os.Args {
+		glog.V(0).Infof("argv[%d]: %q", i, a)
+	}
 
 	kubeClient, err := app.NewKubeClient()
 	if err != nil {
-		glog.Fatalf("Failed to create client: %v", err)
+		glog.Fatalf("Failed to create kubernetes client: %v", err)
 	}
 
-	var namer *utils.Namer
+	namer, err := app.NewNamer(kubeClient, app.Flags.ClusterName, controller.DefaultFirewallName)
+	if err != nil {
+		glog.Fatalf("%v", err)
+	}
+
 	var cloud *gce.GCECloud
-	var clusterManager *controller.ClusterManager
-
-	if app.Flags.InCluster || app.Flags.UseRealCloud {
-		namer, err = app.NewNamer(kubeClient, app.Flags.ClusterName, controller.DefaultFirewallName)
+	// TODO: Make this more resilient. Currently we create the cloud client
+	// and pass it through to all the pools. This makes unit testing easier.
+	// However if the cloud client suddenly fails, we should try to re-create it
+	// and continue.
+	if app.Flags.ConfigFilePath != "" {
+		glog.Infof("Reading config from path %q", app.Flags.ConfigFilePath)
+		config, err := os.Open(app.Flags.ConfigFilePath)
 		if err != nil {
 			glog.Fatalf("%v", err)
 		}
-
-		// TODO: Make this more resilient. Currently we create the cloud client
-		// and pass it through to all the pools. This makes unit testing easier.
-		// However if the cloud client suddenly fails, we should try to re-create it
-		// and continue.
-		if app.Flags.ConfigFilePath != "" {
-			glog.Infof("Reading config from path %v", app.Flags.ConfigFilePath)
-			config, err := os.Open(app.Flags.ConfigFilePath)
-			if err != nil {
-				glog.Fatalf("%v", err)
-			}
-			defer config.Close()
-			cloud = app.NewGCEClient(config)
-			glog.Infof("Successfully loaded cloudprovider using config %q", app.Flags.ConfigFilePath)
-		} else {
-			// TODO: refactor so this comment does not need to be here.
-			// While you might be tempted to refactor so we simply assing nil to the
-			// config and only invoke getGCEClient once, that will not do the right
-			// thing because a nil check against an interface isn't true in golang.
-			cloud = app.NewGCEClient(nil)
-			glog.Infof("Created GCE client without a config file")
-		}
-
-		defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
-		clusterManager, err = controller.NewClusterManager(cloud, namer, *defaultBackendServicePort, app.Flags.HealthCheckPath)
-		if err != nil {
-			glog.Fatalf("%v", err)
-		}
+		defer config.Close()
+		cloud = app.NewGCEClient(config)
+		glog.Infof("Successfully loaded cloudprovider using config %q", app.Flags.ConfigFilePath)
 	} else {
-		// Create fake cluster manager
-		clusterManager = controller.NewFakeClusterManager(app.Flags.ClusterName, controller.DefaultFirewallName).ClusterManager
+		// TODO: refactor so this comment does not need to be here.
+		// While you might be tempted to refactor so we simply assing nil to the
+		// config and only invoke getGCEClient once, that will not do the right
+		// thing because a nil check against an interface isn't true in golang.
+		cloud = app.NewGCEClient(nil)
+		glog.Infof("Created GCE client without a config file")
+	}
+
+	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
+	clusterManager, err := controller.NewClusterManager(cloud, namer, *defaultBackendServicePort, app.Flags.HealthCheckPath)
+	if err != nil {
+		glog.Fatalf("Error creating cluster manager: %v", err)
 	}
 
 	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
@@ -108,23 +102,27 @@ func main() {
 	// Start loadbalancer controller
 	lbc, err := controller.NewLoadBalancerController(kubeClient, stopCh, ctx, clusterManager, enableNEG)
 	if err != nil {
-		glog.Fatalf("%v", err)
+		glog.Fatalf("Error creating load balancer controller: %v", err)
 	}
 
 	if clusterManager.ClusterNamer.UID() != "" {
 		glog.V(0).Infof("Cluster name is %+v", clusterManager.ClusterNamer.UID())
 	}
 	clusterManager.Init(lbc.Translator, lbc.Translator)
+	glog.V(0).Infof("clusterManager initialized")
 
 	if enableNEG {
 		negController, _ := neg.NewController(kubeClient, cloud, ctx, lbc.Translator, namer, app.Flags.ResyncPeriod)
 		go negController.Run(stopCh)
+		glog.V(0).Infof("negController started")
 	}
 
 	go app.RunHTTPServer(lbc)
 	go app.RunSIGTERMHandler(lbc, app.Flags.DeleteAllOnQuit)
 
 	ctx.Start(stopCh)
+
+	glog.V(0).Infof("Starting load balancer controller")
 	lbc.Run()
 
 	for {

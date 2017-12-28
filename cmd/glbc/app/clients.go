@@ -69,7 +69,7 @@ func NewGCEClient(config io.Reader) *gce.GCECloud {
 		if err != nil {
 			glog.Fatalf("Error while reading entire config: %v", err)
 		}
-		glog.V(2).Infof("Using cloudprovider config file:\n%v ", string(allConfig))
+		glog.V(4).Infof("Using cloudprovider config file: %q", string(allConfig))
 
 		getConfigReader = func() io.Reader {
 			return bytes.NewReader(allConfig)
@@ -83,9 +83,9 @@ func NewGCEClient(config io.Reader) *gce.GCECloud {
 	// No errors are thrown. So we need to keep retrying till it works because
 	// we know we're on GCE.
 	for {
-		cloudInterface, err := cloudprovider.GetCloudProvider("gce", getConfigReader())
+		provider, err := cloudprovider.GetCloudProvider("gce", getConfigReader())
 		if err == nil {
-			cloud := cloudInterface.(*gce.GCECloud)
+			cloud := provider.(*gce.GCECloud)
 
 			// If this controller is scheduled on a node without compute/rw
 			// it won't be allowed to list backends. We can assume that the
@@ -98,7 +98,7 @@ func NewGCEClient(config io.Reader) *gce.GCECloud {
 			}
 			glog.Warningf("Failed to list backend services, retrying: %v", err)
 		} else {
-			glog.Warningf("Failed to retrieve cloud interface, retrying: %v", err)
+			glog.Warningf("Failed to get cloud provider, retrying: %v", err)
 		}
 		time.Sleep(cloudClientRetryInterval)
 	}

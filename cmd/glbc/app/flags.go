@@ -37,7 +37,6 @@ var (
 		InCluster       bool
 		KubeConfigFile  string
 		ResyncPeriod    time.Duration
-		UseRealCloud    bool
 		Verbose         bool
 		WatchNamespace  string
 	}{}
@@ -79,14 +78,13 @@ the pod secrets for creating a Kubernetes client.`)
 		`Path to kubeconfig file with authorization and master location information.`)
 	flag.DurationVar(&Flags.ResyncPeriod, "sync-period", 30*time.Second,
 		`Relist and confirm cloud resources this often.`)
-	// TODO: Consolidate this flag and running-in-cluster. People already use
-	// the first one to mean "running in dev", unfortunately.
-	flag.BoolVar(&Flags.UseRealCloud, "use-real-cloud", false,
-		`Optional, if set a real cloud client is created. Only matters with
---running-in-cluster=false, i.e a real cloud is always used when this controller
-is running on a Kubernetes node.`)
-	flag.BoolVar(&Flags.Verbose, "verbose", false,
-		`If true, logs are displayed at V(4), otherwise V(2).`)
 	flag.StringVar(&Flags.WatchNamespace, "watch-namespace", v1.NamespaceAll,
 		`Namespace to watch for Ingress/Services/Endpoints.`)
+
+	// Deprecated flags.
+	flag.BoolVar(&Flags.Verbose, "verbose", false,
+		`This flag is deprecated. Use -v to control verbosity.`)
+	flag.Bool("use-real-cloud", false,
+		`This flag has been deprecated and no longer has any effect.`)
+
 }
