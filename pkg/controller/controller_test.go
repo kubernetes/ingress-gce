@@ -365,6 +365,7 @@ func TestLbNoService(t *testing.T) {
 		},
 	}
 	ing := newIngress(inputMap)
+	ing.Namespace = "ns1"
 	ing.Spec.Backend.ServiceName = "foo1svc"
 	ingStoreKey := getKey(ing, t)
 
@@ -383,16 +384,15 @@ func TestLbNoService(t *testing.T) {
 	// Creates the service, next sync should have complete url map.
 	pm := newPortManager(1, 65536, cm.Namer)
 	addIngress(lbc, ing, pm)
-	lbc.enqueueIngressForService(&api_v1.Service{
+	svc := &api_v1.Service{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      "foo1svc",
 			Namespace: ing.Namespace,
 		},
-	})
-	// TODO: This will hang if the previous step failed to insert into queue
-	key, _ := lbc.ingQueue.queue.Get()
-	lbc.sync(key.(string))
+	}
 
+	lbc.enqueueIngressForService(svc)
+	lbc.sync(fmt.Sprintf("%s/%s", ing.Namespace, ing.Name))
 	inputMap[utils.DefaultBackendKey] = map[string]string{
 		utils.DefaultBackendKey: "foo1svc",
 	}

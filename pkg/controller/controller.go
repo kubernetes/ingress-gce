@@ -77,8 +77,8 @@ type LoadBalancerController struct {
 	// TODO: Watch secrets
 	CloudClusterManager *ClusterManager
 	recorder            record.EventRecorder
-	nodeQueue           *taskQueue
-	ingQueue            *taskQueue
+	nodeQueue           utils.TaskQueue
+	ingQueue            utils.TaskQueue
 	Translator          *translator.GCE
 	stopCh              chan struct{}
 	// stopLock is used to enforce only a single call to Stop is active.
@@ -114,8 +114,8 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 			apiv1.EventSource{Component: "loadbalancer-controller"}),
 		negEnabled: negEnabled,
 	}
-	lbc.nodeQueue = NewTaskQueue(lbc.syncNodes)
-	lbc.ingQueue = NewTaskQueue(lbc.sync)
+	lbc.nodeQueue = utils.NewPeriodicTaskQueue(lbc.syncNodes)
+	lbc.ingQueue = utils.NewPeriodicTaskQueue(lbc.sync)
 	lbc.hasSynced = lbc.storesSynced
 
 	lbc.ingressSynced = ctx.IngressInformer.HasSynced
@@ -142,7 +142,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 				return
 			}
 			lbc.recorder.Eventf(addIng, apiv1.EventTypeNormal, "ADD", fmt.Sprintf("%s/%s", addIng.Namespace, addIng.Name))
-			lbc.ingQueue.enqueue(obj)
+			lbc.ingQueue.Enqueue(obj)
 		},
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*extensions.Ingress)
@@ -151,7 +151,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 				return
 			}
 			glog.Infof("Delete notification received for Ingress %v/%v", delIng.Namespace, delIng.Name)
-			lbc.ingQueue.enqueue(obj)
+			lbc.ingQueue.Enqueue(obj)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			curIng := cur.(*extensions.Ingress)
@@ -161,7 +161,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 			if !reflect.DeepEqual(old, cur) {
 				glog.V(3).Infof("Ingress %v changed, syncing", curIng.Name)
 			}
-			lbc.ingQueue.enqueue(cur)
+			lbc.ingQueue.Enqueue(cur)
 		},
 	})
 
@@ -178,8 +178,8 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, ctx *context.Con
 
 	// node event handler
 	ctx.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    lbc.nodeQueue.enqueue,
-		DeleteFunc: lbc.nodeQueue.enqueue,
+		AddFunc:    lbc.nodeQueue.Enqueue,
+		DeleteFunc: lbc.nodeQueue.Enqueue,
 		// Nodes are updated every 10s and we don't care, so no update handler.
 	})
 
@@ -202,15 +202,15 @@ func (lbc *LoadBalancerController) enqueueIngressForService(obj interface{}) {
 		if !isGCEIngress(&ing) {
 			continue
 		}
-		lbc.ingQueue.enqueue(&ing)
+		lbc.ingQueue.Enqueue(&ing)
 	}
 }
 
 // Run starts the loadbalancer controller.
 func (lbc *LoadBalancerController) Run() {
 	glog.Infof("Starting loadbalancer controller")
-	go lbc.ingQueue.run(time.Second, lbc.stopCh)
-	go lbc.nodeQueue.run(time.Second, lbc.stopCh)
+	go lbc.ingQueue.Run(time.Second, lbc.stopCh)
+	go lbc.nodeQueue.Run(time.Second, lbc.stopCh)
 	<-lbc.stopCh
 	glog.Infof("Shutting down Loadbalancer Controller")
 }
@@ -226,8 +226,8 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 	if !lbc.shutdown {
 		close(lbc.stopCh)
 		glog.Infof("Shutting down controller queues.")
-		lbc.ingQueue.shutdown()
-		lbc.nodeQueue.shutdown()
+		lbc.ingQueue.Shutdown()
+		lbc.nodeQueue.Shutdown()
 		lbc.shutdown = true
 	}
 
