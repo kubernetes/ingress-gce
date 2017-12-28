@@ -321,17 +321,17 @@ func main() {
 	}
 }
 
-func newNamer(kubeClient kubernetes.Interface, clusterName string, fwName string) (*utils.Namer, error) {
+func newNamer(kubeClient kubernetes.Interface, clusterName string, rawFwName string) (*utils.Namer, error) {
 	name, err := getClusterUID(kubeClient, clusterName)
 	if err != nil {
 		return nil, err
 	}
-	fw_name, err := getFirewallName(kubeClient, fwName, name)
+	fwName, err := getFirewallName(kubeClient, rawFwName, name)
 	if err != nil {
 		return nil, err
 	}
 
-	namer := utils.NewNamer(name, fw_name)
+	namer := utils.NewNamer(name, fwName)
 	uidVault := storage.NewConfigMapVault(kubeClient, metav1.NamespaceSystem, uidConfigMapName)
 
 	// Start a goroutine to poll the cluster UID config map
@@ -359,8 +359,8 @@ func newNamer(kubeClient kubernetes.Interface, clusterName string, fwName string
 						namer.SetUID(val)
 					}
 				case storage.ProviderDataKey:
-					if fw_name := namer.Firewall(); fw_name != val {
-						glog.Infof("Cluster firewall name changed from %v -> %v", fw_name, val)
+					if fwName := namer.Firewall(); fwName != val {
+						glog.Infof("Cluster firewall name changed from %v -> %v", fwName, val)
 						namer.SetFirewall(val)
 					}
 				}
@@ -370,32 +370,32 @@ func newNamer(kubeClient kubernetes.Interface, clusterName string, fwName string
 	return namer, nil
 }
 
-// useDefaultOrLookupVault returns either a 'default_name' or if unset, obtains a name from a ConfigMap.
+// useDefaultOrLookupVault returns either a 'defaultName' or if unset, obtains a name from a ConfigMap.
 // The returned value follows this priority:
-// If the provided 'default_name' is not empty, that name is used.
+// If the provided 'defaultName' is not empty, that name is used.
 //       This is effectively a client override via a command line flag.
 // else, check cfgVault with 'cm_key' as a key and if found, use the associated value
 // else, return an empty 'name' and pass along an error iff the configmap lookup is erroneous.
-func useDefaultOrLookupVault(cfgVault *storage.ConfigMapVault, cm_key, default_name string) (string, error) {
-	if default_name != "" {
-		glog.Infof("Using user provided %v %v", cm_key, default_name)
+func useDefaultOrLookupVault(cfgVault *storage.ConfigMapVault, cmKey, defaultName string) (string, error) {
+	if defaultName != "" {
+		glog.Infof("Using user provided %v %v", cmKey, defaultName)
 		// Don't save the uid in the vault, so users can rollback through
 		// setting the accompany flag to ""
-		return default_name, nil
+		return defaultName, nil
 	}
-	val, found, err := cfgVault.Get(cm_key)
+	val, found, err := cfgVault.Get(cmKey)
 	if err != nil {
 		// This can fail because of:
 		// 1. No such config map - found=false, err=nil
 		// 2. No such key in config map - found=false, err=nil
 		// 3. Apiserver flake - found=false, err!=nil
 		// It is not safe to proceed in 3.
-		return "", fmt.Errorf("failed to retrieve %v: %v, returning empty name", cm_key, err)
+		return "", fmt.Errorf("failed to retrieve %v: %v, returning empty name", cmKey, err)
 	} else if !found {
 		// Not found but safe to proceed.
 		return "", nil
 	}
-	glog.Infof("Using %v = %q saved in ConfigMap", cm_key, val)
+	glog.Infof("Using %v = %q saved in ConfigMap", cmKey, val)
 	return val, nil
 }
 
@@ -403,15 +403,15 @@ func useDefaultOrLookupVault(cfgVault *storage.ConfigMapVault, cm_key, default_n
 // backwards compatibility, the firewall name will default to the cluster UID.
 // Use getFlagOrLookupVault to obtain a stored or overridden value for the firewall name.
 // else, use the cluster UID as a backup (this retains backwards compatibility).
-func getFirewallName(kubeClient kubernetes.Interface, name, cluster_uid string) (string, error) {
+func getFirewallName(kubeClient kubernetes.Interface, name, clusterUID string) (string, error) {
 	cfgVault := storage.NewConfigMapVault(kubeClient, metav1.NamespaceSystem, uidConfigMapName)
-	if fw_name, err := useDefaultOrLookupVault(cfgVault, storage.ProviderDataKey, name); err != nil {
+	if fwName, err := useDefaultOrLookupVault(cfgVault, storage.ProviderDataKey, name); err != nil {
 		return "", err
-	} else if fw_name != "" {
-		return fw_name, cfgVault.Put(storage.ProviderDataKey, fw_name)
+	} else if fwName != "" {
+		return fwName, cfgVault.Put(storage.ProviderDataKey, fwName)
 	} else {
-		glog.Infof("Using cluster UID %v as firewall name", cluster_uid)
-		return cluster_uid, cfgVault.Put(storage.ProviderDataKey, cluster_uid)
+		glog.Infof("Using cluster UID %v as firewall name", clusterUID)
+		return clusterUID, cfgVault.Put(storage.ProviderDataKey, clusterUID)
 	}
 }
 
