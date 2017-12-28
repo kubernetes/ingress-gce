@@ -18,7 +18,6 @@ package app
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -29,10 +28,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+
+	// Register the GCP authorization provider.
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
 
 const (
@@ -40,34 +41,26 @@ const (
 	cloudClientRetryInterval = 10 * time.Second
 )
 
+// NewKubeClient returns a Kubernetes client given the command line settings.
 func NewKubeClient() (kubernetes.Interface, error) {
-	var err error
-	var config *rest.Config
-
 	if Flags.InCluster {
-		if config, err = rest.InClusterConfig(); err != nil {
+		glog.V(0).Infof("Using in cluster configuration")
+		config, err := rest.InClusterConfig()
+		if err != nil {
 			return nil, err
 		}
-	} else {
-		if Flags.APIServerHost == "" {
-			return nil, fmt.Errorf("please specify the api server address using the flag --apiserver-host")
-		}
-
-		config, err = clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			&clientcmd.ClientConfigLoadingRules{ExplicitPath: Flags.KubeConfigFile},
-			&clientcmd.ConfigOverrides{
-				ClusterInfo: clientcmdapi.Cluster{
-					Server: Flags.APIServerHost,
-				},
-			}).ClientConfig()
-		if err != nil {
-			glog.Fatalf("error creating client configuration: %v", err)
-		}
+		return kubernetes.NewForConfig(config)
 	}
 
+	glog.V(0).Infof("Using APIServerHost=%q, KubeConfig=%q", Flags.APIServerHost, Flags.KubeConfigFile)
+	config, err := clientcmd.BuildConfigFromFlags(Flags.APIServerHost, Flags.KubeConfigFile)
+	if err != nil {
+		return nil, err
+	}
 	return kubernetes.NewForConfig(config)
 }
 
+// NewGCEClient returns a client to the GCE environment.
 func NewGCEClient(config io.Reader) *gce.GCECloud {
 	getConfigReader := func() io.Reader { return nil }
 

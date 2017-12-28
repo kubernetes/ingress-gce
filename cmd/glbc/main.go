@@ -53,11 +53,11 @@ func main() {
 		flag.Set("v", "4")
 	}
 
-	glog.V(0).Infof("Starting GLBC image: %v, cluster name %v", imageVersion, app.Flags.ClusterName)
+	glog.V(0).Infof("Starting GLBC image: %q, cluster name %q", imageVersion, app.Flags.ClusterName)
 
 	kubeClient, err := app.NewKubeClient()
 	if err != nil {
-		glog.Fatalf("Failed to create client: %v.", err)
+		glog.Fatalf("Failed to create client: %v", err)
 	}
 
 	var namer *utils.Namer
