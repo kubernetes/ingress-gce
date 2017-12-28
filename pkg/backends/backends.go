@@ -81,7 +81,7 @@ type Backends struct {
 	nodePool      instances.NodePool
 	healthChecker healthchecks.HealthChecker
 	snapshotter   storage.Snapshotter
-	prober        probeProvider
+	prober        ProbeProvider
 	// ignoredPorts are a set of ports excluded from GC, even
 	// after the Ingress has been deleted. Note that invoking
 	// a Delete() on these ports will still delete the backend.
@@ -164,7 +164,7 @@ func NewBackendPool(
 }
 
 // Init sets the probeProvider interface value
-func (b *Backends) Init(pp probeProvider) {
+func (b *Backends) Init(pp ProbeProvider) {
 	b.prober = pp
 }
 

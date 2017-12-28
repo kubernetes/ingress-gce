@@ -23,14 +23,14 @@ import (
 )
 
 // ProbeProvider retrieves a probe struct given a nodePort
-type probeProvider interface {
+type ProbeProvider interface {
 	GetProbe(sp ServicePort) (*api_v1.Probe, error)
 }
 
 // BackendPool is an interface to manage a pool of kubernetes nodePort services
 // as gce backendServices, and sync them through the BackendServices interface.
 type BackendPool interface {
-	Init(p probeProvider)
+	Init(p ProbeProvider)
 	Ensure(ports []ServicePort, igs []*compute.InstanceGroup) error
 	Get(port int64) (*compute.BackendService, error)
 	Delete(port int64) error

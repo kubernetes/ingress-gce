@@ -41,7 +41,7 @@ type Instances struct {
 	// zones is a list of zones seeded by Kubernetes node zones.
 	// TODO: we can figure this out.
 	snapshotter storage.Snapshotter
-	zoneLister
+	ZoneLister
 	namer *utils.Namer
 }
 
@@ -59,8 +59,8 @@ func NewNodePool(cloud InstanceGroups, namer *utils.Namer) NodePool {
 // Init initializes the instance pool. The given zoneLister is used to list
 // all zones that require an instance group, and to lookup which zone a
 // given Kubernetes node is in so we can add it to the right instance group.
-func (i *Instances) Init(zl zoneLister) {
-	i.zoneLister = zl
+func (i *Instances) Init(zl ZoneLister) {
+	i.ZoneLister = zl
 }
 
 // EnsureInstanceGroupsAndPorts creates or gets an instance group if it doesn't exist

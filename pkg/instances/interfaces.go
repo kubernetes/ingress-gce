@@ -21,7 +21,7 @@ import (
 )
 
 // zoneLister manages lookups for GCE instance groups/instances to zones.
-type zoneLister interface {
+type ZoneLister interface {
 	ListZones() ([]string, error)
 	GetZoneForNode(name string) (string, error)
 }
@@ -29,7 +29,7 @@ type zoneLister interface {
 // NodePool is an interface to manage a pool of kubernetes nodes synced with vm instances in the cloud
 // through the InstanceGroups interface. It handles zones opaquely using the zoneLister.
 type NodePool interface {
-	Init(zl zoneLister)
+	Init(zl ZoneLister)
 
 	// The following 2 methods operate on instance groups.
 	EnsureInstanceGroupsAndPorts(name string, ports []int64) ([]*compute.InstanceGroup, error)
