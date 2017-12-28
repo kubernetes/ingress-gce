@@ -19,11 +19,15 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
+
+	"github.com/golang/glog"
 
 	compute "google.golang.org/api/compute/v1"
 
 	api_v1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -60,13 +64,9 @@ type ErrSvcAppProtosParsing struct {
 	origErr error
 }
 
-<<<<<<< HEAD
 func (e ErrSvcAppProtosParsing) Error() string {
 	return fmt.Sprintf("could not parse %v annotation on Service %v/%v, err: %v", annotations.ServiceApplicationProtocolKey, e.svc.Namespace, e.svc.Name, e.origErr)
-=======
-func (e errorSvcAppProtosParsing) Error() string {
-	return fmt.Sprintf("could not parse Service app protocol annotation %v/%v, err: %v", e.svc.Namespace, e.svc.Name, e.origErr)
->>>>>>> Make annotation wrapper types internal keys private; adds unit tests
+
 }
 
 // compareLinks returns true if the 2 self links are equal.
