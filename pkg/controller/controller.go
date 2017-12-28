@@ -449,7 +449,7 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ingList extensions.IngressList)
 
 		var tls *loadbalancers.TLSCerts
 
-		annotations := annotations.IngAnnotations(ing.ObjectMeta.Annotations)
+		annotations := annotations.FromIngress(&ing)
 		// Load the TLS cert from the API Spec if it is not specified in the annotation.
 		// TODO: enforce this with validation.
 		if annotations.UseNamedTLS() == "" {

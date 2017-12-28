@@ -20,7 +20,7 @@ import (
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	compute "google.golang.org/api/compute/v1"
 
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/annotations"
 )
 
 // HealthCheckProvider is an interface to manage a single GCE health check.
@@ -41,7 +41,7 @@ type HealthCheckProvider interface {
 
 // HealthChecker is an interface to manage cloud HTTPHealthChecks.
 type HealthChecker interface {
-	New(port int64, protocol utils.AppProtocol, enableNEG bool) *HealthCheck
+	New(port int64, protocol annotations.AppProtocol, enableNEG bool) *HealthCheck
 	Sync(hc *HealthCheck) (string, error)
 	Delete(port int64) error
 	Get(port int64, alpha bool) (*HealthCheck, error)

@@ -17,11 +17,9 @@ limitations under the License.
 package utils
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 
-	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 )
 
@@ -44,60 +42,7 @@ const (
 	AddInstances
 	// RemoveInstances used to record a call to RemoveInstances.
 	RemoveInstances
-
-	// K8sAnnotationPrefix is the prefix used in annotations used to record
-	// debug information in the Ingress annotations.
-	K8sAnnotationPrefix = "ingress.kubernetes.io"
-
-	// ProtocolHTTP protocol for a service
-	ProtocolHTTP AppProtocol = "HTTP"
-	// ProtocolHTTPS protocol for a service
-	ProtocolHTTPS AppProtocol = "HTTPS"
 )
-
-type AppProtocol string
-
-// GCEURLMap is a nested map of hostname->path regex->backend
-type GCEURLMap map[string]map[string]*compute.BackendService
-
-// GetDefaultBackend performs a destructive read and returns the default
-// backend of the urlmap.
-func (g GCEURLMap) GetDefaultBackend() *compute.BackendService {
-	var d *compute.BackendService
-	var exists bool
-	if h, ok := g[DefaultBackendKey]; ok {
-		if d, exists = h[DefaultBackendKey]; exists {
-			delete(h, DefaultBackendKey)
-		}
-		delete(g, DefaultBackendKey)
-	}
-	return d
-}
-
-// String implements the string interface for the GCEURLMap.
-func (g GCEURLMap) String() string {
-	msg := ""
-	for host, um := range g {
-		msg += fmt.Sprintf("%v\n", host)
-		for url, be := range um {
-			msg += fmt.Sprintf("\t%v: ", url)
-			if be == nil {
-				msg += fmt.Sprintf("No backend\n")
-			} else {
-				msg += fmt.Sprintf("%v\n", be.Name)
-			}
-		}
-	}
-	return msg
-}
-
-// PutDefaultBackend performs a destructive write replacing the
-// default backend of the url map with the given backend.
-func (g GCEURLMap) PutDefaultBackend(d *compute.BackendService) {
-	g[DefaultBackendKey] = map[string]*compute.BackendService{
-		DefaultBackendKey: d,
-	}
-}
 
 // FakeGoogleAPIForbiddenErr creates a Forbidden error with type googleapi.Error
 func FakeGoogleAPIForbiddenErr() *googleapi.Error {

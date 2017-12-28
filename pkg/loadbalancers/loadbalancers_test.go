@@ -23,6 +23,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
@@ -35,7 +36,7 @@ const (
 )
 
 var (
-	testDefaultBeNodePort = backends.ServicePort{Port: 3000, Protocol: utils.ProtocolHTTP}
+	testDefaultBeNodePort = backends.ServicePort{Port: 3000, Protocol: annotations.ProtocolHTTP}
 )
 
 func newFakeLoadBalancerPool(f LoadBalancers, t *testing.T, namer *utils.Namer) LoadBalancerPool {
@@ -425,7 +426,7 @@ func TestNameParsing(t *testing.T) {
 	namer := utils.NewNamer(clusterName, firewallName)
 	fullName := namer.ForwardingRule(namer.LoadBalancer("testlb"), utils.HTTPProtocol)
 	annotationsMap := map[string]string{
-		fmt.Sprintf("%v/forwarding-rule", utils.K8sAnnotationPrefix): fullName,
+		fmt.Sprintf("%v/forwarding-rule", annotations.StatusPrefix): fullName,
 	}
 	components := namer.ParseName(GCEResourceName(annotationsMap, "forwarding-rule"))
 	t.Logf("components = %+v", components)

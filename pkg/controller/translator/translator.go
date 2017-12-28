@@ -164,7 +164,7 @@ func (t *GCE) getServiceNodePort(be extensions.IngressBackend, namespace string)
 		return backends.ServicePort{}, errors.ErrNodePortNotFound{be, err}
 	}
 	svc := obj.(*api_v1.Service)
-	appProtocols, err := annotations.SvcAnnotations(svc.GetAnnotations()).ApplicationProtocols()
+	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
 	if err != nil {
 		return backends.ServicePort{}, errors.ErrSvcAppProtosParsing{svc, err}
 	}
@@ -191,9 +191,9 @@ PortLoop:
 		return backends.ServicePort{}, errors.ErrNodePortNotFound{be, fmt.Errorf("could not find matching nodeport from service")}
 	}
 
-	proto := utils.ProtocolHTTP
+	proto := annotations.ProtocolHTTP
 	if protoStr, exists := appProtocols[port.Name]; exists {
-		proto = utils.AppProtocol(protoStr)
+		proto = annotations.AppProtocol(protoStr)
 	}
 
 	p := backends.ServicePort{
@@ -202,7 +202,7 @@ PortLoop:
 		SvcName:       types.NamespacedName{Namespace: namespace, Name: be.ServiceName},
 		SvcPort:       be.ServicePort,
 		SvcTargetPort: port.TargetPort.String(),
-		NEGEnabled:    t.negEnabled && annotations.SvcAnnotations(svc.GetAnnotations()).NEGEnabled(),
+		NEGEnabled:    t.negEnabled && annotations.FromService(svc).NEGEnabled(),
 	}
 	return p, nil
 }
@@ -284,7 +284,7 @@ func (t *GCE) ListZones() ([]string, error) {
 
 // geHTTPProbe returns the http readiness probe from the first container
 // that matches targetPort, from the set of pods matching the given labels.
-func (t *GCE) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrString, protocol utils.AppProtocol) (*api_v1.Probe, error) {
+func (t *GCE) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrString, protocol annotations.AppProtocol) (*api_v1.Probe, error) {
 	l := svc.Spec.Selector
 
 	// Lookup any container with a matching targetPort from the set of pods

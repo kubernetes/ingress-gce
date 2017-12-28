@@ -19,11 +19,15 @@ package controller
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
+
+	"github.com/golang/glog"
 
 	compute "google.golang.org/api/compute/v1"
 
 	api_v1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -33,14 +37,14 @@ import (
 // isGCEIngress returns true if the given Ingress either doesn't specify the
 // ingress.class annotation, or it's set to "gce".
 func isGCEIngress(ing *extensions.Ingress) bool {
-	class := annotations.IngAnnotations(ing.ObjectMeta.Annotations).IngressClass()
+	class := annotations.FromIngress(ing).IngressClass()
 	return class == "" || class == annotations.GceIngressClass
 }
 
 // isGCEMultiClusterIngress returns true if the given Ingress has
 // ingress.class annotation set to "gce-multi-cluster".
 func isGCEMultiClusterIngress(ing *extensions.Ingress) bool {
-	class := annotations.IngAnnotations(ing.ObjectMeta.Annotations).IngressClass()
+	class := annotations.FromIngress(ing).IngressClass()
 	return class == annotations.GceMultiIngressClass
 }
 
@@ -62,6 +66,7 @@ type ErrSvcAppProtosParsing struct {
 
 func (e ErrSvcAppProtosParsing) Error() string {
 	return fmt.Sprintf("could not parse %v annotation on Service %v/%v, err: %v", annotations.ServiceApplicationProtocolKey, e.svc.Namespace, e.svc.Name, e.origErr)
+
 }
 
 // compareLinks returns true if the 2 self links are equal.
@@ -152,6 +157,41 @@ IngressLoop:
 		err = fmt.Errorf("no ingress for service %v", svc.Name)
 	}
 	return
+}
+
+func (s *StoreToEndpointLister) ListEndpointTargetPorts(namespace, name, targetPort string) []int {
+	// if targetPort is integer, no need to translate to endpoint ports
+	if i, err := strconv.Atoi(targetPort); err == nil {
+		return []int{i}
+	}
+
+	ep, exists, err := s.Indexer.Get(
+		&api_v1.Endpoints{
+			ObjectMeta: meta_v1.ObjectMeta{
+				Name:      name,
+				Namespace: namespace,
+			},
+		},
+	)
+
+	if !exists {
+		glog.Errorf("Endpoint object %v/%v does not exist.", namespace, name)
+		return []int{}
+	}
+	if err != nil {
+		glog.Errorf("Failed to retrieve endpoint object %v/%v: %v", namespace, name, err)
+		return []int{}
+	}
+
+	ret := []int{}
+	for _, subset := range ep.(*api_v1.Endpoints).Subsets {
+		for _, port := range subset.Ports {
+			if port.Protocol == api_v1.ProtocolTCP && port.Name == targetPort {
+				ret = append(ret, int(port.Port))
+			}
+		}
+	}
+	return ret
 }
 
 // setInstanceGroupsAnnotation sets the instance-groups annotation with names of the given instance groups.

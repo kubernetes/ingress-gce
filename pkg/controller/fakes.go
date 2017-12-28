@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/healthchecks"
@@ -31,7 +32,7 @@ import (
 )
 
 var (
-	testDefaultBeNodePort = backends.ServicePort{Port: 3000, Protocol: utils.ProtocolHTTP}
+	testDefaultBeNodePort = backends.ServicePort{Port: 3000, Protocol: annotations.ProtocolHTTP}
 	testBackendPort       = intstr.IntOrString{Type: intstr.Int, IntVal: 80}
 )
 
