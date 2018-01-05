@@ -45,4 +45,4 @@ include build/rules.mk
 
 # Additional rule to build an image of glbc for e2e testing.
 push-e2e:
-	@$(MAKE) --no-print-directory CONTAINER_PREFIX=ingress-gce-e2e containers push
+	@$(MAKE) --no-print-directory REGISTRY=gcr.io/e2e-ingress-gce CONTAINER_PREFIX=ingress-gce-e2e containers push
