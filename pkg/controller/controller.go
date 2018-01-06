@@ -68,10 +68,9 @@ type LoadBalancerController struct {
 	nodeSynced     cache.InformerSynced
 	endpointSynced cache.InformerSynced
 	ingLister      StoreToIngressLister
-	nodeLister     StoreToNodeLister
-	svcLister      StoreToServiceLister
-	// Health checks are the readiness probes of containers on pods.
-	podLister StoreToPodLister
+	nodeLister     cache.Indexer
+	svcLister      cache.Indexer
+	podLister      cache.Indexer
 	// endpoint lister is needed when translating service target port to real endpoint target ports.
 	endpointLister StoreToEndpointLister
 	// TODO: Watch secrets
@@ -125,9 +124,9 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 	lbc.endpointSynced = func() bool { return true }
 
 	lbc.ingLister.Store = ctx.IngressInformer.GetStore()
-	lbc.svcLister.Indexer = ctx.ServiceInformer.GetIndexer()
-	lbc.podLister.Indexer = ctx.PodInformer.GetIndexer()
-	lbc.nodeLister.Indexer = ctx.NodeInformer.GetIndexer()
+	lbc.svcLister = ctx.ServiceInformer.GetIndexer()
+	lbc.podLister = ctx.PodInformer.GetIndexer()
+	lbc.nodeLister = ctx.NodeInformer.GetIndexer()
 	if negEnabled {
 		lbc.endpointSynced = ctx.EndpointInformer.HasSynced
 		lbc.endpointLister.Indexer = ctx.EndpointInformer.GetIndexer()
@@ -477,16 +476,13 @@ func (lbc *LoadBalancerController) syncNodes(key string) error {
 	if err != nil {
 		return err
 	}
-	if err := lbc.CloudClusterManager.instancePool.Sync(nodeNames); err != nil {
-		return err
-	}
-	return nil
+	return lbc.CloudClusterManager.instancePool.Sync(nodeNames)
 }
 
 // getReadyNodeNames returns names of schedulable, ready nodes from the node lister.
 func (lbc *LoadBalancerController) getReadyNodeNames() ([]string, error) {
 	nodeNames := []string{}
-	nodes, err := listers.NewNodeLister(lbc.nodeLister.Indexer).ListWithPredicate(utils.NodeIsReady)
+	nodes, err := listers.NewNodeLister(lbc.nodeLister).ListWithPredicate(utils.NodeIsReady)
 	if err != nil {
 		return nodeNames, err
 	}

@@ -74,26 +74,6 @@ type StoreToIngressLister struct {
 	cache.Store
 }
 
-// StoreToNodeLister makes a Store that lists Node.
-type StoreToNodeLister struct {
-	cache.Indexer
-}
-
-// StoreToServiceLister makes a Store that lists Service.
-type StoreToServiceLister struct {
-	cache.Indexer
-}
-
-// StoreToPodLister makes a Store that lists Pods.
-type StoreToPodLister struct {
-	cache.Indexer
-}
-
-// StoreToPodLister makes a Store that lists Endpoints.
-type StoreToEndpointLister struct {
-	cache.Indexer
-}
-
 // List lists all Ingress' in the store (both single and multi cluster ingresses).
 func (s *StoreToIngressLister) ListAll() (ing extensions.IngressList, err error) {
 	for _, m := range s.Store.List() {
@@ -150,6 +130,11 @@ IngressLoop:
 		err = fmt.Errorf("no ingress for service %v", svc.Name)
 	}
 	return
+}
+
+// StoreToEndpointLister makes a Store that lists Endpoints.
+type StoreToEndpointLister struct {
+	cache.Indexer
 }
 
 func (s *StoreToEndpointLister) ListEndpointTargetPorts(namespace, name, targetPort string) []int {

@@ -117,7 +117,7 @@ func TestProbeGetterNamedPort(t *testing.T) {
 		{Port: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
 	addPods(lbc, nodePortToHealthCheck, api_v1.NamespaceDefault)
-	for _, p := range lbc.podLister.Indexer.List() {
+	for _, p := range lbc.podLister.List() {
 		pod := p.(*api_v1.Pod)
 		pod.Spec.Containers[0].Ports[0].Name = "test"
 		pod.Spec.Containers[0].ReadinessProbe.Handler.HTTPGet.Port = intstr.IntOrString{Type: intstr.String, StrVal: "test"}
@@ -167,7 +167,7 @@ func TestProbeGetterCrossNamespace(t *testing.T) {
 			},
 		},
 	}
-	lbc.podLister.Indexer.Add(firstPod)
+	lbc.podLister.Add(firstPod)
 	nodePortToHealthCheck := map[backends.ServicePort]string{
 		{Port: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
@@ -203,7 +203,7 @@ func addPods(lbc *LoadBalancerController, nodePortToHealthCheck map[backends.Ser
 		}
 		svc.Name = fmt.Sprintf("%d", np.Port)
 		svc.Namespace = ns
-		lbc.svcLister.Indexer.Add(svc)
+		lbc.svcLister.Add(svc)
 
 		pod := &api_v1.Pod{
 			ObjectMeta: meta_v1.ObjectMeta{
@@ -232,7 +232,7 @@ func addPods(lbc *LoadBalancerController, nodePortToHealthCheck map[backends.Ser
 				},
 			},
 		}
-		lbc.podLister.Indexer.Add(pod)
+		lbc.podLister.Add(pod)
 		delay = 2 * delay
 	}
 }
@@ -253,7 +253,7 @@ func addNodes(lbc *LoadBalancerController, zoneToNode map[string][]string) {
 					},
 				},
 			}
-			lbc.nodeLister.Indexer.Add(n)
+			lbc.nodeLister.Add(n)
 		}
 	}
 	lbc.CloudClusterManager.instancePool.Init(lbc.Translator)
@@ -334,8 +334,8 @@ func TestGatherFirewallPorts(t *testing.T) {
 		},
 	}
 
-	lbc.endpointLister.Indexer.Add(newDefaultEndpoint(ep1))
-	lbc.endpointLister.Indexer.Add(newDefaultEndpoint(ep2))
+	lbc.endpointLister.Add(newDefaultEndpoint(ep1))
+	lbc.endpointLister.Add(newDefaultEndpoint(ep2))
 
 	res := lbc.Translator.GatherFirewallPorts(svcPorts, true)
 	expect := map[int64]bool{

@@ -196,7 +196,7 @@ func addIngress(lbc *LoadBalancerController, ing *extensions.Ingress, pm *nodePo
 			}
 			svcPort.NodePort = int32(pm.getNodePort(path.Backend.ServiceName))
 			svc.Spec.Ports = []api_v1.ServicePort{svcPort}
-			lbc.svcLister.Indexer.Add(svc)
+			lbc.svcLister.Add(svc)
 		}
 	}
 }
