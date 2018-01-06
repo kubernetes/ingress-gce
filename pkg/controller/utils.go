@@ -68,12 +68,6 @@ func (e ErrSvcAppProtosParsing) Error() string {
 	return fmt.Sprintf("could not parse %v annotation on Service %v/%v, err: %v", annotations.ServiceApplicationProtocolKey, e.svc.Namespace, e.svc.Name, e.origErr)
 }
 
-// compareLinks returns true if the 2 self links are equal.
-func compareLinks(l1, l2 string) bool {
-	// TODO: These can be partial links
-	return l1 == l2 && l1 != ""
-}
-
 // StoreToIngressLister makes a Store that lists Ingress.
 // TODO: Move this to cache/listers post 1.1.
 type StoreToIngressLister struct {
