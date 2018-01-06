@@ -22,18 +22,18 @@ import (
 	api "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestConfigMapUID(t *testing.T) {
+func TestFakeConfigMapVaule(t *testing.T) {
 	vault := NewFakeConfigMapVault(api.NamespaceSystem, "ingress-uid")
 	// Get value from an empty vault.
-	val, exists, err := vault.Get(UidDataKey)
+	val, exists, err := vault.Get(UIDDataKey)
 	if exists {
 		t.Errorf("Got value from an empty vault")
 	}
 
-	// Store empty value for UidDataKey.
+	// Store empty value for UIDDataKey.
 	uid := ""
-	vault.Put(UidDataKey, uid)
-	val, exists, err = vault.Get(UidDataKey)
+	vault.Put(UIDDataKey, uid)
+	val, exists, err = vault.Get(UIDDataKey)
 	if !exists || err != nil {
 		t.Errorf("Failed to retrieve value from vault: %v", err)
 	}
@@ -43,8 +43,8 @@ func TestConfigMapUID(t *testing.T) {
 
 	// Store actual value in key.
 	storedVal := "newuid"
-	vault.Put(UidDataKey, storedVal)
-	val, exists, err = vault.Get(UidDataKey)
+	vault.Put(UIDDataKey, storedVal)
+	val, exists, err = vault.Get(UIDDataKey)
 	if !exists || err != nil {
 		t.Errorf("Failed to retrieve value from vault")
 	} else if val != storedVal {
@@ -59,7 +59,7 @@ func TestConfigMapUID(t *testing.T) {
 	if !exists || err != nil || val != secondVal {
 		t.Errorf("Failed to retrieve second value from vault")
 	}
-	val, exists, err = vault.Get(UidDataKey)
+	val, exists, err = vault.Get(UIDDataKey)
 	if !exists || err != nil || val != storedVal {
 		t.Errorf("Failed to retrieve first value from vault")
 	}
@@ -68,7 +68,7 @@ func TestConfigMapUID(t *testing.T) {
 	if err := vault.Delete(); err != nil {
 		t.Errorf("Failed to delete uid %v", err)
 	}
-	if _, exists, _ := vault.Get(UidDataKey); exists {
+	if _, exists, _ := vault.Get(UIDDataKey); exists {
 		t.Errorf("Found uid but expected none after deletion")
 	}
 }

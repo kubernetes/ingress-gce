@@ -31,19 +31,19 @@ import (
 )
 
 const (
-	// UidDataKey is the key used in config maps to store the UID.
-	UidDataKey = "uid"
+	// UIDDataKey is the key used in config maps to store the UID.
+	UIDDataKey = "uid"
 	// ProviderDataKey is the key used in config maps to store the Provider
 	// UID which we use to ensure unique firewalls.
 	ProviderDataKey = "provider-uid"
 )
 
 // ConfigMapVault stores cluster UIDs in config maps.
-// It's a layer on top of ConfigMapStore that just implements the utils.uidVault
+// It's a layer on top of configMapStore that just implements the utils.uidVault
 // interface.
 type ConfigMapVault struct {
 	storeLock      sync.Mutex
-	ConfigMapStore cache.Store
+	configMapStore cache.Store
 	namespace      string
 	name           string
 }
@@ -54,7 +54,7 @@ type ConfigMapVault struct {
 // returns and error of nil instead.
 func (c *ConfigMapVault) Get(key string) (string, bool, error) {
 	keyStore := fmt.Sprintf("%v/%v", c.namespace, c.name)
-	item, found, err := c.ConfigMapStore.GetByKey(keyStore)
+	item, found, err := c.configMapStore.GetByKey(keyStore)
 	if err != nil || !found {
 		return "", false, err
 	}
@@ -81,7 +81,7 @@ func (c *ConfigMapVault) Put(key, val string) error {
 	}
 	cfgMapKey := fmt.Sprintf("%v/%v", c.namespace, c.name)
 
-	item, exists, err := c.ConfigMapStore.GetByKey(cfgMapKey)
+	item, exists, err := c.configMapStore.GetByKey(cfgMapKey)
 	if err == nil && exists {
 		data := item.(*api_v1.ConfigMap).Data
 		existingVal, ok := data[key]
@@ -96,12 +96,12 @@ func (c *ConfigMapVault) Put(key, val string) error {
 		} else {
 			glog.Infof("Configmap %v will be updated with %v = %v", cfgMapKey, key, val)
 		}
-		if err := c.ConfigMapStore.Update(apiObj); err != nil {
+		if err := c.configMapStore.Update(apiObj); err != nil {
 			return fmt.Errorf("failed to update %v: %v", cfgMapKey, err)
 		}
 	} else {
 		apiObj.Data = map[string]string{key: val}
-		if err := c.ConfigMapStore.Add(apiObj); err != nil {
+		if err := c.configMapStore.Add(apiObj); err != nil {
 			return fmt.Errorf("failed to add %v: %v", cfgMapKey, err)
 		}
 	}
@@ -109,12 +109,12 @@ func (c *ConfigMapVault) Put(key, val string) error {
 	return nil
 }
 
-// Delete deletes the ConfigMapStore.
+// Delete deletes the configMapStore.
 func (c *ConfigMapVault) Delete() error {
 	cfgMapKey := fmt.Sprintf("%v/%v", c.namespace, c.name)
-	item, _, err := c.ConfigMapStore.GetByKey(cfgMapKey)
+	item, _, err := c.configMapStore.GetByKey(cfgMapKey)
 	if err == nil {
-		return c.ConfigMapStore.Delete(item)
+		return c.configMapStore.Delete(item)
 	}
 	glog.Warningf("Couldn't find item %v in vault, unable to delete", cfgMapKey)
 	return nil
@@ -125,57 +125,57 @@ func (c *ConfigMapVault) Delete() error {
 // configmaps and the API, and just store/retrieve a single value, the cluster uid.
 func NewConfigMapVault(c kubernetes.Interface, uidNs, uidConfigMapName string) *ConfigMapVault {
 	return &ConfigMapVault{
-		ConfigMapStore: NewConfigMapStore(c),
+		configMapStore: newConfigMapStore(c),
 		namespace:      uidNs,
 		name:           uidConfigMapName}
 }
 
-// NewFakeConfigMapVault is an implementation of the ConfigMapStore that doesn't
+// NewFakeConfigMapVault is an implementation of the configMapStore that doesn't
 // persist configmaps. Only used in testing.
 func NewFakeConfigMapVault(ns, name string) *ConfigMapVault {
 	return &ConfigMapVault{
-		ConfigMapStore: cache.NewStore(cache.MetaNamespaceKeyFunc),
+		configMapStore: cache.NewStore(cache.MetaNamespaceKeyFunc),
 		namespace:      ns,
 		name:           name}
 }
 
-// ConfigMapStore wraps the store interface. Implementations usually persist
+// configMapStore wraps the store interface. Implementations usually persist
 // contents of the store transparently.
-type ConfigMapStore interface {
+type configMapStore interface {
 	cache.Store
 }
 
-// APIServerConfigMapStore only services Add and GetByKey from apiserver.
+// APIServerconfigMapStore only services Add and GetByKey from apiserver.
 // TODO: Implement all the other store methods and make this a write
 // through cache.
-type APIServerConfigMapStore struct {
-	ConfigMapStore
+type APIServerconfigMapStore struct {
+	configMapStore
 	client kubernetes.Interface
 }
 
 // Add adds the given config map to the apiserver's store.
-func (a *APIServerConfigMapStore) Add(obj interface{}) error {
+func (a *APIServerconfigMapStore) Add(obj interface{}) error {
 	cfg := obj.(*api_v1.ConfigMap)
 	_, err := a.client.Core().ConfigMaps(cfg.Namespace).Create(cfg)
 	return err
 }
 
 // Update updates the existing config map object.
-func (a *APIServerConfigMapStore) Update(obj interface{}) error {
+func (a *APIServerconfigMapStore) Update(obj interface{}) error {
 	cfg := obj.(*api_v1.ConfigMap)
 	_, err := a.client.Core().ConfigMaps(cfg.Namespace).Update(cfg)
 	return err
 }
 
 // Delete deletes the existing config map object.
-func (a *APIServerConfigMapStore) Delete(obj interface{}) error {
+func (a *APIServerconfigMapStore) Delete(obj interface{}) error {
 	cfg := obj.(*api_v1.ConfigMap)
 	return a.client.Core().ConfigMaps(cfg.Namespace).Delete(cfg.Name, &metav1.DeleteOptions{})
 }
 
 // GetByKey returns the config map for a given key.
 // The key must take the form namespace/name.
-func (a *APIServerConfigMapStore) GetByKey(key string) (item interface{}, exists bool, err error) {
+func (a *APIServerconfigMapStore) GetByKey(key string) (item interface{}, exists bool, err error) {
 	nsName := strings.Split(key, "/")
 	if len(nsName) != 2 {
 		return nil, false, fmt.Errorf("failed to get key %v, unexpecte format, expecting ns/name", key)
@@ -192,8 +192,11 @@ func (a *APIServerConfigMapStore) GetByKey(key string) (item interface{}, exists
 	return cfg, true, nil
 }
 
-// NewConfigMapStore returns a config map store capable of persisting updates
+// newConfigMapStore returns a config map store capable of persisting updates
 // to apiserver.
-func NewConfigMapStore(c kubernetes.Interface) ConfigMapStore {
-	return &APIServerConfigMapStore{ConfigMapStore: cache.NewStore(cache.MetaNamespaceKeyFunc), client: c}
+func newConfigMapStore(c kubernetes.Interface) configMapStore {
+	return &APIServerconfigMapStore{
+		configMapStore: cache.NewStore(cache.MetaNamespaceKeyFunc),
+		client:         c,
+	}
 }
