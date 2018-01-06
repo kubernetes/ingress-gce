@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/golang/glog"
@@ -60,22 +61,30 @@ func NewKubeClient() (kubernetes.Interface, error) {
 	return kubernetes.NewForConfig(config)
 }
 
-// NewGCEClient returns a client to the GCE environment.
-func NewGCEClient(config io.Reader) *gce.GCECloud {
-	getConfigReader := func() io.Reader { return nil }
+// NewGCEClient returns a client to the GCE environment. This will block until
+// a valid configuration file can be read.
+func NewGCEClient() *gce.GCECloud {
+	var configReader func() io.Reader
+	if Flags.ConfigFilePath != "" {
+		glog.Infof("Reading config from path %q", Flags.ConfigFilePath)
+		config, err := os.Open(Flags.ConfigFilePath)
+		if err != nil {
+			glog.Fatalf("%v", err)
+		}
+		defer config.Close()
 
-	if config != nil {
 		allConfig, err := ioutil.ReadAll(config)
 		if err != nil {
-			glog.Fatalf("Error while reading entire config: %v", err)
+			glog.Fatalf("Error while reading config (%q): %v", Flags.ConfigFilePath, err)
 		}
-		glog.V(4).Infof("Using cloudprovider config file: %q", string(allConfig))
+		glog.V(4).Infof("Cloudprovider config file contains: %q", string(allConfig))
 
-		getConfigReader = func() io.Reader {
+		configReader = func() io.Reader {
 			return bytes.NewReader(allConfig)
 		}
 	} else {
 		glog.V(2).Infof("No cloudprovider config file provided, using default values.")
+		configReader = func() io.Reader { return nil }
 	}
 
 	// Creating the cloud interface involves resolving the metadata server to get
@@ -83,10 +92,9 @@ func NewGCEClient(config io.Reader) *gce.GCECloud {
 	// No errors are thrown. So we need to keep retrying till it works because
 	// we know we're on GCE.
 	for {
-		provider, err := cloudprovider.GetCloudProvider("gce", getConfigReader())
+		provider, err := cloudprovider.GetCloudProvider("gce", configReader())
 		if err == nil {
 			cloud := provider.(*gce.GCECloud)
-
 			// If this controller is scheduled on a node without compute/rw
 			// it won't be allowed to list backends. We can assume that the
 			// user has no need for Ingress in this case. If they grant

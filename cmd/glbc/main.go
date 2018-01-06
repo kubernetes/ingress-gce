@@ -57,6 +57,8 @@ func main() {
 		glog.V(0).Infof("argv[%d]: %q", i, a)
 	}
 
+	glog.V(2).Infof("Flags = %+v", app.Flags)
+
 	kubeClient, err := app.NewKubeClient()
 	if err != nil {
 		glog.Fatalf("Failed to create kubernetes client: %v", err)
@@ -67,29 +69,7 @@ func main() {
 		glog.Fatalf("%v", err)
 	}
 
-	var cloud *gce.GCECloud
-	// TODO: Make this more resilient. Currently we create the cloud client
-	// and pass it through to all the pools. This makes unit testing easier.
-	// However if the cloud client suddenly fails, we should try to re-create it
-	// and continue.
-	if app.Flags.ConfigFilePath != "" {
-		glog.Infof("Reading config from path %q", app.Flags.ConfigFilePath)
-		config, err := os.Open(app.Flags.ConfigFilePath)
-		if err != nil {
-			glog.Fatalf("%v", err)
-		}
-		defer config.Close()
-		cloud = app.NewGCEClient(config)
-		glog.Infof("Successfully loaded cloudprovider using config %q", app.Flags.ConfigFilePath)
-	} else {
-		// TODO: refactor so this comment does not need to be here.
-		// While you might be tempted to refactor so we simply assing nil to the
-		// config and only invoke getGCEClient once, that will not do the right
-		// thing because a nil check against an interface isn't true in golang.
-		cloud = app.NewGCEClient(nil)
-		glog.Infof("Created GCE client without a config file")
-	}
-
+	cloud := app.NewGCEClient()
 	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
 	clusterManager, err := controller.NewClusterManager(cloud, namer, *defaultBackendServicePort, app.Flags.HealthCheckPath)
 	if err != nil {
@@ -99,7 +79,6 @@ func main() {
 	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
 	stopCh := make(chan struct{})
 	ctx := context.NewControllerContext(kubeClient, app.Flags.WatchNamespace, app.Flags.ResyncPeriod, enableNEG)
-	// Start loadbalancer controller
 	lbc, err := controller.NewLoadBalancerController(kubeClient, stopCh, ctx, clusterManager, enableNEG)
 	if err != nil {
 		glog.Fatalf("Error creating load balancer controller: %v", err)
