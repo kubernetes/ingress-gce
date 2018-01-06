@@ -113,8 +113,8 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 			apiv1.EventSource{Component: "loadbalancer-controller"}),
 		negEnabled: negEnabled,
 	}
-	lbc.nodeQueue = utils.NewPeriodicTaskQueue(lbc.syncNodes)
-	lbc.ingQueue = utils.NewPeriodicTaskQueue(lbc.sync)
+	lbc.nodeQueue = utils.NewPeriodicTaskQueue("nodes", lbc.syncNodes)
+	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
 	lbc.hasSynced = lbc.storesSynced
 
 	lbc.ingressSynced = ctx.IngressInformer.HasSynced
