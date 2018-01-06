@@ -39,6 +39,7 @@ var (
 		ResyncPeriod    time.Duration
 		Verbose         bool
 		WatchNamespace  string
+		Version         bool
 	}{}
 )
 
@@ -80,6 +81,8 @@ the pod secrets for creating a Kubernetes client.`)
 		`Relist and confirm cloud resources this often.`)
 	flag.StringVar(&Flags.WatchNamespace, "watch-namespace", v1.NamespaceAll,
 		`Namespace to watch for Ingress/Services/Endpoints.`)
+	flag.BoolVar(&Flags.Version, "version", false,
+		`Print the version of the controller and exit`)
 
 	// Deprecated flags.
 	flag.BoolVar(&Flags.Verbose, "verbose", false,

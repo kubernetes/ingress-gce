@@ -18,6 +18,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
 	"time"
 
@@ -30,29 +31,21 @@ import (
 	neg "k8s.io/ingress-gce/pkg/networkendpointgroup"
 
 	"k8s.io/ingress-gce/cmd/glbc/app"
+	"k8s.io/ingress-gce/pkg/version"
 )
 
-// Entrypoint of GLBC. Example invocation:
-// 1. In a pod:
-// glbc --delete-all-on-quit
-// 2. Dry run (on localhost):
-// $ kubectl proxy --api-prefix="/"
-// $ glbc --proxy="http://localhost:proxyport"
-
-const (
-	// Current docker image version. Only used in debug logging.
-	// TODO: this should be populated from the build.
-	imageVersion = "glbc:0.9.7"
-)
-
-// main function for GLBC.
 func main() {
 	flag.Parse()
 	if app.Flags.Verbose {
 		flag.Set("v", "4")
 	}
 
-	glog.V(0).Infof("Starting GLBC image: %q, cluster name %q", imageVersion, app.Flags.ClusterName)
+	if app.Flags.Version {
+		fmt.Printf("Controller version: %s\n", version.Version)
+		os.Exit(0)
+	}
+
+	glog.V(0).Infof("Starting GLBC image: %q, cluster name %q", version.Version, app.Flags.ClusterName)
 	for i, a := range os.Args {
 		glog.V(0).Infof("argv[%d]: %q", i, a)
 	}
@@ -100,8 +93,6 @@ func main() {
 	go app.RunSIGTERMHandler(lbc, app.Flags.DeleteAllOnQuit)
 
 	ctx.Start(stopCh)
-
-	glog.V(0).Infof("Starting load balancer controller")
 	lbc.Run()
 
 	for {
