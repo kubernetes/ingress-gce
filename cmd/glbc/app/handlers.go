@@ -44,6 +44,7 @@ func RunHTTPServer(lbc *controller.LoadBalancerController) {
 		lbc.Stop(true)
 	})
 
+	glog.V(0).Infof("Running http server on :%v", Flags.HealthzPort)
 	glog.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", Flags.HealthzPort), nil))
 }
 
@@ -51,6 +52,7 @@ func RunSIGTERMHandler(lbc *controller.LoadBalancerController, deleteAll bool) {
 	// Multiple SIGTERMs will get dropped
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, syscall.SIGTERM)
+	glog.V(0).Infof("SIGTERM handler registered")
 	<-signalChan
 	glog.Infof("Received SIGTERM, shutting down")
 

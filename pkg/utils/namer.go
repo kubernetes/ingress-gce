@@ -131,10 +131,16 @@ func (n *Namer) SetUID(name string) {
 
 	if strings.Contains(name, clusterNameDelimiter) {
 		tokens := strings.Split(name, clusterNameDelimiter)
-		glog.Warningf("Given name %v contains %v, taking last token in: %+v", name, clusterNameDelimiter, tokens)
+		glog.Warningf("Name %q contains %q, taking last token in: %+v", name, clusterNameDelimiter, tokens)
 		name = tokens[len(tokens)-1]
 	}
-	glog.Infof("Changing cluster name from %v to %v", n.clusterName, name)
+
+	if n.clusterName == name {
+		glog.V(4).Infof("Cluster name is unchanged (%q)", name)
+		return
+	}
+
+	glog.Infof("Changing cluster name from %q to %q", n.clusterName, name)
 	n.clusterName = name
 }
 
@@ -144,7 +150,7 @@ func (n *Namer) SetFirewall(name string) {
 	defer n.nameLock.Unlock()
 
 	if n.firewallName != name {
-		glog.Infof("Changing firewall name from %v to %v", n.firewallName, name)
+		glog.Infof("Changing firewall name from %q to %q", n.firewallName, name)
 		n.firewallName = name
 	}
 }
