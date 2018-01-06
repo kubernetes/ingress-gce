@@ -62,15 +62,10 @@ var (
 type LoadBalancerController struct {
 	client kubernetes.Interface
 
-	ingressSynced  cache.InformerSynced
-	serviceSynced  cache.InformerSynced
-	podSynced      cache.InformerSynced
-	nodeSynced     cache.InformerSynced
-	endpointSynced cache.InformerSynced
-	ingLister      StoreToIngressLister
-	nodeLister     cache.Indexer
-	svcLister      cache.Indexer
-	podLister      cache.Indexer
+	ingLister  StoreToIngressLister
+	nodeLister cache.Indexer
+	svcLister  cache.Indexer
+	podLister  cache.Indexer
 	// endpoint lister is needed when translating service target port to real endpoint target ports.
 	endpointLister StoreToEndpointLister
 	// TODO: Watch secrets
@@ -115,20 +110,12 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 	}
 	lbc.nodeQueue = utils.NewPeriodicTaskQueue("nodes", lbc.syncNodes)
 	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
-	lbc.hasSynced = lbc.storesSynced
-
-	lbc.ingressSynced = ctx.IngressInformer.HasSynced
-	lbc.serviceSynced = ctx.ServiceInformer.HasSynced
-	lbc.podSynced = ctx.PodInformer.HasSynced
-	lbc.nodeSynced = ctx.NodeInformer.HasSynced
-	lbc.endpointSynced = func() bool { return true }
-
+	lbc.hasSynced = hasSyncedFromContext(ctx, negEnabled)
 	lbc.ingLister.Store = ctx.IngressInformer.GetStore()
 	lbc.svcLister = ctx.ServiceInformer.GetIndexer()
 	lbc.podLister = ctx.PodInformer.GetIndexer()
 	lbc.nodeLister = ctx.NodeInformer.GetIndexer()
 	if negEnabled {
-		lbc.endpointSynced = ctx.EndpointInformer.HasSynced
 		lbc.endpointLister.Indexer = ctx.EndpointInformer.GetIndexer()
 	}
 
@@ -238,23 +225,6 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 	return nil
 }
 
-// storesSynced returns true if all the sub-controllers have finished their
-// first sync with apiserver.
-func (lbc *LoadBalancerController) storesSynced() bool {
-	return (
-	// wait for pods to sync so we don't allocate a default health check when
-	// an endpoint has a readiness probe.
-	lbc.podSynced() &&
-		// wait for services so we don't thrash on backend creation.
-		lbc.serviceSynced() &&
-		// wait for nodes so we don't disconnect a backend from an instance
-		// group just because we don't realize there are nodes in that zone.
-		lbc.nodeSynced() &&
-		// Wait for ingresses as a safety measure. We don't really need this.
-		lbc.ingressSynced() &&
-		lbc.endpointSynced())
-}
-
 // sync manages Ingress create/updates/deletes.
 func (lbc *LoadBalancerController) sync(key string) (err error) {
 	if !lbc.hasSynced() {
@@ -307,13 +277,12 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 		glog.V(3).Infof("Finished syncing %v", key)
 	}()
 
-	// TODO: Implement proper backoff for the queue.
-	eventMsg := "GCE"
-
 	// Record any errors during sync and throw a single error at the end. This
 	// allows us to free up associated cloud resources ASAP.
 	igs, err := lbc.CloudClusterManager.Checkpoint(lbs, nodeNames, gceNodePorts, allNodePorts, lbc.Translator.GatherFirewallPorts(gceNodePorts, len(lbs) > 0))
 	if err != nil {
+		// TODO: Implement proper backoff for the queue.
+		const eventMsg = "GCE"
 		if fwErr, ok := err.(*firewalls.FirewallSyncError); ok {
 			if ingExists {
 				lbc.recorder.Eventf(obj.(*extensions.Ingress), apiv1.EventTypeNormal, eventMsg, fwErr.Message)
@@ -342,7 +311,7 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 		if err = setInstanceGroupsAnnotation(ing.Annotations, igs); err != nil {
 			return err
 		}
-		if err = lbc.updateAnnotations(ing.Name, ing.Namespace, ing.Annotations); err != nil {
+		if err = updateAnnotations(lbc.client, ing.Name, ing.Namespace, ing.Annotations); err != nil {
 			return err
 		}
 		return nil
@@ -414,25 +383,8 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 		}
 	}
 	annotations := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.CloudClusterManager.backendPool)
-	if err := lbc.updateAnnotations(ing.Name, ing.Namespace, annotations); err != nil {
+	if err := updateAnnotations(lbc.client, ing.Name, ing.Namespace, annotations); err != nil {
 		return err
-	}
-	return nil
-}
-
-func (lbc *LoadBalancerController) updateAnnotations(name, namespace string, annotations map[string]string) error {
-	// Update annotations through /update endpoint
-	ingClient := lbc.client.Extensions().Ingresses(namespace)
-	currIng, err := ingClient.Get(name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	if !reflect.DeepEqual(currIng.Annotations, annotations) {
-		glog.V(3).Infof("Updating annotations of %v/%v", namespace, name)
-		currIng.Annotations = annotations
-		if _, err := ingClient.Update(currIng); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -493,4 +445,43 @@ func (lbc *LoadBalancerController) getReadyNodeNames() ([]string, error) {
 		nodeNames = append(nodeNames, n.Name)
 	}
 	return nodeNames, nil
+}
+
+func hasSyncedFromContext(ctx *context.ControllerContext, negEnabled bool) func() bool {
+	// Wait for all resources to be sync'd to avoid performing actions while
+	// the controller is still initializing state.
+	var funcs []func() bool
+	funcs = append(funcs, []func() bool{
+		ctx.IngressInformer.HasSynced,
+		ctx.ServiceInformer.HasSynced,
+		ctx.PodInformer.HasSynced,
+		ctx.NodeInformer.HasSynced,
+	}...)
+	if negEnabled {
+		funcs = append(funcs, ctx.EndpointInformer.HasSynced)
+	}
+	return func() bool {
+		for _, f := range funcs {
+			if !f() {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+func updateAnnotations(client kubernetes.Interface, name, namespace string, annotations map[string]string) error {
+	ingClient := client.Extensions().Ingresses(namespace)
+	currIng, err := ingClient.Get(name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(currIng.Annotations, annotations) {
+		glog.V(3).Infof("Updating annotations of %v/%v", namespace, name)
+		currIng.Annotations = annotations
+		if _, err := ingClient.Update(currIng); err != nil {
+			return err
+		}
+	}
+	return nil
 }
