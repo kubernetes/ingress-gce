@@ -249,7 +249,7 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 	if err != nil {
 		return err
 	}
-	nodeNames, err := lbc.getReadyNodeNames()
+	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
 	if err != nil {
 		return err
 	}
@@ -424,7 +424,7 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ingList extensions.IngressList)
 // syncNodes manages the syncing of kubernetes nodes to gce instance groups.
 // The instancegroups are referenced by loadbalancer backends.
 func (lbc *LoadBalancerController) syncNodes(key string) error {
-	nodeNames, err := lbc.getReadyNodeNames()
+	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
 	if err != nil {
 		return err
 	}
@@ -432,9 +432,9 @@ func (lbc *LoadBalancerController) syncNodes(key string) error {
 }
 
 // getReadyNodeNames returns names of schedulable, ready nodes from the node lister.
-func (lbc *LoadBalancerController) getReadyNodeNames() ([]string, error) {
+func getReadyNodeNames(lister listers.NodeLister) ([]string, error) {
 	nodeNames := []string{}
-	nodes, err := listers.NewNodeLister(lbc.nodeLister).ListWithPredicate(utils.NodeIsReady)
+	nodes, err := lister.ListWithPredicate(utils.NodeIsReady)
 	if err != nil {
 		return nodeNames, err
 	}
