@@ -29,12 +29,14 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	// Register the GCP authorization provider.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+
+	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const (
@@ -44,7 +46,7 @@ const (
 
 // NewKubeClient returns a Kubernetes client given the command line settings.
 func NewKubeClient() (kubernetes.Interface, error) {
-	if Flags.InCluster {
+	if flags.F.InCluster {
 		glog.V(0).Infof("Using in cluster configuration")
 		config, err := rest.InClusterConfig()
 		if err != nil {
@@ -53,8 +55,8 @@ func NewKubeClient() (kubernetes.Interface, error) {
 		return kubernetes.NewForConfig(config)
 	}
 
-	glog.V(0).Infof("Using APIServerHost=%q, KubeConfig=%q", Flags.APIServerHost, Flags.KubeConfigFile)
-	config, err := clientcmd.BuildConfigFromFlags(Flags.APIServerHost, Flags.KubeConfigFile)
+	glog.V(0).Infof("Using APIServerHost=%q, KubeConfig=%q", flags.F.APIServerHost, flags.F.KubeConfigFile)
+	config, err := clientcmd.BuildConfigFromFlags(flags.F.APIServerHost, flags.F.KubeConfigFile)
 	if err != nil {
 		return nil, err
 	}
@@ -65,9 +67,9 @@ func NewKubeClient() (kubernetes.Interface, error) {
 // a valid configuration file can be read.
 func NewGCEClient() *gce.GCECloud {
 	var configReader func() io.Reader
-	if Flags.ConfigFilePath != "" {
-		glog.Infof("Reading config from path %q", Flags.ConfigFilePath)
-		config, err := os.Open(Flags.ConfigFilePath)
+	if flags.F.ConfigFilePath != "" {
+		glog.Infof("Reading config from path %q", flags.F.ConfigFilePath)
+		config, err := os.Open(flags.F.ConfigFilePath)
 		if err != nil {
 			glog.Fatalf("%v", err)
 		}
@@ -75,7 +77,7 @@ func NewGCEClient() *gce.GCECloud {
 
 		allConfig, err := ioutil.ReadAll(config)
 		if err != nil {
-			glog.Fatalf("Error while reading config (%q): %v", Flags.ConfigFilePath, err)
+			glog.Fatalf("Error while reading config (%q): %v", flags.F.ConfigFilePath, err)
 		}
 		glog.V(4).Infof("Cloudprovider config file contains: %q", string(allConfig))
 

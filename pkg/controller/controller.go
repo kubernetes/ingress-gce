@@ -42,19 +42,16 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-var (
-	keyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
-
-	// DefaultClusterUID is the uid to use for clusters resources created by an
-	// L7 controller created without specifying the --cluster-uid flag.
-	DefaultClusterUID = ""
-
-	// DefaultFirewallName is the name to user for firewall rules created
-	// by an L7 controller when the --fireall-rule is not used.
+const (
 	DefaultFirewallName = ""
-
 	// Frequency to poll on local stores to sync.
 	storeSyncPollPeriod = 5 * time.Second
+)
+
+var (
+	keyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
+	// DefaultFirewallName is the name to user for firewall rules created
+	// by an L7 controller when the --fireall-rule is not used.
 )
 
 // LoadBalancerController watches the kubernetes api and adds/removes services

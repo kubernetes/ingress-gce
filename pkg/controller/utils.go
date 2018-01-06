@@ -32,13 +32,17 @@ import (
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/flags"
 )
 
-// isGCEIngress returns true if the given Ingress either doesn't specify the
-// ingress.class annotation, or it's set to "gce".
+// isGCEIngress returns true if the Ingress matches the class managed by this
+// controller.
 func isGCEIngress(ing *extensions.Ingress) bool {
 	class := annotations.FromIngress(ing).IngressClass()
-	return class == "" || class == annotations.GceIngressClass
+	if flags.F.IngressClass == "" {
+		return class == "" || class == annotations.GceIngressClass
+	}
+	return class == flags.F.IngressClass
 }
 
 // isGCEMultiClusterIngress returns true if the given Ingress has

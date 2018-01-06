@@ -31,47 +31,49 @@ import (
 	neg "k8s.io/ingress-gce/pkg/networkendpointgroup"
 
 	"k8s.io/ingress-gce/cmd/glbc/app"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
 func main() {
+	flags.Register()
 	flag.Parse()
-	if app.Flags.Verbose {
+	if flags.F.Verbose {
 		flag.Set("v", "4")
 	}
 
-	if app.Flags.Version {
+	if flags.F.Version {
 		fmt.Printf("Controller version: %s\n", version.Version)
 		os.Exit(0)
 	}
 
-	glog.V(0).Infof("Starting GLBC image: %q, cluster name %q", version.Version, app.Flags.ClusterName)
+	glog.V(0).Infof("Starting GLBC image: %q, cluster name %q", version.Version, flags.F.ClusterName)
 	for i, a := range os.Args {
 		glog.V(0).Infof("argv[%d]: %q", i, a)
 	}
 
-	glog.V(2).Infof("Flags = %+v", app.Flags)
+	glog.V(2).Infof("Flags = %+v", flags.F)
 
 	kubeClient, err := app.NewKubeClient()
 	if err != nil {
 		glog.Fatalf("Failed to create kubernetes client: %v", err)
 	}
 
-	namer, err := app.NewNamer(kubeClient, app.Flags.ClusterName, controller.DefaultFirewallName)
+	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, controller.DefaultFirewallName)
 	if err != nil {
 		glog.Fatalf("%v", err)
 	}
 
 	cloud := app.NewGCEClient()
 	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
-	clusterManager, err := controller.NewClusterManager(cloud, namer, *defaultBackendServicePort, app.Flags.HealthCheckPath)
+	clusterManager, err := controller.NewClusterManager(cloud, namer, *defaultBackendServicePort, flags.F.HealthCheckPath)
 	if err != nil {
 		glog.Fatalf("Error creating cluster manager: %v", err)
 	}
 
 	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
 	stopCh := make(chan struct{})
-	ctx := context.NewControllerContext(kubeClient, app.Flags.WatchNamespace, app.Flags.ResyncPeriod, enableNEG)
+	ctx := context.NewControllerContext(kubeClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG)
 	lbc, err := controller.NewLoadBalancerController(kubeClient, stopCh, ctx, clusterManager, enableNEG)
 	if err != nil {
 		glog.Fatalf("Error creating load balancer controller: %v", err)
@@ -84,13 +86,13 @@ func main() {
 	glog.V(0).Infof("clusterManager initialized")
 
 	if enableNEG {
-		negController, _ := neg.NewController(kubeClient, cloud, ctx, lbc.Translator, namer, app.Flags.ResyncPeriod)
+		negController, _ := neg.NewController(kubeClient, cloud, ctx, lbc.Translator, namer, flags.F.ResyncPeriod)
 		go negController.Run(stopCh)
 		glog.V(0).Infof("negController started")
 	}
 
 	go app.RunHTTPServer(lbc)
-	go app.RunSIGTERMHandler(lbc, app.Flags.DeleteAllOnQuit)
+	go app.RunSIGTERMHandler(lbc, flags.F.DeleteAllOnQuit)
 
 	ctx.Start(stopCh)
 	lbc.Run()

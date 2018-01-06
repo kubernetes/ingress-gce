@@ -31,6 +31,7 @@ import (
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/flags"
 )
 
 // Pods created in loops start from this time, for routines that
@@ -38,7 +39,7 @@ import (
 var firstPodCreationTime = time.Date(2006, 01, 02, 15, 04, 05, 0, time.UTC)
 
 func TestZoneListing(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	zoneToNode := map[string][]string{
 		"zone-1": {"n1"},
@@ -63,7 +64,7 @@ func TestZoneListing(t *testing.T) {
 }
 
 func TestInstancesAddedToZones(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	zoneToNode := map[string][]string{
 		"zone-1": {"n1", "n2"},
@@ -92,7 +93,7 @@ func TestInstancesAddedToZones(t *testing.T) {
 }
 
 func TestProbeGetter(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 
 	nodePortToHealthCheck := map[backends.ServicePort]string{
@@ -111,7 +112,7 @@ func TestProbeGetter(t *testing.T) {
 }
 
 func TestProbeGetterNamedPort(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	nodePortToHealthCheck := map[backends.ServicePort]string{
 		{Port: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
@@ -134,7 +135,7 @@ func TestProbeGetterNamedPort(t *testing.T) {
 }
 
 func TestProbeGetterCrossNamespace(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 
 	firstPod := &api_v1.Pod{
@@ -304,7 +305,7 @@ func TestAddInstanceGroupsAnnotation(t *testing.T) {
 }
 
 func TestGatherFirewallPorts(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	lbc.CloudClusterManager.defaultBackendNodePort.Port = int64(30000)
 

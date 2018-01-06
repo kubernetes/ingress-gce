@@ -28,26 +28,28 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/flags"
 )
 
 func DefaultBackendServicePort(kubeClient kubernetes.Interface) *backends.ServicePort {
 	// TODO: make this not fatal
-	if Flags.DefaultSvc == "" {
+	if flags.F.DefaultSvc == "" {
 		glog.Fatalf("Please specify --default-backend")
 	}
 
 	// Wait for the default backend Service. There's no pretty way to do this.
-	parts := strings.Split(Flags.DefaultSvc, "/")
+	parts := strings.Split(flags.F.DefaultSvc, "/")
 	if len(parts) != 2 {
 		glog.Fatalf("Default backend should take the form namespace/name: %v",
-			Flags.DefaultSvc)
+			flags.F.DefaultSvc)
 	}
 	port, nodePort, err := getNodePort(kubeClient, parts[0], parts[1])
 	if err != nil {
 		glog.Fatalf("Could not configure default backend %v: %v",
-			Flags.DefaultSvc, err)
+			flags.F.DefaultSvc, err)
 	}
 
 	return &backends.ServicePort{
