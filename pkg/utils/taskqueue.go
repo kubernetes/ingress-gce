@@ -36,6 +36,8 @@ type TaskQueue interface {
 // inserted. If the sync() function results in an error, the item is put on
 // the work queue after a rate-limit.
 type PeriodicTaskQueue struct {
+	// resource is used for logging to distinguish the queue being used.
+	resource string
 	// keyFunc translates an object to a string-based key.
 	keyFunc func(obj interface{}) (string, error)
 	// queue is the work queue the worker polls.
@@ -59,7 +61,7 @@ func (t *PeriodicTaskQueue) Enqueue(obj interface{}) {
 		glog.Errorf("Couldn't get key for object %+v (type %T): %v", obj, obj, err)
 		return
 	}
-	glog.V(4).Infof("Enqueue key=%q", key)
+	glog.V(4).Infof("Enqueue key=%q (%v)", key, t.resource)
 	t.queue.Add(key)
 }
 
@@ -78,9 +80,9 @@ func (t *PeriodicTaskQueue) worker() {
 			close(t.workerDone)
 			return
 		}
-		glog.V(4).Infof("Syncing %v", key)
+		glog.V(4).Infof("Syncing %v (%v)", key, t.resource)
 		if err := t.sync(key.(string)); err != nil {
-			glog.Errorf("Requeuing %q due to error: %v", key, err)
+			glog.Errorf("Requeuing %q due to error: %v (%v)", key, err, t.resource)
 			t.queue.AddRateLimited(key)
 		} else {
 			t.queue.Forget(key)
@@ -91,8 +93,9 @@ func (t *PeriodicTaskQueue) worker() {
 
 // NewPeriodicTaskQueue creates a new task queue with the given sync function.
 // The sync function is called for every element inserted into the queue.
-func NewPeriodicTaskQueue(syncFn func(string) error) *PeriodicTaskQueue {
+func NewPeriodicTaskQueue(resource string, syncFn func(string) error) *PeriodicTaskQueue {
 	return &PeriodicTaskQueue{
+		resource:   resource,
 		keyFunc:    cache.DeletionHandlingMetaNamespaceKeyFunc,
 		queue:      workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		sync:       syncFn,

@@ -35,6 +35,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -196,14 +197,14 @@ func addIngress(lbc *LoadBalancerController, ing *extensions.Ingress, pm *nodePo
 			}
 			svcPort.NodePort = int32(pm.getNodePort(path.Backend.ServiceName))
 			svc.Spec.Ports = []api_v1.ServicePort{svcPort}
-			lbc.svcLister.Indexer.Add(svc)
+			lbc.svcLister.Add(svc)
 		}
 	}
 }
 
 func TestLbCreateDelete(t *testing.T) {
 	testFirewallName := "quux"
-	cm := NewFakeClusterManager(DefaultClusterUID, testFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, testFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	inputMap1 := map[string]utils.FakeIngressRuleValueMap{
 		"foo.example.com": {
@@ -297,7 +298,7 @@ func TestLbCreateDelete(t *testing.T) {
 }
 
 func TestLbFaultyUpdate(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	inputMap := map[string]utils.FakeIngressRuleValueMap{
 		"foo.example.com": {
@@ -338,7 +339,7 @@ func TestLbFaultyUpdate(t *testing.T) {
 }
 
 func TestLbDefaulting(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	// Make sure the controller plugs in the default values accepted by GCE.
 	ing := newIngress(map[string]utils.FakeIngressRuleValueMap{"": {"": "foo1svc"}})
@@ -358,7 +359,7 @@ func TestLbDefaulting(t *testing.T) {
 }
 
 func TestLbNoService(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	inputMap := map[string]utils.FakeIngressRuleValueMap{
 		"foo.example.com": {
@@ -404,7 +405,7 @@ func TestLbNoService(t *testing.T) {
 }
 
 func TestLbChangeStaticIP(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	inputMap := map[string]utils.FakeIngressRuleValueMap{
 		"foo.example.com": {

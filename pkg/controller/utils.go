@@ -32,13 +32,17 @@ import (
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/flags"
 )
 
-// isGCEIngress returns true if the given Ingress either doesn't specify the
-// ingress.class annotation, or it's set to "gce".
+// isGCEIngress returns true if the Ingress matches the class managed by this
+// controller.
 func isGCEIngress(ing *extensions.Ingress) bool {
 	class := annotations.FromIngress(ing).IngressClass()
-	return class == "" || class == annotations.GceIngressClass
+	if flags.F.IngressClass == "" {
+		return class == "" || class == annotations.GceIngressClass
+	}
+	return class == flags.F.IngressClass
 }
 
 // isGCEMultiClusterIngress returns true if the given Ingress has
@@ -68,36 +72,10 @@ func (e ErrSvcAppProtosParsing) Error() string {
 	return fmt.Sprintf("could not parse %v annotation on Service %v/%v, err: %v", annotations.ServiceApplicationProtocolKey, e.svc.Namespace, e.svc.Name, e.origErr)
 }
 
-// compareLinks returns true if the 2 self links are equal.
-func compareLinks(l1, l2 string) bool {
-	// TODO: These can be partial links
-	return l1 == l2 && l1 != ""
-}
-
 // StoreToIngressLister makes a Store that lists Ingress.
 // TODO: Move this to cache/listers post 1.1.
 type StoreToIngressLister struct {
 	cache.Store
-}
-
-// StoreToNodeLister makes a Store that lists Node.
-type StoreToNodeLister struct {
-	cache.Indexer
-}
-
-// StoreToServiceLister makes a Store that lists Service.
-type StoreToServiceLister struct {
-	cache.Indexer
-}
-
-// StoreToPodLister makes a Store that lists Pods.
-type StoreToPodLister struct {
-	cache.Indexer
-}
-
-// StoreToPodLister makes a Store that lists Endpoints.
-type StoreToEndpointLister struct {
-	cache.Indexer
 }
 
 // List lists all Ingress' in the store (both single and multi cluster ingresses).
@@ -156,6 +134,11 @@ IngressLoop:
 		err = fmt.Errorf("no ingress for service %v", svc.Name)
 	}
 	return
+}
+
+// StoreToEndpointLister makes a Store that lists Endpoints.
+type StoreToEndpointLister struct {
+	cache.Indexer
 }
 
 func (s *StoreToEndpointLister) ListEndpointTargetPorts(namespace, name, targetPort string) []int {

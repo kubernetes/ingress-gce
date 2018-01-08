@@ -146,21 +146,18 @@ func NewBackendPool(
 		backendPool.snapshotter = storage.NewInMemoryPool()
 		return backendPool
 	}
-	backendPool.snapshotter = storage.NewCloudListingPool(
-		func(i interface{}) (string, error) {
-			bs := i.(*compute.BackendService)
-			if !namer.NameBelongsToCluster(bs.Name) {
-				return "", fmt.Errorf("unrecognized name %v", bs.Name)
-			}
-			port, err := namer.BackendPort(bs.Name)
-			if err != nil {
-				return "", err
-			}
-			return port, nil
-		},
-		backendPool,
-		30*time.Second,
-	)
+	keyFunc := func(i interface{}) (string, error) {
+		bs := i.(*compute.BackendService)
+		if !namer.NameBelongsToCluster(bs.Name) {
+			return "", fmt.Errorf("unrecognized name %v", bs.Name)
+		}
+		port, err := namer.BackendPort(bs.Name)
+		if err != nil {
+			return "", err
+		}
+		return port, nil
+	}
+	backendPool.snapshotter = storage.NewCloudListingPool("backends", keyFunc, backendPool, 30*time.Second)
 	return backendPool
 }
 

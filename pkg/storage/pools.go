@@ -66,6 +66,8 @@ type cloudLister interface {
 
 // CloudListingPool wraps InMemoryPool but relists from the cloud periodically.
 type CloudListingPool struct {
+	// name is used to distinguish different pools in the logs.
+	name string
 	// A lock to protect against concurrent mutation of the pool
 	lock sync.Mutex
 	// The pool that is re-populated via re-list from cloud, and written to
@@ -88,7 +90,7 @@ type CloudListingPool struct {
 func (c *CloudListingPool) ReplenishPool() {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	glog.V(4).Infof("Replenishing pool")
+	glog.V(4).Infof("Replenishing pool %q", c.name)
 
 	// We must list with the lock, because the controller also lists through
 	// Snapshot(). It's ok if the controller takes a snpshot, we list, we
@@ -97,14 +99,14 @@ func (c *CloudListingPool) ReplenishPool() {
 	// creates a backend, and we delete that backend based on stale state.
 	items, err := c.lister.List()
 	if err != nil {
-		glog.Warningf("Failed to list: %v", err)
+		glog.Warningf("Failed to list %q: %v", c.name, err)
 		return
 	}
 
 	for i := range items {
 		key, err := c.keyGetter(items[i])
 		if err != nil {
-			glog.V(5).Infof("CloudListingPool: %v", err)
+			glog.V(5).Infof("CloudListingPool %q: %v", c.name, err)
 			continue
 		}
 		c.InMemoryPool.Add(key, items[i])
@@ -115,6 +117,8 @@ func (c *CloudListingPool) ReplenishPool() {
 func (c *CloudListingPool) Snapshot() map[string]interface{} {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+
+	glog.V(4).Infof("Snapshot %q", c.name)
 	return c.InMemoryPool.Snapshot()
 }
 
@@ -122,6 +126,8 @@ func (c *CloudListingPool) Snapshot() map[string]interface{} {
 func (c *CloudListingPool) Add(key string, obj interface{}) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+
+	glog.V(4).Infof("Add %q: %q, %+v", c.name, key, obj)
 	c.InMemoryPool.Add(key, obj)
 }
 
@@ -129,18 +135,21 @@ func (c *CloudListingPool) Add(key string, obj interface{}) {
 func (c *CloudListingPool) Delete(key string) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+
+	glog.V(4).Infof("Delete %q: %q", c.name, key)
 	c.InMemoryPool.Delete(key)
 }
 
 // NewCloudListingPool replenishes the InMemoryPool through a background
 // goroutine that lists from the given cloudLister.
-func NewCloudListingPool(k keyFunc, lister cloudLister, relistPeriod time.Duration) *CloudListingPool {
+func NewCloudListingPool(name string, k keyFunc, lister cloudLister, relistPeriod time.Duration) *CloudListingPool {
 	cl := &CloudListingPool{
+		name:         name,
 		InMemoryPool: NewInMemoryPool(),
 		lister:       lister,
 		keyGetter:    k,
 	}
-	glog.V(4).Infof("Starting pool replenish goroutine")
+	glog.V(4).Infof("Starting pool %q", cl.name)
 	go wait.Until(cl.ReplenishPool, relistPeriod, make(chan struct{}))
 	return cl
 }

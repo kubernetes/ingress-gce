@@ -39,5 +39,5 @@ fi
 
 go install                                                         \
     -installsuffix "static"                                        \
-    -ldflags "-X ${PKG}/pkg/version.VERSION=${VERSION}"            \
+    -ldflags "-X ${PKG}/pkg/version.Version=${VERSION}"            \
     ./...

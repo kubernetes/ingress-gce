@@ -25,7 +25,9 @@ import (
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"k8s.io/ingress-gce/pkg/controller"
+	"k8s.io/ingress-gce/pkg/flags"
 )
 
 func RunHTTPServer(lbc *controller.LoadBalancerController) {
@@ -44,8 +46,8 @@ func RunHTTPServer(lbc *controller.LoadBalancerController) {
 		lbc.Stop(true)
 	})
 
-	glog.V(0).Infof("Running http server on :%v", Flags.HealthzPort)
-	glog.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", Flags.HealthzPort), nil))
+	glog.V(0).Infof("Running http server on :%v", flags.F.HealthzPort)
+	glog.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", flags.F.HealthzPort), nil))
 }
 
 func RunSIGTERMHandler(lbc *controller.LoadBalancerController, deleteAll bool) {
