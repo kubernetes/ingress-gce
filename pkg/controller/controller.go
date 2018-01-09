@@ -43,6 +43,7 @@ import (
 )
 
 const (
+	// DefaultFirewallName is the default firewall name.
 	DefaultFirewallName = ""
 	// Frequency to poll on local stores to sync.
 	storeSyncPollPeriod = 5 * time.Second
@@ -58,17 +59,17 @@ var (
 // from the loadbalancer, via loadBalancerConfig.
 type LoadBalancerController struct {
 	client kubernetes.Interface
+	ctx    *context.ControllerContext
 
 	ingLister  StoreToIngressLister
 	nodeLister cache.Indexer
-	svcLister  cache.Indexer
-	podLister  cache.Indexer
+	nodes      *NodeController
 	// endpoint lister is needed when translating service target port to real endpoint target ports.
 	endpointLister StoreToEndpointLister
+
 	// TODO: Watch secrets
 	CloudClusterManager *ClusterManager
 	recorder            record.EventRecorder
-	nodeQueue           utils.TaskQueue
 	ingQueue            utils.TaskQueue
 	Translator          *translator.GCE
 	stopCh              chan struct{}
@@ -105,13 +106,12 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 			apiv1.EventSource{Component: "loadbalancer-controller"}),
 		negEnabled: negEnabled,
 	}
-	lbc.nodeQueue = utils.NewPeriodicTaskQueue("nodes", lbc.syncNodes)
 	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
 	lbc.hasSynced = hasSyncedFromContext(ctx, negEnabled)
 	lbc.ingLister.Store = ctx.IngressInformer.GetStore()
-	lbc.svcLister = ctx.ServiceInformer.GetIndexer()
-	lbc.podLister = ctx.PodInformer.GetIndexer()
 	lbc.nodeLister = ctx.NodeInformer.GetIndexer()
+	lbc.nodes = NewNodeController(ctx, clusterManager)
+
 	if negEnabled {
 		lbc.endpointLister.Indexer = ctx.EndpointInformer.GetIndexer()
 	}
@@ -159,15 +159,18 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 		// Ingress deletes matter, service deletes don't.
 	})
 
-	// node event handler
-	ctx.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    lbc.nodeQueue.Enqueue,
-		DeleteFunc: lbc.nodeQueue.Enqueue,
-		// Nodes are updated every 10s and we don't care, so no update handler.
-	})
-
-	lbc.Translator = translator.New(lbc.recorder, lbc.CloudClusterManager, lbc.svcLister, lbc.nodeLister, lbc.podLister, lbc.endpointLister, lbc.negEnabled)
+	var endpointIndexer cache.Indexer
+	if ctx.EndpointInformer != nil {
+		endpointIndexer = ctx.EndpointInformer.GetIndexer()
+	}
+	lbc.Translator = translator.New(lbc.recorder, lbc.CloudClusterManager,
+		ctx.ServiceInformer.GetIndexer(),
+		ctx.NodeInformer.GetIndexer(),
+		ctx.PodInformer.GetIndexer(),
+		endpointIndexer,
+		negEnabled)
 	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.client}
+
 	glog.V(3).Infof("Created new loadbalancer controller")
 
 	return &lbc, nil
@@ -193,7 +196,8 @@ func (lbc *LoadBalancerController) enqueueIngressForService(obj interface{}) {
 func (lbc *LoadBalancerController) Run() {
 	glog.Infof("Starting loadbalancer controller")
 	go lbc.ingQueue.Run(time.Second, lbc.stopCh)
-	go lbc.nodeQueue.Run(time.Second, lbc.stopCh)
+	lbc.nodes.Run(lbc.stopCh)
+
 	<-lbc.stopCh
 	glog.Infof("Shutting down Loadbalancer Controller")
 }
@@ -210,7 +214,7 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 		close(lbc.stopCh)
 		glog.Infof("Shutting down controller queues.")
 		lbc.ingQueue.Shutdown()
-		lbc.nodeQueue.Shutdown()
+		lbc.nodes.Shutdown()
 		lbc.shutdown = true
 	}
 
@@ -416,32 +420,6 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ingList extensions.IngressList)
 		})
 	}
 	return lbs, nil
-}
-
-// syncNodes manages the syncing of kubernetes nodes to gce instance groups.
-// The instancegroups are referenced by loadbalancer backends.
-func (lbc *LoadBalancerController) syncNodes(key string) error {
-	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
-	if err != nil {
-		return err
-	}
-	return lbc.CloudClusterManager.instancePool.Sync(nodeNames)
-}
-
-// getReadyNodeNames returns names of schedulable, ready nodes from the node lister.
-func getReadyNodeNames(lister listers.NodeLister) ([]string, error) {
-	nodeNames := []string{}
-	nodes, err := lister.ListWithPredicate(utils.NodeIsReady)
-	if err != nil {
-		return nodeNames, err
-	}
-	for _, n := range nodes {
-		if n.Spec.Unschedulable {
-			continue
-		}
-		nodeNames = append(nodeNames, n.Name)
-	}
-	return nodeNames, nil
 }
 
 func hasSyncedFromContext(ctx *context.ControllerContext, negEnabled bool) func() bool {

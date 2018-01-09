@@ -342,9 +342,10 @@ func (t *GCE) GatherFirewallPorts(svcPorts []backends.ServicePort, includeDefaul
 	if includeDefaultBackend {
 		svcPorts = append(svcPorts, *t.bi.DefaultBackendNodePort())
 	}
+
 	portMap := map[int64]bool{}
 	for _, p := range svcPorts {
-		if p.NEGEnabled {
+		if t.negEnabled && p.NEGEnabled {
 			// For NEG backend, need to open firewall to all endpoint target ports
 			// TODO(mixia): refactor firewall syncing into a separate go routine with different trigger.
 			// With NEG, endpoint changes may cause firewall ports to be different if user specifies inconsistent backends.

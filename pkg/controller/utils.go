@@ -28,11 +28,13 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // isGCEIngress returns true if the Ingress matches the class managed by this
@@ -205,4 +207,20 @@ func uniq(nodePorts []backends.ServicePort) []backends.ServicePort {
 		nodePorts = append(nodePorts, sp)
 	}
 	return nodePorts
+}
+
+// getReadyNodeNames returns names of schedulable, ready nodes from the node lister.
+func getReadyNodeNames(lister listers.NodeLister) ([]string, error) {
+	nodeNames := []string{}
+	nodes, err := lister.ListWithPredicate(utils.NodeIsReady)
+	if err != nil {
+		return nodeNames, err
+	}
+	for _, n := range nodes {
+		if n.Spec.Unschedulable {
+			continue
+		}
+		nodeNames = append(nodeNames, n.Name)
+	}
+	return nodeNames, nil
 }
