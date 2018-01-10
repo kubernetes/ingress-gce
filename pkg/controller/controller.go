@@ -107,7 +107,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 		negEnabled: negEnabled,
 	}
 	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
-	lbc.hasSynced = hasSyncedFromContext(ctx, negEnabled)
+	lbc.hasSynced = ctx.HasSynced
 	lbc.ingLister.Store = ctx.IngressInformer.GetStore()
 	lbc.nodeLister = ctx.NodeInformer.GetIndexer()
 	lbc.nodes = NewNodeController(ctx, clusterManager)
@@ -303,6 +303,7 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 	if !ingExists {
 		return syncError
 	}
+
 	ing := *obj.(*extensions.Ingress)
 	if isGCEMultiClusterIngress(&ing) {
 		// Add instance group names as annotation on the ingress.
@@ -312,10 +313,7 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 		if err = setInstanceGroupsAnnotation(ing.Annotations, igs); err != nil {
 			return err
 		}
-		if err = updateAnnotations(lbc.client, ing.Name, ing.Namespace, ing.Annotations); err != nil {
-			return err
-		}
-		return nil
+		return updateAnnotations(lbc.client, ing.Name, ing.Namespace, ing.Annotations)
 	}
 
 	if lbc.negEnabled {
@@ -420,29 +418,6 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ingList extensions.IngressList)
 		})
 	}
 	return lbs, nil
-}
-
-func hasSyncedFromContext(ctx *context.ControllerContext, negEnabled bool) func() bool {
-	// Wait for all resources to be sync'd to avoid performing actions while
-	// the controller is still initializing state.
-	var funcs []func() bool
-	funcs = append(funcs, []func() bool{
-		ctx.IngressInformer.HasSynced,
-		ctx.ServiceInformer.HasSynced,
-		ctx.PodInformer.HasSynced,
-		ctx.NodeInformer.HasSynced,
-	}...)
-	if negEnabled {
-		funcs = append(funcs, ctx.EndpointInformer.HasSynced)
-	}
-	return func() bool {
-		for _, f := range funcs {
-			if !f() {
-				return false
-			}
-		}
-		return true
-	}
 }
 
 func updateAnnotations(client kubernetes.Interface, name, namespace string, annotations map[string]string) error {

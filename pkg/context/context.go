@@ -51,6 +51,26 @@ func NewControllerContext(kubeClient kubernetes.Interface, namespace string, res
 	return context
 }
 
+// HasSynced returns true if all relevant informers has been synced.
+func (ctx *ControllerContext) HasSynced() bool {
+
+	funcs := []func() bool{
+		ctx.IngressInformer.HasSynced,
+		ctx.ServiceInformer.HasSynced,
+		ctx.PodInformer.HasSynced,
+		ctx.NodeInformer.HasSynced,
+	}
+	if ctx.EndpointInformer != nil {
+		funcs = append(funcs, ctx.EndpointInformer.HasSynced)
+	}
+	for _, f := range funcs {
+		if !f() {
+			return false
+		}
+	}
+	return true
+}
+
 // Start all of the informers.
 func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	go ctx.IngressInformer.Run(stopCh)
