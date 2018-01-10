@@ -1,4 +1,4 @@
-package networkendpointgroup
+package neg
 
 import (
 	"reflect"
