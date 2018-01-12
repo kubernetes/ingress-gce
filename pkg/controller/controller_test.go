@@ -98,10 +98,14 @@ func toIngressRules(hostRules map[string]utils.FakeIngressRuleValueMap) []extens
 
 // newIngress returns a new Ingress with the given path map.
 func newIngress(hostRules map[string]utils.FakeIngressRuleValueMap) *extensions.Ingress {
-	return &extensions.Ingress{
+	ret := &extensions.Ingress{
+		TypeMeta: meta_v1.TypeMeta{
+			Kind:       "Ingress",
+			APIVersion: "extensions/v1beta1",
+		},
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      fmt.Sprintf("%v", uuid.NewUUID()),
-			Namespace: "",
+			Namespace: "default",
 		},
 		Spec: extensions.IngressSpec{
 			Backend: &extensions.IngressBackend{
@@ -118,6 +122,8 @@ func newIngress(hostRules map[string]utils.FakeIngressRuleValueMap) *extensions.
 			},
 		},
 	}
+	ret.SelfLink = fmt.Sprintf("%s/%s", ret.Namespace, ret.Name)
+	return ret
 }
 
 // validIngress returns a valid Ingress.
@@ -274,6 +280,7 @@ func TestLbCreateDelete(t *testing.T) {
 			t.Fatalf("Found backend %+v for port %v", be, port)
 		}
 	}
+
 	lbc.ingLister.Store.Delete(ings[1])
 	lbc.sync(getKey(ings[1], t))
 
@@ -285,15 +292,15 @@ func TestLbCreateDelete(t *testing.T) {
 		}
 	}
 	if len(cm.fakeLbs.Fw) != 0 || len(cm.fakeLbs.Um) != 0 || len(cm.fakeLbs.Tp) != 0 {
-		t.Fatalf("Loadbalancer leaked resources")
+		t.Errorf("Loadbalancer leaked resources")
 	}
 	for _, lbName := range []string{getKey(ings[0], t), getKey(ings[1], t)} {
 		if l7, err := cm.l7Pool.Get(lbName); err == nil {
-			t.Fatalf("Found unexpected loadbalandcer %+v: %v", l7, err)
+			t.Fatalf("Got loadbalancer %+v: %v, want none", l7, err)
 		}
 	}
 	if firewallRule, err := cm.firewallPool.(*firewalls.FirewallRules).GetFirewall(firewallName); err == nil {
-		t.Fatalf("Found unexpected firewall rule %v", firewallRule)
+		t.Errorf("Got firewall rule %+v, want none", firewallRule)
 	}
 }
 

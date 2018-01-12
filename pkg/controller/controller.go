@@ -93,24 +93,24 @@ type LoadBalancerController struct {
 //	 required for L7 loadbalancing.
 // - resyncPeriod: Watchers relist from the Kubernetes API server this often.
 func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan struct{}, ctx *context.ControllerContext, clusterManager *ClusterManager, negEnabled bool) (*LoadBalancerController, error) {
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.Infof)
-	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
+	broadcaster := record.NewBroadcaster()
+	broadcaster.StartLogging(glog.Infof)
+	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: kubeClient.Core().Events(""),
 	})
 	lbc := LoadBalancerController{
 		client:              kubeClient,
+		ctx:                 ctx,
+		ingLister:           StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
+		nodeLister:          ctx.NodeInformer.GetIndexer(),
+		nodes:               NewNodeController(ctx, clusterManager),
 		CloudClusterManager: clusterManager,
+		recorder:            broadcaster.NewRecorder(scheme.Scheme, apiv1.EventSource{Component: "loadbalancer-controller"}),
 		stopCh:              stopCh,
-		recorder: eventBroadcaster.NewRecorder(scheme.Scheme,
-			apiv1.EventSource{Component: "loadbalancer-controller"}),
-		negEnabled: negEnabled,
+		hasSynced:           ctx.HasSynced,
+		negEnabled:          negEnabled,
 	}
 	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
-	lbc.hasSynced = ctx.HasSynced
-	lbc.ingLister.Store = ctx.IngressInformer.GetStore()
-	lbc.nodeLister = ctx.NodeInformer.GetIndexer()
-	lbc.nodes = NewNodeController(ctx, clusterManager)
 
 	if negEnabled {
 		lbc.endpointLister.Indexer = ctx.EndpointInformer.GetIndexer()
@@ -245,18 +245,25 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 
 	allNodePorts := lbc.Translator.ToNodePorts(&allIngresses)
 	gceNodePorts := lbc.Translator.ToNodePorts(&gceIngresses)
-	lbNames := lbc.ingLister.Store.ListKeys()
-	lbs, err := lbc.toRuntimeInfo(gceIngresses)
-	if err != nil {
-		return err
-	}
 	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
 	if err != nil {
 		return err
 	}
+	lbNames := lbc.ingLister.Store.ListKeys()
+
 	obj, ingExists, err := lbc.ingLister.Store.GetByKey(key)
 	if err != nil {
 		return err
+	}
+
+	if !ingExists {
+		glog.V(2).Infof("Ingress %q no longer exists, triggering GC", key)
+		return lbc.CloudClusterManager.GC(lbNames, allNodePorts)
+	}
+
+	ingressObj, ok := obj.(*extensions.Ingress)
+	if !ok {
+		return fmt.Errorf("invalid object (not of type Ingress), type was %T", obj)
 	}
 
 	// This performs a 2 phase checkpoint with the cloud:
@@ -280,6 +287,12 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 
 	// Record any errors during sync and throw a single error at the end. This
 	// allows us to free up associated cloud resources ASAP.
+	lbs, err := lbc.toRuntimeInfo(extensions.IngressList{
+		Items: []extensions.Ingress{*ingressObj},
+	})
+	if err != nil {
+		return err
+	}
 	igs, err := lbc.CloudClusterManager.Checkpoint(lbs, nodeNames, gceNodePorts, allNodePorts, lbc.Translator.GatherFirewallPorts(gceNodePorts, len(lbs) > 0))
 	if err != nil {
 		// TODO: Implement proper backoff for the queue.

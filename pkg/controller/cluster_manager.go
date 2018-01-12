@@ -105,6 +105,8 @@ func (c *ClusterManager) shutdown() error {
 // If in performing the checkpoint the cluster manager runs out of quota, a
 // googleapi 403 is returned.
 func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeNames []string, backendServicePorts []backends.ServicePort, namedPorts []backends.ServicePort, firewallPorts []int64) ([]*compute.InstanceGroup, error) {
+	glog.V(4).Infof("Checkpoint %q, len(lbs)=%v, len(nodeNames)=%v, lne(backendServicePorts)=%v, len(namedPorts)=%v, len(firewallPorts)=%v", len(lbs), len(nodeNames), len(backendServicePorts), len(namedPorts), len(firewallPorts))
+
 	if len(namedPorts) != 0 {
 		// Add the default backend node port to the list of named ports for instance groups.
 		namedPorts = append(namedPorts, c.defaultBackendNodePort)
