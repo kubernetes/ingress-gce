@@ -174,15 +174,17 @@ func (c *ClusterManager) GC(lbNames []string, nodePorts []backends.ServicePort) 
 	}
 
 	// TODO(ingress#120): Move this to the backend pool so it mirrors creation
-	var igErr error
 	if len(lbNames) == 0 {
 		igName := c.ClusterNamer.InstanceGroup()
 		glog.Infof("Deleting instance group %v", igName)
-		igErr = c.instancePool.DeleteInstanceGroup(igName)
+		if err := c.instancePool.DeleteInstanceGroup(igName); err != err {
+			return err
+		}
 	}
-	if igErr != nil {
-		return igErr
+	if len(lbNames) == 0 {
+		c.firewallPool.Shutdown()
 	}
+
 	return nil
 }
 
