@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/kubernetes/scheme"
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
 
@@ -63,7 +62,7 @@ func gceForTest(negEnabled bool) *GCE {
 
 	ctx := context.NewControllerContext(client, apiv1.NamespaceAll, 1*time.Second, negEnabled)
 	gce := &GCE{
-		recorder:   broadcaster.NewRecorder(scheme.Scheme, apiv1.EventSource{Component: "loadbalancer-controller"}),
+		recorders:  ctx,
 		bi:         &fakeBackendInfo{},
 		svcLister:  ctx.ServiceInformer.GetIndexer(),
 		nodeLister: ctx.NodeInformer.GetIndexer(),

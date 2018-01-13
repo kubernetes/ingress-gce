@@ -28,11 +28,11 @@ import (
 	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	scheme "k8s.io/client-go/kubernetes/scheme"
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
@@ -69,7 +69,6 @@ type LoadBalancerController struct {
 
 	// TODO: Watch secrets
 	CloudClusterManager *ClusterManager
-	recorder            record.EventRecorder
 	ingQueue            utils.TaskQueue
 	Translator          *translator.GCE
 	stopCh              chan struct{}
@@ -105,7 +104,6 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 		nodeLister:          ctx.NodeInformer.GetIndexer(),
 		nodes:               NewNodeController(ctx, clusterManager),
 		CloudClusterManager: clusterManager,
-		recorder:            broadcaster.NewRecorder(scheme.Scheme, apiv1.EventSource{Component: "loadbalancer-controller"}),
 		stopCh:              stopCh,
 		hasSynced:           ctx.HasSynced,
 		negEnabled:          negEnabled,
@@ -124,7 +122,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 				glog.Infof("Ignoring add for ingress %v based on annotation %v", addIng.Name, annotations.IngressClassKey)
 				return
 			}
-			lbc.recorder.Eventf(addIng, apiv1.EventTypeNormal, "ADD", fmt.Sprintf("%s/%s", addIng.Namespace, addIng.Name))
+			lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeNormal, "ADD", fmt.Sprintf("%s/%s", addIng.Namespace, addIng.Name))
 			lbc.ingQueue.Enqueue(obj)
 		},
 		DeleteFunc: func(obj interface{}) {
@@ -163,7 +161,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 	if ctx.EndpointInformer != nil {
 		endpointIndexer = ctx.EndpointInformer.GetIndexer()
 	}
-	lbc.Translator = translator.New(lbc.recorder, lbc.CloudClusterManager,
+	lbc.Translator = translator.New(lbc.ctx, lbc.CloudClusterManager,
 		ctx.ServiceInformer.GetIndexer(),
 		ctx.NodeInformer.GetIndexer(),
 		ctx.PodInformer.GetIndexer(),
@@ -298,14 +296,14 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 		// TODO: Implement proper backoff for the queue.
 		const eventMsg = "GCE"
 		if fwErr, ok := err.(*firewalls.FirewallSyncError); ok {
-			if ingExists {
-				lbc.recorder.Eventf(obj.(*extensions.Ingress), apiv1.EventTypeNormal, eventMsg, fwErr.Message)
+			if ingObj, ok := obj.(*extensions.Ingress); ok && ingExists {
+				lbc.ctx.Recorder(ingObj.Namespace).Eventf(ingObj, apiv1.EventTypeNormal, eventMsg, fwErr.Message)
 			} else {
 				glog.Warningf("Received firewallSyncError but don't have an ingress for raising an event: %v", fwErr.Message)
 			}
 		} else {
-			if ingExists {
-				lbc.recorder.Eventf(obj.(*extensions.Ingress), apiv1.EventTypeWarning, eventMsg, err.Error())
+			if ingObj, ok := obj.(*extensions.Ingress); ok && ingExists {
+				lbc.ctx.Recorder(ingObj.Namespace).Eventf(ingObj, apiv1.EventTypeWarning, eventMsg, err.Error())
 			} else {
 				err = fmt.Errorf("%v, error: %v", eventMsg, err)
 			}
@@ -355,10 +353,10 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 	if urlMap, err := lbc.Translator.ToURLMap(&ing); err != nil {
 		syncError = fmt.Errorf("%v, convert to url map error %v", syncError, err)
 	} else if err := l7.UpdateUrlMap(urlMap); err != nil {
-		lbc.recorder.Eventf(&ing, apiv1.EventTypeWarning, "UrlMap", err.Error())
+		lbc.ctx.Recorder(ing.Namespace).Eventf(&ing, apiv1.EventTypeWarning, "UrlMap", err.Error())
 		syncError = fmt.Errorf("%v, update url map error: %v", syncError, err)
 	} else if err := lbc.updateIngressStatus(l7, ing); err != nil {
-		lbc.recorder.Eventf(&ing, apiv1.EventTypeWarning, "Status", err.Error())
+		lbc.ctx.Recorder(ing.Namespace).Eventf(&ing, apiv1.EventTypeWarning, "Status", err.Error())
 		syncError = fmt.Errorf("%v, update ingress error: %v", syncError, err)
 	}
 	return syncError
@@ -391,7 +389,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 			if _, err := ingClient.UpdateStatus(currIng); err != nil {
 				return err
 			}
-			lbc.recorder.Eventf(currIng, apiv1.EventTypeNormal, "CREATE", "ip: %v", ip)
+			lbc.ctx.Recorder(ing.Namespace).Eventf(currIng, apiv1.EventTypeNormal, "CREATE", "ip: %v", ip)
 		}
 	}
 	annotations := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.CloudClusterManager.backendPool)
