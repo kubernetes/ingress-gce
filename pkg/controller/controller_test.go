@@ -176,7 +176,7 @@ func newPortManager(st, end int, namer *utils.Namer) *nodePortManager {
 // a nodePortManager is supplied, it also adds all backends to the service store
 // with a nodePort acquired through it.
 func addIngress(lbc *LoadBalancerController, ing *extensions.Ingress, pm *nodePortManager) {
-	lbc.ingLister.Store.Add(ing)
+	lbc.ctx.IngressInformer.GetIndexer().Add(ing)
 	if pm == nil {
 		return
 	}
@@ -197,7 +197,7 @@ func addIngress(lbc *LoadBalancerController, ing *extensions.Ingress, pm *nodePo
 			}
 			svcPort.NodePort = int32(pm.getNodePort(path.Backend.ServiceName))
 			svc.Spec.Ports = []api_v1.ServicePort{svcPort}
-			lbc.svcLister.Add(svc)
+			lbc.ctx.ServiceInformer.GetIndexer().Add(svc)
 		}
 	}
 }

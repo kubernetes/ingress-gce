@@ -1,0 +1,317 @@
+/*
+Copyright 2017 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package translator
+
+import (
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/golang/glog"
+	compute "google.golang.org/api/compute/v1"
+
+	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/kubernetes/scheme"
+	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/tools/record"
+
+	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/context"
+)
+
+var (
+	firstPodCreationTime = time.Date(2006, 01, 02, 15, 04, 05, 0, time.UTC)
+)
+
+type fakeBackendInfo struct {
+}
+
+func (bi *fakeBackendInfo) BackendServiceForPort(port int64) (*compute.BackendService, error) {
+	panic(fmt.Errorf("should not be used"))
+	return nil, nil
+}
+
+func (bi *fakeBackendInfo) DefaultBackendNodePort() *backends.ServicePort {
+	return &backends.ServicePort{Port: 30000, Protocol: annotations.ProtocolHTTP}
+}
+
+func gceForTest(negEnabled bool) *GCE {
+	client := fake.NewSimpleClientset()
+	broadcaster := record.NewBroadcaster()
+	broadcaster.StartLogging(glog.Infof)
+	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
+		Interface: client.Core().Events(""),
+	})
+
+	ctx := context.NewControllerContext(client, apiv1.NamespaceAll, 1*time.Second, negEnabled)
+	gce := &GCE{
+		recorder:   broadcaster.NewRecorder(scheme.Scheme, apiv1.EventSource{Component: "loadbalancer-controller"}),
+		bi:         &fakeBackendInfo{},
+		svcLister:  ctx.ServiceInformer.GetIndexer(),
+		nodeLister: ctx.NodeInformer.GetIndexer(),
+		podLister:  ctx.PodInformer.GetIndexer(),
+		negEnabled: negEnabled,
+	}
+	if ctx.EndpointInformer != nil {
+		gce.endpointLister = ctx.EndpointInformer.GetIndexer()
+	}
+	return gce
+}
+
+func TestGetProbe(t *testing.T) {
+	translator := gceForTest(false)
+	nodePortToHealthCheck := map[backends.ServicePort]string{
+		{Port: 3001, Protocol: annotations.ProtocolHTTP}:  "/healthz",
+		{Port: 3002, Protocol: annotations.ProtocolHTTPS}: "/foo",
+	}
+	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
+		translator.svcLister.Add(svc)
+	}
+	for _, pod := range makePods(nodePortToHealthCheck, apiv1.NamespaceDefault) {
+		translator.podLister.Add(pod)
+	}
+
+	for p, exp := range nodePortToHealthCheck {
+		got, err := translator.GetProbe(p)
+		if err != nil || got == nil {
+			t.Errorf("Failed to get probe for node port %v: %v", p, err)
+		} else if getProbePath(got) != exp {
+			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got), exp)
+		}
+	}
+}
+
+func TestGetProbeNamedPort(t *testing.T) {
+	translator := gceForTest(false)
+	nodePortToHealthCheck := map[backends.ServicePort]string{
+		{Port: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
+	}
+	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
+		translator.svcLister.Add(svc)
+	}
+	for _, pod := range makePods(nodePortToHealthCheck, apiv1.NamespaceDefault) {
+		pod.Spec.Containers[0].Ports[0].Name = "test"
+		pod.Spec.Containers[0].ReadinessProbe.Handler.HTTPGet.Port = intstr.IntOrString{Type: intstr.String, StrVal: "test"}
+		translator.podLister.Add(pod)
+	}
+	for p, exp := range nodePortToHealthCheck {
+		got, err := translator.GetProbe(p)
+		if err != nil || got == nil {
+			t.Errorf("Failed to get probe for node port %v: %v", p, err)
+		} else if getProbePath(got) != exp {
+			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got), exp)
+		}
+	}
+}
+
+func TestGetProbeCrossNamespace(t *testing.T) {
+	translator := gceForTest(false)
+
+	firstPod := &apiv1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			// labels match those added by "addPods", but ns and health check
+			// path is different. If this pod was created in the same ns, it
+			// would become the health check.
+			Labels:            map[string]string{"app-3001": "test"},
+			Name:              fmt.Sprintf("test-pod-new-ns"),
+			Namespace:         "new-ns",
+			CreationTimestamp: metav1.NewTime(firstPodCreationTime.Add(-time.Duration(time.Hour))),
+		},
+		Spec: apiv1.PodSpec{
+			Containers: []apiv1.Container{
+				{
+					Ports: []apiv1.ContainerPort{{ContainerPort: 80}},
+					ReadinessProbe: &apiv1.Probe{
+						Handler: apiv1.Handler{
+							HTTPGet: &apiv1.HTTPGetAction{
+								Scheme: apiv1.URISchemeHTTP,
+								Path:   "/badpath",
+								Port: intstr.IntOrString{
+									Type:   intstr.Int,
+									IntVal: 80,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	translator.podLister.Add(firstPod)
+	nodePortToHealthCheck := map[backends.ServicePort]string{
+		{Port: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
+	}
+	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
+		translator.svcLister.Add(svc)
+	}
+	for _, pod := range makePods(nodePortToHealthCheck, apiv1.NamespaceDefault) {
+		pod.Spec.Containers[0].Ports[0].Name = "test"
+		pod.Spec.Containers[0].ReadinessProbe.Handler.HTTPGet.Port = intstr.IntOrString{Type: intstr.String, StrVal: "test"}
+		translator.podLister.Add(pod)
+	}
+
+	for p, exp := range nodePortToHealthCheck {
+		got, err := translator.GetProbe(p)
+		if err != nil || got == nil {
+			t.Errorf("Failed to get probe for node port %v: %v", p, err)
+		} else if getProbePath(got) != exp {
+			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got), exp)
+		}
+	}
+}
+
+func makePods(nodePortToHealthCheck map[backends.ServicePort]string, ns string) []*apiv1.Pod {
+	delay := 1 * time.Minute
+
+	var pods []*apiv1.Pod
+	for np, u := range nodePortToHealthCheck {
+		pod := &apiv1.Pod{
+			ObjectMeta: metav1.ObjectMeta{
+				Labels:            map[string]string{fmt.Sprintf("app-%d", np.Port): "test"},
+				Name:              fmt.Sprintf("%d", np.Port),
+				Namespace:         ns,
+				CreationTimestamp: metav1.NewTime(firstPodCreationTime.Add(delay)),
+			},
+			Spec: apiv1.PodSpec{
+				Containers: []apiv1.Container{
+					{
+						Ports: []apiv1.ContainerPort{{Name: "test", ContainerPort: 80}},
+						ReadinessProbe: &apiv1.Probe{
+							Handler: apiv1.Handler{
+								HTTPGet: &apiv1.HTTPGetAction{
+									Scheme: apiv1.URIScheme(string(np.Protocol)),
+									Path:   u,
+									Port: intstr.IntOrString{
+										Type:   intstr.Int,
+										IntVal: 80,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		pods = append(pods, pod)
+		delay = time.Duration(2) * delay
+	}
+	return pods
+}
+
+func makeServices(nodePortToHealthCheck map[backends.ServicePort]string, ns string) []*apiv1.Service {
+	var services []*apiv1.Service
+	for np, _ := range nodePortToHealthCheck {
+		svc := &apiv1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("%d", np.Port),
+				Namespace: ns,
+			},
+			Spec: apiv1.ServiceSpec{
+				Selector: map[string]string{fmt.Sprintf("app-%d", np.Port): "test"},
+				Ports: []apiv1.ServicePort{
+					{
+						NodePort: int32(np.Port),
+						TargetPort: intstr.IntOrString{
+							Type:   intstr.Int,
+							IntVal: 80,
+						},
+					},
+				},
+			},
+		}
+		services = append(services, svc)
+	}
+	return services
+}
+
+func getProbePath(p *apiv1.Probe) string {
+	return p.Handler.HTTPGet.Path
+}
+
+func TestGatherFirewallPorts(t *testing.T) {
+	translator := gceForTest(true)
+
+	ep1 := "ep1"
+	ep2 := "ep2"
+
+	svcPorts := []backends.ServicePort{
+		{Port: int64(30001)},
+		{Port: int64(30002)},
+		{
+			SvcName:       types.NamespacedName{"ns", ep1},
+			Port:          int64(30003),
+			NEGEnabled:    true,
+			SvcTargetPort: "80",
+		},
+		{
+			SvcName:       types.NamespacedName{"ns", ep2},
+			Port:          int64(30004),
+			NEGEnabled:    true,
+			SvcTargetPort: "named-port",
+		},
+	}
+
+	translator.endpointLister.Add(newDefaultEndpoint(ep1))
+	translator.endpointLister.Add(newDefaultEndpoint(ep2))
+
+	res := translator.GatherFirewallPorts(svcPorts, true)
+	expect := map[int64]bool{
+		int64(30000): true,
+		int64(30001): true,
+		int64(30002): true,
+		int64(80):    true,
+		int64(8080):  true,
+		int64(8081):  true,
+	}
+	if len(res) != len(expect) {
+		t.Errorf("got firewall ports == %v, want %v", res, expect)
+	}
+	for _, p := range res {
+		if _, ok := expect[p]; !ok {
+			t.Errorf("firewall port %v is missing, (got %v, want %v)", p, res, expect)
+		}
+	}
+}
+
+func newDefaultEndpoint(name string) *apiv1.Endpoints {
+	return &apiv1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns"},
+		Subsets: []apiv1.EndpointSubset{
+			{
+				Ports: []apiv1.EndpointPort{
+					{Name: "", Port: int32(80), Protocol: apiv1.ProtocolTCP},
+					{Name: "named-port", Port: int32(8080), Protocol: apiv1.ProtocolTCP},
+				},
+			},
+			{
+				Ports: []apiv1.EndpointPort{
+					{Name: "named-port", Port: int32(80), Protocol: apiv1.ProtocolTCP},
+				},
+			},
+			{
+				Ports: []apiv1.EndpointPort{
+					{Name: "named-port", Port: int32(8081), Protocol: apiv1.ProtocolTCP},
+				},
+			},
+		},
+	}
+}
