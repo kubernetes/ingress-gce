@@ -47,7 +47,6 @@ type fakeBackendInfo struct {
 
 func (bi *fakeBackendInfo) BackendServiceForPort(port int64) (*compute.BackendService, error) {
 	panic(fmt.Errorf("should not be used"))
-	return nil, nil
 }
 
 func (bi *fakeBackendInfo) DefaultBackendNodePort() *backends.ServicePort {
@@ -219,7 +218,7 @@ func makePods(nodePortToHealthCheck map[backends.ServicePort]string, ns string) 
 
 func makeServices(nodePortToHealthCheck map[backends.ServicePort]string, ns string) []*apiv1.Service {
 	var services []*apiv1.Service
-	for np, _ := range nodePortToHealthCheck {
+	for np := range nodePortToHealthCheck {
 		svc := &apiv1.Service{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("%d", np.Port),
@@ -273,21 +272,28 @@ func TestGatherFirewallPorts(t *testing.T) {
 	translator.endpointLister.Add(newDefaultEndpoint(ep1))
 	translator.endpointLister.Add(newDefaultEndpoint(ep2))
 
-	res := translator.GatherFirewallPorts(svcPorts, true)
-	expect := map[int64]bool{
-		int64(30000): true,
-		int64(30001): true,
-		int64(30002): true,
-		int64(80):    true,
-		int64(8080):  true,
-		int64(8081):  true,
-	}
-	if len(res) != len(expect) {
-		t.Errorf("got firewall ports == %v, want %v", res, expect)
-	}
-	for _, p := range res {
-		if _, ok := expect[p]; !ok {
-			t.Errorf("firewall port %v is missing, (got %v, want %v)", p, res, expect)
+	for _, tc := range []struct {
+		defaultBackend bool
+		want           []int64
+	}{
+		{
+			defaultBackend: false,
+			want:           []int64{80, 8080, 8081, 30001, 30002},
+		},
+		{
+			defaultBackend: true,
+			want:           []int64{80, 8080, 8081, 30000, 30001, 30002},
+		},
+	} {
+
+		res := translator.GatherFirewallPorts(svcPorts, tc.defaultBackend)
+		if len(res) != len(tc.want) {
+			t.Errorf("got firewall ports == %v, want %v", res, tc.want)
+		}
+		for _, p := range res {
+			if _, ok := int64ToMap(tc.want)[p]; !ok {
+				t.Errorf("firewall port %v is missing, (got %v, want %v)", p, res, tc.want)
+			}
 		}
 	}
 }
@@ -314,4 +320,12 @@ func newDefaultEndpoint(name string) *apiv1.Endpoints {
 			},
 		},
 	}
+}
+
+func int64ToMap(l []int64) map[int64]bool {
+	ret := map[int64]bool{}
+	for _, i := range l {
+		ret[i] = true
+	}
+	return ret
 }
