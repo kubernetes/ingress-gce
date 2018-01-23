@@ -124,10 +124,8 @@ func (f *FakeLoadBalancers) GetGlobalForwardingRule(name string) (*compute.Forwa
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
-func (f *FakeLoadBalancers) ListGlobalForwardingRules() (*compute.ForwardingRuleList, error) {
-	ruleList := &compute.ForwardingRuleList{}
-	ruleList.Items = f.Fw
-	return ruleList, nil
+func (f *FakeLoadBalancers) ListGlobalForwardingRules() ([]*compute.ForwardingRule, error) {
+	return f.Fw, nil
 }
 
 // CreateGlobalForwardingRule fakes forwarding rule creation.

@@ -49,7 +49,7 @@ type BackendServices interface {
 	UpdateAlphaGlobalBackendService(bg *computealpha.BackendService) error
 	CreateGlobalBackendService(bg *compute.BackendService) error
 	DeleteGlobalBackendService(name string) error
-	ListGlobalBackendServices() (*compute.BackendServiceList, error)
+	ListGlobalBackendServices() ([]*compute.BackendService, error)
 	GetGlobalBackendServiceHealth(name, instanceGroupLink string) (*compute.BackendServiceGroupHealth, error)
 }
 

@@ -90,6 +90,9 @@ type Backends struct {
 	namer        *utils.Namer
 }
 
+// Backends is a BackendPool.
+var _ BackendPool = (*Backends)(nil)
+
 func portKey(port int64) string {
 	return fmt.Sprintf("%d", port)
 }
@@ -341,15 +344,15 @@ func (b *Backends) Delete(port int64) (err error) {
 func (b *Backends) List() ([]interface{}, error) {
 	// TODO: for consistency with the rest of this sub-package this method
 	// should return a list of backend ports.
-	interList := []interface{}{}
-	be, err := b.cloud.ListGlobalBackendServices()
+	backends, err := b.cloud.ListGlobalBackendServices()
 	if err != nil {
-		return interList, err
+		return nil, err
 	}
-	for i := range be.Items {
-		interList = append(interList, be.Items[i])
+	var ret []interface{}
+	for _, x := range backends {
+		ret = append(ret, x)
 	}
-	return interList, nil
+	return ret, nil
 }
 
 func getBackendsForIGs(igs []*compute.InstanceGroup, bm BalancingMode) []*compute.Backend {

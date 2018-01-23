@@ -97,13 +97,13 @@ func (f *FakeBackendServices) DeleteGlobalBackendService(name string) error {
 }
 
 // ListGlobalBackendServices fakes backend service listing.
-func (f *FakeBackendServices) ListGlobalBackendServices() (*compute.BackendServiceList, error) {
+func (f *FakeBackendServices) ListGlobalBackendServices() ([]*compute.BackendService, error) {
 	var svcs []*compute.BackendService
 	for _, s := range f.backendServices.List() {
 		svc := s.(*compute.BackendService)
 		svcs = append(svcs, svc)
 	}
-	return &compute.BackendServiceList{Items: svcs}, nil
+	return svcs, nil
 }
 
 // UpdateGlobalBackendService fakes updating a backend service.

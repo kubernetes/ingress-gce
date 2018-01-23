@@ -316,7 +316,7 @@ func TestBackendPoolSync(t *testing.T) {
 
 	currBackends, _ := f.ListGlobalBackendServices()
 	currSet := sets.NewString()
-	for _, b := range currBackends.Items {
+	for _, b := range currBackends {
 		currSet.Insert(b.Name)
 	}
 	// Port 81 still exists because it's an in-use service NodePort.
