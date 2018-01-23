@@ -38,7 +38,7 @@ ignored = ["k8s.io/kubernetes/pkg/api"]
 
 [[constraint]]
   name = "k8s.io/kubernetes"
-  revision = "99d3e21eb54cc5869679927e7783b8810f6edc50"
+  revision = "7652c252d4ce2aea1563853bef0438769c5781fd"
 
 [[constraint]]
   name = "github.com/docker/distribution"
