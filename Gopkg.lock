@@ -260,7 +260,7 @@
 [[projects]]
   name = "google.golang.org/api"
   packages = ["compute/v0.alpha","compute/v0.beta","compute/v1","container/v1","gensupport","googleapi","googleapi/internal/uritemplates"]
-  revision = "654f863362977d69086620b5f72f13e911da2410"
+  revision = "373a4c220f5c90e5b7ff7101779c5be385d171be"
 
 [[projects]]
   name = "google.golang.org/appengine"
@@ -339,6 +339,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "c6155a49fcfdedb7503a76e85459c87b5c24838c49217e676726b19ff9186507"
+  inputs-digest = "26bb8be4d39b9d22c64d67a816370a44a3e59cadbba946e4e8596d3fd067d9c9"
   solver-name = "gps-cdcl"
   solver-version = 1
