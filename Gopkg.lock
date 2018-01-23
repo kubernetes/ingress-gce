@@ -327,8 +327,8 @@
 
 [[projects]]
   name = "k8s.io/kubernetes"
-  packages = ["pkg/api/legacyscheme","pkg/api/service","pkg/api/v1/pod","pkg/api/v1/service","pkg/apis/autoscaling","pkg/apis/core","pkg/apis/core/helper","pkg/apis/core/install","pkg/apis/core/pods","pkg/apis/core/v1","pkg/apis/core/v1/helper","pkg/apis/core/validation","pkg/apis/extensions","pkg/apis/networking","pkg/capabilities","pkg/cloudprovider","pkg/cloudprovider/providers/gce","pkg/controller","pkg/features","pkg/fieldpath","pkg/kubelet/apis","pkg/kubelet/types","pkg/master/ports","pkg/security/apparmor","pkg/serviceaccount","pkg/util/file","pkg/util/hash","pkg/util/io","pkg/util/mount","pkg/util/net/sets","pkg/util/nsenter","pkg/util/parsers","pkg/util/pointer","pkg/util/taints","pkg/util/version","pkg/version","pkg/volume","pkg/volume/util"]
-  revision = "99d3e21eb54cc5869679927e7783b8810f6edc50"
+  packages = ["pkg/api/legacyscheme","pkg/api/service","pkg/api/v1/pod","pkg/api/v1/service","pkg/apis/autoscaling","pkg/apis/core","pkg/apis/core/helper","pkg/apis/core/install","pkg/apis/core/pods","pkg/apis/core/v1","pkg/apis/core/v1/helper","pkg/apis/core/validation","pkg/apis/extensions","pkg/apis/networking","pkg/capabilities","pkg/cloudprovider","pkg/cloudprovider/providers/gce","pkg/cloudprovider/providers/gce/cloud","pkg/cloudprovider/providers/gce/cloud/filter","pkg/cloudprovider/providers/gce/cloud/meta","pkg/controller","pkg/features","pkg/fieldpath","pkg/kubelet/apis","pkg/kubelet/types","pkg/master/ports","pkg/security/apparmor","pkg/serviceaccount","pkg/util/file","pkg/util/hash","pkg/util/io","pkg/util/mount","pkg/util/net/sets","pkg/util/nsenter","pkg/util/parsers","pkg/util/pointer","pkg/util/taints","pkg/util/version","pkg/version","pkg/volume","pkg/volume/util"]
+  revision = "7652c252d4ce2aea1563853bef0438769c5781fd"
 
 [[projects]]
   branch = "master"
@@ -339,6 +339,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "49b91b7db2d377929fa4f61772199ef02e56c3a1429af9bd320b1e28581b6882"
+  inputs-digest = "c6155a49fcfdedb7503a76e85459c87b5c24838c49217e676726b19ff9186507"
   solver-name = "gps-cdcl"
   solver-version = 1
