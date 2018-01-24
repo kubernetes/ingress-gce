@@ -221,6 +221,51 @@ func TestCertRetentionAfterRestart(t *testing.T) {
 
 }
 
+// TestPreSharedToSecretBasedCertUpdate updates from pre-shared cert
+// to secret based cert and verifies the pre-shared cert is retained.
+func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
+	namer := utils.NewNamer("uid1", "fw1")
+	primaryCertName := namer.SSLCert(namer.LoadBalancer("test"), true)
+	secondaryCertName := namer.SSLCert(namer.LoadBalancer("test"), false)
+
+	lbInfo := &L7RuntimeInfo{
+		Name:      namer.LoadBalancer("test"),
+		AllowHTTP: false,
+	}
+
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
+
+	// Prepare pre-shared cert.
+	preSharedCert, _ := f.CreateSslCertificate(&compute.SslCertificate{
+		Name:        "test-pre-shared-cert",
+		Certificate: "abc",
+		SelfLink:    "existing",
+	})
+	lbInfo.TLSName = preSharedCert.Name
+
+	// Sync pre-shared cert.
+	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	verifyCertAndProxyLink(preSharedCert.Name, preSharedCert.Certificate, f, t)
+
+	// Updates from pre-shared cert to secret based cert.
+	lbInfo.TLS = &TLSCerts{Key: "key", Cert: "cert"}
+	lbInfo.TLSName = ""
+	// Sync primary cert.
+	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	verifyCertAndProxyLink(primaryCertName, lbInfo.TLS.Cert, f, t)
+
+	// Sync secondary cert.
+	lbInfo.TLS = &TLSCerts{Key: "key2", Cert: "cert2"}
+	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	verifyCertAndProxyLink(secondaryCertName, lbInfo.TLS.Cert, f, t)
+
+	// Check if pre-shared cert is retained.
+	if cert, err := f.GetSslCertificate(preSharedCert.Name); err != nil || cert == nil {
+		t.Fatalf("Want pre-shared certificate %v to exist, got none, err: %v", preSharedCert.Name, err)
+	}
+}
+
 func verifyCertAndProxyLink(certName, certValue string, f *FakeLoadBalancers, t *testing.T) {
 	t.Helper()
 
