@@ -81,9 +81,7 @@ func NewGCEClient() *gce.GCECloud {
 		}
 		glog.V(4).Infof("Cloudprovider config file contains: %q", string(allConfig))
 
-		configReader = func() io.Reader {
-			return bytes.NewReader(allConfig)
-		}
+		configReader = generateConfigReaderFunc(allConfig)
 	} else {
 		glog.V(2).Infof("No cloudprovider config file provided, using default values.")
 		configReader = func() io.Reader { return nil }
@@ -111,5 +109,13 @@ func NewGCEClient() *gce.GCECloud {
 			glog.Warningf("Failed to get cloud provider, retrying: %v", err)
 		}
 		time.Sleep(cloudClientRetryInterval)
+	}
+}
+
+type readerFunc func() io.Reader
+
+func generateConfigReaderFunc(config []byte) readerFunc {
+	return func() io.Reader {
+		return bytes.NewReader(config)
 	}
 }
