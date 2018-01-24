@@ -106,8 +106,8 @@ func (f *FakeInstanceGroups) DeleteInstanceGroup(name, zone string) error {
 }
 
 // ListInstancesInInstanceGroup fakes listing instances in an instance group.
-func (f *FakeInstanceGroups) ListInstancesInInstanceGroup(name, zone string, state string) (*compute.InstanceGroupsListInstances, error) {
-	return f.listResult, nil
+func (f *FakeInstanceGroups) ListInstancesInInstanceGroup(name, zone string, state string) ([]*compute.InstanceWithNamedPorts, error) {
+	return f.listResult.Items, nil
 }
 
 // AddInstancesToInstanceGroup fakes adding instances to an instance group.

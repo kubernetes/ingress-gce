@@ -181,12 +181,11 @@ func (i *Instances) list(name string) (sets.String, error) {
 	}
 
 	for _, zone := range zones {
-		instances, err := i.cloud.ListInstancesInInstanceGroup(
-			name, zone, allInstances)
+		instances, err := i.cloud.ListInstancesInInstanceGroup(name, zone, allInstances)
 		if err != nil {
 			return nodeNames, err
 		}
-		for _, ins := range instances.Items {
+		for _, ins := range instances {
 			// TODO: If round trips weren't so slow one would be inclided
 			// to GetInstance using this url and get the name.
 			parts := strings.Split(ins.Instance, "/")
