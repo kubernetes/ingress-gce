@@ -378,7 +378,7 @@ Currently, all service backends must satisfy *either* of the following requireme
 1. Respond with a 200 on '/'. The content does not matter.
 2. Expose an arbitrary url as a `readiness` probe on the pods backing the Service.
 
-The Ingress controller looks for a compatible readiness probe first, if it finds one, it adopts it as the GCE loadbalancer's HTTP(S) health check. If there's no readiness probe, or the readiness probe requires special HTTP headers, the Ingress controller points the GCE loadbalancer's HTTP health check at '/'. [This is an example](examples/health_checks/README.md) of an Ingress that adopts the readiness probe from the endpoints as its health check.
+The Ingress controller looks for a compatible readiness probe first, if it finds one, it adopts it as the GCE loadbalancer's HTTP(S) health check. If there's no readiness probe, or the readiness probe requires special HTTP headers, the Ingress controller points the GCE loadbalancer's HTTP health check at '/'. [This is an example](/examples/health-checks/README.md) of an Ingress that adopts the readiness probe from the endpoints as its health check.
 
 ## Frontend HTTPS
 For encrypted communication between the client to the load balancer, you can secure an Ingress by specifying a [secret](http://kubernetes.io/docs/user-guide/secrets) that contains a TLS private key and certificate. Currently the Ingress only supports a single TLS port, 443, and assumes TLS termination. This controller does not support SNI, so it will ignore all but the first cert in the TLS configuration section. The TLS secret must [contain keys](https://github.com/kubernetes/kubernetes/blob/master/pkg/api/types.go#L2696) named `tls.crt` and `tls.key` that contain the certificate and private key to use for TLS, eg:
