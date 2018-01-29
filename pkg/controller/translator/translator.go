@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -43,14 +44,20 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+// BackendInfo is an interface to return information about the backends.
 type BackendInfo interface {
 	BackendServiceForPort(port int64) (*compute.BackendService, error)
 	DefaultBackendNodePort() *backends.ServicePort
 }
 
-func New(recorder record.EventRecorder, bi BackendInfo, svcLister cache.Indexer, nodeLister cache.Indexer, podLister cache.Indexer, endpointLister cache.Indexer, negEnabled bool) *GCE {
+type recorderSource interface {
+	Recorder(ns string) record.EventRecorder
+}
+
+// New returns a new ControllerContext.
+func New(recorders recorderSource, bi BackendInfo, svcLister cache.Indexer, nodeLister cache.Indexer, podLister cache.Indexer, endpointLister cache.Indexer, negEnabled bool) *GCE {
 	return &GCE{
-		recorder,
+		recorders,
 		bi,
 		svcLister,
 		nodeLister,
@@ -62,7 +69,8 @@ func New(recorder record.EventRecorder, bi BackendInfo, svcLister cache.Indexer,
 
 // GCE helps with kubernetes -> gce api conversion.
 type GCE struct {
-	recorder       record.EventRecorder
+	recorders recorderSource
+
 	bi             BackendInfo
 	svcLister      cache.Indexer
 	nodeLister     cache.Indexer
@@ -87,7 +95,7 @@ func (t *GCE) ToURLMap(ing *extensions.Ingress) (utils.GCEURLMap, error) {
 				// to all other services under the assumption that the user will
 				// modify nodeport.
 				if _, ok := err.(errors.ErrNodePortNotFound); ok {
-					t.recorder.Eventf(ing, api_v1.EventTypeWarning, "Service", err.(errors.ErrNodePortNotFound).Error())
+					t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeWarning, "Service", err.(errors.ErrNodePortNotFound).Error())
 					continue
 				}
 
@@ -121,12 +129,14 @@ func (t *GCE) ToURLMap(ing *extensions.Ingress) (utils.GCEURLMap, error) {
 			if _, ok := err.(errors.ErrNodePortNotFound); ok {
 				msg = fmt.Sprintf("couldn't find nodeport for %v/%v", ing.Namespace, ing.Spec.Backend.ServiceName)
 			}
-			t.recorder.Eventf(ing, api_v1.EventTypeWarning, "Service", fmt.Sprintf("failed to identify user specified default backend, %v, using system default", msg))
+			msg = fmt.Sprintf("failed to identify user specified default backend, %v, using system default", msg)
+			t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeWarning, "Service", msg)
 		} else if defaultBackend != nil {
-			t.recorder.Eventf(ing, api_v1.EventTypeNormal, "Service", fmt.Sprintf("default backend set to %v:%v", ing.Spec.Backend.ServiceName, defaultBackend.Port))
+			msg := fmt.Sprintf("default backend set to %v:%v", ing.Spec.Backend.ServiceName, defaultBackend.Port)
+			t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeNormal, "Service", msg)
 		}
 	} else {
-		t.recorder.Eventf(ing, api_v1.EventTypeNormal, "Service", "no user specified default backend, using system default")
+		t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeNormal, "Service", "no user specified default backend, using system default")
 	}
 	hostPathBackend.PutDefaultBackend(defaultBackend)
 	return hostPathBackend, nil
@@ -342,9 +352,10 @@ func (t *GCE) GatherFirewallPorts(svcPorts []backends.ServicePort, includeDefaul
 	if includeDefaultBackend {
 		svcPorts = append(svcPorts, *t.bi.DefaultBackendNodePort())
 	}
+
 	portMap := map[int64]bool{}
 	for _, p := range svcPorts {
-		if p.NEGEnabled {
+		if t.negEnabled && p.NEGEnabled {
 			// For NEG backend, need to open firewall to all endpoint target ports
 			// TODO(mixia): refactor firewall syncing into a separate go routine with different trigger.
 			// With NEG, endpoint changes may cause firewall ports to be different if user specifies inconsistent backends.

@@ -28,7 +28,7 @@ import (
 
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
-	neg "k8s.io/ingress-gce/pkg/networkendpointgroup"
+	neg "k8s.io/ingress-gce/pkg/neg"
 
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	"k8s.io/ingress-gce/pkg/flags"

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package networkendpointgroup
+package neg
 
 import (
 	"fmt"
@@ -77,7 +77,7 @@ func NewController(
 		Interface: kubeClient.Core().Events(""),
 	})
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme,
-		apiv1.EventSource{Component: "networkendpointgroup-controller"})
+		apiv1.EventSource{Component: "neg-controller"})
 
 	manager := newSyncerManager(namer,
 		recorder,

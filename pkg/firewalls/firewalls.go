@@ -54,6 +54,7 @@ func NewFirewallPool(cloud Firewall, namer *utils.Namer) SingleFirewallPool {
 
 // Sync sync firewall rules with the cloud.
 func (fr *FirewallRules) Sync(nodePorts []int64, nodeNames []string) error {
+	glog.V(4).Infof("Sync(%v, %v)", nodePorts, nodeNames)
 	if len(nodePorts) == 0 {
 		return fr.Shutdown()
 	}
@@ -99,7 +100,7 @@ func (fr *FirewallRules) Sync(nodePorts []int64, nodeNames []string) error {
 // Shutdown shuts down this firewall rules manager.
 func (fr *FirewallRules) Shutdown() error {
 	name := fr.namer.FirewallRule()
-	glog.Infof("Deleting firewall %v", name)
+	glog.V(0).Infof("Deleting firewall %v", name)
 	return fr.deleteFirewall(name)
 }
 

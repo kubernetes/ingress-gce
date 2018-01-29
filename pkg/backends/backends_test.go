@@ -33,7 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
-	"k8s.io/ingress-gce/pkg/networkendpointgroup"
+	"k8s.io/ingress-gce/pkg/neg"
 	"k8s.io/ingress-gce/pkg/storage"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -58,7 +58,7 @@ var (
 )
 
 func newTestJig(f BackendServices, fakeIGs instances.InstanceGroups, syncWithCloud bool) (*Backends, healthchecks.HealthCheckProvider) {
-	negGetter := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+	negGetter := neg.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	nodePool := instances.NewNodePool(fakeIGs, defaultNamer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	healthCheckProvider := healthchecks.NewFakeHealthCheckProvider()
@@ -333,7 +333,7 @@ func TestBackendPoolSync(t *testing.T) {
 func TestBackendPoolDeleteLegacyHealthChecks(t *testing.T) {
 	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	negGetter := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+	negGetter := neg.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	nodePool := instances.NewNodePool(fakeIGs, defaultNamer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	hcp := healthchecks.NewFakeHealthCheckProvider()
@@ -507,7 +507,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	namespace, name, port := "ns", "name", "port"
 	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	fakeNEG := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	nodePool := instances.NewNodePool(fakeIGs, defaultNamer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	hcp := healthchecks.NewFakeHealthCheckProvider()

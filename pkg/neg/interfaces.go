@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package networkendpointgroup
+package neg
 
 import (
 	computealpha "google.golang.org/api/compute/v0.alpha"

@@ -28,11 +28,11 @@ import (
 	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	scheme "k8s.io/client-go/kubernetes/scheme"
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
@@ -43,6 +43,7 @@ import (
 )
 
 const (
+	// DefaultFirewallName is the default firewall name.
 	DefaultFirewallName = ""
 	// Frequency to poll on local stores to sync.
 	storeSyncPollPeriod = 5 * time.Second
@@ -58,17 +59,16 @@ var (
 // from the loadbalancer, via loadBalancerConfig.
 type LoadBalancerController struct {
 	client kubernetes.Interface
+	ctx    *context.ControllerContext
 
 	ingLister  StoreToIngressLister
 	nodeLister cache.Indexer
-	svcLister  cache.Indexer
-	podLister  cache.Indexer
+	nodes      *NodeController
 	// endpoint lister is needed when translating service target port to real endpoint target ports.
 	endpointLister StoreToEndpointLister
+
 	// TODO: Watch secrets
 	CloudClusterManager *ClusterManager
-	recorder            record.EventRecorder
-	nodeQueue           utils.TaskQueue
 	ingQueue            utils.TaskQueue
 	Translator          *translator.GCE
 	stopCh              chan struct{}
@@ -92,26 +92,24 @@ type LoadBalancerController struct {
 //	 required for L7 loadbalancing.
 // - resyncPeriod: Watchers relist from the Kubernetes API server this often.
 func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan struct{}, ctx *context.ControllerContext, clusterManager *ClusterManager, negEnabled bool) (*LoadBalancerController, error) {
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.Infof)
-	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
+	broadcaster := record.NewBroadcaster()
+	broadcaster.StartLogging(glog.Infof)
+	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: kubeClient.Core().Events(""),
 	})
 	lbc := LoadBalancerController{
 		client:              kubeClient,
+		ctx:                 ctx,
+		ingLister:           StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
+		nodeLister:          ctx.NodeInformer.GetIndexer(),
+		nodes:               NewNodeController(ctx, clusterManager),
 		CloudClusterManager: clusterManager,
 		stopCh:              stopCh,
-		recorder: eventBroadcaster.NewRecorder(scheme.Scheme,
-			apiv1.EventSource{Component: "loadbalancer-controller"}),
-		negEnabled: negEnabled,
+		hasSynced:           ctx.HasSynced,
+		negEnabled:          negEnabled,
 	}
-	lbc.nodeQueue = utils.NewPeriodicTaskQueue("nodes", lbc.syncNodes)
 	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
-	lbc.hasSynced = hasSyncedFromContext(ctx, negEnabled)
-	lbc.ingLister.Store = ctx.IngressInformer.GetStore()
-	lbc.svcLister = ctx.ServiceInformer.GetIndexer()
-	lbc.podLister = ctx.PodInformer.GetIndexer()
-	lbc.nodeLister = ctx.NodeInformer.GetIndexer()
+
 	if negEnabled {
 		lbc.endpointLister.Indexer = ctx.EndpointInformer.GetIndexer()
 	}
@@ -124,7 +122,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 				glog.Infof("Ignoring add for ingress %v based on annotation %v", addIng.Name, annotations.IngressClassKey)
 				return
 			}
-			lbc.recorder.Eventf(addIng, apiv1.EventTypeNormal, "ADD", fmt.Sprintf("%s/%s", addIng.Namespace, addIng.Name))
+			lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeNormal, "ADD", fmt.Sprintf("%s/%s", addIng.Namespace, addIng.Name))
 			lbc.ingQueue.Enqueue(obj)
 		},
 		DeleteFunc: func(obj interface{}) {
@@ -159,15 +157,18 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 		// Ingress deletes matter, service deletes don't.
 	})
 
-	// node event handler
-	ctx.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    lbc.nodeQueue.Enqueue,
-		DeleteFunc: lbc.nodeQueue.Enqueue,
-		// Nodes are updated every 10s and we don't care, so no update handler.
-	})
-
-	lbc.Translator = translator.New(lbc.recorder, lbc.CloudClusterManager, lbc.svcLister, lbc.nodeLister, lbc.podLister, lbc.endpointLister, lbc.negEnabled)
+	var endpointIndexer cache.Indexer
+	if ctx.EndpointInformer != nil {
+		endpointIndexer = ctx.EndpointInformer.GetIndexer()
+	}
+	lbc.Translator = translator.New(lbc.ctx, lbc.CloudClusterManager,
+		ctx.ServiceInformer.GetIndexer(),
+		ctx.NodeInformer.GetIndexer(),
+		ctx.PodInformer.GetIndexer(),
+		endpointIndexer,
+		negEnabled)
 	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.client}
+
 	glog.V(3).Infof("Created new loadbalancer controller")
 
 	return &lbc, nil
@@ -193,7 +194,8 @@ func (lbc *LoadBalancerController) enqueueIngressForService(obj interface{}) {
 func (lbc *LoadBalancerController) Run() {
 	glog.Infof("Starting loadbalancer controller")
 	go lbc.ingQueue.Run(time.Second, lbc.stopCh)
-	go lbc.nodeQueue.Run(time.Second, lbc.stopCh)
+	lbc.nodes.Run(lbc.stopCh)
+
 	<-lbc.stopCh
 	glog.Infof("Shutting down Loadbalancer Controller")
 }
@@ -210,7 +212,7 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 		close(lbc.stopCh)
 		glog.Infof("Shutting down controller queues.")
 		lbc.ingQueue.Shutdown()
-		lbc.nodeQueue.Shutdown()
+		lbc.nodes.Shutdown()
 		lbc.shutdown = true
 	}
 
@@ -241,18 +243,25 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 
 	allNodePorts := lbc.Translator.ToNodePorts(&allIngresses)
 	gceNodePorts := lbc.Translator.ToNodePorts(&gceIngresses)
-	lbNames := lbc.ingLister.Store.ListKeys()
-	lbs, err := lbc.toRuntimeInfo(gceIngresses)
-	if err != nil {
-		return err
-	}
 	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
 	if err != nil {
 		return err
 	}
+	lbNames := lbc.ingLister.Store.ListKeys()
+
 	obj, ingExists, err := lbc.ingLister.Store.GetByKey(key)
 	if err != nil {
 		return err
+	}
+
+	if !ingExists {
+		glog.V(2).Infof("Ingress %q no longer exists, triggering GC", key)
+		return lbc.CloudClusterManager.GC(lbNames, allNodePorts)
+	}
+
+	ingressObj, ok := obj.(*extensions.Ingress)
+	if !ok {
+		return fmt.Errorf("invalid object (not of type Ingress), type was %T", obj)
 	}
 
 	// This performs a 2 phase checkpoint with the cloud:
@@ -276,19 +285,25 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 
 	// Record any errors during sync and throw a single error at the end. This
 	// allows us to free up associated cloud resources ASAP.
+	lbs, err := lbc.toRuntimeInfo(extensions.IngressList{
+		Items: []extensions.Ingress{*ingressObj},
+	})
+	if err != nil {
+		return err
+	}
 	igs, err := lbc.CloudClusterManager.Checkpoint(lbs, nodeNames, gceNodePorts, allNodePorts, lbc.Translator.GatherFirewallPorts(gceNodePorts, len(lbs) > 0))
 	if err != nil {
 		// TODO: Implement proper backoff for the queue.
 		const eventMsg = "GCE"
 		if fwErr, ok := err.(*firewalls.FirewallSyncError); ok {
-			if ingExists {
-				lbc.recorder.Eventf(obj.(*extensions.Ingress), apiv1.EventTypeNormal, eventMsg, fwErr.Message)
+			if ingObj, ok := obj.(*extensions.Ingress); ok && ingExists {
+				lbc.ctx.Recorder(ingObj.Namespace).Eventf(ingObj, apiv1.EventTypeNormal, eventMsg, fwErr.Message)
 			} else {
 				glog.Warningf("Received firewallSyncError but don't have an ingress for raising an event: %v", fwErr.Message)
 			}
 		} else {
-			if ingExists {
-				lbc.recorder.Eventf(obj.(*extensions.Ingress), apiv1.EventTypeWarning, eventMsg, err.Error())
+			if ingObj, ok := obj.(*extensions.Ingress); ok && ingExists {
+				lbc.ctx.Recorder(ingObj.Namespace).Eventf(ingObj, apiv1.EventTypeWarning, eventMsg, err.Error())
 			} else {
 				err = fmt.Errorf("%v, error: %v", eventMsg, err)
 			}
@@ -299,6 +314,7 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 	if !ingExists {
 		return syncError
 	}
+
 	ing := *obj.(*extensions.Ingress)
 	if isGCEMultiClusterIngress(&ing) {
 		// Add instance group names as annotation on the ingress.
@@ -308,10 +324,7 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 		if err = setInstanceGroupsAnnotation(ing.Annotations, igs); err != nil {
 			return err
 		}
-		if err = updateAnnotations(lbc.client, ing.Name, ing.Namespace, ing.Annotations); err != nil {
-			return err
-		}
-		return nil
+		return updateAnnotations(lbc.client, ing.Name, ing.Namespace, ing.Annotations)
 	}
 
 	if lbc.negEnabled {
@@ -340,10 +353,10 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 	if urlMap, err := lbc.Translator.ToURLMap(&ing); err != nil {
 		syncError = fmt.Errorf("%v, convert to url map error %v", syncError, err)
 	} else if err := l7.UpdateUrlMap(urlMap); err != nil {
-		lbc.recorder.Eventf(&ing, apiv1.EventTypeWarning, "UrlMap", err.Error())
+		lbc.ctx.Recorder(ing.Namespace).Eventf(&ing, apiv1.EventTypeWarning, "UrlMap", err.Error())
 		syncError = fmt.Errorf("%v, update url map error: %v", syncError, err)
 	} else if err := lbc.updateIngressStatus(l7, ing); err != nil {
-		lbc.recorder.Eventf(&ing, apiv1.EventTypeWarning, "Status", err.Error())
+		lbc.ctx.Recorder(ing.Namespace).Eventf(&ing, apiv1.EventTypeWarning, "Status", err.Error())
 		syncError = fmt.Errorf("%v, update ingress error: %v", syncError, err)
 	}
 	return syncError
@@ -376,7 +389,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 			if _, err := ingClient.UpdateStatus(currIng); err != nil {
 				return err
 			}
-			lbc.recorder.Eventf(currIng, apiv1.EventTypeNormal, "CREATE", "ip: %v", ip)
+			lbc.ctx.Recorder(ing.Namespace).Eventf(currIng, apiv1.EventTypeNormal, "CREATE", "ip: %v", ip)
 		}
 	}
 	annotations := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.CloudClusterManager.backendPool)
@@ -416,55 +429,6 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ingList extensions.IngressList)
 		})
 	}
 	return lbs, nil
-}
-
-// syncNodes manages the syncing of kubernetes nodes to gce instance groups.
-// The instancegroups are referenced by loadbalancer backends.
-func (lbc *LoadBalancerController) syncNodes(key string) error {
-	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
-	if err != nil {
-		return err
-	}
-	return lbc.CloudClusterManager.instancePool.Sync(nodeNames)
-}
-
-// getReadyNodeNames returns names of schedulable, ready nodes from the node lister.
-func getReadyNodeNames(lister listers.NodeLister) ([]string, error) {
-	nodeNames := []string{}
-	nodes, err := lister.ListWithPredicate(utils.NodeIsReady)
-	if err != nil {
-		return nodeNames, err
-	}
-	for _, n := range nodes {
-		if n.Spec.Unschedulable {
-			continue
-		}
-		nodeNames = append(nodeNames, n.Name)
-	}
-	return nodeNames, nil
-}
-
-func hasSyncedFromContext(ctx *context.ControllerContext, negEnabled bool) func() bool {
-	// Wait for all resources to be sync'd to avoid performing actions while
-	// the controller is still initializing state.
-	var funcs []func() bool
-	funcs = append(funcs, []func() bool{
-		ctx.IngressInformer.HasSynced,
-		ctx.ServiceInformer.HasSynced,
-		ctx.PodInformer.HasSynced,
-		ctx.NodeInformer.HasSynced,
-	}...)
-	if negEnabled {
-		funcs = append(funcs, ctx.EndpointInformer.HasSynced)
-	}
-	return func() bool {
-		for _, f := range funcs {
-			if !f() {
-				return false
-			}
-		}
-		return true
-	}
 }
 
 func updateAnnotations(client kubernetes.Interface, name, namespace string, annotations map[string]string) error {

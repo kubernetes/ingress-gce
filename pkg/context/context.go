@@ -19,33 +19,86 @@ package context
 import (
 	"time"
 
+	"github.com/golang/glog"
+
+	apiv1 "k8s.io/api/core/v1"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	informerv1beta1 "k8s.io/client-go/informers/extensions/v1beta1"
 	"k8s.io/client-go/kubernetes"
+	scheme "k8s.io/client-go/kubernetes/scheme"
+	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/record"
 )
 
 // ControllerContext holds
 type ControllerContext struct {
+	kubeClient kubernetes.Interface
+
 	IngressInformer  cache.SharedIndexInformer
 	ServiceInformer  cache.SharedIndexInformer
 	PodInformer      cache.SharedIndexInformer
 	NodeInformer     cache.SharedIndexInformer
 	EndpointInformer cache.SharedIndexInformer
+
+	// Map of namespace => record.EventRecorder.
+	recorders map[string]record.EventRecorder
 }
 
 // NewControllerContext returns a new shared set of informers.
 func NewControllerContext(kubeClient kubernetes.Interface, namespace string, resyncPeriod time.Duration, enableEndpointsInformer bool) *ControllerContext {
+	newIndexer := func() cache.Indexers {
+		return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
+	}
 	context := &ControllerContext{
-		IngressInformer: informerv1beta1.NewIngressInformer(kubeClient, namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}),
-		ServiceInformer: informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}),
-		PodInformer:     informerv1.NewPodInformer(kubeClient, namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}),
-		NodeInformer:    informerv1.NewNodeInformer(kubeClient, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}),
+		kubeClient:      kubeClient,
+		IngressInformer: informerv1beta1.NewIngressInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
+		ServiceInformer: informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
+		PodInformer:     informerv1.NewPodInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
+		NodeInformer:    informerv1.NewNodeInformer(kubeClient, resyncPeriod, newIndexer()),
+		recorders:       map[string]record.EventRecorder{},
 	}
 	if enableEndpointsInformer {
-		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, namespace, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, namespace, resyncPeriod, newIndexer())
 	}
+
 	return context
+}
+
+// HasSynced returns true if all relevant informers has been synced.
+func (ctx *ControllerContext) HasSynced() bool {
+
+	funcs := []func() bool{
+		ctx.IngressInformer.HasSynced,
+		ctx.ServiceInformer.HasSynced,
+		ctx.PodInformer.HasSynced,
+		ctx.NodeInformer.HasSynced,
+	}
+	if ctx.EndpointInformer != nil {
+		funcs = append(funcs, ctx.EndpointInformer.HasSynced)
+	}
+	for _, f := range funcs {
+		if !f() {
+			return false
+		}
+	}
+	return true
+}
+
+func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
+	if rec, ok := ctx.recorders[ns]; ok {
+		return rec
+	}
+
+	broadcaster := record.NewBroadcaster()
+	broadcaster.StartLogging(glog.Infof)
+	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{
+		Interface: ctx.kubeClient.Core().Events(ns),
+	})
+	rec := broadcaster.NewRecorder(scheme.Scheme, apiv1.EventSource{Component: "loadbalancer-controller"})
+	ctx.recorders[ns] = rec
+
+	return rec
 }
 
 // Start all of the informers.
