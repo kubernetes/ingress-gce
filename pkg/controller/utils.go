@@ -211,7 +211,7 @@ func uniq(nodePorts []backends.ServicePort) []backends.ServicePort {
 
 // getReadyNodeNames returns names of schedulable, ready nodes from the node lister.
 func getReadyNodeNames(lister listers.NodeLister) ([]string, error) {
-	nodeNames := []string{}
+	var nodeNames []string
 	nodes, err := lister.ListWithPredicate(utils.NodeIsReady)
 	if err != nil {
 		return nodeNames, err

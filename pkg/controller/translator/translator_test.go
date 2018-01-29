@@ -291,7 +291,7 @@ func TestGatherFirewallPorts(t *testing.T) {
 		}
 		for _, p := range res {
 			if _, ok := int64ToMap(tc.want)[p]; !ok {
-				t.Errorf("firewall port %v is missing, (got %v, want %v)", p, res, tc.want)
+				t.Errorf("firewall port %v is missing, (got %v, want %v); defaultBackend=%v", p, res, tc.want, tc.defaultBackend)
 			}
 		}
 	}
