@@ -26,15 +26,18 @@ import (
 )
 
 const (
-	nodeResyncPeriod = 1 * time.Second
+	nodeUpdatePeriod = 1 * time.Second
 )
 
 // NodeController synchronizes the state of the nodes to the unmanaged instance
 // groups.
 type NodeController struct {
+	// lister is a cache of the k8s Node resources.
 	lister cache.Indexer
-	queue  utils.TaskQueue
-	cm     *ClusterManager
+	// queue is the TaskQueue used to manage the node worker updates.
+	queue utils.TaskQueue
+	// cm is the shared ClusterManager interface.
+	cm *ClusterManager
 }
 
 // NewNodeController returns a new node update controller.
@@ -48,6 +51,9 @@ func NewNodeController(ctx *context.ControllerContext, cm *ClusterManager) *Node
 	ctx.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    c.queue.Enqueue,
 		DeleteFunc: c.queue.Enqueue,
+		// TODO: watch updates for Nodes going from NotReady to Ready.
+		// Otherwise the controller will wait until the complete
+		// refresh to process the node.
 	})
 
 	return c
@@ -55,7 +61,7 @@ func NewNodeController(ctx *context.ControllerContext, cm *ClusterManager) *Node
 
 // Run a go routine to process updates for the controller.
 func (c *NodeController) Run(stopCh chan struct{}) {
-	go c.queue.Run(nodeResyncPeriod, stopCh)
+	go c.queue.Run(nodeUpdatePeriod, stopCh)
 }
 
 // Run a go routine to process updates for the controller.

@@ -67,7 +67,6 @@ func NewControllerContext(kubeClient kubernetes.Interface, namespace string, res
 
 // HasSynced returns true if all relevant informers has been synced.
 func (ctx *ControllerContext) HasSynced() bool {
-
 	funcs := []func() bool{
 		ctx.IngressInformer.HasSynced,
 		ctx.ServiceInformer.HasSynced,
