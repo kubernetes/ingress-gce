@@ -42,6 +42,10 @@ func main() {
 		flag.Set("v", "4")
 	}
 
+	// TODO: remove this when we do a release so the -logtostderr can be
+	// used as a proper argument.
+	go_flag.Lookup("logtostderr").Value.Set("true")
+
 	if flags.F.Version {
 		fmt.Printf("Controller version: %s\n", version.Version)
 		os.Exit(0)
