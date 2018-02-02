@@ -26,6 +26,7 @@ import (
 
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
@@ -131,7 +132,7 @@ func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeName
 		return igs, err
 	}
 
-	if err := c.firewallPool.Sync(firewallPorts, nodeNames); err != nil {
+	if err := c.firewallPool.Sync(nodeNames); err != nil {
 		return igs, err
 	}
 
@@ -226,6 +227,6 @@ func NewClusterManager(
 
 	// L7 pool creates targetHTTPProxy, ForwardingRules, UrlMaps, StaticIPs.
 	cluster.l7Pool = loadbalancers.NewLoadBalancerPool(cloud, defaultBackendPool, defaultBackendNodePort, cluster.ClusterNamer)
-	cluster.firewallPool = firewalls.NewFirewallPool(cloud, cluster.ClusterNamer)
+	cluster.firewallPool = firewalls.NewFirewallPool(cloud, cluster.ClusterNamer, gce.LoadBalancerSrcRanges(), flags.F.NodePortRanges.Values())
 	return &cluster, nil
 }

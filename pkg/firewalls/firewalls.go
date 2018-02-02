@@ -19,7 +19,7 @@ package firewalls
 import (
 	"fmt"
 	"sort"
-	"strconv"
+	"strings"
 
 	"github.com/golang/glog"
 
@@ -31,76 +31,77 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-// Src ranges from which the GCE L7 performs health checks.
-var l7SrcRanges = []string{"130.211.0.0/22", "35.191.0.0/16"}
-
 // FirewallRules manages firewall rules.
 type FirewallRules struct {
-	cloud     Firewall
-	namer     *utils.Namer
-	srcRanges []string
+	cloud      Firewall
+	namer      *utils.Namer
+	srcRanges  []string
+	portRanges []string
 }
 
 // NewFirewallPool creates a new firewall rule manager.
 // cloud: the cloud object implementing Firewall.
 // namer: cluster namer.
-func NewFirewallPool(cloud Firewall, namer *utils.Namer) SingleFirewallPool {
+func NewFirewallPool(cloud Firewall, namer *utils.Namer, l7SrcRanges []string, nodePortRanges []string) SingleFirewallPool {
 	_, err := netset.ParseIPNets(l7SrcRanges...)
 	if err != nil {
 		glog.Fatalf("Could not parse L7 src ranges %v for firewall rule: %v", l7SrcRanges, err)
 	}
-	return &FirewallRules{cloud: cloud, namer: namer, srcRanges: l7SrcRanges}
+	return &FirewallRules{
+		cloud:      cloud,
+		namer:      namer,
+		srcRanges:  l7SrcRanges,
+		portRanges: nodePortRanges,
+	}
 }
 
 // Sync sync firewall rules with the cloud.
-func (fr *FirewallRules) Sync(nodePorts []int64, nodeNames []string) error {
-	glog.V(4).Infof("Sync(%v, %v)", nodePorts, nodeNames)
-	if len(nodePorts) == 0 {
-		return fr.Shutdown()
-	}
-	// TODO: Fix upstream gce cloudprovider lib so GET also takes the suffix
-	// instead of the whole name.
+func (fr *FirewallRules) Sync(nodeNames []string) error {
+	glog.V(4).Infof("Sync(%v)", nodeNames)
 	name := fr.namer.FirewallRule()
-	rule, _ := fr.cloud.GetFirewall(name)
+	existingFirewall, _ := fr.cloud.GetFirewall(name)
 
-	firewall, err := fr.createFirewallObject(name, "GCE L7 firewall rule", nodePorts, nodeNames)
+	// Retrieve list of target tags from node names. This may be configured in
+	// gce.conf or computed by the GCE cloudprovider package.
+	targetTags, err := fr.cloud.GetNodeTags(nodeNames)
 	if err != nil {
 		return err
 	}
+	sort.Strings(targetTags)
 
-	if rule == nil {
-		glog.Infof("Creating global l7 firewall rule %v", name)
-		return fr.createFirewall(firewall)
+	expectedFirewall := &compute.Firewall{
+		Name:         name,
+		Description:  "GCE L7 firewall rule",
+		SourceRanges: fr.srcRanges,
+		Network:      fr.cloud.NetworkURL(),
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: "tcp",
+				Ports:      fr.portRanges,
+			},
+		},
+		TargetTags: targetTags,
 	}
 
-	requiredPorts := sets.NewString()
-	for _, p := range nodePorts {
-		requiredPorts.Insert(strconv.Itoa(int(p)))
-	}
-	existingPorts := sets.NewString()
-	for _, allowed := range rule.Allowed {
-		for _, p := range allowed.Ports {
-			existingPorts.Insert(p)
-		}
+	if existingFirewall == nil {
+		glog.V(3).Infof("Creating firewall rule %q", name)
+		return fr.createFirewall(expectedFirewall)
 	}
 
-	requiredCIDRs := sets.NewString(l7SrcRanges...)
-	existingCIDRs := sets.NewString(rule.SourceRanges...)
-
-	// Do not update if ports and source cidrs are not outdated.
-	// NOTE: We are not checking if nodeNames matches the firewall targetTags
-	if requiredPorts.Equal(existingPorts) && requiredCIDRs.Equal(existingCIDRs) {
+	// Early return if an update is not required.
+	if equal(expectedFirewall, existingFirewall) {
 		glog.V(4).Info("Firewall does not need update of ports or source ranges")
 		return nil
 	}
-	glog.V(3).Infof("Firewall %v already exists, updating nodeports %v", name, nodePorts)
-	return fr.updateFirewall(firewall)
+
+	glog.V(3).Infof("Updating firewall rule %q", name)
+	return fr.updateFirewall(expectedFirewall)
 }
 
 // Shutdown shuts down this firewall rules manager.
 func (fr *FirewallRules) Shutdown() error {
 	name := fr.namer.FirewallRule()
-	glog.V(0).Infof("Deleting firewall %v", name)
+	glog.V(3).Infof("Deleting firewall %q", name)
 	return fr.deleteFirewall(name)
 }
 
@@ -109,37 +110,6 @@ func (fr *FirewallRules) Shutdown() error {
 // objects out of this interface by returning just the (src, ports, error).
 func (fr *FirewallRules) GetFirewall(name string) (*compute.Firewall, error) {
 	return fr.cloud.GetFirewall(name)
-}
-
-func (fr *FirewallRules) createFirewallObject(firewallName, description string, nodePorts []int64, nodeNames []string) (*compute.Firewall, error) {
-	ports := make([]string, len(nodePorts))
-	for ix := range nodePorts {
-		ports[ix] = strconv.Itoa(int(nodePorts[ix]))
-	}
-	// Sorting the ports will prevent duplicate events being created despite having identical params.
-	sort.Strings(ports)
-
-	// If the node tags to be used for this cluster have been predefined in the
-	// provider config, just use them. Otherwise, invoke computeHostTags method to get the tags.
-	targetTags, err := fr.cloud.GetNodeTags(nodeNames)
-	if err != nil {
-		return nil, err
-	}
-	sort.Strings(targetTags)
-
-	return &compute.Firewall{
-		Name:         firewallName,
-		Description:  description,
-		SourceRanges: fr.srcRanges,
-		Network:      fr.cloud.NetworkURL(),
-		Allowed: []*compute.FirewallAllowed{
-			{
-				IPProtocol: "tcp",
-				Ports:      ports,
-			},
-		},
-		TargetTags: targetTags,
-	}, nil
 }
 
 func (fr *FirewallRules) createFirewall(f *compute.Firewall) error {
@@ -189,4 +159,36 @@ type FirewallSyncError struct {
 
 func (f *FirewallSyncError) Error() string {
 	return f.Message
+}
+
+func equal(expected *compute.Firewall, existing *compute.Firewall) bool {
+	if !sets.NewString(expected.TargetTags...).Equal(sets.NewString(existing.TargetTags...)) {
+		glog.V(5).Infof("Expected target tags %v, actually %v", expected.TargetTags, existing.TargetTags)
+		return false
+	}
+
+	expectedAllowed := allowedToStrings(expected.Allowed)
+	existingAllowed := allowedToStrings(existing.Allowed)
+	if !sets.NewString(expectedAllowed...).Equal(sets.NewString(existingAllowed...)) {
+		glog.V(5).Infof("Expected allowed rules %v, actually %v", expectedAllowed, existingAllowed)
+		return false
+	}
+
+	if !sets.NewString(expected.SourceRanges...).Equal(sets.NewString(existing.SourceRanges...)) {
+		glog.V(5).Infof("Expected source ranges %v, actually %v", expected.SourceRanges, existing.SourceRanges)
+		return false
+	}
+
+	// Ignore other firewall properties as the controller does not set them.
+	return true
+}
+
+func allowedToStrings(allowed []*compute.FirewallAllowed) []string {
+	var allowedStrs []string
+	for _, v := range allowed {
+		sort.Strings(v.Ports)
+		s := strings.ToUpper(v.IPProtocol) + ":" + strings.Join(v.Ports, ",")
+		allowedStrs = append(allowedStrs, s)
+	}
+	return allowedStrs
 }

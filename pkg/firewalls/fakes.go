@@ -17,6 +17,7 @@ limitations under the License.
 package firewalls
 
 import (
+	"encoding/json"
 	"fmt"
 
 	compute "google.golang.org/api/compute/v1"
@@ -55,7 +56,11 @@ func (ff *fakeFirewallsProvider) doCreateFirewall(f *compute.Firewall) error {
 	if _, exists := ff.fw[f.Name]; exists {
 		return fmt.Errorf("firewall rule %v already exists", f.Name)
 	}
-	ff.fw[f.Name] = f
+	cf, err := copyFirewall(f)
+	if err != nil {
+		return err
+	}
+	ff.fw[f.Name] = cf
 	return nil
 }
 
@@ -93,7 +98,11 @@ func (ff *fakeFirewallsProvider) doUpdateFirewall(f *compute.Firewall) error {
 		return fmt.Errorf("update failed for rule %v, srcRange %v ports %+v, rule not found", f.Name, f.SourceRanges, f.Allowed)
 	}
 
-	ff.fw[f.Name] = f
+	cf, err := copyFirewall(f)
+	if err != nil {
+		return err
+	}
+	ff.fw[f.Name] = cf
 	return nil
 }
 
@@ -119,4 +128,16 @@ func (ff *fakeFirewallsProvider) OnXPN() bool {
 
 func (ff *fakeFirewallsProvider) GetNodeTags(nodeNames []string) ([]string, error) {
 	return nodeNames, nil
+}
+
+func copyFirewall(f *compute.Firewall) (*compute.Firewall, error) {
+	enc, err := f.MarshalJSON()
+	if err != nil {
+		return nil, err
+	}
+	var firewall compute.Firewall
+	if err := json.Unmarshal(enc, &firewall); err != nil {
+		return nil, err
+	}
+	return &firewall, nil
 }

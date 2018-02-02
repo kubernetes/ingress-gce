@@ -18,6 +18,9 @@ package flags
 
 import (
 	"flag"
+	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"k8s.io/api/core/v1"
@@ -27,6 +30,9 @@ const (
 	// DefaultClusterUID is the uid to use for clusters resources created by an
 	// L7 controller created without specifying the --cluster-uid flag.
 	DefaultClusterUID = ""
+	// DefaultNodePortRange is the list of ports or port ranges used by kubernetes for
+	// allocating NodePort services.
+	DefaultNodePortRange = "30000-32767"
 )
 
 var (
@@ -46,8 +52,13 @@ var (
 		Verbose         bool
 		Version         bool
 		WatchNamespace  string
+		NodePortRanges  PortRanges
 	}{}
 )
+
+func init() {
+	F.NodePortRanges.ports = []string{DefaultNodePortRange}
+}
 
 // Register flags with the command line parser.
 func Register() {
@@ -92,11 +103,41 @@ the pod secrets for creating a Kubernetes client.`)
 		`Print the version of the controller and exit`)
 	flag.StringVar(&F.IngressClass, "ingress-class", "",
 		`If set, overrides what ingress classes are managed by the controller.`)
+	flag.Var(&F.NodePortRanges, "node-port-ranges", `Node port/port-ranges whitelisted for the
+L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-500`)
 
 	// Deprecated F.
 	flag.BoolVar(&F.Verbose, "verbose", false,
 		`This flag is deprecated. Use -v to control verbosity.`)
 	flag.Bool("use-real-cloud", false,
 		`This flag has been deprecated and no longer has any effect.`)
+}
 
+type PortRanges struct {
+	ports []string
+	isSet bool
+}
+
+// String is the method to format the flag's value, part of the flag.Value interface.
+func (c *PortRanges) String() string {
+	return strings.Join(c.ports, ",")
+}
+
+// Set supports a value of CSV or the flag repeated multiple times
+func (c *PortRanges) Set(value string) error {
+	// On first Set(), clear the original defaults
+	if !c.isSet {
+		c.isSet = true
+	} else {
+		return fmt.Errorf("NodePort Ranges have already been set")
+	}
+
+	c.ports = strings.Split(value, ",")
+	sort.Strings(c.ports)
+	return nil
+}
+
+// Set supports a value of CSV or the flag repeated multiple times
+func (c *PortRanges) Values() []string {
+	return c.ports
 }
