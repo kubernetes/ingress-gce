@@ -34,6 +34,8 @@ import (
 var (
 	testDefaultBeNodePort = backends.ServicePort{Port: 3000, Protocol: annotations.ProtocolHTTP}
 	testBackendPort       = intstr.IntOrString{Type: intstr.Int, IntVal: 80}
+	testSrcRanges         = []string{"1.1.1.1/20"}
+	testNodePortRanges    = []string{"30000-32767"}
 )
 
 // ClusterManager fake
@@ -70,7 +72,7 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 		testDefaultBeNodePort,
 		namer,
 	)
-	frPool := firewalls.NewFirewallPool(firewalls.NewFakeFirewallsProvider(false, false), namer)
+	frPool := firewalls.NewFirewallPool(firewalls.NewFakeFirewallsProvider(false, false), namer, testSrcRanges, testNodePortRanges)
 	cm := &ClusterManager{
 		ClusterNamer: namer,
 		instancePool: nodePool,

@@ -28,7 +28,6 @@ import (
 	extensions "k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/kubernetes/fake"
 
@@ -252,29 +251,15 @@ func TestLbCreateDelete(t *testing.T) {
 	// we shouldn't pull shared backends out from existing loadbalancers.
 	unexpected := []int{pm.portMap["foo2svc"], pm.portMap["bar2svc"]}
 	expected := []int{pm.portMap["foo1svc"], pm.portMap["bar1svc"]}
-	firewallPorts := sets.NewString()
 	pm.namer.SetFirewall(testFirewallName)
 	firewallName := pm.namer.FirewallRule()
 
-	if firewallRule, err := cm.firewallPool.(*firewalls.FirewallRules).GetFirewall(firewallName); err != nil {
+	// Check existence of firewall rule
+	_, err := cm.firewallPool.(*firewalls.FirewallRules).GetFirewall(firewallName)
+	if err != nil {
 		t.Fatalf("%v", err)
-	} else {
-		if len(firewallRule.Allowed) != 1 {
-			t.Fatalf("Expected a single firewall rule")
-		}
-		for _, p := range firewallRule.Allowed[0].Ports {
-			firewallPorts.Insert(p)
-		}
 	}
 
-	for _, port := range expected {
-		if _, err := cm.backendPool.Get(int64(port)); err != nil {
-			t.Fatalf("%v", err)
-		}
-		if !firewallPorts.Has(fmt.Sprintf("%v", port)) {
-			t.Fatalf("Expected a firewall rule for port %v", port)
-		}
-	}
 	for _, port := range unexpected {
 		if be, err := cm.backendPool.Get(int64(port)); err == nil {
 			t.Fatalf("Found backend %+v for port %v", be, port)

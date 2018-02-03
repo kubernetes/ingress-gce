@@ -17,155 +17,211 @@ limitations under the License.
 package firewalls
 
 import (
-	"strconv"
 	"strings"
 	"testing"
 
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-func TestSyncFirewallPool(t *testing.T) {
-	namer := utils.NewNamer("ABC", "XYZ")
+var namer = utils.NewNamer("ABC", "XYZ")
+var ruleName = namer.FirewallRule()
+var srcRanges = []string{"1.1.1.1/11", "2.2.2.2/22"}
+
+func portRanges() []string {
+	return []string{"20000-23000"}
+}
+
+func TestFirewallPoolSync(t *testing.T) {
 	fwp := NewFakeFirewallsProvider(false, false)
-	fp := NewFirewallPool(fwp, namer)
-	ruleName := namer.FirewallRule()
-
-	// Test creating a firewall rule via Sync
-	nodePorts := []int64{80, 443, 3000}
+	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
-	err := fp.Sync(nodePorts, nodes)
-	if err != nil {
+
+	if err := fp.Sync(nodes); err != nil {
+		t.Fatal(err)
+	}
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
+}
+
+func TestFirewallPoolSyncNodes(t *testing.T) {
+	fwp := NewFakeFirewallsProvider(false, false)
+	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
+	nodes := []string{"node-a", "node-b", "node-c"}
+
+	if err := fp.Sync(nodes); err != nil {
+		t.Fatal(err)
+	}
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
+
+	// Add nodes
+	nodes = append(nodes, "node-d", "node-e")
+	if err := fp.Sync(nodes); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodePorts, nodes, l7SrcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 
-	// Sync to fewer ports
-	nodePorts = []int64{80, 443}
-	err = fp.Sync(nodePorts, nodes)
-	if err != nil {
+	// Remove nodes
+	nodes = []string{"node-a", "node-c"}
+	if err := fp.Sync(nodes); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodePorts, nodes, l7SrcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
+}
 
-	firewall, err := fp.(*FirewallRules).createFirewallObject(namer.FirewallRule(), "", nodePorts, nodes)
-	if err != nil {
-		t.Errorf("unexpected err when creating firewall object, err: %v", err)
+func TestFirewallPoolSyncSrcRanges(t *testing.T) {
+	fwp := NewFakeFirewallsProvider(false, false)
+	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
+	nodes := []string{"node-a", "node-b", "node-c"}
+
+	if err := fp.Sync(nodes); err != nil {
+		t.Fatal(err)
+	}
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
+
+	// Manually modify source ranges to bad values.
+	f, _ := fwp.GetFirewall(ruleName)
+	f.SourceRanges = []string{"A", "B", "C"}
+	if err := fwp.UpdateFirewall(f); err != nil {
+		t.Fatal(err)
 	}
 
-	err = fwp.UpdateFirewall(firewall)
-	if err != nil {
-		t.Errorf("failed to update firewall rule, err: %v", err)
-	}
-	verifyFirewallRule(fwp, ruleName, nodePorts, nodes, l7SrcRanges, t)
-
-	// Run Sync and expect l7 src ranges to be returned
-	err = fp.Sync(nodePorts, nodes)
-	if err != nil {
+	if err := fp.Sync(nodes); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodePorts, nodes, l7SrcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
+}
 
-	// Add node and expect firewall to remain the same
-	// NOTE: See computeHostTag(..) in gce cloudprovider
-	nodes = []string{"node-a", "node-b", "node-c", "node-d"}
-	err = fp.Sync(nodePorts, nodes)
-	if err != nil {
+func TestFirewallPoolSyncPorts(t *testing.T) {
+	fwp := NewFakeFirewallsProvider(false, false)
+	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
+	nodes := []string{"node-a", "node-b", "node-c"}
+
+	if err := fp.Sync(nodes); err != nil {
+		t.Fatal(err)
+	}
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
+
+	// Manually modify port list to bad values.
+	f, _ := fwp.GetFirewall(ruleName)
+	f.Allowed[0].Ports[0] = "578"
+	if err := fwp.UpdateFirewall(f); err != nil {
+		t.Fatal(err)
+	}
+
+	// Expect firewall to be synced back to normal
+	if err := fp.Sync(nodes); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodePorts, nodes, l7SrcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 
-	// Remove all ports and expect firewall rule to disappear
-	nodePorts = []int64{}
-	err = fp.Sync(nodePorts, nodes)
-	if err != nil {
+	// Verify additional ports are included
+	negTargetports := []string{"80", "443", "8080"}
+	if err := fp.Sync(nodes, negTargetports...); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, append(portRanges(), negTargetports...), t)
+}
 
-	err = fp.Shutdown()
-	if err != nil {
-		t.Errorf("unexpected err when deleting firewall, err: %v", err)
+func TestFirewallPoolShutdown(t *testing.T) {
+	fwp := NewFakeFirewallsProvider(false, false)
+	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
+	nodes := []string{"node-a", "node-b", "node-c"}
+
+	if err := fp.Sync(nodes); err != nil {
+		t.Fatal(err)
+	}
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
+
+	if err := fp.Shutdown(); err != nil {
+		t.Fatal(err)
+	}
+
+	f, err := fwp.GetFirewall(ruleName)
+	if err == nil || f != nil {
+		t.Fatalf("GetFirewall() = %v, %v, expected nil, (error)", f, err)
 	}
 }
 
 // TestSyncOnXPNWithPermission tests that firwall sync continues to work when OnXPN=true
 func TestSyncOnXPNWithPermission(t *testing.T) {
-	namer := utils.NewNamer("ABC", "XYZ")
+	// Fake XPN cluster with permission
 	fwp := NewFakeFirewallsProvider(true, false)
-	fp := NewFirewallPool(fwp, namer)
-	ruleName := namer.FirewallRule()
-
-	// Test creating a firewall rule via Sync
-	nodePorts := []int64{80, 443, 3000}
+	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
-	err := fp.Sync(nodePorts, nodes)
-	if err != nil {
+
+	if err := fp.Sync(nodes); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodePorts, nodes, l7SrcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 }
 
 // TestSyncOnXPNReadOnly tests that controller behavior is accurate when the controller
 // does not have permission to create/update/delete firewall rules.
 // Specific errors should be returned.
-func TestSyncOnXPNReadOnly(t *testing.T) {
-	namer := utils.NewNamer("ABC", "XYZ")
+func TestSyncXPNReadOnly(t *testing.T) {
 	fwp := NewFakeFirewallsProvider(true, true)
-	fp := NewFirewallPool(fwp, namer)
-	ruleName := namer.FirewallRule()
-
-	// Test creating a firewall rule via Sync
-	nodePorts := []int64{80, 443, 3000}
+	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
-	err := fp.Sync(nodePorts, nodes)
+
+	err := fp.Sync(nodes)
 	if fwErr, ok := err.(*FirewallSyncError); !ok || !strings.Contains(fwErr.Message, "create") {
 		t.Errorf("Expected firewall sync error with a user message. Received err: %v", err)
 	}
 
 	// Manually create the firewall
-	firewall, err := fp.(*FirewallRules).createFirewallObject(ruleName, "", nodePorts, nodes)
-	if err != nil {
-		t.Errorf("unexpected err when creating firewall object, err: %v", err)
+	expectedFirewall := &compute.Firewall{
+		Name:         ruleName,
+		SourceRanges: srcRanges,
+		Network:      fwp.NetworkURL(),
+		Allowed: []*compute.FirewallAllowed{
+			{
+				IPProtocol: "tcp",
+				Ports:      portRanges(),
+			},
+		},
+		TargetTags: nodes,
 	}
-	err = fwp.doCreateFirewall(firewall)
-	if err != nil {
+	if err = fwp.doCreateFirewall(expectedFirewall); err != nil {
 		t.Errorf("unexpected err when creating firewall, err: %v", err)
 	}
 
 	// Run sync again with same state - expect no event
-	err = fp.Sync(nodePorts, nodes)
-	if err != nil {
+	if err = fp.Sync(nodes); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
 
-	// Modify nodePorts to cause an event
-	nodePorts = append(nodePorts, 3001)
-
-	// Run sync again with same state - expect no event
-	err = fp.Sync(nodePorts, nodes)
+	nodes = append(nodes, "node-d")
+	err = fp.Sync(nodes)
 	if fwErr, ok := err.(*FirewallSyncError); !ok || !strings.Contains(fwErr.Message, "update") {
+		t.Errorf("Expected firewall sync error with a user message. Received err: %v", err)
+	}
+
+	err = fp.Shutdown()
+	if fwErr, ok := err.(*FirewallSyncError); !ok || !strings.Contains(fwErr.Message, "delete") {
 		t.Errorf("Expected firewall sync error with a user message. Received err: %v", err)
 	}
 }
 
-func verifyFirewallRule(fwp *fakeFirewallsProvider, ruleName string, expectedPorts []int64, expectedNodes, expectedCIDRs []string, t *testing.T) {
-	var strPorts []string
-	for _, v := range expectedPorts {
-		strPorts = append(strPorts, strconv.FormatInt(v, 10))
-	}
-
+func verifyFirewallRule(fwp *fakeFirewallsProvider, ruleName string, expectedNodes, expectedCIDRs, expectedPorts []string, t *testing.T) {
 	// Verify firewall rule was created
 	f, err := fwp.GetFirewall(ruleName)
 	if err != nil {
 		t.Errorf("could not retrieve firewall via cloud api, err %v", err)
 	}
 
-	// Verify firewall rule has correct ports
-	if !sets.NewString(f.Allowed[0].Ports...).Equal(sets.NewString(strPorts...)) {
-		t.Errorf("allowed ports doesn't equal expected ports, Actual: %v, Expected: %v", f.Allowed[0].Ports, strPorts)
+	if len(f.Allowed) != 1 || f.Allowed[0].IPProtocol != "tcp" {
+		t.Errorf("allowed doesn't exist or isn't 'tcp'")
 	}
 
-	// Verify firewall rule has correct CIDRs
+	if !sets.NewString(f.Allowed[0].Ports...).Equal(sets.NewString(expectedPorts...)) {
+		t.Errorf("allowed ports doesn't equal expected ports, Actual: %+v, Expected: %+v", f.Allowed[0].Ports, expectedPorts)
+	}
+
+	if !sets.NewString(f.TargetTags...).Equal(sets.NewString(expectedNodes...)) {
+		t.Errorf("target tags doesn't equal expected taget tags. Actual: %v, Expected: %v", f.TargetTags, expectedNodes)
+	}
+
 	if !sets.NewString(f.SourceRanges...).Equal(sets.NewString(expectedCIDRs...)) {
 		t.Errorf("source CIDRs doesn't equal expected CIDRs. Actual: %v, Expected: %v", f.SourceRanges, expectedCIDRs)
 	}
