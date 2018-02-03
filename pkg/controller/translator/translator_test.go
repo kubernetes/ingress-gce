@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/fake"
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
@@ -245,7 +246,7 @@ func getProbePath(p *apiv1.Probe) string {
 	return p.Handler.HTTPGet.Path
 }
 
-func TestGatherFirewallPorts(t *testing.T) {
+func TestGatherEndpointPorts(t *testing.T) {
 	translator := gceForTest(true)
 
 	ep1 := "ep1"
@@ -271,29 +272,10 @@ func TestGatherFirewallPorts(t *testing.T) {
 	translator.endpointLister.Add(newDefaultEndpoint(ep1))
 	translator.endpointLister.Add(newDefaultEndpoint(ep2))
 
-	for _, tc := range []struct {
-		defaultBackend bool
-		want           []int64
-	}{
-		{
-			defaultBackend: false,
-			want:           []int64{80, 8080, 8081, 30001, 30002},
-		},
-		{
-			defaultBackend: true,
-			want:           []int64{80, 8080, 8081, 30000, 30001, 30002},
-		},
-	} {
-
-		res := translator.GatherFirewallPorts(svcPorts, tc.defaultBackend)
-		if len(res) != len(tc.want) {
-			t.Errorf("got firewall ports == %v, want %v", res, tc.want)
-		}
-		for _, p := range res {
-			if _, ok := int64ToMap(tc.want)[p]; !ok {
-				t.Errorf("firewall port %v is missing, (got %v, want %v); defaultBackend=%v", p, res, tc.want, tc.defaultBackend)
-			}
-		}
+	expected := []string{"80", "8080", "8081"}
+	got := translator.GatherEndpointPorts(svcPorts)
+	if !sets.NewString(got...).Equal(sets.NewString(expected...)) {
+		t.Errorf("GatherEndpointPorts() = %v, expected %v", got, expected)
 	}
 }
 

@@ -41,7 +41,7 @@ func TestFirewallPoolSync(t *testing.T) {
 	if err := fp.Sync(nodes); err != nil {
 		t.Fatal(err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 }
 
 func TestFirewallPoolSyncNodes(t *testing.T) {
@@ -52,21 +52,21 @@ func TestFirewallPoolSyncNodes(t *testing.T) {
 	if err := fp.Sync(nodes); err != nil {
 		t.Fatal(err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 
 	// Add nodes
 	nodes = append(nodes, "node-d", "node-e")
 	if err := fp.Sync(nodes); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 
 	// Remove nodes
 	nodes = []string{"node-a", "node-c"}
 	if err := fp.Sync(nodes); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 }
 
 func TestFirewallPoolSyncSrcRanges(t *testing.T) {
@@ -77,7 +77,7 @@ func TestFirewallPoolSyncSrcRanges(t *testing.T) {
 	if err := fp.Sync(nodes); err != nil {
 		t.Fatal(err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 
 	// Manually modify source ranges to bad values.
 	f, _ := fwp.GetFirewall(ruleName)
@@ -89,7 +89,7 @@ func TestFirewallPoolSyncSrcRanges(t *testing.T) {
 	if err := fp.Sync(nodes); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 }
 
 func TestFirewallPoolSyncPorts(t *testing.T) {
@@ -100,7 +100,7 @@ func TestFirewallPoolSyncPorts(t *testing.T) {
 	if err := fp.Sync(nodes); err != nil {
 		t.Fatal(err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 
 	// Manually modify port list to bad values.
 	f, _ := fwp.GetFirewall(ruleName)
@@ -109,10 +109,18 @@ func TestFirewallPoolSyncPorts(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Expect firewall to be synced back to normal
 	if err := fp.Sync(nodes); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
+
+	// Verify additional ports are included
+	negTargetports := []string{"80", "443", "8080"}
+	if err := fp.Sync(nodes, negTargetports...); err != nil {
+		t.Errorf("unexpected err when syncing firewall, err: %v", err)
+	}
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, append(portRanges(), negTargetports...), t)
 }
 
 func TestFirewallPoolShutdown(t *testing.T) {
@@ -123,7 +131,7 @@ func TestFirewallPoolShutdown(t *testing.T) {
 	if err := fp.Sync(nodes); err != nil {
 		t.Fatal(err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 
 	if err := fp.Shutdown(); err != nil {
 		t.Fatal(err)
@@ -145,7 +153,7 @@ func TestSyncOnXPNWithPermission(t *testing.T) {
 	if err := fp.Sync(nodes); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
-	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, t)
+	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 }
 
 // TestSyncOnXPNReadOnly tests that controller behavior is accurate when the controller
@@ -195,7 +203,7 @@ func TestSyncXPNReadOnly(t *testing.T) {
 	}
 }
 
-func verifyFirewallRule(fwp *fakeFirewallsProvider, ruleName string, expectedNodes, expectedCIDRs []string, t *testing.T) {
+func verifyFirewallRule(fwp *fakeFirewallsProvider, ruleName string, expectedNodes, expectedCIDRs, expectedPorts []string, t *testing.T) {
 	// Verify firewall rule was created
 	f, err := fwp.GetFirewall(ruleName)
 	if err != nil {
@@ -206,8 +214,8 @@ func verifyFirewallRule(fwp *fakeFirewallsProvider, ruleName string, expectedNod
 		t.Errorf("allowed doesn't exist or isn't 'tcp'")
 	}
 
-	if !sets.NewString(f.Allowed[0].Ports...).Equal(sets.NewString(portRanges()...)) {
-		t.Errorf("allowed ports doesn't equal expected ports, Actual: %+v, Expected: %+v", f.Allowed[0].Ports, portRanges())
+	if !sets.NewString(f.Allowed[0].Ports...).Equal(sets.NewString(expectedPorts...)) {
+		t.Errorf("allowed ports doesn't equal expected ports, Actual: %+v, Expected: %+v", f.Allowed[0].Ports, expectedPorts)
 	}
 
 	if !sets.NewString(f.TargetTags...).Equal(sets.NewString(expectedNodes...)) {

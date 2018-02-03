@@ -343,16 +343,8 @@ func (t *GCE) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrString, pr
 	return nil, nil
 }
 
-// GatherFirewallPorts returns all ports needed for open for ingress.
-// It gathers both node ports (for IG backends) and target ports (for NEG backends).
-func (t *GCE) GatherFirewallPorts(svcPorts []backends.ServicePort, includeDefaultBackend bool) []int64 {
-	// TODO: Manage default backend and its firewall rule in a centralized way.
-	// DefaultBackend is managed in l7 pool, which doesn't understand instances,
-	// which the firewall rule requires.
-	if includeDefaultBackend {
-		svcPorts = append(svcPorts, *t.bi.DefaultBackendNodePort())
-	}
-
+// GatherEndpointPorts returns all ports needed to open NEG endpoints.
+func (t *GCE) GatherEndpointPorts(svcPorts []backends.ServicePort) []string {
 	portMap := map[int64]bool{}
 	for _, p := range svcPorts {
 		if t.negEnabled && p.NEGEnabled {
@@ -363,17 +355,13 @@ func (t *GCE) GatherFirewallPorts(svcPorts []backends.ServicePort, includeDefaul
 			for _, ep := range endpointPorts {
 				portMap[int64(ep)] = true
 			}
-		} else {
-			// For IG backend, need to open service node port.
-			portMap[p.Port] = true
 		}
 	}
-
-	var np []int64
+	var portStrs []string
 	for p := range portMap {
-		np = append(np, p)
+		portStrs = append(portStrs, strconv.FormatInt(p, 10))
 	}
-	return np
+	return portStrs
 }
 
 // isSimpleHTTPProbe returns true if the given Probe is:

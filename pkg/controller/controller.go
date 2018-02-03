@@ -291,7 +291,8 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 	if err != nil {
 		return err
 	}
-	igs, err := lbc.CloudClusterManager.Checkpoint(lbs, nodeNames, gceNodePorts, allNodePorts, lbc.Translator.GatherFirewallPorts(gceNodePorts, len(lbs) > 0))
+
+	igs, err := lbc.CloudClusterManager.Checkpoint(lbs, nodeNames, gceNodePorts, allNodePorts, lbc.Translator.GatherEndpointPorts(gceNodePorts))
 	if err != nil {
 		// TODO: Implement proper backoff for the queue.
 		const eventMsg = "GCE"

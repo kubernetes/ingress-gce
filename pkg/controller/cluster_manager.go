@@ -105,8 +105,8 @@ func (c *ClusterManager) shutdown() error {
 // Returns the list of all instance groups corresponding to the given loadbalancers.
 // If in performing the checkpoint the cluster manager runs out of quota, a
 // googleapi 403 is returned.
-func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeNames []string, backendServicePorts []backends.ServicePort, namedPorts []backends.ServicePort, firewallPorts []int64) ([]*compute.InstanceGroup, error) {
-	glog.V(4).Infof("Checkpoint(%v lbs, %v nodeNames, %v backendServicePorts, %v namedPorts, %v firewallPorts)", len(lbs), len(nodeNames), len(backendServicePorts), len(namedPorts), len(firewallPorts))
+func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeNames []string, backendServicePorts []backends.ServicePort, namedPorts []backends.ServicePort, endpointPorts []string) ([]*compute.InstanceGroup, error) {
+	glog.V(4).Infof("Checkpoint(%v lbs, %v nodeNames, %v backendServicePorts, %v namedPorts, %v endpointPorts)", len(lbs), len(nodeNames), len(backendServicePorts), len(namedPorts), len(endpointPorts))
 
 	if len(namedPorts) != 0 {
 		// Add the default backend node port to the list of named ports for instance groups.
@@ -132,7 +132,7 @@ func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeName
 		return igs, err
 	}
 
-	if err := c.firewallPool.Sync(nodeNames); err != nil {
+	if err := c.firewallPool.Sync(nodeNames, endpointPorts...); err != nil {
 		return igs, err
 	}
 

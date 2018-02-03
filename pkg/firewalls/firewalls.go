@@ -56,7 +56,7 @@ func NewFirewallPool(cloud Firewall, namer *utils.Namer, l7SrcRanges []string, n
 }
 
 // Sync sync firewall rules with the cloud.
-func (fr *FirewallRules) Sync(nodeNames []string) error {
+func (fr *FirewallRules) Sync(nodeNames []string, additionalPorts ...string) error {
 	glog.V(4).Infof("Sync(%v)", nodeNames)
 	name := fr.namer.FirewallRule()
 	existingFirewall, _ := fr.cloud.GetFirewall(name)
@@ -69,6 +69,8 @@ func (fr *FirewallRules) Sync(nodeNames []string) error {
 	}
 	sort.Strings(targetTags)
 
+	ports := sets.NewString(additionalPorts...)
+	ports.Insert(fr.portRanges...)
 	expectedFirewall := &compute.Firewall{
 		Name:         name,
 		Description:  "GCE L7 firewall rule",
@@ -77,7 +79,7 @@ func (fr *FirewallRules) Sync(nodeNames []string) error {
 		Allowed: []*compute.FirewallAllowed{
 			{
 				IPProtocol: "tcp",
-				Ports:      fr.portRanges,
+				Ports:      ports.List(),
 			},
 		},
 		TargetTags: targetTags,
