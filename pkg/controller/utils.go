@@ -224,3 +224,13 @@ func getReadyNodeNames(lister listers.NodeLister) ([]string, error) {
 	}
 	return nodeNames, nil
 }
+
+func nodeStatusChanged(old, cur *api_v1.Node) bool {
+	if old.Spec.Unschedulable != cur.Spec.Unschedulable {
+		return true
+	}
+	if utils.NodeIsReady(old) != utils.NodeIsReady(cur) {
+		return true
+	}
+	return false
+}

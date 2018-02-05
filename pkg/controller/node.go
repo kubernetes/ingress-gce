@@ -19,6 +19,7 @@ package controller
 import (
 	"time"
 
+	apiv1 "k8s.io/api/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/context"
@@ -51,11 +52,12 @@ func NewNodeController(ctx *context.ControllerContext, cm *ClusterManager) *Node
 	ctx.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    c.queue.Enqueue,
 		DeleteFunc: c.queue.Enqueue,
-		// TODO: watch updates for Nodes going from NotReady to Ready.
-		// Otherwise the controller will wait until the complete
-		// refresh to process the node.
+		UpdateFunc: func(oldObj, newObj interface{}) {
+			if nodeStatusChanged(oldObj.(*apiv1.Node), newObj.(*apiv1.Node)) {
+				c.queue.Enqueue(newObj)
+			}
+		},
 	})
-
 	return c
 }
 
