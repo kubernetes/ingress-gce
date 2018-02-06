@@ -200,7 +200,7 @@ func setInstanceGroupsAnnotation(existing map[string]string, igs []*compute.Inst
 func uniq(nodePorts []backends.ServicePort) []backends.ServicePort {
 	portMap := map[int64]backends.ServicePort{}
 	for _, p := range nodePorts {
-		portMap[p.Port] = p
+		portMap[p.NodePort] = p
 	}
 	nodePorts = make([]backends.ServicePort, 0, len(portMap))
 	for _, sp := range portMap {

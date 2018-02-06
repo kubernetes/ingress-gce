@@ -53,7 +53,7 @@ func DefaultBackendServicePort(kubeClient kubernetes.Interface) *backends.Servic
 	}
 
 	return &backends.ServicePort{
-		Port:     int64(nodePort),
+		NodePort: int64(nodePort),
 		Protocol: annotations.ProtocolHTTP, // The default backend is HTTP.
 		SvcName:  types.NamespacedName{Namespace: parts[0], Name: parts[1]},
 		SvcPort:  intstr.FromInt(int(port)),
