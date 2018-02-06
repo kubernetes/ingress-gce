@@ -150,7 +150,7 @@ func (t *GCE) toGCEBackend(be *extensions.IngressBackend, ns string) (*compute.B
 	if err != nil {
 		return nil, err
 	}
-	backend, err := t.bi.BackendServiceForPort(port.Port)
+	backend, err := t.bi.BackendServiceForPort(port.NodePort)
 	if err != nil {
 		return nil, fmt.Errorf("no GCE backend exists for port %v, kube backend %+v", port, be)
 	}
@@ -207,7 +207,7 @@ PortLoop:
 	}
 
 	p := backends.ServicePort{
-		Port:          int64(port.NodePort),
+		NodePort:      int64(port.NodePort),
 		Protocol:      proto,
 		SvcName:       types.NamespacedName{Namespace: namespace, Name: be.ServiceName},
 		SvcPort:       be.ServicePort,
@@ -388,7 +388,7 @@ OuterLoop:
 			svcPort = sp
 			// only one Service can match this nodePort, try and look up
 			// the readiness probe of the pods behind it
-			if int32(port.Port) == sp.NodePort {
+			if int32(port.NodePort) == sp.NodePort {
 				found = true
 				break OuterLoop
 			}

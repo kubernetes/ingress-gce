@@ -50,7 +50,7 @@ func (bi *fakeBackendInfo) BackendServiceForPort(port int64) (*compute.BackendSe
 }
 
 func (bi *fakeBackendInfo) DefaultBackendNodePort() *backends.ServicePort {
-	return &backends.ServicePort{Port: 30000, Protocol: annotations.ProtocolHTTP}
+	return &backends.ServicePort{NodePort: 30000, Protocol: annotations.ProtocolHTTP}
 }
 
 func gceForTest(negEnabled bool) *GCE {
@@ -79,8 +79,8 @@ func gceForTest(negEnabled bool) *GCE {
 func TestGetProbe(t *testing.T) {
 	translator := gceForTest(false)
 	nodePortToHealthCheck := map[backends.ServicePort]string{
-		{Port: 3001, Protocol: annotations.ProtocolHTTP}:  "/healthz",
-		{Port: 3002, Protocol: annotations.ProtocolHTTPS}: "/foo",
+		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}:  "/healthz",
+		{NodePort: 3002, Protocol: annotations.ProtocolHTTPS}: "/foo",
 	}
 	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
 		translator.svcLister.Add(svc)
@@ -102,7 +102,7 @@ func TestGetProbe(t *testing.T) {
 func TestGetProbeNamedPort(t *testing.T) {
 	translator := gceForTest(false)
 	nodePortToHealthCheck := map[backends.ServicePort]string{
-		{Port: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
+		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
 	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
 		translator.svcLister.Add(svc)
@@ -157,7 +157,7 @@ func TestGetProbeCrossNamespace(t *testing.T) {
 	}
 	translator.podLister.Add(firstPod)
 	nodePortToHealthCheck := map[backends.ServicePort]string{
-		{Port: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
+		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
 	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
 		translator.svcLister.Add(svc)
@@ -185,8 +185,8 @@ func makePods(nodePortToHealthCheck map[backends.ServicePort]string, ns string) 
 	for np, u := range nodePortToHealthCheck {
 		pod := &apiv1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Labels:            map[string]string{fmt.Sprintf("app-%d", np.Port): "test"},
-				Name:              fmt.Sprintf("%d", np.Port),
+				Labels:            map[string]string{fmt.Sprintf("app-%d", np.NodePort): "test"},
+				Name:              fmt.Sprintf("%d", np.NodePort),
 				Namespace:         ns,
 				CreationTimestamp: metav1.NewTime(firstPodCreationTime.Add(delay)),
 			},
@@ -221,14 +221,14 @@ func makeServices(nodePortToHealthCheck map[backends.ServicePort]string, ns stri
 	for np := range nodePortToHealthCheck {
 		svc := &apiv1.Service{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("%d", np.Port),
+				Name:      fmt.Sprintf("%d", np.NodePort),
 				Namespace: ns,
 			},
 			Spec: apiv1.ServiceSpec{
-				Selector: map[string]string{fmt.Sprintf("app-%d", np.Port): "test"},
+				Selector: map[string]string{fmt.Sprintf("app-%d", np.NodePort): "test"},
 				Ports: []apiv1.ServicePort{
 					{
-						NodePort: int32(np.Port),
+						NodePort: int32(np.NodePort),
 						TargetPort: intstr.IntOrString{
 							Type:   intstr.Int,
 							IntVal: 80,
@@ -253,17 +253,17 @@ func TestGatherEndpointPorts(t *testing.T) {
 	ep2 := "ep2"
 
 	svcPorts := []backends.ServicePort{
-		{Port: int64(30001)},
-		{Port: int64(30002)},
+		{NodePort: int64(30001)},
+		{NodePort: int64(30002)},
 		{
 			SvcName:       types.NamespacedName{"ns", ep1},
-			Port:          int64(30003),
+			NodePort:      int64(30003),
 			NEGEnabled:    true,
 			SvcTargetPort: "80",
 		},
 		{
 			SvcName:       types.NamespacedName{"ns", ep2},
-			Port:          int64(30004),
+			NodePort:      int64(30004),
 			NEGEnabled:    true,
 			SvcTargetPort: "named-port",
 		},

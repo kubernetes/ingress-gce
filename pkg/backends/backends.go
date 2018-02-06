@@ -99,12 +99,10 @@ func portKey(port int64) string {
 
 // ServicePort for tupling port and protocol
 type ServicePort struct {
-	// Port is the service node port
-	// TODO: rename it to NodePort
-	Port          int64
-	Protocol      annotations.AppProtocol
 	SvcName       types.NamespacedName
 	SvcPort       intstr.IntOrString
+	NodePort      int64
+	Protocol      annotations.AppProtocol
 	SvcTargetPort string
 	NEGEnabled    bool
 }
@@ -180,8 +178,8 @@ func (b *Backends) Get(port int64) (*compute.BackendService, error) {
 }
 
 func (b *Backends) ensureHealthCheck(sp ServicePort) (string, error) {
-	hc := b.healthChecker.New(sp.Port, sp.Protocol, sp.NEGEnabled)
-	existingLegacyHC, err := b.healthChecker.GetLegacy(sp.Port)
+	hc := b.healthChecker.New(sp.NodePort, sp.Protocol, sp.NEGEnabled)
+	existingLegacyHC, err := b.healthChecker.GetLegacy(sp.NodePort)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return "", err
 	}
@@ -228,7 +226,7 @@ func (b *Backends) Ensure(svcPorts []ServicePort, igs []*compute.InstanceGroup) 
 	if igs == nil {
 		ports := []int64{}
 		for _, p := range svcPorts {
-			ports = append(ports, p.Port)
+			ports = append(ports, p.NodePort)
 		}
 		var err error
 		igs, err = instances.EnsureInstanceGroupsAndPorts(b.nodePool, b.namer, ports)
@@ -252,7 +250,7 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 	// We must track the ports even if creating the backends failed, because
 	// we might've created health-check for them.
 	be := &compute.BackendService{}
-	defer func() { b.snapshotter.Add(portKey(p.Port), be) }()
+	defer func() { b.snapshotter.Add(portKey(p.NodePort), be) }()
 
 	var err error
 
@@ -263,14 +261,14 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 	}
 
 	// Verify existance of a backend service for the proper port, but do not specify any backends/igs
-	beName := b.namer.Backend(p.Port)
-	be, _ = b.Get(p.Port)
+	beName := b.namer.Backend(p.NodePort)
+	be, _ = b.Get(p.NodePort)
 	if be == nil {
 		namedPort := &compute.NamedPort{
-			Name: b.namer.NamedPort(p.Port),
-			Port: p.Port,
+			Name: b.namer.NamedPort(p.NodePort),
+			Port: p.NodePort,
 		}
-		glog.V(2).Infof("Creating backend service for port %v named port %v", p.Port, namedPort)
+		glog.V(2).Infof("Creating backend service for port %v named port %v", p.NodePort, namedPort)
 		be, err = b.create(namedPort, hcLink, p, beName)
 		if err != nil {
 			return err
@@ -302,7 +300,7 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 
 	// If previous health check was legacy type, we need to delete it.
 	if existingHCLink != hcLink && strings.Contains(existingHCLink, "/httpHealthChecks/") {
-		if err = b.healthChecker.DeleteLegacy(p.Port); err != nil {
+		if err = b.healthChecker.DeleteLegacy(p.NodePort); err != nil {
 			glog.Warning("Failed to delete legacy HttpHealthCheck %v; Will not try again, err: %v", beName, err)
 		}
 	}
@@ -455,7 +453,7 @@ func (b *Backends) edgeHop(be *compute.BackendService, igs []*compute.InstanceGr
 func (b *Backends) GC(svcNodePorts []ServicePort) error {
 	knownPorts := sets.NewString()
 	for _, p := range svcNodePorts {
-		knownPorts.Insert(portKey(p.Port))
+		knownPorts.Insert(portKey(p.NodePort))
 	}
 	pool := b.snapshotter.Snapshot()
 	for port := range pool {
@@ -516,7 +514,7 @@ func (b *Backends) Link(port ServicePort, zones []string) error {
 		negs = append(negs, neg)
 	}
 
-	backendService, err := b.cloud.GetAlphaGlobalBackendService(b.namer.Backend(port.Port))
+	backendService, err := b.cloud.GetAlphaGlobalBackendService(b.namer.Backend(port.NodePort))
 	if err != nil {
 		return err
 	}
