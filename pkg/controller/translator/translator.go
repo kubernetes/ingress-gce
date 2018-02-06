@@ -338,7 +338,7 @@ func (t *GCE) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrString, pr
 				}
 			}
 		}
-		glog.V(4).Infof("%v: lacks a matching HTTP probe for use in health checks.", logStr)
+		glog.V(5).Infof("%v: lacks a matching HTTP probe for use in health checks.", logStr)
 	}
 	return nil, nil
 }
