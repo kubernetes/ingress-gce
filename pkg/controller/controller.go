@@ -143,10 +143,11 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 				return
 			}
 			if reflect.DeepEqual(old, cur) {
-				return
+				glog.V(3).Infof("Periodic enqueueing of %v/%v", curIng.Namespace, curIng.Name)
+			} else {
+				glog.V(3).Infof("Ingress %v/%v changed, enqueuing", curIng.Namespace, curIng.Name)
 			}
 
-			glog.V(3).Infof("Ingress %v/%v changed, enqueuing", curIng.Namespace, curIng.Name)
 			lbc.ingQueue.Enqueue(cur)
 		},
 	})
