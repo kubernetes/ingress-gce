@@ -17,7 +17,9 @@ limitations under the License.
 package app
 
 import (
+	"flag"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,6 +30,7 @@ import (
 
 	"k8s.io/ingress-gce/pkg/controller"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/version"
 )
 
 func RunHTTPServer(lbc *controller.LoadBalancerController) {
@@ -41,6 +44,7 @@ func RunHTTPServer(lbc *controller.LoadBalancerController) {
 		w.Write([]byte("ok"))
 	})
 	http.Handle("/metrics", promhttp.Handler())
+	http.HandleFunc("/flag", flagHandler)
 	http.HandleFunc("/delete-all-and-quit", func(w http.ResponseWriter, r *http.Request) {
 		// TODO: Retry failures during shutdown.
 		lbc.Stop(true)
@@ -67,3 +71,59 @@ func RunSIGTERMHandler(lbc *controller.LoadBalancerController, deleteAll bool) {
 	glog.Infof("Exiting with %v", exitCode)
 	os.Exit(exitCode)
 }
+
+func flagHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case "GET":
+		getFlagPage(w, r)
+		return
+	case "PUT":
+		putFlag(w, r)
+	default:
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+}
+
+func putFlag(w http.ResponseWriter, r *http.Request) {
+	for key, values := range r.URL.Query() {
+		if len(values) != 1 {
+			glog.Warningln("No query string params provided")
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		v := values[0]
+		switch key {
+		case "v":
+			setVerbosity(v)
+		default:
+			glog.Warningf("Unrecognized key: %q", key)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
+func setVerbosity(v string) {
+	flag.Lookup("v").Value.Set(v)
+	glog.V(0).Infof("Setting verbosity level to %q", v)
+}
+
+func getFlagPage(w http.ResponseWriter, r *http.Request) {
+	s := struct {
+		Version   string
+		Verbosity string
+	}{
+		Version:   version.Version,
+		Verbosity: flag.Lookup("v").Value.String(),
+	}
+	flagPageTemplate.Execute(w, s)
+}
+
+var flagPageTemplate = template.Must(template.New("").Parse(`GCE Ingress Controller "GLBC"
+Version: {{.Version}}
+
+Verbosity ('v'): {{.Verbosity}}
+`))
