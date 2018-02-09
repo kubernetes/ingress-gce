@@ -295,6 +295,7 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 	}
 	lb, err := lbc.toRuntimeInfo(ing)
 	if err != nil {
+		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Ingress", err.Error())
 		return err
 	}
 	lbs := []*loadbalancers.L7RuntimeInfo{lb}
