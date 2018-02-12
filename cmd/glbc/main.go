@@ -39,7 +39,7 @@ func main() {
 	flags.Register()
 	flag.Parse()
 	if flags.F.Verbose {
-		flag.Set("v", "4")
+		flag.Set("v", "3")
 	}
 
 	// TODO: remove this when we do a release so the -logtostderr can be
