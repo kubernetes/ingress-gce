@@ -436,13 +436,13 @@ func (s *syncer) toNetworkEndpointBatch(endpoints sets.String) ([]*compute.Netwo
 
 func (s *syncer) attachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
 	wg.Add(1)
-	glog.V(2).Infof("Attaching %d endpoints for %s/%s-%s into NEG %s in %s.", len(networkEndpoints), s.namespace, s.name, s.targetPort, s.negName, zone)
+	glog.V(2).Infof("Attaching %d endpoint(s) for %s/%s-%s into NEG %s in %s.", len(networkEndpoints), s.namespace, s.name, s.targetPort, s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.AttachNetworkEndpoints, "Attach")
 }
 
 func (s *syncer) detachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
 	wg.Add(1)
-	glog.V(2).Infof("Detaching %d endpoints for %s/%s-%s into NEG %s in %s.", len(networkEndpoints), s.namespace, s.name, s.targetPort, s.negName, zone)
+	glog.V(2).Infof("Detaching %d endpoint(s) for %s/%s-%s into NEG %s in %s.", len(networkEndpoints), s.namespace, s.name, s.targetPort, s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.DetachNetworkEndpoints, "Detach")
 }
 
@@ -454,9 +454,9 @@ func (s *syncer) operationInternal(wg *sync.WaitGroup, zone string, networkEndpo
 	}
 	if svc := getService(s.serviceLister, s.namespace, s.name); svc != nil {
 		if err == nil {
-			s.recorder.Eventf(svc, apiv1.EventTypeNormal, operationName, "%s %d network endpoints to NEG %q in %q.", operationName, len(networkEndpoints), s.negName, zone)
+			s.recorder.Eventf(svc, apiv1.EventTypeNormal, operationName, "%s %d network endpoint(s) (NEG %q in zone %q)", operationName, len(networkEndpoints), s.negName, zone)
 		} else {
-			s.recorder.Eventf(svc, apiv1.EventTypeWarning, operationName+"Failed", "Failed to %s %d network endpoints to NEG %q in %q: %v", operationName, len(networkEndpoints), s.negName, zone, err)
+			s.recorder.Eventf(svc, apiv1.EventTypeWarning, operationName+"Failed", "Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operationName, len(networkEndpoints), s.negName, zone, err)
 		}
 	}
 }
