@@ -14,6 +14,8 @@ Please read the [beta limitations](BETA_LIMITATIONS.md) doc to before using this
 - It relies on a beta Kubernetes resource.
 - The loadbalancer controller pod is not aware of your GCE quota.
 
+**If you are running a cluster on GKE and interested in trying out alpha releases of the GLBC before they are officially released please visit the deploy/glbc/ directory.**
+
 ## Overview
 
 __A reminder on GCE L7__: Google Compute Engine does not have a single resource that represents a L7 loadbalancer. When a user request comes in, it is first handled by the global forwarding rule, which sends the traffic to an HTTP proxy service that sends the traffic to a URL map that parses the URL to see which backend service will handle the request. Each backend service is assigned a set of virtual machine instances grouped into instance groups.

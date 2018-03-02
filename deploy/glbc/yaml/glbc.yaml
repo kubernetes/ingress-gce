@@ -1,0 +1,68 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: l7-lb-controller
+  namespace: kube-system
+  annotations:
+    scheduler.alpha.kubernetes.io/critical-pod: ''
+  labels:
+    k8s-app: gcp-lb-controller
+    kubernetes.io/name: "GLBC"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: gcp-lb-controller
+  template:
+    metadata:
+      labels:
+        k8s-app: gcp-lb-controller
+        name: gcp-lb-controller
+    spec:
+      serviceAccountName: glbc
+      terminationGracePeriodSeconds: 600
+      hostNetwork: true
+      containers:
+      - image: k8s.gcr.io/ingress-gce-glbc-amd64:0.9.8-alpha.2
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8086
+            scheme: HTTP
+          initialDelaySeconds: 30
+          # healthz reaches out to GCE
+          periodSeconds: 30
+          timeoutSeconds: 15
+          successThreshold: 1
+          failureThreshold: 5
+        name: l7-lb-controller
+        volumeMounts:
+        - mountPath: /etc/gce/
+          name: gce-config-volume
+        - mountPath: /var/secrets/google
+          name: google-cloud-key
+        env:
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /var/secrets/google/key.json
+        resources:
+          # Request is set to accommodate this pod alongside the other
+          # master components on a single core master.
+          # TODO: Make resource requirements depend on the size of the cluster
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        command:
+        # TODO: split this out into args when we no longer need to pipe stdout to a file #6428
+        - sh
+        - -c
+        - 'exec /glbc --verbose --default-backend-service=kube-system/default-http-backend --sync-period=600s --running-in-cluster=true --use-real-cloud=true --config-file-path=/etc/gce/gce.conf --healthz-port=8086 2>&1'
+      volumes:
+      - name: google-cloud-key
+        secret:
+          secretName: glbc-gcp-key
+      - name: gce-config-volume
+        configMap:
+          name: gce-config
+          items:
+          - key: gce.conf
+            path: gce.conf
