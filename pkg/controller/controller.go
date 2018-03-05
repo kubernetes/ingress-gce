@@ -415,7 +415,7 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress) (*load
 		return nil, fmt.Errorf("cannot get key for Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
 	}
 
-	var tls *loadbalancers.TLSCerts
+	var tls []*loadbalancers.TLSCerts
 
 	annotations := annotations.FromIngress(ing)
 	// Load the TLS cert from the API Spec if it is not specified in the annotation.

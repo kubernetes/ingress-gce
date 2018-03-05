@@ -29,6 +29,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"crypto/sha256"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -48,6 +49,9 @@ const (
 
 	httpDefaultPortRange  = "80-80"
 	httpsDefaultPortRange = "443-443"
+
+	// Every target https proxy accepts upto 10 ssl certificates.
+	TargetProxyCertLimit = 10
 )
 
 // TLSCerts encapsulates .pem encoded TLS information.
@@ -58,6 +62,9 @@ type TLSCerts struct {
 	Cert string
 	// Chain is a certificate chain.
 	Chain string
+	Name  string
+	// md5 hash(first 8 bytes) of the cert contents
+	CertHash string
 }
 
 // L7RuntimeInfo is info passed to this module from the controller runtime.
@@ -67,8 +74,8 @@ type L7RuntimeInfo struct {
 	// IP is the desired ip of the loadbalancer, eg from a staticIP.
 	IP string
 	// TLS are the tls certs to use in termination.
-	TLS *TLSCerts
-	// TLSName is the name of/for the tls cert to use.
+	TLS []*TLSCerts
+	// TLSName is the name of the preshared cert to use. Multiple certs can be specified as a comma-separated string
 	TLSName string
 	// AllowHTTP will not setup :80, if TLS is nil and AllowHTTP is set,
 	// no loadbalancer is created.
@@ -102,14 +109,15 @@ type L7 struct {
 	fws *compute.ForwardingRule
 	// ip is the static-ip associated with both GlobalForwardingRules.
 	ip *compute.Address
-	// sslCert is the ssl cert associated with the targetHTTPSProxy.
-	// TODO: Make this a custom type that contains crt+key
-	sslCert *compute.SslCertificate
-	// oldSSLCert is the certificate that used to be hooked up to the
+	// prefix to use in ssl cert names
+	sslCertPrefix string
+	// sslCerts is the list of ssl certs associated with the targetHTTPSProxy.
+	sslCerts []*compute.SslCertificate
+	// oldSSLCerts is the list of certs that used to be hooked up to the
 	// targetHTTPSProxy. We can't update a cert in place, so we need
-	// to create - update - delete and storing the old cert in a field
+	// to create - update - delete and storing the old certs in a list
 	// prevents leakage if there's a failure along the way.
-	oldSSLCert *compute.SslCertificate
+	oldSSLCerts []*compute.SslCertificate
 	// glbcDefaultBacked is the backend to use if no path rules match.
 	// TODO: Expose this to users.
 	glbcDefaultBackend *compute.BackendService
@@ -183,16 +191,27 @@ func (l *L7) checkProxy() (err error) {
 	return nil
 }
 
-func (l *L7) deleteOldSSLCert() (err error) {
-	if l.oldSSLCert == nil || l.sslCert == nil || l.oldSSLCert.Name == l.sslCert.Name || !l.namer.IsSSLCert(l.oldSSLCert.Name) {
+func (l *L7) deleteOldSSLCerts() (err error) {
+	if len(l.oldSSLCerts) == 0 {
 		return nil
 	}
-	glog.Infof("Cleaning up old SSL Certificate %v, current name %v", l.oldSSLCert.Name, l.sslCert.Name)
-	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteSslCertificate(l.oldSSLCert.Name)); err != nil {
-		return err
+	certsMap := getMapfromCertList(l.sslCerts)
+	for _, cert := range l.oldSSLCerts {
+		if !l.IsSSLCert(cert.Name) && !l.namer.IsLegacySSLCert(cert.Name) {
+			// retain cert if it is managed by GCE(non-ingress)
+			continue
+		}
+		if _, ok := certsMap[cert.Name]; ok {
+			// cert found in current map
+			continue
+		}
+		glog.Infof("Cleaning up old SSL Certificate %s", cert.Name)
+		if certErr := utils.IgnoreHTTPNotFound(l.cloud.DeleteSslCertificate(cert.Name)); certErr != nil {
+			glog.Errorf("Old cert delete failed - %v", certErr)
+			err = certErr
+		}
 	}
-	l.oldSSLCert = nil
-	return nil
+	return err
 }
 
 // Returns the name portion of a link - which is the last section
@@ -210,54 +229,87 @@ func (l *L7) usePreSharedCert() (bool, error) {
 	if preSharedCertName == "" {
 		return false, nil
 	}
-
-	// Ask GCE for the cert, checking for problems and existence.
-	cert, err := l.cloud.GetSslCertificate(preSharedCertName)
-	if err != nil {
-		return true, err
-	}
-	if cert == nil {
-		return true, fmt.Errorf("cannot find existing sslCertificate %v for %v", preSharedCertName, l.Name)
+	preSharedCerts := strings.Split(preSharedCertName, ",")
+	if len(preSharedCerts) > TargetProxyCertLimit {
+		glog.Warningf("Specified %d preshared certs, limit is %d, rest will be ignored",
+			len(preSharedCerts), TargetProxyCertLimit)
+		preSharedCerts = preSharedCerts[:TargetProxyCertLimit]
 	}
 
-	glog.V(2).Infof("Using existing sslCertificate %v for %v", preSharedCertName, l.Name)
-	l.sslCert = cert
+	l.sslCerts = make([]*compute.SslCertificate, 0, len(preSharedCerts))
+	var failedCerts []string
+
+	for _, sharedCert := range preSharedCerts {
+		// Ask GCE for the cert, checking for problems and existence.
+		sharedCert = strings.TrimSpace(sharedCert)
+		cert, err := l.cloud.GetSslCertificate(sharedCert)
+		if err != nil {
+			failedCerts = append(failedCerts, sharedCert+" Error: "+err.Error())
+			continue
+		}
+		if cert == nil {
+			failedCerts = append(failedCerts, sharedCert+" Error: unable to find existing sslCertificate")
+			continue
+		}
+
+		glog.V(2).Infof("Using existing sslCertificate %v for %v", sharedCert, l.Name)
+		l.sslCerts = append(l.sslCerts, cert)
+	}
+	if len(failedCerts) != 0 {
+		return true, fmt.Errorf("PreSharedCert errors - %s", strings.Join(failedCerts, ","))
+	}
 	return true, nil
 }
 
-func (l *L7) populateSSLCert() error {
-	// Determine what certificate name is being used
-	var expectedCertName string
-	if l.sslCert != nil {
-		expectedCertName = l.sslCert.Name
-	} else {
-		// Retrieve the ssl certificate in use by the expected target proxy (if exists)
-		expectedCertName = getResourceNameFromLink(l.getSslCertLinkInUse())
-	}
+// IsSSLCert returns true if name is ingress managed, specifically by this loadbalancer instance
+func (l *L7) IsSSLCert(name string) bool {
+	return strings.HasPrefix(name, l.sslCertPrefix)
+}
 
-	var err error
-	if expectedCertName != "" {
-		// Retrieve the certificate and ignore error if certificate wasn't found
-		l.sslCert, err = l.cloud.GetSslCertificate(expectedCertName)
-		if err != nil {
-			return utils.IgnoreHTTPNotFound(err)
+func getMapfromCertList(certs []*compute.SslCertificate) map[string]*compute.SslCertificate {
+	if len(certs) == 0 {
+		return nil
+	}
+	certMap := make(map[string]*compute.SslCertificate)
+	for _, cert := range certs {
+		certMap[cert.Name] = cert
+	}
+	return certMap
+}
+
+func (l *L7) populateSSLCert() error {
+	l.sslCerts = make([]*compute.SslCertificate, 0)
+	// Currently we list all certs available in gcloud and filter the ones managed by this loadbalancer instance. This is
+	// to make sure we garbage collect any old certs that this instance might have lost track of due to crashes.
+	// Can be a performance issue if there are too many global certs, default quota is only 10.
+	certs, err := l.cloud.ListSslCertificates()
+	if err != nil {
+		return utils.IgnoreHTTPNotFound(err)
+	}
+	for _, c := range certs {
+		if l.IsSSLCert(c.Name) {
+			glog.Infof("Populating ssl cert %s for l7 %s", c.Name, l.Name)
+			l.sslCerts = append(l.sslCerts, c)
+		}
+	}
+	if len(l.sslCerts) == 0 {
+		// Check for legacy cert since that follows a different naming convention
+		glog.Infof("Looking for legacy ssl certs")
+		expectedCertNames := l.getSslCertLinkInUse()
+		for _, link := range expectedCertNames {
+			// Retrieve the certificate and ignore error if certificate wasn't found
+			name := getResourceNameFromLink(link)
+			if !l.namer.IsLegacySSLCert(name) {
+				continue
+			}
+			cert, _ := l.cloud.GetSslCertificate(getResourceNameFromLink(name))
+			if cert != nil {
+				glog.Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l.Name)
+				l.sslCerts = append(l.sslCerts, cert)
+			}
 		}
 	}
 	return nil
-}
-
-func (l *L7) nextCertificateName() string {
-	// The name of the cert for this lb flip-flops between these 2 on
-	// every certificate update. We don't append the index at the end so we're
-	// sure it isn't truncated.
-	// TODO: Clean this code up into a ring buffer.
-	primaryCertName := l.namer.SSLCert(l.Name, true)
-	secondaryCertName := l.namer.SSLCert(l.Name, false)
-
-	if l.sslCert != nil && l.sslCert.Name == primaryCertName {
-		return secondaryCertName
-	}
-	return primaryCertName
 }
 
 func (l *L7) checkSSLCert() error {
@@ -271,72 +323,84 @@ func (l *L7) checkSSLCert() error {
 		return err
 	}
 
-	// TODO: Currently, GCE only supports a single certificate per static IP
-	// so we don't need to bother with disambiguation. Naming the cert after
-	// the loadbalancer is a simplification.
-	ingCert := l.runtimeInfo.TLS.Cert
-	ingKey := l.runtimeInfo.TLS.Key
+	var newCerts []*compute.SslCertificate
+	// mapping of currently configured certs
+	certsMap := getMapfromCertList(l.sslCerts)
+	var failedCerts []string
 
-	// PrivateKey is write only, so compare certs alone. We're assuming that
-	// no one will change just the key. We can remember the key and compare,
-	// but a bug could end up leaking it, which feels worse.
-	if l.sslCert != nil && ingCert == l.sslCert.Certificate {
-		return nil
+	for _, tlsCert := range l.runtimeInfo.TLS {
+		ingCert := tlsCert.Cert
+		ingKey := tlsCert.Key
+		newCertName := l.namer.SSLCertName(l.sslCertPrefix, tlsCert.CertHash)
+
+		// PrivateKey is write only, so compare certs alone. We're assuming that
+		// no one will change just the key. We can remember the key and compare,
+		// but a bug could end up leaking it, which feels worse.
+		// If the cert contents have changed, its hash would be different, so would be the cert name. So it is enough
+		// to check if this cert name exists in the map.
+		if certsMap != nil {
+			if cert, ok := certsMap[newCertName]; ok {
+				glog.Infof("Retaining cert - %s", tlsCert.Name)
+				newCerts = append(newCerts, cert)
+				continue
+			}
+		}
+		// Controller needs to create the certificate, no need to check if it exists and delete. If it did exist, it
+		// would have been listed in the populateSSLCert function and matched in the check above.
+		glog.V(2).Infof("Creating new sslCertificate %v for %v", newCertName, l.Name)
+		cert, err := l.cloud.CreateSslCertificate(&compute.SslCertificate{
+			Name:        newCertName,
+			Certificate: ingCert,
+			PrivateKey:  ingKey,
+		})
+		if err != nil {
+			glog.Errorf("Failed to create new sslCertificate %v for %v - %s", newCertName, l.Name, err)
+			failedCerts = append(failedCerts, newCertName+" Error:"+err.Error())
+			continue
+		}
+		newCerts = append(newCerts, cert)
 	}
 
-	// Controller needs to create or update the certificate.
-	// Generate the next certificate name to use.
-	newCertName := l.nextCertificateName()
-
-	// Perform a delete in case a certificate exists with the exact name
-	// This certificate should be unused since we check the target proxy's certificate prior
-	// to this point. Although, it's possible an actor pointed a target proxy to this certificate.
-	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteSslCertificate(newCertName)); err != nil {
-		return fmt.Errorf("unable to delete ssl certificate with name %q, expected it to be unused. err: %v", newCertName, err)
+	// Save the old certs for cleanup after we update the target proxy.
+	l.oldSSLCerts = l.sslCerts
+	l.sslCerts = newCerts
+	if len(failedCerts) > 0 {
+		return fmt.Errorf("Cert creation failures - %s", strings.Join(failedCerts, ","))
 	}
-
-	glog.V(2).Infof("Creating new sslCertificate %v for %v", newCertName, l.Name)
-	cert, err := l.cloud.CreateSslCertificate(&compute.SslCertificate{
-		Name:        newCertName,
-		Certificate: ingCert,
-		PrivateKey:  ingKey,
-	})
-	if err != nil {
-		return err
-	}
-	// Save the current cert for cleanup after we update the target proxy.
-	l.oldSSLCert = l.sslCert
-	l.sslCert = cert
-
 	return nil
 }
 
-func (l *L7) getSslCertLinkInUse() string {
+func (l *L7) getSslCertLinkInUse() []string {
 	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
 	proxy, _ := l.cloud.GetTargetHttpsProxy(proxyName)
 	if proxy != nil && len(proxy.SslCertificates) > 0 {
-		return proxy.SslCertificates[0]
+		return proxy.SslCertificates
 	}
-	return ""
+	return nil
 }
 
 func (l *L7) checkHttpsProxy() (err error) {
-	if l.sslCert == nil {
+	if len(l.sslCerts) == 0 {
 		glog.V(3).Infof("No SSL certificates for %v, will not create HTTPS proxy.", l.Name)
 		return nil
 	}
 	if l.um == nil {
 		return fmt.Errorf("no UrlMap for %v, will not create HTTPS proxy", l.Name)
 	}
+
 	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
 	proxy, _ := l.cloud.GetTargetHttpsProxy(proxyName)
 	if proxy == nil {
 		glog.Infof("Creating new https proxy for urlmap %v", l.um.Name)
 		newProxy := &compute.TargetHttpsProxy{
-			Name:            proxyName,
-			UrlMap:          l.um.SelfLink,
-			SslCertificates: []string{l.sslCert.SelfLink},
+			Name:   proxyName,
+			UrlMap: l.um.SelfLink,
 		}
+
+		for _, c := range l.sslCerts {
+			newProxy.SslCertificates = append(newProxy.SslCertificates, c.SelfLink)
+		}
+
 		if err = l.cloud.CreateTargetHttpsProxy(newProxy); err != nil {
 			return err
 		}
@@ -356,17 +420,40 @@ func (l *L7) checkHttpsProxy() (err error) {
 			return err
 		}
 	}
-	cert := proxy.SslCertificates[0]
-	if !utils.CompareLinks(cert, l.sslCert.SelfLink) {
+
+	if !l.compareCerts(proxy.SslCertificates) {
 		glog.Infof("Https proxy %v has the wrong ssl certs, setting %v overwriting %v",
-			proxy.Name, l.sslCert.SelfLink, cert)
-		if err := l.cloud.SetSslCertificateForTargetHttpsProxy(proxy, []*compute.SslCertificate{l.sslCert}); err != nil {
+			proxy.Name, l.sslCerts, proxy.SslCertificates)
+		if err := l.cloud.SetSslCertificateForTargetHttpsProxy(proxy, l.sslCerts); err != nil {
 			return err
 		}
+
 	}
 	glog.V(3).Infof("Created target https proxy %v", proxy.Name)
 	l.tps = proxy
 	return nil
+}
+
+// Returns true if the input array of certs is identical to the certs in the L7 config.
+// Returns false if there is any mismatch
+func (l *L7) compareCerts(certLinks []string) bool {
+	certsMap := getMapfromCertList(l.sslCerts)
+	if len(certLinks) != len(certsMap) {
+		glog.Infof("Loadbalancer has %d certs, target proxy has %d certs", len(certsMap), len(certLinks))
+		return false
+	}
+	var certName string
+	for _, linkName := range certLinks {
+		certName = getResourceNameFromLink(linkName)
+		if cert, ok := certsMap[certName]; !ok {
+			glog.Infof("Cannot find cert with name %s in certsMap %+v", certName, certsMap)
+			return false
+		} else if ok && !utils.CompareLinks(linkName, cert.SelfLink) {
+			glog.Infof("Selflink compare failed for certs - %s in loadbalancer, %s in targetproxy", cert.SelfLink, linkName)
+			return false
+		}
+	}
+	return true
 }
 
 func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *compute.ForwardingRule, err error) {
@@ -555,7 +642,7 @@ func (l *L7) edgeHopHttps() error {
 	if err := l.checkHttpsForwardingRule(); err != nil {
 		return err
 	}
-	if err := l.deleteOldSSLCert(); err != nil {
+	if err := l.deleteOldSSLCerts(); err != nil {
 		return err
 	}
 	return nil
@@ -784,12 +871,20 @@ func (l *L7) Cleanup() error {
 		l.tps = nil
 	}
 	// Delete the SSL cert if it is from a secret, not referencing a pre-created GCE cert.
-	if l.sslCert != nil && l.runtimeInfo.TLSName == "" {
-		glog.V(2).Infof("Deleting sslcert %v", l.sslCert.Name)
-		if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteSslCertificate(l.sslCert.Name)); err != nil {
-			return err
+	if len(l.sslCerts) != 0 && l.runtimeInfo.TLSName == "" {
+		var certErr error
+		for _, cert := range l.sslCerts {
+			glog.V(2).Infof("Deleting sslcert %s", cert.Name)
+			if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteSslCertificate(cert.Name)); err != nil {
+				glog.Errorf("Old cert delete failed - %v", err)
+				certErr = err
+			}
+
 		}
-		l.sslCert = nil
+		l.sslCerts = nil
+		if certErr != nil {
+			return certErr
+		}
 	}
 	if l.tp != nil {
 		glog.V(2).Infof("Deleting target http proxy %v", l.tp.Name)
@@ -850,6 +945,11 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendPool backends.B
 	if err == nil {
 		jsonBackendState = string(b)
 	}
+	certs := []string{}
+	for _, cert := range l7.sslCerts {
+		certs = append(certs, cert.Name)
+	}
+
 	existing[fmt.Sprintf("%v/url-map", annotations.StatusPrefix)] = l7.um.Name
 	// Forwarding rule and target proxy might not exist if allowHTTP == false
 	if l7.fw != nil {
@@ -868,8 +968,8 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendPool backends.B
 	if l7.ip != nil {
 		existing[fmt.Sprintf("%v/static-ip", annotations.StatusPrefix)] = l7.ip.Name
 	}
-	if l7.sslCert != nil {
-		existing[fmt.Sprintf("%v/ssl-cert", annotations.StatusPrefix)] = l7.sslCert.Name
+	if len(certs) > 0 {
+		existing[fmt.Sprintf("%v/ssl-cert", annotations.StatusPrefix)] = strings.Join(certs, ",")
 	}
 	// TODO: We really want to know *when* a backend flipped states.
 	existing[fmt.Sprintf("%v/backends", annotations.StatusPrefix)] = jsonBackendState
@@ -884,4 +984,8 @@ func GCEResourceName(ingAnnotations map[string]string, resourceName string) stri
 	// parsing logic in a single location.
 	resourceName, _ = ingAnnotations[fmt.Sprintf("%v/%v", annotations.StatusPrefix, resourceName)]
 	return resourceName
+}
+
+func GetCertHash(contents string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(contents)))[:16]
 }
