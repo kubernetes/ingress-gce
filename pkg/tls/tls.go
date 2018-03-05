@@ -25,14 +25,13 @@ import (
 	extensions "k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 )
 
 // TlsLoader is the interface for loading the relevant TLSCerts for a given ingress.
 type TlsLoader interface {
 	// Load loads the relevant TLSCerts based on ing.Spec.TLS
-	Load(ing *extensions.Ingress) (*loadbalancers.TLSCerts, error)
+	Load(ing *extensions.Ingress) ([]*loadbalancers.TLSCerts, error)
 	// Validate validates the given TLSCerts and returns an error if they are invalid.
 	Validate(certs *loadbalancers.TLSCerts) error
 }
@@ -53,33 +52,41 @@ type TLSCertsFromSecretsLoader struct {
 // Ensure that TLSCertsFromSecretsLoader implements TlsLoader interface.
 var _ TlsLoader = &TLSCertsFromSecretsLoader{}
 
-func (t *TLSCertsFromSecretsLoader) Load(ing *extensions.Ingress) (*loadbalancers.TLSCerts, error) {
+func (t *TLSCertsFromSecretsLoader) Load(ing *extensions.Ingress) ([]*loadbalancers.TLSCerts, error) {
 	if len(ing.Spec.TLS) == 0 {
 		return nil, nil
 	}
-	// GCE L7s currently only support a single cert.
-	if len(ing.Spec.TLS) > 1 {
-		glog.Warningf("Ignoring %d certs and taking the first for ingress %v/%v",
-			len(ing.Spec.TLS)-1, ing.Namespace, ing.Name)
+	var certs []*loadbalancers.TLSCerts
+
+	if len(ing.Spec.TLS) > loadbalancers.TargetProxyCertLimit {
+		glog.Warningf("Specified %d tls secrets, limit is %d, rest will be ignored",
+			len(ing.Spec.TLS), loadbalancers.TargetProxyCertLimit)
 	}
-	secretName := ing.Spec.TLS[0].SecretName
-	// TODO: Replace this for a secret watcher.
-	glog.V(3).Infof("Retrieving secret for ing %v with name %v", ing.Name, secretName)
-	secret, err := t.Client.Core().Secrets(ing.Namespace).Get(secretName, meta_v1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-	cert, ok := secret.Data[api_v1.TLSCertKey]
-	if !ok {
-		return nil, fmt.Errorf("secret %v has no 'tls.crt'", secretName)
-	}
-	key, ok := secret.Data[api_v1.TLSPrivateKeyKey]
-	if !ok {
-		return nil, fmt.Errorf("secret %v has no 'tls.key'", secretName)
-	}
-	certs := &loadbalancers.TLSCerts{Key: string(key), Cert: string(cert)}
-	if err := t.Validate(certs); err != nil {
-		return nil, err
+
+	for _, tlsSecret := range ing.Spec.TLS {
+		// TODO: Replace this for a secret watcher.
+		glog.V(3).Infof("Retrieving secret for ing %v with name %v", ing.Name, tlsSecret.SecretName)
+		secret, err := t.Client.Core().Secrets(ing.Namespace).Get(tlsSecret.SecretName, meta_v1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		cert, ok := secret.Data[api_v1.TLSCertKey]
+		if !ok {
+			return nil, fmt.Errorf("secret %v has no 'tls.crt'", tlsSecret.SecretName)
+		}
+		key, ok := secret.Data[api_v1.TLSPrivateKeyKey]
+		if !ok {
+			return nil, fmt.Errorf("secret %v has no 'tls.key'", tlsSecret.SecretName)
+		}
+		newCert := &loadbalancers.TLSCerts{Key: string(key), Cert: string(cert), Name: tlsSecret.SecretName,
+			CertHash: loadbalancers.GetCertHash(string(cert))}
+		if err := t.Validate(newCert); err != nil {
+			return nil, err
+		}
+		certs = append(certs, newCert)
+		if len(certs) == loadbalancers.TargetProxyCertLimit {
+			break
+		}
 	}
 	return certs, nil
 }
@@ -95,14 +102,20 @@ type FakeTLSSecretLoader struct {
 // Ensure that FakeTLSSecretLoader implements TlsLoader interface.
 var _ TlsLoader = &FakeTLSSecretLoader{}
 
-func (f *FakeTLSSecretLoader) Load(ing *extensions.Ingress) (*loadbalancers.TLSCerts, error) {
+func (f *FakeTLSSecretLoader) Load(ing *extensions.Ingress) ([]*loadbalancers.TLSCerts, error) {
 	if len(ing.Spec.TLS) == 0 {
 		return nil, nil
 	}
+	var certs []*loadbalancers.TLSCerts
 	for name, cert := range f.FakeCerts {
-		if ing.Spec.TLS[0].SecretName == name {
-			return cert, nil
+		for _, secret := range ing.Spec.TLS {
+			if secret.SecretName == name {
+				certs = append(certs, cert)
+			}
 		}
 	}
-	return nil, fmt.Errorf("couldn't find secret for ingress %v", ing.Name)
+	if len(certs) == 0 {
+		return certs, fmt.Errorf("couldn't find secret for ingress %v", ing.Name)
+	}
+	return certs, nil
 }
