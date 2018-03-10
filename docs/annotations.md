@@ -10,7 +10,7 @@ There is no attempt to record implementation-specific annotations using other pr
 Key:
 
 * `nginx`: the `kubernetes/ingress` nginx controller
-* `gce`: the `kubernetes/ingress` GCE controller
+* `gce`: the `kubernetes/ingress-gce` GCE controller
 * `traefik`: Traefik's built-in Ingress controller
 * `haproxy`: Joao Morais' [HAProxy Ingress controller](https://github.com/jcmoraisjr/haproxy-ingress)
 * `trafficserver`: Torchbox's [Apache Traffic Server controller plugin](https://github.com/torchbox/k8s-ts-ingress)
