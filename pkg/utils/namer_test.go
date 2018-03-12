@@ -229,7 +229,7 @@ func TestIsSSLCert(t *testing.T) {
 		{"mci", "mci-ssl-foo--uid", true},
 	} {
 		namer := NewNamerWithPrefix(tc.prefix, "uid", "fw")
-		res := namer.IsLegacySSLCert(tc.in)
+		res := namer.IsLegacySSLCert("foo", tc.in)
 		if res != tc.want {
 			t.Errorf("with prefix = %q, namer.IsLegacySSLCert(%q) = %v, want %v", tc.prefix, tc.in, res, tc.want)
 		}

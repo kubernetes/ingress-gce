@@ -35,7 +35,9 @@ const (
 	// Tagged with the namespace/name of the Ingress.
 	targetHTTPProxyPrefix  = "tp"
 	targetHTTPSProxyPrefix = "tps"
-	sslCertPrefix          = "ssl"
+	// This prefix is used along with namespace/name of ingress in legacy cert names. New names use this prefix along
+	// with hash of the ingress/namespace name and cert contents.
+	sslCertPrefix = "ssl"
 	// TODO: this should really be "fr" and "frs".
 	forwardingRulePrefix      = "fw"
 	httpsForwardingRulePrefix = "fws"
@@ -300,9 +302,13 @@ func (n *Namer) TargetProxy(lbName string, protocol NamerProtocol) string {
 	return "invalid"
 }
 
-// IsLegacySSLCert returns true if certName is an Ingress managed name following the older naming convention.
-func (n *Namer) IsLegacySSLCert(name string) bool {
-	return strings.HasPrefix(name, n.prefix+"-"+sslCertPrefix)
+// IsLegacySSLCert returns true if certName is an Ingress managed name following the older naming convention. The check
+// also ensures that the cert is managed by the specific ingress instance - lbName
+func (n *Namer) IsLegacySSLCert(lbName string, name string) bool {
+	// old style name is of the form k8s-ssl-<lbname> or k8s-ssl-1-<lbName>.
+	legacyPrefixPrimary := truncate(strings.Join([]string{n.prefix, sslCertPrefix, lbName}, "-"))
+	legacyPrefixSec := truncate(strings.Join([]string{n.prefix, sslCertPrefix, "1", lbName}, "-"))
+	return strings.HasPrefix(name, legacyPrefixPrimary) || strings.HasPrefix(name, legacyPrefixSec)
 }
 
 func (n *Namer) SSLCertPrefix(lbKey string) string {
