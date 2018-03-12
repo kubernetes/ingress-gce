@@ -197,7 +197,7 @@ func (l *L7) deleteOldSSLCerts() (err error) {
 	}
 	certsMap := getMapfromCertList(l.sslCerts)
 	for _, cert := range l.oldSSLCerts {
-		if !l.IsSSLCert(cert.Name) && !l.namer.IsLegacySSLCert(cert.Name) {
+		if !l.isSSLCert(cert.Name) && !l.namer.IsLegacySSLCert(l.Name, cert.Name) {
 			// retain cert if it is managed by GCE(non-ingress)
 			continue
 		}
@@ -261,8 +261,8 @@ func (l *L7) usePreSharedCert() (bool, error) {
 	return true, nil
 }
 
-// IsSSLCert returns true if name is ingress managed, specifically by this loadbalancer instance
-func (l *L7) IsSSLCert(name string) bool {
+// isSSLCert returns true if name is ingress managed, specifically by this loadbalancer instance
+func (l *L7) isSSLCert(name string) bool {
 	return strings.HasPrefix(name, l.sslCertPrefix)
 }
 
@@ -287,7 +287,7 @@ func (l *L7) populateSSLCert() error {
 		return utils.IgnoreHTTPNotFound(err)
 	}
 	for _, c := range certs {
-		if l.IsSSLCert(c.Name) {
+		if l.isSSLCert(c.Name) {
 			glog.Infof("Populating ssl cert %s for l7 %s", c.Name, l.Name)
 			l.sslCerts = append(l.sslCerts, c)
 		}
@@ -299,7 +299,7 @@ func (l *L7) populateSSLCert() error {
 		for _, link := range expectedCertNames {
 			// Retrieve the certificate and ignore error if certificate wasn't found
 			name := getResourceNameFromLink(link)
-			if !l.namer.IsLegacySSLCert(name) {
+			if !l.namer.IsLegacySSLCert(l.Name, name) {
 				continue
 			}
 			cert, _ := l.cloud.GetSslCertificate(getResourceNameFromLink(name))
