@@ -43,6 +43,7 @@ var (
 		ConfigFilePath  string
 		DefaultSvc      string
 		DeleteAllOnQuit bool
+		GCERateLimit    RateLimitSpecs
 		HealthCheckPath string
 		HealthzPort     int
 		InCluster       bool
@@ -58,6 +59,7 @@ var (
 
 func init() {
 	F.NodePortRanges.ports = []string{DefaultNodePortRange}
+	F.GCERateLimit.specs = []string{}
 }
 
 // Register flags with the command line parser.
@@ -85,6 +87,11 @@ the default backend.`)
 external cloud resources as it's shutting down. Mostly used for testing. In
 normal environments the controller should only delete a loadbalancer if the
 associated Ingress is deleted.`)
+	flag.Var(&F.GCERateLimit, "gce-ratelimit",
+		`Optional, can be used to rate limit certain GCE API calls. Example usage:
+--gce-ratelimit=ga.Addresses.Get,qps,1.5,5
+(limit ga.Addresses.Get to maximum of 1.5 qps with a burst of 5).
+Use the flag more than once to rate limit more than one call.`)
 	flag.StringVar(&F.HealthCheckPath, "health-check-path", "/",
 		`Path used to health-check a backend service. All Services must serve a
 200 page on this path. Currently this is only configurable globally.`)
@@ -111,6 +118,25 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 		`This flag is deprecated. Use -v to control verbosity.`)
 	flag.Bool("use-real-cloud", false,
 		`This flag has been deprecated and no longer has any effect.`)
+}
+
+type RateLimitSpecs struct {
+	specs []string
+}
+
+// Part of the flag.Value interface.
+func (r *RateLimitSpecs) String() string {
+	return strings.Join(r.specs, ";")
+}
+
+// Set supports the flag being repeated multiple times. Part of the flag.Value interface.
+func (r *RateLimitSpecs) Set(value string) error {
+	r.specs = append(r.specs, value)
+	return nil
+}
+
+func (r *RateLimitSpecs) Values() []string {
+	return r.specs
 }
 
 type PortRanges struct {
