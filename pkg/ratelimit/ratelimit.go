@@ -47,7 +47,7 @@ func NewGCERateLimiter(specs []string) (*GCERateLimiter, error) {
 			return nil, fmt.Errorf("Must at least specify operation and rate limiter type.")
 		}
 		// params[0] should consist of the operation to rate limit.
-		key, err := constructRateLimitKey(params[0])
+		keys, err := constructRateLimitKeys(params[0])
 		if err != nil {
 			return nil, err
 		}
@@ -56,8 +56,11 @@ func NewGCERateLimiter(specs []string) (*GCERateLimiter, error) {
 		if err != nil {
 			return nil, err
 		}
-		rateLimitImpls[key] = impl
-		glog.Infof("Configured rate limiting for: %v", key)
+		// For each spec, the rate limiter type is the same for all keys generated.
+		for _, key := range keys {
+			rateLimitImpls[key] = impl
+			glog.Infof("Configured rate limiting for: %v", key)
+		}
 	}
 	if len(rateLimitImpls) == 0 {
 		return nil, nil
@@ -67,6 +70,7 @@ func NewGCERateLimiter(specs []string) (*GCERateLimiter, error) {
 
 // Implementation of cloud.RateLimiter
 func (l *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) error {
+	// If the rate limiter is empty, the do some default
 	ch := make(chan struct{})
 	go func() {
 		// Call flowcontrol.RateLimiter implementation.
@@ -101,21 +105,75 @@ func (l *GCERateLimiter) rateLimitImpl(key *cloud.RateLimitKey) flowcontrol.Rate
 }
 
 // Expected format of param is [version].[service].[operation]
-func constructRateLimitKey(param string) (*cloud.RateLimitKey, error) {
+// this could return more than one cloud.RateLimitKey if "*" is used for either
+// version, service, or operation (or more than one of those).
+func constructRateLimitKeys(param string) ([]*cloud.RateLimitKey, error) {
 	params := strings.Split(param, ".")
 	if len(params) != 3 {
 		return nil, fmt.Errorf("Must specify operation in [version].[service].[operation] format.")
 	}
-	// TODO(rramkumar): Add another layer of validation here?
-	version := meta.Version(params[0])
-	service := params[1]
-	operation := params[2]
-	return &cloud.RateLimitKey{
-		ProjectID: "",
-		Operation: operation,
-		Version:   version,
-		Service:   service,
-	}, nil
+	keys := []*cloud.RateLimitKey{}
+
+	// First parse the version.
+	versions := []meta.Version{}
+	if params[0] == "*" {
+		versions = meta.AllVersions
+	} else {
+		// Validate that the full provided version exists
+		if versionExists(params[0]) {
+			versions = append(versions, meta.Version(params[0]))
+		} else {
+			return nil, fmt.Errorf("Invalid version specified: %v", params[0])
+		}
+	}
+	// For each version we get, parse the service.
+	for _, version := range versions {
+		// Construct a list of all possible services for the version.
+		services := []string{}
+		if params[1] == "*" {
+			for _, serviceInfo := meta.AllServices {
+				// Only include in the list of possible services if the service is
+				// available at the particular version we are looking at now.
+				if serviceInfo.Version() == version {
+						services = append(services, serviceInfo.Service)
+				}
+			}
+		} else {
+			// Validate that the full provided service exists.
+			if serviceExists(params[1]) {
+				services = append(services, params[1])
+			} else {
+				return nil, fmt.Errorf("Invalid service specified: %v", params[1])
+			}
+		}
+		// For each service we get, parse the operation.
+		for _, service := range services {
+			// These operation exist for every service.
+			operations := []string{}
+			if params[2] == "*" {
+				// Default for every service, regardless of version.
+				// TODO(rramkumar): Implement support for additional methods.
+				operations = []string{"Get", "List", "Insert", "Delete"}
+			} else {
+				// Validate that the full provided operation exists.
+				if operationExists(params[2]) {
+					operations = append(operations, params[2])
+				} else {
+					return nil, fmt.Errorf("Invalid operation specified: %v", params[2])
+				}
+			}
+			for _, operation := range operations {
+				key := &cloud.RateLimitKey{
+					ProjectID: "",
+					Operation: operation,
+					Version: version,
+					Service: service,
+				}
+				keys = append(keys, key)
+			}
+		}
+	}
+	return keys, nil
 }
 
 // constructRateLimitImpl parses the slice and returns a flowcontrol.RateLimiter
@@ -139,4 +197,36 @@ func constructRateLimitImpl(params []string) (flowcontrol.RateLimiter, error) {
 		return flowcontrol.NewTokenBucketRateLimiter(float32(qps), burst), nil
 	}
 	return nil, fmt.Errorf("Invalid rate limiter type provided: %v", rlType)
+}
+
+// versionExists returns true if the passed in string is a valid meta.Version.
+func versionExists(s string) bool {
+	for _, version := range meta.AllVersions {
+		if meta.Version(s) == version {
+			return true
+		}
+	}
+	return false
+}
+
+// serviceExists returns true if the passed in string refers to a valid GCE service.
+func serviceExists(s string) bool {
+	for _, serviceInfo := range meta.AllServices {
+		if s == serviceInfo.Service {
+			return true
+		}
+	}
+	return false
+}
+
+// operationExists returns true if the passed string refers to a valid operation.
+// Current valid operations are "Get", "List", "Insert", "Delete"
+// TODO(rramkumar): Implement support for more methods.
+func operationExists(s string) bool {
+	for _, operation := []string{"Get", "List", "Insert", "Delete"} {
+		if s == operation {
+			return true
+		}
+	}
+	return false
 }

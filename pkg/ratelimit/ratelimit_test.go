@@ -25,6 +25,7 @@ func TestConfigureGCERateLimiting(t *testing.T) {
 		[]string{"ga.Addresses.Get,qps,1.5,5"},
 		[]string{"ga.Addresses.List,qps,2,10"},
 		[]string{"ga.Addresses.Get,qps,1.5,5", "ga.Firewalls.Get,qps,1.5,5"},
+		[]string{"ga.Operations.Get,qps,10,100"},
 	}
 	invalidTestCases := [][]string{
 		[]string{"gaAddresses.Get,qps,1.5,5"},
@@ -44,6 +45,7 @@ func TestConfigureGCERateLimiting(t *testing.T) {
 		if err != nil {
 			t.Errorf("Did not expect an error for test case: %v", testCase)
 		}
+		// TODO(rramkumar): Verify the internal map for the GCERateLimiter
 	}
 
 	for _, testCase := range invalidTestCases {
@@ -51,5 +53,6 @@ func TestConfigureGCERateLimiting(t *testing.T) {
 		if err == nil {
 			t.Errorf("Expected an error for test case: %v", testCase)
 		}
+		// TODO(rramkumar): Verify the internal map for the GCERateLimiter
 	}
 }
