@@ -31,14 +31,14 @@ import (
 // GCERateLimiter implements cloud.RateLimiter
 type GCERateLimiter struct {
 	// Map a RateLimitKey to its rate limiter implementation.
-	rateLimitImpls map[*cloud.RateLimitKey]flowcontrol.RateLimiter
+	rateLimitImpls map[cloud.RateLimitKey]flowcontrol.RateLimiter
 }
 
 // NewGCERateLimiter parses the list of rate limiting specs passed in and
 // returns a properly configured cloud.RateLimiter implementation.
 // Expected format of specs: {"[version].[service].[operation],[type],[param1],[param2],..", "..."}
 func NewGCERateLimiter(specs []string) (*GCERateLimiter, error) {
-	rateLimitImpls := make(map[*cloud.RateLimitKey]flowcontrol.RateLimiter)
+	rateLimitImpls := make(map[cloud.RateLimitKey]flowcontrol.RateLimiter)
 	// Within each specification, split on comma to get the operation,
 	// rate limiter type, and extra parameters.
 	for _, spec := range specs {
@@ -91,7 +91,7 @@ func (l *GCERateLimiter) rateLimitImpl(key *cloud.RateLimitKey) flowcontrol.Rate
 	// Since the passed in key will have the ProjectID field filled in, we need to
 	// create a copy which does not, so that retreiving the rate limiter implementation
 	// through the map works as expected.
-	keyCopy := &cloud.RateLimitKey{
+	keyCopy := cloud.RateLimitKey{
 		ProjectID: "",
 		Operation: key.Operation,
 		Version:   key.Version,
@@ -101,21 +101,23 @@ func (l *GCERateLimiter) rateLimitImpl(key *cloud.RateLimitKey) flowcontrol.Rate
 }
 
 // Expected format of param is [version].[service].[operation]
-func constructRateLimitKey(param string) (*cloud.RateLimitKey, error) {
+func constructRateLimitKey(param string) (cloud.RateLimitKey, error) {
+	var retVal cloud.RateLimitKey
 	params := strings.Split(param, ".")
 	if len(params) != 3 {
-		return nil, fmt.Errorf("Must specify operation in [version].[service].[operation] format.")
+		return retVal, fmt.Errorf("Must specify rate limit in [version].[service].[operation] format: %v", param)
 	}
 	// TODO(rramkumar): Add another layer of validation here?
 	version := meta.Version(params[0])
 	service := params[1]
 	operation := params[2]
-	return &cloud.RateLimitKey{
+	retVal = cloud.RateLimitKey{
 		ProjectID: "",
 		Operation: operation,
 		Version:   version,
 		Service:   service,
-	}, nil
+	}
+	return retVal, nil
 }
 
 // constructRateLimitImpl parses the slice and returns a flowcontrol.RateLimiter

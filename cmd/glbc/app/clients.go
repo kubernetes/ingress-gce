@@ -99,7 +99,7 @@ func NewGCEClient() *gce.GCECloud {
 			// Configure GCE rate limiting
 			rl, err := ratelimit.NewGCERateLimiter(flags.F.GCERateLimit.Values())
 			if err != nil {
-				glog.Errorf("Error in configuring rate limiting: %v", err)
+				glog.Fatalf("Error configuring rate limiting: %v", err)
 			}
 			cloud.SetRateLimiter(rl)
 			// If this controller is scheduled on a node without compute/rw
