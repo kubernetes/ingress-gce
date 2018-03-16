@@ -36,6 +36,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/ratelimit"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -95,6 +96,12 @@ func NewGCEClient() *gce.GCECloud {
 		provider, err := cloudprovider.GetCloudProvider("gce", configReader())
 		if err == nil {
 			cloud := provider.(*gce.GCECloud)
+			// Configure GCE rate limiting
+			rl, err := ratelimit.NewGCERateLimiter(flags.F.GCERateLimit.Values())
+			if err != nil {
+				glog.Fatalf("Error configuring rate limiting: %v", err)
+			}
+			cloud.SetRateLimiter(rl)
 			// If this controller is scheduled on a node without compute/rw
 			// it won't be allowed to list backends. We can assume that the
 			// user has no need for Ingress in this case. If they grant
