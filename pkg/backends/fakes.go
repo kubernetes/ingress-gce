@@ -24,6 +24,7 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -58,8 +59,14 @@ func (f *FakeBackendServices) GetGlobalBackendService(name string) (*compute.Bac
 
 	svc := obj.(*compute.BackendService)
 	if name == svc.Name {
+		// Currently, getting an Alpha BackendService strips it of Protocol if HTTP2.
+		// TODO: remove this check once ProtocolHTTP2 moves into Beta or GA.
+		if svc.Protocol == string(annotations.ProtocolHTTP2) {
+			svc.Protocol = ""
+		}
 		return svc, nil
 	}
+
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
@@ -68,6 +75,13 @@ func (f *FakeBackendServices) GetAlphaGlobalBackendService(name string) (*comput
 	if err != nil {
 		return nil, err
 	}
+
+	// Currently, getting an Alpha BackendService strips it of Protocol if HTTP2.
+	// TODO: remove this check once ProtocolHTTP2 moves into Beta or GA.
+	if obj.Protocol == "" {
+		obj.Protocol = string(annotations.ProtocolHTTP2)
+	}
+
 	return toAlphaBackendService(obj), nil
 }
 
@@ -81,6 +95,11 @@ func (f *FakeBackendServices) CreateGlobalBackendService(be *compute.BackendServ
 	f.calls = append(f.calls, utils.Create)
 	be.SelfLink = be.Name
 	return f.backendServices.Update(be)
+}
+
+// CreateGlobalBackendService fakes updating a backend service.
+func (f *FakeBackendServices) CreateAlphaGlobalBackendService(be *computealpha.BackendService) error {
+	return f.CreateGlobalBackendService(toV1BackendService(be))
 }
 
 // DeleteGlobalBackendService fakes backend service deletion.

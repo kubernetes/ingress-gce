@@ -32,7 +32,7 @@ type ProbeProvider interface {
 type BackendPool interface {
 	Init(p ProbeProvider)
 	Ensure(ports []ServicePort, igs []*compute.InstanceGroup) error
-	Get(port int64) (*compute.BackendService, error)
+	Get(port int64) (*BackendService, error)
 	Delete(port int64) error
 	GC(ports []ServicePort) error
 	Shutdown() error
@@ -48,6 +48,7 @@ type BackendServices interface {
 	UpdateGlobalBackendService(bg *compute.BackendService) error
 	UpdateAlphaGlobalBackendService(bg *computealpha.BackendService) error
 	CreateGlobalBackendService(bg *compute.BackendService) error
+	CreateAlphaGlobalBackendService(bg *computealpha.BackendService) error
 	DeleteGlobalBackendService(name string) error
 	ListGlobalBackendServices() ([]*compute.BackendService, error)
 	GetGlobalBackendServiceHealth(name, instanceGroupLink string) (*compute.BackendServiceGroupHealth, error)

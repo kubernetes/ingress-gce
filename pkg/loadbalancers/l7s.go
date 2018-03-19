@@ -154,7 +154,7 @@ func (l *L7s) Sync(lbs []*L7RuntimeInfo) error {
 		if err != nil {
 			return err
 		}
-		l.glbcDefaultBackend = defaultBackend
+		l.glbcDefaultBackend = defaultBackend.Ga
 	}
 	// create new loadbalancers, validate existing
 	for _, ri := range lbs {
