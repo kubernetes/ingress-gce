@@ -53,6 +53,17 @@ func TestHealthCheckAdd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
+
+	hc = healthChecks.New(3000, annotations.ProtocolHTTP2, false)
+	_, err = healthChecks.Sync(hc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Verify the health check exists
+	_, err = hcp.GetHealthCheck(namer.Backend(3000))
+	if err != nil {
+		t.Fatalf("expected the health check to exist, err: %v", err)
+	}
 }
 
 func TestHealthCheckAddExisting(t *testing.T) {
@@ -103,6 +114,28 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected the health check to continue existing, err: %v", err)
 	}
+
+	// HTTP2
+	// Manually insert a health check
+	http2 := DefaultHealthCheck(5000, annotations.ProtocolHTTP2)
+	http2.Name = namer.Backend(5000)
+	http2.RequestPath = "/my-probes-health"
+	v1hc, err = httpHC.ToComputeHealthCheck()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	hcp.CreateHealthCheck(v1hc)
+
+	hc = healthChecks.New(5000, annotations.ProtocolHTTPS, false)
+	_, err = healthChecks.Sync(hc)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Verify the health check exists
+	_, err = hcp.GetHealthCheck(http2.Name)
+	if err != nil {
+		t.Fatalf("expected the health check to continue existing, err: %v", err)
+	}
 }
 
 func TestHealthCheckDelete(t *testing.T) {
@@ -138,6 +171,30 @@ func TestHealthCheckDelete(t *testing.T) {
 	err = healthChecks.Delete(1234)
 	if err == nil {
 		t.Errorf("expected not-found error when deleting health check, err: %v", err)
+	}
+}
+
+func TestHTTP2HealthCheckDelete(t *testing.T) {
+	hcp := NewFakeHealthCheckProvider()
+	healthChecks := NewHealthChecker(hcp, "/", namer)
+
+	// Create HTTP2 HC for 1234
+	hc := DefaultHealthCheck(1234, annotations.ProtocolHTTP2)
+	hc.Name = namer.Backend(1234)
+
+	alphahc := hc.ToAlphaComputeHealthCheck()
+	hcp.CreateAlphaHealthCheck(alphahc)
+
+	// Delete only HTTP2 1234
+	err := healthChecks.Delete(1234)
+	if err != nil {
+		t.Errorf("unexpected error when deleting health check, err: %v", err)
+	}
+
+	// Validate port is deleted
+	_, err = hcp.GetAlphaHealthCheck(hc.Name)
+	if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+		t.Errorf("expected not-found error, actual: %v", err)
 	}
 }
 
@@ -178,6 +235,24 @@ func TestHealthCheckUpdate(t *testing.T) {
 	// Verify the check is now HTTPS
 	if hc.Protocol() != annotations.ProtocolHTTPS {
 		t.Fatalf("expected check to be of type HTTPS")
+	}
+
+	// Change to HTTP2
+	hc.Type = string(annotations.ProtocolHTTP2)
+	_, err = healthChecks.Sync(hc)
+	if err != nil {
+		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
+	}
+
+	// Verify the health check exists. HTTP2 is alpha-only.
+	_, err = healthChecks.Get(3000, true)
+	if err != nil {
+		t.Fatalf("expected the health check to exist, err: %v", err)
+	}
+
+	// Verify the check is now HTTP2
+	if hc.Protocol() != annotations.ProtocolHTTP2 {
+		t.Fatalf("expected check to be of type HTTP2")
 	}
 }
 

@@ -100,8 +100,9 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 	}
 
 	nodePort := hc.Port
-	// only use alpha API when PORT_SPECIFICATION field is specified
-	existingHC, err := h.Get(nodePort, hc.ForNEG)
+	// Use alpha API when PORT_SPECIFICATION field is specified or when Type
+	// is HTTP2
+	existingHC, err := h.Get(nodePort, hc.isHttp2() || hc.ForNEG)
 	if err != nil {
 		if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			return "", err
@@ -111,7 +112,7 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 			return "", err
 		}
 
-		return h.getHealthCheckLink(nodePort)
+		return h.getHealthCheckLink(nodePort, hc.isHttp2())
 	}
 
 	if needToUpdate(existingHC, hc) {
@@ -132,7 +133,7 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 }
 
 func (h *HealthChecks) create(hc *HealthCheck) error {
-	if hc.ForNEG {
+	if hc.isHttp2() || hc.ForNEG {
 		glog.V(2).Infof("Creating health check with protocol %v", hc.Type)
 		return h.cloud.CreateAlphaHealthCheck(hc.ToAlphaComputeHealthCheck())
 	} else {
@@ -146,9 +147,9 @@ func (h *HealthChecks) create(hc *HealthCheck) error {
 }
 
 func (h *HealthChecks) update(oldHC, newHC *HealthCheck) error {
-	if newHC.ForNEG {
+	if newHC.isHttp2() || newHC.ForNEG {
 		glog.V(2).Infof("Updating health check with protocol %v", newHC.Type)
-		return h.cloud.UpdateAlphaHealthCheck(mergeHealthcheckForNEG(oldHC, newHC).ToAlphaComputeHealthCheck())
+		return h.cloud.UpdateAlphaHealthCheck(mergeHealthcheck(oldHC, newHC).ToAlphaComputeHealthCheck())
 	} else {
 		glog.V(2).Infof("Updating health check for port %v with protocol %v", newHC.Port, newHC.Type)
 		v1hc, err := newHC.ToComputeHealthCheck()
@@ -159,20 +160,20 @@ func (h *HealthChecks) update(oldHC, newHC *HealthCheck) error {
 	}
 }
 
-// mergeHealthcheckForNEG merges old health check configuration (potentially for IG) with the new one.
+// mergeHealthcheck merges old health check configuration (potentially for IG) with the new one.
 // This is to preserve the existing health check setting as much as possible.
 // WARNING: if a service backend is converted from IG mode to NEG mode,
 // the existing health check setting will be preserve, although it may not suit the customer needs.
-func mergeHealthcheckForNEG(oldHC, newHC *HealthCheck) *HealthCheck {
+func mergeHealthcheck(oldHC, newHC *HealthCheck) *HealthCheck {
 	portSpec := newHC.PortSpecification
 	newHC.HTTPHealthCheck = oldHC.HTTPHealthCheck
-	newHC.Port = 0
+	newHC.HTTPHealthCheck.Port = 0
 	newHC.PortSpecification = portSpec
 	return newHC
 }
 
-func (h *HealthChecks) getHealthCheckLink(port int64) (string, error) {
-	hc, err := h.Get(port, false)
+func (h *HealthChecks) getHealthCheckLink(port int64, alpha bool) (string, error) {
+	hc, err := h.Get(port, alpha)
 	if err != nil {
 		return "", err
 	}
@@ -296,14 +297,16 @@ func NewHealthCheck(hc *computealpha.HealthCheck) *HealthCheck {
 	case annotations.ProtocolHTTP:
 		v.HTTPHealthCheck = *hc.HttpHealthCheck
 	case annotations.ProtocolHTTPS:
-		// HTTPHealthCheck and HTTPSHealthChecks have identical fields
 		v.HTTPHealthCheck = computealpha.HTTPHealthCheck(*hc.HttpsHealthCheck)
+	case annotations.ProtocolHTTP2:
+		v.HTTPHealthCheck = computealpha.HTTPHealthCheck(*hc.Http2HealthCheck)
 	}
 
 	// Users should be modifying HTTP(S) specific settings on the embedded
 	// HTTPHealthCheck. Setting these to nil for preventing confusion.
 	v.HealthCheck.HttpHealthCheck = nil
 	v.HealthCheck.HttpsHealthCheck = nil
+	v.HealthCheck.Http2HealthCheck = nil
 
 	return v
 }
@@ -332,6 +335,7 @@ func (hc *HealthCheck) ToAlphaComputeHealthCheck() *computealpha.HealthCheck {
 func (hc *HealthCheck) merge() {
 	// Zeroing out child settings as a precaution. GoogleAPI throws an error
 	// if the wrong child struct is set.
+	hc.HealthCheck.Http2HealthCheck = nil
 	hc.HealthCheck.HttpsHealthCheck = nil
 	hc.HealthCheck.HttpHealthCheck = nil
 
@@ -341,7 +345,14 @@ func (hc *HealthCheck) merge() {
 	case annotations.ProtocolHTTPS:
 		https := computealpha.HTTPSHealthCheck(hc.HTTPHealthCheck)
 		hc.HealthCheck.HttpsHealthCheck = &https
+	case annotations.ProtocolHTTP2:
+		http2 := computealpha.HTTP2HealthCheck(hc.HTTPHealthCheck)
+		hc.HealthCheck.Http2HealthCheck = &http2
 	}
+}
+
+func (hc *HealthCheck) isHttp2() bool {
+	return hc.Protocol() == annotations.ProtocolHTTP2
 }
 
 func needToUpdate(old, new *HealthCheck) bool {
