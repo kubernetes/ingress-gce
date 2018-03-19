@@ -18,6 +18,7 @@ package backends
 
 import (
 	"encoding/json"
+	"github.com/golang/glog"
 
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	compute "google.golang.org/api/compute/v1"
@@ -29,9 +30,10 @@ import (
 )
 
 // NewFakeBackendServices creates a new fake backend services manager.
-func NewFakeBackendServices(ef func(op int, be *compute.BackendService) error) *FakeBackendServices {
+func NewFakeBackendServices(ef func(op int, be *compute.BackendService) error, alpha bool) *FakeBackendServices {
 	return &FakeBackendServices{
-		errFunc: ef,
+		alphaWhitelisted: alpha,
+		errFunc:          ef,
 		backendServices: cache.NewStore(func(obj interface{}) (string, error) {
 			svc := obj.(*compute.BackendService)
 			return svc.Name, nil
@@ -41,9 +43,10 @@ func NewFakeBackendServices(ef func(op int, be *compute.BackendService) error) *
 
 // FakeBackendServices fakes out GCE backend services.
 type FakeBackendServices struct {
-	backendServices cache.Store
-	calls           []int
-	errFunc         func(op int, be *compute.BackendService) error
+	backendServices  cache.Store
+	calls            []int
+	errFunc          func(op int, be *compute.BackendService) error
+	alphaWhitelisted bool
 }
 
 // GetGlobalBackendService fakes getting a backend service from the cloud.
@@ -71,6 +74,10 @@ func (f *FakeBackendServices) GetGlobalBackendService(name string) (*compute.Bac
 }
 
 func (f *FakeBackendServices) GetAlphaGlobalBackendService(name string) (*computealpha.BackendService, error) {
+	if !f.alphaWhitelisted {
+		return nil, utils.FakeGoogleAPIForbiddenErr()
+	}
+
 	obj, err := f.GetGlobalBackendService(name)
 	if err != nil {
 		return nil, err
@@ -81,6 +88,8 @@ func (f *FakeBackendServices) GetAlphaGlobalBackendService(name string) (*comput
 	if obj.Protocol == "" {
 		obj.Protocol = string(annotations.ProtocolHTTP2)
 	}
+
+	glog.V(2).Infof("get backend service %+v", obj)
 
 	return toAlphaBackendService(obj), nil
 }
@@ -99,6 +108,10 @@ func (f *FakeBackendServices) CreateGlobalBackendService(be *compute.BackendServ
 
 // CreateGlobalBackendService fakes updating a backend service.
 func (f *FakeBackendServices) CreateAlphaGlobalBackendService(be *computealpha.BackendService) error {
+	if !f.alphaWhitelisted {
+		return utils.FakeGoogleAPIForbiddenErr()
+	}
+
 	return f.CreateGlobalBackendService(toV1BackendService(be))
 }
 
@@ -133,11 +146,16 @@ func (f *FakeBackendServices) UpdateGlobalBackendService(be *compute.BackendServ
 		}
 	}
 	f.calls = append(f.calls, utils.Update)
+	glog.V(2).Infof("update backend service %+v", be)
 	return f.backendServices.Update(be)
 }
 
 // UpdateGlobalBackendService fakes updating a backend service.
 func (f *FakeBackendServices) UpdateAlphaGlobalBackendService(be *computealpha.BackendService) error {
+	if !f.alphaWhitelisted {
+		return utils.FakeGoogleAPIForbiddenErr()
+	}
+
 	return f.UpdateGlobalBackendService(toV1BackendService(be))
 }
 

@@ -51,7 +51,7 @@ type fakeClusterManager struct {
 func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager {
 	namer := utils.NewNamer(clusterName, firewallName)
 	fakeLbs := loadbalancers.NewFakeLoadBalancers(clusterName, namer)
-	fakeBackends := backends.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
+	fakeBackends := backends.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil }, false)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
 	fakeHCP := healthchecks.NewFakeHealthCheckProvider()
 	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")

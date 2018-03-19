@@ -71,13 +71,14 @@ func newTestJig(f BackendServices, fakeIGs instances.InstanceGroups, syncWithClo
 }
 
 func TestBackendPoolAdd(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	f := NewFakeBackendServices(noOpErrFunc, true)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
 	testCases := []ServicePort{
 		{NodePort: 80, Protocol: annotations.ProtocolHTTP},
 		{NodePort: 443, Protocol: annotations.ProtocolHTTPS},
+		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2},
 	}
 
 	for _, sp := range testCases {
@@ -131,8 +132,21 @@ func TestBackendPoolAdd(t *testing.T) {
 	}
 }
 
+func TestBackendPoolAddWithoutWhitelist(t *testing.T) {
+	f := NewFakeBackendServices(noOpErrFunc, false)
+	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
+	pool, _ := newTestJig(f, fakeIGs, false)
+
+	sp := ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP2}
+
+	err := pool.Ensure([]ServicePort{sp}, nil)
+	if !utils.IsHTTPErrorCode(err, http.StatusForbidden) {
+		t.Fatalf("Expected creating %+v through alpha API to be forbidden, got %v", sp, err)
+	}
+}
+
 func TestHealthCheckMigration(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	f := NewFakeBackendServices(noOpErrFunc, false)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, hcp := newTestJig(f, fakeIGs, false)
 
@@ -169,7 +183,7 @@ func TestHealthCheckMigration(t *testing.T) {
 }
 
 func TestBackendPoolUpdateHTTPS(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	f := NewFakeBackendServices(noOpErrFunc, false)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -213,8 +227,80 @@ func TestBackendPoolUpdateHTTPS(t *testing.T) {
 	}
 }
 
+func TestBackendPoolUpdateHTTP2(t *testing.T) {
+	f := NewFakeBackendServices(noOpErrFunc, true)
+	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
+	pool, _ := newTestJig(f, fakeIGs, false)
+
+	p := ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
+	pool.Ensure([]ServicePort{p}, nil)
+	beName := defaultNamer.Backend(p.NodePort)
+
+	be, err := f.GetGlobalBackendService(beName)
+	if err != nil {
+		t.Fatalf("Unexpected err: %v", err)
+	}
+
+	if annotations.AppProtocol(be.Protocol) != p.Protocol {
+		t.Fatalf("Expected scheme %v but got %v", p.Protocol, be.Protocol)
+	}
+
+	// Assert the proper health check was created
+	hc, _ := pool.healthChecker.Get(p.NodePort, false)
+	if hc == nil || hc.Protocol() != p.Protocol {
+		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
+	}
+
+	// Update service port to HTTP2
+	p.Protocol = annotations.ProtocolHTTP2
+	pool.Ensure([]ServicePort{p}, nil)
+
+	beAlpha, err := f.GetAlphaGlobalBackendService(beName)
+	if err != nil {
+		t.Fatalf("Unexpected err retrieving backend service after update: %v", err)
+	}
+
+	// Assert the backend has the correct protocol
+	if annotations.AppProtocol(beAlpha.Protocol) != p.Protocol {
+		t.Fatalf("Expected scheme %v but got %v", p.Protocol, annotations.AppProtocol(beAlpha.Protocol))
+	}
+
+	// Assert the proper health check was created
+	hc, _ = pool.healthChecker.Get(p.NodePort, true)
+	if hc == nil || hc.Protocol() != p.Protocol {
+		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
+	}
+}
+
+func TestBackendPoolUpdateHTTP2WithoutWhitelist(t *testing.T) {
+	f := NewFakeBackendServices(noOpErrFunc, false)
+	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
+	pool, _ := newTestJig(f, fakeIGs, false)
+
+	p := ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
+	pool.Ensure([]ServicePort{p}, nil)
+	beName := defaultNamer.Backend(p.NodePort)
+
+	be, err := f.GetGlobalBackendService(beName)
+	if err != nil {
+		t.Fatalf("Unexpected err: %v", err)
+	}
+
+	if annotations.AppProtocol(be.Protocol) != p.Protocol {
+		t.Fatalf("Expected scheme %v but got %v", p.Protocol, be.Protocol)
+	}
+
+	// Update service port to HTTP2
+	p.Protocol = annotations.ProtocolHTTP2
+	err = pool.Ensure([]ServicePort{p}, nil)
+
+	if !utils.IsHTTPErrorCode(err, http.StatusForbidden) {
+		t.Fatalf("Expected getting %+v through alpha API to be forbidden, got %v", p, err)
+	}
+}
+
 func TestBackendPoolChaosMonkey(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	f := NewFakeBackendServices(noOpErrFunc, false)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -262,7 +348,7 @@ func TestBackendPoolSync(t *testing.T) {
 	// Call sync on a backend pool with a list of ports, make sure the pool
 	// creates/deletes required ports.
 	svcNodePorts := []ServicePort{{NodePort: 81, Protocol: annotations.ProtocolHTTP}, {NodePort: 82, Protocol: annotations.ProtocolHTTPS}, {NodePort: 83, Protocol: annotations.ProtocolHTTP}}
-	f := NewFakeBackendServices(noOpErrFunc)
+	f := NewFakeBackendServices(noOpErrFunc, false)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, true)
 	pool.Ensure([]ServicePort{{NodePort: 81}}, nil)
@@ -332,7 +418,7 @@ func TestBackendPoolSync(t *testing.T) {
 }
 
 func TestBackendPoolDeleteLegacyHealthChecks(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	f := NewFakeBackendServices(noOpErrFunc, true)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	negGetter := neg.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	nodePool := instances.NewNodePool(fakeIGs, defaultNamer)
@@ -386,7 +472,7 @@ func TestBackendPoolDeleteLegacyHealthChecks(t *testing.T) {
 }
 
 func TestBackendPoolShutdown(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	f := NewFakeBackendServices(noOpErrFunc, false)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -399,7 +485,7 @@ func TestBackendPoolShutdown(t *testing.T) {
 }
 
 func TestBackendInstanceGroupClobbering(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	f := NewFakeBackendServices(noOpErrFunc, true)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -443,7 +529,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 }
 
 func TestBackendCreateBalancingMode(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	f := NewFakeBackendServices(noOpErrFunc, false)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 	sp := ServicePort{NodePort: 8080}
@@ -506,7 +592,7 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 func TestLinkBackendServiceToNEG(t *testing.T) {
 	zones := []string{"zone1", "zone2"}
 	namespace, name, port := "ns", "name", "port"
-	f := NewFakeBackendServices(noOpErrFunc)
+	f := NewFakeBackendServices(noOpErrFunc, true)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	nodePool := instances.NewNodePool(fakeIGs, defaultNamer)
@@ -587,5 +673,30 @@ func TestRetrieveObjectName(t *testing.T) {
 			t.Errorf("expect %q, but got %q", tc.expect, retrieveObjectName(tc.url))
 		}
 	}
+}
 
+func TestComparableGroupPath(t *testing.T) {
+	testCases := []struct {
+		igPath   string
+		expected string
+	}{
+		{
+			"https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
+			"/zones/us-central1-a/instanceGroups/example-group",
+		},
+		{
+			"https://www.googleapis.com/compute/alpha/projects/project-id/zones/us-central1-b/instanceGroups/test-group",
+			"/zones/us-central1-b/instanceGroups/test-group",
+		},
+		{
+			"https://www.googleapis.com/compute/v1/projects/project-id/zones/us-central1-c/instanceGroups/another-group",
+			"/zones/us-central1-c/instanceGroups/another-group",
+		},
+	}
+
+	for _, tc := range testCases {
+		if comparableGroupPath(tc.igPath) != tc.expected {
+			t.Errorf("expected %s, but got %s", tc.expected, comparableGroupPath(tc.igPath))
+		}
+	}
 }
