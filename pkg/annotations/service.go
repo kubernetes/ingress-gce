@@ -43,6 +43,8 @@ const (
 	ProtocolHTTP AppProtocol = "HTTP"
 	// ProtocolHTTPS protocol for a service
 	ProtocolHTTPS AppProtocol = "HTTPS"
+	// ProtocolHTTP2 protocol for a service
+	ProtocolHTTP2 AppProtocol = "HTTP2"
 )
 
 // AppProtocol describes the service protocol.
@@ -72,7 +74,7 @@ func (svc Service) ApplicationProtocols() (map[string]AppProtocol, error) {
 	// Verify protocol is an accepted value
 	for _, proto := range portToProtos {
 		switch proto {
-		case ProtocolHTTP, ProtocolHTTPS:
+		case ProtocolHTTP, ProtocolHTTPS, ProtocolHTTP2:
 		default:
 			return nil, fmt.Errorf("invalid port application protocol: %v", proto)
 		}
