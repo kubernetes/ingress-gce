@@ -98,6 +98,125 @@ type BackendService struct {
 	isAlpha bool
 }
 
+// GetProtocol gets the Protocol off the correct BackendService
+func (be *BackendService) GetProtocol() string {
+	if be.isAlpha {
+		return be.Alpha.Protocol
+	}
+
+	return be.Ga.Protocol
+}
+
+// GetDescription gets the Description off the correct BackendService
+func (be *BackendService) GetDescription() string {
+	if be.isAlpha {
+		return be.Alpha.Description
+	}
+
+	return be.Ga.Description
+}
+
+// GetHealthCheckLink gets the Healthcheck link off the correct BackendService
+func (be *BackendService) GetHealthCheckLink() string {
+	if be.isAlpha && len(be.Alpha.HealthChecks) == 1 {
+		return be.Alpha.HealthChecks[0]
+	} else if len(be.Ga.HealthChecks) == 1 {
+		return be.Ga.HealthChecks[0]
+	}
+
+	return ""
+}
+
+// ensureProtocol updates the BackendService Protocol with the expected value
+func (be *BackendService) ensureProtocol(p ServicePort, hcLink string) (needsUpdate bool) {
+	existingProtocol := be.GetProtocol()
+	if existingProtocol == string(p.Protocol) {
+		return false
+	}
+
+	// Using the HTTP2 Protocol requires that the BackendService is alpha.
+	// If the BackendService wasn't originally alpha, convert it to Alpha.
+	if !be.isAlpha && p.Protocol == annotations.ProtocolHTTP2 {
+		be.isAlpha = true
+		be.Alpha = toAlphaBackendService(be.Ga)
+	}
+
+	if be.isAlpha {
+		be.Alpha.Protocol = string(p.Protocol)
+	} else {
+		be.Ga.Protocol = string(p.Protocol)
+	}
+
+	return true
+}
+
+// ensureHealthCheck updates the BackendService HealthCheck with the expected value
+func (be *BackendService) ensureHealthCheck(hcLink string) (needsUpdate bool) {
+	existingHCLink := be.GetHealthCheckLink()
+
+	// Compare health check name instead of health check link.
+	// This is because health check link contains api version.
+	// For NEG, the api version for health check will be alpha.
+	// Hence, it will cause the health check links to be always different
+	// TODO (mixia): compare health check link directly once NEG is GA
+	existingHCName := retrieveObjectName(existingHCLink)
+	expectedHCName := retrieveObjectName(hcLink)
+	if existingHCName == expectedHCName {
+		return false
+	}
+
+	if be.isAlpha {
+		be.Alpha.HealthChecks = []string{hcLink}
+	} else {
+		be.Ga.HealthChecks = []string{hcLink}
+	}
+	return true
+}
+
+// ensureDescription updates the BackendService Description with the expected value
+func (be *BackendService) ensureDescription(description string) (needsUpdate bool) {
+	existingDescription := be.GetDescription()
+	if existingDescription == description {
+		return false
+	}
+
+	if be.isAlpha {
+		be.Alpha.Description = description
+	} else {
+		be.Ga.Description = description
+	}
+
+	return true
+}
+
+// ensureBackends generates backends with given instance groups with a specific mode
+func (be *BackendService) ensureBackends(bm BalancingMode, addIGs []*compute.InstanceGroup) {
+	if be.isAlpha {
+		originalIGBackends := []*computealpha.Backend{}
+		for _, backend := range be.Alpha.Backends {
+			// Backend service is not able to point to NEG and IG at the same time.
+			// Filter IG backends here.
+			if strings.Contains(backend.Group, "instanceGroups") {
+				originalIGBackends = append(originalIGBackends, backend)
+			}
+		}
+
+		newBackends := getAlphaBackendsForIGs(addIGs, bm)
+		be.Alpha.Backends = append(originalIGBackends, newBackends...)
+	} else {
+		originalIGBackends := []*compute.Backend{}
+		for _, backend := range be.Ga.Backends {
+			// Backend service is not able to point to NEG and IG at the same time.
+			// Filter IG backends here.
+			if strings.Contains(backend.Group, "instanceGroups") {
+				originalIGBackends = append(originalIGBackends, backend)
+			}
+		}
+		newBackends := getBackendsForIGs(addIGs, bm)
+		be.Ga.Backends = append(originalIGBackends, newBackends...)
+	}
+}
+
 // Backends is a BackendPool.
 var _ BackendPool = (*Backends)(nil)
 
@@ -187,6 +306,9 @@ func (b *Backends) Get(port int64) (*BackendService, error) {
 
 	// If the Protocol is empty, this means this is a alpha BackendService and
 	// Protocol is expected to be HTTP2
+	// WARNING: If a user has created an alpha BackendService in the past but
+	// is no longer alpha whitelisted, this will always return an isForbidden err
+	// until the user can access the alpha APIs again.
 	if beGa.Protocol == "" {
 		beAlpha, err = b.cloud.GetAlphaGlobalBackendService(b.namer.Backend(port))
 		if err != nil {
@@ -233,14 +355,12 @@ func (b *Backends) create(namedPort *compute.NamedPort, hcLink string, sp Servic
 		PortName:     namedPort.Name,
 	}
 
-	bsAlpha := &computealpha.BackendService{}
-
 	if sp.Protocol != annotations.ProtocolHTTP2 {
 		if err := b.cloud.CreateGlobalBackendService(bs); err != nil {
 			return nil, err
 		}
 	} else {
-		bsAlpha = toAlphaBackendService(bs)
+		bsAlpha := toAlphaBackendService(bs)
 		if err := b.cloud.CreateAlphaGlobalBackendService(bsAlpha); err != nil {
 			return nil, err
 		}
@@ -308,43 +428,17 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 		}
 	}
 
-	// Check that the backend service has the correct protocol and health check link
-	existingHCLink := ""
+	needUpdate := be.ensureProtocol(p, hcLink)
+	needUpdate = needUpdate || be.ensureHealthCheck(hcLink)
+	needUpdate = needUpdate || be.ensureDescription(p.Description())
 
-	if be.isAlpha && len(be.Alpha.HealthChecks) == 1 {
-		existingHCLink = be.Alpha.HealthChecks[0]
-	} else if len(be.Ga.HealthChecks) == 1 {
-		existingHCLink = be.Ga.HealthChecks[0]
-	}
-
-	// Compare health check name instead of health check link.
-	// This is because health check link contains api version.
-	// For NEG, the api version for health check will be alpha.
-	// Hence, it will cause the health check links to be always different
-	// TODO (mixia): compare health check link directly once NEG is GA
-	existingHCName := retrieveObjectName(existingHCLink)
-	expectedHCName := retrieveObjectName(hcLink)
-	existingProtocol := be.Ga.Protocol
-	existingDescription := be.Ga.Description
-
-	// Compare the Alpha fields if the BackendService has Alpha features, e.g. HTTP2
-	if be.isAlpha {
-		existingProtocol = be.Alpha.Protocol
-		existingDescription = be.Alpha.Description
-	}
-
-	if existingProtocol != string(p.Protocol) || existingHCName != expectedHCName || existingDescription != p.Description() {
-		glog.V(2).Infof("Updating backend protocol %v (%v) for change in protocol (%v) or health check", beName, existingProtocol, string(p.Protocol))
-		if be.isAlpha {
-			be.Alpha.Protocol = string(p.Protocol)
-			be.Alpha.HealthChecks = []string{hcLink}
-			be.Alpha.Description = p.Description()
-		} else {
-			be.Ga.Protocol = string(p.Protocol)
-			be.Ga.HealthChecks = []string{hcLink}
-			be.Ga.Description = p.Description()
+	if needUpdate {
+		if err = b.update(be); err != nil {
+			return err
 		}
 	}
+
+	existingHCLink := be.GetHealthCheckLink()
 
 	// If previous health check was legacy type, we need to delete it.
 	if existingHCLink != hcLink && strings.Contains(existingHCLink, "/httpHealthChecks/") {
@@ -357,67 +451,51 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 	// perform edgeHop to verify that BackendServices contains links to all
 	// backends/instancegroups
 	if len(igs) > 0 && !p.NEGEnabled {
-		addIGs := getInstanceGroupsToAdd(be, igs)
-		if len(addIGs) == 0 {
-			return b.Update(be)
-		}
-
-		var errs []string
-		for _, bm := range []BalancingMode{Rate, Utilization} {
-			// Generate backends with given instance groups with a specific mode
-			if be.isAlpha {
-				originalIGBackends := []*computealpha.Backend{}
-				for _, backend := range be.Alpha.Backends {
-					// Backend service is not able to point to NEG and IG at the same time.
-					// Filter IG backends here.
-					if strings.Contains(backend.Group, "instanceGroups") {
-						originalIGBackends = append(originalIGBackends, backend)
-					}
-				}
-
-				newBackends := getAlphaBackendsForIGs(addIGs, bm)
-				be.Alpha.Backends = append(originalIGBackends, newBackends...)
-			} else {
-				originalIGBackends := []*compute.Backend{}
-				for _, backend := range be.Ga.Backends {
-					// Backend service is not able to point to NEG and IG at the same time.
-					// Filter IG backends here.
-					if strings.Contains(backend.Group, "instanceGroups") {
-						originalIGBackends = append(originalIGBackends, backend)
-					}
-				}
-				newBackends := getBackendsForIGs(addIGs, bm)
-				be.Ga.Backends = append(originalIGBackends, newBackends...)
-			}
-
-			if err := b.Update(be); err != nil {
-				if utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
-					glog.V(2).Infof("Updating backend service backends with balancing mode %v failed, will try another mode. err:%v", bm, err)
-					errs = append(errs, err.Error())
-					// This is probably a failure because we tried to create the backend
-					// with balancingMode=RATE when there are already backends with
-					// balancingMode=UTILIZATION. Just ignore it and retry setting
-					// balancingMode=UTILIZATION (b/35102911).
-					continue
-				}
-				glog.V(2).Infof("Error updating backend service backends with balancing mode %v:%v", bm, err)
-				return err
-			}
-
-			// Successfully updated Backends, no need to Update the BackendService again
-			return nil
-		}
+		return b.edgeHop(be, igs)
 	}
 
-	return b.Update(be)
+	return nil
 }
 
-// Update calls either the GA or Alpha update path depending on Protocol
-func (b *Backends) Update(be *BackendService) error {
-	if be.isAlpha {
-		return b.cloud.UpdateAlphaGlobalBackendService(be.Alpha)
+// edgeHop checks the links of the given backend by executing an edge hop.
+// It fixes broken links and updates the Backend accordingly.
+func (b *Backends) edgeHop(be *BackendService, igs []*compute.InstanceGroup) error {
+	addIGs := getInstanceGroupsToAdd(be, igs)
+	if len(addIGs) == 0 {
+		return nil
 	}
 
+	var errs []string
+	for _, bm := range []BalancingMode{Rate, Utilization} {
+		be.ensureBackends(bm, addIGs)
+		if err := b.update(be); err != nil {
+			if utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
+				glog.V(2).Infof("Updating backend service backends with balancing mode %v failed, will try another mode. err:%v", bm, err)
+				errs = append(errs, err.Error())
+				// This is probably a failure because we tried to create the backend
+				// with balancingMode=RATE when there are already backends with
+				// balancingMode=UTILIZATION. Just ignore it and retry setting
+				// balancingMode=UTILIZATION (b/35102911).
+				continue
+			}
+			glog.V(2).Infof("Error updating backend service backends with balancing mode %v:%v", bm, err)
+			return err
+		}
+
+		// Successfully updated Backends, no need to Update the BackendService again
+		return nil
+	}
+
+	return fmt.Errorf("received errors when updating backend service: %v", strings.Join(errs, "\n"))
+}
+
+// update calls either the GA or Alpha update path depending on Protocol
+func (b *Backends) update(be *BackendService) error {
+	if be.isAlpha {
+		glog.V(2).Infof("Updating %v backend service %v", "alpha", be.Alpha.Name)
+		return b.cloud.UpdateAlphaGlobalBackendService(be.Alpha)
+	}
+	glog.V(2).Infof("Updating %v backend service %v", "ga", be.Ga.Name)
 	return b.cloud.UpdateGlobalBackendService(be.Ga)
 }
 
@@ -512,32 +590,24 @@ func getBackendsForNEGs(negs []*computealpha.NetworkEndpointGroup) []*computealp
 func getInstanceGroupsToAdd(be *BackendService, igs []*compute.InstanceGroup) []*compute.InstanceGroup {
 	beName := be.Ga.Name
 	beIGs := sets.String{}
-	if be.isAlpha {
-		for _, beToIG := range be.Alpha.Backends {
-			beIGs.Insert(beToIG.Group)
-		}
-
-		beName = be.Alpha.Name
-	} else {
-		for _, beToIG := range be.Ga.Backends {
-			beIGs.Insert(beToIG.Group)
-		}
+	for _, existingBe := range be.Ga.Backends {
+		beIGs.Insert(comparableGroupPath(existingBe.Group))
 	}
 
-	igLinks := sets.String{}
-	for _, igToBE := range igs {
-		igLinks.Insert(igToBE.SelfLink)
+	expectedIGs := sets.String{}
+	for _, ig := range igs {
+		expectedIGs.Insert(comparableGroupPath(ig.SelfLink))
 	}
 
-	if beIGs.IsSuperset(igLinks) {
+	if beIGs.IsSuperset(expectedIGs) {
 		return nil
 	}
-	glog.V(2).Infof("Updating backend service %v with %d backends: expected igs %+v, current igs %+v",
-		beName, igLinks.Len(), igLinks.List(), beIGs.List())
+	glog.V(2).Infof("Expected igs for backend service %v: %+v, current igs %+v",
+		beName, expectedIGs.List(), beIGs.List())
 
 	var addIGs []*compute.InstanceGroup
 	for _, ig := range igs {
-		if !beIGs.Has(ig.SelfLink) {
+		if !beIGs.Has(comparableGroupPath(ig.SelfLink)) {
 			addIGs = append(addIGs, ig)
 		}
 	}
@@ -677,4 +747,11 @@ func applyProbeSettingsToHC(p *v1.Probe, hc *healthchecks.HealthCheck) {
 func retrieveObjectName(url string) string {
 	splited := strings.Split(url, "/")
 	return splited[len(splited)-1]
+}
+
+// comparableGroupPath trims project and compute version from the SelfLink
+// /zones/[ZONE_NAME]/instanceGroups/[IG_NAME]
+func comparableGroupPath(url string) string {
+	path_parts := strings.Split(url, "/zones/")
+	return fmt.Sprintf("/zones/%s", path_parts[1])
 }

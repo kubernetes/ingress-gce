@@ -114,7 +114,8 @@ func TestBackendPoolAdd(t *testing.T) {
 			}
 
 			// Check the created healthcheck is the correct protocol
-			hc, err := pool.healthChecker.Get(sp.NodePort, false)
+			isAlpha := sp.Protocol == annotations.ProtocolHTTP2
+			hc, err := pool.healthChecker.Get(sp.NodePort, isAlpha)
 			if err != nil {
 				t.Fatalf("Unexpected err when querying fake healthchecker: %v", err)
 			}
@@ -167,7 +168,7 @@ func TestHealthCheckMigration(t *testing.T) {
 	}
 }
 
-func TestBackendPoolUpdate(t *testing.T) {
+func TestBackendPoolUpdateHTTPS(t *testing.T) {
 	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
@@ -226,7 +227,7 @@ func TestBackendPoolChaosMonkey(t *testing.T) {
 	// Mess up the link between backend service and instance group.
 	// This simulates a user doing foolish things through the UI.
 	be.Backends = []*compute.Backend{
-		{Group: "test edge hop"},
+		{Group: "/zones/edge-hop-test"},
 	}
 	f.calls = []int{}
 	f.UpdateGlobalBackendService(be)
@@ -412,8 +413,8 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	// Simulate another controller updating the same backend service with
 	// a different instance group
 	newGroups := []*compute.Backend{
-		{Group: "k8s-ig-bar"},
-		{Group: "k8s-ig-foo"},
+		{Group: fmt.Sprintf("/zones/%s/instanceGroups/%s", defaultZone, "k8s-ig-bar")},
+		{Group: fmt.Sprintf("/zones/%s/instanceGroups/%s", defaultZone, "k8s-ig-foo")},
 	}
 	be.Backends = append(be.Backends, newGroups...)
 	if err = f.UpdateGlobalBackendService(be); err != nil {
@@ -428,13 +429,13 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	}
 	gotGroups := sets.NewString()
 	for _, g := range be.Backends {
-		gotGroups.Insert(g.Group)
+		gotGroups.Insert(comparableGroupPath(g.Group))
 	}
 
 	// seed expectedGroups with the first group native to this controller
-	expectedGroups := sets.NewString("k8s-ig--uid1")
+	expectedGroups := sets.NewString(fmt.Sprintf("/zones/%s/instanceGroups/%s", defaultZone, "k8s-ig--uid1"))
 	for _, newGroup := range newGroups {
-		expectedGroups.Insert(newGroup.Group)
+		expectedGroups.Insert(comparableGroupPath(newGroup.Group))
 	}
 	if !expectedGroups.Equal(gotGroups) {
 		t.Fatalf("Expected %v Got %v", expectedGroups, gotGroups)
