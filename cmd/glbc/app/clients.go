@@ -26,7 +26,6 @@ import (
 
 	"github.com/golang/glog"
 
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/kubernetes/pkg/cloudprovider"
@@ -45,23 +44,15 @@ const (
 	cloudClientRetryInterval = 10 * time.Second
 )
 
-// NewKubeClient returns a Kubernetes client given the command line settings.
-func NewKubeClient() (kubernetes.Interface, error) {
+// NewKubeConfig returns a Kubernetes client config given the command line settings.
+func NewKubeConfig() (*rest.Config, error) {
 	if flags.F.InCluster {
 		glog.V(0).Infof("Using in cluster configuration")
-		config, err := rest.InClusterConfig()
-		if err != nil {
-			return nil, err
-		}
-		return kubernetes.NewForConfig(config)
+		return rest.InClusterConfig()
 	}
 
 	glog.V(0).Infof("Using APIServerHost=%q, KubeConfig=%q", flags.F.APIServerHost, flags.F.KubeConfigFile)
-	config, err := clientcmd.BuildConfigFromFlags(flags.F.APIServerHost, flags.F.KubeConfigFile)
-	if err != nil {
-		return nil, err
-	}
-	return kubernetes.NewForConfig(config)
+	return clientcmd.BuildConfigFromFlags(flags.F.APIServerHost, flags.F.KubeConfigFile)
 }
 
 // NewGCEClient returns a client to the GCE environment. This will block until
