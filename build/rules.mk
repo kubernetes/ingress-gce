@@ -77,7 +77,7 @@ else
 	VERBOSE_OUTPUT := >/dev/null
 endif
 
-# This MUST appear as the first rule in a Makefile
+# This MUST appears as the first rule in a Makefile
 all: build
 
 build-%:
@@ -103,7 +103,7 @@ all-push: $(addprefix push-, $(ALL_ARCH))
 build: $(GO_BINARIES) images-build
 
 
-# Rule for all bin/$(ARCH)/bin/$(BINARY)
+# Rules for all bin/$(ARCH)/bin/$(BINARY)
 $(GO_BINARIES): build-dirs
 	@echo "building : $@"
 	@docker pull $(BUILD_IMAGE)
@@ -180,7 +180,7 @@ endef
 $(foreach BINARY,$(CONTAINER_BINARIES),$(eval $(PUSH_RULE)))
 
 
-# Rule for `test`
+# Rules for `test`
 .PHONY: test images-test
 test: build-dirs
 	@docker run                                                            \
