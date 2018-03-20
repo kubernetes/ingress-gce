@@ -189,7 +189,7 @@ func (c *ClusterManager) GC(lbNames []string, nodePorts []backends.ServicePort) 
 }
 
 func (c *ClusterManager) BackendServiceForPort(port int64) (*compute.BackendService, error) {
-	bs, err := c.backendPool.Get(port)
+	bs, err := c.backendPool.Get(port, false)
 	return bs.Ga, err
 }
 

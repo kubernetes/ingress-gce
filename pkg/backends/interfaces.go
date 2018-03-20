@@ -32,7 +32,7 @@ type ProbeProvider interface {
 type BackendPool interface {
 	Init(p ProbeProvider)
 	Ensure(ports []ServicePort, igs []*compute.InstanceGroup) error
-	Get(port int64) (*BackendService, error)
+	Get(port int64, isAlpha bool) (*BackendService, error)
 	Delete(port int64) error
 	GC(ports []ServicePort) error
 	Shutdown() error

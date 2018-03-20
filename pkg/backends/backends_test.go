@@ -19,6 +19,7 @@ package backends
 import (
 	"fmt"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -167,7 +168,7 @@ func TestHealthCheckMigration(t *testing.T) {
 	pool.Ensure([]ServicePort{p}, nil)
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(p.NodePort, false)
+	hc, _ := pool.healthChecker.Get(p.NodePort, p.isAlpha())
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -201,7 +202,7 @@ func TestBackendPoolUpdateHTTPS(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(p.NodePort, false)
+	hc, _ := pool.healthChecker.Get(p.NodePort, p.isAlpha())
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -221,7 +222,7 @@ func TestBackendPoolUpdateHTTPS(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ = pool.healthChecker.Get(p.NodePort, false)
+	hc, _ = pool.healthChecker.Get(p.NodePort, p.isAlpha())
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -246,7 +247,7 @@ func TestBackendPoolUpdateHTTP2(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(p.NodePort, false)
+	hc, _ := pool.healthChecker.Get(p.NodePort, p.isAlpha())
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -359,11 +360,11 @@ func TestBackendPoolSync(t *testing.T) {
 	if err := pool.GC(svcNodePorts); err != nil {
 		t.Errorf("Expected backend pool to GC, err: %v", err)
 	}
-	if _, err := pool.Get(90); err == nil {
+	if _, err := pool.Get(90, false); err == nil {
 		t.Fatalf("Did not expect to find port 90")
 	}
 	for _, port := range svcNodePorts {
-		if _, err := pool.Get(port.NodePort); err != nil {
+		if _, err := pool.Get(port.NodePort, false); err != nil {
 			t.Fatalf("Expected to find port %v", port)
 		}
 	}
@@ -375,7 +376,7 @@ func TestBackendPoolSync(t *testing.T) {
 	}
 
 	for _, port := range deletedPorts {
-		if _, err := pool.Get(port.NodePort); err == nil {
+		if _, err := pool.Get(port.NodePort, false); err == nil {
 			t.Fatalf("Pool contains %v after deletion", port)
 		}
 	}
@@ -532,7 +533,7 @@ func TestBackendCreateBalancingMode(t *testing.T) {
 	f := NewFakeBackendServices(noOpErrFunc, false)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
-	sp := ServicePort{NodePort: 8080}
+	sp := ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP}
 	modes := []BalancingMode{Rate, Utilization}
 
 	// block the creation of Backends with the given balancingMode
@@ -552,6 +553,10 @@ func TestBackendCreateBalancingMode(t *testing.T) {
 		be, err := f.GetGlobalBackendService(defaultNamer.Backend(sp.NodePort))
 		if err != nil {
 			t.Fatalf("%v", err)
+		}
+
+		if len(be.Backends) == 0 {
+			t.Fatalf("Expected Backends to be created")
 		}
 
 		for _, b := range be.Backends {
@@ -698,5 +703,125 @@ func TestComparableGroupPath(t *testing.T) {
 		if comparableGroupPath(tc.igPath) != tc.expected {
 			t.Errorf("expected %s, but got %s", tc.expected, comparableGroupPath(tc.igPath))
 		}
+	}
+}
+
+func TestEnsureBackendServiceProtocol(t *testing.T) {
+	f := NewFakeBackendServices(noOpErrFunc, true)
+	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
+	pool, _ := newTestJig(f, fakeIGs, false)
+
+	svcPorts := []ServicePort{
+		{NodePort: 80, Protocol: annotations.ProtocolHTTP, SvcPort: intstr.FromInt(1)},
+		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, SvcPort: intstr.FromInt(2)},
+		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, SvcPort: intstr.FromInt(3)},
+	}
+
+	for _, oldPort := range svcPorts {
+		for _, newPort := range svcPorts {
+			t.Run(
+				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
+				func(t *testing.T) {
+					pool.Ensure([]ServicePort{oldPort}, nil)
+					be, err := pool.Get(oldPort.NodePort, newPort.isAlpha())
+					if err != nil {
+						t.Fatalf("%v", err)
+					}
+					needsProtocolUpdate := be.ensureProtocol(newPort)
+
+					if reflect.DeepEqual(oldPort, newPort) {
+						if needsProtocolUpdate {
+							t.Fatalf("Expected ensureProtocol for the same port to return false, got %v", needsProtocolUpdate)
+						}
+
+					} else {
+						if !needsProtocolUpdate {
+							t.Fatalf("Expected ensureProtocol for updating to a new port to return true, got %v", needsProtocolUpdate)
+						}
+					}
+
+					if newPort.Protocol == annotations.ProtocolHTTP2 {
+						if be.Alpha.Protocol != string(annotations.ProtocolHTTP2) {
+							t.Fatalf("Expected HTTP2 protocol to be set on Alpha BackendService, got %v", be.Alpha.Protocol)
+						}
+					} else {
+						if be.Ga.Protocol != string(newPort.Protocol) {
+							t.Fatalf("Expected %v protocol to be set on GA BackendService, got %v", newPort.Protocol, be.Ga.Protocol)
+						}
+					}
+				},
+			)
+		}
+	}
+}
+
+func TestEnsureBackendServiceDescription(t *testing.T) {
+	f := NewFakeBackendServices(noOpErrFunc, true)
+	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
+	pool, _ := newTestJig(f, fakeIGs, false)
+
+	svcPorts := []ServicePort{
+		{NodePort: 80, Protocol: annotations.ProtocolHTTP, SvcPort: intstr.FromInt(1)},
+		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, SvcPort: intstr.FromInt(2)},
+		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, SvcPort: intstr.FromInt(3)},
+	}
+
+	for _, oldPort := range svcPorts {
+		for _, newPort := range svcPorts {
+			t.Run(
+				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
+				func(t *testing.T) {
+					pool.Ensure([]ServicePort{oldPort}, nil)
+					be, err := pool.Get(oldPort.NodePort, oldPort.isAlpha())
+					if err != nil {
+						t.Fatalf("%v", err)
+					}
+
+					needsDescriptionUpdate := be.ensureDescription(newPort.Description())
+					if reflect.DeepEqual(oldPort, newPort) {
+						if needsDescriptionUpdate {
+							t.Fatalf("Expected ensureDescription for the same port to return false, got %v", needsDescriptionUpdate)
+						}
+
+					} else {
+						if !needsDescriptionUpdate {
+							t.Fatalf("Expected ensureDescription for updating to a new port to return true, got %v", needsDescriptionUpdate)
+						}
+					}
+				},
+			)
+		}
+	}
+}
+
+func TestEnsureBackendServiceHealthCheckLink(t *testing.T) {
+	f := NewFakeBackendServices(noOpErrFunc, true)
+	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
+	pool, _ := newTestJig(f, fakeIGs, false)
+
+	p := ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, SvcPort: intstr.FromInt(1)}
+	pool.Ensure([]ServicePort{p}, nil)
+	be, err := pool.Get(p.NodePort, p.isAlpha())
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	hcLink := be.GetHealthCheckLink()
+	needsHcUpdate := be.ensureHealthCheckLink(hcLink)
+	if needsHcUpdate {
+		t.Fatalf("Expected ensureHealthCheckLink for the same link to return false, got %v", needsHcUpdate)
+	}
+
+	baseUrl := "https://www.googleapis.com/compute/%s/projects/project-id/zones/us-central1-b/healthChecks/%s"
+	alphaHcLink := fmt.Sprintf(baseUrl, "alpha", "hc-link")
+	needsHcUpdate = be.ensureHealthCheckLink(alphaHcLink)
+	if !needsHcUpdate {
+		t.Fatalf("Expected ensureHealthCheckLink for a new healthcheck link to return true, got %v", needsHcUpdate)
+	}
+
+	gaHcLink := fmt.Sprintf(baseUrl, "v1", "hc-link")
+	needsHcUpdate = be.ensureHealthCheckLink(gaHcLink)
+	if needsHcUpdate {
+		t.Fatalf("Expected ensureHealthCheckLink for healthcheck with the same name to return false, got %v", needsHcUpdate)
 	}
 }

@@ -94,13 +94,11 @@ type Backends struct {
 type BackendService struct {
 	Alpha *computealpha.BackendService
 	Ga    *compute.BackendService
-	// Flag to indicate we want to use the Alpha compute type
-	isAlpha bool
 }
 
 // GetProtocol gets the Protocol off the correct BackendService
 func (be *BackendService) GetProtocol() string {
-	if be.isAlpha {
+	if be.Alpha != nil {
 		return be.Alpha.Protocol
 	}
 
@@ -109,7 +107,7 @@ func (be *BackendService) GetProtocol() string {
 
 // GetDescription gets the Description off the correct BackendService
 func (be *BackendService) GetDescription() string {
-	if be.isAlpha {
+	if be.Alpha != nil {
 		return be.Alpha.Description
 	}
 
@@ -118,40 +116,34 @@ func (be *BackendService) GetDescription() string {
 
 // GetHealthCheckLink gets the Healthcheck link off the correct BackendService
 func (be *BackendService) GetHealthCheckLink() string {
-	if be.isAlpha && len(be.Alpha.HealthChecks) == 1 {
+	if be.Alpha != nil && len(be.Alpha.HealthChecks) == 1 {
 		return be.Alpha.HealthChecks[0]
-	} else if len(be.Ga.HealthChecks) == 1 {
+	}
+
+	if len(be.Ga.HealthChecks) == 1 {
 		return be.Ga.HealthChecks[0]
 	}
 
-	return ""
+	return "invalid-healthcheck-link"
 }
 
 // ensureProtocol updates the BackendService Protocol with the expected value
-func (be *BackendService) ensureProtocol(p ServicePort, hcLink string) (needsUpdate bool) {
+func (be *BackendService) ensureProtocol(p ServicePort) (needsUpdate bool) {
 	existingProtocol := be.GetProtocol()
 	if existingProtocol == string(p.Protocol) {
 		return false
 	}
 
-	// Using the HTTP2 Protocol requires that the BackendService is alpha.
-	// If the BackendService wasn't originally alpha, convert it to Alpha.
-	if !be.isAlpha && p.Protocol == annotations.ProtocolHTTP2 {
-		be.isAlpha = true
-		be.Alpha = toAlphaBackendService(be.Ga)
-	}
-
-	if be.isAlpha {
+	if be.Alpha != nil {
 		be.Alpha.Protocol = string(p.Protocol)
-	} else {
-		be.Ga.Protocol = string(p.Protocol)
 	}
 
+	be.Ga.Protocol = string(p.Protocol)
 	return true
 }
 
-// ensureHealthCheck updates the BackendService HealthCheck with the expected value
-func (be *BackendService) ensureHealthCheck(hcLink string) (needsUpdate bool) {
+// ensureHealthCheckLink updates the BackendService HealthCheck with the expected value
+func (be *BackendService) ensureHealthCheckLink(hcLink string) (needsUpdate bool) {
 	existingHCLink := be.GetHealthCheckLink()
 
 	// Compare health check name instead of health check link.
@@ -165,11 +157,11 @@ func (be *BackendService) ensureHealthCheck(hcLink string) (needsUpdate bool) {
 		return false
 	}
 
-	if be.isAlpha {
+	if be.Alpha != nil {
 		be.Alpha.HealthChecks = []string{hcLink}
-	} else {
-		be.Ga.HealthChecks = []string{hcLink}
 	}
+
+	be.Ga.HealthChecks = []string{hcLink}
 	return true
 }
 
@@ -179,42 +171,11 @@ func (be *BackendService) ensureDescription(description string) (needsUpdate boo
 	if existingDescription == description {
 		return false
 	}
-
-	if be.isAlpha {
+	if be.Alpha != nil {
 		be.Alpha.Description = description
-	} else {
-		be.Ga.Description = description
 	}
-
+	be.Ga.Description = description
 	return true
-}
-
-// ensureBackends generates backends with given instance groups with a specific mode
-func (be *BackendService) ensureBackends(bm BalancingMode, addIGs []*compute.InstanceGroup) {
-	if be.isAlpha {
-		originalIGBackends := []*computealpha.Backend{}
-		for _, backend := range be.Alpha.Backends {
-			// Backend service is not able to point to NEG and IG at the same time.
-			// Filter IG backends here.
-			if strings.Contains(backend.Group, "instanceGroups") {
-				originalIGBackends = append(originalIGBackends, backend)
-			}
-		}
-
-		newBackends := getAlphaBackendsForIGs(addIGs, bm)
-		be.Alpha.Backends = append(originalIGBackends, newBackends...)
-	} else {
-		originalIGBackends := []*compute.Backend{}
-		for _, backend := range be.Ga.Backends {
-			// Backend service is not able to point to NEG and IG at the same time.
-			// Filter IG backends here.
-			if strings.Contains(backend.Group, "instanceGroups") {
-				originalIGBackends = append(originalIGBackends, backend)
-			}
-		}
-		newBackends := getBackendsForIGs(addIGs, bm)
-		be.Ga.Backends = append(originalIGBackends, newBackends...)
-	}
 }
 
 // Backends is a BackendPool.
@@ -240,6 +201,12 @@ func (sp ServicePort) Description() string {
 		return ""
 	}
 	return fmt.Sprintf(`{"kubernetes.io/service-name":"%s","kubernetes.io/service-port":"%s"}`, sp.SvcName.String(), sp.SvcPort.String())
+}
+
+// isAlpha returns true if the ServicePort is using ProtocolHTTP2 - which means
+// we need to use the Alpha API.
+func (sp ServicePort) isAlpha() bool {
+	return sp.Protocol == annotations.ProtocolHTTP2
 }
 
 // NewBackendPool returns a new backend pool.
@@ -295,30 +262,27 @@ func (b *Backends) Init(pp ProbeProvider) {
 }
 
 // Get returns a single backend.
-func (b *Backends) Get(port int64) (*BackendService, error) {
+func (b *Backends) Get(port int64, isAlpha bool) (*BackendService, error) {
 	beGa, err := b.cloud.GetGlobalBackendService(b.namer.Backend(port))
 	if err != nil {
 		return nil, err
 	}
 
-	beAlpha := &computealpha.BackendService{}
-	isAlpha := false
-
+	var beAlpha *computealpha.BackendService
 	// If the Protocol is empty, this means this is a alpha BackendService and
 	// Protocol is expected to be HTTP2
 	// WARNING: If a user has created an alpha BackendService in the past but
 	// is no longer alpha whitelisted, this will always return an isForbidden err
 	// until the user can access the alpha APIs again.
-	if beGa.Protocol == "" {
+	if beGa.Protocol == "" || isAlpha {
 		beAlpha, err = b.cloud.GetAlphaGlobalBackendService(b.namer.Backend(port))
 		if err != nil {
 			return nil, err
 		}
-		isAlpha = true
 	}
 
 	b.snapshotter.Add(portKey(port), beGa)
-	return &BackendService{Ga: beGa, Alpha: beAlpha, isAlpha: isAlpha}, nil
+	return &BackendService{Ga: beGa, Alpha: beAlpha}, nil
 }
 
 func (b *Backends) ensureHealthCheck(sp ServicePort) (string, error) {
@@ -346,27 +310,36 @@ func (b *Backends) ensureHealthCheck(sp ServicePort) (string, error) {
 }
 
 func (b *Backends) create(namedPort *compute.NamedPort, hcLink string, sp ServicePort, name string) (*BackendService, error) {
-	bs := &compute.BackendService{
-		Name:         name,
-		Description:  sp.Description(),
-		Protocol:     string(sp.Protocol),
-		HealthChecks: []string{hcLink},
-		Port:         namedPort.Port,
-		PortName:     namedPort.Name,
-	}
-
-	if sp.Protocol != annotations.ProtocolHTTP2 {
-		if err := b.cloud.CreateGlobalBackendService(bs); err != nil {
-			return nil, err
+	isAlpha := sp.isAlpha()
+	if isAlpha {
+		bsAlpha := &computealpha.BackendService{
+			Name:         name,
+			Description:  sp.Description(),
+			Protocol:     string(sp.Protocol),
+			HealthChecks: []string{hcLink},
+			Port:         namedPort.Port,
+			PortName:     namedPort.Name,
 		}
-	} else {
-		bsAlpha := toAlphaBackendService(bs)
+
 		if err := b.cloud.CreateAlphaGlobalBackendService(bsAlpha); err != nil {
 			return nil, err
 		}
+	} else {
+		bs := &compute.BackendService{
+			Name:         name,
+			Description:  sp.Description(),
+			Protocol:     string(sp.Protocol),
+			HealthChecks: []string{hcLink},
+			Port:         namedPort.Port,
+			PortName:     namedPort.Name,
+		}
+
+		if err := b.cloud.CreateGlobalBackendService(bs); err != nil {
+			return nil, err
+		}
 	}
 
-	return b.Get(namedPort.Port)
+	return b.Get(namedPort.Port, isAlpha)
 }
 
 // Ensure will update or create Backends for the given ports.
@@ -415,7 +388,7 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 
 	// Verify existance of a backend service for the proper port, but do not specify any backends/igs
 	beName := b.namer.Backend(p.NodePort)
-	be, _ = b.Get(p.NodePort)
+	be, _ = b.Get(p.NodePort, p.isAlpha())
 	if be == nil {
 		namedPort := &compute.NamedPort{
 			Name: b.namer.NamedPort(p.NodePort),
@@ -428,8 +401,8 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 		}
 	}
 
-	needUpdate := be.ensureProtocol(p, hcLink)
-	needUpdate = needUpdate || be.ensureHealthCheck(hcLink)
+	needUpdate := be.ensureProtocol(p)
+	needUpdate = needUpdate || be.ensureHealthCheckLink(hcLink)
 	needUpdate = needUpdate || be.ensureDescription(p.Description())
 
 	if needUpdate {
@@ -464,10 +437,43 @@ func (b *Backends) edgeHop(be *BackendService, igs []*compute.InstanceGroup) err
 	if len(addIGs) == 0 {
 		return nil
 	}
+	originalAlphaIGBackends := []*computealpha.Backend{}
+	originalGaIGBackends := []*compute.Backend{}
+	if be.Alpha != nil {
+		for _, backend := range be.Alpha.Backends {
+			// Backend service is not able to point to NEG and IG at the same time.
+			// Filter IG backends here.
+			if strings.Contains(backend.Group, "instanceGroups") {
+				originalAlphaIGBackends = append(originalAlphaIGBackends, backend)
+			}
+		}
+	} else {
+		for _, backend := range be.Ga.Backends {
+			// Backend service is not able to point to NEG and IG at the same time.
+			// Filter IG backends here.
+			if strings.Contains(backend.Group, "instanceGroups") {
+				originalGaIGBackends = append(originalGaIGBackends, backend)
+			}
+		}
+	}
 
+	// We first try to create the backend with balancingMode=RATE.  If this	+	return addIGs
+	// fails, it's mostly likely because there are existing backends with
+	// balancingMode=UTILIZATION. This failure mode throws a googleapi error
+	// which wraps a HTTP 400 status code. We handle it in the loop below
+	// and come around to retry with the right balancing mode. The goal is to
+	// switch everyone to using RATE.
 	var errs []string
 	for _, bm := range []BalancingMode{Rate, Utilization} {
-		be.ensureBackends(bm, addIGs)
+		// Generate backends with given instance groups with a specific mode
+		if be.Alpha != nil {
+			newBackends := getAlphaBackendsForIGs(addIGs, bm)
+			be.Alpha.Backends = append(originalAlphaIGBackends, newBackends...)
+		} else {
+			newBackends := getBackendsForIGs(addIGs, bm)
+			be.Ga.Backends = append(originalGaIGBackends, newBackends...)
+		}
+
 		if err := b.update(be); err != nil {
 			if utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
 				glog.V(2).Infof("Updating backend service backends with balancing mode %v failed, will try another mode. err:%v", bm, err)
@@ -481,17 +487,15 @@ func (b *Backends) edgeHop(be *BackendService, igs []*compute.InstanceGroup) err
 			glog.V(2).Infof("Error updating backend service backends with balancing mode %v:%v", bm, err)
 			return err
 		}
-
 		// Successfully updated Backends, no need to Update the BackendService again
 		return nil
 	}
-
 	return fmt.Errorf("received errors when updating backend service: %v", strings.Join(errs, "\n"))
 }
 
 // update calls either the GA or Alpha update path depending on Protocol
 func (b *Backends) update(be *BackendService) error {
-	if be.isAlpha {
+	if be.Alpha != nil {
 		glog.V(2).Infof("Updating %v backend service %v", "alpha", be.Alpha.Name)
 		return b.cloud.UpdateAlphaGlobalBackendService(be.Alpha)
 	}
