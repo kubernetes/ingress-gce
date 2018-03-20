@@ -38,22 +38,23 @@ const (
 var (
 	// F are global flags for the controller.
 	F = struct {
-		APIServerHost   string
-		ClusterName     string
-		ConfigFilePath  string
-		DefaultSvc      string
-		DeleteAllOnQuit bool
-		GCERateLimit    RateLimitSpecs
-		HealthCheckPath string
-		HealthzPort     int
-		InCluster       bool
-		IngressClass    string
-		KubeConfigFile  string
-		ResyncPeriod    time.Duration
-		Verbose         bool
-		Version         bool
-		WatchNamespace  string
-		NodePortRanges  PortRanges
+		APIServerHost          string
+		ClusterName            string
+		ConfigFilePath         string
+		DefaultSvc             string
+		DeleteAllOnQuit        bool
+		GCERateLimit           RateLimitSpecs
+		HealthCheckPath        string
+		HealthzPort            int
+		InCluster              bool
+		IngressClass           string
+		KubeConfigFile         string
+		ResyncPeriod           time.Duration
+		Verbose                bool
+		Version                bool
+		WatchNamespace         string
+		NodePortRanges         PortRanges
+		EnableServiceExtension bool
 	}{}
 )
 
@@ -116,6 +117,8 @@ the pod secrets for creating a Kubernetes client.`)
 		`If set, overrides what ingress classes are managed by the controller.`)
 	flag.Var(&F.NodePortRanges, "node-port-ranges", `Node port/port-ranges whitelisted for the
 L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-500`)
+	flag.BoolVar(&F.EnableServiceExtension, "enable-service-extension", false,
+		`Optional, whether or not to enable ServiceExtension.`)
 
 	// Deprecated F.
 	flag.BoolVar(&F.Verbose, "verbose", false,
