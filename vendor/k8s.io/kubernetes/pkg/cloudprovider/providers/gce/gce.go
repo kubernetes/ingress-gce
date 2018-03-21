@@ -88,8 +88,8 @@ const (
 	// Defaults to 5 * 2 = 10 seconds before the LB will steer traffic away
 	gceHcUnhealthyThreshold = int64(5)
 
-	gceComputeAPIEndpoint      = "https://www.googleapis.com/compute/v1/"
-	gceComputeAPIEndpointAlpha = "https://www.googleapis.com/compute/alpha/"
+	gceComputeAPIEndpoint     = "https://www.googleapis.com/compute/v1/"
+	gceComputeAPIEndpointBeta = "https://www.googleapis.com/compute/beta/"
 )
 
 // gceObject is an abstraction of all GCE API object in go client
@@ -107,6 +107,7 @@ type GCECloud struct {
 	serviceBeta      *computebeta.Service
 	serviceAlpha     *computealpha.Service
 	containerService *container.Service
+	tpuService       *tpuService
 	client           clientset.Interface
 	clientBuilder    controller.ControllerClientBuilder
 	eventBroadcaster record.EventBroadcaster
@@ -151,9 +152,6 @@ type GCECloud struct {
 
 	// New code generated interface to the GCE compute library.
 	c cloud.Cloud
-
-	// Keep a reference of this around so we can inject a new cloud.RateLimiter implementation.
-	s *cloud.Service
 }
 
 // TODO: replace gcfg with json
@@ -433,6 +431,11 @@ func CreateGCECloud(config *CloudConfig) (*GCECloud, error) {
 	}
 	containerService.UserAgent = userAgent
 
+	tpuService, err := newTPUService(client)
+	if err != nil {
+		return nil, err
+	}
+
 	// ProjectID and.NetworkProjectID may be project number or name.
 	projID, netProjID := tryConvertToProjectNames(config.ProjectID, config.NetworkProjectID, service)
 	onXPN := projID != netProjID
@@ -499,6 +502,7 @@ func CreateGCECloud(config *CloudConfig) (*GCECloud, error) {
 		serviceAlpha:             serviceAlpha,
 		serviceBeta:              serviceBeta,
 		containerService:         containerService,
+		tpuService:               tpuService,
 		projectID:                projID,
 		networkProjectID:         netProjID,
 		onXPN:                    onXPN,
@@ -518,25 +522,15 @@ func CreateGCECloud(config *CloudConfig) (*GCECloud, error) {
 	}
 
 	gce.manager = &gceServiceManager{gce}
-	gce.s = &cloud.Service{
+	gce.c = cloud.NewGCE(&cloud.Service{
 		GA:            service,
 		Alpha:         serviceAlpha,
 		Beta:          serviceBeta,
 		ProjectRouter: &gceProjectRouter{gce},
 		RateLimiter:   &gceRateLimiter{gce},
-	}
-	gce.c = cloud.NewGCE(gce.s)
+	})
 
 	return gce, nil
-}
-
-// SetRateLimiter adds a custom cloud.RateLimiter implementation.
-// WARNING: Calling this could have unexpected behavior if you have in-flight
-// requests. It is best to use this immediately after creating a GCECloud.
-func (g *GCECloud) SetRateLimiter(rl cloud.RateLimiter) {
-	if rl != nil {
-		g.s.RateLimiter = rl
-	}
 }
 
 // determineSubnetURL queries for all subnetworks in a region for a given network and returns
@@ -856,7 +850,13 @@ func newOauthClient(tokenSource oauth2.TokenSource) (*http.Client, error) {
 		glog.Infof("Using existing Token Source %#v", tokenSource)
 	}
 
-	if err := wait.PollImmediate(5*time.Second, 30*time.Second, func() (bool, error) {
+	backoff := wait.Backoff{
+		// These values will add up to about a minute. See #56293 for background.
+		Duration: time.Second,
+		Factor:   1.4,
+		Steps:    10,
+	}
+	if err := wait.ExponentialBackoff(backoff, func() (bool, error) {
 		if _, err := tokenSource.Token(); err != nil {
 			glog.Errorf("error fetching initial token: %v", err)
 			return false, nil
@@ -878,10 +878,10 @@ func (manager *gceServiceManager) getProjectsAPIEndpoint() string {
 	return projectsApiEndpoint
 }
 
-func (manager *gceServiceManager) getProjectsAPIEndpointAlpha() string {
-	projectsApiEndpoint := gceComputeAPIEndpointAlpha + "projects/"
+func (manager *gceServiceManager) getProjectsAPIEndpointBeta() string {
+	projectsApiEndpoint := gceComputeAPIEndpointBeta + "projects/"
 	if manager.gce.service != nil {
-		projectsApiEndpoint = manager.gce.serviceAlpha.BasePath
+		projectsApiEndpoint = manager.gce.serviceBeta.BasePath
 	}
 
 	return projectsApiEndpoint
