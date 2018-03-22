@@ -38,6 +38,7 @@ type LoadBalancers interface {
 	CreateUrlMap(urlMap *compute.UrlMap) error
 	UpdateUrlMap(urlMap *compute.UrlMap) error
 	DeleteUrlMap(name string) error
+	ListUrlMaps() ([]*compute.UrlMap, error)
 
 	// TargetProxies
 	GetTargetHttpProxy(name string) (*compute.TargetHttpProxy, error)

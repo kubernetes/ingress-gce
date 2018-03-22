@@ -222,6 +222,12 @@ func (f *FakeLoadBalancers) DeleteUrlMap(name string) error {
 	return nil
 }
 
+// ListUrlMaps fakes getting url maps from the cloud.
+func (f *FakeLoadBalancers) ListUrlMaps() ([]*compute.UrlMap, error) {
+	f.calls = append(f.calls, "ListUrlMaps")
+	return f.Um, nil
+}
+
 // TargetProxies fakes
 
 // GetTargetHttpProxy fakes getting target http proxies from the cloud.
