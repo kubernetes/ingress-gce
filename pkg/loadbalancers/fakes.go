@@ -192,7 +192,7 @@ func (f *FakeLoadBalancers) GetUrlMap(name string) (*compute.UrlMap, error) {
 func (f *FakeLoadBalancers) CreateUrlMap(urlMap *compute.UrlMap) error {
 	glog.V(4).Infof("CreateUrlMap %+v", urlMap)
 	f.calls = append(f.calls, "CreateUrlMap")
-	urlMap.SelfLink = f.UMName()
+	urlMap.SelfLink = urlMap.Name
 	f.Um = append(f.Um, urlMap)
 	return nil
 }
