@@ -94,7 +94,7 @@ func (c *ClusterManager) shutdown() error {
 }
 
 // Checkpoint performs a checkpoint with the cloud.
-// - lbs are the single cluster L7 loadbalancers we wish to exist. If they already
+// - lb is the single cluster L7 loadbalancers we wish to exist. If they already
 //   exist, they should not have any broken links between say, a UrlMap and
 //   TargetHttpProxy.
 // - nodeNames are the names of nodes we wish to add to all loadbalancer
@@ -105,8 +105,8 @@ func (c *ClusterManager) shutdown() error {
 // Returns the list of all instance groups corresponding to the given loadbalancers.
 // If in performing the checkpoint the cluster manager runs out of quota, a
 // googleapi 403 is returned.
-func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeNames []string, backendServicePorts []backends.ServicePort, namedPorts []backends.ServicePort, endpointPorts []string) ([]*compute.InstanceGroup, error) {
-	glog.V(4).Infof("Checkpoint(%v lbs, %v nodeNames, %v backendServicePorts, %v namedPorts, %v endpointPorts)", len(lbs), len(nodeNames), len(backendServicePorts), len(namedPorts), len(endpointPorts))
+func (c *ClusterManager) Checkpoint(lb *loadbalancers.L7RuntimeInfo, nodeNames []string, backendServicePorts []backends.ServicePort, namedPorts []backends.ServicePort, endpointPorts []string) ([]*compute.InstanceGroup, error) {
+	glog.V(4).Infof("Checkpoint(%v lb, %v nodeNames, %v backendServicePorts, %v namedPorts, %v endpointPorts)", lb, len(nodeNames), len(backendServicePorts), len(namedPorts), len(endpointPorts))
 
 	if len(namedPorts) != 0 {
 		// Add the default backend node port to the list of named ports for instance groups.
@@ -128,7 +128,7 @@ func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeName
 	if err := c.instancePool.Sync(nodeNames); err != nil {
 		return igs, err
 	}
-	if err := c.l7Pool.Sync(lbs); err != nil {
+	if err := c.l7Pool.Sync([]*loadbalancers.L7RuntimeInfo{lb}); err != nil {
 		return igs, err
 	}
 
