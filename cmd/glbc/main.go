@@ -28,13 +28,13 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
+	"k8s.io/ingress-gce/cmd/glbc/app"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
-	neg "k8s.io/ingress-gce/pkg/neg"
-
-	"k8s.io/ingress-gce/cmd/glbc/app"
 	"k8s.io/ingress-gce/pkg/flags"
+	neg "k8s.io/ingress-gce/pkg/neg"
 	"k8s.io/ingress-gce/pkg/serviceextension"
+	serviceextensionclient "k8s.io/ingress-gce/pkg/serviceextension/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
@@ -71,6 +71,7 @@ func main() {
 		glog.Fatalf("Failed to create kubernetes client: %v", err)
 	}
 
+	var serviceExtensionClient serviceextensionclient.Interface
 	if flags.F.EnableServiceExtension {
 		crdClient, err := crdclient.NewForConfig(kubeConfig)
 		if err != nil {
@@ -79,6 +80,11 @@ func main() {
 
 		if _, err := serviceextension.EnsureCRD(crdClient); err != nil {
 			glog.Fatalf("Failed to ensure ServiceExtension CRD: %v", err)
+		}
+
+		serviceExtensionClient, err = serviceextensionclient.NewForConfig(kubeConfig)
+		if err != nil {
+			glog.Fatalf("Failed to create ServiceExtension client: %v", err)
 		}
 	}
 
@@ -96,7 +102,7 @@ func main() {
 
 	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
 	stopCh := make(chan struct{})
-	ctx := context.NewControllerContext(kubeClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG)
+	ctx := context.NewControllerContext(kubeClient, serviceExtensionClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG)
 	lbc, err := controller.NewLoadBalancerController(kubeClient, stopCh, ctx, clusterManager, enableNEG)
 	if err != nil {
 		glog.Fatalf("Error creating load balancer controller: %v", err)

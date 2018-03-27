@@ -29,24 +29,28 @@ import (
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+
+	serviceextensionclient "k8s.io/ingress-gce/pkg/serviceextension/client/clientset/versioned"
+	serviceextensionv1alpha1 "k8s.io/ingress-gce/pkg/serviceextension/client/informers/externalversions/serviceextension/v1alpha1"
 )
 
 // ControllerContext holds
 type ControllerContext struct {
 	kubeClient kubernetes.Interface
 
-	IngressInformer  cache.SharedIndexInformer
-	ServiceInformer  cache.SharedIndexInformer
-	PodInformer      cache.SharedIndexInformer
-	NodeInformer     cache.SharedIndexInformer
-	EndpointInformer cache.SharedIndexInformer
+	IngressInformer          cache.SharedIndexInformer
+	ServiceInformer          cache.SharedIndexInformer
+	PodInformer              cache.SharedIndexInformer
+	NodeInformer             cache.SharedIndexInformer
+	EndpointInformer         cache.SharedIndexInformer
+	ServiceExtensionInformer cache.SharedIndexInformer
 
 	// Map of namespace => record.EventRecorder.
 	recorders map[string]record.EventRecorder
 }
 
 // NewControllerContext returns a new shared set of informers.
-func NewControllerContext(kubeClient kubernetes.Interface, namespace string, resyncPeriod time.Duration, enableEndpointsInformer bool) *ControllerContext {
+func NewControllerContext(kubeClient kubernetes.Interface, serviceExtensionClient serviceextensionclient.Interface, namespace string, resyncPeriod time.Duration, enableEndpointsInformer bool) *ControllerContext {
 	newIndexer := func() cache.Indexers {
 		return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
 	}
@@ -60,6 +64,9 @@ func NewControllerContext(kubeClient kubernetes.Interface, namespace string, res
 	}
 	if enableEndpointsInformer {
 		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, namespace, resyncPeriod, newIndexer())
+	}
+	if serviceExtensionClient != nil {
+		context.ServiceExtensionInformer = serviceextensionv1alpha1.NewServiceExtensionInformer(serviceExtensionClient, namespace, resyncPeriod, newIndexer())
 	}
 
 	return context
@@ -75,6 +82,9 @@ func (ctx *ControllerContext) HasSynced() bool {
 	}
 	if ctx.EndpointInformer != nil {
 		funcs = append(funcs, ctx.EndpointInformer.HasSynced)
+	}
+	if ctx.ServiceExtensionInformer != nil {
+		funcs = append(funcs, ctx.ServiceExtensionInformer.HasSynced)
 	}
 	for _, f := range funcs {
 		if !f() {
@@ -108,5 +118,8 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	go ctx.NodeInformer.Run(stopCh)
 	if ctx.EndpointInformer != nil {
 		go ctx.EndpointInformer.Run(stopCh)
+	}
+	if ctx.ServiceExtensionInformer != nil {
+		go ctx.ServiceExtensionInformer.Run(stopCh)
 	}
 }

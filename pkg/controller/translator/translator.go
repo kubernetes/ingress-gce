@@ -38,9 +38,11 @@ import (
 
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
+	serviceextensionv1alpha1 "k8s.io/ingress-gce/pkg/apis/serviceextension/v1alpha1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/controller/errors"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/serviceextension"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -55,28 +57,36 @@ type recorderSource interface {
 }
 
 // New returns a new ControllerContext.
-func New(recorders recorderSource, bi BackendInfo, svcLister cache.Indexer, nodeLister cache.Indexer, podLister cache.Indexer, endpointLister cache.Indexer, negEnabled bool) *GCE {
-	return &GCE{
-		recorders,
-		bi,
-		svcLister,
-		nodeLister,
-		podLister,
-		endpointLister,
-		negEnabled,
+func New(recorders recorderSource, bi BackendInfo, svcLister, nodeLister, podLister, endpointLister, svcExtensionLister cache.Indexer, negEnabled bool) *GCE {
+	gce := &GCE{
+		recorders:          recorders,
+		bi:                 bi,
+		svcLister:          svcLister,
+		nodeLister:         nodeLister,
+		podLister:          podLister,
+		endpointLister:     endpointLister,
+		svcExtensionLister: svcExtensionLister,
+		negEnabled:         negEnabled,
 	}
+	if svcExtensionLister != nil {
+		gce.svcExtensionEnabled = true
+	}
+	return gce
 }
 
 // GCE helps with kubernetes -> gce api conversion.
 type GCE struct {
 	recorders recorderSource
 
-	bi             BackendInfo
-	svcLister      cache.Indexer
-	nodeLister     cache.Indexer
-	podLister      cache.Indexer
-	endpointLister cache.Indexer
-	negEnabled     bool
+	bi                 BackendInfo
+	svcLister          cache.Indexer
+	nodeLister         cache.Indexer
+	podLister          cache.Indexer
+	endpointLister     cache.Indexer
+	svcExtensionLister cache.Indexer
+
+	negEnabled          bool
+	svcExtensionEnabled bool
 }
 
 // ToURLMap converts an ingress to a map of subdomain: url-regex: gce backend.
@@ -146,20 +156,20 @@ func (t *GCE) toGCEBackend(be *extensions.IngressBackend, ns string) (*compute.B
 	if be == nil {
 		return nil, nil
 	}
-	port, err := t.getServiceNodePort(*be, ns)
+	_, port, err := t.getServiceNodePort(*be, ns)
 	if err != nil {
 		return nil, err
 	}
-	backend, err := t.bi.BackendServiceForPort(port.NodePort)
+	backend, err := t.bi.BackendServiceForPort(int64(port.NodePort))
 	if err != nil {
 		return nil, fmt.Errorf("no GCE backend exists for port %v, kube backend %+v", port, be)
 	}
 	return backend, nil
 }
 
-// getServiceNodePort looks in the svc store for a matching service:port,
-// and returns the nodeport.
-func (t *GCE) getServiceNodePort(be extensions.IngressBackend, namespace string) (backends.ServicePort, error) {
+// getServiceNodePort looks in the service store for a matching service:port,
+// and returns the service and nodeport.
+func (t *GCE) getServiceNodePort(be extensions.IngressBackend, namespace string) (*api_v1.Service, *api_v1.ServicePort, error) {
 	obj, exists, err := t.svcLister.Get(
 		&api_v1.Service{
 			ObjectMeta: meta_v1.ObjectMeta{
@@ -168,16 +178,12 @@ func (t *GCE) getServiceNodePort(be extensions.IngressBackend, namespace string)
 			},
 		})
 	if !exists {
-		return backends.ServicePort{}, errors.ErrNodePortNotFound{be, fmt.Errorf("service %v/%v not found in store", namespace, be.ServiceName)}
+		return nil, nil, errors.ErrNodePortNotFound{be, fmt.Errorf("service %v/%v not found in store", namespace, be.ServiceName)}
 	}
 	if err != nil {
-		return backends.ServicePort{}, errors.ErrNodePortNotFound{be, err}
+		return nil, nil, errors.ErrNodePortNotFound{be, err}
 	}
 	svc := obj.(*api_v1.Service)
-	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
-	if err != nil {
-		return backends.ServicePort{}, errors.ErrSvcAppProtosParsing{svc, err}
-	}
 
 	var port *api_v1.ServicePort
 PortLoop:
@@ -198,7 +204,32 @@ PortLoop:
 	}
 
 	if port == nil {
-		return backends.ServicePort{}, errors.ErrNodePortNotFound{be, fmt.Errorf("could not find matching nodeport from service")}
+		return nil, nil, errors.ErrNodePortNotFound{be, fmt.Errorf("could not find matching nodeport from service")}
+	}
+	return svc, port, nil
+}
+
+// getBackendsServicePort returns a backends.ServicePort constructed from
+// service:port and/or serviceExtension.
+func (t *GCE) getBackendsServicePort(be extensions.IngressBackend, namespace string) (backends.ServicePort, error) {
+	svc, port, err := t.getServiceNodePort(be, namespace)
+	if err != nil {
+		return backends.ServicePort{}, err
+	}
+
+	var svcExt *serviceextensionv1alpha1.ServiceExtension
+	if t.svcExtensionEnabled {
+		svcExt, err = serviceextension.GetServiceExtensionForService(t.svcExtensionLister, svc)
+		if err != nil {
+			err = errors.ErrServiceExtension{svc, err}
+			t.recorders.Recorder(svc.Namespace).Eventf(svc, api_v1.EventTypeWarning, "Service", err.Error())
+			return backends.ServicePort{}, err
+		}
+	}
+
+	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
+	if err != nil {
+		return backends.ServicePort{}, errors.ErrSvcAppProtosParsing{svc, err}
 	}
 
 	proto := annotations.ProtocolHTTP
@@ -213,6 +244,7 @@ PortLoop:
 		SvcPort:       be.ServicePort,
 		SvcTargetPort: port.TargetPort.String(),
 		NEGEnabled:    t.negEnabled && annotations.FromService(svc).NEGEnabled(),
+		SvcExtension:  svcExt,
 	}
 	return p, nil
 }
@@ -231,7 +263,7 @@ func (t *GCE) ingressToNodePorts(ing *extensions.Ingress) []backends.ServicePort
 	var knownPorts []backends.ServicePort
 	defaultBackend := ing.Spec.Backend
 	if defaultBackend != nil {
-		port, err := t.getServiceNodePort(*defaultBackend, ing.Namespace)
+		port, err := t.getBackendsServicePort(*defaultBackend, ing.Namespace)
 		if err != nil {
 			glog.Infof("%v", err)
 		} else {
@@ -244,7 +276,7 @@ func (t *GCE) ingressToNodePorts(ing *extensions.Ingress) []backends.ServicePort
 			continue
 		}
 		for _, path := range rule.HTTP.Paths {
-			port, err := t.getServiceNodePort(path.Backend, ing.Namespace)
+			port, err := t.getBackendsServicePort(path.Backend, ing.Namespace)
 			if err != nil {
 				glog.Infof("%v", err)
 				continue

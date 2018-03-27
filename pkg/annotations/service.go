@@ -43,6 +43,10 @@ const (
 	ProtocolHTTP AppProtocol = "HTTP"
 	// ProtocolHTTPS protocol for a service
 	ProtocolHTTPS AppProtocol = "HTTPS"
+
+	// ServiceExtensionReferenceKey is the annotation key used for referencing
+	// a ServiceExtension from Service.
+	ServiceExtensionReferenceKey = "alpha.cloud.google.com/service-extension"
 )
 
 // AppProtocol describes the service protocol.
@@ -85,4 +89,13 @@ func (svc Service) ApplicationProtocols() (map[string]AppProtocol, error) {
 func (svc Service) NEGEnabled() bool {
 	v, ok := svc.v[NetworkEndpointGroupAlphaAnnotation]
 	return ok && v == "true"
+}
+
+// ServiceExtensionName returns the name of ServiceExtension if exsits.
+func (svc Service) ServiceExtensionName() string {
+	svcExtName, ok := svc.v[ServiceExtensionReferenceKey]
+	if !ok {
+		return ""
+	}
+	return svcExtName
 }

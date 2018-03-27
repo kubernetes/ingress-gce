@@ -23,17 +23,17 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/utils"
-
-	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 func newTestController(kubeClient kubernetes.Interface) *Controller {
-	context := context.NewControllerContext(kubeClient, apiv1.NamespaceAll, 1*time.Second, true)
+	context := context.NewControllerContext(kubeClient, nil, apiv1.NamespaceAll, 1*time.Second, true)
 	controller, _ := NewController(kubeClient,
 		NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		context,
