@@ -299,12 +299,11 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Ingress", err.Error())
 		return err
 	}
-	lbs := []*loadbalancers.L7RuntimeInfo{lb}
 
 	// Get all service ports for the ingress being synced.
 	ingSvcPorts := lbc.Translator.ToNodePorts(singleIngressList)
 
-	igs, err := lbc.CloudClusterManager.Checkpoint(lbs, nodeNames, ingSvcPorts, allNodePorts, lbc.Translator.GatherEndpointPorts(gceNodePorts))
+	igs, err := lbc.CloudClusterManager.Checkpoint(lb, nodeNames, ingSvcPorts, allNodePorts, lbc.Translator.GatherEndpointPorts(gceNodePorts))
 	if err != nil {
 		const eventMsg = "GCE"
 		if fwErr, ok := err.(*firewalls.FirewallSyncError); ok {
