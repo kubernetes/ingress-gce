@@ -159,6 +159,10 @@ func (f *FakeLoadBalancers) DeleteGlobalForwardingRule(name string) error {
 			fw = append(fw, f.Fw[i])
 		}
 	}
+	if len(f.Fw) == len(fw) {
+		// Nothing was deleted.
+		return utils.FakeGoogleAPINotFoundErr()
+	}
 	f.Fw = fw
 	return nil
 }
@@ -218,6 +222,10 @@ func (f *FakeLoadBalancers) DeleteUrlMap(name string) error {
 			um = append(um, f.Um[i])
 		}
 	}
+	if len(f.Um) == len(um) {
+		// Nothing was deleted.
+		return utils.FakeGoogleAPINotFoundErr()
+	}
 	f.Um = um
 	return nil
 }
@@ -257,6 +265,10 @@ func (f *FakeLoadBalancers) DeleteTargetHttpProxy(name string) error {
 		if f.Tp[i].Name != name {
 			tp = append(tp, f.Tp[i])
 		}
+	}
+	if len(f.Tp) == len(tp) {
+		// Nothing was deleted.
+		return utils.FakeGoogleAPINotFoundErr()
 	}
 	f.Tp = tp
 	return nil
@@ -302,6 +314,10 @@ func (f *FakeLoadBalancers) DeleteTargetHttpsProxy(name string) error {
 		if f.Tps[i].Name != name {
 			tp = append(tp, f.Tps[i])
 		}
+	}
+	if len(f.Tps) == len(tp) {
+		// Nothing was deleted.
+		return utils.FakeGoogleAPINotFoundErr()
 	}
 	f.Tps = tp
 	return nil
@@ -425,6 +441,10 @@ func (f *FakeLoadBalancers) DeleteGlobalAddress(name string) error {
 			ip = append(ip, f.IP[i])
 		}
 	}
+	if len(f.IP) == len(ip) {
+		// Nothing was deleted.
+		return utils.FakeGoogleAPINotFoundErr()
+	}
 	f.IP = ip
 	return nil
 }
@@ -458,6 +478,10 @@ func (f *FakeLoadBalancers) DeleteSslCertificate(name string) error {
 		if f.Certs[i].Name != name {
 			certs = append(certs, f.Certs[i])
 		}
+	}
+	if len(f.Certs) == len(certs) {
+		// Nothing was deleted.
+		return utils.FakeGoogleAPINotFoundErr()
 	}
 	f.Certs = certs
 	return nil
