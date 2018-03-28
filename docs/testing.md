@@ -42,5 +42,5 @@ are run through CI, then you will most likely want to test your changes end-to-e
 **Disclaimer:**
   
 Note that the cluster you create should have permission to pull images from the registry
-you are using to push the image to. You can either make your registry publically readable or give explicit permission
+you are using to push the image to. You can either make your registry publicly readable or give explicit permission
 to your cluster's project service account. 
