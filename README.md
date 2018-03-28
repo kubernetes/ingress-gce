@@ -36,9 +36,9 @@ An Ingress Controller is a daemon, deployed as a Kubernetes Pod, that watches th
 
 To achieve L7 loadbalancing through Kubernetes, we employ a resource called `Ingress`. The Ingress is consumed by this loadbalancer controller, which creates the following GCE resource graph:
 
-[Global Forwarding Rule](https://cloud.google.com/compute/docs/load-balancing/http/global-forwarding-rules) -> [TargetHttpProxy](https://cloud.google.com/compute/docs/load-balancing/http/target-proxies) -> [Url Map](https://cloud.google.com/compute/docs/load-balancing/http/url-map) -> [Backend Service](https://cloud.google.com/compute/docs/load-balancing/http/backend-service) -> [Instance Group](https://cloud.google.com/compute/docs/instance-groups/)
+[Global Forwarding Rule](https://cloud.google.com/compute/docs/load-balancing/http/global-forwarding-rules) -> [TargetHttpProxy](https://cloud.google.com/compute/docs/load-balancing/http/target-proxies) -> [URL Map](https://cloud.google.com/compute/docs/load-balancing/http/url-map) -> [Backend Service](https://cloud.google.com/compute/docs/load-balancing/http/backend-service) -> [Instance Group](https://cloud.google.com/compute/docs/instance-groups/)
 
-The controller (glbc) manages the lifecycle of each component in the graph. It uses the Kubernetes resources as a spec for the desired state, and the GCE cloud resources as the observed state, and drives the observed to the desired. If an edge is disconnected, it fixes it. Each Ingress translates to a new GCE L7, and the rules on the Ingress become paths in the GCE Url Map. This allows you to route traffic to various backend Kubernetes Services through a single public IP, which is in contrast to `Type=LoadBalancer`, which allocates a public IP *per* Kubernetes Service. For this to work, the Kubernetes Service *must* have Type=NodePort.
+The controller (GLBC) manages the lifecycle of each component in the graph. It uses the Kubernetes resources as a spec for the desired state, and the GCE cloud resources as the observed state, and drives the observed to the desired. If an edge is disconnected, it fixes it. Each Ingress translates to a new GCE L7, and the rules on the Ingress become paths in the GCE URL Map. This allows you to route traffic to various backend Kubernetes Services through a single public IP, which is in contrast to `Type=LoadBalancer`, which allocates a public IP *per* Kubernetes Service. For this to work, the Kubernetes Service *must* have Type=NodePort.
 
 ### The Ingress
 
@@ -59,26 +59,26 @@ An Ingress in Kubernetes is a REST object, similar to a Service. A minimal Ingre
 12.          servicePort: 80
 ```
 
-POSTing this to the Kubernetes API server would result in glbc creating a GCE L7 that routes all traffic sent to `http://ip-of-loadbalancer/hostless` to :80 of the service named `test`. If the service doesn't exist yet, or doesn't have a nodePort, glbc will allocate an IP and wait till it does. Once the Service shows up, it will create the required path rules to route traffic to it.
+`POST` calls to the Kubernetes API server would cause GLBC to create a GCE L7 that routes all traffic sent to `http://ip-of-loadbalancer/hostless` to :80 of the service named `test`. If the service doesn't exist yet or isn't type NodePort, then GLBC will allocate an IP and wait until it does. Once the Service shows up, it will create the required path rules to route traffic.
 
-__Lines 1-4__: Resource metadata used to tag GCE resources. For example, if you go to the console you would see a url map called: k8-fw-default-hostlessendpoint, where default is the namespace and hostlessendpoint is the name of the resource. The Kubernetes API server ensures that namespace/name is unique so there will never be any collisions.
+__Lines 1-4__: Resource metadata used to tag GCE resources. For example, if you go to the console you would see a URL Map called: `k8-fw-default-hostlessendpoint`, where default is the namespace and `hostlessendpoint` is the name of the resource. The Kubernetes API server ensures that namespace/name is unique so there will never be any collisions.
 
-__Lines 5-7__: Ingress Spec has all the information needed to configure a GCE L7. Most importantly, it contains a list of `rules`. A rule can take many forms, but the only rule relevant to glbc is the `http` rule.
+__Lines 5-7__: Ingress Spec has all the information needed to configure a GCE L7. Most importantly, it contains a list of `rules`. A rule can take many forms, but the only rule relevant to GLBC is the `http` rule.
 
-__Lines 8-9__: Each http rule contains the following information: A host (eg: foo.bar.com, defaults to `*` in this example), a list of paths (eg: `/hostless`) each of which has an associated backend (`test:80`). Both the `host` and `path` must match the content of an incoming request before the L7 directs traffic to the `backend`.
+__Lines 8-9__: Each HTTP rule contains the following information: A host (eg: foo.bar.com, defaults to `*` in this example), a list of paths (eg: `/hostless`) each of which has an associated backend (`test:80`). Both the `host` and `path` must match the content of an incoming request before the L7 directs traffic to the `backend`.
 
-__Lines 10-12__: A `backend` is a service:port combination. It selects a group of pods capable of servicing traffic sent to the path specified in the parent rule. The `port` is the desired `spec.ports[*].port` from the Service Spec -- Note, though, that the L7 actually directs traffic to the corresponding `NodePort`.
+__Lines 10-12__: A `backend` is a service:port combination. It selects a group of pods capable of servicing traffic sent to the path specified in the parent rule. The `port` is the desired `spec.ports[*].port` from the Service Spec -- Note, though, that the L7 actually directs traffic to the port's corresponding `NodePort`.
 
-__Global Parameters__: For the sake of simplicity the example Ingress has no global parameters. However, one can specify a default backend (see examples below) in the absence of which requests that don't match a path in the spec are sent to the default backend of glbc.
+__Global Parameters__: For the sake of simplicity the example Ingress has no global parameters. However, one can specify a default backend (see examples below) in the absence of which requests that don't match a path in the spec are sent to the default backend of GLBC.
 
 
 ## Load Balancer Management
 
-You can manage a GCE L7 by creating/updating/deleting the associated Kubernetes Ingress.
+You can manage a GCE L7 by creating, updating, or deleting the associated Kubernetes Ingress.
 
 ### Creation
 
-Before you can start creating Ingress you need to start up glbc. We can use the rc.yaml in this directory:
+Before you can start creating Ingress you need to start up GLBC. We can use the rc.yaml in this directory:
 ```shell
 $ kubectl create -f rc.yaml
 replicationcontroller "glbc" created
@@ -90,13 +90,13 @@ glbc-6m6b6          2/2       Running   0          21s
 
 A couple of things to note about this controller:
 * It needs a service with a node port to use as the default backend. This is the backend that's used when an Ingress does not specify the default.
-* It has an intentionally long terminationGracePeriod, this is only required with the --delete-all-on-quit flag (see [Deletion](#deletion))
+* It has an intentionally long `terminationGracePeriod`, this is only required with the --delete-all-on-quit flag (see [Deletion](#deletion))
 * Don't start 2 instances of the controller in a single cluster, they will fight each other.
 
 The loadbalancer controller will watch for Services, Nodes and Ingress. Nodes already exist (the nodes in your cluster). We need to create the other 2. You can do so using the ingress-app.yaml in this directory.
 
 A couple of things to note about the Ingress:
-* It creates a Replication Controller for a simple echoserver application, with 1 replica.
+* It creates a Replication Controller for a simple "echoserver" application, with 1 replica.
 * It creates 3 services for the same application pod: echoheaders[x, y, default]
 * It creates an Ingress with 2 hostnames and 3 endpoints (foo.bar.com{/foo} and bar.baz.com{/foo, /bar}) that access the given service
 
@@ -132,7 +132,7 @@ I1005 22:11:34.385161       1 utils.go:83] Syncing e2e-test-beeps-minion-ugv1
 ...
 ```
 
-When it's done, it will update the status of the Ingress with the ip of the L7 it created:
+When it's done, it will update the status of the Ingress with the IP of the L7 it created:
 ```shell
 $ kubectl get ing
 NAME      RULE          BACKEND                 ADDRESS
@@ -145,11 +145,11 @@ echomap   -             echoheadersdefault:80   107.178.254.239
 ```
 
 Go to your GCE console and confirm that the following resources have been created through the HTTPLoadbalancing panel:
-* A Global Forwarding Rule
-* An UrlMap
-* A TargetHTTPProxy
-* BackendServices (one for each Kubernetes nodePort service)
-* An Instance Group (with ports corresponding to the BackendServices)
+* Global Forwarding Rule
+* URL Map
+* TargetHTTPProxy
+* Backend Services (one for each Kubernetes NodePort service)
+* An Instance Group (with ports corresponding to the Backend Services)
 
 The HTTPLoadBalancing panel will also show you if your backends have responded to the health checks, wait till they do. This can take a few minutes. If you see `Health status will display here once configuration is complete.` the L7 is still bootstrapping. Wait till you have `Healthy instances: X`. Even though the GCE L7 is driven by our controller, which notices the Kubernetes healthchecks of a pod, we still need to wait on the first GCE L7 health check to complete. Once your backends are up and healthy:
 
@@ -182,7 +182,7 @@ You can also edit `/etc/hosts` instead of using `--resolve`.
 
 #### Updates
 
-Say you don't want a default backend and you'd like to allow all traffic hitting your loadbalancer at /foo to reach your echoheaders backend service, not just the traffic for foo.bar.com. You can modify the Ingress Spec:
+Say you don't want a default backend and you'd like to allow all traffic hitting your loadbalancer at `/foo` to reach your echoheaders backend service, not just the traffic for foo.bar.com. You can modify the Ingress Spec:
 
 ```yaml
 spec:
@@ -218,14 +218,12 @@ for me but it might not have some of the features you want. If you would
 
 A couple of things to note about this particular update:
 * An Ingress without a default backend inherits the backend of the Ingress controller.
-* A IngressRule without a host gets the wildcard. This is controller specific, some loadbalancer controllers do not respect anything but a DNS subdomain as the host. You *cannot* set the host to a regex.
+* A IngressRule without a host gets the wildcard. This is controller specific, some loadbalancer controllers do not respect anything but a DNS subdomain as the host. You *cannot* set the host to a regular expression.
 * You never want to delete then re-create an Ingress, as it will result in the controller tearing down and recreating the loadbalancer.
-
-__Unexpected updates__: Since glbc constantly runs a control loop it won't allow you to break links that black hole traffic. An easy link to break is the url map itself, but you can also disconnect a target proxy from the urlmap, or remove an instance from the instance group (note this is different from *deleting* the instance, the loadbalancer controller will not recreate it if you do so). Modify one of the url links in the map to point to another backend through the GCE Control Panel UI, and wait till the controller sync (this happens as frequently as you tell it to, via the --resync-period flag). The same goes for the Kubernetes side of things, the API server will validate against obviously bad updates, but if you relink an Ingress so it points to the wrong backends the controller will blindly follow.
 
 ### Paths
 
-Till now, our examples were simplified in that they hit an endpoint with a catch-all path regex. Most real world backends have subresources. Let's create service to test how the loadbalancer handles paths:
+Till now, our examples were simplified in that they hit an endpoint with a catch-all path regular expression. Most real world backends have sub-resources. Let's create service to test how the loadbalancer handles paths:
 ```yaml
 apiVersion: v1
 kind: ReplicationController
@@ -316,7 +314,7 @@ As before, wait a while for the update to take effect, and try accessing `loadba
 
 #### Deletion
 
-Most production loadbalancers live as long as the nodes in the cluster and are torn down when the nodes are destroyed. That said, there are plenty of use cases for deleting an Ingress, deleting a loadbalancer controller, or just purging external loadbalancer resources altogether. Deleting a loadbalancer controller pod will not affect the loadbalancers themselves, this way your backends won't suffer a loss of availability if the scheduler pre-empts your controller pod. Deleting a single loadbalancer is as easy as deleting an Ingress via kubectl:
+Deleting a loadbalancer controller pod will not affect the loadbalancers themselves, this way your backends won't suffer a loss of availability if the scheduler pre-empts your controller pod. Deleting a single loadbalancer is as easy as deleting an Ingress via kubectl:
 ```shell
 $ kubectl delete ing echomap
 $ kubectl logs --follow glbc-6m6b6 l7-lb-controller
@@ -329,7 +327,7 @@ I1007 00:26:02.043188       1 backends.go:134] Deleting backend k8-be-30301
 I1007 00:26:05.591140       1 backends.go:134] Deleting backend k8-be-30284
 I1007 00:26:09.159016       1 controller.go:232] Finished syncing default/echomap
 ```
-Note that it takes ~30 seconds to purge cloud resources, the API calls to create and delete are a onetime cost. GCE BackendServices are ref-counted and deleted by the controller as you delete Kubernetes Ingress'. This is not sufficient for cleanup, because you might have deleted the Ingress while glbc was down, in which case it would leak cloud resources. You can delete the glbc and purge cloud resources in 2 more ways:
+Note that it takes ~30 seconds per ingress to purge cloud resources. This may not be a sufficient cleanup because you might have deleted the Ingress while GLBC was down, in which case it would leak cloud resources. You can delete the GLBC and purge cloud resources in two more ways:
 
 __The dev/test way__: If you want to delete everything in the cloud when the loadbalancer controller pod dies, start it with the --delete-all-on-quit flag. When a pod is killed it's first sent a SIGTERM, followed by a grace period (set to 10minutes for loadbalancer controllers), followed by a SIGKILL. The controller pod uses this time to delete cloud resources. Be careful with --delete-all-on-quit, because if you're running a production glbc and the scheduler re-schedules your pod for some reason, it will result in a loss of availability. You can do this because your rc.yaml has:
 ```yaml
@@ -378,16 +376,16 @@ You just instructed the loadbalancer controller to quit, however if it had done 
 
 Currently, all service backends must satisfy *either* of the following requirements to pass the HTTP(S) health checks sent to it from the GCE loadbalancer:
 1. Respond with a 200 on '/'. The content does not matter.
-2. Expose an arbitrary url as a `readiness` probe on the pods backing the Service.
+2. Expose an arbitrary URL as a `readiness` probe on the pods backing the Service.
 
 The Ingress controller looks for a compatible readiness probe first, if it finds one, it adopts it as the GCE loadbalancer's HTTP(S) health check. If there's no readiness probe, or the readiness probe requires special HTTP headers, the Ingress controller points the GCE loadbalancer's HTTP health check at '/'. [This is an example](/examples/health-checks/README.md) of an Ingress that adopts the readiness probe from the endpoints as its health check.
 
 ## Frontend HTTPS
 
-For encrypted communication between the client to the load balancer, you need to specify a TLS private key and certitificate to be used by the ingress controller.
+For encrypted communication between the client to the load balancer, you need to specify a TLS private key and certificate to be used by the ingress controller.
 
 Ingress controller can read the private key and certificate from 2 sources:
-* kubernetes [secret](http://kubernetes.io/docs/user-guide/secrets).
+* Kubernetes [secret](http://kubernetes.io/docs/user-guide/secrets).
 * [GCP SSL
   certificate](https://cloud.google.com/compute/docs/load-balancing/http/ssl-certificates).
 
@@ -396,7 +394,7 @@ Currently the Ingress only supports a single TLS port, 443, and assumes TLS term
 ### Secret
 
 For the ingress controller to use the certificate and private key stored in a
-kubernetes secret, user needs to specify the secret name in the TLS configuration section
+Kubernetes secret, user needs to specify the secret name in the TLS configuration section
 of their ingress spec. The secret is assumed to exist in the same namespace as the ingress.
 
 This controller does not support SNI, so it will ignore all but the first cert in the TLS configuration section.
@@ -430,12 +428,12 @@ spec:
     servicePort: 80
 ```
 
-This creates 2 GCE forwarding rules that use a single static ip. Both `:80` and `:443` will direct traffic to your backend, which serves HTTP requests on the target port mentioned in the Service associated with the Ingress.
+This creates 2 GCE forwarding rules that use a single static IP. Both `:80` and `:443` will direct traffic to your backend, which serves HTTP requests on the target port mentioned in the Service associated with the Ingress.
 
 ### GCP SSL Cert
 
 For the ingress controller to use the certificate and private key stored in a
-GCP SSL cert, user needs to specify the ssl cert name using the `ingress.gcp.kubernetes.io/pre-shared-cert` annotation.
+GCP SSL cert, user needs to specify the SSL cert name using the `ingress.gcp.kubernetes.io/pre-shared-cert` annotation.
 The certificate in this case is managed by the user and it is their
 responsibility to create/delete it. The Ingress controller assigns the SSL certificate with this name to the target proxies of the Ingress.
 
@@ -594,7 +592,7 @@ Note that the GCLB health checks *do not* get the `301` because they don't inclu
 
 #### Blocking HTTP
 
-You can block traffic on `:80` through an annotation. You might want to do this if all your clients are only going to hit the loadbalancer through https and you don't want to waste the extra GCE forwarding rule, eg:
+You can block traffic on `:80` through an annotation. You might want to do this if all your clients are only going to hit the loadbalancer through HTTPS and you don't want to waste the extra GCE forwarding rule, eg:
 ```yaml
 apiVersion: extensions/v1beta1
 kind: Ingress
@@ -694,7 +692,7 @@ CLIENT VALUES:
 client_address=('10.240.29.196', 56401) (10.240.29.196)
 ```
 
-Then head over to the GCE node with internal ip 10.240.29.196 and check that the [Service is functioning](https://github.com/kubernetes/kubernetes/blob/release-1.0/docs/user-guide/debugging-services.md) as expected. Remember that the GCE L7 is routing you through the NodePort service, and try to trace back.
+Then head over to the GCE node with internal IP 10.240.29.196 and check that the [Service is functioning](https://github.com/kubernetes/kubernetes/blob/release-1.0/docs/user-guide/debugging-services.md) as expected. Remember that the GCE L7 is routing you through the NodePort service, and try to trace back.
 
 * Check if you can access the backend service directly via nodeip:nodeport
 * Check the GCE console
@@ -732,12 +730,13 @@ $ kubectl get nodes | awk '{print $1}' | tail -n +2 | grep -Po 'gke-[0-9,a-z]+-[
 For the curious, here is a high level overview of how the GCE LoadBalancer controller manages cloud resources.
 
 The controller manages cloud resources through a notion of pools. Each pool is the representation of the last known state of a logical cloud resource. Pools are periodically synced with the desired state, as reflected by the Kubernetes api. When you create a new Ingress, the following happens:
-* Create BackendServices for each Kubernetes backend in the Ingress, through the backend pool.
-* Add nodePorts for each BackendService to an Instance Group with all the instances in your cluster, through the instance pool.
-* Create a UrlMap, TargetHttpProxy, Global Forwarding Rule through the loadbalancer pool.
-* Update the loadbalancer's urlmap according to the Ingress.
+* Updates instance groups to reflect all nodes in the cluster.
+* Creates Backend Service for each Kubernetes service referenced in the ingress spec.
+* Adds named-port for each Backend Service to each instance group.
+* Creates a URL Map, TargetHttpProxy, and ForwardingRule.
+* Updates the URL Map according to the Ingress.
 
-Periodically, each pool checks that it has a valid connection to the next hop in the above resource graph. So for example, the backend pool will check that each backend is connected to the instance group and that the node ports match, the instance group will check that all the Kubernetes nodes are a part of the instance group, and so on. Since Backends are a limited resource, they're shared (well, everything is limited by your quota, this applies doubly to backend services). This means you can setup N Ingress' exposing M services through different paths and the controller will only create M backends. When all the Ingress' are deleted, the backend pool GCs the backend.
+Periodically, each pool checks that it has a valid connection to the next hop in the above resource graph. So for example, the backend pool will check that each backend is connected to the instance group and that the node ports match, the instance group will check that all the Kubernetes nodes are a part of the instance group, and so on. Since Backend Services are a limited resource, they're shared (well, everything is limited by your quota, this applies doubly to Backend Services). This means you can setup N Ingress' exposing M services through different paths and the controller will only create M backends. When all the Ingress' are deleted, the backend pool GCs the backend.
 
 ## Wish list:
 

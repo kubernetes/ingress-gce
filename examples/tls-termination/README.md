@@ -12,7 +12,7 @@ and that you have an ingress controller [running](/examples/deployment) in your 
 ## Deployment
 
 The following command instructs the controller to terminate traffic using
-the provided TLS cert, and forward un-encrypted HTTP traffic to the test
+the provided TLS cert, and forward unencrypted HTTP traffic to the test
 HTTP service.
 
 ```console

@@ -8,12 +8,12 @@ This is a list of beta limitations:
 * [Latency](#latency): GLBC is not built for performance. Creating many Ingresses at a time can overwhelm it. It won't fall over, but will take its own time to churn through the Ingress queue.
 * [Quota](#quota): By default, GCE projects are granted a quota of 3 Backend Services. This is insufficient for most Kubernetes clusters.
 * [Oauth scopes](https://cloud.google.com/compute/docs/authentication): By default GKE/GCE clusters are granted "compute/rw" permissions. If you setup a cluster without these permissions, GLBC is useless and you should delete the controller as described in the [section below](#disabling-glbc). If you don't delete the controller it will keep restarting.
-* [Default backends](https://cloud.google.com/compute/docs/load-balancing/http/url-map#url_map_simplest_case): All L7 Loadbalancers created by GLBC have a default backend. If you don't specify one in your Ingress, GLBC will assign the 404 default backend mentioned above.
+* [Default backends](https://cloud.google.com/compute/docs/load-balancing/http/url-map#url_map_simplest_case): All L7 loadbalancers created by GLBC have a default backend. If you don't specify one in your Ingress, GLBC will assign the 404 default backend mentioned above.
 * [Load Balancing Algorithms](#load-balancing-algorithms): The ingress controller doesn't support fine grained control over loadbalancing algorithms yet.
 * [Large clusters](#large-clusters): Ingress on GCE isn't supported on large (>1000 nodes), single-zone clusters.
 * [Teardown](README.md#deletion): The recommended way to tear down a cluster with active Ingresses is to either delete each Ingress, or hit the `/delete-all-and-quit` endpoint on GLBC, before invoking a cluster teardown script (eg: kube-down.sh). You will have to manually cleanup GCE resources through the [cloud console](https://cloud.google.com/compute/docs/console#access) or [gcloud CLI](https://cloud.google.com/compute/docs/gcloud-compute/) if you simply tear down the cluster with active Ingresses.
 * [Changing UIDs](#changing-the-cluster-uid): You can change the UID used as a suffix for all your GCE cloud resources, but this requires you to delete existing Ingresses first.
-* [Cleaning up](#cleaning-up-cloud-resources): You can delete loadbalancers that older clusters might've leaked due to premature teardown through the GCE console.
+* [Cleaning up](#cleaning-up-cloud-resources): You can delete loadbalancers that older clusters might have leaked due to premature teardown through the GCE console.
 
 ## Prerequisites
 
@@ -33,7 +33,7 @@ See [GCE documentation](https://cloud.google.com/compute/docs/resource-quotas#ch
 
 ## Latency
 
-It takes ~1m to spin up a loadbalancer (this includes acquiring the public ip), and ~5-6m before the GCE api starts healthchecking backends. So as far as latency goes, here's what to expect:
+It takes ~1m to spin up a loadbalancer (this includes acquiring the public IP), and ~5-6m before the GCE API starts healthchecking backends. So as far as latency goes, here's what to expect:
 
 Assume one creates the following simple Ingress:
 ```yaml
@@ -98,7 +98,7 @@ GCE has a concept of [ephemeral](https://cloud.google.com/compute/docs/instances
 
 ## Load Balancing Algorithms
 
-Right now, a kube-proxy nodePort is a necessary condition for Ingress on GCP. This is because the cloud lb doesn't understand how to route directly to your pods. Incorporating kube-proxy and cloud lb algorithms so they cooperate toward a common goal is still a work in progress. If you really want fine grained control over the algorithm, you should deploy the nginx ingress controller.
+Right now, a kube-proxy NodePort service is a necessary condition for Ingress on GCP. This is because the cloud lb doesn't understand how to route directly to your pods. Incorporating kube-proxy and cloud lb algorithms so they cooperate toward a common goal is still a work in progress. If you really want fine grained control over the algorithm, you should deploy the nginx ingress controller.
 
 ## Large clusters
 
@@ -106,7 +106,7 @@ Ingress is not yet supported on single zone clusters of size > 1000 nodes ([issu
 
 ## Disabling GLBC
 
-To completely stop the Ingress controller on GCE/GKE, please see [this] (/docs/faq/gce.md#how-do-i-disable-the-gce-ingress-controller) faq.
+To completely stop the Ingress controller on GCE/GKE, please see [this] (/docs/faq/gce.md#how-do-i-disable-the-gce-ingress-controller) FAQ.
 
 ## Changing the cluster UID
 
@@ -147,7 +147,7 @@ above, and reset it to a string bereft of `--`.
 If you deleted a GKE/GCE cluster without first deleting the associated Ingresses, the controller would not have deleted the associated cloud resources. If you find yourself in such a situation, you can delete the resources by hand:
 
 1. Navigate to the [cloud console](https://console.cloud.google.com/) and click on the "Networking" tab, then choose "LoadBalancing"
-2. Find the loadbalancer you'd like to delete, it should have a name formatted as: k8s-um-ns-name--UUID
+2. Find the loadbalancer you'd like to delete, it should have a name formatted as: `k8s-um-ns-name--UUID`
 3. Delete it, check the boxes to also cascade the deletion down to associated resources (eg: backend-services)
 4. Switch to the "Compute Engine" tab, then choose "Instance Groups"
-5. Delete the Instance Group allocated for the leaked Ingress, it should have a name formatted as: k8s-ig-UUID
+5. Delete the Instance Group allocated for the leaked Ingress, it should have a name formatted as: `k8s-ig-UUID`

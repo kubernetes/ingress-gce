@@ -12,8 +12,6 @@ Table of Contents
 * [Are Ingress controllers namespaced?](#are-ingress-controllers-namespaced)
 * [How do I disable an Ingress controller?](#how-do-i-disable-an-ingress-controller)
 * [How do I run multiple Ingress controllers in the same cluster?](#how-do-i-run-multiple-ingress-controllers-in-the-same-cluster)
-* [How do I contribute a backend to the generic Ingress controller?](#how-do-i-contribute-a-backend-to-the-generic-ingress-controller)
-* [Is there a catalog of existing Ingress controllers?](#is-there-a-catalog-of-existing-ingress-controllers)
 * [How are the Ingress controllers tested?](#how-are-the-ingress-controllers-tested)
 * [An Ingress controller E2E is failing, what should I do?](#an-ingress-controller-e2e-is-failing-what-should-i-do)
 * [Is there a roadmap for Ingress features?](#is-there-a-roadmap-for-ingress-features)
@@ -73,25 +71,11 @@ The GCE controller will only act on Ingresses with the annotation value of "gce"
 
 The nginx controller will only act on Ingresses with the annotation value of "nginx" or empty string "" (the default value if the annotation is omitted).
 
-To completely stop the Ingress controller on GCE/GKE, please see [this](gce.md#how-do-i-disable-the-gce-ingress-controller) faq.
+To completely stop the Ingress controller on GCE/GKE, please see [this](gce.md#how-do-i-disable-the-gce-ingress-controller) FAQ.
 
 ## How do I run multiple Ingress controllers in the same cluster?
 
-Multiple Ingress controllers can co-exist and key off the `ingress.class`
-annotation, as shown in this faq, as well as in [this](/examples/daemonset/nginx) example.
-
-## How do I contribute a backend to the generic Ingress controller?
-
-First check the [catalog](#is-there-a-catalog-of-existing-ingress-controllers), to make sure you really need to write one.
-
-1. Write a [generic backend](/examples/custom-controller)
-2. Keep it in your own repo, make sure it passes the [conformance suite](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/framework/ingress_utils.go#L129)
-3. Submit an example(s) in the appropriate subdirectories [here](/examples/README.md)
-4. Add it to the catalog
-
-## Is there a catalog of existing Ingress controllers?
-
-Yes, a non-comprehensive [catalog](/docs/catalog.md) exists.
+Multiple Ingress controllers can co-exist and key off the `ingress.class` annotation.
 
 ## How are the Ingress controllers tested?
 

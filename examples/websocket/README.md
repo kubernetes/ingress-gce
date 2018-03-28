@@ -1,6 +1,6 @@
 # Simple Websocket Example
 
-Any websocket server will suffice; however, for the purpose of demonstration, we'll use the gorilla/websocket package in a Go process.
+Any websocket server will suffice; however, for the purpose of demonstration, we'll use the gorilla/websocket package in a Go binary.
 
 ### Build
 ```shell

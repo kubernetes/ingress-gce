@@ -86,7 +86,7 @@ func (t *TLSCertsFromSecretsLoader) Load(ing *extensions.Ingress) (*loadbalancer
 
 // TODO: Add support for file loading so we can support HTTPS default backends.
 
-// fakeTLSSecretLoader fakes out TLS loading.
+// FakeTLSSecretLoader fakes out TLS loading.
 type FakeTLSSecretLoader struct {
 	noOPValidator
 	FakeCerts map[string]*loadbalancers.TLSCerts
