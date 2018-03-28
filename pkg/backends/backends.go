@@ -433,10 +433,16 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 // edgeHop checks the links of the given backend by executing an edge hop.
 // It fixes broken links and updates the Backend accordingly.
 func (b *Backends) edgeHop(be *BackendService, igs []*compute.InstanceGroup) error {
-	addIGs := getInstanceGroupsToAdd(be, igs)
+	addIGs := []*compute.InstanceGroup{}
+	if be.Alpha != nil {
+		addIGs = getAlphaInstanceGroupsToAdd(be, igs)
+	} else {
+		addIGs = getInstanceGroupsToAdd(be, igs)
+	}
 	if len(addIGs) == 0 {
 		return nil
 	}
+
 	originalAlphaIGBackends := []*computealpha.Backend{}
 	originalGaIGBackends := []*compute.Backend{}
 	if be.Alpha != nil {
@@ -595,6 +601,34 @@ func getInstanceGroupsToAdd(be *BackendService, igs []*compute.InstanceGroup) []
 	beName := be.Ga.Name
 	beIGs := sets.String{}
 	for _, existingBe := range be.Ga.Backends {
+		beIGs.Insert(comparableGroupPath(existingBe.Group))
+	}
+
+	expectedIGs := sets.String{}
+	for _, ig := range igs {
+		expectedIGs.Insert(comparableGroupPath(ig.SelfLink))
+	}
+
+	if beIGs.IsSuperset(expectedIGs) {
+		return nil
+	}
+	glog.V(2).Infof("Expected igs for backend service %v: %+v, current igs %+v",
+		beName, expectedIGs.List(), beIGs.List())
+
+	var addIGs []*compute.InstanceGroup
+	for _, ig := range igs {
+		if !beIGs.Has(comparableGroupPath(ig.SelfLink)) {
+			addIGs = append(addIGs, ig)
+		}
+	}
+
+	return addIGs
+}
+
+func getAlphaInstanceGroupsToAdd(be *BackendService, igs []*compute.InstanceGroup) []*compute.InstanceGroup {
+	beName := be.Alpha.Name
+	beIGs := sets.String{}
+	for _, existingBe := range be.Alpha.Backends {
 		beIGs.Insert(comparableGroupPath(existingBe.Group))
 	}
 
