@@ -54,7 +54,7 @@ __Terminology:__
 
 * [Global Forwarding Rule](https://cloud.google.com/compute/docs/load-balancing/http/global-forwarding-rules): Manages the Ingress VIP
 * [TargetHttpProxy](https://cloud.google.com/compute/docs/load-balancing/http/target-proxies): Manages SSL certs and proxies between the VIP and backend
-* [Url Map](https://cloud.google.com/compute/docs/load-balancing/http/url-map): Routing rules
+* [URL Map](https://cloud.google.com/compute/docs/load-balancing/http/url-map): Routing rules
 * [Backend Service](https://cloud.google.com/compute/docs/load-balancing/http/backend-service): Bridges various Instance Groups on a given Service NodePort
 * [Instance Group](https://cloud.google.com/compute/docs/instance-groups/): Collection of Kubernetes nodes
 
@@ -66,7 +66,7 @@ Global Forwarding Rule -> TargetHTTPProxy
     Static IP                               URL Map - Backend Service(s) - Instance Group (us-central1)
         |                                  /                               ...
 Global Forwarding Rule -> TargetHTTPSProxy
-                            ssl cert
+                            SSL cert
 ```
 
 In addition to this pipeline:
@@ -164,14 +164,14 @@ Yes, please see [this](/examples/static-ip) example.
 
 Yes, expect O(30s) delay.
 
-The controller should create a second ssl certificate suffixed with `-1` and
-atomically swap it with the ssl certificate in your taret proxy, then delete
-the obselete ssl certificate.
+The controller should create a second SSL certificate suffixed with `-1` and
+atomically swap it with the SSL certificate in your target proxy, then delete
+the obsolete SSL certificate.
 
 ## Can I tune the loadbalancing algorithm?
 
-Right now, a kube-proxy nodePort is a necessary condition for Ingress on GCP.
-This is because the cloud lb doesn't understand how to route directly to your
+Right now, a kube-proxy NodePort service is a necessary condition for Ingress on GCP.
+This is because the cloud LB doesn't understand how to route directly to your
 pods. Incorporating kube-proxy and cloud lb algorithms so they cooperate
 toward a common goal is still a work in progress. If you really want fine
 grained control over the algorithm, you should deploy the [nginx controller](/examples/deployment/nginx).
@@ -258,13 +258,13 @@ NodePort Service
 * It's created when the first Ingress is created, and deleted when the last
 Ingress is deleted, since we don't want to waste quota if the user is not going
 to need L7 loadbalancing through Ingress
-* It has a http health check pointing at `/healthz`, not the default `/`, because
+* It has a HTTP health check pointing at `/healthz`, not the default `/`, because
 `/` serves a 404 by design
 
 
 ## How does Ingress work across 2 GCE clusters?
 
-See federation [documentation](http://kubernetes.io/docs/user-guide/federation/federated-ingress/).
+See kubemci [documentation](https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress).
 
 ## I shutdown a cluster without deleting all Ingresses, how do I manually cleanup?
 
@@ -272,10 +272,10 @@ If you kill a cluster without first deleting Ingresses, the resources will leak.
 If you find yourself in such a situation, you can delete the resources by hand:
 
 1. Navigate to the [cloud console](https://console.cloud.google.com/) and click on the "Networking" tab, then choose "LoadBalancing"
-2. Find the loadbalancer you'd like to delete, it should have a name formatted as: k8s-um-ns-name--UUID
+2. Find the loadbalancer you'd like to delete, it should have a name formatted as: `k8s-um-ns-name--UUID`
 3. Delete it, check the boxes to also cascade the deletion down to associated resources (eg: backend-services)
 4. Switch to the "Compute Engine" tab, then choose "Instance Groups"
-5. Delete the Instance Group allocated for the leaked Ingress, it should have a name formatted as: k8s-ig-UUID
+5. Delete the Instance Group allocated for the leaked Ingress, it should have a name formatted as: `k8s-ig-UUID`
 
 We plan to fix this [soon](https://github.com/kubernetes/kubernetes/issues/16337).
 
@@ -327,8 +327,8 @@ Shared:
 
 * Backend Services: because of low quota and high reuse. A single Service in a
 Kubernetes cluster has one NodePort, common throughout the cluster. GCE has
-a hard limit of the number of allowed BackendServices, so if multiple Ingresses
-all point to a single Service, that creates a single BackendService in GCE
+a hard limit of the number of allowed Backend Services, so if multiple Ingresses
+all point to a single Service, that creates a single Backend Service in GCE
 pointing to that Service's NodePort.
 
 * Instance Group: since an instance can only be part of a single loadbalanced
@@ -336,18 +336,18 @@ Instance Group, these must be shared. There is 1 Ingress Instance Group per
 zone containing Kubernetes nodes.
 
 * Health Checks: currently the health checks point at the NodePort
-of a BackendService. They don't *need* to be shared, but they are since
-BackendServices are shared.
+of a Backend Service. They don't *need* to be shared, but they are since
+Backend Services are shared.
 
-* Firewall rule: In a non-federated cluster there is a single firewall rule
+* Firewall rule: There is a single firewall rule
 that covers health check traffic from the range of [GCE loadbalancer IPs](https://cloud.google.com/compute/docs/load-balancing/http/#troubleshooting)
-to Service nodePorts.
+to entire NodePort range.
 
 Unique:
 
-Currently, a single Ingress on GCE creates a unique IP and url map. In this
+Currently, a single Ingress on GCE creates a unique IP and URL Map. In this
 model the following resources cannot be shared:
-* Url Map
+* URL Map
 * Target HTTP(S) Proxies
 * SSL Certificates
 * Static-ip
@@ -358,25 +358,25 @@ model the following resources cannot be shared:
 
 The most likely cause of a controller spin loop is some form of GCE validation
 failure, eg:
-* It's trying to delete a BackendService already in use, say in a UrlMap
-* It's trying to add an Instance to more than 1 loadbalanced InstanceGroups
-* It's trying to flip the loadbalancing algorithm on a BackendService to RATE,
-when some other BackendService is pointing at the same InstanceGroup and asking
+* It's trying to delete a Backend Service already in use, say in a URL Map
+* It's trying to add an Instance to more than 1 loadbalanced Instance Groups
+* It's trying to flip the loadbalancing algorithm on a Backend Service to RATE,
+when some other Backend Service is pointing at the same Instance Group and asking
 for UTILIZATION
 
 In all such cases, the work queue will put a single key (ingress namespace/name)
-that's getting continuously requeued into exponential backoff. However, currently
-the Informers that watch the Kubernetes api are setup to periodically resync,
+that's getting continuously re-queued into exponential backoff. However, currently
+the Informers that watch the Kubernetes API are setup to periodically resync,
 so even though a particular key is in backoff, we might end up syncing all other
 keys every, say, 10m, which might trigger the same validation-error-condition
 when syncing a shared resource.
 
 ## Creating an Internal Load Balancer without existing ingress
 **How the GCE ingress controller Works**  
-To assemble an L7 Load Balancer, the ingress controller creates an [unmanaged instance-group](https://cloud.google.com/compute/docs/instance-groups/creating-groups-of-unmanaged-instances) named `k8s-ig--{UID}` and adds every known minion node to the group. For every service specified in all ingresses, a backend service is created to point to that instance group.
+To assemble an L7 Load Balancer, the ingress controller creates an [unmanaged instance-group](https://cloud.google.com/compute/docs/instance-groups/creating-groups-of-unmanaged-instances) named `k8s-ig--{UID}` and adds every known minion node to the group. For every service specified in all ingresses, a Backend Service is created to point to that instance group.
 
 **How the Internal Load Balancer Works**  
-K8s does not yet assemble ILB's for you, but you can manually create one via the GCP Console. The ILB is composed of a regional forwarding rule and a regional backend service. Similar to the L7 LB, the backend-service points to an unmanaged instance-group containing your K8s nodes.
+K8s does not yet assemble ILB's for you, but you can manually create one via the GCP Console. The ILB is composed of a regional forwarding rule and a regional Backend Service. Similar to the L7 LB, the Backend Service points to an unmanaged instance-group containing your K8s nodes.
 
 **The Complication**  
 GCP will only allow one load balanced unmanaged instance-group for a given instance.
@@ -407,6 +407,6 @@ You can now follow the GCP Console wizard for creating an internal load balancer
 
 ## Can I use websockets?
 Yes!  
-The GCP HTTP(S) Load Balancer supports websockets. You do not need to change your http server or Kubernetes deployment. You will need to manually configure the created Backend Service's `timeout` setting. This value is the interpreted as the max connection duration. The default value of 30 seconds is probably too small for you. You can increase it to the supported maximum: 86400 (a day) through the GCP Console or the gcloud CLI.
+The GCP HTTP(S) Load Balancer supports websockets. You do not need to change your HTTP server or Kubernetes deployment. You will need to manually configure the created Backend Service's `timeout` setting. This value is the interpreted as the max connection duration. The default value of 30 seconds is probably too small for your needs. You can increase it to the supported maximum: 86400 (a day) through the GCP Console or the gcloud CLI.
 
 View the [example](/controllers/gce/examples/websocket/).

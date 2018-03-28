@@ -7,7 +7,7 @@ It includes how to build, test, and release ingress controllers.
 
 The build uses dependencies in the `ingress/vendor` directory, which
 must be installed before building a binary/image. Occasionally, you
-might need to update the dependencies. 
+might need to update the dependencies.
 
 This guide requires you to install the [godep](https://github.com/tools/godep) dependency
 tool.
@@ -84,7 +84,7 @@ $ make docker-push TAG=<tag> PREFIX=$USER/ingress-controller
 
 ### GCE Controller
 
-[TODO](https://github.com/kubernetes/ingress/issues/387): add instructions on building gce controller.
+[TODO](https://github.com/kubernetes/ingress/issues/387): add instructions on building GCE controller.
 
 ## Deploying
 
@@ -137,5 +137,3 @@ cherry-picked into a release branch.
 * If you're not confident about the stability of the code,
 [tag](https://help.github.com/articles/working-with-tags/) it as alpha or beta.
 Typically, a release branch should have stable code.
-
-

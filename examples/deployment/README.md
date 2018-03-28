@@ -4,7 +4,7 @@ This example demonstrates the deployment of a GCE Ingress controller.
 
 Note: __all GCE/GKE clusters already have an Ingress controller running
 on the master. The only reason to deploy another GCE controller is if you want
-to debug or otherwise observe its operation (eg via kubectl logs).__
+to debug or otherwise observe its operation via logs.__
 
 __Before deploying another one in your cluster, make sure you disable the master controller.__
 
