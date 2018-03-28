@@ -166,7 +166,7 @@ Yes, expect O(30s) delay.
 
 The controller should create a second ssl certificate suffixed with `-1` and
 atomically swap it with the ssl certificate in your taret proxy, then delete
-the obselete ssl certificate.
+the obsolete ssl certificate.
 
 ## Can I tune the loadbalancing algorithm?
 
