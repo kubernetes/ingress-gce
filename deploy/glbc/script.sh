@@ -210,7 +210,7 @@ while true; do
 done
 
 # Recreates the deployment and service for the default backend.
-sed -i "/name: http/a \ \ \ \ nodePort: ${NODE_PORT}" default-http-backend.yaml
+sed -i "/name: http/a \ \ \ \ nodePort: ${NODE_PORT}" yaml/default-http-backend.yaml
 kubectl create -f yaml/default-http-backend.yaml
 if [[ $? -eq 1 ]];
 then
