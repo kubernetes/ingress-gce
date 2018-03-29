@@ -44,3 +44,13 @@ type ErrSvcAppProtosParsing struct {
 func (e ErrSvcAppProtosParsing) Error() string {
 	return fmt.Sprintf("could not parse %v annotation on Service %v/%v, err: %v", annotations.ServiceApplicationProtocolKey, e.Svc.Namespace, e.Svc.Name, e.Err)
 }
+
+// ErrServiceExtension is returned when fail to retrieve serviceExtension for service.
+type ErrServiceExtension struct {
+	Svc *v1.Service
+	Err error
+}
+
+func (e ErrServiceExtension) Error() string {
+	return fmt.Sprintf("failed to retrieve ServiceExtension referenced by Service %s/%s, err: %v", e.Svc.Namespace, e.Svc.Name, e.Err)
+}

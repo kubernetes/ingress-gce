@@ -34,10 +34,12 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"k8s.io/ingress-gce/pkg/annotations"
+	serviceextensionv1alpha1 "k8s.io/ingress-gce/pkg/apis/serviceextension/v1alpha1"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/serviceextension"
 	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -65,7 +67,9 @@ type LoadBalancerController struct {
 	nodeLister cache.Indexer
 	nodes      *NodeController
 	// endpoint lister is needed when translating service target port to real endpoint target ports.
-	endpointLister StoreToEndpointLister
+	endpointLister         StoreToEndpointLister
+	serviceLister          cache.Indexer
+	serviceExtensionLister cache.Indexer
 
 	// TODO: Watch secrets
 	CloudClusterManager *ClusterManager
@@ -84,6 +88,8 @@ type LoadBalancerController struct {
 	hasSynced func() bool
 	// negEnabled indicates whether NEG feature is enabled.
 	negEnabled bool
+	// serviceExtensionEnabled indicates whether ServiceExtension feature is enabled.
+	serviceExtensionEnabled bool
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
@@ -112,6 +118,11 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 
 	if negEnabled {
 		lbc.endpointLister.Indexer = ctx.EndpointInformer.GetIndexer()
+	}
+
+	if ctx.ServiceExtensionInformer != nil {
+		lbc.serviceExtensionLister = ctx.ServiceExtensionInformer.GetIndexer()
+		lbc.serviceExtensionEnabled = true
 	}
 
 	// ingress event handler
@@ -163,6 +174,28 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 		// Ingress deletes matter, service deletes don't.
 	})
 
+	var serviceExtensionIndexer cache.Indexer
+	if lbc.serviceExtensionEnabled {
+		// serviceLister is needed to look up which service references
+		// the serviceExtension.
+		lbc.serviceLister = ctx.ServiceInformer.GetIndexer()
+		// serviceExtensionIndexer is needed to look up serviceExtension
+		// while syncing service.
+		serviceExtensionIndexer = ctx.ServiceExtensionInformer.GetIndexer()
+
+		ctx.ServiceExtensionInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    lbc.enqueueIngressForServiceExtension,
+			DeleteFunc: lbc.enqueueIngressForServiceExtension,
+			UpdateFunc: func(old, cur interface{}) {
+				oldSvcExt, okOld := old.(*serviceextensionv1alpha1.ServiceExtension)
+				curSvcExt, okCur := cur.(*serviceextensionv1alpha1.ServiceExtension)
+				if okOld && okCur && !reflect.DeepEqual(oldSvcExt.Spec, curSvcExt.Spec) {
+					lbc.enqueueIngressForServiceExtension(cur)
+				}
+			},
+		})
+	}
+
 	var endpointIndexer cache.Indexer
 	if ctx.EndpointInformer != nil {
 		endpointIndexer = ctx.EndpointInformer.GetIndexer()
@@ -172,6 +205,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 		ctx.NodeInformer.GetIndexer(),
 		ctx.PodInformer.GetIndexer(),
 		endpointIndexer,
+		serviceExtensionIndexer,
 		negEnabled)
 	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.client}
 
@@ -185,7 +219,7 @@ func (lbc *LoadBalancerController) enqueueIngressForService(obj interface{}) {
 	svc := obj.(*apiv1.Service)
 	ings, err := lbc.ingLister.GetServiceIngress(svc)
 	if err != nil {
-		glog.V(5).Infof("ignoring service %v: %v", svc.Name, err)
+		glog.V(5).Infof("ignoring service %s/%s: %v", svc.Namespace, svc.Name, err)
 		return
 	}
 	for _, ing := range ings {
@@ -193,6 +227,15 @@ func (lbc *LoadBalancerController) enqueueIngressForService(obj interface{}) {
 			continue
 		}
 		lbc.ingQueue.Enqueue(&ing)
+	}
+}
+
+// enqueueIngressForServiceExtension enqueues all the Ingress' for a ServiceExtension.
+func (lbc *LoadBalancerController) enqueueIngressForServiceExtension(obj interface{}) {
+	svcExt := obj.(*serviceextensionv1alpha1.ServiceExtension)
+	svcs := serviceextension.GetServicesForServiceExtension(lbc.serviceLister, svcExt)
+	for _, svc := range svcs {
+		lbc.enqueueIngressForService(svc)
 	}
 }
 

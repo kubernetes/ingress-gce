@@ -36,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
+	serviceextensionclientfake "k8s.io/ingress-gce/pkg/serviceextension/client/clientset/versioned/fake"
 )
 
 var (
@@ -55,13 +56,14 @@ func (bi *fakeBackendInfo) DefaultBackendNodePort() *backends.ServicePort {
 
 func gceForTest(negEnabled bool) *GCE {
 	client := fake.NewSimpleClientset()
+	serviceExtensionClient := serviceextensionclientfake.NewSimpleClientset()
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: client.Core().Events(""),
 	})
 
-	ctx := context.NewControllerContext(client, apiv1.NamespaceAll, 1*time.Second, negEnabled)
+	ctx := context.NewControllerContext(client, serviceExtensionClient, apiv1.NamespaceAll, 1*time.Second, negEnabled)
 	gce := &GCE{
 		recorders:  ctx,
 		bi:         &fakeBackendInfo{},
