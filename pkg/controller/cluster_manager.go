@@ -84,7 +84,7 @@ func (c *ClusterManager) shutdown() error {
 		return err
 	}
 	if err := c.firewallPool.Shutdown(); err != nil {
-		if _, ok := err.(*firewalls.FirewallSyncError); ok {
+		if _, ok := err.(*firewalls.FirewallXPNError); ok {
 			return nil
 		}
 		return err
