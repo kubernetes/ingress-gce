@@ -165,7 +165,7 @@ func TestSyncXPNReadOnly(t *testing.T) {
 	nodes := []string{"node-a", "node-b", "node-c"}
 
 	err := fp.Sync(nodes)
-	if fwErr, ok := err.(*FirewallSyncError); !ok || !strings.Contains(fwErr.Message, "create") {
+	if fwErr, ok := err.(*FirewallXPNError); !ok || !strings.Contains(fwErr.Message, "create") {
 		t.Errorf("Expected firewall sync error with a user message. Received err: %v", err)
 	}
 
@@ -193,12 +193,12 @@ func TestSyncXPNReadOnly(t *testing.T) {
 
 	nodes = append(nodes, "node-d")
 	err = fp.Sync(nodes)
-	if fwErr, ok := err.(*FirewallSyncError); !ok || !strings.Contains(fwErr.Message, "update") {
+	if fwErr, ok := err.(*FirewallXPNError); !ok || !strings.Contains(fwErr.Message, "update") {
 		t.Errorf("Expected firewall sync error with a user message. Received err: %v", err)
 	}
 
 	err = fp.Shutdown()
-	if fwErr, ok := err.(*FirewallSyncError); !ok || !strings.Contains(fwErr.Message, "delete") {
+	if fwErr, ok := err.(*FirewallXPNError); !ok || !strings.Contains(fwErr.Message, "delete") {
 		t.Errorf("Expected firewall sync error with a user message. Received err: %v", err)
 	}
 }

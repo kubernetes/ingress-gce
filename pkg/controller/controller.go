@@ -325,7 +325,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	negEndpointPorts := lbc.Translator.GatherEndpointPorts(gceNodePorts)
 	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
 	if err = lbc.CloudClusterManager.EnsureFirewall(nodeNames, negEndpointPorts); err != nil {
-		if fwErr, ok := err.(*firewalls.FirewallSyncError); ok {
+		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
 			// XPN: Raise an event and ignore the error.
 			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeNormal, "XPN", fwErr.Message)
 		} else {
