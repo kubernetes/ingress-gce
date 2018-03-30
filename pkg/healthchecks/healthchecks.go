@@ -148,7 +148,7 @@ func (h *HealthChecks) create(hc *HealthCheck) error {
 
 func (h *HealthChecks) update(oldHC, newHC *HealthCheck) error {
 	if newHC.isHttp2() || newHC.ForNEG {
-		glog.V(2).Infof("Updating health check with protocol %v", newHC.Type)
+		glog.V(2).Infof("Updating health check with protocol %v, ForNEG: %v", newHC.Type, newHC.ForNEG)
 		return h.cloud.UpdateAlphaHealthCheck(mergeHealthcheck(oldHC, newHC).ToAlphaComputeHealthCheck())
 	} else {
 		glog.V(2).Infof("Updating health check for port %v with protocol %v", newHC.Port, newHC.Type)
@@ -166,9 +166,17 @@ func (h *HealthChecks) update(oldHC, newHC *HealthCheck) error {
 // the existing health check setting will be preserve, although it may not suit the customer needs.
 func mergeHealthcheck(oldHC, newHC *HealthCheck) *HealthCheck {
 	portSpec := newHC.PortSpecification
+	port := newHC.Port
 	newHC.HTTPHealthCheck = oldHC.HTTPHealthCheck
-	newHC.HTTPHealthCheck.Port = 0
-	newHC.PortSpecification = portSpec
+
+	// Cannot specify both portSpecification and port field.
+	if newHC.ForNEG {
+		newHC.HTTPHealthCheck.Port = 0
+		newHC.PortSpecification = portSpec
+	} else {
+		newHC.PortSpecification = ""
+		newHC.Port = port
+	}
 	return newHC
 }
 

@@ -254,6 +254,49 @@ func TestHealthCheckUpdate(t *testing.T) {
 	if hc.Protocol() != annotations.ProtocolHTTP2 {
 		t.Fatalf("expected check to be of type HTTP2")
 	}
+
+	// Change to NEG Health Check
+	hc.ForNEG = true
+	hc.PortSpecification = UseServingPortSpecification
+	_, err = healthChecks.Sync(hc)
+
+	if err != nil {
+		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
+	}
+
+	// Verify the health check exists.
+	hc, err = healthChecks.Get(3000, true)
+	if err != nil {
+		t.Fatalf("expected the health check to exist, err: %v", err)
+	}
+
+	if hc.Port != 0 {
+		t.Fatalf("expected health check with PortSpecification to have no Port, got %v", hc.Port)
+	}
+
+	// Change back to regular Health Check
+	hc.ForNEG = false
+	hc.Port = 3000
+	hc.PortSpecification = ""
+
+	_, err = healthChecks.Sync(hc)
+	if err != nil {
+		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
+	}
+
+	// Verify the health check exists.
+	hc, err = healthChecks.Get(3000, true)
+	if err != nil {
+		t.Fatalf("expected the health check to exist, err: %v", err)
+	}
+
+	if len(hc.PortSpecification) != 0 {
+		t.Fatalf("expected health check with Port to have no PortSpecification, got %+v", hc)
+	}
+
+	if hc.Port == 0 {
+		t.Fatalf("expected health check with PortSpecification to have Port")
+	}
 }
 
 func TestHealthCheckDeleteLegacy(t *testing.T) {
