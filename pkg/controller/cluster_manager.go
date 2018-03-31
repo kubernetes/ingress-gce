@@ -84,7 +84,7 @@ func (c *ClusterManager) shutdown() error {
 		return err
 	}
 	if err := c.firewallPool.Shutdown(); err != nil {
-		if _, ok := err.(*firewalls.FirewallSyncError); ok {
+		if _, ok := err.(*firewalls.FirewallXPNError); ok {
 			return nil
 		}
 		return err
@@ -93,59 +93,50 @@ func (c *ClusterManager) shutdown() error {
 	return c.backendPool.Shutdown()
 }
 
-// Checkpoint performs a checkpoint with the cloud.
+// EnsureLoadBalancer creates the backend services and higher-level LB resources.
 // - lb is the single cluster L7 loadbalancers we wish to exist. If they already
 //   exist, they should not have any broken links between say, a UrlMap and
 //   TargetHttpProxy.
-// - nodeNames are the names of nodes we wish to add to all loadbalancer
-//   instance groups.
-// - backendServicePorts are the ports for which we require BackendServices.
-// - namedPorts are the ports which must be opened on instance groups.
-// - firewallPorts are the ports which must be opened in the firewall rule.
-// Returns the list of all instance groups corresponding to the given loadbalancers.
-// If in performing the checkpoint the cluster manager runs out of quota, a
-// googleapi 403 is returned.
-func (c *ClusterManager) Checkpoint(lb *loadbalancers.L7RuntimeInfo, nodeNames []string, backendServicePorts []backends.ServicePort, namedPorts []backends.ServicePort, endpointPorts []string) ([]*compute.InstanceGroup, error) {
-	glog.V(4).Infof("Checkpoint(%v lb, %v nodeNames, %v backendServicePorts, %v namedPorts, %v endpointPorts)", lb, len(nodeNames), len(backendServicePorts), len(namedPorts), len(endpointPorts))
-
-	if len(namedPorts) != 0 {
-		// Add the default backend node port to the list of named ports for instance groups.
-		namedPorts = append(namedPorts, c.defaultBackendNodePort)
-	}
-	// Multiple ingress paths can point to the same service (and hence nodePort)
-	// but each nodePort can only have one set of cloud resources behind it. So
-	// don't waste time double validating GCE BackendServices.
-	namedPorts = uniq(namedPorts)
-	backendServicePorts = uniq(backendServicePorts)
-	// Create Instance Groups.
-	igs, err := c.EnsureInstanceGroupsAndPorts(namedPorts)
-	if err != nil {
-		return igs, err
-	}
-	if err := c.backendPool.Ensure(backendServicePorts, igs); err != nil {
-		return igs, err
-	}
-	if err := c.instancePool.Sync(nodeNames); err != nil {
-		return igs, err
-	}
-	if err := c.l7Pool.Sync([]*loadbalancers.L7RuntimeInfo{lb}); err != nil {
-		return igs, err
+// - lbServicePorts are the ports for which we require Backend Services.
+// - instanceGroups are the groups to be referenced by the Backend Services..
+// If GCE runs out of quota, a googleapi 403 is returned.
+func (c *ClusterManager) EnsureLoadBalancer(lb *loadbalancers.L7RuntimeInfo, lbServicePorts []backends.ServicePort, instanceGroups []*compute.InstanceGroup) error {
+	glog.V(4).Infof("EnsureLoadBalancer(%q lb, %v lbServicePorts, %v instanceGroups)", lb.String(), len(lbServicePorts), len(instanceGroups))
+	if err := c.backendPool.Ensure(uniq(lbServicePorts), instanceGroups); err != nil {
+		return err
 	}
 
-	if err := c.firewallPool.Sync(nodeNames, endpointPorts...); err != nil {
-		return igs, err
-	}
-
-	return igs, nil
+	return c.l7Pool.Sync([]*loadbalancers.L7RuntimeInfo{lb})
 }
 
-func (c *ClusterManager) EnsureInstanceGroupsAndPorts(servicePorts []backends.ServicePort) ([]*compute.InstanceGroup, error) {
+func (c *ClusterManager) EnsureInstanceGroupsAndPorts(nodeNames []string, servicePorts []backends.ServicePort) ([]*compute.InstanceGroup, error) {
+	if len(servicePorts) != 0 {
+		// Add the default backend node port to the list of named ports for instance groups.
+		servicePorts = append(servicePorts, c.defaultBackendNodePort)
+	}
+
+	// Convert to slice of NodePort int64s.
 	ports := []int64{}
-	for _, p := range servicePorts {
+	for _, p := range uniq(servicePorts) {
 		ports = append(ports, p.NodePort)
 	}
+
+	// Create instance groups and set named ports.
 	igs, err := instances.EnsureInstanceGroupsAndPorts(c.instancePool, c.ClusterNamer, ports)
+	if err != nil {
+		return nil, err
+	}
+
+	// Add/remove instances to the instance groups.
+	if err = c.instancePool.Sync(nodeNames); err != nil {
+		return nil, err
+	}
+
 	return igs, err
+}
+
+func (c *ClusterManager) EnsureFirewall(nodeNames []string, endpointPorts []string) error {
+	return c.firewallPool.Sync(nodeNames, endpointPorts...)
 }
 
 // GC garbage collects unused resources.

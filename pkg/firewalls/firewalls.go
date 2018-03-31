@@ -147,19 +147,19 @@ func (fr *FirewallRules) deleteFirewall(name string) error {
 	return err
 }
 
-func newFirewallXPNError(internal error, cmd string) *FirewallSyncError {
-	return &FirewallSyncError{
+func newFirewallXPNError(internal error, cmd string) *FirewallXPNError {
+	return &FirewallXPNError{
 		Internal: internal,
 		Message:  fmt.Sprintf("Firewall change required by network admin: `%v`", cmd),
 	}
 }
 
-type FirewallSyncError struct {
+type FirewallXPNError struct {
 	Internal error
 	Message  string
 }
 
-func (f *FirewallSyncError) Error() string {
+func (f *FirewallXPNError) Error() string {
 	return f.Message
 }
 
