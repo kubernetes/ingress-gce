@@ -81,7 +81,7 @@ func (f *FakeInstanceGroups) GetInstanceGroup(name, zone string) (*compute.Insta
 
 // CreateInstanceGroup fakes instance group creation.
 func (f *FakeInstanceGroups) CreateInstanceGroup(ig *compute.InstanceGroup, zone string) error {
-	ig.SelfLink = ig.Name
+	ig.SelfLink = fmt.Sprintf("/zones/%s/instanceGroups/%s", zone, ig.Name)
 	ig.Zone = zone
 	f.instanceGroups = append(f.instanceGroups, ig)
 	return nil

@@ -49,6 +49,16 @@ func TestService(t *testing.T) {
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
+						ServiceApplicationProtocolKey: `{"443": "HTTP2"}`,
+					},
+				},
+			},
+			appProtocols: map[string]AppProtocol{"443": "HTTP2"},
+		},
+		{
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
 						NetworkEndpointGroupAlphaAnnotation: "true",
 					},
 				},

@@ -18,19 +18,22 @@ package backends
 
 import (
 	"encoding/json"
+	"github.com/golang/glog"
 
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	compute "google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // NewFakeBackendServices creates a new fake backend services manager.
-func NewFakeBackendServices(ef func(op int, be *compute.BackendService) error) *FakeBackendServices {
+func NewFakeBackendServices(ef func(op int, be *compute.BackendService) error, alpha bool) *FakeBackendServices {
 	return &FakeBackendServices{
-		errFunc: ef,
+		alphaWhitelisted: alpha,
+		errFunc:          ef,
 		backendServices: cache.NewStore(func(obj interface{}) (string, error) {
 			svc := obj.(*compute.BackendService)
 			return svc.Name, nil
@@ -40,9 +43,10 @@ func NewFakeBackendServices(ef func(op int, be *compute.BackendService) error) *
 
 // FakeBackendServices fakes out GCE backend services.
 type FakeBackendServices struct {
-	backendServices cache.Store
-	calls           []int
-	errFunc         func(op int, be *compute.BackendService) error
+	backendServices  cache.Store
+	calls            []int
+	errFunc          func(op int, be *compute.BackendService) error
+	alphaWhitelisted bool
 }
 
 // GetGlobalBackendService fakes getting a backend service from the cloud.
@@ -58,16 +62,35 @@ func (f *FakeBackendServices) GetGlobalBackendService(name string) (*compute.Bac
 
 	svc := obj.(*compute.BackendService)
 	if name == svc.Name {
+		// Currently, getting an Alpha BackendService strips it of Protocol if HTTP2.
+		// TODO: remove this check once ProtocolHTTP2 moves into Beta or GA.
+		if svc.Protocol == string(annotations.ProtocolHTTP2) {
+			svc.Protocol = ""
+		}
 		return svc, nil
 	}
+
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
 func (f *FakeBackendServices) GetAlphaGlobalBackendService(name string) (*computealpha.BackendService, error) {
+	if !f.alphaWhitelisted {
+		return nil, utils.FakeGoogleAPIForbiddenErr()
+	}
+
 	obj, err := f.GetGlobalBackendService(name)
 	if err != nil {
 		return nil, err
 	}
+
+	// Currently, getting an Alpha BackendService strips it of Protocol if HTTP2.
+	// TODO: remove this check once ProtocolHTTP2 moves into Beta or GA.
+	if obj.Protocol == "" {
+		obj.Protocol = string(annotations.ProtocolHTTP2)
+	}
+
+	glog.V(2).Infof("get backend service %+v", obj)
+
 	return toAlphaBackendService(obj), nil
 }
 
@@ -81,6 +104,15 @@ func (f *FakeBackendServices) CreateGlobalBackendService(be *compute.BackendServ
 	f.calls = append(f.calls, utils.Create)
 	be.SelfLink = be.Name
 	return f.backendServices.Update(be)
+}
+
+// CreateGlobalBackendService fakes updating a backend service.
+func (f *FakeBackendServices) CreateAlphaGlobalBackendService(be *computealpha.BackendService) error {
+	if !f.alphaWhitelisted {
+		return utils.FakeGoogleAPIForbiddenErr()
+	}
+
+	return f.CreateGlobalBackendService(toV1BackendService(be))
 }
 
 // DeleteGlobalBackendService fakes backend service deletion.
@@ -114,11 +146,16 @@ func (f *FakeBackendServices) UpdateGlobalBackendService(be *compute.BackendServ
 		}
 	}
 	f.calls = append(f.calls, utils.Update)
+	glog.V(2).Infof("update backend service %+v", be)
 	return f.backendServices.Update(be)
 }
 
 // UpdateGlobalBackendService fakes updating a backend service.
 func (f *FakeBackendServices) UpdateAlphaGlobalBackendService(be *computealpha.BackendService) error {
+	if !f.alphaWhitelisted {
+		return utils.FakeGoogleAPIForbiddenErr()
+	}
+
 	return f.UpdateGlobalBackendService(toV1BackendService(be))
 }
 

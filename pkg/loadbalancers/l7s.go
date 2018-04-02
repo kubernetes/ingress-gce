@@ -150,11 +150,11 @@ func (l *L7s) Sync(lbs []*L7RuntimeInfo) error {
 		if err := l.defaultBackendPool.Ensure([]backends.ServicePort{l.defaultBackendNodePort}, nil); err != nil {
 			return err
 		}
-		defaultBackend, err := l.defaultBackendPool.Get(l.defaultBackendNodePort.NodePort)
+		defaultBackend, err := l.defaultBackendPool.Get(l.defaultBackendNodePort.NodePort, false)
 		if err != nil {
 			return err
 		}
-		l.glbcDefaultBackend = defaultBackend
+		l.glbcDefaultBackend = defaultBackend.Ga
 	}
 	// create new loadbalancers, validate existing
 	for _, ri := range lbs {

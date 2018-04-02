@@ -40,7 +40,7 @@ var (
 )
 
 func newFakeLoadBalancerPool(f LoadBalancers, t *testing.T, namer *utils.Namer) LoadBalancerPool {
-	fakeBackends := backends.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
+	fakeBackends := backends.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil }, false)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
 	fakeHCP := healthchecks.NewFakeHealthCheckProvider()
 	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")
