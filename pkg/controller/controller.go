@@ -230,8 +230,8 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 	return nil
 }
 
-// sync manages Ingress create/updates/deletes.
-func (lbc *LoadBalancerController) sync(key string) (err error) {
+// sync manages Ingress create/updates/deletes
+func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	if !lbc.hasSynced() {
 		time.Sleep(storeSyncPollPeriod)
 		return fmt.Errorf("waiting for stores to sync")
@@ -247,90 +247,96 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 		return err
 	}
 
+	// allNodePorts contains ServicePorts used by all ingresses  (single-cluster and multi-cluster).
 	allNodePorts := lbc.Translator.ToNodePorts(&allIngresses)
+	// gceNodePorts contains the ServicePorts used by only single-cluster ingress.
 	gceNodePorts := lbc.Translator.ToNodePorts(&gceIngresses)
 	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
 	if err != nil {
 		return err
 	}
-	lbNames := lbc.ingLister.Store.ListKeys()
 
+	lbNames := lbc.ingLister.Store.ListKeys()
 	obj, ingExists, err := lbc.ingLister.Store.GetByKey(key)
 	if err != nil {
 		return err
 	}
-
 	if !ingExists {
 		glog.V(2).Infof("Ingress %q no longer exists, triggering GC", key)
-		return lbc.CloudClusterManager.GC(lbNames, allNodePorts)
+		// GC will find GCE resources that were used for this ingress and delete them.
+		return lbc.CloudClusterManager.GC(lbNames, gceNodePorts)
 	}
 
+	// Get ingress and DeepCopy for assurance that we don't pollute other goroutines with changes.
 	ing, ok := obj.(*extensions.Ingress)
 	if !ok {
 		return fmt.Errorf("invalid object (not of type Ingress), type was %T", obj)
 	}
-	// DeepCopy for assurance that we don't pollute other goroutines with changes.
 	ing = ing.DeepCopy()
 
-	// This performs a 2 phase checkpoint with the cloud:
-	// * Phase 1 creates/verifies resources are as expected. At the end of a
-	//   successful checkpoint we know that existing L7s are WAI, and the L7
-	//   for the Ingress associated with "key" is ready for a UrlMap update.
-	//   If this encounters an error, eg for quota reasons, we want to invoke
-	//   Phase 2 right away and retry checkpointing.
-	// * Phase 2 performs GC by refcounting shared resources. This needs to
-	//   happen periodically whether or not stage 1 fails. At the end of a
-	//   successful GC we know that there are no dangling cloud resources that
-	//   don't have an associated Kubernetes Ingress/Service/Endpoint.
-
-	var syncError error
 	defer func() {
-		if deferErr := lbc.CloudClusterManager.GC(lbNames, allNodePorts); deferErr != nil {
-			err = fmt.Errorf("error during sync %v, error during GC %v", syncError, deferErr)
+		if retErr != nil {
+			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", retErr.Error())
 		}
-		glog.V(3).Infof("Finished syncing %v", key)
+		// Garbage collection will occur regardless of an error occurring. If an error occurred,
+		// it could have been caused by quota issues; therefore, garbage collecting now may
+		// free up enough quota for the next sync to pass.
+		if gcErr := lbc.CloudClusterManager.GC(lbNames, gceNodePorts); gcErr != nil {
+			retErr = fmt.Errorf("error during sync %v, error during GC %v", retErr, gcErr)
+		}
 	}()
 
-	singleIngressList := &extensions.IngressList{
-		Items: []extensions.Ingress{*ing},
-	}
-	lb, err := lbc.toRuntimeInfo(ing)
+	igs, err := lbc.CloudClusterManager.EnsureInstanceGroupsAndPorts(nodeNames, allNodePorts)
 	if err != nil {
-		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Ingress", err.Error())
 		return err
-	}
-	lbs := []*loadbalancers.L7RuntimeInfo{lb}
-
-	// Get all service ports for the ingress being synced.
-	ingSvcPorts := lbc.Translator.ToNodePorts(singleIngressList)
-
-	igs, err := lbc.CloudClusterManager.Checkpoint(lbs, nodeNames, ingSvcPorts, allNodePorts, lbc.Translator.GatherEndpointPorts(gceNodePorts))
-	if err != nil {
-		const eventMsg = "GCE"
-		if fwErr, ok := err.(*firewalls.FirewallSyncError); ok {
-			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeNormal, eventMsg, fwErr.Message)
-		} else {
-			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, eventMsg, err.Error())
-			syncError = err
-		}
 	}
 
 	if isGCEMultiClusterIngress(ing) {
-		// Add instance group names as annotation on the ingress.
+		// Add instance group names as annotation on the ingress and return.
 		if ing.Annotations == nil {
 			ing.Annotations = map[string]string{}
 		}
 		if err = setInstanceGroupsAnnotation(ing.Annotations, igs); err != nil {
 			return err
 		}
-		return updateAnnotations(lbc.client, ing.Name, ing.Namespace, ing.Annotations)
+		if err = updateAnnotations(lbc.client, ing.Name, ing.Namespace, ing.Annotations); err != nil {
+			return err
+		}
+		glog.V(3).Infof("Finished syncing MCI-ingress %v", key)
+		return nil
 	}
 
-	if lbc.negEnabled {
-		svcPorts := lbc.Translator.ToNodePorts(singleIngressList)
-		for _, svcPort := range svcPorts {
-			if svcPort.NEGEnabled {
+	// Continue syncing this specific GCE ingress.
+	lb, err := lbc.toRuntimeInfo(ing)
+	if err != nil {
+		return err
+	}
 
+	// Get all service ports for the ingress being synced.
+	lbSvcPorts := lbc.Translator.ToNodePorts(&extensions.IngressList{
+		Items: []extensions.Ingress{*ing},
+	})
+
+	// Create the backend services and higher-level LB resources.
+	if err = lbc.CloudClusterManager.EnsureLoadBalancer(lb, lbSvcPorts, igs); err != nil {
+		return err
+	}
+
+	negEndpointPorts := lbc.Translator.GatherEndpointPorts(gceNodePorts)
+	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
+	if err = lbc.CloudClusterManager.EnsureFirewall(nodeNames, negEndpointPorts); err != nil {
+		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
+			// XPN: Raise an event and ignore the error.
+			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeNormal, "XPN", fwErr.Message)
+		} else {
+			return err
+		}
+	}
+
+	// If NEG enabled, link the backend services to the NEGs.
+	if lbc.negEnabled {
+		for _, svcPort := range lbSvcPorts {
+			if svcPort.NEGEnabled {
 				zones, err := lbc.Translator.ListZones()
 				if err != nil {
 					return err
@@ -345,20 +351,24 @@ func (lbc *LoadBalancerController) sync(key string) (err error) {
 	// Update the UrlMap of the single loadbalancer that came through the watch.
 	l7, err := lbc.CloudClusterManager.l7Pool.Get(key)
 	if err != nil {
-		syncError = fmt.Errorf("%v, unable to get loadbalancer: %v", syncError, err)
-		return syncError
+		return fmt.Errorf("unable to get loadbalancer: %v", err)
 	}
 
-	if urlMap, err := lbc.Translator.ToURLMap(ing); err != nil {
-		syncError = fmt.Errorf("%v, convert to url map error %v", syncError, err)
-	} else if err := l7.UpdateUrlMap(urlMap); err != nil {
-		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "UrlMap", err.Error())
-		syncError = fmt.Errorf("%v, update url map error: %v", syncError, err)
-	} else if err := lbc.updateIngressStatus(l7, ing); err != nil {
-		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Status", err.Error())
-		syncError = fmt.Errorf("%v, update ingress error: %v", syncError, err)
+	urlMap, err := lbc.Translator.ToURLMap(ing)
+	if err != nil {
+		return fmt.Errorf("convert to URL Map error %v", err)
 	}
-	return syncError
+
+	if err := l7.UpdateUrlMap(urlMap); err != nil {
+		return fmt.Errorf("update URL Map error: %v", err)
+	}
+
+	if err := lbc.updateIngressStatus(l7, ing); err != nil {
+		return fmt.Errorf("update ingress status error: %v", err)
+	}
+
+	glog.V(3).Infof("Finished syncing %v", key)
+	return nil
 }
 
 // updateIngressStatus updates the IP and annotations of a loadbalancer.
