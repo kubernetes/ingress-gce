@@ -22,6 +22,7 @@ import (
 
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/flags"
 )
 
 func TestService(t *testing.T) {
@@ -30,6 +31,7 @@ func TestService(t *testing.T) {
 		appProtocolsErr bool
 		appProtocols    map[string]AppProtocol
 		neg             bool
+		http2           bool
 	}{
 		{
 			svc:          &v1.Service{},
@@ -53,7 +55,19 @@ func TestService(t *testing.T) {
 					},
 				},
 			},
+			appProtocols:    map[string]AppProtocol{"443": "HTTP2"},
+			appProtocolsErr: true, // Without the http2 flag enabled, expect error
+		},
+		{
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ServiceApplicationProtocolKey: `{"443": "HTTP2"}`,
+					},
+				},
+			},
 			appProtocols: map[string]AppProtocol{"443": "HTTP2"},
+			http2:        true,
 		},
 		{
 			svc: &v1.Service{
@@ -87,6 +101,7 @@ func TestService(t *testing.T) {
 			appProtocolsErr: true,
 		},
 	} {
+		flags.F.Features.Http2 = tc.http2
 		svc := FromService(tc.svc)
 		ap, err := svc.ApplicationProtocols()
 		if tc.appProtocolsErr {
