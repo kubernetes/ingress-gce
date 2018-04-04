@@ -46,6 +46,7 @@ var (
 		GCERateLimit    RateLimitSpecs
 		HealthCheckPath string
 		HealthzPort     int
+		Features        *Features
 		InCluster       bool
 		IngressClass    string
 		KubeConfigFile  string
@@ -60,6 +61,23 @@ var (
 func init() {
 	F.NodePortRanges.ports = []string{DefaultNodePortRange}
 	F.GCERateLimit.specs = []string{"alpha.Operations.Get,qps,10,100", "beta.Operations.Get,qps,10,100", "ga.Operations.Get,qps,10,100"}
+	F.Features = EnabledFeatures()
+}
+
+// Features is a collection of feature flags for easily enabling and disabling
+// new Ingress features.
+type Features struct {
+	// Http2 enables ProtocolHTTP2 as a valid annotation key on Service, which
+	// allows the creation HTTP2 BackendServices and HealthChecks. Alpha-only.
+	Http2 bool
+}
+
+var DefaultFeatures = &Features{
+	Http2: true,
+}
+
+func EnabledFeatures() *Features {
+	return DefaultFeatures
 }
 
 // Register flags with the command line parser.
