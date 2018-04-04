@@ -124,6 +124,7 @@ var readtests = []struct {
 	{"[section]\nname=\"va\\\"lue\"", &cBasic{Section: cBasicS1{Name: "va\"lue"}}, true},
 	{"[section]\nname=\"va\\nlue\"", &cBasic{Section: cBasicS1{Name: "va\nlue"}}, true},
 	{"[section]\nname=\"va\\tlue\"", &cBasic{Section: cBasicS1{Name: "va\tlue"}}, true},
+	{"[section]\nname=\\\"value\\\"", &cBasic{Section: cBasicS1{Name: `"value"`}}, true},
 	{"\n[section]\nname=\\", &cBasic{}, false},
 	{"\n[section]\nname=\\a", &cBasic{}, false},
 	{"\n[section]\nname=\"val\\a\"", &cBasic{}, false},
@@ -169,10 +170,10 @@ var readtests = []struct {
 	{"\n[section]\nname=\"va ; lue\" ; cmnt", &cBasic{Section: cBasicS1{Name: "va ; lue"}}, true},
 	{"\n[section]\nname=; cmnt", &cBasic{Section: cBasicS1{Name: ""}}, true},
 }}, {"scanning:subsections", []readtest{
-	{"\n[sub \"A\"]\nname=value", &cSubs{map[string]*cSubsS1{"A": &cSubsS1{"value"}}}, true},
-	{"\n[sub \"b\"]\nname=value", &cSubs{map[string]*cSubsS1{"b": &cSubsS1{"value"}}}, true},
-	{"\n[sub \"A\\\\\"]\nname=value", &cSubs{map[string]*cSubsS1{"A\\": &cSubsS1{"value"}}}, true},
-	{"\n[sub \"A\\\"\"]\nname=value", &cSubs{map[string]*cSubsS1{"A\"": &cSubsS1{"value"}}}, true},
+	{"\n[sub \"A\"]\nname=value", &cSubs{map[string]*cSubsS1{"A": {"value"}}}, true},
+	{"\n[sub \"b\"]\nname=value", &cSubs{map[string]*cSubsS1{"b": {"value"}}}, true},
+	{"\n[sub \"A\\\\\"]\nname=value", &cSubs{map[string]*cSubsS1{"A\\": {"value"}}}, true},
+	{"\n[sub \"A\\\"\"]\nname=value", &cSubs{map[string]*cSubsS1{"A\"": {"value"}}}, true},
 }}, {"syntax", []readtest{
 	// invalid line
 	{"\n[section]\n=", &cBasic{}, false},
@@ -209,7 +210,7 @@ var readtests = []struct {
 	// name specified as struct tag
 	{"[tag-name]\nname=value", &cBasic{TagName: cBasicS1{Name: "value"}}, true},
 	// empty subsections
-	{"\n[sub \"A\"]\n[sub \"B\"]", &cSubs{map[string]*cSubsS1{"A": &cSubsS1{}, "B": &cSubsS1{}}}, true},
+	{"\n[sub \"A\"]\n[sub \"B\"]", &cSubs{map[string]*cSubsS1{"A": {}, "B": {}}}, true},
 }}, {"multivalue", []readtest{
 	// unnamed slice type: treat as multi-value
 	{"\n[m1]", &cMulti{M1: cMultiS1{}}, true},
