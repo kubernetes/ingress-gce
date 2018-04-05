@@ -15,23 +15,23 @@ import (
 )
 
 const (
-	NegName          = "test-neg-name"
-	ServiceNamespace = "test-ns"
-	ServiceName      = "test-name"
-	NamedPort        = "named-port"
+	testNegName          = "test-neg-name"
+	testServiceNamespace = "test-ns"
+	testServiceName      = "test-name"
+	testNamedPort        = "named-port"
 )
 
 func NewTestSyncer() *syncer {
 	kubeClient := fake.NewSimpleClientset()
 	context := context.NewControllerContext(kubeClient, apiv1.NamespaceAll, 1*time.Second, true)
 	svcPort := servicePort{
-		namespace:  ServiceNamespace,
-		name:       ServiceName,
+		namespace:  testServiceNamespace,
+		name:       testServiceName,
 		targetPort: "80",
 	}
 
 	return newSyncer(svcPort,
-		NegName,
+		testNegName,
 		record.NewFakeRecorder(100),
 		NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-newtork"),
 		NewFakeZoneGetter(),
@@ -103,7 +103,7 @@ func TestEnsureNetworkEndpointGroups(t *testing.T) {
 		if len(negs) != 1 {
 			t.Errorf("Unexpected negs %v", negs)
 		} else {
-			if negs[0].Name != NegName {
+			if negs[0].Name != testNegName {
 				t.Errorf("Unexpected neg %q", negs[0].Name)
 			}
 		}
@@ -124,7 +124,7 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 			},
 		},
 		{
-			targetPort: NamedPort,
+			targetPort: testNamedPort,
 			expect: map[string]sets.String{
 				TestZone1: sets.NewString("10.100.2.2||instance2||81"),
 				TestZone2: sets.NewString("10.100.4.1||instance4||81", "10.100.3.2||instance3||8081", "10.100.4.2||instance4||8081"),
@@ -366,8 +366,8 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 	instance4 := TestInstance4
 	return &apiv1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ServiceName,
-			Namespace: ServiceNamespace,
+			Name:      testServiceName,
+			Namespace: testServiceNamespace,
 		},
 		Subsets: []apiv1.EndpointSubset{
 			{
@@ -410,7 +410,7 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 				},
 				Ports: []apiv1.EndpointPort{
 					{
-						Name:     NamedPort,
+						Name:     testNamedPort,
 						Port:     int32(81),
 						Protocol: apiv1.ProtocolTCP,
 					},
@@ -429,7 +429,7 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 				},
 				Ports: []apiv1.EndpointPort{
 					{
-						Name:     NamedPort,
+						Name:     testNamedPort,
 						Port:     int32(8081),
 						Protocol: apiv1.ProtocolTCP,
 					},

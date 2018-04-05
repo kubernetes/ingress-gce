@@ -168,15 +168,18 @@ func (t *GCE) getServiceNodePort(be extensions.IngressBackend, namespace string)
 			},
 		})
 	if !exists {
-		return backends.ServicePort{}, errors.ErrNodePortNotFound{be, fmt.Errorf("service %v/%v not found in store", namespace, be.ServiceName)}
+		return backends.ServicePort{}, errors.ErrNodePortNotFound{
+			Backend: be,
+			Err:     fmt.Errorf("service %v/%v not found in store", namespace, be.ServiceName),
+		}
 	}
 	if err != nil {
-		return backends.ServicePort{}, errors.ErrNodePortNotFound{be, err}
+		return backends.ServicePort{}, errors.ErrNodePortNotFound{Backend: be, Err: err}
 	}
 	svc := obj.(*api_v1.Service)
 	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
 	if err != nil {
-		return backends.ServicePort{}, errors.ErrSvcAppProtosParsing{svc, err}
+		return backends.ServicePort{}, errors.ErrSvcAppProtosParsing{Svc: svc, Err: err}
 	}
 
 	var port *api_v1.ServicePort
@@ -198,7 +201,10 @@ PortLoop:
 	}
 
 	if port == nil {
-		return backends.ServicePort{}, errors.ErrNodePortNotFound{be, fmt.Errorf("could not find matching nodeport from service")}
+		return backends.ServicePort{}, errors.ErrNodePortNotFound{
+			Backend: be,
+			Err:     fmt.Errorf("could not find matching nodeport from service"),
+		}
 	}
 
 	proto := annotations.ProtocolHTTP

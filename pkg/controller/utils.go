@@ -54,26 +54,6 @@ func isGCEMultiClusterIngress(ing *extensions.Ingress) bool {
 	return class == annotations.GceMultiIngressClass
 }
 
-// ErrNodePortNotFound is an implementation of error.
-type ErrNodePortNotFound struct {
-	backend extensions.IngressBackend
-	origErr error
-}
-
-func (e ErrNodePortNotFound) Error() string {
-	return fmt.Sprintf("Could not find nodeport for backend %+v: %v",
-		e.backend, e.origErr)
-}
-
-type ErrSvcAppProtosParsing struct {
-	svc     *api_v1.Service
-	origErr error
-}
-
-func (e ErrSvcAppProtosParsing) Error() string {
-	return fmt.Sprintf("could not parse %v annotation on Service %v/%v, err: %v", annotations.ServiceApplicationProtocolKey, e.svc.Namespace, e.svc.Name, e.origErr)
-}
-
 // StoreToIngressLister makes a Store that lists Ingress.
 // TODO: Move this to cache/listers post 1.1.
 type StoreToIngressLister struct {
