@@ -335,13 +335,19 @@ func (f *FakeLoadBalancers) SetUrlMapForTargetHttpsProxy(proxy *compute.TargetHt
 }
 
 // SetSslCertificateForTargetHttpsProxy fakes out setting certificates.
-func (f *FakeLoadBalancers) SetSslCertificateForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, SSLCert *compute.SslCertificate) error {
+func (f *FakeLoadBalancers) SetSslCertificateForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, SSLCerts []*compute.SslCertificate) error {
 	f.calls = append(f.calls, "SetSslCertificateForTargetHttpsProxy")
 	found := false
+	var certs []string
+	for _, cert := range SSLCerts {
+		certs = append(certs, cert.SelfLink)
+	}
+
 	for i := range f.Tps {
 		if f.Tps[i].Name == proxy.Name {
-			f.Tps[i].SslCertificates = []string{SSLCert.SelfLink}
+			f.Tps[i].SslCertificates = certs
 			found = true
+			break
 		}
 	}
 	if !found {
@@ -462,10 +468,19 @@ func (f *FakeLoadBalancers) GetSslCertificate(name string) (*compute.SslCertific
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
+func (f *FakeLoadBalancers) ListSslCertificates() ([]*compute.SslCertificate, error) {
+	f.calls = append(f.calls, "ListSslCertificates")
+	return f.Certs, nil
+}
+
 // CreateSslCertificate fakes out certificate creation.
 func (f *FakeLoadBalancers) CreateSslCertificate(cert *compute.SslCertificate) (*compute.SslCertificate, error) {
 	f.calls = append(f.calls, "CreateSslCertificate")
 	cert.SelfLink = cert.Name
+	if len(f.Certs) == TargetProxyCertLimit {
+		// Simulate cert creation failure
+		return nil, fmt.Errorf("Unable to create cert, Exceeded cert limit of %d.", TargetProxyCertLimit)
+	}
 	f.Certs = append(f.Certs, cert)
 	return cert, nil
 }
