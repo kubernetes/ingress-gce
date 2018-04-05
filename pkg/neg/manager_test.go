@@ -167,11 +167,11 @@ func TestGarbageCollectionSyncer(t *testing.T) {
 
 func TestGarbageCollectionNEG(t *testing.T) {
 	kubeClient := fake.NewSimpleClientset()
-	if _, err := kubeClient.Core().Endpoints(ServiceNamespace).Create(getDefaultEndpoint()); err != nil {
+	if _, err := kubeClient.Core().Endpoints(testServiceNamespace).Create(getDefaultEndpoint()); err != nil {
 		t.Fatalf("Failed to create endpoint: %v", err)
 	}
 	manager := NewTestSyncerManager(kubeClient)
-	if err := manager.EnsureSyncers(ServiceNamespace, ServiceName, sets.NewString("80")); err != nil {
+	if err := manager.EnsureSyncers(testServiceNamespace, testServiceName, sets.NewString("80")); err != nil {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}
 
@@ -192,5 +192,5 @@ func TestGarbageCollectionNEG(t *testing.T) {
 	}
 
 	// make sure there is no leaking go routine
-	manager.StopSyncer(ServiceNamespace, ServiceName)
+	manager.StopSyncer(testServiceNamespace, testServiceName)
 }

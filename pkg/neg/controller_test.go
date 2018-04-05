@@ -49,7 +49,7 @@ func TestNewNonNEGService(t *testing.T) {
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(false))
 	controller.ingressLister.Add(newTestIngress())
-	err := controller.processService(serviceKeyFunc(ServiceNamespace, ServiceName))
+	err := controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestNewNEGService(t *testing.T) {
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(true))
 	controller.ingressLister.Add(newTestIngress())
-	err := controller.processService(serviceKeyFunc(ServiceNamespace, ServiceName))
+	err := controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -75,14 +75,14 @@ func TestEnableNEGService(t *testing.T) {
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(false))
 	controller.ingressLister.Add(newTestIngress())
-	err := controller.processService(serviceKeyFunc(ServiceNamespace, ServiceName))
+	err := controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
 	validateSyncers(t, controller, 0, true)
 
 	controller.serviceLister.Update(newTestService(true))
-	err = controller.processService(serviceKeyFunc(ServiceNamespace, ServiceName))
+	err = controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -94,14 +94,14 @@ func TestDisableNEGService(t *testing.T) {
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(true))
 	controller.ingressLister.Add(newTestIngress())
-	err := controller.processService(serviceKeyFunc(ServiceNamespace, ServiceName))
+	err := controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
 	validateSyncers(t, controller, 3, false)
 
 	controller.serviceLister.Update(newTestService(false))
-	err = controller.processService(serviceKeyFunc(ServiceNamespace, ServiceName))
+	err = controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -117,13 +117,13 @@ func TestGatherServiceTargetPortUsedByIngress(t *testing.T) {
 		{
 			[]extensions.Ingress{{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      ServiceName,
-					Namespace: ServiceNamespace,
+					Name:      testServiceName,
+					Namespace: testServiceNamespace,
 				},
 				Spec: extensions.IngressSpec{
 					Backend: &extensions.IngressBackend{
-						"nonExists",
-						intstr.FromString(NamedPort),
+						ServiceName: "nonExists",
+						ServicePort: intstr.FromString(testNamedPort),
 					},
 				},
 			}},
@@ -133,13 +133,13 @@ func TestGatherServiceTargetPortUsedByIngress(t *testing.T) {
 		{
 			[]extensions.Ingress{{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      ServiceName,
-					Namespace: ServiceNamespace,
+					Name:      testServiceName,
+					Namespace: testServiceNamespace,
 				},
 				Spec: extensions.IngressSpec{
 					Backend: &extensions.IngressBackend{
-						ServiceName,
-						intstr.FromString("NonExisted"),
+						ServiceName: testServiceName,
+						ServicePort: intstr.FromString("NonExisted"),
 					},
 				},
 			}},
@@ -149,8 +149,8 @@ func TestGatherServiceTargetPortUsedByIngress(t *testing.T) {
 		{
 			[]extensions.Ingress{{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:      ServiceName,
-					Namespace: ServiceNamespace,
+					Name:      testServiceName,
+					Namespace: testServiceNamespace,
 				},
 				Spec: extensions.IngressSpec{
 					Rules: []extensions.IngressRule{
@@ -159,17 +159,17 @@ func TestGatherServiceTargetPortUsedByIngress(t *testing.T) {
 								HTTP: &extensions.HTTPIngressRuleValue{
 									Paths: []extensions.HTTPIngressPath{
 										{
-											"/path1",
-											extensions.IngressBackend{
-												ServiceName,
-												intstr.FromInt(80),
+											Path: "/path1",
+											Backend: extensions.IngressBackend{
+												ServiceName: testServiceName,
+												ServicePort: intstr.FromInt(80),
 											},
 										},
 										{
-											"/path2",
-											extensions.IngressBackend{
-												"nonExisted",
-												intstr.FromInt(443),
+											Path: "/path2",
+											Backend: extensions.IngressBackend{
+												ServiceName: "nonExisted",
+												ServicePort: intstr.FromInt(443),
 											},
 										},
 									},
@@ -184,12 +184,12 @@ func TestGatherServiceTargetPortUsedByIngress(t *testing.T) {
 		// two ingresses with multiple different references to service
 		{
 			[]extensions.Ingress{*newTestIngress(), *newTestIngress()},
-			[]string{"8080", "8081", NamedPort},
+			[]string{"8080", "8081", testNamedPort},
 		},
 		// one ingress iwth multiple different references to service
 		{
 			[]extensions.Ingress{*newTestIngress()},
-			[]string{"8080", "8081", NamedPort},
+			[]string{"8080", "8081", testNamedPort},
 		},
 	}
 
@@ -221,13 +221,13 @@ func validateSyncers(t *testing.T, controller *Controller, num int, stopped bool
 func newTestIngress() *extensions.Ingress {
 	return &extensions.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      ServiceName,
-			Namespace: ServiceNamespace,
+			Name:      testServiceName,
+			Namespace: testServiceNamespace,
 		},
 		Spec: extensions.IngressSpec{
 			Backend: &extensions.IngressBackend{
-				ServiceName,
-				intstr.FromString(NamedPort),
+				ServiceName: testServiceName,
+				ServicePort: intstr.FromString(testNamedPort),
 			},
 			Rules: []extensions.IngressRule{
 				{
@@ -235,24 +235,24 @@ func newTestIngress() *extensions.Ingress {
 						HTTP: &extensions.HTTPIngressRuleValue{
 							Paths: []extensions.HTTPIngressPath{
 								{
-									"/path1",
-									extensions.IngressBackend{
-										ServiceName,
-										intstr.FromInt(80),
+									Path: "/path1",
+									Backend: extensions.IngressBackend{
+										ServiceName: testServiceName,
+										ServicePort: intstr.FromInt(80),
 									},
 								},
 								{
-									"/path2",
-									extensions.IngressBackend{
-										ServiceName,
-										intstr.FromInt(443),
+									Path: "/path2",
+									Backend: extensions.IngressBackend{
+										ServiceName: testServiceName,
+										ServicePort: intstr.FromInt(443),
 									},
 								},
 								{
-									"/path3",
-									extensions.IngressBackend{
-										ServiceName,
-										intstr.FromString(NamedPort),
+									Path: "/path3",
+									Backend: extensions.IngressBackend{
+										ServiceName: testServiceName,
+										ServicePort: intstr.FromString(testNamedPort),
 									},
 								},
 							},
@@ -271,8 +271,8 @@ func newTestService(negEnabled bool) *apiv1.Service {
 	}
 	return &apiv1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        ServiceName,
-			Namespace:   ServiceNamespace,
+			Name:        testServiceName,
+			Namespace:   testServiceNamespace,
 			Annotations: svcAnnotations,
 		},
 		Spec: apiv1.ServiceSpec{
@@ -283,10 +283,10 @@ func newTestService(negEnabled bool) *apiv1.Service {
 				},
 				{
 					Port:       443,
-					TargetPort: intstr.FromString(NamedPort),
+					TargetPort: intstr.FromString(testNamedPort),
 				},
 				{
-					Name:       NamedPort,
+					Name:       testNamedPort,
 					Port:       8081,
 					TargetPort: intstr.FromInt(8081),
 				},
