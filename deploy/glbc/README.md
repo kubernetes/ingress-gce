@@ -1,7 +1,7 @@
 # Overview
 
-Welcome, you are reading this because you want to run an alpha version of the
-GCP Ingress Controller (GLBC) before it is officially released! The purpose of this is to
+Welcome, you are reading this because you are interested in running a version of the
+GCP Ingress Controller (GLBC) before it is officially released on GKE! The purpose of this is to
 allow users to find bugs and report them, while also getting early access to improvements and
 new features. You will notice that the following things are sitting in this directory:
 
@@ -12,9 +12,9 @@ new features. You will notice that the following things are sitting in this dire
 We will explain what each of these things mean in a bit. However, you will only be interacting
 with one file (script.sh).
 
-**Disclaimer: Running this script could potentially be disruptive to traffic. It
-is not advisable to run this on a production cluster. Furthermore you should
-refrain from contacting GKE support if there are issues. Run at your own risk.**
+**Disclaimer: Running this script could potentially be disruptive to traffic
+so if you want to run this on a production cluster, do so at your own risk. 
+Furthermore you should refrain from contacting GKE support if there are issues.**
 
 # Important Prerequisites
 
