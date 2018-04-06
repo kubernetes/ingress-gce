@@ -11,7 +11,7 @@ The second group uses an image built directly from HEAD of this repository.
 Currently, we run tests against an image from HEAD in GCE only. On the other hand,
 tests that run against a release image use both GCE and GKE.
 
-Any test that starts with ingress-gce-* is a test which runs a image of GLBC from HEAD.
+Any test that starts with ingress-gce-* is a test which runs an image of GLBC from HEAD.
 Any other test you see runs a release image of GLBC.
 Check out https://k8s-testgrid.appspot.com/sig-network-gce & https://k8s-testgrid.appspot.com/sig-network-gke
 for to see the results for these tests.
