@@ -360,7 +360,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 	if !utils.CompareLinks(cert, l.sslCert.SelfLink) {
 		glog.Infof("Https proxy %v has the wrong ssl certs, setting %v overwriting %v",
 			proxy.Name, l.sslCert.SelfLink, cert)
-		if err := l.cloud.SetSslCertificateForTargetHttpsProxy(proxy, l.sslCert); err != nil {
+		if err := l.cloud.SetSslCertificateForTargetHttpsProxy(proxy, []*compute.SslCertificate{l.sslCert}); err != nil {
 			return err
 		}
 	}

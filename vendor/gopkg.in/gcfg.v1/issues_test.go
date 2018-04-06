@@ -92,3 +92,19 @@ func TestIssue11(t *testing.T) {
 		}
 	}
 }
+
+// Escaped double quote should be supported in "raw" string literals
+func TestIssue12(t *testing.T) {
+	var c struct {
+		Section struct {
+			Name string
+		}
+	}
+	err := ReadFileInto(&c, "testdata/issue12.gcfg")
+	if err != nil {
+		t.Fatalf("fail: want ok, got error %v", err)
+	}
+	if c.Section.Name != `"value"` {
+		t.Errorf("fail: want `\"value\"`, got %q", c.Section.Name)
+	}
+}
