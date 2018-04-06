@@ -335,7 +335,12 @@ func (f *FakeLoadBalancers) SetUrlMapForTargetHttpsProxy(proxy *compute.TargetHt
 }
 
 // SetSslCertificateForTargetHttpsProxy fakes out setting certificates.
-func (f *FakeLoadBalancers) SetSslCertificateForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, SSLCert *compute.SslCertificate) error {
+func (f *FakeLoadBalancers) SetSslCertificateForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, certs []*compute.SslCertificate) error {
+	if len(certs) != 1 {
+		return fmt.Errorf("can only take one cert, got %v", certs)
+	}
+	SSLCert := certs[0]
+
 	f.calls = append(f.calls, "SetSslCertificateForTargetHttpsProxy")
 	found := false
 	for i := range f.Tps {
