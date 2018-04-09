@@ -55,6 +55,7 @@ type LoadBalancers interface {
 
 	// SslCertificates
 	GetSslCertificate(name string) (*compute.SslCertificate, error)
+	ListSslCertificates() ([]*compute.SslCertificate, error)
 	CreateSslCertificate(certs *compute.SslCertificate) (*compute.SslCertificate, error)
 	DeleteSslCertificate(name string) error
 
