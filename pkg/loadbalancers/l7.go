@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"crypto/sha256"
+
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -109,8 +110,6 @@ type L7 struct {
 	fws *compute.ForwardingRule
 	// ip is the static-ip associated with both GlobalForwardingRules.
 	ip *compute.Address
-	// prefix to use in ssl cert names
-	sslCertPrefix string
 	// sslCerts is the list of ssl certs associated with the targetHTTPSProxy.
 	sslCerts []*compute.SslCertificate
 	// oldSSLCerts is the list of certs that used to be hooked up to the
@@ -197,7 +196,7 @@ func (l *L7) deleteOldSSLCerts() (err error) {
 	}
 	certsMap := getMapfromCertList(l.sslCerts)
 	for _, cert := range l.oldSSLCerts {
-		if !l.isSSLCert(cert.Name) && !l.namer.IsLegacySSLCert(l.Name, cert.Name) {
+		if !l.namer.IsCertUsedForLB(l.Name, cert.Name) && !l.namer.IsLegacySSLCert(l.Name, cert.Name) {
 			// retain cert if it is managed by GCE(non-ingress)
 			continue
 		}
@@ -261,11 +260,6 @@ func (l *L7) usePreSharedCert() (bool, error) {
 	return true, nil
 }
 
-// isSSLCert returns true if name is ingress managed, specifically by this loadbalancer instance
-func (l *L7) isSSLCert(name string) bool {
-	return strings.HasPrefix(name, l.sslCertPrefix)
-}
-
 func getMapfromCertList(certs []*compute.SslCertificate) map[string]*compute.SslCertificate {
 	if len(certs) == 0 {
 		return nil
@@ -287,7 +281,7 @@ func (l *L7) populateSSLCert() error {
 		return utils.IgnoreHTTPNotFound(err)
 	}
 	for _, c := range certs {
-		if l.isSSLCert(c.Name) {
+		if l.namer.IsCertUsedForLB(l.Name, c.Name) {
 			glog.Infof("Populating ssl cert %s for l7 %s", c.Name, l.Name)
 			l.sslCerts = append(l.sslCerts, c)
 		}
@@ -331,7 +325,7 @@ func (l *L7) checkSSLCert() error {
 	for _, tlsCert := range l.runtimeInfo.TLS {
 		ingCert := tlsCert.Cert
 		ingKey := tlsCert.Key
-		newCertName := l.namer.SSLCertName(l.sslCertPrefix, tlsCert.CertHash)
+		newCertName := l.namer.SSLCertName(l.Name, tlsCert.CertHash)
 
 		// PrivateKey is write only, so compare certs alone. We're assuming that
 		// no one will change just the key. We can remember the key and compare,
@@ -423,7 +417,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 
 	if !l.compareCerts(proxy.SslCertificates) {
 		glog.Infof("Https proxy %v has the wrong ssl certs, setting %v overwriting %v",
-			proxy.Name, l.sslCerts, proxy.SslCertificates)
+			proxy.Name, toCertNames(l.sslCerts), proxy.SslCertificates)
 		if err := l.cloud.SetSslCertificateForTargetHttpsProxy(proxy, l.sslCerts); err != nil {
 			return err
 		}
@@ -988,4 +982,11 @@ func GCEResourceName(ingAnnotations map[string]string, resourceName string) stri
 
 func GetCertHash(contents string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(contents)))[:16]
+}
+
+func toCertNames(certs []*compute.SslCertificate) (names []string) {
+	for _, v := range certs {
+		names = append(names, v.Name)
+	}
+	return names
 }
