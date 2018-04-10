@@ -238,17 +238,11 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	}
 	glog.V(3).Infof("Syncing %v", key)
 
-	allIngresses, err := lbc.ingLister.ListAll()
-	if err != nil {
-		return err
-	}
 	gceIngresses, err := lbc.ingLister.ListGCEIngresses()
 	if err != nil {
 		return err
 	}
 
-	// allNodePorts contains ServicePorts used by all ingresses  (single-cluster and multi-cluster).
-	allNodePorts := lbc.Translator.ToNodePorts(&allIngresses)
 	// gceNodePorts contains the ServicePorts used by only single-cluster ingress.
 	gceNodePorts := lbc.Translator.ToNodePorts(&gceIngresses)
 	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
@@ -286,7 +280,8 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 		}
 	}()
 
-	igs, err := lbc.CloudClusterManager.EnsureInstanceGroupsAndPorts(nodeNames, allNodePorts)
+	ingNodePorts := lbc.Translator.IngressToNodePorts(ing)
+	igs, err := lbc.CloudClusterManager.EnsureInstanceGroupsAndPorts(nodeNames, ingNodePorts)
 	if err != nil {
 		return err
 	}

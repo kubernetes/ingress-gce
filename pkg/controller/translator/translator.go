@@ -223,17 +223,17 @@ PortLoop:
 	return p, nil
 }
 
-// ToNodePorts is a helper method over ingressToNodePorts to process a list of ingresses.
+// ToNodePorts is a helper method over IngressToNodePorts to process a list of ingresses.
 func (t *GCE) ToNodePorts(ings *extensions.IngressList) []backends.ServicePort {
 	var knownPorts []backends.ServicePort
 	for _, ing := range ings.Items {
-		knownPorts = append(knownPorts, t.ingressToNodePorts(&ing)...)
+		knownPorts = append(knownPorts, t.IngressToNodePorts(&ing)...)
 	}
 	return knownPorts
 }
 
-// ingressToNodePorts converts a pathlist to a flat list of nodeports for the given ingress.
-func (t *GCE) ingressToNodePorts(ing *extensions.Ingress) []backends.ServicePort {
+// IngressToNodePorts converts a pathlist to a flat list of nodeports for the given ingress.
+func (t *GCE) IngressToNodePorts(ing *extensions.Ingress) []backends.ServicePort {
 	var knownPorts []backends.ServicePort
 	defaultBackend := ing.Spec.Backend
 	if defaultBackend != nil {
