@@ -24,6 +24,8 @@ import (
 
 	"github.com/golang/glog"
 
+	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"k8s.io/ingress-gce/pkg/context"
@@ -32,6 +34,7 @@ import (
 
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/serviceextension"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
@@ -58,9 +61,25 @@ func main() {
 
 	glog.V(2).Infof("Flags = %+v", flags.F)
 
-	kubeClient, err := app.NewKubeClient()
+	kubeConfig, err := app.NewKubeConfig()
+	if err != nil {
+		glog.Fatalf("Failed to create kubernetes client config: %v", err)
+	}
+
+	kubeClient, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
 		glog.Fatalf("Failed to create kubernetes client: %v", err)
+	}
+
+	if flags.F.EnableServiceExtension {
+		crdClient, err := crdclient.NewForConfig(kubeConfig)
+		if err != nil {
+			glog.Fatalf("Failed to create kubernetes CRD client: %v", err)
+		}
+
+		if _, err := serviceextension.EnsureCRD(crdClient); err != nil {
+			glog.Fatalf("Failed to ensure ServiceExtension CRD: %v", err)
+		}
 	}
 
 	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, controller.DefaultFirewallName)
