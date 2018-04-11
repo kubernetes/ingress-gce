@@ -23,14 +23,15 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"strconv"
+	"strings"
+
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/neg"
 	"k8s.io/ingress-gce/pkg/utils"
-	"strconv"
-	"strings"
 )
 
 const (
@@ -65,11 +66,13 @@ func TestCreateHTTPLoadBalancer(t *testing.T) {
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
-	l7, err := pool.Get(lbInfo.Name)
 
+	// Run Sync
+	pool.Sync([]*L7RuntimeInfo{lbInfo})
+
+	l7, err := pool.Get(lbInfo.Name)
 	if err != nil || l7 == nil {
-		t.Fatalf("Expected l7 not created")
+		t.Fatalf("Expected l7 not created, err: %v", err)
 	}
 	um, err := f.GetUrlMap(f.UMName())
 	if err != nil {
@@ -129,12 +132,12 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 // and the proxy is updated to another cert when the provided cert changes
 func TestCertUpdate(t *testing.T) {
 	namer := utils.NewNamer("uid1", "fw1")
-	sslCertPrefix := namer.SSLCertPrefix("test")
-	certName1 := namer.SSLCertName(sslCertPrefix, GetCertHash("cert"))
-	certName2 := namer.SSLCertName(sslCertPrefix, GetCertHash("cert2"))
+	lbName := namer.LoadBalancer("test")
+	certName1 := namer.SSLCertName(lbName, GetCertHash("cert"))
+	certName2 := namer.SSLCertName(lbName, GetCertHash("cert2"))
 
 	lbInfo := &L7RuntimeInfo{
-		Name:      namer.LoadBalancer("test"),
+		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
 	}
@@ -144,7 +147,9 @@ func TestCertUpdate(t *testing.T) {
 
 	// Sync first cert
 	pool.Sync([]*L7RuntimeInfo{lbInfo})
-	t.Logf("name=%q", certName1)
+
+	// Verify certs
+	t.Logf("lbName=%q, name=%q", lbName, certName1)
 	expectCerts := map[string]string{certName1: lbInfo.TLS[0].Cert}
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 
@@ -158,12 +163,12 @@ func TestCertUpdate(t *testing.T) {
 // Tests that controller can overwrite existing, unused certificates
 func TestCertCreationWithCollision(t *testing.T) {
 	namer := utils.NewNamer("uid1", "fw1")
-	sslCertPrefix := namer.SSLCertPrefix("test")
-	certName1 := namer.SSLCertName(sslCertPrefix, GetCertHash("cert"))
-	certName2 := namer.SSLCertName(sslCertPrefix, GetCertHash("cert2"))
+	lbName := namer.LoadBalancer("test")
+	certName1 := namer.SSLCertName(lbName, GetCertHash("cert"))
+	certName2 := namer.SSLCertName(lbName, GetCertHash("cert2"))
 
 	lbInfo := &L7RuntimeInfo{
-		Name:      namer.LoadBalancer("test"),
+		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
 	}
@@ -202,18 +207,18 @@ func TestCertCreationWithCollision(t *testing.T) {
 
 func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 	namer := utils.NewNamer("uid1", "fw1")
-	sslCertPrefix := namer.SSLCertPrefix("test")
 	cert1 := createCert("key", "cert", "name")
 	cert2 := createCert("key2", "cert2", "name2")
 	cert3 := createCert("key3", "cert3", "name3")
-	certName1 := namer.SSLCertName(sslCertPrefix, cert1.CertHash)
-	certName2 := namer.SSLCertName(sslCertPrefix, cert2.CertHash)
-	certName3 := namer.SSLCertName(sslCertPrefix, cert3.CertHash)
+	lbName := namer.LoadBalancer("test")
+	certName1 := namer.SSLCertName(lbName, cert1.CertHash)
+	certName2 := namer.SSLCertName(lbName, cert2.CertHash)
+	certName3 := namer.SSLCertName(lbName, cert3.CertHash)
 
 	expectCerts := map[string]string{}
 
 	lbInfo := &L7RuntimeInfo{
-		Name:      namer.LoadBalancer("test"),
+		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{cert1},
 	}
@@ -249,14 +254,15 @@ func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 // are picked up and deleted when upgrading to the new scheme.
 func TestUpgradeToNewCertNames(t *testing.T) {
 	namer := utils.NewNamer("uid1", "fw1")
+	lbName := namer.LoadBalancer("test")
 	lbInfo := &L7RuntimeInfo{
-		Name:      namer.LoadBalancer("test"),
+		Name:      lbName,
 		AllowHTTP: false,
 	}
 	oldCertName := "k8s-ssl-" + lbInfo.Name
 	tlsCert := createCert("key", "cert", "name")
 	lbInfo.TLS = []*TLSCerts{tlsCert}
-	newCertName := namer.SSLCertName(namer.SSLCertPrefix("test"), tlsCert.CertHash)
+	newCertName := namer.SSLCertName(lbName, tlsCert.CertHash)
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
@@ -292,16 +298,16 @@ func TestMaxCertsUpload(t *testing.T) {
 	var tlsCerts []*TLSCerts
 	expectCerts := make(map[string]string)
 	namer := utils.NewNamer("uid1", "fw1")
-	certPrefix := namer.SSLCertPrefix("test")
+	lbName := namer.LoadBalancer("test")
 
 	for ix := 0; ix < TargetProxyCertLimit; ix++ {
 		str := strconv.Itoa(ix)
 		tlsCerts = append(tlsCerts, createCert("key-"+str, "cert-"+str, "name-"+str))
-		certName := namer.SSLCertName(certPrefix, GetCertHash("cert-"+str))
+		certName := namer.SSLCertName(lbName, GetCertHash("cert-"+str))
 		expectCerts[certName] = "cert-" + str
 	}
 	lbInfo := &L7RuntimeInfo{
-		Name:      namer.LoadBalancer("test"),
+		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       tlsCerts,
 	}
@@ -322,18 +328,18 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 	var tlsCerts []*TLSCerts
 	expectCerts := make(map[string]string)
 	namer := utils.NewNamer("uid1", "fw1")
-	certPrefix := namer.SSLCertPrefix("test")
+	lbName := namer.LoadBalancer("test")
 	contents := ""
 
 	for ix := 0; ix < 3; ix++ {
 		str := strconv.Itoa(ix)
 		contents = "cert-" + str + " foo.com"
 		tlsCerts = append(tlsCerts, createCert("key-"+str, contents, "name-"+str))
-		certName := namer.SSLCertName(certPrefix, GetCertHash(contents))
+		certName := namer.SSLCertName(lbName, GetCertHash(contents))
 		expectCerts[certName] = contents
 	}
 	lbInfo := &L7RuntimeInfo{
-		Name:      namer.LoadBalancer("test"),
+		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       tlsCerts,
 	}
@@ -391,12 +397,12 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 // to secret based cert and verifies the pre-shared cert is retained.
 func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 	namer := utils.NewNamer("uid1", "fw1")
-	sslCertPrefix := namer.SSLCertPrefix("test")
-	certName1 := namer.SSLCertName(sslCertPrefix, GetCertHash("cert"))
-	certName2 := namer.SSLCertName(sslCertPrefix, GetCertHash("cert2"))
+	lbName := namer.LoadBalancer("test")
+	certName1 := namer.SSLCertName(lbName, GetCertHash("cert"))
+	certName2 := namer.SSLCertName(lbName, GetCertHash("cert2"))
 
 	lbInfo := &L7RuntimeInfo{
-		Name:      namer.LoadBalancer("test"),
+		Name:      lbName,
 		AllowHTTP: false,
 	}
 
@@ -500,7 +506,7 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	for certName, certValue := range expectCerts {
 		cert, err := f.GetSslCertificate(certName)
 		if err != nil {
-			t.Fatalf("expected ssl certificate to exist: %v, err: %v", certName, err)
+			t.Fatalf("expected ssl certificate to exist: %v, err: %v, all certs: %v", certName, err, toCertNames(allCerts))
 		}
 
 		if cert.Certificate != certValue {

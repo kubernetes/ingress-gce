@@ -14,29 +14,29 @@ ignored = ["k8s.io/kubernetes/pkg/api"]
   name = "github.com/prometheus/client_golang"
   version = "v0.8.0"
 
-[[constraint]]
+# This needs to be an override as it is a non-direct dependency and will not be
+# considered by `dep` as a constraint.
+[[override]]
   name = "github.com/spf13/pflag"
   version = "v1.0.0"
 
 [[constraint]]
-  name = "google.golang.org/api"
-  revision = "373a4c220f5c90e5b7ff7101779c5be385d171be"
-
-[[constraint]]
   name = "k8s.io/api"
-  revision = "release-1.10"
+  revision = "kubernetes-1.10.0-rc.1"
 
-[[constraint]]
+# This needs to be an override as it is a non-direct dependency and will not be
+# considered by `dep` as a constraint.
+[[override]]
   name = "k8s.io/apiserver"
-  revision = "release-1.10"
+  revision = "kubernetes-1.10.0-rc.1"
 
 [[constraint]]
   name = "k8s.io/apimachinery"
-  revision = "kubernetes-1.9.0"
+  revision = "kubernetes-1.10.0-rc.1"
 
 [[constraint]]
   name = "k8s.io/client-go"
-  revision = "kubernetes-1.9.0"
+  revision = "kubernetes-1.10.0-rc.1"
 
 [[constraint]]
   name = "k8s.io/kubernetes"
@@ -54,13 +54,14 @@ ignored = ["k8s.io/kubernetes/pkg/api"]
 # This needs to be an override as it is a non-direct dependency and will not be
 # considered by `dep` as a constraint.
 [[override]]
-  name = "google.golang.org/api"
-  revision = "7f657476956314fee258816aaf81c0ff65cf8bee"
-
-[[constraint]]
   name = "github.com/opencontainers/go-digest"
   version = "1.0.0-rc1"
 
 [[constraint]]
   branch = "master"
   name = "k8s.io/cluster-registry"
+
+[prune]
+  go-tests = true
+  unused-packages = true
+

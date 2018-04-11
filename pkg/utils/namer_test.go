@@ -94,7 +94,6 @@ func TestNamerParseName(t *testing.T) {
 	const uid = "uid1"
 	namer := NewNamer(uid, "fw1")
 	lbName := namer.LoadBalancer("key1")
-	certPrefix := namer.SSLCertPrefix("key1")
 	secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
 	for _, tc := range []struct {
 		in   string
@@ -105,8 +104,8 @@ func TestNamerParseName(t *testing.T) {
 		{namer.InstanceGroup(), &NameComponents{uid, "ig", ""}},
 		{namer.TargetProxy(lbName, HTTPProtocol), &NameComponents{uid, "tp", ""}},
 		{namer.TargetProxy(lbName, HTTPSProtocol), &NameComponents{uid, "tps", ""}},
-		{namer.SSLCertName(certPrefix, secretHash), &NameComponents{uid, "ssl", ""}},
-		{namer.SSLCertName(certPrefix, secretHash), &NameComponents{uid, "ssl", ""}},
+		{namer.SSLCertName("default/my-ing", secretHash), &NameComponents{uid, "ssl", ""}},
+		{namer.SSLCertName("default/my-ing", secretHash), &NameComponents{uid, "ssl", ""}},
 		{namer.ForwardingRule(lbName, HTTPProtocol), &NameComponents{uid, "fw", ""}},
 		{namer.ForwardingRule(lbName, HTTPSProtocol), &NameComponents{uid, "fws", ""}},
 		{namer.UrlMap(lbName), &NameComponents{uid, "um", ""}},
@@ -125,15 +124,14 @@ func TestNameBelongsToCluster(t *testing.T) {
 	for _, prefix := range []string{defaultPrefix, "mci"} {
 		namer := NewNamerWithPrefix(prefix, uid, "fw1")
 		lbName := namer.LoadBalancer("key1")
-		certPrefix := namer.SSLCertPrefix("key1")
 		// Positive cases.
 		for _, tc := range []string{
 			namer.Backend(80),
 			namer.InstanceGroup(),
 			namer.TargetProxy(lbName, HTTPProtocol),
 			namer.TargetProxy(lbName, HTTPSProtocol),
-			namer.SSLCertName(certPrefix, secretHash),
-			namer.SSLCertName(certPrefix, secretHash),
+			namer.SSLCertName("default/my-ing", secretHash),
+			namer.SSLCertName("default/my-ing", secretHash),
 			namer.ForwardingRule(lbName, HTTPProtocol),
 			namer.ForwardingRule(lbName, HTTPSProtocol),
 			namer.UrlMap(lbName),
@@ -269,8 +267,6 @@ func TestNamerFirewallRule(t *testing.T) {
 
 func TestNamerLoadBalancer(t *testing.T) {
 	secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
-	// namespaceHash is calculated the same way as cert hash
-	namespaceHash := fmt.Sprintf("%x", sha256.Sum256([]byte("key1")))[:16]
 	for _, tc := range []struct {
 		prefix string
 
@@ -287,7 +283,7 @@ func TestNamerLoadBalancer(t *testing.T) {
 			"key1--uid1",
 			"k8s-tp-key1--uid1",
 			"k8s-tps-key1--uid1",
-			fmt.Sprintf("k8s-ssl-%s--uid1-%s", namespaceHash, secretHash),
+			"k8s-ssl-%s-%s--uid1",
 			"k8s-fw-key1--uid1",
 			"k8s-fws-key1--uid1",
 			"k8s-um-key1--uid1",
@@ -297,7 +293,7 @@ func TestNamerLoadBalancer(t *testing.T) {
 			"key1--uid1",
 			"mci-tp-key1--uid1",
 			"mci-tps-key1--uid1",
-			fmt.Sprintf("mci-ssl-%s--uid1-%s", namespaceHash, secretHash),
+			"mci-ssl-%s-%s--uid1",
 			"mci-fw-key1--uid1",
 			"mci-fws-key1--uid1",
 			"mci-um-key1--uid1",
@@ -305,7 +301,10 @@ func TestNamerLoadBalancer(t *testing.T) {
 	} {
 		namer := NewNamerWithPrefix(tc.prefix, "uid1", "fw1")
 		lbName := namer.LoadBalancer("key1")
-		certPrefix := namer.SSLCertPrefix("key1")
+		// namespaceHash is calculated the same way as cert hash
+		namespaceHash := fmt.Sprintf("%x", sha256.Sum256([]byte(lbName)))[:16]
+		tc.sslCert = fmt.Sprintf(tc.sslCert, namespaceHash, secretHash)
+
 		if lbName != tc.lbName {
 			t.Errorf("lbName = %q, want %q", lbName, "key1--uid1")
 		}
@@ -318,7 +317,7 @@ func TestNamerLoadBalancer(t *testing.T) {
 		if name != tc.targetHTTPSProxy {
 			t.Errorf("namer.TargetProxy(%q, HTTPSProtocol) = %q, want %q", lbName, name, tc.targetHTTPSProxy)
 		}
-		name = namer.SSLCertName(certPrefix, secretHash)
+		name = namer.SSLCertName(lbName, secretHash)
 		if name != tc.sslCert {
 			t.Errorf("namer.SSLCertName(%q, true) = %q, want %q", lbName, name, tc.sslCert)
 		}
@@ -334,6 +333,42 @@ func TestNamerLoadBalancer(t *testing.T) {
 		if name != tc.urlMap {
 			t.Errorf("namer.UrlMap(%q) = %q, want %q", lbName, name, tc.urlMap)
 		}
+	}
+}
+
+func TestNamerIsCertUsedForLB(t *testing.T) {
+	cases := map[string]struct {
+		prefix      string
+		ingName     string
+		secretValue string
+	}{
+		"short ingress name": {
+			prefix:      "k8s",
+			ingName:     "default/my-ingress",
+			secretValue: "test123321test",
+		},
+		"long ingress name": {
+			prefix:      "k8s",
+			ingName:     "a-very-long-and-useless-namespace-value/a-very-long-and-nondescript-ingress-name",
+			secretValue: "test123321test",
+		},
+		"long ingress name with mci prefix": {
+			prefix:      "mci",
+			ingName:     "a-very-long-and-useless-namespace-value/a-very-long-and-nondescript-ingress-name",
+			secretValue: "test123321test",
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			namer := NewNamerWithPrefix(tc.prefix, "cluster-uid", "fw1")
+			lbName := namer.LoadBalancer(tc.ingName)
+			secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte(tc.secretValue)))[:16]
+
+			certName := namer.SSLCertName(lbName, secretHash)
+			if v := namer.IsCertUsedForLB(lbName, certName); !v {
+				t.Errorf("namer.IsCertUsedForLB(%q, %q) = %v, want %v", lbName, certName, v, true)
+			}
+		})
 	}
 }
 
