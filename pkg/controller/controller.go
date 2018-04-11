@@ -238,17 +238,11 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	}
 	glog.V(3).Infof("Syncing %v", key)
 
-	allIngresses, err := lbc.ingLister.ListAll()
-	if err != nil {
-		return err
-	}
 	gceIngresses, err := lbc.ingLister.ListGCEIngresses()
 	if err != nil {
 		return err
 	}
 
-	// allNodePorts contains ServicePorts used by all ingresses  (single-cluster and multi-cluster).
-	allNodePorts := lbc.Translator.ToNodePorts(&allIngresses)
 	// gceNodePorts contains the ServicePorts used by only single-cluster ingress.
 	gceNodePorts := lbc.Translator.ToNodePorts(&gceIngresses)
 	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
@@ -286,7 +280,8 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 		}
 	}()
 
-	igs, err := lbc.CloudClusterManager.EnsureInstanceGroupsAndPorts(nodeNames, allNodePorts)
+	ingNodePorts := lbc.Translator.IngressToNodePorts(ing)
+	igs, err := lbc.CloudClusterManager.EnsureInstanceGroupsAndPorts(nodeNames, ingNodePorts)
 	if err != nil {
 		return err
 	}
@@ -415,7 +410,7 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress) (*load
 		return nil, fmt.Errorf("cannot get key for Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
 	}
 
-	var tls *loadbalancers.TLSCerts
+	var tls []*loadbalancers.TLSCerts
 
 	annotations := annotations.FromIngress(ing)
 	// Load the TLS cert from the API Spec if it is not specified in the annotation.

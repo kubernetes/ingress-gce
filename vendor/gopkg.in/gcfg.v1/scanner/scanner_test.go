@@ -80,6 +80,7 @@ var tokens = [...]elt{
 	{token.STRING, `"foo" "bar"`, literal, "=", " "},
 	{token.STRING, "foo\\\nbar", literal, "=", ""},
 	{token.STRING, "foo\\\r\nbar", literal, "=", ""},
+	{token.STRING, `\"foobar\"`, literal, "=", ""},
 }
 
 const whitespace = "  \t  \n\n\n" // to separate tokens
@@ -381,8 +382,8 @@ var errors = []struct {
 	{"\"\n", token.STRING, 0, "string not terminated"},
 	{`="`, token.STRING, 1, "string not terminated"},
 	{"=\"\n", token.STRING, 1, "string not terminated"},
-	{"=\\", token.STRING, 1, "unquoted '\\' must be followed by new line"},
-	{"=\\\r", token.STRING, 1, "unquoted '\\' must be followed by new line"},
+	{"=\\", token.STRING, 1, "unquoted '\\' must be followed by new line or double quote"},
+	{"=\\\r", token.STRING, 1, "unquoted '\\' must be followed by new line or double quote"},
 	{`"\z"`, token.STRING, 2, "unknown escape sequence"},
 	{`"\a"`, token.STRING, 2, "unknown escape sequence"},
 	{`"\b"`, token.STRING, 2, "unknown escape sequence"},
