@@ -321,6 +321,20 @@
 
 [[projects]]
   branch = "master"
+  name = "k8s.io/cluster-registry"
+  packages = [
+    "pkg/apis/clusterregistry/v1alpha1",
+    "pkg/client/clientset_generated/clientset",
+    "pkg/client/clientset_generated/clientset/scheme",
+    "pkg/client/clientset_generated/clientset/typed/clusterregistry/v1alpha1",
+    "pkg/client/informers_generated/externalversions/clusterregistry/v1alpha1",
+    "pkg/client/informers_generated/externalversions/internalinterfaces",
+    "pkg/client/listers_generated/clusterregistry/v1alpha1"
+  ]
+  revision = "0309542bf91ca34c577e19769418561f65af5226"
+
+[[projects]]
+  branch = "master"
   name = "k8s.io/kube-openapi"
   packages = ["pkg/common","pkg/util/proto"]
   revision = "b16ebc07f5cad97831f961e4b5a9cc1caed33b7e"
@@ -339,6 +353,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "26bb8be4d39b9d22c64d67a816370a44a3e59cadbba946e4e8596d3fd067d9c9"
+  inputs-digest = "be35c28d01485c9d48cba15a847f2f6756c6bfd0ac3dae612d3c522566b2b48f"
   solver-name = "gps-cdcl"
   solver-version = 1
