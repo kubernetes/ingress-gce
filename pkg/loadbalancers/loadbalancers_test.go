@@ -615,19 +615,19 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 func TestUpdateUrlMap(t *testing.T) {
 	um1 := utils.GCEURLMap{
 		"bar.example.com": {
-			"/bar2": &compute.BackendService{SelfLink: "bar2svc"},
+			"/bar2": "bar2svc",
 		},
 	}
 	um2 := utils.GCEURLMap{
 		"foo.example.com": {
-			"/foo1": &compute.BackendService{SelfLink: "foo1svc"},
-			"/foo2": &compute.BackendService{SelfLink: "foo2svc"},
+			"/foo1": "foo1svc",
+			"/foo2": "foo2svc",
 		},
 		"bar.example.com": {
-			"/bar1": &compute.BackendService{SelfLink: "bar1svc"},
+			"/bar1": "bar1svc",
 		},
 	}
-	um2.PutDefaultBackend(&compute.BackendService{SelfLink: "default"})
+	um2.PutDefaultBackendName("default")
 
 	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true}
@@ -647,14 +647,14 @@ func TestUpdateUrlMap(t *testing.T) {
 	// The final map doesn't contain /bar2
 	expectedMap := map[string]utils.FakeIngressRuleValueMap{
 		utils.DefaultBackendKey: {
-			utils.DefaultBackendKey: "default",
+			utils.DefaultBackendKey: utils.BackendServiceRelativeResourcePath("default"),
 		},
 		"foo.example.com": {
-			"/foo1": "foo1svc",
-			"/foo2": "foo2svc",
+			"/foo1": utils.BackendServiceRelativeResourcePath("foo1svc"),
+			"/foo2": utils.BackendServiceRelativeResourcePath("foo2svc"),
 		},
 		"bar.example.com": {
-			"/bar1": "bar1svc",
+			"/bar1": utils.BackendServiceRelativeResourcePath("bar1svc"),
 		},
 	}
 	if err := f.CheckURLMap(l7, expectedMap); err != nil {
@@ -665,24 +665,24 @@ func TestUpdateUrlMap(t *testing.T) {
 func TestUpdateUrlMapNoChanges(t *testing.T) {
 	um1 := utils.GCEURLMap{
 		"foo.example.com": {
-			"/foo1": &compute.BackendService{SelfLink: "foo1svc"},
-			"/foo2": &compute.BackendService{SelfLink: "foo2svc"},
+			"/foo1": "foo1svc",
+			"/foo2": "foo2svc",
 		},
 		"bar.example.com": {
-			"/bar1": &compute.BackendService{SelfLink: "bar1svc"},
+			"/bar1": "bar1svc",
 		},
 	}
-	um1.PutDefaultBackend(&compute.BackendService{SelfLink: "default"})
+	um1.PutDefaultBackendName("default")
 	um2 := utils.GCEURLMap{
 		"foo.example.com": {
-			"/foo1": &compute.BackendService{SelfLink: "foo1svc"},
-			"/foo2": &compute.BackendService{SelfLink: "foo2svc"},
+			"/foo1": "foo1svc",
+			"/foo2": "foo2svc",
 		},
 		"bar.example.com": {
-			"/bar1": &compute.BackendService{SelfLink: "bar1svc"},
+			"/bar1": "bar1svc",
 		},
 	}
-	um2.PutDefaultBackend(&compute.BackendService{SelfLink: "default"})
+	um2.PutDefaultBackendName("default")
 
 	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true}
@@ -797,7 +797,6 @@ func TestInvalidClusterNameChange(t *testing.T) {
 			t.Fatalf("Expected %q got %q", testCase.expected, got)
 		}
 	}
-
 }
 
 func createCert(key string, contents string, name string) *TLSCerts {

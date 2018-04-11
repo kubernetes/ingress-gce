@@ -167,7 +167,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 	if ctx.EndpointInformer != nil {
 		endpointIndexer = ctx.EndpointInformer.GetIndexer()
 	}
-	lbc.Translator = translator.New(lbc.ctx, lbc.CloudClusterManager,
+	lbc.Translator = translator.New(lbc.ctx, lbc.CloudClusterManager.ClusterNamer,
 		ctx.ServiceInformer.GetIndexer(),
 		ctx.NodeInformer.GetIndexer(),
 		ctx.PodInformer.GetIndexer(),

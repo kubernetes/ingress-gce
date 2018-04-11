@@ -91,3 +91,30 @@ func TestTrimFieldsEvenly(t *testing.T) {
 		}
 	}
 }
+
+func TestBackendServiceComparablePath(t *testing.T) {
+	testCases := []struct {
+		url      string
+		expected string
+	}{
+		{
+			"global/backendServices/foo",
+			"global/backendServices/foo",
+		},
+		{
+			"https://www.googleapis.com/compute/v1/projects/foo/global/backendServices/foo",
+			"global/backendServices/foo",
+		},
+		{
+			"https://www.googleapis.com/compute/v1/projects/foo/zones/us-central1-c/backendServices/foo",
+			"",
+		},
+	}
+
+	for _, tc := range testCases {
+		res := BackendServiceComparablePath(tc.url)
+		if res != tc.expected {
+			t.Errorf("Expected result after url trim to be %v, but got %v", tc.expected, res)
+		}
+	}
+}
