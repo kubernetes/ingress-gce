@@ -57,6 +57,11 @@ ignored = ["k8s.io/kubernetes/pkg/api"]
   name = "github.com/opencontainers/go-digest"
   version = "1.0.0-rc1"
 
+[[constraint]]
+  branch = "master"
+  name = "k8s.io/cluster-registry"
+
 [prune]
   go-tests = true
   unused-packages = true
+

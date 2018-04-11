@@ -603,6 +603,20 @@
 
 [[projects]]
   branch = "master"
+  name = "k8s.io/cluster-registry"
+  packages = [
+    "pkg/apis/clusterregistry/v1alpha1",
+    "pkg/client/clientset_generated/clientset",
+    "pkg/client/clientset_generated/clientset/scheme",
+    "pkg/client/clientset_generated/clientset/typed/clusterregistry/v1alpha1",
+    "pkg/client/informers_generated/externalversions/clusterregistry/v1alpha1",
+    "pkg/client/informers_generated/externalversions/internalinterfaces",
+    "pkg/client/listers_generated/clusterregistry/v1alpha1"
+  ]
+  revision = "0309542bf91ca34c577e19769418561f65af5226"
+
+[[projects]]
+  branch = "master"
   name = "k8s.io/kube-openapi"
   packages = ["pkg/util/proto"]
   revision = "cd0308977f05a0de033c0e8ce1860b317e360dca"
