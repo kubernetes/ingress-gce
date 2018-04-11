@@ -41,7 +41,7 @@ const (
 )
 
 // NewNamer returns a new naming policy given the state of the cluster.
-func NewNamer(kubeClient kubernetes.Interface, clusterName string, fwName string) (*utils.Namer, error) {
+func NewNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*utils.Namer, error) {
 	name, err := getClusterUID(kubeClient, clusterName)
 	if err != nil {
 		return nil, err

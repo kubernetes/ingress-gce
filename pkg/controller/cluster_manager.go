@@ -179,15 +179,6 @@ func (c *ClusterManager) GC(lbNames []string, nodePorts []backends.ServicePort) 
 	return nil
 }
 
-func (c *ClusterManager) BackendServiceForPort(port int64) (*compute.BackendService, error) {
-	bs, err := c.backendPool.Get(port, false)
-	return bs.Ga, err
-}
-
-func (c *ClusterManager) DefaultBackendNodePort() *backends.ServicePort {
-	return &c.defaultBackendNodePort
-}
-
 // NewClusterManager creates a cluster manager for shared resources.
 // - namer: is the namer used to tag cluster wide shared resources.
 // - defaultBackendNodePort: is the node port of glbc's default backend. This is

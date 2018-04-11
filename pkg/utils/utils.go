@@ -17,6 +17,7 @@ limitations under the License.
 package utils
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -134,4 +135,21 @@ func trimFieldsEvenly(max int, fields ...string) []string {
 	}
 
 	return ret
+}
+
+// BackendServiceRelativeResourcePath returns a relative path of the link for a
+// BackendService given its name.
+func BackendServiceRelativeResourcePath(name string) string {
+	return fmt.Sprintf("global/backendServices/%v", name)
+}
+
+// BackendServiceComparablePath trims project and compute version from the SelfLink
+// for a global BackendService.
+// global/backendServices/[BACKEND_SERVICE_NAME]
+func BackendServiceComparablePath(url string) string {
+	path_parts := strings.Split(url, "global/")
+	if len(path_parts) != 2 {
+		return ""
+	}
+	return fmt.Sprintf("global/%s", path_parts[1])
 }

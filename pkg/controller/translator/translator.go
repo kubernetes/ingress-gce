@@ -23,8 +23,6 @@ import (
 
 	"github.com/golang/glog"
 
-	compute "google.golang.org/api/compute/v1"
-
 	api_v1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -44,21 +42,15 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-// BackendInfo is an interface to return information about the backends.
-type BackendInfo interface {
-	BackendServiceForPort(port int64) (*compute.BackendService, error)
-	DefaultBackendNodePort() *backends.ServicePort
-}
-
 type recorderSource interface {
 	Recorder(ns string) record.EventRecorder
 }
 
 // New returns a new ControllerContext.
-func New(recorders recorderSource, bi BackendInfo, svcLister cache.Indexer, nodeLister cache.Indexer, podLister cache.Indexer, endpointLister cache.Indexer, negEnabled bool) *GCE {
+func New(recorders recorderSource, namer *utils.Namer, svcLister cache.Indexer, nodeLister cache.Indexer, podLister cache.Indexer, endpointLister cache.Indexer, negEnabled bool) *GCE {
 	return &GCE{
 		recorders,
-		bi,
+		namer,
 		svcLister,
 		nodeLister,
 		podLister,
@@ -71,7 +63,7 @@ func New(recorders recorderSource, bi BackendInfo, svcLister cache.Indexer, node
 type GCE struct {
 	recorders recorderSource
 
-	bi             BackendInfo
+	namer          *utils.Namer
 	svcLister      cache.Indexer
 	nodeLister     cache.Indexer
 	podLister      cache.Indexer
@@ -87,9 +79,9 @@ func (t *GCE) ToURLMap(ing *extensions.Ingress) (utils.GCEURLMap, error) {
 			glog.Errorf("Ignoring non http Ingress rule")
 			continue
 		}
-		pathToBackend := map[string]*compute.BackendService{}
+		pathToBackend := map[string]string{}
 		for _, p := range rule.HTTP.Paths {
-			backend, err := t.toGCEBackend(&p.Backend, ing.Namespace)
+			backendName, err := t.toGCEBackendName(&p.Backend, ing.Namespace)
 			if err != nil {
 				// If a service doesn't have a nodeport we can still forward traffic
 				// to all other services under the assumption that the user will
@@ -111,7 +103,7 @@ func (t *GCE) ToURLMap(ing *extensions.Ingress) (utils.GCEURLMap, error) {
 			if path == "" {
 				path = loadbalancers.DefaultPath
 			}
-			pathToBackend[path] = backend
+			pathToBackend[path] = backendName
 		}
 		// If multiple hostless rule sets are specified, last one wins
 		host := rule.Host
@@ -120,10 +112,10 @@ func (t *GCE) ToURLMap(ing *extensions.Ingress) (utils.GCEURLMap, error) {
 		}
 		hostPathBackend[host] = pathToBackend
 	}
-	var defaultBackend *compute.BackendService
+	var defaultBackendName string
 	if ing.Spec.Backend != nil {
 		var err error
-		defaultBackend, err = t.toGCEBackend(ing.Spec.Backend, ing.Namespace)
+		defaultBackendName, err = t.toGCEBackendName(ing.Spec.Backend, ing.Namespace)
 		if err != nil {
 			msg := fmt.Sprintf("%v", err)
 			if _, ok := err.(errors.ErrNodePortNotFound); ok {
@@ -131,30 +123,28 @@ func (t *GCE) ToURLMap(ing *extensions.Ingress) (utils.GCEURLMap, error) {
 			}
 			msg = fmt.Sprintf("failed to identify user specified default backend, %v, using system default", msg)
 			t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeWarning, "Service", msg)
-		} else if defaultBackend != nil {
-			msg := fmt.Sprintf("default backend set to %v:%v", ing.Spec.Backend.ServiceName, defaultBackend.Port)
+		} else if defaultBackendName != "" {
+			port, _ := t.namer.BackendPort(defaultBackendName)
+			msg := fmt.Sprintf("default backend set to %v:%v", ing.Spec.Backend.ServiceName, port)
 			t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeNormal, "Service", msg)
 		}
 	} else {
 		t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeNormal, "Service", "no user specified default backend, using system default")
 	}
-	hostPathBackend.PutDefaultBackend(defaultBackend)
+	hostPathBackend.PutDefaultBackendName(defaultBackendName)
 	return hostPathBackend, nil
 }
 
-func (t *GCE) toGCEBackend(be *extensions.IngressBackend, ns string) (*compute.BackendService, error) {
+func (t *GCE) toGCEBackendName(be *extensions.IngressBackend, ns string) (string, error) {
 	if be == nil {
-		return nil, nil
+		return "", nil
 	}
 	port, err := t.getServiceNodePort(*be, ns)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	backend, err := t.bi.BackendServiceForPort(port.NodePort)
-	if err != nil {
-		return nil, fmt.Errorf("no GCE backend exists for port %v, kube backend %+v", port, be)
-	}
-	return backend, nil
+	backendName := t.namer.Backend(port.NodePort)
+	return backendName, nil
 }
 
 // getServiceNodePort looks in the svc store for a matching service:port,

@@ -16,27 +16,23 @@ limitations under the License.
 
 package utils
 
-import (
-	"fmt"
+import "fmt"
 
-	compute "google.golang.org/api/compute/v1"
-)
+// GCEURLMap is a nested map of hostname-> path regex-> backend name
+type GCEURLMap map[string]map[string]string
 
-// GCEURLMap is a nested map of hostname->path regex->backend
-type GCEURLMap map[string]map[string]*compute.BackendService
-
-// GetDefaultBackend performs a destructive read and returns the default
-// backend of the urlmap.
-func (g GCEURLMap) GetDefaultBackend() *compute.BackendService {
-	var d *compute.BackendService
+// GetDefaultBackendName performs a destructive read and returns
+// the name of the default backend in the urlmap.
+func (g GCEURLMap) GetDefaultBackendName() string {
+	var name string
 	var exists bool
 	if h, ok := g[DefaultBackendKey]; ok {
-		if d, exists = h[DefaultBackendKey]; exists {
+		if name, exists = h[DefaultBackendKey]; exists {
 			delete(h, DefaultBackendKey)
 		}
 		delete(g, DefaultBackendKey)
 	}
-	return d
+	return name
 }
 
 // String implements the string interface for the GCEURLMap.
@@ -44,22 +40,23 @@ func (g GCEURLMap) String() string {
 	msg := ""
 	for host, um := range g {
 		msg += fmt.Sprintf("%v\n", host)
-		for url, be := range um {
+		for url, beName := range um {
 			msg += fmt.Sprintf("\t%v: ", url)
-			if be == nil {
+			if beName == "" {
 				msg += fmt.Sprintf("No backend\n")
 			} else {
-				msg += fmt.Sprintf("%v\n", be.Name)
+				msg += fmt.Sprintf("%v\n", beName)
 			}
 		}
 	}
 	return msg
 }
 
-// PutDefaultBackend performs a destructive write replacing the
-// default backend of the url map with the given backend.
-func (g GCEURLMap) PutDefaultBackend(d *compute.BackendService) {
-	g[DefaultBackendKey] = map[string]*compute.BackendService{
-		DefaultBackendKey: d,
+// PutDefaultBackendName performs a destructive write replacing
+// the existing name of the default backend in the url map with
+// the name of the given backend.
+func (g GCEURLMap) PutDefaultBackendName(name string) {
+	g[DefaultBackendKey] = map[string]string{
+		DefaultBackendKey: name,
 	}
 }

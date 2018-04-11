@@ -166,7 +166,8 @@ func (p *nodePortManager) toNodePortSvcNames(inputMap map[string]utils.FakeIngre
 	for host, rules := range inputMap {
 		ruleMap := utils.FakeIngressRuleValueMap{}
 		for path, svc := range rules {
-			ruleMap[path] = p.namer.Backend(int64(p.portMap[svc]))
+			beName := p.namer.Backend(int64(p.portMap[svc]))
+			ruleMap[path] = utils.BackendServiceRelativeResourcePath(beName)
 		}
 		expectedMap[host] = ruleMap
 	}
@@ -320,7 +321,7 @@ func TestLbFaultyUpdate(t *testing.T) {
 	// make sure the controller corrects it.
 	l7.UpdateUrlMap(utils.GCEURLMap{
 		"foo.example.com": {
-			"/foo1": &compute.BackendService{SelfLink: "foo2svc"},
+			"/foo1": "foo2svc",
 		},
 	})
 
