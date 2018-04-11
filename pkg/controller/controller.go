@@ -307,13 +307,8 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 		return err
 	}
 
-	// Get all service ports for the ingress being synced.
-	lbSvcPorts := lbc.Translator.ToNodePorts(&extensions.IngressList{
-		Items: []extensions.Ingress{*ing},
-	})
-
 	// Create the backend services and higher-level LB resources.
-	if err = lbc.CloudClusterManager.EnsureLoadBalancer(lb, lbSvcPorts, igs); err != nil {
+	if err = lbc.CloudClusterManager.EnsureLoadBalancer(lb, ingNodePorts, igs); err != nil {
 		return err
 	}
 
@@ -330,7 +325,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 
 	// If NEG enabled, link the backend services to the NEGs.
 	if lbc.negEnabled {
-		for _, svcPort := range lbSvcPorts {
+		for _, svcPort := range ingNodePorts {
 			if svcPort.NEGEnabled {
 				zones, err := lbc.Translator.ListZones()
 				if err != nil {
