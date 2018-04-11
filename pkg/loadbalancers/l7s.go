@@ -76,7 +76,6 @@ func (l *L7s) create(ri *L7RuntimeInfo) (*L7, error) {
 		cloud:              l.cloud,
 		glbcDefaultBackend: l.glbcDefaultBackend,
 		namer:              l.namer,
-		sslCertPrefix:      l.namer.SSLCertPrefix(ri.Name),
 	}, nil
 }
 

@@ -25,6 +25,7 @@ import (
 	"sync"
 
 	"crypto/sha256"
+
 	"github.com/golang/glog"
 )
 
@@ -302,35 +303,33 @@ func (n *Namer) TargetProxy(lbName string, protocol NamerProtocol) string {
 	return "invalid"
 }
 
-// IsLegacySSLCert returns true if certName is an Ingress managed name following the older naming convention. The check
-// also ensures that the cert is managed by the specific ingress instance - lbName
-func (n *Namer) IsLegacySSLCert(lbName string, name string) bool {
-	// old style name is of the form k8s-ssl-<lbname> or k8s-ssl-1-<lbName>.
-	legacyPrefixPrimary := truncate(strings.Join([]string{n.prefix, sslCertPrefix, lbName}, "-"))
-	legacyPrefixSec := truncate(strings.Join([]string{n.prefix, sslCertPrefix, "1", lbName}, "-"))
-	return strings.HasPrefix(name, legacyPrefixPrimary) || strings.HasPrefix(name, legacyPrefixSec)
+// IsCertUsedForLB returns true if the resourceName belongs to this cluster's ingress.
+// It checks that the hashed lbName exists and
+func (n *Namer) IsCertUsedForLB(lbName, resourceName string) bool {
+	lbNameHash := n.lbNameToHash(lbName)
+	prefix := fmt.Sprintf("%s-%s-%s", n.prefix, sslCertPrefix, lbNameHash)
+	return strings.HasPrefix(resourceName, prefix) && strings.HasSuffix(resourceName, n.UID())
 }
 
-func (n *Namer) SSLCertPrefix(lbKey string) string {
-	// lbKey is of the form namespace/ingressname. Cert prefix will use the 8 byte(16 chars) hash of namespace-ingressname
-	// followed by the cluster id(also 16 char). We use hash instead of the actual name so that the cert prefix is of a
-	// fixed length and at the same time unique for a given loadbalancer instance.
+func (n *Namer) lbNameToHash(lbName string) string {
+	ingHash := fmt.Sprintf("%x", sha256.Sum256([]byte(lbName)))
+	return ingHash[:16]
+}
 
-	parts := strings.Split(lbKey, clusterNameDelimiter)
-	scrubbedName := strings.Replace(lbKey, "/", "-", -1)
-	clusterName := n.UID()
-	if parts[len(parts)-1] == clusterName {
-		scrubbedName = strings.TrimSuffix(scrubbedName, clusterNameDelimiter+clusterName)
-	}
-	// sha256 is 32 bytes(64 chars) long, truncating to first 8 bytes still results in low probability of collision
-	namespaceHash := fmt.Sprintf("%x", sha256.Sum256([]byte(scrubbedName)))
-	clusterPrefix := namespaceHash[:16] + clusterNameDelimiter + clusterName
-	return fmt.Sprintf("%s-%s-%s", n.prefix, sslCertPrefix, clusterPrefix)
+// IsLegacySSLCert returns true if certName is an Ingress managed name following the older naming convention. The check
+// also ensures that the cert is managed by the specific ingress instance - lbName
+func (n *Namer) IsLegacySSLCert(lbName string, resourceName string) bool {
+	// old style name is of the form k8s-ssl-<lbname> or k8s-ssl-1-<lbName>.
+	legacyPrefixPrimary := truncate(fmt.Sprintf("%s-%s-%s", n.prefix, sslCertPrefix, lbName))
+	legacyPrefixSec := truncate(fmt.Sprintf("%s-%s-1-%s", n.prefix, sslCertPrefix, lbName))
+	return strings.HasPrefix(resourceName, legacyPrefixPrimary) || strings.HasPrefix(resourceName, legacyPrefixSec)
 }
 
 // SSLCertName returns the name of the certificate.
-func (n *Namer) SSLCertName(prefix string, secretHash string) string {
-	return truncate(prefix + "-" + secretHash)
+func (n *Namer) SSLCertName(lbName string, secretHash string) string {
+	lbNameHash := n.lbNameToHash(lbName)
+	// k8s-ssl-[lbNameHash]-[certhash]--[clusterUID]
+	return truncate(fmt.Sprintf("%s-%s-%s-%s%s%s", n.prefix, sslCertPrefix, lbNameHash, secretHash, clusterNameDelimiter, n.UID()))
 }
 
 // ForwardingRule returns the name of the forwarding rule prefix.
