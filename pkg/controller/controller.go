@@ -34,6 +34,7 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/firewalls"
@@ -268,18 +269,22 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	}
 	ing = ing.DeepCopy()
 
-	defer func() {
-		if retErr != nil {
-			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", retErr.Error())
-		}
-		// Garbage collection will occur regardless of an error occurring. If an error occurred,
-		// it could have been caused by quota issues; therefore, garbage collecting now may
-		// free up enough quota for the next sync to pass.
-		if gcErr := lbc.CloudClusterManager.GC(lbNames, gceNodePorts); gcErr != nil {
-			retErr = fmt.Errorf("error during sync %v, error during GC %v", retErr, gcErr)
-		}
-	}()
+	ensureErr := lbc.ensureIngress(key, ing, nodeNames, gceNodePorts)
+	if ensureErr != nil {
+		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", fmt.Sprintf("Error during sync: %v", ensureErr.Error()))
+	}
 
+	// Garbage collection will occur regardless of an error occurring. If an error occurred,
+	// it could have been caused by quota issues; therefore, garbage collecting now may
+	// free up enough quota for the next sync to pass.
+	if gcErr := lbc.CloudClusterManager.GC(lbNames, gceNodePorts); gcErr != nil {
+		retErr = fmt.Errorf("error during sync %v, error during GC %v", retErr, gcErr)
+	}
+
+	return ensureErr
+}
+
+func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ingress, nodeNames []string, gceNodePorts []backends.ServicePort) error {
 	ingNodePorts := lbc.Translator.IngressToNodePorts(ing)
 	igs, err := lbc.CloudClusterManager.EnsureInstanceGroupsAndPorts(nodeNames, ingNodePorts)
 	if err != nil {
@@ -297,7 +302,6 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 		if err = updateAnnotations(lbc.client, ing.Name, ing.Namespace, ing.Annotations); err != nil {
 			return err
 		}
-		glog.V(3).Infof("Finished syncing MCI-ingress %v", key)
 		return nil
 	}
 
@@ -357,7 +361,6 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 		return fmt.Errorf("update ingress status error: %v", err)
 	}
 
-	glog.V(3).Infof("Finished syncing %v", key)
 	return nil
 }
 
