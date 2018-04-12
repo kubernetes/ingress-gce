@@ -29,9 +29,11 @@ import (
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	crclient "k8s.io/cluster-registry/pkg/client/clientset_generated/clientset"
 )
 
-// ControllerContext holds
+// ControllerContext holds resources necessary for the general
+// workflow of the controller.
 type ControllerContext struct {
 	kubeClient kubernetes.Interface
 
@@ -43,6 +45,14 @@ type ControllerContext struct {
 
 	// Map of namespace => record.EventRecorder.
 	recorders map[string]record.EventRecorder
+
+	MCContext MultiClusterContext
+}
+
+// MultiClusterContext holds resource necessary for MCI mode.
+type MultiClusterContext struct {
+	crClient        crclient.Interface
+	ClusterInformer cache.SharedIndexInformer
 }
 
 // NewControllerContext returns a new shared set of informers.

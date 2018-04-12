@@ -61,7 +61,12 @@ ignored = ["k8s.io/kubernetes/pkg/api"]
   branch = "master"
   name = "k8s.io/cluster-registry"
 
+[[constraint]]
+  branch = "master"
+  name = "k8s.io/kube-openapi"
+
 [prune]
   go-tests = true
   unused-packages = true
+
 
