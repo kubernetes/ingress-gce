@@ -32,3 +32,10 @@ you will find the variable `command` being set. Update the image reference
 in the set logic for that variable to the latest release image.
 
 [Example PR](https://github.com/kubernetes/kubernetes/pull/62079)
+
+## Expose Tests for Unreleased Features
+
+In [ingress.go](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/network/ingress.go)
+search the file for the string `[Unreleased]`. This is used to describe tests that we did not want 
+running against the latest release because they were not yet implemented in that release. Now that this new 
+release will contain the necessary changes, remove the `[Unreleased]` designation where applicable.
