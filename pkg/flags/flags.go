@@ -44,6 +44,7 @@ var (
 		DefaultSvc             string
 		DeleteAllOnQuit        bool
 		GCERateLimit           RateLimitSpecs
+		MultiCluster           bool
 		HealthCheckPath        string
 		HealthzPort            int
 		Features               *Features
@@ -123,6 +124,8 @@ values.`)
 	flag.BoolVar(&F.InCluster, "running-in-cluster", true,
 		`Optional, if this controller is running in a kubernetes cluster, use
 the pod secrets for creating a Kubernetes client.`)
+	flag.BoolVar(&F.MultiCluster, "multi-cluster", false,
+		`enables the controller to run in multi-cluster mode.`)
 	flag.StringVar(&F.KubeConfigFile, "kubeconfig", "",
 		`Path to kubeconfig file with authorization and master location information.`)
 	flag.DurationVar(&F.ResyncPeriod, "sync-period", 30*time.Second,
