@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	compute "google.golang.org/api/compute/v1"
 
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -36,22 +35,12 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 var (
 	firstPodCreationTime = time.Date(2006, 01, 02, 15, 04, 05, 0, time.UTC)
 )
-
-type fakeBackendInfo struct {
-}
-
-func (bi *fakeBackendInfo) BackendServiceForPort(port int64) (*compute.BackendService, error) {
-	panic(fmt.Errorf("should not be used"))
-}
-
-func (bi *fakeBackendInfo) DefaultBackendNodePort() *backends.ServicePort {
-	return &backends.ServicePort{NodePort: 30000, Protocol: annotations.ProtocolHTTP}
-}
 
 func gceForTest(negEnabled bool) *GCE {
 	client := fake.NewSimpleClientset()
@@ -61,10 +50,12 @@ func gceForTest(negEnabled bool) *GCE {
 		Interface: client.Core().Events(""),
 	})
 
+	namer := utils.NewNamer("uid1", "fw1")
+
 	ctx := context.NewControllerContext(client, apiv1.NamespaceAll, 1*time.Second, negEnabled)
 	gce := &GCE{
 		recorders:  ctx,
-		bi:         &fakeBackendInfo{},
+		namer:      namer,
 		svcLister:  ctx.ServiceInformer.GetIndexer(),
 		nodeLister: ctx.NodeInformer.GetIndexer(),
 		podLister:  ctx.PodInformer.GetIndexer(),

@@ -711,9 +711,9 @@ func (l *L7) UpdateUrlMap(ingressRules utils.GCEURLMap) error {
 	// backend, it applies to all host rules as well as to the urlmap itself.
 	// If it doesn't the urlmap might have a stale default, so replace it with
 	// glbc's default backend.
-	defaultBackend := ingressRules.GetDefaultBackend()
-	if defaultBackend != nil {
-		l.um.DefaultService = defaultBackend.SelfLink
+	defaultBackendName := ingressRules.GetDefaultBackendName()
+	if defaultBackendName != "" {
+		l.um.DefaultService = utils.BackendServiceRelativeResourcePath(defaultBackendName)
 	} else {
 		l.um.DefaultService = l.glbcDefaultBackend.SelfLink
 	}
@@ -726,7 +726,7 @@ func (l *L7) UpdateUrlMap(ingressRules utils.GCEURLMap) error {
 	l.um.HostRules = []*compute.HostRule{}
 	l.um.PathMatchers = []*compute.PathMatcher{}
 
-	for hostname, urlToBackend := range ingressRules {
+	for hostname, urlToBackendName := range ingressRules {
 		// Create a host rule
 		// Create a path matcher
 		// Add all given endpoint:backends to pathRules in path matcher
@@ -744,9 +744,10 @@ func (l *L7) UpdateUrlMap(ingressRules utils.GCEURLMap) error {
 
 		// Longest prefix wins. For equal rules, first hit wins, i.e the second
 		// /foo rule when the first is deleted.
-		for expr, be := range urlToBackend {
+		for expr, beName := range urlToBackendName {
+			beLink := utils.BackendServiceRelativeResourcePath(beName)
 			pathMatcher.PathRules = append(
-				pathMatcher.PathRules, &compute.PathRule{Paths: []string{expr}, Service: be.SelfLink})
+				pathMatcher.PathRules, &compute.PathRule{Paths: []string{expr}, Service: beLink})
 		}
 		l.um.PathMatchers = append(l.um.PathMatchers, pathMatcher)
 	}
@@ -771,7 +772,7 @@ func (l *L7) UpdateUrlMap(ingressRules utils.GCEURLMap) error {
 }
 
 func mapsEqual(a, b *compute.UrlMap) bool {
-	if a.DefaultService != b.DefaultService {
+	if utils.BackendServiceComparablePath(a.DefaultService) != utils.BackendServiceComparablePath(b.DefaultService) {
 		return false
 	}
 	if len(a.HostRules) != len(b.HostRules) {
@@ -801,7 +802,7 @@ func mapsEqual(a, b *compute.UrlMap) bool {
 	for i := range a.PathMatchers {
 		a := a.PathMatchers[i]
 		b := b.PathMatchers[i]
-		if a.DefaultService != b.DefaultService {
+		if utils.BackendServiceComparablePath(a.DefaultService) != utils.BackendServiceComparablePath(b.DefaultService) {
 			return false
 		}
 		if a.Description != b.Description {
@@ -824,7 +825,9 @@ func mapsEqual(a, b *compute.UrlMap) bool {
 					return false
 				}
 			}
-			if a.Service != b.Service {
+			// Trim down the url's for a.Service and b.Service to a comparable structure
+			// We do this because we update the UrlMap with relative links (not full) to backends.
+			if utils.BackendServiceComparablePath(a.Service) != utils.BackendServiceComparablePath(b.Service) {
 				return false
 			}
 		}
