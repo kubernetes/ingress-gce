@@ -182,10 +182,6 @@ func newPortManager(st, end int, namer *utils.Namer) *nodePortManager {
 // a nodePortManager is supplied, it also adds all backends to the service store
 // with a nodePort acquired through it.
 func addIngress(lbc *LoadBalancerController, ing *extensions.Ingress, pm *nodePortManager) {
-	lbc.ctx.IngressInformer.GetIndexer().Add(ing)
-	if pm == nil {
-		return
-	}
 	for _, rule := range ing.Spec.Rules {
 		for _, path := range rule.HTTP.Paths {
 			svc := &api_v1.Service{
@@ -206,6 +202,8 @@ func addIngress(lbc *LoadBalancerController, ing *extensions.Ingress, pm *nodePo
 			lbc.ctx.ServiceInformer.GetIndexer().Add(svc)
 		}
 	}
+	lbc.client.Extensions().Ingresses(ing.Namespace).Create(ing)
+	lbc.ctx.IngressInformer.GetIndexer().Add(ing)
 }
 
 func TestLbCreateDelete(t *testing.T) {
@@ -234,7 +232,9 @@ func TestLbCreateDelete(t *testing.T) {
 		newIng := newIngress(m)
 		addIngress(lbc, newIng, pm)
 		ingStoreKey := getKey(newIng, t)
-		lbc.sync(ingStoreKey)
+		if err := lbc.sync(ingStoreKey); err != nil {
+			t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
+		}
 		l7, err := cm.l7Pool.Get(ingStoreKey)
 		if err != nil {
 			t.Fatalf("cm.l7Pool.Get(%q) = _, %v; want nil", ingStoreKey, err)
@@ -245,7 +245,9 @@ func TestLbCreateDelete(t *testing.T) {
 		ings = append(ings, newIng)
 	}
 	lbc.ingLister.Store.Delete(ings[0])
-	lbc.sync(getKey(ings[0], t))
+	if err := lbc.sync(getKey(ings[0], t)); err != nil {
+		t.Fatalf("lbc.sync() = err %v", err)
+	}
 
 	// BackendServices associated with ports of deleted Ingress' should get gc'd
 	// when the Ingress is deleted, regardless of the service. At the same time
@@ -268,7 +270,9 @@ func TestLbCreateDelete(t *testing.T) {
 	}
 
 	lbc.ingLister.Store.Delete(ings[1])
-	lbc.sync(getKey(ings[1], t))
+	if err := lbc.sync(getKey(ings[1], t)); err != nil {
+		t.Fatalf("lbc.sync() = err %v", err)
+	}
 
 	// No cluster resources (except the defaults used by the cluster manager)
 	// should exist at this point.
@@ -308,7 +312,9 @@ func TestLbFaultyUpdate(t *testing.T) {
 	addIngress(lbc, ing, pm)
 
 	ingStoreKey := getKey(ing, t)
-	lbc.sync(ingStoreKey)
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync() = err %v", err)
+	}
 	l7, err := cm.l7Pool.Get(ingStoreKey)
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -325,7 +331,9 @@ func TestLbFaultyUpdate(t *testing.T) {
 		},
 	})
 
-	lbc.sync(ingStoreKey)
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync() = err %v", err)
+	}
 	if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(inputMap)); err != nil {
 		t.Fatalf("cm.fakeLbs.CheckURLMap(...) = %v, want nil", err)
 	}
@@ -340,7 +348,9 @@ func TestLbDefaulting(t *testing.T) {
 	addIngress(lbc, ing, pm)
 
 	ingStoreKey := getKey(ing, t)
-	lbc.sync(ingStoreKey)
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync() = err %v", err)
+	}
 	l7, err := cm.l7Pool.Get(ingStoreKey)
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -353,6 +363,7 @@ func TestLbDefaulting(t *testing.T) {
 
 func TestLbNoService(t *testing.T) {
 	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
+	pm := newPortManager(1, 65536, cm.Namer)
 	lbc := newLoadBalancerController(t, cm)
 	inputMap := map[string]utils.FakeIngressRuleValueMap{
 		"foo.example.com": {
@@ -368,8 +379,10 @@ func TestLbNoService(t *testing.T) {
 	// This will still create the associated loadbalancer, it will just
 	// have empty rules. The rules will get corrected when the service
 	// pops up.
-	addIngress(lbc, ing, nil)
-	lbc.sync(ingStoreKey)
+	addIngress(lbc, ing, pm)
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync() = err %v", err)
+	}
 
 	l7, err := cm.l7Pool.Get(ingStoreKey)
 	if err != nil {
@@ -377,7 +390,6 @@ func TestLbNoService(t *testing.T) {
 	}
 
 	// Creates the service, next sync should have complete url map.
-	pm := newPortManager(1, 65536, cm.Namer)
 	addIngress(lbc, ing, pm)
 	svc := &api_v1.Service{
 		ObjectMeta: meta_v1.ObjectMeta{
@@ -387,7 +399,9 @@ func TestLbNoService(t *testing.T) {
 	}
 
 	lbc.enqueueIngressForService(svc)
-	lbc.sync(fmt.Sprintf("%s/%s", ing.Namespace, ing.Name))
+	if err := lbc.sync(fmt.Sprintf("%s/%s", ing.Namespace, ing.Name)); err != nil {
+		t.Fatalf("lbc.sync() = err %v", err)
+	}
 	inputMap[utils.DefaultBackendKey] = map[string]string{
 		utils.DefaultBackendKey: "foo1svc",
 	}
@@ -423,7 +437,9 @@ func TestLbChangeStaticIP(t *testing.T) {
 	ingStoreKey := getKey(ing, t)
 
 	// First sync creates forwarding rules and allocates an IP.
-	lbc.sync(ingStoreKey)
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync() = err %v", err)
+	}
 
 	// First allocate a static ip, then specify a userip in annotations.
 	// The forwarding rules should contain the user ip.
@@ -438,7 +454,9 @@ func TestLbChangeStaticIP(t *testing.T) {
 	cm.fakeLbs.ReserveGlobalAddress(&compute.Address{Name: "testip", Address: "1.2.3.4"})
 
 	// Second sync reassigns 1.2.3.4 to existing forwarding rule (by recreating it)
-	lbc.sync(ingStoreKey)
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync() = err %v", err)
+	}
 
 	newRules := cm.fakeLbs.GetForwardingRulesWithIPs([]string{"1.2.3.4"})
 	if len(newRules) != 2 || newRules[0].IPAddress != newRules[1].IPAddress || newRules[1].IPAddress != "1.2.3.4" {

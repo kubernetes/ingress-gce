@@ -85,6 +85,7 @@ func (t *PeriodicTaskQueue) worker() {
 			glog.Errorf("Requeuing %q due to error: %v (%v)", key, err, t.resource)
 			t.queue.AddRateLimited(key)
 		} else {
+			glog.V(4).Infof("Finished syncing %v", key)
 			t.queue.Forget(key)
 		}
 		t.queue.Done(key)
