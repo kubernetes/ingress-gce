@@ -190,9 +190,9 @@ func (l *L7) checkProxy() (err error) {
 	return nil
 }
 
-func (l *L7) deleteOldSSLCerts() (err error) {
+func (l *L7) deleteOldSSLCerts() {
 	if len(l.oldSSLCerts) == 0 {
-		return nil
+		return
 	}
 	certsMap := getMapfromCertList(l.sslCerts)
 	for _, cert := range l.oldSSLCerts {
@@ -204,13 +204,11 @@ func (l *L7) deleteOldSSLCerts() (err error) {
 			// cert found in current map
 			continue
 		}
-		glog.Infof("Cleaning up old SSL Certificate %s", cert.Name)
+		glog.V(3).Infof("Cleaning up old SSL Certificate %s", cert.Name)
 		if certErr := utils.IgnoreHTTPNotFound(l.cloud.DeleteSslCertificate(cert.Name)); certErr != nil {
 			glog.Errorf("Old cert delete failed - %v", certErr)
-			err = certErr
 		}
 	}
-	return err
 }
 
 // Returns the name portion of a link - which is the last section
@@ -317,47 +315,55 @@ func (l *L7) checkSSLCert() error {
 		return err
 	}
 
-	var newCerts []*compute.SslCertificate
+	existingCertsMap := getMapfromCertList(l.sslCerts)
+	l.oldSSLCerts = l.sslCerts
+	l.sslCerts = make([]*compute.SslCertificate, 0)
+
 	// mapping of currently configured certs
-	certsMap := getMapfromCertList(l.sslCerts)
+	visitedCertMap := make(map[string]string)
 	var failedCerts []string
 
 	for _, tlsCert := range l.runtimeInfo.TLS {
 		ingCert := tlsCert.Cert
 		ingKey := tlsCert.Key
-		newCertName := l.namer.SSLCertName(l.Name, tlsCert.CertHash)
+		gcpCertName := l.namer.SSLCertName(l.Name, tlsCert.CertHash)
+
+		if addedBy, exists := visitedCertMap[gcpCertName]; exists {
+			glog.V(3).Infof("Secret %q has a certificate already used by %v", tlsCert.Name, addedBy)
+			continue
+		}
 
 		// PrivateKey is write only, so compare certs alone. We're assuming that
 		// no one will change just the key. We can remember the key and compare,
 		// but a bug could end up leaking it, which feels worse.
 		// If the cert contents have changed, its hash would be different, so would be the cert name. So it is enough
 		// to check if this cert name exists in the map.
-		if certsMap != nil {
-			if cert, ok := certsMap[newCertName]; ok {
-				glog.Infof("Retaining cert - %s", tlsCert.Name)
-				newCerts = append(newCerts, cert)
+		if existingCertsMap != nil {
+			if cert, ok := existingCertsMap[gcpCertName]; ok {
+				glog.V(3).Infof("Secret %q already exists as certificate %q", tlsCert.Name, gcpCertName)
+				visitedCertMap[gcpCertName] = fmt.Sprintf("certificate:%q", gcpCertName)
+				l.sslCerts = append(l.sslCerts, cert)
 				continue
 			}
 		}
 		// Controller needs to create the certificate, no need to check if it exists and delete. If it did exist, it
 		// would have been listed in the populateSSLCert function and matched in the check above.
-		glog.V(2).Infof("Creating new sslCertificate %v for %v", newCertName, l.Name)
+		glog.V(2).Infof("Creating new sslCertificate %q for LB %q", gcpCertName, l.Name)
 		cert, err := l.cloud.CreateSslCertificate(&compute.SslCertificate{
-			Name:        newCertName,
+			Name:        gcpCertName,
 			Certificate: ingCert,
 			PrivateKey:  ingKey,
 		})
 		if err != nil {
-			glog.Errorf("Failed to create new sslCertificate %v for %v - %s", newCertName, l.Name, err)
-			failedCerts = append(failedCerts, newCertName+" Error:"+err.Error())
+			glog.Errorf("Failed to create new sslCertificate %q for %q - %v", gcpCertName, l.Name, err)
+			failedCerts = append(failedCerts, gcpCertName+" Error:"+err.Error())
 			continue
 		}
-		newCerts = append(newCerts, cert)
+		visitedCertMap[gcpCertName] = fmt.Sprintf("secret:%q", tlsCert.Name)
+		l.sslCerts = append(l.sslCerts, cert)
 	}
 
 	// Save the old certs for cleanup after we update the target proxy.
-	l.oldSSLCerts = l.sslCerts
-	l.sslCerts = newCerts
 	if len(failedCerts) > 0 {
 		return fmt.Errorf("Cert creation failures - %s", strings.Join(failedCerts, ","))
 	}
@@ -627,19 +633,15 @@ func (l *L7) edgeHopHttp() error {
 }
 
 func (l *L7) edgeHopHttps() error {
+	defer l.deleteOldSSLCerts()
 	if err := l.checkSSLCert(); err != nil {
 		return err
 	}
+
 	if err := l.checkHttpsProxy(); err != nil {
 		return err
 	}
-	if err := l.checkHttpsForwardingRule(); err != nil {
-		return err
-	}
-	if err := l.deleteOldSSLCerts(); err != nil {
-		return err
-	}
-	return nil
+	return l.checkHttpsForwardingRule()
 }
 
 // GetIP returns the ip associated with the forwarding rule for this l7.
