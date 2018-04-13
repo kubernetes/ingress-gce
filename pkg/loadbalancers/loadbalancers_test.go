@@ -160,6 +160,31 @@ func TestCertUpdate(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 }
 
+// Test that multiple secrets with the same certificate value don't cause a sync error.
+func TestMultipleSecretsWithSameCert(t *testing.T) {
+	namer := utils.NewNamer("uid1", "fw1")
+	lbName := namer.LoadBalancer("test")
+
+	lbInfo := &L7RuntimeInfo{
+		Name:      lbName,
+		AllowHTTP: false,
+		TLS: []*TLSCerts{
+			createCert("key", "cert", "secret-a"),
+			createCert("key", "cert", "secret-b"),
+		},
+	}
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
+
+	// Sync first cert
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
+	certName := namer.SSLCertName(lbName, GetCertHash("cert"))
+	expectCerts := map[string]string{certName: lbInfo.TLS[0].Cert}
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+}
+
 // Tests that controller can overwrite existing, unused certificates
 func TestCertCreationWithCollision(t *testing.T) {
 	namer := utils.NewNamer("uid1", "fw1")
@@ -458,7 +483,7 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 
 func verifyProxyCertsInOrder(hostname string, f *FakeLoadBalancers, t *testing.T) {
 	t.Helper()
-	t.Logf("f =\n%s", f)
+	t.Logf("f =\n%s", f.String())
 
 	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
 	if err != nil {
@@ -488,11 +513,10 @@ func verifyProxyCertsInOrder(hostname string, f *FakeLoadBalancers, t *testing.T
 // expectCerts is the mapping of certs expected in the FakeLoadBalancer. expectCertsProxy is the mapping of certs expected
 // to be in use by the target proxy. Both values will be different for the PreSharedToSecretBasedCertUpdate test.
 // f will contain the preshared as well as secret-based certs, but target proxy will contain only one or the other.
-func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[string]string, f *FakeLoadBalancers,
-	t *testing.T) {
+func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[string]string, f *FakeLoadBalancers, t *testing.T) {
 	t.Helper()
 
-	t.Logf("f =\n%s", f)
+	t.Logf("f =\n%s", f.String())
 
 	// f needs to contain only the certs in expectCerts, nothing more, nothing less
 	allCerts, err := f.ListSslCertificates()
