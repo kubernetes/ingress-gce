@@ -1,5 +1,11 @@
 # Changelog
 
+### 1.1.1
+**Image:**  `k8s.gcr.io/ingress-gce-glbc-amd64:v1.1.1`
+
+*Major Changes:*
+- [#213](https://github.com/kubernetes/ingress-gce/pull/213) Fix for controller error when an ingress has multiple secrets backed by the same certificate.  
+
 ### 1.1.0
 **Image:**  `k8s.gcr.io/ingress-gce-glbc-amd64:v1.1.0`
 
@@ -10,6 +16,9 @@
 *Major Changes:*
 - [#189](https://github.com/kubernetes/ingress-gce/pull/189) Build binaries with Go 1.10.1 (previously 1.9).
 - [#199](https://github.com/kubernetes/ingress-gce/pull/199) Only update instance group named ports with ports targeted by the syncing ingress - not all ingresses.
+
+*Known Issues:*
+- [#213](https://github.com/kubernetes/ingress-gce/pull/213) Controller may orphan certificates if two secrets with the same certificate are referenced from the same ingress.  
 
 ### 1.0.1
 
