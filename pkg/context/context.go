@@ -30,12 +30,13 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	crclient "k8s.io/cluster-registry/pkg/client/clientset_generated/clientset"
+	crinformerv1alpha1 "k8s.io/cluster-registry/pkg/client/informers_generated/externalversions/clusterregistry/v1alpha1"
 )
 
 // ControllerContext holds resources necessary for the general
 // workflow of the controller.
 type ControllerContext struct {
-	kubeClient kubernetes.Interface
+	KubeClient kubernetes.Interface
 
 	IngressInformer  cache.SharedIndexInformer
 	ServiceInformer  cache.SharedIndexInformer
@@ -46,30 +47,35 @@ type ControllerContext struct {
 	// Map of namespace => record.EventRecorder.
 	recorders map[string]record.EventRecorder
 
-	MCContext MultiClusterContext
+	MC MultiClusterContext
 }
 
 // MultiClusterContext holds resource necessary for MCI mode.
 type MultiClusterContext struct {
-	crClient        crclient.Interface
+	RegistryClient  crclient.Interface
 	ClusterInformer cache.SharedIndexInformer
 }
 
 // NewControllerContext returns a new shared set of informers.
-func NewControllerContext(kubeClient kubernetes.Interface, namespace string, resyncPeriod time.Duration, enableEndpointsInformer bool) *ControllerContext {
+func NewControllerContext(kubeClient kubernetes.Interface, registryClient crclient.Interface, namespace string, resyncPeriod time.Duration, enableEndpointsInformer bool) *ControllerContext {
 	newIndexer := func() cache.Indexers {
 		return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
 	}
+
 	context := &ControllerContext{
-		kubeClient:      kubeClient,
+		KubeClient:      kubeClient,
 		IngressInformer: informerv1beta1.NewIngressInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
 		ServiceInformer: informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
 		PodInformer:     informerv1.NewPodInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
 		NodeInformer:    informerv1.NewNodeInformer(kubeClient, resyncPeriod, newIndexer()),
+		MC:              MultiClusterContext{RegistryClient: registryClient},
 		recorders:       map[string]record.EventRecorder{},
 	}
 	if enableEndpointsInformer {
 		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, namespace, resyncPeriod, newIndexer())
+	}
+	if context.MC.RegistryClient != nil {
+		context.MC.ClusterInformer = crinformerv1alpha1.NewClusterInformer(registryClient, resyncPeriod, newIndexer())
 	}
 
 	return context
@@ -86,6 +92,9 @@ func (ctx *ControllerContext) HasSynced() bool {
 	if ctx.EndpointInformer != nil {
 		funcs = append(funcs, ctx.EndpointInformer.HasSynced)
 	}
+	if ctx.MC.ClusterInformer != nil {
+		funcs = append(funcs, ctx.MC.ClusterInformer.HasSynced)
+	}
 	for _, f := range funcs {
 		if !f() {
 			return false
@@ -94,6 +103,7 @@ func (ctx *ControllerContext) HasSynced() bool {
 	return true
 }
 
+// Recorder creates an event recorder for the specified namespace.
 func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 	if rec, ok := ctx.recorders[ns]; ok {
 		return rec
@@ -102,7 +112,7 @@ func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{
-		Interface: ctx.kubeClient.Core().Events(ns),
+		Interface: ctx.KubeClient.Core().Events(ns),
 	})
 	rec := broadcaster.NewRecorder(scheme.Scheme, apiv1.EventSource{Component: "loadbalancer-controller"})
 	ctx.recorders[ns] = rec
@@ -118,5 +128,9 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	go ctx.NodeInformer.Run(stopCh)
 	if ctx.EndpointInformer != nil {
 		go ctx.EndpointInformer.Run(stopCh)
+	}
+
+	if ctx.MC.ClusterInformer != nil {
+		go ctx.MC.ClusterInformer.Run(stopCh)
 	}
 }

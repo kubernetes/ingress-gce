@@ -55,8 +55,8 @@ func defaultBackendName(clusterName string) string {
 func newLoadBalancerController(t *testing.T, cm *fakeClusterManager) *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
 	stopCh := make(chan struct{})
-	ctx := context.NewControllerContext(kubeClient, api_v1.NamespaceAll, 1*time.Second, true)
-	lb, err := NewLoadBalancerController(kubeClient, stopCh, ctx, cm.ClusterManager, true)
+	ctx := context.NewControllerContext(kubeClient, nil, api_v1.NamespaceAll, 1*time.Second, true)
+	lb, err := NewLoadBalancerController(ctx, cm.ClusterManager, true, stopCh)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -202,7 +202,7 @@ func addIngress(lbc *LoadBalancerController, ing *extensions.Ingress, pm *nodePo
 			lbc.ctx.ServiceInformer.GetIndexer().Add(svc)
 		}
 	}
-	lbc.client.Extensions().Ingresses(ing.Namespace).Create(ing)
+	lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Create(ing)
 	lbc.ctx.IngressInformer.GetIndexer().Add(ing)
 }
 

@@ -26,10 +26,12 @@ import (
 
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
+	crclient "k8s.io/cluster-registry/pkg/client/clientset_generated/clientset"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
+	"k8s.io/ingress-gce/pkg/mci"
 	neg "k8s.io/ingress-gce/pkg/neg"
 
 	"k8s.io/ingress-gce/cmd/glbc/app"
@@ -82,6 +84,14 @@ func main() {
 		}
 	}
 
+	var registryClient crclient.Interface
+	if flags.F.MultiCluster {
+		registryClient, err = crclient.NewForConfig(kubeConfig)
+		if err != nil {
+			glog.Fatalf("Failed to create Cluster Registry client: %v", err)
+		}
+	}
+
 	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, controller.DefaultFirewallName)
 	if err != nil {
 		glog.Fatalf("%v", err)
@@ -96,8 +106,8 @@ func main() {
 
 	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
 	stopCh := make(chan struct{})
-	ctx := context.NewControllerContext(kubeClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG)
-	lbc, err := controller.NewLoadBalancerController(kubeClient, stopCh, ctx, clusterManager, enableNEG)
+	ctx := context.NewControllerContext(kubeClient, registryClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG)
+	lbc, err := controller.NewLoadBalancerController(ctx, clusterManager, enableNEG, stopCh)
 	if err != nil {
 		glog.Fatalf("Error creating load balancer controller: %v", err)
 	}
@@ -109,9 +119,15 @@ func main() {
 	glog.V(0).Infof("clusterManager initialized")
 
 	if enableNEG {
-		negController, _ := neg.NewController(kubeClient, cloud, ctx, lbc.Translator, namer, flags.F.ResyncPeriod)
+		negController, _ := neg.NewController(cloud, ctx, lbc.Translator, namer, flags.F.ResyncPeriod)
 		go negController.Run(stopCh)
 		glog.V(0).Infof("negController started")
+	}
+
+	if flags.F.MultiCluster {
+		mciController, _ := mci.NewController(ctx, flags.F.ResyncPeriod)
+		go mciController.Run(stopCh)
+		glog.V(0).Infof("Multi-Cluster Ingress Controller started")
 	}
 
 	go app.RunHTTPServer(lbc)
