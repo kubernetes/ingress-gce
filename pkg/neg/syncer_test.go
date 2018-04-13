@@ -23,7 +23,7 @@ const (
 
 func NewTestSyncer() *syncer {
 	kubeClient := fake.NewSimpleClientset()
-	context := context.NewControllerContext(kubeClient, apiv1.NamespaceAll, 1*time.Second, true)
+	context := context.NewControllerContext(kubeClient, nil, apiv1.NamespaceAll, 1*time.Second, true)
 	svcPort := servicePort{
 		namespace:  testServiceNamespace,
 		name:       testServiceName,

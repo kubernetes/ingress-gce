@@ -36,7 +36,7 @@ const (
 )
 
 func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
-	context := context.NewControllerContext(kubeClient, apiv1.NamespaceAll, 1*time.Second, true)
+	context := context.NewControllerContext(kubeClient, nil, apiv1.NamespaceAll, 1*time.Second, true)
 	manager := newSyncerManager(
 		utils.NewNamer(CluseterID, ""),
 		record.NewFakeRecorder(100),

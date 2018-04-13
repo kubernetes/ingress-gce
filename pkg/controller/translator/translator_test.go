@@ -52,7 +52,7 @@ func gceForTest(negEnabled bool) *GCE {
 
 	namer := utils.NewNamer("uid1", "fw1")
 
-	ctx := context.NewControllerContext(client, apiv1.NamespaceAll, 1*time.Second, negEnabled)
+	ctx := context.NewControllerContext(client, nil, apiv1.NamespaceAll, 1*time.Second, negEnabled)
 	gce := &GCE{
 		recorders:  ctx,
 		namer:      namer,

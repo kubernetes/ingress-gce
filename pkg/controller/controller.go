@@ -59,8 +59,7 @@ var (
 // LoadBalancerController watches the kubernetes api and adds/removes services
 // from the loadbalancer, via loadBalancerConfig.
 type LoadBalancerController struct {
-	client kubernetes.Interface
-	ctx    *context.ControllerContext
+	ctx *context.ControllerContext
 
 	ingLister  StoreToIngressLister
 	nodeLister cache.Indexer
@@ -88,18 +87,16 @@ type LoadBalancerController struct {
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
-// - kubeClient: A kubernetes REST client.
 // - clusterManager: A ClusterManager capable of creating all cloud resources
 //	 required for L7 loadbalancing.
 // - resyncPeriod: Watchers relist from the Kubernetes API server this often.
-func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan struct{}, ctx *context.ControllerContext, clusterManager *ClusterManager, negEnabled bool) (*LoadBalancerController, error) {
+func NewLoadBalancerController(ctx *context.ControllerContext, clusterManager *ClusterManager, negEnabled bool, stopCh chan struct{}) (*LoadBalancerController, error) {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
-		Interface: kubeClient.Core().Events(""),
+		Interface: ctx.KubeClient.Core().Events(""),
 	})
 	lbc := LoadBalancerController{
-		client:              kubeClient,
 		ctx:                 ctx,
 		ingLister:           StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
 		nodeLister:          ctx.NodeInformer.GetIndexer(),
@@ -174,7 +171,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 		ctx.PodInformer.GetIndexer(),
 		endpointIndexer,
 		negEnabled)
-	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.client}
+	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.ctx.KubeClient}
 
 	glog.V(3).Infof("Created new loadbalancer controller")
 
@@ -299,7 +296,7 @@ func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ing
 		if err = setInstanceGroupsAnnotation(ing.Annotations, igs); err != nil {
 			return err
 		}
-		if err = updateAnnotations(lbc.client, ing.Name, ing.Namespace, ing.Annotations); err != nil {
+		if err = updateAnnotations(lbc.ctx.KubeClient, ing.Name, ing.Namespace, ing.Annotations); err != nil {
 			return err
 		}
 		return nil
@@ -367,7 +364,7 @@ func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ing
 // updateIngressStatus updates the IP and annotations of a loadbalancer.
 // The annotations are parsed by kubectl describe.
 func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing *extensions.Ingress) error {
-	ingClient := lbc.client.Extensions().Ingresses(ing.Namespace)
+	ingClient := lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace)
 
 	// Update IP through update/status endpoint
 	ip := l7.GetIP()
@@ -395,7 +392,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 		}
 	}
 	annotations := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.CloudClusterManager.backendPool)
-	if err := updateAnnotations(lbc.client, ing.Name, ing.Namespace, annotations); err != nil {
+	if err := updateAnnotations(lbc.ctx.KubeClient, ing.Name, ing.Namespace, annotations); err != nil {
 		return err
 	}
 	return nil
