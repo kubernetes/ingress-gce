@@ -664,7 +664,10 @@
     "pkg/apis/clusterregistry/v1alpha1",
     "pkg/client/clientset_generated/clientset",
     "pkg/client/clientset_generated/clientset/scheme",
-    "pkg/client/clientset_generated/clientset/typed/clusterregistry/v1alpha1"
+    "pkg/client/clientset_generated/clientset/typed/clusterregistry/v1alpha1",
+    "pkg/client/informers_generated/externalversions/clusterregistry/v1alpha1",
+    "pkg/client/informers_generated/externalversions/internalinterfaces",
+    "pkg/client/listers_generated/clusterregistry/v1alpha1"
   ]
   revision = "0309542bf91ca34c577e19769418561f65af5226"
 
@@ -737,6 +740,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "a03a01de13ead5f4d83b0cf943b4592d693a44eae04cad16c729c8e3a1f35243"
+  inputs-digest = "faef4f2be2707f32d65e2d0da20ad06c910e6402fddd4eee29857e2e970b8e55"
   solver-name = "gps-cdcl"
   solver-version = 1
