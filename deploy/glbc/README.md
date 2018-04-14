@@ -18,7 +18,7 @@ Furthermore you should refrain from contacting GKE support if there are issues.*
 
 # Important Prerequisites
 
-There are two prerequisite steps that needs to be taken before running the script.
+There are two prerequisite steps that need to be taken before running the script.
 
 Run the command below:
 
