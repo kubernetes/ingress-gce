@@ -65,8 +65,12 @@ ignored = ["k8s.io/kubernetes/pkg/api"]
   branch = "master"
   name = "k8s.io/kube-openapi"
 
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/hashicorp/go-multierror"
+
+
 [prune]
   go-tests = true
   unused-packages = true
-
-
