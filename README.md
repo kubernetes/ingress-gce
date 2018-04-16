@@ -438,7 +438,7 @@ The certificate in this case is managed by the user and it is their
 responsibility to create/delete it. The Ingress controller assigns the SSL certificate with this name to the target proxies of the Ingress.
 
 ## Backend HTTPS
-For encrypted communication between the load balancer and your Kubernetes service, you need to decorate the service's port as expecting HTTPS. There's an alpha [Service annotation](examples/backside_https/app.yaml) for specifying the expected protocol per service port. Upon seeing the protocol as HTTPS, the ingress controller will assemble a GCP L7 load balancer with an HTTPS backend-service with a HTTPS health check.
+For encrypted communication between the load balancer and your Kubernetes service, you need to decorate the service's port as expecting HTTPS. There's an alpha [Service annotation](examples/backside-https/app.yaml) for specifying the expected protocol per service port. Upon seeing the protocol as HTTPS, the ingress controller will assemble a GCP L7 load balancer with an HTTPS backend-service with an HTTPS health check.
 
 The annotation value is a stringified JSON map of port-name to "HTTPS" or "HTTP".  If you do not specify the port, "HTTP" is assumed.
 ```yaml

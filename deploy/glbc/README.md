@@ -13,12 +13,12 @@ We will explain what each of these things mean in a bit. However, you will only 
 with one file (script.sh).
 
 **Disclaimer: Running this script could potentially be disruptive to traffic
-so if you want to run this on a production cluster, do so at your own risk. 
+so if you want to run this on a production cluster, do so at your own risk.
 Furthermore you should refrain from contacting GKE support if there are issues.**
 
 # Important Prerequisites
 
-There are two prerequisite steps that needs to be taken before running the script.
+There are two prerequisite steps that need to be taken before running the script.
 
 Run the command below:
 
@@ -37,7 +37,7 @@ theoretically work. If not, the script will do its best to fail gracefully
 and let you know what might have went wrong.
 
 The second step is to make sure you populate the gce.conf file. The instructions
-for populating the file are in the file itself. You just have to fill it in. 
+for populating the file are in the file itself. You just have to fill it in.
 
 # Important Details
 
@@ -114,5 +114,3 @@ issue.
 If you have issues with the controller after the script execution and you do not
 know what it causing it, invoke the script in its cleanup mode. The is a quick
 and simple way of going back to how everything was before.
-
-

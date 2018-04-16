@@ -96,14 +96,14 @@ func (l *L7s) Add(ri *L7RuntimeInfo) (err error) {
 
 	lb, _ := l.Get(name)
 	if lb == nil {
-		glog.Infof("Creating l7 %v", name)
+		glog.V(3).Infof("Creating l7 %v", name)
 		lb, err = l.create(ri)
 		if err != nil {
 			return err
 		}
 	} else {
 		if !reflect.DeepEqual(lb.runtimeInfo, ri) {
-			glog.Infof("LB %v runtime info changed, old %+v new %+v", lb.Name, lb.runtimeInfo, ri)
+			glog.V(3).Infof("LB %v runtime info changed, old %+v new %+v", lb.Name, lb.runtimeInfo, ri)
 			lb.runtimeInfo = ri
 		}
 	}
@@ -130,7 +130,7 @@ func (l *L7s) Delete(name string) error {
 	if err != nil {
 		return err
 	}
-	glog.Infof("Deleting lb %v", name)
+	glog.V(3).Infof("Deleting lb %v", name)
 	if err := lb.Cleanup(); err != nil {
 		return err
 	}
@@ -204,6 +204,6 @@ func (l *L7s) Shutdown() error {
 	if err := l.defaultBackendPool.Shutdown(); err != nil {
 		return err
 	}
-	glog.Infof("Loadbalancer pool shutdown.")
+	glog.V(2).Infof("Loadbalancer pool shutdown.")
 	return nil
 }
