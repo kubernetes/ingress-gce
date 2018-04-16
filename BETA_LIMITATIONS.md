@@ -106,7 +106,7 @@ Ingress is not yet supported on single zone clusters of size > 1000 nodes ([issu
 
 ## Disabling GLBC
 
-To completely stop the Ingress controller on GCE/GKE, please see [this] (/docs/faq/gce.md#how-do-i-disable-the-gce-ingress-controller) FAQ.
+To completely stop the Ingress controller on GCE/GKE, please see [this](/docs/faq/gce.md#how-do-i-disable-the-gce-ingress-controller) FAQ.
 
 ## Changing the cluster UID
 
