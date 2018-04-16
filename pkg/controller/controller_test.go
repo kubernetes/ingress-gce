@@ -178,29 +178,41 @@ func newPortManager(st, end int, namer *utils.Namer) *nodePortManager {
 	return &nodePortManager{map[string]int{}, st, end, namer}
 }
 
+// service is a helper function to create k8s service object.
+func service(ib *extensions.IngressBackend, namespace string, pm *nodePortManager) *api_v1.Service {
+	svc := &api_v1.Service{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:      ib.ServiceName,
+			Namespace: namespace,
+		},
+	}
+	var svcPort api_v1.ServicePort
+	switch ib.ServicePort.Type {
+	case intstr.Int:
+		svcPort = api_v1.ServicePort{Port: ib.ServicePort.IntVal}
+	default:
+		svcPort = api_v1.ServicePort{Name: ib.ServicePort.StrVal}
+	}
+	svcPort.NodePort = int32(pm.getNodePort(ib.ServiceName))
+	svc.Spec.Ports = []api_v1.ServicePort{svcPort}
+	svc.Spec.Type = api_v1.ServiceTypeNodePort
+	return svc
+}
+
 // addIngress adds an ingress to the loadbalancer controllers ingress store. If
 // a nodePortManager is supplied, it also adds all backends to the service store
 // with a nodePort acquired through it.
 func addIngress(lbc *LoadBalancerController, ing *extensions.Ingress, pm *nodePortManager) {
 	for _, rule := range ing.Spec.Rules {
 		for _, path := range rule.HTTP.Paths {
-			svc := &api_v1.Service{
-				ObjectMeta: meta_v1.ObjectMeta{
-					Name:      path.Backend.ServiceName,
-					Namespace: ing.Namespace,
-				},
-			}
-			var svcPort api_v1.ServicePort
-			switch path.Backend.ServicePort.Type {
-			case intstr.Int:
-				svcPort = api_v1.ServicePort{Port: path.Backend.ServicePort.IntVal}
-			default:
-				svcPort = api_v1.ServicePort{Name: path.Backend.ServicePort.StrVal}
-			}
-			svcPort.NodePort = int32(pm.getNodePort(path.Backend.ServiceName))
-			svc.Spec.Ports = []api_v1.ServicePort{svcPort}
+			svc := service(&path.Backend, ing.Namespace, pm)
 			lbc.ctx.ServiceInformer.GetIndexer().Add(svc)
 		}
+	}
+	if ing.Spec.Backend != nil {
+		defaultBackend := ing.Spec.Backend
+		defaultBackendSvc := service(defaultBackend, ing.Namespace, pm)
+		lbc.ctx.ServiceInformer.GetIndexer().Add(defaultBackendSvc)
 	}
 	lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Create(ing)
 	lbc.ctx.IngressInformer.GetIndexer().Add(ing)

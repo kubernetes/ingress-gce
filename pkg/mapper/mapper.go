@@ -62,7 +62,7 @@ func (c *clusterServiceMapper) Services(ing *v1beta1.Ingress) (map[v1beta1.Ingre
 		}
 		svc, err := c.svcGetter(defaultBackend.ServiceName, ing.Namespace)
 		if err != nil {
-			result = multierror.Append(result, fmt.Errorf("error getting %v/%v: %v", defaultBackend.ServiceName, ing.Namespace, err))
+			result = multierror.Append(result, fmt.Errorf("error getting service %v/%v for backend %+v: %v", ing.Namespace, defaultBackend.ServiceName, *defaultBackend, err))
 		} else {
 			backendToService[*defaultBackend] = *svc
 		}
@@ -82,7 +82,7 @@ Loop:
 			}
 			svc, err := c.svcGetter(path.Backend.ServiceName, ing.Namespace)
 			if err != nil {
-				result = multierror.Append(result, fmt.Errorf("error getting %v/%v", ing.Namespace, path.Backend.ServiceName))
+				result = multierror.Append(result, fmt.Errorf("error getting service %v/%v for backend %+v: %v", ing.Namespace, path.Backend.ServiceName, path.Backend, err))
 				continue
 			}
 			backendToService[path.Backend] = *svc

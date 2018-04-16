@@ -22,43 +22,14 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
-	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	"k8s.io/ingress-gce/pkg/test"
 )
 
-var rawIng = `
-apiVersion: extensions/v1beta1
-kind: Ingress
-metadata:
-  name: test
-spec:
-  backend:
-    serviceName: default
-    servicePort: 80
-  rules:
-  - host: foo.bar.com
-    http:
-      paths:
-      - path: /foo
-        backend:
-          serviceName: testx
-          servicePort: 80
-      - path: /bar
-        backend:
-          serviceName: testy
-          servicePort: 80
-      - path: /baz
-        backend:
-          serviceName: testz
-          servicePort: 80
-`
-
 func TestServices(t *testing.T) {
-	ing, err := getTestIngress()
+	ing, err := test.GetTestIngress("../test/manifests/ing1.yaml")
 	if err != nil {
-		t.Errorf("Error occured when constructing test Ingress: %v", err)
+		t.Fatalf("Error occured when getting test Ingress: %v", err)
 	}
 
 	testCases := []struct {
@@ -102,16 +73,4 @@ func stubbedErrorSvcGetter(svcName, namespace string) (*v1.Service, error) {
 // stubbedSvcGetter returns a skeleton Service.
 func stubbedSvcGetter(svcName, namespace string) (*v1.Service, error) {
 	return &v1.Service{ObjectMeta: meta_v1.ObjectMeta{Name: svcName}}, nil
-}
-
-func getTestIngress() (v1beta1.Ingress, error) {
-	ing := v1beta1.Ingress{}
-	json, err := utilyaml.ToJSON([]byte(rawIng))
-	if err != nil {
-		return v1beta1.Ingress{}, err
-	}
-	if err := runtime.DecodeInto(legacyscheme.Codecs.UniversalDecoder(), json, &ing); err != nil {
-		return v1beta1.Ingress{}, err
-	}
-	return ing, nil
 }

@@ -22,6 +22,9 @@ import (
 	"strings"
 
 	"google.golang.org/api/googleapi"
+	api_v1 "k8s.io/api/core/v1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/cache"
 )
 
 const (
@@ -135,6 +138,30 @@ func trimFieldsEvenly(max int, fields ...string) []string {
 	}
 
 	return ret
+}
+
+// Encapsulates an object that can get a service from a cluster.
+type SvcGetter struct {
+	cache.Store
+}
+
+func (s *SvcGetter) Get(svcName, namespace string) (*api_v1.Service, error) {
+	obj, exists, err := s.Store.Get(
+		&api_v1.Service{
+			ObjectMeta: meta_v1.ObjectMeta{
+				Name:      svcName,
+				Namespace: namespace,
+			},
+		},
+	)
+	if !exists {
+		return nil, fmt.Errorf("service %v/%v not found in store", namespace, svcName)
+	}
+	if err != nil {
+		return nil, err
+	}
+	svc := obj.(*api_v1.Service)
+	return svc, nil
 }
 
 // BackendServiceRelativeResourcePath returns a relative path of the link for a

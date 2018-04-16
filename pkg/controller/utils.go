@@ -214,27 +214,3 @@ func nodeStatusChanged(old, cur *api_v1.Node) bool {
 	}
 	return false
 }
-
-// Encapsulates an object that can get a service from a cluster.
-type SvcGetter struct {
-	cache.Store
-}
-
-func (s *SvcGetter) Get(svcName, namespace string) (*api_v1.Service, error) {
-	obj, exists, err := s.Store.Get(
-		&api_v1.Service{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Name:      svcName,
-				Namespace: namespace,
-			},
-		},
-	)
-	if !exists {
-		return nil, fmt.Errorf("service %v/%v not found in store", namespace, svcName)
-	}
-	if err != nil {
-		return nil, err
-	}
-	svc := obj.(*api_v1.Service)
-	return svc, nil
-}

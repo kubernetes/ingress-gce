@@ -31,6 +31,8 @@ import (
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+
+	multierror "github.com/hashicorp/go-multierror"
 	"k8s.io/client-go/tools/record"
 
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -39,6 +41,7 @@ import (
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/mapper"
 	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -165,12 +168,15 @@ func NewLoadBalancerController(ctx *context.ControllerContext, clusterManager *C
 	if ctx.EndpointInformer != nil {
 		endpointIndexer = ctx.EndpointInformer.GetIndexer()
 	}
+	svcGetter := utils.SvcGetter{Store: ctx.ServiceInformer.GetStore()}
 	lbc.Translator = translator.New(lbc.ctx, lbc.CloudClusterManager.ClusterNamer,
 		ctx.ServiceInformer.GetIndexer(),
 		ctx.NodeInformer.GetIndexer(),
 		ctx.PodInformer.GetIndexer(),
 		endpointIndexer,
+		mapper.NewClusterServiceMapper(svcGetter.Get, nil),
 		negEnabled)
+
 	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.ctx.KubeClient}
 
 	glog.V(3).Infof("Created new loadbalancer controller")
@@ -242,7 +248,14 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	}
 
 	// gceNodePorts contains the ServicePorts used by only single-cluster ingress.
-	gceNodePorts := lbc.Translator.ToNodePorts(&gceIngresses)
+	var gceNodePorts []backends.ServicePort
+	for _, gceIngress := range gceIngresses.Items {
+		svcPortMapping, err := lbc.Translator.ServicePortMapping(&gceIngress)
+		if err != nil {
+			glog.Infof("%v", err.Error())
+		}
+		gceNodePorts = append(gceNodePorts, extractSvcPorts(svcPortMapping)...)
+	}
 	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
 	if err != nil {
 		return err
@@ -282,7 +295,24 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 }
 
 func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ingress, nodeNames []string, gceNodePorts []backends.ServicePort) error {
-	ingNodePorts := lbc.Translator.IngressToNodePorts(ing)
+	// Given an ingress, returns a mapping of IngressBackend -> ServicePort
+	svcPortMapping, err := lbc.Translator.ServicePortMapping(ing)
+	if err != nil {
+		// TODO(rramkumar): Clean this up, it's very ugly.
+		switch err.(type) {
+		case *multierror.Error:
+			// Emit an event for each error in the multierror.
+			merr := err.(*multierror.Error)
+			for _, e := range merr.Errors {
+				msg := fmt.Sprintf("%v", e)
+				lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Service", msg)
+			}
+		default:
+			msg := fmt.Sprintf("%v", err)
+			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Service", msg)
+		}
+	}
+	ingNodePorts := extractSvcPorts(svcPortMapping)
 	igs, err := lbc.CloudClusterManager.EnsureInstanceGroupsAndPorts(nodeNames, ingNodePorts)
 	if err != nil {
 		return err
@@ -345,17 +375,17 @@ func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ing
 		return fmt.Errorf("unable to get loadbalancer: %v", err)
 	}
 
-	urlMap, err := lbc.Translator.ToURLMap(ing)
+	urlMap, err := lbc.Translator.ToURLMap(ing, svcPortMapping)
 	if err != nil {
-		return fmt.Errorf("convert to URL Map error %v", err)
+		return fmt.Errorf("error converting to URLMap: %v", err)
 	}
 
 	if err := l7.UpdateUrlMap(urlMap); err != nil {
-		return fmt.Errorf("update URL Map error: %v", err)
+		return fmt.Errorf("error updating URLMap: %v", err)
 	}
 
 	if err := lbc.updateIngressStatus(l7, ing); err != nil {
-		return fmt.Errorf("update ingress status error: %v", err)
+		return fmt.Errorf("error updating ingress status: %v", err)
 	}
 
 	return nil
@@ -440,4 +470,11 @@ func updateAnnotations(client kubernetes.Interface, name, namespace string, anno
 		}
 	}
 	return nil
+}
+
+func extractSvcPorts(svcPortMapping map[extensions.IngressBackend]backends.ServicePort) (svcPorts []backends.ServicePort) {
+	for _, svcPort := range svcPortMapping {
+		svcPorts = append(svcPorts, svcPort)
+	}
+	return svcPorts
 }
