@@ -141,7 +141,7 @@ func (l *L7) checkUrlMap(backend *compute.BackendService) (err error) {
 		return nil
 	}
 
-	glog.Infof("Creating url map %v for backend %v", urlMapName, l.glbcDefaultBackend.Name)
+	glog.V(3).Infof("Creating url map %v for backend %v", urlMapName, l.glbcDefaultBackend.Name)
 	newUrlMap := &compute.UrlMap{
 		Name:           urlMapName,
 		DefaultService: l.glbcDefaultBackend.SelfLink,
@@ -164,7 +164,7 @@ func (l *L7) checkProxy() (err error) {
 	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPProtocol)
 	proxy, _ := l.cloud.GetTargetHttpProxy(proxyName)
 	if proxy == nil {
-		glog.Infof("Creating new http proxy for urlmap %v", l.um.Name)
+		glog.V(3).Infof("Creating new http proxy for urlmap %v", l.um.Name)
 		newProxy := &compute.TargetHttpProxy{
 			Name:   proxyName,
 			UrlMap: l.um.SelfLink,
@@ -180,7 +180,7 @@ func (l *L7) checkProxy() (err error) {
 		return nil
 	}
 	if !utils.CompareLinks(proxy.UrlMap, l.um.SelfLink) {
-		glog.Infof("Proxy %v has the wrong url map, setting %v overwriting %v",
+		glog.V(3).Infof("Proxy %v has the wrong url map, setting %v overwriting %v",
 			proxy.Name, l.um, proxy.UrlMap)
 		if err := l.cloud.SetUrlMapForTargetHttpProxy(proxy, l.um); err != nil {
 			return err
@@ -280,13 +280,13 @@ func (l *L7) populateSSLCert() error {
 	}
 	for _, c := range certs {
 		if l.namer.IsCertUsedForLB(l.Name, c.Name) {
-			glog.Infof("Populating ssl cert %s for l7 %s", c.Name, l.Name)
+			glog.V(4).Infof("Populating ssl cert %s for l7 %s", c.Name, l.Name)
 			l.sslCerts = append(l.sslCerts, c)
 		}
 	}
 	if len(l.sslCerts) == 0 {
 		// Check for legacy cert since that follows a different naming convention
-		glog.Infof("Looking for legacy ssl certs")
+		glog.V(4).Infof("Looking for legacy ssl certs")
 		expectedCertNames := l.getSslCertLinkInUse()
 		for _, link := range expectedCertNames {
 			// Retrieve the certificate and ignore error if certificate wasn't found
@@ -296,7 +296,7 @@ func (l *L7) populateSSLCert() error {
 			}
 			cert, _ := l.cloud.GetSslCertificate(getResourceNameFromLink(name))
 			if cert != nil {
-				glog.Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l.Name)
+				glog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l.Name)
 				l.sslCerts = append(l.sslCerts, cert)
 			}
 		}
@@ -391,7 +391,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
 	proxy, _ := l.cloud.GetTargetHttpsProxy(proxyName)
 	if proxy == nil {
-		glog.Infof("Creating new https proxy for urlmap %v", l.um.Name)
+		glog.V(3).Infof("Creating new https proxy for urlmap %v", l.um.Name)
 		newProxy := &compute.TargetHttpsProxy{
 			Name:   proxyName,
 			UrlMap: l.um.SelfLink,
@@ -414,7 +414,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 		return nil
 	}
 	if !utils.CompareLinks(proxy.UrlMap, l.um.SelfLink) {
-		glog.Infof("Https proxy %v has the wrong url map, setting %v overwriting %v",
+		glog.V(3).Infof("Https proxy %v has the wrong url map, setting %v overwriting %v",
 			proxy.Name, l.um, proxy.UrlMap)
 		if err := l.cloud.SetUrlMapForTargetHttpsProxy(proxy, l.um); err != nil {
 			return err
@@ -422,14 +422,13 @@ func (l *L7) checkHttpsProxy() (err error) {
 	}
 
 	if !l.compareCerts(proxy.SslCertificates) {
-		glog.Infof("Https proxy %v has the wrong ssl certs, setting %v overwriting %v",
+		glog.V(3).Infof("Https proxy %v has the wrong ssl certs, setting %v overwriting %v",
 			proxy.Name, toCertNames(l.sslCerts), proxy.SslCertificates)
 		if err := l.cloud.SetSslCertificateForTargetHttpsProxy(proxy, l.sslCerts); err != nil {
 			return err
 		}
 
 	}
-	glog.V(3).Infof("Created target https proxy %v", proxy.Name)
 	l.tps = proxy
 	return nil
 }
@@ -439,17 +438,17 @@ func (l *L7) checkHttpsProxy() (err error) {
 func (l *L7) compareCerts(certLinks []string) bool {
 	certsMap := getMapfromCertList(l.sslCerts)
 	if len(certLinks) != len(certsMap) {
-		glog.Infof("Loadbalancer has %d certs, target proxy has %d certs", len(certsMap), len(certLinks))
+		glog.V(4).Infof("Loadbalancer has %d certs, target proxy has %d certs", len(certsMap), len(certLinks))
 		return false
 	}
 	var certName string
 	for _, linkName := range certLinks {
 		certName = getResourceNameFromLink(linkName)
 		if cert, ok := certsMap[certName]; !ok {
-			glog.Infof("Cannot find cert with name %s in certsMap %+v", certName, certsMap)
+			glog.V(4).Infof("Cannot find cert with name %s in certsMap %+v", certName, certsMap)
 			return false
 		} else if ok && !utils.CompareLinks(linkName, cert.SelfLink) {
-			glog.Infof("Selflink compare failed for certs - %s in loadbalancer, %s in targetproxy", cert.SelfLink, linkName)
+			glog.V(4).Infof("Selflink compare failed for certs - %s in loadbalancer, %s in targetproxy", cert.SelfLink, linkName)
 			return false
 		}
 	}
@@ -468,7 +467,7 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 	}
 	if fw == nil {
 		parts := strings.Split(proxyLink, "/")
-		glog.Infof("Creating forwarding rule for proxy %v and ip %v:%v", parts[len(parts)-1:], ip, portRange)
+		glog.V(3).Infof("Creating forwarding rule for proxy %v and ip %v:%v", parts[len(parts)-1:], ip, portRange)
 		rule := &compute.ForwardingRule{
 			Name:       name,
 			IPAddress:  ip,
@@ -486,9 +485,9 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 	}
 	// TODO: If the port range and protocol don't match, recreate the rule
 	if utils.CompareLinks(fw.Target, proxyLink) {
-		glog.V(3).Infof("Forwarding rule %v already exists", fw.Name)
+		glog.V(4).Infof("Forwarding rule %v already exists", fw.Name)
 	} else {
-		glog.Infof("Forwarding rule %v has the wrong proxy, setting %v overwriting %v",
+		glog.V(3).Infof("Forwarding rule %v has the wrong proxy, setting %v overwriting %v",
 			fw.Name, fw.Target, proxyLink)
 		if err := l.cloud.SetProxyForGlobalForwardingRule(fw.Name, proxyLink); err != nil {
 			return nil, err
@@ -577,7 +576,7 @@ func (l *L7) checkStaticIP() (err error) {
 	staticIPName := l.namer.ForwardingRule(l.Name, utils.HTTPProtocol)
 	ip, _ := l.cloud.GetGlobalAddress(staticIPName)
 	if ip == nil {
-		glog.Infof("Creating static ip %v", staticIPName)
+		glog.V(3).Infof("Creating static ip %v", staticIPName)
 		err = l.cloud.ReserveGlobalAddress(&compute.Address{Name: staticIPName, Address: l.fw.IPAddress})
 		if err != nil {
 			if utils.IsHTTPErrorCode(err, http.StatusConflict) ||
@@ -755,11 +754,11 @@ func (l *L7) UpdateUrlMap(ingressRules utils.GCEURLMap) error {
 	}
 	oldMap, _ := l.cloud.GetUrlMap(l.um.Name)
 	if oldMap != nil && mapsEqual(oldMap, l.um) {
-		glog.Infof("UrlMap for l7 %v is unchanged", l.Name)
+		glog.V(4).Infof("URLMap for l7 %v is unchanged", l.Name)
 		return nil
 	}
 
-	glog.V(3).Infof("Updating URLMap: %q", l.Name)
+	glog.V(3).Infof("Updating URLMap: %q", l.um.Name)
 	if err := l.cloud.UpdateUrlMap(l.um); err != nil {
 		return err
 	}
