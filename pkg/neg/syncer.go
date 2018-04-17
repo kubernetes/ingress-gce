@@ -204,7 +204,7 @@ func (s *syncer) sync() error {
 	}
 
 	if !exists {
-		glog.Warningf("Endpoint %s/%s does not exists. Skipping NEG sync", s.namespace, s.name)
+		glog.Warningf("Endpoint %s/%s does not exist. Skipping NEG sync", s.namespace, s.name)
 		return nil
 	}
 
