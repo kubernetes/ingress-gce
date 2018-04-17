@@ -26,7 +26,7 @@ flag.
 
 __Behind another Ingress__: Sometimes it is desirable to deploy a stack of
 Ingresses, like the GCE Ingress -> nginx Ingress -> application. You might
-want to do this because the GCE HTTP lb offers some features that the GCE
+want to do this because the GCE HTTP LB offers some features that the GCE
 network LB does not, like a global static IP or CDN, but doesn't offer all the
 features of nginx, like URL rewriting or redirects.
 
