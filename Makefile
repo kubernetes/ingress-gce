@@ -23,6 +23,9 @@ PKG := k8s.io/ingress-gce
 # for each BINARY.
 CONTAINER_BINARIES := glbc
 
+# Latest commit hash for current branch.
+GIT_COMMIT := $(shell git rev-parse HEAD)
+
 # Registry to push to.
 REGISTRY ?= gcr.io/google_containers
 

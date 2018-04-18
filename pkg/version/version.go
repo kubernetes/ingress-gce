@@ -19,3 +19,7 @@ package version
 // Version is a version string populated by the build using -ldflags "-X
 // ${PKG}/pkg/version.Version=${VERSION}".
 var Version = "UNKNOWN"
+
+// GitCommit is the latest git commit hash populated by the build using
+// -ldflags "-X ${PKG}/pkg/version.GitCommit=${GIT_COMMIT}".
+var GitCommit = "UNKNOWN"
