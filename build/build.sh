@@ -29,6 +29,11 @@ fi
 if [ -z "${VERSION}" ]; then
     echo "VERSION must be set"
     exit 1
+
+fi
+if [ -z "${GIT_COMMIT}" ]; then
+    echo "GIT_COMMIT must be set"
+    exit 1
 fi
 
 export CGO_ENABLED=0
@@ -37,7 +42,7 @@ if [ $GOARCH == "amd64" ]; then
     export GOBIN="$GOPATH/bin/linux_amd64"
 fi
 
-go install                                                         \
-    -installsuffix "static"                                        \
-    -ldflags "-X ${PKG}/pkg/version.Version=${VERSION}"            \
+go install                                                                                             \
+    -installsuffix "static"                                                                            \
+    -ldflags "-X ${PKG}/pkg/version.Version=${VERSION} -X ${PKG}/pkg/version.GitCommit=${GIT_COMMIT}"  \
     ./...
