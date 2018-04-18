@@ -38,6 +38,7 @@ func ServicePorts(backendToService map[v1beta1.IngressBackend]v1.Service) (map[v
 		svcPort, err := servicePort(ib, svc)
 		if err != nil {
 			result = multierror.Append(result, err)
+			continue
 		}
 		backendToServicePort[ib] = svcPort
 	}
@@ -49,7 +50,7 @@ func ServicePorts(backendToService map[v1beta1.IngressBackend]v1.Service) (map[v
 func servicePort(ib v1beta1.IngressBackend, svc v1.Service) (ServicePort, error) {
 	// If service is not of type NodePort, return an error.
 	if svc.Spec.Type != v1.ServiceTypeNodePort {
-		return ServicePort{}, fmt.Errorf("service %v is type %v, expected type NodePort", svc.Name, svc.Spec.Type)
+		return ServicePort{}, fmt.Errorf("service %v/%v for backend %+v is type %v, expected type NodePort", svc.Namespace, svc.Name, ib, svc.Spec.Type)
 	}
 	appProtocols, err := annotations.FromService(&svc).ApplicationProtocols()
 	if err != nil {
@@ -75,12 +76,12 @@ PortLoop:
 	}
 
 	if port == nil {
-		return ServicePort{}, fmt.Errorf("could not find matching port for backend %+v and service %s/%s. Looking for port %+v in %v", ib, svc.Namespace, ib.ServiceName, ib.ServicePort, svc.Spec.Ports)
+		return ServicePort{}, fmt.Errorf("could not find matching port on service %v/%v for backend %+v. Looking for port %+v in %v", svc.Namespace, ib.ServiceName, ib, ib.ServicePort, svc.Spec.Ports)
 	}
 
 	proto := annotations.ProtocolHTTP
 	if protoStr, exists := appProtocols[port.Name]; exists {
-		glog.V(2).Infof("service %s/%s, port %q: using protocol to %q", svc.Namespace, ib.ServiceName, port, protoStr)
+		glog.V(2).Infof("service %v/%v, port %q: using protocol to %q", svc.Namespace, ib.ServiceName, port, protoStr)
 		proto = annotations.AppProtocol(protoStr)
 	}
 

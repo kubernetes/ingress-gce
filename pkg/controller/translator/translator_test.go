@@ -18,6 +18,7 @@ package translator
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -32,9 +33,12 @@ import (
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
 
+	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/mapper"
+	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -53,18 +57,46 @@ func gceForTest(negEnabled bool) *GCE {
 	namer := utils.NewNamer("uid1", "fw1")
 
 	ctx := context.NewControllerContext(client, nil, apiv1.NamespaceAll, 1*time.Second, negEnabled)
+	svcGetter := utils.SvcGetter{Store: ctx.ServiceInformer.GetStore()}
 	gce := &GCE{
 		recorders:  ctx,
 		namer:      namer,
 		svcLister:  ctx.ServiceInformer.GetIndexer(),
 		nodeLister: ctx.NodeInformer.GetIndexer(),
 		podLister:  ctx.PodInformer.GetIndexer(),
+		svcMapper:  mapper.NewClusterServiceMapper(svcGetter.Get, nil),
 		negEnabled: negEnabled,
 	}
 	if ctx.EndpointInformer != nil {
 		gce.endpointLister = ctx.EndpointInformer.GetIndexer()
 	}
 	return gce
+}
+
+func TestToURLMap(t *testing.T) {
+	ing, err := test.GetTestIngress("../../test/manifests/ing1.yaml")
+	if err != nil {
+		t.Fatalf("Error occured when getting test Ingress: %v", err)
+	}
+	translator := gceForTest(false)
+	backendToServicePortMap := map[v1beta1.IngressBackend]backends.ServicePort{
+		v1beta1.IngressBackend{ServiceName: "default", ServicePort: intstr.FromInt(80)}: backends.ServicePort{NodePort: 30000},
+		v1beta1.IngressBackend{ServiceName: "testy", ServicePort: intstr.FromInt(80)}:   backends.ServicePort{NodePort: 30001},
+		v1beta1.IngressBackend{ServiceName: "testx", ServicePort: intstr.FromInt(80)}:   backends.ServicePort{NodePort: 30002},
+		v1beta1.IngressBackend{ServiceName: "testz", ServicePort: intstr.FromInt(80)}:   backends.ServicePort{NodePort: 30003},
+	}
+	expectedUrlMap := utils.GCEURLMap{
+		"foo.bar.com": {
+			"/foo": translator.namer.Backend(30002),
+			"/bar": translator.namer.Backend(30001),
+			"/baz": translator.namer.Backend(30003),
+		},
+	}
+	expectedUrlMap.PutDefaultBackendName(translator.namer.Backend(30000))
+	urlMap, _ := translator.ToURLMap(&ing, backendToServicePortMap)
+	if !reflect.DeepEqual(expectedUrlMap, urlMap) {
+		t.Errorf("Result %v does not match expected %v", urlMap, expectedUrlMap)
+	}
 }
 
 func TestGetProbe(t *testing.T) {
