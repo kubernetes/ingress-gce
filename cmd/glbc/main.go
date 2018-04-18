@@ -55,6 +55,7 @@ func main() {
 	}
 
 	glog.V(0).Infof("Starting GLBC image: %q, cluster name %q", version.Version, flags.F.ClusterName)
+	glog.V(0).Infof("Latest commit hash: %q", version.GitCommit)
 	for i, a := range os.Args {
 		glog.V(0).Infof("argv[%d]: %q", i, a)
 	}
