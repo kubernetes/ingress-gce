@@ -35,3 +35,7 @@ func NewFakeClusterServiceMapper(returnError bool) ClusterServiceMapper {
 func (f *fakeClusterServiceMapper) Services(ing *v1beta1.Ingress) (map[v1beta1.IngressBackend]v1.Service, error) {
 	return nil, fmt.Errorf("fake error")
 }
+
+func (f *fakeClusterServiceMapper) SetExpectedServices(expectedSvcs []string) {
+	return
+}

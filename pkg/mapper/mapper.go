@@ -20,6 +20,7 @@ import (
 	multierror "github.com/hashicorp/go-multierror"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // Implements ClusterServiceMapper
@@ -38,14 +39,10 @@ var _ ClusterServiceMapper = &clusterServiceMapper{}
 func NewClusterServiceMapper(
 	svcGetter func(svcName string, namespace string) (*v1.Service, error),
 	expectedSvcs []string) ClusterServiceMapper {
-	es := make(map[string]bool)
-	if expectedSvcs == nil {
-		return &clusterServiceMapper{svcGetter, es}
+	return &clusterServiceMapper{
+		svcGetter,
+		utils.StringsToKeyMap(expectedSvcs),
 	}
-	for _, expectedSvc := range expectedSvcs {
-		es[expectedSvc] = true
-	}
-	return &clusterServiceMapper{svcGetter, es}
 }
 
 // Services returns a mapping for a cluster of IngressBackend -> Service given an Ingress.
@@ -89,6 +86,13 @@ Loop:
 		}
 	}
 	return backendToService, result.ErrorOrNil()
+}
+
+// SetExpectedServices makes the mapper aware of services that are expected
+// to exist in the cluster. Multiple calls to this function will overwrite
+// any previous state.
+func (c *clusterServiceMapper) SetExpectedServices(expectedSvcs []string) {
+	c.expectedSvcs = utils.StringsToKeyMap(expectedSvcs)
 }
 
 // expectedToExist returns true if the provided service name is expected to exist.

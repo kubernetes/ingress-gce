@@ -23,4 +23,5 @@ import (
 // Services it defines for a specific cluster,
 type ClusterServiceMapper interface {
 	Services(ing *v1beta1.Ingress) (map[v1beta1.IngressBackend]v1.Service, error)
+	SetExpectedServices(expectedSvcs []string)
 }
