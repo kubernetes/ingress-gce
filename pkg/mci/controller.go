@@ -34,11 +34,15 @@ type Controller struct {
 
 	clusterSynced cache.InformerSynced
 	clusterLister cache.Indexer
-
-	// TODO(rramkumar): Add lister for service extension CRD.
 }
 
-func NewController(ctx *context.ControllerContext, resyncPeriod time.Duration) (*Controller, error) {
+// MCIEnqueue is a interface to allow the MCI controller to enqueue ingresses
+// based on events it receives.
+type MCIEnqueue interface {
+	EnqueueAllIngresses() error
+}
+
+func NewController(ctx *context.ControllerContext, resyncPeriod time.Duration, enqueue MCIEnqueue) (*Controller, error) {
 	mciController := &Controller{
 		resyncPeriod:  resyncPeriod,
 		clusterSynced: ctx.MC.ClusterInformer.HasSynced,
@@ -49,10 +53,18 @@ func NewController(ctx *context.ControllerContext, resyncPeriod time.Duration) (
 		AddFunc: func(obj interface{}) {
 			c := obj.(*crv1alpha1.Cluster)
 			glog.V(3).Infof("Cluster %v added", c.Name)
+			err := enqueue.EnqueueAllIngresses()
+			if err != nil {
+				glog.V(3).Infof("Error enqueuing ingress on cluster add: %v", err)
+			}
 		},
 		DeleteFunc: func(obj interface{}) {
 			c := obj.(*crv1alpha1.Cluster)
 			glog.V(3).Infof("Cluster %v deleted", c.Name)
+			err := enqueue.EnqueueAllIngresses()
+			if err != nil {
+				glog.V(3).Infof("Error enqueuing ingress on cluster delete: %v", err)
+			}
 		},
 		UpdateFunc: func(obj, cur interface{}) {
 			c := obj.(*crv1alpha1.Cluster)

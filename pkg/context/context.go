@@ -54,6 +54,7 @@ type ControllerContext struct {
 type MultiClusterContext struct {
 	RegistryClient  crclient.Interface
 	ClusterInformer cache.SharedIndexInformer
+	MCIEnabled      bool
 }
 
 // NewControllerContext returns a new shared set of informers.
@@ -76,6 +77,7 @@ func NewControllerContext(kubeClient kubernetes.Interface, registryClient crclie
 	}
 	if context.MC.RegistryClient != nil {
 		context.MC.ClusterInformer = crinformerv1alpha1.NewClusterInformer(registryClient, resyncPeriod, newIndexer())
+		context.MC.MCIEnabled = true
 	}
 
 	return context

@@ -184,6 +184,18 @@ func NewLoadBalancerController(ctx *context.ControllerContext, clusterManager *C
 	return &lbc, nil
 }
 
+// Implements MCIEnqueue
+func (lbc *LoadBalancerController) EnqueueAllIngresses() error {
+	ings, err := lbc.ingLister.ListGCEIngresses()
+	if err != nil {
+		return err
+	}
+	for _, ing := range ings.Items {
+		lbc.ingQueue.Enqueue(&ing)
+	}
+	return nil
+}
+
 // enqueueIngressForService enqueues all the Ingress' for a Service.
 func (lbc *LoadBalancerController) enqueueIngressForService(obj interface{}) {
 	svc := obj.(*apiv1.Service)
@@ -241,6 +253,12 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 		return fmt.Errorf("waiting for stores to sync")
 	}
 	glog.V(3).Infof("Syncing %v", key)
+
+	if lbc.ctx.MC.MCIEnabled {
+		// This is a temporary short-circuit to just verify that
+		// the MCI controller properly queues ingresses.
+		return nil
+	}
 
 	gceIngresses, err := lbc.ingLister.ListGCEIngresses()
 	if err != nil {
