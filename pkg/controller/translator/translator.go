@@ -37,7 +37,6 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
-	"k8s.io/ingress-gce/pkg/mapper"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -46,7 +45,7 @@ type recorderSource interface {
 }
 
 // New returns a new ControllerContext.
-func New(recorders recorderSource, namer *utils.Namer, svcLister cache.Indexer, nodeLister cache.Indexer, podLister cache.Indexer, endpointLister cache.Indexer, svcMapper mapper.ClusterServiceMapper, negEnabled bool) *GCE {
+func New(recorders recorderSource, namer *utils.Namer, svcLister cache.Indexer, nodeLister cache.Indexer, podLister cache.Indexer, endpointLister cache.Indexer, negEnabled bool) *GCE {
 	return &GCE{
 		recorders,
 		namer,
@@ -54,7 +53,6 @@ func New(recorders recorderSource, namer *utils.Namer, svcLister cache.Indexer, 
 		nodeLister,
 		podLister,
 		endpointLister,
-		svcMapper,
 		negEnabled,
 	}
 }
@@ -68,7 +66,6 @@ type GCE struct {
 	nodeLister     cache.Indexer
 	podLister      cache.Indexer
 	endpointLister cache.Indexer
-	svcMapper      mapper.ClusterServiceMapper
 	negEnabled     bool
 }
 
@@ -114,19 +111,6 @@ func (t *GCE) ToURLMap(ing *extensions.Ingress, svcPorts map[extensions.IngressB
 	}
 	urlMap.PutDefaultBackendName(defaultBackendName)
 	return urlMap, nil
-}
-
-// ServicePortMapping converts an Ingress to a IngressBackend -> ServicePort mapping.
-func (t *GCE) ServicePortMapping(ing *extensions.Ingress) (map[extensions.IngressBackend]backends.ServicePort, error) {
-	backendToServiceMap, err := t.svcMapper.Services(ing)
-	if err != nil {
-		return nil, err
-	}
-	backendToServicePortsMap, err := backends.ServicePorts(backendToServiceMap)
-	if err != nil {
-		return nil, err
-	}
-	return backendToServicePortsMap, nil
 }
 
 func getZone(n *api_v1.Node) string {

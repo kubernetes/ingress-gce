@@ -17,12 +17,11 @@ package target
 import (
 	"fmt"
 
-	"github.com/golang/glog"
 	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/utils"
 )
 
 type targetResourceManager struct {
@@ -36,36 +35,36 @@ func NewTargetResourceManager(kubeClient kubernetes.Interface) TargetResourceMan
 var _ TargetResourceManager = &targetResourceManager{}
 
 func (m *targetResourceManager) EnsureTargetIngress(ing *extensions.Ingress) (*extensions.Ingress, error) {
-	existingIng, getErr := m.kubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	existingTargetIng, getErr := m.kubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
 	if getErr != nil {
-		if utils.IsNotFoundError(getErr) {
-			// Add MCI annotation to "target" ingress.
-			ing.Annotations[annotations.IngressClassKey] = annotations.GceMultiIngressClass
-			actualIng, createErr := m.kubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Create(ing)
+		if errors.IsNotFound(getErr) {
+			targetIng := createTargetIngress(ing)
+			createdIng, createErr := m.kubeClient.ExtensionsV1beta1().Ingresses(targetIng.Namespace).Create(targetIng)
 			if createErr != nil {
 				return nil, fmt.Errorf("Error creating target ingress %v/%v: %v", ing.Namespace, ing.Name, createErr)
 			}
-			return actualIng, nil
+			return createdIng, nil
 		}
+		return nil, getErr
 	}
-	// Ignore instance group annotation while comparing ingresses.
-	ignoreAnnotations := map[string]string{instanceGroupAnnotationKey: ""}
-	if !objectMetaAndSpecEquivalent(ing, existingIng, ignoreAnnotations) {
-		glog.V(3).Infof("Target ingress %v in cluster %v differs. Overwriting... \n")
-		updatedIng, updateErr := m.kubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Update(ing)
+	// Ignore all GCP resource annotations and MCI annotation when comparing ingresses.
+	ignoreAnnotations := map[string]string{annotations.InstanceGroupsAnnotationKey: "", annotations.IngressClassKey: ""}
+	if !objectMetaAndSpecEquivalent(ing, existingTargetIng, ignoreAnnotations) {
+		updateTargetIng(ing, existingTargetIng)
+		updatedIng, updateErr := m.kubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Update(existingTargetIng)
 		if updateErr != nil {
 			return nil, fmt.Errorf("Error updating target ingress %v/%v: %v", ing.Namespace, ing.Name, updateErr)
 		}
 		return updatedIng, nil
 	}
-	return existingIng, nil
+	return existingTargetIng, nil
 
 }
 
-func (m *targetResourceManager) DeleteTargetIngress(ing *extensions.Ingress) error {
-	deleteErr := m.kubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Delete(ing.Name, &meta_v1.DeleteOptions{})
+func (m *targetResourceManager) DeleteTargetIngress(name, namespace string) error {
+	deleteErr := m.kubeClient.ExtensionsV1beta1().Ingresses(namespace).Delete(name, &meta_v1.DeleteOptions{})
 	if deleteErr != nil {
-		return fmt.Errorf("Error deleting ingress %v/%v: %v", ing.Namespace, ing.Name, deleteErr)
+		return fmt.Errorf("Error deleting ingress %v/%v: %v", namespace, name, deleteErr)
 	}
 	return nil
 }

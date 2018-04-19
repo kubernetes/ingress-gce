@@ -106,6 +106,7 @@ func main() {
 	}
 
 	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
+	mciEnabled := flags.F.MultiCluster
 	stopCh := make(chan struct{})
 	ctx := context.NewControllerContext(kubeClient, registryClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG)
 	lbc, err := controller.NewLoadBalancerController(ctx, clusterManager, enableNEG, stopCh)
@@ -116,7 +117,7 @@ func main() {
 	if clusterManager.ClusterNamer.UID() != "" {
 		glog.V(0).Infof("Cluster name is %+v", clusterManager.ClusterNamer.UID())
 	}
-	clusterManager.Init(lbc.Translator, lbc.Translator)
+	clusterManager.Init(lbc.Translator, lbc.Translator, mciEnabled)
 	glog.V(0).Infof("clusterManager initialized")
 
 	if enableNEG {
@@ -125,7 +126,7 @@ func main() {
 		glog.V(0).Infof("negController started")
 	}
 
-	if flags.F.MultiCluster {
+	if mciEnabled {
 		mciController, _ := mci.NewController(ctx, flags.F.ResyncPeriod, lbc)
 		go mciController.Run(stopCh)
 		glog.V(0).Infof("Multi-Cluster Ingress Controller started")

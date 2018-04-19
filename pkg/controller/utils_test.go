@@ -17,12 +17,14 @@ limitations under the License.
 package controller
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
 	compute "google.golang.org/api/compute/v1"
 
 	api_v1 "k8s.io/api/core/v1"
+	extensions "k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -150,6 +152,31 @@ func TestAddInstanceGroupsAnnotation(t *testing.T) {
 		}
 		if ingAnnotations[annotations.InstanceGroupsAnnotationKey] != c.ExpectedAnnotation {
 			t.Fatalf("Unexpected annotation value: %s, expected: %s", ingAnnotations[annotations.InstanceGroupsAnnotationKey], c.ExpectedAnnotation)
+		}
+	}
+}
+
+func TestInstanceGroupsAnnotation(t *testing.T) {
+	testCases := []struct {
+		ing      *extensions.Ingress
+		expected []InstanceGroupsAnnotationValue
+	}{
+		{
+			&extensions.Ingress{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.InstanceGroupsAnnotationKey: `[{"Name":"k8s-ig--1","Zone":"https://www.googleapis.com/compute/v1/projects/rramkumar-gke-dev/zones/us-central1-c"}]`,
+					},
+				},
+			},
+			[]InstanceGroupsAnnotationValue{InstanceGroupsAnnotationValue{Name: "k8s-ig--1", Zone: "https://www.googleapis.com/compute/v1/projects/rramkumar-gke-dev/zones/us-central1-c"}},
+		},
+	}
+
+	for _, testCase := range testCases {
+		res, _ := instanceGroupsAnnotation(testCase.ing)
+		if !reflect.DeepEqual(testCase.expected, res) {
+			t.Errorf("Expected instance group annotation values %+v not equal to result %+v", testCase.expected, res)
 		}
 	}
 }

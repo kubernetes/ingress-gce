@@ -61,7 +61,7 @@ func (m *clusterInformerManager) CreateInformers() {
 }
 
 func (m *clusterInformerManager) DeleteInformers() {
-	<-m.stopChan
+	close(m.stopChan)
 }
 
 func (m *clusterInformerManager) HasSynced() bool {

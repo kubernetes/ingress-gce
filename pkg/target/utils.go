@@ -17,13 +17,11 @@ package target
 import (
 	"reflect"
 
+	"k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
-)
-
-var (
-	instanceGroupAnnotationKey = "ingress.gcp.kubernetes.io/instance-groups"
 )
 
 // objectMetaEquivalent checks if cluster-independent, user provided data in two given ObjectMeta are equal.
@@ -60,4 +58,30 @@ func objectMetaAndSpecEquivalent(a, b runtime.Object, ignoreAnnotationKeys map[s
 	specA := reflect.ValueOf(a).Elem().FieldByName("Spec").Interface()
 	specB := reflect.ValueOf(b).Elem().FieldByName("Spec").Interface()
 	return objectMetaEquivalent(objectMetaA, objectMetaB, ignoreAnnotationKeys) && reflect.DeepEqual(specA, specB)
+}
+
+// createTargetIngress creates a copy of the passed in ingress but with certain
+// modifications needed to make the target ingress viable in the target cluster.
+func createTargetIngress(ing *v1beta1.Ingress) *v1beta1.Ingress {
+	// We have to do a manual copy since doing a deep copy will
+	// populate certain ObjectMeta fields we don't want.
+	targetIng := &v1beta1.Ingress{}
+	// Copy over name, namespace, annotations.
+	targetIng.Name = ing.Name
+	targetIng.Namespace = ing.Namespace
+	targetIng.Annotations = ing.Annotations
+	// Copy over spec.
+	targetIng.Spec = ing.Spec
+	// Add MCI annotation to "target" ingress.
+	annotations.AddAnnotation(targetIng, annotations.IngressClassKey, annotations.GceMultiIngressClass)
+	return targetIng
+}
+
+// updateTargetIng makes sure that targetIng is updated to reflect any changes in ing.
+// Note that we only care about namespace, labels, and the spec. We do not care about any
+// changes to feature annotations because the target ingress does not process them.
+func updateTargetIng(ing *v1beta1.Ingress, targetIng *v1beta1.Ingress) {
+	targetIng.Namespace = ing.Namespace
+	targetIng.Labels = ing.Labels
+	targetIng.Spec = ing.Spec
 }

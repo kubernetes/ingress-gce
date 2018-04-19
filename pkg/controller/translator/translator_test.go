@@ -37,7 +37,6 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/mapper"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -57,14 +56,12 @@ func gceForTest(negEnabled bool) *GCE {
 	namer := utils.NewNamer("uid1", "fw1")
 
 	ctx := context.NewControllerContext(client, nil, apiv1.NamespaceAll, 1*time.Second, negEnabled)
-	svcGetter := utils.SvcGetter{Store: ctx.ServiceInformer.GetStore()}
 	gce := &GCE{
 		recorders:  ctx,
 		namer:      namer,
 		svcLister:  ctx.ServiceInformer.GetIndexer(),
 		nodeLister: ctx.NodeInformer.GetIndexer(),
 		podLister:  ctx.PodInformer.GetIndexer(),
-		svcMapper:  mapper.NewClusterServiceMapper(svcGetter.Get, nil),
 		negEnabled: negEnabled,
 	}
 	if ctx.EndpointInformer != nil {

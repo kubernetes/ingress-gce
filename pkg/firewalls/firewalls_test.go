@@ -38,7 +38,7 @@ func TestFirewallPoolSync(t *testing.T) {
 	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
-	if err := fp.Sync(nodes); err != nil {
+	if err := fp.Sync(nodes, false); err != nil {
 		t.Fatal(err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
@@ -49,21 +49,21 @@ func TestFirewallPoolSyncNodes(t *testing.T) {
 	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
-	if err := fp.Sync(nodes); err != nil {
+	if err := fp.Sync(nodes, false); err != nil {
 		t.Fatal(err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 
 	// Add nodes
 	nodes = append(nodes, "node-d", "node-e")
-	if err := fp.Sync(nodes); err != nil {
+	if err := fp.Sync(nodes, false); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 
 	// Remove nodes
 	nodes = []string{"node-a", "node-c"}
-	if err := fp.Sync(nodes); err != nil {
+	if err := fp.Sync(nodes, false); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
@@ -74,7 +74,7 @@ func TestFirewallPoolSyncSrcRanges(t *testing.T) {
 	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
-	if err := fp.Sync(nodes); err != nil {
+	if err := fp.Sync(nodes, false); err != nil {
 		t.Fatal(err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
@@ -86,7 +86,7 @@ func TestFirewallPoolSyncSrcRanges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := fp.Sync(nodes); err != nil {
+	if err := fp.Sync(nodes, false); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
@@ -97,7 +97,7 @@ func TestFirewallPoolSyncPorts(t *testing.T) {
 	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
-	if err := fp.Sync(nodes); err != nil {
+	if err := fp.Sync(nodes, false); err != nil {
 		t.Fatal(err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
@@ -110,14 +110,14 @@ func TestFirewallPoolSyncPorts(t *testing.T) {
 	}
 
 	// Expect firewall to be synced back to normal
-	if err := fp.Sync(nodes); err != nil {
+	if err := fp.Sync(nodes, false); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 
 	// Verify additional ports are included
 	negTargetports := []string{"80", "443", "8080"}
-	if err := fp.Sync(nodes, negTargetports...); err != nil {
+	if err := fp.Sync(nodes, false, negTargetports...); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, append(portRanges(), negTargetports...), t)
@@ -128,7 +128,7 @@ func TestFirewallPoolShutdown(t *testing.T) {
 	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
-	if err := fp.Sync(nodes); err != nil {
+	if err := fp.Sync(nodes, false); err != nil {
 		t.Fatal(err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
@@ -150,7 +150,7 @@ func TestSyncOnXPNWithPermission(t *testing.T) {
 	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
-	if err := fp.Sync(nodes); err != nil {
+	if err := fp.Sync(nodes, false); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
@@ -164,7 +164,7 @@ func TestSyncXPNReadOnly(t *testing.T) {
 	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
-	err := fp.Sync(nodes)
+	err := fp.Sync(nodes, false)
 	if fwErr, ok := err.(*FirewallXPNError); !ok || !strings.Contains(fwErr.Message, "create") {
 		t.Errorf("Expected firewall sync error with a user message. Received err: %v", err)
 	}
@@ -187,12 +187,12 @@ func TestSyncXPNReadOnly(t *testing.T) {
 	}
 
 	// Run sync again with same state - expect no event
-	if err = fp.Sync(nodes); err != nil {
+	if err = fp.Sync(nodes, false); err != nil {
 		t.Errorf("unexpected err when syncing firewall, err: %v", err)
 	}
 
 	nodes = append(nodes, "node-d")
-	err = fp.Sync(nodes)
+	err = fp.Sync(nodes, false)
 	if fwErr, ok := err.(*FirewallXPNError); !ok || !strings.Contains(fwErr.Message, "update") {
 		t.Errorf("Expected firewall sync error with a user message. Received err: %v", err)
 	}

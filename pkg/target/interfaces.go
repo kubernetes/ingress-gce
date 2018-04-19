@@ -21,5 +21,5 @@ import (
 // TargetResourceManager is an interface to manage the k8s resources in "target" clusters.
 type TargetResourceManager interface {
 	EnsureTargetIngress(ing *extensions.Ingress) (*extensions.Ingress, error)
-	DeleteTargetIngress(ing *extensions.Ingress) error
+	DeleteTargetIngress(name, namespace string) error
 }

@@ -57,9 +57,11 @@ type ClusterManager struct {
 }
 
 // Init initializes the cluster manager.
-func (c *ClusterManager) Init(zl instances.ZoneLister, pp backends.ProbeProvider) {
+func (c *ClusterManager) Init(zl instances.ZoneLister, pp backends.ProbeProvider, mciEnabled bool) {
 	c.instancePool.Init(zl)
-	c.backendPool.Init(pp)
+	if !mciEnabled {
+		c.backendPool.Init(pp)
+	}
 	// TODO: Initialize other members as needed.
 }
 
@@ -135,8 +137,8 @@ func (c *ClusterManager) EnsureInstanceGroupsAndPorts(nodeNames []string, servic
 	return igs, err
 }
 
-func (c *ClusterManager) EnsureFirewall(nodeNames []string, endpointPorts []string) error {
-	return c.firewallPool.Sync(nodeNames, endpointPorts...)
+func (c *ClusterManager) EnsureFirewall(nodeNames []string, endpointPorts []string, mciEnabled bool) error {
+	return c.firewallPool.Sync(nodeNames, mciEnabled, endpointPorts...)
 }
 
 // GC garbage collects unused resources.

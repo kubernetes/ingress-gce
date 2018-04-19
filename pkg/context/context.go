@@ -33,6 +33,8 @@ import (
 	crinformerv1alpha1 "k8s.io/cluster-registry/pkg/client/informers_generated/externalversions/clusterregistry/v1alpha1"
 	"k8s.io/ingress-gce/pkg/informer"
 	"k8s.io/ingress-gce/pkg/mapper"
+	"k8s.io/ingress-gce/pkg/target"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // ControllerContext holds resources necessary for the general
@@ -60,6 +62,7 @@ type MultiClusterContext struct {
 	MCIEnabled              bool
 	ClusterClients          map[string]kubernetes.Interface
 	ClusterInformerManagers map[string]informer.ClusterInformerManager
+	ClusterResourceManagers map[string]target.TargetResourceManager
 	ClusterServiceMappers   map[string]mapper.ClusterServiceMapper
 }
 
@@ -87,6 +90,7 @@ func NewControllerContext(kubeClient kubernetes.Interface, registryClient crclie
 		context.MC.ClusterClients = make(map[string]kubernetes.Interface)
 		context.MC.ClusterInformerManagers = make(map[string]informer.ClusterInformerManager)
 		context.MC.ClusterServiceMappers = make(map[string]mapper.ClusterServiceMapper)
+		context.MC.ClusterResourceManagers = make(map[string]target.TargetResourceManager)
 	}
 
 	return context
@@ -144,4 +148,25 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	if ctx.MC.ClusterInformer != nil {
 		go ctx.MC.ClusterInformer.Run(stopCh)
 	}
+}
+
+func (ctx *ControllerContext) ResourceManagers() (resourceManagers map[string]target.TargetResourceManager) {
+	if !ctx.MC.MCIEnabled {
+		return nil
+	}
+	return ctx.MC.ClusterResourceManagers
+}
+
+// If in MCI mode, ServiceMappers() gets mappers for all clusters in the
+// cluster registry. This is because for now, we assume that all ingresses live
+// in all "target" clusters. This will change once we start taking the
+// MultiClusterConfig into account. If we are not in MCI mode,
+// then ServiceMappers() consists of the mapper for the local cluster
+func (ctx *ControllerContext) ServiceMappers() (svcMappers map[string]mapper.ClusterServiceMapper) {
+	if ctx.MC.MCIEnabled {
+		return ctx.MC.ClusterServiceMappers
+	}
+	// Create a ClusterServiceMapper for the local cluster.
+	svcGetter := utils.SvcGetter{Store: ctx.ServiceInformer.GetStore()}
+	return map[string]mapper.ClusterServiceMapper{"local": mapper.NewClusterServiceMapper(svcGetter.Get, nil)}
 }

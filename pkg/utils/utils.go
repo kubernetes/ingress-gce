@@ -23,8 +23,11 @@ import (
 
 	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
+	extensions "k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/flags"
 )
 
 const (
@@ -164,6 +167,87 @@ func (s *SvcGetter) Get(svcName, namespace string) (*api_v1.Service, error) {
 	return svc, nil
 }
 
+// IsGCEIngress returns true if the Ingress matches the class managed by this
+// controller.
+func IsGCEIngress(ing *extensions.Ingress) bool {
+	class := annotations.FromIngress(ing).IngressClass()
+	if flags.F.IngressClass == "" {
+		return class == "" || class == annotations.GceIngressClass
+	}
+	return class == flags.F.IngressClass
+}
+
+// IsGCEMultiClusterIngress returns true if the given Ingress has
+// ingress.class annotation set to "gce-multi-cluster".
+func IsGCEMultiClusterIngress(ing *extensions.Ingress) bool {
+	class := annotations.FromIngress(ing).IngressClass()
+	return class == annotations.GceMultiIngressClass
+}
+
+// StoreToIngressLister makes a Store that lists Ingress.
+// TODO: Move this to cache/listers post 1.1.
+type StoreToIngressLister struct {
+	cache.Store
+}
+
+// List lists all Ingress' in the store (both single and multi cluster ingresses).
+func (s *StoreToIngressLister) ListAll() (ing extensions.IngressList, err error) {
+	for _, m := range s.Store.List() {
+		newIng := m.(*extensions.Ingress)
+		if IsGCEIngress(newIng) || IsGCEMultiClusterIngress(newIng) {
+			ing.Items = append(ing.Items, *newIng)
+		}
+	}
+	return ing, nil
+}
+
+// ListGCEIngresses lists all GCE Ingress' in the store.
+func (s *StoreToIngressLister) ListGCEIngresses() (ing extensions.IngressList, err error) {
+	for _, m := range s.Store.List() {
+		newIng := m.(*extensions.Ingress)
+		if IsGCEIngress(newIng) {
+			ing.Items = append(ing.Items, *newIng)
+		}
+	}
+	return ing, nil
+}
+
+// GetServiceIngress gets all the Ingress' that have rules pointing to a service.
+// Note that this ignores services without the right nodePorts.
+func (s *StoreToIngressLister) GetServiceIngress(svc *api_v1.Service) (ings []extensions.Ingress, err error) {
+IngressLoop:
+	for _, m := range s.Store.List() {
+		ing := *m.(*extensions.Ingress)
+		if ing.Namespace != svc.Namespace {
+			continue
+		}
+
+		// Check service of default backend
+		if ing.Spec.Backend != nil && ing.Spec.Backend.ServiceName == svc.Name {
+			ings = append(ings, ing)
+			continue
+		}
+
+		// Check the target service for each path rule
+		for _, rule := range ing.Spec.Rules {
+			if rule.IngressRuleValue.HTTP == nil {
+				continue
+			}
+			for _, p := range rule.IngressRuleValue.HTTP.Paths {
+				if p.Backend.ServiceName == svc.Name {
+					ings = append(ings, ing)
+					// Skip the rest of the rules to avoid duplicate ingresses in list
+					continue IngressLoop
+				}
+			}
+		}
+	}
+	if len(ings) == 0 {
+		err = fmt.Errorf("no ingress for service %v", svc.Name)
+	}
+	return
+}
+
 // BackendServiceRelativeResourcePath returns a relative path of the link for a
 // BackendService given its name.
 func BackendServiceRelativeResourcePath(name string) string {
@@ -179,6 +263,15 @@ func BackendServiceComparablePath(url string) string {
 		return ""
 	}
 	return fmt.Sprintf("global/%s", path_parts[1])
+}
+
+// func TrimZoneLink takes in a fully qualified zone link and returns just the zone.
+func TrimZoneLink(url string) string {
+	path_parts := strings.Split(url, "zones/")
+	if len(path_parts) != 2 {
+		return ""
+	}
+	return path_parts[1]
 }
 
 // StringsToKeyMap returns the map representation of a list of strings.

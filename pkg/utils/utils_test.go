@@ -118,3 +118,26 @@ func TestBackendServiceComparablePath(t *testing.T) {
 		}
 	}
 }
+
+func TestTrimZoneLink(t *testing.T) {
+	testCases := []struct {
+		url      string
+		expected string
+	}{
+		{
+			"https://www.googleapis.com/compute/v1/projects/foo/zones/us-central1-c",
+			"us-central1-c",
+		},
+		{
+			"https://www.googleapis.com/comopute/v1/projects/foo/zones/",
+			"",
+		},
+	}
+
+	for _, tc := range testCases {
+		res := TrimZoneLink(tc.url)
+		if res != tc.expected {
+			t.Errorf("Expected result after zone link trim to be %v, but got %v", tc.expected, res)
+		}
+	}
+}

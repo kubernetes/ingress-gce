@@ -21,15 +21,14 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
-	clientcmd "k8s.io/client-go/tools/clientcmd/api"
 	crv1alpha1 "k8s.io/cluster-registry/pkg/apis/clusterregistry/v1alpha1"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/informer"
 	"k8s.io/ingress-gce/pkg/mapper"
+	"k8s.io/ingress-gce/pkg/target"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -42,29 +41,35 @@ type Controller struct {
 
 	clusterSynced cache.InformerSynced
 	clusterLister cache.Indexer
+	queueHandle   MCIEnqueue
 }
 
 // MCIEnqueue is a interface to allow the MCI controller to enqueue ingresses
 // based on events it receives.
 type MCIEnqueue interface {
 	EnqueueAllIngresses() error
+	EnqueueIngress(ing *extensions.Ingress)
 }
 
-func NewController(ctx *context.ControllerContext, resyncPeriod time.Duration, enqueue MCIEnqueue) (*Controller, error) {
+func NewController(ctx *context.ControllerContext, resyncPeriod time.Duration, queueHandle MCIEnqueue) (*Controller, error) {
 	mciController := &Controller{
 		ctx:           ctx,
 		resyncPeriod:  resyncPeriod,
 		clusterSynced: ctx.MC.ClusterInformer.HasSynced,
 		clusterLister: ctx.MC.ClusterInformer.GetIndexer(),
+		queueHandle:   queueHandle,
 	}
 
 	ctx.MC.ClusterInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			c := obj.(*crv1alpha1.Cluster)
 			glog.V(3).Infof("Cluster %v added", c.Name)
-			mciController.handleClusterAdd(c)
+			err := mciController.handleClusterAdd(c)
+			if err != nil {
+				glog.V(3).Infof("Error bootstrapping resources for cluster %v: %v", c.Name, err)
+			}
 			// For now, queue up all ingresses
-			err := enqueue.EnqueueAllIngresses()
+			err = queueHandle.EnqueueAllIngresses()
 			if err != nil {
 				glog.V(3).Infof("Error enqueuing ingresses on add of cluster %v: %v", c.Name, err)
 			}
@@ -73,9 +78,10 @@ func NewController(ctx *context.ControllerContext, resyncPeriod time.Duration, e
 			c := obj.(*crv1alpha1.Cluster)
 			glog.V(3).Infof("Cluster %v deleted", c.Name)
 			mciController.handleClusterDelete(c)
-			err := enqueue.EnqueueAllIngresses()
+			// For now, queue up all ingresses
+			err := queueHandle.EnqueueAllIngresses()
 			if err != nil {
-				glog.V(3).Infof("Error enqueuing ingress on delete of cluster %v: %v", c.Name, err)
+				glog.V(3).Infof("Error enqueuing ingresses on add of cluster %v: %v", c.Name, err)
 			}
 		},
 		UpdateFunc: func(obj, cur interface{}) {
@@ -86,10 +92,10 @@ func NewController(ctx *context.ControllerContext, resyncPeriod time.Duration, e
 	return mciController, nil
 }
 
-func (controller *Controller) handleClusterAdd(c *crv1alpha1.Cluster) {
+func (controller *Controller) handleClusterAdd(c *crv1alpha1.Cluster) error {
 	client, err := buildClusterClient(c)
 	if err != nil {
-		glog.V(3).Infof("Error building client for cluster %v: %v", c.Name, err)
+		return fmt.Errorf("Error building client for cluster %v: %v", c.Name, err)
 	}
 	// Keep track of the client
 	controller.ctx.MC.ClusterClients[c.Name] = client
@@ -97,7 +103,8 @@ func (controller *Controller) handleClusterAdd(c *crv1alpha1.Cluster) {
 	informerManager := informer.NewClusterInformerManager(client, controller.resyncPeriod)
 	informerManager.CreateInformers()
 
-	// TODO(rramkumar): For now, just add event handlers for Ingress.
+	// For now, just add event handlers for Ingress.
+	controller.addIngressEventHandlers(informerManager, c.Name)
 
 	// Keep track of the informer manager.
 	controller.ctx.MC.ClusterInformerManagers[c.Name] = informerManager
@@ -107,43 +114,55 @@ func (controller *Controller) handleClusterAdd(c *crv1alpha1.Cluster) {
 	svcMapper := mapper.NewClusterServiceMapper(svcGetter.Get, nil)
 	// Keep track of the service mapper.
 	controller.ctx.MC.ClusterServiceMappers[c.Name] = svcMapper
+	// Create a target resource manager for this cluster
+	targetResourceManager := target.NewTargetResourceManager(client)
+	controller.ctx.MC.ClusterResourceManagers[c.Name] = targetResourceManager
 	glog.V(3).Infof("Built client and informers for cluster %v", c.Name)
+	return nil
 }
 
 func (controller *Controller) handleClusterDelete(c *crv1alpha1.Cluster) {
+	// Remove all ingresses in the cluster
+	controller.deleteIngressesFromCluster(c)
 	// Remove client for this cluster
 	delete(controller.ctx.MC.ClusterClients, c.Name)
 	// Stop informers.
 	informerManager := controller.ctx.MC.ClusterInformerManagers[c.Name]
 	informerManager.DeleteInformers()
 	delete(controller.ctx.MC.ClusterInformerManagers, c.Name)
-	// Remove cluster service mappers
+	// Remove cluster service mapper.
 	delete(controller.ctx.MC.ClusterServiceMappers, c.Name)
+	// Remove target resource manager
+	delete(controller.ctx.MC.ClusterResourceManagers, c.Name)
 	glog.V(3).Infof("Removed client and informers for cluster %v", c.Name)
 }
 
-// buildClusterClient builds a k8s client given a cluster from the ClusterRegistry.
-func buildClusterClient(c *crv1alpha1.Cluster) (kubernetes.Interface, error) {
-	// Config used to instantiate a client
-	restConfig := &rest.Config{}
-	// Get endpoint for the master. For now, we only consider the first endpoint given.
-	masterEndpoints := c.Spec.KubernetesAPIEndpoints.ServerEndpoints
-	if len(masterEndpoints) == 0 {
-		return nil, fmt.Errorf("No master endpoints provided")
+func (controller *Controller) addIngressEventHandlers(informerManager informer.ClusterInformerManager, clusterName string) {
+	informerManager.AddHandlersForInformer(informer.IngressInformer, cache.ResourceEventHandlerFuncs{
+		// Note: For now, we don't care about ingresses being added or deleted in "target" clusters.
+		UpdateFunc: func(obj, cur interface{}) {
+			ing := obj.(*extensions.Ingress)
+			controller.queueHandle.EnqueueIngress(ing)
+			glog.V(3).Infof("Target ingress %v/%v updated in cluster %v. Requeueing ingress...", ing.Namespace, ing.Name, clusterName)
+		},
+	})
+}
+
+func (controller *Controller) deleteIngressesFromCluster(c *crv1alpha1.Cluster) {
+	ingLister := utils.StoreToIngressLister{Store: controller.ctx.IngressInformer.GetStore()}
+	resourceManager := controller.ctx.MC.ClusterResourceManagers[c.Name]
+	ings, err := ingLister.ListGCEIngresses()
+	if err != nil {
+		glog.V(3).Infof("Error listing ingresses before deletion of target ingresses from cluster %v", c.Name, err)
 	}
-	// Populate config with master endpoint.
-	restConfig.Host = masterEndpoints[0].ServerAddress
-	// Don't verify TLS for now
-	restConfig.TLSClientConfig = rest.TLSClientConfig{Insecure: true}
-	// Get auth for the master. We assume auth mechanism is using a client cert.
-	authProviders := c.Spec.AuthInfo.Providers
-	if len(authProviders) == 0 {
-		return nil, fmt.Errorf("No auth providers provided")
+	for _, ing := range ings.Items {
+		err = resourceManager.DeleteTargetIngress(ing.Name, ing.Namespace)
+		if err != nil {
+			glog.V(3).Infof("Error deleting target ingress %v/%v in cluster %v: %v", ing.Namespace, ing.Name, c.Name, err)
+			return
+		}
 	}
-	providerConfig := c.Spec.AuthInfo.Providers[0]
-	// Populate config with client auth.
-	restConfig.AuthProvider = &clientcmd.AuthProviderConfig{Name: providerConfig.Name, Config: providerConfig.Config}
-	return kubernetes.NewForConfig(restConfig)
+	glog.V(3).Infof("Deleted all target ingresses in cluster %v", c.Name)
 }
 
 func (c *Controller) Run(stopCh <-chan struct{}) {

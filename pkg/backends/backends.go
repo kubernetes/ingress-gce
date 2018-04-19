@@ -73,7 +73,7 @@ const (
 // received by GCLB above this RPS are NOT dropped, GCLB continues to distribute
 // them across IGs.
 // TODO: Should this be math.MaxInt64?
-const maxRPS = 1
+const maxRPS = 1e14
 
 // Backends implements BackendPool.
 type Backends struct {
@@ -433,6 +433,13 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 // edgeHop checks the links of the given backend by executing an edge hop.
 // It fixes broken links and updates the Backend accordingly.
 func (b *Backends) edgeHop(be *BackendService, igs []*compute.InstanceGroup) error {
+	// Note: Clearing the backends in the BackendService is an ugly hack to make mci work.
+	if be.Alpha != nil {
+		be.Alpha.Backends = nil
+	} else {
+		be.Ga.Backends = nil
+	}
+
 	addIGs := getInstanceGroupsToAdd(be, igs)
 	if len(addIGs) == 0 {
 		return nil

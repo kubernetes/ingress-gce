@@ -56,18 +56,10 @@ func NewFirewallPool(cloud Firewall, namer *utils.Namer, l7SrcRanges []string, n
 }
 
 // Sync sync firewall rules with the cloud.
-func (fr *FirewallRules) Sync(nodeNames []string, additionalPorts ...string) error {
+func (fr *FirewallRules) Sync(nodeNames []string, mciEnabled bool, additionalPorts ...string) error {
 	glog.V(4).Infof("Sync(%v)", nodeNames)
 	name := fr.namer.FirewallRule()
 	existingFirewall, _ := fr.cloud.GetFirewall(name)
-
-	// Retrieve list of target tags from node names. This may be configured in
-	// gce.conf or computed by the GCE cloudprovider package.
-	targetTags, err := fr.cloud.GetNodeTags(nodeNames)
-	if err != nil {
-		return err
-	}
-	sort.Strings(targetTags)
 
 	ports := sets.NewString(additionalPorts...)
 	ports.Insert(fr.portRanges...)
@@ -82,7 +74,19 @@ func (fr *FirewallRules) Sync(nodeNames []string, additionalPorts ...string) err
 				Ports:      ports.List(),
 			},
 		},
-		TargetTags: targetTags,
+	}
+
+	// If MCI is enabled, then for simplicity, we apply the firewall rule across all targets.
+	// Otherwise, we specifically get the network tags for each node.
+	if !mciEnabled {
+		// Retrieve list of target tags from node names. This may be configured in
+		// gce.conf or computed by the GCE cloudprovider package.
+		targetTags, err := fr.cloud.GetNodeTags(nodeNames)
+		if err != nil {
+			return err
+		}
+		sort.Strings(targetTags)
+		expectedFirewall.TargetTags = targetTags
 	}
 
 	if existingFirewall == nil {

@@ -114,3 +114,10 @@ func (ing *Ingress) IngressClass() string {
 	}
 	return val
 }
+
+func AddAnnotation(ing *extensions.Ingress, key, val string) {
+	if ing.Annotations == nil {
+		ing.Annotations = map[string]string{}
+	}
+	ing.Annotations[key] = val
+}

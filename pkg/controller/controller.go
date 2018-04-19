@@ -24,6 +24,7 @@ import (
 
 	"github.com/golang/glog"
 
+	compute "google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,7 +48,8 @@ import (
 )
 
 const (
-	// DefaultFirewallName is the default firewall name.
+	// DefaultFirewallName is the name to user for firewall rules created
+	// by an L7 controller when the --fireall-rule is not used.
 	DefaultFirewallName = ""
 	// Frequency to poll on local stores to sync.
 	storeSyncPollPeriod = 5 * time.Second
@@ -55,8 +57,6 @@ const (
 
 var (
 	keyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
-	// DefaultFirewallName is the name to user for firewall rules created
-	// by an L7 controller when the --fireall-rule is not used.
 )
 
 // LoadBalancerController watches the kubernetes api and adds/removes services
@@ -64,7 +64,7 @@ var (
 type LoadBalancerController struct {
 	ctx *context.ControllerContext
 
-	ingLister  StoreToIngressLister
+	ingLister  utils.StoreToIngressLister
 	nodeLister cache.Indexer
 	nodes      *NodeController
 	// endpoint lister is needed when translating service target port to real endpoint target ports.
@@ -101,7 +101,7 @@ func NewLoadBalancerController(ctx *context.ControllerContext, clusterManager *C
 	})
 	lbc := LoadBalancerController{
 		ctx:                 ctx,
-		ingLister:           StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
+		ingLister:           utils.StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
 		nodeLister:          ctx.NodeInformer.GetIndexer(),
 		nodes:               NewNodeController(ctx, clusterManager),
 		CloudClusterManager: clusterManager,
@@ -119,7 +119,7 @@ func NewLoadBalancerController(ctx *context.ControllerContext, clusterManager *C
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*extensions.Ingress)
-			if !isGCEIngress(addIng) && !isGCEMultiClusterIngress(addIng) {
+			if !utils.IsGCEIngress(addIng) && !utils.IsGCEMultiClusterIngress(addIng) {
 				glog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", addIng.Name, annotations.IngressClassKey)
 				return
 			}
@@ -130,7 +130,7 @@ func NewLoadBalancerController(ctx *context.ControllerContext, clusterManager *C
 		},
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*extensions.Ingress)
-			if !isGCEIngress(delIng) && !isGCEMultiClusterIngress(delIng) {
+			if !utils.IsGCEIngress(delIng) && !utils.IsGCEMultiClusterIngress(delIng) {
 				glog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", delIng.Name, annotations.IngressClassKey)
 				return
 			}
@@ -140,7 +140,7 @@ func NewLoadBalancerController(ctx *context.ControllerContext, clusterManager *C
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			curIng := cur.(*extensions.Ingress)
-			if !isGCEIngress(curIng) && !isGCEMultiClusterIngress(curIng) {
+			if !utils.IsGCEIngress(curIng) && !utils.IsGCEMultiClusterIngress(curIng) {
 				return
 			}
 			if reflect.DeepEqual(old, cur) {
@@ -168,13 +168,11 @@ func NewLoadBalancerController(ctx *context.ControllerContext, clusterManager *C
 	if ctx.EndpointInformer != nil {
 		endpointIndexer = ctx.EndpointInformer.GetIndexer()
 	}
-	svcGetter := utils.SvcGetter{Store: ctx.ServiceInformer.GetStore()}
 	lbc.Translator = translator.New(lbc.ctx, lbc.CloudClusterManager.ClusterNamer,
 		ctx.ServiceInformer.GetIndexer(),
 		ctx.NodeInformer.GetIndexer(),
 		ctx.PodInformer.GetIndexer(),
 		endpointIndexer,
-		mapper.NewClusterServiceMapper(svcGetter.Get, nil),
 		negEnabled)
 
 	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.ctx.KubeClient}
@@ -196,6 +194,11 @@ func (lbc *LoadBalancerController) EnqueueAllIngresses() error {
 	return nil
 }
 
+// Implements MCIEnqueue
+func (lbc *LoadBalancerController) EnqueueIngress(ing *extensions.Ingress) {
+	lbc.ingQueue.Enqueue(ing)
+}
+
 // enqueueIngressForService enqueues all the Ingress' for a Service.
 func (lbc *LoadBalancerController) enqueueIngressForService(obj interface{}) {
 	svc := obj.(*apiv1.Service)
@@ -205,7 +208,7 @@ func (lbc *LoadBalancerController) enqueueIngressForService(obj interface{}) {
 		return
 	}
 	for _, ing := range ings {
-		if !isGCEIngress(&ing) {
+		if !utils.IsGCEIngress(&ing) {
 			continue
 		}
 		lbc.ingQueue.Enqueue(&ing)
@@ -254,29 +257,22 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	}
 	glog.V(3).Infof("Syncing %v", key)
 
-	if lbc.ctx.MC.MCIEnabled {
-		// This is a temporary short-circuit to just verify that
-		// the MCI controller properly queues ingresses.
-		return nil
-	}
-
 	gceIngresses, err := lbc.ingLister.ListGCEIngresses()
 	if err != nil {
 		return err
 	}
 
-	// gceNodePorts contains the ServicePorts used by only single-cluster ingress.
+	svcMappers := lbc.ctx.ServiceMappers()
+	// gceNodePorts contains ServicePort's for all Ingresses.
 	var gceNodePorts []backends.ServicePort
 	for _, gceIngress := range gceIngresses.Items {
-		svcPortMapping, err := lbc.Translator.ServicePortMapping(&gceIngress)
-		if err != nil {
-			glog.Infof("%v", err.Error())
+		for cluster, svcMapper := range svcMappers {
+			svcPorts, _, err := servicePorts(&gceIngress, svcMapper)
+			if err != nil {
+				glog.Infof("Error getting NodePort's for cluster %v: %v", cluster, err.Error())
+			}
+			gceNodePorts = append(gceNodePorts, svcPorts...)
 		}
-		gceNodePorts = append(gceNodePorts, extractSvcPorts(svcPortMapping)...)
-	}
-	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
-	if err != nil {
-		return err
 	}
 
 	lbNames := lbc.ingLister.Store.ListKeys()
@@ -284,8 +280,20 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	if err != nil {
 		return err
 	}
+
 	if !ingExists {
 		glog.V(2).Infof("Ingress %q no longer exists, triggering GC", key)
+		resourceManagers := lbc.ctx.ResourceManagers()
+		for cluster, resourceManager := range resourceManagers {
+			ingNamespace, ingName, err := cache.SplitMetaNamespaceKey(key)
+			if err != nil {
+				return fmt.Errorf("Error extracting (namespace,name) pair from key %v: %v", key, err)
+			}
+			err = resourceManager.DeleteTargetIngress(ingName, ingNamespace)
+			if err != nil {
+				return fmt.Errorf("Error deleting target ingress %v/%v in cluster %v: %v", ingNamespace, ingName, cluster, err)
+			}
+		}
 		// GC will find GCE resources that were used for this ingress and delete them.
 		return lbc.CloudClusterManager.GC(lbNames, gceNodePorts)
 	}
@@ -297,7 +305,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	}
 	ing = ing.DeepCopy()
 
-	ensureErr := lbc.ensureIngress(key, ing, nodeNames, gceNodePorts)
+	ensureErr := lbc.ensureIngress(key, ing, svcMappers, gceNodePorts)
 	if ensureErr != nil {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", fmt.Sprintf("Error during sync: %v", ensureErr.Error()))
 	}
@@ -312,31 +320,73 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	return ensureErr
 }
 
-func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ingress, nodeNames []string, gceNodePorts []backends.ServicePort) error {
-	// Given an ingress, returns a mapping of IngressBackend -> ServicePort
-	svcPortMapping, err := lbc.Translator.ServicePortMapping(ing)
-	if err != nil {
-		// TODO(rramkumar): Clean this up, it's very ugly.
-		switch err.(type) {
-		case *multierror.Error:
-			// Emit an event for each error in the multierror.
-			merr := err.(*multierror.Error)
-			for _, e := range merr.Errors {
-				msg := fmt.Sprintf("%v", e)
+func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ingress, svcMappers map[string]mapper.ClusterServiceMapper, gceNodePorts []backends.ServicePort) error {
+	var ingNodePorts []backends.ServicePort
+	var backendToServicePorts map[extensions.IngressBackend]backends.ServicePort
+	for cluster, svcMapper := range svcMappers {
+		svcPorts, m, err := servicePorts(ing, svcMapper)
+		ingNodePorts = svcPorts
+		backendToServicePorts = m
+		if err != nil {
+			// TODO(rramkumar): Clean this up, it's very ugly.
+			switch err.(type) {
+			case *multierror.Error:
+				// Emit an event for each error in the multierror.
+				merr := err.(*multierror.Error)
+				for _, e := range merr.Errors {
+					msg := fmt.Sprintf("Error getting NodePort's for cluster %v: %v", cluster, e)
+					lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Service", msg)
+				}
+			default:
+				msg := fmt.Sprintf("%v", err)
 				lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Service", msg)
 			}
-		default:
-			msg := fmt.Sprintf("%v", err)
-			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Service", msg)
 		}
+		// TODO(rramkumar): In each iteration, pass svcPorts to a validator which progressively
+		// validates that each list of ServicePort's it gets is consistent with the previous.
+		// For now, we are going to do no validation.
 	}
-	ingNodePorts := extractSvcPorts(svcPortMapping)
-	igs, err := lbc.CloudClusterManager.EnsureInstanceGroupsAndPorts(nodeNames, ingNodePorts)
+
+	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
 	if err != nil {
 		return err
 	}
 
-	if isGCEMultiClusterIngress(ing) {
+	var igs []*compute.InstanceGroup
+	if lbc.ctx.MC.MCIEnabled {
+		resourceManagers := lbc.ctx.ResourceManagers()
+		for cluster, resourceManager := range resourceManagers {
+			targetIng, ensureErr := resourceManager.EnsureTargetIngress(ing)
+			if ensureErr != nil {
+				return fmt.Errorf("Error ensuring target ingress %v/%v in cluster %v: %v", ing.Namespace, ing.Name, cluster, ensureErr)
+			}
+			annotationVals, annotationErr := instanceGroupsAnnotation(targetIng)
+			if annotationErr != nil {
+				return fmt.Errorf("Error getting instance group annotations from target ingress %v/%v in cluster %v: %v", ing.Namespace, ing.Name, cluster, annotationErr)
+			}
+			if len(annotationVals) == 0 {
+				// If a target ingress does not have the annotation yet,
+				// then just return and wait for the ingress to be requeued.
+				glog.V(3).Infof("Could not find instance group annotation for target ingress %v/%v in cluster %v. Requeueing ingress...", ing.Namespace, ing.Name, cluster)
+				return nil
+			}
+			for _, val := range annotationVals {
+				ig, err := lbc.CloudClusterManager.instancePool.Get(val.Name, utils.TrimZoneLink(val.Zone))
+				if err != nil {
+					return fmt.Errorf("Error getting instance groups for target ingress %v/%v in cluster %v: %v", ing.Namespace, ing.Name, cluster, err)
+				}
+				glog.V(3).Infof("Found instance group %v for target ingress %v/v in cluster %v", ig.Name, ing.Namespace, ing.Name, cluster)
+				igs = append(igs, ig)
+			}
+		}
+	} else {
+		igs, err = lbc.CloudClusterManager.EnsureInstanceGroupsAndPorts(nodeNames, ingNodePorts)
+		if err != nil {
+			return err
+		}
+	}
+
+	if utils.IsGCEMultiClusterIngress(ing) {
 		// Add instance group names as annotation on the ingress and return.
 		if ing.Annotations == nil {
 			ing.Annotations = map[string]string{}
@@ -363,7 +413,7 @@ func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ing
 
 	negEndpointPorts := lbc.Translator.GatherEndpointPorts(gceNodePorts)
 	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
-	if err = lbc.CloudClusterManager.EnsureFirewall(nodeNames, negEndpointPorts); err != nil {
+	if err = lbc.CloudClusterManager.EnsureFirewall(nodeNames, negEndpointPorts, lbc.ctx.MC.MCIEnabled); err != nil {
 		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
 			// XPN: Raise an event and ignore the error.
 			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeNormal, "XPN", fwErr.Message)
@@ -393,7 +443,7 @@ func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ing
 		return fmt.Errorf("unable to get loadbalancer: %v", err)
 	}
 
-	urlMap, err := lbc.Translator.ToURLMap(ing, svcPortMapping)
+	urlMap, err := lbc.Translator.ToURLMap(ing, backendToServicePorts)
 	if err != nil {
 		return fmt.Errorf("error converting to URLMap: %v", err)
 	}
@@ -490,9 +540,19 @@ func updateAnnotations(client kubernetes.Interface, name, namespace string, anno
 	return nil
 }
 
-func extractSvcPorts(svcPortMapping map[extensions.IngressBackend]backends.ServicePort) (svcPorts []backends.ServicePort) {
-	for _, svcPort := range svcPortMapping {
+// servicePorts converts an Ingress to its ServicePort's using a specific ClusterServiceMapper.
+func servicePorts(ing *extensions.Ingress, svcMapper mapper.ClusterServiceMapper) ([]backends.ServicePort, map[extensions.IngressBackend]backends.ServicePort, error) {
+	var svcPorts []backends.ServicePort
+	backendToServiceMap, err := svcMapper.Services(ing)
+	if err != nil {
+		return nil, nil, err
+	}
+	backendToServicePortsMap, err := backends.ServicePorts(backendToServiceMap)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, svcPort := range backendToServicePortsMap {
 		svcPorts = append(svcPorts, svcPort)
 	}
-	return svcPorts
+	return svcPorts, backendToServicePortsMap, nil
 }
