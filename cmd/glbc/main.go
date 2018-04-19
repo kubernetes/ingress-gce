@@ -126,7 +126,7 @@ func main() {
 	}
 
 	if flags.F.MultiCluster {
-		mciController, _ := mci.NewController(ctx, flags.F.ResyncPeriod)
+		mciController, _ := mci.NewController(ctx, flags.F.ResyncPeriod, lbc)
 		go mciController.Run(stopCh)
 		glog.V(0).Infof("Multi-Cluster Ingress Controller started")
 	}
