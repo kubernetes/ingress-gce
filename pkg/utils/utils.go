@@ -180,3 +180,11 @@ func BackendServiceComparablePath(url string) string {
 	}
 	return fmt.Sprintf("global/%s", path_parts[1])
 }
+
+func StringsToKeyMap(strings []string) map[string]bool {
+	m := make(map[string]bool)
+	for _, s := range strings {
+		m[s] = true
+	}
+	return m
+}
