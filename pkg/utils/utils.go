@@ -181,10 +181,22 @@ func BackendServiceComparablePath(url string) string {
 	return fmt.Sprintf("global/%s", path_parts[1])
 }
 
+// StringsToKeyMap returns the map representation of a list of strings.
 func StringsToKeyMap(strings []string) map[string]bool {
 	m := make(map[string]bool)
 	for _, s := range strings {
 		m[s] = true
 	}
 	return m
+}
+
+// PruneMap prunes the keys specified in ignore and returns the pruned map.
+func PruneMap(m, ignore map[string]string) map[string]string {
+	result := map[string]string{}
+	for k, v := range m {
+		if _, exists := ignore[k]; !exists {
+			result[k] = v
+		}
+	}
+	return result
 }
