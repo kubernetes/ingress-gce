@@ -31,6 +31,8 @@ import (
 	"k8s.io/client-go/tools/record"
 	crclient "k8s.io/cluster-registry/pkg/client/clientset_generated/clientset"
 	crinformerv1alpha1 "k8s.io/cluster-registry/pkg/client/informers_generated/externalversions/clusterregistry/v1alpha1"
+	"k8s.io/ingress-gce/pkg/informer"
+	"k8s.io/ingress-gce/pkg/mapper"
 )
 
 // ControllerContext holds resources necessary for the general
@@ -54,7 +56,11 @@ type ControllerContext struct {
 type MultiClusterContext struct {
 	RegistryClient  crclient.Interface
 	ClusterInformer cache.SharedIndexInformer
-	MCIEnabled      bool
+
+	MCIEnabled              bool
+	ClusterClients          map[string]kubernetes.Interface
+	ClusterInformerManagers map[string]informer.ClusterInformerManager
+	ClusterServiceMappers   map[string]mapper.ClusterServiceMapper
 }
 
 // NewControllerContext returns a new shared set of informers.
@@ -78,6 +84,9 @@ func NewControllerContext(kubeClient kubernetes.Interface, registryClient crclie
 	if context.MC.RegistryClient != nil {
 		context.MC.ClusterInformer = crinformerv1alpha1.NewClusterInformer(registryClient, resyncPeriod, newIndexer())
 		context.MC.MCIEnabled = true
+		context.MC.ClusterClients = make(map[string]kubernetes.Interface)
+		context.MC.ClusterInformerManagers = make(map[string]informer.ClusterInformerManager)
+		context.MC.ClusterServiceMappers = make(map[string]mapper.ClusterServiceMapper)
 	}
 
 	return context
