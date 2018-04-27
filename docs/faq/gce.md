@@ -14,7 +14,7 @@ Table of Contents
 * [Can I configure GCE health checks through the Ingress?](#can-i-configure-gce-health-checks-through-the-ingress)
 * [Why does my Ingress have an ephemeral ip?](#why-does-my-ingress-have-an-ephemeral-ip)
 * [Can I pre-allocate a static-ip?](#can-i-pre-allocate-a-static-ip)
-* [Does updating a Kubernetes secrete update the GCE TLS certs?](#does-updating-a-kubernetes-secrete-update-the-gce-tls-certs)
+* [Does updating a Kubernetes secret update the GCE TLS certs?](#does-updating-a-kubernetes-secrete-update-the-gce-tls-certs)
 * [Can I tune the loadbalancing algorithm?](#can-i-tune-the-loadbalancing-algorithm)
 * [Is there a maximum number of Endpoints I can add to the Ingress?](#is-there-a-maximum-number-of-endpoints-i-can-add-to-the-ingress)
 * [How do I match GCE resources to Kubernetes Services?](#how-do-i-match-gce-resources-to-kubernetes-services)
