@@ -33,8 +33,8 @@ import (
 	neg "k8s.io/ingress-gce/pkg/neg"
 
 	"k8s.io/ingress-gce/cmd/glbc/app"
+	"k8s.io/ingress-gce/pkg/backendconfig"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/serviceextension"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
@@ -72,14 +72,14 @@ func main() {
 		glog.Fatalf("Failed to create kubernetes client: %v", err)
 	}
 
-	if flags.F.EnableServiceExtension {
+	if flags.F.EnableBackendConfig {
 		crdClient, err := crdclient.NewForConfig(kubeConfig)
 		if err != nil {
 			glog.Fatalf("Failed to create kubernetes CRD client: %v", err)
 		}
 
-		if _, err := serviceextension.EnsureCRD(crdClient); err != nil {
-			glog.Fatalf("Failed to ensure ServiceExtension CRD: %v", err)
+		if _, err := backendconfig.EnsureCRD(crdClient); err != nil {
+			glog.Fatalf("Failed to ensure BackendConfig CRD: %v", err)
 		}
 	}
 
