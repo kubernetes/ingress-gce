@@ -2,8 +2,8 @@
 
 Create secret
 ```console
-$ make keys secret
-$ kubectl create -f /tmp/tls.json
+$ make keys
+$ kubectl create secret tls foo-secret --key /tmp/tls.key --cert /tmp/tls.crt
 ```
 
 Make sure you have the l7 controller running:

@@ -66,7 +66,7 @@ const (
 	// to take advantage of NoExecute Taints and Tolerations.
 	TaintBasedEvictions utilfeature.Feature = "TaintBasedEvictions"
 
-	// owner: @jcbsmpsn
+	// owner: @mikedanese
 	// alpha: v1.7
 	//
 	// Gets a server certificate for the kubelet from the Certificate Signing
@@ -74,8 +74,8 @@ const (
 	// certificate as expiration approaches.
 	RotateKubeletServerCertificate utilfeature.Feature = "RotateKubeletServerCertificate"
 
-	// owner: @jcbsmpsn
-	// alpha: v1.7
+	// owner: @mikedanese
+	// beta: v1.8
 	//
 	// Automatically renews the client certificate used for communicating with
 	// the API server as the certificate approaches expiration.
@@ -135,6 +135,13 @@ const (
 	// Enable mount propagation of volumes.
 	MountPropagation utilfeature.Feature = "MountPropagation"
 
+	// owner: @sjenning
+	// alpha: v1.11
+	//
+	// Allows resource reservations at the QoS level preventing pods at lower QoS levels from
+	// bursting into resources requested at higher QoS levels (memory only for now)
+	QOSReserved utilfeature.Feature = "QOSReserved"
+
 	// owner: @ConnorDoyle
 	// alpha: v1.8
 	//
@@ -192,7 +199,7 @@ const (
 	BlockVolume utilfeature.Feature = "BlockVolume"
 
 	// owner: @pospispa
-	// beta: v1.10
+	// GA: v1.11
 	//
 	// Postpone deletion of a PV or a PVC when they are being used
 	StorageObjectInUseProtection utilfeature.Feature = "StorageObjectInUseProtection"
@@ -299,6 +306,7 @@ var defaultKubernetesFeatureGates = map[utilfeature.Feature]utilfeature.FeatureS
 	EnableEquivalenceClassCache:                 {Default: false, PreRelease: utilfeature.Alpha},
 	TaintNodesByCondition:                       {Default: false, PreRelease: utilfeature.Alpha},
 	MountPropagation:                            {Default: true, PreRelease: utilfeature.Beta},
+	QOSReserved:                                 {Default: false, PreRelease: utilfeature.Alpha},
 	ExpandPersistentVolumes:                     {Default: false, PreRelease: utilfeature.Alpha},
 	CPUManager:                                  {Default: true, PreRelease: utilfeature.Beta},
 	ServiceNodeExclusion:                        {Default: false, PreRelease: utilfeature.Alpha},
@@ -307,7 +315,7 @@ var defaultKubernetesFeatureGates = map[utilfeature.Feature]utilfeature.FeatureS
 	CSIPersistentVolume:                         {Default: true, PreRelease: utilfeature.Beta},
 	CustomPodDNS:                                {Default: true, PreRelease: utilfeature.Beta},
 	BlockVolume:                                 {Default: false, PreRelease: utilfeature.Alpha},
-	StorageObjectInUseProtection:                {Default: true, PreRelease: utilfeature.Beta},
+	StorageObjectInUseProtection:                {Default: true, PreRelease: utilfeature.GA},
 	ResourceLimitsPriorityFunction:              {Default: false, PreRelease: utilfeature.Alpha},
 	SupportIPVSProxyMode:                        {Default: true, PreRelease: utilfeature.Beta},
 	SupportPodPidsLimit:                         {Default: false, PreRelease: utilfeature.Alpha},
