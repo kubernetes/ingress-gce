@@ -16,16 +16,12 @@ all:
 
 KEY = /tmp/tls.key
 CERT = /tmp/tls.crt
-SECRET = /tmp/tls.json
 HOST=example.com
 NAME=tls-secret
 
 keys:
 	# The CName used here is specific to the service specified in nginx-app.yaml.
 	openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout $(KEY) -out $(CERT) -subj "/CN=$(HOST)/O=$(HOST)"
-
-secret:
-	godep go run make_secret.go -crt $(CERT) -key $(KEY) -name $(NAME) > $(SECRET)
 
 clean:
 	rm $(KEY)
