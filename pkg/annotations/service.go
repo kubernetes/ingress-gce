@@ -40,6 +40,15 @@ const (
 	// 3. Adding this annotation on ingress.
 	NetworkEndpointGroupAlphaAnnotation = "alpha.cloud.google.com/load-balancer-neg"
 
+	// BackendConfigKey is a stringified JSON with two fields:
+	// - "ports": a map of port names or port numbers to backendConfig names
+	// - "default": denotes the default backendConfig name for all ports except
+	// those are explicitly referenced.
+	// Examples:
+	// - '{"ports":{"my-https-port":"config-https","my-http-port":"config-http"}}'
+	// - '{"default":"config-default","ports":{"my-https-port":"config-https"}}'
+	BackendConfigKey = "alpha.cloud.google.com/backend-config"
+
 	// ProtocolHTTP protocol for a service
 	ProtocolHTTP AppProtocol = "HTTP"
 	// ProtocolHTTPS protocol for a service
@@ -92,4 +101,26 @@ func (svc Service) ApplicationProtocols() (map[string]AppProtocol, error) {
 func (svc Service) NEGEnabled() bool {
 	v, ok := svc.v[NetworkEndpointGroupAlphaAnnotation]
 	return ok && v == "true"
+}
+
+type BackendConfigs struct {
+	Default string            `json:"default,omitempty"`
+	Ports   map[string]string `json:"ports,omitempty"`
+}
+
+// GetBackendConfigs returns BackendConfigs for the service.
+func (svc Service) GetBackendConfigs() (*BackendConfigs, error) {
+	val, ok := svc.v[BackendConfigKey]
+	if !ok {
+		return nil, nil
+	}
+
+	configs := BackendConfigs{}
+	if err := json.Unmarshal([]byte(val), &configs); err != nil {
+		return nil, err
+	}
+	if configs.Default == "" && len(configs.Ports) == 0 {
+		return nil, fmt.Errorf("no backendConfigs found in annotation: %v", val)
+	}
+	return &configs, nil
 }
