@@ -97,12 +97,6 @@
   revision = "0fb14efe8c47ae851c0034ed7a448854d3d34cf3"
 
 [[projects]]
-  branch = "master"
-  name = "github.com/howeyc/gopass"
-  packages = ["."]
-  revision = "bf9dde6d0d2c004a008c27aaee91170c786f6db8"
-
-[[projects]]
   name = "github.com/imdario/mergo"
   packages = ["."]
   revision = "9d5f1277e9a8ed20c3684bda8fde67c05628518c"
@@ -360,7 +354,7 @@
     "storage/v1alpha1",
     "storage/v1beta1"
   ]
-  revision = "kubernetes-1.10.0-rc.1"
+  revision = "kubernetes-1.11.0-alpha.2"
 
 [[projects]]
   branch = "master"
@@ -429,7 +423,7 @@
     "third_party/forked/golang/json",
     "third_party/forked/golang/reflect"
   ]
-  revision = "kubernetes-1.10.0-rc.1"
+  revision = "kubernetes-1.11.0-alpha.2"
 
 [[projects]]
   name = "k8s.io/apiserver"
@@ -440,7 +434,7 @@
     "pkg/features",
     "pkg/util/feature"
   ]
-  revision = "kubernetes-1.10.0-rc.1"
+  revision = "kubernetes-1.11.0-alpha.2"
 
 [[projects]]
   name = "k8s.io/client-go"
@@ -599,7 +593,7 @@
     "util/retry",
     "util/workqueue"
   ]
-  revision = "kubernetes-1.10.0-rc.1"
+  revision = "kubernetes-1.11.0-alpha.2"
 
 [[projects]]
   branch = "master"
@@ -624,6 +618,7 @@
     "pkg/apis/core/validation",
     "pkg/apis/extensions",
     "pkg/apis/networking",
+    "pkg/apis/policy",
     "pkg/apis/scheduling",
     "pkg/capabilities",
     "pkg/cloudprovider",
@@ -637,6 +632,11 @@
     "pkg/kubelet/apis",
     "pkg/kubelet/types",
     "pkg/master/ports",
+    "pkg/scheduler/algorithm",
+    "pkg/scheduler/algorithm/priorities/util",
+    "pkg/scheduler/api",
+    "pkg/scheduler/schedulercache",
+    "pkg/scheduler/util",
     "pkg/security/apparmor",
     "pkg/serviceaccount",
     "pkg/util/file",
@@ -656,7 +656,7 @@
     "pkg/volume/util/recyclerclient",
     "pkg/volume/util/types"
   ]
-  revision = "9c40f5b5a622c61c2e37efd37bf136d174d6799a"
+  revision = "33d85b01fe42663de500747def3eaae75cfa0950"
 
 [[projects]]
   branch = "master"
@@ -667,6 +667,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "064926867855c43d408e33f9c6c767a9b1b1ee41e6452a4c8c96b7847d416c3d"
+  inputs-digest = "f6a139f94bd124c6a3a7dc347a6e7b8e157d779d8f2ce06f59b5a18574aa43b2"
   solver-name = "gps-cdcl"
   solver-version = 1

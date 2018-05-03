@@ -19,10 +19,10 @@ limitations under the License.
 package mount
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 )
 
 type FileType string
@@ -108,6 +108,12 @@ type Interface interface {
 	// subpath starts. On the other hand, Interface.CleanSubPaths must be called
 	// when the pod finishes.
 	PrepareSafeSubpath(subPath Subpath) (newHostPath string, cleanupAction func(), err error)
+	// GetMountRefs finds all mount references to the path, returns a
+	// list of paths. Path could be a mountpoint path, device or a normal
+	// directory (for bind mount).
+	GetMountRefs(pathname string) ([]string, error)
+	// GetFSGroup returns FSGroup of the path.
+	GetFSGroup(pathname string) (int64, error)
 }
 
 type Subpath struct {
@@ -166,22 +172,19 @@ func (mounter *SafeFormatAndMount) FormatAndMount(source string, target string, 
 	return mounter.formatAndMount(source, target, fstype, options)
 }
 
-// GetMountRefsByDev finds all references to the device provided
+// getMountRefsByDev finds all references to the device provided
 // by mountPath; returns a list of paths.
-func GetMountRefsByDev(mounter Interface, mountPath string) ([]string, error) {
+// Note that mountPath should be path after the evaluation of any symblolic links.
+func getMountRefsByDev(mounter Interface, mountPath string) ([]string, error) {
 	mps, err := mounter.List()
 	if err != nil {
 		return nil, err
-	}
-	slTarget, err := filepath.EvalSymlinks(mountPath)
-	if err != nil {
-		slTarget = mountPath
 	}
 
 	// Finding the device mounted to mountPath
 	diskDev := ""
 	for i := range mps {
-		if slTarget == mps[i].Path {
+		if mountPath == mps[i].Path {
 			diskDev = mps[i].Device
 			break
 		}
@@ -190,8 +193,8 @@ func GetMountRefsByDev(mounter Interface, mountPath string) ([]string, error) {
 	// Find all references to the device.
 	var refs []string
 	for i := range mps {
-		if mps[i].Device == diskDev || mps[i].Device == slTarget {
-			if mps[i].Path != slTarget {
+		if mps[i].Device == diskDev || mps[i].Device == mountPath {
+			if mps[i].Path != mountPath {
 				refs = append(refs, mps[i].Path)
 			}
 		}
@@ -232,13 +235,6 @@ func GetDeviceNameFromMount(mounter Interface, mountPath string) (string, int, e
 	return device, refCount, nil
 }
 
-func isNotDirErr(err error) bool {
-	if e, ok := err.(*os.PathError); ok && e.Err == syscall.ENOTDIR {
-		return true
-	}
-	return false
-}
-
 // IsNotMountPoint determines if a directory is a mountpoint.
 // It should return ErrNotExist when the directory does not exist.
 // This method uses the List() of all mountpoints
@@ -254,7 +250,7 @@ func IsNotMountPoint(mounter Interface, file string) (bool, error) {
 		notMnt = true
 		notMntErr = nil
 	}
-	if notMntErr != nil && isNotDirErr(notMntErr) {
+	if notMntErr != nil {
 		return notMnt, notMntErr
 	}
 	// identified as mountpoint, so return this fact
@@ -336,4 +332,38 @@ func pathWithinBase(fullPath, basePath string) bool {
 func startsWithBackstep(rel string) bool {
 	// normalize to / and check for ../
 	return rel == ".." || strings.HasPrefix(filepath.ToSlash(rel), "../")
+}
+
+// getFileType checks for file/directory/socket and block/character devices
+func getFileType(pathname string) (FileType, error) {
+	var pathType FileType
+	info, err := os.Stat(pathname)
+	if os.IsNotExist(err) {
+		return pathType, fmt.Errorf("path %q does not exist", pathname)
+	}
+	// err in call to os.Stat
+	if err != nil {
+		return pathType, err
+	}
+
+	// checks whether the mode is the target mode
+	isSpecificMode := func(mode, targetMode os.FileMode) bool {
+		return mode&targetMode == targetMode
+	}
+
+	mode := info.Mode()
+	if mode.IsDir() {
+		return FileTypeDirectory, nil
+	} else if mode.IsRegular() {
+		return FileTypeFile, nil
+	} else if isSpecificMode(mode, os.ModeSocket) {
+		return FileTypeSocket, nil
+	} else if isSpecificMode(mode, os.ModeDevice) {
+		if isSpecificMode(mode, os.ModeCharDevice) {
+			return FileTypeCharDev, nil
+		}
+		return FileTypeBlockDev, nil
+	}
+
+	return pathType, fmt.Errorf("only recognise file, directory, socket, block device and character device")
 }

@@ -25,8 +25,8 @@ import (
 
 type NsenterMounter struct{}
 
-func NewNsenterMounter() *NsenterMounter {
-	return &NsenterMounter{}
+func NewNsenterMounter() (*NsenterMounter, error) {
+	return &NsenterMounter{}, nil
 }
 
 var _ = Interface(&NsenterMounter{})
@@ -97,4 +97,12 @@ func (*NsenterMounter) PrepareSafeSubpath(subPath Subpath) (newHostPath string, 
 
 func (*NsenterMounter) CleanSubPaths(podDir string, volumeName string) error {
 	return nil
+}
+
+func (*NsenterMounter) GetMountRefs(pathname string) ([]string, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (*NsenterMounter) GetFSGroup(pathname string) (int64, error) {
+	return -1, errors.New("not implemented")
 }
