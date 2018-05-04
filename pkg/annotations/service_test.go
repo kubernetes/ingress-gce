@@ -118,3 +118,100 @@ func TestService(t *testing.T) {
 		}
 	}
 }
+
+func TestBackendConfigs(t *testing.T) {
+	testcases := []struct {
+		desc            string
+		svc             *v1.Service
+		expectedConfigs *BackendConfigs
+		expectErr       bool
+	}{
+		{
+			desc: "no backendConfig annotation",
+			svc:  &v1.Service{},
+		},
+		{
+			desc: "single backendConfig",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						BackendConfigKey: `{"ports":{"http": "config-http"}}`,
+					},
+				},
+			},
+			expectedConfigs: &BackendConfigs{
+				Ports: map[string]string{
+					"http": "config-http",
+				},
+			},
+		},
+		{
+			desc: "multiple backendConfigs",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						BackendConfigKey: `{"ports":{"http": "config-http", "https": "config-https"}}`,
+					},
+				},
+			},
+			expectedConfigs: &BackendConfigs{
+				Ports: map[string]string{
+					"http":  "config-http",
+					"https": "config-https",
+				},
+			},
+		}, {
+			desc: "multiple backendConfigs with default",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						BackendConfigKey: `{"default": "config-default", "ports":{"http": "config-http", "https": "config-https"}}`,
+					},
+				},
+			},
+			expectedConfigs: &BackendConfigs{
+				Default: "config-default",
+				Ports: map[string]string{
+					"http":  "config-http",
+					"https": "config-https",
+				},
+			},
+		},
+		{
+			desc: "invalid backendConfig annotation",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						BackendConfigKey: `invalid`,
+					},
+				},
+			},
+			expectErr: true,
+		},
+		{
+			desc: "wrong field name in backendConfig annotation",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						BackendConfigKey: `{"portstypo":{"https": "config-https"}}`,
+					},
+				},
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testcases {
+		svc := FromService(tc.svc)
+		configs, err := svc.GetBackendConfigs()
+		if tc.expectErr {
+			if err == nil {
+				t.Errorf("%s: for annotions %+v; svc.GetBackendConfigs() = %v, _; want _, error", tc.desc, svc.v, configs)
+			}
+			continue
+		}
+		if err != nil || !reflect.DeepEqual(configs, tc.expectedConfigs) {
+			t.Errorf("%s: for annotions %+v; svc.GetBackendConfigs() = %v, %v; want %v, nil", tc.desc, svc.v, configs, err, tc.expectedConfigs)
+		}
+	}
+}
