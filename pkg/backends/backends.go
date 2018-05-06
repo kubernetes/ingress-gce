@@ -49,7 +49,7 @@ type BalancingMode string
 const (
 	// Rate balances incoming requests based on observed RPS.
 	// As of this writing, it's the only balancing mode supported by GCE's
-	// internal LB. This setting doesn't make sense for Kubernets clusters
+	// internal LB. This setting doesn't make sense for Kubernetes clusters
 	// because requests can get proxied between instance groups in different
 	// zones by kube-proxy without GCE even knowing it. Setting equal RPS on
 	// all IGs should achieve roughly equal distribution of requests.
@@ -386,7 +386,7 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 		return err
 	}
 
-	// Verify existance of a backend service for the proper port, but do not specify any backends/igs
+	// Verify existence of a backend service for the proper port, but do not specify any backends/igs
 	beName := b.namer.Backend(p.NodePort)
 	be, _ = b.Get(p.NodePort, p.isAlpha())
 	if be == nil {
