@@ -637,12 +637,12 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 }
 
 func TestUpdateUrlMap(t *testing.T) {
-	um1 := utils.GCEURLMap{
+	um1 := utils.GCEURLMapFromPrimitive(utils.PrimitivePathMap{
 		"bar.example.com": {
 			"/bar2": "bar2svc",
 		},
-	}
-	um2 := utils.GCEURLMap{
+	})
+	um2 := utils.GCEURLMapFromPrimitive(utils.PrimitivePathMap{
 		"foo.example.com": {
 			"/foo1": "foo1svc",
 			"/foo2": "foo2svc",
@@ -650,8 +650,8 @@ func TestUpdateUrlMap(t *testing.T) {
 		"bar.example.com": {
 			"/bar1": "bar1svc",
 		},
-	}
-	um2.PutDefaultBackendName("default")
+	})
+	um2.DefaultBackendName = "default"
 
 	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true}
@@ -663,31 +663,18 @@ func TestUpdateUrlMap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	for _, ir := range []utils.GCEURLMap{um1, um2} {
+	for _, ir := range []*utils.GCEURLMap{um1, um2} {
 		if err := l7.UpdateUrlMap(ir); err != nil {
 			t.Fatalf("%v", err)
 		}
 	}
-	// The final map doesn't contain /bar2
-	expectedMap := map[string]utils.FakeIngressRuleValueMap{
-		utils.DefaultBackendKey: {
-			utils.DefaultBackendKey: utils.BackendServiceRelativeResourcePath("default"),
-		},
-		"foo.example.com": {
-			"/foo1": utils.BackendServiceRelativeResourcePath("foo1svc"),
-			"/foo2": utils.BackendServiceRelativeResourcePath("foo2svc"),
-		},
-		"bar.example.com": {
-			"/bar1": utils.BackendServiceRelativeResourcePath("bar1svc"),
-		},
-	}
-	if err := f.CheckURLMap(l7, expectedMap); err != nil {
+	if err := f.CheckURLMap(l7, um2); err != nil {
 		t.Errorf("CheckURLMap(...) = %v, want nil", err)
 	}
 }
 
 func TestUpdateUrlMapNoChanges(t *testing.T) {
-	um1 := utils.GCEURLMap{
+	um1 := utils.GCEURLMapFromPrimitive(utils.PrimitivePathMap{
 		"foo.example.com": {
 			"/foo1": "foo1svc",
 			"/foo2": "foo2svc",
@@ -695,9 +682,9 @@ func TestUpdateUrlMapNoChanges(t *testing.T) {
 		"bar.example.com": {
 			"/bar1": "bar1svc",
 		},
-	}
-	um1.PutDefaultBackendName("default")
-	um2 := utils.GCEURLMap{
+	})
+	um1.DefaultBackendName = "default"
+	um2 := utils.GCEURLMapFromPrimitive(utils.PrimitivePathMap{
 		"foo.example.com": {
 			"/foo1": "foo1svc",
 			"/foo2": "foo2svc",
@@ -705,8 +692,8 @@ func TestUpdateUrlMapNoChanges(t *testing.T) {
 		"bar.example.com": {
 			"/bar1": "bar1svc",
 		},
-	}
-	um2.PutDefaultBackendName("default")
+	})
+	um2.DefaultBackendName = "default"
 
 	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true}
@@ -717,7 +704,7 @@ func TestUpdateUrlMapNoChanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	for _, ir := range []utils.GCEURLMap{um1, um2} {
+	for _, ir := range []*utils.GCEURLMap{um1, um2} {
 		if err := l7.UpdateUrlMap(ir); err != nil {
 			t.Fatalf("%v", err)
 		}

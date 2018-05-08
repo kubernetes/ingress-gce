@@ -43,7 +43,6 @@ import (
 const testClusterName = "testcluster"
 
 var (
-	testPathMap   = map[string]string{"/foo": defaultBackendName(testClusterName)}
 	testIPManager = testIP{}
 )
 
@@ -79,10 +78,10 @@ func toHTTPIngressPaths(pathMap map[string]string) []extensions.HTTPIngressPath 
 	return httpPaths
 }
 
-// toIngressRules converts the given ingressRule map to a list of IngressRules.
-func toIngressRules(hostRules map[string]utils.FakeIngressRuleValueMap) []extensions.IngressRule {
+// toIngressRules converts the given path map to a list of IngressRules.
+func toIngressRules(paths utils.PrimitivePathMap) []extensions.IngressRule {
 	rules := []extensions.IngressRule{}
-	for host, pathMap := range hostRules {
+	for host, pathMap := range paths {
 		rules = append(rules, extensions.IngressRule{
 			Host: host,
 			IngressRuleValue: extensions.IngressRuleValue{
@@ -96,7 +95,7 @@ func toIngressRules(hostRules map[string]utils.FakeIngressRuleValueMap) []extens
 }
 
 // newIngress returns a new Ingress with the given path map.
-func newIngress(hostRules map[string]utils.FakeIngressRuleValueMap) *extensions.Ingress {
+func newIngress(paths utils.PrimitivePathMap) *extensions.Ingress {
 	ret := &extensions.Ingress{
 		TypeMeta: meta_v1.TypeMeta{
 			Kind:       "Ingress",
@@ -111,7 +110,7 @@ func newIngress(hostRules map[string]utils.FakeIngressRuleValueMap) *extensions.
 				ServiceName: defaultBackendName(testClusterName),
 				ServicePort: testBackendPort,
 			},
-			Rules: toIngressRules(hostRules),
+			Rules: toIngressRules(paths),
 		},
 		Status: extensions.IngressStatus{
 			LoadBalancer: api_v1.LoadBalancerStatus{
@@ -127,8 +126,10 @@ func newIngress(hostRules map[string]utils.FakeIngressRuleValueMap) *extensions.
 
 // validIngress returns a valid Ingress.
 func validIngress() *extensions.Ingress {
-	return newIngress(map[string]utils.FakeIngressRuleValueMap{
-		"foo.bar.com": testPathMap,
+	return newIngress(utils.PrimitivePathMap{
+		"foo.bar.com": {
+			"/foo": defaultBackendName(testClusterName),
+		},
 	})
 }
 
@@ -161,17 +162,16 @@ func (p *nodePortManager) getNodePort(svcName string) int {
 
 // toNodePortSvcNames converts all service names in the given map to gce node
 // port names, eg foo -> k8-be-<foo nodeport>
-func (p *nodePortManager) toNodePortSvcNames(inputMap map[string]utils.FakeIngressRuleValueMap) map[string]utils.FakeIngressRuleValueMap {
-	expectedMap := map[string]utils.FakeIngressRuleValueMap{}
-	for host, rules := range inputMap {
-		ruleMap := utils.FakeIngressRuleValueMap{}
+func (p *nodePortManager) toNodePortSvcNames(paths utils.PrimitivePathMap) utils.PrimitivePathMap {
+	result := utils.PrimitivePathMap{}
+	for host, rules := range paths {
+		ruleMap := map[string]string{}
 		for path, svc := range rules {
-			beName := p.namer.Backend(int64(p.portMap[svc]))
-			ruleMap[path] = utils.BackendServiceRelativeResourcePath(beName)
+			ruleMap[path] = p.namer.Backend(int64(p.portMap[svc]))
 		}
-		expectedMap[host] = ruleMap
+		result[host] = ruleMap
 	}
-	return expectedMap
+	return result
 }
 
 func newPortManager(st, end int, namer *utils.Namer) *nodePortManager {
@@ -210,7 +210,8 @@ func TestLbCreateDelete(t *testing.T) {
 	testFirewallName := "quux"
 	cm := NewFakeClusterManager(flags.DefaultClusterUID, testFirewallName)
 	lbc := newLoadBalancerController(t, cm)
-	inputMap1 := map[string]utils.FakeIngressRuleValueMap{
+	pm := newPortManager(1, 65536, cm.Namer)
+	inputMap1 := utils.PrimitivePathMap{
 		"foo.example.com": {
 			"/foo1": "foo1svc",
 			"/foo2": "foo2svc",
@@ -220,15 +221,14 @@ func TestLbCreateDelete(t *testing.T) {
 			"/bar2": "bar2svc",
 		},
 	}
-	inputMap2 := map[string]utils.FakeIngressRuleValueMap{
+	inputMap2 := utils.PrimitivePathMap{
 		"baz.foobar.com": {
 			"/foo": "foo1svc",
 			"/bar": "bar1svc",
 		},
 	}
-	pm := newPortManager(1, 65536, cm.Namer)
 	ings := []*extensions.Ingress{}
-	for _, m := range []map[string]utils.FakeIngressRuleValueMap{inputMap1, inputMap2} {
+	for _, m := range []utils.PrimitivePathMap{inputMap1, inputMap2} {
 		newIng := newIngress(m)
 		addIngress(lbc, newIng, pm)
 		ingStoreKey := getKey(newIng, t)
@@ -239,8 +239,10 @@ func TestLbCreateDelete(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cm.l7Pool.Get(%q) = _, %v; want nil", ingStoreKey, err)
 		}
-		if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(m)); err != nil {
-			t.Fatalf("cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(m)) = %v, want nil", err)
+		expectedUrlMap := utils.GCEURLMapFromPrimitive(pm.toNodePortSvcNames(m))
+		expectedUrlMap.DefaultBackendName = cm.Namer.Backend(testDefaultBeNodePort.NodePort)
+		if err := cm.fakeLbs.CheckURLMap(l7, expectedUrlMap); err != nil {
+			t.Fatalf("cm.fakeLbs.CheckURLMap(l7, expectedUrlMap) = %v, want nil", err)
 		}
 		ings = append(ings, newIng)
 	}
@@ -297,7 +299,8 @@ func TestLbCreateDelete(t *testing.T) {
 func TestLbFaultyUpdate(t *testing.T) {
 	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
-	inputMap := map[string]utils.FakeIngressRuleValueMap{
+	pm := newPortManager(1, 65536, cm.Namer)
+	inputMap := utils.PrimitivePathMap{
 		"foo.example.com": {
 			"/foo1": "foo1svc",
 			"/foo2": "foo2svc",
@@ -308,9 +311,7 @@ func TestLbFaultyUpdate(t *testing.T) {
 		},
 	}
 	ing := newIngress(inputMap)
-	pm := newPortManager(1, 65536, cm.Namer)
 	addIngress(lbc, ing, pm)
-
 	ingStoreKey := getKey(ing, t)
 	if err := lbc.sync(ingStoreKey); err != nil {
 		t.Fatalf("lbc.sync() = err %v", err)
@@ -319,22 +320,25 @@ func TestLbFaultyUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(inputMap)); err != nil {
+	expectedUrlMap := utils.GCEURLMapFromPrimitive(pm.toNodePortSvcNames(inputMap))
+	expectedUrlMap.DefaultBackendName = cm.Namer.Backend(testDefaultBeNodePort.NodePort)
+	if err := cm.fakeLbs.CheckURLMap(l7, expectedUrlMap); err != nil {
 		t.Fatalf("cm.fakeLbs.CheckURLMap(...) = %v, want nil", err)
 	}
 
 	// Change the urlmap directly through the lb pool, resync, and
 	// make sure the controller corrects it.
-	l7.UpdateUrlMap(utils.GCEURLMap{
+	forcedUpdate := utils.GCEURLMapFromPrimitive(utils.PrimitivePathMap{
 		"foo.example.com": {
 			"/foo1": "foo2svc",
 		},
 	})
+	l7.UpdateUrlMap(forcedUpdate)
 
 	if err := lbc.sync(ingStoreKey); err != nil {
 		t.Fatalf("lbc.sync() = err %v", err)
 	}
-	if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(inputMap)); err != nil {
+	if err := cm.fakeLbs.CheckURLMap(l7, expectedUrlMap); err != nil {
 		t.Fatalf("cm.fakeLbs.CheckURLMap(...) = %v, want nil", err)
 	}
 }
@@ -343,7 +347,7 @@ func TestLbDefaulting(t *testing.T) {
 	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	// Make sure the controller plugs in the default values accepted by GCE.
-	ing := newIngress(map[string]utils.FakeIngressRuleValueMap{"": {"": "foo1svc"}})
+	ing := newIngress(utils.PrimitivePathMap{"": {"": "foo1svc"}})
 	pm := newPortManager(1, 65536, cm.Namer)
 	addIngress(lbc, ing, pm)
 
@@ -355,8 +359,14 @@ func TestLbDefaulting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	expectedMap := map[string]utils.FakeIngressRuleValueMap{loadbalancers.DefaultHost: {loadbalancers.DefaultPath: "foo1svc"}}
-	if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(expectedMap)); err != nil {
+	expected := utils.PrimitivePathMap{
+		loadbalancers.DefaultHost: {
+			loadbalancers.DefaultPath: "foo1svc",
+		},
+	}
+	expectedUrlMap := utils.GCEURLMapFromPrimitive(pm.toNodePortSvcNames(expected))
+	expectedUrlMap.DefaultBackendName = cm.Namer.Backend(testDefaultBeNodePort.NodePort)
+	if err := cm.fakeLbs.CheckURLMap(l7, expectedUrlMap); err != nil {
 		t.Fatalf("cm.fakeLbs.CheckURLMap(...) = %v, want nil", err)
 	}
 }
@@ -365,7 +375,7 @@ func TestLbNoService(t *testing.T) {
 	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	pm := newPortManager(1, 65536, cm.Namer)
 	lbc := newLoadBalancerController(t, cm)
-	inputMap := map[string]utils.FakeIngressRuleValueMap{
+	inputMap := utils.PrimitivePathMap{
 		"foo.example.com": {
 			"/foo1": "foo1svc",
 		},
@@ -402,11 +412,10 @@ func TestLbNoService(t *testing.T) {
 	if err := lbc.sync(fmt.Sprintf("%s/%s", ing.Namespace, ing.Name)); err != nil {
 		t.Fatalf("lbc.sync() = err %v", err)
 	}
-	inputMap[utils.DefaultBackendKey] = map[string]string{
-		utils.DefaultBackendKey: "foo1svc",
-	}
-	expectedMap := pm.toNodePortSvcNames(inputMap)
-	if err := cm.fakeLbs.CheckURLMap(l7, expectedMap); err != nil {
+
+	expectedUrlMap := utils.GCEURLMapFromPrimitive(pm.toNodePortSvcNames(inputMap))
+	expectedUrlMap.DefaultBackendName = cm.Namer.Backend(int64(pm.getNodePort("foo1svc")))
+	if err := cm.fakeLbs.CheckURLMap(l7, expectedUrlMap); err != nil {
 		t.Fatalf("cm.fakeLbs.CheckURLMap(...) = %v, want nil", err)
 	}
 }
@@ -414,7 +423,7 @@ func TestLbNoService(t *testing.T) {
 func TestLbChangeStaticIP(t *testing.T) {
 	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
-	inputMap := map[string]utils.FakeIngressRuleValueMap{
+	inputMap := utils.PrimitivePathMap{
 		"foo.example.com": {
 			"/foo1": "foo1svc",
 		},
