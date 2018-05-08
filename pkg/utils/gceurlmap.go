@@ -21,16 +21,18 @@ import "fmt"
 // GCEURLMap is a nested map of hostname-> path regex-> backend name
 type GCEURLMap map[string]map[string]string
 
-// GetDefaultBackendName performs a destructive read and returns
-// the name of the default backend in the urlmap.
-func (g GCEURLMap) GetDefaultBackendName() string {
+// GetDefaultBackendName returns the name of the default backend in the urlmap.
+// If destructiveRead is true, the default backend name is subsequently removed.
+func (g GCEURLMap) GetDefaultBackendName(destructiveRead bool) string {
 	var name string
 	var exists bool
 	if h, ok := g[DefaultBackendKey]; ok {
-		if name, exists = h[DefaultBackendKey]; exists {
+		if name, exists = h[DefaultBackendKey]; exists && destructiveRead {
 			delete(h, DefaultBackendKey)
 		}
-		delete(g, DefaultBackendKey)
+		if destructiveRead {
+			delete(g, DefaultBackendKey)
+		}
 	}
 	return name
 }
