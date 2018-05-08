@@ -80,11 +80,7 @@ type Backends struct {
 	healthChecker healthchecks.HealthChecker
 	snapshotter   storage.Snapshotter
 	prober        ProbeProvider
-	// ignoredPorts are a set of ports excluded from GC, even
-	// after the Ingress has been deleted. Note that invoking
-	// a Delete() on these ports will still delete the backend.
-	ignoredPorts sets.String
-	namer        *utils.Namer
+	namer         *utils.Namer
 }
 
 // BackendService embeds both the GA and alpha compute BackendService types
@@ -195,20 +191,14 @@ func NewBackendPool(
 	healthChecker healthchecks.HealthChecker,
 	nodePool instances.NodePool,
 	namer *utils.Namer,
-	ignorePorts []int64,
 	resyncWithCloud bool) *Backends {
 
-	ignored := []string{}
-	for _, p := range ignorePorts {
-		ignored = append(ignored, portKey(p))
-	}
 	backendPool := &Backends{
 		cloud:         cloud,
 		negGetter:     negGetter,
 		nodePool:      nodePool,
 		healthChecker: healthChecker,
 		namer:         namer,
-		ignoredPorts:  sets.NewString(ignored...),
 	}
 	if !resyncWithCloud {
 		backendPool.snapshotter = storage.NewInMemoryPool()
@@ -319,20 +309,6 @@ func (b *Backends) create(namedPort *compute.NamedPort, hcLink string, sp utils.
 // Uses the given instance groups if non-nil, else creates instance groups.
 func (b *Backends) Ensure(svcPorts []utils.ServicePort, igs []*compute.InstanceGroup) error {
 	glog.V(3).Infof("Sync: backends %v", svcPorts)
-	// Ideally callers should pass the instance groups to prevent recomputing them here.
-	// Igs can be nil in scenarios where we do not have instance groups such as
-	// while syncing default backend service.
-	if igs == nil {
-		ports := []int64{}
-		for _, p := range svcPorts {
-			ports = append(ports, p.NodePort)
-		}
-		var err error
-		igs, err = instances.EnsureInstanceGroupsAndPorts(b.nodePool, b.namer, ports)
-		if err != nil {
-			return err
-		}
-	}
 	// create backends for new ports, perform an edge hop for existing ports
 	for _, port := range svcPorts {
 		if err := b.ensureBackendService(port, igs); err != nil {
@@ -608,7 +584,7 @@ func (b *Backends) GC(svcNodePorts []utils.ServicePort) error {
 			return err
 		}
 		nodePort := int64(p)
-		if knownPorts.Has(portKey(nodePort)) || b.ignoredPorts.Has(portKey(nodePort)) {
+		if knownPorts.Has(portKey(nodePort)) {
 			continue
 		}
 		glog.V(3).Infof("GCing backend for port %v", p)

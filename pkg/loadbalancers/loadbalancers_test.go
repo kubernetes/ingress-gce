@@ -27,10 +27,7 @@ import (
 	"strings"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/backends"
-	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
-	"k8s.io/ingress-gce/pkg/neg"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -39,36 +36,34 @@ const (
 )
 
 var (
-	testDefaultBeNodePort = utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
+	testDefaultBeNodePort = utils.ServicePort{NodePort: 30000, Protocol: annotations.ProtocolHTTP}
 )
 
 func newFakeLoadBalancerPool(f LoadBalancers, t *testing.T, namer *utils.Namer) LoadBalancerPool {
-	fakeBackends := backends.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil }, false)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
-	fakeHCP := healthchecks.NewFakeHealthCheckProvider()
-	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")
-	healthChecker := healthchecks.NewHealthChecker(fakeHCP, "/", namer)
 	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
-	backendPool := backends.NewBackendPool(
-		fakeBackends, fakeNEG, healthChecker, nodePool, namer, []int64{}, false)
 
-	return NewLoadBalancerPool(f, backendPool, testDefaultBeNodePort, namer)
+	return NewLoadBalancerPool(f, namer)
 }
 
 func TestCreateHTTPLoadBalancer(t *testing.T) {
 	// This should NOT create the forwarding rule and target proxy
 	// associated with the HTTPS branch of this loadbalancer.
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{
 		Name:      namer.LoadBalancer("test"),
 		AllowHTTP: true,
+		UrlMap:    gceUrlMap,
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
-	// Run Sync
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
 
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil || l7 == nil {
@@ -77,9 +72,6 @@ func TestCreateHTTPLoadBalancer(t *testing.T) {
 	um, err := f.GetUrlMap(f.UMName())
 	if err != nil {
 		t.Fatalf("f.GetUrlMap(%q) = _, %v; want nil", f.UMName(), err)
-	}
-	if um.DefaultService != pool.(*L7s).GLBCDefaultBackend().SelfLink {
-		t.Fatalf("got um.DefaultService = %v; want %v", um.DefaultService, pool.(*L7s).GLBCDefaultBackend().SelfLink)
 	}
 	tp, err := f.GetTargetHttpProxy(f.TPName(false))
 	if err != nil {
@@ -100,24 +92,27 @@ func TestCreateHTTPLoadBalancer(t *testing.T) {
 func TestCreateHTTPSLoadBalancer(t *testing.T) {
 	// This should NOT create the forwarding rule and target proxy
 	// associated with the HTTP branch of this loadbalancer.
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{
 		Name:      namer.LoadBalancer("test"),
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
+		UrlMap:    gceUrlMap,
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
+
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
 	um, err := f.GetUrlMap(f.UMName())
-	if err != nil ||
-		um.DefaultService != pool.(*L7s).GLBCDefaultBackend().SelfLink {
-		t.Fatalf("%v", err)
-	}
 	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
 	if err != nil || tps.UrlMap != um.SelfLink {
 		t.Fatalf("%v", err)
@@ -131,6 +126,8 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 // Tests that a certificate is created from the provided Key/Cert combo
 // and the proxy is updated to another cert when the provided cert changes
 func TestCertUpdate(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	namer := utils.NewNamer("uid1", "fw1")
 	lbName := namer.LoadBalancer("test")
 	certName1 := namer.SSLCertName(lbName, GetCertHash("cert"))
@@ -140,13 +137,16 @@ func TestCertUpdate(t *testing.T) {
 		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
+		UrlMap:    gceUrlMap,
 	}
 
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	// Sync first cert
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
 
 	// Verify certs
 	t.Logf("lbName=%q, name=%q", lbName, certName1)
@@ -155,13 +155,17 @@ func TestCertUpdate(t *testing.T) {
 
 	// Sync with different cert
 	lbInfo.TLS = []*TLSCerts{createCert("key2", "cert2", "name")}
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
 	expectCerts = map[string]string{certName2: lbInfo.TLS[0].Cert}
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 }
 
 // Test that multiple secrets with the same certificate value don't cause a sync error.
 func TestMultipleSecretsWithSameCert(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	namer := utils.NewNamer("uid1", "fw1")
 	lbName := namer.LoadBalancer("test")
 
@@ -172,6 +176,7 @@ func TestMultipleSecretsWithSameCert(t *testing.T) {
 			createCert("key", "cert", "secret-a"),
 			createCert("key", "cert", "secret-b"),
 		},
+		UrlMap: gceUrlMap,
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
@@ -187,6 +192,8 @@ func TestMultipleSecretsWithSameCert(t *testing.T) {
 
 // Tests that controller can overwrite existing, unused certificates
 func TestCertCreationWithCollision(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	namer := utils.NewNamer("uid1", "fw1")
 	lbName := namer.LoadBalancer("test")
 	certName1 := namer.SSLCertName(lbName, GetCertHash("cert"))
@@ -196,6 +203,7 @@ func TestCertCreationWithCollision(t *testing.T) {
 		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
+		UrlMap:    gceUrlMap,
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
@@ -210,7 +218,10 @@ func TestCertCreationWithCollision(t *testing.T) {
 	})
 
 	// Sync first cert
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
+
 	expectCerts := map[string]string{certName1: lbInfo.TLS[0].Cert}
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 
@@ -224,13 +235,17 @@ func TestCertCreationWithCollision(t *testing.T) {
 
 	// Sync with different cert
 	lbInfo.TLS = []*TLSCerts{createCert("key2", "cert2", "name")}
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
 	expectCerts = map[string]string{certName2: "xyz"}
 	// xyz instead of cert2 because the name collided and cert did not get updated.
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 }
 
 func TestMultipleCertRetentionAfterRestart(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	namer := utils.NewNamer("uid1", "fw1")
 	cert1 := createCert("key", "cert", "name")
 	cert2 := createCert("key2", "cert2", "name2")
@@ -246,6 +261,7 @@ func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{cert1},
+		UrlMap:    gceUrlMap,
 	}
 	expectCerts[certName1] = cert1.Cert
 
@@ -278,11 +294,14 @@ func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 //TestUpgradeToNewCertNames verifies that certs uploaded using the old naming convention
 // are picked up and deleted when upgrading to the new scheme.
 func TestUpgradeToNewCertNames(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	namer := utils.NewNamer("uid1", "fw1")
 	lbName := namer.LoadBalancer("test")
 	lbInfo := &L7RuntimeInfo{
 		Name:      lbName,
 		AllowHTTP: false,
+		UrlMap:    gceUrlMap,
 	}
 	oldCertName := "k8s-ssl-" + lbInfo.Name
 	tlsCert := createCert("key", "cert", "name")
@@ -312,7 +331,9 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 		t.Fatalf("Expected cert with name %s, Got %s", oldCertName, proxyCerts[0].Name)
 	}
 	// Sync should replace this oldCert with one following the new naming scheme
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
 	// We expect to see only the new cert linked to the proxy and available in the load balancer.
 	expectCerts := map[string]string{newCertName: tlsCert.Cert}
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
@@ -320,6 +341,8 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 
 // Tests uploading 10 certs which is the global limit today. Ensures that creation of the 11th cert fails.
 func TestMaxCertsUpload(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	var tlsCerts []*TLSCerts
 	expectCerts := make(map[string]string)
 	namer := utils.NewNamer("uid1", "fw1")
@@ -335,10 +358,15 @@ func TestMaxCertsUpload(t *testing.T) {
 		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       tlsCerts,
+		UrlMap:    gceUrlMap,
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
+
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 	failCert := createCert("key100", "cert100", "name100")
 	lbInfo.TLS = append(lbInfo.TLS, failCert)
@@ -350,6 +378,8 @@ func TestMaxCertsUpload(t *testing.T) {
 // specified, to the targetproxy. The targetproxy will present the first occurring cert for a given hostname to the client.
 // This test verifies this behavior.
 func TestIdenticalHostnameCerts(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	var tlsCerts []*TLSCerts
 	expectCerts := make(map[string]string)
 	namer := utils.NewNamer("uid1", "fw1")
@@ -367,12 +397,15 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       tlsCerts,
+		UrlMap:    gceUrlMap,
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 	// Sync multiple times to make sure ordering is preserved
 	for i := 0; i < 10; i++ {
-		pool.Sync([]*L7RuntimeInfo{lbInfo})
+		if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+			t.Fatalf("pool.Sync() = err %v", err)
+		}
 		verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 		// Fetch the target proxy certs and go through in order
 		verifyProxyCertsInOrder(" foo.com", f, t)
@@ -381,10 +414,13 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 }
 
 func TestIdenticalHostnameCertsPreShared(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{
 		Name:      namer.LoadBalancer("test"),
 		AllowHTTP: false,
+		UrlMap:    gceUrlMap,
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
@@ -410,7 +446,9 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 	lbInfo.TLSName = preSharedCert1.Name + "," + preSharedCert2.Name + "," + preSharedCert3.Name
 	// Sync multiple times to make sure ordering is preserved
 	for i := 0; i < 10; i++ {
-		pool.Sync([]*L7RuntimeInfo{lbInfo})
+		if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+			t.Fatalf("pool.Sync() = err %v", err)
+		}
 		verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 		// Fetch the target proxy certs and go through in order
 		verifyProxyCertsInOrder(" foo.com", f, t)
@@ -421,6 +459,8 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 // TestPreSharedToSecretBasedCertUpdate updates from pre-shared cert
 // to secret based cert and verifies the pre-shared cert is retained.
 func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	namer := utils.NewNamer("uid1", "fw1")
 	lbName := namer.LoadBalancer("test")
 	certName1 := namer.SSLCertName(lbName, GetCertHash("cert"))
@@ -429,6 +469,7 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 	lbInfo := &L7RuntimeInfo{
 		Name:      lbName,
 		AllowHTTP: false,
+		UrlMap:    gceUrlMap,
 	}
 
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
@@ -450,7 +491,9 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 	lbInfo.TLSName = preSharedCert1.Name + "," + preSharedCert2.Name
 
 	// Sync pre-shared certs.
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
 	expectCerts := map[string]string{preSharedCert1.Name: preSharedCert1.Certificate,
 		preSharedCert2.Name: preSharedCert2.Certificate}
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
@@ -458,7 +501,9 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 	// Updates from pre-shared cert to secret based cert.
 	lbInfo.TLS = []*TLSCerts{createCert("key", "cert", "name")}
 	lbInfo.TLSName = ""
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
 	expectCerts[certName1] = lbInfo.TLS[0].Cert
 	// fakeLoadBalancer contains the preshared certs as well, but proxy will use only certName1
 	expectCertsProxy := map[string]string{certName1: lbInfo.TLS[0].Cert}
@@ -557,13 +602,15 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 	// This should NOT create the forwarding rule and target proxy
 	// associated with the HTTP branch of this loadbalancer.
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	tlsName := "external-cert-name"
-
 	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{
 		Name:      namer.LoadBalancer("test"),
 		AllowHTTP: false,
 		TLSName:   tlsName,
+		UrlMap:    gceUrlMap,
 	}
 
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
@@ -571,16 +618,14 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 		Name: tlsName,
 	})
 	pool := newFakeLoadBalancerPool(f, t, namer)
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
 	um, err := f.GetUrlMap(f.UMName())
-	if err != nil ||
-		um.DefaultService != pool.(*L7s).GLBCDefaultBackend().SelfLink {
-		t.Fatalf("%v", err)
-	}
 	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
 	if err != nil || tps.UrlMap != um.SelfLink {
 		t.Fatalf("%v", err)
@@ -595,25 +640,26 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 	// This should create 2 forwarding rules and target proxies
 	// but they should use the same urlmap, and have the same
 	// static ip.
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{
 		Name:      namer.LoadBalancer("test"),
 		AllowHTTP: true,
 		TLS:       []*TLSCerts{{Key: "key", Cert: "cert"}},
+		UrlMap:    gceUrlMap,
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
 	um, err := f.GetUrlMap(f.UMName())
-	if err != nil ||
-		um.DefaultService != pool.(*L7s).GLBCDefaultBackend().SelfLink {
-		t.Fatalf("%v", err)
-	}
 	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
 	if err != nil || tps.UrlMap != um.SelfLink {
 		t.Fatalf("%v", err)
@@ -650,17 +696,20 @@ func TestUpdateUrlMap(t *testing.T) {
 	um2.DefaultBackend = utils.ServicePort{NodePort: 30004}
 
 	namer := utils.NewNamer("uid1", "fw1")
-	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true}
+	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true, UrlMap: um1}
 
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 	for _, ir := range []*utils.GCEURLMap{um1, um2} {
-		if err := l7.UpdateUrlMap(ir); err != nil {
+		lbInfo.UrlMap = ir
+		if err := l7.UpdateUrlMap(); err != nil {
 			t.Fatalf("%v", err)
 		}
 	}
@@ -688,18 +737,22 @@ func TestUpdateUrlMapNoChanges(t *testing.T) {
 	um2.DefaultBackend = utils.ServicePort{NodePort: 30003}
 
 	namer := utils.NewNamer("uid1", "fw1")
-	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true}
+	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true, UrlMap: um1}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 	for _, ir := range []*utils.GCEURLMap{um1, um2} {
-		if err := l7.UpdateUrlMap(ir); err != nil {
+		lbInfo.UrlMap = ir
+		if err := l7.UpdateUrlMap(); err != nil {
 			t.Fatalf("%v", err)
 		}
+
 	}
 	for _, call := range f.calls {
 		if call == "UpdateUrlMap" {
@@ -728,23 +781,24 @@ func TestNameParsing(t *testing.T) {
 }
 
 func TestClusterNameChange(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{
-		Name: namer.LoadBalancer("test"),
-		TLS:  []*TLSCerts{{Key: "key", Cert: "cert"}},
+		Name:   namer.LoadBalancer("test"),
+		TLS:    []*TLSCerts{{Key: "key", Cert: "cert"}},
+		UrlMap: gceUrlMap,
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
 	um, err := f.GetUrlMap(f.UMName())
-	if err != nil ||
-		um.DefaultService != pool.(*L7s).GLBCDefaultBackend().SelfLink {
-		t.Fatalf("%v", err)
-	}
 	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
 	if err != nil || tps.UrlMap != um.SelfLink {
 		t.Fatalf("%v", err)
@@ -759,7 +813,9 @@ func TestClusterNameChange(t *testing.T) {
 	f.name = fmt.Sprintf("%v--%v", lbInfo.Name, newName)
 
 	// Now the components should get renamed with the next suffix.
-	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	if err := pool.Sync([]*L7RuntimeInfo{lbInfo}); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
 	l7, err = pool.Get(lbInfo.Name)
 	if err != nil || namer.ParseName(l7.Name).ClusterName != newName {
 		t.Fatalf("Expected L7 name to change.")
@@ -768,11 +824,6 @@ func TestClusterNameChange(t *testing.T) {
 	if err != nil || namer.ParseName(um.Name).ClusterName != newName {
 		t.Fatalf("Expected urlmap name to change.")
 	}
-	if err != nil ||
-		um.DefaultService != pool.(*L7s).GLBCDefaultBackend().SelfLink {
-		t.Fatalf("%v", err)
-	}
-
 	tps, err = f.GetTargetHttpsProxy(f.TPName(true))
 	if err != nil || tps.UrlMap != um.SelfLink {
 		t.Fatalf("%v", err)

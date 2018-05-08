@@ -40,12 +40,11 @@ const (
 
 // ClusterManager manages cluster resource pools.
 type ClusterManager struct {
-	ClusterNamer           *utils.Namer
-	defaultBackendNodePort utils.ServicePort
-	instancePool           instances.NodePool
-	backendPool            backends.BackendPool
-	l7Pool                 loadbalancers.LoadBalancerPool
-	firewallPool           firewalls.SingleFirewallPool
+	ClusterNamer *utils.Namer
+	instancePool instances.NodePool
+	backendPool  backends.BackendPool
+	l7Pool       loadbalancers.LoadBalancerPool
+	firewallPool firewalls.SingleFirewallPool
 
 	// TODO: Refactor so we simply init a health check pool.
 	// Currently health checks are tied to backends because each backend needs
@@ -110,11 +109,6 @@ func (c *ClusterManager) EnsureLoadBalancer(lb *loadbalancers.L7RuntimeInfo, lbS
 }
 
 func (c *ClusterManager) EnsureInstanceGroupsAndPorts(nodeNames []string, servicePorts []utils.ServicePort) ([]*compute.InstanceGroup, error) {
-	if len(servicePorts) != 0 {
-		// Add the default backend node port to the list of named ports for instance groups.
-		servicePorts = append(servicePorts, c.defaultBackendNodePort)
-	}
-
 	// Convert to slice of NodePort int64s.
 	ports := []int64{}
 	for _, p := range uniq(servicePorts) {
@@ -187,7 +181,6 @@ func (c *ClusterManager) GC(lbNames []string, nodePorts []utils.ServicePort) err
 func NewClusterManager(
 	cloud *gce.GCECloud,
 	namer *utils.Namer,
-	defaultBackendNodePort utils.ServicePort,
 	defaultHealthCheckPath string) (*ClusterManager, error) {
 
 	// Names are fundamental to the cluster, the uid allocator makes sure names don't collide.
@@ -204,12 +197,10 @@ func NewClusterManager(
 	cluster.healthCheckers = []healthchecks.HealthChecker{healthChecker, defaultBackendHealthChecker}
 
 	// TODO: This needs to change to a consolidated management of the default backend.
-	cluster.backendPool = backends.NewBackendPool(cloud, cloud, healthChecker, cluster.instancePool, cluster.ClusterNamer, []int64{defaultBackendNodePort.NodePort}, true)
-	defaultBackendPool := backends.NewBackendPool(cloud, cloud, defaultBackendHealthChecker, cluster.instancePool, cluster.ClusterNamer, []int64{}, false)
-	cluster.defaultBackendNodePort = defaultBackendNodePort
+	cluster.backendPool = backends.NewBackendPool(cloud, cloud, healthChecker, cluster.instancePool, cluster.ClusterNamer, true)
 
 	// L7 pool creates targetHTTPProxy, ForwardingRules, UrlMaps, StaticIPs.
-	cluster.l7Pool = loadbalancers.NewLoadBalancerPool(cloud, defaultBackendPool, defaultBackendNodePort, cluster.ClusterNamer)
+	cluster.l7Pool = loadbalancers.NewLoadBalancerPool(cloud, cluster.ClusterNamer)
 	cluster.firewallPool = firewalls.NewFirewallPool(cloud, cluster.ClusterNamer, gce.LoadBalancerSrcRanges(), flags.F.NodePortRanges.Values())
 	return &cluster, nil
 }

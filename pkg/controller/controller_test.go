@@ -55,7 +55,7 @@ func newLoadBalancerController(t *testing.T, cm *fakeClusterManager) *LoadBalanc
 	kubeClient := fake.NewSimpleClientset()
 	stopCh := make(chan struct{})
 	ctx := context.NewControllerContext(kubeClient, api_v1.NamespaceAll, 1*time.Second, true)
-	lb, err := NewLoadBalancerController(kubeClient, stopCh, ctx, cm.ClusterManager, true)
+	lb, err := NewLoadBalancerController(kubeClient, stopCh, ctx, cm.ClusterManager, true, testDefaultBeNodePort)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -155,6 +155,7 @@ func gceURLMapFromPrimitive(primitiveMap utils.PrimitivePathMap, pm *nodePortMan
 		}
 		urlMap.PutPathRulesForHost(hostname, pathRules)
 	}
+	urlMap.DefaultBackend = testDefaultBeNodePort
 	return urlMap
 }
 
@@ -326,14 +327,14 @@ func TestLbFaultyUpdate(t *testing.T) {
 		t.Fatalf("cm.fakeLbs.CheckURLMap(...) = %v, want nil", err)
 	}
 
-	// Change the urlmap directly through the lb pool, resync, and
+	// Change the urlmap directly, resync, and
 	// make sure the controller corrects it.
-	forcedUpdate := gceURLMapFromPrimitive(utils.PrimitivePathMap{
+	l7.RuntimeInfo().UrlMap = gceURLMapFromPrimitive(utils.PrimitivePathMap{
 		"foo.example.com": {
 			"/foo1": "foo2svc",
 		},
 	}, pm)
-	l7.UpdateUrlMap(forcedUpdate)
+	l7.UpdateUrlMap()
 
 	if err := lbc.sync(ingStoreKey); err != nil {
 		t.Fatalf("lbc.sync() = err %v", err)

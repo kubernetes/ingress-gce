@@ -84,6 +84,8 @@ type LoadBalancerController struct {
 	hasSynced func() bool
 	// negEnabled indicates whether NEG feature is enabled.
 	negEnabled bool
+	// defaultBackendSvcPort is the ServicePort for the system default backend.
+	defaultBackendSvcPort utils.ServicePort
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
@@ -91,22 +93,23 @@ type LoadBalancerController struct {
 // - clusterManager: A ClusterManager capable of creating all cloud resources
 //	 required for L7 loadbalancing.
 // - resyncPeriod: Watchers relist from the Kubernetes API server this often.
-func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan struct{}, ctx *context.ControllerContext, clusterManager *ClusterManager, negEnabled bool) (*LoadBalancerController, error) {
+func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan struct{}, ctx *context.ControllerContext, clusterManager *ClusterManager, negEnabled bool, defaultBackendSvcPort utils.ServicePort) (*LoadBalancerController, error) {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: kubeClient.Core().Events(""),
 	})
 	lbc := LoadBalancerController{
-		client:              kubeClient,
-		ctx:                 ctx,
-		ingLister:           StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
-		nodeLister:          ctx.NodeInformer.GetIndexer(),
-		nodes:               NewNodeController(ctx, clusterManager),
-		CloudClusterManager: clusterManager,
-		stopCh:              stopCh,
-		hasSynced:           ctx.HasSynced,
-		negEnabled:          negEnabled,
+		client:                kubeClient,
+		ctx:                   ctx,
+		ingLister:             StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
+		nodeLister:            ctx.NodeInformer.GetIndexer(),
+		nodes:                 NewNodeController(ctx, clusterManager),
+		CloudClusterManager:   clusterManager,
+		stopCh:                stopCh,
+		hasSynced:             ctx.HasSynced,
+		negEnabled:            negEnabled,
+		defaultBackendSvcPort: defaultBackendSvcPort,
 	}
 	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
 
@@ -284,7 +287,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 }
 
 func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ingress, nodeNames []string, gceSvcPorts []utils.ServicePort) error {
-	urlMap := lbc.Translator.TranslateIngress(ing)
+	urlMap := lbc.Translator.TranslateIngress(ing, lbc.defaultBackendSvcPort)
 	ingSvcPorts := urlMap.AllServicePorts()
 	igs, err := lbc.CloudClusterManager.EnsureInstanceGroupsAndPorts(nodeNames, ingSvcPorts)
 	if err != nil {
@@ -310,6 +313,7 @@ func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ing
 	if err != nil {
 		return err
 	}
+	lb.UrlMap = urlMap
 
 	// Create the backend services and higher-level LB resources.
 	if err = lbc.CloudClusterManager.EnsureLoadBalancer(lb, ingSvcPorts, igs); err != nil {
@@ -348,7 +352,7 @@ func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ing
 		return fmt.Errorf("unable to get loadbalancer: %v", err)
 	}
 
-	if err := l7.UpdateUrlMap(urlMap); err != nil {
+	if err := l7.UpdateUrlMap(); err != nil {
 		return fmt.Errorf("update URL Map error: %v", err)
 	}
 
@@ -445,7 +449,7 @@ func updateAnnotations(client kubernetes.Interface, name, namespace string, anno
 func (lbc *LoadBalancerController) ToSvcPorts(ings *extensions.IngressList) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings.Items {
-		urlMap := lbc.Translator.TranslateIngress(&ing)
+		urlMap := lbc.Translator.TranslateIngress(&ing, lbc.defaultBackendSvcPort)
 		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts

@@ -90,7 +90,7 @@ func main() {
 
 	cloud := app.NewGCEClient()
 	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
-	clusterManager, err := controller.NewClusterManager(cloud, namer, *defaultBackendServicePort, flags.F.HealthCheckPath)
+	clusterManager, err := controller.NewClusterManager(cloud, namer, flags.F.HealthCheckPath)
 	if err != nil {
 		glog.Fatalf("Error creating cluster manager: %v", err)
 	}
@@ -98,7 +98,7 @@ func main() {
 	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
 	stopCh := make(chan struct{})
 	ctx := context.NewControllerContext(kubeClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG)
-	lbc, err := controller.NewLoadBalancerController(kubeClient, stopCh, ctx, clusterManager, enableNEG)
+	lbc, err := controller.NewLoadBalancerController(kubeClient, stopCh, ctx, clusterManager, enableNEG, *defaultBackendServicePort)
 	if err != nil {
 		glog.Fatalf("Error creating load balancer controller: %v", err)
 	}
