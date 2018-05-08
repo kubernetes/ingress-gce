@@ -20,6 +20,34 @@ import (
 	"testing"
 )
 
-func TestGCEURLMap(t *testing.T) {
-	// TODO
+func TestGetDefaultBackendName(t *testing.T) {
+	urlMap := GCEURLMap{}
+	urlMap.PutDefaultBackendName("foo")
+	n := urlMap.GetDefaultBackendName(false)
+	if n != "foo" {
+		t.Fatalf("Expected default backend name foo. Got %v", n)
+	}
+}
+
+func TestGetDefaultBackendNameDestructive(t *testing.T) {
+	urlMap := GCEURLMap{}
+	urlMap.PutDefaultBackendName("foo")
+	n := urlMap.GetDefaultBackendName(true)
+	if n != "foo" {
+		t.Fatalf("Expected default backend name foo. Got %v", n)
+	}
+	n = urlMap.GetDefaultBackendName(true)
+	if n != "" {
+		t.Fatalf("Expected empty default backend name. Got %v", n)
+	}
+}
+
+func TestPutDefaultBackendName(t *testing.T) {
+	urlMap := GCEURLMap{}
+	urlMap.PutDefaultBackendName("foo")
+	urlMap.PutDefaultBackendName("bar")
+	n := urlMap.GetDefaultBackendName(true)
+	if n != "bar" {
+		t.Fatalf("Expected default backend name bar. Got %v", n)
+	}
 }

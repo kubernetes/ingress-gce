@@ -712,7 +712,7 @@ func (l *L7) UpdateUrlMap(ingressRules utils.GCEURLMap) error {
 	// backend, it applies to all host rules as well as to the urlmap itself.
 	// If it doesn't the urlmap might have a stale default, so replace it with
 	// glbc's default backend.
-	defaultBackendName := ingressRules.GetDefaultBackendName()
+	defaultBackendName := ingressRules.GetDefaultBackendName(true)
 	if defaultBackendName != "" {
 		l.um.DefaultService = utils.BackendServiceRelativeResourcePath(defaultBackendName)
 	} else {
