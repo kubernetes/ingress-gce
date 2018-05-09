@@ -41,10 +41,10 @@ type HealthCheckProvider interface {
 
 // HealthChecker is an interface to manage cloud HTTPHealthChecks.
 type HealthChecker interface {
-	New(port int64, protocol annotations.AppProtocol, enableNEG bool) *HealthCheck
+	New(name string, port int64, protocol annotations.AppProtocol, enableNEG bool) *HealthCheck
 	Sync(hc *HealthCheck) (string, error)
-	Delete(port int64) error
-	Get(port int64, alpha bool) (*HealthCheck, error)
+	Delete(name string) error
+	Get(name string, alpha bool) (*HealthCheck, error)
 	GetLegacy(port int64) (*compute.HttpHealthCheck, error)
 	DeleteLegacy(port int64) error
 }
