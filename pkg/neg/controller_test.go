@@ -186,7 +186,7 @@ func TestGatherServiceTargetPortUsedByIngress(t *testing.T) {
 			[]extensions.Ingress{*newTestIngress(), *newTestIngress()},
 			[]string{"8080", "8081", testNamedPort},
 		},
-		// one ingress iwth multiple different references to service
+		// one ingress with multiple different references to service
 		{
 			[]extensions.Ingress{*newTestIngress()},
 			[]string{"8080", "8081", testNamedPort},

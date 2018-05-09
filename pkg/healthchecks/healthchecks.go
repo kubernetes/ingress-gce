@@ -203,7 +203,8 @@ func (h *HealthChecks) Get(port int64, alpha bool) (*HealthCheck, error) {
 	if alpha {
 		hc, err = h.cloud.GetAlphaHealthCheck(name)
 	} else {
-		v1hc, err := h.cloud.GetHealthCheck(name)
+		var v1hc *compute.HealthCheck
+		v1hc, err = h.cloud.GetHealthCheck(name)
 		if err != nil {
 			return nil, err
 		}

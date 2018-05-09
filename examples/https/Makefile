@@ -14,8 +14,8 @@
 
 all:
 
-KEY = /tmp/tls.key
-CERT = /tmp/tls.crt
+KEY=/tmp/tls.key
+CERT=/tmp/tls.crt
 HOST=example.com
 NAME=tls-secret
 

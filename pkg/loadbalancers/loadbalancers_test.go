@@ -347,7 +347,7 @@ func TestMaxCertsUpload(t *testing.T) {
 }
 
 // In case multiple certs for the same subject/hostname are uploaded, the certs will be sent in the same order they were
-// specified, to the targetproxy. The targetproxy will present the first occuring cert for a given hostname to the client.
+// specified, to the targetproxy. The targetproxy will present the first occurring cert for a given hostname to the client.
 // This test verifies this behavior.
 func TestIdenticalHostnameCerts(t *testing.T) {
 	var tlsCerts []*TLSCerts
