@@ -26,31 +26,15 @@ import (
 //       2. All paths for a specific host are unique.
 //       3. Adding paths for a hostname replaces existing for that host.
 type GCEURLMap struct {
-	// DefaultBackendName is the k8s name given to the default backend.
-	DefaultBackendName string
+	DefaultBackend ServicePort
 	// hostRules is a mapping from hostnames to path rules for that host.
 	hostRules map[string][]PathRule
 }
 
 // PathRule encapsulates the information for a single path -> backend mapping.
 type PathRule struct {
-	Path string
-	// BackendName is the k8s name given to the backend.
-	BackendName string
-}
-
-// GCEURLMapFromPrimitive returns a GCEURLMap that is populated from a primitive representation.
-// Note: This is useful for tests.
-func GCEURLMapFromPrimitive(rawUrlMap map[string]map[string]string) *GCEURLMap {
-	urlMap := NewGCEURLMap()
-	for hostname, rules := range rawUrlMap {
-		pathRules := make([]PathRule, 0)
-		for path, backend := range rules {
-			pathRules = append(pathRules, PathRule{Path: path, BackendName: backend})
-		}
-		urlMap.PutPathRulesForHost(hostname, pathRules)
-	}
-	return urlMap
+	Path    string
+	Backend ServicePort
 }
 
 // NewGCEURLMap returns an empty GCEURLMap
@@ -68,7 +52,7 @@ func (g *GCEURLMap) PutPathRulesForHost(hostname string, pathRules []PathRule) {
 	uniquePaths := make(map[string]PathRule)
 	for _, pathRule := range pathRules {
 		if _, ok := uniquePaths[pathRule.Path]; ok {
-			glog.V(4).Infof("Equal paths (%v) for host %v. Using backend %v", pathRule.Path, hostname, pathRule.BackendName)
+			glog.V(4).Infof("Equal paths (%v) for host %v. Using backend %+v", pathRule.Path, hostname, pathRule.Backend)
 		}
 		uniquePaths[pathRule.Path] = pathRule
 	}
@@ -90,6 +74,19 @@ func (g *GCEURLMap) AllRules() map[string][]PathRule {
 	return retVal
 }
 
+// AllServicePorts return a list of all ServicePorts contained in the GCEURLMap.
+func (g *GCEURLMap) AllServicePorts() (svcPorts []ServicePort) {
+	for _, rules := range g.hostRules {
+		for _, rule := range rules {
+			svcPorts = append(svcPorts, rule.Backend)
+		}
+	}
+	if g.DefaultBackend != (ServicePort{}) {
+		svcPorts = append(svcPorts, g.DefaultBackend)
+	}
+	return
+}
+
 // HostExists returns true if the given hostname is specified in the GCEURLMap.
 func (g *GCEURLMap) HostExists(hostname string) bool {
 	_, ok := g.hostRules[hostname]
@@ -97,18 +94,18 @@ func (g *GCEURLMap) HostExists(hostname string) bool {
 }
 
 // PathExists returns true if the given path exists for the given hostname.
-// It will also return the name of the backend associated with that path.
-func (g *GCEURLMap) PathExists(hostname, path string) (bool, string) {
+// It will also return the backend associated with that path.
+func (g *GCEURLMap) PathExists(hostname, path string) (bool, ServicePort) {
 	pathRules, ok := g.hostRules[hostname]
 	if !ok {
-		return ok, ""
+		return ok, ServicePort{}
 	}
 	for _, pathRule := range pathRules {
 		if pathRule.Path == path {
-			return true, pathRule.BackendName
+			return true, pathRule.Backend
 		}
 	}
-	return false, ""
+	return false, ServicePort{}
 }
 
 // String dumps a readable version of the GCEURLMap.
@@ -118,13 +115,9 @@ func (g *GCEURLMap) String() string {
 		msg += fmt.Sprintf("%v\n", host)
 		for _, rule := range rules {
 			msg += fmt.Sprintf("\t%v: ", rule.Path)
-			if rule.BackendName == "" {
-				msg += fmt.Sprintf("No backend\n")
-			} else {
-				msg += fmt.Sprintf("%v\n", rule.BackendName)
-			}
+			msg += fmt.Sprintf("%+v\n", rule.Backend)
 		}
 	}
-	msg += fmt.Sprintf("Default Backend: %v", g.DefaultBackendName)
+	msg += fmt.Sprintf("Default Backend: %+v", g.DefaultBackend)
 	return msg
 }

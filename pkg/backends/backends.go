@@ -29,11 +29,8 @@ import (
 	compute "google.golang.org/api/compute/v1"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/storage"
@@ -128,7 +125,7 @@ func (be *BackendService) GetHealthCheckLink() string {
 }
 
 // ensureProtocol updates the BackendService Protocol with the expected value
-func (be *BackendService) ensureProtocol(p ServicePort) (needsUpdate bool) {
+func (be *BackendService) ensureProtocol(p utils.ServicePort) (needsUpdate bool) {
 	existingProtocol := be.GetProtocol()
 	if existingProtocol == string(p.Protocol) {
 		return false
@@ -183,30 +180,6 @@ var _ BackendPool = (*Backends)(nil)
 
 func portKey(port int64) string {
 	return fmt.Sprintf("%d", port)
-}
-
-// ServicePort for tupling port and protocol
-type ServicePort struct {
-	SvcName       types.NamespacedName
-	SvcPort       intstr.IntOrString
-	NodePort      int64
-	Protocol      annotations.AppProtocol
-	SvcTargetPort string
-	NEGEnabled    bool
-}
-
-// Description returns a string describing the ServicePort.
-func (sp ServicePort) Description() string {
-	if sp.SvcName.String() == "" || sp.SvcPort.String() == "" {
-		return ""
-	}
-	return fmt.Sprintf(`{"kubernetes.io/service-name":"%s","kubernetes.io/service-port":"%s"}`, sp.SvcName.String(), sp.SvcPort.String())
-}
-
-// isAlpha returns true if the ServicePort is using ProtocolHTTP2 - which means
-// we need to use the Alpha API.
-func (sp ServicePort) isAlpha() bool {
-	return sp.Protocol == annotations.ProtocolHTTP2
 }
 
 // NewBackendPool returns a new backend pool.
@@ -285,7 +258,7 @@ func (b *Backends) Get(port int64, isAlpha bool) (*BackendService, error) {
 	return &BackendService{Ga: beGa, Alpha: beAlpha}, nil
 }
 
-func (b *Backends) ensureHealthCheck(sp ServicePort) (string, error) {
+func (b *Backends) ensureHealthCheck(sp utils.ServicePort) (string, error) {
 	hc := b.healthChecker.New(sp.NodePort, sp.Protocol, sp.NEGEnabled)
 	existingLegacyHC, err := b.healthChecker.GetLegacy(sp.NodePort)
 	if err != nil && !utils.IsNotFoundError(err) {
@@ -309,8 +282,8 @@ func (b *Backends) ensureHealthCheck(sp ServicePort) (string, error) {
 	return b.healthChecker.Sync(hc)
 }
 
-func (b *Backends) create(namedPort *compute.NamedPort, hcLink string, sp ServicePort, name string) (*BackendService, error) {
-	isAlpha := sp.isAlpha()
+func (b *Backends) create(namedPort *compute.NamedPort, hcLink string, sp utils.ServicePort, name string) (*BackendService, error) {
+	isAlpha := sp.IsAlpha()
 	if isAlpha {
 		bsAlpha := &computealpha.BackendService{
 			Name:         name,
@@ -344,7 +317,7 @@ func (b *Backends) create(namedPort *compute.NamedPort, hcLink string, sp Servic
 
 // Ensure will update or create Backends for the given ports.
 // Uses the given instance groups if non-nil, else creates instance groups.
-func (b *Backends) Ensure(svcPorts []ServicePort, igs []*compute.InstanceGroup) error {
+func (b *Backends) Ensure(svcPorts []utils.ServicePort, igs []*compute.InstanceGroup) error {
 	glog.V(3).Infof("Sync: backends %v", svcPorts)
 	// Ideally callers should pass the instance groups to prevent recomputing them here.
 	// Igs can be nil in scenarios where we do not have instance groups such as
@@ -372,7 +345,7 @@ func (b *Backends) Ensure(svcPorts []ServicePort, igs []*compute.InstanceGroup) 
 // ensureBackendService will update or create a Backend for the given port.
 // It assumes that the instance groups have been created and required named port has been added.
 // If not, then Ensure should be called instead.
-func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGroup) error {
+func (b *Backends) ensureBackendService(p utils.ServicePort, igs []*compute.InstanceGroup) error {
 	// We must track the ports even if creating the backends failed, because
 	// we might've created health-check for them.
 	be := &BackendService{}
@@ -388,7 +361,7 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 
 	// Verify existence of a backend service for the proper port, but do not specify any backends/igs
 	beName := b.namer.Backend(p.NodePort)
-	be, _ = b.Get(p.NodePort, p.isAlpha())
+	be, _ = b.Get(p.NodePort, p.IsAlpha())
 	if be == nil {
 		namedPort := &compute.NamedPort{
 			Name: b.namer.NamedPort(p.NodePort),
@@ -623,7 +596,7 @@ func getInstanceGroupsToAdd(be *BackendService, igs []*compute.InstanceGroup) []
 }
 
 // GC garbage collects services corresponding to ports in the given list.
-func (b *Backends) GC(svcNodePorts []ServicePort) error {
+func (b *Backends) GC(svcNodePorts []utils.ServicePort) error {
 	knownPorts := sets.NewString()
 	for _, p := range svcNodePorts {
 		knownPorts.Insert(portKey(p.NodePort))
@@ -649,7 +622,7 @@ func (b *Backends) GC(svcNodePorts []ServicePort) error {
 // Shutdown deletes all backends and the default backend.
 // This will fail if one of the backends is being used by another resource.
 func (b *Backends) Shutdown() error {
-	if err := b.GC([]ServicePort{}); err != nil {
+	if err := b.GC([]utils.ServicePort{}); err != nil {
 		return err
 	}
 	return nil
@@ -672,7 +645,7 @@ func (b *Backends) Status(name string) string {
 	return hs.HealthStatus[0].HealthState
 }
 
-func (b *Backends) Link(port ServicePort, zones []string) error {
+func (b *Backends) Link(port utils.ServicePort, zones []string) error {
 	if !port.NEGEnabled {
 		return nil
 	}

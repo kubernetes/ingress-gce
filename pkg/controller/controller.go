@@ -34,7 +34,6 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/firewalls"
@@ -244,8 +243,8 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 		return err
 	}
 
-	// gceNodePorts contains the ServicePorts used by only single-cluster ingress.
-	gceNodePorts := lbc.Translator.ToNodePorts(&gceIngresses)
+	// gceSvcPorts contains the ServicePorts used by only single-cluster ingress.
+	gceSvcPorts := lbc.ToSvcPorts(&gceIngresses)
 	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
 	if err != nil {
 		return err
@@ -259,7 +258,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	if !ingExists {
 		glog.V(2).Infof("Ingress %q no longer exists, triggering GC", key)
 		// GC will find GCE resources that were used for this ingress and delete them.
-		return lbc.CloudClusterManager.GC(lbNames, gceNodePorts)
+		return lbc.CloudClusterManager.GC(lbNames, gceSvcPorts)
 	}
 
 	// Get ingress and DeepCopy for assurance that we don't pollute other goroutines with changes.
@@ -269,7 +268,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	}
 	ing = ing.DeepCopy()
 
-	ensureErr := lbc.ensureIngress(key, ing, nodeNames, gceNodePorts)
+	ensureErr := lbc.ensureIngress(key, ing, nodeNames, gceSvcPorts)
 	if ensureErr != nil {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", fmt.Sprintf("Error during sync: %v", ensureErr.Error()))
 	}
@@ -277,16 +276,17 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	// Garbage collection will occur regardless of an error occurring. If an error occurred,
 	// it could have been caused by quota issues; therefore, garbage collecting now may
 	// free up enough quota for the next sync to pass.
-	if gcErr := lbc.CloudClusterManager.GC(lbNames, gceNodePorts); gcErr != nil {
+	if gcErr := lbc.CloudClusterManager.GC(lbNames, gceSvcPorts); gcErr != nil {
 		retErr = fmt.Errorf("error during sync %v, error during GC %v", retErr, gcErr)
 	}
 
 	return ensureErr
 }
 
-func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ingress, nodeNames []string, gceNodePorts []backends.ServicePort) error {
-	ingNodePorts := lbc.Translator.IngressToNodePorts(ing)
-	igs, err := lbc.CloudClusterManager.EnsureInstanceGroupsAndPorts(nodeNames, ingNodePorts)
+func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ingress, nodeNames []string, gceSvcPorts []utils.ServicePort) error {
+	urlMap := lbc.Translator.TranslateIngress(ing)
+	ingSvcPorts := urlMap.AllServicePorts()
+	igs, err := lbc.CloudClusterManager.EnsureInstanceGroupsAndPorts(nodeNames, ingSvcPorts)
 	if err != nil {
 		return err
 	}
@@ -312,11 +312,11 @@ func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ing
 	}
 
 	// Create the backend services and higher-level LB resources.
-	if err = lbc.CloudClusterManager.EnsureLoadBalancer(lb, ingNodePorts, igs); err != nil {
+	if err = lbc.CloudClusterManager.EnsureLoadBalancer(lb, ingSvcPorts, igs); err != nil {
 		return err
 	}
 
-	negEndpointPorts := lbc.Translator.GatherEndpointPorts(gceNodePorts)
+	negEndpointPorts := lbc.Translator.GatherEndpointPorts(gceSvcPorts)
 	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
 	if err = lbc.CloudClusterManager.EnsureFirewall(nodeNames, negEndpointPorts); err != nil {
 		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
@@ -329,7 +329,7 @@ func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ing
 
 	// If NEG enabled, link the backend services to the NEGs.
 	if lbc.negEnabled {
-		for _, svcPort := range ingNodePorts {
+		for _, svcPort := range ingSvcPorts {
 			if svcPort.NEGEnabled {
 				zones, err := lbc.Translator.ListZones()
 				if err != nil {
@@ -346,11 +346,6 @@ func (lbc *LoadBalancerController) ensureIngress(key string, ing *extensions.Ing
 	l7, err := lbc.CloudClusterManager.l7Pool.Get(key)
 	if err != nil {
 		return fmt.Errorf("unable to get loadbalancer: %v", err)
-	}
-
-	urlMap, err := lbc.Translator.ToURLMap(ing)
-	if err != nil {
-		return fmt.Errorf("convert to URL Map error %v", err)
 	}
 
 	if err := l7.UpdateUrlMap(urlMap); err != nil {
@@ -443,4 +438,15 @@ func updateAnnotations(client kubernetes.Interface, name, namespace string, anno
 		}
 	}
 	return nil
+}
+
+// ToSvcPorts is a helper method over translator.TranslateIngress to process a list of ingresses.
+// Note: This method is used for GC.
+func (lbc *LoadBalancerController) ToSvcPorts(ings *extensions.IngressList) []utils.ServicePort {
+	var knownPorts []utils.ServicePort
+	for _, ing := range ings.Items {
+		urlMap := lbc.Translator.TranslateIngress(&ing)
+		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
+	}
+	return knownPorts
 }

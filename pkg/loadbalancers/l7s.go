@@ -37,7 +37,7 @@ type L7s struct {
 	// TODO: Remove this field and always ask the BackendPool using the NodePort.
 	glbcDefaultBackend     *compute.BackendService
 	defaultBackendPool     backends.BackendPool
-	defaultBackendNodePort backends.ServicePort
+	defaultBackendNodePort utils.ServicePort
 	namer                  *utils.Namer
 }
 
@@ -62,7 +62,7 @@ func (l *L7s) Namer() *utils.Namer {
 func NewLoadBalancerPool(
 	cloud LoadBalancers,
 	defaultBackendPool backends.BackendPool,
-	defaultBackendNodePort backends.ServicePort, namer *utils.Namer) LoadBalancerPool {
+	defaultBackendNodePort utils.ServicePort, namer *utils.Namer) LoadBalancerPool {
 	return &L7s{cloud, storage.NewInMemoryPool(), nil, defaultBackendPool, defaultBackendNodePort, namer}
 }
 
@@ -146,7 +146,7 @@ func (l *L7s) Sync(lbs []*L7RuntimeInfo) error {
 		// Lazily create a default backend so we don't tax users who don't care
 		// about Ingress by consuming 1 of their 3 GCE BackendServices. This
 		// BackendService is GC'd when there are no more Ingresses.
-		if err := l.defaultBackendPool.Ensure([]backends.ServicePort{l.defaultBackendNodePort}, nil); err != nil {
+		if err := l.defaultBackendPool.Ensure([]utils.ServicePort{l.defaultBackendNodePort}, nil); err != nil {
 			return err
 		}
 		defaultBackend, err := l.defaultBackendPool.Get(l.defaultBackendNodePort.NodePort, false)

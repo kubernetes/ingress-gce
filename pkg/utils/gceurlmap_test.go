@@ -25,8 +25,8 @@ func TestGCEURLMap(t *testing.T) {
 
 	// Add some path rules for a host.
 	rules := []PathRule{
-		PathRule{Path: "/test1", BackendName: "test1"},
-		PathRule{Path: "/test2", BackendName: "test2"},
+		PathRule{Path: "/test1", Backend: ServicePort{NodePort: 30000}},
+		PathRule{Path: "/test2", Backend: ServicePort{NodePort: 30001}},
 	}
 	urlMap.PutPathRulesForHost("example.com", rules)
 	if !urlMap.HostExists("example.com") {
@@ -41,7 +41,7 @@ func TestGCEURLMap(t *testing.T) {
 
 	// Add some path rules for the same host. Ensure this results in an overwrite.
 	rules = []PathRule{
-		PathRule{Path: "/test3", BackendName: "test3"},
+		PathRule{Path: "/test3", Backend: ServicePort{NodePort: 30002}},
 	}
 	urlMap.PutPathRulesForHost("example.com", rules)
 	if ok, _ := urlMap.PathExists("example.com", "/test1"); ok {
@@ -56,13 +56,13 @@ func TestGCEURLMap(t *testing.T) {
 
 	// Add some path rules with equal paths. Ensure the last one is taken.
 	rules = []PathRule{
-		PathRule{Path: "/test4", BackendName: "test4"},
-		PathRule{Path: "/test5", BackendName: "test5"},
-		PathRule{Path: "/test4", BackendName: "test4-a"},
+		PathRule{Path: "/test4", Backend: ServicePort{NodePort: 30003}},
+		PathRule{Path: "/test5", Backend: ServicePort{NodePort: 30004}},
+		PathRule{Path: "/test4", Backend: ServicePort{NodePort: 30005}},
 	}
 	urlMap.PutPathRulesForHost("example.com", rules)
 	_, backend := urlMap.PathExists("example.com", "/test4")
-	if backend != "test4-a" {
-		t.Errorf("Expected path /test4 for hostname example.com to point to backend test4-a in %+v", urlMap)
+	if backend.NodePort != 30005 {
+		t.Errorf("Expected path /test4 for hostname example.com to point to backend with NodePort 30005 in %+v", urlMap)
 	}
 }

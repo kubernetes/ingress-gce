@@ -181,16 +181,16 @@ func (f *FakeBackendServices) GetGlobalBackendServiceHealth(name, instanceGroupL
 
 // FakeProbeProvider implements the probeProvider interface for tests.
 type FakeProbeProvider struct {
-	probes map[ServicePort]*api_v1.Probe
+	probes map[utils.ServicePort]*api_v1.Probe
 }
 
 // NewFakeProbeProvider returns a struct which satisfies probeProvider interface
-func NewFakeProbeProvider(probes map[ServicePort]*api_v1.Probe) *FakeProbeProvider {
+func NewFakeProbeProvider(probes map[utils.ServicePort]*api_v1.Probe) *FakeProbeProvider {
 	return &FakeProbeProvider{probes}
 }
 
 // GetProbe returns the probe for a given nodePort
-func (pp *FakeProbeProvider) GetProbe(port ServicePort) (*api_v1.Probe, error) {
+func (pp *FakeProbeProvider) GetProbe(port utils.ServicePort) (*api_v1.Probe, error) {
 	if probe, exists := pp.probes[port]; exists && probe.HTTPGet != nil {
 		return probe, nil
 	}

@@ -39,7 +39,7 @@ const (
 )
 
 var (
-	testDefaultBeNodePort = backends.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
+	testDefaultBeNodePort = utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
 )
 
 func newFakeLoadBalancerPool(f LoadBalancers, t *testing.T, namer *utils.Namer) LoadBalancerPool {
@@ -637,21 +637,17 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 }
 
 func TestUpdateUrlMap(t *testing.T) {
-	um1 := utils.GCEURLMapFromPrimitive(utils.PrimitivePathMap{
-		"bar.example.com": {
-			"/bar2": "bar2svc",
-		},
+	um1 := utils.NewGCEURLMap()
+	um2 := utils.NewGCEURLMap()
+
+	um1.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar2", Backend: utils.ServicePort{NodePort: 30000}}})
+
+	um2.PutPathRulesForHost("foo.example.com", []utils.PathRule{
+		utils.PathRule{Path: "/foo1", Backend: utils.ServicePort{NodePort: 30001}},
+		utils.PathRule{Path: "/foo2", Backend: utils.ServicePort{NodePort: 30002}},
 	})
-	um2 := utils.GCEURLMapFromPrimitive(utils.PrimitivePathMap{
-		"foo.example.com": {
-			"/foo1": "foo1svc",
-			"/foo2": "foo2svc",
-		},
-		"bar.example.com": {
-			"/bar1": "bar1svc",
-		},
-	})
-	um2.DefaultBackendName = "default"
+	um2.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar1", Backend: utils.ServicePort{NodePort: 30003}}})
+	um2.DefaultBackend = utils.ServicePort{NodePort: 30004}
 
 	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true}
@@ -674,26 +670,22 @@ func TestUpdateUrlMap(t *testing.T) {
 }
 
 func TestUpdateUrlMapNoChanges(t *testing.T) {
-	um1 := utils.GCEURLMapFromPrimitive(utils.PrimitivePathMap{
-		"foo.example.com": {
-			"/foo1": "foo1svc",
-			"/foo2": "foo2svc",
-		},
-		"bar.example.com": {
-			"/bar1": "bar1svc",
-		},
+	um1 := utils.NewGCEURLMap()
+	um2 := utils.NewGCEURLMap()
+
+	um1.PutPathRulesForHost("foo.example.com", []utils.PathRule{
+		utils.PathRule{Path: "/foo1", Backend: utils.ServicePort{NodePort: 30000}},
+		utils.PathRule{Path: "/foo2", Backend: utils.ServicePort{NodePort: 30001}},
 	})
-	um1.DefaultBackendName = "default"
-	um2 := utils.GCEURLMapFromPrimitive(utils.PrimitivePathMap{
-		"foo.example.com": {
-			"/foo1": "foo1svc",
-			"/foo2": "foo2svc",
-		},
-		"bar.example.com": {
-			"/bar1": "bar1svc",
-		},
+	um1.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar1", Backend: utils.ServicePort{NodePort: 30002}}})
+	um1.DefaultBackend = utils.ServicePort{NodePort: 30003}
+
+	um2.PutPathRulesForHost("foo.example.com", []utils.PathRule{
+		utils.PathRule{Path: "/foo1", Backend: utils.ServicePort{NodePort: 30000}},
+		utils.PathRule{Path: "/foo2", Backend: utils.ServicePort{NodePort: 30001}},
 	})
-	um2.DefaultBackendName = "default"
+	um2.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar1", Backend: utils.ServicePort{NodePort: 30002}}})
+	um2.DefaultBackend = utils.ServicePort{NodePort: 30003}
 
 	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true}
