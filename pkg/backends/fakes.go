@@ -125,6 +125,12 @@ func (f *FakeBackendServices) DeleteGlobalBackendService(name string) error {
 	if err != nil {
 		return err
 	}
+
+	if f.errFunc != nil {
+		if err := f.errFunc(utils.Delete, svc.(*compute.BackendService)); err != nil {
+			return err
+		}
+	}
 	return f.backendServices.Delete(svc)
 }
 
