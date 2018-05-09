@@ -96,9 +96,9 @@ func CompareLinks(l1, l2 string) bool {
 	return l1 == l2 && l1 != ""
 }
 
-// FakeIngressRuleValueMap is a convenience type used by multiple submodules
+// PrimitivePathMap is a convenience type used by multiple submodules
 // that share the same testing methods.
-type FakeIngressRuleValueMap map[string]string
+type PrimitivePathMap map[string]map[string]string
 
 // trimFieldsEvenly trims the fields evenly and keeps the total length
 // <= max. Truncation is spread in ratio with their original length,

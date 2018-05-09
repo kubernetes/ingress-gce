@@ -18,6 +18,7 @@ package backends
 
 import (
 	"encoding/json"
+
 	"github.com/golang/glog"
 
 	computealpha "google.golang.org/api/compute/v0.alpha"
@@ -102,7 +103,9 @@ func (f *FakeBackendServices) CreateGlobalBackendService(be *compute.BackendServ
 		}
 	}
 	f.calls = append(f.calls, utils.Create)
-	be.SelfLink = be.Name
+	// This is a temporary hack to make a test work. Ideally in all of
+	// our fakes, we should be setting the self link to an actual path.
+	be.SelfLink = utils.BackendServiceRelativeResourcePath(be.Name)
 	return f.backendServices.Update(be)
 }
 

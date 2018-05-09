@@ -358,24 +358,19 @@ func (f *FakeLoadBalancers) SetSslCertificateForTargetHttpsProxy(proxy *compute.
 
 // UrlMap fakes
 
-// CheckURLMap checks the URL map.
-func (f *FakeLoadBalancers) CheckURLMap(l7 *L7, expectedMap map[string]utils.FakeIngressRuleValueMap) error {
+// CheckURLMap checks the compute.UrlMap maintained by the load balancer.
+// We check against our internal representation.
+func (f *FakeLoadBalancers) CheckURLMap(l7 *L7, expectedUrlMap *utils.GCEURLMap) error {
 	f.calls = append(f.calls, "CheckURLMap")
 	um, err := f.GetUrlMap(l7.UrlMap().Name)
 	if err != nil || um == nil {
 		return fmt.Errorf("f.GetUrlMap(%q) = %v, %v; want _, nil", l7.UrlMap().Name, um, err)
 	}
-	// Check the default backend
-	var d string
-	if h, ok := expectedMap[utils.DefaultBackendKey]; ok {
-		if d, ok = h[utils.DefaultBackendKey]; ok {
-			delete(h, utils.DefaultBackendKey)
-		}
-		delete(expectedMap, utils.DefaultBackendKey)
-	}
+	defaultBackendName := expectedUrlMap.DefaultBackendName
+	defaultBackendLink := utils.BackendServiceRelativeResourcePath(expectedUrlMap.DefaultBackendName)
 	// The urlmap should have a default backend, and each path matcher.
-	if d != "" && l7.UrlMap().DefaultService != d {
-		return fmt.Errorf("default backend = %v, want %v", l7.UrlMap().DefaultService, d)
+	if defaultBackendName != "" && l7.UrlMap().DefaultService != defaultBackendLink {
+		return fmt.Errorf("default backend = %v, want %v", l7.UrlMap().DefaultService, defaultBackendLink)
 	}
 
 	for _, matcher := range l7.UrlMap().PathMatchers {
@@ -386,8 +381,8 @@ func (f *FakeLoadBalancers) CheckURLMap(l7 *L7, expectedMap map[string]utils.Fak
 				if len(hostRule.Hosts) != 1 {
 					return fmt.Errorf("unexpected hosts in hostrules %+v", hostRule)
 				}
-				if d != "" && matcher.DefaultService != d {
-					return fmt.Errorf("expected default backend %v found %v", d, matcher.DefaultService)
+				if defaultBackendLink != "" && matcher.DefaultService != defaultBackendLink {
+					return fmt.Errorf("expected default backend %v found %v", defaultBackendLink, matcher.DefaultService)
 				}
 				hostname = hostRule.Hosts[0]
 				break
@@ -399,21 +394,14 @@ func (f *FakeLoadBalancers) CheckURLMap(l7 *L7, expectedMap map[string]utils.Fak
 				return fmt.Errorf("Unexpected rule in pathrules %+v", rule)
 			}
 			pathRule := rule.Paths[0]
-			if hostMap, ok := expectedMap[hostname]; !ok {
-				return fmt.Errorf("Expected map for host %v: %v", hostname, hostMap)
-			} else if svc, ok := expectedMap[hostname][pathRule]; !ok {
-				return fmt.Errorf("Expected rule %v in host map", pathRule)
-			} else if svc != rule.Service {
+			if !expectedUrlMap.HostExists(hostname) {
+				return fmt.Errorf("Expected path rules for host %v", hostname)
+			} else if ok, svc := expectedUrlMap.PathExists(hostname, pathRule); !ok {
+				return fmt.Errorf("Expected rule %v for host %v", pathRule, hostname)
+			} else if utils.BackendServiceRelativeResourcePath(svc) != rule.Service {
 				return fmt.Errorf("Expected service %v found %v", svc, rule.Service)
 			}
-			delete(expectedMap[hostname], pathRule)
-			if len(expectedMap[hostname]) == 0 {
-				delete(expectedMap, hostname)
-			}
 		}
-	}
-	if len(expectedMap) != 0 {
-		return fmt.Errorf("Untranslated entries %+v", expectedMap)
 	}
 	return nil
 }

@@ -21,5 +21,48 @@ import (
 )
 
 func TestGCEURLMap(t *testing.T) {
-	// TODO
+	urlMap := NewGCEURLMap()
+
+	// Add some path rules for a host.
+	rules := []PathRule{
+		PathRule{Path: "/test1", BackendName: "test1"},
+		PathRule{Path: "/test2", BackendName: "test2"},
+	}
+	urlMap.PutPathRulesForHost("example.com", rules)
+	if !urlMap.HostExists("example.com") {
+		t.Errorf("Expected hostname example.com to exist in %+v", urlMap)
+	}
+	if ok, _ := urlMap.PathExists("example.com", "/test1"); !ok {
+		t.Errorf("Expected path /test1 for hostname example.com to exist in %+v", urlMap)
+	}
+	if ok, _ := urlMap.PathExists("example.com", "/test2"); !ok {
+		t.Errorf("Expected path /test2 for hostname example.com to exist in %+v", urlMap)
+	}
+
+	// Add some path rules for the same host. Ensure this results in an overwrite.
+	rules = []PathRule{
+		PathRule{Path: "/test3", BackendName: "test3"},
+	}
+	urlMap.PutPathRulesForHost("example.com", rules)
+	if ok, _ := urlMap.PathExists("example.com", "/test1"); ok {
+		t.Errorf("Expected path /test1 for hostname example.com not to exist in %+v", urlMap)
+	}
+	if ok, _ := urlMap.PathExists("example.com", "/test2"); ok {
+		t.Errorf("Expected path /test2 for hostname example.com not to exist in %+v", urlMap)
+	}
+	if ok, _ := urlMap.PathExists("example.com", "/test3"); !ok {
+		t.Errorf("Expected path /test3 for hostname example.com to exist in %+v", urlMap)
+	}
+
+	// Add some path rules with equal paths. Ensure the last one is taken.
+	rules = []PathRule{
+		PathRule{Path: "/test4", BackendName: "test4"},
+		PathRule{Path: "/test5", BackendName: "test5"},
+		PathRule{Path: "/test4", BackendName: "test4-a"},
+	}
+	urlMap.PutPathRulesForHost("example.com", rules)
+	_, backend := urlMap.PathExists("example.com", "/test4")
+	if backend != "test4-a" {
+		t.Errorf("Expected path /test4 for hostname example.com to point to backend test4-a in %+v", urlMap)
+	}
 }

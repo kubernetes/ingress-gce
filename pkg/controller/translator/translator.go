@@ -71,15 +71,14 @@ type GCE struct {
 	negEnabled     bool
 }
 
-// ToURLMap converts an ingress to a map of subdomain: url-regex: gce backend.
-func (t *GCE) ToURLMap(ing *extensions.Ingress) (utils.GCEURLMap, error) {
-	hostPathBackend := utils.GCEURLMap{}
+// ToURLMap converts an ingress to our internal UrlMap representation.
+func (t *GCE) ToURLMap(ing *extensions.Ingress) (*utils.GCEURLMap, error) {
+	urlMap := utils.NewGCEURLMap()
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {
-			glog.Errorf("Ignoring non http Ingress rule")
 			continue
 		}
-		pathToBackend := map[string]string{}
+		pathRules := []utils.PathRule{}
 		for _, p := range rule.HTTP.Paths {
 			backendName, err := t.toGCEBackendName(&p.Backend, ing.Namespace)
 			if err != nil {
@@ -94,7 +93,7 @@ func (t *GCE) ToURLMap(ing *extensions.Ingress) (utils.GCEURLMap, error) {
 				// If a service doesn't have a backend, there's nothing the user
 				// can do to correct this (the admin might've limited quota).
 				// So keep requeuing the l7 till all backends exist.
-				return utils.GCEURLMap{}, err
+				return utils.NewGCEURLMap(), err
 			}
 			// The Ingress spec defines empty path as catch-all, so if a user
 			// asks for a single host and multiple empty paths, all traffic is
@@ -103,14 +102,14 @@ func (t *GCE) ToURLMap(ing *extensions.Ingress) (utils.GCEURLMap, error) {
 			if path == "" {
 				path = loadbalancers.DefaultPath
 			}
-			pathToBackend[path] = backendName
+
+			pathRules = append(pathRules, utils.PathRule{Path: path, BackendName: backendName})
 		}
-		// If multiple hostless rule sets are specified, last one wins
 		host := rule.Host
 		if host == "" {
 			host = loadbalancers.DefaultHost
 		}
-		hostPathBackend[host] = pathToBackend
+		urlMap.PutPathRulesForHost(host, pathRules)
 	}
 	var defaultBackendName string
 	if ing.Spec.Backend != nil {
@@ -131,8 +130,8 @@ func (t *GCE) ToURLMap(ing *extensions.Ingress) (utils.GCEURLMap, error) {
 	} else {
 		t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeNormal, "Service", "no user specified default backend, using system default")
 	}
-	hostPathBackend.PutDefaultBackendName(defaultBackendName)
-	return hostPathBackend, nil
+	urlMap.DefaultBackendName = defaultBackendName
+	return urlMap, nil
 }
 
 func (t *GCE) toGCEBackendName(be *extensions.IngressBackend, ns string) (string, error) {

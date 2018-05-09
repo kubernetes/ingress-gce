@@ -70,13 +70,6 @@ const (
 	// avoid terminating on an invalid character ('-').
 	nameLenLimit = 62
 
-	// DefaultBackendKey is the key used to transmit the defaultBackend
-	// through a urlmap. It's not a valid subdomain, and it is a catch
-	// all path.  TODO: Find a better way to transmit this, once we've
-	// decided on default backend semantics (i.e do we want a default
-	// per host, per lb etc).
-	DefaultBackendKey = "DefaultBackend"
-
 	// maxNEGDescriptiveLabel is the max length for namespace, name and
 	// port for neg name.  63 - 5 (k8s and naming schema version prefix)
 	// - 16 (cluster id) - 8 (suffix hash) - 4 (hyphen connector) = 30
