@@ -19,7 +19,6 @@ package backends
 import (
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -174,10 +173,6 @@ func (be *BackendService) ensureDescription(description string) (needsUpdate boo
 // Backends is a BackendPool.
 var _ BackendPool = (*Backends)(nil)
 
-func portKey(port int64) string {
-	return fmt.Sprintf("%d", port)
-}
-
 // NewBackendPool returns a new backend pool.
 // - cloud: implements BackendServices and syncs backends with a cloud provider
 // - healthChecker: is capable of producing health checks for backends.
@@ -209,11 +204,7 @@ func NewBackendPool(
 		if !namer.NameBelongsToCluster(bs.Name) {
 			return "", fmt.Errorf("unrecognized name %v", bs.Name)
 		}
-		port, err := namer.BackendPort(bs.Name)
-		if err != nil {
-			return "", err
-		}
-		return port, nil
+		return bs.Name, nil
 	}
 	backendPool.snapshotter = storage.NewCloudListingPool("backends", keyFunc, backendPool, 30*time.Second)
 	return backendPool
@@ -225,8 +216,8 @@ func (b *Backends) Init(pp ProbeProvider) {
 }
 
 // Get returns a single backend.
-func (b *Backends) Get(port int64, isAlpha bool) (*BackendService, error) {
-	beGa, err := b.cloud.GetGlobalBackendService(b.namer.Backend(port))
+func (b *Backends) Get(name string, isAlpha bool) (*BackendService, error) {
+	beGa, err := b.cloud.GetGlobalBackendService(name)
 	if err != nil {
 		return nil, err
 	}
@@ -238,18 +229,22 @@ func (b *Backends) Get(port int64, isAlpha bool) (*BackendService, error) {
 	// is no longer alpha whitelisted, this will always return an isForbidden err
 	// until the user can access the alpha APIs again.
 	if beGa.Protocol == "" || isAlpha {
-		beAlpha, err = b.cloud.GetAlphaGlobalBackendService(b.namer.Backend(port))
+		beAlpha, err = b.cloud.GetAlphaGlobalBackendService(beGa.Name)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	b.snapshotter.Add(portKey(port), beGa)
+	b.snapshotter.Add(name, beGa)
 	return &BackendService{Ga: beGa, Alpha: beAlpha}, nil
 }
 
 func (b *Backends) ensureHealthCheck(sp utils.ServicePort) (string, error) {
-	hc := b.healthChecker.New(sp.NodePort, sp.Protocol, sp.NEGEnabled)
+	name := b.namer.Backend(sp.NodePort)
+	if sp.NEGEnabled {
+		name = b.namer.BackendNEG(sp.SvcName.Namespace, sp.SvcName.Name, sp.SvcTargetPort)
+	}
+	hc := b.healthChecker.New(name, sp.NodePort, sp.Protocol, sp.NEGEnabled)
 	existingLegacyHC, err := b.healthChecker.GetLegacy(sp.NodePort)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return "", err
@@ -302,7 +297,7 @@ func (b *Backends) create(namedPort *compute.NamedPort, hcLink string, sp utils.
 		}
 	}
 
-	return b.Get(namedPort.Port, isAlpha)
+	return b.Get(name, isAlpha)
 }
 
 // Ensure will update or create Backends for the given ports.
@@ -325,8 +320,14 @@ func (b *Backends) ensureBackendService(p utils.ServicePort, igs []*compute.Inst
 	// We must track the ports even if creating the backends failed, because
 	// we might've created health-check for them.
 	be := &BackendService{}
-	defer func() { b.snapshotter.Add(portKey(p.NodePort), be) }()
+	beName := b.namer.Backend(p.NodePort)
+	if p.NEGEnabled {
+		beName = b.namer.BackendNEG(p.SvcName.Namespace, p.SvcName.Name, p.SvcTargetPort)
+	}
 
+	defer func() {
+		b.snapshotter.Add(beName, be)
+	}()
 	var err error
 
 	// Ensure health check for backend service exists
@@ -335,15 +336,15 @@ func (b *Backends) ensureBackendService(p utils.ServicePort, igs []*compute.Inst
 		return err
 	}
 
-	// Verify existence of a backend service for the proper port, but do not specify any backends/igs
-	beName := b.namer.Backend(p.NodePort)
-	be, _ = b.Get(p.NodePort, p.IsAlpha())
+	// Verify existance of a backend service for the proper port, but do not specify any backends/igs
+	be, _ = b.Get(beName, p.IsAlpha())
 	if be == nil {
 		namedPort := &compute.NamedPort{
 			Name: b.namer.NamedPort(p.NodePort),
 			Port: p.NodePort,
 		}
-		glog.V(2).Infof("Creating backend service for port %v named port %v", p.NodePort, namedPort)
+
+		glog.V(2).Infof("Creating backend service for port %v named %v", p.NodePort, beName)
 		be, err = b.create(namedPort, hcLink, p, beName)
 		if err != nil {
 			return err
@@ -454,23 +455,24 @@ func (b *Backends) update(be *BackendService) error {
 }
 
 // Delete deletes the Backend for the given port.
-func (b *Backends) Delete(port int64) (err error) {
-	name := b.namer.Backend(port)
-	glog.V(2).Infof("Deleting backend service %v", name)
+func (b *Backends) Delete(name string) (err error) {
 	defer func() {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			err = nil
 		}
 		if err == nil {
-			b.snapshotter.Delete(portKey(port))
+			b.snapshotter.Delete(name)
 		}
 	}()
+
+	glog.V(2).Infof("Deleting backend service %v", name)
+
 	// Try deleting health checks even if a backend is not found.
 	if err = b.cloud.DeleteGlobalBackendService(name); err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		return err
 	}
 
-	return b.healthChecker.Delete(port)
+	return b.healthChecker.Delete(name)
 }
 
 // List lists all backends.
@@ -575,20 +577,20 @@ func getInstanceGroupsToAdd(be *BackendService, igs []*compute.InstanceGroup) []
 func (b *Backends) GC(svcNodePorts []utils.ServicePort) error {
 	knownPorts := sets.NewString()
 	for _, p := range svcNodePorts {
-		knownPorts.Insert(portKey(p.NodePort))
+		name := b.namer.Backend(p.NodePort)
+		if p.NEGEnabled {
+			name = b.namer.BackendNEG(p.SvcName.Namespace, p.SvcName.Name, p.SvcTargetPort)
+		}
+		knownPorts.Insert(name)
 	}
 	pool := b.snapshotter.Snapshot()
 	for port := range pool {
-		p, err := strconv.ParseUint(port, 10, 16)
-		if err != nil {
-			return err
-		}
-		nodePort := int64(p)
-		if knownPorts.Has(portKey(nodePort)) {
+		if knownPorts.Has(port) {
 			continue
 		}
-		glog.V(3).Infof("GCing backend for port %v", p)
-		if err := b.Delete(nodePort); err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+
+		glog.V(3).Infof("GCing backendService for port %s", port)
+		if err := b.Delete(port); err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			return err
 		}
 	}
@@ -636,7 +638,7 @@ func (b *Backends) Link(port utils.ServicePort, zones []string) error {
 		negs = append(negs, neg)
 	}
 
-	backendService, err := b.cloud.GetAlphaGlobalBackendService(b.namer.Backend(port.NodePort))
+	backendService, err := b.cloud.GetAlphaGlobalBackendService(negName)
 	if err != nil {
 		return err
 	}

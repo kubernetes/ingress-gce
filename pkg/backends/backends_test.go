@@ -124,7 +124,7 @@ func TestBackendPoolAdd(t *testing.T) {
 
 			// Check the created healthcheck is the correct protocol
 			isAlpha := sp.Protocol == annotations.ProtocolHTTP2
-			hc, err := pool.healthChecker.Get(sp.NodePort, isAlpha)
+			hc, err := pool.healthChecker.Get(beName, isAlpha)
 			if err != nil {
 				t.Fatalf("Unexpected err when querying fake healthchecker: %v", err)
 			}
@@ -175,7 +175,7 @@ func TestHealthCheckMigration(t *testing.T) {
 	pool.Ensure([]utils.ServicePort{p}, nil)
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(p.NodePort, p.IsAlpha())
+	hc, _ := pool.healthChecker.Get(defaultNamer.Backend(p.NodePort), p.IsAlpha())
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -209,7 +209,7 @@ func TestBackendPoolUpdateHTTPS(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(p.NodePort, p.IsAlpha())
+	hc, _ := pool.healthChecker.Get(beName, p.IsAlpha())
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -229,7 +229,7 @@ func TestBackendPoolUpdateHTTPS(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ = pool.healthChecker.Get(p.NodePort, p.IsAlpha())
+	hc, _ = pool.healthChecker.Get(beName, p.IsAlpha())
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -254,7 +254,7 @@ func TestBackendPoolUpdateHTTP2(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(p.NodePort, p.IsAlpha())
+	hc, _ := pool.healthChecker.Get(beName, p.IsAlpha())
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -274,7 +274,7 @@ func TestBackendPoolUpdateHTTP2(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ = pool.healthChecker.Get(p.NodePort, true)
+	hc, _ = pool.healthChecker.Get(beName, true)
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -361,31 +361,31 @@ func TestBackendPoolSync(t *testing.T) {
 	f := NewFakeBackendServices(noOpErrFunc, false)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, true)
-	pool.Ensure([]utils.ServicePort{{NodePort: 81}}, nil)
-	pool.Ensure([]utils.ServicePort{{NodePort: 90}}, nil)
+	pool.Ensure([]utils.ServicePort{svcNodePorts[0]}, nil)
+	pool.Ensure([]utils.ServicePort{svcNodePorts[1]}, nil)
 	if err := pool.Ensure(svcNodePorts, nil); err != nil {
 		t.Errorf("Expected backend pool to add node ports, err: %v", err)
 	}
 	if err := pool.GC(svcNodePorts); err != nil {
 		t.Errorf("Expected backend pool to GC, err: %v", err)
 	}
-	if _, err := pool.Get(90, false); err == nil {
+	if _, err := pool.Get(defaultNamer.Backend(90), false); err == nil {
 		t.Fatalf("Did not expect to find port 90")
 	}
 	for _, port := range svcNodePorts {
-		if _, err := pool.Get(port.NodePort, false); err != nil {
+		if _, err := pool.Get(defaultNamer.Backend(port.NodePort), false); err != nil {
 			t.Fatalf("Expected to find port %v", port)
 		}
 	}
 
-	svcNodePorts = []utils.ServicePort{{NodePort: 81}}
-	deletedPorts := []utils.ServicePort{{NodePort: 82}, {NodePort: 83}}
+	deletedPorts := []utils.ServicePort{svcNodePorts[1], svcNodePorts[2]}
+	svcNodePorts = []utils.ServicePort{svcNodePorts[0]}
 	if err := pool.GC(svcNodePorts); err != nil {
 		t.Fatalf("Expected backend pool to GC, err: %v", err)
 	}
 
 	for _, port := range deletedPorts {
-		if _, err := pool.Get(port.NodePort, false); err == nil {
+		if _, err := pool.Get(defaultNamer.Backend(port.NodePort), false); err == nil {
 			t.Fatalf("Pool contains %v after deletion", port)
 		}
 	}
@@ -424,6 +424,174 @@ func TestBackendPoolSync(t *testing.T) {
 	currSet.Delete(knownBe)
 	if !currSet.Equal(unrelatedBackends) {
 		t.Fatalf("Some unrelated backends were deleted. Expected %+v, got %+v", unrelatedBackends, currSet)
+	}
+}
+
+func TestBackendPoolSyncNEG(t *testing.T) {
+	// Convert a BackendPool from non-NEG to NEG.
+	// Expect the old BackendServices to be GC'ed
+	svcPort := ServicePort{NodePort: 81, Protocol: annotations.ProtocolHTTP}
+	f := NewFakeBackendServices(noOpErrFunc, true)
+	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
+	pool, _ := newTestJig(f, fakeIGs, true)
+	if err := pool.Ensure([]ServicePort{svcPort}, nil); err != nil {
+		t.Errorf("Expected backend pool to add node ports, err: %v", err)
+	}
+
+	nodePortName := defaultNamer.Backend(svcPort.NodePort)
+	_, err := f.GetGlobalBackendService(nodePortName)
+	if err != nil {
+		t.Fatalf("Failed to get backend service: %v", err)
+	}
+
+	// Convert to NEG
+	svcPort.NEGEnabled = true
+	if err := pool.Ensure([]ServicePort{svcPort}, nil); err != nil {
+		t.Errorf("Expected backend pool to add node ports, err: %v", err)
+	}
+
+	negName := defaultNamer.BackendNEG(svcPort.SvcName.Namespace, svcPort.SvcName.Name, svcPort.SvcTargetPort)
+	_, err = f.GetGlobalBackendService(negName)
+	if err != nil {
+		t.Fatalf("Failed to get backend service with name %v: %v", negName, err)
+	}
+	// GC should garbage collect the Backend on the old naming schema
+	pool.GC([]ServicePort{svcPort})
+
+	bs, err := f.GetGlobalBackendService(nodePortName)
+	if err == nil {
+		t.Fatalf("Expected not to get BackendService with name %v, got: %+v", nodePortName, bs)
+	}
+
+	// Convert back to non-NEG
+	svcPort.NEGEnabled = false
+	if err := pool.Ensure([]ServicePort{svcPort}, nil); err != nil {
+		t.Errorf("Expected backend pool to add node ports, err: %v", err)
+	}
+
+	pool.GC([]ServicePort{svcPort})
+
+	_, err = f.GetGlobalBackendService(nodePortName)
+	if err != nil {
+		t.Fatalf("Failed to get backend service with name %v: %v", nodePortName, err)
+	}
+}
+
+func TestBackendPoolSyncQuota(t *testing.T) {
+	testCases := []struct {
+		oldPorts      []ServicePort
+		newPorts      []ServicePort
+		expectSyncErr bool
+		desc          string
+	}{
+		{
+			[]ServicePort{{NodePort: 8080}},
+			[]ServicePort{{NodePort: 8080}},
+			false,
+			"Same port",
+		},
+		{
+			[]ServicePort{{NodePort: 8080}},
+			[]ServicePort{{NodePort: 9000}},
+			true,
+			"Different port",
+		},
+		{
+			[]ServicePort{{NodePort: 8080}},
+			[]ServicePort{{NodePort: 8080}, {NodePort: 443}},
+			false,
+			"Same port plus additional port",
+		},
+		{
+			[]ServicePort{{NodePort: 8080}},
+			[]ServicePort{{NodePort: 3000}, {NodePort: 4000}, {NodePort: 5000}},
+			true,
+			"New set of ports not including the same port",
+		},
+		// Need to fill the SvcTargetPort field on ServicePort to make sure
+		// NEG Backend naming is unique
+		{
+			[]ServicePort{{NodePort: 8080}, {NodePort: 443}},
+			[]ServicePort{
+				{NodePort: 8080, SvcTargetPort: "testport8080", NEGEnabled: true},
+				{NodePort: 443, SvcTargetPort: "testport443", NEGEnabled: true},
+			},
+			true,
+			"Same port converted to NEG, plus one new NEG port",
+		},
+		{
+			[]ServicePort{
+				{NodePort: 80, SvcTargetPort: "testport80", NEGEnabled: true},
+				{NodePort: 90, SvcTargetPort: "testport90"},
+			},
+			[]ServicePort{
+				{NodePort: 80, SvcTargetPort: "testport80"},
+				{NodePort: 90, SvcTargetPort: "testport90", NEGEnabled: true},
+			},
+			true,
+			"Mixed NEG and non-NEG ports",
+		},
+		{
+			[]ServicePort{
+				{NodePort: 100, SvcTargetPort: "testport100", NEGEnabled: true},
+				{NodePort: 110, SvcTargetPort: "testport110", NEGEnabled: true},
+				{NodePort: 120, SvcTargetPort: "testport120", NEGEnabled: true},
+			},
+			[]ServicePort{
+				{NodePort: 100, SvcTargetPort: "testport100"},
+				{NodePort: 110, SvcTargetPort: "testport110"},
+				{NodePort: 120, SvcTargetPort: "testport120"},
+			},
+			true,
+			"Same ports as NEG, then non-NEG",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			f := NewFakeBackendServices(noOpErrFunc, true)
+			fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
+			pool, _ := newTestJig(f, fakeIGs, false)
+
+			bsCreated := 0
+			quota := len(tc.newPorts)
+
+			// Throw an error if more BackendServices than quota allows have been created
+			f.errFunc = func(op int, be *compute.BackendService) error {
+				if op == utils.Create {
+					if bsCreated+1 > quota {
+						return &googleapi.Error{Code: http.StatusForbidden, Body: be.Name}
+					}
+					bsCreated += 1
+				}
+
+				if op == utils.Delete {
+					bsCreated -= 1
+				}
+
+				return nil
+			}
+
+			if err := pool.Ensure(tc.oldPorts, nil); err != nil {
+				t.Errorf("Expected backend pool to add node ports, err: %v", err)
+			}
+
+			// Ensuring these ports again without first Garbage Collecting goes over
+			// the set quota. Expect an error here, until GC is called.
+			err := pool.Ensure(tc.newPorts, nil)
+			if tc.expectSyncErr && err == nil {
+				t.Errorf("Expect initial sync to go over quota, but received no error")
+			}
+
+			pool.GC(tc.newPorts)
+			if err := pool.Ensure(tc.newPorts, nil); err != nil {
+				t.Errorf("Expected backend pool to add node ports, err: %v", err)
+			}
+
+			if bsCreated != quota {
+				t.Errorf("Expected to create %v BackendServices, got: %v", quota, bsCreated)
+			}
+		})
 	}
 }
 
@@ -635,7 +803,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 
 	for _, zone := range zones {
 		err := fakeNEG.CreateNetworkEndpointGroup(&computealpha.NetworkEndpointGroup{
-			Name: defaultNamer.NEG(namespace, name, port),
+			Name: defaultNamer.BackendNEG(namespace, name, port),
 		}, zone)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -646,7 +814,8 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 		t.Fatalf("Failed to link backend service to NEG: %v", err)
 	}
 
-	bs, err := f.GetGlobalBackendService(defaultNamer.Backend(svcPort.NodePort))
+	beName := defaultNamer.BackendNEG(svcPort.SvcName.Namespace, svcPort.SvcName.Name, svcPort.SvcTargetPort)
+	bs, err := f.GetGlobalBackendService(beName)
 	if err != nil {
 		t.Fatalf("Failed to retrieve backend service: %v", err)
 	}
@@ -735,7 +904,7 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
 				func(t *testing.T) {
 					pool.Ensure([]utils.ServicePort{oldPort}, nil)
-					be, err := pool.Get(oldPort.NodePort, newPort.IsAlpha())
+					be, err := pool.Get(defaultNamer.Backend(oldPort.NodePort), newPort.IsAlpha())
 					if err != nil {
 						t.Fatalf("%v", err)
 					}
@@ -784,7 +953,7 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
 				func(t *testing.T) {
 					pool.Ensure([]utils.ServicePort{oldPort}, nil)
-					be, err := pool.Get(oldPort.NodePort, oldPort.IsAlpha())
+					be, err := pool.Get(defaultNamer.Backend(oldPort.NodePort), oldPort.isAlpha())
 					if err != nil {
 						t.Fatalf("%v", err)
 					}
@@ -813,7 +982,7 @@ func TestEnsureBackendServiceHealthCheckLink(t *testing.T) {
 
 	p := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, SvcPort: intstr.FromInt(1)}
 	pool.Ensure([]utils.ServicePort{p}, nil)
-	be, err := pool.Get(p.NodePort, p.IsAlpha())
+	be, err := pool.Get(defaultNamer.Backend(p.NodePort), p.IsAlpha())
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
