@@ -17,7 +17,6 @@ limitations under the License.
 package utils
 
 import (
-	"crypto/md5"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -79,8 +78,8 @@ const (
 
 	// maxNEGDescriptiveLabel is the max length for namespace, name and
 	// port for neg name.  63 - 5 (k8s and naming schema version prefix)
-	// - 16 (cluster id) - 8 (suffix hash) - 4 (hyphen connector) = 30
-	maxNEGDescriptiveLabel = 30
+	// - 8 (truncated cluster id) - 8 (suffix hash) - 4 (hyphen connector) = 38
+	maxNEGDescriptiveLabel = 38
 
 	// schemaVersionV1 is the version 1 naming scheme for NEG
 	schemaVersionV1 = "1"
@@ -223,6 +222,19 @@ func (n *Namer) ParseName(name string) *NameComponents {
 	}
 }
 
+// negBelongsToCluster checks that the uid is present and a substring of the
+// cluster uid, since the NEG naming schema truncates it to 8 characters.
+// This is only valid for NEGs and Backends on NEG.
+func (n *Namer) negBelongsToCluster(name string) bool {
+	l := strings.Split(name, "-")
+	var uid string
+	if len(l) > 1 {
+		uid = l[1]
+	}
+
+	return len(uid) > 0 && strings.Contains(n.UID(), uid)
+}
+
 // NameBelongsToCluster checks if a given name is tagged with this
 // cluster's UID.
 func (n *Namer) NameBelongsToCluster(name string) bool {
@@ -231,7 +243,7 @@ func (n *Namer) NameBelongsToCluster(name string) bool {
 	}
 	clusterName := n.UID()
 	components := n.ParseName(name)
-	return components.ClusterName == clusterName
+	return components.ClusterName == clusterName || n.negBelongsToCluster(name)
 }
 
 // BeName constructs the name for a backend.
@@ -370,7 +382,17 @@ func (n *Namer) NEG(namespace, name, port string) string {
 	trimedNamespace := trimmedFields[0]
 	trimedName := trimmedFields[1]
 	trimedPort := trimmedFields[2]
-	return fmt.Sprintf("%s-%s-%s-%s-%s", n.negPrefix(), trimedNamespace, trimedName, trimedPort, negSuffix(namespace, name, port))
+	return fmt.Sprintf("%s-%s-%s-%s-%s", n.negPrefix(), trimedNamespace, trimedName, trimedPort, negSuffix(n.UID(), namespace, name, port))
+}
+
+// BackendNEG names the BackendServices which are using NEG, using the same
+// naming convention as NEG.
+func (n *Namer) BackendNEG(namespace, name, port string) string {
+	trimmedFields := trimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name, port)
+	trimedNamespace := trimmedFields[0]
+	trimedName := trimmedFields[1]
+	trimedPort := trimmedFields[2]
+	return fmt.Sprintf("%s-%s-%s-%s-%s", n.negPrefix(), trimedNamespace, trimedName, trimedPort, negSuffix(n.UID(), namespace, name, port))
 }
 
 // IsNEG returns true if the name is a NEG owned by this cluster.
@@ -379,10 +401,16 @@ func (n *Namer) IsNEG(name string) bool {
 }
 
 func (n *Namer) negPrefix() string {
-	return fmt.Sprintf("%s%s-%s", n.prefix, schemaVersionV1, n.UID())
+	uid := n.UID()
+	if len(uid) > 8 {
+		uid = uid[:8]
+	}
+	return fmt.Sprintf("%s%s-%s", n.prefix, schemaVersionV1, uid)
 }
 
 // negSuffix returns hash code with 8 characters
-func negSuffix(namespace, name, port string) string {
-	return fmt.Sprintf("%x", md5.Sum([]byte(namespace+name+port)))[:8]
+func negSuffix(uid, namespace, name, port string) string {
+	negString := uid + namespace + name + port
+	negHash := fmt.Sprintf("%x", sha256.Sum256([]byte(negString)))
+	return negHash[:8]
 }

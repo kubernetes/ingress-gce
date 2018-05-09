@@ -144,6 +144,10 @@ func (t *GCE) toGCEBackendName(be *extensions.IngressBackend, ns string) (string
 		return "", err
 	}
 	backendName := t.namer.Backend(port.NodePort)
+	if port.NEGEnabled {
+		backendName = t.namer.BackendNEG(port.SvcName.Namespace, port.SvcName.Name, port.SvcTargetPort)
+	}
+
 	return backendName, nil
 }
 
