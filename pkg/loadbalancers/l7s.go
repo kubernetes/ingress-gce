@@ -149,7 +149,7 @@ func (l *L7s) Sync(lbs []*L7RuntimeInfo) error {
 		if err := l.defaultBackendPool.Ensure([]backends.ServicePort{l.defaultBackendNodePort}, nil); err != nil {
 			return err
 		}
-		defaultBackend, err := l.defaultBackendPool.Get(l.defaultBackendNodePort.NodePort, false)
+		defaultBackend, err := l.defaultBackendPool.Get(l.namer.Backend(l.defaultBackendNodePort.NodePort), false)
 		if err != nil {
 			return err
 		}
@@ -188,7 +188,8 @@ func (l *L7s) GC(names []string) error {
 	// This needs to happen after we've deleted all url-maps that might be
 	// using it.
 	if len(names) == 0 {
-		if err := l.defaultBackendPool.Delete(l.defaultBackendNodePort.NodePort); err != nil {
+		name := l.namer.Backend(l.defaultBackendNodePort.NodePort)
+		if err := l.defaultBackendPool.Delete(name); err != nil {
 			return err
 		}
 		l.glbcDefaultBackend = nil
