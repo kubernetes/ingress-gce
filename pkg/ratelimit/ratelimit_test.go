@@ -22,22 +22,22 @@ import (
 
 func TestConfigureGCERateLimiting(t *testing.T) {
 	validTestCases := [][]string{
-		[]string{"ga.Addresses.Get,qps,1.5,5"},
-		[]string{"ga.Addresses.List,qps,2,10"},
-		[]string{"ga.Addresses.Get,qps,1.5,5", "ga.Firewalls.Get,qps,1.5,5"},
-		[]string{"ga.Operations.Get,qps,10,100"},
+		{"ga.Addresses.Get,qps,1.5,5"},
+		{"ga.Addresses.List,qps,2,10"},
+		{"ga.Addresses.Get,qps,1.5,5", "ga.Firewalls.Get,qps,1.5,5"},
+		{"ga.Operations.Get,qps,10,100"},
 	}
 	invalidTestCases := [][]string{
-		[]string{"gaAddresses.Get,qps,1.5,5"},
-		[]string{"gaAddresses.Get,qps,0,5"},
-		[]string{"gaAddresses.Get,qps,-1,5"},
-		[]string{"ga.Addresses.Get,qps,1.5.5"},
-		[]string{"gaAddresses.Get,qps,1.5,5.5"},
-		[]string{"gaAddressesGet,qps,1.5,5.5"},
-		[]string{"gaAddressesGet,qps,1.5"},
-		[]string{"ga.Addresses.Get,foo,1.5,5"},
-		[]string{"ga.Addresses.Get,1.5,5"},
-		[]string{"ga.Addresses.Get,qps,1.5,5", "gaFirewalls.Get,qps,1.5,5"},
+		{"gaAddresses.Get,qps,1.5,5"},
+		{"gaAddresses.Get,qps,0,5"},
+		{"gaAddresses.Get,qps,-1,5"},
+		{"ga.Addresses.Get,qps,1.5.5"},
+		{"gaAddresses.Get,qps,1.5,5.5"},
+		{"gaAddressesGet,qps,1.5,5.5"},
+		{"gaAddressesGet,qps,1.5"},
+		{"ga.Addresses.Get,foo,1.5,5"},
+		{"ga.Addresses.Get,1.5,5"},
+		{"ga.Addresses.Get,qps,1.5,5", "gaFirewalls.Get,qps,1.5,5"},
 	}
 
 	for _, testCase := range validTestCases {

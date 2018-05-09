@@ -7,7 +7,6 @@ metadata:
   # gcloud compute addresses create test-ip --global
   annotations:
     kubernetes.io/ingress.global-static-ip-name: "test-ip"
-    kubernetes.io/ingress.class: "gce"
 spec:
   tls:
   # This assumes tls-secret exists.
@@ -16,4 +15,3 @@ spec:
     # This assumes http-svc exists and routes to healthy endpoints.
     serviceName: http-svc
     servicePort: 80
-

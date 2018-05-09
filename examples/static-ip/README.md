@@ -126,4 +126,3 @@ $ gcloud compute addresses list
 NAME                                           REGION       ADDRESS          STATUS
 k8s-fw-default-http-ingress--32658fa96c080068               35.186.195.33    IN_USE
 ```
-
