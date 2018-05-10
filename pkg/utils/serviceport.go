@@ -51,8 +51,8 @@ func (sp ServicePort) IsAlpha() bool {
 // BackendName returns the name of the backend which would be used for this ServicePort.
 func (sp ServicePort) BackendName(namer *Namer) string {
 	if !sp.NEGEnabled {
-		return namer.Backend(sp.NodePort)
+		return namer.IGBackend(sp.NodePort)
 	}
 
-	return namer.BackendNEG(sp.SvcName.Namespace, sp.SvcName.Name, sp.SvcTargetPort)
+	return namer.NEG(sp.SvcName.Namespace, sp.SvcName.Name, sp.SvcTargetPort)
 }

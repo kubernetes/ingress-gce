@@ -159,6 +159,14 @@ func (n *Namer) UID() string {
 	return n.clusterName
 }
 
+func (n *Namer) shortUID() string {
+	uid := n.UID()
+	if len(uid) <= 8 {
+		return uid
+	}
+	return uid[:8]
+}
+
 // GetFirewallName returns the firewall name of this cluster.
 func (n *Namer) Firewall() string {
 	n.nameLock.Lock()
@@ -215,14 +223,14 @@ func (n *Namer) ParseName(name string) *NameComponents {
 	}
 }
 
-// negBelongsToCluster checks that the uid is present and a substring of the
+// negBelongsToCluster checks that the UID is present and a substring of the
 // cluster uid, since the NEG naming schema truncates it to 8 characters.
-// This is only valid for NEGs and Backends on NEG.
+// This is only valid for NEGs, BackendServices and Healthchecks for NEG.
 func (n *Namer) negBelongsToCluster(name string) bool {
-	l := strings.Split(name, "-")
+	fields := strings.Split(name, "-")
 	var uid string
-	if len(l) > 1 {
-		uid = l[1]
+	if len(fields) > 1 {
+		uid = fields[1]
 	}
 
 	return len(uid) > 0 && strings.Contains(n.UID(), uid)
@@ -239,13 +247,13 @@ func (n *Namer) NameBelongsToCluster(name string) bool {
 	return components.ClusterName == clusterName || n.negBelongsToCluster(name)
 }
 
-// BeName constructs the name for a backend.
-func (n *Namer) Backend(port int64) string {
+// IGBackend constructs the name for a backend service targeting instance groups.
+func (n *Namer) IGBackend(port int64) string {
 	return n.decorateName(fmt.Sprintf("%v-%v-%d", n.prefix, backendPrefix, port))
 }
 
-// BackendPort retrieves the port from the given backend name.
-func (n *Namer) BackendPort(beName string) (string, error) {
+// IGBackendPort retrieves the port from the given backend name.
+func (n *Namer) IGBackendPort(beName string) (string, error) {
 	r := regexp.MustCompile(n.prefix + "-" + backendRegex)
 	match := r.FindStringSubmatch(beName)
 	if len(match) < 2 {
@@ -371,21 +379,11 @@ func (n *Namer) NamedPort(port int64) string {
 // of all NEGs associated with the current cluster. Any modifications
 // must be backward compatible.
 func (n *Namer) NEG(namespace, name, port string) string {
-	trimmedFields := trimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name, port)
-	trimedNamespace := trimmedFields[0]
-	trimedName := trimmedFields[1]
-	trimedPort := trimmedFields[2]
-	return fmt.Sprintf("%s-%s-%s-%s-%s", n.negPrefix(), trimedNamespace, trimedName, trimedPort, negSuffix(n.UID(), namespace, name, port))
-}
-
-// BackendNEG names the BackendServices which are using NEG, using the same
-// naming convention as NEG.
-func (n *Namer) BackendNEG(namespace, name, port string) string {
-	trimmedFields := trimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name, port)
-	trimedNamespace := trimmedFields[0]
-	trimedName := trimmedFields[1]
-	trimedPort := trimmedFields[2]
-	return fmt.Sprintf("%s-%s-%s-%s-%s", n.negPrefix(), trimedNamespace, trimedName, trimedPort, negSuffix(n.UID(), namespace, name, port))
+	truncFields := trimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name, port)
+	truncNamespace := truncFields[0]
+	truncName := truncFields[1]
+	truncPort := truncFields[2]
+	return fmt.Sprintf("%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, negSuffix(n.shortUID(), namespace, name, port))
 }
 
 // IsNEG returns true if the name is a NEG owned by this cluster.
@@ -394,16 +392,12 @@ func (n *Namer) IsNEG(name string) bool {
 }
 
 func (n *Namer) negPrefix() string {
-	uid := n.UID()
-	if len(uid) > 8 {
-		uid = uid[:8]
-	}
-	return fmt.Sprintf("%s%s-%s", n.prefix, schemaVersionV1, uid)
+	return fmt.Sprintf("%s%s-%s", n.prefix, schemaVersionV1, n.shortUID())
 }
 
 // negSuffix returns hash code with 8 characters
 func negSuffix(uid, namespace, name, port string) string {
-	negString := uid + namespace + name + port
+	negString := strings.Join([]string{uid, namespace, name, port}, ";")
 	negHash := fmt.Sprintf("%x", sha256.Sum256([]byte(negString)))
 	return negHash[:8]
 }

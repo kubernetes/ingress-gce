@@ -100,7 +100,7 @@ func TestNamerParseName(t *testing.T) {
 		want *NameComponents
 	}{
 		{"", &NameComponents{}}, // TODO: this should really be a parse error.
-		{namer.Backend(80), &NameComponents{uid, "be", ""}},
+		{namer.IGBackend(80), &NameComponents{uid, "be", ""}},
 		{namer.InstanceGroup(), &NameComponents{uid, "ig", ""}},
 		{namer.TargetProxy(lbName, HTTPProtocol), &NameComponents{uid, "tp", ""}},
 		{namer.TargetProxy(lbName, HTTPSProtocol), &NameComponents{uid, "tps", ""}},
@@ -126,7 +126,7 @@ func TestNameBelongsToCluster(t *testing.T) {
 		lbName := namer.LoadBalancer("key1")
 		// Positive cases.
 		for _, tc := range []string{
-			namer.Backend(80),
+			namer.IGBackend(80),
 			namer.InstanceGroup(),
 			namer.TargetProxy(lbName, HTTPProtocol),
 			namer.TargetProxy(lbName, HTTPSProtocol),
@@ -172,14 +172,14 @@ func TestNamerBackend(t *testing.T) {
 		if tc.uid != "" {
 			namer.SetUID(tc.uid)
 		}
-		name := namer.Backend(tc.port)
+		name := namer.IGBackend(tc.port)
 		if name != tc.want {
 			t.Errorf("%s: namer.Backend() = %q, want %q", tc.desc, name, tc.want)
 		}
 	}
 	// Prefix.
 	namer := NewNamerWithPrefix("mci", "uid1", "fw1")
-	name := namer.Backend(80)
+	name := namer.IGBackend(80)
 	const want = "mci-be-80--uid1"
 	if name != want {
 		t.Errorf("with prefix = %q, namer.Backend(80) = %q, want %q", "mci", name, want)
@@ -198,7 +198,7 @@ func TestBackendPort(t *testing.T) {
 		{"k8s-be-8080--uid1", "8080", true},
 		{"k8s-be-port1--uid1", "8080", false},
 	} {
-		port, err := namer.BackendPort(tc.in)
+		port, err := namer.IGBackendPort(tc.in)
 		if err != nil {
 			if tc.valid {
 				t.Errorf("namer.BackendPort(%q) = _, %v, want _, nil", tc.in, err)
@@ -386,21 +386,21 @@ func TestNamerNEG(t *testing.T) {
 			"namespace",
 			"name",
 			"80",
-			"k8s1-01234567-namespace-name-80-1bcdfee6",
+			"k8s1-01234567-namespace-name-80-5104b449",
 		},
 		{
 			"63 characters",
 			longstring[:10],
 			longstring[:10],
 			longstring[:10],
-			"k8s1-01234567-0123456789-0123456789-0123456789-0db7111e",
+			"k8s1-01234567-0123456789-0123456789-0123456789-6d4e657b",
 		},
 		{
 			"long namespace",
 			longstring,
 			"0",
 			"0",
-			"k8s1-01234567-0123456789012345678901234567890123456-0--9faea975",
+			"k8s1-01234567-0123456789012345678901234567890123456-0--72142e04",
 		},
 
 		{
@@ -408,14 +408,14 @@ func TestNamerNEG(t *testing.T) {
 			longstring,
 			longstring,
 			"0",
-			"k8s1-01234567-0123456789012345678-0123456789012345678--59770beb",
+			"k8s1-01234567-0123456789012345678-0123456789012345678--9129e3d2",
 		},
 		{
 			" long name, namespace and port",
 			longstring,
 			longstring[:40],
 			longstring[:30],
-			"k8s1-01234567-0123456789012345-0123456789012-012345678-623f075f",
+			"k8s1-01234567-0123456789012345-0123456789012-012345678-a7dff5e0",
 		},
 	}
 
@@ -433,7 +433,7 @@ func TestNamerNEG(t *testing.T) {
 	// Different prefix.
 	namer = NewNamerWithPrefix("mci", clusterId, "fw")
 	name := namer.NEG("ns", "svc", "port")
-	const want = "mci1-01234567-ns-svc-port-73fad9b3"
+	const want = "mci1-01234567-ns-svc-port-fe7dd054"
 	if name != want {
 		t.Errorf(`with prefix %q, namer.NEG("ns", "svc", 80) = %q, want %q`, "mci", name, want)
 	}

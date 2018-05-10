@@ -268,7 +268,7 @@ func TestLbCreateDelete(t *testing.T) {
 	}
 
 	for _, port := range unexpected {
-		beName := pm.namer.Backend(int64(port))
+		beName := pm.namer.IGBackend(int64(port))
 		if be, err := cm.backendPool.Get(beName, false); err == nil {
 			t.Fatalf("Found backend %+v for port %v", be, port)
 		}
@@ -282,7 +282,7 @@ func TestLbCreateDelete(t *testing.T) {
 	// No cluster resources (except the defaults used by the cluster manager)
 	// should exist at this point.
 	for _, port := range expected {
-		beName := pm.namer.Backend(int64(port))
+		beName := pm.namer.IGBackend(int64(port))
 		if be, err := cm.backendPool.Get(beName, false); err == nil {
 			t.Fatalf("Found backend %+v for port %v", be, port)
 		}

@@ -210,13 +210,13 @@ func (h *HealthChecks) Get(name string, alpha bool) (*HealthCheck, error) {
 
 // GetLegacy deletes legacy HTTP health checks
 func (h *HealthChecks) GetLegacy(port int64) (*compute.HttpHealthCheck, error) {
-	name := h.namer.Backend(port)
+	name := h.namer.IGBackend(port)
 	return h.cloud.GetHttpHealthCheck(name)
 }
 
 // DeleteLegacy deletes legacy HTTP health checks
 func (h *HealthChecks) DeleteLegacy(port int64) error {
-	name := h.namer.Backend(port)
+	name := h.namer.IGBackend(port)
 	glog.V(2).Infof("Deleting legacy HTTP health check %v", name)
 	return h.cloud.DeleteHttpHealthCheck(name)
 }
