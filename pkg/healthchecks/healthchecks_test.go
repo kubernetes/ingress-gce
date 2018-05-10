@@ -22,17 +22,23 @@ import (
 
 	compute "google.golang.org/api/compute/v1"
 
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-var namer = utils.NewNamer("uid1", "fw1")
+var (
+	namer = utils.NewNamer("uid1", "fw1")
+
+	defaultBackendSvc = types.NamespacedName{Namespace: "system", Name: "default"}
+)
 
 func TestHealthCheckAdd(t *testing.T) {
 	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", namer)
+	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
 
-	hc := healthChecks.New(namer.IGBackend(80), 80, annotations.ProtocolHTTP, false)
+	sp := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, NEGEnabled: false}
+	hc := healthChecks.New(sp)
 	_, err := healthChecks.Sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -43,7 +49,8 @@ func TestHealthCheckAdd(t *testing.T) {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
 
-	hc = healthChecks.New(namer.IGBackend(443), 443, annotations.ProtocolHTTPS, false)
+	sp = utils.ServicePort{NodePort: 443, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false}
+	hc = healthChecks.New(sp)
 	_, err = healthChecks.Sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -54,7 +61,8 @@ func TestHealthCheckAdd(t *testing.T) {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
 
-	hc = healthChecks.New(namer.IGBackend(3000), 3000, annotations.ProtocolHTTP2, false)
+	sp = utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, NEGEnabled: false}
+	hc = healthChecks.New(sp)
 	_, err = healthChecks.Sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -68,7 +76,7 @@ func TestHealthCheckAdd(t *testing.T) {
 
 func TestHealthCheckAddExisting(t *testing.T) {
 	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", namer)
+	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
 
 	// HTTP
 	// Manually insert a health check
@@ -81,8 +89,9 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 	hcp.CreateHealthCheck(v1hc)
 
+	sp := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, NEGEnabled: false}
 	// Should not fail adding the same type of health check
-	hc := healthChecks.New(namer.IGBackend(3000), 3000, annotations.ProtocolHTTP, false)
+	hc := healthChecks.New(sp)
 	_, err = healthChecks.Sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -104,7 +113,8 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 	hcp.CreateHealthCheck(v1hc)
 
-	hc = healthChecks.New(namer.IGBackend(4000), 4000, annotations.ProtocolHTTPS, false)
+	sp = utils.ServicePort{NodePort: 4000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false}
+	hc = healthChecks.New(sp)
 	_, err = healthChecks.Sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -126,7 +136,8 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 	hcp.CreateHealthCheck(v1hc)
 
-	hc = healthChecks.New(namer.IGBackend(5000), 5000, annotations.ProtocolHTTPS, false)
+	sp = utils.ServicePort{NodePort: 5000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false}
+	hc = healthChecks.New(sp)
 	_, err = healthChecks.Sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -140,7 +151,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 func TestHealthCheckDelete(t *testing.T) {
 	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", namer)
+	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
 
 	// Create HTTP HC for 1234
 	hc := DefaultHealthCheck(1234, annotations.ProtocolHTTP)
@@ -176,7 +187,7 @@ func TestHealthCheckDelete(t *testing.T) {
 
 func TestHTTP2HealthCheckDelete(t *testing.T) {
 	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", namer)
+	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
 
 	// Create HTTP2 HC for 1234
 	hc := DefaultHealthCheck(1234, annotations.ProtocolHTTP2)
@@ -200,7 +211,7 @@ func TestHTTP2HealthCheckDelete(t *testing.T) {
 
 func TestHealthCheckUpdate(t *testing.T) {
 	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", namer)
+	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
 
 	// HTTP
 	// Manually insert a health check
@@ -301,7 +312,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 
 func TestHealthCheckDeleteLegacy(t *testing.T) {
 	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", namer)
+	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
 
 	err := hcp.CreateHttpHealthCheck(&compute.HttpHealthCheck{
 		Name: namer.IGBackend(80),
@@ -319,8 +330,9 @@ func TestHealthCheckDeleteLegacy(t *testing.T) {
 
 func TestAlphaHealthCheck(t *testing.T) {
 	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", namer)
-	hc := healthChecks.New(namer.IGBackend(8000), 8000, annotations.ProtocolHTTP, true)
+	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
+	sp := utils.ServicePort{NodePort: 8000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true}
+	hc := healthChecks.New(sp)
 	_, err := healthChecks.Sync(hc)
 	if err != nil {
 		t.Fatalf("got %v, want nil", err)

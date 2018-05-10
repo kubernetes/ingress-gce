@@ -55,7 +55,7 @@ func newLoadBalancerController(t *testing.T, cm *fakeClusterManager) *LoadBalanc
 	kubeClient := fake.NewSimpleClientset()
 	stopCh := make(chan struct{})
 	ctx := context.NewControllerContext(kubeClient, api_v1.NamespaceAll, 1*time.Second, true)
-	lb, err := NewLoadBalancerController(kubeClient, stopCh, ctx, cm.ClusterManager, true, testDefaultBeNodePort)
+	lb, err := NewLoadBalancerController(kubeClient, stopCh, ctx, cm.ClusterManager, true)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -155,7 +155,7 @@ func gceURLMapFromPrimitive(primitiveMap utils.PrimitivePathMap, pm *nodePortMan
 		}
 		urlMap.PutPathRulesForHost(hostname, pathRules)
 	}
-	urlMap.DefaultBackend = testDefaultBeNodePort
+	urlMap.DefaultBackend = testDefaultBeSvcPort
 	return urlMap
 }
 

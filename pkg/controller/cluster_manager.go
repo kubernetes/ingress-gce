@@ -33,11 +33,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-const (
-	defaultPort            = 80
-	defaultHealthCheckPath = "/"
-)
-
 // ClusterManager manages cluster resource pools.
 type ClusterManager struct {
 	ClusterNamer *utils.Namer
@@ -47,12 +42,10 @@ type ClusterManager struct {
 	firewallPool firewalls.SingleFirewallPool
 
 	// TODO: Refactor so we simply init a health check pool.
-	// Currently health checks are tied to backends because each backend needs
-	// the link of the associated health, but both the backend pool and
-	// loadbalancer pool manage backends, because the lifetime of the default
-	// backend is tied to the last/first loadbalancer not the life of the
-	// nodeport service or Ingress.
-	healthCheckers []healthchecks.HealthChecker
+	healthChecker healthchecks.HealthChecker
+
+	// defaultBackendSvcPort is the ServicePort for the system default backend.
+	defaultBackendSvcPort utils.ServicePort
 }
 
 // Init initializes the cluster manager.
@@ -179,25 +172,25 @@ func (c *ClusterManager) GC(lbNames []string, nodePorts []utils.ServicePort) err
 // - namer: is the namer used to tag cluster wide shared resources.
 // - defaultBackendNodePort: is the node port of glbc's default backend. This is
 //	 the kubernetes Service that serves the 404 page if no urls match.
-// - defaultHealthCheckPath: is the default path used for L7 health checks, eg: "/healthz".
+// - healthCheckPath: is the default path used for L7 health checks, eg: "/healthz".
+// - defaultBackendHealthCheckPath: is the default path used for the default backend health checks.
 func NewClusterManager(
 	cloud *gce.GCECloud,
 	namer *utils.Namer,
-	defaultHealthCheckPath string) (*ClusterManager, error) {
+	defaultBackendSvcPort utils.ServicePort,
+	healthCheckPath string,
+	defaultBackendHealthCheckPath string) (*ClusterManager, error) {
 
 	// Names are fundamental to the cluster, the uid allocator makes sure names don't collide.
-	cluster := ClusterManager{ClusterNamer: namer}
+	cluster := ClusterManager{ClusterNamer: namer, defaultBackendSvcPort: defaultBackendSvcPort}
 
 	// NodePool stores GCE vms that are in this Kubernetes cluster.
 	cluster.instancePool = instances.NewNodePool(cloud, namer)
 
 	// BackendPool creates GCE BackendServices and associated health checks.
-	healthChecker := healthchecks.NewHealthChecker(cloud, defaultHealthCheckPath, cluster.ClusterNamer)
-	// Loadbalancer pool manages the default backend and its health check.
-	defaultBackendHealthChecker := healthchecks.NewHealthChecker(cloud, "/healthz", cluster.ClusterNamer)
+	cluster.healthChecker = healthchecks.NewHealthChecker(cloud, healthCheckPath, defaultBackendHealthCheckPath, cluster.ClusterNamer, defaultBackendSvcPort.SvcName)
+	cluster.backendPool = backends.NewBackendPool(cloud, cloud, cluster.healthChecker, cluster.instancePool, cluster.ClusterNamer, true)
 
-	cluster.healthCheckers = []healthchecks.HealthChecker{healthChecker, defaultBackendHealthChecker}
-	cluster.backendPool = backends.NewBackendPool(cloud, cloud, healthChecker, cluster.instancePool, cluster.ClusterNamer, true)
 	// L7 pool creates targetHTTPProxy, ForwardingRules, UrlMaps, StaticIPs.
 	cluster.l7Pool = loadbalancers.NewLoadBalancerPool(cloud, cluster.ClusterNamer)
 	cluster.firewallPool = firewalls.NewFirewallPool(cloud, cluster.ClusterNamer, gce.LoadBalancerSrcRanges(), flags.F.NodePortRanges.Values())
