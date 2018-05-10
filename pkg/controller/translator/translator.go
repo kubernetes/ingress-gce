@@ -137,7 +137,7 @@ PortLoop:
 }
 
 // TranslateIngress converts an Ingress into our internal UrlMap representation.
-func (t *GCE) TranslateIngress(ing *extensions.Ingress) *utils.GCEURLMap {
+func (t *GCE) TranslateIngress(ing *extensions.Ingress, glbcDefaultBackend utils.ServicePort) *utils.GCEURLMap {
 	urlMap := utils.NewGCEURLMap()
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {
@@ -166,16 +166,21 @@ func (t *GCE) TranslateIngress(ing *extensions.Ingress) *utils.GCEURLMap {
 		}
 		urlMap.PutPathRulesForHost(host, pathRules)
 	}
+	// Note that the url map is always populated with some default backend,
+	// whether it be the one specified in the Ingress, or the system default.
 	if ing.Spec.Backend != nil {
 		svcPort, err := t.getServiceNodePort(*ing.Spec.Backend, ing.Namespace)
 		if err != nil {
 			msg := fmt.Sprintf("%v", err)
 			msg = fmt.Sprintf("failed to identify user specified default backend, %v, using system default", msg)
 			t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeWarning, "Service", msg)
+			urlMap.DefaultBackend = glbcDefaultBackend
 			glog.Infof("%v", err)
 		} else {
 			urlMap.DefaultBackend = svcPort
 		}
+	} else {
+		urlMap.DefaultBackend = glbcDefaultBackend
 	}
 	return urlMap
 }

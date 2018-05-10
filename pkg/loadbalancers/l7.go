@@ -84,6 +84,8 @@ type L7RuntimeInfo struct {
 	// The name of a Global Static IP. If specified, the IP associated with
 	// this name is used in the Forwarding Rules for this loadbalancer.
 	StaticIPName string
+	// UrlMap is our internal representation of a url map.
+	UrlMap *utils.GCEURLMap
 }
 
 // String returns the load balancer name
@@ -117,11 +119,13 @@ type L7 struct {
 	// to create - update - delete and storing the old certs in a list
 	// prevents leakage if there's a failure along the way.
 	oldSSLCerts []*compute.SslCertificate
-	// glbcDefaultBacked is the backend to use if no path rules match.
-	// TODO: Expose this to users.
-	glbcDefaultBackend *compute.BackendService
 	// namer is used to compute names of the various sub-components of an L7.
 	namer *utils.Namer
+}
+
+// RuntimeInfo returns the L7RuntimeInfo associated with the L7 load balancer.
+func (l *L7) RuntimeInfo() *L7RuntimeInfo {
+	return l.runtimeInfo
 }
 
 // UrlMap returns the UrlMap associated with the L7 load balancer.
@@ -129,10 +133,11 @@ func (l *L7) UrlMap() *compute.UrlMap {
 	return l.um
 }
 
-func (l *L7) checkUrlMap(backend *compute.BackendService) (err error) {
-	if l.glbcDefaultBackend == nil {
-		return fmt.Errorf("cannot create urlmap without default backend")
+func (l *L7) checkUrlMap() (err error) {
+	if l.runtimeInfo.UrlMap == nil {
+		return fmt.Errorf("cannot create urlmap without internal representation")
 	}
+	defaultBackendName := l.namer.Backend(l.runtimeInfo.UrlMap.DefaultBackend.NodePort)
 	urlMapName := l.namer.UrlMap(l.Name)
 	urlMap, _ := l.cloud.GetUrlMap(urlMapName)
 	if urlMap != nil {
@@ -141,10 +146,10 @@ func (l *L7) checkUrlMap(backend *compute.BackendService) (err error) {
 		return nil
 	}
 
-	glog.V(3).Infof("Creating url map %v for backend %v", urlMapName, l.glbcDefaultBackend.Name)
+	glog.V(3).Infof("Creating url map %v for backend %v", urlMapName, defaultBackendName)
 	newUrlMap := &compute.UrlMap{
 		Name:           urlMapName,
-		DefaultService: l.glbcDefaultBackend.SelfLink,
+		DefaultService: utils.BackendServiceRelativeResourcePath(defaultBackendName),
 	}
 	if err = l.cloud.CreateUrlMap(newUrlMap); err != nil {
 		return err
@@ -597,7 +602,7 @@ func (l *L7) checkStaticIP() (err error) {
 }
 
 func (l *L7) edgeHop() error {
-	if err := l.checkUrlMap(l.glbcDefaultBackend); err != nil {
+	if err := l.checkUrlMap(); err != nil {
 		return err
 	}
 	if l.runtimeInfo.AllowHTTP {
@@ -703,21 +708,18 @@ func getNameForPathMatcher(hostRule string) string {
 // and remove the mapping. When a new path is added to a host (happens
 // more frequently than service deletion) we just need to lookup the 1
 // pathmatcher of the host.
-func (l *L7) UpdateUrlMap(ingressRules *utils.GCEURLMap) error {
+func (l *L7) UpdateUrlMap() error {
 	if l.um == nil {
-		return fmt.Errorf("cannot add url without an urlmap")
+		return fmt.Errorf("cannot update GCE urlmap without an existing GCE urlmap.")
+	}
+	if l.runtimeInfo.UrlMap == nil {
+		return fmt.Errorf("cannot update GCE urlmap without internal representation")
 	}
 
-	// All UrlMaps must have a default backend. If the Ingress has a default
-	// backend, it applies to all host rules as well as to the urlmap itself.
-	// If it doesn't the urlmap might have a stale default, so replace it with
-	// glbc's default backend.
-	defaultBackendName := l.namer.Backend(ingressRules.DefaultBackend.NodePort)
-	if defaultBackendName != "" {
-		l.um.DefaultService = utils.BackendServiceRelativeResourcePath(defaultBackendName)
-	} else {
-		l.um.DefaultService = l.glbcDefaultBackend.SelfLink
-	}
+	urlMap := l.runtimeInfo.UrlMap
+
+	defaultBackendName := l.namer.Backend(urlMap.DefaultBackend.NodePort)
+	l.um.DefaultService = utils.BackendServiceRelativeResourcePath(defaultBackendName)
 
 	// Every update replaces the entire urlmap.
 	// TODO:  when we have multiple loadbalancers point to a single gce url map
@@ -727,7 +729,7 @@ func (l *L7) UpdateUrlMap(ingressRules *utils.GCEURLMap) error {
 	l.um.HostRules = []*compute.HostRule{}
 	l.um.PathMatchers = []*compute.PathMatcher{}
 
-	for hostname, rules := range ingressRules.AllRules() {
+	for hostname, rules := range urlMap.AllRules() {
 		// Create a host rule
 		// Create a path matcher
 		// Add all given endpoint:backends to pathRules in path matcher

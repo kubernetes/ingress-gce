@@ -22,10 +22,8 @@ import (
 
 	"github.com/golang/glog"
 
-	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/storage"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -34,17 +32,7 @@ import (
 type L7s struct {
 	cloud       LoadBalancers
 	snapshotter storage.Snapshotter
-	// TODO: Remove this field and always ask the BackendPool using the NodePort.
-	glbcDefaultBackend     *compute.BackendService
-	defaultBackendPool     backends.BackendPool
-	defaultBackendNodePort utils.ServicePort
-	namer                  *utils.Namer
-}
-
-// GLBCDefaultBackend returns the BackendService used when no path
-// rules match.
-func (l *L7s) GLBCDefaultBackend() *compute.BackendService {
-	return l.glbcDefaultBackend
+	namer       *utils.Namer
 }
 
 // Namer returns the namer associated with the L7s.
@@ -55,27 +43,16 @@ func (l *L7s) Namer() *utils.Namer {
 // NewLoadBalancerPool returns a new loadbalancer pool.
 // - cloud: implements LoadBalancers. Used to sync L7 loadbalancer resources
 //	 with the cloud.
-// - defaultBackendPool: a BackendPool used to manage the GCE BackendService for
-//   the default backend.
-// - defaultBackendNodePort: The nodePort of the Kubernetes service representing
-//   the default backend.
-func NewLoadBalancerPool(
-	cloud LoadBalancers,
-	defaultBackendPool backends.BackendPool,
-	defaultBackendNodePort utils.ServicePort, namer *utils.Namer) LoadBalancerPool {
-	return &L7s{cloud, storage.NewInMemoryPool(), nil, defaultBackendPool, defaultBackendNodePort, namer}
+func NewLoadBalancerPool(cloud LoadBalancers, namer *utils.Namer) LoadBalancerPool {
+	return &L7s{cloud, storage.NewInMemoryPool(), namer}
 }
 
 func (l *L7s) create(ri *L7RuntimeInfo) (*L7, error) {
-	if l.glbcDefaultBackend == nil {
-		glog.Warningf("Creating l7 without a default backend")
-	}
 	return &L7{
-		runtimeInfo:        ri,
-		Name:               l.namer.LoadBalancer(ri.Name),
-		cloud:              l.cloud,
-		glbcDefaultBackend: l.glbcDefaultBackend,
-		namer:              l.namer,
+		runtimeInfo: ri,
+		Name:        l.namer.LoadBalancer(ri.Name),
+		cloud:       l.cloud,
+		namer:       l.namer,
 	}, nil
 }
 
@@ -142,19 +119,6 @@ func (l *L7s) Delete(name string) error {
 func (l *L7s) Sync(lbs []*L7RuntimeInfo) error {
 	glog.V(3).Infof("Syncing loadbalancers %v", lbs)
 
-	if len(lbs) != 0 {
-		// Lazily create a default backend so we don't tax users who don't care
-		// about Ingress by consuming 1 of their 3 GCE BackendServices. This
-		// BackendService is GC'd when there are no more Ingresses.
-		if err := l.defaultBackendPool.Ensure([]utils.ServicePort{l.defaultBackendNodePort}, nil); err != nil {
-			return err
-		}
-		defaultBackend, err := l.defaultBackendPool.Get(l.defaultBackendNodePort.NodePort, false)
-		if err != nil {
-			return err
-		}
-		l.glbcDefaultBackend = defaultBackend.Ga
-	}
 	// create new loadbalancers, validate existing
 	for _, ri := range lbs {
 		if err := l.Add(ri); err != nil {
@@ -184,24 +148,12 @@ func (l *L7s) GC(names []string) error {
 			return err
 		}
 	}
-	// Tear down the default backend when there are no more loadbalancers.
-	// This needs to happen after we've deleted all url-maps that might be
-	// using it.
-	if len(names) == 0 {
-		if err := l.defaultBackendPool.Delete(l.defaultBackendNodePort.NodePort); err != nil {
-			return err
-		}
-		l.glbcDefaultBackend = nil
-	}
 	return nil
 }
 
 // Shutdown logs whether or not the pool is empty.
 func (l *L7s) Shutdown() error {
 	if err := l.GC([]string{}); err != nil {
-		return err
-	}
-	if err := l.defaultBackendPool.Shutdown(); err != nil {
 		return err
 	}
 	glog.V(2).Infof("Loadbalancer pool shutdown.")
