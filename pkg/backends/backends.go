@@ -240,10 +240,7 @@ func (b *Backends) Get(name string, isAlpha bool) (*BackendService, error) {
 }
 
 func (b *Backends) ensureHealthCheck(sp utils.ServicePort) (string, error) {
-	name := b.namer.Backend(sp.NodePort)
-	if sp.NEGEnabled {
-		name = b.namer.BackendNEG(sp.SvcName.Namespace, sp.SvcName.Name, sp.SvcTargetPort)
-	}
+	name := sp.BackendName(b.namer)
 	hc := b.healthChecker.New(name, sp.NodePort, sp.Protocol, sp.NEGEnabled)
 	existingLegacyHC, err := b.healthChecker.GetLegacy(sp.NodePort)
 	if err != nil && !utils.IsNotFoundError(err) {
@@ -316,44 +313,40 @@ func (b *Backends) Ensure(svcPorts []utils.ServicePort, igs []*compute.InstanceG
 // ensureBackendService will update or create a Backend for the given port.
 // It assumes that the instance groups have been created and required named port has been added.
 // If not, then Ensure should be called instead.
-func (b *Backends) ensureBackendService(p utils.ServicePort, igs []*compute.InstanceGroup) error {
+func (b *Backends) ensureBackendService(sp utils.ServicePort, igs []*compute.InstanceGroup) error {
 	// We must track the ports even if creating the backends failed, because
 	// we might've created health-check for them.
 	be := &BackendService{}
-	beName := b.namer.Backend(p.NodePort)
-	if p.NEGEnabled {
-		beName = b.namer.BackendNEG(p.SvcName.Namespace, p.SvcName.Name, p.SvcTargetPort)
-	}
+	beName := sp.BackendName(b.namer)
 
 	defer func() {
 		b.snapshotter.Add(beName, be)
 	}()
-	var err error
 
 	// Ensure health check for backend service exists
-	hcLink, err := b.ensureHealthCheck(p)
+	hcLink, err := b.ensureHealthCheck(sp)
 	if err != nil {
 		return err
 	}
 
 	// Verify existance of a backend service for the proper port, but do not specify any backends/igs
-	be, _ = b.Get(beName, p.IsAlpha())
+	be, _ = b.Get(beName, sp.IsAlpha())
 	if be == nil {
 		namedPort := &compute.NamedPort{
-			Name: b.namer.NamedPort(p.NodePort),
-			Port: p.NodePort,
+			Name: b.namer.NamedPort(sp.NodePort),
+			Port: sp.NodePort,
 		}
 
-		glog.V(2).Infof("Creating backend service for port %v named %v", p.NodePort, beName)
-		be, err = b.create(namedPort, hcLink, p, beName)
+		glog.V(2).Infof("Creating backend service for port %v named %v", sp.NodePort, beName)
+		be, err = b.create(namedPort, hcLink, sp, beName)
 		if err != nil {
 			return err
 		}
 	}
 
-	needUpdate := be.ensureProtocol(p)
+	needUpdate := be.ensureProtocol(sp)
 	needUpdate = needUpdate || be.ensureHealthCheckLink(hcLink)
-	needUpdate = needUpdate || be.ensureDescription(p.Description())
+	needUpdate = needUpdate || be.ensureDescription(sp.Description())
 
 	if needUpdate {
 		if err = b.update(be); err != nil {
@@ -365,7 +358,7 @@ func (b *Backends) ensureBackendService(p utils.ServicePort, igs []*compute.Inst
 
 	// If previous health check was legacy type, we need to delete it.
 	if existingHCLink != hcLink && strings.Contains(existingHCLink, "/httpHealthChecks/") {
-		if err = b.healthChecker.DeleteLegacy(p.NodePort); err != nil {
+		if err = b.healthChecker.DeleteLegacy(sp.NodePort); err != nil {
 			glog.Warning("Failed to delete legacy HttpHealthCheck %v; Will not try again, err: %v", beName, err)
 		}
 	}
@@ -373,7 +366,7 @@ func (b *Backends) ensureBackendService(p utils.ServicePort, igs []*compute.Inst
 	// If there are instance pools(node pool is synced) and NEG is not enabled,
 	// perform edgeHop to verify that BackendServices contains links to all
 	// backends/instancegroups
-	if len(igs) > 0 && !p.NEGEnabled {
+	if len(igs) > 0 && !sp.NEGEnabled {
 		return b.edgeHop(be, igs)
 	}
 
@@ -574,13 +567,10 @@ func getInstanceGroupsToAdd(be *BackendService, igs []*compute.InstanceGroup) []
 }
 
 // GC garbage collects services corresponding to ports in the given list.
-func (b *Backends) GC(svcNodePorts []utils.ServicePort) error {
+func (b *Backends) GC(svcPorts []utils.ServicePort) error {
 	knownPorts := sets.NewString()
-	for _, p := range svcNodePorts {
-		name := b.namer.Backend(p.NodePort)
-		if p.NEGEnabled {
-			name = b.namer.BackendNEG(p.SvcName.Namespace, p.SvcName.Name, p.SvcTargetPort)
-		}
+	for _, sp := range svcPorts {
+		name := sp.BackendName(b.namer)
 		knownPorts.Insert(name)
 	}
 	pool := b.snapshotter.Snapshot()

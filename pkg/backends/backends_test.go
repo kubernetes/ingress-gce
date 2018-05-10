@@ -430,11 +430,11 @@ func TestBackendPoolSync(t *testing.T) {
 func TestBackendPoolSyncNEG(t *testing.T) {
 	// Convert a BackendPool from non-NEG to NEG.
 	// Expect the old BackendServices to be GC'ed
-	svcPort := ServicePort{NodePort: 81, Protocol: annotations.ProtocolHTTP}
+	svcPort := utils.ServicePort{NodePort: 81, Protocol: annotations.ProtocolHTTP}
 	f := NewFakeBackendServices(noOpErrFunc, true)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, true)
-	if err := pool.Ensure([]ServicePort{svcPort}, nil); err != nil {
+	if err := pool.Ensure([]utils.ServicePort{svcPort}, nil); err != nil {
 		t.Errorf("Expected backend pool to add node ports, err: %v", err)
 	}
 
@@ -446,7 +446,7 @@ func TestBackendPoolSyncNEG(t *testing.T) {
 
 	// Convert to NEG
 	svcPort.NEGEnabled = true
-	if err := pool.Ensure([]ServicePort{svcPort}, nil); err != nil {
+	if err := pool.Ensure([]utils.ServicePort{svcPort}, nil); err != nil {
 		t.Errorf("Expected backend pool to add node ports, err: %v", err)
 	}
 
@@ -456,7 +456,7 @@ func TestBackendPoolSyncNEG(t *testing.T) {
 		t.Fatalf("Failed to get backend service with name %v: %v", negName, err)
 	}
 	// GC should garbage collect the Backend on the old naming schema
-	pool.GC([]ServicePort{svcPort})
+	pool.GC([]utils.ServicePort{svcPort})
 
 	bs, err := f.GetGlobalBackendService(nodePortName)
 	if err == nil {
@@ -465,11 +465,11 @@ func TestBackendPoolSyncNEG(t *testing.T) {
 
 	// Convert back to non-NEG
 	svcPort.NEGEnabled = false
-	if err := pool.Ensure([]ServicePort{svcPort}, nil); err != nil {
+	if err := pool.Ensure([]utils.ServicePort{svcPort}, nil); err != nil {
 		t.Errorf("Expected backend pool to add node ports, err: %v", err)
 	}
 
-	pool.GC([]ServicePort{svcPort})
+	pool.GC([]utils.ServicePort{svcPort})
 
 	_, err = f.GetGlobalBackendService(nodePortName)
 	if err != nil {
@@ -479,40 +479,40 @@ func TestBackendPoolSyncNEG(t *testing.T) {
 
 func TestBackendPoolSyncQuota(t *testing.T) {
 	testCases := []struct {
-		oldPorts      []ServicePort
-		newPorts      []ServicePort
+		oldPorts      []utils.ServicePort
+		newPorts      []utils.ServicePort
 		expectSyncErr bool
 		desc          string
 	}{
 		{
-			[]ServicePort{{NodePort: 8080}},
-			[]ServicePort{{NodePort: 8080}},
+			[]utils.ServicePort{{NodePort: 8080}},
+			[]utils.ServicePort{{NodePort: 8080}},
 			false,
 			"Same port",
 		},
 		{
-			[]ServicePort{{NodePort: 8080}},
-			[]ServicePort{{NodePort: 9000}},
+			[]utils.ServicePort{{NodePort: 8080}},
+			[]utils.ServicePort{{NodePort: 9000}},
 			true,
 			"Different port",
 		},
 		{
-			[]ServicePort{{NodePort: 8080}},
-			[]ServicePort{{NodePort: 8080}, {NodePort: 443}},
+			[]utils.ServicePort{{NodePort: 8080}},
+			[]utils.ServicePort{{NodePort: 8080}, {NodePort: 443}},
 			false,
 			"Same port plus additional port",
 		},
 		{
-			[]ServicePort{{NodePort: 8080}},
-			[]ServicePort{{NodePort: 3000}, {NodePort: 4000}, {NodePort: 5000}},
+			[]utils.ServicePort{{NodePort: 8080}},
+			[]utils.ServicePort{{NodePort: 3000}, {NodePort: 4000}, {NodePort: 5000}},
 			true,
 			"New set of ports not including the same port",
 		},
 		// Need to fill the SvcTargetPort field on ServicePort to make sure
 		// NEG Backend naming is unique
 		{
-			[]ServicePort{{NodePort: 8080}, {NodePort: 443}},
-			[]ServicePort{
+			[]utils.ServicePort{{NodePort: 8080}, {NodePort: 443}},
+			[]utils.ServicePort{
 				{NodePort: 8080, SvcTargetPort: "testport8080", NEGEnabled: true},
 				{NodePort: 443, SvcTargetPort: "testport443", NEGEnabled: true},
 			},
@@ -520,11 +520,11 @@ func TestBackendPoolSyncQuota(t *testing.T) {
 			"Same port converted to NEG, plus one new NEG port",
 		},
 		{
-			[]ServicePort{
+			[]utils.ServicePort{
 				{NodePort: 80, SvcTargetPort: "testport80", NEGEnabled: true},
 				{NodePort: 90, SvcTargetPort: "testport90"},
 			},
-			[]ServicePort{
+			[]utils.ServicePort{
 				{NodePort: 80, SvcTargetPort: "testport80"},
 				{NodePort: 90, SvcTargetPort: "testport90", NEGEnabled: true},
 			},
@@ -532,12 +532,12 @@ func TestBackendPoolSyncQuota(t *testing.T) {
 			"Mixed NEG and non-NEG ports",
 		},
 		{
-			[]ServicePort{
+			[]utils.ServicePort{
 				{NodePort: 100, SvcTargetPort: "testport100", NEGEnabled: true},
 				{NodePort: 110, SvcTargetPort: "testport110", NEGEnabled: true},
 				{NodePort: 120, SvcTargetPort: "testport120", NEGEnabled: true},
 			},
-			[]ServicePort{
+			[]utils.ServicePort{
 				{NodePort: 100, SvcTargetPort: "testport100"},
 				{NodePort: 110, SvcTargetPort: "testport110"},
 				{NodePort: 120, SvcTargetPort: "testport120"},
@@ -953,7 +953,7 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
 				func(t *testing.T) {
 					pool.Ensure([]utils.ServicePort{oldPort}, nil)
-					be, err := pool.Get(defaultNamer.Backend(oldPort.NodePort), oldPort.isAlpha())
+					be, err := pool.Get(defaultNamer.Backend(oldPort.NodePort), oldPort.IsAlpha())
 					if err != nil {
 						t.Fatalf("%v", err)
 					}

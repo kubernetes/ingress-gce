@@ -47,3 +47,12 @@ func (sp ServicePort) Description() string {
 func (sp ServicePort) IsAlpha() bool {
 	return sp.Protocol == annotations.ProtocolHTTP2
 }
+
+// BackendName returns the name of the backend which would be used for this ServicePort.
+func (sp ServicePort) BackendName(namer *Namer) string {
+	if !sp.NEGEnabled {
+		return namer.Backend(sp.NodePort)
+	}
+
+	return namer.BackendNEG(sp.SvcName.Namespace, sp.SvcName.Name, sp.SvcTargetPort)
+}

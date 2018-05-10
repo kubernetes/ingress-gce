@@ -245,7 +245,6 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	if err != nil {
 		return err
 	}
-
 	// gceSvcPorts contains the ServicePorts used by only single-cluster ingress.
 	gceSvcPorts := lbc.ToSvcPorts(&gceIngresses)
 	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))

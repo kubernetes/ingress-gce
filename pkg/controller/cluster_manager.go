@@ -112,7 +112,9 @@ func (c *ClusterManager) EnsureInstanceGroupsAndPorts(nodeNames []string, servic
 	// Convert to slice of NodePort int64s.
 	ports := []int64{}
 	for _, p := range uniq(servicePorts) {
-		ports = append(ports, p.NodePort)
+		if !p.NEGEnabled {
+			ports = append(ports, p.NodePort)
+		}
 	}
 
 	// Create instance groups and set named ports.
@@ -196,7 +198,6 @@ func NewClusterManager(
 
 	cluster.healthCheckers = []healthchecks.HealthChecker{healthChecker, defaultBackendHealthChecker}
 	cluster.backendPool = backends.NewBackendPool(cloud, cloud, healthChecker, cluster.instancePool, cluster.ClusterNamer, true)
-
 	// L7 pool creates targetHTTPProxy, ForwardingRules, UrlMaps, StaticIPs.
 	cluster.l7Pool = loadbalancers.NewLoadBalancerPool(cloud, cluster.ClusterNamer)
 	cluster.firewallPool = firewalls.NewFirewallPool(cloud, cluster.ClusterNamer, gce.LoadBalancerSrcRanges(), flags.F.NodePortRanges.Values())
