@@ -33,7 +33,6 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -69,7 +68,7 @@ func gceForTest(negEnabled bool) *GCE {
 
 func TestGetProbe(t *testing.T) {
 	translator := gceForTest(false)
-	nodePortToHealthCheck := map[backends.ServicePort]string{
+	nodePortToHealthCheck := map[utils.ServicePort]string{
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}:  "/healthz",
 		{NodePort: 3002, Protocol: annotations.ProtocolHTTPS}: "/foo",
 	}
@@ -92,7 +91,7 @@ func TestGetProbe(t *testing.T) {
 
 func TestGetProbeNamedPort(t *testing.T) {
 	translator := gceForTest(false)
-	nodePortToHealthCheck := map[backends.ServicePort]string{
+	nodePortToHealthCheck := map[utils.ServicePort]string{
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
 	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
@@ -147,7 +146,7 @@ func TestGetProbeCrossNamespace(t *testing.T) {
 		},
 	}
 	translator.podLister.Add(firstPod)
-	nodePortToHealthCheck := map[backends.ServicePort]string{
+	nodePortToHealthCheck := map[utils.ServicePort]string{
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
 	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
@@ -169,7 +168,7 @@ func TestGetProbeCrossNamespace(t *testing.T) {
 	}
 }
 
-func makePods(nodePortToHealthCheck map[backends.ServicePort]string, ns string) []*apiv1.Pod {
+func makePods(nodePortToHealthCheck map[utils.ServicePort]string, ns string) []*apiv1.Pod {
 	delay := 1 * time.Minute
 
 	var pods []*apiv1.Pod
@@ -207,7 +206,7 @@ func makePods(nodePortToHealthCheck map[backends.ServicePort]string, ns string) 
 	return pods
 }
 
-func makeServices(nodePortToHealthCheck map[backends.ServicePort]string, ns string) []*apiv1.Service {
+func makeServices(nodePortToHealthCheck map[utils.ServicePort]string, ns string) []*apiv1.Service {
 	var services []*apiv1.Service
 	for np := range nodePortToHealthCheck {
 		svc := &apiv1.Service{
@@ -243,7 +242,7 @@ func TestGatherEndpointPorts(t *testing.T) {
 	ep1 := "ep1"
 	ep2 := "ep2"
 
-	svcPorts := []backends.ServicePort{
+	svcPorts := []utils.ServicePort{
 		{NodePort: int64(30001)},
 		{NodePort: int64(30002)},
 		{

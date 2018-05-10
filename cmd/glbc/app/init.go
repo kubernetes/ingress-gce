@@ -30,11 +30,11 @@ import (
 	"k8s.io/client-go/kubernetes"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
-func DefaultBackendServicePort(kubeClient kubernetes.Interface) *backends.ServicePort {
+func DefaultBackendServicePort(kubeClient kubernetes.Interface) *utils.ServicePort {
 	// TODO: make this not fatal
 	if flags.F.DefaultSvc == "" {
 		glog.Fatalf("Please specify --default-backend")
@@ -52,7 +52,7 @@ func DefaultBackendServicePort(kubeClient kubernetes.Interface) *backends.Servic
 			flags.F.DefaultSvc, err)
 	}
 
-	return &backends.ServicePort{
+	return &utils.ServicePort{
 		NodePort: int64(nodePort),
 		Protocol: annotations.ProtocolHTTP, // The default backend is HTTP.
 		SvcName:  types.NamespacedName{Namespace: parts[0], Name: parts[1]},

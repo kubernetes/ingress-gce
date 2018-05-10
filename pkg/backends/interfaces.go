@@ -20,25 +20,26 @@ import (
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	compute "google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // ProbeProvider retrieves a probe struct given a nodePort
 type ProbeProvider interface {
-	GetProbe(sp ServicePort) (*api_v1.Probe, error)
+	GetProbe(sp utils.ServicePort) (*api_v1.Probe, error)
 }
 
 // BackendPool is an interface to manage a pool of kubernetes nodePort services
 // as gce backendServices, and sync them through the BackendServices interface.
 type BackendPool interface {
 	Init(p ProbeProvider)
-	Ensure(ports []ServicePort, igs []*compute.InstanceGroup) error
+	Ensure(ports []utils.ServicePort, igs []*compute.InstanceGroup) error
 	Get(port int64, isAlpha bool) (*BackendService, error)
 	Delete(port int64) error
-	GC(ports []ServicePort) error
+	GC(ports []utils.ServicePort) error
 	Shutdown() error
 	Status(name string) string
 	List() ([]interface{}, error)
-	Link(port ServicePort, zones []string) error
+	Link(port utils.ServicePort, zones []string) error
 }
 
 // BackendServices is an interface for managing gce backend services.

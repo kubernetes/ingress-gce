@@ -41,7 +41,7 @@ const (
 // ClusterManager manages cluster resource pools.
 type ClusterManager struct {
 	ClusterNamer           *utils.Namer
-	defaultBackendNodePort backends.ServicePort
+	defaultBackendNodePort utils.ServicePort
 	instancePool           instances.NodePool
 	backendPool            backends.BackendPool
 	l7Pool                 loadbalancers.LoadBalancerPool
@@ -100,7 +100,7 @@ func (c *ClusterManager) shutdown() error {
 // - lbServicePorts are the ports for which we require Backend Services.
 // - instanceGroups are the groups to be referenced by the Backend Services..
 // If GCE runs out of quota, a googleapi 403 is returned.
-func (c *ClusterManager) EnsureLoadBalancer(lb *loadbalancers.L7RuntimeInfo, lbServicePorts []backends.ServicePort, instanceGroups []*compute.InstanceGroup) error {
+func (c *ClusterManager) EnsureLoadBalancer(lb *loadbalancers.L7RuntimeInfo, lbServicePorts []utils.ServicePort, instanceGroups []*compute.InstanceGroup) error {
 	glog.V(4).Infof("EnsureLoadBalancer(%q lb, %v lbServicePorts, %v instanceGroups)", lb.String(), len(lbServicePorts), len(instanceGroups))
 	if err := c.backendPool.Ensure(uniq(lbServicePorts), instanceGroups); err != nil {
 		return err
@@ -109,7 +109,7 @@ func (c *ClusterManager) EnsureLoadBalancer(lb *loadbalancers.L7RuntimeInfo, lbS
 	return c.l7Pool.Sync([]*loadbalancers.L7RuntimeInfo{lb})
 }
 
-func (c *ClusterManager) EnsureInstanceGroupsAndPorts(nodeNames []string, servicePorts []backends.ServicePort) ([]*compute.InstanceGroup, error) {
+func (c *ClusterManager) EnsureInstanceGroupsAndPorts(nodeNames []string, servicePorts []utils.ServicePort) ([]*compute.InstanceGroup, error) {
 	if len(servicePorts) != 0 {
 		// Add the default backend node port to the list of named ports for instance groups.
 		servicePorts = append(servicePorts, c.defaultBackendNodePort)
@@ -145,7 +145,7 @@ func (c *ClusterManager) EnsureFirewall(nodeNames []string, endpointPorts []stri
 // - nodePorts are the ports for which we want BackendServies. BackendServices
 //   for ports not in this list are deleted.
 // This method ignores googleapi 404 errors (StatusNotFound).
-func (c *ClusterManager) GC(lbNames []string, nodePorts []backends.ServicePort) error {
+func (c *ClusterManager) GC(lbNames []string, nodePorts []utils.ServicePort) error {
 	// On GC:
 	// * Loadbalancers need to get deleted before backends.
 	// * Backends are refcounted in a shared pool.
@@ -187,7 +187,7 @@ func (c *ClusterManager) GC(lbNames []string, nodePorts []backends.ServicePort) 
 func NewClusterManager(
 	cloud *gce.GCECloud,
 	namer *utils.Namer,
-	defaultBackendNodePort backends.ServicePort,
+	defaultBackendNodePort utils.ServicePort,
 	defaultHealthCheckPath string) (*ClusterManager, error) {
 
 	// Names are fundamental to the cluster, the uid allocator makes sure names don't collide.

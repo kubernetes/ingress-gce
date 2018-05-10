@@ -32,7 +32,7 @@ import (
 )
 
 var (
-	testDefaultBeNodePort = backends.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
+	testDefaultBeNodePort = utils.ServicePort{NodePort: 30000, Protocol: annotations.ProtocolHTTP}
 	testBackendPort       = intstr.IntOrString{Type: intstr.Int, IntVal: 80}
 	testSrcRanges         = []string{"1.1.1.1/20"}
 	testNodePortRanges    = []string{"30000-32767"}

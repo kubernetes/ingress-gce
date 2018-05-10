@@ -36,7 +36,6 @@ import (
 
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/controller/errors"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -71,84 +70,9 @@ type GCE struct {
 	negEnabled     bool
 }
 
-// ToURLMap converts an ingress to our internal UrlMap representation.
-func (t *GCE) ToURLMap(ing *extensions.Ingress) (*utils.GCEURLMap, error) {
-	urlMap := utils.NewGCEURLMap()
-	for _, rule := range ing.Spec.Rules {
-		if rule.HTTP == nil {
-			continue
-		}
-		pathRules := []utils.PathRule{}
-		for _, p := range rule.HTTP.Paths {
-			backendName, err := t.toGCEBackendName(&p.Backend, ing.Namespace)
-			if err != nil {
-				// If a service doesn't have a nodeport we can still forward traffic
-				// to all other services under the assumption that the user will
-				// modify nodeport.
-				if _, ok := err.(errors.ErrNodePortNotFound); ok {
-					t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeWarning, "Service", err.(errors.ErrNodePortNotFound).Error())
-					continue
-				}
-
-				// If a service doesn't have a backend, there's nothing the user
-				// can do to correct this (the admin might've limited quota).
-				// So keep requeuing the l7 till all backends exist.
-				return utils.NewGCEURLMap(), err
-			}
-			// The Ingress spec defines empty path as catch-all, so if a user
-			// asks for a single host and multiple empty paths, all traffic is
-			// sent to one of the last backend in the rules list.
-			path := p.Path
-			if path == "" {
-				path = loadbalancers.DefaultPath
-			}
-
-			pathRules = append(pathRules, utils.PathRule{Path: path, BackendName: backendName})
-		}
-		host := rule.Host
-		if host == "" {
-			host = loadbalancers.DefaultHost
-		}
-		urlMap.PutPathRulesForHost(host, pathRules)
-	}
-	var defaultBackendName string
-	if ing.Spec.Backend != nil {
-		var err error
-		defaultBackendName, err = t.toGCEBackendName(ing.Spec.Backend, ing.Namespace)
-		if err != nil {
-			msg := fmt.Sprintf("%v", err)
-			if _, ok := err.(errors.ErrNodePortNotFound); ok {
-				msg = fmt.Sprintf("couldn't find nodeport for %v/%v", ing.Namespace, ing.Spec.Backend.ServiceName)
-			}
-			msg = fmt.Sprintf("failed to identify user specified default backend, %v, using system default", msg)
-			t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeWarning, "Service", msg)
-		} else if defaultBackendName != "" {
-			port, _ := t.namer.BackendPort(defaultBackendName)
-			msg := fmt.Sprintf("default backend set to %v:%v", ing.Spec.Backend.ServiceName, port)
-			t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeNormal, "Service", msg)
-		}
-	} else {
-		t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeNormal, "Service", "no user specified default backend, using system default")
-	}
-	urlMap.DefaultBackendName = defaultBackendName
-	return urlMap, nil
-}
-
-func (t *GCE) toGCEBackendName(be *extensions.IngressBackend, ns string) (string, error) {
-	if be == nil {
-		return "", nil
-	}
-	port, err := t.getServiceNodePort(*be, ns)
-	if err != nil {
-		return "", err
-	}
-	backendName := t.namer.Backend(port.NodePort)
-	return backendName, nil
-}
-
 // getServiceNodePort looks in the svc store for a matching service:port,
 // and returns the nodeport.
-func (t *GCE) getServiceNodePort(be extensions.IngressBackend, namespace string) (backends.ServicePort, error) {
+func (t *GCE) getServiceNodePort(be extensions.IngressBackend, namespace string) (utils.ServicePort, error) {
 	obj, exists, err := t.svcLister.Get(
 		&api_v1.Service{
 			ObjectMeta: meta_v1.ObjectMeta{
@@ -157,18 +81,18 @@ func (t *GCE) getServiceNodePort(be extensions.IngressBackend, namespace string)
 			},
 		})
 	if !exists {
-		return backends.ServicePort{}, errors.ErrNodePortNotFound{
+		return utils.ServicePort{}, errors.ErrNodePortNotFound{
 			Backend: be,
 			Err:     fmt.Errorf("service %v/%v not found in store", namespace, be.ServiceName),
 		}
 	}
 	if err != nil {
-		return backends.ServicePort{}, errors.ErrNodePortNotFound{Backend: be, Err: err}
+		return utils.ServicePort{}, errors.ErrNodePortNotFound{Backend: be, Err: err}
 	}
 	svc := obj.(*api_v1.Service)
 	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
 	if err != nil {
-		return backends.ServicePort{}, errors.ErrSvcAppProtosParsing{Svc: svc, Err: err}
+		return utils.ServicePort{}, errors.ErrSvcAppProtosParsing{Svc: svc, Err: err}
 	}
 
 	var port *api_v1.ServicePort
@@ -190,7 +114,7 @@ PortLoop:
 	}
 
 	if port == nil {
-		return backends.ServicePort{}, errors.ErrNodePortNotFound{
+		return utils.ServicePort{}, errors.ErrNodePortNotFound{
 			Backend: be,
 			Err:     fmt.Errorf("could not find matching nodeport from service"),
 		}
@@ -201,7 +125,7 @@ PortLoop:
 		proto = annotations.AppProtocol(protoStr)
 	}
 
-	p := backends.ServicePort{
+	p := utils.ServicePort{
 		NodePort:      int64(port.NodePort),
 		Protocol:      proto,
 		SvcName:       types.NamespacedName{Namespace: namespace, Name: be.ServiceName},
@@ -212,42 +136,48 @@ PortLoop:
 	return p, nil
 }
 
-// ToNodePorts is a helper method over IngressToNodePorts to process a list of ingresses.
-func (t *GCE) ToNodePorts(ings *extensions.IngressList) []backends.ServicePort {
-	var knownPorts []backends.ServicePort
-	for _, ing := range ings.Items {
-		knownPorts = append(knownPorts, t.IngressToNodePorts(&ing)...)
-	}
-	return knownPorts
-}
-
-// IngressToNodePorts converts a pathlist to a flat list of nodeports for the given ingress.
-func (t *GCE) IngressToNodePorts(ing *extensions.Ingress) []backends.ServicePort {
-	var knownPorts []backends.ServicePort
-	defaultBackend := ing.Spec.Backend
-	if defaultBackend != nil {
-		port, err := t.getServiceNodePort(*defaultBackend, ing.Namespace)
-		if err != nil {
-			glog.Infof("%v", err)
-		} else {
-			knownPorts = append(knownPorts, port)
-		}
-	}
+// TranslateIngress converts an Ingress into our internal UrlMap representation.
+func (t *GCE) TranslateIngress(ing *extensions.Ingress) *utils.GCEURLMap {
+	urlMap := utils.NewGCEURLMap()
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {
-			glog.Errorf("ignoring non http Ingress rule")
+			glog.Errorf("Ignoring non http rule while translating %v", ing.Name)
 			continue
 		}
-		for _, path := range rule.HTTP.Paths {
-			port, err := t.getServiceNodePort(path.Backend, ing.Namespace)
+		pathRules := []utils.PathRule{}
+		for _, p := range rule.HTTP.Paths {
+			svcPort, err := t.getServiceNodePort(p.Backend, ing.Namespace)
 			if err != nil {
 				glog.Infof("%v", err)
 				continue
 			}
-			knownPorts = append(knownPorts, port)
+			// The Ingress spec defines empty path as catch-all, so if a user
+			// asks for a single host and multiple empty paths, all traffic is
+			// sent to one of the last backend in the rules list.
+			path := p.Path
+			if path == "" {
+				path = loadbalancers.DefaultPath
+			}
+			pathRules = append(pathRules, utils.PathRule{Path: path, Backend: svcPort})
+		}
+		host := rule.Host
+		if host == "" {
+			host = loadbalancers.DefaultHost
+		}
+		urlMap.PutPathRulesForHost(host, pathRules)
+	}
+	if ing.Spec.Backend != nil {
+		svcPort, err := t.getServiceNodePort(*ing.Spec.Backend, ing.Namespace)
+		if err != nil {
+			msg := fmt.Sprintf("%v", err)
+			msg = fmt.Sprintf("failed to identify user specified default backend, %v, using system default", msg)
+			t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeWarning, "Service", msg)
+			glog.Infof("%v", err)
+		} else {
+			urlMap.DefaultBackend = svcPort
 		}
 	}
-	return knownPorts
+	return urlMap
 }
 
 func getZone(n *api_v1.Node) string {
@@ -339,7 +269,7 @@ func (t *GCE) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrString, pr
 }
 
 // GatherEndpointPorts returns all ports needed to open NEG endpoints.
-func (t *GCE) GatherEndpointPorts(svcPorts []backends.ServicePort) []string {
+func (t *GCE) GatherEndpointPorts(svcPorts []utils.ServicePort) []string {
 	portMap := map[int64]bool{}
 	for _, p := range svcPorts {
 		if t.negEnabled && p.NEGEnabled {
@@ -369,7 +299,7 @@ func isSimpleHTTPProbe(probe *api_v1.Probe) bool {
 }
 
 // GetProbe returns a probe that's used for the given nodeport
-func (t *GCE) GetProbe(port backends.ServicePort) (*api_v1.Probe, error) {
+func (t *GCE) GetProbe(port utils.ServicePort) (*api_v1.Probe, error) {
 	sl := t.svcLister.List()
 
 	// Find the label and target port of the one service with the given nodePort

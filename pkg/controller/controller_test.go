@@ -142,6 +142,22 @@ func getKey(ing *extensions.Ingress, t *testing.T) string {
 	return key
 }
 
+// gceURLMapFromPrimitive returns a GCEURLMap that is populated from a primitive representation.
+// It uses the passed in nodePortManager to construct a stubbed ServicePort based on service names.
+func gceURLMapFromPrimitive(primitiveMap utils.PrimitivePathMap, pm *nodePortManager) *utils.GCEURLMap {
+	urlMap := utils.NewGCEURLMap()
+	for hostname, rules := range primitiveMap {
+		pathRules := make([]utils.PathRule, 0)
+		for path, backend := range rules {
+			nodePort := pm.getNodePort(backend)
+			stubSvcPort := utils.ServicePort{NodePort: int64(nodePort)}
+			pathRules = append(pathRules, utils.PathRule{Path: path, Backend: stubSvcPort})
+		}
+		urlMap.PutPathRulesForHost(hostname, pathRules)
+	}
+	return urlMap
+}
+
 // nodePortManager is a helper to allocate ports to services and
 // remember the allocations.
 type nodePortManager struct {
@@ -158,20 +174,6 @@ func (p *nodePortManager) getNodePort(svcName string) int {
 	}
 	p.portMap[svcName] = rand.Intn(p.end-p.start) + p.start
 	return p.portMap[svcName]
-}
-
-// toNodePortSvcNames converts all service names in the given map to gce node
-// port names, eg foo -> k8-be-<foo nodeport>
-func (p *nodePortManager) toNodePortSvcNames(paths utils.PrimitivePathMap) utils.PrimitivePathMap {
-	result := utils.PrimitivePathMap{}
-	for host, rules := range paths {
-		ruleMap := map[string]string{}
-		for path, svc := range rules {
-			ruleMap[path] = p.namer.Backend(int64(p.portMap[svc]))
-		}
-		result[host] = ruleMap
-	}
-	return result
 }
 
 func newPortManager(st, end int, namer *utils.Namer) *nodePortManager {
@@ -239,8 +241,7 @@ func TestLbCreateDelete(t *testing.T) {
 		if err != nil {
 			t.Fatalf("cm.l7Pool.Get(%q) = _, %v; want nil", ingStoreKey, err)
 		}
-		expectedUrlMap := utils.GCEURLMapFromPrimitive(pm.toNodePortSvcNames(m))
-		expectedUrlMap.DefaultBackendName = cm.Namer.Backend(testDefaultBeNodePort.NodePort)
+		expectedUrlMap := gceURLMapFromPrimitive(m, pm)
 		if err := cm.fakeLbs.CheckURLMap(l7, expectedUrlMap); err != nil {
 			t.Fatalf("cm.fakeLbs.CheckURLMap(l7, expectedUrlMap) = %v, want nil", err)
 		}
@@ -320,19 +321,18 @@ func TestLbFaultyUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	expectedUrlMap := utils.GCEURLMapFromPrimitive(pm.toNodePortSvcNames(inputMap))
-	expectedUrlMap.DefaultBackendName = cm.Namer.Backend(testDefaultBeNodePort.NodePort)
+	expectedUrlMap := gceURLMapFromPrimitive(inputMap, pm)
 	if err := cm.fakeLbs.CheckURLMap(l7, expectedUrlMap); err != nil {
 		t.Fatalf("cm.fakeLbs.CheckURLMap(...) = %v, want nil", err)
 	}
 
 	// Change the urlmap directly through the lb pool, resync, and
 	// make sure the controller corrects it.
-	forcedUpdate := utils.GCEURLMapFromPrimitive(utils.PrimitivePathMap{
+	forcedUpdate := gceURLMapFromPrimitive(utils.PrimitivePathMap{
 		"foo.example.com": {
 			"/foo1": "foo2svc",
 		},
-	})
+	}, pm)
 	l7.UpdateUrlMap(forcedUpdate)
 
 	if err := lbc.sync(ingStoreKey); err != nil {
@@ -346,9 +346,10 @@ func TestLbFaultyUpdate(t *testing.T) {
 func TestLbDefaulting(t *testing.T) {
 	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
+	pm := newPortManager(1, 65536, cm.Namer)
 	// Make sure the controller plugs in the default values accepted by GCE.
 	ing := newIngress(utils.PrimitivePathMap{"": {"": "foo1svc"}})
-	pm := newPortManager(1, 65536, cm.Namer)
+
 	addIngress(lbc, ing, pm)
 
 	ingStoreKey := getKey(ing, t)
@@ -364,8 +365,7 @@ func TestLbDefaulting(t *testing.T) {
 			loadbalancers.DefaultPath: "foo1svc",
 		},
 	}
-	expectedUrlMap := utils.GCEURLMapFromPrimitive(pm.toNodePortSvcNames(expected))
-	expectedUrlMap.DefaultBackendName = cm.Namer.Backend(testDefaultBeNodePort.NodePort)
+	expectedUrlMap := gceURLMapFromPrimitive(expected, pm)
 	if err := cm.fakeLbs.CheckURLMap(l7, expectedUrlMap); err != nil {
 		t.Fatalf("cm.fakeLbs.CheckURLMap(...) = %v, want nil", err)
 	}
@@ -382,7 +382,6 @@ func TestLbNoService(t *testing.T) {
 	}
 	ing := newIngress(inputMap)
 	ing.Namespace = "ns1"
-	ing.Spec.Backend.ServiceName = "foo1svc"
 	ingStoreKey := getKey(ing, t)
 
 	// Adds ingress to store, but doesn't create an associated service.
@@ -413,8 +412,7 @@ func TestLbNoService(t *testing.T) {
 		t.Fatalf("lbc.sync() = err %v", err)
 	}
 
-	expectedUrlMap := utils.GCEURLMapFromPrimitive(pm.toNodePortSvcNames(inputMap))
-	expectedUrlMap.DefaultBackendName = cm.Namer.Backend(int64(pm.getNodePort("foo1svc")))
+	expectedUrlMap := gceURLMapFromPrimitive(inputMap, pm)
 	if err := cm.fakeLbs.CheckURLMap(l7, expectedUrlMap); err != nil {
 		t.Fatalf("cm.fakeLbs.CheckURLMap(...) = %v, want nil", err)
 	}

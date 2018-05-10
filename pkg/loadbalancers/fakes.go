@@ -366,8 +366,8 @@ func (f *FakeLoadBalancers) CheckURLMap(l7 *L7, expectedUrlMap *utils.GCEURLMap)
 	if err != nil || um == nil {
 		return fmt.Errorf("f.GetUrlMap(%q) = %v, %v; want _, nil", l7.UrlMap().Name, um, err)
 	}
-	defaultBackendName := expectedUrlMap.DefaultBackendName
-	defaultBackendLink := utils.BackendServiceRelativeResourcePath(expectedUrlMap.DefaultBackendName)
+	defaultBackendName := f.namer.Backend(expectedUrlMap.DefaultBackend.NodePort)
+	defaultBackendLink := utils.BackendServiceRelativeResourcePath(defaultBackendName)
 	// The urlmap should have a default backend, and each path matcher.
 	if defaultBackendName != "" && l7.UrlMap().DefaultService != defaultBackendLink {
 		return fmt.Errorf("default backend = %v, want %v", l7.UrlMap().DefaultService, defaultBackendLink)
@@ -398,7 +398,7 @@ func (f *FakeLoadBalancers) CheckURLMap(l7 *L7, expectedUrlMap *utils.GCEURLMap)
 				return fmt.Errorf("Expected path rules for host %v", hostname)
 			} else if ok, svc := expectedUrlMap.PathExists(hostname, pathRule); !ok {
 				return fmt.Errorf("Expected rule %v for host %v", pathRule, hostname)
-			} else if utils.BackendServiceRelativeResourcePath(svc) != rule.Service {
+			} else if utils.BackendServiceRelativeResourcePath(f.namer.Backend(svc.NodePort)) != rule.Service {
 				return fmt.Errorf("Expected service %v found %v", svc, rule.Service)
 			}
 		}

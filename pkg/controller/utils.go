@@ -32,7 +32,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -177,12 +176,12 @@ func setInstanceGroupsAnnotation(existing map[string]string, igs []*compute.Inst
 }
 
 // uniq returns an array of unique service ports from the given array.
-func uniq(nodePorts []backends.ServicePort) []backends.ServicePort {
-	portMap := map[int64]backends.ServicePort{}
+func uniq(nodePorts []utils.ServicePort) []utils.ServicePort {
+	portMap := map[int64]utils.ServicePort{}
 	for _, p := range nodePorts {
 		portMap[p.NodePort] = p
 	}
-	nodePorts = make([]backends.ServicePort, 0, len(portMap))
+	nodePorts = make([]utils.ServicePort, 0, len(portMap))
 	for _, sp := range portMap {
 		nodePorts = append(nodePorts, sp)
 	}
