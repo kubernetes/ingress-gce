@@ -133,11 +133,12 @@ func (l *L7) UrlMap() *compute.UrlMap {
 	return l.um
 }
 
-func (l *L7) checkUrlMap() (err error) {
+func (l *L7) assertUrlMapExists() (err error) {
 	if l.runtimeInfo.UrlMap == nil {
 		return fmt.Errorf("cannot create urlmap without internal representation")
 	}
-	defaultBackendName := l.namer.Backend(l.runtimeInfo.UrlMap.DefaultBackend.NodePort)
+
+	defaultBackendName := l.runtimeInfo.UrlMap.DefaultBackend.BackendName(l.namer)
 	urlMapName := l.namer.UrlMap(l.Name)
 	urlMap, _ := l.cloud.GetUrlMap(urlMapName)
 	if urlMap != nil {
@@ -602,7 +603,7 @@ func (l *L7) checkStaticIP() (err error) {
 }
 
 func (l *L7) edgeHop() error {
-	if err := l.checkUrlMap(); err != nil {
+	if err := l.assertUrlMapExists(); err != nil {
 		return err
 	}
 	if l.runtimeInfo.AllowHTTP {
@@ -717,8 +718,7 @@ func (l *L7) UpdateUrlMap() error {
 	}
 
 	urlMap := l.runtimeInfo.UrlMap
-
-	defaultBackendName := l.namer.Backend(urlMap.DefaultBackend.NodePort)
+	defaultBackendName := urlMap.DefaultBackend.BackendName(l.namer)
 	l.um.DefaultService = utils.BackendServiceRelativeResourcePath(defaultBackendName)
 
 	// Every update replaces the entire urlmap.
@@ -747,7 +747,7 @@ func (l *L7) UpdateUrlMap() error {
 
 		// GCE ensures that matched rule with longest prefix wins.
 		for _, rule := range rules {
-			beName := l.namer.Backend(rule.Backend.NodePort)
+			beName := rule.Backend.BackendName(l.namer)
 			beLink := utils.BackendServiceRelativeResourcePath(beName)
 			pathMatcher.PathRules = append(
 				pathMatcher.PathRules, &compute.PathRule{Paths: []string{rule.Path}, Service: beLink})

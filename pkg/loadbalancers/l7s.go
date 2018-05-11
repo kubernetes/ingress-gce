@@ -141,6 +141,7 @@ func (l *L7s) GC(names []string) error {
 			return err
 		}
 	}
+
 	return nil
 }
 

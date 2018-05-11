@@ -77,17 +77,15 @@ func NewHealthChecker(cloud HealthCheckProvider, defaultHealthCheckPath string, 
 }
 
 // New returns a *HealthCheck with default settings and specified port/protocol
-func (h *HealthChecks) New(port int64, protocol annotations.AppProtocol, enableNEG bool) *HealthCheck {
+func (h *HealthChecks) New(name string, port int64, protocol annotations.AppProtocol, enableNEG bool) *HealthCheck {
 	var hc *HealthCheck
 	if enableNEG {
 		hc = DefaultNEGHealthCheck(protocol)
 	} else {
 		hc = DefaultHealthCheck(port, protocol)
 	}
-	// port is the key for retriving existing health-check
-	// TODO: rename backend-service and health-check to not use port as key
-	hc.Name = h.namer.Backend(port)
-	hc.Port = port
+
+	hc.Name = name
 	return hc
 }
 
@@ -99,10 +97,9 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 		hc.RequestPath = h.defaultPath
 	}
 
-	nodePort := hc.Port
 	// Use alpha API when PORT_SPECIFICATION field is specified or when Type
 	// is HTTP2
-	existingHC, err := h.Get(nodePort, hc.isHttp2() || hc.ForNEG)
+	existingHC, err := h.Get(hc.Name, hc.isHttp2() || hc.ForNEG)
 	if err != nil {
 		if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			return "", err
@@ -112,7 +109,7 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 			return "", err
 		}
 
-		return h.getHealthCheckLink(nodePort, hc.isHttp2())
+		return h.getHealthCheckLink(hc.Name, hc.isHttp2())
 	}
 
 	if needToUpdate(existingHC, hc) {
@@ -180,8 +177,8 @@ func mergeHealthcheck(oldHC, newHC *HealthCheck) *HealthCheck {
 	return newHC
 }
 
-func (h *HealthChecks) getHealthCheckLink(port int64, alpha bool) (string, error) {
-	hc, err := h.Get(port, alpha)
+func (h *HealthChecks) getHealthCheckLink(name string, alpha bool) (string, error) {
+	hc, err := h.Get(name, alpha)
 	if err != nil {
 		return "", err
 	}
@@ -189,17 +186,15 @@ func (h *HealthChecks) getHealthCheckLink(port int64, alpha bool) (string, error
 }
 
 // Delete deletes the health check by port.
-func (h *HealthChecks) Delete(port int64) error {
-	name := h.namer.Backend(port)
+func (h *HealthChecks) Delete(name string) error {
 	glog.V(2).Infof("Deleting health check %v", name)
 	return h.cloud.DeleteHealthCheck(name)
 }
 
 // Get returns the health check by port
-func (h *HealthChecks) Get(port int64, alpha bool) (*HealthCheck, error) {
+func (h *HealthChecks) Get(name string, alpha bool) (*HealthCheck, error) {
 	var hc *computealpha.HealthCheck
 	var err error
-	name := h.namer.Backend(port)
 	if alpha {
 		hc, err = h.cloud.GetAlphaHealthCheck(name)
 	} else {
@@ -215,13 +210,13 @@ func (h *HealthChecks) Get(port int64, alpha bool) (*HealthCheck, error) {
 
 // GetLegacy deletes legacy HTTP health checks
 func (h *HealthChecks) GetLegacy(port int64) (*compute.HttpHealthCheck, error) {
-	name := h.namer.Backend(port)
+	name := h.namer.IGBackend(port)
 	return h.cloud.GetHttpHealthCheck(name)
 }
 
 // DeleteLegacy deletes legacy HTTP health checks
 func (h *HealthChecks) DeleteLegacy(port int64) error {
-	name := h.namer.Backend(port)
+	name := h.namer.IGBackend(port)
 	glog.V(2).Infof("Deleting legacy HTTP health check %v", name)
 	return h.cloud.DeleteHttpHealthCheck(name)
 }
