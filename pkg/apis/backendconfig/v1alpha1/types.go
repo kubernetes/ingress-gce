@@ -50,3 +50,42 @@ type BackendConfigList struct {
 
 	Items []BackendConfig `json:"items"`
 }
+
+// IAPConfig contains configuration for IAP-enabled backends.
+type IAPConfig struct {
+	Enabled           bool
+	ClientCredentials *OAuthClientCredentials
+}
+
+// OAuthClientCredentials contains credentials for a single IAP-enabled backend.
+type OAuthClientCredentials struct {
+	// The name of a k8s secret which stores the OAuth client id & secret.
+	Secret string
+}
+
+// CDNConfig contains configuration for CDN-enabled backends.
+type CDNConfig struct {
+	Enabled   bool
+	CDNPolicy *CacheKeyPolicy
+}
+
+// CacheKeyPolicy contains configuration for how requests to a CDN-enabled backend are cached.
+type CacheKeyPolicy struct {
+	// If true, requests to different hosts will be cached separately.
+	IncludeHost bool
+	// If true, http and https requests will be cached separately.
+	IncludeProtocol bool
+	// If true, query string parameters are included in the cache key
+	// according to QueryStringBlacklist and QueryStringWhitelist.
+	// If neither is set, the entire query string is included and if false
+	// the entire query string is excluded.
+	IncludeQueryString bool
+	// Names of query strint parameters to exclude from cache keys. All other
+	// parameters are included. Either specify QueryStringBlacklist or
+	// QueryStringWhitelist, but not both.
+	QueryStringBlacklist []string
+	// Names of query string parameters to include in cache keys. All other
+	// parameters are excluded. Either specify QueryStringBlacklist or
+	// QueryStringWhitelist, but not both.
+	QueryStringWhitelist []string
+}
