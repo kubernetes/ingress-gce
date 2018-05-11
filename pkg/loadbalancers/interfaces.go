@@ -70,9 +70,8 @@ type LoadBalancers interface {
 // with a gce loadbalancer.
 type LoadBalancerPool interface {
 	Get(name string) (*L7, error)
-	Add(ri *L7RuntimeInfo) error
 	Delete(name string) error
-	Sync(ri []*L7RuntimeInfo) error
+	Sync(ri *L7RuntimeInfo) error
 	GC(names []string) error
 	Shutdown() error
 }

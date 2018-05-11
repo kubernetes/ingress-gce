@@ -20,7 +20,7 @@ import (
 	"testing"
 )
 
-func TestConfigureGCERateLimiting(t *testing.T) {
+func TestGCERateLimiter(t *testing.T) {
 	validTestCases := [][]string{
 		{"ga.Addresses.Get,qps,1.5,5"},
 		{"ga.Addresses.List,qps,2,10"},

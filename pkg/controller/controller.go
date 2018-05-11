@@ -70,7 +70,7 @@ type LoadBalancerController struct {
 	// TODO: Watch secrets
 	CloudClusterManager *ClusterManager
 	ingQueue            utils.TaskQueue
-	Translator          *translator.GCE
+	Translator          *translator.Translator
 	stopCh              chan struct{}
 	// stopLock is used to enforce only a single call to Stop is active.
 	// Needed because we allow stopping through an http endpoint and
@@ -170,7 +170,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 	if ctx.EndpointInformer != nil {
 		endpointIndexer = ctx.EndpointInformer.GetIndexer()
 	}
-	lbc.Translator = translator.New(lbc.ctx, lbc.CloudClusterManager.ClusterNamer,
+	lbc.Translator = translator.NewTranslator(lbc.ctx, lbc.CloudClusterManager.ClusterNamer,
 		ctx.ServiceInformer.GetIndexer(),
 		ctx.NodeInformer.GetIndexer(),
 		ctx.PodInformer.GetIndexer(),

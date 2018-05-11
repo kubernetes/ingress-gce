@@ -41,7 +41,7 @@ var (
 	firstPodCreationTime = time.Date(2006, 01, 02, 15, 04, 05, 0, time.UTC)
 )
 
-func gceForTest(negEnabled bool) *GCE {
+func fakeTranslator(negEnabled bool) *Translator {
 	client := fake.NewSimpleClientset()
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
@@ -52,7 +52,7 @@ func gceForTest(negEnabled bool) *GCE {
 	namer := utils.NewNamer("uid1", "fw1")
 
 	ctx := context.NewControllerContext(client, apiv1.NamespaceAll, 1*time.Second, negEnabled)
-	gce := &GCE{
+	gce := &Translator{
 		recorders:  ctx,
 		namer:      namer,
 		svcLister:  ctx.ServiceInformer.GetIndexer(),
@@ -67,7 +67,7 @@ func gceForTest(negEnabled bool) *GCE {
 }
 
 func TestGetProbe(t *testing.T) {
-	translator := gceForTest(false)
+	translator := fakeTranslator(false)
 	nodePortToHealthCheck := map[utils.ServicePort]string{
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}:  "/healthz",
 		{NodePort: 3002, Protocol: annotations.ProtocolHTTPS}: "/foo",
@@ -90,7 +90,7 @@ func TestGetProbe(t *testing.T) {
 }
 
 func TestGetProbeNamedPort(t *testing.T) {
-	translator := gceForTest(false)
+	translator := fakeTranslator(false)
 	nodePortToHealthCheck := map[utils.ServicePort]string{
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
@@ -113,7 +113,7 @@ func TestGetProbeNamedPort(t *testing.T) {
 }
 
 func TestGetProbeCrossNamespace(t *testing.T) {
-	translator := gceForTest(false)
+	translator := fakeTranslator(false)
 
 	firstPod := &apiv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -237,7 +237,7 @@ func getProbePath(p *apiv1.Probe) string {
 }
 
 func TestGatherEndpointPorts(t *testing.T) {
-	translator := gceForTest(true)
+	translator := fakeTranslator(true)
 
 	ep1 := "ep1"
 	ep2 := "ep2"

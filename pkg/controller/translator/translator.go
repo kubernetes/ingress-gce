@@ -45,9 +45,10 @@ type recorderSource interface {
 	Recorder(ns string) record.EventRecorder
 }
 
-// New returns a new ControllerContext.
-func New(recorders recorderSource, namer *utils.Namer, svcLister cache.Indexer, nodeLister cache.Indexer, podLister cache.Indexer, endpointLister cache.Indexer, negEnabled bool) *GCE {
-	return &GCE{
+// NewTranslator returns a new Translator.
+func NewTranslator(recorders recorderSource,
+	namer *utils.Namer, svcLister cache.Indexer, nodeLister cache.Indexer, podLister cache.Indexer, endpointLister cache.Indexer, negEnabled bool) *Translator {
+	return &Translator{
 		recorders,
 		namer,
 		svcLister,
@@ -58,8 +59,8 @@ func New(recorders recorderSource, namer *utils.Namer, svcLister cache.Indexer, 
 	}
 }
 
-// GCE helps with kubernetes -> gce api conversion.
-type GCE struct {
+// Translator helps with kubernetes -> gce api conversion.
+type Translator struct {
 	recorders recorderSource
 
 	namer          *utils.Namer
@@ -72,7 +73,7 @@ type GCE struct {
 
 // getServiceNodePort looks in the svc store for a matching service:port,
 // and returns the nodeport.
-func (t *GCE) getServiceNodePort(be extensions.IngressBackend, namespace string) (utils.ServicePort, error) {
+func (t *Translator) getServiceNodePort(be extensions.IngressBackend, namespace string) (utils.ServicePort, error) {
 	obj, exists, err := t.svcLister.Get(
 		&api_v1.Service{
 			ObjectMeta: meta_v1.ObjectMeta{
@@ -137,7 +138,7 @@ PortLoop:
 }
 
 // TranslateIngress converts an Ingress into our internal UrlMap representation.
-func (t *GCE) TranslateIngress(ing *extensions.Ingress, glbcDefaultBackend utils.ServicePort) *utils.GCEURLMap {
+func (t *Translator) TranslateIngress(ing *extensions.Ingress, glbcDefaultBackend utils.ServicePort) *utils.GCEURLMap {
 	urlMap := utils.NewGCEURLMap()
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {
@@ -194,7 +195,7 @@ func getZone(n *api_v1.Node) string {
 }
 
 // GetZoneForNode returns the zone for a given node by looking up its zone label.
-func (t *GCE) GetZoneForNode(name string) (string, error) {
+func (t *Translator) GetZoneForNode(name string) (string, error) {
 	nodes, err := listers.NewNodeLister(t.nodeLister).ListWithPredicate(utils.NodeIsReady)
 	if err != nil {
 		return "", err
@@ -210,7 +211,7 @@ func (t *GCE) GetZoneForNode(name string) (string, error) {
 }
 
 // ListZones returns a list of zones this Kubernetes cluster spans.
-func (t *GCE) ListZones() ([]string, error) {
+func (t *Translator) ListZones() ([]string, error) {
 	zones := sets.String{}
 	readyNodes, err := listers.NewNodeLister(t.nodeLister).ListWithPredicate(utils.NodeIsReady)
 	if err != nil {
@@ -224,7 +225,7 @@ func (t *GCE) ListZones() ([]string, error) {
 
 // geHTTPProbe returns the http readiness probe from the first container
 // that matches targetPort, from the set of pods matching the given labels.
-func (t *GCE) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrString, protocol annotations.AppProtocol) (*api_v1.Probe, error) {
+func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrString, protocol annotations.AppProtocol) (*api_v1.Probe, error) {
 	l := svc.Spec.Selector
 
 	// Lookup any container with a matching targetPort from the set of pods
@@ -274,7 +275,7 @@ func (t *GCE) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrString, pr
 }
 
 // GatherEndpointPorts returns all ports needed to open NEG endpoints.
-func (t *GCE) GatherEndpointPorts(svcPorts []utils.ServicePort) []string {
+func (t *Translator) GatherEndpointPorts(svcPorts []utils.ServicePort) []string {
 	portMap := map[int64]bool{}
 	for _, p := range svcPorts {
 		if t.negEnabled && p.NEGEnabled {
@@ -304,7 +305,7 @@ func isSimpleHTTPProbe(probe *api_v1.Probe) bool {
 }
 
 // GetProbe returns a probe that's used for the given nodeport
-func (t *GCE) GetProbe(port utils.ServicePort) (*api_v1.Probe, error) {
+func (t *Translator) GetProbe(port utils.ServicePort) (*api_v1.Probe, error) {
 	sl := t.svcLister.List()
 
 	// Find the label and target port of the one service with the given nodePort

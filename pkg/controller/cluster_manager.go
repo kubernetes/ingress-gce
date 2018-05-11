@@ -105,7 +105,7 @@ func (c *ClusterManager) EnsureLoadBalancer(lb *loadbalancers.L7RuntimeInfo, lbS
 		return err
 	}
 
-	return c.l7Pool.Sync([]*loadbalancers.L7RuntimeInfo{lb})
+	return c.l7Pool.Sync(lb)
 }
 
 func (c *ClusterManager) EnsureInstanceGroupsAndPorts(nodeNames []string, servicePorts []utils.ServicePort) ([]*compute.InstanceGroup, error) {

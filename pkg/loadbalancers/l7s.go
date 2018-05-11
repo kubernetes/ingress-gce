@@ -47,15 +47,6 @@ func NewLoadBalancerPool(cloud LoadBalancers, namer *utils.Namer) LoadBalancerPo
 	return &L7s{cloud, storage.NewInMemoryPool(), namer}
 }
 
-func (l *L7s) create(ri *L7RuntimeInfo) (*L7, error) {
-	return &L7{
-		runtimeInfo: ri,
-		Name:        l.namer.LoadBalancer(ri.Name),
-		cloud:       l.cloud,
-		namer:       l.namer,
-	}, nil
-}
-
 // Get returns the loadbalancer by name.
 func (l *L7s) Get(name string) (*L7, error) {
 	name = l.namer.LoadBalancer(name)
@@ -66,15 +57,20 @@ func (l *L7s) Get(name string) (*L7, error) {
 	return lb.(*L7), nil
 }
 
-// Add gets or creates a loadbalancer.
-// If the loadbalancer already exists, it checks that its edges are valid.
-func (l *L7s) Add(ri *L7RuntimeInfo) (err error) {
+// addLB gets or creates a loadbalancer. If the loadbalancer already exists,
+// it checks that its edges are valid.
+func (l *L7s) addLB(ri *L7RuntimeInfo) (err error) {
 	name := l.namer.LoadBalancer(ri.Name)
 
 	lb, _ := l.Get(name)
 	if lb == nil {
 		glog.V(3).Infof("Creating l7 %v", name)
-		lb, err = l.create(ri)
+		lb = &L7{
+			runtimeInfo: ri,
+			Name:        l.namer.LoadBalancer(ri.Name),
+			cloud:       l.cloud,
+			namer:       l.namer,
+		}
 		if err != nil {
 			return err
 		}
@@ -100,7 +96,7 @@ func (l *L7s) Add(ri *L7RuntimeInfo) (err error) {
 	return nil
 }
 
-// Delete deletes a loadbalancer by name.
+// Delete deletes a load balancer by name.
 func (l *L7s) Delete(name string) error {
 	name = l.namer.LoadBalancer(name)
 	lb, err := l.Get(name)
@@ -115,15 +111,12 @@ func (l *L7s) Delete(name string) error {
 	return nil
 }
 
-// Sync loadbalancers with the given runtime info from the controller.
-func (l *L7s) Sync(lbs []*L7RuntimeInfo) error {
-	glog.V(3).Infof("Syncing loadbalancers %v", lbs)
-
-	// create new loadbalancers, validate existing
-	for _, ri := range lbs {
-		if err := l.Add(ri); err != nil {
-			return err
-		}
+// Sync a load balancer with the given runtime info from the controller.
+func (l *L7s) Sync(ri *L7RuntimeInfo) error {
+	glog.V(3).Infof("Syncing load balancer %v", ri)
+	// Create new load balancer and validate existing
+	if err := l.addLB(ri); err != nil {
+		return err
 	}
 	return nil
 }
