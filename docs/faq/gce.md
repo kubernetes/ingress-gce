@@ -117,7 +117,7 @@ returns a HTTP 200.
 Some nodes are reporting negatively on the GCE HTTP health check.
 Please check the following:
 1. Try to access any node-ip:node-port/health-check-url
-2. Try to access any pubic-ip:node-port/health-check-url
+2. Try to access any public-ip:node-port/health-check-url
 3. Make sure you have a firewall-rule allowing access to the GCE LB IP range
    (created by the Ingress controller on your behalf)
 4. Make sure the right NodePort is opened in the Backend Service, and
