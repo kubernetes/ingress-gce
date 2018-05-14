@@ -17,68 +17,63 @@ limitations under the License.
 package app
 
 import (
-	"strings"
+	"fmt"
 	"time"
 
 	"github.com/golang/glog"
 
-	"k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
-
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-func DefaultBackendServicePort(kubeClient kubernetes.Interface) *utils.ServicePort {
-	// TODO: make this not fatal
+// DefaultBackendServicePortID returns the tuple of service namespace/name and port which will be
+// used as the default backend for load balancers.
+func DefaultBackendServicePortID(kubeClient kubernetes.Interface) utils.ServicePortID {
 	if flags.F.DefaultSvc == "" {
-		glog.Fatalf("Please specify --default-backend")
+		glog.Fatalf("Please specify --default-backend-service")
 	}
 
-	// Wait for the default backend Service. There's no pretty way to do this.
-	parts := strings.Split(flags.F.DefaultSvc, "/")
-	if len(parts) != 2 {
-		glog.Fatalf("Default backend should take the form namespace/name: %v",
-			flags.F.DefaultSvc)
+	if flags.F.DefaultSvcPortName == "" {
+		glog.Fatalf("Please specify --default-backend-service-port")
 	}
-	port, nodePort, err := getNodePort(kubeClient, parts[0], parts[1])
+
+	name, err := utils.ToNamespacedName(flags.F.DefaultSvc)
 	if err != nil {
-		glog.Fatalf("Could not configure default backend %v: %v",
-			flags.F.DefaultSvc, err)
+		glog.Fatalf("Failed to parse --default-backend-service: %v", err)
 	}
 
-	return &utils.ServicePort{
-		NodePort: int64(nodePort),
-		Protocol: annotations.ProtocolHTTP, // The default backend is HTTP.
-		SvcName:  types.NamespacedName{Namespace: parts[0], Name: parts[1]},
-		SvcPort:  intstr.FromInt(int(port)),
+	if err := waitForServicePort(kubeClient, name, flags.F.DefaultSvcPortName); err != nil {
+		glog.Fatalf("Failed to verify default backend service: %v", err)
+	}
+
+	return utils.ServicePortID{
+		Service: name,
+		Port:    intstr.FromString(flags.F.DefaultSvcPortName),
 	}
 }
 
-// getNodePort waits for the Service, and returns its first node port.
-func getNodePort(client kubernetes.Interface, ns, name string) (port, nodePort int32, err error) {
-	glog.V(2).Infof("Waiting for %v/%v", ns, name)
+// servicePortExists checks that the service and specified port name exists.
+func waitForServicePort(client kubernetes.Interface, name types.NamespacedName, portName string) error {
+	glog.V(2).Infof("Checking existance of default backend service %q", name.String())
 
-	var svc *v1.Service
-	wait.Poll(1*time.Second, 5*time.Minute, func() (bool, error) {
-		svc, err = client.Core().Services(ns).Get(name, metav1.GetOptions{})
+	err := wait.Poll(3*time.Second, 5*time.Minute, func() (bool, error) {
+		svc, err := client.Core().Services(name.Namespace).Get(name.Name, meta_v1.GetOptions{})
 		if err != nil {
+			glog.V(4).Infof("Service %q does not exist", name.String())
 			return false, nil
 		}
+
 		for _, p := range svc.Spec.Ports {
-			if p.NodePort != 0 {
-				port = p.Port
-				nodePort = p.NodePort
-				glog.V(3).Infof("Node port %v", nodePort)
-				break
+			if p.Name == portName {
+				return true, nil
 			}
 		}
-		return true, nil
+		return false, fmt.Errorf("port %q not found in service %q", portName, name.String())
 	})
-	return
+	return err
 }

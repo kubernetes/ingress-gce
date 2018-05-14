@@ -43,6 +43,7 @@ var (
 		ConfigFilePath            string
 		DefaultSvcHealthCheckPath string
 		DefaultSvc                string
+		DefaultSvcPortName        string
 		DeleteAllOnQuit           bool
 		GCERateLimit              RateLimitSpecs
 		HealthCheckPath           string
@@ -99,12 +100,15 @@ resources.`)
 		`Path to a file containing the gce config. If left unspecified this
 controller only works with default zones.`)
 	flag.StringVar(&F.DefaultSvcHealthCheckPath, "default-backend-health-check-path", "/healthz",
-		`Path used to health-check a default backend service. The default backend service
-must serve a 200 page on this path.`)
+		`Path used to health-check the default backend service. This path must serve a 200 page.
+Flags default-backend-service and default-backend-service-port should never be empty - default
+values will be used if not specified.`)
 	flag.StringVar(&F.DefaultSvc, "default-backend-service", "kube-system/default-http-backend",
 		`Service used to serve a 404 page for the default backend. Takes the
-form namespace/name. The controller uses the first node port of this Service for
-the default backend.`)
+form namespace/name.`)
+	flag.StringVar(&F.DefaultSvcPortName, "default-backend-service-port", "http",
+		`Specify the default service's port used to serve a 404 page for the default backend. Takes
+only the port's name - not its number.`)
 	flag.BoolVar(&F.DeleteAllOnQuit, "delete-all-on-quit", false,
 		`If true, the controller will delete all Ingress and the associated
 external cloud resources as it's shutting down. Mostly used for testing. In

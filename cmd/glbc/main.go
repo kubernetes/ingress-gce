@@ -89,8 +89,8 @@ func main() {
 	}
 
 	cloud := app.NewGCEClient()
-	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
-	clusterManager, err := controller.NewClusterManager(cloud, namer, *defaultBackendServicePort, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath)
+	defaultBackendServicePortID := app.DefaultBackendServicePortID(kubeClient)
+	clusterManager, err := controller.NewClusterManager(cloud, namer, defaultBackendServicePortID, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath)
 	if err != nil {
 		glog.Fatalf("Error creating cluster manager: %v", err)
 	}

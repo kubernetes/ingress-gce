@@ -612,11 +612,11 @@ func (b *Backends) Status(name string) string {
 	return hs.HealthStatus[0].HealthState
 }
 
-func (b *Backends) Link(port utils.ServicePort, zones []string) error {
-	if !port.NEGEnabled {
+func (b *Backends) Link(sp utils.ServicePort, zones []string) error {
+	if !sp.NEGEnabled {
 		return nil
 	}
-	negName := b.namer.NEG(port.SvcName.Namespace, port.SvcName.Name, port.SvcTargetPort)
+	negName := b.namer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.SvcTargetPort)
 	var negs []*computealpha.NetworkEndpointGroup
 	var err error
 	for _, zone := range zones {
@@ -627,7 +627,8 @@ func (b *Backends) Link(port utils.ServicePort, zones []string) error {
 		negs = append(negs, neg)
 	}
 
-	backendService, err := b.cloud.GetAlphaGlobalBackendService(negName)
+	beName := sp.BackendName(b.namer)
+	backendService, err := b.cloud.GetAlphaGlobalBackendService(beName)
 	if err != nil {
 		return err
 	}

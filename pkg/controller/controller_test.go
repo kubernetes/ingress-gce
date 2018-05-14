@@ -60,6 +60,25 @@ func newLoadBalancerController(t *testing.T, cm *fakeClusterManager) *LoadBalanc
 		t.Fatalf("%v", err)
 	}
 	lb.hasSynced = func() bool { return true }
+
+	// Create the default-backend service.
+	svc := &api_v1.Service{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:      testDefaultBeSvcPort.ID.Service.Name,
+			Namespace: testDefaultBeSvcPort.ID.Service.Namespace,
+		},
+	}
+	var svcPort api_v1.ServicePort
+	switch testBackendPort.Type {
+	case intstr.Int:
+		svcPort = api_v1.ServicePort{Port: testBackendPort.IntVal}
+	default:
+		svcPort = api_v1.ServicePort{Name: testBackendPort.StrVal}
+	}
+	svcPort.NodePort = int32(testDefaultBeSvcPort.NodePort)
+	svc.Spec.Ports = []api_v1.ServicePort{svcPort}
+
+	ctx.ServiceInformer.GetIndexer().Add(svc)
 	return lb
 }
 

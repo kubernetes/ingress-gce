@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
@@ -71,24 +70,21 @@ type Translator struct {
 	negEnabled     bool
 }
 
-// getServiceNodePort looks in the svc store for a matching service:port,
+// getServicePort looks in the svc store for a matching service:port,
 // and returns the nodeport.
-func (t *Translator) getServiceNodePort(be extensions.IngressBackend, namespace string) (utils.ServicePort, error) {
+func (t *Translator) getServicePort(id utils.ServicePortID) (utils.ServicePort, error) {
 	obj, exists, err := t.svcLister.Get(
 		&api_v1.Service{
 			ObjectMeta: meta_v1.ObjectMeta{
-				Name:      be.ServiceName,
-				Namespace: namespace,
+				Name:      id.Service.Name,
+				Namespace: id.Service.Namespace,
 			},
 		})
 	if !exists {
-		return utils.ServicePort{}, errors.ErrNodePortNotFound{
-			Backend: be,
-			Err:     fmt.Errorf("service %v/%v not found in store", namespace, be.ServiceName),
-		}
+		return utils.ServicePort{}, fmt.Errorf("service %q not found in store", id.Service)
 	}
 	if err != nil {
-		return utils.ServicePort{}, errors.ErrNodePortNotFound{Backend: be, Err: err}
+		return utils.ServicePort{}, fmt.Errorf("error retrieving service %q: %v", id.Service, err)
 	}
 	svc := obj.(*api_v1.Service)
 	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
@@ -100,14 +96,14 @@ func (t *Translator) getServiceNodePort(be extensions.IngressBackend, namespace 
 PortLoop:
 	for _, p := range svc.Spec.Ports {
 		np := p
-		switch be.ServicePort.Type {
+		switch id.Port.Type {
 		case intstr.Int:
-			if p.Port == be.ServicePort.IntVal {
+			if p.Port == id.Port.IntVal {
 				port = &np
 				break PortLoop
 			}
 		default:
-			if p.Name == be.ServicePort.StrVal {
+			if p.Name == id.Port.StrVal {
 				port = &np
 				break PortLoop
 			}
@@ -115,10 +111,7 @@ PortLoop:
 	}
 
 	if port == nil {
-		return utils.ServicePort{}, errors.ErrNodePortNotFound{
-			Backend: be,
-			Err:     fmt.Errorf("could not find matching nodeport from service"),
-		}
+		return utils.ServicePort{}, fmt.Errorf("could not find port %q in service %q", id.Port, id.Service)
 	}
 
 	proto := annotations.ProtocolHTTP
@@ -127,10 +120,9 @@ PortLoop:
 	}
 
 	p := utils.ServicePort{
+		ID:            id,
 		NodePort:      int64(port.NodePort),
 		Protocol:      proto,
-		SvcName:       types.NamespacedName{Namespace: namespace, Name: be.ServiceName},
-		SvcPort:       be.ServicePort,
 		SvcTargetPort: port.TargetPort.String(),
 		NEGEnabled:    t.negEnabled && annotations.FromService(svc).NEGEnabled(),
 	}
@@ -138,7 +130,7 @@ PortLoop:
 }
 
 // TranslateIngress converts an Ingress into our internal UrlMap representation.
-func (t *Translator) TranslateIngress(ing *extensions.Ingress, glbcDefaultBackend utils.ServicePort) *utils.GCEURLMap {
+func (t *Translator) TranslateIngress(ing *extensions.Ingress, systemDefaultBackend utils.ServicePortID) (*utils.GCEURLMap, error) {
 	urlMap := utils.NewGCEURLMap()
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {
@@ -147,7 +139,7 @@ func (t *Translator) TranslateIngress(ing *extensions.Ingress, glbcDefaultBacken
 		}
 		pathRules := []utils.PathRule{}
 		for _, p := range rule.HTTP.Paths {
-			svcPort, err := t.getServiceNodePort(p.Backend, ing.Namespace)
+			svcPort, err := t.getServicePort(utils.BackendToServicePortID(p.Backend, ing.Namespace))
 			if err != nil {
 				glog.Infof("%v", err)
 				continue
@@ -170,20 +162,25 @@ func (t *Translator) TranslateIngress(ing *extensions.Ingress, glbcDefaultBacken
 	// Note that the url map is always populated with some default backend,
 	// whether it be the one specified in the Ingress, or the system default.
 	if ing.Spec.Backend != nil {
-		svcPort, err := t.getServiceNodePort(*ing.Spec.Backend, ing.Namespace)
-		if err != nil {
-			msg := fmt.Sprintf("%v", err)
-			msg = fmt.Sprintf("failed to identify user specified default backend, %v, using system default", msg)
-			t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeWarning, "Service", msg)
-			urlMap.DefaultBackend = glbcDefaultBackend
-			glog.Infof("%v", err)
-		} else {
+		svcPort, err := t.getServicePort(utils.BackendToServicePortID(*ing.Spec.Backend, ing.Namespace))
+		if err == nil {
 			urlMap.DefaultBackend = svcPort
+			return urlMap, nil
 		}
-	} else {
-		urlMap.DefaultBackend = glbcDefaultBackend
+
+		msg := fmt.Sprintf("%v", err)
+		msg = fmt.Sprintf("failed to identify user specified default backend %v, using system default", msg)
+		t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeWarning, "Service", msg)
+		glog.Infof("%v", err)
 	}
-	return urlMap
+
+	svcPort, err := t.getServicePort(systemDefaultBackend)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve the default backend service %q with port %q", systemDefaultBackend.Service.String(), systemDefaultBackend.Port.String())
+	}
+
+	urlMap.DefaultBackend = svcPort
+	return urlMap, nil
 }
 
 func getZone(n *api_v1.Node) string {
@@ -277,12 +274,12 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 // GatherEndpointPorts returns all ports needed to open NEG endpoints.
 func (t *Translator) GatherEndpointPorts(svcPorts []utils.ServicePort) []string {
 	portMap := map[int64]bool{}
-	for _, p := range svcPorts {
-		if t.negEnabled && p.NEGEnabled {
+	for _, sp := range svcPorts {
+		if t.negEnabled && sp.NEGEnabled {
 			// For NEG backend, need to open firewall to all endpoint target ports
 			// TODO(mixia): refactor firewall syncing into a separate go routine with different trigger.
 			// With NEG, endpoint changes may cause firewall ports to be different if user specifies inconsistent backends.
-			endpointPorts := listEndpointTargetPorts(t.endpointLister, p.SvcName.Namespace, p.SvcName.Name, p.SvcTargetPort)
+			endpointPorts := listEndpointTargetPorts(t.endpointLister, sp.ID.Service.Namespace, sp.ID.Service.Name, sp.SvcTargetPort)
 			for _, ep := range endpointPorts {
 				portMap[int64(ep)] = true
 			}
