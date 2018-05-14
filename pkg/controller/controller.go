@@ -32,6 +32,8 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	backendconfigv1alpha1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1alpha1"
+	backendconfig "k8s.io/ingress-gce/pkg/backendconfig"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
@@ -61,11 +63,11 @@ type LoadBalancerController struct {
 	client kubernetes.Interface
 	ctx    *context.ControllerContext
 
-	ingLister  StoreToIngressLister
-	nodeLister cache.Indexer
-	nodes      *NodeController
+	ingLister StoreToIngressLister
 	// endpoint lister is needed when translating service target port to real endpoint target ports.
 	endpointLister StoreToEndpointLister
+	nodeLister     cache.Indexer
+	nodes          *NodeController
 
 	// TODO: Watch secrets
 	CloudClusterManager *ClusterManager
@@ -91,7 +93,14 @@ type LoadBalancerController struct {
 // - clusterManager: A ClusterManager capable of creating all cloud resources
 //	 required for L7 loadbalancing.
 // - resyncPeriod: Watchers relist from the Kubernetes API server this often.
-func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan struct{}, ctx *context.ControllerContext, clusterManager *ClusterManager, negEnabled bool) (*LoadBalancerController, error) {
+func NewLoadBalancerController(
+	kubeClient kubernetes.Interface,
+	stopCh chan struct{},
+	ctx *context.ControllerContext,
+	clusterManager *ClusterManager,
+	negEnabled bool,
+	backendConfigEnabled bool) (*LoadBalancerController, error) {
+
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
@@ -114,7 +123,7 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 		lbc.endpointLister.Indexer = ctx.EndpointInformer.GetIndexer()
 	}
 
-	// ingress event handler
+	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*extensions.Ingress)
@@ -152,16 +161,29 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 		},
 	})
 
-	// service event handler
+	// Service event handlers.
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: lbc.enqueueIngressForService,
+		AddFunc: lbc.enqueueIngressForObject,
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
-				lbc.enqueueIngressForService(cur)
+				lbc.enqueueIngressForObject(cur)
 			}
 		},
 		// Ingress deletes matter, service deletes don't.
 	})
+
+	// BackendConfig event handlers.
+	if backendConfigEnabled {
+		ctx.BackendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: lbc.enqueueIngressForObject,
+			UpdateFunc: func(old, cur interface{}) {
+				if !reflect.DeepEqual(old, cur) {
+					lbc.enqueueIngressForObject(cur)
+				}
+			},
+			DeleteFunc: lbc.enqueueIngressForObject,
+		})
+	}
 
 	var endpointIndexer cache.Indexer
 	if ctx.EndpointInformer != nil {
@@ -180,9 +202,24 @@ func NewLoadBalancerController(kubeClient kubernetes.Interface, stopCh chan stru
 	return &lbc, nil
 }
 
-// enqueueIngressForService enqueues all the Ingress' for a Service.
-func (lbc *LoadBalancerController) enqueueIngressForService(obj interface{}) {
-	svc := obj.(*apiv1.Service)
+// enqueueIngressForObject enqueues Ingresses that are associated with the
+// passed in object. It is a wrapper around functions which do the actual
+// work of enqueueing Ingresses based on a typed object.
+func (lbc *LoadBalancerController) enqueueIngressForObject(obj interface{}) {
+	switch obj.(type) {
+	case *apiv1.Service:
+		svc := obj.(*apiv1.Service)
+		lbc.enqueueIngressForService(svc)
+	case *backendconfigv1alpha1.BackendConfig:
+		beConfig := obj.(*backendconfigv1alpha1.BackendConfig)
+		lbc.enqueueIngressForBackendConfig(beConfig)
+	default:
+		// Do nothing.
+	}
+}
+
+// enqueueIngressForService enqueues all the Ingresses for a Service.
+func (lbc *LoadBalancerController) enqueueIngressForService(svc *apiv1.Service) {
 	ings, err := lbc.ingLister.GetServiceIngress(svc)
 	if err != nil {
 		glog.V(5).Infof("ignoring service %v: %v", svc.Name, err)
@@ -193,6 +230,17 @@ func (lbc *LoadBalancerController) enqueueIngressForService(obj interface{}) {
 			continue
 		}
 		lbc.ingQueue.Enqueue(&ing)
+	}
+}
+
+// enqueueIngressForBackendConfig enqueues all Ingresses for a BackendConfig.
+func (lbc *LoadBalancerController) enqueueIngressForBackendConfig(beConfig *backendconfigv1alpha1.BackendConfig) {
+	// Get all the Services associated with this BackendConfig.
+	svcLister := lbc.ctx.ServiceInformer.GetIndexer()
+	linkedSvcs := backendconfig.GetServicesForBackendConfig(svcLister, beConfig)
+	// Enqueue all the Ingresses associated with each Service.
+	for _, svc := range linkedSvcs {
+		lbc.enqueueIngressForService(svc)
 	}
 }
 

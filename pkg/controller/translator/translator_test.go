@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/record"
+	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
@@ -43,6 +44,7 @@ var (
 
 func fakeTranslator(negEnabled bool) *Translator {
 	client := fake.NewSimpleClientset()
+	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
@@ -51,7 +53,7 @@ func fakeTranslator(negEnabled bool) *Translator {
 
 	namer := utils.NewNamer("uid1", "fw1")
 
-	ctx := context.NewControllerContext(client, apiv1.NamespaceAll, 1*time.Second, negEnabled)
+	ctx := context.NewControllerContext(client, backendConfigClient, apiv1.NamespaceAll, 1*time.Second, negEnabled)
 	gce := &Translator{
 		recorders:  ctx,
 		namer:      namer,

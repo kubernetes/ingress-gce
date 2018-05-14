@@ -26,6 +26,7 @@ import (
 
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
+	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"k8s.io/ingress-gce/pkg/context"
@@ -72,6 +73,7 @@ func main() {
 		glog.Fatalf("Failed to create kubernetes client: %v", err)
 	}
 
+	var backendConfigClient backendconfigclient.Interface
 	if flags.F.EnableBackendConfig {
 		crdClient, err := crdclient.NewForConfig(kubeConfig)
 		if err != nil {
@@ -80,6 +82,11 @@ func main() {
 
 		if _, err := backendconfig.EnsureCRD(crdClient); err != nil {
 			glog.Fatalf("Failed to ensure BackendConfig CRD: %v", err)
+		}
+
+		backendConfigClient, err = backendconfigclient.NewForConfig(kubeConfig)
+		if err != nil {
+			glog.Fatalf("Failed to create BackendConfig client: %v", err)
 		}
 	}
 
@@ -97,8 +104,8 @@ func main() {
 
 	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
 	stopCh := make(chan struct{})
-	ctx := context.NewControllerContext(kubeClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG)
-	lbc, err := controller.NewLoadBalancerController(kubeClient, stopCh, ctx, clusterManager, enableNEG)
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG)
+	lbc, err := controller.NewLoadBalancerController(kubeClient, stopCh, ctx, clusterManager, enableNEG, flags.F.EnableBackendConfig)
 	if err != nil {
 		glog.Fatalf("Error creating load balancer controller: %v", err)
 	}

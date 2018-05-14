@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
+	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -36,7 +37,8 @@ const (
 )
 
 func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
-	context := context.NewControllerContext(kubeClient, apiv1.NamespaceAll, 1*time.Second, true)
+	backendConfigClient := backendconfigclient.NewSimpleClientset()
+	context := context.NewControllerContext(kubeClient, backendConfigClient, apiv1.NamespaceAll, 1*time.Second, true)
 	manager := newSyncerManager(
 		utils.NewNamer(CluseterID, ""),
 		record.NewFakeRecorder(100),
