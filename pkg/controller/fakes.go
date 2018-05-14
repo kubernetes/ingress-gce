@@ -18,6 +18,7 @@ package controller
 
 import (
 	compute "google.golang.org/api/compute/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -32,10 +33,14 @@ import (
 )
 
 var (
-	testDefaultBeNodePort = utils.ServicePort{NodePort: 30000, Protocol: annotations.ProtocolHTTP}
-	testBackendPort       = intstr.IntOrString{Type: intstr.Int, IntVal: 80}
-	testSrcRanges         = []string{"1.1.1.1/20"}
-	testNodePortRanges    = []string{"30000-32767"}
+	testDefaultBeSvcPort = utils.ServicePort{
+		NodePort: 30000,
+		Protocol: annotations.ProtocolHTTP,
+		SvcName:  types.NamespacedName{Namespace: "system", Name: "default"},
+	}
+	testBackendPort    = intstr.IntOrString{Type: intstr.Int, IntVal: 80}
+	testSrcRanges      = []string{"1.1.1.1/20"}
+	testNodePortRanges = []string{"30000-32767"}
 )
 
 // ClusterManager fake
@@ -59,7 +64,7 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{"zone-a"}})
 
-	healthChecker := healthchecks.NewHealthChecker(fakeHCP, "/", namer)
+	healthChecker := healthchecks.NewHealthChecker(fakeHCP, "/", "/healthz", namer, testDefaultBeSvcPort.SvcName)
 
 	backendPool := backends.NewBackendPool(
 		fakeBackends,
@@ -68,11 +73,12 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 	l7Pool := loadbalancers.NewLoadBalancerPool(fakeLbs, namer)
 	frPool := firewalls.NewFirewallPool(firewalls.NewFakeFirewallsProvider(false, false), namer, testSrcRanges, testNodePortRanges)
 	cm := &ClusterManager{
-		ClusterNamer: namer,
-		instancePool: nodePool,
-		backendPool:  backendPool,
-		l7Pool:       l7Pool,
-		firewallPool: frPool,
+		ClusterNamer:          namer,
+		instancePool:          nodePool,
+		backendPool:           backendPool,
+		l7Pool:                l7Pool,
+		firewallPool:          frPool,
+		defaultBackendSvcPort: testDefaultBeSvcPort,
 	}
 	return &fakeClusterManager{cm, fakeLbs, fakeBackends, fakeIGs, namer}
 }

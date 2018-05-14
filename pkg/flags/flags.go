@@ -38,24 +38,25 @@ const (
 var (
 	// F are global flags for the controller.
 	F = struct {
-		APIServerHost       string
-		ClusterName         string
-		ConfigFilePath      string
-		DefaultSvc          string
-		DeleteAllOnQuit     bool
-		GCERateLimit        RateLimitSpecs
-		HealthCheckPath     string
-		HealthzPort         int
-		Features            *Features
-		InCluster           bool
-		IngressClass        string
-		KubeConfigFile      string
-		ResyncPeriod        time.Duration
-		Verbose             bool
-		Version             bool
-		WatchNamespace      string
-		NodePortRanges      PortRanges
-		EnableBackendConfig bool
+		APIServerHost             string
+		ClusterName               string
+		ConfigFilePath            string
+		DefaultSvcHealthCheckPath string
+		DefaultSvc                string
+		DeleteAllOnQuit           bool
+		GCERateLimit              RateLimitSpecs
+		HealthCheckPath           string
+		HealthzPort               int
+		Features                  *Features
+		InCluster                 bool
+		IngressClass              string
+		KubeConfigFile            string
+		ResyncPeriod              time.Duration
+		Verbose                   bool
+		Version                   bool
+		WatchNamespace            string
+		NodePortRanges            PortRanges
+		EnableBackendConfig       bool
 	}{}
 )
 
@@ -97,6 +98,9 @@ resources.`)
 	flag.StringVar(&F.ConfigFilePath, "config-file-path", "",
 		`Path to a file containing the gce config. If left unspecified this
 controller only works with default zones.`)
+	flag.StringVar(&F.DefaultSvcHealthCheckPath, "default-backend-health-check-path", "/healthz",
+		`Path used to health-check a default backend service. The default backend service
+must serve a 200 page on this path.`)
 	flag.StringVar(&F.DefaultSvc, "default-backend-service", "kube-system/default-http-backend",
 		`Service used to serve a 404 page for the default backend. Takes the
 form namespace/name. The controller uses the first node port of this Service for

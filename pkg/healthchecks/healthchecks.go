@@ -22,6 +22,7 @@ import (
 
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	compute "google.golang.org/api/compute/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/golang/glog"
 
@@ -64,39 +65,43 @@ const (
 
 // HealthChecks manages health checks.
 type HealthChecks struct {
-	cloud       HealthCheckProvider
-	defaultPath string
-	namer       *utils.Namer
+	cloud HealthCheckProvider
+	// path is the default health check path for backends.
+	path string
+	// defaultBackend is the default health check path for the default backend.
+	defaultBackendPath string
+	namer              *utils.Namer
+	// This is a workaround which allows us to not have to maintain
+	// a separate health checker for the default backend.
+	defaultBackendSvc types.NamespacedName
 }
 
 // NewHealthChecker creates a new health checker.
 // cloud: the cloud object implementing SingleHealthCheck.
 // defaultHealthCheckPath: is the HTTP path to use for health checks.
-func NewHealthChecker(cloud HealthCheckProvider, defaultHealthCheckPath string, namer *utils.Namer) HealthChecker {
-	return &HealthChecks{cloud, defaultHealthCheckPath, namer}
+func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendHealthCheckPath string, namer *utils.Namer, defaultBackendSvc types.NamespacedName) HealthChecker {
+	return &HealthChecks{cloud, healthCheckPath, defaultBackendHealthCheckPath, namer, defaultBackendSvc}
 }
 
 // New returns a *HealthCheck with default settings and specified port/protocol
-func (h *HealthChecks) New(name string, port int64, protocol annotations.AppProtocol, enableNEG bool) *HealthCheck {
+func (h *HealthChecks) New(sp utils.ServicePort) *HealthCheck {
 	var hc *HealthCheck
-	if enableNEG {
-		hc = DefaultNEGHealthCheck(protocol)
+	if sp.NEGEnabled {
+		hc = DefaultNEGHealthCheck(sp.Protocol)
 	} else {
-		hc = DefaultHealthCheck(port, protocol)
+		hc = DefaultHealthCheck(sp.NodePort, sp.Protocol)
 	}
-
-	hc.Name = name
+	// port is the key for retriving existing health-check
+	// TODO: rename backend-service and health-check to not use port as key
+	hc.Name = sp.BackendName(h.namer)
+	hc.Port = sp.NodePort
+	hc.RequestPath = h.pathFromSvcPort(sp)
 	return hc
 }
 
 // Sync retrieves a health check based on port, checks type and settings and updates/creates if necessary.
 // Sync is only called by the backends.Add func - it's not a pool like other resources.
 func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
-	// Verify default path
-	if hc.RequestPath == "" {
-		hc.RequestPath = h.defaultPath
-	}
-
 	// Use alpha API when PORT_SPECIFICATION field is specified or when Type
 	// is HTTP2
 	existingHC, err := h.Get(hc.Name, hc.isHttp2() || hc.ForNEG)
@@ -223,12 +228,7 @@ func (h *HealthChecks) DeleteLegacy(port int64) error {
 
 // DefaultHealthCheck simply returns the default health check.
 func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthCheck {
-	httpSettings := computealpha.HTTPHealthCheck{
-		Port: port,
-		// Empty string is used as a signal to the caller to use the appropriate
-		// default.
-		RequestPath: "",
-	}
+	httpSettings := computealpha.HTTPHealthCheck{Port: port}
 
 	hcSettings := computealpha.HealthCheck{
 		// How often to health check.
@@ -252,12 +252,7 @@ func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthChe
 
 // DefaultHealthCheck simply returns the default health check.
 func DefaultNEGHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
-	httpSettings := computealpha.HTTPHealthCheck{
-		PortSpecification: UseServingPortSpecification,
-		// Empty string is used as a signal to the caller to use the appropriate
-		// default.
-		RequestPath: "",
-	}
+	httpSettings := computealpha.HTTPHealthCheck{PortSpecification: UseServingPortSpecification}
 
 	hcSettings := computealpha.HealthCheck{
 		// How often to health check.
@@ -387,6 +382,15 @@ func toAlphaHealthCheck(hc *compute.HealthCheck) (*computealpha.HealthCheck, err
 	ret := &computealpha.HealthCheck{}
 	err := copyViaJSON(ret, hc)
 	return ret, err
+}
+
+// pathFromSvcPort returns the default path for a health check based on whether
+// the passed in ServicePort is associated with the system default backend.
+func (h *HealthChecks) pathFromSvcPort(sp utils.ServicePort) string {
+	if h.defaultBackendSvc == sp.SvcName {
+		return h.defaultBackendPath
+	}
+	return h.path
 }
 
 type jsonConvertable interface {

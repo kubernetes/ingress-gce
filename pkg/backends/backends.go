@@ -240,8 +240,7 @@ func (b *Backends) Get(name string, isAlpha bool) (*BackendService, error) {
 }
 
 func (b *Backends) ensureHealthCheck(sp utils.ServicePort) (string, error) {
-	name := sp.BackendName(b.namer)
-	hc := b.healthChecker.New(name, sp.NodePort, sp.Protocol, sp.NEGEnabled)
+	hc := b.healthChecker.New(sp)
 	existingLegacyHC, err := b.healthChecker.GetLegacy(sp.NodePort)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return "", err

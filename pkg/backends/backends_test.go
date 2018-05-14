@@ -42,8 +42,9 @@ import (
 const defaultZone = "zone-a"
 
 var (
-	defaultNamer  = utils.NewNamer("uid1", "fw1")
-	existingProbe = &api_v1.Probe{
+	defaultNamer      = utils.NewNamer("uid1", "fw1")
+	defaultBackendSvc = types.NamespacedName{Namespace: "system", Name: "default"}
+	existingProbe     = &api_v1.Probe{
 		Handler: api_v1.Handler{
 			HTTPGet: &api_v1.HTTPGetAction{
 				Scheme: api_v1.URISchemeHTTPS,
@@ -63,7 +64,7 @@ func newTestJig(f BackendServices, fakeIGs instances.InstanceGroups, syncWithClo
 	nodePool := instances.NewNodePool(fakeIGs, defaultNamer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	healthCheckProvider := healthchecks.NewFakeHealthCheckProvider()
-	healthChecks := healthchecks.NewHealthChecker(healthCheckProvider, "/", defaultNamer)
+	healthChecks := healthchecks.NewHealthChecker(healthCheckProvider, "/", "/healthz", defaultNamer, defaultBackendSvc)
 	bp := NewBackendPool(f, negGetter, healthChecks, nodePool, defaultNamer, syncWithCloud)
 	probes := map[utils.ServicePort]*api_v1.Probe{{NodePort: 443, Protocol: annotations.ProtocolHTTPS}: existingProbe}
 	bp.Init(NewFakeProbeProvider(probes))
@@ -602,7 +603,7 @@ func TestBackendPoolDeleteLegacyHealthChecks(t *testing.T) {
 	nodePool := instances.NewNodePool(fakeIGs, defaultNamer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	hcp := healthchecks.NewFakeHealthCheckProvider()
-	healthChecks := healthchecks.NewHealthChecker(hcp, "/", defaultNamer)
+	healthChecks := healthchecks.NewHealthChecker(hcp, "/", "/healthz", defaultNamer, defaultBackendSvc)
 	bp := NewBackendPool(f, negGetter, healthChecks, nodePool, defaultNamer, false)
 	probes := map[utils.ServicePort]*api_v1.Probe{}
 	bp.Init(NewFakeProbeProvider(probes))
@@ -783,7 +784,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	nodePool := instances.NewNodePool(fakeIGs, defaultNamer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	hcp := healthchecks.NewFakeHealthCheckProvider()
-	healthChecks := healthchecks.NewHealthChecker(hcp, "/", defaultNamer)
+	healthChecks := healthchecks.NewHealthChecker(hcp, "/", "/healthz", defaultNamer, defaultBackendSvc)
 	bp := NewBackendPool(f, fakeNEG, healthChecks, nodePool, defaultNamer, false)
 
 	svcPort := utils.ServicePort{
