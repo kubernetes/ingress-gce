@@ -64,6 +64,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 							},
 						},
 					},
+					Required: []string{"spec"},
 				},
 			},
 			Dependencies: []string{
@@ -188,13 +189,13 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 								Format: "",
 							},
 						},
-						"clientCredentials": {
+						"oauthclientCredentials": {
 							SchemaProps: spec.SchemaProps{
 								Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.OAuthClientCredentials"),
 							},
 						},
 					},
-					Required: []string{"enabled", "clientCredentials"},
+					Required: []string{"enabled", "oauthclientCredentials"},
 				},
 			},
 			Dependencies: []string{
@@ -205,7 +206,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 				SchemaProps: spec.SchemaProps{
 					Description: "OAuthClientCredentials contains credentials for a single IAP-enabled backend.",
 					Properties: map[string]spec.Schema{
-						"secret": {
+						"secretName": {
 							SchemaProps: spec.SchemaProps{
 								Description: "The name of a k8s secret which stores the OAuth client id & secret.",
 								Type:        []string{"string"},
@@ -227,7 +228,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 							},
 						},
 					},
-					Required: []string{"secret"},
+					Required: []string{"secretName"},
 				},
 			},
 			Dependencies: []string{},

@@ -30,7 +30,7 @@ type BackendConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   BackendConfigSpec   `json:"spec,omitempty"`
+	Spec   BackendConfigSpec   `json:"spec"`
 	Status BackendConfigStatus `json:"status,omitempty"`
 }
 
@@ -60,14 +60,14 @@ type BackendConfigList struct {
 // +k8s:openapi-gen=true
 type IAPConfig struct {
 	Enabled                bool                    `json:"enabled"`
-	OAuthClientCredentials *OAuthClientCredentials `json:"clientCredentials"`
+	OAuthClientCredentials *OAuthClientCredentials `json:"oauthclientCredentials"`
 }
 
 // OAuthClientCredentials contains credentials for a single IAP-enabled backend.
 // +k8s:openapi-gen=true
 type OAuthClientCredentials struct {
 	// The name of a k8s secret which stores the OAuth client id & secret.
-	SecretName string `json:"secret"`
+	SecretName string `json:"secretName"`
 	// Direct reference to OAuth client id.
 	ClientID string `json:"clientID,omitempty"`
 	// Direct reference to OAuth client secret.

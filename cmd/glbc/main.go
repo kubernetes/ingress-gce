@@ -165,7 +165,7 @@ func runControllers(ctx *context.ControllerContext) {
 	}
 
 	defaultBackendServicePortID := app.DefaultBackendServicePortID(ctx.KubeClient)
-	clusterManager, err := controller.NewClusterManager(ctx.Cloud, namer, defaultBackendServicePortID, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath)
+	clusterManager, err := controller.NewClusterManager(ctx, namer, defaultBackendServicePortID, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath)
 	if err != nil {
 		glog.Fatalf("controller.NewClusterManager(cloud, namer, %+v, %q, %q) = %v", defaultBackendServicePortID, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath, err)
 	}

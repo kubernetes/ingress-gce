@@ -297,8 +297,9 @@ func TestGetBackendConfigForServicePort(t *testing.T) {
 			expectedConfig: testBackendConfig,
 		},
 		{
-			desc: "service with no backend config",
-			svc:  svcWithoutConfig,
+			desc:           "service with no backend config",
+			svc:            svcWithoutConfig,
+			expectedConfig: nil,
 		},
 		{
 			desc:        "service with backend config but port doesn't match",
