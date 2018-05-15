@@ -43,7 +43,7 @@ func getCRDSpec() *apiextensionsv1beta1.CustomResourceDefinition {
 		ObjectMeta: metav1.ObjectMeta{Name: "backendconfigs" + "." + apisbackendconfig.GroupName},
 		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
 			Group:   apisbackendconfig.GroupName,
-			Version: "v1alpha1",
+			Version: "v1beta1",
 			Scope:   apiextensionsv1beta1.NamespaceScoped,
 			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
 				Kind:     "BackendConfig",

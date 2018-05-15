@@ -25,8 +25,8 @@ import (
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/testing"
 	clientset "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
-	cloudv1alpha1 "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/typed/backendconfig/v1alpha1"
-	fakecloudv1alpha1 "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/typed/backendconfig/v1alpha1/fake"
+	cloudv1beta1 "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/typed/backendconfig/v1beta1"
+	fakecloudv1beta1 "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/typed/backendconfig/v1beta1/fake"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
@@ -70,12 +70,12 @@ func (c *Clientset) Discovery() discovery.DiscoveryInterface {
 
 var _ clientset.Interface = &Clientset{}
 
-// CloudV1alpha1 retrieves the CloudV1alpha1Client
-func (c *Clientset) CloudV1alpha1() cloudv1alpha1.CloudV1alpha1Interface {
-	return &fakecloudv1alpha1.FakeCloudV1alpha1{Fake: c.Fake}
+// CloudV1beta1 retrieves the CloudV1beta1Client
+func (c *Clientset) CloudV1beta1() cloudv1beta1.CloudV1beta1Interface {
+	return &fakecloudv1beta1.FakeCloudV1beta1{Fake: c.Fake}
 }
 
-// Cloud retrieves the CloudV1alpha1Client
-func (c *Clientset) Cloud() cloudv1alpha1.CloudV1alpha1Interface {
-	return &fakecloudv1alpha1.FakeCloudV1alpha1{Fake: c.Fake}
+// Cloud retrieves the CloudV1beta1Client
+func (c *Clientset) Cloud() cloudv1beta1.CloudV1beta1Interface {
+	return &fakecloudv1beta1.FakeCloudV1beta1{Fake: c.Fake}
 }

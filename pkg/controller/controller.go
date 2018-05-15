@@ -32,7 +32,7 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	backendconfigv1alpha1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1alpha1"
+	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	backendconfig "k8s.io/ingress-gce/pkg/backendconfig"
 
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -210,8 +210,8 @@ func (lbc *LoadBalancerController) enqueueIngressForObject(obj interface{}) {
 	case *apiv1.Service:
 		svc := obj.(*apiv1.Service)
 		lbc.enqueueIngressForService(svc)
-	case *backendconfigv1alpha1.BackendConfig:
-		beConfig := obj.(*backendconfigv1alpha1.BackendConfig)
+	case *backendconfigv1beta1.BackendConfig:
+		beConfig := obj.(*backendconfigv1beta1.BackendConfig)
 		lbc.enqueueIngressForBackendConfig(beConfig)
 	default:
 		// Do nothing.
@@ -234,7 +234,7 @@ func (lbc *LoadBalancerController) enqueueIngressForService(svc *apiv1.Service) 
 }
 
 // enqueueIngressForBackendConfig enqueues all Ingresses for a BackendConfig.
-func (lbc *LoadBalancerController) enqueueIngressForBackendConfig(beConfig *backendconfigv1alpha1.BackendConfig) {
+func (lbc *LoadBalancerController) enqueueIngressForBackendConfig(beConfig *backendconfigv1beta1.BackendConfig) {
 	// Get all the Services associated with this BackendConfig.
 	svcLister := lbc.ctx.ServiceInformer.GetIndexer()
 	linkedSvcs := backendconfig.GetServicesForBackendConfig(svcLister, beConfig)

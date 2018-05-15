@@ -27,12 +27,12 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfigv1alpha1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1alpha1"
+	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 )
 
 // GetServicesForBackendConfig returns all services that reference the given
 // BackendConfig.
-func GetServicesForBackendConfig(svcLister cache.Store, backendConfig *backendconfigv1alpha1.BackendConfig) []*apiv1.Service {
+func GetServicesForBackendConfig(svcLister cache.Store, backendConfig *backendconfigv1beta1.BackendConfig) []*apiv1.Service {
 	svcs := []*apiv1.Service{}
 	for _, obj := range svcLister.List() {
 		svc := obj.(*apiv1.Service)
@@ -62,7 +62,7 @@ func GetServicesForBackendConfig(svcLister cache.Store, backendConfig *backendco
 
 // GetBackendConfigForServicePort returns the corresponding BackendConfig for
 // the given ServicePort if specified.
-func GetBackendConfigForServicePort(backendConfigLister cache.Store, svc *apiv1.Service, svcPort *apiv1.ServicePort) (*backendconfigv1alpha1.BackendConfig, error) {
+func GetBackendConfigForServicePort(backendConfigLister cache.Store, svc *apiv1.Service, svcPort *apiv1.ServicePort) (*backendconfigv1beta1.BackendConfig, error) {
 	backendConfigNames, err := annotations.FromService(svc).GetBackendConfigs()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get BackendConfig names from service %s/%s: %v", svc.Namespace, svc.Name, err)
@@ -87,7 +87,7 @@ func GetBackendConfigForServicePort(backendConfigLister cache.Store, svc *apiv1.
 	}
 
 	obj, exists, err := backendConfigLister.Get(
-		&backendconfigv1alpha1.BackendConfig{
+		&backendconfigv1beta1.BackendConfig{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      configName,
 				Namespace: svc.Namespace,
@@ -96,5 +96,5 @@ func GetBackendConfigForServicePort(backendConfigLister cache.Store, svc *apiv1.
 	if !exists || err != nil {
 		return nil, fmt.Errorf("failed to get BackendConfig %s for service %s/%s: %v", configName, svc.Namespace, svc.Name, err)
 	}
-	return obj.(*backendconfigv1alpha1.BackendConfig), nil
+	return obj.(*backendconfigv1beta1.BackendConfig), nil
 }
