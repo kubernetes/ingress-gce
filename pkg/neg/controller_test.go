@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/annotations"
+	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -33,7 +34,8 @@ import (
 )
 
 func newTestController(kubeClient kubernetes.Interface) *Controller {
-	context := context.NewControllerContext(kubeClient, apiv1.NamespaceAll, 1*time.Second, true)
+	backendConfigClient := backendconfigclient.NewSimpleClientset()
+	context := context.NewControllerContext(kubeClient, backendConfigClient, apiv1.NamespaceAll, 1*time.Second, true)
 	controller, _ := NewController(kubeClient,
 		NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		context,

@@ -35,6 +35,8 @@ type BackendConfig struct {
 
 // BackendConfigSpec is the spec for a BackendConfig resource
 type BackendConfigSpec struct {
+	Iap *IAPConfig
+	Cdn *CDNConfig
 }
 
 // BackendConfigStatus is the status for a BackendConfig resource
