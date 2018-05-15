@@ -33,12 +33,12 @@ import (
 )
 
 var (
+	testBackendPort      = intstr.IntOrString{Type: intstr.Int, IntVal: 80}
 	testDefaultBeSvcPort = utils.ServicePort{
+		ID:       utils.ServicePortID{Service: types.NamespacedName{Namespace: "system", Name: "default"}, Port: testBackendPort},
 		NodePort: 30000,
 		Protocol: annotations.ProtocolHTTP,
-		SvcName:  types.NamespacedName{Namespace: "system", Name: "default"},
 	}
-	testBackendPort    = intstr.IntOrString{Type: intstr.Int, IntVal: 80}
 	testSrcRanges      = []string{"1.1.1.1/20"}
 	testNodePortRanges = []string{"30000-32767"}
 )
@@ -64,7 +64,7 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{"zone-a"}})
 
-	healthChecker := healthchecks.NewHealthChecker(fakeHCP, "/", "/healthz", namer, testDefaultBeSvcPort.SvcName)
+	healthChecker := healthchecks.NewHealthChecker(fakeHCP, "/", "/healthz", namer, testDefaultBeSvcPort.ID.Service)
 
 	backendPool := backends.NewBackendPool(
 		fakeBackends,
@@ -73,12 +73,12 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 	l7Pool := loadbalancers.NewLoadBalancerPool(fakeLbs, namer)
 	frPool := firewalls.NewFirewallPool(firewalls.NewFakeFirewallsProvider(false, false), namer, testSrcRanges, testNodePortRanges)
 	cm := &ClusterManager{
-		ClusterNamer:          namer,
-		instancePool:          nodePool,
-		backendPool:           backendPool,
-		l7Pool:                l7Pool,
-		firewallPool:          frPool,
-		defaultBackendSvcPort: testDefaultBeSvcPort,
+		ClusterNamer:            namer,
+		instancePool:            nodePool,
+		backendPool:             backendPool,
+		l7Pool:                  l7Pool,
+		firewallPool:            frPool,
+		defaultBackendSvcPortID: testDefaultBeSvcPort.ID,
 	}
 	return &fakeClusterManager{cm, fakeLbs, fakeBackends, fakeIGs, namer}
 }

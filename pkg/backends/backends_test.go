@@ -788,13 +788,15 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	bp := NewBackendPool(f, fakeNEG, healthChecks, nodePool, defaultNamer, false)
 
 	svcPort := utils.ServicePort{
-		NodePort: 30001,
-		Protocol: annotations.ProtocolHTTP,
-		SvcName: types.NamespacedName{
-			Namespace: namespace,
-			Name:      name,
+		ID: utils.ServicePortID{
+			Service: types.NamespacedName{
+				Namespace: namespace,
+				Name:      name,
+			},
+			Port: intstr.FromInt(80),
 		},
-		SvcPort:       intstr.FromInt(80),
+		NodePort:      30001,
+		Protocol:      annotations.ProtocolHTTP,
 		SvcTargetPort: port,
 		NEGEnabled:    true,
 	}
@@ -894,9 +896,9 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 	pool, _ := newTestJig(f, fakeIGs, false)
 
 	svcPorts := []utils.ServicePort{
-		{NodePort: 80, Protocol: annotations.ProtocolHTTP, SvcPort: intstr.FromInt(1)},
-		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, SvcPort: intstr.FromInt(2)},
-		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, SvcPort: intstr.FromInt(3)},
+		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}},
+		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, ID: utils.ServicePortID{Port: intstr.FromInt(2)}},
+		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, ID: utils.ServicePortID{Port: intstr.FromInt(3)}},
 	}
 
 	for _, oldPort := range svcPorts {
@@ -943,9 +945,9 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 	pool, _ := newTestJig(f, fakeIGs, false)
 
 	svcPorts := []utils.ServicePort{
-		{NodePort: 80, Protocol: annotations.ProtocolHTTP, SvcPort: intstr.FromInt(1)},
-		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, SvcPort: intstr.FromInt(2)},
-		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, SvcPort: intstr.FromInt(3)},
+		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}},
+		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, ID: utils.ServicePortID{Port: intstr.FromInt(2)}},
+		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, ID: utils.ServicePortID{Port: intstr.FromInt(3)}},
 	}
 
 	for _, oldPort := range svcPorts {
@@ -981,7 +983,7 @@ func TestEnsureBackendServiceHealthCheckLink(t *testing.T) {
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
-	p := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, SvcPort: intstr.FromInt(1)}
+	p := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}}
 	pool.Ensure([]utils.ServicePort{p}, nil)
 	be, err := pool.Get(p.BackendName(defaultNamer), p.IsAlpha())
 	if err != nil {

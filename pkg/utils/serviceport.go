@@ -19,15 +19,22 @@ package utils
 import (
 	"fmt"
 
+	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 )
 
+// ServicePortID contains the Service and Port fields.
+type ServicePortID struct {
+	Service types.NamespacedName
+	Port    intstr.IntOrString
+}
+
 // ServicePort maintains configuration for a single backend.
 type ServicePort struct {
-	SvcName       types.NamespacedName
-	SvcPort       intstr.IntOrString
+	ID ServicePortID
+
 	NodePort      int64
 	Protocol      annotations.AppProtocol
 	SvcTargetPort string
@@ -36,10 +43,10 @@ type ServicePort struct {
 
 // Description returns a string describing the ServicePort.
 func (sp ServicePort) Description() string {
-	if sp.SvcName.String() == "" || sp.SvcPort.String() == "" {
+	if sp.ID.Service.String() == "" || sp.ID.Port.String() == "" {
 		return ""
 	}
-	return fmt.Sprintf(`{"kubernetes.io/service-name":"%s","kubernetes.io/service-port":"%s"}`, sp.SvcName.String(), sp.SvcPort.String())
+	return fmt.Sprintf(`{"kubernetes.io/service-name":"%s","kubernetes.io/service-port":"%s"}`, sp.ID.Service.String(), sp.ID.Port.String())
 }
 
 // IsAlpha returns true if the ServicePort is using ProtocolHTTP2 - which means
@@ -54,5 +61,16 @@ func (sp ServicePort) BackendName(namer *Namer) string {
 		return namer.IGBackend(sp.NodePort)
 	}
 
-	return namer.NEG(sp.SvcName.Namespace, sp.SvcName.Name, sp.SvcTargetPort)
+	return namer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.SvcTargetPort)
+}
+
+// BackendToServicePortID creates a ServicePortID from a given IngressBackend and namespace.
+func BackendToServicePortID(be extensions.IngressBackend, namespace string) ServicePortID {
+	return ServicePortID{
+		Service: types.NamespacedName{
+			Name:      be.ServiceName,
+			Namespace: namespace,
+		},
+		Port: be.ServicePort,
+	}
 }

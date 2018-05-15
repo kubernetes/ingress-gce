@@ -387,7 +387,7 @@ func toAlphaHealthCheck(hc *compute.HealthCheck) (*computealpha.HealthCheck, err
 // pathFromSvcPort returns the default path for a health check based on whether
 // the passed in ServicePort is associated with the system default backend.
 func (h *HealthChecks) pathFromSvcPort(sp utils.ServicePort) string {
-	if h.defaultBackendSvc == sp.SvcName {
+	if h.defaultBackendSvc == sp.ID.Service {
 		return h.defaultBackendPath
 	}
 	return h.path

@@ -18,6 +18,8 @@ package utils
 
 import (
 	"testing"
+
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func TestTrimFieldsEvenly(t *testing.T) {
@@ -116,5 +118,41 @@ func TestBackendServiceComparablePath(t *testing.T) {
 		if res != tc.expected {
 			t.Errorf("Expected result after url trim to be %v, but got %v", tc.expected, res)
 		}
+	}
+}
+
+func TestToNamespacedName(t *testing.T) {
+	cases := []struct {
+		input   string
+		wantErr bool
+		wantOut types.NamespacedName
+	}{
+		{
+			input:   "kube-system/default-http-backend",
+			wantOut: types.NamespacedName{Namespace: "kube-system", Name: "default-http-backend"},
+		},
+		{
+			input:   "abc",
+			wantErr: true,
+		},
+		{
+			input:   "",
+			wantErr: true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			gotOut, gotErr := ToNamespacedName(tc.input)
+			if tc.wantErr != (gotErr != nil) {
+				t.Errorf("ToNamespacedName(%v) = _, %v, want err? %v", tc.input, gotErr, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+
+			if gotOut != tc.wantOut {
+				t.Errorf("ToNamespacedName(%v) = %v, want %v", tc.input, gotOut, tc.wantOut)
+			}
+		})
 	}
 }

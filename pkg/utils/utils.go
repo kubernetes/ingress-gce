@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"google.golang.org/api/googleapi"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 const (
@@ -60,6 +61,18 @@ func FakeGoogleAPINotFoundErr() *googleapi.Error {
 func IsHTTPErrorCode(err error, code int) bool {
 	apiErr, ok := err.(*googleapi.Error)
 	return ok && apiErr.Code == code
+}
+
+// ToNamespacedName returns a types.NamespacedName struct parsed from namespace/name.
+func ToNamespacedName(s string) (r types.NamespacedName, err error) {
+	parts := strings.Split(s, "/")
+	if len(parts) != 2 {
+		return r, fmt.Errorf("service should take the form 'namespace/name': %q", s)
+	}
+	return types.NamespacedName{
+		Namespace: parts[0],
+		Name:      parts[1],
+	}, nil
 }
 
 // IgnoreHTTPNotFound returns the passed err if it's not a GoogleAPI error
