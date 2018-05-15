@@ -27,11 +27,11 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfigv1alpha1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1alpha1"
+	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 )
 
 var (
-	testBackendConfig = &backendconfigv1alpha1.BackendConfig{
+	testBackendConfig = &backendconfigv1beta1.BackendConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "config-test",
 			Namespace: "test",
@@ -266,7 +266,7 @@ func TestGetBackendConfigForServicePort(t *testing.T) {
 		svc            *apiv1.Service
 		svcPort        *apiv1.ServicePort
 		getFunc        func(obj interface{}) (item interface{}, exists bool, err error)
-		expectedConfig *backendconfigv1alpha1.BackendConfig
+		expectedConfig *backendconfigv1beta1.BackendConfig
 		expectErr      bool
 	}{
 		{
