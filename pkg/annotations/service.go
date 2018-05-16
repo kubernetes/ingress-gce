@@ -47,7 +47,7 @@ const (
 	// Examples:
 	// - '{"ports":{"my-https-port":"config-https","my-http-port":"config-http"}}'
 	// - '{"default":"config-default","ports":{"my-https-port":"config-https"}}'
-	BackendConfigKey = "alpha.cloud.google.com/backend-config"
+	BackendConfigKey = "beta.cloud.google.com/backend-config"
 
 	// ProtocolHTTP protocol for a service
 	ProtocolHTTP AppProtocol = "HTTP"
