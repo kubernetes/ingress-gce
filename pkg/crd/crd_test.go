@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package backendconfig
+package crd
 
 import (
 	"reflect"
@@ -25,8 +25,19 @@ import (
 	crdclientfake "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
 )
 
+var (
+	crdMeta = &CRDMeta{
+		groupName: "test.group.com",
+		version:   "v1alpha1",
+		kind:      "Test",
+		listKind:  "TestList",
+		singular:  "test",
+		plural:    "tests",
+	}
+)
+
 func TestCreateOrUpdateCRD(t *testing.T) {
-	expectedCRD := getCRDSpec()
+	expectedCRD := crd(crdMeta)
 	testCases := []struct {
 		desc     string
 		initFunc func(clientset crdclient.Interface) error
@@ -37,7 +48,7 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 		{
 			desc: "Update CRD when exist with wrongname",
 			initFunc: func(clientset crdclient.Interface) error {
-				crd := getCRDSpec()
+				crd := crd(crdMeta)
 				crd.Spec.Names.Kind = "wrongname"
 				crd.Spec.Names.ListKind = "wrongnameList"
 				if _, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd); err != nil {
@@ -49,14 +60,15 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		crdClient := crdclientfake.NewSimpleClientset()
+		fakeCRDClient := crdclientfake.NewSimpleClientset()
+		fakeCRDHandler := NewCRDHandler(fakeCRDClient)
 		if tc.initFunc != nil {
-			if err := tc.initFunc(crdClient); err != nil {
+			if err := tc.initFunc(fakeCRDClient); err != nil {
 				t.Errorf("%s: Unexpected error in initFunc(): %v", tc.desc, err)
 			}
 		}
 
-		crd, err := createOrUpdateCRD(crdClient)
+		crd, err := fakeCRDHandler.createOrUpdateCRD(crdMeta)
 		if err != nil {
 			t.Errorf("%s: Unexpected error in createOrUpdateCRD(): %v", tc.desc, err)
 		}
