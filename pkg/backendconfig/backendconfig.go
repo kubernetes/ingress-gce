@@ -27,8 +27,23 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/ingress-gce/pkg/annotations"
+	apisbackendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	"k8s.io/ingress-gce/pkg/crd"
 )
+
+func CRDMeta() *crd.CRDMeta {
+	meta := crd.NewCRDMeta(
+		apisbackendconfig.GroupName,
+		"v1beta1",
+		"BackendConfig",
+		"BackendConfigList",
+		"backendconfig",
+		"backendconfigs",
+	)
+	meta.AddValidationInfo("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.BackendConfig", backendconfigv1beta1.GetOpenAPIDefinitions)
+	return meta
+}
 
 // GetServicesForBackendConfig returns all services that reference the given
 // BackendConfig.

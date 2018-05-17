@@ -35,6 +35,7 @@ import (
 
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	"k8s.io/ingress-gce/pkg/backendconfig"
+	"k8s.io/ingress-gce/pkg/crd"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/version"
 )
@@ -79,8 +80,10 @@ func main() {
 		if err != nil {
 			glog.Fatalf("Failed to create kubernetes CRD client: %v", err)
 		}
-
-		if _, err := backendconfig.EnsureCRD(crdClient); err != nil {
+		// TODO(rramkumar): Reuse this CRD handler for other CRD's coming.
+		crdHandler := crd.NewCRDHandler(crdClient)
+		backendConfigCRDMeta := backendconfig.CRDMeta()
+		if _, err := crdHandler.EnsureCRD(backendConfigCRDMeta); err != nil {
 			glog.Fatalf("Failed to ensure BackendConfig CRD: %v", err)
 		}
 

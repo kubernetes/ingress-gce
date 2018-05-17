@@ -25,18 +25,20 @@ import (
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
 // BackendConfig is a specification for a BackendConfig resource
+// +k8s:openapi-gen=true
 type BackendConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   BackendConfigSpec   `json:"spec"`
-	Status BackendConfigStatus `json:"status"`
+	Spec   BackendConfigSpec   `json:"spec,omitempty"`
+	Status BackendConfigStatus `json:"status,omitempty"`
 }
 
 // BackendConfigSpec is the spec for a BackendConfig resource
+// +k8s:openapi-gen=true
 type BackendConfigSpec struct {
-	Iap *IAPConfig
-	Cdn *CDNConfig
+	Iap *IAPConfig `json:"iap,omitempty"`
+	Cdn *CDNConfig `json:"cdn,omitempty"`
 }
 
 // BackendConfigStatus is the status for a BackendConfig resource
@@ -54,40 +56,44 @@ type BackendConfigList struct {
 }
 
 // IAPConfig contains configuration for IAP-enabled backends.
+// +k8s:openapi-gen=true
 type IAPConfig struct {
-	Enabled           bool
-	ClientCredentials *OAuthClientCredentials
+	Enabled           bool                    `json:"enabled"`
+	ClientCredentials *OAuthClientCredentials `json:"clientCredentials,omitempty"`
 }
 
 // OAuthClientCredentials contains credentials for a single IAP-enabled backend.
+// +k8s:openapi-gen=true
 type OAuthClientCredentials struct {
 	// The name of a k8s secret which stores the OAuth client id & secret.
-	Secret string
+	Secret string `json:"secret"`
 }
 
 // CDNConfig contains configuration for CDN-enabled backends.
+// +k8s:openapi-gen=true
 type CDNConfig struct {
-	Enabled   bool
-	CDNPolicy *CacheKeyPolicy
+	Enabled     bool            `json:"enabled"`
+	CachePolicy *CacheKeyPolicy `json:"cachePolicy,omitempty"`
 }
 
 // CacheKeyPolicy contains configuration for how requests to a CDN-enabled backend are cached.
+// +k8s:openapi-gen=true
 type CacheKeyPolicy struct {
 	// If true, requests to different hosts will be cached separately.
-	IncludeHost bool
+	IncludeHost bool `json:"includeHost,omitempty"`
 	// If true, http and https requests will be cached separately.
-	IncludeProtocol bool
+	IncludeProtocol bool `json:"includeProtocol,omitempty"`
 	// If true, query string parameters are included in the cache key
 	// according to QueryStringBlacklist and QueryStringWhitelist.
 	// If neither is set, the entire query string is included and if false
 	// the entire query string is excluded.
-	IncludeQueryString bool
+	IncludeQueryString bool `json:"includeQueryString,omitempty"`
 	// Names of query strint parameters to exclude from cache keys. All other
 	// parameters are included. Either specify QueryStringBlacklist or
 	// QueryStringWhitelist, but not both.
-	QueryStringBlacklist []string
+	QueryStringBlacklist []string `json:"queryStringBlacklist,omitempty"`
 	// Names of query string parameters to include in cache keys. All other
 	// parameters are excluded. Either specify QueryStringBlacklist or
 	// QueryStringWhitelist, but not both.
-	QueryStringWhitelist []string
+	QueryStringWhitelist []string `json:"queryStringWhitelist,omitempty"`
 }
