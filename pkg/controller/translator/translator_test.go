@@ -17,21 +17,22 @@ limitations under the License.
 package translator
 
 import (
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
+	"log"
 	"testing"
 	"time"
 
-	"github.com/golang/glog"
-
 	apiv1 "k8s.io/api/core/v1"
+	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/fake"
-	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
-	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
+	"k8s.io/ingress-gce/pkg/test"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
@@ -40,22 +41,16 @@ import (
 
 var (
 	firstPodCreationTime = time.Date(2006, 01, 02, 15, 04, 05, 0, time.UTC)
+	defaultBackend       = utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")}
 )
 
 func fakeTranslator(negEnabled bool) *Translator {
 	client := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
-	broadcaster := record.NewBroadcaster()
-	broadcaster.StartLogging(glog.Infof)
-	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
-		Interface: client.Core().Events(""),
-	})
 
-	namer := utils.NewNamer("uid1", "fw1")
-
+	namer := utils.NewNamer("uid1", "")
 	ctx := context.NewControllerContext(client, backendConfigClient, apiv1.NamespaceAll, 1*time.Second, negEnabled)
 	gce := &Translator{
-		recorders:  ctx,
 		namer:      namer,
 		svcLister:  ctx.ServiceInformer.GetIndexer(),
 		nodeLister: ctx.NodeInformer.GetIndexer(),
@@ -66,6 +61,108 @@ func fakeTranslator(negEnabled bool) *Translator {
 		gce.endpointLister = ctx.EndpointInformer.GetIndexer()
 	}
 	return gce
+}
+
+func TestTranslateIngress(t *testing.T) {
+	translator := fakeTranslator(false)
+
+	// default backend
+	svc := test.NewService(types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, apiv1.ServiceSpec{
+		Type:  apiv1.ServiceTypeNodePort,
+		Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
+	})
+	translator.svcLister.Add(svc)
+
+	// first-service
+	svc = test.NewService(types.NamespacedName{Name: "first-service", Namespace: "default"}, apiv1.ServiceSpec{
+		Type:  apiv1.ServiceTypeNodePort,
+		Ports: []apiv1.ServicePort{{Port: 80}},
+	})
+	translator.svcLister.Add(svc)
+
+	// other-service
+	svc = test.NewService(types.NamespacedName{Name: "second-service", Namespace: "default"}, apiv1.ServiceSpec{
+		Type:  apiv1.ServiceTypeNodePort,
+		Ports: []apiv1.ServicePort{{Port: 80}},
+	})
+	translator.svcLister.Add(svc)
+
+	cases := map[string]struct {
+		ing           *extensions.Ingress
+		wantErrCount  int
+		wantGCEURLMap *utils.GCEURLMap
+	}{
+		"Default Backend Only": {
+			ing: test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
+				extensions.IngressSpec{
+					Backend: test.Backend("first-service", intstr.FromInt(80)),
+				}),
+			wantErrCount:  0,
+			wantGCEURLMap: &utils.GCEURLMap{DefaultBackend: &utils.ServicePort{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "first-service", Namespace: "default"}, Port: intstr.FromInt(80)}}},
+		},
+		"No Backend": {
+			ing:           test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"}, extensions.IngressSpec{}),
+			wantErrCount:  0,
+			wantGCEURLMap: &utils.GCEURLMap{DefaultBackend: &utils.ServicePort{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")}}},
+		},
+		"No Host": {
+			ing:           ingressFromFile("ingress-no-host.yaml"),
+			wantErrCount:  0,
+			wantGCEURLMap: gceURLMapFromFile("ingress-no-host.json"),
+		},
+		"Single Host": {
+			ing:           ingressFromFile("ingress-single-host.yaml"),
+			wantErrCount:  0,
+			wantGCEURLMap: gceURLMapFromFile("ingress-single-host.json"),
+		},
+		"Two Hosts": {
+			ing:           ingressFromFile("ingress-two-hosts.yaml"),
+			wantErrCount:  0,
+			wantGCEURLMap: gceURLMapFromFile("ingress-two-hosts.json"),
+		},
+		"Multiple Paths": {
+			ing:           ingressFromFile("ingress-multi-paths.yaml"),
+			wantErrCount:  0,
+			wantGCEURLMap: gceURLMapFromFile("ingress-multi-paths.json"),
+		},
+		"Multiple Empty Paths": {
+			ing:           ingressFromFile("ingress-multi-empty.yaml"),
+			wantErrCount:  0,
+			wantGCEURLMap: gceURLMapFromFile("ingress-multi-empty.json"),
+		},
+		"Missing Rule Service": {
+			ing:           ingressFromFile("ingress-missing-rule-svc.yaml"),
+			wantErrCount:  1,
+			wantGCEURLMap: gceURLMapFromFile("ingress-missing-rule-svc.json"),
+		},
+		"Missing Multiple Rule Service": {
+			ing:           ingressFromFile("ingress-missing-multi-svc.yaml"),
+			wantErrCount:  2,
+			wantGCEURLMap: gceURLMapFromFile("ingress-missing-multi-svc.json"),
+		},
+		"Missing Default Service": {
+			ing: test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
+				extensions.IngressSpec{
+					Backend: test.Backend("random-service", intstr.FromInt(80)),
+				}),
+			wantErrCount:  1,
+			wantGCEURLMap: utils.NewGCEURLMap(),
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			gotGCEURLMap, gotErrs := translator.TranslateIngress(tc.ing, defaultBackend)
+			if len(gotErrs) != tc.wantErrCount {
+				t.Errorf("TranslateIngress() = _, %+v, want %v errs", gotErrs, tc.wantErrCount)
+			}
+
+			// Check that the GCEURLMaps point to the same ServicePortIDs.
+			if !utils.EqualMapping(gotGCEURLMap, tc.wantGCEURLMap) {
+				t.Errorf("TranslateIngress() = %+v\nwant\n%+v", gotGCEURLMap.String(), tc.wantGCEURLMap.String())
+			}
+		})
+	}
 }
 
 func TestGetProbe(t *testing.T) {
@@ -293,6 +390,30 @@ func newDefaultEndpoint(name string) *apiv1.Endpoints {
 			},
 		},
 	}
+}
+
+func ingressFromFile(filename string) *extensions.Ingress {
+	data, err := ioutil.ReadFile("testdata/" + filename)
+	if err != nil {
+		log.Fatal(err)
+	}
+	ing, err := test.DecodeIngress(data)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return ing
+}
+
+func gceURLMapFromFile(filename string) *utils.GCEURLMap {
+	data, err := ioutil.ReadFile("testdata/" + filename)
+	if err != nil {
+		log.Fatal(err)
+	}
+	v := &utils.GCEURLMap{}
+	if err := json.Unmarshal(data, v); err != nil {
+		log.Fatal(err)
+	}
+	return v
 }
 
 func int64ToMap(l []int64) map[int64]bool {

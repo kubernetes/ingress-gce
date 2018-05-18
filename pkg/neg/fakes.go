@@ -18,10 +18,11 @@ package neg
 
 import (
 	"fmt"
-	computealpha "google.golang.org/api/compute/v0.alpha"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"reflect"
 	"sync"
+
+	computealpha "google.golang.org/api/compute/v0.alpha"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 const (

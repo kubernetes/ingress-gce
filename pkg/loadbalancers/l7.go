@@ -729,7 +729,7 @@ func (l *L7) UpdateUrlMap() error {
 	l.um.HostRules = []*compute.HostRule{}
 	l.um.PathMatchers = []*compute.PathMatcher{}
 
-	for hostname, rules := range urlMap.AllRules() {
+	for hostname, rules := range urlMap.HostRules {
 		// Create a host rule
 		// Create a path matcher
 		// Add all given endpoint:backends to pathRules in path matcher

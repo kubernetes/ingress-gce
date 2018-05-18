@@ -17,6 +17,8 @@ limitations under the License.
 package utils
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -148,6 +150,19 @@ func trimFieldsEvenly(max int, fields ...string) []string {
 	}
 
 	return ret
+}
+
+// PrettyJson marshals an object in a human-friendly format.
+func PrettyJson(data interface{}) (string, error) {
+	buffer := new(bytes.Buffer)
+	encoder := json.NewEncoder(buffer)
+	encoder.SetIndent("", "\t")
+
+	err := encoder.Encode(data)
+	if err != nil {
+		return "", err
+	}
+	return buffer.String(), nil
 }
 
 // BackendServiceRelativeResourcePath returns a relative path of the link for a

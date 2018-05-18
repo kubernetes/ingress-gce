@@ -20,19 +20,37 @@ import (
 	"fmt"
 
 	"k8s.io/api/core/v1"
-	"k8s.io/api/extensions/v1beta1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
-// ErrNodePortNotFound is returned when a port was not found.
-type ErrNodePortNotFound struct {
-	Backend v1beta1.IngressBackend
-	Err     error
+// ErrSvcNotNodePort is returned when the service is not a nodeport.
+type ErrSvcNotNodePort struct {
+	Service types.NamespacedName
 }
 
-func (e ErrNodePortNotFound) Error() string {
-	return fmt.Sprintf("Could not find nodeport for backend %+v: %v", e.Backend, e.Err)
+func (e ErrSvcNotNodePort) Error() string {
+	return fmt.Sprintf("service %q is not type 'NodePort'", e.Service)
+}
+
+// ErrSvcNotFound is returned when a service is not found.
+type ErrSvcNotFound struct {
+	Service types.NamespacedName
+}
+
+func (e ErrSvcNotFound) Error() string {
+	return fmt.Sprintf("could not find service %q", e.Service)
+}
+
+// ErrSvcPortNotFound is returned when a service's port is not found.
+type ErrSvcPortNotFound struct {
+	utils.ServicePortID
+}
+
+func (e ErrSvcPortNotFound) Error() string {
+	return fmt.Sprintf("could not find port %q in service %q", e.ServicePortID.Port, e.ServicePortID.Service)
 }
 
 // ErrSvcAppProtosParsing is returned when the service is malformed.

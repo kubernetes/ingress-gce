@@ -1,0 +1,41 @@
+{
+	"DefaultBackend": {
+		"ID": {
+			"Service": {
+				"Namespace": "kube-system",
+				"Name": "default-http-backend"
+			},
+			"Port": "http"
+		}
+	},
+	"HostRules": {
+		"abc.com": [
+			{
+				"Path": "/*",
+				"Backend": {
+					"ID": {
+						"Service": {
+							"Namespace": "default",
+							"Name": "second-service"
+						},
+						"Port": 80
+					}
+				}
+			}
+		],
+		"foo.bar.com": [
+			{
+				"Path": "/*",
+				"Backend": {
+					"ID": {
+						"Service": {
+							"Namespace": "default",
+							"Name": "first-service"
+						},
+						"Port": 80
+					}
+				}
+			}
+		]
+	}
+}
