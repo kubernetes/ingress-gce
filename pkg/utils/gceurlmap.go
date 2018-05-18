@@ -26,9 +26,9 @@ import (
 //       2. All paths for a specific host are unique.
 //       3. Adding paths for a hostname replaces existing for that host.
 type GCEURLMap struct {
-	DefaultBackend ServicePort
+	DefaultBackend *ServicePort
 	// hostRules is a mapping from hostnames to path rules for that host.
-	hostRules map[string][]PathRule
+	HostRules map[string][]PathRule
 }
 
 // PathRule encapsulates the information for a single path -> backend mapping.
@@ -39,7 +39,43 @@ type PathRule struct {
 
 // NewGCEURLMap returns an empty GCEURLMap
 func NewGCEURLMap() *GCEURLMap {
-	return &GCEURLMap{hostRules: make(map[string][]PathRule)}
+	return &GCEURLMap{HostRules: make(map[string][]PathRule)}
+}
+
+// EqualMapping returns true if both maps point to the same ServicePortIDs.
+// ServicePort settings are *not* included in this comparison.
+func EqualMapping(a, b *GCEURLMap) bool {
+	if (a.DefaultBackend != nil) != (b.DefaultBackend != nil) {
+		return false
+	}
+	if a.DefaultBackend != nil && a.DefaultBackend.ID != b.DefaultBackend.ID {
+		return false
+	}
+
+	if len(a.HostRules) != len(b.HostRules) {
+		return false
+	}
+
+	for host, aRules := range a.HostRules {
+		bRules, ok := b.HostRules[host]
+		if !ok {
+			return false
+		}
+
+		if len(aRules) != len(bRules) {
+			return false
+		}
+
+		for x, r := range aRules {
+			if r.Path != bRules[x].Path {
+				return false
+			}
+			if r.Backend.ID != bRules[x].Backend.ID {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // PutPathRulesForHost adds path rules for a single hostname.
@@ -49,54 +85,63 @@ func NewGCEURLMap() *GCEURLMap {
 func (g *GCEURLMap) PutPathRulesForHost(hostname string, pathRules []PathRule) {
 	// Convert the path rules to a map to filter out two equal paths
 	// Note that the if two paths are equal, the one later in the list is the winner.
-	uniquePaths := make(map[string]PathRule)
-	for _, pathRule := range pathRules {
-		if _, ok := uniquePaths[pathRule.Path]; ok {
-			glog.V(4).Infof("Equal paths (%v) for host %v. Using backend %+v", pathRule.Path, hostname, pathRule.Backend)
+	seen := make(map[string]bool)
+	var uniquePathRules []PathRule
+	for x := len(pathRules) - 1; x >= 0; x-- {
+		pathRule := pathRules[x]
+
+		if seen[pathRule.Path] {
+			glog.V(4).Infof("Path %q was duplicated", pathRule.Path)
+			continue
+		} else {
+			seen[pathRule.Path] = true
 		}
-		uniquePaths[pathRule.Path] = pathRule
-	}
-	uniquePathRules := make([]PathRule, 0)
-	for _, pathRule := range uniquePaths {
-		uniquePathRules = append(uniquePathRules, pathRule)
+
+		uniquePathRules = append([]PathRule{pathRule}, uniquePathRules...)
 	}
 	if g.HostExists(hostname) {
 		glog.V(4).Infof("Overwriting path rules for host %v", hostname)
 	}
-	g.hostRules[hostname] = uniquePathRules
-}
-
-// AllRules returns every list of PathRule's for each hostname.
-// Note: Return value is a copy to ensure invariants are not broken mistakenly.
-// TODO(rramkumar): Build an iterator for this?
-func (g *GCEURLMap) AllRules() map[string][]PathRule {
-	retVal := g.hostRules
-	return retVal
+	g.HostRules[hostname] = uniquePathRules
 }
 
 // AllServicePorts return a list of all ServicePorts contained in the GCEURLMap.
 func (g *GCEURLMap) AllServicePorts() (svcPorts []ServicePort) {
-	for _, rules := range g.hostRules {
+	if g == nil {
+		return nil
+	}
+
+	if g.DefaultBackend != nil {
+		svcPorts = append(svcPorts, *g.DefaultBackend)
+	}
+
+	for _, rules := range g.HostRules {
 		for _, rule := range rules {
 			svcPorts = append(svcPorts, rule.Backend)
 		}
 	}
-	if g.DefaultBackend != (ServicePort{}) {
-		svcPorts = append(svcPorts, g.DefaultBackend)
-	}
+
 	return
 }
 
 // HostExists returns true if the given hostname is specified in the GCEURLMap.
 func (g *GCEURLMap) HostExists(hostname string) bool {
-	_, ok := g.hostRules[hostname]
+	if g == nil {
+		return false
+	}
+
+	_, ok := g.HostRules[hostname]
 	return ok
 }
 
 // PathExists returns true if the given path exists for the given hostname.
 // It will also return the backend associated with that path.
 func (g *GCEURLMap) PathExists(hostname, path string) (bool, ServicePort) {
-	pathRules, ok := g.hostRules[hostname]
+	if g == nil {
+		return false, ServicePort{}
+	}
+
+	pathRules, ok := g.HostRules[hostname]
 	if !ok {
 		return ok, ServicePort{}
 	}
@@ -110,8 +155,12 @@ func (g *GCEURLMap) PathExists(hostname, path string) (bool, ServicePort) {
 
 // String dumps a readable version of the GCEURLMap.
 func (g *GCEURLMap) String() string {
+	if g == nil {
+		return ""
+	}
+
 	msg := ""
-	for host, rules := range g.hostRules {
+	for host, rules := range g.HostRules {
 		msg += fmt.Sprintf("%v\n", host)
 		for _, rule := range rules {
 			msg += fmt.Sprintf("\t%v: ", rule.Path)

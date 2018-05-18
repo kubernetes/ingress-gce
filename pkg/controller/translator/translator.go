@@ -33,22 +33,21 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 
-	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/controller/errors"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-type recorderSource interface {
-	Recorder(ns string) record.EventRecorder
-}
-
 // NewTranslator returns a new Translator.
-func NewTranslator(recorders recorderSource,
-	namer *utils.Namer, svcLister cache.Indexer, nodeLister cache.Indexer, podLister cache.Indexer, endpointLister cache.Indexer, negEnabled bool) *Translator {
+func NewTranslator(
+	namer *utils.Namer,
+	svcLister cache.Indexer,
+	nodeLister cache.Indexer,
+	podLister cache.Indexer,
+	endpointLister cache.Indexer,
+	negEnabled bool) *Translator {
 	return &Translator{
-		recorders,
 		namer,
 		svcLister,
 		nodeLister,
@@ -60,8 +59,6 @@ func NewTranslator(recorders recorderSource,
 
 // Translator helps with kubernetes -> gce api conversion.
 type Translator struct {
-	recorders recorderSource
-
 	namer          *utils.Namer
 	svcLister      cache.Indexer
 	nodeLister     cache.Indexer
@@ -72,7 +69,7 @@ type Translator struct {
 
 // getServicePort looks in the svc store for a matching service:port,
 // and returns the nodeport.
-func (t *Translator) getServicePort(id utils.ServicePortID) (utils.ServicePort, error) {
+func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort, error) {
 	obj, exists, err := t.svcLister.Get(
 		&api_v1.Service{
 			ObjectMeta: meta_v1.ObjectMeta{
@@ -81,15 +78,15 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (utils.ServicePort, 
 			},
 		})
 	if !exists {
-		return utils.ServicePort{}, fmt.Errorf("service %q not found in store", id.Service)
+		return nil, errors.ErrSvcNotFound{Service: id.Service}
 	}
 	if err != nil {
-		return utils.ServicePort{}, fmt.Errorf("error retrieving service %q: %v", id.Service, err)
+		return nil, fmt.Errorf("error retrieving service %q: %v", id.Service, err)
 	}
 	svc := obj.(*api_v1.Service)
 	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
 	if err != nil {
-		return utils.ServicePort{}, errors.ErrSvcAppProtosParsing{Svc: svc, Err: err}
+		return nil, errors.ErrSvcAppProtosParsing{Svc: svc, Err: err}
 	}
 
 	var port *api_v1.ServicePort
@@ -111,7 +108,7 @@ PortLoop:
 	}
 
 	if port == nil {
-		return utils.ServicePort{}, fmt.Errorf("could not find port %q in service %q", id.Port, id.Service)
+		return nil, errors.ErrSvcPortNotFound{ServicePortID: id}
 	}
 
 	proto := annotations.ProtocolHTTP
@@ -119,31 +116,37 @@ PortLoop:
 		proto = annotations.AppProtocol(protoStr)
 	}
 
-	p := utils.ServicePort{
+	negEnabled := annotations.FromService(svc).NEGEnabled()
+	if !negEnabled && svc.Spec.Type != api_v1.ServiceTypeNodePort {
+		return nil, errors.ErrSvcNotNodePort{Service: id.Service}
+	}
+
+	return &utils.ServicePort{
 		ID:            id,
 		NodePort:      int64(port.NodePort),
 		Protocol:      proto,
 		SvcTargetPort: port.TargetPort.String(),
-		NEGEnabled:    t.negEnabled && annotations.FromService(svc).NEGEnabled(),
-	}
-	return p, nil
+		NEGEnabled:    t.negEnabled && negEnabled,
+	}, nil
 }
 
 // TranslateIngress converts an Ingress into our internal UrlMap representation.
-func (t *Translator) TranslateIngress(ing *extensions.Ingress, systemDefaultBackend utils.ServicePortID) (*utils.GCEURLMap, error) {
+func (t *Translator) TranslateIngress(ing *extensions.Ingress, systemDefaultBackend utils.ServicePortID) (*utils.GCEURLMap, []error) {
+	var errs []error
 	urlMap := utils.NewGCEURLMap()
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {
-			glog.Errorf("Ignoring non http rule while translating %v", ing.Name)
 			continue
 		}
+
 		pathRules := []utils.PathRule{}
 		for _, p := range rule.HTTP.Paths {
 			svcPort, err := t.getServicePort(utils.BackendToServicePortID(p.Backend, ing.Namespace))
 			if err != nil {
-				glog.Infof("%v", err)
+				errs = append(errs, err)
 				continue
 			}
+
 			// The Ingress spec defines empty path as catch-all, so if a user
 			// asks for a single host and multiple empty paths, all traffic is
 			// sent to one of the last backend in the rules list.
@@ -151,7 +154,7 @@ func (t *Translator) TranslateIngress(ing *extensions.Ingress, systemDefaultBack
 			if path == "" {
 				path = loadbalancers.DefaultPath
 			}
-			pathRules = append(pathRules, utils.PathRule{Path: path, Backend: svcPort})
+			pathRules = append(pathRules, utils.PathRule{Path: path, Backend: *svcPort})
 		}
 		host := rule.Host
 		if host == "" {
@@ -159,28 +162,26 @@ func (t *Translator) TranslateIngress(ing *extensions.Ingress, systemDefaultBack
 		}
 		urlMap.PutPathRulesForHost(host, pathRules)
 	}
-	// Note that the url map is always populated with some default backend,
-	// whether it be the one specified in the Ingress, or the system default.
+
 	if ing.Spec.Backend != nil {
 		svcPort, err := t.getServicePort(utils.BackendToServicePortID(*ing.Spec.Backend, ing.Namespace))
 		if err == nil {
 			urlMap.DefaultBackend = svcPort
-			return urlMap, nil
+			return urlMap, errs
 		}
 
-		msg := fmt.Sprintf("%v", err)
-		msg = fmt.Sprintf("failed to identify user specified default backend %v, using system default", msg)
-		t.recorders.Recorder(ing.Namespace).Eventf(ing, api_v1.EventTypeWarning, "Service", msg)
-		glog.Infof("%v", err)
+		errs = append(errs, err)
+		return urlMap, errs
 	}
 
 	svcPort, err := t.getServicePort(systemDefaultBackend)
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve the default backend service %q with port %q", systemDefaultBackend.Service.String(), systemDefaultBackend.Port.String())
+	if err == nil {
+		urlMap.DefaultBackend = svcPort
+		return urlMap, errs
 	}
 
-	urlMap.DefaultBackend = svcPort
-	return urlMap, nil
+	errs = append(errs, fmt.Errorf("failed to retrieve the system default backend service %q with port %q", systemDefaultBackend.Service, systemDefaultBackend.Port))
+	return urlMap, errs
 }
 
 func getZone(n *api_v1.Node) string {

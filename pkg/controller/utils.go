@@ -18,8 +18,10 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/golang/glog"
 
@@ -35,6 +37,14 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 )
+
+func joinErrs(errs []error) error {
+	var errStrs []string
+	for _, e := range errs {
+		errStrs = append(errStrs, e.Error())
+	}
+	return errors.New(strings.Join(errStrs, "; "))
+}
 
 // isGCEIngress returns true if the Ingress matches the class managed by this
 // controller.
