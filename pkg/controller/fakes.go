@@ -17,7 +17,7 @@ limitations under the License.
 package controller
 
 import (
-	compute "google.golang.org/api/compute/v1"
+	computealpha "google.golang.org/api/compute/v0.alpha"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -56,7 +56,7 @@ type fakeClusterManager struct {
 func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager {
 	namer := utils.NewNamer(clusterName, firewallName)
 	fakeLbs := loadbalancers.NewFakeLoadBalancers(clusterName, namer)
-	fakeBackends := backends.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil }, false)
+	fakeBackends := backends.NewFakeBackendServices(func(op int, be *computealpha.BackendService) error { return nil })
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
 	fakeHCP := healthchecks.NewFakeHealthCheckProvider()
 	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")

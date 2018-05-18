@@ -56,7 +56,13 @@ var (
 			},
 		},
 	}
-	noOpErrFunc = func(op int, be *compute.BackendService) error { return nil }
+	noOpErrFunc  = func(op int, be *computealpha.BackendService) error { return nil }
+	alphaErrFunc = func(op int, be *computealpha.BackendService) error {
+		if be.Protocol == string(annotations.ProtocolHTTP2) {
+			return utils.FakeGoogleAPIForbiddenErr()
+		}
+		return nil
+	}
 )
 
 func newTestJig(f BackendServices, fakeIGs instances.InstanceGroups, syncWithCloud bool) (*Backends, healthchecks.HealthCheckProvider) {
@@ -73,7 +79,7 @@ func newTestJig(f BackendServices, fakeIGs instances.InstanceGroups, syncWithClo
 }
 
 func TestBackendPoolAdd(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, true)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -142,7 +148,7 @@ func TestBackendPoolAdd(t *testing.T) {
 }
 
 func TestBackendPoolAddWithoutWhitelist(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, false)
+	f := NewFakeBackendServices(alphaErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -155,7 +161,7 @@ func TestBackendPoolAddWithoutWhitelist(t *testing.T) {
 }
 
 func TestHealthCheckMigration(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, false)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, hcp := newTestJig(f, fakeIGs, false)
 
@@ -192,7 +198,7 @@ func TestHealthCheckMigration(t *testing.T) {
 }
 
 func TestBackendPoolUpdateHTTPS(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, false)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -237,7 +243,7 @@ func TestBackendPoolUpdateHTTPS(t *testing.T) {
 }
 
 func TestBackendPoolUpdateHTTP2(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, true)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -282,7 +288,7 @@ func TestBackendPoolUpdateHTTP2(t *testing.T) {
 }
 
 func TestBackendPoolUpdateHTTP2WithoutWhitelist(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, false)
+	f := NewFakeBackendServices(alphaErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -309,7 +315,7 @@ func TestBackendPoolUpdateHTTP2WithoutWhitelist(t *testing.T) {
 }
 
 func TestBackendPoolChaosMonkey(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, false)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -359,7 +365,7 @@ func TestBackendPoolSync(t *testing.T) {
 	// Call sync on a backend pool with a list of ports, make sure the pool
 	// creates/deletes required ports.
 	svcNodePorts := []utils.ServicePort{{NodePort: 81, Protocol: annotations.ProtocolHTTP}, {NodePort: 82, Protocol: annotations.ProtocolHTTPS}, {NodePort: 83, Protocol: annotations.ProtocolHTTP}}
-	f := NewFakeBackendServices(noOpErrFunc, false)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, true)
 	pool.Ensure([]utils.ServicePort{svcNodePorts[0]}, nil)
@@ -432,7 +438,7 @@ func TestBackendPoolSyncNEG(t *testing.T) {
 	// Convert a BackendPool from non-NEG to NEG.
 	// Expect the old BackendServices to be GC'ed
 	svcPort := utils.ServicePort{NodePort: 81, Protocol: annotations.ProtocolHTTP}
-	f := NewFakeBackendServices(noOpErrFunc, true)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, true)
 	if err := pool.Ensure([]utils.ServicePort{svcPort}, nil); err != nil {
@@ -550,7 +556,7 @@ func TestBackendPoolSyncQuota(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			f := NewFakeBackendServices(noOpErrFunc, true)
+			f := NewFakeBackendServices(noOpErrFunc)
 			fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 			pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -558,7 +564,7 @@ func TestBackendPoolSyncQuota(t *testing.T) {
 			quota := len(tc.newPorts)
 
 			// Throw an error if more BackendServices than quota allows have been created
-			f.errFunc = func(op int, be *compute.BackendService) error {
+			f.errFunc = func(op int, be *computealpha.BackendService) error {
 				if op == utils.Create {
 					if bsCreated+1 > quota {
 						return &googleapi.Error{Code: http.StatusForbidden, Body: be.Name}
@@ -597,7 +603,7 @@ func TestBackendPoolSyncQuota(t *testing.T) {
 }
 
 func TestBackendPoolDeleteLegacyHealthChecks(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, true)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	negGetter := neg.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	nodePool := instances.NewNodePool(fakeIGs, defaultNamer)
@@ -651,7 +657,7 @@ func TestBackendPoolDeleteLegacyHealthChecks(t *testing.T) {
 }
 
 func TestBackendPoolShutdown(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, false)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -664,7 +670,7 @@ func TestBackendPoolShutdown(t *testing.T) {
 }
 
 func TestBackendInstanceGroupClobbering(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, true)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -710,7 +716,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 }
 
 func TestBackendCreateBalancingMode(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, false)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP}
@@ -720,7 +726,7 @@ func TestBackendCreateBalancingMode(t *testing.T) {
 	// and verify that a backend with the other balancingMode is
 	// created
 	for i, bm := range modes {
-		f.errFunc = func(op int, be *compute.BackendService) error {
+		f.errFunc = func(op int, be *computealpha.BackendService) error {
 			for _, b := range be.Backends {
 				if b.BalancingMode == string(bm) {
 					return &googleapi.Error{Code: http.StatusBadRequest}
@@ -778,7 +784,7 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 func TestLinkBackendServiceToNEG(t *testing.T) {
 	zones := []string{"zone1", "zone2"}
 	namespace, name, port := "ns", "name", "port"
-	f := NewFakeBackendServices(noOpErrFunc, true)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	nodePool := instances.NewNodePool(fakeIGs, defaultNamer)
@@ -891,7 +897,7 @@ func TestComparableGroupPath(t *testing.T) {
 }
 
 func TestEnsureBackendServiceProtocol(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, true)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -940,7 +946,7 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 }
 
 func TestEnsureBackendServiceDescription(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, true)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
@@ -979,7 +985,7 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 }
 
 func TestEnsureBackendServiceHealthCheckLink(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc, true)
+	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	pool, _ := newTestJig(f, fakeIGs, false)
 
