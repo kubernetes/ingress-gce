@@ -112,6 +112,12 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/google/btree"
+  packages = ["."]
+  revision = "e89373fe6b4a7413d7acd6da1725b83ef713e6e4"
+
+[[projects]]
+  branch = "master"
   name = "github.com/google/gofuzz"
   packages = ["."]
   revision = "24818f796faf91cd76ec7bddd72458fbced7a6c1"
@@ -131,6 +137,15 @@
   packages = ["."]
   revision = "ea4d1f681babbce9545c9c5f3d5194a789c89f5b"
   version = "v1.2.0"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/gregjones/httpcache"
+  packages = [
+    ".",
+    "diskcache"
+  ]
+  revision = "9cad4c3443a7200dd6400aef47183728de563a38"
 
 [[projects]]
   branch = "master"
@@ -188,10 +203,16 @@
   version = "v1.0.0-rc1"
 
 [[projects]]
-  name = "github.com/pborman/uuid"
+  branch = "master"
+  name = "github.com/petar/GoLLRB"
+  packages = ["llrb"]
+  revision = "53be0d36a84c2a886ca057d34b6aa4468df9ccb4"
+
+[[projects]]
+  name = "github.com/peterbourgon/diskv"
   packages = ["."]
-  revision = "e790cca94e6cc75c7064b1332e63811d4aae1a53"
-  version = "v1.1"
+  revision = "5f041e8faa004a95c88a202771f4cc3e991971e6"
+  version = "v2.0.1"
 
 [[projects]]
   name = "github.com/prometheus/client_golang"
@@ -406,12 +427,13 @@
     "rbac/v1alpha1",
     "rbac/v1beta1",
     "scheduling/v1alpha1",
+    "scheduling/v1beta1",
     "settings/v1alpha1",
     "storage/v1",
     "storage/v1alpha1",
     "storage/v1beta1"
   ]
-  revision = "kubernetes-1.11.0-alpha.2"
+  revision = "kubernetes-1.12.0-alpha.0"
 
 [[projects]]
   branch = "master"
@@ -436,9 +458,6 @@
     "pkg/api/meta",
     "pkg/api/resource",
     "pkg/api/validation",
-    "pkg/apimachinery",
-    "pkg/apimachinery/announced",
-    "pkg/apimachinery/registered",
     "pkg/apis/meta/internalversion",
     "pkg/apis/meta/v1",
     "pkg/apis/meta/v1/unstructured",
@@ -470,7 +489,6 @@
     "pkg/util/runtime",
     "pkg/util/sets",
     "pkg/util/strategicpatch",
-    "pkg/util/uuid",
     "pkg/util/validation",
     "pkg/util/validation/field",
     "pkg/util/wait",
@@ -480,7 +498,7 @@
     "third_party/forked/golang/json",
     "third_party/forked/golang/reflect"
   ]
-  revision = "kubernetes-1.11.0-alpha.2"
+  revision = "kubernetes-1.12.0-alpha.0"
 
 [[projects]]
   name = "k8s.io/apiserver"
@@ -491,7 +509,7 @@
     "pkg/features",
     "pkg/util/feature"
   ]
-  revision = "kubernetes-1.11.0-alpha.2"
+  revision = "kubernetes-1.12.0-alpha.0"
 
 [[projects]]
   name = "k8s.io/client-go"
@@ -532,6 +550,7 @@
     "informers/rbac/v1beta1",
     "informers/scheduling",
     "informers/scheduling/v1alpha1",
+    "informers/scheduling/v1beta1",
     "informers/settings",
     "informers/settings/v1alpha1",
     "informers/storage",
@@ -589,6 +608,8 @@
     "kubernetes/typed/rbac/v1beta1/fake",
     "kubernetes/typed/scheduling/v1alpha1",
     "kubernetes/typed/scheduling/v1alpha1/fake",
+    "kubernetes/typed/scheduling/v1beta1",
+    "kubernetes/typed/scheduling/v1beta1/fake",
     "kubernetes/typed/settings/v1alpha1",
     "kubernetes/typed/settings/v1alpha1/fake",
     "kubernetes/typed/storage/v1",
@@ -617,6 +638,7 @@
     "listers/rbac/v1alpha1",
     "listers/rbac/v1beta1",
     "listers/scheduling/v1alpha1",
+    "listers/scheduling/v1beta1",
     "listers/settings/v1alpha1",
     "listers/storage/v1",
     "listers/storage/v1alpha1",
@@ -650,7 +672,7 @@
     "util/retry",
     "util/workqueue"
   ]
-  revision = "kubernetes-1.11.0-alpha.2"
+  revision = "kubernetes-1.12.0-alpha.0"
 
 [[projects]]
   branch = "master"
@@ -716,7 +738,7 @@
     "pkg/volume/util/recyclerclient",
     "pkg/volume/util/types"
   ]
-  revision = "33d85b01fe42663de500747def3eaae75cfa0950"
+  revision = "77a08ee2d774d1785670677d4d4b7d1a1739c12c"
 
 [[projects]]
   branch = "master"
@@ -727,6 +749,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "a37eab342be1c93be2f9b28b9684eab94c260f849a4dbed2e56b53cba3b39f95"
+  inputs-digest = "2a803b38db41744594cd39636c91db49297ced36ada6812d8967adcd3ec609db"
   solver-name = "gps-cdcl"
   solver-version = 1
