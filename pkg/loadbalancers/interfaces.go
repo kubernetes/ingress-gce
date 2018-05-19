@@ -51,7 +51,7 @@ type LoadBalancers interface {
 	CreateTargetHttpsProxy(proxy *compute.TargetHttpsProxy) error
 	DeleteTargetHttpsProxy(name string) error
 	SetUrlMapForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, urlMap *compute.UrlMap) error
-	SetSslCertificateForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, SSLCerts []*compute.SslCertificate) error
+	SetSslCertificateForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, sslCertURLs []string) error
 
 	// SslCertificates
 	GetSslCertificate(name string) (*compute.SslCertificate, error)
