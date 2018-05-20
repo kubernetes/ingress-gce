@@ -383,6 +383,10 @@ The Ingress controller looks for a compatible readiness probe first, if it finds
 
 For encrypted communication between the client to the load balancer, you need to specify a TLS private key and certificate to be used by the ingress controller.
 
+Version 1.1 of GLBC now supports (as a beta feature) using more than one SSL certificate in a single Ingress for request termination (aka Multiple-TLS).
+With this change, keep in mind that the GCP's limit is 10. Take a look at GCP's [documentation]((https://cloud.google.com/compute/docs/load-balancing/http/ssl-certificates))
+on SSL certificates for more information on how they are supported in L7 load balancing.
+
 Ingress controller can read the private key and certificate from 2 sources:
 * Kubernetes [secret](http://kubernetes.io/docs/user-guide/secrets).
    * [Example](/examples/https)
@@ -431,6 +435,40 @@ spec:
 
 This creates 2 GCE forwarding rules that use a single static IP. Both `:80` and `:443` will direct traffic to your backend, which serves HTTP requests on the target port mentioned in the Service associated with the Ingress.
 
+Specifying multiple secrets can be done as follows:
+
+```yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+spec:
+  tls:
+  - secretName: svc1-certificate
+  - secretName: svc2-certificate
+  backend:
+    serviceName: svc1
+    servicePort: svc1-port
+  rules:
+  - host: svc1.example.com
+    http:
+      paths:
+      - path: /*
+        backend:
+          serviceName: svc1
+          servicePort: svc1-port
+  - host: svc2.example.com
+    http:
+      paths:
+      - path: /*
+        backend:
+          serviceName: svc2
+          servicePort: svc2-port
+```
+
+In this example, ideally svc1-certificate will contain the hostname svc1.example.com and svc2-certificate will contain the hostname svc2.example.com.
+Therefore, when a client request indicates a hostname of svc1.example.com, the certificate contained in secret svc1-certificate will be served.
+
+Keep in mind that if you downgrade to a version that does not support Multiple-TLS (< 1.1), then you will need to manually clean up the created certificates in GCP.
+
 ### GCP SSL Cert
 
 For the ingress controller to use the certificate and private key stored in a
@@ -448,6 +486,21 @@ metadata:
 spec:
 ...
 ```
+
+Multiple pre-shared certs can be specified as follows:
+
+```yaml
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: no-rules-map
+  annotations:
+      ingress.gcp.kubernetes.io/pre-shared-cert: "my-certificate-1, my-certificate-2, my-certificate-3"
+spec:
+...
+```
+
+It is important to point out that certificates specified via the annotation take precedence over certificates specified via the secret. In other words, if both methods are used, the certificates specified via the annotation will be used while the ones specified via the secret are ignored.
 
 #### Ingress cannot redirect HTTP to HTTPS
 
