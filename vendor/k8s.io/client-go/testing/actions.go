@@ -58,6 +58,16 @@ func NewGetSubresourceAction(resource schema.GroupVersionResource, namespace, su
 	return action
 }
 
+func NewRootGetSubresourceAction(resource schema.GroupVersionResource, subresource, name string) GetActionImpl {
+	action := GetActionImpl{}
+	action.Verb = "get"
+	action.Resource = resource
+	action.Subresource = subresource
+	action.Name = name
+
+	return action
+}
+
 func NewRootListAction(resource schema.GroupVersionResource, kind schema.GroupVersionKind, opts interface{}) ListActionImpl {
 	action := ListActionImpl{}
 	action.Verb = "list"
@@ -75,20 +85,6 @@ func NewListAction(resource schema.GroupVersionResource, kind schema.GroupVersio
 	action.Resource = resource
 	action.Kind = kind
 	action.Namespace = namespace
-	labelSelector, fieldSelector, _ := ExtractFromListOptions(opts)
-	action.ListRestrictions = ListRestrictions{labelSelector, fieldSelector}
-
-	return action
-}
-
-func NewListSubresourceAction(resource schema.GroupVersionResource, name, subresource string, kind schema.GroupVersionKind, namespace string, opts interface{}) ListActionImpl {
-	action := ListActionImpl{}
-	action.Verb = "list"
-	action.Resource = resource
-	action.Subresource = subresource
-	action.Kind = kind
-	action.Namespace = namespace
-	action.Name = name
 	labelSelector, fieldSelector, _ := ExtractFromListOptions(opts)
 	action.ListRestrictions = ListRestrictions{labelSelector, fieldSelector}
 
@@ -114,12 +110,23 @@ func NewCreateAction(resource schema.GroupVersionResource, namespace string, obj
 	return action
 }
 
-func NewCreateSubresourceAction(resource schema.GroupVersionResource, name, subresource string, namespace string, object runtime.Object) CreateActionImpl {
+func NewRootCreateSubresourceAction(resource schema.GroupVersionResource, name, subresource string, object runtime.Object) CreateActionImpl {
 	action := CreateActionImpl{}
 	action.Verb = "create"
 	action.Resource = resource
 	action.Subresource = subresource
+	action.Name = name
+	action.Object = object
+
+	return action
+}
+
+func NewCreateSubresourceAction(resource schema.GroupVersionResource, name, subresource, namespace string, object runtime.Object) CreateActionImpl {
+	action := CreateActionImpl{}
+	action.Verb = "create"
+	action.Resource = resource
 	action.Namespace = namespace
+	action.Subresource = subresource
 	action.Name = name
 	action.Object = object
 
@@ -218,10 +225,31 @@ func NewRootDeleteAction(resource schema.GroupVersionResource, name string) Dele
 	return action
 }
 
+func NewRootDeleteSubresourceAction(resource schema.GroupVersionResource, subresource string, name string) DeleteActionImpl {
+	action := DeleteActionImpl{}
+	action.Verb = "delete"
+	action.Resource = resource
+	action.Subresource = subresource
+	action.Name = name
+
+	return action
+}
+
 func NewDeleteAction(resource schema.GroupVersionResource, namespace, name string) DeleteActionImpl {
 	action := DeleteActionImpl{}
 	action.Verb = "delete"
 	action.Resource = resource
+	action.Namespace = namespace
+	action.Name = name
+
+	return action
+}
+
+func NewDeleteSubresourceAction(resource schema.GroupVersionResource, subresource, namespace, name string) DeleteActionImpl {
+	action := DeleteActionImpl{}
+	action.Verb = "delete"
+	action.Resource = resource
+	action.Subresource = subresource
 	action.Namespace = namespace
 	action.Name = name
 
