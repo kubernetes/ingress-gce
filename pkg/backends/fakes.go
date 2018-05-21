@@ -56,11 +56,6 @@ func (f *FakeBackendServices) GetGlobalBackendService(name string) (*compute.Bac
 	}
 
 	if name == svc.Name {
-		// Currently, getting an Alpha BackendService strips it of Protocol if HTTP2.
-		// TODO: remove this check once ProtocolHTTP2 moves into Beta or GA.
-		if svc.Protocol == string(annotations.ProtocolHTTP2) {
-			svc.Protocol = ""
-		}
 		return toV1BackendService(svc), nil
 	}
 
@@ -78,11 +73,6 @@ func (f *FakeBackendServices) GetAlphaGlobalBackendService(name string) (*comput
 	}
 
 	svc := obj.(*computealpha.BackendService)
-	// Currently, getting an Alpha BackendService strips it of Protocol if HTTP2.
-	// TODO: remove this check once ProtocolHTTP2 moves into Beta or GA.
-	if svc.Protocol == "" {
-		svc.Protocol = string(annotations.ProtocolHTTP2)
-	}
 
 	if name == svc.Name {
 		return svc, nil
@@ -196,6 +186,12 @@ func toV1BackendService(be *computealpha.BackendService) *compute.BackendService
 	bytes, _ := be.MarshalJSON()
 	res := &compute.BackendService{}
 	json.Unmarshal(bytes, res)
+
+	// Currently, getting an Alpha BackendService strips it of Protocol if HTTP2.
+	// TODO: remove this check once ProtocolHTTP2 moves into Beta or GA.
+	if res.Protocol == string(annotations.ProtocolHTTP2) {
+		res.Protocol = ""
+	}
 	return res
 }
 
