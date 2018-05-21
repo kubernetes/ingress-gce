@@ -32,7 +32,7 @@ type ProbeProvider interface {
 // as gce backendServices, and sync them through the BackendServices interface.
 type BackendPool interface {
 	Init(p ProbeProvider)
-	Ensure(ports []utils.ServicePort, igs []*compute.InstanceGroup) error
+	Ensure(ports []utils.ServicePort, igLinks []string) error
 	Get(name string, isAlpha bool) (*BackendService, error)
 	Delete(name string) error
 	GC(ports []utils.ServicePort) error

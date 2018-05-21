@@ -297,12 +297,11 @@ func (b *Backends) create(namedPort *compute.NamedPort, hcLink string, sp utils.
 }
 
 // Ensure will update or create Backends for the given ports.
-// Uses the given instance groups if non-nil, else creates instance groups.
-func (b *Backends) Ensure(svcPorts []utils.ServicePort, igs []*compute.InstanceGroup) error {
+func (b *Backends) Ensure(svcPorts []utils.ServicePort, igLinks []string) error {
 	glog.V(3).Infof("Sync: backends %v", svcPorts)
 	// create backends for new ports, perform an edge hop for existing ports
 	for _, port := range svcPorts {
-		if err := b.ensureBackendService(port, igs); err != nil {
+		if err := b.ensureBackendService(port, igLinks); err != nil {
 			return err
 		}
 	}
@@ -312,7 +311,7 @@ func (b *Backends) Ensure(svcPorts []utils.ServicePort, igs []*compute.InstanceG
 // ensureBackendService will update or create a Backend for the given port.
 // It assumes that the instance groups have been created and required named port has been added.
 // If not, then Ensure should be called instead.
-func (b *Backends) ensureBackendService(sp utils.ServicePort, igs []*compute.InstanceGroup) error {
+func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) error {
 	// We must track the ports even if creating the backends failed, because
 	// we might've created health-check for them.
 	be := &BackendService{}
@@ -365,8 +364,8 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igs []*compute.Ins
 	// If there are instance pools(node pool is synced) and NEG is not enabled,
 	// perform edgeHop to verify that BackendServices contains links to all
 	// backends/instancegroups
-	if len(igs) > 0 && !sp.NEGEnabled {
-		return b.edgeHop(be, igs)
+	if len(igLinks) > 0 && !sp.NEGEnabled {
+		return b.edgeHop(be, igLinks)
 	}
 
 	return nil
@@ -374,8 +373,8 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igs []*compute.Ins
 
 // edgeHop checks the links of the given backend by executing an edge hop.
 // It fixes broken links and updates the Backend accordingly.
-func (b *Backends) edgeHop(be *BackendService, igs []*compute.InstanceGroup) error {
-	addIGs := getInstanceGroupsToAdd(be, igs)
+func (b *Backends) edgeHop(be *BackendService, igLinks []string) error {
+	addIGs := getInstanceGroupsToAdd(be, igLinks)
 	if len(addIGs) == 0 {
 		return nil
 	}
@@ -482,11 +481,11 @@ func (b *Backends) List() ([]interface{}, error) {
 	return ret, nil
 }
 
-func getBackendsForIGs(igs []*compute.InstanceGroup, bm BalancingMode) []*compute.Backend {
+func getBackendsForIGs(igLinks []string, bm BalancingMode) []*compute.Backend {
 	var backends []*compute.Backend
-	for _, ig := range igs {
+	for _, igLink := range igLinks {
 		b := &compute.Backend{
-			Group:         ig.SelfLink,
+			Group:         igLink,
 			BalancingMode: string(bm),
 		}
 		switch bm {
@@ -502,11 +501,11 @@ func getBackendsForIGs(igs []*compute.InstanceGroup, bm BalancingMode) []*comput
 	return backends
 }
 
-func getAlphaBackendsForIGs(igs []*compute.InstanceGroup, bm BalancingMode) []*computealpha.Backend {
+func getAlphaBackendsForIGs(igLinks []string, bm BalancingMode) []*computealpha.Backend {
 	var backends []*computealpha.Backend
-	for _, ig := range igs {
+	for _, igLink := range igLinks {
 		b := &computealpha.Backend{
-			Group:         ig.SelfLink,
+			Group:         igLink,
 			BalancingMode: string(bm),
 		}
 		switch bm {
@@ -535,7 +534,7 @@ func getBackendsForNEGs(negs []*computealpha.NetworkEndpointGroup) []*computealp
 	return backends
 }
 
-func getInstanceGroupsToAdd(be *BackendService, igs []*compute.InstanceGroup) []*compute.InstanceGroup {
+func getInstanceGroupsToAdd(be *BackendService, igLinks []string) []string {
 	// A GA link can be used to reference an alpha object - so we only need to
 	// check the GA InstanceGroups.
 	beName := be.Ga.Name
@@ -545,8 +544,8 @@ func getInstanceGroupsToAdd(be *BackendService, igs []*compute.InstanceGroup) []
 	}
 
 	expectedIGs := sets.String{}
-	for _, ig := range igs {
-		expectedIGs.Insert(comparableGroupPath(ig.SelfLink))
+	for _, igLink := range igLinks {
+		expectedIGs.Insert(comparableGroupPath(igLink))
 	}
 
 	if beIGs.IsSuperset(expectedIGs) {
@@ -555,10 +554,10 @@ func getInstanceGroupsToAdd(be *BackendService, igs []*compute.InstanceGroup) []
 	glog.V(2).Infof("Expected igs for backend service %v: %+v, current igs %+v",
 		beName, expectedIGs.List(), beIGs.List())
 
-	var addIGs []*compute.InstanceGroup
-	for _, ig := range igs {
-		if !beIGs.Has(comparableGroupPath(ig.SelfLink)) {
-			addIGs = append(addIGs, ig)
+	var addIGs []string
+	for _, igLink := range igLinks {
+		if !beIGs.Has(comparableGroupPath(igLink)) {
+			addIGs = append(addIGs, igLink)
 		}
 	}
 

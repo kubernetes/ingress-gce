@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"strings"
 
+	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/apimachinery/pkg/types"
 )
@@ -180,4 +181,13 @@ func BackendServiceComparablePath(url string) string {
 		return ""
 	}
 	return fmt.Sprintf("global/%s", path_parts[1])
+}
+
+// IGLinks returns a list of links extracted from the passed in list of
+// compute.InstanceGroup's.
+func IGLinks(igs []*compute.InstanceGroup) (igLinks []string) {
+	for _, ig := range igs {
+		igLinks = append(igLinks, ig.SelfLink)
+	}
+	return
 }
