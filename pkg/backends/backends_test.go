@@ -93,7 +93,7 @@ func TestBackendPoolAdd(t *testing.T) {
 			// Add a backend for a port, then re-add the same port and
 			// make sure it corrects a broken link from the backend to
 			// the instance group.
-			err = pool.Ensure([]utils.ServicePort{sp}, igs)
+			err = pool.Ensure([]utils.ServicePort{sp}, utils.IGLinks(igs))
 			if err != nil {
 				t.Fatalf("Did not expect error when ensuring a ServicePort %+v: %v", sp, err)
 			}
@@ -314,8 +314,11 @@ func TestBackendPoolChaosMonkey(t *testing.T) {
 	pool, _ := newTestJig(f, fakeIGs, false)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP}
-	igs, _ := pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
-	pool.Ensure([]utils.ServicePort{sp}, igs)
+	igs, err := pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
+	if err != nil {
+		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
+	}
+	pool.Ensure([]utils.ServicePort{sp}, utils.IGLinks(igs))
 	beName := sp.BackendName(defaultNamer)
 
 	be, _ := f.GetGlobalBackendService(beName)
@@ -328,8 +331,11 @@ func TestBackendPoolChaosMonkey(t *testing.T) {
 	f.calls = []int{}
 	f.UpdateGlobalBackendService(be)
 
-	igs, _ = pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
-	pool.Ensure([]utils.ServicePort{sp}, igs)
+	igs, err = pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
+	if err != nil {
+		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
+	}
+	pool.Ensure([]utils.ServicePort{sp}, utils.IGLinks(igs))
 	for _, call := range f.calls {
 		if call == utils.Create {
 			t.Fatalf("Unexpected create for existing backend service")
@@ -669,8 +675,11 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	pool, _ := newTestJig(f, fakeIGs, false)
 
 	sp := utils.ServicePort{NodePort: 80}
-	igs, _ := pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
-	pool.Ensure([]utils.ServicePort{sp}, igs)
+	igs, err := pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
+	if err != nil {
+		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
+	}
+	pool.Ensure([]utils.ServicePort{sp}, utils.IGLinks(igs))
 
 	be, err := f.GetGlobalBackendService(defaultNamer.IGBackend(80))
 	if err != nil {
@@ -688,8 +697,11 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	}
 
 	// Make sure repeated adds don't clobber the inserted instance group
-	igs, _ = pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
-	pool.Ensure([]utils.ServicePort{sp}, igs)
+	igs, err = pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
+	if err != nil {
+		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
+	}
+	pool.Ensure([]utils.ServicePort{sp}, utils.IGLinks(igs))
 	be, err = f.GetGlobalBackendService(defaultNamer.IGBackend(80))
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -729,8 +741,11 @@ func TestBackendCreateBalancingMode(t *testing.T) {
 			return nil
 		}
 
-		igs, _ := pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
-		pool.Ensure([]utils.ServicePort{sp}, igs)
+		igs, err := pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
+		if err != nil {
+			t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
+		}
+		pool.Ensure([]utils.ServicePort{sp}, utils.IGLinks(igs))
 		be, err := f.GetGlobalBackendService(sp.BackendName(defaultNamer))
 		if err != nil {
 			t.Fatalf("%v", err)
