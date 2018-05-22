@@ -122,10 +122,13 @@ type Features struct {
 	// Http2 enables ProtocolHTTP2 as a valid annotation key on Service, which
 	// allows the creation HTTP2 BackendServices and HealthChecks. Alpha-only.
 	Http2 bool
+	// NEG enables using NetworkEndpointGroups instead of IGs as backends
+	NEG bool
 }
 
 var DefaultFeatures = &Features{
 	Http2: true,
+	NEG:   true,
 }
 
 func EnabledFeatures() *Features {

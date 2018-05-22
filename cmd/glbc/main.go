@@ -32,7 +32,6 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
@@ -101,7 +100,7 @@ func main() {
 	}
 
 	cloud := app.NewGCEClient()
-	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
+	enableNEG := flags.F.Features.NEG
 	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cloud, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG, flags.F.EnableBackendConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
