@@ -50,6 +50,7 @@ func condenseSchema(currentSchema spec.Schema, openapiSpec map[string]common.Ope
 		ref := propertySchema.SchemaProps.Ref.String()
 		if ref != "" {
 			referencedSchema := openapiSpec[ref].Schema
+			referencedSchema.SchemaProps.Type = spec.StringOrArray{"object"}
 			propertySchema.SchemaProps = referencedSchema.SchemaProps
 			currentSchemaProperties[property] = propertySchema
 			condenseSchema(propertySchema, openapiSpec)
