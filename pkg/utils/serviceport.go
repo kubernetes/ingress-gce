@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
+	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 )
 
 // ServicePortID contains the Service and Port fields.
@@ -39,6 +40,7 @@ type ServicePort struct {
 	Protocol      annotations.AppProtocol
 	SvcTargetPort string
 	NEGEnabled    bool
+	BackendConfig *backendconfigv1beta1.BackendConfig
 }
 
 // Description returns a string describing the ServicePort.

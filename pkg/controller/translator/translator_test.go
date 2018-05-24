@@ -52,13 +52,8 @@ func fakeTranslator(negEnabled bool) *Translator {
 	ctx := context.NewControllerContext(client, backendConfigClient, apiv1.NamespaceAll, 1*time.Second, negEnabled)
 	gce := &Translator{
 		namer:      namer,
-		svcLister:  ctx.ServiceInformer.GetIndexer(),
-		nodeLister: ctx.NodeInformer.GetIndexer(),
-		podLister:  ctx.PodInformer.GetIndexer(),
+		ctx:        ctx,
 		negEnabled: negEnabled,
-	}
-	if ctx.EndpointInformer != nil {
-		gce.endpointLister = ctx.EndpointInformer.GetIndexer()
 	}
 	return gce
 }
@@ -66,26 +61,28 @@ func fakeTranslator(negEnabled bool) *Translator {
 func TestTranslateIngress(t *testing.T) {
 	translator := fakeTranslator(false)
 
+	svcLister := translator.ctx.ServiceInformer.GetIndexer()
+
 	// default backend
 	svc := test.NewService(types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, apiv1.ServiceSpec{
 		Type:  apiv1.ServiceTypeNodePort,
 		Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
 	})
-	translator.svcLister.Add(svc)
+	svcLister.Add(svc)
 
 	// first-service
 	svc = test.NewService(types.NamespacedName{Name: "first-service", Namespace: "default"}, apiv1.ServiceSpec{
 		Type:  apiv1.ServiceTypeNodePort,
 		Ports: []apiv1.ServicePort{{Port: 80}},
 	})
-	translator.svcLister.Add(svc)
+	svcLister.Add(svc)
 
 	// other-service
 	svc = test.NewService(types.NamespacedName{Name: "second-service", Namespace: "default"}, apiv1.ServiceSpec{
 		Type:  apiv1.ServiceTypeNodePort,
 		Ports: []apiv1.ServicePort{{Port: 80}},
 	})
-	translator.svcLister.Add(svc)
+	svcLister.Add(svc)
 
 	cases := map[string]struct {
 		ing           *extensions.Ingress
@@ -172,10 +169,10 @@ func TestGetProbe(t *testing.T) {
 		{NodePort: 3002, Protocol: annotations.ProtocolHTTPS}: "/foo",
 	}
 	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
-		translator.svcLister.Add(svc)
+		translator.ctx.ServiceInformer.GetIndexer().Add(svc)
 	}
 	for _, pod := range makePods(nodePortToHealthCheck, apiv1.NamespaceDefault) {
-		translator.podLister.Add(pod)
+		translator.ctx.PodInformer.GetIndexer().Add(pod)
 	}
 
 	for p, exp := range nodePortToHealthCheck {
@@ -194,12 +191,12 @@ func TestGetProbeNamedPort(t *testing.T) {
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
 	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
-		translator.svcLister.Add(svc)
+		translator.ctx.ServiceInformer.GetIndexer().Add(svc)
 	}
 	for _, pod := range makePods(nodePortToHealthCheck, apiv1.NamespaceDefault) {
 		pod.Spec.Containers[0].Ports[0].Name = "test"
 		pod.Spec.Containers[0].ReadinessProbe.Handler.HTTPGet.Port = intstr.IntOrString{Type: intstr.String, StrVal: "test"}
-		translator.podLister.Add(pod)
+		translator.ctx.PodInformer.GetIndexer().Add(pod)
 	}
 	for p, exp := range nodePortToHealthCheck {
 		got, err := translator.GetProbe(p)
@@ -244,17 +241,17 @@ func TestGetProbeCrossNamespace(t *testing.T) {
 			},
 		},
 	}
-	translator.podLister.Add(firstPod)
+	translator.ctx.PodInformer.GetIndexer().Add(firstPod)
 	nodePortToHealthCheck := map[utils.ServicePort]string{
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
 	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
-		translator.svcLister.Add(svc)
+		translator.ctx.ServiceInformer.GetIndexer().Add(svc)
 	}
 	for _, pod := range makePods(nodePortToHealthCheck, apiv1.NamespaceDefault) {
 		pod.Spec.Containers[0].Ports[0].Name = "test"
 		pod.Spec.Containers[0].ReadinessProbe.Handler.HTTPGet.Port = intstr.IntOrString{Type: intstr.String, StrVal: "test"}
-		translator.podLister.Add(pod)
+		translator.ctx.PodInformer.GetIndexer().Add(pod)
 	}
 
 	for p, exp := range nodePortToHealthCheck {
@@ -358,8 +355,9 @@ func TestGatherEndpointPorts(t *testing.T) {
 		},
 	}
 
-	translator.endpointLister.Add(newDefaultEndpoint(ep1))
-	translator.endpointLister.Add(newDefaultEndpoint(ep2))
+	endpointLister := translator.ctx.EndpointInformer.GetIndexer()
+	endpointLister.Add(newDefaultEndpoint(ep1))
+	endpointLister.Add(newDefaultEndpoint(ep2))
 
 	expected := []string{"80", "8080", "8081"}
 	got := translator.GatherEndpointPorts(svcPorts)

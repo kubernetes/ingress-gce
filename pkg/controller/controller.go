@@ -185,16 +185,7 @@ func NewLoadBalancerController(
 		})
 	}
 
-	var endpointIndexer cache.Indexer
-	if ctx.EndpointInformer != nil {
-		endpointIndexer = ctx.EndpointInformer.GetIndexer()
-	}
-	lbc.Translator = translator.NewTranslator(lbc.CloudClusterManager.ClusterNamer,
-		ctx.ServiceInformer.GetIndexer(),
-		ctx.NodeInformer.GetIndexer(),
-		ctx.PodInformer.GetIndexer(),
-		endpointIndexer,
-		negEnabled)
+	lbc.Translator = translator.NewTranslator(lbc.CloudClusterManager.ClusterNamer, ctx, negEnabled)
 	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.client}
 
 	glog.V(3).Infof("Created new loadbalancer controller")
