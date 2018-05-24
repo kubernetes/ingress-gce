@@ -34,43 +34,34 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/ingress-gce/pkg/annotations"
+	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	"k8s.io/ingress-gce/pkg/backendconfig"
+	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/errors"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // NewTranslator returns a new Translator.
-func NewTranslator(
-	namer *utils.Namer,
-	svcLister cache.Indexer,
-	nodeLister cache.Indexer,
-	podLister cache.Indexer,
-	endpointLister cache.Indexer,
-	negEnabled bool) *Translator {
+func NewTranslator(namer *utils.Namer, ctx *context.ControllerContext, negEnabled bool) *Translator {
 	return &Translator{
-		namer,
-		svcLister,
-		nodeLister,
-		podLister,
-		endpointLister,
-		negEnabled,
+		namer:      namer,
+		ctx:        ctx,
+		negEnabled: negEnabled,
 	}
 }
 
 // Translator helps with kubernetes -> gce api conversion.
 type Translator struct {
-	namer          *utils.Namer
-	svcLister      cache.Indexer
-	nodeLister     cache.Indexer
-	podLister      cache.Indexer
-	endpointLister cache.Indexer
-	negEnabled     bool
+	namer      *utils.Namer
+	ctx        *context.ControllerContext
+	negEnabled bool
 }
 
 // getServicePort looks in the svc store for a matching service:port,
 // and returns the nodeport.
 func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort, error) {
-	obj, exists, err := t.svcLister.Get(
+	obj, exists, err := t.ctx.ServiceInformer.GetIndexer().Get(
 		&api_v1.Service{
 			ObjectMeta: meta_v1.ObjectMeta{
 				Name:      id.Service.Name,
@@ -121,12 +112,26 @@ PortLoop:
 		return nil, errors.ErrSvcNotNodePort{Service: id.Service}
 	}
 
+	var backendConfig *backendconfigv1beta1.BackendConfig
+	if t.ctx.BackendConfigInformer != nil {
+		backendConfigInStore, err := backendconfig.GetBackendConfigForServicePort(t.ctx.BackendConfigInformer.GetIndexer(), svc, port)
+		if err != nil {
+			return nil, err
+		}
+		if backendConfigInStore != nil {
+			// Object in cache could be changed in-flight. Deepcopy to
+			// reduce race conditions.
+			backendConfig = backendConfigInStore.DeepCopy()
+		}
+	}
+
 	return &utils.ServicePort{
 		ID:            id,
 		NodePort:      int64(port.NodePort),
 		Protocol:      proto,
 		SvcTargetPort: port.TargetPort.String(),
 		NEGEnabled:    t.negEnabled && negEnabled,
+		BackendConfig: backendConfig,
 	}, nil
 }
 
@@ -194,7 +199,7 @@ func getZone(n *api_v1.Node) string {
 
 // GetZoneForNode returns the zone for a given node by looking up its zone label.
 func (t *Translator) GetZoneForNode(name string) (string, error) {
-	nodes, err := listers.NewNodeLister(t.nodeLister).ListWithPredicate(utils.NodeIsReady)
+	nodes, err := listers.NewNodeLister(t.ctx.NodeInformer.GetIndexer()).ListWithPredicate(utils.NodeIsReady)
 	if err != nil {
 		return "", err
 	}
@@ -211,7 +216,7 @@ func (t *Translator) GetZoneForNode(name string) (string, error) {
 // ListZones returns a list of zones this Kubernetes cluster spans.
 func (t *Translator) ListZones() ([]string, error) {
 	zones := sets.String{}
-	readyNodes, err := listers.NewNodeLister(t.nodeLister).ListWithPredicate(utils.NodeIsReady)
+	readyNodes, err := listers.NewNodeLister(t.ctx.NodeInformer.GetIndexer()).ListWithPredicate(utils.NodeIsReady)
 	if err != nil {
 		return zones.List(), err
 	}
@@ -228,7 +233,7 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 
 	// Lookup any container with a matching targetPort from the set of pods
 	// with a matching label selector.
-	pl, err := listPodsBySelector(t.podLister, labels.SelectorFromSet(labels.Set(l)))
+	pl, err := listPodsBySelector(t.ctx.PodInformer.GetIndexer(), labels.SelectorFromSet(labels.Set(l)))
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +285,7 @@ func (t *Translator) GatherEndpointPorts(svcPorts []utils.ServicePort) []string 
 			// For NEG backend, need to open firewall to all endpoint target ports
 			// TODO(mixia): refactor firewall syncing into a separate go routine with different trigger.
 			// With NEG, endpoint changes may cause firewall ports to be different if user specifies inconsistent backends.
-			endpointPorts := listEndpointTargetPorts(t.endpointLister, sp.ID.Service.Namespace, sp.ID.Service.Name, sp.SvcTargetPort)
+			endpointPorts := listEndpointTargetPorts(t.ctx.EndpointInformer.GetIndexer(), sp.ID.Service.Namespace, sp.ID.Service.Name, sp.SvcTargetPort)
 			for _, ep := range endpointPorts {
 				portMap[int64(ep)] = true
 			}
@@ -304,7 +309,7 @@ func isSimpleHTTPProbe(probe *api_v1.Probe) bool {
 
 // GetProbe returns a probe that's used for the given nodeport
 func (t *Translator) GetProbe(port utils.ServicePort) (*api_v1.Probe, error) {
-	sl := t.svcLister.List()
+	sl := t.ctx.ServiceInformer.GetIndexer().List()
 
 	// Find the label and target port of the one service with the given nodePort
 	var service api_v1.Service
