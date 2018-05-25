@@ -84,11 +84,16 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 								Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig"),
 							},
 						},
+						"securityPolicy": {
+							SchemaProps: spec.SchemaProps{
+								Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SecurityPolicyConfig"),
+							},
+						},
 					},
 				},
 			},
 			Dependencies: []string{
-				"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.IAPConfig"},
+				"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.IAPConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SecurityPolicyConfig"},
 		},
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig": {
 			Schema: spec.Schema{

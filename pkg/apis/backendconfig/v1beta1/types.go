@@ -37,8 +37,9 @@ type BackendConfig struct {
 // BackendConfigSpec is the spec for a BackendConfig resource
 // +k8s:openapi-gen=true
 type BackendConfigSpec struct {
-	Iap *IAPConfig `json:"iap,omitempty"`
-	Cdn *CDNConfig `json:"cdn,omitempty"`
+	Iap            *IAPConfig            `json:"iap,omitempty"`
+	Cdn            *CDNConfig            `json:"cdn,omitempty"`
+	SecurityPolicy *SecurityPolicyConfig `json:"securityPolicy,omitempty"`
 }
 
 // BackendConfigStatus is the status for a BackendConfig resource
@@ -96,4 +97,10 @@ type CacheKeyPolicy struct {
 	// parameters are excluded. Either specify QueryStringBlacklist or
 	// QueryStringWhitelist, but not both.
 	QueryStringWhitelist []string `json:"queryStringWhitelist,omitempty"`
+}
+
+// SecurityPolicyConfig contains configuration for CloudArmor-enabled backends.
+type SecurityPolicyConfig struct {
+	// Name of the security policy that should be associated.
+	Name string `json:"name"`
 }
