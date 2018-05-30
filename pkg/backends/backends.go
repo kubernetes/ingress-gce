@@ -239,16 +239,17 @@ func (b *Backends) Get(name string, isAlpha bool) (*BackendService, error) {
 	return &BackendService{Ga: beGa, Alpha: beAlpha}, nil
 }
 
-func (b *Backends) ensureHealthCheck(sp utils.ServicePort) (string, error) {
+func (b *Backends) ensureHealthCheck(sp utils.ServicePort, hasLegacyHC bool) (string, error) {
 	hc := b.healthChecker.New(sp)
-	existingLegacyHC, err := b.healthChecker.GetLegacy(sp.NodePort)
-	if err != nil && !utils.IsNotFoundError(err) {
-		return "", err
-	}
-
-	if existingLegacyHC != nil {
-		glog.V(4).Infof("Applying settings of existing health check to newer health check on port %+v", sp)
-		applyLegacyHCToHC(existingLegacyHC, hc)
+	if hasLegacyHC {
+		existingLegacyHC, err := b.healthChecker.GetLegacy(sp.NodePort)
+		if err != nil && !utils.IsNotFoundError(err) {
+			return "", err
+		}
+		if existingLegacyHC != nil {
+			glog.V(4).Infof("Applying settings of existing health check to newer health check on port %+v", sp)
+			applyLegacyHCToHC(existingLegacyHC, hc)
+		}
 	} else if b.prober != nil {
 		probe, err := b.prober.GetProbe(sp)
 		if err != nil {
@@ -321,14 +322,24 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 		b.snapshotter.Add(beName, be)
 	}()
 
-	// Ensure health check for backend service exists
-	hcLink, err := b.ensureHealthCheck(sp)
+	be, _ = b.Get(beName, sp.IsAlpha())
+	hasLegacyHC := false
+	if be != nil {
+		// If the backend already exists, find out if it is using a legacy health check.
+		existingHCLink := be.GetHealthCheckLink()
+		if strings.Contains(existingHCLink, "/httpHealthChecks/") {
+			hasLegacyHC = true
+		}
+	}
+
+	// Ensure health check for backend service exists. Note that hasLegacyHC
+	// will dictate whether we search for an existing legacy health check.
+	hcLink, err := b.ensureHealthCheck(sp, hasLegacyHC)
 	if err != nil {
 		return err
 	}
 
 	// Verify existance of a backend service for the proper port, but do not specify any backends/igs
-	be, _ = b.Get(beName, sp.IsAlpha())
 	if be == nil {
 		namedPort := &compute.NamedPort{
 			Name: b.namer.NamedPort(sp.NodePort),
@@ -343,8 +354,8 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 	}
 
 	needUpdate := be.ensureProtocol(sp)
-	needUpdate = needUpdate || be.ensureHealthCheckLink(hcLink)
-	needUpdate = needUpdate || be.ensureDescription(sp.Description())
+	needUpdate = be.ensureHealthCheckLink(hcLink) || needUpdate
+	needUpdate = be.ensureDescription(sp.Description()) || needUpdate
 
 	if needUpdate {
 		if err = b.update(be); err != nil {
@@ -352,10 +363,8 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 		}
 	}
 
-	existingHCLink := be.GetHealthCheckLink()
-
 	// If previous health check was legacy type, we need to delete it.
-	if existingHCLink != hcLink && strings.Contains(existingHCLink, "/httpHealthChecks/") {
+	if hasLegacyHC {
 		if err = b.healthChecker.DeleteLegacy(sp.NodePort); err != nil {
 			glog.Warning("Failed to delete legacy HttpHealthCheck %v; Will not try again, err: %v", beName, err)
 		}

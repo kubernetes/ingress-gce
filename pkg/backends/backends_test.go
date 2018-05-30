@@ -166,23 +166,38 @@ func TestHealthCheckMigration(t *testing.T) {
 	pool, hcp := newTestJig(f, fakeIGs, false)
 
 	p := utils.ServicePort{NodePort: 7000, Protocol: annotations.ProtocolHTTP}
+	beName := p.BackendName(defaultNamer)
 
 	// Create a legacy health check and insert it into the HC provider.
 	legacyHC := &compute.HttpHealthCheck{
-		Name:               p.BackendName(defaultNamer),
+		Name:               beName,
 		RequestPath:        "/my-healthz-path",
 		Host:               "k8s.io",
 		Description:        "My custom HC",
 		UnhealthyThreshold: 30,
 		CheckIntervalSec:   40,
 	}
-	hcp.CreateHttpHealthCheck(legacyHC)
+	if err := hcp.CreateHttpHealthCheck(legacyHC); err != nil {
+		t.Fatalf("unexpected error creating http health check %v", err)
+	}
+
+	// Verify legacy check exists
+	legacyHC, err := hcp.GetHttpHealthCheck(beName)
+	if err != nil {
+		t.Fatalf("unexpected error getting http health check %v", err)
+	}
+
+	// Create backend service with expected name and link to legacy health check
+	f.CreateGlobalBackendService(&compute.BackendService{
+		Name:         beName,
+		HealthChecks: []string{legacyHC.SelfLink},
+	})
 
 	// Add the service port to the backend pool
 	pool.Ensure([]utils.ServicePort{p}, nil)
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(p.BackendName(defaultNamer), p.IsAlpha())
+	hc, _ := pool.healthChecker.Get(beName, p.IsAlpha())
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
