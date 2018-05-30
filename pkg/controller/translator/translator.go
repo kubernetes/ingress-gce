@@ -112,16 +112,17 @@ PortLoop:
 		return nil, errors.ErrSvcNotNodePort{Service: id.Service}
 	}
 
-	var backendConfig *backendconfigv1beta1.BackendConfig
+	var beConfig *backendconfigv1beta1.BackendConfig
 	if t.ctx.BackendConfigInformer != nil {
-		backendConfigInStore, err := backendconfig.GetBackendConfigForServicePort(t.ctx.BackendConfigInformer.GetIndexer(), svc, port)
+		beConfig, err := backendconfig.GetBackendConfigForServicePort(t.ctx.BackendConfigInformer.GetIndexer(), svc, port)
 		if err != nil {
-			return nil, err
+			return nil, errors.ErrSvcBackendConfig{ServicePortID: id, Err: err}
 		}
-		if backendConfigInStore != nil {
-			// Object in cache could be changed in-flight. Deepcopy to
-			// reduce race conditions.
-			backendConfig = backendConfigInStore.DeepCopy()
+		// Object in cache could be changed in-flight. Deepcopy to
+		// reduce race conditions.
+		beConfig = beConfig.DeepCopy()
+		if err = backendconfig.Validate(t.ctx.KubeClient, beConfig); err != nil {
+			return nil, errors.ErrBackendConfigValidation{BackendConfig: *beConfig, Err: err}
 		}
 	}
 
@@ -131,7 +132,7 @@ PortLoop:
 		Protocol:      proto,
 		SvcTargetPort: port.TargetPort.String(),
 		NEGEnabled:    t.negEnabled && negEnabled,
-		BackendConfig: backendConfig,
+		BackendConfig: beConfig,
 	}, nil
 }
 
