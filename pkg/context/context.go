@@ -35,7 +35,7 @@ import (
 
 // ControllerContext holds
 type ControllerContext struct {
-	kubeClient kubernetes.Interface
+	KubeClient kubernetes.Interface
 
 	IngressInformer       cache.SharedIndexInformer
 	ServiceInformer       cache.SharedIndexInformer
@@ -60,7 +60,7 @@ func NewControllerContext(
 		return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
 	}
 	context := &ControllerContext{
-		kubeClient:      kubeClient,
+		KubeClient:      kubeClient,
 		IngressInformer: informerv1beta1.NewIngressInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
 		ServiceInformer: informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
 		PodInformer:     informerv1.NewPodInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
@@ -107,7 +107,7 @@ func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{
-		Interface: ctx.kubeClient.Core().Events(ns),
+		Interface: ctx.KubeClient.Core().Events(ns),
 	})
 	rec := broadcaster.NewRecorder(scheme.Scheme, apiv1.EventSource{Component: "loadbalancer-controller"})
 	ctx.recorders[ns] = rec

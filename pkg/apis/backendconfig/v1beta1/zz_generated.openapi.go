@@ -194,7 +194,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 							},
 						},
 					},
-					Required: []string{"enabled"},
+					Required: []string{"enabled", "clientCredentials"},
 				},
 			},
 			Dependencies: []string{
@@ -208,6 +208,20 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 						"secret": {
 							SchemaProps: spec.SchemaProps{
 								Description: "The name of a k8s secret which stores the OAuth client id & secret.",
+								Type:        []string{"string"},
+								Format:      "",
+							},
+						},
+						"clientID": {
+							SchemaProps: spec.SchemaProps{
+								Description: "Direct reference to OAuth client id.",
+								Type:        []string{"string"},
+								Format:      "",
+							},
+						},
+						"clientSecret": {
+							SchemaProps: spec.SchemaProps{
+								Description: "Direct reference to OAuth client secret.",
 								Type:        []string{"string"},
 								Format:      "",
 							},

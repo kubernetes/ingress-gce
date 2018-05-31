@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"k8s.io/ingress-gce/pkg/annotations"
+	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -61,4 +62,25 @@ type ErrSvcAppProtosParsing struct {
 
 func (e ErrSvcAppProtosParsing) Error() string {
 	return fmt.Sprintf("could not parse %v annotation on Service %v/%v, err: %v", annotations.ServiceApplicationProtocolKey, e.Svc.Namespace, e.Svc.Name, e.Err)
+}
+
+// ErrSvcBackendConfig is returned when there was an error getting the
+// BackendConfig for a service port.
+type ErrSvcBackendConfig struct {
+	utils.ServicePortID
+	Err error
+}
+
+func (e ErrSvcBackendConfig) Error() string {
+	return fmt.Sprintf("error getting BackendConfig for port %v on service %v/%v, err: %v", e.ServicePortID.Port, e.ServicePortID.Service.Namespace, e.ServicePortID.Service.Name, e.Err)
+}
+
+// ErrBackendConfigValidation is returned when there was an error validating a BackendConfig.
+type ErrBackendConfigValidation struct {
+	backendconfigv1beta1.BackendConfig
+	Err error
+}
+
+func (e ErrBackendConfigValidation) Error() string {
+	return fmt.Sprintf("BackendConfig %v/%v is not valid: %v", e.BackendConfig.Namespace, e.BackendConfig.Name, e.Err)
 }
