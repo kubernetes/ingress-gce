@@ -370,7 +370,7 @@ func (n *Namer) NamedPort(port int64) string {
 // NEG returns the gce neg name based on the service namespace, name
 // and target port. NEG naming convention:
 //
-//   {prefix}{version}-{clusterid}-{namespace}-{name}-{target port}-{hash}
+//   {prefix}{version}-{clusterid}-{namespace}-{name}-{service port}-{hash}
 //
 // Output name is at most 63 characters. NEG tries to keep as much
 // information as possible.
