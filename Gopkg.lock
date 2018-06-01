@@ -433,7 +433,7 @@
     "storage/v1alpha1",
     "storage/v1beta1"
   ]
-  revision = "kubernetes-1.12.0-alpha.0"
+  revision = "dc6e60c1b0483cd8e94610bfacf6989fe55df091"
 
 [[projects]]
   branch = "master"
@@ -738,7 +738,7 @@
     "pkg/volume/util/recyclerclient",
     "pkg/volume/util/types"
   ]
-  revision = "77a08ee2d774d1785670677d4d4b7d1a1739c12c"
+  revision = "v1.11.0-beta.1"
 
 [[projects]]
   branch = "master"
@@ -749,6 +749,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "2a803b38db41744594cd39636c91db49297ced36ada6812d8967adcd3ec609db"
+  inputs-digest = "e687c933806d18d25a999a20b6e369841a637c2b437497ad3f442bef271c249a"
   solver-name = "gps-cdcl"
   solver-version = 1
