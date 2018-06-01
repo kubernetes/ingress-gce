@@ -22,7 +22,9 @@ ignored = ["k8s.io/kubernetes/pkg/api"]
 
 [[constraint]]
   name = "k8s.io/api"
-  revision = "kubernetes-1.12.0-alpha.0"
+  # Pin to an unreleased commit because the latest release is not compatible
+  # with kubernetes/kubernetes:v1.11.0-beta.1.
+  revision = "dc6e60c1b0483cd8e94610bfacf6989fe55df091"
 
 # This needs to be an override as it is a non-direct dependency and will not be
 # considered by `dep` as a constraint.
@@ -40,7 +42,7 @@ ignored = ["k8s.io/kubernetes/pkg/api"]
 
 [[constraint]]
   name = "k8s.io/kubernetes"
-  revision = "77a08ee2d774d1785670677d4d4b7d1a1739c12c"
+  revision = "v1.11.0-beta.1"
 
 # This needs to be an override as it is a non-direct dependency and will not be
 # considered by `dep` as a constraint.
