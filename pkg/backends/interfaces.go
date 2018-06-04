@@ -21,6 +21,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
 // ProbeProvider retrieves a probe struct given a nodePort
@@ -33,7 +34,7 @@ type ProbeProvider interface {
 type BackendPool interface {
 	Init(p ProbeProvider)
 	Ensure(ports []utils.ServicePort, igLinks []string) error
-	Get(name string, isAlpha bool) (*BackendService, error)
+	Get(name string, version meta.Version) (*BackendService, error)
 	Delete(name string) error
 	GC(ports []utils.ServicePort) error
 	Shutdown() error

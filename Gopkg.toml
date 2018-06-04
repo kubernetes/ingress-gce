@@ -62,3 +62,7 @@ ignored = ["k8s.io/kubernetes/pkg/api"]
 [prune]
   go-tests = true
   unused-packages = true
+
+[[constraint]]
+  name = "github.com/kr/pretty"
+  version = "0.1.0"

@@ -397,11 +397,11 @@ func TestBackendPoolSync(t *testing.T) {
 	if err := pool.GC(svcNodePorts); err != nil {
 		t.Errorf("Expected backend pool to GC, err: %v", err)
 	}
-	if _, err := pool.Get(defaultNamer.IGBackend(90), false); err == nil {
+	if _, err := pool.Get(defaultNamer.IGBackend(90), ""); err == nil {
 		t.Fatalf("Did not expect to find port 90")
 	}
 	for _, port := range svcNodePorts {
-		if _, err := pool.Get(port.BackendName(defaultNamer), false); err != nil {
+		if _, err := pool.Get(port.BackendName(defaultNamer), port.Version()); err != nil {
 			t.Fatalf("Expected to find port %v", port)
 		}
 	}
@@ -413,7 +413,7 @@ func TestBackendPoolSync(t *testing.T) {
 	}
 
 	for _, port := range deletedPorts {
-		if _, err := pool.Get(port.BackendName(defaultNamer), false); err == nil {
+		if _, err := pool.Get(port.BackendName(defaultNamer), port.Version()); err == nil {
 			t.Fatalf("Pool contains %v after deletion", port)
 		}
 	}
@@ -943,11 +943,11 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
 				func(t *testing.T) {
 					pool.Ensure([]utils.ServicePort{oldPort}, nil)
-					be, err := pool.Get(oldPort.BackendName(defaultNamer), newPort.IsAlpha())
+					be, err := pool.Get(oldPort.BackendName(defaultNamer), oldPort.Version())
 					if err != nil {
 						t.Fatalf("%v", err)
 					}
-					needsProtocolUpdate := be.ensureProtocol(newPort)
+					needsProtocolUpdate := ensureProtocol(be, newPort)
 
 					if reflect.DeepEqual(oldPort, newPort) {
 						if needsProtocolUpdate {
@@ -961,12 +961,8 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 					}
 
 					if newPort.Protocol == annotations.ProtocolHTTP2 {
-						if be.Alpha.Protocol != string(annotations.ProtocolHTTP2) {
-							t.Fatalf("Expected HTTP2 protocol to be set on Alpha BackendService, got %v", be.Alpha.Protocol)
-						}
-					} else {
-						if be.Ga.Protocol != string(newPort.Protocol) {
-							t.Fatalf("Expected %v protocol to be set on GA BackendService, got %v", newPort.Protocol, be.Ga.Protocol)
+						if be.Protocol != string(annotations.ProtocolHTTP2) {
+							t.Fatalf("Expected HTTP2 protocol to be set on BackendService, got %v", be.Protocol)
 						}
 					}
 				},
@@ -992,12 +988,12 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
 				func(t *testing.T) {
 					pool.Ensure([]utils.ServicePort{oldPort}, nil)
-					be, err := pool.Get(oldPort.BackendName(defaultNamer), oldPort.IsAlpha())
+					be, err := pool.Get(oldPort.BackendName(defaultNamer), oldPort.Version())
 					if err != nil {
 						t.Fatalf("%v", err)
 					}
 
-					needsDescriptionUpdate := be.ensureDescription(newPort.Description())
+					needsDescriptionUpdate := ensureDescription(be, newPort.Description())
 					if reflect.DeepEqual(oldPort, newPort) {
 						if needsDescriptionUpdate {
 							t.Fatalf("Expected ensureDescription for the same port to return false, got %v", needsDescriptionUpdate)
@@ -1021,26 +1017,26 @@ func TestEnsureBackendServiceHealthCheckLink(t *testing.T) {
 
 	p := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}}
 	pool.Ensure([]utils.ServicePort{p}, nil)
-	be, err := pool.Get(p.BackendName(defaultNamer), p.IsAlpha())
+	be, err := pool.Get(p.BackendName(defaultNamer), p.Version())
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
 
-	hcLink := be.GetHealthCheckLink()
-	needsHcUpdate := be.ensureHealthCheckLink(hcLink)
+	hcLink := getHealthCheckLink(be)
+	needsHcUpdate := ensureHealthCheckLink(be, hcLink)
 	if needsHcUpdate {
 		t.Fatalf("Expected ensureHealthCheckLink for the same link to return false, got %v", needsHcUpdate)
 	}
 
 	baseUrl := "https://www.googleapis.com/compute/%s/projects/project-id/zones/us-central1-b/healthChecks/%s"
 	alphaHcLink := fmt.Sprintf(baseUrl, "alpha", "hc-link")
-	needsHcUpdate = be.ensureHealthCheckLink(alphaHcLink)
+	needsHcUpdate = ensureHealthCheckLink(be, alphaHcLink)
 	if !needsHcUpdate {
 		t.Fatalf("Expected ensureHealthCheckLink for a new healthcheck link to return true, got %v", needsHcUpdate)
 	}
 
 	gaHcLink := fmt.Sprintf(baseUrl, "v1", "hc-link")
-	needsHcUpdate = be.ensureHealthCheckLink(gaHcLink)
+	needsHcUpdate = ensureHealthCheckLink(be, gaHcLink)
 	if needsHcUpdate {
 		t.Fatalf("Expected ensureHealthCheckLink for healthcheck with the same name to return false, got %v", needsHcUpdate)
 	}

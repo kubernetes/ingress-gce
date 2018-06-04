@@ -90,7 +90,7 @@ func (c *ClusterManager) shutdown() error {
 //   exist, they should not have any broken links between say, a UrlMap and
 //   TargetHttpProxy.
 // - lbServicePorts are the ports for which we require Backend Services.
-// - instanceGroups are the groups to be referenced by the Backend Services..
+// - igLinks are the links to the groups to be referenced by the Backend Services.
 // If GCE runs out of quota, a googleapi 403 is returned.
 func (c *ClusterManager) EnsureLoadBalancer(lb *loadbalancers.L7RuntimeInfo, lbServicePorts []utils.ServicePort, igLinks []string) error {
 	glog.V(4).Infof("EnsureLoadBalancer(%q lb, %v lbServicePorts, %v instanceGroups)", lb.String(), len(lbServicePorts), len(igLinks))
