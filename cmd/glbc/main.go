@@ -107,8 +107,8 @@ func main() {
 
 	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
 	stopCh := make(chan struct{})
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG)
-	lbc, err := controller.NewLoadBalancerController(kubeClient, stopCh, ctx, clusterManager, enableNEG, flags.F.EnableBackendConfig)
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG, flags.F.EnableBackendConfig)
+	lbc, err := controller.NewLoadBalancerController(kubeClient, stopCh, ctx, clusterManager)
 	if err != nil {
 		glog.Fatalf("Error creating load balancer controller: %v", err)
 	}

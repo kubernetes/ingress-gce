@@ -49,11 +49,10 @@ func fakeTranslator(negEnabled bool) *Translator {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 
 	namer := utils.NewNamer("uid1", "")
-	ctx := context.NewControllerContext(client, backendConfigClient, apiv1.NamespaceAll, 1*time.Second, negEnabled)
+	ctx := context.NewControllerContext(client, backendConfigClient, apiv1.NamespaceAll, 1*time.Second, negEnabled, false)
 	gce := &Translator{
-		namer:      namer,
-		ctx:        ctx,
-		negEnabled: negEnabled,
+		namer: namer,
+		ctx:   ctx,
 	}
 	return gce
 }

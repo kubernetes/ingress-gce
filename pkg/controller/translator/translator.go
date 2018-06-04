@@ -1,12 +1,9 @@
 /*
 Copyright 2017 The Kubernetes Authors.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
     http://www.apache.org/licenses/LICENSE-2.0
-
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -43,19 +40,14 @@ import (
 )
 
 // NewTranslator returns a new Translator.
-func NewTranslator(namer *utils.Namer, ctx *context.ControllerContext, negEnabled bool) *Translator {
-	return &Translator{
-		namer:      namer,
-		ctx:        ctx,
-		negEnabled: negEnabled,
-	}
+func NewTranslator(namer *utils.Namer, ctx *context.ControllerContext) *Translator {
+	return &Translator{namer, ctx}
 }
 
 // Translator helps with kubernetes -> gce api conversion.
 type Translator struct {
-	namer      *utils.Namer
-	ctx        *context.ControllerContext
-	negEnabled bool
+	namer *utils.Namer
+	ctx   *context.ControllerContext
 }
 
 // getServicePort looks in the svc store for a matching service:port,
@@ -113,7 +105,7 @@ PortLoop:
 	}
 
 	var beConfig *backendconfigv1beta1.BackendConfig
-	if t.ctx.BackendConfigInformer != nil {
+	if t.ctx.BackendConfigEnabled {
 		beConfig, err := backendconfig.GetBackendConfigForServicePort(t.ctx.BackendConfigInformer.GetIndexer(), svc, port)
 		if err != nil {
 			return nil, errors.ErrSvcBackendConfig{ServicePortID: id, Err: err}
@@ -131,7 +123,7 @@ PortLoop:
 		NodePort:      int64(port.NodePort),
 		Protocol:      proto,
 		SvcTargetPort: port.TargetPort.String(),
-		NEGEnabled:    t.negEnabled && negEnabled,
+		NEGEnabled:    t.ctx.NEGEnabled && negEnabled,
 		BackendConfig: beConfig,
 	}, nil
 }
@@ -200,7 +192,8 @@ func getZone(n *api_v1.Node) string {
 
 // GetZoneForNode returns the zone for a given node by looking up its zone label.
 func (t *Translator) GetZoneForNode(name string) (string, error) {
-	nodes, err := listers.NewNodeLister(t.ctx.NodeInformer.GetIndexer()).ListWithPredicate(utils.NodeIsReady)
+	nodeLister := t.ctx.NodeInformer.GetIndexer()
+	nodes, err := listers.NewNodeLister(nodeLister).ListWithPredicate(utils.NodeIsReady)
 	if err != nil {
 		return "", err
 	}
@@ -217,7 +210,8 @@ func (t *Translator) GetZoneForNode(name string) (string, error) {
 // ListZones returns a list of zones this Kubernetes cluster spans.
 func (t *Translator) ListZones() ([]string, error) {
 	zones := sets.String{}
-	readyNodes, err := listers.NewNodeLister(t.ctx.NodeInformer.GetIndexer()).ListWithPredicate(utils.NodeIsReady)
+	nodeLister := t.ctx.NodeInformer.GetIndexer()
+	readyNodes, err := listers.NewNodeLister(nodeLister).ListWithPredicate(utils.NodeIsReady)
 	if err != nil {
 		return zones.List(), err
 	}
@@ -281,12 +275,12 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 // GatherEndpointPorts returns all ports needed to open NEG endpoints.
 func (t *Translator) GatherEndpointPorts(svcPorts []utils.ServicePort) []string {
 	portMap := map[int64]bool{}
-	for _, sp := range svcPorts {
-		if t.negEnabled && sp.NEGEnabled {
+	for _, p := range svcPorts {
+		if t.ctx.NEGEnabled && p.NEGEnabled {
 			// For NEG backend, need to open firewall to all endpoint target ports
 			// TODO(mixia): refactor firewall syncing into a separate go routine with different trigger.
 			// With NEG, endpoint changes may cause firewall ports to be different if user specifies inconsistent backends.
-			endpointPorts := listEndpointTargetPorts(t.ctx.EndpointInformer.GetIndexer(), sp.ID.Service.Namespace, sp.ID.Service.Name, sp.SvcTargetPort)
+			endpointPorts := listEndpointTargetPorts(t.ctx.EndpointInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.SvcTargetPort)
 			for _, ep := range endpointPorts {
 				portMap[int64(ep)] = true
 			}

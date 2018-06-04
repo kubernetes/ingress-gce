@@ -1,12 +1,9 @@
 /*
 Copyright 2017 The Kubernetes Authors.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
     http://www.apache.org/licenses/LICENSE-2.0
-
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -33,7 +30,7 @@ import (
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1beta1"
 )
 
-// ControllerContext holds
+// ControllerContext holds the state needed for the execution of the controller.
 type ControllerContext struct {
 	KubeClient kubernetes.Interface
 
@@ -43,6 +40,9 @@ type ControllerContext struct {
 	PodInformer           cache.SharedIndexInformer
 	NodeInformer          cache.SharedIndexInformer
 	EndpointInformer      cache.SharedIndexInformer
+
+	NEGEnabled           bool
+	BackendConfigEnabled bool
 
 	// Map of namespace => record.EventRecorder.
 	recorders map[string]record.EventRecorder
@@ -54,23 +54,26 @@ func NewControllerContext(
 	backendConfigClient backendconfigclient.Interface,
 	namespace string,
 	resyncPeriod time.Duration,
-	enableEndpointsInformer bool) *ControllerContext {
+	enableNEG bool,
+	enableBackendConfig bool) *ControllerContext {
 
 	newIndexer := func() cache.Indexers {
 		return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
 	}
 	context := &ControllerContext{
-		KubeClient:      kubeClient,
-		IngressInformer: informerv1beta1.NewIngressInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
-		ServiceInformer: informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
-		PodInformer:     informerv1.NewPodInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
-		NodeInformer:    informerv1.NewNodeInformer(kubeClient, resyncPeriod, newIndexer()),
-		recorders:       map[string]record.EventRecorder{},
+		KubeClient:           kubeClient,
+		IngressInformer:      informerv1beta1.NewIngressInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
+		ServiceInformer:      informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
+		PodInformer:          informerv1.NewPodInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
+		NodeInformer:         informerv1.NewNodeInformer(kubeClient, resyncPeriod, newIndexer()),
+		NEGEnabled:           enableNEG,
+		BackendConfigEnabled: enableBackendConfig,
+		recorders:            map[string]record.EventRecorder{},
 	}
-	if enableEndpointsInformer {
+	if enableNEG {
 		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, namespace, resyncPeriod, newIndexer())
 	}
-	if backendConfigClient != nil {
+	if enableBackendConfig {
 		context.BackendConfigInformer = informerbackendconfig.NewBackendConfigInformer(backendConfigClient, namespace, resyncPeriod, newIndexer())
 	}
 
