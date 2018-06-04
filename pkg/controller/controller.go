@@ -84,8 +84,6 @@ type LoadBalancerController struct {
 	// hasSynced returns true if all associated sub-controllers have synced.
 	// Abstracted into a func for testing.
 	hasSynced func() bool
-	// negEnabled indicates whether NEG feature is enabled.
-	negEnabled bool
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
@@ -97,9 +95,7 @@ func NewLoadBalancerController(
 	kubeClient kubernetes.Interface,
 	stopCh chan struct{},
 	ctx *context.ControllerContext,
-	clusterManager *ClusterManager,
-	negEnabled bool,
-	backendConfigEnabled bool) (*LoadBalancerController, error) {
+	clusterManager *ClusterManager) (*LoadBalancerController, error) {
 
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
@@ -115,11 +111,10 @@ func NewLoadBalancerController(
 		CloudClusterManager: clusterManager,
 		stopCh:              stopCh,
 		hasSynced:           ctx.HasSynced,
-		negEnabled:          negEnabled,
 	}
 	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
 
-	if negEnabled {
+	if ctx.NEGEnabled {
 		lbc.endpointLister.Indexer = ctx.EndpointInformer.GetIndexer()
 	}
 
@@ -173,7 +168,7 @@ func NewLoadBalancerController(
 	})
 
 	// BackendConfig event handlers.
-	if backendConfigEnabled {
+	if ctx.BackendConfigEnabled {
 		ctx.BackendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: lbc.enqueueIngressForObject,
 			UpdateFunc: func(old, cur interface{}) {
@@ -185,7 +180,7 @@ func NewLoadBalancerController(
 		})
 	}
 
-	lbc.Translator = translator.NewTranslator(lbc.CloudClusterManager.ClusterNamer, ctx, negEnabled)
+	lbc.Translator = translator.NewTranslator(lbc.CloudClusterManager.ClusterNamer, ctx)
 	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.client}
 
 	glog.V(3).Infof("Created new loadbalancer controller")
@@ -372,7 +367,7 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 	}
 
 	// If NEG enabled, link the backend services to the NEGs.
-	if lbc.negEnabled {
+	if lbc.ctx.NEGEnabled {
 		for _, svcPort := range ingSvcPorts {
 			if svcPort.NEGEnabled {
 				zones, err := lbc.Translator.ListZones()
