@@ -43,7 +43,10 @@ if [ $GOARCH == "amd64" ]; then
 fi
 
 if echo "${TARGET}" | grep '.*-test$'; then
-  go test -c -o "${TARGET}" "$PKG/cmd/$(basename ${TARGET})"
+  go test -c          \
+    -ldflags "-X ${PKG}/pkg/version.Version=${VERSION} -X ${PKG}/pkg/version.GitCommit=${GIT_COMMIT}" \
+    -o "${TARGET}"    \
+    "$PKG/cmd/$(basename ${TARGET})"
 else
   go install                                                                                             \
       -installsuffix "static"                                                                            \

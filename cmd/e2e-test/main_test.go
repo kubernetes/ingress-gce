@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/version"
 	// Pull in the auth library for GCP.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
@@ -59,6 +60,9 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "You must set the RUN_INGRESS_E2E environment variable to 'true' run the tests.")
 		return
 	}
+
+	fmt.Printf("Version: %q\n", version.Version)
+	fmt.Printf("Commit: %q\n", version.GitCommit)
 
 	var err error
 	var kubeconfig *rest.Config
