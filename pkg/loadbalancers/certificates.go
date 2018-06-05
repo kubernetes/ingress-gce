@@ -159,19 +159,14 @@ func (l *L7) populateSSLCert() error {
 	if len(l.sslCerts) == 0 {
 		// Check for legacy cert since that follows a different naming convention
 		glog.V(4).Infof("Looking for legacy ssl certs")
-		expectedCertLinks := l.getSslCertLinkInUse()
-		for _, link := range expectedCertLinks {
+		expectedCertNames := l.getSslCertLinkInUse()
+		for _, link := range expectedCertNames {
 			// Retrieve the certificate and ignore error if certificate wasn't found
-			name, err := utils.KeyName(link)
-			if err != nil {
-				glog.Warningf("error getting certificate name: %v", link)
-				continue
-			}
-
+			name := getResourceNameFromLink(link)
 			if !l.namer.IsLegacySSLCert(l.Name, name) {
 				continue
 			}
-			cert, _ := l.cloud.GetSslCertificate(name)
+			cert, _ := l.cloud.GetSslCertificate(getResourceNameFromLink(name))
 			if cert != nil {
 				glog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l.Name)
 				l.sslCerts = append(l.sslCerts, cert)
@@ -210,19 +205,14 @@ func (l *L7) compareCerts(certLinks []string) bool {
 		glog.V(4).Infof("Loadbalancer has %d certs, target proxy has %d certs", len(certsMap), len(certLinks))
 		return false
 	}
-
-	for _, link := range certLinks {
-		certName, err := utils.KeyName(link)
-		if err != nil {
-			glog.Warningf("Cannot get cert name from URL: %v", link)
-			return false
-		}
-
+	var certName string
+	for _, linkName := range certLinks {
+		certName = getResourceNameFromLink(linkName)
 		if cert, ok := certsMap[certName]; !ok {
 			glog.V(4).Infof("Cannot find cert with name %s in certsMap %+v", certName, certsMap)
 			return false
-		} else if ok && !utils.EqualResourceID(link, cert.SelfLink) {
-			glog.V(4).Infof("Selflink compare failed for certs - %s in loadbalancer, %s in targetproxy", cert.SelfLink, link)
+		} else if ok && !utils.CompareLinks(linkName, cert.SelfLink) {
+			glog.V(4).Infof("Selflink compare failed for certs - %s in loadbalancer, %s in targetproxy", cert.SelfLink, linkName)
 			return false
 		}
 	}

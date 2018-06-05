@@ -355,7 +355,7 @@ func TestBackendPoolChaosMonkey(t *testing.T) {
 	// Mess up the link between backend service and instance group.
 	// This simulates a user doing foolish things through the UI.
 	be.Backends = []*compute.Backend{
-		{Group: "zones/us-central1-c/instanceGroups/edge-hop-test"},
+		{Group: "/zones/edge-hop-test"},
 	}
 
 	// Add hook to keep track of how many calls are made.
@@ -384,17 +384,16 @@ func TestBackendPoolChaosMonkey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to find instance group %v", defaultNamer.InstanceGroup())
 	}
-	groupPath, err := utils.ResourcePath(gotGroup.SelfLink)
-	if err != nil {
-		t.Fatalf("Failed to get resource path from %q", gotGroup.SelfLink)
-	}
-
+	backendLinks := sets.NewString()
 	for _, be := range gotBackend.Backends {
-		if be.Group == groupPath {
-			return
-		}
+		backendLinks.Insert(be.Group)
 	}
-	t.Fatalf("Failed to find %q in backend groups %+v", groupPath, be.Backends)
+	if !backendLinks.Has(gotGroup.SelfLink) {
+		t.Fatalf(
+			"Broken instance group link, got: %+v expected: %v",
+			backendLinks.List(),
+			gotGroup.SelfLink)
+	}
 }
 
 func TestBackendPoolSync(t *testing.T) {
@@ -721,8 +720,8 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	// Simulate another controller updating the same backend service with
 	// a different instance group
 	newGroups := []*compute.Backend{
-		{Group: fmt.Sprintf("zones/%s/instanceGroups/%s", defaultZone, "k8s-ig-bar")},
-		{Group: fmt.Sprintf("zones/%s/instanceGroups/%s", defaultZone, "k8s-ig-foo")},
+		{Group: fmt.Sprintf("/zones/%s/instanceGroups/%s", defaultZone, "k8s-ig-bar")},
+		{Group: fmt.Sprintf("/zones/%s/instanceGroups/%s", defaultZone, "k8s-ig-foo")},
 	}
 	be.Backends = append(be.Backends, newGroups...)
 	if err = fakeGCE.UpdateGlobalBackendService(be); err != nil {
@@ -741,21 +740,13 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	}
 	gotGroups := sets.NewString()
 	for _, g := range be.Backends {
-		igPath, err := utils.ResourcePath(g.Group)
-		if err != nil {
-			t.Fatalf("%v", err)
-		}
-		gotGroups.Insert(igPath)
+		gotGroups.Insert(comparableGroupPath(g.Group))
 	}
 
 	// seed expectedGroups with the first group native to this controller
-	expectedGroups := sets.NewString(fmt.Sprintf("zones/%s/instanceGroups/%s", defaultZone, "k8s-ig--uid1"))
+	expectedGroups := sets.NewString(fmt.Sprintf("/zones/%s/instanceGroups/%s", defaultZone, "k8s-ig--uid1"))
 	for _, newGroup := range newGroups {
-		igPath, err := utils.ResourcePath(newGroup.Group)
-		if err != nil {
-			t.Fatalf("%v", err)
-		}
-		expectedGroups.Insert(igPath)
+		expectedGroups.Insert(comparableGroupPath(newGroup.Group))
 	}
 	if !expectedGroups.Equal(gotGroups) {
 		t.Fatalf("Expected %v Got %v", expectedGroups, gotGroups)
@@ -887,9 +878,65 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	}
 
 	for _, be := range bs.Backends {
-		neg := "networkEndpointGroups"
+		neg := "NetworkEndpointGroup"
 		if !strings.Contains(be.Group, neg) {
-			t.Errorf("Got backend link %q, want containing %q", be.Group, neg)
+			t.Errorf("Expect backend to be a NEG, but got %q", be.Group)
+		}
+	}
+}
+
+func TestRetrieveObjectName(t *testing.T) {
+	testCases := []struct {
+		url    string
+		expect string
+	}{
+		{
+			"",
+			"",
+		},
+		{
+			"a/b/c/d/",
+			"",
+		},
+		{
+			"a/b/c/d",
+			"d",
+		},
+		{
+			"compute",
+			"compute",
+		},
+	}
+
+	for _, tc := range testCases {
+		if retrieveObjectName(tc.url) != tc.expect {
+			t.Errorf("expect %q, but got %q", tc.expect, retrieveObjectName(tc.url))
+		}
+	}
+}
+
+func TestComparableGroupPath(t *testing.T) {
+	testCases := []struct {
+		igPath   string
+		expected string
+	}{
+		{
+			"https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
+			"/zones/us-central1-a/instanceGroups/example-group",
+		},
+		{
+			"https://www.googleapis.com/compute/alpha/projects/project-id/zones/us-central1-b/instanceGroups/test-group",
+			"/zones/us-central1-b/instanceGroups/test-group",
+		},
+		{
+			"https://www.googleapis.com/compute/v1/projects/project-id/zones/us-central1-c/instanceGroups/another-group",
+			"/zones/us-central1-c/instanceGroups/another-group",
+		},
+	}
+
+	for _, tc := range testCases {
+		if comparableGroupPath(tc.igPath) != tc.expected {
+			t.Errorf("expected %s, but got %s", tc.expected, comparableGroupPath(tc.igPath))
 		}
 	}
 }

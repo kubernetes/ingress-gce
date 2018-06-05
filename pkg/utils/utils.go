@@ -26,7 +26,6 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
 const (
@@ -107,6 +106,16 @@ func IsForbiddenError(err error) bool {
 	return IsHTTPErrorCode(err, http.StatusForbidden)
 }
 
+// CompareLinks returns true if the 2 self links are equal.
+func CompareLinks(l1, l2 string) bool {
+	// TODO: These can be partial links
+	return l1 == l2 && l1 != ""
+}
+
+// PrimitivePathMap is a convenience type used by multiple submodules
+// that share the same testing methods.
+type PrimitivePathMap map[string]map[string]string
+
 // trimFieldsEvenly trims the fields evenly and keeps the total length
 // <= max. Truncation is spread in ratio with their original length,
 // meaning smaller fields will be truncated less than longer ones.
@@ -163,67 +172,15 @@ func BackendServiceRelativeResourcePath(name string) string {
 	return fmt.Sprintf("global/backendServices/%v", name)
 }
 
-// KeyName returns the name portion from a full or partial GCP resource URL.
-// Example:
-//    https://googleapis.com/v1/compute/projects/my-project/global/backendServices/my-backend
-// Output: my-backend
-func KeyName(url string) (string, error) {
-	id, err := cloud.ParseResourceURL(url)
-	if err != nil {
-		return "", err
+// BackendServiceComparablePath trims project and compute version from the SelfLink
+// for a global BackendService.
+// global/backendServices/[BACKEND_SERVICE_NAME]
+func BackendServiceComparablePath(url string) string {
+	path_parts := strings.Split(url, "global/")
+	if len(path_parts) != 2 {
+		return ""
 	}
-
-	if id.Key == nil {
-		// Resource is projects
-		return id.ProjectID, nil
-	}
-
-	return id.Key.Name, nil
-}
-
-// ResourcePath returns the location, resource and name portion from a
-// full or partial GCP resource URL. This removes the endpoint prefix, version, and project.
-// Example:
-//    https://googleapis.com/v1/compute/projects/my-project/global/backendServices/my-backend
-// Output: global/backendServices/my-backend
-func ResourcePath(url string) (string, error) {
-	resID, err := cloud.ParseResourceURL(url)
-	if err != nil {
-		return "", err
-	}
-	return resID.ResourcePath(), nil
-}
-
-// EqualResourcePaths returns true if a and b have equal ResourcePaths. Resource paths
-// entail the location, resource type, and resource name.
-func EqualResourcePaths(a, b string) bool {
-	aPath, err := ResourcePath(a)
-	if err != nil {
-		return false
-	}
-
-	bPath, err := ResourcePath(b)
-	if err != nil {
-		return false
-	}
-
-	return aPath == bPath
-}
-
-// EqualResourceID returns true if a and b have equal ResourceNames. Relative resource names
-// entail the project, location, resource type, and resource name.
-func EqualResourceID(a, b string) bool {
-	aId, err := cloud.ParseResourceURL(a)
-	if err != nil {
-		return false
-	}
-
-	bId, err := cloud.ParseResourceURL(b)
-	if err != nil {
-		return false
-	}
-
-	return aId.Equal(bId)
+	return fmt.Sprintf("global/%s", path_parts[1])
 }
 
 // IGLinks returns a list of links extracted from the passed in list of
