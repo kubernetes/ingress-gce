@@ -84,7 +84,7 @@ func TestTrimFieldsEvenly(t *testing.T) {
 		for i := range res {
 			totalLen += len(res[i])
 			if res[i] != tc.expect[i] {
-				t.Errorf("%s: the %d field is expected to be %q, but got %q", tc.desc, i, tc.expect[i], res[i])
+				t.Errorf("%s: the %d field is want to be %q, but got %q", tc.desc, i, tc.expect[i], res[i])
 			}
 		}
 
@@ -94,10 +94,10 @@ func TestTrimFieldsEvenly(t *testing.T) {
 	}
 }
 
-func TestBackendServiceComparablePath(t *testing.T) {
+func TestResourcePathOfURL(t *testing.T) {
 	testCases := []struct {
-		url      string
-		expected string
+		url  string
+		want string
 	}{
 		{
 			"global/backendServices/foo",
@@ -108,15 +108,15 @@ func TestBackendServiceComparablePath(t *testing.T) {
 			"global/backendServices/foo",
 		},
 		{
-			"https://www.googleapis.com/compute/v1/projects/foo/zones/us-central1-c/backendServices/foo",
+			"https://www.googleapis.com/compute/v1/projects/foo/BAD-INPUT/zones/us-central1-c/backendServices/foo",
 			"",
 		},
 	}
 
 	for _, tc := range testCases {
-		res := BackendServiceComparablePath(tc.url)
-		if res != tc.expected {
-			t.Errorf("Expected result after url trim to be %v, but got %v", tc.expected, res)
+		res, _ := ResourcePath(tc.url)
+		if res != tc.want {
+			t.Errorf("ResourcePath(%q) = %q, want %q", tc.url, res, tc.want)
 		}
 	}
 }
@@ -152,6 +152,120 @@ func TestToNamespacedName(t *testing.T) {
 
 			if gotOut != tc.wantOut {
 				t.Errorf("ToNamespacedName(%v) = %v, want %v", tc.input, gotOut, tc.wantOut)
+			}
+		})
+	}
+}
+
+func TestEqualResourcePaths(t *testing.T) {
+	testCases := map[string]struct {
+		a    string
+		b    string
+		want bool
+	}{
+		"partial vs full": {
+			a:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
+			b:    "zones/us-central1-a/instanceGroups/example-group",
+			want: true,
+		},
+		"full vs full": {
+			a:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
+			b:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
+			want: true,
+		},
+		"diff projects and versions": {
+			a:    "https://www.googleapis.com/compute/v1/projects/project-A/zones/us-central1-a/instanceGroups/example-group",
+			b:    "https://www.googleapis.com/compute/beta/projects/project-B/zones/us-central1-a/instanceGroups/example-group",
+			want: true,
+		},
+		"diff name": {
+			a:    "https://www.googleapis.com/compute/v1/projects/project-A/zones/us-central1-a/instanceGroups/example-groupA",
+			b:    "https://www.googleapis.com/compute/beta/projects/project-B/zones/us-central1-a/instanceGroups/example-groupB",
+			want: false,
+		},
+		"diff location": {
+			a:    "https://www.googleapis.com/compute/v1/projects/project-A/zones/us-central1-a/instanceGroups/example-group",
+			b:    "https://www.googleapis.com/compute/beta/projects/project-B/zones/us-central1-b/instanceGroups/example-group",
+			want: false,
+		},
+		"diff resource": {
+			a:    "https://www.googleapis.com/compute/v1/projects/project-A/zones/us-central1-a/backendServices/example-group",
+			b:    "https://www.googleapis.com/compute/beta/projects/project-B/zones/us-central1-b/instanceGroups/example-group",
+			want: false,
+		},
+		"bad input a": {
+			a:    "/project-A/zones/us-central1-a/backendServices/example-group",
+			b:    "https://www.googleapis.com/compute/beta/projects/project-B/zones/us-central1-b/instanceGroups/example-group",
+			want: false,
+		},
+		"bad input b": {
+			a:    "https://www.googleapis.com/compute/beta/projects/project-B/zones/us-central1-b/instanceGroups/example-group",
+			b:    "/project-A/zones/us-central1-a/backendServices/example-group",
+			want: false,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			if got := EqualResourcePaths(tc.a, tc.b); got != tc.want {
+				t.Errorf("EqualResourcePathsOfURLs(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestEqualResourceID(t *testing.T) {
+	testCases := map[string]struct {
+		a    string
+		b    string
+		want bool
+	}{
+		"partial vs full": {
+			a:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
+			b:    "projects/project-id/zones/us-central1-a/instanceGroups/example-group",
+			want: true,
+		},
+		"full vs full": {
+			a:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
+			b:    "https://www.googleapis.com/compute/beta/projects/project-id/zones/us-central1-a/instanceGroups/example-group",
+			want: true,
+		},
+		"diff versions": {
+			a:    "https://www.googleapis.com/compute/v1/projects/project-A/zones/us-central1-a/instanceGroups/example-group",
+			b:    "https://www.googleapis.com/compute/beta/projects/project-A/zones/us-central1-a/instanceGroups/example-group",
+			want: true,
+		},
+		"diff name": {
+			a:    "https://www.googleapis.com/compute/v1/projects/project-A/zones/us-central1-a/instanceGroups/example-groupA",
+			b:    "https://www.googleapis.com/compute/beta/projects/project-B/zones/us-central1-a/instanceGroups/example-groupB",
+			want: false,
+		},
+		"diff location": {
+			a:    "https://www.googleapis.com/compute/v1/projects/project-A/zones/us-central1-a/instanceGroups/example-group",
+			b:    "https://www.googleapis.com/compute/beta/projects/project-B/zones/us-central1-b/instanceGroups/example-group",
+			want: false,
+		},
+		"diff resource": {
+			a:    "https://www.googleapis.com/compute/v1/projects/project-A/zones/us-central1-a/backendServices/example-group",
+			b:    "https://www.googleapis.com/compute/beta/projects/project-B/zones/us-central1-b/instanceGroups/example-group",
+			want: false,
+		},
+		"bad input a": {
+			a:    "/project-A/zones/us-central1-a/backendServices/example-group",
+			b:    "https://www.googleapis.com/compute/beta/projects/project-B/zones/us-central1-b/instanceGroups/example-group",
+			want: false,
+		},
+		"bad input b": {
+			a:    "https://www.googleapis.com/compute/beta/projects/project-B/zones/us-central1-b/instanceGroups/example-group",
+			b:    "/project-A/zones/us-central1-a/backendServices/example-group",
+			want: false,
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			if got := EqualResourceID(tc.a, tc.b); got != tc.want {
+				t.Errorf("EqualResourcePathsOfURLs(%q, %q) = %v, want %v", tc.a, tc.b, got, tc.want)
 			}
 		})
 	}

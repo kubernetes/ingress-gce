@@ -23,6 +23,8 @@ import (
 
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
 const (
@@ -82,10 +84,10 @@ func NewFakeNetworkEndpointGroupCloud(subnetwork, network string) networkEndpoin
 
 var NotFoundError = fmt.Errorf("Not Found")
 
-func (cloud *FakeNetworkEndpointGroupCloud) GetNetworkEndpointGroup(name string, zone string) (*computealpha.NetworkEndpointGroup, error) {
-	cloud.mu.Lock()
-	defer cloud.mu.Unlock()
-	negs, ok := cloud.NetworkEndpointGroups[zone]
+func (f *FakeNetworkEndpointGroupCloud) GetNetworkEndpointGroup(name string, zone string) (*computealpha.NetworkEndpointGroup, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	negs, ok := f.NetworkEndpointGroups[zone]
 	if ok {
 		for _, neg := range negs {
 			if neg.Name == name {
@@ -100,35 +102,35 @@ func networkEndpointKey(name, zone string) string {
 	return fmt.Sprintf("%s-%s", zone, name)
 }
 
-func (cloud *FakeNetworkEndpointGroupCloud) ListNetworkEndpointGroup(zone string) ([]*computealpha.NetworkEndpointGroup, error) {
-	cloud.mu.Lock()
-	defer cloud.mu.Unlock()
-	return cloud.NetworkEndpointGroups[zone], nil
+func (f *FakeNetworkEndpointGroupCloud) ListNetworkEndpointGroup(zone string) ([]*computealpha.NetworkEndpointGroup, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.NetworkEndpointGroups[zone], nil
 }
 
-func (cloud *FakeNetworkEndpointGroupCloud) AggregatedListNetworkEndpointGroup() (map[string][]*computealpha.NetworkEndpointGroup, error) {
-	cloud.mu.Lock()
-	defer cloud.mu.Unlock()
-	return cloud.NetworkEndpointGroups, nil
+func (f *FakeNetworkEndpointGroupCloud) AggregatedListNetworkEndpointGroup() (map[string][]*computealpha.NetworkEndpointGroup, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.NetworkEndpointGroups, nil
 }
 
-func (cloud *FakeNetworkEndpointGroupCloud) CreateNetworkEndpointGroup(neg *computealpha.NetworkEndpointGroup, zone string) error {
-	cloud.mu.Lock()
-	defer cloud.mu.Unlock()
-	neg.SelfLink = fmt.Sprintf("https://fake.google.com/compute/%s/NetworkEndpointGroup/%s", zone, neg.Name)
-	if _, ok := cloud.NetworkEndpointGroups[zone]; !ok {
-		cloud.NetworkEndpointGroups[zone] = []*computealpha.NetworkEndpointGroup{}
+func (f *FakeNetworkEndpointGroupCloud) CreateNetworkEndpointGroup(neg *computealpha.NetworkEndpointGroup, zone string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	neg.SelfLink = cloud.NewNetworkEndpointGroupsResourceID("mock-project", zone, neg.Name).SelfLink(meta.VersionAlpha)
+	if _, ok := f.NetworkEndpointGroups[zone]; !ok {
+		f.NetworkEndpointGroups[zone] = []*computealpha.NetworkEndpointGroup{}
 	}
-	cloud.NetworkEndpointGroups[zone] = append(cloud.NetworkEndpointGroups[zone], neg)
-	cloud.NetworkEndpoints[networkEndpointKey(neg.Name, zone)] = []*computealpha.NetworkEndpoint{}
+	f.NetworkEndpointGroups[zone] = append(f.NetworkEndpointGroups[zone], neg)
+	f.NetworkEndpoints[networkEndpointKey(neg.Name, zone)] = []*computealpha.NetworkEndpoint{}
 	return nil
 }
 
-func (cloud *FakeNetworkEndpointGroupCloud) DeleteNetworkEndpointGroup(name string, zone string) error {
-	cloud.mu.Lock()
-	defer cloud.mu.Unlock()
-	delete(cloud.NetworkEndpoints, networkEndpointKey(name, zone))
-	negs := cloud.NetworkEndpointGroups[zone]
+func (f *FakeNetworkEndpointGroupCloud) DeleteNetworkEndpointGroup(name string, zone string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.NetworkEndpoints, networkEndpointKey(name, zone))
+	negs := f.NetworkEndpointGroups[zone]
 	newList := []*computealpha.NetworkEndpointGroup{}
 	found := false
 	for _, neg := range negs {
@@ -141,22 +143,22 @@ func (cloud *FakeNetworkEndpointGroupCloud) DeleteNetworkEndpointGroup(name stri
 	if !found {
 		return NotFoundError
 	}
-	cloud.NetworkEndpointGroups[zone] = newList
+	f.NetworkEndpointGroups[zone] = newList
 	return nil
 }
 
-func (cloud *FakeNetworkEndpointGroupCloud) AttachNetworkEndpoints(name, zone string, endpoints []*computealpha.NetworkEndpoint) error {
-	cloud.mu.Lock()
-	defer cloud.mu.Unlock()
-	cloud.NetworkEndpoints[networkEndpointKey(name, zone)] = append(cloud.NetworkEndpoints[networkEndpointKey(name, zone)], endpoints...)
+func (f *FakeNetworkEndpointGroupCloud) AttachNetworkEndpoints(name, zone string, endpoints []*computealpha.NetworkEndpoint) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.NetworkEndpoints[networkEndpointKey(name, zone)] = append(f.NetworkEndpoints[networkEndpointKey(name, zone)], endpoints...)
 	return nil
 }
 
-func (cloud *FakeNetworkEndpointGroupCloud) DetachNetworkEndpoints(name, zone string, endpoints []*computealpha.NetworkEndpoint) error {
-	cloud.mu.Lock()
-	defer cloud.mu.Unlock()
+func (f *FakeNetworkEndpointGroupCloud) DetachNetworkEndpoints(name, zone string, endpoints []*computealpha.NetworkEndpoint) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	newList := []*computealpha.NetworkEndpoint{}
-	for _, ne := range cloud.NetworkEndpoints[networkEndpointKey(name, zone)] {
+	for _, ne := range f.NetworkEndpoints[networkEndpointKey(name, zone)] {
 		found := false
 		for _, remove := range endpoints {
 			if reflect.DeepEqual(*ne, *remove) {
@@ -169,15 +171,15 @@ func (cloud *FakeNetworkEndpointGroupCloud) DetachNetworkEndpoints(name, zone st
 		}
 		newList = append(newList, ne)
 	}
-	cloud.NetworkEndpoints[networkEndpointKey(name, zone)] = newList
+	f.NetworkEndpoints[networkEndpointKey(name, zone)] = newList
 	return nil
 }
 
-func (cloud *FakeNetworkEndpointGroupCloud) ListNetworkEndpoints(name, zone string, showHealthStatus bool) ([]*computealpha.NetworkEndpointWithHealthStatus, error) {
-	cloud.mu.Lock()
-	defer cloud.mu.Unlock()
+func (f *FakeNetworkEndpointGroupCloud) ListNetworkEndpoints(name, zone string, showHealthStatus bool) ([]*computealpha.NetworkEndpointWithHealthStatus, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	ret := []*computealpha.NetworkEndpointWithHealthStatus{}
-	nes, ok := cloud.NetworkEndpoints[networkEndpointKey(name, zone)]
+	nes, ok := f.NetworkEndpoints[networkEndpointKey(name, zone)]
 	if !ok {
 		return nil, NotFoundError
 	}
@@ -187,10 +189,10 @@ func (cloud *FakeNetworkEndpointGroupCloud) ListNetworkEndpoints(name, zone stri
 	return ret, nil
 }
 
-func (cloud *FakeNetworkEndpointGroupCloud) NetworkURL() string {
-	return cloud.Network
+func (f *FakeNetworkEndpointGroupCloud) NetworkURL() string {
+	return f.Network
 }
 
-func (cloud *FakeNetworkEndpointGroupCloud) SubnetworkURL() string {
-	return cloud.Subnetwork
+func (f *FakeNetworkEndpointGroupCloud) SubnetworkURL() string {
+	return f.Subnetwork
 }

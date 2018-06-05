@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
@@ -252,8 +253,8 @@ func (s *syncer) ensureNetworkEndpointGroups() error {
 		needToCreate := false
 		if neg == nil {
 			needToCreate = true
-		} else if retrieveName(neg.LoadBalancer.Network) != retrieveName(s.cloud.NetworkURL()) ||
-			retrieveName(neg.LoadBalancer.Subnetwork) != retrieveName(s.cloud.SubnetworkURL()) {
+		} else if !utils.EqualResourceID(neg.LoadBalancer.Network, s.cloud.NetworkURL()) ||
+			!utils.EqualResourceID(neg.LoadBalancer.Subnetwork, s.cloud.SubnetworkURL()) {
 			// Only compare network and subnetwork names to avoid api endpoint differences that cause deleting NEG accidentally.
 			// TODO: change to compare network/subnetwork url instead of name when NEG API reach GA.
 			needToCreate = true
@@ -506,11 +507,6 @@ func calculateDifference(targetMap, currentMap map[string]sets.String) (map[stri
 		}
 	}
 	return addSet, removeSet
-}
-
-func retrieveName(url string) string {
-	strs := strings.Split(url, "/")
-	return strs[len(strs)-1]
 }
 
 // getService retrieves service object from serviceLister based on the input namespace and name
