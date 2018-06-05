@@ -74,7 +74,7 @@ ifeq ($(VERBOSE), 1)
 	VERBOSE_OUTPUT := >&1
 else
 	DOCKER_BUILD_FLAGS := -q
-	VERBOSE_OUTPUT := >/dev/null
+	VERBOSE_OUTPUT := >/dev/null 2>/dev/null
 endif
 
 # This MUST appear as the first rule in a Makefile
@@ -106,7 +106,7 @@ build: $(GO_BINARIES) images-build
 # Rule for all bin/$(ARCH)/bin/$(BINARY)
 $(GO_BINARIES): build-dirs
 	@echo "building : $@"
-	@docker pull $(BUILD_IMAGE)
+	@docker pull $(BUILD_IMAGE) $(VERBOSE_OUTPUT)
 	@docker run                                                            \
 	    --rm                                                               \
 	    --sig-proxy=true                                                   \
@@ -122,10 +122,10 @@ $(GO_BINARIES): build-dirs
 	        ARCH=$(ARCH)                                                   \
 	        VERSION=$(VERSION)                                             \
 	        PKG=$(PKG)                                                     \
-		GIT_COMMIT=$(GIT_COMMIT)                                       \
+			TARGET=$@                                                      \
+		GIT_COMMIT=$(GIT_COMMIT)                                           \
 	        ./build/build.sh                                               \
 	    "
-
 
 # Rules for dockerfiles.
 define DOCKERFILE_RULE
