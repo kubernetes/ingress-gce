@@ -1,0 +1,71 @@
+/*
+Copyright 2018 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package fuzz
+
+import (
+	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	bcclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
+)
+
+type ClientsetValidatorEnv struct {
+	ns  string
+	k8s *kubernetes.Clientset
+	bc  *bcclient.Clientset
+}
+
+func (e *ClientsetValidatorEnv) BackendConfigs() (map[string]*backendconfig.BackendConfig, error) {
+	bcl, err := e.bc.CloudV1beta1().BackendConfigs(e.ns).List(metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	ret := map[string]*backendconfig.BackendConfig{}
+	for _, bc := range bcl.Items {
+		ret[bc.Name] = bc.DeepCopy()
+	}
+	return ret, nil
+
+}
+
+func (e *ClientsetValidatorEnv) Services() (map[string]*v1.Service, error) {
+	sl, err := e.k8s.Core().Services(e.ns).List(metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	ret := map[string]*v1.Service{}
+	for _, s := range sl.Items {
+		ret[s.Name] = s.DeepCopy()
+	}
+	return ret, nil
+}
+
+func NewClientsetValidatorEnv(config *rest.Config, ns string) (ValidatorEnv, error) {
+	ret := &ClientsetValidatorEnv{ns: ns}
+	var err error
+	ret.k8s, err = kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	ret.bc, err = bcclient.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
