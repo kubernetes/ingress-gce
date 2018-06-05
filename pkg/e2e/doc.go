@@ -16,4 +16,21 @@ limitations under the License.
 
 // Package e2e contains supporting infrastructure for end-to-end integration
 // testing driven by the tests in cmd/e2e-test.
+//
+// Test should be written with a Sandbox:
+//   func TestExample(t *testing.T) {
+//     for _, tc := range []struct{
+//       ...
+//     }{
+//       ...
+//     }{
+//       tc := tc // avoid variable capture
+//       Framework.RunWithSandbox(t, func(t *testing.T, s *e2e.Sandbox) {
+//         t.Parallel()
+//         // Test code...
+//       })
+//     }
+//   }
+//
+// The Sandbox will handle resource isolation and reclaimation.
 package e2e

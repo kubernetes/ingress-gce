@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/golang/glog"
 	"k8s.io/client-go/rest"
@@ -34,8 +35,13 @@ import (
 
 var (
 	flags struct {
-		inCluster  bool
-		kubeconfig string
+		run              bool
+		inCluster        bool
+		kubeconfig       string
+		project          string
+		seed             int64
+		destroySandboxes bool
+		handleSIGINT     bool
 	}
 
 	Framework *e2e.Framework
@@ -48,7 +54,13 @@ func init() {
 	} else {
 		flag.StringVar(&flags.kubeconfig, "kubeconfig", "", "absolute path to the kubeconfig file")
 	}
+	flag.BoolVar(&flags.run, "run", false, "set to true to run tests (suppresses test suite from 'go test ./...')")
 	flag.BoolVar(&flags.inCluster, "inCluster", false, "set to true if running in the cluster")
+	flag.StringVar(&flags.project, "project", "", "GCP project")
+	flag.Int64Var(&flags.seed, "seed", -1, "random seed")
+	flag.BoolVar(&flags.destroySandboxes, "destroySandboxes", true, "set to false to leave sandboxed resources for debugging")
+	flag.BoolVar(&flags.handleSIGINT, "handleSIGINT", true, "catch SIGINT to perform clean")
+
 }
 
 // TestMain is the entrypoint for the end-to-end test suite. This is where
@@ -56,13 +68,17 @@ func init() {
 func TestMain(m *testing.M) {
 	flag.Parse()
 
-	if os.Getenv("RUN_INGRESS_E2E") != "true" {
-		fmt.Fprintln(os.Stderr, "You must set the RUN_INGRESS_E2E environment variable to 'true' run the tests.")
-		return
+	if !flags.inCluster && !flags.run {
+		fmt.Fprintln(os.Stderr, "Set -run to run the tests.")
+		// Return 0 here so 'go test ./...' will succeed.
+		os.Exit(0)
+	}
+	if flags.project == "" {
+		fmt.Fprintln(os.Stderr, "-project must be set to the Google Cloud test project")
+		os.Exit(1)
 	}
 
-	fmt.Printf("Version: %q\n", version.Version)
-	fmt.Printf("Commit: %q\n", version.GitCommit)
+	fmt.Printf("Version: %q, Commit: %q\n", version.Version, version.GitCommit)
 
 	var err error
 	var kubeconfig *rest.Config
@@ -79,7 +95,19 @@ func TestMain(m *testing.M) {
 		}
 	}
 
-	Framework = e2e.NewFramework(kubeconfig)
+	if flags.seed == -1 {
+		flags.seed = time.Now().UnixNano()
+	}
+	glog.Infof("Using random seed = %d", flags.seed)
+
+	Framework = e2e.NewFramework(kubeconfig, e2e.Options{
+		Project:          flags.project,
+		Seed:             flags.seed,
+		DestroySandboxes: flags.destroySandboxes,
+	})
+	if flags.handleSIGINT {
+		Framework.CatchSIGINT()
+	}
 	if err := Framework.SanityCheck(); err != nil {
 		glog.Fatalf("Framework sanity check failed: %v", err)
 	}

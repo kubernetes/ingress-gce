@@ -15,4 +15,4 @@
 FROM debian:9
 
 ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
-ENTRYPOINT ["/ARG_BIN"]
+ENTRYPOINT ["/ARG_BIN", "-inCluster"]

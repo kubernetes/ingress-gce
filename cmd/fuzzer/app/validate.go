@@ -30,6 +30,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	backendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
+	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	// Pull in the auth library for GCP.
@@ -85,8 +86,12 @@ func Validate() {
 		panic(err.Error())
 	}
 
-	k8s := k8sClientSet(config)
-	env, err := fuzz.NewClientsetValidatorEnv(config, validateOptions.ns)
+	gce, err := e2e.NewCloud("bowei-gke")
+	if err != nil {
+		panic(err)
+	}
+
+	env, err := fuzz.NewDefaultValidatorEnv(config, validateOptions.ns, gce)
 
 	if err != nil {
 		panic(err)
@@ -109,6 +114,7 @@ func Validate() {
 	}
 	fmt.Printf("Features = %v\n\n", fsNames)
 
+	k8s := k8sClientSet(config)
 	ing, err := k8s.Extensions().Ingresses(validateOptions.ns).Get(validateOptions.name, metav1.GetOptions{})
 	if err != nil {
 		panic(err)
@@ -127,6 +133,13 @@ func Validate() {
 	if result.Err != nil {
 		os.Exit(1)
 	}
+
+	vip := ing.Status.LoadBalancer.Ingress[0].IP
+	gclb, err := fuzz.GCLBForVIP(context.Background(), gce, vip, []fuzz.FeatureValidator{})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("GCP resources = \n%s\n", pretty.Sprint(gclb))
 }
 
 func homeDir() string {
