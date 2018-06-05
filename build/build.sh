@@ -42,7 +42,11 @@ if [ $GOARCH == "amd64" ]; then
     export GOBIN="$GOPATH/bin/linux_amd64"
 fi
 
-go install                                                                                             \
-    -installsuffix "static"                                                                            \
-    -ldflags "-X ${PKG}/pkg/version.Version=${VERSION} -X ${PKG}/pkg/version.GitCommit=${GIT_COMMIT}"  \
-    ./...
+if echo "${TARGET}" | grep '.*-test$'; then
+  go test -c -o "${TARGET}" "$PKG/cmd/$(basename ${TARGET})"
+else
+  go install                                                                                             \
+      -installsuffix "static"                                                                            \
+      -ldflags "-X ${PKG}/pkg/version.Version=${VERSION} -X ${PKG}/pkg/version.GitCommit=${GIT_COMMIT}"  \
+      ./...
+fi

@@ -21,7 +21,7 @@ PKG := k8s.io/ingress-gce
 
 # List of binaries to build. You must have a matching Dockerfile.BINARY
 # for each BINARY.
-CONTAINER_BINARIES := glbc
+CONTAINER_BINARIES := glbc e2e-test
 
 # Latest commit hash for current branch.
 GIT_COMMIT := $(shell git rev-parse HEAD)
