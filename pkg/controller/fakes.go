@@ -17,10 +17,10 @@ limitations under the License.
 package controller
 
 import (
-	computealpha "google.golang.org/api/compute/v0.alpha"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -47,7 +47,7 @@ var (
 type fakeClusterManager struct {
 	*ClusterManager
 	fakeLbs      *loadbalancers.FakeLoadBalancers
-	fakeBackends *backends.FakeBackendServices
+	fakeBackends *gce.GCECloud
 	fakeIGs      *instances.FakeInstanceGroups
 	Namer        *utils.Namer
 }
@@ -56,7 +56,7 @@ type fakeClusterManager struct {
 func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager {
 	namer := utils.NewNamer(clusterName, firewallName)
 	fakeLbs := loadbalancers.NewFakeLoadBalancers(clusterName, namer)
-	fakeBackends := backends.NewFakeBackendServices(func(op int, be *computealpha.BackendService) error { return nil })
+	fakeBackends := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
 	fakeHCP := healthchecks.NewFakeHealthCheckProvider()
 	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")

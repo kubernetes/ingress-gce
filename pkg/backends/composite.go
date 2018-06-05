@@ -25,12 +25,13 @@ import (
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
 // TODO(rramkumar): All code in this file should ideally be generated.
 
-func createBackendService(be *BackendService, cloud BackendServices) error {
+func createBackendService(be *BackendService, cloud *gce.GCECloud) error {
 	if be.Version == meta.VersionAlpha {
 		alpha, err := be.toAlpha()
 		if err != nil {
@@ -47,7 +48,7 @@ func createBackendService(be *BackendService, cloud BackendServices) error {
 	return cloud.CreateGlobalBackendService(ga)
 }
 
-func updateBackendService(be *BackendService, cloud BackendServices) error {
+func updateBackendService(be *BackendService, cloud *gce.GCECloud) error {
 	if be.Version == meta.VersionAlpha {
 		alpha, err := be.toAlpha()
 		if err != nil {
@@ -64,7 +65,7 @@ func updateBackendService(be *BackendService, cloud BackendServices) error {
 	return cloud.UpdateGlobalBackendService(ga)
 }
 
-func getBackendService(name string, version meta.Version, cloud BackendServices) (*BackendService, error) {
+func getBackendService(name string, version meta.Version, cloud *gce.GCECloud) (*BackendService, error) {
 	var gceObj interface{}
 	var err error
 	if version == meta.VersionAlpha {
