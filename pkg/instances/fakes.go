@@ -22,6 +22,8 @@ import (
 
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -81,7 +83,7 @@ func (f *FakeInstanceGroups) GetInstanceGroup(name, zone string) (*compute.Insta
 
 // CreateInstanceGroup fakes instance group creation.
 func (f *FakeInstanceGroups) CreateInstanceGroup(ig *compute.InstanceGroup, zone string) error {
-	ig.SelfLink = fmt.Sprintf("/zones/%s/instanceGroups/%s", zone, ig.Name)
+	ig.SelfLink = cloud.NewInstanceGroupsResourceID("mock-project", zone, ig.Name).SelfLink(meta.VersionGA)
 	ig.Zone = zone
 	f.instanceGroups = append(f.instanceGroups, ig)
 	return nil
