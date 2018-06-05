@@ -548,11 +548,10 @@ func verifyProxyCertsInOrder(hostname string, f *FakeLoadBalancers, t *testing.T
 	count := 0
 	tmp := ""
 
-	for _, link := range tps.SslCertificates {
-		certName, _ := utils.KeyName(link)
-		cert, err := f.GetSslCertificate(certName)
+	for _, linkName := range tps.SslCertificates {
+		cert, err := f.GetSslCertificate(getResourceNameFromLink(linkName))
 		if err != nil {
-			t.Fatalf("Failed to fetch certificate from link %s - %v", link, err)
+			t.Fatalf("Failed to fetch certificate from link %s - %v", linkName, err)
 		}
 		if strings.HasSuffix(cert.Certificate, hostname) {
 			// cert contents will be of the form "cert-<number> <hostname>", we want the certs with the smaller number
@@ -603,9 +602,8 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	if len(tps.SslCertificates) != len(expectCertsProxy) {
 		t.Fatalf("Expected https proxy to have %d certs, actual %d", len(expectCertsProxy), len(tps.SslCertificates))
 	}
-	for _, link := range tps.SslCertificates {
-		certName, _ := utils.KeyName(link)
-		if _, ok := expectCerts[certName]; !ok {
+	for _, linkName := range tps.SslCertificates {
+		if _, ok := expectCerts[getResourceNameFromLink(linkName)]; !ok {
 			t.Fatalf("unexpected ssl certificate linked in target proxy; Expected : %v; Target Proxy Certs: %v",
 				expectCertsProxy, tps.SslCertificates)
 		}

@@ -23,8 +23,6 @@ import (
 
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -136,7 +134,7 @@ func (f *FakeLoadBalancers) CreateGlobalForwardingRule(rule *compute.ForwardingR
 	if rule.IPAddress == "" {
 		rule.IPAddress = fmt.Sprintf(testIPManager.ip())
 	}
-	rule.SelfLink = cloud.NewGlobalForwardingRulesResourceID("mock-project", rule.Name).SelfLink(meta.VersionGA)
+	rule.SelfLink = rule.Name
 	f.Fw = append(f.Fw, rule)
 	return nil
 }
@@ -198,7 +196,7 @@ func (f *FakeLoadBalancers) GetUrlMap(name string) (*compute.UrlMap, error) {
 func (f *FakeLoadBalancers) CreateUrlMap(urlMap *compute.UrlMap) error {
 	glog.V(4).Infof("CreateUrlMap %+v", urlMap)
 	f.calls = append(f.calls, "CreateUrlMap")
-	urlMap.SelfLink = cloud.NewUrlMapsResourceID("mock-project", urlMap.Name).SelfLink(meta.VersionGA)
+	urlMap.SelfLink = urlMap.Name
 	f.Um = append(f.Um, urlMap)
 	return nil
 }
@@ -254,7 +252,7 @@ func (f *FakeLoadBalancers) GetTargetHttpProxy(name string) (*compute.TargetHttp
 // CreateTargetHttpProxy fakes creating a target http proxy.
 func (f *FakeLoadBalancers) CreateTargetHttpProxy(proxy *compute.TargetHttpProxy) error {
 	f.calls = append(f.calls, "CreateTargetHttpProxy")
-	proxy.SelfLink = cloud.NewTargetHttpProxiesResourceID("mock-project", proxy.Name).SelfLink(meta.VersionGA)
+	proxy.SelfLink = proxy.Name
 	f.Tp = append(f.Tp, proxy)
 	return nil
 }
@@ -303,7 +301,7 @@ func (f *FakeLoadBalancers) GetTargetHttpsProxy(name string) (*compute.TargetHtt
 // CreateTargetHttpsProxy fakes creating a target http proxy.
 func (f *FakeLoadBalancers) CreateTargetHttpsProxy(proxy *compute.TargetHttpsProxy) error {
 	f.calls = append(f.calls, "CreateTargetHttpsProxy")
-	proxy.SelfLink = cloud.NewTargetHttpProxiesResourceID("mock-project", proxy.Name).SelfLink(meta.VersionGA)
+	proxy.SelfLink = proxy.Name
 	f.Tps = append(f.Tps, proxy)
 	return nil
 }
@@ -461,7 +459,7 @@ func (f *FakeLoadBalancers) ListSslCertificates() ([]*compute.SslCertificate, er
 // CreateSslCertificate fakes out certificate creation.
 func (f *FakeLoadBalancers) CreateSslCertificate(cert *compute.SslCertificate) (*compute.SslCertificate, error) {
 	f.calls = append(f.calls, "CreateSslCertificate")
-	cert.SelfLink = cloud.NewSslCertificatesResourceID("mock-project", cert.Name).SelfLink(meta.VersionGA)
+	cert.SelfLink = cert.Name
 	if len(f.Certs) == TargetProxyCertLimit {
 		// Simulate cert creation failure
 		return nil, fmt.Errorf("Unable to create cert, Exceeded cert limit of %d.", TargetProxyCertLimit)

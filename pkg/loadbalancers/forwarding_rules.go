@@ -18,6 +18,7 @@ package loadbalancers
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
@@ -69,7 +70,8 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 		fw = nil
 	}
 	if fw == nil {
-		glog.V(3).Infof("Creating forwarding rule for proxy %q and ip %v:%v", proxyLink, ip, portRange)
+		parts := strings.Split(proxyLink, "/")
+		glog.V(3).Infof("Creating forwarding rule for proxy %v and ip %v:%v", parts[len(parts)-1:], ip, portRange)
 		rule := &compute.ForwardingRule{
 			Name:       name,
 			IPAddress:  ip,
@@ -86,7 +88,7 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 		}
 	}
 	// TODO: If the port range and protocol don't match, recreate the rule
-	if utils.EqualResourceID(fw.Target, proxyLink) {
+	if utils.CompareLinks(fw.Target, proxyLink) {
 		glog.V(4).Infof("Forwarding rule %v already exists", fw.Name)
 	} else {
 		glog.V(3).Infof("Forwarding rule %v has the wrong proxy, setting %v overwriting %v",

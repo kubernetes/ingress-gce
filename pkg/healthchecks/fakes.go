@@ -21,8 +21,6 @@ import (
 	compute "google.golang.org/api/compute/v1"
 
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
 // NewFakeHealthCheckProvider returns a new FakeHealthChecks.
@@ -42,7 +40,7 @@ type FakeHealthCheckProvider struct {
 // CreateHttpHealthCheck fakes out http health check creation.
 func (f *FakeHealthCheckProvider) CreateHttpHealthCheck(hc *compute.HttpHealthCheck) error {
 	v := *hc
-	v.SelfLink = cloud.NewHttpHealthChecksResourceID("mock-project", hc.Name).SelfLink(meta.VersionGA)
+	v.SelfLink = "https://fake.google.com/compute/httpHealthChecks/" + hc.Name
 	f.http[hc.Name] = v
 	return nil
 }
@@ -79,8 +77,8 @@ func (f *FakeHealthCheckProvider) UpdateHttpHealthCheck(hc *compute.HttpHealthCh
 // CreateHealthCheck fakes out http health check creation.
 func (f *FakeHealthCheckProvider) CreateHealthCheck(hc *compute.HealthCheck) error {
 	v := *hc
-	v.SelfLink = cloud.NewHealthChecksResourceID("mock-project", hc.Name).SelfLink(meta.VersionGA)
-	alphaHC, _ := toAlphaHealthCheck(&v)
+	v.SelfLink = "https://fake.google.com/compute/healthChecks/" + hc.Name
+	alphaHC, _ := toAlphaHealthCheck(hc)
 	f.generic[hc.Name] = *alphaHC
 	return nil
 }
@@ -88,8 +86,8 @@ func (f *FakeHealthCheckProvider) CreateHealthCheck(hc *compute.HealthCheck) err
 // CreateHealthCheck fakes out http health check creation.
 func (f *FakeHealthCheckProvider) CreateAlphaHealthCheck(hc *computealpha.HealthCheck) error {
 	v := *hc
-	v.SelfLink = cloud.NewHealthChecksResourceID("mock-project", hc.Name).SelfLink(meta.VersionAlpha)
-	f.generic[hc.Name] = v
+	v.SelfLink = "https://fake.google.com/compute/healthChecks/" + hc.Name
+	f.generic[hc.Name] = *hc
 	return nil
 }
 
