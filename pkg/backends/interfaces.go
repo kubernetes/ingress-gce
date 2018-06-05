@@ -18,7 +18,6 @@ package backends
 
 import (
 	computealpha "google.golang.org/api/compute/v0.alpha"
-	compute "google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
@@ -41,19 +40,6 @@ type BackendPool interface {
 	Status(name string) string
 	List() ([]interface{}, error)
 	Link(port utils.ServicePort, zones []string) error
-}
-
-// BackendServices is an interface for managing gce backend services.
-type BackendServices interface {
-	GetGlobalBackendService(name string) (*compute.BackendService, error)
-	GetAlphaGlobalBackendService(name string) (*computealpha.BackendService, error)
-	UpdateGlobalBackendService(bg *compute.BackendService) error
-	UpdateAlphaGlobalBackendService(bg *computealpha.BackendService) error
-	CreateGlobalBackendService(bg *compute.BackendService) error
-	CreateAlphaGlobalBackendService(bg *computealpha.BackendService) error
-	DeleteGlobalBackendService(name string) error
-	ListGlobalBackendServices() ([]*compute.BackendService, error)
-	GetGlobalBackendServiceHealth(name, instanceGroupLink string) (*compute.BackendServiceGroupHealth, error)
 }
 
 // NEGGetter is an interface to retrieve NEG object

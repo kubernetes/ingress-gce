@@ -29,6 +29,7 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 
 	"k8s.io/ingress-gce/pkg/healthchecks"
@@ -74,7 +75,7 @@ const maxRPS = 1
 
 // Backends implements BackendPool.
 type Backends struct {
-	cloud         BackendServices
+	cloud         *gce.GCECloud
 	negGetter     NEGGetter
 	nodePool      instances.NodePool
 	healthChecker healthchecks.HealthChecker
@@ -94,7 +95,7 @@ var _ BackendPool = (*Backends)(nil)
 // - ignorePorts: is a set of ports to avoid syncing/GCing.
 // - resyncWithCloud: if true, periodically syncs with cloud resources.
 func NewBackendPool(
-	cloud BackendServices,
+	cloud *gce.GCECloud,
 	negGetter NEGGetter,
 	healthChecker healthchecks.HealthChecker,
 	nodePool instances.NodePool,

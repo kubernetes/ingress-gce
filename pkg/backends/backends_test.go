@@ -17,6 +17,7 @@ limitations under the License.
 package backends
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -30,6 +31,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/mock"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/healthchecks"
@@ -56,32 +61,29 @@ var (
 			},
 		},
 	}
-	noOpErrFunc  = func(op int, be *computealpha.BackendService) error { return nil }
-	alphaErrFunc = func(op int, be *computealpha.BackendService) error {
-		if be.Protocol == string(annotations.ProtocolHTTP2) {
-			return utils.FakeGoogleAPIForbiddenErr()
-		}
-		return nil
-	}
 )
 
-func newTestJig(f BackendServices, fakeIGs instances.InstanceGroups, syncWithCloud bool) (*Backends, healthchecks.HealthCheckProvider) {
+func newTestJig(gce *gce.GCECloud, fakeIGs instances.InstanceGroups, syncWithCloud bool) (*Backends, healthchecks.HealthCheckProvider) {
 	negGetter := neg.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	nodePool := instances.NewNodePool(fakeIGs, defaultNamer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	healthCheckProvider := healthchecks.NewFakeHealthCheckProvider()
 	healthChecks := healthchecks.NewHealthChecker(healthCheckProvider, "/", "/healthz", defaultNamer, defaultBackendSvc)
-	bp := NewBackendPool(f, negGetter, healthChecks, nodePool, defaultNamer, syncWithCloud)
+	bp := NewBackendPool(gce, negGetter, healthChecks, nodePool, defaultNamer, syncWithCloud)
 	probes := map[utils.ServicePort]*api_v1.Probe{{NodePort: 443, Protocol: annotations.ProtocolHTTPS}: existingProbe}
 	bp.Init(NewFakeProbeProvider(probes))
+
+	// Add standard hooks for mocking update calls. Each test can set a different update hook if it chooses to.
+	(gce.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceHook
+	(gce.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = mock.UpdateBackendServiceHook
 
 	return bp, healthCheckProvider
 }
 
 func TestBackendPoolAdd(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, false)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
 
 	testCases := []utils.ServicePort{
 		{NodePort: 80, Protocol: annotations.ProtocolHTTP},
@@ -106,7 +108,7 @@ func TestBackendPoolAdd(t *testing.T) {
 			beName := sp.BackendName(defaultNamer)
 
 			// Check that the new backend has the right port
-			be, err := f.GetGlobalBackendService(beName)
+			be, err := fakeGCE.GetGlobalBackendService(beName)
 			if err != nil {
 				t.Fatalf("Did not find expected backend %v", beName)
 			}
@@ -148,11 +150,14 @@ func TestBackendPoolAdd(t *testing.T) {
 }
 
 func TestBackendPoolAddWithoutWhitelist(t *testing.T) {
-	f := NewFakeBackendServices(alphaErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, false)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
 
 	sp := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP2}
+
+	// Add hook to simulate the forbidden error (i.e no alpha whitelist).
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.InsertHook = mock.InsertAlphaBackendServiceUnauthorizedErrHook
 
 	err := pool.Ensure([]utils.ServicePort{sp}, nil)
 	if !utils.IsHTTPErrorCode(err, http.StatusForbidden) {
@@ -161,9 +166,9 @@ func TestBackendPoolAddWithoutWhitelist(t *testing.T) {
 }
 
 func TestHealthCheckMigration(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, hcp := newTestJig(f, fakeIGs, false)
+	pool, hcp := newTestJig(fakeGCE, fakeIGs, false)
 
 	p := utils.ServicePort{NodePort: 7000, Protocol: annotations.ProtocolHTTP}
 	beName := p.BackendName(defaultNamer)
@@ -188,7 +193,7 @@ func TestHealthCheckMigration(t *testing.T) {
 	}
 
 	// Create backend service with expected name and link to legacy health check
-	f.CreateGlobalBackendService(&compute.BackendService{
+	fakeGCE.CreateGlobalBackendService(&compute.BackendService{
 		Name:         beName,
 		HealthChecks: []string{legacyHC.SelfLink},
 	})
@@ -213,15 +218,15 @@ func TestHealthCheckMigration(t *testing.T) {
 }
 
 func TestBackendPoolUpdateHTTPS(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, false)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
 
 	p := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
 	pool.Ensure([]utils.ServicePort{p}, nil)
 	beName := p.BackendName(defaultNamer)
 
-	be, err := f.GetGlobalBackendService(beName)
+	be, err := fakeGCE.GetGlobalBackendService(beName)
 	if err != nil {
 		t.Fatalf("Unexpected err: %v", err)
 	}
@@ -240,7 +245,7 @@ func TestBackendPoolUpdateHTTPS(t *testing.T) {
 	p.Protocol = annotations.ProtocolHTTPS
 	pool.Ensure([]utils.ServicePort{p}, nil)
 
-	be, err = f.GetGlobalBackendService(beName)
+	be, err = fakeGCE.GetGlobalBackendService(beName)
 	if err != nil {
 		t.Fatalf("Unexpected err retrieving backend service after update: %v", err)
 	}
@@ -258,15 +263,15 @@ func TestBackendPoolUpdateHTTPS(t *testing.T) {
 }
 
 func TestBackendPoolUpdateHTTP2(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, false)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
 
 	p := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
 	pool.Ensure([]utils.ServicePort{p}, nil)
 	beName := p.BackendName(defaultNamer)
 
-	be, err := f.GetGlobalBackendService(beName)
+	be, err := fakeGCE.GetGlobalBackendService(beName)
 	if err != nil {
 		t.Fatalf("Unexpected err: %v", err)
 	}
@@ -285,7 +290,7 @@ func TestBackendPoolUpdateHTTP2(t *testing.T) {
 	p.Protocol = annotations.ProtocolHTTP2
 	pool.Ensure([]utils.ServicePort{p}, nil)
 
-	beAlpha, err := f.GetAlphaGlobalBackendService(beName)
+	beAlpha, err := fakeGCE.GetAlphaGlobalBackendService(beName)
 	if err != nil {
 		t.Fatalf("Unexpected err retrieving backend service after update: %v", err)
 	}
@@ -303,15 +308,15 @@ func TestBackendPoolUpdateHTTP2(t *testing.T) {
 }
 
 func TestBackendPoolUpdateHTTP2WithoutWhitelist(t *testing.T) {
-	f := NewFakeBackendServices(alphaErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, false)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
 
 	p := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
 	pool.Ensure([]utils.ServicePort{p}, nil)
 	beName := p.BackendName(defaultNamer)
 
-	be, err := f.GetGlobalBackendService(beName)
+	be, err := fakeGCE.GetGlobalBackendService(beName)
 	if err != nil {
 		t.Fatalf("Unexpected err: %v", err)
 	}
@@ -319,6 +324,9 @@ func TestBackendPoolUpdateHTTP2WithoutWhitelist(t *testing.T) {
 	if annotations.AppProtocol(be.Protocol) != p.Protocol {
 		t.Fatalf("Expected scheme %v but got %v", p.Protocol, be.Protocol)
 	}
+
+	// Add hook to simulate the forbidden error (i.e no alpha whitelist).
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceUnauthorizedErrHook
 
 	// Update service port to HTTP2
 	p.Protocol = annotations.ProtocolHTTP2
@@ -330,9 +338,9 @@ func TestBackendPoolUpdateHTTP2WithoutWhitelist(t *testing.T) {
 }
 
 func TestBackendPoolChaosMonkey(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, false)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP}
 	igs, err := pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
@@ -342,27 +350,33 @@ func TestBackendPoolChaosMonkey(t *testing.T) {
 	pool.Ensure([]utils.ServicePort{sp}, utils.IGLinks(igs))
 	beName := sp.BackendName(defaultNamer)
 
-	be, _ := f.GetGlobalBackendService(beName)
+	be, _ := fakeGCE.GetGlobalBackendService(beName)
 
 	// Mess up the link between backend service and instance group.
 	// This simulates a user doing foolish things through the UI.
 	be.Backends = []*compute.Backend{
 		{Group: "/zones/edge-hop-test"},
 	}
-	f.calls = []int{}
-	f.UpdateGlobalBackendService(be)
+
+	// Add hook to keep track of how many calls are made.
+	// TODO(rramkumar): This is a hack. Implement function call counters in generated code.
+	createCalls := 0
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, obj *compute.BackendService, m *cloud.MockBackendServices) (bool, error) {
+		createCalls += 1
+		return false, nil
+	}
+
+	fakeGCE.UpdateGlobalBackendService(be)
 
 	igs, err = pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
 	if err != nil {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
 	pool.Ensure([]utils.ServicePort{sp}, utils.IGLinks(igs))
-	for _, call := range f.calls {
-		if call == utils.Create {
-			t.Fatalf("Unexpected create for existing backend service")
-		}
+	if createCalls > 0 {
+		t.Fatalf("Unexpected create for existing backend service")
 	}
-	gotBackend, err := f.GetGlobalBackendService(beName)
+	gotBackend, err := fakeGCE.GetGlobalBackendService(beName)
 	if err != nil {
 		t.Fatalf("Failed to find a backend with name %v: %v", beName, err)
 	}
@@ -386,9 +400,9 @@ func TestBackendPoolSync(t *testing.T) {
 	// Call sync on a backend pool with a list of ports, make sure the pool
 	// creates/deletes required ports.
 	svcNodePorts := []utils.ServicePort{{NodePort: 81, Protocol: annotations.ProtocolHTTP}, {NodePort: 82, Protocol: annotations.ProtocolHTTPS}, {NodePort: 83, Protocol: annotations.ProtocolHTTP}}
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, true)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, true)
 	pool.Ensure([]utils.ServicePort{svcNodePorts[0]}, nil)
 	pool.Ensure([]utils.ServicePort{svcNodePorts[1]}, nil)
 	if err := pool.Ensure(svcNodePorts, nil); err != nil {
@@ -425,11 +439,11 @@ func TestBackendPoolSync(t *testing.T) {
 	// k8s-be-3001--uid - another cluster tagged with uid
 	unrelatedBackends := sets.NewString([]string{"foo", "k8s-be-foo", "k8s--bar--foo", "k8s-be-30001--uid"}...)
 	for _, name := range unrelatedBackends.List() {
-		f.CreateGlobalBackendService(&compute.BackendService{Name: name})
+		fakeGCE.CreateGlobalBackendService(&compute.BackendService{Name: name})
 	}
 
 	// This backend should get deleted again since it is managed by this cluster.
-	f.CreateGlobalBackendService(&compute.BackendService{Name: deletedPorts[0].BackendName(defaultNamer)})
+	fakeGCE.CreateGlobalBackendService(&compute.BackendService{Name: deletedPorts[0].BackendName(defaultNamer)})
 
 	// TODO: Avoid casting.
 	// Repopulate the pool with a cloud list, which now includes the 82 port
@@ -439,7 +453,7 @@ func TestBackendPoolSync(t *testing.T) {
 
 	pool.GC(svcNodePorts)
 
-	currBackends, _ := f.ListGlobalBackendServices()
+	currBackends, _ := fakeGCE.ListGlobalBackendServices()
 	currSet := sets.NewString()
 	for _, b := range currBackends {
 		currSet.Insert(b.Name)
@@ -459,15 +473,15 @@ func TestBackendPoolSyncNEG(t *testing.T) {
 	// Convert a BackendPool from non-NEG to NEG.
 	// Expect the old BackendServices to be GC'ed
 	svcPort := utils.ServicePort{NodePort: 81, Protocol: annotations.ProtocolHTTP}
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, true)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, true)
 	if err := pool.Ensure([]utils.ServicePort{svcPort}, nil); err != nil {
 		t.Errorf("Expected backend pool to add node ports, err: %v", err)
 	}
 
 	nodePortName := svcPort.BackendName(defaultNamer)
-	_, err := f.GetGlobalBackendService(nodePortName)
+	_, err := fakeGCE.GetGlobalBackendService(nodePortName)
 	if err != nil {
 		t.Fatalf("Failed to get backend service: %v", err)
 	}
@@ -479,14 +493,14 @@ func TestBackendPoolSyncNEG(t *testing.T) {
 	}
 
 	negName := svcPort.BackendName(defaultNamer)
-	_, err = f.GetGlobalBackendService(negName)
+	_, err = fakeGCE.GetGlobalBackendService(negName)
 	if err != nil {
 		t.Fatalf("Failed to get backend service with name %v: %v", negName, err)
 	}
 	// GC should garbage collect the Backend on the old naming schema
 	pool.GC([]utils.ServicePort{svcPort})
 
-	bs, err := f.GetGlobalBackendService(nodePortName)
+	bs, err := fakeGCE.GetGlobalBackendService(nodePortName)
 	if err == nil {
 		t.Fatalf("Expected not to get BackendService with name %v, got: %+v", nodePortName, bs)
 	}
@@ -499,7 +513,7 @@ func TestBackendPoolSyncNEG(t *testing.T) {
 
 	pool.GC([]utils.ServicePort{svcPort})
 
-	_, err = f.GetGlobalBackendService(nodePortName)
+	_, err = fakeGCE.GetGlobalBackendService(nodePortName)
 	if err != nil {
 		t.Fatalf("Failed to get backend service with name %v: %v", nodePortName, err)
 	}
@@ -577,27 +591,24 @@ func TestBackendPoolSyncQuota(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			f := NewFakeBackendServices(noOpErrFunc)
+			fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 			fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-			pool, _ := newTestJig(f, fakeIGs, false)
+			pool, _ := newTestJig(fakeGCE, fakeIGs, false)
 
 			bsCreated := 0
 			quota := len(tc.newPorts)
 
-			// Throw an error if more BackendServices than quota allows have been created
-			f.errFunc = func(op int, be *computealpha.BackendService) error {
-				if op == utils.Create {
-					if bsCreated+1 > quota {
-						return &googleapi.Error{Code: http.StatusForbidden, Body: be.Name}
-					}
-					bsCreated += 1
+			// Add hooks to simulate quota changes & errors.
+			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockBackendServices) (bool, error) {
+				if bsCreated+1 > quota {
+					return true, &googleapi.Error{Code: http.StatusForbidden, Body: be.Name}
 				}
-
-				if op == utils.Delete {
-					bsCreated -= 1
-				}
-
-				return nil
+				bsCreated += 1
+				return false, nil
+			}
+			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockBackendServices) (bool, error) {
+				bsCreated -= 1
+				return false, nil
 			}
 
 			if err := pool.Ensure(tc.oldPorts, nil); err != nil {
@@ -624,14 +635,14 @@ func TestBackendPoolSyncQuota(t *testing.T) {
 }
 
 func TestBackendPoolDeleteLegacyHealthChecks(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	negGetter := neg.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	nodePool := instances.NewNodePool(fakeIGs, defaultNamer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	hcp := healthchecks.NewFakeHealthCheckProvider()
 	healthChecks := healthchecks.NewHealthChecker(hcp, "/", "/healthz", defaultNamer, defaultBackendSvc)
-	bp := NewBackendPool(f, negGetter, healthChecks, nodePool, defaultNamer, false)
+	bp := NewBackendPool(fakeGCE, negGetter, healthChecks, nodePool, defaultNamer, false)
 	probes := map[utils.ServicePort]*api_v1.Probe{}
 	bp.Init(NewFakeProbeProvider(probes))
 
@@ -651,7 +662,7 @@ func TestBackendPoolDeleteLegacyHealthChecks(t *testing.T) {
 	}
 
 	// Create backend service with expected name and link to legacy health check
-	f.CreateGlobalBackendService(&compute.BackendService{
+	fakeGCE.CreateGlobalBackendService(&compute.BackendService{
 		Name:         beName,
 		HealthChecks: []string{hc.SelfLink},
 	})
@@ -678,22 +689,22 @@ func TestBackendPoolDeleteLegacyHealthChecks(t *testing.T) {
 }
 
 func TestBackendPoolShutdown(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, false)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
 
 	// Add a backend-service and verify that it doesn't exist after Shutdown()
 	pool.Ensure([]utils.ServicePort{{NodePort: 80}}, nil)
 	pool.Shutdown()
-	if _, err := f.GetGlobalBackendService(defaultNamer.IGBackend(80)); err == nil {
+	if _, err := fakeGCE.GetGlobalBackendService(defaultNamer.IGBackend(80)); err == nil {
 		t.Fatalf("%v", err)
 	}
 }
 
 func TestBackendInstanceGroupClobbering(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, false)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
 
 	sp := utils.ServicePort{NodePort: 80}
 	igs, err := pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
@@ -702,7 +713,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	}
 	pool.Ensure([]utils.ServicePort{sp}, utils.IGLinks(igs))
 
-	be, err := f.GetGlobalBackendService(defaultNamer.IGBackend(80))
+	be, err := fakeGCE.GetGlobalBackendService(defaultNamer.IGBackend(80))
 	if err != nil {
 		t.Fatalf("f.GetGlobalBackendService(defaultNamer.IGBackend(80)) = _, %v, want _, nil", err)
 	}
@@ -713,7 +724,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 		{Group: fmt.Sprintf("/zones/%s/instanceGroups/%s", defaultZone, "k8s-ig-foo")},
 	}
 	be.Backends = append(be.Backends, newGroups...)
-	if err = f.UpdateGlobalBackendService(be); err != nil {
+	if err = fakeGCE.UpdateGlobalBackendService(be); err != nil {
 		t.Fatalf("Failed to update backend service %v", be.Name)
 	}
 
@@ -723,7 +734,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
 	pool.Ensure([]utils.ServicePort{sp}, utils.IGLinks(igs))
-	be, err = f.GetGlobalBackendService(defaultNamer.IGBackend(80))
+	be, err = fakeGCE.GetGlobalBackendService(defaultNamer.IGBackend(80))
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -743,9 +754,9 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 }
 
 func TestBackendCreateBalancingMode(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, false)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP}
 	modes := []BalancingMode{Rate, Utilization}
 
@@ -753,13 +764,13 @@ func TestBackendCreateBalancingMode(t *testing.T) {
 	// and verify that a backend with the other balancingMode is
 	// created
 	for i, bm := range modes {
-		f.errFunc = func(op int, be *computealpha.BackendService) error {
+		(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockBackendServices) error {
 			for _, b := range be.Backends {
 				if b.BalancingMode == string(bm) {
 					return &googleapi.Error{Code: http.StatusBadRequest}
 				}
 			}
-			return nil
+			return mock.UpdateBackendServiceHook(ctx, key, be, m)
 		}
 
 		igs, err := pool.nodePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
@@ -767,7 +778,7 @@ func TestBackendCreateBalancingMode(t *testing.T) {
 			t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 		}
 		pool.Ensure([]utils.ServicePort{sp}, utils.IGLinks(igs))
-		be, err := f.GetGlobalBackendService(sp.BackendName(defaultNamer))
+		be, err := fakeGCE.GetGlobalBackendService(sp.BackendName(defaultNamer))
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
@@ -814,14 +825,18 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 func TestLinkBackendServiceToNEG(t *testing.T) {
 	zones := []string{"zone1", "zone2"}
 	namespace, name, port := "ns", "name", "port"
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	nodePool := instances.NewNodePool(fakeIGs, defaultNamer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	hcp := healthchecks.NewFakeHealthCheckProvider()
 	healthChecks := healthchecks.NewHealthChecker(hcp, "/", "/healthz", defaultNamer, defaultBackendSvc)
-	bp := NewBackendPool(f, fakeNEG, healthChecks, nodePool, defaultNamer, false)
+	bp := NewBackendPool(fakeGCE, fakeNEG, healthChecks, nodePool, defaultNamer, false)
+
+	// Add standard hooks for mocking update calls. Each test can set a update different hook if it chooses to.
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = mock.UpdateBackendServiceHook
 
 	svcPort := utils.ServicePort{
 		ID: utils.ServicePortID{
@@ -854,7 +869,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	}
 
 	beName := svcPort.BackendName(defaultNamer)
-	bs, err := f.GetGlobalBackendService(beName)
+	bs, err := fakeGCE.GetGlobalBackendService(beName)
 	if err != nil {
 		t.Fatalf("Failed to retrieve backend service: %v", err)
 	}
@@ -927,9 +942,9 @@ func TestComparableGroupPath(t *testing.T) {
 }
 
 func TestEnsureBackendServiceProtocol(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, false)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
 
 	svcPorts := []utils.ServicePort{
 		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}},
@@ -972,9 +987,9 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 }
 
 func TestEnsureBackendServiceDescription(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, false)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
 
 	svcPorts := []utils.ServicePort{
 		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}},
@@ -1011,9 +1026,9 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 }
 
 func TestEnsureBackendServiceHealthCheckLink(t *testing.T) {
-	f := NewFakeBackendServices(noOpErrFunc)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(f, fakeIGs, false)
+	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
 
 	p := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}}
 	pool.Ensure([]utils.ServicePort{p}, nil)

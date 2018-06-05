@@ -720,6 +720,7 @@
     "pkg/cloudprovider/providers/gce/cloud",
     "pkg/cloudprovider/providers/gce/cloud/filter",
     "pkg/cloudprovider/providers/gce/cloud/meta",
+    "pkg/cloudprovider/providers/gce/cloud/mock",
     "pkg/controller",
     "pkg/features",
     "pkg/fieldpath",
@@ -761,6 +762,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "c40f481aeb9ef2453844f8799dd4c69410e3d9a8dd46b89f2d1b4341e40c7c9c"
+  inputs-digest = "fe1175f3405890cf5b95bdf041e0a358ca58f231fc7281650266f17924357ade"
   solver-name = "gps-cdcl"
   solver-version = 1
