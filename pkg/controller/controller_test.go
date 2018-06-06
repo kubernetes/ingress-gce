@@ -45,7 +45,7 @@ func newLoadBalancerController(t *testing.T, cm *fakeClusterManager) *LoadBalanc
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 
 	stopCh := make(chan struct{})
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, api_v1.NamespaceAll, 1*time.Minute, true, false)
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cm.fakeBackends, api_v1.NamespaceAll, 1*time.Minute, true, false)
 	lbc, err := NewLoadBalancerController(ctx, cm.ClusterManager, stopCh)
 	if err != nil {
 		t.Fatalf("%v", err)
