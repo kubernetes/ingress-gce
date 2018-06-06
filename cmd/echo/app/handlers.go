@@ -28,7 +28,8 @@ import (
 )
 
 const (
-	serverIdleTimeout = 620 * time.Second
+	serverIdleTimeout   = 620 * time.Second
+	queryStringCacheKey = "cache"
 )
 
 // RunHTTPServer runs HTTP and HTTPS goroutines and blocks.
@@ -78,12 +79,13 @@ func healthCheck(w http.ResponseWriter, r *http.Request) {
 
 func echo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	setHeadersFromQueryString(w, r)
 
 	var dump = struct {
 		Method        string              `json:"method"`
 		URI           string              `json:"uri"`
 		HTTPVersion   string              `json:"httpVersion"`
+		Time          time.Time           `json:"time"`
 		K8sEnv        Env                 `json:"k8sEnv"`
 		RemoteAddr    string              `json:"remoteAddr"`
 		TLS           bool                `json:"tls"`
@@ -93,6 +95,7 @@ func echo(w http.ResponseWriter, r *http.Request) {
 		Method:        r.Method,
 		URI:           r.RequestURI,
 		HTTPVersion:   fmt.Sprintf("%d.%d", r.ProtoMajor, r.ProtoMinor),
+		Time:          time.Now(),
 		K8sEnv:        E,
 		RemoteAddr:    r.RemoteAddr,
 		Header:        r.Header,
@@ -106,6 +109,15 @@ func echo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.WriteHeader(http.StatusOK)
 	w.Write(dumpData)
 	glog.V(3).Infof("echo: %v, %v, %v", time.Now(), r.UserAgent(), r.RemoteAddr)
+}
+
+// setHeadersFromQueryString looks for certain keys in the request query string
+// and sets response headers based on the values for those keys.
+func setHeadersFromQueryString(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get(queryStringCacheKey) == "true" {
+		w.Header().Set("Cache-Control", "max-age=86400,public")
+	}
 }
