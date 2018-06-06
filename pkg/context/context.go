@@ -29,11 +29,14 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1beta1"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
 // ControllerContext holds the state needed for the execution of the controller.
 type ControllerContext struct {
 	KubeClient kubernetes.Interface
+
+	Cloud *gce.GCECloud
 
 	IngressInformer       cache.SharedIndexInformer
 	ServiceInformer       cache.SharedIndexInformer
@@ -56,6 +59,7 @@ type ControllerContext struct {
 func NewControllerContext(
 	kubeClient kubernetes.Interface,
 	backendConfigClient backendconfigclient.Interface,
+	cloud *gce.GCECloud,
 	namespace string,
 	resyncPeriod time.Duration,
 	enableNEG bool,
@@ -66,6 +70,7 @@ func NewControllerContext(
 	}
 	context := &ControllerContext{
 		KubeClient:           kubeClient,
+		Cloud:                cloud,
 		IngressInformer:      informerv1beta1.NewIngressInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
 		ServiceInformer:      informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
 		PodInformer:          informerv1.NewPodInformer(kubeClient, namespace, resyncPeriod, newIndexer()),

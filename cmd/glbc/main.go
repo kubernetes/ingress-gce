@@ -102,16 +102,16 @@ func main() {
 
 	cloud := app.NewGCEClient()
 	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG, flags.F.EnableBackendConfig)
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cloud, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG, flags.F.EnableBackendConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
-		runControllers(ctx, cloud)
+		runControllers(ctx)
 		return
 	}
 
 	electionConfig, err := makeLeaderElectionConfig(kubeClient, ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace), func() {
-		runControllers(ctx, cloud)
+		runControllers(ctx)
 	})
 	if err != nil {
 		glog.Fatalf("%v", err)
@@ -158,14 +158,14 @@ func makeLeaderElectionConfig(client clientset.Interface, recorder record.EventR
 	}, nil
 }
 
-func runControllers(ctx *context.ControllerContext, cloud *gce.GCECloud) {
+func runControllers(ctx *context.ControllerContext) {
 	namer, err := app.NewNamer(ctx.KubeClient, flags.F.ClusterName, controller.DefaultFirewallName)
 	if err != nil {
 		glog.Fatalf("app.NewNamer(ctx.KubeClient, %q, %q) = %v", flags.F.ClusterName, controller.DefaultFirewallName, err)
 	}
 
 	defaultBackendServicePortID := app.DefaultBackendServicePortID(ctx.KubeClient)
-	clusterManager, err := controller.NewClusterManager(cloud, namer, defaultBackendServicePortID, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath)
+	clusterManager, err := controller.NewClusterManager(ctx.Cloud, namer, defaultBackendServicePortID, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath)
 	if err != nil {
 		glog.Fatalf("controller.NewClusterManager(cloud, namer, %+v, %q, %q) = %v", defaultBackendServicePortID, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath, err)
 	}
@@ -183,7 +183,8 @@ func runControllers(ctx *context.ControllerContext, cloud *gce.GCECloud) {
 	glog.V(0).Infof("clusterManager initialized")
 
 	if ctx.NEGEnabled {
-		negController, _ := neg.NewController(ctx.KubeClient, cloud, ctx, lbc.Translator, namer, flags.F.ResyncPeriod)
+		// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
+		negController, _ := neg.NewController(ctx.Cloud, ctx, lbc.Translator, namer, flags.F.ResyncPeriod)
 		go negController.Run(stopCh)
 		glog.V(0).Infof("negController started")
 	}

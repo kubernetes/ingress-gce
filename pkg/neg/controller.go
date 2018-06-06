@@ -27,7 +27,6 @@ import (
 	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -62,7 +61,6 @@ type Controller struct {
 
 // NewController returns a network endpoint group controller.
 func NewController(
-	kubeClient kubernetes.Interface,
 	cloud networkEndpointGroupCloud,
 	ctx *context.ControllerContext,
 	zoneGetter zoneGetter,
@@ -74,7 +72,7 @@ func NewController(
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
-		Interface: kubeClient.Core().Events(""),
+		Interface: ctx.KubeClient.Core().Events(""),
 	})
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme,
 		apiv1.EventSource{Component: "neg-controller"})
