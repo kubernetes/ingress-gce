@@ -17,13 +17,19 @@ limitations under the License.
 package flags
 
 import (
-	"flag"
+	goflag "flag"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	flag "github.com/spf13/pflag"
+
 	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
+	"k8s.io/kubernetes/pkg/apis/componentconfig"
+	"k8s.io/kubernetes/pkg/client/leaderelectionconfig"
 )
 
 const (
@@ -33,6 +39,22 @@ const (
 	// DefaultNodePortRange is the list of ports or port ranges used by kubernetes for
 	// allocating NodePort services.
 	DefaultNodePortRange = "30000-32767"
+
+	// DefaultLeaseDuration is a 15 second lease duration.
+	DefaultLeaseDuration = 15 * time.Second
+	// DefaultRenewDeadline is a 10 second renewal deadline.
+	DefaultRenewDeadline = 10 * time.Second
+	// DefaultRetryPeriod is a 2 second retry period.
+	DefaultRetryPeriod = 2 * time.Second
+
+	// DefaultResourceLock is the type of resource used for the lock object.
+	DefaultResourceLock = resourcelock.ConfigMapsResourceLock
+
+	// DefaultLockObjectNamespace is the namespace which owns the lock object.
+	DefaultLockObjectNamespace string = "kube-system"
+
+	// DefaultLockObjectName is the object name of the lock object.
+	DefaultLockObjectName = "ingress-gce-lock"
 )
 
 var (
@@ -58,13 +80,40 @@ var (
 		WatchNamespace            string
 		NodePortRanges            PortRanges
 		EnableBackendConfig       bool
+
+		LeaderElection LeaderElectionConfiguration
 	}{}
 )
+
+type LeaderElectionConfiguration struct {
+	componentconfig.LeaderElectionConfiguration
+
+	// LockObjectNamespace defines the namespace of the lock object
+	LockObjectNamespace string
+	// LockObjectName defines the lock object name
+	LockObjectName string
+}
+
+func defaultLeaderElectionConfiguration() LeaderElectionConfiguration {
+	return LeaderElectionConfiguration{
+		LeaderElectionConfiguration: componentconfig.LeaderElectionConfiguration{
+			LeaderElect:   true,
+			LeaseDuration: metav1.Duration{Duration: DefaultLeaseDuration},
+			RenewDeadline: metav1.Duration{Duration: DefaultRenewDeadline},
+			RetryPeriod:   metav1.Duration{Duration: DefaultRetryPeriod},
+			ResourceLock:  DefaultResourceLock,
+		},
+
+		LockObjectNamespace: DefaultLockObjectNamespace,
+		LockObjectName:      DefaultLockObjectName,
+	}
+}
 
 func init() {
 	F.NodePortRanges.ports = []string{DefaultNodePortRange}
 	F.GCERateLimit.specs = []string{"alpha.Operations.Get,qps,10,100", "beta.Operations.Get,qps,10,100", "ga.Operations.Get,qps,10,100"}
 	F.Features = EnabledFeatures()
+	F.LeaderElection = defaultLeaderElectionConfiguration()
 }
 
 // Features is a collection of feature flags for easily enabling and disabling
@@ -85,6 +134,8 @@ func EnabledFeatures() *Features {
 
 // Register flags with the command line parser.
 func Register() {
+	flag.CommandLine.AddGoFlagSet(goflag.CommandLine)
+
 	flag.StringVar(&F.APIServerHost, "apiserver-host", "",
 		`The address of the Kubernetes Apiserver to connect to in the format of
 protocol://address:port, e.g., http://localhost:8080. If not specified, the
@@ -146,6 +197,10 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableBackendConfig, "enable-backend-config", false,
 		`Optional, whether or not to enable BackendConfig.`)
 
+	leaderelectionconfig.BindFlags(&F.LeaderElection.LeaderElectionConfiguration, flag.CommandLine)
+	flag.StringVar(&F.LeaderElection.LockObjectNamespace, "lock-object-namespace", F.LeaderElection.LockObjectNamespace, "Define the namespace of the lock object.")
+	flag.StringVar(&F.LeaderElection.LockObjectName, "lock-object-name", F.LeaderElection.LockObjectName, "Define the name of the lock object.")
+
 	// Deprecated F.
 	flag.BoolVar(&F.Verbose, "verbose", false,
 		`This flag is deprecated. Use -v to control verbosity.`)
@@ -179,6 +234,10 @@ func (r *RateLimitSpecs) Values() []string {
 	return r.specs
 }
 
+func (r *RateLimitSpecs) Type() string {
+	return "rateLimitSpecs"
+}
+
 type PortRanges struct {
 	ports []string
 	isSet bool
@@ -206,4 +265,8 @@ func (c *PortRanges) Set(value string) error {
 // Set supports a value of CSV or the flag repeated multiple times
 func (c *PortRanges) Values() []string {
 	return c.ports
+}
+
+func (c *PortRanges) Type() string {
+	return "portRanges"
 }

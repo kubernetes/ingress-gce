@@ -17,15 +17,20 @@ limitations under the License.
 package main
 
 import (
-	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"time"
 
 	"github.com/golang/glog"
+	flag "github.com/spf13/pflag"
 
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
+	clientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/leaderelection"
+	"k8s.io/client-go/tools/leaderelection/resourcelock"
+	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
@@ -42,6 +47,8 @@ import (
 
 func main() {
 	flags.Register()
+	rand.Seed(time.Now().UTC().UnixNano())
+
 	flag.Parse()
 	if flags.F.Verbose {
 		flag.Set("v", "3")
@@ -93,39 +100,94 @@ func main() {
 		}
 	}
 
-	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, controller.DefaultFirewallName)
+	cloud := app.NewGCEClient()
+	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG, flags.F.EnableBackendConfig)
+	go app.RunHTTPServer(ctx.HealthCheck)
+
+	if !flags.F.LeaderElection.LeaderElect {
+		runControllers(ctx, cloud)
+		return
+	}
+
+	electionConfig, err := makeLeaderElectionConfig(kubeClient, ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace), func() {
+		runControllers(ctx, cloud)
+	})
 	if err != nil {
 		glog.Fatalf("%v", err)
 	}
+	leaderelection.RunOrDie(*electionConfig)
+}
 
-	cloud := app.NewGCEClient()
-	defaultBackendServicePortID := app.DefaultBackendServicePortID(kubeClient)
-	clusterManager, err := controller.NewClusterManager(cloud, namer, defaultBackendServicePortID, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath)
+// makeLeaderElectionConfig builds a leader election configuration. It will
+// create a new resource lock associated with the configuration.
+func makeLeaderElectionConfig(client clientset.Interface, recorder record.EventRecorder, run func()) (*leaderelection.LeaderElectionConfig, error) {
+	hostname, err := os.Hostname()
 	if err != nil {
-		glog.Fatalf("Error creating cluster manager: %v", err)
+		return nil, fmt.Errorf("unable to get hostname: %v", err)
+	}
+	// add a uniquifier so that two processes on the same host don't accidentally both become active
+	id := fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6))
+	rl, err := resourcelock.New(resourcelock.ConfigMapsResourceLock,
+		flags.F.LeaderElection.LockObjectNamespace,
+		flags.F.LeaderElection.LockObjectName,
+		client.CoreV1(),
+		resourcelock.ResourceLockConfig{
+			Identity:      id,
+			EventRecorder: recorder,
+		})
+	if err != nil {
+		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
 	}
 
-	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
-	stopCh := make(chan struct{})
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG, flags.F.EnableBackendConfig)
-	lbc, err := controller.NewLoadBalancerController(kubeClient, stopCh, ctx, clusterManager)
+	return &leaderelection.LeaderElectionConfig{
+		Lock:          rl,
+		LeaseDuration: flags.F.LeaderElection.LeaseDuration.Duration,
+		RenewDeadline: flags.F.LeaderElection.RenewDeadline.Duration,
+		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
+		Callbacks: leaderelection.LeaderCallbacks{
+			OnStartedLeading: func(_ <-chan struct{}) {
+				// Since we are committing a suicide after losing
+				// mastership, we can safely ignore the argument.
+				run()
+			},
+			OnStoppedLeading: func() {
+				glog.Fatalf("lost master")
+			},
+		},
+	}, nil
+}
+
+func runControllers(ctx *context.ControllerContext, cloud *gce.GCECloud) {
+	namer, err := app.NewNamer(ctx.KubeClient, flags.F.ClusterName, controller.DefaultFirewallName)
 	if err != nil {
-		glog.Fatalf("Error creating load balancer controller: %v", err)
+		glog.Fatalf("app.NewNamer(ctx.KubeClient, %q, %q) = %v", flags.F.ClusterName, controller.DefaultFirewallName, err)
+	}
+
+	defaultBackendServicePortID := app.DefaultBackendServicePortID(ctx.KubeClient)
+	clusterManager, err := controller.NewClusterManager(cloud, namer, defaultBackendServicePortID, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath)
+	if err != nil {
+		glog.Fatalf("controller.NewClusterManager(cloud, namer, %+v, %q, %q) = %v", defaultBackendServicePortID, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath, err)
+	}
+
+	stopCh := make(chan struct{})
+	lbc, err := controller.NewLoadBalancerController(ctx, clusterManager, stopCh)
+	if err != nil {
+		glog.Fatalf("controller.NewLoadBalancerController(ctx, clusterManager, stopCh) = %v", err)
 	}
 
 	if clusterManager.ClusterNamer.UID() != "" {
-		glog.V(0).Infof("Cluster name is %+v", clusterManager.ClusterNamer.UID())
+		glog.V(0).Infof("Cluster name: %+v", clusterManager.ClusterNamer.UID())
 	}
 	clusterManager.Init(lbc.Translator, lbc.Translator)
 	glog.V(0).Infof("clusterManager initialized")
 
-	if enableNEG {
-		negController, _ := neg.NewController(kubeClient, cloud, ctx, lbc.Translator, namer, flags.F.ResyncPeriod)
+	if ctx.NEGEnabled {
+		negController, _ := neg.NewController(ctx.KubeClient, cloud, ctx, lbc.Translator, namer, flags.F.ResyncPeriod)
 		go negController.Run(stopCh)
 		glog.V(0).Infof("negController started")
 	}
 
-	go app.RunHTTPServer(lbc)
 	go app.RunSIGTERMHandler(lbc, flags.F.DeleteAllOnQuit)
 
 	ctx.Start(stopCh)

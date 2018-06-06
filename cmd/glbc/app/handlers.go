@@ -23,32 +23,24 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
-func RunHTTPServer(lbc *controller.LoadBalancerController) {
-	http.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		if err := lbc.CloudClusterManager.IsHealthy(); err != nil {
-			w.WriteHeader(500)
-			w.Write([]byte(fmt.Sprintf("Cluster unhealthy: %v", err)))
-			return
-		}
-		w.WriteHeader(200)
-		w.Write([]byte("ok"))
-	})
-	http.Handle("/metrics", promhttp.Handler())
+// RunHTTPServer starts an HTTP server. `healthChecker` returns a mapping of component/controller
+// name to the result of its healthcheck.
+func RunHTTPServer(healthChecker func() context.HealthCheckResults) {
+	http.HandleFunc("/healthz", healthCheckHandler(healthChecker))
 	http.HandleFunc("/flag", flagHandler)
-	http.HandleFunc("/delete-all-and-quit", func(w http.ResponseWriter, r *http.Request) {
-		// TODO: Retry failures during shutdown.
-		lbc.Stop(true)
-	})
+	http.Handle("/metrics", promhttp.Handler())
 
 	glog.V(0).Infof("Running http server on :%v", flags.F.HealthzPort)
 	glog.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", flags.F.HealthzPort), nil))
@@ -70,6 +62,36 @@ func RunSIGTERMHandler(lbc *controller.LoadBalancerController, deleteAll bool) {
 	}
 	glog.Infof("Exiting with %v", exitCode)
 	os.Exit(exitCode)
+}
+
+func healthCheckHandler(checker func() context.HealthCheckResults) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var hasErr bool
+		var s strings.Builder
+		for component, result := range checker() {
+			status := "OK"
+			if result != nil {
+				hasErr = true
+				status = fmt.Sprintf("err: %v", result)
+			}
+			s.WriteString(fmt.Sprintf("%v: %v\n", component, status))
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if hasErr {
+			w.WriteHeader(500)
+		} else {
+			w.WriteHeader(200)
+		}
+
+		if s.Len() == 0 {
+			w.Write([]byte("OK - no running controllers"))
+			return
+		}
+
+		w.Write([]byte(s.String()))
+		return
+	}
 }
 
 func flagHandler(w http.ResponseWriter, r *http.Request) {
