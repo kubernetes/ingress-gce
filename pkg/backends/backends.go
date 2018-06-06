@@ -32,6 +32,7 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/storage"
@@ -125,7 +126,7 @@ func NewBackendPool(
 }
 
 // getHealthCheckLink gets the Healthcheck link off the BackendService
-func getHealthCheckLink(be *BackendService) string {
+func getHealthCheckLink(be *composite.BackendService) string {
 	if len(be.HealthChecks) == 1 {
 		return be.HealthChecks[0]
 	}
@@ -133,7 +134,7 @@ func getHealthCheckLink(be *BackendService) string {
 }
 
 // ensureProtocol updates the BackendService Protocol with the expected value
-func ensureProtocol(be *BackendService, p utils.ServicePort) (needsUpdate bool) {
+func ensureProtocol(be *composite.BackendService, p utils.ServicePort) (needsUpdate bool) {
 	if be.Protocol == string(p.Protocol) {
 		return false
 	}
@@ -142,7 +143,7 @@ func ensureProtocol(be *BackendService, p utils.ServicePort) (needsUpdate bool) 
 }
 
 // ensureDescription updates the BackendService Description with the expected value
-func ensureDescription(be *BackendService, description string) (needsUpdate bool) {
+func ensureDescription(be *composite.BackendService, description string) (needsUpdate bool) {
 	if be.Description == description {
 		return false
 	}
@@ -151,7 +152,7 @@ func ensureDescription(be *BackendService, description string) (needsUpdate bool
 }
 
 // ensureHealthCheckLink updates the BackendService HealthCheck with the expected value
-func ensureHealthCheckLink(be *BackendService, hcLink string) (needsUpdate bool) {
+func ensureHealthCheckLink(be *composite.BackendService, hcLink string) (needsUpdate bool) {
 	existingHCLink := getHealthCheckLink(be)
 
 	// Compare health check name instead of health check link.
@@ -175,8 +176,8 @@ func (b *Backends) Init(pp ProbeProvider) {
 }
 
 // Get returns a single backend.
-func (b *Backends) Get(name string, version meta.Version) (*BackendService, error) {
-	be, err := getBackendService(name, version, b.cloud)
+func (b *Backends) Get(name string, version meta.Version) (*composite.BackendService, error) {
+	be, err := composite.GetBackendService(name, version, b.cloud)
 	if err != nil {
 		return nil, err
 	}
@@ -209,12 +210,12 @@ func (b *Backends) ensureHealthCheck(sp utils.ServicePort, hasLegacyHC bool) (st
 	return b.healthChecker.Sync(hc)
 }
 
-func (b *Backends) create(hcLink string, sp utils.ServicePort, name string) (*BackendService, error) {
+func (b *Backends) create(hcLink string, sp utils.ServicePort, name string) (*composite.BackendService, error) {
 	namedPort := &compute.NamedPort{
 		Name: b.namer.NamedPort(sp.NodePort),
 		Port: sp.NodePort,
 	}
-	be := &BackendService{
+	be := &composite.BackendService{
 		Version:      sp.Version(),
 		Name:         name,
 		Description:  sp.Description(),
@@ -223,7 +224,7 @@ func (b *Backends) create(hcLink string, sp utils.ServicePort, name string) (*Ba
 		Port:         namedPort.Port,
 		PortName:     namedPort.Name,
 	}
-	if err := createBackendService(be, b.cloud); err != nil {
+	if err := composite.CreateBackendService(be, b.cloud); err != nil {
 		return nil, err
 	}
 	// Note: We need to perform a GCE call to re-fetch the object we just created
@@ -248,7 +249,7 @@ func (b *Backends) Ensure(svcPorts []utils.ServicePort, igLinks []string) error 
 func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) error {
 	// We must track the ports even if creating the backends failed, because
 	// we might've created health-check for them.
-	be := &BackendService{}
+	be := &composite.BackendService{}
 	beName := sp.BackendName(b.namer)
 
 	defer func() {
@@ -289,7 +290,7 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 	needUpdate = ensureHealthCheckLink(be, hcLink) || needUpdate
 	needUpdate = ensureDescription(be, sp.Description()) || needUpdate
 	if needUpdate {
-		if err = updateBackendService(be, b.cloud); err != nil {
+		if err = composite.UpdateBackendService(be, b.cloud); err != nil {
 			return err
 		}
 	}
@@ -313,13 +314,13 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 
 // edgeHop checks the links of the given backend by executing an edge hop.
 // It fixes broken links and updates the Backend accordingly.
-func (b *Backends) edgeHop(be *BackendService, igLinks []string) error {
+func (b *Backends) edgeHop(be *composite.BackendService, igLinks []string) error {
 	addIGs := getInstanceGroupsToAdd(be, igLinks)
 	if len(addIGs) == 0 {
 		return nil
 	}
 
-	originalIGBackends := []*Backend{}
+	originalIGBackends := []*composite.Backend{}
 	for _, backend := range be.Backends {
 		// Backend service is not able to point to NEG and IG at the same time.
 		// Filter IG backends here.
@@ -340,7 +341,7 @@ func (b *Backends) edgeHop(be *BackendService, igLinks []string) error {
 		newBackends := getBackendsForIGs(addIGs, bm)
 		be.Backends = append(originalIGBackends, newBackends...)
 
-		if err := updateBackendService(be, b.cloud); err != nil {
+		if err := composite.UpdateBackendService(be, b.cloud); err != nil {
 			if utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
 				glog.V(2).Infof("Updating backend service backends with balancing mode %v failed, will try another mode. err:%v", bm, err)
 				errs = append(errs, err.Error())
@@ -395,10 +396,10 @@ func (b *Backends) List() ([]interface{}, error) {
 	return ret, nil
 }
 
-func getBackendsForIGs(igLinks []string, bm BalancingMode) []*Backend {
-	var backends []*Backend
+func getBackendsForIGs(igLinks []string, bm BalancingMode) []*composite.Backend {
+	var backends []*composite.Backend
 	for _, igLink := range igLinks {
-		b := &Backend{
+		b := &composite.Backend{
 			Group:         igLink,
 			BalancingMode: string(bm),
 		}
@@ -428,7 +429,7 @@ func getBackendsForNEGs(negs []*computealpha.NetworkEndpointGroup) []*computealp
 	return backends
 }
 
-func getInstanceGroupsToAdd(be *BackendService, igLinks []string) []string {
+func getInstanceGroupsToAdd(be *composite.BackendService, igLinks []string) []string {
 	beName := be.Name
 	beIGs := sets.String{}
 	for _, existingBe := range be.Backends {
