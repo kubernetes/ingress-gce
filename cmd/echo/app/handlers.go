@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	"k8s.io/ingress-gce/pkg/version"
 )
 
 const (
@@ -80,21 +81,23 @@ func echo(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 
 	var dump = struct {
-		Method      string              `json:"method"`
-		URI         string              `json:"uri"`
-		HTTPVersion string              `json:"httpVersion"`
-		K8sEnv      Env                 `json:"k8sEnv"`
-		RemoteAddr  string              `json:"remoteAddr"`
-		TLS         bool                `json:"tls"`
-		Header      map[string][]string `json:"header"`
+		Method        string              `json:"method"`
+		URI           string              `json:"uri"`
+		HTTPVersion   string              `json:"httpVersion"`
+		K8sEnv        Env                 `json:"k8sEnv"`
+		RemoteAddr    string              `json:"remoteAddr"`
+		TLS           bool                `json:"tls"`
+		Header        map[string][]string `json:"header"`
+		ServerVersion string              `json:"serverVersion"`
 	}{
-		Method:      r.Method,
-		URI:         r.RequestURI,
-		HTTPVersion: fmt.Sprintf("%d.%d", r.ProtoMajor, r.ProtoMinor),
-		K8sEnv:      E,
-		RemoteAddr:  r.RemoteAddr,
-		Header:      r.Header,
-		TLS:         r.TLS != nil,
+		Method:        r.Method,
+		URI:           r.RequestURI,
+		HTTPVersion:   fmt.Sprintf("%d.%d", r.ProtoMajor, r.ProtoMinor),
+		K8sEnv:        E,
+		RemoteAddr:    r.RemoteAddr,
+		Header:        r.Header,
+		TLS:           r.TLS != nil,
+		ServerVersion: version.Version,
 	}
 
 	dumpData, err := json.MarshalIndent(dump, "", "\t")
