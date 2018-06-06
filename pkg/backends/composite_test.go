@@ -23,6 +23,7 @@ import (
 
 	"github.com/kr/pretty"
 	computealpha "google.golang.org/api/compute/v0.alpha"
+	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
@@ -122,6 +123,10 @@ func TestToBackendService(t *testing.T) {
 			&BackendService{Protocol: "HTTP2"},
 		},
 		{
+			computebeta.BackendService{Protocol: "HTTP"},
+			&BackendService{Protocol: "HTTP"},
+		},
+		{
 			compute.BackendService{Protocol: "HTTP"},
 			&BackendService{Protocol: "HTTP"},
 		},
@@ -146,6 +151,20 @@ func TestToAlpha(t *testing.T) {
 	// Verify that a known alpha field value is preserved.
 	if alpha.Protocol != "HTTP2" {
 		t.Errorf("alpha.Protocol = %q, want HTTP2", alpha.Protocol)
+	}
+}
+
+func TestToBeta(t *testing.T) {
+	composite := BackendService{
+		Version:  meta.VersionBeta,
+		Protocol: "HTTP",
+	}
+	beta, err := composite.toBeta()
+	if err != nil {
+		t.Fatalf("composite.toBeta() =_, %v; want _, nil", err)
+	}
+	if beta.Protocol != "HTTP" {
+		t.Errorf("beta.Protocol = %q, want HTTP", beta.Protocol)
 	}
 }
 
