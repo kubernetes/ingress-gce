@@ -19,6 +19,7 @@ package backends
 import (
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	api_v1 "k8s.io/api/core/v1"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
@@ -33,7 +34,7 @@ type ProbeProvider interface {
 type BackendPool interface {
 	Init(p ProbeProvider)
 	Ensure(ports []utils.ServicePort, igLinks []string) error
-	Get(name string, version meta.Version) (*BackendService, error)
+	Get(name string, version meta.Version) (*composite.BackendService, error)
 	Delete(name string) error
 	GC(ports []utils.ServicePort) error
 	Shutdown() error

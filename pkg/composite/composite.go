@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package backends
+package composite
 
 import (
 	"encoding/json"
@@ -32,7 +32,7 @@ import (
 
 // TODO(rramkumar): All code in this file should ideally be generated.
 
-func createBackendService(be *BackendService, cloud *gce.GCECloud) error {
+func CreateBackendService(be *BackendService, cloud *gce.GCECloud) error {
 	switch be.Version {
 	case meta.VersionAlpha:
 		alpha, err := be.toAlpha()
@@ -58,7 +58,7 @@ func createBackendService(be *BackendService, cloud *gce.GCECloud) error {
 	}
 }
 
-func updateBackendService(be *BackendService, cloud *gce.GCECloud) error {
+func UpdateBackendService(be *BackendService, cloud *gce.GCECloud) error {
 	switch be.Version {
 	case meta.VersionAlpha:
 		alpha, err := be.toAlpha()
@@ -84,7 +84,7 @@ func updateBackendService(be *BackendService, cloud *gce.GCECloud) error {
 	}
 }
 
-func getBackendService(name string, version meta.Version, cloud *gce.GCECloud) (*BackendService, error) {
+func GetBackendService(name string, version meta.Version, cloud *gce.GCECloud) (*BackendService, error) {
 	var gceObj interface{}
 	var err error
 	switch version {
