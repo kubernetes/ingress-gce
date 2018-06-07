@@ -72,24 +72,7 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 		return nil, errors.ErrSvcAppProtosParsing{Svc: svc, Err: err}
 	}
 
-	var port *api_v1.ServicePort
-PortLoop:
-	for _, p := range svc.Spec.Ports {
-		np := p
-		switch id.Port.Type {
-		case intstr.Int:
-			if p.Port == id.Port.IntVal {
-				port = &np
-				break PortLoop
-			}
-		default:
-			if p.Name == id.Port.StrVal {
-				port = &np
-				break PortLoop
-			}
-		}
-	}
-
+	port := ServicePort(*svc, id.Port)
 	if port == nil {
 		return nil, errors.ErrSvcPortNotFound{ServicePortID: id}
 	}
