@@ -18,7 +18,6 @@ package backendconfig
 
 import (
 	"fmt"
-	"strconv"
 
 	"github.com/golang/glog"
 
@@ -78,26 +77,17 @@ func GetServicesForBackendConfig(svcLister cache.Store, backendConfig *backendco
 // GetBackendConfigForServicePort returns the corresponding BackendConfig for
 // the given ServicePort if specified.
 func GetBackendConfigForServicePort(backendConfigLister cache.Store, svc *apiv1.Service, svcPort *apiv1.ServicePort) (*backendconfigv1beta1.BackendConfig, error) {
-	backendConfigNames, err := annotations.FromService(svc).GetBackendConfigs()
+	backendConfigs, err := annotations.FromService(svc).GetBackendConfigs()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get BackendConfig names from service %s/%s: %v", svc.Namespace, svc.Name, err)
+		return nil, fmt.Errorf("failed to get BackendConfigs from service %s/%s: %v", svc.Namespace, svc.Name, err)
 	}
 	// BackendConfig is optional for ServicePort.
-	if backendConfigNames == nil {
+	if backendConfigs == nil {
 		return nil, nil
 	}
 
-	// Both port name and port number are allowed.
-	configName := ""
-	if name, ok := backendConfigNames.Ports[svcPort.Name]; ok {
-		configName = name
-	} else if name, ok := backendConfigNames.Ports[strconv.Itoa(int(svcPort.Port))]; ok {
-		configName = name
-	} else if len(backendConfigNames.Default) != 0 {
-		configName = backendConfigNames.Default
-	}
-	// Return earlier if no BackendConfig matches.
-	if len(configName) == 0 {
+	configName := BackendConfigName(*backendConfigs, *svcPort)
+	if configName == "" {
 		return nil, nil
 	}
 
