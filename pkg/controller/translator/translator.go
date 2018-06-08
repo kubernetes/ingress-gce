@@ -53,6 +53,10 @@ type Translator struct {
 // getServicePort looks in the svc store for a matching service:port,
 // and returns the nodeport.
 func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort, error) {
+	// We periodically add information to this ServicePort to ensure that we
+	// always return as much as possible, rather than nil, if there was a non-fatal error.
+	var svcPort *utils.ServicePort
+
 	obj, exists, err := t.ctx.ServiceInformer.GetIndexer().Get(
 		&api_v1.Service{
 			ObjectMeta: meta_v1.ObjectMeta{
@@ -61,54 +65,60 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 			},
 		})
 	if !exists {
+		// This is a fatal error.
 		return nil, errors.ErrSvcNotFound{Service: id.Service}
 	}
 	if err != nil {
+		// This is a fatal error.
 		return nil, fmt.Errorf("error retrieving service %q: %v", id.Service, err)
 	}
-	svc := obj.(*api_v1.Service)
-	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
-	if err != nil {
-		return nil, errors.ErrSvcAppProtosParsing{Svc: svc, Err: err}
-	}
 
+	svc := obj.(*api_v1.Service)
 	port := ServicePort(*svc, id.Port)
 	if port == nil {
+		// This is a fatal error.
 		return nil, errors.ErrSvcPortNotFound{ServicePortID: id}
+	}
+
+	negEnabled := annotations.FromService(svc).NEGEnabled()
+	if !negEnabled && svc.Spec.Type != api_v1.ServiceTypeNodePort {
+		// This is a fatal error.
+		return nil, errors.ErrSvcNotNodePort{Service: id.Service}
+	}
+	svcPort = &utils.ServicePort{
+		ID:            id,
+		NodePort:      int64(port.NodePort),
+		SvcTargetPort: port.TargetPort.String(),
+		NEGEnabled:    t.ctx.NEGEnabled && negEnabled,
+	}
+
+	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
+	if err != nil {
+		return svcPort, errors.ErrSvcAppProtosParsing{Svc: svc, Err: err}
 	}
 
 	proto := annotations.ProtocolHTTP
 	if protoStr, exists := appProtocols[port.Name]; exists {
 		proto = annotations.AppProtocol(protoStr)
 	}
-
-	negEnabled := annotations.FromService(svc).NEGEnabled()
-	if !negEnabled && svc.Spec.Type != api_v1.ServiceTypeNodePort {
-		return nil, errors.ErrSvcNotNodePort{Service: id.Service}
-	}
+	svcPort.Protocol = proto
 
 	var beConfig *backendconfigv1beta1.BackendConfig
 	if t.ctx.BackendConfigEnabled {
-		beConfig, err := backendconfig.GetBackendConfigForServicePort(t.ctx.BackendConfigInformer.GetIndexer(), svc, port)
+		beConfig, err = backendconfig.GetBackendConfigForServicePort(t.ctx.BackendConfigInformer.GetIndexer(), svc, port)
 		if err != nil {
-			return nil, errors.ErrSvcBackendConfig{ServicePortID: id, Err: err}
+			return svcPort, errors.ErrSvcBackendConfig{ServicePortID: id, Err: err}
 		}
 		// Object in cache could be changed in-flight. Deepcopy to
 		// reduce race conditions.
 		beConfig = beConfig.DeepCopy()
 		if err = backendconfig.Validate(t.ctx.KubeClient, beConfig); err != nil {
-			return nil, errors.ErrBackendConfigValidation{BackendConfig: *beConfig, Err: err}
+			return svcPort, errors.ErrBackendConfigValidation{BackendConfig: *beConfig, Err: err}
 		}
 	}
+	svcPort.BackendConfig = beConfig
 
-	return &utils.ServicePort{
-		ID:            id,
-		NodePort:      int64(port.NodePort),
-		Protocol:      proto,
-		SvcTargetPort: port.TargetPort.String(),
-		NEGEnabled:    t.ctx.NEGEnabled && negEnabled,
-		BackendConfig: beConfig,
-	}, nil
+	return svcPort, nil
 }
 
 // TranslateIngress converts an Ingress into our internal UrlMap representation.
@@ -125,17 +135,17 @@ func (t *Translator) TranslateIngress(ing *extensions.Ingress, systemDefaultBack
 			svcPort, err := t.getServicePort(utils.BackendToServicePortID(p.Backend, ing.Namespace))
 			if err != nil {
 				errs = append(errs, err)
-				continue
 			}
-
-			// The Ingress spec defines empty path as catch-all, so if a user
-			// asks for a single host and multiple empty paths, all traffic is
-			// sent to one of the last backend in the rules list.
-			path := p.Path
-			if path == "" {
-				path = loadbalancers.DefaultPath
+			if svcPort != nil {
+				// The Ingress spec defines empty path as catch-all, so if a user
+				// asks for a single host and multiple empty paths, all traffic is
+				// sent to one of the last backend in the rules list.
+				path := p.Path
+				if path == "" {
+					path = loadbalancers.DefaultPath
+				}
+				pathRules = append(pathRules, utils.PathRule{Path: path, Backend: *svcPort})
 			}
-			pathRules = append(pathRules, utils.PathRule{Path: path, Backend: *svcPort})
 		}
 		host := rule.Host
 		if host == "" {
