@@ -18,6 +18,7 @@ package annotations
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"k8s.io/api/core/v1"
@@ -103,6 +104,12 @@ func (svc Service) NEGEnabled() bool {
 	return ok && v == "true"
 }
 
+var (
+	ErrBackendConfigNoneFound         = errors.New("no BackendConfig's found in annotation")
+	ErrBackendConfigInvalidJSON       = errors.New("annotation is invalid json")
+	ErrBackendConfigAnnotationMissing = errors.New("annotation is missing")
+)
+
 type BackendConfigs struct {
 	Default string            `json:"default,omitempty"`
 	Ports   map[string]string `json:"ports,omitempty"`
@@ -112,15 +119,15 @@ type BackendConfigs struct {
 func (svc Service) GetBackendConfigs() (*BackendConfigs, error) {
 	val, ok := svc.v[BackendConfigKey]
 	if !ok {
-		return nil, nil
+		return nil, ErrBackendConfigAnnotationMissing
 	}
 
 	configs := BackendConfigs{}
 	if err := json.Unmarshal([]byte(val), &configs); err != nil {
-		return nil, err
+		return nil, ErrBackendConfigInvalidJSON
 	}
 	if configs.Default == "" && len(configs.Ports) == 0 {
-		return nil, fmt.Errorf("no backendConfigs found in annotation: %v", val)
+		return nil, ErrBackendConfigNoneFound
 	}
 	return &configs, nil
 }

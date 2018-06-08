@@ -17,7 +17,7 @@ limitations under the License.
 package backendconfig
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/golang/glog"
 
@@ -29,6 +29,13 @@ import (
 	apisbackendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/crd"
+)
+
+var (
+	ErrBackendConfigsFromAnnotation = errors.New("error getting BackendConfig's from annotation")
+	ErrBackendConfigDoesNotExist    = errors.New("no BackendConfig for service port exists.")
+	ErrBackendConfigFailedToGet     = errors.New("client had error getting BackendConfig for service port.")
+	ErrNoBackendConfigForPort       = errors.New("no BackendConfig name found for service port.")
 )
 
 func CRDMeta() *crd.CRDMeta {
@@ -79,16 +86,17 @@ func GetServicesForBackendConfig(svcLister cache.Store, backendConfig *backendco
 func GetBackendConfigForServicePort(backendConfigLister cache.Store, svc *apiv1.Service, svcPort *apiv1.ServicePort) (*backendconfigv1beta1.BackendConfig, error) {
 	backendConfigs, err := annotations.FromService(svc).GetBackendConfigs()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get BackendConfigs from service %s/%s: %v", svc.Namespace, svc.Name, err)
-	}
-	// BackendConfig is optional for ServicePort.
-	if backendConfigs == nil {
-		return nil, nil
+		// If the user did not provide the annotation at all, then we
+		// do not want to return an error.
+		if err == annotations.ErrBackendConfigAnnotationMissing {
+			return nil, nil
+		}
+		return nil, ErrBackendConfigsFromAnnotation
 	}
 
 	configName := BackendConfigName(*backendConfigs, *svcPort)
 	if configName == "" {
-		return nil, nil
+		return nil, ErrNoBackendConfigForPort
 	}
 
 	obj, exists, err := backendConfigLister.Get(
@@ -98,8 +106,12 @@ func GetBackendConfigForServicePort(backendConfigLister cache.Store, svc *apiv1.
 				Namespace: svc.Namespace,
 			},
 		})
-	if !exists || err != nil {
-		return nil, fmt.Errorf("failed to get BackendConfig %s for service %s/%s: %v", configName, svc.Namespace, svc.Name, err)
+	if err != nil {
+		return nil, ErrBackendConfigFailedToGet
 	}
+	if !exists {
+		return nil, ErrBackendConfigDoesNotExist
+	}
+
 	return obj.(*backendconfigv1beta1.BackendConfig), nil
 }

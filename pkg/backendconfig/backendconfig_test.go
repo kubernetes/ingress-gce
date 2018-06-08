@@ -267,7 +267,7 @@ func TestGetBackendConfigForServicePort(t *testing.T) {
 		svcPort        *apiv1.ServicePort
 		getFunc        func(obj interface{}) (item interface{}, exists bool, err error)
 		expectedConfig *backendconfigv1beta1.BackendConfig
-		expectErr      bool
+		expectedErr    error
 	}{
 		{
 			desc:    "service port name with backend config",
@@ -301,9 +301,10 @@ func TestGetBackendConfigForServicePort(t *testing.T) {
 			svc:  svcWithoutConfig,
 		},
 		{
-			desc:    "service with backend config but port doesn't match",
-			svc:     svcWithTestConfigMismatchPort,
-			svcPort: &apiv1.ServicePort{Name: "port1"},
+			desc:        "service with backend config but port doesn't match",
+			svc:         svcWithTestConfigMismatchPort,
+			svcPort:     &apiv1.ServicePort{Name: "port1"},
+			expectedErr: ErrNoBackendConfigForPort,
 		},
 		{
 			desc:    "service port matches backend config but config not exist",
@@ -312,7 +313,7 @@ func TestGetBackendConfigForServicePort(t *testing.T) {
 			getFunc: func(obj interface{}) (interface{}, bool, error) {
 				return nil, false, nil
 			},
-			expectErr: true,
+			expectedErr: ErrBackendConfigDoesNotExist,
 		},
 		{
 			desc:    "service port matches backend config but failed to retrieve config",
@@ -321,7 +322,7 @@ func TestGetBackendConfigForServicePort(t *testing.T) {
 			getFunc: func(obj interface{}) (interface{}, bool, error) {
 				return nil, false, fmt.Errorf("internal error")
 			},
-			expectErr: true,
+			expectedErr: ErrBackendConfigFailedToGet,
 		},
 	}
 
@@ -330,13 +331,8 @@ func TestGetBackendConfigForServicePort(t *testing.T) {
 			GetFunc: tc.getFunc,
 		}
 		config, err := GetBackendConfigForServicePort(fakeStore, tc.svc, tc.svcPort)
-		if err == nil && tc.expectErr ||
-			err != nil && !tc.expectErr {
-			t.Errorf("%s: unexpected error returned, want error=%t, got %v", tc.desc, tc.expectErr, err)
-			continue
-		}
-		if !reflect.DeepEqual(config, tc.expectedConfig) {
-			t.Errorf("%s: unexpected config returned, want %v, got %v", tc.desc, tc.expectedConfig, config)
+		if !reflect.DeepEqual(config, tc.expectedConfig) || tc.expectedErr != err {
+			t.Errorf("%s: GetBackendConfigForServicePort() = %v, %v; want %v, %v", tc.desc, config, tc.expectedConfig, err, tc.expectedErr)
 		}
 	}
 }
