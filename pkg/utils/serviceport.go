@@ -17,14 +17,12 @@ limitations under the License.
 package utils
 
 import (
-	"fmt"
-
 	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
 // ServicePortID contains the Service and Port fields.
@@ -44,21 +42,12 @@ type ServicePort struct {
 	BackendConfig *backendconfigv1beta1.BackendConfig
 }
 
-// Description returns a string describing the ServicePort.
-func (sp ServicePort) Description() string {
-	if sp.ID.Service.String() == "" || sp.ID.Port.String() == "" {
-		return ""
+// GetDescription returns a Description for this ServicePort.
+func (sp ServicePort) GetDescription() Description {
+	return Description{
+		ServiceName: sp.ID.Service.String(),
+		ServicePort: sp.ID.Port.String(),
 	}
-	return fmt.Sprintf(`{"kubernetes.io/service-name":"%s","kubernetes.io/service-port":"%s"}`, sp.ID.Service.String(), sp.ID.Port.String())
-}
-
-// Version returns the meta.Version for the backend that this ServicePort is
-// associated with.
-func (sp ServicePort) Version() meta.Version {
-	if sp.Protocol == annotations.ProtocolHTTP2 {
-		return meta.VersionAlpha
-	}
-	return meta.VersionGA
 }
 
 // IsAlpha returns true if the ServicePort is using ProtocolHTTP2 - which means
