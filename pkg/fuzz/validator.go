@@ -29,6 +29,7 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
 // ValidatorEnv captures non-Ingress spec related environment that affect the
@@ -36,22 +37,29 @@ import (
 type ValidatorEnv interface {
 	BackendConfigs() (map[string]*backendconfig.BackendConfig, error)
 	Services() (map[string]*v1.Service, error)
+	Cloud() cloud.Cloud
 }
 
-// StaticValidatorEnv is an environment that is statically configured.
-type StaticValidatorEnv struct {
+// MockValidatorEnv is an environment that is used for mock testing.
+type MockValidatorEnv struct {
 	BackendConfigsMap map[string]*backendconfig.BackendConfig
 	ServicesMap       map[string]*v1.Service
+	MockCloud         *cloud.MockGCE
 }
 
 // BackendConfigs implements ValidatorEnv.
-func (e *StaticValidatorEnv) BackendConfigs() (map[string]*backendconfig.BackendConfig, error) {
+func (e *MockValidatorEnv) BackendConfigs() (map[string]*backendconfig.BackendConfig, error) {
 	return e.BackendConfigsMap, nil
 }
 
 // Services implements ValidatorEnv.
-func (e *StaticValidatorEnv) Services() (map[string]*v1.Service, error) {
+func (e *MockValidatorEnv) Services() (map[string]*v1.Service, error) {
 	return e.ServicesMap, nil
+}
+
+// Cloud implements ValidatorEnv.
+func (e *MockValidatorEnv) Cloud() cloud.Cloud {
+	return e.MockCloud
 }
 
 // IngressValidatorAttributes are derived attributes governing how the Ingress
@@ -121,14 +129,14 @@ func (a *IngressValidatorAttributes) applyFeatures(env ValidatorEnv, ing *v1beta
 	return nil
 }
 
-// IngressValidationResult is the result of an Ingress validation.
-type IngressValidationResult struct {
+// IngressResult is the result of an Ingress validation.
+type IngressResult struct {
 	Err   error
-	Paths []*PathValidationResult
+	Paths []*PathResult
 }
 
-// PathValidationResult is the result of validating a path.
-type PathValidationResult struct {
+// PathResult is the result of validating a path.
+type PathResult struct {
 	Scheme string
 	Host   string
 	Path   string
@@ -148,6 +156,7 @@ func defaultAttributes() *IngressValidatorAttributes {
 
 // NewIngressValidator returns a new validator for checking the correctness of
 // an Ingress spec against the behavior of the instantiated load balancer.
+// If attribs is nil, then the default set of attributes will be used.
 func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, features []Feature, attribs *IngressValidatorAttributes) (*IngressValidator, error) {
 	var fvs []FeatureValidator
 	for _, f := range features {
@@ -199,16 +208,16 @@ func (v *IngressValidator) vip() *string {
 }
 
 // Check runs all of the checks against the instantiated load balancer.
-func (v *IngressValidator) Check(ctx context.Context) *IngressValidationResult {
+func (v *IngressValidator) Check(ctx context.Context) *IngressResult {
 	glog.V(3).Infof("Check Ingress %s/%s attribs=%+v", v.ing.Namespace, v.ing.Name, v.attribs)
-	ret := &IngressValidationResult{}
+	ret := &IngressResult{}
 	ret.Err = v.CheckPaths(ctx, ret)
 	return ret
 }
 
 // CheckPaths checks the host, paths that have been configured. Checks are
 // run in parallel.
-func (v *IngressValidator) CheckPaths(ctx context.Context, vr *IngressValidationResult) error {
+func (v *IngressValidator) CheckPaths(ctx context.Context, vr *IngressResult) error {
 	// pathForDefaultBackend is a unique string that will not match any path.
 	const pathForDefaultBackend = "/edeaaff3f1774ad2888673770c6d64097e391bc362d7d6fb34982ddf0efd18cb"
 
@@ -220,7 +229,7 @@ func (v *IngressValidator) CheckPaths(ctx context.Context, vr *IngressValidation
 		if v.ing.Spec.Backend != nil {
 			glog.V(2).Infof("Checking default backend for Ingress %s/%s", v.ing.Namespace, v.ing.Name)
 			// Capture variables for the thunk.
-			result := &PathValidationResult{Scheme: scheme}
+			result := &PathResult{Scheme: scheme}
 			vr.Paths = append(vr.Paths, result)
 			scheme := scheme
 			ctx, cancelFunc := context.WithTimeout(ctx, v.attribs.RequestTimeout)
@@ -239,7 +248,7 @@ func (v *IngressValidator) CheckPaths(ctx context.Context, vr *IngressValidation
 			}
 			for _, path := range rule.HTTP.Paths {
 				// Capture variables for the thunk.
-				result := &PathValidationResult{Scheme: scheme, Host: rule.Host, Path: path.Path}
+				result := &PathResult{Scheme: scheme, Host: rule.Host, Path: path.Path}
 				vr.Paths = append(vr.Paths, result)
 				scheme, host, path := scheme, rule.Host, path.Path
 				ctx, cancelFunc := context.WithTimeout(ctx, v.attribs.RequestTimeout)

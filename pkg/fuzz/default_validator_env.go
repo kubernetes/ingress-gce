@@ -23,15 +23,35 @@ import (
 	"k8s.io/client-go/rest"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	bcclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
-type ClientsetValidatorEnv struct {
+// DefaultValidatorEnv is a ValidatorEnv that gets data from the Kubernetes
+// clientset.
+type DefaultValidatorEnv struct {
 	ns  string
 	k8s *kubernetes.Clientset
 	bc  *bcclient.Clientset
+	gce cloud.Cloud
 }
 
-func (e *ClientsetValidatorEnv) BackendConfigs() (map[string]*backendconfig.BackendConfig, error) {
+// NewDefaultValidatorEnv returns a new ValidatorEnv.
+func NewDefaultValidatorEnv(config *rest.Config, ns string, gce cloud.Cloud) (ValidatorEnv, error) {
+	ret := &DefaultValidatorEnv{ns: ns, gce: gce}
+	var err error
+	ret.k8s, err = kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	ret.bc, err = bcclient.NewForConfig(config)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
+}
+
+// BackendConfigs implements ValidatorEnv.
+func (e *DefaultValidatorEnv) BackendConfigs() (map[string]*backendconfig.BackendConfig, error) {
 	bcl, err := e.bc.CloudV1beta1().BackendConfigs(e.ns).List(metav1.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -44,7 +64,8 @@ func (e *ClientsetValidatorEnv) BackendConfigs() (map[string]*backendconfig.Back
 
 }
 
-func (e *ClientsetValidatorEnv) Services() (map[string]*v1.Service, error) {
+// Services implements ValidatorEnv.
+func (e *DefaultValidatorEnv) Services() (map[string]*v1.Service, error) {
 	sl, err := e.k8s.Core().Services(e.ns).List(metav1.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -56,16 +77,7 @@ func (e *ClientsetValidatorEnv) Services() (map[string]*v1.Service, error) {
 	return ret, nil
 }
 
-func NewClientsetValidatorEnv(config *rest.Config, ns string) (ValidatorEnv, error) {
-	ret := &ClientsetValidatorEnv{ns: ns}
-	var err error
-	ret.k8s, err = kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, err
-	}
-	ret.bc, err = bcclient.NewForConfig(config)
-	if err != nil {
-		return nil, err
-	}
-	return ret, nil
+// DefaultValidatorEnv implements ValidatorEnv.
+func (e *DefaultValidatorEnv) Cloud() cloud.Cloud {
+	return e.gce
 }

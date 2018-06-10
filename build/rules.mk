@@ -122,11 +122,10 @@ $(GO_BINARIES): build-dirs
 	        ARCH=$(ARCH)                                                   \
 	        VERSION=$(VERSION)                                             \
 	        PKG=$(PKG)                                                     \
-			TARGET=$@                                                      \
-		GIT_COMMIT=$(GIT_COMMIT)                                           \
+			TARGET=$@                                              \
+		GIT_COMMIT=$(GIT_COMMIT)                                       \
 	        ./build/build.sh                                               \
 	    "                                                                  \
-		$(VERBOSE_OUTPUT)
 
 # Rules for dockerfiles.
 define DOCKERFILE_RULE

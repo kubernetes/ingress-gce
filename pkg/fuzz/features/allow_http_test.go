@@ -28,7 +28,7 @@ func TestAllowHTTPFeature(t *testing.T) {
 
 	v := &AllowHTTPFeature{}
 	a := &fuzz.IngressValidatorAttributes{CheckHTTP: true}
-	env := &fuzz.StaticValidatorEnv{}
+	env := &fuzz.MockValidatorEnv{}
 
 	ing := fuzz.NewIngressBuilder("ns1", "ing1", "").I
 	ing.Annotations = map[string]string{}

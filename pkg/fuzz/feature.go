@@ -30,6 +30,15 @@ type Feature interface {
 	NewValidator() FeatureValidator
 }
 
+// FeatureValidators returns a list of validators.
+func FeatureValidators(fs []Feature) []FeatureValidator {
+	var ret []FeatureValidator
+	for _, f := range fs {
+		ret = append(ret, f.NewValidator())
+	}
+	return ret
+}
+
 // CheckResponseAction is the action to be taken when evaluating the
 // CheckResponse.
 type CheckResponseAction int
@@ -59,6 +68,9 @@ type FeatureValidator interface {
 	// request. If (_, err) is returned, then the response is considered to be
 	// an error.
 	CheckResponse(host, path string, resp *http.Response, body []byte) (CheckResponseAction, error)
+
+	HasAlphaResource(resourceType string) bool
+	HasBetaResource(resourceType string) bool
 }
 
 // NullValidator is a feature that does nothing. Embed this object to reduce the
@@ -78,4 +90,14 @@ func (*NullValidator) ModifyRequest(string, string, *http.Request) {}
 // CheckResponse implements Feature.
 func (*NullValidator) CheckResponse(string, string, *http.Response, []byte) (CheckResponseAction, error) {
 	return CheckResponseContinue, nil
+}
+
+// HasAlphaResource implements Feature.
+func (*NullValidator) HasAlphaResource(resourceType string) bool {
+	return false
+}
+
+// HasBetaResource implements Feature.
+func (*NullValidator) HasBetaResource(resourceType string) bool {
+	return false
 }
