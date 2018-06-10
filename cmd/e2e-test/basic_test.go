@@ -31,6 +31,8 @@ import (
 func TestBasic(t *testing.T) {
 	t.Parallel()
 
+	port80 := intstr.FromInt(80)
+
 	for _, tc := range []struct {
 		desc string
 		ing  *v1beta1.Ingress
@@ -39,20 +41,27 @@ func TestBasic(t *testing.T) {
 		numBackendServices int
 	}{
 		{
-			desc:               "http default backend",
-			ing:                fuzz.NewIngressBuilder("", "ingress-1", "").DefaultBackend("service-1", intstr.FromInt(80)).I,
+			desc: "http default backend",
+			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
+				DefaultBackend("service-1", port80).
+				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 1,
 		},
 		{
-			desc:               "http one path",
-			ing:                fuzz.NewIngressBuilder("", "ingress-1", "").AddPath("test.com", "/", "service-1", intstr.FromInt(80)).I,
+			desc: "http one path",
+			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
+				AddPath("test.com", "/", "service-1", port80).
+				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 2,
 		},
 		{
-			desc:               "http multiple paths",
-			ing:                fuzz.NewIngressBuilder("", "ingress-1", "").AddPath("test.com", "/foo", "service-1", intstr.FromInt(80)).AddPath("test.com", "/bar", "service-1", intstr.FromInt(80)).I,
+			desc: "http multiple paths",
+			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
+				AddPath("test.com", "/foo", "service-1", port80).
+				AddPath("test.com", "/bar", "service-1", port80).
+				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 2,
 		},
