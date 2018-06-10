@@ -102,12 +102,14 @@ func TestIngressValidatorAttributes(t *testing.T) {
 	}{
 		{
 			desc:          "default",
-			ing:           NewIngressBuilder("ns1", "name1", "").I,
+			ing:           NewIngressBuilder("ns1", "name1", "").Build(),
 			wantCheckHTTP: true,
 		},
 		{
-			desc:           "with TLS",
-			ing:            NewIngressBuilder("ns1", "name1", "").AddTLS([]string{"foo.com"}, "s1").I,
+			desc: "with TLS",
+			ing: NewIngressBuilder("ns1", "name1", "").
+				AddTLS([]string{"foo.com"}, "s1").
+				Build(),
 			wantCheckHTTP:  true,
 			wantCheckHTTPS: true,
 		},
@@ -237,39 +239,60 @@ func TestValidatorCheck(t *testing.T) {
 	}{
 		{
 			desc: "simple",
-			ing:  NewIngressBuilderFromExisting(baseIngress).AddPath("test.com", "/path1", "s", port80).I,
+			ing: NewIngressBuilderFromExisting(baseIngress).
+				AddPath("test.com", "/path1", "s", port80).
+				Build(),
 		},
 		{
-			desc:              "default backend",
-			ing:               NewIngressBuilderFromExisting(baseIngress).DefaultBackend("s", port80).I,
+			desc: "default backend",
+			ing: NewIngressBuilderFromExisting(baseIngress).
+				DefaultBackend("s", port80).
+				Build(),
 			hasDefaultBackend: true,
 		},
 		{
 			desc: "multiple paths",
-			ing:  NewIngressBuilderFromExisting(baseIngress).AddPath("test.com", "/path1", "s", port80).AddPath("test.com", "/path2", "s", port80).AddPath("test.com", "/path3", "s", port80).I,
+			ing: NewIngressBuilderFromExisting(baseIngress).
+				AddPath("test.com", "/path1", "s", port80).
+				AddPath("test.com", "/path2", "s", port80).
+				AddPath("test.com", "/path3", "s", port80).
+				Build(),
 		},
 		{
 			desc: "TLS",
-			ing:  NewIngressBuilderFromExisting(baseIngress).AddPath("test.com", "/path1", "s", port80).AddTLS([]string{"test.com"}, "secret1").I,
+			ing: NewIngressBuilderFromExisting(baseIngress).
+				AddPath("test.com", "/path1", "s", port80).
+				AddTLS([]string{"test.com"}, "secret1").
+				Build(),
 		},
 		{
-			desc:    "no VIP",
-			ing:     NewIngressBuilder("ns1", "ing1", "").AddPath("test.com", "/badpath", "s", port80).I,
+			desc: "no VIP",
+			ing: NewIngressBuilder("ns1", "ing1", "").
+				AddPath("test.com", "/badpath", "s", port80).
+				Build(),
 			wantErr: true,
 		},
 		{
-			desc:    "bad paths",
-			ing:     NewIngressBuilderFromExisting(baseIngress).AddPath("test.com", "/badpath", "s", port80).I,
+			desc: "bad paths",
+			ing: NewIngressBuilderFromExisting(baseIngress).
+				AddPath("test.com", "/badpath", "s", port80).
+				Build(),
 			wantErr: true,
 		},
 		{
-			desc:    "bad paths TLS",
-			ing:     NewIngressBuilderFromExisting(baseIngress).AddPath("test.com", "/badpath", "s", port80).AddTLS([]string{"test.com"}, "secret1").I,
+			desc: "bad paths TLS",
+			ing: NewIngressBuilderFromExisting(baseIngress).
+				AddPath("test.com", "/badpath", "s", port80).
+				AddTLS([]string{"test.com"}, "secret1").
+				Build(),
 			wantErr: true,
 		},
 		{
-			desc:            "server timeout",
-			ing:             NewIngressBuilderFromExisting(baseIngress).AddPath("test.com", "/badpath", "s", port80).AddTLS([]string{"test.com"}, "secret1").I,
+			desc: "server timeout",
+			ing: NewIngressBuilderFromExisting(baseIngress).
+				AddPath("test.com", "/badpath", "s", port80).
+				AddTLS([]string{"test.com"}, "secret1").
+				Build(),
 			dontStartServer: true,
 			wantErr:         true,
 		},
@@ -320,24 +343,32 @@ func TestValidatorCheckFeature(t *testing.T) {
 		wantErr             bool
 	}{
 		{
-			desc:    "simple",
-			ing:     NewIngressBuilderFromExisting(baseIngress).AddPath("test.com", "/path1", "s", port80).I,
+			desc: "simple",
+			ing: NewIngressBuilderFromExisting(baseIngress).
+				AddPath("test.com", "/path1", "s", port80).
+				Build(),
 			feature: &mockFeature{},
 		},
 		{
-			desc:    "skip default check",
-			ing:     NewIngressBuilderFromExisting(baseIngress).AddPath("test.com", "/path1", "s", port80).I,
+			desc: "skip default check",
+			ing: NewIngressBuilderFromExisting(baseIngress).
+				AddPath("test.com", "/path1", "s", port80).
+				Build(),
 			feature: &mockFeature{mode: mockValidatorSkipCheck},
 		},
 		{
-			desc:                "error in configure",
-			ing:                 NewIngressBuilderFromExisting(baseIngress).AddPath("test.com", "/path1", "s", port80).I,
+			desc: "error in configure",
+			ing: NewIngressBuilderFromExisting(baseIngress).
+				AddPath("test.com", "/path1", "s", port80).
+				Build(),
 			feature:             &mockFeature{mode: mockValidatorConfigureError},
 			wantNewValidatorErr: true,
 		},
 		{
-			desc:    "error in check",
-			ing:     NewIngressBuilderFromExisting(baseIngress).AddPath("test.com", "/path1", "s", port80).I,
+			desc: "error in check",
+			ing: NewIngressBuilderFromExisting(baseIngress).
+				AddPath("test.com", "/path1", "s", port80).
+				Build(),
 			feature: &mockFeature{mode: mockValidatorCheckError},
 			wantErr: true,
 		},

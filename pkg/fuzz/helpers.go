@@ -75,9 +75,9 @@ func ServiceMapFromIngress(ing *v1beta1.Ingress) ServiceMap {
 // IngressBuilder is syntactic sugar for creating Ingress specs for testing
 // purposes.
 //
-//   ing := NewIngressBuilder("ns1", "name1", "127.0.0.1").I
+//   ing := NewIngressBuilder("ns1", "name1", "127.0.0.1").Build()
 type IngressBuilder struct {
-	I *v1beta1.Ingress
+	ing *v1beta1.Ingress
 }
 
 // NewIngressBuilder instantiates a new IngressBuilder.
@@ -97,18 +97,24 @@ func NewIngressBuilder(ns, name, vip string) *IngressBuilder {
 			},
 		}
 	}
-	return &IngressBuilder{I: ing}
+	return &IngressBuilder{ing: ing}
 }
 
 // NewIngressBuilderFromExisting creates a IngressBuilder from an existing
 // Ingress object. The Ingress object will be copied.
 func NewIngressBuilderFromExisting(i *v1beta1.Ingress) *IngressBuilder {
-	return &IngressBuilder{I: i.DeepCopy()}
+	return &IngressBuilder{ing: i.DeepCopy()}
+}
+
+// Build returns a constructed Ingress. The Ingress is a copy, so the Builder
+// can be reused to construct multiple Ingress definitions.
+func (i *IngressBuilder) Build() *v1beta1.Ingress {
+	return i.ing.DeepCopy()
 }
 
 // DefaultBackend sets the default backend.
 func (i *IngressBuilder) DefaultBackend(service string, port intstr.IntOrString) *IngressBuilder {
-	i.I.Spec.Backend = &v1beta1.IngressBackend{
+	i.ing.Spec.Backend = &v1beta1.IngressBackend{
 		ServiceName: service,
 		ServicePort: port,
 	}
@@ -123,18 +129,18 @@ func (i *IngressBuilder) AddHost(host string) *IngressBuilder {
 
 // Host returns the rule for a host and creates it if it did not exist.
 func (i *IngressBuilder) Host(host string) *v1beta1.IngressRule {
-	for idx := range i.I.Spec.Rules {
-		if i.I.Spec.Rules[idx].Host == host {
-			return &i.I.Spec.Rules[idx]
+	for idx := range i.ing.Spec.Rules {
+		if i.ing.Spec.Rules[idx].Host == host {
+			return &i.ing.Spec.Rules[idx]
 		}
 	}
-	i.I.Spec.Rules = append(i.I.Spec.Rules, v1beta1.IngressRule{
+	i.ing.Spec.Rules = append(i.ing.Spec.Rules, v1beta1.IngressRule{
 		Host: host,
 		IngressRuleValue: v1beta1.IngressRuleValue{
 			HTTP: &v1beta1.HTTPIngressRuleValue{},
 		},
 	})
-	return &i.I.Spec.Rules[len(i.I.Spec.Rules)-1]
+	return &i.ing.Spec.Rules[len(i.ing.Spec.Rules)-1]
 }
 
 // AddPath a new path for the given host if it did not already exist.
@@ -164,7 +170,7 @@ func (i *IngressBuilder) Path(host, path, service string, port intstr.IntOrStrin
 
 // AddTLS adds a TLS secret reference.
 func (i *IngressBuilder) AddTLS(hosts []string, secretName string) *IngressBuilder {
-	i.I.Spec.TLS = append(i.I.Spec.TLS, v1beta1.IngressTLS{
+	i.ing.Spec.TLS = append(i.ing.Spec.TLS, v1beta1.IngressTLS{
 		Hosts:      hosts,
 		SecretName: secretName,
 	})

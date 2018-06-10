@@ -66,7 +66,9 @@ func TestServiceMapFromIngress(t *testing.T) {
 	}{
 		{
 			desc: "one path",
-			ing:  NewIngressBuilder("n1", "ing1", "").AddPath("test1.com", "/foo", "s", intstr.FromInt(80)).I,
+			ing: NewIngressBuilder("n1", "ing1", "").
+				AddPath("test1.com", "/foo", "s", intstr.FromInt(80)).
+				Build(),
 			want: ServiceMap{
 				HostPath{"test1.com", "/foo"}: &v1beta1.IngressBackend{
 					ServiceName: "s", ServicePort: intstr.IntOrString{IntVal: 80},
@@ -75,7 +77,10 @@ func TestServiceMapFromIngress(t *testing.T) {
 		},
 		{
 			desc: "multiple paths",
-			ing:  NewIngressBuilder("n1", "ing1", "").AddPath("test1.com", "/foo", "s", intstr.FromInt(80)).AddPath("test1.com", "/bar", "s", intstr.FromInt(80)).I,
+			ing: NewIngressBuilder("n1", "ing1", "").
+				AddPath("test1.com", "/foo", "s", intstr.FromInt(80)).
+				AddPath("test1.com", "/bar", "s", intstr.FromInt(80)).
+				Build(),
 			want: ServiceMap{
 				HostPath{"test1.com", "/foo"}: &v1beta1.IngressBackend{
 					ServiceName: "s", ServicePort: intstr.IntOrString{IntVal: 80},
@@ -87,7 +92,9 @@ func TestServiceMapFromIngress(t *testing.T) {
 		},
 		{
 			desc: "default backend",
-			ing:  NewIngressBuilder("n1", "ing1", "").DefaultBackend("s", intstr.FromInt(80)).I,
+			ing: NewIngressBuilder("n1", "ing1", "").
+				DefaultBackend("s", intstr.FromInt(80)).
+				Build(),
 			want: ServiceMap{
 				HostPath{}: &v1beta1.IngressBackend{
 					ServiceName: "s", ServicePort: intstr.IntOrString{IntVal: 80},
@@ -124,7 +131,7 @@ func TestIngressBuilder(t *testing.T) {
 			want: &v1beta1.Ingress{
 				ObjectMeta: om,
 			},
-			got: NewIngressBuilder(ns, name, "").I,
+			got: NewIngressBuilder(ns, name, "").Build(),
 		},
 		{
 			desc: "one path",
@@ -151,7 +158,9 @@ func TestIngressBuilder(t *testing.T) {
 					},
 				},
 			},
-			got: NewIngressBuilder(ns, name, "").AddPath("test.com", "/", "svc1", intstr.FromInt(80)).I,
+			got: NewIngressBuilder(ns, name, "").
+				AddPath("test.com", "/", "svc1", intstr.FromInt(80)).
+				Build(),
 		},
 		{
 			desc: "with VIP",
@@ -163,7 +172,7 @@ func TestIngressBuilder(t *testing.T) {
 					},
 				},
 			},
-			got: NewIngressBuilder(ns, name, "127.0.0.1").I,
+			got: NewIngressBuilder(ns, name, "127.0.0.1").Build(),
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {

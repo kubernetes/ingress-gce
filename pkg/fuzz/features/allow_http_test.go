@@ -30,7 +30,7 @@ func TestAllowHTTPFeature(t *testing.T) {
 	a := &fuzz.IngressValidatorAttributes{CheckHTTP: true}
 	env := &fuzz.MockValidatorEnv{}
 
-	ing := fuzz.NewIngressBuilder("ns1", "ing1", "").I
+	ing := fuzz.NewIngressBuilder("ns1", "ing1", "").Build()
 	ing.Annotations = map[string]string{}
 	ing.Annotations[annotations.AllowHTTPKey] = "false"
 
