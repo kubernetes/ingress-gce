@@ -119,13 +119,13 @@ $(GO_BINARIES): build-dirs
 	    -w /go/src/$(PKG)                                                  \
 	    $(BUILD_IMAGE)                                                     \
 	    /bin/sh -c "                                                       \
-	        ARCH=$(ARCH)                                                   \
+		ARCH=$(ARCH)                                                   \
 	        VERSION=$(VERSION)                                             \
 	        PKG=$(PKG)                                                     \
-			TARGET=$@                                              \
+		TARGET=$@                                                      \
 		GIT_COMMIT=$(GIT_COMMIT)                                       \
 	        ./build/build.sh                                               \
-	    "                                                                  \
+	    "
 
 # Rules for dockerfiles.
 define DOCKERFILE_RULE
