@@ -30,11 +30,12 @@ const (
 )
 
 // CreateEchoService creates the pod and service serving echoheaders.
-func CreateEchoService(s *Sandbox, name string) (*v1.Pod, *v1.Service, error) {
+func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (*v1.Pod, *v1.Service, error) {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   name,
-			Labels: map[string]string{"app": name},
+			Name:        name,
+			Labels:      map[string]string{"app": name},
+			Annotations: annotations,
 		},
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{
@@ -69,4 +70,21 @@ func CreateEchoService(s *Sandbox, name string) (*v1.Pod, *v1.Service, error) {
 	glog.V(2).Infof("Echo service %q:%q created", s.Namespace, name)
 
 	return pod, service, nil
+}
+
+// CreateSecret creates a secret from the given data.
+func CreateSecret(s *Sandbox, name string, data map[string][]byte) (*v1.Secret, error) {
+	secret := &v1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Data: data,
+	}
+	var err error
+	if secret, err = s.f.Clientset.Core().Secrets(s.Namespace).Create(secret); err != nil {
+		return nil, err
+	}
+	glog.V(2).Infof("Secret %q:%q created", s.Namespace, name)
+
+	return secret, nil
 }
