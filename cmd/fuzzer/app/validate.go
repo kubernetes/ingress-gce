@@ -44,6 +44,7 @@ var (
 		name         string
 		listFeatures bool
 		featureRegex string
+		project      string
 	}
 	// ValidateFlagSet is the flag set for the validate subcommand.
 	ValidateFlagSet = flag.NewFlagSet("validate", flag.ExitOnError)
@@ -59,6 +60,7 @@ func init() {
 	ValidateFlagSet.StringVar(&validateOptions.ns, "ns", "default", "namespace of the Ingress object to validate")
 	ValidateFlagSet.BoolVar(&validateOptions.listFeatures, "listFeatures", false, "list features available to be validated")
 	ValidateFlagSet.StringVar(&validateOptions.featureRegex, "featureRegex", "", "features matching regex will be included in validation")
+	ValidateFlagSet.StringVar(&validateOptions.project, "project", "", "GCP project where the load balancer will be created")
 
 	// Merges in the global flags into the subcommand FlagSet.
 	flag.VisitAll(func(f *flag.Flag) {
@@ -76,9 +78,16 @@ func Validate() {
 		os.Exit(0)
 	}
 
-	if validateOptions.name == "" {
-		fmt.Fprint(ValidateFlagSet.Output(), "You must specify a -name.\n")
-		os.Exit(1)
+	for _, o := range []struct {
+		flag, val string
+	}{
+		{validateOptions.name, "-name"},
+		{validateOptions.project, "-project"},
+	} {
+		if o.val == "" {
+			fmt.Fprintf(ValidateFlagSet.Output(), "You must specify the %s flag.\n", o.flag)
+			os.Exit(1)
+		}
 	}
 
 	config, err := clientcmd.BuildConfigFromFlags("", validateOptions.kubeconfig)
@@ -86,7 +95,7 @@ func Validate() {
 		panic(err.Error())
 	}
 
-	gce, err := e2e.NewCloud("bowei-gke")
+	gce, err := e2e.NewCloud(validateOptions.project)
 	if err != nil {
 		panic(err)
 	}

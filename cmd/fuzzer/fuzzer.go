@@ -40,9 +40,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Make glog not complain about flags not being parsed.
-	// flag.CommandLine.Parse([]string{})
-
 	switch os.Args[1] {
 	case "validate":
 		app.ValidateFlagSet.Parse(os.Args[2:])
