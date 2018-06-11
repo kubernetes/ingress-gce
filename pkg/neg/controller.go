@@ -43,6 +43,11 @@ const (
 	maxRetries = 15
 )
 
+func init() {
+	// register prometheus metrics
+	registerMetrics()
+}
+
 // Controller is network endpoint group controller.
 // It determines whether NEG for a service port is needed, then signals negSyncerManager to sync it.
 type Controller struct {
@@ -154,6 +159,7 @@ func (c *Controller) stop() {
 
 // processEndpoint finds the related syncers and signal it to sync
 func (c *Controller) processEndpoint(obj interface{}) {
+	defer lastSyncTimestamp.WithLabelValues().Set(float64(time.Now().UTC().UnixNano()))
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		glog.Errorf("Failed to generate endpoint key: %v", err)
@@ -182,6 +188,7 @@ func (c *Controller) serviceWorker() {
 
 // processService takes a service and determines whether it needs NEGs or not.
 func (c *Controller) processService(key string) error {
+	defer lastSyncTimestamp.WithLabelValues().Set(float64(time.Now().UTC().UnixNano()))
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
