@@ -124,11 +124,12 @@ func TestBackendConfigs(t *testing.T) {
 		desc            string
 		svc             *v1.Service
 		expectedConfigs *BackendConfigs
-		expectErr       bool
+		expectedErr     error
 	}{
 		{
-			desc: "no backendConfig annotation",
-			svc:  &v1.Service{},
+			desc:        "no backendConfig annotation",
+			svc:         &v1.Service{},
+			expectedErr: ErrBackendConfigAnnotationMissing,
 		},
 		{
 			desc: "single backendConfig",
@@ -186,7 +187,7 @@ func TestBackendConfigs(t *testing.T) {
 					},
 				},
 			},
-			expectErr: true,
+			expectedErr: ErrBackendConfigInvalidJSON,
 		},
 		{
 			desc: "wrong field name in backendConfig annotation",
@@ -197,21 +198,15 @@ func TestBackendConfigs(t *testing.T) {
 					},
 				},
 			},
-			expectErr: true,
+			expectedErr: ErrBackendConfigNoneFound,
 		},
 	}
 
 	for _, tc := range testcases {
 		svc := FromService(tc.svc)
 		configs, err := svc.GetBackendConfigs()
-		if tc.expectErr {
-			if err == nil {
-				t.Errorf("%s: for annotions %+v; svc.GetBackendConfigs() = %v, _; want _, error", tc.desc, svc.v, configs)
-			}
-			continue
-		}
-		if err != nil || !reflect.DeepEqual(configs, tc.expectedConfigs) {
-			t.Errorf("%s: for annotions %+v; svc.GetBackendConfigs() = %v, %v; want %v, nil", tc.desc, svc.v, configs, err, tc.expectedConfigs)
+		if !reflect.DeepEqual(configs, tc.expectedConfigs) || tc.expectedErr != err {
+			t.Errorf("%s: for annotations %+v; svc.GetBackendConfigs() = %v, %v; want %v, %v", tc.desc, svc.v, configs, err, tc.expectedConfigs, tc.expectedErr)
 		}
 	}
 }
