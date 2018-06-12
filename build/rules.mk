@@ -130,7 +130,7 @@ $(GO_BINARIES): build-dirs
 # Rules for dockerfiles.
 define DOCKERFILE_RULE
 .$(BINARY)-$(ARCH)-dockerfile: Dockerfile.$(BINARY)
-	@echo generating Dockerfile $$@ from $$<
+	@echo "generating Dockerfile $$@ from $$<"
 	@sed					\
 	    -e 's|ARG_ARCH|$(ARCH)|g' \
 	    -e 's|ARG_BIN|$(BINARY)|g' \
@@ -233,7 +233,7 @@ endif
 # Miscellaneous rules
 .PHONY: version
 version:
-	@echo $(VERSION)
+	@echo "$(VERSION)"
 
 .PHONY: build-dirs
 build-dirs:
@@ -254,20 +254,20 @@ bin-clean:
 .PHONY: help
 help:
 	@echo "make targets"
-	@echo
+	@echo ""
 	@echo "  all, build    build all binaries"
 	@echo "  containers    build the containers"
 	@echo "  push          push containers to the registry"
 	@echo "  help          this help message"
 	@echo "  version       show package version"
-	@echo
+	@echo ""
 	@echo "  {build,containers,push}-ARCH    do action for specific ARCH"
 	@echo "  all-{build,containers,push}     do action for all ARCH"
 	@echo "  only-push-BINARY                push just BINARY"
-	@echo
+	@echo ""
 	@echo "  Available ARCH: $(ALL_ARCH)"
 	@echo "  Available BINARIES: $(ALL_BINARIES)"
-	@echo
+	@echo ""
 	@echo "  Setting VERBOSE=1 will show additional build logging."
-	@echo
+	@echo ""
 	@echo "  Setting VERSION will override the container version tag."
