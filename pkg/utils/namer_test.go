@@ -19,6 +19,7 @@ package utils
 import (
 	"crypto/sha256"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -333,6 +334,17 @@ func TestNamerLoadBalancer(t *testing.T) {
 		if name != tc.urlMap {
 			t.Errorf("namer.UrlMap(%q) = %q, want %q", lbName, name, tc.urlMap)
 		}
+	}
+}
+
+// Ensure that a valid cert name is created if clusterName is empty.
+func TestNamerSSLCertName(t *testing.T) {
+	secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
+	namer := NewNamerWithPrefix("k8s", "", "fw1")
+	lbName := namer.LoadBalancer("key1")
+	certName := namer.SSLCertName(lbName, secretHash)
+	if strings.HasSuffix(certName, clusterNameDelimiter) {
+		t.Errorf("Invalid Cert name %s ending with %s", certName, clusterNameDelimiter)
 	}
 }
 

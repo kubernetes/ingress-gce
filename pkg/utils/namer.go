@@ -192,6 +192,7 @@ func truncate(key string) string {
 
 func (n *Namer) decorateName(name string) string {
 	clusterName := n.UID()
+	// clusterName might be empty for legacy clusters
 	if clusterName == "" {
 		return name
 	}
@@ -342,7 +343,7 @@ func (n *Namer) IsLegacySSLCert(lbName string, resourceName string) bool {
 func (n *Namer) SSLCertName(lbName string, secretHash string) string {
 	lbNameHash := n.lbNameToHash(lbName)
 	// k8s-ssl-[lbNameHash]-[certhash]--[clusterUID]
-	return truncate(fmt.Sprintf("%s-%s-%s-%s%s%s", n.prefix, sslCertPrefix, lbNameHash, secretHash, clusterNameDelimiter, n.UID()))
+	return n.decorateName(fmt.Sprintf("%s-%s-%s-%s", n.prefix, sslCertPrefix, lbNameHash, secretHash))
 }
 
 // ForwardingRule returns the name of the forwarding rule prefix.
