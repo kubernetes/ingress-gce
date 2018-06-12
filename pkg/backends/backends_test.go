@@ -69,7 +69,7 @@ func newTestJig(gce *gce.GCECloud, fakeIGs instances.InstanceGroups, syncWithClo
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	healthCheckProvider := healthchecks.NewFakeHealthCheckProvider()
 	healthChecks := healthchecks.NewHealthChecker(healthCheckProvider, "/", "/healthz", defaultNamer, defaultBackendSvc)
-	bp := NewBackendPool(gce, negGetter, healthChecks, nodePool, defaultNamer, syncWithCloud)
+	bp := NewBackendPool(gce, negGetter, healthChecks, nodePool, defaultNamer, false, syncWithCloud)
 	probes := map[utils.ServicePort]*api_v1.Probe{{NodePort: 443, Protocol: annotations.ProtocolHTTPS}: existingProbe}
 	bp.Init(NewFakeProbeProvider(probes))
 
@@ -642,7 +642,7 @@ func TestBackendPoolDeleteLegacyHealthChecks(t *testing.T) {
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	hcp := healthchecks.NewFakeHealthCheckProvider()
 	healthChecks := healthchecks.NewHealthChecker(hcp, "/", "/healthz", defaultNamer, defaultBackendSvc)
-	bp := NewBackendPool(fakeGCE, negGetter, healthChecks, nodePool, defaultNamer, false)
+	bp := NewBackendPool(fakeGCE, negGetter, healthChecks, nodePool, defaultNamer, false, false)
 	probes := map[utils.ServicePort]*api_v1.Probe{}
 	bp.Init(NewFakeProbeProvider(probes))
 
@@ -832,7 +832,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	hcp := healthchecks.NewFakeHealthCheckProvider()
 	healthChecks := healthchecks.NewHealthChecker(hcp, "/", "/healthz", defaultNamer, defaultBackendSvc)
-	bp := NewBackendPool(fakeGCE, fakeNEG, healthChecks, nodePool, defaultNamer, false)
+	bp := NewBackendPool(fakeGCE, fakeNEG, healthChecks, nodePool, defaultNamer, false, false)
 
 	// Add standard hooks for mocking update calls. Each test can set a update different hook if it chooses to.
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceHook

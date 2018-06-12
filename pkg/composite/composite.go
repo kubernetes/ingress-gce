@@ -240,6 +240,13 @@ func (be *BackendService) toAlpha() (*computealpha.BackendService, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling BackendService JSON to compute alpha type: %v", err)
 	}
+	// Set force send fields. This is a temporary hack.
+	if alpha.CdnPolicy != nil && alpha.CdnPolicy.CacheKeyPolicy != nil {
+		alpha.CdnPolicy.CacheKeyPolicy.ForceSendFields = []string{"IncludeHost", "IncludeProtocol", "IncludeQueryString", "QueryStringBlacklist", "QueryStringWhitelist"}
+	}
+	if alpha.Iap != nil {
+		alpha.Iap.ForceSendFields = []string{"Enabled", "Oauth2ClientId", "Oauth2ClientSecret"}
+	}
 	return alpha, nil
 }
 
@@ -255,6 +262,13 @@ func (be *BackendService) toBeta() (*computebeta.BackendService, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling BackendService JSON to compute beta type: %v", err)
 	}
+	// Set force send fields. This is a temporary hack.
+	if beta.CdnPolicy != nil && beta.CdnPolicy.CacheKeyPolicy != nil {
+		beta.CdnPolicy.CacheKeyPolicy.ForceSendFields = []string{"IncludeHost", "IncludeProtocol", "IncludeQueryString", "QueryStringBlacklist", "QueryStringWhitelist"}
+	}
+	if beta.Iap != nil {
+		beta.Iap.ForceSendFields = []string{"Enabled", "Oauth2ClientId", "Oauth2ClientSecret"}
+	}
 	return beta, nil
 }
 
@@ -269,6 +283,13 @@ func (be *BackendService) toGA() (*compute.BackendService, error) {
 	err = json.Unmarshal(bytes, ga)
 	if err != nil {
 		return nil, fmt.Errorf("error unmarshalling BackendService JSON to compute GA type: %v", err)
+	}
+	// Set force send fields. This is a temporary hack.
+	if ga.CdnPolicy != nil && ga.CdnPolicy.CacheKeyPolicy != nil {
+		ga.CdnPolicy.CacheKeyPolicy.ForceSendFields = []string{"IncludeHost", "IncludeProtocol", "IncludeQueryString", "QueryStringBlacklist", "QueryStringWhitelist"}
+	}
+	if ga.Iap != nil {
+		ga.Iap.ForceSendFields = []string{"Enabled", "Oauth2ClientId", "Oauth2ClientSecret"}
 	}
 	return ga, nil
 }
