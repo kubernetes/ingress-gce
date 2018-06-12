@@ -476,6 +476,74 @@ func UpdateAlphaBackendServiceHook(ctx context.Context, key *meta.Key, obj *alph
 	return nil
 }
 
+// UpdateUrlMapHook defines the hook for updating a UrlMap.
+// It replaces the object with the same key in the mock with the updated object.
+func UpdateUrlMapHook(ctx context.Context, key *meta.Key, obj *ga.UrlMap, m *cloud.MockUrlMaps) error {
+	_, err := m.Get(ctx, key)
+	if err != nil {
+		return &googleapi.Error{
+			Code:    http.StatusNotFound,
+			Message: fmt.Sprintf("Key: %s was not found in UrlMaps", key.String()),
+		}
+	}
+
+	obj.Name = key.Name
+	projectID := m.ProjectRouter.ProjectID(ctx, "ga", "urlMaps")
+	obj.SelfLink = cloud.SelfLink(meta.VersionGA, projectID, "urlMaps", key)
+
+	m.Objects[*key] = &cloud.MockUrlMapsObj{Obj: obj}
+	return nil
+}
+
+// TargetHttpsProxySetSslCertificatesHook defines the hook for setting ssl certificates on a TargetHttpsProxy.
+func TargetHttpsProxySetSslCertificatesHook(ctx context.Context, key *meta.Key, req *ga.TargetHttpsProxiesSetSslCertificatesRequest, m *cloud.MockTargetHttpsProxies) error {
+	_, err := m.Get(ctx, key)
+	if err != nil {
+		return &googleapi.Error{
+			Code:    http.StatusNotFound,
+			Message: fmt.Sprintf("Key: %s was not found in UrlMaps", key.String()),
+		}
+	}
+
+	obj, _ := m.Objects[*key]
+	gaObj := obj.ToGA()
+
+	gaObj.SslCertificates = req.SslCertificates
+	return nil
+}
+
+// TargetHttpsProxySetUrlMapHook defines the hook for setting the url map on a TargetHttpsProxy.
+func TargetHttpsProxySetUrlMapHook(ctx context.Context, key *meta.Key, ref *ga.UrlMapReference, m *cloud.MockTargetHttpsProxies) error {
+	_, err := m.Get(ctx, key)
+	if err != nil {
+		return &googleapi.Error{
+			Code:    http.StatusNotFound,
+			Message: fmt.Sprintf("Key: %s was not found in UrlMaps", key.String()),
+		}
+	}
+
+	obj, _ := m.Objects[*key]
+	gaObj := obj.ToGA()
+	gaObj.UrlMap = ref.UrlMap
+	return nil
+}
+
+// TargetHttpProxySetUrlMapHook defines the hook for setting the url map on a TargetHttpProxy.
+func TargetHttpProxySetUrlMapHook(ctx context.Context, key *meta.Key, ref *ga.UrlMapReference, m *cloud.MockTargetHttpProxies) error {
+	_, err := m.Get(ctx, key)
+	if err != nil {
+		return &googleapi.Error{
+			Code:    http.StatusNotFound,
+			Message: fmt.Sprintf("Key: %s was not found in UrlMaps", key.String()),
+		}
+	}
+
+	obj, _ := m.Objects[*key]
+	gaObj := obj.ToGA()
+	gaObj.UrlMap = ref.UrlMap
+	return nil
+}
+
 // InsertFirewallsUnauthorizedErrHook mocks firewall insertion. A forbidden error will be thrown as return.
 func InsertFirewallsUnauthorizedErrHook(ctx context.Context, key *meta.Key, obj *ga.Firewall, m *cloud.MockFirewalls) (bool, error) {
 	return true, &googleapi.Error{Code: http.StatusForbidden}

@@ -46,7 +46,7 @@ var (
 // ClusterManager fake
 type fakeClusterManager struct {
 	*ClusterManager
-	fakeLbs      *loadbalancers.FakeLoadBalancers
+	fakeLbs      *gce.GCECloud
 	fakeBackends *gce.GCECloud
 	fakeIGs      *instances.FakeInstanceGroups
 	Namer        *utils.Namer
@@ -54,9 +54,8 @@ type fakeClusterManager struct {
 
 // NewFakeClusterManager creates a new fake ClusterManager.
 func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager {
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	namer := utils.NewNamer(clusterName, firewallName)
-	fakeLbs := loadbalancers.NewFakeLoadBalancers(clusterName, namer)
-	fakeBackends := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
 	fakeHCP := healthchecks.NewFakeHealthCheckProvider()
 	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")
@@ -67,10 +66,10 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 	healthChecker := healthchecks.NewHealthChecker(fakeHCP, "/", "/healthz", namer, testDefaultBeSvcPort.ID.Service)
 
 	backendPool := backends.NewBackendPool(
-		fakeBackends,
+		fakeGCE,
 		fakeNEG,
 		healthChecker, nodePool, namer, false)
-	l7Pool := loadbalancers.NewLoadBalancerPool(fakeLbs, namer)
+	l7Pool := loadbalancers.NewLoadBalancerPool(fakeGCE, namer)
 	frPool := firewalls.NewFirewallPool(firewalls.NewFakeFirewallsProvider(false, false), namer, testSrcRanges, testNodePortRanges)
 	cm := &ClusterManager{
 		ClusterNamer:            namer,
@@ -80,5 +79,5 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 		firewallPool:            frPool,
 		defaultBackendSvcPortID: testDefaultBeSvcPort.ID,
 	}
-	return &fakeClusterManager{cm, fakeLbs, fakeBackends, fakeIGs, namer}
+	return &fakeClusterManager{cm, fakeGCE, fakeGCE, fakeIGs, namer}
 }

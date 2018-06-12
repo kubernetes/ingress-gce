@@ -28,6 +28,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
 const (
@@ -84,7 +85,7 @@ type L7 struct {
 	// runtimeInfo is non-cloudprovider information passed from the controller.
 	runtimeInfo *L7RuntimeInfo
 	// cloud is an interface to manage loadbalancers in the GCE cloud.
-	cloud LoadBalancers
+	cloud *gce.GCECloud
 	// um is the UrlMap associated with this L7.
 	um *compute.UrlMap
 	// tp is the TargetHTTPProxy associated with this L7.

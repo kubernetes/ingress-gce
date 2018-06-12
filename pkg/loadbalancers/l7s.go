@@ -23,6 +23,7 @@ import (
 	"github.com/golang/glog"
 
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"k8s.io/ingress-gce/pkg/storage"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -30,7 +31,7 @@ import (
 
 // L7s implements LoadBalancerPool.
 type L7s struct {
-	cloud       LoadBalancers
+	cloud       *gce.GCECloud
 	snapshotter storage.Snapshotter
 	namer       *utils.Namer
 }
@@ -43,7 +44,7 @@ func (l *L7s) Namer() *utils.Namer {
 // NewLoadBalancerPool returns a new loadbalancer pool.
 // - cloud: implements LoadBalancers. Used to sync L7 loadbalancer resources
 //	 with the cloud.
-func NewLoadBalancerPool(cloud LoadBalancers, namer *utils.Namer) LoadBalancerPool {
+func NewLoadBalancerPool(cloud *gce.GCECloud, namer *utils.Namer) LoadBalancerPool {
 	return &L7s{cloud, storage.NewInMemoryPool(), namer}
 }
 
