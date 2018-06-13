@@ -22,11 +22,11 @@ import (
 
 	compute "google.golang.org/api/compute/v0.alpha"
 	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -54,48 +54,48 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 	testCases := []struct {
 		namespace string
 		name      string
-		ports     sets.String
+		ports     annotations.PortNameMap
 		stop      bool
 		expect    []servicePort // keys of running syncers
 	}{
 		{
 			"ns1",
 			"n1",
-			sets.NewString("80", "443"),
+			annotations.PortNameMap{1000: "80", 2000: "443"},
 			false,
 			[]servicePort{
-				getSyncerKey("ns1", "n1", "80"),
-				getSyncerKey("ns1", "n1", "443"),
+				getSyncerKey("ns1", "n1", 1000, "80"),
+				getSyncerKey("ns1", "n1", 2000, "443"),
 			},
 		},
 		{
 			"ns1",
 			"n1",
-			sets.NewString("80", "namedport"),
+			annotations.PortNameMap{3000: "80", 4000: "namedport"},
 			false,
 			[]servicePort{
-				getSyncerKey("ns1", "n1", "80"),
-				getSyncerKey("ns1", "n1", "namedport"),
+				getSyncerKey("ns1", "n1", 3000, "80"),
+				getSyncerKey("ns1", "n1", 4000, "namedport"),
 			},
 		},
 		{
 			"ns2",
 			"n1",
-			sets.NewString("80"),
+			annotations.PortNameMap{3000: "80"},
 			false,
 			[]servicePort{
-				getSyncerKey("ns1", "n1", "80"),
-				getSyncerKey("ns1", "n1", "namedport"),
-				getSyncerKey("ns2", "n1", "80"),
+				getSyncerKey("ns1", "n1", 3000, "80"),
+				getSyncerKey("ns1", "n1", 4000, "namedport"),
+				getSyncerKey("ns2", "n1", 3000, "80"),
 			},
 		},
 		{
 			"ns1",
 			"n1",
-			sets.NewString(),
+			annotations.PortNameMap{},
 			true,
 			[]servicePort{
-				getSyncerKey("ns2", "n1", "80"),
+				getSyncerKey("ns2", "n1", 3000, "80"),
 			},
 		},
 	}
@@ -113,11 +113,11 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		for _, key := range tc.expect {
 			syncer, ok := manager.syncerMap[key]
 			if !ok {
-				t.Errorf("Expect syncer key %q to be present.", key)
+				t.Errorf("Expect syncer key %+v to be present.", key)
 				continue
 			}
 			if syncer.IsStopped() || syncer.IsShuttingDown() {
-				t.Errorf("Expect syncer %q to be running.", key)
+				t.Errorf("Expect syncer %+v to be running.", key)
 			}
 		}
 		for key, syncer := range manager.syncerMap {
@@ -132,7 +132,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 				continue
 			}
 			if !syncer.IsStopped() {
-				t.Errorf("Expect syncer %q to be stopped.", key)
+				t.Errorf("Expect syncer %+v to be stopped.", key)
 			}
 		}
 	}
@@ -144,13 +144,17 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 
 func TestGarbageCollectionSyncer(t *testing.T) {
 	manager := NewTestSyncerManager(fake.NewSimpleClientset())
-	if err := manager.EnsureSyncers("ns1", "n1", sets.NewString("80", "namedport")); err != nil {
+	portMap := make(annotations.PortNameMap)
+	portMap[3000] = "80"
+	portMap[4000] = "namedport"
+
+	if err := manager.EnsureSyncers("ns1", "n1", portMap); err != nil {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}
 	manager.StopSyncer("ns1", "n1")
 
-	syncer1 := manager.syncerMap[getSyncerKey("ns1", "n1", "80")]
-	syncer2 := manager.syncerMap[getSyncerKey("ns1", "n1", "namedport")]
+	syncer1 := manager.syncerMap[getSyncerKey("ns1", "n1", 3000, "80")]
+	syncer2 := manager.syncerMap[getSyncerKey("ns1", "n1", 4000, "namedport")]
 
 	if err := wait.PollImmediate(time.Second, 30*time.Second, func() (bool, error) {
 		return !syncer1.IsShuttingDown() && syncer1.IsStopped() && !syncer2.IsShuttingDown() && syncer2.IsStopped(), nil
@@ -173,11 +177,13 @@ func TestGarbageCollectionNEG(t *testing.T) {
 		t.Fatalf("Failed to create endpoint: %v", err)
 	}
 	manager := NewTestSyncerManager(kubeClient)
-	if err := manager.EnsureSyncers(testServiceNamespace, testServiceName, sets.NewString("80")); err != nil {
+	ports := make(annotations.PortNameMap)
+	ports[80] = "namedport"
+	if err := manager.EnsureSyncers(testServiceNamespace, testServiceName, ports); err != nil {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}
 
-	negName := manager.namer.NEG("test", "test", "80")
+	negName := manager.namer.NEG("test", "test", 80)
 	manager.cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 		Name: negName,
 	}, TestZone1)
