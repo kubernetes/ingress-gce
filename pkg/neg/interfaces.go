@@ -18,7 +18,7 @@ package neg
 
 import (
 	computealpha "google.golang.org/api/compute/v0.alpha"
-	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/annotations"
 )
 
 // networkEndpointGroupCloud is an interface for managing gce network endpoint group.
@@ -37,7 +37,7 @@ type networkEndpointGroupCloud interface {
 
 // networkEndpointGroupNamer is an interface for generating network endpoint group name.
 type networkEndpointGroupNamer interface {
-	NEG(namespace, name, port string) string
+	NEG(namespace, name string, port int32) string
 	IsNEG(name string) bool
 }
 
@@ -64,7 +64,8 @@ type negSyncer interface {
 // negSyncerManager is an interface for controllers to manage syncer
 type negSyncerManager interface {
 	// EnsureSyncer ensures corresponding syncers are started and stops any unnecessary syncer
-	EnsureSyncers(namespace, name string, targetPorts sets.String) error
+	// portMap is a map of ServicePort Port to TargetPort
+	EnsureSyncers(namespace, name string, portMap annotations.PortNameMap) error
 	// StopSyncer stops all syncers related to the service. This call is asynchronous. It will not wait for all syncers to stop.
 	StopSyncer(namespace, name string)
 	// Sync signals all syncers related to the service to sync. This call is asynchronous.

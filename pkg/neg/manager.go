@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/annotations"
 )
 
 type serviceKey struct {
@@ -45,8 +46,9 @@ type syncerManager struct {
 	// TODO: lock per service instead of global lock
 	mu sync.Mutex
 	// svcPortMap is the canonical indicator for whether a service needs NEG.
-	// key consists of service namespace and name. Value is the list of target ports that requires NEG
-	svcPortMap map[serviceKey]sets.String
+	// key consists of service namespace and name. Value is a map of ServicePort
+	// Port:TargetPort, which represents ports that require NEG
+	svcPortMap map[serviceKey]annotations.PortNameMap
 	// syncerMap stores the NEG syncer
 	// key consists of service namespace, name and targetPort. Value is the corresponding syncer.
 	syncerMap map[servicePort]negSyncer
@@ -60,29 +62,29 @@ func newSyncerManager(namer networkEndpointGroupNamer, recorder record.EventReco
 		zoneGetter:     zoneGetter,
 		serviceLister:  serviceLister,
 		endpointLister: endpointLister,
-		svcPortMap:     make(map[serviceKey]sets.String),
+		svcPortMap:     make(map[serviceKey]annotations.PortNameMap),
 		syncerMap:      make(map[servicePort]negSyncer),
 	}
 }
 
 // EnsureSyncer starts and stops syncers based on the input service ports.
-func (manager *syncerManager) EnsureSyncers(namespace, name string, targetPorts sets.String) error {
+func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts annotations.PortNameMap) error {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	key := getServiceKey(namespace, name)
 	currentPorts, ok := manager.svcPortMap[key]
 	if !ok {
-		currentPorts = sets.NewString()
+		currentPorts = make(annotations.PortNameMap)
 	}
 
-	removes := currentPorts.Difference(targetPorts).List()
-	adds := targetPorts.Difference(currentPorts).List()
-	manager.svcPortMap[key] = targetPorts
+	removes := currentPorts.Difference(newPorts)
+	adds := newPorts.Difference(currentPorts)
+
+	manager.svcPortMap[key] = newPorts
 	glog.V(3).Infof("EnsureSyncer %v/%v: removing %v ports, adding %v ports", namespace, name, removes, adds)
 
-	// Stop syncer for removed ports
-	for _, port := range removes {
-		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, port)]
+	for svcPort, targetPort := range removes {
+		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, targetPort)]
 		if ok {
 			syncer.Stop()
 		}
@@ -90,23 +92,24 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, targetPorts 
 
 	errList := []error{}
 	// Ensure a syncer is running for each port that is being added.
-	for _, port := range adds {
-		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, port)]
+	for svcPort, targetPort := range adds {
+		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, targetPort)]
 		if !ok {
 			syncer = newSyncer(
 				servicePort{
 					namespace:  namespace,
 					name:       name,
-					targetPort: port,
+					port:       svcPort,
+					targetPort: targetPort,
 				},
-				manager.namer.NEG(namespace, name, port),
+				manager.namer.NEG(namespace, name, svcPort),
 				manager.recorder,
 				manager.cloud,
 				manager.zoneGetter,
 				manager.serviceLister,
 				manager.endpointLister,
 			)
-			manager.syncerMap[getSyncerKey(namespace, name, port)] = syncer
+			manager.syncerMap[getSyncerKey(namespace, name, svcPort, targetPort)] = syncer
 		}
 
 		if syncer.IsStopped() {
@@ -115,6 +118,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, targetPorts 
 			}
 		}
 	}
+
 	return utilerrors.NewAggregate(errList)
 }
 
@@ -124,8 +128,8 @@ func (manager *syncerManager) StopSyncer(namespace, name string) {
 	defer manager.mu.Unlock()
 	key := getServiceKey(namespace, name)
 	if ports, ok := manager.svcPortMap[key]; ok {
-		for _, port := range ports.List() {
-			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, port)]; ok {
+		for svcPort, targetPort := range ports {
+			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, targetPort)]; ok {
 				syncer.Stop()
 			}
 		}
@@ -140,8 +144,8 @@ func (manager *syncerManager) Sync(namespace, name string) {
 	defer manager.mu.Unlock()
 	key := getServiceKey(namespace, name)
 	if portList, ok := manager.svcPortMap[key]; ok {
-		for _, port := range portList.List() {
-			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, port)]; ok {
+		for svcPort, targetPort := range portList {
+			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, targetPort)]; ok {
 				if !syncer.IsStopped() {
 					syncer.Sync()
 				}
@@ -215,8 +219,8 @@ func (manager *syncerManager) garbageCollectNEG() error {
 		manager.mu.Lock()
 		defer manager.mu.Unlock()
 		for key, ports := range manager.svcPortMap {
-			for _, port := range ports.List() {
-				name := manager.namer.NEG(key.namespace, key.name, port)
+			for sp, _ := range ports {
+				name := manager.namer.NEG(key.namespace, key.name, sp)
 				negNames.Delete(name)
 			}
 		}
@@ -248,11 +252,12 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 }
 
 // getSyncerKey encodes a service namespace, name and targetPort into a string key
-func getSyncerKey(namespace, name, port string) servicePort {
+func getSyncerKey(namespace, name string, port int32, targetPort string) servicePort {
 	return servicePort{
 		namespace:  namespace,
 		name:       name,
-		targetPort: port,
+		port:       port,
+		targetPort: targetPort,
 	}
 }
 
