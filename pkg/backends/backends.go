@@ -277,7 +277,7 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 		return err
 	}
 
-	// Verify existance of a backend service for the proper port, but do not specify any backends/igs
+	// Verify existence of a backend service for the proper port, but do not specify any backends/igs
 	if getErr != nil {
 		if !utils.IsNotFoundError(getErr) {
 			return getErr
