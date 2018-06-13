@@ -390,28 +390,28 @@ func TestNamerNEG(t *testing.T) {
 		desc      string
 		namespace string
 		name      string
-		port      string
+		port      int32
 		expect    string
 	}{
 		{
 			"simple case",
 			"namespace",
 			"name",
-			"80",
+			80,
 			"k8s1-01234567-namespace-name-80-5104b449",
 		},
 		{
 			"63 characters",
 			longstring[:10],
 			longstring[:10],
-			longstring[:10],
-			"k8s1-01234567-0123456789-0123456789-0123456789-6d4e657b",
+			1234567890,
+			"k8s1-01234567-0123456789-0123456789-1234567890-ed141b14",
 		},
 		{
 			"long namespace",
 			longstring,
 			"0",
-			"0",
+			0,
 			"k8s1-01234567-0123456789012345678901234567890123456-0--72142e04",
 		},
 
@@ -419,15 +419,15 @@ func TestNamerNEG(t *testing.T) {
 			"long name and namespace",
 			longstring,
 			longstring,
-			"0",
+			0,
 			"k8s1-01234567-0123456789012345678-0123456789012345678--9129e3d2",
 		},
 		{
-			" long name, namespace and port",
+			"long name, namespace and port",
 			longstring,
 			longstring[:40],
-			longstring[:30],
-			"k8s1-01234567-0123456789012345-0123456789012-012345678-a7dff5e0",
+			2147483647,
+			"k8s1-01234567-0123456789012345678-0123456789012345-214-ed1f2a2f",
 		},
 	}
 
@@ -444,8 +444,8 @@ func TestNamerNEG(t *testing.T) {
 
 	// Different prefix.
 	namer = NewNamerWithPrefix("mci", clusterId, "fw")
-	name := namer.NEG("ns", "svc", "port")
-	const want = "mci1-01234567-ns-svc-port-fe7dd054"
+	name := namer.NEG("ns", "svc", 80)
+	const want = "mci1-01234567-ns-svc-80-4890871b"
 	if name != want {
 		t.Errorf(`with prefix %q, namer.NEG("ns", "svc", 80) = %q, want %q`, "mci", name, want)
 	}

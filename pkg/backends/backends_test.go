@@ -557,34 +557,34 @@ func TestBackendPoolSyncQuota(t *testing.T) {
 		{
 			[]utils.ServicePort{{NodePort: 8080}, {NodePort: 443}},
 			[]utils.ServicePort{
-				{NodePort: 8080, SvcTargetPort: "testport8080", NEGEnabled: true},
-				{NodePort: 443, SvcTargetPort: "testport443", NEGEnabled: true},
+				{SvcPort: 8080, NodePort: 8080, NEGEnabled: true},
+				{SvcPort: 443, NodePort: 443, NEGEnabled: true},
 			},
 			true,
 			"Same port converted to NEG, plus one new NEG port",
 		},
 		{
 			[]utils.ServicePort{
-				{NodePort: 80, SvcTargetPort: "testport80", NEGEnabled: true},
-				{NodePort: 90, SvcTargetPort: "testport90"},
+				{SvcPort: 80, NodePort: 80, NEGEnabled: true},
+				{SvcPort: 90, NodePort: 90},
 			},
 			[]utils.ServicePort{
-				{NodePort: 80, SvcTargetPort: "testport80"},
-				{NodePort: 90, SvcTargetPort: "testport90", NEGEnabled: true},
+				{SvcPort: 80},
+				{SvcPort: 90, NEGEnabled: true},
 			},
 			true,
 			"Mixed NEG and non-NEG ports",
 		},
 		{
 			[]utils.ServicePort{
-				{NodePort: 100, SvcTargetPort: "testport100", NEGEnabled: true},
-				{NodePort: 110, SvcTargetPort: "testport110", NEGEnabled: true},
-				{NodePort: 120, SvcTargetPort: "testport120", NEGEnabled: true},
+				{SvcPort: 100, NodePort: 100, NEGEnabled: true},
+				{SvcPort: 110, NodePort: 110, NEGEnabled: true},
+				{SvcPort: 120, NodePort: 120, NEGEnabled: true},
 			},
 			[]utils.ServicePort{
-				{NodePort: 100, SvcTargetPort: "testport100"},
-				{NodePort: 110, SvcTargetPort: "testport110"},
-				{NodePort: 120, SvcTargetPort: "testport120"},
+				{SvcPort: 100, NodePort: 100},
+				{SvcPort: 110, NodePort: 110},
+				{SvcPort: 120, NodePort: 120},
 			},
 			true,
 			"Same ports as NEG, then non-NEG",
@@ -854,8 +854,8 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 				Namespace: namespace,
 				Name:      name,
 			},
-			Port: intstr.FromInt(80),
 		},
+		SvcPort:       80,
 		NodePort:      30001,
 		Protocol:      annotations.ProtocolHTTP,
 		SvcTargetPort: port,
@@ -867,7 +867,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 
 	for _, zone := range zones {
 		err := fakeNEG.CreateNetworkEndpointGroup(&computealpha.NetworkEndpointGroup{
-			Name: defaultNamer.NEG(namespace, name, port),
+			Name: defaultNamer.NEG(namespace, name, svcPort.SvcPort),
 		}, zone)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)

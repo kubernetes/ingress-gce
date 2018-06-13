@@ -25,12 +25,59 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 )
 
+func TestNEGService(t *testing.T) {
+	for _, tc := range []struct {
+		svc *v1.Service
+		neg bool
+	}{
+		{
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NetworkEndpointGroupAlphaAnnotation: "true",
+					},
+				},
+			},
+			neg: true,
+		},
+		{
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ExposeNEGAnnotationKey: `{"service_ports":{"80":{}}}`,
+					},
+				},
+			},
+			neg: true,
+		},
+		{
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NetworkEndpointGroupAlphaAnnotation: "true",
+						ExposeNEGAnnotationKey:              `{"service_ports":{"80":{}}}`,
+					},
+				},
+			},
+			neg: true,
+		},
+		{
+			svc: &v1.Service{},
+			neg: false,
+		},
+	} {
+		svc := FromService(tc.svc)
+		if b := svc.NEGEnabled(); b != tc.neg {
+			t.Errorf("for service %+v; svc.NEGEnabled() = %v; want %v", tc.svc, b, tc.neg)
+		}
+	}
+}
+
 func TestService(t *testing.T) {
 	for _, tc := range []struct {
 		svc             *v1.Service
 		appProtocolsErr bool
 		appProtocols    map[string]AppProtocol
-		neg             bool
 		http2           bool
 	}{
 		{
@@ -73,17 +120,6 @@ func TestService(t *testing.T) {
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						NetworkEndpointGroupAlphaAnnotation: "true",
-					},
-				},
-			},
-			appProtocols: map[string]AppProtocol{},
-			neg:          true,
-		},
-		{
-			svc: &v1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
 						ServiceApplicationProtocolKey: `invalid`,
 					},
 				},
@@ -112,9 +148,6 @@ func TestService(t *testing.T) {
 		}
 		if err != nil || !reflect.DeepEqual(ap, tc.appProtocols) {
 			t.Errorf("for service %+v; svc.ApplicationProtocols() = %v, %v; want %v, nil", tc.svc, ap, err, tc.appProtocols)
-		}
-		if b := svc.NEGEnabled(); b != tc.neg {
-			t.Errorf("for service %+v; svc.NEGEnabled() = %v; want %v", tc.svc, b, tc.neg)
 		}
 	}
 }

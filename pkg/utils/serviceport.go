@@ -36,6 +36,7 @@ type ServicePort struct {
 	ID ServicePortID
 
 	NodePort      int64
+	SvcPort       int32
 	Protocol      annotations.AppProtocol
 	SvcTargetPort string
 	NEGEnabled    bool
@@ -63,7 +64,7 @@ func (sp ServicePort) BackendName(namer *Namer) string {
 		return namer.IGBackend(sp.NodePort)
 	}
 
-	return namer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.SvcTargetPort)
+	return namer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.SvcPort)
 }
 
 // BackendToServicePortID creates a ServicePortID from a given IngressBackend and namespace.
