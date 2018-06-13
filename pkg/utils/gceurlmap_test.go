@@ -21,6 +21,7 @@ import (
 )
 
 func TestGCEURLMap(t *testing.T) {
+	t.Parallel()
 	urlMap := NewGCEURLMap()
 
 	// Add some path rules for a host.

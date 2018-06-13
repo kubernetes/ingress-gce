@@ -159,14 +159,7 @@ func ensureDescription(be *composite.BackendService, description string) (needsU
 func ensureHealthCheckLink(be *composite.BackendService, hcLink string) (needsUpdate bool) {
 	existingHCLink := getHealthCheckLink(be)
 
-	// Compare health check name instead of health check link.
-	// This is because health check link contains api version.
-	// For NEG, the api version for health check will be alpha.
-	// Hence, it will cause the health check links to be always different
-	// TODO (mixia): compare health check link directly once NEG is GA
-	existingHCName := retrieveObjectName(existingHCLink)
-	expectedHCName := retrieveObjectName(hcLink)
-	if existingHCName == expectedHCName {
+	if utils.EqualResourceIDs(existingHCLink, hcLink) {
 		return false
 	}
 
@@ -324,7 +317,11 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 // edgeHop checks the links of the given backend by executing an edge hop.
 // It fixes broken links and updates the Backend accordingly.
 func (b *Backends) edgeHop(be *composite.BackendService, igLinks []string) error {
-	addIGs := getInstanceGroupsToAdd(be, igLinks)
+	addIGs, err := getInstanceGroupsToAdd(be, igLinks)
+	if err != nil {
+		return err
+	}
+
 	if len(addIGs) == 0 {
 		return nil
 	}
@@ -438,32 +435,32 @@ func getBackendsForNEGs(negs []*computealpha.NetworkEndpointGroup) []*computealp
 	return backends
 }
 
-func getInstanceGroupsToAdd(be *composite.BackendService, igLinks []string) []string {
-	beName := be.Name
-	beIGs := sets.String{}
+func getInstanceGroupsToAdd(be *composite.BackendService, igLinks []string) ([]string, error) {
+	existingIGs := sets.String{}
 	for _, existingBe := range be.Backends {
-		beIGs.Insert(comparableGroupPath(existingBe.Group))
-	}
-
-	expectedIGs := sets.String{}
-	for _, igLink := range igLinks {
-		expectedIGs.Insert(comparableGroupPath(igLink))
-	}
-
-	if beIGs.IsSuperset(expectedIGs) {
-		return nil
-	}
-	glog.V(2).Infof("Expected igs for backend service %v: %+v, current igs %+v",
-		beName, expectedIGs.List(), beIGs.List())
-
-	var addIGs []string
-	for _, igLink := range igLinks {
-		if !beIGs.Has(comparableGroupPath(igLink)) {
-			addIGs = append(addIGs, igLink)
+		path, err := utils.RelativeResourceName(existingBe.Group)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse instance group: %v", err)
 		}
+		existingIGs.Insert(path)
 	}
 
-	return addIGs
+	wantIGs := sets.String{}
+	for _, igLink := range igLinks {
+		path, err := utils.RelativeResourceName(igLink)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse instance group: %v", err)
+		}
+		wantIGs.Insert(path)
+	}
+
+	missingIGs := wantIGs.Difference(existingIGs)
+	if missingIGs.Len() > 0 {
+		glog.V(2).Infof("Backend service %q has instance groups %+v, want %+v",
+			be.Name, existingIGs.List(), wantIGs.List())
+	}
+
+	return missingIGs.List(), nil
 }
 
 // GC garbage collects services corresponding to ports in the given list.
@@ -590,17 +587,4 @@ func applyProbeSettingsToHC(p *v1.Probe, hc *healthchecks.HealthCheck) {
 		// For IG mode, short healthcheck interval may health check flooding problem.
 		hc.CheckIntervalSec = int64(p.PeriodSeconds) + int64(healthchecks.DefaultHealthCheckInterval.Seconds())
 	}
-}
-
-//retrieveObjectName takes a GCE object link and return the last part of the url as object name
-func retrieveObjectName(url string) string {
-	splited := strings.Split(url, "/")
-	return splited[len(splited)-1]
-}
-
-// comparableGroupPath trims project and compute version from the SelfLink
-// /zones/[ZONE_NAME]/instanceGroups/[IG_NAME]
-func comparableGroupPath(url string) string {
-	path_parts := strings.Split(url, "/zones/")
-	return fmt.Sprintf("/zones/%s", path_parts[1])
 }

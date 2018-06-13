@@ -118,24 +118,6 @@ func (l *L7) UrlMap() *compute.UrlMap {
 	return l.um
 }
 
-// Returns the name portion of a link - which is the last section
-func getResourceNameFromLink(link string) string {
-	s := strings.Split(link, "/")
-	if len(s) == 0 {
-		return ""
-	}
-	return s[len(s)-1]
-}
-
-func (l *L7) getSslCertLinkInUse() []string {
-	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
-	proxy, _ := l.cloud.GetTargetHttpsProxy(proxyName)
-	if proxy != nil && len(proxy.SslCertificates) > 0 {
-		return proxy.SslCertificates
-	}
-	return nil
-}
-
 func (l *L7) edgeHop() error {
 	if err := l.assertUrlMapExists(); err != nil {
 		return err
