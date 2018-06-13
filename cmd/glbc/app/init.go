@@ -59,7 +59,7 @@ func DefaultBackendServicePortID(kubeClient kubernetes.Interface) utils.ServiceP
 
 // servicePortExists checks that the service and specified port name exists.
 func waitForServicePort(client kubernetes.Interface, name types.NamespacedName, portName string) error {
-	glog.V(2).Infof("Checking existance of default backend service %q", name.String())
+	glog.V(2).Infof("Checking existence of default backend service %q", name.String())
 
 	err := wait.Poll(3*time.Second, 5*time.Minute, func() (bool, error) {
 		svc, err := client.Core().Services(name.Namespace).Get(name.Name, meta_v1.GetOptions{})
