@@ -81,9 +81,10 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 	}
 
 	negEnabled := annotations.FromService(svc).NEGEnabled()
-	if !negEnabled && svc.Spec.Type != api_v1.ServiceTypeNodePort {
+	if !negEnabled && svc.Spec.Type != api_v1.ServiceTypeNodePort &&
+		svc.Spec.Type != api_v1.ServiceTypeLoadBalancer {
 		// This is a fatal error.
-		return nil, errors.ErrSvcNotNodePort{Service: id.Service}
+		return nil, errors.ErrBadSvcType{Service: id.Service, ServiceType: svc.Spec.Type}
 	}
 	svcPort = &utils.ServicePort{
 		ID:            id,
@@ -94,7 +95,7 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 
 	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
 	if err != nil {
-		return svcPort, errors.ErrSvcAppProtosParsing{Svc: svc, Err: err}
+		return svcPort, errors.ErrSvcAppProtosParsing{Service: id.Service, Err: err}
 	}
 
 	proto := annotations.ProtocolHTTP
