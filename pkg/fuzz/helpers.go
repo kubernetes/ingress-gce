@@ -223,3 +223,63 @@ func (i *IngressBuilder) AddTLS(hosts []string, secretName string) *IngressBuild
 	})
 	return i
 }
+
+// BackendConfigBuilder is syntactic sugar for creating BackendConfig specs for testing
+// purposes.
+//
+//   backendConfig := NewBackendConfigBuilder("ns1", "name1").Build()
+type BackendConfigBuilder struct {
+	backendConfig *backendconfig.BackendConfig
+}
+
+// NewBackendConfigBuilder instantiates a new BackendConfig.
+func NewBackendConfigBuilder(ns, name string) *BackendConfigBuilder {
+	var backendConfig = &backendconfig.BackendConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: ns,
+		},
+	}
+	return &BackendConfigBuilder{backendConfig: backendConfig}
+}
+
+// NewBackendConfigBuilderFromExisting creates a BackendConfigBuilder from an existing
+// BackendConfig object. The BackendConfigBuilder object will be copied.
+func NewBackendConfigBuilderFromExisting(b *backendconfig.BackendConfig) *BackendConfigBuilder {
+	return &BackendConfigBuilder{backendConfig: b.DeepCopy()}
+}
+
+// Build returns a constructed BackendConfig. The BackendConfig is a copy, so the Builder
+// can be reused to construct multiple BackendConfig definitions.
+func (b *BackendConfigBuilder) Build() *backendconfig.BackendConfig {
+	return b.backendConfig.DeepCopy()
+}
+
+// EnableCDN enables or disables CDN on the BackendConfig.
+func (b *BackendConfigBuilder) EnableCDN(enabled bool) *BackendConfigBuilder {
+	if b.backendConfig.Spec.Cdn == nil {
+		b.backendConfig.Spec.Cdn = &backendconfig.CDNConfig{}
+	}
+	b.backendConfig.Spec.Cdn.Enabled = enabled
+	return b
+}
+
+// SetCachePolicy specifies the cache policy on the BackendConfig.
+func (b *BackendConfigBuilder) SetCachePolicy(cachePolicy *backendconfig.CacheKeyPolicy) *BackendConfigBuilder {
+	if b.backendConfig.Spec.Cdn == nil {
+		b.backendConfig.Spec.Cdn = &backendconfig.CDNConfig{}
+	}
+	b.backendConfig.Spec.Cdn.CachePolicy = cachePolicy
+	return b
+}
+
+// SetIAPConfig enables or disables IAP on the BackendConfig and also sets
+// the secret which contains the OAuth credentials.
+func (b *BackendConfigBuilder) SetIAPConfig(enabled bool, secret string) *BackendConfigBuilder {
+	if b.backendConfig.Spec.Iap == nil {
+		b.backendConfig.Spec.Iap = &backendconfig.IAPConfig{}
+	}
+	b.backendConfig.Spec.Iap.Enabled = enabled
+	b.backendConfig.Spec.Iap.OAuthClientCredentials = &backendconfig.OAuthClientCredentials{SecretName: secret}
+	return b
+}

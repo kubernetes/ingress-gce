@@ -70,7 +70,7 @@ func TestBasic(t *testing.T) {
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
 			t.Parallel()
 
-			_, _, err := e2e.CreateEchoService(s, "service-1")
+			_, _, err := e2e.CreateEchoService(s, "service-1", nil)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}

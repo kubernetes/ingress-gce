@@ -59,7 +59,6 @@ func fakeTranslator(negEnabled bool) *Translator {
 
 func TestTranslateIngress(t *testing.T) {
 	translator := fakeTranslator(false)
-
 	svcLister := translator.ctx.ServiceInformer.GetIndexer()
 
 	// default backend
@@ -156,6 +155,67 @@ func TestTranslateIngress(t *testing.T) {
 			// Check that the GCEURLMaps point to the same ServicePortIDs.
 			if !utils.EqualMapping(gotGCEURLMap, tc.wantGCEURLMap) {
 				t.Errorf("TranslateIngress() = %+v\nwant\n%+v", gotGCEURLMap.String(), tc.wantGCEURLMap.String())
+			}
+		})
+	}
+}
+
+func TestGetServicePort(t *testing.T) {
+	cases := map[string]struct {
+		spec        apiv1.ServiceSpec
+		annotations map[string]string
+		id          utils.ServicePortID
+		wantErr     bool
+		wantPort    bool
+	}{
+		"ClusterIP Service": {
+			spec: apiv1.ServiceSpec{
+				Type:  apiv1.ServiceTypeClusterIP,
+				Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
+			},
+			id:       utils.ServicePortID{Port: intstr.FromString("http")},
+			wantErr:  true,
+			wantPort: false,
+		},
+		"Missing Port": {
+			spec: apiv1.ServiceSpec{
+				Type:  apiv1.ServiceTypeClusterIP,
+				Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
+			},
+			id:       utils.ServicePortID{Port: intstr.FromString("badport")},
+			wantErr:  true,
+			wantPort: false,
+		},
+		"AppProtocols malformed": {
+			spec: apiv1.ServiceSpec{
+				Type:  apiv1.ServiceTypeNodePort,
+				Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
+			},
+			annotations: map[string]string{
+				"service.alpha.kubernetes.io/app-protocols": "bad-string",
+			},
+			id:       utils.ServicePortID{Port: intstr.FromString("http")},
+			wantErr:  true,
+			wantPort: true,
+		},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			translator := fakeTranslator(false)
+			svcLister := translator.ctx.ServiceInformer.GetIndexer()
+
+			svcName := types.NamespacedName{Name: name, Namespace: "default"}
+			svc := test.NewService(svcName, tc.spec)
+			svc.Annotations = tc.annotations
+			svcLister.Add(svc)
+			tc.id.Service = svcName
+
+			port, gotErr := translator.getServicePort(tc.id)
+			if (gotErr != nil) != tc.wantErr {
+				t.Errorf("translator.getServicePort(%+v) = _, %v, want err? %v", tc.id, gotErr, tc.wantErr)
+			}
+			if (port != nil) != tc.wantPort {
+				t.Errorf("translator.getServicePort(%+v) = %v, want port? %v", tc.id, port, tc.wantPort)
 			}
 		})
 	}

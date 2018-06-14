@@ -25,6 +25,7 @@ import (
 	gce "k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/healthchecks"
@@ -175,7 +176,7 @@ func (c *ClusterManager) GC(lbNames []string, nodePorts []utils.ServicePort) err
 // - healthCheckPath: is the default path used for L7 health checks, eg: "/healthz".
 // - defaultBackendHealthCheckPath: is the default path used for the default backend health checks.
 func NewClusterManager(
-	cloud *gce.GCECloud,
+	ctx *context.ControllerContext,
 	namer *utils.Namer,
 	defaultBackendSvcPortID utils.ServicePortID,
 	healthCheckPath string,
@@ -185,14 +186,14 @@ func NewClusterManager(
 	cluster := ClusterManager{ClusterNamer: namer, defaultBackendSvcPortID: defaultBackendSvcPortID}
 
 	// NodePool stores GCE vms that are in this Kubernetes cluster.
-	cluster.instancePool = instances.NewNodePool(cloud, namer)
+	cluster.instancePool = instances.NewNodePool(ctx.Cloud, namer)
 
 	// BackendPool creates GCE BackendServices and associated health checks.
-	cluster.healthChecker = healthchecks.NewHealthChecker(cloud, healthCheckPath, defaultBackendHealthCheckPath, cluster.ClusterNamer, defaultBackendSvcPortID.Service)
-	cluster.backendPool = backends.NewBackendPool(cloud, cloud, cluster.healthChecker, cluster.instancePool, cluster.ClusterNamer, true)
+	cluster.healthChecker = healthchecks.NewHealthChecker(ctx.Cloud, healthCheckPath, defaultBackendHealthCheckPath, cluster.ClusterNamer, defaultBackendSvcPortID.Service)
+	cluster.backendPool = backends.NewBackendPool(ctx.Cloud, ctx.Cloud, cluster.healthChecker, cluster.instancePool, cluster.ClusterNamer, ctx.BackendConfigEnabled, true)
 
 	// L7 pool creates targetHTTPProxy, ForwardingRules, UrlMaps, StaticIPs.
-	cluster.l7Pool = loadbalancers.NewLoadBalancerPool(cloud, cluster.ClusterNamer)
-	cluster.firewallPool = firewalls.NewFirewallPool(cloud, cluster.ClusterNamer, gce.LoadBalancerSrcRanges(), flags.F.NodePortRanges.Values())
+	cluster.l7Pool = loadbalancers.NewLoadBalancerPool(ctx.Cloud, cluster.ClusterNamer)
+	cluster.firewallPool = firewalls.NewFirewallPool(ctx.Cloud, cluster.ClusterNamer, gce.LoadBalancerSrcRanges(), flags.F.NodePortRanges.Values())
 	return &cluster, nil
 }

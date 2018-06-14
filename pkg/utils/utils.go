@@ -176,11 +176,11 @@ func BackendServiceRelativeResourcePath(name string) string {
 // for a global BackendService.
 // global/backendServices/[BACKEND_SERVICE_NAME]
 func BackendServiceComparablePath(url string) string {
-	path_parts := strings.Split(url, "global/")
-	if len(path_parts) != 2 {
+	pathParts := strings.Split(url, "global/")
+	if len(pathParts) != 2 {
 		return ""
 	}
-	return fmt.Sprintf("global/%s", path_parts[1])
+	return fmt.Sprintf("global/%s", pathParts[1])
 }
 
 // IGLinks returns a list of links extracted from the passed in list of

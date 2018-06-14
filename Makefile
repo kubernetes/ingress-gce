@@ -21,7 +21,7 @@ PKG := k8s.io/ingress-gce
 
 # List of binaries to build. You must have a matching Dockerfile.BINARY
 # for each BINARY.
-CONTAINER_BINARIES := \
+CONTAINER_BINARIES ?= \
 	e2e-test \
 	echo \
 	fuzzer \
@@ -53,4 +53,4 @@ include build/rules.mk
 # Additional rule to build an image of glbc for e2e testing.
 # TODO(rramkumar): Find a way not to use "latest" as the tag.
 push-e2e:
-	@$(MAKE) --no-print-directory CONTAINER_PREFIX=ingress-gce-e2e containers push
+	@$(MAKE) --no-print-directory containers push

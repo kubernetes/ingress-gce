@@ -178,7 +178,7 @@ func NewLoadBalancerController(
 		})
 	}
 
-	lbc.Translator = translator.NewTranslator(lbc.CloudClusterManager.ClusterNamer, ctx)
+	lbc.Translator = translator.NewTranslator(lbc.CloudClusterManager.ClusterNamer, lbc.ctx)
 	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.client}
 
 	// Register health check on controller context.

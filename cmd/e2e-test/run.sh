@@ -1,4 +1,6 @@
-# Copyright 2018 The Kubernetes Authors. All rights reserved.
+#!/bin/bash
+#
+# Copyright 2018 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,10 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM debian:9
+# run.sh manages the settings required for running containerized in a
+# Kubernetes cluster.
 
-COPY cmd/e2e-test/run.sh /run.sh
-ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
-RUN apt-get update && apt-get update && apt-get install curl -y
-
-ENTRYPOINT ["/run.sh"]
+echo '--- BEGIN ---'
+PROJECT=$(curl -H'Metadata-Flavor:Google' metadata.google.internal/computeMetadata/v1/project/project-id 2>/dev/null)
+echo "PROJECT: ${PROJECT}"
+CMD="/e2e-test -test.v -test.parallel=10 -run -project ${PROJECT} -logtostderr -inCluster -v=2"
+echo "CMD: ${CMD}" $@
+${CMD} "$@" 2>&1
+echo "RESULT: $?"
+echo '--- END ---'

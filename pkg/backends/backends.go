@@ -32,6 +32,7 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 
+	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
@@ -76,13 +77,14 @@ const maxRPS = 1
 
 // Backends implements BackendPool.
 type Backends struct {
-	cloud         *gce.GCECloud
-	negGetter     NEGGetter
-	nodePool      instances.NodePool
-	healthChecker healthchecks.HealthChecker
-	snapshotter   storage.Snapshotter
-	prober        ProbeProvider
-	namer         *utils.Namer
+	cloud                *gce.GCECloud
+	negGetter            NEGGetter
+	nodePool             instances.NodePool
+	healthChecker        healthchecks.HealthChecker
+	snapshotter          storage.Snapshotter
+	prober               ProbeProvider
+	namer                *utils.Namer
+	backendConfigEnabled bool
 }
 
 // Backends is a BackendPool.
@@ -101,14 +103,16 @@ func NewBackendPool(
 	healthChecker healthchecks.HealthChecker,
 	nodePool instances.NodePool,
 	namer *utils.Namer,
+	backendConfigEnabled,
 	resyncWithCloud bool) *Backends {
 
 	backendPool := &Backends{
-		cloud:         cloud,
-		negGetter:     negGetter,
-		nodePool:      nodePool,
-		healthChecker: healthChecker,
-		namer:         namer,
+		cloud:                cloud,
+		negGetter:            negGetter,
+		nodePool:             nodePool,
+		healthChecker:        healthChecker,
+		namer:                namer,
+		backendConfigEnabled: backendConfigEnabled,
 	}
 	if !resyncWithCloud {
 		backendPool.snapshotter = storage.NewInMemoryPool()
@@ -289,6 +293,11 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 	needUpdate := ensureProtocol(be, sp)
 	needUpdate = ensureHealthCheckLink(be, hcLink) || needUpdate
 	needUpdate = ensureDescription(be, sp.Description()) || needUpdate
+	if b.backendConfigEnabled && sp.BackendConfig != nil {
+		needUpdate = features.EnsureCDN(sp, be) || needUpdate
+		needUpdate = features.EnsureIAP(sp, be) || needUpdate
+	}
+
 	if needUpdate {
 		if err = composite.UpdateBackendService(be, b.cloud); err != nil {
 			return err

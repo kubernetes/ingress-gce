@@ -27,13 +27,15 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-// ErrSvcNotNodePort is returned when the service is not a nodeport.
-type ErrSvcNotNodePort struct {
-	Service types.NamespacedName
+// ErrBadSvcType is returned when the service is not NodePort or LoadBalancer.
+type ErrBadSvcType struct {
+	Service     types.NamespacedName
+	ServiceType v1.ServiceType
 }
 
-func (e ErrSvcNotNodePort) Error() string {
-	return fmt.Sprintf("service %q is not type 'NodePort'", e.Service)
+// Error returns the service name & type and what are acceptable types.
+func (e ErrBadSvcType) Error() string {
+	return fmt.Sprintf("service %q is type %q, expected \"NodePort\" or \"LoadBalancer\"", e.Service, e.ServiceType)
 }
 
 // ErrSvcNotFound is returned when a service is not found.
@@ -41,6 +43,7 @@ type ErrSvcNotFound struct {
 	Service types.NamespacedName
 }
 
+// Error returns the name of the missing service.
 func (e ErrSvcNotFound) Error() string {
 	return fmt.Sprintf("could not find service %q", e.Service)
 }
@@ -50,18 +53,20 @@ type ErrSvcPortNotFound struct {
 	utils.ServicePortID
 }
 
+// Error returns the port name/number of the service which is not found.
 func (e ErrSvcPortNotFound) Error() string {
-	return fmt.Sprintf("could not find port %q in service %q", e.ServicePortID.Port, e.ServicePortID.Service)
+	return fmt.Sprintf("could not find port %q in service %q", e.ServicePortID.Port.String(), e.ServicePortID.Service)
 }
 
 // ErrSvcAppProtosParsing is returned when the service is malformed.
 type ErrSvcAppProtosParsing struct {
-	Svc *v1.Service
-	Err error
+	Service types.NamespacedName
+	Err     error
 }
 
+// Error returns the annotation key, service name, and the parsing error.
 func (e ErrSvcAppProtosParsing) Error() string {
-	return fmt.Sprintf("could not parse %v annotation on Service %v/%v, err: %v", annotations.ServiceApplicationProtocolKey, e.Svc.Namespace, e.Svc.Name, e.Err)
+	return fmt.Sprintf("could not parse %q annotation on service %q, err: %v", annotations.ServiceApplicationProtocolKey, e.Service, e.Err)
 }
 
 // ErrSvcBackendConfig is returned when there was an error getting the
@@ -71,8 +76,9 @@ type ErrSvcBackendConfig struct {
 	Err error
 }
 
+// Error returns the port name/number, service name, and the underlying error.
 func (e ErrSvcBackendConfig) Error() string {
-	return fmt.Sprintf("error getting BackendConfig for port %v on service %v/%v, err: %v", e.ServicePortID.Port, e.ServicePortID.Service.Namespace, e.ServicePortID.Service.Name, e.Err)
+	return fmt.Sprintf("error getting BackendConfig for port %q on service %q, err: %v", e.ServicePortID.Port, e.ServicePortID.Service, e.Err)
 }
 
 // ErrBackendConfigValidation is returned when there was an error validating a BackendConfig.
@@ -81,6 +87,7 @@ type ErrBackendConfigValidation struct {
 	Err error
 }
 
+// Error returns the BackendConfig's name and underlying error.
 func (e ErrBackendConfigValidation) Error() string {
 	return fmt.Sprintf("BackendConfig %v/%v is not valid: %v", e.BackendConfig.Namespace, e.BackendConfig.Name, e.Err)
 }

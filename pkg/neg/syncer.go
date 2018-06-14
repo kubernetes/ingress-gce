@@ -184,13 +184,14 @@ func (s *syncer) IsShuttingDown() bool {
 	return s.shuttingDown
 }
 
-func (s *syncer) sync() error {
+func (s *syncer) sync() (err error) {
 	if s.IsStopped() || s.IsShuttingDown() {
 		glog.V(4).Infof("Skip syncing NEG %q for %s/%s-%s.", s.negName, s.namespace, s.name, s.targetPort)
 		return nil
 	}
-
 	glog.V(2).Infof("Sync NEG %q for %s/%s-%s", s.negName, s.namespace, s.name, s.targetPort)
+	start := time.Now()
+	defer observeNegSync(s.negName, attachSync, err, start)
 	ep, exists, err := s.endpointLister.Get(
 		&apiv1.Endpoints{
 			ObjectMeta: metav1.ObjectMeta{

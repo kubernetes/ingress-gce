@@ -13,10 +13,15 @@
 # limitations under the License.
 #
 
-# To enable creating RBAC rules on the GKE cluster:
+# To run the containerized e2e test in your own cluster:
+#
+# $ kubectl apply -f e2e-test.yaml
+#
+# You will nee to first enable creating RBAC rules on the GKE cluster:
+#
 # $ kubectl create clusterrolebinding cluster-admin-binding \
-#   --clusterrole cluster-admin
-#   --user $(gcloud config get-value account)
+#   --clusterrole cluster-admin \
+#   --user $(gcloud config get-value account) \
 #   clusterrolebinding "cluster-admin-binding"
 kind: ServiceAccount
 apiVersion: v1
@@ -24,36 +29,25 @@ metadata:
   name: ingress-e2e-test
   namespace: default
 ---
-kind: Role
+kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
-  namespace: default
   name: ingress-e2e-test
 rules:
-   - apiGroups: [""]
-     resources: ["pods"]
-     verbs: ["list"]
-   - apiGroups: [""]
-     resources: ["nodes"]
-     verbs: ["list"]
-   - apiGroups: [""]
-     resources: ["services"]
-     verbs: ["list"]
-   - apiGroups: [""]
-     resources: ["configmaps"]
-     verbs: ["get", "create"]
+   - apiGroups: ["*"]
+     resources: ["*"]
+     verbs: ["*"]
 ---
-kind: RoleBinding
+kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
 metadata:
   name: ingress-e2e-test
-  namespace: default
 subjects:
   - kind: ServiceAccount
     name: ingress-e2e-test
     namespace: default
 roleRef:
-  kind: Role
+  kind: ClusterRole
   name: ingress-e2e-test
   apiGroup: rbac.authorization.k8s.io
 ---
@@ -65,7 +59,7 @@ metadata:
 spec:
   containers:
   - name: ingress-e2e
-    image: gcr.io/k8s-ingress-image-push/ingress-gce-e2e-test-amd64:v1.1.0-123-g7aaa9456
+    image: gcr.io/k8s-ingress-image-push/ingress-gce-e2e-test-amd64:master
     imagePullPolicy: Always
   restartPolicy: Never
   serviceAccount: ingress-e2e-test
