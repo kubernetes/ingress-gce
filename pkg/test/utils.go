@@ -7,6 +7,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
+	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 )
 
 // NewIngress returns an Ingress with the given spec.
@@ -31,6 +32,17 @@ func NewService(name types.NamespacedName, spec api_v1.ServiceSpec) *api_v1.Serv
 			Kind:       "Service",
 			APIVersion: "v1",
 		},
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:      name.Name,
+			Namespace: name.Namespace,
+		},
+		Spec: spec,
+	}
+}
+
+// NewBackendConfig returns a BackendConfig with the given spec.
+func NewBackendConfig(name types.NamespacedName, spec backendconfig.BackendConfigSpec) *backendconfig.BackendConfig {
+	return &backendconfig.BackendConfig{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      name.Name,
 			Namespace: name.Namespace,

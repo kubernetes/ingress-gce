@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/fake"
+	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
 
@@ -44,12 +45,12 @@ var (
 	defaultBackend       = utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")}
 )
 
-func fakeTranslator(negEnabled bool) *Translator {
+func fakeTranslator(negEnabled, backendConfigEnabled bool) *Translator {
 	client := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 
 	namer := utils.NewNamer("uid1", "")
-	ctx := context.NewControllerContext(client, backendConfigClient, nil, apiv1.NamespaceAll, 1*time.Second, negEnabled, false)
+	ctx := context.NewControllerContext(client, backendConfigClient, nil, apiv1.NamespaceAll, 1*time.Second, negEnabled, backendConfigEnabled)
 	gce := &Translator{
 		namer: namer,
 		ctx:   ctx,
@@ -58,7 +59,7 @@ func fakeTranslator(negEnabled bool) *Translator {
 }
 
 func TestTranslateIngress(t *testing.T) {
-	translator := fakeTranslator(false)
+	translator := fakeTranslator(false, false)
 	svcLister := translator.ctx.ServiceInformer.GetIndexer()
 
 	// default backend
@@ -82,12 +83,14 @@ func TestTranslateIngress(t *testing.T) {
 	})
 	svcLister.Add(svc)
 
-	cases := map[string]struct {
+	cases := []struct {
+		desc          string
 		ing           *extensions.Ingress
 		wantErrCount  int
 		wantGCEURLMap *utils.GCEURLMap
 	}{
-		"Default Backend Only": {
+		{
+			desc: "default backend only",
 			ing: test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
 				extensions.IngressSpec{
 					Backend: test.Backend("first-service", intstr.FromInt(80)),
@@ -95,47 +98,56 @@ func TestTranslateIngress(t *testing.T) {
 			wantErrCount:  0,
 			wantGCEURLMap: &utils.GCEURLMap{DefaultBackend: &utils.ServicePort{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "first-service", Namespace: "default"}, Port: intstr.FromInt(80)}}},
 		},
-		"No Backend": {
+		{
+			desc:          "no backend",
 			ing:           test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"}, extensions.IngressSpec{}),
 			wantErrCount:  0,
 			wantGCEURLMap: &utils.GCEURLMap{DefaultBackend: &utils.ServicePort{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")}}},
 		},
-		"No Host": {
+		{
+			desc:          "no host",
 			ing:           ingressFromFile("ingress-no-host.yaml"),
 			wantErrCount:  0,
 			wantGCEURLMap: gceURLMapFromFile("ingress-no-host.json"),
 		},
-		"Single Host": {
+		{
+			desc:          "single host",
 			ing:           ingressFromFile("ingress-single-host.yaml"),
 			wantErrCount:  0,
 			wantGCEURLMap: gceURLMapFromFile("ingress-single-host.json"),
 		},
-		"Two Hosts": {
+		{
+			desc:          "two hosts",
 			ing:           ingressFromFile("ingress-two-hosts.yaml"),
 			wantErrCount:  0,
 			wantGCEURLMap: gceURLMapFromFile("ingress-two-hosts.json"),
 		},
-		"Multiple Paths": {
+		{
+			desc:          "multiple paths",
 			ing:           ingressFromFile("ingress-multi-paths.yaml"),
 			wantErrCount:  0,
 			wantGCEURLMap: gceURLMapFromFile("ingress-multi-paths.json"),
 		},
-		"Multiple Empty Paths": {
+		{
+			desc:          "multiple empty paths",
 			ing:           ingressFromFile("ingress-multi-empty.yaml"),
 			wantErrCount:  0,
 			wantGCEURLMap: gceURLMapFromFile("ingress-multi-empty.json"),
 		},
-		"Missing Rule Service": {
+		{
+			desc:          "missing rule service",
 			ing:           ingressFromFile("ingress-missing-rule-svc.yaml"),
 			wantErrCount:  1,
 			wantGCEURLMap: gceURLMapFromFile("ingress-missing-rule-svc.json"),
 		},
-		"Missing Multiple Rule Service": {
+		{
+			desc:          "missing multiple rule service",
 			ing:           ingressFromFile("ingress-missing-multi-svc.yaml"),
 			wantErrCount:  2,
 			wantGCEURLMap: gceURLMapFromFile("ingress-missing-multi-svc.json"),
 		},
-		"Missing Default Service": {
+		{
+			desc: "missing default service",
 			ing: test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
 				extensions.IngressSpec{
 					Backend: test.Backend("random-service", intstr.FromInt(80)),
@@ -145,30 +157,32 @@ func TestTranslateIngress(t *testing.T) {
 		},
 	}
 
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
 			gotGCEURLMap, gotErrs := translator.TranslateIngress(tc.ing, defaultBackend)
 			if len(gotErrs) != tc.wantErrCount {
-				t.Errorf("TranslateIngress() = _, %+v, want %v errs", gotErrs, tc.wantErrCount)
+				t.Errorf("%s: TranslateIngress() = _, %+v, want %v errs", tc.desc, gotErrs, tc.wantErrCount)
 			}
 
 			// Check that the GCEURLMaps point to the same ServicePortIDs.
 			if !utils.EqualMapping(gotGCEURLMap, tc.wantGCEURLMap) {
-				t.Errorf("TranslateIngress() = %+v\nwant\n%+v", gotGCEURLMap.String(), tc.wantGCEURLMap.String())
+				t.Errorf("%s: TranslateIngress() = %+v\nwant\n%+v", tc.desc, gotGCEURLMap.String(), tc.wantGCEURLMap.String())
 			}
 		})
 	}
 }
 
 func TestGetServicePort(t *testing.T) {
-	cases := map[string]struct {
+	cases := []struct {
+		desc        string
 		spec        apiv1.ServiceSpec
 		annotations map[string]string
 		id          utils.ServicePortID
 		wantErr     bool
 		wantPort    bool
 	}{
-		"ClusterIP Service": {
+		{
+			desc: "clusterIP service",
 			spec: apiv1.ServiceSpec{
 				Type:  apiv1.ServiceTypeClusterIP,
 				Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
@@ -177,16 +191,18 @@ func TestGetServicePort(t *testing.T) {
 			wantErr:  true,
 			wantPort: false,
 		},
-		"Missing Port": {
+		{
+			desc: "missing port",
 			spec: apiv1.ServiceSpec{
-				Type:  apiv1.ServiceTypeClusterIP,
+				Type:  apiv1.ServiceTypeNodePort,
 				Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
 			},
 			id:       utils.ServicePortID{Port: intstr.FromString("badport")},
 			wantErr:  true,
 			wantPort: false,
 		},
-		"AppProtocols malformed": {
+		{
+			desc: "app protocols malformed",
 			spec: apiv1.ServiceSpec{
 				Type:  apiv1.ServiceTypeNodePort,
 				Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
@@ -199,12 +215,12 @@ func TestGetServicePort(t *testing.T) {
 			wantPort: true,
 		},
 	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			translator := fakeTranslator(false)
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			translator := fakeTranslator(false, true)
 			svcLister := translator.ctx.ServiceInformer.GetIndexer()
 
-			svcName := types.NamespacedName{Name: name, Namespace: "default"}
+			svcName := types.NamespacedName{Name: "foo", Namespace: "default"}
 			svc := test.NewService(svcName, tc.spec)
 			svc.Annotations = tc.annotations
 			svcLister.Add(svc)
@@ -221,8 +237,84 @@ func TestGetServicePort(t *testing.T) {
 	}
 }
 
+func TestGetServicePortWithBackendConfigEnabled(t *testing.T) {
+	backendConfig := test.NewBackendConfig(types.NamespacedName{Name: "config-http", Namespace: "default"}, backendconfig.BackendConfigSpec{
+		Cdn: &backendconfig.CDNConfig{
+			Enabled: true,
+		},
+	})
+
+	testCases := []struct {
+		desc        string
+		annotations map[string]string
+		id          utils.ServicePortID
+		wantErr     bool
+		wantPort    bool
+	}{
+		{
+			desc: "error getting backend config",
+			annotations: map[string]string{
+				annotations.BackendConfigKey: `{"ports":{"https":"config-https"}}`,
+			},
+			id:       utils.ServicePortID{Port: intstr.FromString("https")},
+			wantErr:  true,
+			wantPort: true,
+		},
+		{
+			desc:        "no backend config annotation",
+			annotations: nil,
+			id:          utils.ServicePortID{Port: intstr.FromString("http")},
+			wantErr:     false,
+			wantPort:    true,
+		},
+		{
+			desc: "no backend config name for port",
+			annotations: map[string]string{
+				annotations.BackendConfigKey: `{"ports":{"https":"config-https"}}`,
+			},
+			id:       utils.ServicePortID{Port: intstr.FromString("http")},
+			wantErr:  false,
+			wantPort: true,
+		},
+		{
+			desc: "successfully got backend config for port",
+			annotations: map[string]string{
+				annotations.BackendConfigKey: `{"ports":{"http":"config-http"}}`,
+			},
+			id:       utils.ServicePortID{Port: intstr.FromString("http")},
+			wantErr:  false,
+			wantPort: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			translator := fakeTranslator(false, true)
+			svcLister := translator.ctx.ServiceInformer.GetIndexer()
+			backendConfigLister := translator.ctx.BackendConfigInformer.GetIndexer()
+			svcName := types.NamespacedName{Name: "foo", Namespace: "default"}
+			svc := test.NewService(svcName, apiv1.ServiceSpec{
+				Type:  apiv1.ServiceTypeNodePort,
+				Ports: []apiv1.ServicePort{{Name: "http", Port: 80}, {Name: "https", Port: 443}},
+			})
+			tc.id.Service = svcName
+			svc.Annotations = tc.annotations
+
+			svcLister.Add(svc)
+			backendConfigLister.Add(backendConfig)
+
+			port, gotErr := translator.getServicePort(tc.id)
+			if (gotErr != nil) != tc.wantErr {
+				t.Errorf("%s: translator.getServicePort(%+v) = _, %v, want err? %v", tc.desc, tc.id, gotErr, tc.wantErr)
+			}
+			if (port != nil) != tc.wantPort {
+				t.Errorf("%s: translator.getServicePort(%+v) = %v, want port? %v", tc.desc, tc.id, port, tc.wantPort)
+			}
+		})
+	}
+}
+
 func TestGetProbe(t *testing.T) {
-	translator := fakeTranslator(false)
+	translator := fakeTranslator(false, false)
 	nodePortToHealthCheck := map[utils.ServicePort]string{
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}:  "/healthz",
 		{NodePort: 3002, Protocol: annotations.ProtocolHTTPS}: "/foo",
@@ -245,7 +337,7 @@ func TestGetProbe(t *testing.T) {
 }
 
 func TestGetProbeNamedPort(t *testing.T) {
-	translator := fakeTranslator(false)
+	translator := fakeTranslator(false, false)
 	nodePortToHealthCheck := map[utils.ServicePort]string{
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
@@ -268,7 +360,7 @@ func TestGetProbeNamedPort(t *testing.T) {
 }
 
 func TestGetProbeCrossNamespace(t *testing.T) {
-	translator := fakeTranslator(false)
+	translator := fakeTranslator(false, false)
 
 	firstPod := &apiv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -392,7 +484,7 @@ func getProbePath(p *apiv1.Probe) string {
 }
 
 func TestGatherEndpointPorts(t *testing.T) {
-	translator := fakeTranslator(true)
+	translator := fakeTranslator(true, false)
 
 	ep1 := "ep1"
 	ep2 := "ep2"

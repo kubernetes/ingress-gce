@@ -84,9 +84,11 @@ func TestServicePort(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		result := ServicePort(testSvc, tc.port)
-		if !reflect.DeepEqual(result, tc.expected) {
-			t.Errorf("%s: expected %+v but got %+v", tc.desc, tc.expected, result)
-		}
+		t.Run(tc.desc, func(t *testing.T) {
+			result := ServicePort(testSvc, tc.port)
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Errorf("%s: expected %+v but got %+v", tc.desc, tc.expected, result)
+			}
+		})
 	}
 }

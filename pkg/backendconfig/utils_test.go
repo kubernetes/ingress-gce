@@ -66,9 +66,11 @@ func TestBackendConfigName(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		result := BackendConfigName(tc.backendConfigs, tc.svcPort)
-		if result != tc.expected {
-			t.Errorf("%s: expected %s but got %s", tc.desc, tc.expected, result)
-		}
+		t.Run(tc.desc, func(t *testing.T) {
+			result := BackendConfigName(tc.backendConfigs, tc.svcPort)
+			if result != tc.expected {
+				t.Errorf("%s: expected %s but got %s", tc.desc, tc.expected, result)
+			}
+		})
 	}
 }
