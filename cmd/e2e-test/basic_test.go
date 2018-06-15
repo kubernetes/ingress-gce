@@ -92,7 +92,7 @@ func TestBasic(t *testing.T) {
 			vip := ing.Status.LoadBalancer.Ingress[0].IP
 			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
 			if err != nil {
-				t.Fatalf("Error getting GCP resources for LB with IP = %q", vip)
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 			// Do some cursory checks on the GCP objects.
 			if len(gclb.ForwardingRule) != tc.numForwardingRules {
