@@ -236,14 +236,14 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 		}
 		gclb.BackendService[*bsKey] = &BackendService{GA: bs}
 
-		if hasAlphaResource("urlMap", validators) {
+		if hasAlphaResource("backendService", validators) {
 			bs, err := c.AlphaBackendServices().Get(ctx, bsKey)
 			if err != nil {
 				return nil, err
 			}
 			gclb.BackendService[*bsKey].Alpha = bs
 		}
-		if hasBetaResource("urlMap", validators) {
+		if hasBetaResource("backendService", validators) {
 			bs, err := c.BetaBackendServices().Get(ctx, bsKey)
 			if err != nil {
 				return nil, err
