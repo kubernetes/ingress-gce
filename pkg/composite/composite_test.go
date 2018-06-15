@@ -149,6 +149,21 @@ func TestToAlpha(t *testing.T) {
 	}
 }
 
+func TestToBeta(t *testing.T) {
+	composite := BackendService{
+		Version:        meta.VersionGA,
+		SecurityPolicy: "foo",
+	}
+	beta, err := composite.toBeta()
+	if err != nil {
+		t.Fatalf("composite.toBeta() =_, %v; want _, nil", err)
+	}
+	// Verify that a known beta field value is preserved.
+	if beta.SecurityPolicy != "foo" {
+		t.Errorf("beta.SecurityPolicy = %q, want foo", beta.SecurityPolicy)
+	}
+}
+
 func TestToGA(t *testing.T) {
 	composite := BackendService{
 		Version:  meta.VersionGA,

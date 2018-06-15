@@ -17,7 +17,6 @@ limitations under the License.
 package features
 
 import (
-	"reflect"
 	"testing"
 
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
@@ -27,14 +26,14 @@ import (
 
 func TestEnsureCDN(t *testing.T) {
 	testCases := []struct {
-		desc     string
-		sp       utils.ServicePort
-		be       *composite.BackendService
-		expected bool
+		desc           string
+		sp             utils.ServicePort
+		be             *composite.BackendService
+		updateExpected bool
 	}{
 		{
-			"settings are identical, no update needed",
-			utils.ServicePort{
+			desc: "settings are identical, no update needed",
+			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
 						Cdn: &backendconfigv1beta1.CDNConfig{
@@ -46,7 +45,7 @@ func TestEnsureCDN(t *testing.T) {
 					},
 				},
 			},
-			&composite.BackendService{
+			be: &composite.BackendService{
 				EnableCDN: true,
 				CdnPolicy: &composite.BackendServiceCdnPolicy{
 					CacheKeyPolicy: &composite.CacheKeyPolicy{
@@ -54,153 +53,60 @@ func TestEnsureCDN(t *testing.T) {
 					},
 				},
 			},
-			false,
+			updateExpected: false,
 		},
 		{
-			"cache settings are different, update needed",
-			utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						Cdn: &backendconfigv1beta1.CDNConfig{
-							Enabled: true,
-							CachePolicy: &backendconfigv1beta1.CacheKeyPolicy{
-								QueryStringWhitelist: []string{"foo"},
-							},
-						},
-					},
-				},
-			},
-			&composite.BackendService{
-				EnableCDN: true,
-			},
-			true,
-		},
-		{
-			"enabled setting is different, update needed",
-			utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						Cdn: &backendconfigv1beta1.CDNConfig{
-							Enabled: true,
-						},
-					},
-				},
-			},
-			&composite.BackendService{
-				EnableCDN: false,
-			},
-			true,
-		},
-	}
-
-	for _, testCase := range testCases {
-		result := EnsureCDN(testCase.sp, testCase.be)
-		if result != testCase.expected {
-			t.Errorf("%v: expected %v but got %v", testCase.desc, testCase.expected, result)
-		}
-	}
-}
-
-func TestApplyCDNSettings(t *testing.T) {
-	testCases := []struct {
-		desc     string
-		sp       utils.ServicePort
-		be       *composite.BackendService
-		expected composite.BackendService
-	}{
-		{
-			"apply settings on empty BackendService",
-			utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						Cdn: &backendconfigv1beta1.CDNConfig{
-							Enabled: true,
-							CachePolicy: &backendconfigv1beta1.CacheKeyPolicy{
-								IncludeHost: true,
-							},
-						},
-					},
-				},
-			},
-			&composite.BackendService{},
-			composite.BackendService{
-				EnableCDN: true,
-				CdnPolicy: &composite.BackendServiceCdnPolicy{
-					CacheKeyPolicy: &composite.CacheKeyPolicy{
-						IncludeHost: true,
-					},
-				},
-			},
-		},
-		{
-			"overwrite some fields on existing settings",
-			utils.ServicePort{
+			desc: "cache settings are different, update needed",
+			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
 						Cdn: &backendconfigv1beta1.CDNConfig{
 							Enabled: true,
 							CachePolicy: &backendconfigv1beta1.CacheKeyPolicy{
 								IncludeHost:        true,
+								IncludeQueryString: false,
 								IncludeProtocol:    false,
-								IncludeQueryString: true,
 							},
 						},
 					},
 				},
 			},
-			&composite.BackendService{
-				EnableCDN: false,
+			be: &composite.BackendService{
+				EnableCDN: true,
 				CdnPolicy: &composite.BackendServiceCdnPolicy{
 					CacheKeyPolicy: &composite.CacheKeyPolicy{
 						IncludeHost:        false,
+						IncludeQueryString: true,
 						IncludeProtocol:    true,
-						IncludeQueryString: true,
 					},
 				},
 			},
-			composite.BackendService{
-				EnableCDN: true,
-				CdnPolicy: &composite.BackendServiceCdnPolicy{
-					CacheKeyPolicy: &composite.CacheKeyPolicy{
-						IncludeHost:        true,
-						IncludeProtocol:    false,
-						IncludeQueryString: true,
-					},
-				},
-			},
+			updateExpected: true,
 		},
 		{
-			"no feature settings in spec",
-			utils.ServicePort{
+			desc: "enabled setting is different, update needed",
+			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
-						Cdn: nil,
+						Cdn: &backendconfigv1beta1.CDNConfig{
+							Enabled: true,
+						},
 					},
 				},
 			},
-			&composite.BackendService{
-				EnableCDN: true,
-				CdnPolicy: &composite.BackendServiceCdnPolicy{
-					CacheKeyPolicy: &composite.CacheKeyPolicy{
-						IncludeHost: true,
-					},
-				},
-			},
-			composite.BackendService{
+			be: &composite.BackendService{
 				EnableCDN: false,
-				CdnPolicy: &composite.BackendServiceCdnPolicy{
-					CacheKeyPolicy: &composite.CacheKeyPolicy{
-						IncludeHost: false,
-					},
-				},
 			},
+			updateExpected: true,
 		},
 	}
 
-	for _, testCase := range testCases {
-		applyCDNSettings(testCase.sp, testCase.be)
-		if !reflect.DeepEqual(testCase.expected, *testCase.be) {
-			t.Errorf("%v: expected %+v but got %+v", testCase.desc, testCase.expected, *testCase.be)
-		}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			result := EnsureCDN(tc.sp, tc.be)
+			if result != tc.updateExpected {
+				t.Errorf("%v: expected %v but got %v", tc.desc, tc.updateExpected, result)
+			}
+		})
 	}
 }
