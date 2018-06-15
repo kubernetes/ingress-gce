@@ -89,6 +89,7 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 	svcPort = &utils.ServicePort{
 		ID:            id,
 		NodePort:      int64(port.NodePort),
+		SvcPort:       int32(port.Port),
 		SvcTargetPort: port.TargetPort.String(),
 		NEGEnabled:    t.ctx.NEGEnabled && negEnabled,
 	}
