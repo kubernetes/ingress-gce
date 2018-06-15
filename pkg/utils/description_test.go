@@ -67,7 +67,7 @@ func TestString(t *testing.T) {
 	}
 }
 
-func TestGetDescriptionFromString(t *testing.T) {
+func TestDescriptionFromString(t *testing.T) {
 	testCases := []struct {
 		desc               string
 		backendServiceDesc string
@@ -100,8 +100,8 @@ func TestGetDescriptionFromString(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		description := GetDescriptionFromString(tc.backendServiceDesc)
-		if !reflect.DeepEqual(description, tc.expectedDesc) {
+		description := DescriptionFromString(tc.backendServiceDesc)
+		if !reflect.DeepEqual(*description, tc.expectedDesc) {
 			t.Errorf("%s: GetDescriptionFromString(%s)=%s, want %s", tc.desc, tc.backendServiceDesc, description, tc.expectedDesc)
 		}
 	}

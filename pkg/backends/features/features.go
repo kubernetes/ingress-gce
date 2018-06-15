@@ -39,13 +39,13 @@ var (
 )
 
 // SetDescription sets the XFeatures field for the given Description.
-func SetDescription(desc *utils.Description, sp utils.ServicePort) {
+func SetDescription(desc *utils.Description, sp *utils.ServicePort) {
 	desc.XFeatures = featuresFromServicePort(sp)
 }
 
 // featuresFromServicePort returns a list of features used by the
 // given ServicePort that required non-GA API.
-func featuresFromServicePort(sp utils.ServicePort) []string {
+func featuresFromServicePort(sp *utils.ServicePort) []string {
 	features := []string{}
 	if sp.Protocol == annotations.ProtocolHTTP2 {
 		features = append(features, FeatureHTTP2)
@@ -55,14 +55,14 @@ func featuresFromServicePort(sp utils.ServicePort) []string {
 
 // VersionFromServicePort returns the meta.Version for the backend that this ServicePort is
 // associated with.
-func VersionFromServicePort(sp utils.ServicePort) meta.Version {
+func VersionFromServicePort(sp *utils.ServicePort) meta.Version {
 	return VersionFromFeatures(featuresFromServicePort(sp))
 }
 
 // VersionFromDescription returns the meta.Version required for the given
 // description.
 func VersionFromDescription(desc string) meta.Version {
-	return VersionFromFeatures(utils.GetDescriptionFromString(desc).XFeatures)
+	return VersionFromFeatures(utils.DescriptionFromString(desc).XFeatures)
 }
 
 // VersionFromFeatures returns the meta.Version required for the given
@@ -78,12 +78,15 @@ func VersionFromFeatures(features []string) meta.Version {
 	return meta.VersionGA
 }
 
-// IsLowerVersion reutrns if v1 is a lower version than v2.
-func IsLowerVersion(v1, v2 meta.Version) bool {
-	versionMap := map[meta.Version]int{
+var (
+	versionMap = map[meta.Version]int{
 		meta.VersionAlpha: 0,
 		meta.VersionBeta:  1,
 		meta.VersionGA:    2,
 	}
+)
+
+// IsLowerVersion reutrns if v1 is a lower version than v2.
+func IsLowerVersion(v1, v2 meta.Version) bool {
 	return versionMap[v1] < versionMap[v2]
 }

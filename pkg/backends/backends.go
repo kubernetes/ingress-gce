@@ -147,7 +147,7 @@ func ensureProtocol(be *composite.BackendService, p utils.ServicePort) (needsUpd
 }
 
 // ensureDescription updates the BackendService Description with the expected value
-func ensureDescription(be *composite.BackendService, sp utils.ServicePort) (needsUpdate bool) {
+func ensureDescription(be *composite.BackendService, sp *utils.ServicePort) (needsUpdate bool) {
 	desc := sp.GetDescription()
 	features.SetDescription(&desc, sp)
 	descString := desc.String()
@@ -232,7 +232,7 @@ func (b *Backends) create(hcLink string, sp utils.ServicePort, name string) (*co
 		Name: b.namer.NamedPort(sp.NodePort),
 		Port: sp.NodePort,
 	}
-	version := features.VersionFromServicePort(sp)
+	version := features.VersionFromServicePort(&sp)
 	be := &composite.BackendService{
 		Version:      version,
 		Name:         name,
@@ -241,7 +241,7 @@ func (b *Backends) create(hcLink string, sp utils.ServicePort, name string) (*co
 		Port:         namedPort.Port,
 		PortName:     namedPort.Name,
 	}
-	ensureDescription(be, sp)
+	ensureDescription(be, &sp)
 	if err := composite.CreateBackendService(be, b.cloud); err != nil {
 		return nil, err
 	}
@@ -269,7 +269,7 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 	// we might've created health-check for them.
 	be := &composite.BackendService{}
 	beName := sp.BackendName(b.namer)
-	version := features.VersionFromServicePort(sp)
+	version := features.VersionFromServicePort(&sp)
 
 	defer func() {
 		b.snapshotter.Add(beName, be)
@@ -308,7 +308,7 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 	be.Version = version
 	needUpdate := ensureProtocol(be, sp)
 	needUpdate = ensureHealthCheckLink(be, hcLink) || needUpdate
-	needUpdate = ensureDescription(be, sp) || needUpdate
+	needUpdate = ensureDescription(be, &sp) || needUpdate
 	if b.backendConfigEnabled && sp.BackendConfig != nil {
 		needUpdate = features.EnsureCDN(sp, be) || needUpdate
 		needUpdate = features.EnsureIAP(sp, be) || needUpdate

@@ -66,7 +66,7 @@ func TestFeaturesFromServicePort(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		features := featuresFromServicePort(tc.svcPort)
+		features := featuresFromServicePort(&tc.svcPort)
 		if !sets.NewString(features...).Equal(sets.NewString(tc.expectedFeatures...)) {
 			t.Errorf("%s: featuresFromServicePort()=%s, want %s", tc.desc, features, tc.expectedFeatures)
 		}
@@ -157,7 +157,7 @@ func TestVersionFromServicePort(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		if v := VersionFromServicePort(tc.svcPort); v != tc.expectedVersion {
+		if v := VersionFromServicePort(&tc.svcPort); v != tc.expectedVersion {
 			t.Errorf("%s: VersionFromServicePort()=%s, want %s", tc.desc, v, tc.expectedVersion)
 		}
 	}

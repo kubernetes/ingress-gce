@@ -16,4 +16,5 @@ limitations under the License.
 
 // This package contains the implementations of backend service
 // features.
+// TODO(mrhohn): Document what needs to happen when a feature is added.
 package features

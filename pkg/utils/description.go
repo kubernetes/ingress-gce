@@ -43,15 +43,15 @@ func (desc *Description) String() string {
 	return string(descJson)
 }
 
-// GetDescriptionFromString gets a Description from string,
-func GetDescriptionFromString(descString string) Description {
+// DescriptionFromString gets a Description from string,
+func DescriptionFromString(descString string) *Description {
 	if descString == "" {
-		return Description{}
+		return &Description{}
 	}
 	var desc Description
 	if err := json.Unmarshal([]byte(descString), &desc); err != nil {
 		glog.Errorf("Failed to parse description: %s, falling back to empty list", descString)
-		return Description{}
+		return &Description{}
 	}
-	return desc
+	return &desc
 }
