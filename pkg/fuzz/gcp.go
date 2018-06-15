@@ -109,10 +109,9 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 	gclb := NewGCLB()
 	allGFRs, err := c.GlobalForwardingRules().List(ctx, filter.None)
 	if err != nil {
+		glog.Warningf("Error listing forwarding rules: %v", err)
 		return nil, err
 	}
-
-	var urlMapKey *meta.Key
 
 	var gfrs []*compute.ForwardingRule
 	for _, gfr := range allGFRs {
@@ -121,12 +120,14 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 		}
 	}
 
+	var urlMapKey *meta.Key
 	for _, gfr := range gfrs {
 		frKey := meta.GlobalKey(gfr.Name)
 		gclb.ForwardingRule[*frKey] = &ForwardingRule{GA: gfr}
 		if hasAlphaResource("forwardingRule", validators) {
 			fr, err := c.AlphaForwardingRules().Get(ctx, frKey)
 			if err != nil {
+				glog.Warningf("Error getting alpha forwarding rules: %v", err)
 				return nil, err
 			}
 			gclb.ForwardingRule[*frKey].Alpha = fr
@@ -138,12 +139,14 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 		// ForwardingRule => TargetProxy
 		resID, err := cloud.ParseResourceURL(gfr.Target)
 		if err != nil {
+			glog.Warningf("Error parsing Target (%q): %v", gfr.Target, err)
 			return nil, err
 		}
 		switch resID.Resource {
 		case "targetHttpProxies":
 			p, err := c.TargetHttpProxies().Get(ctx, resID.Key)
 			if err != nil {
+				glog.Warningf("Error getting TargetHttpProxy %s: %v", resID.Key, err)
 				return nil, err
 			}
 			gclb.TargetHTTPProxy[*resID.Key] = &TargetHTTPProxy{GA: p}
@@ -153,12 +156,20 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 
 			urlMapResID, err := cloud.ParseResourceURL(p.UrlMap)
 			if err != nil {
-				panic(err)
+				glog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
+				return nil, err
 			}
-			urlMapKey = urlMapResID.Key
+			if urlMapKey == nil {
+				urlMapKey = urlMapResID.Key
+			}
+			if *urlMapKey != *urlMapResID.Key {
+				glog.Warningf("Error targetHttpProxy references are not the same (%s != %s)", *urlMapKey, *urlMapResID.Key)
+				return nil, fmt.Errorf("targetHttpProxy references are not the same: %+v != %+v", *urlMapKey, *urlMapResID.Key)
+			}
 		case "targetHttpsProxies":
 			p, err := c.TargetHttpsProxies().Get(ctx, resID.Key)
 			if err != nil {
+				glog.Warningf("Error getting targetHttpsProxy (%s): %v", resID.Key, err)
 				return nil, err
 			}
 			gclb.TargetHTTPSProxy[*resID.Key] = &TargetHTTPSProxy{GA: p}
@@ -168,10 +179,15 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 
 			urlMapResID, err := cloud.ParseResourceURL(p.UrlMap)
 			if err != nil {
-				panic(err)
+				glog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
+				return nil, err
+			}
+			if urlMapKey == nil {
+				urlMapKey = urlMapResID.Key
 			}
 			if *urlMapKey != *urlMapResID.Key {
-				return nil, fmt.Errorf("%+v != %+v", *urlMapKey, *urlMapResID.Key) // XXX
+				glog.Warningf("Error targetHttpsProxy references are not the same (%s != %s)", *urlMapKey, *urlMapResID.Key)
+				return nil, fmt.Errorf("targetHttpsProxy references are not the same: %+v != %+v", *urlMapKey, *urlMapResID.Key)
 			}
 		default:
 			glog.Errorf("Unhandled resource: %q, grf = %+v", resID.Resource, gfr)
