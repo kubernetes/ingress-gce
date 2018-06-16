@@ -26,6 +26,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
 const (
@@ -106,16 +107,6 @@ func IsForbiddenError(err error) bool {
 	return IsHTTPErrorCode(err, http.StatusForbidden)
 }
 
-// CompareLinks returns true if the 2 self links are equal.
-func CompareLinks(l1, l2 string) bool {
-	// TODO: These can be partial links
-	return l1 == l2 && l1 != ""
-}
-
-// PrimitivePathMap is a convenience type used by multiple submodules
-// that share the same testing methods.
-type PrimitivePathMap map[string]map[string]string
-
 // trimFieldsEvenly trims the fields evenly and keeps the total length
 // <= max. Truncation is spread in ratio with their original length,
 // meaning smaller fields will be truncated less than longer ones.
@@ -166,21 +157,80 @@ func PrettyJson(data interface{}) (string, error) {
 	return buffer.String(), nil
 }
 
-// BackendServiceRelativeResourcePath returns a relative path of the link for a
-// BackendService given its name.
-func BackendServiceRelativeResourcePath(name string) string {
-	return fmt.Sprintf("global/backendServices/%v", name)
+// KeyName returns the name portion from a full or partial GCP resource URL.
+// Example:
+//  Input:  https://googleapis.com/v1/compute/projects/my-project/global/backendServices/my-backend
+//  Output: my-backend
+func KeyName(url string) (string, error) {
+	id, err := cloud.ParseResourceURL(url)
+	if err != nil {
+		return "", err
+	}
+
+	if id.Key == nil {
+		// Resource is projects
+		return id.ProjectID, nil
+	}
+
+	return id.Key.Name, nil
 }
 
-// BackendServiceComparablePath trims project and compute version from the SelfLink
-// for a global BackendService.
-// global/backendServices/[BACKEND_SERVICE_NAME]
-func BackendServiceComparablePath(url string) string {
-	pathParts := strings.Split(url, "global/")
-	if len(pathParts) != 2 {
-		return ""
+// RelativeResourceName returns the project, location, resource, and name from a full/partial GCP
+// resource URL. This removes the endpoint prefix and version.
+// Example:
+//  Input:  https://googleapis.com/v1/compute/projects/my-project/global/backendServices/my-backend
+//  Output: projects/my-project/global/backendServices/my-backend
+func RelativeResourceName(url string) (string, error) {
+	resID, err := cloud.ParseResourceURL(url)
+	if err != nil {
+		return "", err
 	}
-	return fmt.Sprintf("global/%s", pathParts[1])
+	return resID.RelativeResourceName(), nil
+}
+
+// ResourcePath returns the location, resource and name portion from a
+// full or partial GCP resource URL. This removes the endpoint prefix, version, and project.
+// Example:
+//  Input:  https://googleapis.com/v1/compute/projects/my-project/global/backendServices/my-backend
+//  Output: global/backendServices/my-backend
+func ResourcePath(url string) (string, error) {
+	resID, err := cloud.ParseResourceURL(url)
+	if err != nil {
+		return "", err
+	}
+	return resID.ResourcePath(), nil
+}
+
+// EqualResourcePaths returns true if a and b have equal ResourcePaths. Resource paths
+// entail the location, resource type, and resource name.
+func EqualResourcePaths(a, b string) bool {
+	aPath, err := ResourcePath(a)
+	if err != nil {
+		return false
+	}
+
+	bPath, err := ResourcePath(b)
+	if err != nil {
+		return false
+	}
+
+	return aPath == bPath
+}
+
+// EqualResourceIDs returns true if a and b have equal ResourceIDs which entail the project,
+// location, resource type, and resource name.
+func EqualResourceIDs(a, b string) bool {
+	aId, err := cloud.ParseResourceURL(a)
+	if err != nil {
+		return false
+	}
+
+	bId, err := cloud.ParseResourceURL(b)
+	if err != nil {
+		return false
+	}
+
+	return aId.Equal(bId)
 }
 
 // IGLinks returns a list of links extracted from the passed in list of

@@ -148,7 +148,7 @@ func (l *L7) populateSSLCert() error {
 	// Can be a performance issue if there are too many global certs, default quota is only 10.
 	certs, err := l.cloud.ListSslCertificates()
 	if err != nil {
-		return utils.IgnoreHTTPNotFound(err)
+		return err
 	}
 	for _, c := range certs {
 		if l.namer.IsCertUsedForLB(l.Name, c.Name) {
@@ -159,14 +159,23 @@ func (l *L7) populateSSLCert() error {
 	if len(l.sslCerts) == 0 {
 		// Check for legacy cert since that follows a different naming convention
 		glog.V(4).Infof("Looking for legacy ssl certs")
-		expectedCertNames := l.getSslCertLinkInUse()
-		for _, link := range expectedCertNames {
+		expectedCertLinks, err := l.getSslCertLinkInUse()
+		if err != nil {
+			// Return nil if target proxy doesn't exist.
+			return utils.IgnoreHTTPNotFound(err)
+		}
+		for _, link := range expectedCertLinks {
 			// Retrieve the certificate and ignore error if certificate wasn't found
-			name := getResourceNameFromLink(link)
+			name, err := utils.KeyName(link)
+			if err != nil {
+				glog.Warningf("error parsing cert name: %v", err)
+				continue
+			}
+
 			if !l.namer.IsLegacySSLCert(l.Name, name) {
 				continue
 			}
-			cert, _ := l.cloud.GetSslCertificate(getResourceNameFromLink(name))
+			cert, _ := l.cloud.GetSslCertificate(name)
 			if cert != nil {
 				glog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l.Name)
 				l.sslCerts = append(l.sslCerts, cert)
@@ -205,14 +214,19 @@ func (l *L7) compareCerts(certLinks []string) bool {
 		glog.V(4).Infof("Loadbalancer has %d certs, target proxy has %d certs", len(certsMap), len(certLinks))
 		return false
 	}
-	var certName string
-	for _, linkName := range certLinks {
-		certName = getResourceNameFromLink(linkName)
+
+	for _, link := range certLinks {
+		certName, err := utils.KeyName(link)
+		if err != nil {
+			glog.Warningf("Cannot get cert name: %v", err)
+			return false
+		}
+
 		if cert, ok := certsMap[certName]; !ok {
 			glog.V(4).Infof("Cannot find cert with name %s in certsMap %+v", certName, certsMap)
 			return false
-		} else if ok && !utils.CompareLinks(linkName, cert.SelfLink) {
-			glog.V(4).Infof("Selflink compare failed for certs - %s in loadbalancer, %s in targetproxy", cert.SelfLink, linkName)
+		} else if ok && !utils.EqualResourceIDs(link, cert.SelfLink) {
+			glog.V(4).Infof("Selflink compare failed for certs - %s in loadbalancer, %s in targetproxy", cert.SelfLink, link)
 			return false
 		}
 	}

@@ -26,6 +26,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
 const (
@@ -50,7 +51,7 @@ func (l *L7) assertUrlMapExists() (err error) {
 	glog.V(3).Infof("Creating url map %v for backend %v", urlMapName, defaultBackendName)
 	newUrlMap := &compute.UrlMap{
 		Name:           urlMapName,
-		DefaultService: utils.BackendServiceRelativeResourcePath(defaultBackendName),
+		DefaultService: cloud.NewBackendServicesResourceID("", defaultBackendName).ResourcePath(),
 	}
 	if err = l.cloud.CreateUrlMap(newUrlMap); err != nil {
 		return err
@@ -122,7 +123,7 @@ func (l *L7) UpdateUrlMap() error {
 
 	urlMap := l.runtimeInfo.UrlMap
 	defaultBackendName := urlMap.DefaultBackend.BackendName(l.namer)
-	l.um.DefaultService = utils.BackendServiceRelativeResourcePath(defaultBackendName)
+	l.um.DefaultService = cloud.NewBackendServicesResourceID("", defaultBackendName).ResourcePath()
 
 	// Every update replaces the entire urlmap.
 	// TODO:  when we have multiple loadbalancers point to a single gce url map
@@ -151,7 +152,7 @@ func (l *L7) UpdateUrlMap() error {
 		// GCE ensures that matched rule with longest prefix wins.
 		for _, rule := range rules {
 			beName := rule.Backend.BackendName(l.namer)
-			beLink := utils.BackendServiceRelativeResourcePath(beName)
+			beLink := cloud.NewBackendServicesResourceID("", beName).ResourcePath()
 			pathMatcher.PathRules = append(
 				pathMatcher.PathRules, &compute.PathRule{Paths: []string{rule.Path}, Service: beLink})
 		}
@@ -205,7 +206,7 @@ func (l *L7) getBackendNames() []string {
 }
 
 func mapsEqual(a, b *compute.UrlMap) bool {
-	if utils.BackendServiceComparablePath(a.DefaultService) != utils.BackendServiceComparablePath(b.DefaultService) {
+	if !utils.EqualResourcePaths(a.DefaultService, b.DefaultService) {
 		return false
 	}
 	if len(a.HostRules) != len(b.HostRules) {
@@ -235,7 +236,7 @@ func mapsEqual(a, b *compute.UrlMap) bool {
 	for i := range a.PathMatchers {
 		a := a.PathMatchers[i]
 		b := b.PathMatchers[i]
-		if utils.BackendServiceComparablePath(a.DefaultService) != utils.BackendServiceComparablePath(b.DefaultService) {
+		if !utils.EqualResourcePaths(a.DefaultService, b.DefaultService) {
 			return false
 		}
 		if a.Description != b.Description {
@@ -260,7 +261,7 @@ func mapsEqual(a, b *compute.UrlMap) bool {
 			}
 			// Trim down the url's for a.Service and b.Service to a comparable structure
 			// We do this because we update the UrlMap with relative links (not full) to backends.
-			if utils.BackendServiceComparablePath(a.Service) != utils.BackendServiceComparablePath(b.Service) {
+			if !utils.EqualResourcePaths(a.Service, b.Service) {
 				return false
 			}
 		}

@@ -26,6 +26,7 @@ import (
 )
 
 func TestPeriodicTaskQueue(t *testing.T) {
+	t.Parallel()
 	synced := map[string]bool{}
 	stopCh := make(chan struct{})
 	doneCh := make(chan struct{}, 1)
