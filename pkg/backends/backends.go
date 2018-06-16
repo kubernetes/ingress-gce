@@ -147,11 +147,14 @@ func ensureProtocol(be *composite.BackendService, p utils.ServicePort) (needsUpd
 }
 
 // ensureDescription updates the BackendService Description with the expected value
-func ensureDescription(be *composite.BackendService, description string) (needsUpdate bool) {
-	if be.Description == description {
+func ensureDescription(be *composite.BackendService, sp *utils.ServicePort) (needsUpdate bool) {
+	desc := sp.GetDescription()
+	features.SetDescription(&desc, sp)
+	descString := desc.String()
+	if be.Description == descString {
 		return false
 	}
-	be.Description = description
+	be.Description = descString
 	return true
 }
 
@@ -184,6 +187,16 @@ func (b *Backends) Get(name string, version meta.Version) (*composite.BackendSer
 	be, err := composite.GetBackendService(name, version, b.cloud)
 	if err != nil {
 		return nil, err
+	}
+	// Evaluate the existing features from description to see if a lower
+	// API version is required so that we don't lose information from
+	// the existing backend service.
+	versionRequired := features.VersionFromDescription(be.Description)
+	if features.IsLowerVersion(versionRequired, version) {
+		be, err = composite.GetBackendService(name, versionRequired, b.cloud)
+		if err != nil {
+			return nil, err
+		}
 	}
 	b.snapshotter.Add(name, be)
 	return be, nil
@@ -219,22 +232,23 @@ func (b *Backends) create(hcLink string, sp utils.ServicePort, name string) (*co
 		Name: b.namer.NamedPort(sp.NodePort),
 		Port: sp.NodePort,
 	}
+	version := features.VersionFromServicePort(&sp)
 	be := &composite.BackendService{
-		Version:      sp.Version(),
+		Version:      version,
 		Name:         name,
-		Description:  sp.Description(),
 		Protocol:     string(sp.Protocol),
 		HealthChecks: []string{hcLink},
 		Port:         namedPort.Port,
 		PortName:     namedPort.Name,
 	}
+	ensureDescription(be, &sp)
 	if err := composite.CreateBackendService(be, b.cloud); err != nil {
 		return nil, err
 	}
 	// Note: We need to perform a GCE call to re-fetch the object we just created
 	// so that the "Fingerprint" field is filled in. This is needed to update the
 	// object without error.
-	return b.Get(name, sp.Version())
+	return b.Get(name, version)
 }
 
 // Ensure will update or create Backends for the given ports.
@@ -255,12 +269,13 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 	// we might've created health-check for them.
 	be := &composite.BackendService{}
 	beName := sp.BackendName(b.namer)
+	version := features.VersionFromServicePort(&sp)
 
 	defer func() {
 		b.snapshotter.Add(beName, be)
 	}()
 
-	be, getErr := b.Get(beName, sp.Version())
+	be, getErr := b.Get(beName, version)
 	hasLegacyHC := false
 	if be != nil {
 		// If the backend already exists, find out if it is using a legacy health check.
@@ -289,10 +304,11 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 			return err
 		}
 	}
-	be.Version = sp.Version()
+	// Set composite backend service to the version required by current service port.
+	be.Version = version
 	needUpdate := ensureProtocol(be, sp)
 	needUpdate = ensureHealthCheckLink(be, hcLink) || needUpdate
-	needUpdate = ensureDescription(be, sp.Description()) || needUpdate
+	needUpdate = ensureDescription(be, &sp) || needUpdate
 	if b.backendConfigEnabled && sp.BackendConfig != nil {
 		needUpdate = features.EnsureCDN(sp, be) || needUpdate
 		needUpdate = features.EnsureIAP(sp, be) || needUpdate

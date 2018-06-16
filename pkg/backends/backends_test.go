@@ -37,6 +37,7 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/mock"
 
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/neg"
@@ -415,7 +416,7 @@ func TestBackendPoolSync(t *testing.T) {
 		t.Fatalf("Did not expect to find port 90")
 	}
 	for _, port := range svcNodePorts {
-		if _, err := pool.Get(port.BackendName(defaultNamer), port.Version()); err != nil {
+		if _, err := pool.Get(port.BackendName(defaultNamer), features.VersionFromServicePort(&port)); err != nil {
 			t.Fatalf("Expected to find port %v", port)
 		}
 	}
@@ -427,7 +428,7 @@ func TestBackendPoolSync(t *testing.T) {
 	}
 
 	for _, port := range deletedPorts {
-		if _, err := pool.Get(port.BackendName(defaultNamer), port.Version()); err == nil {
+		if _, err := pool.Get(port.BackendName(defaultNamer), features.VersionFromServicePort(&port)); err == nil {
 			t.Fatalf("Pool contains %v after deletion", port)
 		}
 	}
@@ -958,7 +959,7 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
 				func(t *testing.T) {
 					pool.Ensure([]utils.ServicePort{oldPort}, nil)
-					be, err := pool.Get(oldPort.BackendName(defaultNamer), oldPort.Version())
+					be, err := pool.Get(oldPort.BackendName(defaultNamer), features.VersionFromServicePort(&oldPort))
 					if err != nil {
 						t.Fatalf("%v", err)
 					}
@@ -1003,12 +1004,12 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
 				func(t *testing.T) {
 					pool.Ensure([]utils.ServicePort{oldPort}, nil)
-					be, err := pool.Get(oldPort.BackendName(defaultNamer), oldPort.Version())
+					be, err := pool.Get(oldPort.BackendName(defaultNamer), features.VersionFromServicePort(&oldPort))
 					if err != nil {
 						t.Fatalf("%v", err)
 					}
 
-					needsDescriptionUpdate := ensureDescription(be, newPort.Description())
+					needsDescriptionUpdate := ensureDescription(be, &newPort)
 					if reflect.DeepEqual(oldPort, newPort) {
 						if needsDescriptionUpdate {
 							t.Fatalf("Expected ensureDescription for the same port to return false, got %v", needsDescriptionUpdate)
@@ -1032,7 +1033,7 @@ func TestEnsureBackendServiceHealthCheckLink(t *testing.T) {
 
 	p := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}}
 	pool.Ensure([]utils.ServicePort{p}, nil)
-	be, err := pool.Get(p.BackendName(defaultNamer), p.Version())
+	be, err := pool.Get(p.BackendName(defaultNamer), features.VersionFromServicePort(&p))
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
