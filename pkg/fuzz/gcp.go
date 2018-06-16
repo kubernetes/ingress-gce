@@ -20,11 +20,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 
 	"github.com/golang/glog"
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/filter"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
@@ -67,6 +70,8 @@ type BackendService struct {
 
 // GCLB contains the resources for a load balancer.
 type GCLB struct {
+	VIP string
+
 	ForwardingRule   map[meta.Key]*ForwardingRule
 	TargetHTTPProxy  map[meta.Key]*TargetHTTPProxy
 	TargetHTTPSProxy map[meta.Key]*TargetHTTPSProxy
@@ -75,14 +80,82 @@ type GCLB struct {
 }
 
 // NewGCLB returns an empty GCLB.
-func NewGCLB() *GCLB {
+func NewGCLB(vip string) *GCLB {
 	return &GCLB{
+		VIP:              vip,
 		ForwardingRule:   map[meta.Key]*ForwardingRule{},
 		TargetHTTPProxy:  map[meta.Key]*TargetHTTPProxy{},
 		TargetHTTPSProxy: map[meta.Key]*TargetHTTPSProxy{},
 		URLMap:           map[meta.Key]*URLMap{},
 		BackendService:   map[meta.Key]*BackendService{},
 	}
+}
+
+// CheckResourceDeletion checks the existance of the resources. Returns nil if
+// all of the associated resources no longer exist.
+func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud) error {
+	var resources []*meta.Key
+
+	for k := range g.ForwardingRule {
+		_, err := c.ForwardingRules().Get(ctx, &k)
+		if err != nil {
+			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+				return err
+			}
+		} else {
+			resources = append(resources, &k)
+		}
+	}
+	for k := range g.TargetHTTPProxy {
+		_, err := c.TargetHttpProxies().Get(ctx, &k)
+		if err != nil {
+			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+				return err
+			}
+		} else {
+			resources = append(resources, &k)
+		}
+	}
+	for k := range g.TargetHTTPSProxy {
+		_, err := c.TargetHttpsProxies().Get(ctx, &k)
+		if err != nil {
+			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+				return err
+			}
+		} else {
+			resources = append(resources, &k)
+		}
+	}
+	for k := range g.URLMap {
+		_, err := c.UrlMaps().Get(ctx, &k)
+		if err != nil {
+			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+				return err
+			}
+		} else {
+			resources = append(resources, &k)
+		}
+	}
+	for k := range g.BackendService {
+		_, err := c.BackendServices().Get(ctx, &k)
+		if err != nil {
+			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+				return err
+			}
+		} else {
+			resources = append(resources, &k)
+		}
+	}
+
+	if len(resources) != 0 {
+		var s []string
+		for _, r := range resources {
+			s = append(s, r.String())
+		}
+		return fmt.Errorf("resources still exist (%s)", strings.Join(s, ", "))
+	}
+
+	return nil
 }
 
 func hasAlphaResource(resourceType string, validators []FeatureValidator) bool {
@@ -106,7 +179,8 @@ func hasBetaResource(resourceType string, validators []FeatureValidator) bool {
 // GCLBForVIP retrieves all of the resources associated with the GCLB for a
 // given VIP.
 func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []FeatureValidator) (*GCLB, error) {
-	gclb := NewGCLB()
+	gclb := NewGCLB(vip)
+
 	allGFRs, err := c.GlobalForwardingRules().List(ctx, filter.None)
 	if err != nil {
 		glog.Warningf("Error listing forwarding rules: %v", err)

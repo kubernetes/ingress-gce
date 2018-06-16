@@ -22,6 +22,7 @@ import (
 
 	"github.com/kr/pretty"
 	"k8s.io/api/extensions/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -70,19 +71,24 @@ func TestBasic(t *testing.T) {
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
 			t.Parallel()
 
+			ctx := context.Background()
+
 			_, _, err := e2e.CreateEchoService(s, "service-1", nil)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
+			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
 			if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
+			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 
 			ing, err := e2e.WaitForIngress(s, tc.ing)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
+			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
 			if len(ing.Status.LoadBalancer.Ingress) < 1 {
@@ -90,10 +96,12 @@ func TestBasic(t *testing.T) {
 			}
 
 			vip := ing.Status.LoadBalancer.Ingress[0].IP
+			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ing.Name, vip)
 			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
 			if err != nil {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
+
 			// Do some cursory checks on the GCP objects.
 			if len(gclb.ForwardingRule) != tc.numForwardingRules {
 				t.Errorf("got %d fowarding rules, want %d;\n%s", len(gclb.ForwardingRule), tc.numForwardingRules, pretty.Sprint(gclb.ForwardingRule))
@@ -101,6 +109,16 @@ func TestBasic(t *testing.T) {
 			if len(gclb.BackendService) != tc.numBackendServices {
 				t.Errorf("got %d backend services, want %d;\n%s", len(gclb.BackendService), tc.numBackendServices, pretty.Sprint(gclb.BackendService))
 			}
+
+			// Wait for GCLB resources to be deleted.
+			if err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Delete(tc.ing.Name, &metav1.DeleteOptions{}); err != nil {
+				t.Errorf("Delete(%q) = %v, want nil", tc.ing.Name, err)
+			}
+			t.Logf("Waiting for GCLB resources to be deleted (%s/%s)", s.Namespace, tc.ing.Name)
+			if err := e2e.WaitForGCLBDeletion(ctx, Framework.Cloud, gclb); err != nil {
+				t.Errorf("e2e.WaitForGCLBDeletion(...) = %v, want nil", err)
+			}
+			t.Logf("GCLB resources deleted (%s/%s)", s.Namespace, tc.ing.Name)
 		})
 	}
 }
