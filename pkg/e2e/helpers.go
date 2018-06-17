@@ -20,16 +20,21 @@ import (
 	"context"
 	"time"
 
+	"github.com/golang/glog"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
 const (
 	ingressPollInterval = 30 * time.Second
 	ingressPollTimeout  = 20 * time.Minute
+
+	gclbDeletionInterval = 30 * time.Second
+	gclbDeletionTimeout  = 5 * time.Minute
 )
 
 // WaitForIngress to stabilize.
@@ -51,4 +56,16 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) 
 		return false, nil
 	})
 	return ing, err
+}
+
+// WaitForGCLBDeletion waits for the resources associated with the GLBC to be
+// deleted.
+func WaitForGCLBDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB) error {
+	return wait.Poll(gclbDeletionInterval, gclbDeletionTimeout, func() (bool, error) {
+		if err := g.CheckResourceDeletion(ctx, c); err != nil {
+			glog.Infof("WaitForGCLBDeletion(%q) = %v", g.VIP, err)
+			return false, nil
+		}
+		return true, nil
+	})
 }
