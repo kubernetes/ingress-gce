@@ -16,12 +16,41 @@
 
 # run.sh manages the settings required for running containerized in a
 # Kubernetes cluster.
-
 echo '--- BEGIN ---'
-PROJECT=$(curl -H'Metadata-Flavor:Google' metadata.google.internal/computeMetadata/v1/project/project-id 2>/dev/null)
+for ATTEMPT in $(seq 60); do
+  PROJECT=$(curl -H'Metadata-Flavor:Google' metadata.google.internal/computeMetadata/v1/project/project-id 2>/dev/null)
+  if [[ -n "$PROJECT" ]]; then
+    break
+  fi
+  echo "Warning: could not get Compute project name from the metadata server (attempt ${ATTEMPT})"
+  sleep 1
+done
+
+if [[ -z "$PROJECT" ]]; then
+  echo "Error: could not get Compute project name from the metadata server"
+  exit 1
+fi
+
+echo
+echo ==============================================================================
 echo "PROJECT: ${PROJECT}"
 CMD="/e2e-test -test.v -test.parallel=10 -run -project ${PROJECT} -logtostderr -inCluster -v=2"
 echo "CMD: ${CMD}" $@
+echo
+
+echo ==============================================================================
+echo E2E TEST
+echo
 ${CMD} "$@" 2>&1
+echo
+
+RESOURCES="forwarding-rules target-http-proxies target-https-proxies url-maps backend-services"
+for RES in ${RESOURCES}; do
+  echo ==============================================================================
+  echo "GCP RESOURCE: ${RES}"
+  gcloud compute ${RES} list --project ${PROJECT} --format yaml
+done
+
+echo ==============================================================================
 echo "RESULT: $?"
 echo '--- END ---'
