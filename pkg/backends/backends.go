@@ -313,6 +313,12 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 		}
 	}
 
+	if b.backendConfigEnabled && sp.BackendConfig != nil {
+		if err := features.EnsureSecurityPolicy(b.cloud, sp, be, beName); err != nil {
+			return err
+		}
+	}
+
 	// If previous health check was legacy type, we need to delete it.
 	if hasLegacyHC {
 		if err = b.healthChecker.DeleteLegacy(sp.NodePort); err != nil {
