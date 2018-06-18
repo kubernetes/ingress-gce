@@ -32,6 +32,46 @@ func TestEnsureCDN(t *testing.T) {
 		updateExpected bool
 	}{
 		{
+			desc: "cdn setting are missing from spec, no update needed",
+			sp: utils.ServicePort{
+				BackendConfig: &backendconfigv1beta1.BackendConfig{
+					Spec: backendconfigv1beta1.BackendConfigSpec{
+						Cdn: nil,
+					},
+				},
+			},
+			be: &composite.BackendService{
+				EnableCDN: true,
+				CdnPolicy: &composite.BackendServiceCdnPolicy{
+					CacheKeyPolicy: &composite.CacheKeyPolicy{
+						IncludeHost: true,
+					},
+				},
+			},
+			updateExpected: false,
+		},
+		{
+			desc: "cache policies are missing from spec, update needed",
+			sp: utils.ServicePort{
+				BackendConfig: &backendconfigv1beta1.BackendConfig{
+					Spec: backendconfigv1beta1.BackendConfigSpec{
+						Cdn: &backendconfigv1beta1.CDNConfig{
+							Enabled: true,
+						},
+					},
+				},
+			},
+			be: &composite.BackendService{
+				EnableCDN: true,
+				CdnPolicy: &composite.BackendServiceCdnPolicy{
+					CacheKeyPolicy: &composite.CacheKeyPolicy{
+						IncludeHost: true,
+					},
+				},
+			},
+			updateExpected: true,
+		},
+		{
 			desc: "settings are identical, no update needed",
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{

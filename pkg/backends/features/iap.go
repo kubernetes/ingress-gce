@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	"github.com/golang/glog"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -30,6 +29,9 @@ import (
 // and applies it to the BackendService if it is stale. It returns true
 // if there were existing settings on the BackendService that were overwritten.
 func EnsureIAP(sp utils.ServicePort, be *composite.BackendService) bool {
+	if sp.BackendConfig.Spec.Iap == nil {
+		return false
+	}
 	beTemp := &composite.BackendService{}
 	applyIAPSettings(sp, beTemp)
 	// We need to compare the SHA256 of the client secret instead of the client secret itself
@@ -48,20 +50,9 @@ func EnsureIAP(sp utils.ServicePort, be *composite.BackendService) bool {
 // made to actually persist the changes.
 func applyIAPSettings(sp utils.ServicePort, be *composite.BackendService) {
 	beConfig := sp.BackendConfig
-	setIAPDefaults(beConfig)
 	// Apply the boolean switch
 	be.Iap = &composite.BackendServiceIAP{Enabled: beConfig.Spec.Iap.Enabled}
 	// Apply the OAuth credentials
 	be.Iap.Oauth2ClientId = beConfig.Spec.Iap.OAuthClientCredentials.ClientID
 	be.Iap.Oauth2ClientSecret = beConfig.Spec.Iap.OAuthClientCredentials.ClientSecret
-}
-
-// setIAPDefaults initializes any nil pointers in IAP configuration which ensures that there are defaults for missing sub-types.
-func setIAPDefaults(beConfig *backendconfigv1beta1.BackendConfig) {
-	if beConfig.Spec.Iap == nil {
-		beConfig.Spec.Iap = &backendconfigv1beta1.IAPConfig{}
-	}
-	if beConfig.Spec.Iap.OAuthClientCredentials == nil {
-		beConfig.Spec.Iap.OAuthClientCredentials = &backendconfigv1beta1.OAuthClientCredentials{}
-	}
 }

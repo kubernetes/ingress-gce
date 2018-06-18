@@ -29,6 +29,9 @@ import (
 // and applies it to the BackendService. It returns true if there were existing
 // settings on the BackendService that were overwritten.
 func EnsureCDN(sp utils.ServicePort, be *composite.BackendService) bool {
+	if sp.BackendConfig.Spec.Cdn == nil {
+		return false
+	}
 	beTemp := &composite.BackendService{}
 	applyCDNSettings(sp, beTemp)
 	if !reflect.DeepEqual(beTemp.CdnPolicy, be.CdnPolicy) || beTemp.EnableCDN != be.EnableCDN {
@@ -59,9 +62,6 @@ func applyCDNSettings(sp utils.ServicePort, be *composite.BackendService) {
 
 // setCDNDefaults initializes any nil pointers in CDN configuration which ensures that there are defaults for missing sub-types.
 func setCDNDefaults(beConfig *backendconfigv1beta1.BackendConfig) {
-	if beConfig.Spec.Cdn == nil {
-		beConfig.Spec.Cdn = &backendconfigv1beta1.CDNConfig{}
-	}
 	if beConfig.Spec.Cdn.CachePolicy == nil {
 		beConfig.Spec.Cdn.CachePolicy = &backendconfigv1beta1.CacheKeyPolicy{}
 	}

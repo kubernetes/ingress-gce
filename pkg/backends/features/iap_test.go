@@ -34,6 +34,24 @@ func TestEnsureIAP(t *testing.T) {
 		updateExpected bool
 	}{
 		{
+			desc: "iap settings are missing from spec, no update needed",
+			sp: utils.ServicePort{
+				BackendConfig: &backendconfigv1beta1.BackendConfig{
+					Spec: backendconfigv1beta1.BackendConfigSpec{
+						Iap: nil,
+					},
+				},
+			},
+			be: &composite.BackendService{
+				Iap: &composite.BackendServiceIAP{
+					Enabled:                  true,
+					Oauth2ClientId:           "foo",
+					Oauth2ClientSecretSha256: fmt.Sprintf("%x", sha256.Sum256([]byte("bar"))),
+				},
+			},
+			updateExpected: false,
+		},
+		{
 			desc: "settings are identical, no update needed",
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
