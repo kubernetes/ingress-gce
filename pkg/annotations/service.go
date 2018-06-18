@@ -88,7 +88,7 @@ type Service struct {
 	v map[string]string
 }
 
-// PortNameMap is a map of ServicePort's Port:TargetPort.
+// PortNameMap is a map of ServicePort:TargetPort.
 type PortNameMap map[int32]string
 
 // FromService extracts the annotations from an Service definition.
@@ -206,14 +206,14 @@ func (svc *Service) NEGServicePorts(knownPorts PortNameMap) (PortNameMap, error)
 	}
 
 	// TODO: add link to Expose NEG documentation when complete
-	var portMap ExposeNegAnnotation
-	if err := json.Unmarshal([]byte(v), &portMap); err != nil {
+	var exposedNegPortMap ExposeNegAnnotation
+	if err := json.Unmarshal([]byte(v), &exposedNegPortMap); err != nil {
 		return nil, fmt.Errorf("NEG annotation %s is not well-formed: %v", v, err)
 	}
 
 	portSet := make(PortNameMap)
 	var errList []error
-	for port, _ := range portMap {
+	for port, _ := range exposedNegPortMap {
 		// TODO: also validate ServicePorts in the exposed NEG annotation via webhook
 		if _, ok := knownPorts[port]; !ok {
 			errList = append(errList, fmt.Errorf("ServicePort %v doesn't exist on Service", port))

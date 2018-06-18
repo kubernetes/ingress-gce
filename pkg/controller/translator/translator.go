@@ -87,11 +87,11 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 		return nil, errors.ErrBadSvcType{Service: id.Service, ServiceType: svc.Spec.Type}
 	}
 	svcPort = &utils.ServicePort{
-		ID:            id,
-		NodePort:      int64(port.NodePort),
-		SvcPort:       int32(port.Port),
-		SvcTargetPort: port.TargetPort.String(),
-		NEGEnabled:    t.ctx.NEGEnabled && negEnabled,
+		ID:         id,
+		NodePort:   int64(port.NodePort),
+		Port:       int32(port.Port),
+		TargetPort: port.TargetPort.String(),
+		NEGEnabled: t.ctx.NEGEnabled && negEnabled,
 	}
 
 	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
@@ -280,7 +280,7 @@ func (t *Translator) GatherEndpointPorts(svcPorts []utils.ServicePort) []string 
 			// For NEG backend, need to open firewall to all endpoint target ports
 			// TODO(mixia): refactor firewall syncing into a separate go routine with different trigger.
 			// With NEG, endpoint changes may cause firewall ports to be different if user specifies inconsistent backends.
-			endpointPorts := listEndpointTargetPorts(t.ctx.EndpointInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.SvcTargetPort)
+			endpointPorts := listEndpointTargetPorts(t.ctx.EndpointInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.TargetPort)
 			for _, ep := range endpointPorts {
 				portMap[int64(ep)] = true
 			}

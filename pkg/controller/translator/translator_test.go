@@ -493,16 +493,16 @@ func TestGatherEndpointPorts(t *testing.T) {
 		{NodePort: int64(30001)},
 		{NodePort: int64(30002)},
 		{
-			ID:            utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: ep1}},
-			NodePort:      int64(30003),
-			NEGEnabled:    true,
-			SvcTargetPort: "80",
+			ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: ep1}},
+			NodePort:   int64(30003),
+			NEGEnabled: true,
+			TargetPort: "80",
 		},
 		{
-			ID:            utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: ep2}},
-			NodePort:      int64(30004),
-			NEGEnabled:    true,
-			SvcTargetPort: "named-port",
+			ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: ep2}},
+			NodePort:   int64(30004),
+			NEGEnabled: true,
+			TargetPort: "named-port",
 		},
 	}
 

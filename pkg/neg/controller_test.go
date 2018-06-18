@@ -199,7 +199,7 @@ func TestDisableNEGServiceWithIngress(t *testing.T) {
 	validateSyncers(t, controller, 3, true)
 }
 
-func TestGatherServiceTargetPortUsedByIngress(t *testing.T) {
+func TestGatherPortMappingUsedByIngress(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {

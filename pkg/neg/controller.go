@@ -214,10 +214,9 @@ func (c *Controller) processService(key string) error {
 	}
 
 	if !enabled {
-		c.removeNegAnnotation(service)
 		c.manager.StopSyncer(namespace, name)
-		c.serviceLister.Update(service)
-		return nil
+		// delete the annotation
+		return c.syncNegAnnotation(namespace, name, service, make(annotations.PortNameMap))
 	}
 
 	glog.V(2).Infof("Syncing service %q", key)
@@ -244,19 +243,28 @@ func (c *Controller) processService(key string) error {
 		svcPortMap = svcPortMap.Union(negSvcPorts)
 	}
 
-	if len(svcPortMap) > 0 {
-		c.applyNegAnnotation(namespace, name, service, svcPortMap)
-	} else {
-		c.removeNegAnnotation(service)
+	err = c.syncNegAnnotation(namespace, name, service, svcPortMap)
+	if err != nil {
+		return err
 	}
-
 	return c.manager.EnsureSyncers(namespace, name, svcPortMap)
 }
 
-func (c *Controller) applyNegAnnotation(namespace, name string, service *apiv1.Service, portMap annotations.PortNameMap) error {
+func (c *Controller) syncNegAnnotation(namespace, name string, service *apiv1.Service, portMap annotations.PortNameMap) error {
 	zones, err := c.zoneGetter.ListZones()
 	if err != nil {
 		return err
+	}
+
+	if len(portMap) == 0 {
+		if _, ok := service.Annotations[annotations.NEGStatusKey]; ok {
+			// TODO: use PATCH to remove annotation
+			delete(service.Annotations, annotations.NEGStatusKey)
+			glog.V(2).Infof("Removing expose NEG annotation from service: %s/%s", namespace, name)
+			return c.serviceLister.Update(service)
+		}
+		// service doesn't have the expose NEG annotation and doesn't need update
+		return nil
 	}
 
 	portToNegs := make(annotations.PortNameMap)
@@ -271,15 +279,13 @@ func (c *Controller) applyNegAnnotation(namespace, name string, service *apiv1.S
 
 	annotation := string(formattedAnnotation)
 
+	existingAnnotation, ok := service.Annotations[annotations.NEGStatusKey]
+	if ok && existingAnnotation == annotation {
+		return nil
+	}
+
 	service.Annotations[annotations.NEGStatusKey] = annotation
-	glog.V(2).Infof("Applying annotation: %s to service: %s/%s", annotation, namespace, name)
-
-	return c.serviceLister.Update(service)
-}
-
-func (c *Controller) removeNegAnnotation(service *apiv1.Service) error {
-	// TODO: use PATCH to remove annotation
-	delete(service.Annotations, annotations.NEGStatusKey)
+	glog.V(2).Infof("Updating NEG visibility annotation %q on service %s/%s.", annotation, namespace, name)
 	return c.serviceLister.Update(service)
 }
 

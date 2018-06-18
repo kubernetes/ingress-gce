@@ -44,7 +44,7 @@ func TestNEGService(t *testing.T) {
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						ExposeNEGAnnotationKey: `{"service_ports":{"80":{}}}`,
+						ExposeNEGAnnotationKey: `"{"80":{}}"`,
 					},
 				},
 			},
@@ -55,7 +55,7 @@ func TestNEGService(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						NetworkEndpointGroupAlphaAnnotation: "true",
-						ExposeNEGAnnotationKey:              `{"service_ports":{"80":{}}}`,
+						ExposeNEGAnnotationKey:              `"{"80":{}}"`,
 					},
 				},
 			},

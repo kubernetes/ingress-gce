@@ -552,39 +552,39 @@ func TestBackendPoolSyncQuota(t *testing.T) {
 			true,
 			"New set of ports not including the same port",
 		},
-		// Need to fill the SvcTargetPort field on ServicePort to make sure
+		// Need to fill the TargetPort field on ServicePort to make sure
 		// NEG Backend naming is unique
 		{
 			[]utils.ServicePort{{NodePort: 8080}, {NodePort: 443}},
 			[]utils.ServicePort{
-				{SvcPort: 8080, NodePort: 8080, NEGEnabled: true},
-				{SvcPort: 443, NodePort: 443, NEGEnabled: true},
+				{Port: 8080, NodePort: 8080, NEGEnabled: true},
+				{Port: 443, NodePort: 443, NEGEnabled: true},
 			},
 			true,
 			"Same port converted to NEG, plus one new NEG port",
 		},
 		{
 			[]utils.ServicePort{
-				{SvcPort: 80, NodePort: 80, NEGEnabled: true},
-				{SvcPort: 90, NodePort: 90},
+				{Port: 80, NodePort: 80, NEGEnabled: true},
+				{Port: 90, NodePort: 90},
 			},
 			[]utils.ServicePort{
-				{SvcPort: 80},
-				{SvcPort: 90, NEGEnabled: true},
+				{Port: 80},
+				{Port: 90, NEGEnabled: true},
 			},
 			true,
 			"Mixed NEG and non-NEG ports",
 		},
 		{
 			[]utils.ServicePort{
-				{SvcPort: 100, NodePort: 100, NEGEnabled: true},
-				{SvcPort: 110, NodePort: 110, NEGEnabled: true},
-				{SvcPort: 120, NodePort: 120, NEGEnabled: true},
+				{Port: 100, NodePort: 100, NEGEnabled: true},
+				{Port: 110, NodePort: 110, NEGEnabled: true},
+				{Port: 120, NodePort: 120, NEGEnabled: true},
 			},
 			[]utils.ServicePort{
-				{SvcPort: 100, NodePort: 100},
-				{SvcPort: 110, NodePort: 110},
-				{SvcPort: 120, NodePort: 120},
+				{Port: 100, NodePort: 100},
+				{Port: 110, NodePort: 110},
+				{Port: 120, NodePort: 120},
 			},
 			true,
 			"Same ports as NEG, then non-NEG",
@@ -855,11 +855,11 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 				Name:      name,
 			},
 		},
-		SvcPort:       80,
-		NodePort:      30001,
-		Protocol:      annotations.ProtocolHTTP,
-		SvcTargetPort: port,
-		NEGEnabled:    true,
+		Port:       80,
+		NodePort:   30001,
+		Protocol:   annotations.ProtocolHTTP,
+		TargetPort: port,
+		NEGEnabled: true,
 	}
 	if err := bp.Ensure([]utils.ServicePort{svcPort}, nil); err != nil {
 		t.Fatalf("Failed to ensure backend service: %v", err)
@@ -867,7 +867,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 
 	for _, zone := range zones {
 		err := fakeNEG.CreateNetworkEndpointGroup(&computealpha.NetworkEndpointGroup{
-			Name: defaultNamer.NEG(namespace, name, svcPort.SvcPort),
+			Name: defaultNamer.NEG(namespace, name, svcPort.Port),
 		}, zone)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
