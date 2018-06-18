@@ -17,6 +17,8 @@ limitations under the License.
 package features
 
 import (
+	"sort"
+
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 
@@ -27,6 +29,8 @@ import (
 const (
 	// FeatureHTTP2 defines the feature name of HTTP2.
 	FeatureHTTP2 = "HTTP2"
+	// FeatureSecurityPolicy defines the feature name of SecurityPolicy.
+	FeatureSecurityPolicy = "SecurityPolicy"
 )
 
 var (
@@ -34,7 +38,7 @@ var (
 	// version to feature names.
 	versionToFeatures = map[meta.Version][]string{
 		meta.VersionAlpha: []string{FeatureHTTP2},
-		meta.VersionBeta:  []string{},
+		meta.VersionBeta:  []string{FeatureSecurityPolicy},
 	}
 )
 
@@ -50,6 +54,11 @@ func featuresFromServicePort(sp *utils.ServicePort) []string {
 	if sp.Protocol == annotations.ProtocolHTTP2 {
 		features = append(features, FeatureHTTP2)
 	}
+	if sp.BackendConfig != nil && sp.BackendConfig.Spec.SecurityPolicy != nil {
+		features = append(features, FeatureSecurityPolicy)
+	}
+	// Keep feature names sorted to be consistent.
+	sort.Strings(features)
 	return features
 }
 
@@ -86,7 +95,7 @@ var (
 	}
 )
 
-// IsLowerVersion reutrns if v1 is a lower version than v2.
+// IsLowerVersion returns if v1 is a lower version than v2.
 func IsLowerVersion(v1, v2 meta.Version) bool {
 	return versionMap[v1] < versionMap[v2]
 }
