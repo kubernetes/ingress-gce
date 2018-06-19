@@ -70,24 +70,7 @@ func TestCreateHTTPLoadBalancer(t *testing.T) {
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created, err: %v", err)
 	}
-	um, err := f.GetUrlMap(f.UMName())
-	if err != nil {
-		t.Fatalf("f.GetUrlMap(%q) = _, %v; want nil", f.UMName(), err)
-	}
-	tp, err := f.GetTargetHttpProxy(f.TPName(false))
-	if err != nil {
-		t.Fatalf("f.GetTargetHttpProxy(%q) = _, %v; want nil", f.TPName(false), err)
-	}
-	if tp.UrlMap != um.SelfLink {
-		t.Fatalf("%v", err)
-	}
-	fw, err := f.GetGlobalForwardingRule(f.FWName(false))
-	if err != nil {
-		t.Fatalf("f.GetGlobalForwardingRule(%q) = _, %v, want nil", f.FWName(false), err)
-	}
-	if fw.Target != tp.SelfLink {
-		t.Fatalf("%v", err)
-	}
+	verifyHTTPForwardingRuleAndProxyLinks(t, f)
 }
 
 func TestCreateHTTPSLoadBalancer(t *testing.T) {
@@ -114,14 +97,46 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
+	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+}
+
+func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, f *FakeLoadBalancers) {
+	t.Helper()
+
 	um, err := f.GetUrlMap(f.UMName())
 	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
-	if err != nil || tps.UrlMap != um.SelfLink {
-		t.Fatalf("%v", err)
+	if err != nil {
+		t.Fatalf("f.GetTargetHttpsProxy(%q) = _, %v; want nil", f.TPName(true), err)
+	}
+	if !utils.EqualResourcePaths(tps.UrlMap, um.SelfLink) {
+		t.Fatalf("tps.UrlMap = %q, want %q", tps.UrlMap, um.SelfLink)
 	}
 	fws, err := f.GetGlobalForwardingRule(f.FWName(true))
-	if err != nil || fws.Target != tps.SelfLink {
-		t.Fatalf("%v", err)
+	if err != nil {
+		t.Fatalf("f.GetGlobalForwardingRule(%q) = _, %v, want nil", f.FWName(true), err)
+	}
+	if !utils.EqualResourcePaths(fws.Target, tps.SelfLink) {
+		t.Fatalf("fws.Target = %q, want %q", fws.Target, tps.SelfLink)
+	}
+}
+
+func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, f *FakeLoadBalancers) {
+	t.Helper()
+
+	um, err := f.GetUrlMap(f.UMName())
+	tps, err := f.GetTargetHttpProxy(f.TPName(false))
+	if err != nil {
+		t.Fatalf("f.GetTargetHttpProxy(%q) = _, %v; want nil", f.TPName(false), err)
+	}
+	if !utils.EqualResourcePaths(tps.UrlMap, um.SelfLink) {
+		t.Fatalf("tp.UrlMap = %q, want %q", tps.UrlMap, um.SelfLink)
+	}
+	fws, err := f.GetGlobalForwardingRule(f.FWName(false))
+	if err != nil {
+		t.Fatalf("f.GetGlobalForwardingRule(%q) = _, %v, want nil", f.FWName(false), err)
+	}
+	if !utils.EqualResourcePaths(fws.Target, tps.SelfLink) {
+		t.Fatalf("fw.Target = %q, want %q", fws.Target, tps.SelfLink)
 	}
 }
 
@@ -285,7 +300,6 @@ func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 	// Restart of controller represented by a new pool
 	secondPool := newFakeLoadBalancerPool(f, t, namer)
 	secondPool.Sync(lbInfo)
-
 	// Verify both certs are still present
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 
@@ -572,7 +586,6 @@ func verifyProxyCertsInOrder(hostname string, f *FakeLoadBalancers, t *testing.T
 // f will contain the preshared as well as secret-based certs, but target proxy will contain only one or the other.
 func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[string]string, f *FakeLoadBalancers, t *testing.T) {
 	t.Helper()
-
 	t.Logf("f =\n%s", f.String())
 
 	// f needs to contain only the certs in expectCerts, nothing more, nothing less
@@ -639,15 +652,7 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
-	um, err := f.GetUrlMap(f.UMName())
-	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
-	if err != nil || tps.UrlMap != um.SelfLink {
-		t.Fatalf("%v", err)
-	}
-	fws, err := f.GetGlobalForwardingRule(f.FWName(true))
-	if err != nil || fws.Target != tps.SelfLink {
-		t.Fatalf("%v", err)
-	}
+	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
 }
 
 func TestCreateBothLoadBalancers(t *testing.T) {
@@ -674,30 +679,37 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
-	um, err := f.GetUrlMap(f.UMName())
-	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
-	if err != nil || tps.UrlMap != um.SelfLink {
-		t.Fatalf("%v", err)
-	}
-	tp, err := f.GetTargetHttpProxy(f.TPName(false))
-	if err != nil || tp.UrlMap != um.SelfLink {
-		t.Fatalf("%v", err)
-	}
-	fws, err := f.GetGlobalForwardingRule(f.FWName(true))
-	if err != nil || fws.Target != tps.SelfLink {
-		t.Fatalf("%v", err)
-	}
-	fw, err := f.GetGlobalForwardingRule(f.FWName(false))
-	if err != nil || fw.Target != tp.SelfLink {
-		t.Fatalf("%v", err)
-	}
+
+	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+	verifyHTTPForwardingRuleAndProxyLinks(t, f)
+
+	// We know the forwarding rules exist, retrieve their addresses.
+	fws, _ := f.GetGlobalForwardingRule(f.FWName(true))
+	fw, _ := f.GetGlobalForwardingRule(f.FWName(false))
 	ip, err := f.GetGlobalAddress(f.FWName(false))
-	if err != nil || ip.Address != fw.IPAddress || ip.Address != fws.IPAddress {
+	if err != nil {
 		t.Fatalf("%v", err)
+	}
+	if ip.Address != fw.IPAddress || ip.Address != fws.IPAddress {
+		t.Fatalf("ip.Address = %q, want %q and %q all equal", ip.Address, fw.IPAddress, fws.IPAddress)
 	}
 }
 
-func TestUpdateUrlMap(t *testing.T) {
+// verifyURLMap gets the created URLMap and compares it against an expected one.
+func verifyURLMap(t *testing.T, f *FakeLoadBalancers, name string, wantGCEURLMap *utils.GCEURLMap) {
+	t.Helper()
+
+	um, err := f.GetUrlMap(name)
+	if err != nil || um == nil {
+		t.Errorf("f.GetUrlMap(%q) = %v, %v; want _, nil", name, um, err)
+	}
+	wantComputeURLMap := toComputeURLMap(name, wantGCEURLMap, f.namer)
+	if !mapsEqual(wantComputeURLMap, um) {
+		t.Errorf("mapsEqual() = false, got\n%+v\n  want\n%+v", um, wantComputeURLMap)
+	}
+}
+
+func TestUrlMapChange(t *testing.T) {
 	um1 := utils.NewGCEURLMap()
 	um2 := utils.NewGCEURLMap()
 
@@ -719,22 +731,26 @@ func TestUpdateUrlMap(t *testing.T) {
 	if err := pool.Sync(lbInfo); err != nil {
 		t.Fatalf("pool.Sync() = err %v", err)
 	}
+
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	for _, ir := range []*utils.GCEURLMap{um1, um2} {
-		lbInfo.UrlMap = ir
-		if err := l7.UpdateUrlMap(); err != nil {
-			t.Fatalf("%v", err)
-		}
+	verifyURLMap(t, f, l7.UrlMap().Name, um1)
+
+	// Change url map.
+	lbInfo.UrlMap = um2
+	if err = pool.Sync(lbInfo); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
 	}
-	if err := f.CheckURLMap(l7, um2); err != nil {
-		t.Errorf("CheckURLMap(...) = %v, want nil", err)
+	l7, err = pool.Get(lbInfo.Name)
+	if err != nil {
+		t.Fatalf("%v", err)
 	}
+	verifyURLMap(t, f, l7.UrlMap().Name, um2)
 }
 
-func TestUpdateUrlMapNoChanges(t *testing.T) {
+func TestPoolSyncNoChanges(t *testing.T) {
 	um1 := utils.NewGCEURLMap()
 	um2 := utils.NewGCEURLMap()
 
@@ -759,17 +775,12 @@ func TestUpdateUrlMapNoChanges(t *testing.T) {
 	if err := pool.Sync(lbInfo); err != nil {
 		t.Fatalf("pool.Sync() = err %v", err)
 	}
-	l7, err := pool.Get(lbInfo.Name)
-	if err != nil {
-		t.Fatalf("%v", err)
-	}
-	for _, ir := range []*utils.GCEURLMap{um1, um2} {
-		lbInfo.UrlMap = ir
-		if err := l7.UpdateUrlMap(); err != nil {
-			t.Fatalf("%v", err)
-		}
 
+	lbInfo.UrlMap = um2
+	if err := pool.Sync(lbInfo); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
 	}
+
 	for _, call := range f.calls {
 		if call == "UpdateUrlMap" {
 			t.Errorf("UpdateUrlMap() should not have been called")
@@ -802,9 +813,10 @@ func TestClusterNameChange(t *testing.T) {
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	namer := utils.NewNamer("uid1", "fw1")
 	lbInfo := &L7RuntimeInfo{
-		Name:   namer.LoadBalancer("test"),
-		TLS:    []*TLSCerts{{Key: "key", Cert: "cert"}},
-		UrlMap: gceUrlMap,
+		Name:      namer.LoadBalancer("test"),
+		AllowHTTP: true,
+		TLS:       []*TLSCerts{{Key: "key", Cert: "cert"}},
+		UrlMap:    gceUrlMap,
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer)
@@ -815,40 +827,24 @@ func TestClusterNameChange(t *testing.T) {
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
-	um, err := f.GetUrlMap(f.UMName())
-	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
-	if err != nil || tps.UrlMap != um.SelfLink {
-		t.Fatalf("%v", err)
-	}
-	fws, err := f.GetGlobalForwardingRule(f.FWName(true))
-	if err != nil || fws.Target != tps.SelfLink {
-		t.Fatalf("%v", err)
-	}
+	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+	verifyHTTPForwardingRuleAndProxyLinks(t, f)
+
 	newName := "newName"
 	namer = pool.(*L7s).Namer()
 	namer.SetUID(newName)
 	f.name = fmt.Sprintf("%v--%v", lbInfo.Name, newName)
 
 	// Now the components should get renamed with the next suffix.
-	if err := pool.Sync(lbInfo); err != nil {
+	if err = pool.Sync(lbInfo); err != nil {
 		t.Fatalf("pool.Sync() = err %v", err)
 	}
 	l7, err = pool.Get(lbInfo.Name)
 	if err != nil || namer.ParseName(l7.Name).ClusterName != newName {
 		t.Fatalf("Expected L7 name to change.")
 	}
-	um, err = f.GetUrlMap(f.UMName())
-	if err != nil || namer.ParseName(um.Name).ClusterName != newName {
-		t.Fatalf("Expected urlmap name to change.")
-	}
-	tps, err = f.GetTargetHttpsProxy(f.TPName(true))
-	if err != nil || tps.UrlMap != um.SelfLink {
-		t.Fatalf("%v", err)
-	}
-	fws, err = f.GetGlobalForwardingRule(f.FWName(true))
-	if err != nil || fws.Target != tps.SelfLink {
-		t.Fatalf("%v", err)
-	}
+	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+	verifyHTTPForwardingRuleAndProxyLinks(t, f)
 }
 
 func TestInvalidClusterNameChange(t *testing.T) {

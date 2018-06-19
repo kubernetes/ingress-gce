@@ -338,11 +338,10 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 	}
 
 	// Continue syncing this specific GCE ingress.
-	lb, err := lbc.toRuntimeInfo(ing)
+	lb, err := lbc.toRuntimeInfo(ing, urlMap)
 	if err != nil {
 		return err
 	}
-	lb.UrlMap = urlMap
 
 	// Create the backend services and higher-level LB resources.
 	// Note: To ensure the load balancer, we only need the IG links.
@@ -376,16 +375,11 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 		}
 	}
 
-	// Update the UrlMap of the single loadbalancer that came through the watch.
+	// Get the loadbalancer and update the ingress status.
 	l7, err := lbc.CloudClusterManager.l7Pool.Get(lb.Name)
 	if err != nil {
 		return fmt.Errorf("unable to get loadbalancer: %v", err)
 	}
-
-	if err := l7.UpdateUrlMap(); err != nil {
-		return fmt.Errorf("update URL Map error: %v", err)
-	}
-
 	if err := lbc.updateIngressStatus(l7, ing); err != nil {
 		return fmt.Errorf("update ingress status error: %v", err)
 	}
@@ -423,7 +417,11 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 			lbc.ctx.Recorder(ing.Namespace).Eventf(currIng, apiv1.EventTypeNormal, "CREATE", "ip: %v", ip)
 		}
 	}
-	annotations := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.CloudClusterManager.backendPool)
+	annotations, err := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.CloudClusterManager.backendPool)
+	if err != nil {
+		return err
+	}
+
 	if err := updateAnnotations(lbc.client, ing.Name, ing.Namespace, annotations); err != nil {
 		return err
 	}
@@ -431,7 +429,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 }
 
 // toRuntimeInfo returns L7RuntimeInfo for the given ingress.
-func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress) (*loadbalancers.L7RuntimeInfo, error) {
+func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress, urlMap *utils.GCEURLMap) (*loadbalancers.L7RuntimeInfo, error) {
 	k, err := keyFunc(ing)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get key for Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
@@ -455,6 +453,7 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress) (*load
 		TLSName:      annotations.UseNamedTLS(),
 		AllowHTTP:    annotations.AllowHTTP(),
 		StaticIPName: annotations.StaticIPName(),
+		UrlMap:       urlMap,
 	}, nil
 }
 

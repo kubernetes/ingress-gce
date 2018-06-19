@@ -15,6 +15,7 @@ package utils
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/golang/glog"
 )
@@ -27,8 +28,16 @@ import (
 //       3. Adding paths for a hostname replaces existing for that host.
 type GCEURLMap struct {
 	DefaultBackend *ServicePort
-	// hostRules is a mapping from hostnames to path rules for that host.
-	HostRules map[string][]PathRule
+	// HostRules is an ordered list of hostnames, path rule tuples.
+	HostRules []HostRule
+	// hosts is a map of existing hosts.
+	hosts map[string]bool
+}
+
+// HostRule encapsulates the Hostname and its list of PathRules.
+type HostRule struct {
+	Hostname string
+	Paths    []PathRule
 }
 
 // PathRule encapsulates the information for a single path -> backend mapping.
@@ -39,7 +48,7 @@ type PathRule struct {
 
 // NewGCEURLMap returns an empty GCEURLMap
 func NewGCEURLMap() *GCEURLMap {
-	return &GCEURLMap{HostRules: make(map[string][]PathRule)}
+	return &GCEURLMap{hosts: make(map[string]bool)}
 }
 
 // EqualMapping returns true if both maps point to the same ServicePortIDs.
@@ -56,21 +65,22 @@ func EqualMapping(a, b *GCEURLMap) bool {
 		return false
 	}
 
-	for host, aRules := range a.HostRules {
-		bRules, ok := b.HostRules[host]
-		if !ok {
+	for i, aRules := range a.HostRules {
+		bRules := b.HostRules[i]
+		if aRules.Hostname != bRules.Hostname {
 			return false
 		}
 
-		if len(aRules) != len(bRules) {
+		if len(aRules.Paths) != len(bRules.Paths) {
 			return false
 		}
 
-		for x, r := range aRules {
-			if r.Path != bRules[x].Path {
+		for i, aPath := range aRules.Paths {
+			bPath := bRules.Paths[i]
+			if aPath.Path != bPath.Path {
 				return false
 			}
-			if r.Backend.ID != bRules[x].Backend.ID {
+			if aPath.Backend.ID != bPath.Backend.ID {
 				return false
 			}
 		}
@@ -99,24 +109,30 @@ func (g *GCEURLMap) PutPathRulesForHost(hostname string, pathRules []PathRule) {
 
 		uniquePathRules = append([]PathRule{pathRule}, uniquePathRules...)
 	}
-	if g.HostExists(hostname) {
-		glog.V(4).Infof("Overwriting path rules for host %v", hostname)
+	hr := HostRule{
+		Hostname: hostname,
+		Paths:    uniquePathRules,
 	}
-	g.HostRules[hostname] = uniquePathRules
+
+	_, exists := g.hosts[hostname]
+	if exists {
+		glog.V(4).Infof("Overwriting path rules for host %v", hostname)
+		g.deleteHost(hostname)
+	}
+
+	g.HostRules = append(g.HostRules, hr)
+	g.hosts[hostname] = true
+	return
 }
 
 // AllServicePorts return a list of all ServicePorts contained in the GCEURLMap.
 func (g *GCEURLMap) AllServicePorts() (svcPorts []ServicePort) {
-	if g == nil {
-		return nil
-	}
-
 	if g.DefaultBackend != nil {
 		svcPorts = append(svcPorts, *g.DefaultBackend)
 	}
 
 	for _, rules := range g.HostRules {
-		for _, rule := range rules {
+		for _, rule := range rules.Paths {
 			svcPorts = append(svcPorts, rule.Backend)
 		}
 	}
@@ -124,49 +140,53 @@ func (g *GCEURLMap) AllServicePorts() (svcPorts []ServicePort) {
 	return
 }
 
+func (g *GCEURLMap) deleteHost(hostname string) {
+	// Iterate HostRules and remove any (should only be zero or one) with the provided hostname.
+	for i := len(g.HostRules) - 1; i >= 0; i-- {
+		if g.HostRules[i].Hostname == hostname {
+			g.HostRules = append(g.HostRules[:i], g.HostRules[i+1:]...)
+		}
+	}
+	delete(g.hosts, hostname)
+}
+
 // HostExists returns true if the given hostname is specified in the GCEURLMap.
 func (g *GCEURLMap) HostExists(hostname string) bool {
-	if g == nil {
-		return false
-	}
-
-	_, ok := g.HostRules[hostname]
-	return ok
+	return g.hosts[hostname]
 }
 
 // PathExists returns true if the given path exists for the given hostname.
 // It will also return the backend associated with that path.
-func (g *GCEURLMap) PathExists(hostname, path string) (bool, ServicePort) {
-	if g == nil {
-		return false, ServicePort{}
+func (g *GCEURLMap) PathExists(hostname, path string) (ServicePort, bool) {
+	if !g.hosts[hostname] {
+		return ServicePort{}, false
 	}
 
-	pathRules, ok := g.HostRules[hostname]
-	if !ok {
-		return ok, ServicePort{}
-	}
-	for _, pathRule := range pathRules {
-		if pathRule.Path == path {
-			return true, pathRule.Backend
+	for _, h := range g.HostRules {
+		if h.Hostname != hostname {
+			continue
+		}
+
+		for _, p := range h.Paths {
+			if p.Path == path {
+				return p.Backend, true
+			}
 		}
 	}
-	return false, ServicePort{}
+
+	return ServicePort{}, false
 }
 
 // String dumps a readable version of the GCEURLMap.
 func (g *GCEURLMap) String() string {
-	if g == nil {
-		return ""
-	}
-
-	msg := ""
-	for host, rules := range g.HostRules {
-		msg += fmt.Sprintf("%v\n", host)
-		for _, rule := range rules {
-			msg += fmt.Sprintf("\t%v: ", rule.Path)
-			msg += fmt.Sprintf("%+v\n", rule.Backend)
+	var b strings.Builder
+	for _, hostRule := range g.HostRules {
+		b.WriteString(fmt.Sprintf("%v\n", hostRule.Hostname))
+		for _, rule := range hostRule.Paths {
+			b.WriteString(fmt.Sprintf("\t%v: ", rule.Path))
+			b.WriteString(fmt.Sprintf("%+v\n", rule.Backend))
 		}
 	}
-	msg += fmt.Sprintf("Default Backend: %+v", g.DefaultBackend)
-	return msg
+	b.WriteString(fmt.Sprintf("Default Backend: %+v", g.DefaultBackend))
+	return b.String()
 }

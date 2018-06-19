@@ -72,3 +72,16 @@ func BackendToServicePortID(be extensions.IngressBackend, namespace string) Serv
 		Port: be.ServicePort,
 	}
 }
+
+// NewServicePortWithID returns a ServicePort with only ID.
+func NewServicePortWithID(svcName, svcNamespace string, port intstr.IntOrString) ServicePort {
+	return ServicePort{
+		ID: ServicePortID{
+			Service: types.NamespacedName{
+				Name:      svcName,
+				Namespace: svcNamespace,
+			},
+			Port: port,
+		},
+	}
+}
