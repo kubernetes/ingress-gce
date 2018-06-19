@@ -8,21 +8,27 @@
 			"Port": "http"
 		}
 	},
-	"HostRules": {
-		"abc.com": [],
-		"foo.bar.com": [
-			{
-				"Path": "/testpath",
-				"Backend": {
-					"ID": {
-						"Service": {
-							"Namespace": "default",
-							"Name": "first-service"
-						},
-						"Port": 80
+	"HostRules": [
+		{
+			"HostName": "foo.bar.com",
+			"Paths": [
+				{
+					"Path": "/testpath",
+					"Backend": {
+						"ID": {
+							"Service": {
+								"Namespace": "default",
+								"Name": "first-service"
+							},
+							"Port": 80
+						}
 					}
 				}
-			}
-		]
-	}
+			]
+		},
+		{
+			"HostName": "abc.com",
+			"Paths": []
+		}
+	]
 }

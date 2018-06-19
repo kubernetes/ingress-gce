@@ -17,11 +17,10 @@ limitations under the License.
 package loadbalancers
 
 import (
-	"fmt"
-
 	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
 const (
@@ -30,16 +29,14 @@ const (
 )
 
 func (l *L7) checkProxy() (err error) {
-	if l.um == nil {
-		return fmt.Errorf("cannot create proxy without urlmap")
-	}
+	urlMapLink := cloud.NewUrlMapsResourceID("", l.um.Name).ResourcePath()
 	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPProtocol)
 	proxy, _ := l.cloud.GetTargetHttpProxy(proxyName)
 	if proxy == nil {
 		glog.V(3).Infof("Creating new http proxy for urlmap %v", l.um.Name)
 		newProxy := &compute.TargetHttpProxy{
 			Name:   proxyName,
-			UrlMap: l.um.SelfLink,
+			UrlMap: urlMapLink,
 		}
 		if err = l.cloud.CreateTargetHttpProxy(newProxy); err != nil {
 			return err
@@ -51,10 +48,10 @@ func (l *L7) checkProxy() (err error) {
 		l.tp = proxy
 		return nil
 	}
-	if !utils.EqualResourceIDs(proxy.UrlMap, l.um.SelfLink) {
+	if !utils.EqualResourcePaths(proxy.UrlMap, urlMapLink) {
 		glog.V(3).Infof("Proxy %v has the wrong url map, setting %v overwriting %v",
-			proxy.Name, l.um, proxy.UrlMap)
-		if err := l.cloud.SetUrlMapForTargetHttpProxy(proxy, l.um.SelfLink); err != nil {
+			proxy.Name, urlMapLink, proxy.UrlMap)
+		if err := l.cloud.SetUrlMapForTargetHttpProxy(proxy, urlMapLink); err != nil {
 			return err
 		}
 	}
@@ -64,20 +61,18 @@ func (l *L7) checkProxy() (err error) {
 
 func (l *L7) checkHttpsProxy() (err error) {
 	if len(l.sslCerts) == 0 {
-		glog.V(3).Infof("No SSL certificates for %v, will not create HTTPS proxy.", l.Name)
+		glog.V(3).Infof("No SSL certificates for %q, will not create HTTPS proxy.", l.Name)
 		return nil
 	}
-	if l.um == nil {
-		return fmt.Errorf("no UrlMap for %v, will not create HTTPS proxy", l.Name)
-	}
 
+	urlMapLink := cloud.NewUrlMapsResourceID("", l.um.Name).ResourcePath()
 	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
 	proxy, _ := l.cloud.GetTargetHttpsProxy(proxyName)
 	if proxy == nil {
-		glog.V(3).Infof("Creating new https proxy for urlmap %v", l.um.Name)
+		glog.V(3).Infof("Creating new https proxy for urlmap %q", l.um.Name)
 		newProxy := &compute.TargetHttpsProxy{
 			Name:   proxyName,
-			UrlMap: l.um.SelfLink,
+			UrlMap: urlMapLink,
 		}
 
 		for _, c := range l.sslCerts {
@@ -96,16 +91,16 @@ func (l *L7) checkHttpsProxy() (err error) {
 		l.tps = proxy
 		return nil
 	}
-	if !utils.EqualResourceIDs(proxy.UrlMap, l.um.SelfLink) {
+	if !utils.EqualResourcePaths(proxy.UrlMap, urlMapLink) {
 		glog.V(3).Infof("Https proxy %v has the wrong url map, setting %v overwriting %v",
-			proxy.Name, l.um, proxy.UrlMap)
-		if err := l.cloud.SetUrlMapForTargetHttpsProxy(proxy, l.um.SelfLink); err != nil {
+			proxy.Name, urlMapLink, proxy.UrlMap)
+		if err := l.cloud.SetUrlMapForTargetHttpsProxy(proxy, urlMapLink); err != nil {
 			return err
 		}
 	}
 
 	if !l.compareCerts(proxy.SslCertificates) {
-		glog.V(3).Infof("Https proxy %v has the wrong ssl certs, setting %v overwriting %v",
+		glog.V(3).Infof("Https proxy %q has the wrong ssl certs, setting %v overwriting %v",
 			proxy.Name, toCertNames(l.sslCerts), proxy.SslCertificates)
 		var sslCertURLs []string
 		for _, cert := range l.sslCerts {

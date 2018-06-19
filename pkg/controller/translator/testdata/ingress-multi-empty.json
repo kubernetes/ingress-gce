@@ -8,9 +8,10 @@
 			"Port": "http"
 		}
 	},
-	"HostRules": {
-		"foo.bar.com": [
-			{
+	"HostRules": [
+		{
+			"HostName": "foo.bar.com",
+			"Paths": [{
 				"Path": "/*",
 				"Backend": {
 					"ID": {
@@ -21,7 +22,7 @@
 						"Port": 80
 					}
 				}
-			}
-		]
-	}
+			}]
+		}
+	]
 }
