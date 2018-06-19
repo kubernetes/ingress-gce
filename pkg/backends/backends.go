@@ -311,6 +311,12 @@ func (b *Backends) ensureBackendService(sp utils.ServicePort, igLinks []string) 
 		if err = composite.UpdateBackendService(be, b.cloud); err != nil {
 			return err
 		}
+		// Get the BackendService after an update so that the Fingerprint
+		// is properly updated in our local copy.
+		be, getErr = b.Get(beName, version)
+		if getErr != nil {
+			return getErr
+		}
 	}
 
 	// If previous health check was legacy type, we need to delete it.
