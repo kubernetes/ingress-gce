@@ -108,9 +108,11 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 	if t.ctx.BackendConfigEnabled {
 		beConfig, err = backendconfig.GetBackendConfigForServicePort(t.ctx.BackendConfigInformer.GetIndexer(), svc, port)
 		if err != nil {
-			if err == backendconfig.ErrNoBackendConfigForPort {
-				beConfig = &backendconfigv1beta1.BackendConfig{}
-			} else {
+			// If we could not find a backend config name for the current
+			// service port, then do not return an error. Removing a reference
+			// to a backend config from the service annotation is a valid
+			// step that a user could take.
+			if err != backendconfig.ErrNoBackendConfigForPort {
 				return svcPort, errors.ErrSvcBackendConfig{ServicePortID: id, Err: err}
 			}
 		}
