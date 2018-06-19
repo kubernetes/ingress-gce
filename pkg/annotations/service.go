@@ -45,11 +45,11 @@ const (
 	// with the service. This should be a valid JSON string, as defined in
 	// ExposeNegAnnotation.
 	// example: {"80":{},"443":{}}
-	ExposeNEGAnnotationKey = "cloud.google.com/expose-load-balancer-neg"
+	ExposeNEGAnnotationKey = "cloud.google.com/neg"
 
 	// NEGStatusKey is the annotation key whose value is the status of the NEGs
 	// on the Service, and is applied by the NEG Controller.
-	NEGStatusKey = "cloud.google.com/neg"
+	NEGStatusKey = "cloud.google.com/neg-status"
 
 	// BackendConfigKey is a stringified JSON with two fields:
 	// - "ports": a map of port names or port numbers to backendConfig names

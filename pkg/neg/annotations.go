@@ -70,21 +70,21 @@ func NEGServicePorts(exposedNegPortMap annotations.ExposeNegAnnotation, knownPor
 	return portSet, utilerrors.NewAggregate(errList)
 }
 
-// NegServiceState contains name and zone of the Network Endpoint Group
+// NegStatus contains name and zone of the Network Endpoint Group
 // resources associated with this service
-type NegServiceState struct {
+type NegStatus struct {
 	// NetworkEndpointGroups returns the mapping between service port and NEG
 	// resource. key is service port, value is the name of the NEG resource.
 	NetworkEndpointGroups PortNameMap `json:"network_endpoint_groups,omitempty"`
 	Zones                 []string    `json:"zones,omitempty"`
 }
 
-// GenNegServiceState generates a NegServiceState denoting the current NEGs
+// GetNegStatus generates a NegStatus denoting the current NEGs
 // associated with the given ports.
 // NetworkEndpointGroups is a mapping between ServicePort and NEG name
 // Zones is a list of zones where the NEGs exist.
-func GenNegServiceState(zones []string, portToNegs PortNameMap) NegServiceState {
-	res := NegServiceState{}
+func GetNegStatus(zones []string, portToNegs PortNameMap) NegStatus {
+	res := NegStatus{}
 	res.NetworkEndpointGroups = make(PortNameMap)
 	res.Zones = zones
 	res.NetworkEndpointGroups = portToNegs

@@ -276,7 +276,7 @@ func (c *Controller) syncNegAnnotation(namespace, name string, service *apiv1.Se
 	for svcPort, _ := range portMap {
 		portToNegs[svcPort] = c.namer.NEG(namespace, name, svcPort)
 	}
-	negSvcState := GenNegServiceState(zones, portToNegs)
+	negSvcState := GetNegStatus(zones, portToNegs)
 	formattedAnnotation, err := json.Marshal(negSvcState)
 	if err != nil {
 		return err
