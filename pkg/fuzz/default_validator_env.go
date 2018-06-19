@@ -61,7 +61,6 @@ func (e *DefaultValidatorEnv) BackendConfigs() (map[string]*backendconfig.Backen
 		ret[bc.Name] = bc.DeepCopy()
 	}
 	return ret, nil
-
 }
 
 // Services implements ValidatorEnv.

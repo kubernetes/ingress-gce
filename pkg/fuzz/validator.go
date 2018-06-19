@@ -32,6 +32,9 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
+// pathForDefaultBackend is a unique string that will not match any path.
+const pathForDefaultBackend = "/edeaaff3f1774ad2888673770c6d64097e391bc362d7d6fb34982ddf0efd18cb"
+
 // ValidatorEnv captures non-Ingress spec related environment that affect the
 // set of validations and Features.
 type ValidatorEnv interface {
@@ -174,6 +177,9 @@ func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, features []Feat
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 	return &IngressValidator{
 		ing:      ing,
@@ -218,9 +224,6 @@ func (v *IngressValidator) Check(ctx context.Context) *IngressResult {
 // CheckPaths checks the host, paths that have been configured. Checks are
 // run in parallel.
 func (v *IngressValidator) CheckPaths(ctx context.Context, vr *IngressResult) error {
-	// pathForDefaultBackend is a unique string that will not match any path.
-	const pathForDefaultBackend = "/edeaaff3f1774ad2888673770c6d64097e391bc362d7d6fb34982ddf0efd18cb"
-
 	var (
 		thunks []func()
 		wg     sync.WaitGroup
@@ -305,7 +308,7 @@ func (v *IngressValidator) checkPath(ctx context.Context, scheme, host, path str
 	glog.V(3).Infof("Request is %+v", *req)
 
 	resp, err := v.client.Do(req)
-	if err != nil {
+	if err != nil && err != http.ErrUseLastResponse {
 		glog.Infof("Ingress %s/%s: %v", v.ing.Namespace, v.ing.Name, err)
 		return err
 	}

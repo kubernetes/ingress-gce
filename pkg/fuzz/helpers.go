@@ -17,12 +17,58 @@ limitations under the License.
 package fuzz
 
 import (
+	"fmt"
+
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigutil "k8s.io/ingress-gce/pkg/backendconfig"
+	translatorutil "k8s.io/ingress-gce/pkg/controller/translator"
 )
+
+// BackendConfigForPath returns the BackendConfig associated with the given path.
+// Note: This function returns an empty object (not nil pointer) if a BackendConfig
+// did not exist in the given environment.
+func BackendConfigForPath(host, path string, ing *v1beta1.Ingress, env ValidatorEnv) (*backendconfig.BackendConfig, error) {
+	sm := ServiceMapFromIngress(ing)
+	if path == pathForDefaultBackend {
+		path = ""
+	}
+	hp := HostPath{Host: host, Path: path}
+	b, ok := sm[hp]
+	if !ok {
+		return nil, fmt.Errorf("HostPath %v not found in Ingress", hp)
+	}
+	serviceMap, err := env.Services()
+	if err != nil {
+		return nil, err
+	}
+	service, ok := serviceMap[b.ServiceName]
+	if !ok {
+		return nil, fmt.Errorf("Service %q not found in environment", b.ServiceName)
+	}
+	servicePort := translatorutil.ServicePort(*service, b.ServicePort)
+	if servicePort == nil {
+		return nil, fmt.Errorf("Port %+v in Service %q not found", b.ServicePort, b.ServiceName)
+	}
+	bc, err := annotations.FromService(service).GetBackendConfigs()
+	if err != nil {
+		return nil, err
+	}
+	configName := backendconfigutil.BackendConfigName(*bc, *servicePort)
+	backendConfigMap, err := env.BackendConfigs()
+	if err != nil {
+		return nil, err
+	}
+	backendConfig, ok := backendConfigMap[configName]
+	if !ok {
+		return &backendconfig.BackendConfig{}, nil
+	}
+	return backendConfig, nil
+}
 
 // NewService is a helper function for creating a simple Service spec.
 func NewService(name, ns string, port int) *v1.Service {

@@ -25,4 +25,6 @@ import "k8s.io/ingress-gce/pkg/fuzz"
 var All = []fuzz.Feature{
 	AllowHTTP,
 	PresharedCert,
+	CDN,
+	IAP,
 }
