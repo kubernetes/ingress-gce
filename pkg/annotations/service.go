@@ -22,7 +22,6 @@ import (
 	"fmt"
 
 	"k8s.io/api/core/v1"
-	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/ingress-gce/pkg/flags"
 )
 
@@ -86,38 +85,9 @@ type Service struct {
 	v map[string]string
 }
 
-// PortNameMap is a map of ServicePort:TargetPort.
-type PortNameMap map[int32]string
-
 // FromService extracts the annotations from an Service definition.
 func FromService(obj *v1.Service) *Service {
 	return &Service{obj.Annotations}
-}
-
-// Union returns the union of the Port:TargetPort mappings
-func (p1 PortNameMap) Union(p2 PortNameMap) PortNameMap {
-	result := make(PortNameMap)
-	for svcPort, targetPort := range p1 {
-		result[svcPort] = targetPort
-	}
-
-	for svcPort, targetPort := range p2 {
-		result[svcPort] = targetPort
-	}
-
-	return result
-}
-
-// Difference returns the set of Port:TargetPorts in p2 that aren't present in p1
-func (p1 PortNameMap) Difference(p2 PortNameMap) PortNameMap {
-	result := make(PortNameMap)
-	for svcPort, targetPort := range p1 {
-		if _, ok := p2[svcPort]; !ok {
-			result[svcPort] = targetPort
-		}
-	}
-
-	return result
 }
 
 // ApplicationProtocols returns a map of port (name or number) to the protocol
@@ -170,6 +140,27 @@ func (svc *Service) NEGExposed() bool {
 	return ok && len(v) > 0
 }
 
+var (
+	ErrExposeNegAnnotationMissing = errors.New("No NEG ServicePorts specified")
+	ErrExposeNegAnnotationInvalid = errors.New("Expose NEG annotation is invalid")
+)
+
+// ExposeNegAnnotation returns the value of the Expose NEG annotation key
+func (svc *Service) ExposeNegAnnotation() (ExposeNegAnnotation, error) {
+	annotation, ok := svc.v[ExposeNEGAnnotationKey]
+	if !ok {
+		return nil, ErrExposeNegAnnotationMissing
+	}
+
+	// TODO: add link to Expose NEG documentation when complete
+	var exposedNegPortMap ExposeNegAnnotation
+	if err := json.Unmarshal([]byte(annotation), &exposedNegPortMap); err != nil {
+		return nil, ErrExposeNegAnnotationInvalid
+	}
+
+	return exposedNegPortMap, nil
+}
+
 // NEGEnabled is true if the service uses NEGs.
 func (svc *Service) NEGEnabled() bool {
 	return svc.NEGExposed() || svc.NEGEnabledForIngress()
@@ -195,59 +186,4 @@ func (svc *Service) GetBackendConfigs() (*BackendConfigs, error) {
 		return nil, ErrBackendConfigNoneFound
 	}
 	return &configs, nil
-}
-
-var (
-	ErrExposeNegAnnotationMissing = errors.New("No NEG ServicePorts specified")
-	ErrExposeNegAnnotationInvalid = errors.New("Expose NEG annotation is invalid")
-)
-
-// NEGServicePorts returns the parsed ServicePorts from the annotation.
-// knownPorts represents the known Port:TargetPort attributes of servicePorts
-// that already exist on the service. This function returns an error if
-// any of the parsed ServicePorts from the annotation is not in knownPorts.
-func (svc *Service) NEGServicePorts(knownPorts PortNameMap) (PortNameMap, error) {
-	v, ok := svc.v[ExposeNEGAnnotationKey]
-	if !ok {
-		return nil, ErrExposeNegAnnotationMissing
-	}
-
-	// TODO: add link to Expose NEG documentation when complete
-	var exposedNegPortMap ExposeNegAnnotation
-	if err := json.Unmarshal([]byte(v), &exposedNegPortMap); err != nil {
-		return nil, ErrExposeNegAnnotationInvalid
-	}
-
-	portSet := make(PortNameMap)
-	var errList []error
-	for port, _ := range exposedNegPortMap {
-		// TODO: also validate ServicePorts in the exposed NEG annotation via webhook
-		if _, ok := knownPorts[port]; !ok {
-			errList = append(errList, fmt.Errorf("ServicePort %v doesn't exist on Service", port))
-		}
-		portSet[port] = knownPorts[port]
-	}
-
-	return portSet, utilerrors.NewAggregate(errList)
-}
-
-// NegServiceState contains name and zone of the Network Endpoint Group
-// resources associated with this service
-type NegServiceState struct {
-	// NetworkEndpointGroups returns the mapping between service port and NEG
-	// resource. key is service port, value is the name of the NEG resource.
-	NetworkEndpointGroups PortNameMap `json:"network_endpoint_groups,omitempty"`
-	Zones                 []string    `json:"zones,omitempty"`
-}
-
-// GenNegServiceState generates a NegServiceState denoting the current NEGs
-// associated with the given ports.
-// NetworkEndpointGroups is a mapping between ServicePort and NEG name
-// Zones is a list of zones where the NEGs exist.
-func GenNegServiceState(zones []string, portToNegs PortNameMap) NegServiceState {
-	res := NegServiceState{}
-	res.NetworkEndpointGroups = make(PortNameMap)
-	res.Zones = zones
-	res.NetworkEndpointGroups = portToNegs
-	return res
 }

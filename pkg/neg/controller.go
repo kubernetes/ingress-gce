@@ -216,12 +216,12 @@ func (c *Controller) processService(key string) error {
 	if !enabled {
 		c.manager.StopSyncer(namespace, name)
 		// delete the annotation
-		return c.syncNegAnnotation(namespace, name, service, make(annotations.PortNameMap))
+		return c.syncNegAnnotation(namespace, name, service, make(PortNameMap))
 	}
 
 	glog.V(2).Infof("Syncing service %q", key)
 	// map of ServicePort (int) to TargetPort
-	svcPortMap := make(annotations.PortNameMap)
+	svcPortMap := make(PortNameMap)
 
 	if annotations.FromService(service).NEGEnabledForIngress() {
 		// Only service ports referenced by ingress are synced for NEG
@@ -230,12 +230,17 @@ func (c *Controller) processService(key string) error {
 	}
 
 	if annotations.FromService(service).NEGExposed() {
-		knownPorts := make(annotations.PortNameMap)
+		knownPorts := make(PortNameMap)
 		for _, sp := range service.Spec.Ports {
 			knownPorts[sp.Port] = sp.TargetPort.String()
 		}
 
-		negSvcPorts, err := annotations.FromService(service).NEGServicePorts(knownPorts)
+		annotation, err := annotations.FromService(service).ExposeNegAnnotation()
+		if err != nil {
+			return err
+		}
+
+		negSvcPorts, err := NEGServicePorts(annotation, knownPorts)
 		if err != nil {
 			return err
 		}
@@ -250,7 +255,7 @@ func (c *Controller) processService(key string) error {
 	return c.manager.EnsureSyncers(namespace, name, svcPortMap)
 }
 
-func (c *Controller) syncNegAnnotation(namespace, name string, service *apiv1.Service, portMap annotations.PortNameMap) error {
+func (c *Controller) syncNegAnnotation(namespace, name string, service *apiv1.Service, portMap PortNameMap) error {
 	zones, err := c.zoneGetter.ListZones()
 	if err != nil {
 		return err
@@ -267,11 +272,11 @@ func (c *Controller) syncNegAnnotation(namespace, name string, service *apiv1.Se
 		return nil
 	}
 
-	portToNegs := make(annotations.PortNameMap)
+	portToNegs := make(PortNameMap)
 	for svcPort, _ := range portMap {
 		portToNegs[svcPort] = c.namer.NEG(namespace, name, svcPort)
 	}
-	negSvcState := annotations.GenNegServiceState(zones, portToNegs)
+	negSvcState := GenNegServiceState(zones, portToNegs)
 	formattedAnnotation, err := json.Marshal(negSvcState)
 	if err != nil {
 		return err
@@ -342,9 +347,9 @@ func (c *Controller) synced() bool {
 
 // gatherPortMappingUsedByIngress returns a map containing port:targetport
 // of all service ports of the service that are referenced by ingresses
-func gatherPortMappingUsedByIngress(ings []extensions.Ingress, svc *apiv1.Service) annotations.PortNameMap {
+func gatherPortMappingUsedByIngress(ings []extensions.Ingress, svc *apiv1.Service) PortNameMap {
 	servicePorts := sets.NewString()
-	ingressSvcPorts := make(annotations.PortNameMap)
+	ingressSvcPorts := make(PortNameMap)
 	for _, ing := range ings {
 		if ing.Spec.Backend != nil && ing.Spec.Backend.ServiceName == svc.Name {
 			servicePorts.Insert(ing.Spec.Backend.ServicePort.String())

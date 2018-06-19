@@ -311,26 +311,26 @@ func TestSyncNegAnnotation(t *testing.T) {
 
 	testCases := []struct {
 		desc            string
-		previousPortMap annotations.PortNameMap
-		portMap         annotations.PortNameMap
+		previousPortMap PortNameMap
+		portMap         PortNameMap
 	}{
 		{
 			desc:    "apply new annotation with no previous annotation",
-			portMap: annotations.PortNameMap{80: "named_port", 443: "other_port"},
+			portMap: PortNameMap{80: "named_port", 443: "other_port"},
 		},
 		{
 			desc:            "same annotation applied twice",
-			previousPortMap: annotations.PortNameMap{80: "named_port", 4040: "other_port"},
-			portMap:         annotations.PortNameMap{80: "named_port", 4040: "other_port"},
+			previousPortMap: PortNameMap{80: "named_port", 4040: "other_port"},
+			portMap:         PortNameMap{80: "named_port", 4040: "other_port"},
 		},
 		{
 			desc:            "apply new annotation and override previous annotation",
-			previousPortMap: annotations.PortNameMap{80: "named_port", 4040: "other_port"},
-			portMap:         annotations.PortNameMap{3000: "6000", 4000: "8000"},
+			previousPortMap: PortNameMap{80: "named_port", 4040: "other_port"},
+			portMap:         PortNameMap{3000: "6000", 4000: "8000"},
 		},
 		{
 			desc:            "remove previous annotation",
-			previousPortMap: annotations.PortNameMap{80: "named_port", 4040: "other_port"},
+			previousPortMap: PortNameMap{80: "named_port", 4040: "other_port"},
 		},
 		{
 			desc: "remove annotation with no previous annotation",
