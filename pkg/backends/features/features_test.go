@@ -25,6 +25,7 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 
 	"k8s.io/ingress-gce/pkg/annotations"
+	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -45,6 +46,29 @@ var (
 		ID:       fakeSvcPortID,
 		Protocol: annotations.ProtocolHTTP2,
 	}
+
+	svcPortWithSecurityPolicy = utils.ServicePort{
+		ID: fakeSvcPortID,
+		BackendConfig: &backendconfigv1beta1.BackendConfig{
+			Spec: backendconfigv1beta1.BackendConfigSpec{
+				SecurityPolicy: &backendconfigv1beta1.SecurityPolicyConfig{
+					Name: "policy-test",
+				},
+			},
+		},
+	}
+
+	svcPortWithHTTP2SecurityPolicy = utils.ServicePort{
+		ID:       fakeSvcPortID,
+		Protocol: annotations.ProtocolHTTP2,
+		BackendConfig: &backendconfigv1beta1.BackendConfig{
+			Spec: backendconfigv1beta1.BackendConfigSpec{
+				SecurityPolicy: &backendconfigv1beta1.SecurityPolicyConfig{
+					Name: "policy-test",
+				},
+			},
+		},
+	}
 )
 
 func TestFeaturesFromServicePort(t *testing.T) {
@@ -62,6 +86,16 @@ func TestFeaturesFromServicePort(t *testing.T) {
 			desc:             "HTTP2",
 			svcPort:          svcPortWithHTTP2,
 			expectedFeatures: []string{"HTTP2"},
+		},
+		{
+			desc:             "SecurityPolicy",
+			svcPort:          svcPortWithSecurityPolicy,
+			expectedFeatures: []string{"SecurityPolicy"},
+		},
+		{
+			desc:             "HTTP2 + SecurityPolicy",
+			svcPort:          svcPortWithHTTP2SecurityPolicy,
+			expectedFeatures: []string{"HTTP2", "SecurityPolicy"},
 		},
 	}
 
@@ -87,6 +121,16 @@ func TestVersionFromFeatures(t *testing.T) {
 		{
 			desc:            "HTTP2",
 			features:        []string{FeatureHTTP2},
+			expectedVersion: meta.VersionAlpha,
+		},
+		{
+			desc:            "SecurityPolicy",
+			features:        []string{FeatureSecurityPolicy},
+			expectedVersion: meta.VersionBeta,
+		},
+		{
+			desc:            "HTTP2 + SecurityPolicy",
+			features:        []string{FeatureHTTP2, FeatureSecurityPolicy},
 			expectedVersion: meta.VersionAlpha,
 		},
 		{
@@ -125,6 +169,16 @@ func TestVersionFromDescription(t *testing.T) {
 			expectedVersion:    meta.VersionAlpha,
 		},
 		{
+			desc:               "SecurityPolicy",
+			backendServiceDesc: `{"kubernetes.io/service-name":"my-service","kubernetes.io/service-port":"my-port","x-features":["SecurityPolicy"]}`,
+			expectedVersion:    meta.VersionBeta,
+		},
+		{
+			desc:               "HTTP2 + SecurityPolicy",
+			backendServiceDesc: `{"kubernetes.io/service-name":"my-service","kubernetes.io/service-port":"my-port","x-features":["HTTP2","SecurityPolicy"]}`,
+			expectedVersion:    meta.VersionAlpha,
+		},
+		{
 			desc:               "HTTP2 + unknown",
 			backendServiceDesc: `{"kubernetes.io/service-name":"my-service","kubernetes.io/service-port":"my-port","x-features":["HTTP2","whatisthis"]}`,
 			expectedVersion:    meta.VersionAlpha,
@@ -152,6 +206,16 @@ func TestVersionFromServicePort(t *testing.T) {
 		{
 			desc:            "enabled http2",
 			svcPort:         svcPortWithHTTP2,
+			expectedVersion: meta.VersionAlpha,
+		},
+		{
+			desc:            "enabled security policy",
+			svcPort:         svcPortWithSecurityPolicy,
+			expectedVersion: meta.VersionBeta,
+		},
+		{
+			desc:            "enabled http2 + security policy",
+			svcPort:         svcPortWithHTTP2SecurityPolicy,
 			expectedVersion: meta.VersionAlpha,
 		},
 	}
