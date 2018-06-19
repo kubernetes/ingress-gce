@@ -50,6 +50,29 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 	return controller
 }
 
+func TestIsHealthy(t *testing.T) {
+	controller := newTestController(fake.NewSimpleClientset())
+	defer controller.stop()
+
+	err := controller.IsHealthy()
+	if err != nil {
+		t.Errorf("Expect controller to be healthy initially: %v", err)
+	}
+
+	timestamp := time.Now().Add(-61 * time.Minute)
+	controller.syncTracker.Set(timestamp)
+	err = controller.IsHealthy()
+	if err == nil {
+		t.Errorf("Expect controller to NOT be healthy")
+	}
+
+	controller.syncTracker.Track()
+	err = controller.IsHealthy()
+	if err != nil {
+		t.Errorf("Expect controller to be healthy: %v", err)
+	}
+}
+
 func TestNewNonNEGService(t *testing.T) {
 	t.Parallel()
 
