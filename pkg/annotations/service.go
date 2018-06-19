@@ -162,6 +162,10 @@ var (
 
 // NEGExposed is true if the service exposes NEGs
 func (svc *Service) NEGExposed() bool {
+	if !flags.F.Features.NEGExposed {
+		return false
+	}
+
 	v, ok := svc.v[ExposeNEGAnnotationKey]
 	return ok && len(v) > 0
 }
