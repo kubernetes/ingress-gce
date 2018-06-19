@@ -301,6 +301,70 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 	}
 }
 
+func TestSyncNegAnnotation(t *testing.T) {
+	t.Parallel()
+
+	controller := newTestController(fake.NewSimpleClientset())
+	defer controller.stop()
+	controller.serviceLister.Add(newTestService(false, []int32{}))
+	svcKey := serviceKeyFunc(testServiceNamespace, testServiceName)
+
+	testCases := []struct {
+		desc            string
+		previousPortMap annotations.PortNameMap
+		portMap         annotations.PortNameMap
+	}{
+		{
+			desc:    "apply new annotation with no previous annotation",
+			portMap: annotations.PortNameMap{80: "named_port", 443: "other_port"},
+		},
+		{
+			desc:            "same annotation applied twice",
+			previousPortMap: annotations.PortNameMap{80: "named_port", 4040: "other_port"},
+			portMap:         annotations.PortNameMap{80: "named_port", 4040: "other_port"},
+		},
+		{
+			desc:            "apply new annotation and override previous annotation",
+			previousPortMap: annotations.PortNameMap{80: "named_port", 4040: "other_port"},
+			portMap:         annotations.PortNameMap{3000: "6000", 4000: "8000"},
+		},
+		{
+			desc:            "remove previous annotation",
+			previousPortMap: annotations.PortNameMap{80: "named_port", 4040: "other_port"},
+		},
+		{
+			desc: "remove annotation with no previous annotation",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			svc, exists, err := controller.serviceLister.GetByKey(svcKey)
+			if !exists || err != nil {
+				t.Fatalf("Service was not retrieved successfully, err: %v", err)
+			}
+
+			controller.syncNegAnnotation(testServiceNamespace, testServiceName, svc.(*apiv1.Service), tc.previousPortMap)
+			svc, _, _ = controller.serviceLister.GetByKey(svcKey)
+
+			var oldSvcPorts []int32
+			for port, _ := range tc.previousPortMap {
+				oldSvcPorts = append(oldSvcPorts, port)
+			}
+			validateServiceStateAnnotation(t, svc.(*apiv1.Service), oldSvcPorts)
+
+			controller.syncNegAnnotation(testServiceNamespace, testServiceName, svc.(*apiv1.Service), tc.portMap)
+			svc, _, _ = controller.serviceLister.GetByKey(svcKey)
+
+			var svcPorts []int32
+			for port, _ := range tc.portMap {
+				svcPorts = append(svcPorts, port)
+			}
+			validateServiceStateAnnotation(t, svc.(*apiv1.Service), svcPorts)
+		})
+	}
+}
+
 func validateSyncers(t *testing.T, controller *Controller, num int, stopped bool) {
 	t.Helper()
 	if len(controller.manager.(*syncerManager).syncerMap) != num {

@@ -76,9 +76,7 @@ type ExposeNegAnnotation map[int32]NegAttributes
 
 // NegAttributes houses the attributes of the NEGs that are associated with the
 // service. Future extensions to the Expose NEGs annotation should be added here.
-type NegAttributes struct {
-	kind string
-}
+type NegAttributes struct{}
 
 // AppProtocol describes the service protocol.
 type AppProtocol string
@@ -195,6 +193,11 @@ func (svc *Service) GetBackendConfigs() (*BackendConfigs, error) {
 	return &configs, nil
 }
 
+var (
+	ErrExposeNegAnnotationMissing = errors.New("No NEG ServicePorts specified")
+	ErrExposeNegAnnotationInvalid = errors.New("Expose NEG annotation is invalid")
+)
+
 // NEGServicePorts returns the parsed ServicePorts from the annotation.
 // knownPorts represents the known Port:TargetPort attributes of servicePorts
 // that already exist on the service. This function returns an error if
@@ -202,13 +205,13 @@ func (svc *Service) GetBackendConfigs() (*BackendConfigs, error) {
 func (svc *Service) NEGServicePorts(knownPorts PortNameMap) (PortNameMap, error) {
 	v, ok := svc.v[ExposeNEGAnnotationKey]
 	if !ok {
-		return nil, fmt.Errorf("No NEG ServicePorts specified")
+		return nil, ErrExposeNegAnnotationMissing
 	}
 
 	// TODO: add link to Expose NEG documentation when complete
 	var exposedNegPortMap ExposeNegAnnotation
 	if err := json.Unmarshal([]byte(v), &exposedNegPortMap); err != nil {
-		return nil, fmt.Errorf("NEG annotation %s is not well-formed: %v", v, err)
+		return nil, ErrExposeNegAnnotationInvalid
 	}
 
 	portSet := make(PortNameMap)
