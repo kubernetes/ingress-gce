@@ -35,6 +35,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const (
@@ -54,6 +55,8 @@ type Controller struct {
 	manager      negSyncerManager
 	resyncPeriod time.Duration
 	recorder     record.EventRecorder
+	namer        networkEndpointGroupNamer
+	zoneGetter   zoneGetter
 
 	ingressSynced  cache.InformerSynced
 	serviceSynced  cache.InformerSynced
@@ -63,8 +66,9 @@ type Controller struct {
 
 	// serviceQueue takes service key as work item. Service key with format "namespace/name".
 	serviceQueue workqueue.RateLimitingInterface
-	zoneGetter   zoneGetter
-	namer        networkEndpointGroupNamer
+
+	// syncTracker tracks the latest time that service and endpoint changes are processed
+	syncTracker utils.TimeTracker
 }
 
 // NewController returns a network endpoint group controller.
@@ -96,14 +100,15 @@ func NewController(
 		manager:        manager,
 		resyncPeriod:   resyncPeriod,
 		recorder:       recorder,
+		zoneGetter:     zoneGetter,
+		namer:          namer,
 		ingressSynced:  ctx.IngressInformer.HasSynced,
 		serviceSynced:  ctx.ServiceInformer.HasSynced,
 		endpointSynced: ctx.EndpointInformer.HasSynced,
 		ingressLister:  ctx.IngressInformer.GetIndexer(),
 		serviceLister:  ctx.ServiceInformer.GetIndexer(),
 		serviceQueue:   workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		zoneGetter:     zoneGetter,
-		namer:          namer,
+		syncTracker:    utils.NewTimeTracker(),
 	}
 
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -133,6 +138,7 @@ func NewController(
 			negController.processEndpoint(cur)
 		},
 	})
+	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
 	return negController, nil
 }
 
@@ -154,6 +160,16 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 	<-stopCh
 }
 
+func (c *Controller) IsHealthy() error {
+	// check if last seen service and endpoint processing is more than an hour ago
+	if c.syncTracker.Get().Before(time.Now().Add(-time.Hour)) {
+		msg := fmt.Sprintf("NEG controller has not proccessed any service and endpoint updates for more than an hour. Something went wrong. Last sync was on %v", c.syncTracker.Get())
+		glog.Error(msg)
+		return fmt.Errorf(msg)
+	}
+	return nil
+}
+
 func (c *Controller) stop() {
 	glog.V(2).Infof("Shutting down network endpoint group controller")
 	c.serviceQueue.ShutDown()
@@ -162,7 +178,11 @@ func (c *Controller) stop() {
 
 // processEndpoint finds the related syncers and signal it to sync
 func (c *Controller) processEndpoint(obj interface{}) {
-	defer lastSyncTimestamp.WithLabelValues().Set(float64(time.Now().UTC().UnixNano()))
+	defer func() {
+		now := c.syncTracker.Track()
+		lastSyncTimestamp.WithLabelValues().Set(float64(now.UTC().UnixNano()))
+	}()
+
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		glog.Errorf("Failed to generate endpoint key: %v", err)
@@ -191,7 +211,11 @@ func (c *Controller) serviceWorker() {
 
 // processService takes a service and determines whether it needs NEGs or not.
 func (c *Controller) processService(key string) error {
-	defer lastSyncTimestamp.WithLabelValues().Set(float64(time.Now().UTC().UnixNano()))
+	defer func() {
+		now := c.syncTracker.Track()
+		lastSyncTimestamp.WithLabelValues().Set(float64(now.UTC().UnixNano()))
+	}()
+
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
