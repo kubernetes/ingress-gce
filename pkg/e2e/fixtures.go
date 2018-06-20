@@ -33,9 +33,8 @@ const (
 func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (*v1.Pod, *v1.Service, error) {
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        name,
-			Labels:      map[string]string{"app": name},
-			Annotations: annotations,
+			Name:   name,
+			Labels: map[string]string{"app": name},
 		},
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{
@@ -48,7 +47,10 @@ func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (
 		},
 	}
 	service := &v1.Service{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Annotations: annotations,
+		},
 		Spec: v1.ServiceSpec{
 			Ports: []v1.ServicePort{{
 				Name:       "web",

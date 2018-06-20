@@ -34,6 +34,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
@@ -50,23 +51,29 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 	if err != nil {
 		panic(err)
 	}
+	backendConfigClient, err := backendconfigclient.NewForConfig(config)
+	if err != nil {
+		glog.Fatalf("Failed to create BackendConfig client: %v", err)
+	}
 	return &Framework{
-		RestConfig:       config,
-		Clientset:        kubernetes.NewForConfigOrDie(config),
-		Project:          options.Project,
-		Cloud:            theCloud,
-		Rand:             rand.New(rand.NewSource(options.Seed)),
-		destroySandboxes: options.DestroySandboxes,
+		RestConfig:          config,
+		Clientset:           kubernetes.NewForConfigOrDie(config),
+		BackendConfigClient: backendConfigClient,
+		Project:             options.Project,
+		Cloud:               theCloud,
+		Rand:                rand.New(rand.NewSource(options.Seed)),
+		destroySandboxes:    options.DestroySandboxes,
 	}
 }
 
 // Framework is the end-to-end test framework.
 type Framework struct {
-	RestConfig *rest.Config
-	Clientset  *kubernetes.Clientset
-	Project    string
-	Cloud      cloud.Cloud
-	Rand       *rand.Rand
+	RestConfig          *rest.Config
+	Clientset           *kubernetes.Clientset
+	BackendConfigClient *backendconfigclient.Clientset
+	Project             string
+	Cloud               cloud.Cloud
+	Rand                *rand.Rand
 
 	destroySandboxes bool
 
