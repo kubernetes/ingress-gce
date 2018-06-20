@@ -130,8 +130,8 @@ func (svc *Service) NEGEnabledForIngress() bool {
 
 var (
 	ErrBackendConfigNoneFound         = errors.New("no BackendConfig's found in annotation")
-	ErrBackendConfigInvalidJSON       = errors.New("annotation is invalid json")
-	ErrBackendConfigAnnotationMissing = errors.New("annotation is missing")
+	ErrBackendConfigInvalidJSON       = errors.New("BackendConfig annotation is invalid json")
+	ErrBackendConfigAnnotationMissing = errors.New("BackendConfig annotation is missing")
 )
 
 // NEGExposed is true if the service exposes NEGs

@@ -62,7 +62,11 @@ func GetServicesForBackendConfig(svcLister cache.Store, backendConfig *backendco
 		}
 		backendConfigNames, err := annotations.FromService(svc).GetBackendConfigs()
 		if err != nil {
-			glog.Errorf("Failed to get BackendConfig names from service %s/%s: %v", svc.Namespace, svc.Name, err)
+			// If the user did not provide the annotation at all, then we
+			// do not want to log an error.
+			if err != annotations.ErrBackendConfigAnnotationMissing {
+				glog.Errorf("Failed to get BackendConfig names from service %s/%s: %v", svc.Namespace, svc.Name, err)
+			}
 			continue
 		}
 		if backendConfigNames != nil {
