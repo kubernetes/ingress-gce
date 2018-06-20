@@ -82,6 +82,7 @@ func echo(w http.ResponseWriter, r *http.Request) {
 	setHeadersFromQueryString(w, r)
 
 	var dump = struct {
+		Host          string              `json:"host"`
 		Method        string              `json:"method"`
 		URI           string              `json:"uri"`
 		HTTPVersion   string              `json:"httpVersion"`
@@ -92,6 +93,7 @@ func echo(w http.ResponseWriter, r *http.Request) {
 		Header        map[string][]string `json:"header"`
 		ServerVersion string              `json:"serverVersion"`
 	}{
+		Host:          r.Host,
 		Method:        r.Method,
 		URI:           r.RequestURI,
 		HTTPVersion:   fmt.Sprintf("%d.%d", r.ProtoMajor, r.ProtoMinor),
