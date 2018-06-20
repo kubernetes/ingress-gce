@@ -93,10 +93,17 @@ func (s *StoreToIngressLister) ListGCEIngresses() (ing extensions.IngressList, e
 
 // GetServiceIngress gets all the Ingress' that have rules pointing to a service.
 // Note that this ignores services without the right nodePorts.
-func (s *StoreToIngressLister) GetServiceIngress(svc *api_v1.Service) (ings []extensions.Ingress, err error) {
+func (s *StoreToIngressLister) GetServiceIngress(svc *api_v1.Service, systemDefaultBackend utils.ServicePortID) (ings []extensions.Ingress, err error) {
 IngressLoop:
 	for _, m := range s.Store.List() {
 		ing := *m.(*extensions.Ingress)
+
+		// Check if system default backend is involved
+		if ing.Spec.Backend == nil && systemDefaultBackend.Service.Name == svc.Name && systemDefaultBackend.Service.Namespace == svc.Namespace {
+			ings = append(ings, ing)
+			continue
+		}
+
 		if ing.Namespace != svc.Namespace {
 			continue
 		}
