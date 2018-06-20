@@ -75,7 +75,11 @@ type ExposeNegAnnotation map[int32]NegAttributes
 
 // NegAttributes houses the attributes of the NEGs that are associated with the
 // service. Future extensions to the Expose NEGs annotation should be added here.
-type NegAttributes struct{}
+type NegAttributes struct {
+	// Note - in the future, this will be used for custom naming of NEGs.
+	// Currently has no effect.
+	Name string `json:"name,omitempty"`
+}
 
 // AppProtocol describes the service protocol.
 type AppProtocol string

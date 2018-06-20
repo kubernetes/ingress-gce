@@ -303,7 +303,8 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 
 func TestSyncNegAnnotation(t *testing.T) {
 	t.Parallel()
-
+	// TODO: test that c.serviceLister.Update is called whenever the annotation
+	// is changed. When there is no change, Update should not be called.
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(false, []int32{}))
