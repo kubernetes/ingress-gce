@@ -207,7 +207,7 @@ func (lbc *LoadBalancerController) enqueueIngressForObject(obj interface{}) {
 
 // enqueueIngressForService enqueues all the Ingresses for a Service.
 func (lbc *LoadBalancerController) enqueueIngressForService(svc *apiv1.Service) {
-	ings, err := lbc.ingLister.GetServiceIngress(svc)
+	ings, err := lbc.ingLister.GetServiceIngress(svc, lbc.CloudClusterManager.defaultBackendSvcPortID)
 	if err != nil {
 		glog.V(5).Infof("ignoring service %v: %v", svc.Name, err)
 		return
