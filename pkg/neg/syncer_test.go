@@ -29,6 +29,7 @@ func NewTestSyncer() *syncer {
 	svcPort := servicePort{
 		namespace:  testServiceNamespace,
 		name:       testServiceName,
+		port:       80,
 		targetPort: "80",
 	}
 

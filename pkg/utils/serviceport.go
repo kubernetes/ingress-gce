@@ -33,11 +33,14 @@ type ServicePortID struct {
 
 // ServicePort maintains configuration for a single backend.
 type ServicePort struct {
+	// Ingress backend-specified service name and port
 	ID ServicePortID
 
-	NodePort      int64
+	NodePort int64
+	// Numerical port of the Service, retrieved from the Service
+	Port          int32
 	Protocol      annotations.AppProtocol
-	SvcTargetPort string
+	TargetPort    string
 	NEGEnabled    bool
 	BackendConfig *backendconfigv1beta1.BackendConfig
 }
@@ -63,7 +66,7 @@ func (sp ServicePort) BackendName(namer *Namer) string {
 		return namer.IGBackend(sp.NodePort)
 	}
 
-	return namer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.SvcTargetPort)
+	return namer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.Port)
 }
 
 // BackendToServicePortID creates a ServicePortID from a given IngressBackend and namespace.

@@ -17,6 +17,7 @@ limitations under the License.
 package neg
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -62,6 +63,8 @@ type Controller struct {
 
 	// serviceQueue takes service key as work item. Service key with format "namespace/name".
 	serviceQueue workqueue.RateLimitingInterface
+	zoneGetter   zoneGetter
+	namer        networkEndpointGroupNamer
 }
 
 // NewController returns a network endpoint group controller.
@@ -99,6 +102,8 @@ func NewController(
 		ingressLister:  ctx.IngressInformer.GetIndexer(),
 		serviceLister:  ctx.ServiceInformer.GetIndexer(),
 		serviceQueue:   workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		zoneGetter:     zoneGetter,
+		namer:          namer,
 	}
 
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -210,13 +215,83 @@ func (c *Controller) processService(key string) error {
 
 	if !enabled {
 		c.manager.StopSyncer(namespace, name)
-		return nil
+		// delete the annotation
+		return c.syncNegAnnotation(namespace, name, service, make(PortNameMap))
 	}
 
 	glog.V(2).Infof("Syncing service %q", key)
-	// Only service ports referenced by ingress are synced for NEG
-	ings := getIngressServicesFromStore(c.ingressLister, service)
-	return c.manager.EnsureSyncers(namespace, name, gatherSerivceTargetPortUsedByIngress(ings, service))
+	// map of ServicePort (int) to TargetPort
+	svcPortMap := make(PortNameMap)
+
+	if annotations.FromService(service).NEGEnabledForIngress() {
+		// Only service ports referenced by ingress are synced for NEG
+		ings := getIngressServicesFromStore(c.ingressLister, service)
+		svcPortMap = gatherPortMappingUsedByIngress(ings, service)
+	}
+
+	if annotations.FromService(service).NEGExposed() {
+		knownPorts := make(PortNameMap)
+		for _, sp := range service.Spec.Ports {
+			knownPorts[sp.Port] = sp.TargetPort.String()
+		}
+
+		annotation, err := annotations.FromService(service).ExposeNegAnnotation()
+		if err != nil {
+			return err
+		}
+
+		negSvcPorts, err := NEGServicePorts(annotation, knownPorts)
+		if err != nil {
+			return err
+		}
+
+		svcPortMap = svcPortMap.Union(negSvcPorts)
+	}
+
+	err = c.syncNegAnnotation(namespace, name, service, svcPortMap)
+	if err != nil {
+		return err
+	}
+	return c.manager.EnsureSyncers(namespace, name, svcPortMap)
+}
+
+func (c *Controller) syncNegAnnotation(namespace, name string, service *apiv1.Service, portMap PortNameMap) error {
+	zones, err := c.zoneGetter.ListZones()
+	if err != nil {
+		return err
+	}
+
+	if len(portMap) == 0 {
+		if _, ok := service.Annotations[annotations.NEGStatusKey]; ok {
+			// TODO: use PATCH to remove annotation
+			delete(service.Annotations, annotations.NEGStatusKey)
+			glog.V(2).Infof("Removing expose NEG annotation from service: %s/%s", namespace, name)
+			return c.serviceLister.Update(service)
+		}
+		// service doesn't have the expose NEG annotation and doesn't need update
+		return nil
+	}
+
+	portToNegs := make(PortNameMap)
+	for svcPort, _ := range portMap {
+		portToNegs[svcPort] = c.namer.NEG(namespace, name, svcPort)
+	}
+	negSvcState := GetNegStatus(zones, portToNegs)
+	formattedAnnotation, err := json.Marshal(negSvcState)
+	if err != nil {
+		return err
+	}
+
+	annotation := string(formattedAnnotation)
+
+	existingAnnotation, ok := service.Annotations[annotations.NEGStatusKey]
+	if ok && existingAnnotation == annotation {
+		return nil
+	}
+
+	service.Annotations[annotations.NEGStatusKey] = annotation
+	glog.V(2).Infof("Updating NEG visibility annotation %q on service %s/%s.", annotation, namespace, name)
+	return c.serviceLister.Update(service)
 }
 
 func (c *Controller) handleErr(err error, key interface{}) {
@@ -270,10 +345,11 @@ func (c *Controller) synced() bool {
 		c.ingressSynced()
 }
 
-// gatherSerivceTargetPortUsedByIngress returns all target ports of the service that are referenced by ingresses
-func gatherSerivceTargetPortUsedByIngress(ings []extensions.Ingress, svc *apiv1.Service) sets.String {
+// gatherPortMappingUsedByIngress returns a map containing port:targetport
+// of all service ports of the service that are referenced by ingresses
+func gatherPortMappingUsedByIngress(ings []extensions.Ingress, svc *apiv1.Service) PortNameMap {
 	servicePorts := sets.NewString()
-	targetPorts := sets.NewString()
+	ingressSvcPorts := make(PortNameMap)
 	for _, ing := range ings {
 		if ing.Spec.Backend != nil && ing.Spec.Backend.ServiceName == svc.Name {
 			servicePorts.Insert(ing.Spec.Backend.ServicePort.String())
@@ -308,11 +384,11 @@ func gatherSerivceTargetPortUsedByIngress(ings []extensions.Ingress, svc *apiv1.
 			}
 		}
 		if found {
-			targetPorts.Insert(svcPort.TargetPort.String())
+			ingressSvcPorts[svcPort.Port] = svcPort.TargetPort.String()
 		}
 	}
 
-	return targetPorts
+	return ingressSvcPorts
 }
 
 // gatherIngressServiceKeys returns all service key (formatted as namespace/name) referenced in the ingress

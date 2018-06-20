@@ -25,12 +25,77 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 )
 
+func TestNEGService(t *testing.T) {
+	for _, tc := range []struct {
+		svc     *v1.Service
+		neg     bool
+		ingress bool
+		exposed bool
+	}{
+		{
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NetworkEndpointGroupAlphaAnnotation: "true",
+					},
+				},
+			},
+			neg:     true,
+			ingress: true,
+			exposed: false,
+		},
+		{
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						ExposeNEGAnnotationKey: `"{"80":{}}"`,
+					},
+				},
+			},
+			neg:     true,
+			ingress: false,
+			exposed: true,
+		},
+		{
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NetworkEndpointGroupAlphaAnnotation: "true",
+						ExposeNEGAnnotationKey:              `"{"80":{}}"`,
+					},
+				},
+			},
+			neg:     true,
+			ingress: true,
+			exposed: true,
+		},
+		{
+			svc:     &v1.Service{},
+			neg:     false,
+			ingress: false,
+			exposed: false,
+		},
+	} {
+		svc := FromService(tc.svc)
+		if neg := svc.NEGEnabled(); neg != tc.neg {
+			t.Errorf("for service %+v; svc.NEGEnabled() = %v; want %v", tc.svc, neg, tc.neg)
+		}
+
+		if ing := svc.NEGEnabledForIngress(); ing != tc.ingress {
+			t.Errorf("for service %+v; svc.NEGEnabledForIngress() = %v; want %v", tc.svc, ing, tc.ingress)
+		}
+
+		if exposed := svc.NEGExposed(); exposed != tc.exposed {
+			t.Errorf("for service %+v; svc.NEGExposed() = %v; want %v", tc.svc, exposed, tc.exposed)
+		}
+	}
+}
+
 func TestService(t *testing.T) {
 	for _, tc := range []struct {
 		svc             *v1.Service
 		appProtocolsErr bool
 		appProtocols    map[string]AppProtocol
-		neg             bool
 		http2           bool
 	}{
 		{
@@ -73,17 +138,6 @@ func TestService(t *testing.T) {
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						NetworkEndpointGroupAlphaAnnotation: "true",
-					},
-				},
-			},
-			appProtocols: map[string]AppProtocol{},
-			neg:          true,
-		},
-		{
-			svc: &v1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Annotations: map[string]string{
 						ServiceApplicationProtocolKey: `invalid`,
 					},
 				},
@@ -112,9 +166,6 @@ func TestService(t *testing.T) {
 		}
 		if err != nil || !reflect.DeepEqual(ap, tc.appProtocols) {
 			t.Errorf("for service %+v; svc.ApplicationProtocols() = %v, %v; want %v, nil", tc.svc, ap, err, tc.appProtocols)
-		}
-		if b := svc.NEGEnabled(); b != tc.neg {
-			t.Errorf("for service %+v; svc.NEGEnabled() = %v; want %v", tc.svc, b, tc.neg)
 		}
 	}
 }
@@ -208,5 +259,65 @@ func TestBackendConfigs(t *testing.T) {
 		if !reflect.DeepEqual(configs, tc.expectedConfigs) || tc.expectedErr != err {
 			t.Errorf("%s: for annotations %+v; svc.GetBackendConfigs() = %v, %v; want %v, %v", tc.desc, svc.v, configs, err, tc.expectedConfigs, tc.expectedErr)
 		}
+	}
+}
+
+func TestExposeNegAnnotation(t *testing.T) {
+	testcases := []struct {
+		desc        string
+		annotation  string
+		expected    ExposeNegAnnotation
+		expectedErr error
+	}{
+		{
+			desc:        "no expose NEG annotation",
+			annotation:  "",
+			expectedErr: ErrExposeNegAnnotationMissing,
+		},
+		{
+			desc:        "invalid expose NEG annotation",
+			annotation:  "invalid",
+			expectedErr: ErrExposeNegAnnotationInvalid,
+		},
+		{
+			desc:       "NEG annotation references existing service ports",
+			expected:   ExposeNegAnnotation{80: NegAttributes{}, 443: NegAttributes{}},
+			annotation: `{"80":{},"443":{}}`,
+		},
+
+		{
+			desc:       "NEGServicePort takes the union of known ports and ports referenced in the annotation",
+			annotation: `{"80":{}}`,
+			expected:   ExposeNegAnnotation{80: NegAttributes{}},
+		},
+	}
+
+	for _, tc := range testcases {
+		service := &v1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{},
+			},
+		}
+
+		t.Run(tc.desc, func(t *testing.T) {
+			if len(tc.annotation) > 0 {
+				service.Annotations[ExposeNEGAnnotationKey] = tc.annotation
+			}
+
+			svc := FromService(service)
+			exposeNegStruct, err := svc.ExposeNegAnnotation()
+
+			if tc.expectedErr == nil && err != nil {
+				t.Errorf("ExpectedNEGServicePorts to not return an error, got: %v", err)
+			}
+
+			if !reflect.DeepEqual(exposeNegStruct, tc.expected) {
+				t.Errorf("Expected NEGServicePorts to equal: %v; got: %v", tc.expected, exposeNegStruct)
+			}
+
+			if tc.expectedErr != nil && err != tc.expectedErr {
+				t.Errorf("Expected NEGServicePorts to return a %v error, got: %v", tc.expectedErr, err)
+			}
+		})
 	}
 }

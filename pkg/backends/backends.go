@@ -542,7 +542,7 @@ func (b *Backends) Link(sp utils.ServicePort, zones []string) error {
 	if !sp.NEGEnabled {
 		return nil
 	}
-	negName := b.namer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.SvcTargetPort)
+	negName := sp.BackendName(b.namer)
 	var negs []*computealpha.NetworkEndpointGroup
 	var err error
 	for _, zone := range zones {

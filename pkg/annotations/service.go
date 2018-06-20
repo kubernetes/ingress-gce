@@ -41,6 +41,16 @@ const (
 	// 3. Adding this annotation on ingress.
 	NetworkEndpointGroupAlphaAnnotation = "alpha.cloud.google.com/load-balancer-neg"
 
+	// ExposeNEGAnnotationKey is the annotation key to specify standalone NEGs associated
+	// with the service. This should be a valid JSON string, as defined in
+	// ExposeNegAnnotation.
+	// example: {"80":{},"443":{}}
+	ExposeNEGAnnotationKey = "cloud.google.com/neg"
+
+	// NEGStatusKey is the annotation key whose value is the status of the NEGs
+	// on the Service, and is applied by the NEG Controller.
+	NEGStatusKey = "cloud.google.com/neg-status"
+
 	// BackendConfigKey is a stringified JSON with two fields:
 	// - "ports": a map of port names or port numbers to backendConfig names
 	// - "default": denotes the default backendConfig name for all ports except
@@ -58,6 +68,19 @@ const (
 	ProtocolHTTP2 AppProtocol = "HTTP2"
 )
 
+// ExposeNegAnnotation is the format of the annotation associated with the
+// ExposeNEGAnnotationKey key, and maps ServicePort to attributes of the NEG that should be
+// associated with the ServicePort. ServicePorts in this map will be NEG-enabled.
+type ExposeNegAnnotation map[int32]NegAttributes
+
+// NegAttributes houses the attributes of the NEGs that are associated with the
+// service. Future extensions to the Expose NEGs annotation should be added here.
+type NegAttributes struct {
+	// Note - in the future, this will be used for custom naming of NEGs.
+	// Currently has no effect.
+	Name string `json:"name,omitempty"`
+}
+
 // AppProtocol describes the service protocol.
 type AppProtocol string
 
@@ -73,7 +96,7 @@ func FromService(obj *v1.Service) *Service {
 
 // ApplicationProtocols returns a map of port (name or number) to the protocol
 // on the port.
-func (svc Service) ApplicationProtocols() (map[string]AppProtocol, error) {
+func (svc *Service) ApplicationProtocols() (map[string]AppProtocol, error) {
 	val, ok := svc.v[ServiceApplicationProtocolKey]
 	if !ok {
 		return map[string]AppProtocol{}, nil
@@ -98,8 +121,9 @@ func (svc Service) ApplicationProtocols() (map[string]AppProtocol, error) {
 	return portToProtos, err
 }
 
-// NEGEnabled is true if the service uses NEGs.
-func (svc Service) NEGEnabled() bool {
+// NEGEnabledForIngress returns true if the annotation is to be applied on
+// Ingress-referenced ports
+func (svc *Service) NEGEnabledForIngress() bool {
 	v, ok := svc.v[NetworkEndpointGroupAlphaAnnotation]
 	return ok && v == "true"
 }
@@ -110,13 +134,49 @@ var (
 	ErrBackendConfigAnnotationMissing = errors.New("annotation is missing")
 )
 
+// NEGExposed is true if the service exposes NEGs
+func (svc *Service) NEGExposed() bool {
+	if !flags.F.Features.NEGExposed {
+		return false
+	}
+
+	v, ok := svc.v[ExposeNEGAnnotationKey]
+	return ok && len(v) > 0
+}
+
+var (
+	ErrExposeNegAnnotationMissing = errors.New("No NEG ServicePorts specified")
+	ErrExposeNegAnnotationInvalid = errors.New("Expose NEG annotation is invalid")
+)
+
+// ExposeNegAnnotation returns the value of the Expose NEG annotation key
+func (svc *Service) ExposeNegAnnotation() (ExposeNegAnnotation, error) {
+	annotation, ok := svc.v[ExposeNEGAnnotationKey]
+	if !ok {
+		return nil, ErrExposeNegAnnotationMissing
+	}
+
+	// TODO: add link to Expose NEG documentation when complete
+	var exposedNegPortMap ExposeNegAnnotation
+	if err := json.Unmarshal([]byte(annotation), &exposedNegPortMap); err != nil {
+		return nil, ErrExposeNegAnnotationInvalid
+	}
+
+	return exposedNegPortMap, nil
+}
+
+// NEGEnabled is true if the service uses NEGs.
+func (svc *Service) NEGEnabled() bool {
+	return svc.NEGExposed() || svc.NEGEnabledForIngress()
+}
+
 type BackendConfigs struct {
 	Default string            `json:"default,omitempty"`
 	Ports   map[string]string `json:"ports,omitempty"`
 }
 
 // GetBackendConfigs returns BackendConfigs for the service.
-func (svc Service) GetBackendConfigs() (*BackendConfigs, error) {
+func (svc *Service) GetBackendConfigs() (*BackendConfigs, error) {
 	val, ok := svc.v[BackendConfigKey]
 	if !ok {
 		return nil, ErrBackendConfigAnnotationMissing

@@ -45,9 +45,9 @@ const (
 
 // servicePort includes information to uniquely identify a NEG
 type servicePort struct {
-	namespace string
-	name      string
-	// Serivice target port
+	namespace  string
+	name       string
+	port       int32
 	targetPort string
 }
 
@@ -101,13 +101,13 @@ func (s *syncer) init() {
 // Start starts the syncer go routine if it has not been started.
 func (s *syncer) Start() error {
 	if !s.IsStopped() {
-		return fmt.Errorf("NEG syncer for %s/%s-%s is already running.", s.namespace, s.name, s.targetPort)
+		return fmt.Errorf("NEG syncer for %s/%s-%v/%s is already running.", s.namespace, s.name, s.port, s.targetPort)
 	}
 	if s.IsShuttingDown() {
-		return fmt.Errorf("NEG syncer for %s/%s-%s is shutting down. ", s.namespace, s.name, s.targetPort)
+		return fmt.Errorf("NEG syncer for %s/%s-%v/%s is shutting down. ", s.namespace, s.name, s.port, s.targetPort)
 	}
 
-	glog.V(2).Infof("Starting NEG syncer for service port %s/%s-%s", s.namespace, s.name, s.targetPort)
+	glog.V(2).Infof("Starting NEG syncer for service port %s/%s-%v/%s", s.namespace, s.name, s.port, s.targetPort)
 	s.init()
 	go func() {
 		for {
@@ -136,7 +136,7 @@ func (s *syncer) Start() error {
 					s.stateLock.Lock()
 					s.shuttingDown = false
 					s.stateLock.Unlock()
-					glog.V(2).Infof("Stopping NEG syncer for %s/%s-%s", s.namespace, s.name, s.targetPort)
+					glog.V(2).Infof("Stopping NEG syncer for %s/%s-%v-%s", s.namespace, s.name, s.port, s.targetPort)
 					return
 				}
 			case <-retryCh:
@@ -152,7 +152,7 @@ func (s *syncer) Stop() {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	if !s.stopped {
-		glog.V(2).Infof("Stopping NEG syncer for service port %s/%s-%s", s.namespace, s.name, s.targetPort)
+		glog.V(2).Infof("Stopping NEG syncer for service port %s/%s-%v/%s", s.namespace, s.name, s.port, s.targetPort)
 		s.stopped = true
 		s.shuttingDown = true
 		close(s.syncCh)

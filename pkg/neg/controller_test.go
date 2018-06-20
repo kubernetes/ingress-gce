@@ -17,12 +17,16 @@ limitations under the License.
 package neg
 
 import (
+	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -47,9 +51,11 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 }
 
 func TestNewNonNEGService(t *testing.T) {
+	t.Parallel()
+
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
-	controller.serviceLister.Add(newTestService(false))
+	controller.serviceLister.Add(newTestService(false, []int32{}))
 	controller.ingressLister.Add(newTestIngress())
 	err := controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
@@ -60,41 +66,124 @@ func TestNewNonNEGService(t *testing.T) {
 }
 
 func TestNewNEGService(t *testing.T) {
-	controller := newTestController(fake.NewSimpleClientset())
-	defer controller.stop()
-	controller.serviceLister.Add(newTestService(true))
-	controller.ingressLister.Add(newTestIngress())
-	err := controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
-	if err != nil {
-		t.Fatalf("Failed to process service: %v", err)
+	t.Parallel()
+
+	testCases := []struct {
+		svcPorts []int32
+		ingress  bool
+		desc     string
+	}{
+		{
+			[]int32{80, 443, 8081, 8080},
+			true,
+			"With ingress, 3 ports same as in ingress, 1 new port",
+		},
+		{
+			[]int32{80, 443, 8081, 8080, 1234, 5678},
+			true,
+			"With ingress, 3 ports same as ingress and 3 new ports",
+		},
+		{
+			[]int32{80, 1234, 5678},
+			true,
+			"With ingress, 1 port same as ingress and 2 new ports",
+		},
+		{
+			[]int32{},
+			false,
+			"With ingress, no additional ports",
+		},
+		{
+			[]int32{80, 443, 8081, 8080},
+			false,
+			"No ingress, 4 ports",
+		},
+		{
+			[]int32{80},
+			false,
+			"No ingress, 1 port",
+		},
+		{
+			[]int32{},
+			false,
+			"No ingress, no ports",
+		},
 	}
 
-	validateSyncers(t, controller, 3, false)
+	testIngressPorts := sets.NewString([]string{"80", "443", "8081"}...)
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			controller := newTestController(fake.NewSimpleClientset())
+			defer controller.stop()
+			svcKey := serviceKeyFunc(testServiceNamespace, testServiceName)
+			controller.serviceLister.Add(newTestService(tc.ingress, tc.svcPorts))
+
+			if tc.ingress {
+				controller.ingressLister.Add(newTestIngress())
+			}
+
+			err := controller.processService(svcKey)
+			if err != nil {
+				t.Fatalf("Failed to process service: %v", err)
+			}
+
+			expectedSyncers := len(tc.svcPorts)
+			if tc.ingress {
+				svcPorts := sets.NewString()
+				for _, port := range tc.svcPorts {
+					svcPorts.Insert(fmt.Sprintf("%v", port))
+				}
+				expectedSyncers = len(svcPorts.Union(testIngressPorts))
+			}
+			validateSyncers(t, controller, expectedSyncers, false)
+			svc, exists, _ := controller.serviceLister.GetByKey(svcKey)
+			if !exists || err != nil {
+				t.Fatalf("Service was not created successfully, err: %v", err)
+			}
+			validateServiceStateAnnotation(t, svc.(*apiv1.Service), tc.svcPorts)
+		})
+	}
 }
 
-func TestEnableNEGService(t *testing.T) {
+func TestEnableNEGServiceWithIngress(t *testing.T) {
+	t.Parallel()
+
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
-	controller.serviceLister.Add(newTestService(false))
+	controller.serviceLister.Add(newTestService(false, []int32{}))
 	controller.ingressLister.Add(newTestIngress())
-	err := controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
+	svcKey := serviceKeyFunc(testServiceNamespace, testServiceName)
+	err := controller.processService(svcKey)
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
 	validateSyncers(t, controller, 0, true)
+	svc, exists, _ := controller.serviceLister.GetByKey(svcKey)
+	if !exists || err != nil {
+		t.Fatalf("Service was not created successfully, err: %v", err)
+	}
 
-	controller.serviceLister.Update(newTestService(true))
-	err = controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
+	controller.serviceLister.Update(newTestService(true, []int32{}))
+	err = controller.processService(svcKey)
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
 	validateSyncers(t, controller, 3, false)
+	svc, exists, _ = controller.serviceLister.GetByKey(svcKey)
+	svcPorts := []int32{80, 8081, 443}
+	if !exists || err != nil {
+		t.Fatalf("Service was not created successfully, err: %v", err)
+	}
+	validateServiceStateAnnotation(t, svc.(*apiv1.Service), svcPorts)
 }
 
-func TestDisableNEGService(t *testing.T) {
+func TestDisableNEGServiceWithIngress(t *testing.T) {
+	t.Parallel()
+
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
-	controller.serviceLister.Add(newTestService(true))
+	controller.serviceLister.Add(newTestService(true, []int32{}))
 	controller.ingressLister.Add(newTestIngress())
 	err := controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
@@ -102,7 +191,7 @@ func TestDisableNEGService(t *testing.T) {
 	}
 	validateSyncers(t, controller, 3, false)
 
-	controller.serviceLister.Update(newTestService(false))
+	controller.serviceLister.Update(newTestService(false, []int32{}))
 	err = controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
@@ -110,12 +199,14 @@ func TestDisableNEGService(t *testing.T) {
 	validateSyncers(t, controller, 3, true)
 }
 
-func TestGatherServiceTargetPortUsedByIngress(t *testing.T) {
+func TestGatherPortMappingUsedByIngress(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		ings   []extensions.Ingress
-		expect []string
+		expect []int32
+		desc   string
 	}{
-		// no match
 		{
 			[]extensions.Ingress{{
 				ObjectMeta: metav1.ObjectMeta{
@@ -129,9 +220,9 @@ func TestGatherServiceTargetPortUsedByIngress(t *testing.T) {
 					},
 				},
 			}},
-			[]string{},
+			[]int32{},
+			"no match",
 		},
-		// ingress spec point to non-existed service port
 		{
 			[]extensions.Ingress{{
 				ObjectMeta: metav1.ObjectMeta{
@@ -145,9 +236,9 @@ func TestGatherServiceTargetPortUsedByIngress(t *testing.T) {
 					},
 				},
 			}},
-			[]string{},
+			[]int32{},
+			"ingress spec point to non-existed service port",
 		},
-		// ingress point to multiple services
 		{
 			[]extensions.Ingress{{
 				ObjectMeta: metav1.ObjectMeta{
@@ -181,35 +272,102 @@ func TestGatherServiceTargetPortUsedByIngress(t *testing.T) {
 					},
 				},
 			}},
-			[]string{"8080"},
+			[]int32{80},
+			"ingress point to multiple services",
 		},
-		// two ingresses with multiple different references to service
 		{
 			[]extensions.Ingress{*newTestIngress(), *newTestIngress()},
-			[]string{"8080", "8081", testNamedPort},
+			[]int32{80, 443, 8081},
+			"two ingresses with multiple different references to service",
 		},
-		// one ingress with multiple different references to service
 		{
 			[]extensions.Ingress{*newTestIngress()},
-			[]string{"8080", "8081", testNamedPort},
+			[]int32{80, 443, 8081},
+			"one ingress with multiple different references to service",
 		},
 	}
 
 	for _, tc := range testCases {
-		ports := gatherSerivceTargetPortUsedByIngress(tc.ings, newTestService(true))
-		if len(ports) != len(tc.expect) {
-			t.Errorf("Expect %v ports, but got %v.", len(tc.expect), len(ports))
+		portMap := gatherPortMappingUsedByIngress(tc.ings, newTestService(true, []int32{}))
+		if len(portMap) != len(tc.expect) {
+			t.Errorf("Expect %v ports, but got %v.", len(tc.expect), len(portMap))
 		}
 
 		for _, exp := range tc.expect {
-			if !ports.Has(exp) {
-				t.Errorf("Expect ports to include %q.", exp)
+			if _, ok := portMap[exp]; !ok {
+				t.Errorf("Expect ports to include %v.", exp)
 			}
 		}
 	}
 }
 
+func TestSyncNegAnnotation(t *testing.T) {
+	t.Parallel()
+	// TODO: test that c.serviceLister.Update is called whenever the annotation
+	// is changed. When there is no change, Update should not be called.
+	controller := newTestController(fake.NewSimpleClientset())
+	defer controller.stop()
+	controller.serviceLister.Add(newTestService(false, []int32{}))
+	svcKey := serviceKeyFunc(testServiceNamespace, testServiceName)
+
+	testCases := []struct {
+		desc            string
+		previousPortMap PortNameMap
+		portMap         PortNameMap
+	}{
+		{
+			desc:    "apply new annotation with no previous annotation",
+			portMap: PortNameMap{80: "named_port", 443: "other_port"},
+		},
+		{
+			desc:            "same annotation applied twice",
+			previousPortMap: PortNameMap{80: "named_port", 4040: "other_port"},
+			portMap:         PortNameMap{80: "named_port", 4040: "other_port"},
+		},
+		{
+			desc:            "apply new annotation and override previous annotation",
+			previousPortMap: PortNameMap{80: "named_port", 4040: "other_port"},
+			portMap:         PortNameMap{3000: "6000", 4000: "8000"},
+		},
+		{
+			desc:            "remove previous annotation",
+			previousPortMap: PortNameMap{80: "named_port", 4040: "other_port"},
+		},
+		{
+			desc: "remove annotation with no previous annotation",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			svc, exists, err := controller.serviceLister.GetByKey(svcKey)
+			if !exists || err != nil {
+				t.Fatalf("Service was not retrieved successfully, err: %v", err)
+			}
+
+			controller.syncNegAnnotation(testServiceNamespace, testServiceName, svc.(*apiv1.Service), tc.previousPortMap)
+			svc, _, _ = controller.serviceLister.GetByKey(svcKey)
+
+			var oldSvcPorts []int32
+			for port, _ := range tc.previousPortMap {
+				oldSvcPorts = append(oldSvcPorts, port)
+			}
+			validateServiceStateAnnotation(t, svc.(*apiv1.Service), oldSvcPorts)
+
+			controller.syncNegAnnotation(testServiceNamespace, testServiceName, svc.(*apiv1.Service), tc.portMap)
+			svc, _, _ = controller.serviceLister.GetByKey(svcKey)
+
+			var svcPorts []int32
+			for port, _ := range tc.portMap {
+				svcPorts = append(svcPorts, port)
+			}
+			validateServiceStateAnnotation(t, svc.(*apiv1.Service), svcPorts)
+		})
+	}
+}
+
 func validateSyncers(t *testing.T, controller *Controller, num int, stopped bool) {
+	t.Helper()
 	if len(controller.manager.(*syncerManager).syncerMap) != num {
 		t.Errorf("got %v syncer, want %v.", len(controller.manager.(*syncerManager).syncerMap), num)
 	}
@@ -218,6 +376,48 @@ func validateSyncers(t *testing.T, controller *Controller, num int, stopped bool
 			t.Errorf("got syncer %q IsStopped() == %v, want %v.", key, syncer.IsStopped(), stopped)
 		}
 	}
+}
+
+func validateServiceStateAnnotation(t *testing.T, svc *apiv1.Service, svcPorts []int32) {
+	t.Helper()
+	if len(svcPorts) == 0 {
+		v, ok := svc.Annotations[annotations.NEGStatusKey]
+		if ok {
+			t.Fatalf("Expected no NEG service state annotation when there are no servicePorts, got: %v", v)
+		}
+		return
+	}
+
+	v, ok := svc.Annotations[annotations.NEGStatusKey]
+	if !ok {
+		t.Fatalf("Failed to apply the NEG service state annotation, got %+v", svc.Annotations)
+	}
+
+	for _, port := range svcPorts {
+		if !strings.Contains(v, fmt.Sprintf("%v", port)) {
+			t.Fatalf("Expected NEG service state annotation to contain port %v, got %v", port, v)
+		}
+	}
+
+	zoneGetter := NewFakeZoneGetter()
+	zones, _ := zoneGetter.ListZones()
+	for _, zone := range zones {
+		if !strings.Contains(v, zone) {
+			t.Fatalf("Expected NEG service state annotation to contain zone %v, got %v", zone, v)
+		}
+	}
+}
+
+func generateNegAnnotation(svcPorts []int32) string {
+	if len(svcPorts) == 0 {
+		return ""
+	}
+	annotation := make(map[int32]annotations.NegAttributes)
+	for _, port := range svcPorts {
+		annotation[port] = annotations.NegAttributes{}
+	}
+	formattedAnnotation, _ := json.Marshal(annotation)
+	return string(formattedAnnotation)
 }
 
 func newTestIngress() *extensions.Ingress {
@@ -266,11 +466,43 @@ func newTestIngress() *extensions.Ingress {
 	}
 }
 
-func newTestService(negEnabled bool) *apiv1.Service {
+func newTestService(negIngress bool, negSvcPorts []int32) *apiv1.Service {
 	svcAnnotations := map[string]string{}
-	if negEnabled {
-		svcAnnotations[annotations.NetworkEndpointGroupAlphaAnnotation] = "true"
+	svcAnnotations[annotations.NetworkEndpointGroupAlphaAnnotation] = fmt.Sprint(negIngress)
+	if len(negSvcPorts) > 0 {
+		svcAnnotations[annotations.ExposeNEGAnnotationKey] = generateNegAnnotation(negSvcPorts)
 	}
+
+	ports := []apiv1.ServicePort{
+		{
+			Port:       80,
+			TargetPort: intstr.FromInt(8080),
+		},
+		{
+			Port:       443,
+			TargetPort: intstr.FromString(testNamedPort),
+		},
+		{
+			Name:       testNamedPort,
+			Port:       8081,
+			TargetPort: intstr.FromInt(8081),
+		},
+		{
+			Port:       8888,
+			TargetPort: intstr.FromInt(8888),
+		},
+	}
+
+	for _, port := range negSvcPorts {
+		ports = append(
+			ports,
+			apiv1.ServicePort{
+				Port:       port,
+				TargetPort: intstr.FromString(fmt.Sprintf("%v", port)),
+			},
+		)
+	}
+
 	return &apiv1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        testServiceName,
@@ -278,25 +510,7 @@ func newTestService(negEnabled bool) *apiv1.Service {
 			Annotations: svcAnnotations,
 		},
 		Spec: apiv1.ServiceSpec{
-			Ports: []apiv1.ServicePort{
-				{
-					Port:       80,
-					TargetPort: intstr.FromInt(8080),
-				},
-				{
-					Port:       443,
-					TargetPort: intstr.FromString(testNamedPort),
-				},
-				{
-					Name:       testNamedPort,
-					Port:       8081,
-					TargetPort: intstr.FromInt(8081),
-				},
-				{
-					Port:       8888,
-					TargetPort: intstr.FromInt(8888),
-				},
-			},
+			Ports: ports,
 		},
 	}
 }

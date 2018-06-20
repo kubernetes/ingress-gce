@@ -124,11 +124,14 @@ type Features struct {
 	Http2 bool
 	// NEG enables using NetworkEndpointGroups instead of IGs as backends
 	NEG bool
+	// NEGExposed enables using standalone (exposed) NEGs
+	NEGExposed bool
 }
 
 var DefaultFeatures = &Features{
-	Http2: true,
-	NEG:   true,
+	Http2:      true,
+	NEG:        true,
+	NEGExposed: true,
 }
 
 func EnabledFeatures() *Features {

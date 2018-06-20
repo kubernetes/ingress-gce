@@ -371,7 +371,7 @@ func (n *Namer) NamedPort(port int64) string {
 // NEG returns the gce neg name based on the service namespace, name
 // and target port. NEG naming convention:
 //
-//   {prefix}{version}-{clusterid}-{namespace}-{name}-{target port}-{hash}
+//   {prefix}{version}-{clusterid}-{namespace}-{name}-{service port}-{hash}
 //
 // Output name is at most 63 characters. NEG tries to keep as much
 // information as possible.
@@ -379,12 +379,13 @@ func (n *Namer) NamedPort(port int64) string {
 // WARNING: Controllers depend on the naming pattern to get the list
 // of all NEGs associated with the current cluster. Any modifications
 // must be backward compatible.
-func (n *Namer) NEG(namespace, name, port string) string {
-	truncFields := trimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name, port)
+func (n *Namer) NEG(namespace, name string, port int32) string {
+	portStr := fmt.Sprintf("%v", port)
+	truncFields := trimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name, portStr)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
-	return fmt.Sprintf("%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, negSuffix(n.shortUID(), namespace, name, port))
+	return fmt.Sprintf("%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, negSuffix(n.shortUID(), namespace, name, portStr))
 }
 
 // IsNEG returns true if the name is a NEG owned by this cluster.
