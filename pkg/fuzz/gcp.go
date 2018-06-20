@@ -160,7 +160,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud) error {
 
 func hasAlphaResource(resourceType string, validators []FeatureValidator) bool {
 	for _, val := range validators {
-		if val.HasAlphaResource("forwardingRule") {
+		if val.HasAlphaResource(resourceType) {
 			return true
 		}
 	}
@@ -169,7 +169,7 @@ func hasAlphaResource(resourceType string, validators []FeatureValidator) bool {
 
 func hasBetaResource(resourceType string, validators []FeatureValidator) bool {
 	for _, val := range validators {
-		if val.HasBetaResource("forwardingRule") {
+		if val.HasBetaResource(resourceType) {
 			return true
 		}
 	}
