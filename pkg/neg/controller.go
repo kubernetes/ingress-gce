@@ -261,7 +261,7 @@ func (c *Controller) processService(key string) error {
 			knownPorts[sp.Port] = sp.TargetPort.String()
 		}
 
-		annotation, err := annotations.FromService(service).ExposeNegAnnotation()
+		annotation, err := annotations.FromService(service).NegAnnotation()
 		if err != nil {
 			return err
 		}

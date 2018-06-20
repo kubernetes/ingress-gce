@@ -32,20 +32,15 @@ const (
 	// '{"my-https-port":"HTTPS","my-http-port":"HTTP"}'
 	ServiceApplicationProtocolKey = "service.alpha.kubernetes.io/app-protocols"
 
-	// NetworkEndpointGroupAlphaAnnotation is the annotation key to enable GCE NEG feature for ingress backend services.
-	// To enable this feature, the value of the annotation must be "true".
-	// This annotation should be specified on services that are backing ingresses.
-	// WARNING: The feature will NOT be effective in the following circumstances:
-	// 1. NEG feature is not enabled in feature gate.
-	// 2. Service is not referenced in any ingress.
-	// 3. Adding this annotation on ingress.
-	NetworkEndpointGroupAlphaAnnotation = "alpha.cloud.google.com/load-balancer-neg"
-
-	// ExposeNEGAnnotationKey is the annotation key to specify standalone NEGs associated
-	// with the service. This should be a valid JSON string, as defined in
-	// ExposeNegAnnotation.
-	// example: {"80":{},"443":{}}
-	ExposeNEGAnnotationKey = "cloud.google.com/neg"
+	// NEGAnnotationKey is the annotation key to enable GCE NEG.
+	// The value of the annotation must be a valid JSON string in the format
+	// specified by type NegAnnotation. To enable, must have either Ingress: true
+	// or a non-empty ExposedPorts map referencing valid ServicePorts.
+	// examples:
+	// - `{"exposed_ports":{"80":{},"443":{}}}`
+	// - `{"ingress":true}`
+	// - `{"ingress": true,"exposed_ports":{"3000":{},"4000":{}}}`
+	NEGAnnotationKey = "cloud.google.com/neg"
 
 	// NEGStatusKey is the annotation key whose value is the status of the NEGs
 	// on the Service, and is applied by the NEG Controller.
@@ -68,10 +63,26 @@ const (
 	ProtocolHTTP2 AppProtocol = "HTTP2"
 )
 
-// ExposeNegAnnotation is the format of the annotation associated with the
-// ExposeNEGAnnotationKey key, and maps ServicePort to attributes of the NEG that should be
+// NegAnnotation is the format of the annotation associated with the
+// NEGAnnotationKey key.
+// WARNING: The feature will NOT be effective in the following circumstances:
+// 1. Service is not referenced in any ingress.
+// 2. Adding this annotation on ingress.
+// ExposedPorts maps ServicePort to attributes of the NEG that should be
 // associated with the ServicePort. ServicePorts in this map will be NEG-enabled.
-type ExposeNegAnnotation map[int32]NegAttributes
+type NegAnnotation struct {
+	// "Ingress" indicates whether to enable NEG feature for Ingress referencing
+	// the service. Each NEG correspond to a service port.
+	// NEGs will be created and managed under the following conditions:
+	// 1. Service is referenced by ingress
+	// 2. "ingress" is set to "true". Default to "false"
+	// When the above conditions are satisfied, Ingress will create a load balancer
+	//  and target corresponding NEGs as backends. Service Nodeport is not required.
+	Ingress bool `json:"ingress,omitempty"`
+	// ExposedPorts specifies the service ports to be exposed as stand-alone NEG.
+	// The exposed NEGs will be created and managed by NEG controller.
+	ExposedPorts map[int32]NegAttributes `json:"exposed_ports,omitempty"`
+}
 
 // NegAttributes houses the attributes of the NEGs that are associated with the
 // service. Future extensions to the Expose NEGs annotation should be added here.
@@ -124,8 +135,11 @@ func (svc *Service) ApplicationProtocols() (map[string]AppProtocol, error) {
 // NEGEnabledForIngress returns true if the annotation is to be applied on
 // Ingress-referenced ports
 func (svc *Service) NEGEnabledForIngress() bool {
-	v, ok := svc.v[NetworkEndpointGroupAlphaAnnotation]
-	return ok && v == "true"
+	annotation, err := svc.NegAnnotation()
+	if err != nil {
+		return false
+	}
+	return annotation.Ingress
 }
 
 var (
@@ -140,8 +154,11 @@ func (svc *Service) NEGExposed() bool {
 		return false
 	}
 
-	v, ok := svc.v[ExposeNEGAnnotationKey]
-	return ok && len(v) > 0
+	annotation, err := svc.NegAnnotation()
+	if err != nil {
+		return false
+	}
+	return len(annotation.ExposedPorts) > 0
 }
 
 var (
@@ -149,25 +166,25 @@ var (
 	ErrExposeNegAnnotationInvalid = errors.New("Expose NEG annotation is invalid")
 )
 
-// ExposeNegAnnotation returns the value of the Expose NEG annotation key
-func (svc *Service) ExposeNegAnnotation() (ExposeNegAnnotation, error) {
-	annotation, ok := svc.v[ExposeNEGAnnotationKey]
+// NegAnnotation returns the value of the  NEG annotation key
+func (svc *Service) NegAnnotation() (NegAnnotation, error) {
+	var res NegAnnotation
+	annotation, ok := svc.v[NEGAnnotationKey]
 	if !ok {
-		return nil, ErrExposeNegAnnotationMissing
+		return res, ErrExposeNegAnnotationMissing
 	}
 
 	// TODO: add link to Expose NEG documentation when complete
-	var exposedNegPortMap ExposeNegAnnotation
-	if err := json.Unmarshal([]byte(annotation), &exposedNegPortMap); err != nil {
-		return nil, ErrExposeNegAnnotationInvalid
+	if err := json.Unmarshal([]byte(annotation), &res); err != nil {
+		return res, ErrExposeNegAnnotationInvalid
 	}
 
-	return exposedNegPortMap, nil
+	return res, nil
 }
 
 // NEGEnabled is true if the service uses NEGs.
 func (svc *Service) NEGEnabled() bool {
-	return svc.NEGExposed() || svc.NEGEnabledForIngress()
+	return svc.NEGEnabledForIngress() || svc.NEGExposed()
 }
 
 type BackendConfigs struct {

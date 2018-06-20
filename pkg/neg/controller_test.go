@@ -431,14 +431,15 @@ func validateServiceStateAnnotation(t *testing.T, svc *apiv1.Service, svcPorts [
 	}
 }
 
-func generateNegAnnotation(svcPorts []int32) string {
-	if len(svcPorts) == 0 {
-		return ""
-	}
-	annotation := make(map[int32]annotations.NegAttributes)
+func generateNegAnnotation(ingress bool, svcPorts []int32) string {
+	var annotation annotations.NegAnnotation
+	enabledPorts := make(map[int32]annotations.NegAttributes)
 	for _, port := range svcPorts {
-		annotation[port] = annotations.NegAttributes{}
+		enabledPorts[port] = annotations.NegAttributes{}
 	}
+
+	annotation.Ingress = ingress
+	annotation.ExposedPorts = enabledPorts
 	formattedAnnotation, _ := json.Marshal(annotation)
 	return string(formattedAnnotation)
 }
@@ -491,9 +492,8 @@ func newTestIngress() *extensions.Ingress {
 
 func newTestService(negIngress bool, negSvcPorts []int32) *apiv1.Service {
 	svcAnnotations := map[string]string{}
-	svcAnnotations[annotations.NetworkEndpointGroupAlphaAnnotation] = fmt.Sprint(negIngress)
-	if len(negSvcPorts) > 0 {
-		svcAnnotations[annotations.ExposeNEGAnnotationKey] = generateNegAnnotation(negSvcPorts)
+	if negIngress || len(negSvcPorts) > 0 {
+		svcAnnotations[annotations.NEGAnnotationKey] = generateNegAnnotation(negIngress, negSvcPorts)
 	}
 
 	ports := []apiv1.ServicePort{

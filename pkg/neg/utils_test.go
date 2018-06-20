@@ -129,7 +129,7 @@ func TestNEGServicePorts(t *testing.T) {
 	}{
 		{
 			desc:       "NEG annotation references port that Service does not have",
-			annotation: `{"3000":{}}`,
+			annotation: `{"exposed_ports":{"3000":{}}}`,
 			expectedErr: utilerrors.NewAggregate([]error{
 				fmt.Errorf("ServicePort %v doesn't exist on Service", 3000),
 			}),
@@ -138,14 +138,14 @@ func TestNEGServicePorts(t *testing.T) {
 		},
 		{
 			desc:            "NEG annotation references existing service ports",
-			annotation:      `{"80":{},"443":{}}`,
+			annotation:      `{"exposed_ports":{"80":{},"443":{}}}`,
 			knownPortMap:    PortNameMap{80: "namedport", 443: "3000"},
 			expectedPortMap: PortNameMap{80: "namedport", 443: "3000"},
 		},
 
 		{
 			desc:            "NEGServicePort takes the union of known ports and ports referenced in the annotation",
-			annotation:      `{"80":{}}`,
+			annotation:      `{"exposed_ports":{"80":{}}}`,
 			knownPortMap:    PortNameMap{80: "8080", 3000: "3030", 4000: "4040"},
 			expectedPortMap: PortNameMap{80: "8080"},
 		},
@@ -159,11 +159,11 @@ func TestNEGServicePorts(t *testing.T) {
 		}
 
 		if len(tc.annotation) > 0 {
-			service.Annotations[annotations.ExposeNEGAnnotationKey] = tc.annotation
+			service.Annotations[annotations.NEGAnnotationKey] = tc.annotation
 		}
 
 		svc := annotations.FromService(service)
-		exposeNegStruct, _ := svc.ExposeNegAnnotation()
+		exposeNegStruct, _ := svc.NegAnnotation()
 
 		t.Run(tc.desc, func(t *testing.T) {
 			svcPorts, err := NEGServicePorts(exposeNegStruct, tc.knownPortMap)
@@ -172,7 +172,7 @@ func TestNEGServicePorts(t *testing.T) {
 			}
 
 			if !reflect.DeepEqual(svcPorts, tc.expectedPortMap) {
-				t.Errorf("Expected NEGServicePorts to equal: %v; got: %v", tc.expectedPortMap, svcPorts)
+				t.Errorf("Expected NEGServicePorts to equal: %v; got: %v; err: %v", tc.expectedPortMap, svcPorts, err)
 			}
 
 			if tc.expectedErr != nil {
