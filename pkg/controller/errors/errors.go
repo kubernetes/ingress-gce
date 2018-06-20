@@ -78,7 +78,7 @@ type ErrSvcBackendConfig struct {
 
 // Error returns the port name/number, service name, and the underlying error.
 func (e ErrSvcBackendConfig) Error() string {
-	return fmt.Sprintf("error getting BackendConfig for port %q on service %q, err: %v", e.ServicePortID.Port, e.ServicePortID.Service, e.Err)
+	return fmt.Sprintf("error getting BackendConfig for port %q on service %q, err: %v", e.ServicePortID.Port.String(), e.ServicePortID.Service.String(), e.Err)
 }
 
 // ErrBackendConfigValidation is returned when there was an error validating a BackendConfig.

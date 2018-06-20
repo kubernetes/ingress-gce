@@ -177,7 +177,7 @@ func (t *Translator) TranslateIngress(ing *extensions.Ingress, systemDefaultBack
 		return urlMap, errs
 	}
 
-	errs = append(errs, fmt.Errorf("failed to retrieve the system default backend service %q with port %q", systemDefaultBackend.Service, systemDefaultBackend.Port))
+	errs = append(errs, fmt.Errorf("failed to retrieve the system default backend service %q with port %q: %v", systemDefaultBackend.Service.String(), systemDefaultBackend.Port.String(), err))
 	return urlMap, errs
 }
 
