@@ -22,7 +22,6 @@ import (
 
 	"github.com/kr/pretty"
 	"k8s.io/api/extensions/v1beta1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -110,15 +109,9 @@ func TestBasic(t *testing.T) {
 				t.Errorf("got %d backend services, want %d;\n%s", len(gclb.BackendService), tc.numBackendServices, pretty.Sprint(gclb.BackendService))
 			}
 
-			// Wait for GCLB resources to be deleted.
-			if err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Delete(tc.ing.Name, &metav1.DeleteOptions{}); err != nil {
-				t.Errorf("Delete(%q) = %v, want nil", tc.ing.Name, err)
+			if err := e2e.WaitForIngressDeletion(ctx, Framework.Cloud, gclb, s, ing, false); err != nil {
+				t.Errorf("Failed to wait for ingress deletion: %v", err)
 			}
-			t.Logf("Waiting for GCLB resources to be deleted (%s/%s)", s.Namespace, tc.ing.Name)
-			if err := e2e.WaitForGCLBDeletion(ctx, Framework.Cloud, gclb); err != nil {
-				t.Errorf("e2e.WaitForGCLBDeletion(...) = %v, want nil", err)
-			}
-			t.Logf("GCLB resources deleted (%s/%s)", s.Namespace, tc.ing.Name)
 		})
 	}
 }

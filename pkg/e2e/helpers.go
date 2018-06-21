@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/golang/glog"
@@ -58,11 +59,25 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) 
 	return ing, err
 }
 
+// WaitForIngressDeletion deletes the given ingress and waits for the
+// resources associated with it to be deleted.
+func WaitForIngressDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, s *Sandbox, ing *v1beta1.Ingress, omitSystemDefaultBackend bool) error {
+	if err := s.f.Clientset.Extensions().Ingresses(s.Namespace).Delete(ing.Name, &metav1.DeleteOptions{}); err != nil {
+		return fmt.Errorf("Delete(%q) = %v, want nil", ing.Name, err)
+	}
+	glog.Infof("Waiting for GCLB resources to be deleted (%s/%s), omitSystemDefaultBackend=%t", s.Namespace, ing.Name, omitSystemDefaultBackend)
+	if err := WaitForGCLBDeletion(ctx, c, g, omitSystemDefaultBackend); err != nil {
+		return fmt.Errorf("WaitForGCLBDeletion(...) = %v, want nil", err)
+	}
+	glog.Infof("GCLB resources deleted (%s/%s)", s.Namespace, ing.Name)
+	return nil
+}
+
 // WaitForGCLBDeletion waits for the resources associated with the GLBC to be
 // deleted.
-func WaitForGCLBDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB) error {
+func WaitForGCLBDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, omitSystemDefaultBackend bool) error {
 	return wait.Poll(gclbDeletionInterval, gclbDeletionTimeout, func() (bool, error) {
-		if err := g.CheckResourceDeletion(ctx, c); err != nil {
+		if err := g.CheckResourceDeletion(ctx, c, omitSystemDefaultBackend); err != nil {
 			glog.Infof("WaitForGCLBDeletion(%q) = %v", g.VIP, err)
 			return false, nil
 		}
