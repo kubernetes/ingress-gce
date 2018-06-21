@@ -368,20 +368,20 @@ func TestSyncNegAnnotation(t *testing.T) {
 				t.Fatalf("Service was not retrieved successfully, err: %v", err)
 			}
 
-			controller.syncNegAnnotation(testServiceNamespace, testServiceName, svc.(*apiv1.Service), tc.previousPortMap)
+			controller.syncNegStatusAnnotation(testServiceNamespace, testServiceName, svc.(*apiv1.Service), tc.previousPortMap)
 			svc, _, _ = controller.serviceLister.GetByKey(svcKey)
 
 			var oldSvcPorts []int32
-			for port, _ := range tc.previousPortMap {
+			for port := range tc.previousPortMap {
 				oldSvcPorts = append(oldSvcPorts, port)
 			}
 			validateServiceStateAnnotation(t, svc.(*apiv1.Service), oldSvcPorts)
 
-			controller.syncNegAnnotation(testServiceNamespace, testServiceName, svc.(*apiv1.Service), tc.portMap)
+			controller.syncNegStatusAnnotation(testServiceNamespace, testServiceName, svc.(*apiv1.Service), tc.portMap)
 			svc, _, _ = controller.serviceLister.GetByKey(svcKey)
 
 			var svcPorts []int32
-			for port, _ := range tc.portMap {
+			for port := range tc.portMap {
 				svcPorts = append(svcPorts, port)
 			}
 			validateServiceStateAnnotation(t, svc.(*apiv1.Service), svcPorts)

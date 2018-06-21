@@ -163,7 +163,9 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 func (c *Controller) IsHealthy() error {
 	// check if last seen service and endpoint processing is more than an hour ago
 	if c.syncTracker.Get().Before(time.Now().Add(-time.Hour)) {
-		msg := fmt.Sprintf("NEG controller has not proccessed any service and endpoint updates for more than an hour. Something went wrong. Last sync was on %v", c.syncTracker.Get())
+		msg := fmt.Sprintf("NEG controller has not processed any service "+
+			"and endpoint updates for more than an hour. Something went wrong. "+
+			"Last sync was on %v", c.syncTracker.Get())
 		glog.Error(msg)
 		return fmt.Errorf(msg)
 	}
@@ -240,7 +242,7 @@ func (c *Controller) processService(key string) error {
 	if !enabled {
 		c.manager.StopSyncer(namespace, name)
 		// delete the annotation
-		return c.syncNegAnnotation(namespace, name, service, make(PortNameMap))
+		return c.syncNegStatusAnnotation(namespace, name, service, make(PortNameMap))
 	}
 
 	glog.V(2).Infof("Syncing service %q", key)
@@ -272,19 +274,20 @@ func (c *Controller) processService(key string) error {
 		svcPortMap = svcPortMap.Union(negSvcPorts)
 	}
 
-	err = c.syncNegAnnotation(namespace, name, service, svcPortMap)
+	err = c.syncNegStatusAnnotation(namespace, name, service, svcPortMap)
 	if err != nil {
 		return err
 	}
 	return c.manager.EnsureSyncers(namespace, name, svcPortMap)
 }
 
-func (c *Controller) syncNegAnnotation(namespace, name string, service *apiv1.Service, portMap PortNameMap) error {
+func (c *Controller) syncNegStatusAnnotation(namespace, name string, service *apiv1.Service, portMap PortNameMap) error {
 	zones, err := c.zoneGetter.ListZones()
 	if err != nil {
 		return err
 	}
 
+	// Remove NEG Status Annotation when no NEG is needed
 	if len(portMap) == 0 {
 		if _, ok := service.Annotations[annotations.NEGStatusKey]; ok {
 			// TODO: use PATCH to remove annotation
@@ -297,17 +300,15 @@ func (c *Controller) syncNegAnnotation(namespace, name string, service *apiv1.Se
 	}
 
 	portToNegs := make(PortNameMap)
-	for svcPort, _ := range portMap {
+	for svcPort := range portMap {
 		portToNegs[svcPort] = c.namer.NEG(namespace, name, svcPort)
 	}
 	negSvcState := GetNegStatus(zones, portToNegs)
-	formattedAnnotation, err := json.Marshal(negSvcState)
+	bytes, err := json.Marshal(negSvcState)
 	if err != nil {
 		return err
 	}
-
-	annotation := string(formattedAnnotation)
-
+	annotation := string(bytes)
 	existingAnnotation, ok := service.Annotations[annotations.NEGStatusKey]
 	if ok && existingAnnotation == annotation {
 		return nil
@@ -315,6 +316,7 @@ func (c *Controller) syncNegAnnotation(namespace, name string, service *apiv1.Se
 
 	service.Annotations[annotations.NEGStatusKey] = annotation
 	glog.V(2).Infof("Updating NEG visibility annotation %q on service %s/%s.", annotation, namespace, name)
+	// TODO: use PATCH to Update Annotation
 	return c.serviceLister.Update(service)
 }
 

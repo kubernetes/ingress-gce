@@ -101,13 +101,13 @@ func (s *syncer) init() {
 // Start starts the syncer go routine if it has not been started.
 func (s *syncer) Start() error {
 	if !s.IsStopped() {
-		return fmt.Errorf("NEG syncer for %s/%s-%v/%s is already running.", s.namespace, s.name, s.port, s.targetPort)
+		return fmt.Errorf("NEG syncer for %s is already running.", s.formattedName())
 	}
 	if s.IsShuttingDown() {
-		return fmt.Errorf("NEG syncer for %s/%s-%v/%s is shutting down. ", s.namespace, s.name, s.port, s.targetPort)
+		return fmt.Errorf("NEG syncer for %s is shutting down. ", s.formattedName())
 	}
 
-	glog.V(2).Infof("Starting NEG syncer for service port %s/%s-%v/%s", s.namespace, s.name, s.port, s.targetPort)
+	glog.V(2).Infof("Starting NEG syncer for service port %s", s.formattedName())
 	s.init()
 	go func() {
 		for {
@@ -136,7 +136,7 @@ func (s *syncer) Start() error {
 					s.stateLock.Lock()
 					s.shuttingDown = false
 					s.stateLock.Unlock()
-					glog.V(2).Infof("Stopping NEG syncer for %s/%s-%v-%s", s.namespace, s.name, s.port, s.targetPort)
+					glog.V(2).Infof("Stopping NEG syncer for %s", s.formattedName())
 					return
 				}
 			case <-retryCh:
@@ -152,7 +152,7 @@ func (s *syncer) Stop() {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	if !s.stopped {
-		glog.V(2).Infof("Stopping NEG syncer for service port %s/%s-%v/%s", s.namespace, s.name, s.port, s.targetPort)
+		glog.V(2).Infof("Stopping NEG syncer for service port %s", s.formattedName())
 		s.stopped = true
 		s.shuttingDown = true
 		close(s.syncCh)
@@ -162,7 +162,7 @@ func (s *syncer) Stop() {
 // Sync informs syncer to run sync loop as soon as possible.
 func (s *syncer) Sync() bool {
 	if s.IsStopped() {
-		glog.Warningf("NEG syncer for %s/%s-%s is already stopped.", s.namespace, s.name, s.targetPort)
+		glog.Warningf("NEG syncer for %s is already stopped.", s.formattedName())
 		return false
 	}
 	select {
@@ -187,10 +187,10 @@ func (s *syncer) IsShuttingDown() bool {
 
 func (s *syncer) sync() (err error) {
 	if s.IsStopped() || s.IsShuttingDown() {
-		glog.V(4).Infof("Skip syncing NEG %q for %s/%s-%s.", s.negName, s.namespace, s.name, s.targetPort)
+		glog.V(4).Infof("Skip syncing NEG %q for %s.", s.negName, s.formattedName())
 		return nil
 	}
-	glog.V(2).Infof("Sync NEG %q for %s/%s-%s", s.negName, s.namespace, s.name, s.targetPort)
+	glog.V(2).Infof("Sync NEG %q for %s.", s.negName, s.formattedName())
 	start := time.Now()
 	defer observeNegSync(s.negName, attachSync, err, start)
 	ep, exists, err := s.endpointLister.Get(
@@ -263,13 +263,13 @@ func (s *syncer) ensureNetworkEndpointGroups() error {
 				errList = append(errList, err)
 			} else {
 				if svc := getService(s.serviceLister, s.namespace, s.name); svc != nil {
-					s.recorder.Eventf(svc, apiv1.EventTypeNormal, "Delete", "Deleted NEG %q for %s/%s-%s in %q.", s.negName, s.namespace, s.name, s.targetPort, zone)
+					s.recorder.Eventf(svc, apiv1.EventTypeNormal, "Delete", "Deleted NEG %q for %s in %q.", s.negName, s.formattedName(), zone)
 				}
 			}
 		}
 
 		if needToCreate {
-			glog.V(2).Infof("Creating NEG %q for %s/%s in %q.", s.negName, s.namespace, s.name, zone)
+			glog.V(2).Infof("Creating NEG %q for %s in %q.", s.negName, s.formattedName(), zone)
 			err = s.cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 				Name:                s.negName,
 				Type:                gce.NEGLoadBalancerType,
@@ -283,7 +283,7 @@ func (s *syncer) ensureNetworkEndpointGroups() error {
 				errList = append(errList, err)
 			} else {
 				if svc := getService(s.serviceLister, s.namespace, s.name); svc != nil {
-					s.recorder.Eventf(svc, apiv1.EventTypeNormal, "Create", "Created NEG %q for %s/%s-%s in %q.", s.negName, s.namespace, s.name, s.targetPort, zone)
+					s.recorder.Eventf(svc, apiv1.EventTypeNormal, "Create", "Created NEG %q for %s in %q.", s.negName, s.formattedName(), zone)
 				}
 			}
 		}
@@ -436,13 +436,13 @@ func (s *syncer) toNetworkEndpointBatch(endpoints sets.String) ([]*compute.Netwo
 
 func (s *syncer) attachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
 	wg.Add(1)
-	glog.V(2).Infof("Attaching %d endpoint(s) for %s/%s-%s into NEG %s in %s.", len(networkEndpoints), s.namespace, s.name, s.targetPort, s.negName, zone)
+	glog.V(2).Infof("Attaching %d endpoint(s) for %s into NEG %s in %s.", len(networkEndpoints), s.formattedName(), s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.AttachNetworkEndpoints, "Attach")
 }
 
 func (s *syncer) detachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
 	wg.Add(1)
-	glog.V(2).Infof("Detaching %d endpoint(s) for %s/%s-%s into NEG %s in %s.", len(networkEndpoints), s.namespace, s.name, s.targetPort, s.negName, zone)
+	glog.V(2).Infof("Detaching %d endpoint(s) for %s into NEG %s in %s.", len(networkEndpoints), s.formattedName(), s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.DetachNetworkEndpoints, "Detach")
 }
 
@@ -475,6 +475,10 @@ func (s *syncer) nextRetryDelay() time.Duration {
 func (s *syncer) resetRetryDelay() {
 	s.retryCount = 0
 	s.lastRetryDelay = time.Duration(0)
+}
+
+func (s *syncer) formattedName() string {
+	return fmt.Sprintf("%s/%s-%v/%s", s.namespace, s.name, s.port, s.targetPort)
 }
 
 // encodeEndpoint encodes ip and instance into a single string
