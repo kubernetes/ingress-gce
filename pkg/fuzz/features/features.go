@@ -27,4 +27,5 @@ var All = []fuzz.Feature{
 	PresharedCert,
 	CDN,
 	IAP,
+	SecurityPolicy,
 }
