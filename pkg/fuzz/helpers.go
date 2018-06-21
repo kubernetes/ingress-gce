@@ -283,3 +283,12 @@ func (b *BackendConfigBuilder) SetIAPConfig(enabled bool, secret string) *Backen
 	b.backendConfig.Spec.Iap.OAuthClientCredentials = &backendconfig.OAuthClientCredentials{SecretName: secret}
 	return b
 }
+
+// SetSecurityPolicy sets security policy on the BackendConfig.
+func (b *BackendConfigBuilder) SetSecurityPolicy(securityPolicy string) *BackendConfigBuilder {
+	if b.backendConfig.Spec.SecurityPolicy == nil {
+		b.backendConfig.Spec.SecurityPolicy = &backendconfig.SecurityPolicyConfig{}
+	}
+	b.backendConfig.Spec.SecurityPolicy.Name = securityPolicy
+	return b
+}
