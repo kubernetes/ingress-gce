@@ -78,7 +78,7 @@ func TestNewNonNEGService(t *testing.T) {
 
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
-	controller.serviceLister.Add(newTestService(false, []int32{}))
+	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
 	controller.ingressLister.Add(newTestIngress())
 	err := controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
@@ -140,7 +140,7 @@ func TestNewNEGService(t *testing.T) {
 			controller := newTestController(fake.NewSimpleClientset())
 			defer controller.stop()
 			svcKey := serviceKeyFunc(testServiceNamespace, testServiceName)
-			controller.serviceLister.Add(newTestService(tc.ingress, tc.svcPorts))
+			controller.serviceLister.Add(newTestService(controller, tc.ingress, tc.svcPorts))
 
 			if tc.ingress {
 				controller.ingressLister.Add(newTestIngress())
@@ -160,11 +160,12 @@ func TestNewNEGService(t *testing.T) {
 				expectedSyncers = len(svcPorts.Union(testIngressPorts))
 			}
 			validateSyncers(t, controller, expectedSyncers, false)
-			svc, exists, _ := controller.serviceLister.GetByKey(svcKey)
-			if !exists || err != nil {
+			svcClient := controller.client.CoreV1().Services(testServiceNamespace)
+			svc, err := svcClient.Get(testServiceName, metav1.GetOptions{})
+			if err != nil {
 				t.Fatalf("Service was not created successfully, err: %v", err)
 			}
-			validateServiceStateAnnotation(t, svc.(*apiv1.Service), tc.svcPorts)
+			validateServiceStateAnnotation(t, svc, tc.svcPorts)
 		})
 	}
 }
@@ -174,31 +175,32 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
-	controller.serviceLister.Add(newTestService(false, []int32{}))
+	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
 	controller.ingressLister.Add(newTestIngress())
+	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
 	svcKey := serviceKeyFunc(testServiceNamespace, testServiceName)
 	err := controller.processService(svcKey)
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
 	validateSyncers(t, controller, 0, true)
-	svc, exists, _ := controller.serviceLister.GetByKey(svcKey)
-	if !exists || err != nil {
-		t.Fatalf("Service was not created successfully, err: %v", err)
+	svc, err := svcClient.Get(testServiceName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
 
-	controller.serviceLister.Update(newTestService(true, []int32{}))
+	controller.serviceLister.Update(newTestService(controller, true, []int32{}))
 	err = controller.processService(svcKey)
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
 	validateSyncers(t, controller, 3, false)
-	svc, exists, _ = controller.serviceLister.GetByKey(svcKey)
+	svc, err = svcClient.Get(testServiceName, metav1.GetOptions{})
 	svcPorts := []int32{80, 8081, 443}
-	if !exists || err != nil {
+	if err != nil {
 		t.Fatalf("Service was not created successfully, err: %v", err)
 	}
-	validateServiceStateAnnotation(t, svc.(*apiv1.Service), svcPorts)
+	validateServiceStateAnnotation(t, svc, svcPorts)
 }
 
 func TestDisableNEGServiceWithIngress(t *testing.T) {
@@ -206,7 +208,7 @@ func TestDisableNEGServiceWithIngress(t *testing.T) {
 
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
-	controller.serviceLister.Add(newTestService(true, []int32{}))
+	controller.serviceLister.Add(newTestService(controller, true, []int32{}))
 	controller.ingressLister.Add(newTestIngress())
 	err := controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
@@ -214,7 +216,7 @@ func TestDisableNEGServiceWithIngress(t *testing.T) {
 	}
 	validateSyncers(t, controller, 3, false)
 
-	controller.serviceLister.Update(newTestService(false, []int32{}))
+	controller.serviceLister.Update(newTestService(controller, false, []int32{}))
 	err = controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
@@ -311,7 +313,9 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		portMap := gatherPortMappingUsedByIngress(tc.ings, newTestService(true, []int32{}))
+		controller := newTestController(fake.NewSimpleClientset())
+		defer controller.stop()
+		portMap := gatherPortMappingUsedByIngress(tc.ings, newTestService(controller, true, []int32{}))
 		if len(portMap) != len(tc.expect) {
 			t.Errorf("Expect %v ports, but got %v.", len(tc.expect), len(portMap))
 		}
@@ -330,8 +334,8 @@ func TestSyncNegAnnotation(t *testing.T) {
 	// is changed. When there is no change, Update should not be called.
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
-	controller.serviceLister.Add(newTestService(false, []int32{}))
-	svcKey := serviceKeyFunc(testServiceNamespace, testServiceName)
+	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
+	newTestService(controller, false, []int32{})
 
 	testCases := []struct {
 		desc            string
@@ -363,28 +367,23 @@ func TestSyncNegAnnotation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			svc, exists, err := controller.serviceLister.GetByKey(svcKey)
-			if !exists || err != nil {
-				t.Fatalf("Service was not retrieved successfully, err: %v", err)
-			}
-
-			controller.syncNegStatusAnnotation(testServiceNamespace, testServiceName, svc.(*apiv1.Service), tc.previousPortMap)
-			svc, _, _ = controller.serviceLister.GetByKey(svcKey)
+			controller.syncNegStatusAnnotation(testServiceNamespace, testServiceName, tc.previousPortMap)
+			svc, _ := svcClient.Get(testServiceName, metav1.GetOptions{})
 
 			var oldSvcPorts []int32
 			for port := range tc.previousPortMap {
 				oldSvcPorts = append(oldSvcPorts, port)
 			}
-			validateServiceStateAnnotation(t, svc.(*apiv1.Service), oldSvcPorts)
+			validateServiceStateAnnotation(t, svc, oldSvcPorts)
 
-			controller.syncNegStatusAnnotation(testServiceNamespace, testServiceName, svc.(*apiv1.Service), tc.portMap)
-			svc, _, _ = controller.serviceLister.GetByKey(svcKey)
+			controller.syncNegStatusAnnotation(testServiceNamespace, testServiceName, tc.portMap)
+			svc, _ = svcClient.Get(testServiceName, metav1.GetOptions{})
 
 			var svcPorts []int32
 			for port := range tc.portMap {
 				svcPorts = append(svcPorts, port)
 			}
-			validateServiceStateAnnotation(t, svc.(*apiv1.Service), svcPorts)
+			validateServiceStateAnnotation(t, svc, svcPorts)
 		})
 	}
 }
@@ -490,7 +489,7 @@ func newTestIngress() *extensions.Ingress {
 	}
 }
 
-func newTestService(negIngress bool, negSvcPorts []int32) *apiv1.Service {
+func newTestService(c *Controller, negIngress bool, negSvcPorts []int32) *apiv1.Service {
 	svcAnnotations := map[string]string{}
 	if negIngress || len(negSvcPorts) > 0 {
 		svcAnnotations[annotations.NEGAnnotationKey] = generateNegAnnotation(negIngress, negSvcPorts)
@@ -526,7 +525,7 @@ func newTestService(negIngress bool, negSvcPorts []int32) *apiv1.Service {
 		)
 	}
 
-	return &apiv1.Service{
+	svc := &apiv1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        testServiceName,
 			Namespace:   testServiceNamespace,
@@ -536,4 +535,7 @@ func newTestService(negIngress bool, negSvcPorts []int32) *apiv1.Service {
 			Ports: ports,
 		},
 	}
+
+	c.client.CoreV1().Services(testServiceNamespace).Create(svc)
+	return svc
 }
