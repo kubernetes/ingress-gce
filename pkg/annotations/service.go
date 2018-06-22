@@ -65,11 +65,6 @@ const (
 
 // NegAnnotation is the format of the annotation associated with the
 // NEGAnnotationKey key.
-// WARNING: The feature will NOT be effective in the following circumstances:
-// 1. Service is not referenced in any ingress.
-// 2. Adding this annotation on ingress.
-// ExposedPorts maps ServicePort to attributes of the NEG that should be
-// associated with the ServicePort. ServicePorts in this map will be NEG-enabled.
 type NegAnnotation struct {
 	// "Ingress" indicates whether to enable NEG feature for Ingress referencing
 	// the service. Each NEG correspond to a service port.
@@ -81,6 +76,8 @@ type NegAnnotation struct {
 	Ingress bool `json:"ingress,omitempty"`
 	// ExposedPorts specifies the service ports to be exposed as stand-alone NEG.
 	// The exposed NEGs will be created and managed by NEG controller.
+	// ExposedPorts maps ServicePort to attributes of the NEG that should be
+	// associated with the ServicePort.
 	ExposedPorts map[int32]NegAttributes `json:"exposed_ports,omitempty"`
 }
 
