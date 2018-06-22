@@ -36,7 +36,7 @@ func TestNEGService(t *testing.T) {
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						NetworkEndpointGroupAlphaAnnotation: "true",
+						NEGAnnotationKey: `{"ingress":true}`,
 					},
 				},
 			},
@@ -48,7 +48,7 @@ func TestNEGService(t *testing.T) {
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						ExposeNEGAnnotationKey: `"{"80":{}}"`,
+						NEGAnnotationKey: `{"exposed_ports":{"80":{}}}`,
 					},
 				},
 			},
@@ -60,8 +60,7 @@ func TestNEGService(t *testing.T) {
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						NetworkEndpointGroupAlphaAnnotation: "true",
-						ExposeNEGAnnotationKey:              `"{"80":{}}"`,
+						NEGAnnotationKey: `{"ingress":true,"exposed_ports":{"80":{}}}`,
 					},
 				},
 			},
@@ -262,11 +261,11 @@ func TestBackendConfigs(t *testing.T) {
 	}
 }
 
-func TestExposeNegAnnotation(t *testing.T) {
+func TestNegAnnotation(t *testing.T) {
 	testcases := []struct {
 		desc        string
 		annotation  string
-		expected    ExposeNegAnnotation
+		expected    NegAnnotation
 		expectedErr error
 	}{
 		{
@@ -280,15 +279,19 @@ func TestExposeNegAnnotation(t *testing.T) {
 			expectedErr: ErrExposeNegAnnotationInvalid,
 		},
 		{
-			desc:       "NEG annotation references existing service ports",
-			expected:   ExposeNegAnnotation{80: NegAttributes{}, 443: NegAttributes{}},
-			annotation: `{"80":{},"443":{}}`,
+			desc: "NEG annotation references existing service ports",
+			expected: NegAnnotation{
+				ExposedPorts: map[int32]NegAttributes{80: NegAttributes{}, 443: NegAttributes{}},
+			},
+			annotation: `{"exposed_ports":{"80":{},"443":{}}}`,
 		},
 
 		{
 			desc:       "NEGServicePort takes the union of known ports and ports referenced in the annotation",
-			annotation: `{"80":{}}`,
-			expected:   ExposeNegAnnotation{80: NegAttributes{}},
+			annotation: `{"exposed_ports":{"80":{}}}`,
+			expected: NegAnnotation{
+				ExposedPorts: map[int32]NegAttributes{80: NegAttributes{}},
+			},
 		},
 	}
 
@@ -301,18 +304,18 @@ func TestExposeNegAnnotation(t *testing.T) {
 
 		t.Run(tc.desc, func(t *testing.T) {
 			if len(tc.annotation) > 0 {
-				service.Annotations[ExposeNEGAnnotationKey] = tc.annotation
+				service.Annotations[NEGAnnotationKey] = tc.annotation
 			}
 
 			svc := FromService(service)
-			exposeNegStruct, err := svc.ExposeNegAnnotation()
+			exposeNegStruct, err := svc.NegAnnotation()
 
 			if tc.expectedErr == nil && err != nil {
 				t.Errorf("ExpectedNEGServicePorts to not return an error, got: %v", err)
 			}
 
 			if !reflect.DeepEqual(exposeNegStruct, tc.expected) {
-				t.Errorf("Expected NEGServicePorts to equal: %v; got: %v", tc.expected, exposeNegStruct)
+				t.Errorf("Expected NEGServicePorts to equal: %v; got: %v", tc.expected, exposeNegStruct.ExposedPorts)
 			}
 
 			if tc.expectedErr != nil && err != tc.expectedErr {

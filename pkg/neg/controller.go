@@ -26,8 +26,10 @@ import (
 	"github.com/golang/glog"
 	apiv1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -63,6 +65,7 @@ type Controller struct {
 	endpointSynced cache.InformerSynced
 	ingressLister  cache.Indexer
 	serviceLister  cache.Indexer
+	client         kubernetes.Interface
 
 	// serviceQueue takes service key as work item. Service key with format "namespace/name".
 	serviceQueue workqueue.RateLimitingInterface
@@ -97,6 +100,7 @@ func NewController(
 		ctx.EndpointInformer.GetIndexer())
 
 	negController := &Controller{
+		client:         ctx.KubeClient,
 		manager:        manager,
 		resyncPeriod:   resyncPeriod,
 		recorder:       recorder,
@@ -242,7 +246,7 @@ func (c *Controller) processService(key string) error {
 	if !enabled {
 		c.manager.StopSyncer(namespace, name)
 		// delete the annotation
-		return c.syncNegStatusAnnotation(namespace, name, service, make(PortNameMap))
+		return c.syncNegStatusAnnotation(namespace, name, make(PortNameMap))
 	}
 
 	glog.V(2).Infof("Syncing service %q", key)
@@ -261,7 +265,7 @@ func (c *Controller) processService(key string) error {
 			knownPorts[sp.Port] = sp.TargetPort.String()
 		}
 
-		annotation, err := annotations.FromService(service).ExposeNegAnnotation()
+		annotation, err := annotations.FromService(service).NegAnnotation()
 		if err != nil {
 			return err
 		}
@@ -274,15 +278,20 @@ func (c *Controller) processService(key string) error {
 		svcPortMap = svcPortMap.Union(negSvcPorts)
 	}
 
-	err = c.syncNegStatusAnnotation(namespace, name, service, svcPortMap)
+	err = c.syncNegStatusAnnotation(namespace, name, svcPortMap)
 	if err != nil {
 		return err
 	}
 	return c.manager.EnsureSyncers(namespace, name, svcPortMap)
 }
 
-func (c *Controller) syncNegStatusAnnotation(namespace, name string, service *apiv1.Service, portMap PortNameMap) error {
+func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap PortNameMap) error {
 	zones, err := c.zoneGetter.ListZones()
+	if err != nil {
+		return err
+	}
+	svcClient := c.client.CoreV1().Services(namespace)
+	service, err := svcClient.Get(name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -293,7 +302,8 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, service *ap
 			// TODO: use PATCH to remove annotation
 			delete(service.Annotations, annotations.NEGStatusKey)
 			glog.V(2).Infof("Removing expose NEG annotation from service: %s/%s", namespace, name)
-			return c.serviceLister.Update(service)
+			_, err = svcClient.Update(service)
+			return err
 		}
 		// service doesn't have the expose NEG annotation and doesn't need update
 		return nil
@@ -316,8 +326,8 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, service *ap
 
 	service.Annotations[annotations.NEGStatusKey] = annotation
 	glog.V(2).Infof("Updating NEG visibility annotation %q on service %s/%s.", annotation, namespace, name)
-	// TODO: use PATCH to Update Annotation
-	return c.serviceLister.Update(service)
+	_, err = svcClient.Update(service)
+	return err
 }
 
 func (c *Controller) handleErr(err error, key interface{}) {
