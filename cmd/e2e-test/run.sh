@@ -17,6 +17,7 @@
 # run.sh manages the settings required for running containerized in a
 # Kubernetes cluster.
 echo '--- BEGIN ---'
+
 for ATTEMPT in $(seq 60); do
   PROJECT=$(curl -H'Metadata-Flavor:Google' metadata.google.internal/computeMetadata/v1/project/project-id 2>/dev/null)
   if [[ -n "$PROJECT" ]]; then
@@ -44,11 +45,12 @@ echo
 ${CMD} "$@" 2>&1
 echo
 
+GCLOUD=/google-cloud-sdk/bin/gcloud
 RESOURCES="forwarding-rules target-http-proxies target-https-proxies url-maps backend-services"
 for RES in ${RESOURCES}; do
   echo ==============================================================================
   echo "GCP RESOURCE: ${RES}"
-  gcloud compute ${RES} list --project ${PROJECT} --format yaml
+  ${GCLOUD} compute ${RES} list --quiet --project ${PROJECT} --format yaml 2>&1
 done
 
 echo ==============================================================================
