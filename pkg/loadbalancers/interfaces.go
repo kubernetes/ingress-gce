@@ -44,13 +44,13 @@ type LoadBalancers interface {
 	GetTargetHttpProxy(name string) (*compute.TargetHttpProxy, error)
 	CreateTargetHttpProxy(proxy *compute.TargetHttpProxy) error
 	DeleteTargetHttpProxy(name string) error
-	SetUrlMapForTargetHttpProxy(proxy *compute.TargetHttpProxy, urlMap *compute.UrlMap) error
+	SetUrlMapForTargetHttpProxy(proxy *compute.TargetHttpProxy, urlMapLink string) error
 
 	// TargetHttpsProxies
 	GetTargetHttpsProxy(name string) (*compute.TargetHttpsProxy, error)
 	CreateTargetHttpsProxy(proxy *compute.TargetHttpsProxy) error
 	DeleteTargetHttpsProxy(name string) error
-	SetUrlMapForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, urlMap *compute.UrlMap) error
+	SetUrlMapForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, urlMapLink string) error
 	SetSslCertificateForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, sslCertURLs []string) error
 
 	// SslCertificates
