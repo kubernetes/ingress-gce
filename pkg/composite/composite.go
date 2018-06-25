@@ -173,12 +173,21 @@ type Backend struct {
 }
 
 type BackendServiceIAP struct {
-	Enabled                  bool     `json:"enabled,omitempty"`
-	Oauth2ClientId           string   `json:"oauth2ClientId,omitempty"`
-	Oauth2ClientSecret       string   `json:"oauth2ClientSecret,omitempty"`
-	Oauth2ClientSecretSha256 string   `json:"oauth2ClientSecretSha256,omitempty"`
-	ForceSendFields          []string `json:"-"`
-	NullFields               []string `json:"-"`
+	Enabled                  bool                               `json:"enabled,omitempty"`
+	Oauth2ClientId           string                             `json:"oauth2ClientId,omitempty"`
+	Oauth2ClientSecret       string                             `json:"oauth2ClientSecret,omitempty"`
+	Oauth2ClientSecretSha256 string                             `json:"oauth2ClientSecretSha256,omitempty"`
+	ForceSendFields          []string                           `json:"-"`
+	NullFields               []string                           `json:"-"`
+	Oauth2ClientInfo         *BackendServiceIAPOAuth2ClientInfo `json:"oauth2ClientInfo,omitempty"`
+}
+
+type BackendServiceIAPOAuth2ClientInfo struct {
+	ApplicationName       string   `json:"applicationName,omitempty"`
+	ClientName            string   `json:"clientName,omitempty"`
+	DeveloperEmailAddress string   `json:"developerEmailAddress,omitempty"`
+	ForceSendFields       []string `json:"-"`
+	NullFields            []string `json:"-"`
 }
 
 type BackendServiceCdnPolicy struct {

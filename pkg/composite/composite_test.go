@@ -64,6 +64,14 @@ func TestBackendServiceIAP(t *testing.T) {
 	}
 }
 
+func TestBackendServiceIAPOAuth2ClientInfo(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceIAPOAuth2ClientInfo{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceIAPOAuth2ClientInfo{})
+	if err := typeEquality(compositeType, alphaType); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBackendServiceCdnPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceCdnPolicy{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceCdnPolicy{})
@@ -190,7 +198,7 @@ func typeEquality(t1, t2 reflect.Type) error {
 	if !reflect.DeepEqual(t1Fields, t2Fields) {
 		return fmt.Errorf("type = %+v, want %+v", t1Fields, t2Fields)
 	}
-	for n, _ := range t1Fields {
+	for n := range t1Fields {
 		f1, _ := t1.FieldByName(n)
 		f2, _ := t2.FieldByName(n)
 		if err := compareFields(f1, f2); err != nil {
