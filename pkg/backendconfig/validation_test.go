@@ -27,7 +27,7 @@ import (
 )
 
 var (
-	beConfig = &backendconfigv1beta1.BackendConfig{
+	defaultBeConfig = &backendconfigv1beta1.BackendConfig{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Namespace: "default",
 		},
@@ -46,10 +46,12 @@ func TestValidateIAP(t *testing.T) {
 	testCases := []struct {
 		desc        string
 		init        func(kubeClient kubernetes.Interface)
+		beConfig    *backendconfigv1beta1.BackendConfig
 		expectError bool
 	}{
 		{
-			desc: "secret does not exist",
+			desc:     "secret does not exist",
+			beConfig: defaultBeConfig,
 			init: func(kubeClient kubernetes.Interface) {
 				secret := &v1.Secret{
 					ObjectMeta: meta_v1.ObjectMeta{
@@ -62,7 +64,8 @@ func TestValidateIAP(t *testing.T) {
 			expectError: true,
 		},
 		{
-			desc: "secret does not contain client_id",
+			desc:     "secret does not contain client_id",
+			beConfig: defaultBeConfig,
 			init: func(kubeClient kubernetes.Interface) {
 				secret := &v1.Secret{
 					ObjectMeta: meta_v1.ObjectMeta{
@@ -78,7 +81,8 @@ func TestValidateIAP(t *testing.T) {
 			expectError: true,
 		},
 		{
-			desc: "secret does not contain client_secret",
+			desc:     "secret does not contain client_secret",
+			beConfig: defaultBeConfig,
 			init: func(kubeClient kubernetes.Interface) {
 				secret := &v1.Secret{
 					ObjectMeta: meta_v1.ObjectMeta{
@@ -94,7 +98,8 @@ func TestValidateIAP(t *testing.T) {
 			expectError: true,
 		},
 		{
-			desc: "validation passes",
+			desc:     "validation passes",
+			beConfig: defaultBeConfig,
 			init: func(kubeClient kubernetes.Interface) {
 				secret := &v1.Secret{
 					ObjectMeta: meta_v1.ObjectMeta{
@@ -112,13 +117,20 @@ func TestValidateIAP(t *testing.T) {
 		},
 		{
 			desc: "iap and cdn enabled at the same time",
+			beConfig: &backendconfigv1beta1.BackendConfig{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: backendconfigv1beta1.BackendConfigSpec{
+					Iap: &backendconfigv1beta1.IAPConfig{
+						Enabled: true,
+					},
+					Cdn: &backendconfigv1beta1.CDNConfig{
+						Enabled: true,
+					},
+				},
+			},
 			init: func(kubeClient kubernetes.Interface) {
-				// TODO(rramkumar): Don't modify in-flight.
-				// This works now since this is the last test in the
-				// list of cases.
-				beConfig.Spec.Cdn = &backendconfigv1beta1.CDNConfig{
-					Enabled: true,
-				}
 				secret := &v1.Secret{
 					ObjectMeta: meta_v1.ObjectMeta{
 						Namespace: "default",
@@ -138,7 +150,7 @@ func TestValidateIAP(t *testing.T) {
 	for _, testCase := range testCases {
 		kubeClient := fake.NewSimpleClientset()
 		testCase.init(kubeClient)
-		err := Validate(kubeClient, beConfig)
+		err := Validate(kubeClient, testCase.beConfig)
 		if testCase.expectError && err == nil {
 			t.Errorf("%v: Expected error but got nil", testCase.desc)
 		}
