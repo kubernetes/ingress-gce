@@ -24,7 +24,7 @@ import (
 
 	"github.com/golang/glog"
 
-	computealpha "google.golang.org/api/compute/v0.alpha"
+	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 
 	v1 "k8s.io/api/core/v1"
@@ -450,10 +450,10 @@ func getBackendsForIGs(igLinks []string, bm BalancingMode) []*composite.Backend 
 	return backends
 }
 
-func getBackendsForNEGs(negs []*computealpha.NetworkEndpointGroup) []*computealpha.Backend {
-	var backends []*computealpha.Backend
+func getBackendsForNEGs(negs []*computebeta.NetworkEndpointGroup) []*computebeta.Backend {
+	var backends []*computebeta.Backend
 	for _, neg := range negs {
-		b := &computealpha.Backend{
+		b := &computebeta.Backend{
 			Group:              neg.SelfLink,
 			BalancingMode:      string(Rate),
 			MaxRatePerEndpoint: maxRPS,
@@ -543,7 +543,7 @@ func (b *Backends) Link(sp utils.ServicePort, zones []string) error {
 		return nil
 	}
 	negName := sp.BackendName(b.namer)
-	var negs []*computealpha.NetworkEndpointGroup
+	var negs []*computebeta.NetworkEndpointGroup
 	var err error
 	for _, zone := range zones {
 		neg, err := b.negGetter.GetNetworkEndpointGroup(negName, zone)
@@ -554,7 +554,7 @@ func (b *Backends) Link(sp utils.ServicePort, zones []string) error {
 	}
 
 	beName := sp.BackendName(b.namer)
-	backendService, err := b.cloud.GetAlphaGlobalBackendService(beName)
+	backendService, err := b.cloud.GetBetaGlobalBackendService(beName)
 	if err != nil {
 		return err
 	}
@@ -574,7 +574,7 @@ func (b *Backends) Link(sp utils.ServicePort, zones []string) error {
 
 	if !oldBackends.Equal(newBackends) {
 		backendService.Backends = targetBackends
-		return b.cloud.UpdateAlphaGlobalBackendService(backendService)
+		return b.cloud.UpdateBetaGlobalBackendService(backendService)
 	}
 	return nil
 }

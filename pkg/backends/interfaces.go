@@ -17,7 +17,7 @@ limitations under the License.
 package backends
 
 import (
-	computealpha "google.golang.org/api/compute/v0.alpha"
+	computebeta "google.golang.org/api/compute/v0.beta"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -45,5 +45,5 @@ type BackendPool interface {
 
 // NEGGetter is an interface to retrieve NEG object
 type NEGGetter interface {
-	GetNetworkEndpointGroup(name string, zone string) (*computealpha.NetworkEndpointGroup, error)
+	GetNetworkEndpointGroup(name string, zone string) (*computebeta.NetworkEndpointGroup, error)
 }
