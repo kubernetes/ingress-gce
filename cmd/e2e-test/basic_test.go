@@ -110,7 +110,7 @@ func TestBasic(t *testing.T) {
 			}
 
 			if err := e2e.WaitForIngressDeletion(ctx, Framework.Cloud, gclb, s, ing, false); err != nil {
-				t.Errorf("Failed to wait for ingress deletion: %v", err)
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, false) = %v, want nil", ing.Name, err)
 			}
 		})
 	}
