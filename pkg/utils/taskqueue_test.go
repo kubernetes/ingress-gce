@@ -20,7 +20,6 @@ import (
 	"errors"
 	"reflect"
 	"testing"
-	"time"
 
 	"k8s.io/client-go/tools/cache"
 )
@@ -28,7 +27,6 @@ import (
 func TestPeriodicTaskQueue(t *testing.T) {
 	t.Parallel()
 	synced := map[string]bool{}
-	stopCh := make(chan struct{})
 	doneCh := make(chan struct{}, 1)
 
 	var tq TaskQueue
@@ -39,20 +37,24 @@ func TestPeriodicTaskQueue(t *testing.T) {
 			return errors.New("injected error")
 		case "stop":
 			doneCh <- struct{}{}
+		case "more":
+			t.Error("synced after TaskQueue.Shutdown()")
 		}
 		return nil
 	}
 	tq = NewPeriodicTaskQueue("test", sync)
 
-	go tq.Run(time.Microsecond, stopCh)
+	go tq.Run()
 	tq.Enqueue(cache.ExplicitKey("a"))
 	tq.Enqueue(cache.ExplicitKey("b"))
 	tq.Enqueue(cache.ExplicitKey("err"))
 	tq.Enqueue(cache.ExplicitKey("stop"))
 
 	<-doneCh
-	close(stopCh)
 	tq.Shutdown()
+
+	// Enqueue after Shutdown isn't going to be synced.
+	tq.Enqueue(cache.ExplicitKey("more"))
 
 	expected := map[string]bool{
 		"a":    true,

@@ -17,18 +17,12 @@ limitations under the License.
 package controller
 
 import (
-	"time"
-
 	apiv1 "k8s.io/api/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/utils"
-)
-
-const (
-	nodeUpdatePeriod = 1 * time.Second
 )
 
 // NodeController synchronizes the state of the nodes to the unmanaged instance
@@ -66,12 +60,12 @@ func NewNodeController(ctx *context.ControllerContext, instancePool instances.No
 	return c
 }
 
-// Run a go routine to process updates for the controller.
-func (c *NodeController) Run(stopCh chan struct{}) {
-	go c.queue.Run(nodeUpdatePeriod, stopCh)
+// Run a goroutine to process updates for the controller.
+func (c *NodeController) Run() {
+	c.queue.Run()
 }
 
-// Run a go routine to process updates for the controller.
+// Shutdown shuts down the goroutine that processes node updates.
 func (c *NodeController) Shutdown() {
 	c.queue.Shutdown()
 }

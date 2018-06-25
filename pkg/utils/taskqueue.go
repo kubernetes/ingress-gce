@@ -17,10 +17,7 @@ limitations under the License.
 package utils
 
 import (
-	"time"
-
 	"github.com/golang/glog"
-	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 )
@@ -31,7 +28,7 @@ var (
 
 // TaskQueue is a rate limited operation queue.
 type TaskQueue interface {
-	Run(period time.Duration, stopCh <-chan struct{})
+	Run()
 	Enqueue(objs ...interface{})
 	Shutdown()
 }
@@ -53,9 +50,23 @@ type PeriodicTaskQueue struct {
 }
 
 // Run the task queue. This will block until the Shutdown() has been called.
-// TODO: seems redundant to both have stopCh and Shutdown().
-func (t *PeriodicTaskQueue) Run(period time.Duration, stopCh <-chan struct{}) {
-	wait.Until(t.worker, period, stopCh)
+func (t *PeriodicTaskQueue) Run() {
+	for {
+		key, quit := t.queue.Get()
+		if quit {
+			close(t.workerDone)
+			return
+		}
+		glog.V(4).Infof("Syncing %v (%v)", key, t.resource)
+		if err := t.sync(key.(string)); err != nil {
+			glog.Errorf("Requeuing %q due to error: %v (%v)", key, err, t.resource)
+			t.queue.AddRateLimited(key)
+		} else {
+			glog.V(4).Infof("Finished syncing %v", key)
+			t.queue.Forget(key)
+		}
+		t.queue.Done(key)
+	}
 }
 
 // Enqueue one or more keys to the work queue.
@@ -76,26 +87,6 @@ func (t *PeriodicTaskQueue) Shutdown() {
 	glog.V(2).Infof("Shutdown")
 	t.queue.ShutDown()
 	<-t.workerDone
-}
-
-// worker processes work in the queue through sync.
-func (t *PeriodicTaskQueue) worker() {
-	for {
-		key, quit := t.queue.Get()
-		if quit {
-			close(t.workerDone)
-			return
-		}
-		glog.V(4).Infof("Syncing %v (%v)", key, t.resource)
-		if err := t.sync(key.(string)); err != nil {
-			glog.Errorf("Requeuing %q due to error: %v (%v)", key, err, t.resource)
-			t.queue.AddRateLimited(key)
-		} else {
-			glog.V(4).Infof("Finished syncing %v", key)
-			t.queue.Forget(key)
-		}
-		t.queue.Done(key)
-	}
 }
 
 // NewPeriodicTaskQueue creates a new task queue with the default rate limiter.

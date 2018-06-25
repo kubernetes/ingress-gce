@@ -129,9 +129,9 @@ func (fwc *FirewallController) ToSvcPorts(ings *extensions.IngressList) []utils.
 	return knownPorts
 }
 
-func (fwc *FirewallController) Run(stopCh chan struct{}) {
+func (fwc *FirewallController) Run() {
 	defer fwc.shutdown()
-	fwc.queue.Run(time.Second, stopCh)
+	fwc.queue.Run()
 }
 
 // This should only be called when the process is being terminated.
