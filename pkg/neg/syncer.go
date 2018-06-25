@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	compute "google.golang.org/api/compute/v0.alpha"
+	compute "google.golang.org/api/compute/v0.beta"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/clock"
@@ -272,7 +272,6 @@ func (s *syncer) ensureNetworkEndpointGroups() error {
 			glog.V(2).Infof("Creating NEG %q for %s in %q.", s.negName, s.formattedName(), zone)
 			err = s.cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 				Name:                s.negName,
-				Type:                gce.NEGLoadBalancerType,
 				NetworkEndpointType: gce.NEGIPPortNetworkEndpointType,
 				LoadBalancer: &compute.NetworkEndpointGroupLbNetworkEndpointGroup{
 					Network:    s.cloud.NetworkURL(),

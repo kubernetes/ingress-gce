@@ -277,11 +277,11 @@ func (f *FakeLoadBalancers) DeleteTargetHttpProxy(name string) error {
 }
 
 // SetUrlMapForTargetHttpProxy fakes setting an url-map for a target http proxy.
-func (f *FakeLoadBalancers) SetUrlMapForTargetHttpProxy(proxy *compute.TargetHttpProxy, urlMap *compute.UrlMap) error {
+func (f *FakeLoadBalancers) SetUrlMapForTargetHttpProxy(proxy *compute.TargetHttpProxy, urlMapLink string) error {
 	f.calls = append(f.calls, "SetUrlMapForTargetHttpProxy")
 	for i := range f.Tp {
 		if f.Tp[i].Name == proxy.Name {
-			f.Tp[i].UrlMap = urlMap.SelfLink
+			f.Tp[i].UrlMap = urlMapLink
 		}
 	}
 	return nil
@@ -326,11 +326,11 @@ func (f *FakeLoadBalancers) DeleteTargetHttpsProxy(name string) error {
 }
 
 // SetUrlMapForTargetHttpsProxy fakes setting an url-map for a target http proxy.
-func (f *FakeLoadBalancers) SetUrlMapForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, urlMap *compute.UrlMap) error {
+func (f *FakeLoadBalancers) SetUrlMapForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, urlMapLink string) error {
 	f.calls = append(f.calls, "SetUrlMapForTargetHttpsProxy")
 	for i := range f.Tps {
 		if f.Tps[i].Name == proxy.Name {
-			f.Tps[i].UrlMap = urlMap.SelfLink
+			f.Tps[i].UrlMap = urlMapLink
 		}
 	}
 	return nil

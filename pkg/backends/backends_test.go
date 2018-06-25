@@ -24,7 +24,7 @@ import (
 	"strings"
 	"testing"
 
-	computealpha "google.golang.org/api/compute/v0.alpha"
+	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
@@ -845,7 +845,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	bp := NewBackendPool(fakeGCE, fakeNEG, healthChecks, nodePool, defaultNamer, false, false)
 
 	// Add standard hooks for mocking update calls. Each test can set a update different hook if it chooses to.
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.UpdateHook = mock.UpdateBetaBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = mock.UpdateBackendServiceHook
 
 	svcPort := utils.ServicePort{
@@ -866,7 +866,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	}
 
 	for _, zone := range zones {
-		err := fakeNEG.CreateNetworkEndpointGroup(&computealpha.NetworkEndpointGroup{
+		err := fakeNEG.CreateNetworkEndpointGroup(&computebeta.NetworkEndpointGroup{
 			Name: defaultNamer.NEG(namespace, name, svcPort.Port),
 		}, zone)
 		if err != nil {

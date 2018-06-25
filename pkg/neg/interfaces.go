@@ -17,19 +17,19 @@ limitations under the License.
 package neg
 
 import (
-	computealpha "google.golang.org/api/compute/v0.alpha"
+	computebeta "google.golang.org/api/compute/v0.beta"
 )
 
 // networkEndpointGroupCloud is an interface for managing gce network endpoint group.
 type networkEndpointGroupCloud interface {
-	GetNetworkEndpointGroup(name string, zone string) (*computealpha.NetworkEndpointGroup, error)
-	ListNetworkEndpointGroup(zone string) ([]*computealpha.NetworkEndpointGroup, error)
-	AggregatedListNetworkEndpointGroup() (map[string][]*computealpha.NetworkEndpointGroup, error)
-	CreateNetworkEndpointGroup(neg *computealpha.NetworkEndpointGroup, zone string) error
+	GetNetworkEndpointGroup(name string, zone string) (*computebeta.NetworkEndpointGroup, error)
+	ListNetworkEndpointGroup(zone string) ([]*computebeta.NetworkEndpointGroup, error)
+	AggregatedListNetworkEndpointGroup() (map[string][]*computebeta.NetworkEndpointGroup, error)
+	CreateNetworkEndpointGroup(neg *computebeta.NetworkEndpointGroup, zone string) error
 	DeleteNetworkEndpointGroup(name string, zone string) error
-	AttachNetworkEndpoints(name, zone string, endpoints []*computealpha.NetworkEndpoint) error
-	DetachNetworkEndpoints(name, zone string, endpoints []*computealpha.NetworkEndpoint) error
-	ListNetworkEndpoints(name, zone string, showHealthStatus bool) ([]*computealpha.NetworkEndpointWithHealthStatus, error)
+	AttachNetworkEndpoints(name, zone string, endpoints []*computebeta.NetworkEndpoint) error
+	DetachNetworkEndpoints(name, zone string, endpoints []*computebeta.NetworkEndpoint) error
+	ListNetworkEndpoints(name, zone string, showHealthStatus bool) ([]*computebeta.NetworkEndpointWithHealthStatus, error)
 	NetworkURL() string
 	SubnetworkURL() string
 }

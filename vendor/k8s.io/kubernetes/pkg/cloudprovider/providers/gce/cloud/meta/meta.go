@@ -161,22 +161,20 @@ var AllServices = []*ServiceInfo{
 		Resource:    "disks",
 		keyType:     Zonal,
 		serviceType: reflect.TypeOf(&ga.DisksService{}),
-	},
-	{
-		Object:      "Disk",
-		Service:     "Disks",
-		Resource:    "disks",
-		version:     VersionAlpha,
-		keyType:     Zonal,
-		serviceType: reflect.TypeOf(&alpha.DisksService{}),
+		additionalMethods: []string{
+			"Resize",
+		},
 	},
 	{
 		Object:      "Disk",
 		Service:     "RegionDisks",
 		Resource:    "disks",
-		version:     VersionAlpha,
+		version:     VersionBeta,
 		keyType:     Regional,
-		serviceType: reflect.TypeOf(&alpha.DisksService{}),
+		serviceType: reflect.TypeOf(&beta.RegionDisksService{}),
+		additionalMethods: []string{
+			"Resize",
+		},
 	},
 	{
 		Object:      "Firewall",
@@ -219,6 +217,17 @@ var AllServices = []*ServiceInfo{
 		Resource:    "healthChecks",
 		keyType:     Global,
 		serviceType: reflect.TypeOf(&ga.HealthChecksService{}),
+		additionalMethods: []string{
+			"Update",
+		},
+	},
+	{
+		Object:      "HealthCheck",
+		Service:     "HealthChecks",
+		Resource:    "healthChecks",
+		version:     VersionBeta,
+		keyType:     Global,
+		serviceType: reflect.TypeOf(&beta.HealthChecksService{}),
 		additionalMethods: []string{
 			"Update",
 		},
@@ -311,6 +320,20 @@ var AllServices = []*ServiceInfo{
 		version:     VersionAlpha,
 		keyType:     Zonal,
 		serviceType: reflect.TypeOf(&alpha.NetworkEndpointGroupsService{}),
+		additionalMethods: []string{
+			"AttachNetworkEndpoints",
+			"DetachNetworkEndpoints",
+			"ListNetworkEndpoints",
+		},
+		options: AggregatedList,
+	},
+	{
+		Object:      "NetworkEndpointGroup",
+		Service:     "NetworkEndpointGroups",
+		Resource:    "networkEndpointGroups",
+		version:     VersionBeta,
+		keyType:     Zonal,
+		serviceType: reflect.TypeOf(&beta.NetworkEndpointGroupsService{}),
 		additionalMethods: []string{
 			"AttachNetworkEndpoints",
 			"DetachNetworkEndpoints",

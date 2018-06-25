@@ -29,7 +29,7 @@
   "description": "Creates and runs virtual machines on Google Cloud Platform.",
   "discoveryVersion": "v1",
   "documentationLink": "https://developers.google.com/compute/docs/reference/latest/",
-  "etag": "\"Zkyw9ACJZUvcYmlFaKGChzhmtnE/sjJmygLtppFCHd4HT93S5V6uREc\"",
+  "etag": "\"Zkyw9ACJZUvcYmlFaKGChzhmtnE/IurywadF-jE9WvkrxG6q8D7zy7k\"",
   "icons": {
     "x16": "https://www.google.com/images/icons/product/compute_engine-16.png",
     "x32": "https://www.google.com/images/icons/product/compute_engine-32.png"
@@ -12051,7 +12051,7 @@
           ]
         },
         "get": {
-          "description": "Returns the specified NodeGroup. Gets a list of available NodeGroups by making a list() request.",
+          "description": "Returns the specified NodeGroup. Get a list of available NodeGroups by making a list() request.",
           "httpMethod": "GET",
           "id": "compute.nodeGroups.get",
           "parameterOrder": [
@@ -18691,6 +18691,42 @@
             "https://www.googleapis.com/auth/compute"
           ]
         },
+        "setLabels": {
+          "description": "Sets the labels on a security policy. To learn more about labels, read the Labeling Resources documentation.",
+          "httpMethod": "POST",
+          "id": "compute.securityPolicies.setLabels",
+          "parameterOrder": [
+            "project",
+            "resource"
+          ],
+          "parameters": {
+            "project": {
+              "description": "Project ID for this request.",
+              "location": "path",
+              "pattern": "(?:(?:[-a-z0-9]{1,63}\\.)*(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?):)?(?:[0-9]{1,19}|(?:[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?))",
+              "required": true,
+              "type": "string"
+            },
+            "resource": {
+              "description": "Name of the resource for this request.",
+              "location": "path",
+              "pattern": "[a-z](?:[-a-z0-9_]{0,61}[a-z0-9])?",
+              "required": true,
+              "type": "string"
+            }
+          },
+          "path": "{project}/global/securityPolicies/{resource}/setLabels",
+          "request": {
+            "$ref": "GlobalSetLabelsRequest"
+          },
+          "response": {
+            "$ref": "Operation"
+          },
+          "scopes": [
+            "https://www.googleapis.com/auth/cloud-platform",
+            "https://www.googleapis.com/auth/compute"
+          ]
+        },
         "testIamPermissions": {
           "description": "Returns permissions that a caller has on the specified resource.",
           "httpMethod": "POST",
@@ -23806,7 +23842,6 @@
       }
     }
   },
-  "revision": "20180428",
   "rootUrl": "https://www.googleapis.com/",
   "schemas": {
     "AcceleratorConfig": {
@@ -24380,9 +24415,11 @@
           "description": "[Output Only] The status of the address, which can be one of RESERVING, RESERVED, or IN_USE. An address that is RESERVING is currently in the process of being reserved. A RESERVED address is currently reserved and available to use. An IN_USE address is currently being used by another resource and is not available.",
           "enum": [
             "IN_USE",
-            "RESERVED"
+            "RESERVED",
+            "RESERVING"
           ],
           "enumDescriptions": [
+            "",
             "",
             ""
           ],
@@ -24886,6 +24923,10 @@
         "sourceImageEncryptionKey": {
           "$ref": "CustomerEncryptionKey",
           "description": "The customer-supplied encryption key of the source image. Required if the source image is protected by a customer-supplied encryption key.\n\nInstance templates do not store customer-supplied encryption keys, so you cannot create disks for instances in a managed instance group if the source images are encrypted with your own keys."
+        },
+        "sourceSnapshot": {
+          "description": "The source snapshot to create this disk. When creating a new instance, one of initializeParams.sourceSnapshot or disks.source is required except for local SSD.\n\nTo create a disk with a snapshot that you created, specify the snapshot name in the following format:\nglobal/snapshots/my-backup\n\n\nIf the source snapshot is deleted later, this field will not be set.",
+          "type": "string"
         }
       },
       "type": "object"
@@ -26207,11 +26248,33 @@
         "oauth2ClientId": {
           "type": "string"
         },
+        "oauth2ClientInfo": {
+          "$ref": "BackendServiceIAPOAuth2ClientInfo",
+          "description": "[Input Only] OAuth client info required to generate client id to be used for IAP."
+        },
         "oauth2ClientSecret": {
           "type": "string"
         },
         "oauth2ClientSecretSha256": {
           "description": "[Output Only] SHA256 hash value for the field oauth2_client_secret above.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "BackendServiceIAPOAuth2ClientInfo": {
+      "id": "BackendServiceIAPOAuth2ClientInfo",
+      "properties": {
+        "applicationName": {
+          "description": "Application name to be used in OAuth consent screen.",
+          "type": "string"
+        },
+        "clientName": {
+          "description": "Name of the client to be generated. Optional - If not provided, the name will be autogenerated by the backend.",
+          "type": "string"
+        },
+        "developerEmailAddress": {
+          "description": "Developer's information to be used in OAuth consent screen.",
           "type": "string"
         }
       },
@@ -26585,10 +26648,10 @@
           "type": "string"
         },
         "type": {
-          "description": "The type of commitment, which affects the discount rate and the eligible resources. Type MEMORY_OPTIMIZED_VM specifies a commitment that will only apply to memory optimized VMs. Type NORMAL specifies a commitment that applies to all other resources.",
+          "description": "The type of commitment, which affects the discount rate and the eligible resources. Type MEMORY_OPTIMIZED specifies a commitment that will only apply to memory optimized machines.",
           "enum": [
-            "MEMORY_OPTIMIZED_VM",
-            "NORMAL",
+            "GENERAL_PURPOSE",
+            "MEMORY_OPTIMIZED",
             "TYPE_UNSPECIFIED"
           ],
           "enumDescriptions": [
@@ -28181,7 +28244,7 @@
           "type": "boolean"
         },
         "enableLogging": {
-          "description": "This field denotes whether to enable logging for a particular firewall rule. If logging is enabled, logs will be exported to the configured export destination for all firewall logs in the network. Logs may be exported to BigQuery or Pub/Sub.",
+          "description": "This field denotes whether to enable logging for a particular firewall rule. If logging is enabled, logs will be exported to Stackdriver.",
           "type": "boolean"
         },
         "id": {
@@ -28417,6 +28480,10 @@
             ""
           ],
           "type": "string"
+        },
+        "allPorts": {
+          "description": "This field is used along with the backend_service field for internal load balancing or with the target field for internal TargetInstance. This field cannot be used with port or portRange fields.\n\nWhen the load balancing scheme is INTERNAL and protocol is TCP/UDP, specify this field to allow packets addressed to any ports will be forwarded to the backends configured with this forwarding rule.",
+          "type": "boolean"
         },
         "backendService": {
           "description": "This field is not used for external load balancing.\n\nFor internal load balancing, this field identifies the BackendService resource to receive the matched traffic.",
@@ -31208,6 +31275,10 @@
         "shieldedVmIntegrityPolicy": {
           "$ref": "ShieldedVmIntegrityPolicy"
         },
+        "sourceMachineImage": {
+          "description": "Source machine image",
+          "type": "string"
+        },
         "startRestricted": {
           "description": "[Output Only] Whether a VM has been restricted for start because Compute Engine has detected suspicious activity.",
           "type": "boolean"
@@ -31712,7 +31783,7 @@
           "type": "string"
         },
         "fingerprint": {
-          "description": "Fingerprint of this resource. This field may be used in optimistic locking. It will be ignored when inserting an InstanceGroupManager. An up-to-date fingerprint must be provided in order to update the InstanceGroupManager or the field need to be unset.",
+          "description": "Fingerprint of this resource. This field may be used in optimistic locking. It will be ignored when inserting an InstanceGroupManager. An up-to-date fingerprint must be provided in order to update the InstanceGroupManager.",
           "format": "byte",
           "type": "string"
         },
@@ -32229,9 +32300,11 @@
         "instanceRedistributionType": {
           "enum": [
             "NONE",
-            "PROACTIVE"
+            "PROACTIVE",
+            "UNSPECIFIED_TYPE"
           ],
           "enumDescriptions": [
+            "",
             "",
             ""
           ],
@@ -35707,7 +35780,7 @@
       "type": "object"
     },
     "ManagedInstance": {
-      "description": "Next available tag: 12",
+      "description": "A Managed Instance resource.",
       "id": "ManagedInstance",
       "properties": {
         "currentAction": {
@@ -37233,6 +37306,10 @@
           },
           "type": "array"
         },
+        "name": {
+          "description": "The name of the node.",
+          "type": "string"
+        },
         "nodeType": {
           "description": "The type of this node.",
           "type": "string"
@@ -37259,6 +37336,12 @@
           "items": {
             "format": "int32",
             "type": "integer"
+          },
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "type": "string"
           },
           "type": "array"
         }
@@ -39008,6 +39091,7 @@
             "IN_USE_MAINTENANCE_WINDOWS",
             "LOCAL_SSD_TOTAL_GB",
             "NETWORKS",
+            "NETWORK_ENDPOINT_GROUPS",
             "NVIDIA_K80_GPUS",
             "NVIDIA_P100_GPUS",
             "NVIDIA_P100_VWS_GPUS",
@@ -39016,6 +39100,7 @@
             "PREEMPTIBLE_LOCAL_SSD_GB",
             "PREEMPTIBLE_NVIDIA_K80_GPUS",
             "PREEMPTIBLE_NVIDIA_P100_GPUS",
+            "PREEMPTIBLE_NVIDIA_V100_GPUS",
             "PRIVATE_V6_ACCESS_SUBNETWORKS",
             "REGIONAL_AUTOSCALERS",
             "REGIONAL_INSTANCE_GROUP_MANAGERS",
@@ -39040,6 +39125,8 @@
             "VPN_TUNNELS"
           ],
           "enumDescriptions": [
+            "",
+            "",
             "",
             "",
             "",
@@ -41190,7 +41277,7 @@
           "type": "string"
         },
         "nats": {
-          "description": "A list of Nat services created in this router. The maximum number of Nat services within a Router is 3 for Alpha.",
+          "description": "A list of Nat services created in this router.",
           "items": {
             "$ref": "RouterNat"
           },
@@ -41622,6 +41709,16 @@
           },
           "type": "array"
         },
+        "icmpIdleTimeoutSec": {
+          "description": "Timeout (in seconds) for ICMP connections. Defaults to 30s if not set.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "minPortsPerVm": {
+          "description": "Minimum number of ports allocated to a VM from this NAT config. If not set, a default number of ports is allocated to a VM. This gets rounded up to the nearest power of 2. Eg. if the value of this field is 50, at least 64 ports will be allocated to a VM.",
+          "format": "int32",
+          "type": "integer"
+        },
         "name": {
           "description": "Unique name of this Nat service. The name must be 1-63 characters long and comply with RFC1035.",
           "pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
@@ -41666,6 +41763,21 @@
             "$ref": "RouterNatSubnetworkToNat"
           },
           "type": "array"
+        },
+        "tcpEstablishedIdleTimeoutSec": {
+          "description": "Timeout (in seconds) for TCP established connections. Defaults to 1200s if not set.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "tcpTransitoryIdleTimeoutSec": {
+          "description": "Timeout (in seconds) for TCP transitory connections. Defaults to 30s if not set.",
+          "format": "int32",
+          "type": "integer"
+        },
+        "udpIdleTimeoutSec": {
+          "description": "Timeout (in seconds) for UDP connections. Defaults to 30s if not set.",
+          "format": "int32",
+          "type": "integer"
         }
       },
       "type": "object"
@@ -42161,7 +42273,7 @@
       "type": "object"
     },
     "SecurityPolicy": {
-      "description": "A security policy is comprised of one or more rules. It can also be associated with one or more 'targets'.",
+      "description": "A security policy is comprised of one or more rules. It can also be associated with one or more 'targets'. Next available tag: 11",
       "id": "SecurityPolicy",
       "properties": {
         "creationTimestamp": {
@@ -42186,6 +42298,18 @@
           "default": "compute#securityPolicy",
           "description": "[Output only] Type of the resource. Always compute#securityPolicyfor security policies",
           "type": "string"
+        },
+        "labelFingerprint": {
+          "description": "A fingerprint for the labels being applied to this security policy, which is essentially a hash of the labels set used for optimistic locking. The fingerprint is initially generated by Compute Engine and changes after every request to modify or update labels. You must always provide an up-to-date fingerprint hash in order to update or change labels.\n\nTo see the latest fingerprint, make get() request to the security policy.",
+          "format": "byte",
+          "type": "string"
+        },
+        "labels": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Labels to apply to this security policy resource. These can be later modified by the setLabels method. Each label key/value must comply with RFC1035. Label values may be empty.",
+          "type": "object"
         },
         "name": {
           "description": "Name of the resource. Provided by the client when the resource is created. The name must be 1-63 characters long, and comply with RFC1035. Specifically, the name must be 1-63 characters long and match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])?` which means the first character must be a lowercase letter, and all following characters must be a dash, lowercase letter, or digit, except the last character, which cannot be a dash.",
@@ -42547,7 +42671,7 @@
           "type": "object"
         },
         "licenseCodes": {
-          "description": "Integer license codes indicating which licenses are attached to this snapshot.",
+          "description": "[Output Only] Integer license codes indicating which licenses are attached to this snapshot.",
           "items": {
             "format": "int64",
             "type": "string"
@@ -46649,20 +46773,6 @@
           "description": "URL of the network to which this VPN gateway is attached. Provided by the client when the VPN gateway is created.",
           "type": "string"
         },
-        "redundancy": {
-          "description": "The redundancy mode configured for this VPN gateway. Possible values are ACTIVE_ACTIVE and NONE. If set to ACTIVE_ACTIVE, two VPN interfaces are created thereby providing higher availability. If set to NONE, only one interface is created with a lower availability SLA.\n\nIf this field is specified, either 2 or 1 external IP addresses (depending on the value of specified redundancy) are automatically allocated for use with this VPN gateway, and incoming traffic on the external addresses to ports ESP, UDP:500 and UDP:4500 are automatically forwarded to this gateway.",
-          "enum": [
-            "ACTIVE_ACTIVE",
-            "NONE",
-            "REDUNDANCY_UNSPECIFIED"
-          ],
-          "enumDescriptions": [
-            "",
-            "",
-            ""
-          ],
-          "type": "string"
-        },
         "region": {
           "description": "[Output Only] URL of the region where the VPN gateway resides.",
           "type": "string"
@@ -47143,11 +47253,11 @@
           "type": "string"
         },
         "vpnGateway": {
-          "description": "URL of the VPN gateway with which this VPN tunnel is associated. Provided by the client when the VPN tunnel is created. This must be used (instead of target_vpn_gateway) if a VPN gateway resource is created with redundancy.\n\nVPN gateway resource provides a way to create a highly available VPN setup.",
+          "description": "URL of the VPN gateway with which this VPN tunnel is associated. Provided by the client when the VPN tunnel is created. This must be used (instead of target_vpn_gateway) if a High Availability VPN gateway resource is created.",
           "type": "string"
         },
         "vpnGatewayInterface": {
-          "description": "The interface ID of the VPN gateway with which this VPN tunnel is associated. If the VPN gateway has redundancy other than NONE, this field is required to identify which interface of the VPN gateway to use.",
+          "description": "The interface ID of the VPN gateway with which this VPN tunnel is associated.",
           "format": "int32",
           "type": "integer"
         }
