@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
 var (
@@ -225,7 +226,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	hcp.CreateHealthCheck(v1hc)
 
 	// Verify the health check exists
-	_, err = healthChecks.Get(hc.Name, false)
+	_, err = healthChecks.Get(hc.Name, meta.VersionGA)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -238,7 +239,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists
-	_, err = healthChecks.Get(hc.Name, false)
+	_, err = healthChecks.Get(hc.Name, meta.VersionGA)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -256,7 +257,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists. HTTP2 is alpha-only.
-	_, err = healthChecks.Get(hc.Name, true)
+	_, err = healthChecks.Get(hc.Name, meta.VersionAlpha)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -276,7 +277,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists.
-	hc, err = healthChecks.Get(hc.Name, true)
+	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -296,7 +297,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists.
-	hc, err = healthChecks.Get(hc.Name, true)
+	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -338,7 +339,7 @@ func TestAlphaHealthCheck(t *testing.T) {
 		t.Fatalf("got %v, want nil", err)
 	}
 
-	ret, err := healthChecks.Get(hc.Name, true)
+	ret, err := healthChecks.Get(hc.Name, meta.VersionAlpha)
 	if err != nil {
 		t.Fatalf("got %v, want nil", err)
 	}
