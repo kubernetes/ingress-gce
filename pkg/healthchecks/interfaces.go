@@ -18,9 +18,11 @@ package healthchecks
 
 import (
 	computealpha "google.golang.org/api/compute/v0.alpha"
+	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
 // HealthCheckProvider is an interface to manage a single GCE health check.
@@ -31,11 +33,14 @@ type HealthCheckProvider interface {
 	GetHttpHealthCheck(name string) (*compute.HttpHealthCheck, error)
 
 	CreateAlphaHealthCheck(hc *computealpha.HealthCheck) error
+	CreateBetaHealthCheck(hc *computebeta.HealthCheck) error
 	CreateHealthCheck(hc *compute.HealthCheck) error
 	UpdateAlphaHealthCheck(hc *computealpha.HealthCheck) error
+	UpdateBetaHealthCheck(hc *computebeta.HealthCheck) error
 	UpdateHealthCheck(hc *compute.HealthCheck) error
 	DeleteHealthCheck(name string) error
 	GetAlphaHealthCheck(name string) (*computealpha.HealthCheck, error)
+	GetBetaHealthCheck(name string) (*computebeta.HealthCheck, error)
 	GetHealthCheck(name string) (*compute.HealthCheck, error)
 }
 
@@ -44,7 +49,7 @@ type HealthChecker interface {
 	New(sp utils.ServicePort) *HealthCheck
 	Sync(hc *HealthCheck) (string, error)
 	Delete(name string) error
-	Get(name string, alpha bool) (*HealthCheck, error)
+	Get(name string, version meta.Version) (*HealthCheck, error)
 	GetLegacy(port int64) (*compute.HttpHealthCheck, error)
 	DeleteLegacy(port int64) error
 }

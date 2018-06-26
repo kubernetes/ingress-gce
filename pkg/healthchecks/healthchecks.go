@@ -17,19 +17,20 @@ limitations under the License.
 package healthchecks
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
 	computealpha "google.golang.org/api/compute/v0.alpha"
+	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/golang/glog"
-
-	"encoding/json"
-
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
 const (
@@ -102,9 +103,7 @@ func (h *HealthChecks) New(sp utils.ServicePort) *HealthCheck {
 // Sync retrieves a health check based on port, checks type and settings and updates/creates if necessary.
 // Sync is only called by the backends.Add func - it's not a pool like other resources.
 func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
-	// Use alpha API when PORT_SPECIFICATION field is specified or when Type
-	// is HTTP2
-	existingHC, err := h.Get(hc.Name, hc.isHttp2() || hc.ForNEG)
+	existingHC, err := h.Get(hc.Name, hc.Version())
 	if err != nil {
 		if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			return "", err
@@ -114,7 +113,7 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 			return "", err
 		}
 
-		return h.getHealthCheckLink(hc.Name, hc.isHttp2())
+		return h.getHealthCheckLink(hc.Name, hc.Version())
 	}
 
 	if needToUpdate(existingHC, hc) {
@@ -135,30 +134,51 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 }
 
 func (h *HealthChecks) create(hc *HealthCheck) error {
-	if hc.isHttp2() || hc.ForNEG {
-		glog.V(2).Infof("Creating health check with protocol %v", hc.Type)
+	switch hc.Version() {
+	case meta.VersionAlpha:
+		glog.V(2).Infof("Creating alpha health check with protocol %v", hc.Type)
 		return h.cloud.CreateAlphaHealthCheck(hc.ToAlphaComputeHealthCheck())
-	} else {
+	case meta.VersionBeta:
+		glog.V(2).Infof("Creating beta health check with protocol %v", hc.Type)
+		betaHC, err := hc.ToBetaComputeHealthCheck()
+		if err != nil {
+			return err
+		}
+		return h.cloud.CreateBetaHealthCheck(betaHC)
+	case meta.VersionGA:
 		glog.V(2).Infof("Creating health check for port %v with protocol %v", hc.Port, hc.Type)
 		v1hc, err := hc.ToComputeHealthCheck()
 		if err != nil {
 			return err
 		}
 		return h.cloud.CreateHealthCheck(v1hc)
+	default:
+		return fmt.Errorf("Unknown Version: %q", hc.Version())
 	}
 }
 
 func (h *HealthChecks) update(oldHC, newHC *HealthCheck) error {
-	if newHC.isHttp2() || newHC.ForNEG {
-		glog.V(2).Infof("Updating health check with protocol %v, ForNEG: %v", newHC.Type, newHC.ForNEG)
+	switch newHC.Version() {
+	case meta.VersionAlpha:
+		glog.V(2).Infof("Updating alpha health check with protocol %v", newHC.Type)
 		return h.cloud.UpdateAlphaHealthCheck(mergeHealthcheck(oldHC, newHC).ToAlphaComputeHealthCheck())
-	} else {
+	case meta.VersionBeta:
+		glog.V(2).Infof("Updating beta health check with protocol %v", newHC.Type)
+		betaHC, err := mergeHealthcheck(oldHC, newHC).ToBetaComputeHealthCheck()
+		if err != nil {
+			return err
+		}
+		return h.cloud.UpdateBetaHealthCheck(betaHC)
+	case meta.VersionGA:
 		glog.V(2).Infof("Updating health check for port %v with protocol %v", newHC.Port, newHC.Type)
 		v1hc, err := newHC.ToComputeHealthCheck()
 		if err != nil {
 			return err
 		}
 		return h.cloud.UpdateHealthCheck(v1hc)
+	default:
+		return fmt.Errorf("Unknown Version: %q", newHC.Version())
+
 	}
 }
 
@@ -182,8 +202,8 @@ func mergeHealthcheck(oldHC, newHC *HealthCheck) *HealthCheck {
 	return newHC
 }
 
-func (h *HealthChecks) getHealthCheckLink(name string, alpha bool) (string, error) {
-	hc, err := h.Get(name, alpha)
+func (h *HealthChecks) getHealthCheckLink(name string, version meta.Version) (string, error) {
+	hc, err := h.Get(name, version)
 	if err != nil {
 		return "", err
 	}
@@ -197,18 +217,29 @@ func (h *HealthChecks) Delete(name string) error {
 }
 
 // Get returns the health check by port
-func (h *HealthChecks) Get(name string, alpha bool) (*HealthCheck, error) {
+func (h *HealthChecks) Get(name string, version meta.Version) (*HealthCheck, error) {
 	var hc *computealpha.HealthCheck
 	var err error
-	if alpha {
+	switch version {
+	case meta.VersionAlpha:
 		hc, err = h.cloud.GetAlphaHealthCheck(name)
-	} else {
-		var v1hc *compute.HealthCheck
-		v1hc, err = h.cloud.GetHealthCheck(name)
 		if err != nil {
 			return nil, err
 		}
-		hc, err = toAlphaHealthCheck(v1hc)
+	case meta.VersionBeta:
+		betaHC, err := h.cloud.GetBetaHealthCheck(name)
+		if err != nil {
+			return nil, err
+		}
+		hc, err = betaToAlphaHealthCheck(betaHC)
+	case meta.VersionGA:
+		v1hc, err := h.cloud.GetHealthCheck(name)
+		if err != nil {
+			return nil, err
+		}
+		hc, err = v1ToAlphaHealthCheck(v1hc)
+	default:
+		return nil, fmt.Errorf("Unknown version %v", version)
 	}
 	return NewHealthCheck(hc), err
 }
@@ -321,7 +352,17 @@ func (hc *HealthCheck) ToComputeHealthCheck() (*compute.HealthCheck, error) {
 	return toV1HealthCheck(&hc.HealthCheck)
 }
 
-// ToComputeHealthCheck returns a valid compute.HealthCheck object
+// ToBetaComputeHealthCheck returns a valid computebeta.HealthCheck object
+func (hc *HealthCheck) ToBetaComputeHealthCheck() (*computebeta.HealthCheck, error) {
+	// Cannot specify both portSpecification and port field.
+	if len(hc.PortSpecification) > 0 {
+		hc.Port = 0
+	}
+	hc.merge()
+	return toBetaHealthCheck(&hc.HealthCheck)
+}
+
+// ToAlphaComputeHealthCheck returns a valid computealpha.HealthCheck object
 func (hc *HealthCheck) ToAlphaComputeHealthCheck() *computealpha.HealthCheck {
 	// Cannot specify both portSpecification and port field.
 	if len(hc.PortSpecification) > 0 {
@@ -354,6 +395,19 @@ func (hc *HealthCheck) isHttp2() bool {
 	return hc.Protocol() == annotations.ProtocolHTTP2
 }
 
+// Version returns the appropriate API version to handle the health check
+// Use Alpha API for HTTP2
+// Use Beta API for NEG as PORT_SPECIFICATION is required
+func (hc *HealthCheck) Version() meta.Version {
+	if hc.isHttp2() {
+		return meta.VersionAlpha
+	}
+	if hc.ForNEG {
+		return meta.VersionBeta
+	}
+	return meta.VersionGA
+}
+
 func needToUpdate(old, new *HealthCheck) bool {
 	if old.Protocol() != new.Protocol() {
 		glog.V(2).Infof("Updating health check %v because it has protocol %v but need %v", old.Name, old.Type, new.Type)
@@ -376,9 +430,24 @@ func toV1HealthCheck(hc *computealpha.HealthCheck) (*compute.HealthCheck, error)
 	return ret, err
 }
 
-// toV1HealthCheck converts v1 health check to alpha health check.
+// toBetaHealthCheck converts alpha health check to beta health check.
+func toBetaHealthCheck(hc *computealpha.HealthCheck) (*computebeta.HealthCheck, error) {
+	ret := &computebeta.HealthCheck{}
+	err := copyViaJSON(ret, hc)
+	return ret, err
+}
+
+// v1ToAlphaHealthCheck converts v1 health check to alpha health check.
 // There should be no information lost after conversion.
-func toAlphaHealthCheck(hc *compute.HealthCheck) (*computealpha.HealthCheck, error) {
+func v1ToAlphaHealthCheck(hc *compute.HealthCheck) (*computealpha.HealthCheck, error) {
+	ret := &computealpha.HealthCheck{}
+	err := copyViaJSON(ret, hc)
+	return ret, err
+}
+
+// betaToAlphaHealthCheck converts beta health check to alpha health check.
+// There should be no information lost after conversion.
+func betaToAlphaHealthCheck(hc *computebeta.HealthCheck) (*computealpha.HealthCheck, error) {
 	ret := &computealpha.HealthCheck{}
 	err := copyViaJSON(ret, hc)
 	return ret, err
