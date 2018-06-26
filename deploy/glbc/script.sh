@@ -210,14 +210,17 @@ while true; do
 done
 
 # Recreates the deployment and service for the default backend.
-sed -i "/name: http/a \ \ \ \ nodePort: ${NODE_PORT}" yaml/default-http-backend.yaml
-kubectl create -f yaml/default-http-backend.yaml
+# Note: We do sed on a copy so that the original file stays clean for future runs.
+cp yaml/default-http-backend.yaml yaml/default-http-backend-copy.yaml
+sed -i "/name: http/a \ \ \ \ nodePort: ${NODE_PORT}" yaml/default-http-backend-copy.yaml
+kubectl create -f yaml/default-http-backend-copy.yaml
 if [[ $? -eq 1 ]];
 then
   # Prompt the user to finish the last steps by themselves. We don't want to
   # have to cleanup and start all over again if we are this close to finishing.
   error_exit "Error-bot: Issue starting default backend. ${PERMISSION_ISSUE}. We are so close to being done so just manually start the default backend with NodePort: ${NODE_PORT} and create glbc.yaml when ready"
 fi
+rm yaml/default-http-backend-copy.yaml
 
 # Startup glbc
 kubectl create -f yaml/glbc.yaml
