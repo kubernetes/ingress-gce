@@ -20,6 +20,7 @@ import (
 	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
@@ -53,11 +54,18 @@ func (sp ServicePort) GetDescription() Description {
 	}
 }
 
-// IsAlpha returns true if the ServicePort is using ProtocolHTTP2 - which means
-// we need to use the Alpha API.
-// TODO(rramkumar): Replace all instances of this call with Version()
-func (sp ServicePort) IsAlpha() bool {
-	return sp.Protocol == annotations.ProtocolHTTP2
+// Version returns the support version of the ServicePort configuration
+// Alpha includes HTTP2
+// Beta includes NEG
+// The rest are v1
+func (sp ServicePort) Version() meta.Version {
+	if sp.Protocol == annotations.ProtocolHTTP2 {
+		return meta.VersionAlpha
+	}
+	if sp.NEGEnabled {
+		return meta.VersionBeta
+	}
+	return meta.VersionGA
 }
 
 // BackendName returns the name of the backend which would be used for this ServicePort.
