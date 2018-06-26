@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	echoheadersImage = "k8s.gcr.io/echoserver:1.10"
+	echoheadersImage = "gcr.io/k8s-ingress-image-push/ingress-gce-echo-amd64:master"
 )
 
 // CreateEchoService creates the pod and service serving echoheaders.
