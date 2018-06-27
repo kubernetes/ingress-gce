@@ -95,7 +95,7 @@ func TestIAP(t *testing.T) {
 				t.Errorf("Delete(%q) = %v, want nil", ing.Name, err)
 			}
 			t.Logf("Waiting for GCLB resources to be deleted (%s/%s)", s.Namespace, ing.Name)
-			if err := e2e.WaitForGCLBDeletion(ctx, Framework.Cloud, gclb); err != nil {
+			if err := e2e.WaitForGCLBDeletion(ctx, Framework.Cloud, gclb, nil); err != nil {
 				t.Errorf("e2e.WaitForGCLBDeletion(...) = %v, want nil", err)
 			}
 			t.Logf("GCLB resources deleted (%s/%s)", s.Namespace, ing.Name)
