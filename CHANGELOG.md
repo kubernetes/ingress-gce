@@ -1,5 +1,14 @@
 # Changelog
 
+### 1.2.0
+
+*Major Changes:*
+- Support for backendconfig.cloud.google.com (Beta)
+- Support for IAP (Beta)
+- Support for CDN (Beta)
+- Support for CloudArmor (Beta)
+- Network Endpoint Groups support (Beta)
+
 ### 1.1.1
 **Image:**  `k8s.gcr.io/ingress-gce-glbc-amd64:v1.1.1`
 
