@@ -32,10 +32,15 @@ if [[ -z "$PROJECT" ]]; then
   exit 1
 fi
 
+
+if [[ -z "$NUM_RUNS" ]]; then 
+  NUM_RUNS=1
+fi
+
 echo
 echo ==============================================================================
 echo "PROJECT: ${PROJECT}"
-CMD="/e2e-test -test.v -test.parallel=10 -run -project ${PROJECT} -logtostderr -inCluster -v=2"
+CMD="/e2e-test -test.v -test.parallel=10 -run -consecutiveRuns ${NUM_RUNS} -project ${PROJECT} -logtostderr -inCluster -v=2"
 echo "CMD: ${CMD}" $@
 echo
 

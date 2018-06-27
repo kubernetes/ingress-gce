@@ -42,6 +42,7 @@ var (
 		seed             int64
 		destroySandboxes bool
 		handleSIGINT     bool
+		consecutiveRuns  int64
 	}
 
 	Framework *e2e.Framework
@@ -60,6 +61,7 @@ func init() {
 	flag.Int64Var(&flags.seed, "seed", -1, "random seed")
 	flag.BoolVar(&flags.destroySandboxes, "destroySandboxes", true, "set to false to leave sandboxed resources for debugging")
 	flag.BoolVar(&flags.handleSIGINT, "handleSIGINT", true, "catch SIGINT to perform clean")
+	flag.Int64Var(&flags.consecutiveRuns, "consecutiveRuns", 1, "number of times to run each e2e test before exiting.")
 
 }
 
@@ -104,6 +106,7 @@ func TestMain(m *testing.M) {
 		Project:          flags.project,
 		Seed:             flags.seed,
 		DestroySandboxes: flags.destroySandboxes,
+		ConsecutiveRuns:  flags.consecutiveRuns,
 	})
 	if flags.handleSIGINT {
 		Framework.CatchSIGINT()
