@@ -28,9 +28,12 @@ import (
 	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/filter"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
+
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // ForwardingRule is a union of the API version types.
@@ -91,9 +94,16 @@ func NewGCLB(vip string) *GCLB {
 	}
 }
 
+// GCLBDeleteOptions may be provided when cleaning up GCLB resource.
+type GCLBDeleteOptions struct {
+	// SkipDefaultBackend indicates whether to skip checking for the
+	// system default backend.
+	SkipDefaultBackend bool
+}
+
 // CheckResourceDeletion checks the existance of the resources. Returns nil if
 // all of the associated resources no longer exist.
-func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud) error {
+func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options *GCLBDeleteOptions) error {
 	var resources []*meta.Key
 
 	for k := range g.ForwardingRule {
@@ -137,12 +147,18 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud) error {
 		}
 	}
 	for k := range g.BackendService {
-		_, err := c.BackendServices().Get(ctx, &k)
+		bs, err := c.BackendServices().Get(ctx, &k)
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
 				return err
 			}
 		} else {
+			if options != nil && options.SkipDefaultBackend {
+				desc := utils.DescriptionFromString(bs.Description)
+				if desc.ServiceName == "kube-system/default-http-backend" {
+					continue
+				}
+			}
 			resources = append(resources, &k)
 		}
 	}

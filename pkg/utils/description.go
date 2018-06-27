@@ -37,7 +37,7 @@ func (desc *Description) String() string {
 
 	descJson, err := json.Marshal(desc)
 	if err != nil {
-		glog.Errorf("Failed to generate description string: %s, falling back to empty string", desc)
+		glog.Errorf("Failed to generate description string: %v, falling back to empty string", err)
 		return ""
 	}
 	return string(descJson)
