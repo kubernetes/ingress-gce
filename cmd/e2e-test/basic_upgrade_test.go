@@ -28,7 +28,7 @@ import (
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 )
 
-func TestBasic(t *testing.T) {
+func TestBasicUpgrade(t *testing.T) {
 	t.Parallel()
 
 	port80 := intstr.FromInt(80)
@@ -41,14 +41,6 @@ func TestBasic(t *testing.T) {
 		numBackendServices int
 	}{
 		{
-			desc: "http default backend",
-			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
-				DefaultBackend("service-1", port80).
-				Build(),
-			numForwardingRules: 1,
-			numBackendServices: 1,
-		},
-		{
 			desc: "http one path",
 			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
 				AddPath("test.com", "/", "service-1", port80).
@@ -56,38 +48,33 @@ func TestBasic(t *testing.T) {
 			numForwardingRules: 1,
 			numBackendServices: 2,
 		},
-		{
-			desc: "http multiple paths",
-			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
-				AddPath("test.com", "/foo", "service-1", port80).
-				AddPath("test.com", "/bar", "service-1", port80).
-				Build(),
-			numForwardingRules: 1,
-			numBackendServices: 2,
-		},
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
-		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
-			t.Parallel()
+		Framework.RunContinuouslyWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox, isFirstRun bool) {
+			// Only create resources if this is the first test run in the sandbox.
+			if isFirstRun {
+				_, _, err := e2e.CreateEchoService(s, "service-1", nil)
+				if err != nil {
+					t.Fatalf("error creating echo service: %v", err)
+				}
+				t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
-			ctx := context.Background()
-
-			_, _, err := e2e.CreateEchoService(s, "service-1", nil)
-			if err != nil {
-				t.Fatalf("error creating echo service: %v", err)
+				if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(tc.ing); err != nil {
+					t.Fatalf("error creating Ingress spec: %v", err)
+				}
+				t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 			}
-			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
-			if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(tc.ing); err != nil {
-				t.Fatalf("error creating Ingress spec: %v", err)
+			options := &e2e.WaitForIngressOptions{
+				// If this is not the first run in the sandbox,
+				// then we expect all paths to be reachable immediately.
+				ExpectUnreachable: isFirstRun,
 			}
-			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
-
-			ing, err := e2e.WaitForIngress(s, tc.ing, nil)
+			ing, err := e2e.WaitForIngress(s, tc.ing, options)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
-			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
 			if len(ing.Status.LoadBalancer.Ingress) < 1 {
@@ -107,10 +94,6 @@ func TestBasic(t *testing.T) {
 			}
 			if len(gclb.BackendService) != tc.numBackendServices {
 				t.Errorf("got %d backend services, want %d;\n%s", len(gclb.BackendService), tc.numBackendServices, pretty.Sprint(gclb.BackendService))
-			}
-
-			if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, nil); err != nil {
-				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
 			}
 		})
 	}

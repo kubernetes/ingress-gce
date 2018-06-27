@@ -38,8 +38,15 @@ const (
 	gclbDeletionTimeout  = 5 * time.Minute
 )
 
+// WaitForIngressOptions holds options dictating how we wait for an ingress to stabilize.
+type WaitForIngressOptions struct {
+	// ExpectUnreachable is true when we expect the LB to still be
+	// programming itself (i.e 404's / 502's)
+	ExpectUnreachable bool
+}
+
 // WaitForIngress to stabilize.
-func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
+func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOptions) (*v1beta1.Ingress, error) {
 	err := wait.Poll(ingressPollInterval, ingressPollTimeout, func() (bool, error) {
 		var err error
 		ing, err = s.f.Clientset.Extensions().Ingresses(s.Namespace).Get(ing.Name, metav1.GetOptions{})
@@ -53,8 +60,12 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) 
 		result := validator.Check(context.Background())
 		if result.Err == nil {
 			return true, nil
+		} else {
+			if options == nil || options.ExpectUnreachable {
+				return false, nil
+			}
+			return true, fmt.Errorf("Unexpected error from validation: %v", result.Err)
 		}
-		return false, nil
 	})
 	return ing, err
 }
