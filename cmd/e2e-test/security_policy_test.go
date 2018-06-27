@@ -131,8 +131,8 @@ func TestSecurityPolicyEnable(t *testing.T) {
 
 		t.Logf("Cleaning up test")
 
-		if err := e2e.WaitForIngressDeletion(ctx, Framework.Cloud, gclb, s, testIng, false); err != nil {
-			t.Errorf("e2e.WaitForIngressDeletion(..., %q, false) = %v, want nil", testIng.Name, err)
+		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, testIng, nil); err != nil {
+			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", testIng.Name, err)
 		}
 	})
 }
@@ -237,8 +237,8 @@ func TestSecurityPolicyTransition(t *testing.T) {
 
 		t.Logf("Cleaning up test")
 
-		if err := e2e.WaitForIngressDeletion(ctx, Framework.Cloud, gclb, s, ing, false); err != nil {
-			t.Errorf("e2e.WaitForIngressDeletion(..., %q, false) = %v, want nil", ing.Name, err)
+		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, nil); err != nil {
+			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
 		}
 	})
 }

@@ -94,9 +94,16 @@ func NewGCLB(vip string) *GCLB {
 	}
 }
 
+// GCLBDeleteOptions may be provided when cleaning up GCLB resource.
+type GCLBDeleteOptions struct {
+	// SkipDefaultBackend indicates whether to skip checking for the
+	// system default backend.
+	SkipDefaultBackend bool
+}
+
 // CheckResourceDeletion checks the existance of the resources. Returns nil if
 // all of the associated resources no longer exist.
-func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, omitSystemDefaultBackend bool) error {
+func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options *GCLBDeleteOptions) error {
 	var resources []*meta.Key
 
 	for k := range g.ForwardingRule {
@@ -146,7 +153,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, omitSys
 				return err
 			}
 		} else {
-			if omitSystemDefaultBackend {
+			if options != nil && options.SkipDefaultBackend {
 				desc := utils.DescriptionFromString(bs.Description)
 				if desc.ServiceName == "kube-system/default-http-backend" {
 					continue

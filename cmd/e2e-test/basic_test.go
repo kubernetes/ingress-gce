@@ -109,8 +109,8 @@ func TestBasic(t *testing.T) {
 				t.Errorf("got %d backend services, want %d;\n%s", len(gclb.BackendService), tc.numBackendServices, pretty.Sprint(gclb.BackendService))
 			}
 
-			if err := e2e.WaitForIngressDeletion(ctx, Framework.Cloud, gclb, s, ing, false); err != nil {
-				t.Errorf("e2e.WaitForIngressDeletion(..., %q, false) = %v, want nil", ing.Name, err)
+			if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, nil); err != nil {
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
 			}
 		})
 	}
