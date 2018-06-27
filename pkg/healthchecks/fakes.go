@@ -18,6 +18,7 @@ package healthchecks
 
 import (
 	computealpha "google.golang.org/api/compute/v0.alpha"
+	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 
 	"k8s.io/ingress-gce/pkg/utils"
@@ -80,7 +81,7 @@ func (f *FakeHealthCheckProvider) UpdateHttpHealthCheck(hc *compute.HttpHealthCh
 func (f *FakeHealthCheckProvider) CreateHealthCheck(hc *compute.HealthCheck) error {
 	v := *hc
 	v.SelfLink = cloud.NewHealthChecksResourceID("mock-project", hc.Name).SelfLink(meta.VersionGA)
-	alphaHC, _ := toAlphaHealthCheck(&v)
+	alphaHC, _ := v1ToAlphaHealthCheck(&v)
 	f.generic[hc.Name] = *alphaHC
 	return nil
 }
@@ -90,6 +91,15 @@ func (f *FakeHealthCheckProvider) CreateAlphaHealthCheck(hc *computealpha.Health
 	v := *hc
 	v.SelfLink = cloud.NewHealthChecksResourceID("mock-project", hc.Name).SelfLink(meta.VersionAlpha)
 	f.generic[hc.Name] = v
+	return nil
+}
+
+// CreateHealthCheck fakes out http health check creation.
+func (f *FakeHealthCheckProvider) CreateBetaHealthCheck(hc *computebeta.HealthCheck) error {
+	v := *hc
+	v.SelfLink = cloud.NewHealthChecksResourceID("mock-project", hc.Name).SelfLink(meta.VersionBeta)
+	alphaHC, _ := betaToAlphaHealthCheck(&v)
+	f.generic[hc.Name] = *alphaHC
 	return nil
 }
 
@@ -103,10 +113,18 @@ func (f *FakeHealthCheckProvider) GetHealthCheck(name string) (*compute.HealthCh
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
-// GetHealthCheck fakes out getting a http health check from the cloud.
 func (f *FakeHealthCheckProvider) GetAlphaHealthCheck(name string) (*computealpha.HealthCheck, error) {
 	if hc, found := f.generic[name]; found {
 		return &hc, nil
+	}
+	return nil, utils.FakeGoogleAPINotFoundErr()
+}
+
+func (f *FakeHealthCheckProvider) GetBetaHealthCheck(name string) (*computebeta.HealthCheck, error) {
+	if hc, found := f.generic[name]; found {
+		ret := &computebeta.HealthCheck{}
+		err := copyViaJSON(ret, &hc)
+		return ret, err
 	}
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
@@ -126,7 +144,7 @@ func (f *FakeHealthCheckProvider) UpdateHealthCheck(hc *compute.HealthCheck) err
 	if _, exists := f.generic[hc.Name]; !exists {
 		return utils.FakeGoogleAPINotFoundErr()
 	}
-	alphaHC, _ := toAlphaHealthCheck(hc)
+	alphaHC, _ := v1ToAlphaHealthCheck(hc)
 	f.generic[hc.Name] = *alphaHC
 	return nil
 }
@@ -137,5 +155,14 @@ func (f *FakeHealthCheckProvider) UpdateAlphaHealthCheck(hc *computealpha.Health
 	}
 
 	f.generic[hc.Name] = *hc
+	return nil
+}
+
+func (f *FakeHealthCheckProvider) UpdateBetaHealthCheck(hc *computebeta.HealthCheck) error {
+	if _, exists := f.generic[hc.Name]; !exists {
+		return utils.FakeGoogleAPINotFoundErr()
+	}
+	alphaHC, _ := betaToAlphaHealthCheck(hc)
+	f.generic[hc.Name] = *alphaHC
 	return nil
 }

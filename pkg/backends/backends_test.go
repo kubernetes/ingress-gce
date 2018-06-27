@@ -132,9 +132,7 @@ func TestBackendPoolAdd(t *testing.T) {
 				t.Fatalf("Port %v not added to instance group", sp)
 			}
 
-			// Check the created healthcheck is the correct protocol
-			isAlpha := sp.Protocol == annotations.ProtocolHTTP2
-			hc, err := pool.healthChecker.Get(beName, isAlpha)
+			hc, err := pool.healthChecker.Get(beName, sp.Version())
 			if err != nil {
 				t.Fatalf("Unexpected err when querying fake healthchecker: %v", err)
 			}
@@ -203,7 +201,7 @@ func TestHealthCheckMigration(t *testing.T) {
 	pool.Ensure([]utils.ServicePort{p}, nil)
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(beName, p.IsAlpha())
+	hc, _ := pool.healthChecker.Get(beName, p.Version())
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -237,7 +235,7 @@ func TestBackendPoolUpdateHTTPS(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(beName, p.IsAlpha())
+	hc, _ := pool.healthChecker.Get(beName, p.Version())
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -257,7 +255,7 @@ func TestBackendPoolUpdateHTTPS(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ = pool.healthChecker.Get(beName, p.IsAlpha())
+	hc, _ = pool.healthChecker.Get(beName, p.Version())
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -282,7 +280,7 @@ func TestBackendPoolUpdateHTTP2(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(beName, p.IsAlpha())
+	hc, _ := pool.healthChecker.Get(beName, p.Version())
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -302,7 +300,7 @@ func TestBackendPoolUpdateHTTP2(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ = pool.healthChecker.Get(beName, true)
+	hc, _ = pool.healthChecker.Get(beName, meta.VersionAlpha)
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
