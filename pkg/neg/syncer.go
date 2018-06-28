@@ -124,7 +124,7 @@ func (s *syncer) Start() error {
 				}
 
 				if svc := getService(s.serviceLister, s.namespace, s.name); svc != nil {
-					s.recorder.Eventf(svc, apiv1.EventTypeWarning, "SyncNetworkEndpiontGroupFailed", "Failed to sync NEG %q %s: %v", s.negName, retryMesg, err)
+					s.recorder.Eventf(svc, apiv1.EventTypeWarning, "SyncNetworkEndpointGroupFailed", "Failed to sync NEG %q %s: %v", s.negName, retryMesg, err)
 				}
 			} else {
 				s.resetRetryDelay()
