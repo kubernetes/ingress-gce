@@ -107,6 +107,18 @@ func TestPortNameMapDifference(t *testing.T) {
 			PortNameMap{80: "namedport", 8080: "9000"},
 			PortNameMap{443: "3000", 5000: "6000"},
 		},
+		{
+			"difference of two non-empty maps with a key in common but different in value",
+			PortNameMap{80: "namedport"},
+			PortNameMap{80: "8080", 8080: "9000"},
+			PortNameMap{80: "namedport"},
+		},
+		{
+			"difference of two non-empty maps with 2 keys in common but different in values",
+			PortNameMap{80: "namedport", 443: "8443"},
+			PortNameMap{80: "8080", 443: "9443"},
+			PortNameMap{80: "namedport", 443: "8443"},
+		},
 	}
 
 	for _, tc := range testcases {
