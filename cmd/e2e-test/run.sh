@@ -43,6 +43,7 @@ echo ===========================================================================
 echo E2E TEST
 echo
 ${CMD} "$@" 2>&1
+RESULT=$?
 echo
 
 GCLOUD=/google-cloud-sdk/bin/gcloud
@@ -54,5 +55,5 @@ for RES in ${RESOURCES}; do
 done
 
 echo ==============================================================================
-echo "RESULT: $?"
+echo "RESULT: $RESULT"
 echo '--- END ---'
