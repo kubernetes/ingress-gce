@@ -43,6 +43,7 @@ type Options struct {
 	Project          string
 	Seed             int64
 	DestroySandboxes bool
+	ConsecutiveRuns  int64
 }
 
 // NewFramework returns a new test framework to run.
@@ -63,6 +64,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		Cloud:               theCloud,
 		Rand:                rand.New(rand.NewSource(options.Seed)),
 		destroySandboxes:    options.DestroySandboxes,
+		consecutiveRuns:     options.ConsecutiveRuns,
 	}
 }
 
@@ -75,6 +77,7 @@ type Framework struct {
 	Cloud               cloud.Cloud
 	Rand                *rand.Rand
 
+	consecutiveRuns     int64
 	destroySandboxes bool
 
 	lock      sync.Mutex
@@ -153,11 +156,16 @@ func (f *Framework) WithSandbox(testFunc func(*Sandbox) error) error {
 	f.sandboxes = append(f.sandboxes, sandbox)
 	f.lock.Unlock()
 
-	if f.destroySandboxes {
-		defer sandbox.Destroy()
+	for s.totalRuns < f.consecutiveRuns {
+		if s.PendingDestruction(f) {
+			defer sandbox.Destroy()
+		}
+		glog.V(2).Infof("Starting run #%d for sandbox with namespace %q", s.TotalRuns, sandbox.Namespace)
+		if err := testFunc(sandbox); err != nil {
+			return err
+		}
+		s.totalRuns += 1
 	}
-
-	return testFunc(sandbox)
 }
 
 // RunWithSandbox runs the testFunc with the Sandbox, taking care of resource
@@ -177,11 +185,14 @@ func (f *Framework) RunWithSandbox(name string, t *testing.T, testFunc func(*tes
 		f.sandboxes = append(f.sandboxes, sandbox)
 		f.lock.Unlock()
 
-		if f.destroySandboxes {
-			defer sandbox.Destroy()
+		for s.TotalRuns < f.consecutiveRuns {
+			if s.TotalRuns - 1 == f.consecutiveRuns && f.destroySandboxes {
+				defer sandbox.Destroy()
+			}
+			glog.V(2).Infof("Starting run #%d for sandbox with namespace %q", s.TotalRuns, sandbox.Namespace)
+			testFunc(sandbox)
+			s.TotalRuns += 1
 		}
-
-		testFunc(t, sandbox)
 	})
 }
 

@@ -72,16 +72,18 @@ func TestBasic(t *testing.T) {
 
 			ctx := context.Background()
 
-			_, _, err := e2e.CreateEchoService(s, "service-1", nil)
-			if err != nil {
-				t.Fatalf("error creating echo service: %v", err)
-			}
-			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
+			if s.IsNew() {
+				_, _, err := e2e.CreateEchoService(s, "service-1", nil)
+				if err != nil {
+					t.Fatalf("error creating echo service: %v", err)
+				}
+				t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
-			if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(tc.ing); err != nil {
-				t.Fatalf("error creating Ingress spec: %v", err)
+				if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(tc.ing); err != nil {
+					t.Fatalf("error creating Ingress spec: %v", err)
+				}
+				t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 			}
-			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 
 			ing, err := e2e.WaitForIngress(s, tc.ing)
 			if err != nil {
@@ -109,8 +111,10 @@ func TestBasic(t *testing.T) {
 				t.Errorf("got %d backend services, want %d;\n%s", len(gclb.BackendService), tc.numBackendServices, pretty.Sprint(gclb.BackendService))
 			}
 
-			if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, nil); err != nil {
-				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+			if s.PendingDestruction(Framework) {
+				if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, nil); err != nil {
+					t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+				}
 			}
 		})
 	}

@@ -33,10 +33,22 @@ type Sandbox struct {
 	Namespace string
 	// ValidatorEnv for use with the test.
 	ValidatorEnv fuzz.ValidatorEnv
-
+	
+	totalExecutions int
 	lock      sync.Mutex
 	f         *Framework
 	destroyed bool
+}
+
+// IsNew returns true if this sandbox has never had a test executed inside of it.
+func (s *Sandbox) IsNew() bool {
+	return s.totalExecutions == 0
+}
+
+// PendingDestruction returns true if this sandbox will be destroyed at the 
+// end of the its current test run.
+func (s *Sandbox) PendingDestruction(f *Framework) {
+	return f.destroySandboxes && s.totalExecutions - 1  == f.consecutiveRuns
 }
 
 // Create the sandbox.
