@@ -39,8 +39,8 @@ var (
 	// versionToFeatures stores the mapping from the required API
 	// version to feature names.
 	versionToFeatures = map[meta.Version][]string{
-		meta.VersionAlpha: []string{FeatureHTTP2},
-		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureNEG},
+		meta.VersionAlpha: []string{},
+		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureNEG, FeatureHTTP2},
 	}
 )
 

@@ -76,6 +76,7 @@ func newTestJig(gce *gce.GCECloud, fakeIGs instances.InstanceGroups, syncWithClo
 
 	// Add standard hooks for mocking update calls. Each test can set a different update hook if it chooses to.
 	(gce.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceHook
+	(gce.Compute().(*cloud.MockGCE)).MockBetaBackendServices.UpdateHook = mock.UpdateBetaBackendServiceHook
 	(gce.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = mock.UpdateBackendServiceHook
 
 	return bp, healthCheckProvider
@@ -145,22 +146,6 @@ func TestBackendPoolAdd(t *testing.T) {
 				t.Fatalf("Healthcheck for 443 should have special request path from probe")
 			}
 		})
-	}
-}
-
-func TestBackendPoolAddWithoutWhitelist(t *testing.T) {
-	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
-
-	sp := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP2}
-
-	// Add hook to simulate the forbidden error (i.e no alpha whitelist).
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.InsertHook = mock.InsertAlphaBackendServiceUnauthorizedErrHook
-
-	err := pool.Ensure([]utils.ServicePort{sp}, nil)
-	if !utils.IsHTTPErrorCode(err, http.StatusForbidden) {
-		t.Fatalf("Expected creating %+v through alpha API to be forbidden, got %v", sp, err)
 	}
 }
 
@@ -289,50 +274,20 @@ func TestBackendPoolUpdateHTTP2(t *testing.T) {
 	p.Protocol = annotations.ProtocolHTTP2
 	pool.Ensure([]utils.ServicePort{p}, nil)
 
-	beAlpha, err := fakeGCE.GetAlphaGlobalBackendService(beName)
+	beBeta, err := fakeGCE.GetBetaGlobalBackendService(beName)
 	if err != nil {
 		t.Fatalf("Unexpected err retrieving backend service after update: %v", err)
 	}
 
 	// Assert the backend has the correct protocol
-	if annotations.AppProtocol(beAlpha.Protocol) != p.Protocol {
-		t.Fatalf("Expected scheme %v but got %v", p.Protocol, annotations.AppProtocol(beAlpha.Protocol))
+	if annotations.AppProtocol(beBeta.Protocol) != p.Protocol {
+		t.Fatalf("Expected scheme %v but got %v", p.Protocol, annotations.AppProtocol(beBeta.Protocol))
 	}
 
 	// Assert the proper health check was created
 	hc, _ = pool.healthChecker.Get(beName, meta.VersionAlpha)
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
-	}
-}
-
-func TestBackendPoolUpdateHTTP2WithoutWhitelist(t *testing.T) {
-	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	pool, _ := newTestJig(fakeGCE, fakeIGs, false)
-
-	p := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
-	pool.Ensure([]utils.ServicePort{p}, nil)
-	beName := p.BackendName(defaultNamer)
-
-	be, err := fakeGCE.GetGlobalBackendService(beName)
-	if err != nil {
-		t.Fatalf("Unexpected err: %v", err)
-	}
-
-	if annotations.AppProtocol(be.Protocol) != p.Protocol {
-		t.Fatalf("Expected scheme %v but got %v", p.Protocol, be.Protocol)
-	}
-
-	// Add hook to simulate the forbidden error (i.e no alpha whitelist).
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceUnauthorizedErrHook
-
-	// Update service port to HTTP2
-	p.Protocol = annotations.ProtocolHTTP2
-	err = pool.Ensure([]utils.ServicePort{p}, nil)
-
-	if !utils.IsHTTPErrorCode(err, http.StatusForbidden) {
-		t.Fatalf("Expected getting %+v through alpha API to be forbidden, got %v", p, err)
 	}
 }
 
