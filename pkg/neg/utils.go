@@ -44,11 +44,10 @@ func (p1 PortNameMap) Union(p2 PortNameMap) PortNameMap {
 func (p1 PortNameMap) Difference(p2 PortNameMap) PortNameMap {
 	result := make(PortNameMap)
 	for svcPort, targetPort := range p1 {
-		if _, ok := p2[svcPort]; !ok {
+		if p1[svcPort] != p2[svcPort] {
 			result[svcPort] = targetPort
 		}
 	}
-
 	return result
 }
 
