@@ -250,7 +250,7 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 	return manager.cloud.DeleteNetworkEndpointGroup(name, zone)
 }
 
-// getSyncerKey encodes a service namespace, name and targetPort into a string key
+// getSyncerKey encodes a service namespace, name, service port and targetPort into a string key
 func getSyncerKey(namespace, name string, port int32, targetPort string) servicePort {
 	return servicePort{
 		namespace:  namespace,
