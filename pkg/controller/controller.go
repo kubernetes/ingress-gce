@@ -429,7 +429,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 			lbc.ctx.Recorder(ing.Namespace).Eventf(currIng, apiv1.EventTypeNormal, "CREATE", "ip: %v", ip)
 		}
 	}
-	annotations := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.CloudClusterManager.backendPool)
+	annotations := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.CloudClusterManager.backendPool, lbc.ctx.SyncTimestampEnabled)
 	if err := updateAnnotations(lbc.client, ing.Name, ing.Namespace, annotations); err != nil {
 		return err
 	}

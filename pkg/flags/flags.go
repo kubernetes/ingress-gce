@@ -80,6 +80,7 @@ var (
 		WatchNamespace            string
 		NodePortRanges            PortRanges
 		EnableBackendConfig       bool
+		EnableSyncTimestamp       bool
 
 		LeaderElection LeaderElectionConfiguration
 	}{}
@@ -202,6 +203,8 @@ the pod secrets for creating a Kubernetes client.`)
 L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-500`)
 	flag.BoolVar(&F.EnableBackendConfig, "enable-backend-config", false,
 		`Optional, whether or not to enable BackendConfig.`)
+	flag.BoolVar(&F.EnableSyncTimestamp, "enable-sync-timestamp", false,
+		`Optional, whether or not to set timestamp annotation upon ingress sync.`)
 
 	leaderelectionconfig.BindFlags(&F.LeaderElection.LeaderElectionConfiguration, flag.CommandLine)
 	flag.StringVar(&F.LeaderElection.LockObjectNamespace, "lock-object-namespace", F.LeaderElection.LockObjectNamespace, "Define the namespace of the lock object.")
