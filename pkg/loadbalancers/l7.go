@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
 
@@ -242,7 +243,7 @@ func (l *L7) Cleanup() error {
 }
 
 // GetLBAnnotations returns the annotations of an l7. This includes it's current status.
-func GetLBAnnotations(l7 *L7, existing map[string]string, backendPool backends.BackendPool) map[string]string {
+func GetLBAnnotations(l7 *L7, existing map[string]string, backendPool backends.BackendPool, syncTimestampEnabled bool) map[string]string {
 	if existing == nil {
 		existing = map[string]string{}
 	}
@@ -284,6 +285,9 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendPool backends.B
 	}
 	// TODO: We really want to know *when* a backend flipped states.
 	existing[fmt.Sprintf("%v/backends", annotations.StatusPrefix)] = jsonBackendState
+	if syncTimestampEnabled {
+		existing[fmt.Sprintf("%v/sync-timestamp", annotations.StatusPrefix)] = fmt.Sprintf("%d", time.Now().Unix())
+	}
 	return existing
 }
 

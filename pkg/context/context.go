@@ -47,6 +47,7 @@ type ControllerContext struct {
 
 	NEGEnabled           bool
 	BackendConfigEnabled bool
+	SyncTimestampEnabled bool
 
 	healthChecks map[string]func() error
 	hcLock       sync.Mutex
@@ -63,7 +64,8 @@ func NewControllerContext(
 	namespace string,
 	resyncPeriod time.Duration,
 	enableNEG bool,
-	enableBackendConfig bool) *ControllerContext {
+	enableBackendConfig bool,
+	enableSyncTimestamp bool) *ControllerContext {
 
 	newIndexer := func() cache.Indexers {
 		return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
@@ -77,6 +79,7 @@ func NewControllerContext(
 		NodeInformer:         informerv1.NewNodeInformer(kubeClient, resyncPeriod, newIndexer()),
 		NEGEnabled:           enableNEG,
 		BackendConfigEnabled: enableBackendConfig,
+		SyncTimestampEnabled: enableSyncTimestamp,
 		recorders:            map[string]record.EventRecorder{},
 		healthChecks:         make(map[string]func() error),
 	}

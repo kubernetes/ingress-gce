@@ -101,7 +101,7 @@ func main() {
 
 	cloud := app.NewGCEClient()
 	enableNEG := flags.F.Features.NEG
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cloud, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG, flags.F.EnableBackendConfig)
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cloud, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG, flags.F.EnableBackendConfig, flags.F.EnableSyncTimestamp)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
