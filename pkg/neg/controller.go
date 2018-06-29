@@ -40,12 +40,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-const (
-	// For each service, only retries 15 times to process it.
-	// This is a convention in kube-controller-manager.
-	maxRetries = 15
-)
-
 func init() {
 	// register prometheus metrics
 	registerMetrics()
@@ -336,21 +330,14 @@ func (c *Controller) handleErr(err error, key interface{}) {
 		return
 	}
 
-	glog.Errorf("Error processing service %q: %v", key, err)
-	if c.serviceQueue.NumRequeues(key) < maxRetries {
-		c.serviceQueue.AddRateLimited(key)
-		return
-	}
-
-	defer c.serviceQueue.Forget(key)
-	service, exists, err := c.serviceLister.GetByKey(key.(string))
-	if err != nil {
+	msg := fmt.Sprintf("error processing service %q: %v", key, err)
+	glog.Errorf(msg)
+	if service, exists, err := c.serviceLister.GetByKey(key.(string)); err != nil {
 		glog.Warning("Failed to retrieve service %q from store: %v", key.(string), err)
-		return
+	} else if exists {
+		c.recorder.Eventf(service.(*apiv1.Service), apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
 	}
-	if exists {
-		c.recorder.Eventf(service.(*apiv1.Service), apiv1.EventTypeWarning, "ProcessServiceFailed", "Service %q dropped from queue (requeued %v times)", key, c.serviceQueue.NumRequeues(key))
-	}
+	c.serviceQueue.AddRateLimited(key)
 }
 
 func (c *Controller) enqueueService(obj interface{}) {

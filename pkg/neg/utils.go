@@ -61,7 +61,7 @@ func NEGServicePorts(ann annotations.NegAnnotation, knownPorts PortNameMap) (Por
 	for port, _ := range ann.ExposedPorts {
 		// TODO: also validate ServicePorts in the exposed NEG annotation via webhook
 		if _, ok := knownPorts[port]; !ok {
-			errList = append(errList, fmt.Errorf("ServicePort %v doesn't exist on Service", port))
+			errList = append(errList, fmt.Errorf("port %v specified in %q doesn't exist in the service", port, annotations.NEGAnnotationKey))
 		}
 		portSet[port] = knownPorts[port]
 	}
