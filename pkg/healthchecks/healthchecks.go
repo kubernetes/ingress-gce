@@ -396,13 +396,9 @@ func (hc *HealthCheck) isHttp2() bool {
 }
 
 // Version returns the appropriate API version to handle the health check
-// Use Alpha API for HTTP2
-// Use Beta API for NEG as PORT_SPECIFICATION is required
+// Use Beta API for NEG as PORT_SPECIFICATION is required, and HTTP2
 func (hc *HealthCheck) Version() meta.Version {
-	if hc.isHttp2() {
-		return meta.VersionAlpha
-	}
-	if hc.ForNEG {
+	if hc.isHttp2() || hc.ForNEG {
 		return meta.VersionBeta
 	}
 	return meta.VersionGA
