@@ -599,12 +599,18 @@ func TestBackendPoolSyncQuota(t *testing.T) {
 			quota := len(tc.newPorts)
 
 			// Add hooks to simulate quota changes & errors.
-			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockBackendServices) (bool, error) {
+			insertFunc := func(ctx context.Context, key *meta.Key, beName string) (bool, error) {
 				if bsCreated+1 > quota {
-					return true, &googleapi.Error{Code: http.StatusForbidden, Body: be.Name}
+					return true, &googleapi.Error{Code: http.StatusForbidden, Body: beName}
 				}
 				bsCreated += 1
 				return false, nil
+			}
+			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockBackendServices) (bool, error) {
+				return insertFunc(ctx, key, be.Name)
+			}
+			(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, be *computebeta.BackendService, m *cloud.MockBetaBackendServices) (bool, error) {
+				return insertFunc(ctx, key, be.Name)
 			}
 			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockBackendServices) (bool, error) {
 				bsCreated -= 1
