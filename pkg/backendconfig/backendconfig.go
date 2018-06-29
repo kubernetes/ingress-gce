@@ -32,10 +32,9 @@ import (
 )
 
 var (
-	ErrBackendConfigsFromAnnotation = errors.New("error getting BackendConfig's from annotation")
-	ErrBackendConfigDoesNotExist    = errors.New("no BackendConfig for service port exists.")
-	ErrBackendConfigFailedToGet     = errors.New("client had error getting BackendConfig for service port.")
-	ErrNoBackendConfigForPort       = errors.New("no BackendConfig name found for service port.")
+	ErrBackendConfigDoesNotExist = errors.New("no BackendConfig for service port exists.")
+	ErrBackendConfigFailedToGet  = errors.New("client had error getting BackendConfig for service port.")
+	ErrNoBackendConfigForPort    = errors.New("no BackendConfig name found for service port.")
 )
 
 func CRDMeta() *crd.CRDMeta {
@@ -95,7 +94,7 @@ func GetBackendConfigForServicePort(backendConfigLister cache.Store, svc *apiv1.
 		if err == annotations.ErrBackendConfigAnnotationMissing {
 			return nil, nil
 		}
-		return nil, ErrBackendConfigsFromAnnotation
+		return nil, err
 	}
 
 	configName := BackendConfigName(*backendConfigs, *svcPort)
