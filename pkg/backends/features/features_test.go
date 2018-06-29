@@ -69,6 +69,11 @@ var (
 			},
 		},
 	}
+
+	svcPortWithNEG = utils.ServicePort{
+		ID:         fakeSvcPortID,
+		NEGEnabled: true,
+	}
 )
 
 func TestFeaturesFromServicePort(t *testing.T) {
@@ -91,6 +96,11 @@ func TestFeaturesFromServicePort(t *testing.T) {
 			desc:             "SecurityPolicy",
 			svcPort:          svcPortWithSecurityPolicy,
 			expectedFeatures: []string{"SecurityPolicy"},
+		},
+		{
+			desc:             "NEG",
+			svcPort:          svcPortWithNEG,
+			expectedFeatures: []string{"NEG"},
 		},
 		{
 			desc:             "HTTP2 + SecurityPolicy",
@@ -126,6 +136,11 @@ func TestVersionFromFeatures(t *testing.T) {
 		{
 			desc:            "SecurityPolicy",
 			features:        []string{FeatureSecurityPolicy},
+			expectedVersion: meta.VersionBeta,
+		},
+		{
+			desc:            "NEG",
+			features:        []string{FeatureNEG},
 			expectedVersion: meta.VersionBeta,
 		},
 		{

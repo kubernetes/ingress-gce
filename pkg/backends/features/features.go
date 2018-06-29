@@ -31,6 +31,8 @@ const (
 	FeatureHTTP2 = "HTTP2"
 	// FeatureSecurityPolicy defines the feature name of SecurityPolicy.
 	FeatureSecurityPolicy = "SecurityPolicy"
+	// FeatureNEG defines the feature name of NEG.
+	FeatureNEG = "NEG"
 )
 
 var (
@@ -38,7 +40,7 @@ var (
 	// version to feature names.
 	versionToFeatures = map[meta.Version][]string{
 		meta.VersionAlpha: []string{FeatureHTTP2},
-		meta.VersionBeta:  []string{FeatureSecurityPolicy},
+		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureNEG},
 	}
 )
 
@@ -56,6 +58,9 @@ func featuresFromServicePort(sp *utils.ServicePort) []string {
 	}
 	if sp.BackendConfig != nil && sp.BackendConfig.Spec.SecurityPolicy != nil {
 		features = append(features, FeatureSecurityPolicy)
+	}
+	if sp.NEGEnabled {
+		features = append(features, FeatureNEG)
 	}
 	// Keep feature names sorted to be consistent.
 	sort.Strings(features)

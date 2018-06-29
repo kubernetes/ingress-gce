@@ -132,7 +132,7 @@ func TestBackendPoolAdd(t *testing.T) {
 				t.Fatalf("Port %v not added to instance group", sp)
 			}
 
-			hc, err := pool.healthChecker.Get(beName, sp.Version())
+			hc, err := pool.healthChecker.Get(beName, features.VersionFromServicePort(&sp))
 			if err != nil {
 				t.Fatalf("Unexpected err when querying fake healthchecker: %v", err)
 			}
@@ -201,7 +201,7 @@ func TestHealthCheckMigration(t *testing.T) {
 	pool.Ensure([]utils.ServicePort{p}, nil)
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(beName, p.Version())
+	hc, _ := pool.healthChecker.Get(beName, features.VersionFromServicePort(&p))
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -235,7 +235,7 @@ func TestBackendPoolUpdateHTTPS(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(beName, p.Version())
+	hc, _ := pool.healthChecker.Get(beName, features.VersionFromServicePort(&p))
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -255,7 +255,7 @@ func TestBackendPoolUpdateHTTPS(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ = pool.healthChecker.Get(beName, p.Version())
+	hc, _ = pool.healthChecker.Get(beName, features.VersionFromServicePort(&p))
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -280,7 +280,7 @@ func TestBackendPoolUpdateHTTP2(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(beName, p.Version())
+	hc, _ := pool.healthChecker.Get(beName, features.VersionFromServicePort(&p))
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -599,12 +599,18 @@ func TestBackendPoolSyncQuota(t *testing.T) {
 			quota := len(tc.newPorts)
 
 			// Add hooks to simulate quota changes & errors.
-			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockBackendServices) (bool, error) {
+			insertFunc := func(ctx context.Context, key *meta.Key, beName string) (bool, error) {
 				if bsCreated+1 > quota {
-					return true, &googleapi.Error{Code: http.StatusForbidden, Body: be.Name}
+					return true, &googleapi.Error{Code: http.StatusForbidden, Body: beName}
 				}
 				bsCreated += 1
 				return false, nil
+			}
+			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockBackendServices) (bool, error) {
+				return insertFunc(ctx, key, be.Name)
+			}
+			(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.InsertHook = func(ctx context.Context, key *meta.Key, be *computebeta.BackendService, m *cloud.MockBetaBackendServices) (bool, error) {
+				return insertFunc(ctx, key, be.Name)
 			}
 			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockBackendServices) (bool, error) {
 				bsCreated -= 1
