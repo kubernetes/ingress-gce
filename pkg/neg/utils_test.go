@@ -143,7 +143,7 @@ func TestNEGServicePorts(t *testing.T) {
 			desc:       "NEG annotation references port that Service does not have",
 			annotation: `{"exposed_ports":{"3000":{}}}`,
 			expectedErr: utilerrors.NewAggregate([]error{
-				fmt.Errorf("ServicePort %v doesn't exist on Service", 3000),
+				fmt.Errorf("port %v specified in %q doesn't exist in the service", 3000, annotations.NEGAnnotationKey),
 			}),
 			knownPortMap:    PortNameMap{80: "some_port", 443: "another_port"},
 			expectedPortMap: PortNameMap{3000: ""},

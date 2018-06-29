@@ -39,8 +39,11 @@ import (
 
 const (
 	MAX_NETWORK_ENDPOINTS_PER_BATCH = 500
-	minRetryDelay                   = 5 * time.Second
-	maxRetryDelay                   = 300 * time.Second
+	// For each NEG, only retries 15 times to process it.
+	// This is a convention in kube-controller-manager.
+	maxRetries    = 15
+	minRetryDelay = 5 * time.Second
+	maxRetryDelay = 600 * time.Second
 )
 
 // servicePort includes information to uniquely identify a NEG
@@ -435,13 +438,13 @@ func (s *syncer) toNetworkEndpointBatch(endpoints sets.String) ([]*compute.Netwo
 
 func (s *syncer) attachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
 	wg.Add(1)
-	glog.V(2).Infof("Attaching %d endpoint(s) for %s into NEG %s in %s.", len(networkEndpoints), s.formattedName(), s.negName, zone)
+	glog.V(2).Infof("Attaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpoints), s.formattedName(), s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.AttachNetworkEndpoints, "Attach")
 }
 
 func (s *syncer) detachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
 	wg.Add(1)
-	glog.V(2).Infof("Detaching %d endpoint(s) for %s into NEG %s in %s.", len(networkEndpoints), s.formattedName(), s.negName, zone)
+	glog.V(2).Infof("Detaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpoints), s.formattedName(), s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.DetachNetworkEndpoints, "Detach")
 }
 
