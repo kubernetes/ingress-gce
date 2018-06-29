@@ -20,16 +20,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
-
-	"github.com/golang/glog"
 
 	compute "google.golang.org/api/compute/v1"
 
 	api_v1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 
@@ -132,46 +128,6 @@ IngressLoop:
 		err = fmt.Errorf("no ingress for service %v", svc.Name)
 	}
 	return
-}
-
-// StoreToEndpointLister makes a Store that lists Endpoints.
-type StoreToEndpointLister struct {
-	cache.Indexer
-}
-
-func (s *StoreToEndpointLister) ListEndpointTargetPorts(namespace, name, targetPort string) []int {
-	// if targetPort is integer, no need to translate to endpoint ports
-	if i, err := strconv.Atoi(targetPort); err == nil {
-		return []int{i}
-	}
-
-	ep, exists, err := s.Indexer.Get(
-		&api_v1.Endpoints{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Name:      name,
-				Namespace: namespace,
-			},
-		},
-	)
-
-	if !exists {
-		glog.Errorf("Endpoint object %v/%v does not exist.", namespace, name)
-		return []int{}
-	}
-	if err != nil {
-		glog.Errorf("Failed to retrieve endpoint object %v/%v: %v", namespace, name, err)
-		return []int{}
-	}
-
-	ret := []int{}
-	for _, subset := range ep.(*api_v1.Endpoints).Subsets {
-		for _, port := range subset.Ports {
-			if port.Protocol == api_v1.ProtocolTCP && port.Name == targetPort {
-				ret = append(ret, int(port.Port))
-			}
-		}
-	}
-	return ret
 }
 
 // setInstanceGroupsAnnotation sets the instance-groups annotation with names of the given instance groups.
