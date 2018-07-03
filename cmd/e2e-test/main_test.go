@@ -42,6 +42,7 @@ var (
 		seed             int64
 		destroySandboxes bool
 		handleSIGINT     bool
+		handleSIGTERM    bool
 	}
 
 	Framework *e2e.Framework
@@ -60,7 +61,7 @@ func init() {
 	flag.Int64Var(&flags.seed, "seed", -1, "random seed")
 	flag.BoolVar(&flags.destroySandboxes, "destroySandboxes", true, "set to false to leave sandboxed resources for debugging")
 	flag.BoolVar(&flags.handleSIGINT, "handleSIGINT", true, "catch SIGINT to perform clean")
-
+	flag.BoolVar(&flags.handleSIGTERM, "handleSIGTERM", true, "catch SIGTERM to perform clean")
 }
 
 // TestMain is the entrypoint for the end-to-end test suite. This is where
@@ -105,8 +106,8 @@ func TestMain(m *testing.M) {
 		Seed:             flags.seed,
 		DestroySandboxes: flags.destroySandboxes,
 	})
-	if flags.handleSIGINT {
-		Framework.CatchSIGINT()
+	if flags.handleSIGINT || flags.handleSIGTERM {
+		Framework.CatchSignals(flags.handleSIGINT, flags.handleSIGTERM)
 	}
 	if err := Framework.SanityCheck(); err != nil {
 		glog.Fatalf("Framework sanity check failed: %v", err)

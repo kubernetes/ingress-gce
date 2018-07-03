@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"syscall"
 	"testing"
 
 	"github.com/golang/glog"
@@ -106,25 +107,25 @@ func (f *Framework) SanityCheck() error {
 	return nil
 }
 
-// CatchSIGINT and cleanup sandboxes when the test is interrupted.
-func (f *Framework) CatchSIGINT() {
-	glog.Infof("Catching SIGINT")
+// CatchSignals cleans up sandboxes when the test is interrupted or terminated.
+func (f *Framework) CatchSignals(handleSIGINT, handleSIGTERM bool) {
+	glog.Infof("Catching SIGINT/SIGTERM")
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	c := make(chan os.Signal)
+	signal.Notify(c, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		for range c {
-			f.sigintHandler()
+			f.sigHandler(<-c)
 		}
 	}()
 }
 
-func (f *Framework) sigintHandler() {
+func (f *Framework) sigHandler(sig os.Signal) {
 	if !f.destroySandboxes {
 		return
 	}
 
-	glog.Warningf("SIGINT received, cleaning up sandboxes (disable with -handleSIGINT=false)")
+	glog.Warningf("Signal %s received, cleaning up sandboxes (disable via flags)", sig.String())
 
 	f.lock.Lock()
 	defer f.lock.Unlock()
@@ -133,7 +134,7 @@ func (f *Framework) sigintHandler() {
 		s.Destroy()
 	}
 
-	glog.Errorf("Exiting due to SIGINT")
+	glog.Errorf("Exiting due to %s signal", sig.String())
 	os.Exit(1)
 }
 
@@ -158,6 +159,7 @@ func (f *Framework) WithSandbox(testFunc func(*Sandbox) error) error {
 	}
 
 	return testFunc(sandbox)
+
 }
 
 // RunWithSandbox runs the testFunc with the Sandbox, taking care of resource
@@ -182,6 +184,40 @@ func (f *Framework) RunWithSandbox(name string, t *testing.T, testFunc func(*tes
 		}
 
 		testFunc(t, sandbox)
+	})
+}
+
+// RunContinuouslyWithSandbox runs the testFunc with the Sandbox, taking care of resource
+// cleanup and isolation. This indirectly calls testing.T.Run().
+func (f *Framework) RunContinuouslyWithSandbox(name string, t *testing.T, testFunc func(*testing.T, *Sandbox, bool)) {
+	t.Run(name, func(t *testing.T) {
+		sandbox := &Sandbox{
+			Namespace: fmt.Sprintf("test-sandbox-%x", f.Rand.Int63()),
+			f:         f,
+		}
+		glog.V(2).Infof("Using namespace %q for test sandbox", sandbox.Namespace)
+		if err := sandbox.Create(); err != nil {
+			t.Fatalf("error creating sandbox: %v", err)
+		}
+
+		f.lock.Lock()
+		f.sandboxes = append(f.sandboxes, sandbox)
+		f.lock.Unlock()
+
+		if f.destroySandboxes {
+			defer sandbox.Destroy()
+		}
+
+		totalRuns := 1
+		for {
+			glog.Infof("Starting run #%d for sandbox %q", totalRuns, sandbox.Namespace)
+			isFirstRun := true
+			if totalRuns > 1 {
+				isFirstRun = false
+			}
+			testFunc(t, sandbox, isFirstRun)
+			totalRuns++
+		}
 	})
 }
 
