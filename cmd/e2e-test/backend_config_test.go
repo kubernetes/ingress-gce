@@ -45,6 +45,7 @@ func TestBackendConfigNegatives(t *testing.T) {
 		desc           string
 		svcAnnotations map[string]string
 		backendConfig  *backendconfigv1beta1.BackendConfig
+		secretName     string
 		expectedMsg    string
 	}{
 		{
@@ -70,7 +71,8 @@ func TestBackendConfigNegatives(t *testing.T) {
 				EnableCDN(true).
 				SetIAPConfig(true, "bar").
 				Build(),
-			expectedMsg: "is not valid",
+			secretName:  "bar",
+			expectedMsg: "iap and cdn cannot be enabled at the same time",
 		},
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
@@ -82,6 +84,16 @@ func TestBackendConfigNegatives(t *testing.T) {
 					t.Fatalf("Error creating backend config: %v", err)
 				}
 				t.Logf("Backend config %s/%s created", s.Namespace, tc.backendConfig.Name)
+			}
+
+			if tc.secretName != "" {
+				if _, err := e2e.CreateSecret(s, tc.secretName,
+					map[string][]byte{
+						"client_id":     []byte("my-id"),
+						"client_secret": []byte("my-secret"),
+					}); err != nil {
+					t.Fatalf("Error creating secret %q: %v", tc.secretName, err)
+				}
 			}
 
 			if _, _, err := e2e.CreateEchoService(s, "service-1", tc.svcAnnotations); err != nil {
