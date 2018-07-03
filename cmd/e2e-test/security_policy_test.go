@@ -143,8 +143,8 @@ func TestSecurityPolicyTransition(t *testing.T) {
 
 	Framework.RunWithSandbox("Security Policy Transition", t, func(t *testing.T, s *e2e.Sandbox) {
 		policies := []*computebeta.SecurityPolicy{
-			buildPolicyAllowAll(fmt.Sprintf("transition-test-allow-all-%s", s.Namespace))
-			buildPolicyDisallowAll(fmt.Sprintf("transition-test-disallow-all-%s", s.Namespace))
+			buildPolicyAllowAll(fmt.Sprintf("transition-test-allow-all-%s", s.Namespace)),
+			buildPolicyDisallowAll(fmt.Sprintf("transition-test-disallow-all-%s", s.Namespace)),
 		}
 		defer func() {
 			if err := cleanupSecurityPolicies(t, ctx, Framework.Cloud, policies); err != nil {
