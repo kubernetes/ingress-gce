@@ -55,7 +55,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 	if err != nil {
 		glog.Fatalf("Failed to create BackendConfig client: %v", err)
 	}
-	return &Framework{
+	f := &Framework{
 		RestConfig:          config,
 		Clientset:           kubernetes.NewForConfigOrDie(config),
 		BackendConfigClient: backendConfigClient,
@@ -64,6 +64,8 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		Rand:                rand.New(rand.NewSource(options.Seed)),
 		destroySandboxes:    options.DestroySandboxes,
 	}
+	f.statusManager = NewStatusManager(f)
+	return f
 }
 
 // Framework is the end-to-end test framework.
@@ -74,6 +76,7 @@ type Framework struct {
 	Project             string
 	Cloud               cloud.Cloud
 	Rand                *rand.Rand
+	statusManager       *StatusManager
 
 	destroySandboxes bool
 
@@ -103,6 +106,11 @@ func (f *Framework) SanityCheck() error {
 			return err
 		}
 	}
+	glog.V(2).Info("Checking status manager initialization")
+	if err := f.statusManager.init(); err != nil {
+		glog.Errorf("Error initalizing status manager: %v", err)
+		return err
+	}
 	return nil
 }
 
@@ -118,23 +126,23 @@ func (f *Framework) CatchSIGINT() {
 		}
 	}()
 }
-
 func (f *Framework) sigintHandler() {
 	if !f.destroySandboxes {
 		return
 	}
+	glog.Warningf("SIGINT received, shutting down (disable with -handleSIGINT=false)")
+	f.shutdown(1)
+}
 
-	glog.Warningf("SIGINT received, cleaning up sandboxes (disable with -handleSIGINT=false)")
-
+func (f *Framework) shutdown(exitCode int) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-
+	glog.V(2).Infof("Cleaning up sandboxes...")
 	for _, s := range f.sandboxes {
 		s.Destroy()
 	}
-
-	glog.Errorf("Exiting due to SIGINT")
-	os.Exit(1)
+	f.statusManager.shutdown()
+	os.Exit(exitCode)
 }
 
 // WithSandbox runs the testFunc with the Sandbox, taking care of resource

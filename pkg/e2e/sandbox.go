@@ -77,3 +77,7 @@ func (s *Sandbox) Destroy() {
 	}
 	s.destroyed = true
 }
+
+func (s *Sandbox) PutStatus(status IngressStability) {
+	s.f.statusManager.putStatus(s.Namespace, status)
+}
