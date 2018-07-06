@@ -83,7 +83,7 @@ func TestBasic(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 
-			ing, err := e2e.WaitForIngress(s, tc.ing)
+			ing, err := e2e.WaitForIngress(s, tc.ing, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
