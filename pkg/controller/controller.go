@@ -63,11 +63,9 @@ type LoadBalancerController struct {
 	client kubernetes.Interface
 	ctx    *context.ControllerContext
 
-	ingLister StoreToIngressLister
-	// endpoint lister is needed when translating service target port to real endpoint target ports.
-	endpointLister StoreToEndpointLister
-	nodeLister     cache.Indexer
-	nodes          *NodeController
+	ingLister  StoreToIngressLister
+	nodeLister cache.Indexer
+	nodes      *NodeController
 
 	// TODO: Watch secrets
 	CloudClusterManager *ClusterManager
@@ -111,10 +109,6 @@ func NewLoadBalancerController(
 		hasSynced:           ctx.HasSynced,
 	}
 	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
-
-	if ctx.NEGEnabled {
-		lbc.endpointLister.Indexer = ctx.EndpointInformer.GetIndexer()
-	}
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{

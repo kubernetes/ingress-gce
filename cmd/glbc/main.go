@@ -69,7 +69,7 @@ func main() {
 	}
 
 	glog.V(2).Infof("Flags = %+v", flags.F)
-
+	defer glog.Flush()
 	kubeConfig, err := app.NewKubeConfig()
 	if err != nil {
 		glog.Fatalf("Failed to create kubernetes client config: %v", err)
