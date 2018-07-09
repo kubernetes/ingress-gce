@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"k8s.io/ingress-gce/pkg/annotations"
+	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
 )
@@ -37,56 +38,108 @@ var (
 	eventPollTimeout  = 3 * time.Minute
 )
 
-func TestBackendConfigNotExist(t *testing.T) {
+func TestBackendConfigNegatives(t *testing.T) {
 	t.Parallel()
 
-	Framework.RunWithSandbox("BackendConfig not exist", t, func(t *testing.T, s *e2e.Sandbox) {
-		testBackendConfigAnnotation := map[string]string{
-			annotations.BackendConfigKey: `{"default":"not-exist"}`,
-		}
-		if _, _, err := e2e.CreateEchoService(s, "service-1", testBackendConfigAnnotation); err != nil {
-			t.Fatalf("e2e.CreateEchoService(s, service-1, %q) = _, _, %v, want _, _, nil", testBackendConfigAnnotation, err)
-		}
+	for _, tc := range []struct {
+		desc           string
+		svcAnnotations map[string]string
+		backendConfig  *backendconfigv1beta1.BackendConfig
+		secretName     string
+		expectedMsg    string
+	}{
+		{
+			desc: "backend config not exist",
+			svcAnnotations: map[string]string{
+				annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
+			},
+			expectedMsg: "no BackendConfig",
+		},
+		{
+			desc: "invalid format in backend config annotation",
+			svcAnnotations: map[string]string{
+				annotations.BackendConfigKey: `invalid`,
+			},
+			expectedMsg: fmt.Sprintf("%v", annotations.ErrBackendConfigInvalidJSON),
+		},
+		{
+			desc: "enable both IAP and CDN in backend config",
+			svcAnnotations: map[string]string{
+				annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
+			},
+			backendConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
+				EnableCDN(true).
+				SetIAPConfig(true, "bar").
+				Build(),
+			secretName:  "bar",
+			expectedMsg: "iap and cdn cannot be enabled at the same time",
+		},
+	} {
+		tc := tc // Capture tc as we are running this in parallel.
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Parallel()
 
-		port80 := intstr.FromInt(80)
-		testIng := fuzz.NewIngressBuilder("", "ingress-1", "").
-			AddPath("test.com", "/", "service-1", port80).
-			Build()
-		testIng, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(testIng)
-		if err != nil {
-			t.Fatalf("error creating Ingress spec: %v", err)
-		}
-		t.Logf("Ingress %s/%s created", s.Namespace, testIng.Name)
+			if tc.backendConfig != nil {
+				if _, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Create(tc.backendConfig); err != nil {
+					t.Fatalf("Error creating backend config: %v", err)
+				}
+				t.Logf("Backend config %s/%s created", s.Namespace, tc.backendConfig.Name)
+			}
 
-		t.Logf("Waiting for BackendConfig warning event to be emitted")
-		if err := wait.Poll(eventPollInterval, eventPollTimeout, func() (bool, error) {
-			events, err := Framework.Clientset.CoreV1().Events(s.Namespace).List(metav1.ListOptions{})
+			if tc.secretName != "" {
+				if _, err := e2e.CreateSecret(s, tc.secretName,
+					map[string][]byte{
+						"client_id":     []byte("my-id"),
+						"client_secret": []byte("my-secret"),
+					}); err != nil {
+					t.Fatalf("Error creating secret %q: %v", tc.secretName, err)
+				}
+			}
+
+			if _, _, err := e2e.CreateEchoService(s, "service-1", tc.svcAnnotations); err != nil {
+				t.Fatalf("e2e.CreateEchoService(s, service-1, %q) = _, _, %v, want _, _, nil", tc.svcAnnotations, err)
+			}
+
+			port80 := intstr.FromInt(80)
+			testIng := fuzz.NewIngressBuilder("", "ingress-1", "").
+				AddPath("test.com", "/", "service-1", port80).
+				Build()
+			testIng, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(testIng)
 			if err != nil {
-				return false, fmt.Errorf("error in listing events: %s", err)
+				t.Fatalf("error creating Ingress spec: %v", err)
 			}
-			for _, event := range events.Items {
-				if event.InvolvedObject.Kind != "Ingress" ||
-					event.InvolvedObject.Name != "ingress-1" ||
-					event.Type != v1.EventTypeWarning {
-					continue
-				}
-				if strings.Contains(event.Message, "no BackendConfig") {
-					t.Logf("BackendConfig warning event emitted")
-					return true, nil
-				}
-			}
-			t.Logf("No BackendConfig warning event is emitted yet")
-			return false, nil
-		}); err != nil {
-			t.Fatalf("error waiting for BackendConfig warning event: %v", err)
-		}
+			t.Logf("Ingress %s/%s created", s.Namespace, testIng.Name)
 
-		testIng, err = Framework.Clientset.Extensions().Ingresses(s.Namespace).Get(testIng.Name, metav1.GetOptions{})
-		if err != nil {
-			t.Fatalf("error retrieving Ingress %q: %v", testIng.Name, err)
-		}
-		if len(testIng.Status.LoadBalancer.Ingress) > 0 {
-			t.Fatalf("Ingress should not have an IP: %+v", testIng.Status)
-		}
-	})
+			t.Logf("Waiting for warning event to be emitted")
+			if err := wait.Poll(eventPollInterval, eventPollTimeout, func() (bool, error) {
+				events, err := Framework.Clientset.CoreV1().Events(s.Namespace).List(metav1.ListOptions{})
+				if err != nil {
+					return false, fmt.Errorf("error in listing events: %s", err)
+				}
+				for _, event := range events.Items {
+					if event.InvolvedObject.Kind != "Ingress" ||
+						event.InvolvedObject.Name != "ingress-1" ||
+						event.Type != v1.EventTypeWarning {
+						continue
+					}
+					if strings.Contains(event.Message, tc.expectedMsg) {
+						t.Logf("Warning event emitted")
+						return true, nil
+					}
+				}
+				t.Logf("No warning event is emitted yet")
+				return false, nil
+			}); err != nil {
+				t.Fatalf("error waiting for BackendConfig warning event: %v", err)
+			}
+
+			testIng, err = Framework.Clientset.Extensions().Ingresses(s.Namespace).Get(testIng.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("error retrieving Ingress %q: %v", testIng.Name, err)
+			}
+			if len(testIng.Status.LoadBalancer.Ingress) > 0 {
+				t.Fatalf("Ingress should not have an IP: %+v", testIng.Status)
+			}
+		})
+	}
 }
