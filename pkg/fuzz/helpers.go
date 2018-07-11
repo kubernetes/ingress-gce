@@ -112,7 +112,10 @@ func ServiceMapFromIngress(ing *v1beta1.Ingress) ServiceMap {
 		for _, path := range rule.HTTP.Paths {
 			hp := HostPath{Host: rule.Host, Path: path.Path}
 			if _, ok := ret[hp]; !ok {
-				ret[hp] = &path.Backend
+				// Copy the value over to a new struct so that we won't be
+				// saving the same pointer.
+				cloneBackend := path.Backend
+				ret[hp] = &cloneBackend
 			}
 		}
 	}

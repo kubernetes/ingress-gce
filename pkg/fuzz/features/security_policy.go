@@ -17,9 +17,14 @@ limitations under the License.
 package features
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 
 	"k8s.io/api/extensions/v1beta1"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
+
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
 )
 
@@ -63,7 +68,50 @@ func (v *securityPolicyValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing
 
 // CheckResponse implements fuzz.FeatureValidator.
 func (v *securityPolicyValidator) CheckResponse(host, path string, resp *http.Response, body []byte) (fuzz.CheckResponseAction, error) {
-	// There isn't anything interesting to check in response.
+	backendConfig, err := fuzz.BackendConfigForPath(host, path, v.ing, v.env)
+	if err != nil {
+		if err == annotations.ErrBackendConfigAnnotationMissing {
+			// Don't fail this test if the service associated
+			// with the host + path has no BackendConfig annotation.
+			return fuzz.CheckResponseContinue, nil
+		}
+		return fuzz.CheckResponseContinue, err
+	}
+	if backendConfig.Spec.SecurityPolicy == nil || backendConfig.Spec.SecurityPolicy.Name == "" {
+		// Don't check on response if security policy isn't configured
+		// in BackendConfig or is set to none.
+		return fuzz.CheckResponseContinue, nil
+	}
+
+	policy, err := v.env.Cloud().BetaSecurityPolicies().Get(context.Background(), meta.GlobalKey(backendConfig.Spec.SecurityPolicy.Name))
+	if err != nil {
+		return fuzz.CheckResponseContinue, fmt.Errorf("error getting security policy %q: %v", backendConfig.Spec.SecurityPolicy.Name, err)
+	}
+	// Check for the exact response code we are expecting.
+	// For simplicity, the test assumes only the default rule exists.
+	if len(policy.Rules) == 0 {
+		return fuzz.CheckResponseContinue, fmt.Errorf("found 0 rule for security policy %q", backendConfig.Spec.SecurityPolicy.Name)
+	}
+	var expectedCode int
+	switch policy.Rules[0].Action {
+	case "allow":
+		expectedCode = 200
+	case "deny(403)":
+		expectedCode = 403
+	case "deny(404)":
+		expectedCode = 404
+	case "deny(502)":
+		expectedCode = 502
+	default:
+		return fuzz.CheckResponseContinue, fmt.Errorf("unrecognized rule %q", policy.Rules[0].Action)
+	}
+	if resp.StatusCode != expectedCode {
+		return fuzz.CheckResponseContinue, fmt.Errorf("unexpected status code %d, want %d", resp.StatusCode, expectedCode)
+	}
+	// Skip standard check in case of deny policy.
+	if expectedCode != 200 {
+		return fuzz.CheckResponseSkip, nil
+	}
 	return fuzz.CheckResponseContinue, nil
 }
 
