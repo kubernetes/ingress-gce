@@ -50,8 +50,12 @@ func NewNodeController(ctx *context.ControllerContext, cm *ClusterManager) *Node
 	c.queue = utils.NewPeriodicTaskQueue("nodes", c.sync)
 
 	ctx.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    c.queue.Enqueue,
-		DeleteFunc: c.queue.Enqueue,
+		AddFunc: func(obj interface{}) {
+			c.queue.Enqueue(obj)
+		},
+		DeleteFunc: func(obj interface{}) {
+			c.queue.Enqueue(obj)
+		},
 		UpdateFunc: func(oldObj, newObj interface{}) {
 			if nodeStatusChanged(oldObj.(*apiv1.Node), newObj.(*apiv1.Node)) {
 				c.queue.Enqueue(newObj)
@@ -72,7 +76,7 @@ func (c *NodeController) Shutdown() {
 }
 
 func (c *NodeController) sync(key string) error {
-	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(c.lister))
+	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(c.lister))
 	if err != nil {
 		return err
 	}
