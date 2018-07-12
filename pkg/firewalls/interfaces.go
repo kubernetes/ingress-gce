@@ -23,7 +23,7 @@ import (
 // SingleFirewallPool syncs the firewall rule for L7 traffic.
 type SingleFirewallPool interface {
 	Sync(nodeNames []string, additionalPorts ...string) error
-	Shutdown() error
+	GC() error
 }
 
 // Firewall interfaces with the GCE firewall api.

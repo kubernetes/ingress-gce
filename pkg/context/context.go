@@ -33,6 +33,11 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
+const (
+	// Frequency to poll on local stores to sync.
+	StoreSyncPollPeriod = 5 * time.Second
+)
+
 // ControllerContext holds the state needed for the execution of the controller.
 type ControllerContext struct {
 	KubeClient kubernetes.Interface

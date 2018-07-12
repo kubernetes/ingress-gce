@@ -31,11 +31,19 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+const (
+	// DefaultFirewallName is the name to use for firewall rules created
+	// by an L7 controller when --firewall-rule is not used.
+	DefaultFirewallName = ""
+)
+
 // FirewallRules manages firewall rules.
 type FirewallRules struct {
-	cloud      Firewall
-	namer      *utils.Namer
-	srcRanges  []string
+	cloud     Firewall
+	namer     *utils.Namer
+	srcRanges []string
+	// TODO(rramkumar): Eliminate this variable. We should just pass in
+	// all the port ranges to open with each call to Sync()
 	portRanges []string
 }
 
@@ -100,8 +108,8 @@ func (fr *FirewallRules) Sync(nodeNames []string, additionalPorts ...string) err
 	return fr.updateFirewall(expectedFirewall)
 }
 
-// Shutdown shuts down this firewall rules manager.
-func (fr *FirewallRules) Shutdown() error {
+// GC deletes the firewall rule.
+func (fr *FirewallRules) GC() error {
 	name := fr.namer.FirewallRule()
 	glog.V(3).Infof("Deleting firewall %q", name)
 	return fr.deleteFirewall(name)

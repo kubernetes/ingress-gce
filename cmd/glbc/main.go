@@ -40,6 +40,7 @@ import (
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	"k8s.io/ingress-gce/pkg/backendconfig"
 	"k8s.io/ingress-gce/pkg/crd"
+	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/version"
 )
@@ -166,9 +167,9 @@ func makeLeaderElectionConfig(client clientset.Interface, recorder record.EventR
 }
 
 func runControllers(ctx *context.ControllerContext) {
-	namer, err := app.NewNamer(ctx.KubeClient, flags.F.ClusterName, controller.DefaultFirewallName)
+	namer, err := app.NewNamer(ctx.KubeClient, flags.F.ClusterName, firewalls.DefaultFirewallName)
 	if err != nil {
-		glog.Fatalf("app.NewNamer(ctx.KubeClient, %q, %q) = %v", flags.F.ClusterName, controller.DefaultFirewallName, err)
+		glog.Fatalf("app.NewNamer(ctx.KubeClient, %q, %q) = %v", flags.F.ClusterName, firewalls.DefaultFirewallName, err)
 	}
 
 	clusterManager, err := controller.NewClusterManager(ctx, namer, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath)
@@ -181,6 +182,8 @@ func runControllers(ctx *context.ControllerContext) {
 	if err != nil {
 		glog.Fatalf("controller.NewLoadBalancerController(ctx, clusterManager, stopCh) = %v", err)
 	}
+
+	fwc := firewalls.NewFirewallController(ctx, namer, flags.F.NodePortRanges.Values())
 
 	if clusterManager.ClusterNamer.UID() != "" {
 		glog.V(0).Infof("Cluster name: %+v", clusterManager.ClusterNamer.UID())
@@ -196,6 +199,9 @@ func runControllers(ctx *context.ControllerContext) {
 	}
 
 	go app.RunSIGTERMHandler(lbc, flags.F.DeleteAllOnQuit)
+
+	go fwc.Run(stopCh)
+	glog.V(0).Infof("firewall controller started")
 
 	ctx.Start(stopCh)
 	lbc.Run()

@@ -25,10 +25,14 @@ import (
 	"k8s.io/client-go/util/workqueue"
 )
 
+var (
+	KeyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
+)
+
 // TaskQueue is a rate limited operation queue.
 type TaskQueue interface {
 	Run(period time.Duration, stopCh <-chan struct{})
-	Enqueue(obj interface{})
+	Enqueue(objs ...interface{})
 	Shutdown()
 }
 
@@ -54,15 +58,17 @@ func (t *PeriodicTaskQueue) Run(period time.Duration, stopCh <-chan struct{}) {
 	wait.Until(t.worker, period, stopCh)
 }
 
-// Enqueue a key to the work queue.
-func (t *PeriodicTaskQueue) Enqueue(obj interface{}) {
-	key, err := t.keyFunc(obj)
-	if err != nil {
-		glog.Errorf("Couldn't get key for object %+v (type %T): %v", obj, obj, err)
-		return
+// Enqueue one or more keys to the work queue.
+func (t *PeriodicTaskQueue) Enqueue(objs ...interface{}) {
+	for _, obj := range objs {
+		key, err := t.keyFunc(obj)
+		if err != nil {
+			glog.Errorf("Couldn't get key for object %+v (type %T): %v", obj, obj, err)
+			return
+		}
+		glog.V(4).Infof("Enqueue key=%q (%v)", key, t.resource)
+		t.queue.Add(key)
 	}
-	glog.V(4).Infof("Enqueue key=%q (%v)", key, t.resource)
-	t.queue.Add(key)
 }
 
 // Shutdown shuts down the work queue and waits for the worker to ACK
@@ -97,7 +103,7 @@ func (t *PeriodicTaskQueue) worker() {
 func NewPeriodicTaskQueue(resource string, syncFn func(string) error) *PeriodicTaskQueue {
 	return &PeriodicTaskQueue{
 		resource:   resource,
-		keyFunc:    cache.DeletionHandlingMetaNamespaceKeyFunc,
+		keyFunc:    KeyFunc,
 		queue:      workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		sync:       syncFn,
 		workerDone: make(chan struct{}),
