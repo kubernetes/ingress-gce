@@ -77,9 +77,9 @@ You can manage a GCE L7 by creating, updating, or deleting the associated Kubern
 
 ### Creation
 
-Before you can start creating Ingress you need to start up GLBC. We can use the rc.yaml in this directory:
+Before you can start creating Ingress you need to start up GLBC. We can use the examples/deployment/gce-ingress-controller.yaml:
 ```shell
-$ kubectl create -f rc.yaml
+$ kubectl create -f examples/deployment/gce-ingress-controller.yaml
 replicationcontroller "glbc" created
 $ kubectl get pods
 NAME                READY     STATUS    RESTARTS   AGE
@@ -88,29 +88,29 @@ glbc-6m6b6          2/2       Running   0          21s
 ```
 
 A couple of things to note about this controller:
-* It needs a service with a node port to use as the default backend. This is the backend that's used when an Ingress does not specify the default.
 * It has an intentionally long `terminationGracePeriod`, this is only required with the --delete-all-on-quit flag (see [Deletion](#deletion))
 * Don't start 2 instances of the controller in a single cluster, they will fight each other.
 
-The loadbalancer controller will watch for Services, Nodes and Ingress. Nodes already exist (the nodes in your cluster). We need to create the other 2. You can do so using the ingress-app.yaml in this directory.
+The loadbalancer controller will watch for Services, Nodes and Ingress. Nodes already exist (the nodes in your cluster). We need to create the other 2. For example, create the Service with examples/multi-path/svc.yaml and the Ingress with examples/multi-path/gce-multi-path-ingress.yaml.
 
-A couple of things to note about the Ingress:
+A couple of things to note about the Service:
 * It creates a Replication Controller for a simple "echoserver" application, with 1 replica.
-* It creates 3 services for the same application pod: echoheaders[x, y, default]
+* It creates 2 services for the same application pod: echoheaders[x, y]
+
+Something to note about the Ingress:
 * It creates an Ingress with 2 hostnames and 3 endpoints (foo.bar.com{/foo} and bar.baz.com{/foo, /bar}) that access the given service
 
 ```shell
-$ kubectl create -f ingress-app.yaml
+$ kubectl create -f examples/http-svc.yaml examples/multi-path/gce-multi-path-ingress.yaml
 $ kubectl get svc
 NAME                 CLUSTER_IP     EXTERNAL_IP   PORT(S)   SELECTOR          AGE
-echoheadersdefault   10.0.43.119    nodes         80/TCP    app=echoheaders   16m
 echoheadersx         10.0.126.10    nodes         80/TCP    app=echoheaders   16m
 echoheadersy         10.0.134.238   nodes         80/TCP    app=echoheaders   16m
 Kubernetes           10.0.0.1       <none>        443/TCP   <none>            21h
 
 $ kubectl get ing
 NAME      RULE          BACKEND                 ADDRESS
-echomap   -             echoheadersdefault:80
+echomap   -             echoheadersx:80
           foo.bar.com
           /foo          echoheadersx:80
           bar.baz.com
@@ -192,10 +192,10 @@ spec:
 ..
 ```
 
-and replace the existing Ingress (ignore errors about replacing the Service, we're using the same .yaml file but we only care about the Ingress):
+and replace the existing Ingress:
 
 ```
-$ kubectl replace -f ingress-app.yaml
+$ kubectl replace -f examples/multi-path/gce-multi-path-ingress.yaml
 ingress "echomap" replaced
 
 $ curl http://107.178.254.239/foo

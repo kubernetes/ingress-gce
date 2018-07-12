@@ -16,7 +16,6 @@ spec:
     name: http
   selector:
     k8s-app: glbc
-
 ---
 apiVersion: v1
 kind: ReplicationController
