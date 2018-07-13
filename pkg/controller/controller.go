@@ -78,7 +78,7 @@ type LoadBalancerController struct {
 func NewLoadBalancerController(
 	ctx *context.ControllerContext,
 	clusterManager *ClusterManager,
-	stopCh chan struct{}) (*LoadBalancerController, error) {
+	stopCh chan struct{}) *LoadBalancerController {
 
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
@@ -185,7 +185,7 @@ func NewLoadBalancerController(
 
 	glog.V(3).Infof("Created new loadbalancer controller")
 
-	return &lbc, nil
+	return &lbc
 }
 
 // Run starts the loadbalancer controller.
