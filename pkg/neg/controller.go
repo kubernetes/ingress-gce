@@ -74,8 +74,7 @@ func NewController(
 	ctx *context.ControllerContext,
 	zoneGetter zoneGetter,
 	namer networkEndpointGroupNamer,
-	resyncPeriod time.Duration,
-) (*Controller, error) {
+	resyncPeriod time.Duration) *Controller {
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
 	eventBroadcaster := record.NewBroadcaster()
@@ -137,7 +136,7 @@ func NewController(
 		},
 	})
 	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
-	return negController, nil
+	return negController
 }
 
 func (c *Controller) Run(stopCh <-chan struct{}) {
