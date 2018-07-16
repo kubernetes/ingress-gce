@@ -170,7 +170,7 @@ func runControllers(ctx *context.ControllerContext) {
 	}
 
 	stopCh := make(chan struct{})
-	lbc, err := controller.NewLoadBalancerController(ctx, clusterManager, stopCh)
+	lbc := controller.NewLoadBalancerController(ctx, clusterManager, stopCh)
 	if err != nil {
 		glog.Fatalf("controller.NewLoadBalancerController(ctx, clusterManager, stopCh) = %v", err)
 	}
@@ -183,7 +183,7 @@ func runControllers(ctx *context.ControllerContext) {
 
 	if ctx.NEGEnabled {
 		// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
-		negController, _ := neg.NewController(ctx.Cloud, ctx, lbc.Translator, namer, flags.F.ResyncPeriod)
+		negController := neg.NewController(ctx.Cloud, ctx, lbc.Translator, namer, flags.F.ResyncPeriod)
 		go negController.Run(stopCh)
 		glog.V(0).Infof("negController started")
 	}
