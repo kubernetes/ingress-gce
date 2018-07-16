@@ -68,6 +68,7 @@ var (
 		DefaultSvcPortName        string
 		DeleteAllOnQuit           bool
 		GCERateLimit              RateLimitSpecs
+		GCEOperationPollInterval  time.Duration
 		HealthCheckPath           string
 		HealthzPort               int
 		Features                  *Features
@@ -111,7 +112,7 @@ func defaultLeaderElectionConfiguration() LeaderElectionConfiguration {
 
 func init() {
 	F.NodePortRanges.ports = []string{DefaultNodePortRange}
-	F.GCERateLimit.specs = []string{"alpha.Operations.Get,qps,10,100", "beta.Operations.Get,qps,10,100", "ga.Operations.Get,qps,10,100"}
+	F.GCERateLimit.specs = []string{"alpha.Operations.Get,qps,10,10", "beta.Operations.Get,qps,10,10", "ga.Operations.Get,qps,10,10"}
 	F.Features = EnabledFeatures()
 	F.LeaderElection = defaultLeaderElectionConfiguration()
 }
@@ -180,6 +181,8 @@ specify this flag, the default is to rate limit Operations.Get for all versions.
 If you do specify this flag one or more times, this default will be overwritten.
 If you want to still use the default, simply specify it along with your other
 values.`)
+	flag.DurationVar(&F.GCEOperationPollInterval, "gce-operation-poll-interval", time.Second,
+		`Minimum time between polling requests to GCE for checking the status of an operation.`)
 	flag.StringVar(&F.HealthCheckPath, "health-check-path", "/",
 		`Path used to health-check a backend service. All Services must serve a
 200 page on this path. Currently this is only configurable globally.`)

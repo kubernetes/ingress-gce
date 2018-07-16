@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/golang/glog"
 	"k8s.io/client-go/util/flowcontrol"
@@ -32,12 +33,15 @@ import (
 type GCERateLimiter struct {
 	// Map a RateLimitKey to its rate limiter implementation.
 	rateLimitImpls map[cloud.RateLimitKey]flowcontrol.RateLimiter
+	// Minimum polling interval for getting operations. Underlying operations rate limiter
+	// may increase the time.
+	operationPollInterval time.Duration
 }
 
 // NewGCERateLimiter parses the list of rate limiting specs passed in and
 // returns a properly configured cloud.RateLimiter implementation.
 // Expected format of specs: {"[version].[service].[operation],[type],[param1],[param2],..", "..."}
-func NewGCERateLimiter(specs []string) (*GCERateLimiter, error) {
+func NewGCERateLimiter(specs []string, operationPollInterval time.Duration) (*GCERateLimiter, error) {
 	rateLimitImpls := make(map[cloud.RateLimitKey]flowcontrol.RateLimiter)
 	// Within each specification, split on comma to get the operation,
 	// rate limiter type, and extra parameters.
@@ -62,27 +66,39 @@ func NewGCERateLimiter(specs []string) (*GCERateLimiter, error) {
 	if len(rateLimitImpls) == 0 {
 		return nil, nil
 	}
-	return &GCERateLimiter{rateLimitImpls}, nil
+	return &GCERateLimiter{
+		rateLimitImpls:        rateLimitImpls,
+		operationPollInterval: operationPollInterval,
+	}, nil
 }
 
-// Implementation of cloud.RateLimiter
+// Accept looks up the associated flowcontrol.RateLimiter (if exists) and waits on it.
 func (l *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) error {
-	ch := make(chan struct{})
-	go func() {
-		// Call flowcontrol.RateLimiter implementation.
-		impl := l.rateLimitImpl(key)
-		if impl != nil {
-			impl.Accept()
+	var rl cloud.RateLimiter
+
+	impl := l.rateLimitImpl(key)
+	if impl != nil {
+		// Wrap the flowcontrol.RateLimiter with a AcceptRateLimiter and handle context.
+		rl = &cloud.AcceptRateLimiter{Acceptor: impl}
+	} else {
+		// Check the context then use the cloud NopRateLimiter which accepts immediately.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
 		}
-		close(ch)
-	}()
-	select {
-	case <-ch:
-		break
-	case <-ctx.Done():
-		return ctx.Err()
+		rl = &cloud.NopRateLimiter{}
 	}
-	return nil
+
+	if key.Operation == "Get" && key.Service == "Operations" {
+		// Wait a minimum amount of time regardless of rate limiter.
+		rl = &cloud.MinimumRateLimiter{
+			RateLimiter: rl,
+			Minimum:     l.operationPollInterval,
+		}
+	}
+
+	return rl.Accept(ctx, key)
 }
 
 // rateLimitImpl returns the flowcontrol.RateLimiter implementation
