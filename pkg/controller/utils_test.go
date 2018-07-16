@@ -24,10 +24,13 @@ import (
 
 	api_v1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // Pods created in loops start from this time, for routines that
@@ -199,6 +202,106 @@ func TestNodeStatusChanged(t *testing.T) {
 	}
 }
 
+func TestUniq(t *testing.T) {
+	testCases := []struct {
+		desc   string
+		input  []utils.ServicePort
+		expect []utils.ServicePort
+	}{
+		{
+			"Empty",
+			[]utils.ServicePort{},
+			[]utils.ServicePort{},
+		},
+		{
+			"Two service ports",
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "80", 80, 30080),
+				testServicePort("ns", "name", "443", 443, 30443),
+			},
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "80", 80, 30080),
+				testServicePort("ns", "name", "443", 443, 30443),
+			},
+		},
+		{
+			"Two service ports with different names",
+			[]utils.ServicePort{
+				testServicePort("ns", "name1", "80", 80, 30080),
+				testServicePort("ns", "name2", "80", 80, 30880),
+			},
+			[]utils.ServicePort{
+				testServicePort("ns", "name1", "80", 80, 30080),
+				testServicePort("ns", "name2", "80", 80, 30880),
+			},
+		},
+		{
+			"Two duplicate service ports",
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "80", 80, 30080),
+				testServicePort("ns", "name", "80", 80, 30080),
+			},
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "80", 80, 30080),
+			},
+		},
+		{
+			"Two services without nodeports",
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "80", 80, 0),
+				testServicePort("ns", "name", "443", 443, 0),
+			},
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "80", 80, 0),
+				testServicePort("ns", "name", "443", 443, 0),
+			},
+		},
+		{
+			"2 out of 3 are duplicates",
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "80", 80, 0),
+				testServicePort("ns", "name", "443", 443, 0),
+				testServicePort("ns", "name", "443", 443, 0),
+			},
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "80", 80, 0),
+				testServicePort("ns", "name", "443", 443, 0),
+			},
+		},
+		{
+			"mix of named port and port number references",
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "http", 80, 0),
+				testServicePort("ns", "name", "https", 443, 0),
+				testServicePort("ns", "name", "443", 443, 0),
+			},
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "http", 80, 0),
+				testServicePort("ns", "name", "443", 443, 0),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		res := uniq(tc.input)
+		if len(res) != len(tc.expect) {
+			t.Errorf("Test case %q: Expect %d, got %d", tc.desc, len(tc.expect), len(res))
+		}
+		for _, svcPort := range tc.expect {
+			found := false
+			for _, sp := range res {
+				if svcPort == sp {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("Test case %q: Expect service port %v to be present. But not found", tc.desc, svcPort)
+			}
+		}
+	}
+
+}
+
 func testNode() *api_v1.Node {
 	return &api_v1.Node{
 		ObjectMeta: meta_v1.ObjectMeta{
@@ -221,5 +324,19 @@ func testNode() *api_v1.Node {
 				},
 			},
 		},
+	}
+}
+
+func testServicePort(namespace, name, port string, servicePort, nodePort int) utils.ServicePort {
+	return utils.ServicePort{
+		ID: utils.ServicePortID{
+			Service: types.NamespacedName{
+				Namespace: namespace,
+				Name:      name,
+			},
+			Port: intstr.FromString(port),
+		},
+		Port:     int32(servicePort),
+		NodePort: int64(nodePort),
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
+	"fmt"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 )
@@ -29,6 +30,10 @@ import (
 type ServicePortID struct {
 	Service types.NamespacedName
 	Port    intstr.IntOrString
+}
+
+func (id ServicePortID) String() string {
+	return fmt.Sprintf("%v/%v", id.Service.String(), id.Port.String())
 }
 
 // ServicePort maintains configuration for a single backend.

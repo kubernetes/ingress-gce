@@ -149,16 +149,16 @@ func setInstanceGroupsAnnotation(existing map[string]string, igs []*compute.Inst
 }
 
 // uniq returns an array of unique service ports from the given array.
-func uniq(nodePorts []utils.ServicePort) []utils.ServicePort {
-	portMap := map[int64]utils.ServicePort{}
-	for _, p := range nodePorts {
-		portMap[p.NodePort] = p
+func uniq(svcPorts []utils.ServicePort) []utils.ServicePort {
+	portMap := map[string]utils.ServicePort{}
+	for _, p := range svcPorts {
+		portMap[fmt.Sprintf("%q-%d", p.ID.Service.String(), p.Port)] = p
 	}
-	nodePorts = make([]utils.ServicePort, 0, len(portMap))
+	svcPorts = make([]utils.ServicePort, 0, len(portMap))
 	for _, sp := range portMap {
-		nodePorts = append(nodePorts, sp)
+		svcPorts = append(svcPorts, sp)
 	}
-	return nodePorts
+	return svcPorts
 }
 
 // getReadyNodeNames returns names of schedulable, ready nodes from the node lister.
