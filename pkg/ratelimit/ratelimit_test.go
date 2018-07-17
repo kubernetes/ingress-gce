@@ -18,6 +18,7 @@ package ratelimit
 
 import (
 	"testing"
+	"time"
 )
 
 func TestGCERateLimiter(t *testing.T) {
@@ -41,14 +42,14 @@ func TestGCERateLimiter(t *testing.T) {
 	}
 
 	for _, testCase := range validTestCases {
-		_, err := NewGCERateLimiter(testCase)
+		_, err := NewGCERateLimiter(testCase, time.Second)
 		if err != nil {
 			t.Errorf("Did not expect an error for test case: %v", testCase)
 		}
 	}
 
 	for _, testCase := range invalidTestCases {
-		_, err := NewGCERateLimiter(testCase)
+		_, err := NewGCERateLimiter(testCase, time.Second)
 		if err == nil {
 			t.Errorf("Expected an error for test case: %v", testCase)
 		}

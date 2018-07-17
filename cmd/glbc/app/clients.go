@@ -88,7 +88,7 @@ func NewGCEClient() *gce.GCECloud {
 		if err == nil {
 			cloud := provider.(*gce.GCECloud)
 			// Configure GCE rate limiting
-			rl, err := ratelimit.NewGCERateLimiter(flags.F.GCERateLimit.Values())
+			rl, err := ratelimit.NewGCERateLimiter(flags.F.GCERateLimit.Values(), flags.F.GCEOperationPollInterval)
 			if err != nil {
 				glog.Fatalf("Error configuring rate limiting: %v", err)
 			}
