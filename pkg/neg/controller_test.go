@@ -26,6 +26,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
@@ -37,10 +38,21 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+var (
+	defaultBackend = utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")}
+)
+
 func newTestController(kubeClient kubernetes.Interface) *Controller {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, apiv1.NamespaceAll, 1*time.Second, true, false)
-	controller, _ := NewController(
+	ctxConfig := context.ControllerContextConfig{
+		NEGEnabled:              true,
+		BackendConfigEnabled:    false,
+		Namespace:               apiv1.NamespaceAll,
+		ResyncPeriod:            1 * time.Second,
+		DefaultBackendSvcPortID: defaultBackend,
+	}
+	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, ctxConfig)
+	controller := NewController(
 		NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		context,
 		NewFakeZoneGetter(),

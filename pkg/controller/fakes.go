@@ -73,12 +73,11 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 	l7Pool := loadbalancers.NewLoadBalancerPool(fakeLbs, namer)
 	frPool := firewalls.NewFirewallPool(firewalls.NewFakeFirewallsProvider(false, false), namer, testSrcRanges, testNodePortRanges)
 	cm := &ClusterManager{
-		ClusterNamer:            namer,
-		instancePool:            nodePool,
-		backendPool:             backendPool,
-		l7Pool:                  l7Pool,
-		firewallPool:            frPool,
-		defaultBackendSvcPortID: testDefaultBeSvcPort.ID,
+		ClusterNamer: namer,
+		instancePool: nodePool,
+		backendPool:  backendPool,
+		l7Pool:       l7Pool,
+		firewallPool: frPool,
 	}
 	return &fakeClusterManager{cm, fakeLbs, fakeBackends, fakeIGs, namer}
 }

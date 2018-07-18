@@ -201,7 +201,7 @@ func (lbc *LoadBalancerController) enqueueIngressForObject(obj interface{}) {
 
 // enqueueIngressForService enqueues all the Ingresses for a Service.
 func (lbc *LoadBalancerController) enqueueIngressForService(svc *apiv1.Service) {
-	ings, err := lbc.ingLister.GetServiceIngress(svc, lbc.CloudClusterManager.defaultBackendSvcPortID)
+	ings, err := lbc.ingLister.GetServiceIngress(svc, lbc.ctx.DefaultBackendSvcPortID)
 	if err != nil {
 		glog.V(5).Infof("ignoring service %v: %v", svc.Name, err)
 		return
@@ -312,7 +312,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 }
 
 func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNames []string, gceSvcPorts []utils.ServicePort) error {
-	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.CloudClusterManager.defaultBackendSvcPortID)
+	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
 	if errs != nil {
 		return fmt.Errorf("error while evaluating the ingress spec: %v", joinErrs(errs))
 	}
@@ -479,7 +479,7 @@ func updateAnnotations(client kubernetes.Interface, name, namespace string, anno
 func (lbc *LoadBalancerController) ToSvcPorts(ings *extensions.IngressList) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings.Items {
-		urlMap, _ := lbc.Translator.TranslateIngress(&ing, lbc.CloudClusterManager.defaultBackendSvcPortID)
+		urlMap, _ := lbc.Translator.TranslateIngress(&ing, lbc.ctx.DefaultBackendSvcPortID)
 		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts

@@ -45,11 +45,16 @@ func newLoadBalancerController(t *testing.T, cm *fakeClusterManager) *LoadBalanc
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 
 	stopCh := make(chan struct{})
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cm.fakeBackends, api_v1.NamespaceAll, 1*time.Minute, true, false)
-	lbc, err := NewLoadBalancerController(ctx, cm.ClusterManager, stopCh)
-	if err != nil {
-		t.Fatalf("%v", err)
+	ctxConfig := context.ControllerContextConfig{
+		NEGEnabled:              true,
+		BackendConfigEnabled:    false,
+		Namespace:               api_v1.NamespaceAll,
+		ResyncPeriod:            1 * time.Minute,
+		DefaultBackendSvcPortID: testDefaultBeSvcPort.ID,
 	}
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cm.fakeBackends, ctxConfig)
+	lbc := NewLoadBalancerController(ctx, cm.ClusterManager, stopCh)
+
 	lbc.hasSynced = func() bool { return true }
 
 	// Create the default-backend service.
