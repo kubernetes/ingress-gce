@@ -119,7 +119,7 @@ func (l *L7) UrlMap() *compute.UrlMap {
 }
 
 func (l *L7) edgeHop() error {
-	if err := l.assertUrlMapExists(); err != nil {
+	if err := l.ensureComputeURLMap(); err != nil {
 		return err
 	}
 	if l.runtimeInfo.AllowHTTP {
@@ -242,11 +242,14 @@ func (l *L7) Cleanup() error {
 }
 
 // GetLBAnnotations returns the annotations of an l7. This includes it's current status.
-func GetLBAnnotations(l7 *L7, existing map[string]string, backendPool backends.BackendPool) map[string]string {
+func GetLBAnnotations(l7 *L7, existing map[string]string, backendPool backends.BackendPool) (map[string]string, error) {
 	if existing == nil {
 		existing = map[string]string{}
 	}
-	backends := l7.getBackendNames()
+	backends, err := getBackendNames(l7.um)
+	if err != nil {
+		return nil, err
+	}
 	backendState := map[string]string{}
 	for _, beName := range backends {
 		backendState[beName] = backendPool.Status(beName)
@@ -284,7 +287,7 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendPool backends.B
 	}
 	// TODO: We really want to know *when* a backend flipped states.
 	existing[fmt.Sprintf("%v/backends", annotations.StatusPrefix)] = jsonBackendState
-	return existing
+	return existing, nil
 }
 
 // GCEResourceName retrieves the name of the gce resource created for this

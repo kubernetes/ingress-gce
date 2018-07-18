@@ -57,9 +57,8 @@ func (l *L7s) Get(name string) (*L7, error) {
 	return lb.(*L7), nil
 }
 
-// addLB gets or creates a loadbalancer. If the loadbalancer already exists,
-// it checks that its edges are valid.
-func (l *L7s) addLB(ri *L7RuntimeInfo) (err error) {
+// Sync a load balancer with the given runtime info from the controller.
+func (l *L7s) Sync(ri *L7RuntimeInfo) error {
 	name := l.namer.LoadBalancer(ri.Name)
 
 	lb, _ := l.Get(name)
@@ -70,9 +69,6 @@ func (l *L7s) addLB(ri *L7RuntimeInfo) (err error) {
 			Name:        l.namer.LoadBalancer(ri.Name),
 			cloud:       l.cloud,
 			namer:       l.namer,
-		}
-		if err != nil {
-			return err
 		}
 	} else {
 		if !reflect.DeepEqual(lb.runtimeInfo, ri) {
@@ -108,16 +104,6 @@ func (l *L7s) Delete(name string) error {
 		return err
 	}
 	l.snapshotter.Delete(name)
-	return nil
-}
-
-// Sync a load balancer with the given runtime info from the controller.
-func (l *L7s) Sync(ri *L7RuntimeInfo) error {
-	glog.V(3).Infof("Syncing load balancer %v", ri)
-	// Create new load balancer and validate existing
-	if err := l.addLB(ri); err != nil {
-		return err
-	}
 	return nil
 }
 
