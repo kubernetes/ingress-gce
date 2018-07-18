@@ -101,7 +101,15 @@ func main() {
 
 	cloud := app.NewGCEClient()
 	enableNEG := flags.F.Features.NEG
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cloud, flags.F.WatchNamespace, flags.F.ResyncPeriod, enableNEG, flags.F.EnableBackendConfig)
+	defaultBackendServicePortID := app.DefaultBackendServicePortID(kubeClient)
+	ctxConfig := context.ControllerContextConfig{
+		NEGEnabled:              enableNEG,
+		BackendConfigEnabled:    flags.F.EnableBackendConfig,
+		Namespace:               flags.F.WatchNamespace,
+		ResyncPeriod:            flags.F.ResyncPeriod,
+		DefaultBackendSvcPortID: defaultBackendServicePortID,
+	}
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cloud, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
@@ -163,10 +171,9 @@ func runControllers(ctx *context.ControllerContext) {
 		glog.Fatalf("app.NewNamer(ctx.KubeClient, %q, %q) = %v", flags.F.ClusterName, controller.DefaultFirewallName, err)
 	}
 
-	defaultBackendServicePortID := app.DefaultBackendServicePortID(ctx.KubeClient)
-	clusterManager, err := controller.NewClusterManager(ctx, namer, defaultBackendServicePortID, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath)
+	clusterManager, err := controller.NewClusterManager(ctx, namer, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath)
 	if err != nil {
-		glog.Fatalf("controller.NewClusterManager(cloud, namer, %+v, %q, %q) = %v", defaultBackendServicePortID, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath, err)
+		glog.Fatalf("controller.NewClusterManager(cloud, namer, %q, %q) = %v", flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath, err)
 	}
 
 	stopCh := make(chan struct{})
