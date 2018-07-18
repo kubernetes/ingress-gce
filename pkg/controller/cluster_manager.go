@@ -83,22 +83,6 @@ func (c *ClusterManager) shutdown() error {
 	return c.backendPool.Shutdown()
 }
 
-// EnsureLoadBalancer creates the backend services and higher-level LB resources.
-// - lb is the single cluster L7 loadbalancers we wish to exist. If they already
-//   exist, they should not have any broken links between say, a UrlMap and
-//   TargetHttpProxy.
-// - lbServicePorts are the ports for which we require Backend Services.
-// - igLinks are the links to the groups to be referenced by the Backend Services.
-// If GCE runs out of quota, a googleapi 403 is returned.
-func (c *ClusterManager) EnsureLoadBalancer(lb *loadbalancers.L7RuntimeInfo, lbServicePorts []utils.ServicePort, igLinks []string) error {
-	glog.V(4).Infof("EnsureLoadBalancer(%q lb, %v lbServicePorts, %v instanceGroups)", lb.String(), len(lbServicePorts), len(igLinks))
-	if err := c.backendPool.Ensure(uniq(lbServicePorts), igLinks); err != nil {
-		return err
-	}
-
-	return c.l7Pool.Sync(lb)
-}
-
 func (c *ClusterManager) EnsureInstanceGroupsAndPorts(nodeNames []string, servicePorts []utils.ServicePort) ([]*compute.InstanceGroup, error) {
 	// Convert to slice of NodePort int64s.
 	ports := []int64{}

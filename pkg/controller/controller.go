@@ -344,9 +344,13 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 	}
 	lb.UrlMap = urlMap
 
-	// Create the backend services and higher-level LB resources.
-	// Note: To ensure the load balancer, we only need the IG links.
-	if err = lbc.CloudClusterManager.EnsureLoadBalancer(lb, ingSvcPorts, utils.IGLinks(igs)); err != nil {
+	// Create the backends. Note that we only need the IG links.
+	if err := lbc.CloudClusterManager.backendPool.Ensure(uniq(ingSvcPorts), utils.IGLinks(igs)); err != nil {
+		return err
+	}
+
+	// Create higher-level LB resources.
+	if err := lbc.CloudClusterManager.l7Pool.Sync(lb); err != nil {
 		return err
 	}
 
