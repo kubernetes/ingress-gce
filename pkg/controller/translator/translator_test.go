@@ -50,7 +50,14 @@ func fakeTranslator(negEnabled, backendConfigEnabled bool) *Translator {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 
 	namer := utils.NewNamer("uid1", "")
-	ctx := context.NewControllerContext(client, backendConfigClient, nil, apiv1.NamespaceAll, 1*time.Second, negEnabled, backendConfigEnabled)
+	ctxConfig := context.ControllerContextConfig{
+		NEGEnabled:              negEnabled,
+		BackendConfigEnabled:    backendConfigEnabled,
+		Namespace:               apiv1.NamespaceAll,
+		ResyncPeriod:            1 * time.Second,
+		DefaultBackendSvcPortID: defaultBackend,
+	}
+	ctx := context.NewControllerContext(client, backendConfigClient, nil, ctxConfig)
 	gce := &Translator{
 		namer: namer,
 		ctx:   ctx,

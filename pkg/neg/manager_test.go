@@ -37,7 +37,14 @@ const (
 
 func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, apiv1.NamespaceAll, 1*time.Second, true, false)
+	ctxConfig := context.ControllerContextConfig{
+		NEGEnabled:              true,
+		BackendConfigEnabled:    false,
+		Namespace:               apiv1.NamespaceAll,
+		ResyncPeriod:            1 * time.Second,
+		DefaultBackendSvcPortID: defaultBackend,
+	}
+	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, ctxConfig)
 	manager := newSyncerManager(
 		utils.NewNamer(CluseterID, ""),
 		record.NewFakeRecorder(100),

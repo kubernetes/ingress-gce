@@ -44,9 +44,6 @@ type ClusterManager struct {
 
 	// TODO: Refactor so we simply init a health check pool.
 	healthChecker healthchecks.HealthChecker
-
-	// defaultBackendSvcPortID is the ServicePortID for the system default backend.
-	defaultBackendSvcPortID utils.ServicePortID
 }
 
 // Init initializes the cluster manager.
@@ -178,18 +175,17 @@ func (c *ClusterManager) GC(lbNames []string, nodePorts []utils.ServicePort) err
 func NewClusterManager(
 	ctx *context.ControllerContext,
 	namer *utils.Namer,
-	defaultBackendSvcPortID utils.ServicePortID,
 	healthCheckPath string,
 	defaultBackendHealthCheckPath string) (*ClusterManager, error) {
 
 	// Names are fundamental to the cluster, the uid allocator makes sure names don't collide.
-	cluster := ClusterManager{ClusterNamer: namer, defaultBackendSvcPortID: defaultBackendSvcPortID}
+	cluster := ClusterManager{ClusterNamer: namer}
 
 	// NodePool stores GCE vms that are in this Kubernetes cluster.
 	cluster.instancePool = instances.NewNodePool(ctx.Cloud, namer)
 
 	// BackendPool creates GCE BackendServices and associated health checks.
-	cluster.healthChecker = healthchecks.NewHealthChecker(ctx.Cloud, healthCheckPath, defaultBackendHealthCheckPath, cluster.ClusterNamer, defaultBackendSvcPortID.Service)
+	cluster.healthChecker = healthchecks.NewHealthChecker(ctx.Cloud, healthCheckPath, defaultBackendHealthCheckPath, cluster.ClusterNamer, ctx.DefaultBackendSvcPortID.Service)
 	cluster.backendPool = backends.NewBackendPool(ctx.Cloud, ctx.Cloud, cluster.healthChecker, cluster.instancePool, cluster.ClusterNamer, ctx.BackendConfigEnabled, true)
 
 	// L7 pool creates targetHTTPProxy, ForwardingRules, UrlMaps, StaticIPs.
