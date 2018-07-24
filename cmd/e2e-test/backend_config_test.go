@@ -35,7 +35,7 @@ import (
 
 var (
 	eventPollInterval = 15 * time.Second
-	eventPollTimeout  = 3 * time.Minute
+	eventPollTimeout  = 10 * time.Minute
 )
 
 func TestBackendConfigNegatives(t *testing.T) {
@@ -110,7 +110,7 @@ func TestBackendConfigNegatives(t *testing.T) {
 			}
 			t.Logf("Ingress %s/%s created", s.Namespace, testIng.Name)
 
-			t.Logf("Waiting for warning event to be emitted")
+			t.Logf("Waiting %v for warning event to be emitted", eventPollTimeout)
 			if err := wait.Poll(eventPollInterval, eventPollTimeout, func() (bool, error) {
 				events, err := Framework.Clientset.CoreV1().Events(s.Namespace).List(metav1.ListOptions{})
 				if err != nil {

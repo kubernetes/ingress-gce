@@ -39,7 +39,7 @@ import (
 
 const (
 	policyUpdateInterval = 15 * time.Second
-	policyUpdateTimeout  = 3 * time.Minute
+	policyUpdateTimeout  = 10 * time.Minute
 )
 
 func buildPolicyAllowAll(name string) *computebeta.SecurityPolicy {
@@ -217,8 +217,7 @@ func TestSecurityPolicyTransition(t *testing.T) {
 			}
 			t.Logf("Backend config %s/%s updated", testBackendConfig.Name, s.Namespace)
 
-			t.Logf("Checking on relevant backend service whether security policy is properly updated")
-
+			t.Logf("Waiting %v for security policy to be updated on relevant backend service", policyUpdateTimeout)
 			if err := wait.Poll(policyUpdateInterval, policyUpdateTimeout, func() (bool, error) {
 				gclb, err = fuzz.GCLBForVIP(ctx, Framework.Cloud, vip, fuzz.FeatureValidators([]fuzz.Feature{features.SecurityPolicy}))
 				if err != nil {
