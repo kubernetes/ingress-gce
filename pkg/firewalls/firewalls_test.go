@@ -123,7 +123,7 @@ func TestFirewallPoolSyncPorts(t *testing.T) {
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, append(portRanges(), negTargetports...), t)
 }
 
-func TestFirewallPoolShutdown(t *testing.T) {
+func TestFirewallPoolGC(t *testing.T) {
 	fwp := NewFakeFirewallsProvider(false, false)
 	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
@@ -133,7 +133,7 @@ func TestFirewallPoolShutdown(t *testing.T) {
 	}
 	verifyFirewallRule(fwp, ruleName, nodes, srcRanges, portRanges(), t)
 
-	if err := fp.Shutdown(); err != nil {
+	if err := fp.GC(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -197,7 +197,7 @@ func TestSyncXPNReadOnly(t *testing.T) {
 		t.Errorf("Expected firewall sync error with a user message. Received err: %v", err)
 	}
 
-	err = fp.Shutdown()
+	err = fp.GC()
 	if fwErr, ok := err.(*FirewallXPNError); !ok || !strings.Contains(fwErr.Message, "delete") {
 		t.Errorf("Expected firewall sync error with a user message. Received err: %v", err)
 	}

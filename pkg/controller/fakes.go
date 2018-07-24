@@ -17,30 +17,20 @@ limitations under the License.
 package controller
 
 import (
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
-	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/neg"
+	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 var (
-	testBackendPort      = intstr.IntOrString{Type: intstr.Int, IntVal: 80}
-	testDefaultBeSvcPort = utils.ServicePort{
-		ID:       utils.ServicePortID{Service: types.NamespacedName{Namespace: "system", Name: "default"}, Port: testBackendPort},
-		NodePort: 30000,
-		Protocol: annotations.ProtocolHTTP,
-	}
-	testSrcRanges      = []string{"1.1.1.1/20"}
-	testNodePortRanges = []string{"30000-32767"}
+	testSrcRanges = []string{"1.1.1.1/20"}
 )
 
 // ClusterManager fake
@@ -64,20 +54,18 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{"zone-a"}})
 
-	healthChecker := healthchecks.NewHealthChecker(fakeHCP, "/", "/healthz", namer, testDefaultBeSvcPort.ID.Service)
+	healthChecker := healthchecks.NewHealthChecker(fakeHCP, "/", "/healthz", namer, test.DefaultBeSvcPort.ID.Service)
 
 	backendPool := backends.NewBackendPool(
 		fakeBackends,
 		fakeNEG,
 		healthChecker, nodePool, namer, false, false)
 	l7Pool := loadbalancers.NewLoadBalancerPool(fakeLbs, namer)
-	frPool := firewalls.NewFirewallPool(firewalls.NewFakeFirewallsProvider(false, false), namer, testSrcRanges, testNodePortRanges)
 	cm := &ClusterManager{
 		ClusterNamer: namer,
 		instancePool: nodePool,
 		backendPool:  backendPool,
 		l7Pool:       l7Pool,
-		firewallPool: frPool,
 	}
 	return &fakeClusterManager{cm, fakeLbs, fakeBackends, fakeIGs, namer}
 }
