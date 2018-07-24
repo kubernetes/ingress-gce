@@ -4,7 +4,7 @@ metadata:
   name: glbc
   namespace: kube-system
 ---
-apiVersion: rbac.authorization.k8s.io/
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: system:controller:glbc
@@ -19,7 +19,7 @@ rules:
   resources: ["ingresses/status"]
   verbs: ["update"]
 ---
-apiVersion: rbac.authorization.k8s.io/
+apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: system:controller:glbc
