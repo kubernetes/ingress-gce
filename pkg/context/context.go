@@ -54,7 +54,8 @@ type ControllerContext struct {
 	EndpointInformer      cache.SharedIndexInformer
 
 	healthChecks map[string]func() error
-	hcLock       sync.Mutex
+
+	lock sync.Mutex
 
 	// Map of namespace => record.EventRecorder.
 	recorders map[string]record.EventRecorder
@@ -141,8 +142,8 @@ func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 
 // AddHealthCheck registers function to be called for healthchecking.
 func (ctx *ControllerContext) AddHealthCheck(id string, hc func() error) {
-	ctx.hcLock.Lock()
-	defer ctx.hcLock.Unlock()
+	ctx.lock.Lock()
+	defer ctx.lock.Unlock()
 
 	ctx.healthChecks[id] = hc
 }
@@ -152,8 +153,8 @@ type HealthCheckResults map[string]error
 
 // HealthCheck runs all registered healthcheck functions.
 func (ctx *ControllerContext) HealthCheck() HealthCheckResults {
-	ctx.hcLock.Lock()
-	defer ctx.hcLock.Unlock()
+	ctx.lock.Lock()
+	defer ctx.lock.Unlock()
 
 	healthChecks := make(map[string]error)
 	for component, f := range ctx.healthChecks {
