@@ -39,7 +39,7 @@ const (
 )
 
 var (
-	NewIndexer := func() cache.Indexers {
+	NewIndexer = func() cache.Indexers {
 		return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
 	}
 )
