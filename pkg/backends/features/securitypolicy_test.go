@@ -35,11 +35,11 @@ import (
 
 func TestEnsureSecurityPolicy(t *testing.T) {
 	mockSecurityPolcies := make(map[string]*computebeta.SecurityPolicyReference)
-	setSecurityPolicyLock := sync.Mutex{}
+	mockSecurityPolicyLock := sync.Mutex{}
 	setSecurityPolicyHook := func(_ context.Context, key *meta.Key, ref *computebeta.SecurityPolicyReference, _ *cloud.MockBetaBackendServices) error {
-		setSecurityPolicyLock.Lock()
+		mockSecurityPolicyLock.Lock()
 		mockSecurityPolcies[key.Name] = ref
-		setSecurityPolicyLock.Unlock()
+		mockSecurityPolicyLock.Unlock()
 		return nil
 	}
 
@@ -134,7 +134,9 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 
 			if tc.expectSetCall {
 				// Verify whether the desired policy is set.
+				mockSecurityPolicyLock.Lock()
 				policyRef, ok := mockSecurityPolcies[fakeBeName]
+				mockSecurityPolicyLock.Unlock()
 				if !ok {
 					t.Errorf("policy not set for backend service %s", fakeBeName)
 					return
@@ -151,8 +153,10 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 					t.Errorf("got policy %q, want %q", policyLink, desiredPolicyName)
 				}
 			} else {
-				// Verify not set call is made.
+				// Verify no set call is made.
+				mockSecurityPolicyLock.Lock()
 				policyRef, ok := mockSecurityPolcies[fakeBeName]
+				mockSecurityPolicyLock.Unlock()
 				if ok {
 					t.Errorf("unexpected policy %q is set for backend service %s", policyRef, fakeBeName)
 				}
