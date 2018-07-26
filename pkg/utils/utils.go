@@ -23,6 +23,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/golang/glog"
+
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
@@ -54,6 +56,16 @@ const (
 	AddInstances
 	// RemoveInstances used to record a call to RemoveInstances.
 	RemoveInstances
+	// LabelNodeRoleMaster specifies that a node is a master
+	// This is a duplicate definition of the constant in:
+	// kubernetes/kubernetes/pkg/controller/service/service_controller.go
+	LabelNodeRoleMaster = "node-role.kubernetes.io/master"
+	// LabelNodeRoleExcludeBalancer specifies that a node should be excluded from load-balancing
+	// This is a duplicate definition of the constant in:
+	// kubernetes/kubernetes/pkg/controller/service/service_controller.go
+	// This label is feature-gated in kubernetes/kubernetes but we do not have feature gates
+	// This will need to be updated after the end of the alpha
+	LabelNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
 )
 
 // FakeGoogleAPIForbiddenErr creates a Forbidden error with type googleapi.Error
@@ -335,19 +347,53 @@ IngressLoop:
 	return
 }
 
-// GetReadyNodeNames returns names of schedulable, ready nodes from the node lister.
+// GetReadyNodeNames returns names of schedulable, ready nodes from the node lister
+// It also filters out masters and nodes excluded from load-balancing
 // TODO(rramkumar): Add a test for this.
 func GetReadyNodeNames(lister listers.NodeLister) ([]string, error) {
 	var nodeNames []string
-	nodes, err := lister.ListWithPredicate(NodeIsReady)
+	nodes, err := lister.ListWithPredicate(GetNodeConditionPredicate())
 	if err != nil {
 		return nodeNames, err
 	}
 	for _, n := range nodes {
-		if n.Spec.Unschedulable {
-			continue
-		}
 		nodeNames = append(nodeNames, n.Name)
 	}
 	return nodeNames, nil
+}
+
+// This is a duplicate definition of the function in:
+// kubernetes/kubernetes/pkg/controller/service/service_controller.go
+func GetNodeConditionPredicate() listers.NodeConditionPredicate {
+	return func(node *api_v1.Node) bool {
+		// We add the master to the node list, but its unschedulable.  So we use this to filter
+		// the master.
+		if node.Spec.Unschedulable {
+			return false
+		}
+
+		// As of 1.6, we will taint the master, but not necessarily mark it unschedulable.
+		// Recognize nodes labeled as master, and filter them also, as we were doing previously.
+		if _, hasMasterRoleLabel := node.Labels[LabelNodeRoleMaster]; hasMasterRoleLabel {
+			return false
+		}
+
+		if _, hasExcludeBalancerLabel := node.Labels[LabelNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
+			return false
+		}
+
+		// If we have no info, don't accept
+		if len(node.Status.Conditions) == 0 {
+			return false
+		}
+		for _, cond := range node.Status.Conditions {
+			// We consider the node for load balancing only when its NodeReady condition status
+			// is ConditionTrue
+			if cond.Type == api_v1.NodeReady && cond.Status != api_v1.ConditionTrue {
+				glog.V(4).Infof("Ignoring node %v with %v condition status %v", node.Name, cond.Type, cond.Status)
+				return false
+			}
+		}
+		return true
+	}
 }
