@@ -44,3 +44,10 @@ the GCP Backend Service should use.
 
 Example Value: `'{"my-https-port":"HTTPS"}'`  
 [Example YAML](/examples/backside-https)  
+
+#### Set BackendConfig of Service Ports
+`beta.cloud.google.com/backend-config`
+
+Provide a mapping between ports and BackendConfig objects. You can provide configuration for a Cloud load
+balancer by associating Service ports with BackendConfig objects. For more details please visit
+https://cloud.google.com/kubernetes-engine/docs/concepts/backendconfig.
