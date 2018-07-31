@@ -26,11 +26,14 @@ import (
 )
 
 const (
-	// ServiceApplicationProtocolKey is a stringified JSON map of port names to
-	// protocol strings. Possible values are HTTP, HTTPS
+	// ServiceApplicationProtocolKey and GoogleServiceApplicationProtocolKey
+	// is a stringified JSON map of port names to protocol strings.
+	// Possible values are HTTP, HTTPS and HTTP2.
 	// Example:
 	// '{"my-https-port":"HTTPS","my-http-port":"HTTP"}'
-	ServiceApplicationProtocolKey = "service.alpha.kubernetes.io/app-protocols"
+	// Note: ServiceApplicationProtocolKey will be deprecated.
+	ServiceApplicationProtocolKey       = "service.alpha.kubernetes.io/app-protocols"
+	GoogleServiceApplicationProtocolKey = "cloud.google.com/app-protocols"
 
 	// NEGAnnotationKey is the annotation key to enable GCE NEG.
 	// The value of the annotation must be a valid JSON string in the format
@@ -105,9 +108,15 @@ func FromService(obj *v1.Service) *Service {
 // ApplicationProtocols returns a map of port (name or number) to the protocol
 // on the port.
 func (svc *Service) ApplicationProtocols() (map[string]AppProtocol, error) {
-	val, ok := svc.v[ServiceApplicationProtocolKey]
+	var val string
+	var ok bool
+	// First check the old annotation, then fall back to the new one.
+	val, ok = svc.v[ServiceApplicationProtocolKey]
 	if !ok {
-		return map[string]AppProtocol{}, nil
+		val, ok = svc.v[GoogleServiceApplicationProtocolKey]
+		if !ok {
+			return map[string]AppProtocol{}, nil
+		}
 	}
 
 	var portToProtos map[string]AppProtocol
