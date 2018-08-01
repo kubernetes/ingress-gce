@@ -20,8 +20,6 @@ import (
 	"net/http"
 	"testing"
 
-	compute "google.golang.org/api/compute/v1"
-
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -309,24 +307,6 @@ func TestHealthCheckUpdate(t *testing.T) {
 	if hc.Port == 0 {
 		t.Fatalf("expected health check with PortSpecification to have Port")
 	}
-}
-
-func TestHealthCheckDeleteLegacy(t *testing.T) {
-	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
-
-	err := hcp.CreateHttpHealthCheck(&compute.HttpHealthCheck{
-		Name: namer.IGBackend(80),
-	})
-	if err != nil {
-		t.Fatalf("expected health check to be created, err: %v", err)
-	}
-
-	err = healthChecks.DeleteLegacy(80)
-	if err != nil {
-		t.Fatalf("expected health check to be deleted, err: %v", err)
-	}
-
 }
 
 func TestAlphaHealthCheck(t *testing.T) {
