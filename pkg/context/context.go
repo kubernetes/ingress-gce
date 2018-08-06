@@ -20,6 +20,7 @@ import (
 	"github.com/golang/glog"
 
 	apiv1 "k8s.io/api/core/v1"
+	extensions "k8s.io/api/extensions/v1beta1"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	informerv1beta1 "k8s.io/client-go/informers/extensions/v1beta1"
 	"k8s.io/client-go/kubernetes"
@@ -27,6 +28,8 @@ import (
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	"k8s.io/ingress-gce/pkg/backendconfig"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -179,4 +182,35 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	if ctx.BackendConfigInformer != nil {
 		go ctx.BackendConfigInformer.Run(stopCh)
 	}
+}
+
+// IngressesForService gets all the Ingresses that reference a Service.
+func (ctx *ControllerContext) IngressesForService(svc *apiv1.Service) (ingList []*extensions.Ingress) {
+	ingLister := utils.StoreToIngressLister{Store: ctx.IngressInformer.GetStore()}
+	ings, err := ingLister.GetServiceIngress(svc, ctx.DefaultBackendSvcPortID)
+	if err != nil {
+		glog.V(4).Infof("ignoring service %v: %v", svc.Name, err)
+		return
+	}
+	for _, ing := range ings {
+		if !utils.IsGCEIngress(&ing) {
+			continue
+		}
+		ingList = append(ingList, &ing)
+	}
+	return
+}
+
+// IngressesForBackendConfig gets all Ingresses that reference (indirectly) a BackendConfig.
+// TODO(rramkumar): This can be optimized to remove nested loops.
+func (ctx *ControllerContext) IngressesForBackendConfig(beConfig *backendconfigv1beta1.BackendConfig) (ingList []*extensions.Ingress) {
+	// Get all the Services associated with this BackendConfig.
+	svcLister := ctx.ServiceInformer.GetStore()
+	linkedSvcs := backendconfig.GetServicesForBackendConfig(svcLister, beConfig)
+	// Return all the Ingresses associated with each Service.
+	for _, svc := range linkedSvcs {
+		ingsForSvc := ctx.IngressesForService(svc)
+		ingList = append(ingList, ingsForSvc...)
+	}
+	return
 }

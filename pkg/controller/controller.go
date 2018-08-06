@@ -49,7 +49,6 @@ type LoadBalancerController struct {
 	client kubernetes.Interface
 	ctx    *context.ControllerContext
 
-	joiner     *utils.Joiner
 	ingLister  utils.StoreToIngressLister
 	nodeLister cache.Indexer
 	nodes      *NodeController
@@ -96,7 +95,6 @@ func NewLoadBalancerController(
 		hasSynced:           ctx.HasSynced,
 	}
 	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
-	lbc.joiner = utils.NewJoiner(lbc.ingLister, ctx.ServiceInformer.GetIndexer(), ctx.DefaultBackendSvcPortID)
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -140,13 +138,13 @@ func NewLoadBalancerController(
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			svc := obj.(*apiv1.Service)
-			ings := lbc.joiner.IngressesForService(svc)
+			ings := lbc.ctx.IngressesForService(svc)
 			lbc.ingQueue.Enqueue(convert(ings)...)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
 				svc := cur.(*apiv1.Service)
-				ings := lbc.joiner.IngressesForService(svc)
+				ings := lbc.ctx.IngressesForService(svc)
 				lbc.ingQueue.Enqueue(convert(ings)...)
 			}
 		},
@@ -158,20 +156,20 @@ func NewLoadBalancerController(
 		ctx.BackendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				beConfig := obj.(*backendconfigv1beta1.BackendConfig)
-				ings := lbc.joiner.IngressesForBackendConfig(beConfig)
+				ings := lbc.ctx.IngressesForBackendConfig(beConfig)
 				lbc.ingQueue.Enqueue(convert(ings)...)
 
 			},
 			UpdateFunc: func(old, cur interface{}) {
 				if !reflect.DeepEqual(old, cur) {
 					beConfig := cur.(*backendconfigv1beta1.BackendConfig)
-					ings := lbc.joiner.IngressesForBackendConfig(beConfig)
+					ings := lbc.ctx.IngressesForBackendConfig(beConfig)
 					lbc.ingQueue.Enqueue(convert(ings)...)
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
 				beConfig := obj.(*backendconfigv1beta1.BackendConfig)
-				ings := lbc.joiner.IngressesForBackendConfig(beConfig)
+				ings := lbc.ctx.IngressesForBackendConfig(beConfig)
 				lbc.ingQueue.Enqueue(convert(ings)...)
 			},
 		})
