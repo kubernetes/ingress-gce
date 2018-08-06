@@ -45,7 +45,6 @@ type FirewallController struct {
 	ctx          *context.ControllerContext
 	firewallPool SingleFirewallPool
 	queue        utils.TaskQueue
-	joiner       *utils.Joiner
 	ingLister    utils.StoreToIngressLister
 	translator   *translator.Translator
 	nodeLister   cache.Indexer
@@ -70,7 +69,6 @@ func NewFirewallController(
 	}
 
 	fwc.queue = utils.NewPeriodicTaskQueue("firewall", fwc.sync)
-	fwc.joiner = utils.NewJoiner(fwc.ingLister, ctx.ServiceInformer.GetIndexer(), ctx.DefaultBackendSvcPortID)
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -101,7 +99,7 @@ func NewFirewallController(
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			svc := obj.(*apiv1.Service)
-			ings := fwc.joiner.IngressesForService(svc)
+			ings := fwc.ctx.IngressesForService(svc)
 			if len(ings) > 0 {
 				fwc.queue.Enqueue(queueKey)
 			}
@@ -109,7 +107,7 @@ func NewFirewallController(
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
 				svc := cur.(*apiv1.Service)
-				ings := fwc.joiner.IngressesForService(svc)
+				ings := fwc.ctx.IngressesForService(svc)
 				if len(ings) > 0 {
 					fwc.queue.Enqueue(queueKey)
 				}
