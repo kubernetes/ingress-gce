@@ -65,7 +65,7 @@ func (c *ClusterManager) EnsureInstanceGroupsAndPorts(nodeNames []string, servic
 	}
 
 	// Create instance groups and set named ports.
-	igs, err := instances.EnsureInstanceGroupsAndPorts(c.instancePool, c.ClusterNamer, ports)
+	igs, err := c.instancePool.EnsureInstanceGroupsAndPorts(c.ClusterNamer.InstanceGroup(), ports)
 	if err != nil {
 		return nil, err
 	}
