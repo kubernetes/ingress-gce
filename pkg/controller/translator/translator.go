@@ -40,14 +40,13 @@ import (
 )
 
 // NewTranslator returns a new Translator.
-func NewTranslator(namer *utils.Namer, ctx *context.ControllerContext) *Translator {
-	return &Translator{namer, ctx}
+func NewTranslator(ctx *context.ControllerContext) *Translator {
+	return &Translator{ctx}
 }
 
 // Translator helps with kubernetes -> gce api conversion.
 type Translator struct {
-	namer *utils.Namer
-	ctx   *context.ControllerContext
+	ctx *context.ControllerContext
 }
 
 // getServicePort looks in the svc store for a matching service:port,

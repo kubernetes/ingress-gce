@@ -25,12 +25,10 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
+	//"k8s.io/apimachinery/pkg/util/sets"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/firewalls"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -39,8 +37,7 @@ import (
 var firstPodCreationTime = time.Date(2006, 01, 02, 15, 04, 05, 0, time.UTC)
 
 func TestZoneListing(t *testing.T) {
-	cm := NewFakeClusterManager(flags.DefaultClusterUID, firewalls.DefaultFirewallName)
-	lbc := newLoadBalancerController(t, cm)
+	lbc := newLoadBalancerController()
 	zoneToNode := map[string][]string{
 		"zone-1": {"n1"},
 		"zone-2": {"n2"},
@@ -63,9 +60,10 @@ func TestZoneListing(t *testing.T) {
 	}
 }
 
+/*
+* TODO(rramkumar): Move to pkg/instances in another PR
 func TestInstancesAddedToZones(t *testing.T) {
-	cm := NewFakeClusterManager(flags.DefaultClusterUID, firewalls.DefaultFirewallName)
-	lbc := newLoadBalancerController(t, cm)
+	lbc := newLoadBalancerController()
 	zoneToNode := map[string][]string{
 		"zone-1": {"n1", "n2"},
 		"zone-2": {"n3"},
@@ -74,14 +72,14 @@ func TestInstancesAddedToZones(t *testing.T) {
 
 	// Create 2 igs, one per zone.
 	testIG := "test-ig"
-	lbc.CloudClusterManager.instancePool.EnsureInstanceGroupsAndPorts(testIG, []int64{int64(3001)})
+	lbc.instancePool.EnsureInstanceGroupsAndPorts(testIG, []int64{int64(3001)})
 
 	// node pool syncs kube-nodes, this will add them to both igs.
-	lbc.CloudClusterManager.instancePool.Sync([]string{"n1", "n2", "n3"})
-	gotZonesToNode := cm.fakeIGs.GetInstancesByZone()
+	lbc.instancePool.Sync([]string{"n1", "n2", "n3"})
+	gotZonesToNode := lbc.instancePool.GetInstancesByZone()
 
 	for z, nodeNames := range zoneToNode {
-		if ig, err := cm.fakeIGs.GetInstanceGroup(testIG, z); err != nil {
+		if ig, err := lbc.instancePool.GetInstanceGroup(testIG, z); err != nil {
 			t.Errorf("Failed to find ig %v in zone %v, found %+v: %v", testIG, z, ig, err)
 		}
 		expNodes := sets.NewString(nodeNames...)
@@ -91,6 +89,7 @@ func TestInstancesAddedToZones(t *testing.T) {
 		}
 	}
 }
+*/
 
 func addNodes(lbc *LoadBalancerController, zoneToNode map[string][]string) {
 	for zone, nodes := range zoneToNode {
@@ -111,7 +110,7 @@ func addNodes(lbc *LoadBalancerController, zoneToNode map[string][]string) {
 			lbc.nodeLister.Add(n)
 		}
 	}
-	lbc.CloudClusterManager.instancePool.Init(lbc.Translator)
+	lbc.instancePool.Init(lbc.Translator)
 }
 
 func getProbePath(p *api_v1.Probe) string {

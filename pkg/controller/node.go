@@ -23,6 +23,7 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -37,15 +38,15 @@ type NodeController struct {
 	lister cache.Indexer
 	// queue is the TaskQueue used to manage the node worker updates.
 	queue utils.TaskQueue
-	// cm is the shared ClusterManager interface.
-	cm *ClusterManager
+	// instancePool is a NodePool to manage kubernetes nodes.
+	instancePool instances.NodePool
 }
 
 // NewNodeController returns a new node update controller.
-func NewNodeController(ctx *context.ControllerContext, cm *ClusterManager) *NodeController {
+func NewNodeController(ctx *context.ControllerContext, instancePool instances.NodePool) *NodeController {
 	c := &NodeController{
-		lister: ctx.NodeInformer.GetIndexer(),
-		cm:     cm,
+		lister:       ctx.NodeInformer.GetIndexer(),
+		instancePool: instancePool,
 	}
 	c.queue = utils.NewPeriodicTaskQueue("nodes", c.sync)
 
@@ -80,5 +81,5 @@ func (c *NodeController) sync(key string) error {
 	if err != nil {
 		return err
 	}
-	return c.cm.instancePool.Sync(nodeNames)
+	return c.instancePool.Sync(nodeNames)
 }

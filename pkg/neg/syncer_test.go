@@ -13,6 +13,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const (
@@ -25,6 +26,7 @@ const (
 func NewTestSyncer() *syncer {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
+	namer := utils.NewNamer(ClusterID, "")
 	ctxConfig := context.ControllerContextConfig{
 		NEGEnabled:              true,
 		BackendConfigEnabled:    false,
@@ -32,7 +34,7 @@ func NewTestSyncer() *syncer {
 		ResyncPeriod:            1 * time.Second,
 		DefaultBackendSvcPortID: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, ctxConfig)
+	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, namer, ctxConfig)
 	svcPort := servicePort{
 		namespace:  testServiceNamespace,
 		name:       testServiceName,

@@ -26,10 +26,14 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/fake"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
+	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"k8s.io/ingress-gce/pkg/context"
 )
@@ -40,20 +44,28 @@ var (
 )
 
 // newLoadBalancerController create a loadbalancer controller.
-func newLoadBalancerController(t *testing.T, cm *fakeClusterManager) *LoadBalancerController {
+func newLoadBalancerController() *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
+	namer := utils.NewNamer(clusterUID, "")
 
 	stopCh := make(chan struct{})
 	ctxConfig := context.ControllerContextConfig{
-		NEGEnabled:              true,
-		BackendConfigEnabled:    false,
-		Namespace:               api_v1.NamespaceAll,
-		ResyncPeriod:            1 * time.Minute,
-		DefaultBackendSvcPortID: test.DefaultBeSvcPort.ID,
+		NEGEnabled:                    true,
+		BackendConfigEnabled:          false,
+		Namespace:                     api_v1.NamespaceAll,
+		ResyncPeriod:                  1 * time.Minute,
+		DefaultBackendSvcPortID:       test.DefaultBeSvcPort.ID,
+		HealthCheckPath:               "/",
+		DefaultBackendHealthCheckPath: "/healthz",
 	}
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cm.fakeBackends, ctxConfig)
-	lbc := NewLoadBalancerController(ctx, cm.ClusterManager, stopCh)
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, fakeGCE, namer, ctxConfig)
+	lbc := NewLoadBalancerController(ctx, stopCh)
+	// TODO(rramkumar): Fix this so we don't have to override with our fake
+	lbc.instancePool = instances.NewNodePool(instances.NewFakeInstanceGroups(sets.NewString(), namer), namer)
+	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(loadbalancers.NewFakeLoadBalancers(clusterUID, namer), namer)
+	lbc.instancePool.Init(&instances.FakeZoneLister{Zones: []string{"zone-a"}})
 
 	lbc.hasSynced = func() bool { return true }
 
@@ -115,8 +127,7 @@ func backend(name string, port intstr.IntOrString) extensions.IngressBackend {
 // TestIngressSyncError asserts that `sync` will bubble an error when an ingress cannot be synced
 // due to configuration problems.
 func TestIngressSyncError(t *testing.T) {
-	cm := NewFakeClusterManager(clusterUID, "")
-	lbc := newLoadBalancerController(t, cm)
+	lbc := newLoadBalancerController()
 
 	someBackend := backend("my-service", intstr.FromInt(80))
 	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
@@ -139,8 +150,7 @@ func TestIngressSyncError(t *testing.T) {
 // TestIngressCreateDelete asserts that `sync` will not return an error for a good ingress config
 // and will not return an error when the ingress is deleted.
 func TestIngressCreateDelete(t *testing.T) {
-	cm := NewFakeClusterManager(clusterUID, "")
-	lbc := newLoadBalancerController(t, cm)
+	lbc := newLoadBalancerController()
 
 	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
 		Type:  api_v1.ServiceTypeNodePort,
@@ -174,8 +184,7 @@ func TestIngressCreateDelete(t *testing.T) {
 
 // TestEnsureMCIngress asserts a multi-cluster ingress will result with correct status annotations.
 func TestEnsureMCIngress(t *testing.T) {
-	cm := NewFakeClusterManager(clusterUID, "")
-	lbc := newLoadBalancerController(t, cm)
+	lbc := newLoadBalancerController()
 
 	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
 		Type:  api_v1.ServiceTypeNodePort,
