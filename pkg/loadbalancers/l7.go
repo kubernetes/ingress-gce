@@ -242,7 +242,7 @@ func (l *L7) Cleanup() error {
 }
 
 // GetLBAnnotations returns the annotations of an l7. This includes it's current status.
-func GetLBAnnotations(l7 *L7, existing map[string]string, backendPool backends.BackendPool) (map[string]string, error) {
+func GetLBAnnotations(l7 *L7, existing map[string]string, backendSyncer backends.Syncer) (map[string]string, error) {
 	if existing == nil {
 		existing = map[string]string{}
 	}
@@ -252,7 +252,7 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendPool backends.B
 	}
 	backendState := map[string]string{}
 	for _, beName := range backends {
-		backendState[beName] = backendPool.Status(beName)
+		backendState[beName] = backendSyncer.Status(beName)
 	}
 	jsonBackendState := "Unknown"
 	b, err := json.Marshal(backendState)

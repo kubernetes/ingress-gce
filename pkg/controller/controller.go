@@ -38,6 +38,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
@@ -50,8 +51,7 @@ import (
 // LoadBalancerController watches the kubernetes api and adds/removes services
 // from the loadbalancer, via loadBalancerConfig.
 type LoadBalancerController struct {
-	client kubernetes.Interface
-	ctx    *context.ControllerContext
+	ctx *context.ControllerContext
 
 	ingLister  utils.StoreToIngressLister
 	nodeLister cache.Indexer
@@ -74,8 +74,13 @@ type LoadBalancerController struct {
 
 	// Resource pools.
 	instancePool instances.NodePool
-	backendPool  backends.BackendPool
 	l7Pool       loadbalancers.LoadBalancerPool
+
+	// syncer implementation for backends
+	backendSyncer backends.Syncer
+	// linker implementations for backends
+	negLinker backends.Linker
+	igLinker  backends.Linker
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
@@ -90,20 +95,21 @@ func NewLoadBalancerController(
 	})
 	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendHealthCheckPath, ctx.ClusterNamer, ctx.DefaultBackendSvcPortID.Service)
 	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer)
-	backendPool := backends.NewBackendPool(ctx.Cloud, ctx.Cloud, healthChecker, instancePool, ctx.ClusterNamer, ctx.BackendConfigEnabled, true)
+	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer, true)
 	lbc := LoadBalancerController{
-		client:       ctx.KubeClient,
-		ctx:          ctx,
-		ingLister:    utils.StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
-		nodeLister:   ctx.NodeInformer.GetIndexer(),
-		Translator:   translator.NewTranslator(ctx),
-		tlsLoader:    &tls.TLSCertsFromSecretsLoader{Client: ctx.KubeClient},
-		stopCh:       stopCh,
-		hasSynced:    ctx.HasSynced,
-		nodes:        NewNodeController(ctx, instancePool),
-		instancePool: instancePool,
-		backendPool:  backendPool,
-		l7Pool:       loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer),
+		ctx:           ctx,
+		ingLister:     utils.StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
+		nodeLister:    ctx.NodeInformer.GetIndexer(),
+		Translator:    translator.NewTranslator(ctx),
+		tlsLoader:     &tls.TLSCertsFromSecretsLoader{Client: ctx.KubeClient},
+		stopCh:        stopCh,
+		hasSynced:     ctx.HasSynced,
+		nodes:         NewNodeController(ctx, instancePool),
+		instancePool:  instancePool,
+		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer),
+		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.ClusterNamer, ctx.BackendConfigEnabled),
+		negLinker:     backends.NewNEGLinker(backendPool, ctx.Cloud, ctx.ClusterNamer),
+		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool, ctx.ClusterNamer),
 	}
 
 	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
@@ -188,7 +194,18 @@ func NewLoadBalancerController(
 	}
 
 	// Register health check on controller context.
-	ctx.AddHealthCheck("ingress", lbc.IsHealthy)
+	ctx.AddHealthCheck("ingress", func() error {
+		_, err := backendPool.Get("foo", meta.VersionGA)
+
+		// If this container is scheduled on a node without compute/rw it is
+		// effectively useless, but it is healthy. Reporting it as unhealthy
+		// will lead to container crashlooping.
+		if utils.IsHTTPErrorCode(err, http.StatusForbidden) {
+			glog.Infof("Reporting cluster as healthy, but unable to list backends: %v", err)
+			return nil
+		}
+		return err
+	})
 
 	glog.V(3).Infof("Created new loadbalancer controller")
 
@@ -198,7 +215,7 @@ func NewLoadBalancerController(
 func (lbc *LoadBalancerController) Init() {
 	// TODO(rramkumar): Try to get rid of this "Init".
 	lbc.instancePool.Init(lbc.Translator)
-	lbc.backendPool.Init(lbc.Translator)
+	lbc.backendSyncer.Init(lbc.Translator)
 }
 
 // Run starts the loadbalancer controller.
@@ -235,25 +252,9 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 			return err
 		}
 		// The backend pool will also delete instance groups.
-		return lbc.backendPool.Shutdown()
+		return lbc.backendSyncer.Shutdown()
 	}
 	return nil
-}
-
-// IsHealthy returns an error if the cluster manager is unhealthy.
-func (lbc *LoadBalancerController) IsHealthy() (err error) {
-	// TODO: Expand on this, for now we just want to detect when the GCE client
-	// is broken.
-	_, err = lbc.backendPool.List()
-
-	// If this container is scheduled on a node without compute/rw it is
-	// effectively useless, but it is healthy. Reporting it as unhealthy
-	// will lead to container crashlooping.
-	if utils.IsHTTPErrorCode(err, http.StatusForbidden) {
-		glog.Infof("Reporting cluster as healthy, but unable to list backends: %v", err)
-		return nil
-	}
-	return
 }
 
 // sync manages Ingress create/updates/deletes
@@ -328,41 +329,42 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 		if err = setInstanceGroupsAnnotation(ing.Annotations, igs); err != nil {
 			return err
 		}
-		if err = updateAnnotations(lbc.client, ing.Name, ing.Namespace, ing.Annotations); err != nil {
+		if err = updateAnnotations(lbc.ctx.KubeClient, ing.Name, ing.Namespace, ing.Annotations); err != nil {
 			return err
 		}
 		return nil
 	}
 
-	// Continue syncing this specific GCE ingress.
+	// Sync the backends
+	if lbc.backendSyncer.Sync(ingSvcPorts); err != nil {
+		return err
+	}
+
+	// Get the zones our groups live in.
+	zones, err := lbc.Translator.ListZones()
+	var groupKeys []backends.GroupKey
+	for _, zone := range zones {
+		groupKeys = append(groupKeys, backends.GroupKey{Zone: zone})
+	}
+
+	// Link backends to groups.
+	for _, sp := range ingSvcPorts {
+		if sp.NEGEnabled {
+			// Link backend to NEG's if the backend has NEG enabled.
+			lbc.negLinker.Link(sp, groupKeys)
+		} else {
+			// Otherwise, link backend to IG's.
+			lbc.igLinker.Link(sp, groupKeys)
+		}
+	}
+
 	lb, err := lbc.toRuntimeInfo(ing, urlMap)
 	if err != nil {
 		return err
 	}
-
-	// Create the backends. Note that we only need the IG links.
-	if err := lbc.backendPool.Ensure(uniq(ingSvcPorts), utils.IGLinks(igs)); err != nil {
-		return err
-	}
-
 	// Create higher-level LB resources.
 	if err := lbc.l7Pool.Sync(lb); err != nil {
 		return err
-	}
-
-	// If NEG enabled, link the backend services to the NEGs.
-	if lbc.ctx.NEGEnabled {
-		for _, svcPort := range ingSvcPorts {
-			if svcPort.NEGEnabled {
-				zones, err := lbc.Translator.ListZones()
-				if err != nil {
-					return err
-				}
-				if err := lbc.backendPool.Link(svcPort, zones); err != nil {
-					return err
-				}
-			}
-		}
 	}
 
 	// Get the loadbalancer and update the ingress status.
@@ -380,7 +382,7 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 // updateIngressStatus updates the IP and annotations of a loadbalancer.
 // The annotations are parsed by kubectl describe.
 func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing *extensions.Ingress) error {
-	ingClient := lbc.client.Extensions().Ingresses(ing.Namespace)
+	ingClient := lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace)
 
 	// Update IP through update/status endpoint
 	ip := l7.GetIP()
@@ -407,12 +409,12 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 			lbc.ctx.Recorder(ing.Namespace).Eventf(currIng, apiv1.EventTypeNormal, "CREATE", "ip: %v", ip)
 		}
 	}
-	annotations, err := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.backendPool)
+	annotations, err := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.backendSyncer)
 	if err != nil {
 		return err
 	}
 
-	if err := updateAnnotations(lbc.client, ing.Name, ing.Namespace, annotations); err != nil {
+	if err := updateAnnotations(lbc.ctx.KubeClient, ing.Name, ing.Namespace, annotations); err != nil {
 		return err
 	}
 	return nil
@@ -513,7 +515,7 @@ func (lbc *LoadBalancerController) gc(lbNames []string, nodePorts []utils.Servic
 	//      happen when an Ingress is updated, if we don't GC after the update
 	//      we'll leak the backend.
 	lbErr := lbc.l7Pool.GC(lbNames)
-	beErr := lbc.backendPool.GC(nodePorts)
+	beErr := lbc.backendSyncer.GC(nodePorts)
 	if lbErr != nil {
 		return lbErr
 	}
