@@ -70,7 +70,7 @@ type Controller struct {
 
 // NewController returns a network endpoint group controller.
 func NewController(
-	cloud networkEndpointGroupCloud,
+	cloud NetworkEndpointGroupCloud,
 	ctx *context.ControllerContext,
 	zoneGetter zoneGetter,
 	namer networkEndpointGroupNamer,
@@ -85,12 +85,7 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
-	manager := newSyncerManager(namer,
-		recorder,
-		cloud,
-		zoneGetter,
-		ctx.ServiceInformer.GetIndexer(),
-		ctx.EndpointInformer.GetIndexer())
+	manager := newSyncerManager(namer, recorder, cloud, zoneGetter, ctx.ServiceInformer.GetIndexer(), ctx.EndpointInformer.GetIndexer())
 
 	negController := &Controller{
 		client:         ctx.KubeClient,

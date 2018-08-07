@@ -36,7 +36,7 @@ type serviceKey struct {
 type syncerManager struct {
 	namer      networkEndpointGroupNamer
 	recorder   record.EventRecorder
-	cloud      networkEndpointGroupCloud
+	cloud      NetworkEndpointGroupCloud
 	zoneGetter zoneGetter
 
 	serviceLister  cache.Indexer
@@ -53,7 +53,7 @@ type syncerManager struct {
 	syncerMap map[servicePort]negSyncer
 }
 
-func newSyncerManager(namer networkEndpointGroupNamer, recorder record.EventRecorder, cloud networkEndpointGroupCloud, zoneGetter zoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) *syncerManager {
+func newSyncerManager(namer networkEndpointGroupNamer, recorder record.EventRecorder, cloud NetworkEndpointGroupCloud, zoneGetter zoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) *syncerManager {
 	return &syncerManager{
 		namer:          namer,
 		recorder:       recorder,

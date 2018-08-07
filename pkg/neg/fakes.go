@@ -73,7 +73,7 @@ type FakeNetworkEndpointGroupCloud struct {
 	mu                    sync.Mutex
 }
 
-func NewFakeNetworkEndpointGroupCloud(subnetwork, network string) networkEndpointGroupCloud {
+func NewFakeNetworkEndpointGroupCloud(subnetwork, network string) NetworkEndpointGroupCloud {
 	return &FakeNetworkEndpointGroupCloud{
 		Subnetwork:            subnetwork,
 		Network:               network,
