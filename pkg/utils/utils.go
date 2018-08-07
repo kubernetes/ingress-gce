@@ -125,10 +125,10 @@ func IsForbiddenError(err error) bool {
 	return IsHTTPErrorCode(err, http.StatusForbidden)
 }
 
-// trimFieldsEvenly trims the fields evenly and keeps the total length
+// TrimFieldsEvenly trims the fields evenly and keeps the total length
 // <= max. Truncation is spread in ratio with their original length,
 // meaning smaller fields will be truncated less than longer ones.
-func trimFieldsEvenly(max int, fields ...string) []string {
+func TrimFieldsEvenly(max int, fields ...string) []string {
 	if max <= 0 {
 		return fields
 	}
