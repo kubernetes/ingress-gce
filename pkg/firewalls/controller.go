@@ -54,16 +54,15 @@ type FirewallController struct {
 // NewFirewallController returns a new firewall controller.
 func NewFirewallController(
 	ctx *context.ControllerContext,
-	namer *utils.Namer,
 	portRanges []string) *FirewallController {
 
-	firewallPool := NewFirewallPool(ctx.Cloud, namer, gce.LoadBalancerSrcRanges(), portRanges)
+	firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, gce.LoadBalancerSrcRanges(), portRanges)
 
 	fwc := &FirewallController{
 		ctx:          ctx,
 		firewallPool: firewallPool,
 		ingLister:    utils.StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
-		translator:   translator.NewTranslator(namer, ctx),
+		translator:   translator.NewTranslator(ctx),
 		nodeLister:   ctx.NodeInformer.GetIndexer(),
 		hasSynced:    ctx.HasSynced,
 	}

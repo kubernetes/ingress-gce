@@ -53,6 +53,8 @@ type ControllerContext struct {
 
 	Cloud *gce.GCECloud
 
+	ClusterNamer *utils.Namer
+
 	ControllerContextConfig
 
 	IngressInformer       cache.SharedIndexInformer
@@ -77,7 +79,9 @@ type ControllerContextConfig struct {
 	Namespace            string
 	ResyncPeriod         time.Duration
 	// DefaultBackendSvcPortID is the ServicePortID for the system default backend.
-	DefaultBackendSvcPortID utils.ServicePortID
+	DefaultBackendSvcPortID       utils.ServicePortID
+	HealthCheckPath               string
+	DefaultBackendHealthCheckPath string
 }
 
 // NewControllerContext returns a new shared set of informers.
@@ -85,11 +89,13 @@ func NewControllerContext(
 	kubeClient kubernetes.Interface,
 	backendConfigClient backendconfigclient.Interface,
 	cloud *gce.GCECloud,
+	namer *utils.Namer,
 	config ControllerContextConfig) *ControllerContext {
 
 	context := &ControllerContext{
-		KubeClient: kubeClient,
-		Cloud:      cloud,
+		KubeClient:              kubeClient,
+		Cloud:                   cloud,
+		ClusterNamer:            namer,
 		ControllerContextConfig: config,
 		IngressInformer:         informerv1beta1.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, NewIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, NewIndexer()),

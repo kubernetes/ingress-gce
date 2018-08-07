@@ -32,11 +32,12 @@ import (
 )
 
 const (
-	CluseterID = "clusterid"
+	ClusterID = "clusterid"
 )
 
 func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
+	namer := utils.NewNamer(ClusterID, "")
 	ctxConfig := context.ControllerContextConfig{
 		NEGEnabled:              true,
 		BackendConfigEnabled:    false,
@@ -44,9 +45,9 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 		ResyncPeriod:            1 * time.Second,
 		DefaultBackendSvcPortID: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, ctxConfig)
+	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, namer, ctxConfig)
 	manager := newSyncerManager(
-		utils.NewNamer(CluseterID, ""),
+		namer,
 		record.NewFakeRecorder(100),
 		NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		NewFakeZoneGetter(),

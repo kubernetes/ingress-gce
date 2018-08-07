@@ -100,17 +100,27 @@ func main() {
 		}
 	}
 
+	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, firewalls.DefaultFirewallName)
+	if err != nil {
+		glog.Fatalf("app.NewNamer(ctx.KubeClient, %q, %q) = %v", flags.F.ClusterName, firewalls.DefaultFirewallName, err)
+	}
+	if namer.UID() != "" {
+		glog.V(0).Infof("Cluster name: %+v", namer.UID())
+	}
+
 	cloud := app.NewGCEClient()
 	enableNEG := flags.F.Features.NEG
 	defaultBackendServicePortID := app.DefaultBackendServicePortID(kubeClient)
 	ctxConfig := context.ControllerContextConfig{
-		NEGEnabled:              enableNEG,
-		BackendConfigEnabled:    flags.F.EnableBackendConfig,
-		Namespace:               flags.F.WatchNamespace,
-		ResyncPeriod:            flags.F.ResyncPeriod,
-		DefaultBackendSvcPortID: defaultBackendServicePortID,
+		NEGEnabled:                    enableNEG,
+		BackendConfigEnabled:          flags.F.EnableBackendConfig,
+		Namespace:                     flags.F.WatchNamespace,
+		ResyncPeriod:                  flags.F.ResyncPeriod,
+		DefaultBackendSvcPortID:       defaultBackendServicePortID,
+		HealthCheckPath:               flags.F.HealthCheckPath,
+		DefaultBackendHealthCheckPath: flags.F.DefaultSvcHealthCheckPath,
 	}
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cloud, ctxConfig)
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cloud, namer, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
@@ -167,33 +177,14 @@ func makeLeaderElectionConfig(client clientset.Interface, recorder record.EventR
 }
 
 func runControllers(ctx *context.ControllerContext) {
-	namer, err := app.NewNamer(ctx.KubeClient, flags.F.ClusterName, firewalls.DefaultFirewallName)
-	if err != nil {
-		glog.Fatalf("app.NewNamer(ctx.KubeClient, %q, %q) = %v", flags.F.ClusterName, firewalls.DefaultFirewallName, err)
-	}
-
-	clusterManager, err := controller.NewClusterManager(ctx, namer, flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath)
-	if err != nil {
-		glog.Fatalf("controller.NewClusterManager(cloud, namer, %q, %q) = %v", flags.F.HealthCheckPath, flags.F.DefaultSvcHealthCheckPath, err)
-	}
-
 	stopCh := make(chan struct{})
-	lbc := controller.NewLoadBalancerController(ctx, clusterManager, stopCh)
-	if err != nil {
-		glog.Fatalf("controller.NewLoadBalancerController(ctx, clusterManager, stopCh) = %v", err)
-	}
+	lbc := controller.NewLoadBalancerController(ctx, stopCh)
 
-	fwc := firewalls.NewFirewallController(ctx, namer, flags.F.NodePortRanges.Values())
-
-	if clusterManager.ClusterNamer.UID() != "" {
-		glog.V(0).Infof("Cluster name: %+v", clusterManager.ClusterNamer.UID())
-	}
-	clusterManager.Init(lbc.Translator, lbc.Translator)
-	glog.V(0).Infof("clusterManager initialized")
+	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values())
 
 	if ctx.NEGEnabled {
 		// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
-		negController := neg.NewController(ctx.Cloud, ctx, lbc.Translator, namer, flags.F.ResyncPeriod)
+		negController := neg.NewController(ctx.Cloud, ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod)
 		go negController.Run(stopCh)
 		glog.V(0).Infof("negController started")
 	}
@@ -204,6 +195,7 @@ func runControllers(ctx *context.ControllerContext) {
 	glog.V(0).Infof("firewall controller started")
 
 	ctx.Start(stopCh)
+	lbc.Init()
 	lbc.Run()
 
 	for {

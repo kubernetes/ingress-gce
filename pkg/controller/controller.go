@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
+	compute "google.golang.org/api/compute/v1"
 
 	apiv1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
@@ -34,6 +35,9 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/healthchecks"
+	"k8s.io/ingress-gce/pkg/instances"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
@@ -54,10 +58,9 @@ type LoadBalancerController struct {
 	nodes      *NodeController
 
 	// TODO: Watch secrets
-	CloudClusterManager *ClusterManager
-	ingQueue            utils.TaskQueue
-	Translator          *translator.Translator
-	stopCh              chan struct{}
+	ingQueue   utils.TaskQueue
+	Translator *translator.Translator
+	stopCh     chan struct{}
 	// stopLock is used to enforce only a single call to Stop is active.
 	// Needed because we allow stopping through an http endpoint and
 	// allowing concurrent stoppers leads to stack traces.
@@ -68,15 +71,16 @@ type LoadBalancerController struct {
 	// hasSynced returns true if all associated sub-controllers have synced.
 	// Abstracted into a func for testing.
 	hasSynced func() bool
+
+	// Resource pools.
+	instancePool instances.NodePool
+	backendPool  backends.BackendPool
+	l7Pool       loadbalancers.LoadBalancerPool
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
-// - clusterManager: A ClusterManager capable of creating all cloud resources
-//	 required for L7 loadbalancing.
-// - resyncPeriod: Watchers relist from the Kubernetes API server this often.
 func NewLoadBalancerController(
 	ctx *context.ControllerContext,
-	clusterManager *ClusterManager,
 	stopCh chan struct{}) *LoadBalancerController {
 
 	broadcaster := record.NewBroadcaster()
@@ -84,16 +88,24 @@ func NewLoadBalancerController(
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: ctx.KubeClient.Core().Events(""),
 	})
+	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendHealthCheckPath, ctx.ClusterNamer, ctx.DefaultBackendSvcPortID.Service)
+	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer)
+	backendPool := backends.NewBackendPool(ctx.Cloud, ctx.Cloud, healthChecker, instancePool, ctx.ClusterNamer, ctx.BackendConfigEnabled, true)
 	lbc := LoadBalancerController{
-		client:              ctx.KubeClient,
-		ctx:                 ctx,
-		ingLister:           utils.StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
-		nodeLister:          ctx.NodeInformer.GetIndexer(),
-		nodes:               NewNodeController(ctx, clusterManager),
-		CloudClusterManager: clusterManager,
-		stopCh:              stopCh,
-		hasSynced:           ctx.HasSynced,
+		client:       ctx.KubeClient,
+		ctx:          ctx,
+		ingLister:    utils.StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
+		nodeLister:   ctx.NodeInformer.GetIndexer(),
+		Translator:   translator.NewTranslator(ctx),
+		tlsLoader:    &tls.TLSCertsFromSecretsLoader{Client: ctx.KubeClient},
+		stopCh:       stopCh,
+		hasSynced:    ctx.HasSynced,
+		nodes:        NewNodeController(ctx, instancePool),
+		instancePool: instancePool,
+		backendPool:  backendPool,
+		l7Pool:       loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer),
 	}
+
 	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
 
 	// Ingress event handlers.
@@ -175,15 +187,18 @@ func NewLoadBalancerController(
 		})
 	}
 
-	lbc.Translator = translator.NewTranslator(lbc.CloudClusterManager.ClusterNamer, lbc.ctx)
-	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.client}
-
 	// Register health check on controller context.
 	ctx.AddHealthCheck("ingress", lbc.IsHealthy)
 
 	glog.V(3).Infof("Created new loadbalancer controller")
 
 	return &lbc
+}
+
+func (lbc *LoadBalancerController) Init() {
+	// TODO(rramkumar): Try to get rid of this "Init".
+	lbc.instancePool.Init(lbc.Translator)
+	lbc.backendPool.Init(lbc.Translator)
 }
 
 // Run starts the loadbalancer controller.
@@ -213,9 +228,14 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 	}
 
 	// Deleting shared cluster resources is idempotent.
+	// TODO(rramkumar): Do we need deleteAll? Can we get rid of its' flag?
 	if deleteAll {
 		glog.Infof("Shutting down cluster manager.")
-		return lbc.CloudClusterManager.shutdown()
+		if err := lbc.l7Pool.Shutdown(); err != nil {
+			return err
+		}
+		// The backend pool will also delete instance groups.
+		return lbc.backendPool.Shutdown()
 	}
 	return nil
 }
@@ -224,7 +244,7 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 func (lbc *LoadBalancerController) IsHealthy() (err error) {
 	// TODO: Expand on this, for now we just want to detect when the GCE client
 	// is broken.
-	_, err = lbc.CloudClusterManager.backendPool.List()
+	_, err = lbc.backendPool.List()
 
 	// If this container is scheduled on a node without compute/rw it is
 	// effectively useless, but it is healthy. Reporting it as unhealthy
@@ -263,7 +283,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	if !ingExists {
 		glog.V(2).Infof("Ingress %q no longer exists, triggering GC", key)
 		// GC will find GCE resources that were used for this ingress and delete them.
-		return lbc.CloudClusterManager.GC(lbNames, gceSvcPorts)
+		return lbc.gc(lbNames, gceSvcPorts)
 	}
 
 	// Get ingress and DeepCopy for assurance that we don't pollute other goroutines with changes.
@@ -281,7 +301,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	// Garbage collection will occur regardless of an error occurring. If an error occurred,
 	// it could have been caused by quota issues; therefore, garbage collecting now may
 	// free up enough quota for the next sync to pass.
-	if gcErr := lbc.CloudClusterManager.GC(lbNames, gceSvcPorts); gcErr != nil {
+	if gcErr := lbc.gc(lbNames, gceSvcPorts); gcErr != nil {
 		retErr = fmt.Errorf("error during sync %v, error during GC %v", retErr, gcErr)
 	}
 
@@ -295,7 +315,7 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 	}
 
 	ingSvcPorts := urlMap.AllServicePorts()
-	igs, err := lbc.CloudClusterManager.EnsureInstanceGroupsAndPorts(nodeNames, ingSvcPorts)
+	igs, err := lbc.ensureInstanceGroupsAndPorts(ingSvcPorts, nodeNames)
 	if err != nil {
 		return err
 	}
@@ -321,12 +341,12 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 	}
 
 	// Create the backends. Note that we only need the IG links.
-	if err := lbc.CloudClusterManager.backendPool.Ensure(uniq(ingSvcPorts), utils.IGLinks(igs)); err != nil {
+	if err := lbc.backendPool.Ensure(uniq(ingSvcPorts), utils.IGLinks(igs)); err != nil {
 		return err
 	}
 
 	// Create higher-level LB resources.
-	if err := lbc.CloudClusterManager.l7Pool.Sync(lb); err != nil {
+	if err := lbc.l7Pool.Sync(lb); err != nil {
 		return err
 	}
 
@@ -338,7 +358,7 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 				if err != nil {
 					return err
 				}
-				if err := lbc.CloudClusterManager.backendPool.Link(svcPort, zones); err != nil {
+				if err := lbc.backendPool.Link(svcPort, zones); err != nil {
 					return err
 				}
 			}
@@ -346,7 +366,7 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 	}
 
 	// Get the loadbalancer and update the ingress status.
-	l7, err := lbc.CloudClusterManager.l7Pool.Get(lb.Name)
+	l7, err := lbc.l7Pool.Get(lb.Name)
 	if err != nil {
 		return fmt.Errorf("unable to get loadbalancer: %v", err)
 	}
@@ -387,7 +407,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 			lbc.ctx.Recorder(ing.Namespace).Eventf(currIng, apiv1.EventTypeNormal, "CREATE", "ip: %v", ip)
 		}
 	}
-	annotations, err := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.CloudClusterManager.backendPool)
+	annotations, err := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.backendPool)
 	if err != nil {
 		return err
 	}
@@ -452,4 +472,64 @@ func (lbc *LoadBalancerController) ToSvcPorts(ings *extensions.IngressList) []ut
 		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts
+}
+
+func (lbc *LoadBalancerController) ensureInstanceGroupsAndPorts(svcPorts []utils.ServicePort, nodeNames []string) ([]*compute.InstanceGroup, error) {
+	ports := []int64{}
+	for _, p := range uniq(svcPorts) {
+		if !p.NEGEnabled {
+			ports = append(ports, p.NodePort)
+		}
+	}
+
+	// Create instance groups and set named ports.
+	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(lbc.ctx.ClusterNamer.InstanceGroup(), ports)
+	if err != nil {
+		return nil, err
+	}
+	// Add/remove instances to the instance groups.
+	if err = lbc.instancePool.Sync(nodeNames); err != nil {
+		return nil, err
+	}
+
+	return igs, nil
+}
+
+// gc garbage collects unused resources.
+// - lbNames are the names of L7 loadbalancers we wish to exist. Those not in
+//   this list are removed from the cloud.
+// - nodePorts are the ports for which we want BackendServies. BackendServices
+//   for ports not in this list are deleted.
+// This method ignores googleapi 404 errors (StatusNotFound).
+func (lbc *LoadBalancerController) gc(lbNames []string, nodePorts []utils.ServicePort) error {
+	// On GC:
+	// * Loadbalancers need to get deleted before backends.
+	// * Backends are refcounted in a shared pool.
+	// * We always want to GC backends even if there was an error in GCing
+	//   loadbalancers, because the next Sync could rely on the GC for quota.
+	// * There are at least 2 cases for backend GC:
+	//   1. The loadbalancer has been deleted.
+	//   2. An update to the url map drops the refcount of a backend. This can
+	//      happen when an Ingress is updated, if we don't GC after the update
+	//      we'll leak the backend.
+	lbErr := lbc.l7Pool.GC(lbNames)
+	beErr := lbc.backendPool.GC(nodePorts)
+	if lbErr != nil {
+		return lbErr
+	}
+	if beErr != nil {
+		return beErr
+	}
+
+	// TODO(ingress#120): Move this to the backend pool so it mirrors creation
+	if len(lbNames) == 0 {
+		igName := lbc.ctx.ClusterNamer.InstanceGroup()
+		glog.Infof("Deleting instance group %v", igName)
+		if err := lbc.instancePool.DeleteInstanceGroup(igName); err != err {
+			return err
+		}
+		glog.V(2).Infof("Shutting down firewall as there are no loadbalancers")
+	}
+
+	return nil
 }
