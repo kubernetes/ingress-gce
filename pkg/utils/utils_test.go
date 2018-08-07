@@ -76,7 +76,7 @@ func TestTrimFieldsEvenly(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		res := trimFieldsEvenly(tc.max, tc.fields...)
+		res := TrimFieldsEvenly(tc.max, tc.fields...)
 		if len(res) != len(tc.expect) {
 			t.Fatalf("%s: expect length == %d, got %d", tc.desc, len(tc.expect), len(res))
 		}

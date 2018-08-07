@@ -381,7 +381,7 @@ func (n *Namer) NamedPort(port int64) string {
 // must be backward compatible.
 func (n *Namer) NEG(namespace, name string, port int32) string {
 	portStr := fmt.Sprintf("%v", port)
-	truncFields := trimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name, portStr)
+	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name, portStr)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
