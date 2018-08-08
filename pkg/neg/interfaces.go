@@ -20,8 +20,8 @@ import (
 	computebeta "google.golang.org/api/compute/v0.beta"
 )
 
-// networkEndpointGroupCloud is an interface for managing gce network endpoint group.
-type networkEndpointGroupCloud interface {
+// MetworkEndpointGroupCloud is an interface for managing gce network endpoint group.
+type NetworkEndpointGroupCloud interface {
 	GetNetworkEndpointGroup(name string, zone string) (*computebeta.NetworkEndpointGroup, error)
 	ListNetworkEndpointGroup(zone string) ([]*computebeta.NetworkEndpointGroup, error)
 	AggregatedListNetworkEndpointGroup() (map[string][]*computebeta.NetworkEndpointGroup, error)

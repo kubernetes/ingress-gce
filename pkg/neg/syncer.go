@@ -63,7 +63,7 @@ type syncer struct {
 	endpointLister cache.Indexer
 
 	recorder   record.EventRecorder
-	cloud      networkEndpointGroupCloud
+	cloud      NetworkEndpointGroupCloud
 	zoneGetter zoneGetter
 
 	stateLock    sync.Mutex
@@ -76,7 +76,7 @@ type syncer struct {
 	retryCount     int
 }
 
-func newSyncer(svcPort servicePort, networkEndpointGroupName string, recorder record.EventRecorder, cloud networkEndpointGroupCloud, zoneGetter zoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) *syncer {
+func newSyncer(svcPort servicePort, networkEndpointGroupName string, recorder record.EventRecorder, cloud NetworkEndpointGroupCloud, zoneGetter zoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) *syncer {
 	glog.V(2).Infof("New syncer for service %s/%s port %s NEG %q", svcPort.namespace, svcPort.name, svcPort.targetPort, networkEndpointGroupName)
 	return &syncer{
 		servicePort:    svcPort,

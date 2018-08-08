@@ -136,6 +136,7 @@ func (ctx *ControllerContext) HasSynced() bool {
 	return true
 }
 
+// Recorder return the event recorder for the given namespace.
 func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 	if rec, ok := ctx.recorders[ns]; ok {
 		return rec
