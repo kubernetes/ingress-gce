@@ -9,7 +9,9 @@ type Syncer interface {
 	// Sync creates a full GCLB given an Ingress.
 	Sync(ing *extensions.Ingress) error
 	// GC cleans up GCLB resources for all Ingresses and can optionally
-	// use some arbitrary state to help with the process.
+	// use some arbitrary to help with the process.
+	// TODO(rramkumar): Do we need to rethink the strategy of GC'ing
+	// all Ingresses at once?
 	GC(state interface{}) error
 }
 
