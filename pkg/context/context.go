@@ -41,12 +41,6 @@ const (
 	StoreSyncPollPeriod = 5 * time.Second
 )
 
-var (
-	NewIndexer = func() cache.Indexers {
-		return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
-	}
-)
-
 // ControllerContext holds the state needed for the execution of the controller.
 type ControllerContext struct {
 	KubeClient kubernetes.Interface
@@ -91,18 +85,18 @@ func NewControllerContext(
 		KubeClient: kubeClient,
 		Cloud:      cloud,
 		ControllerContextConfig: config,
-		IngressInformer:         informerv1beta1.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, NewIndexer()),
-		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, NewIndexer()),
-		PodInformer:             informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, NewIndexer()),
-		NodeInformer:            informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, NewIndexer()),
+		IngressInformer:         informerv1beta1.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		PodInformer:             informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		NodeInformer:            informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		recorders:               map[string]record.EventRecorder{},
 		healthChecks:            make(map[string]func() error),
 	}
 	if config.NEGEnabled {
-		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, config.Namespace, config.ResyncPeriod, NewIndexer())
+		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 	if config.BackendConfigEnabled {
-		context.BackendConfigInformer = informerbackendconfig.NewBackendConfigInformer(backendConfigClient, config.Namespace, config.ResyncPeriod, NewIndexer())
+		context.BackendConfigInformer = informerbackendconfig.NewBackendConfigInformer(backendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 
 	return context

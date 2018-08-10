@@ -397,3 +397,8 @@ func GetNodeConditionPredicate() listers.NodeConditionPredicate {
 		return true
 	}
 }
+
+// NewNamespaceIndexer returns a new Indexer for use by SharedIndexInformers
+func NewNamespaceIndexer() cache.Indexers {
+	return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
+}
