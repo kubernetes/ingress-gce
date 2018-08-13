@@ -24,26 +24,56 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
-// ProbeProvider retrieves a probe struct given a nodePort
-type ProbeProvider interface {
-	GetProbe(sp utils.ServicePort) (*api_v1.Probe, error)
+// GroupKey represents a single group for a backend. The implementation of
+// this Group could be InstanceGroup or NEG.
+type GroupKey struct {
+	Zone string
 }
 
-// BackendPool is an interface to manage a pool of kubernetes nodePort services
-// as gce backendServices, and sync them through the BackendServices interface.
-type BackendPool interface {
-	Init(p ProbeProvider)
-	Ensure(ports []utils.ServicePort, igLinks []string) error
+// Pool is an interface to perform CRUD operations on a pool of GCE
+// Backend Services.
+type Pool interface {
+	// Get a composite BackendService given a required version.
 	Get(name string, version meta.Version) (*composite.BackendService, error)
+	// Create a composite BackendService and returns it.
+	Create(sp utils.ServicePort) (*composite.BackendService, error)
+	// Update a BackendService given the composite type.
+	Update(be *composite.BackendService) error
+	// Delete a BackendService given its name.
 	Delete(name string) error
-	GC(ports []utils.ServicePort) error
-	Shutdown() error
+	// Get the health of a BackendService given its name.
+	Health(name string) string
+	// Get a list of BackendService names currently in this pool.
+	GetLocalSnapshot() []string
+}
+
+// Syncer is an interface to sync Kubernetes services to GCE BackendServices.
+type Syncer interface {
+	// Init an implementation of ProbeProvider.
+	Init(p ProbeProvider)
+	// Sync a BackendService. Implementations should only create the BackendService
+	// but not its groups.
+	Sync(svcPorts []utils.ServicePort) error
+	// GC garbage collects unused BackendService's
+	GC(svcPorts []utils.ServicePort) error
+	// Status returns the status of a BackendService given its name.
 	Status(name string) string
-	List() ([]interface{}, error)
-	Link(port utils.ServicePort, zones []string) error
+	// Shutdown cleans up all BackendService's previously synced.
+	Shutdown() error
+}
+
+// Linker is an interface to link backends with their associated groups.
+type Linker interface {
+	// Link a BackendService to its groups.
+	Link(sp utils.ServicePort, groups []GroupKey) error
 }
 
 // NEGGetter is an interface to retrieve NEG object
 type NEGGetter interface {
 	GetNetworkEndpointGroup(name string, zone string) (*computebeta.NetworkEndpointGroup, error)
+}
+
+// ProbeProvider retrieves a probe struct given a nodePort
+type ProbeProvider interface {
+	GetProbe(sp utils.ServicePort) (*api_v1.Probe, error)
 }

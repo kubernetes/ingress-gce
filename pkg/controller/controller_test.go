@@ -94,17 +94,17 @@ func addService(lbc *LoadBalancerController, svc *api_v1.Service) {
 		}
 	}
 
-	lbc.client.CoreV1().Services(svc.Namespace).Create(svc)
+	lbc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Create(svc)
 	lbc.ctx.ServiceInformer.GetIndexer().Add(svc)
 }
 
 func addIngress(lbc *LoadBalancerController, ing *extensions.Ingress) {
-	lbc.client.Extensions().Ingresses(ing.Namespace).Create(ing)
+	lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Create(ing)
 	lbc.ctx.IngressInformer.GetIndexer().Add(ing)
 }
 
 func deleteIngress(lbc *LoadBalancerController, ing *extensions.Ingress) {
-	lbc.client.Extensions().Ingresses(ing.Namespace).Delete(ing.Name, &meta_v1.DeleteOptions{})
+	lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Delete(ing.Name, &meta_v1.DeleteOptions{})
 	lbc.ctx.IngressInformer.GetIndexer().Delete(ing)
 }
 
@@ -171,7 +171,7 @@ func TestIngressCreateDelete(t *testing.T) {
 	}
 
 	// Check Ingress status has IP.
-	updatedIng, _ := lbc.client.Extensions().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	updatedIng, _ := lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
 	if len(updatedIng.Status.LoadBalancer.Ingress) != 1 || updatedIng.Status.LoadBalancer.Ingress[0].IP == "" {
 		t.Errorf("Get(%q) = status %+v, want non-empty", updatedIng.Name, updatedIng.Status.LoadBalancer.Ingress)
 	}
@@ -206,7 +206,7 @@ func TestEnsureMCIngress(t *testing.T) {
 	}
 
 	// Check Ingress has annotations noting the instance group name.
-	updatedIng, _ := lbc.client.Extensions().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	updatedIng, _ := lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
 	igAnnotationKey := "ingress.gcp.kubernetes.io/instance-groups"
 	wantVal := `[{"Name":"k8s-ig--aaaaa","Zone":"zone-a"}]`
 	if val, ok := updatedIng.GetAnnotations()[igAnnotationKey]; !ok {

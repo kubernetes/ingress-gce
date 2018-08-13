@@ -1,0 +1,127 @@
+/*
+Copyright 2018 The Kubernetes Authors.
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+    http://www.apache.org/licenses/LICENSE-2.0
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package backends
+
+import (
+	"context"
+	"net/http"
+	"testing"
+
+	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/mock"
+)
+
+const defaultZone = "zone-a"
+
+func newTestIGLinker(fakeGCE *gce.GCECloud, fakeInstancePool instances.NodePool) *instanceGroupLinker {
+	fakeInstancePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
+	fakeBackendPool := NewPool(fakeGCE, defaultNamer, false)
+
+	// Add standard hooks for mocking update calls. Each test can set a different update hook if it chooses to.
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.UpdateHook = mock.UpdateBetaBackendServiceHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = mock.UpdateBackendServiceHook
+
+	return &instanceGroupLinker{fakeInstancePool, fakeBackendPool, defaultNamer}
+}
+
+func TestLink(t *testing.T) {
+	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
+	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
+	linker := newTestIGLinker(fakeGCE, fakeNodePool)
+
+	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP}
+
+	// Mimic the instance group being created
+	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
+	}
+
+	// Mimic the syncer creating the backend.
+	linker.backendPool.Create(sp)
+
+	if err := linker.Link(sp, []GroupKey{{defaultZone}}); err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	be, err := fakeGCE.GetGlobalBackendService(sp.BackendName(defaultNamer))
+	if err != nil {
+		t.Fatalf("%v", err)
+	}
+
+	if len(be.Backends) == 0 {
+		t.Fatalf("Expected Backends to be created")
+	}
+}
+
+func TestLinkWithCreationModeError(t *testing.T) {
+	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
+	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer)
+	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
+	linker := newTestIGLinker(fakeGCE, fakeNodePool)
+
+	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP}
+	modes := []BalancingMode{Rate, Utilization}
+
+	// block the update of Backends with the given balancingMode
+	// and verify that a backend with the other balancingMode is
+	// updated properly.
+	for i, bm := range modes {
+		(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockBackendServices) error {
+			for _, b := range be.Backends {
+				if b.BalancingMode == string(bm) {
+					return &googleapi.Error{Code: http.StatusBadRequest}
+				}
+			}
+			return mock.UpdateBackendServiceHook(ctx, key, be, m)
+		}
+
+		// Mimic the instance group being created
+		if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+			t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
+		}
+
+		// Mimic the syncer creating the backend.
+		linker.backendPool.Create(sp)
+
+		if err := linker.Link(sp, []GroupKey{{defaultZone}}); err != nil {
+			t.Fatalf("%v", err)
+		}
+
+		be, err := fakeGCE.GetGlobalBackendService(sp.BackendName(defaultNamer))
+		if err != nil {
+			t.Fatalf("%v", err)
+		}
+
+		if len(be.Backends) == 0 {
+			t.Fatalf("Expected Backends to be created")
+		}
+
+		for _, b := range be.Backends {
+			if b.BalancingMode != string(modes[(i+1)%len(modes)]) {
+				t.Fatalf("Wrong balancing mode, expected %v got %v", modes[(i+1)%len(modes)], b.BalancingMode)
+			}
+		}
+		linker.backendPool.Delete(sp.BackendName(defaultNamer))
+	}
+}

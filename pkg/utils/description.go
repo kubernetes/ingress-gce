@@ -30,7 +30,7 @@ type Description struct {
 }
 
 // String returns the string representation of a Description.
-func (desc *Description) String() string {
+func (desc Description) String() string {
 	if desc.ServiceName == "" || desc.ServicePort == "" {
 		return ""
 	}
