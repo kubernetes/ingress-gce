@@ -61,7 +61,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	}
 
 	// Mimic how the syncer would create the backend.
-	linker.backendPool.Create(svcPort)
+	linker.backendPool.Create(svcPort, "fake-healthcheck-link")
 
 	for _, key := range zones {
 		err := fakeNEG.CreateNetworkEndpointGroup(&computebeta.NetworkEndpointGroup{

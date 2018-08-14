@@ -100,7 +100,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 		}
 		// Only create the backend service if the error was 404.
 		glog.V(2).Infof("Creating backend service for port %v named %v", sp.NodePort, beName)
-		be, err = s.backendPool.Create(sp)
+		be, err = s.backendPool.Create(sp, hcLink)
 		if err != nil {
 			return err
 		}
