@@ -384,7 +384,7 @@ The Ingress controller looks for a compatible readiness probe first, if it finds
 For encrypted communication between the client to the load balancer, you need to specify a TLS private key and certificate to be used by the ingress controller.
 
 Version 1.1 of GLBC now supports (as a beta feature) using more than one SSL certificate in a single Ingress for request termination (aka Multiple-TLS).
-With this change, keep in mind that the GCP's limit is 10. Take a look at GCP's [documentation]((https://cloud.google.com/compute/docs/load-balancing/http/ssl-certificates))
+With this change, keep in mind that the GCP's limit is 10. Take a look at GCP's [documentation]((https://cloud.google.com/load-balancing/docs/ssl/))
 on SSL certificates for more information on how they are supported in L7 load balancing.
 
 Ingress controller can read the private key and certificate from 2 sources:
