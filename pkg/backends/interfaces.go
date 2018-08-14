@@ -36,7 +36,7 @@ type Pool interface {
 	// Get a composite BackendService given a required version.
 	Get(name string, version meta.Version) (*composite.BackendService, error)
 	// Create a composite BackendService and returns it.
-	Create(sp utils.ServicePort) (*composite.BackendService, error)
+	Create(sp utils.ServicePort, hcLink string) (*composite.BackendService, error)
 	// Update a BackendService given the composite type.
 	Update(be *composite.BackendService) error
 	// Delete a BackendService given its name.

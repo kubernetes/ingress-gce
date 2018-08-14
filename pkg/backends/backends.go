@@ -79,7 +79,7 @@ func ensureDescription(be *composite.BackendService, sp *utils.ServicePort) (nee
 }
 
 // Create implements Pool.
-func (b *Backends) Create(sp utils.ServicePort) (*composite.BackendService, error) {
+func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.BackendService, error) {
 	name := sp.BackendName(b.namer)
 	namedPort := &compute.NamedPort{
 		Name: b.namer.NamedPort(sp.NodePort),
@@ -88,11 +88,12 @@ func (b *Backends) Create(sp utils.ServicePort) (*composite.BackendService, erro
 
 	version := features.VersionFromServicePort(&sp)
 	be := &composite.BackendService{
-		Version:  version,
-		Name:     name,
-		Protocol: string(sp.Protocol),
-		Port:     namedPort.Port,
-		PortName: namedPort.Name,
+		Version:      version,
+		Name:         name,
+		Protocol:     string(sp.Protocol),
+		Port:         namedPort.Port,
+		PortName:     namedPort.Name,
+		HealthChecks: []string{hcLink},
 	}
 	ensureDescription(be, &sp)
 	if err := composite.CreateBackendService(be, b.cloud); err != nil {

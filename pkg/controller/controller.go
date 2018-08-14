@@ -336,7 +336,7 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 	}
 
 	// Sync the backends
-	if lbc.backendSyncer.Sync(ingSvcPorts); err != nil {
+	if err := lbc.backendSyncer.Sync(ingSvcPorts); err != nil {
 		return err
 	}
 
@@ -349,12 +349,16 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 
 	// Link backends to groups.
 	for _, sp := range ingSvcPorts {
+		var linkErr error
 		if sp.NEGEnabled {
 			// Link backend to NEG's if the backend has NEG enabled.
-			lbc.negLinker.Link(sp, groupKeys)
+			linkErr = lbc.negLinker.Link(sp, groupKeys)
 		} else {
 			// Otherwise, link backend to IG's.
-			lbc.igLinker.Link(sp, groupKeys)
+			linkErr = lbc.igLinker.Link(sp, groupKeys)
+		}
+		if linkErr != nil {
+			return linkErr
 		}
 	}
 
