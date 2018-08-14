@@ -634,6 +634,27 @@ The controller manages cloud resources through a notion of pools. Each pool is t
 
 Periodically, each pool checks that it has a valid connection to the next hop in the above resource graph. So for example, the backend pool will check that each backend is connected to the instance group and that the node ports match, the instance group will check that all the Kubernetes nodes are a part of the instance group, and so on. Since Backend Services are a limited resource, they're shared (well, everything is limited by your quota, this applies doubly to Backend Services). This means you can setup N Ingress' exposing M services through different paths and the controller will only create M backends. When all the Ingress' are deleted, the backend pool GCs the backend.
 
+## GCE + GKE Version Mapping
+
+The table below describes what version of GLBC is running on GCE (standard K8s) and on GKE. Note that these versions are simply the defaults. Users still have the power to change the version manually if they want to.
+ 
+   *Format: k8s version -> glbc version*
+
+   * GCE:
+       * 1.9.0 -> 0.9.7
+       * 1.10.0 -> v1.0.0
+       * 1.10.1 -> v1.0.1
+       * 1.10.2 -> v1.1.1
+       * 1.11.0 -> v1.1.1
+        
+   * GKE:
+       * 1.9.6-gke.2 -> 0.9.7
+       * 1.9.7-gke.5 -> 0.9.7
+       * 1.10.2-gke.4 -> v1.1.1
+       * 1.10.4-gke.3 -> v1.1.1
+       * 1.10.5-gke.4 -> v1.2.3
+       * 1.10.6-gke.1 -> v1.2.3
+
 ## Wish list:
 
 * More E2e, integration tests
