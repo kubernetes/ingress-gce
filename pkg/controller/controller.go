@@ -258,7 +258,7 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 }
 
 // sync manages Ingress create/updates/deletes
-func (lbc *LoadBalancerController) sync(key string) (retErr error) {
+func (lbc *LoadBalancerController) sync(key string) error {
 	if !lbc.hasSynced() {
 		time.Sleep(context.StoreSyncPollPeriod)
 		return fmt.Errorf("waiting for stores to sync")
@@ -303,7 +303,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	// it could have been caused by quota issues; therefore, garbage collecting now may
 	// free up enough quota for the next sync to pass.
 	if gcErr := lbc.gc(lbNames, gceSvcPorts); gcErr != nil {
-		retErr = fmt.Errorf("error during sync %v, error during GC %v", retErr, gcErr)
+		glog.Errorf("error during end-of-sync GC %v", gcErr)
 	}
 
 	return ensureErr
