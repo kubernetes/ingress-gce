@@ -105,8 +105,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 			return err
 		}
 	}
-	// Set composite backend service to the version required by current service port.
-	be.Version = version
+
 	needUpdate := ensureProtocol(be, sp)
 	needUpdate = ensureHealthCheckLink(be, hcLink) || needUpdate
 	needUpdate = ensureDescription(be, &sp) || needUpdate
