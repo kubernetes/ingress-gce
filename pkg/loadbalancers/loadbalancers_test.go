@@ -360,17 +360,19 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 }
 
-// Tests uploading 10 certs which is the global limit today. Ensures that creation of the 11th cert fails.
+// Tests uploading 15 certs which is the limit for the fake loadbalancer. Ensures that creation of the 16th cert fails.
+// Tests uploading 10 certs which is the target proxy limit. Uploading 11th cert should fail.
 func TestMaxCertsUpload(t *testing.T) {
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	var tlsCerts []*TLSCerts
 	expectCerts := make(map[string]string)
+	expectCertsExtra := make(map[string]string)
 	namer := utils.NewNamer("uid1", "fw1")
 	lbName := namer.LoadBalancer("test")
 
-	for ix := 0; ix < TargetProxyCertLimit; ix++ {
+	for ix := 0; ix < FakeCertLimit; ix++ {
 		str := strconv.Itoa(ix)
 		tlsCerts = append(tlsCerts, createCert("key-"+str, "cert-"+str, "name-"+str))
 		certName := namer.SSLCertName(lbName, GetCertHash("cert-"+str))
@@ -392,7 +394,32 @@ func TestMaxCertsUpload(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 	failCert := createCert("key100", "cert100", "name100")
 	lbInfo.TLS = append(lbInfo.TLS, failCert)
-	pool.Sync(lbInfo)
+	err := pool.Sync(lbInfo)
+	if err == nil {
+		t.Fatalf("Creating more than %d certs should have errored out", FakeCertLimit)
+	}
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+	// Set cert count less than cert creation limit but more than target proxy limit
+	lbInfo.TLS = lbInfo.TLS[:TargetProxyCertLimit+1]
+	for _, cert := range lbInfo.TLS {
+		expectCertsExtra[namer.SSLCertName(lbName, cert.CertHash)] = cert.Cert
+	}
+	err = pool.Sync(lbInfo)
+	if err == nil {
+		t.Fatalf("Assigning more than %d certs should have errored out", TargetProxyCertLimit)
+	}
+	// load balancer will contain the extra cert, but target proxy will not
+	verifyCertAndProxyLink(expectCertsExtra, expectCerts, f, t)
+	// Removing the extra cert from ingress spec should delete it
+	lbInfo.TLS = lbInfo.TLS[:TargetProxyCertLimit]
+	err = pool.Sync(lbInfo)
+	if err != nil {
+		t.Fatalf("Unexpected error %s", err)
+	}
+	expectCerts = make(map[string]string)
+	for _, cert := range lbInfo.TLS {
+		expectCerts[namer.SSLCertName(lbName, cert.CertHash)] = cert.Cert
+	}
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 }
 
@@ -618,9 +645,9 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	}
 	for _, link := range tps.SslCertificates {
 		certName, _ := utils.KeyName(link)
-		if _, ok := expectCerts[certName]; !ok {
-			t.Fatalf("unexpected ssl certificate linked in target proxy; Expected : %v; Target Proxy Certs: %v",
-				expectCertsProxy, tps.SslCertificates)
+		if _, ok := expectCertsProxy[certName]; !ok {
+			t.Fatalf("unexpected ssl certificate '%s' linked in target proxy; Expected : %v; Target Proxy Certs: %v",
+				certName, expectCertsProxy, tps.SslCertificates)
 		}
 	}
 }

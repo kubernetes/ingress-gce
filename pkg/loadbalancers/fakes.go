@@ -29,6 +29,8 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+const FakeCertLimit = 15
+
 var testIPManager = testIP{}
 
 type testIP struct {
@@ -342,6 +344,9 @@ func (f *FakeLoadBalancers) SetSslCertificateForTargetHttpsProxy(proxy *compute.
 	found := false
 	for i := range f.Tps {
 		if f.Tps[i].Name == proxy.Name {
+			if len(sslCertURLs) > TargetProxyCertLimit {
+				return utils.FakeGoogleAPIForbiddenErr()
+			}
 			f.Tps[i].SslCertificates = sslCertURLs
 			found = true
 			break
@@ -412,9 +417,9 @@ func (f *FakeLoadBalancers) ListSslCertificates() ([]*compute.SslCertificate, er
 func (f *FakeLoadBalancers) CreateSslCertificate(cert *compute.SslCertificate) (*compute.SslCertificate, error) {
 	f.calls = append(f.calls, "CreateSslCertificate")
 	cert.SelfLink = cloud.NewSslCertificatesResourceID("mock-project", cert.Name).SelfLink(meta.VersionGA)
-	if len(f.Certs) == TargetProxyCertLimit {
+	if len(f.Certs) == FakeCertLimit {
 		// Simulate cert creation failure
-		return nil, fmt.Errorf("Unable to create cert, Exceeded cert limit of %d.", TargetProxyCertLimit)
+		return nil, fmt.Errorf("Unable to create cert, Exceeded cert limit of %d.", FakeCertLimit)
 	}
 	f.Certs = append(f.Certs, cert)
 	return cert, nil

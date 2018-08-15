@@ -99,12 +99,6 @@ func (l *L7) usePreSharedCert() (bool, error) {
 		return false, nil
 	}
 	preSharedCerts := strings.Split(preSharedCertName, ",")
-	if len(preSharedCerts) > TargetProxyCertLimit {
-		glog.Warningf("Specified %d preshared certs, limit is %d, rest will be ignored",
-			len(preSharedCerts), TargetProxyCertLimit)
-		preSharedCerts = preSharedCerts[:TargetProxyCertLimit]
-	}
-
 	l.sslCerts = make([]*compute.SslCertificate, 0, len(preSharedCerts))
 	var failedCerts []string
 
