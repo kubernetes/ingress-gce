@@ -108,6 +108,8 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 
 // Update implements Pool.
 func (b *Backends) Update(be *composite.BackendService) error {
+	// Ensure the backend service has the proper version before updating.
+	be.Version = features.VersionFromDescription(be.Description)
 	if err := composite.UpdateBackendService(be, b.cloud); err != nil {
 		return err
 	}
