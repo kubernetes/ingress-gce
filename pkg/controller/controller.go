@@ -316,11 +316,13 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 	}
 
 	ingSvcPorts := urlMap.AllServicePorts()
+
 	igs, err := lbc.ensureInstanceGroupsAndPorts(ingSvcPorts, nodeNames)
 	if err != nil {
 		return err
 	}
 
+	// TODO: Remove this after deprecation
 	if utils.IsGCEMultiClusterIngress(ing) {
 		// Add instance group names as annotation on the ingress and return.
 		if ing.Annotations == nil {
@@ -480,12 +482,13 @@ func (lbc *LoadBalancerController) ToSvcPorts(ings *extensions.IngressList) []ut
 	return knownPorts
 }
 
+// ensureInstanceGroupsAndPorts creates instance group if necessary
+// if all service ports have NEG enabled, then instance group creation will be skipped and return nil.
 func (lbc *LoadBalancerController) ensureInstanceGroupsAndPorts(svcPorts []utils.ServicePort, nodeNames []string) ([]*compute.InstanceGroup, error) {
-	ports := []int64{}
-	for _, p := range uniq(svcPorts) {
-		if !p.NEGEnabled {
-			ports = append(ports, p.NodePort)
-		}
+	ports := nodePorts(svcPorts)
+	if len(ports) == 0 {
+		glog.V(2).Infof("Skip ensuring instance groups as all backend(s) have NEG enabled.")
+		return nil, nil
 	}
 
 	// Create instance groups and set named ports.
@@ -507,7 +510,7 @@ func (lbc *LoadBalancerController) ensureInstanceGroupsAndPorts(svcPorts []utils
 // - nodePorts are the ports for which we want BackendServies. BackendServices
 //   for ports not in this list are deleted.
 // This method ignores googleapi 404 errors (StatusNotFound).
-func (lbc *LoadBalancerController) gc(lbNames []string, nodePorts []utils.ServicePort) error {
+func (lbc *LoadBalancerController) gc(lbNames []string, svcPorts []utils.ServicePort) error {
 	// On GC:
 	// * Loadbalancers need to get deleted before backends.
 	// * Backends are refcounted in a shared pool.
@@ -519,7 +522,7 @@ func (lbc *LoadBalancerController) gc(lbNames []string, nodePorts []utils.Servic
 	//      happen when an Ingress is updated, if we don't GC after the update
 	//      we'll leak the backend.
 	lbErr := lbc.l7Pool.GC(lbNames)
-	beErr := lbc.backendSyncer.GC(nodePorts)
+	beErr := lbc.backendSyncer.GC(svcPorts)
 	if lbErr != nil {
 		return lbErr
 	}
@@ -528,7 +531,7 @@ func (lbc *LoadBalancerController) gc(lbNames []string, nodePorts []utils.Servic
 	}
 
 	// TODO(ingress#120): Move this to the backend pool so it mirrors creation
-	if len(lbNames) == 0 {
+	if len(lbNames) == 0 || len(nodePorts(svcPorts)) == 0 {
 		igName := lbc.ctx.ClusterNamer.InstanceGroup()
 		glog.Infof("Deleting instance group %v", igName)
 		if err := lbc.instancePool.DeleteInstanceGroup(igName); err != err {

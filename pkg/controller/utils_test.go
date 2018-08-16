@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 
 	api_v1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
+	"reflect"
 )
 
 // Pods created in loops start from this time, for routines that
@@ -216,68 +217,68 @@ func TestUniq(t *testing.T) {
 		{
 			"Two service ports",
 			[]utils.ServicePort{
-				testServicePort("ns", "name", "80", 80, 30080),
-				testServicePort("ns", "name", "443", 443, 30443),
+				testServicePort("ns", "name", "80", 80, 30080, true),
+				testServicePort("ns", "name", "443", 443, 30443, true),
 			},
 			[]utils.ServicePort{
-				testServicePort("ns", "name", "80", 80, 30080),
-				testServicePort("ns", "name", "443", 443, 30443),
+				testServicePort("ns", "name", "80", 80, 30080, true),
+				testServicePort("ns", "name", "443", 443, 30443, true),
 			},
 		},
 		{
 			"Two service ports with different names",
 			[]utils.ServicePort{
-				testServicePort("ns", "name1", "80", 80, 30080),
-				testServicePort("ns", "name2", "80", 80, 30880),
+				testServicePort("ns", "name1", "80", 80, 30080, true),
+				testServicePort("ns", "name2", "80", 80, 30880, true),
 			},
 			[]utils.ServicePort{
-				testServicePort("ns", "name1", "80", 80, 30080),
-				testServicePort("ns", "name2", "80", 80, 30880),
+				testServicePort("ns", "name1", "80", 80, 30080, true),
+				testServicePort("ns", "name2", "80", 80, 30880, true),
 			},
 		},
 		{
 			"Two duplicate service ports",
 			[]utils.ServicePort{
-				testServicePort("ns", "name", "80", 80, 30080),
-				testServicePort("ns", "name", "80", 80, 30080),
+				testServicePort("ns", "name", "80", 80, 30080, true),
+				testServicePort("ns", "name", "80", 80, 30080, true),
 			},
 			[]utils.ServicePort{
-				testServicePort("ns", "name", "80", 80, 30080),
+				testServicePort("ns", "name", "80", 80, 30080, true),
 			},
 		},
 		{
 			"Two services without nodeports",
 			[]utils.ServicePort{
-				testServicePort("ns", "name", "80", 80, 0),
-				testServicePort("ns", "name", "443", 443, 0),
+				testServicePort("ns", "name", "80", 80, 0, true),
+				testServicePort("ns", "name", "443", 443, 0, true),
 			},
 			[]utils.ServicePort{
-				testServicePort("ns", "name", "80", 80, 0),
-				testServicePort("ns", "name", "443", 443, 0),
+				testServicePort("ns", "name", "80", 80, 0, true),
+				testServicePort("ns", "name", "443", 443, 0, true),
 			},
 		},
 		{
 			"2 out of 3 are duplicates",
 			[]utils.ServicePort{
-				testServicePort("ns", "name", "80", 80, 0),
-				testServicePort("ns", "name", "443", 443, 0),
-				testServicePort("ns", "name", "443", 443, 0),
+				testServicePort("ns", "name", "80", 80, 0, true),
+				testServicePort("ns", "name", "443", 443, 0, true),
+				testServicePort("ns", "name", "443", 443, 0, true),
 			},
 			[]utils.ServicePort{
-				testServicePort("ns", "name", "80", 80, 0),
-				testServicePort("ns", "name", "443", 443, 0),
+				testServicePort("ns", "name", "80", 80, 0, true),
+				testServicePort("ns", "name", "443", 443, 0, true),
 			},
 		},
 		{
 			"mix of named port and port number references",
 			[]utils.ServicePort{
-				testServicePort("ns", "name", "http", 80, 0),
-				testServicePort("ns", "name", "https", 443, 0),
-				testServicePort("ns", "name", "443", 443, 0),
+				testServicePort("ns", "name", "http", 80, 0, true),
+				testServicePort("ns", "name", "https", 443, 0, true),
+				testServicePort("ns", "name", "443", 443, 0, true),
 			},
 			[]utils.ServicePort{
-				testServicePort("ns", "name", "http", 80, 0),
-				testServicePort("ns", "name", "443", 443, 0),
+				testServicePort("ns", "name", "http", 80, 0, true),
+				testServicePort("ns", "name", "443", 443, 0, true),
 			},
 		},
 	}
@@ -297,6 +298,61 @@ func TestUniq(t *testing.T) {
 			if !found {
 				t.Errorf("Test case %q: Expect service port %v to be present. But not found", tc.desc, svcPort)
 			}
+		}
+	}
+
+}
+
+func TestGetNodePortsUsedByIngress(t *testing.T) {
+	testCases := []struct {
+		desc        string
+		svcPorts    []utils.ServicePort
+		expectPorts []int64
+	}{
+		{
+			"empty input",
+			[]utils.ServicePort{},
+			[]int64{},
+		},
+		{
+			" all NEG enabled",
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "80", 80, 30080, true),
+				testServicePort("ns", "name", "443", 443, 30443, true),
+			},
+			[]int64{},
+		},
+		{
+			" all nonNEG enabled",
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "80", 80, 30080, false),
+				testServicePort("ns", "name", "443", 443, 30443, false),
+			},
+			[]int64{30080, 30443},
+		},
+		{
+			" mixed SvcPorts",
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "80", 80, 30080, false),
+				testServicePort("ns", "name", "443", 443, 30443, true),
+			},
+			[]int64{30080},
+		},
+		{
+			" mixed SvcPorts with duplicates",
+			[]utils.ServicePort{
+				testServicePort("ns", "name", "80", 80, 30080, false),
+				testServicePort("ns", "name", "80", 80, 30080, false),
+				testServicePort("ns", "name", "443", 443, 30443, false),
+			},
+			[]int64{30080, 30443},
+		},
+	}
+
+	for _, tc := range testCases {
+		res := nodePorts(tc.svcPorts)
+		if !reflect.DeepEqual(res, tc.expectPorts) {
+			t.Errorf("For case %q, expect %v, but got %v", tc.desc, tc.expectPorts, res)
 		}
 	}
 
@@ -327,7 +383,7 @@ func testNode() *api_v1.Node {
 	}
 }
 
-func testServicePort(namespace, name, port string, servicePort, nodePort int) utils.ServicePort {
+func testServicePort(namespace, name, port string, servicePort, nodePort int, enableNEG bool) utils.ServicePort {
 	return utils.ServicePort{
 		ID: utils.ServicePortID{
 			Service: types.NamespacedName{
@@ -336,7 +392,8 @@ func testServicePort(namespace, name, port string, servicePort, nodePort int) ut
 			},
 			Port: intstr.FromString(port),
 		},
-		Port:     int32(servicePort),
-		NodePort: int64(nodePort),
+		Port:       int32(servicePort),
+		NodePort:   int64(nodePort),
+		NEGEnabled: enableNEG,
 	}
 }
