@@ -204,7 +204,7 @@ func NewLoadBalancerController(
 			glog.Infof("Reporting cluster as healthy, but unable to list backends: %v", err)
 			return nil
 		}
-		return err
+		return utils.IgnoreHTTPNotFound(err)
 	})
 
 	glog.V(3).Infof("Created new loadbalancer controller")
