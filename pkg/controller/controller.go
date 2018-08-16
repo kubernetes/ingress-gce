@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"net/http"
 	"reflect"
 	"sync"
 	"time"
@@ -33,28 +34,13 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
-	backendconfig "k8s.io/ingress-gce/pkg/backendconfig"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
-	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
-)
-
-const (
-	// DefaultFirewallName is the default firewall name.
-	DefaultFirewallName = ""
-	// Frequency to poll on local stores to sync.
-	storeSyncPollPeriod = 5 * time.Second
-)
-
-var (
-	keyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
-	// DefaultFirewallName is the name to user for firewall rules created
-	// by an L7 controller when the --fireall-rule is not used.
 )
 
 // LoadBalancerController watches the kubernetes api and adds/removes services
@@ -63,7 +49,8 @@ type LoadBalancerController struct {
 	client kubernetes.Interface
 	ctx    *context.ControllerContext
 
-	ingLister  StoreToIngressLister
+	joiner     *utils.Joiner
+	ingLister  utils.StoreToIngressLister
 	nodeLister cache.Indexer
 	nodes      *NodeController
 
@@ -91,7 +78,7 @@ type LoadBalancerController struct {
 func NewLoadBalancerController(
 	ctx *context.ControllerContext,
 	clusterManager *ClusterManager,
-	stopCh chan struct{}) (*LoadBalancerController, error) {
+	stopCh chan struct{}) *LoadBalancerController {
 
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(glog.Infof)
@@ -101,7 +88,7 @@ func NewLoadBalancerController(
 	lbc := LoadBalancerController{
 		client:              ctx.KubeClient,
 		ctx:                 ctx,
-		ingLister:           StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
+		ingLister:           utils.StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
 		nodeLister:          ctx.NodeInformer.GetIndexer(),
 		nodes:               NewNodeController(ctx, clusterManager),
 		CloudClusterManager: clusterManager,
@@ -109,12 +96,13 @@ func NewLoadBalancerController(
 		hasSynced:           ctx.HasSynced,
 	}
 	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
+	lbc.joiner = utils.NewJoiner(lbc.ingLister, ctx.ServiceInformer.GetIndexer(), ctx.DefaultBackendSvcPortID)
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*extensions.Ingress)
-			if !isGCEIngress(addIng) && !isGCEMultiClusterIngress(addIng) {
+			if !utils.IsGCEIngress(addIng) && !utils.IsGCEMultiClusterIngress(addIng) {
 				glog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", addIng.Name, annotations.IngressClassKey)
 				return
 			}
@@ -125,7 +113,7 @@ func NewLoadBalancerController(
 		},
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*extensions.Ingress)
-			if !isGCEIngress(delIng) && !isGCEMultiClusterIngress(delIng) {
+			if !utils.IsGCEIngress(delIng) && !utils.IsGCEMultiClusterIngress(delIng) {
 				glog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", delIng.Name, annotations.IngressClassKey)
 				return
 			}
@@ -135,7 +123,7 @@ func NewLoadBalancerController(
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			curIng := cur.(*extensions.Ingress)
-			if !isGCEIngress(curIng) && !isGCEMultiClusterIngress(curIng) {
+			if !utils.IsGCEIngress(curIng) && !utils.IsGCEMultiClusterIngress(curIng) {
 				return
 			}
 			if reflect.DeepEqual(old, cur) {
@@ -150,10 +138,16 @@ func NewLoadBalancerController(
 
 	// Service event handlers.
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: lbc.enqueueIngressForObject,
+		AddFunc: func(obj interface{}) {
+			svc := obj.(*apiv1.Service)
+			ings := lbc.joiner.IngressesForService(svc)
+			lbc.ingQueue.Enqueue(convert(ings)...)
+		},
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
-				lbc.enqueueIngressForObject(cur)
+				svc := cur.(*apiv1.Service)
+				ings := lbc.joiner.IngressesForService(svc)
+				lbc.ingQueue.Enqueue(convert(ings)...)
 			}
 		},
 		// Ingress deletes matter, service deletes don't.
@@ -162,13 +156,24 @@ func NewLoadBalancerController(
 	// BackendConfig event handlers.
 	if ctx.BackendConfigEnabled {
 		ctx.BackendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: lbc.enqueueIngressForObject,
+			AddFunc: func(obj interface{}) {
+				beConfig := obj.(*backendconfigv1beta1.BackendConfig)
+				ings := lbc.joiner.IngressesForBackendConfig(beConfig)
+				lbc.ingQueue.Enqueue(convert(ings)...)
+
+			},
 			UpdateFunc: func(old, cur interface{}) {
 				if !reflect.DeepEqual(old, cur) {
-					lbc.enqueueIngressForObject(cur)
+					beConfig := cur.(*backendconfigv1beta1.BackendConfig)
+					ings := lbc.joiner.IngressesForBackendConfig(beConfig)
+					lbc.ingQueue.Enqueue(convert(ings)...)
 				}
 			},
-			DeleteFunc: lbc.enqueueIngressForObject,
+			DeleteFunc: func(obj interface{}) {
+				beConfig := obj.(*backendconfigv1beta1.BackendConfig)
+				ings := lbc.joiner.IngressesForBackendConfig(beConfig)
+				lbc.ingQueue.Enqueue(convert(ings)...)
+			},
 		})
 	}
 
@@ -176,53 +181,11 @@ func NewLoadBalancerController(
 	lbc.tlsLoader = &tls.TLSCertsFromSecretsLoader{Client: lbc.client}
 
 	// Register health check on controller context.
-	ctx.AddHealthCheck("ingress", lbc.CloudClusterManager.IsHealthy)
+	ctx.AddHealthCheck("ingress", lbc.IsHealthy)
 
 	glog.V(3).Infof("Created new loadbalancer controller")
 
-	return &lbc, nil
-}
-
-// enqueueIngressForObject enqueues Ingresses that are associated with the
-// passed in object. It is a wrapper around functions which do the actual
-// work of enqueueing Ingresses based on a typed object.
-func (lbc *LoadBalancerController) enqueueIngressForObject(obj interface{}) {
-	switch obj.(type) {
-	case *apiv1.Service:
-		svc := obj.(*apiv1.Service)
-		lbc.enqueueIngressForService(svc)
-	case *backendconfigv1beta1.BackendConfig:
-		beConfig := obj.(*backendconfigv1beta1.BackendConfig)
-		lbc.enqueueIngressForBackendConfig(beConfig)
-	default:
-		// Do nothing.
-	}
-}
-
-// enqueueIngressForService enqueues all the Ingresses for a Service.
-func (lbc *LoadBalancerController) enqueueIngressForService(svc *apiv1.Service) {
-	ings, err := lbc.ingLister.GetServiceIngress(svc, lbc.CloudClusterManager.defaultBackendSvcPortID)
-	if err != nil {
-		glog.V(5).Infof("ignoring service %v: %v", svc.Name, err)
-		return
-	}
-	for _, ing := range ings {
-		if !isGCEIngress(&ing) {
-			continue
-		}
-		lbc.ingQueue.Enqueue(&ing)
-	}
-}
-
-// enqueueIngressForBackendConfig enqueues all Ingresses for a BackendConfig.
-func (lbc *LoadBalancerController) enqueueIngressForBackendConfig(beConfig *backendconfigv1beta1.BackendConfig) {
-	// Get all the Services associated with this BackendConfig.
-	svcLister := lbc.ctx.ServiceInformer.GetIndexer()
-	linkedSvcs := backendconfig.GetServicesForBackendConfig(svcLister, beConfig)
-	// Enqueue all the Ingresses associated with each Service.
-	for _, svc := range linkedSvcs {
-		lbc.enqueueIngressForService(svc)
-	}
+	return &lbc
 }
 
 // Run starts the loadbalancer controller.
@@ -259,10 +222,26 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 	return nil
 }
 
+// IsHealthy returns an error if the cluster manager is unhealthy.
+func (lbc *LoadBalancerController) IsHealthy() (err error) {
+	// TODO: Expand on this, for now we just want to detect when the GCE client
+	// is broken.
+	_, err = lbc.CloudClusterManager.backendPool.List()
+
+	// If this container is scheduled on a node without compute/rw it is
+	// effectively useless, but it is healthy. Reporting it as unhealthy
+	// will lead to container crashlooping.
+	if utils.IsHTTPErrorCode(err, http.StatusForbidden) {
+		glog.Infof("Reporting cluster as healthy, but unable to list backends: %v", err)
+		return nil
+	}
+	return
+}
+
 // sync manages Ingress create/updates/deletes
 func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	if !lbc.hasSynced() {
-		time.Sleep(storeSyncPollPeriod)
+		time.Sleep(context.StoreSyncPollPeriod)
 		return fmt.Errorf("waiting for stores to sync")
 	}
 	glog.V(3).Infof("Syncing %v", key)
@@ -273,7 +252,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	}
 	// gceSvcPorts contains the ServicePorts used by only single-cluster ingress.
 	gceSvcPorts := lbc.ToSvcPorts(&gceIngresses)
-	nodeNames, err := getReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
+	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
 	if err != nil {
 		return err
 	}
@@ -296,7 +275,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	}
 	ing = ing.DeepCopy()
 
-	ensureErr := lbc.ensureIngress(ing, nodeNames, gceSvcPorts)
+	ensureErr := lbc.ensureIngress(ing, nodeNames)
 	if ensureErr != nil {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", fmt.Sprintf("Error during sync: %v", ensureErr.Error()))
 	}
@@ -311,8 +290,8 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	return ensureErr
 }
 
-func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNames []string, gceSvcPorts []utils.ServicePort) error {
-	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.CloudClusterManager.defaultBackendSvcPortID)
+func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNames []string) error {
+	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
 	if errs != nil {
 		return fmt.Errorf("error while evaluating the ingress spec: %v", joinErrs(errs))
 	}
@@ -323,7 +302,7 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 		return err
 	}
 
-	if isGCEMultiClusterIngress(ing) {
+	if utils.IsGCEMultiClusterIngress(ing) {
 		// Add instance group names as annotation on the ingress and return.
 		if ing.Annotations == nil {
 			ing.Annotations = map[string]string{}
@@ -338,27 +317,19 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 	}
 
 	// Continue syncing this specific GCE ingress.
-	lb, err := lbc.toRuntimeInfo(ing)
+	lb, err := lbc.toRuntimeInfo(ing, urlMap)
 	if err != nil {
 		return err
 	}
-	lb.UrlMap = urlMap
 
-	// Create the backend services and higher-level LB resources.
-	// Note: To ensure the load balancer, we only need the IG links.
-	if err = lbc.CloudClusterManager.EnsureLoadBalancer(lb, ingSvcPorts, utils.IGLinks(igs)); err != nil {
+	// Create the backends. Note that we only need the IG links.
+	if err := lbc.CloudClusterManager.backendPool.Ensure(uniq(ingSvcPorts), utils.IGLinks(igs)); err != nil {
 		return err
 	}
 
-	negEndpointPorts := lbc.Translator.GatherEndpointPorts(gceSvcPorts)
-	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
-	if err = lbc.CloudClusterManager.EnsureFirewall(nodeNames, negEndpointPorts); err != nil {
-		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
-			// XPN: Raise an event and ignore the error.
-			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeNormal, "XPN", fwErr.Message)
-		} else {
-			return err
-		}
+	// Create higher-level LB resources.
+	if err := lbc.CloudClusterManager.l7Pool.Sync(lb); err != nil {
+		return err
 	}
 
 	// If NEG enabled, link the backend services to the NEGs.
@@ -376,16 +347,11 @@ func (lbc *LoadBalancerController) ensureIngress(ing *extensions.Ingress, nodeNa
 		}
 	}
 
-	// Update the UrlMap of the single loadbalancer that came through the watch.
+	// Get the loadbalancer and update the ingress status.
 	l7, err := lbc.CloudClusterManager.l7Pool.Get(lb.Name)
 	if err != nil {
 		return fmt.Errorf("unable to get loadbalancer: %v", err)
 	}
-
-	if err := l7.UpdateUrlMap(); err != nil {
-		return fmt.Errorf("update URL Map error: %v", err)
-	}
-
 	if err := lbc.updateIngressStatus(l7, ing); err != nil {
 		return fmt.Errorf("update ingress status error: %v", err)
 	}
@@ -423,7 +389,11 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 			lbc.ctx.Recorder(ing.Namespace).Eventf(currIng, apiv1.EventTypeNormal, "CREATE", "ip: %v", ip)
 		}
 	}
-	annotations := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.CloudClusterManager.backendPool)
+	annotations, err := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.CloudClusterManager.backendPool)
+	if err != nil {
+		return err
+	}
+
 	if err := updateAnnotations(lbc.client, ing.Name, ing.Namespace, annotations); err != nil {
 		return err
 	}
@@ -431,8 +401,8 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 }
 
 // toRuntimeInfo returns L7RuntimeInfo for the given ingress.
-func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress) (*loadbalancers.L7RuntimeInfo, error) {
-	k, err := keyFunc(ing)
+func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress, urlMap *utils.GCEURLMap) (*loadbalancers.L7RuntimeInfo, error) {
+	k, err := utils.KeyFunc(ing)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get key for Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
 	}
@@ -455,6 +425,7 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress) (*load
 		TLSName:      annotations.UseNamedTLS(),
 		AllowHTTP:    annotations.AllowHTTP(),
 		StaticIPName: annotations.StaticIPName(),
+		UrlMap:       urlMap,
 	}, nil
 }
 
@@ -479,7 +450,7 @@ func updateAnnotations(client kubernetes.Interface, name, namespace string, anno
 func (lbc *LoadBalancerController) ToSvcPorts(ings *extensions.IngressList) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings.Items {
-		urlMap, _ := lbc.Translator.TranslateIngress(&ing, lbc.CloudClusterManager.defaultBackendSvcPortID)
+		urlMap, _ := lbc.Translator.TranslateIngress(&ing, lbc.ctx.DefaultBackendSvcPortID)
 		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts

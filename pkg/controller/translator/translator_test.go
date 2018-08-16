@@ -20,7 +20,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"testing"
 	"time"
 
@@ -50,7 +49,14 @@ func fakeTranslator(negEnabled, backendConfigEnabled bool) *Translator {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 
 	namer := utils.NewNamer("uid1", "")
-	ctx := context.NewControllerContext(client, backendConfigClient, nil, apiv1.NamespaceAll, 1*time.Second, negEnabled, backendConfigEnabled)
+	ctxConfig := context.ControllerContextConfig{
+		NEGEnabled:              negEnabled,
+		BackendConfigEnabled:    backendConfigEnabled,
+		Namespace:               apiv1.NamespaceAll,
+		ResyncPeriod:            1 * time.Second,
+		DefaultBackendSvcPortID: defaultBackend,
+	}
+	ctx := context.NewControllerContext(client, backendConfigClient, nil, ctxConfig)
 	gce := &Translator{
 		namer: namer,
 		ctx:   ctx,
@@ -106,45 +112,45 @@ func TestTranslateIngress(t *testing.T) {
 		},
 		{
 			desc:          "no host",
-			ing:           ingressFromFile("ingress-no-host.yaml"),
+			ing:           ingressFromFile(t, "ingress-no-host.yaml"),
 			wantErrCount:  0,
-			wantGCEURLMap: gceURLMapFromFile("ingress-no-host.json"),
+			wantGCEURLMap: gceURLMapFromFile(t, "ingress-no-host.json"),
 		},
 		{
 			desc:          "single host",
-			ing:           ingressFromFile("ingress-single-host.yaml"),
+			ing:           ingressFromFile(t, "ingress-single-host.yaml"),
 			wantErrCount:  0,
-			wantGCEURLMap: gceURLMapFromFile("ingress-single-host.json"),
+			wantGCEURLMap: gceURLMapFromFile(t, "ingress-single-host.json"),
 		},
 		{
 			desc:          "two hosts",
-			ing:           ingressFromFile("ingress-two-hosts.yaml"),
+			ing:           ingressFromFile(t, "ingress-two-hosts.yaml"),
 			wantErrCount:  0,
-			wantGCEURLMap: gceURLMapFromFile("ingress-two-hosts.json"),
+			wantGCEURLMap: gceURLMapFromFile(t, "ingress-two-hosts.json"),
 		},
 		{
 			desc:          "multiple paths",
-			ing:           ingressFromFile("ingress-multi-paths.yaml"),
+			ing:           ingressFromFile(t, "ingress-multi-paths.yaml"),
 			wantErrCount:  0,
-			wantGCEURLMap: gceURLMapFromFile("ingress-multi-paths.json"),
+			wantGCEURLMap: gceURLMapFromFile(t, "ingress-multi-paths.json"),
 		},
 		{
 			desc:          "multiple empty paths",
-			ing:           ingressFromFile("ingress-multi-empty.yaml"),
+			ing:           ingressFromFile(t, "ingress-multi-empty.yaml"),
 			wantErrCount:  0,
-			wantGCEURLMap: gceURLMapFromFile("ingress-multi-empty.json"),
+			wantGCEURLMap: gceURLMapFromFile(t, "ingress-multi-empty.json"),
 		},
 		{
 			desc:          "missing rule service",
-			ing:           ingressFromFile("ingress-missing-rule-svc.yaml"),
+			ing:           ingressFromFile(t, "ingress-missing-rule-svc.yaml"),
 			wantErrCount:  1,
-			wantGCEURLMap: gceURLMapFromFile("ingress-missing-rule-svc.json"),
+			wantGCEURLMap: gceURLMapFromFile(t, "ingress-missing-rule-svc.json"),
 		},
 		{
 			desc:          "missing multiple rule service",
-			ing:           ingressFromFile("ingress-missing-multi-svc.yaml"),
+			ing:           ingressFromFile(t, "ingress-missing-multi-svc.yaml"),
 			wantErrCount:  2,
-			wantGCEURLMap: gceURLMapFromFile("ingress-missing-multi-svc.json"),
+			wantGCEURLMap: gceURLMapFromFile(t, "ingress-missing-multi-svc.json"),
 		},
 		{
 			desc: "missing default service",
@@ -541,26 +547,28 @@ func newDefaultEndpoint(name string) *apiv1.Endpoints {
 	}
 }
 
-func ingressFromFile(filename string) *extensions.Ingress {
+func ingressFromFile(t *testing.T, filename string) *extensions.Ingress {
+	t.Helper()
+
 	data, err := ioutil.ReadFile("testdata/" + filename)
 	if err != nil {
-		log.Fatal(err)
+		t.Errorf("ioutil.ReadFile(%q) = %v", filename, err)
 	}
 	ing, err := test.DecodeIngress(data)
 	if err != nil {
-		log.Fatal(err)
+		t.Errorf("test.DecodeIngress(%q) = %v", filename, err)
 	}
 	return ing
 }
 
-func gceURLMapFromFile(filename string) *utils.GCEURLMap {
+func gceURLMapFromFile(t *testing.T, filename string) *utils.GCEURLMap {
 	data, err := ioutil.ReadFile("testdata/" + filename)
 	if err != nil {
-		log.Fatal(err)
+		t.Errorf("ioutil.ReadFile(%q) = %v", filename, err)
 	}
 	v := &utils.GCEURLMap{}
 	if err := json.Unmarshal(data, v); err != nil {
-		log.Fatal(err)
+		t.Errorf("json.Unmarshal(%q) = %v", filename, err)
 	}
 	return v
 }

@@ -29,7 +29,13 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1beta1"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+)
+
+const (
+	// Frequency to poll on local stores to sync.
+	StoreSyncPollPeriod = 5 * time.Second
 )
 
 // ControllerContext holds the state needed for the execution of the controller.
@@ -38,6 +44,8 @@ type ControllerContext struct {
 
 	Cloud *gce.GCECloud
 
+	ControllerContextConfig
+
 	IngressInformer       cache.SharedIndexInformer
 	ServiceInformer       cache.SharedIndexInformer
 	BackendConfigInformer cache.SharedIndexInformer
@@ -45,14 +53,22 @@ type ControllerContext struct {
 	NodeInformer          cache.SharedIndexInformer
 	EndpointInformer      cache.SharedIndexInformer
 
-	NEGEnabled           bool
-	BackendConfigEnabled bool
-
 	healthChecks map[string]func() error
-	hcLock       sync.Mutex
+
+	lock sync.Mutex
 
 	// Map of namespace => record.EventRecorder.
 	recorders map[string]record.EventRecorder
+}
+
+// ControllerContextConfig encapsulates some settings that are tunable via command line flags.
+type ControllerContextConfig struct {
+	NEGEnabled           bool
+	BackendConfigEnabled bool
+	Namespace            string
+	ResyncPeriod         time.Duration
+	// DefaultBackendSvcPortID is the ServicePortID for the system default backend.
+	DefaultBackendSvcPortID utils.ServicePortID
 }
 
 // NewControllerContext returns a new shared set of informers.
@@ -60,31 +76,24 @@ func NewControllerContext(
 	kubeClient kubernetes.Interface,
 	backendConfigClient backendconfigclient.Interface,
 	cloud *gce.GCECloud,
-	namespace string,
-	resyncPeriod time.Duration,
-	enableNEG bool,
-	enableBackendConfig bool) *ControllerContext {
+	config ControllerContextConfig) *ControllerContext {
 
-	newIndexer := func() cache.Indexers {
-		return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
-	}
 	context := &ControllerContext{
-		KubeClient:           kubeClient,
-		Cloud:                cloud,
-		IngressInformer:      informerv1beta1.NewIngressInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
-		ServiceInformer:      informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
-		PodInformer:          informerv1.NewPodInformer(kubeClient, namespace, resyncPeriod, newIndexer()),
-		NodeInformer:         informerv1.NewNodeInformer(kubeClient, resyncPeriod, newIndexer()),
-		NEGEnabled:           enableNEG,
-		BackendConfigEnabled: enableBackendConfig,
-		recorders:            map[string]record.EventRecorder{},
-		healthChecks:         make(map[string]func() error),
+		KubeClient: kubeClient,
+		Cloud:      cloud,
+		ControllerContextConfig: config,
+		IngressInformer:         informerv1beta1.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		PodInformer:             informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		NodeInformer:            informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		recorders:               map[string]record.EventRecorder{},
+		healthChecks:            make(map[string]func() error),
 	}
-	if enableNEG {
-		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, namespace, resyncPeriod, newIndexer())
+	if config.NEGEnabled {
+		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
-	if enableBackendConfig {
-		context.BackendConfigInformer = informerbackendconfig.NewBackendConfigInformer(backendConfigClient, namespace, resyncPeriod, newIndexer())
+	if config.BackendConfigEnabled {
+		context.BackendConfigInformer = informerbackendconfig.NewBackendConfigInformer(backendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 
 	return context
@@ -130,8 +139,8 @@ func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 
 // AddHealthCheck registers function to be called for healthchecking.
 func (ctx *ControllerContext) AddHealthCheck(id string, hc func() error) {
-	ctx.hcLock.Lock()
-	defer ctx.hcLock.Unlock()
+	ctx.lock.Lock()
+	defer ctx.lock.Unlock()
 
 	ctx.healthChecks[id] = hc
 }
@@ -141,8 +150,8 @@ type HealthCheckResults map[string]error
 
 // HealthCheck runs all registered healthcheck functions.
 func (ctx *ControllerContext) HealthCheck() HealthCheckResults {
-	ctx.hcLock.Lock()
-	defer ctx.hcLock.Unlock()
+	ctx.lock.Lock()
+	defer ctx.lock.Unlock()
 
 	healthChecks := make(map[string]error)
 	for component, f := range ctx.healthChecks {

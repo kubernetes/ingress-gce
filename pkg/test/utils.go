@@ -7,7 +7,18 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	"k8s.io/ingress-gce/pkg/utils"
+)
+
+var (
+	BackendPort      = intstr.IntOrString{Type: intstr.Int, IntVal: 80}
+	DefaultBeSvcPort = utils.ServicePort{
+		ID:       utils.ServicePortID{Service: types.NamespacedName{Namespace: "system", Name: "default"}, Port: BackendPort},
+		NodePort: 30000,
+		Protocol: annotations.ProtocolHTTP,
+	}
 )
 
 // NewIngress returns an Ingress with the given spec.

@@ -45,15 +45,20 @@ func newLoadBalancerController(t *testing.T, cm *fakeClusterManager) *LoadBalanc
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 
 	stopCh := make(chan struct{})
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cm.fakeBackends, api_v1.NamespaceAll, 1*time.Minute, true, false)
-	lbc, err := NewLoadBalancerController(ctx, cm.ClusterManager, stopCh)
-	if err != nil {
-		t.Fatalf("%v", err)
+	ctxConfig := context.ControllerContextConfig{
+		NEGEnabled:              true,
+		BackendConfigEnabled:    false,
+		Namespace:               api_v1.NamespaceAll,
+		ResyncPeriod:            1 * time.Minute,
+		DefaultBackendSvcPortID: test.DefaultBeSvcPort.ID,
 	}
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cm.fakeBackends, ctxConfig)
+	lbc := NewLoadBalancerController(ctx, cm.ClusterManager, stopCh)
+
 	lbc.hasSynced = func() bool { return true }
 
 	// Create the default-backend service.
-	defaultSvc := test.NewService(testDefaultBeSvcPort.ID.Service, api_v1.ServiceSpec{
+	defaultSvc := test.NewService(test.DefaultBeSvcPort.ID.Service, api_v1.ServiceSpec{
 		Type: api_v1.ServiceTypeNodePort,
 		Ports: []api_v1.ServicePort{
 			{
@@ -93,7 +98,7 @@ func deleteIngress(lbc *LoadBalancerController, ing *extensions.Ingress) {
 
 // getKey returns the key for an ingress.
 func getKey(ing *extensions.Ingress, t *testing.T) string {
-	key, err := keyFunc(ing)
+	key, err := utils.KeyFunc(ing)
 	if err != nil {
 		t.Fatalf("Unexpected error getting key for Ingress %v: %v", ing.Name, err)
 	}
@@ -187,7 +192,7 @@ func TestEnsureMCIngress(t *testing.T) {
 	addIngress(lbc, ing)
 
 	ingStoreKey := getKey(ing, t)
-	if err := lbc.ensureIngress(ing, []string{"node-a", "node-b"}, []utils.ServicePort{}); err != nil {
+	if err := lbc.ensureIngress(ing, []string{"node-a", "node-b"}); err != nil {
 		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
 	}
 

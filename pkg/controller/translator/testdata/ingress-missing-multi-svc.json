@@ -8,8 +8,14 @@
 			"Port": "http"
 		}
 	},
-	"HostRules": {
-		"abc.com": [],
-		"foo.bar.com": []
-	}
+	"HostRules": [
+		{
+			"HostName": "foo.bar.com",
+			"Paths": []
+		},
+		{
+			"HostName": "abc.com",
+			"Paths": []
+		}
+	]
 }

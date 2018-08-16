@@ -105,6 +105,27 @@ func TestService(t *testing.T) {
 			svc: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
+						GoogleServiceApplicationProtocolKey: `{"80": "HTTP", "443": "HTTPS"}`,
+					},
+				},
+			},
+			appProtocols: map[string]AppProtocol{"80": "HTTP", "443": "HTTPS"},
+		},
+		{
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						GoogleServiceApplicationProtocolKey: `{"80": "HTTP", "443": "HTTPS"}`,
+						ServiceApplicationProtocolKey:       `{"81": "HTTP", "444": "HTTPS"}`,
+					},
+				},
+			},
+			appProtocols: map[string]AppProtocol{"81": "HTTP", "444": "HTTPS"},
+		},
+		{
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
 						ServiceApplicationProtocolKey: `{"80": "HTTP", "443": "HTTPS"}`,
 					},
 				},

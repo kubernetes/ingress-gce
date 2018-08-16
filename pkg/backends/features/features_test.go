@@ -131,7 +131,7 @@ func TestVersionFromFeatures(t *testing.T) {
 		{
 			desc:            "HTTP2",
 			features:        []string{FeatureHTTP2},
-			expectedVersion: meta.VersionAlpha,
+			expectedVersion: meta.VersionBeta,
 		},
 		{
 			desc:            "SecurityPolicy",
@@ -146,7 +146,7 @@ func TestVersionFromFeatures(t *testing.T) {
 		{
 			desc:            "HTTP2 + SecurityPolicy",
 			features:        []string{FeatureHTTP2, FeatureSecurityPolicy},
-			expectedVersion: meta.VersionAlpha,
+			expectedVersion: meta.VersionBeta,
 		},
 		{
 			desc:            "unknown feature",
@@ -181,7 +181,7 @@ func TestVersionFromDescription(t *testing.T) {
 		{
 			desc:               "HTTP2",
 			backendServiceDesc: `{"kubernetes.io/service-name":"my-service","kubernetes.io/service-port":"my-port","x-features":["HTTP2"]}`,
-			expectedVersion:    meta.VersionAlpha,
+			expectedVersion:    meta.VersionBeta,
 		},
 		{
 			desc:               "SecurityPolicy",
@@ -191,12 +191,12 @@ func TestVersionFromDescription(t *testing.T) {
 		{
 			desc:               "HTTP2 + SecurityPolicy",
 			backendServiceDesc: `{"kubernetes.io/service-name":"my-service","kubernetes.io/service-port":"my-port","x-features":["HTTP2","SecurityPolicy"]}`,
-			expectedVersion:    meta.VersionAlpha,
+			expectedVersion:    meta.VersionBeta,
 		},
 		{
 			desc:               "HTTP2 + unknown",
 			backendServiceDesc: `{"kubernetes.io/service-name":"my-service","kubernetes.io/service-port":"my-port","x-features":["HTTP2","whatisthis"]}`,
-			expectedVersion:    meta.VersionAlpha,
+			expectedVersion:    meta.VersionBeta,
 		},
 	}
 
@@ -221,7 +221,7 @@ func TestVersionFromServicePort(t *testing.T) {
 		{
 			desc:            "enabled http2",
 			svcPort:         svcPortWithHTTP2,
-			expectedVersion: meta.VersionAlpha,
+			expectedVersion: meta.VersionBeta,
 		},
 		{
 			desc:            "enabled security policy",
@@ -231,7 +231,7 @@ func TestVersionFromServicePort(t *testing.T) {
 		{
 			desc:            "enabled http2 + security policy",
 			svcPort:         svcPortWithHTTP2SecurityPolicy,
-			expectedVersion: meta.VersionAlpha,
+			expectedVersion: meta.VersionBeta,
 		},
 	}
 

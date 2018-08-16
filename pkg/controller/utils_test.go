@@ -29,6 +29,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -38,7 +39,7 @@ import (
 var firstPodCreationTime = time.Date(2006, 01, 02, 15, 04, 05, 0, time.UTC)
 
 func TestZoneListing(t *testing.T) {
-	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, firewalls.DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	zoneToNode := map[string][]string{
 		"zone-1": {"n1"},
@@ -63,7 +64,7 @@ func TestZoneListing(t *testing.T) {
 }
 
 func TestInstancesAddedToZones(t *testing.T) {
-	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, firewalls.DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	zoneToNode := map[string][]string{
 		"zone-1": {"n1", "n2"},
