@@ -37,6 +37,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -234,12 +235,12 @@ func (c *Controller) processService(key string) error {
 	if !enabled {
 		c.manager.StopSyncer(namespace, name)
 		// delete the annotation
-		return c.syncNegStatusAnnotation(namespace, name, make(PortNameMap))
+		return c.syncNegStatusAnnotation(namespace, name, make(negtypes.PortNameMap))
 	}
 
 	glog.V(2).Infof("Syncing service %q", key)
 	// map of ServicePort (int) to TargetPort
-	svcPortMap := make(PortNameMap)
+	svcPortMap := make(negtypes.PortNameMap)
 
 	if annotations.FromService(service).NEGEnabledForIngress() {
 		// Only service ports referenced by ingress are synced for NEG
@@ -248,7 +249,7 @@ func (c *Controller) processService(key string) error {
 	}
 
 	if annotations.FromService(service).NEGExposed() {
-		knownPorts := make(PortNameMap)
+		knownPorts := make(negtypes.PortNameMap)
 		for _, sp := range service.Spec.Ports {
 			knownPorts[sp.Port] = sp.TargetPort.String()
 		}
@@ -273,7 +274,7 @@ func (c *Controller) processService(key string) error {
 	return c.manager.EnsureSyncers(namespace, name, svcPortMap)
 }
 
-func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap PortNameMap) error {
+func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap negtypes.PortNameMap) error {
 	zones, err := c.zoneGetter.ListZones()
 	if err != nil {
 		return err
@@ -297,7 +298,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap Por
 		return nil
 	}
 
-	portToNegs := make(PortNameMap)
+	portToNegs := make(negtypes.PortNameMap)
 	for svcPort := range portMap {
 		portToNegs[svcPort] = c.namer.NEG(namespace, name, svcPort)
 	}
@@ -364,9 +365,9 @@ func (c *Controller) synced() bool {
 
 // gatherPortMappingUsedByIngress returns a map containing port:targetport
 // of all service ports of the service that are referenced by ingresses
-func gatherPortMappingUsedByIngress(ings []extensions.Ingress, svc *apiv1.Service) PortNameMap {
+func gatherPortMappingUsedByIngress(ings []extensions.Ingress, svc *apiv1.Service) negtypes.PortNameMap {
 	servicePorts := sets.NewString()
-	ingressSvcPorts := make(PortNameMap)
+	ingressSvcPorts := make(negtypes.PortNameMap)
 	for _, ing := range ings {
 		if ing.Spec.Backend != nil && ing.Spec.Backend.ServiceName == svc.Name {
 			servicePorts.Insert(ing.Spec.Backend.ServicePort.String())

@@ -33,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -352,26 +353,26 @@ func TestSyncNegAnnotation(t *testing.T) {
 
 	testCases := []struct {
 		desc            string
-		previousPortMap PortNameMap
-		portMap         PortNameMap
+		previousPortMap negtypes.PortNameMap
+		portMap         negtypes.PortNameMap
 	}{
 		{
 			desc:    "apply new annotation with no previous annotation",
-			portMap: PortNameMap{80: "named_port", 443: "other_port"},
+			portMap: negtypes.PortNameMap{80: "named_port", 443: "other_port"},
 		},
 		{
 			desc:            "same annotation applied twice",
-			previousPortMap: PortNameMap{80: "named_port", 4040: "other_port"},
-			portMap:         PortNameMap{80: "named_port", 4040: "other_port"},
+			previousPortMap: negtypes.PortNameMap{80: "named_port", 4040: "other_port"},
+			portMap:         negtypes.PortNameMap{80: "named_port", 4040: "other_port"},
 		},
 		{
 			desc:            "apply new annotation and override previous annotation",
-			previousPortMap: PortNameMap{80: "named_port", 4040: "other_port"},
-			portMap:         PortNameMap{3000: "6000", 4000: "8000"},
+			previousPortMap: negtypes.PortNameMap{80: "named_port", 4040: "other_port"},
+			portMap:         negtypes.PortNameMap{3000: "6000", 4000: "8000"},
 		},
 		{
 			desc:            "remove previous annotation",
-			previousPortMap: PortNameMap{80: "named_port", 4040: "other_port"},
+			previousPortMap: negtypes.PortNameMap{80: "named_port", 4040: "other_port"},
 		},
 		{
 			desc: "remove annotation with no previous annotation",

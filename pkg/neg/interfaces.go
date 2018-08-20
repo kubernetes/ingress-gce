@@ -18,6 +18,7 @@ package neg
 
 import (
 	computebeta "google.golang.org/api/compute/v0.beta"
+	"k8s.io/ingress-gce/pkg/neg/types"
 )
 
 // MetworkEndpointGroupCloud is an interface for managing gce network endpoint group.
@@ -64,7 +65,7 @@ type negSyncer interface {
 type negSyncerManager interface {
 	// EnsureSyncer ensures corresponding syncers are started and stops any unnecessary syncer
 	// portMap is a map of ServicePort Port to TargetPort
-	EnsureSyncers(namespace, name string, portMap PortNameMap) error
+	EnsureSyncers(namespace, name string, portMap types.PortNameMap) error
 	// StopSyncer stops all syncers related to the service. This call is asynchronous. It will not wait for all syncers to stop.
 	StopSyncer(namespace, name string)
 	// Sync signals all syncers related to the service to sync. This call is asynchronous.

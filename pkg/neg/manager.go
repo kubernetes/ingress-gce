@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/neg/types"
 )
 
 type serviceKey struct {
@@ -47,7 +48,7 @@ type syncerManager struct {
 	// svcPortMap is the canonical indicator for whether a service needs NEG.
 	// key consists of service namespace and name. Value is a map of ServicePort
 	// Port:TargetPort, which represents ports that require NEG
-	svcPortMap map[serviceKey]PortNameMap
+	svcPortMap map[serviceKey]types.PortNameMap
 	// syncerMap stores the NEG syncer
 	// key consists of service namespace, name and targetPort. Value is the corresponding syncer.
 	syncerMap map[servicePort]negSyncer
@@ -61,19 +62,19 @@ func newSyncerManager(namer networkEndpointGroupNamer, recorder record.EventReco
 		zoneGetter:     zoneGetter,
 		serviceLister:  serviceLister,
 		endpointLister: endpointLister,
-		svcPortMap:     make(map[serviceKey]PortNameMap),
+		svcPortMap:     make(map[serviceKey]types.PortNameMap),
 		syncerMap:      make(map[servicePort]negSyncer),
 	}
 }
 
 // EnsureSyncer starts and stops syncers based on the input service ports.
-func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts PortNameMap) error {
+func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts types.PortNameMap) error {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	key := getServiceKey(namespace, name)
 	currentPorts, ok := manager.svcPortMap[key]
 	if !ok {
-		currentPorts = make(PortNameMap)
+		currentPorts = make(types.PortNameMap)
 	}
 
 	removes := currentPorts.Difference(newPorts)

@@ -21,42 +21,15 @@ import (
 
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/neg/types"
 )
-
-// PortNameMap is a map of ServicePort:TargetPort.
-type PortNameMap map[int32]string
-
-// Union returns the union of the Port:TargetPort mappings
-func (p1 PortNameMap) Union(p2 PortNameMap) PortNameMap {
-	result := make(PortNameMap)
-	for svcPort, targetPort := range p1 {
-		result[svcPort] = targetPort
-	}
-
-	for svcPort, targetPort := range p2 {
-		result[svcPort] = targetPort
-	}
-
-	return result
-}
-
-// Difference returns the set of Port:TargetPorts in p2 that aren't present in p1
-func (p1 PortNameMap) Difference(p2 PortNameMap) PortNameMap {
-	result := make(PortNameMap)
-	for svcPort, targetPort := range p1 {
-		if p1[svcPort] != p2[svcPort] {
-			result[svcPort] = targetPort
-		}
-	}
-	return result
-}
 
 // NEGServicePorts returns the parsed ServicePorts from the annotation.
 // knownPorts represents the known Port:TargetPort attributes of servicePorts
 // that already exist on the service. This function returns an error if
 // any of the parsed ServicePorts from the annotation is not in knownPorts.
-func NEGServicePorts(ann annotations.NegAnnotation, knownPorts PortNameMap) (PortNameMap, error) {
-	portSet := make(PortNameMap)
+func NEGServicePorts(ann annotations.NegAnnotation, knownPorts types.PortNameMap) (types.PortNameMap, error) {
+	portSet := make(types.PortNameMap)
 	var errList []error
 	for port, _ := range ann.ExposedPorts {
 		// TODO: also validate ServicePorts in the exposed NEG annotation via webhook
@@ -69,22 +42,13 @@ func NEGServicePorts(ann annotations.NegAnnotation, knownPorts PortNameMap) (Por
 	return portSet, utilerrors.NewAggregate(errList)
 }
 
-// NegStatus contains name and zone of the Network Endpoint Group
-// resources associated with this service
-type NegStatus struct {
-	// NetworkEndpointGroups returns the mapping between service port and NEG
-	// resource. key is service port, value is the name of the NEG resource.
-	NetworkEndpointGroups PortNameMap `json:"network_endpoint_groups,omitempty"`
-	Zones                 []string    `json:"zones,omitempty"`
-}
-
 // GetNegStatus generates a NegStatus denoting the current NEGs
 // associated with the given ports.
 // NetworkEndpointGroups is a mapping between ServicePort and NEG name
 // Zones is a list of zones where the NEGs exist.
-func GetNegStatus(zones []string, portToNegs PortNameMap) NegStatus {
-	res := NegStatus{}
-	res.NetworkEndpointGroups = make(PortNameMap)
+func GetNegStatus(zones []string, portToNegs types.PortNameMap) types.NegStatus {
+	res := types.NegStatus{}
+	res.NetworkEndpointGroups = make(types.PortNameMap)
 	res.Zones = zones
 	res.NetworkEndpointGroups = portToNegs
 	return res
