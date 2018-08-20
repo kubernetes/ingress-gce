@@ -32,7 +32,6 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.BackendConfig": {
 			Schema: spec.Schema{
 				SchemaProps: spec.SchemaProps{
-					Description: "BackendConfig is a specification for a BackendConfig resource",
 					Properties: map[string]spec.Schema{
 						"kind": {
 							SchemaProps: spec.SchemaProps{
@@ -64,7 +63,6 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 							},
 						},
 					},
-					Required: []string{"spec"},
 				},
 			},
 			Dependencies: []string{
