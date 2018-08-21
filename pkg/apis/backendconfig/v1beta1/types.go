@@ -24,13 +24,12 @@ import (
 // +genclient:noStatus
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// BackendConfig is a specification for a BackendConfig resource
 // +k8s:openapi-gen=true
 type BackendConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   BackendConfigSpec   `json:"spec"`
+	Spec   BackendConfigSpec   `json:"spec,omitempty"`
 	Status BackendConfigStatus `json:"status,omitempty"`
 }
 
