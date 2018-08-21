@@ -117,12 +117,11 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 		existingPorts[np.Port] = true
 	}
 
-	// Determine which ports need to be added
+	// Determine which ports need to be added. Note that this adds existing ports as well.
 	var newPorts []int64
 	for _, p := range ports {
 		if existingPorts[p] {
 			glog.V(5).Infof("Instance group %v/%v already has named port %v", zone, ig.Name, p)
-			continue
 		}
 		newPorts = append(newPorts, p)
 	}
@@ -134,8 +133,8 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 	}
 
 	if len(newNamedPorts) > 0 {
-		glog.V(3).Infof("Instance group %v/%v does not have ports %+v, adding them now.", zone, name, newPorts)
-		if err := i.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, newNamedPorts...)); err != nil {
+		glog.V(3).Infof("Setting named ports %+v on instance group %v/%v", zone, name, newPorts)
+		if err := i.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, newNamedPorts); err != nil {
 			return nil, err
 		}
 	}
