@@ -25,118 +25,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/neg/types"
 )
-
-func TestPortNameMapUnion(t *testing.T) {
-	testcases := []struct {
-		desc        string
-		p1          PortNameMap
-		p2          PortNameMap
-		expectedMap PortNameMap
-	}{
-		{
-			"empty map union empty map",
-			PortNameMap{},
-			PortNameMap{},
-			PortNameMap{},
-		},
-		{
-			"empty map union a non-empty map is the non-empty map",
-			PortNameMap{},
-			PortNameMap{80: "namedport", 443: "3000"},
-			PortNameMap{80: "namedport", 443: "3000"},
-		},
-		{
-			"union of two non-empty maps",
-			PortNameMap{443: "3000", 5000: "6000"},
-			PortNameMap{80: "namedport", 8080: "9000"},
-			PortNameMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"},
-		},
-	}
-
-	for _, tc := range testcases {
-		t.Run(tc.desc, func(t *testing.T) {
-			result := tc.p1.Union(tc.p2)
-			if !reflect.DeepEqual(result, tc.expectedMap) {
-				t.Errorf("Expected p1.Union(p2) to equal: %v; got: %v", tc.expectedMap, result)
-			}
-		})
-	}
-}
-
-func TestPortNameMapDifference(t *testing.T) {
-	testcases := []struct {
-		desc        string
-		p1          PortNameMap
-		p2          PortNameMap
-		expectedMap PortNameMap
-	}{
-		{
-			"empty map difference empty map",
-			PortNameMap{},
-			PortNameMap{},
-			PortNameMap{},
-		},
-		{
-			"empty map difference a non-empty map is empty map",
-			PortNameMap{},
-			PortNameMap{80: "namedport", 443: "3000"},
-			PortNameMap{},
-		},
-		{
-			"non-empty map difference a non-empty map is the non-empty map",
-			PortNameMap{80: "namedport", 443: "3000"},
-			PortNameMap{},
-			PortNameMap{80: "namedport", 443: "3000"},
-		},
-		{
-			"difference of two non-empty maps with the same elements",
-			PortNameMap{80: "namedport", 443: "3000"},
-			PortNameMap{80: "namedport", 443: "3000"},
-			PortNameMap{},
-		},
-		{
-			"difference of two non-empty maps with no elements in common returns p1",
-			PortNameMap{443: "3000", 5000: "6000"},
-			PortNameMap{80: "namedport", 8080: "9000"},
-			PortNameMap{443: "3000", 5000: "6000"},
-		},
-		{
-			"difference of two non-empty maps with elements in common",
-			PortNameMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"},
-			PortNameMap{80: "namedport", 8080: "9000"},
-			PortNameMap{443: "3000", 5000: "6000"},
-		},
-		{
-			"difference of two non-empty maps with a key in common but different in value",
-			PortNameMap{80: "namedport"},
-			PortNameMap{80: "8080", 8080: "9000"},
-			PortNameMap{80: "namedport"},
-		},
-		{
-			"difference of two non-empty maps with 2 keys in common but different in values",
-			PortNameMap{80: "namedport", 443: "8443"},
-			PortNameMap{80: "8080", 443: "9443"},
-			PortNameMap{80: "namedport", 443: "8443"},
-		},
-	}
-
-	for _, tc := range testcases {
-		t.Run(tc.desc, func(t *testing.T) {
-			result := tc.p1.Difference(tc.p2)
-			if !reflect.DeepEqual(result, tc.expectedMap) {
-				t.Errorf("Expected p1.Difference(p2) to equal: %v; got: %v", tc.expectedMap, result)
-			}
-		})
-	}
-}
 
 func TestNEGServicePorts(t *testing.T) {
 	testcases := []struct {
 		desc            string
 		annotation      string
-		knownPortMap    PortNameMap
-		expectedPortMap PortNameMap
+		knownPortMap    types.PortNameMap
+		expectedPortMap types.PortNameMap
 		expectedErr     error
 	}{
 		{
@@ -145,21 +42,21 @@ func TestNEGServicePorts(t *testing.T) {
 			expectedErr: utilerrors.NewAggregate([]error{
 				fmt.Errorf("port %v specified in %q doesn't exist in the service", 3000, annotations.NEGAnnotationKey),
 			}),
-			knownPortMap:    PortNameMap{80: "some_port", 443: "another_port"},
-			expectedPortMap: PortNameMap{3000: ""},
+			knownPortMap:    types.PortNameMap{80: "some_port", 443: "another_port"},
+			expectedPortMap: types.PortNameMap{3000: ""},
 		},
 		{
 			desc:            "NEG annotation references existing service ports",
 			annotation:      `{"exposed_ports":{"80":{},"443":{}}}`,
-			knownPortMap:    PortNameMap{80: "namedport", 443: "3000"},
-			expectedPortMap: PortNameMap{80: "namedport", 443: "3000"},
+			knownPortMap:    types.PortNameMap{80: "namedport", 443: "3000"},
+			expectedPortMap: types.PortNameMap{80: "namedport", 443: "3000"},
 		},
 
 		{
 			desc:            "NEGServicePort takes the union of known ports and ports referenced in the annotation",
 			annotation:      `{"exposed_ports":{"80":{}}}`,
-			knownPortMap:    PortNameMap{80: "8080", 3000: "3030", 4000: "4040"},
-			expectedPortMap: PortNameMap{80: "8080"},
+			knownPortMap:    types.PortNameMap{80: "8080", 3000: "3030", 4000: "4040"},
+			expectedPortMap: types.PortNameMap{80: "8080"},
 		},
 	}
 

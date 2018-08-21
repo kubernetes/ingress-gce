@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -61,14 +62,14 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 	testCases := []struct {
 		namespace string
 		name      string
-		ports     PortNameMap
+		ports     types.PortNameMap
 		stop      bool
 		expect    []servicePort // keys of running syncers
 	}{
 		{
 			"ns1",
 			"n1",
-			PortNameMap{1000: "80", 2000: "443"},
+			types.PortNameMap{1000: "80", 2000: "443"},
 			false,
 			[]servicePort{
 				getSyncerKey("ns1", "n1", 1000, "80"),
@@ -78,7 +79,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		{
 			"ns1",
 			"n1",
-			PortNameMap{3000: "80", 4000: "namedport"},
+			types.PortNameMap{3000: "80", 4000: "namedport"},
 			false,
 			[]servicePort{
 				getSyncerKey("ns1", "n1", 3000, "80"),
@@ -88,7 +89,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		{
 			"ns2",
 			"n1",
-			PortNameMap{3000: "80"},
+			types.PortNameMap{3000: "80"},
 			false,
 			[]servicePort{
 				getSyncerKey("ns1", "n1", 3000, "80"),
@@ -99,7 +100,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		{
 			"ns1",
 			"n1",
-			PortNameMap{},
+			types.PortNameMap{},
 			true,
 			[]servicePort{
 				getSyncerKey("ns2", "n1", 3000, "80"),
@@ -151,7 +152,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 
 func TestGarbageCollectionSyncer(t *testing.T) {
 	manager := NewTestSyncerManager(fake.NewSimpleClientset())
-	portMap := make(PortNameMap)
+	portMap := make(types.PortNameMap)
 	portMap[3000] = "80"
 	portMap[4000] = "namedport"
 
@@ -184,7 +185,7 @@ func TestGarbageCollectionNEG(t *testing.T) {
 		t.Fatalf("Failed to create endpoint: %v", err)
 	}
 	manager := NewTestSyncerManager(kubeClient)
-	ports := make(PortNameMap)
+	ports := make(types.PortNameMap)
 	ports[80] = "namedport"
 	if err := manager.EnsureSyncers(testServiceNamespace, testServiceName, ports); err != nil {
 		t.Fatalf("Failed to ensure syncer: %v", err)
