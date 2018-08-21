@@ -86,3 +86,15 @@ func convert(ings []*extensions.Ingress) (retVal []interface{}) {
 	}
 	return
 }
+
+// nodePorts returns the list of uniq NodePort from the input ServicePorts.
+// Only NonNEG service backend need NodePort.
+func nodePorts(svcPorts []utils.ServicePort) []int64 {
+	ports := []int64{}
+	for _, p := range uniq(svcPorts) {
+		if !p.NEGEnabled {
+			ports = append(ports, p.NodePort)
+		}
+	}
+	return ports
+}
