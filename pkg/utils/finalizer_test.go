@@ -28,24 +28,24 @@ func TestGetPatchBytes(t *testing.T) {
 			Finalizers: []string{"foo"},
 		},
 	}
-	b, err := getPatchBytes(ing, updated, extensions.Ingress{})
+	b, err := GetPatchBytes(ing, updated, extensions.Ingress{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	expected := `{"metadata":{"finalizers":["foo"]}}`
 	if string(b) != expected {
-		t.Errorf("getPatchBytes(%+v, %+v) = %s ; want %s", ing, updated, string(b), expected)
+		t.Errorf("GetPatchBytes(%+v, %+v) = %s ; want %s", ing, updated, string(b), expected)
 	}
 
 	// Patch an Ingress with the finalizer removed
 	ing = updated
 	updated = &extensions.Ingress{}
-	b, err = getPatchBytes(ing, updated, extensions.Ingress{})
+	b, err = GetPatchBytes(ing, updated, extensions.Ingress{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	expected = `{"metadata":{"finalizers":null}}`
 	if string(b) != expected {
-		t.Errorf("getPatchBytes(%+v, %+v) = %s ; want %s", ing, updated, string(b), expected)
+		t.Errorf("GetPatchBytes(%+v, %+v) = %s ; want %s", ing, updated, string(b), expected)
 	}
 }
