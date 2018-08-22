@@ -40,9 +40,9 @@ func hasFinalizer(m meta_v1.ObjectMeta, key string) bool {
 	return slice.ContainsString(m.Finalizers, key, nil)
 }
 
-// getPatchBytes returns a patch which is the difference between the old and new objects.
+// GetPatchBytes returns a patch which is the difference between the old and new objects.
 // Note: refStruct is a empty struct of the type which the patch is being generated for.
-func getPatchBytes(old interface{}, cur interface{}, refStruct interface{}) ([]byte, error) {
+func GetPatchBytes(old interface{}, cur interface{}, refStruct interface{}) ([]byte, error) {
 	oldBytes, err := json.Marshal(old)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal old object: %v", err)
