@@ -498,6 +498,7 @@
     "pkg/util/json",
     "pkg/util/mergepatch",
     "pkg/util/net",
+    "pkg/util/rand",
     "pkg/util/runtime",
     "pkg/util/sets",
     "pkg/util/strategicpatch",
@@ -746,6 +747,7 @@
     "pkg/util/nsenter",
     "pkg/util/parsers",
     "pkg/util/pointer",
+    "pkg/util/slice",
     "pkg/util/taints",
     "pkg/util/version",
     "pkg/version",
@@ -766,6 +768,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "102bb41dd4ba03720ca84b7fa098e8c5f9c7307606f1a8d3ccb6a12f4e87e699"
+  inputs-digest = "6fc8f0603eff6c0fe3f6059ad7027268388640e2418d78fe9905012bf1cbe3ec"
   solver-name = "gps-cdcl"
   solver-version = 1
