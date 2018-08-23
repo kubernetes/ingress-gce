@@ -201,7 +201,7 @@ func TestEnsureMCIngress(t *testing.T) {
 	addIngress(lbc, ing)
 
 	ingStoreKey := getKey(ing, t)
-	if err := lbc.ensureIngress(ing, []string{"node-a", "node-b"}); err != nil {
+	if err := lbc.sync(ingStoreKey); err != nil {
 		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
 	}
 
