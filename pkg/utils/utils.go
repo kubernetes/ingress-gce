@@ -19,6 +19,7 @@ package utils
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -401,4 +402,13 @@ func GetNodeConditionPredicate() listers.NodeConditionPredicate {
 // NewNamespaceIndexer returns a new Indexer for use by SharedIndexInformers
 func NewNamespaceIndexer() cache.Indexers {
 	return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
+}
+
+// JoinErrs returns an aggregated error based on the passed in list of errors.
+func JoinErrs(errs []error) error {
+	var errStrs []string
+	for _, e := range errs {
+		errStrs = append(errStrs, e.Error())
+	}
+	return errors.New(strings.Join(errStrs, "; "))
 }
