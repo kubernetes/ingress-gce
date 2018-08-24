@@ -1,10 +1,24 @@
+/*
+Copyright 2018 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
 package sync
 
 import (
 	"errors"
 	"fmt"
-
-	extensions "k8s.io/api/extensions/v1beta1"
 )
 
 // ErrSkipBackendsSync is an error that can be returned by a Controller to
@@ -23,26 +37,22 @@ func NewIngressSyncer(controller Controller) Syncer {
 }
 
 // Sync implements Syncer.
-func (s *IngressSyncer) Sync(ing *extensions.Ingress) error {
-	state, err := s.controller.PreProcess(ing)
-	if err != nil {
-		return fmt.Errorf("Error running pre-process routine: %v", err)
-	}
-
-	if err := s.controller.SyncBackends(ing, state); err != nil {
+func (s *IngressSyncer) Sync(state interface{}) error {
+	if err := s.controller.SyncBackends(state); err != nil {
 		if err == ErrSkipBackendsSync {
 			return nil
 		}
 		return fmt.Errorf("Error running backend syncing routine: %v", err)
 	}
 
-	if err := s.controller.SyncLoadBalancer(ing, state); err != nil {
+	if err := s.controller.SyncLoadBalancer(state); err != nil {
 		return fmt.Errorf("Error running load balancer syncing routine: %v", err)
 	}
 
-	if err := s.controller.PostProcess(ing); err != nil {
+	if err := s.controller.PostProcess(state); err != nil {
 		return fmt.Errorf("Error running post-process routine: %v", err)
 	}
+
 	return nil
 }
 

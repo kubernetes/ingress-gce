@@ -48,13 +48,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-// GarbageCollectionState is created by this controller for the purpose
-// of garbage collecting GCLB resources during the sync of an Ingress.
-type GarbageCollectionState struct {
-	lbNames  []string
-	svcPorts []utils.ServicePort
-}
-
 // LoadBalancerController watches the kubernetes api and adds/removes services
 // from the loadbalancer, via loadBalancerConfig.
 type LoadBalancerController struct {
@@ -268,23 +261,14 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 	return nil
 }
 
-// PreProcess implements Controller.
-func (lbc *LoadBalancerController) PreProcess(ing *extensions.Ingress) (interface{}, error) {
-	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
-	if errs != nil {
-		return "", fmt.Errorf("error while evaluating the ingress spec: %v", joinErrs(errs))
-	}
-	return urlMap, nil
-}
-
 // SyncBackends implements Controller.
-func (lbc *LoadBalancerController) SyncBackends(ing *extensions.Ingress, state interface{}) error {
-	// We expect state to be a utils.GCEURLMap
-	urlMap, ok := state.(*utils.GCEURLMap)
+func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
+	// We expect state to be a syncState
+	syncState, ok := state.(*syncState)
 	if !ok {
-		return fmt.Errorf("expected state type to be GCEURLMap, type was %T", state)
+		return fmt.Errorf("expected state type to be syncState, type was %T", state)
 	}
-	ingSvcPorts := urlMap.AllServicePorts()
+	ingSvcPorts := syncState.urlMap.AllServicePorts()
 
 	// Create instance groups and set named ports.
 	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(lbc.ctx.ClusterNamer.InstanceGroup(), nodePorts(ingSvcPorts))
@@ -302,7 +286,8 @@ func (lbc *LoadBalancerController) SyncBackends(ing *extensions.Ingress, state i
 	}
 
 	// TODO: Remove this after deprecation
-	if utils.IsGCEMultiClusterIngress(ing) {
+	ing := syncState.ing
+	if utils.IsGCEMultiClusterIngress(syncState.ing) {
 		// Add instance group names as annotation on the ingress and return.
 		if ing.Annotations == nil {
 			ing.Annotations = map[string]string{}
@@ -349,10 +334,10 @@ func (lbc *LoadBalancerController) SyncBackends(ing *extensions.Ingress, state i
 
 // GCBackends implements Controller.
 func (lbc *LoadBalancerController) GCBackends(state interface{}) error {
-	// We expect state to be a GarbageCollectionState
-	gcState, ok := state.(*GarbageCollectionState)
+	// We expect state to be a gcState
+	gcState, ok := state.(*gcState)
 	if !ok {
-		return fmt.Errorf("expected state type to be GarbageCollectionState, type was %T", state)
+		return fmt.Errorf("expected state type to be gcState, type was %T", state)
 	}
 
 	if err := lbc.backendSyncer.GC(gcState.svcPorts); err != nil {
@@ -371,14 +356,14 @@ func (lbc *LoadBalancerController) GCBackends(state interface{}) error {
 }
 
 // SyncLoadBalancer implements Controller.
-func (lbc *LoadBalancerController) SyncLoadBalancer(ing *extensions.Ingress, state interface{}) error {
-	// We expect state to be a utils.GCEURLMap
-	urlMap, ok := state.(*utils.GCEURLMap)
+func (lbc *LoadBalancerController) SyncLoadBalancer(state interface{}) error {
+	// We expect state to be a syncState
+	syncState, ok := state.(*syncState)
 	if !ok {
-		return fmt.Errorf("expected state type to be GCEURLMap, type was %T", state)
+		return fmt.Errorf("expected state type to be syncState, type was %T", state)
 	}
 
-	lb, err := lbc.toRuntimeInfo(ing, urlMap)
+	lb, err := lbc.toRuntimeInfo(syncState.ing, syncState.urlMap)
 	if err != nil {
 		return err
 	}
@@ -392,11 +377,12 @@ func (lbc *LoadBalancerController) SyncLoadBalancer(ing *extensions.Ingress, sta
 
 // GCLoadBalancers implements Controller.
 func (lbc *LoadBalancerController) GCLoadBalancers(state interface{}) error {
-	// We expect state to be a GarbageCollectionState
-	gcState, ok := state.(*GarbageCollectionState)
+	// We expect state to be a gcState
+	gcState, ok := state.(*gcState)
 	if !ok {
-		return fmt.Errorf("expected state type to be GarbageCollectionState, type was %T", state)
+		return fmt.Errorf("expected state type to be gcState, type was %T", state)
 	}
+
 	if err := lbc.l7Pool.GC(gcState.lbNames); err != nil {
 		return err
 	}
@@ -405,12 +391,20 @@ func (lbc *LoadBalancerController) GCLoadBalancers(state interface{}) error {
 }
 
 // PostProcess implements Controller.
-func (lbc *LoadBalancerController) PostProcess(ing *extensions.Ingress) error {
+func (lbc *LoadBalancerController) PostProcess(state interface{}) error {
+	// We expect state to be a syncState
+	syncState, ok := state.(*syncState)
+	if !ok {
+		return fmt.Errorf("expected state type to be syncState, type was %T", state)
+	}
+
 	// Get the loadbalancer and update the ingress status.
+	ing := syncState.ing
 	k, err := utils.KeyFunc(ing)
 	if err != nil {
-		return fmt.Errorf("cannot get key for Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
+		return fmt.Errorf("cannot get key for Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 	}
+
 	l7, err := lbc.l7Pool.Get(k)
 	if err != nil {
 		return fmt.Errorf("unable to get loadbalancer: %v", err)
@@ -421,8 +415,8 @@ func (lbc *LoadBalancerController) PostProcess(ing *extensions.Ingress) error {
 	return nil
 }
 
-// sync manages Ingress create/updates/deletes
-func (lbc *LoadBalancerController) sync(key string) (retErr error) {
+// sync manages Ingress create/updates/deletes events from queue.
+func (lbc *LoadBalancerController) sync(key string) error {
 	if !lbc.hasSynced() {
 		time.Sleep(context.StoreSyncPollPeriod)
 		return fmt.Errorf("waiting for stores to sync")
@@ -437,7 +431,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	// gceSvcPorts contains the ServicePorts used by only single-cluster ingress.
 	gceSvcPorts := lbc.ToSvcPorts(&gceIngresses)
 	lbNames := lbc.ingLister.Store.ListKeys()
-	gcState := &GarbageCollectionState{lbNames, gceSvcPorts}
+	gcState := &gcState{lbNames, gceSvcPorts}
 
 	obj, ingExists, err := lbc.ingLister.Store.GetByKey(key)
 	if !ingExists {
@@ -453,7 +447,15 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	}
 	ing = ing.DeepCopy()
 
-	syncErr := lbc.ingSyncer.Sync(ing)
+	// Bootstrap state for GCP sync.
+	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
+	syncState := &syncState{urlMap, ing}
+	if errs != nil {
+		return fmt.Errorf("error while evaluating the ingress spec: %v", joinErrs(errs))
+	}
+
+	// Sync GCP resources.
+	syncErr := lbc.ingSyncer.Sync(syncState)
 	if syncErr != nil {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", fmt.Sprintf("Error during sync: %v", syncErr.Error()))
 	}
@@ -462,7 +464,7 @@ func (lbc *LoadBalancerController) sync(key string) (retErr error) {
 	// it could have been caused by quota issues; therefore, garbage collecting now may
 	// free up enough quota for the next sync to pass.
 	if gcErr := lbc.ingSyncer.GC(gcState); gcErr != nil {
-		retErr = fmt.Errorf("error during sync %v, error during GC %v", retErr, gcErr)
+		return fmt.Errorf("error during sync %v, error during GC %v", syncErr, gcErr)
 	}
 
 	return syncErr
