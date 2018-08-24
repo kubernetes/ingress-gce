@@ -18,9 +18,7 @@ package controller
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
-	"strings"
 
 	compute "google.golang.org/api/compute/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
@@ -30,14 +28,6 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 )
-
-func joinErrs(errs []error) error {
-	var errStrs []string
-	for _, e := range errs {
-		errStrs = append(errStrs, e.Error())
-	}
-	return errors.New(strings.Join(errStrs, "; "))
-}
 
 // setInstanceGroupsAnnotation sets the instance-groups annotation with names of the given instance groups.
 func setInstanceGroupsAnnotation(existing map[string]string, igs []*compute.InstanceGroup) error {

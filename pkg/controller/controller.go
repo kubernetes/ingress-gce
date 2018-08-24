@@ -451,7 +451,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
 	syncState := &syncState{urlMap, ing}
 	if errs != nil {
-		return fmt.Errorf("error while evaluating the ingress spec: %v", joinErrs(errs))
+		return fmt.Errorf("error while evaluating the ingress spec: %v", utils.JoinErrs(errs))
 	}
 
 	// Sync GCP resources.
