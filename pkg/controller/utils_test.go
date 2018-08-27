@@ -351,8 +351,17 @@ func TestGetNodePortsUsedByIngress(t *testing.T) {
 
 	for _, tc := range testCases {
 		res := nodePorts(tc.svcPorts)
-		if !reflect.DeepEqual(res, tc.expectPorts) {
-			t.Errorf("For case %q, expect %v, but got %v", tc.desc, tc.expectPorts, res)
+		for _, p := range res {
+			found := false
+			for _, ep := range tc.expectPorts {
+				if reflect.DeepEqual(ep, p) {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("For case %q, expect %v, but got %v", tc.desc, tc.expectPorts, res)
+				break
+			}
 		}
 	}
 
