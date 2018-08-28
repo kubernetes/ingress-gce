@@ -226,13 +226,17 @@ func (c *Controller) processService(key string) error {
 	}
 
 	var service *apiv1.Service
-	var enabled bool
+	var foundNEGAnnotation bool
+	var negAnnotation *annotations.NegAnnotation
 	if exists {
 		service = svc.(*apiv1.Service)
-		enabled = annotations.FromService(service).NEGEnabled()
+		foundNEGAnnotation, negAnnotation, err = annotations.FromService(service).NEGAnnotation()
+		if err != nil {
+			return err
+		}
 	}
 
-	if !enabled {
+	if !foundNEGAnnotation || !negAnnotation.NEGEnabled() {
 		c.manager.StopSyncer(namespace, name)
 		// delete the annotation
 		return c.syncNegStatusAnnotation(namespace, name, make(negtypes.PortNameMap))
@@ -242,24 +246,19 @@ func (c *Controller) processService(key string) error {
 	// map of ServicePort (int) to TargetPort
 	svcPortMap := make(negtypes.PortNameMap)
 
-	if annotations.FromService(service).NEGEnabledForIngress() {
+	if negAnnotation.NEGEnabledForIngress() {
 		// Only service ports referenced by ingress are synced for NEG
 		ings := getIngressServicesFromStore(c.ingressLister, service)
 		svcPortMap = gatherPortMappingUsedByIngress(ings, service)
 	}
 
-	if annotations.FromService(service).NEGExposed() {
+	if negAnnotation.NEGExposed() {
 		knownPorts := make(negtypes.PortNameMap)
 		for _, sp := range service.Spec.Ports {
 			knownPorts[sp.Port] = sp.TargetPort.String()
 		}
 
-		annotation, err := annotations.FromService(service).NegAnnotation()
-		if err != nil {
-			return err
-		}
-
-		negSvcPorts, err := NEGServicePorts(annotation, knownPorts)
+		negSvcPorts, err := NEGServicePorts(negAnnotation, knownPorts)
 		if err != nil {
 			return err
 		}
