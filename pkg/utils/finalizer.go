@@ -14,11 +14,7 @@ limitations under the License.
 package utils
 
 import (
-	"encoding/json"
-	"fmt"
-
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/kubernetes/pkg/util/slice"
 )
 
@@ -38,25 +34,4 @@ func NeedToAddFinalizer(m meta_v1.ObjectMeta, key string) bool {
 
 func hasFinalizer(m meta_v1.ObjectMeta, key string) bool {
 	return slice.ContainsString(m.Finalizers, key, nil)
-}
-
-// GetPatchBytes returns a patch which is the difference between the old and new objects.
-// Note: refStruct is a empty struct of the type which the patch is being generated for.
-func GetPatchBytes(old interface{}, cur interface{}, refStruct interface{}) ([]byte, error) {
-	oldBytes, err := json.Marshal(old)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal old object: %v", err)
-	}
-
-	newBytes, err := json.Marshal(cur)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal new object: %v", err)
-	}
-
-	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldBytes, newBytes, refStruct)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create patch: %v", err)
-	}
-
-	return patchBytes, nil
 }
