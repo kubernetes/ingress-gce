@@ -55,10 +55,10 @@ func (p1 PortNameMap) Difference(p2 PortNameMap) PortNameMap {
 // knownPorts represents the known Port:TargetPort attributes of servicePorts
 // that already exist on the service. This function returns an error if
 // any of the parsed ServicePorts from the annotation is not in knownPorts.
-func NEGServicePorts(ann annotations.NegAnnotation, knownPorts PortNameMap) (PortNameMap, error) {
+func NEGServicePorts(ann *annotations.NegAnnotation, knownPorts PortNameMap) (PortNameMap, error) {
 	portSet := make(PortNameMap)
 	var errList []error
-	for port, _ := range ann.ExposedPorts {
+	for port := range ann.ExposedPorts {
 		// TODO: also validate ServicePorts in the exposed NEG annotation via webhook
 		if _, ok := knownPorts[port]; !ok {
 			errList = append(errList, fmt.Errorf("port %v specified in %q doesn't exist in the service", port, annotations.NEGAnnotationKey))

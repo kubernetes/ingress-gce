@@ -80,7 +80,11 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 		return nil, errors.ErrSvcPortNotFound{ServicePortID: id}
 	}
 
-	negEnabled := annotations.FromService(svc).NEGEnabled()
+	var negEnabled bool
+	ok, negAnnotation, err := annotations.FromService(svc).NEGAnnotation()
+	if ok && err == nil {
+		negEnabled = negAnnotation.NEGEnabledForIngress()
+	}
 	if !negEnabled && svc.Spec.Type != api_v1.ServiceTypeNodePort &&
 		svc.Spec.Type != api_v1.ServiceTypeLoadBalancer {
 		// This is a fatal error.

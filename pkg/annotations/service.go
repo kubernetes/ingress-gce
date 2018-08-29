@@ -92,6 +92,22 @@ type NegAttributes struct {
 	Name string `json:"name,omitempty"`
 }
 
+// NEGEnabledForIngress returns true if the annotation is to be applied on
+// Ingress-referenced ports
+func (n *NegAnnotation) NEGEnabledForIngress() bool {
+	return n.Ingress
+}
+
+// NEGExposed is true if the service exposes NEGs
+func (n *NegAnnotation) NEGExposed() bool {
+	return len(n.ExposedPorts) > 0
+}
+
+// NEGExposed is true if the service uses NEG
+func (n *NegAnnotation) NEGEnabled() bool {
+	return n.NEGEnabledForIngress() || n.NEGExposed()
+}
+
 // AppProtocol describes the service protocol.
 type AppProtocol string
 
@@ -138,59 +154,28 @@ func (svc *Service) ApplicationProtocols() (map[string]AppProtocol, error) {
 	return portToProtos, err
 }
 
-// NEGEnabledForIngress returns true if the annotation is to be applied on
-// Ingress-referenced ports
-func (svc *Service) NEGEnabledForIngress() bool {
-	annotation, err := svc.NegAnnotation()
-	if err != nil {
-		return false
-	}
-	return annotation.Ingress
-}
-
 var (
 	ErrBackendConfigNoneFound         = errors.New("no BackendConfig's found in annotation")
 	ErrBackendConfigInvalidJSON       = errors.New("BackendConfig annotation is invalid json")
 	ErrBackendConfigAnnotationMissing = errors.New("BackendConfig annotation is missing")
+	ErrNEGAnnotationInvalid           = errors.New("NEG annotation is invalid.")
 )
 
-// NEGExposed is true if the service exposes NEGs
-func (svc *Service) NEGExposed() bool {
-	if !flags.F.Features.NEGExposed {
-		return false
-	}
-
-	annotation, err := svc.NegAnnotation()
-	if err != nil {
-		return false
-	}
-	return len(annotation.ExposedPorts) > 0
-}
-
-var (
-	ErrExposeNegAnnotationMissing = errors.New("No NEG ServicePorts specified")
-	ErrExposeNegAnnotationInvalid = errors.New("Expose NEG annotation is invalid")
-)
-
-// NegAnnotation returns the value of the  NEG annotation key
-func (svc *Service) NegAnnotation() (NegAnnotation, error) {
+// NEGAnnotation returns true if NEG annotation is found.
+// If found, it also returns NEG annotation struct.
+func (svc *Service) NEGAnnotation() (bool, *NegAnnotation, error) {
 	var res NegAnnotation
 	annotation, ok := svc.v[NEGAnnotationKey]
 	if !ok {
-		return res, ErrExposeNegAnnotationMissing
+		return false, nil, nil
 	}
 
 	// TODO: add link to Expose NEG documentation when complete
 	if err := json.Unmarshal([]byte(annotation), &res); err != nil {
-		return res, ErrExposeNegAnnotationInvalid
+		return true, nil, ErrNEGAnnotationInvalid
 	}
 
-	return res, nil
-}
-
-// NEGEnabled is true if the service uses NEGs.
-func (svc *Service) NEGEnabled() bool {
-	return svc.NEGEnabledForIngress() || svc.NEGExposed()
+	return true, &res, nil
 }
 
 type BackendConfigs struct {
