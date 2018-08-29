@@ -49,33 +49,3 @@ func TestStrategicMergePatchBytes(t *testing.T) {
 		t.Errorf("StrategicMergePatchBytes(%+v, %+v) = %s ; want %s", ing, updated, string(b), expected)
 	}
 }
-
-func TestJSONMergePatchBytes(t *testing.T) {
-	// Patch an Ingress w/ a finalizer
-	ing := &extensions.Ingress{}
-	updated := &extensions.Ingress{
-		ObjectMeta: metav1.ObjectMeta{
-			Finalizers: []string{"foo"},
-		},
-	}
-	b, err := JSONMergePatchBytes(ing, updated)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected := `{"metadata":{"creationTimestamp":null,"finalizers":["foo"]}}`
-	if string(b) != expected {
-		t.Errorf("JSONMergePatchBytes(%+v, %+v) = %s ; want %s", ing, updated, string(b), expected)
-	}
-
-	// Patch an Ingress with the finalizer removed
-	ing = updated
-	updated = &extensions.Ingress{}
-	b, err = JSONMergePatchBytes(ing, updated)
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected = `{"metadata":{"creationTimestamp":null}}`
-	if string(b) != expected {
-		t.Errorf("JSONMergePatchBytes(%+v, %+v) = %s ; want %s", ing, updated, string(b), expected)
-	}
-}
