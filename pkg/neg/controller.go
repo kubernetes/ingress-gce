@@ -421,11 +421,19 @@ func gatherIngressServiceKeys(obj interface{}) sets.String {
 		return set
 	}
 
+	if !utils.IsGCEIngress(ing) && !utils.IsGCEMultiClusterIngress(ing) {
+		glog.V(4).Infof("Ignoring ingress %v/%v based on annotation %v", ing.Namespace, ing.Name, annotations.IngressClassKey)
+		return set
+	}
+
 	if ing.Spec.Backend != nil {
 		set.Insert(serviceKeyFunc(ing.Namespace, ing.Spec.Backend.ServiceName))
 	}
 
 	for _, rule := range ing.Spec.Rules {
+		if rule.IngressRuleValue.HTTP == nil {
+			continue
+		}
 		for _, path := range rule.IngressRuleValue.HTTP.Paths {
 			set.Insert(serviceKeyFunc(ing.Namespace, path.Backend.ServiceName))
 		}
