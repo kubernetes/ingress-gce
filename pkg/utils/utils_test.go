@@ -19,7 +19,9 @@ package utils
 import (
 	"testing"
 
+	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 func TestTrimFieldsEvenly(t *testing.T) {
@@ -274,4 +276,182 @@ func TestEqualResourceIDs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestTraverseIngressBackends(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc           string
+		ing            *extensions.Ingress
+		expectBackends []extensions.IngressBackend
+	}{
+		{
+			"empty spec",
+			&extensions.Ingress{},
+			[]extensions.IngressBackend{},
+		},
+		{
+			"one default backend",
+			&extensions.Ingress{
+				Spec: extensions.IngressSpec{
+					Backend: &extensions.IngressBackend{
+						ServiceName: "dummy-service",
+						ServicePort: intstr.FromInt(80),
+					},
+					Rules: []extensions.IngressRule{},
+				},
+			},
+			[]extensions.IngressBackend{
+				{
+					ServiceName: "dummy-service",
+					ServicePort: intstr.FromInt(80),
+				},
+			},
+		},
+		{
+			"one backend in path",
+			&extensions.Ingress{
+				Spec: extensions.IngressSpec{
+					Rules: []extensions.IngressRule{
+						{
+							Host: "foo.bar",
+							IngressRuleValue: extensions.IngressRuleValue{
+								HTTP: &extensions.HTTPIngressRuleValue{
+									Paths: []extensions.HTTPIngressPath{
+										{
+											Path: "/foo",
+											Backend: extensions.IngressBackend{
+												ServiceName: "foo-service",
+												ServicePort: intstr.FromInt(80),
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			[]extensions.IngressBackend{
+				{
+					ServiceName: "foo-service",
+					ServicePort: intstr.FromInt(80),
+				},
+			},
+		},
+		{
+			"one rule with only host",
+			&extensions.Ingress{
+				Spec: extensions.IngressSpec{
+					Rules: []extensions.IngressRule{
+						{
+							Host: "foo.bar",
+						},
+					},
+				},
+			},
+			[]extensions.IngressBackend{},
+		},
+		{
+			"complex ingress spec",
+			&extensions.Ingress{
+				Spec: extensions.IngressSpec{
+					Backend: &extensions.IngressBackend{
+						ServiceName: "backend-service",
+						ServicePort: intstr.FromInt(81),
+					},
+					Rules: []extensions.IngressRule{
+						{
+							Host: "foo.bar",
+							IngressRuleValue: extensions.IngressRuleValue{
+								HTTP: &extensions.HTTPIngressRuleValue{
+									Paths: []extensions.HTTPIngressPath{
+										{
+											Path: "/foo",
+											Backend: extensions.IngressBackend{
+												ServiceName: "foo-service",
+												ServicePort: intstr.FromInt(82),
+											},
+										},
+										{
+											Path: "/bar",
+											Backend: extensions.IngressBackend{
+												ServiceName: "bar-service",
+												ServicePort: intstr.FromInt(83),
+											},
+										},
+									},
+								},
+							},
+						},
+						{
+							IngressRuleValue: extensions.IngressRuleValue{
+								HTTP: &extensions.HTTPIngressRuleValue{
+									Paths: []extensions.HTTPIngressPath{
+										{
+											Path: "/a",
+											Backend: extensions.IngressBackend{
+												ServiceName: "a-service",
+												ServicePort: intstr.FromInt(84),
+											},
+										},
+										{
+											Path: "/b",
+											Backend: extensions.IngressBackend{
+												ServiceName: "b-service",
+												ServicePort: intstr.FromInt(85),
+											},
+										},
+									},
+								},
+							},
+						},
+						{
+							Host: "a.b.c",
+						},
+						{
+							Host: "e.f.g",
+						},
+					},
+				},
+			},
+			[]extensions.IngressBackend{
+				{
+					ServiceName: "backend-service",
+					ServicePort: intstr.FromInt(81),
+				},
+				{
+					ServiceName: "foo-service",
+					ServicePort: intstr.FromInt(82),
+				},
+				{
+					ServiceName: "bar-service",
+					ServicePort: intstr.FromInt(83),
+				},
+				{
+					ServiceName: "a-service",
+					ServicePort: intstr.FromInt(84),
+				},
+				{
+					ServiceName: "b-service",
+					ServicePort: intstr.FromInt(85),
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		counter := 0
+		TraverseIngressBackends(tc.ing, func(id ServicePortID) bool {
+			if tc.expectBackends[counter].ServiceName != id.Service.Name || tc.expectBackends[counter].ServicePort != id.Port {
+				t.Errorf("Test case %q, for backend %v, expecting service name %q and service port %q, but got %q, %q", tc.desc, counter, tc.expectBackends[counter].ServiceName, tc.expectBackends[counter].ServicePort.String(), id.Service.Name, id.Port.String())
+			}
+			counter += 1
+			return false
+		})
+	}
+}
+
+func getTestIngress() {
+	return
 }
