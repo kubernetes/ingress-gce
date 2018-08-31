@@ -99,7 +99,7 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 	if err := composite.CreateBackendService(be, b.cloud); err != nil {
 		return nil, err
 	}
-	b.snapshotter.Add(name, be)
+	b.snapshotter.Add(name, true)
 	// Note: We need to perform a GCE call to re-fetch the object we just created
 	// so that the "Fingerprint" field is filled in. This is needed to update the
 	// object without error.
@@ -113,7 +113,7 @@ func (b *Backends) Update(be *composite.BackendService) error {
 	if err := composite.UpdateBackendService(be, b.cloud); err != nil {
 		return err
 	}
-	b.snapshotter.Add(be.Name, be)
+	b.snapshotter.Add(be.Name, true)
 	return nil
 }
 
@@ -133,7 +133,7 @@ func (b *Backends) Get(name string, version meta.Version) (*composite.BackendSer
 			return nil, err
 		}
 	}
-	b.snapshotter.Add(name, be)
+	b.snapshotter.Add(name, true)
 	return be, nil
 }
 
@@ -193,8 +193,8 @@ func (b *Backends) List() ([]interface{}, error) {
 		return nil, err
 	}
 	var ret []interface{}
-	for _, x := range backends {
-		ret = append(ret, x)
+	for _, _ = range backends {
+		ret = append(ret, true)
 	}
 	return ret, nil
 }
