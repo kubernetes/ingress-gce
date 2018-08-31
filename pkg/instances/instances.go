@@ -71,7 +71,7 @@ func (i *Instances) EnsureInstanceGroupsAndPorts(name string, ports []int64) (ig
 		return nil, err
 	}
 
-	defer i.snapshotter.Add(name, struct{}{})
+	defer i.snapshotter.Add(name, true)
 	for _, zone := range zones {
 		ig, err := i.ensureInstanceGroupAndPorts(name, zone, ports)
 		if err != nil {
@@ -200,7 +200,7 @@ func (i *Instances) Get(name, zone string) (*compute.InstanceGroup, error) {
 	if err != nil {
 		return nil, err
 	}
-	i.snapshotter.Add(name, struct{}{})
+	i.snapshotter.Add(name, true)
 	return ig, nil
 }
 
