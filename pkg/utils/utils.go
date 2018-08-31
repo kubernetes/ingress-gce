@@ -26,7 +26,7 @@ import (
 
 	"github.com/golang/glog"
 
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
@@ -278,6 +278,11 @@ func IsGCEMultiClusterIngress(ing *extensions.Ingress) bool {
 	return class == annotations.GceMultiIngressClass
 }
 
+// IsGLBCIngress returns true if the given Ingress should be processed by GLBC
+func IsGLBCIngress(ing *extensions.Ingress) bool {
+	return IsGCEIngress(ing) || IsGCEMultiClusterIngress(ing)
+}
+
 // StoreToIngressLister makes a Store that lists Ingress.
 type StoreToIngressLister struct {
 	cache.Store
@@ -308,7 +313,6 @@ func (s *StoreToIngressLister) ListGCEIngresses() (ing extensions.IngressList, e
 // GetServiceIngress gets all the Ingress' that have rules pointing to a service.
 // Note that this ignores services without the right nodePorts.
 func (s *StoreToIngressLister) GetServiceIngress(svc *api_v1.Service, systemDefaultBackend ServicePortID) (ings []extensions.Ingress, err error) {
-IngressLoop:
 	for _, m := range s.Store.List() {
 		ing := *m.(*extensions.Ingress)
 
@@ -322,25 +326,13 @@ IngressLoop:
 			continue
 		}
 
-		// Check service of default backend
-		if ing.Spec.Backend != nil && ing.Spec.Backend.ServiceName == svc.Name {
-			ings = append(ings, ing)
-			continue
-		}
-
-		// Check the target service for each path rule
-		for _, rule := range ing.Spec.Rules {
-			if rule.IngressRuleValue.HTTP == nil {
-				continue
+		TraverseIngressBackends(&ing, func(id ServicePortID) bool {
+			if id.Service.Name == svc.Name {
+				ings = append(ings, ing)
+				return true
 			}
-			for _, p := range rule.IngressRuleValue.HTTP.Paths {
-				if p.Backend.ServiceName == svc.Name {
-					ings = append(ings, ing)
-					// Skip the rest of the rules to avoid duplicate ingresses in list
-					continue IngressLoop
-				}
-			}
-		}
+			return false
+		})
 	}
 	if len(ings) == 0 {
 		err = fmt.Errorf("no ingress for service %v", svc.Name)
@@ -411,4 +403,38 @@ func JoinErrs(errs []error) error {
 		errStrs = append(errStrs, e.Error())
 	}
 	return errors.New(strings.Join(errStrs, "; "))
+}
+
+func IngressKeyFunc(ing *extensions.Ingress) string {
+	if ing == nil {
+		return ""
+	}
+	return types.NamespacedName{Namespace: ing.Namespace, Name: ing.Name}.String()
+}
+
+// TraverseIngressBackends traverse thru all backends specified in the input ingress and call process
+// If process return true, then return and stop traversing the backends
+func TraverseIngressBackends(ing *extensions.Ingress, process func(id ServicePortID) bool) {
+	if ing == nil {
+		return
+	}
+	// Check service of default backend
+	if ing.Spec.Backend != nil {
+		if process(ServicePortID{Service: types.NamespacedName{Namespace: ing.Namespace, Name: ing.Spec.Backend.ServiceName}, Port: ing.Spec.Backend.ServicePort}) {
+			return
+		}
+	}
+
+	// Check the target service for each path rule
+	for _, rule := range ing.Spec.Rules {
+		if rule.IngressRuleValue.HTTP == nil {
+			continue
+		}
+		for _, p := range rule.IngressRuleValue.HTTP.Paths {
+			if process(ServicePortID{Service: types.NamespacedName{Namespace: ing.Namespace, Name: p.Backend.ServiceName}, Port: p.Backend.ServicePort}) {
+				return
+			}
+		}
+	}
+	return
 }
