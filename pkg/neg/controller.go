@@ -19,7 +19,6 @@ package neg
 import (
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"strconv"
 	"time"
 
@@ -104,23 +103,43 @@ func NewController(
 		syncTracker:    utils.NewTimeTracker(),
 	}
 
+	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			addIng := obj.(*extensions.Ingress)
+			if !utils.IsGLBCIngress(addIng) {
+				glog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", utils.IngressKeyFunc(addIng), annotations.IngressClassKey)
+				return
+			}
+			negController.enqueueIngressServices(addIng)
+		},
+		DeleteFunc: func(obj interface{}) {
+			delIng := obj.(*extensions.Ingress)
+			if !utils.IsGLBCIngress(delIng) {
+				glog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", utils.IngressKeyFunc(delIng), annotations.IngressClassKey)
+				return
+			}
+			negController.enqueueIngressServices(delIng)
+		},
+		UpdateFunc: func(old, cur interface{}) {
+			oldIng := cur.(*extensions.Ingress)
+			curIng := cur.(*extensions.Ingress)
+			if !utils.IsGLBCIngress(curIng) {
+				glog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", utils.IngressKeyFunc(curIng), annotations.IngressClassKey)
+				return
+			}
+			keys := gatherIngressServiceKeys(oldIng)
+			keys = keys.Union(gatherIngressServiceKeys(curIng))
+			for _, key := range keys.List() {
+				negController.enqueueService(cache.ExplicitKey(key))
+			}
+		},
+	})
+
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    negController.enqueueService,
 		DeleteFunc: negController.enqueueService,
 		UpdateFunc: func(old, cur interface{}) {
 			negController.enqueueService(cur)
-		},
-	})
-
-	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    negController.enqueueIngressServices,
-		DeleteFunc: negController.enqueueIngressServices,
-		UpdateFunc: func(old, cur interface{}) {
-			keys := gatherIngressServiceKeys(old)
-			keys = keys.Union(gatherIngressServiceKeys(cur))
-			for _, key := range keys.List() {
-				negController.enqueueService(cache.ExplicitKey(key))
-			}
 		},
 	})
 
@@ -343,8 +362,8 @@ func (c *Controller) enqueueService(obj interface{}) {
 	c.serviceQueue.Add(key)
 }
 
-func (c *Controller) enqueueIngressServices(obj interface{}) {
-	keys := gatherIngressServiceKeys(obj)
+func (c *Controller) enqueueIngressServices(ing *extensions.Ingress) {
+	keys := gatherIngressServiceKeys(ing)
 	for key := range keys {
 		c.enqueueService(cache.ExplicitKey(key))
 	}
@@ -368,17 +387,13 @@ func gatherPortMappingUsedByIngress(ings []extensions.Ingress, svc *apiv1.Servic
 	servicePorts := sets.NewString()
 	ingressSvcPorts := make(negtypes.PortNameMap)
 	for _, ing := range ings {
-		if ing.Spec.Backend != nil && ing.Spec.Backend.ServiceName == svc.Name {
-			servicePorts.Insert(ing.Spec.Backend.ServicePort.String())
-		}
-	}
-	for _, ing := range ings {
-		for _, rule := range ing.Spec.Rules {
-			for _, path := range rule.IngressRuleValue.HTTP.Paths {
-				if path.Backend.ServiceName == svc.Name {
-					servicePorts.Insert(path.Backend.ServicePort.String())
+		if utils.IsGLBCIngress(&ing) {
+			utils.TraverseIngressBackends(&ing, func(id utils.ServicePortID) bool {
+				if id.Service.Name == svc.Name {
+					servicePorts.Insert(id.Port.String())
 				}
-			}
+				return false
+			})
 		}
 	}
 
@@ -409,31 +424,15 @@ func gatherPortMappingUsedByIngress(ings []extensions.Ingress, svc *apiv1.Servic
 }
 
 // gatherIngressServiceKeys returns all service key (formatted as namespace/name) referenced in the ingress
-func gatherIngressServiceKeys(obj interface{}) sets.String {
+func gatherIngressServiceKeys(ing *extensions.Ingress) sets.String {
 	set := sets.NewString()
-	ing, ok := obj.(*extensions.Ingress)
-	if !ok {
-		glog.Errorf("Expecting ingress type but got: %T", reflect.TypeOf(ing))
+	if ing == nil {
 		return set
 	}
-
-	if !utils.IsGCEIngress(ing) && !utils.IsGCEMultiClusterIngress(ing) {
-		glog.V(4).Infof("Ignoring ingress %v/%v based on annotation %v", ing.Namespace, ing.Name, annotations.IngressClassKey)
-		return set
-	}
-
-	if ing.Spec.Backend != nil {
-		set.Insert(serviceKeyFunc(ing.Namespace, ing.Spec.Backend.ServiceName))
-	}
-
-	for _, rule := range ing.Spec.Rules {
-		if rule.IngressRuleValue.HTTP == nil {
-			continue
-		}
-		for _, path := range rule.IngressRuleValue.HTTP.Paths {
-			set.Insert(serviceKeyFunc(ing.Namespace, path.Backend.ServiceName))
-		}
-	}
+	utils.TraverseIngressBackends(ing, func(id utils.ServicePortID) bool {
+		set.Insert(serviceKeyFunc(id.Service.Namespace, id.Service.Name))
+		return false
+	})
 	return set
 }
 
@@ -442,33 +441,22 @@ func serviceKeyFunc(namespace, name string) string {
 }
 
 func getIngressServicesFromStore(store cache.Store, svc *apiv1.Service) (ings []extensions.Ingress) {
-IngressLoop:
 	for _, m := range store.List() {
 		ing := *m.(*extensions.Ingress)
 		if ing.Namespace != svc.Namespace {
 			continue
 		}
 
-		// Check service of default backend
-		if ing.Spec.Backend != nil && ing.Spec.Backend.ServiceName == svc.Name {
-			ings = append(ings, ing)
-			continue
+		if utils.IsGLBCIngress(&ing) {
+			utils.TraverseIngressBackends(&ing, func(id utils.ServicePortID) bool {
+				if id.Service.Name == svc.Name {
+					ings = append(ings, ing)
+					return true
+				}
+				return false
+			})
 		}
 
-		// Check the target service for each path rule
-		for _, rule := range ing.Spec.Rules {
-			if rule.IngressRuleValue.HTTP == nil {
-				continue
-			}
-			for _, p := range rule.IngressRuleValue.HTTP.Paths {
-				if p.Backend.ServiceName == svc.Name {
-					ings = append(ings, ing)
-					// Skip the rest of the rules to avoid duplicate ingresses in list.
-					// Check next ingress
-					continue IngressLoop
-				}
-			}
-		}
 	}
 	return
 }
