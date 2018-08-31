@@ -167,9 +167,8 @@ func (manager *syncerManager) ShutDown() {
 func (manager *syncerManager) GC() error {
 	glog.V(2).Infof("Start NEG garbage collection.")
 	defer glog.V(2).Infof("NEG garbage collection finished.")
-	for _, key := range manager.getAllStoppedSyncerKeys() {
-		manager.garbageCollectSyncer(key)
-	}
+	// Garbage collect Syncers
+	manager.garbageCollectSyncer()
 
 	// Garbage collect NEGs
 	if err := manager.garbageCollectNEG(); err != nil {
@@ -178,24 +177,15 @@ func (manager *syncerManager) GC() error {
 	return nil
 }
 
-func (manager *syncerManager) garbageCollectSyncer(key servicePort) {
+// garbageCollectSyncer removes stopped syncer from syncerMap
+func (manager *syncerManager) garbageCollectSyncer() {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
-	if manager.syncerMap[key].IsStopped() && !manager.syncerMap[key].IsShuttingDown() {
-		delete(manager.syncerMap, key)
-	}
-}
-
-func (manager *syncerManager) getAllStoppedSyncerKeys() []servicePort {
-	manager.mu.Lock()
-	defer manager.mu.Unlock()
-	ret := []servicePort{}
 	for key, syncer := range manager.syncerMap {
-		if syncer.IsStopped() {
-			ret = append(ret, key)
+		if syncer.IsStopped() && !syncer.IsShuttingDown() {
+			delete(manager.syncerMap, key)
 		}
 	}
-	return ret
 }
 
 func (manager *syncerManager) garbageCollectNEG() error {
@@ -219,7 +209,7 @@ func (manager *syncerManager) garbageCollectNEG() error {
 		manager.mu.Lock()
 		defer manager.mu.Unlock()
 		for key, ports := range manager.svcPortMap {
-			for sp, _ := range ports {
+			for sp := range ports {
 				name := manager.namer.NEG(key.namespace, key.name, sp)
 				negNames.Delete(name)
 			}

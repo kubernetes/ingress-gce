@@ -40,6 +40,11 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+const (
+	// gcPeriod is the interval between NEG garbage collection workflows
+	gcPeriod = 2 * time.Minute
+)
+
 func init() {
 	// register prometheus metrics
 	registerMetrics()
@@ -167,7 +172,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 	}()
 
 	go wait.Until(c.serviceWorker, time.Second, stopCh)
-	go wait.Until(c.gc, c.resyncPeriod, stopCh)
+	go wait.Until(c.gc, gcPeriod, stopCh)
 
 	<-stopCh
 }
