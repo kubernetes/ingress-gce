@@ -193,8 +193,8 @@ func (b *Backends) List() ([]interface{}, error) {
 		return nil, err
 	}
 	var ret []interface{}
-	for _, _ = range backends {
-		ret = append(ret, true)
+	for _, x := range backends {
+		ret = append(ret, x)
 	}
 	return ret, nil
 }

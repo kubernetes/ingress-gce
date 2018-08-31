@@ -18,9 +18,10 @@ package loadbalancers
 
 import (
 	"fmt"
-	"reflect"
+	"time"
 
 	"github.com/golang/glog"
+	compute "google.golang.org/api/compute/v1"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -43,39 +44,45 @@ func (l *L7s) Namer() *utils.Namer {
 // NewLoadBalancerPool returns a new loadbalancer pool.
 // - cloud: implements LoadBalancers. Used to sync L7 loadbalancer resources
 //	 with the cloud.
-func NewLoadBalancerPool(cloud LoadBalancers, namer *utils.Namer) LoadBalancerPool {
-	return &L7s{cloud, storage.NewInMemoryPool(), namer}
+func NewLoadBalancerPool(cloud LoadBalancers, namer *utils.Namer, resyncWithCloud bool) LoadBalancerPool {
+	l7Pool := &L7s{
+		cloud: cloud,
+		namer: namer,
+	}
+	if !resyncWithCloud {
+		l7Pool.snapshotter = storage.NewInMemoryPool()
+	}
+	keyFunc := func(i interface{}) (string, error) {
+		um := i.(*compute.UrlMap)
+		if !namer.NameBelongsToCluster(um.Name) {
+			return "", fmt.Errorf("unrecognized name %v", um.Name)
+		}
+		// Scrub out the UrlMap prefix of the name to get the base LB name.
+		return namer.ScrubUrlMapPrefix(um.Name), nil
+	}
+	l7Pool.snapshotter = storage.NewCloudListingPool("loadbalancers", keyFunc, l7Pool, 30*time.Second)
+	return l7Pool
 }
 
-// Get returns the loadbalancer by name.
-func (l *L7s) Get(name string) (*L7, error) {
+// Get implements LoadBalancerPool.
+// Note: This is currently only used for testing.
+func (l *L7s) Get(name string) bool {
 	name = l.namer.LoadBalancer(name)
-	lb, exists := l.snapshotter.Get(name)
-	if !exists {
-		return nil, fmt.Errorf("loadbalancer %v not in pool", name)
-	}
-	return lb.(*L7), nil
+	_, exists := l.snapshotter.Get(name)
+	return exists
 }
 
-// Sync a load balancer with the given runtime info from the controller.
-func (l *L7s) Sync(ri *L7RuntimeInfo) error {
+// Sync implements LoadBalancerPool.
+func (l *L7s) Sync(ri *L7RuntimeInfo) (*L7, error) {
 	name := l.namer.LoadBalancer(ri.Name)
-
-	lb, _ := l.Get(name)
-	if lb == nil {
-		glog.V(3).Infof("Creating l7 %v", name)
-		lb = &L7{
-			runtimeInfo: ri,
-			Name:        l.namer.LoadBalancer(ri.Name),
-			cloud:       l.cloud,
-			namer:       l.namer,
-		}
-	} else {
-		if !reflect.DeepEqual(lb.runtimeInfo, ri) {
-			glog.V(3).Infof("LB %v runtime info changed, old %+v new %+v", lb.Name, lb.runtimeInfo, ri)
-			lb.runtimeInfo = ri
-		}
+	glog.V(3).Infof("Sync: LB %s", name)
+	lb := &L7{
+		runtimeInfo: ri,
+		Name:        l.namer.LoadBalancer(ri.Name),
+		cloud:       l.cloud,
+		namer:       l.namer,
 	}
+
 	// Add the lb to the pool, in case we create an UrlMap but run out
 	// of quota in creating the ForwardingRule we still need to cleanup
 	// the UrlMap during GC.
@@ -86,28 +93,24 @@ func (l *L7s) Sync(ri *L7RuntimeInfo) error {
 	// make it exist we need to create a collection of gce resources, done
 	// through the edge hop.
 	if err := lb.edgeHop(); err != nil {
-		return err
+		return lb, err
 	}
 
-	return nil
+	return lb, nil
 }
 
-// Delete deletes a load balancer by name.
+// Delete implements LoadBalancerPool.
 func (l *L7s) Delete(name string) error {
 	name = l.namer.LoadBalancer(name)
-	lb, err := l.Get(name)
-	if err != nil {
-		return err
-	}
 	glog.V(3).Infof("Deleting lb %v", name)
-	if err := lb.Cleanup(); err != nil {
+	if err := Cleanup(name, l.cloud, l.namer); err != nil {
 		return err
 	}
 	l.snapshotter.Delete(name)
 	return nil
 }
 
-// GC garbage collects loadbalancers not in the input list.
+// GC implements LoadBalancerPool.
 func (l *L7s) GC(names []string) error {
 	glog.V(4).Infof("GC(%v)", names)
 
@@ -131,11 +134,24 @@ func (l *L7s) GC(names []string) error {
 	return nil
 }
 
-// Shutdown logs whether or not the pool is empty.
+// Shutdown implemented LoadBalancerPool.
 func (l *L7s) Shutdown() error {
 	if err := l.GC([]string{}); err != nil {
 		return err
 	}
 	glog.V(2).Infof("Loadbalancer pool shutdown.")
 	return nil
+}
+
+// List lists all loadbalancers via listing all URLMap's.
+func (l *L7s) List() ([]interface{}, error) {
+	urlMaps, err := l.cloud.ListUrlMaps()
+	if err != nil {
+		return nil, err
+	}
+	var ret []interface{}
+	for _, x := range urlMaps {
+		ret = append(ret, x)
+	}
+	return ret, nil
 }

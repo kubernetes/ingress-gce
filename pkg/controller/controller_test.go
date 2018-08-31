@@ -64,7 +64,7 @@ func newLoadBalancerController() *LoadBalancerController {
 	lbc := NewLoadBalancerController(ctx, stopCh)
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instances.NewNodePool(instances.NewFakeInstanceGroups(sets.NewString(), namer), namer)
-	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(loadbalancers.NewFakeLoadBalancers(clusterUID, namer), namer)
+	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(loadbalancers.NewFakeLoadBalancers(clusterUID, namer), namer, false)
 	lbc.instancePool.Init(&instances.FakeZoneLister{Zones: []string{"zone-a"}})
 
 	lbc.hasSynced = func() bool { return true }

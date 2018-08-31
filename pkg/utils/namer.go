@@ -363,6 +363,16 @@ func (n *Namer) UrlMap(lbName string) string {
 	return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, urlMapPrefix, lbName))
 }
 
+// ScrubUrlMapPrefix removes the "k8s-um" prefix from the UrlMap name.
+func (n *Namer) ScrubUrlMapPrefix(name string) string {
+	prefix := fmt.Sprintf("%s-%s-", n.prefix, urlMapPrefix)
+	parts := strings.Split(name, prefix)
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[1]
+}
+
 // NamedPort returns the name for a named port.
 func (n *Namer) NamedPort(port int64) string {
 	return fmt.Sprintf("port%v", port)

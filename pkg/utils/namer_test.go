@@ -337,6 +337,33 @@ func TestNamerLoadBalancer(t *testing.T) {
 	}
 }
 
+func TestNamerScrubUrlMapPrefix(t *testing.T) {
+	namer := NewNamer("uid1", "fw1")
+	cases := []struct {
+		urlMapName   string
+		scrubbedName string
+	}{
+		{
+			urlMapName:   "k8s-um-foo",
+			scrubbedName: "foo",
+		},
+		{
+			urlMapName:   "k8s-um-default-foo--clusterid",
+			scrubbedName: "default-foo--clusterid",
+		},
+		{
+			urlMapName: "k8s-default-foo--clusterid",
+		},
+	}
+
+	for _, tc := range cases {
+		res := namer.ScrubUrlMapPrefix(tc.urlMapName)
+		if res != tc.scrubbedName {
+			t.Fatalf("namer.ScrubUrlMapPrefix() = %s, want %s", res, tc.scrubbedName)
+		}
+	}
+}
+
 // Ensure that a valid cert name is created if clusterName is empty.
 func TestNamerSSLCertName(t *testing.T) {
 	secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]

@@ -176,68 +176,59 @@ func (l *L7) GetIP() string {
 	return ""
 }
 
-// Cleanup deletes resources specific to this l7 in the right order.
+// Cleanup deletes resources specific to this l7 in the right order given a base name.
 // forwarding rule -> target proxy -> url map
 // This leaves backends and health checks, which are shared across loadbalancers.
-func (l *L7) Cleanup() error {
-	if l.fw != nil {
-		glog.V(2).Infof("Deleting global forwarding rule %v", l.fw.Name)
-		if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalForwardingRule(l.fw.Name)); err != nil {
-			return err
-		}
-		l.fw = nil
+func Cleanup(name string, cloud LoadBalancers, namer *utils.Namer) error {
+	fwName := namer.ForwardingRule(name, "HTTP")
+	glog.V(2).Infof("Deleting global forwarding rule %v", fwName)
+	if err := utils.IgnoreHTTPNotFound(cloud.DeleteGlobalForwardingRule(fwName)); err != nil {
+		return err
 	}
-	if l.fws != nil {
-		glog.V(2).Infof("Deleting global forwarding rule %v", l.fws.Name)
-		if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalForwardingRule(l.fws.Name)); err != nil {
-			return err
-		}
-		l.fws = nil
+	fwsName := namer.ForwardingRule(name, "HTTPS")
+	glog.V(2).Infof("Deleting global forwarding rule %v", fwsName)
+	if err := utils.IgnoreHTTPNotFound(cloud.DeleteGlobalForwardingRule(fwsName)); err != nil {
+		return err
 	}
-	if l.ip != nil {
-		glog.V(2).Infof("Deleting static IP %v(%v)", l.ip.Name, l.ip.Address)
-		if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalAddress(l.ip.Name)); err != nil {
-			return err
-		}
-		l.ip = nil
-	}
-	if l.tps != nil {
-		glog.V(2).Infof("Deleting target https proxy %v", l.tps.Name)
-		if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHttpsProxy(l.tps.Name)); err != nil {
-			return err
-		}
-		l.tps = nil
-	}
-	// Delete the SSL cert if it is from a secret, not referencing a pre-created GCE cert.
-	if len(l.sslCerts) != 0 && l.runtimeInfo.TLSName == "" {
-		var certErr error
-		for _, cert := range l.sslCerts {
-			glog.V(2).Infof("Deleting sslcert %s", cert.Name)
-			if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteSslCertificate(cert.Name)); err != nil {
-				glog.Errorf("Old cert delete failed - %v", err)
-				certErr = err
-			}
 
-		}
-		l.sslCerts = nil
-		if certErr != nil {
-			return certErr
+	staticIPName := fwName
+	glog.V(2).Infof("Deleting static IP %v", staticIPName)
+	if err := utils.IgnoreHTTPNotFound(cloud.DeleteGlobalAddress(staticIPName)); err != nil {
+		return err
+	}
+
+	tpsName := namer.TargetProxy(name, "HTTPS")
+	glog.V(2).Infof("Deleting target https proxy %v", tpsName)
+	if err := utils.IgnoreHTTPNotFound(cloud.DeleteTargetHttpsProxy(tpsName)); err != nil {
+		return err
+	}
+
+	certs, err := cloud.ListSslCertificates()
+	if err != nil {
+		return err
+	}
+	for _, c := range certs {
+		// Delete the SSL cert if it is from a secret, not referencing a pre-created GCE cert.
+		if namer.IsCertUsedForLB(name, c.Name) {
+			glog.V(2).Infof("Deleting sslcert %s", c.Name)
+			if err := utils.IgnoreHTTPNotFound(cloud.DeleteSslCertificate(c.Name)); err != nil {
+				return err
+			}
 		}
 	}
-	if l.tp != nil {
-		glog.V(2).Infof("Deleting target http proxy %v", l.tp.Name)
-		if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHttpProxy(l.tp.Name)); err != nil {
-			return err
-		}
-		l.tp = nil
+
+	tpName := namer.TargetProxy(name, "HTTP")
+	glog.V(2).Infof("Deleting target http proxy %v", tpName)
+	if err := utils.IgnoreHTTPNotFound(cloud.DeleteTargetHttpProxy(tpName)); err != nil {
+		return err
 	}
-	if l.um != nil {
-		glog.V(2).Infof("Deleting url map %v", l.um.Name)
-		if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteUrlMap(l.um.Name)); err != nil {
-			return err
-		}
-		l.um = nil
+
+	umName := namer.UrlMap(name)
+	glog.V(2).Infof("Deleting url map %v", umName)
+	if err := utils.IgnoreHTTPNotFound(cloud.DeleteUrlMap(umName)); err != nil {
+		return err
 	}
+
 	return nil
 }
 

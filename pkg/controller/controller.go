@@ -109,7 +109,7 @@ func NewLoadBalancerController(
 		hasSynced:     ctx.HasSynced,
 		nodes:         NewNodeController(ctx, instancePool),
 		instancePool:  instancePool,
-		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer),
+		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, true),
 		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.ClusterNamer, ctx.BackendConfigEnabled),
 		negLinker:     backends.NewNEGLinker(backendPool, ctx.Cloud, ctx.ClusterNamer),
 		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool, ctx.ClusterNamer),
@@ -369,9 +369,12 @@ func (lbc *LoadBalancerController) SyncLoadBalancer(state interface{}) error {
 	}
 
 	// Create higher-level LB resources.
-	if err := lbc.l7Pool.Sync(lb); err != nil {
+	l7, err := lbc.l7Pool.Sync(lb)
+	if err != nil {
 		return err
 	}
+	syncState.l7 = l7
+
 	return nil
 }
 
@@ -400,16 +403,12 @@ func (lbc *LoadBalancerController) PostProcess(state interface{}) error {
 
 	// Get the loadbalancer and update the ingress status.
 	ing := syncState.ing
-	k, err := utils.KeyFunc(ing)
-	if err != nil {
-		return fmt.Errorf("cannot get key for Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
+
+	if syncState.l7 == nil {
+		return fmt.Errorf("sync state does not contain L7 spec")
 	}
 
-	l7, err := lbc.l7Pool.Get(k)
-	if err != nil {
-		return fmt.Errorf("unable to get loadbalancer: %v", err)
-	}
-	if err := lbc.updateIngressStatus(l7, ing); err != nil {
+	if err := lbc.updateIngressStatus(syncState.l7, ing); err != nil {
 		return fmt.Errorf("update ingress status error: %v", err)
 	}
 	return nil
@@ -449,7 +448,10 @@ func (lbc *LoadBalancerController) sync(key string) error {
 
 	// Bootstrap state for GCP sync.
 	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
-	syncState := &syncState{urlMap, ing}
+	syncState := &syncState{
+		urlMap: urlMap,
+		ing:    ing,
+	}
 	if errs != nil {
 		return fmt.Errorf("error while evaluating the ingress spec: %v", utils.JoinErrs(errs))
 	}
