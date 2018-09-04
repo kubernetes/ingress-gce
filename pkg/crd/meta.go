@@ -28,20 +28,22 @@ type CRDMeta struct {
 	listKind   string
 	singular   string
 	plural     string
+	shortNames []string
 	typeSource string
 	fn         common.GetOpenAPIDefinitions
 }
 
 // NewCRDMeta creates a CRDMeta type which can be passed to a CRDHandler in
 // order to create/ensure a CRD.
-func NewCRDMeta(groupName, version, kind, listKind, singular, plural string) *CRDMeta {
+func NewCRDMeta(groupName, version, kind, listKind, singular, plural string, shortNames ...string) *CRDMeta {
 	return &CRDMeta{
-		groupName: groupName,
-		version:   version,
-		kind:      kind,
-		listKind:  listKind,
-		singular:  singular,
-		plural:    plural,
+		groupName:  groupName,
+		version:    version,
+		kind:       kind,
+		listKind:   listKind,
+		singular:   singular,
+		plural:     plural,
+		shortNames: shortNames,
 	}
 }
 

@@ -102,10 +102,11 @@ func crd(meta *CRDMeta) *apiextensionsv1beta1.CustomResourceDefinition {
 			Version: meta.version,
 			Scope:   apiextensionsv1beta1.NamespaceScoped,
 			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
-				Kind:     meta.kind,
-				ListKind: meta.listKind,
-				Plural:   meta.plural,
-				Singular: meta.singular,
+				Kind:       meta.kind,
+				ListKind:   meta.listKind,
+				Plural:     meta.plural,
+				Singular:   meta.singular,
+				ShortNames: meta.shortNames,
 			},
 		},
 	}
