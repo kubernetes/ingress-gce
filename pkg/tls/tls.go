@@ -58,11 +58,6 @@ func (t *TLSCertsFromSecretsLoader) Load(ing *extensions.Ingress) ([]*loadbalanc
 	}
 	var certs []*loadbalancers.TLSCerts
 
-	if len(ing.Spec.TLS) > loadbalancers.TargetProxyCertLimit {
-		glog.Warningf("Specified %d tls secrets, limit is %d, rest will be ignored",
-			len(ing.Spec.TLS), loadbalancers.TargetProxyCertLimit)
-	}
-
 	for _, tlsSecret := range ing.Spec.TLS {
 		// TODO: Replace this for a secret watcher.
 		glog.V(3).Infof("Retrieving secret for ing %v with name %v", ing.Name, tlsSecret.SecretName)
@@ -84,9 +79,6 @@ func (t *TLSCertsFromSecretsLoader) Load(ing *extensions.Ingress) ([]*loadbalanc
 			return nil, err
 		}
 		certs = append(certs, newCert)
-		if len(certs) == loadbalancers.TargetProxyCertLimit {
-			break
-		}
 	}
 	return certs, nil
 }
