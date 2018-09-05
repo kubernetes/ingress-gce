@@ -60,6 +60,7 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		NewFakeZoneGetter(),
 		namer,
 		1*time.Second,
+		1*time.Second,
 	)
 	return controller
 }

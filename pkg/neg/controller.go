@@ -40,11 +40,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-const (
-	// gcPeriod is the interval between NEG garbage collection workflows
-	gcPeriod = 2 * time.Minute
-)
-
 func init() {
 	// register prometheus metrics
 	registerMetrics()
@@ -55,6 +50,7 @@ func init() {
 type Controller struct {
 	manager      negSyncerManager
 	resyncPeriod time.Duration
+	gcPeriod     time.Duration
 	recorder     record.EventRecorder
 	namer        networkEndpointGroupNamer
 	zoneGetter   zoneGetter
@@ -79,7 +75,8 @@ func NewController(
 	ctx *context.ControllerContext,
 	zoneGetter zoneGetter,
 	namer networkEndpointGroupNamer,
-	resyncPeriod time.Duration) *Controller {
+	resyncPeriod time.Duration,
+	gcPeriod time.Duration) *Controller {
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
 	eventBroadcaster := record.NewBroadcaster()
@@ -96,6 +93,7 @@ func NewController(
 		client:         ctx.KubeClient,
 		manager:        manager,
 		resyncPeriod:   resyncPeriod,
+		gcPeriod:       gcPeriod,
 		recorder:       recorder,
 		zoneGetter:     zoneGetter,
 		namer:          namer,
@@ -172,7 +170,12 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 	}()
 
 	go wait.Until(c.serviceWorker, time.Second, stopCh)
-	go wait.Until(c.gc, gcPeriod, stopCh)
+	go func() {
+		// Wait for gcPeriod to run the first GC
+		// This is to make sure that all services are fully processed before running GC.
+		time.Sleep(c.gcPeriod)
+		wait.Until(c.gc, c.gcPeriod, stopCh)
+	}()
 
 	<-stopCh
 }
