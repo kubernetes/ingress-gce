@@ -27,6 +27,7 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -526,7 +527,14 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress, urlMap
 	if annotations.UseNamedTLS() == "" {
 		tls, err = lbc.tlsLoader.Load(ing)
 		if err != nil {
-			return nil, fmt.Errorf("cannot get certs for Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
+			if apierrors.IsNotFound(err) {
+				// TODO: this path should be removed when external certificate managers migrate to a better solution.
+				const msg = "Could not find TLS certificates. Continuing setup for the load balancer to serve HTTP. Note: this behavior is deprecated and will be removed in a future version of ingress-gce"
+				lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", msg)
+			} else {
+				glog.Errorf("Could not get certificates for ingress %s/%s: %v", ing.Namespace, ing.Name, err)
+				return nil, err
+			}
 		}
 	}
 
