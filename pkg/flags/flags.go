@@ -81,6 +81,7 @@ var (
 		WatchNamespace            string
 		NodePortRanges            PortRanges
 		EnableBackendConfig       bool
+		NegGCPeriod               time.Duration
 
 		LeaderElection LeaderElectionConfiguration
 	}{}
@@ -215,6 +216,8 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 		`This flag is deprecated. Use -v to control verbosity.`)
 	flag.Bool("use-real-cloud", false,
 		`This flag has been deprecated and no longer has any effect.`)
+	flag.DurationVar(&F.NegGCPeriod, "neg-gc-period", 120*time.Second,
+		`Relist and garbage collect NEGs this often.`)
 }
 
 type RateLimitSpecs struct {
