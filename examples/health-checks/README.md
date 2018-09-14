@@ -10,13 +10,11 @@ You have exposed your service on an external port on all nodes in your
 cluster.  If you want to expose this service to the external internet, you may
 need to set up firewall rules for the service port(s) (tcp:31165) to serve traffic.
 
-See http://releases.k8s.io/HEAD/docs/user-guide/services-firewalls.md for more details.
 service "echoheadersx" created
 You have exposed your service on an external port on all nodes in your
 cluster.  If you want to expose this service to the external internet, you may
 need to set up firewall rules for the service port(s) (tcp:31020) to serve traffic.
 
-See http://releases.k8s.io/HEAD/docs/user-guide/services-firewalls.md for more details.
 service "echoheadersy" created
 ingress "echomap" created
 ```
