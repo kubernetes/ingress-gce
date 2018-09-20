@@ -25,7 +25,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/ingress-gce/pkg/neg/types"
+	negsyncer "k8s.io/ingress-gce/pkg/neg/syncer"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 )
 
 type serviceKey struct {
@@ -35,10 +36,10 @@ type serviceKey struct {
 
 // syncerManager contains all the active syncer goroutines and manage their lifecycle.
 type syncerManager struct {
-	namer      networkEndpointGroupNamer
+	namer      negtypes.NetworkEndpointGroupNamer
 	recorder   record.EventRecorder
-	cloud      NetworkEndpointGroupCloud
-	zoneGetter zoneGetter
+	cloud      negtypes.NetworkEndpointGroupCloud
+	zoneGetter negtypes.ZoneGetter
 
 	serviceLister  cache.Indexer
 	endpointLister cache.Indexer
@@ -48,13 +49,13 @@ type syncerManager struct {
 	// svcPortMap is the canonical indicator for whether a service needs NEG.
 	// key consists of service namespace and name. Value is a map of ServicePort
 	// Port:TargetPort, which represents ports that require NEG
-	svcPortMap map[serviceKey]types.PortNameMap
+	svcPortMap map[serviceKey]negtypes.PortNameMap
 	// syncerMap stores the NEG syncer
 	// key consists of service namespace, name and targetPort. Value is the corresponding syncer.
-	syncerMap map[servicePort]negSyncer
+	syncerMap map[negsyncer.NegSyncerKey]negtypes.NegSyncer
 }
 
-func newSyncerManager(namer networkEndpointGroupNamer, recorder record.EventRecorder, cloud NetworkEndpointGroupCloud, zoneGetter zoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) *syncerManager {
+func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) *syncerManager {
 	return &syncerManager{
 		namer:          namer,
 		recorder:       recorder,
@@ -62,19 +63,19 @@ func newSyncerManager(namer networkEndpointGroupNamer, recorder record.EventReco
 		zoneGetter:     zoneGetter,
 		serviceLister:  serviceLister,
 		endpointLister: endpointLister,
-		svcPortMap:     make(map[serviceKey]types.PortNameMap),
-		syncerMap:      make(map[servicePort]negSyncer),
+		svcPortMap:     make(map[serviceKey]negtypes.PortNameMap),
+		syncerMap:      make(map[negsyncer.NegSyncerKey]negtypes.NegSyncer),
 	}
 }
 
 // EnsureSyncer starts and stops syncers based on the input service ports.
-func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts types.PortNameMap) error {
+func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts negtypes.PortNameMap) error {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	key := getServiceKey(namespace, name)
 	currentPorts, ok := manager.svcPortMap[key]
 	if !ok {
-		currentPorts = make(types.PortNameMap)
+		currentPorts = make(negtypes.PortNameMap)
 	}
 
 	removes := currentPorts.Difference(newPorts)
@@ -95,12 +96,12 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts typ
 	for svcPort, targetPort := range adds {
 		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, targetPort)]
 		if !ok {
-			syncer = newSyncer(
-				servicePort{
-					namespace:  namespace,
-					name:       name,
-					port:       svcPort,
-					targetPort: targetPort,
+			syncer = negsyncer.NewBatchSyncer(
+				negsyncer.NegSyncerKey{
+					Namespace:  namespace,
+					Name:       name,
+					Port:       svcPort,
+					TargetPort: targetPort,
 				},
 				manager.namer.NEG(namespace, name, svcPort),
 				manager.recorder,
@@ -242,12 +243,12 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 }
 
 // getSyncerKey encodes a service namespace, name, service port and targetPort into a string key
-func getSyncerKey(namespace, name string, port int32, targetPort string) servicePort {
-	return servicePort{
-		namespace:  namespace,
-		name:       name,
-		port:       port,
-		targetPort: targetPort,
+func getSyncerKey(namespace, name string, port int32, targetPort string) negsyncer.NegSyncerKey {
+	return negsyncer.NegSyncerKey{
+		Namespace:  namespace,
+		Name:       name,
+		Port:       port,
+		TargetPort: targetPort,
 	}
 }
 

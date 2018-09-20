@@ -438,3 +438,7 @@ func TraverseIngressBackends(ing *extensions.Ingress, process func(id ServicePor
 	}
 	return
 }
+
+func ServiceKeyFunc(namespace, name string) string {
+	return fmt.Sprintf("%s/%s", namespace, name)
+}

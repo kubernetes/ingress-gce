@@ -20,14 +20,14 @@ import (
 	computebeta "google.golang.org/api/compute/v0.beta"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/neg"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/mock"
 )
 
-func newTestNEGLinker(fakeNEG neg.NetworkEndpointGroupCloud, fakeGCE *gce.GCECloud) *negLinker {
+func newTestNEGLinker(fakeNEG negtypes.NetworkEndpointGroupCloud, fakeGCE *gce.GCECloud) *negLinker {
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer, false)
 
 	// Add standard hooks for mocking update calls. Each test can set a update different hook if it chooses to.
@@ -40,7 +40,7 @@ func newTestNEGLinker(fakeNEG neg.NetworkEndpointGroupCloud, fakeGCE *gce.GCEClo
 
 func TestLinkBackendServiceToNEG(t *testing.T) {
 	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+	fakeNEG := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	linker := newTestNEGLinker(fakeNEG, fakeGCE)
 
 	zones := []GroupKey{{"zone1"}, {"zone2"}}

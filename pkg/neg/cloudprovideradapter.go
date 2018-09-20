@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	computebeta "google.golang.org/api/compute/v0.beta"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/filter"
@@ -28,7 +29,7 @@ import (
 )
 
 // NewAdapter takes a GCECloud and returns a NetworkEndpointGroupCloud.
-func NewAdapter(g *gce.GCECloud) NetworkEndpointGroupCloud {
+func NewAdapter(g *gce.GCECloud) negtypes.NetworkEndpointGroupCloud {
 	return &cloudProviderAdapter{
 		c:             g.Compute(),
 		networkURL:    g.NetworkURL(),

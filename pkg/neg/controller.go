@@ -36,24 +36,25 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 func init() {
 	// register prometheus metrics
-	registerMetrics()
+	metrics.RegisterMetrics()
 }
 
 // Controller is network endpoint group controller.
-// It determines whether NEG for a service port is needed, then signals negSyncerManager to sync it.
+// It determines whether NEG for a service port is needed, then signals NegSyncerManager to sync it.
 type Controller struct {
-	manager      negSyncerManager
+	manager      negtypes.NegSyncerManager
 	resyncPeriod time.Duration
 	gcPeriod     time.Duration
 	recorder     record.EventRecorder
-	namer        networkEndpointGroupNamer
-	zoneGetter   zoneGetter
+	namer        negtypes.NetworkEndpointGroupNamer
+	zoneGetter   negtypes.ZoneGetter
 
 	ingressSynced  cache.InformerSynced
 	serviceSynced  cache.InformerSynced
@@ -71,10 +72,10 @@ type Controller struct {
 
 // NewController returns a network endpoint group controller.
 func NewController(
-	cloud NetworkEndpointGroupCloud,
+	cloud negtypes.NetworkEndpointGroupCloud,
 	ctx *context.ControllerContext,
-	zoneGetter zoneGetter,
-	namer networkEndpointGroupNamer,
+	zoneGetter negtypes.ZoneGetter,
+	namer negtypes.NetworkEndpointGroupNamer,
 	resyncPeriod time.Duration,
 	gcPeriod time.Duration) *Controller {
 	// init event recorder
@@ -202,7 +203,7 @@ func (c *Controller) stop() {
 func (c *Controller) processEndpoint(obj interface{}) {
 	defer func() {
 		now := c.syncTracker.Track()
-		lastSyncTimestamp.WithLabelValues().Set(float64(now.UTC().UnixNano()))
+		metrics.LastSyncTimestamp.WithLabelValues().Set(float64(now.UTC().UnixNano()))
 	}()
 
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
@@ -235,7 +236,7 @@ func (c *Controller) serviceWorker() {
 func (c *Controller) processService(key string) error {
 	defer func() {
 		now := c.syncTracker.Track()
-		lastSyncTimestamp.WithLabelValues().Set(float64(now.UTC().UnixNano()))
+		metrics.LastSyncTimestamp.WithLabelValues().Set(float64(now.UTC().UnixNano()))
 	}()
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
@@ -438,14 +439,10 @@ func gatherIngressServiceKeys(ing *extensions.Ingress) sets.String {
 		return set
 	}
 	utils.TraverseIngressBackends(ing, func(id utils.ServicePortID) bool {
-		set.Insert(serviceKeyFunc(id.Service.Namespace, id.Service.Name))
+		set.Insert(utils.ServiceKeyFunc(id.Service.Namespace, id.Service.Name))
 		return false
 	})
 	return set
-}
-
-func serviceKeyFunc(namespace, name string) string {
-	return fmt.Sprintf("%s/%s", namespace, name)
 }
 
 func getIngressServicesFromStore(store cache.Store, svc *apiv1.Service) (ings []extensions.Ingress) {

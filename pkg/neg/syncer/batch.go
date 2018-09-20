@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package neg
+package syncer
 
 import (
 	"fmt"
@@ -33,6 +33,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
@@ -46,25 +48,26 @@ const (
 	maxRetryDelay = 600 * time.Second
 )
 
-// servicePort includes information to uniquely identify a NEG
-type servicePort struct {
-	namespace  string
-	name       string
-	port       int32
-	targetPort string
+// NegSyncerKey includes information to uniquely identify a NEG
+type NegSyncerKey struct {
+	Namespace  string
+	Name       string
+	Port       int32
+	TargetPort string
 }
 
-// syncer handles synchorizing NEGs for one service port. It handles sync, resync and retry on error.
-type syncer struct {
-	servicePort
+// batchSyncer handles synchorizing NEGs for one service port. It handles sync, resync and retry on error.
+// It syncs NEG in batch and waits for all operation to complete before continue to the next batch.
+type batchSyncer struct {
+	NegSyncerKey
 	negName string
 
 	serviceLister  cache.Indexer
 	endpointLister cache.Indexer
 
 	recorder   record.EventRecorder
-	cloud      NetworkEndpointGroupCloud
-	zoneGetter zoneGetter
+	cloud      negtypes.NetworkEndpointGroupCloud
+	zoneGetter negtypes.ZoneGetter
 
 	stateLock    sync.Mutex
 	stopped      bool
@@ -76,10 +79,10 @@ type syncer struct {
 	retryCount     int
 }
 
-func newSyncer(svcPort servicePort, networkEndpointGroupName string, recorder record.EventRecorder, cloud NetworkEndpointGroupCloud, zoneGetter zoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) *syncer {
-	glog.V(2).Infof("New syncer for service %s/%s port %s NEG %q", svcPort.namespace, svcPort.name, svcPort.targetPort, networkEndpointGroupName)
-	return &syncer{
-		servicePort:    svcPort,
+func NewBatchSyncer(svcPort NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) *batchSyncer {
+	glog.V(2).Infof("New syncer for service %s/%s Port %s NEG %q", svcPort.Namespace, svcPort.Name, svcPort.TargetPort, networkEndpointGroupName)
+	return &batchSyncer{
+		NegSyncerKey:   svcPort,
 		negName:        networkEndpointGroupName,
 		recorder:       recorder,
 		serviceLister:  serviceLister,
@@ -94,7 +97,7 @@ func newSyncer(svcPort servicePort, networkEndpointGroupName string, recorder re
 	}
 }
 
-func (s *syncer) init() {
+func (s *batchSyncer) init() {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	s.stopped = false
@@ -102,7 +105,7 @@ func (s *syncer) init() {
 }
 
 // Start starts the syncer go routine if it has not been started.
-func (s *syncer) Start() error {
+func (s *batchSyncer) Start() error {
 	if !s.IsStopped() {
 		return fmt.Errorf("NEG syncer for %s is already running.", s.formattedName())
 	}
@@ -126,7 +129,7 @@ func (s *syncer) Start() error {
 					retryMesg = "(will retry)"
 				}
 
-				if svc := getService(s.serviceLister, s.namespace, s.name); svc != nil {
+				if svc := getService(s.serviceLister, s.Namespace, s.Name); svc != nil {
 					s.recorder.Eventf(svc, apiv1.EventTypeWarning, "SyncNetworkEndpointGroupFailed", "Failed to sync NEG %q %s: %v", s.negName, retryMesg, err)
 				}
 			} else {
@@ -151,7 +154,7 @@ func (s *syncer) Start() error {
 }
 
 // Stop stops syncer and return only when syncer shutdown completes.
-func (s *syncer) Stop() {
+func (s *batchSyncer) Stop() {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	if !s.stopped {
@@ -163,7 +166,7 @@ func (s *syncer) Stop() {
 }
 
 // Sync informs syncer to run sync loop as soon as possible.
-func (s *syncer) Sync() bool {
+func (s *batchSyncer) Sync() bool {
 	if s.IsStopped() {
 		glog.Warningf("NEG syncer for %s is already stopped.", s.formattedName())
 		return false
@@ -176,31 +179,31 @@ func (s *syncer) Sync() bool {
 	}
 }
 
-func (s *syncer) IsStopped() bool {
+func (s *batchSyncer) IsStopped() bool {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	return s.stopped
 }
 
-func (s *syncer) IsShuttingDown() bool {
+func (s *batchSyncer) IsShuttingDown() bool {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	return s.shuttingDown
 }
 
-func (s *syncer) sync() (err error) {
+func (s *batchSyncer) sync() (err error) {
 	if s.IsStopped() || s.IsShuttingDown() {
 		glog.V(4).Infof("Skip syncing NEG %q for %s.", s.negName, s.formattedName())
 		return nil
 	}
 	glog.V(2).Infof("Sync NEG %q for %s.", s.negName, s.formattedName())
 	start := time.Now()
-	defer observeNegSync(s.negName, attachSync, err, start)
+	defer metrics.ObserveNegSync(s.negName, metrics.AttachSync, err, start)
 	ep, exists, err := s.endpointLister.Get(
 		&apiv1.Endpoints{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      s.name,
-				Namespace: s.namespace,
+				Name:      s.Name,
+				Namespace: s.Namespace,
 			},
 		},
 	)
@@ -209,7 +212,7 @@ func (s *syncer) sync() (err error) {
 	}
 
 	if !exists {
-		glog.Warningf("Endpoint %s/%s does not exist. Skipping NEG sync", s.namespace, s.name)
+		glog.Warningf("Endpoint %s/%s does not exist. Skipping NEG sync", s.Namespace, s.Name)
 		return nil
 	}
 
@@ -230,7 +233,7 @@ func (s *syncer) sync() (err error) {
 
 	addEndpoints, removeEndpoints := calculateDifference(targetMap, currentMap)
 	if len(addEndpoints) == 0 && len(removeEndpoints) == 0 {
-		glog.V(4).Infof("No endpoint change for %s/%s, skip syncing NEG. ", s.namespace, s.name)
+		glog.V(4).Infof("No endpoint change for %s/%s, skip syncing NEG. ", s.Namespace, s.Name)
 		return nil
 	}
 
@@ -238,7 +241,7 @@ func (s *syncer) sync() (err error) {
 }
 
 // ensureNetworkEndpointGroups ensures negs are created in the related zones.
-func (s *syncer) ensureNetworkEndpointGroups() error {
+func (s *batchSyncer) ensureNetworkEndpointGroups() error {
 	var err error
 	zones, err := s.zoneGetter.ListZones()
 	if err != nil {
@@ -265,7 +268,7 @@ func (s *syncer) ensureNetworkEndpointGroups() error {
 			if err != nil {
 				errList = append(errList, err)
 			} else {
-				if svc := getService(s.serviceLister, s.namespace, s.name); svc != nil {
+				if svc := getService(s.serviceLister, s.Namespace, s.Name); svc != nil {
 					s.recorder.Eventf(svc, apiv1.EventTypeNormal, "Delete", "Deleted NEG %q for %s in %q.", s.negName, s.formattedName(), zone)
 				}
 			}
@@ -284,7 +287,7 @@ func (s *syncer) ensureNetworkEndpointGroups() error {
 			if err != nil {
 				errList = append(errList, err)
 			} else {
-				if svc := getService(s.serviceLister, s.namespace, s.name); svc != nil {
+				if svc := getService(s.serviceLister, s.Namespace, s.Name); svc != nil {
 					s.recorder.Eventf(svc, apiv1.EventTypeNormal, "Create", "Created NEG %q for %s in %q.", s.negName, s.formattedName(), zone)
 				}
 			}
@@ -294,22 +297,22 @@ func (s *syncer) ensureNetworkEndpointGroups() error {
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map
-func (s *syncer) toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints) (map[string]sets.String, error) {
+func (s *batchSyncer) toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints) (map[string]sets.String, error) {
 	zoneNetworkEndpointMap := map[string]sets.String{}
-	targetPort, _ := strconv.Atoi(s.targetPort)
+	targetPort, _ := strconv.Atoi(s.TargetPort)
 	for _, subset := range endpoints.Subsets {
 		matchPort := ""
-		// service spec allows target port to be a named port.
-		// support both explicit port and named port.
+		// service spec allows target Port to be a named Port.
+		// support both explicit Port and named Port.
 		for _, port := range subset.Ports {
 			if targetPort != 0 {
-				// targetPort is int
+				// TargetPort is int
 				if int(port.Port) == targetPort {
-					matchPort = s.targetPort
+					matchPort = s.TargetPort
 				}
 			} else {
-				// targetPort is string
-				if port.Name == s.targetPort {
+				// TargetPort is string
+				if port.Name == s.TargetPort {
 					matchPort = strconv.Itoa(int(port.Port))
 				}
 			}
@@ -318,7 +321,7 @@ func (s *syncer) toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints) (map[strin
 			}
 		}
 
-		// subset does not contain target port
+		// subset does not contain target Port
 		if len(matchPort) == 0 {
 			continue
 		}
@@ -337,7 +340,7 @@ func (s *syncer) toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints) (map[strin
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
-func (s *syncer) retrieveExistingZoneNetworkEndpointMap() (map[string]sets.String, error) {
+func (s *batchSyncer) retrieveExistingZoneNetworkEndpointMap() (map[string]sets.String, error) {
 	zones, err := s.zoneGetter.ListZones()
 	if err != nil {
 		return nil, err
@@ -375,7 +378,7 @@ func (e *ErrorList) List() []error {
 }
 
 // syncNetworkEndpoints adds and removes endpoints for negs
-func (s *syncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]sets.String) error {
+func (s *batchSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]sets.String) error {
 	var wg sync.WaitGroup
 	errList := &ErrorList{}
 
@@ -411,7 +414,7 @@ func (s *syncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]s
 }
 
 // translate a endpoints set to a batch of network endpoints object
-func (s *syncer) toNetworkEndpointBatch(endpoints sets.String) ([]*compute.NetworkEndpoint, error) {
+func (s *batchSyncer) toNetworkEndpointBatch(endpoints sets.String) ([]*compute.NetworkEndpoint, error) {
 	var ok bool
 	list := make([]string, int(math.Min(float64(endpoints.Len()), float64(MAX_NETWORK_ENDPOINTS_PER_BATCH))))
 	for i := range list {
@@ -436,25 +439,25 @@ func (s *syncer) toNetworkEndpointBatch(endpoints sets.String) ([]*compute.Netwo
 	return networkEndpointList, nil
 }
 
-func (s *syncer) attachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
+func (s *batchSyncer) attachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
 	wg.Add(1)
 	glog.V(2).Infof("Attaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpoints), s.formattedName(), s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.AttachNetworkEndpoints, "Attach")
 }
 
-func (s *syncer) detachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
+func (s *batchSyncer) detachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
 	wg.Add(1)
 	glog.V(2).Infof("Detaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpoints), s.formattedName(), s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.DetachNetworkEndpoints, "Detach")
 }
 
-func (s *syncer) operationInternal(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList, syncFunc func(name, zone string, endpoints []*compute.NetworkEndpoint) error, operationName string) {
+func (s *batchSyncer) operationInternal(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList, syncFunc func(name, zone string, endpoints []*compute.NetworkEndpoint) error, operationName string) {
 	defer wg.Done()
 	err := syncFunc(s.negName, zone, networkEndpoints)
 	if err != nil {
 		errList.Add(err)
 	}
-	if svc := getService(s.serviceLister, s.namespace, s.name); svc != nil {
+	if svc := getService(s.serviceLister, s.Namespace, s.Name); svc != nil {
 		if err == nil {
 			s.recorder.Eventf(svc, apiv1.EventTypeNormal, operationName, "%s %d network endpoint(s) (NEG %q in zone %q)", operationName, len(networkEndpoints), s.negName, zone)
 		} else {
@@ -463,7 +466,7 @@ func (s *syncer) operationInternal(wg *sync.WaitGroup, zone string, networkEndpo
 	}
 }
 
-func (s *syncer) nextRetryDelay() time.Duration {
+func (s *batchSyncer) nextRetryDelay() time.Duration {
 	s.retryCount += 1
 	s.lastRetryDelay *= 2
 	if s.lastRetryDelay < minRetryDelay {
@@ -474,13 +477,13 @@ func (s *syncer) nextRetryDelay() time.Duration {
 	return s.lastRetryDelay
 }
 
-func (s *syncer) resetRetryDelay() {
+func (s *batchSyncer) resetRetryDelay() {
 	s.retryCount = 0
 	s.lastRetryDelay = time.Duration(0)
 }
 
-func (s *syncer) formattedName() string {
-	return fmt.Sprintf("%s/%s-%v/%s", s.namespace, s.name, s.port, s.targetPort)
+func (s *batchSyncer) formattedName() string {
+	return fmt.Sprintf("%s/%s-%v/%s", s.Namespace, s.Name, s.Port, s.TargetPort)
 }
 
 // encodeEndpoint encodes ip and instance into a single string
@@ -514,9 +517,9 @@ func calculateDifference(targetMap, currentMap map[string]sets.String) (map[stri
 	return addSet, removeSet
 }
 
-// getService retrieves service object from serviceLister based on the input namespace and name
+// getService retrieves service object from serviceLister based on the input Namespace and Name
 func getService(serviceLister cache.Indexer, namespace, name string) *apiv1.Service {
-	service, exists, err := serviceLister.GetByKey(serviceKeyFunc(namespace, name))
+	service, exists, err := serviceLister.GetByKey(utils.ServiceKeyFunc(namespace, name))
 	if exists && err == nil {
 		return service.(*apiv1.Service)
 	}
