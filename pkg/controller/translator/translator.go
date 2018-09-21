@@ -245,7 +245,7 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 		}
 		logStr := fmt.Sprintf("Pod %v matching service selectors %v (targetport %+v)", pod.Name, l, targetPort)
 		for _, c := range pod.Spec.Containers {
-			if !isSimpleHTTPProbe(c.ReadinessProbe) || string(getProbeScheme(protocol)) != string(c.ReadinessProbe.HTTPGet.Scheme) {
+			if !isSimpleHTTPProbe(c.ReadinessProbe) || getProbeScheme(protocol) != c.ReadinessProbe.HTTPGet.Scheme {
 				continue
 			}
 
