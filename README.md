@@ -7,7 +7,7 @@ GLBC is a GCE L7 load balancer controller that manages external loadbalancers co
 
 ## A word to the wise
 
-Please read the [beta limitations](BETA_LIMITATIONS.md) doc to before using this controller. In summary:
+Please read the [beta limitations](BETA_LIMITATIONS.md) doc before using this controller. In summary:
 
 - This is a **work in progress**.
 - It relies on a beta Kubernetes resource.
