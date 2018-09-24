@@ -42,11 +42,15 @@ func NewNEGLinker(
 
 // Link implements Link.
 func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
-	negName := sp.BackendName(l.namer)
-
 	var negs []*computebeta.NetworkEndpointGroup
 	var err error
 	for _, group := range groups {
+		// If the group key contains a name, then use that.
+		// Otherwise, generate the name using the namer.
+		negName := group.Name
+		if negName == "" {
+			negName = sp.BackendName(l.namer)
+		}
 		neg, err := l.negGetter.GetNetworkEndpointGroup(negName, group.Zone)
 		if err != nil {
 			return err

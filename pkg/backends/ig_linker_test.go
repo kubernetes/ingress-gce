@@ -60,7 +60,7 @@ func TestLink(t *testing.T) {
 	// Mimic the syncer creating the backend.
 	linker.backendPool.Create(sp, "fake-health-check-link")
 
-	if err := linker.Link(sp, []GroupKey{{defaultZone}}); err != nil {
+	if err := linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {
 		t.Fatalf("%v", err)
 	}
 
@@ -104,7 +104,7 @@ func TestLinkWithCreationModeError(t *testing.T) {
 		// Mimic the syncer creating the backend.
 		linker.backendPool.Create(sp, "fake-health-check-link")
 
-		if err := linker.Link(sp, []GroupKey{{defaultZone}}); err != nil {
+		if err := linker.Link(sp, []GroupKey{{Zone: defaultZone}}); err != nil {
 			t.Fatalf("%v", err)
 		}
 
