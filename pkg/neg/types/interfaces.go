@@ -1,5 +1,5 @@
 /*
-Copyright 2017 The Kubernetes Authors.
+Copyright 2018 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -14,14 +14,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package neg
+package types
 
 import (
 	computebeta "google.golang.org/api/compute/v0.beta"
-	"k8s.io/ingress-gce/pkg/neg/types"
 )
 
-// MetworkEndpointGroupCloud is an interface for managing gce network endpoint group.
+// ZoneGetter is an interface for retrieve zone related information
+type ZoneGetter interface {
+	ListZones() ([]string, error)
+	GetZoneForNode(name string) (string, error)
+}
+
+// NetworkEndpointGroupCloud is an interface for managing gce network endpoint group.
 type NetworkEndpointGroupCloud interface {
 	GetNetworkEndpointGroup(name string, zone string) (*computebeta.NetworkEndpointGroup, error)
 	ListNetworkEndpointGroup(zone string) ([]*computebeta.NetworkEndpointGroup, error)
@@ -35,20 +40,14 @@ type NetworkEndpointGroupCloud interface {
 	SubnetworkURL() string
 }
 
-// networkEndpointGroupNamer is an interface for generating network endpoint group name.
-type networkEndpointGroupNamer interface {
+// NetworkEndpointGroupNamer is an interface for generating network endpoint group name.
+type NetworkEndpointGroupNamer interface {
 	NEG(namespace, name string, port int32) string
 	IsNEG(name string) bool
 }
 
-// zoneGetter is an interface for retrieve zone related information
-type zoneGetter interface {
-	ListZones() ([]string, error)
-	GetZoneForNode(name string) (string, error)
-}
-
-// negSyncer is an interface to interact with syncer
-type negSyncer interface {
+// NegSyncer is an interface to interact with syncer
+type NegSyncer interface {
 	// Start starts the syncer. This call is synchronous. It will return after syncer is started.
 	Start() error
 	// Stop stops the syncer. This call is asynchronous. It will not block until syncer is stopped.
@@ -61,11 +60,11 @@ type negSyncer interface {
 	IsShuttingDown() bool
 }
 
-// negSyncerManager is an interface for controllers to manage syncer
-type negSyncerManager interface {
+// NegSyncerManager is an interface for controllers to manage syncer
+type NegSyncerManager interface {
 	// EnsureSyncer ensures corresponding syncers are started and stops any unnecessary syncer
 	// portMap is a map of ServicePort Port to TargetPort
-	EnsureSyncers(namespace, name string, portMap types.PortNameMap) error
+	EnsureSyncers(namespace, name string, portMap PortNameMap) error
 	// StopSyncer stops all syncers related to the service. This call is asynchronous. It will not wait for all syncers to stop.
 	StopSyncer(namespace, name string)
 	// Sync signals all syncers related to the service to sync. This call is asynchronous.

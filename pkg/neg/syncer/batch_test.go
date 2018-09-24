@@ -1,4 +1,4 @@
-package neg
+package syncer
 
 import (
 	"reflect"
@@ -7,12 +7,15 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -20,13 +23,18 @@ const (
 	testNegName          = "test-neg-name"
 	testServiceNamespace = "test-ns"
 	testServiceName      = "test-name"
-	testNamedPort        = "named-port"
+	testNamedPort        = "named-Port"
+	clusterID            = "clusterid"
 )
 
-func NewTestSyncer() *syncer {
+var (
+	defaultBackend = utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")}
+)
+
+func NewTestSyncer() *batchSyncer {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
-	namer := utils.NewNamer(ClusterID, "")
+	namer := utils.NewNamer(clusterID, "")
 	ctxConfig := context.ControllerContextConfig{
 		NEGEnabled:              true,
 		BackendConfigEnabled:    false,
@@ -35,18 +43,18 @@ func NewTestSyncer() *syncer {
 		DefaultBackendSvcPortID: defaultBackend,
 	}
 	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, namer, ctxConfig)
-	svcPort := servicePort{
-		namespace:  testServiceNamespace,
-		name:       testServiceName,
-		port:       80,
-		targetPort: "80",
+	svcPort := NegSyncerKey{
+		Namespace:  testServiceNamespace,
+		Name:       testServiceName,
+		Port:       80,
+		TargetPort: "80",
 	}
 
-	return newSyncer(svcPort,
+	return NewBatchSyncer(svcPort,
 		testNegName,
 		record.NewFakeRecorder(100),
-		NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-newtork"),
-		NewFakeZoneGetter(),
+		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-newtork"),
+		negtypes.NewFakeZoneGetter(),
 		context.ServiceInformer.GetIndexer(),
 		context.EndpointInformer.GetIndexer())
 }
@@ -104,7 +112,7 @@ func TestEnsureNetworkEndpointGroups(t *testing.T) {
 	}
 
 	ret, _ := syncer.cloud.AggregatedListNetworkEndpointGroup()
-	expectZones := []string{TestZone1, TestZone2}
+	expectZones := []string{negtypes.TestZone1, negtypes.TestZone2}
 	for _, zone := range expectZones {
 		negs, ok := ret[zone]
 		if !ok {
@@ -131,21 +139,21 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 		{
 			targetPort: "80",
 			expect: map[string]sets.String{
-				TestZone1: sets.NewString("10.100.1.1||instance1||80", "10.100.1.2||instance1||80", "10.100.2.1||instance2||80"),
-				TestZone2: sets.NewString("10.100.3.1||instance3||80"),
+				negtypes.TestZone1: sets.NewString("10.100.1.1||instance1||80", "10.100.1.2||instance1||80", "10.100.2.1||instance2||80"),
+				negtypes.TestZone2: sets.NewString("10.100.3.1||instance3||80"),
 			},
 		},
 		{
 			targetPort: testNamedPort,
 			expect: map[string]sets.String{
-				TestZone1: sets.NewString("10.100.2.2||instance2||81"),
-				TestZone2: sets.NewString("10.100.4.1||instance4||81", "10.100.3.2||instance3||8081", "10.100.4.2||instance4||8081"),
+				negtypes.TestZone1: sets.NewString("10.100.2.2||instance2||81"),
+				negtypes.TestZone2: sets.NewString("10.100.4.1||instance4||81", "10.100.3.2||instance3||8081", "10.100.4.2||instance4||8081"),
 			},
 		},
 	}
 
 	for _, tc := range testCases {
-		syncer.targetPort = tc.targetPort
+		syncer.TargetPort = tc.targetPort
 		res, _ := syncer.toZoneNetworkEndpointMap(getDefaultEndpoint())
 
 		if !reflect.DeepEqual(res, tc.expect) {
@@ -176,10 +184,10 @@ func TestCalculateDifference(t *testing.T) {
 		// unchanged
 		{
 			targetSet: map[string]sets.String{
-				TestZone1: sets.NewString("a", "b", "c"),
+				negtypes.TestZone1: sets.NewString("a", "b", "c"),
 			},
 			currentSet: map[string]sets.String{
-				TestZone1: sets.NewString("a", "b", "c"),
+				negtypes.TestZone1: sets.NewString("a", "b", "c"),
 			},
 			addSet:    map[string]sets.String{},
 			removeSet: map[string]sets.String{},
@@ -194,24 +202,24 @@ func TestCalculateDifference(t *testing.T) {
 		// add in one zone
 		{
 			targetSet: map[string]sets.String{
-				TestZone1: sets.NewString("a", "b", "c"),
+				negtypes.TestZone1: sets.NewString("a", "b", "c"),
 			},
 			currentSet: map[string]sets.String{},
 			addSet: map[string]sets.String{
-				TestZone1: sets.NewString("a", "b", "c"),
+				negtypes.TestZone1: sets.NewString("a", "b", "c"),
 			},
 			removeSet: map[string]sets.String{},
 		},
 		// add in 2 zones
 		{
 			targetSet: map[string]sets.String{
-				TestZone1: sets.NewString("a", "b", "c"),
-				TestZone2: sets.NewString("e", "f", "g"),
+				negtypes.TestZone1: sets.NewString("a", "b", "c"),
+				negtypes.TestZone2: sets.NewString("e", "f", "g"),
 			},
 			currentSet: map[string]sets.String{},
 			addSet: map[string]sets.String{
-				TestZone1: sets.NewString("a", "b", "c"),
-				TestZone2: sets.NewString("e", "f", "g"),
+				negtypes.TestZone1: sets.NewString("a", "b", "c"),
+				negtypes.TestZone2: sets.NewString("e", "f", "g"),
 			},
 			removeSet: map[string]sets.String{},
 		},
@@ -219,58 +227,58 @@ func TestCalculateDifference(t *testing.T) {
 		{
 			targetSet: map[string]sets.String{},
 			currentSet: map[string]sets.String{
-				TestZone1: sets.NewString("a", "b", "c"),
+				negtypes.TestZone1: sets.NewString("a", "b", "c"),
 			},
 			addSet: map[string]sets.String{},
 			removeSet: map[string]sets.String{
-				TestZone1: sets.NewString("a", "b", "c"),
+				negtypes.TestZone1: sets.NewString("a", "b", "c"),
 			},
 		},
 		// remove in 2 zones
 		{
 			targetSet: map[string]sets.String{},
 			currentSet: map[string]sets.String{
-				TestZone1: sets.NewString("a", "b", "c"),
-				TestZone2: sets.NewString("e", "f", "g"),
+				negtypes.TestZone1: sets.NewString("a", "b", "c"),
+				negtypes.TestZone2: sets.NewString("e", "f", "g"),
 			},
 			addSet: map[string]sets.String{},
 			removeSet: map[string]sets.String{
-				TestZone1: sets.NewString("a", "b", "c"),
-				TestZone2: sets.NewString("e", "f", "g"),
+				negtypes.TestZone1: sets.NewString("a", "b", "c"),
+				negtypes.TestZone2: sets.NewString("e", "f", "g"),
 			},
 		},
 		// add and delete in one zone
 		{
 			targetSet: map[string]sets.String{
-				TestZone1: sets.NewString("a", "b", "c"),
+				negtypes.TestZone1: sets.NewString("a", "b", "c"),
 			},
 			currentSet: map[string]sets.String{
-				TestZone1: sets.NewString("b", "c", "d"),
+				negtypes.TestZone1: sets.NewString("b", "c", "d"),
 			},
 			addSet: map[string]sets.String{
-				TestZone1: sets.NewString("a"),
+				negtypes.TestZone1: sets.NewString("a"),
 			},
 			removeSet: map[string]sets.String{
-				TestZone1: sets.NewString("d"),
+				negtypes.TestZone1: sets.NewString("d"),
 			},
 		},
 		// add and delete in 2 zones
 		{
 			targetSet: map[string]sets.String{
-				TestZone1: sets.NewString("a", "b", "c"),
-				TestZone2: sets.NewString("a", "b", "c"),
+				negtypes.TestZone1: sets.NewString("a", "b", "c"),
+				negtypes.TestZone2: sets.NewString("a", "b", "c"),
 			},
 			currentSet: map[string]sets.String{
-				TestZone1: sets.NewString("b", "c", "d"),
-				TestZone2: sets.NewString("b", "c", "d"),
+				negtypes.TestZone1: sets.NewString("b", "c", "d"),
+				negtypes.TestZone2: sets.NewString("b", "c", "d"),
 			},
 			addSet: map[string]sets.String{
-				TestZone1: sets.NewString("a"),
-				TestZone2: sets.NewString("a"),
+				negtypes.TestZone1: sets.NewString("a"),
+				negtypes.TestZone2: sets.NewString("a"),
 			},
 			removeSet: map[string]sets.String{
-				TestZone1: sets.NewString("d"),
-				TestZone2: sets.NewString("d"),
+				negtypes.TestZone1: sets.NewString("d"),
+				negtypes.TestZone2: sets.NewString("d"),
 			},
 		},
 	}
@@ -301,35 +309,35 @@ func TestSyncNetworkEndpoints(t *testing.T) {
 	}{
 		{
 			expectSet: map[string]sets.String{
-				TestZone1: sets.NewString("10.100.1.1||instance1||80", "10.100.2.1||instance2||80"),
-				TestZone2: sets.NewString("10.100.3.1||instance3||80", "10.100.4.1||instance4||80"),
+				negtypes.TestZone1: sets.NewString("10.100.1.1||instance1||80", "10.100.2.1||instance2||80"),
+				negtypes.TestZone2: sets.NewString("10.100.3.1||instance3||80", "10.100.4.1||instance4||80"),
 			},
 			addSet: map[string]sets.String{
-				TestZone1: sets.NewString("10.100.1.1||instance1||80", "10.100.2.1||instance2||80"),
-				TestZone2: sets.NewString("10.100.3.1||instance3||80", "10.100.4.1||instance4||80"),
+				negtypes.TestZone1: sets.NewString("10.100.1.1||instance1||80", "10.100.2.1||instance2||80"),
+				negtypes.TestZone2: sets.NewString("10.100.3.1||instance3||80", "10.100.4.1||instance4||80"),
 			},
 			removeSet: map[string]sets.String{},
 		},
 		{
 			expectSet: map[string]sets.String{
-				TestZone1: sets.NewString("10.100.1.2||instance1||80"),
-				TestZone2: sets.NewString(),
+				negtypes.TestZone1: sets.NewString("10.100.1.2||instance1||80"),
+				negtypes.TestZone2: sets.NewString(),
 			},
 			addSet: map[string]sets.String{
-				TestZone1: sets.NewString("10.100.1.2||instance1||80"),
+				negtypes.TestZone1: sets.NewString("10.100.1.2||instance1||80"),
 			},
 			removeSet: map[string]sets.String{
-				TestZone1: sets.NewString("10.100.1.1||instance1||80", "10.100.2.1||instance2||80"),
-				TestZone2: sets.NewString("10.100.3.1||instance3||80", "10.100.4.1||instance4||80"),
+				negtypes.TestZone1: sets.NewString("10.100.1.1||instance1||80", "10.100.2.1||instance2||80"),
+				negtypes.TestZone2: sets.NewString("10.100.3.1||instance3||80", "10.100.4.1||instance4||80"),
 			},
 		},
 		{
 			expectSet: map[string]sets.String{
-				TestZone1: sets.NewString("10.100.1.2||instance1||80"),
-				TestZone2: sets.NewString("10.100.3.2||instance3||80"),
+				negtypes.TestZone1: sets.NewString("10.100.1.2||instance1||80"),
+				negtypes.TestZone2: sets.NewString("10.100.3.2||instance3||80"),
 			},
 			addSet: map[string]sets.String{
-				TestZone2: sets.NewString("10.100.3.2||instance3||80"),
+				negtypes.TestZone2: sets.NewString("10.100.3.2||instance3||80"),
 			},
 			removeSet: map[string]sets.String{},
 		},
@@ -343,7 +351,7 @@ func TestSyncNetworkEndpoints(t *testing.T) {
 	}
 }
 
-func examineNetworkEndpoints(expectSet map[string]sets.String, syncer *syncer, t *testing.T) {
+func examineNetworkEndpoints(expectSet map[string]sets.String, syncer *batchSyncer, t *testing.T) {
 	for zone, endpoints := range expectSet {
 		expectEndpoints, err := syncer.toNetworkEndpointBatch(endpoints)
 		if err != nil {
@@ -372,10 +380,10 @@ func examineNetworkEndpoints(expectSet map[string]sets.String, syncer *syncer, t
 }
 
 func getDefaultEndpoint() *apiv1.Endpoints {
-	instance1 := TestInstance1
-	instance2 := TestInstance2
-	instance3 := TestInstance3
-	instance4 := TestInstance4
+	instance1 := negtypes.TestInstance1
+	instance2 := negtypes.TestInstance2
+	instance3 := negtypes.TestInstance3
+	instance4 := negtypes.TestInstance4
 	return &apiv1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      testServiceName,

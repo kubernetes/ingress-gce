@@ -39,6 +39,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
+const (
+	testServiceNamespace = "test-ns"
+	testServiceName      = "test-Name"
+	testNamedPort        = "named-Port"
+)
+
 var (
 	defaultBackend = utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")}
 )
@@ -55,9 +61,9 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 	}
 	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, namer, ctxConfig)
 	controller := NewController(
-		NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
+		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		context,
-		NewFakeZoneGetter(),
+		negtypes.NewFakeZoneGetter(),
 		namer,
 		1*time.Second,
 		1*time.Second,
@@ -95,7 +101,7 @@ func TestNewNonNEGService(t *testing.T) {
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
 	controller.ingressLister.Add(newTestIngress())
-	err := controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
+	err := controller.processService(utils.ServiceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -154,7 +160,7 @@ func TestNewNEGService(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			controller := newTestController(fake.NewSimpleClientset())
 			defer controller.stop()
-			svcKey := serviceKeyFunc(testServiceNamespace, testServiceName)
+			svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
 			controller.serviceLister.Add(newTestService(controller, tc.ingress, tc.svcPorts))
 
 			if tc.ingress {
@@ -193,7 +199,7 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
 	controller.ingressLister.Add(newTestIngress())
 	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
-	svcKey := serviceKeyFunc(testServiceNamespace, testServiceName)
+	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
 	err := controller.processService(svcKey)
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
@@ -225,14 +231,14 @@ func TestDisableNEGServiceWithIngress(t *testing.T) {
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(controller, true, []int32{}))
 	controller.ingressLister.Add(newTestIngress())
-	err := controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
+	err := controller.processService(utils.ServiceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
 	validateSyncers(t, controller, 3, false)
 
 	controller.serviceLister.Update(newTestService(controller, false, []int32{}))
-	err = controller.processService(serviceKeyFunc(testServiceNamespace, testServiceName))
+	err = controller.processService(utils.ServiceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
 	}
@@ -436,7 +442,7 @@ func validateServiceStateAnnotation(t *testing.T, svc *apiv1.Service, svcPorts [
 		}
 	}
 
-	zoneGetter := NewFakeZoneGetter()
+	zoneGetter := negtypes.NewFakeZoneGetter()
 	zones, _ := zoneGetter.ListZones()
 	for _, zone := range zones {
 		if !strings.Contains(v, zone) {

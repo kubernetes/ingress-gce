@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package neg
+package metrics
 
 import (
 	"sync"
@@ -32,8 +32,8 @@ const (
 	resultSuccess = "success"
 	resultError   = "error"
 
-	attachSync = syncType("attach")
-	detachSync = syncType("detach")
+	AttachSync = syncType("attach")
+	DetachSync = syncType("detach")
 )
 
 type syncType string
@@ -45,7 +45,7 @@ var (
 		"result", // Result of the sync.
 	}
 
-	syncLatency = prometheus.NewHistogramVec(
+	SyncLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Namespace: metrics.GLBC_NAMESPACE,
 			Subsystem: negControllerSubsystem,
@@ -55,7 +55,7 @@ var (
 		syncMetricsLabels,
 	)
 
-	lastSyncTimestamp = prometheus.NewGaugeVec(
+	LastSyncTimestamp = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: metrics.GLBC_NAMESPACE,
 			Subsystem: negControllerSubsystem,
@@ -68,18 +68,18 @@ var (
 
 var register sync.Once
 
-func registerMetrics() {
+func RegisterMetrics() {
 	register.Do(func() {
-		prometheus.MustRegister(syncLatency)
-		prometheus.MustRegister(lastSyncTimestamp)
+		prometheus.MustRegister(SyncLatency)
+		prometheus.MustRegister(LastSyncTimestamp)
 	})
 }
 
-// observeNegSync publish collected metrics for the sync of NEG
-func observeNegSync(negName string, syncType syncType, err error, start time.Time) {
+// ObserveNegSync publish collected metrics for the sync of NEG
+func ObserveNegSync(negName string, syncType syncType, err error, start time.Time) {
 	result := resultSuccess
 	if err != nil {
 		result = resultError
 	}
-	syncLatency.WithLabelValues(negName, string(syncType), result).Observe(time.Since(start).Seconds())
+	SyncLatency.WithLabelValues(negName, string(syncType), result).Observe(time.Since(start).Seconds())
 }

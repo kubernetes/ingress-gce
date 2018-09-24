@@ -22,13 +22,16 @@ import (
 
 	compute "google.golang.org/api/compute/v0.beta"
 	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/neg/syncer"
 	"k8s.io/ingress-gce/pkg/neg/types"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -50,8 +53,8 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 	manager := newSyncerManager(
 		namer,
 		record.NewFakeRecorder(100),
-		NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
-		NewFakeZoneGetter(),
+		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
+		negtypes.NewFakeZoneGetter(),
 		context.ServiceInformer.GetIndexer(),
 		context.EndpointInformer.GetIndexer(),
 	)
@@ -64,14 +67,14 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		name      string
 		ports     types.PortNameMap
 		stop      bool
-		expect    []servicePort // keys of running syncers
+		expect    []syncer.NegSyncerKey // keys of running syncers
 	}{
 		{
 			"ns1",
 			"n1",
 			types.PortNameMap{1000: "80", 2000: "443"},
 			false,
-			[]servicePort{
+			[]syncer.NegSyncerKey{
 				getSyncerKey("ns1", "n1", 1000, "80"),
 				getSyncerKey("ns1", "n1", 2000, "443"),
 			},
@@ -81,7 +84,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			"n1",
 			types.PortNameMap{3000: "80", 4000: "namedport"},
 			false,
-			[]servicePort{
+			[]syncer.NegSyncerKey{
 				getSyncerKey("ns1", "n1", 3000, "80"),
 				getSyncerKey("ns1", "n1", 4000, "namedport"),
 			},
@@ -91,7 +94,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			"n1",
 			types.PortNameMap{3000: "80"},
 			false,
-			[]servicePort{
+			[]syncer.NegSyncerKey{
 				getSyncerKey("ns1", "n1", 3000, "80"),
 				getSyncerKey("ns1", "n1", 4000, "namedport"),
 				getSyncerKey("ns2", "n1", 3000, "80"),
@@ -102,7 +105,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			"n1",
 			types.PortNameMap{},
 			true,
-			[]servicePort{
+			[]syncer.NegSyncerKey{
 				getSyncerKey("ns2", "n1", 3000, "80"),
 			},
 		},
@@ -194,13 +197,13 @@ func TestGarbageCollectionNEG(t *testing.T) {
 	negName := manager.namer.NEG("test", "test", 80)
 	manager.cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 		Name: negName,
-	}, TestZone1)
+	}, negtypes.TestZone1)
 
 	if err := manager.GC(); err != nil {
 		t.Fatalf("Failed to GC: %v", err)
 	}
 
-	negs, _ := manager.cloud.ListNetworkEndpointGroup(TestZone1)
+	negs, _ := manager.cloud.ListNetworkEndpointGroup(negtypes.TestZone1)
 	for _, neg := range negs {
 		if neg.Name == negName {
 			t.Errorf("Expect NEG %q to be GCed.", negName)
@@ -209,4 +212,84 @@ func TestGarbageCollectionNEG(t *testing.T) {
 
 	// make sure there is no leaking go routine
 	manager.StopSyncer(testServiceNamespace, testServiceName)
+}
+
+func getDefaultEndpoint() *apiv1.Endpoints {
+	instance1 := negtypes.TestInstance1
+	instance2 := negtypes.TestInstance2
+	instance3 := negtypes.TestInstance3
+	instance4 := negtypes.TestInstance4
+	return &apiv1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testServiceName,
+			Namespace: testServiceNamespace,
+		},
+		Subsets: []apiv1.EndpointSubset{
+			{
+				Addresses: []apiv1.EndpointAddress{
+					{
+						IP:       "10.100.1.1",
+						NodeName: &instance1,
+					},
+					{
+						IP:       "10.100.1.2",
+						NodeName: &instance1,
+					},
+					{
+						IP:       "10.100.2.1",
+						NodeName: &instance2,
+					},
+					{
+						IP:       "10.100.3.1",
+						NodeName: &instance3,
+					},
+				},
+				Ports: []apiv1.EndpointPort{
+					{
+						Name:     "",
+						Port:     int32(80),
+						Protocol: apiv1.ProtocolTCP,
+					},
+				},
+			},
+			{
+				Addresses: []apiv1.EndpointAddress{
+					{
+						IP:       "10.100.2.2",
+						NodeName: &instance2,
+					},
+					{
+						IP:       "10.100.4.1",
+						NodeName: &instance4,
+					},
+				},
+				Ports: []apiv1.EndpointPort{
+					{
+						Name:     testNamedPort,
+						Port:     int32(81),
+						Protocol: apiv1.ProtocolTCP,
+					},
+				},
+			},
+			{
+				Addresses: []apiv1.EndpointAddress{
+					{
+						IP:       "10.100.3.2",
+						NodeName: &instance3,
+					},
+					{
+						IP:       "10.100.4.2",
+						NodeName: &instance4,
+					},
+				},
+				Ports: []apiv1.EndpointPort{
+					{
+						Name:     testNamedPort,
+						Port:     int32(8081),
+						Protocol: apiv1.ProtocolTCP,
+					},
+				},
+			},
+		},
+	}
 }
