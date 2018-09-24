@@ -43,7 +43,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	linker := newTestNEGLinker(fakeNEG, fakeGCE)
 
-	zones := []GroupKey{{"zone1"}, {"zone2"}}
+	zones := []GroupKey{{Zone: "zone1"}, {Zone: "zone2"}}
 	namespace, name, port := "ns", "name", "port"
 
 	svcPort := utils.ServicePort{

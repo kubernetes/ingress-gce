@@ -28,6 +28,7 @@ import (
 // this Group could be InstanceGroup or NEG.
 type GroupKey struct {
 	Zone string
+	Name string
 }
 
 // Pool is an interface to perform CRUD operations on a pool of GCE
