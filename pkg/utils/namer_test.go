@@ -136,6 +136,7 @@ func TestNameBelongsToCluster(t *testing.T) {
 			namer.ForwardingRule(lbName, HTTPProtocol),
 			namer.ForwardingRule(lbName, HTTPSProtocol),
 			namer.UrlMap(lbName),
+			namer.NEG("ns", "n", int32(80)),
 		} {
 			if !namer.NameBelongsToCluster(tc) {
 				t.Errorf("namer.NameBelongsToCluster(%q) = false, want true", tc)

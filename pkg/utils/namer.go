@@ -240,7 +240,7 @@ func (n *Namer) negBelongsToCluster(name string) bool {
 // NameBelongsToCluster checks if a given name is tagged with this
 // cluster's UID.
 func (n *Namer) NameBelongsToCluster(name string) bool {
-	if !strings.HasPrefix(name, n.prefix+"-") {
+	if !strings.HasPrefix(name, n.prefix) {
 		return false
 	}
 	clusterName := n.UID()
