@@ -192,7 +192,7 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
       - name: default-http-backend
-        image: gcr.io/google_containers/defaultbackend:1.0
+        image: k8s.gcr.io/defaultbackend:1.5
         volumeMounts:
         - mountPath: /etc/kubernetes
           name: kubeconfig
