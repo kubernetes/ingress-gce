@@ -27,8 +27,8 @@ import (
 
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apiserver/pkg/apis/config"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
-	"k8s.io/kubernetes/pkg/apis/componentconfig"
 	"k8s.io/kubernetes/pkg/client/leaderelectionconfig"
 )
 
@@ -88,7 +88,7 @@ var (
 )
 
 type LeaderElectionConfiguration struct {
-	componentconfig.LeaderElectionConfiguration
+	config.LeaderElectionConfiguration
 
 	// LockObjectNamespace defines the namespace of the lock object
 	LockObjectNamespace string
@@ -98,7 +98,7 @@ type LeaderElectionConfiguration struct {
 
 func defaultLeaderElectionConfiguration() LeaderElectionConfiguration {
 	return LeaderElectionConfiguration{
-		LeaderElectionConfiguration: componentconfig.LeaderElectionConfiguration{
+		LeaderElectionConfiguration: config.LeaderElectionConfiguration{
 			LeaderElect:   true,
 			LeaseDuration: metav1.Duration{Duration: DefaultLeaseDuration},
 			RenewDeadline: metav1.Duration{Duration: DefaultRenewDeadline},

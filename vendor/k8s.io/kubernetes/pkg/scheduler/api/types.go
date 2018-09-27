@@ -36,6 +36,9 @@ const (
 	MaxPriority = 10
 	// MaxWeight defines the max weight value.
 	MaxWeight = MaxInt / MaxPriority
+	// DefaultPercentageOfNodesToScore defines the percentage of nodes of all nodes
+	// that once found feasible, the scheduler stops looking for more nodes.
+	DefaultPercentageOfNodesToScore = 50
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -109,6 +112,8 @@ type PriorityArgument struct {
 	// The priority function that checks whether a particular node has a certain label
 	// defined or not, regardless of value
 	LabelPreference *LabelPreference
+	// The RequestedToCapacityRatio priority function is parametrized with function shape.
+	RequestedToCapacityRatioArguments *RequestedToCapacityRatioArguments
 }
 
 // ServiceAffinity holds the parameters that are used to configure the corresponding predicate in scheduler policy configuration.
@@ -141,6 +146,20 @@ type LabelPreference struct {
 	// If true, higher priority is given to nodes that have the label
 	// If false, higher priority is given to nodes that do not have the label
 	Presence bool
+}
+
+// RequestedToCapacityRatioArguments holds arguments specific to RequestedToCapacityRatio priority function
+type RequestedToCapacityRatioArguments struct {
+	// Array of point defining priority function shape
+	UtilizationShape []UtilizationShapePoint
+}
+
+// UtilizationShapePoint represents single point of priority function shape
+type UtilizationShapePoint struct {
+	// Utilization (x axis). Valid values are 0 to 100. Fully utilized node maps to 100.
+	Utilization int
+	// Score assigned to given utilization (y axis). Valid values are 0 to 10.
+	Score int
 }
 
 // ExtenderManagedResource describes the arguments of extended resources

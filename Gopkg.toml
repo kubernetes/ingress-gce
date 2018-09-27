@@ -22,27 +22,25 @@ ignored = ["k8s.io/kubernetes/pkg/api"]
 
 [[constraint]]
   name = "k8s.io/api"
-  # Pin to an unreleased commit because the latest release is not compatible
-  # with kubernetes/kubernetes:v1.11.0-beta.1.
-  revision = "dc6e60c1b0483cd8e94610bfacf6989fe55df091"
+  branch = "master"
 
 # This needs to be an override as it is a non-direct dependency and will not be
 # considered by `dep` as a constraint.
 [[override]]
   name = "k8s.io/apiserver"
-  revision = "kubernetes-1.12.0-alpha.0"
+  branch = "master"
 
 [[constraint]]
   name = "k8s.io/apimachinery"
-  revision = "kubernetes-1.12.0-alpha.0"
+  branch = "master"
 
 [[constraint]]
   name = "k8s.io/client-go"
-  revision = "kubernetes-1.12.0-alpha.0"
+  branch = "master"
 
 [[constraint]]
   name = "k8s.io/kubernetes"
-  revision = "v1.11.0-beta.1"
+  branch = "master"
 
 # This needs to be an override as it is a non-direct dependency and will not be
 # considered by `dep` as a constraint.

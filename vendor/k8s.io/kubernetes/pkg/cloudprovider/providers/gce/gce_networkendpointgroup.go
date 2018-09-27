@@ -28,7 +28,6 @@ import (
 )
 
 const (
-	NEGLoadBalancerType          = "LOAD_BALANCING"
 	NEGIPPortNetworkEndpointType = "GCE_VM_IP_PORT"
 )
 

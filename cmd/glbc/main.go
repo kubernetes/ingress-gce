@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"os"
@@ -33,7 +34,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 
-	"k8s.io/ingress-gce/pkg/context"
+	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
 	neg "k8s.io/ingress-gce/pkg/neg"
 
@@ -111,7 +112,7 @@ func main() {
 	cloud := app.NewGCEClient()
 	enableNEG := flags.F.Features.NEG
 	defaultBackendServicePortID := app.DefaultBackendServicePortID(kubeClient)
-	ctxConfig := context.ControllerContextConfig{
+	ctxConfig := ingctx.ControllerContextConfig{
 		NEGEnabled:                    enableNEG,
 		BackendConfigEnabled:          flags.F.EnableBackendConfig,
 		Namespace:                     flags.F.WatchNamespace,
@@ -120,7 +121,7 @@ func main() {
 		HealthCheckPath:               flags.F.HealthCheckPath,
 		DefaultBackendHealthCheckPath: flags.F.DefaultSvcHealthCheckPath,
 	}
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, cloud, namer, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, cloud, namer, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
@@ -134,7 +135,7 @@ func main() {
 	if err != nil {
 		glog.Fatalf("%v", err)
 	}
-	leaderelection.RunOrDie(*electionConfig)
+	leaderelection.RunOrDie(context.Background(), *electionConfig)
 }
 
 // makeLeaderElectionConfig builds a leader election configuration. It will
@@ -164,7 +165,7 @@ func makeLeaderElectionConfig(client clientset.Interface, recorder record.EventR
 		RenewDeadline: flags.F.LeaderElection.RenewDeadline.Duration,
 		RetryPeriod:   flags.F.LeaderElection.RetryPeriod.Duration,
 		Callbacks: leaderelection.LeaderCallbacks{
-			OnStartedLeading: func(_ <-chan struct{}) {
+			OnStartedLeading: func(context.Context) {
 				// Since we are committing a suicide after losing
 				// mastership, we can safely ignore the argument.
 				run()
@@ -176,7 +177,7 @@ func makeLeaderElectionConfig(client clientset.Interface, recorder record.EventR
 	}, nil
 }
 
-func runControllers(ctx *context.ControllerContext) {
+func runControllers(ctx *ingctx.ControllerContext) {
 	stopCh := make(chan struct{})
 	lbc := controller.NewLoadBalancerController(ctx, stopCh)
 
