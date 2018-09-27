@@ -29,6 +29,7 @@ import (
 type FakeMounter struct {
 	MountPoints []MountPoint
 	Log         []FakeAction
+	Filesystem  map[string]FileType
 	// Some tests run things in parallel, make sure the mounter does not produce
 	// any golang's DATA RACE warnings.
 	mutex sync.Mutex
@@ -190,7 +191,10 @@ func (f *FakeMounter) MakeRShared(path string) error {
 }
 
 func (f *FakeMounter) GetFileType(pathname string) (FileType, error) {
-	return FileType("fake"), nil
+	if t, ok := f.Filesystem[pathname]; ok {
+		return t, nil
+	}
+	return FileType("Directory"), nil
 }
 
 func (f *FakeMounter) MakeDir(pathname string) error {
@@ -201,8 +205,15 @@ func (f *FakeMounter) MakeFile(pathname string) error {
 	return nil
 }
 
-func (f *FakeMounter) ExistsPath(pathname string) bool {
-	return false
+func (f *FakeMounter) ExistsPath(pathname string) (bool, error) {
+	if _, ok := f.Filesystem[pathname]; ok {
+		return true, nil
+	}
+	return false, nil
+}
+
+func (f *FakeMounter) EvalHostSymlinks(pathname string) (string, error) {
+	return pathname, nil
 }
 
 func (f *FakeMounter) PrepareSafeSubpath(subPath Subpath) (newHostPath string, cleanupAction func(), err error) {
@@ -231,4 +242,8 @@ func (f *FakeMounter) GetFSGroup(pathname string) (int64, error) {
 
 func (f *FakeMounter) GetSELinuxSupport(pathname string) (bool, error) {
 	return false, errors.New("GetSELinuxSupport not implemented")
+}
+
+func (f *FakeMounter) GetMode(pathname string) (os.FileMode, error) {
+	return 0, errors.New("not implemented")
 }

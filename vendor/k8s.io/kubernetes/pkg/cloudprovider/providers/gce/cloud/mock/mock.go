@@ -476,7 +476,7 @@ func UpdateAlphaBackendServiceHook(ctx context.Context, key *meta.Key, obj *alph
 	return nil
 }
 
-// UpdateAlphaBackendServiceHook defines the hook for updating an alpha BackendService.
+// UpdateBetaBackendServiceHook defines the hook for updating an beta BackendService.
 // It replaces the object with the same key in the mock with the updated object.
 func UpdateBetaBackendServiceHook(ctx context.Context, key *meta.Key, obj *beta.BackendService, m *cloud.MockBetaBackendServices) error {
 	_, err := m.Get(ctx, key)
@@ -492,6 +492,25 @@ func UpdateBetaBackendServiceHook(ctx context.Context, key *meta.Key, obj *beta.
 	obj.SelfLink = cloud.SelfLink(meta.VersionBeta, projectID, "backendServices", key)
 
 	m.Objects[*key] = &cloud.MockBackendServicesObj{Obj: obj}
+	return nil
+}
+
+// UpdateURLMapHook defines the hook for updating a UrlMap.
+// It replaces the object with the same key in the mock with the updated object.
+func UpdateURLMapHook(ctx context.Context, key *meta.Key, obj *ga.UrlMap, m *cloud.MockUrlMaps) error {
+	_, err := m.Get(ctx, key)
+	if err != nil {
+		return &googleapi.Error{
+			Code:    http.StatusNotFound,
+			Message: fmt.Sprintf("Key: %s was not found in UrlMaps", key.String()),
+		}
+	}
+
+	obj.Name = key.Name
+	projectID := m.ProjectRouter.ProjectID(ctx, "ga", "urlMaps")
+	obj.SelfLink = cloud.SelfLink(meta.VersionGA, projectID, "urlMaps", key)
+
+	m.Objects[*key] = &cloud.MockUrlMapsObj{Obj: obj}
 	return nil
 }
 

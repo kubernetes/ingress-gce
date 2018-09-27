@@ -23,6 +23,7 @@ import (
 	"sync"
 
 	"github.com/golang/glog"
+	authenticationv1 "k8s.io/api/authentication/v1"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,8 +32,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/record"
+	csiclientset "k8s.io/csi-api/pkg/client/clientset/versioned"
 	"k8s.io/kubernetes/pkg/cloudprovider"
-	"k8s.io/kubernetes/pkg/util/io"
 	"k8s.io/kubernetes/pkg/util/mount"
 	"k8s.io/kubernetes/pkg/volume/util/recyclerclient"
 )
@@ -202,9 +203,17 @@ type ProvisionableVolumePlugin interface {
 // AttachableVolumePlugin is an extended interface of VolumePlugin and is used for volumes that require attachment
 // to a node before mounting.
 type AttachableVolumePlugin interface {
-	VolumePlugin
+	DeviceMountableVolumePlugin
 	NewAttacher() (Attacher, error)
 	NewDetacher() (Detacher, error)
+}
+
+// DeviceMountableVolumePlugin is an extended interface of VolumePlugin and is used
+// for volumes that requires mount device to a node before binding to volume to pod.
+type DeviceMountableVolumePlugin interface {
+	VolumePlugin
+	NewDeviceMounter() (DeviceMounter, error)
+	NewDeviceUnmounter() (DeviceUnmounter, error)
 	GetDeviceMountRefs(deviceMountPath string) ([]string, error)
 }
 
@@ -214,6 +223,32 @@ type ExpandableVolumePlugin interface {
 	VolumePlugin
 	ExpandVolumeDevice(spec *Spec, newSize resource.Quantity, oldSize resource.Quantity) (resource.Quantity, error)
 	RequiresFSResize() bool
+}
+
+// VolumePluginWithAttachLimits is an extended interface of VolumePlugin that restricts number of
+// volumes that can be attached to a node.
+type VolumePluginWithAttachLimits interface {
+	VolumePlugin
+	// Return maximum number of volumes that can be attached to a node for this plugin.
+	// The key must be same as string returned by VolumeLimitKey function. The returned
+	// map may look like:
+	//     - { "storage-limits-aws-ebs": 39 }
+	//     - { "storage-limits-gce-pd": 10 }
+	// A volume plugin may return error from this function - if it can not be used on a given node or not
+	// applicable in given environment (where environment could be cloudprovider or any other dependency)
+	// For example - calling this function for EBS volume plugin on a GCE node should
+	// result in error.
+	// The returned values are stored in node allocatable property and will be used
+	// by scheduler to determine how many pods with volumes can be scheduled on given node.
+	GetVolumeLimits() (map[string]int64, error)
+	// Return volume limit key string to be used in node capacity constraints
+	// The key must start with prefix storage-limits-. For example:
+	//    - storage-limits-aws-ebs
+	//    - storage-limits-csi-cinder
+	// The key should respect character limit of ResourceName type
+	// This function may be called by kubelet or scheduler to identify node allocatable property
+	// which stores volumes limits.
+	VolumeLimitKey(spec *Spec) string
 }
 
 // BlockVolumePlugin is an extend interface of VolumePlugin and is used for block volumes support.
@@ -275,6 +310,9 @@ type VolumeHost interface {
 	// GetKubeClient returns a client interface
 	GetKubeClient() clientset.Interface
 
+	// GetCSIClient returns a client interface to csi.storage.k8s.io
+	GetCSIClient() csiclientset.Interface
+
 	// NewWrapperMounter finds an appropriate plugin with which to handle
 	// the provided spec.  This is used to implement volume plugins which
 	// "wrap" other plugins.  For example, the "secret" volume is
@@ -292,9 +330,6 @@ type VolumeHost interface {
 	// Get mounter interface.
 	GetMounter(pluginName string) mount.Interface
 
-	// Get writer interface for writing data to disk.
-	GetWriter() io.Writer
-
 	// Returns the hostname of the host kubelet is running on
 	GetHostName() string
 
@@ -309,6 +344,8 @@ type VolumeHost interface {
 
 	// Returns a function that returns a configmap.
 	GetConfigMapFunc() func(namespace, name string) (*v1.ConfigMap, error)
+
+	GetServiceAccountTokenFunc() func(namespace, name string, tr *authenticationv1.TokenRequest) (*authenticationv1.TokenRequest, error)
 
 	// Returns an interface that should be used to execute any utilities in volume plugins
 	GetExec(pluginName string) mount.Exec
@@ -576,12 +613,24 @@ func (pm *VolumePluginMgr) refreshProbedPlugins() {
 			}
 			pm.probedPlugins[event.Plugin.GetPluginName()] = event.Plugin
 		} else if event.Op == ProbeRemove {
-			delete(pm.probedPlugins, event.Plugin.GetPluginName())
+			// Plugin is not available on ProbeRemove event, only PluginName
+			delete(pm.probedPlugins, event.PluginName)
 		} else {
 			glog.Errorf("Unknown Operation on PluginName: %s.",
 				event.Plugin.GetPluginName())
 		}
 	}
+}
+
+// ListVolumePluginWithLimits returns plugins that have volume limits on nodes
+func (pm *VolumePluginMgr) ListVolumePluginWithLimits() []VolumePluginWithAttachLimits {
+	matchedPlugins := []VolumePluginWithAttachLimits{}
+	for _, v := range pm.plugins {
+		if plugin, ok := v.(VolumePluginWithAttachLimits); ok {
+			matchedPlugins = append(matchedPlugins, plugin)
+		}
+	}
+	return matchedPlugins
 }
 
 // FindPersistentPluginBySpec looks for a persistent volume plugin that can
@@ -596,6 +645,20 @@ func (pm *VolumePluginMgr) FindPersistentPluginBySpec(spec *Spec) (PersistentVol
 		return persistentVolumePlugin, nil
 	}
 	return nil, fmt.Errorf("no persistent volume plugin matched")
+}
+
+// FindVolumePluginWithLimitsBySpec returns volume plugin that has a limit on how many
+// of them can be attached to a node
+func (pm *VolumePluginMgr) FindVolumePluginWithLimitsBySpec(spec *Spec) (VolumePluginWithAttachLimits, error) {
+	volumePlugin, err := pm.FindPluginBySpec(spec)
+	if err != nil {
+		return nil, fmt.Errorf("Could not find volume plugin for spec : %#v", spec)
+	}
+
+	if limitedPlugin, ok := volumePlugin.(VolumePluginWithAttachLimits); ok {
+		return limitedPlugin, nil
+	}
+	return nil, fmt.Errorf("no plugin with limits found")
 }
 
 // FindPersistentPluginByName fetches a persistent volume plugin by name.  If
@@ -702,6 +765,30 @@ func (pm *VolumePluginMgr) FindAttachablePluginByName(name string) (AttachableVo
 	}
 	if attachablePlugin, ok := volumePlugin.(AttachableVolumePlugin); ok {
 		return attachablePlugin, nil
+	}
+	return nil, nil
+}
+
+// FindDeviceMountablePluginBySpec fetches a persistent volume plugin by spec.
+func (pm *VolumePluginMgr) FindDeviceMountablePluginBySpec(spec *Spec) (DeviceMountableVolumePlugin, error) {
+	volumePlugin, err := pm.FindPluginBySpec(spec)
+	if err != nil {
+		return nil, err
+	}
+	if deviceMountableVolumePlugin, ok := volumePlugin.(DeviceMountableVolumePlugin); ok {
+		return deviceMountableVolumePlugin, nil
+	}
+	return nil, nil
+}
+
+// FindDeviceMountablePluginByName fetches a devicemountable volume plugin by name.
+func (pm *VolumePluginMgr) FindDeviceMountablePluginByName(name string) (DeviceMountableVolumePlugin, error) {
+	volumePlugin, err := pm.FindPluginByName(name)
+	if err != nil {
+		return nil, err
+	}
+	if deviceMountableVolumePlugin, ok := volumePlugin.(DeviceMountableVolumePlugin); ok {
+		return deviceMountableVolumePlugin, nil
 	}
 	return nil, nil
 }
