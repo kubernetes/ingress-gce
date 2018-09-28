@@ -24,14 +24,15 @@ const FinalizerKeySuffix = "finalizer.cloud.google.com"
 
 // IsDeletionCandidate is true if the passed in meta contains the specified finalizer.
 func IsDeletionCandidate(m meta_v1.ObjectMeta, key string) bool {
-	return m.DeletionTimestamp != nil && hasFinalizer(m, key)
+	return m.DeletionTimestamp != nil && HasFinalizer(m, key)
 }
 
 // NeedToAddFinalizer is true if the passed in meta does not contain the specified finalizer.
 func NeedToAddFinalizer(m meta_v1.ObjectMeta, key string) bool {
-	return m.DeletionTimestamp == nil && !hasFinalizer(m, key)
+	return m.DeletionTimestamp == nil && !HasFinalizer(m, key)
 }
 
-func hasFinalizer(m meta_v1.ObjectMeta, key string) bool {
+// HasFinalizer is true if the passed in meta has the specified finalizer.
+func HasFinalizer(m meta_v1.ObjectMeta, key string) bool {
 	return slice.ContainsString(m.Finalizers, key, nil)
 }
