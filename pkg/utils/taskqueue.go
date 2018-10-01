@@ -98,13 +98,19 @@ func (t *PeriodicTaskQueue) worker() {
 	}
 }
 
-// NewPeriodicTaskQueue creates a new task queue with the given sync function.
-// The sync function is called for every element inserted into the queue.
+// NewPeriodicTaskQueue creates a new task queue with the default rate limiter.
 func NewPeriodicTaskQueue(resource string, syncFn func(string) error) *PeriodicTaskQueue {
+	rl := workqueue.DefaultControllerRateLimiter()
+	return NewPeriodicTaskQueueWithLimiter(resource, syncFn, rl)
+}
+
+// NewPeriodicTaskQueueWithLimiter creates a new task queue with the given sync function
+// and rate limiter. The sync function is called for every element inserted into the queue.
+func NewPeriodicTaskQueueWithLimiter(resource string, syncFn func(string) error, rl workqueue.RateLimiter) *PeriodicTaskQueue {
 	return &PeriodicTaskQueue{
 		resource:   resource,
 		keyFunc:    KeyFunc,
-		queue:      workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		queue:      workqueue.NewRateLimitingQueue(rl),
 		sync:       syncFn,
 		workerDone: make(chan struct{}),
 	}
