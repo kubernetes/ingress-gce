@@ -326,6 +326,10 @@ func (s *batchSyncer) toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints) (map[
 			continue
 		}
 		for _, address := range subset.Addresses {
+			if address.NodeName == nil {
+				glog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
+				continue
+			}
 			zone, err := s.zoneGetter.GetZoneForNode(*address.NodeName)
 			if err != nil {
 				return nil, err
