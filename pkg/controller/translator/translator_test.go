@@ -325,6 +325,7 @@ func TestGetProbe(t *testing.T) {
 	nodePortToHealthCheck := map[utils.ServicePort]string{
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}:  "/healthz",
 		{NodePort: 3002, Protocol: annotations.ProtocolHTTPS}: "/foo",
+		{NodePort: 3003, Protocol: annotations.ProtocolHTTP2}: "/http2-check",
 	}
 	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
 		translator.ctx.ServiceInformer.GetIndexer().Add(svc)
@@ -441,7 +442,7 @@ func makePods(nodePortToHealthCheck map[utils.ServicePort]string, ns string) []*
 						ReadinessProbe: &apiv1.Probe{
 							Handler: apiv1.Handler{
 								HTTPGet: &apiv1.HTTPGetAction{
-									Scheme: apiv1.URIScheme(string(np.Protocol)),
+									Scheme: getProbeScheme(np.Protocol),
 									Path:   u,
 									Port: intstr.IntOrString{
 										Type:   intstr.Int,

@@ -245,7 +245,7 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 		}
 		logStr := fmt.Sprintf("Pod %v matching service selectors %v (targetport %+v)", pod.Name, l, targetPort)
 		for _, c := range pod.Spec.Containers {
-			if !isSimpleHTTPProbe(c.ReadinessProbe) || string(protocol) != string(c.ReadinessProbe.HTTPGet.Scheme) {
+			if !isSimpleHTTPProbe(c.ReadinessProbe) || getProbeScheme(protocol) != c.ReadinessProbe.HTTPGet.Scheme {
 				continue
 			}
 
@@ -303,6 +303,15 @@ func isSimpleHTTPProbe(probe *api_v1.Probe) bool {
 	return (probe != nil && probe.Handler.HTTPGet != nil && probe.Handler.HTTPGet.Host == "" &&
 		(len(probe.Handler.HTTPGet.HTTPHeaders) == 0 ||
 			(len(probe.Handler.HTTPGet.HTTPHeaders) == 1 && probe.Handler.HTTPGet.HTTPHeaders[0].Name == "Host")))
+}
+
+// getProbeScheme returns the Kubernetes API URL scheme corresponding to the
+// protocol.
+func getProbeScheme(protocol annotations.AppProtocol) api_v1.URIScheme {
+	if protocol == annotations.ProtocolHTTP2 {
+		return api_v1.URISchemeHTTPS
+	}
+	return api_v1.URIScheme(string(protocol))
 }
 
 // GetProbe returns a probe that's used for the given nodeport
