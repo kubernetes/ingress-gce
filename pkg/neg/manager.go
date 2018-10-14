@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	negsyncer "k8s.io/ingress-gce/pkg/neg/syncer"
+	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 )
 

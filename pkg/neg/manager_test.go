@@ -29,7 +29,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/neg/syncer"
+	"k8s.io/ingress-gce/pkg/neg/syncers"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -67,14 +67,14 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		name      string
 		ports     types.PortNameMap
 		stop      bool
-		expect    []syncer.NegSyncerKey // keys of running syncers
+		expect    []syncers.NegSyncerKey // keys of running syncers
 	}{
 		{
 			"ns1",
 			"n1",
 			types.PortNameMap{1000: "80", 2000: "443"},
 			false,
-			[]syncer.NegSyncerKey{
+			[]syncers.NegSyncerKey{
 				getSyncerKey("ns1", "n1", 1000, "80"),
 				getSyncerKey("ns1", "n1", 2000, "443"),
 			},
@@ -84,7 +84,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			"n1",
 			types.PortNameMap{3000: "80", 4000: "namedport"},
 			false,
-			[]syncer.NegSyncerKey{
+			[]syncers.NegSyncerKey{
 				getSyncerKey("ns1", "n1", 3000, "80"),
 				getSyncerKey("ns1", "n1", 4000, "namedport"),
 			},
@@ -94,7 +94,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			"n1",
 			types.PortNameMap{3000: "80"},
 			false,
-			[]syncer.NegSyncerKey{
+			[]syncers.NegSyncerKey{
 				getSyncerKey("ns1", "n1", 3000, "80"),
 				getSyncerKey("ns1", "n1", 4000, "namedport"),
 				getSyncerKey("ns2", "n1", 3000, "80"),
@@ -105,7 +105,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			"n1",
 			types.PortNameMap{},
 			true,
-			[]syncer.NegSyncerKey{
+			[]syncers.NegSyncerKey{
 				getSyncerKey("ns2", "n1", 3000, "80"),
 			},
 		},
