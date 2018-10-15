@@ -59,7 +59,7 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		ResyncPeriod:            1 * time.Second,
 		DefaultBackendSvcPortID: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, nil, namer, ctxConfig)
 	controller := NewController(
 		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		context,
