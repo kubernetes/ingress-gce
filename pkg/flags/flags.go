@@ -128,12 +128,15 @@ type Features struct {
 	NEG bool
 	// NEGExposed enables using standalone (exposed) NEGs
 	NEGExposed bool
+	// ManagedCertificates enables using ManagedCertificate CRD
+	ManagedCertificates bool
 }
 
 var DefaultFeatures = &Features{
-	Http2:      true,
-	NEG:        true,
-	NEGExposed: true,
+	Http2:               true,
+	NEG:                 true,
+	NEGExposed:          true,
+	ManagedCertificates: false,
 }
 
 func EnabledFeatures() *Features {
@@ -210,6 +213,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	leaderelectionconfig.BindFlags(&F.LeaderElection.LeaderElectionConfiguration, flag.CommandLine)
 	flag.StringVar(&F.LeaderElection.LockObjectNamespace, "lock-object-namespace", F.LeaderElection.LockObjectNamespace, "Define the namespace of the lock object.")
 	flag.StringVar(&F.LeaderElection.LockObjectName, "lock-object-name", F.LeaderElection.LockObjectName, "Define the name of the lock object.")
+	flag.BoolVar(&F.Features.ManagedCertificates, "enable-managed-certificates", F.Features.ManagedCertificates, "Enable ManagedCertificates.")
 
 	// Deprecated F.
 	flag.BoolVar(&F.Verbose, "verbose", false,

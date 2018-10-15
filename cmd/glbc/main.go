@@ -23,6 +23,7 @@ import (
 	"os"
 	"time"
 
+	managedcertificatesclient "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/clientgen/clientset/versioned"
 	"github.com/golang/glog"
 	flag "github.com/spf13/pflag"
 
@@ -82,6 +83,12 @@ func main() {
 		glog.Fatalf("Failed to create kubernetes client: %v", err)
 	}
 
+	// Ingress only reads status of ManagedCertificate CR which is set in another component.
+	mcrtClient, err := managedcertificatesclient.NewForConfig(kubeConfig)
+	if err != nil {
+		glog.Fatalf("Failed to create Managed Certificates client: %v", err)
+	}
+
 	var backendConfigClient backendconfigclient.Interface
 	if flags.F.EnableBackendConfig {
 		crdClient, err := crdclient.NewForConfig(kubeConfig)
@@ -121,7 +128,7 @@ func main() {
 		HealthCheckPath:               flags.F.HealthCheckPath,
 		DefaultBackendHealthCheckPath: flags.F.DefaultSvcHealthCheckPath,
 	}
-	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, cloud, namer, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, mcrtClient, cloud, namer, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {

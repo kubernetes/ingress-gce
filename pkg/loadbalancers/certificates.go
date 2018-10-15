@@ -23,23 +23,49 @@ import (
 
 	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+const SslCertificateMissing = "SslCertificateMissing"
+
 func (l *L7) checkSSLCert() error {
-	// Handle Pre-Shared cert and early return if used
-	if used, err := l.usePreSharedCert(); used {
+	if flags.F.Features.ManagedCertificates {
+		// Handle annotation managed-certificates
+		managedSslCerts, used, err := l.getManagedCertificates()
+		if used {
+			l.sslCerts = managedSslCerts
+			return err
+		}
+	}
+
+	// Handle annotation pre-shared-cert
+	used, preSharedSslCerts, err := l.getPreSharedCertificates()
+	if used {
+		l.sslCerts = preSharedSslCerts
 		return err
 	}
 
 	// Get updated value of certificate for comparison
-	if err := l.populateSSLCert(); err != nil {
+	existingSecretsSslCerts, err := l.getIngressManagedSslCerts()
+	if err != nil {
 		return err
 	}
 
-	existingCertsMap := getMapfromCertList(l.sslCerts)
-	l.oldSSLCerts = l.sslCerts
-	l.sslCerts = make([]*compute.SslCertificate, 0)
+	l.oldSSLCerts = existingSecretsSslCerts
+	secretsSslCerts, err := l.createSecretsSslCertificates(existingSecretsSslCerts)
+	l.sslCerts = secretsSslCerts
+	return err
+}
+
+// createSecretsSslCertificates creates SslCertificates based on kubernetes secrets in Ingress configuration.
+func (l *L7) createSecretsSslCertificates(existingCerts []*compute.SslCertificate) ([]*compute.SslCertificate, error) {
+	var result []*compute.SslCertificate
+
+	existingCertsMap := getMapfromCertList(existingCerts)
 
 	// mapping of currently configured certs
 	visitedCertMap := make(map[string]string)
@@ -64,7 +90,7 @@ func (l *L7) checkSSLCert() error {
 			if cert, ok := existingCertsMap[gcpCertName]; ok {
 				glog.V(3).Infof("Secret %q already exists as certificate %q", tlsCert.Name, gcpCertName)
 				visitedCertMap[gcpCertName] = fmt.Sprintf("certificate:%q", gcpCertName)
-				l.sslCerts = append(l.sslCerts, cert)
+				result = append(result, cert)
 				continue
 			}
 		}
@@ -82,46 +108,89 @@ func (l *L7) checkSSLCert() error {
 			continue
 		}
 		visitedCertMap[gcpCertName] = fmt.Sprintf("secret:%q", tlsCert.Name)
-		l.sslCerts = append(l.sslCerts, cert)
+		result = append(result, cert)
 	}
 
 	// Save the old certs for cleanup after we update the target proxy.
 	if len(failedCerts) > 0 {
-		return fmt.Errorf("Cert creation failures - %s", strings.Join(failedCerts, ","))
+		return result, fmt.Errorf("Cert creation failures - %s", strings.Join(failedCerts, ","))
 	}
-	return nil
+	return result, nil
 }
 
-func (l *L7) usePreSharedCert() (bool, error) {
-	// Use the named GCE cert when it is specified by the annotation.
-	preSharedCertName := l.runtimeInfo.TLSName
-	if preSharedCertName == "" {
-		return false, nil
-	}
-	preSharedCerts := strings.Split(preSharedCertName, ",")
-	l.sslCerts = make([]*compute.SslCertificate, 0, len(preSharedCerts))
+// getSslCertificates fetches GCE SslCertificate resources by names.
+func (l *L7) getSslCertificates(names []string) ([]*compute.SslCertificate, error) {
+	var result []*compute.SslCertificate
 	var failedCerts []string
-
-	for _, sharedCert := range preSharedCerts {
+	for _, name := range names {
 		// Ask GCE for the cert, checking for problems and existence.
-		sharedCert = strings.TrimSpace(sharedCert)
-		cert, err := l.cloud.GetSslCertificate(sharedCert)
+		cert, err := l.cloud.GetSslCertificate(name)
 		if err != nil {
-			failedCerts = append(failedCerts, sharedCert+" Error: "+err.Error())
+			failedCerts = append(failedCerts, name+": "+err.Error())
+			l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, SslCertificateMissing, err.Error())
 			continue
 		}
 		if cert == nil {
-			failedCerts = append(failedCerts, sharedCert+" Error: unable to find existing sslCertificate")
+			failedCerts = append(failedCerts, name+": unable to find existing SslCertificate")
 			continue
 		}
 
-		glog.V(2).Infof("Using existing sslCertificate %v for %v", sharedCert, l.Name)
-		l.sslCerts = append(l.sslCerts, cert)
+		glog.V(2).Infof("Using existing SslCertificate %v for %v", name, l.Name)
+		result = append(result, cert)
 	}
 	if len(failedCerts) != 0 {
-		return true, fmt.Errorf("PreSharedCert errors - %s", strings.Join(failedCerts, ","))
+		return result, fmt.Errorf("Errors - %s", strings.Join(failedCerts, ","))
 	}
-	return true, nil
+
+	return result, nil
+}
+
+// getManagedCertificates fetches SslCertificates specified via managed-certificates annotation.
+func (l *L7) getManagedCertificates() ([]*compute.SslCertificate, bool, error) {
+	if l.runtimeInfo.ManagedCertificates == "" {
+		return nil, false, nil
+	}
+
+	mcrtsNames := utils.SplitAnnotation(l.runtimeInfo.ManagedCertificates)
+	req, err := labels.NewRequirement("metadata.name", selection.In, mcrtsNames)
+	if err != nil {
+		return nil, true, err
+	}
+
+	sel := labels.NewSelector()
+	sel.Add(*req)
+	mcrts, err := l.mcrt.ManagedCertificates(l.runtimeInfo.Ingress.Namespace).List(sel)
+	if err != nil {
+		return nil, true, err
+	}
+
+	var names []string
+	for _, mcrt := range mcrts {
+		if mcrt.Status.CertificateName != "" {
+			names = append(names, mcrt.Status.CertificateName)
+		}
+	}
+
+	sslCerts, err := l.getSslCertificates(names)
+	if err != nil {
+		return sslCerts, true, fmt.Errorf("managed-certificates errors: %s", err.Error())
+	}
+
+	return sslCerts, true, nil
+}
+
+// getPreSharedCertificates fetches SslCertificates specified via pre-shared-cert annotation.
+func (l *L7) getPreSharedCertificates() (bool, []*compute.SslCertificate, error) {
+	if l.runtimeInfo.TLSName == "" {
+		return false, nil, nil
+	}
+	sslCerts, err := l.getSslCertificates(utils.SplitAnnotation(l.runtimeInfo.TLSName))
+
+	if err != nil {
+		return true, sslCerts, fmt.Errorf("pre-shared-cert errors: %s", err.Error())
+	}
+
+	return true, sslCerts, nil
 }
 
 func getMapfromCertList(certs []*compute.SslCertificate) map[string]*compute.SslCertificate {
@@ -135,28 +204,32 @@ func getMapfromCertList(certs []*compute.SslCertificate) map[string]*compute.Ssl
 	return certMap
 }
 
-func (l *L7) populateSSLCert() error {
-	l.sslCerts = make([]*compute.SslCertificate, 0)
+// getIngressManagedSslCerts fetches SslCertificate resources created and managed by this load balancer
+// instance. These SslCertificate resources were created based on kubernetes secrets in Ingress
+// configuration.
+func (l *L7) getIngressManagedSslCerts() ([]*compute.SslCertificate, error) {
+	var result []*compute.SslCertificate
+
 	// Currently we list all certs available in gcloud and filter the ones managed by this loadbalancer instance. This is
 	// to make sure we garbage collect any old certs that this instance might have lost track of due to crashes.
 	// Can be a performance issue if there are too many global certs, default quota is only 10.
 	certs, err := l.cloud.ListSslCertificates()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, c := range certs {
 		if l.namer.IsCertUsedForLB(l.Name, c.Name) {
 			glog.V(4).Infof("Populating ssl cert %s for l7 %s", c.Name, l.Name)
-			l.sslCerts = append(l.sslCerts, c)
+			result = append(result, c)
 		}
 	}
-	if len(l.sslCerts) == 0 {
+	if len(result) == 0 {
 		// Check for legacy cert since that follows a different naming convention
 		glog.V(4).Infof("Looking for legacy ssl certs")
 		expectedCertLinks, err := l.getSslCertLinkInUse()
 		if err != nil {
 			// Return nil if target proxy doesn't exist.
-			return utils.IgnoreHTTPNotFound(err)
+			return nil, utils.IgnoreHTTPNotFound(err)
 		}
 		for _, link := range expectedCertLinks {
 			// Retrieve the certificate and ignore error if certificate wasn't found
@@ -172,11 +245,11 @@ func (l *L7) populateSSLCert() error {
 			cert, _ := l.cloud.GetSslCertificate(name)
 			if cert != nil {
 				glog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l.Name)
-				l.sslCerts = append(l.sslCerts, cert)
+				result = append(result, cert)
 			}
 		}
 	}
-	return nil
+	return result, nil
 }
 
 func (l *L7) deleteOldSSLCerts() {

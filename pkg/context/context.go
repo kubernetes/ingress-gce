@@ -17,6 +17,8 @@ import (
 	"sync"
 	"time"
 
+	managedcertificatesclient "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/clientgen/clientset/versioned"
+	managedcertificatesv1alpha1 "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/clientgen/informers/externalversions/gke.googleapis.com/v1alpha1"
 	"github.com/golang/glog"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -51,12 +53,13 @@ type ControllerContext struct {
 
 	ControllerContextConfig
 
-	IngressInformer       cache.SharedIndexInformer
-	ServiceInformer       cache.SharedIndexInformer
-	BackendConfigInformer cache.SharedIndexInformer
-	PodInformer           cache.SharedIndexInformer
-	NodeInformer          cache.SharedIndexInformer
-	EndpointInformer      cache.SharedIndexInformer
+	IngressInformer            cache.SharedIndexInformer
+	ServiceInformer            cache.SharedIndexInformer
+	BackendConfigInformer      cache.SharedIndexInformer
+	PodInformer                cache.SharedIndexInformer
+	NodeInformer               cache.SharedIndexInformer
+	EndpointInformer           cache.SharedIndexInformer
+	ManagedCertificateInformer cache.SharedIndexInformer
 
 	healthChecks map[string]func() error
 
@@ -82,21 +85,23 @@ type ControllerContextConfig struct {
 func NewControllerContext(
 	kubeClient kubernetes.Interface,
 	backendConfigClient backendconfigclient.Interface,
+	mcrtClient managedcertificatesclient.Interface,
 	cloud *gce.GCECloud,
 	namer *utils.Namer,
 	config ControllerContextConfig) *ControllerContext {
 
 	context := &ControllerContext{
-		KubeClient:              kubeClient,
-		Cloud:                   cloud,
-		ClusterNamer:            namer,
-		ControllerContextConfig: config,
-		IngressInformer:         informerv1beta1.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		PodInformer:             informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		NodeInformer:            informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		recorders:               map[string]record.EventRecorder{},
-		healthChecks:            make(map[string]func() error),
+		KubeClient:                 kubeClient,
+		Cloud:                      cloud,
+		ClusterNamer:               namer,
+		ControllerContextConfig:    config,
+		IngressInformer:            informerv1beta1.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		ServiceInformer:            informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		PodInformer:                informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		NodeInformer:               informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		ManagedCertificateInformer: managedcertificatesv1alpha1.NewManagedCertificateInformer(mcrtClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		recorders:                  map[string]record.EventRecorder{},
+		healthChecks:               make(map[string]func() error),
 	}
 	if config.NEGEnabled {
 		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
@@ -115,6 +120,7 @@ func (ctx *ControllerContext) HasSynced() bool {
 		ctx.ServiceInformer.HasSynced,
 		ctx.PodInformer.HasSynced,
 		ctx.NodeInformer.HasSynced,
+		ctx.ManagedCertificateInformer.HasSynced,
 	}
 	if ctx.EndpointInformer != nil {
 		funcs = append(funcs, ctx.EndpointInformer.HasSynced)
@@ -177,6 +183,7 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	go ctx.ServiceInformer.Run(stopCh)
 	go ctx.PodInformer.Run(stopCh)
 	go ctx.NodeInformer.Run(stopCh)
+	go ctx.ManagedCertificateInformer.Run(stopCh)
 	if ctx.EndpointInformer != nil {
 		go ctx.EndpointInformer.Run(stopCh)
 	}

@@ -64,6 +64,12 @@ const (
 	// This is read only for users. Controller will overrite any user updates.
 	// This is only set for ingresses with ingressClass = "gce-multi-cluster"
 	InstanceGroupsAnnotationKey = "ingress.gcp.kubernetes.io/instance-groups"
+
+	// ManagedCertificates represents the specific ManagedCertificate resources for
+	// the Ingress controller to use to terminate SSL. The controller *does not*
+	// manage ManagedCertificate resources, it is the user's responsibility to
+	// create/delete them.
+	ManagedCertificates = "gke.googleapis.com/managed-certificates"
 )
 
 // Ingress represents ingress annotations.
@@ -109,6 +115,14 @@ func (ing *Ingress) StaticIPName() string {
 
 func (ing *Ingress) IngressClass() string {
 	val, ok := ing.v[IngressClassKey]
+	if !ok {
+		return ""
+	}
+	return val
+}
+
+func (ing *Ingress) ManagedCertificates() string {
+	val, ok := ing.v[ManagedCertificates]
 	if !ok {
 		return ""
 	}

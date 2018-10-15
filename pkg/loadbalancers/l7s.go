@@ -20,19 +20,23 @@ import (
 	"fmt"
 	"reflect"
 
+	mcrt "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/clientgen/listers/gke.googleapis.com/v1alpha1"
 	"github.com/golang/glog"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/storage"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // L7s implements LoadBalancerPool.
 type L7s struct {
-	cloud       LoadBalancers
-	snapshotter storage.Snapshotter
-	namer       *utils.Namer
+	cloud            LoadBalancers
+	snapshotter      storage.Snapshotter
+	namer            *utils.Namer
+	mcrt             mcrt.ManagedCertificateLister
+	recorderProducer events.RecorderProducer
 }
 
 // Namer returns the namer associated with the L7s.
@@ -43,8 +47,8 @@ func (l *L7s) Namer() *utils.Namer {
 // NewLoadBalancerPool returns a new loadbalancer pool.
 // - cloud: implements LoadBalancers. Used to sync L7 loadbalancer resources
 //	 with the cloud.
-func NewLoadBalancerPool(cloud LoadBalancers, namer *utils.Namer) LoadBalancerPool {
-	return &L7s{cloud, storage.NewInMemoryPool(), namer}
+func NewLoadBalancerPool(cloud LoadBalancers, namer *utils.Namer, mcrt mcrt.ManagedCertificateLister, recorderProducer events.RecorderProducer) LoadBalancerPool {
+	return &L7s{cloud, storage.NewInMemoryPool(), namer, mcrt, recorderProducer}
 }
 
 // Get returns the loadbalancer by name.
@@ -69,6 +73,8 @@ func (l *L7s) Sync(ri *L7RuntimeInfo) error {
 			Name:        l.namer.LoadBalancer(ri.Name),
 			cloud:       l.cloud,
 			namer:       l.namer,
+			mcrt:        l.mcrt,
+			recorder:    l.recorderProducer.Recorder(ri.Ingress.Namespace),
 		}
 	} else {
 		if !reflect.DeepEqual(lb.runtimeInfo, ri) {
