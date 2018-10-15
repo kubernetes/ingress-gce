@@ -463,31 +463,17 @@ func TestIsNEG(t *testing.T) {
 		{defaultPrefix, "k8s1-uid1-namespace-name-80-1e047e33", true},
 		{"mci", "mci1-uid1-ns-svc-port-16c06497", true},
 		{defaultPrefix, "k8s1-uid1234567890123-namespace-name-80-2d8100t5", true},
+		{defaultPrefix, "k8s1-uid12345-namespace-name-80-1e047e33", true},
+		{defaultPrefix, "k8s1-uid12345-ns-svc-port-16c06497", true},
+		{defaultPrefix, "k8s1-wronguid-namespace-name-80-1e047e33", false},
+		{defaultPrefix, "k8s-be-80--uid1", false},
+		{defaultPrefix, "k8s-ssl-foo--uid", false},
+		{defaultPrefix, "invalidk8sresourcename", false},
 	} {
 		namer := NewNamerWithPrefix(tc.prefix, "uid1", "fw1")
 		res := namer.IsNEG(tc.in)
 		if res != tc.want {
 			t.Errorf("with prefix %q, namer.IsNEG(%q) = %v, want %v", tc.prefix, tc.in, res, tc.want)
-		}
-	}
-}
-
-func TestNegBelongsToCluster(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		want bool
-	}{
-		{"k8s1-uid12345-namespace-name-80-1e047e33", true},
-		{"k8s1-uid12345-ns-svc-port-16c06497", true},
-		{"k8s1-wronguid-namespace-name-80-1e047e33", false},
-		{"k8s-be-80--uid1", false},
-		{"k8s-ssl-foo--uid", false},
-		{"invalidk8sresourcename", false},
-	} {
-		namer := NewNamer("uid1234567890", "fw1")
-		res := namer.negBelongsToCluster(tc.name)
-		if res != tc.want {
-			t.Errorf("namer.negBelongsToCluster(%q) = %v, want %v", tc.name, res, tc.want)
 		}
 	}
 }

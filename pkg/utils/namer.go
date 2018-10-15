@@ -224,28 +224,21 @@ func (n *Namer) ParseName(name string) *NameComponents {
 	}
 }
 
-// negBelongsToCluster checks that the UID is present and a substring of the
-// cluster uid, since the NEG naming schema truncates it to 8 characters.
-// This is only valid for NEGs, BackendServices and Healthchecks for NEG.
-func (n *Namer) negBelongsToCluster(name string) bool {
-	fields := strings.Split(name, "-")
-	var uid string
-	if len(fields) > 1 {
-		uid = fields[1]
-	}
-
-	return len(uid) > 0 && strings.Contains(n.UID(), uid)
-}
-
 // NameBelongsToCluster checks if a given name is tagged with this
 // cluster's UID.
 func (n *Namer) NameBelongsToCluster(name string) bool {
-	if !strings.HasPrefix(name, n.prefix) {
+	// Name follows the NEG naming scheme
+	if n.IsNEG(name) {
+		return true
+	}
+
+	// Name follows the naming scheme where clusterid is the suffix.
+	if !strings.HasPrefix(name, n.prefix+"-") {
 		return false
 	}
 	clusterName := n.UID()
 	components := n.ParseName(name)
-	return components.ClusterName == clusterName || n.negBelongsToCluster(name)
+	return components.ClusterName == clusterName
 }
 
 // IGBackend constructs the name for a backend service targeting instance groups.
@@ -389,6 +382,9 @@ func (n *Namer) NEG(namespace, name string, port int32) string {
 }
 
 // IsNEG returns true if the name is a NEG owned by this cluster.
+// It checks that the UID is present and a substring of the
+// cluster uid, since the NEG naming schema truncates it to 8 characters.
+// This is only valid for NEGs, BackendServices and Healthchecks for NEG.
 func (n *Namer) IsNEG(name string) bool {
 	return strings.HasPrefix(name, n.negPrefix())
 }
