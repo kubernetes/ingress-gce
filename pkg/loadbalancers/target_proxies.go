@@ -79,6 +79,10 @@ func (l *L7) checkHttpsProxy() (err error) {
 			newProxy.SslCertificates = append(newProxy.SslCertificates, c.SelfLink)
 		}
 
+		if l.sslPolicy != "" {
+			newProxy.SslPolicy = l.sslPolicy
+		}
+
 		if err = l.cloud.CreateTargetHttpsProxy(newProxy); err != nil {
 			return err
 		}

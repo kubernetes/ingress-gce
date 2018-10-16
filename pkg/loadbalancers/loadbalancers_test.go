@@ -18,14 +18,12 @@ package loadbalancers
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"testing"
 
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-
-	"strconv"
-	"strings"
-
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -652,6 +650,8 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	}
 }
 
+// TestCreateHTTPSLoadBalancer tests creating an Ingress with a
+// named certificate and an attached SSLPolicy.
 func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 	// This should NOT create the forwarding rule and target proxy
 	// associated with the HTTP branch of this loadbalancer.
@@ -665,6 +665,7 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 		AllowHTTP: false,
 		TLSName:   tlsName,
 		UrlMap:    gceUrlMap,
+		SSLPolicy: "https://google.com/sslpolicy/selflink",
 	}
 
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
@@ -678,6 +679,10 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 	l7, err := pool.Get(lbInfo.Name)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
+	}
+
+	if l7.sslPolicy != lbInfo.SSLPolicy {
+		t.Fatalf("l7 missing SSLPolicy: found %s, expected %s", l7.sslPolicy, lbInfo.SSLPolicy)
 	}
 	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
 }

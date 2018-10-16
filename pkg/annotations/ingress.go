@@ -48,6 +48,13 @@ const (
 	// to the target proxies of the Ingress.
 	PreSharedCertKey = "ingress.gcp.kubernetes.io/pre-shared-cert"
 
+	// SSLPolicyKey represents a URL for a pre-existing Google Cloud
+	// SSLPolicy. The controller *does not* manage the SSLPolicy, it is the
+	// user's responsibility to create/delete it.
+	// In GCP, the Ingress controller assigns the SSL Policy with this name
+	// to the target proxies of the ingress.
+	SSLPolicyKey = "ingress.gcp.kubernetes.io/ssl-policy"
+
 	// IngressClassKey picks a specific "class" for the Ingress. The controller
 	// only processes Ingresses with this annotation either unset, or set
 	// to either gceIngessClass or the empty string.
@@ -92,6 +99,15 @@ func (ing *Ingress) AllowHTTP() bool {
 // UseNamedTLS returns the name of the GCE SSL certificate. Empty by default.
 func (ing *Ingress) UseNamedTLS() string {
 	val, ok := ing.v[PreSharedCertKey]
+	if !ok {
+		return ""
+	}
+
+	return val
+}
+
+func (ing *Ingress) UseSSLPolicy() string {
+	val, ok := ing.v[SSLPolicyKey]
 	if !ok {
 		return ""
 	}

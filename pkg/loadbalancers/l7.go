@@ -22,9 +22,7 @@ import (
 	"strings"
 
 	"github.com/golang/glog"
-
 	compute "google.golang.org/api/compute/v1"
-
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -50,6 +48,8 @@ type L7RuntimeInfo struct {
 	TLS []*TLSCerts
 	// TLSName is the name of the preshared cert to use. Multiple certs can be specified as a comma-separated string
 	TLSName string
+	// SSLPolicy is the URL for an SSL Policy to apply to a load balancer.
+	SSLPolicy string
 	// AllowHTTP will not setup :80, if TLS is nil and AllowHTTP is set,
 	// no loadbalancer is created.
 	AllowHTTP bool
@@ -99,6 +99,8 @@ type L7 struct {
 	ip *compute.Address
 	// sslCerts is the list of ssl certs associated with the targetHTTPSProxy.
 	sslCerts []*compute.SslCertificate
+	// sslPolicy the URL of the SSLPolicy to apply to this proxy.
+	sslPolicy string
 	// oldSSLCerts is the list of certs that used to be hooked up to the
 	// targetHTTPSProxy. We can't update a cert in place, so we need
 	// to create - update - delete and storing the old certs in a list
@@ -160,6 +162,10 @@ func (l *L7) edgeHopHttps() error {
 	}
 
 	if err := l.checkHttpsProxy(); err != nil {
+		return err
+	}
+
+	if err := l.checkSSLPolicy(); err != nil {
 		return err
 	}
 	return l.checkHttpsForwardingRule()
@@ -284,6 +290,10 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendSyncer backends
 	}
 	if len(certs) > 0 {
 		existing[fmt.Sprintf("%v/ssl-cert", annotations.StatusPrefix)] = strings.Join(certs, ",")
+	}
+
+	if l7.sslPolicy != "" {
+		existing[fmt.Sprintf("%v/ssl-policy", annotations.StatusPrefix)] = l7.sslPolicy
 	}
 	// TODO: We really want to know *when* a backend flipped states.
 	existing[fmt.Sprintf("%v/backends", annotations.StatusPrefix)] = jsonBackendState

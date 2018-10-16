@@ -22,7 +22,13 @@ configured.
 `ingress.gcp.kubernetes.io/pre-shared-cert`  
 
 Instead of storing certificates and keys in Kubernetes secrets, you can upload them to GCP and
-reference them by name through this annotation.  
+reference them by name through this annotation.
+
+#### Use GCP SSL Policy
+`ingress.gcp.kubernetes.io/ssl-policy`
+
+Use a pre-existing SSL Policy by specifying the selfLink for the SSL Policy.
+`selfLink` can be found via: `gcloud beta compute ssl-policies --project $PROJECT describe $POLICY_NAME`.
 
 #### Specify Reserved GCP address  
 `kubernetes.io/ingress.global-static-ip-name`   

@@ -28,6 +28,7 @@ func TestIngress(t *testing.T) {
 		ing          *extensions.Ingress
 		allowHTTP    bool
 		useNamedTLS  string
+		useSSLPolicy string
 		staticIPName string
 		ingressClass string
 	}{
@@ -43,11 +44,13 @@ func TestIngress(t *testing.T) {
 						IngressClassKey:  "gce",
 						PreSharedCertKey: "shared-cert-key",
 						StaticIPNameKey:  "1.2.3.4",
+						SSLPolicyKey:     "https://google.com/sslpolicy/selflink",
 					},
 				},
 			},
 			allowHTTP:    false,
 			useNamedTLS:  "shared-cert-key",
+			useSSLPolicy: "https://google.com/sslpolicy/selflink",
 			staticIPName: "1.2.3.4",
 			ingressClass: "gce",
 		},
@@ -64,6 +67,9 @@ func TestIngress(t *testing.T) {
 		}
 		if x := ing.IngressClass(); x != tc.ingressClass {
 			t.Errorf("ingress %+v; IngressClass() = %v, want %v", tc.ing, x, tc.ingressClass)
+		}
+		if x := ing.UseSSLPolicy(); x != tc.useSSLPolicy {
+			t.Errorf("ingress %+v; UseSSLPolicy() = %v, want %v", tc.ing, x, tc.useSSLPolicy)
 		}
 	}
 }
