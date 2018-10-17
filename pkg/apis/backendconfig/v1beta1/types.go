@@ -36,9 +36,11 @@ type BackendConfig struct {
 // BackendConfigSpec is the spec for a BackendConfig resource
 // +k8s:openapi-gen=true
 type BackendConfigSpec struct {
-	Iap            *IAPConfig            `json:"iap,omitempty"`
-	Cdn            *CDNConfig            `json:"cdn,omitempty"`
-	SecurityPolicy *SecurityPolicyConfig `json:"securityPolicy,omitempty"`
+	Iap                *IAPConfig                `json:"iap,omitempty"`
+	Cdn                *CDNConfig                `json:"cdn,omitempty"`
+	SecurityPolicy     *SecurityPolicyConfig     `json:"securityPolicy,omitempty"`
+	TimeoutSec         int64                     `json:"timeoutSec,omitempty"`
+	ConnectionDraining *ConnectionDrainingConfig `json:"connectionDraining,omitempty"`
 }
 
 // BackendConfigStatus is the status for a BackendConfig resource
@@ -106,4 +108,11 @@ type CacheKeyPolicy struct {
 type SecurityPolicyConfig struct {
 	// Name of the security policy that should be associated.
 	Name string `json:"name"`
+}
+
+// ConnectionDrainingConfig contains configuration for connection draining.
+// For now only a timeout, later possibly ForceSendFields or NullFields.
+// +k8s:openapi-gen=true
+type ConnectionDrainingConfig struct {
+	DrainingTimeoutSec int64 `json:"drainingTimeoutSec,omitempty"`
 }

@@ -88,11 +88,22 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 								Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SecurityPolicyConfig"),
 							},
 						},
+						"timeoutSec": {
+							SchemaProps: spec.SchemaProps{
+								Type:   []string{"integer"},
+								Format: "int64",
+							},
+						},
+						"connectionDraining": {
+							SchemaProps: spec.SchemaProps{
+								Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConnectionDrainingConfig"),
+							},
+						},
 					},
 				},
 			},
 			Dependencies: []string{
-				"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.IAPConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SecurityPolicyConfig"},
+				"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConnectionDrainingConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.IAPConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SecurityPolicyConfig"},
 		},
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig": {
 			Schema: spec.Schema{
@@ -169,6 +180,22 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 										},
 									},
 								},
+							},
+						},
+					},
+				},
+			},
+			Dependencies: []string{},
+		},
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConnectionDrainingConfig": {
+			Schema: spec.Schema{
+				SchemaProps: spec.SchemaProps{
+					Description: "ConnectionDrainingConfig contains configuration for connection draining. For now only a timeout, later possibly ForceSendFields or NullFields.",
+					Properties: map[string]spec.Schema{
+						"drainingTimeoutSec": {
+							SchemaProps: spec.SchemaProps{
+								Type:   []string{"integer"},
+								Format: "int64",
 							},
 						},
 					},

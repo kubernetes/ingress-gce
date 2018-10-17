@@ -74,6 +74,15 @@ var (
 		ID:         fakeSvcPortID,
 		NEGEnabled: true,
 	}
+
+	svcPortWithTimeout = utils.ServicePort{
+		ID: fakeSvcPortID,
+		BackendConfig: &backendconfigv1beta1.BackendConfig{
+			Spec: backendconfigv1beta1.BackendConfigSpec{
+				TimeoutSec: 123,
+			},
+		},
+	}
 )
 
 func TestFeaturesFromServicePort(t *testing.T) {
@@ -106,6 +115,11 @@ func TestFeaturesFromServicePort(t *testing.T) {
 			desc:             "HTTP2 + SecurityPolicy",
 			svcPort:          svcPortWithHTTP2SecurityPolicy,
 			expectedFeatures: []string{"HTTP2", "SecurityPolicy"},
+		},
+		{
+			desc:             "Timeout",
+			svcPort:          svcPortWithTimeout,
+			expectedFeatures: []string{"Timeout"},
 		},
 	}
 
@@ -146,6 +160,11 @@ func TestVersionFromFeatures(t *testing.T) {
 		{
 			desc:            "HTTP2 + SecurityPolicy",
 			features:        []string{FeatureHTTP2, FeatureSecurityPolicy},
+			expectedVersion: meta.VersionBeta,
+		},
+		{
+			desc:            "Timeout",
+			features:        []string{FeatureTimeout},
 			expectedVersion: meta.VersionBeta,
 		},
 		{
