@@ -39,7 +39,7 @@ type BackendConfigSpec struct {
 	Iap                *IAPConfig                `json:"iap,omitempty"`
 	Cdn                *CDNConfig                `json:"cdn,omitempty"`
 	SecurityPolicy     *SecurityPolicyConfig     `json:"securityPolicy,omitempty"`
-	TimeoutSec         int64                     `json:"timeoutSec,omitempty"`
+	TimeoutSec         *int64                    `json:"timeoutSec,omitempty"`
 	ConnectionDraining *ConnectionDrainingConfig `json:"connectionDraining,omitempty"`
 }
 
@@ -111,8 +111,9 @@ type SecurityPolicyConfig struct {
 }
 
 // ConnectionDrainingConfig contains configuration for connection draining.
-// For now only a timeout, later possibly ForceSendFields or NullFields.
+// For now the draining timeout. May manage more settings in the future.
 // +k8s:openapi-gen=true
 type ConnectionDrainingConfig struct {
-	DrainingTimeoutSec int64 `json:"drainingTimeoutSec,omitempty"`
+	// Draining timeout in seconds.
+	DrainingTimeoutSec *int64 `json:"drainingTimeoutSec,omitempty"`
 }

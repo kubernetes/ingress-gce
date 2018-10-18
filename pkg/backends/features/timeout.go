@@ -17,6 +17,8 @@ limitations under the License.
 package features
 
 import (
+	"reflect"
+
 	"github.com/golang/glog"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -26,12 +28,12 @@ import (
 // and applies it to the BackendService. It returns true if there were existing
 // settings on the BackendService that were overwritten.
 func EnsureTimeout(sp utils.ServicePort, be *composite.BackendService) bool {
-	if sp.BackendConfig.Spec.TimeoutSec == 0 {
+	if sp.BackendConfig.Spec.TimeoutSec == nil {
 		return false
 	}
 	beTemp := &composite.BackendService{}
 	applyTimeoutSettings(sp, beTemp)
-	if beTemp.TimeoutSec != be.TimeoutSec {
+	if !reflect.DeepEqual(beTemp.TimeoutSec, be.TimeoutSec) {
 		applyTimeoutSettings(sp, be)
 		glog.V(2).Infof("Updated Timeout settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
 		return true
@@ -43,6 +45,5 @@ func EnsureTimeout(sp utils.ServicePort, be *composite.BackendService) bool {
 // to the passed in compute.BackendService. A GCE API call still needs to be
 // made to actually persist the changes.
 func applyTimeoutSettings(sp utils.ServicePort, be *composite.BackendService) {
-	beConfig := sp.BackendConfig
-	be.TimeoutSec = beConfig.Spec.TimeoutSec
+	be.TimeoutSec = *sp.BackendConfig.Spec.TimeoutSec
 }

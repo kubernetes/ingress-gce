@@ -35,9 +35,7 @@ func TestEnsureDraining(t *testing.T) {
 			desc: "connection draining setting are missing from spec, no update needed",
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						ConnectionDraining: nil,
-					},
+					Spec: backendconfigv1beta1.BackendConfigSpec{},
 				},
 			},
 			be: &composite.BackendService{
@@ -53,7 +51,7 @@ func TestEnsureDraining(t *testing.T) {
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
 						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
-							DrainingTimeoutSec: 111,
+							DrainingTimeoutSec: intPtr(111),
 						},
 					},
 				},
@@ -71,7 +69,7 @@ func TestEnsureDraining(t *testing.T) {
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
 						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
-							DrainingTimeoutSec: 111,
+							DrainingTimeoutSec: intPtr(111),
 						},
 					},
 				},

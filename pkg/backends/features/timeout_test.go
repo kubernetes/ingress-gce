@@ -32,14 +32,20 @@ func TestEnsureTimeout(t *testing.T) {
 		updateExpected bool
 	}{
 		{
-			desc: "timeout setting are missing from spec, no update needed",
+			desc: "timeout setting missing from spec, no update needed",
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						TimeoutSec: 0,
-					},
+					Spec: backendconfigv1beta1.BackendConfigSpec{},
 				},
 			},
+			be: &composite.BackendService{
+				TimeoutSec: 0,
+			},
+			updateExpected: false,
+		},
+		{
+			desc:           "timeout setting missing from both ends, no update needed",
+			sp:             utils.ServicePort{BackendConfig: &backendconfigv1beta1.BackendConfig{}},
 			be:             &composite.BackendService{},
 			updateExpected: false,
 		},
@@ -48,7 +54,7 @@ func TestEnsureTimeout(t *testing.T) {
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
-						TimeoutSec: 111,
+						TimeoutSec: intPtr(111),
 					},
 				},
 			},
@@ -62,7 +68,7 @@ func TestEnsureTimeout(t *testing.T) {
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
-						TimeoutSec: 222,
+						TimeoutSec: intPtr(222),
 					},
 				},
 			},

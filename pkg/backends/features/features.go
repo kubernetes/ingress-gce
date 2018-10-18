@@ -44,7 +44,7 @@ var (
 	// version to feature names.
 	versionToFeatures = map[meta.Version][]string{
 		meta.VersionAlpha: []string{},
-		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureNEG, FeatureHTTP2, FeatureTimeout, FeatureDraining},
+		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureNEG, FeatureHTTP2},
 	}
 )
 
@@ -63,7 +63,7 @@ func featuresFromServicePort(sp *utils.ServicePort) []string {
 	if sp.BackendConfig != nil && sp.BackendConfig.Spec.SecurityPolicy != nil {
 		features = append(features, FeatureSecurityPolicy)
 	}
-	if sp.BackendConfig != nil && sp.BackendConfig.Spec.TimeoutSec != 0 {
+	if sp.BackendConfig != nil && sp.BackendConfig.Spec.TimeoutSec != nil {
 		features = append(features, FeatureTimeout)
 	}
 	if sp.BackendConfig != nil && sp.BackendConfig.Spec.ConnectionDraining != nil {

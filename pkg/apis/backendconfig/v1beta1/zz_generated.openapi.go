@@ -190,12 +190,13 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConnectionDrainingConfig": {
 			Schema: spec.Schema{
 				SchemaProps: spec.SchemaProps{
-					Description: "ConnectionDrainingConfig contains configuration for connection draining. For now only a timeout, later possibly ForceSendFields or NullFields.",
+					Description: "ConnectionDrainingConfig contains configuration for connection draining. For now the draining timeout. May manage more settings in the future.",
 					Properties: map[string]spec.Schema{
 						"drainingTimeoutSec": {
 							SchemaProps: spec.SchemaProps{
-								Type:   []string{"integer"},
-								Format: "int64",
+								Description: "Draining timeout in seconds.",
+								Type:        []string{"integer"},
+								Format:      "int64",
 							},
 						},
 					},

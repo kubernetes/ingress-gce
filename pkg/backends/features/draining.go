@@ -49,8 +49,9 @@ func EnsureDraining(sp utils.ServicePort, be *composite.BackendService) bool {
 func applyDrainingSettings(sp utils.ServicePort, be *composite.BackendService) {
 	beConfig := sp.BackendConfig
 	setDrainingDefaults(beConfig)
-	be.ConnectionDraining = &composite.ConnectionDraining{
-		DrainingTimeoutSec: beConfig.Spec.ConnectionDraining.DrainingTimeoutSec,
+	be.ConnectionDraining = &composite.ConnectionDraining{}
+	if beConfig.Spec.ConnectionDraining.DrainingTimeoutSec != nil {
+		be.ConnectionDraining.DrainingTimeoutSec = *beConfig.Spec.ConnectionDraining.DrainingTimeoutSec
 	}
 }
 
