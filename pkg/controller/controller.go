@@ -102,8 +102,7 @@ func NewLoadBalancerController(
 
 	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendHealthCheckPath, ctx.ClusterNamer, ctx.DefaultBackendSvcPortID.Service)
 	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer)
-	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer, true)
-
+	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
 	var mcrtLister mcrtv1alpha1.ManagedCertificateLister
 	if ctx.ManagedCertificateEnabled {
 		mcrtLister = mcrtv1alpha1.NewManagedCertificateLister(ctx.ManagedCertificateInformer.GetIndexer())

@@ -56,11 +56,11 @@ var (
 	}
 )
 
-func newTestSyncer(fakeGCE *gce.GCECloud, poolSyncWithCloud bool) *backendSyncer {
+func newTestSyncer(fakeGCE *gce.GCECloud) *backendSyncer {
 	fakeHealthCheckProvider := healthchecks.NewFakeHealthCheckProvider()
 	fakeHealthChecks := healthchecks.NewHealthChecker(fakeHealthCheckProvider, "/", "/healthz", defaultNamer, defaultBackendSvc)
 
-	fakeBackendPool := NewPool(fakeGCE, defaultNamer, poolSyncWithCloud)
+	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
 	syncer := &backendSyncer{
 		backendPool:          fakeBackendPool,
@@ -82,7 +82,7 @@ func newTestSyncer(fakeGCE *gce.GCECloud, poolSyncWithCloud bool) *backendSyncer
 
 func TestSync(t *testing.T) {
 	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-	syncer := newTestSyncer(fakeGCE, false)
+	syncer := newTestSyncer(fakeGCE)
 
 	testCases := []utils.ServicePort{
 		{NodePort: 80, Protocol: annotations.ProtocolHTTP},
@@ -125,7 +125,7 @@ func TestSync(t *testing.T) {
 
 func TestSyncUpdateHTTPS(t *testing.T) {
 	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-	syncer := newTestSyncer(fakeGCE, false)
+	syncer := newTestSyncer(fakeGCE)
 
 	p := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
 	syncer.Sync([]utils.ServicePort{p})
@@ -169,7 +169,7 @@ func TestSyncUpdateHTTPS(t *testing.T) {
 
 func TestSyncUpdateHTTP2(t *testing.T) {
 	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-	syncer := newTestSyncer(fakeGCE, false)
+	syncer := newTestSyncer(fakeGCE)
 
 	p := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
 	syncer.Sync([]utils.ServicePort{p})
@@ -213,7 +213,7 @@ func TestSyncUpdateHTTP2(t *testing.T) {
 
 func TestGC(t *testing.T) {
 	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-	syncer := newTestSyncer(fakeGCE, false)
+	syncer := newTestSyncer(fakeGCE)
 
 	svcNodePorts := []utils.ServicePort{
 		{NodePort: 81, Protocol: annotations.ProtocolHTTP},
@@ -339,7 +339,7 @@ func TestSyncQuota(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-			syncer := newTestSyncer(fakeGCE, false)
+			syncer := newTestSyncer(fakeGCE)
 
 			bsCreated := 0
 			quota := len(tc.newPorts)
@@ -390,7 +390,7 @@ func TestSyncNEG(t *testing.T) {
 	// Convert a BackendPool from non-NEG to NEG.
 	// Expect the old BackendServices to be GC'ed
 	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-	syncer := newTestSyncer(fakeGCE, false)
+	syncer := newTestSyncer(fakeGCE)
 
 	svcPort := utils.ServicePort{NodePort: 81, Protocol: annotations.ProtocolHTTP}
 	if err := syncer.Sync([]utils.ServicePort{svcPort}); err != nil {
@@ -438,7 +438,7 @@ func TestSyncNEG(t *testing.T) {
 
 func TestShutdown(t *testing.T) {
 	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-	syncer := newTestSyncer(fakeGCE, false)
+	syncer := newTestSyncer(fakeGCE)
 
 	// Sync a backend and verify that it doesn't exist after Shutdown()
 	syncer.Sync([]utils.ServicePort{{NodePort: 80}})
@@ -476,7 +476,7 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 
 func TestEnsureBackendServiceProtocol(t *testing.T) {
 	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-	syncer := newTestSyncer(fakeGCE, false)
+	syncer := newTestSyncer(fakeGCE)
 
 	svcPorts := []utils.ServicePort{
 		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}},
@@ -520,7 +520,7 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 
 func TestEnsureBackendServiceDescription(t *testing.T) {
 	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-	syncer := newTestSyncer(fakeGCE, false)
+	syncer := newTestSyncer(fakeGCE)
 
 	svcPorts := []utils.ServicePort{
 		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}},
@@ -558,7 +558,7 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 
 func TestEnsureBackendServiceHealthCheckLink(t *testing.T) {
 	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-	syncer := newTestSyncer(fakeGCE, false)
+	syncer := newTestSyncer(fakeGCE)
 
 	p := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}}
 	syncer.Sync([]utils.ServicePort{p})
