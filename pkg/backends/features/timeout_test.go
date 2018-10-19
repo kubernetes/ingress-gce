@@ -24,6 +24,8 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+var testPortBC = int64(111)
+
 func TestEnsureTimeout(t *testing.T) {
 	testCases := []struct {
 		desc           string
@@ -31,18 +33,6 @@ func TestEnsureTimeout(t *testing.T) {
 		be             *composite.BackendService
 		updateExpected bool
 	}{
-		{
-			desc: "timeout setting missing from spec, no update needed",
-			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{},
-				},
-			},
-			be: &composite.BackendService{
-				TimeoutSec: 0,
-			},
-			updateExpected: false,
-		},
 		{
 			desc:           "timeout setting missing from both ends, no update needed",
 			sp:             utils.ServicePort{BackendConfig: &backendconfigv1beta1.BackendConfig{}},
@@ -54,7 +44,7 @@ func TestEnsureTimeout(t *testing.T) {
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
-						TimeoutSec: intPtr(111),
+						TimeoutSec: &testPortBC,
 					},
 				},
 			},
@@ -68,12 +58,12 @@ func TestEnsureTimeout(t *testing.T) {
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
-						TimeoutSec: intPtr(222),
+						TimeoutSec: &testPortBC,
 					},
 				},
 			},
 			be: &composite.BackendService{
-				TimeoutSec: 111,
+				TimeoutSec: 222,
 			},
 			updateExpected: true,
 		},

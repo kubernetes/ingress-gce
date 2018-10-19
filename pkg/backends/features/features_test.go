@@ -74,26 +74,6 @@ var (
 		ID:         fakeSvcPortID,
 		NEGEnabled: true,
 	}
-
-	svcPortWithTimeout = utils.ServicePort{
-		ID: fakeSvcPortID,
-		BackendConfig: &backendconfigv1beta1.BackendConfig{
-			Spec: backendconfigv1beta1.BackendConfigSpec{
-				TimeoutSec: intPtr(123),
-			},
-		},
-	}
-
-	svcPortWithDrainingTimeout = utils.ServicePort{
-		ID: fakeSvcPortID,
-		BackendConfig: &backendconfigv1beta1.BackendConfig{
-			Spec: backendconfigv1beta1.BackendConfigSpec{
-				ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
-					DrainingTimeoutSec: intPtr(456),
-				},
-			},
-		},
-	}
 )
 
 func TestFeaturesFromServicePort(t *testing.T) {
@@ -126,16 +106,6 @@ func TestFeaturesFromServicePort(t *testing.T) {
 			desc:             "HTTP2 + SecurityPolicy",
 			svcPort:          svcPortWithHTTP2SecurityPolicy,
 			expectedFeatures: []string{"HTTP2", "SecurityPolicy"},
-		},
-		{
-			desc:             "Timeout",
-			svcPort:          svcPortWithTimeout,
-			expectedFeatures: []string{"Timeout"},
-		},
-		{
-			desc:             "Draining Timeout",
-			svcPort:          svcPortWithDrainingTimeout,
-			expectedFeatures: []string{"Draining"},
 		},
 	}
 
@@ -177,16 +147,6 @@ func TestVersionFromFeatures(t *testing.T) {
 			desc:            "HTTP2 + SecurityPolicy",
 			features:        []string{FeatureHTTP2, FeatureSecurityPolicy},
 			expectedVersion: meta.VersionBeta,
-		},
-		{
-			desc:            "Timeout",
-			features:        []string{FeatureTimeout},
-			expectedVersion: meta.VersionGA,
-		},
-		{
-			desc:            "Draining Timeout",
-			features:        []string{FeatureDraining},
-			expectedVersion: meta.VersionGA,
 		},
 		{
 			desc:            "unknown feature",
@@ -273,16 +233,6 @@ func TestVersionFromServicePort(t *testing.T) {
 			svcPort:         svcPortWithHTTP2SecurityPolicy,
 			expectedVersion: meta.VersionBeta,
 		},
-		{
-			desc:            "enabled timeout",
-			svcPort:         svcPortWithTimeout,
-			expectedVersion: meta.VersionGA,
-		},
-		{
-			desc:            "enabled draining timeout",
-			svcPort:         svcPortWithDrainingTimeout,
-			expectedVersion: meta.VersionGA,
-		},
 	}
 
 	for _, tc := range testCases {
@@ -342,8 +292,4 @@ func TestIsLowerVersion(t *testing.T) {
 			t.Errorf("%s: IsLowerVersion(%s, %s)=%t, want %t", tc.desc, tc.v1, tc.v2, res, tc.expect)
 		}
 	}
-}
-
-func intPtr(x int64) *int64 {
-	return &x
 }

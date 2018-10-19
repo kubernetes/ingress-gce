@@ -20,7 +20,6 @@ import (
 	"reflect"
 
 	"github.com/golang/glog"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -44,22 +43,11 @@ func EnsureDraining(sp utils.ServicePort, be *composite.BackendService) bool {
 }
 
 // applyDrainingSettings applies the ConnectionDraining settings specified in the
-// BackendConfig to the passed in compute.BackendService. A GCE API call still needs
+// BackendConfig to the passed in composite.BackendService. A GCE API call still needs
 // to be made to actually persist the changes.
 func applyDrainingSettings(sp utils.ServicePort, be *composite.BackendService) {
-	beConfig := sp.BackendConfig
-	setDrainingDefaults(beConfig)
 	be.ConnectionDraining = &composite.ConnectionDraining{}
-	if beConfig.Spec.ConnectionDraining.DrainingTimeoutSec != nil {
-		be.ConnectionDraining.DrainingTimeoutSec = *beConfig.Spec.ConnectionDraining.DrainingTimeoutSec
-	}
-}
-
-// setDrainingDefaults initializes any nil pointers in Drainning configuration which ensures that
-// there are defaults for missing sub-types. Will be more useful once we support more than just
-// timeouts.
-func setDrainingDefaults(beConfig *backendconfigv1beta1.BackendConfig) {
-	if beConfig.Spec.ConnectionDraining == nil {
-		beConfig.Spec.ConnectionDraining = &backendconfigv1beta1.ConnectionDrainingConfig{}
+	if sp.BackendConfig.Spec.ConnectionDraining.DrainingTimeoutSec != nil {
+		be.ConnectionDraining.DrainingTimeoutSec = *sp.BackendConfig.Spec.ConnectionDraining.DrainingTimeoutSec
 	}
 }

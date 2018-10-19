@@ -42,8 +42,8 @@ func EnsureTimeout(sp utils.ServicePort, be *composite.BackendService) bool {
 }
 
 // applyTimeoutSettings applies the Timeout settings specified in the BackendConfig
-// to the passed in compute.BackendService. A GCE API call still needs to be
-// made to actually persist the changes.
+// to the passed in composite.BackendService. A GCE API call still needs to be made
+// to actually persist the changes.
 func applyTimeoutSettings(sp utils.ServicePort, be *composite.BackendService) {
 	be.TimeoutSec = *sp.BackendConfig.Spec.TimeoutSec
 }

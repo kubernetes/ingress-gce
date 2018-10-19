@@ -33,10 +33,6 @@ const (
 	FeatureSecurityPolicy = "SecurityPolicy"
 	// FeatureNEG defines the feature name of NEG.
 	FeatureNEG = "NEG"
-	// FeatureTimeout define the feature name for timeouts.
-	FeatureTimeout = "Timeout"
-	// FeatureDraining define the feature name for Connection Draining.
-	FeatureDraining = "Draining"
 )
 
 var (
@@ -62,12 +58,6 @@ func featuresFromServicePort(sp *utils.ServicePort) []string {
 	}
 	if sp.BackendConfig != nil && sp.BackendConfig.Spec.SecurityPolicy != nil {
 		features = append(features, FeatureSecurityPolicy)
-	}
-	if sp.BackendConfig != nil && sp.BackendConfig.Spec.TimeoutSec != nil {
-		features = append(features, FeatureTimeout)
-	}
-	if sp.BackendConfig != nil && sp.BackendConfig.Spec.ConnectionDraining != nil {
-		features = append(features, FeatureDraining)
 	}
 	if sp.NEGEnabled {
 		features = append(features, FeatureNEG)

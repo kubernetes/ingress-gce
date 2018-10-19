@@ -24,6 +24,8 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+var testPort = int64(111)
+
 func TestEnsureDraining(t *testing.T) {
 	testCases := []struct {
 		desc           string
@@ -31,6 +33,22 @@ func TestEnsureDraining(t *testing.T) {
 		be             *composite.BackendService
 		updateExpected bool
 	}{
+		{
+			desc: "connection draining timeout setting is defined on serviceport but missing from spec, update needed",
+			sp: utils.ServicePort{
+				BackendConfig: &backendconfigv1beta1.BackendConfig{
+					Spec: backendconfigv1beta1.BackendConfigSpec{
+						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
+							DrainingTimeoutSec: &testPort,
+						},
+					},
+				},
+			},
+			be: &composite.BackendService{
+				ConnectionDraining: &composite.ConnectionDraining{},
+			},
+			updateExpected: true,
+		},
 		{
 			desc: "connection draining setting are missing from spec, no update needed",
 			sp: utils.ServicePort{
@@ -51,7 +69,7 @@ func TestEnsureDraining(t *testing.T) {
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
 						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
-							DrainingTimeoutSec: intPtr(111),
+							DrainingTimeoutSec: &testPort,
 						},
 					},
 				},
@@ -69,7 +87,7 @@ func TestEnsureDraining(t *testing.T) {
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
 						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
-							DrainingTimeoutSec: intPtr(111),
+							DrainingTimeoutSec: &testPort,
 						},
 					},
 				},
