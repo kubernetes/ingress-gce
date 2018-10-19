@@ -19,8 +19,6 @@ package backendconfig
 import (
 	"errors"
 
-	"github.com/golang/glog"
-
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
@@ -48,40 +46,6 @@ func CRDMeta() *crd.CRDMeta {
 	)
 	meta.AddValidationInfo("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.BackendConfig", backendconfigv1beta1.GetOpenAPIDefinitions)
 	return meta
-}
-
-// GetServicesForBackendConfig returns all services that reference the given
-// BackendConfig.
-func GetServicesForBackendConfig(svcLister cache.Store, backendConfig *backendconfigv1beta1.BackendConfig) []*apiv1.Service {
-	svcs := []*apiv1.Service{}
-	for _, obj := range svcLister.List() {
-		svc := obj.(*apiv1.Service)
-		if svc.Namespace != backendConfig.Namespace {
-			continue
-		}
-		backendConfigNames, err := annotations.FromService(svc).GetBackendConfigs()
-		if err != nil {
-			// If the user did not provide the annotation at all, then we
-			// do not want to log an error.
-			if err != annotations.ErrBackendConfigAnnotationMissing {
-				glog.Errorf("Failed to get BackendConfig names from service %s/%s: %v", svc.Namespace, svc.Name, err)
-			}
-			continue
-		}
-		if backendConfigNames != nil {
-			if backendConfigNames.Default == backendConfig.Name {
-				svcs = append(svcs, svc)
-				continue
-			}
-			for _, backendConfigName := range backendConfigNames.Ports {
-				if backendConfigName == backendConfig.Name {
-					svcs = append(svcs, svc)
-					break
-				}
-			}
-		}
-	}
-	return svcs
 }
 
 // GetBackendConfigForServicePort returns the corresponding BackendConfig for

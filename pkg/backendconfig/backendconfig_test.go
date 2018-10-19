@@ -22,243 +22,10 @@ import (
 	"testing"
 
 	apiv1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 
-	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 )
-
-var (
-	testBackendConfig = &backendconfigv1beta1.BackendConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "config-test",
-			Namespace: "test",
-		},
-	}
-
-	svcWithoutConfig = &apiv1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-no-config",
-			Namespace: "test",
-		},
-		Spec: apiv1.ServiceSpec{
-			Ports: []apiv1.ServicePort{
-				{Name: "port1"},
-			},
-		},
-	}
-
-	svcWithTestConfig = &apiv1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-test-config",
-			Namespace: "test",
-			Annotations: map[string]string{
-				annotations.BackendConfigKey: `{"ports": {"port1": "config-test"}}`,
-			},
-		},
-		Spec: apiv1.ServiceSpec{
-			Ports: []apiv1.ServicePort{
-				{Name: "port1"},
-			},
-		},
-	}
-
-	svcWithTestConfigPortNumber = &apiv1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-test-config-port-number",
-			Namespace: "test",
-			Annotations: map[string]string{
-				annotations.BackendConfigKey: `{"ports": {"443": "config-test"}}`,
-			},
-		},
-		Spec: apiv1.ServiceSpec{
-			Ports: []apiv1.ServicePort{
-				{Port: 443},
-			},
-		},
-	}
-
-	svcWithTestConfigMismatchPort = &apiv1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-test-config-mismatch-port",
-			Namespace: "test",
-			Annotations: map[string]string{
-				annotations.BackendConfigKey: `{"ports": {"port2": "config-test"}}`,
-			},
-		},
-		Spec: apiv1.ServiceSpec{
-			Ports: []apiv1.ServicePort{
-				{Name: "port1"},
-			},
-		},
-	}
-
-	svcWithDefaultTestConfig = &apiv1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-default-test-config",
-			Namespace: "test",
-			Annotations: map[string]string{
-				annotations.BackendConfigKey: `{"default": "config-test"}`,
-			},
-		},
-		Spec: apiv1.ServiceSpec{
-			Ports: []apiv1.ServicePort{
-				{Name: "port1"},
-			},
-		},
-	}
-
-	svcWithTestConfigOtherNamespace = &apiv1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-test-config",
-			Namespace: "other-namespace",
-			Annotations: map[string]string{
-				annotations.BackendConfigKey: `{"ports": {"port1": "config-test"}}`,
-			},
-		},
-		Spec: apiv1.ServiceSpec{
-			Ports: []apiv1.ServicePort{
-				{Name: "port1"},
-			},
-		},
-	}
-
-	svcWithOtherConfig = &apiv1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-other-config",
-			Namespace: "test",
-			Annotations: map[string]string{
-				annotations.BackendConfigKey: `{"ports": {"port1": "config-other"}}`,
-			},
-		},
-		Spec: apiv1.ServiceSpec{
-			Ports: []apiv1.ServicePort{
-				{Name: "port1"},
-			},
-		},
-	}
-
-	svcWithDefaultOtherConfig = &apiv1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-default-other-config",
-			Namespace: "test",
-			Annotations: map[string]string{
-				annotations.BackendConfigKey: `{"default": "config-other"}`,
-			},
-		},
-		Spec: apiv1.ServiceSpec{
-			Ports: []apiv1.ServicePort{
-				{Name: "port1"},
-			},
-		},
-	}
-
-	svcWithInvalidConfig = &apiv1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "svc-invalid-config",
-			Namespace: "test",
-			Annotations: map[string]string{
-				annotations.BackendConfigKey: `invalid`,
-			},
-		},
-		Spec: apiv1.ServiceSpec{
-			Ports: []apiv1.ServicePort{
-				{Name: "port1"},
-			},
-		},
-	}
-)
-
-func TestGetServicesForBackendConfig(t *testing.T) {
-	testCases := []struct {
-		desc         string
-		listFunc     func() []interface{}
-		expectedSvcs []*apiv1.Service
-	}{
-		{
-			desc: "should filter service with no backend config",
-			listFunc: func() []interface{} {
-				return []interface{}{svcWithoutConfig}
-			},
-		},
-		{
-			desc: "should include service with test backend config",
-			listFunc: func() []interface{} {
-				return []interface{}{svcWithTestConfig}
-			},
-			expectedSvcs: []*apiv1.Service{svcWithTestConfig},
-		},
-		{
-			desc: "should include service with default test backend config",
-			listFunc: func() []interface{} {
-				return []interface{}{svcWithDefaultTestConfig}
-			},
-			expectedSvcs: []*apiv1.Service{svcWithDefaultTestConfig},
-		},
-		{
-			desc: "should filter service with test backend config in a different namespace",
-			listFunc: func() []interface{} {
-				return []interface{}{svcWithTestConfigOtherNamespace}
-			},
-		},
-		{
-			desc: "should filter service with a different backend config",
-			listFunc: func() []interface{} {
-				return []interface{}{svcWithOtherConfig}
-			},
-		},
-		{
-			desc: "should filter service with a different default backend config",
-			listFunc: func() []interface{} {
-				return []interface{}{svcWithDefaultOtherConfig}
-			},
-		},
-		{
-			desc: "should filter service with invalid backend config",
-			listFunc: func() []interface{} {
-				return []interface{}{svcWithInvalidConfig}
-			},
-		},
-		{
-			desc: "mixed together: should only include services with corresponding backend config",
-			listFunc: func() []interface{} {
-				return []interface{}{
-					svcWithoutConfig,
-					svcWithTestConfig,
-					svcWithDefaultTestConfig,
-					svcWithTestConfigOtherNamespace,
-					svcWithOtherConfig,
-					svcWithDefaultOtherConfig,
-					svcWithInvalidConfig,
-				}
-			},
-			expectedSvcs: []*apiv1.Service{
-				svcWithTestConfig,
-				svcWithDefaultTestConfig,
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		fakeStore := &cache.FakeCustomStore{
-			ListFunc: tc.listFunc,
-		}
-		svcs := GetServicesForBackendConfig(fakeStore, testBackendConfig)
-		if !sets.NewString(convertServicesToNamespacedNames(svcs)...).Equal(sets.NewString(convertServicesToNamespacedNames(tc.expectedSvcs)...)) {
-			t.Errorf("%s: unexpected services, got %v, want %v", tc.desc, svcs, tc.expectedSvcs)
-		}
-	}
-}
-
-func convertServicesToNamespacedNames(svcs []*apiv1.Service) []string {
-	svcNames := []string{}
-	for _, svc := range svcs {
-		svcNames = append(svcNames, fmt.Sprintf("%s:%s", svc.Namespace, svc.Name))
-	}
-	return svcNames
-}
 
 func TestGetBackendConfigForServicePort(t *testing.T) {
 	testCases := []struct {
@@ -271,45 +38,45 @@ func TestGetBackendConfigForServicePort(t *testing.T) {
 	}{
 		{
 			desc:    "service port name with backend config",
-			svc:     svcWithTestConfig,
+			svc:     SvcWithTestConfig,
 			svcPort: &apiv1.ServicePort{Name: "port1"},
 			getFunc: func(obj interface{}) (interface{}, bool, error) {
-				return testBackendConfig, true, nil
+				return TestBackendConfig, true, nil
 			},
-			expectedConfig: testBackendConfig,
+			expectedConfig: TestBackendConfig,
 		},
 		{
 			desc:    "service port number with backend config",
-			svc:     svcWithTestConfigPortNumber,
+			svc:     SvcWithTestConfigPortNumber,
 			svcPort: &apiv1.ServicePort{Port: 443},
 			getFunc: func(obj interface{}) (interface{}, bool, error) {
-				return testBackendConfig, true, nil
+				return TestBackendConfig, true, nil
 			},
-			expectedConfig: testBackendConfig,
+			expectedConfig: TestBackendConfig,
 		},
 		{
 			desc:    "service with default backend config",
-			svc:     svcWithDefaultTestConfig,
+			svc:     SvcWithDefaultTestConfig,
 			svcPort: &apiv1.ServicePort{Name: "port1"},
 			getFunc: func(obj interface{}) (interface{}, bool, error) {
-				return testBackendConfig, true, nil
+				return TestBackendConfig, true, nil
 			},
-			expectedConfig: testBackendConfig,
+			expectedConfig: TestBackendConfig,
 		},
 		{
 			desc:           "service with no backend config",
-			svc:            svcWithoutConfig,
+			svc:            SvcWithoutConfig,
 			expectedConfig: nil,
 		},
 		{
 			desc:        "service with backend config but port doesn't match",
-			svc:         svcWithTestConfigMismatchPort,
+			svc:         SvcWithTestConfigMismatchPort,
 			svcPort:     &apiv1.ServicePort{Name: "port1"},
 			expectedErr: ErrNoBackendConfigForPort,
 		},
 		{
 			desc:    "service port matches backend config but config not exist",
-			svc:     svcWithTestConfig,
+			svc:     SvcWithTestConfig,
 			svcPort: &apiv1.ServicePort{Name: "port1"},
 			getFunc: func(obj interface{}) (interface{}, bool, error) {
 				return nil, false, nil
@@ -318,7 +85,7 @@ func TestGetBackendConfigForServicePort(t *testing.T) {
 		},
 		{
 			desc:    "service port matches backend config but failed to retrieve config",
-			svc:     svcWithTestConfig,
+			svc:     SvcWithTestConfig,
 			svcPort: &apiv1.ServicePort{Name: "port1"},
 			getFunc: func(obj interface{}) (interface{}, bool, error) {
 				return nil, false, fmt.Errorf("internal error")

@@ -16,9 +16,153 @@ package backendconfig
 import (
 	"strconv"
 
-	apiv1 "k8s.io/api/core/v1"
-
 	"k8s.io/ingress-gce/pkg/annotations"
+	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+
+	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// The below vars are used for sharing unit testing types with multiple packages.
+var (
+	TestBackendConfig = &backendconfigv1beta1.BackendConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "config-test",
+			Namespace: "test",
+		},
+	}
+
+	SvcWithoutConfig = &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-no-config",
+			Namespace: "test",
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{Name: "port1"},
+			},
+		},
+	}
+
+	SvcWithTestConfig = &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-test-config",
+			Namespace: "test",
+			Annotations: map[string]string{
+				annotations.BackendConfigKey: `{"ports": {"port1": "config-test"}}`,
+			},
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{Name: "port1"},
+			},
+		},
+	}
+
+	SvcWithTestConfigPortNumber = &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-test-config-port-number",
+			Namespace: "test",
+			Annotations: map[string]string{
+				annotations.BackendConfigKey: `{"ports": {"443": "config-test"}}`,
+			},
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{Port: 443},
+			},
+		},
+	}
+
+	SvcWithTestConfigMismatchPort = &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-test-config-mismatch-port",
+			Namespace: "test",
+			Annotations: map[string]string{
+				annotations.BackendConfigKey: `{"ports": {"port2": "config-test"}}`,
+			},
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{Name: "port1"},
+			},
+		},
+	}
+
+	SvcWithDefaultTestConfig = &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-default-test-config",
+			Namespace: "test",
+			Annotations: map[string]string{
+				annotations.BackendConfigKey: `{"default": "config-test"}`,
+			},
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{Name: "port1"},
+			},
+		},
+	}
+
+	SvcWithTestConfigOtherNamespace = &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-test-config",
+			Namespace: "other-namespace",
+			Annotations: map[string]string{
+				annotations.BackendConfigKey: `{"ports": {"port1": "config-test"}}`,
+			},
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{Name: "port1"},
+			},
+		},
+	}
+
+	SvcWithOtherConfig = &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-other-config",
+			Namespace: "test",
+			Annotations: map[string]string{
+				annotations.BackendConfigKey: `{"ports": {"port1": "config-other"}}`,
+			},
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{Name: "port1"},
+			},
+		},
+	}
+
+	SvcWithDefaultOtherConfig = &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-default-other-config",
+			Namespace: "test",
+			Annotations: map[string]string{
+				annotations.BackendConfigKey: `{"default": "config-other"}`,
+			},
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{Name: "port1"},
+			},
+		},
+	}
+
+	SvcWithInvalidConfig = &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-invalid-config",
+			Namespace: "test",
+			Annotations: map[string]string{
+				annotations.BackendConfigKey: `invalid`,
+			},
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{Name: "port1"},
+			},
+		},
+	}
 )
 
 // BackendConfigName returns the name of the BackendConfig which is associated
