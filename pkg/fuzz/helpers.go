@@ -313,3 +313,18 @@ func (b *BackendConfigBuilder) SetSecurityPolicy(securityPolicy string) *Backend
 	b.backendConfig.Spec.SecurityPolicy.Name = securityPolicy
 	return b
 }
+
+// SetTimeout defines the BackendConfig's connection timeout
+func (b *BackendConfigBuilder) SetTimeout(timeout int64) *BackendConfigBuilder {
+	b.backendConfig.Spec.TimeoutSec = &timeout
+	return b
+}
+
+// SetDrainTimeout defines the BackendConfig's draining timeout
+func (b *BackendConfigBuilder) SetDrainTimeout(timeout int64) *BackendConfigBuilder {
+	if b.backendConfig.Spec.ConnectionDraining == nil {
+		b.backendConfig.Spec.ConnectionDraining = &backendconfig.ConnectionDrainingConfig{}
+	}
+	b.backendConfig.Spec.ConnectionDraining.DrainingTimeoutSec = &timeout
+	return b
+}
