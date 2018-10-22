@@ -29,8 +29,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/version"
+
 	// Pull in the auth library for GCP.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 )
 
 var (
