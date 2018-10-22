@@ -18,6 +18,12 @@ rules:
 - apiGroups: ["extensions"]
   resources: ["ingresses/status"]
   verbs: ["update"]
+- apiGroups: ["apiextensions.k8s.io"]
+  resources: ["customresourcedefinitions"]
+  verbs: ["get", "list", "watch", "update", "create", "patch"]
+- apiGroups: ["cloud.google.com"]
+  resources: ["backendconfigs"]
+  verbs: ["get", "list", "watch", "update", "create", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
