@@ -681,6 +681,7 @@
     "pkg/version",
     "plugin/pkg/client/auth/exec",
     "plugin/pkg/client/auth/gcp",
+    "plugin/pkg/client/auth/oidc",
     "rest",
     "rest/watch",
     "testing",
@@ -805,6 +806,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "6702ab70994ca0b365c3da36b183ec7ae4e7d31ac8c24af8ef0a43d71e9f3d1a"
+  inputs-digest = "d52b35b964f01e5f6dda6ac5f238bb097c5116e410db011a7a3feedc3a46b7ab"
   solver-name = "gps-cdcl"
   solver-version = 1
