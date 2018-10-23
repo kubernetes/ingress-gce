@@ -42,6 +42,10 @@ const (
 	policyUpdateTimeout  = 10 * time.Minute
 )
 
+var deleteOptions = &fuzz.GCLBDeleteOptions{
+	SkipDefaultBackend: true,
+}
+
 func buildPolicyAllowAll(name string) *computebeta.SecurityPolicy {
 	return &computebeta.SecurityPolicy{
 		Name: name,
@@ -131,7 +135,7 @@ func TestSecurityPolicyEnable(t *testing.T) {
 
 		t.Logf("Cleaning up test")
 
-		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, testIng, nil); err != nil {
+		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, testIng, deleteOptions); err != nil {
 			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", testIng.Name, err)
 		}
 	})
@@ -236,7 +240,7 @@ func TestSecurityPolicyTransition(t *testing.T) {
 
 		t.Logf("Cleaning up test")
 
-		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, nil); err != nil {
+		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, deleteOptions); err != nil {
 			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
 		}
 	})
