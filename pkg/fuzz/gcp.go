@@ -104,7 +104,7 @@ type GCLBDeleteOptions struct {
 // CheckResourceDeletion checks the existance of the resources. Returns nil if
 // all of the associated resources no longer exist.
 func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options *GCLBDeleteOptions) error {
-	var resources []*meta.Key
+	var resources []meta.Key
 
 	for k := range g.ForwardingRule {
 		_, err := c.ForwardingRules().Get(ctx, &k)
@@ -113,7 +113,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 				return err
 			}
 		} else {
-			resources = append(resources, &k)
+			resources = append(resources, k)
 		}
 	}
 	for k := range g.TargetHTTPProxy {
@@ -123,7 +123,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 				return err
 			}
 		} else {
-			resources = append(resources, &k)
+			resources = append(resources, k)
 		}
 	}
 	for k := range g.TargetHTTPSProxy {
@@ -133,7 +133,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 				return err
 			}
 		} else {
-			resources = append(resources, &k)
+			resources = append(resources, k)
 		}
 	}
 	for k := range g.URLMap {
@@ -143,7 +143,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 				return err
 			}
 		} else {
-			resources = append(resources, &k)
+			resources = append(resources, k)
 		}
 	}
 	for k := range g.BackendService {
@@ -159,7 +159,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 					continue
 				}
 			}
-			resources = append(resources, &k)
+			resources = append(resources, k)
 		}
 	}
 
