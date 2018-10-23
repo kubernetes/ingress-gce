@@ -320,8 +320,8 @@ func (b *BackendConfigBuilder) SetTimeout(timeout int64) *BackendConfigBuilder {
 	return b
 }
 
-// SetDrainTimeout defines the BackendConfig's draining timeout
-func (b *BackendConfigBuilder) SetDrainTimeout(timeout int64) *BackendConfigBuilder {
+// SetConnectionDrainingTimeout defines the BackendConfig's draining timeout
+func (b *BackendConfigBuilder) SetConnectionDrainingTimeout(timeout int64) *BackendConfigBuilder {
 	if b.backendConfig.Spec.ConnectionDraining == nil {
 		b.backendConfig.Spec.ConnectionDraining = &backendconfig.ConnectionDrainingConfig{}
 	}

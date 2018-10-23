@@ -45,7 +45,7 @@ func TestDraining(t *testing.T) {
 		{
 			desc: "http with 60s draining timeout",
 			beConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
-				SetDrainTimeout(60).
+				SetConnectionDrainingTimeout(60).
 				Build(),
 		},
 		{
@@ -98,7 +98,7 @@ func TestDraining(t *testing.T) {
 				timeout = *tc.beConfig.Spec.ConnectionDraining.DrainingTimeoutSec
 			}
 
-			if err := verifyDrainingTimeouts(t, gclb, s.Namespace, "service-1", timeout); err != nil {
+			if err := verifyConnectionDrainingTimeout(t, gclb, s.Namespace, "service-1", timeout); err != nil {
 				t.Error(err)
 			}
 
@@ -115,7 +115,7 @@ func TestDraining(t *testing.T) {
 	}
 }
 
-func verifyDrainingTimeouts(t *testing.T, gclb *fuzz.GCLB, svcNamespace, svcName string, expectedTimeout int64) error {
+func verifyConnectionDrainingTimeout(t *testing.T, gclb *fuzz.GCLB, svcNamespace, svcName string, expectedTimeout int64) error {
 	for _, bs := range gclb.BackendService {
 		desc := utils.DescriptionFromString(bs.GA.Description)
 		if desc.ServiceName != fmt.Sprintf("%s/%s", svcNamespace, svcName) {
