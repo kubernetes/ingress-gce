@@ -117,8 +117,12 @@ func TestCDN(t *testing.T) {
 			if err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Delete(ing.Name, &metav1.DeleteOptions{}); err != nil {
 				t.Errorf("Delete(%q) = %v, want nil", ing.Name, err)
 			}
+
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: true,
+			}
 			t.Logf("Waiting for GCLB resources to be deleted (%s/%s)", s.Namespace, ing.Name)
-			if err := e2e.WaitForGCLBDeletion(ctx, Framework.Cloud, gclb, nil); err != nil {
+			if err := e2e.WaitForGCLBDeletion(ctx, Framework.Cloud, gclb, deleteOptions); err != nil {
 				t.Errorf("e2e.WaitForGCLBDeletion(...) = %v, want nil", err)
 			}
 			t.Logf("GCLB resources deleted (%s/%s)", s.Namespace, ing.Name)
