@@ -45,6 +45,13 @@ I0618 23:51:04.068408   62186 framework.go:89] Checking external Internet connec
 ...
 ```
 
+To run a specific test case, you can use something similar to the command below:
+
+```
+# Ref https://golang.org/cmd/go/#hdr-Testing_flags.
+$ bin/amd64/e2e-test -run -project my-project -v 2 -logtostderr -test.run=TestIAP
+```
+
 Note that killing the test with `CTRL-C` will cause the existing namespace
 sandboxes to be deleted, hopefully reducing the amount of cleanup necessary on
 an aborted test run:
