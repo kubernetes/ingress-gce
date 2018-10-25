@@ -90,14 +90,14 @@ func validateSessionAffinity(kubeClient kubernetes.Interface, beConfig *backendc
 
 	if beConfig.Spec.SessionAffinity.AffinityType != "" {
 		if _, ok := supportedAffinities[beConfig.Spec.SessionAffinity.AffinityType]; !ok {
-			return fmt.Errorf("unsupported AffinityType: %s, sould be one of NONE, CLIENT_IP, or GENERATED_COOKIE",
+			return fmt.Errorf("unsupported AffinityType: %s, should be one of NONE, CLIENT_IP, or GENERATED_COOKIE",
 				beConfig.Spec.SessionAffinity.AffinityType)
 		}
 	}
 
 	if beConfig.Spec.SessionAffinity.AffinityCookieTtlSec != nil {
 		if *beConfig.Spec.SessionAffinity.AffinityCookieTtlSec < 0 || *beConfig.Spec.SessionAffinity.AffinityCookieTtlSec > 86400 {
-			return fmt.Errorf("unsupported AffinityCookieTtlSec: %d, should be comprised between 0 and 86400",
+			return fmt.Errorf("unsupported AffinityCookieTtlSec: %d, should be between 0 and 86400",
 				*beConfig.Spec.SessionAffinity.AffinityCookieTtlSec)
 		}
 	}

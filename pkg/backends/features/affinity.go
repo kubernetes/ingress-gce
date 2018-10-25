@@ -17,7 +17,7 @@ limitations under the License.
 package features
 
 import (
-	"strings"
+	"reflect"
 
 	"github.com/golang/glog"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -29,25 +29,25 @@ import (
 // It returns true if there were existing settings on the BackendService
 // that were overwritten.
 func EnsureAffinity(sp utils.ServicePort, be *composite.BackendService) bool {
-	changed := false
-
 	if sp.BackendConfig.Spec.SessionAffinity == nil {
 		return false
 	}
-
-	if sp.BackendConfig.Spec.SessionAffinity.AffinityType != "" &&
-		strings.Compare(sp.BackendConfig.Spec.SessionAffinity.AffinityType, be.SessionAffinity) != 0 {
-		be.SessionAffinity = sp.BackendConfig.Spec.SessionAffinity.AffinityType
+	beTemp := &composite.BackendService{}
+	applyAffinitySettings(sp, beTemp)
+	if !reflect.DeepEqual(beTemp.AffinityCookieTtlSec, be.AffinityCookieTtlSec) || beTemp.SessionAffinity != be.SessionAffinity {
+		applyAffinitySettings(sp, be)
 		glog.V(2).Infof("Updated SessionAffinity settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
-		changed = true
+		return true
 	}
+	return false
+}
 
-	if sp.BackendConfig.Spec.SessionAffinity.AffinityCookieTtlSec != nil &&
-		*sp.BackendConfig.Spec.SessionAffinity.AffinityCookieTtlSec != be.AffinityCookieTtlSec {
+// applyAffinitySettings applies the session affinity settings specified in the
+// BackendConfig to the passed in composite.BackendService. A GCE API call still
+// needs to be made to actually persist the changes.
+func applyAffinitySettings(sp utils.ServicePort, be *composite.BackendService) {
+	be.SessionAffinity = sp.BackendConfig.Spec.SessionAffinity.AffinityType
+	if sp.BackendConfig.Spec.SessionAffinity.AffinityCookieTtlSec != nil {
 		be.AffinityCookieTtlSec = *sp.BackendConfig.Spec.SessionAffinity.AffinityCookieTtlSec
-		glog.V(2).Infof("Updated AffinityCookieTtlSec settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
-		changed = true
 	}
-
-	return changed
 }
