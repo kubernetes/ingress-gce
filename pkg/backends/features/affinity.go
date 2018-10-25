@@ -31,17 +31,20 @@ import (
 func EnsureAffinity(sp utils.ServicePort, be *composite.BackendService) bool {
 	changed := false
 
-	// Should we check if specified SessionAffinity is among the currently GCP supported values?
-	// For now let's forward as is to GCP, to inherit API error message (and evolutions).
-	// Same for TTL (should be in 0-86400 range).
-	if sp.BackendConfig.Spec.SessionAffinity != "" && strings.Compare(sp.BackendConfig.Spec.SessionAffinity, be.SessionAffinity) != 0 {
-		be.SessionAffinity = sp.BackendConfig.Spec.SessionAffinity
+	if sp.BackendConfig.Spec.SessionAffinity == nil {
+		return false
+	}
+
+	if sp.BackendConfig.Spec.SessionAffinity.AffinityType != "" &&
+		strings.Compare(sp.BackendConfig.Spec.SessionAffinity.AffinityType, be.SessionAffinity) != 0 {
+		be.SessionAffinity = sp.BackendConfig.Spec.SessionAffinity.AffinityType
 		glog.V(2).Infof("Updated SessionAffinity settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
 		changed = true
 	}
 
-	if sp.BackendConfig.Spec.AffinityCookieTtlSec != nil && *sp.BackendConfig.Spec.AffinityCookieTtlSec != be.AffinityCookieTtlSec {
-		be.AffinityCookieTtlSec = *sp.BackendConfig.Spec.AffinityCookieTtlSec
+	if sp.BackendConfig.Spec.SessionAffinity.AffinityCookieTtlSec != nil &&
+		*sp.BackendConfig.Spec.SessionAffinity.AffinityCookieTtlSec != be.AffinityCookieTtlSec {
+		be.AffinityCookieTtlSec = *sp.BackendConfig.Spec.SessionAffinity.AffinityCookieTtlSec
 		glog.V(2).Infof("Updated AffinityCookieTtlSec settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
 		changed = true
 	}

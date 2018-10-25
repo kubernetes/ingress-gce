@@ -99,23 +99,16 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 								Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConnectionDrainingConfig"),
 							},
 						},
-						"affinityCookieTtlSec": {
-							SchemaProps: spec.SchemaProps{
-								Type:   []string{"integer"},
-								Format: "int64",
-							},
-						},
 						"sessionAffinity": {
 							SchemaProps: spec.SchemaProps{
-								Type:   []string{"string"},
-								Format: "",
+								Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SessionAffinityConfig"),
 							},
 						},
 					},
 				},
 			},
 			Dependencies: []string{
-				"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConnectionDrainingConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.IAPConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SecurityPolicyConfig"},
+				"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConnectionDrainingConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.IAPConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SecurityPolicyConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SessionAffinityConfig"},
 		},
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig": {
 			Schema: spec.Schema{
@@ -267,6 +260,28 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 						},
 					},
 					Required: []string{"secretName"},
+				},
+			},
+			Dependencies: []string{},
+		},
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SessionAffinityConfig": {
+			Schema: spec.Schema{
+				SchemaProps: spec.SchemaProps{
+					Description: "SessionAffinityConfig contains configuration for stickyness parameters.",
+					Properties: map[string]spec.Schema{
+						"affinityType": {
+							SchemaProps: spec.SchemaProps{
+								Type:   []string{"string"},
+								Format: "",
+							},
+						},
+						"affinityCookieTtlSec": {
+							SchemaProps: spec.SchemaProps{
+								Type:   []string{"integer"},
+								Format: "int64",
+							},
+						},
+					},
 				},
 			},
 			Dependencies: []string{},

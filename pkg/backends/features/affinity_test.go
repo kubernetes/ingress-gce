@@ -51,7 +51,9 @@ func TestEnsureAffinity(t *testing.T) {
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
-						SessionAffinity: "CLIENT_IP",
+						SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+							AffinityType: "CLIENT_IP",
+						},
 					},
 				},
 			},
@@ -65,7 +67,9 @@ func TestEnsureAffinity(t *testing.T) {
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
-						AffinityCookieTtlSec: &testTTL,
+						SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+							AffinityCookieTtlSec: &testTTL,
+						},
 					},
 				},
 			},
@@ -79,8 +83,10 @@ func TestEnsureAffinity(t *testing.T) {
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
-						SessionAffinity:      "CLIENT_IP",
-						AffinityCookieTtlSec: &testTTL,
+						SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+							AffinityType:         "CLIENT_IP",
+							AffinityCookieTtlSec: &testTTL,
+						},
 					},
 				},
 			},
@@ -95,8 +101,10 @@ func TestEnsureAffinity(t *testing.T) {
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
-						SessionAffinity:      "CLIENT_IP",
-						AffinityCookieTtlSec: &testTTL,
+						SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+							AffinityType:         "CLIENT_IP",
+							AffinityCookieTtlSec: &testTTL,
+						},
 					},
 				},
 			},
