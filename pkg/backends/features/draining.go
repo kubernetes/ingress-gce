@@ -47,7 +47,5 @@ func EnsureDraining(sp utils.ServicePort, be *composite.BackendService) bool {
 // to be made to actually persist the changes.
 func applyDrainingSettings(sp utils.ServicePort, be *composite.BackendService) {
 	be.ConnectionDraining = &composite.ConnectionDraining{}
-	if sp.BackendConfig.Spec.ConnectionDraining.DrainingTimeoutSec != nil {
-		be.ConnectionDraining.DrainingTimeoutSec = *sp.BackendConfig.Spec.ConnectionDraining.DrainingTimeoutSec
-	}
+	be.ConnectionDraining.DrainingTimeoutSec = sp.BackendConfig.Spec.ConnectionDraining.DrainingTimeoutSec
 }

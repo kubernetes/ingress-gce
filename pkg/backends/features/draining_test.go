@@ -24,8 +24,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-var testPort = int64(111)
-
 func TestEnsureDraining(t *testing.T) {
 	testCases := []struct {
 		desc           string
@@ -39,7 +37,7 @@ func TestEnsureDraining(t *testing.T) {
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
 						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
-							DrainingTimeoutSec: &testPort,
+							DrainingTimeoutSec: 111,
 						},
 					},
 				},
@@ -69,7 +67,7 @@ func TestEnsureDraining(t *testing.T) {
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
 						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
-							DrainingTimeoutSec: &testPort,
+							DrainingTimeoutSec: 111,
 						},
 					},
 				},
@@ -87,7 +85,7 @@ func TestEnsureDraining(t *testing.T) {
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
 						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
-							DrainingTimeoutSec: &testPort,
+							DrainingTimeoutSec: 111,
 						},
 					},
 				},
