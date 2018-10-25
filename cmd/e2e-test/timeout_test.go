@@ -103,15 +103,18 @@ func TestTimeout(t *testing.T) {
 			}
 
 			if err := verifyTimeout(t, gclb, s.Namespace, "service-1", timeout); err != nil {
-				t.Error(err)
+				t.Errorf("verifyTimeout(..., %q, %q, %d) = %v, want nil", s.Namespace, "service-1", timeout, err)
 			}
 
 			// Wait for GCLB resources to be deleted.
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: true,
+			}
 			if err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Delete(ing.Name, &metav1.DeleteOptions{}); err != nil {
 				t.Errorf("Delete(%q) = %v, want nil", ing.Name, err)
 			}
 			t.Logf("Waiting for GCLB resources to be deleted (%s/%s)", s.Namespace, ing.Name)
-			if err := e2e.WaitForGCLBDeletion(ctx, Framework.Cloud, gclb, nil); err != nil {
+			if err := e2e.WaitForGCLBDeletion(ctx, Framework.Cloud, gclb, deleteOptions); err != nil {
 				t.Errorf("e2e.WaitForGCLBDeletion(...) = %v, want nil", err)
 			}
 			t.Logf("GCLB resources deleted (%s/%s)", s.Namespace, ing.Name)
