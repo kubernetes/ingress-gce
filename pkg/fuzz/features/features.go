@@ -28,4 +28,5 @@ var All = []fuzz.Feature{
 	CDN,
 	IAP,
 	SecurityPolicy,
+	Affinity,
 }
