@@ -133,8 +133,11 @@ func TestAffinity(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				bc.Spec.SessionAffinity = tc.transition.affinity
-				bc.Spec.AffinityCookieTtlSec = &tc.transition.ttl
+				if bc.Spec.SessionAffinity == nil {
+					bc.Spec.SessionAffinity = &backendconfig.SessionAffinityConfig{}
+				}
+				bc.Spec.SessionAffinity.AffinityType = tc.transition.affinity
+				bc.Spec.SessionAffinity.AffinityCookieTtlSec = &tc.transition.ttl
 				_, err = Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Update(bc)
 				return err
 			}); err != nil {

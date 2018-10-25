@@ -269,13 +269,19 @@ func (b *BackendConfigBuilder) EnableCDN(enabled bool) *BackendConfigBuilder {
 
 // SetSessionAffinity specifies the session affinity on the BackendConfig.
 func (b *BackendConfigBuilder) SetSessionAffinity(affinity string) *BackendConfigBuilder {
-	b.backendConfig.Spec.SessionAffinity = affinity
+	if b.backendConfig.Spec.SessionAffinity == nil {
+		b.backendConfig.Spec.SessionAffinity = &backendconfig.SessionAffinityConfig{}
+	}
+	b.backendConfig.Spec.SessionAffinity.AffinityType = affinity
 	return b
 }
 
 // SetAffinityCookieTtlSec specifies the session affinity cookie TTL on the BackendConfig.
 func (b *BackendConfigBuilder) SetAffinityCookieTtlSec(ttl int64) *BackendConfigBuilder {
-	b.backendConfig.Spec.AffinityCookieTtlSec = &ttl
+	if b.backendConfig.Spec.SessionAffinity == nil {
+		b.backendConfig.Spec.SessionAffinity = &backendconfig.SessionAffinityConfig{}
+	}
+	b.backendConfig.Spec.SessionAffinity.AffinityCookieTtlSec = &ttl
 	return b
 }
 
