@@ -36,11 +36,13 @@ type BackendConfig struct {
 // BackendConfigSpec is the spec for a BackendConfig resource
 // +k8s:openapi-gen=true
 type BackendConfigSpec struct {
-	Iap                *IAPConfig                `json:"iap,omitempty"`
-	Cdn                *CDNConfig                `json:"cdn,omitempty"`
-	SecurityPolicy     *SecurityPolicyConfig     `json:"securityPolicy,omitempty"`
-	TimeoutSec         *int64                    `json:"timeoutSec,omitempty"`
-	ConnectionDraining *ConnectionDrainingConfig `json:"connectionDraining,omitempty"`
+	Iap                  *IAPConfig                `json:"iap,omitempty"`
+	Cdn                  *CDNConfig                `json:"cdn,omitempty"`
+	SecurityPolicy       *SecurityPolicyConfig     `json:"securityPolicy,omitempty"`
+	TimeoutSec           *int64                    `json:"timeoutSec,omitempty"`
+	ConnectionDraining   *ConnectionDrainingConfig `json:"connectionDraining,omitempty"`
+	AffinityCookieTtlSec *int64                    `json:"affinityCookieTtlSec,omitempty"`
+	SessionAffinity      string                    `json:"sessionAffinity,omitempty"`
 }
 
 // BackendConfigStatus is the status for a BackendConfig resource

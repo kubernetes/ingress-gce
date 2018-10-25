@@ -133,6 +133,15 @@ func (in *BackendConfigSpec) DeepCopyInto(out *BackendConfigSpec) {
 			(*in).DeepCopyInto(*out)
 		}
 	}
+	if in.AffinityCookieTtlSec != nil {
+		in, out := &in.AffinityCookieTtlSec, &out.AffinityCookieTtlSec
+		if *in == nil {
+			*out = nil
+		} else {
+			*out = new(int64)
+			**out = **in
+		}
+	}
 	return
 }
 
