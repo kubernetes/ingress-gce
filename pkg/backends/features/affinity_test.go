@@ -24,7 +24,9 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-func TestEnsureDraining(t *testing.T) {
+var testTTL = int64(10)
+
+func TestEnsureAffinity(t *testing.T) {
 	testCases := []struct {
 		desc           string
 		sp             utils.ServicePort
@@ -32,76 +34,91 @@ func TestEnsureDraining(t *testing.T) {
 		updateExpected bool
 	}{
 		{
-			desc: "connection draining timeout setting is defined on serviceport but missing from spec, update needed",
-			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
-							DrainingTimeoutSec: 111,
-						},
-					},
-				},
-			},
-			be: &composite.BackendService{
-				ConnectionDraining: &composite.ConnectionDraining{},
-			},
-			updateExpected: true,
-		},
-		{
-			desc: "connection draining setting are missing from spec, no update needed",
+			desc: "affinity settings missing from spec, no update needed",
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{},
 				},
 			},
 			be: &composite.BackendService{
-				ConnectionDraining: &composite.ConnectionDraining{
-					DrainingTimeoutSec: 111,
-				},
+				SessionAffinity:      "GENERATED_COOKIE",
+				AffinityCookieTtlSec: 10,
 			},
 			updateExpected: false,
 		},
 		{
-			desc: "connection draining settings are identical, no update needed",
+			desc: "sessionaffinity setting differing, update needed",
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
-						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
-							DrainingTimeoutSec: 111,
+						SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+							AffinityType: "CLIENT_IP",
 						},
 					},
 				},
 			},
 			be: &composite.BackendService{
-				ConnectionDraining: &composite.ConnectionDraining{
-					DrainingTimeoutSec: 111,
-				},
-			},
-			updateExpected: false,
-		},
-		{
-			desc: "connection draining settings differs, update needed",
-			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
-							DrainingTimeoutSec: 111,
-						},
-					},
-				},
-			},
-			be: &composite.BackendService{
-				ConnectionDraining: &composite.ConnectionDraining{
-					DrainingTimeoutSec: 222,
-				},
+				SessionAffinity: "NONE",
 			},
 			updateExpected: true,
+		},
+		{
+			desc: "affinity ttl setting differing, update needed",
+			sp: utils.ServicePort{
+				BackendConfig: &backendconfigv1beta1.BackendConfig{
+					Spec: backendconfigv1beta1.BackendConfigSpec{
+						SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+							AffinityCookieTtlSec: &testTTL,
+						},
+					},
+				},
+			},
+			be: &composite.BackendService{
+				AffinityCookieTtlSec: 20,
+			},
+			updateExpected: true,
+		},
+		{
+			desc: "sessionaffinity and ttl settings differing, update needed",
+			sp: utils.ServicePort{
+				BackendConfig: &backendconfigv1beta1.BackendConfig{
+					Spec: backendconfigv1beta1.BackendConfigSpec{
+						SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+							AffinityType:         "CLIENT_IP",
+							AffinityCookieTtlSec: &testTTL,
+						},
+					},
+				},
+			},
+			be: &composite.BackendService{
+				SessionAffinity:      "NONE",
+				AffinityCookieTtlSec: 20,
+			},
+			updateExpected: true,
+		},
+		{
+			desc: "affinity settings identical, no updated needed",
+			sp: utils.ServicePort{
+				BackendConfig: &backendconfigv1beta1.BackendConfig{
+					Spec: backendconfigv1beta1.BackendConfigSpec{
+						SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+							AffinityType:         "CLIENT_IP",
+							AffinityCookieTtlSec: &testTTL,
+						},
+					},
+				},
+			},
+			be: &composite.BackendService{
+				SessionAffinity:      "CLIENT_IP",
+				AffinityCookieTtlSec: testTTL,
+			},
+			updateExpected: false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := EnsureDraining(tc.sp, tc.be)
+			result := EnsureAffinity(tc.sp, tc.be)
 			if result != tc.updateExpected {
 				t.Errorf("%v: expected %v but got %v", tc.desc, tc.updateExpected, result)
 			}

@@ -29,11 +29,26 @@ const (
 	OAuthClientSecretKey = "client_secret"
 )
 
+var supportedAffinities = map[string]bool{
+	"NONE":             true,
+	"CLIENT_IP":        true,
+	"GENERATED_COOKIE": true,
+}
+
 func Validate(kubeClient kubernetes.Interface, beConfig *backendconfigv1beta1.BackendConfig) error {
 	if beConfig == nil {
 		return nil
 	}
-	return validateIAP(kubeClient, beConfig)
+
+	if err := validateIAP(kubeClient, beConfig); err != nil {
+		return err
+	}
+
+	if err := validateSessionAffinity(kubeClient, beConfig); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // TODO(rramkumar): Return errors as constants so that the unit tests can distinguish
@@ -65,5 +80,27 @@ func validateIAP(kubeClient kubernetes.Interface, beConfig *backendconfigv1beta1
 	if beConfig.Spec.Cdn != nil && beConfig.Spec.Cdn.Enabled {
 		return fmt.Errorf("iap and cdn cannot be enabled at the same time")
 	}
+	return nil
+}
+
+func validateSessionAffinity(kubeClient kubernetes.Interface, beConfig *backendconfigv1beta1.BackendConfig) error {
+	if beConfig.Spec.SessionAffinity == nil {
+		return nil
+	}
+
+	if beConfig.Spec.SessionAffinity.AffinityType != "" {
+		if _, ok := supportedAffinities[beConfig.Spec.SessionAffinity.AffinityType]; !ok {
+			return fmt.Errorf("unsupported AffinityType: %s, should be one of NONE, CLIENT_IP, or GENERATED_COOKIE",
+				beConfig.Spec.SessionAffinity.AffinityType)
+		}
+	}
+
+	if beConfig.Spec.SessionAffinity.AffinityCookieTtlSec != nil {
+		if *beConfig.Spec.SessionAffinity.AffinityCookieTtlSec < 0 || *beConfig.Spec.SessionAffinity.AffinityCookieTtlSec > 86400 {
+			return fmt.Errorf("unsupported AffinityCookieTtlSec: %d, should be between 0 and 86400",
+				*beConfig.Spec.SessionAffinity.AffinityCookieTtlSec)
+		}
+	}
+
 	return nil
 }

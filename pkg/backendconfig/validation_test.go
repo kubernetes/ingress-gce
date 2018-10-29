@@ -27,6 +27,9 @@ import (
 )
 
 var (
+	goodTTL int64 = 86400
+	badTTL  int64 = 86400 + 1
+
 	defaultBeConfig = &backendconfigv1beta1.BackendConfig{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Namespace: "default",
@@ -150,6 +153,83 @@ func TestValidateIAP(t *testing.T) {
 	for _, testCase := range testCases {
 		kubeClient := fake.NewSimpleClientset()
 		testCase.init(kubeClient)
+		err := Validate(kubeClient, testCase.beConfig)
+		if testCase.expectError && err == nil {
+			t.Errorf("%v: Expected error but got nil", testCase.desc)
+		}
+		if !testCase.expectError && err != nil {
+			t.Errorf("%v: Did not expect error but got: %v", testCase.desc, err)
+		}
+	}
+}
+
+func TestValidateSessionAffinity(t *testing.T) {
+	testCases := []struct {
+		desc        string
+		beConfig    *backendconfigv1beta1.BackendConfig
+		expectError bool
+	}{
+
+		{
+			desc: "unsupported affinity type",
+			beConfig: &backendconfigv1beta1.BackendConfig{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: backendconfigv1beta1.BackendConfigSpec{
+					SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+						AffinityType: "WRONG_TYPE",
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			desc: "supported affinity type",
+			beConfig: &backendconfigv1beta1.BackendConfig{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: backendconfigv1beta1.BackendConfigSpec{
+					SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+						AffinityType: "CLIENT_IP",
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			desc: "unsupported ttl value",
+			beConfig: &backendconfigv1beta1.BackendConfig{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: backendconfigv1beta1.BackendConfigSpec{
+					SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+						AffinityCookieTtlSec: &badTTL,
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			desc: "supported ttl value",
+			beConfig: &backendconfigv1beta1.BackendConfig{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: backendconfigv1beta1.BackendConfigSpec{
+					SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+						AffinityCookieTtlSec: &goodTTL,
+					},
+				},
+			},
+			expectError: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		kubeClient := fake.NewSimpleClientset()
 		err := Validate(kubeClient, testCase.beConfig)
 		if testCase.expectError && err == nil {
 			t.Errorf("%v: Expected error but got nil", testCase.desc)

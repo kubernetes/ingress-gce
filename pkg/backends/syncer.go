@@ -114,6 +114,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 		needUpdate = features.EnsureIAP(sp, be) || needUpdate
 		needUpdate = features.EnsureTimeout(sp, be) || needUpdate
 		needUpdate = features.EnsureDraining(sp, be) || needUpdate
+		needUpdate = features.EnsureAffinity(sp, be) || needUpdate
 	}
 
 	if needUpdate {

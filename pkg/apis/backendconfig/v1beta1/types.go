@@ -41,6 +41,7 @@ type BackendConfigSpec struct {
 	SecurityPolicy     *SecurityPolicyConfig     `json:"securityPolicy,omitempty"`
 	TimeoutSec         *int64                    `json:"timeoutSec,omitempty"`
 	ConnectionDraining *ConnectionDrainingConfig `json:"connectionDraining,omitempty"`
+	SessionAffinity    *SessionAffinityConfig    `json:"sessionAffinity,omitempty"`
 }
 
 // BackendConfigStatus is the status for a BackendConfig resource
@@ -115,5 +116,12 @@ type SecurityPolicyConfig struct {
 // +k8s:openapi-gen=true
 type ConnectionDrainingConfig struct {
 	// Draining timeout in seconds.
-	DrainingTimeoutSec *int64 `json:"drainingTimeoutSec,omitempty"`
+	DrainingTimeoutSec int64 `json:"drainingTimeoutSec,omitempty"`
+}
+
+// SessionAffinityConfig contains configuration for stickyness parameters.
+// +k8s:openapi-gen=true
+type SessionAffinityConfig struct {
+	AffinityType         string `json:"affinityType,omitempty"`
+	AffinityCookieTtlSec *int64 `json:"affinityCookieTtlSec,omitempty"`
 }
