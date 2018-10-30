@@ -20,31 +20,82 @@ import (
 	"fmt"
 	"testing"
 
+	mcrtv1alpha1 "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/apis/gke.googleapis.com/v1alpha1"
+	mcrtlisterv1alpha1 "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/clientgen/listers/gke.googleapis.com/v1alpha1"
+
 	compute "google.golang.org/api/compute/v1"
+	extensions "k8s.io/api/extensions/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"strconv"
 	"strings"
 
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/events"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const (
-	defaultZone = "zone-a"
+	defaultNamespace = "default"
+	defaultZone      = "zone-a"
 )
 
 var (
 	testDefaultBeNodePort = utils.ServicePort{NodePort: 30000, Protocol: annotations.ProtocolHTTP}
 )
 
-func newFakeLoadBalancerPool(f LoadBalancers, t *testing.T, namer *utils.Namer) LoadBalancerPool {
+type mockMcrtLister struct {
+	mcrts []*mcrtv1alpha1.ManagedCertificate
+}
+
+func newMockMcrtLister(names map[string]string) *mockMcrtLister {
+	var mcrts []*mcrtv1alpha1.ManagedCertificate
+	for mcrtName, sslCertName := range names {
+		mcrts = append(mcrts, &mcrtv1alpha1.ManagedCertificate{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: mcrtName,
+			},
+			Status: mcrtv1alpha1.ManagedCertificateStatus{
+				CertificateName: sslCertName,
+			},
+		})
+	}
+
+	return &mockMcrtLister{
+		mcrts: mcrts,
+	}
+}
+
+func (m mockMcrtLister) Get(name string) (*mcrtv1alpha1.ManagedCertificate, error) {
+	return nil, fmt.Errorf("Get() not implemented")
+}
+
+func (m mockMcrtLister) List(selector labels.Selector) ([]*mcrtv1alpha1.ManagedCertificate, error) {
+	return m.mcrts, nil
+}
+
+func (m *mockMcrtLister) ManagedCertificates(namespace string) mcrtlisterv1alpha1.ManagedCertificateNamespaceLister {
+	return *m
+}
+
+func newIngress() *extensions.Ingress {
+	return &extensions.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: defaultNamespace,
+		},
+	}
+}
+
+func newFakeLoadBalancerPool(f LoadBalancers, t *testing.T, namer *utils.Namer, mcrtLister *mockMcrtLister) LoadBalancerPool {
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
 	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 
-	return NewLoadBalancerPool(f, namer)
+	return NewLoadBalancerPool(f, namer, mcrtLister, events.RecorderProducerMock{})
 }
 
 func TestCreateHTTPLoadBalancer(t *testing.T) {
@@ -58,9 +109,10 @@ func TestCreateHTTPLoadBalancer(t *testing.T) {
 		Name:      namer.LoadBalancer("test"),
 		AllowHTTP: true,
 		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
 	if err := pool.Sync(lbInfo); err != nil {
 		t.Fatalf("pool.Sync() = err %v", err)
@@ -85,9 +137,10 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
 	if err := pool.Sync(lbInfo); err != nil {
 		t.Fatalf("pool.Sync() = err %v", err)
@@ -156,10 +209,11 @@ func TestCertUpdate(t *testing.T) {
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
 	}
 
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
 	// Sync first cert
 	if err := pool.Sync(lbInfo); err != nil {
@@ -195,10 +249,11 @@ func TestMultipleSecretsWithSameCert(t *testing.T) {
 			createCert("key", "cert", "secret-a"),
 			createCert("key", "cert", "secret-b"),
 		},
-		UrlMap: gceUrlMap,
+		UrlMap:  gceUrlMap,
+		Ingress: newIngress(),
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
 	// Sync first cert
 	if err := pool.Sync(lbInfo); err != nil {
@@ -224,9 +279,10 @@ func TestCertCreationWithCollision(t *testing.T) {
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
 	// Have the same name used by orphaned cert
 	// Since name of the cert is the same, the contents of Certificate have to be the same too, since name contains a
@@ -283,11 +339,12 @@ func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{cert1},
 		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
 	}
 	expectCerts[certName1] = cert1.Cert
 
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	firstPool := newFakeLoadBalancerPool(f, t, namer)
+	firstPool := newFakeLoadBalancerPool(f, t, namer, nil)
 
 	firstPool.Sync(lbInfo)
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
@@ -298,7 +355,7 @@ func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 
 	// Restart of controller represented by a new pool
-	secondPool := newFakeLoadBalancerPool(f, t, namer)
+	secondPool := newFakeLoadBalancerPool(f, t, namer, nil)
 	secondPool.Sync(lbInfo)
 	// Verify both certs are still present
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
@@ -323,13 +380,14 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 		Name:      lbName,
 		AllowHTTP: false,
 		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
 	}
 	oldCertName := "k8s-ssl-" + lbInfo.Name
 	tlsCert := createCert("key", "cert", "name")
 	lbInfo.TLS = []*TLSCerts{tlsCert}
 	newCertName := namer.SSLCertName(lbName, tlsCert.CertHash)
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
 	// Manually create a target proxy and assign a legacy cert to it.
 	sslCert := &compute.SslCertificate{Name: oldCertName, Certificate: "cert"}
@@ -383,9 +441,10 @@ func TestMaxCertsUpload(t *testing.T) {
 		AllowHTTP: false,
 		TLS:       tlsCerts,
 		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
 	if err := pool.Sync(lbInfo); err != nil {
 		t.Fatalf("pool.Sync() = err %v", err)
@@ -448,9 +507,10 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 		AllowHTTP: false,
 		TLS:       tlsCerts,
 		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 	// Sync multiple times to make sure ordering is preserved
 	for i := 0; i < 10; i++ {
 		if err := pool.Sync(lbInfo); err != nil {
@@ -472,9 +532,10 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 		Name:      namer.LoadBalancer("test"),
 		AllowHTTP: false,
 		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 	// Prepare pre-shared certs.
 	preSharedCert1, _ := f.CreateSslCertificate(&compute.SslCertificate{
 		Name:        "test-pre-shared-cert",
@@ -522,10 +583,11 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 		Name:      lbName,
 		AllowHTTP: false,
 		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
 	}
 
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
 	// Prepare pre-shared certs.
 	preSharedCert1, _ := f.CreateSslCertificate(&compute.SslCertificate{
@@ -665,13 +727,14 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 		AllowHTTP: false,
 		TLSName:   tlsName,
 		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
 	}
 
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	f.CreateSslCertificate(&compute.SslCertificate{
 		Name: tlsName,
 	})
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 	if err := pool.Sync(lbInfo); err != nil {
 		t.Fatalf("pool.Sync() = err %v", err)
 	}
@@ -695,9 +758,10 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 		AllowHTTP: true,
 		TLS:       []*TLSCerts{{Key: "key", Cert: "cert"}},
 		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
 	if err := pool.Sync(lbInfo); err != nil {
 		t.Fatalf("pool.Sync() = err %v", err)
@@ -751,10 +815,10 @@ func TestUrlMapChange(t *testing.T) {
 	um2.DefaultBackend = &utils.ServicePort{NodePort: 30004}
 
 	namer := utils.NewNamer("uid1", "fw1")
-	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true, UrlMap: um1}
+	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true, UrlMap: um1, Ingress: newIngress()}
 
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 	if err := pool.Sync(lbInfo); err != nil {
 		t.Fatalf("pool.Sync() = err %v", err)
 	}
@@ -796,9 +860,9 @@ func TestPoolSyncNoChanges(t *testing.T) {
 	um2.DefaultBackend = &utils.ServicePort{NodePort: 30003}
 
 	namer := utils.NewNamer("uid1", "fw1")
-	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true, UrlMap: um1}
+	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true, UrlMap: um1, Ingress: newIngress()}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 	if err := pool.Sync(lbInfo); err != nil {
 		t.Fatalf("pool.Sync() = err %v", err)
 	}
@@ -844,9 +908,10 @@ func TestClusterNameChange(t *testing.T) {
 		AllowHTTP: true,
 		TLS:       []*TLSCerts{{Key: "key", Cert: "cert"}},
 		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	pool := newFakeLoadBalancerPool(f, t, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 	if err := pool.Sync(lbInfo); err != nil {
 		t.Fatalf("pool.Sync() = err %v", err)
 	}
@@ -895,4 +960,259 @@ func TestInvalidClusterNameChange(t *testing.T) {
 
 func createCert(key string, contents string, name string) *TLSCerts {
 	return &TLSCerts{Key: key, Cert: contents, Name: name, CertHash: GetCertHash(contents)}
+}
+
+func syncPool(f *FakeLoadBalancers, t *testing.T, namer *utils.Namer, mcrtLister *mockMcrtLister, lbInfo *L7RuntimeInfo) {
+	pool := newFakeLoadBalancerPool(f, t, namer, mcrtLister)
+	if err := pool.Sync(lbInfo); err != nil {
+		t.Fatalf("pool.Sync() = err %v", err)
+	}
+	l7, err := pool.Get(lbInfo.Name)
+	if err != nil || l7 == nil {
+		t.Fatalf("Expected l7 not created")
+	}
+}
+
+func TestCreateHTTPSLoadBalancerManagedCertificates(t *testing.T) {
+	// This should NOT create the forwarding rule and target proxy
+	// associated with the HTTP branch of this loadbalancer.
+	flags.F.Features.ManagedCertificates = true
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+	certs := map[string]string{
+		"managed-cert1-name": "ssl-cert1-name",
+		"managed-cert2-name": "ssl-cert2-name",
+	}
+	managedCertificates := ""
+	for k := range certs {
+		managedCertificates += k + ","
+	}
+	namer := utils.NewNamer("uid1", "fw1")
+	lbInfo := &L7RuntimeInfo{
+		Name:                namer.LoadBalancer("test"),
+		AllowHTTP:           false,
+		ManagedCertificates: managedCertificates,
+		UrlMap:              gceUrlMap,
+		Ingress:             newIngress(),
+	}
+
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	for _, v := range certs {
+		f.CreateSslCertificate(&compute.SslCertificate{
+			Name: v,
+		})
+	}
+	mcrtLister := newMockMcrtLister(certs)
+	syncPool(f, t, namer, mcrtLister, lbInfo)
+	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+
+	expectCerts := make(map[string]string, len(certs))
+	for _, v := range certs {
+		expectCerts[v] = ""
+	}
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+}
+
+func TestCreateHTTPSLoadBalancerManagedCertificatesAddAndRemove(t *testing.T) {
+	// This should NOT create the forwarding rule and target proxy
+	// associated with the HTTP branch of this loadbalancer.
+	flags.F.Features.ManagedCertificates = true
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+	certs := map[string]string{
+		"managed-cert1-name": "ssl-cert1-name",
+		"managed-cert2-name": "ssl-cert2-name",
+	}
+	managedCertificates := ""
+	for k := range certs {
+		managedCertificates += k + ","
+	}
+	namer := utils.NewNamer("uid1", "fw1")
+	lbInfo := &L7RuntimeInfo{
+		Name:                namer.LoadBalancer("test"),
+		AllowHTTP:           false,
+		ManagedCertificates: managedCertificates,
+		UrlMap:              gceUrlMap,
+		Ingress:             newIngress(),
+	}
+
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	for _, v := range certs {
+		f.CreateSslCertificate(&compute.SslCertificate{
+			Name: v,
+		})
+	}
+	mcrtLister := newMockMcrtLister(certs)
+	syncPool(f, t, namer, mcrtLister, lbInfo)
+	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+
+	expectCerts := make(map[string]string, len(certs))
+	for _, v := range certs {
+		expectCerts[v] = ""
+	}
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+
+	// Remove managed certificates
+	lbInfo.ManagedCertificates = ""
+	for _, v := range certs {
+		f.DeleteSslCertificate(v)
+	}
+	syncPool(f, t, namer, mcrtLister, lbInfo)
+	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+
+	verifyCertAndProxyLink(nil, expectCerts, f, t)
+}
+
+func TestCreateHTTPSLoadBalancerManagedCertificatesAndSecretsCerts(t *testing.T) {
+	// This should NOT create the forwarding rule and target proxy
+	// associated with the HTTP branch of this loadbalancer.
+	flags.F.Features.ManagedCertificates = true
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+	certs := map[string]string{
+		"managed-cert1-name": "ssl-cert1-name",
+		"managed-cert2-name": "ssl-cert2-name",
+	}
+	managedCertificates := ""
+	for k := range certs {
+		managedCertificates += k + ","
+	}
+	namer := utils.NewNamer("uid1", "fw1")
+	secretCerts := []string{"cert1", "cert2"}
+	var tls []*TLSCerts
+	for _, c := range secretCerts {
+		tls = append(tls, createCert(c+"_key", c, c+"_name"))
+	}
+
+	lbInfo := &L7RuntimeInfo{
+		Name:                namer.LoadBalancer("test"),
+		AllowHTTP:           false,
+		ManagedCertificates: managedCertificates,
+		UrlMap:              gceUrlMap,
+		TLS:                 tls,
+		Ingress:             newIngress(),
+	}
+
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	for _, v := range certs {
+		f.CreateSslCertificate(&compute.SslCertificate{
+			Name: v,
+		})
+	}
+	mcrtLister := newMockMcrtLister(certs)
+	syncPool(f, t, namer, mcrtLister, lbInfo)
+	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+
+	expectCerts := make(map[string]string, len(certs))
+	for _, v := range certs {
+		expectCerts[v] = ""
+	}
+
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+}
+
+func TestCreateHTTPSLoadBalancerManagedCertificatesAndPreSharedCert(t *testing.T) {
+	// This should NOT create the forwarding rule and target proxy
+	// associated with the HTTP branch of this loadbalancer.
+	flags.F.Features.ManagedCertificates = true
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+	certs := map[string]string{
+		"managed-cert1-name": "ssl-cert1-name",
+		"managed-cert2-name": "ssl-cert2-name",
+	}
+	managedCertificates := ""
+	for k := range certs {
+		managedCertificates += k + ","
+	}
+	preSharedCerts := []string{"ssl-cert3-name", "ssl-cert4-name"}
+	namer := utils.NewNamer("uid1", "fw1")
+
+	lbInfo := &L7RuntimeInfo{
+		Name:                namer.LoadBalancer("test"),
+		AllowHTTP:           false,
+		ManagedCertificates: managedCertificates,
+		UrlMap:              gceUrlMap,
+		TLSName:             strings.Join(preSharedCerts, ","),
+		Ingress:             newIngress(),
+	}
+
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	for _, v := range certs {
+		f.CreateSslCertificate(&compute.SslCertificate{
+			Name: v,
+		})
+	}
+
+	mcrtLister := newMockMcrtLister(certs)
+	syncPool(f, t, namer, mcrtLister, lbInfo)
+	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+
+	expectCerts := make(map[string]string, len(certs))
+	for _, v := range certs {
+		expectCerts[v] = ""
+	}
+
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+}
+
+func TestCreateHTTPSLoadBalancerAllCerts(t *testing.T) {
+	// This should NOT create the forwarding rule and target proxy
+	// associated with the HTTP branch of this loadbalancer.
+	flags.F.Features.ManagedCertificates = true
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+	certs := map[string]string{
+		"managed-cert1-name": "ssl-cert1-name",
+		"managed-cert2-name": "ssl-cert2-name",
+	}
+	managedCertificates := ""
+	for k := range certs {
+		managedCertificates += k + ","
+	}
+	preSharedCerts := []string{"ssl-cert3-name", "ssl-cert4-name"}
+	namer := utils.NewNamer("uid1", "fw1")
+	secretCerts := []string{"cert1", "cert2"}
+	var tls []*TLSCerts
+	for _, c := range secretCerts {
+		tls = append(tls, createCert(c+"_key", c, c+"_name"))
+	}
+
+	lbInfo := &L7RuntimeInfo{
+		Name:                namer.LoadBalancer("test"),
+		AllowHTTP:           false,
+		ManagedCertificates: managedCertificates,
+		UrlMap:              gceUrlMap,
+		TLSName:             strings.Join(preSharedCerts, ","),
+		TLS:                 tls,
+		Ingress:             newIngress(),
+	}
+
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	for _, v := range certs {
+		f.CreateSslCertificate(&compute.SslCertificate{
+			Name: v,
+		})
+	}
+
+	mcrtLister := newMockMcrtLister(certs)
+	syncPool(f, t, namer, mcrtLister, lbInfo)
+	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+
+	expectCerts := make(map[string]string, len(certs))
+	for _, v := range certs {
+		expectCerts[v] = ""
+	}
+
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 }

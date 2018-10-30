@@ -21,9 +21,13 @@ import (
 	"fmt"
 	"strings"
 
+	mcrt "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/clientgen/listers/gke.googleapis.com/v1alpha1"
 	"github.com/golang/glog"
 
 	compute "google.golang.org/api/compute/v1"
+
+	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/client-go/tools/record"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -50,6 +54,10 @@ type L7RuntimeInfo struct {
 	TLS []*TLSCerts
 	// TLSName is the name of the preshared cert to use. Multiple certs can be specified as a comma-separated string
 	TLSName string
+	// Ingress is the processed Ingress API object.
+	Ingress *extensions.Ingress
+	// ManagedCertificates is a comma-separated list of managed SSL certificates to use.
+	ManagedCertificates string
 	// AllowHTTP will not setup :80, if TLS is nil and AllowHTTP is set,
 	// no loadbalancer is created.
 	AllowHTTP bool
@@ -106,6 +114,10 @@ type L7 struct {
 	oldSSLCerts []*compute.SslCertificate
 	// namer is used to compute names of the various sub-components of an L7.
 	namer *utils.Namer
+	// mcrt is an interface to ManagedCertificate resources.
+	mcrt mcrt.ManagedCertificateLister
+	// recorder is used to generate k8s Events.
+	recorder record.EventRecorder
 }
 
 // RuntimeInfo returns the L7RuntimeInfo associated with the L7 load balancer.
@@ -128,13 +140,14 @@ func (l *L7) edgeHop() error {
 		}
 	}
 	// Defer promoting an ephemeral to a static IP until it's really needed.
-	if l.runtimeInfo.AllowHTTP && (l.runtimeInfo.TLS != nil || l.runtimeInfo.TLSName != "") {
+	sslConfigured := l.runtimeInfo.TLS != nil || l.runtimeInfo.TLSName != "" || l.runtimeInfo.ManagedCertificates != ""
+	if l.runtimeInfo.AllowHTTP && sslConfigured {
 		glog.V(3).Infof("checking static ip for %v", l.Name)
 		if err := l.checkStaticIP(); err != nil {
 			return err
 		}
 	}
-	if l.runtimeInfo.TLS != nil || l.runtimeInfo.TLSName != "" {
+	if sslConfigured {
 		glog.V(3).Infof("validating https for %v", l.Name)
 		if err := l.edgeHopHttps(); err != nil {
 			return err
@@ -208,16 +221,20 @@ func (l *L7) Cleanup() error {
 		}
 		l.tps = nil
 	}
-	// Delete the SSL cert if it is from a secret, not referencing a pre-created GCE cert.
-	if len(l.sslCerts) != 0 && l.runtimeInfo.TLSName == "" {
+	// Delete the SSL cert if it is from a secret, not referencing a pre-created GCE cert or managed certificates.
+	secretsSslCerts, err := l.getIngressManagedSslCerts()
+	if err != nil {
+		return err
+	}
+
+	if len(secretsSslCerts) != 0 {
 		var certErr error
-		for _, cert := range l.sslCerts {
+		for _, cert := range secretsSslCerts {
 			glog.V(2).Infof("Deleting sslcert %s", cert.Name)
 			if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteSslCertificate(cert.Name)); err != nil {
 				glog.Errorf("Old cert delete failed - %v", err)
 				certErr = err
 			}
-
 		}
 		l.sslCerts = nil
 		if certErr != nil {
