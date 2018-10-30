@@ -199,7 +199,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	go app.RunSIGTERMHandler(lbc, flags.F.DeleteAllOnQuit)
 
-	go fwc.Run(stopCh)
+	go fwc.Run()
 	glog.V(0).Infof("firewall controller started")
 
 	ctx.Start(stopCh)

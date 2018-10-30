@@ -228,8 +228,8 @@ func (lbc *LoadBalancerController) Init() {
 // Run starts the loadbalancer controller.
 func (lbc *LoadBalancerController) Run() {
 	glog.Infof("Starting loadbalancer controller")
-	go lbc.ingQueue.Run(time.Second, lbc.stopCh)
-	lbc.nodes.Run(lbc.stopCh)
+	go lbc.ingQueue.Run()
+	go lbc.nodes.Run()
 
 	<-lbc.stopCh
 	glog.Infof("Shutting down Loadbalancer Controller")
