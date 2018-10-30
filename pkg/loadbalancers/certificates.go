@@ -56,13 +56,13 @@ func (l *L7) checkSSLCert() error {
 	}
 
 	l.oldSSLCerts = existingSecretsSslCerts
-	secretsSslCerts, err := l.createSecretsSslCertificates(existingSecretsSslCerts)
+	secretsSslCerts, err := l.createSslCertificates(existingSecretsSslCerts)
 	l.sslCerts = secretsSslCerts
 	return err
 }
 
-// createSecretsSslCertificates creates SslCertificates based on kubernetes secrets in Ingress configuration.
-func (l *L7) createSecretsSslCertificates(existingCerts []*compute.SslCertificate) ([]*compute.SslCertificate, error) {
+// createSslCertificates creates SslCertificates based on kubernetes secrets in Ingress configuration.
+func (l *L7) createSslCertificates(existingCerts []*compute.SslCertificate) ([]*compute.SslCertificate, error) {
 	var result []*compute.SslCertificate
 
 	existingCertsMap := getMapfromCertList(existingCerts)
