@@ -122,6 +122,7 @@ func main() {
 	ctxConfig := ingctx.ControllerContextConfig{
 		NEGEnabled:                    enableNEG,
 		BackendConfigEnabled:          flags.F.EnableBackendConfig,
+		ManagedCertificateEnabled:     flags.F.Features.ManagedCertificates,
 		Namespace:                     flags.F.WatchNamespace,
 		ResyncPeriod:                  flags.F.ResyncPeriod,
 		DefaultBackendSvcPortID:       defaultBackendServicePortID,
