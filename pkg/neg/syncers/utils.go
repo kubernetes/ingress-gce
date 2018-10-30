@@ -30,6 +30,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"strconv"
 )
 
 const (
@@ -148,4 +149,102 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		}
 	}
 	return nil
+}
+
+// toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map
+func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.ZoneGetter, targetPort string) (map[string]sets.String, error) {
+	zoneNetworkEndpointMap := map[string]sets.String{}
+	if endpoints == nil {
+		glog.Errorf("Endpoint object is nil")
+		return zoneNetworkEndpointMap, nil
+	}
+	targetPortNum, _ := strconv.Atoi(targetPort)
+	for _, subset := range endpoints.Subsets {
+		matchPort := ""
+		// service spec allows target Port to be a named Port.
+		// support both explicit Port and named Port.
+		for _, port := range subset.Ports {
+			if targetPortNum != 0 {
+				// TargetPort is int
+				if int(port.Port) == targetPortNum {
+					matchPort = targetPort
+				}
+			} else {
+				// TargetPort is string
+				if port.Name == targetPort {
+					matchPort = strconv.Itoa(int(port.Port))
+				}
+			}
+			if len(matchPort) > 0 {
+				break
+			}
+		}
+
+		// subset does not contain target Port
+		if len(matchPort) == 0 {
+			continue
+		}
+		for _, address := range subset.Addresses {
+			if address.NodeName == nil {
+				glog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
+				continue
+			}
+			zone, err := zoneGetter.GetZoneForNode(*address.NodeName)
+			if err != nil {
+				return nil, err
+			}
+			if zoneNetworkEndpointMap[zone] == nil {
+				zoneNetworkEndpointMap[zone] = sets.String{}
+			}
+			zoneNetworkEndpointMap[zone].Insert(encodeEndpoint(address.IP, *address.NodeName, matchPort))
+		}
+	}
+	return zoneNetworkEndpointMap, nil
+}
+
+// retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
+func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud) (map[string]sets.String, error) {
+	zones, err := zoneGetter.ListZones()
+	if err != nil {
+		return nil, err
+	}
+
+	zoneNetworkEndpointMap := map[string]sets.String{}
+	for _, zone := range zones {
+		zoneNetworkEndpointMap[zone] = sets.String{}
+		networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, false)
+		if err != nil {
+			return nil, err
+		}
+		for _, ne := range networkEndpointsWithHealthStatus {
+			zoneNetworkEndpointMap[zone].Insert(encodeEndpoint(ne.NetworkEndpoint.IpAddress, ne.NetworkEndpoint.Instance, strconv.FormatInt(ne.NetworkEndpoint.Port, 10)))
+		}
+	}
+	return zoneNetworkEndpointMap, nil
+}
+
+// makeEndpointBatch return a batch of endpoint from the input and remove the endpoints from input set
+// The return map has the encoded endpoint as key and GCE network endpoint object as value
+func makeEndpointBatch(endpoints sets.String) (map[string]*compute.NetworkEndpoint, error) {
+	endpointBatch := map[string]*compute.NetworkEndpoint{}
+
+	for i := 0; i < MAX_NETWORK_ENDPOINTS_PER_BATCH; i++ {
+		encodedEndpoint, ok := endpoints.PopAny()
+		if !ok {
+			break
+		}
+
+		ip, instance, port := decodeEndpoint(encodedEndpoint)
+		portNum, err := strconv.Atoi(port)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to decode endpoint %q: %v", encodedEndpoint, err)
+		}
+
+		endpointBatch[encodedEndpoint] = &compute.NetworkEndpoint{
+			Instance:  instance,
+			IpAddress: ip,
+			Port:      int64(portNum),
+		}
+	}
+	return endpointBatch, nil
 }
