@@ -70,6 +70,10 @@ const (
 	// manage ManagedCertificate resources, it is the user's responsibility to
 	// create/delete them.
 	ManagedCertificates = "gke.googleapis.com/managed-certificates"
+
+	// SuppressFirewallXPNErrorKey is the annotation key used by firewall
+	// controller whether to supress firewallXPNError.
+	SuppressFirewallXPNErrorKey = "networking.gke.io/suppress-firewall-xpn-error"
 )
 
 // Ingress represents ingress annotations.
@@ -127,4 +131,18 @@ func (ing *Ingress) ManagedCertificates() string {
 		return ""
 	}
 	return val
+}
+
+// SuppressFirewallXPNError returns the SuppressFirewallXPNErrorKey flag.
+// False by default.
+func (ing *Ingress) SuppressFirewallXPNError() bool {
+	val, ok := ing.v[SuppressFirewallXPNErrorKey]
+	if !ok {
+		return false
+	}
+	v, err := strconv.ParseBool(val)
+	if err != nil {
+		return false
+	}
+	return v
 }
