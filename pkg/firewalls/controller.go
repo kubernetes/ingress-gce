@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -170,6 +171,9 @@ func (fwc *FirewallController) sync(key string) error {
 		if fwErr, ok := err.(*FirewallXPNError); ok {
 			// XPN: Raise an event on each ingress
 			for _, ing := range gceIngresses.Items {
+				if annotations.FromIngress(&ing).SuppressFirewallXPNError() {
+					continue
+				}
 				fwc.ctx.Recorder(ing.Namespace).Eventf(&ing, apiv1.EventTypeNormal, "XPN", fwErr.Message)
 			}
 		} else {
