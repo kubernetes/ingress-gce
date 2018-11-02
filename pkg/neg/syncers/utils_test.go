@@ -18,12 +18,12 @@ package syncers
 
 import (
 	"reflect"
+	"strconv"
 	"testing"
 
 	"google.golang.org/api/compute/v0.beta"
 	"k8s.io/apimachinery/pkg/util/sets"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	"strconv"
 )
 
 func TestEncodeDecodeEndpoint(t *testing.T) {

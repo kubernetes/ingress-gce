@@ -18,6 +18,7 @@ package syncers
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,7 +31,6 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
-	"strconv"
 )
 
 const (
