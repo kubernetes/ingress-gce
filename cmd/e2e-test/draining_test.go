@@ -20,15 +20,23 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/utils"
+)
+
+const (
+	drainingTransitionPollTimeout = 5 * time.Minute
+	drainingTansitionPollInterval = 30 * time.Second
 )
 
 func TestDraining(t *testing.T) {
@@ -39,19 +47,22 @@ func TestDraining(t *testing.T) {
 		Build()
 
 	for _, tc := range []struct {
-		desc     string
-		beConfig *backendconfig.BackendConfig
+		desc         string
+		beConfig     *backendconfig.BackendConfig
+		transitionTo int64
 	}{
 		{
 			desc: "http with 60s draining timeout",
 			beConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
 				SetConnectionDrainingTimeout(60).
 				Build(),
+			transitionTo: 30,
 		},
 		{
 			desc: "http no draining defined",
 			beConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
 				Build(),
+			transitionTo: 60,
 		},
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
@@ -98,8 +109,39 @@ func TestDraining(t *testing.T) {
 				timeout = tc.beConfig.Spec.ConnectionDraining.DrainingTimeoutSec
 			}
 
+			// Check conformity
 			if err := verifyConnectionDrainingTimeout(t, gclb, s.Namespace, "service-1", timeout); err != nil {
 				t.Errorf("verifyConnectionDrainingTimeout(..., %q, %q, %d) = %v, want nil", s.Namespace, "service-1", timeout, err)
+			}
+
+			// Test modifications/transitions
+			if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				bc, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Get(tc.beConfig.Name, metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				if bc.Spec.ConnectionDraining == nil {
+					bc.Spec.ConnectionDraining = &backendconfig.ConnectionDrainingConfig{}
+				}
+				bc.Spec.ConnectionDraining.DrainingTimeoutSec = tc.transitionTo
+				_, err = Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Update(bc)
+				return err
+			}); err != nil {
+				t.Errorf("Failed to update BackendConfig ConnectionDraining settings for %s: %v", t.Name(), err)
+			}
+
+			if err := wait.Poll(drainingTansitionPollInterval, drainingTransitionPollTimeout, func() (bool, error) {
+				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
+				if err != nil {
+					t.Logf("error getting GCP resources for LB with IP = %q: %v", vip, err)
+					return false, nil
+				}
+				if err := verifyConnectionDrainingTimeout(t, gclb, s.Namespace, "service-1", tc.transitionTo); err != nil {
+					t.Errorf("verifyConnectionDrainingTimeout(..., %q, %q, %d) = %v, want nil", s.Namespace, "service-1", tc.transitionTo, err)
+				}
+				return true, nil
+			}); err != nil {
+				t.Errorf("error waiting for BackendConfig ConnectionDraining transition propagation to GCLB: %v", err)
 			}
 
 			// Wait for GCLB resources to be deleted.
