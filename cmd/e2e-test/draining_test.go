@@ -94,8 +94,8 @@ func TestDraining(t *testing.T) {
 			}
 
 			timeout := int64(0)
-			if tc.beConfig.Spec.ConnectionDraining != nil && tc.beConfig.Spec.ConnectionDraining.DrainingTimeoutSec != nil {
-				timeout = *tc.beConfig.Spec.ConnectionDraining.DrainingTimeoutSec
+			if tc.beConfig.Spec.ConnectionDraining != nil {
+				timeout = tc.beConfig.Spec.ConnectionDraining.DrainingTimeoutSec
 			}
 
 			if err := verifyConnectionDrainingTimeout(t, gclb, s.Namespace, "service-1", timeout); err != nil {

@@ -325,6 +325,6 @@ func (b *BackendConfigBuilder) SetConnectionDrainingTimeout(timeout int64) *Back
 	if b.backendConfig.Spec.ConnectionDraining == nil {
 		b.backendConfig.Spec.ConnectionDraining = &backendconfig.ConnectionDrainingConfig{}
 	}
-	b.backendConfig.Spec.ConnectionDraining.DrainingTimeoutSec = &timeout
+	b.backendConfig.Spec.ConnectionDraining.DrainingTimeoutSec = timeout
 	return b
 }
