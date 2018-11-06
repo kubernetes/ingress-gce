@@ -17,7 +17,7 @@ Please read the [beta limitations](BETA_LIMITATIONS.md) doc to before using this
 
 ## Overview
 
-**GCP HTTP(S) Load Balancer**: Google Compute Platform does not have a single resource that represents a L7 loadbalancer. When a user request comes in, it is first handled by the global forwarding rule, which sends the traffic to an HTTP proxy service that sends the traffic to a URL map that parses the URL to see which backend service will handle the request. Each backend service is assigned a set of virtual machine instances grouped into instance groups.
+**GCP HTTP(S) Load Balancer**: Google Compute Platform does not have a single resource that represents a L7 loadbalancer. When a user request comes in, it is first handled by the global forwarding rule, which sends the traffic to an HTTP proxy service that sends the traffic to a URL map that parses the URL to see which backend service will handle the request. Each backend service is assigned a set of virtual machine instances grouped into instance groups, or sets of IP addresses and ports named [network endpoint groups](https://cloud.google.com/load-balancing/docs/negs/) (NEGs).
 
 **Services**: A Kubernetes Service defines a set of pods and a means by which to access them, such as single stable IP address and corresponding DNS name. This IP defaults to a cluster VIP in a private address range. You can direct ingress traffic to a particular Service by setting its `Type` to NodePort or LoadBalancer. NodePort opens up a port on *every* node in your cluster and proxies traffic to the endpoints of your service, while LoadBalancer allocates an L4 cloud loadbalancer.
 
@@ -35,9 +35,9 @@ An Ingress Controller is a daemon, deployed as a Kubernetes Pod, that watches th
 
 To achieve L7 loadbalancing through Kubernetes, we employ a resource called `Ingress`. The Ingress is consumed by this loadbalancer controller, which creates the following GCE resource graph:
 
-[Global Forwarding Rule](https://cloud.google.com/compute/docs/load-balancing/http/global-forwarding-rules) -> [TargetHttpProxy](https://cloud.google.com/compute/docs/load-balancing/http/target-proxies) -> [URL Map](https://cloud.google.com/compute/docs/load-balancing/http/url-map) -> [Backend Service](https://cloud.google.com/compute/docs/load-balancing/http/backend-service) -> [Instance Group](https://cloud.google.com/compute/docs/instance-groups/)
+[Global Forwarding Rule](https://cloud.google.com/compute/docs/load-balancing/http/global-forwarding-rules) -> [TargetHttpProxy](https://cloud.google.com/compute/docs/load-balancing/http/target-proxies) -> [URL Map](https://cloud.google.com/compute/docs/load-balancing/http/url-map) -> [Backend Service](https://cloud.google.com/compute/docs/load-balancing/http/backend-service) -> [Instance Group](https://cloud.google.com/compute/docs/instance-groups/) or [Network Endpoint Group](https://cloud.google.com/load-balancing/docs/negs/)
 
-The controller (GLBC) manages the lifecycle of each component in the graph. It uses the Kubernetes resources as a spec for the desired state, and the GCE cloud resources as the observed state, and drives the observed to the desired. If an edge is disconnected, it fixes it. Each Ingress translates to a new GCE L7, and the rules on the Ingress become paths in the GCE URL Map. This allows you to route traffic to various backend Kubernetes Services through a single public IP, which is in contrast to `Type=LoadBalancer`, which allocates a public IP *per* Kubernetes Service. For this to work, the Kubernetes Service *must* have Type=NodePort.
+The controller (GLBC) manages the lifecycle of each component in the graph. It uses the Kubernetes resources as a spec for the desired state, and the GCE cloud resources as the observed state, and drives the observed to the desired. If an edge is disconnected, it fixes it. Each Ingress translates to a new GCE L7, and the rules on the Ingress become paths in the GCE URL Map. This allows you to route traffic to various backend Kubernetes Services (or directly to Pods when using NEGs) through a single public IP, which is in contrast to `Type=LoadBalancer`, which allocates a public IP *per* Kubernetes Service. For this to work, the Kubernetes Service *must* have Type=NodePort.
 
 ### The Ingress
 
@@ -66,7 +66,7 @@ __Lines 5-7__: Ingress Spec has all the information needed to configure a GCE L7
 
 __Lines 8-9__: Each HTTP rule contains the following information: A host (eg: foo.bar.com, defaults to `*` in this example), a list of paths (eg: `/hostless`) each of which has an associated backend (`test:80`). Both the `host` and `path` must match the content of an incoming request before the L7 directs traffic to the `backend`.
 
-__Lines 10-12__: A `backend` is a service:port combination. It selects a group of pods capable of servicing traffic sent to the path specified in the parent rule. The `port` is the desired `spec.ports[*].port` from the Service Spec -- Note, though, that the L7 actually directs traffic to the port's corresponding `NodePort`.
+__Lines 10-12__: A `backend` is a service:port combination. It selects a group of pods capable of servicing traffic sent to the path specified in the parent rule. The `port` is the desired `spec.ports[*].port` from the Service Spec -- Note, though, that the L7 actually directs traffic to the port's corresponding `NodePort`, unless configured as a NEG.
 
 __Global Parameters__: For the sake of simplicity the example Ingress has no global parameters. However, one can specify a default backend (see examples below) in the absence of which requests that don't match a path in the spec are sent to the default backend of GLBC.
 

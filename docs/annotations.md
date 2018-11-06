@@ -51,3 +51,11 @@ Example Value: `'{"my-https-port":"HTTPS"}'`
 Provide a mapping between ports and BackendConfig objects. You can provide configuration for a Cloud load
 balancer by associating Service ports with BackendConfig objects. For more details please visit
 https://cloud.google.com/kubernetes-engine/docs/concepts/backendconfig.
+
+#### Enable Network Endpoint Group
+`cloud.google.com/neg`
+
+Set `ingress` to enable NEG feature for the Ingress referencing this service.
+Optionaly provide a map of service ports that should be exposed as stand-alone NEGs.
+
+Example Value: `'{"ingress":true,"exposed_ports":{"80":{}, "443":{}}}'`
