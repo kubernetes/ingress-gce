@@ -166,7 +166,7 @@ func (manager *syncerManager) ShutDown() {
 
 // GC garbage collects syncers and NEGs.
 func (manager *syncerManager) GC() error {
-	glog.V(2).Infof("Start NEG garbage collection.")
+	glog.V(2).Info("Start NEG garbage collection.")
 	defer glog.V(2).Infof("NEG garbage collection finished.")
 	// Garbage collect Syncers
 	manager.garbageCollectSyncer()

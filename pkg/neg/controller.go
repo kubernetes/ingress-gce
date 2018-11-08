@@ -163,13 +163,13 @@ func NewController(
 
 func (c *Controller) Run(stopCh <-chan struct{}) {
 	wait.PollUntil(5*time.Second, func() (bool, error) {
-		glog.V(2).Infof("Waiting for initial sync")
+		glog.V(2).Info("Waiting for initial sync")
 		return c.synced(), nil
 	}, stopCh)
 
-	glog.V(2).Infof("Starting network endpoint group controller")
+	glog.V(2).Info("Starting network endpoint group controller")
 	defer func() {
-		glog.V(2).Infof("Shutting down network endpoint group controller")
+		glog.V(2).Info("Shutting down network endpoint group controller")
 		c.stop()
 	}()
 
@@ -198,7 +198,7 @@ func (c *Controller) IsHealthy() error {
 }
 
 func (c *Controller) stop() {
-	glog.V(2).Infof("Shutting down network endpoint group controller")
+	glog.V(2).Info("Shutting down network endpoint group controller")
 	c.serviceQueue.ShutDown()
 	c.endpointQueue.ShutDown()
 	c.manager.ShutDown()

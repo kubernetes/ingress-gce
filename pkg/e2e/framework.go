@@ -108,7 +108,7 @@ func (f *Framework) SanityCheck() error {
 
 // CatchSIGINT and cleanup sandboxes when the test is interrupted.
 func (f *Framework) CatchSIGINT() {
-	glog.Infof("Catching SIGINT")
+	glog.Info("Catching SIGINT")
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
