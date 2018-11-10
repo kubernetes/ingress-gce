@@ -93,7 +93,7 @@ func (c *CloudListingPool) ReplenishPool() {
 	glog.V(4).Infof("Replenishing pool %q", c.name)
 
 	// We must list with the lock, because the controller also lists through
-	// Snapshot(). It's ok if the controller takes a snpshot, we list, we
+	// Snapshot(). It's ok if the controller takes a snapshot, we list, we
 	// delete, because we have delete based on the most recent state. Worst
 	// case we thrash. It's not ok if we list, the controller lists and
 	// creates a backend, and we delete that backend based on stale state.

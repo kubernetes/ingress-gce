@@ -45,7 +45,7 @@ type cloudProviderAdapter struct {
 	subnetworkURL string
 }
 
-// GetNetworkEndpointGroup inmplements NetworkEndpointGroupCloud.
+// GetNetworkEndpointGroup implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) GetNetworkEndpointGroup(name string, zone string) (*computebeta.NetworkEndpointGroup, error) {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
