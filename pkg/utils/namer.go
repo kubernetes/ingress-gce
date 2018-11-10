@@ -113,7 +113,7 @@ func NewNamerWithPrefix(prefix, clusterName, firewallName string) *Namer {
 	return namer
 }
 
-// NameComponents is a struct representing the components of a a GCE
+// NameComponents is a struct representing the components of a GCE
 // resource name constructed by the namer. The format of such a name
 // is: k8s-resource-<metadata, eg port>--uid
 type NameComponents struct {
