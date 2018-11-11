@@ -101,7 +101,7 @@ Something to note about the Ingress:
 * It creates an Ingress with 2 hostnames and 3 endpoints (foo.bar.com{/foo} and bar.baz.com{/foo, /bar}) that access the given service
 
 ```shell
-$ kubectl create -f examples/http-svc.yaml examples/multi-path/gce-multi-path-ingress.yaml
+$ kubectl create -f examples/multi-path/svc.yaml examples/multi-path/gce-multi-path-ingress.yaml
 $ kubectl get svc
 NAME                 CLUSTER_IP     EXTERNAL_IP   PORT(S)   SELECTOR          AGE
 echoheadersx         10.0.126.10    nodes         80/TCP    app=echoheaders   16m
