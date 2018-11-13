@@ -24,40 +24,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 	"time"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
-
-func init() {
-	// Register the summary and the histogram with Prometheus's default registry.
-	prometheus.MustRegister(requestCount)
-	prometheus.MustRegister(requestDuration)
-}
 
 func main() {
 	// command line arguments
 	port := flag.Int("port", 8080, "Port number to serve default backend 404 page.")
-	healthPort := flag.Int("svc-port", 10254, "Port number to serve /healthz and /metrics.")
-
 	timeout := flag.Duration("timeout", 5*time.Second, "Time in seconds to wait before forcefully terminating the server.")
 
 	flag.Parse()
 
 	notFound := newHTTPServer(fmt.Sprintf(":%d", *port), notFound())
-	metrics := newHTTPServer(fmt.Sprintf(":%d", *healthPort), metrics())
-
-	// start the the healthz and metrics http server
-	go func() {
-		err := metrics.ListenAndServe()
-		if err != http.ErrServerClosed {
-			fmt.Fprintf(os.Stderr, "could not start healthz/metrics http server: %s\n", err)
-			os.Exit(1)
-		}
-	}()
 
 	// start the main http server
 	go func() {
@@ -89,6 +67,7 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 		IdleTimeout:       10 * time.Second,
 	}
 }
+
 func notFound(options ...func(*server)) *server {
 	s := &server{mux: http.NewServeMux()}
 	// TODO: this handler exists only to avoid breaking existing deployments
@@ -97,28 +76,9 @@ func notFound(options ...func(*server)) *server {
 		fmt.Fprint(w, "ok")
 	})
 	s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
 		w.WriteHeader(http.StatusNotFound)
 		fmt.Fprint(w, "default backend - 404")
-
-		duration := time.Now().Sub(start).Seconds() * 1e3
-
-		proto := strconv.Itoa(r.ProtoMajor)
-		proto = proto + "." + strconv.Itoa(r.ProtoMinor)
-
-		requestCount.WithLabelValues(proto).Inc()
-		requestDuration.WithLabelValues(proto).Observe(duration)
 	})
-	return s
-}
-
-func metrics() *server {
-	s := &server{mux: http.NewServeMux()}
-	s.mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, "ok")
-	})
-	s.mux.Handle("/metrics", promhttp.Handler())
 	return s
 }
 

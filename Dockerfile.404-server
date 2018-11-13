@@ -14,7 +14,9 @@
 
 FROM scratch
 
-#   nobody:nobody
+ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
+
+# nobody:nobody
 USER 65534:65534
-COPY server /
-ENTRYPOINT ["/server"]
+
+ENTRYPOINT ["/ARG_BIN"]
