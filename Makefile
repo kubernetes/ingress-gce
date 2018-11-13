@@ -22,6 +22,7 @@ PKG := k8s.io/ingress-gce
 # List of binaries to build. You must have a matching Dockerfile.BINARY
 # for each BINARY.
 CONTAINER_BINARIES ?= \
+	404-server \
 	e2e-test \
 	echo \
 	fuzzer \
