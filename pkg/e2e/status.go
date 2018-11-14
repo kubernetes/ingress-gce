@@ -35,16 +35,30 @@ var (
 	Stable IngressStability = "Stable"
 	// Unstable indicates an Ingress is unstable (i.e serving 404/502's).
 	Unstable IngressStability = "Unstable"
-	// ExitKey is the key used to indicate to the status manager
-	// whether to gracefully finish the e2e test execution.
-	exitKey = "exit"
 )
 
 const (
-	configMapName = "status-cm"
+	configMapName  = "status-cm"
+	cmPollInterval = 30 * time.Second
+	flushInterval  = 30 * time.Second
+	// ExitKey is the key used to indicate to the status manager
+	// whether to gracefully finish the e2e test execution.
+	// Value associated with it is a timestamp string.
+	exitKey = "exit"
+	// masterUpgraded is the key used to indicate to the status manager that
+	// the k8s master has successfully finished upgrading.
+	// Value associated with it is a timestamp string.
+	masterUpgraded = "master-upgraded"
 )
 
 // StatusManager manages the status of sandboxed Ingresses via a ConfigMap.
+// Upon initialization, it creates a ConfigMap object which the guitar
+// test can also read and write to.
+// Ingress e2e tests write to the ConfigMap whether or not the Ingresses
+// created have stabilized or not. The Guitar test reads from this same
+// configmap and writes to the master-upgraded key indicating that a k8s master
+// upgrade has successfully finished, and exit key to indicate that the e2e test
+// can exit.
 type StatusManager struct {
 	cm *v1.ConfigMap
 	f  *Framework
@@ -65,25 +79,25 @@ func (sm *StatusManager) init() error {
 	var err error
 	sm.cm, err = sm.f.Clientset.Core().ConfigMaps("default").Create(sm.cm)
 	if err != nil {
-		return fmt.Errorf("Error creating ConfigMap: %v", err)
+		return fmt.Errorf("error creating ConfigMap: %v", err)
 	}
 
 	newIndexer := func() cache.Indexers {
 		return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
 	}
-	cmInformer := informerv1.NewConfigMapInformer(sm.f.Clientset, "default", 30*time.Second, newIndexer())
+	cmInformer := informerv1.NewConfigMapInformer(sm.f.Clientset, "default", cmPollInterval, newIndexer())
 	cmInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(old, cur interface{}) {
 			curCm := cur.(*v1.ConfigMap)
-			if curCm.Data[exitKey] == "yes" {
-				glog.V(2).Infof("ConfigMap was updated with exit switch.")
+			if len(curCm.Data[exitKey]) > 0 {
+				glog.V(2).Infof("ConfigMap was updated with exit switch at %s", curCm.Data[exitKey])
 				sm.f.shutdown(0)
 			}
 		},
 	})
 
 	go func() {
-		for _ = range time.NewTicker(30 * time.Second).C {
+		for _ = range time.NewTicker(flushInterval).C {
 			sm.flush()
 		}
 	}()
@@ -93,6 +107,7 @@ func (sm *StatusManager) init() error {
 
 func (sm *StatusManager) shutdown() {
 	glog.V(2).Infof("Shutting down status manager.")
+	glog.V(3).Infof("ConfigMap: %+v", sm.cm.Data)
 	if err := sm.f.Clientset.Core().ConfigMaps("default").Delete(configMapName, &metav1.DeleteOptions{}); err != nil {
 		glog.Errorf("Error deleting ConfigMap: %v", err)
 	}
@@ -100,20 +115,36 @@ func (sm *StatusManager) shutdown() {
 
 func (sm *StatusManager) putStatus(key string, status IngressStability) {
 	sm.f.lock.Lock()
+	defer sm.f.lock.Unlock()
 	if sm.cm.Data == nil {
 		sm.cm.Data = make(map[string]string)
 	}
 	sm.cm.Data[key] = string(status)
-	sm.f.lock.Unlock()
+}
+
+func (sm *StatusManager) masterUpgraded() bool {
+	if len(sm.cm.Data[masterUpgraded]) > 0 {
+		glog.V(2).Infof("Master has successfully upgraded at %s", sm.cm.Data[masterUpgraded])
+		return true
+	}
+	return false
 }
 
 func (sm *StatusManager) flush() {
 	sm.f.lock.Lock()
 	defer sm.f.lock.Unlock()
-	var err error
-	sm.cm, err = sm.f.Clientset.Core().ConfigMaps("default").Update(sm.cm)
-	if err != nil {
-		glog.Errorf("Error updating ConfigMap: %v", err)
+
+	// Loop until we successfully update the config map
+	for {
+		var err error
+		sm.cm, err = sm.f.Clientset.Core().ConfigMaps("default").Update(sm.cm)
+		if err != nil {
+			glog.Errorf("Error updating ConfigMap: %v", err)
+		} else {
+			// ConfigMap successfully updated
+			break
+		}
 	}
 	glog.V(3).Infof("Flushed statuses to ConfigMap")
+	glog.V(3).Infof("ConfigMap: %+v", sm.cm.Data)
 }

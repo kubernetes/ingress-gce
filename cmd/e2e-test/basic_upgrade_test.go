@@ -66,7 +66,23 @@ func TestBasicUpgrade(t *testing.T) {
 			s.PutStatus(e2e.Unstable)
 
 			runs := 0
+			// needUpdate indicates that the Ingress sync has NOT yet been triggered
+			needUpdate := true
+			// Framework.shutdown() kills this loop.
 			for {
+				if s.MasterUpgraded() && needUpdate {
+					// force ingress update. only add path once
+					newIng := fuzz.NewIngressBuilderFromExisting(tc.ing).
+						AddPath("test.com", "/", "service-1", intstr.FromInt(80)).
+						Build()
+
+					if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(newIng); err != nil {
+						t.Fatalf("error creating Ingress spec: %v", err)
+					} else {
+						needUpdate = false
+					}
+				}
+
 				options := &e2e.WaitForIngressOptions{
 					ExpectUnreachable: runs == 0,
 				}
