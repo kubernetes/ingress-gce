@@ -104,6 +104,11 @@ func addIngress(lbc *LoadBalancerController, ing *extensions.Ingress) {
 	lbc.ctx.IngressInformer.GetIndexer().Add(ing)
 }
 
+func updateIngress(lbc *LoadBalancerController, ing *extensions.Ingress) {
+	lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Update(ing)
+	lbc.ctx.IngressInformer.GetIndexer().Update(ing)
+}
+
 func deleteIngress(lbc *LoadBalancerController, ing *extensions.Ingress) {
 	lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Delete(ing.Name, &meta_v1.DeleteOptions{})
 	lbc.ctx.IngressInformer.GetIndexer().Delete(ing)
@@ -180,6 +185,47 @@ func TestIngressCreateDelete(t *testing.T) {
 	deleteIngress(lbc, ing)
 	if err := lbc.sync(ingStoreKey); err != nil {
 		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
+	}
+}
+
+// TestIngressClassChange asserts that `sync` will not return an error for a good ingress config
+// status is updated and LB is deleted after class change.
+func TestIngressClassChange(t *testing.T) {
+	lbc := newLoadBalancerController()
+	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
+		Type:  api_v1.ServiceTypeNodePort,
+		Ports: []api_v1.ServicePort{{Port: 80}},
+	})
+	addService(lbc, svc)
+	defaultBackend := backend("my-service", intstr.FromInt(80))
+	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
+		extensions.IngressSpec{
+			Backend: &defaultBackend,
+		})
+	ing.ObjectMeta.Annotations = map[string]string{"kubernetes.io/ingress.class": "gce"}
+	addIngress(lbc, ing)
+
+	ingStoreKey := getKey(ing, t)
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
+	}
+
+	ing.ObjectMeta.Annotations = map[string]string{"kubernetes.io/ingress.class": "new-class"}
+	updateIngress(lbc, ing)
+
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
+	}
+
+	// Check status of LoadBalancer is updated after class changes
+	updatedIng, _ := lbc.ctx.KubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	if len(updatedIng.Status.LoadBalancer.Ingress) != 0 {
+		t.Error("Ingress status wasn't updated after class changed")
+	}
+
+	// Check LB for ingress is deleted after class changed
+	if pool, _ := lbc.l7Pool.Get(ingStoreKey); pool != nil {
+		t.Errorf("LB(%v) wasn't deleted after class changed", ingStoreKey)
 	}
 }
 
