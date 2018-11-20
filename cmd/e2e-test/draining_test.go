@@ -137,7 +137,8 @@ func TestDraining(t *testing.T) {
 					return false, nil
 				}
 				if err := verifyConnectionDrainingTimeout(t, gclb, s.Namespace, "service-1", tc.transitionTo); err != nil {
-					t.Errorf("verifyConnectionDrainingTimeout(..., %q, %q, %d) = %v, want nil", s.Namespace, "service-1", tc.transitionTo, err)
+					t.Logf("verifyConnectionDrainingTimeout(..., %q, %q, %d) = %v, want nil", s.Namespace, "service-1", tc.transitionTo, err)
+					return false, nil
 				}
 				return true, nil
 			}); err != nil {
