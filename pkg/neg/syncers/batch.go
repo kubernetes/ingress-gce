@@ -238,6 +238,7 @@ func (s *batchSyncer) ensureNetworkEndpointGroups() error {
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map
+// TODO: migrate to use the util function instead
 func (s *batchSyncer) toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints) (map[string]sets.String, error) {
 	zoneNetworkEndpointMap := map[string]sets.String{}
 	targetPort, _ := strconv.Atoi(s.TargetPort)
@@ -285,6 +286,7 @@ func (s *batchSyncer) toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints) (map[
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
+// TODO: migrate to use the util function instead
 func (s *batchSyncer) retrieveExistingZoneNetworkEndpointMap() (map[string]sets.String, error) {
 	zones, err := s.zoneGetter.ListZones()
 	if err != nil {
