@@ -79,6 +79,7 @@ func TestBasicUpgrade(t *testing.T) {
 					if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(newIng); err != nil {
 						t.Fatalf("error creating Ingress spec: %v", err)
 					} else {
+						s.PutStatus(e2e.Unstable)
 						needUpdate = false
 					}
 				}

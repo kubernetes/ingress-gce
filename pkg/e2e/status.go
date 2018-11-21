@@ -52,13 +52,21 @@ const (
 )
 
 // StatusManager manages the status of sandboxed Ingresses via a ConfigMap.
-// Upon initialization, it creates a ConfigMap object which the guitar
-// test can also read and write to.
-// Ingress e2e tests write to the ConfigMap whether or not the Ingresses
-// created have stabilized or not. The Guitar test reads from this same
-// configmap and writes to the master-upgraded key indicating that a k8s master
-// upgrade has successfully finished, and exit key to indicate that the e2e test
-// can exit.
+// It interacts with the Guitar test portion as follows:
+// 1. StatusManager initializes and creates the ConfigMap status-cm. It listens
+// on updates via informers.
+// 2. e2e test calls StatusManager.putStatus with the Ingress name as key,
+// and Unstable as the status
+// 3. e2e test watches for when Ingress stabilizes, then uses StatusManager to
+// update the Ingress's status to Stable
+// 4. Guitar test reads from ConfigMap status-cm. When it detects that all
+// Ingresses are stable (i.e., no value in the map is Unstable), it starts
+// the MasterUpgrade.
+// 5. When the k8s master finishes upgrading, the guitar test writes the
+// timestamp to the master-upgraded key in the ConfigMap
+// 6. Guitar test writes the exit key in the ConfigMap to indicate that the e2e
+// test can exit.
+// 7. The StatusManager loop reads the exit key, then starts shutdown().
 type StatusManager struct {
 	cm *v1.ConfigMap
 	f  *Framework
