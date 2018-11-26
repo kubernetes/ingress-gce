@@ -77,3 +77,13 @@ func (s *Sandbox) Destroy() {
 	}
 	s.destroyed = true
 }
+
+func (s *Sandbox) PutStatus(status IngressStability) {
+	s.f.statusManager.putStatus(s.Namespace, status)
+}
+
+// MasterUpgraded checks the config map for whether or not the k8s master has
+// successfully finished upgrading or not
+func (s *Sandbox) MasterUpgraded() bool {
+	return s.f.statusManager.masterUpgraded()
+}
