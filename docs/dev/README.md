@@ -1,5 +1,8 @@
 # Ingress Development Guide
 
+*** Note: This directory will soon be completely removed in favor of docs/contrib and
+docs/deploy. ***
+
 This directory is intended to be the canonical source of truth for things like
 writing and hacking on Ingress controllers. If you find a requirement that this
 doc does not capture, please submit an issue on GitHub. If you find other docs
