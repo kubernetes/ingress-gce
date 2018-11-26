@@ -283,63 +283,6 @@ func IsGLBCIngress(ing *extensions.Ingress) bool {
 	return IsGCEIngress(ing) || IsGCEMultiClusterIngress(ing)
 }
 
-// StoreToIngressLister makes a Store that lists Ingress.
-type StoreToIngressLister struct {
-	cache.Store
-}
-
-// List lists all Ingress' in the store (both single and multi cluster ingresses).
-func (s *StoreToIngressLister) ListAll() (ing extensions.IngressList, err error) {
-	for _, m := range s.Store.List() {
-		newIng := m.(*extensions.Ingress)
-		if IsGCEIngress(newIng) || IsGCEMultiClusterIngress(newIng) {
-			ing.Items = append(ing.Items, *newIng)
-		}
-	}
-	return ing, nil
-}
-
-// ListGCEIngresses lists all GCE Ingress' in the store.
-func (s *StoreToIngressLister) ListGCEIngresses() (ing extensions.IngressList, err error) {
-	for _, m := range s.Store.List() {
-		newIng := m.(*extensions.Ingress)
-		if IsGCEIngress(newIng) {
-			ing.Items = append(ing.Items, *newIng)
-		}
-	}
-	return ing, nil
-}
-
-// GetServiceIngress gets all the Ingress' that have rules pointing to a service.
-// Note that this ignores services without the right nodePorts.
-func (s *StoreToIngressLister) GetServiceIngress(svc *api_v1.Service, systemDefaultBackend ServicePortID) (ings []extensions.Ingress, err error) {
-	for _, m := range s.Store.List() {
-		ing := *m.(*extensions.Ingress)
-
-		// Check if system default backend is involved
-		if ing.Spec.Backend == nil && systemDefaultBackend.Service.Name == svc.Name && systemDefaultBackend.Service.Namespace == svc.Namespace {
-			ings = append(ings, ing)
-			continue
-		}
-
-		if ing.Namespace != svc.Namespace {
-			continue
-		}
-
-		TraverseIngressBackends(&ing, func(id ServicePortID) bool {
-			if id.Service.Name == svc.Name {
-				ings = append(ings, ing)
-				return true
-			}
-			return false
-		})
-	}
-	if len(ings) == 0 {
-		err = fmt.Errorf("no ingress for service %v", svc.Name)
-	}
-	return
-}
-
 // GetReadyNodeNames returns names of schedulable, ready nodes from the node lister
 // It also filters out masters and nodes excluded from load-balancing
 // TODO(rramkumar): Add a test for this.

@@ -37,6 +37,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
@@ -55,7 +56,6 @@ import (
 type LoadBalancerController struct {
 	ctx *context.ControllerContext
 
-	ingLister  utils.StoreToIngressLister
 	nodeLister cache.Indexer
 	nodes      *NodeController
 
@@ -110,7 +110,6 @@ func NewLoadBalancerController(
 
 	lbc := LoadBalancerController{
 		ctx:           ctx,
-		ingLister:     utils.StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
 		nodeLister:    ctx.NodeInformer.GetIndexer(),
 		Translator:    translator.NewTranslator(ctx),
 		tlsLoader:     &tls.TLSCertsFromSecretsLoader{Client: ctx.KubeClient},
@@ -169,13 +168,13 @@ func NewLoadBalancerController(
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			svc := obj.(*apiv1.Service)
-			ings := lbc.ctx.IngressesForService(svc)
+			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesService(svc).AsList()
 			lbc.ingQueue.Enqueue(convert(ings)...)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
 				svc := cur.(*apiv1.Service)
-				ings := lbc.ctx.IngressesForService(svc)
+				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesService(svc).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
 			}
 		},
@@ -187,20 +186,20 @@ func NewLoadBalancerController(
 		ctx.BackendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				beConfig := obj.(*backendconfigv1beta1.BackendConfig)
-				ings := lbc.ctx.IngressesForBackendConfig(beConfig)
+				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
 
 			},
 			UpdateFunc: func(old, cur interface{}) {
 				if !reflect.DeepEqual(old, cur) {
 					beConfig := cur.(*backendconfigv1beta1.BackendConfig)
-					ings := lbc.ctx.IngressesForBackendConfig(beConfig)
+					ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 					lbc.ingQueue.Enqueue(convert(ings)...)
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
 				beConfig := obj.(*backendconfigv1beta1.BackendConfig)
-				ings := lbc.ctx.IngressesForBackendConfig(beConfig)
+				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
 			},
 		})
@@ -433,16 +432,19 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	glog.V(3).Infof("Syncing %v", key)
 
 	// Create state needed for GC.
-	gceIngresses, err := lbc.ingLister.ListGCEIngresses()
-	if err != nil {
-		return err
-	}
+	gceIngresses := operator.Ingresses(lbc.ctx.Ingresses().List()).Filter(func(ing *extensions.Ingress) bool {
+		return utils.IsGCEIngress(ing)
+	}).AsList()
+
 	// gceSvcPorts contains the ServicePorts used by only single-cluster ingress.
-	gceSvcPorts := lbc.ToSvcPorts(&gceIngresses)
-	lbNames := lbc.ingLister.Store.ListKeys()
+	gceSvcPorts := lbc.ToSvcPorts(gceIngresses)
+	lbNames := lbc.ctx.Ingresses().ListKeys()
 	gcState := &gcState{lbNames, gceSvcPorts}
 
-	obj, ingExists, err := lbc.ingLister.Store.GetByKey(key)
+	ing, ingExists, err := lbc.ctx.Ingresses().GetByKey(key)
+	if err != nil {
+		return fmt.Errorf("error getting Ingress for key %s: %v", key, err)
+	}
 	if !ingExists {
 		glog.V(2).Infof("Ingress %q no longer exists, triggering GC", key)
 		// GC will find GCE resources that were used for this ingress and delete them.
@@ -450,10 +452,6 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	}
 
 	// Get ingress and DeepCopy for assurance that we don't pollute other goroutines with changes.
-	ing, ok := obj.(*extensions.Ingress)
-	if !ok {
-		return fmt.Errorf("invalid object (not of type Ingress), type was %T", obj)
-	}
 	ing = ing.DeepCopy()
 
 	// Bootstrap state for GCP sync.
@@ -578,10 +576,10 @@ func updateAnnotations(client kubernetes.Interface, name, namespace string, anno
 
 // ToSvcPorts is a helper method over translator.TranslateIngress to process a list of ingresses.
 // Note: This method is used for GC.
-func (lbc *LoadBalancerController) ToSvcPorts(ings *extensions.IngressList) []utils.ServicePort {
+func (lbc *LoadBalancerController) ToSvcPorts(ings []*extensions.Ingress) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
-	for _, ing := range ings.Items {
-		urlMap, _ := lbc.Translator.TranslateIngress(&ing, lbc.ctx.DefaultBackendSvcPortID)
+	for _, ing := range ings {
+		urlMap, _ := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
 		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts
