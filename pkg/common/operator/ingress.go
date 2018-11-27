@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 
 	api_v1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
@@ -66,6 +67,21 @@ func (op *IngressesOperator) ReferencesBackendConfig(beConfig *backendconfigv1be
 				i = append(i, ing)
 				dupes[key] = true
 			}
+		}
+	}
+	return Ingresses(i)
+}
+
+// ReferencesFrontendConfig returns the Ingresses that reference the given FrontendConfig.
+func (op *IngressesOperator) ReferencesFrontendConfig(feConfig *frontendconfigv1beta1.FrontendConfig) *IngressesOperator {
+	dupes := map[string]bool{}
+
+	var i []*extensions.Ingress
+	for _, ing := range op.i {
+		key := fmt.Sprintf("%s/%s", ing.Namespace, ing.Name)
+		if doesIngressReferenceFrontendConfig(ing, feConfig) && !dupes[key] {
+			i = append(i, ing)
+			dupes[key] = true
 		}
 	}
 	return Ingresses(i)

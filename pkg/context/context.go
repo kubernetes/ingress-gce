@@ -32,6 +32,8 @@ import (
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/common/typed"
+	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
+	frontendconfiginformer "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
@@ -54,6 +56,7 @@ type ControllerContext struct {
 	IngressInformer            cache.SharedIndexInformer
 	ServiceInformer            cache.SharedIndexInformer
 	BackendConfigInformer      cache.SharedIndexInformer
+	FrontendConfigInformer     cache.SharedIndexInformer
 	PodInformer                cache.SharedIndexInformer
 	NodeInformer               cache.SharedIndexInformer
 	EndpointInformer           cache.SharedIndexInformer
@@ -70,8 +73,9 @@ type ControllerContext struct {
 // ControllerContextConfig encapsulates some settings that are tunable via command line flags.
 type ControllerContextConfig struct {
 	NEGEnabled                bool
-	BackendConfigEnabled      bool
 	ManagedCertificateEnabled bool
+	BackendConfigEnabled      bool
+	FrontendConfigEnabled     bool
 	Namespace                 string
 	ResyncPeriod              time.Duration
 	// DefaultBackendSvcPortID is the ServicePortID for the system default backend.
@@ -83,8 +87,9 @@ type ControllerContextConfig struct {
 // NewControllerContext returns a new shared set of informers.
 func NewControllerContext(
 	kubeClient kubernetes.Interface,
-	backendConfigClient backendconfigclient.Interface,
 	mcrtClient managedcertificatesclient.Interface,
+	backendConfigClient backendconfigclient.Interface,
+	frontendConfigClient frontendconfigclient.Interface,
 	cloud *gce.GCECloud,
 	namer *utils.Namer,
 	config ControllerContextConfig) *ControllerContext {
@@ -107,6 +112,9 @@ func NewControllerContext(
 	if config.BackendConfigEnabled {
 		context.BackendConfigInformer = informerbackendconfig.NewBackendConfigInformer(backendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
+	if config.FrontendConfigEnabled {
+		context.FrontendConfigInformer = frontendconfiginformer.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	}
 	if config.ManagedCertificateEnabled {
 		context.ManagedCertificateInformer = managedcertificatesv1alpha1.NewManagedCertificateInformer(mcrtClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
@@ -127,6 +135,9 @@ func (ctx *ControllerContext) HasSynced() bool {
 	}
 	if ctx.BackendConfigInformer != nil {
 		funcs = append(funcs, ctx.BackendConfigInformer.HasSynced)
+	}
+	if ctx.FrontendConfigInformer != nil {
+		funcs = append(funcs, ctx.FrontendConfigInformer.HasSynced)
 	}
 	if ctx.ManagedCertificateInformer != nil {
 		funcs = append(funcs, ctx.ManagedCertificateInformer.HasSynced)
@@ -192,6 +203,9 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	if ctx.BackendConfigInformer != nil {
 		go ctx.BackendConfigInformer.Run(stopCh)
 	}
+	if ctx.FrontendConfigInformer != nil {
+		go ctx.FrontendConfigInformer.Run(stopCh)
+	}
 	if ctx.ManagedCertificateInformer != nil {
 		go ctx.ManagedCertificateInformer.Run(stopCh)
 	}
@@ -213,4 +227,12 @@ func (ctx *ControllerContext) BackendConfigs() *typed.BackendConfigStore {
 		return typed.WrapBackendConfigStore(nil)
 	}
 	return typed.WrapBackendConfigStore(ctx.BackendConfigInformer.GetStore())
+}
+
+// FrontendConfigs returns the store of FrontendConfigs.
+func (ctx *ControllerContext) FrontendConfigs() *typed.FrontendConfigStore {
+	if ctx.FrontendConfigInformer == nil {
+		return typed.WrapFrontendConfigStore(nil)
+	}
+	return typed.WrapFrontendConfigStore(ctx.FrontendConfigInformer.GetStore())
 }
