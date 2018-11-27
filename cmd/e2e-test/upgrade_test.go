@@ -28,7 +28,7 @@ import (
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 )
 
-func TestBasicUpgrade(t *testing.T) {
+func TestUpgrade(t *testing.T) {
 	t.Parallel()
 
 	port80 := intstr.FromInt(80)
