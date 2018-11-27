@@ -132,3 +132,11 @@ func (ing *Ingress) SuppressFirewallXPNError() bool {
 	}
 	return v
 }
+
+func (ing *Ingress) FrontendConfig() string {
+	val, ok := ing.v[FrontendConfigKey]
+	if !ok {
+		return ""
+	}
+	return val
+}

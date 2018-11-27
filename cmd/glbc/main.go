@@ -115,6 +115,7 @@ func main() {
 		DefaultBackendSvcPortID:       defaultBackendServicePortID,
 		HealthCheckPath:               flags.F.HealthCheckPath,
 		DefaultBackendHealthCheckPath: flags.F.DefaultSvcHealthCheckPath,
+		FrontendConfigEnabled:         flags.F.EnableFrontendConfig,
 	}
 	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, cloud, namer, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)

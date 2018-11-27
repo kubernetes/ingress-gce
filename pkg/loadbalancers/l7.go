@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/tools/record"
 
 	"k8s.io/ingress-gce/pkg/annotations"
+	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/utils"
 )

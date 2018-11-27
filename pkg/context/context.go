@@ -49,12 +49,13 @@ type ControllerContext struct {
 
 	ControllerContextConfig
 
-	IngressInformer       cache.SharedIndexInformer
-	ServiceInformer       cache.SharedIndexInformer
-	BackendConfigInformer cache.SharedIndexInformer
-	PodInformer           cache.SharedIndexInformer
-	NodeInformer          cache.SharedIndexInformer
-	EndpointInformer      cache.SharedIndexInformer
+	IngressInformer        cache.SharedIndexInformer
+	ServiceInformer        cache.SharedIndexInformer
+	BackendConfigInformer  cache.SharedIndexInformer
+	FrontendConfigInformer cache.SharedIndexInformer
+	PodInformer            cache.SharedIndexInformer
+	NodeInformer           cache.SharedIndexInformer
+	EndpointInformer       cache.SharedIndexInformer
 
 	healthChecks map[string]func() error
 
@@ -72,6 +73,7 @@ type ControllerContextConfig struct {
 	DefaultBackendSvcPortID       utils.ServicePortID
 	HealthCheckPath               string
 	DefaultBackendHealthCheckPath string
+	FrontendConfigEnabled         bool
 }
 
 // NewControllerContext returns a new shared set of informers.

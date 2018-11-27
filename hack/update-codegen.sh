@@ -25,13 +25,14 @@ OPENAPI_PKG=${GOPATH}/src/k8s.io/kube-openapi
 echo "Generating composite types"
 go run ${SCRIPT_ROOT}/pkg/composite/gen/main.go
 
+echo "Performing code generation for BackendConfig CRD"
 ${CODEGEN_PKG}/generate-groups.sh \
   "deepcopy,client,informer,lister" \
   k8s.io/ingress-gce/pkg/backendconfig/client k8s.io/ingress-gce/pkg/apis \
   "backendconfig:v1beta1 backendconfig:v1" \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
 
-echo "Generating openapi for v1beta1"
+echo "Generating openapi for BackendConfig v1beta1"
 go install ${OPENAPI_PKG}/cmd/openapi-gen
 ${GOPATH}/bin/openapi-gen \
   --output-file-base zz_generated.openapi \
@@ -39,10 +40,25 @@ ${GOPATH}/bin/openapi-gen \
   --output-package k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1 \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
 
-echo "Generating openapi for v1"
+echo "Generating openapi for BackendConfig v1"
 go install ${OPENAPI_PKG}/cmd/openapi-gen
 ${GOPATH}/bin/openapi-gen \
   --output-file-base zz_generated.openapi \
   --input-dirs k8s.io/ingress-gce/pkg/apis/backendconfig/v1\
   --output-package k8s.io/ingress-gce/pkg/apis/backendconfig/v1 \
+  --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
+
+echo "Performing code generation for FrontendConfig CRD"
+${CODEGEN_PKG}/generate-groups.sh \
+  "deepcopy,client,informer,lister" \
+  k8s.io/ingress-gce/pkg/frontendconfig/client k8s.io/ingress-gce/pkg/apis \
+  frontendconfig:v1beta1 \
+  --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
+
+echo "Generating openapi for FrontendConfig v1beta1"
+go install ${OPENAPI_PKG}/cmd/openapi-gen
+${GOPATH}/bin/openapi-gen \
+  --output-file-base zz_generated.openapi \
+  --input-dirs k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1\
+  --output-package k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1 \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt

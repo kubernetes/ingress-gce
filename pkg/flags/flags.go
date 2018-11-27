@@ -67,6 +67,7 @@ var (
 		DefaultSvc                string
 		DefaultSvcPortName        string
 		DeleteAllOnQuit           bool
+		EnableFrontendConfig      bool
 		GCERateLimit              RateLimitSpecs
 		GCEOperationPollInterval  time.Duration
 		HealthCheckPath           string
