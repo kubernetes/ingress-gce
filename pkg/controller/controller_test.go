@@ -28,7 +28,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/fake"
-	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
@@ -47,21 +46,19 @@ var (
 // newLoadBalancerController create a loadbalancer controller.
 func newLoadBalancerController() *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
-	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	namer := utils.NewNamer(clusterUID, "")
 
 	stopCh := make(chan struct{})
 	ctxConfig := context.ControllerContextConfig{
 		NEGEnabled:                    true,
-		BackendConfigEnabled:          false,
 		Namespace:                     api_v1.NamespaceAll,
 		ResyncPeriod:                  1 * time.Minute,
 		DefaultBackendSvcPortID:       test.DefaultBeSvcPort.ID,
 		HealthCheckPath:               "/",
 		DefaultBackendHealthCheckPath: "/healthz",
 	}
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, nil, fakeGCE, namer, ctxConfig)
+	ctx := context.NewControllerContext(kubeClient, nil, nil, nil, fakeGCE, namer, ctxConfig)
 	lbc := NewLoadBalancerController(ctx, stopCh)
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instances.NewNodePool(instances.NewFakeInstanceGroups(sets.NewString(), namer), namer)

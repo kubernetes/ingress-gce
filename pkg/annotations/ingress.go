@@ -74,6 +74,14 @@ const (
 	// SuppressFirewallXPNErrorKey is the annotation key used by firewall
 	// controller whether to supress firewallXPNError.
 	SuppressFirewallXPNErrorKey = "networking.gke.io/suppress-firewall-xpn-error"
+
+	// FrontendConfigKey is the annotation key used by controller to specify
+	// the FrontendConfig resource which should be associated with the Ingress.
+	// The value of the annotation is the name of the FrontendConfig resource.
+	// Examples:
+	// - annotations:
+	//     networking.gke.io/v1beta1.FrontendConfig: 'my-frontendconfig'
+	FrontendConfigKey = "networking.gke.io/v1beta1.FrontendConfig"
 )
 
 // Ingress represents ingress annotations.
@@ -145,4 +153,12 @@ func (ing *Ingress) SuppressFirewallXPNError() bool {
 		return false
 	}
 	return v
+}
+
+func (ing *Ingress) FrontendConfig() string {
+	val, ok := ing.v[FrontendConfigKey]
+	if !ok {
+		return ""
+	}
+	return val
 }

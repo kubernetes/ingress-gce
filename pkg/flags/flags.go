@@ -81,6 +81,7 @@ var (
 		WatchNamespace            string
 		NodePortRanges            PortRanges
 		EnableBackendConfig       bool
+		EnableFrontendConfig      bool
 		NegGCPeriod               time.Duration
 
 		LeaderElection LeaderElectionConfiguration
@@ -209,6 +210,8 @@ the pod secrets for creating a Kubernetes client.`)
 L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-500`)
 	flag.BoolVar(&F.EnableBackendConfig, "enable-backend-config", false,
 		`Optional, whether or not to enable BackendConfig.`)
+	flag.BoolVar(&F.EnableFrontendConfig, "enable-frontend-config", false,
+		`Optional, whether or not to enable FrontendConfig.`)
 
 	leaderelectionconfig.BindFlags(&F.LeaderElection.LeaderElectionConfiguration, flag.CommandLine)
 	flag.StringVar(&F.LeaderElection.LockObjectNamespace, "lock-object-namespace", F.LeaderElection.LockObjectNamespace, "Define the namespace of the lock object.")

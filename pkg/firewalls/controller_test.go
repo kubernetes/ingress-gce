@@ -24,7 +24,6 @@ import (
 	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
-	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	test "k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
@@ -36,18 +35,16 @@ import (
 // newFirewallController creates a firewall controller.
 func newFirewallController() *FirewallController {
 	kubeClient := fake.NewSimpleClientset()
-	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 
 	ctxConfig := context.ControllerContextConfig{
 		NEGEnabled:              true,
-		BackendConfigEnabled:    false,
 		Namespace:               api_v1.NamespaceAll,
 		ResyncPeriod:            1 * time.Minute,
 		DefaultBackendSvcPortID: test.DefaultBeSvcPort.ID,
 	}
 
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, nil, fakeGCE, namer, ctxConfig)
+	ctx := context.NewControllerContext(kubeClient, nil, nil, nil, fakeGCE, namer, ctxConfig)
 	fwc := NewFirewallController(ctx, []string{"30000-32767"})
 	fwc.hasSynced = func() bool { return true }
 

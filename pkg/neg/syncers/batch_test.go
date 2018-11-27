@@ -13,7 +13,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
-	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -33,16 +32,14 @@ var (
 
 func NewTestSyncer() *batchSyncer {
 	kubeClient := fake.NewSimpleClientset()
-	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := utils.NewNamer(clusterID, "")
 	ctxConfig := context.ControllerContextConfig{
 		NEGEnabled:              true,
-		BackendConfigEnabled:    false,
 		Namespace:               apiv1.NamespaceAll,
 		ResyncPeriod:            1 * time.Second,
 		DefaultBackendSvcPortID: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, nil, namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, nil, nil, nil, nil, namer, ctxConfig)
 	svcPort := NegSyncerKey{
 		Namespace:  testServiceNamespace,
 		Name:       testServiceName,

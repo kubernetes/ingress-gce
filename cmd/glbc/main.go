@@ -34,6 +34,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
+	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 
 	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
@@ -44,6 +45,7 @@ import (
 	"k8s.io/ingress-gce/pkg/crd"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
@@ -89,14 +91,15 @@ func main() {
 		glog.Fatalf("Failed to create Managed Certificates client: %v", err)
 	}
 
+	crdClient, err := crdclient.NewForConfig(kubeConfig)
+	if err != nil {
+		glog.Fatalf("Failed to create kubernetes CRD client: %v", err)
+
+	}
+	crdHandler := crd.NewCRDHandler(crdClient)
+
 	var backendConfigClient backendconfigclient.Interface
 	if flags.F.EnableBackendConfig {
-		crdClient, err := crdclient.NewForConfig(kubeConfig)
-		if err != nil {
-			glog.Fatalf("Failed to create kubernetes CRD client: %v", err)
-		}
-		// TODO(rramkumar): Reuse this CRD handler for other CRD's coming.
-		crdHandler := crd.NewCRDHandler(crdClient)
 		backendConfigCRDMeta := backendconfig.CRDMeta()
 		if _, err := crdHandler.EnsureCRD(backendConfigCRDMeta); err != nil {
 			glog.Fatalf("Failed to ensure BackendConfig CRD: %v", err)
@@ -105,6 +108,19 @@ func main() {
 		backendConfigClient, err = backendconfigclient.NewForConfig(kubeConfig)
 		if err != nil {
 			glog.Fatalf("Failed to create BackendConfig client: %v", err)
+		}
+	}
+
+	var frontendConfigClient frontendconfigclient.Interface
+	if flags.F.EnableFrontendConfig {
+		frontendConfigCRDMeta := frontendconfig.CRDMeta()
+		if _, err := crdHandler.EnsureCRD(frontendConfigCRDMeta); err != nil {
+			glog.Fatalf("Failed to ensure FrontendConfig CRD: %v", err)
+		}
+
+		frontendConfigClient, err = frontendconfigclient.NewForConfig(kubeConfig)
+		if err != nil {
+			glog.Fatalf("Failed to create FrontendConfig client: %v", err)
 		}
 	}
 
@@ -121,15 +137,16 @@ func main() {
 	defaultBackendServicePortID := app.DefaultBackendServicePortID(kubeClient)
 	ctxConfig := ingctx.ControllerContextConfig{
 		NEGEnabled:                    enableNEG,
-		BackendConfigEnabled:          flags.F.EnableBackendConfig,
 		ManagedCertificateEnabled:     flags.F.Features.ManagedCertificates,
+		BackendConfigEnabled:          flags.F.EnableBackendConfig,
+		FrontendConfigEnabled:         flags.F.EnableFrontendConfig,
 		Namespace:                     flags.F.WatchNamespace,
 		ResyncPeriod:                  flags.F.ResyncPeriod,
 		DefaultBackendSvcPortID:       defaultBackendServicePortID,
 		HealthCheckPath:               flags.F.HealthCheckPath,
 		DefaultBackendHealthCheckPath: flags.F.DefaultSvcHealthCheckPath,
 	}
-	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, mcrtClient, cloud, namer, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeClient, mcrtClient, backendConfigClient, frontendConfigClient, cloud, namer, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {

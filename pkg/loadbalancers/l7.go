@@ -29,6 +29,8 @@ import (
 	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/client-go/tools/record"
 
+	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
+
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -66,6 +68,8 @@ type L7RuntimeInfo struct {
 	StaticIPName string
 	// UrlMap is our internal representation of a url map.
 	UrlMap *utils.GCEURLMap
+	// FrontendConfig is the type which encapsulates features for the load balancer.
+	FrontendConfig *frontendconfigv1beta1.FrontendConfig
 }
 
 // TLSCerts encapsulates .pem encoded TLS information.
