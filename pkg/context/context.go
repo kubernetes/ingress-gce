@@ -52,6 +52,7 @@ type ControllerContext struct {
 	ControllerContextConfig
 
 	IngressInformer            cache.SharedIndexInformer
+	SecretInformer             cache.SharedIndexInformer
 	ServiceInformer            cache.SharedIndexInformer
 	BackendConfigInformer      cache.SharedIndexInformer
 	PodInformer                cache.SharedIndexInformer
@@ -96,6 +97,7 @@ func NewControllerContext(
 		ControllerContextConfig: config,
 		IngressInformer:         informerv1beta1.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		SecretInformer:          informerv1.NewSecretInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		PodInformer:             informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		NodeInformer:            informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		recorders:               map[string]record.EventRecorder{},
@@ -121,6 +123,7 @@ func (ctx *ControllerContext) HasSynced() bool {
 		ctx.ServiceInformer.HasSynced,
 		ctx.PodInformer.HasSynced,
 		ctx.NodeInformer.HasSynced,
+		ctx.SecretInformer.HasSynced,
 	}
 	if ctx.EndpointInformer != nil {
 		funcs = append(funcs, ctx.EndpointInformer.HasSynced)
@@ -184,6 +187,7 @@ func (ctx *ControllerContext) HealthCheck() HealthCheckResults {
 func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	go ctx.IngressInformer.Run(stopCh)
 	go ctx.ServiceInformer.Run(stopCh)
+	go ctx.SecretInformer.Run(stopCh)
 	go ctx.PodInformer.Run(stopCh)
 	go ctx.NodeInformer.Run(stopCh)
 	if ctx.EndpointInformer != nil {

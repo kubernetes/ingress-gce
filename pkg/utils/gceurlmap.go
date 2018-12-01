@@ -88,6 +88,17 @@ func EqualMapping(a, b *GCEURLMap) bool {
 	return true
 }
 
+func (g *GCEURLMap) AddPathRulesForHost(hostname string, pathRules []PathRule) {
+	var existedPathRules []PathRule
+	for _, hr := range g.HostRules {
+		if hr.Hostname == hostname {
+			existedPathRules = hr.Paths
+		}
+	}
+	pathRules = append(pathRules, existedPathRules...)
+	g.PutPathRulesForHost(hostname, pathRules)
+}
+
 // PutPathRulesForHost adds path rules for a single hostname.
 // This function ensures the invariants of the GCEURLMap are maintained.
 // It will log if an invariant violation was found and reconciled.

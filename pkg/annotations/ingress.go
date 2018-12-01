@@ -41,6 +41,9 @@ const (
 	// responsibility to create/delete it.
 	StaticIPNameKey = "kubernetes.io/ingress.global-static-ip-name"
 
+	// LoadBalancerNameKey tells the Ingress controller to use a specific LoadBalancer
+	LoadBalancerNameKey = "kubernetes.io/ingress.loadbalancer-name"
+
 	// PreSharedCertKey represents the specific pre-shared SSL
 	// certicate for the Ingress controller to use. The controller *does not*
 	// manage this certificate, it is the users responsibility to create/delete it.
@@ -111,6 +114,14 @@ func (ing *Ingress) UseNamedTLS() string {
 
 func (ing *Ingress) StaticIPName() string {
 	val, ok := ing.v[StaticIPNameKey]
+	if !ok {
+		return ""
+	}
+	return val
+}
+
+func (ing *Ingress) LoadBalancerName() string {
+	val, ok := ing.v[LoadBalancerNameKey]
 	if !ok {
 		return ""
 	}

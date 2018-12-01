@@ -131,6 +131,24 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 	return svcPort, nil
 }
 
+func (t *Translator) TranslateIngressList(ingList []*extensions.Ingress, systemDefaultBackend utils.ServicePortID) (*utils.GCEURLMap, []error) {
+	urlMap := utils.NewGCEURLMap()
+	for _, ing := range ingList {
+		ingUrlMap, err := t.TranslateIngress(ing, systemDefaultBackend)
+		if urlMap.DefaultBackend == nil {
+			// TODO: decide which default backend is really default
+			urlMap.DefaultBackend = ingUrlMap.DefaultBackend
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, hostRule := range ingUrlMap.HostRules {
+			urlMap.AddPathRulesForHost(hostRule.Hostname, hostRule.Paths)
+		}
+	}
+	return urlMap, nil
+}
+
 // TranslateIngress converts an Ingress into our internal UrlMap representation.
 func (t *Translator) TranslateIngress(ing *extensions.Ingress, systemDefaultBackend utils.ServicePortID) (*utils.GCEURLMap, []error) {
 	var errs []error

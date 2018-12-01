@@ -51,6 +51,21 @@ func NewService(name types.NamespacedName, spec api_v1.ServiceSpec) *api_v1.Serv
 	}
 }
 
+func NewSecret(name types.NamespacedName, secretType api_v1.SecretType, data map[string][]byte) *api_v1.Secret {
+	return &api_v1.Secret{
+		TypeMeta: meta_v1.TypeMeta{
+			Kind:       "Secret",
+			APIVersion: "v1",
+		},
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:      name.Name,
+			Namespace: name.Namespace,
+		},
+		Data: data,
+		Type: secretType,
+	}
+}
+
 // NewBackendConfig returns a BackendConfig with the given spec.
 func NewBackendConfig(name types.NamespacedName, spec backendconfig.BackendConfigSpec) *backendconfig.BackendConfig {
 	return &backendconfig.BackendConfig{

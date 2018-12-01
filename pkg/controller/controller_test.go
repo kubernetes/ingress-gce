@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +37,9 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
+	"google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/kubernetes/pkg/util/slice"
 )
 
 var (
@@ -112,6 +115,11 @@ func updateIngress(lbc *LoadBalancerController, ing *extensions.Ingress) {
 func deleteIngress(lbc *LoadBalancerController, ing *extensions.Ingress) {
 	lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Delete(ing.Name, &meta_v1.DeleteOptions{})
 	lbc.ctx.IngressInformer.GetIndexer().Delete(ing)
+}
+
+func addSecret(lbc *LoadBalancerController, secret *api_v1.Secret) {
+	lbc.ctx.KubeClient.CoreV1().Secrets(secret.Namespace).Create(secret)
+	lbc.ctx.SecretInformer.GetIndexer().Add(secret)
 }
 
 // getKey returns the key for an ingress.
@@ -261,4 +269,218 @@ func TestEnsureMCIngress(t *testing.T) {
 	} else if val != wantVal {
 		t.Errorf("Ingress.Annotation %q = %q, want %q", igAnnotationKey, val, wantVal)
 	}
+}
+
+func TestMultiIngressLB(t *testing.T) {
+	lbc := newLoadBalancerController()
+
+	defaultSvc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
+		Type:  api_v1.ServiceTypeNodePort,
+		Ports: []api_v1.ServicePort{{Port: 80}},
+	})
+	ing1Svc := test.NewService(types.NamespacedName{Name: "ing1-backend", Namespace: "default"}, api_v1.ServiceSpec{
+		Type:  api_v1.ServiceTypeNodePort,
+		Ports: []api_v1.ServicePort{{Port: 8080}},
+	})
+	tlsSvc := test.NewService(types.NamespacedName{Name: "tls-backend", Namespace: "default"}, api_v1.ServiceSpec{
+		Type:  api_v1.ServiceTypeNodePort,
+		Ports: []api_v1.ServicePort{{Port: 8082}},
+	})
+
+	tlsSecret := test.NewSecret(types.NamespacedName{Name: "tls-secret", Namespace: "default"}, api_v1.SecretTypeTLS, map[string][]byte{
+		"tls.crt": []byte("value"),
+		"tls.key": []byte("key"),
+	})
+	tls2Secret := test.NewSecret(types.NamespacedName{Name: "tls2-secret", Namespace: "default"}, api_v1.SecretTypeTLS, map[string][]byte{
+		"tls.crt": []byte("value"),
+		"tls.key": []byte("key"),
+	})
+	addService(lbc, defaultSvc)
+	addService(lbc, ing1Svc)
+	addService(lbc, tlsSvc)
+	addSecret(lbc, tlsSecret)
+	addSecret(lbc, tls2Secret)
+
+	defaultBackend := backend("my-service", intstr.FromInt(80))
+	ing1Backend := backend("ing1-backend", intstr.FromInt(8080))
+	tlsBackend := backend("tls-backend", intstr.FromInt(8082))
+	// Add first ingress
+	ing1 := test.NewIngress(types.NamespacedName{Name: "my-ingress1", Namespace: "default"},
+		extensions.IngressSpec{
+			Backend: &defaultBackend,
+			Rules: []extensions.IngressRule{
+				{
+					Host: "example.com",
+					IngressRuleValue: extensions.IngressRuleValue{
+						HTTP: &extensions.HTTPIngressRuleValue{
+							Paths: []extensions.HTTPIngressPath{
+								{
+									Path:    "/path1/",
+									Backend: ing1Backend,
+								},
+							},
+						},
+					},
+				},
+				{
+					Host: "tls-example.com",
+					IngressRuleValue: extensions.IngressRuleValue{
+						HTTP: &extensions.HTTPIngressRuleValue{
+							Paths: []extensions.HTTPIngressPath{
+								{
+									Path:    "/tls/",
+									Backend: tlsBackend,
+								},
+							},
+						},
+					},
+				},
+			},
+			TLS: []extensions.IngressTLS{
+				{
+					Hosts: []string{
+						"example.com",
+					},
+					SecretName: "tls-secret",
+				},
+				{
+					Hosts: []string{
+						"tls-example.com",
+					},
+					SecretName: "tls2-secret",
+				},
+			},
+		})
+	ing1.ObjectMeta.Annotations = map[string]string{
+		"kubernetes.io/ingress.class":             "gce",
+		"kubernetes.io/ingress.loadbalancer-name": "mylb",
+	}
+	addIngress(lbc, ing1)
+
+	ingStoreKey1 := getKey(ing1, t)
+	if err := lbc.sync(ingStoreKey1); err != nil {
+		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey1, err)
+	}
+
+	ing2Backend := backend("ing2-backend", intstr.FromInt(8081))
+	ing2Svc := test.NewService(types.NamespacedName{Name: "ing2-backend", Namespace: "default"}, api_v1.ServiceSpec{
+		Type:  api_v1.ServiceTypeNodePort,
+		Ports: []api_v1.ServicePort{{Port: 8081}},
+	})
+	addService(lbc, ing2Svc)
+	// Add second ingress
+	ing2 := test.NewIngress(types.NamespacedName{Name: "my-ingress2", Namespace: "default"},
+		extensions.IngressSpec{
+			Backend: &defaultBackend,
+			Rules: []extensions.IngressRule{
+				{
+					Host: "example.com",
+					IngressRuleValue: extensions.IngressRuleValue{
+						HTTP: &extensions.HTTPIngressRuleValue{
+							Paths: []extensions.HTTPIngressPath{
+								{
+									Path:    "/path2/",
+									Backend: ing2Backend,
+								},
+							},
+						},
+					},
+				},
+			},
+			TLS: []extensions.IngressTLS{
+				{
+					Hosts: []string{
+						"example.com",
+					},
+					SecretName: "tls-secret",
+				},
+			},
+		})
+	ing2.ObjectMeta.Annotations = map[string]string{
+		"kubernetes.io/ingress.class":             "gce",
+		"kubernetes.io/ingress.loadbalancer-name": "mylb",
+	}
+	addIngress(lbc, ing2)
+
+	ingStoreKey2 := getKey(ing2, t)
+	if err := lbc.sync(ingStoreKey2); err != nil {
+		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey2, err)
+	}
+
+	updatedIng1, _ := lbc.ctx.KubeClient.ExtensionsV1beta1().Ingresses(ing1.Namespace).Get(ing1.Name, meta_v1.GetOptions{})
+	updatedIng2, _ := lbc.ctx.KubeClient.ExtensionsV1beta1().Ingresses(ing2.Namespace).Get(ing2.Name, meta_v1.GetOptions{})
+
+	if len(updatedIng1.Status.LoadBalancer.Ingress) == 0 {
+		t.Fatalf("Ingress status wasn't updated %+v", updatedIng1)
+	}
+
+	if len(updatedIng2.Status.LoadBalancer.Ingress) == 0 {
+		t.Fatalf("Ingress status wasn't updated %+v", updatedIng2)
+	}
+
+	if updatedIng1.Status.LoadBalancer.Ingress[0].IP != updatedIng2.Status.LoadBalancer.Ingress[0].IP {
+		t.Error("Ingresses with the same LB should have 1 IP")
+	}
+
+	lbName1, _, _ := lbc.GetLoadBalancerName(ing1)
+	lbName2, _, _ := lbc.GetLoadBalancerName(ing2)
+	if lbName1 != lbName2 {
+		t.Errorf("Ingresses must have equal lb name, but lb1: %+v, lb2: %+v", lbName1, lbName2)
+	}
+
+	// TODO: add check for url map
+	lb, _ := lbc.l7Pool.Get(lbName1)
+	var hostRules []string
+	for _, r := range lb.UrlMap().HostRules {
+		hostRules = append(hostRules, r.Hosts...)
+		pm, err := getPathMatcher(lb, r.PathMatcher)
+		if err != nil {
+			t.Error(err)
+		}
+		if slice.ContainsString(r.Hosts, "example.com", nil) {
+			if !pathRuleExists(pm.PathRules, "/path1/", ing1Backend.ServiceName) {
+				t.Errorf("PathMatcher %+v for host example.com must contain /path1/ to service %+v", pm.Name, ing1Backend.ServiceName)
+			}
+			if !pathRuleExists(pm.PathRules, "/path2/", ing1Backend.ServiceName) {
+				t.Errorf("PathMatcher %+v for host example.com must contain /path2/ to service %+v", pm.Name, ing2Backend.ServiceName)
+			}
+		}
+		if slice.ContainsString(r.Hosts, "tls-example.com", nil) {
+			if !pathRuleExists(pm.PathRules, "/tls/", ing1Backend.ServiceName) {
+				t.Errorf("PathMatcher %+v for host tls-example.com must contain /path1/ to service %+v", pm.Name, tlsBackend.ServiceName)
+			}
+		}
+	}
+
+	if !slice.ContainsString(hostRules, "example.com", nil) {
+		t.Errorf("lb must contain host rule for host example.com")
+	}
+
+	if !slice.ContainsString(hostRules, "tls-example.com", nil) {
+		t.Errorf("lb must contain host rule for host tls-example.com")
+	}
+
+	// TODO: add check for TLS
+
+}
+
+func getPathMatcher(lbc *loadbalancers.L7, pathMatcherName string) (*compute.PathMatcher, error) {
+	for _, pm := range lbc.UrlMap().PathMatchers {
+		if pm.Name == pathMatcherName {
+			return pm, nil
+		}
+	}
+	return nil, fmt.Errorf("failed to find pathMatcher %+v", pathMatcherName)
+}
+
+func pathRuleExists(pathRules []*compute.PathRule, path string, service string) bool {
+	for _, pr := range pathRules {
+		//if pr.Service == service && slice.ContainsString(pr.Paths, path, nil) {
+		//	return true
+		//}
+		if slice.ContainsString(pr.Paths, path, nil) {
+			return true
+		}
+	}
+	return false
 }
