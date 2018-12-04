@@ -76,9 +76,12 @@ func TestUpgrade(t *testing.T) {
 						AddPath("test.com", "/", "service-1", intstr.FromInt(80)).
 						Build()
 
-					if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(newIng); err != nil {
+					if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Update(newIng); err != nil {
 						t.Fatalf("error creating Ingress spec: %v", err)
 					} else {
+						// If Ingress upgrade succeeds, we update the status on this Ingress
+						// to Unstable. It is set back to Stable after WaitForIngress below
+						// finishes successfully.
 						s.PutStatus(e2e.Unstable)
 						needUpdate = false
 					}
@@ -91,10 +94,10 @@ func TestUpgrade(t *testing.T) {
 				if err != nil {
 					t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 				}
+				s.PutStatus(e2e.Stable)
 
 				if runs == 0 {
 					t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
-					s.PutStatus(e2e.Stable)
 				} else {
 					t.Logf("GCLB is stable (%s/%s)", s.Namespace, tc.ing.Name)
 				}
