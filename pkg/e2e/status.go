@@ -93,16 +93,20 @@ func (sm *StatusManager) init() error {
 	newIndexer := func() cache.Indexers {
 		return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
 	}
+	stopCh := make(chan struct{})
 	cmInformer := informerv1.NewConfigMapInformer(sm.f.Clientset, "default", cmPollInterval, newIndexer())
 	cmInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		UpdateFunc: func(old, cur interface{}) {
 			curCm := cur.(*v1.ConfigMap)
 			if len(curCm.Data[exitKey]) > 0 {
 				glog.V(2).Infof("ConfigMap was updated with exit switch at %s", curCm.Data[exitKey])
+				close(stopCh)
 				sm.f.shutdown(0)
 			}
 		},
 	})
+
+	go cmInformer.Run(stopCh)
 
 	go func() {
 		for _ = range time.NewTicker(flushInterval).C {
@@ -132,7 +136,7 @@ func (sm *StatusManager) putStatus(key string, status IngressStability) {
 
 func (sm *StatusManager) masterUpgraded() bool {
 	if len(sm.cm.Data[masterUpgraded]) > 0 {
-		glog.V(2).Infof("Master has successfully upgraded at %s", sm.cm.Data[masterUpgraded])
+		glog.V(4).Infof("Master has successfully upgraded at %s", sm.cm.Data[masterUpgraded])
 		return true
 	}
 	return false
@@ -144,8 +148,23 @@ func (sm *StatusManager) flush() {
 
 	// Loop until we successfully update the config map
 	for {
-		var err error
-		sm.cm, err = sm.f.Clientset.Core().ConfigMaps("default").Update(sm.cm)
+		updatedCm, err := sm.f.Clientset.Core().ConfigMaps("default").Get(configMapName, metav1.GetOptions{})
+		if err != nil {
+			glog.Errorf("Error getting ConfigMap: %v", err)
+		}
+
+		if updatedCm.Data == nil {
+			updatedCm.Data = make(map[string]string)
+		}
+
+		// K8s considers its version of the ConfigMap to be latest, so we must get
+		// the configmap from k8s first, then merge in our data.
+		for key, value := range sm.cm.Data {
+			updatedCm.Data[key] = value
+		}
+		sm.cm = updatedCm
+
+		_, err = sm.f.Clientset.Core().ConfigMaps("default").Update(sm.cm)
 		if err != nil {
 			glog.Errorf("Error updating ConfigMap: %v", err)
 		} else {
@@ -154,5 +173,5 @@ func (sm *StatusManager) flush() {
 		}
 	}
 	glog.V(3).Infof("Flushed statuses to ConfigMap")
-	glog.V(3).Infof("ConfigMap: %+v", sm.cm.Data)
+	glog.V(3).Infof("ConfigMap: %+v", sm.cm)
 }
