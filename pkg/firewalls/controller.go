@@ -67,7 +67,7 @@ func NewFirewallController(
 		hasSynced:    ctx.HasSynced,
 	}
 
-	fwc.queue = utils.NewPeriodicTaskQueue("firewall", fwc.sync)
+	fwc.queue = utils.NewPeriodicTaskQueue("", "firewall", fwc.sync)
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{

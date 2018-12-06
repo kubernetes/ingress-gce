@@ -42,7 +42,7 @@ func NewNodeController(ctx *context.ControllerContext, instancePool instances.No
 		lister:       ctx.NodeInformer.GetIndexer(),
 		instancePool: instancePool,
 	}
-	c.queue = utils.NewPeriodicTaskQueue("nodes", c.sync)
+	c.queue = utils.NewPeriodicTaskQueue("", "nodes", c.sync)
 
 	ctx.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
