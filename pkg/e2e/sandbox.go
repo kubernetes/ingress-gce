@@ -87,3 +87,9 @@ func (s *Sandbox) PutStatus(status IngressStability) {
 func (s *Sandbox) MasterUpgraded() bool {
 	return s.f.statusManager.masterUpgraded()
 }
+
+// MasterUpgrading checks the config map for whether or not the k8s master has
+// successfully finished upgrading or not
+func (s *Sandbox) MasterUpgrading() bool {
+	return s.f.statusManager.masterUpgrading()
+}
