@@ -36,6 +36,8 @@ const (
 	// FeatureL7ILB defines the feature name of L7 Internal Load Balancer
 	// L7-ILB Resources are currently alpha and regional
 	FeatureL7ILB = "L7ILB"
+	// FeatureCustomRequestHeaders defines the feature name of Custom Request Headers.
+	FeatureCustomRequestHeaders = "CustomRequestHeaders"
 )
 
 var (
@@ -43,7 +45,7 @@ var (
 	// version to feature names.
 	versionToFeatures = map[meta.Version][]string{
 		meta.VersionAlpha: []string{FeatureL7ILB},
-		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureHTTP2},
+		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureHTTP2, FeatureCustomRequestHeaders},
 	}
 	// TODO: (shance) refactor all scope to be above the serviceport level
 	scopeToFeatures = map[meta.KeyType][]string{
@@ -71,6 +73,9 @@ func featuresFromServicePort(sp *utils.ServicePort) []string {
 	}
 	if sp.L7ILBEnabled {
 		features = append(features, FeatureL7ILB)
+	}
+	if sp.BackendConfig != nil && sp.BackendConfig.Spec.CustomRequestHeaders != nil {
+		features = append(features, FeatureCustomRequestHeaders)
 	}
 	// Keep feature names sorted to be consistent.
 	sort.Strings(features)
