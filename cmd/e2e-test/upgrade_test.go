@@ -71,6 +71,7 @@ func TestUpgrade(t *testing.T) {
 			// Framework.shutdown() kills this loop.
 			for {
 				if s.MasterUpgraded() && needUpdate {
+					t.Logf("Detected master upgrade, adding a path to Ingress to force Ingress update")
 					// force ingress update. only add path once
 					newIng := fuzz.NewIngressBuilderFromExisting(tc.ing).
 						AddPath("test.com", "/", "service-1", intstr.FromInt(80)).
@@ -87,6 +88,12 @@ func TestUpgrade(t *testing.T) {
 					}
 				}
 
+				// While k8s master is upgrading, it will return a connection refused
+				// error for any k8s resource we try to hit. We loop until the
+				// master upgrade has finished.
+				if s.MasterUpgrading() {
+					continue
+				}
 				options := &e2e.WaitForIngressOptions{
 					ExpectUnreachable: runs == 0,
 				}

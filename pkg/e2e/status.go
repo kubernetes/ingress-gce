@@ -45,26 +45,30 @@ const (
 	// whether to gracefully finish the e2e test execution.
 	// Value associated with it is a timestamp string.
 	exitKey = "exit"
-	// masterUpgraded is the key used to indicate to the status manager that
+	// masterUpgradingKey is the key used to indicate to the status manager that
+	// the k8s master is in the process of upgrading.
+	// Value associated with it is a timestamp string.
+	masterUpgradingKey = "master-upgrading"
+	// masterUpgradedKey is the key used to indicate to the status manager that
 	// the k8s master has successfully finished upgrading.
 	// Value associated with it is a timestamp string.
-	masterUpgraded = "master-upgraded"
+	masterUpgradedKey = "master-upgraded"
 )
 
 // StatusManager manages the status of sandboxed Ingresses via a ConfigMap.
-// It interacts with the Guitar test portion as follows:
+// It interacts with the an external framework test portion as follows:
 // 1. StatusManager initializes and creates the ConfigMap status-cm. It listens
 // on updates via informers.
 // 2. e2e test calls StatusManager.putStatus with the Ingress name as key,
 // and Unstable as the status
 // 3. e2e test watches for when Ingress stabilizes, then uses StatusManager to
 // update the Ingress's status to Stable
-// 4. Guitar test reads from ConfigMap status-cm. When it detects that all
+// 4. The external framework test reads from ConfigMap status-cm. When it detects that all
 // Ingresses are stable (i.e., no value in the map is Unstable), it starts
 // the MasterUpgrade.
-// 5. When the k8s master finishes upgrading, the guitar test writes the
+// 5. When the k8s master finishes upgrading, the framework test writes the
 // timestamp to the master-upgraded key in the ConfigMap
-// 6. Guitar test writes the exit key in the ConfigMap to indicate that the e2e
+// 6. The external framework test writes the exit key in the ConfigMap to indicate that the e2e
 // test can exit.
 // 7. The StatusManager loop reads the exit key, then starts shutdown().
 type StatusManager struct {
@@ -134,9 +138,13 @@ func (sm *StatusManager) putStatus(key string, status IngressStability) {
 	sm.cm.Data[key] = string(status)
 }
 
+func (sm *StatusManager) masterUpgrading() bool {
+	return len(sm.cm.Data[masterUpgradingKey]) > 0
+}
+
 func (sm *StatusManager) masterUpgraded() bool {
-	if len(sm.cm.Data[masterUpgraded]) > 0 {
-		glog.V(4).Infof("Master has successfully upgraded at %s", sm.cm.Data[masterUpgraded])
+	if len(sm.cm.Data[masterUpgradedKey]) > 0 {
+		glog.V(4).Infof("Master has successfully upgraded at %s", sm.cm.Data[masterUpgradedKey])
 		return true
 	}
 	return false
@@ -146,11 +154,16 @@ func (sm *StatusManager) flush() {
 	sm.f.lock.Lock()
 	defer sm.f.lock.Unlock()
 
+	// If master is in the process upgrading, we exit early
+	if sm.masterUpgrading() {
+		return
+	}
+
 	// Loop until we successfully update the config map
 	for {
 		updatedCm, err := sm.f.Clientset.Core().ConfigMaps("default").Get(configMapName, metav1.GetOptions{})
 		if err != nil {
-			glog.Errorf("Error getting ConfigMap: %v", err)
+			glog.Warningf("Error getting ConfigMap: %v", err)
 		}
 
 		if updatedCm.Data == nil {
@@ -163,10 +176,11 @@ func (sm *StatusManager) flush() {
 			updatedCm.Data[key] = value
 		}
 		sm.cm = updatedCm
+		sm.cm.Name = configMapName
 
 		_, err = sm.f.Clientset.Core().ConfigMaps("default").Update(sm.cm)
 		if err != nil {
-			glog.Errorf("Error updating ConfigMap: %v", err)
+			glog.Warningf("Error updating ConfigMap: %v", err)
 		} else {
 			// ConfigMap successfully updated
 			break
