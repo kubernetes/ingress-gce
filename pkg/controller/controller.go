@@ -49,6 +49,7 @@ import (
 	ingsync "k8s.io/ingress-gce/pkg/sync"
 	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/kubernetes/pkg/util/slice"
 )
 
 // LoadBalancerController watches the kubernetes api and adds/removes services
@@ -152,6 +153,14 @@ func NewLoadBalancerController(
 		UpdateFunc: func(old, cur interface{}) {
 			curIng := cur.(*extensions.Ingress)
 			if !utils.IsGLBCIngress(curIng) {
+				oldIng := old.(*extensions.Ingress)
+				// If ingress was GLBC Ingress, we need to track ingress class change
+				// and run GC to delete LB resources.
+				if utils.IsGLBCIngress(oldIng) {
+					glog.V(4).Infof("Ingress %v class was changed, enqueuing", utils.IngressKeyFunc(curIng))
+					lbc.ingQueue.Enqueue(cur)
+					return
+				}
 				return
 			}
 			if reflect.DeepEqual(old, cur) {
@@ -453,6 +462,14 @@ func (lbc *LoadBalancerController) sync(key string) error {
 
 	// Get ingress and DeepCopy for assurance that we don't pollute other goroutines with changes.
 	ing = ing.DeepCopy()
+
+	// Check if ingress class was changed to non-GLBC to remove ingress LB from state and trigger GC
+	if !utils.IsGLBCIngress(ing) {
+		glog.V(2).Infof("Ingress %q class was changed, triggering GC", key)
+		// Remove lb from state for GC
+		gcState.lbNames = slice.RemoveString(gcState.lbNames, key, nil)
+		return lbc.ingSyncer.GC(gcState)
+	}
 
 	// Bootstrap state for GCP sync.
 	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
