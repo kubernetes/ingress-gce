@@ -33,6 +33,8 @@ const (
 	FeatureSecurityPolicy = "SecurityPolicy"
 	// FeatureNEG defines the feature name of NEG.
 	FeatureNEG = "NEG"
+	// FeatureCustomRequestHeaders defines the feature name of Custom Request Headers.
+	FeatureCustomRequestHeaders = "CustomRequestHeaders"
 )
 
 var (
@@ -40,7 +42,7 @@ var (
 	// version to feature names.
 	versionToFeatures = map[meta.Version][]string{
 		meta.VersionAlpha: []string{},
-		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureNEG, FeatureHTTP2},
+		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureNEG, FeatureHTTP2, FeatureCustomRequestHeaders},
 	}
 )
 
@@ -61,6 +63,9 @@ func featuresFromServicePort(sp *utils.ServicePort) []string {
 	}
 	if sp.NEGEnabled {
 		features = append(features, FeatureNEG)
+	}
+	if sp.BackendConfig != nil && sp.BackendConfig.Spec.CustomRequestHeaders != nil {
+		features = append(features, FeatureCustomRequestHeaders)
 	}
 	// Keep feature names sorted to be consistent.
 	sort.Strings(features)
