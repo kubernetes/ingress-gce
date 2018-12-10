@@ -42,7 +42,7 @@ func TestPeriodicTaskQueue(t *testing.T) {
 		}
 		return nil
 	}
-	tq = NewPeriodicTaskQueue("test", sync)
+	tq = NewPeriodicTaskQueue("", "test", sync)
 
 	go tq.Run()
 	tq.Enqueue(cache.ExplicitKey("a"))

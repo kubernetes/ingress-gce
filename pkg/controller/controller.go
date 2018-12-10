@@ -125,7 +125,7 @@ func NewLoadBalancerController(
 	}
 	lbc.ingSyncer = ingsync.NewIngressSyncer(&lbc)
 
-	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingresses", lbc.sync)
+	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingress", "ingresses", lbc.sync)
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
