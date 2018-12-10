@@ -48,7 +48,7 @@ status: RESERVED
 ## Assigning a static IP to an Ingress
 
 You can now add the static IP from the previous step to an Ingress,
-by specifying the `kubernetes.io/global-static-ip-name` annotation,
+by specifying the `kubernetes.io/ingress.global-static-ip-name` annotation,
 the example yaml in this directory already has it set to `test-ip`
 
 ```console
