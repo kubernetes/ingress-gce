@@ -25,7 +25,6 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -152,26 +151,31 @@ func (l *L7) getManagedCertificates() ([]*compute.SslCertificate, bool, error) {
 	}
 
 	mcrtsNames := utils.SplitAnnotation(l.runtimeInfo.ManagedCertificates)
-	req, err := labels.NewRequirement("metadata.name", selection.In, mcrtsNames)
+	mcrts, err := l.mcrt.ManagedCertificates(l.runtimeInfo.Ingress.Namespace).List(labels.Everything())
 	if err != nil {
 		return nil, true, err
 	}
 
-	sel := labels.NewSelector()
-	sel.Add(*req)
-	mcrts, err := l.mcrt.ManagedCertificates(l.runtimeInfo.Ingress.Namespace).List(sel)
-	if err != nil {
-		return nil, true, err
-	}
-
-	var names []string
+	var sslCertsNames []string
 	for _, mcrt := range mcrts {
+		found := false
+		for _, mcrtName := range mcrtsNames {
+			if mcrtName == mcrt.Name {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			continue
+		}
+
 		if mcrt.Status.CertificateName != "" {
-			names = append(names, mcrt.Status.CertificateName)
+			sslCertsNames = append(sslCertsNames, mcrt.Status.CertificateName)
 		}
 	}
 
-	sslCerts, err := l.getSslCertificates(names)
+	sslCerts, err := l.getSslCertificates(sslCertsNames)
 	if err != nil {
 		return sslCerts, true, fmt.Errorf("managed-certificates errors: %s", err.Error())
 	}
