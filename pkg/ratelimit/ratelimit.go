@@ -48,7 +48,7 @@ func NewGCERateLimiter(specs []string, operationPollInterval time.Duration) (*GC
 	for _, spec := range specs {
 		params := strings.Split(spec, ",")
 		if len(params) < 2 {
-			return nil, fmt.Errorf("Must at least specify operation and rate limiter type.")
+			return nil, fmt.Errorf("must at least specify operation and rate limiter type.")
 		}
 		// params[0] should consist of the operation to rate limit.
 		key, err := constructRateLimitKey(params[0])
@@ -121,7 +121,7 @@ func constructRateLimitKey(param string) (cloud.RateLimitKey, error) {
 	var retVal cloud.RateLimitKey
 	params := strings.Split(param, ".")
 	if len(params) != 3 {
-		return retVal, fmt.Errorf("Must specify rate limit in [version].[service].[operation] format: %v", param)
+		return retVal, fmt.Errorf("must specify rate limit in [version].[service].[operation] format: %v", param)
 	}
 	// TODO(rramkumar): Add another layer of validation here?
 	version := meta.Version(params[0])
@@ -144,17 +144,17 @@ func constructRateLimitImpl(params []string) (flowcontrol.RateLimiter, error) {
 	implArgs := params[1:]
 	if rlType == "qps" {
 		if len(implArgs) != 2 {
-			return nil, fmt.Errorf("Invalid number of args for rate limiter type %v. Expected %d, Got %v", rlType, 2, len(implArgs))
+			return nil, fmt.Errorf("invalid number of args for rate limiter type %v. Expected %d, Got %v", rlType, 2, len(implArgs))
 		}
 		qps, err := strconv.ParseFloat(implArgs[0], 32)
 		if err != nil || qps <= 0 {
-			return nil, fmt.Errorf("Invalid argument for rate limiter type %v. Either %v is not a float or not greater than 0.", rlType, implArgs[0])
+			return nil, fmt.Errorf("invalid argument for rate limiter type %v. Either %v is not a float or not greater than 0.", rlType, implArgs[0])
 		}
 		burst, err := strconv.Atoi(implArgs[1])
 		if err != nil {
-			return nil, fmt.Errorf("Invalid argument for rate limiter type %v. Expected %v to be a int.", rlType, implArgs[1])
+			return nil, fmt.Errorf("invalid argument for rate limiter type %v. Expected %v to be a int.", rlType, implArgs[1])
 		}
 		return flowcontrol.NewTokenBucketRateLimiter(float32(qps), burst), nil
 	}
-	return nil, fmt.Errorf("Invalid rate limiter type provided: %v", rlType)
+	return nil, fmt.Errorf("invalid rate limiter type provided: %v", rlType)
 }

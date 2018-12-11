@@ -82,7 +82,7 @@ func NewFakeNetworkEndpointGroupCloud(subnetwork, network string) NetworkEndpoin
 	}
 }
 
-var NotFoundError = fmt.Errorf("Not Found")
+var NotFoundError = fmt.Errorf("not Found")
 
 func (f *FakeNetworkEndpointGroupCloud) GetNetworkEndpointGroup(name string, zone string) (*computebeta.NetworkEndpointGroup, error) {
 	f.mu.Lock()

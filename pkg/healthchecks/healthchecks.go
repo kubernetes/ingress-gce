@@ -153,7 +153,7 @@ func (h *HealthChecks) create(hc *HealthCheck) error {
 		}
 		return h.cloud.CreateHealthCheck(v1hc)
 	default:
-		return fmt.Errorf("Unknown Version: %q", hc.Version())
+		return fmt.Errorf("unknown Version: %q", hc.Version())
 	}
 }
 
@@ -177,7 +177,7 @@ func (h *HealthChecks) update(oldHC, newHC *HealthCheck) error {
 		}
 		return h.cloud.UpdateHealthCheck(v1hc)
 	default:
-		return fmt.Errorf("Unknown Version: %q", newHC.Version())
+		return fmt.Errorf("unknown Version: %q", newHC.Version())
 
 	}
 }
@@ -239,7 +239,7 @@ func (h *HealthChecks) Get(name string, version meta.Version) (*HealthCheck, err
 		}
 		hc, err = v1ToAlphaHealthCheck(v1hc)
 	default:
-		return nil, fmt.Errorf("Unknown version %v", version)
+		return nil, fmt.Errorf("unknown version %v", version)
 	}
 	return NewHealthCheck(hc), err
 }

@@ -88,7 +88,7 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 	for _, group := range groups {
 		ig, err := l.instancePool.Get(l.namer.InstanceGroup(), group.Zone)
 		if err != nil {
-			return fmt.Errorf("Error retrieving IG for linking with backend %+v: %v", sp, err)
+			return fmt.Errorf("error retrieving IG for linking with backend %+v: %v", sp, err)
 		}
 		igLinks = append(igLinks, ig.SelfLink)
 	}

@@ -237,7 +237,7 @@ func makeEndpointBatch(endpoints sets.String) (map[string]*compute.NetworkEndpoi
 		ip, instance, port := decodeEndpoint(encodedEndpoint)
 		portNum, err := strconv.Atoi(port)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to decode endpoint %q: %v", encodedEndpoint, err)
+			return nil, fmt.Errorf("failed to decode endpoint %q: %v", encodedEndpoint, err)
 		}
 
 		endpointBatch[encodedEndpoint] = &compute.NetworkEndpoint{

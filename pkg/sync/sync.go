@@ -42,15 +42,15 @@ func (s *IngressSyncer) Sync(state interface{}) error {
 		if err == ErrSkipBackendsSync {
 			return nil
 		}
-		return fmt.Errorf("Error running backend syncing routine: %v", err)
+		return fmt.Errorf("error running backend syncing routine: %v", err)
 	}
 
 	if err := s.controller.SyncLoadBalancer(state); err != nil {
-		return fmt.Errorf("Error running load balancer syncing routine: %v", err)
+		return fmt.Errorf("error running load balancer syncing routine: %v", err)
 	}
 
 	if err := s.controller.PostProcess(state); err != nil {
-		return fmt.Errorf("Error running post-process routine: %v", err)
+		return fmt.Errorf("error running post-process routine: %v", err)
 	}
 
 	return nil
@@ -61,10 +61,10 @@ func (s *IngressSyncer) GC(state interface{}) error {
 	lbErr := s.controller.GCLoadBalancers(state)
 	beErr := s.controller.GCBackends(state)
 	if lbErr != nil {
-		return fmt.Errorf("Error running load balancer garbage collection routine: %v", lbErr)
+		return fmt.Errorf("error running load balancer garbage collection routine: %v", lbErr)
 	}
 	if beErr != nil {
-		return fmt.Errorf("Error running backend garbage collection routine: %v", beErr)
+		return fmt.Errorf("error running backend garbage collection routine: %v", beErr)
 	}
 	return nil
 }

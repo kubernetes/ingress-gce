@@ -138,7 +138,7 @@ func (l *L7) getSslCertificates(names []string) ([]*compute.SslCertificate, erro
 		result = append(result, cert)
 	}
 	if len(failedCerts) != 0 {
-		return result, fmt.Errorf("Errors - %s", strings.Join(failedCerts, ","))
+		return result, fmt.Errorf("errors - %s", strings.Join(failedCerts, ","))
 	}
 
 	return result, nil

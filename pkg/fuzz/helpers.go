@@ -48,11 +48,11 @@ func BackendConfigForPath(host, path string, ing *v1beta1.Ingress, env Validator
 	}
 	service, ok := serviceMap[b.ServiceName]
 	if !ok {
-		return nil, fmt.Errorf("Service %q not found in environment", b.ServiceName)
+		return nil, fmt.Errorf("service %q not found in environment", b.ServiceName)
 	}
 	servicePort := translatorutil.ServicePort(*service, b.ServicePort)
 	if servicePort == nil {
-		return nil, fmt.Errorf("Port %+v in Service %q not found", b.ServicePort, b.ServiceName)
+		return nil, fmt.Errorf("port %+v in Service %q not found", b.ServicePort, b.ServiceName)
 	}
 	bc, err := annotations.FromService(service).GetBackendConfigs()
 	if err != nil {

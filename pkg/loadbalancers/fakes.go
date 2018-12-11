@@ -419,7 +419,7 @@ func (f *FakeLoadBalancers) CreateSslCertificate(cert *compute.SslCertificate) (
 	cert.SelfLink = cloud.NewSslCertificatesResourceID("mock-project", cert.Name).SelfLink(meta.VersionGA)
 	if len(f.Certs) == FakeCertLimit {
 		// Simulate cert creation failure
-		return nil, fmt.Errorf("Unable to create cert, Exceeded cert limit of %d.", FakeCertLimit)
+		return nil, fmt.Errorf("unable to create cert, Exceeded cert limit of %d.", FakeCertLimit)
 	}
 	f.Certs = append(f.Certs, cert)
 	return cert, nil

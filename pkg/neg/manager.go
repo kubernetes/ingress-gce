@@ -173,7 +173,7 @@ func (manager *syncerManager) GC() error {
 
 	// Garbage collect NEGs
 	if err := manager.garbageCollectNEG(); err != nil {
-		return fmt.Errorf("Failed to garbage collect negs: %v", err)
+		return fmt.Errorf("failed to garbage collect negs: %v", err)
 	}
 	return nil
 }
