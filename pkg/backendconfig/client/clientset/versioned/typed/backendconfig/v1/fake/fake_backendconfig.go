@@ -25,34 +25,34 @@ import (
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
-	v1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 )
 
 // FakeBackendConfigs implements BackendConfigInterface
 type FakeBackendConfigs struct {
-	Fake *FakeCloudV1beta1
+	Fake *FakeCloudV1
 	ns   string
 }
 
-var backendconfigsResource = schema.GroupVersionResource{Group: "cloud.google.com", Version: "v1beta1", Resource: "backendconfigs"}
+var backendconfigsResource = schema.GroupVersionResource{Group: "cloud.google.com", Version: "v1", Resource: "backendconfigs"}
 
-var backendconfigsKind = schema.GroupVersionKind{Group: "cloud.google.com", Version: "v1beta1", Kind: "BackendConfig"}
+var backendconfigsKind = schema.GroupVersionKind{Group: "cloud.google.com", Version: "v1", Kind: "BackendConfig"}
 
 // Get takes name of the backendConfig, and returns the corresponding backendConfig object, and an error if there is any.
-func (c *FakeBackendConfigs) Get(name string, options v1.GetOptions) (result *v1beta1.BackendConfig, err error) {
+func (c *FakeBackendConfigs) Get(name string, options v1.GetOptions) (result *backendconfigv1.BackendConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewGetAction(backendconfigsResource, c.ns, name), &v1beta1.BackendConfig{})
+		Invokes(testing.NewGetAction(backendconfigsResource, c.ns, name), &backendconfigv1.BackendConfig{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1beta1.BackendConfig), err
+	return obj.(*backendconfigv1.BackendConfig), err
 }
 
 // List takes label and field selectors, and returns the list of BackendConfigs that match those selectors.
-func (c *FakeBackendConfigs) List(opts v1.ListOptions) (result *v1beta1.BackendConfigList, err error) {
+func (c *FakeBackendConfigs) List(opts v1.ListOptions) (result *backendconfigv1.BackendConfigList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewListAction(backendconfigsResource, backendconfigsKind, c.ns, opts), &v1beta1.BackendConfigList{})
+		Invokes(testing.NewListAction(backendconfigsResource, backendconfigsKind, c.ns, opts), &backendconfigv1.BackendConfigList{})
 
 	if obj == nil {
 		return nil, err
@@ -62,8 +62,8 @@ func (c *FakeBackendConfigs) List(opts v1.ListOptions) (result *v1beta1.BackendC
 	if label == nil {
 		label = labels.Everything()
 	}
-	list := &v1beta1.BackendConfigList{ListMeta: obj.(*v1beta1.BackendConfigList).ListMeta}
-	for _, item := range obj.(*v1beta1.BackendConfigList).Items {
+	list := &backendconfigv1.BackendConfigList{ListMeta: obj.(*backendconfigv1.BackendConfigList).ListMeta}
+	for _, item := range obj.(*backendconfigv1.BackendConfigList).Items {
 		if label.Matches(labels.Set(item.Labels)) {
 			list.Items = append(list.Items, item)
 		}
@@ -79,31 +79,31 @@ func (c *FakeBackendConfigs) Watch(opts v1.ListOptions) (watch.Interface, error)
 }
 
 // Create takes the representation of a backendConfig and creates it.  Returns the server's representation of the backendConfig, and an error, if there is any.
-func (c *FakeBackendConfigs) Create(backendConfig *v1beta1.BackendConfig) (result *v1beta1.BackendConfig, err error) {
+func (c *FakeBackendConfigs) Create(backendConfig *backendconfigv1.BackendConfig) (result *backendconfigv1.BackendConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewCreateAction(backendconfigsResource, c.ns, backendConfig), &v1beta1.BackendConfig{})
+		Invokes(testing.NewCreateAction(backendconfigsResource, c.ns, backendConfig), &backendconfigv1.BackendConfig{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1beta1.BackendConfig), err
+	return obj.(*backendconfigv1.BackendConfig), err
 }
 
 // Update takes the representation of a backendConfig and updates it. Returns the server's representation of the backendConfig, and an error, if there is any.
-func (c *FakeBackendConfigs) Update(backendConfig *v1beta1.BackendConfig) (result *v1beta1.BackendConfig, err error) {
+func (c *FakeBackendConfigs) Update(backendConfig *backendconfigv1.BackendConfig) (result *backendconfigv1.BackendConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewUpdateAction(backendconfigsResource, c.ns, backendConfig), &v1beta1.BackendConfig{})
+		Invokes(testing.NewUpdateAction(backendconfigsResource, c.ns, backendConfig), &backendconfigv1.BackendConfig{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1beta1.BackendConfig), err
+	return obj.(*backendconfigv1.BackendConfig), err
 }
 
 // Delete takes name of the backendConfig and deletes it. Returns an error if one occurs.
 func (c *FakeBackendConfigs) Delete(name string, options *v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(backendconfigsResource, c.ns, name), &v1beta1.BackendConfig{})
+		Invokes(testing.NewDeleteAction(backendconfigsResource, c.ns, name), &backendconfigv1.BackendConfig{})
 
 	return err
 }
@@ -112,17 +112,17 @@ func (c *FakeBackendConfigs) Delete(name string, options *v1.DeleteOptions) erro
 func (c *FakeBackendConfigs) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
 	action := testing.NewDeleteCollectionAction(backendconfigsResource, c.ns, listOptions)
 
-	_, err := c.Fake.Invokes(action, &v1beta1.BackendConfigList{})
+	_, err := c.Fake.Invokes(action, &backendconfigv1.BackendConfigList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched backendConfig.
-func (c *FakeBackendConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1beta1.BackendConfig, err error) {
+func (c *FakeBackendConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *backendconfigv1.BackendConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(backendconfigsResource, c.ns, name, data, subresources...), &v1beta1.BackendConfig{})
+		Invokes(testing.NewPatchSubresourceAction(backendconfigsResource, c.ns, name, data, subresources...), &backendconfigv1.BackendConfig{})
 
 	if obj == nil {
 		return nil, err
 	}
-	return obj.(*v1beta1.BackendConfig), err
+	return obj.(*backendconfigv1.BackendConfig), err
 }
