@@ -101,6 +101,7 @@ func TestUpgrade(t *testing.T) {
 				if err != nil {
 					t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 				}
+
 				s.PutStatus(e2e.Stable)
 
 				if runs == 0 {
@@ -130,6 +131,20 @@ func TestUpgrade(t *testing.T) {
 				}
 
 				runs++
+
+				// If the Master has upgraded and the Ingress is stable,
+				// we delete the Ingress and exit out of the loop to indicate that
+				// the test is done.
+				if s.MasterUpgraded() && !needUpdate {
+					deleteOptions := &fuzz.GCLBDeleteOptions{
+						SkipDefaultBackend: true,
+					}
+					if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing, deleteOptions); err != nil {
+						t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+					} else {
+						break
+					}
+				}
 			}
 		})
 	}
