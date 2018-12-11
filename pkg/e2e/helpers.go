@@ -35,7 +35,7 @@ const (
 	ingressPollTimeout  = 20 * time.Minute
 
 	gclbDeletionInterval = 30 * time.Second
-	gclbDeletionTimeout  = 10 * time.Minute
+	gclbDeletionTimeout  = 15 * time.Minute
 )
 
 // WaitForIngressOptions holds options dictating how we wait for an ingress to stabilize.
