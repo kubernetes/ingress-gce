@@ -196,7 +196,7 @@ func getZone(n *api_v1.Node) string {
 // GetZoneForNode returns the zone for a given node by looking up its zone label.
 func (t *Translator) GetZoneForNode(name string) (string, error) {
 	nodeLister := t.ctx.NodeInformer.GetIndexer()
-	nodes, err := listers.NewNodeLister(nodeLister).ListWithPredicate(utils.GetNodeConditionPredicate())
+	nodes, err := listers.NewNodeLister(nodeLister).List(labels.Everything())
 	if err != nil {
 		return "", err
 	}
