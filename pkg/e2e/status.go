@@ -72,10 +72,10 @@ const (
 // test can exit.
 // 7. The StatusManager loop reads the exit key, then starts shutdown().
 type StatusManager struct {
-	cm               *v1.ConfigMap
-	f                *Framework
-	informerCh       chan struct{}
-	informersRunning bool
+	cm              *v1.ConfigMap
+	f               *Framework
+	informerCh      chan struct{}
+	informerRunning bool
 }
 
 func NewStatusManager(f *Framework) *StatusManager {
@@ -124,14 +124,14 @@ func (sm *StatusManager) startInformer() {
 		},
 	})
 
-	glog.V(4).Info("Started informers")
-	sm.informersRunning = true
+	glog.V(4).Info("Started ConfigMap informer")
+	sm.informerRunning = true
 	go cmInformer.Run(sm.informerCh)
 }
 
 func (sm *StatusManager) stopInformer() {
-	glog.V(4).Info("Stopped informers")
-	sm.informersRunning = false
+	glog.V(4).Info("Stopped ConfigMap informer")
+	sm.informerRunning = false
 	close(sm.informerCh)
 }
 
@@ -168,13 +168,20 @@ func (sm *StatusManager) flush() {
 	sm.f.lock.Lock()
 	defer sm.f.lock.Unlock()
 
+	// If master is in the process of upgrading, we exit early and turn off the
+	// ConfigMap informer.
+	if sm.masterUpgrading() && sm.informerRunning {
+		sm.stopInformer()
+		return
+	}
+
+	// Restart ConfigMap informer if it was previously shut down
+	if sm.masterUpgraded() && !sm.informerRunning {
+		sm.startInformer()
+	}
+
 	// Loop until we successfully update the config map
 	for {
-		// Restart ConfigMap informer if it was previously shut down
-		if sm.masterUpgraded() && !sm.informersRunning {
-			sm.startInformer()
-		}
-
 		updatedCm, err := sm.f.Clientset.Core().ConfigMaps("default").Get(configMapName, metav1.GetOptions{})
 		if err != nil {
 			glog.Warningf("Error getting ConfigMap: %v", err)
@@ -196,13 +203,6 @@ func (sm *StatusManager) flush() {
 		}
 		sm.cm = updatedCm
 		sm.cm.Name = configMapName
-
-		// If master is in the process upgrading, we exit early and turn off the
-		// ConfigMap informer.
-		if sm.masterUpgrading() && sm.informersRunning {
-			sm.stopInformer()
-			return
-		}
 
 		_, err = sm.f.Clientset.Core().ConfigMaps("default").Update(sm.cm)
 		if err != nil {
