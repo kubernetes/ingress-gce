@@ -72,8 +72,10 @@ const (
 // test can exit.
 // 7. The StatusManager loop reads the exit key, then starts shutdown().
 type StatusManager struct {
-	cm *v1.ConfigMap
-	f  *Framework
+	cm              *v1.ConfigMap
+	f               *Framework
+	informerCh      chan struct{}
+	informerRunning bool
 }
 
 func NewStatusManager(f *Framework) *StatusManager {
@@ -94,31 +96,43 @@ func (sm *StatusManager) init() error {
 		return fmt.Errorf("error creating ConfigMap: %v", err)
 	}
 
-	newIndexer := func() cache.Indexers {
-		return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
-	}
-	stopCh := make(chan struct{})
-	cmInformer := informerv1.NewConfigMapInformer(sm.f.Clientset, "default", cmPollInterval, newIndexer())
-	cmInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		UpdateFunc: func(old, cur interface{}) {
-			curCm := cur.(*v1.ConfigMap)
-			if len(curCm.Data[exitKey]) > 0 {
-				glog.V(2).Infof("ConfigMap was updated with exit switch at %s", curCm.Data[exitKey])
-				close(stopCh)
-				sm.f.shutdown(0)
-			}
-		},
-	})
-
-	go cmInformer.Run(stopCh)
-
 	go func() {
 		for _ = range time.NewTicker(flushInterval).C {
 			sm.flush()
 		}
 	}()
 
+	sm.startInformer()
 	return nil
+}
+
+func (sm *StatusManager) startInformer() {
+	newIndexer := func() cache.Indexers {
+		return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
+	}
+
+	sm.informerCh = make(chan struct{})
+	cmInformer := informerv1.NewConfigMapInformer(sm.f.Clientset, "default", cmPollInterval, newIndexer())
+	cmInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		UpdateFunc: func(old, cur interface{}) {
+			curCm := cur.(*v1.ConfigMap)
+			if len(curCm.Data[exitKey]) > 0 {
+				glog.V(2).Infof("ConfigMap was updated with exit switch at %s", curCm.Data[exitKey])
+				close(sm.informerCh)
+				sm.f.shutdown(0)
+			}
+		},
+	})
+
+	glog.V(4).Info("Started ConfigMap informer")
+	sm.informerRunning = true
+	go cmInformer.Run(sm.informerCh)
+}
+
+func (sm *StatusManager) stopInformer() {
+	glog.V(4).Info("Stopped ConfigMap informer")
+	sm.informerRunning = false
+	close(sm.informerCh)
 }
 
 func (sm *StatusManager) shutdown() {
@@ -154,9 +168,16 @@ func (sm *StatusManager) flush() {
 	sm.f.lock.Lock()
 	defer sm.f.lock.Unlock()
 
-	// If master is in the process upgrading, we exit early
-	if sm.masterUpgrading() {
+	// If master is in the process of upgrading, we exit early and turn off the
+	// ConfigMap informer.
+	if sm.masterUpgrading() && sm.informerRunning {
+		sm.stopInformer()
 		return
+	}
+
+	// Restart ConfigMap informer if it was previously shut down
+	if sm.masterUpgraded() && !sm.informerRunning {
+		sm.startInformer()
 	}
 
 	// Loop until we successfully update the config map
@@ -171,9 +192,14 @@ func (sm *StatusManager) flush() {
 		}
 
 		// K8s considers its version of the ConfigMap to be latest, so we must get
-		// the configmap from k8s first, then merge in our data.
+		// the configmap from k8s first.
+		// We give precedence to the master-upgraded and master-upgrading flags
+		// set by the external test framework, but otherwise we prioritize
+		// Ingress statuses set by StatusManager.
 		for key, value := range sm.cm.Data {
-			updatedCm.Data[key] = value
+			if key != masterUpgradedKey && key != masterUpgradingKey {
+				updatedCm.Data[key] = value
+			}
 		}
 		sm.cm = updatedCm
 		sm.cm.Name = configMapName
