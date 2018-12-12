@@ -1,0 +1,127 @@
+apiVersion: apiextensions.k8s.io/v1beta1
+kind: CustomResourceDefinition
+metadata:
+  creationTimestamp: null
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: backendconfigs.cloud.google.com
+spec:
+  group: cloud.google.com
+  names:
+    kind: BackendConfig
+    plural: backendconfigs
+  scope: Namespaced
+  validation:
+    openAPIV3Schema:
+      properties:
+        apiVersion:
+          description: 'APIVersion defines the versioned schema of this representation
+            of an object. Servers should convert recognized schemas to the latest
+            internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources'
+          type: string
+        kind:
+          description: 'Kind is a string value representing the REST resource this
+            object represents. Servers may infer this from the endpoint the client
+            submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds'
+          type: string
+        metadata:
+          type: object
+        spec:
+          properties:
+            cdn:
+              properties:
+                cachePolicy:
+                  properties:
+                    includeHost:
+                      description: If true, requests to different hosts will be cached
+                        separately.
+                      type: boolean
+                    includeProtocol:
+                      description: If true, http and https requests will be cached
+                        separately.
+                      type: boolean
+                    includeQueryString:
+                      description: If true, query string parameters are included in
+                        the cache key according to QueryStringBlacklist and QueryStringWhitelist.
+                        If neither is set, the entire query string is included and
+                        if false the entire query string is excluded.
+                      type: boolean
+                    queryStringBlacklist:
+                      items:
+                        description: Names of query strint parameters to exclude from
+                          cache keys. All other parameters are included. Either specify
+                          QueryStringBlacklist or QueryStringWhitelist, but not both.
+                        type: string
+                      type: array
+                    queryStringWhitelist:
+                      items:
+                        description: Names of query string parameters to include in
+                          cache keys. All other parameters are excluded. Either specify
+                          QueryStringBlacklist or QueryStringWhitelist, but not both.
+                        type: string
+                      type: array
+                  type: object
+                enabled:
+                  type: boolean
+              required:
+              - enabled
+              type: object
+            connectionDraining:
+              properties:
+                drainingTimeoutSec:
+                  description: Draining timeout in seconds.
+                  format: int64
+                  type: integer
+              type: object
+            iap:
+              properties:
+                enabled:
+                  type: boolean
+                oauthclientCredentials:
+                  properties:
+                    clientID:
+                      description: Direct reference to OAuth client id.
+                      type: string
+                    clientSecret:
+                      description: Direct reference to OAuth client secret.
+                      type: string
+                    secretName:
+                      description: The name of a k8s secret which stores the OAuth
+                        client id & secret.
+                      type: string
+                  required:
+                  - secretName
+                  type: object
+              required:
+              - enabled
+              - oauthclientCredentials
+              type: object
+            securityPolicy:
+              properties:
+                name:
+                  description: Name of the security policy that should be associated.
+                  type: string
+              required:
+              - name
+              type: object
+            sessionAffinity:
+              properties:
+                affinityCookieTtlSec:
+                  format: int64
+                  type: integer
+                affinityType:
+                  type: string
+              type: object
+            timeoutSec:
+              format: int64
+              type: integer
+          type: object
+        status:
+          type: object
+  version: v1beta1
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []
