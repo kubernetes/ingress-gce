@@ -4,14 +4,14 @@ import (
 	"github.com/golang/glog"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	v1beta1 "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 
 	api_v1 "k8s.io/api/core/v1"
 )
 
 // doesServiceReferenceBackendConfig returns true if the passed in Service directly references
 // the passed in BackendConfig.
-func doesServiceReferenceBackendConfig(svc *api_v1.Service, beConfig *backendconfigv1beta1.BackendConfig) bool {
+func doesServiceReferenceBackendConfig(svc *api_v1.Service, beConfig *v1beta1.BackendConfig) bool {
 	if svc.Namespace != beConfig.Namespace {
 		return false
 	}

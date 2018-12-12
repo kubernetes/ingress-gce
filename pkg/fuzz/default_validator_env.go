@@ -21,7 +21,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
-	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfig "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 	bcclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )

@@ -23,21 +23,21 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	v1beta1 "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 )
 
 var (
 	goodTTL int64 = 86400
 	badTTL  int64 = 86400 + 1
 
-	defaultBeConfig = &backendconfigv1beta1.BackendConfig{
+	defaultBeConfig = &v1beta1.BackendConfig{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Namespace: "default",
 		},
-		Spec: backendconfigv1beta1.BackendConfigSpec{
-			Iap: &backendconfigv1beta1.IAPConfig{
+		Spec: v1beta1.BackendConfigSpec{
+			Iap: &v1beta1.IAPConfig{
 				Enabled: true,
-				OAuthClientCredentials: &backendconfigv1beta1.OAuthClientCredentials{
+				OAuthClientCredentials: &v1beta1.OAuthClientCredentials{
 					SecretName: "foo",
 				},
 			},
@@ -49,7 +49,7 @@ func TestValidateIAP(t *testing.T) {
 	testCases := []struct {
 		desc        string
 		init        func(kubeClient kubernetes.Interface)
-		beConfig    *backendconfigv1beta1.BackendConfig
+		beConfig    *v1beta1.BackendConfig
 		expectError bool
 	}{
 		{
@@ -120,15 +120,15 @@ func TestValidateIAP(t *testing.T) {
 		},
 		{
 			desc: "iap and cdn enabled at the same time",
-			beConfig: &backendconfigv1beta1.BackendConfig{
+			beConfig: &v1beta1.BackendConfig{
 				ObjectMeta: meta_v1.ObjectMeta{
 					Namespace: "default",
 				},
-				Spec: backendconfigv1beta1.BackendConfigSpec{
-					Iap: &backendconfigv1beta1.IAPConfig{
+				Spec: v1beta1.BackendConfigSpec{
+					Iap: &v1beta1.IAPConfig{
 						Enabled: true,
 					},
-					Cdn: &backendconfigv1beta1.CDNConfig{
+					Cdn: &v1beta1.CDNConfig{
 						Enabled: true,
 					},
 				},
@@ -166,18 +166,18 @@ func TestValidateIAP(t *testing.T) {
 func TestValidateSessionAffinity(t *testing.T) {
 	testCases := []struct {
 		desc        string
-		beConfig    *backendconfigv1beta1.BackendConfig
+		beConfig    *v1beta1.BackendConfig
 		expectError bool
 	}{
 
 		{
 			desc: "unsupported affinity type",
-			beConfig: &backendconfigv1beta1.BackendConfig{
+			beConfig: &v1beta1.BackendConfig{
 				ObjectMeta: meta_v1.ObjectMeta{
 					Namespace: "default",
 				},
-				Spec: backendconfigv1beta1.BackendConfigSpec{
-					SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+				Spec: v1beta1.BackendConfigSpec{
+					SessionAffinity: &v1beta1.SessionAffinityConfig{
 						AffinityType: "WRONG_TYPE",
 					},
 				},
@@ -186,12 +186,12 @@ func TestValidateSessionAffinity(t *testing.T) {
 		},
 		{
 			desc: "supported affinity type",
-			beConfig: &backendconfigv1beta1.BackendConfig{
+			beConfig: &v1beta1.BackendConfig{
 				ObjectMeta: meta_v1.ObjectMeta{
 					Namespace: "default",
 				},
-				Spec: backendconfigv1beta1.BackendConfigSpec{
-					SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+				Spec: v1beta1.BackendConfigSpec{
+					SessionAffinity: &v1beta1.SessionAffinityConfig{
 						AffinityType: "CLIENT_IP",
 					},
 				},
@@ -200,12 +200,12 @@ func TestValidateSessionAffinity(t *testing.T) {
 		},
 		{
 			desc: "unsupported ttl value",
-			beConfig: &backendconfigv1beta1.BackendConfig{
+			beConfig: &v1beta1.BackendConfig{
 				ObjectMeta: meta_v1.ObjectMeta{
 					Namespace: "default",
 				},
-				Spec: backendconfigv1beta1.BackendConfigSpec{
-					SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+				Spec: v1beta1.BackendConfigSpec{
+					SessionAffinity: &v1beta1.SessionAffinityConfig{
 						AffinityCookieTtlSec: &badTTL,
 					},
 				},
@@ -214,12 +214,12 @@ func TestValidateSessionAffinity(t *testing.T) {
 		},
 		{
 			desc: "supported ttl value",
-			beConfig: &backendconfigv1beta1.BackendConfig{
+			beConfig: &v1beta1.BackendConfig{
 				ObjectMeta: meta_v1.ObjectMeta{
 					Namespace: "default",
 				},
-				Spec: backendconfigv1beta1.BackendConfigSpec{
-					SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+				Spec: v1beta1.BackendConfigSpec{
+					SessionAffinity: &v1beta1.SessionAffinityConfig{
 						AffinityCookieTtlSec: &goodTTL,
 					},
 				},

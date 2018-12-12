@@ -23,7 +23,7 @@ import (
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
-	cloudv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	cloudv1beta1 "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 )
 
 var Scheme = runtime.NewScheme()

@@ -30,7 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/fake"
-	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfig "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
 

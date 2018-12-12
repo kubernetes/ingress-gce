@@ -19,7 +19,7 @@ package features
 import (
 	"testing"
 
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	v1beta1 "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -34,9 +34,9 @@ func TestEnsureDraining(t *testing.T) {
 		{
 			desc: "connection draining timeout setting is defined on serviceport but missing from spec, update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{
+						ConnectionDraining: &v1beta1.ConnectionDrainingConfig{
 							DrainingTimeoutSec: 111,
 						},
 					},
@@ -50,8 +50,8 @@ func TestEnsureDraining(t *testing.T) {
 		{
 			desc: "connection draining setting are missing from spec, no update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{},
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{},
 				},
 			},
 			be: &composite.BackendService{
@@ -64,9 +64,9 @@ func TestEnsureDraining(t *testing.T) {
 		{
 			desc: "connection draining settings are identical, no update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{
+						ConnectionDraining: &v1beta1.ConnectionDrainingConfig{
 							DrainingTimeoutSec: 111,
 						},
 					},
@@ -82,9 +82,9 @@ func TestEnsureDraining(t *testing.T) {
 		{
 			desc: "connection draining settings differs, update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{
+						ConnectionDraining: &v1beta1.ConnectionDrainingConfig{
 							DrainingTimeoutSec: 111,
 						},
 					},

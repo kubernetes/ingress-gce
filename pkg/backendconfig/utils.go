@@ -17,7 +17,7 @@ import (
 	"strconv"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	v1beta1 "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,7 +25,7 @@ import (
 
 // The below vars are used for sharing unit testing types with multiple packages.
 var (
-	TestBackendConfig = &backendconfigv1beta1.BackendConfig{
+	TestBackendConfig = &v1beta1.BackendConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "config-test",
 			Namespace: "test",

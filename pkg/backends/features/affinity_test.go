@@ -19,7 +19,7 @@ package features
 import (
 	"testing"
 
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	v1beta1 "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -36,8 +36,8 @@ func TestEnsureAffinity(t *testing.T) {
 		{
 			desc: "affinity settings missing from spec, no update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{},
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{},
 				},
 			},
 			be: &composite.BackendService{
@@ -49,9 +49,9 @@ func TestEnsureAffinity(t *testing.T) {
 		{
 			desc: "sessionaffinity setting differing, update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{
+						SessionAffinity: &v1beta1.SessionAffinityConfig{
 							AffinityType: "CLIENT_IP",
 						},
 					},
@@ -65,9 +65,9 @@ func TestEnsureAffinity(t *testing.T) {
 		{
 			desc: "affinity ttl setting differing, update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{
+						SessionAffinity: &v1beta1.SessionAffinityConfig{
 							AffinityCookieTtlSec: &testTTL,
 						},
 					},
@@ -81,9 +81,9 @@ func TestEnsureAffinity(t *testing.T) {
 		{
 			desc: "sessionaffinity and ttl settings differing, update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{
+						SessionAffinity: &v1beta1.SessionAffinityConfig{
 							AffinityType:         "CLIENT_IP",
 							AffinityCookieTtlSec: &testTTL,
 						},
@@ -99,9 +99,9 @@ func TestEnsureAffinity(t *testing.T) {
 		{
 			desc: "affinity settings identical, no updated needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{
+						SessionAffinity: &v1beta1.SessionAffinityConfig{
 							AffinityType:         "CLIENT_IP",
 							AffinityCookieTtlSec: &testTTL,
 						},

@@ -22,25 +22,25 @@ ignored = ["k8s.io/kubernetes/pkg/api"]
 
 [[constraint]]
   name = "k8s.io/api"
-  branch = "master"
+  version = "kubernetes-1.12.3"
 
 # This needs to be an override as it is a non-direct dependency and will not be
 # considered by `dep` as a constraint.
 [[override]]
   name = "k8s.io/apiserver"
-  branch = "master"
+  version = "kubernetes-1.12.3"
 
 [[constraint]]
   name = "k8s.io/apimachinery"
-  branch = "master"
+  version = "kubernetes-1.12.3"
 
 [[constraint]]
   name = "k8s.io/client-go"
-  branch = "master"
+  version = "kubernetes-1.12.3"
 
 [[constraint]]
   name = "k8s.io/kubernetes"
-  branch = "master"
+  version = "kubernetes-1.12.3"
 
 # This needs to be an override as it is a non-direct dependency and will not be
 # considered by `dep` as a constraint.

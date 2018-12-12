@@ -30,7 +30,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
-	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1beta1"
+	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/cloud/v1beta1"
 	"k8s.io/ingress-gce/pkg/common/typed"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"

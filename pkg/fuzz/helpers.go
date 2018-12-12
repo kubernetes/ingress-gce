@@ -24,7 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfig "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 	backendconfigutil "k8s.io/ingress-gce/pkg/backendconfig"
 	translatorutil "k8s.io/ingress-gce/pkg/controller/translator"
 )

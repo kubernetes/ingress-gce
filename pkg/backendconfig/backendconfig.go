@@ -24,9 +24,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	apisbackendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
-	"k8s.io/ingress-gce/pkg/crd"
+	v1beta1 "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 )
 
 var (
@@ -35,22 +33,9 @@ var (
 	ErrNoBackendConfigForPort    = errors.New("no BackendConfig name found for service port.")
 )
 
-func CRDMeta() *crd.CRDMeta {
-	meta := crd.NewCRDMeta(
-		apisbackendconfig.GroupName,
-		"v1beta1",
-		"BackendConfig",
-		"BackendConfigList",
-		"backendconfig",
-		"backendconfigs",
-	)
-	meta.AddValidationInfo("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.BackendConfig", backendconfigv1beta1.GetOpenAPIDefinitions)
-	return meta
-}
-
 // GetBackendConfigForServicePort returns the corresponding BackendConfig for
 // the given ServicePort if specified.
-func GetBackendConfigForServicePort(backendConfigLister cache.Store, svc *apiv1.Service, svcPort *apiv1.ServicePort) (*backendconfigv1beta1.BackendConfig, error) {
+func GetBackendConfigForServicePort(backendConfigLister cache.Store, svc *apiv1.Service, svcPort *apiv1.ServicePort) (*v1beta1.BackendConfig, error) {
 	backendConfigs, err := annotations.FromService(svc).GetBackendConfigs()
 	if err != nil {
 		// If the user did not provide the annotation at all, then we
@@ -67,7 +52,7 @@ func GetBackendConfigForServicePort(backendConfigLister cache.Store, svc *apiv1.
 	}
 
 	obj, exists, err := backendConfigLister.Get(
-		&backendconfigv1beta1.BackendConfig{
+		&v1beta1.BackendConfig{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      configName,
 				Namespace: svc.Namespace,
@@ -80,5 +65,5 @@ func GetBackendConfigForServicePort(backendConfigLister cache.Store, svc *apiv1.
 		return nil, ErrBackendConfigDoesNotExist
 	}
 
-	return obj.(*backendconfigv1beta1.BackendConfig), nil
+	return obj.(*v1beta1.BackendConfig), nil
 }

@@ -23,7 +23,7 @@ import (
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
-	cloudv1beta1 "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/typed/backendconfig/v1beta1"
+	cloudv1beta1 "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/typed/cloud/v1beta1"
 )
 
 type Interface interface {

@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfig "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"

@@ -20,7 +20,7 @@ import (
 	"reflect"
 
 	"github.com/golang/glog"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	v1beta1 "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -61,8 +61,8 @@ func applyCDNSettings(sp utils.ServicePort, be *composite.BackendService) {
 }
 
 // setCDNDefaults initializes any nil pointers in CDN configuration which ensures that there are defaults for missing sub-types.
-func setCDNDefaults(beConfig *backendconfigv1beta1.BackendConfig) {
+func setCDNDefaults(beConfig *v1beta1.BackendConfig) {
 	if beConfig.Spec.Cdn.CachePolicy == nil {
-		beConfig.Spec.Cdn.CachePolicy = &backendconfigv1beta1.CacheKeyPolicy{}
+		beConfig.Spec.Cdn.CachePolicy = &v1beta1.CacheKeyPolicy{}
 	}
 }

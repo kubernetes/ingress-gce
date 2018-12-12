@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"testing"
 
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	v1beta1 "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -36,8 +36,8 @@ func TestEnsureIAP(t *testing.T) {
 		{
 			desc: "iap settings are missing from spec, no update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{
 						Iap: nil,
 					},
 				},
@@ -54,11 +54,11 @@ func TestEnsureIAP(t *testing.T) {
 		{
 			desc: "settings are identical, no update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						Iap: &backendconfigv1beta1.IAPConfig{
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{
+						Iap: &v1beta1.IAPConfig{
 							Enabled: true,
-							OAuthClientCredentials: &backendconfigv1beta1.OAuthClientCredentials{
+							OAuthClientCredentials: &v1beta1.OAuthClientCredentials{
 								ClientID:     "foo",
 								ClientSecret: "bar",
 							},
@@ -78,11 +78,11 @@ func TestEnsureIAP(t *testing.T) {
 		{
 			desc: "no existing settings, update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						Iap: &backendconfigv1beta1.IAPConfig{
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{
+						Iap: &v1beta1.IAPConfig{
 							Enabled: true,
-							OAuthClientCredentials: &backendconfigv1beta1.OAuthClientCredentials{
+							OAuthClientCredentials: &v1beta1.OAuthClientCredentials{
 								ClientID:     "foo",
 								ClientSecret: "baz",
 							},
@@ -98,11 +98,11 @@ func TestEnsureIAP(t *testing.T) {
 		{
 			desc: "client id is different, update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						Iap: &backendconfigv1beta1.IAPConfig{
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{
+						Iap: &v1beta1.IAPConfig{
 							Enabled: true,
-							OAuthClientCredentials: &backendconfigv1beta1.OAuthClientCredentials{
+							OAuthClientCredentials: &v1beta1.OAuthClientCredentials{
 								ClientID:     "foo",
 								ClientSecret: "baz",
 							},
@@ -122,11 +122,11 @@ func TestEnsureIAP(t *testing.T) {
 		{
 			desc: "client secret is different, update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						Iap: &backendconfigv1beta1.IAPConfig{
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{
+						Iap: &v1beta1.IAPConfig{
 							Enabled: true,
-							OAuthClientCredentials: &backendconfigv1beta1.OAuthClientCredentials{
+							OAuthClientCredentials: &v1beta1.OAuthClientCredentials{
 								ClientID:     "foo",
 								ClientSecret: "baz",
 							},
@@ -146,11 +146,11 @@ func TestEnsureIAP(t *testing.T) {
 		{
 			desc: "enabled setting is different, update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						Iap: &backendconfigv1beta1.IAPConfig{
+				BackendConfig: &v1beta1.BackendConfig{
+					Spec: v1beta1.BackendConfigSpec{
+						Iap: &v1beta1.IAPConfig{
 							Enabled: false,
-							OAuthClientCredentials: &backendconfigv1beta1.OAuthClientCredentials{
+							OAuthClientCredentials: &v1beta1.OAuthClientCredentials{
 								ClientID:     "foo",
 								ClientSecret: "baz",
 							},

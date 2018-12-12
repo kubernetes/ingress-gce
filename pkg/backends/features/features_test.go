@@ -25,7 +25,7 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	v1beta1 "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -49,9 +49,9 @@ var (
 
 	svcPortWithSecurityPolicy = utils.ServicePort{
 		ID: fakeSvcPortID,
-		BackendConfig: &backendconfigv1beta1.BackendConfig{
-			Spec: backendconfigv1beta1.BackendConfigSpec{
-				SecurityPolicy: &backendconfigv1beta1.SecurityPolicyConfig{
+		BackendConfig: &v1beta1.BackendConfig{
+			Spec: v1beta1.BackendConfigSpec{
+				SecurityPolicy: &v1beta1.SecurityPolicyConfig{
 					Name: "policy-test",
 				},
 			},
@@ -61,9 +61,9 @@ var (
 	svcPortWithHTTP2SecurityPolicy = utils.ServicePort{
 		ID:       fakeSvcPortID,
 		Protocol: annotations.ProtocolHTTP2,
-		BackendConfig: &backendconfigv1beta1.BackendConfig{
-			Spec: backendconfigv1beta1.BackendConfigSpec{
-				SecurityPolicy: &backendconfigv1beta1.SecurityPolicyConfig{
+		BackendConfig: &v1beta1.BackendConfig{
+			Spec: v1beta1.BackendConfigSpec{
+				SecurityPolicy: &v1beta1.SecurityPolicyConfig{
 					Name: "policy-test",
 				},
 			},

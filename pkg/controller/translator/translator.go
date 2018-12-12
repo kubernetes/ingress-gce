@@ -31,7 +31,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	v1beta1 "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 	"k8s.io/ingress-gce/pkg/backendconfig"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/errors"
@@ -108,7 +108,7 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 	}
 	svcPort.Protocol = proto
 
-	var beConfig *backendconfigv1beta1.BackendConfig
+	var beConfig *v1beta1.BackendConfig
 	if t.ctx.BackendConfigEnabled {
 		beConfig, err = backendconfig.GetBackendConfigForServicePort(t.ctx.BackendConfigInformer.GetIndexer(), svc, port)
 		if err != nil {

@@ -28,7 +28,7 @@ import (
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
-	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfig "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 

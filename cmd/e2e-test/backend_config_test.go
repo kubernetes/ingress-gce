@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	v1beta1 "k8s.io/ingress-gce/pkg/apis/cloud/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
 )
@@ -44,7 +44,7 @@ func TestBackendConfigNegatives(t *testing.T) {
 	for _, tc := range []struct {
 		desc           string
 		svcAnnotations map[string]string
-		backendConfig  *backendconfigv1beta1.BackendConfig
+		backendConfig  *v1beta1.BackendConfig
 		secretName     string
 		expectedMsg    string
 	}{
