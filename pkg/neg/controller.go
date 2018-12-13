@@ -79,7 +79,8 @@ func NewController(
 	zoneGetter negtypes.ZoneGetter,
 	namer negtypes.NetworkEndpointGroupNamer,
 	resyncPeriod time.Duration,
-	gcPeriod time.Duration) *Controller {
+	gcPeriod time.Duration,
+	negSyncerType NegSyncerType) *Controller {
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
 	eventBroadcaster := record.NewBroadcaster()
@@ -90,7 +91,7 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
-	manager := newSyncerManager(namer, recorder, cloud, zoneGetter, ctx.ServiceInformer.GetIndexer(), ctx.EndpointInformer.GetIndexer())
+	manager := newSyncerManager(namer, recorder, cloud, zoneGetter, ctx.ServiceInformer.GetIndexer(), ctx.EndpointInformer.GetIndexer(), negSyncerType)
 
 	negController := &Controller{
 		client:         ctx.KubeClient,

@@ -57,6 +57,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 		negtypes.NewFakeZoneGetter(),
 		context.ServiceInformer.GetIndexer(),
 		context.EndpointInformer.GetIndexer(),
+		transactionSyncer,
 	)
 	return manager
 }
