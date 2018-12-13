@@ -193,7 +193,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	if ctx.NEGEnabled {
 		// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
-		negController := neg.NewController(neg.NewAdapter(ctx.Cloud), ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod)
+		negController := neg.NewController(neg.NewAdapter(ctx.Cloud), ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, neg.NegSyncerType(flags.F.NegSyncerType))
 		go negController.Run(stopCh)
 		glog.V(0).Infof("negController started")
 	}

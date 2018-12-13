@@ -82,6 +82,7 @@ var (
 		NodePortRanges            PortRanges
 		EnableBackendConfig       bool
 		NegGCPeriod               time.Duration
+		NegSyncerType             string
 
 		LeaderElection LeaderElectionConfiguration
 	}{}
@@ -214,14 +215,15 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.LeaderElection.LockObjectNamespace, "lock-object-namespace", F.LeaderElection.LockObjectNamespace, "Define the namespace of the lock object.")
 	flag.StringVar(&F.LeaderElection.LockObjectName, "lock-object-name", F.LeaderElection.LockObjectName, "Define the name of the lock object.")
 	flag.BoolVar(&F.Features.ManagedCertificates, "enable-managed-certificates", F.Features.ManagedCertificates, "Enable ManagedCertificates.")
+	flag.DurationVar(&F.NegGCPeriod, "neg-gc-period", 120*time.Second,
+		`Relist and garbage collect NEGs this often.`)
+	flag.StringVar(&F.NegSyncerType, "neg-syncer-type", "transaction", "Define the NEG syncer type to use. Valid values are \"batch\" and \"transaction\"")
 
 	// Deprecated F.
 	flag.BoolVar(&F.Verbose, "verbose", false,
 		`This flag is deprecated. Use -v to control verbosity.`)
 	flag.Bool("use-real-cloud", false,
 		`This flag has been deprecated and no longer has any effect.`)
-	flag.DurationVar(&F.NegGCPeriod, "neg-gc-period", 120*time.Second,
-		`Relist and garbage collect NEGs this often.`)
 }
 
 type RateLimitSpecs struct {

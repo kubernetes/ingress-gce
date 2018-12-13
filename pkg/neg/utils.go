@@ -24,6 +24,14 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/types"
 )
 
+const (
+	batchSyncer       = NegSyncerType("batch")
+	transactionSyncer = NegSyncerType("transaction")
+)
+
+// NegSyncerType represents the the neg syncer type
+type NegSyncerType string
+
 // NEGServicePorts returns the parsed ServicePorts from the annotation.
 // knownPorts represents the known Port:TargetPort attributes of servicePorts
 // that already exist on the service. This function returns an error if
