@@ -86,7 +86,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	adds := newPorts.Difference(currentPorts)
 
 	manager.svcPortMap[key] = newPorts
-	glog.V(3).Infof("EnsureSyncer %v/%v: removing %v ports, adding %v ports", namespace, name, removes, adds)
+	glog.V(3).Infof("EnsureSyncer %v/%v: syncing %v ports, removing %v ports, adding %v ports", namespace, name, newPorts, removes, adds)
 
 	for svcPort, targetPort := range removes {
 		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, targetPort)]
