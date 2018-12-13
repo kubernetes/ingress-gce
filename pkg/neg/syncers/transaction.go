@@ -63,6 +63,8 @@ type transactionSyncer struct {
 func NewTransactionSyncer(negSyncerKey NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) negtypes.NegSyncer {
 	syncer := newSyncer(negSyncerKey, networkEndpointGroupName, serviceLister, recorder)
 	ts := &transactionSyncer{
+		NegSyncerKey:   negSyncerKey,
+		negName:        networkEndpointGroupName,
 		syncer:         syncer,
 		needInit:       true,
 		transactions:   NewTransactionTable(),
@@ -230,8 +232,6 @@ func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointM
 // If error occurs or any transaction entry requires reconciliation, it will trigger resync
 func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[string]*compute.NetworkEndpoint) {
 	var err error
-	defer s.commitTransaction(err, networkEndpointMap)
-
 	networkEndpoints := []*compute.NetworkEndpoint{}
 	for _, ne := range networkEndpointMap {
 		networkEndpoints = append(networkEndpoints, ne)
@@ -250,6 +250,8 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), s.negName, zone, err))
 	}
 
+	// WARNING: commitTransaction must be called at last for analyzing the operation result
+	s.commitTransaction(err, networkEndpointMap)
 }
 
 func (s *transactionSyncer) recordEvent(eventType, reason, eventDesc string) {
@@ -274,6 +276,8 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 	needSync := false
 
 	if err != nil {
+		// Trigger NEG initialization if error occurs
+		// This is to prevent if the NEG object is deleted or misconfigured by user
 		s.needInit = true
 		needRetry = true
 	}
