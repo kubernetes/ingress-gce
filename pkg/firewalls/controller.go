@@ -28,7 +28,6 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -47,6 +46,7 @@ type FirewallController struct {
 	ctx          *context.ControllerContext
 	firewallPool SingleFirewallPool
 	queue        utils.TaskQueue
+	ingLister    utils.StoreToIngressLister
 	translator   *translator.Translator
 	nodeLister   cache.Indexer
 	hasSynced    func() bool
@@ -62,12 +62,13 @@ func NewFirewallController(
 	fwc := &FirewallController{
 		ctx:          ctx,
 		firewallPool: firewallPool,
+		ingLister:    utils.StoreToIngressLister{Store: ctx.IngressInformer.GetStore()},
 		translator:   translator.NewTranslator(ctx),
 		nodeLister:   ctx.NodeInformer.GetIndexer(),
 		hasSynced:    ctx.HasSynced,
 	}
 
-	fwc.queue = utils.NewPeriodicTaskQueue("", "firewall", fwc.sync)
+	fwc.queue = utils.NewPeriodicTaskQueue("firewall", fwc.sync)
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -98,7 +99,7 @@ func NewFirewallController(
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			svc := obj.(*apiv1.Service)
-			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesService(svc).AsList()
+			ings := fwc.ctx.IngressesForService(svc)
 			if len(ings) > 0 {
 				fwc.queue.Enqueue(queueKey)
 			}
@@ -106,7 +107,7 @@ func NewFirewallController(
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
 				svc := cur.(*apiv1.Service)
-				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesService(svc).AsList()
+				ings := fwc.ctx.IngressesForService(svc)
 				if len(ings) > 0 {
 					fwc.queue.Enqueue(queueKey)
 				}
@@ -120,10 +121,10 @@ func NewFirewallController(
 // ToSvcPorts is a helper method over translator.TranslateIngress to process a list of ingresses.
 // TODO(rramkumar): This is a copy of code in controller.go. Extract this into
 // something shared.
-func (fwc *FirewallController) ToSvcPorts(ings []*extensions.Ingress) []utils.ServicePort {
+func (fwc *FirewallController) ToSvcPorts(ings *extensions.IngressList) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
-	for _, ing := range ings {
-		urlMap, _ := fwc.translator.TranslateIngress(ing, fwc.ctx.DefaultBackendSvcPortID)
+	for _, ing := range ings.Items {
+		urlMap, _ := fwc.translator.TranslateIngress(&ing, fwc.ctx.DefaultBackendSvcPortID)
 		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts
@@ -147,18 +148,18 @@ func (fwc *FirewallController) sync(key string) error {
 	}
 	glog.V(3).Infof("Syncing firewall")
 
-	gceIngresses := operator.Ingresses(fwc.ctx.Ingresses().List()).Filter(func(ing *extensions.Ingress) bool {
-		return utils.IsGCEIngress(ing)
-	}).AsList()
-
+	gceIngresses, err := fwc.ingLister.ListGCEIngresses()
+	if err != nil {
+		return err
+	}
 	// If there are no more ingresses, then delete the firewall rule.
-	if len(gceIngresses) == 0 {
+	if len(gceIngresses.Items) == 0 {
 		fwc.firewallPool.GC()
 		return nil
 	}
 
 	// gceSvcPorts contains the ServicePorts used by only single-cluster ingress.
-	gceSvcPorts := fwc.ToSvcPorts(gceIngresses)
+	gceSvcPorts := fwc.ToSvcPorts(&gceIngresses)
 	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(fwc.nodeLister))
 	if err != nil {
 		return err
@@ -169,11 +170,11 @@ func (fwc *FirewallController) sync(key string) error {
 	if err := fwc.firewallPool.Sync(nodeNames, negPorts...); err != nil {
 		if fwErr, ok := err.(*FirewallXPNError); ok {
 			// XPN: Raise an event on each ingress
-			for _, ing := range gceIngresses {
-				if annotations.FromIngress(ing).SuppressFirewallXPNError() {
+			for _, ing := range gceIngresses.Items {
+				if annotations.FromIngress(&ing).SuppressFirewallXPNError() {
 					continue
 				}
-				fwc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeNormal, "XPN", fwErr.Message)
+				fwc.ctx.Recorder(ing.Namespace).Eventf(&ing, apiv1.EventTypeNormal, "XPN", fwErr.Message)
 			}
 		} else {
 			return err
