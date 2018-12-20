@@ -326,6 +326,8 @@ func TestGetProbe(t *testing.T) {
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}:  "/healthz",
 		{NodePort: 3002, Protocol: annotations.ProtocolHTTPS}: "/foo",
 		{NodePort: 3003, Protocol: annotations.ProtocolHTTP2}: "/http2-check",
+		{NodePort: 0, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true,
+			ID: utils.ServicePortID{Service: types.NamespacedName{Name: "svc0", Namespace: apiv1.NamespaceDefault}}}: "/bar",
 	}
 	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
 		translator.ctx.ServiceInformer.GetIndexer().Add(svc)
@@ -431,7 +433,7 @@ func makePods(nodePortToHealthCheck map[utils.ServicePort]string, ns string) []*
 		pod := &apiv1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
 				Labels:            map[string]string{fmt.Sprintf("app-%d", np.NodePort): "test"},
-				Name:              fmt.Sprintf("%d", np.NodePort),
+				Name:              fmt.Sprintf("pod%d", np.NodePort),
 				Namespace:         ns,
 				CreationTimestamp: metav1.NewTime(firstPodCreationTime.Add(delay)),
 			},
@@ -466,7 +468,7 @@ func makeServices(nodePortToHealthCheck map[utils.ServicePort]string, ns string)
 	for np := range nodePortToHealthCheck {
 		svc := &apiv1.Service{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("%d", np.NodePort),
+				Name:      fmt.Sprintf("svc%d", np.NodePort),
 				Namespace: ns,
 			},
 			Spec: apiv1.ServiceSpec{

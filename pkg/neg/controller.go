@@ -332,7 +332,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		if _, ok := service.Annotations[annotations.NEGStatusKey]; ok {
 			// TODO: use PATCH to remove annotation
 			delete(service.Annotations, annotations.NEGStatusKey)
-			glog.V(2).Infof("Removing expose NEG annotation from service: %s/%s", namespace, name)
+			glog.V(2).Infof("Removing NEG status annotation from service: %s/%s", namespace, name)
 			_, err = svcClient.Update(service)
 			return err
 		}
