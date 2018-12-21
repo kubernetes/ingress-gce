@@ -46,13 +46,15 @@ ${CMD} "$@" 2>&1
 RESULT=$?
 echo
 
-GCLOUD=/google-cloud-sdk/bin/gcloud
-RESOURCES="forwarding-rules target-http-proxies target-https-proxies url-maps backend-services"
-for RES in ${RESOURCES}; do
-  echo ==============================================================================
-  echo "GCP RESOURCE: ${RES}"
-  ${GCLOUD} compute ${RES} list --quiet --project ${PROJECT} --format yaml 2>&1
-done
+if [[ "${DUMP_RESOURCES:-}" == "true" ]]; then
+  GCLOUD=/google-cloud-sdk/bin/gcloud
+  RESOURCES="forwarding-rules target-http-proxies target-https-proxies url-maps backend-services"
+  for RES in ${RESOURCES}; do
+    echo ==============================================================================
+    echo "GCP RESOURCE: ${RES}"
+    ${GCLOUD} compute ${RES} list --quiet --project ${PROJECT} --format yaml 2>&1
+  done
+fi
 
 echo ==============================================================================
 echo "RESULT: $RESULT"
