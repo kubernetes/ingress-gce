@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/kr/pretty"
@@ -68,7 +69,6 @@ func TestUpgrade(t *testing.T) {
 			runs := 0
 			// needUpdate indicates that the Ingress sync has NOT yet been triggered
 			needUpdate := true
-			// Framework.shutdown() kills this loop.
 			for {
 				if s.MasterUpgraded() && needUpdate {
 					t.Logf("Detected master upgrade, adding a path to Ingress to force Ingress update")
@@ -99,6 +99,12 @@ func TestUpgrade(t *testing.T) {
 				}
 				ing, err := e2e.WaitForIngress(s, tc.ing, options)
 				if err != nil {
+					if strings.Contains(err.Error(), "connection refused") {
+						// We ignore any connection refused errors because there is an
+						// unavoidable race condition between when a master upgrade is
+						// triggered and when WaitForIngress() is called.
+						continue
+					}
 					t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 				}
 
