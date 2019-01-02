@@ -527,6 +527,41 @@ func TestGatherEndpointPorts(t *testing.T) {
 	}
 }
 
+func TestGetZoneForNode(t *testing.T) {
+	nodeName := "node"
+	zone := "us-central1-a"
+	translator := fakeTranslator(true, false)
+	translator.ctx.NodeInformer.GetIndexer().Add(&apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "ns",
+			Name:      nodeName,
+			Labels: map[string]string{
+				annotations.ZoneKey: zone,
+			},
+		},
+		Spec: apiv1.NodeSpec{
+			Unschedulable: false,
+		},
+		Status: apiv1.NodeStatus{
+			Conditions: []apiv1.NodeCondition{
+				{
+					Type:   apiv1.NodeReady,
+					Status: apiv1.ConditionFalse,
+				},
+			},
+		},
+	})
+
+	ret, err := translator.GetZoneForNode(nodeName)
+	if err != nil {
+		t.Errorf("Expect error = nil, but got %v", err)
+	}
+
+	if zone != ret {
+		t.Errorf("Expect zone = %q, but got %q", zone, ret)
+	}
+}
+
 func newDefaultEndpoint(name string) *apiv1.Endpoints {
 	return &apiv1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns"},
