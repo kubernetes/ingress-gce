@@ -8,6 +8,64 @@ Do not move it without providing redirects.
 
 # Troubleshooting
 
+## General
+
+This controller is complicated because it exposes a tangled set of external resources as a single logical abstraction. It's recommended that you are at least *aware* of how one creates a GCE L7 [without a kubernetes Ingress](https://cloud.google.com/container-engine/docs/tutorials/http-balancer). If weird things happen, here are some basic debugging guidelines:
+
+* Check loadbalancer controller pod logs via kubectl
+A typical sign of trouble is repeated retries in the logs:
+```shell
+I1006 18:58:53.451869       1 loadbalancer.go:268] Forwarding rule k8-fw-default-echomap already exists
+I1006 18:58:53.451955       1 backends.go:162] Syncing backends [30301 30284 30301]
+I1006 18:58:53.451998       1 backends.go:134] Deleting backend k8-be-30302
+E1006 18:58:57.029253       1 utils.go:71] Requeuing default/echomap, err googleapi: Error 400: The backendService resource 'projects/Kubernetesdev/global/backendServices/k8-be-30302' is already being used by 'projects/Kubernetesdev/global/urlMaps/k8-um-default-echomap'
+I1006 18:58:57.029336       1 utils.go:83] Syncing default/echomap
+```
+
+This could be a bug or quota limitation. In the case of the former, please head over to slack or github.
+
+* If you see a GET hanging, followed by a 502 with the following response:
+
+```
+<html><head>
+<meta http-equiv="content-type" content="text/html;charset=utf-8">
+<title>502 Server Error</title>
+</head>
+<body text=#000000 bgcolor=#ffffff>
+<h1>Error: Server Error</h1>
+<h2>The server encountered a temporary error and could not complete your request.<p>Please try again in 30 seconds.</h2>
+<h2></h2>
+</body></html>
+```
+The loadbalancer is probably bootstrapping itself.
+
+* If a GET responds with a 404 and the following response:
+```
+  <a href=//www.google.com/><span id=logo aria-label=Google></span></a>
+  <p><b>404.</b> <ins>That’s an error.</ins>
+  <p>The requested URL <code>/hostless</code> was not found on this server.  <ins>That’s all we know.</ins>
+```
+It means you have lost your IP somehow, or just typed in the wrong IP.
+
+* If you see requests taking an abnormal amount of time, run the echoheaders pod and look for the client address
+```shell
+CLIENT VALUES:
+client_address=('10.240.29.196', 56401) (10.240.29.196)
+```
+
+Then head over to the GCE node with internal IP 10.240.29.196 and check that the [Service is functioning](https://github.com/kubernetes/kubernetes/blob/release-1.0/docs/user-guide/debugging-services.md) as expected. Remember that the GCE L7 is routing you through the NodePort service, and try to trace back.
+
+* Check if you can access the backend service directly via nodeip:nodeport
+* Check the GCE console
+* Make sure you only have a single loadbalancer controller running
+* Make sure the initial GCE health checks have passed
+* A crash loop looks like:
+```shell
+$ kubectl get pods
+glbc-fjtlq             0/1       CrashLoopBackOff   17         1h
+```
+If you hit that it means the controller isn't even starting. Re-check your input flags, especially the required ones.
+
 
 ## Authentication to the Kubernetes API Server
 
