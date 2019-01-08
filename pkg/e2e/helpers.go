@@ -64,7 +64,7 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOpt
 			if options == nil || options.ExpectUnreachable {
 				return false, nil
 			}
-			return true, fmt.Errorf("Unexpected error from validation: %v", result.Err)
+			return true, fmt.Errorf("unexpected error from validation: %v", result.Err)
 		}
 	})
 	return ing, err
@@ -74,7 +74,7 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOpt
 // resources associated with it to be deleted.
 func WaitForIngressDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ing *v1beta1.Ingress, options *fuzz.GCLBDeleteOptions) error {
 	if err := s.f.Clientset.Extensions().Ingresses(s.Namespace).Delete(ing.Name, &metav1.DeleteOptions{}); err != nil {
-		return fmt.Errorf("Delete(%q) = %v, want nil", ing.Name, err)
+		return fmt.Errorf("delete(%q) = %v, want nil", ing.Name, err)
 	}
 	glog.Infof("Waiting for GCLB resources to be deleted (%s/%s), IngressDeletionOptions=%+v", s.Namespace, ing.Name, options)
 	if err := WaitForGCLBDeletion(ctx, s.f.Cloud, g, options); err != nil {

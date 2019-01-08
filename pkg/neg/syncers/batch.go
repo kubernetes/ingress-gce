@@ -375,7 +375,7 @@ func (s *batchSyncer) toNetworkEndpointBatch(endpoints sets.String) ([]*compute.
 		ip, instance, port := decodeEndpoint(enc)
 		portNum, err := strconv.Atoi(port)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to decode endpoint %q: %v", enc, err)
+			return nil, fmt.Errorf("failed to decode endpoint %q: %v", enc, err)
 		}
 		networkEndpointList[i] = &compute.NetworkEndpoint{
 			Instance:  instance,

@@ -288,7 +288,7 @@ func verifySecurityPolicy(t *testing.T, gclb *fuzz.GCLB, svcNamespace, svcName, 
 		}
 
 		if bs.Beta == nil {
-			return fmt.Errorf("Beta BackendService resource not found: %v", bs)
+			return fmt.Errorf("beta BackendService resource not found: %v", bs)
 		}
 		if bs.Beta.SecurityPolicy != policyLink {
 			return fmt.Errorf("backend service %q has security policy %q, want %q", bs.Beta.Name, bs.Beta.SecurityPolicy, policyLink)

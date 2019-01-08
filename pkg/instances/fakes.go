@@ -159,7 +159,7 @@ func (f *FakeInstanceGroups) SetNamedPortsOfInstanceGroup(igName, zone string, n
 		}
 	}
 	if ig == nil {
-		return fmt.Errorf("Failed to find instance group %q in zone %q", igName, zone)
+		return fmt.Errorf("failed to find instance group %q in zone %q", igName, zone)
 	}
 
 	ig.NamedPorts = namedPorts

@@ -34,11 +34,11 @@ func validation(typeSource string, fn common.GetOpenAPIDefinitions) (*apiextensi
 	jsonSchemaProps := &apiextensionsv1beta1.JSONSchemaProps{}
 	bytes, err := json.Marshal(condensedSchema)
 	if err != nil {
-		return nil, fmt.Errorf("Error marshalling OpenAPI schema to JSON: %v", err)
+		return nil, fmt.Errorf("error marshalling OpenAPI schema to JSON: %v", err)
 	}
 	err = json.Unmarshal(bytes, jsonSchemaProps)
 	if err != nil {
-		return nil, fmt.Errorf("Error unmarshalling OpenAPI JSON: %v", err)
+		return nil, fmt.Errorf("error unmarshalling OpenAPI JSON: %v", err)
 	}
 	return &apiextensionsv1beta1.CustomResourceValidation{OpenAPIV3Schema: jsonSchemaProps}, nil
 }

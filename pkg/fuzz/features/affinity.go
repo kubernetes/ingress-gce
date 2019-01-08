@@ -84,17 +84,17 @@ func (v *affinityValidator) CheckResponse(host, path string, resp *http.Response
 
 	if backendConfig.Spec.SessionAffinity.AffinityType == "GENERATED_COOKIE" && !haveCookie {
 		return fuzz.CheckResponseContinue,
-			fmt.Errorf("Cookie based affinity is turned on but response did not contain a GCLB cookie")
+			fmt.Errorf("cookie based affinity is turned on but response did not contain a GCLB cookie")
 	}
 
 	if backendConfig.Spec.SessionAffinity.AffinityType == "NONE" && haveCookie {
 		return fuzz.CheckResponseContinue,
-			fmt.Errorf("Affinity is NONE but response contains a GCLB cookie")
+			fmt.Errorf("affinity is NONE but response contains a GCLB cookie")
 	}
 
 	if backendConfig.Spec.SessionAffinity.AffinityType == "CLIENT_IP" && haveCookie {
 		return fuzz.CheckResponseContinue,
-			fmt.Errorf("Affinity is CLIENT_IP but response contains a GCLB cookie")
+			fmt.Errorf("affinity is CLIENT_IP but response contains a GCLB cookie")
 	}
 
 	return fuzz.CheckResponseContinue, nil

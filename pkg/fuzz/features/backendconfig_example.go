@@ -70,7 +70,7 @@ func (v *backendConfigExampleValidator) CheckResponse(host, path string, resp *h
 	hp := fuzz.HostPath{Host: host, Path: path}
 	b, ok := sm[hp]
 	if !ok {
-		return fuzz.CheckResponseContinue, fmt.Errorf("HostPath %v not found in Ingress", hp)
+		return fuzz.CheckResponseContinue, fmt.Errorf("hostPath %v not found in Ingress", hp)
 	}
 
 	serviceMap, err := v.env.Services()
@@ -80,7 +80,7 @@ func (v *backendConfigExampleValidator) CheckResponse(host, path string, resp *h
 
 	service, ok := serviceMap[b.ServiceName]
 	if !ok {
-		return fuzz.CheckResponseContinue, fmt.Errorf("Service %q not found in environment", b.ServiceName)
+		return fuzz.CheckResponseContinue, fmt.Errorf("service %q not found in environment", b.ServiceName)
 	}
 
 	anno := annotations.FromService(service)
