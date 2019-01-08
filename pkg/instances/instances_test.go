@@ -28,7 +28,7 @@ const defaultZone = "default-zone"
 var defaultNamer = utils.NewNamer("uid1", "fw1")
 
 func newNodePool(f *FakeInstanceGroups, zone string) NodePool {
-	pool := NewNodePool(f, utils.NewNamer("cluster-uid", "cluster-fw"))
+	pool := NewNodePool(f, defaultNamer)
 	pool.Init(&FakeZoneLister{[]string{zone}})
 	return pool
 }
@@ -36,7 +36,7 @@ func newNodePool(f *FakeInstanceGroups, zone string) NodePool {
 func TestNodePoolSync(t *testing.T) {
 	f := NewFakeInstanceGroups(sets.NewString([]string{"n1", "n2"}...), defaultNamer)
 	pool := newNodePool(f, defaultZone)
-	pool.EnsureInstanceGroupsAndPorts("test", []int64{80})
+	pool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{80})
 
 	// KubeNodes: n1
 	// GCENodes: n1, n2
@@ -55,7 +55,7 @@ func TestNodePoolSync(t *testing.T) {
 
 	f = NewFakeInstanceGroups(sets.NewString([]string{"n1"}...), defaultNamer)
 	pool = newNodePool(f, defaultZone)
-	pool.EnsureInstanceGroupsAndPorts("test", []int64{80})
+	pool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{80})
 
 	f.calls = []int{}
 	kubeNodes = sets.NewString([]string{"n1", "n2"}...)
@@ -71,7 +71,7 @@ func TestNodePoolSync(t *testing.T) {
 
 	f = NewFakeInstanceGroups(sets.NewString([]string{"n1", "n2"}...), defaultNamer)
 	pool = newNodePool(f, defaultZone)
-	pool.EnsureInstanceGroupsAndPorts("test", []int64{80})
+	pool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{80})
 
 	f.calls = []int{}
 	kubeNodes = sets.NewString([]string{"n1", "n2"}...)

@@ -385,9 +385,12 @@ func (lbc *LoadBalancerController) SyncLoadBalancer(state interface{}) error {
 	}
 
 	// Create higher-level LB resources.
-	if err := lbc.l7Pool.Sync(lb); err != nil {
+	l7, err := lbc.l7Pool.Ensure(lb)
+	if err != nil {
 		return err
 	}
+
+	syncState.l7 = l7
 	return nil
 }
 
@@ -414,18 +417,8 @@ func (lbc *LoadBalancerController) PostProcess(state interface{}) error {
 		return fmt.Errorf("expected state type to be syncState, type was %T", state)
 	}
 
-	// Get the loadbalancer and update the ingress status.
-	ing := syncState.ing
-	k, err := utils.KeyFunc(ing)
-	if err != nil {
-		return fmt.Errorf("cannot get key for Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
-	}
-
-	l7, err := lbc.l7Pool.Get(k)
-	if err != nil {
-		return fmt.Errorf("unable to get loadbalancer: %v", err)
-	}
-	if err := lbc.updateIngressStatus(l7, ing); err != nil {
+	// Update the ingress status.
+	if err := lbc.updateIngressStatus(syncState.l7, syncState.ing); err != nil {
 		return fmt.Errorf("update ingress status error: %v", err)
 	}
 	return nil
@@ -472,7 +465,6 @@ func (lbc *LoadBalancerController) sync(key string) error {
 
 	// Bootstrap state for GCP sync.
 	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
-	syncState := &syncState{urlMap, ing}
 	if errs != nil {
 		msg := fmt.Errorf("error while evaluating the ingress spec: %v", utils.JoinErrs(errs))
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Translate", msg.Error())
@@ -480,6 +472,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	}
 
 	// Sync GCP resources.
+	syncState := &syncState{urlMap, ing, nil}
 	syncErr := lbc.ingSyncer.Sync(syncState)
 	if syncErr != nil {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", fmt.Sprintf("Error during sync: %v", syncErr.Error()))

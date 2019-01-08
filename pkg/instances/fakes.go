@@ -112,6 +112,11 @@ func (f *FakeInstanceGroups) ListInstancesInInstanceGroup(name, zone string, sta
 	return f.listResult.Items, nil
 }
 
+// ListInstancesGroups fakes listing instancegroups in a zone
+func (f *FakeInstanceGroups) ListInstanceGroups(zone string) ([]*compute.InstanceGroup, error) {
+	return f.instanceGroups, nil
+}
+
 // AddInstancesToInstanceGroup fakes adding instances to an instance group.
 func (f *FakeInstanceGroups) AddInstancesToInstanceGroup(name, zone string, instanceRefs []*compute.InstanceReference) error {
 	instanceNames := toInstanceNames(instanceRefs)

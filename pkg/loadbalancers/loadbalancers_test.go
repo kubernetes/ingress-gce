@@ -18,6 +18,7 @@ package loadbalancers
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	mcrtv1alpha1 "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/apis/gke.googleapis.com/v1alpha1"
@@ -114,11 +115,7 @@ func TestCreateHTTPLoadBalancer(t *testing.T) {
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
-	}
-
-	l7, err := pool.Get(lbInfo.Name)
+	l7, err := pool.Ensure(lbInfo)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created, err: %v", err)
 	}
@@ -142,11 +139,7 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
-	}
-
-	l7, err := pool.Get(lbInfo.Name)
+	l7, err := pool.Ensure(lbInfo)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
@@ -216,8 +209,8 @@ func TestCertUpdate(t *testing.T) {
 	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
 	// Sync first cert
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 
 	// Verify certs
@@ -227,8 +220,8 @@ func TestCertUpdate(t *testing.T) {
 
 	// Sync with different cert
 	lbInfo.TLS = []*TLSCerts{createCert("key2", "cert2", "name")}
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 	expectCerts = map[string]string{certName2: lbInfo.TLS[0].Cert}
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
@@ -256,8 +249,8 @@ func TestMultipleSecretsWithSameCert(t *testing.T) {
 	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
 	// Sync first cert
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 	certName := namer.SSLCertName(lbName, GetCertHash("cert"))
 	expectCerts := map[string]string{certName: lbInfo.TLS[0].Cert}
@@ -294,8 +287,8 @@ func TestCertCreationWithCollision(t *testing.T) {
 	})
 
 	// Sync first cert
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 
 	expectCerts := map[string]string{certName1: lbInfo.TLS[0].Cert}
@@ -311,8 +304,8 @@ func TestCertCreationWithCollision(t *testing.T) {
 
 	// Sync with different cert
 	lbInfo.TLS = []*TLSCerts{createCert("key2", "cert2", "name")}
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 	expectCerts = map[string]string{certName2: "xyz"}
 	// xyz instead of cert2 because the name collided and cert did not get updated.
@@ -346,24 +339,24 @@ func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	firstPool := newFakeLoadBalancerPool(f, t, namer, nil)
 
-	firstPool.Sync(lbInfo)
+	firstPool.Ensure(lbInfo)
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 	// Update config to use 2 certs
 	lbInfo.TLS = []*TLSCerts{cert1, cert2}
 	expectCerts[certName2] = cert2.Cert
-	firstPool.Sync(lbInfo)
+	firstPool.Ensure(lbInfo)
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 
 	// Restart of controller represented by a new pool
 	secondPool := newFakeLoadBalancerPool(f, t, namer, nil)
-	secondPool.Sync(lbInfo)
+	secondPool.Ensure(lbInfo)
 	// Verify both certs are still present
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 
 	// Replace the 2 certs with a different, single cert
 	lbInfo.TLS = []*TLSCerts{cert3}
 	expectCerts = map[string]string{certName3: cert3.Cert}
-	secondPool.Sync(lbInfo)
+	secondPool.Ensure(lbInfo)
 	// Only the new cert should be present
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 }
@@ -410,8 +403,8 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 		t.Fatalf("Expected cert with name %s, Got %s", oldCertName, proxyCerts[0].Name)
 	}
 	// Sync should replace this oldCert with one following the new naming scheme
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 	// We expect to see only the new cert linked to the proxy and available in the load balancer.
 	expectCerts := map[string]string{newCertName: tlsCert.Cert}
@@ -446,14 +439,14 @@ func TestMaxCertsUpload(t *testing.T) {
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 	failCert := createCert("key100", "cert100", "name100")
 	lbInfo.TLS = append(lbInfo.TLS, failCert)
-	err := pool.Sync(lbInfo)
+	_, err := pool.Ensure(lbInfo)
 	if err == nil {
 		t.Fatalf("Creating more than %d certs should have errored out", FakeCertLimit)
 	}
@@ -463,7 +456,7 @@ func TestMaxCertsUpload(t *testing.T) {
 	for _, cert := range lbInfo.TLS {
 		expectCertsExtra[namer.SSLCertName(lbName, cert.CertHash)] = cert.Cert
 	}
-	err = pool.Sync(lbInfo)
+	_, err = pool.Ensure(lbInfo)
 	if err == nil {
 		t.Fatalf("Assigning more than %d certs should have errored out", TargetProxyCertLimit)
 	}
@@ -471,7 +464,7 @@ func TestMaxCertsUpload(t *testing.T) {
 	verifyCertAndProxyLink(expectCertsExtra, expectCerts, f, t)
 	// Removing the extra cert from ingress spec should delete it
 	lbInfo.TLS = lbInfo.TLS[:TargetProxyCertLimit]
-	err = pool.Sync(lbInfo)
+	_, err = pool.Ensure(lbInfo)
 	if err != nil {
 		t.Fatalf("Unexpected error %s", err)
 	}
@@ -513,8 +506,8 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 	// Sync multiple times to make sure ordering is preserved
 	for i := 0; i < 10; i++ {
-		if err := pool.Sync(lbInfo); err != nil {
-			t.Fatalf("pool.Sync() = err %v", err)
+		if _, err := pool.Ensure(lbInfo); err != nil {
+			t.Fatalf("pool.Ensure() = err %v", err)
 		}
 		verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 		// Fetch the target proxy certs and go through in order
@@ -558,8 +551,8 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 	lbInfo.TLSName = preSharedCert1.Name + "," + preSharedCert2.Name + "," + preSharedCert3.Name
 	// Sync multiple times to make sure ordering is preserved
 	for i := 0; i < 10; i++ {
-		if err := pool.Sync(lbInfo); err != nil {
-			t.Fatalf("pool.Sync() = err %v", err)
+		if _, err := pool.Ensure(lbInfo); err != nil {
+			t.Fatalf("pool.Ensure() = err %v", err)
 		}
 		verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 		// Fetch the target proxy certs and go through in order
@@ -605,8 +598,8 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 	lbInfo.TLSName = preSharedCert1.Name + "," + preSharedCert2.Name
 
 	// Sync pre-shared certs.
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 	expectCerts := map[string]string{preSharedCert1.Name: preSharedCert1.Certificate,
 		preSharedCert2.Name: preSharedCert2.Certificate}
@@ -615,8 +608,8 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 	// Updates from pre-shared cert to secret based cert.
 	lbInfo.TLS = []*TLSCerts{createCert("key", "cert", "name")}
 	lbInfo.TLSName = ""
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 	expectCerts[certName1] = lbInfo.TLS[0].Cert
 	// fakeLoadBalancer contains the preshared certs as well, but proxy will use only certName1
@@ -625,7 +618,7 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 
 	// Sync a different cert.
 	lbInfo.TLS = []*TLSCerts{createCert("key2", "cert2", "name")}
-	pool.Sync(lbInfo)
+	pool.Ensure(lbInfo)
 	delete(expectCerts, certName1)
 	expectCerts[certName2] = lbInfo.TLS[0].Cert
 	expectCertsProxy = map[string]string{certName2: lbInfo.TLS[0].Cert}
@@ -735,10 +728,10 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 		Name: tlsName,
 	})
 	pool := newFakeLoadBalancerPool(f, t, namer, nil)
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
-	l7, err := pool.Get(lbInfo.Name)
+	l7, err := pool.Ensure(lbInfo)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
@@ -763,10 +756,10 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer, nil)
 
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
-	l7, err := pool.Get(lbInfo.Name)
+	l7, err := pool.Ensure(lbInfo)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
@@ -819,11 +812,11 @@ func TestUrlMapChange(t *testing.T) {
 
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer, nil)
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 
-	l7, err := pool.Get(lbInfo.Name)
+	l7, err := pool.Ensure(lbInfo)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -831,10 +824,10 @@ func TestUrlMapChange(t *testing.T) {
 
 	// Change url map.
 	lbInfo.UrlMap = um2
-	if err = pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err = pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
-	l7, err = pool.Get(lbInfo.Name)
+	l7, err = pool.Ensure(lbInfo)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -863,13 +856,13 @@ func TestPoolSyncNoChanges(t *testing.T) {
 	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer("test"), AllowHTTP: true, UrlMap: um1, Ingress: newIngress()}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer, nil)
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 
 	lbInfo.UrlMap = um2
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 
 	for _, call := range f.calls {
@@ -912,10 +905,10 @@ func TestClusterNameChange(t *testing.T) {
 	}
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	pool := newFakeLoadBalancerPool(f, t, namer, nil)
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
-	l7, err := pool.Get(lbInfo.Name)
+	l7, err := pool.Ensure(lbInfo)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
@@ -928,10 +921,7 @@ func TestClusterNameChange(t *testing.T) {
 	f.name = fmt.Sprintf("%v--%v", lbInfo.Name, newName)
 
 	// Now the components should get renamed with the next suffix.
-	if err = pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
-	}
-	l7, err = pool.Get(lbInfo.Name)
+	l7, err = pool.Ensure(lbInfo)
 	if err != nil || namer.ParseName(l7.Name).ClusterName != newName {
 		t.Fatalf("Expected L7 name to change.")
 	}
@@ -964,10 +954,10 @@ func createCert(key string, contents string, name string) *TLSCerts {
 
 func syncPool(f *FakeLoadBalancers, t *testing.T, namer *utils.Namer, mcrtLister *mockMcrtLister, lbInfo *L7RuntimeInfo) {
 	pool := newFakeLoadBalancerPool(f, t, namer, mcrtLister)
-	if err := pool.Sync(lbInfo); err != nil {
-		t.Fatalf("pool.Sync() = err %v", err)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
 	}
-	l7, err := pool.Get(lbInfo.Name)
+	l7, err := pool.Ensure(lbInfo)
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
@@ -1215,4 +1205,47 @@ func TestCreateHTTPSLoadBalancerAllCerts(t *testing.T) {
 	}
 
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+}
+
+func TestList(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+	namer := utils.NewNamer("uid1", "fw1")
+	lbName := "test"
+	lbInfo := &L7RuntimeInfo{
+		Name:      namer.LoadBalancer(lbName),
+		AllowHTTP: true,
+		TLS:       []*TLSCerts{{Key: "key", Cert: "cert"}},
+		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
+	}
+
+	names := []string{
+		"invalid-url-map-name1",
+		"invalid-url-map-name2",
+		"wrongprefix-um-test--uid1",
+		"k8s-um-old-l7--uid1", // Expect List() to catch old URL maps
+	}
+
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	for _, name := range names {
+		f.CreateUrlMap(&compute.UrlMap{Name: name})
+	}
+
+	pool := newFakeLoadBalancerPool(f, t, namer, nil)
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
+	}
+
+	lbNames, err := pool.List()
+	if err != nil {
+		t.Fatalf("pool.List() = err %v", err)
+	}
+
+	expected := []string{"old-l7", "test"}
+
+	if !reflect.DeepEqual(lbNames, expected) {
+		t.Fatalf("pool.List() returned %+v, want %+v", lbNames, expected)
+	}
 }

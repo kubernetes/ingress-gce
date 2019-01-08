@@ -14,13 +14,11 @@ limitations under the License.
 package backends
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/backends/features"
-	"k8s.io/ingress-gce/pkg/cloudlist"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
@@ -29,9 +27,8 @@ import (
 
 // Backends handles CRUD operations for backends.
 type Backends struct {
-	cloud     *gce.GCECloud
-	gceLister cloudlist.Lister
-	namer     *utils.Namer
+	cloud *gce.GCECloud
+	namer *utils.Namer
 }
 
 // Backends is a Pool.
@@ -41,19 +38,10 @@ var _ Pool = (*Backends)(nil)
 // - cloud: implements BackendServices
 // - namer: procudes names for backends.
 func NewPool(cloud *gce.GCECloud, namer *utils.Namer) *Backends {
-	backendPool := &Backends{
+	return &Backends{
 		cloud: cloud,
 		namer: namer,
 	}
-	keyFunc := func(i interface{}) (string, error) {
-		bs := i.(*compute.BackendService)
-		if !namer.NameBelongsToCluster(bs.Name) {
-			return "", fmt.Errorf("unrecognized name %v", bs.Name)
-		}
-		return bs.Name, nil
-	}
-	backendPool.gceLister = cloudlist.NewGCELister("backends", keyFunc, backendPool)
-	return backendPool
 }
 
 // ensureDescription updates the BackendService Description with the expected value
@@ -158,27 +146,21 @@ func (b *Backends) Health(name string) string {
 	return hs.HealthStatus[0].HealthState
 }
 
-// GetManagedBackends implements Pool.
-func (b *Backends) GetManagedBackends() ([]string, error) {
-	names, err := b.gceLister.List()
-	if err != nil {
-		return []string{}, fmt.Errorf("error listing controller-managed backend services from cloud: %v", err)
-	}
-	return names, nil
-}
-
-// List lists all backends. Note that this function will return all backends, even ones that
-// are not managed by this controller.
-func (b *Backends) List() ([]interface{}, error) {
+// List lists all backends managed by this controller.
+func (b *Backends) List() ([]string, error) {
 	// TODO: for consistency with the rest of this sub-package this method
 	// should return a list of backend ports.
 	backends, err := b.cloud.ListGlobalBackendServices()
 	if err != nil {
 		return nil, err
 	}
-	var ret []interface{}
-	for _, x := range backends {
-		ret = append(ret, x)
+
+	var names []string
+
+	for _, bs := range backends {
+		if b.namer.NameBelongsToCluster(bs.Name) {
+			names = append(names, bs.Name)
+		}
 	}
-	return ret, nil
+	return names, nil
 }

@@ -142,9 +142,9 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
 		knownPorts.Insert(name)
 	}
 
-	backendNames, err := s.backendPool.GetManagedBackends()
+	backendNames, err := s.backendPool.List()
 	if err != nil {
-		return fmt.Errorf("error getting the names of managed backends: %v", err)
+		return fmt.Errorf("error getting the names of controller-managed backends: %v", err)
 	}
 
 	for _, name := range backendNames {

@@ -45,7 +45,7 @@ type Pool interface {
 	// Get the health of a BackendService given its name.
 	Health(name string) string
 	// Get a list of BackendService names that are managed by this pool.
-	GetManagedBackends() ([]string, error)
+	List() ([]string, error)
 }
 
 // Syncer is an interface to sync Kubernetes services to GCE BackendServices.

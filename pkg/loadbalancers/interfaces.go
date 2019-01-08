@@ -69,9 +69,9 @@ type LoadBalancers interface {
 // LoadBalancerPool is an interface to manage the cloud resources associated
 // with a gce loadbalancer.
 type LoadBalancerPool interface {
-	Get(name string) (*L7, error)
+	Ensure(ri *L7RuntimeInfo) (*L7, error)
 	Delete(name string) error
-	Sync(ri *L7RuntimeInfo) error
 	GC(names []string) error
 	Shutdown() error
+	List() ([]string, error)
 }

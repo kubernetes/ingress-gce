@@ -222,11 +222,6 @@ func TestIngressClassChange(t *testing.T) {
 	if len(updatedIng.Status.LoadBalancer.Ingress) != 0 {
 		t.Error("Ingress status wasn't updated after class changed")
 	}
-
-	// Check LB for ingress is deleted after class changed
-	if pool, _ := lbc.l7Pool.Get(ingStoreKey); pool != nil {
-		t.Errorf("LB(%v) wasn't deleted after class changed", ingStoreKey)
-	}
 }
 
 // TestEnsureMCIngress asserts a multi-cluster ingress will result with correct status annotations.
