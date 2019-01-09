@@ -17,7 +17,9 @@ Please read the [beta limitations](BETA_LIMITATIONS.md) doc to before using this
 
 ## Overview
 
-Please visit [here](https://cloud.google.com/kubernetes-engine/docs/how-to/load-balance-ingress) for core use-cases and [here](https://cloud.google.com/kubernetes-engine/docs/concepts/ingress) for other cool features.
+See [here](https://kubernetes.io/docs/concepts/services-networking/ingress/) for high-level concepts on Ingress in Kubernetes.
+
+For GCP-specific documentation, please visit [here](https://cloud.google.com/kubernetes-engine/docs/how-to/load-balance-ingress) (core use-cases) and [here](https://cloud.google.com/kubernetes-engine/docs/concepts/ingress) (other cool features).
 
 ## Releases
 
