@@ -1,0 +1,6 @@
+project=ingress-gce
+user=kubernetes
+enhancement_labels=kind/feature,kind/documentation
+bug_labels=kind/bug
+base=CHANGELOG.md
+unreleased=false

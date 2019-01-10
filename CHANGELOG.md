@@ -1,5 +1,34 @@
 # Change Log
 
+## [v1.4.1](https://github.com/kubernetes/ingress-gce/tree/v1.4.1) (2019-01-04)
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.4.0...v1.4.1)
+
+**Fixed bugs:**
+
+- Instance is Not Removed from IG when node is marked as unschedulable [\#591](https://github.com/kubernetes/ingress-gce/issues/591)
+- Readiness Probe does not get reflected for NEG enabled ingress [\#541](https://github.com/kubernetes/ingress-gce/issues/541)
+- Firewall rule required message ignores existing rules \(shared VPC\) [\#485](https://github.com/kubernetes/ingress-gce/issues/485)
+- Ingress-GCE does not GC LB resources when ingress class changed and no other ingress on GCE exists [\#481](https://github.com/kubernetes/ingress-gce/issues/481)
+- ingress controller gave me 2 IP addresses instead of 1 when I added TLS [\#410](https://github.com/kubernetes/ingress-gce/issues/410)
+
+**Closed issues:**
+
+- URL map / backend service mapping is totally shuffled [\#555](https://github.com/kubernetes/ingress-gce/issues/555)
+- Backend health is reported as "Unknown" if there are no pods in the first zone of a regional cluster [\#554](https://github.com/kubernetes/ingress-gce/issues/554)
+- Ingress controller does not support HTTP2 with mutual TLS [\#553](https://github.com/kubernetes/ingress-gce/issues/553)
+- ErrImagePull: k8s.gcr.io/defaultbackend:1.5 not found [\#549](https://github.com/kubernetes/ingress-gce/issues/549)
+- configure maxRatePerInstance in backend [\#545](https://github.com/kubernetes/ingress-gce/issues/545)
+- GKE BackendConfig permissions change `container.backendConfigs.get` does not exist [\#538](https://github.com/kubernetes/ingress-gce/issues/538)
+- A new home for 404-server \(defaultbackend\) [\#498](https://github.com/kubernetes/ingress-gce/issues/498)
+- Does not work if workers are in different subnet.  [\#282](https://github.com/kubernetes/ingress-gce/issues/282)
+
+**Merged pull requests:**
+
+- \[1.4 Cherry pick\] Revert "Remove unused named ports from instance group's" [\#587](https://github.com/kubernetes/ingress-gce/pull/587) ([rramkumar1](https://github.com/rramkumar1))
+- Fix wrong filtering of ManagedCertificate objects. [\#552](https://github.com/kubernetes/ingress-gce/pull/552) ([krzykwas](https://github.com/krzykwas))
+
+# Change Log
+
 ## [Unreleased](https://github.com/kubernetes/ingress-gce/tree/HEAD)
 
 [Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.4.0...HEAD)
