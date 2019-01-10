@@ -33,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
+	"k8s.io/ingress-gce/pkg/fuzz/whitebox"
 
 	// Pull in the auth library for GCP.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -133,7 +134,7 @@ func Validate() {
 
 	fmt.Printf("Ingress =\n%s\n\n", pretty.Sprint(*ing))
 
-	iv, err := fuzz.NewIngressValidator(env, ing, fs, nil)
+	iv, err := fuzz.NewIngressValidator(env, ing, fs, whitebox.AllTests, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -151,6 +152,10 @@ func Validate() {
 		panic(err)
 	}
 	fmt.Printf("GCP resources = \n%s\n", pretty.Sprint(gclb))
+
+	if err := iv.PerformWhiteboxTests(gclb); err != nil {
+		panic(err)
+	}
 }
 
 func homeDir() string {

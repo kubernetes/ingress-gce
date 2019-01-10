@@ -131,10 +131,11 @@ func TestNEG(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			if err = e2e.CheckGCLB(gclb, numForwardingRules, tc.numBackendServices); err != nil {
-				t.Error(err)
+			if err := e2e.PerformWhiteboxTests(s, ing, gclb); err != nil {
+				t.Fatalf("Error performing whitebox tests: %v", err)
 			}
 
+			// TODO(mixia): The below checks should be merged into PerformWhiteboxTests().
 			if (len(gclb.NetworkEndpointGroup) > 0) != tc.expectNegBackend {
 				t.Errorf("Error: expectNegBackend = %v, %d negs found for gclb %v", tc.expectNegBackend, len(gclb.NetworkEndpointGroup), gclb)
 			}
@@ -169,37 +170,27 @@ func TestNEGTransition(t *testing.T) {
 			desc        string
 			annotations *annotations.NegAnnotation
 			// negGC is true if a NEG should be garbage collected after applying the annotations
-			negGC              bool
-			numForwardingRules int
-			numBackendServices int
+			negGC bool
 		}{
 			{
-				desc:               "Using ingress only",
-				annotations:        &annotations.NegAnnotation{Ingress: true},
-				negGC:              false,
-				numForwardingRules: 1,
-				numBackendServices: 1,
+				desc:        "Using ingress only",
+				annotations: &annotations.NegAnnotation{Ingress: true},
+				negGC:       false,
 			},
 			{
-				desc:               "Disable NEG for ingress",
-				annotations:        &annotations.NegAnnotation{Ingress: false},
-				negGC:              true,
-				numForwardingRules: 1,
-				numBackendServices: 1,
+				desc:        "Disable NEG for ingress",
+				annotations: &annotations.NegAnnotation{Ingress: false},
+				negGC:       true,
 			},
 			{
-				desc:               "Re-enable NEG for ingress",
-				annotations:        &annotations.NegAnnotation{Ingress: true},
-				negGC:              false,
-				numForwardingRules: 1,
-				numBackendServices: 1,
+				desc:        "Re-enable NEG for ingress",
+				annotations: &annotations.NegAnnotation{Ingress: true},
+				negGC:       false,
 			},
 			{
-				desc:               "No annotations",
-				annotations:        nil,
-				negGC:              true,
-				numForwardingRules: 1,
-				numBackendServices: 1,
+				desc:        "No annotations",
+				annotations: nil,
+				negGC:       true,
 			},
 		} {
 			t.Logf("Running test case: %s", tc.desc)
@@ -243,8 +234,8 @@ func TestNEGTransition(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
-				t.Error(err)
+			if err := e2e.PerformWhiteboxTests(s, ing, gclb); err != nil {
+				t.Fatalf("Error performing whitebox tests: %v", err)
 			}
 
 			if tc.negGC {

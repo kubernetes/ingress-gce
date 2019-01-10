@@ -132,8 +132,8 @@ func TestBasicHTTPS(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
-				t.Error(err)
+			if err := e2e.PerformWhiteboxTests(s, ing, gclb); err != nil {
+				t.Fatalf("Error performing whitebox tests: %v", err)
 			}
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{

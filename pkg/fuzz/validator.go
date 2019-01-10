@@ -168,7 +168,7 @@ func defaultAttributes() *IngressValidatorAttributes {
 // NewIngressValidator returns a new validator for checking the correctness of
 // an Ingress spec against the behavior of the instantiated load balancer.
 // If attribs is nil, then the default set of attributes will be used.
-func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, features []Feature, attribs *IngressValidatorAttributes) (*IngressValidator, error) {
+func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, features []Feature, whiteboxTests []WhiteboxTest, attribs *IngressValidatorAttributes) (*IngressValidator, error) {
 	var fvs []FeatureValidator
 	for _, f := range features {
 		fvs = append(fvs, f.NewValidator())
@@ -190,18 +190,20 @@ func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, features []Feat
 		},
 	}
 	return &IngressValidator{
-		ing:      ing,
-		features: fvs,
-		attribs:  attribs,
-		client:   client,
+		ing:           ing,
+		features:      fvs,
+		whiteboxTests: whiteboxTests,
+		attribs:       attribs,
+		client:        client,
 	}, nil
 }
 
 // IngressValidator encapsulates the logic required to validate a given configuration
 // is behaving correctly.
 type IngressValidator struct {
-	ing      *v1beta1.Ingress
-	features []FeatureValidator
+	ing           *v1beta1.Ingress
+	features      []FeatureValidator
+	whiteboxTests []WhiteboxTest
 
 	attribs *IngressValidatorAttributes
 	client  *http.Client
@@ -219,6 +221,16 @@ func (v *IngressValidator) Vip() *string {
 	}
 	ret := statuses[0].IP
 	return &ret
+}
+
+// PerformWhiteboxTests runs additional whitebox tests.
+func (v *IngressValidator) PerformWhiteboxTests(gclb *GCLB) error {
+	for _, w := range v.whiteboxTests {
+		if err := w.Test(v.ing, gclb); err != nil {
+			return fmt.Errorf("%s failed with error: %v", w.Name(), err)
+		}
+	}
+	return nil
 }
 
 // Check runs all of the checks against the instantiated load balancer.

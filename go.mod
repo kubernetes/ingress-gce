@@ -17,11 +17,13 @@ require (
 	github.com/json-iterator/go v1.1.6 // indirect
 	github.com/kr/pretty v0.1.0
 	github.com/mailru/easyjson v0.0.0-20190403194419-1ea4449da983 // indirect
+	github.com/mdempsky/maligned v0.0.0-20180708014732-6e39bd26a8c8 // indirect
 	github.com/prometheus/client_golang v0.9.3-0.20190127221311-3c4408c8b829
 	github.com/prometheus/client_model v0.0.0-20190129233127-fd36f4220a90 // indirect
 	github.com/prometheus/common v0.3.0 // indirect
 	github.com/prometheus/procfs v0.0.0-20190416084830-8368d24ba045 // indirect
 	github.com/spf13/pflag v1.0.3
+	github.com/tsenart/deadcode v0.0.0-20160724212837-210d2dc333e9 // indirect
 	golang.org/x/crypto v0.0.0-20190422183909-d864b10871cd // indirect
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 // indirect

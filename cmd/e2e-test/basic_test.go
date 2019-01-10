@@ -36,25 +36,18 @@ func TestBasic(t *testing.T) {
 	for _, tc := range []struct {
 		desc string
 		ing  *v1beta1.Ingress
-
-		numForwardingRules int
-		numBackendServices int
 	}{
 		{
 			desc: "http default backend",
 			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
 				DefaultBackend("service-1", port80).
 				Build(),
-			numForwardingRules: 1,
-			numBackendServices: 1,
 		},
 		{
 			desc: "http one path",
 			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
 				AddPath("test.com", "/", "service-1", port80).
 				Build(),
-			numForwardingRules: 1,
-			numBackendServices: 2,
 		},
 		{
 			desc: "http multiple paths",
@@ -62,8 +55,6 @@ func TestBasic(t *testing.T) {
 				AddPath("test.com", "/foo", "service-1", port80).
 				AddPath("test.com", "/bar", "service-1", port80).
 				Build(),
-			numForwardingRules: 1,
-			numBackendServices: 2,
 		},
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
@@ -91,7 +82,6 @@ func TestBasic(t *testing.T) {
 			}
 			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
 
-			// Perform whitebox testing.
 			if len(ing.Status.LoadBalancer.Ingress) < 1 {
 				t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
 			}
@@ -103,8 +93,8 @@ func TestBasic(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
-				t.Error(err)
+			if err := e2e.PerformWhiteboxTests(s, tc.ing, gclb); err != nil {
+				t.Fatalf("Error performing whitebox tests: %v", err)
 			}
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
@@ -176,17 +166,12 @@ func TestEdge(t *testing.T) {
 	for _, tc := range []struct {
 		desc string
 		ing  *v1beta1.Ingress
-
-		numForwardingRules int
-		numBackendServices int
 	}{
 		{
 			desc: "long ingress name",
 			ing: fuzz.NewIngressBuilder("", "long-ingress-name", "").
 				DefaultBackend("service-1", port80).
 				Build(),
-			numForwardingRules: 1,
-			numBackendServices: 1,
 		},
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
@@ -225,8 +210,8 @@ func TestEdge(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
-				t.Error(err)
+			if err := e2e.PerformWhiteboxTests(s, tc.ing, gclb); err != nil {
+				t.Fatalf("Error performing whitebox tests: %v", err)
 			}
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
