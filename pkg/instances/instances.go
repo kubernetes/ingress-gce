@@ -25,7 +25,6 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
-	"k8s.io/ingress-gce/pkg/storage"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -37,9 +36,6 @@ const (
 // Instances implements NodePool.
 type Instances struct {
 	cloud InstanceGroups
-	// zones is a list of zones seeded by Kubernetes node zones.
-	// TODO: we can figure this out.
-	snapshotter storage.Snapshotter
 	ZoneLister
 	namer *utils.Namer
 }
@@ -49,9 +45,8 @@ type Instances struct {
 //   members of the cloud InstanceGroup.
 func NewNodePool(cloud InstanceGroups, namer *utils.Namer) NodePool {
 	return &Instances{
-		cloud:       cloud,
-		snapshotter: storage.NewInMemoryPool(),
-		namer:       namer,
+		cloud: cloud,
+		namer: namer,
 	}
 }
 
@@ -71,7 +66,6 @@ func (i *Instances) EnsureInstanceGroupsAndPorts(name string, ports []int64) (ig
 		return nil, err
 	}
 
-	defer i.snapshotter.Add(name, struct{}{})
 	for _, zone := range zones {
 		ig, err := i.ensureInstanceGroupAndPorts(name, zone, ports)
 		if err != nil {
@@ -145,7 +139,6 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 
 // DeleteInstanceGroup deletes the given IG by name, from all zones.
 func (i *Instances) DeleteInstanceGroup(name string) error {
-	defer i.snapshotter.Delete(name)
 	errs := []error{}
 
 	zones, err := i.ListZones()
@@ -201,8 +194,38 @@ func (i *Instances) Get(name, zone string) (*compute.InstanceGroup, error) {
 	if err != nil {
 		return nil, err
 	}
-	i.snapshotter.Add(name, struct{}{})
+
 	return ig, nil
+}
+
+// List lists the names of all InstanceGroups belonging to this cluster.
+func (i *Instances) List() ([]string, error) {
+	var igs []*compute.InstanceGroup
+
+	zones, err := i.ListZones()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, zone := range zones {
+		igsForZone, err := i.cloud.ListInstanceGroups(zone)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, ig := range igsForZone {
+			igs = append(igs, ig)
+		}
+	}
+
+	var names []string
+	for _, ig := range igs {
+		if i.namer.NameBelongsToCluster(ig.Name) {
+			names = append(names, ig.Name)
+		}
+	}
+
+	return names, nil
 }
 
 // splitNodesByZones takes a list of node names and returns a map of zone:node names.
@@ -270,8 +293,12 @@ func (i *Instances) Sync(nodes []string) (err error) {
 		}
 	}()
 
-	pool := i.snapshotter.Snapshot()
-	for igName := range pool {
+	pool, err := i.List()
+	if err != nil {
+		return err
+	}
+
+	for _, igName := range pool {
 		gceNodes := sets.NewString()
 		gceNodes, err = i.list(igName)
 		if err != nil {

@@ -18,22 +18,18 @@ package loadbalancers
 
 import (
 	"fmt"
-	"reflect"
 
 	mcrt "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/clientgen/listers/gke.googleapis.com/v1alpha1"
 	"github.com/golang/glog"
 
 	"k8s.io/apimachinery/pkg/util/sets"
-
 	"k8s.io/ingress-gce/pkg/events"
-	"k8s.io/ingress-gce/pkg/storage"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // L7s implements LoadBalancerPool.
 type L7s struct {
 	cloud            LoadBalancers
-	snapshotter      storage.Snapshotter
 	namer            *utils.Namer
 	mcrt             mcrt.ManagedCertificateLister
 	recorderProducer events.RecorderProducer
@@ -48,69 +44,66 @@ func (l *L7s) Namer() *utils.Namer {
 // - cloud: implements LoadBalancers. Used to sync L7 loadbalancer resources
 //	 with the cloud.
 func NewLoadBalancerPool(cloud LoadBalancers, namer *utils.Namer, mcrt mcrt.ManagedCertificateLister, recorderProducer events.RecorderProducer) LoadBalancerPool {
-	return &L7s{cloud, storage.NewInMemoryPool(), namer, mcrt, recorderProducer}
+	return &L7s{
+		cloud:            cloud,
+		namer:            namer,
+		mcrt:             mcrt,
+		recorderProducer: recorderProducer,
+	}
 }
 
-// Get returns the loadbalancer by name.
-func (l *L7s) Get(name string) (*L7, error) {
-	name = l.namer.LoadBalancer(name)
-	lb, exists := l.snapshotter.Get(name)
-	if !exists {
-		return nil, fmt.Errorf("loadbalancer %v not in pool", name)
+// Ensure ensures a loadbalancer and its resources given the RuntimeInfo
+func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
+	lb := &L7{
+		runtimeInfo: ri,
+		Name:        l.namer.LoadBalancer(ri.Name),
+		cloud:       l.cloud,
+		namer:       l.namer,
+		mcrt:        l.mcrt,
+		recorder:    l.recorderProducer.Recorder(ri.Ingress.Namespace),
 	}
-	return lb.(*L7), nil
-}
 
-// Sync a load balancer with the given runtime info from the controller.
-func (l *L7s) Sync(ri *L7RuntimeInfo) error {
-	name := l.namer.LoadBalancer(ri.Name)
-
-	lb, _ := l.Get(name)
-	if lb == nil {
-		glog.V(3).Infof("Creating l7 %v", name)
-		lb = &L7{
-			runtimeInfo: ri,
-			Name:        l.namer.LoadBalancer(ri.Name),
-			cloud:       l.cloud,
-			namer:       l.namer,
-			mcrt:        l.mcrt,
-			recorder:    l.recorderProducer.Recorder(ri.Ingress.Namespace),
-		}
-	} else {
-		if !reflect.DeepEqual(lb.runtimeInfo, ri) {
-			glog.V(3).Infof("LB %v runtime info changed, old %+v new %+v", lb.Name, lb.runtimeInfo, ri)
-			lb.runtimeInfo = ri
-		}
-	}
-	// Add the lb to the pool, in case we create an UrlMap but run out
-	// of quota in creating the ForwardingRule we still need to cleanup
-	// the UrlMap during GC.
-	defer l.snapshotter.Add(name, lb)
-
-	// Why edge hop for the create?
-	// The loadbalancer is a fictitious resource, it doesn't exist in gce. To
-	// make it exist we need to create a collection of gce resources, done
-	// through the edge hop.
 	if err := lb.edgeHop(); err != nil {
-		return err
+		return nil, fmt.Errorf("loadbalancer %v does not exist: %v", lb.Name, err)
 	}
-
-	return nil
+	return lb, nil
 }
 
 // Delete deletes a load balancer by name.
 func (l *L7s) Delete(name string) error {
-	name = l.namer.LoadBalancer(name)
-	lb, err := l.Get(name)
-	if err != nil {
-		return err
+	lb := &L7{
+		runtimeInfo: &L7RuntimeInfo{Name: name},
+		Name:        l.namer.LoadBalancer(name),
+		cloud:       l.cloud,
+		namer:       l.namer,
+		mcrt:        l.mcrt,
 	}
-	glog.V(3).Infof("Deleting lb %v", name)
+
+	glog.V(3).Infof("Deleting lb %v", lb.Name)
 	if err := lb.Cleanup(); err != nil {
 		return err
 	}
-	l.snapshotter.Delete(name)
 	return nil
+}
+
+// List returns a list of names of L7 resources, by listing all URL maps and
+// deriving the Loadbalancer name from the URL map name
+func (l *L7s) List() ([]string, error) {
+	var names []string
+
+	urlMaps, err := l.cloud.ListUrlMaps()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, um := range urlMaps {
+		if l.namer.NameBelongsToCluster(um.Name) {
+			nameParts := l.namer.ParseName(um.Name)
+			names = append(names, nameParts.LbName)
+		}
+	}
+
+	return names, nil
 }
 
 // GC garbage collects loadbalancers not in the input list.
@@ -119,12 +112,15 @@ func (l *L7s) GC(names []string) error {
 
 	knownLoadBalancers := sets.NewString()
 	for _, n := range names {
-		knownLoadBalancers.Insert(l.namer.LoadBalancer(n))
+		knownLoadBalancers.Insert(n)
 	}
-	pool := l.snapshotter.Snapshot()
+	pool, err := l.List()
+	if err != nil {
+		return err
+	}
 
 	// Delete unknown loadbalancers
-	for name := range pool {
+	for _, name := range pool {
 		if knownLoadBalancers.Has(name) {
 			continue
 		}

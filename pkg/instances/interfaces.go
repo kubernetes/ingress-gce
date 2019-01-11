@@ -40,6 +40,7 @@ type NodePool interface {
 	Remove(groupName string, nodeNames []string) error
 	Sync(nodeNames []string) error
 	Get(name, zone string) (*compute.InstanceGroup, error)
+	List() ([]string, error)
 }
 
 // InstanceGroups is an interface for managing gce instances groups, and the instances therein.
@@ -47,6 +48,7 @@ type InstanceGroups interface {
 	GetInstanceGroup(name, zone string) (*compute.InstanceGroup, error)
 	CreateInstanceGroup(ig *compute.InstanceGroup, zone string) error
 	DeleteInstanceGroup(name, zone string) error
+	ListInstanceGroups(zone string) ([]*compute.InstanceGroup, error)
 
 	// TODO: Refactor for modulatiry.
 	ListInstancesInInstanceGroup(name, zone string, state string) ([]*compute.InstanceWithNamedPorts, error)

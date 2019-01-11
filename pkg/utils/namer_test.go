@@ -101,15 +101,15 @@ func TestNamerParseName(t *testing.T) {
 		want *NameComponents
 	}{
 		{"", &NameComponents{}}, // TODO: this should really be a parse error.
-		{namer.IGBackend(80), &NameComponents{uid, "be", ""}},
-		{namer.InstanceGroup(), &NameComponents{uid, "ig", ""}},
-		{namer.TargetProxy(lbName, HTTPProtocol), &NameComponents{uid, "tp", ""}},
-		{namer.TargetProxy(lbName, HTTPSProtocol), &NameComponents{uid, "tps", ""}},
-		{namer.SSLCertName("default/my-ing", secretHash), &NameComponents{uid, "ssl", ""}},
-		{namer.SSLCertName("default/my-ing", secretHash), &NameComponents{uid, "ssl", ""}},
-		{namer.ForwardingRule(lbName, HTTPProtocol), &NameComponents{uid, "fw", ""}},
-		{namer.ForwardingRule(lbName, HTTPSProtocol), &NameComponents{uid, "fws", ""}},
-		{namer.UrlMap(lbName), &NameComponents{uid, "um", ""}},
+		{namer.IGBackend(80), &NameComponents{ClusterName: uid, Resource: "be"}},
+		{namer.InstanceGroup(), &NameComponents{ClusterName: uid, Resource: "ig"}},
+		{namer.TargetProxy(lbName, HTTPProtocol), &NameComponents{ClusterName: uid, Resource: "tp"}},
+		{namer.TargetProxy(lbName, HTTPSProtocol), &NameComponents{ClusterName: uid, Resource: "tps"}},
+		{namer.SSLCertName("default/my-ing", secretHash), &NameComponents{ClusterName: uid, Resource: "ssl"}},
+		{namer.SSLCertName("default/my-ing", secretHash), &NameComponents{ClusterName: uid, Resource: "ssl"}},
+		{namer.ForwardingRule(lbName, HTTPProtocol), &NameComponents{ClusterName: uid, Resource: "fw"}},
+		{namer.ForwardingRule(lbName, HTTPSProtocol), &NameComponents{ClusterName: uid, Resource: "fws"}},
+		{namer.UrlMap(lbName), &NameComponents{ClusterName: uid, Resource: "um", LbName: "key1"}},
 	} {
 		nc := namer.ParseName(tc.in)
 		if *nc != *tc.want {

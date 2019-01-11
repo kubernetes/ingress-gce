@@ -34,7 +34,7 @@ const defaultZone = "zone-a"
 
 func newTestIGLinker(fakeGCE *gce.GCECloud, fakeInstancePool instances.NodePool) *instanceGroupLinker {
 	fakeInstancePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
-	fakeBackendPool := NewPool(fakeGCE, defaultNamer, false)
+	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
 	// Add standard hooks for mocking update calls. Each test can set a different update hook if it chooses to.
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceHook

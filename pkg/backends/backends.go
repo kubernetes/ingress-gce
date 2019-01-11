@@ -14,15 +14,12 @@ limitations under the License.
 package backends
 
 import (
-	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/storage"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
@@ -30,9 +27,8 @@ import (
 
 // Backends handles CRUD operations for backends.
 type Backends struct {
-	cloud       *gce.GCECloud
-	snapshotter storage.Snapshotter
-	namer       *utils.Namer
+	cloud *gce.GCECloud
+	namer *utils.Namer
 }
 
 // Backends is a Pool.
@@ -41,29 +37,11 @@ var _ Pool = (*Backends)(nil)
 // NewPool returns a new backend pool.
 // - cloud: implements BackendServices
 // - namer: procudes names for backends.
-// - resyncWithCloud: if true, periodically syncs with cloud resources.
-func NewPool(
-	cloud *gce.GCECloud,
-	namer *utils.Namer,
-	resyncWithCloud bool) *Backends {
-
-	backendPool := &Backends{
+func NewPool(cloud *gce.GCECloud, namer *utils.Namer) *Backends {
+	return &Backends{
 		cloud: cloud,
 		namer: namer,
 	}
-	if !resyncWithCloud {
-		backendPool.snapshotter = storage.NewInMemoryPool()
-		return backendPool
-	}
-	keyFunc := func(i interface{}) (string, error) {
-		bs := i.(*compute.BackendService)
-		if !namer.NameBelongsToCluster(bs.Name) {
-			return "", fmt.Errorf("unrecognized name %v", bs.Name)
-		}
-		return bs.Name, nil
-	}
-	backendPool.snapshotter = storage.NewCloudListingPool("backends", keyFunc, backendPool, 30*time.Second)
-	return backendPool
 }
 
 // ensureDescription updates the BackendService Description with the expected value
@@ -99,7 +77,6 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 	if err := composite.CreateBackendService(be, b.cloud); err != nil {
 		return nil, err
 	}
-	b.snapshotter.Add(name, be)
 	// Note: We need to perform a GCE call to re-fetch the object we just created
 	// so that the "Fingerprint" field is filled in. This is needed to update the
 	// object without error.
@@ -113,7 +90,6 @@ func (b *Backends) Update(be *composite.BackendService) error {
 	if err := composite.UpdateBackendService(be, b.cloud); err != nil {
 		return err
 	}
-	b.snapshotter.Add(be.Name, be)
 	return nil
 }
 
@@ -133,7 +109,6 @@ func (b *Backends) Get(name string, version meta.Version) (*composite.BackendSer
 			return nil, err
 		}
 	}
-	b.snapshotter.Add(name, be)
 	return be, nil
 }
 
@@ -142,9 +117,6 @@ func (b *Backends) Delete(name string) (err error) {
 	defer func() {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			err = nil
-		}
-		if err == nil {
-			b.snapshotter.Delete(name)
 		}
 	}()
 
@@ -174,27 +146,21 @@ func (b *Backends) Health(name string) string {
 	return hs.HealthStatus[0].HealthState
 }
 
-// GetLocalSnapshot implements Pool.
-func (b *Backends) GetLocalSnapshot() []string {
-	pool := b.snapshotter.Snapshot()
-	var keys []string
-	for name := range pool {
-		keys = append(keys, name)
-	}
-	return keys
-}
-
-// List lists all backends.
-func (b *Backends) List() ([]interface{}, error) {
+// List lists all backends managed by this controller.
+func (b *Backends) List() ([]string, error) {
 	// TODO: for consistency with the rest of this sub-package this method
 	// should return a list of backend ports.
 	backends, err := b.cloud.ListGlobalBackendServices()
 	if err != nil {
 		return nil, err
 	}
-	var ret []interface{}
-	for _, x := range backends {
-		ret = append(ret, x)
+
+	var names []string
+
+	for _, bs := range backends {
+		if b.namer.NameBelongsToCluster(bs.Name) {
+			names = append(names, bs.Name)
+		}
 	}
-	return ret, nil
+	return names, nil
 }

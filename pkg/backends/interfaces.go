@@ -44,8 +44,8 @@ type Pool interface {
 	Delete(name string) error
 	// Get the health of a BackendService given its name.
 	Health(name string) string
-	// Get a list of BackendService names currently in this pool.
-	GetLocalSnapshot() []string
+	// Get a list of BackendService names that are managed by this pool.
+	List() ([]string, error)
 }
 
 // Syncer is an interface to sync Kubernetes services to GCE BackendServices.

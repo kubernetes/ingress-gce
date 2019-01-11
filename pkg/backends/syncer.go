@@ -14,6 +14,7 @@ limitations under the License.
 package backends
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -140,7 +141,12 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
 		name := sp.BackendName(s.namer)
 		knownPorts.Insert(name)
 	}
-	backendNames := s.backendPool.GetLocalSnapshot()
+
+	backendNames, err := s.backendPool.List()
+	if err != nil {
+		return fmt.Errorf("error getting the names of controller-managed backends: %v", err)
+	}
+
 	for _, name := range backendNames {
 		if knownPorts.Has(name) {
 			continue
