@@ -309,6 +309,12 @@ func (n *Namer) LoadBalancer(key string) string {
 	return truncate(fmt.Sprintf("%v%v%v", scrubbedName, clusterNameDelimiter, clusterName))
 }
 
+// LoadBalancerFromLbName reconstructs the full loadbalancer name, given the
+// lbName portion from NameComponents
+func (n *Namer) LoadBalancerFromLbName(lbName string) string {
+	return fmt.Sprintf("%v%v%v", lbName, clusterNameDelimiter, n.UID())
+}
+
 // TargetProxy returns the name for target proxy given the load
 // balancer name and the protocol.
 func (n *Namer) TargetProxy(lbName string, protocol NamerProtocol) string {
