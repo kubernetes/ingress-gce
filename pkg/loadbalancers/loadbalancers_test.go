@@ -1243,7 +1243,7 @@ func TestList(t *testing.T) {
 		t.Fatalf("pool.List() = err %v", err)
 	}
 
-	expected := []string{"old-l7", "test"}
+	expected := []string{"old-l7--uid1", "test--uid1"}
 
 	if !reflect.DeepEqual(lbNames, expected) {
 		t.Fatalf("pool.List() returned %+v, want %+v", lbNames, expected)

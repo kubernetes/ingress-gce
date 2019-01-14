@@ -99,7 +99,8 @@ func (l *L7s) List() ([]string, error) {
 	for _, um := range urlMaps {
 		if l.namer.NameBelongsToCluster(um.Name) {
 			nameParts := l.namer.ParseName(um.Name)
-			names = append(names, nameParts.LbName)
+			l7Name := l.namer.LoadBalancerFromLbName(nameParts.LbName)
+			names = append(names, l7Name)
 		}
 	}
 
@@ -108,11 +109,11 @@ func (l *L7s) List() ([]string, error) {
 
 // GC garbage collects loadbalancers not in the input list.
 func (l *L7s) GC(names []string) error {
-	glog.V(4).Infof("GC(%v)", names)
+	glog.V(2).Infof("GC(%v)", names)
 
 	knownLoadBalancers := sets.NewString()
 	for _, n := range names {
-		knownLoadBalancers.Insert(n)
+		knownLoadBalancers.Insert(l.namer.LoadBalancer(n))
 	}
 	pool, err := l.List()
 	if err != nil {
