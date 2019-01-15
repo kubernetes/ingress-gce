@@ -49,7 +49,7 @@ func (l *L7) checkSSLCert() error {
 	}
 
 	// Get updated value of certificate for comparison
-	existingSecretsSslCerts, err := l.getIngressManagedSslCerts()
+	existingSecretsSslCerts, err := getIngressManagedSslCerts(l.Name, l.cloud, l.namer)
 	if err != nil {
 		return err
 	}
@@ -211,44 +211,44 @@ func getMapfromCertList(certs []*compute.SslCertificate) map[string]*compute.Ssl
 // getIngressManagedSslCerts fetches SslCertificate resources created and managed by this load balancer
 // instance. These SslCertificate resources were created based on kubernetes secrets in Ingress
 // configuration.
-func (l *L7) getIngressManagedSslCerts() ([]*compute.SslCertificate, error) {
+func getIngressManagedSslCerts(name string, cloud LoadBalancers, namer *utils.Namer) ([]*compute.SslCertificate, error) {
 	var result []*compute.SslCertificate
 
 	// Currently we list all certs available in gcloud and filter the ones managed by this loadbalancer instance. This is
 	// to make sure we garbage collect any old certs that this instance might have lost track of due to crashes.
 	// Can be a performance issue if there are too many global certs, default quota is only 10.
-	certs, err := l.cloud.ListSslCertificates()
+	certs, err := cloud.ListSslCertificates()
 	if err != nil {
 		return nil, err
 	}
 	for _, c := range certs {
-		if l.namer.IsCertUsedForLB(l.Name, c.Name) {
-			glog.V(4).Infof("Populating ssl cert %s for l7 %s", c.Name, l.Name)
+		if namer.IsCertUsedForLB(name, c.Name) {
+			glog.V(4).Infof("Populating ssl cert %s for l7 %s", c.Name, name)
 			result = append(result, c)
 		}
 	}
 	if len(result) == 0 {
 		// Check for legacy cert since that follows a different naming convention
 		glog.V(4).Infof("Looking for legacy ssl certs")
-		expectedCertLinks, err := l.getSslCertLinkInUse()
+		expectedCertLinks, err := getSslCertLinkInUse(name, cloud, namer)
 		if err != nil {
 			// Return nil if target proxy doesn't exist.
 			return nil, utils.IgnoreHTTPNotFound(err)
 		}
 		for _, link := range expectedCertLinks {
 			// Retrieve the certificate and ignore error if certificate wasn't found
-			name, err := utils.KeyName(link)
+			sslName, err := utils.KeyName(link)
 			if err != nil {
 				glog.Warningf("error parsing cert name: %v", err)
 				continue
 			}
 
-			if !l.namer.IsLegacySSLCert(l.Name, name) {
+			if !namer.IsLegacySSLCert(name, sslName) {
 				continue
 			}
-			cert, _ := l.cloud.GetSslCertificate(name)
+			cert, _ := cloud.GetSslCertificate(sslName)
 			if cert != nil {
-				glog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l.Name)
+				glog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, name)
 				result = append(result, cert)
 			}
 		}
@@ -279,8 +279,8 @@ func (l *L7) deleteOldSSLCerts() {
 
 // Returns true if the input array of certs is identical to the certs in the L7 config.
 // Returns false if there is any mismatch
-func (l *L7) compareCerts(certLinks []string) bool {
-	certsMap := getMapfromCertList(l.sslCerts)
+func compareCerts(certs []*compute.SslCertificate, certLinks []string) bool {
+	certsMap := getMapfromCertList(certs)
 	if len(certLinks) != len(certsMap) {
 		glog.V(4).Infof("Loadbalancer has %d certs, target proxy has %d certs", len(certsMap), len(certLinks))
 		return false

@@ -71,16 +71,9 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 
 // Delete deletes a load balancer by name.
 func (l *L7s) Delete(name string) error {
-	lb := &L7{
-		runtimeInfo: &L7RuntimeInfo{Name: name},
-		Name:        l.namer.LoadBalancer(name),
-		cloud:       l.cloud,
-		namer:       l.namer,
-		mcrt:        l.mcrt,
-	}
-
-	glog.V(3).Infof("Deleting lb %v", lb.Name)
-	if err := lb.Cleanup(); err != nil {
+	lbName := l.namer.LoadBalancer(name)
+	glog.V(3).Infof("Deleting lb %v", lbName)
+	if err := Cleanup(lbName, l.cloud, l.namer); err != nil {
 		return err
 	}
 	return nil

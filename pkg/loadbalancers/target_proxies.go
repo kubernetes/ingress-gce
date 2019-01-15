@@ -99,7 +99,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 		}
 	}
 
-	if !l.compareCerts(proxy.SslCertificates) {
+	if !compareCerts(l.sslCerts, proxy.SslCertificates) {
 		glog.V(3).Infof("Https proxy %q has the wrong ssl certs, setting %v overwriting %v",
 			proxy.Name, toCertNames(l.sslCerts), proxy.SslCertificates)
 		var sslCertURLs []string
@@ -115,9 +115,9 @@ func (l *L7) checkHttpsProxy() (err error) {
 	return nil
 }
 
-func (l *L7) getSslCertLinkInUse() ([]string, error) {
-	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
-	proxy, err := l.cloud.GetTargetHttpsProxy(proxyName)
+func getSslCertLinkInUse(name string, cloud LoadBalancers, namer *utils.Namer) ([]string, error) {
+	proxyName := namer.TargetProxy(name, utils.HTTPSProtocol)
+	proxy, err := cloud.GetTargetHttpsProxy(proxyName)
 	if err != nil {
 		return nil, err
 	}
