@@ -20,7 +20,6 @@ import (
 	"reflect"
 
 	"github.com/golang/glog"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -34,7 +33,8 @@ func EnsureCDN(sp utils.ServicePort, be *composite.BackendService) bool {
 	}
 	beTemp := &composite.BackendService{}
 	applyCDNSettings(sp, beTemp)
-	if !reflect.DeepEqual(beTemp.CdnPolicy, be.CdnPolicy) || beTemp.EnableCDN != be.EnableCDN {
+	// Only compare CdnPolicy if it was specified.
+	if (beTemp.CdnPolicy != nil && !reflect.DeepEqual(beTemp.CdnPolicy, be.CdnPolicy)) || beTemp.EnableCDN != be.EnableCDN {
 		applyCDNSettings(sp, be)
 		glog.V(2).Infof("Updated CDN settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
 		return true
@@ -47,22 +47,19 @@ func EnsureCDN(sp utils.ServicePort, be *composite.BackendService) bool {
 // made to actually persist the changes.
 func applyCDNSettings(sp utils.ServicePort, be *composite.BackendService) {
 	beConfig := sp.BackendConfig
-	setCDNDefaults(beConfig)
 	// Apply the boolean switch
 	be.EnableCDN = beConfig.Spec.Cdn.Enabled
-	// Apply the cache key policies
 	cacheKeyPolicy := beConfig.Spec.Cdn.CachePolicy
-	be.CdnPolicy = &composite.BackendServiceCdnPolicy{CacheKeyPolicy: &composite.CacheKeyPolicy{}}
-	be.CdnPolicy.CacheKeyPolicy.IncludeHost = cacheKeyPolicy.IncludeHost
-	be.CdnPolicy.CacheKeyPolicy.IncludeProtocol = cacheKeyPolicy.IncludeProtocol
-	be.CdnPolicy.CacheKeyPolicy.IncludeQueryString = cacheKeyPolicy.IncludeQueryString
-	be.CdnPolicy.CacheKeyPolicy.QueryStringBlacklist = cacheKeyPolicy.QueryStringBlacklist
-	be.CdnPolicy.CacheKeyPolicy.QueryStringWhitelist = cacheKeyPolicy.QueryStringWhitelist
-}
-
-// setCDNDefaults initializes any nil pointers in CDN configuration which ensures that there are defaults for missing sub-types.
-func setCDNDefaults(beConfig *backendconfigv1beta1.BackendConfig) {
-	if beConfig.Spec.Cdn.CachePolicy == nil {
-		beConfig.Spec.Cdn.CachePolicy = &backendconfigv1beta1.CacheKeyPolicy{}
+	// Apply the cache key policies if the BackendConfig contains them.
+	if cacheKeyPolicy != nil {
+		be.CdnPolicy = &composite.BackendServiceCdnPolicy{CacheKeyPolicy: &composite.CacheKeyPolicy{}}
+		be.CdnPolicy.CacheKeyPolicy.IncludeHost = cacheKeyPolicy.IncludeHost
+		be.CdnPolicy.CacheKeyPolicy.IncludeProtocol = cacheKeyPolicy.IncludeProtocol
+		be.CdnPolicy.CacheKeyPolicy.IncludeQueryString = cacheKeyPolicy.IncludeQueryString
+		be.CdnPolicy.CacheKeyPolicy.QueryStringBlacklist = cacheKeyPolicy.QueryStringBlacklist
+		be.CdnPolicy.CacheKeyPolicy.QueryStringWhitelist = cacheKeyPolicy.QueryStringWhitelist
 	}
+	// Note that upon creation of a BackendServices, the fields 'IncludeHost',
+	// 'IncludeProtocol' and 'IncludeQueryString' all default to true if not
+	// explicitly specified.
 }

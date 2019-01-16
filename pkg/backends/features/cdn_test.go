@@ -51,7 +51,7 @@ func TestEnsureCDN(t *testing.T) {
 			updateExpected: false,
 		},
 		{
-			desc: "cache policies are missing from spec, update needed",
+			desc: "cache policies are missing from spec, no update needed",
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
@@ -69,7 +69,7 @@ func TestEnsureCDN(t *testing.T) {
 					},
 				},
 			},
-			updateExpected: true,
+			updateExpected: false,
 		},
 		{
 			desc: "settings are identical, no update needed",
