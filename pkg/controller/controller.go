@@ -368,6 +368,17 @@ func (lbc *LoadBalancerController) GCBackends(state interface{}) error {
 			return err
 		}
 	}
+
+	for _, ing := range gcState.ingresses {
+		if utils.IsDeletionCandidate(ing.ObjectMeta, utils.FinalizerKey()) {
+			ingClient := lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace)
+			if err := utils.RemoveFinalizer(ing, ingClient); err != nil {
+				glog.Errorf("Failed to remove Finalizer from Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
+				return err
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -418,10 +429,7 @@ func (lbc *LoadBalancerController) PostProcess(state interface{}) error {
 	}
 
 	// Update the ingress status.
-	if err := lbc.updateIngressStatus(syncState.l7, syncState.ing); err != nil {
-		return fmt.Errorf("update ingress status error: %v", err)
-	}
-	return nil
+	return lbc.updateIngressStatus(syncState.l7, syncState.ing)
 }
 
 // sync manages Ingress create/updates/deletes events from queue.
@@ -440,12 +448,12 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	// gceSvcPorts contains the ServicePorts used by only single-cluster ingress.
 	gceSvcPorts := lbc.ToSvcPorts(gceIngresses)
 	lbNames := lbc.ctx.Ingresses().ListKeys()
-	gcState := &gcState{lbNames, gceSvcPorts}
 
 	ing, ingExists, err := lbc.ctx.Ingresses().GetByKey(key)
 	if err != nil {
 		return fmt.Errorf("error getting Ingress for key %s: %v", key, err)
 	}
+	gcState := &gcState{lbc.ctx.Ingresses().List(), lbNames, gceSvcPorts}
 	if !ingExists {
 		glog.V(2).Infof("Ingress %q no longer exists, triggering GC", key)
 		// GC will find GCE resources that were used for this ingress and delete them.
@@ -454,13 +462,22 @@ func (lbc *LoadBalancerController) sync(key string) error {
 
 	// Get ingress and DeepCopy for assurance that we don't pollute other goroutines with changes.
 	ing = ing.DeepCopy()
+	ingClient := lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace)
+	if err := utils.AddFinalizer(ing, ingClient); err != nil {
+		glog.Errorf("Failed to add Finalizer to Ingress %q: %v", key, err)
+		return err
+	}
 
 	// Check if ingress class was changed to non-GLBC to remove ingress LB from state and trigger GC
 	if !utils.IsGLBCIngress(ing) {
 		glog.V(2).Infof("Ingress %q class was changed, triggering GC", key)
 		// Remove lb from state for GC
 		gcState.lbNames = slice.RemoveString(gcState.lbNames, key, nil)
-		return lbc.ingSyncer.GC(gcState)
+		if gcErr := lbc.ingSyncer.GC(gcState); gcErr != nil {
+			return gcErr
+		}
+
+		return nil
 	}
 
 	// Bootstrap state for GCP sync.

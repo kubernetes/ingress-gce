@@ -186,6 +186,12 @@ func TestIngressCreateDelete(t *testing.T) {
 	if err := lbc.sync(ingStoreKey); err != nil {
 		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
 	}
+
+	// Check Ingress has been deleted
+	updatedIng, _ = lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	if updatedIng != nil {
+		t.Fatalf("Ingress was not deleted, got: %+v", updatedIng)
+	}
 }
 
 // TestIngressClassChange asserts that `sync` will not return an error for a good ingress config

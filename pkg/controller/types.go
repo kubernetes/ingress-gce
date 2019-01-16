@@ -25,8 +25,9 @@ import (
 
 // gcState is used by the controller to maintain state for garbage collection routines.
 type gcState struct {
-	lbNames  []string
-	svcPorts []utils.ServicePort
+	ingresses []*extensions.Ingress
+	lbNames   []string
+	svcPorts  []utils.ServicePort
 }
 
 // syncState is used by the controller to maintain state for routines that sync GCP resources of an Ingress.
