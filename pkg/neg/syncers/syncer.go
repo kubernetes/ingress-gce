@@ -28,6 +28,10 @@ import (
 	"k8s.io/client-go/tools/record"
 )
 
+type syncerCore interface {
+	sync() error
+}
+
 // syncer is a NEG syncer skeleton.
 // It handles state transitions and backoff retry operations.
 type syncer struct {
@@ -36,7 +40,7 @@ type syncer struct {
 	negName string
 
 	// NEG sync function
-	syncFunc func() error
+	core syncerCore
 
 	// event recording
 	serviceLister cache.Indexer
@@ -53,11 +57,11 @@ type syncer struct {
 	backoff backoffHandler
 }
 
-func newSyncer(negSyncerKey NegSyncerKey, networkEndpointGroupName string, serviceLister cache.Indexer, recorder record.EventRecorder) *syncer {
+func newSyncer(negSyncerKey NegSyncerKey, networkEndpointGroupName string, serviceLister cache.Indexer, recorder record.EventRecorder, core syncerCore) *syncer {
 	return &syncer{
 		NegSyncerKey:  negSyncerKey,
 		negName:       networkEndpointGroupName,
-		syncFunc:      func() error { return nil },
+		core:          core,
 		serviceLister: serviceLister,
 		recorder:      recorder,
 		stopped:       true,
@@ -81,7 +85,7 @@ func (s *syncer) Start() error {
 		for {
 			// equivalent to never retry
 			retryCh := make(<-chan time.Time)
-			err := s.syncFunc()
+			err := s.core.sync()
 			if err != nil {
 				delay, retryErr := s.backoff.NextRetryDelay()
 				retryMesg := ""
@@ -157,8 +161,4 @@ func (s *syncer) IsShuttingDown() bool {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	return s.shuttingDown
-}
-
-func (s *syncer) SetSyncFunc(syncFunc func() error) {
-	s.syncFunc = syncFunc
 }

@@ -61,11 +61,10 @@ type transactionSyncer struct {
 }
 
 func NewTransactionSyncer(negSyncerKey NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) negtypes.NegSyncer {
-	syncer := newSyncer(negSyncerKey, networkEndpointGroupName, serviceLister, recorder)
+	// TransactionSyncer implements the syncer core
 	ts := &transactionSyncer{
 		NegSyncerKey:   negSyncerKey,
 		negName:        networkEndpointGroupName,
-		syncer:         syncer,
 		needInit:       true,
 		transactions:   NewTransactionTable(),
 		serviceLister:  serviceLister,
@@ -73,9 +72,12 @@ func NewTransactionSyncer(negSyncerKey NegSyncerKey, networkEndpointGroupName st
 		recorder:       recorder,
 		cloud:          cloud,
 		zoneGetter:     zoneGetter,
-		retry:          NewDelayRetryHandler(func() { syncer.Sync() }, NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay)),
 	}
-	syncer.SetSyncFunc(ts.sync)
+	// Syncer implements life cycle logic
+	syncer := newSyncer(negSyncerKey, networkEndpointGroupName, serviceLister, recorder, ts)
+	// TransactionSyncer needs syncer interface for internals
+	ts.syncer = syncer
+	ts.retry = NewDelayRetryHandler(func() { syncer.Sync() }, NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay))
 	return syncer
 }
 

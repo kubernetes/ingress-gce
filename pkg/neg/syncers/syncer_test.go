@@ -27,11 +27,12 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 type syncerTester struct {
-	syncer
+	syncer negtypes.NegSyncer
 	// keep track of the number of syncs
 	syncCount int
 	// syncError is true, then sync function return error
@@ -53,7 +54,7 @@ func (t *syncerTester) sync() error {
 	return nil
 }
 
-func newTestNegSyncer() *syncerTester {
+func newSyncerTester() *syncerTester {
 	testNegName := "test-neg-name"
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
@@ -73,94 +74,96 @@ func newTestNegSyncer() *syncerTester {
 		TargetPort: "80",
 	}
 
-	s := &syncerTester{
-		syncer: *newSyncer(
-			negSyncerKey,
-			testNegName,
-			context.ServiceInformer.GetIndexer(),
-			record.NewFakeRecorder(100),
-		),
+	st := &syncerTester{
 		syncCount: 0,
 		blockSync: false,
 		syncError: false,
 		ch:        make(chan interface{}),
 	}
-	s.SetSyncFunc(s.sync)
-	return s
+
+	s := newSyncer(
+		negSyncerKey,
+		testNegName,
+		context.ServiceInformer.GetIndexer(),
+		record.NewFakeRecorder(100),
+		st,
+	)
+	st.syncer = s
+	return st
 }
 
 func TestStartAndStopNoopSyncer(t *testing.T) {
-	syncer := newTestNegSyncer()
-	if !syncer.IsStopped() {
+	syncerTester := newSyncerTester()
+	if !syncerTester.syncer.IsStopped() {
 		t.Fatalf("Syncer is not stopped after creation.")
 	}
-	if syncer.IsShuttingDown() {
+	if syncerTester.syncer.IsShuttingDown() {
 		t.Fatalf("Syncer is shutting down after creation.")
 	}
 
-	if err := syncer.Start(); err != nil {
+	if err := syncerTester.syncer.Start(); err != nil {
 		t.Fatalf("Failed to start syncer: %v", err)
 	}
-	if syncer.IsStopped() {
+	if syncerTester.syncer.IsStopped() {
 		t.Fatalf("Syncer is stopped after Start.")
 	}
-	if syncer.IsShuttingDown() {
+	if syncerTester.syncer.IsShuttingDown() {
 		t.Fatalf("Syncer is shutting down after Start.")
 	}
 
 	// blocks sync function
-	syncer.blockSync = true
-	syncer.Stop()
-	if !syncer.IsShuttingDown() {
+	syncerTester.blockSync = true
+	syncerTester.syncer.Stop()
+	if !syncerTester.syncer.IsShuttingDown() {
 		// assume syncer needs 5 second for sync
 		t.Fatalf("Syncer is not shutting down after Start.")
 	}
 
-	if !syncer.IsStopped() {
+	if !syncerTester.syncer.IsStopped() {
 		t.Fatalf("Syncer is not stopped after Stop.")
 	}
 
 	// unblock sync function
-	syncer.ch <- struct{}{}
+	syncerTester.ch <- struct{}{}
 	if err := wait.PollImmediate(time.Second, 3*time.Second, func() (bool, error) {
-		return !syncer.IsShuttingDown() && syncer.IsStopped(), nil
+		return !syncerTester.syncer.IsShuttingDown() && syncerTester.syncer.IsStopped(), nil
 	}); err != nil {
 		t.Fatalf("Syncer failed to shutdown: %v", err)
 	}
 
-	if err := syncer.Start(); err != nil {
+	if err := syncerTester.syncer.Start(); err != nil {
 		t.Fatalf("Failed to restart syncer: %v", err)
 	}
-	if syncer.IsStopped() {
+	if syncerTester.syncer.IsStopped() {
 		t.Fatalf("Syncer is stopped after restart.")
 	}
-	if syncer.IsShuttingDown() {
+	if syncerTester.syncer.IsShuttingDown() {
 		t.Fatalf("Syncer is shutting down after restart.")
 	}
 
-	syncer.Stop()
-	if !syncer.IsStopped() {
+	syncerTester.syncer.Stop()
+	if !syncerTester.syncer.IsStopped() {
 		t.Fatalf("Syncer is not stopped after Stop.")
 	}
 }
 
 func TestRetryOnSyncError(t *testing.T) {
 	maxRetry := 3
-	syncer := newTestNegSyncer()
-	syncer.syncError = true
-	if err := syncer.Start(); err != nil {
+	syncerTester := newSyncerTester()
+	syncerTester.syncError = true
+	if err := syncerTester.syncer.Start(); err != nil {
 		t.Fatalf("Failed to start syncer: %v", err)
 	}
-	syncer.backoff = NewExponentialBackendOffHandler(maxRetry, 0, 0)
+	syncerTester.syncer.(*syncer).backoff = NewExponentialBackendOffHandler(maxRetry, 0, 0)
 
 	if err := wait.PollImmediate(time.Second, 5*time.Second, func() (bool, error) {
 		// In 5 seconds, syncer should be able to retry 3 times.
-		return syncer.syncCount == maxRetry+1, nil
+		return syncerTester.syncCount == maxRetry+1, nil
 	}); err != nil {
 		t.Errorf("Syncer failed to retry and record error: %v", err)
 	}
 
-	if syncer.syncCount != maxRetry+1 {
-		t.Errorf("Expect sync count to be %v, but got %v", maxRetry+1, syncer.syncCount)
+	if syncerTester.syncCount != maxRetry+1 {
+		t.Errorf("Expect sync count to be %v, but got %v", maxRetry+1, syncerTester.syncCount)
 	}
 }
