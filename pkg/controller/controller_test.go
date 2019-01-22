@@ -37,6 +37,7 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 )
 
 var (
@@ -109,9 +110,17 @@ func updateIngress(lbc *LoadBalancerController, ing *extensions.Ingress) {
 	lbc.ctx.IngressInformer.GetIndexer().Update(ing)
 }
 
+func setDeletionTimestamp(lbc *LoadBalancerController, ing *extensions.Ingress) {
+	ts := meta_v1.NewTime(time.Now())
+	ing.SetDeletionTimestamp(&ts)
+	updateIngress(lbc, ing)
+}
+
 func deleteIngress(lbc *LoadBalancerController, ing *extensions.Ingress) {
-	lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Delete(ing.Name, &meta_v1.DeleteOptions{})
-	lbc.ctx.IngressInformer.GetIndexer().Delete(ing)
+	if len(ing.GetFinalizers()) == 0 {
+		lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Delete(ing.Name, &meta_v1.DeleteOptions{})
+		lbc.ctx.IngressInformer.GetIndexer().Delete(ing)
+	}
 }
 
 // getKey returns the key for an ingress.
@@ -153,44 +162,122 @@ func TestIngressSyncError(t *testing.T) {
 	}
 }
 
-// TestIngressCreateDelete asserts that `sync` will not return an error for a good ingress config
-// and will not return an error when the ingress is deleted.
-func TestIngressCreateDelete(t *testing.T) {
-	lbc := newLoadBalancerController()
+// TestIngressCreateDeleteFinalizer asserts that `sync` will will not return an
+// error for a good ingress config. It also tests garbage collection for
+// Ingresses that need to be deleted, and keep the ones that don't, depending
+// on whether Finalizer Adds and/or Removes are enabled.
+func TestIngressCreateDeleteFinalizer(t *testing.T) {
+	testCases := []struct {
+		enableFinalizerAdd    bool
+		enableFinalizerRemove bool
+		ingNames              []string
+		desc                  string
+	}{
+		{
+			enableFinalizerAdd:    true,
+			enableFinalizerRemove: true,
+			ingNames:              []string{"ing-1", "ing-2", "ing-3"},
+			desc:                  "both FinalizerAdd and FinalizerRemove are enabled",
+		},
+		{
+			ingNames: []string{"ing-1", "ing-2", "ing-3"},
+			desc:     "both FinalizerAdd and FinalizerRemove are disabled",
+		},
+		{
+			enableFinalizerAdd: true,
+			ingNames:           []string{"ing-1", "ing-2", "ing-3"},
+			desc:               "FinalizerAdd is enabled",
+		},
+		{
+			enableFinalizerRemove: true,
+			ingNames:              []string{"ing-1", "ing-2", "ing-3"},
+			desc:                  "FinalizerRemove is enabled",
+		},
+	}
 
-	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
-		Type:  api_v1.ServiceTypeNodePort,
-		Ports: []api_v1.ServicePort{{Port: 80}},
-	})
-	addService(lbc, svc)
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			flags.F.Features.FinalizerAdd = tc.enableFinalizerAdd
+			flags.F.Features.FinalizerRemove = tc.enableFinalizerRemove
 
-	defaultBackend := backend("my-service", intstr.FromInt(80))
-	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
-		extensions.IngressSpec{
-			Backend: &defaultBackend,
+			lbc := newLoadBalancerController()
+			svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
+				Type:  api_v1.ServiceTypeNodePort,
+				Ports: []api_v1.ServicePort{{Port: 80}},
+			})
+			addService(lbc, svc)
+			defaultBackend := backend("my-service", intstr.FromInt(80))
+
+			for _, name := range tc.ingNames {
+				ing := test.NewIngress(types.NamespacedName{Name: name, Namespace: "default"},
+					extensions.IngressSpec{
+						Backend: &defaultBackend,
+					})
+				addIngress(lbc, ing)
+
+				ingStoreKey := getKey(ing, t)
+				if err := lbc.sync(ingStoreKey); err != nil {
+					t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
+				}
+
+				updatedIng, _ := lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+
+				// Check Ingress status has IP.
+				if len(updatedIng.Status.LoadBalancer.Ingress) != 1 || updatedIng.Status.LoadBalancer.Ingress[0].IP == "" {
+					t.Errorf("Get(%q) = status %+v, want non-empty", updatedIng.Name, updatedIng.Status.LoadBalancer.Ingress)
+				}
+
+				// Check Ingress has Finalizer if the FinalizerAdd flag is true
+				if tc.enableFinalizerAdd && len(updatedIng.GetFinalizers()) != 1 {
+					t.Errorf("GetFinalizers() = %+v, want 1", updatedIng.GetFinalizers())
+				}
+
+				// Check Ingress DOES NOT have Finalizer if FinalizerAdd flag is false
+				if !tc.enableFinalizerAdd && len(updatedIng.GetFinalizers()) == 1 {
+					t.Errorf("GetFinalizers() = %+v, want 0", updatedIng.GetFinalizers())
+				}
+			}
+
+			for i, name := range tc.ingNames {
+				ing, _ := lbc.ctx.KubeClient.Extensions().Ingresses("default").Get(name, meta_v1.GetOptions{})
+				setDeletionTimestamp(lbc, ing)
+
+				ingStoreKey := getKey(ing, t)
+				if err := lbc.sync(ingStoreKey); err != nil {
+					t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
+				}
+
+				updatedIng, _ := lbc.ctx.KubeClient.Extensions().Ingresses("default").Get(name, meta_v1.GetOptions{})
+				deleteIngress(lbc, updatedIng)
+
+				updatedIng, _ = lbc.ctx.KubeClient.Extensions().Ingresses("default").Get(name, meta_v1.GetOptions{})
+				if tc.enableFinalizerAdd && !tc.enableFinalizerRemove {
+					if updatedIng == nil {
+						t.Fatalf("Expected Ingress not to be deleted")
+					}
+
+					if len(updatedIng.GetFinalizers()) != 1 {
+						t.Errorf("GetFinalizers() = %+v, want 0", updatedIng.GetFinalizers())
+					}
+
+					continue
+				}
+
+				if updatedIng != nil {
+					t.Fatalf("Ingress was not deleted, got: %+v", updatedIng)
+				}
+
+				remainingIngresses, err := lbc.ctx.KubeClient.Extensions().Ingresses("default").List(meta_v1.ListOptions{})
+				if err != nil {
+					t.Fatalf("List() = err %v", err)
+				}
+
+				remainingIngCount := len(tc.ingNames) - i - 1
+				if len(remainingIngresses.Items) != remainingIngCount {
+					t.Fatalf("Expected %d Ingresses, got: %d", remainingIngCount, len(remainingIngresses.Items))
+				}
+			}
 		})
-	addIngress(lbc, ing)
-
-	ingStoreKey := getKey(ing, t)
-	if err := lbc.sync(ingStoreKey); err != nil {
-		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
-	}
-
-	// Check Ingress status has IP.
-	updatedIng, _ := lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
-	if len(updatedIng.Status.LoadBalancer.Ingress) != 1 || updatedIng.Status.LoadBalancer.Ingress[0].IP == "" {
-		t.Errorf("Get(%q) = status %+v, want non-empty", updatedIng.Name, updatedIng.Status.LoadBalancer.Ingress)
-	}
-
-	deleteIngress(lbc, ing)
-	if err := lbc.sync(ingStoreKey); err != nil {
-		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
-	}
-
-	// Check Ingress has been deleted
-	updatedIng, _ = lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
-	if updatedIng != nil {
-		t.Fatalf("Ingress was not deleted, got: %+v", updatedIng)
 	}
 }
 

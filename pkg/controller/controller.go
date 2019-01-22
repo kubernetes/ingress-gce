@@ -45,6 +45,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	ingsync "k8s.io/ingress-gce/pkg/sync"
 	"k8s.io/ingress-gce/pkg/tls"
@@ -372,11 +373,13 @@ func (lbc *LoadBalancerController) GCBackends(state interface{}) error {
 	}
 
 	for _, ing := range gcState.ingresses {
-		if utils.IsDeletionCandidate(ing.ObjectMeta, utils.FinalizerKey()) {
+		if utils.IsDeletionCandidate(ing.ObjectMeta, utils.FinalizerKey) {
 			ingClient := lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace)
-			if err := utils.RemoveFinalizer(&ing, ingClient); err != nil {
-				glog.Errorf("Failed to remove Finalizer from Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
-				return err
+			if flags.F.Features.FinalizerRemove {
+				if err := utils.RemoveFinalizer(&ing, ingClient); err != nil {
+					glog.Errorf("Failed to remove Finalizer from Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
+					return err
+				}
 			}
 		}
 	}
@@ -465,29 +468,31 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	if err != nil {
 		return fmt.Errorf("error getting Ingress for key %s: %v", key, err)
 	}
-	ingList, err := lbc.ingLister.ListGCEIngresses()
-	if err != nil {
-		return fmt.Errorf("error getting list of Ingresses: %v", err)
-
-	}
-	gcState := &gcState{ingList.Items, lbNames, gceSvcPorts}
-	if !ingExists {
-		glog.V(2).Infof("Ingress %q no longer exists, triggering GC", key)
-		// GC will find GCE resources that were used for this ingress and delete them.
-		return lbc.ingSyncer.GC(gcState)
-	}
-
 	// Get ingress and DeepCopy for assurance that we don't pollute other goroutines with changes.
 	ing, ok := obj.(*extensions.Ingress)
 	if !ok {
 		return fmt.Errorf("invalid object (not of type Ingress), type was %T", obj)
 	}
 
+	ingList, err := lbc.ingLister.ListGCEIngresses()
+	if err != nil {
+		return fmt.Errorf("error getting list of Ingresses: %v", err)
+
+	}
+	gcState := &gcState{ingList.Items, lbNames, gceSvcPorts}
+	if !ingExists || utils.IsDeletionCandidate(ing.ObjectMeta, utils.FinalizerKey) {
+		glog.V(2).Infof("Ingress %q no longer exists, triggering GC", key)
+		// GC will find GCE resources that were used for this ingress and delete them.
+		return lbc.ingSyncer.GC(gcState)
+	}
+
 	ing = ing.DeepCopy()
 	ingClient := lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace)
-	if err := utils.AddFinalizer(ing, ingClient); err != nil {
-		glog.Errorf("Failed to add Finalizer to Ingress %q: %v", key, err)
-		return err
+	if flags.F.Features.FinalizerAdd {
+		if err := utils.AddFinalizer(ing, ingClient); err != nil {
+			glog.Errorf("Failed to add Finalizer to Ingress %q: %v", key, err)
+			return err
+		}
 	}
 
 	// Check if ingress class was changed to non-GLBC to remove ingress LB from state and trigger GC
