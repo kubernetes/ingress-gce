@@ -15,7 +15,7 @@
 #!/bin/bash
 
 function usage() {
-  echo -e "Usage: ./script.sh -n myCluster -z myZone [-c] [-r]\n"
+  echo -e "Usage: ./gke-self-managed.sh -n myCluster -z myZone [-c] [-r]\n"
   echo    "  -c, --cleanup        Cleanup resources created by a previous run of the script"
   echo    "  -n, --cluster-name   Name of the cluster (Required)"
   echo    "  -z, --zone           Zone the cluster is in (Required)"
@@ -50,14 +50,14 @@ function cleanup() {
   # GLBC is restored on the GKE master, the addon manager does not try to create a
   # new one.
   kubectl delete clusterrolebinding one-binding-to-rule-them-all
-  kubectl delete -f yaml/rbac.yaml
+  kubectl delete -f ../resources/rbac.yaml
   kubectl delete configmap gce-config -n kube-system
   gcloud iam service-accounts delete glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com
   gcloud projects remove-iam-policy-binding ${PROJECT_ID} \
     --member serviceAccount:glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com \
     --role roles/compute.admin
   kubectl delete secret glbc-gcp-key -n kube-system
-  kubectl delete -f yaml/glbc.yaml
+  kubectl delete -f ../resources/glbc.yaml
   # Ask if user wants to reenable GLBC on the GKE master.
   while true; do
     echo -e "${GREEN}Script-bot: Do you want to reenable GLBC on the GKE master?${NC}"
@@ -114,7 +114,7 @@ done
 arg_check
 
 # Check that the gce.conf is valid for the cluster
-NODE_INSTANCE_PREFIX=`cat gce.conf | grep node-instance-prefix | awk '{print $3}'`
+NODE_INSTANCE_PREFIX=`cat ../resources/gce.conf | grep node-instance-prefix | awk '{print $3}'`
 [[ "$NODE_INSTANCE_PREFIX" == "gke-${CLUSTER_NAME}" ]] ||  error_exit "Error bot: --cluster-name does not match gce.conf. ${NO_CLEANUP}"
 
 # Get the project id associated with the cluster.
@@ -130,15 +130,15 @@ kubectl create clusterrolebinding one-binding-to-rule-them-all --clusterrole=clu
 
 # Create a new service account for glbc and give it a
 # ClusterRole allowing it access to API objects it needs.
-kubectl create -f yaml/rbac.yaml
+kubectl create -f ../resources/rbac.yaml
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating the RBAC spec. ${CLEANUP_HELP}"
 
 # Inject gce.conf onto the user node as a ConfigMap.
 # This config map is mounted as a volume in glbc.yaml
-kubectl create configmap gce-config --from-file=gce.conf -n kube-system
+kubectl create configmap gce-config --from-file=../resources/gce.conf -n kube-system
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating gce.conf ConfigMap. ${CLEANUP_HELP}"
 
-# Create new GCP service acccount. 
+# Create new GCP service acccount.
 gcloud iam service-accounts create glbc-service-account \
   --display-name "Service Account for GLBC"
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating a GCP service account. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
@@ -178,7 +178,7 @@ sleep 90
 while true; do
   echo -e "${GREEN}Script-bot: Before proceeding, please ensure your API server is accepting all requests.
 Failure to do so may result in the script creating a broken state."
-  echo -e "${GREEN}Script-bot: Press [C | c] to continue.${NC}" 
+  echo -e "${GREEN}Script-bot: Press [C | c] to continue.${NC}"
   read input
   case $input in
     [Cc]* ) break;;
@@ -211,19 +211,19 @@ done
 
 # Recreates the deployment and service for the default backend.
 # Note: We do sed on a copy so that the original file stays clean for future runs.
-cp yaml/default-http-backend.yaml yaml/default-http-backend-copy.yaml
-sed -i "/name: http/a \ \ \ \ nodePort: ${NODE_PORT}" yaml/default-http-backend-copy.yaml
-kubectl create -f yaml/default-http-backend-copy.yaml
+cp ../resources/default-http-backend.yaml ../resources/default-http-backend-copy.yaml
+sed -i "/name: http/a \ \ \ \ nodePort: ${NODE_PORT}" ../resources/default-http-backend-copy.yaml
+kubectl create -f ../resources/default-http-backend-copy.yaml
 if [[ $? -eq 1 ]];
 then
   # Prompt the user to finish the last steps by themselves. We don't want to
   # have to cleanup and start all over again if we are this close to finishing.
   error_exit "Error-bot: Issue starting default backend. ${PERMISSION_ISSUE}. We are so close to being done so just manually start the default backend with NodePort: ${NODE_PORT} and create glbc.yaml when ready"
 fi
-rm yaml/default-http-backend-copy.yaml
+rm ../resources/default-http-backend-copy.yaml
 
 # Startup glbc
-kubectl create -f yaml/glbc.yaml
+kubectl create -f ../resources/glbc.yaml
 [[ $? -eq 0 ]] || manual_glbc_provision
 if [[ $? -eq 1 ]];
 then

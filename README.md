@@ -13,8 +13,6 @@ Please read the [beta limitations](BETA_LIMITATIONS.md) doc to before using this
 - It relies on a beta Kubernetes resource.
 - The loadbalancer controller pod is not aware of your GCE quota.
 
-**If you are running a cluster on GKE and interested in trying out alpha releases of the GLBC before they are officially released please visit the deploy/glbc/ directory.**
-
 ## Overview
 
 See [here](https://kubernetes.io/docs/concepts/services-networking/ingress/) for high-level concepts on Ingress in Kubernetes.
@@ -25,9 +23,13 @@ For GCP-specific documentation, please visit [here](https://cloud.google.com/kub
 
 Please visit the [changelog](CHANGELOG.md) for both high-level release notes and a detailed changelog.
 
+## Documentation
+
+Please visit our [docs](docs/) for more information on how to run, contribute, troubleshoot and much more!
+
 ## GKE Version Mapping
 
-The table below describes what version of Ingress-GCE is running on GKE. Note that these versions are simply the defaults. Users still have the power to change the version manually if they want to (see deploy/).
+The table below describes what version of Ingress-GCE is running on GKE. Note that these versions are simply the defaults. 
 
    *Format: k8s version -> glbc version* ('+' indicates that version or above)
 

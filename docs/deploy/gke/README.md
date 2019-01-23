@@ -1,16 +1,10 @@
 # Overview
 
-Welcome, you are reading this because you are interested in running a version of the
-GCP Ingress Controller (GLBC) before it is officially released on GKE! The purpose of this is to
-allow users to find bugs and report them, while also getting early access to improvements and
-new features. You will notice that the following things are sitting in this directory:
+Welcome, you are reading this because you are interested in running a **self-managed** version of the
+Ingress-GCE Controller on GKE!
 
-1. script.sh
-2. gce.conf
-3. yaml/
-
-We will explain what each of these things mean in a bit. However, you will only be interacting
-with one file (script.sh).
+Note that on GKE, Ingress-GCE runs by default but it is managed for you by GKE. This document
+will teach you how to release GKE from managing GLBC and put that power in your hands.
 
 **Disclaimer: Running this script could potentially be disruptive to traffic
 so if you want to run this on a production cluster, do so at your own risk.
@@ -29,14 +23,14 @@ under [core]/project is the one that contains your cluster. Second, ensure that
 the current logged-in account listed under [core]/account is the owner of the project.
 In other words, this account should have full project ownership permissions and be listed as
 having the "Owner" role on the IAM page of your GCP project. You might ask why this
-is needed? Well, the reason is that the script invokes a kubectl command which
+is needed? Well, the reason is that our [script](../resources/gke-self-managed.sh) invokes a kubectl command which
 creates a new k8s RBAC role (see below for explanation why). In order to do this, the
 current user must be the project owner. The "Owner" role also gives the account
 permission to do basically anything so all commands the script runs should
 theoretically work. If not, the script will do its best to fail gracefully
 and let you know what might have went wrong.
 
-The second step is to make sure you populate the gce.conf file. The instructions
+The second step is to make sure you populate the [gce.conf](../resources/gce.conf) file. The instructions
 for populating the file are in the file itself. You just have to fill it in.
 
 # Important Details
@@ -72,22 +66,22 @@ with what we described above.
 
 ## Dependencies
 
-As promised, here is an explanation of each script dependency.
+Here is an explanation of each script dependency.
 
-1. gce.conf
+1. [gce.conf](../resources/gce.conf)
     * This file normally sits on the GKE master and provides important config for
       the GCP Compute API client within the GLBC. The GLBC is configured to know
       where to look for this file. In this case, we simply mount the file as a
       volume and tell GLBC to look for it there.
-2. yaml/default-http-backend.yaml
+2. [default-http-backend.yaml](../resources/default-http-backend.yaml)
     * This file contains the specifications for both the default-http-backend
       deployment and service. This is no different than what you are used to
       seeing in your cluster. In this case, we need to recreate the default
       backend since turning off the GLBC on the master removes it.
-3. yaml/rbac.yaml
+3. [rbac.yaml](../resources/rbac.yaml)
     * This file contains specification for an RBAC role which gives the GLBC
       access to the resources it needs from the k8s API server.
-4. yaml/glbc.yaml
+4. [glbc.yaml](../resources/glbc.yaml)
     * This file contains the specification for the GLBC deployment. Notice that in
       this case, we need a deployment because we want to preserve the controller
       in case of node restarts.
@@ -98,7 +92,7 @@ Take a look at the script to understand where each file is used.
 
 Run the command below to see the usage:
 
-`./script.sh --help`
+`./gke-self-managed.sh --help`
 
 After that, it should be self-explanatory!
 

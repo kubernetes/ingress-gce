@@ -1,9 +1,9 @@
-# GLBC E2E Testing
+# Overview
 
 This document briefly goes over how the e2e testing is setup for this repository. It will also go into
 some detail on how you can run tests against your own cluster.
 
-## Kubernetes CI Overview
+## CI 
 
 There are two groups of e2e tests that run in Kubernetes CI.
 The first group uses a currently released image of GLBC when the test cluster is brought up.
@@ -21,26 +21,10 @@ a job that pushes a new image of GLBC for e2e testing. The ingress-gce-* jobs th
 this image when the test cluster is brought up. You can see the results of this job
 at https://k8s-testgrid.appspot.com/sig-network-gce#ingress-gce-image-push.
 
-## Manual Testing
+## Running E2E tests
 
 If you are fixing a bug or writing a new feature and want to test your changes before they
-are run through CI, then you will most likely want to test your changes end-to-end before submitting:
-
-1. ingress-gce-e2e:
-
-  * `VERSION=mytag REGISTRY=gcr.io/my-test-project make push-e2e`
-  * `export GCE_GLBC_IMAGE=gcr.io/my-test-project/ingress-gce-e2e-glbc-amd64:mytag`
-  * `go run hack/e2e.go --up --test --down --test_args="--ginkgo.focus=\[Feature:Ingress\]"`
-
-2. ingress-gce-upgrade-e2e
-
-  * `VERSION=mytag REGISTRY=gcr.io/my-test-project make push-e2e`
-  * `go run hack/e2e.go --up --test --down --test_args="--ginkgo.focus=\[Feature:IngressUpgrade\] --ingress-upgrade-image=gcr.io/my-test-project/ingress-gce-e2e-glbc-amd64:mytag"`
-
-
-
-**Disclaimer:**
-
-Note that the cluster you create should have permission to pull images from the registry
-you are using to push the image to. You can either make your registry publicly readable or give explicit permission
-to your cluster's project service account.
+are run through CI, then you will most likely want to test your changes end-to-end before submitting.
+The instructions for running the e2e tests are [here](../../cmd/e2e-test/readme.md).
+Before following those instructions, ensure that you are running the controller
+by following the instructions [here](../deploy/local/README.md)
