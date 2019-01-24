@@ -17,10 +17,12 @@ limitations under the License.
 package syncers
 
 import (
-	"k8s.io/apimachinery/pkg/util/wait"
 	"sync"
 	"testing"
 	"time"
+
+	"k8s.io/apimachinery/pkg/util/clock"
+	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 const (
@@ -46,7 +48,7 @@ func (h *retryHandlerTestHelper) getCount() int {
 }
 
 func verifyRetryHandler(t *testing.T, expectCount int, helper *retryHandlerTestHelper) {
-	if err := wait.PollImmediate(time.Second, 2*smallTestRetryDelay, func() (bool, error) {
+	if err := wait.PollImmediate(time.Microsecond, 2*time.Second, func() (bool, error) {
 		if helper.getCount() == expectCount {
 			return true, nil
 		}
@@ -59,7 +61,11 @@ func verifyRetryHandler(t *testing.T, expectCount int, helper *retryHandlerTestH
 func TestBackoffRetryHandler_Retry(t *testing.T) {
 	helper := &retryHandlerTestHelper{}
 	handler := NewDelayRetryHandler(helper.incrementCount, NewExponentialBackendOffHandler(testMaxRetries, smallTestRetryDelay, testMaxRetryDelay))
+	fakeClock := clock.NewFakeClock(time.Now())
+	handler.clock = fakeClock
+	delay := smallTestRetryDelay
 
+	// Trigger 2 Retries and expect one actual retry happens
 	if err := handler.Retry(); err != nil {
 		t.Fatalf("Expect no error, but got %v", err)
 	}
@@ -67,19 +73,30 @@ func TestBackoffRetryHandler_Retry(t *testing.T) {
 	if err := handler.Retry(); err != ErrHandlerRetrying {
 		t.Fatalf("Expect error %v, but got %v", ErrHandlerRetrying, err)
 	}
-
+	fakeClock.Step(delay)
 	verifyRetryHandler(t, 1, helper)
 
+	// Trigger exponential backoff retry
 	if err := handler.Retry(); err != nil {
 		t.Fatalf("Expect no error, but got %v", err)
 	}
-
+	delay *= 2
+	fakeClock.Step(delay)
 	verifyRetryHandler(t, 2, helper)
 
+	// Trigger exponential backoff retry #2
+	if err := handler.Retry(); err != nil {
+		t.Fatalf("Expect no error, but got %v", err)
+	}
+	delay *= 2
+	fakeClock.Step(delay)
+	verifyRetryHandler(t, 3, helper)
+
+	// Trigger reset and retry again
 	handler.Reset()
 	if err := handler.Retry(); err != nil {
 		t.Fatalf("Expect no error, but got %v", err)
 	}
-
-	verifyRetryHandler(t, 3, helper)
+	fakeClock.Step(smallTestRetryDelay)
+	verifyRetryHandler(t, 4, helper)
 }

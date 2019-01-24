@@ -74,8 +74,9 @@ func (h *backoffRetryHandler) Retry() error {
 	}
 
 	h.retrying = true
+	ch := h.clock.After(delay)
 	go func() {
-		<-h.clock.After(delay)
+		<-ch
 		func() {
 			h.stateLock.Lock()
 			defer h.stateLock.Unlock()
