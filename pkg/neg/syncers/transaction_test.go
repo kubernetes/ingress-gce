@@ -17,19 +17,24 @@ limitations under the License.
 package syncers
 
 import (
+	"fmt"
 	"net"
 	"reflect"
+	"strconv"
 	"testing"
 	"time"
 
+	"google.golang.org/api/compute/v0.beta"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
 const (
@@ -43,6 +48,295 @@ const (
 	testNamespace = "ns"
 	testService   = "svc"
 )
+
+func TestTransactionSyncNetworkEndpoints(t *testing.T) {
+	t.Parallel()
+	fakeGCECloud := gce.FakeGCECloud(gce.DefaultTestClusterValues())
+	negtypes.MockNetworkEndpointAPIs(fakeGCECloud)
+	_, transactionSyncer := newTestTransactionSyncer(fakeGCECloud)
+	testCases := []struct {
+		desc            string
+		addEndpoints    map[string]sets.String
+		removeEndpoints map[string]sets.String
+		expectEndpoints map[string]sets.String
+	}{
+		{
+			"empty input",
+			map[string]sets.String{},
+			map[string]sets.String{},
+			map[string]sets.String{},
+		},
+		{
+			"add some endpoints",
+			map[string]sets.String{
+				testZone1: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
+				testZone2: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+			},
+			map[string]sets.String{},
+			map[string]sets.String{
+				testZone1: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
+				testZone2: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+			},
+		},
+		{
+			"remove some endpoints",
+			map[string]sets.String{},
+			map[string]sets.String{
+				testZone1: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
+			},
+			map[string]sets.String{
+				testZone2: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+			},
+		},
+		{
+			"add duplicate endpoints",
+			map[string]sets.String{
+				testZone2: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+			},
+			map[string]sets.String{},
+			map[string]sets.String{
+				testZone2: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+			},
+		},
+		{
+			"add and remove endpoints",
+			map[string]sets.String{
+				testZone1: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+			},
+			map[string]sets.String{
+				testZone2: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+			},
+			map[string]sets.String{
+				testZone1: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+			},
+		},
+		{
+			"add more endpoints",
+			map[string]sets.String{
+				testZone2: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			},
+			map[string]sets.String{},
+			map[string]sets.String{
+				testZone1: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				testZone2: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			},
+		},
+		{
+			"add and remove endpoints in both zones",
+			map[string]sets.String{
+				testZone1: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
+				testZone2: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+			},
+			map[string]sets.String{
+				testZone1: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				testZone2: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+			},
+			map[string]sets.String{
+				testZone1: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
+				testZone2: sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+			},
+		},
+	}
+
+	if err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
+		t.Errorf("Expect error == nil, but got %v", err)
+	}
+
+	for _, tc := range testCases {
+		err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints)
+		if err != nil {
+			t.Errorf("For case %q, expect error == nil, but got %v", tc.desc, err)
+		}
+
+		if err := waitForTransactions(transactionSyncer); err != nil {
+			t.Errorf("For case %q, expect error == nil, but got %v", tc.desc, err)
+		}
+
+		for zone, endpoints := range tc.expectEndpoints {
+			list, err := fakeGCECloud.ListNetworkEndpoints(transactionSyncer.negName, zone, false)
+			if err != nil {
+				t.Errorf("For case %q,, expect error == nil, but got %v", tc.desc, err)
+			}
+
+			endpointSet := sets.NewString()
+			for _, ep := range list {
+				endpointSet.Insert(encodeEndpoint(ep.NetworkEndpoint.IpAddress, ep.NetworkEndpoint.Instance, strconv.FormatInt(ep.NetworkEndpoint.Port, 10)))
+			}
+
+			if !endpoints.Equal(endpointSet) {
+				t.Errorf("For case %q, in zone %q, expect endpoints == %v, but got %v", tc.desc, zone, endpoints, endpointSet)
+			}
+		}
+	}
+}
+
+func TestCommitTransaction(t *testing.T) {
+	t.Parallel()
+	s, transactionSyncer := newTestTransactionSyncer(gce.FakeGCECloud(gce.DefaultTestClusterValues()))
+	// use testSyncer to track the number of Sync got triggered
+	testSyncer := &testSyncer{s.(*syncer), 0}
+	transactionSyncer.syncer = testSyncer
+	// assume NEG is initialized
+	transactionSyncer.needInit = false
+	transactionSyncer.retry = NewDelayRetryHandler(func() { transactionSyncer.syncer.Sync() }, NewExponentialBackendOffHandler(0, 0, 0))
+
+	testCases := []struct {
+		desc            string
+		err             error
+		endpointMap     map[string]*compute.NetworkEndpoint
+		table           func() transactionTable
+		expect          func() transactionTable
+		expectSyncCount int
+		expectNeedInit  bool
+	}{
+		{
+			"empty inputs",
+			nil,
+			map[string]*compute.NetworkEndpoint{},
+			func() transactionTable { return NewTransactionTable() },
+			func() transactionTable { return NewTransactionTable() },
+			0,
+			false,
+		},
+		{
+			"attach 10 endpoints on 1 instance successfully",
+			nil,
+			generateEndpointBatch(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+			func() transactionTable {
+				table := NewTransactionTable()
+				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				return table
+			},
+			func() transactionTable { return NewTransactionTable() },
+			0,
+			false,
+		},
+		{
+			"detach 20 endpoints on 2 instances successfully",
+			nil,
+			generateEndpointBatch(sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
+			func() transactionTable {
+				table := NewTransactionTable()
+				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				return table
+			},
+			func() transactionTable { return NewTransactionTable() },
+			0,
+			false,
+		},
+		{
+			"attach 20 endpoints on 2 instances successfully with unrelated 10 entries in the transaction table",
+			nil,
+			generateEndpointBatch(sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
+			func() transactionTable {
+				table := NewTransactionTable()
+				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				return table
+			},
+			func() transactionTable {
+				table := NewTransactionTable()
+				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				return table
+			},
+			0,
+			false,
+		},
+		{
+			"error and retry",
+			fmt.Errorf("dummy error"),
+			map[string]*compute.NetworkEndpoint{},
+			func() transactionTable {
+				table := NewTransactionTable()
+				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				return table
+			},
+			func() transactionTable {
+				table := NewTransactionTable()
+				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				return table
+			},
+			1,
+			true,
+		},
+		{
+			"error and retry #2",
+			fmt.Errorf("dummy error"),
+			generateEndpointBatch(sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
+			func() transactionTable {
+				table := NewTransactionTable()
+				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				return table
+			},
+			func() transactionTable {
+				table := NewTransactionTable()
+				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				return table
+			},
+			2,
+			true,
+		},
+		{
+			"detach 20 endpoints on 2 instance but missing transaction entries on 1 instance",
+			nil,
+			generateEndpointBatch(sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
+			func() transactionTable {
+				table := NewTransactionTable()
+				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				return table
+			},
+			func() transactionTable { return NewTransactionTable() },
+			3,
+			false,
+		},
+		{
+			"detach 20 endpoints on 2 instance but 10 endpoints needs reconcile",
+			nil,
+			generateEndpointBatch(sets.NewString().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
+			func() transactionTable {
+				table := NewTransactionTable()
+				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: true}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				return table
+			},
+			func() transactionTable {
+				table := NewTransactionTable()
+				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				return table
+			},
+			4,
+			false,
+		},
+	}
+
+	for _, tc := range testCases {
+		transactionSyncer.transactions = tc.table()
+		transactionSyncer.commitTransaction(tc.err, tc.endpointMap)
+		if transactionSyncer.needInit != tc.expectNeedInit {
+			t.Errorf("For case %q, expect needInit == %v, but got %v", tc.desc, tc.expectNeedInit, transactionSyncer.needInit)
+		}
+		if transactionSyncer.needInit == true {
+			transactionSyncer.needInit = false
+		}
+
+		validateTransactionTableEquality(t, tc.desc, transactionSyncer.transactions, tc.expect())
+		// wait for the sync count to bump
+		if err := wait.PollImmediate(time.Microsecond, 5*time.Second, func() (bool, error) {
+			if tc.expectSyncCount == testSyncer.SyncCount {
+				return true, nil
+			}
+			return false, nil
+		}); err != nil {
+			t.Errorf("For case %q, expect sync count == %v, but got %v", tc.desc, tc.expectSyncCount, testSyncer.SyncCount)
+		}
+
+	}
+}
 
 func TestReconcileTransactions(t *testing.T) {
 	testCases := []struct {
@@ -294,29 +588,8 @@ func TestReconcileTransactions(t *testing.T) {
 		if !reflect.DeepEqual(copy, tc.endpointMap) {
 			t.Errorf("For test case %q, does not expect endpointMap to change", tc.desc)
 		}
-
 		// Check if the existing entries are matching expected
-		expectTable := tc.expect()
-		for _, key := range table.Keys() {
-			expectEntry, ok := expectTable.Get(key)
-			if !ok {
-				t.Errorf("For test case %q, do not expect key %q to exists", tc.desc, key)
-				continue
-			}
-			gotEntry, _ := table.Get(key)
-			if !reflect.DeepEqual(expectEntry, gotEntry) {
-				t.Errorf("For test case %q, expectEntry of key %q to be %v, but got %v", tc.desc, key, expectEntry, gotEntry)
-			}
-		}
-
-		// Check if there are missing entries that expected to exist in output
-		for _, key := range expectTable.Keys() {
-			_, ok := table.Get(key)
-			if !ok {
-				t.Errorf("For test case %q, expect transaction key %q to exists, but got nil", tc.desc, key)
-				continue
-			}
-		}
+		validateTransactionTableEquality(t, tc.desc, table, tc.expect())
 	}
 }
 
@@ -554,7 +827,7 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 	}
 }
 
-func NewTestTransactionSyncer() negtypes.NegSyncer {
+func newTestTransactionSyncer(fakeGCE *gce.GCECloud) (negtypes.NegSyncer, *transactionSyncer) {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := utils.NewNamer(clusterID, "")
@@ -573,13 +846,15 @@ func NewTestTransactionSyncer() negtypes.NegSyncer {
 		TargetPort: "8080",
 	}
 
-	return NewTransactionSyncer(svcPort,
+	negsyncer := NewTransactionSyncer(svcPort,
 		testNegName,
 		record.NewFakeRecorder(100),
-		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-newtork"),
+		fakeGCE,
 		negtypes.NewFakeZoneGetter(),
 		context.ServiceInformer.GetIndexer(),
 		context.EndpointInformer.GetIndexer())
+	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
+	return negsyncer, transactionSyncer
 }
 
 func copyMap(endpointMap map[string]sets.String) map[string]sets.String {
@@ -608,4 +883,54 @@ func generateEndpointSet(initialIp net.IP, num int, instance string, targetPort 
 		ret.Insert(encodeEndpoint(ip.String(), instance, targetPort))
 	}
 	return ret
+}
+
+func generateEndpointBatch(endpointSet sets.String) map[string]*compute.NetworkEndpoint {
+	ret, _ := makeEndpointBatch(endpointSet)
+	return ret
+}
+
+type testSyncer struct {
+	*syncer
+	SyncCount int
+}
+
+func (s *testSyncer) Sync() bool {
+	s.SyncCount++
+	return s.syncer.Sync()
+}
+
+func validateTransactionTableEquality(t *testing.T, desc string, table, expectTable transactionTable) {
+	for _, key := range table.Keys() {
+		expectEntry, ok := expectTable.Get(key)
+		if !ok {
+			t.Errorf("For test case %q, do not expect key %q to exists", desc, key)
+			continue
+		}
+		gotEntry, _ := table.Get(key)
+		if !reflect.DeepEqual(expectEntry, gotEntry) {
+			t.Errorf("For test case %q, expectEntry of key %q to be %v, but got %v", desc, key, expectEntry, gotEntry)
+		}
+	}
+
+	// Check if there are missing entries that expected to exist in output
+	for _, key := range expectTable.Keys() {
+		_, ok := table.Get(key)
+		if !ok {
+			t.Errorf("For test case %q, expect transaction key %q to exists, but got nil", desc, key)
+			continue
+		}
+	}
+}
+
+// waitForTransactions waits for transactions to be completed
+func waitForTransactions(syncer *transactionSyncer) error {
+	return wait.PollImmediate(time.Microsecond, 5*time.Second, func() (bool, error) {
+		syncer.syncLock.Lock()
+		defer syncer.syncLock.Unlock()
+		if len(syncer.transactions.Keys()) == 0 {
+			return true, nil
+		}
+		return false, nil
+	})
 }

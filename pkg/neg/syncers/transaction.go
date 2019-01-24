@@ -75,7 +75,7 @@ func NewTransactionSyncer(negSyncerKey NegSyncerKey, networkEndpointGroupName st
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, networkEndpointGroupName, serviceLister, recorder, ts)
-	// TransactionSyncer needs syncer interface for internals
+	// transactionSyncer needs syncer interface for internals
 	ts.syncer = syncer
 	ts.retry = NewDelayRetryHandler(func() { syncer.Sync() }, NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay))
 	return syncer
@@ -287,7 +287,7 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 	for encodedEndpoint := range networkEndpointMap {
 		entry, ok := s.transactions.Get(encodedEndpoint)
 		if !ok {
-			glog.Errorf("Endpoint %q was not found in the transaction table.")
+			glog.Errorf("Endpoint %q was not found in the transaction table.", encodedEndpoint)
 			needSync = true
 			continue
 		}
