@@ -131,6 +131,10 @@ type Features struct {
 	NEGExposed bool
 	// ManagedCertificates enables using ManagedCertificate CRD
 	ManagedCertificates bool
+	// FinalizerAdd enables adding a finalizer on Ingress
+	FinalizerAdd bool
+	// FinalizerRemove enables removing a finalizer on Ingress.
+	FinalizerRemove bool
 }
 
 var DefaultFeatures = &Features{
@@ -138,6 +142,8 @@ var DefaultFeatures = &Features{
 	NEG:                 true,
 	NEGExposed:          true,
 	ManagedCertificates: false,
+	FinalizerAdd:        false,
+	FinalizerRemove:     false,
 }
 
 func EnabledFeatures() *Features {
@@ -218,6 +224,10 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.DurationVar(&F.NegGCPeriod, "neg-gc-period", 120*time.Second,
 		`Relist and garbage collect NEGs this often.`)
 	flag.StringVar(&F.NegSyncerType, "neg-syncer-type", "transaction", "Define the NEG syncer type to use. Valid values are \"batch\" and \"transaction\"")
+	flag.BoolVar(&F.Features.FinalizerAdd, "enable-finalizer-add",
+		F.Features.FinalizerAdd, "Enable adding Finalizer to Ingress.")
+	flag.BoolVar(&F.Features.FinalizerRemove, "enable-finalizer-remove",
+		F.Features.FinalizerRemove, "Enable removing Finalizer from Ingress.")
 
 	// Deprecated F.
 	flag.BoolVar(&F.Verbose, "verbose", false,

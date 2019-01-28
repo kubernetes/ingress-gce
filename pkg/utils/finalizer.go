@@ -14,13 +14,17 @@ limitations under the License.
 package utils
 
 import (
+	"fmt"
+
+	"github.com/golang/glog"
+	extensions "k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	client "k8s.io/client-go/kubernetes/typed/extensions/v1beta1"
 	"k8s.io/kubernetes/pkg/util/slice"
 )
 
-// FinalizerKeySuffix is a suffix for finalizers added by the controller.
-// A full key could be something like "ingress.finalizer.cloud.google.com"
-const FinalizerKeySuffix = "finalizer.cloud.google.com"
+// FinalizerKey is the string representing the Ingress finalizer.
+const FinalizerKey = "networking.gke.io/ingress-finalizer"
 
 // IsDeletionCandidate is true if the passed in meta contains the specified finalizer.
 func IsDeletionCandidate(m meta_v1.ObjectMeta, key string) bool {
@@ -35,4 +39,36 @@ func NeedToAddFinalizer(m meta_v1.ObjectMeta, key string) bool {
 // HasFinalizer is true if the passed in meta has the specified finalizer.
 func HasFinalizer(m meta_v1.ObjectMeta, key string) bool {
 	return slice.ContainsString(m.Finalizers, key, nil)
+}
+
+// AddFinalizer tries to add a finalizer to an Ingress. If a finalizer
+// already exists, it does nothing.
+func AddFinalizer(ing *extensions.Ingress, ingClient client.IngressInterface) error {
+	ingKey := FinalizerKey
+	if NeedToAddFinalizer(ing.ObjectMeta, ingKey) {
+		updated := ing.DeepCopy()
+		updated.ObjectMeta.Finalizers = append(updated.ObjectMeta.Finalizers, ingKey)
+		if _, err := ingClient.Update(updated); err != nil {
+			return fmt.Errorf("error updating Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
+		}
+		glog.V(3).Infof("Added finalizer %q for Ingress %s/%s", ingKey, ing.Namespace, ing.Name)
+	}
+
+	return nil
+}
+
+// RemoveFinalizer tries to remove a Finalizer from an Ingress. If a
+// finalizer is not on the Ingress, it does nothing.
+func RemoveFinalizer(ing *extensions.Ingress, ingClient client.IngressInterface) error {
+	ingKey := FinalizerKey
+	if HasFinalizer(ing.ObjectMeta, ingKey) {
+		updated := ing.DeepCopy()
+		updated.ObjectMeta.Finalizers = slice.RemoveString(updated.ObjectMeta.Finalizers, ingKey, nil)
+		if _, err := ingClient.Update(updated); err != nil {
+			return fmt.Errorf("error updating Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
+		}
+		glog.V(3).Infof("Removed finalizer %q for Ingress %s/%s", ingKey, ing.Namespace, ing.Name)
+	}
+
+	return nil
 }
