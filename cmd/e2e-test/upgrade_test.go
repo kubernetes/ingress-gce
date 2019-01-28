@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"github.com/kr/pretty"
@@ -66,11 +65,20 @@ func TestUpgrade(t *testing.T) {
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 			s.PutStatus(e2e.Unstable)
 
-			runs := 0
-			// needUpdate indicates that the Ingress sync has NOT yet been triggered
-			needUpdate := true
+			ing := waitForStableIngress(true, tc.ing, s, t)
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
+
+			whiteboxTest(ing, s, tc.numForwardingRules, tc.numBackendServices, t)
+
 			for {
-				if s.MasterUpgraded() && needUpdate {
+				// While k8s master is upgrading, it will return a connection refused
+				// error for any k8s resource we try to hit. We loop until the
+				// master upgrade has finished.
+				if s.MasterUpgrading() {
+					continue
+				}
+
+				if s.MasterUpgraded() {
 					t.Logf("Detected master upgrade, adding a path to Ingress to force Ingress update")
 					// force ingress update. only add path once
 					newIng := fuzz.NewIngressBuilderFromExisting(tc.ing).
@@ -84,74 +92,69 @@ func TestUpgrade(t *testing.T) {
 						// to Unstable. It is set back to Stable after WaitForIngress below
 						// finishes successfully.
 						s.PutStatus(e2e.Unstable)
-						needUpdate = false
 					}
-				}
 
-				// While k8s master is upgrading, it will return a connection refused
-				// error for any k8s resource we try to hit. We loop until the
-				// master upgrade has finished.
-				if s.MasterUpgrading() {
-					continue
-				}
-				options := &e2e.WaitForIngressOptions{
-					ExpectUnreachable: runs == 0,
-				}
-				ing, err := e2e.WaitForIngress(s, tc.ing, options)
-				if err != nil {
-					if strings.Contains(err.Error(), "connection refused") {
-						// We ignore any connection refused errors because there is an
-						// unavoidable race condition between when a master upgrade is
-						// triggered and when WaitForIngress() is called.
-						continue
-					}
-					t.Fatalf("error waiting for Ingress to stabilize: %v", err)
-				}
-
-				s.PutStatus(e2e.Stable)
-
-				if runs == 0 {
-					t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
-				} else {
-					t.Logf("GCLB is stable (%s/%s)", s.Namespace, tc.ing.Name)
-				}
-
-				// Perform whitebox testing.
-				if len(ing.Status.LoadBalancer.Ingress) < 1 {
-					t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
-				}
-
-				vip := ing.Status.LoadBalancer.Ingress[0].IP
-				t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ing.Name, vip)
-				gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
-				if err != nil {
-					t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
-				}
-
-				// Do some cursory checks on the GCP objects.
-				if len(gclb.ForwardingRule) != tc.numForwardingRules {
-					t.Errorf("got %d fowarding rules, want %d;\n%s", len(gclb.ForwardingRule), tc.numForwardingRules, pretty.Sprint(gclb.ForwardingRule))
-				}
-				if len(gclb.BackendService) != tc.numBackendServices {
-					t.Errorf("got %d backend services, want %d;\n%s", len(gclb.BackendService), tc.numBackendServices, pretty.Sprint(gclb.BackendService))
-				}
-
-				runs++
-
-				// If the Master has upgraded and the Ingress is stable,
-				// we delete the Ingress and exit out of the loop to indicate that
-				// the test is done.
-				if s.MasterUpgraded() && !needUpdate {
-					deleteOptions := &fuzz.GCLBDeleteOptions{
-						SkipDefaultBackend: true,
-					}
-					if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing, deleteOptions); err != nil {
-						t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
-					} else {
-						break
-					}
+					break
 				}
 			}
+
+			// Verify the Ingress has stabilized after the master upgrade and we
+			// trigger an Ingress update
+			ing = waitForStableIngress(false, ing, s, t)
+			t.Logf("GCLB is stable (%s/%s)", s.Namespace, tc.ing.Name)
+			whiteboxTest(ing, s, tc.numForwardingRules, tc.numBackendServices, t)
+
+			// If the Master has upgraded and the Ingress is stable,
+			// we delete the Ingress and exit out of the loop to indicate that
+			// the test is done.
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: true,
+			}
+
+			vip := ing.Status.LoadBalancer.Ingress[0].IP
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+
+			if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing, deleteOptions); err != nil { // Sometimes times out waiting
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+			}
 		})
+	}
+}
+
+func waitForStableIngress(expectUnreachable bool, ing *v1beta1.Ingress, s *e2e.Sandbox, t *testing.T) *v1beta1.Ingress {
+	options := &e2e.WaitForIngressOptions{
+		ExpectUnreachable: expectUnreachable,
+	}
+
+	ing, err := e2e.WaitForIngress(s, ing, options)
+	if err != nil {
+		t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+	}
+
+	s.PutStatus(e2e.Stable)
+	return ing
+}
+
+func whiteboxTest(ing *v1beta1.Ingress, s *e2e.Sandbox, numForwardingRules, numBackendServices int, t *testing.T) {
+	if len(ing.Status.LoadBalancer.Ingress) < 1 {
+		t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
+	}
+
+	vip := ing.Status.LoadBalancer.Ingress[0].IP
+	t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
+	gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
+	if err != nil {
+		t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+	}
+
+	// Do some cursory checks on the GCP objects.
+	if len(gclb.ForwardingRule) != numForwardingRules {
+		t.Errorf("got %d fowarding rules, want %d;\n%s", len(gclb.ForwardingRule), numForwardingRules, pretty.Sprint(gclb.ForwardingRule))
+	}
+	if len(gclb.BackendService) != numBackendServices {
+		t.Errorf("got %d backend services, want %d;\n%s", len(gclb.BackendService), numBackendServices, pretty.Sprint(gclb.BackendService))
 	}
 }
