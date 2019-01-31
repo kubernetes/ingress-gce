@@ -172,10 +172,16 @@ func (sm *StatusManager) setMasterUpgrading(ts string) {
 }
 
 func (sm *StatusManager) masterUpgrading() bool {
+	sm.f.lock.Lock()
+	defer sm.f.lock.Unlock()
+
 	return len(sm.cm.Data[masterUpgradingKey]) > 0
 }
 
 func (sm *StatusManager) masterUpgraded() bool {
+	sm.f.lock.Lock()
+	defer sm.f.lock.Unlock()
+
 	return len(sm.cm.Data[masterUpgradedKey]) > 0
 }
 
@@ -185,14 +191,13 @@ func (sm *StatusManager) flush() {
 
 	glog.V(3).Infof("Attempting to flush %v", sm.cm.Data)
 
-	// If master is in the process of upgrading, we exit early and turn off the
-	// ConfigMap informer.
-	if sm.masterUpgrading() && sm.informerRunning {
+	// If master is in the process of upgrading, we stop the informer.
+	if sm.informerRunning && len(sm.cm.Data[masterUpgradingKey]) > 0 {
 		sm.stopInformer()
 	}
 
 	// Restart ConfigMap informer if it was previously shut down
-	if !sm.informerRunning && sm.masterUpgraded() {
+	if !sm.informerRunning && len(sm.cm.Data[masterUpgradedKey]) > 0 {
 		glog.V(2).Infof("Master has successfully upgraded at %s", sm.cm.Data[masterUpgradedKey])
 		sm.startInformer()
 	}
@@ -204,9 +209,9 @@ func (sm *StatusManager) flush() {
 	// order to not overwrite our ConfigMap data.
 	if err != nil {
 		// if the k8s master is upgrading, we suppress the error message because
-		// the error is expected.
-		if !sm.masterUpgrading() {
-			glog.Warningf("Error getting ConfigMap: %v", err)
+		// we expect a "connection refused" error in this situation.
+		if len(sm.cm.Data[masterUpgradingKey]) > 0 {
+			return
 		}
 
 		glog.Warningf("Error getting ConfigMap: %v", err)
