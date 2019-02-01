@@ -138,6 +138,12 @@ func (l *L7) edgeHop() error {
 		if err := l.edgeHopHttp(); err != nil {
 			return err
 		}
+	} else {
+		// if AllowHTTP is disabled, clean up the HTTP resources that would have
+		// been derived from this L7.
+		if err := l.cleanupResourcesWithProtocol(utils.HTTPProtocol); err != nil {
+			return err
+		}
 	}
 	// Defer promoting an ephemeral to a static IP until it's really needed.
 	sslConfigured := l.runtimeInfo.TLS != nil || l.runtimeInfo.TLSName != "" || l.runtimeInfo.ManagedCertificates != ""
@@ -147,11 +153,20 @@ func (l *L7) edgeHop() error {
 			return err
 		}
 	}
+	// TODO: Figure out whether we should demote the static IP to ephemeral in
+	// the case when  allowHTTP or sslConfigured becomes false.
 	if sslConfigured {
 		glog.V(3).Infof("validating https for %v", l.Name)
 		if err := l.edgeHopHttps(); err != nil {
 			return err
 		}
+		return nil
+	}
+
+	// If SSL is disabled, clean up the HTTPS resources that would have been
+	// derived from this L7.
+	if err := l.cleanupResourcesWithProtocol(utils.HTTPSProtocol); err != nil {
+		return err
 	}
 	return nil
 }
@@ -189,22 +204,33 @@ func (l *L7) GetIP() string {
 	return ""
 }
 
-// Cleanup deletes resources specific to this l7 in the right order.
-// forwarding rule -> target proxy -> url map
-// This leaves backends and health checks, which are shared across loadbalancers.
-func (l *L7) Cleanup() error {
-	fwName := l.namer.ForwardingRule(l.Name, utils.HTTPProtocol)
-	glog.V(2).Infof("Deleting global forwarding rule %v", fwName)
+func (l *L7) cleanupResourcesWithProtocol(protocol utils.NamerProtocol) error {
+	fwName := l.namer.ForwardingRule(l.Name, protocol)
+	glog.V(3).Infof("Deleting global %v forwarding rule %v", protocol, fwName)
 	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalForwardingRule(fwName)); err != nil {
 		return err
 	}
 
-	fwsName := l.namer.ForwardingRule(l.Name, utils.HTTPSProtocol)
-	glog.V(2).Infof("Deleting global forwarding rule %v", fwsName)
-	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalForwardingRule(fwsName)); err != nil {
-		return err
+	tpName := l.namer.TargetProxy(l.Name, protocol)
+	glog.V(3).Infof("Deleting target %v proxy %v", protocol, tpName)
+	if protocol == utils.HTTPProtocol {
+		if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHttpProxy(tpName)); err != nil {
+			return err
+		}
+	} else {
+		if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHttpsProxy(tpName)); err != nil {
+			return err
+		}
+		if err := l.deleteIngressManagedSslCerts(); err != nil {
+			return err
+		}
 	}
 
+	return nil
+}
+
+func (l *L7) deleteStaticIP() error {
+	fwName := l.namer.ForwardingRule(l.Name, utils.HTTPProtocol)
 	ip, err := l.cloud.GetGlobalAddress(fwName)
 	if ip != nil && utils.IgnoreHTTPNotFound(err) == nil {
 		glog.V(2).Infof("Deleting static IP %v(%v)", ip.Name, ip.Address)
@@ -213,18 +239,10 @@ func (l *L7) Cleanup() error {
 		}
 	}
 
-	tpName := l.namer.TargetProxy(l.Name, utils.HTTPProtocol)
-	glog.V(2).Infof("Deleting target http proxy %v", tpName)
-	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHttpProxy(tpName)); err != nil {
-		return err
-	}
+	return nil
+}
 
-	tpsName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
-	glog.V(2).Infof("Deleting target https proxy %v", tpsName)
-	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHttpsProxy(tpsName)); err != nil {
-		return err
-	}
-
+func (l *L7) deleteIngressManagedSslCerts() error {
 	// Delete the SSL cert if it is from a secret, not referencing a pre-created GCE cert or managed certificates.
 	secretsSslCerts, err := l.getIngressManagedSslCerts()
 	if err != nil {
@@ -244,6 +262,45 @@ func (l *L7) Cleanup() error {
 		if certErr != nil {
 			return certErr
 		}
+	}
+
+	return nil
+}
+
+// Cleanup deletes resources specific to this l7 in the right order.
+// forwarding rule -> target proxy -> url map
+// This leaves backends and health checks, which are shared across loadbalancers.
+func (l *L7) Cleanup() error {
+	fwName := l.namer.ForwardingRule(l.Name, utils.HTTPProtocol)
+	glog.V(2).Infof("Deleting global http forwarding rule %v", fwName)
+	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalForwardingRule(fwName)); err != nil {
+		return err
+	}
+
+	fwsName := l.namer.ForwardingRule(l.Name, utils.HTTPSProtocol)
+	glog.V(2).Infof("Deleting global https forwarding rule %v", fwsName)
+	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalForwardingRule(fwsName)); err != nil {
+		return err
+	}
+
+	if err := l.deleteStaticIP(); err != nil {
+		return err
+	}
+
+	tpName := l.namer.TargetProxy(l.Name, utils.HTTPProtocol)
+	glog.V(2).Infof("Deleting target http proxy %v", tpName)
+	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHttpProxy(tpName)); err != nil {
+		return err
+	}
+
+	tpsName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
+	glog.V(2).Infof("Deleting target https proxy %v", tpsName)
+	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHttpsProxy(tpsName)); err != nil {
+		return err
+	}
+
+	if err := l.deleteIngressManagedSslCerts(); err != nil {
+		return err
 	}
 
 	umName := l.namer.UrlMap(l.Name)

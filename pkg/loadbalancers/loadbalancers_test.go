@@ -166,6 +166,20 @@ func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, f *FakeLoadBalancers) 
 	}
 }
 
+func verifyHTTPSForwardingRuleAndProxyLinksDeleted(t *testing.T, f *FakeLoadBalancers) {
+	t.Helper()
+
+	tps, _ := f.GetTargetHttpsProxy(f.TPName(true))
+	if tps != nil {
+		t.Fatalf("f.GetTargetHttpsProxy(%q) = %v; want nil", f.TPName(true), tps)
+	}
+
+	fws, _ := f.GetGlobalForwardingRule(f.FWName(true))
+	if fws != nil {
+		t.Fatalf("f.GetGlobalForwardingRule(%q) = %v, want nil", f.FWName(true), fws)
+	}
+}
+
 func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, f *FakeLoadBalancers) {
 	t.Helper()
 
@@ -183,6 +197,20 @@ func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, f *FakeLoadBalancers) {
 	}
 	if !utils.EqualResourcePaths(fws.Target, tps.SelfLink) {
 		t.Fatalf("fw.Target = %q, want %q", fws.Target, tps.SelfLink)
+	}
+}
+
+func verifyHTTPForwardingRuleAndProxyLinksDeleted(t *testing.T, f *FakeLoadBalancers) {
+	t.Helper()
+
+	tp, _ := f.GetTargetHttpProxy(f.TPName(false))
+	if tp != nil {
+		t.Fatalf("f.GetTargetHttpProxy(%q) = %v; want nil", f.TPName(false), tp)
+	}
+
+	fws, _ := f.GetGlobalForwardingRule(f.FWName(false))
+	if fws != nil {
+		t.Fatalf("f.GetGlobalForwardingRule(%q) = %v, want nil", f.FWName(false), fws)
 	}
 }
 
@@ -736,6 +764,7 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 		t.Fatalf("Expected l7 not created")
 	}
 	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+	verifyHTTPForwardingRuleAndProxyLinksDeleted(t, f)
 }
 
 func TestCreateBothLoadBalancers(t *testing.T) {
@@ -997,6 +1026,7 @@ func TestCreateHTTPSLoadBalancerManagedCertificates(t *testing.T) {
 	mcrtLister := newMockMcrtLister(certs)
 	syncPool(f, t, namer, mcrtLister, lbInfo)
 	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+	verifyHTTPForwardingRuleAndProxyLinksDeleted(t, f)
 
 	expectCerts := make(map[string]string, len(certs))
 	for _, v := range certs {
@@ -1039,6 +1069,7 @@ func TestCreateHTTPSLoadBalancerManagedCertificatesAddAndRemove(t *testing.T) {
 	mcrtLister := newMockMcrtLister(certs)
 	syncPool(f, t, namer, mcrtLister, lbInfo)
 	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+	verifyHTTPForwardingRuleAndProxyLinksDeleted(t, f)
 
 	expectCerts := make(map[string]string, len(certs))
 	for _, v := range certs {
@@ -1052,9 +1083,10 @@ func TestCreateHTTPSLoadBalancerManagedCertificatesAddAndRemove(t *testing.T) {
 		f.DeleteSslCertificate(v)
 	}
 	syncPool(f, t, namer, mcrtLister, lbInfo)
-	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
 
-	verifyCertAndProxyLink(nil, expectCerts, f, t)
+	// With no certificates, the HTTPS resources are expected to be deleted
+	verifyHTTPForwardingRuleAndProxyLinksDeleted(t, f)
+	verifyHTTPSForwardingRuleAndProxyLinksDeleted(t, f)
 }
 
 func TestCreateHTTPSLoadBalancerManagedCertificatesAndSecretsCerts(t *testing.T) {
@@ -1098,6 +1130,7 @@ func TestCreateHTTPSLoadBalancerManagedCertificatesAndSecretsCerts(t *testing.T)
 	mcrtLister := newMockMcrtLister(certs)
 	syncPool(f, t, namer, mcrtLister, lbInfo)
 	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+	verifyHTTPForwardingRuleAndProxyLinksDeleted(t, f)
 
 	expectCerts := make(map[string]string, len(certs))
 	for _, v := range certs {
@@ -1145,6 +1178,7 @@ func TestCreateHTTPSLoadBalancerManagedCertificatesAndPreSharedCert(t *testing.T
 	mcrtLister := newMockMcrtLister(certs)
 	syncPool(f, t, namer, mcrtLister, lbInfo)
 	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+	verifyHTTPForwardingRuleAndProxyLinksDeleted(t, f)
 
 	expectCerts := make(map[string]string, len(certs))
 	for _, v := range certs {
@@ -1198,6 +1232,7 @@ func TestCreateHTTPSLoadBalancerAllCerts(t *testing.T) {
 	mcrtLister := newMockMcrtLister(certs)
 	syncPool(f, t, namer, mcrtLister, lbInfo)
 	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+	verifyHTTPForwardingRuleAndProxyLinksDeleted(t, f)
 
 	expectCerts := make(map[string]string, len(certs))
 	for _, v := range certs {
