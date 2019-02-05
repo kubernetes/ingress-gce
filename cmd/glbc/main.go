@@ -30,6 +30,7 @@ import (
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
+	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/leaderelection"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
@@ -81,6 +82,12 @@ func main() {
 	kubeClient, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
 		glog.Fatalf("Failed to create kubernetes client: %v", err)
+	}
+
+	// Due to scaling issues, leader election must be configured with a separate k8s client.
+	leaderElectKubeClient, err := kubernetes.NewForConfig(restclient.AddUserAgent(kubeConfig, "leader-election"))
+	if err != nil {
+		glog.Fatalf("Failed to create kubernetes client for leader election: %v", err)
 	}
 
 	// Ingress only reads status of ManagedCertificate CR which is set in another component.
@@ -137,7 +144,7 @@ func main() {
 		return
 	}
 
-	electionConfig, err := makeLeaderElectionConfig(kubeClient, ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace), func() {
+	electionConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace), func() {
 		runControllers(ctx)
 	})
 	if err != nil {
