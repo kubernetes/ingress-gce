@@ -29,16 +29,18 @@ Please visit the [changelog](CHANGELOG.md) for both high-level release notes and
 
 The table below describes what version of Ingress-GCE is running on GKE. Note that these versions are simply the defaults. Users still have the power to change the version manually if they want to (see deploy/).
 
-   *Format: k8s version -> glbc version*
+   *Format: k8s version -> glbc version* ('+' indicates that version or above)
 
-       * 1.9.6-gke.2 -> 0.9.7
-       * 1.9.7-gke.5 -> 0.9.7
-       * 1.10.4-gke.0 -> v1.1.1
-       * 1.10.5-gke.1 -> v1.2.2
-       * 1.10.5-gke.3 -> v1.2.3
-       * 1.10.6-gke.2 -> v1.3.0
-       * 1.10.7-gke.1 -> v1.3.2
-       * 1.11.2-gke.4 -> v1.3.3
-       * 1.11.3-gke.14 -> v1.4.0
+       * 1.9.6-gke.2+ -> 0.9.7
+       * 1.9.7-gke.5+ -> 0.9.7
+       * 1.10.4-gke.0+ -> v1.1.1
+       * 1.10.5-gke.1+ -> v1.2.2
+       * 1.10.5-gke.3+ -> v1.2.3
+       * 1.10.6-gke.2+ -> v1.3.0
+       * 1.10.7-gke.1+ -> v1.3.2
+       * 1.11.2-gke.4+ -> v1.3.3
+       * 1.11.3-gke.14+ -> v1.4.0
+       * 1.11.6-gke.2+ -> v1.4.1
+       * 1.11.6-gke.6+ -> v1.4.2
 
 [![Analytics](https://kubernetes-site.appspot.com/UA-36037335-10/GitHub/contrib/service-loadbalancer/gce/README.md?pixel)]()
