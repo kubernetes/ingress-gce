@@ -327,9 +327,15 @@ OuterLoop:
 		service = *as.(*api_v1.Service)
 		for _, sp := range service.Spec.Ports {
 			svcPort = sp
+			// If service is NEG enabled, compare the service name and namespace instead
+			// This is because NEG enabled service is not required to have nodePort
+			if port.NEGEnabled && port.ID.Service.Namespace == service.Namespace && port.ID.Service.Name == service.Name && port.Port == sp.Port {
+				found = true
+				break OuterLoop
+			}
 			// only one Service can match this nodePort, try and look up
 			// the readiness probe of the pods behind it
-			if int32(port.NodePort) == sp.NodePort {
+			if port.NodePort != 0 && int32(port.NodePort) == sp.NodePort {
 				found = true
 				break OuterLoop
 			}
