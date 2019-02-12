@@ -130,10 +130,6 @@ type Features struct {
 	NEGExposed bool
 	// ManagedCertificates enables using ManagedCertificate CRD
 	ManagedCertificates bool
-	// FinalizerAdd enables adding a finalizer on Ingress
-	FinalizerAdd bool
-	// FinalizerRemove enables removing a finalizer on Ingress.
-	FinalizerRemove bool
 }
 
 var DefaultFeatures = &Features{
@@ -141,8 +137,6 @@ var DefaultFeatures = &Features{
 	NEG:                 true,
 	NEGExposed:          true,
 	ManagedCertificates: false,
-	FinalizerAdd:        false,
-	FinalizerRemove:     false,
 }
 
 func EnabledFeatures() *Features {
@@ -220,10 +214,6 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.LeaderElection.LockObjectNamespace, "lock-object-namespace", F.LeaderElection.LockObjectNamespace, "Define the namespace of the lock object.")
 	flag.StringVar(&F.LeaderElection.LockObjectName, "lock-object-name", F.LeaderElection.LockObjectName, "Define the name of the lock object.")
 	flag.BoolVar(&F.Features.ManagedCertificates, "enable-managed-certificates", F.Features.ManagedCertificates, "Enable ManagedCertificates.")
-	flag.BoolVar(&F.Features.FinalizerAdd, "enable-finalizer-add",
-		F.Features.FinalizerAdd, "Enable adding Finalizer to Ingress.")
-	flag.BoolVar(&F.Features.FinalizerRemove, "enable-finalizer-remove",
-		F.Features.FinalizerRemove, "Enable removing Finalizer from Ingress.")
 
 	// Deprecated F.
 	flag.BoolVar(&F.Verbose, "verbose", false,

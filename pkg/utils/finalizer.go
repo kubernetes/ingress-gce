@@ -23,8 +23,9 @@ import (
 	"k8s.io/kubernetes/pkg/util/slice"
 )
 
-// FinalizerKey is the string representing the Ingress finalizer.
-const FinalizerKey = "networking.gke.io/ingress-finalizer"
+// FinalizerKeySuffix is a suffix for finalizers added by the controller.
+// A full key could be something like "ingress.finalizer.cloud.google.com"
+const FinalizerKeySuffix = "finalizer.cloud.google.com"
 
 // IsDeletionCandidate is true if the passed in meta contains the specified finalizer.
 func IsDeletionCandidate(m meta_v1.ObjectMeta, key string) bool {
@@ -41,10 +42,15 @@ func HasFinalizer(m meta_v1.ObjectMeta, key string) bool {
 	return slice.ContainsString(m.Finalizers, key, nil)
 }
 
+// FinalizerKey generates the finalizer string for Ingress
+func FinalizerKey() string {
+	return fmt.Sprintf("%s.%s", "ingress", FinalizerKeySuffix)
+}
+
 // AddFinalizer tries to add a finalizer to an Ingress. If a finalizer
 // already exists, it does nothing.
 func AddFinalizer(ing *extensions.Ingress, ingClient client.IngressInterface) error {
-	ingKey := FinalizerKey
+	ingKey := FinalizerKey()
 	if NeedToAddFinalizer(ing.ObjectMeta, ingKey) {
 		updated := ing.DeepCopy()
 		updated.ObjectMeta.Finalizers = append(updated.ObjectMeta.Finalizers, ingKey)
@@ -60,7 +66,7 @@ func AddFinalizer(ing *extensions.Ingress, ingClient client.IngressInterface) er
 // RemoveFinalizer tries to remove a Finalizer from an Ingress. If a
 // finalizer is not on the Ingress, it does nothing.
 func RemoveFinalizer(ing *extensions.Ingress, ingClient client.IngressInterface) error {
-	ingKey := FinalizerKey
+	ingKey := FinalizerKey()
 	if HasFinalizer(ing.ObjectMeta, ingKey) {
 		updated := ing.DeepCopy()
 		updated.ObjectMeta.Finalizers = slice.RemoveString(updated.ObjectMeta.Finalizers, ingKey, nil)
