@@ -24,23 +24,12 @@ import (
 	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/labels"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const SslCertificateMissing = "SslCertificateMissing"
 
 func (l *L7) checkSSLCert() error {
-	if flags.F.Features.ManagedCertificates {
-		// Handle annotation managed-certificates
-		managedSslCerts, used, err := l.getManagedCertificates()
-		if used {
-			l.sslCerts = managedSslCerts
-			return err
-		}
-	}
-
 	// Handle annotation pre-shared-cert
 	used, preSharedSslCerts, err := l.getPreSharedCertificates()
 	if used {
@@ -142,45 +131,6 @@ func (l *L7) getSslCertificates(names []string) ([]*compute.SslCertificate, erro
 	}
 
 	return result, nil
-}
-
-// getManagedCertificates fetches SslCertificates specified via managed-certificates annotation.
-func (l *L7) getManagedCertificates() ([]*compute.SslCertificate, bool, error) {
-	if l.runtimeInfo.ManagedCertificates == "" {
-		return nil, false, nil
-	}
-
-	mcrtsNames := utils.SplitAnnotation(l.runtimeInfo.ManagedCertificates)
-	mcrts, err := l.mcrt.ManagedCertificates(l.runtimeInfo.Ingress.Namespace).List(labels.Everything())
-	if err != nil {
-		return nil, true, err
-	}
-
-	var sslCertsNames []string
-	for _, mcrt := range mcrts {
-		found := false
-		for _, mcrtName := range mcrtsNames {
-			if mcrtName == mcrt.Name {
-				found = true
-				break
-			}
-		}
-
-		if !found {
-			continue
-		}
-
-		if mcrt.Status.CertificateName != "" {
-			sslCertsNames = append(sslCertsNames, mcrt.Status.CertificateName)
-		}
-	}
-
-	sslCerts, err := l.getSslCertificates(sslCertsNames)
-	if err != nil {
-		return sslCerts, true, fmt.Errorf("managed-certificates errors: %s", err.Error())
-	}
-
-	return sslCerts, true, nil
 }
 
 // getPreSharedCertificates fetches SslCertificates specified via pre-shared-cert annotation.

@@ -65,12 +65,6 @@ const (
 	// This is only set for ingresses with ingressClass = "gce-multi-cluster"
 	InstanceGroupsAnnotationKey = "ingress.gcp.kubernetes.io/instance-groups"
 
-	// ManagedCertificates represents the specific ManagedCertificate resources for
-	// the Ingress controller to use to terminate SSL. The controller *does not*
-	// manage ManagedCertificate resources, it is the user's responsibility to
-	// create/delete them.
-	ManagedCertificates = "gke.googleapis.com/managed-certificates"
-
 	// SuppressFirewallXPNErrorKey is the annotation key used by firewall
 	// controller whether to supress firewallXPNError.
 	SuppressFirewallXPNErrorKey = "networking.gke.io/suppress-firewall-xpn-error"
@@ -119,14 +113,6 @@ func (ing *Ingress) StaticIPName() string {
 
 func (ing *Ingress) IngressClass() string {
 	val, ok := ing.v[IngressClassKey]
-	if !ok {
-		return ""
-	}
-	return val
-}
-
-func (ing *Ingress) ManagedCertificates() string {
-	val, ok := ing.v[ManagedCertificates]
 	if !ok {
 		return ""
 	}

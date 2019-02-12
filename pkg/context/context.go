@@ -17,8 +17,6 @@ import (
 	"sync"
 	"time"
 
-	managedcertificatesclient "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/clientgen/clientset/versioned"
-	managedcertificatesv1alpha1 "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/clientgen/informers/externalversions/gke.googleapis.com/v1alpha1"
 	"github.com/golang/glog"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -51,13 +49,12 @@ type ControllerContext struct {
 
 	ControllerContextConfig
 
-	IngressInformer            cache.SharedIndexInformer
-	ServiceInformer            cache.SharedIndexInformer
-	BackendConfigInformer      cache.SharedIndexInformer
-	PodInformer                cache.SharedIndexInformer
-	NodeInformer               cache.SharedIndexInformer
-	EndpointInformer           cache.SharedIndexInformer
-	ManagedCertificateInformer cache.SharedIndexInformer
+	IngressInformer       cache.SharedIndexInformer
+	ServiceInformer       cache.SharedIndexInformer
+	BackendConfigInformer cache.SharedIndexInformer
+	PodInformer           cache.SharedIndexInformer
+	NodeInformer          cache.SharedIndexInformer
+	EndpointInformer      cache.SharedIndexInformer
 
 	healthChecks map[string]func() error
 
@@ -69,11 +66,10 @@ type ControllerContext struct {
 
 // ControllerContextConfig encapsulates some settings that are tunable via command line flags.
 type ControllerContextConfig struct {
-	NEGEnabled                bool
-	BackendConfigEnabled      bool
-	ManagedCertificateEnabled bool
-	Namespace                 string
-	ResyncPeriod              time.Duration
+	NEGEnabled           bool
+	BackendConfigEnabled bool
+	Namespace            string
+	ResyncPeriod         time.Duration
 	// DefaultBackendSvcPortID is the ServicePortID for the system default backend.
 	DefaultBackendSvcPortID       utils.ServicePortID
 	HealthCheckPath               string
@@ -84,7 +80,6 @@ type ControllerContextConfig struct {
 func NewControllerContext(
 	kubeClient kubernetes.Interface,
 	backendConfigClient backendconfigclient.Interface,
-	mcrtClient managedcertificatesclient.Interface,
 	cloud *gce.GCECloud,
 	namer *utils.Namer,
 	config ControllerContextConfig) *ControllerContext {
@@ -107,9 +102,6 @@ func NewControllerContext(
 	if config.BackendConfigEnabled {
 		context.BackendConfigInformer = informerbackendconfig.NewBackendConfigInformer(backendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
-	if config.ManagedCertificateEnabled {
-		context.ManagedCertificateInformer = managedcertificatesv1alpha1.NewManagedCertificateInformer(mcrtClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
-	}
 
 	return context
 }
@@ -127,9 +119,6 @@ func (ctx *ControllerContext) HasSynced() bool {
 	}
 	if ctx.BackendConfigInformer != nil {
 		funcs = append(funcs, ctx.BackendConfigInformer.HasSynced)
-	}
-	if ctx.ManagedCertificateInformer != nil {
-		funcs = append(funcs, ctx.ManagedCertificateInformer.HasSynced)
 	}
 	for _, f := range funcs {
 		if !f() {
@@ -191,9 +180,6 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	}
 	if ctx.BackendConfigInformer != nil {
 		go ctx.BackendConfigInformer.Run(stopCh)
-	}
-	if ctx.ManagedCertificateInformer != nil {
-		go ctx.ManagedCertificateInformer.Run(stopCh)
 	}
 }
 

@@ -565,7 +565,7 @@ func NewTestTransactionSyncer() negtypes.NegSyncer {
 		ResyncPeriod:            1 * time.Second,
 		DefaultBackendSvcPortID: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, nil, namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, namer, ctxConfig)
 	svcPort := NegSyncerKey{
 		Namespace:  testNamespace,
 		Name:       testService,

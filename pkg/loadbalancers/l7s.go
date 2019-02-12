@@ -19,7 +19,6 @@ package loadbalancers
 import (
 	"fmt"
 
-	mcrt "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/clientgen/listers/gke.googleapis.com/v1alpha1"
 	"github.com/golang/glog"
 
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -31,7 +30,6 @@ import (
 type L7s struct {
 	cloud            LoadBalancers
 	namer            *utils.Namer
-	mcrt             mcrt.ManagedCertificateLister
 	recorderProducer events.RecorderProducer
 }
 
@@ -43,11 +41,10 @@ func (l *L7s) Namer() *utils.Namer {
 // NewLoadBalancerPool returns a new loadbalancer pool.
 // - cloud: implements LoadBalancers. Used to sync L7 loadbalancer resources
 //	 with the cloud.
-func NewLoadBalancerPool(cloud LoadBalancers, namer *utils.Namer, mcrt mcrt.ManagedCertificateLister, recorderProducer events.RecorderProducer) LoadBalancerPool {
+func NewLoadBalancerPool(cloud LoadBalancers, namer *utils.Namer, recorderProducer events.RecorderProducer) LoadBalancerPool {
 	return &L7s{
 		cloud:            cloud,
 		namer:            namer,
-		mcrt:             mcrt,
 		recorderProducer: recorderProducer,
 	}
 }
@@ -59,7 +56,6 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 		Name:        l.namer.LoadBalancer(ri.Name),
 		cloud:       l.cloud,
 		namer:       l.namer,
-		mcrt:        l.mcrt,
 		recorder:    l.recorderProducer.Recorder(ri.Ingress.Namespace),
 	}
 
@@ -76,7 +72,6 @@ func (l *L7s) Delete(name string) error {
 		Name:        l.namer.LoadBalancer(name),
 		cloud:       l.cloud,
 		namer:       l.namer,
-		mcrt:        l.mcrt,
 	}
 
 	glog.V(3).Infof("Deleting lb %v", lb.Name)

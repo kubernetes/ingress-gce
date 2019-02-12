@@ -129,8 +129,6 @@ type Features struct {
 	NEG bool
 	// NEGExposed enables using standalone (exposed) NEGs
 	NEGExposed bool
-	// ManagedCertificates enables using ManagedCertificate CRD
-	ManagedCertificates bool
 	// FinalizerAdd enables adding a finalizer on Ingress
 	FinalizerAdd bool
 	// FinalizerRemove enables removing a finalizer on Ingress.
@@ -138,12 +136,11 @@ type Features struct {
 }
 
 var DefaultFeatures = &Features{
-	Http2:               true,
-	NEG:                 true,
-	NEGExposed:          true,
-	ManagedCertificates: false,
-	FinalizerAdd:        false,
-	FinalizerRemove:     false,
+	Http2:           true,
+	NEG:             true,
+	NEGExposed:      true,
+	FinalizerAdd:    false,
+	FinalizerRemove: false,
 }
 
 func EnabledFeatures() *Features {
@@ -220,7 +217,6 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	leaderelectionconfig.BindFlags(&F.LeaderElection.LeaderElectionConfiguration, flag.CommandLine)
 	flag.StringVar(&F.LeaderElection.LockObjectNamespace, "lock-object-namespace", F.LeaderElection.LockObjectNamespace, "Define the namespace of the lock object.")
 	flag.StringVar(&F.LeaderElection.LockObjectName, "lock-object-name", F.LeaderElection.LockObjectName, "Define the name of the lock object.")
-	flag.BoolVar(&F.Features.ManagedCertificates, "enable-managed-certificates", F.Features.ManagedCertificates, "Enable ManagedCertificates.")
 	flag.DurationVar(&F.NegGCPeriod, "neg-gc-period", 120*time.Second,
 		`Relist and garbage collect NEGs this often.`)
 	flag.StringVar(&F.NegSyncerType, "neg-syncer-type", "transaction", "Define the NEG syncer type to use. Valid values are \"batch\" and \"transaction\"")
