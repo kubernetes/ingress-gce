@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"strings"
 
-	mcrt "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/clientgen/listers/gke.googleapis.com/v1alpha1"
 	"github.com/golang/glog"
 
 	compute "google.golang.org/api/compute/v1"
@@ -56,8 +55,6 @@ type L7RuntimeInfo struct {
 	TLSName string
 	// Ingress is the processed Ingress API object.
 	Ingress *extensions.Ingress
-	// ManagedCertificates is a comma-separated list of managed SSL certificates to use.
-	ManagedCertificates string
 	// AllowHTTP will not setup :80, if TLS is nil and AllowHTTP is set,
 	// no loadbalancer is created.
 	AllowHTTP bool
@@ -114,8 +111,6 @@ type L7 struct {
 	oldSSLCerts []*compute.SslCertificate
 	// namer is used to compute names of the various sub-components of an L7.
 	namer *utils.Namer
-	// mcrt is an interface to ManagedCertificate resources.
-	mcrt mcrt.ManagedCertificateLister
 	// recorder is used to generate k8s Events.
 	recorder record.EventRecorder
 }
@@ -140,7 +135,7 @@ func (l *L7) edgeHop() error {
 		}
 	}
 	// Defer promoting an ephemeral to a static IP until it's really needed.
-	sslConfigured := l.runtimeInfo.TLS != nil || l.runtimeInfo.TLSName != "" || l.runtimeInfo.ManagedCertificates != ""
+	sslConfigured := l.runtimeInfo.TLS != nil || l.runtimeInfo.TLSName != ""
 	if l.runtimeInfo.AllowHTTP && sslConfigured {
 		glog.V(3).Infof("checking static ip for %v", l.Name)
 		if err := l.checkStaticIP(); err != nil {

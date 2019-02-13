@@ -23,7 +23,6 @@ import (
 	"sync"
 	"time"
 
-	mcrtv1alpha1 "github.com/GoogleCloudPlatform/gke-managed-certs/pkg/clientgen/listers/gke.googleapis.com/v1alpha1"
 	"github.com/golang/glog"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -104,10 +103,6 @@ func NewLoadBalancerController(
 	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendHealthCheckPath, ctx.ClusterNamer, ctx.DefaultBackendSvcPortID.Service)
 	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer)
 	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
-	var mcrtLister mcrtv1alpha1.ManagedCertificateLister
-	if ctx.ManagedCertificateEnabled {
-		mcrtLister = mcrtv1alpha1.NewManagedCertificateLister(ctx.ManagedCertificateInformer.GetIndexer())
-	}
 
 	lbc := LoadBalancerController{
 		ctx:           ctx,
@@ -118,7 +113,7 @@ func NewLoadBalancerController(
 		hasSynced:     ctx.HasSynced,
 		nodes:         NewNodeController(ctx, instancePool),
 		instancePool:  instancePool,
-		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, mcrtLister, ctx),
+		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx),
 		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.ClusterNamer, ctx.BackendConfigEnabled),
 		negLinker:     backends.NewNEGLinker(backendPool, ctx.Cloud, ctx.ClusterNamer),
 		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool, ctx.ClusterNamer),
@@ -578,14 +573,13 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress, urlMap
 	}
 
 	return &loadbalancers.L7RuntimeInfo{
-		Name:                k,
-		TLS:                 tls,
-		TLSName:             annotations.UseNamedTLS(),
-		Ingress:             ing,
-		ManagedCertificates: annotations.ManagedCertificates(),
-		AllowHTTP:           annotations.AllowHTTP(),
-		StaticIPName:        annotations.StaticIPName(),
-		UrlMap:              urlMap,
+		Name:         k,
+		TLS:          tls,
+		TLSName:      annotations.UseNamedTLS(),
+		Ingress:      ing,
+		AllowHTTP:    annotations.AllowHTTP(),
+		StaticIPName: annotations.StaticIPName(),
+		UrlMap:       urlMap,
 	}, nil
 }
 

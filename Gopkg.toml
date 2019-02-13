@@ -64,7 +64,3 @@ ignored = ["k8s.io/kubernetes/pkg/api"]
 [[constraint]]
   name = "github.com/kr/pretty"
   version = "0.1.0"
-
-[[constraint]]
-  branch = "master"
-  name = "github.com/GoogleCloudPlatform/gke-managed-certs"
