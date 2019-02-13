@@ -43,4 +43,14 @@ The table below describes what version of Ingress-GCE is running on GKE. Note th
        * 1.11.6-gke.2+ -> v1.4.1
        * 1.11.6-gke.6+ -> v1.4.2
 
+## Limitations
+
+A few points to note:
+* The pod's `containerPort` field must be defined
+* The service's `targetPort` field must point to the pod port's `containerPort` value or `name`. Note that the `targetPort` defaults to the `port` value if not defined
+* The pods must exist at the time of ingress creation
+* The readiness probe must be exposed on the port matching the `servicePort` specified in the Ingress
+* The readiness probe cannot have special requirements like headers
+* The probe timeouts are translated to GCE health check timeouts
+
 [![Analytics](https://kubernetes-site.appspot.com/UA-36037335-10/GitHub/contrib/service-loadbalancer/gce/README.md?pixel)]()
