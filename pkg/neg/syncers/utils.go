@@ -112,8 +112,8 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	needToCreate := false
 	if neg == nil {
 		needToCreate = true
-	} else if !utils.EqualResourceIDs(neg.LoadBalancer.Network, cloud.NetworkURL()) ||
-		!utils.EqualResourceIDs(neg.LoadBalancer.Subnetwork, cloud.SubnetworkURL()) {
+	} else if !utils.EqualResourceIDs(neg.Network, cloud.NetworkURL()) ||
+		!utils.EqualResourceIDs(neg.Subnetwork, cloud.SubnetworkURL()) {
 		needToCreate = true
 		glog.V(2).Infof("NEG %q in %q does not match network and subnetwork of the cluster. Deleting NEG.", negName, zone)
 		err = cloud.DeleteNetworkEndpointGroup(negName, zone)
@@ -133,10 +133,8 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		err = cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 			Name:                negName,
 			NetworkEndpointType: gce.NEGIPPortNetworkEndpointType,
-			LoadBalancer: &compute.NetworkEndpointGroupLbNetworkEndpointGroup{
-				Network:    cloud.NetworkURL(),
-				Subnetwork: cloud.SubnetworkURL(),
-			},
+			Network:             cloud.NetworkURL(),
+			Subnetwork:          cloud.SubnetworkURL(),
 		}, zone)
 		if err != nil {
 			return err
