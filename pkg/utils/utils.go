@@ -298,6 +298,17 @@ func GetReadyNodeNames(lister listers.NodeLister) ([]string, error) {
 	return nodeNames, nil
 }
 
+// NodeIsReady returns true if a node contains at least one condition of type "Ready"
+func NodeIsReady(node *api_v1.Node) bool {
+	for i := range node.Status.Conditions {
+		condition := &node.Status.Conditions[i]
+		if condition.Type == api_v1.NodeReady {
+			return condition.Status == api_v1.ConditionTrue
+		}
+	}
+	return false
+}
+
 // This is a duplicate definition of the function in:
 // kubernetes/kubernetes/pkg/controller/service/service_controller.go
 func GetNodeConditionPredicate() listers.NodeConditionPredicate {
