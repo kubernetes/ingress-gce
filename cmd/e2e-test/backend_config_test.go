@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"k8s.io/ingress-gce/pkg/annotations"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -141,5 +143,120 @@ func TestBackendConfigNegatives(t *testing.T) {
 				t.Fatalf("Ingress should not have an IP: %+v", testIng.Status)
 			}
 		})
+	}
+}
+
+func TestBackendConfigMigration(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc          string
+		backendConfig *backendconfigv1beta1.BackendConfig
+	}{
+		{
+			desc: "plain backend config",
+			backendConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-v1beta1").
+				Build(),
+		},
+		{
+			desc: "enable CDN in backend config",
+			backendConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-v1beta1").
+				EnableCDN(true).
+				Build(),
+		},
+	} {
+		tc := tc // Capture tc as we are running this in parallel.
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			// Create the v1beta1 BackendConfig
+			if _, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Create(tc.backendConfig); err != nil {
+				t.Fatalf("Error creating backend config v1beta1: %v", err)
+			}
+			t.Logf("Backend config v1beta1 %s/%s created", s.Namespace, tc.backendConfig.Name)
+
+			// Create a new service with the v1beta1 BackendConfig attached
+			svcAnnotations := map[string]string{
+				annotations.BackendConfigKey: fmt.Sprintf(`{"default":"%s"}`, tc.backendConfig.Name),
+			}
+			_, svc, err := e2e.CreateEchoService(s, "service-1", svcAnnotations)
+			if err != nil {
+				t.Fatalf("e2e.CreateEchoService(s, service-1, %q) = _, _, %v, want _, _, nil", svcAnnotations, err)
+			}
+
+			// Convert the BackendConfig to v1, then create it
+			backendConfigV1 := &backendconfigv1.BackendConfig{}
+			bytes, err := json.Marshal(tc.backendConfig)
+			if err != nil {
+				t.Fatalf("could not marshal object %+v to JSON: %v", tc.backendConfig, err)
+			}
+			err = json.Unmarshal(bytes, backendConfigV1)
+			if err != nil {
+				t.Fatalf("error unmarshalling to BackendConfig: %v", err)
+			}
+			backendConfigV1.Name = "backendconfig-v1"
+			if _, err := Framework.BackendConfigClient.CloudV1().BackendConfigs(s.Namespace).Create(backendConfigV1); err != nil {
+				t.Fatalf("Error creating backend config v1: %v", err)
+			}
+			t.Logf("Backend config v1 %s/%s created", s.Namespace, backendConfigV1.Name)
+
+			ensureIngressWithService("service-1", false, s, t)
+
+			// Update the annotations to have the v1 BackendConfig attached
+			svcAnnotations = map[string]string{
+				annotations.BackendConfigKey: fmt.Sprintf(`{"default":"%s"}`, backendConfigV1.Name),
+			}
+
+			svc, err = Framework.Clientset.Core().Services(s.Namespace).Get(svc.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Services(%s).Get(%s) = _, %v. want _, nil", s.Namespace, svc.Name, err)
+			}
+			svc.Annotations = svcAnnotations
+			if _, err := e2e.UpdateEchoService(s, svc); err != nil {
+				t.Fatalf("e2e.UpdateEchoService(s, service-1, %q) = _, %v, want _, nil", svcAnnotations, err)
+			}
+			ensureIngressWithService("service-1", true, s, t)
+
+			// Update the annotations to have the original v1beta1 BackendConfig attached
+			svcAnnotations = map[string]string{
+				annotations.BackendConfigKey: fmt.Sprintf(`{"default":"%s"}`, tc.backendConfig.Name),
+			}
+			svc, err = Framework.Clientset.Core().Services(s.Namespace).Get(svc.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Services(%s).Get(%s) = _, %v. want _, nil", s.Namespace, svc.Name, err)
+			}
+			svc.Annotations = svcAnnotations
+			if _, err := e2e.UpdateEchoService(s, svc); err != nil {
+				t.Fatalf("e2e.UpdateEchoService(s, service-1, %q) = _, %v, want _, nil", svcAnnotations, err)
+			}
+			ensureIngressWithService("service-1", true, s, t)
+		})
+	}
+}
+
+func ensureIngressWithService(svcName string, alreadyExists bool, s *e2e.Sandbox, t *testing.T) {
+	port80 := intstr.FromInt(80)
+	ing := fuzz.NewIngressBuilder("", "ingress-1", "").
+		AddPath("test.com", "/", svcName, port80).
+		Build()
+
+	if alreadyExists {
+		if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Update(ing); err != nil {
+			t.Fatalf("error updating Ingress spec: %v", err)
+		}
+		t.Logf("Ingress %s/%s updated", s.Namespace, ing.Name)
+	} else {
+		_, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(ing)
+		if err != nil {
+			t.Fatalf("error creating Ingress spec: %v", err)
+		}
+		t.Logf("Ingress %s/%s created", s.Namespace, ing.Name)
+	}
+
+	ing, err := e2e.WaitForIngress(s, ing, nil)
+	if err != nil {
+		t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+	}
+
+	if len(ing.Status.LoadBalancer.Ingress) < 1 {
+		t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
 	}
 }

@@ -74,6 +74,19 @@ func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (
 	return pod, service, nil
 }
 
+// UpdateEchoService updates the service serving echoheaders. Note that if
+// the service passed in is not the most recent version of the object on the
+// k8s cluster, Services.Update will return an error.
+func UpdateEchoService(s *Sandbox, svc *v1.Service) (*v1.Service, error) {
+	service, err := s.f.Clientset.Core().Services(s.Namespace).Update(svc)
+	if err != nil {
+		return nil, err
+	}
+	glog.V(2).Infof("Echo service %q:%q updated", s.Namespace, service.Name)
+
+	return service, nil
+}
+
 // CreateSecret creates a secret from the given data.
 func CreateSecret(s *Sandbox, name string, data map[string][]byte) (*v1.Secret, error) {
 	secret := &v1.Secret{

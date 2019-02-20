@@ -98,9 +98,9 @@ func crd(meta *CRDMeta) *apiextensionsv1beta1.CustomResourceDefinition {
 	crd := &apiextensionsv1beta1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{Name: meta.plural + "." + meta.groupName},
 		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
-			Group:   meta.groupName,
-			Version: meta.version,
-			Scope:   apiextensionsv1beta1.NamespaceScoped,
+			Group:    meta.groupName,
+			Versions: meta.versions,
+			Scope:    apiextensionsv1beta1.NamespaceScoped,
 			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
 				Kind:       meta.kind,
 				ListKind:   meta.listKind,

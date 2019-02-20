@@ -20,6 +20,7 @@ import (
 	"errors"
 
 	apiv1 "k8s.io/api/core/v1"
+	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/cache"
 
@@ -33,17 +34,33 @@ var (
 	ErrBackendConfigDoesNotExist = errors.New("no BackendConfig for service port exists.")
 	ErrBackendConfigFailedToGet  = errors.New("client had error getting BackendConfig for service port.")
 	ErrNoBackendConfigForPort    = errors.New("no BackendConfig name found for service port.")
+
+	CRDVersion = []apiextensionsv1beta1.CustomResourceDefinitionVersion{
+		{
+			Name:    "v1beta1",
+			Served:  true,
+			Storage: true,
+		},
+		{
+			Name:    "v1",
+			Served:  true,
+			Storage: false,
+		},
+	}
 )
 
 func CRDMeta() *crd.CRDMeta {
 	meta := crd.NewCRDMeta(
+		CRDVersion,
 		apisbackendconfig.GroupName,
-		"v1beta1",
 		"BackendConfig",
 		"BackendConfigList",
 		"backendconfig",
 		"backendconfigs",
 	)
+
+	// TODO: when we deprecate v1beta1, use v1.BackendConfig, v1.GetOpenAPIDefinitions
+	// Also need to use v1 client and watchers
 	meta.AddValidationInfo("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.BackendConfig", backendconfigv1beta1.GetOpenAPIDefinitions)
 	return meta
 }

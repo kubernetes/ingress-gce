@@ -28,11 +28,17 @@ import (
 var (
 	crdMeta = &CRDMeta{
 		groupName: "test.group.com",
-		version:   "v1alpha1",
-		kind:      "Test",
-		listKind:  "TestList",
-		singular:  "test",
-		plural:    "tests",
+		versions: []apiextensionsv1beta1.CustomResourceDefinitionVersion{
+			{
+				Name:    "v1alpha1",
+				Served:  true,
+				Storage: true,
+			},
+		},
+		kind:     "Test",
+		listKind: "TestList",
+		singular: "test",
+		plural:   "tests",
 	}
 )
 

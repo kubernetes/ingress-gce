@@ -17,13 +17,14 @@ limitations under the License.
 package crd
 
 import (
+	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	"k8s.io/kube-openapi/pkg/common"
 )
 
 // CRDMeta contains version, validation and API information for a CRD.
 type CRDMeta struct {
 	groupName  string
-	version    string
+	versions   []apiextensionsv1beta1.CustomResourceDefinitionVersion
 	kind       string
 	listKind   string
 	singular   string
@@ -35,10 +36,10 @@ type CRDMeta struct {
 
 // NewCRDMeta creates a CRDMeta type which can be passed to a CRDHandler in
 // order to create/ensure a CRD.
-func NewCRDMeta(groupName, version, kind, listKind, singular, plural string, shortNames ...string) *CRDMeta {
+func NewCRDMeta(versions []apiextensionsv1beta1.CustomResourceDefinitionVersion, groupName, kind, listKind, singular, plural string, shortNames ...string) *CRDMeta {
 	return &CRDMeta{
 		groupName:  groupName,
-		version:    version,
+		versions:   versions,
 		kind:       kind,
 		listKind:   listKind,
 		singular:   singular,
