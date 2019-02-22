@@ -384,7 +384,7 @@ func TestMaxCertsUpload(t *testing.T) {
 	namer := utils.NewNamer("uid1", "fw1")
 	lbName := namer.LoadBalancer("test")
 
-	for ix := 0; ix < FakeCertLimit; ix++ {
+	for ix := 0; ix < FakeCertQuota; ix++ {
 		str := strconv.Itoa(ix)
 		tlsCerts = append(tlsCerts, createCert("key-"+str, "cert-"+str, "name-"+str))
 		certName := namer.SSLCertName(lbName, GetCertHash("cert-"+str))
@@ -409,7 +409,7 @@ func TestMaxCertsUpload(t *testing.T) {
 	lbInfo.TLS = append(lbInfo.TLS, failCert)
 	_, err := pool.Ensure(lbInfo)
 	if err == nil {
-		t.Fatalf("Creating more than %d certs should have errored out", FakeCertLimit)
+		t.Fatalf("Creating more than %d certs should have errored out", FakeCertQuota)
 	}
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 	// Set cert count less than cert creation limit but more than target proxy limit
@@ -965,4 +965,254 @@ func TestList(t *testing.T) {
 	if !reflect.DeepEqual(lbNames, expected) {
 		t.Fatalf("pool.List() returned %+v, want %+v", lbNames, expected)
 	}
+}
+
+// TestSecretBasedAndPreSharedCerts creates both pre-shared and
+// secret-based certs and tests that all should be used.
+func TestSecretBasedAndPreSharedCerts(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+	namer := utils.NewNamer("uid1", "fw1")
+	lbName := namer.LoadBalancer("test")
+	certName1 := namer.SSLCertName(lbName, GetCertHash("cert"))
+	certName2 := namer.SSLCertName(lbName, GetCertHash("cert2"))
+
+	lbInfo := &L7RuntimeInfo{
+		Name:      lbName,
+		AllowHTTP: false,
+		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
+	}
+
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
+
+	// Prepare pre-shared certs.
+	preSharedCert1, _ := f.CreateSslCertificate(&compute.SslCertificate{
+		Name:        "test-pre-shared-cert",
+		Certificate: "abc",
+		SelfLink:    "existing",
+	})
+	preSharedCert2, _ := f.CreateSslCertificate(&compute.SslCertificate{
+		Name:        "test-pre-shared-cert2",
+		Certificate: "xyz",
+		SelfLink:    "existing2",
+	})
+	lbInfo.TLSName = preSharedCert1.Name + "," + preSharedCert2.Name
+
+	// Secret based certs.
+	lbInfo.TLS = []*TLSCerts{
+		createCert("key", "cert", "name"),
+		createCert("key2", "cert2", "name"),
+	}
+
+	expectCerts := map[string]string{
+		preSharedCert1.Name: preSharedCert1.Certificate,
+		preSharedCert2.Name: preSharedCert2.Certificate,
+		certName1:           lbInfo.TLS[0].Cert,
+		certName2:           lbInfo.TLS[1].Cert,
+	}
+
+	// Verify that both secret-based and pre-shared certs are used.
+	pool.Ensure(lbInfo)
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+}
+
+// TestMaxSecretBasedAndPreSharedCerts uploads 10 secret-based certs, which is the limit for the fake target proxy.
+// Then creates 5 pre-shared certs, reaching the limit of 15 certs which is the fake certs quota.
+// Ensures that creation of the 16th cert fails.
+// Trying to use all 15 certs should fail.
+// After removing 5 secret-based certs, all remaining certs should be used.
+func TestMaxSecretBasedAndPreSharedCerts(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+
+	var tlsCerts []*TLSCerts
+	expectCerts := make(map[string]string)
+	expectCertsExtra := make(map[string]string)
+	namer := utils.NewNamer("uid1", "fw1")
+	lbName := namer.LoadBalancer("test")
+
+	for ix := 0; ix < TargetProxyCertLimit; ix++ {
+		str := strconv.Itoa(ix)
+		tlsCerts = append(tlsCerts, createCert("key-"+str, "cert-"+str, "name-"+str))
+		certName := namer.SSLCertName(lbName, GetCertHash("cert-"+str))
+		expectCerts[certName] = "cert-" + str
+		expectCertsExtra[certName] = "cert-" + str
+	}
+	lbInfo := &L7RuntimeInfo{
+		Name:      lbName,
+		AllowHTTP: false,
+		TLS:       tlsCerts,
+		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
+	}
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
+
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
+	}
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+
+	// Create pre-shared certs up to FakeCertQuota.
+	preSharedCerts := []*compute.SslCertificate{}
+	tlsNames := []string{}
+	for ix := TargetProxyCertLimit; ix < FakeCertQuota; ix++ {
+		str := strconv.Itoa(ix)
+		cert, err := f.CreateSslCertificate(&compute.SslCertificate{
+			Name:        "test-pre-shared-cert-" + str,
+			Certificate: "abc-" + str,
+			SelfLink:    "existing-" + str,
+		})
+		if err != nil {
+			t.Fatalf("f.CreateSslCertificate() = err %v", err)
+		}
+		preSharedCerts = append(preSharedCerts, cert)
+		tlsNames = append(tlsNames, cert.Name)
+		expectCertsExtra[cert.Name] = cert.Certificate
+	}
+	lbInfo.TLSName = strings.Join(tlsNames, ",")
+
+	_, err := f.CreateSslCertificate(&compute.SslCertificate{
+		Name:        "test-pre-shared-cert-100",
+		Certificate: "abc-100",
+		SelfLink:    "existing-100",
+	})
+	if err == nil {
+		t.Fatalf("Creating more than %d certs should have errored out", FakeCertQuota)
+	}
+
+	// Trying to use more than TargetProxyCertLimit certs should fail.
+	// Verify that secret-based certs are still used,
+	// and the loadbalancer also contains pre-shared certs.
+	if _, err := pool.Ensure(lbInfo); err == nil {
+		t.Fatalf("Trying to use more than %d certs should have errored out", TargetProxyCertLimit)
+	}
+	verifyCertAndProxyLink(expectCertsExtra, expectCerts, f, t)
+
+	// Remove enough secret-based certs to make room for pre-shared certs.
+	lbInfo.TLS = lbInfo.TLS[:TargetProxyCertLimit-len(preSharedCerts)]
+	expectCerts = make(map[string]string)
+	for _, cert := range lbInfo.TLS {
+		expectCerts[namer.SSLCertName(lbName, cert.CertHash)] = cert.Cert
+	}
+	for _, cert := range preSharedCerts {
+		expectCerts[cert.Name] = cert.Certificate
+	}
+
+	if _, err = pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
+	}
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+}
+
+// TestSecretBasedToPreSharedCertUpdate updates from secret-based cert
+// to pre-shared cert and verifies the secret-based cert is still used,
+// until the secret is removed.
+func TestSecretBasedToPreSharedCertUpdate(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+	namer := utils.NewNamer("uid1", "fw1")
+	lbName := namer.LoadBalancer("test")
+	certName1 := namer.SSLCertName(lbName, GetCertHash("cert"))
+
+	lbInfo := &L7RuntimeInfo{
+		Name:      lbName,
+		AllowHTTP: false,
+		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
+	}
+
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
+
+	// Sync secret based cert.
+	lbInfo.TLS = []*TLSCerts{createCert("key", "cert", "name")}
+	lbInfo.TLSName = ""
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
+	}
+	expectCerts := map[string]string{certName1: lbInfo.TLS[0].Cert}
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+
+	// Prepare pre-shared cert.
+	preSharedCert1, _ := f.CreateSslCertificate(&compute.SslCertificate{
+		Name:        "test-pre-shared-cert",
+		Certificate: "abc",
+		SelfLink:    "existing",
+	})
+	lbInfo.TLSName = preSharedCert1.Name
+
+	// Sync certs.
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
+	}
+	expectCerts[preSharedCert1.Name] = preSharedCert1.Certificate
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+
+	// Delete the secret.
+	lbInfo.TLS = []*TLSCerts{}
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
+	}
+	delete(expectCerts, certName1)
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+}
+
+// TestSecretBasedToPreSharedCertUpdateWithErrors tries to incorrectly update from secret-based cert
+// to pre-shared cert, verifying that the secret-based cert is retained.
+func TestSecretBasedToPreSharedCertUpdateWithErrors(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+	namer := utils.NewNamer("uid1", "fw1")
+	lbName := namer.LoadBalancer("test")
+	certName1 := namer.SSLCertName(lbName, GetCertHash("cert"))
+
+	lbInfo := &L7RuntimeInfo{
+		Name:      lbName,
+		AllowHTTP: false,
+		UrlMap:    gceUrlMap,
+		Ingress:   newIngress(),
+	}
+
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
+
+	// Sync secret based cert.
+	lbInfo.TLS = []*TLSCerts{createCert("key", "cert", "name")}
+	lbInfo.TLSName = ""
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
+	}
+	expectCerts := map[string]string{certName1: lbInfo.TLS[0].Cert}
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
+
+	// Prepare pre-shared certs.
+	preSharedCert1, _ := f.CreateSslCertificate(&compute.SslCertificate{
+		Name:        "test-pre-shared-cert",
+		Certificate: "abc",
+		SelfLink:    "existing",
+	})
+
+	// Typo in the cert name.
+	lbInfo.TLSName = preSharedCert1.Name + "typo"
+	if _, err := pool.Ensure(lbInfo); err == nil {
+		t.Fatalf("pool.Ensure() should have errored out because of the wrong cert name")
+	}
+	expectCertsProxy := map[string]string{certName1: lbInfo.TLS[0].Cert}
+	expectCerts[preSharedCert1.Name] = preSharedCert1.Certificate
+	// pre-shared cert is not used by the target proxy.
+	verifyCertAndProxyLink(expectCerts, expectCertsProxy, f, t)
+
+	// Fix the typo.
+	lbInfo.TLSName = preSharedCert1.Name
+	if _, err := pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("pool.Ensure() = err %v", err)
+	}
+	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 }

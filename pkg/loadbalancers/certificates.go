@@ -30,23 +30,35 @@ import (
 const SslCertificateMissing = "SslCertificateMissing"
 
 func (l *L7) checkSSLCert() error {
+	// Use both pre-shared and secret-based certs if available,
+	// combining encountered errors.
+	errs := []error{}
+
 	// Handle annotation pre-shared-cert
-	used, preSharedSslCerts, err := l.getPreSharedCertificates()
-	if used {
-		l.sslCerts = preSharedSslCerts
-		return err
+	preSharedSslCerts, err := l.getPreSharedCertificates()
+	if err != nil {
+		errs = append(errs, err)
 	}
+	l.sslCerts = preSharedSslCerts
 
 	// Get updated value of certificate for comparison
 	existingSecretsSslCerts, err := l.getIngressManagedSslCerts()
 	if err != nil {
-		return err
+		errs = append(errs, err)
+		// Do not continue if getIngressManagedSslCerts() failed.
+		return utils.JoinErrs(errs)
 	}
 
 	l.oldSSLCerts = existingSecretsSslCerts
 	secretsSslCerts, err := l.createSslCertificates(existingSecretsSslCerts)
-	l.sslCerts = secretsSslCerts
-	return err
+	if err != nil {
+		errs = append(errs, err)
+	}
+	l.sslCerts = append(l.sslCerts, secretsSslCerts...)
+	if len(errs) > 0 {
+		return utils.JoinErrs(errs)
+	}
+	return nil
 }
 
 // createSslCertificates creates SslCertificates based on kubernetes secrets in Ingress configuration.
@@ -134,17 +146,17 @@ func (l *L7) getSslCertificates(names []string) ([]*compute.SslCertificate, erro
 }
 
 // getPreSharedCertificates fetches SslCertificates specified via pre-shared-cert annotation.
-func (l *L7) getPreSharedCertificates() (bool, []*compute.SslCertificate, error) {
+func (l *L7) getPreSharedCertificates() ([]*compute.SslCertificate, error) {
 	if l.runtimeInfo.TLSName == "" {
-		return false, nil, nil
+		return nil, nil
 	}
 	sslCerts, err := l.getSslCertificates(utils.SplitAnnotation(l.runtimeInfo.TLSName))
 
 	if err != nil {
-		return true, sslCerts, fmt.Errorf("pre-shared-cert errors: %s", err.Error())
+		return sslCerts, fmt.Errorf("pre-shared-cert errors: %s", err.Error())
 	}
 
-	return true, sslCerts, nil
+	return sslCerts, nil
 }
 
 func getMapfromCertList(certs []*compute.SslCertificate) map[string]*compute.SslCertificate {
