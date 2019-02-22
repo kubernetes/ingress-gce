@@ -29,7 +29,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
-const FakeCertLimit = 15
+const FakeCertQuota = 15
 
 var testIPManager = testIP{}
 
@@ -417,9 +417,9 @@ func (f *FakeLoadBalancers) ListSslCertificates() ([]*compute.SslCertificate, er
 func (f *FakeLoadBalancers) CreateSslCertificate(cert *compute.SslCertificate) (*compute.SslCertificate, error) {
 	f.calls = append(f.calls, "CreateSslCertificate")
 	cert.SelfLink = cloud.NewSslCertificatesResourceID("mock-project", cert.Name).SelfLink(meta.VersionGA)
-	if len(f.Certs) == FakeCertLimit {
+	if len(f.Certs) == FakeCertQuota {
 		// Simulate cert creation failure
-		return nil, fmt.Errorf("unable to create cert, Exceeded cert limit of %d.", FakeCertLimit)
+		return nil, fmt.Errorf("unable to create cert, Exceeded cert limit of %d.", FakeCertQuota)
 	}
 	f.Certs = append(f.Certs, cert)
 	return cert, nil
