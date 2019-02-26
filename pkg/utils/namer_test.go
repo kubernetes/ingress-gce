@@ -119,24 +119,35 @@ func TestNamerParseName(t *testing.T) {
 }
 
 func TestNameBelongsToCluster(t *testing.T) {
-	const uid = "uid1"
+	const uid = "0123456789abcdef"
+	// string with 10 characters
+	longKey := "0123456789"
 	secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
-
 	for _, prefix := range []string{defaultPrefix, "mci"} {
 		namer := NewNamerWithPrefix(prefix, uid, "fw1")
 		lbName := namer.LoadBalancer("key1")
+		// longLBName with 40 characters. Triggers truncation
+		longLBName := namer.LoadBalancer(strings.Repeat(longKey, 4))
 		// Positive cases.
 		for _, tc := range []string{
+			// short names
 			namer.IGBackend(80),
 			namer.InstanceGroup(),
 			namer.TargetProxy(lbName, HTTPProtocol),
 			namer.TargetProxy(lbName, HTTPSProtocol),
 			namer.SSLCertName("default/my-ing", secretHash),
-			namer.SSLCertName("default/my-ing", secretHash),
 			namer.ForwardingRule(lbName, HTTPProtocol),
 			namer.ForwardingRule(lbName, HTTPSProtocol),
 			namer.UrlMap(lbName),
 			namer.NEG("ns", "n", int32(80)),
+			// long names that are truncated
+			namer.TargetProxy(longLBName, HTTPProtocol),
+			namer.TargetProxy(longLBName, HTTPSProtocol),
+			namer.SSLCertName(longLBName, secretHash),
+			namer.ForwardingRule(longLBName, HTTPProtocol),
+			namer.ForwardingRule(longLBName, HTTPSProtocol),
+			namer.UrlMap(longLBName),
+			namer.NEG(strings.Repeat(longKey, 3), strings.Repeat(longKey, 3), int32(88888)),
 		} {
 			if !namer.NameBelongsToCluster(tc) {
 				t.Errorf("namer.NameBelongsToCluster(%q) = false, want true", tc)
@@ -146,7 +157,18 @@ func TestNameBelongsToCluster(t *testing.T) {
 
 	// Negative cases.
 	namer := NewNamer(uid, "fw1")
-	for _, tc := range []string{"", "invalid", "not--the-right-uid"} {
+	// longLBName with 60 characters. Triggers truncation to eliminate cluster name suffix
+	longLBName := namer.LoadBalancer(strings.Repeat(longKey, 6))
+	for _, tc := range []string{
+		"",
+		"invalid",
+		"not--the-right-uid",
+		namer.TargetProxy(longLBName, HTTPProtocol),
+		namer.TargetProxy(longLBName, HTTPSProtocol),
+		namer.ForwardingRule(longLBName, HTTPProtocol),
+		namer.ForwardingRule(longLBName, HTTPSProtocol),
+		namer.UrlMap(longLBName),
+	} {
 		if namer.NameBelongsToCluster(tc) {
 			t.Errorf("namer.NameBelongsToCluster(%q) = true, want false", tc)
 		}
