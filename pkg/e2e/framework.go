@@ -149,7 +149,7 @@ func (f *Framework) shutdown(exitCode int) {
 // cleanup and isolation.
 func (f *Framework) WithSandbox(testFunc func(*Sandbox) error) error {
 	sandbox := &Sandbox{
-		Namespace: fmt.Sprintf("sandbox-%x", f.Rand.Int63()),
+		Namespace: fmt.Sprintf("test-sandbox-%x", f.Rand.Int63()),
 		f:         f,
 	}
 	glog.V(2).Infof("Using namespace %q for test sandbox", sandbox.Namespace)
@@ -173,7 +173,7 @@ func (f *Framework) WithSandbox(testFunc func(*Sandbox) error) error {
 func (f *Framework) RunWithSandbox(name string, t *testing.T, testFunc func(*testing.T, *Sandbox)) {
 	t.Run(name, func(t *testing.T) {
 		sandbox := &Sandbox{
-			Namespace: fmt.Sprintf("sandbox-%x", f.Rand.Int63()),
+			Namespace: fmt.Sprintf("test-sandbox-%x", f.Rand.Int63()),
 			f:         f,
 		}
 		glog.V(2).Infof("Using namespace %q for test sandbox", sandbox.Namespace)
