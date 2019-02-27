@@ -66,10 +66,8 @@ type ControllerContext struct {
 
 // ControllerContextConfig encapsulates some settings that are tunable via command line flags.
 type ControllerContextConfig struct {
-	NEGEnabled           bool
-	BackendConfigEnabled bool
-	Namespace            string
-	ResyncPeriod         time.Duration
+	Namespace    string
+	ResyncPeriod time.Duration
 	// DefaultBackendSvcPortID is the ServicePortID for the system default backend.
 	DefaultBackendSvcPortID       utils.ServicePortID
 	HealthCheckPath               string
@@ -91,16 +89,12 @@ func NewControllerContext(
 		ControllerContextConfig: config,
 		IngressInformer:         informerv1beta1.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		BackendConfigInformer:   informerbackendconfig.NewBackendConfigInformer(backendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		EndpointInformer:        informerv1.NewEndpointsInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		PodInformer:             informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		NodeInformer:            informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		recorders:               map[string]record.EventRecorder{},
 		healthChecks:            make(map[string]func() error),
-	}
-	if config.NEGEnabled {
-		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
-	}
-	if config.BackendConfigEnabled {
-		context.BackendConfigInformer = informerbackendconfig.NewBackendConfigInformer(backendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 
 	return context
@@ -111,14 +105,10 @@ func (ctx *ControllerContext) HasSynced() bool {
 	funcs := []func() bool{
 		ctx.IngressInformer.HasSynced,
 		ctx.ServiceInformer.HasSynced,
+		ctx.BackendConfigInformer.HasSynced,
 		ctx.PodInformer.HasSynced,
 		ctx.NodeInformer.HasSynced,
-	}
-	if ctx.EndpointInformer != nil {
-		funcs = append(funcs, ctx.EndpointInformer.HasSynced)
-	}
-	if ctx.BackendConfigInformer != nil {
-		funcs = append(funcs, ctx.BackendConfigInformer.HasSynced)
+		ctx.EndpointInformer.HasSynced,
 	}
 	for _, f := range funcs {
 		if !f() {
@@ -195,8 +185,5 @@ func (ctx *ControllerContext) Services() *typed.ServiceStore {
 
 // BackendConfigs returns the store of BackendConfigs.
 func (ctx *ControllerContext) BackendConfigs() *typed.BackendConfigStore {
-	if ctx.BackendConfigInformer == nil {
-		return typed.WrapBackendConfigStore(nil)
-	}
 	return typed.WrapBackendConfigStore(ctx.BackendConfigInformer.GetStore())
 }

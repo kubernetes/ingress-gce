@@ -53,8 +53,6 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := utils.NewNamer(ClusterID, "")
 	ctxConfig := context.ControllerContextConfig{
-		NEGEnabled:              true,
-		BackendConfigEnabled:    false,
 		Namespace:               apiv1.NamespaceAll,
 		ResyncPeriod:            1 * time.Second,
 		DefaultBackendSvcPortID: defaultBackend,

@@ -40,8 +40,6 @@ func newFirewallController() *FirewallController {
 	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 
 	ctxConfig := context.ControllerContextConfig{
-		NEGEnabled:              true,
-		BackendConfigEnabled:    false,
 		Namespace:               api_v1.NamespaceAll,
 		ResyncPeriod:            1 * time.Minute,
 		DefaultBackendSvcPortID: test.DefaultBeSvcPort.ID,

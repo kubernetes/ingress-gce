@@ -44,14 +44,12 @@ var (
 	defaultBackend       = utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")}
 )
 
-func fakeTranslator(negEnabled, backendConfigEnabled bool) *Translator {
+func fakeTranslator() *Translator {
 	client := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 
 	namer := utils.NewNamer("uid1", "")
 	ctxConfig := context.ControllerContextConfig{
-		NEGEnabled:                    negEnabled,
-		BackendConfigEnabled:          backendConfigEnabled,
 		Namespace:                     apiv1.NamespaceAll,
 		ResyncPeriod:                  1 * time.Second,
 		DefaultBackendSvcPortID:       defaultBackend,
@@ -66,7 +64,7 @@ func fakeTranslator(negEnabled, backendConfigEnabled bool) *Translator {
 }
 
 func TestTranslateIngress(t *testing.T) {
-	translator := fakeTranslator(false, false)
+	translator := fakeTranslator()
 	svcLister := translator.ctx.ServiceInformer.GetIndexer()
 
 	// default backend
@@ -224,7 +222,7 @@ func TestGetServicePort(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			translator := fakeTranslator(false, true)
+			translator := fakeTranslator()
 			svcLister := translator.ctx.ServiceInformer.GetIndexer()
 
 			svcName := types.NamespacedName{Name: "foo", Namespace: "default"}
@@ -295,7 +293,7 @@ func TestGetServicePortWithBackendConfigEnabled(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			translator := fakeTranslator(false, true)
+			translator := fakeTranslator()
 			svcLister := translator.ctx.ServiceInformer.GetIndexer()
 			backendConfigLister := translator.ctx.BackendConfigInformer.GetIndexer()
 			svcName := types.NamespacedName{Name: "foo", Namespace: "default"}
@@ -321,7 +319,7 @@ func TestGetServicePortWithBackendConfigEnabled(t *testing.T) {
 }
 
 func TestGetProbe(t *testing.T) {
-	translator := fakeTranslator(false, false)
+	translator := fakeTranslator()
 	nodePortToHealthCheck := map[utils.ServicePort]string{
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}:  "/healthz",
 		{NodePort: 3002, Protocol: annotations.ProtocolHTTPS}: "/foo",
@@ -347,7 +345,7 @@ func TestGetProbe(t *testing.T) {
 }
 
 func TestGetProbeNamedPort(t *testing.T) {
-	translator := fakeTranslator(false, false)
+	translator := fakeTranslator()
 	nodePortToHealthCheck := map[utils.ServicePort]string{
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
@@ -370,7 +368,7 @@ func TestGetProbeNamedPort(t *testing.T) {
 }
 
 func TestGetProbeCrossNamespace(t *testing.T) {
-	translator := fakeTranslator(false, false)
+	translator := fakeTranslator()
 
 	firstPod := &apiv1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -494,7 +492,7 @@ func getProbePath(p *apiv1.Probe) string {
 }
 
 func TestGatherEndpointPorts(t *testing.T) {
-	translator := fakeTranslator(true, false)
+	translator := fakeTranslator()
 
 	ep1 := "ep1"
 	ep2 := "ep2"
@@ -530,7 +528,7 @@ func TestGatherEndpointPorts(t *testing.T) {
 func TestGetZoneForNode(t *testing.T) {
 	nodeName := "node"
 	zone := "us-central1-a"
-	translator := fakeTranslator(true, false)
+	translator := fakeTranslator()
 	translator.ctx.NodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "ns",

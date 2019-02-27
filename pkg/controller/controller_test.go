@@ -54,8 +54,6 @@ func newLoadBalancerController() *LoadBalancerController {
 
 	stopCh := make(chan struct{})
 	ctxConfig := context.ControllerContextConfig{
-		NEGEnabled:                    true,
-		BackendConfigEnabled:          false,
 		Namespace:                     api_v1.NamespaceAll,
 		ResyncPeriod:                  1 * time.Minute,
 		DefaultBackendSvcPortID:       test.DefaultBeSvcPort.ID,
@@ -197,8 +195,8 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			flags.F.Features.FinalizerAdd = tc.enableFinalizerAdd
-			flags.F.Features.FinalizerRemove = tc.enableFinalizerRemove
+			flags.F.FinalizerAdd = tc.enableFinalizerAdd
+			flags.F.FinalizerRemove = tc.enableFinalizerRemove
 
 			lbc := newLoadBalancerController()
 			svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{

@@ -94,7 +94,7 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 		NodePort:   int64(port.NodePort),
 		Port:       int32(port.Port),
 		TargetPort: port.TargetPort.String(),
-		NEGEnabled: t.ctx.NEGEnabled && negEnabled,
+		NEGEnabled: negEnabled,
 	}
 
 	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
@@ -109,25 +109,24 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 	svcPort.Protocol = proto
 
 	var beConfig *backendconfigv1beta1.BackendConfig
-	if t.ctx.BackendConfigEnabled {
-		beConfig, err = backendconfig.GetBackendConfigForServicePort(t.ctx.BackendConfigInformer.GetIndexer(), svc, port)
-		if err != nil {
-			// If we could not find a backend config name for the current
-			// service port, then do not return an error. Removing a reference
-			// to a backend config from the service annotation is a valid
-			// step that a user could take.
-			if err != backendconfig.ErrNoBackendConfigForPort {
-				return svcPort, errors.ErrSvcBackendConfig{ServicePortID: id, Err: err}
-			}
+	beConfig, err = backendconfig.GetBackendConfigForServicePort(t.ctx.BackendConfigInformer.GetIndexer(), svc, port)
+	if err != nil {
+		// If we could not find a backend config name for the current
+		// service port, then do not return an error. Removing a reference
+		// to a backend config from the service annotation is a valid
+		// step that a user could take.
+		if err != backendconfig.ErrNoBackendConfigForPort {
+			return svcPort, errors.ErrSvcBackendConfig{ServicePortID: id, Err: err}
 		}
-		// Object in cache could be changed in-flight. Deepcopy to
-		// reduce race conditions.
-		beConfig = beConfig.DeepCopy()
-		if err = backendconfig.Validate(t.ctx.KubeClient, beConfig); err != nil {
-			return svcPort, errors.ErrBackendConfigValidation{BackendConfig: *beConfig, Err: err}
-		}
-		svcPort.BackendConfig = beConfig
 	}
+	// Object in cache could be changed in-flight. Deepcopy to
+	// reduce race conditions.
+	beConfig = beConfig.DeepCopy()
+	if err = backendconfig.Validate(t.ctx.KubeClient, beConfig); err != nil {
+		return svcPort, errors.ErrBackendConfigValidation{BackendConfig: *beConfig, Err: err}
+	}
+	svcPort.BackendConfig = beConfig
+
 	return svcPort, nil
 }
 
@@ -279,7 +278,7 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 func (t *Translator) GatherEndpointPorts(svcPorts []utils.ServicePort) []string {
 	portMap := map[int64]bool{}
 	for _, p := range svcPorts {
-		if t.ctx.NEGEnabled && p.NEGEnabled {
+		if p.NEGEnabled {
 			// For NEG backend, need to open firewall to all endpoint target ports
 			// TODO(mixia): refactor firewall syncing into a separate go routine with different trigger.
 			// With NEG, endpoint changes may cause firewall ports to be different if user specifies inconsistent backends.
