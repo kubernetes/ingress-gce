@@ -69,6 +69,12 @@ const (
 	// avoid terminating on an invalid character ('-').
 	nameLenLimit = 62
 
+	// clusterNameEvalThreshold is the minimum required length of the clusterName section
+	// in the suffix of a GCE resource in order to qualify for evaluating if a given name
+	// belong to the current cluster. This is for minimizing chances of cluster name collision due
+	// matching uid prefix.
+	clusterNameEvalThreshold = 4
+
 	// maxNEGDescriptiveLabel is the max length for namespace, name and
 	// port for neg name.  63 - 5 (k8s and naming schema version prefix)
 	// - 8 (truncated cluster id) - 8 (suffix hash) - 4 (hyphen connector) = 38
@@ -226,7 +232,7 @@ func (n *Namer) ParseName(name string) *NameComponents {
 	if resource == urlMapPrefix {
 		// It is possible for the loadbalancer name to have dashes in it - so we
 		// join the remaining name parts.
-		lbName = strings.Join(c[2:len(c)], "-")
+		lbName = strings.Join(c[2:], "-")
 	}
 
 	return &NameComponents{
@@ -248,9 +254,34 @@ func (n *Namer) NameBelongsToCluster(name string) bool {
 	if !strings.HasPrefix(name, n.prefix+"-") {
 		return false
 	}
-	clusterName := n.UID()
+	fullClusterName := n.UID()
 	components := n.ParseName(name)
-	return components.ClusterName == clusterName
+	componentClusterName := components.ClusterName
+
+	// if exact match is found, then return true immediately
+	// otherwise, do best effort matching as follows
+	if componentClusterName == fullClusterName {
+		return true
+	}
+
+	// if the name is longer or equal to 63 charactors and the last character of the resource matches alphaNumericChar,
+	// it is likely that the name was truncated.
+	if len(name) > nameLenLimit && len(componentClusterName) > 0 && componentClusterName[len(componentClusterName)-1:] == alphaNumericChar {
+		componentClusterName = componentClusterName[0 : len(componentClusterName)-1]
+	}
+
+	// If the name is longer or equal to 63 characters and the length of the
+	// cluster name parsed from the resource name is too short, ignore the resource and do
+	// not consider the resource managed by this cluster. This is to prevent cluster A
+	// accidentally GC resources from cluster B due to both clusters share the same prefix
+	// uid.
+	// For example:
+	// Case 1: k8s-fws-test-sandbox-50a6f22a4cd34e91-ingress-1--16a1467191ad30
+	// The cluster name is 16a1467191ad30 which is longer than clusterNameEvalThreshold.
+	// Case 2: k8s-fws-test-sandbox-50a6f22a4cd34e91-ingress-1111111111111--10
+	// The cluster name is 10 which is shorter than clusterNameEvalThreshold.
+	return len(componentClusterName) > clusterNameEvalThreshold && strings.HasPrefix(fullClusterName, componentClusterName)
+
 }
 
 // IGBackend constructs the name for a backend service targeting instance groups.
