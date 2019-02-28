@@ -43,7 +43,7 @@ func TestUpgrade(t *testing.T) {
 		{
 			desc: "http default backend",
 			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
-				DefaultBackend("service-1", port80).
+				AddPath("foo.com", "/", "service-1", port80).
 				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 1,
@@ -82,7 +82,7 @@ func TestUpgrade(t *testing.T) {
 					t.Logf("Detected master upgrade, adding a path to Ingress to force Ingress update")
 					// force ingress update. only add path once
 					newIng := fuzz.NewIngressBuilderFromExisting(tc.ing).
-						AddPath("test.com", "/", "service-1", intstr.FromInt(80)).
+						AddPath("bar.com", "/", "service-1", port80).
 						Build()
 
 					if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Update(newIng); err != nil {
