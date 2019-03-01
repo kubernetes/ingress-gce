@@ -126,7 +126,7 @@ func (fr *FirewallRules) createFirewall(f *compute.Firewall) error {
 	err := fr.cloud.CreateFirewall(f)
 	if utils.IsForbiddenError(err) && fr.cloud.OnXPN() {
 		gcloudCmd := gce.FirewallToGCloudCreateCmd(f, fr.cloud.NetworkProjectID())
-		glog.V(3).Infof("Could not create L7 firewall on XPN cluster. Raising event for cmd: %q", gcloudCmd)
+		glog.V(3).Infof("Could not create L7 firewall on XPN cluster: %v. Raising event for cmd: %q", err, gcloudCmd)
 		return newFirewallXPNError(err, gcloudCmd)
 	}
 	return err
@@ -136,7 +136,7 @@ func (fr *FirewallRules) updateFirewall(f *compute.Firewall) error {
 	err := fr.cloud.UpdateFirewall(f)
 	if utils.IsForbiddenError(err) && fr.cloud.OnXPN() {
 		gcloudCmd := gce.FirewallToGCloudUpdateCmd(f, fr.cloud.NetworkProjectID())
-		glog.V(3).Infof("Could not update L7 firewall on XPN cluster. Raising event for cmd: %q", gcloudCmd)
+		glog.V(3).Infof("Could not update L7 firewall on XPN cluster: %v. Raising event for cmd: %q", err, gcloudCmd)
 		return newFirewallXPNError(err, gcloudCmd)
 	}
 	return err
@@ -149,7 +149,7 @@ func (fr *FirewallRules) deleteFirewall(name string) error {
 		return nil
 	} else if utils.IsForbiddenError(err) && fr.cloud.OnXPN() {
 		gcloudCmd := gce.FirewallToGCloudDeleteCmd(name, fr.cloud.NetworkProjectID())
-		glog.V(3).Infof("Could not attempt delete of L7 firewall on XPN cluster. %q needs to be ran.", gcloudCmd)
+		glog.V(3).Infof("Could not attempt delete of L7 firewall on XPN cluster: %v. %q needs to be ran.", err, gcloudCmd)
 		return newFirewallXPNError(err, gcloudCmd)
 	}
 	return err
