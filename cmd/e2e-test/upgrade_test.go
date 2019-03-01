@@ -100,7 +100,7 @@ func TestUpgrade(t *testing.T) {
 
 			// Verify the Ingress has stabilized after the master upgrade and we
 			// trigger an Ingress update
-			ing = waitForStableIngress(false, ing, s, t)
+			ing = waitForStableIngress(true, ing, s, t)
 			t.Logf("GCLB is stable (%s/%s)", s.Namespace, tc.ing.Name)
 			whiteboxTest(ing, s, tc.numForwardingRules, tc.numBackendServices, t)
 
