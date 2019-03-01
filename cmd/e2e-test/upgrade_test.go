@@ -46,7 +46,7 @@ func TestUpgrade(t *testing.T) {
 				AddPath("foo.com", "/", "service-1", port80).
 				Build(),
 			numForwardingRules: 1,
-			numBackendServices: 1,
+			numBackendServices: 2,
 		},
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
