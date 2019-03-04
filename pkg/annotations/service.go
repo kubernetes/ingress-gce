@@ -22,7 +22,6 @@ import (
 	"fmt"
 
 	"k8s.io/api/core/v1"
-	"k8s.io/ingress-gce/pkg/flags"
 )
 
 const (
@@ -143,9 +142,6 @@ func (svc *Service) ApplicationProtocols() (map[string]AppProtocol, error) {
 		switch proto {
 		case ProtocolHTTP, ProtocolHTTPS:
 		case ProtocolHTTP2:
-			if !flags.F.Features.Http2 {
-				return nil, fmt.Errorf("http2 not enabled as port application protocol")
-			}
 		default:
 			return nil, fmt.Errorf("invalid port application protocol: %v", proto)
 		}

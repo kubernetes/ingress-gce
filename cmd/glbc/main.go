@@ -117,11 +117,8 @@ func main() {
 	}
 
 	cloud := app.NewGCEClient()
-	enableNEG := flags.F.Features.NEG
 	defaultBackendServicePortID := app.DefaultBackendServicePortID(kubeClient)
 	ctxConfig := ingctx.ControllerContextConfig{
-		NEGEnabled:                    enableNEG,
-		BackendConfigEnabled:          flags.F.EnableBackendConfig,
 		Namespace:                     flags.F.WatchNamespace,
 		ResyncPeriod:                  flags.F.ResyncPeriod,
 		DefaultBackendSvcPortID:       defaultBackendServicePortID,
@@ -190,12 +187,10 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values())
 
-	if ctx.NEGEnabled {
-		// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
-		negController := neg.NewController(neg.NewAdapter(ctx.Cloud), ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, neg.NegSyncerType(flags.F.NegSyncerType))
-		go negController.Run(stopCh)
-		glog.V(0).Infof("negController started")
-	}
+	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
+	negController := neg.NewController(neg.NewAdapter(ctx.Cloud), ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, neg.NegSyncerType(flags.F.NegSyncerType))
+	go negController.Run(stopCh)
+	glog.V(0).Infof("negController started")
 
 	go app.RunSIGTERMHandler(lbc, flags.F.DeleteAllOnQuit)
 

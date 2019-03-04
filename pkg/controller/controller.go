@@ -114,7 +114,7 @@ func NewLoadBalancerController(
 		nodes:         NewNodeController(ctx, instancePool),
 		instancePool:  instancePool,
 		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx),
-		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.ClusterNamer, ctx.BackendConfigEnabled),
+		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.ClusterNamer),
 		negLinker:     backends.NewNEGLinker(backendPool, ctx.Cloud, ctx.ClusterNamer),
 		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool, ctx.ClusterNamer),
 	}
@@ -186,28 +186,25 @@ func NewLoadBalancerController(
 	})
 
 	// BackendConfig event handlers.
-	if ctx.BackendConfigEnabled {
-		ctx.BackendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				beConfig := obj.(*backendconfigv1beta1.BackendConfig)
+	ctx.BackendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			beConfig := obj.(*backendconfigv1beta1.BackendConfig)
+			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
+			lbc.ingQueue.Enqueue(convert(ings)...)
+		},
+		UpdateFunc: func(old, cur interface{}) {
+			if !reflect.DeepEqual(old, cur) {
+				beConfig := cur.(*backendconfigv1beta1.BackendConfig)
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
-
-			},
-			UpdateFunc: func(old, cur interface{}) {
-				if !reflect.DeepEqual(old, cur) {
-					beConfig := cur.(*backendconfigv1beta1.BackendConfig)
-					ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
-					lbc.ingQueue.Enqueue(convert(ings)...)
-				}
-			},
-			DeleteFunc: func(obj interface{}) {
-				beConfig := obj.(*backendconfigv1beta1.BackendConfig)
-				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
-				lbc.ingQueue.Enqueue(convert(ings)...)
-			},
-		})
-	}
+			}
+		},
+		DeleteFunc: func(obj interface{}) {
+			beConfig := obj.(*backendconfigv1beta1.BackendConfig)
+			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
+			lbc.ingQueue.Enqueue(convert(ings)...)
+		},
+	})
 
 	// Register health check on controller context.
 	ctx.AddHealthCheck("ingress", func() error {
@@ -368,7 +365,7 @@ func (lbc *LoadBalancerController) GCBackends(state interface{}) error {
 	for _, ing := range gcState.ingresses {
 		if utils.IsDeletionCandidate(ing.ObjectMeta, utils.FinalizerKey) {
 			ingClient := lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace)
-			if flags.F.Features.FinalizerRemove {
+			if flags.F.FinalizerRemove {
 				if err := utils.RemoveFinalizer(ing, ingClient); err != nil {
 					glog.Errorf("Failed to remove Finalizer from Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
 					return err
@@ -461,7 +458,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	// Get ingress and DeepCopy for assurance that we don't pollute other goroutines with changes.
 	ing = ing.DeepCopy()
 	ingClient := lbc.ctx.KubeClient.Extensions().Ingresses(ing.Namespace)
-	if flags.F.Features.FinalizerAdd {
+	if flags.F.FinalizerAdd {
 		if err := utils.AddFinalizer(ing, ingClient); err != nil {
 			glog.Errorf("Failed to add Finalizer to Ingress %q: %v", key, err)
 			return err

@@ -71,7 +71,6 @@ var (
 		GCEOperationPollInterval  time.Duration
 		HealthCheckPath           string
 		HealthzPort               int
-		Features                  *Features
 		InCluster                 bool
 		IngressClass              string
 		KubeConfigFile            string
@@ -83,6 +82,8 @@ var (
 		EnableBackendConfig       bool
 		NegGCPeriod               time.Duration
 		NegSyncerType             string
+		FinalizerAdd              bool
+		FinalizerRemove           bool
 
 		LeaderElection LeaderElectionConfiguration
 	}{}
@@ -115,36 +116,7 @@ func defaultLeaderElectionConfiguration() LeaderElectionConfiguration {
 func init() {
 	F.NodePortRanges.ports = []string{DefaultNodePortRange}
 	F.GCERateLimit.specs = []string{"alpha.Operations.Get,qps,10,10", "beta.Operations.Get,qps,10,10", "ga.Operations.Get,qps,10,10"}
-	F.Features = EnabledFeatures()
 	F.LeaderElection = defaultLeaderElectionConfiguration()
-}
-
-// Features is a collection of feature flags for easily enabling and disabling
-// new Ingress features.
-type Features struct {
-	// Http2 enables ProtocolHTTP2 as a valid annotation key on Service, which
-	// allows the creation HTTP2 BackendServices and HealthChecks. Alpha-only.
-	Http2 bool
-	// NEG enables using NetworkEndpointGroups instead of IGs as backends
-	NEG bool
-	// NEGExposed enables using standalone (exposed) NEGs
-	NEGExposed bool
-	// FinalizerAdd enables adding a finalizer on Ingress
-	FinalizerAdd bool
-	// FinalizerRemove enables removing a finalizer on Ingress.
-	FinalizerRemove bool
-}
-
-var DefaultFeatures = &Features{
-	Http2:           true,
-	NEG:             true,
-	NEGExposed:      true,
-	FinalizerAdd:    false,
-	FinalizerRemove: false,
-}
-
-func EnabledFeatures() *Features {
-	return DefaultFeatures
 }
 
 // Register flags with the command line parser.
@@ -211,8 +183,6 @@ the pod secrets for creating a Kubernetes client.`)
 		`If set, overrides what ingress classes are managed by the controller.`)
 	flag.Var(&F.NodePortRanges, "node-port-ranges", `Node port/port-ranges whitelisted for the
 L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-500`)
-	flag.BoolVar(&F.EnableBackendConfig, "enable-backend-config", false,
-		`Optional, whether or not to enable BackendConfig.`)
 
 	leaderelectionconfig.BindFlags(&F.LeaderElection.LeaderElectionConfiguration, flag.CommandLine)
 	flag.StringVar(&F.LeaderElection.LockObjectNamespace, "lock-object-namespace", F.LeaderElection.LockObjectNamespace, "Define the namespace of the lock object.")
@@ -220,16 +190,10 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.DurationVar(&F.NegGCPeriod, "neg-gc-period", 120*time.Second,
 		`Relist and garbage collect NEGs this often.`)
 	flag.StringVar(&F.NegSyncerType, "neg-syncer-type", "transaction", "Define the NEG syncer type to use. Valid values are \"batch\" and \"transaction\"")
-	flag.BoolVar(&F.Features.FinalizerAdd, "enable-finalizer-add",
-		F.Features.FinalizerAdd, "Enable adding Finalizer to Ingress.")
-	flag.BoolVar(&F.Features.FinalizerRemove, "enable-finalizer-remove",
-		F.Features.FinalizerRemove, "Enable removing Finalizer from Ingress.")
-
-	// Deprecated F.
-	flag.BoolVar(&F.Verbose, "verbose", false,
-		`This flag is deprecated. Use -v to control verbosity.`)
-	flag.Bool("use-real-cloud", false,
-		`This flag has been deprecated and no longer has any effect.`)
+	flag.BoolVar(&F.FinalizerAdd, "enable-finalizer-add",
+		F.FinalizerAdd, "Enable adding Finalizer to Ingress.")
+	flag.BoolVar(&F.FinalizerRemove, "enable-finalizer-remove",
+		F.FinalizerRemove, "Enable removing Finalizer from Ingress.")
 }
 
 type RateLimitSpecs struct {

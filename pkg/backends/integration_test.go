@@ -57,7 +57,7 @@ func newTestJig(fakeGCE *gce.GCECloud) *Jig {
 	return &Jig{
 		fakeInstancePool: fakeInstancePool,
 		linker:           NewInstanceGroupLinker(fakeInstancePool, fakeBackendPool, defaultNamer),
-		syncer:           NewBackendSyncer(fakeBackendPool, fakeHealthChecks, defaultNamer, false),
+		syncer:           NewBackendSyncer(fakeBackendPool, fakeHealthChecks, defaultNamer),
 		pool:             fakeBackendPool,
 	}
 }

@@ -832,8 +832,6 @@ func newTestTransactionSyncer(fakeGCE *gce.GCECloud) (negtypes.NegSyncer, *trans
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := utils.NewNamer(clusterID, "")
 	ctxConfig := context.ControllerContextConfig{
-		NEGEnabled:              true,
-		BackendConfigEnabled:    false,
 		Namespace:               apiv1.NamespaceAll,
 		ResyncPeriod:            1 * time.Second,
 		DefaultBackendSvcPortID: defaultBackend,

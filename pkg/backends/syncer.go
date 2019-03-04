@@ -29,11 +29,10 @@ import (
 
 // backendSyncer manages the lifecycle of backends.
 type backendSyncer struct {
-	backendPool          Pool
-	healthChecker        healthchecks.HealthChecker
-	backendConfigEnabled bool
-	prober               ProbeProvider
-	namer                *utils.Namer
+	backendPool   Pool
+	healthChecker healthchecks.HealthChecker
+	prober        ProbeProvider
+	namer         *utils.Namer
 }
 
 // backendSyncer is a Syncer
@@ -42,13 +41,11 @@ var _ Syncer = (*backendSyncer)(nil)
 func NewBackendSyncer(
 	backendPool Pool,
 	healthChecker healthchecks.HealthChecker,
-	namer *utils.Namer,
-	backendConfigEnabled bool) Syncer {
+	namer *utils.Namer) Syncer {
 	return &backendSyncer{
-		backendPool:          backendPool,
-		healthChecker:        healthChecker,
-		namer:                namer,
-		backendConfigEnabled: backendConfigEnabled,
+		backendPool:   backendPool,
+		healthChecker: healthChecker,
+		namer:         namer,
 	}
 }
 
@@ -110,7 +107,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	needUpdate := ensureProtocol(be, sp)
 	needUpdate = ensureHealthCheckLink(be, hcLink) || needUpdate
 	needUpdate = ensureDescription(be, &sp) || needUpdate
-	if s.backendConfigEnabled && sp.BackendConfig != nil {
+	if sp.BackendConfig != nil {
 		needUpdate = features.EnsureCDN(sp, be) || needUpdate
 		needUpdate = features.EnsureIAP(sp, be) || needUpdate
 		needUpdate = features.EnsureTimeout(sp, be) || needUpdate
@@ -124,7 +121,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 		}
 	}
 
-	if s.backendConfigEnabled && sp.BackendConfig != nil {
+	if sp.BackendConfig != nil {
 		cloud := s.backendPool.(*Backends).cloud
 		if err := features.EnsureSecurityPolicy(cloud, sp, be, beName); err != nil {
 			return err

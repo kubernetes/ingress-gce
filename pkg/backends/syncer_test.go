@@ -63,10 +63,9 @@ func newTestSyncer(fakeGCE *gce.GCECloud) *backendSyncer {
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
 	syncer := &backendSyncer{
-		backendPool:          fakeBackendPool,
-		healthChecker:        fakeHealthChecks,
-		namer:                defaultNamer,
-		backendConfigEnabled: false,
+		backendPool:   fakeBackendPool,
+		healthChecker: fakeHealthChecks,
+		namer:         defaultNamer,
 	}
 
 	probes := map[utils.ServicePort]*api_v1.Probe{{NodePort: 443, Protocol: annotations.ProtocolHTTPS}: existingProbe}
