@@ -24,7 +24,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
@@ -337,7 +337,7 @@ func GetNodeConditionPredicate() listers.NodeConditionPredicate {
 			// We consider the node for load balancing only when its NodeReady condition status
 			// is ConditionTrue
 			if cond.Type == api_v1.NodeReady && cond.Status != api_v1.ConditionTrue {
-				glog.V(4).Infof("Ignoring node %v with %v condition status %v", node.Name, cond.Type, cond.Status)
+				klog.V(4).Infof("Ignoring node %v with %v condition status %v", node.Name, cond.Type, cond.Status)
 				return false
 			}
 		}

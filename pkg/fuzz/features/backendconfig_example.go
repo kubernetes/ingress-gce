@@ -20,10 +20,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/golang/glog"
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
+	"k8s.io/klog"
 )
 
 // BackendConfigExample is an example of how a Feature will integrate with the
@@ -89,7 +89,7 @@ func (v *backendConfigExampleValidator) CheckResponse(host, path string, resp *h
 		return fuzz.CheckResponseContinue, err
 	}
 
-	glog.Infof("Relevant BackendConfigs: %+v", bc)
+	klog.Infof("Relevant BackendConfigs: %+v", bc)
 
 	return fuzz.CheckResponseContinue, nil
 }

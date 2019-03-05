@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -72,7 +72,7 @@ func (h *CRDHandler) EnsureCRD(meta *CRDMeta) (*apiextensionsv1beta1.CustomResou
 		return nil, fmt.Errorf("timed out waiting for %v CRD to become Established: %v", meta.kind, err)
 	}
 
-	glog.V(0).Infof("%v CRD is Established.", meta.kind)
+	klog.V(0).Infof("%v CRD is Established.", meta.kind)
 	return crd, nil
 }
 
@@ -85,12 +85,12 @@ func (h *CRDHandler) createOrUpdateCRD(meta *CRDMeta) (*apiextensionsv1beta1.Cus
 
 	// Update CRD if already present.
 	if err == nil {
-		glog.V(0).Infof("Updating existing %v CRD...", meta.kind)
+		klog.V(0).Infof("Updating existing %v CRD...", meta.kind)
 		crd.ResourceVersion = existingCRD.ResourceVersion
 		return h.client.ApiextensionsV1beta1().CustomResourceDefinitions().Update(crd)
 	}
 
-	glog.V(0).Infof("Creating %v CRD...", meta.kind)
+	klog.V(0).Infof("Creating %v CRD...", meta.kind)
 	return h.client.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd)
 }
 
@@ -113,7 +113,7 @@ func crd(meta *CRDMeta) *apiextensionsv1beta1.CustomResourceDefinition {
 	if meta.typeSource != "" && meta.fn != nil {
 		validationSpec, err := validation(meta.typeSource, meta.fn)
 		if err != nil {
-			glog.Errorf("Error adding simple validation for %v CRD: %v", meta.kind, err)
+			klog.Errorf("Error adding simple validation for %v CRD: %v", meta.kind, err)
 		}
 		crd.Spec.Validation = validationSpec
 	}

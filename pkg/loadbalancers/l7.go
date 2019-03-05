@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	compute "google.golang.org/api/compute/v1"
 
@@ -137,13 +137,13 @@ func (l *L7) edgeHop() error {
 	// Defer promoting an ephemeral to a static IP until it's really needed.
 	sslConfigured := l.runtimeInfo.TLS != nil || l.runtimeInfo.TLSName != ""
 	if l.runtimeInfo.AllowHTTP && sslConfigured {
-		glog.V(3).Infof("checking static ip for %v", l.Name)
+		klog.V(3).Infof("checking static ip for %v", l.Name)
 		if err := l.checkStaticIP(); err != nil {
 			return err
 		}
 	}
 	if sslConfigured {
-		glog.V(3).Infof("validating https for %v", l.Name)
+		klog.V(3).Infof("validating https for %v", l.Name)
 		if err := l.edgeHopHttps(); err != nil {
 			return err
 		}
@@ -189,33 +189,33 @@ func (l *L7) GetIP() string {
 // This leaves backends and health checks, which are shared across loadbalancers.
 func (l *L7) Cleanup() error {
 	fwName := l.namer.ForwardingRule(l.Name, utils.HTTPProtocol)
-	glog.V(2).Infof("Deleting global forwarding rule %v", fwName)
+	klog.V(2).Infof("Deleting global forwarding rule %v", fwName)
 	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalForwardingRule(fwName)); err != nil {
 		return err
 	}
 
 	fwsName := l.namer.ForwardingRule(l.Name, utils.HTTPSProtocol)
-	glog.V(2).Infof("Deleting global forwarding rule %v", fwsName)
+	klog.V(2).Infof("Deleting global forwarding rule %v", fwsName)
 	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalForwardingRule(fwsName)); err != nil {
 		return err
 	}
 
 	ip, err := l.cloud.GetGlobalAddress(fwName)
 	if ip != nil && utils.IgnoreHTTPNotFound(err) == nil {
-		glog.V(2).Infof("Deleting static IP %v(%v)", ip.Name, ip.Address)
+		klog.V(2).Infof("Deleting static IP %v(%v)", ip.Name, ip.Address)
 		if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalAddress(ip.Name)); err != nil {
 			return err
 		}
 	}
 
 	tpName := l.namer.TargetProxy(l.Name, utils.HTTPProtocol)
-	glog.V(2).Infof("Deleting target http proxy %v", tpName)
+	klog.V(2).Infof("Deleting target http proxy %v", tpName)
 	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHttpProxy(tpName)); err != nil {
 		return err
 	}
 
 	tpsName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
-	glog.V(2).Infof("Deleting target https proxy %v", tpsName)
+	klog.V(2).Infof("Deleting target https proxy %v", tpsName)
 	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHttpsProxy(tpsName)); err != nil {
 		return err
 	}
@@ -229,9 +229,9 @@ func (l *L7) Cleanup() error {
 	if len(secretsSslCerts) != 0 {
 		var certErr error
 		for _, cert := range secretsSslCerts {
-			glog.V(2).Infof("Deleting sslcert %s", cert.Name)
+			klog.V(2).Infof("Deleting sslcert %s", cert.Name)
 			if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteSslCertificate(cert.Name)); err != nil {
-				glog.Errorf("Old cert delete failed - %v", err)
+				klog.Errorf("Old cert delete failed - %v", err)
 				certErr = err
 			}
 		}
@@ -242,7 +242,7 @@ func (l *L7) Cleanup() error {
 	}
 
 	umName := l.namer.UrlMap(l.Name)
-	glog.V(2).Infof("Deleting URL Map %v", umName)
+	klog.V(2).Infof("Deleting URL Map %v", umName)
 	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteUrlMap(umName)); err != nil {
 		return err
 	}

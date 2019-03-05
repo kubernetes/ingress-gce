@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	"google.golang.org/api/compute/v0.beta"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -30,6 +29,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
@@ -96,7 +96,7 @@ func getService(serviceLister cache.Indexer, namespace, name string) *apiv1.Serv
 		return service.(*apiv1.Service)
 	}
 	if err != nil {
-		glog.Errorf("Failed to retrieve service %s/%s from store: %v", namespace, name, err)
+		klog.Errorf("Failed to retrieve service %s/%s from store: %v", namespace, name, err)
 	}
 	return nil
 }
@@ -106,7 +106,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	neg, err := cloud.GetNetworkEndpointGroup(negName, zone)
 	if err != nil {
 		// Most likely to be caused by non-existed NEG
-		glog.V(4).Infof("Error while retriving %q in zone %q: %v", negName, zone, err)
+		klog.V(4).Infof("Error while retriving %q in zone %q: %v", negName, zone, err)
 	}
 
 	needToCreate := false
@@ -115,7 +115,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	} else if !utils.EqualResourceIDs(neg.Network, cloud.NetworkURL()) ||
 		!utils.EqualResourceIDs(neg.Subnetwork, cloud.SubnetworkURL()) {
 		needToCreate = true
-		glog.V(2).Infof("NEG %q in %q does not match network and subnetwork of the cluster. Deleting NEG.", negName, zone)
+		klog.V(2).Infof("NEG %q in %q does not match network and subnetwork of the cluster. Deleting NEG.", negName, zone)
 		err = cloud.DeleteNetworkEndpointGroup(negName, zone)
 		if err != nil {
 			return err
@@ -129,7 +129,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	}
 
 	if needToCreate {
-		glog.V(2).Infof("Creating NEG %q for %s in %q.", negName, negServicePortName, zone)
+		klog.V(2).Infof("Creating NEG %q for %s in %q.", negName, negServicePortName, zone)
 		err = cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 			Name:                negName,
 			NetworkEndpointType: gce.NEGIPPortNetworkEndpointType,
@@ -153,7 +153,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.ZoneGetter, targetPort string) (map[string]sets.String, error) {
 	zoneNetworkEndpointMap := map[string]sets.String{}
 	if endpoints == nil {
-		glog.Errorf("Endpoint object is nil")
+		klog.Errorf("Endpoint object is nil")
 		return zoneNetworkEndpointMap, nil
 	}
 	targetPortNum, _ := strconv.Atoi(targetPort)
@@ -184,7 +184,7 @@ func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.Zo
 		}
 		for _, address := range subset.Addresses {
 			if address.NodeName == nil {
-				glog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
+				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
 				continue
 			}
 			zone, err := zoneGetter.GetZoneForNode(*address.NodeName)

@@ -19,9 +19,9 @@ package features
 import (
 	"reflect"
 
-	"github.com/golang/glog"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 // EnsureDraining reads the ConnectionDraining configuration specified in
@@ -36,7 +36,7 @@ func EnsureDraining(sp utils.ServicePort, be *composite.BackendService) bool {
 	applyDrainingSettings(sp, beTemp)
 	if !reflect.DeepEqual(beTemp.ConnectionDraining, be.ConnectionDraining) {
 		applyDrainingSettings(sp, be)
-		glog.V(2).Infof("Updated ConnectionDraining settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
+		klog.V(2).Infof("Updated ConnectionDraining settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
 		return true
 	}
 	return false

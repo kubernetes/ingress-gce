@@ -20,10 +20,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/golang/glog"
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
+	"k8s.io/klog"
 )
 
 // IAP is a feature in BackendConfig that supports using GCP Identity-Aware Proxy (IAP).
@@ -82,7 +82,7 @@ func (v *iapValidator) CheckResponse(host, path string, resp *http.Response, bod
 	// and that the response code was a 302.
 	if iapEnabled {
 		if resp.StatusCode != http.StatusFound {
-			glog.V(2).Infof("The response was %v", resp)
+			klog.V(2).Infof("The response was %v", resp)
 			return fuzz.CheckResponseContinue, fmt.Errorf("IAP is turned on but response %v did not return a 302", resp)
 		}
 		if resp.Header.Get("x-goog-iap-generated-response") == "" {

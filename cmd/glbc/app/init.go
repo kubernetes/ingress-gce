@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -35,20 +35,20 @@ import (
 // used as the default backend for load balancers.
 func DefaultBackendServicePortID(kubeClient kubernetes.Interface) utils.ServicePortID {
 	if flags.F.DefaultSvc == "" {
-		glog.Fatalf("Please specify --default-backend-service")
+		klog.Fatalf("Please specify --default-backend-service")
 	}
 
 	if flags.F.DefaultSvcPortName == "" {
-		glog.Fatalf("Please specify --default-backend-service-port")
+		klog.Fatalf("Please specify --default-backend-service-port")
 	}
 
 	name, err := utils.ToNamespacedName(flags.F.DefaultSvc)
 	if err != nil {
-		glog.Fatalf("Failed to parse --default-backend-service: %v", err)
+		klog.Fatalf("Failed to parse --default-backend-service: %v", err)
 	}
 
 	if err := waitForServicePort(kubeClient, name, flags.F.DefaultSvcPortName); err != nil {
-		glog.Fatalf("Failed to verify default backend service: %v", err)
+		klog.Fatalf("Failed to verify default backend service: %v", err)
 	}
 
 	return utils.ServicePortID{
@@ -59,12 +59,12 @@ func DefaultBackendServicePortID(kubeClient kubernetes.Interface) utils.ServiceP
 
 // servicePortExists checks that the service and specified port name exists.
 func waitForServicePort(client kubernetes.Interface, name types.NamespacedName, portName string) error {
-	glog.V(2).Infof("Checking existance of default backend service %q", name.String())
+	klog.V(2).Infof("Checking existance of default backend service %q", name.String())
 
 	err := wait.Poll(3*time.Second, 5*time.Minute, func() (bool, error) {
 		svc, err := client.Core().Services(name.Namespace).Get(name.Name, meta_v1.GetOptions{})
 		if err != nil {
-			glog.V(4).Infof("Service %q does not exist", name.String())
+			klog.V(4).Infof("Service %q does not exist", name.String())
 			return false, nil
 		}
 

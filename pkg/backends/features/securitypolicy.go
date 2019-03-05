@@ -19,7 +19,7 @@ package features
 import (
 	"fmt"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	computebeta "google.golang.org/api/compute/v0.beta"
 
@@ -43,7 +43,7 @@ func EnsureSecurityPolicy(cloud *gce.GCECloud, sp utils.ServicePort, be *composi
 		return nil
 	}
 
-	glog.V(2).Infof("Setting security policy %q for backend service %s (%s:%s)", policyRef, beName, sp.ID.Service.String(), sp.ID.Port.String())
+	klog.V(2).Infof("Setting security policy %q for backend service %s (%s:%s)", policyRef, beName, sp.ID.Service.String(), sp.ID.Port.String())
 	if err := cloud.SetSecurityPolicyForBetaGlobalBackendService(beName, policyRef); err != nil {
 		return fmt.Errorf("failed to set security policy %q for backend service %s (%s:%s): %v", policyRef, beName, sp.ID.Service.String(), sp.ID.Port.String(), err)
 	}

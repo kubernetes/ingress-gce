@@ -50,7 +50,7 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 		expectSetCall         bool
 	}{
 		{
-			desc: "attach-policy",
+			desc:                  "attach-policy",
 			currentBackendService: &composite.BackendService{},
 			desiredConfig: &backendconfigv1beta1.BackendConfig{
 				Spec: backendconfigv1beta1.BackendConfigSpec{
@@ -103,7 +103,7 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 			},
 		},
 		{
-			desc: "empty-policy",
+			desc:                  "empty-policy",
 			currentBackendService: &composite.BackendService{},
 			desiredConfig:         &backendconfigv1beta1.BackendConfig{},
 		},

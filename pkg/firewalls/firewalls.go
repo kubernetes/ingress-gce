@@ -21,7 +21,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -53,7 +53,7 @@ type FirewallRules struct {
 func NewFirewallPool(cloud Firewall, namer *utils.Namer, l7SrcRanges []string, nodePortRanges []string) SingleFirewallPool {
 	_, err := netset.ParseIPNets(l7SrcRanges...)
 	if err != nil {
-		glog.Fatalf("Could not parse L7 src ranges %v for firewall rule: %v", l7SrcRanges, err)
+		klog.Fatalf("Could not parse L7 src ranges %v for firewall rule: %v", l7SrcRanges, err)
 	}
 	return &FirewallRules{
 		cloud:      cloud,
@@ -65,7 +65,7 @@ func NewFirewallPool(cloud Firewall, namer *utils.Namer, l7SrcRanges []string, n
 
 // Sync sync firewall rules with the cloud.
 func (fr *FirewallRules) Sync(nodeNames []string, additionalPorts ...string) error {
-	glog.V(4).Infof("Sync(%v)", nodeNames)
+	klog.V(4).Infof("Sync(%v)", nodeNames)
 	name := fr.namer.FirewallRule()
 	existingFirewall, _ := fr.cloud.GetFirewall(name)
 
@@ -94,24 +94,24 @@ func (fr *FirewallRules) Sync(nodeNames []string, additionalPorts ...string) err
 	}
 
 	if existingFirewall == nil {
-		glog.V(3).Infof("Creating firewall rule %q", name)
+		klog.V(3).Infof("Creating firewall rule %q", name)
 		return fr.createFirewall(expectedFirewall)
 	}
 
 	// Early return if an update is not required.
 	if equal(expectedFirewall, existingFirewall) {
-		glog.V(4).Info("Firewall does not need update of ports or source ranges")
+		klog.V(4).Info("Firewall does not need update of ports or source ranges")
 		return nil
 	}
 
-	glog.V(3).Infof("Updating firewall rule %q", name)
+	klog.V(3).Infof("Updating firewall rule %q", name)
 	return fr.updateFirewall(expectedFirewall)
 }
 
 // GC deletes the firewall rule.
 func (fr *FirewallRules) GC() error {
 	name := fr.namer.FirewallRule()
-	glog.V(3).Infof("Deleting firewall %q", name)
+	klog.V(3).Infof("Deleting firewall %q", name)
 	return fr.deleteFirewall(name)
 }
 
@@ -126,7 +126,7 @@ func (fr *FirewallRules) createFirewall(f *compute.Firewall) error {
 	err := fr.cloud.CreateFirewall(f)
 	if utils.IsForbiddenError(err) && fr.cloud.OnXPN() {
 		gcloudCmd := gce.FirewallToGCloudCreateCmd(f, fr.cloud.NetworkProjectID())
-		glog.V(3).Infof("Could not create L7 firewall on XPN cluster: %v. Raising event for cmd: %q", err, gcloudCmd)
+		klog.V(3).Infof("Could not create L7 firewall on XPN cluster: %v. Raising event for cmd: %q", err, gcloudCmd)
 		return newFirewallXPNError(err, gcloudCmd)
 	}
 	return err
@@ -136,7 +136,7 @@ func (fr *FirewallRules) updateFirewall(f *compute.Firewall) error {
 	err := fr.cloud.UpdateFirewall(f)
 	if utils.IsForbiddenError(err) && fr.cloud.OnXPN() {
 		gcloudCmd := gce.FirewallToGCloudUpdateCmd(f, fr.cloud.NetworkProjectID())
-		glog.V(3).Infof("Could not update L7 firewall on XPN cluster: %v. Raising event for cmd: %q", err, gcloudCmd)
+		klog.V(3).Infof("Could not update L7 firewall on XPN cluster: %v. Raising event for cmd: %q", err, gcloudCmd)
 		return newFirewallXPNError(err, gcloudCmd)
 	}
 	return err
@@ -145,11 +145,11 @@ func (fr *FirewallRules) updateFirewall(f *compute.Firewall) error {
 func (fr *FirewallRules) deleteFirewall(name string) error {
 	err := fr.cloud.DeleteFirewall(name)
 	if utils.IsNotFoundError(err) {
-		glog.Infof("Firewall with name %v didn't exist when attempting delete.", name)
+		klog.Infof("Firewall with name %v didn't exist when attempting delete.", name)
 		return nil
 	} else if utils.IsForbiddenError(err) && fr.cloud.OnXPN() {
 		gcloudCmd := gce.FirewallToGCloudDeleteCmd(name, fr.cloud.NetworkProjectID())
-		glog.V(3).Infof("Could not attempt delete of L7 firewall on XPN cluster: %v. %q needs to be ran.", err, gcloudCmd)
+		klog.V(3).Infof("Could not attempt delete of L7 firewall on XPN cluster: %v. %q needs to be ran.", err, gcloudCmd)
 		return newFirewallXPNError(err, gcloudCmd)
 	}
 	return err
@@ -173,19 +173,19 @@ func (f *FirewallXPNError) Error() string {
 
 func equal(expected *compute.Firewall, existing *compute.Firewall) bool {
 	if !sets.NewString(expected.TargetTags...).Equal(sets.NewString(existing.TargetTags...)) {
-		glog.V(5).Infof("Expected target tags %v, actually %v", expected.TargetTags, existing.TargetTags)
+		klog.V(5).Infof("Expected target tags %v, actually %v", expected.TargetTags, existing.TargetTags)
 		return false
 	}
 
 	expectedAllowed := allowedToStrings(expected.Allowed)
 	existingAllowed := allowedToStrings(existing.Allowed)
 	if !sets.NewString(expectedAllowed...).Equal(sets.NewString(existingAllowed...)) {
-		glog.V(5).Infof("Expected allowed rules %v, actually %v", expectedAllowed, existingAllowed)
+		klog.V(5).Infof("Expected allowed rules %v, actually %v", expectedAllowed, existingAllowed)
 		return false
 	}
 
 	if !sets.NewString(expected.SourceRanges...).Equal(sets.NewString(existing.SourceRanges...)) {
-		glog.V(5).Infof("Expected source ranges %v, actually %v", expected.SourceRanges, existing.SourceRanges)
+		klog.V(5).Infof("Expected source ranges %v, actually %v", expected.SourceRanges, existing.SourceRanges)
 		return false
 	}
 

@@ -19,9 +19,9 @@ package features
 import (
 	"reflect"
 
-	"github.com/golang/glog"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 // EnsureAffinity reads the sessionAffinity and AffinityCookieTtlSec configuration
@@ -36,7 +36,7 @@ func EnsureAffinity(sp utils.ServicePort, be *composite.BackendService) bool {
 	applyAffinitySettings(sp, beTemp)
 	if !reflect.DeepEqual(beTemp.AffinityCookieTtlSec, be.AffinityCookieTtlSec) || beTemp.SessionAffinity != be.SessionAffinity {
 		applyAffinitySettings(sp, be)
-		glog.V(2).Infof("Updated SessionAffinity settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
+		klog.V(2).Infof("Updated SessionAffinity settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
 		return true
 	}
 	return false

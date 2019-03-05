@@ -21,7 +21,6 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/golang/glog"
 	apiv1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -32,6 +31,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
@@ -136,7 +136,7 @@ func (fwc *FirewallController) Run() {
 
 // This should only be called when the process is being terminated.
 func (fwc *FirewallController) shutdown() {
-	glog.Infof("Shutting down Firewall Controller")
+	klog.Infof("Shutting down Firewall Controller")
 	fwc.queue.Shutdown()
 }
 
@@ -145,7 +145,7 @@ func (fwc *FirewallController) sync(key string) error {
 		time.Sleep(context.StoreSyncPollPeriod)
 		return fmt.Errorf("waiting for stores to sync")
 	}
-	glog.V(3).Infof("Syncing firewall")
+	klog.V(3).Infof("Syncing firewall")
 
 	gceIngresses := operator.Ingresses(fwc.ctx.Ingresses().List()).Filter(func(ing *extensions.Ingress) bool {
 		return utils.IsGCEIngress(ing)

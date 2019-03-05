@@ -26,7 +26,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/golang/glog"
 	"golang.org/x/oauth2/google"
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
@@ -35,6 +34,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
@@ -53,7 +53,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 	}
 	backendConfigClient, err := backendconfigclient.NewForConfig(config)
 	if err != nil {
-		glog.Fatalf("Failed to create BackendConfig client: %v", err)
+		klog.Fatalf("Failed to create BackendConfig client: %v", err)
 	}
 	f := &Framework{
 		RestConfig:          config,
@@ -86,29 +86,29 @@ type Framework struct {
 
 // SanityCheck the test environment before proceeding.
 func (f *Framework) SanityCheck() error {
-	glog.V(2).Info("Checking connectivity with Kubernetes API")
+	klog.V(2).Info("Checking connectivity with Kubernetes API")
 	if _, err := f.Clientset.Core().Pods("default").List(metav1.ListOptions{}); err != nil {
-		glog.Errorf("Error accessing Kubernetes API: %v", err)
+		klog.Errorf("Error accessing Kubernetes API: %v", err)
 		return err
 	}
-	glog.V(2).Infof("Checking connectivity with Google Cloud API (get project %q)", f.Project)
+	klog.V(2).Infof("Checking connectivity with Google Cloud API (get project %q)", f.Project)
 	if _, err := f.Cloud.Projects().Get(context.Background(), f.Project); err != nil {
-		glog.Errorf("Error accessing compute API: %v", err)
+		klog.Errorf("Error accessing compute API: %v", err)
 		return err
 	}
-	glog.V(2).Info("Checking external Internet connectivity")
+	klog.V(2).Info("Checking external Internet connectivity")
 	for _, url := range []string{
 		"http://www.google.com",
 		"http://www.amazon.com",
 	} {
 		if _, err := http.Get(url); err != nil {
-			glog.Errorf("Error in HTTP GET to %q: %v", url, err)
+			klog.Errorf("Error in HTTP GET to %q: %v", url, err)
 			return err
 		}
 	}
-	glog.V(2).Info("Checking status manager initialization")
+	klog.V(2).Info("Checking status manager initialization")
 	if err := f.statusManager.init(); err != nil {
-		glog.Errorf("Error initalizing status manager: %v", err)
+		klog.Errorf("Error initalizing status manager: %v", err)
 		return err
 	}
 	return nil
@@ -116,7 +116,7 @@ func (f *Framework) SanityCheck() error {
 
 // CatchSIGINT and cleanup sandboxes when the test is interrupted.
 func (f *Framework) CatchSIGINT() {
-	glog.Infof("Catching SIGINT")
+	klog.Infof("Catching SIGINT")
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -130,14 +130,14 @@ func (f *Framework) sigintHandler() {
 	if !f.destroySandboxes {
 		return
 	}
-	glog.Warningf("SIGINT received, shutting down (disable with -handleSIGINT=false)")
+	klog.Warningf("SIGINT received, shutting down (disable with -handleSIGINT=false)")
 	f.shutdown(1)
 }
 
 func (f *Framework) shutdown(exitCode int) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
-	glog.V(2).Infof("Cleaning up sandboxes...")
+	klog.V(2).Infof("Cleaning up sandboxes...")
 	for _, s := range f.sandboxes {
 		s.Destroy()
 	}
@@ -159,7 +159,7 @@ func (f *Framework) WithSandbox(testFunc func(*Sandbox) error) error {
 			return fmt.Errorf("sandbox %s was created previously by the framework.", s.Namespace)
 		}
 	}
-	glog.V(2).Infof("Using namespace %q for test sandbox", sandbox.Namespace)
+	klog.V(2).Infof("Using namespace %q for test sandbox", sandbox.Namespace)
 	if err := sandbox.Create(); err != nil {
 		f.lock.Unlock()
 		return err
@@ -190,7 +190,7 @@ func (f *Framework) RunWithSandbox(name string, t *testing.T, testFunc func(*tes
 				t.Fatalf("Sandbox %s was created previously by the framework.", s.Namespace)
 			}
 		}
-		glog.V(2).Infof("Using namespace %q for test sandbox", sandbox.Namespace)
+		klog.V(2).Infof("Using namespace %q for test sandbox", sandbox.Namespace)
 		if err := sandbox.Create(); err != nil {
 			f.lock.Unlock()
 			t.Fatalf("error creating sandbox: %v", err)

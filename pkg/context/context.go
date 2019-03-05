@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	apiv1 "k8s.io/api/core/v1"
 	informerv1 "k8s.io/client-go/informers/core/v1"
@@ -125,7 +125,7 @@ func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 	}
 
 	broadcaster := record.NewBroadcaster()
-	broadcaster.StartLogging(glog.Infof)
+	broadcaster.StartLogging(klog.Infof)
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{
 		Interface: ctx.KubeClient.Core().Events(ns),
 	})

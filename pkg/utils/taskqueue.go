@@ -17,9 +17,9 @@ limitations under the License.
 package utils
 
 import (
-	"github.com/golang/glog"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/klog"
 )
 
 var (
@@ -57,12 +57,12 @@ func (t *PeriodicTaskQueue) Run() {
 			close(t.workerDone)
 			return
 		}
-		glog.V(4).Infof("Syncing %v (%v)", key, t.resource)
+		klog.V(4).Infof("Syncing %v (%v)", key, t.resource)
 		if err := t.sync(key.(string)); err != nil {
-			glog.Errorf("Requeuing %q due to error: %v (%v)", key, err, t.resource)
+			klog.Errorf("Requeuing %q due to error: %v (%v)", key, err, t.resource)
 			t.queue.AddRateLimited(key)
 		} else {
-			glog.V(4).Infof("Finished syncing %v", key)
+			klog.V(4).Infof("Finished syncing %v", key)
 			t.queue.Forget(key)
 		}
 		t.queue.Done(key)
@@ -74,17 +74,17 @@ func (t *PeriodicTaskQueue) Enqueue(objs ...interface{}) {
 	for _, obj := range objs {
 		key, err := t.keyFunc(obj)
 		if err != nil {
-			glog.Errorf("Couldn't get key for object %+v (type %T): %v", obj, obj, err)
+			klog.Errorf("Couldn't get key for object %+v (type %T): %v", obj, obj, err)
 			return
 		}
-		glog.V(4).Infof("Enqueue key=%q (%v)", key, t.resource)
+		klog.V(4).Infof("Enqueue key=%q (%v)", key, t.resource)
 		t.queue.Add(key)
 	}
 }
 
 // Shutdown shuts down the work queue and waits for the worker to ACK
 func (t *PeriodicTaskQueue) Shutdown() {
-	glog.V(2).Infof("Shutdown")
+	klog.V(2).Infof("Shutdown")
 	t.queue.ShutDown()
 	<-t.workerDone
 }

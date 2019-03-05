@@ -21,10 +21,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 const SslCertificateMissing = "SslCertificateMissing"
@@ -77,7 +77,7 @@ func (l *L7) createSslCertificates(existingCerts []*compute.SslCertificate) ([]*
 		gcpCertName := l.namer.SSLCertName(l.Name, tlsCert.CertHash)
 
 		if addedBy, exists := visitedCertMap[gcpCertName]; exists {
-			glog.V(3).Infof("Secret %q has a certificate already used by %v", tlsCert.Name, addedBy)
+			klog.V(3).Infof("Secret %q has a certificate already used by %v", tlsCert.Name, addedBy)
 			continue
 		}
 
@@ -88,7 +88,7 @@ func (l *L7) createSslCertificates(existingCerts []*compute.SslCertificate) ([]*
 		// to check if this cert name exists in the map.
 		if existingCertsMap != nil {
 			if cert, ok := existingCertsMap[gcpCertName]; ok {
-				glog.V(3).Infof("Secret %q already exists as certificate %q", tlsCert.Name, gcpCertName)
+				klog.V(3).Infof("Secret %q already exists as certificate %q", tlsCert.Name, gcpCertName)
 				visitedCertMap[gcpCertName] = fmt.Sprintf("certificate:%q", gcpCertName)
 				result = append(result, cert)
 				continue
@@ -96,14 +96,14 @@ func (l *L7) createSslCertificates(existingCerts []*compute.SslCertificate) ([]*
 		}
 		// Controller needs to create the certificate, no need to check if it exists and delete. If it did exist, it
 		// would have been listed in the populateSSLCert function and matched in the check above.
-		glog.V(2).Infof("Creating new sslCertificate %q for LB %q", gcpCertName, l.Name)
+		klog.V(2).Infof("Creating new sslCertificate %q for LB %q", gcpCertName, l.Name)
 		cert, err := l.cloud.CreateSslCertificate(&compute.SslCertificate{
 			Name:        gcpCertName,
 			Certificate: ingCert,
 			PrivateKey:  ingKey,
 		})
 		if err != nil {
-			glog.Errorf("Failed to create new sslCertificate %q for %q - %v", gcpCertName, l.Name, err)
+			klog.Errorf("Failed to create new sslCertificate %q for %q - %v", gcpCertName, l.Name, err)
 			failedCerts = append(failedCerts, gcpCertName+" Error:"+err.Error())
 			continue
 		}
@@ -135,7 +135,7 @@ func (l *L7) getSslCertificates(names []string) ([]*compute.SslCertificate, erro
 			continue
 		}
 
-		glog.V(2).Infof("Using existing SslCertificate %v for %v", name, l.Name)
+		klog.V(2).Infof("Using existing SslCertificate %v for %v", name, l.Name)
 		result = append(result, cert)
 	}
 	if len(failedCerts) != 0 {
@@ -185,13 +185,13 @@ func (l *L7) getIngressManagedSslCerts() ([]*compute.SslCertificate, error) {
 	}
 	for _, c := range certs {
 		if l.namer.IsCertUsedForLB(l.Name, c.Name) {
-			glog.V(4).Infof("Populating ssl cert %s for l7 %s", c.Name, l.Name)
+			klog.V(4).Infof("Populating ssl cert %s for l7 %s", c.Name, l.Name)
 			result = append(result, c)
 		}
 	}
 	if len(result) == 0 {
 		// Check for legacy cert since that follows a different naming convention
-		glog.V(4).Infof("Looking for legacy ssl certs")
+		klog.V(4).Infof("Looking for legacy ssl certs")
 		expectedCertLinks, err := l.getSslCertLinkInUse()
 		if err != nil {
 			// Return nil if target proxy doesn't exist.
@@ -201,7 +201,7 @@ func (l *L7) getIngressManagedSslCerts() ([]*compute.SslCertificate, error) {
 			// Retrieve the certificate and ignore error if certificate wasn't found
 			name, err := utils.KeyName(link)
 			if err != nil {
-				glog.Warningf("error parsing cert name: %v", err)
+				klog.Warningf("error parsing cert name: %v", err)
 				continue
 			}
 
@@ -210,7 +210,7 @@ func (l *L7) getIngressManagedSslCerts() ([]*compute.SslCertificate, error) {
 			}
 			cert, _ := l.cloud.GetSslCertificate(name)
 			if cert != nil {
-				glog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l.Name)
+				klog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l.Name)
 				result = append(result, cert)
 			}
 		}
@@ -232,9 +232,9 @@ func (l *L7) deleteOldSSLCerts() {
 			// cert found in current map
 			continue
 		}
-		glog.V(3).Infof("Cleaning up old SSL Certificate %s", cert.Name)
+		klog.V(3).Infof("Cleaning up old SSL Certificate %s", cert.Name)
 		if certErr := utils.IgnoreHTTPNotFound(l.cloud.DeleteSslCertificate(cert.Name)); certErr != nil {
-			glog.Errorf("Old cert delete failed - %v", certErr)
+			klog.Errorf("Old cert delete failed - %v", certErr)
 		}
 	}
 }
@@ -244,22 +244,22 @@ func (l *L7) deleteOldSSLCerts() {
 func (l *L7) compareCerts(certLinks []string) bool {
 	certsMap := getMapfromCertList(l.sslCerts)
 	if len(certLinks) != len(certsMap) {
-		glog.V(4).Infof("Loadbalancer has %d certs, target proxy has %d certs", len(certsMap), len(certLinks))
+		klog.V(4).Infof("Loadbalancer has %d certs, target proxy has %d certs", len(certsMap), len(certLinks))
 		return false
 	}
 
 	for _, link := range certLinks {
 		certName, err := utils.KeyName(link)
 		if err != nil {
-			glog.Warningf("Cannot get cert name: %v", err)
+			klog.Warningf("Cannot get cert name: %v", err)
 			return false
 		}
 
 		if cert, ok := certsMap[certName]; !ok {
-			glog.V(4).Infof("Cannot find cert with name %s in certsMap %+v", certName, certsMap)
+			klog.V(4).Infof("Cannot find cert with name %s in certsMap %+v", certName, certsMap)
 			return false
 		} else if ok && !utils.EqualResourceIDs(link, cert.SelfLink) {
-			glog.V(4).Infof("Selflink compare failed for certs - %s in loadbalancer, %s in targetproxy", cert.SelfLink, link)
+			klog.V(4).Infof("Selflink compare failed for certs - %s in loadbalancer, %s in targetproxy", cert.SelfLink, link)
 			return false
 		}
 	}

@@ -19,7 +19,7 @@ package tls
 import (
 	"fmt"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	api_v1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
@@ -60,7 +60,7 @@ func (t *TLSCertsFromSecretsLoader) Load(ing *extensions.Ingress) ([]*loadbalanc
 
 	for _, tlsSecret := range ing.Spec.TLS {
 		// TODO: Replace this for a secret watcher.
-		glog.V(3).Infof("Retrieving secret for ing %v with name %v", ing.Name, tlsSecret.SecretName)
+		klog.V(3).Infof("Retrieving secret for ing %v with name %v", ing.Name, tlsSecret.SecretName)
 		secret, err := t.Client.Core().Secrets(ing.Namespace).Get(tlsSecret.SecretName, meta_v1.GetOptions{})
 		if err != nil {
 			return nil, err

@@ -16,10 +16,10 @@ package utils
 import (
 	"fmt"
 
-	"github.com/golang/glog"
 	extensions "k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	client "k8s.io/client-go/kubernetes/typed/extensions/v1beta1"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/util/slice"
 )
 
@@ -51,7 +51,7 @@ func AddFinalizer(ing *extensions.Ingress, ingClient client.IngressInterface) er
 		if _, err := ingClient.Update(updated); err != nil {
 			return fmt.Errorf("error updating Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 		}
-		glog.V(3).Infof("Added finalizer %q for Ingress %s/%s", ingKey, ing.Namespace, ing.Name)
+		klog.V(3).Infof("Added finalizer %q for Ingress %s/%s", ingKey, ing.Namespace, ing.Name)
 	}
 
 	return nil
@@ -67,7 +67,7 @@ func RemoveFinalizer(ing *extensions.Ingress, ingClient client.IngressInterface)
 		if _, err := ingClient.Update(updated); err != nil {
 			return fmt.Errorf("error updating Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 		}
-		glog.V(3).Infof("Removed finalizer %q for Ingress %s/%s", ingKey, ing.Namespace, ing.Name)
+		klog.V(3).Infof("Removed finalizer %q for Ingress %s/%s", ingKey, ing.Namespace, ing.Name)
 	}
 
 	return nil

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -64,7 +64,7 @@ func (c *ConfigMapVault) Get(key string) (string, bool, error) {
 	if k, ok := data[key]; ok {
 		return k, true, nil
 	}
-	glog.Infof("Found config map %v but it doesn't contain key %v: %+v", keyStore, key, data)
+	klog.Infof("Found config map %v but it doesn't contain key %v: %+v", keyStore, key, data)
 	return "", false, nil
 }
 
@@ -92,9 +92,9 @@ func (c *ConfigMapVault) Put(key, val string) error {
 		data[key] = val
 		apiObj.Data = data
 		if existingVal != val {
-			glog.Infof("Configmap %v has key %v but wrong value %v, updating to %v", cfgMapKey, key, existingVal, val)
+			klog.Infof("Configmap %v has key %v but wrong value %v, updating to %v", cfgMapKey, key, existingVal, val)
 		} else {
-			glog.Infof("Configmap %v will be updated with %v = %v", cfgMapKey, key, val)
+			klog.Infof("Configmap %v will be updated with %v = %v", cfgMapKey, key, val)
 		}
 		if err := c.configMapStore.Update(apiObj); err != nil {
 			return fmt.Errorf("failed to update %v: %v", cfgMapKey, err)
@@ -105,7 +105,7 @@ func (c *ConfigMapVault) Put(key, val string) error {
 			return fmt.Errorf("failed to add %v: %v", cfgMapKey, err)
 		}
 	}
-	glog.Infof("Successfully stored key %v = %v in config map %v", key, val, cfgMapKey)
+	klog.Infof("Successfully stored key %v = %v in config map %v", key, val, cfgMapKey)
 	return nil
 }
 
@@ -116,7 +116,7 @@ func (c *ConfigMapVault) Delete() error {
 	if err == nil {
 		return c.configMapStore.Delete(item)
 	}
-	glog.Warningf("Couldn't find item %v in vault, unable to delete", cfgMapKey)
+	klog.Warningf("Couldn't find item %v in vault, unable to delete", cfgMapKey)
 	return nil
 }
 

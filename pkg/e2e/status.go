@@ -20,11 +20,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog"
 )
 
 // IngressStability denotes the stabilization status of all Ingresses in a sandbox.
@@ -121,34 +121,34 @@ func (sm *StatusManager) startInformer() {
 			// if the k8s master is in the process of upgrading we can't access
 			// the ConfigMap.
 			if len(upgradeTs) > 0 {
-				glog.V(2).Infof("Master upgrade began at %v", upgradeTs)
+				klog.V(2).Infof("Master upgrade began at %v", upgradeTs)
 				sm.setMasterUpgrading(upgradeTs)
 			}
 
 			if len(curCm.Data[exitKey]) > 0 {
-				glog.V(2).Infof("ConfigMap was updated with exit switch at %s", curCm.Data[exitKey])
+				klog.V(2).Infof("ConfigMap was updated with exit switch at %s", curCm.Data[exitKey])
 				close(sm.informerCh)
 				sm.f.shutdown(0)
 			}
 		},
 	})
 
-	glog.V(2).Info("Started ConfigMap informer")
+	klog.V(2).Info("Started ConfigMap informer")
 	sm.informerRunning = true
 	go cmInformer.Run(sm.informerCh)
 }
 
 func (sm *StatusManager) stopInformer() {
-	glog.V(2).Info("Stopped ConfigMap informer")
+	klog.V(2).Info("Stopped ConfigMap informer")
 	sm.informerRunning = false
 	close(sm.informerCh)
 }
 
 func (sm *StatusManager) shutdown() {
-	glog.V(2).Infof("Shutting down status manager.")
-	glog.V(3).Infof("ConfigMap: %+v", sm.cm.Data)
+	klog.V(2).Infof("Shutting down status manager.")
+	klog.V(3).Infof("ConfigMap: %+v", sm.cm.Data)
 	if err := sm.f.Clientset.Core().ConfigMaps("default").Delete(configMapName, &metav1.DeleteOptions{}); err != nil {
-		glog.Errorf("Error deleting ConfigMap: %v", err)
+		klog.Errorf("Error deleting ConfigMap: %v", err)
 	}
 }
 
@@ -189,7 +189,7 @@ func (sm *StatusManager) flush() {
 	sm.f.lock.Lock()
 	defer sm.f.lock.Unlock()
 
-	glog.V(3).Infof("Attempting to flush %v", sm.cm.Data)
+	klog.V(3).Infof("Attempting to flush %v", sm.cm.Data)
 
 	// If master is in the process of upgrading, we stop the informer.
 	if sm.informerRunning && len(sm.cm.Data[masterUpgradingKey]) > 0 {
@@ -198,7 +198,7 @@ func (sm *StatusManager) flush() {
 
 	// Restart ConfigMap informer if it was previously shut down
 	if !sm.informerRunning && len(sm.cm.Data[masterUpgradedKey]) > 0 {
-		glog.V(2).Infof("Master has successfully upgraded at %s", sm.cm.Data[masterUpgradedKey])
+		klog.V(2).Infof("Master has successfully upgraded at %s", sm.cm.Data[masterUpgradedKey])
 		sm.startInformer()
 	}
 
@@ -214,7 +214,7 @@ func (sm *StatusManager) flush() {
 			return
 		}
 
-		glog.Warningf("Error getting ConfigMap: %v", err)
+		klog.Warningf("Error getting ConfigMap: %v", err)
 		return
 	}
 
@@ -235,8 +235,8 @@ func (sm *StatusManager) flush() {
 
 	_, err = sm.f.Clientset.Core().ConfigMaps("default").Update(sm.cm)
 	if err != nil {
-		glog.Warningf("Error updating ConfigMap: %v", err)
+		klog.Warningf("Error updating ConfigMap: %v", err)
 	} else {
-		glog.V(3).Infof("Flushed statuses %v to ConfigMap", sm.cm.Data)
+		klog.V(3).Infof("Flushed statuses %v to ConfigMap", sm.cm.Data)
 	}
 }

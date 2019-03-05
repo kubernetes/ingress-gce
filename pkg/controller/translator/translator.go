@@ -18,7 +18,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	api_v1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
@@ -264,12 +264,12 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 						}
 					}
 
-					glog.Infof("%v: found matching targetPort on container %v, but not on readinessProbe (%+v)",
+					klog.Infof("%v: found matching targetPort on container %v, but not on readinessProbe (%+v)",
 						logStr, c.Name, c.ReadinessProbe.Handler.HTTPGet.Port)
 				}
 			}
 		}
-		glog.V(5).Infof("%v: lacks a matching HTTP probe for use in health checks.", logStr)
+		klog.V(5).Infof("%v: lacks a matching HTTP probe for use in health checks.", logStr)
 	}
 	return nil, nil
 }
@@ -386,11 +386,11 @@ func listEndpointTargetPorts(indexer cache.Indexer, namespace, name, targetPort 
 	)
 
 	if !exists {
-		glog.Errorf("Endpoint object %v/%v does not exist.", namespace, name)
+		klog.Errorf("Endpoint object %v/%v does not exist.", namespace, name)
 		return []int{}
 	}
 	if err != nil {
-		glog.Errorf("Failed to retrieve endpoint object %v/%v: %v", namespace, name, err)
+		klog.Errorf("Failed to retrieve endpoint object %v/%v: %v", namespace, name, err)
 		return []int{}
 	}
 

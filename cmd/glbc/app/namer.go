@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -62,25 +62,25 @@ func NewNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*uti
 		for _, key := range [...]string{storage.UIDDataKey, storage.ProviderDataKey} {
 			val, found, err := uidVault.Get(key)
 			if err != nil {
-				glog.Errorf("Can't read uidConfigMap %v", uidConfigMapName)
+				klog.Errorf("Can't read uidConfigMap %v", uidConfigMapName)
 			} else if !found {
 				errmsg := fmt.Sprintf("Can't read %v from uidConfigMap %v", key, uidConfigMapName)
 				if key == storage.UIDDataKey {
-					glog.Errorf(errmsg)
+					klog.Errorf(errmsg)
 				} else {
-					glog.V(4).Infof(errmsg)
+					klog.V(4).Infof(errmsg)
 				}
 			} else {
 
 				switch key {
 				case storage.UIDDataKey:
 					if uid := namer.UID(); uid != val {
-						glog.Infof("Cluster uid changed from %v -> %v", uid, val)
+						klog.Infof("Cluster uid changed from %v -> %v", uid, val)
 						namer.SetUID(val)
 					}
 				case storage.ProviderDataKey:
 					if fw_name := namer.Firewall(); fw_name != val {
-						glog.Infof("Cluster firewall name changed from %v -> %v", fw_name, val)
+						klog.Infof("Cluster firewall name changed from %v -> %v", fw_name, val)
 						namer.SetFirewall(val)
 					}
 				}
@@ -99,7 +99,7 @@ func NewNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*uti
 // else, return an empty 'name' and pass along an error iff the configmap lookup is erroneous.
 func useDefaultOrLookupVault(cfgVault *storage.ConfigMapVault, configMapKey, defaultName string) (string, error) {
 	if defaultName != "" {
-		glog.Infof("Using user provided %v %v", configMapKey, defaultName)
+		klog.Infof("Using user provided %v %v", configMapKey, defaultName)
 		// Don't save the uid in the vault, so users can rollback
 		// through setting the accompany flag to ""
 		return defaultName, nil
@@ -116,7 +116,7 @@ func useDefaultOrLookupVault(cfgVault *storage.ConfigMapVault, configMapKey, def
 		// Not found but safe to proceed.
 		return "", nil
 	}
-	glog.Infof("Using %v = %q saved in ConfigMap", configMapKey, val)
+	klog.Infof("Using %v = %q saved in ConfigMap", configMapKey, val)
 	return val, nil
 }
 
@@ -131,7 +131,7 @@ func getFirewallName(kubeClient kubernetes.Interface, name, clusterUID string) (
 	} else if firewallName != "" {
 		return firewallName, cfgVault.Put(storage.ProviderDataKey, firewallName)
 	} else {
-		glog.Infof("Using cluster UID %v as firewall name", clusterUID)
+		klog.Infof("Using cluster UID %v as firewall name", clusterUID)
 		return clusterUID, cfgVault.Put(storage.ProviderDataKey, clusterUID)
 	}
 }
@@ -164,7 +164,7 @@ func getClusterUID(kubeClient kubernetes.Interface, name string) (string, error)
 			if c.ClusterName != "" {
 				return c.ClusterName, cfgVault.Put(storage.UIDDataKey, c.ClusterName)
 			}
-			glog.Infof("Found a working Ingress, assuming uid is empty string")
+			klog.Infof("Found a working Ingress, assuming uid is empty string")
 			return "", cfgVault.Put(storage.UIDDataKey, "")
 		}
 	}

@@ -23,8 +23,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/golang/glog"
 	"k8s.io/ingress-gce/pkg/version"
+	"k8s.io/klog"
 )
 
 const (
@@ -46,7 +46,7 @@ func RunHTTPServer(ctx context.Context) {
 		cert, key := createCert()
 		err := server.ListenAndServeTLS(cert, key)
 		if err != nil {
-			glog.Fatal(err)
+			klog.Fatal(err)
 		}
 
 		<-ctx.Done()
@@ -61,7 +61,7 @@ func RunHTTPServer(ctx context.Context) {
 		server := &http.Server{Addr: fmt.Sprintf(":%d", F.HTTPPort), IdleTimeout: serverIdleTimeout}
 		err := server.ListenAndServe()
 		if err != nil {
-			glog.Fatal(err)
+			klog.Fatal(err)
 		}
 
 		<-ctx.Done()
@@ -74,7 +74,7 @@ func RunHTTPServer(ctx context.Context) {
 func healthCheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("health: OK"))
-	glog.V(3).Infof("healthcheck: %v, %v, %v", time.Now(), r.UserAgent(), r.RemoteAddr)
+	klog.V(3).Infof("healthcheck: %v, %v, %v", time.Now(), r.UserAgent(), r.RemoteAddr)
 }
 
 func echo(w http.ResponseWriter, r *http.Request) {
@@ -107,13 +107,13 @@ func echo(w http.ResponseWriter, r *http.Request) {
 
 	dumpData, err := json.MarshalIndent(dump, "", "\t")
 	if err != nil {
-		glog.Errorf("failed to marshal dump: %v", err)
+		klog.Errorf("failed to marshal dump: %v", err)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	w.Write(dumpData)
-	glog.V(3).Infof("echo: %v, %v, %v", time.Now(), r.UserAgent(), r.RemoteAddr)
+	klog.V(3).Infof("echo: %v, %v, %v", time.Now(), r.UserAgent(), r.RemoteAddr)
 }
 
 // setHeadersFromQueryString looks for certain keys in the request query string

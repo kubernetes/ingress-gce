@@ -19,7 +19,7 @@ package utils
 import (
 	"encoding/json"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 )
 
 // Description stores the description for a BackendService.
@@ -37,7 +37,7 @@ func (desc Description) String() string {
 
 	descJson, err := json.Marshal(desc)
 	if err != nil {
-		glog.Errorf("Failed to generate description string: %v, falling back to empty string", err)
+		klog.Errorf("Failed to generate description string: %v, falling back to empty string", err)
 		return ""
 	}
 	return string(descJson)
@@ -50,7 +50,7 @@ func DescriptionFromString(descString string) *Description {
 	}
 	var desc Description
 	if err := json.Unmarshal([]byte(descString), &desc); err != nil {
-		glog.Errorf("Failed to parse description: %s, falling back to empty list", descString)
+		klog.Errorf("Failed to parse description: %s, falling back to empty list", descString)
 		return &Description{}
 	}
 	return &desc

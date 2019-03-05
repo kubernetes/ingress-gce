@@ -19,9 +19,9 @@ package features
 import (
 	"reflect"
 
-	"github.com/golang/glog"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 // EnsureCDN reads the CDN configuration specified in the ServicePort.BackendConfig
@@ -36,7 +36,7 @@ func EnsureCDN(sp utils.ServicePort, be *composite.BackendService) bool {
 	// Only compare CdnPolicy if it was specified.
 	if (beTemp.CdnPolicy != nil && !reflect.DeepEqual(beTemp.CdnPolicy, be.CdnPolicy)) || beTemp.EnableCDN != be.EnableCDN {
 		applyCDNSettings(sp, be)
-		glog.V(2).Infof("Updated CDN settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
+		klog.V(2).Infof("Updated CDN settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
 		return true
 	}
 	return false

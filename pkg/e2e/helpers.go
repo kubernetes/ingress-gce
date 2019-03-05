@@ -21,12 +21,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/golang/glog"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
@@ -76,11 +76,11 @@ func WaitForIngressDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ing *
 	if err := s.f.Clientset.Extensions().Ingresses(s.Namespace).Delete(ing.Name, &metav1.DeleteOptions{}); err != nil {
 		return fmt.Errorf("delete(%q) = %v, want nil", ing.Name, err)
 	}
-	glog.Infof("Waiting for GCLB resources to be deleted (%s/%s), IngressDeletionOptions=%+v", s.Namespace, ing.Name, options)
+	klog.Infof("Waiting for GCLB resources to be deleted (%s/%s), IngressDeletionOptions=%+v", s.Namespace, ing.Name, options)
 	if err := WaitForGCLBDeletion(ctx, s.f.Cloud, g, options); err != nil {
 		return fmt.Errorf("WaitForGCLBDeletion(...) = %v, want nil", err)
 	}
-	glog.Infof("GCLB resources deleted (%s/%s)", s.Namespace, ing.Name)
+	klog.Infof("GCLB resources deleted (%s/%s)", s.Namespace, ing.Name)
 	return nil
 }
 
@@ -89,7 +89,7 @@ func WaitForIngressDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ing *
 func WaitForGCLBDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, options *fuzz.GCLBDeleteOptions) error {
 	return wait.Poll(gclbDeletionInterval, gclbDeletionTimeout, func() (bool, error) {
 		if err := g.CheckResourceDeletion(ctx, c, options); err != nil {
-			glog.Infof("WaitForGCLBDeletion(%q) = %v", g.VIP, err)
+			klog.Infof("WaitForGCLBDeletion(%q) = %v", g.VIP, err)
 			return false, nil
 		}
 		return true, nil

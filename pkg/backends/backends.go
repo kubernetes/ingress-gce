@@ -16,11 +16,11 @@ package backends
 import (
 	"net/http"
 
-	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
@@ -120,7 +120,7 @@ func (b *Backends) Delete(name string) (err error) {
 		}
 	}()
 
-	glog.V(2).Infof("Deleting backend service %v", name)
+	klog.V(2).Infof("Deleting backend service %v", name)
 
 	// Try deleting health checks even if a backend is not found.
 	if err = b.cloud.DeleteGlobalBackendService(name); err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {

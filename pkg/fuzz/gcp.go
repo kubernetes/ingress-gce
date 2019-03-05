@@ -23,11 +23,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/golang/glog"
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"k8s.io/klog"
 
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/filter"
@@ -199,7 +199,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 
 	allGFRs, err := c.GlobalForwardingRules().List(ctx, filter.None)
 	if err != nil {
-		glog.Warningf("Error listing forwarding rules: %v", err)
+		klog.Warningf("Error listing forwarding rules: %v", err)
 		return nil, err
 	}
 
@@ -217,7 +217,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 		if hasAlphaResource("forwardingRule", validators) {
 			fr, err := c.AlphaForwardingRules().Get(ctx, frKey)
 			if err != nil {
-				glog.Warningf("Error getting alpha forwarding rules: %v", err)
+				klog.Warningf("Error getting alpha forwarding rules: %v", err)
 				return nil, err
 			}
 			gclb.ForwardingRule[*frKey].Alpha = fr
@@ -229,14 +229,14 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 		// ForwardingRule => TargetProxy
 		resID, err := cloud.ParseResourceURL(gfr.Target)
 		if err != nil {
-			glog.Warningf("Error parsing Target (%q): %v", gfr.Target, err)
+			klog.Warningf("Error parsing Target (%q): %v", gfr.Target, err)
 			return nil, err
 		}
 		switch resID.Resource {
 		case "targetHttpProxies":
 			p, err := c.TargetHttpProxies().Get(ctx, resID.Key)
 			if err != nil {
-				glog.Warningf("Error getting TargetHttpProxy %s: %v", resID.Key, err)
+				klog.Warningf("Error getting TargetHttpProxy %s: %v", resID.Key, err)
 				return nil, err
 			}
 			gclb.TargetHTTPProxy[*resID.Key] = &TargetHTTPProxy{GA: p}
@@ -246,20 +246,20 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 
 			urlMapResID, err := cloud.ParseResourceURL(p.UrlMap)
 			if err != nil {
-				glog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
+				klog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
 				return nil, err
 			}
 			if urlMapKey == nil {
 				urlMapKey = urlMapResID.Key
 			}
 			if *urlMapKey != *urlMapResID.Key {
-				glog.Warningf("Error targetHttpProxy references are not the same (%s != %s)", *urlMapKey, *urlMapResID.Key)
+				klog.Warningf("Error targetHttpProxy references are not the same (%s != %s)", *urlMapKey, *urlMapResID.Key)
 				return nil, fmt.Errorf("targetHttpProxy references are not the same: %+v != %+v", *urlMapKey, *urlMapResID.Key)
 			}
 		case "targetHttpsProxies":
 			p, err := c.TargetHttpsProxies().Get(ctx, resID.Key)
 			if err != nil {
-				glog.Warningf("Error getting targetHttpsProxy (%s): %v", resID.Key, err)
+				klog.Warningf("Error getting targetHttpsProxy (%s): %v", resID.Key, err)
 				return nil, err
 			}
 			gclb.TargetHTTPSProxy[*resID.Key] = &TargetHTTPSProxy{GA: p}
@@ -269,18 +269,18 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 
 			urlMapResID, err := cloud.ParseResourceURL(p.UrlMap)
 			if err != nil {
-				glog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
+				klog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
 				return nil, err
 			}
 			if urlMapKey == nil {
 				urlMapKey = urlMapResID.Key
 			}
 			if *urlMapKey != *urlMapResID.Key {
-				glog.Warningf("Error targetHttpsProxy references are not the same (%s != %s)", *urlMapKey, *urlMapResID.Key)
+				klog.Warningf("Error targetHttpsProxy references are not the same (%s != %s)", *urlMapKey, *urlMapResID.Key)
 				return nil, fmt.Errorf("targetHttpsProxy references are not the same: %+v != %+v", *urlMapKey, *urlMapResID.Key)
 			}
 		default:
-			glog.Errorf("Unhandled resource: %q, grf = %+v", resID.Resource, gfr)
+			klog.Errorf("Unhandled resource: %q, grf = %+v", resID.Resource, gfr)
 			return nil, fmt.Errorf("unhandled resource %q", resID.Resource)
 		}
 	}

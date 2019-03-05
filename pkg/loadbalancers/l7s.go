@@ -19,7 +19,7 @@ package loadbalancers
 import (
 	"fmt"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/events"
@@ -74,7 +74,7 @@ func (l *L7s) Delete(name string) error {
 		namer:       l.namer,
 	}
 
-	glog.V(3).Infof("Deleting lb %v", lb.Name)
+	klog.V(3).Infof("Deleting lb %v", lb.Name)
 	if err := lb.Cleanup(); err != nil {
 		return err
 	}
@@ -104,7 +104,7 @@ func (l *L7s) List() ([]string, error) {
 
 // GC garbage collects loadbalancers not in the input list.
 func (l *L7s) GC(names []string) error {
-	glog.V(2).Infof("GC(%v)", names)
+	klog.V(2).Infof("GC(%v)", names)
 
 	knownLoadBalancers := sets.NewString()
 	for _, n := range names {
@@ -120,7 +120,7 @@ func (l *L7s) GC(names []string) error {
 		if knownLoadBalancers.Has(name) {
 			continue
 		}
-		glog.V(2).Infof("GCing loadbalancer %v", name)
+		klog.V(2).Infof("GCing loadbalancer %v", name)
 		if err := l.Delete(name); err != nil {
 			return err
 		}
@@ -134,6 +134,6 @@ func (l *L7s) Shutdown() error {
 	if err := l.GC([]string{}); err != nil {
 		return err
 	}
-	glog.V(2).Infof("Loadbalancer pool shutdown.")
+	klog.V(2).Infof("Loadbalancer pool shutdown.")
 	return nil
 }

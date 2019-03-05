@@ -18,11 +18,11 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
@@ -130,7 +130,7 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 
 		if err := l.backendPool.Update(be); err != nil {
 			if utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
-				glog.V(2).Infof("Updating backend service backends with balancing mode %v failed, will try another mode. err:%v", bm, err)
+				klog.V(2).Infof("Updating backend service backends with balancing mode %v failed, will try another mode. err:%v", bm, err)
 				errs = append(errs, err.Error())
 				// This is probably a failure because we tried to create the backend
 				// with balancingMode=RATE when there are already backends with
@@ -138,7 +138,7 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 				// balancingMode=UTILIZATION (b/35102911).
 				continue
 			}
-			glog.V(2).Infof("Error updating backend service backends with balancing mode %v:%v", bm, err)
+			klog.V(2).Infof("Error updating backend service backends with balancing mode %v:%v", bm, err)
 			return err
 		}
 		// Successfully updated Backends, no need to Update the BackendService again
@@ -188,7 +188,7 @@ func getInstanceGroupsToAdd(be *composite.BackendService, igLinks []string) ([]s
 
 	missingIGs := wantIGs.Difference(existingIGs)
 	if missingIGs.Len() > 0 {
-		glog.V(2).Infof("Backend service %q has instance groups %+v, want %+v",
+		klog.V(2).Infof("Backend service %q has instance groups %+v, want %+v",
 			be.Name, existingIGs.List(), wantIGs.List())
 	}
 
