@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This image requires ca-certificate, which is pre-installed in distroless.
-FROM gcr.io/distroless/static:latest
+FROM alpine:3.8
+
+RUN apk add --no-cache ca-certificates
 
 ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
 ENTRYPOINT ["/ARG_BIN"]
