@@ -30,4 +30,5 @@ var All = []fuzz.Feature{
 	SecurityPolicy,
 	Affinity,
 	NEG,
+	AppProtocol,
 }
