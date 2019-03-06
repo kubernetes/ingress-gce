@@ -25,10 +25,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
@@ -110,9 +110,9 @@ func (a *IngressValidatorAttributes) baseAttributes(ing *v1beta1.Ingress) {
 // applyFeatures applies the settings for each of the additional features.
 func (a *IngressValidatorAttributes) applyFeatures(env ValidatorEnv, ing *v1beta1.Ingress, features []FeatureValidator) error {
 	for _, f := range features {
-		glog.V(4).Infof("Applying feature %q", f.Name())
+		klog.V(4).Infof("Applying feature %q", f.Name())
 		if err := f.ConfigureAttributes(env, ing, a); err != nil {
-			glog.Warningf("Feature %q could not be applied: %v", f.Name(), err)
+			klog.Warningf("Feature %q could not be applied: %v", f.Name(), err)
 			return err
 		}
 	}
@@ -125,7 +125,7 @@ func (a *IngressValidatorAttributes) applyFeatures(env ValidatorEnv, ing *v1beta
 			return err
 		}
 		if !a.equal(copy) {
-			glog.Errorf("Feature %q is unstable generating attributes, %+v becomes %+v", f.Name(), *a, *copy)
+			klog.Errorf("Feature %q is unstable generating attributes, %+v becomes %+v", f.Name(), *a, *copy)
 			return fmt.Errorf("feature %q is unstable generating attributes, %+v becomes %+v", f.Name(), *a, *copy)
 		}
 	}
@@ -215,7 +215,7 @@ func (v *IngressValidator) vip() *string {
 
 // Check runs all of the checks against the instantiated load balancer.
 func (v *IngressValidator) Check(ctx context.Context) *IngressResult {
-	glog.V(3).Infof("Check Ingress %s/%s attribs=%+v", v.ing.Namespace, v.ing.Name, v.attribs)
+	klog.V(3).Infof("Check Ingress %s/%s attribs=%+v", v.ing.Namespace, v.ing.Name, v.attribs)
 	ret := &IngressResult{}
 	ret.Err = v.CheckPaths(ctx, ret)
 	return ret
@@ -230,7 +230,7 @@ func (v *IngressValidator) CheckPaths(ctx context.Context, vr *IngressResult) er
 	)
 	for _, scheme := range v.attribs.schemes() {
 		if v.ing.Spec.Backend != nil {
-			glog.V(2).Infof("Checking default backend for Ingress %s/%s", v.ing.Namespace, v.ing.Name)
+			klog.V(2).Infof("Checking default backend for Ingress %s/%s", v.ing.Namespace, v.ing.Name)
 			// Capture variables for the thunk.
 			result := &PathResult{Scheme: scheme}
 			vr.Paths = append(vr.Paths, result)
@@ -269,12 +269,12 @@ func (v *IngressValidator) CheckPaths(ctx context.Context, vr *IngressResult) er
 	for _, f := range thunks {
 		go f()
 	}
-	glog.V(2).Infof("Waiting for path checks for Ingress %s/%s to finish", v.ing.Namespace, v.ing.Name)
+	klog.V(2).Infof("Waiting for path checks for Ingress %s/%s to finish", v.ing.Namespace, v.ing.Name)
 	wg.Wait()
 
 	for _, r := range vr.Paths {
 		if r.Err != nil {
-			glog.V(2).Infof("Got an error checking paths for Ingress %s/%s: %v", v.ing.Namespace, v.ing.Name, r.Err)
+			klog.V(2).Infof("Got an error checking paths for Ingress %s/%s: %v", v.ing.Namespace, v.ing.Name, r.Err)
 			return r.Err
 		}
 	}
@@ -290,7 +290,7 @@ func (v *IngressValidator) checkPath(ctx context.Context, scheme, host, path str
 	vip := *v.vip()
 
 	url := fmt.Sprintf("%s://%s%s%s", scheme, vip, portStr(v.attribs, scheme), path)
-	glog.V(3).Infof("Checking Ingress %s/%s url=%q", v.ing.Namespace, v.ing.Name, url)
+	klog.V(3).Infof("Checking Ingress %s/%s url=%q", v.ing.Namespace, v.ing.Name, url)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
@@ -305,22 +305,22 @@ func (v *IngressValidator) checkPath(ctx context.Context, scheme, host, path str
 		f.ModifyRequest(host, path, req)
 	}
 
-	glog.V(3).Infof("Request is %+v", *req)
+	klog.V(3).Infof("Request is %+v", *req)
 
 	resp, err := v.client.Do(req)
 	if err != nil && err != http.ErrUseLastResponse {
-		glog.Infof("Ingress %s/%s: %v", v.ing.Namespace, v.ing.Name, err)
+		klog.Infof("Ingress %s/%s: %v", v.ing.Namespace, v.ing.Name, err)
 		return err
 	}
 
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		glog.Infof("Ingress %s/%s reading body: %v", v.ing.Namespace, v.ing.Name, err)
+		klog.Infof("Ingress %s/%s reading body: %v", v.ing.Namespace, v.ing.Name, err)
 		return err
 	}
 
-	glog.V(2).Infof("Ingress %s/%s GET %q: %d (%d bytes)", v.ing.Namespace, v.ing.Name, url, resp.StatusCode, len(body))
+	klog.V(2).Infof("Ingress %s/%s GET %q: %d (%d bytes)", v.ing.Namespace, v.ing.Name, url, resp.StatusCode, len(body))
 
 	doStandardCheck := true
 	// Perform the checks for each of the features.

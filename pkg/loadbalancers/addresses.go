@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 // checkStaticIP reserves a static IP allocated to the Forwarding Rule.
@@ -32,18 +32,18 @@ func (l *L7) checkStaticIP() (err error) {
 	}
 	// Don't manage staticIPs if the user has specified an IP.
 	if address, manageStaticIP := l.getEffectiveIP(); !manageStaticIP {
-		glog.V(3).Infof("Not managing user specified static IP %v", address)
+		klog.V(3).Infof("Not managing user specified static IP %v", address)
 		return nil
 	}
 	staticIPName := l.namer.ForwardingRule(l.Name, utils.HTTPProtocol)
 	ip, _ := l.cloud.GetGlobalAddress(staticIPName)
 	if ip == nil {
-		glog.V(3).Infof("Creating static ip %v", staticIPName)
+		klog.V(3).Infof("Creating static ip %v", staticIPName)
 		err = l.cloud.ReserveGlobalAddress(&compute.Address{Name: staticIPName, Address: l.fw.IPAddress})
 		if err != nil {
 			if utils.IsHTTPErrorCode(err, http.StatusConflict) ||
 				utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
-				glog.V(3).Infof("IP %v(%v) is already reserved, assuming it is OK to use.",
+				klog.V(3).Infof("IP %v(%v) is already reserved, assuming it is OK to use.",
 					l.fw.IPAddress, staticIPName)
 				return nil
 			}

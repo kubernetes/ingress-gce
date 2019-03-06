@@ -19,9 +19,9 @@ package features
 import (
 	"reflect"
 
-	"github.com/golang/glog"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 // EnsureTimeout reads the TimeoutSec configuration specified in the ServicePort.BackendConfig
@@ -35,7 +35,7 @@ func EnsureTimeout(sp utils.ServicePort, be *composite.BackendService) bool {
 	applyTimeoutSettings(sp, beTemp)
 	if !reflect.DeepEqual(beTemp.TimeoutSec, be.TimeoutSec) {
 		applyTimeoutSettings(sp, be)
-		glog.V(2).Infof("Updated Timeout settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
+		klog.V(2).Infof("Updated Timeout settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
 		return true
 	}
 	return false

@@ -24,11 +24,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/glog"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/version"
+	"k8s.io/klog"
 
 	// Pull in the auth library for GCP.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -88,19 +88,19 @@ func TestMain(m *testing.M) {
 	if flags.inCluster {
 		kubeconfig, err = rest.InClusterConfig()
 		if err != nil {
-			glog.Fatalf("Error creating InClusterConfig(): %v", err)
+			klog.Fatalf("Error creating InClusterConfig(): %v", err)
 		}
 	} else {
 		kubeconfig, err = clientcmd.BuildConfigFromFlags("", flags.kubeconfig)
 		if err != nil {
-			glog.Fatalf("Error creating kubernetes clientset from %q: %v", flags.kubeconfig, err)
+			klog.Fatalf("Error creating kubernetes clientset from %q: %v", flags.kubeconfig, err)
 		}
 	}
 
 	if flags.seed == -1 {
 		flags.seed = time.Now().UnixNano()
 	}
-	glog.Infof("Using random seed = %d", flags.seed)
+	klog.Infof("Using random seed = %d", flags.seed)
 
 	Framework = e2e.NewFramework(kubeconfig, e2e.Options{
 		Project:          flags.project,
@@ -111,7 +111,7 @@ func TestMain(m *testing.M) {
 		Framework.CatchSIGINT()
 	}
 	if err := Framework.SanityCheck(); err != nil {
-		glog.Fatalf("Framework sanity check failed: %v", err)
+		klog.Fatalf("Framework sanity check failed: %v", err)
 	}
 
 	os.Exit(m.Run())

@@ -23,7 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v0.beta"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,6 +33,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/klog"
 )
 
 // batchSyncer handles synchorizing NEGs for one service port. It handles sync, resync and retry on error.
@@ -60,7 +60,7 @@ type batchSyncer struct {
 }
 
 func NewBatchSyncer(svcPort NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) *batchSyncer {
-	glog.V(2).Infof("New syncer for service %s/%s Port %s NEG %q", svcPort.Namespace, svcPort.Name, svcPort.TargetPort, networkEndpointGroupName)
+	klog.V(2).Infof("New syncer for service %s/%s Port %s NEG %q", svcPort.Namespace, svcPort.Name, svcPort.TargetPort, networkEndpointGroupName)
 	return &batchSyncer{
 		NegSyncerKey:   svcPort,
 		negName:        networkEndpointGroupName,
@@ -93,7 +93,7 @@ func (s *batchSyncer) Start() error {
 		return fmt.Errorf("NEG syncer for %s is shutting down. ", s.NegSyncerKey.String())
 	}
 
-	glog.V(2).Infof("Starting NEG syncer for service port %s", s.NegSyncerKey.String())
+	klog.V(2).Infof("Starting NEG syncer for service port %s", s.NegSyncerKey.String())
 	s.init()
 	go func() {
 		for {
@@ -122,7 +122,7 @@ func (s *batchSyncer) Start() error {
 					s.stateLock.Lock()
 					s.shuttingDown = false
 					s.stateLock.Unlock()
-					glog.V(2).Infof("Stopping NEG syncer for %s", s.NegSyncerKey.String())
+					klog.V(2).Infof("Stopping NEG syncer for %s", s.NegSyncerKey.String())
 					return
 				}
 			case <-retryCh:
@@ -138,7 +138,7 @@ func (s *batchSyncer) Stop() {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	if !s.stopped {
-		glog.V(2).Infof("Stopping NEG syncer for service port %s", s.NegSyncerKey.String())
+		klog.V(2).Infof("Stopping NEG syncer for service port %s", s.NegSyncerKey.String())
 		s.stopped = true
 		s.shuttingDown = true
 		close(s.syncCh)
@@ -148,7 +148,7 @@ func (s *batchSyncer) Stop() {
 // Sync informs syncer to run sync loop as soon as possible.
 func (s *batchSyncer) Sync() bool {
 	if s.IsStopped() {
-		glog.Warningf("NEG syncer for %s is already stopped.", s.NegSyncerKey.String())
+		klog.Warningf("NEG syncer for %s is already stopped.", s.NegSyncerKey.String())
 		return false
 	}
 	select {
@@ -173,10 +173,10 @@ func (s *batchSyncer) IsShuttingDown() bool {
 
 func (s *batchSyncer) sync() (err error) {
 	if s.IsStopped() || s.IsShuttingDown() {
-		glog.V(4).Infof("Skip syncing NEG %q for %s.", s.negName, s.NegSyncerKey.String())
+		klog.V(4).Infof("Skip syncing NEG %q for %s.", s.negName, s.NegSyncerKey.String())
 		return nil
 	}
-	glog.V(2).Infof("Sync NEG %q for %s.", s.negName, s.NegSyncerKey.String())
+	klog.V(2).Infof("Sync NEG %q for %s.", s.negName, s.NegSyncerKey.String())
 	start := time.Now()
 	defer metrics.ObserveNegSync(s.negName, metrics.AttachSync, err, start)
 	ep, exists, err := s.endpointLister.Get(
@@ -192,7 +192,7 @@ func (s *batchSyncer) sync() (err error) {
 	}
 
 	if !exists {
-		glog.Warningf("Endpoint %s/%s does not exist. Skipping NEG sync", s.Namespace, s.Name)
+		klog.Warningf("Endpoint %s/%s does not exist. Skipping NEG sync", s.Namespace, s.Name)
 		return nil
 	}
 
@@ -213,7 +213,7 @@ func (s *batchSyncer) sync() (err error) {
 
 	addEndpoints, removeEndpoints := calculateDifference(targetMap, currentMap)
 	if len(addEndpoints) == 0 && len(removeEndpoints) == 0 {
-		glog.V(4).Infof("No endpoint change for %s/%s, skip syncing NEG. ", s.Namespace, s.Name)
+		klog.V(4).Infof("No endpoint change for %s/%s, skip syncing NEG. ", s.Namespace, s.Name)
 		return nil
 	}
 
@@ -269,7 +269,7 @@ func (s *batchSyncer) toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints) (map[
 		}
 		for _, address := range subset.Addresses {
 			if address.NodeName == nil {
-				glog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
+				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
 				continue
 			}
 			zone, err := s.zoneGetter.GetZoneForNode(*address.NodeName)
@@ -388,13 +388,13 @@ func (s *batchSyncer) toNetworkEndpointBatch(endpoints sets.String) ([]*compute.
 
 func (s *batchSyncer) attachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
 	wg.Add(1)
-	glog.V(2).Infof("Attaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpoints), s.NegSyncerKey.String(), s.negName, zone)
+	klog.V(2).Infof("Attaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpoints), s.NegSyncerKey.String(), s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.AttachNetworkEndpoints, "Attach")
 }
 
 func (s *batchSyncer) detachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
 	wg.Add(1)
-	glog.V(2).Infof("Detaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpoints), s.NegSyncerKey.String(), s.negName, zone)
+	klog.V(2).Infof("Detaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpoints), s.NegSyncerKey.String(), s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.DetachNetworkEndpoints, "Detach")
 }
 

@@ -25,7 +25,7 @@ import (
 
 	"crypto/sha256"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 )
 
 const (
@@ -134,16 +134,16 @@ func (n *Namer) SetUID(name string) {
 
 	if strings.Contains(name, clusterNameDelimiter) {
 		tokens := strings.Split(name, clusterNameDelimiter)
-		glog.Warningf("Name %q contains %q, taking last token in: %+v", name, clusterNameDelimiter, tokens)
+		klog.Warningf("Name %q contains %q, taking last token in: %+v", name, clusterNameDelimiter, tokens)
 		name = tokens[len(tokens)-1]
 	}
 
 	if n.clusterName == name {
-		glog.V(4).Infof("Cluster name is unchanged (%q)", name)
+		klog.V(4).Infof("Cluster name is unchanged (%q)", name)
 		return
 	}
 
-	glog.Infof("Changing cluster name from %q to %q", n.clusterName, name)
+	klog.Infof("Changing cluster name from %q to %q", n.clusterName, name)
 	n.clusterName = name
 }
 
@@ -153,7 +153,7 @@ func (n *Namer) SetFirewall(name string) {
 	defer n.nameLock.Unlock()
 
 	if n.firewallName != name {
-		glog.Infof("Changing firewall name from %q to %q", n.firewallName, name)
+		klog.Infof("Changing firewall name from %q to %q", n.firewallName, name)
 		n.firewallName = name
 	}
 }
@@ -355,7 +355,7 @@ func (n *Namer) TargetProxy(lbName string, protocol NamerProtocol) string {
 	case HTTPSProtocol:
 		return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, targetHTTPSProxyPrefix, lbName))
 	}
-	glog.Fatalf("Invalid TargetProxy protocol: %v", protocol)
+	klog.Fatalf("Invalid TargetProxy protocol: %v", protocol)
 	return "invalid"
 }
 
@@ -396,7 +396,7 @@ func (n *Namer) ForwardingRule(lbName string, protocol NamerProtocol) string {
 	case HTTPSProtocol:
 		return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, httpsForwardingRulePrefix, lbName))
 	}
-	glog.Fatalf("invalid ForwardingRule protocol: %q", protocol)
+	klog.Fatalf("invalid ForwardingRule protocol: %q", protocol)
 	return "invalid"
 }
 

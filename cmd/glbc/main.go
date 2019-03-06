@@ -23,8 +23,8 @@ import (
 	"os"
 	"time"
 
-	"github.com/golang/glog"
 	flag "github.com/spf13/pflag"
+	"k8s.io/klog"
 
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"
@@ -65,55 +65,55 @@ func main() {
 		os.Exit(0)
 	}
 
-	glog.V(0).Infof("Starting GLBC image: %q, cluster name %q", version.Version, flags.F.ClusterName)
-	glog.V(0).Infof("Latest commit hash: %q", version.GitCommit)
+	klog.V(0).Infof("Starting GLBC image: %q, cluster name %q", version.Version, flags.F.ClusterName)
+	klog.V(0).Infof("Latest commit hash: %q", version.GitCommit)
 	for i, a := range os.Args {
-		glog.V(0).Infof("argv[%d]: %q", i, a)
+		klog.V(0).Infof("argv[%d]: %q", i, a)
 	}
 
-	glog.V(2).Infof("Flags = %+v", flags.F)
-	defer glog.Flush()
+	klog.V(2).Infof("Flags = %+v", flags.F)
+	defer klog.Flush()
 	kubeConfig, err := app.NewKubeConfig()
 	if err != nil {
-		glog.Fatalf("Failed to create kubernetes client config: %v", err)
+		klog.Fatalf("Failed to create kubernetes client config: %v", err)
 	}
 
 	kubeClient, err := kubernetes.NewForConfig(kubeConfig)
 	if err != nil {
-		glog.Fatalf("Failed to create kubernetes client: %v", err)
+		klog.Fatalf("Failed to create kubernetes client: %v", err)
 	}
 
 	// Due to scaling issues, leader election must be configured with a separate k8s client.
 	leaderElectKubeClient, err := kubernetes.NewForConfig(restclient.AddUserAgent(kubeConfig, "leader-election"))
 	if err != nil {
-		glog.Fatalf("Failed to create kubernetes client for leader election: %v", err)
+		klog.Fatalf("Failed to create kubernetes client for leader election: %v", err)
 	}
 
 	var backendConfigClient backendconfigclient.Interface
 	if flags.F.EnableBackendConfig {
 		crdClient, err := crdclient.NewForConfig(kubeConfig)
 		if err != nil {
-			glog.Fatalf("Failed to create kubernetes CRD client: %v", err)
+			klog.Fatalf("Failed to create kubernetes CRD client: %v", err)
 		}
 		// TODO(rramkumar): Reuse this CRD handler for other CRD's coming.
 		crdHandler := crd.NewCRDHandler(crdClient)
 		backendConfigCRDMeta := backendconfig.CRDMeta()
 		if _, err := crdHandler.EnsureCRD(backendConfigCRDMeta); err != nil {
-			glog.Fatalf("Failed to ensure BackendConfig CRD: %v", err)
+			klog.Fatalf("Failed to ensure BackendConfig CRD: %v", err)
 		}
 
 		backendConfigClient, err = backendconfigclient.NewForConfig(kubeConfig)
 		if err != nil {
-			glog.Fatalf("Failed to create BackendConfig client: %v", err)
+			klog.Fatalf("Failed to create BackendConfig client: %v", err)
 		}
 	}
 
 	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, firewalls.DefaultFirewallName)
 	if err != nil {
-		glog.Fatalf("app.NewNamer(ctx.KubeClient, %q, %q) = %v", flags.F.ClusterName, firewalls.DefaultFirewallName, err)
+		klog.Fatalf("app.NewNamer(ctx.KubeClient, %q, %q) = %v", flags.F.ClusterName, firewalls.DefaultFirewallName, err)
 	}
 	if namer.UID() != "" {
-		glog.V(0).Infof("Cluster name: %+v", namer.UID())
+		klog.V(0).Infof("Cluster name: %+v", namer.UID())
 	}
 
 	cloud := app.NewGCEClient()
@@ -137,7 +137,7 @@ func main() {
 		runControllers(ctx)
 	})
 	if err != nil {
-		glog.Fatalf("%v", err)
+		klog.Fatalf("%v", err)
 	}
 	leaderelection.RunOrDie(context.Background(), *electionConfig)
 }
@@ -175,7 +175,7 @@ func makeLeaderElectionConfig(client clientset.Interface, recorder record.EventR
 				run()
 			},
 			OnStoppedLeading: func() {
-				glog.Fatalf("lost master")
+				klog.Fatalf("lost master")
 			},
 		},
 	}, nil
@@ -190,19 +190,19 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
 	negController := neg.NewController(neg.NewAdapter(ctx.Cloud), ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, neg.NegSyncerType(flags.F.NegSyncerType))
 	go negController.Run(stopCh)
-	glog.V(0).Infof("negController started")
+	klog.V(0).Infof("negController started")
 
 	go app.RunSIGTERMHandler(lbc, flags.F.DeleteAllOnQuit)
 
 	go fwc.Run()
-	glog.V(0).Infof("firewall controller started")
+	klog.V(0).Infof("firewall controller started")
 
 	ctx.Start(stopCh)
 	lbc.Init()
 	lbc.Run()
 
 	for {
-		glog.Infof("Handled quit, awaiting pod deletion.")
+		klog.Infof("Handled quit, awaiting pod deletion.")
 		time.Sleep(30 * time.Second)
 	}
 }

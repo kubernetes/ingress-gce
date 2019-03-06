@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
@@ -39,21 +39,21 @@ func CreateBackendService(be *BackendService, cloud *gce.GCECloud) error {
 		if err != nil {
 			return err
 		}
-		glog.V(3).Infof("Creating alpha backend service %v", alpha.Name)
+		klog.V(3).Infof("Creating alpha backend service %v", alpha.Name)
 		return cloud.CreateAlphaGlobalBackendService(alpha)
 	case meta.VersionBeta:
 		beta, err := be.toBeta()
 		if err != nil {
 			return err
 		}
-		glog.V(3).Infof("Creating beta backend service %v", beta.Name)
+		klog.V(3).Infof("Creating beta backend service %v", beta.Name)
 		return cloud.CreateBetaGlobalBackendService(beta)
 	default:
 		ga, err := be.toGA()
 		if err != nil {
 			return err
 		}
-		glog.V(3).Infof("Creating ga backend service %v", ga.Name)
+		klog.V(3).Infof("Creating ga backend service %v", ga.Name)
 		return cloud.CreateGlobalBackendService(ga)
 	}
 }
@@ -65,21 +65,21 @@ func UpdateBackendService(be *BackendService, cloud *gce.GCECloud) error {
 		if err != nil {
 			return err
 		}
-		glog.V(3).Infof("Updating alpha backend service %v", alpha.Name)
+		klog.V(3).Infof("Updating alpha backend service %v", alpha.Name)
 		return cloud.UpdateAlphaGlobalBackendService(alpha)
 	case meta.VersionBeta:
 		beta, err := be.toBeta()
 		if err != nil {
 			return err
 		}
-		glog.V(3).Infof("Updating beta backend service %v", beta.Name)
+		klog.V(3).Infof("Updating beta backend service %v", beta.Name)
 		return cloud.UpdateBetaGlobalBackendService(beta)
 	default:
 		ga, err := be.toGA()
 		if err != nil {
 			return err
 		}
-		glog.V(3).Infof("Updating ga backend service %v", ga.Name)
+		klog.V(3).Infof("Updating ga backend service %v", ga.Name)
 		return cloud.UpdateGlobalBackendService(ga)
 	}
 }

@@ -27,32 +27,32 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 )
 
 // createCert creates a certificate and key in temporary files and returns their paths.
 func createCert() (certFilePath string, keyFilepath string) {
 	cert, key, err := generateInsecureCertAndKey("echo", time.Now(), F.CertificateLifeSpan)
 	if err != nil {
-		glog.Fatal(err)
+		klog.Fatal(err)
 	}
 
 	tmpCert, err := ioutil.TempFile("", "server.crt")
 	if err != nil {
-		glog.Fatal(err)
+		klog.Fatal(err)
 	}
 
 	tmpKey, err := ioutil.TempFile("", "server.key")
 	if err != nil {
-		glog.Fatal(err)
+		klog.Fatal(err)
 	}
 
 	if err := ioutil.WriteFile(tmpCert.Name(), cert, 0644); err != nil {
-		glog.Fatal(err)
+		klog.Fatal(err)
 	}
 
 	if err := ioutil.WriteFile(tmpKey.Name(), key, 0644); err != nil {
-		glog.Fatal(err)
+		klog.Fatal(err)
 	}
 
 	return tmpCert.Name(), tmpKey.Name()
@@ -65,14 +65,14 @@ func generateInsecureCertAndKey(organization string, validFrom time.Time, validF
 	serialNumberLimit := new(big.Int).Lsh(big.NewInt(1), 128)
 	serialNumber, err := rand.Int(rand.Reader, serialNumberLimit)
 	if err != nil {
-		glog.Fatalf("failed to generate serial number: %s", err)
+		klog.Fatalf("failed to generate serial number: %s", err)
 	}
 
 	validUntill := validFrom.Add(validFor)
 
 	priv, err := rsa.GenerateKey(rand.Reader, rsaBits)
 	if err != nil {
-		glog.Fatalf("failed to generate private key: %s", err)
+		klog.Fatalf("failed to generate private key: %s", err)
 	}
 
 	template := x509.Certificate{
@@ -90,7 +90,7 @@ func generateInsecureCertAndKey(organization string, validFrom time.Time, validF
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
 	if err != nil {
-		glog.Fatalf("Failed to create certificate: %s", err)
+		klog.Fatalf("Failed to create certificate: %s", err)
 	}
 	var certBytes bytes.Buffer
 	pem.Encode(&certBytes, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})

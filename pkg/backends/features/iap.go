@@ -20,9 +20,9 @@ import (
 	"crypto/sha256"
 	"fmt"
 
-	"github.com/golang/glog"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 // EnsureIAP reads the IAP configuration specified in the BackendConfig
@@ -39,7 +39,7 @@ func EnsureIAP(sp utils.ServicePort, be *composite.BackendService) bool {
 	beTemp.Iap.Oauth2ClientSecretSha256 = fmt.Sprintf("%x", sha256.Sum256([]byte(beTemp.Iap.Oauth2ClientSecret)))
 	if be.Iap == nil || beTemp.Iap.Enabled != be.Iap.Enabled || beTemp.Iap.Oauth2ClientId != be.Iap.Oauth2ClientId || beTemp.Iap.Oauth2ClientSecretSha256 != be.Iap.Oauth2ClientSecretSha256 {
 		applyIAPSettings(sp, be)
-		glog.V(2).Infof("Updated IAP settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
+		klog.V(2).Infof("Updated IAP settings for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
 		return true
 	}
 	return false

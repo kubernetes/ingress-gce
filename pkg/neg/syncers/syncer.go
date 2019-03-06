@@ -21,11 +21,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/glog"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/klog"
 )
 
 type syncerCore interface {
@@ -79,7 +79,7 @@ func (s *syncer) Start() error {
 		return fmt.Errorf("NEG syncer for %s is shutting down. ", s.NegSyncerKey.String())
 	}
 
-	glog.V(2).Infof("Starting NEG syncer for service port %s", s.NegSyncerKey.String())
+	klog.V(2).Infof("Starting NEG syncer for service port %s", s.NegSyncerKey.String())
 	s.init()
 	go func() {
 		for {
@@ -109,7 +109,7 @@ func (s *syncer) Start() error {
 					s.stateLock.Lock()
 					s.shuttingDown = false
 					s.stateLock.Unlock()
-					glog.V(2).Infof("Stopping NEG syncer for %s", s.NegSyncerKey.String())
+					klog.V(2).Infof("Stopping NEG syncer for %s", s.NegSyncerKey.String())
 					return
 				}
 			case <-retryCh:
@@ -131,7 +131,7 @@ func (s *syncer) Stop() {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	if !s.stopped {
-		glog.V(2).Infof("Stopping NEG syncer for service port %s", s.NegSyncerKey.String())
+		klog.V(2).Infof("Stopping NEG syncer for service port %s", s.NegSyncerKey.String())
 		s.stopped = true
 		s.shuttingDown = true
 		close(s.syncCh)
@@ -140,7 +140,7 @@ func (s *syncer) Stop() {
 
 func (s *syncer) Sync() bool {
 	if s.IsStopped() {
-		glog.Warningf("NEG syncer for %s is already stopped.", s.NegSyncerKey.String())
+		klog.Warningf("NEG syncer for %s is already stopped.", s.NegSyncerKey.String())
 		return false
 	}
 	select {

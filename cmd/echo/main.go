@@ -20,15 +20,15 @@ import (
 	"context"
 	"flag"
 
-	"github.com/golang/glog"
 	"k8s.io/ingress-gce/cmd/echo/app"
 	"k8s.io/ingress-gce/pkg/version"
+	"k8s.io/klog"
 )
 
 func main() {
 	app.RegisterFlags()
 	flag.Parse()
 
-	glog.V(0).Infof("Starting echo: %q", version.Version)
+	klog.V(0).Infof("Starting echo: %q", version.Version)
 	app.RunHTTPServer(context.Background())
 }

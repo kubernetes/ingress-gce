@@ -20,13 +20,13 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/golang/glog"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/klog"
 )
 
 type serviceKey struct {
@@ -58,7 +58,7 @@ type syncerManager struct {
 }
 
 func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer, negSyncerType NegSyncerType) *syncerManager {
-	glog.V(2).Infof("NEG controller will use NEG syncer type: %q", negSyncerType)
+	klog.V(2).Infof("NEG controller will use NEG syncer type: %q", negSyncerType)
 	return &syncerManager{
 		negSyncerType:  negSyncerType,
 		namer:          namer,
@@ -86,7 +86,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	adds := newPorts.Difference(currentPorts)
 
 	manager.svcPortMap[key] = newPorts
-	glog.V(3).Infof("EnsureSyncer %v/%v: syncing %v ports, removing %v ports, adding %v ports", namespace, name, newPorts, removes, adds)
+	klog.V(3).Infof("EnsureSyncer %v/%v: syncing %v ports, removing %v ports, adding %v ports", namespace, name, newPorts, removes, adds)
 
 	for svcPort, targetPort := range removes {
 		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, targetPort)]
@@ -186,8 +186,8 @@ func (manager *syncerManager) ShutDown() {
 
 // GC garbage collects syncers and NEGs.
 func (manager *syncerManager) GC() error {
-	glog.V(2).Infof("Start NEG garbage collection.")
-	defer glog.V(2).Infof("NEG garbage collection finished.")
+	klog.V(2).Infof("Start NEG garbage collection.")
+	defer klog.V(2).Infof("NEG garbage collection finished.")
 	// Garbage collect Syncers
 	manager.garbageCollectSyncer()
 
@@ -258,7 +258,7 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 		// Assume error is caused by not existing
 		return nil
 	}
-	glog.V(2).Infof("Deleting NEG %q in %q.", name, zone)
+	klog.V(2).Infof("Deleting NEG %q in %q.", name, zone)
 	return manager.cloud.DeleteNetworkEndpointGroup(name, zone)
 }
 

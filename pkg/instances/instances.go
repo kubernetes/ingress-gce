@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -80,29 +80,29 @@ func (i *Instances) EnsureInstanceGroupsAndPorts(name string, ports []int64) (ig
 func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64) (*compute.InstanceGroup, error) {
 	ig, err := i.Get(name, zone)
 	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-		glog.Errorf("Failed to get instance group %v/%v, err: %v", zone, name, err)
+		klog.Errorf("Failed to get instance group %v/%v, err: %v", zone, name, err)
 		return nil, err
 	}
 
 	if ig == nil {
-		glog.V(3).Infof("Creating instance group %v/%v.", zone, name)
+		klog.V(3).Infof("Creating instance group %v/%v.", zone, name)
 		if err = i.cloud.CreateInstanceGroup(&compute.InstanceGroup{Name: name}, zone); err != nil {
 			// Error may come back with StatusConflict meaning the instance group was created by another controller
 			// possibly the Service Controller for internal load balancers.
 			if utils.IsHTTPErrorCode(err, http.StatusConflict) {
-				glog.Warningf("Failed to create instance group %v/%v due to conflict status, but continuing sync. err: %v", zone, name, err)
+				klog.Warningf("Failed to create instance group %v/%v due to conflict status, but continuing sync. err: %v", zone, name, err)
 			} else {
-				glog.Errorf("Failed to create instance group %v/%v, err: %v", zone, name, err)
+				klog.Errorf("Failed to create instance group %v/%v, err: %v", zone, name, err)
 				return nil, err
 			}
 		}
 		ig, err = i.cloud.GetInstanceGroup(name, zone)
 		if err != nil {
-			glog.Errorf("Failed to get instance group %v/%v after ensuring existence, err: %v", zone, name, err)
+			klog.Errorf("Failed to get instance group %v/%v after ensuring existence, err: %v", zone, name, err)
 			return nil, err
 		}
 	} else {
-		glog.V(5).Infof("Instance group %v/%v already exists.", zone, name)
+		klog.V(5).Infof("Instance group %v/%v already exists.", zone, name)
 	}
 
 	// Build map of existing ports
@@ -115,7 +115,7 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 	var newPorts []int64
 	for _, p := range ports {
 		if existingPorts[p] {
-			glog.V(5).Infof("Instance group %v/%v already has named port %v", zone, ig.Name, p)
+			klog.V(5).Infof("Instance group %v/%v already has named port %v", zone, ig.Name, p)
 			continue
 		}
 		newPorts = append(newPorts, p)
@@ -128,7 +128,7 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 	}
 
 	if len(newNamedPorts) > 0 {
-		glog.V(3).Infof("Instance group %v/%v does not have ports %+v, adding them now.", zone, name, newPorts)
+		klog.V(3).Infof("Instance group %v/%v does not have ports %+v, adding them now.", zone, name, newPorts)
 		if err := i.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, newNamedPorts...)); err != nil {
 			return nil, err
 		}
@@ -148,14 +148,14 @@ func (i *Instances) DeleteInstanceGroup(name string) error {
 	for _, zone := range zones {
 		if err := i.cloud.DeleteInstanceGroup(name, zone); err != nil {
 			if utils.IsNotFoundError(err) {
-				glog.V(3).Infof("Instance group %v in zone %v did not exist", name, zone)
+				klog.V(3).Infof("Instance group %v in zone %v did not exist", name, zone)
 			} else if utils.IsInUsedByError(err) {
-				glog.V(3).Infof("Could not delete instance group %v in zone %v because it's still in use. Ignoring: %v", name, zone, err)
+				klog.V(3).Infof("Could not delete instance group %v in zone %v because it's still in use. Ignoring: %v", name, zone, err)
 			} else {
 				errs = append(errs, err)
 			}
 		} else {
-			glog.V(3).Infof("Deleted instance group %v in zone %v", name, zone)
+			klog.V(3).Infof("Deleted instance group %v in zone %v", name, zone)
 		}
 	}
 	if len(errs) == 0 {
@@ -235,7 +235,7 @@ func (i *Instances) splitNodesByZone(names []string) map[string][]string {
 	for _, name := range names {
 		zone, err := i.GetZoneForNode(name)
 		if err != nil {
-			glog.Errorf("Failed to get zones for %v: %v, skipping", name, err)
+			klog.Errorf("Failed to get zones for %v: %v, skipping", name, err)
 			continue
 		}
 		if _, ok := nodesByZone[zone]; !ok {
@@ -250,7 +250,7 @@ func (i *Instances) splitNodesByZone(names []string) map[string][]string {
 func (i *Instances) Add(groupName string, names []string) error {
 	errs := []error{}
 	for zone, nodeNames := range i.splitNodesByZone(names) {
-		glog.V(1).Infof("Adding nodes %v to %v in zone %v", nodeNames, groupName, zone)
+		klog.V(1).Infof("Adding nodes %v to %v in zone %v", nodeNames, groupName, zone)
 		if err := i.cloud.AddInstancesToInstanceGroup(groupName, zone, i.cloud.ToInstanceReferences(zone, nodeNames)); err != nil {
 			errs = append(errs, err)
 		}
@@ -265,7 +265,7 @@ func (i *Instances) Add(groupName string, names []string) error {
 func (i *Instances) Remove(groupName string, names []string) error {
 	errs := []error{}
 	for zone, nodeNames := range i.splitNodesByZone(names) {
-		glog.V(1).Infof("Removing nodes %v from %v in zone %v", nodeNames, groupName, zone)
+		klog.V(1).Infof("Removing nodes %v from %v in zone %v", nodeNames, groupName, zone)
 		if err := i.cloud.RemoveInstancesFromInstanceGroup(groupName, zone, i.cloud.ToInstanceReferences(zone, nodeNames)); err != nil {
 			errs = append(errs, err)
 		}
@@ -278,7 +278,7 @@ func (i *Instances) Remove(groupName string, names []string) error {
 
 // Sync syncs kubernetes instances with the instances in the instance group.
 func (i *Instances) Sync(nodes []string) (err error) {
-	glog.V(4).Infof("Syncing nodes %v", nodes)
+	klog.V(4).Infof("Syncing nodes %v", nodes)
 
 	defer func() {
 		// The node pool is only responsible for syncing nodes to instance
@@ -288,7 +288,7 @@ func (i *Instances) Sync(nodes []string) (err error) {
 		// group, however if it happens because a user deletes the IG by mistake
 		// we should just wait till the backend pool fixes it.
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-			glog.Infof("Node pool encountered a 404, ignoring: %v", err)
+			klog.Infof("Node pool encountered a 404, ignoring: %v", err)
 			err = nil
 		}
 	}()
@@ -313,14 +313,14 @@ func (i *Instances) Sync(nodes []string) (err error) {
 		removeNodes := gceNodes.Difference(kubeNodes).List()
 		addNodes := kubeNodes.Difference(gceNodes).List()
 		if len(removeNodes) != 0 {
-			glog.V(4).Infof("Removing nodes from IG: %v", removeNodes)
+			klog.V(4).Infof("Removing nodes from IG: %v", removeNodes)
 			if err = i.Remove(igName, removeNodes); err != nil {
 				return err
 			}
 		}
 
 		if len(addNodes) != 0 {
-			glog.V(4).Infof("Adding nodes to IG: %v", addNodes)
+			klog.V(4).Infof("Adding nodes to IG: %v", addNodes)
 			if err = i.Add(igName, addNodes); err != nil {
 				return err
 			}

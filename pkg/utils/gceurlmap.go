@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 )
 
 // GCEURLMap is a simplified representation of a UrlMap somewhere
@@ -101,7 +101,7 @@ func (g *GCEURLMap) PutPathRulesForHost(hostname string, pathRules []PathRule) {
 		pathRule := pathRules[x]
 
 		if seen[pathRule.Path] {
-			glog.V(4).Infof("Path %q was duplicated", pathRule.Path)
+			klog.V(4).Infof("Path %q was duplicated", pathRule.Path)
 			continue
 		} else {
 			seen[pathRule.Path] = true
@@ -116,7 +116,7 @@ func (g *GCEURLMap) PutPathRulesForHost(hostname string, pathRules []PathRule) {
 
 	_, exists := g.hosts[hostname]
 	if exists {
-		glog.V(4).Infof("Overwriting path rules for host %v", hostname)
+		klog.V(4).Infof("Overwriting path rules for host %v", hostname)
 		g.deleteHost(hostname)
 	}
 

@@ -24,7 +24,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -48,11 +48,11 @@ const (
 // NewKubeConfig returns a Kubernetes client config given the command line settings.
 func NewKubeConfig() (*rest.Config, error) {
 	if flags.F.InCluster {
-		glog.V(0).Infof("Using in cluster configuration")
+		klog.V(0).Infof("Using in cluster configuration")
 		return rest.InClusterConfig()
 	}
 
-	glog.V(0).Infof("Using APIServerHost=%q, KubeConfig=%q", flags.F.APIServerHost, flags.F.KubeConfigFile)
+	klog.V(0).Infof("Using APIServerHost=%q, KubeConfig=%q", flags.F.APIServerHost, flags.F.KubeConfigFile)
 	return clientcmd.BuildConfigFromFlags(flags.F.APIServerHost, flags.F.KubeConfigFile)
 }
 
@@ -61,22 +61,22 @@ func NewKubeConfig() (*rest.Config, error) {
 func NewGCEClient() *gce.GCECloud {
 	var configReader func() io.Reader
 	if flags.F.ConfigFilePath != "" {
-		glog.Infof("Reading config from path %q", flags.F.ConfigFilePath)
+		klog.Infof("Reading config from path %q", flags.F.ConfigFilePath)
 		config, err := os.Open(flags.F.ConfigFilePath)
 		if err != nil {
-			glog.Fatalf("%v", err)
+			klog.Fatalf("%v", err)
 		}
 		defer config.Close()
 
 		allConfig, err := ioutil.ReadAll(config)
 		if err != nil {
-			glog.Fatalf("Error while reading config (%q): %v", flags.F.ConfigFilePath, err)
+			klog.Fatalf("Error while reading config (%q): %v", flags.F.ConfigFilePath, err)
 		}
-		glog.V(4).Infof("Cloudprovider config file contains: %q", string(allConfig))
+		klog.V(4).Infof("Cloudprovider config file contains: %q", string(allConfig))
 
 		configReader = generateConfigReaderFunc(allConfig)
 	} else {
-		glog.V(2).Infof("No cloudprovider config file provided, using default values.")
+		klog.V(2).Infof("No cloudprovider config file provided, using default values.")
 		configReader = func() io.Reader { return nil }
 	}
 
@@ -91,7 +91,7 @@ func NewGCEClient() *gce.GCECloud {
 			// Configure GCE rate limiting
 			rl, err := ratelimit.NewGCERateLimiter(flags.F.GCERateLimit.Values(), flags.F.GCEOperationPollInterval)
 			if err != nil {
-				glog.Fatalf("Error configuring rate limiting: %v", err)
+				klog.Fatalf("Error configuring rate limiting: %v", err)
 			}
 			cloud.SetRateLimiter(rl)
 			// If this controller is scheduled on a node without compute/rw
@@ -103,9 +103,9 @@ func NewGCEClient() *gce.GCECloud {
 			if _, err = cloud.ListGlobalBackendServices(); err == nil || utils.IsHTTPErrorCode(err, http.StatusForbidden) {
 				return cloud
 			}
-			glog.Warningf("Failed to list backend services, retrying: %v", err)
+			klog.Warningf("Failed to list backend services, retrying: %v", err)
 		} else {
-			glog.Warningf("Failed to get cloud provider, retrying: %v", err)
+			klog.Warningf("Failed to get cloud provider, retrying: %v", err)
 		}
 		time.Sleep(cloudClientRetryInterval)
 	}

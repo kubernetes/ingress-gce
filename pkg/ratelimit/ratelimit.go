@@ -23,8 +23,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
 	"k8s.io/client-go/util/flowcontrol"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
@@ -61,7 +61,7 @@ func NewGCERateLimiter(specs []string, operationPollInterval time.Duration) (*GC
 			return nil, err
 		}
 		rateLimitImpls[key] = impl
-		glog.Infof("Configured rate limiting for: %v", key)
+		klog.Infof("Configured rate limiting for: %v", key)
 	}
 	if len(rateLimitImpls) == 0 {
 		return nil, nil

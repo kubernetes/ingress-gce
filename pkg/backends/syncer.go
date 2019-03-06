@@ -18,13 +18,13 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 // backendSyncer manages the lifecycle of backends.
@@ -57,7 +57,7 @@ func (s *backendSyncer) Init(pp ProbeProvider) {
 // Sync implements Syncer.
 func (s *backendSyncer) Sync(svcPorts []utils.ServicePort) error {
 	for _, sp := range svcPorts {
-		glog.V(3).Infof("Sync: backend %+v", sp)
+		klog.V(3).Infof("Sync: backend %+v", sp)
 		if err := s.ensureBackendService(sp); err != nil {
 			return err
 		}
@@ -97,7 +97,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 			return getErr
 		}
 		// Only create the backend service if the error was 404.
-		glog.V(2).Infof("Creating backend service for port %v named %v", sp.NodePort, beName)
+		klog.V(2).Infof("Creating backend service for port %v named %v", sp.NodePort, beName)
 		be, err = s.backendPool.Create(sp, hcLink)
 		if err != nil {
 			return err
@@ -149,7 +149,7 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
 			continue
 		}
 
-		glog.V(3).Infof("GCing backendService for port %s", name)
+		klog.V(3).Infof("GCing backendService for port %s", name)
 		if err := s.backendPool.Delete(name); err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			return err
 		}
@@ -175,7 +175,7 @@ func (s *backendSyncer) Shutdown() error {
 
 func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort, hasLegacyHC bool) (string, error) {
 	if hasLegacyHC {
-		glog.Errorf("Backend %+v has legacy health check", sp.ID)
+		klog.Errorf("Backend %+v has legacy health check", sp.ID)
 	}
 	hc := s.healthChecker.New(sp)
 	if s.prober != nil {
@@ -184,7 +184,7 @@ func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort, hasLegacyHC bool
 			return "", err
 		}
 		if probe != nil {
-			glog.V(4).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
+			klog.V(4).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
 			applyProbeSettingsToHC(probe, hc)
 		}
 	}

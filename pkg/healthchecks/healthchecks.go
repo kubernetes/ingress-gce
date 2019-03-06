@@ -26,10 +26,10 @@ import (
 	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 
-	"github.com/golang/glog"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
@@ -125,9 +125,9 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 		// TODO: reconcile health checks, and compare headers interval etc.
 		// Currently Ingress doesn't expose all the health check params
 		// natively, so some users prefer to hand modify the check.
-		glog.V(2).Infof("Unexpected request path on health check %v, has %v want %v, NOT reconciling", hc.Name, existingHC.RequestPath, hc.RequestPath)
+		klog.V(2).Infof("Unexpected request path on health check %v, has %v want %v, NOT reconciling", hc.Name, existingHC.RequestPath, hc.RequestPath)
 	} else {
-		glog.V(2).Infof("Health check %v already exists and has the expected path %v", hc.Name, hc.RequestPath)
+		klog.V(2).Infof("Health check %v already exists and has the expected path %v", hc.Name, hc.RequestPath)
 	}
 
 	return existingHC.SelfLink, nil
@@ -136,17 +136,17 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 func (h *HealthChecks) create(hc *HealthCheck) error {
 	switch hc.Version() {
 	case meta.VersionAlpha:
-		glog.V(2).Infof("Creating alpha health check with protocol %v", hc.Type)
+		klog.V(2).Infof("Creating alpha health check with protocol %v", hc.Type)
 		return h.cloud.CreateAlphaHealthCheck(hc.ToAlphaComputeHealthCheck())
 	case meta.VersionBeta:
-		glog.V(2).Infof("Creating beta health check with protocol %v", hc.Type)
+		klog.V(2).Infof("Creating beta health check with protocol %v", hc.Type)
 		betaHC, err := hc.ToBetaComputeHealthCheck()
 		if err != nil {
 			return err
 		}
 		return h.cloud.CreateBetaHealthCheck(betaHC)
 	case meta.VersionGA:
-		glog.V(2).Infof("Creating health check for port %v with protocol %v", hc.Port, hc.Type)
+		klog.V(2).Infof("Creating health check for port %v with protocol %v", hc.Port, hc.Type)
 		v1hc, err := hc.ToComputeHealthCheck()
 		if err != nil {
 			return err
@@ -160,17 +160,17 @@ func (h *HealthChecks) create(hc *HealthCheck) error {
 func (h *HealthChecks) update(oldHC, newHC *HealthCheck) error {
 	switch newHC.Version() {
 	case meta.VersionAlpha:
-		glog.V(2).Infof("Updating alpha health check with protocol %v", newHC.Type)
+		klog.V(2).Infof("Updating alpha health check with protocol %v", newHC.Type)
 		return h.cloud.UpdateAlphaHealthCheck(mergeHealthcheck(oldHC, newHC).ToAlphaComputeHealthCheck())
 	case meta.VersionBeta:
-		glog.V(2).Infof("Updating beta health check with protocol %v", newHC.Type)
+		klog.V(2).Infof("Updating beta health check with protocol %v", newHC.Type)
 		betaHC, err := mergeHealthcheck(oldHC, newHC).ToBetaComputeHealthCheck()
 		if err != nil {
 			return err
 		}
 		return h.cloud.UpdateBetaHealthCheck(betaHC)
 	case meta.VersionGA:
-		glog.V(2).Infof("Updating health check for port %v with protocol %v", newHC.Port, newHC.Type)
+		klog.V(2).Infof("Updating health check for port %v with protocol %v", newHC.Port, newHC.Type)
 		v1hc, err := newHC.ToComputeHealthCheck()
 		if err != nil {
 			return err
@@ -212,7 +212,7 @@ func (h *HealthChecks) getHealthCheckLink(name string, version meta.Version) (st
 
 // Delete deletes the health check by port.
 func (h *HealthChecks) Delete(name string) error {
-	glog.V(2).Infof("Deleting health check %v", name)
+	klog.V(2).Infof("Deleting health check %v", name)
 	return h.cloud.DeleteHealthCheck(name)
 }
 
@@ -393,12 +393,12 @@ func (hc *HealthCheck) Version() meta.Version {
 
 func needToUpdate(old, new *HealthCheck) bool {
 	if old.Protocol() != new.Protocol() {
-		glog.V(2).Infof("Updating health check %v because it has protocol %v but need %v", old.Name, old.Type, new.Type)
+		klog.V(2).Infof("Updating health check %v because it has protocol %v but need %v", old.Name, old.Type, new.Type)
 		return true
 	}
 
 	if old.PortSpecification != new.PortSpecification {
-		glog.V(2).Infof("Updating health check %v because it has port specification %q but need %q", old.Name, old.PortSpecification, new.PortSpecification)
+		klog.V(2).Infof("Updating health check %v because it has port specification %q but need %q", old.Name, old.PortSpecification, new.PortSpecification)
 		return true
 	}
 	return false

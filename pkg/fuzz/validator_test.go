@@ -24,11 +24,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/klog"
 )
 
 var baseIngress = &v1beta1.Ingress{
@@ -74,7 +74,7 @@ func (m *mockFeature) ConfigureAttributes(env ValidatorEnv, ing *v1beta1.Ingress
 	case mockValidatorHTTPS:
 		a.CheckHTTPS = true
 	case mockValidatorConfigureError:
-		glog.Infof("Injected ConfigureAttributes error")
+		klog.Infof("Injected ConfigureAttributes error")
 		return errors.New("injected error")
 	}
 	return nil
@@ -83,7 +83,7 @@ func (m *mockFeature) ConfigureAttributes(env ValidatorEnv, ing *v1beta1.Ingress
 func (m *mockFeature) CheckResponse(host, path string, resp *http.Response, body []byte) (CheckResponseAction, error) {
 	switch m.mode {
 	case mockValidatorCheckError:
-		glog.Infof("Injected CheckResponse error")
+		klog.Infof("Injected CheckResponse error")
 		return CheckResponseContinue, errors.New("injected error")
 	case mockValidatorSkipCheck:
 		return CheckResponseSkip, nil
@@ -179,13 +179,13 @@ func (m *mockServer) listen() error {
 	if err != nil {
 		return err
 	}
-	glog.V(2).Infof("HTTP is listening on %s", m.l.Addr())
+	klog.V(2).Infof("HTTP is listening on %s", m.l.Addr())
 
 	m.ls, err = net.Listen("tcp", ":0")
 	if err != nil {
 		return err
 	}
-	glog.V(2).Infof("HTTPS is listening on %s", m.ls.Addr())
+	klog.V(2).Infof("HTTPS is listening on %s", m.ls.Addr())
 
 	return nil
 }

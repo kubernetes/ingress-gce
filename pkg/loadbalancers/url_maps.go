@@ -21,10 +21,10 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
@@ -49,7 +49,7 @@ func (l *L7) ensureComputeURLMap() error {
 	}
 
 	if currentMap == nil {
-		glog.V(3).Infof("Creating URLMap %q", expectedMap.Name)
+		klog.V(3).Infof("Creating URLMap %q", expectedMap.Name)
 		if err := l.cloud.CreateUrlMap(expectedMap); err != nil {
 			return fmt.Errorf("CreateUrlMap: %v", err)
 		}
@@ -58,12 +58,12 @@ func (l *L7) ensureComputeURLMap() error {
 	}
 
 	if mapsEqual(currentMap, expectedMap) {
-		glog.V(4).Infof("URLMap for %q is unchanged", l.Name)
+		klog.V(4).Infof("URLMap for %q is unchanged", l.Name)
 		l.um = currentMap
 		return nil
 	}
 
-	glog.V(3).Infof("Updating URLMap for %q", l.Name)
+	klog.V(3).Infof("Updating URLMap for %q", l.Name)
 	expectedMap.Fingerprint = currentMap.Fingerprint
 	if err := l.cloud.UpdateUrlMap(expectedMap); err != nil {
 		return fmt.Errorf("UpdateURLMap: %v", err)

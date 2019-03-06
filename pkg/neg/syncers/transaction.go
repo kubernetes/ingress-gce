@@ -20,7 +20,6 @@ import (
 	"sync"
 
 	"fmt"
-	"github.com/golang/glog"
 	"google.golang.org/api/compute/v0.beta"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,6 +28,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/klog"
 )
 
 type transactionSyncer struct {
@@ -101,10 +101,10 @@ func (s *transactionSyncer) syncInternal() error {
 	}
 
 	if s.syncer.IsStopped() || s.syncer.IsShuttingDown() {
-		glog.V(4).Infof("Skip syncing NEG %q for %s.", s.negName, s.NegSyncerKey.String())
+		klog.V(4).Infof("Skip syncing NEG %q for %s.", s.negName, s.NegSyncerKey.String())
 		return nil
 	}
-	glog.V(2).Infof("Sync NEG %q for %s.", s.negName, s.NegSyncerKey.String())
+	klog.V(2).Infof("Sync NEG %q for %s.", s.negName, s.NegSyncerKey.String())
 
 	ep, exists, err := s.endpointLister.Get(
 		&apiv1.Endpoints{
@@ -119,7 +119,7 @@ func (s *transactionSyncer) syncInternal() error {
 	}
 
 	if !exists {
-		glog.Warningf("Endpoint %s/%s does not exist. Skipping NEG sync", s.Namespace, s.Name)
+		klog.Warningf("Endpoint %s/%s does not exist. Skipping NEG sync", s.Namespace, s.Name)
 		return nil
 	}
 
@@ -148,7 +148,7 @@ func (s *transactionSyncer) syncInternal() error {
 	filterEndpointByTransaction(removeEndpoints, s.transactions)
 
 	if len(addEndpoints) == 0 && len(removeEndpoints) == 0 {
-		glog.V(4).Infof("No endpoint change for %s/%s, skip syncing NEG. ", s.Namespace, s.Name)
+		klog.V(4).Infof("No endpoint change for %s/%s, skip syncing NEG. ", s.Namespace, s.Name)
 		return nil
 	}
 
@@ -177,7 +177,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 	syncFunc := func(endpointMap map[string]sets.String, operation transactionOp) error {
 		for zone, endpointSet := range endpointMap {
 			if endpointSet.Len() == 0 {
-				glog.V(2).Infof("0 endpoint for %s operation for %s in NEG %s at %s. Skipping", attachOp, s.NegSyncerKey.String(), s.negName, zone)
+				klog.V(2).Infof("0 endpoint for %s operation for %s in NEG %s at %s. Skipping", attachOp, s.NegSyncerKey.String(), s.negName, zone)
 				continue
 			}
 
@@ -219,13 +219,13 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 
 // attachNetworkEndpoints creates go routine to run operations for attaching network endpoints
 func (s *transactionSyncer) attachNetworkEndpoints(zone string, networkEndpointMap map[string]*compute.NetworkEndpoint) {
-	glog.V(2).Infof("Attaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpointMap), s.NegSyncerKey.String(), s.negName, zone)
+	klog.V(2).Infof("Attaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpointMap), s.NegSyncerKey.String(), s.negName, zone)
 	go s.operationInternal(attachOp, zone, networkEndpointMap)
 }
 
 // detachNetworkEndpoints creates go routine to run operations for detaching network endpoints
 func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointMap map[string]*compute.NetworkEndpoint) {
-	glog.V(2).Infof("Detaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpointMap), s.NegSyncerKey.String(), s.negName, zone)
+	klog.V(2).Infof("Detaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpointMap), s.NegSyncerKey.String(), s.negName, zone)
 	go s.operationInternal(detachOp, zone, networkEndpointMap)
 }
 
@@ -287,12 +287,12 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 	for encodedEndpoint := range networkEndpointMap {
 		entry, ok := s.transactions.Get(encodedEndpoint)
 		if !ok {
-			glog.Errorf("Endpoint %q was not found in the transaction table.", encodedEndpoint)
+			klog.Errorf("Endpoint %q was not found in the transaction table.", encodedEndpoint)
 			needSync = true
 			continue
 		}
 		if entry.NeedReconcile == true {
-			glog.Errorf("Endpoint %q in NEG %q need to be reconciled.", encodedEndpoint, s.NegSyncerKey.String())
+			klog.Errorf("Endpoint %q in NEG %q need to be reconciled.", encodedEndpoint, s.NegSyncerKey.String())
 			needSync = true
 		}
 		s.transactions.Delete(encodedEndpoint)
@@ -318,7 +318,7 @@ func filterEndpointByTransaction(endpointMap map[string]sets.String, table trans
 	for _, endpointSet := range endpointMap {
 		for _, endpoint := range endpointSet.List() {
 			if entry, ok := table.Get(endpoint); ok {
-				glog.V(2).Infof("Endpoint %q is removed from the endpoint set as transaction %v still exists.", endpoint, entry)
+				klog.V(2).Infof("Endpoint %q is removed from the endpoint set as transaction %v still exists.", endpoint, entry)
 				endpointSet.Delete(endpoint)
 			}
 		}
@@ -332,7 +332,7 @@ func mergeTransactionIntoZoneEndpointMap(endpointMap map[string]sets.String, tra
 		entry, ok := transactions.Get(endpointKey)
 		// If called in syncInternal, as the transaction table
 		if !ok {
-			glog.V(2).Infof("Transaction entry of key %q was not found.", endpointKey)
+			klog.V(2).Infof("Transaction entry of key %q was not found.", endpointKey)
 			continue
 		}
 		// Add endpoints in attach transaction

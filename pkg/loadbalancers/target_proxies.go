@@ -17,9 +17,9 @@ limitations under the License.
 package loadbalancers
 
 import (
-	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
@@ -33,7 +33,7 @@ func (l *L7) checkProxy() (err error) {
 	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPProtocol)
 	proxy, _ := l.cloud.GetTargetHttpProxy(proxyName)
 	if proxy == nil {
-		glog.V(3).Infof("Creating new http proxy for urlmap %v", l.um.Name)
+		klog.V(3).Infof("Creating new http proxy for urlmap %v", l.um.Name)
 		newProxy := &compute.TargetHttpProxy{
 			Name:   proxyName,
 			UrlMap: urlMapLink,
@@ -49,7 +49,7 @@ func (l *L7) checkProxy() (err error) {
 		return nil
 	}
 	if !utils.EqualResourcePaths(proxy.UrlMap, urlMapLink) {
-		glog.V(3).Infof("Proxy %v has the wrong url map, setting %v overwriting %v",
+		klog.V(3).Infof("Proxy %v has the wrong url map, setting %v overwriting %v",
 			proxy.Name, urlMapLink, proxy.UrlMap)
 		if err := l.cloud.SetUrlMapForTargetHttpProxy(proxy, urlMapLink); err != nil {
 			return err
@@ -61,7 +61,7 @@ func (l *L7) checkProxy() (err error) {
 
 func (l *L7) checkHttpsProxy() (err error) {
 	if len(l.sslCerts) == 0 {
-		glog.V(3).Infof("No SSL certificates for %q, will not create HTTPS proxy.", l.Name)
+		klog.V(3).Infof("No SSL certificates for %q, will not create HTTPS proxy.", l.Name)
 		return nil
 	}
 
@@ -69,7 +69,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
 	proxy, _ := l.cloud.GetTargetHttpsProxy(proxyName)
 	if proxy == nil {
-		glog.V(3).Infof("Creating new https proxy for urlmap %q", l.um.Name)
+		klog.V(3).Infof("Creating new https proxy for urlmap %q", l.um.Name)
 		newProxy := &compute.TargetHttpsProxy{
 			Name:   proxyName,
 			UrlMap: urlMapLink,
@@ -92,7 +92,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 		return nil
 	}
 	if !utils.EqualResourcePaths(proxy.UrlMap, urlMapLink) {
-		glog.V(3).Infof("Https proxy %v has the wrong url map, setting %v overwriting %v",
+		klog.V(3).Infof("Https proxy %v has the wrong url map, setting %v overwriting %v",
 			proxy.Name, urlMapLink, proxy.UrlMap)
 		if err := l.cloud.SetUrlMapForTargetHttpsProxy(proxy, urlMapLink); err != nil {
 			return err
@@ -100,7 +100,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 	}
 
 	if !l.compareCerts(proxy.SslCertificates) {
-		glog.V(3).Infof("Https proxy %q has the wrong ssl certs, setting %v overwriting %v",
+		klog.V(3).Infof("Https proxy %q has the wrong ssl certs, setting %v overwriting %v",
 			proxy.Name, toCertNames(l.sslCerts), proxy.SslCertificates)
 		var sslCertURLs []string
 		for _, cert := range l.sslCerts {

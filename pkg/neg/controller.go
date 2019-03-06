@@ -22,7 +22,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/golang/glog"
 	apiv1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,6 +38,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 func init() {
@@ -84,7 +84,7 @@ func NewController(
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
 	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(glog.Infof)
+	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: ctx.KubeClient.Core().Events(""),
 	})
@@ -115,7 +115,7 @@ func NewController(
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*extensions.Ingress)
 			if !utils.IsGLBCIngress(addIng) {
-				glog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", utils.IngressKeyFunc(addIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", utils.IngressKeyFunc(addIng), annotations.IngressClassKey)
 				return
 			}
 			negController.enqueueIngressServices(addIng)
@@ -123,7 +123,7 @@ func NewController(
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*extensions.Ingress)
 			if !utils.IsGLBCIngress(delIng) {
-				glog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", utils.IngressKeyFunc(delIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", utils.IngressKeyFunc(delIng), annotations.IngressClassKey)
 				return
 			}
 			negController.enqueueIngressServices(delIng)
@@ -132,7 +132,7 @@ func NewController(
 			oldIng := cur.(*extensions.Ingress)
 			curIng := cur.(*extensions.Ingress)
 			if !utils.IsGLBCIngress(curIng) {
-				glog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", utils.IngressKeyFunc(curIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", utils.IngressKeyFunc(curIng), annotations.IngressClassKey)
 				return
 			}
 			keys := gatherIngressServiceKeys(oldIng)
@@ -164,13 +164,13 @@ func NewController(
 
 func (c *Controller) Run(stopCh <-chan struct{}) {
 	wait.PollUntil(5*time.Second, func() (bool, error) {
-		glog.V(2).Infof("Waiting for initial sync")
+		klog.V(2).Infof("Waiting for initial sync")
 		return c.synced(), nil
 	}, stopCh)
 
-	glog.V(2).Infof("Starting network endpoint group controller")
+	klog.V(2).Infof("Starting network endpoint group controller")
 	defer func() {
-		glog.V(2).Infof("Shutting down network endpoint group controller")
+		klog.V(2).Infof("Shutting down network endpoint group controller")
 		c.stop()
 	}()
 
@@ -192,14 +192,14 @@ func (c *Controller) IsHealthy() error {
 		msg := fmt.Sprintf("NEG controller has not processed any service "+
 			"and endpoint updates for more than an hour. Something went wrong. "+
 			"Last sync was on %v", c.syncTracker.Get())
-		glog.Error(msg)
+		klog.Error(msg)
 		return fmt.Errorf(msg)
 	}
 	return nil
 }
 
 func (c *Controller) stop() {
-	glog.V(2).Infof("Shutting down network endpoint group controller")
+	klog.V(2).Infof("Shutting down network endpoint group controller")
 	c.serviceQueue.ShutDown()
 	c.endpointQueue.ShutDown()
 	c.manager.ShutDown()
@@ -227,7 +227,7 @@ func (c *Controller) processEndpoint(key string) {
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		glog.Errorf("Failed to split endpoint namespaced key %q: %v", key, err)
+		klog.Errorf("Failed to split endpoint namespaced key %q: %v", key, err)
 		return
 	}
 	c.manager.Sync(namespace, name)
@@ -285,7 +285,7 @@ func (c *Controller) processService(key string) error {
 		return c.syncNegStatusAnnotation(namespace, name, make(negtypes.PortNameMap))
 	}
 
-	glog.V(2).Infof("Syncing service %q", key)
+	klog.V(2).Infof("Syncing service %q", key)
 	// map of ServicePort (int) to TargetPort
 	svcPortMap := make(negtypes.PortNameMap)
 
@@ -332,7 +332,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		if _, ok := service.Annotations[annotations.NEGStatusKey]; ok {
 			// TODO: use PATCH to remove annotation
 			delete(service.Annotations, annotations.NEGStatusKey)
-			glog.V(2).Infof("Removing NEG status annotation from service: %s/%s", namespace, name)
+			klog.V(2).Infof("Removing NEG status annotation from service: %s/%s", namespace, name)
 			_, err = svcClient.Update(service)
 			return err
 		}
@@ -356,7 +356,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	}
 
 	service.Annotations[annotations.NEGStatusKey] = annotation
-	glog.V(2).Infof("Updating NEG visibility annotation %q on service %s/%s.", annotation, namespace, name)
+	klog.V(2).Infof("Updating NEG visibility annotation %q on service %s/%s.", annotation, namespace, name)
 	_, err = svcClient.Update(service)
 	return err
 }
@@ -368,9 +368,9 @@ func (c *Controller) handleErr(err error, key interface{}) {
 	}
 
 	msg := fmt.Sprintf("error processing service %q: %v", key, err)
-	glog.Errorf(msg)
+	klog.Errorf(msg)
 	if service, exists, err := c.serviceLister.GetByKey(key.(string)); err != nil {
-		glog.Warning("Failed to retrieve service %q from store: %v", key.(string), err)
+		klog.Warning("Failed to retrieve service %q from store: %v", key.(string), err)
 	} else if exists {
 		c.recorder.Eventf(service.(*apiv1.Service), apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
 	}
@@ -380,7 +380,7 @@ func (c *Controller) handleErr(err error, key interface{}) {
 func (c *Controller) enqueueEndpoint(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		glog.Errorf("Failed to generate endpoint key: %v", err)
+		klog.Errorf("Failed to generate endpoint key: %v", err)
 		return
 	}
 	c.endpointQueue.Add(key)
@@ -389,7 +389,7 @@ func (c *Controller) enqueueEndpoint(obj interface{}) {
 func (c *Controller) enqueueService(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		glog.Errorf("Failed to generate service key: %v", err)
+		klog.Errorf("Failed to generate service key: %v", err)
 		return
 	}
 	c.serviceQueue.Add(key)
@@ -404,7 +404,7 @@ func (c *Controller) enqueueIngressServices(ing *extensions.Ingress) {
 
 func (c *Controller) gc() {
 	if err := c.manager.GC(); err != nil {
-		glog.Errorf("NEG controller garbage collection failed: %v", err)
+		klog.Errorf("NEG controller garbage collection failed: %v", err)
 	}
 }
 

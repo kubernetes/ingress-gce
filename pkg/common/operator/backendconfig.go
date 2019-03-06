@@ -1,7 +1,7 @@
 package operator
 
 import (
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
@@ -20,7 +20,7 @@ func doesServiceReferenceBackendConfig(svc *api_v1.Service, beConfig *backendcon
 		// If the user did not provide the annotation at all, then we
 		// do not want to log an error.
 		if err != annotations.ErrBackendConfigAnnotationMissing {
-			glog.Errorf("Failed to get BackendConfig names from service %s/%s: %v", svc.Namespace, svc.Name, err)
+			klog.Errorf("Failed to get BackendConfig names from service %s/%s: %v", svc.Namespace, svc.Name, err)
 		}
 		return false
 	}

@@ -19,9 +19,9 @@ package loadbalancers
 import (
 	"fmt"
 
-	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 const (
@@ -45,7 +45,7 @@ func (l *L7) checkHttpForwardingRule() (err error) {
 
 func (l *L7) checkHttpsForwardingRule() (err error) {
 	if l.tps == nil {
-		glog.V(3).Infof("No https target proxy for %v, not created https forwarding rule", l.Name)
+		klog.V(3).Infof("No https target proxy for %v, not created https forwarding rule", l.Name)
 		return nil
 	}
 	name := l.namer.ForwardingRule(l.Name, utils.HTTPSProtocol)
@@ -61,7 +61,7 @@ func (l *L7) checkHttpsForwardingRule() (err error) {
 func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *compute.ForwardingRule, err error) {
 	fw, _ = l.cloud.GetGlobalForwardingRule(name)
 	if fw != nil && (ip != "" && fw.IPAddress != ip || fw.PortRange != portRange) {
-		glog.Warningf("Recreating forwarding rule %v(%v), so it has %v(%v)",
+		klog.Warningf("Recreating forwarding rule %v(%v), so it has %v(%v)",
 			fw.IPAddress, fw.PortRange, ip, portRange)
 		if err = utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalForwardingRule(name)); err != nil {
 			return nil, err
@@ -69,7 +69,7 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 		fw = nil
 	}
 	if fw == nil {
-		glog.V(3).Infof("Creating forwarding rule for proxy %q and ip %v:%v", proxyLink, ip, portRange)
+		klog.V(3).Infof("Creating forwarding rule for proxy %q and ip %v:%v", proxyLink, ip, portRange)
 		rule := &compute.ForwardingRule{
 			Name:       name,
 			IPAddress:  ip,
@@ -87,9 +87,9 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 	}
 	// TODO: If the port range and protocol don't match, recreate the rule
 	if utils.EqualResourceIDs(fw.Target, proxyLink) {
-		glog.V(4).Infof("Forwarding rule %v already exists", fw.Name)
+		klog.V(4).Infof("Forwarding rule %v already exists", fw.Name)
 	} else {
-		glog.V(3).Infof("Forwarding rule %v has the wrong proxy, setting %v overwriting %v",
+		klog.V(3).Infof("Forwarding rule %v has the wrong proxy, setting %v overwriting %v",
 			fw.Name, fw.Target, proxyLink)
 		if err := l.cloud.SetProxyForGlobalForwardingRule(fw.Name, proxyLink); err != nil {
 			return nil, err
@@ -124,7 +124,7 @@ func (l *L7) getEffectiveIP() (string, bool) {
 		// Existing static IPs allocated to forwarding rules will get orphaned
 		// till the Ingress is torn down.
 		if ip, err := l.cloud.GetGlobalAddress(l.runtimeInfo.StaticIPName); err != nil || ip == nil {
-			glog.Warningf("The given static IP name %v doesn't translate to an existing global static IP, ignoring it and allocating a new IP: %v",
+			klog.Warningf("The given static IP name %v doesn't translate to an existing global static IP, ignoring it and allocating a new IP: %v",
 				l.runtimeInfo.StaticIPName, err)
 		} else {
 			return ip.Address, false

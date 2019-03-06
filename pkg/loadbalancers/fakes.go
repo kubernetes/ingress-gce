@@ -19,7 +19,7 @@ package loadbalancers
 import (
 	"fmt"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -198,7 +198,7 @@ func (f *FakeLoadBalancers) GetUrlMap(name string) (*compute.UrlMap, error) {
 
 // CreateUrlMap fakes url-map creation.
 func (f *FakeLoadBalancers) CreateUrlMap(urlMap *compute.UrlMap) error {
-	glog.V(4).Infof("CreateUrlMap %+v", urlMap)
+	klog.V(4).Infof("CreateUrlMap %+v", urlMap)
 	f.calls = append(f.calls, "CreateUrlMap")
 	urlMap.SelfLink = cloud.NewUrlMapsResourceID("mock-project", urlMap.Name).SelfLink(meta.VersionGA)
 	f.Um = append(f.Um, urlMap)

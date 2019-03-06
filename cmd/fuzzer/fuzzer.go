@@ -49,7 +49,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Suppress glog logging before flag.Parse() error.
+	// Suppress klog logging before flag.Parse() error.
 	flag.CommandLine.Parse([]string{})
 
 	switch os.Args[1] {

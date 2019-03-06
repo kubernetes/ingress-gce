@@ -19,10 +19,10 @@ package e2e
 // Put common test fixtures (e.g. resources to be created) here.
 
 import (
-	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/klog"
 )
 
 const (
@@ -69,7 +69,7 @@ func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (
 	if service, err = s.f.Clientset.Core().Services(s.Namespace).Create(service); err != nil {
 		return nil, nil, err
 	}
-	glog.V(2).Infof("Echo service %q:%q created", s.Namespace, name)
+	klog.V(2).Infof("Echo service %q:%q created", s.Namespace, name)
 
 	return pod, service, nil
 }
@@ -86,7 +86,7 @@ func CreateSecret(s *Sandbox, name string, data map[string][]byte) (*v1.Secret, 
 	if secret, err = s.f.Clientset.Core().Secrets(s.Namespace).Create(secret); err != nil {
 		return nil, err
 	}
-	glog.V(2).Infof("Secret %q:%q created", s.Namespace, name)
+	klog.V(2).Infof("Secret %q:%q created", s.Namespace, name)
 
 	return secret, nil
 }

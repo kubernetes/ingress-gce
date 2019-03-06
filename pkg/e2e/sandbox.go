@@ -19,7 +19,7 @@ package e2e
 import (
 	"sync"
 
-	"github.com/golang/glog"
+	"k8s.io/klog"
 
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -47,14 +47,14 @@ func (s *Sandbox) Create() error {
 		},
 	}
 	if _, err := s.f.Clientset.Core().Namespaces().Create(ns); err != nil {
-		glog.Errorf("Error creating namespace %q: %v", s.Namespace, err)
+		klog.Errorf("Error creating namespace %q: %v", s.Namespace, err)
 		return err
 	}
 
 	var err error
 	s.ValidatorEnv, err = fuzz.NewDefaultValidatorEnv(s.f.RestConfig, s.Namespace, s.f.Cloud)
 	if err != nil {
-		glog.Errorf("Error creating validator env for namespace %q: %v", s.Namespace, err)
+		klog.Errorf("Error creating validator env for namespace %q: %v", s.Namespace, err)
 		return err
 	}
 
@@ -63,7 +63,7 @@ func (s *Sandbox) Create() error {
 
 // Destroy the sandbox and all resources associated with the sandbox.
 func (s *Sandbox) Destroy() {
-	glog.V(2).Infof("Destroying test sandbox %q", s.Namespace)
+	klog.V(2).Infof("Destroying test sandbox %q", s.Namespace)
 
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -73,7 +73,7 @@ func (s *Sandbox) Destroy() {
 	}
 
 	if err := s.f.Clientset.Core().Namespaces().Delete(s.Namespace, &metav1.DeleteOptions{}); err != nil {
-		glog.Errorf("Error deleting namespace %q: %v", s.Namespace, err)
+		klog.Errorf("Error deleting namespace %q: %v", s.Namespace, err)
 	}
 	s.destroyed = true
 }
