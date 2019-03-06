@@ -148,16 +148,23 @@ func (f *Framework) shutdown(exitCode int) {
 // WithSandbox runs the testFunc with the Sandbox, taking care of resource
 // cleanup and isolation.
 func (f *Framework) WithSandbox(testFunc func(*Sandbox) error) error {
+	f.lock.Lock()
 	sandbox := &Sandbox{
 		Namespace: fmt.Sprintf("test-sandbox-%x", f.Rand.Int63()),
 		f:         f,
 	}
+	for _, s := range f.sandboxes {
+		if s.Namespace == sandbox.Namespace {
+			f.lock.Unlock()
+			return fmt.Errorf("sandbox %s was created previously by the framework.", s.Namespace)
+		}
+	}
 	glog.V(2).Infof("Using namespace %q for test sandbox", sandbox.Namespace)
 	if err := sandbox.Create(); err != nil {
+		f.lock.Unlock()
 		return err
 	}
 
-	f.lock.Lock()
 	f.sandboxes = append(f.sandboxes, sandbox)
 	f.lock.Unlock()
 
@@ -172,16 +179,23 @@ func (f *Framework) WithSandbox(testFunc func(*Sandbox) error) error {
 // cleanup and isolation. This indirectly calls testing.T.Run().
 func (f *Framework) RunWithSandbox(name string, t *testing.T, testFunc func(*testing.T, *Sandbox)) {
 	t.Run(name, func(t *testing.T) {
+		f.lock.Lock()
 		sandbox := &Sandbox{
 			Namespace: fmt.Sprintf("test-sandbox-%x", f.Rand.Int63()),
 			f:         f,
 		}
+		for _, s := range f.sandboxes {
+			if s.Namespace == sandbox.Namespace {
+				f.lock.Unlock()
+				t.Fatalf("Sandbox %s was created previously by the framework.", s.Namespace)
+			}
+		}
 		glog.V(2).Infof("Using namespace %q for test sandbox", sandbox.Namespace)
 		if err := sandbox.Create(); err != nil {
+			f.lock.Unlock()
 			t.Fatalf("error creating sandbox: %v", err)
 		}
 
-		f.lock.Lock()
 		f.sandboxes = append(f.sandboxes, sandbox)
 		f.lock.Unlock()
 
