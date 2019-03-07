@@ -44,6 +44,7 @@ import (
 	"k8s.io/ingress-gce/pkg/crd"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
+	_ "k8s.io/ingress-gce/pkg/klog"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
