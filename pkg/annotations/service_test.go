@@ -18,6 +18,7 @@ package annotations
 
 import (
 	"fmt"
+	"k8s.io/ingress-gce/pkg/neg/types"
 	"reflect"
 	"testing"
 
@@ -136,7 +137,7 @@ func TestNEGAnnotation(t *testing.T) {
 			exposed:    true,
 		},
 	} {
-		found, negAnnotation, err := FromService(tc.svc).NEGAnnotation()
+		negAnnotation, found, err := FromService(tc.svc).NEGAnnotation()
 		if fmt.Sprintf("%q", err) != fmt.Sprintf("%q", tc.expectError) {
 			t.Errorf("Test case %q: Expect error to be %q, but got: %q", tc.desc, tc.expectError, err)
 		}
@@ -164,6 +165,69 @@ func TestNEGAnnotation(t *testing.T) {
 		if exposed := negAnnotation.NEGExposed(); exposed != tc.exposed {
 			t.Errorf("Test case %q: Expect NEGExposed() = %v; want %v", tc.desc, tc.exposed, exposed)
 		}
+	}
+}
+
+func TestNEGStatus(t *testing.T) {
+	for _, tc := range []struct {
+		desc            string
+		svc             *v1.Service
+		expectNegStatus *types.NegStatus
+		expectError     error
+		expectFound     bool
+	}{
+		{
+			desc:        "No NEG Status",
+			svc:         &v1.Service{},
+			expectFound: false,
+			expectError: nil,
+		},
+		{
+			desc: "Basic NEG Status",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+					},
+				},
+			},
+			expectNegStatus: &types.NegStatus{NetworkEndpointGroups: types.PortNameMap{80: "neg-name"}, Zones: []string{"us-central1-a"}},
+			expectFound:     true,
+			expectError:     nil,
+		},
+		{
+			desc: "Invalid NEG Status",
+			svc: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						NEGStatusKey: `foobar`,
+					},
+				},
+			},
+			expectNegStatus: nil,
+			expectFound:     true,
+			expectError:     fmt.Errorf("Error parsing neg status: invalid character 'o' in literal false (expecting 'a')"),
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			negStatus, found, err := FromService(tc.svc).NEGStatus()
+
+			if fmt.Sprintf("%q", err) != fmt.Sprintf("%q", tc.expectError) {
+				t.Errorf("Test case %q: Expect error to be %q, but got: %q", tc.desc, tc.expectError, err)
+			}
+
+			if found != tc.expectFound {
+				t.Errorf("Test case %q: Expect found to be %v, be got %v", tc.desc, tc.expectFound, found)
+			}
+
+			if tc.expectError != nil || !tc.expectFound {
+				return
+			}
+
+			if !reflect.DeepEqual(*tc.expectNegStatus, *negStatus) {
+				t.Errorf("Test case %q: Expect NegStatus to be %v, be got %v", tc.desc, *tc.expectNegStatus, *negStatus)
+			}
+		})
 	}
 }
 

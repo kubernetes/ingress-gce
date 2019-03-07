@@ -72,7 +72,7 @@ func TestNEGServicePorts(t *testing.T) {
 		}
 
 		svc := annotations.FromService(service)
-		_, exposeNegStruct, _ := svc.NEGAnnotation()
+		exposeNegStruct, _, _ := svc.NEGAnnotation()
 
 		t.Run(tc.desc, func(t *testing.T) {
 			svcPorts, err := NEGServicePorts(exposeNegStruct, tc.knownPortMap)

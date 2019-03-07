@@ -96,7 +96,7 @@ func TestBackendConfigNegatives(t *testing.T) {
 				}
 			}
 
-			if _, _, err := e2e.CreateEchoService(s, "service-1", tc.svcAnnotations); err != nil {
+			if _, err := e2e.CreateEchoService(s, "service-1", tc.svcAnnotations); err != nil {
 				t.Fatalf("e2e.CreateEchoService(s, service-1, %q) = _, _, %v, want _, _, nil", tc.svcAnnotations, err)
 			}
 

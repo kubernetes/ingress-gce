@@ -22,10 +22,9 @@ import (
 	"net/http"
 
 	"k8s.io/api/extensions/v1beta1"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
-
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
 // SecurityPolicy is a feature in BackendConfig that supports using GCP

@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"k8s.io/ingress-gce/pkg/neg/types"
 
 	"k8s.io/api/core/v1"
 )
@@ -107,6 +108,11 @@ func (n *NegAnnotation) NEGEnabled() bool {
 	return n.NEGEnabledForIngress() || n.NEGExposed()
 }
 
+func (n *NegAnnotation) String() string {
+	bytes, _ := json.Marshal(n)
+	return string(bytes)
+}
+
 // AppProtocol describes the service protocol.
 type AppProtocol string
 
@@ -159,19 +165,35 @@ var (
 
 // NEGAnnotation returns true if NEG annotation is found.
 // If found, it also returns NEG annotation struct.
-func (svc *Service) NEGAnnotation() (bool, *NegAnnotation, error) {
+func (svc *Service) NEGAnnotation() (*NegAnnotation, bool, error) {
 	var res NegAnnotation
 	annotation, ok := svc.v[NEGAnnotationKey]
 	if !ok {
-		return false, nil, nil
+		return nil, false, nil
 	}
 
 	// TODO: add link to Expose NEG documentation when complete
 	if err := json.Unmarshal([]byte(annotation), &res); err != nil {
-		return true, nil, ErrNEGAnnotationInvalid
+		return nil, true, ErrNEGAnnotationInvalid
 	}
 
-	return true, &res, nil
+	return &res, true, nil
+}
+
+func (svc *Service) NEGStatus() (*types.NegStatus, bool, error) {
+	var res types.NegStatus
+	var err error
+
+	annotation, ok := svc.v[NEGStatusKey]
+	if !ok {
+		return nil, false, nil
+	}
+
+	if res, err = types.ParseNegStatus(annotation); err != nil {
+		return nil, true, fmt.Errorf("Error parsing neg status: %v", err)
+	}
+
+	return &res, true, nil
 }
 
 type BackendConfigs struct {

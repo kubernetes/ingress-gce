@@ -17,6 +17,7 @@ limitations under the License.
 package types
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 )
@@ -120,6 +121,52 @@ func TestPortNameMapDifference(t *testing.T) {
 			result := tc.p1.Difference(tc.p2)
 			if !reflect.DeepEqual(result, tc.expectedMap) {
 				t.Errorf("Expected p1.Difference(p2) to equal: %v; got: %v", tc.expectedMap, result)
+			}
+		})
+	}
+}
+
+func TestParseNegStatus(t *testing.T) {
+	for _, tc := range []struct {
+		desc            string
+		status          string
+		expectNegStatus *NegStatus
+		expectError     error
+	}{
+		{
+			desc:            "Test empty string",
+			status:          "",
+			expectNegStatus: &NegStatus{},
+			expectError:     fmt.Errorf("unexpected end of JSON input"),
+		},
+		{
+			desc:            "Test basic status",
+			status:          `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+			expectNegStatus: &NegStatus{NetworkEndpointGroups: PortNameMap{80: "neg-name"}, Zones: []string{"us-central1-a"}},
+			expectError:     nil,
+		},
+		{
+			desc:            "Incorrect fields",
+			status:          `{"network_endpoint_group":{"80":"neg-name"},"zone":["us-central1-a"]}`,
+			expectNegStatus: &NegStatus{},
+			expectError:     nil,
+		},
+		{
+			desc:            "Invalid annotation",
+			status:          `{"network_endpoint_groups":{"80":"neg-name"},"zones":"us-central1-a"]}`,
+			expectNegStatus: &NegStatus{},
+			expectError:     fmt.Errorf("invalid character ']' after object key:value pair"),
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			negStatus, err := ParseNegStatus(tc.status)
+
+			if fmt.Sprintf("%q", err) != fmt.Sprintf("%q", tc.expectError) {
+				t.Errorf("Test case %q: Expect error to be %q, but got: %q", tc.desc, tc.expectError, err)
+			}
+
+			if !reflect.DeepEqual(*tc.expectNegStatus, negStatus) {
+				t.Errorf("Expected NegStatus to be %v, got %v instead", tc.expectNegStatus, negStatus)
 			}
 		})
 	}

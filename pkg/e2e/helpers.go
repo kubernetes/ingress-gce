@@ -21,9 +21,11 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/klog"
@@ -36,9 +38,12 @@ const (
 
 	gclbDeletionInterval = 30 * time.Second
 	gclbDeletionTimeout  = 15 * time.Minute
+
+	negPollInterval = 5 * time.Second
+	negPollTimeout  = 3 * time.Minute
 )
 
-// WaitForIngressOptions holds options dictating how we wait for an ingress to stabilize.
+// WaitForIngressOptions holds options dictating how we wait for an ingress to stabilize
 type WaitForIngressOptions struct {
 	// ExpectUnreachable is true when we expect the LB to still be
 	// programming itself (i.e 404's / 502's)
@@ -46,6 +51,8 @@ type WaitForIngressOptions struct {
 }
 
 // WaitForIngress to stabilize.
+// We expect the ingress to be unreachable at first as LB is
+// still programming itself (i.e 404's / 502's)
 func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOptions) (*v1beta1.Ingress, error) {
 	err := wait.Poll(ingressPollInterval, ingressPollTimeout, func() (bool, error) {
 		var err error
@@ -93,5 +100,38 @@ func WaitForGCLBDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, optio
 			return false, nil
 		}
 		return true, nil
+	})
+}
+
+// WaitForNEGDeletion waits for all NEGs associated with a GCLB to be deleted via GC
+func WaitForNEGDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, options *fuzz.GCLBDeleteOptions) error {
+	return wait.Poll(negPollInterval, negPollTimeout, func() (bool, error) {
+		if err := g.CheckNEGDeletion(ctx, c, options); err != nil {
+			klog.Infof("format: WaitForNegDeletion(%q) = %v", g.VIP, err)
+			return false, nil
+		}
+		return true, nil
+	})
+}
+
+// WaitForNegConfiguration waits until the NEGStatus of the service is updated to at least one NEG
+// TODO: (shance) make this more robust so it handles multiple NEGS
+func WaitForNEGConfiguration(svc *v1.Service, f *Framework, s *Sandbox) error {
+	return wait.Poll(negPollInterval, negPollTimeout, func() (bool, error) {
+		// Get Annotation
+		svc, _ = f.Clientset.CoreV1().Services(s.Namespace).Get(svc.Name, metav1.GetOptions{})
+
+		negStatus, found, err := annotations.FromService(svc).NEGStatus()
+
+		if found {
+			if err != nil {
+				return false, fmt.Errorf("Error parsing neg status: %v", err)
+			}
+			if negStatus.NetworkEndpointGroups != nil {
+				return true, nil
+			}
+		}
+
+		return false, nil
 	})
 }

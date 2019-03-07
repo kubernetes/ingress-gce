@@ -80,7 +80,7 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 	}
 
 	var negEnabled bool
-	ok, negAnnotation, err := annotations.FromService(svc).NEGAnnotation()
+	negAnnotation, ok, err := annotations.FromService(svc).NEGAnnotation()
 	if ok && err == nil {
 		negEnabled = negAnnotation.NEGEnabledForIngress()
 	}
