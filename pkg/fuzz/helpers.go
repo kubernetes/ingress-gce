@@ -18,6 +18,7 @@ package fuzz
 
 import (
 	"fmt"
+	"strings"
 
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
@@ -233,6 +234,16 @@ func (i *IngressBuilder) AddTLS(hosts []string, secretName string) *IngressBuild
 		Hosts:      hosts,
 		SecretName: secretName,
 	})
+	return i
+}
+
+// AddPresharedCerts adds preshared certs via the annotation. Note that a value
+// added in a previous call to this function will be overwritten.
+func (i *IngressBuilder) AddPresharedCerts(names []string) *IngressBuilder {
+	if i.ing.Annotations == nil {
+		i.ing.Annotations = make(map[string]string)
+	}
+	i.ing.Annotations[annotations.PreSharedCertKey] = strings.Join(names, ",")
 	return i
 }
 

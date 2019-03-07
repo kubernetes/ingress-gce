@@ -137,6 +137,7 @@ func (f *Framework) sigintHandler() {
 func (f *Framework) shutdown(exitCode int) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
+
 	klog.V(2).Infof("Cleaning up sandboxes...")
 	for _, s := range f.sandboxes {
 		s.Destroy()
