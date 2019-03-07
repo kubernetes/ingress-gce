@@ -49,10 +49,10 @@
   version = "v2.8.0"
 
 [[projects]]
-  name = "github.com/ghodss/yaml"
+  name = "github.com/evanphx/json-patch"
   packages = ["."]
-  revision = "0ca9ea5df5451ffdf184b4428c902747c2c11cd7"
-  version = "v1.0.0"
+  revision = "72bf35d0ff611848c1dc9df0f976c81192392fa5"
+  version = "v4.1.0"
 
 [[projects]]
   name = "github.com/go-openapi/jsonpointer"
@@ -86,11 +86,6 @@
   ]
   revision = "636bf0302bc95575d69441b25a2603156ffdddf1"
   version = "v1.1.1"
-
-[[projects]]
-  name = "github.com/golang/glog"
-  packages = ["."]
-  revision = "23def4e6c14b4da8ac2ed8007337bc5eb5007998"
 
 [[projects]]
   branch = "master"
@@ -408,7 +403,6 @@
   version = "v2.2.1"
 
 [[projects]]
-  branch = "master"
   name = "k8s.io/api"
   packages = [
     "admissionregistration/v1alpha1",
@@ -416,6 +410,7 @@
     "apps/v1",
     "apps/v1beta1",
     "apps/v1beta2",
+    "auditregistration/v1alpha1",
     "authentication/v1",
     "authentication/v1beta1",
     "authorization/v1",
@@ -443,10 +438,9 @@
     "storage/v1alpha1",
     "storage/v1beta1"
   ]
-  revision = "a191abe0b71e00ce4cde58af8002aa4c1a8bb068"
+  revision = "kubernetes-1.13.0"
 
 [[projects]]
-  branch = "master"
   name = "k8s.io/apiextensions-apiserver"
   packages = [
     "pkg/apis/apiextensions",
@@ -458,10 +452,9 @@
     "pkg/client/clientset/clientset/typed/apiextensions/v1beta1/fake",
     "pkg/features"
   ]
-  revision = "c0b566b8903bc2b6e3f4e41d35b3ae9e5d170c30"
+  revision = "kubernetes-1.13.0"
 
 [[projects]]
-  branch = "master"
   name = "k8s.io/apimachinery"
   packages = [
     "pkg/api/equality",
@@ -512,10 +505,9 @@
     "third_party/forked/golang/json",
     "third_party/forked/golang/reflect"
   ]
-  revision = "c6dd271be00615c6fa8c91fdf63381265a5f0e4e"
+  revision = "kubernetes-1.13.0"
 
 [[projects]]
-  branch = "master"
   name = "k8s.io/apiserver"
   packages = [
     "pkg/apis/config",
@@ -525,10 +517,9 @@
     "pkg/features",
     "pkg/util/feature"
   ]
-  revision = "ec2b99f30258e1f9b5d18389756f0676ce7a57ea"
+  revision = "kubernetes-1.13.0"
 
 [[projects]]
-  branch = "master"
   name = "k8s.io/client-go"
   packages = [
     "discovery",
@@ -541,6 +532,8 @@
     "informers/apps/v1",
     "informers/apps/v1beta1",
     "informers/apps/v1beta2",
+    "informers/auditregistration",
+    "informers/auditregistration/v1alpha1",
     "informers/autoscaling",
     "informers/autoscaling/v1",
     "informers/autoscaling/v2beta1",
@@ -590,6 +583,8 @@
     "kubernetes/typed/apps/v1beta1/fake",
     "kubernetes/typed/apps/v1beta2",
     "kubernetes/typed/apps/v1beta2/fake",
+    "kubernetes/typed/auditregistration/v1alpha1",
+    "kubernetes/typed/auditregistration/v1alpha1/fake",
     "kubernetes/typed/authentication/v1",
     "kubernetes/typed/authentication/v1/fake",
     "kubernetes/typed/authentication/v1beta1",
@@ -647,6 +642,7 @@
     "listers/apps/v1",
     "listers/apps/v1beta1",
     "listers/apps/v1beta2",
+    "listers/auditregistration/v1alpha1",
     "listers/autoscaling/v1",
     "listers/autoscaling/v2beta1",
     "listers/autoscaling/v2beta2",
@@ -704,7 +700,13 @@
     "util/retry",
     "util/workqueue"
   ]
-  revision = "c49eef9ec85d226da87b0284e1f358a6d341110e"
+  revision = "kubernetes-1.13.0"
+
+[[projects]]
+  branch = "master"
+  name = "k8s.io/cloud-provider"
+  packages = ["."]
+  revision = "8f30ec879f0bed52ac8c95c19eb553509615e1a3"
 
 [[projects]]
   branch = "master"
@@ -733,13 +735,13 @@
   revision = "e3762e86a74c878ffed47484592986685639c2cd"
 
 [[projects]]
-  branch = "master"
   name = "k8s.io/kubernetes"
   packages = [
     "pkg/api/legacyscheme",
     "pkg/api/service",
     "pkg/api/v1/pod",
     "pkg/api/v1/service",
+    "pkg/apis/apps",
     "pkg/apis/autoscaling",
     "pkg/apis/core",
     "pkg/apis/core/helper",
@@ -748,9 +750,6 @@
     "pkg/apis/core/v1",
     "pkg/apis/core/v1/helper",
     "pkg/apis/core/validation",
-    "pkg/apis/extensions",
-    "pkg/apis/networking",
-    "pkg/apis/policy",
     "pkg/apis/scheduling",
     "pkg/capabilities",
     "pkg/client/leaderelectionconfig",
@@ -766,11 +765,7 @@
     "pkg/kubelet/apis",
     "pkg/kubelet/types",
     "pkg/master/ports",
-    "pkg/scheduler/algorithm",
-    "pkg/scheduler/algorithm/priorities/util",
     "pkg/scheduler/api",
-    "pkg/scheduler/cache",
-    "pkg/scheduler/util",
     "pkg/security/apparmor",
     "pkg/serviceaccount",
     "pkg/util/file",
@@ -778,9 +773,9 @@
     "pkg/util/io",
     "pkg/util/mount",
     "pkg/util/net/sets",
-    "pkg/util/node",
     "pkg/util/nsenter",
     "pkg/util/parsers",
+    "pkg/util/resizefs",
     "pkg/util/slice",
     "pkg/util/strings",
     "pkg/util/taints",
@@ -792,7 +787,7 @@
     "pkg/volume/util/types",
     "pkg/volume/util/volumepathhandler"
   ]
-  revision = "7b9f6df068c6dab7b3fd01bf3b1e7c2991d9184a"
+  revision = "v1.13.0"
 
 [[projects]]
   branch = "master"
@@ -803,9 +798,15 @@
   ]
   revision = "cd34563cd63c2bd7c6fe88a73c4dcf34ed8a67cb"
 
+[[projects]]
+  name = "sigs.k8s.io/yaml"
+  packages = ["."]
+  revision = "fd68e9863619f6ec2fdd8625fe1f02e7c877e480"
+  version = "v1.1.0"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "b33e9b30d595296e6ebfcab79448a5fbee24d2d01a528e76c229f0e81b3a7da1"
+  inputs-digest = "0b4f3ef395e8e1883bf568b8921e1f56187702a9c86411176b0d1f41ae0f485e"
   solver-name = "gps-cdcl"
   solver-version = 1

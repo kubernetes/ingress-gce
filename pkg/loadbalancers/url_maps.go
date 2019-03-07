@@ -43,14 +43,14 @@ func (l *L7) ensureComputeURLMap() error {
 	// Every update replaces the entire urlmap.
 	expectedMap := toComputeURLMap(l.Name, l.runtimeInfo.UrlMap, l.namer)
 
-	currentMap, err := l.cloud.GetUrlMap(expectedMap.Name)
+	currentMap, err := l.cloud.GetURLMap(expectedMap.Name)
 	if utils.IgnoreHTTPNotFound(err) != nil {
 		return err
 	}
 
 	if currentMap == nil {
 		klog.V(3).Infof("Creating URLMap %q", expectedMap.Name)
-		if err := l.cloud.CreateUrlMap(expectedMap); err != nil {
+		if err := l.cloud.CreateURLMap(expectedMap); err != nil {
 			return fmt.Errorf("CreateUrlMap: %v", err)
 		}
 		l.um = expectedMap
@@ -65,7 +65,7 @@ func (l *L7) ensureComputeURLMap() error {
 
 	klog.V(3).Infof("Updating URLMap for %q", l.Name)
 	expectedMap.Fingerprint = currentMap.Fingerprint
-	if err := l.cloud.UpdateUrlMap(expectedMap); err != nil {
+	if err := l.cloud.UpdateURLMap(expectedMap); err != nil {
 		return fmt.Errorf("UpdateURLMap: %v", err)
 	}
 

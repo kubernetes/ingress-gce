@@ -110,10 +110,10 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, f *FakeLoadBalancers) {
 	t.Helper()
 
-	um, err := f.GetUrlMap(f.UMName())
-	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
+	um, err := f.GetURLMap(f.UMName())
+	tps, err := f.GetTargetHTTPSProxy(f.TPName(true))
 	if err != nil {
-		t.Fatalf("f.GetTargetHttpsProxy(%q) = _, %v; want nil", f.TPName(true), err)
+		t.Fatalf("f.GetTargetHTTPSProxy(%q) = _, %v; want nil", f.TPName(true), err)
 	}
 	if !utils.EqualResourcePaths(tps.UrlMap, um.SelfLink) {
 		t.Fatalf("tps.UrlMap = %q, want %q", tps.UrlMap, um.SelfLink)
@@ -130,10 +130,10 @@ func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, f *FakeLoadBalancers) 
 func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, f *FakeLoadBalancers) {
 	t.Helper()
 
-	um, err := f.GetUrlMap(f.UMName())
-	tps, err := f.GetTargetHttpProxy(f.TPName(false))
+	um, err := f.GetURLMap(f.UMName())
+	tps, err := f.GetTargetHTTPProxy(f.TPName(false))
 	if err != nil {
-		t.Fatalf("f.GetTargetHttpProxy(%q) = _, %v; want nil", f.TPName(false), err)
+		t.Fatalf("f.GetTargetHTTPProxy(%q) = _, %v; want nil", f.TPName(false), err)
 	}
 	if !utils.EqualResourcePaths(tps.UrlMap, um.SelfLink) {
 		t.Fatalf("tp.UrlMap = %q, want %q", tps.UrlMap, um.SelfLink)
@@ -348,7 +348,7 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 	f.CreateSslCertificate(sslCert)
 	tpName := f.TPName(true)
 	newProxy := &compute.TargetHttpsProxy{Name: tpName, SslCertificates: []string{sslCert.SelfLink}}
-	err := f.CreateTargetHttpsProxy(newProxy)
+	err := f.CreateTargetHTTPSProxy(newProxy)
 	if err != nil {
 		t.Fatalf("Failed to create Target proxy %v - %v", newProxy, err)
 	}
@@ -598,7 +598,7 @@ func verifyProxyCertsInOrder(hostname string, f *FakeLoadBalancers, t *testing.T
 	t.Helper()
 	t.Logf("f =\n%s", f.String())
 
-	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
+	tps, err := f.GetTargetHTTPSProxy(f.TPName(true))
 	if err != nil {
 		t.Fatalf("expected https proxy to exist: %v, err: %v", f.TPName(true), err)
 	}
@@ -652,7 +652,7 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	}
 
 	// httpsproxy needs to contain only the certs in expectCerts, nothing more, nothing less
-	tps, err := f.GetTargetHttpsProxy(f.TPName(true))
+	tps, err := f.GetTargetHTTPSProxy(f.TPName(true))
 	if err != nil {
 		t.Fatalf("expected https proxy to exist: %v, err: %v", f.TPName(true), err)
 	}
@@ -744,7 +744,7 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 func verifyURLMap(t *testing.T, f *FakeLoadBalancers, name string, wantGCEURLMap *utils.GCEURLMap) {
 	t.Helper()
 
-	um, err := f.GetUrlMap(name)
+	um, err := f.GetURLMap(name)
 	if err != nil || um == nil {
 		t.Errorf("f.GetUrlMap(%q) = %v, %v; want _, nil", name, um, err)
 	}
@@ -947,7 +947,7 @@ func TestList(t *testing.T) {
 
 	f := NewFakeLoadBalancers(lbInfo.Name, namer)
 	for _, name := range names {
-		f.CreateUrlMap(&compute.UrlMap{Name: name})
+		f.CreateURLMap(&compute.UrlMap{Name: name})
 	}
 
 	pool := newFakeLoadBalancerPool(f, t, namer)

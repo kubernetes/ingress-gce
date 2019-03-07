@@ -49,7 +49,7 @@ var (
 func newLoadBalancerController() *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
-	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	namer := utils.NewNamer(clusterUID, "")
 
 	stopCh := make(chan struct{})

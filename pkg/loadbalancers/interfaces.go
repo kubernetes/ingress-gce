@@ -34,24 +34,24 @@ type LoadBalancers interface {
 	ListGlobalForwardingRules() ([]*compute.ForwardingRule, error)
 
 	// UrlMaps
-	GetUrlMap(name string) (*compute.UrlMap, error)
-	CreateUrlMap(urlMap *compute.UrlMap) error
-	UpdateUrlMap(urlMap *compute.UrlMap) error
-	DeleteUrlMap(name string) error
-	ListUrlMaps() ([]*compute.UrlMap, error)
+	GetURLMap(name string) (*compute.UrlMap, error)
+	CreateURLMap(urlMap *compute.UrlMap) error
+	UpdateURLMap(urlMap *compute.UrlMap) error
+	DeleteURLMap(name string) error
+	ListURLMaps() ([]*compute.UrlMap, error)
 
 	// TargetProxies
-	GetTargetHttpProxy(name string) (*compute.TargetHttpProxy, error)
-	CreateTargetHttpProxy(proxy *compute.TargetHttpProxy) error
-	DeleteTargetHttpProxy(name string) error
-	SetUrlMapForTargetHttpProxy(proxy *compute.TargetHttpProxy, urlMapLink string) error
+	GetTargetHTTPProxy(name string) (*compute.TargetHttpProxy, error)
+	CreateTargetHTTPProxy(proxy *compute.TargetHttpProxy) error
+	DeleteTargetHTTPProxy(name string) error
+	SetURLMapForTargetHTTPProxy(proxy *compute.TargetHttpProxy, urlMapLink string) error
 
 	// TargetHttpsProxies
-	GetTargetHttpsProxy(name string) (*compute.TargetHttpsProxy, error)
-	CreateTargetHttpsProxy(proxy *compute.TargetHttpsProxy) error
-	DeleteTargetHttpsProxy(name string) error
-	SetUrlMapForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, urlMapLink string) error
-	SetSslCertificateForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, sslCertURLs []string) error
+	GetTargetHTTPSProxy(name string) (*compute.TargetHttpsProxy, error)
+	CreateTargetHTTPSProxy(proxy *compute.TargetHttpsProxy) error
+	DeleteTargetHTTPSProxy(name string) error
+	SetURLMapForTargetHTTPSProxy(proxy *compute.TargetHttpsProxy, urlMapLink string) error
+	SetSslCertificateForTargetHTTPSProxy(proxy *compute.TargetHttpsProxy, sslCertURLs []string) error
 
 	// SslCertificates
 	GetSslCertificate(name string) (*compute.SslCertificate, error)

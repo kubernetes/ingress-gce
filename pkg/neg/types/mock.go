@@ -36,7 +36,7 @@ type NetworkEndpointEntry struct {
 
 type NetworkEndpointStore map[meta.Key][]NetworkEndpointEntry
 
-func MockNetworkEndpointAPIs(fakeGCE *gce.GCECloud) {
+func MockNetworkEndpointAPIs(fakeGCE *gce.Cloud) {
 	m := (fakeGCE.Compute().(*cloud.MockGCE))
 	m.MockBetaNetworkEndpointGroups.X = NetworkEndpointStore{}
 	m.MockBetaNetworkEndpointGroups.AttachNetworkEndpointsHook = MockAttachNetworkEndpointsHook

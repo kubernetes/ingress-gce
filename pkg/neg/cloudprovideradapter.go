@@ -28,8 +28,8 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
-// NewAdapter takes a GCECloud and returns a NetworkEndpointGroupCloud.
-func NewAdapter(g *gce.GCECloud) negtypes.NetworkEndpointGroupCloud {
+// NewAdapter takes a Cloud and returns a NetworkEndpointGroupCloud.
+func NewAdapter(g *gce.Cloud) negtypes.NetworkEndpointGroupCloud {
 	return &cloudProviderAdapter{
 		c:             g.Compute(),
 		networkURL:    g.NetworkURL(),
@@ -38,7 +38,7 @@ func NewAdapter(g *gce.GCECloud) negtypes.NetworkEndpointGroupCloud {
 }
 
 // cloudProviderAdapter is a temporary shim to consolidate accesses to
-// GCECloud and push them outside of this package.
+// Cloud and push them outside of this package.
 type cloudProviderAdapter struct {
 	c             cloud.Cloud
 	networkURL    string

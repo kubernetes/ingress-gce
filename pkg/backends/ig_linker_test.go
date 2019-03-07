@@ -32,7 +32,7 @@ import (
 
 const defaultZone = "zone-a"
 
-func newTestIGLinker(fakeGCE *gce.GCECloud, fakeInstancePool instances.NodePool) *instanceGroupLinker {
+func newTestIGLinker(fakeGCE *gce.Cloud, fakeInstancePool instances.NodePool) *instanceGroupLinker {
 	fakeInstancePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
@@ -47,7 +47,7 @@ func newTestIGLinker(fakeGCE *gce.GCECloud, fakeInstancePool instances.NodePool)
 func TestLink(t *testing.T) {
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer)
-	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP}
@@ -77,7 +77,7 @@ func TestLink(t *testing.T) {
 func TestLinkWithCreationModeError(t *testing.T) {
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer)
-	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP}

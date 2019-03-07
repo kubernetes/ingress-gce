@@ -37,7 +37,7 @@ import (
 func newFirewallController() *FirewallController {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
-	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:               api_v1.NamespaceAll,

@@ -51,9 +51,9 @@ const (
 
 func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 	t.Parallel()
-	fakeGCECloud := gce.FakeGCECloud(gce.DefaultTestClusterValues())
-	negtypes.MockNetworkEndpointAPIs(fakeGCECloud)
-	_, transactionSyncer := newTestTransactionSyncer(fakeGCECloud)
+	fakeCloud := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	negtypes.MockNetworkEndpointAPIs(fakeCloud)
+	_, transactionSyncer := newTestTransactionSyncer(fakeCloud)
 	testCases := []struct {
 		desc            string
 		addEndpoints    map[string]sets.String
@@ -153,7 +153,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 		}
 
 		for zone, endpoints := range tc.expectEndpoints {
-			list, err := fakeGCECloud.ListNetworkEndpoints(transactionSyncer.negName, zone, false)
+			list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.negName, zone, false)
 			if err != nil {
 				t.Errorf("For case %q,, expect error == nil, but got %v", tc.desc, err)
 			}
@@ -172,7 +172,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 
 func TestCommitTransaction(t *testing.T) {
 	t.Parallel()
-	s, transactionSyncer := newTestTransactionSyncer(gce.FakeGCECloud(gce.DefaultTestClusterValues()))
+	s, transactionSyncer := newTestTransactionSyncer(gce.NewFakeGCECloud(gce.DefaultTestClusterValues()))
 	// use testSyncer to track the number of Sync got triggered
 	testSyncer := &testSyncer{s.(*syncer), 0}
 	transactionSyncer.syncer = testSyncer
@@ -827,7 +827,7 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 	}
 }
 
-func newTestTransactionSyncer(fakeGCE *gce.GCECloud) (negtypes.NegSyncer, *transactionSyncer) {
+func newTestTransactionSyncer(fakeGCE *gce.Cloud) (negtypes.NegSyncer, *transactionSyncer) {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := utils.NewNamer(clusterID, "")

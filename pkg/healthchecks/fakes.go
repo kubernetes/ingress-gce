@@ -41,7 +41,7 @@ type FakeHealthCheckProvider struct {
 }
 
 // CreateHttpHealthCheck fakes out http health check creation.
-func (f *FakeHealthCheckProvider) CreateHttpHealthCheck(hc *compute.HttpHealthCheck) error {
+func (f *FakeHealthCheckProvider) CreateHTTPHealthCheck(hc *compute.HttpHealthCheck) error {
 	v := *hc
 	v.SelfLink = cloud.NewHttpHealthChecksResourceID("mock-project", hc.Name).SelfLink(meta.VersionGA)
 	f.http[hc.Name] = v
@@ -49,7 +49,7 @@ func (f *FakeHealthCheckProvider) CreateHttpHealthCheck(hc *compute.HttpHealthCh
 }
 
 // GetHttpHealthCheck fakes out getting a http health check from the cloud.
-func (f *FakeHealthCheckProvider) GetHttpHealthCheck(name string) (*compute.HttpHealthCheck, error) {
+func (f *FakeHealthCheckProvider) GetHTTPHealthCheck(name string) (*compute.HttpHealthCheck, error) {
 	if hc, found := f.http[name]; found {
 		return &hc, nil
 	}
@@ -58,7 +58,7 @@ func (f *FakeHealthCheckProvider) GetHttpHealthCheck(name string) (*compute.Http
 }
 
 // DeleteHttpHealthCheck fakes out deleting a http health check.
-func (f *FakeHealthCheckProvider) DeleteHttpHealthCheck(name string) error {
+func (f *FakeHealthCheckProvider) DeleteHTTPHealthCheck(name string) error {
 	if _, exists := f.http[name]; !exists {
 		return utils.FakeGoogleAPINotFoundErr()
 	}
@@ -68,7 +68,7 @@ func (f *FakeHealthCheckProvider) DeleteHttpHealthCheck(name string) error {
 }
 
 // UpdateHttpHealthCheck sends the given health check as an update.
-func (f *FakeHealthCheckProvider) UpdateHttpHealthCheck(hc *compute.HttpHealthCheck) error {
+func (f *FakeHealthCheckProvider) UpdateHTTPHealthCheck(hc *compute.HttpHealthCheck) error {
 	if _, exists := f.http[hc.Name]; !exists {
 		return utils.FakeGoogleAPINotFoundErr()
 	}

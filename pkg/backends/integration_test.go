@@ -40,7 +40,7 @@ type Jig struct {
 	pool             Pool
 }
 
-func newTestJig(fakeGCE *gce.GCECloud) *Jig {
+func newTestJig(fakeGCE *gce.Cloud) *Jig {
 	fakeHealthCheckProvider := healthchecks.NewFakeHealthCheckProvider()
 	fakeHealthChecks := healthchecks.NewHealthChecker(fakeHealthCheckProvider, "/", "/healthz", defaultNamer, defaultBackendSvc)
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
@@ -63,7 +63,7 @@ func newTestJig(fakeGCE *gce.GCECloud) *Jig {
 }
 
 func TestBackendInstanceGroupClobbering(t *testing.T) {
-	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	jig := newTestJig(fakeGCE)
 
 	sp := utils.ServicePort{NodePort: 80}
@@ -135,7 +135,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 }
 
 func TestSyncChaosMonkey(t *testing.T) {
-	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	jig := newTestJig(fakeGCE)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP}

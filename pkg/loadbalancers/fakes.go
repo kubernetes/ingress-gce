@@ -185,9 +185,9 @@ func (f *FakeLoadBalancers) GetForwardingRulesWithIPs(ip []string) (fwRules []*c
 
 // UrlMaps fakes
 
-// GetUrlMap fakes getting url maps from the cloud.
-func (f *FakeLoadBalancers) GetUrlMap(name string) (*compute.UrlMap, error) {
-	f.calls = append(f.calls, "GetUrlMap")
+// GetURLMap fakes getting url maps from the cloud.
+func (f *FakeLoadBalancers) GetURLMap(name string) (*compute.UrlMap, error) {
+	f.calls = append(f.calls, "GetURLMap")
 	for i := range f.Um {
 		if f.Um[i].Name == name {
 			return f.Um[i], nil
@@ -196,18 +196,18 @@ func (f *FakeLoadBalancers) GetUrlMap(name string) (*compute.UrlMap, error) {
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
-// CreateUrlMap fakes url-map creation.
-func (f *FakeLoadBalancers) CreateUrlMap(urlMap *compute.UrlMap) error {
-	klog.V(4).Infof("CreateUrlMap %+v", urlMap)
-	f.calls = append(f.calls, "CreateUrlMap")
+// CreateURLMap fakes url-map creation.
+func (f *FakeLoadBalancers) CreateURLMap(urlMap *compute.UrlMap) error {
+	klog.V(4).Infof("CreateURLMap %+v", urlMap)
+	f.calls = append(f.calls, "CreateURLMap")
 	urlMap.SelfLink = cloud.NewUrlMapsResourceID("mock-project", urlMap.Name).SelfLink(meta.VersionGA)
 	f.Um = append(f.Um, urlMap)
 	return nil
 }
 
-// UpdateUrlMap fakes updating url-maps.
-func (f *FakeLoadBalancers) UpdateUrlMap(urlMap *compute.UrlMap) error {
-	f.calls = append(f.calls, "UpdateUrlMap")
+// UpdateURLMap fakes updating url-maps.
+func (f *FakeLoadBalancers) UpdateURLMap(urlMap *compute.UrlMap) error {
+	f.calls = append(f.calls, "UpdateURLMap")
 	for i := range f.Um {
 		if f.Um[i].Name == urlMap.Name {
 			f.Um[i] = urlMap
@@ -217,9 +217,9 @@ func (f *FakeLoadBalancers) UpdateUrlMap(urlMap *compute.UrlMap) error {
 	return utils.FakeGoogleAPINotFoundErr()
 }
 
-// DeleteUrlMap fakes url-map deletion.
-func (f *FakeLoadBalancers) DeleteUrlMap(name string) error {
-	f.calls = append(f.calls, "DeleteUrlMap")
+// DeleteURLMap fakes url-map deletion.
+func (f *FakeLoadBalancers) DeleteURLMap(name string) error {
+	f.calls = append(f.calls, "DeleteURLMap")
 	um := []*compute.UrlMap{}
 	for i := range f.Um {
 		if f.Um[i].Name != name {
@@ -234,17 +234,17 @@ func (f *FakeLoadBalancers) DeleteUrlMap(name string) error {
 	return nil
 }
 
-// ListUrlMaps fakes getting url maps from the cloud.
-func (f *FakeLoadBalancers) ListUrlMaps() ([]*compute.UrlMap, error) {
-	f.calls = append(f.calls, "ListUrlMaps")
+// ListURLMaps fakes getting url maps from the cloud.
+func (f *FakeLoadBalancers) ListURLMaps() ([]*compute.UrlMap, error) {
+	f.calls = append(f.calls, "ListURLMaps")
 	return f.Um, nil
 }
 
 // TargetProxies fakes
 
-// GetTargetHttpProxy fakes getting target http proxies from the cloud.
-func (f *FakeLoadBalancers) GetTargetHttpProxy(name string) (*compute.TargetHttpProxy, error) {
-	f.calls = append(f.calls, "GetTargetHttpProxy")
+// GetTargetHTTPProxy fakes getting target http proxies from the cloud.
+func (f *FakeLoadBalancers) GetTargetHTTPProxy(name string) (*compute.TargetHttpProxy, error) {
+	f.calls = append(f.calls, "GetTargetHTTPProxy")
 	for i := range f.Tp {
 		if f.Tp[i].Name == name {
 			return f.Tp[i], nil
@@ -253,17 +253,17 @@ func (f *FakeLoadBalancers) GetTargetHttpProxy(name string) (*compute.TargetHttp
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
-// CreateTargetHttpProxy fakes creating a target http proxy.
-func (f *FakeLoadBalancers) CreateTargetHttpProxy(proxy *compute.TargetHttpProxy) error {
-	f.calls = append(f.calls, "CreateTargetHttpProxy")
+// CreateTargetHTTPProxy fakes creating a target http proxy.
+func (f *FakeLoadBalancers) CreateTargetHTTPProxy(proxy *compute.TargetHttpProxy) error {
+	f.calls = append(f.calls, "CreateTargetHTTPProxy")
 	proxy.SelfLink = cloud.NewTargetHttpProxiesResourceID("mock-project", proxy.Name).SelfLink(meta.VersionGA)
 	f.Tp = append(f.Tp, proxy)
 	return nil
 }
 
-// DeleteTargetHttpProxy fakes deleting a target http proxy.
-func (f *FakeLoadBalancers) DeleteTargetHttpProxy(name string) error {
-	f.calls = append(f.calls, "DeleteTargetHttpProxy")
+// DeleteTargetHTTPProxy fakes deleting a target http proxy.
+func (f *FakeLoadBalancers) DeleteTargetHTTPProxy(name string) error {
+	f.calls = append(f.calls, "DeleteTargetHTTPProxy")
 	tp := []*compute.TargetHttpProxy{}
 	for i := range f.Tp {
 		if f.Tp[i].Name != name {
@@ -278,9 +278,9 @@ func (f *FakeLoadBalancers) DeleteTargetHttpProxy(name string) error {
 	return nil
 }
 
-// SetUrlMapForTargetHttpProxy fakes setting an url-map for a target http proxy.
-func (f *FakeLoadBalancers) SetUrlMapForTargetHttpProxy(proxy *compute.TargetHttpProxy, urlMapLink string) error {
-	f.calls = append(f.calls, "SetUrlMapForTargetHttpProxy")
+// SetURLMapForTargetHTTPProxy fakes setting an url-map for a target http proxy.
+func (f *FakeLoadBalancers) SetURLMapForTargetHTTPProxy(proxy *compute.TargetHttpProxy, urlMapLink string) error {
+	f.calls = append(f.calls, "SetURLMapForTargetHTTPProxy")
 	for i := range f.Tp {
 		if f.Tp[i].Name == proxy.Name {
 			f.Tp[i].UrlMap = urlMapLink
@@ -291,9 +291,9 @@ func (f *FakeLoadBalancers) SetUrlMapForTargetHttpProxy(proxy *compute.TargetHtt
 
 // TargetHttpsProxy fakes
 
-// GetTargetHttpsProxy fakes getting target http proxies from the cloud.
-func (f *FakeLoadBalancers) GetTargetHttpsProxy(name string) (*compute.TargetHttpsProxy, error) {
-	f.calls = append(f.calls, "GetTargetHttpsProxy")
+// GetTargetHTTPSProxy fakes getting target http proxies from the cloud.
+func (f *FakeLoadBalancers) GetTargetHTTPSProxy(name string) (*compute.TargetHttpsProxy, error) {
+	f.calls = append(f.calls, "GetTargetHTTPSProxy")
 	for i := range f.Tps {
 		if f.Tps[i].Name == name {
 			return f.Tps[i], nil
@@ -302,17 +302,17 @@ func (f *FakeLoadBalancers) GetTargetHttpsProxy(name string) (*compute.TargetHtt
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
-// CreateTargetHttpsProxy fakes creating a target http proxy.
-func (f *FakeLoadBalancers) CreateTargetHttpsProxy(proxy *compute.TargetHttpsProxy) error {
-	f.calls = append(f.calls, "CreateTargetHttpsProxy")
+// CreateTargetHTTPSProxy fakes creating a target http proxy.
+func (f *FakeLoadBalancers) CreateTargetHTTPSProxy(proxy *compute.TargetHttpsProxy) error {
+	f.calls = append(f.calls, "CreateTargetHTTPSProxy")
 	proxy.SelfLink = cloud.NewTargetHttpProxiesResourceID("mock-project", proxy.Name).SelfLink(meta.VersionGA)
 	f.Tps = append(f.Tps, proxy)
 	return nil
 }
 
-// DeleteTargetHttpsProxy fakes deleting a target http proxy.
-func (f *FakeLoadBalancers) DeleteTargetHttpsProxy(name string) error {
-	f.calls = append(f.calls, "DeleteTargetHttpsProxy")
+// DeleteTargetHTTPSProxy fakes deleting a target http proxy.
+func (f *FakeLoadBalancers) DeleteTargetHTTPSProxy(name string) error {
+	f.calls = append(f.calls, "DeleteTargetHTTPSProxy")
 	tp := []*compute.TargetHttpsProxy{}
 	for i := range f.Tps {
 		if f.Tps[i].Name != name {
@@ -327,9 +327,9 @@ func (f *FakeLoadBalancers) DeleteTargetHttpsProxy(name string) error {
 	return nil
 }
 
-// SetUrlMapForTargetHttpsProxy fakes setting an url-map for a target http proxy.
-func (f *FakeLoadBalancers) SetUrlMapForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, urlMapLink string) error {
-	f.calls = append(f.calls, "SetUrlMapForTargetHttpsProxy")
+// SetURLMapForTargetHTTPSProxy fakes setting an url-map for a target http proxy.
+func (f *FakeLoadBalancers) SetURLMapForTargetHTTPSProxy(proxy *compute.TargetHttpsProxy, urlMapLink string) error {
+	f.calls = append(f.calls, "SetURLMapForTargetHTTPSProxy")
 	for i := range f.Tps {
 		if f.Tps[i].Name == proxy.Name {
 			f.Tps[i].UrlMap = urlMapLink
@@ -338,9 +338,9 @@ func (f *FakeLoadBalancers) SetUrlMapForTargetHttpsProxy(proxy *compute.TargetHt
 	return nil
 }
 
-// SetSslCertificateForTargetHttpsProxy fakes out setting certificates.
-func (f *FakeLoadBalancers) SetSslCertificateForTargetHttpsProxy(proxy *compute.TargetHttpsProxy, sslCertURLs []string) error {
-	f.calls = append(f.calls, "SetSslCertificateForTargetHttpsProxy")
+// SetSslCertificateForTargetHTTPProxy fakes out setting certificates.
+func (f *FakeLoadBalancers) SetSslCertificateForTargetHTTPSProxy(proxy *compute.TargetHttpsProxy, sslCertURLs []string) error {
+	f.calls = append(f.calls, "SetSslCertificateForTargetHTTPSProxy")
 	found := false
 	for i := range f.Tps {
 		if f.Tps[i].Name == proxy.Name {

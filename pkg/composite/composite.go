@@ -32,7 +32,7 @@ import (
 
 // TODO(rramkumar): All code in this file should ideally be generated.
 
-func CreateBackendService(be *BackendService, cloud *gce.GCECloud) error {
+func CreateBackendService(be *BackendService, cloud *gce.Cloud) error {
 	switch be.Version {
 	case meta.VersionAlpha:
 		alpha, err := be.toAlpha()
@@ -58,7 +58,7 @@ func CreateBackendService(be *BackendService, cloud *gce.GCECloud) error {
 	}
 }
 
-func UpdateBackendService(be *BackendService, cloud *gce.GCECloud) error {
+func UpdateBackendService(be *BackendService, cloud *gce.Cloud) error {
 	switch be.Version {
 	case meta.VersionAlpha:
 		alpha, err := be.toAlpha()
@@ -84,7 +84,7 @@ func UpdateBackendService(be *BackendService, cloud *gce.GCECloud) error {
 	}
 }
 
-func GetBackendService(name string, version meta.Version, cloud *gce.GCECloud) (*BackendService, error) {
+func GetBackendService(name string, version meta.Version, cloud *gce.Cloud) (*BackendService, error) {
 	var gceObj interface{}
 	var err error
 	switch version {
