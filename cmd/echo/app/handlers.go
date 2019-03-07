@@ -32,6 +32,20 @@ const (
 	queryStringCacheKey = "cache"
 )
 
+// ResponseBody is the structure returned by the echo server.
+type ResponseBody struct {
+	Host          string              `json:"host"`
+	Method        string              `json:"method"`
+	URI           string              `json:"uri"`
+	HTTPVersion   string              `json:"httpVersion"`
+	Time          time.Time           `json:"time"`
+	K8sEnv        Env                 `json:"k8sEnv"`
+	RemoteAddr    string              `json:"remoteAddr"`
+	TLS           bool                `json:"tls"`
+	Header        map[string][]string `json:"header"`
+	ServerVersion string              `json:"serverVersion"`
+}
+
 // RunHTTPServer runs HTTP and HTTPS goroutines and blocks.
 func RunHTTPServer(ctx context.Context) {
 	http.HandleFunc("/healthcheck", healthCheck)
@@ -81,18 +95,7 @@ func echo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	setHeadersFromQueryString(w, r)
 
-	var dump = struct {
-		Host          string              `json:"host"`
-		Method        string              `json:"method"`
-		URI           string              `json:"uri"`
-		HTTPVersion   string              `json:"httpVersion"`
-		Time          time.Time           `json:"time"`
-		K8sEnv        Env                 `json:"k8sEnv"`
-		RemoteAddr    string              `json:"remoteAddr"`
-		TLS           bool                `json:"tls"`
-		Header        map[string][]string `json:"header"`
-		ServerVersion string              `json:"serverVersion"`
-	}{
+	dump := ResponseBody{
 		Host:          r.Host,
 		Method:        r.Method,
 		URI:           r.RequestURI,
