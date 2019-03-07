@@ -43,6 +43,10 @@ type WaitForIngressOptions struct {
 	// ExpectUnreachable is true when we expect the LB to still be
 	// programming itself (i.e 404's / 502's)
 	ExpectUnreachable bool
+
+	//
+	//// ExpectStable after first 200,
+	//ExpectStable bool
 }
 
 // WaitForIngress to stabilize.
@@ -95,3 +99,8 @@ func WaitForGCLBDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, optio
 		return true, nil
 	})
 }
+
+// WaitForNEGDeletion waits for the NEG to be deleted
+//func WaitForNEGDeletion(ctx) error {
+//
+//}

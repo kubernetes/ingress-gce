@@ -108,6 +108,11 @@ func (n *NegAnnotation) NEGEnabled() bool {
 	return n.NEGEnabledForIngress() || n.NEGExposed()
 }
 
+func (n *NegAnnotation) String() string {
+	bytes, _ := json.Marshal(n)
+	return string(bytes)
+}
+
 // AppProtocol describes the service protocol.
 type AppProtocol string
 

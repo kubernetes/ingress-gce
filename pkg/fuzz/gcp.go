@@ -36,6 +36,11 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+const (
+	negResourceType = "networkEndpointGroup"
+)
+
+
 // ForwardingRule is a union of the API version types.
 type ForwardingRule struct {
 	GA    *compute.ForwardingRule
@@ -71,6 +76,12 @@ type BackendService struct {
 	Beta  *computebeta.BackendService
 }
 
+// NetworkEndpointGroup is a union of the API version types.
+type NetworkEndpointGroup struct {
+	Alpha *computealpha.NetworkEndpointGroup
+	Beta  *computebeta.NetworkEndpointGroup
+}
+
 // GCLB contains the resources for a load balancer.
 type GCLB struct {
 	VIP string
@@ -80,6 +91,7 @@ type GCLB struct {
 	TargetHTTPSProxy map[meta.Key]*TargetHTTPSProxy
 	URLMap           map[meta.Key]*URLMap
 	BackendService   map[meta.Key]*BackendService
+	NetworkEndpointGroup map[meta.Key]*NetworkEndpointGroup
 }
 
 // NewGCLB returns an empty GCLB.
@@ -91,6 +103,7 @@ func NewGCLB(vip string) *GCLB {
 		TargetHTTPSProxy: map[meta.Key]*TargetHTTPSProxy{},
 		URLMap:           map[meta.Key]*URLMap{},
 		BackendService:   map[meta.Key]*BackendService{},
+		NetworkEndpointGroup: map[meta.Key]*NetworkEndpointGroup{},
 	}
 }
 
@@ -342,7 +355,54 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 		}
 	}
 
-	// TODO: fetch Backends
+	negKeys := []*meta.Key{}
+	// Fetch NEG Backends
+	for _, bsKey := range bsKeys {
+		beGroups := []string{}
+		if hasAlphaResource("backendService", validators) {
+			bs, err := c.AlphaBackendServices().Get(ctx, bsKey)
+			if err != nil {
+				return nil, err
+			}
+			for _, be := range bs.Backends {
+				beGroups = append(beGroups, be.Group)
+			}
+		} else {
+			bs, err := c.BetaBackendServices().Get(ctx, bsKey)
+			if err != nil {
+				return nil, err
+			}
+			for _, be := range bs.Backends {
+				beGroups = append(beGroups, be.Group)
+			}
+		}
+		for _, group := range beGroups {
+			// Only fetch NEG backends
+			if !strings.Contains(group, negResourceType) {
+				continue
+			}
+			resourceId, err := cloud.ParseResourceURL(group)
+			if err != nil {
+				return nil, err
+			}
+			negKeys = append(negKeys, resourceId.Key)
+		}
+	}
+
+	for _, negKey := range negKeys {
+		neg, err := c.BetaNetworkEndpointGroups().Get(ctx, negKey)
+		if err != nil {
+			return nil, err
+		}
+		gclb.NetworkEndpointGroup[*negKey] = &NetworkEndpointGroup{Beta: neg}
+		if hasAlphaResource(negResourceType, validators) {
+			neg, err := c.AlphaNetworkEndpointGroups().Get(ctx, negKey)
+			if err != nil {
+				return nil, err
+			}
+			gclb.NetworkEndpointGroup[*negKey].Alpha = neg
+		}
+	}
 
 	return gclb, err
 }

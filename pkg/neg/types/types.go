@@ -16,6 +16,8 @@ limitations under the License.
 
 package types
 
+import "k8s.io/kubernetes/staging/src/k8s.io/apimachinery/pkg/util/json"
+
 // PortNameMap is a map of ServicePort:TargetPort.
 type PortNameMap map[int32]string
 
@@ -51,4 +53,11 @@ type NegStatus struct {
 	// resource. key is service port, value is the name of the NEG resource.
 	NetworkEndpointGroups PortNameMap `json:"network_endpoint_groups,omitempty"`
 	Zones                 []string    `json:"zones,omitempty"`
+}
+
+// ParseNegStatus parses the given annotation into NEG status struct
+func ParseNegStatus(annotation string) (NegStatus, error){
+	ret := &NegStatus{}
+	err := json.Unmarshal([]byte(annotation), ret)
+	return *ret, err
 }
