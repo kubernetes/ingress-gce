@@ -27,7 +27,7 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/mock"
 )
 
-func newTestNEGLinker(fakeNEG negtypes.NetworkEndpointGroupCloud, fakeGCE *gce.GCECloud) *negLinker {
+func newTestNEGLinker(fakeNEG negtypes.NetworkEndpointGroupCloud, fakeGCE *gce.Cloud) *negLinker {
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
 	// Add standard hooks for mocking update calls. Each test can set a update different hook if it chooses to.
@@ -39,7 +39,7 @@ func newTestNEGLinker(fakeNEG negtypes.NetworkEndpointGroupCloud, fakeGCE *gce.G
 }
 
 func TestLinkBackendServiceToNEG(t *testing.T) {
-	fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	fakeNEG := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	linker := newTestNEGLinker(fakeNEG, fakeGCE)
 

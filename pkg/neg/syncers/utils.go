@@ -30,17 +30,17 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
 const (
 	MAX_NETWORK_ENDPOINTS_PER_BATCH = 500
 	// For each NEG, only retries 15 times to process it.
 	// This is a convention in kube-controller-manager.
-	maxRetries    = 15
-	minRetryDelay = 5 * time.Second
-	maxRetryDelay = 600 * time.Second
-	separator     = "||"
+	maxRetries                   = 15
+	minRetryDelay                = 5 * time.Second
+	maxRetryDelay                = 600 * time.Second
+	separator                    = "||"
+	negIPPortNetworkEndpointType = "GCE_VM_IP_PORT"
 )
 
 // NegSyncerKey includes information to uniquely identify a NEG
@@ -132,7 +132,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		klog.V(2).Infof("Creating NEG %q for %s in %q.", negName, negServicePortName, zone)
 		err = cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 			Name:                negName,
-			NetworkEndpointType: gce.NEGIPPortNetworkEndpointType,
+			NetworkEndpointType: negIPPortNetworkEndpointType,
 			Network:             cloud.NetworkURL(),
 			Subnetwork:          cloud.SubnetworkURL(),
 		}, zone)

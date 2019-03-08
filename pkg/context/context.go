@@ -43,7 +43,7 @@ const (
 type ControllerContext struct {
 	KubeClient kubernetes.Interface
 
-	Cloud *gce.GCECloud
+	Cloud *gce.Cloud
 
 	ClusterNamer *utils.Namer
 
@@ -78,7 +78,7 @@ type ControllerContextConfig struct {
 func NewControllerContext(
 	kubeClient kubernetes.Interface,
 	backendConfigClient backendconfigclient.Interface,
-	cloud *gce.GCECloud,
+	cloud *gce.Cloud,
 	namer *utils.Namer,
 	config ControllerContextConfig) *ControllerContext {
 

@@ -21,6 +21,7 @@ import (
 	"flag"
 
 	"k8s.io/ingress-gce/cmd/echo/app"
+	_ "k8s.io/ingress-gce/pkg/klog"
 	"k8s.io/ingress-gce/pkg/version"
 	"k8s.io/klog"
 )

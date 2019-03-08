@@ -24,11 +24,10 @@ import (
 	"os"
 	"time"
 
-	"k8s.io/klog"
-
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/kubernetes/pkg/cloudprovider"
+	cloudprovider "k8s.io/cloud-provider"
+	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	// Register the GCP authorization provider.
@@ -58,7 +57,7 @@ func NewKubeConfig() (*rest.Config, error) {
 
 // NewGCEClient returns a client to the GCE environment. This will block until
 // a valid configuration file can be read.
-func NewGCEClient() *gce.GCECloud {
+func NewGCEClient() *gce.Cloud {
 	var configReader func() io.Reader
 	if flags.F.ConfigFilePath != "" {
 		klog.Infof("Reading config from path %q", flags.F.ConfigFilePath)
@@ -87,7 +86,7 @@ func NewGCEClient() *gce.GCECloud {
 	for {
 		provider, err := cloudprovider.GetCloudProvider("gce", configReader())
 		if err == nil {
-			cloud := provider.(*gce.GCECloud)
+			cloud := provider.(*gce.Cloud)
 			// Configure GCE rate limiting
 			rl, err := ratelimit.NewGCERateLimiter(flags.F.GCERateLimit.Values(), flags.F.GCEOperationPollInterval)
 			if err != nil {

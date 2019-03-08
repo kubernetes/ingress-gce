@@ -216,7 +216,7 @@
 - Add a version mapping for both GCE and GKE clusters [\#432](https://github.com/kubernetes/ingress-gce/pull/432) ([rramkumar1](https://github.com/rramkumar1))
 - Fix bug in backend syncer where backend service was being created without health check [\#431](https://github.com/kubernetes/ingress-gce/pull/431) ([rramkumar1](https://github.com/rramkumar1))
 - move NewIndexer to utils [\#429](https://github.com/kubernetes/ingress-gce/pull/429) ([agau4779](https://github.com/agau4779))
-- Push dependency on the GCECloud up out of the neg controller [\#425](https://github.com/kubernetes/ingress-gce/pull/425) ([bowei](https://github.com/bowei))
+- Push dependency on the Cloud up out of the neg controller [\#425](https://github.com/kubernetes/ingress-gce/pull/425) ([bowei](https://github.com/bowei))
 - Extract BackendPool interface into three 3 separate interfaces [\#424](https://github.com/kubernetes/ingress-gce/pull/424) ([rramkumar1](https://github.com/rramkumar1))
 - export TrimFieldsEvenly [\#423](https://github.com/kubernetes/ingress-gce/pull/423) ([agau4779](https://github.com/agau4779))
 - Refactor to remove ClusterManager completely  [\#422](https://github.com/kubernetes/ingress-gce/pull/422) ([rramkumar1](https://github.com/rramkumar1))

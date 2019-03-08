@@ -33,7 +33,7 @@ import (
 
 // EnsureSecurityPolicy ensures the security policy link on backend service.
 // TODO(mrhohn): Emit event when attach/detach security policy to backend service.
-func EnsureSecurityPolicy(cloud *gce.GCECloud, sp utils.ServicePort, be *composite.BackendService, beName string) error {
+func EnsureSecurityPolicy(cloud *gce.Cloud, sp utils.ServicePort, be *composite.BackendService, beName string) error {
 	if sp.BackendConfig.Spec.SecurityPolicy == nil {
 		return nil
 	}
@@ -52,7 +52,7 @@ func EnsureSecurityPolicy(cloud *gce.GCECloud, sp utils.ServicePort, be *composi
 
 // securityPolicyNeedsUpdate checks if security policy needs update and
 // returns the desired policy reference.
-func securityPolicyNeedsUpdate(cloud *gce.GCECloud, currentLink, desiredName string) (bool, *computebeta.SecurityPolicyReference) {
+func securityPolicyNeedsUpdate(cloud *gce.Cloud, currentLink, desiredName string) (bool, *computebeta.SecurityPolicyReference) {
 	currentName, _ := utils.KeyName(currentLink)
 	if currentName == desiredName {
 		return false, nil

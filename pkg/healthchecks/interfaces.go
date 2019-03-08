@@ -27,10 +27,10 @@ import (
 
 // HealthCheckProvider is an interface to manage a single GCE health check.
 type HealthCheckProvider interface {
-	CreateHttpHealthCheck(hc *compute.HttpHealthCheck) error
-	UpdateHttpHealthCheck(hc *compute.HttpHealthCheck) error
-	DeleteHttpHealthCheck(name string) error
-	GetHttpHealthCheck(name string) (*compute.HttpHealthCheck, error)
+	CreateHTTPHealthCheck(hc *compute.HttpHealthCheck) error
+	UpdateHTTPHealthCheck(hc *compute.HttpHealthCheck) error
+	DeleteHTTPHealthCheck(name string) error
+	GetHTTPHealthCheck(name string) (*compute.HttpHealthCheck, error)
 
 	CreateAlphaHealthCheck(hc *computealpha.HealthCheck) error
 	CreateBetaHealthCheck(hc *computebeta.HealthCheck) error

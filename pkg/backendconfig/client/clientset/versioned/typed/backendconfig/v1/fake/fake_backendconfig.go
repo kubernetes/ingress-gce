@@ -119,7 +119,7 @@ func (c *FakeBackendConfigs) DeleteCollection(options *v1.DeleteOptions, listOpt
 // Patch applies the patch and returns the patched backendConfig.
 func (c *FakeBackendConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *backendconfigv1.BackendConfig, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(backendconfigsResource, c.ns, name, data, subresources...), &backendconfigv1.BackendConfig{})
+		Invokes(testing.NewPatchSubresourceAction(backendconfigsResource, c.ns, name, pt, data, subresources...), &backendconfigv1.BackendConfig{})
 
 	if obj == nil {
 		return nil, err

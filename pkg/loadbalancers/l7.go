@@ -210,13 +210,13 @@ func (l *L7) Cleanup() error {
 
 	tpName := l.namer.TargetProxy(l.Name, utils.HTTPProtocol)
 	klog.V(2).Infof("Deleting target http proxy %v", tpName)
-	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHttpProxy(tpName)); err != nil {
+	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHTTPProxy(tpName)); err != nil {
 		return err
 	}
 
 	tpsName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
 	klog.V(2).Infof("Deleting target https proxy %v", tpsName)
-	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHttpsProxy(tpsName)); err != nil {
+	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHTTPSProxy(tpsName)); err != nil {
 		return err
 	}
 
@@ -243,7 +243,7 @@ func (l *L7) Cleanup() error {
 
 	umName := l.namer.UrlMap(l.Name)
 	klog.V(2).Infof("Deleting URL Map %v", umName)
-	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteUrlMap(umName)); err != nil {
+	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteURLMap(umName)); err != nil {
 		return err
 	}
 

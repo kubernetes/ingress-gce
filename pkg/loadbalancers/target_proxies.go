@@ -31,17 +31,17 @@ const (
 func (l *L7) checkProxy() (err error) {
 	urlMapLink := cloud.NewUrlMapsResourceID("", l.um.Name).ResourcePath()
 	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPProtocol)
-	proxy, _ := l.cloud.GetTargetHttpProxy(proxyName)
+	proxy, _ := l.cloud.GetTargetHTTPProxy(proxyName)
 	if proxy == nil {
 		klog.V(3).Infof("Creating new http proxy for urlmap %v", l.um.Name)
 		newProxy := &compute.TargetHttpProxy{
 			Name:   proxyName,
 			UrlMap: urlMapLink,
 		}
-		if err = l.cloud.CreateTargetHttpProxy(newProxy); err != nil {
+		if err = l.cloud.CreateTargetHTTPProxy(newProxy); err != nil {
 			return err
 		}
-		proxy, err = l.cloud.GetTargetHttpProxy(proxyName)
+		proxy, err = l.cloud.GetTargetHTTPProxy(proxyName)
 		if err != nil {
 			return err
 		}
@@ -51,7 +51,7 @@ func (l *L7) checkProxy() (err error) {
 	if !utils.EqualResourcePaths(proxy.UrlMap, urlMapLink) {
 		klog.V(3).Infof("Proxy %v has the wrong url map, setting %v overwriting %v",
 			proxy.Name, urlMapLink, proxy.UrlMap)
-		if err := l.cloud.SetUrlMapForTargetHttpProxy(proxy, urlMapLink); err != nil {
+		if err := l.cloud.SetURLMapForTargetHTTPProxy(proxy, urlMapLink); err != nil {
 			return err
 		}
 	}
@@ -67,7 +67,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 
 	urlMapLink := cloud.NewUrlMapsResourceID("", l.um.Name).ResourcePath()
 	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
-	proxy, _ := l.cloud.GetTargetHttpsProxy(proxyName)
+	proxy, _ := l.cloud.GetTargetHTTPSProxy(proxyName)
 	if proxy == nil {
 		klog.V(3).Infof("Creating new https proxy for urlmap %q", l.um.Name)
 		newProxy := &compute.TargetHttpsProxy{
@@ -79,11 +79,11 @@ func (l *L7) checkHttpsProxy() (err error) {
 			newProxy.SslCertificates = append(newProxy.SslCertificates, c.SelfLink)
 		}
 
-		if err = l.cloud.CreateTargetHttpsProxy(newProxy); err != nil {
+		if err = l.cloud.CreateTargetHTTPSProxy(newProxy); err != nil {
 			return err
 		}
 
-		proxy, err = l.cloud.GetTargetHttpsProxy(proxyName)
+		proxy, err = l.cloud.GetTargetHTTPSProxy(proxyName)
 		if err != nil {
 			return err
 		}
@@ -94,7 +94,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 	if !utils.EqualResourcePaths(proxy.UrlMap, urlMapLink) {
 		klog.V(3).Infof("Https proxy %v has the wrong url map, setting %v overwriting %v",
 			proxy.Name, urlMapLink, proxy.UrlMap)
-		if err := l.cloud.SetUrlMapForTargetHttpsProxy(proxy, urlMapLink); err != nil {
+		if err := l.cloud.SetURLMapForTargetHTTPSProxy(proxy, urlMapLink); err != nil {
 			return err
 		}
 	}
@@ -106,7 +106,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 		for _, cert := range l.sslCerts {
 			sslCertURLs = append(sslCertURLs, cert.SelfLink)
 		}
-		if err := l.cloud.SetSslCertificateForTargetHttpsProxy(proxy, sslCertURLs); err != nil {
+		if err := l.cloud.SetSslCertificateForTargetHTTPSProxy(proxy, sslCertURLs); err != nil {
 			return err
 		}
 
@@ -117,7 +117,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 
 func (l *L7) getSslCertLinkInUse() ([]string, error) {
 	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
-	proxy, err := l.cloud.GetTargetHttpsProxy(proxyName)
+	proxy, err := l.cloud.GetTargetHTTPSProxy(proxyName)
 	if err != nil {
 		return nil, err
 	}

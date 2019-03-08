@@ -86,7 +86,7 @@ func (l *L7s) Delete(name string) error {
 func (l *L7s) List() ([]string, error) {
 	var names []string
 
-	urlMaps, err := l.cloud.ListUrlMaps()
+	urlMaps, err := l.cloud.ListURLMaps()
 	if err != nil {
 		return nil, err
 	}

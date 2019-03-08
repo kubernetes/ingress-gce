@@ -123,7 +123,7 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
 
-			fakeGCE := gce.FakeGCECloud(gce.DefaultTestClusterValues())
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 			fakeBeName := fmt.Sprintf("be-name-XXX-%d", i)
 
 			(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.SetSecurityPolicyHook = setSecurityPolicyHook

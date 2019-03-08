@@ -27,7 +27,7 @@ import (
 
 // Backends handles CRUD operations for backends.
 type Backends struct {
-	cloud *gce.GCECloud
+	cloud *gce.Cloud
 	namer *utils.Namer
 }
 
@@ -37,7 +37,7 @@ var _ Pool = (*Backends)(nil)
 // NewPool returns a new backend pool.
 // - cloud: implements BackendServices
 // - namer: procudes names for backends.
-func NewPool(cloud *gce.GCECloud, namer *utils.Namer) *Backends {
+func NewPool(cloud *gce.Cloud, namer *utils.Namer) *Backends {
 	return &Backends{
 		cloud: cloud,
 		namer: namer,

@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/ingress-gce/pkg/e2e"
+	_ "k8s.io/ingress-gce/pkg/klog"
 	"k8s.io/ingress-gce/pkg/version"
 	"k8s.io/klog"
 
@@ -62,7 +63,6 @@ func init() {
 	flag.Int64Var(&flags.seed, "seed", -1, "random seed")
 	flag.BoolVar(&flags.destroySandboxes, "destroySandboxes", true, "set to false to leave sandboxed resources for debugging")
 	flag.BoolVar(&flags.handleSIGINT, "handleSIGINT", true, "catch SIGINT to perform clean")
-
 }
 
 // TestMain is the entrypoint for the end-to-end test suite. This is where
