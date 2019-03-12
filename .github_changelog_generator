@@ -4,3 +4,4 @@ enhancement_labels=kind/feature,kind/documentation
 bug_labels=kind/bug
 base=CHANGELOG.md
 unreleased=false
+git_remote=upstream
