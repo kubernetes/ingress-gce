@@ -17,7 +17,7 @@ Follow either of the two links above to access the appropriate CLA and instructi
 
 ## Finding Things That Need Help
 
-If you're new to the project and want to help, but don't know where to start, we have a semi-curated list of issues that should not need deep knowledge of the system. [Have a look and see if anything sounds interesting](https://github.com/kubernetes/ingress/issues?utf8=%E2%9C%93&q=is%3Aopen%20is%3Aissue%20label%3A%22help+wanted%22). Alternatively, read some of the docs on other controllers and try to write your own, file and fix any/all issues that come up, including gaps in documentation!
+If you're new to the project and want to help, but don't know where to start, we have a semi-curated list of issues that need volunteers. Look [here](https://github.com/kubernetes/ingress-gce/issues?q=is%3Aopen+is%3Aissue+label%3A%22help+wanted%22) for issues that need a helping hand and look [here](https://github.com/kubernetes/ingress-gce/issues?q=is%3Aopen+is%3Aissue+label%3A%22good+first+issue%22) for issues that are perfect for a first-time contributor. As always, we are happy to accept documentation fixes!
 
 ## Contributing a Patch
 
