@@ -24,16 +24,26 @@ import (
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 )
 
+// TODO(rramkumar): Per-feature validation should be moved to the feature-specific files (e.g pkg/backends/features/cdn.go)
+
 const (
 	OAuthClientIDKey     = "client_id"
 	OAuthClientSecretKey = "client_secret"
 )
 
-var supportedAffinities = map[string]bool{
-	"NONE":             true,
-	"CLIENT_IP":        true,
-	"GENERATED_COOKIE": true,
-}
+var (
+	supportedAffinities = map[string]bool{
+		"NONE":             true,
+		"CLIENT_IP":        true,
+		"GENERATED_COOKIE": true,
+	}
+
+	supportedHealthChecks = map[string]bool{
+		"HTTP":  true,
+		"HTTPS": true,
+		"HTTP2": true,
+	}
+)
 
 func Validate(kubeClient kubernetes.Interface, beConfig *backendconfigv1beta1.BackendConfig) error {
 	if beConfig == nil {
@@ -45,6 +55,10 @@ func Validate(kubeClient kubernetes.Interface, beConfig *backendconfigv1beta1.Ba
 	}
 
 	if err := validateSessionAffinity(kubeClient, beConfig); err != nil {
+		return err
+	}
+
+	if err := validateHealthCheck(kubeClient, beConfig); err != nil {
 		return err
 	}
 
@@ -99,6 +113,57 @@ func validateSessionAffinity(kubeClient kubernetes.Interface, beConfig *backendc
 		if *beConfig.Spec.SessionAffinity.AffinityCookieTtlSec < 0 || *beConfig.Spec.SessionAffinity.AffinityCookieTtlSec > 86400 {
 			return fmt.Errorf("unsupported AffinityCookieTtlSec: %d, should be between 0 and 86400",
 				*beConfig.Spec.SessionAffinity.AffinityCookieTtlSec)
+		}
+	}
+
+	return nil
+}
+
+// TODO(rramkumar): When we migrate to kubebuilder this sort of validation will be done in the Go type definition.
+func validateHealthCheck(kubeClient kubernetes.Interface, beConfig *backendconfigv1beta1.BackendConfig) error {
+	if beConfig.Spec.HealthCheck == nil {
+		return nil
+	}
+
+	hcType := beConfig.Spec.HealthCheck.Type
+	if hcType != nil  {
+		if _, ok := supportedHealthChecks[*hcType]; !ok {
+			return fmt.Errorf("unsupported health check type: %s", *hcType)
+		}
+	}
+
+	port := beConfig.Spec.HealthCheck.Port
+	if port != nil {
+		if *port <= 0 || *port > 65535 {
+			return fmt.Errorf("health check port must be between 0 and 65535, got %d", *port)
+		}
+	}
+
+	healthyThreshold := beConfig.Spec.HealthCheck.HealthyThreshold
+	if healthyThreshold != nil {
+		if *healthyThreshold <= 0 || *healthyThreshold > 10 {
+			return fmt.Errorf("health check healthiness threshold must be greater than 0 and less than 11, got %d", *healthyThreshold)
+		}
+	}
+
+	unhealthyThreshold := beConfig.Spec.HealthCheck.UnhealthyThreshold
+	if unhealthyThreshold != nil {
+		if *unhealthyThreshold <= 0 || *unhealthyThreshold > 10 {
+			return fmt.Errorf("health check unhealthiness threshold must be greater than 0 and less than 11, got %d", *unhealthyThreshold)
+		}
+	}
+
+	timeout := beConfig.Spec.HealthCheck.TimeoutSec
+	if timeout != nil {
+		if *timeout <= 0 {
+			return fmt.Errorf("health check timeout %d must be greater than 0", *timeout)
+		}
+	}
+
+	checkInterval := beConfig.Spec.HealthCheck.CheckIntervalSec
+	if checkInterval != nil {
+		if *checkInterval <= 0 || *checkInterval > 300 {
+			return fmt.Errorf("health check interval must be greater than 0 and less than or equal to 300, got %d", *checkInterval)
 		}
 	}
 

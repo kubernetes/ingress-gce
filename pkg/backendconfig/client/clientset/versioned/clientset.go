@@ -1,5 +1,5 @@
 /*
-Copyright 2018 The Kubernetes Authors.
+Copyright 2019 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,8 +30,6 @@ type Interface interface {
 	Discovery() discovery.DiscoveryInterface
 	CloudV1beta1() cloudv1beta1.CloudV1beta1Interface
 	CloudV1() cloudv1.CloudV1Interface
-	// Deprecated: please explicitly pick a version if possible.
-	Cloud() cloudv1.CloudV1Interface
 }
 
 // Clientset contains the clients for groups. Each group has exactly one
@@ -49,12 +47,6 @@ func (c *Clientset) CloudV1beta1() cloudv1beta1.CloudV1beta1Interface {
 
 // CloudV1 retrieves the CloudV1Client
 func (c *Clientset) CloudV1() cloudv1.CloudV1Interface {
-	return c.cloudV1
-}
-
-// Deprecated: Cloud retrieves the default version of CloudClient.
-// Please explicitly pick a version.
-func (c *Clientset) Cloud() cloudv1.CloudV1Interface {
 	return c.cloudV1
 }
 

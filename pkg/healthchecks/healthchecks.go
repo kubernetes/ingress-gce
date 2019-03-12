@@ -28,6 +28,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
+	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
@@ -102,6 +103,13 @@ func (h *HealthChecks) New(sp utils.ServicePort) *HealthCheck {
 	hc.Name = sp.BackendName(h.namer)
 	hc.Port = sp.NodePort
 	hc.RequestPath = h.pathFromSvcPort(sp)
+
+	if sp.BackendConfig != nil {
+		// Overwrite default settings with BackendConfig settings.
+		applyBackendConfig(hc, sp.BackendConfig)
+		klog.V(2).Info("Applied health check settings from BackendConfig")
+	}
+
 	return hc
 }
 
@@ -126,6 +134,7 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 		return existingHC.SelfLink, err
 	}
 
+	// TODO(rramkumar): This logic should be deprecated.
 	if existingHC.RequestPath != hc.RequestPath {
 		// TODO: reconcile health checks, and compare headers interval etc.
 		// Currently Ingress doesn't expose all the health check params
@@ -276,7 +285,7 @@ func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthChe
 	}
 }
 
-// DefaultHealthCheck simply returns the default health check.
+// DefaultNEGHealthCheck simply returns the default NEG-based health check.
 func DefaultNEGHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 	httpSettings := computealpha.HTTPHealthCheck{PortSpecification: UseServingPortSpecification}
 
@@ -297,6 +306,41 @@ func DefaultNEGHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 		HTTPHealthCheck: httpSettings,
 		HealthCheck:     hcSettings,
 		ForNEG:          true,
+	}
+}
+
+// applyBackendConfig applies health check settings from a BackendConfig
+func applyBackendConfig(hc *HealthCheck, bc *backendconfigv1beta1.BackendConfig) {
+	if bc == nil || hc == nil {
+		return
+	}
+
+	hcConfig := bc.Spec.HealthCheck
+	if hcConfig == nil {
+		return
+	}
+
+	if hcConfig.CheckIntervalSec != nil {
+		hc.CheckIntervalSec = *(hcConfig.CheckIntervalSec)
+	}
+	if hcConfig.TimeoutSec != nil {
+		hc.TimeoutSec = *(hcConfig.TimeoutSec)
+	}
+	if hcConfig.HealthyThreshold != nil {
+		hc.HealthyThreshold = *(hcConfig.HealthyThreshold)
+	}
+	if hcConfig.UnhealthyThreshold != nil {
+		hc.UnhealthyThreshold = *(hcConfig.UnhealthyThreshold)
+	}
+	if hcConfig.Type != nil {
+		// TODO(rramkumar): Revisit this.
+		hc.Type = *(hcConfig.Type)
+	}
+	if hcConfig.Port != nil {
+		hc.Port = *(hcConfig.Port)
+	}
+	if hcConfig.RequestPath != nil {
+		hc.RequestPath = *(hcConfig.RequestPath)
 	}
 }
 
