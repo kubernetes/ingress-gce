@@ -51,15 +51,7 @@ import (
 func main() {
 	flags.Register()
 	rand.Seed(time.Now().UTC().UnixNano())
-
 	flag.Parse()
-	if flags.F.Verbose {
-		flag.Set("v", "3")
-	}
-
-	// TODO: remove this when we do a release so the -logtostderr can be
-	// used as a proper argument.
-	flag.Lookup("logtostderr").Value.Set("true")
 
 	if flags.F.Version {
 		fmt.Printf("Controller version: %s\n", version.Version)
