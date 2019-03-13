@@ -27,6 +27,7 @@ import (
 
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
@@ -306,38 +307,51 @@ func (v *IngressValidator) checkPath(ctx context.Context, scheme, host, path str
 	}
 
 	klog.V(3).Infof("Request is %+v", *req)
-
-	resp, err := v.client.Do(req)
-	if err != nil && err != http.ErrUseLastResponse {
-		klog.Infof("Ingress %s/%s: %v", v.ing.Namespace, v.ing.Name, err)
-		return err
+	// featuresToCheck contains the indexes of FeatureValidators
+	featuresToCheck := sets.Int{}
+	for i := range v.features {
+		featuresToCheck.Insert(i)
 	}
-
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		klog.Infof("Ingress %s/%s reading body: %v", v.ing.Namespace, v.ing.Name, err)
-		return err
-	}
-
-	klog.V(2).Infof("Ingress %s/%s GET %q: %d (%d bytes)", v.ing.Namespace, v.ing.Name, url, resp.StatusCode, len(body))
-
 	doStandardCheck := true
-	// Perform the checks for each of the features.
-	for _, f := range v.features {
-		action, err := f.CheckResponse(host, path, resp, body)
-		if err != nil {
+	// validator will keep sending requests if there are still features that has not complete validation
+	for featuresToCheck.Len() > 0 {
+		resp, err := v.client.Do(req)
+		if err != nil && err != http.ErrUseLastResponse {
+			klog.Infof("Ingress %s/%s: %v", v.ing.Namespace, v.ing.Name, err)
 			return err
 		}
-		switch action {
-		case CheckResponseContinue:
-		case CheckResponseSkip:
-			doStandardCheck = false
-		}
-	}
 
-	if doStandardCheck && resp.StatusCode != 200 {
-		return fmt.Errorf("ingress %s/%s: GET %q: %d, want 200", v.ing.Namespace, v.ing.Name, url, resp.StatusCode)
+		defer resp.Body.Close()
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			klog.Infof("Ingress %s/%s reading body: %v", v.ing.Namespace, v.ing.Name, err)
+			return err
+		}
+
+		klog.V(2).Infof("Ingress %s/%s GET %q: %d (%d bytes)", v.ing.Namespace, v.ing.Name, url, resp.StatusCode, len(body))
+
+		// Perform the checks for each of the features.
+		for _, i := range featuresToCheck.List() {
+			f := v.features[i]
+			action, err := f.CheckResponse(host, path, resp, body)
+			if err != nil {
+				return err
+			}
+			switch action {
+			// do not remove the feature from featuresToCheck
+			// repeat the request until the FeatureValidator allows it to continue
+			case CheckResponseRepeat:
+			case CheckResponseContinue:
+				featuresToCheck.Delete(i)
+			case CheckResponseSkip:
+				featuresToCheck.Delete(i)
+				doStandardCheck = false
+			}
+		}
+
+		if doStandardCheck && resp.StatusCode != 200 {
+			return fmt.Errorf("ingress %s/%s: GET %q: %d, want 200", v.ing.Namespace, v.ing.Name, url, resp.StatusCode)
+		}
 	}
 
 	return nil

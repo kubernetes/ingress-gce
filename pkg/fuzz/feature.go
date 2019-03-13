@@ -48,6 +48,8 @@ const (
 	CheckResponseContinue CheckResponseAction = iota
 	// CheckResponseSkip skips the standard response checking.
 	CheckResponseSkip CheckResponseAction = iota
+	// CheckResponseRepeat ask the validator to send request repeatedly
+	CheckResponseRepeat CheckResponseAction = iota
 )
 
 // FeatureValidator is a validator for the Feature. It has various hooks to the
