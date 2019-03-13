@@ -75,7 +75,6 @@ var (
 		IngressClass              string
 		KubeConfigFile            string
 		ResyncPeriod              time.Duration
-		Verbose                   bool
 		Version                   bool
 		WatchNamespace            string
 		NodePortRanges            PortRanges
