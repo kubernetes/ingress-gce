@@ -118,3 +118,78 @@ func TestBasic(t *testing.T) {
 		})
 	}
 }
+
+// TestBasicEdge exercises some basic edge cases that previously have caused bugs.
+func TestBasicEdge(t *testing.T) {
+	t.Parallel()
+
+	port80 := intstr.FromInt(80)
+
+	for _, tc := range []struct {
+		desc string
+		ing  *v1beta1.Ingress
+
+		numForwardingRules int
+		numBackendServices int
+	}{
+		{
+			desc: "long ingress name",
+			ing: fuzz.NewIngressBuilder("", "long-ingress-name", "").
+				DefaultBackend("service-1", port80).
+				Build(),
+			numForwardingRules: 1,
+			numBackendServices: 1,
+		},
+	} {
+		tc := tc // Capture tc as we are running this in parallel.
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Parallel()
+
+			ctx := context.Background()
+
+			_, _, err := e2e.CreateEchoService(s, "service-1", nil)
+			if err != nil {
+				t.Fatalf("error creating echo service: %v", err)
+			}
+			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
+
+			if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(tc.ing); err != nil {
+				t.Fatalf("error creating Ingress spec: %v", err)
+			}
+			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
+
+			ing, err := e2e.WaitForIngress(s, tc.ing, nil)
+			if err != nil {
+				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+			}
+			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
+
+			// Perform whitebox testing.
+			if len(ing.Status.LoadBalancer.Ingress) < 1 {
+				t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
+			}
+
+			vip := ing.Status.LoadBalancer.Ingress[0].IP
+			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ing.Name, vip)
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+
+			// Do some cursory checks on the GCP objects.
+			if len(gclb.ForwardingRule) != tc.numForwardingRules {
+				t.Errorf("got %d fowarding rules, want %d;\n%s", len(gclb.ForwardingRule), tc.numForwardingRules, pretty.Sprint(gclb.ForwardingRule))
+			}
+			if len(gclb.BackendService) != tc.numBackendServices {
+				t.Errorf("got %d backend services, want %d;\n%s", len(gclb.BackendService), tc.numBackendServices, pretty.Sprint(gclb.BackendService))
+			}
+
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: true,
+			}
+			if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, deleteOptions); err != nil {
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+			}
+		})
+	}
+}
