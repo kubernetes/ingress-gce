@@ -188,7 +188,7 @@ func TestGC(t *testing.T) {
 		}
 
 		// check if the total number of url maps are expected
-		urlMaps, _ := l7sPool.cloud.ListURLMaps()
+		urlMaps, _ := l7sPool.cloud.ListUrlMaps()
 		if len(urlMaps) != len(tc.expectLBs)+len(otherKeys) {
 			t.Errorf("For case %q, expect %d urlmaps, but got %d.", tc.desc, len(tc.expectLBs)+len(otherKeys), len(urlMaps))
 		}
@@ -227,8 +227,8 @@ func TestDoNotGCWantedLB(t *testing.T) {
 	}
 
 	numOfExtraUrlMap := 2
-	l7sPool.cloud.CreateURLMap(&compute.UrlMap{Name: "random--name1"})
-	l7sPool.cloud.CreateURLMap(&compute.UrlMap{Name: "k8s-random-random--1111111111111111"})
+	l7sPool.cloud.CreateUrlMap(&compute.UrlMap{Name: "random--name1"})
+	l7sPool.cloud.CreateUrlMap(&compute.UrlMap{Name: "k8s-random-random--1111111111111111"})
 
 	for _, tc := range testCases {
 		createFakeLoadbalancer(l7sPool.cloud, namer, tc.key)
@@ -240,7 +240,7 @@ func TestDoNotGCWantedLB(t *testing.T) {
 		if err := checkFakeLoadBalancer(l7sPool.cloud, namer, tc.key, true); err != nil {
 			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
 		}
-		urlMaps, _ := l7sPool.cloud.ListURLMaps()
+		urlMaps, _ := l7sPool.cloud.ListUrlMaps()
 		if len(urlMaps) != 1+numOfExtraUrlMap {
 			t.Errorf("For case %q, expect %d urlmaps, but got %d.", tc.desc, 1+numOfExtraUrlMap, len(urlMaps))
 		}
@@ -286,7 +286,7 @@ func TestGCToLeakLB(t *testing.T) {
 
 func newTestLoadBalancerPool() LoadBalancerPool {
 	namer := utils.NewNamer(testClusterName, "fw1")
-	fakeGCECloud := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	fakeGCECloud := gce.FakeGCECloud(gce.DefaultTestClusterValues())
 	ctx := &context.ControllerContext{}
 	return NewLoadBalancerPool(fakeGCECloud, namer, ctx)
 }
@@ -294,16 +294,16 @@ func newTestLoadBalancerPool() LoadBalancerPool {
 func createFakeLoadbalancer(cloud LoadBalancers, namer *utils.Namer, key string) {
 	lbName := namer.LoadBalancer(key)
 	cloud.CreateGlobalForwardingRule(&compute.ForwardingRule{Name: namer.ForwardingRule(lbName, utils.HTTPProtocol)})
-	cloud.CreateTargetHTTPProxy(&compute.TargetHttpProxy{Name: namer.TargetProxy(lbName, utils.HTTPProtocol)})
-	cloud.CreateURLMap(&compute.UrlMap{Name: namer.UrlMap(lbName)})
+	cloud.CreateTargetHttpProxy(&compute.TargetHttpProxy{Name: namer.TargetProxy(lbName, utils.HTTPProtocol)})
+	cloud.CreateUrlMap(&compute.UrlMap{Name: namer.UrlMap(lbName)})
 	cloud.ReserveGlobalAddress(&compute.Address{Name: namer.ForwardingRule(lbName, utils.HTTPProtocol)})
 }
 
 func removeFakeLoadBalancer(cloud LoadBalancers, namer *utils.Namer, key string) {
 	lbName := namer.LoadBalancer(key)
 	cloud.DeleteGlobalForwardingRule(namer.ForwardingRule(lbName, utils.HTTPProtocol))
-	cloud.DeleteTargetHTTPProxy(namer.TargetProxy(lbName, utils.HTTPProtocol))
-	cloud.DeleteURLMap(namer.UrlMap(lbName))
+	cloud.DeleteTargetHttpProxy(namer.TargetProxy(lbName, utils.HTTPProtocol))
+	cloud.DeleteUrlMap(namer.UrlMap(lbName))
 	cloud.DeleteGlobalAddress(namer.ForwardingRule(lbName, utils.HTTPProtocol))
 }
 
@@ -317,14 +317,14 @@ func checkFakeLoadBalancer(cloud LoadBalancers, namer *utils.Namer, key string, 
 	if !expectPresent && err.(*googleapi.Error).Code != http.StatusNotFound {
 		return fmt.Errorf("expect GlobalForwardingRule %q to not present: %v", key, err)
 	}
-	_, err = cloud.GetTargetHTTPProxy(namer.TargetProxy(lbName, utils.HTTPProtocol))
+	_, err = cloud.GetTargetHttpProxy(namer.TargetProxy(lbName, utils.HTTPProtocol))
 	if expectPresent && err != nil {
 		return err
 	}
 	if !expectPresent && err.(*googleapi.Error).Code != http.StatusNotFound {
 		return fmt.Errorf("expect TargetHTTPProxy %q to not present: %v", key, err)
 	}
-	_, err = cloud.GetURLMap(namer.UrlMap(lbName))
+	_, err = cloud.GetUrlMap(namer.UrlMap(lbName))
 	if expectPresent && err != nil {
 		return err
 	}
