@@ -556,19 +556,15 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress, urlMap
 	var tls []*loadbalancers.TLSCerts
 
 	annotations := annotations.FromIngress(ing)
-	// Load the TLS cert from the API Spec if it is not specified in the annotation.
-	// TODO: enforce this with validation.
-	if annotations.UseNamedTLS() == "" {
-		tls, err = lbc.tlsLoader.Load(ing)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				// TODO: this path should be removed when external certificate managers migrate to a better solution.
-				const msg = "Could not find TLS certificates. Continuing setup for the load balancer to serve HTTP. Note: this behavior is deprecated and will be removed in a future version of ingress-gce"
-				lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", msg)
-			} else {
-				glog.Errorf("Could not get certificates for ingress %s/%s: %v", ing.Namespace, ing.Name, err)
-				return nil, err
-			}
+	tls, err = lbc.tlsLoader.Load(ing)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// TODO: this path should be removed when external certificate managers migrate to a better solution.
+			const msg = "Could not find TLS certificates. Continuing setup for the load balancer to serve HTTP. Note: this behavior is deprecated and will be removed in a future version of ingress-gce"
+			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", msg)
+		} else {
+			glog.Errorf("Could not get certificates for ingress %s/%s: %v", ing.Namespace, ing.Name, err)
+			return nil, err
 		}
 	}
 

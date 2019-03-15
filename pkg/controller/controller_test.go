@@ -28,11 +28,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/test"
+	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
@@ -348,5 +350,38 @@ func TestEnsureMCIngress(t *testing.T) {
 		t.Errorf("Ingress.Annotations does not contain key %q", igAnnotationKey)
 	} else if val != wantVal {
 		t.Errorf("Ingress.Annotation %q = %q, want %q", igAnnotationKey, val, wantVal)
+	}
+}
+
+// TestToRuntimeInfoCerts asserts that both pre-shared and secret-based certs
+// are included in the RuntimeInfo.
+func TestToRuntimeInfoCerts(t *testing.T) {
+	lbc := newLoadBalancerController()
+	tlsCerts := []*loadbalancers.TLSCerts{&loadbalancers.TLSCerts{Key: "key", Cert: "cert", Name: "tlsCert"}}
+	fakeLoader := &tls.FakeTLSSecretLoader{FakeCerts: map[string]*loadbalancers.TLSCerts{"tlsCert": tlsCerts[0]}}
+	lbc.tlsLoader = fakeLoader
+	presharedCertName := "preSharedCert"
+	ing := &extensions.Ingress{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Annotations: map[string]string{annotations.PreSharedCertKey: presharedCertName},
+		},
+		Spec: extensions.IngressSpec{
+			TLS: []extensions.IngressTLS{
+				extensions.IngressTLS{
+					SecretName: tlsCerts[0].Name,
+				},
+			},
+		},
+	}
+	urlMap := &utils.GCEURLMap{}
+	lbInfo, err := lbc.toRuntimeInfo(ing, urlMap)
+	if err != nil {
+		t.Fatalf("lbc.toRuntimeInfo() = err %v", err)
+	}
+	if lbInfo.TLSName != presharedCertName {
+		t.Errorf("lbInfo.TLSName = %v, want %v", lbInfo.TLSName, presharedCertName)
+	}
+	if len(lbInfo.TLS) != 1 || lbInfo.TLS[0] != tlsCerts[0] {
+		t.Errorf("lbInfo.TLS = %v, want %v", lbInfo.TLS, tlsCerts)
 	}
 }
