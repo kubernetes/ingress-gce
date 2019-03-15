@@ -55,6 +55,7 @@ func (l *L7) checkSSLCert() error {
 		errs = append(errs, err)
 	}
 	l.sslCerts = append(l.sslCerts, secretsSslCerts...)
+	glog.V(2).Infof("Using %v pre-shared certificates and %v certificates from secrets", len(preSharedSslCerts), len(secretsSslCerts))
 	if len(errs) > 0 {
 		return utils.JoinErrs(errs)
 	}
