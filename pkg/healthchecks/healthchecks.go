@@ -62,6 +62,11 @@ const (
 	// backends, the port or named port specified in the Backend Service is
 	// used for health checking.
 	UseServingPortSpecification = "USE_SERVING_PORT"
+
+	// TODO: revendor the GCE API go client so that this error will not be hit.
+	newHealthCheckErrorMessageTemplate = "the %v health check configuration on the existing health check %v is nil. " +
+		"This is usually caused by an application protocol change on the k8s service spec. " +
+		"Please revert the change on application protocol to avoid this error message."
 )
 
 // HealthChecks manages health checks.
@@ -241,7 +246,10 @@ func (h *HealthChecks) Get(name string, version meta.Version) (*HealthCheck, err
 	default:
 		return nil, fmt.Errorf("unknown version %v", version)
 	}
-	return NewHealthCheck(hc), err
+	if err != nil {
+		return nil, err
+	}
+	return NewHealthCheck(hc)
 }
 
 // DefaultHealthCheck simply returns the default health check.
@@ -304,18 +312,30 @@ type HealthCheck struct {
 }
 
 // NewHealthCheck creates a HealthCheck which abstracts nested structs away
-func NewHealthCheck(hc *computealpha.HealthCheck) *HealthCheck {
+func NewHealthCheck(hc *computealpha.HealthCheck) (*HealthCheck, error) {
 	if hc == nil {
-		return nil
+		return nil, nil
 	}
-
 	v := &HealthCheck{HealthCheck: *hc}
+	var err error
 	switch annotations.AppProtocol(hc.Type) {
 	case annotations.ProtocolHTTP:
+		if hc.HttpHealthCheck == nil {
+			err = fmt.Errorf(newHealthCheckErrorMessageTemplate, annotations.ProtocolHTTP, hc.Name)
+			return nil, err
+		}
 		v.HTTPHealthCheck = *hc.HttpHealthCheck
 	case annotations.ProtocolHTTPS:
+		if hc.HttpsHealthCheck == nil {
+			err = fmt.Errorf(newHealthCheckErrorMessageTemplate, annotations.ProtocolHTTPS, hc.Name)
+			return nil, err
+		}
 		v.HTTPHealthCheck = computealpha.HTTPHealthCheck(*hc.HttpsHealthCheck)
 	case annotations.ProtocolHTTP2:
+		if hc.Http2HealthCheck == nil {
+			err = fmt.Errorf(newHealthCheckErrorMessageTemplate, annotations.ProtocolHTTP2, hc.Name)
+			return nil, err
+		}
 		v.HTTPHealthCheck = computealpha.HTTPHealthCheck(*hc.Http2HealthCheck)
 	}
 
@@ -325,7 +345,7 @@ func NewHealthCheck(hc *computealpha.HealthCheck) *HealthCheck {
 	v.HealthCheck.HttpsHealthCheck = nil
 	v.HealthCheck.Http2HealthCheck = nil
 
-	return v
+	return v, err
 }
 
 // Protocol returns the type cased to AppProtocol
