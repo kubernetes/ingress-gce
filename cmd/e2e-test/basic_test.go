@@ -119,8 +119,8 @@ func TestBasic(t *testing.T) {
 	}
 }
 
-// TestBasicEdge exercises some basic edge cases that previously have caused bugs.
-func TestBasicEdge(t *testing.T) {
+// TestEdge exercises some basic edge cases that previously have caused bugs.
+func TestEdge(t *testing.T) {
 	t.Parallel()
 
 	port80 := intstr.FromInt(80)
