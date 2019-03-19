@@ -83,22 +83,20 @@ func main() {
 	}
 
 	var backendConfigClient backendconfigclient.Interface
-	if flags.F.EnableBackendConfig {
-		crdClient, err := crdclient.NewForConfig(kubeConfig)
-		if err != nil {
-			klog.Fatalf("Failed to create kubernetes CRD client: %v", err)
-		}
-		// TODO(rramkumar): Reuse this CRD handler for other CRD's coming.
-		crdHandler := crd.NewCRDHandler(crdClient)
-		backendConfigCRDMeta := backendconfig.CRDMeta()
-		if _, err := crdHandler.EnsureCRD(backendConfigCRDMeta); err != nil {
-			klog.Fatalf("Failed to ensure BackendConfig CRD: %v", err)
-		}
+	crdClient, err := crdclient.NewForConfig(kubeConfig)
+	if err != nil {
+		klog.Fatalf("Failed to create kubernetes CRD client: %v", err)
+	}
+	// TODO(rramkumar): Reuse this CRD handler for other CRD's coming.
+	crdHandler := crd.NewCRDHandler(crdClient)
+	backendConfigCRDMeta := backendconfig.CRDMeta()
+	if _, err := crdHandler.EnsureCRD(backendConfigCRDMeta); err != nil {
+		klog.Fatalf("Failed to ensure BackendConfig CRD: %v", err)
+	}
 
-		backendConfigClient, err = backendconfigclient.NewForConfig(kubeConfig)
-		if err != nil {
-			klog.Fatalf("Failed to create BackendConfig client: %v", err)
-		}
+	backendConfigClient, err = backendconfigclient.NewForConfig(kubeConfig)
+	if err != nil {
+		klog.Fatalf("Failed to create BackendConfig client: %v", err)
 	}
 
 	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, firewalls.DefaultFirewallName)
