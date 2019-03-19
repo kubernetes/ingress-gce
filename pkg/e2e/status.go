@@ -18,6 +18,7 @@ package e2e
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"time"
 
 	"k8s.io/api/core/v1"
@@ -91,6 +92,12 @@ func NewStatusManager(f *Framework) *StatusManager {
 
 func (sm *StatusManager) init() error {
 	var err error
+
+	// Optimistically delete a leftover config map
+	if err := sm.f.Clientset.Core().ConfigMaps("default").Delete(sm.cm.Name, &metav1.DeleteOptions{}); !errors.IsNotFound(err) {
+		klog.V(3).Infof("Error deleting config map %s: %v", sm.cm.Name, err)
+	}
+
 	sm.cm, err = sm.f.Clientset.Core().ConfigMaps("default").Create(sm.cm)
 	if err != nil {
 		return fmt.Errorf("error creating ConfigMap: %v", err)
