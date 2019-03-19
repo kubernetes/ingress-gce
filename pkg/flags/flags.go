@@ -78,7 +78,6 @@ var (
 		Version                   bool
 		WatchNamespace            string
 		NodePortRanges            PortRanges
-		EnableBackendConfig       bool
 		NegGCPeriod               time.Duration
 		NegSyncerType             string
 		FinalizerAdd              bool
