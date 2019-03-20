@@ -29,7 +29,9 @@ done
 
 if [[ -z "$PROJECT" ]]; then
   echo "Error: could not get Compute project name from the metadata server"
-  exit 1
+  echo "RESULT: 2"
+  echo '--- END ---'
+  exit
 fi
 
 echo
