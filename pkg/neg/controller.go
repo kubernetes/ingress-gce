@@ -273,7 +273,7 @@ func (c *Controller) processService(key string) error {
 	var negAnnotation *annotations.NegAnnotation
 	if exists {
 		service = svc.(*apiv1.Service)
-		foundNEGAnnotation, negAnnotation, err = annotations.FromService(service).NEGAnnotation()
+		negAnnotation, foundNEGAnnotation, err = annotations.FromService(service).NEGAnnotation()
 		if err != nil {
 			return err
 		}

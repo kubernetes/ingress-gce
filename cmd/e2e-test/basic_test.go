@@ -72,7 +72,7 @@ func TestBasic(t *testing.T) {
 
 			ctx := context.Background()
 
-			_, _, err := e2e.CreateEchoService(s, "service-1", nil)
+			_, err := e2e.CreateEchoService(s, "service-1", nil)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
@@ -147,7 +147,7 @@ func TestEdge(t *testing.T) {
 
 			ctx := context.Background()
 
-			_, _, err := e2e.CreateEchoService(s, "service-1", nil)
+			_, err := e2e.CreateEchoService(s, "service-1", nil)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}

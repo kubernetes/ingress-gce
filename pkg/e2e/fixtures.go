@@ -19,7 +19,11 @@ package e2e
 // Put common test fixtures (e.g. resources to be created) here.
 
 import (
+	"fmt"
+	"reflect"
+
 	"k8s.io/api/core/v1"
+	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/klog"
@@ -29,8 +33,33 @@ const (
 	echoheadersImage = "gcr.io/k8s-ingress-image-push/ingress-gce-echo-amd64:master"
 )
 
-// CreateEchoService creates the pod and service serving echoheaders.
-func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (*v1.Pod, *v1.Service, error) {
+// CreateEchoService creates the pod and service serving echoheaders
+// Todo: (shance) remove this and replace uses with EnsureEchoService()
+func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (*v1.Service, error) {
+	return EnsureEchoService(s, name, annotations, v1.ProtocolTCP, 80, v1.ServiceTypeNodePort)
+}
+
+// Ensures that the Echo service with the given description is set up
+func EnsureEchoService(s *Sandbox, name string, annotations map[string]string,
+	protocol v1.Protocol, port int32, svcType v1.ServiceType) (*v1.Service, error) {
+
+	expectedSvc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Annotations: annotations,
+		},
+		Spec: v1.ServiceSpec{
+			Ports: []v1.ServicePort{{
+				Name:       "web",
+				Protocol:   protocol,
+				Port:       port,
+				TargetPort: intstr.FromString("web"),
+			}},
+			Selector: map[string]string{"app": name},
+			Type:     svcType,
+		},
+	}
+
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
@@ -46,32 +75,31 @@ func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (
 			},
 		},
 	}
-	service := &v1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        name,
-			Annotations: annotations,
-		},
-		Spec: v1.ServiceSpec{
-			Ports: []v1.ServicePort{{
-				Name:       "web",
-				Protocol:   v1.ProtocolTCP,
-				Port:       80,
-				TargetPort: intstr.FromString("web"),
-			}},
-			Selector: map[string]string{"app": name},
-			Type:     v1.ServiceTypeNodePort,
-		},
-	}
-	var err error
-	if pod, err = s.f.Clientset.Core().Pods(s.Namespace).Create(pod); err != nil {
-		return nil, nil, err
-	}
-	if service, err = s.f.Clientset.Core().Services(s.Namespace).Create(service); err != nil {
-		return nil, nil, err
-	}
-	klog.V(2).Infof("Echo service %q:%q created", s.Namespace, name)
 
-	return pod, service, nil
+	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(name, metav1.GetOptions{})
+
+	if svc == nil || err != nil {
+		if pod, err = s.f.Clientset.Core().Pods(s.Namespace).Create(pod); err != nil {
+			return nil, err
+		}
+		if svc, err = s.f.Clientset.Core().Services(s.Namespace).Create(expectedSvc); err != nil {
+			return nil, err
+		}
+		return svc, err
+	}
+
+	if !reflect.DeepEqual(svc.Spec, expectedSvc.Spec) {
+		// Update the fields individually since we don't want to override everything
+		svc.ObjectMeta.Annotations = expectedSvc.ObjectMeta.Annotations
+		svc.Spec.Ports = expectedSvc.Spec.Ports
+		svc.Spec.Type = expectedSvc.Spec.Type
+
+		if svc, err := s.f.Clientset.Core().Services(s.Namespace).Update(svc); err != nil {
+			return nil, fmt.Errorf("svc: %v\nexpectedSvc: %v\nerr: %v", svc, expectedSvc, err)
+		}
+	}
+
+	return svc, nil
 }
 
 // CreateSecret creates a secret from the given data.
@@ -89,4 +117,21 @@ func CreateSecret(s *Sandbox, name string, data map[string][]byte) (*v1.Secret, 
 	klog.V(2).Infof("Secret %q:%q created", s.Namespace, name)
 
 	return secret, nil
+}
+
+func EnsureIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
+	currentIng, err := s.f.Clientset.Extensions().Ingresses(s.Namespace).Get(ing.ObjectMeta.Name, metav1.GetOptions{})
+
+	if currentIng == nil || err != nil {
+		ing, err := s.f.Clientset.Extensions().Ingresses(s.Namespace).Create(ing)
+		return ing, err
+	}
+
+	// Update ingress spec if they are not equal
+	if !reflect.DeepEqual(ing.Spec, currentIng.Spec) {
+		ing, err = s.f.Clientset.Extensions().Ingresses(s.Namespace).Update(ing)
+		return ing, err
+	}
+
+	return currentIng, nil
 }

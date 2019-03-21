@@ -36,6 +36,10 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+const (
+	NegResourceType = "networkEndpointGroup"
+)
+
 // ForwardingRule is a union of the API version types.
 type ForwardingRule struct {
 	GA    *compute.ForwardingRule
@@ -71,26 +75,34 @@ type BackendService struct {
 	Beta  *computebeta.BackendService
 }
 
+// NetworkEndpointGroup is a union of the API version types.
+type NetworkEndpointGroup struct {
+	Alpha *computealpha.NetworkEndpointGroup
+	Beta  *computebeta.NetworkEndpointGroup
+}
+
 // GCLB contains the resources for a load balancer.
 type GCLB struct {
 	VIP string
 
-	ForwardingRule   map[meta.Key]*ForwardingRule
-	TargetHTTPProxy  map[meta.Key]*TargetHTTPProxy
-	TargetHTTPSProxy map[meta.Key]*TargetHTTPSProxy
-	URLMap           map[meta.Key]*URLMap
-	BackendService   map[meta.Key]*BackendService
+	ForwardingRule       map[meta.Key]*ForwardingRule
+	TargetHTTPProxy      map[meta.Key]*TargetHTTPProxy
+	TargetHTTPSProxy     map[meta.Key]*TargetHTTPSProxy
+	URLMap               map[meta.Key]*URLMap
+	BackendService       map[meta.Key]*BackendService
+	NetworkEndpointGroup map[meta.Key]*NetworkEndpointGroup
 }
 
 // NewGCLB returns an empty GCLB.
 func NewGCLB(vip string) *GCLB {
 	return &GCLB{
-		VIP:              vip,
-		ForwardingRule:   map[meta.Key]*ForwardingRule{},
-		TargetHTTPProxy:  map[meta.Key]*TargetHTTPProxy{},
-		TargetHTTPSProxy: map[meta.Key]*TargetHTTPSProxy{},
-		URLMap:           map[meta.Key]*URLMap{},
-		BackendService:   map[meta.Key]*BackendService{},
+		VIP:                  vip,
+		ForwardingRule:       map[meta.Key]*ForwardingRule{},
+		TargetHTTPProxy:      map[meta.Key]*TargetHTTPProxy{},
+		TargetHTTPSProxy:     map[meta.Key]*TargetHTTPSProxy{},
+		URLMap:               map[meta.Key]*URLMap{},
+		BackendService:       map[meta.Key]*BackendService{},
+		NetworkEndpointGroup: map[meta.Key]*NetworkEndpointGroup{},
 	}
 }
 
@@ -101,7 +113,7 @@ type GCLBDeleteOptions struct {
 	SkipDefaultBackend bool
 }
 
-// CheckResourceDeletion checks the existance of the resources. Returns nil if
+// CheckResourceDeletion checks the existence of the resources. Returns nil if
 // all of the associated resources no longer exist.
 func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options *GCLBDeleteOptions) error {
 	var resources []meta.Key
@@ -162,6 +174,16 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 			resources = append(resources, k)
 		}
 	}
+	for k := range g.NetworkEndpointGroup {
+		_, err := c.BetaNetworkEndpointGroups().Get(ctx, &k)
+		if err != nil {
+			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+				return err
+			}
+		} else {
+			resources = append(resources, k)
+		}
+	}
 
 	if len(resources) != 0 {
 		var s []string
@@ -169,6 +191,32 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 			s = append(s, r.String())
 		}
 		return fmt.Errorf("resources still exist (%s)", strings.Join(s, ", "))
+	}
+
+	return nil
+}
+
+// Check that all NEGs associated with the GCLB have been deleted
+func (g *GCLB) CheckNEGDeletion(ctx context.Context, c cloud.Cloud, options *GCLBDeleteOptions) error {
+	var resources []meta.Key
+
+	for k := range g.NetworkEndpointGroup {
+		_, err := c.BetaNetworkEndpointGroups().Get(ctx, &k)
+		if err != nil {
+			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+				return err
+			}
+		} else {
+			resources = append(resources, k)
+		}
+	}
+
+	if len(resources) != 0 {
+		var s []string
+		for _, r := range resources {
+			s = append(s, r.String())
+		}
+		return fmt.Errorf("NEGs still exist (%s)", strings.Join(s, ", "))
 	}
 
 	return nil
@@ -342,7 +390,54 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 		}
 	}
 
-	// TODO: fetch Backends
+	negKeys := []*meta.Key{}
+	// Fetch NEG Backends
+	for _, bsKey := range bsKeys {
+		beGroups := []string{}
+		if hasAlphaResource("backendService", validators) {
+			bs, err := c.AlphaBackendServices().Get(ctx, bsKey)
+			if err != nil {
+				return nil, err
+			}
+			for _, be := range bs.Backends {
+				beGroups = append(beGroups, be.Group)
+			}
+		} else {
+			bs, err := c.BetaBackendServices().Get(ctx, bsKey)
+			if err != nil {
+				return nil, err
+			}
+			for _, be := range bs.Backends {
+				beGroups = append(beGroups, be.Group)
+			}
+		}
+		for _, group := range beGroups {
+			// Only fetch NEG backends
+			if !strings.Contains(group, NegResourceType) {
+				continue
+			}
+			resourceId, err := cloud.ParseResourceURL(group)
+			if err != nil {
+				return nil, err
+			}
+			negKeys = append(negKeys, resourceId.Key)
+		}
+	}
+
+	for _, negKey := range negKeys {
+		neg, err := c.BetaNetworkEndpointGroups().Get(ctx, negKey)
+		if err != nil {
+			return nil, err
+		}
+		gclb.NetworkEndpointGroup[*negKey] = &NetworkEndpointGroup{Beta: neg}
+		if hasAlphaResource(NegResourceType, validators) {
+			neg, err := c.AlphaNetworkEndpointGroups().Get(ctx, negKey)
+			if err != nil {
+				return nil, err
+			}
+			gclb.NetworkEndpointGroup[*negKey].Alpha = neg
+		}
+	}
 
 	return gclb, err
 }

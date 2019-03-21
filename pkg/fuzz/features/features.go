@@ -29,4 +29,5 @@ var All = []fuzz.Feature{
 	IAP,
 	SecurityPolicy,
 	Affinity,
+	NEG,
 }

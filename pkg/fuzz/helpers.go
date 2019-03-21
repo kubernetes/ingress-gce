@@ -29,10 +29,7 @@ import (
 	translatorutil "k8s.io/ingress-gce/pkg/controller/translator"
 )
 
-// BackendConfigForPath returns the BackendConfig associated with the given path.
-// Note: This function returns an empty object (not nil pointer) if a BackendConfig
-// did not exist in the given environment.
-func BackendConfigForPath(host, path string, ing *v1beta1.Ingress, env ValidatorEnv) (*backendconfig.BackendConfig, error) {
+func ServiceForPath(host, path string, ing *v1beta1.Ingress, env ValidatorEnv) (*v1.Service, *v1.ServicePort, error) {
 	sm := ServiceMapFromIngress(ing)
 	if path == pathForDefaultBackend {
 		path = ""
@@ -40,19 +37,31 @@ func BackendConfigForPath(host, path string, ing *v1beta1.Ingress, env Validator
 	hp := HostPath{Host: host, Path: path}
 	b, ok := sm[hp]
 	if !ok {
-		return nil, fmt.Errorf("HostPath %v not found in Ingress", hp)
+		return nil, nil, fmt.Errorf("HostPath %v not found in Ingress", hp)
 	}
 	serviceMap, err := env.Services()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	service, ok := serviceMap[b.ServiceName]
 	if !ok {
-		return nil, fmt.Errorf("service %q not found in environment", b.ServiceName)
+		return nil, nil, fmt.Errorf("service %q not found in environment", b.ServiceName)
 	}
 	servicePort := translatorutil.ServicePort(*service, b.ServicePort)
 	if servicePort == nil {
-		return nil, fmt.Errorf("port %+v in Service %q not found", b.ServicePort, b.ServiceName)
+		return nil, nil, fmt.Errorf("port %+v in Service %q not found", b.ServicePort, b.ServiceName)
+	}
+
+	return service, servicePort, nil
+}
+
+// BackendConfigForPath returns the BackendConfig associated with the given path.
+// Note: This function returns an empty object (not nil pointer) if a BackendConfig
+// did not exist in the given environment.
+func BackendConfigForPath(host, path string, ing *v1beta1.Ingress, env ValidatorEnv) (*backendconfig.BackendConfig, error) {
+	service, servicePort, err := ServiceForPath(host, path, ing, env)
+	if err != nil {
+		return nil, err
 	}
 	bc, err := annotations.FromService(service).GetBackendConfigs()
 	if err != nil {

@@ -42,7 +42,7 @@ func (*IAPFeature) Name() string {
 	return "IAP"
 }
 
-// iapValidator is a validator the CDN feature.
+// iapValidator is a validator for the IAP feature.
 type iapValidator struct {
 	fuzz.NullValidator
 

@@ -66,7 +66,7 @@ func TestIAP(t *testing.T) {
 			}
 			t.Logf("BackendConfig created (%s/%s) ", s.Namespace, tc.beConfig.Name)
 
-			_, _, err := e2e.CreateEchoService(s, "service-1", backendConfigAnnotation)
+			_, err := e2e.CreateEchoService(s, "service-1", backendConfigAnnotation)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
