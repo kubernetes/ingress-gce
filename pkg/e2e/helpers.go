@@ -107,7 +107,7 @@ func WaitForGCLBDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, optio
 func WaitForNEGDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, options *fuzz.GCLBDeleteOptions) error {
 	return wait.Poll(negPollInterval, negPollTimeout, func() (bool, error) {
 		if err := g.CheckNEGDeletion(ctx, c, options); err != nil {
-			klog.Infof("format: WaitForNegDeletion(%q) = %v", g.VIP, err)
+			klog.Infof("WaitForNegDeletion(%q) = %v", g.VIP, err)
 			return false, nil
 		}
 		return true, nil
@@ -134,4 +134,17 @@ func WaitForNEGConfiguration(svc *v1.Service, f *Framework, s *Sandbox) error {
 
 		return false, nil
 	})
+}
+
+func CheckGCLB(gclb *fuzz.GCLB, numForwardingRules int, numBackendServices int) error {
+
+	// Do some cursory checks on the GCP objects.
+	if len(gclb.ForwardingRule) != numForwardingRules {
+		return fmt.Errorf("got %d forwarding rules, want %d", len(gclb.ForwardingRule), numForwardingRules)
+	}
+	if len(gclb.BackendService) != numBackendServices {
+		return fmt.Errorf("got %d backend services, want %d", len(gclb.BackendService), numBackendServices)
+	}
+
+	return nil
 }

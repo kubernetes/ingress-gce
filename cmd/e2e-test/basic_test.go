@@ -20,7 +20,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/kr/pretty"
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
@@ -101,12 +100,9 @@ func TestBasic(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			// Do some cursory checks on the GCP objects.
-			if len(gclb.ForwardingRule) != tc.numForwardingRules {
-				t.Errorf("got %d fowarding rules, want %d;\n%s", len(gclb.ForwardingRule), tc.numForwardingRules, pretty.Sprint(gclb.ForwardingRule))
-			}
-			if len(gclb.BackendService) != tc.numBackendServices {
-				t.Errorf("got %d backend services, want %d;\n%s", len(gclb.BackendService), tc.numBackendServices, pretty.Sprint(gclb.BackendService))
+			err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices)
+			if err != nil {
+				t.Error(err)
 			}
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
@@ -176,12 +172,9 @@ func TestEdge(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			// Do some cursory checks on the GCP objects.
-			if len(gclb.ForwardingRule) != tc.numForwardingRules {
-				t.Errorf("got %d fowarding rules, want %d;\n%s", len(gclb.ForwardingRule), tc.numForwardingRules, pretty.Sprint(gclb.ForwardingRule))
-			}
-			if len(gclb.BackendService) != tc.numBackendServices {
-				t.Errorf("got %d backend services, want %d;\n%s", len(gclb.BackendService), tc.numBackendServices, pretty.Sprint(gclb.BackendService))
+			err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices)
+			if err != nil {
+				t.Error(err)
 			}
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{

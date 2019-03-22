@@ -95,12 +95,9 @@ func TestNEG(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			// Do some cursory checks on the GCP objects.
-			if len(gclb.ForwardingRule) != tc.numForwardingRules {
-				t.Errorf("got %d fowarding rules, want %d", len(gclb.ForwardingRule), tc.numForwardingRules)
-			}
-			if len(gclb.BackendService) != tc.numBackendServices {
-				t.Errorf("got %d backend services, want %d", len(gclb.BackendService), tc.numBackendServices)
+			err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices)
+			if err != nil {
+				t.Error(err)
 			}
 
 			if (len(gclb.NetworkEndpointGroup) > 0) != tc.negExpected {
@@ -200,14 +197,10 @@ func TestNEGTransition(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			// Do some cursory checks on the GCP objects.
-			if len(gclb.ForwardingRule) != tc.numForwardingRules {
-				t.Errorf("got %d fowarding rules, want %d", len(gclb.ForwardingRule), tc.numForwardingRules)
+			err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices)
+			if err != nil {
+				t.Error(err)
 			}
-			if len(gclb.BackendService) != tc.numBackendServices {
-				t.Errorf("got %d backend services, want %d", len(gclb.BackendService), tc.numBackendServices)
-			}
-
 			if tc.negGC {
 				if len(gclb.NetworkEndpointGroup) != 0 {
 					t.Errorf("NegGC = true, expected 0 negs for gclb %v, got %d", gclb, len(gclb.NetworkEndpointGroup))
