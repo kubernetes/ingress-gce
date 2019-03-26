@@ -100,8 +100,7 @@ func TestBasic(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices)
-			if err != nil {
+			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
 				t.Error(err)
 			}
 
@@ -172,8 +171,7 @@ func TestEdge(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices)
-			if err != nil {
+			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
 				t.Error(err)
 			}
 

@@ -60,7 +60,7 @@ func TestNEG(t *testing.T) {
 		tc := tc // Capture tc as we are running this in parallel.
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
 			_, err := e2e.EnsureEchoService(s, "service-1", map[string]string{
-				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ProtocolTCP, 80, v1.ServiceTypeNodePort)
+				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ProtocolTCP, 80, v1.ServiceTypeNodePort, 1)
 			if err != nil {
 				t.Fatalf("error ensuring echo service: %v", err)
 			}
@@ -95,8 +95,7 @@ func TestNEG(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices)
-			if err != nil {
+			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
 				t.Error(err)
 			}
 
@@ -165,7 +164,7 @@ func TestNEGTransition(t *testing.T) {
 		} {
 			// First create the echo service, we will be adapting it throughout the basic tests
 			_, err := e2e.EnsureEchoService(s, "service-1", map[string]string{
-				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ProtocolTCP, 80, v1.ServiceTypeNodePort)
+				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ProtocolTCP, 80, v1.ServiceTypeNodePort, 1)
 			if err != nil {
 				t.Fatalf("error ensuring echo service: %v", err)
 			}
@@ -197,10 +196,10 @@ func TestNEGTransition(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices)
-			if err != nil {
+			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
 				t.Error(err)
 			}
+
 			if tc.negGC {
 				if len(gclb.NetworkEndpointGroup) != 0 {
 					t.Errorf("NegGC = true, expected 0 negs for gclb %v, got %d", gclb, len(gclb.NetworkEndpointGroup))

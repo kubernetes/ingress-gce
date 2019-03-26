@@ -36,12 +36,11 @@ const (
 // CreateEchoService creates the pod and service serving echoheaders
 // Todo: (shance) remove this and replace uses with EnsureEchoService()
 func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (*v1.Service, error) {
-	return EnsureEchoService(s, name, annotations, v1.ProtocolTCP, 80, v1.ServiceTypeNodePort)
+	return EnsureEchoService(s, name, annotations, v1.ProtocolTCP, 80, v1.ServiceTypeNodePort, 1)
 }
 
 // Ensures that the Echo service with the given description is set up
-func EnsureEchoService(s *Sandbox, name string, annotations map[string]string,
-	protocol v1.Protocol, port int32, svcType v1.ServiceType) (*v1.Service, error) {
+func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, protocol v1.Protocol, port int32, svcType v1.ServiceType, numReplicas int32) (*v1.Service, error) {
 
 	expectedSvc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -60,7 +59,7 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string,
 		},
 	}
 
-	pod := &v1.Pod{
+	podTemplate := v1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
 			Labels: map[string]string{"app": name},
@@ -76,10 +75,21 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string,
 		},
 	}
 
+	deployment := &v1beta1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: v1beta1.DeploymentSpec{
+			Replicas: &numReplicas,
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
+			Template: podTemplate,
+		},
+	}
+
 	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(name, metav1.GetOptions{})
 
 	if svc == nil || err != nil {
-		if pod, err = s.f.Clientset.Core().Pods(s.Namespace).Create(pod); err != nil {
+		if deployment, err = s.f.Clientset.Extensions().Deployments(s.Namespace).Create(deployment); err != nil {
 			return nil, err
 		}
 		if svc, err = s.f.Clientset.Core().Services(s.Namespace).Create(expectedSvc); err != nil {
