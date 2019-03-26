@@ -38,7 +38,7 @@ func TestNEG(t *testing.T) {
 	for _, tc := range []struct {
 		desc               string
 		annotations        annotations.NegAnnotation
-		svcType						 v1.ServiceType
+		svcType            v1.ServiceType
 		negExpected        bool
 		numForwardingRules int
 		numBackendServices int
@@ -46,7 +46,7 @@ func TestNEG(t *testing.T) {
 		{
 			desc:               "Create a basic NEG",
 			annotations:        annotations.NegAnnotation{Ingress: true},
-			svcType: v1.ServiceTypeNodePort,
+			svcType:            v1.ServiceTypeNodePort,
 			negExpected:        true,
 			numForwardingRules: 1,
 			numBackendServices: 1,
@@ -55,7 +55,7 @@ func TestNEG(t *testing.T) {
 			desc:               "Annotation with no NEG",
 			annotations:        annotations.NegAnnotation{Ingress: false},
 			negExpected:        false,
-			svcType:	v1.ServiceTypeNodePort,
+			svcType:            v1.ServiceTypeNodePort,
 			numForwardingRules: 1,
 			numBackendServices: 1,
 		},
@@ -63,7 +63,7 @@ func TestNEG(t *testing.T) {
 			desc:               "Ingress can reference ClusterIP service NEG enabled",
 			annotations:        annotations.NegAnnotation{Ingress: true},
 			negExpected:        true,
-			svcType:	v1.ServiceTypeClusterIP,
+			svcType:            v1.ServiceTypeClusterIP,
 			numForwardingRules: 1,
 			numBackendServices: 1,
 		},
@@ -71,7 +71,7 @@ func TestNEG(t *testing.T) {
 		tc := tc // Capture tc as we are running this in parallel.
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
 			_, err := e2e.EnsureEchoService(s, "service-1", map[string]string{
-				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ProtocolTCP, 80, tc.svcType, 1)
+				annotations.NEGAnnotationKey: tc.annotations.String()}, tc.svcType, 1)
 			if err != nil {
 				t.Fatalf("error ensuring echo service: %v", err)
 			}
@@ -175,7 +175,7 @@ func TestNEGTransition(t *testing.T) {
 		} {
 			// First create the echo service, we will be adapting it throughout the basic tests
 			_, err := e2e.EnsureEchoService(s, "service-1", map[string]string{
-				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ProtocolTCP, 80, v1.ServiceTypeNodePort, 1)
+				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ServiceTypeNodePort, 1)
 			if err != nil {
 				t.Fatalf("error ensuring echo service: %v", err)
 			}
