@@ -38,7 +38,7 @@ var NEG = &NegFeature{}
 type NegFeature struct{}
 
 // NewValidator implements fuzz.Feature.
-func (NegFeature) NewValidator() fuzz.FeatureValidator {
+func (*NegFeature) NewValidator() fuzz.FeatureValidator {
 	return &negValidator{}
 }
 

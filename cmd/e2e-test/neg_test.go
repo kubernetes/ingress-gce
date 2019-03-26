@@ -60,7 +60,7 @@ func TestNEG(t *testing.T) {
 		tc := tc // Capture tc as we are running this in parallel.
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
 			_, err := e2e.EnsureEchoService(s, "service-1", map[string]string{
-				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ProtocolTCP, 80, v1.ServiceTypeNodePort)
+				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ProtocolTCP, 80, v1.ServiceTypeNodePort, 1)
 			if err != nil {
 				t.Fatalf("error ensuring echo service: %v", err)
 			}
@@ -95,12 +95,8 @@ func TestNEG(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			// Do some cursory checks on the GCP objects.
-			if len(gclb.ForwardingRule) != tc.numForwardingRules {
-				t.Errorf("got %d fowarding rules, want %d", len(gclb.ForwardingRule), tc.numForwardingRules)
-			}
-			if len(gclb.BackendService) != tc.numBackendServices {
-				t.Errorf("got %d backend services, want %d", len(gclb.BackendService), tc.numBackendServices)
+			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
+				t.Error(err)
 			}
 
 			if (len(gclb.NetworkEndpointGroup) > 0) != tc.negExpected {
@@ -168,7 +164,7 @@ func TestNEGTransition(t *testing.T) {
 		} {
 			// First create the echo service, we will be adapting it throughout the basic tests
 			_, err := e2e.EnsureEchoService(s, "service-1", map[string]string{
-				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ProtocolTCP, 80, v1.ServiceTypeNodePort)
+				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ProtocolTCP, 80, v1.ServiceTypeNodePort, 1)
 			if err != nil {
 				t.Fatalf("error ensuring echo service: %v", err)
 			}
@@ -200,12 +196,8 @@ func TestNEGTransition(t *testing.T) {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
 
-			// Do some cursory checks on the GCP objects.
-			if len(gclb.ForwardingRule) != tc.numForwardingRules {
-				t.Errorf("got %d fowarding rules, want %d", len(gclb.ForwardingRule), tc.numForwardingRules)
-			}
-			if len(gclb.BackendService) != tc.numBackendServices {
-				t.Errorf("got %d backend services, want %d", len(gclb.BackendService), tc.numBackendServices)
+			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
+				t.Error(err)
 			}
 
 			if tc.negGC {
