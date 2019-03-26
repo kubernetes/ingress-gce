@@ -79,11 +79,16 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 			Name: name,
 		},
 		Spec: v1beta1.DeploymentSpec{
-			Replicas: &numReplicas,
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
 			Template: podTemplate,
 		},
 	}
+
+	scale := &v1beta1.Scale{
+		Spec: v1beta1.ScaleSpec{
+			Replicas: numReplicas},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name, Namespace: s.Namespace}}
 
 	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(name, metav1.GetOptions{})
 
@@ -95,6 +100,10 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 			return nil, err
 		}
 		return svc, err
+	}
+
+	if _, err = s.f.Clientset.Extensions().Deployments(s.Namespace).UpdateScale(name, scale); err != nil {
+		return nil, fmt.Errorf("Error updating deployment scale: %v", err)
 	}
 
 	if !reflect.DeepEqual(svc.Spec, expectedSvc.Spec) {
