@@ -36,12 +36,11 @@ const (
 // CreateEchoService creates the pod and service serving echoheaders
 // Todo: (shance) remove this and replace uses with EnsureEchoService()
 func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (*v1.Service, error) {
-	return EnsureEchoService(s, name, annotations, v1.ProtocolTCP, 80, v1.ServiceTypeNodePort, 1)
+	return EnsureEchoService(s, name, annotations, v1.ServiceTypeNodePort, 1)
 }
 
 // Ensures that the Echo service with the given description is set up
-func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, protocol v1.Protocol, port int32, svcType v1.ServiceType, numReplicas int32) (*v1.Service, error) {
-
+func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32) (*v1.Service, error) {
 	expectedSvc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
@@ -50,8 +49,8 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, p
 		Spec: v1.ServiceSpec{
 			Ports: []v1.ServicePort{{
 				Name:       "web",
-				Protocol:   protocol,
-				Port:       port,
+				Protocol:   v1.ProtocolTCP,
+				Port:       80,
 				TargetPort: intstr.FromString("web"),
 			}},
 			Selector: map[string]string{"app": name},
@@ -80,11 +79,16 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, p
 			Name: name,
 		},
 		Spec: v1beta1.DeploymentSpec{
-			Replicas: &numReplicas,
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
 			Template: podTemplate,
 		},
 	}
+
+	scale := &v1beta1.Scale{
+		Spec: v1beta1.ScaleSpec{
+			Replicas: numReplicas},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name, Namespace: s.Namespace}}
 
 	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(name, metav1.GetOptions{})
 
@@ -96,6 +100,10 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, p
 			return nil, err
 		}
 		return svc, err
+	}
+
+	if _, err = s.f.Clientset.Extensions().Deployments(s.Namespace).UpdateScale(name, scale); err != nil {
+		return nil, fmt.Errorf("Error updating deployment scale: %v", err)
 	}
 
 	if !reflect.DeepEqual(svc.Spec, expectedSvc.Spec) {
