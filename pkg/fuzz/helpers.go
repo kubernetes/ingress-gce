@@ -29,6 +29,7 @@ import (
 	translatorutil "k8s.io/ingress-gce/pkg/controller/translator"
 )
 
+// ServiceForPath returns the Service and ServicePort associated with the given path.
 func ServiceForPath(host, path string, ing *v1beta1.Ingress, env ValidatorEnv) (*v1.Service, *v1.ServicePort, error) {
 	sm := ServiceMapFromIngress(ing)
 	if path == pathForDefaultBackend {
@@ -101,7 +102,7 @@ type HostPath struct {
 	Path string
 }
 
-// ServiceMap is a map of (host, path) to the appropriate BackendConfig(s).
+// ServiceMap is a map of (host, path) to the appropriate backend.
 type ServiceMap map[HostPath]*v1beta1.IngressBackend
 
 // ServiceMapFromIngress creates a service map from the Ingress object. Note:

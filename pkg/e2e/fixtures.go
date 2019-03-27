@@ -47,12 +47,20 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 			Annotations: annotations,
 		},
 		Spec: v1.ServiceSpec{
-			Ports: []v1.ServicePort{{
-				Name:       "web",
-				Protocol:   v1.ProtocolTCP,
-				Port:       80,
-				TargetPort: intstr.FromString("web"),
-			}},
+			Ports: []v1.ServicePort{
+				{
+					Name:       "http-port",
+					Protocol:   v1.ProtocolTCP,
+					Port:       80,
+					TargetPort: intstr.FromInt(8080),
+				},
+				{
+					Name:       "https-port",
+					Protocol:   v1.ProtocolTCP,
+					Port:       443,
+					TargetPort: intstr.FromInt(8443),
+				},
+			},
 			Selector: map[string]string{"app": name},
 			Type:     svcType,
 		},
@@ -66,9 +74,12 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 		Spec: v1.PodSpec{
 			Containers: []v1.Container{
 				{
-					Name:  "web",
+					Name:  "echoheaders",
 					Image: echoheadersImage,
-					Ports: []v1.ContainerPort{{ContainerPort: 8080, Name: "web"}},
+					Ports: []v1.ContainerPort{
+						{ContainerPort: 8080, Name: "http-port"},
+						{ContainerPort: 8443, Name: "https-port"},
+					},
 				},
 			},
 		},
@@ -86,9 +97,13 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 
 	scale := &v1beta1.Scale{
 		Spec: v1beta1.ScaleSpec{
-			Replicas: numReplicas},
+			Replicas: numReplicas,
+		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: name, Namespace: s.Namespace}}
+			Name:      name,
+			Namespace: s.Namespace,
+		},
+	}
 
 	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(name, metav1.GetOptions{})
 
