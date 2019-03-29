@@ -70,6 +70,10 @@ func (v *staticIPValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1be
 // CheckResponse implements fuzz.FeatureValidator
 func (v *staticIPValidator) CheckResponse(host, path string, resp *http.Response, body []byte) (fuzz.CheckResponseAction, error) {
 	addrName := annotations.FromIngress(v.ing).StaticIPName()
+	if addrName == "" {
+		return fuzz.CheckResponseContinue, nil
+	}
+
 	addr, err := v.env.Cloud().GlobalAddresses().Get(context.Background(), meta.GlobalKey(addrName))
 	if err != nil {
 		return fuzz.CheckResponseContinue, fmt.Errorf("error getting GCP address %s: %v", addrName, err)

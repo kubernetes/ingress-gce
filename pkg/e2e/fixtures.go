@@ -191,3 +191,13 @@ func NewGCPAddress(s *Sandbox, name string) error {
 
 	return nil
 }
+
+// DeleteGCPAddress deletes a global static IP address with the given name.
+func DeleteGCPAddress(s *Sandbox, name string) error {
+	if err := s.f.Cloud.GlobalAddresses().Delete(context.Background(), meta.GlobalKey(name)); err != nil {
+		return err
+	}
+	klog.V(2).Infof("Global static IP %s deleted", name)
+
+	return nil
+}
