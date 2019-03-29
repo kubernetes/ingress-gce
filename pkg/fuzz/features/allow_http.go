@@ -47,5 +47,8 @@ func (*AllowHTTPFeature) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1beta1
 	if !an.AllowHTTP() {
 		a.CheckHTTP = false
 	}
+
+	//TODO(rramkumar): Verify that all HTTPS resources were garbage collected.
+
 	return nil
 }
