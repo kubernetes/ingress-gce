@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"k8s.io/api/extensions/v1beta1"
@@ -112,6 +113,54 @@ func TestBasic(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBasicStaticIP tests that the static-ip annotation works as expected.
+func TestBasicStaticIP(t *testing.T) {
+	ctx := context.Background()
+	t.Parallel()
+
+	Framework.RunWithSandbox("static-ip", t, func(t *testing.T, s *e2e.Sandbox) {
+		_, err := e2e.CreateEchoService(s, "service-1", nil)
+		if err != nil {
+			t.Fatalf("e2e.CreateEchoService(s, service-1, nil) = _, %v; want _, nil", err)
+		}
+
+		addrName := fmt.Sprintf("test-addr-%s", s.Namespace)
+		if err := e2e.NewGCPAddress(s, addrName); err != nil {
+			t.Fatalf("e2e.NewGCPAddress(..., %s) = %v, want nil", addrName, err)
+		}
+
+		testIng := fuzz.NewIngressBuilder("", "ingress-1", "").
+			DefaultBackend("service-1", intstr.FromInt(80)).
+			AddStaticIP(addrName).
+			Build()
+		testIng, err = Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(testIng)
+		if err != nil {
+			t.Fatalf("error creating Ingress spec: %v", err)
+		}
+		t.Logf("Ingress %s/%s created", s.Namespace, testIng.Name)
+
+		testIng, err = e2e.WaitForIngress(s, testIng, nil)
+		if err != nil {
+			t.Fatalf("e2e.WaitForIngress(s, %q) = _, %v; want _, nil", testIng.Name, err)
+		}
+		if len(testIng.Status.LoadBalancer.Ingress) < 1 {
+			t.Fatalf("Ingress does not have an IP: %+v", testIng.Status)
+		}
+
+		vip := testIng.Status.LoadBalancer.Ingress[0].IP
+		gclb, err := fuzz.GCLBForVIP(ctx, Framework.Cloud, vip, fuzz.FeatureValidators([]fuzz.Feature{features.SecurityPolicy}))
+		if err != nil {
+			t.Fatalf("fuzz.GCLBForVIP(..., %q, %q) = _, %v; want _, nil", vip, features.SecurityPolicy, err)
+		}
+
+		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, testIng, deleteOptions); err != nil {
+			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", testIng.Name, err)
+		}
+	})
+
+	// TODO(rramkumar): Add transition
 }
 
 // TestEdge exercises some basic edge cases that previously have caused bugs.

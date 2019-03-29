@@ -19,14 +19,17 @@ package e2e
 // Put common test fixtures (e.g. resources to be created) here.
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/klog"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
 const (
@@ -157,24 +160,34 @@ func DeleteSecret(s *Sandbox, name string) error {
 	if err := s.f.Clientset.Core().Secrets(s.Namespace).Delete(name, &metav1.DeleteOptions{}); err != nil {
 		return err
 	}
-
 	klog.V(2).Infof("Secret %q:%q created", s.Namespace, name)
+
 	return nil
 }
 
+// EnsureIngress creates a new Ingress or updates an existing one.
 func EnsureIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
 	currentIng, err := s.f.Clientset.Extensions().Ingresses(s.Namespace).Get(ing.ObjectMeta.Name, metav1.GetOptions{})
 
 	if currentIng == nil || err != nil {
-		ing, err := s.f.Clientset.Extensions().Ingresses(s.Namespace).Create(ing)
-		return ing, err
+		return s.f.Clientset.Extensions().Ingresses(s.Namespace).Create(ing)
 	}
 
 	// Update ingress spec if they are not equal
 	if !reflect.DeepEqual(ing.Spec, currentIng.Spec) {
-		ing, err = s.f.Clientset.Extensions().Ingresses(s.Namespace).Update(ing)
-		return ing, err
+		return s.f.Clientset.Extensions().Ingresses(s.Namespace).Update(ing)
 	}
 
 	return currentIng, nil
+}
+
+// NewGCPAddress reserves a global static IP address with the given name.
+func NewGCPAddress(s *Sandbox, name string) error {
+	addr := &compute.Address{Name: name}
+	if err := s.f.Cloud.GlobalAddresses().Insert(context.Background(), meta.GlobalKey(addr.Name), addr); err != nil {
+		return err
+	}
+	klog.V(2).Infof("Global static IP %s created", name)
+
+	return nil
 }
