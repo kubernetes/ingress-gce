@@ -152,6 +152,16 @@ func CreateSecret(s *Sandbox, name string, data map[string][]byte) (*v1.Secret, 
 	return secret, nil
 }
 
+// DeleteSecret deletes a secret.
+func DeleteSecret(s *Sandbox, name string) error {
+	if err := s.f.Clientset.Core().Secrets(s.Namespace).Delete(name, &metav1.DeleteOptions{}); err != nil {
+		return err
+	}
+
+	klog.V(2).Infof("Secret %q:%q created", s.Namespace, name)
+	return nil
+}
+
 func EnsureIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
 	currentIng, err := s.f.Clientset.Extensions().Ingresses(s.Namespace).Get(ing.ObjectMeta.Name, metav1.GetOptions{})
 

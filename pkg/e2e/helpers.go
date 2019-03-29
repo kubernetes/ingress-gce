@@ -137,7 +137,6 @@ func WaitForNEGConfiguration(svc *v1.Service, f *Framework, s *Sandbox) error {
 }
 
 func CheckGCLB(gclb *fuzz.GCLB, numForwardingRules int, numBackendServices int) error {
-
 	// Do some cursory checks on the GCP objects.
 	if len(gclb.ForwardingRule) != numForwardingRules {
 		return fmt.Errorf("got %d forwarding rules, want %d", len(gclb.ForwardingRule), numForwardingRules)
