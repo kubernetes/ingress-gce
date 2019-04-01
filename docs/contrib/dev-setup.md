@@ -5,13 +5,8 @@ The below guide assumes you have installed the necessary binaries to run Golang.
 
 ## Get the code
 
-It is suggested to create your own fork of the repository on Github. Once that
-is done, go ahead and download the repo.
-
-```console
-cd $GOPATH/src
-git clone https://github.com/[YOUR GITHUB_USER]/ingress-gce.git
-```
+We suggest to follow the steps [here](https://github.com/kubernetes/community/blob/master/contributors/guide/github-workflow.md) to get your Github workflow started.
+Those steps reference the main Kubernetes repository but the same steps apply for this repository.
 
 ## Unit tests
 
