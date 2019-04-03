@@ -21,18 +21,21 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/ingress-gce/cmd/glbc/app"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	bcclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
 // DefaultValidatorEnv is a ValidatorEnv that gets data from the Kubernetes
 // clientset.
 type DefaultValidatorEnv struct {
-	ns  string
-	k8s *kubernetes.Clientset
-	bc  *bcclient.Clientset
-	gce cloud.Cloud
+	ns    string
+	k8s   *kubernetes.Clientset
+	bc    *bcclient.Clientset
+	gce   cloud.Cloud
+	namer *utils.Namer
 }
 
 // NewDefaultValidatorEnv returns a new ValidatorEnv.
@@ -47,7 +50,8 @@ func NewDefaultValidatorEnv(config *rest.Config, ns string, gce cloud.Cloud) (Va
 	if err != nil {
 		return nil, err
 	}
-	return ret, nil
+	ret.namer, err = app.NewNamer(ret.k8s, "", "")
+	return ret, err
 }
 
 // BackendConfigs implements ValidatorEnv.
@@ -79,4 +83,9 @@ func (e *DefaultValidatorEnv) Services() (map[string]*v1.Service, error) {
 // DefaultValidatorEnv implements ValidatorEnv.
 func (e *DefaultValidatorEnv) Cloud() cloud.Cloud {
 	return e.gce
+}
+
+// DefaultValidatorEnv implements ValidatorEnv.
+func (e *DefaultValidatorEnv) Namer() *utils.Namer {
+	return e.namer
 }

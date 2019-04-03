@@ -23,6 +23,7 @@ package features
 import (
 	"context"
 	"fmt"
+	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -76,65 +77,76 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 		return fuzz.CheckResponseContinue, err
 	}
 
-	// Check neg status for ingress enabled
-	// TODO: (shance) update this to support exposed_port as well
-	annotationSvc := annotations.FromService(svc)
-	negAnnotation, found, err := annotationSvc.NEGAnnotation()
+	negEnabled, negName, err := v.getNegNameForServicePort(svc, svcPort)
 	if err != nil {
-		return fuzz.CheckResponseContinue, fmt.Errorf("Error getting NEG annotation for service %v: %v", svc, err)
+		return fuzz.CheckResponseContinue, err
 	}
 
-	// Path does not have a NEG annotation, nothing to check here
-	if !found {
-		return fuzz.CheckResponseContinue, nil
-	}
-
-	ctx := context.Background()
-
-	negStatus, found, err := annotationSvc.NEGStatus()
-
-	if err != nil {
-		return fuzz.CheckResponseContinue, fmt.Errorf("Error obtaining Neg status for service: %v, error: %v", svc, err)
-	}
-
-	// Do whitebox verifications
-	// Check if the corresponding backend service is targeting NEGs instead of IGs
-	// WARNING: assumes the backend service naming scheme is using the NEG naming scheme
-	if negAnnotation.NEGEnabledForIngress() {
-		if found && len(negStatus.NetworkEndpointGroups) > 0 {
-			// Check backend services as well
-			if backendIsNeg, err := verifyNegBackend(&ctx, v.env, negStatus.NetworkEndpointGroups[svcPort.Port]); !backendIsNeg {
-				return fuzz.CheckResponseContinue, err
-			}
-			return fuzz.CheckResponseContinue, nil
-		} else {
-			return fuzz.CheckResponseContinue, fmt.Errorf("Error, path %v for service %v is not targeting a neg", path, svc)
-		}
+	if negEnabled {
+		return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName)
 	} else {
-		if found {
-			return fuzz.CheckResponseContinue, fmt.Errorf("Error, path %v for service %v should not be targetting a neg", path, svc)
-		} else {
-			return fuzz.CheckResponseContinue, nil
-		}
+		return fuzz.CheckResponseContinue, verifyIgBackend(v.env, v.env.Namer().IGBackend(int64(svcPort.NodePort)))
 	}
 }
 
-func verifyNegBackend(ctx *context.Context, env fuzz.ValidatorEnv, negName string) (bool, error) {
-	beService, err := env.Cloud().BackendServices().Get(*ctx, &meta.Key{Name: negName})
-
-	if beService == nil {
-		return false, fmt.Errorf("No backend service returned for name %s", negName)
+// getNegNameForServicePort returns the NEG name for the service port if it exists.
+// It returns true if neg is enabled on the service for Ingress. It returns false otherwise.
+func (v *negValidator) getNegNameForServicePort(svc *v1.Service, svcPort *v1.ServicePort) (negEnabled bool, negName string, err error) {
+	annotationSvc := annotations.FromService(svc)
+	negAnnotation, negAnnotationFound, err := annotationSvc.NEGAnnotation()
+	if err != nil {
+		return false, negName, fmt.Errorf("error getting NEG annotation for service %v/%v: %v", svc.Namespace, svc.Name, err)
 	}
 
+	if !negAnnotationFound {
+		return false, negName, nil
+	}
+
+	if !negAnnotation.NEGEnabledForIngress() {
+		return false, negName, nil
+	}
+
+	status, negStatusFound, err := annotationSvc.NEGStatus()
 	if err != nil {
-		return false, err
+		return true, negName, fmt.Errorf("error getting NEG status for service %v/%v: %v", svc.Namespace, svc.Name, err)
+	}
+
+	if !negStatusFound {
+		return true, negName, fmt.Errorf("NEG status not found for service %v/%v", svc.Namespace, svc.Name)
+	}
+
+	negName, negFound := status.NetworkEndpointGroups[svcPort.Port]
+	if !negFound {
+		return true, negName, fmt.Errorf("NEG for service port %d not found for service %v/%v in NEG status %v", svcPort.Port, svc.Namespace, svc.Name, status)
+	}
+	return true, negName, nil
+}
+
+// verifyNegBackend verifies if the backend service is using network endpoint group
+func verifyNegBackend(env fuzz.ValidatorEnv, negName string) error {
+	return verifyBackend(env, negName, negName)
+}
+
+// verifyNegBackend verifies if the backend service is using instance group
+func verifyIgBackend(env fuzz.ValidatorEnv, bsName string) error {
+	return verifyBackend(env, bsName, "instanceGroup")
+}
+
+// verifyBackend verifies the backend service and check if the corresponding backend group has the keyword
+func verifyBackend(env fuzz.ValidatorEnv, bsName string, backendKeyword string) error {
+	beService, err := env.Cloud().BackendServices().Get(context.Background(), &meta.Key{Name: bsName})
+	if err != nil {
+		return err
+	}
+
+	if beService == nil {
+		return fmt.Errorf("no backend service returned for name %s", bsName)
 	}
 
 	for _, be := range beService.Backends {
-		if !strings.Contains(be.Group, negName) {
-			return false, fmt.Errorf("Backend %v group %v is not a NEG", be, be.Group)
+		if !strings.Contains(be.Group, backendKeyword) {
+			return fmt.Errorf("backend group %q of backend service %q does not contain keyword %q", be.Group, bsName, backendKeyword)
 		}
 	}
-
-	return true, nil
+	return nil
 }

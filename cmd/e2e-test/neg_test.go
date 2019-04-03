@@ -138,7 +138,7 @@ func TestNEGTransition(t *testing.T) {
 
 		for _, tc := range []struct {
 			desc        string
-			annotations annotations.NegAnnotation
+			annotations *annotations.NegAnnotation
 			// negGC is true if a NEG should be garbage collected after applying the annotations
 			negGC              bool
 			numForwardingRules int
@@ -146,36 +146,40 @@ func TestNEGTransition(t *testing.T) {
 		}{
 			{
 				desc:               "Using ingress only",
-				annotations:        annotations.NegAnnotation{Ingress: true},
+				annotations:        &annotations.NegAnnotation{Ingress: true},
 				negGC:              false,
 				numForwardingRules: 1,
 				numBackendServices: 1,
 			},
 			{
 				desc:               "Disable NEG for ingress",
-				annotations:        annotations.NegAnnotation{Ingress: false},
+				annotations:        &annotations.NegAnnotation{Ingress: false},
 				negGC:              true,
 				numForwardingRules: 1,
 				numBackendServices: 1,
 			},
 			{
 				desc:               "Re-enable NEG for ingress",
-				annotations:        annotations.NegAnnotation{Ingress: true},
+				annotations:        &annotations.NegAnnotation{Ingress: true},
 				negGC:              false,
 				numForwardingRules: 1,
 				numBackendServices: 1,
 			},
 			{
 				desc:               "No annotations",
-				annotations:        annotations.NegAnnotation{},
+				annotations:        nil,
 				negGC:              true,
 				numForwardingRules: 1,
 				numBackendServices: 1,
 			},
 		} {
+			svcAnnotations := map[string]string{}
+			if tc.annotations != nil {
+				svcAnnotations[annotations.NEGAnnotationKey] = tc.annotations.String()
+			}
 			// First create the echo service, we will be adapting it throughout the basic tests
-			_, err := e2e.EnsureEchoService(s, "service-1", map[string]string{
-				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ServiceTypeNodePort, 1)
+			_, err := e2e.EnsureEchoService(s, "service-1", svcAnnotations, v1.ServiceTypeNodePort, 1)
+
 			if err != nil {
 				t.Fatalf("error ensuring echo service: %v", err)
 			}
