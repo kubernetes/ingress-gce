@@ -1,5 +1,28 @@
 # Change Log
 
+## [v1.5.1](https://github.com/kubernetes/ingress-gce/tree/v1.5.1) (2019-03-15)
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.5.0...v1.5.1)
+
+**Fixed bugs:**
+
+- \[GLBC\] GCE resources of non-snapshotted ingresses are not deleted [\#31](https://github.com/kubernetes/ingress-gce/issues/31)
+
+**Closed issues:**
+
+- Why GCP deploy an ingress controller on the master node rather than worker node? [\#685](https://github.com/kubernetes/ingress-gce/issues/685)
+- How to expose ports [\#634](https://github.com/kubernetes/ingress-gce/issues/634)
+- load balancer controller out of sync with gcp and ingress annotations [\#562](https://github.com/kubernetes/ingress-gce/issues/562)
+- Example service and ingress gives Unknown Host error [\#560](https://github.com/kubernetes/ingress-gce/issues/560)
+- GKE Ingress controller ignoring ingress.class annotation [\#476](https://github.com/kubernetes/ingress-gce/issues/476)
+
+**Merged pull requests:**
+
+- Cherry pick \#688 into release.15 [\#692](https://github.com/kubernetes/ingress-gce/pull/692) ([freehan](https://github.com/freehan))
+- Cherrypick \#678 into release-1.5 [\#691](https://github.com/kubernetes/ingress-gce/pull/691) ([freehan](https://github.com/freehan))
+- Fix supporting secret-based and pre-shared certs at the same time [\#687](https://github.com/kubernetes/ingress-gce/pull/687) ([michallowicki](https://github.com/michallowicki))
+
+# Change Log
+
 ## [v1.5.0](https://github.com/kubernetes/ingress-gce/tree/v1.5.0) (2019-02-27)
 [Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.4.0...v1.5.0)
 
