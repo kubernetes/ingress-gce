@@ -128,7 +128,7 @@ func TestNEGTransition(t *testing.T) {
 
 	ctx := context.Background()
 
-	Framework.RunWithSandbox("Basic NEG Tests", t, func(t *testing.T, s *e2e.Sandbox) {
+	Framework.RunWithSandbox("NEG State Transition Tests", t, func(t *testing.T, s *e2e.Sandbox) {
 
 		ing := fuzz.NewIngressBuilder("", "ingress-1", "").
 			DefaultBackend("service-1", port80).
@@ -173,6 +173,8 @@ func TestNEGTransition(t *testing.T) {
 				numBackendServices: 1,
 			},
 		} {
+			t.Logf("Running test case: %s", tc.desc)
+
 			svcAnnotations := map[string]string{}
 			if tc.annotations != nil {
 				svcAnnotations[annotations.NEGAnnotationKey] = tc.annotations.String()
