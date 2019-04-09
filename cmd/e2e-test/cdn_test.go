@@ -90,7 +90,7 @@ func TestCDN(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
-			if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(ing); err != nil {
+			if _, err := Framework.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Create(ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
@@ -114,7 +114,7 @@ func TestCDN(t *testing.T) {
 			}
 
 			// Wait for GCLB resources to be deleted.
-			if err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Delete(ing.Name, &metav1.DeleteOptions{}); err != nil {
+			if err := Framework.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Delete(ing.Name, &metav1.DeleteOptions{}); err != nil {
 				t.Errorf("Delete(%q) = %v, want nil", ing.Name, err)
 			}
 

@@ -127,7 +127,7 @@ func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(klog.Infof)
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{
-		Interface: ctx.KubeClient.Core().Events(ns),
+		Interface: ctx.KubeClient.CoreV1().Events(ns),
 	})
 	rec := broadcaster.NewRecorder(scheme.Scheme, apiv1.EventSource{Component: "loadbalancer-controller"})
 	ctx.recorders[ns] = rec

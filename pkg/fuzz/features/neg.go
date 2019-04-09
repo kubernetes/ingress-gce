@@ -23,15 +23,16 @@ package features
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
-	"net/http"
-	"strconv"
-	"strings"
 )
 
 // NEG is a feature in GCP to support pod as Loadbalancer backends

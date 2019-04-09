@@ -17,6 +17,7 @@ limitations under the License.
 package fuzz
 
 import (
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -25,7 +26,6 @@ import (
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	bcclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
 // DefaultValidatorEnv is a ValidatorEnv that gets data from the Kubernetes
@@ -69,7 +69,7 @@ func (e *DefaultValidatorEnv) BackendConfigs() (map[string]*backendconfig.Backen
 
 // Services implements ValidatorEnv.
 func (e *DefaultValidatorEnv) Services() (map[string]*v1.Service, error) {
-	sl, err := e.k8s.Core().Services(e.ns).List(metav1.ListOptions{})
+	sl, err := e.k8s.CoreV1().Services(e.ns).List(metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}

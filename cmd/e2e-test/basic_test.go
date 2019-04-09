@@ -78,7 +78,7 @@ func TestBasic(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
-			if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(tc.ing); err != nil {
+			if _, err := Framework.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
@@ -136,7 +136,7 @@ func TestBasicStaticIP(t *testing.T) {
 			DefaultBackend("service-1", intstr.FromInt(80)).
 			AddStaticIP(addrName).
 			Build()
-		testIng, err = Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(testIng)
+		testIng, err = Framework.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Create(testIng)
 		if err != nil {
 			t.Fatalf("error creating Ingress spec: %v", err)
 		}
@@ -198,7 +198,7 @@ func TestEdge(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
-			if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(tc.ing); err != nil {
+			if _, err := Framework.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)

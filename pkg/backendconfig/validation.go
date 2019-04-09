@@ -61,7 +61,7 @@ func validateIAP(kubeClient kubernetes.Interface, beConfig *backendconfigv1beta1
 	// If necessary, get the OAuth credentials stored in the K8s secret.
 	if beConfig.Spec.Iap.OAuthClientCredentials != nil && beConfig.Spec.Iap.OAuthClientCredentials.SecretName != "" {
 		secretName := beConfig.Spec.Iap.OAuthClientCredentials.SecretName
-		secret, err := kubeClient.Core().Secrets(beConfig.Namespace).Get(secretName, meta_v1.GetOptions{})
+		secret, err := kubeClient.CoreV1().Secrets(beConfig.Namespace).Get(secretName, meta_v1.GetOptions{})
 		if err != nil {
 			return fmt.Errorf("error retrieving secret %v: %v", secretName, err)
 		}

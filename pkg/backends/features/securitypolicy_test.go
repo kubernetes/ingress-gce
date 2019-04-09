@@ -24,9 +24,9 @@ import (
 
 	computebeta "google.golang.org/api/compute/v0.beta"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -50,7 +50,7 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 		expectSetCall         bool
 	}{
 		{
-			desc: "attach-policy",
+			desc:                  "attach-policy",
 			currentBackendService: &composite.BackendService{},
 			desiredConfig: &backendconfigv1beta1.BackendConfig{
 				Spec: backendconfigv1beta1.BackendConfigSpec{
@@ -103,7 +103,7 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 			},
 		},
 		{
-			desc: "empty-policy",
+			desc:                  "empty-policy",
 			currentBackendService: &composite.BackendService{},
 			desiredConfig:         &backendconfigv1beta1.BackendConfig{},
 		},

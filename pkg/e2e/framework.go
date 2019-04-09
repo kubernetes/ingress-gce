@@ -26,6 +26,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"golang.org/x/oauth2/google"
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
@@ -35,7 +36,6 @@ import (
 	"k8s.io/client-go/rest"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
 // Options for the test framework.
@@ -87,7 +87,7 @@ type Framework struct {
 // SanityCheck the test environment before proceeding.
 func (f *Framework) SanityCheck() error {
 	klog.V(2).Info("Checking connectivity with Kubernetes API")
-	if _, err := f.Clientset.Core().Pods("default").List(metav1.ListOptions{}); err != nil {
+	if _, err := f.Clientset.CoreV1().Pods("default").List(metav1.ListOptions{}); err != nil {
 		klog.Errorf("Error accessing Kubernetes API: %v", err)
 		return err
 	}
