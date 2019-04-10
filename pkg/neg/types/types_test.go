@@ -41,39 +41,53 @@ func TestPortInfoMapMerge(t *testing.T) {
 		p1          PortInfoMap
 		p2          PortInfoMap
 		expectedMap PortInfoMap
-		expectErr   error
+		expectErr   bool
 	}{
 		{
 			"empty map union empty map",
 			PortInfoMap{},
 			PortInfoMap{},
 			PortInfoMap{},
-			nil,
+			false,
 		},
 		{
 			"empty map union a non-empty map is the non-empty map",
 			PortInfoMap{},
 			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
 			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
-			nil,
+			false,
 		},
 		{
 			"union of two non-empty maps",
 			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer),
 			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8080: "9000"}, namer),
 			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer),
-			nil,
+			false,
+		},
+		{
+			"error on inconsistent value",
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "3000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8000: "9000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer),
+			true,
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
 			err := tc.p1.Merge(tc.p2)
-			if tc.expectErr != err {
-				t.Errorf("Expect error == %v, got %v", tc.expectErr, err)
+			if tc.expectErr && err == nil {
+				t.Errorf("Expect error != nil, got %v", err)
 			}
-			if !reflect.DeepEqual(tc.p1, tc.expectedMap) {
-				t.Errorf("Expected p1.Merge(p2) to equal: %v; got: %v", tc.expectedMap, tc.p1)
+
+			if !tc.expectErr && err != nil {
+				t.Errorf("Expect error == nil, got %v", err)
+			}
+
+			if !tc.expectErr {
+				if !reflect.DeepEqual(tc.p1, tc.expectedMap) {
+					t.Errorf("Expected p1.Merge(p2) to equal: %v; got: %v", tc.expectedMap, tc.p1)
+				}
 			}
 		})
 	}

@@ -37,6 +37,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"strconv"
 )
 
 const (
@@ -112,43 +113,51 @@ func TestNewNEGService(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		svcPorts []int32
-		ingress  bool
-		desc     string
+		exposedPorts   []int32
+		ingress        bool
+		expectNegPorts []int32
+		desc           string
 	}{
 		{
 			[]int32{80, 443, 8081, 8080},
 			true,
+			[]int32{80, 443, 8081, 8080},
 			"With ingress, 3 ports same as in ingress, 1 new port",
 		},
 		{
 			[]int32{80, 443, 8081, 8080, 1234, 5678},
 			true,
+			[]int32{80, 443, 8081, 8080, 1234, 5678},
 			"With ingress, 3 ports same as ingress and 3 new ports",
 		},
 		{
 			[]int32{80, 1234, 5678},
 			true,
+			[]int32{80, 443, 8081, 1234, 5678},
 			"With ingress, 1 port same as ingress and 2 new ports",
 		},
 		{
 			[]int32{},
-			false,
+			true,
+			[]int32{80, 443, 8081},
 			"With ingress, no additional ports",
 		},
 		{
 			[]int32{80, 443, 8081, 8080},
 			false,
+			[]int32{80, 443, 8081, 8080},
 			"No ingress, 4 ports",
 		},
 		{
 			[]int32{80},
 			false,
+			[]int32{80},
 			"No ingress, 1 port",
 		},
 		{
 			[]int32{},
 			false,
+			[]int32{},
 			"No ingress, no ports",
 		},
 	}
@@ -160,7 +169,7 @@ func TestNewNEGService(t *testing.T) {
 			controller := newTestController(fake.NewSimpleClientset())
 			defer controller.stop()
 			svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
-			controller.serviceLister.Add(newTestService(controller, tc.ingress, tc.svcPorts))
+			controller.serviceLister.Add(newTestService(controller, tc.ingress, tc.exposedPorts))
 
 			if tc.ingress {
 				controller.ingressLister.Add(newTestIngress())
@@ -171,10 +180,10 @@ func TestNewNEGService(t *testing.T) {
 				t.Fatalf("Failed to process service: %v", err)
 			}
 
-			expectedSyncers := len(tc.svcPorts)
+			expectedSyncers := len(tc.exposedPorts)
 			if tc.ingress {
 				svcPorts := sets.NewString()
-				for _, port := range tc.svcPorts {
+				for _, port := range tc.exposedPorts {
 					svcPorts.Insert(fmt.Sprintf("%v", port))
 				}
 				expectedSyncers = len(svcPorts.Union(testIngressPorts))
@@ -185,7 +194,7 @@ func TestNewNEGService(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Service was not created successfully, err: %v", err)
 			}
-			validateServiceStateAnnotation(t, svc, tc.svcPorts)
+			validateServiceStateAnnotation(t, svc, tc.expectNegPorts, controller.namer)
 		})
 	}
 }
@@ -220,7 +229,7 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Service was not created successfully, err: %v", err)
 	}
-	validateServiceStateAnnotation(t, svc, svcPorts)
+	validateServiceStateAnnotation(t, svc, svcPorts, controller.namer)
 }
 
 func TestDisableNEGServiceWithIngress(t *testing.T) {
@@ -356,8 +365,8 @@ func TestSyncNegAnnotation(t *testing.T) {
 	defer controller.stop()
 	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
 	newTestService(controller, false, []int32{})
-	namespace := "ns"
-	name := "svc"
+	namespace := testServiceNamespace
+	name := testServiceName
 	namer := controller.namer
 	testCases := []struct {
 		desc            string
@@ -389,23 +398,23 @@ func TestSyncNegAnnotation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller.syncNegStatusAnnotation(testServiceNamespace, testServiceName, tc.previousPortMap)
-			svc, _ := svcClient.Get(testServiceName, metav1.GetOptions{})
+			controller.syncNegStatusAnnotation(namespace, name, tc.previousPortMap)
+			svc, _ := svcClient.Get(name, metav1.GetOptions{})
 
 			var oldSvcPorts []int32
 			for port := range tc.previousPortMap {
 				oldSvcPorts = append(oldSvcPorts, port)
 			}
-			validateServiceStateAnnotation(t, svc, oldSvcPorts)
+			validateServiceStateAnnotation(t, svc, oldSvcPorts, controller.namer)
 
-			controller.syncNegStatusAnnotation(testServiceNamespace, testServiceName, tc.portMap)
-			svc, _ = svcClient.Get(testServiceName, metav1.GetOptions{})
+			controller.syncNegStatusAnnotation(namespace, name, tc.portMap)
+			svc, _ = svcClient.Get(name, metav1.GetOptions{})
 
 			var svcPorts []int32
 			for port := range tc.portMap {
 				svcPorts = append(svcPorts, port)
 			}
-			validateServiceStateAnnotation(t, svc, svcPorts)
+			validateServiceStateAnnotation(t, svc, svcPorts, controller.namer)
 		})
 	}
 }
@@ -422,7 +431,7 @@ func validateSyncers(t *testing.T, controller *Controller, num int, stopped bool
 	}
 }
 
-func validateServiceStateAnnotation(t *testing.T, svc *apiv1.Service, svcPorts []int32) {
+func validateServiceStateAnnotation(t *testing.T, svc *apiv1.Service, svcPorts []int32, namer negtypes.NetworkEndpointGroupNamer) {
 	t.Helper()
 	if len(svcPorts) == 0 {
 		v, ok := svc.Annotations[annotations.NEGStatusKey]
@@ -437,6 +446,7 @@ func validateServiceStateAnnotation(t *testing.T, svc *apiv1.Service, svcPorts [
 		t.Fatalf("Failed to apply the NEG service state annotation, got %+v", svc.Annotations)
 	}
 
+	// plain text validation
 	for _, port := range svcPorts {
 		if !strings.Contains(v, fmt.Sprintf("%v", port)) {
 			t.Fatalf("Expected NEG service state annotation to contain port %v, got %v", port, v)
@@ -449,6 +459,34 @@ func validateServiceStateAnnotation(t *testing.T, svc *apiv1.Service, svcPorts [
 		if !strings.Contains(v, zone) {
 			t.Fatalf("Expected NEG service state annotation to contain zone %v, got %v", zone, v)
 		}
+	}
+
+	// negStatus validation
+	negStatus, err := negtypes.ParseNegStatus(v)
+	if err != nil {
+		t.Fatalf("Failed to parse neg status annotation %q: %v", v, err)
+	}
+
+	if len(negStatus.NetworkEndpointGroups) != len(svcPorts) {
+		t.Fatalf("Expect # of NEG to be %d, but got %d", len(svcPorts), len(negStatus.NetworkEndpointGroups))
+	}
+
+	for _, svcPort := range svcPorts {
+		negName, ok := negStatus.NetworkEndpointGroups[strconv.Itoa(int(svcPort))]
+		if !ok {
+			t.Fatalf("NEG for port %d was not found", svcPort)
+		}
+		expectName := namer.NEG(svc.Namespace, svc.Name, svcPort)
+		if negName != expectName {
+			t.Fatalf("Expect NEG name of service port %d to be %q, but got %q", svcPort, expectName, negName)
+		}
+	}
+
+	zoneInStatus := sets.NewString(negStatus.Zones...)
+	expectedZones := sets.NewString(zones...)
+
+	if !zoneInStatus.Equal(expectedZones) {
+		t.Fatalf("Expect Zone %v, but got %v", expectedZones.List(), zoneInStatus.List())
 	}
 }
 
