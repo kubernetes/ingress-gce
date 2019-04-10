@@ -191,7 +191,7 @@ func TestNEGStatus(t *testing.T) {
 					},
 				},
 			},
-			expectNegStatus: &types.NegStatus{NetworkEndpointGroups: types.PortNameMap{80: "neg-name"}, Zones: []string{"us-central1-a"}},
+			expectNegStatus: &types.NegStatus{NetworkEndpointGroups: types.PortNegMap{"80": "neg-name"}, Zones: []string{"us-central1-a"}},
 			expectFound:     true,
 			expectError:     nil,
 		},
