@@ -57,7 +57,7 @@ func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 	for svcPort, portInfo := range p2 {
 		if existingPortInfo, ok := p1[svcPort]; ok {
 			if !reflect.DeepEqual(existingPortInfo, portInfo) {
-				return fmt.Errorf("key %q in PortInfoMaps has different values. Existing value %v while new value: %v", svcPort, existingPortInfo, portInfo)
+				return fmt.Errorf("key %d in PortInfoMaps has different values. Existing value %v while new value: %v", svcPort, existingPortInfo, portInfo)
 			}
 		}
 		p1[svcPort] = portInfo
