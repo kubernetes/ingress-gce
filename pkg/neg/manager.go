@@ -51,7 +51,7 @@ type syncerManager struct {
 	// svcPortMap is the canonical indicator for whether a service needs NEG.
 	// key consists of service namespace and name. Value is a map of ServicePort
 	// Port:TargetPort, which represents ports that require NEG
-	svcPortMap map[serviceKey]negtypes.PortNameMap
+	svcPortMap map[serviceKey]negtypes.PortInfoMap
 	// syncerMap stores the NEG syncer
 	// key consists of service namespace, name and targetPort. Value is the corresponding syncer.
 	syncerMap map[negsyncer.NegSyncerKey]negtypes.NegSyncer
@@ -67,19 +67,19 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.
 		zoneGetter:     zoneGetter,
 		serviceLister:  serviceLister,
 		endpointLister: endpointLister,
-		svcPortMap:     make(map[serviceKey]negtypes.PortNameMap),
+		svcPortMap:     make(map[serviceKey]negtypes.PortInfoMap),
 		syncerMap:      make(map[negsyncer.NegSyncerKey]negtypes.NegSyncer),
 	}
 }
 
 // EnsureSyncer starts and stops syncers based on the input service ports.
-func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts negtypes.PortNameMap) error {
+func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts negtypes.PortInfoMap) error {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	key := getServiceKey(namespace, name)
 	currentPorts, ok := manager.svcPortMap[key]
 	if !ok {
-		currentPorts = make(negtypes.PortNameMap)
+		currentPorts = make(negtypes.PortInfoMap)
 	}
 
 	removes := currentPorts.Difference(newPorts)
@@ -88,8 +88,8 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	manager.svcPortMap[key] = newPorts
 	klog.V(3).Infof("EnsureSyncer %v/%v: syncing %v ports, removing %v ports, adding %v ports", namespace, name, newPorts, removes, adds)
 
-	for svcPort, targetPort := range removes {
-		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, targetPort)]
+	for svcPort, portInfo := range removes {
+		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo.TargetPort)]
 		if ok {
 			syncer.Stop()
 		}
@@ -97,20 +97,20 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 
 	errList := []error{}
 	// Ensure a syncer is running for each port that is being added.
-	for svcPort, targetPort := range adds {
-		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, targetPort)]
+	for svcPort, portInfo := range adds {
+		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo.TargetPort)]
 		if !ok {
 			syncerKey := negsyncer.NegSyncerKey{
 				Namespace:  namespace,
 				Name:       name,
 				Port:       svcPort,
-				TargetPort: targetPort,
+				TargetPort: portInfo.TargetPort,
 			}
 
 			if manager.negSyncerType == transactionSyncer {
 				syncer = negsyncer.NewTransactionSyncer(
 					syncerKey,
-					manager.namer.NEG(namespace, name, svcPort),
+					portInfo.NegName,
 					manager.recorder,
 					manager.cloud,
 					manager.zoneGetter,
@@ -121,7 +121,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				// Use batch syncer by default
 				syncer = negsyncer.NewBatchSyncer(
 					syncerKey,
-					manager.namer.NEG(namespace, name, svcPort),
+					portInfo.NegName,
 					manager.recorder,
 					manager.cloud,
 					manager.zoneGetter,
@@ -130,7 +130,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				)
 			}
 
-			manager.syncerMap[getSyncerKey(namespace, name, svcPort, targetPort)] = syncer
+			manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo.TargetPort)] = syncer
 		}
 
 		if syncer.IsStopped() {
@@ -149,8 +149,8 @@ func (manager *syncerManager) StopSyncer(namespace, name string) {
 	defer manager.mu.Unlock()
 	key := getServiceKey(namespace, name)
 	if ports, ok := manager.svcPortMap[key]; ok {
-		for svcPort, targetPort := range ports {
-			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, targetPort)]; ok {
+		for svcPort, portInfo := range ports {
+			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo.TargetPort)]; ok {
 				syncer.Stop()
 			}
 		}
@@ -164,9 +164,9 @@ func (manager *syncerManager) Sync(namespace, name string) {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	key := getServiceKey(namespace, name)
-	if portList, ok := manager.svcPortMap[key]; ok {
-		for svcPort, targetPort := range portList {
-			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, targetPort)]; ok {
+	if portInfoMap, ok := manager.svcPortMap[key]; ok {
+		for svcPort, portInfo := range portInfoMap {
+			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo.TargetPort)]; ok {
 				if !syncer.IsStopped() {
 					syncer.Sync()
 				}
@@ -229,10 +229,9 @@ func (manager *syncerManager) garbageCollectNEG() error {
 	func() {
 		manager.mu.Lock()
 		defer manager.mu.Unlock()
-		for key, ports := range manager.svcPortMap {
-			for sp := range ports {
-				name := manager.namer.NEG(key.namespace, key.name, sp)
-				negNames.Delete(name)
+		for _, portInfoMap := range manager.svcPortMap {
+			for _, portInfo := range portInfoMap {
+				negNames.Delete(portInfo.NegName)
 			}
 		}
 	}()

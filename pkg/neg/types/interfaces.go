@@ -64,7 +64,7 @@ type NegSyncer interface {
 type NegSyncerManager interface {
 	// EnsureSyncer ensures corresponding syncers are started and stops any unnecessary syncer
 	// portMap is a map of ServicePort Port to TargetPort
-	EnsureSyncers(namespace, name string, portMap PortNameMap) error
+	EnsureSyncers(namespace, name string, portMap PortInfoMap) error
 	// StopSyncer stops all syncers related to the service. This call is asynchronous. It will not wait for all syncers to stop.
 	StopSyncer(namespace, name string)
 	// Sync signals all syncers related to the service to sync. This call is asynchronous.
