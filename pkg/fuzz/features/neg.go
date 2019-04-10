@@ -29,6 +29,7 @@ import (
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -115,7 +116,7 @@ func (v *negValidator) getNegNameForServicePort(svc *v1.Service, svcPort *v1.Ser
 		return true, negName, fmt.Errorf("NEG status not found for service %v/%v", svc.Namespace, svc.Name)
 	}
 
-	negName, negFound := status.NetworkEndpointGroups[svcPort.Port]
+	negName, negFound := status.NetworkEndpointGroups[strconv.Itoa(int(svcPort.Port))]
 	if !negFound {
 		return true, negName, fmt.Errorf("NEG for service port %d not found for service %v/%v in NEG status %v", svcPort.Port, svc.Namespace, svc.Name, status)
 	}

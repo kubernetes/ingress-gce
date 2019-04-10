@@ -22,97 +22,120 @@ import (
 	"testing"
 )
 
-func TestPortNameMapUnion(t *testing.T) {
+type negNamer struct{}
+
+func (*negNamer) NEG(namespace, name string, svcPort int32) string {
+	return fmt.Sprintf("%v-%v-%v", namespace, name, svcPort)
+}
+
+func (*negNamer) IsNEG(name string) bool {
+	return false
+}
+
+func TestPortInfoMapMerge(t *testing.T) {
+	namer := &negNamer{}
+	namespace := "namespace"
+	name := "name"
 	testcases := []struct {
 		desc        string
-		p1          PortNameMap
-		p2          PortNameMap
-		expectedMap PortNameMap
+		p1          PortInfoMap
+		p2          PortInfoMap
+		expectedMap PortInfoMap
+		expectErr   error
 	}{
 		{
 			"empty map union empty map",
-			PortNameMap{},
-			PortNameMap{},
-			PortNameMap{},
+			PortInfoMap{},
+			PortInfoMap{},
+			PortInfoMap{},
+			nil,
 		},
 		{
 			"empty map union a non-empty map is the non-empty map",
-			PortNameMap{},
-			PortNameMap{80: "namedport", 443: "3000"},
-			PortNameMap{80: "namedport", 443: "3000"},
+			PortInfoMap{},
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
+			nil,
 		},
 		{
 			"union of two non-empty maps",
-			PortNameMap{443: "3000", 5000: "6000"},
-			PortNameMap{80: "namedport", 8080: "9000"},
-			PortNameMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"},
+			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8080: "9000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer),
+			nil,
 		},
 	}
 
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := tc.p1.Union(tc.p2)
-			if !reflect.DeepEqual(result, tc.expectedMap) {
-				t.Errorf("Expected p1.Union(p2) to equal: %v; got: %v", tc.expectedMap, result)
+			err := tc.p1.Merge(tc.p2)
+			if tc.expectErr != err {
+				t.Errorf("Expect error == %v, got %v", tc.expectErr, err)
+			}
+			if !reflect.DeepEqual(tc.p1, tc.expectedMap) {
+				t.Errorf("Expected p1.Merge(p2) to equal: %v; got: %v", tc.expectedMap, tc.p1)
 			}
 		})
 	}
 }
 
-func TestPortNameMapDifference(t *testing.T) {
+func TestPortInfoMapDifference(t *testing.T) {
+	namer := &negNamer{}
+	namespace := "namespace"
+	name := "name"
 	testcases := []struct {
 		desc        string
-		p1          PortNameMap
-		p2          PortNameMap
-		expectedMap PortNameMap
+		p1          PortInfoMap
+		p2          PortInfoMap
+		expectedMap PortInfoMap
 	}{
 		{
 			"empty map difference empty map",
-			PortNameMap{},
-			PortNameMap{},
-			PortNameMap{},
+			PortInfoMap{},
+			PortInfoMap{},
+			PortInfoMap{},
 		},
 		{
 			"empty map difference a non-empty map is empty map",
-			PortNameMap{},
-			PortNameMap{80: "namedport", 443: "3000"},
-			PortNameMap{},
+			PortInfoMap{},
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
+			PortInfoMap{},
 		},
 		{
 			"non-empty map difference a non-empty map is the non-empty map",
-			PortNameMap{80: "namedport", 443: "3000"},
-			PortNameMap{},
-			PortNameMap{80: "namedport", 443: "3000"},
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
+			PortInfoMap{},
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
 		},
 		{
 			"difference of two non-empty maps with the same elements",
-			PortNameMap{80: "namedport", 443: "3000"},
-			PortNameMap{80: "namedport", 443: "3000"},
-			PortNameMap{},
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
+			PortInfoMap{},
 		},
 		{
 			"difference of two non-empty maps with no elements in common returns p1",
-			PortNameMap{443: "3000", 5000: "6000"},
-			PortNameMap{80: "namedport", 8080: "9000"},
-			PortNameMap{443: "3000", 5000: "6000"},
+			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8080: "9000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer),
 		},
 		{
 			"difference of two non-empty maps with elements in common",
-			PortNameMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"},
-			PortNameMap{80: "namedport", 8080: "9000"},
-			PortNameMap{443: "3000", 5000: "6000"},
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8080: "9000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer),
 		},
 		{
 			"difference of two non-empty maps with a key in common but different in value",
-			PortNameMap{80: "namedport"},
-			PortNameMap{80: "8080", 8080: "9000"},
-			PortNameMap{80: "namedport"},
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "8080", 8080: "9000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport"}, namer),
 		},
 		{
 			"difference of two non-empty maps with 2 keys in common but different in values",
-			PortNameMap{80: "namedport", 443: "8443"},
-			PortNameMap{80: "8080", 443: "9443"},
-			PortNameMap{80: "namedport", 443: "8443"},
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "8443"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "8080", 443: "9443"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "8443"}, namer),
 		},
 	}
 
@@ -124,6 +147,41 @@ func TestPortNameMapDifference(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestPortInfoMapToPortNegMap(t *testing.T) {
+	for _, tc := range []struct {
+		desc             string
+		portInfoMap      PortInfoMap
+		expectPortNegMap PortNegMap
+	}{
+		{
+			desc:             "Test empty struct",
+			portInfoMap:      PortInfoMap{},
+			expectPortNegMap: PortNegMap{},
+		},
+		{
+			desc:             "1 port",
+			portInfoMap:      PortInfoMap{int32(80): PortInfo{NegName: "neg1"}},
+			expectPortNegMap: PortNegMap{"80": "neg1"},
+		},
+		{
+			desc:             "2 ports",
+			portInfoMap:      PortInfoMap{int32(80): PortInfo{NegName: "neg1"}, int32(8080): PortInfo{NegName: "neg2"}},
+			expectPortNegMap: PortNegMap{"80": "neg1", "8080": "neg2"},
+		},
+		{
+			desc:             "3 ports",
+			portInfoMap:      PortInfoMap{int32(80): PortInfo{NegName: "neg1"}, int32(443): PortInfo{NegName: "neg2"}, int32(8080): PortInfo{NegName: "neg3"}},
+			expectPortNegMap: PortNegMap{"80": "neg1", "443": "neg2", "8080": "neg3"},
+		},
+	} {
+		res := tc.portInfoMap.ToPortNegMap()
+		if !reflect.DeepEqual(res, tc.expectPortNegMap) {
+			t.Errorf("For test case %q, expect %v, but got %v", tc.desc, tc.expectPortNegMap, res)
+		}
+	}
+
 }
 
 func TestParseNegStatus(t *testing.T) {
@@ -142,7 +200,13 @@ func TestParseNegStatus(t *testing.T) {
 		{
 			desc:            "Test basic status",
 			status:          `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
-			expectNegStatus: &NegStatus{NetworkEndpointGroups: PortNameMap{80: "neg-name"}, Zones: []string{"us-central1-a"}},
+			expectNegStatus: &NegStatus{NetworkEndpointGroups: PortNegMap{"80": "neg-name"}, Zones: []string{"us-central1-a"}},
+			expectError:     nil,
+		},
+		{
+			desc:            "Test NEG status with 2 ports",
+			status:          `{"network_endpoint_groups":{"80":"neg-name", "443":"another-neg-name"},"zones":["us-central1-a"]}`,
+			expectNegStatus: &NegStatus{NetworkEndpointGroups: PortNegMap{"80": "neg-name", "443": "another-neg-name"}, Zones: []string{"us-central1-a"}},
 			expectError:     nil,
 		},
 		{

@@ -356,29 +356,31 @@ func TestSyncNegAnnotation(t *testing.T) {
 	defer controller.stop()
 	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
 	newTestService(controller, false, []int32{})
-
+	namespace := "ns"
+	name := "svc"
+	namer := controller.namer
 	testCases := []struct {
 		desc            string
-		previousPortMap negtypes.PortNameMap
-		portMap         negtypes.PortNameMap
+		previousPortMap negtypes.PortInfoMap
+		portMap         negtypes.PortInfoMap
 	}{
 		{
 			desc:    "apply new annotation with no previous annotation",
-			portMap: negtypes.PortNameMap{80: "named_port", 443: "other_port"},
+			portMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 443: "other_port"}, namer),
 		},
 		{
 			desc:            "same annotation applied twice",
-			previousPortMap: negtypes.PortNameMap{80: "named_port", 4040: "other_port"},
-			portMap:         negtypes.PortNameMap{80: "named_port", 4040: "other_port"},
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer),
+			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer),
 		},
 		{
 			desc:            "apply new annotation and override previous annotation",
-			previousPortMap: negtypes.PortNameMap{80: "named_port", 4040: "other_port"},
-			portMap:         negtypes.PortNameMap{3000: "6000", 4000: "8000"},
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer),
+			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{3000: "6000", 4000: "8000"}, namer),
 		},
 		{
 			desc:            "remove previous annotation",
-			previousPortMap: negtypes.PortNameMap{80: "named_port", 4040: "other_port"},
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer),
 		},
 		{
 			desc: "remove annotation with no previous annotation",

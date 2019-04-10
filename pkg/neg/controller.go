@@ -279,44 +279,51 @@ func (c *Controller) processService(key string) error {
 		}
 	}
 
-	if !foundNEGAnnotation || !negAnnotation.NEGEnabled() {
+	// If neg annotation is not found or NEG is not enabled
+	if !foundNEGAnnotation || negAnnotation == nil || !negAnnotation.NEGEnabled() {
 		c.manager.StopSyncer(namespace, name)
 		// delete the annotation
-		return c.syncNegStatusAnnotation(namespace, name, make(negtypes.PortNameMap))
+		return c.syncNegStatusAnnotation(namespace, name, make(negtypes.PortInfoMap))
 	}
 
 	klog.V(2).Infof("Syncing service %q", key)
-	// map of ServicePort (int) to TargetPort
-	svcPortMap := make(negtypes.PortNameMap)
-
+	portInfoMap := make(negtypes.PortInfoMap)
+	// handle NEGs used by ingress
 	if negAnnotation.NEGEnabledForIngress() {
 		// Only service ports referenced by ingress are synced for NEG
 		ings := getIngressServicesFromStore(c.ingressLister, service)
-		svcPortMap = gatherPortMappingUsedByIngress(ings, service)
+		ingressSvcPorts := gatherPortMappingUsedByIngress(ings, service)
+		ingressPortInfoMap := negtypes.NewPortInfoMap(namespace, name, ingressSvcPorts, c.namer)
+		if err := portInfoMap.Merge(ingressPortInfoMap); err != nil {
+			return fmt.Errorf("failed to merge service ports referenced by ingress (%v): %v", ingressPortInfoMap, err)
+		}
 	}
 
+	// handle Exposed Standalone NEGs
 	if negAnnotation.NEGExposed() {
-		knownPorts := make(negtypes.PortNameMap)
+		knownPorts := make(negtypes.SvcPortMap)
 		for _, sp := range service.Spec.Ports {
 			knownPorts[sp.Port] = sp.TargetPort.String()
 		}
 
-		negSvcPorts, err := NEGServicePorts(negAnnotation, knownPorts)
+		exposedNegSvcPort, err := negServicePorts(negAnnotation, knownPorts)
 		if err != nil {
 			return err
 		}
 
-		svcPortMap = svcPortMap.Union(negSvcPorts)
+		if err := portInfoMap.Merge(negtypes.NewPortInfoMap(namespace, name, exposedNegSvcPort, c.namer)); err != nil {
+			return fmt.Errorf("failed to merge service ports exposed as standalone NEGs (%v) into ingress referenced service ports (%v): %v", exposedNegSvcPort, portInfoMap, err)
+		}
 	}
 
-	err = c.syncNegStatusAnnotation(namespace, name, svcPortMap)
+	err = c.syncNegStatusAnnotation(namespace, name, portInfoMap)
 	if err != nil {
 		return err
 	}
-	return c.manager.EnsureSyncers(namespace, name, svcPortMap)
+	return c.manager.EnsureSyncers(namespace, name, portInfoMap)
 }
 
-func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap negtypes.PortNameMap) error {
+func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap negtypes.PortInfoMap) error {
 	zones, err := c.zoneGetter.ListZones()
 	if err != nil {
 		return err
@@ -340,11 +347,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		return nil
 	}
 
-	portToNegs := make(negtypes.PortNameMap)
-	for svcPort := range portMap {
-		portToNegs[svcPort] = c.namer.NEG(namespace, name, svcPort)
-	}
-	negSvcState := GetNegStatus(zones, portToNegs)
+	negSvcState := negtypes.NewNegStatus(zones, portMap.ToPortNegMap())
 	bytes, err := json.Marshal(negSvcState)
 	if err != nil {
 		return err
@@ -416,9 +419,9 @@ func (c *Controller) synced() bool {
 
 // gatherPortMappingUsedByIngress returns a map containing port:targetport
 // of all service ports of the service that are referenced by ingresses
-func gatherPortMappingUsedByIngress(ings []extensions.Ingress, svc *apiv1.Service) negtypes.PortNameMap {
+func gatherPortMappingUsedByIngress(ings []extensions.Ingress, svc *apiv1.Service) negtypes.SvcPortMap {
 	servicePorts := sets.NewString()
-	ingressSvcPorts := make(negtypes.PortNameMap)
+	ingressSvcPorts := make(negtypes.SvcPortMap)
 	for _, ing := range ings {
 		if utils.IsGLBCIngress(&ing) {
 			utils.TraverseIngressBackends(&ing, func(id utils.ServicePortID) bool {

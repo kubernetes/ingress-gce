@@ -61,17 +61,19 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 }
 
 func TestEnsureAndStopSyncer(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		namespace string
 		name      string
-		ports     types.PortNameMap
+		ports     types.SvcPortMap
 		stop      bool
 		expect    []syncers.NegSyncerKey // keys of running syncers
 	}{
 		{
 			"ns1",
 			"n1",
-			types.PortNameMap{1000: "80", 2000: "443"},
+			types.SvcPortMap{1000: "80", 2000: "443"},
 			false,
 			[]syncers.NegSyncerKey{
 				getSyncerKey("ns1", "n1", 1000, "80"),
@@ -81,7 +83,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		{
 			"ns1",
 			"n1",
-			types.PortNameMap{3000: "80", 4000: "namedport"},
+			types.SvcPortMap{3000: "80", 4000: "namedport"},
 			false,
 			[]syncers.NegSyncerKey{
 				getSyncerKey("ns1", "n1", 3000, "80"),
@@ -91,7 +93,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		{
 			"ns2",
 			"n1",
-			types.PortNameMap{3000: "80"},
+			types.SvcPortMap{3000: "80"},
 			false,
 			[]syncers.NegSyncerKey{
 				getSyncerKey("ns1", "n1", 3000, "80"),
@@ -102,20 +104,21 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		{
 			"ns1",
 			"n1",
-			types.PortNameMap{},
+			types.SvcPortMap{},
 			true,
 			[]syncers.NegSyncerKey{
 				getSyncerKey("ns2", "n1", 3000, "80"),
 			},
 		},
 	}
-
 	manager := NewTestSyncerManager(fake.NewSimpleClientset())
+	namer := manager.namer
 	for _, tc := range testCases {
 		if tc.stop {
 			manager.StopSyncer(tc.namespace, tc.name)
 		} else {
-			if err := manager.EnsureSyncers(tc.namespace, tc.name, tc.ports); err != nil {
+			portInfoMap := negtypes.NewPortInfoMap(tc.namespace, tc.name, tc.ports, namer)
+			if err := manager.EnsureSyncers(tc.namespace, tc.name, portInfoMap); err != nil {
 				t.Errorf("Failed to ensure syncer %s/%s-%v: %v", tc.namespace, tc.name, tc.ports, err)
 			}
 		}
@@ -153,18 +156,27 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 }
 
 func TestGarbageCollectionSyncer(t *testing.T) {
-	manager := NewTestSyncerManager(fake.NewSimpleClientset())
-	portMap := make(types.PortNameMap)
-	portMap[3000] = "80"
-	portMap[4000] = "namedport"
+	t.Parallel()
 
-	if err := manager.EnsureSyncers("ns1", "n1", portMap); err != nil {
+	manager := NewTestSyncerManager(fake.NewSimpleClientset())
+	namer := manager.namer
+	namespace := testServiceNamespace
+	name := testServiceName
+	svcPort1 := int32(3000)
+	svcPort2 := int32(4000)
+	targetPort1 := "80"
+	targetPort2 := "namedport"
+	portMap := make(types.PortInfoMap)
+	portMap[svcPort1] = types.PortInfo{TargetPort: targetPort1, NegName: namer.NEG(namespace, name, svcPort1)}
+	portMap[svcPort2] = types.PortInfo{TargetPort: targetPort2, NegName: namer.NEG(namespace, name, svcPort2)}
+
+	if err := manager.EnsureSyncers(namespace, name, portMap); err != nil {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}
-	manager.StopSyncer("ns1", "n1")
+	manager.StopSyncer(namespace, name)
 
-	syncer1 := manager.syncerMap[getSyncerKey("ns1", "n1", 3000, "80")]
-	syncer2 := manager.syncerMap[getSyncerKey("ns1", "n1", 4000, "namedport")]
+	syncer1 := manager.syncerMap[getSyncerKey(namespace, name, svcPort1, targetPort1)]
+	syncer2 := manager.syncerMap[getSyncerKey(namespace, name, svcPort2, targetPort2)]
 
 	if err := wait.PollImmediate(time.Second, 30*time.Second, func() (bool, error) {
 		return !syncer1.IsShuttingDown() && syncer1.IsStopped() && !syncer2.IsShuttingDown() && syncer2.IsStopped(), nil
@@ -182,13 +194,16 @@ func TestGarbageCollectionSyncer(t *testing.T) {
 }
 
 func TestGarbageCollectionNEG(t *testing.T) {
+	t.Parallel()
+
 	kubeClient := fake.NewSimpleClientset()
 	if _, err := kubeClient.Core().Endpoints(testServiceNamespace).Create(getDefaultEndpoint()); err != nil {
 		t.Fatalf("Failed to create endpoint: %v", err)
 	}
 	manager := NewTestSyncerManager(kubeClient)
-	ports := make(types.PortNameMap)
-	ports[80] = "namedport"
+	svcPort := int32(80)
+	ports := make(types.PortInfoMap)
+	ports[svcPort] = types.PortInfo{TargetPort: "namedport", NegName: manager.namer.NEG(testServiceNamespace, testServiceName, svcPort)}
 	if err := manager.EnsureSyncers(testServiceNamespace, testServiceName, ports); err != nil {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}

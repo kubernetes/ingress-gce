@@ -32,12 +32,12 @@ const (
 // NegSyncerType represents the the neg syncer type
 type NegSyncerType string
 
-// NEGServicePorts returns the parsed ServicePorts from the annotation.
+// negServicePorts returns the parsed ServicePorts from the annotation.
 // knownPorts represents the known Port:TargetPort attributes of servicePorts
 // that already exist on the service. This function returns an error if
 // any of the parsed ServicePorts from the annotation is not in knownPorts.
-func NEGServicePorts(ann *annotations.NegAnnotation, knownPorts types.PortNameMap) (types.PortNameMap, error) {
-	portSet := make(types.PortNameMap)
+func negServicePorts(ann *annotations.NegAnnotation, knownPorts types.SvcPortMap) (types.SvcPortMap, error) {
+	portSet := make(types.SvcPortMap)
 	var errList []error
 	for port := range ann.ExposedPorts {
 		// TODO: also validate ServicePorts in the exposed NEG annotation via webhook
@@ -48,16 +48,4 @@ func NEGServicePorts(ann *annotations.NegAnnotation, knownPorts types.PortNameMa
 	}
 
 	return portSet, utilerrors.NewAggregate(errList)
-}
-
-// GetNegStatus generates a NegStatus denoting the current NEGs
-// associated with the given ports.
-// NetworkEndpointGroups is a mapping between ServicePort and NEG name
-// Zones is a list of zones where the NEGs exist.
-func GetNegStatus(zones []string, portToNegs types.PortNameMap) types.NegStatus {
-	res := types.NegStatus{}
-	res.NetworkEndpointGroups = make(types.PortNameMap)
-	res.Zones = zones
-	res.NetworkEndpointGroups = portToNegs
-	return res
 }
