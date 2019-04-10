@@ -22,6 +22,9 @@ SCRIPT_ROOT=$(dirname ${BASH_SOURCE})/..
 CODEGEN_PKG=${CODEGEN_PKG:-$(cd ${SCRIPT_ROOT}; ls -d -1 ./vendor/k8s.io/code-generator 2>/dev/null || echo ../code-generator)}
 OPENAPI_PKG=${GOPATH}/src/k8s.io/kube-openapi
 
+echo "Generating composite types"
+go run ${SCRIPT_ROOT}/pkg/composite/gen/main.go
+
 ${CODEGEN_PKG}/generate-groups.sh \
   "deepcopy,client,informer,lister" \
   k8s.io/ingress-gce/pkg/backendconfig/client k8s.io/ingress-gce/pkg/apis \
