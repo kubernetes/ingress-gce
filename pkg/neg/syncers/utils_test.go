@@ -282,6 +282,7 @@ func TestNetworkEndpointCalculateDifference(t *testing.T) {
 	}
 }
 
+// TODO(freehan): add test cases with Endpoints with NotReady addresses
 func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	zoneGetter := negtypes.NewFakeZoneGetter()
 	testCases := []struct {
@@ -310,7 +311,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		res, _ := toZoneNetworkEndpointMap(getDefaultEndpoint(), zoneGetter, tc.targetPort)
+		res, _, _ := toZoneNetworkEndpointMap(getDefaultEndpoint(), zoneGetter, tc.targetPort, nil)
 
 		if !reflect.DeepEqual(res, tc.expect) {
 			t.Errorf("Expect %v, but got %v.", tc.expect, res)

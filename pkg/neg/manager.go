@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog"
@@ -43,6 +44,7 @@ type syncerManager struct {
 	cloud      negtypes.NetworkEndpointGroupCloud
 	zoneGetter negtypes.ZoneGetter
 
+	podLister      cache.Indexer
 	serviceLister  cache.Indexer
 	endpointLister cache.Indexer
 
@@ -55,9 +57,11 @@ type syncerManager struct {
 	// syncerMap stores the NEG syncer
 	// key consists of service namespace, name and targetPort. Value is the corresponding syncer.
 	syncerMap map[negsyncer.NegSyncerKey]negtypes.NegSyncer
+	// reflector handles NEG readiness gate and conditions for pods in NEG.
+	reflector readiness.Reflector
 }
 
-func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer, negSyncerType NegSyncerType) *syncerManager {
+func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer, negSyncerType NegSyncerType, reflector readiness.Reflector) *syncerManager {
 	klog.V(2).Infof("NEG controller will use NEG syncer type: %q", negSyncerType)
 	return &syncerManager{
 		negSyncerType:  negSyncerType,
@@ -65,10 +69,12 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.
 		recorder:       recorder,
 		cloud:          cloud,
 		zoneGetter:     zoneGetter,
+		podLister:      podLister,
 		serviceLister:  serviceLister,
 		endpointLister: endpointLister,
 		svcPortMap:     make(map[serviceKey]negtypes.PortInfoMap),
 		syncerMap:      make(map[negsyncer.NegSyncerKey]negtypes.NegSyncer),
+		reflector:      reflector,
 	}
 }
 
@@ -114,8 +120,10 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 					manager.recorder,
 					manager.cloud,
 					manager.zoneGetter,
+					manager.podLister,
 					manager.serviceLister,
 					manager.endpointLister,
+					manager.reflector,
 				)
 			} else {
 				// Use batch syncer by default
@@ -140,6 +148,8 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		}
 	}
 
+	// notify readiness reflector
+	manager.reflector.SyncNegService(namespace, name, newPorts.NegsWithReadinessGate())
 	return utilerrors.NewAggregate(errList)
 }
 

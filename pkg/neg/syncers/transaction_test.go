@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
@@ -169,6 +170,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 	}
 }
 
+// TODO(freehan): instead of only checking sync count. Also check the retry count
 func TestCommitTransaction(t *testing.T) {
 	t.Parallel()
 	s, transactionSyncer := newTestTransactionSyncer(gce.NewFakeGCECloud(gce.DefaultTestClusterValues()))
@@ -194,7 +196,7 @@ func TestCommitTransaction(t *testing.T) {
 			map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint{},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
-			0,
+			1,
 			false,
 		},
 		{
@@ -207,7 +209,7 @@ func TestCommitTransaction(t *testing.T) {
 				return table
 			},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
-			0,
+			2,
 			false,
 		},
 		{
@@ -221,7 +223,7 @@ func TestCommitTransaction(t *testing.T) {
 				return table
 			},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
-			0,
+			3,
 			false,
 		},
 		{
@@ -240,7 +242,7 @@ func TestCommitTransaction(t *testing.T) {
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 				return table
 			},
-			0,
+			4,
 			false,
 		},
 		{
@@ -257,7 +259,7 @@ func TestCommitTransaction(t *testing.T) {
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 				return table
 			},
-			1,
+			5,
 			true,
 		},
 		{
@@ -276,7 +278,7 @@ func TestCommitTransaction(t *testing.T) {
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 				return table
 			},
-			2,
+			6,
 			true,
 		},
 		{
@@ -289,7 +291,7 @@ func TestCommitTransaction(t *testing.T) {
 				return table
 			},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
-			3,
+			7,
 			false,
 		},
 		{
@@ -308,7 +310,7 @@ func TestCommitTransaction(t *testing.T) {
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 				return table
 			},
-			4,
+			8,
 			false,
 		},
 	}
@@ -843,13 +845,18 @@ func newTestTransactionSyncer(fakeGCE *gce.Cloud) (negtypes.NegSyncer, *transact
 		TargetPort: "8080",
 	}
 
+	// TODO(freehan): use real readiness reflector
+	reflector := &readiness.NoopReflector{}
+
 	negsyncer := NewTransactionSyncer(svcPort,
 		testNegName,
 		record.NewFakeRecorder(100),
 		fakeGCE,
 		negtypes.NewFakeZoneGetter(),
+		context.PodInformer.GetIndexer(),
 		context.ServiceInformer.GetIndexer(),
-		context.EndpointInformer.GetIndexer())
+		context.EndpointInformer.GetIndexer(),
+		reflector)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
 	return negsyncer, transactionSyncer
 }

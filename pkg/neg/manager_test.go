@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/syncers"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -48,18 +49,24 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 		DefaultBackendSvcPortID: defaultBackend,
 	}
 	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, namer, ctxConfig)
+	//TODO(freehan): use real readiness reflector for unit test
+	reflector := &readiness.NoopReflector{}
+
 	manager := newSyncerManager(
 		namer,
 		record.NewFakeRecorder(100),
 		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		negtypes.NewFakeZoneGetter(),
+		context.PodInformer.GetIndexer(),
 		context.ServiceInformer.GetIndexer(),
 		context.EndpointInformer.GetIndexer(),
 		transactionSyncer,
+		reflector,
 	)
 	return manager
 }
 
+// TODO(freehan): include test cases with different ReadinessGate setup
 func TestEnsureAndStopSyncer(t *testing.T) {
 	t.Parallel()
 
@@ -117,7 +124,8 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		if tc.stop {
 			manager.StopSyncer(tc.namespace, tc.name)
 		} else {
-			portInfoMap := negtypes.NewPortInfoMap(tc.namespace, tc.name, tc.ports, namer)
+			// TODO(freehan): include test cases with different ReadinessGate setup
+			portInfoMap := negtypes.NewPortInfoMap(tc.namespace, tc.name, tc.ports, namer, false)
 			if err := manager.EnsureSyncers(tc.namespace, tc.name, portInfoMap); err != nil {
 				t.Errorf("Failed to ensure syncer %s/%s-%v: %v", tc.namespace, tc.name, tc.ports, err)
 			}

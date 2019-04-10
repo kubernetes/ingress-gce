@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -257,20 +258,24 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 			{
 				Addresses: []apiv1.EndpointAddress{
 					{
-						IP:       "10.100.1.1",
-						NodeName: &instance1,
+						IP:        "10.100.1.1",
+						NodeName:  &instance1,
+						TargetRef: &v1.ObjectReference{},
 					},
 					{
-						IP:       "10.100.1.2",
-						NodeName: &instance1,
+						IP:        "10.100.1.2",
+						NodeName:  &instance1,
+						TargetRef: &v1.ObjectReference{},
 					},
 					{
-						IP:       "10.100.2.1",
-						NodeName: &instance2,
+						IP:        "10.100.2.1",
+						NodeName:  &instance2,
+						TargetRef: &v1.ObjectReference{},
 					},
 					{
-						IP:       "10.100.3.1",
-						NodeName: &instance3,
+						IP:        "10.100.3.1",
+						NodeName:  &instance3,
+						TargetRef: &v1.ObjectReference{},
 					},
 				},
 				Ports: []apiv1.EndpointPort{
@@ -280,16 +285,19 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 						Protocol: apiv1.ProtocolTCP,
 					},
 				},
+				NotReadyAddresses: []apiv1.EndpointAddress{},
 			},
 			{
 				Addresses: []apiv1.EndpointAddress{
 					{
-						IP:       "10.100.2.2",
-						NodeName: &instance2,
+						IP:        "10.100.2.2",
+						NodeName:  &instance2,
+						TargetRef: &v1.ObjectReference{},
 					},
 					{
-						IP:       "10.100.4.1",
-						NodeName: &instance4,
+						IP:        "10.100.4.1",
+						NodeName:  &instance4,
+						TargetRef: &v1.ObjectReference{},
 					},
 				},
 				Ports: []apiv1.EndpointPort{
@@ -299,16 +307,19 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 						Protocol: apiv1.ProtocolTCP,
 					},
 				},
+				NotReadyAddresses: []apiv1.EndpointAddress{},
 			},
 			{
 				Addresses: []apiv1.EndpointAddress{
 					{
-						IP:       "10.100.3.2",
-						NodeName: &instance3,
+						IP:        "10.100.3.2",
+						NodeName:  &instance3,
+						TargetRef: &v1.ObjectReference{},
 					},
 					{
-						IP:       "10.100.4.2",
-						NodeName: &instance4,
+						IP:        "10.100.4.2",
+						NodeName:  &instance4,
+						TargetRef: &v1.ObjectReference{},
 					},
 				},
 				Ports: []apiv1.EndpointPort{
@@ -318,6 +329,7 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 						Protocol: apiv1.ProtocolTCP,
 					},
 				},
+				NotReadyAddresses: []apiv1.EndpointAddress{},
 			},
 		},
 	}

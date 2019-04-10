@@ -33,6 +33,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/neg/utils"
 	"k8s.io/klog"
 )
 
@@ -307,27 +308,10 @@ func (s *batchSyncer) retrieveExistingZoneNetworkEndpointMap() (map[string]sets.
 	return zoneNetworkEndpointMap, nil
 }
 
-type ErrorList struct {
-	errList []error
-	lock    sync.Mutex
-}
-
-func (e *ErrorList) Add(err error) {
-	e.lock.Lock()
-	defer e.lock.Unlock()
-	e.errList = append(e.errList, err)
-}
-
-func (e *ErrorList) List() []error {
-	e.lock.Lock()
-	defer e.lock.Unlock()
-	return e.errList
-}
-
 // syncNetworkEndpoints adds and removes endpoints for negs
 func (s *batchSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]sets.String) error {
 	var wg sync.WaitGroup
-	errList := &ErrorList{}
+	errList := &utils.ErrorList{}
 
 	// Detach Endpoints
 	for zone, endpointSet := range removeEndpoints {
@@ -386,19 +370,19 @@ func (s *batchSyncer) toNetworkEndpointBatch(endpoints sets.String) ([]*compute.
 	return networkEndpointList, nil
 }
 
-func (s *batchSyncer) attachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
+func (s *batchSyncer) attachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *utils.ErrorList) {
 	wg.Add(1)
 	klog.V(2).Infof("Attaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpoints), s.NegSyncerKey.String(), s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.AttachNetworkEndpoints, "Attach")
 }
 
-func (s *batchSyncer) detachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList) {
+func (s *batchSyncer) detachNetworkEndpoints(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *utils.ErrorList) {
 	wg.Add(1)
 	klog.V(2).Infof("Detaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpoints), s.NegSyncerKey.String(), s.negName, zone)
 	go s.operationInternal(wg, zone, networkEndpoints, errList, s.cloud.DetachNetworkEndpoints, "Detach")
 }
 
-func (s *batchSyncer) operationInternal(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *ErrorList, syncFunc func(name, zone string, endpoints []*compute.NetworkEndpoint) error, operationName string) {
+func (s *batchSyncer) operationInternal(wg *sync.WaitGroup, zone string, networkEndpoints []*compute.NetworkEndpoint, errList *utils.ErrorList, syncFunc func(name, zone string, endpoints []*compute.NetworkEndpoint) error, operationName string) {
 	defer wg.Done()
 	err := syncFunc(s.negName, zone, networkEndpoints)
 	if err != nil {

@@ -23,7 +23,9 @@ import (
 	"time"
 
 	"google.golang.org/api/compute/v0.beta"
+	"k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -170,11 +172,12 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map
-func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.ZoneGetter, targetPort string) (map[string]negtypes.NetworkEndpointSet, error) {
+func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.ZoneGetter, targetPort string, podLister cache.Indexer) (map[string]negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]types.NamespacedName, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
+	networkEndpointPodMap := map[negtypes.NetworkEndpoint]types.NamespacedName{}
 	if endpoints == nil {
 		klog.Errorf("Endpoint object is nil")
-		return zoneNetworkEndpointMap, nil
+		return zoneNetworkEndpointMap, networkEndpointPodMap, nil
 	}
 	targetPortNum, _ := strconv.Atoi(targetPort)
 	for _, subset := range endpoints.Subsets {
@@ -202,22 +205,43 @@ func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.Zo
 		if len(matchPort) == 0 {
 			continue
 		}
-		for _, address := range subset.Addresses {
-			if address.NodeName == nil {
-				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
-				continue
+
+		// processAddressFunc adds the qualified endpoints from the input list into the endpointSet group by zone
+		processAddressFunc := func(addresses []v1.EndpointAddress, includeAllEndpoints bool) error {
+			for _, address := range addresses {
+				if address.NodeName == nil {
+					klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
+					continue
+				}
+				if address.TargetRef == nil {
+					klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
+					continue
+				}
+				zone, err := zoneGetter.GetZoneForNode(*address.NodeName)
+				if err != nil {
+					return fmt.Errorf("failed to retrieve associated zone of node %q: %v", *address.NodeName, err)
+				}
+				if zoneNetworkEndpointMap[zone] == nil {
+					zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
+				}
+
+				if includeAllEndpoints || shouldPodBeInNeg(podLister, address.TargetRef.Namespace, address.TargetRef.Name) {
+					networkEndpoint := negtypes.NetworkEndpoint{IP: address.IP, Port: matchPort, Node: *address.NodeName}
+					zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
+					networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: address.TargetRef.Namespace, Name: address.TargetRef.Name}
+				}
 			}
-			zone, err := zoneGetter.GetZoneForNode(*address.NodeName)
-			if err != nil {
-				return nil, err
-			}
-			if zoneNetworkEndpointMap[zone] == nil {
-				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
-			}
-			zoneNetworkEndpointMap[zone].Insert(negtypes.NetworkEndpoint{IP: address.IP, Port: matchPort, Node: *address.NodeName})
+			return nil
+		}
+
+		if err := processAddressFunc(subset.Addresses, true); err != nil {
+			return nil, nil, err
+		}
+		if err := processAddressFunc(subset.NotReadyAddresses, false); err != nil {
+			return nil, nil, err
 		}
 	}
-	return zoneNetworkEndpointMap, nil
+	return zoneNetworkEndpointMap, networkEndpointPodMap, nil
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
@@ -264,4 +288,32 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet) (map[negtypes.Netw
 		}
 	}
 	return endpointBatch, nil
+}
+
+func keyFunc(namespace, name string) string {
+	return fmt.Sprintf("%s/%s", namespace, name)
+}
+
+// shouldPodBeInNeg returns true if pod is not in graceful termination state
+func shouldPodBeInNeg(podLister cache.Indexer, namespace, name string) bool {
+	key := keyFunc(namespace, name)
+	obj, exists, err := podLister.GetByKey(key)
+	if err != nil {
+		klog.Errorf("Failed to retrieve pod %s from pod lister: %v", key, err)
+		return false
+	}
+	if !exists {
+		return false
+	}
+	pod, ok := obj.(*v1.Pod)
+	if !ok {
+		klog.Errorf("Failed to convert obj %s to v1.Pod. The object type is %T", key, obj)
+		return false
+	}
+
+	// if pod has DeletionTimestamp, that means pod is in graceful termination state.
+	if pod.DeletionTimestamp != nil {
+		return false
+	}
+	return true
 }
