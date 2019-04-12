@@ -164,11 +164,10 @@ func verifyBackend(env fuzz.ValidatorEnv, bsName string, backendKeyword string, 
 		return err
 	}
 
+	if strings.Contains(urlMap.DefaultService, beService.Name) {
+		return nil
+	}
 	for _, pathMatcher := range urlMap.PathMatchers {
-		if strings.Contains(pathMatcher.DefaultService, beService.Name) {
-			return nil
-		}
-
 		for _, rule := range pathMatcher.PathRules {
 			if strings.Contains(rule.Service, beService.Name) {
 				return nil
@@ -176,5 +175,5 @@ func verifyBackend(env fuzz.ValidatorEnv, bsName string, backendKeyword string, 
 		}
 	}
 
-	return fmt.Errorf("backend service %q is not used by ingress URL Map %q", bsName, urlMapName)
+	return fmt.Errorf("backend service %q is not used by UrlMap %q", bsName, urlMapName)
 }
