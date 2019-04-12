@@ -27,6 +27,7 @@ import (
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 	"net/http"
 	"strconv"
@@ -83,10 +84,16 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 		return fuzz.CheckResponseContinue, err
 	}
 
+	key, err := utils.KeyFunc(v.ing)
+	if err != nil {
+		return fuzz.CheckResponseContinue, err
+	}
+
+	urlMapName := v.env.Namer().UrlMap(v.env.Namer().LoadBalancer(key))
 	if negEnabled {
-		return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName)
+		return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName, urlMapName)
 	} else {
-		return fuzz.CheckResponseContinue, verifyIgBackend(v.env, v.env.Namer().IGBackend(int64(svcPort.NodePort)))
+		return fuzz.CheckResponseContinue, verifyIgBackend(v.env, v.env.Namer().IGBackend(int64(svcPort.NodePort)), urlMapName)
 	}
 }
 
@@ -124,18 +131,19 @@ func (v *negValidator) getNegNameForServicePort(svc *v1.Service, svcPort *v1.Ser
 }
 
 // verifyNegBackend verifies if the backend service is using network endpoint group
-func verifyNegBackend(env fuzz.ValidatorEnv, negName string) error {
-	return verifyBackend(env, negName, negName)
+func verifyNegBackend(env fuzz.ValidatorEnv, negName string, urlMapName string) error {
+	return verifyBackend(env, negName, negName, urlMapName)
 }
 
 // verifyNegBackend verifies if the backend service is using instance group
-func verifyIgBackend(env fuzz.ValidatorEnv, bsName string) error {
-	return verifyBackend(env, bsName, "instanceGroup")
+func verifyIgBackend(env fuzz.ValidatorEnv, bsName string, urlMapName string) error {
+	return verifyBackend(env, bsName, "instanceGroup", urlMapName)
 }
 
 // verifyBackend verifies the backend service and check if the corresponding backend group has the keyword
-func verifyBackend(env fuzz.ValidatorEnv, bsName string, backendKeyword string) error {
-	beService, err := env.Cloud().BackendServices().Get(context.Background(), &meta.Key{Name: bsName})
+func verifyBackend(env fuzz.ValidatorEnv, bsName string, backendKeyword string, urlMapName string) error {
+	ctx := context.Background()
+	beService, err := env.Cloud().BackendServices().Get(ctx, &meta.Key{Name: bsName})
 	if err != nil {
 		return err
 	}
@@ -149,5 +157,24 @@ func verifyBackend(env fuzz.ValidatorEnv, bsName string, backendKeyword string) 
 			return fmt.Errorf("backend group %q of backend service %q does not contain keyword %q", be.Group, bsName, backendKeyword)
 		}
 	}
-	return nil
+
+	// Examine if ingress url map is targeting the backend service
+	urlMap, err := env.Cloud().UrlMaps().Get(ctx, &meta.Key{Name: urlMapName})
+	if err != nil {
+		return err
+	}
+
+	for _, pathMatcher := range urlMap.PathMatchers {
+		if strings.Contains(pathMatcher.DefaultService, beService.Name) {
+			return nil
+		}
+
+		for _, rule := range pathMatcher.PathRules {
+			if strings.Contains(rule.Service, beService.Name) {
+				return nil
+			}
+		}
+	}
+
+	return fmt.Errorf("backend service %q is not used by ingress URL Map %q", bsName, urlMapName)
 }
