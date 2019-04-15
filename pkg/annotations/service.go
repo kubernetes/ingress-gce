@@ -124,6 +124,15 @@ type NegStatus struct {
 	Zones []string `json:"zones,omitempty"`
 }
 
+func (ns NegStatus) Marshal() (string, error) {
+	ret := ""
+	bytes, err := json.Marshal(ns)
+	if err != nil {
+		return ret, err
+	}
+	return string(bytes), err
+}
+
 // NewNegStatus generates a NegStatus denoting the current NEGs
 // associated with the given ports.
 func NewNegStatus(zones []string, portToNegs PortNegMap) NegStatus {

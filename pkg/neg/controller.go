@@ -17,7 +17,6 @@ limitations under the License.
 package neg
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -347,12 +346,11 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		return nil
 	}
 
-	negSvcState := annotations.NewNegStatus(zones, portMap.ToPortNegMap())
-	bytes, err := json.Marshal(negSvcState)
+	negStatus := annotations.NewNegStatus(zones, portMap.ToPortNegMap())
+	annotation, err := negStatus.Marshal()
 	if err != nil {
 		return err
 	}
-	annotation := string(bytes)
 	existingAnnotation, ok := service.Annotations[annotations.NEGStatusKey]
 	if ok && existingAnnotation == annotation {
 		return nil
