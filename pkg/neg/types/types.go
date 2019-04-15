@@ -18,7 +18,7 @@ package types
 
 import (
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/json"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"reflect"
 	"strconv"
 )
@@ -80,39 +80,10 @@ func (p1 PortInfoMap) Difference(p2 PortInfoMap) PortInfoMap {
 	return result
 }
 
-func (p1 PortInfoMap) ToPortNegMap() PortNegMap {
-	ret := PortNegMap{}
+func (p1 PortInfoMap) ToPortNegMap() annotations.PortNegMap {
+	ret := annotations.PortNegMap{}
 	for svcPort, portInfo := range p1 {
 		ret[strconv.Itoa(int(svcPort))] = portInfo.NegName
 	}
 	return ret
-}
-
-// PortNegMap is the mapping between service port to NEG name
-type PortNegMap map[string]string
-
-// NegStatus contains name and zone of the Network Endpoint Group
-// resources associated with this service
-type NegStatus struct {
-	// NetworkEndpointGroups returns the mapping between service port and NEG
-	// resource. key is service port, value is the name of the NEG resource.
-	NetworkEndpointGroups PortNegMap `json:"network_endpoint_groups,omitempty"`
-	// Zones is a list of zones where the NEGs exist.
-	Zones []string `json:"zones,omitempty"`
-}
-
-// NewNegStatus generates a NegStatus denoting the current NEGs
-// associated with the given ports.
-func NewNegStatus(zones []string, portToNegs PortNegMap) NegStatus {
-	res := NegStatus{}
-	res.Zones = zones
-	res.NetworkEndpointGroups = portToNegs
-	return res
-}
-
-// ParseNegStatus parses the given annotation into NEG status struct
-func ParseNegStatus(annotation string) (NegStatus, error) {
-	ret := &NegStatus{}
-	err := json.Unmarshal([]byte(annotation), ret)
-	return *ret, err
 }

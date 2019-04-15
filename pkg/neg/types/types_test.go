@@ -18,6 +18,7 @@ package types
 
 import (
 	"fmt"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"reflect"
 	"testing"
 )
@@ -167,27 +168,27 @@ func TestPortInfoMapToPortNegMap(t *testing.T) {
 	for _, tc := range []struct {
 		desc             string
 		portInfoMap      PortInfoMap
-		expectPortNegMap PortNegMap
+		expectPortNegMap annotations.PortNegMap
 	}{
 		{
 			desc:             "Test empty struct",
 			portInfoMap:      PortInfoMap{},
-			expectPortNegMap: PortNegMap{},
+			expectPortNegMap: annotations.PortNegMap{},
 		},
 		{
 			desc:             "1 port",
 			portInfoMap:      PortInfoMap{int32(80): PortInfo{NegName: "neg1"}},
-			expectPortNegMap: PortNegMap{"80": "neg1"},
+			expectPortNegMap: annotations.PortNegMap{"80": "neg1"},
 		},
 		{
 			desc:             "2 ports",
 			portInfoMap:      PortInfoMap{int32(80): PortInfo{NegName: "neg1"}, int32(8080): PortInfo{NegName: "neg2"}},
-			expectPortNegMap: PortNegMap{"80": "neg1", "8080": "neg2"},
+			expectPortNegMap: annotations.PortNegMap{"80": "neg1", "8080": "neg2"},
 		},
 		{
 			desc:             "3 ports",
 			portInfoMap:      PortInfoMap{int32(80): PortInfo{NegName: "neg1"}, int32(443): PortInfo{NegName: "neg2"}, int32(8080): PortInfo{NegName: "neg3"}},
-			expectPortNegMap: PortNegMap{"80": "neg1", "443": "neg2", "8080": "neg3"},
+			expectPortNegMap: annotations.PortNegMap{"80": "neg1", "443": "neg2", "8080": "neg3"},
 		},
 	} {
 		res := tc.portInfoMap.ToPortNegMap()
@@ -196,56 +197,4 @@ func TestPortInfoMapToPortNegMap(t *testing.T) {
 		}
 	}
 
-}
-
-func TestParseNegStatus(t *testing.T) {
-	for _, tc := range []struct {
-		desc            string
-		status          string
-		expectNegStatus *NegStatus
-		expectError     error
-	}{
-		{
-			desc:            "Test empty string",
-			status:          "",
-			expectNegStatus: &NegStatus{},
-			expectError:     fmt.Errorf("unexpected end of JSON input"),
-		},
-		{
-			desc:            "Test basic status",
-			status:          `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
-			expectNegStatus: &NegStatus{NetworkEndpointGroups: PortNegMap{"80": "neg-name"}, Zones: []string{"us-central1-a"}},
-			expectError:     nil,
-		},
-		{
-			desc:            "Test NEG status with 2 ports",
-			status:          `{"network_endpoint_groups":{"80":"neg-name", "443":"another-neg-name"},"zones":["us-central1-a"]}`,
-			expectNegStatus: &NegStatus{NetworkEndpointGroups: PortNegMap{"80": "neg-name", "443": "another-neg-name"}, Zones: []string{"us-central1-a"}},
-			expectError:     nil,
-		},
-		{
-			desc:            "Incorrect fields",
-			status:          `{"network_endpoint_group":{"80":"neg-name"},"zone":["us-central1-a"]}`,
-			expectNegStatus: &NegStatus{},
-			expectError:     nil,
-		},
-		{
-			desc:            "Invalid annotation",
-			status:          `{"network_endpoint_groups":{"80":"neg-name"},"zones":"us-central1-a"]}`,
-			expectNegStatus: &NegStatus{},
-			expectError:     fmt.Errorf("invalid character ']' after object key:value pair"),
-		},
-	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			negStatus, err := ParseNegStatus(tc.status)
-
-			if fmt.Sprintf("%q", err) != fmt.Sprintf("%q", tc.expectError) {
-				t.Errorf("Test case %q: Expect error to be %q, but got: %q", tc.desc, tc.expectError, err)
-			}
-
-			if !reflect.DeepEqual(*tc.expectNegStatus, negStatus) {
-				t.Errorf("Expected NegStatus to be %v, got %v instead", tc.expectNegStatus, negStatus)
-			}
-		})
-	}
 }

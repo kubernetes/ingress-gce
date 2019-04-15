@@ -462,7 +462,7 @@ func validateServiceStateAnnotation(t *testing.T, svc *apiv1.Service, svcPorts [
 	}
 
 	// negStatus validation
-	negStatus, err := negtypes.ParseNegStatus(v)
+	negStatus, err := annotations.ParseNegStatus(v)
 	if err != nil {
 		t.Fatalf("Failed to parse neg status annotation %q: %v", v, err)
 	}
