@@ -50,7 +50,7 @@ func NewDefaultValidatorEnv(config *rest.Config, ns string, gce cloud.Cloud) (Va
 	if err != nil {
 		return nil, err
 	}
-	ret.namer, err = app.NewNamer(ret.k8s, "", "")
+	ret.namer, err = app.NewStaticNamer(ret.k8s, "", "")
 	return ret, err
 }
 
