@@ -46,7 +46,7 @@ func (s *Sandbox) Create() error {
 			Name: s.Namespace,
 		},
 	}
-	if _, err := s.f.Clientset.Core().Namespaces().Create(ns); err != nil {
+	if _, err := s.f.Clientset.CoreV1().Namespaces().Create(ns); err != nil {
 		klog.Errorf("Error creating namespace %q: %v", s.Namespace, err)
 		return err
 	}
@@ -72,7 +72,7 @@ func (s *Sandbox) Destroy() {
 		return
 	}
 
-	if err := s.f.Clientset.Core().Namespaces().Delete(s.Namespace, &metav1.DeleteOptions{}); err != nil {
+	if err := s.f.Clientset.CoreV1().Namespaces().Delete(s.Namespace, &metav1.DeleteOptions{}); err != nil {
 		klog.Errorf("Error deleting namespace %q: %v", s.Namespace, err)
 	}
 	s.destroyed = true

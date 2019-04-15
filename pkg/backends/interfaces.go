@@ -17,11 +17,11 @@ limitations under the License.
 package backends
 
 import (
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	computebeta "google.golang.org/api/compute/v0.beta"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
 // GroupKey represents a single group for a backend. The implementation of

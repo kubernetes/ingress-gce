@@ -146,6 +146,7 @@ func makeLeaderElectionConfig(client clientset.Interface, recorder record.EventR
 		flags.F.LeaderElection.LockObjectNamespace,
 		flags.F.LeaderElection.LockObjectName,
 		client.CoreV1(),
+		client.CoordinationV1(),
 		resourcelock.ResourceLockConfig{
 			Identity:      id,
 			EventRecorder: recorder,

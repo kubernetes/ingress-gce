@@ -104,7 +104,7 @@ func TestBackendConfigNegatives(t *testing.T) {
 			testIng := fuzz.NewIngressBuilder("", "ingress-1", "").
 				AddPath("test.com", "/", "service-1", port80).
 				Build()
-			testIng, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(testIng)
+			testIng, err := Framework.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Create(testIng)
 			if err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
@@ -133,7 +133,7 @@ func TestBackendConfigNegatives(t *testing.T) {
 				t.Fatalf("error waiting for BackendConfig warning event: %v", err)
 			}
 
-			testIng, err = Framework.Clientset.Extensions().Ingresses(s.Namespace).Get(testIng.Name, metav1.GetOptions{})
+			testIng, err = Framework.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Get(testIng.Name, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("error retrieving Ingress %q: %v", testIng.Name, err)
 			}

@@ -94,11 +94,11 @@ func (sm *StatusManager) init() error {
 	var err error
 
 	// Optimistically delete a leftover config map
-	if err := sm.f.Clientset.Core().ConfigMaps("default").Delete(sm.cm.Name, &metav1.DeleteOptions{}); !errors.IsNotFound(err) {
+	if err := sm.f.Clientset.CoreV1().ConfigMaps("default").Delete(sm.cm.Name, &metav1.DeleteOptions{}); !errors.IsNotFound(err) {
 		klog.V(3).Infof("Error deleting config map %s: %v", sm.cm.Name, err)
 	}
 
-	sm.cm, err = sm.f.Clientset.Core().ConfigMaps("default").Create(sm.cm)
+	sm.cm, err = sm.f.Clientset.CoreV1().ConfigMaps("default").Create(sm.cm)
 	if err != nil {
 		return fmt.Errorf("error creating ConfigMap: %v", err)
 	}
@@ -154,7 +154,7 @@ func (sm *StatusManager) stopInformer() {
 func (sm *StatusManager) shutdown() {
 	klog.V(2).Infof("Shutting down status manager.")
 	klog.V(3).Infof("ConfigMap: %+v", sm.cm.Data)
-	if err := sm.f.Clientset.Core().ConfigMaps("default").Delete(configMapName, &metav1.DeleteOptions{}); err != nil {
+	if err := sm.f.Clientset.CoreV1().ConfigMaps("default").Delete(configMapName, &metav1.DeleteOptions{}); err != nil {
 		klog.Errorf("Error deleting ConfigMap: %v", err)
 	}
 }
@@ -211,7 +211,7 @@ func (sm *StatusManager) flush() {
 
 	// K8s considers its version of the ConfigMap to be latest, so we must get
 	// the configmap from k8s first.
-	updatedCm, err := sm.f.Clientset.Core().ConfigMaps("default").Get(configMapName, metav1.GetOptions{})
+	updatedCm, err := sm.f.Clientset.CoreV1().ConfigMaps("default").Get(configMapName, metav1.GetOptions{})
 	// The k8s API returns an empty ConfigMap upon error - we return early in
 	// order to not overwrite our ConfigMap data.
 	if err != nil {
@@ -240,7 +240,7 @@ func (sm *StatusManager) flush() {
 	sm.cm = updatedCm
 	sm.cm.Name = configMapName
 
-	_, err = sm.f.Clientset.Core().ConfigMaps("default").Update(sm.cm)
+	_, err = sm.f.Clientset.CoreV1().ConfigMaps("default").Update(sm.cm)
 	if err != nil {
 		klog.Warningf("Error updating ConfigMap: %v", err)
 	} else {

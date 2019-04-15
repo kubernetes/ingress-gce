@@ -23,13 +23,13 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 )
 
 const (
@@ -111,16 +111,16 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(name, metav1.GetOptions{})
 
 	if svc == nil || err != nil {
-		if deployment, err = s.f.Clientset.Extensions().Deployments(s.Namespace).Create(deployment); err != nil {
+		if deployment, err = s.f.Clientset.ExtensionsV1beta1().Deployments(s.Namespace).Create(deployment); err != nil {
 			return nil, err
 		}
-		if svc, err = s.f.Clientset.Core().Services(s.Namespace).Create(expectedSvc); err != nil {
+		if svc, err = s.f.Clientset.CoreV1().Services(s.Namespace).Create(expectedSvc); err != nil {
 			return nil, err
 		}
 		return svc, err
 	}
 
-	if _, err = s.f.Clientset.Extensions().Deployments(s.Namespace).UpdateScale(name, scale); err != nil {
+	if _, err = s.f.Clientset.ExtensionsV1beta1().Deployments(s.Namespace).UpdateScale(name, scale); err != nil {
 		return nil, fmt.Errorf("Error updating deployment scale: %v", err)
 	}
 
@@ -130,7 +130,7 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 		svc.Spec.Ports = expectedSvc.Spec.Ports
 		svc.Spec.Type = expectedSvc.Spec.Type
 
-		if svc, err := s.f.Clientset.Core().Services(s.Namespace).Update(svc); err != nil {
+		if svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Update(svc); err != nil {
 			return nil, fmt.Errorf("svc: %v\nexpectedSvc: %v\nerr: %v", svc, expectedSvc, err)
 		}
 	}
@@ -147,7 +147,7 @@ func CreateSecret(s *Sandbox, name string, data map[string][]byte) (*v1.Secret, 
 		Data: data,
 	}
 	var err error
-	if secret, err = s.f.Clientset.Core().Secrets(s.Namespace).Create(secret); err != nil {
+	if secret, err = s.f.Clientset.CoreV1().Secrets(s.Namespace).Create(secret); err != nil {
 		return nil, err
 	}
 	klog.V(2).Infof("Secret %q:%q created", s.Namespace, name)
@@ -157,7 +157,7 @@ func CreateSecret(s *Sandbox, name string, data map[string][]byte) (*v1.Secret, 
 
 // DeleteSecret deletes a secret.
 func DeleteSecret(s *Sandbox, name string) error {
-	if err := s.f.Clientset.Core().Secrets(s.Namespace).Delete(name, &metav1.DeleteOptions{}); err != nil {
+	if err := s.f.Clientset.CoreV1().Secrets(s.Namespace).Delete(name, &metav1.DeleteOptions{}); err != nil {
 		return err
 	}
 	klog.V(2).Infof("Secret %q:%q created", s.Namespace, name)
@@ -167,15 +167,15 @@ func DeleteSecret(s *Sandbox, name string) error {
 
 // EnsureIngress creates a new Ingress or updates an existing one.
 func EnsureIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
-	currentIng, err := s.f.Clientset.Extensions().Ingresses(s.Namespace).Get(ing.ObjectMeta.Name, metav1.GetOptions{})
+	currentIng, err := s.f.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Get(ing.ObjectMeta.Name, metav1.GetOptions{})
 
 	if currentIng == nil || err != nil {
-		return s.f.Clientset.Extensions().Ingresses(s.Namespace).Create(ing)
+		return s.f.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Create(ing)
 	}
 
 	// Update ingress spec if they are not equal
 	if !reflect.DeepEqual(ing.Spec, currentIng.Spec) {
-		return s.f.Clientset.Extensions().Ingresses(s.Namespace).Update(ing)
+		return s.f.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Update(ing)
 	}
 
 	return currentIng, nil

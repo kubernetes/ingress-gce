@@ -25,12 +25,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
 )
 
 // pathForDefaultBackend is a unique string that will not match any path.

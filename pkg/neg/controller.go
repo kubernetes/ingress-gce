@@ -85,7 +85,7 @@ func NewController(
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
-		Interface: ctx.KubeClient.Core().Events(""),
+		Interface: ctx.KubeClient.CoreV1().Events(""),
 	})
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme,
 		apiv1.EventSource{Component: "neg-controller"})
@@ -371,7 +371,7 @@ func (c *Controller) handleErr(err error, key interface{}) {
 	msg := fmt.Sprintf("error processing service %q: %v", key, err)
 	klog.Errorf(msg)
 	if service, exists, err := c.serviceLister.GetByKey(key.(string)); err != nil {
-		klog.Warning("Failed to retrieve service %q from store: %v", key.(string), err)
+		klog.Warningf("Failed to retrieve service %q from store: %v", key.(string), err)
 	} else if exists {
 		c.recorder.Eventf(service.(*apiv1.Service), apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
 	}

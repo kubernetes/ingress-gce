@@ -27,8 +27,8 @@ import (
 
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apiserver/pkg/apis/config"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
+	"k8s.io/component-base/config"
 	"k8s.io/kubernetes/pkg/client/leaderelectionconfig"
 )
 

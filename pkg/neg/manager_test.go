@@ -197,7 +197,7 @@ func TestGarbageCollectionNEG(t *testing.T) {
 	t.Parallel()
 
 	kubeClient := fake.NewSimpleClientset()
-	if _, err := kubeClient.Core().Endpoints(testServiceNamespace).Create(getDefaultEndpoint()); err != nil {
+	if _, err := kubeClient.CoreV1().Endpoints(testServiceNamespace).Create(getDefaultEndpoint()); err != nil {
 		t.Fatalf("Failed to create endpoint: %v", err)
 	}
 	manager := NewTestSyncerManager(kubeClient)

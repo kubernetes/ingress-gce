@@ -62,7 +62,7 @@ func waitForServicePort(client kubernetes.Interface, name types.NamespacedName, 
 	klog.V(2).Infof("Checking existance of default backend service %q", name.String())
 
 	err := wait.Poll(3*time.Second, 5*time.Minute, func() (bool, error) {
-		svc, err := client.Core().Services(name.Namespace).Get(name.Name, meta_v1.GetOptions{})
+		svc, err := client.CoreV1().Services(name.Namespace).Get(name.Name, meta_v1.GetOptions{})
 		if err != nil {
 			klog.V(4).Infof("Service %q does not exist", name.String())
 			return false, nil

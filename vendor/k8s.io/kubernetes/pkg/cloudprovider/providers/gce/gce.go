@@ -36,7 +36,8 @@ import (
 	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 	container "google.golang.org/api/container/v1"
-	"k8s.io/klog"
+
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -45,15 +46,12 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/pkg/version"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/flowcontrol"
-
 	cloudprovider "k8s.io/cloud-provider"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
-	"k8s.io/kubernetes/pkg/controller"
-	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
-	"k8s.io/kubernetes/pkg/version"
+	"k8s.io/klog"
 )
 
 const (
@@ -98,6 +96,14 @@ type gceObject interface {
 	MarshalJSON() ([]byte, error)
 }
 
+var _ cloudprovider.Interface = (*Cloud)(nil)
+var _ cloudprovider.Instances = (*Cloud)(nil)
+var _ cloudprovider.LoadBalancer = (*Cloud)(nil)
+var _ cloudprovider.Routes = (*Cloud)(nil)
+var _ cloudprovider.Zones = (*Cloud)(nil)
+var _ cloudprovider.PVLabeler = (*Cloud)(nil)
+var _ cloudprovider.Clusters = (*Cloud)(nil)
+
 // Cloud is an implementation of Interface, LoadBalancer and Instances for Google Compute Engine.
 type Cloud struct {
 	// ClusterID contains functionality for getting (and initializing) the ingress-uid. Call Cloud.Initialize()
@@ -110,7 +116,7 @@ type Cloud struct {
 	containerService *container.Service
 	tpuService       *tpuService
 	client           clientset.Interface
-	clientBuilder    controller.ControllerClientBuilder
+	clientBuilder    cloudprovider.ControllerClientBuilder
 	eventBroadcaster record.EventBroadcaster
 	eventRecorder    record.EventRecorder
 	projectID        string
@@ -225,7 +231,7 @@ func init() {
 	cloudprovider.RegisterCloudProvider(
 		ProviderName,
 		func(config io.Reader) (cloudprovider.Interface, error) {
-			return newCloud(config)
+			return newGCECloud(config)
 		})
 }
 
@@ -252,8 +258,8 @@ func (g *Cloud) ContainerService() *container.Service {
 	return g.containerService
 }
 
-// newCloud creates a new instance of Cloud.
-func newCloud(config io.Reader) (gceCloud *Cloud, err error) {
+// newGCECloud creates a new instance of Cloud.
+func newGCECloud(config io.Reader) (gceCloud *Cloud, err error) {
 	var cloudConfig *CloudConfig
 	var configFile *ConfigFile
 
@@ -269,7 +275,7 @@ func newCloud(config io.Reader) (gceCloud *Cloud, err error) {
 	if err != nil {
 		return nil, err
 	}
-	return CreateCloud(cloudConfig)
+	return CreateGCECloud(cloudConfig)
 }
 
 func readConfig(reader io.Reader) (*ConfigFile, error) {
@@ -379,11 +385,11 @@ func generateCloudConfig(configFile *ConfigFile) (cloudConfig *CloudConfig, err 
 	return cloudConfig, err
 }
 
-// CreateCloud creates a Cloud object using the specified parameters.
+// CreateGCECloud creates a Cloud object using the specified parameters.
 // If no networkUrl is specified, loads networkName via rest call.
 // If no tokenSource is specified, uses oauth2.DefaultTokenSource.
 // If managedZones is nil / empty all zones in the region will be managed.
-func CreateCloud(config *CloudConfig) (*Cloud, error) {
+func CreateGCECloud(config *CloudConfig) (*Cloud, error) {
 	// Remove any pre-release version and build metadata from the semver,
 	// leaving only the MAJOR.MINOR.PATCH portion. See http://semver.org/.
 	version := strings.TrimLeft(strings.Split(strings.Split(version.Get().GitVersion, "-")[0], "+")[0], "v")
@@ -475,7 +481,7 @@ func CreateCloud(config *CloudConfig) (*Cloud, error) {
 		subnetURL = gceSubnetworkURL(config.APIEndpoint, netProjID, config.Region, config.SubnetworkName)
 	} else {
 		// Determine the type of network and attempt to discover the correct subnet for AUTO mode.
-		// Gracefully fail because kubelet calls CreateCloud without any config, and minions
+		// Gracefully fail because kubelet calls CreateGCECloud without any config, and minions
 		// lack the proper credentials for API calls.
 		if networkName := lastComponent(networkURL); networkName != "" {
 			var n *compute.Network
@@ -702,8 +708,8 @@ func (g *Cloud) SetInformers(informerFactory informers.SharedInformerFactory) {
 		UpdateFunc: func(prev, obj interface{}) {
 			prevNode := prev.(*v1.Node)
 			newNode := obj.(*v1.Node)
-			if newNode.Labels[kubeletapis.LabelZoneFailureDomain] ==
-				prevNode.Labels[kubeletapis.LabelZoneFailureDomain] {
+			if newNode.Labels[v1.LabelZoneFailureDomain] ==
+				prevNode.Labels[v1.LabelZoneFailureDomain] {
 				return
 			}
 			g.updateNodeZones(prevNode, newNode)
@@ -734,7 +740,7 @@ func (g *Cloud) updateNodeZones(prevNode, newNode *v1.Node) {
 	g.nodeZonesLock.Lock()
 	defer g.nodeZonesLock.Unlock()
 	if prevNode != nil {
-		prevZone, ok := prevNode.ObjectMeta.Labels[kubeletapis.LabelZoneFailureDomain]
+		prevZone, ok := prevNode.ObjectMeta.Labels[v1.LabelZoneFailureDomain]
 		if ok {
 			g.nodeZones[prevZone].Delete(prevNode.ObjectMeta.Name)
 			if g.nodeZones[prevZone].Len() == 0 {
@@ -743,7 +749,7 @@ func (g *Cloud) updateNodeZones(prevNode, newNode *v1.Node) {
 		}
 	}
 	if newNode != nil {
-		newZone, ok := newNode.ObjectMeta.Labels[kubeletapis.LabelZoneFailureDomain]
+		newZone, ok := newNode.ObjectMeta.Labels[v1.LabelZoneFailureDomain]
 		if ok {
 			if g.nodeZones[newZone] == nil {
 				g.nodeZones[newZone] = sets.NewString()
@@ -764,9 +770,6 @@ func isProjectNumber(idOrNumber string) bool {
 	_, err := strconv.ParseUint(idOrNumber, 10, 64)
 	return err == nil
 }
-
-// Cloud implements cloudprovider.Interface.
-var _ cloudprovider.Interface = (*Cloud)(nil)
 
 func gceNetworkURL(apiEndpoint, project, network string) string {
 	if apiEndpoint == "" {

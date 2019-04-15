@@ -62,7 +62,7 @@ func TestValidateIAP(t *testing.T) {
 						Name:      "foo",
 					},
 				}
-				kubeClient.Core().Secrets("wrong-namespace").Create(secret)
+				kubeClient.CoreV1().Secrets("wrong-namespace").Create(secret)
 			},
 			expectError: true,
 		},
@@ -79,7 +79,7 @@ func TestValidateIAP(t *testing.T) {
 						"client_secret": []byte("my-secret"),
 					},
 				}
-				kubeClient.Core().Secrets("default").Create(secret)
+				kubeClient.CoreV1().Secrets("default").Create(secret)
 			},
 			expectError: true,
 		},
@@ -96,7 +96,7 @@ func TestValidateIAP(t *testing.T) {
 						"client_id": []byte("my-id"),
 					},
 				}
-				kubeClient.Core().Secrets("default").Create(secret)
+				kubeClient.CoreV1().Secrets("default").Create(secret)
 			},
 			expectError: true,
 		},
@@ -114,7 +114,7 @@ func TestValidateIAP(t *testing.T) {
 						"client_secret": []byte("my-secret"),
 					},
 				}
-				kubeClient.Core().Secrets("default").Create(secret)
+				kubeClient.CoreV1().Secrets("default").Create(secret)
 			},
 			expectError: false,
 		},
@@ -144,7 +144,7 @@ func TestValidateIAP(t *testing.T) {
 						"client_secret": []byte("my-secret"),
 					},
 				}
-				kubeClient.Core().Secrets("default").Create(secret)
+				kubeClient.CoreV1().Secrets("default").Create(secret)
 			},
 			expectError: true,
 		},

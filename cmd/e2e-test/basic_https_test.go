@@ -107,7 +107,7 @@ func TestBasicHTTPS(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
-			if _, err := Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(ing); err != nil {
+			if _, err := Framework.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Create(ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)

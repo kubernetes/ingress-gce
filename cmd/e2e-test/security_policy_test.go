@@ -25,10 +25,10 @@ import (
 
 	computebeta "google.golang.org/api/compute/v0.beta"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce/cloud/meta"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
@@ -107,7 +107,7 @@ func TestSecurityPolicyEnable(t *testing.T) {
 
 		port80 := intstr.FromInt(80)
 		testIng := fuzz.NewIngressBuilder("", "ingress-1", "").DefaultBackend("service-1", port80).AddPath("test.com", "/", "service-1", port80).Build()
-		testIng, err = Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(testIng)
+		testIng, err = Framework.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Create(testIng)
 		if err != nil {
 			t.Fatalf("error creating Ingress spec: %v", err)
 		}
@@ -179,7 +179,7 @@ func TestSecurityPolicyTransition(t *testing.T) {
 
 		port80 := intstr.FromInt(80)
 		testIng := fuzz.NewIngressBuilder("", "ingress-1", "").DefaultBackend("service-1", port80).AddPath("test.com", "/", "service-1", port80).Build()
-		testIng, err = Framework.Clientset.Extensions().Ingresses(s.Namespace).Create(testIng)
+		testIng, err = Framework.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Create(testIng)
 		if err != nil {
 			t.Fatalf("error creating Ingress spec: %v", err)
 		}
