@@ -42,16 +42,10 @@ const (
 
 // NewNamer returns a new naming policy given the state of the cluster.
 func NewNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*utils.Namer, error) {
-	name, err := getClusterUID(kubeClient, clusterName)
+	namer, err := NewStaticNamer(kubeClient, clusterName, fwName)
 	if err != nil {
 		return nil, err
 	}
-	fw_name, err := getFirewallName(kubeClient, fwName, name)
-	if err != nil {
-		return nil, err
-	}
-
-	namer := utils.NewNamer(name, fw_name)
 	uidVault := storage.NewConfigMapVault(kubeClient, metav1.NamespaceSystem, uidConfigMapName)
 
 	// Start a goroutine to poll the cluster UID config map.  We don't
@@ -88,6 +82,21 @@ func NewNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*uti
 		}
 	}, 5*time.Second)
 	return namer, nil
+}
+
+// NewStaticNamer returns a new naming policy given a snapshot of cluster state. Note that this
+// implementation does not dynamically change the naming policy based on changes in cluster state.
+func NewStaticNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*utils.Namer, error) {
+	name, err := getClusterUID(kubeClient, clusterName)
+	if err != nil {
+		return nil, err
+	}
+	fw_name, err := getFirewallName(kubeClient, fwName, name)
+	if err != nil {
+		return nil, err
+	}
+
+	return utils.NewNamer(name, fw_name), nil
 }
 
 // useDefaultOrLookupVault returns either a 'defaultName' or if unset, obtains
