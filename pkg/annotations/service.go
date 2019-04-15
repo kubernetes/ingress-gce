@@ -20,8 +20,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"k8s.io/ingress-gce/pkg/neg/types"
-
 	"k8s.io/api/core/v1"
 )
 
@@ -113,6 +111,35 @@ func (n *NegAnnotation) String() string {
 	return string(bytes)
 }
 
+// PortNegMap is the mapping between service port to NEG name
+type PortNegMap map[string]string
+
+// NegStatus contains name and zone of the Network Endpoint Group
+// resources associated with this service
+type NegStatus struct {
+	// NetworkEndpointGroups returns the mapping between service port and NEG
+	// resource. key is service port, value is the name of the NEG resource.
+	NetworkEndpointGroups PortNegMap `json:"network_endpoint_groups,omitempty"`
+	// Zones is a list of zones where the NEGs exist.
+	Zones []string `json:"zones,omitempty"`
+}
+
+// NewNegStatus generates a NegStatus denoting the current NEGs
+// associated with the given ports.
+func NewNegStatus(zones []string, portToNegs PortNegMap) NegStatus {
+	res := NegStatus{}
+	res.Zones = zones
+	res.NetworkEndpointGroups = portToNegs
+	return res
+}
+
+// ParseNegStatus parses the given annotation into NEG status struct
+func ParseNegStatus(annotation string) (NegStatus, error) {
+	ret := &NegStatus{}
+	err := json.Unmarshal([]byte(annotation), ret)
+	return *ret, err
+}
+
 // AppProtocol describes the service protocol.
 type AppProtocol string
 
@@ -180,8 +207,8 @@ func (svc *Service) NEGAnnotation() (*NegAnnotation, bool, error) {
 	return &res, true, nil
 }
 
-func (svc *Service) NEGStatus() (*types.NegStatus, bool, error) {
-	var res types.NegStatus
+func (svc *Service) NEGStatus() (*NegStatus, bool, error) {
+	var res NegStatus
 	var err error
 
 	annotation, ok := svc.v[NEGStatusKey]
@@ -189,7 +216,7 @@ func (svc *Service) NEGStatus() (*types.NegStatus, bool, error) {
 		return nil, false, nil
 	}
 
-	if res, err = types.ParseNegStatus(annotation); err != nil {
+	if res, err = ParseNegStatus(annotation); err != nil {
 		return nil, true, fmt.Errorf("Error parsing neg status: %v", err)
 	}
 

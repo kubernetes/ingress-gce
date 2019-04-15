@@ -347,7 +347,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		return nil
 	}
 
-	negSvcState := negtypes.NewNegStatus(zones, portMap.ToPortNegMap())
+	negSvcState := annotations.NewNegStatus(zones, portMap.ToPortNegMap())
 	bytes, err := json.Marshal(negSvcState)
 	if err != nil {
 		return err
