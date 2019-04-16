@@ -59,6 +59,9 @@ func (t *TLSCertsFromSecretsLoader) Load(ing *extensions.Ingress) ([]*loadbalanc
 	var certs []*loadbalancers.TLSCerts
 
 	for _, tlsSecret := range ing.Spec.TLS {
+		if tlsSecret.SecretName == "" {
+			continue
+		}
 		// TODO: Replace this for a secret watcher.
 		klog.V(3).Infof("Retrieving secret for ing %v with name %v", ing.Name, tlsSecret.SecretName)
 		secret, err := t.Client.CoreV1().Secrets(ing.Namespace).Get(tlsSecret.SecretName, meta_v1.GetOptions{})
