@@ -335,7 +335,7 @@ func (v *IngressValidator) checkPath(ctx context.Context, scheme, host, path str
 	for _, f := range v.features {
 		action, err := f.CheckResponse(host, path, resp, body)
 		if err != nil {
-			return err
+			return fmt.Errorf("error from %s validator: %v", f.Name(), err)
 		}
 		switch action {
 		case CheckResponseContinue:
