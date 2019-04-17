@@ -17,10 +17,13 @@ limitations under the License.
 package app
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"k8s.io/ingress-gce/pkg/version"
@@ -114,9 +117,30 @@ func echo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	w.Write(dumpData)
+	processedData, err := process(w, r, dumpData)
+	if err != nil {
+		klog.Errorf("error processing data dump: %v", err)
+		return
+	}
+
+	w.Write(processedData)
 	klog.V(3).Infof("echo: %v, %v, %v", time.Now(), r.UserAgent(), r.RemoteAddr)
+}
+
+// process does additional processing on response data if necessary.
+func process(w http.ResponseWriter, r *http.Request, b []byte) ([]byte, error) {
+	if strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		var compressed bytes.Buffer
+		zw := gzip.NewWriter(&compressed)
+		_, err := zw.Write(b)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compress data: %v", err)
+		}
+		zw.Close()
+		w.Header().Set("Content-Encoding", "gzip")
+		return compressed.Bytes(), nil
+	}
+	return b, nil
 }
 
 // setHeadersFromQueryString looks for certain keys in the request query string
