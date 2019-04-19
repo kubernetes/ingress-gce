@@ -19,6 +19,8 @@ package syncers
 import (
 	"fmt"
 	"testing"
+
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 )
 
 func TestTransactionTable(t *testing.T) {
@@ -30,19 +32,21 @@ func TestTransactionTable(t *testing.T) {
 		t.Errorf("Expect no keys, but got %v", ret)
 	}
 
-	_, ok := table.Get("non exist")
+	_, ok := table.Get(negtypes.NetworkEndpoint{IP: "Non exists"})
 	if ok {
 		t.Errorf("Expect ok = false, but got %v", ok)
 	}
 
 	testNum := 10
-	keyPrefix := "key"
+	ipPrefix := "ip"
+	portPrefix := "port"
+	nodePrefix := "node"
 	zonePrefix := "zone"
-	testKeyMap := map[string]transactionEntry{}
+	testKeyMap := map[negtypes.NetworkEndpoint]transactionEntry{}
 
 	// Insert entries into transaction table
 	for i := 0; i < testNum; i++ {
-		key := fmt.Sprintf("%s%d", keyPrefix, i)
+		key := negtypes.NetworkEndpoint{IP: fmt.Sprintf("%s%d", ipPrefix, i), Port: fmt.Sprintf("%s%d", portPrefix, i), Node: fmt.Sprintf("%s%d", nodePrefix, i)}
 		entry := transactionEntry{
 			attachOp,
 			false,
@@ -56,7 +60,7 @@ func TestTransactionTable(t *testing.T) {
 
 	// Update half of the entries in the transaction table
 	for i := 0; i < testNum/2; i++ {
-		key := fmt.Sprintf("%s%d", keyPrefix, i)
+		key := negtypes.NetworkEndpoint{IP: fmt.Sprintf("%s%d", ipPrefix, i), Port: fmt.Sprintf("%s%d", portPrefix, i), Node: fmt.Sprintf("%s%d", nodePrefix, i)}
 		newEntry := transactionEntry{
 			detachOp,
 			true,
@@ -69,7 +73,7 @@ func TestTransactionTable(t *testing.T) {
 	verifyTable(t, table, testKeyMap)
 }
 
-func verifyTable(t *testing.T, table transactionTable, expectTransactionMap map[string]transactionEntry) {
+func verifyTable(t *testing.T, table transactionTable, expectTransactionMap map[negtypes.NetworkEndpoint]transactionEntry) {
 	keys := table.Keys()
 	if len(expectTransactionMap) != len(keys) {
 		t.Errorf("Expect keys length to be %v, but got %v", len(expectTransactionMap), len(keys))
@@ -88,5 +92,13 @@ func verifyTable(t *testing.T, table transactionTable, expectTransactionMap map[
 		if entry != expectEntry {
 			t.Errorf("Expect entry to be %v, but got %v", expectEntry, entry)
 		}
+	}
+}
+
+func genNetworkEndpoint(key string) negtypes.NetworkEndpoint {
+	return negtypes.NetworkEndpoint{
+		IP:   key,
+		Port: key,
+		Node: key,
 	}
 }

@@ -16,6 +16,8 @@ limitations under the License.
 
 package syncers
 
+import negtypes "k8s.io/ingress-gce/pkg/neg/types"
+
 const (
 	attachOp = iota
 	detachOp
@@ -47,32 +49,32 @@ type transactionEntry struct {
 // It uses the encoded endpoint as key and associate attributes of an transaction as value
 // WARNING: transactionTable is not thread safe
 type transactionTable struct {
-	data map[string]transactionEntry
+	data map[negtypes.NetworkEndpoint]transactionEntry
 }
 
 func NewTransactionTable() transactionTable {
 	return transactionTable{
-		data: make(map[string]transactionEntry),
+		data: make(map[negtypes.NetworkEndpoint]transactionEntry),
 	}
 }
 
-func (tt transactionTable) Keys() []string {
-	res := []string{}
+func (tt transactionTable) Keys() []negtypes.NetworkEndpoint {
+	res := []negtypes.NetworkEndpoint{}
 	for key := range tt.data {
 		res = append(res, key)
 	}
 	return res
 }
 
-func (tt transactionTable) Get(key string) (transactionEntry, bool) {
+func (tt transactionTable) Get(key negtypes.NetworkEndpoint) (transactionEntry, bool) {
 	ret, ok := tt.data[key]
 	return ret, ok
 }
 
-func (tt transactionTable) Delete(key string) {
+func (tt transactionTable) Delete(key negtypes.NetworkEndpoint) {
 	delete(tt.data, key)
 }
 
-func (tt transactionTable) Put(key string, entry transactionEntry) {
+func (tt transactionTable) Put(key negtypes.NetworkEndpoint, entry transactionEntry) {
 	tt.data[key] = entry
 }
