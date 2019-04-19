@@ -86,6 +86,26 @@ func calculateDifference(targetMap, currentMap map[string]sets.String) (map[stri
 	return addSet, removeSet
 }
 
+// calculateDifference determines what endpoints needs to be added and removed in order to move current state to target state.
+func calculateNetworkEndpointDifference(targetMap, currentMap map[string]negtypes.NetworkEndpointSet) (map[string]negtypes.NetworkEndpointSet, map[string]negtypes.NetworkEndpointSet) {
+	addSet := map[string]negtypes.NetworkEndpointSet{}
+	removeSet := map[string]negtypes.NetworkEndpointSet{}
+	for zone, endpointSet := range targetMap {
+		diff := endpointSet.Difference(currentMap[zone])
+		if len(diff) > 0 {
+			addSet[zone] = diff
+		}
+	}
+
+	for zone, endpointSet := range currentMap {
+		diff := endpointSet.Difference(targetMap[zone])
+		if len(diff) > 0 {
+			removeSet[zone] = diff
+		}
+	}
+	return addSet, removeSet
+}
+
 // getService retrieves service object from serviceLister based on the input Namespace and Name
 func getService(serviceLister cache.Indexer, namespace, name string) *apiv1.Service {
 	if serviceLister == nil {
@@ -150,8 +170,8 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map
-func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.ZoneGetter, targetPort string) (map[string]sets.String, error) {
-	zoneNetworkEndpointMap := map[string]sets.String{}
+func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.ZoneGetter, targetPort string) (map[string]negtypes.NetworkEndpointSet, error) {
+	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	if endpoints == nil {
 		klog.Errorf("Endpoint object is nil")
 		return zoneNetworkEndpointMap, nil
@@ -192,30 +212,30 @@ func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.Zo
 				return nil, err
 			}
 			if zoneNetworkEndpointMap[zone] == nil {
-				zoneNetworkEndpointMap[zone] = sets.String{}
+				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 			}
-			zoneNetworkEndpointMap[zone].Insert(encodeEndpoint(address.IP, *address.NodeName, matchPort))
+			zoneNetworkEndpointMap[zone].Insert(negtypes.NetworkEndpoint{IP: address.IP, Port: matchPort, Node: *address.NodeName})
 		}
 	}
 	return zoneNetworkEndpointMap, nil
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
-func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud) (map[string]sets.String, error) {
+func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud) (map[string]negtypes.NetworkEndpointSet, error) {
 	zones, err := zoneGetter.ListZones()
 	if err != nil {
 		return nil, err
 	}
 
-	zoneNetworkEndpointMap := map[string]sets.String{}
+	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	for _, zone := range zones {
-		zoneNetworkEndpointMap[zone] = sets.String{}
+		zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 		networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, false)
 		if err != nil {
 			return nil, err
 		}
 		for _, ne := range networkEndpointsWithHealthStatus {
-			zoneNetworkEndpointMap[zone].Insert(encodeEndpoint(ne.NetworkEndpoint.IpAddress, ne.NetworkEndpoint.Instance, strconv.FormatInt(ne.NetworkEndpoint.Port, 10)))
+			zoneNetworkEndpointMap[zone].Insert(negtypes.NetworkEndpoint{IP: ne.NetworkEndpoint.IpAddress, Node: ne.NetworkEndpoint.Instance, Port: strconv.FormatInt(ne.NetworkEndpoint.Port, 10)})
 		}
 	}
 	return zoneNetworkEndpointMap, nil
@@ -223,24 +243,23 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.
 
 // makeEndpointBatch return a batch of endpoint from the input and remove the endpoints from input set
 // The return map has the encoded endpoint as key and GCE network endpoint object as value
-func makeEndpointBatch(endpoints sets.String) (map[string]*compute.NetworkEndpoint, error) {
-	endpointBatch := map[string]*compute.NetworkEndpoint{}
+func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet) (map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint, error) {
+	endpointBatch := map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint{}
 
 	for i := 0; i < MAX_NETWORK_ENDPOINTS_PER_BATCH; i++ {
-		encodedEndpoint, ok := endpoints.PopAny()
+		networkEndpoint, ok := endpoints.PopAny()
 		if !ok {
 			break
 		}
 
-		ip, instance, port := decodeEndpoint(encodedEndpoint)
-		portNum, err := strconv.Atoi(port)
+		portNum, err := strconv.Atoi(networkEndpoint.Port)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode endpoint %q: %v", encodedEndpoint, err)
+			return nil, fmt.Errorf("failed to decode endpoint %q: %v", networkEndpoint, err)
 		}
 
-		endpointBatch[encodedEndpoint] = &compute.NetworkEndpoint{
-			Instance:  instance,
-			IpAddress: ip,
+		endpointBatch[networkEndpoint] = &compute.NetworkEndpoint{
+			Instance:  networkEndpoint.Node,
+			IpAddress: networkEndpoint.IP,
 			Port:      int64(portNum),
 		}
 	}
