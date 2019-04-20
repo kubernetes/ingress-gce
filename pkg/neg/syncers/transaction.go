@@ -48,7 +48,7 @@ type transactionSyncer struct {
 	// 3. the operationInternal observed any error
 	needInit bool
 	// transactions stores each transaction
-	transactions transactionTable
+	transactions networkEndpointTransactionTable
 
 	serviceLister  cache.Indexer
 	endpointLister cache.Indexer
@@ -314,7 +314,7 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 }
 
 // filterEndpointByTransaction removes the all endpoints from endpoint map if they exists in the transaction table
-func filterEndpointByTransaction(endpointMap map[string]negtypes.NetworkEndpointSet, table transactionTable) {
+func filterEndpointByTransaction(endpointMap map[string]negtypes.NetworkEndpointSet, table networkEndpointTransactionTable) {
 	for _, endpointSet := range endpointMap {
 		for _, endpoint := range endpointSet.List() {
 			if entry, ok := table.Get(endpoint); ok {
@@ -327,7 +327,7 @@ func filterEndpointByTransaction(endpointMap map[string]negtypes.NetworkEndpoint
 
 // mergeTransactionIntoZoneEndpointMap merges the ongoing transaction into the endpointMap.
 // This converts the existing endpointMap to the state when all transactions completed
-func mergeTransactionIntoZoneEndpointMap(endpointMap map[string]negtypes.NetworkEndpointSet, transactions transactionTable) {
+func mergeTransactionIntoZoneEndpointMap(endpointMap map[string]negtypes.NetworkEndpointSet, transactions networkEndpointTransactionTable) {
 	for _, endpointKey := range transactions.Keys() {
 		entry, ok := transactions.Get(endpointKey)
 		// If called in syncInternal, as the transaction table
@@ -355,7 +355,7 @@ func mergeTransactionIntoZoneEndpointMap(endpointMap map[string]negtypes.Network
 
 // reconcileTransactions compares the endpoint map with existing transaction entries in transaction table
 // if transaction does not cu
-func reconcileTransactions(endpointMap map[string]negtypes.NetworkEndpointSet, transactions transactionTable) {
+func reconcileTransactions(endpointMap map[string]negtypes.NetworkEndpointSet, transactions networkEndpointTransactionTable) {
 	// Identify endpoints that should be in NEG but the current transaction does not match the intention
 	for zone, endpointSet := range endpointMap {
 		for _, endpointKey := range endpointSet.List() {

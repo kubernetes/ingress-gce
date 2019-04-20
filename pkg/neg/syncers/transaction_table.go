@@ -16,7 +16,17 @@ limitations under the License.
 
 package syncers
 
-import negtypes "k8s.io/ingress-gce/pkg/neg/types"
+import (
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"sync"
+)
+
+type networkEndpointTransactionTable interface {
+	Keys() []negtypes.NetworkEndpoint
+	Get(key negtypes.NetworkEndpoint) (transactionEntry, bool)
+	Delete(key negtypes.NetworkEndpoint)
+	Put(key negtypes.NetworkEndpoint, entry transactionEntry)
+}
 
 const (
 	attachOp = iota
@@ -50,15 +60,20 @@ type transactionEntry struct {
 // WARNING: transactionTable is not thread safe
 type transactionTable struct {
 	data map[negtypes.NetworkEndpoint]transactionEntry
+
+	lock sync.Mutex
 }
 
-func NewTransactionTable() transactionTable {
-	return transactionTable{
+func NewTransactionTable() networkEndpointTransactionTable {
+	return &transactionTable{
 		data: make(map[negtypes.NetworkEndpoint]transactionEntry),
 	}
 }
 
-func (tt transactionTable) Keys() []negtypes.NetworkEndpoint {
+func (tt *transactionTable) Keys() []negtypes.NetworkEndpoint {
+	tt.lock.Lock()
+	defer tt.lock.Unlock()
+
 	res := []negtypes.NetworkEndpoint{}
 	for key := range tt.data {
 		res = append(res, key)
@@ -66,15 +81,24 @@ func (tt transactionTable) Keys() []negtypes.NetworkEndpoint {
 	return res
 }
 
-func (tt transactionTable) Get(key negtypes.NetworkEndpoint) (transactionEntry, bool) {
+func (tt *transactionTable) Get(key negtypes.NetworkEndpoint) (transactionEntry, bool) {
+	tt.lock.Lock()
+	defer tt.lock.Unlock()
+
 	ret, ok := tt.data[key]
 	return ret, ok
 }
 
-func (tt transactionTable) Delete(key negtypes.NetworkEndpoint) {
+func (tt *transactionTable) Delete(key negtypes.NetworkEndpoint) {
+	tt.lock.Lock()
+	defer tt.lock.Unlock()
+
 	delete(tt.data, key)
 }
 
-func (tt transactionTable) Put(key negtypes.NetworkEndpoint, entry transactionEntry) {
+func (tt *transactionTable) Put(key negtypes.NetworkEndpoint, entry transactionEntry) {
+	tt.lock.Lock()
+	defer tt.lock.Unlock()
+
 	tt.data[key] = entry
 }
