@@ -25,7 +25,6 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -140,7 +139,7 @@ func (s *transactionSyncer) syncInternal() error {
 	// Find transaction entries that needs to be reconciled
 	reconcileTransactions(targetMap, s.transactions)
 	// Calculate the endpoints to add and delete to transform the current state to desire state
-	addEndpoints, removeEndpoints := calculateDifference(targetMap, currentMap)
+	addEndpoints, removeEndpoints := calculateNetworkEndpointDifference(targetMap, currentMap)
 	// Filter out the endpoints with existing transaction
 	// This mostly happens when transaction entry require reconciliation but the transaction is still progress
 	// e.g. endpoint A is in the process of adding to NEG N, and the new desire state is not to have A in N.
@@ -174,8 +173,8 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
-func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]sets.String) error {
-	syncFunc := func(endpointMap map[string]sets.String, operation transactionOp) error {
+func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]negtypes.NetworkEndpointSet) error {
+	syncFunc := func(endpointMap map[string]negtypes.NetworkEndpointSet, operation transactionOp) error {
 		for zone, endpointSet := range endpointMap {
 			if endpointSet.Len() == 0 {
 				klog.V(2).Infof("0 endpoint for %v operation for %s in NEG %s at %s. Skipping", attachOp, s.NegSyncerKey.String(), s.negName, zone)
@@ -193,9 +192,9 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 				Zone:          zone,
 			}
 
-			// Insert encodedEndpoint into transaction table
-			for encodedEndpoint := range batch {
-				s.transactions.Put(encodedEndpoint, transEntry)
+			// Insert networkEndpoint into transaction table
+			for networkEndpoint := range batch {
+				s.transactions.Put(networkEndpoint, transEntry)
 			}
 
 			if operation == attachOp {
@@ -219,13 +218,13 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 }
 
 // attachNetworkEndpoints creates go routine to run operations for attaching network endpoints
-func (s *transactionSyncer) attachNetworkEndpoints(zone string, networkEndpointMap map[string]*compute.NetworkEndpoint) {
+func (s *transactionSyncer) attachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
 	klog.V(2).Infof("Attaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpointMap), s.NegSyncerKey.String(), s.negName, zone)
 	go s.operationInternal(attachOp, zone, networkEndpointMap)
 }
 
 // detachNetworkEndpoints creates go routine to run operations for detaching network endpoints
-func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointMap map[string]*compute.NetworkEndpoint) {
+func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
 	klog.V(2).Infof("Detaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpointMap), s.NegSyncerKey.String(), s.negName, zone)
 	go s.operationInternal(detachOp, zone, networkEndpointMap)
 }
@@ -233,7 +232,7 @@ func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointM
 // operationInternal executes NEG API call and commits the transactions
 // It will record events when operations are completed
 // If error occurs or any transaction entry requires reconciliation, it will trigger resync
-func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[string]*compute.NetworkEndpoint) {
+func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
 	var err error
 	networkEndpoints := []*compute.NetworkEndpoint{}
 	for _, ne := range networkEndpointMap {
@@ -267,7 +266,7 @@ func (s *transactionSyncer) recordEvent(eventType, reason, eventDesc string) {
 // It will trigger syncer retry in the following conditions:
 // 1. Any of the transaction committed needed to be reconciled
 // 2. Input error was not nil
-func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[string]*compute.NetworkEndpoint) {
+func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
 	s.syncLock.Lock()
 	defer s.syncLock.Unlock()
 
@@ -285,18 +284,18 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 		needRetry = true
 	}
 
-	for encodedEndpoint := range networkEndpointMap {
-		entry, ok := s.transactions.Get(encodedEndpoint)
+	for networkEndpoint := range networkEndpointMap {
+		entry, ok := s.transactions.Get(networkEndpoint)
 		if !ok {
-			klog.Errorf("Endpoint %q was not found in the transaction table.", encodedEndpoint)
+			klog.Errorf("Endpoint %q was not found in the transaction table.", networkEndpoint)
 			needSync = true
 			continue
 		}
 		if entry.NeedReconcile == true {
-			klog.Errorf("Endpoint %q in NEG %q need to be reconciled.", encodedEndpoint, s.NegSyncerKey.String())
+			klog.Errorf("Endpoint %q in NEG %q need to be reconciled.", networkEndpoint, s.NegSyncerKey.String())
 			needSync = true
 		}
-		s.transactions.Delete(encodedEndpoint)
+		s.transactions.Delete(networkEndpoint)
 	}
 
 	if needSync {
@@ -315,7 +314,7 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 }
 
 // filterEndpointByTransaction removes the all endpoints from endpoint map if they exists in the transaction table
-func filterEndpointByTransaction(endpointMap map[string]sets.String, table transactionTable) {
+func filterEndpointByTransaction(endpointMap map[string]negtypes.NetworkEndpointSet, table transactionTable) {
 	for _, endpointSet := range endpointMap {
 		for _, endpoint := range endpointSet.List() {
 			if entry, ok := table.Get(endpoint); ok {
@@ -328,7 +327,7 @@ func filterEndpointByTransaction(endpointMap map[string]sets.String, table trans
 
 // mergeTransactionIntoZoneEndpointMap merges the ongoing transaction into the endpointMap.
 // This converts the existing endpointMap to the state when all transactions completed
-func mergeTransactionIntoZoneEndpointMap(endpointMap map[string]sets.String, transactions transactionTable) {
+func mergeTransactionIntoZoneEndpointMap(endpointMap map[string]negtypes.NetworkEndpointSet, transactions transactionTable) {
 	for _, endpointKey := range transactions.Keys() {
 		entry, ok := transactions.Get(endpointKey)
 		// If called in syncInternal, as the transaction table
@@ -339,7 +338,7 @@ func mergeTransactionIntoZoneEndpointMap(endpointMap map[string]sets.String, tra
 		// Add endpoints in attach transaction
 		if entry.Operation == attachOp {
 			if _, ok := endpointMap[entry.Zone]; !ok {
-				endpointMap[entry.Zone] = sets.NewString()
+				endpointMap[entry.Zone] = negtypes.NewNetworkEndpointSet()
 			}
 			endpointMap[entry.Zone].Insert(endpointKey)
 		}
@@ -356,7 +355,7 @@ func mergeTransactionIntoZoneEndpointMap(endpointMap map[string]sets.String, tra
 
 // reconcileTransactions compares the endpoint map with existing transaction entries in transaction table
 // if transaction does not cu
-func reconcileTransactions(endpointMap map[string]sets.String, transactions transactionTable) {
+func reconcileTransactions(endpointMap map[string]negtypes.NetworkEndpointSet, transactions transactionTable) {
 	// Identify endpoints that should be in NEG but the current transaction does not match the intention
 	for zone, endpointSet := range endpointMap {
 		for _, endpointKey := range endpointSet.List() {

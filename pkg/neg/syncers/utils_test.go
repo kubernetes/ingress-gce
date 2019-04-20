@@ -160,29 +160,151 @@ func TestCalculateDifference(t *testing.T) {
 	}
 }
 
+func TestNetworkEndpointCalculateDifference(t *testing.T) {
+	testCases := []struct {
+		targetSet  map[string]negtypes.NetworkEndpointSet
+		currentSet map[string]negtypes.NetworkEndpointSet
+		addSet     map[string]negtypes.NetworkEndpointSet
+		removeSet  map[string]negtypes.NetworkEndpointSet
+	}{
+		// unchanged
+		{
+			targetSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+			},
+			currentSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+			},
+			addSet:    map[string]negtypes.NetworkEndpointSet{},
+			removeSet: map[string]negtypes.NetworkEndpointSet{},
+		},
+		// unchanged
+		{
+			targetSet:  map[string]negtypes.NetworkEndpointSet{},
+			currentSet: map[string]negtypes.NetworkEndpointSet{},
+			addSet:     map[string]negtypes.NetworkEndpointSet{},
+			removeSet:  map[string]negtypes.NetworkEndpointSet{},
+		},
+		// add in one zone
+		{
+			targetSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+			},
+			currentSet: map[string]negtypes.NetworkEndpointSet{},
+			addSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+			},
+			removeSet: map[string]negtypes.NetworkEndpointSet{},
+		},
+		// add in 2 zones
+		{
+			targetSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("e"), genNetworkEndpoint("f"), genNetworkEndpoint("g")),
+			},
+			currentSet: map[string]negtypes.NetworkEndpointSet{},
+			addSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("e"), genNetworkEndpoint("f"), genNetworkEndpoint("g")),
+			},
+			removeSet: map[string]negtypes.NetworkEndpointSet{},
+		},
+		// remove in one zone
+		{
+			targetSet: map[string]negtypes.NetworkEndpointSet{},
+			currentSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+			},
+			addSet: map[string]negtypes.NetworkEndpointSet{},
+			removeSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+			},
+		},
+		// remove in 2 zones
+		{
+			targetSet: map[string]negtypes.NetworkEndpointSet{},
+			currentSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("e"), genNetworkEndpoint("f"), genNetworkEndpoint("g")),
+			},
+			addSet: map[string]negtypes.NetworkEndpointSet{},
+			removeSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("e"), genNetworkEndpoint("f"), genNetworkEndpoint("g")),
+			},
+		},
+		// add and delete in one zone
+		{
+			targetSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+			},
+			currentSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("b"), genNetworkEndpoint("c"), genNetworkEndpoint("d")),
+			},
+			addSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a")),
+			},
+			removeSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("d")),
+			},
+		},
+		// add and delete in 2 zones
+		{
+			targetSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a"), genNetworkEndpoint("b"), genNetworkEndpoint("c")),
+			},
+			currentSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("b"), genNetworkEndpoint("c"), genNetworkEndpoint("d")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("b"), genNetworkEndpoint("c"), genNetworkEndpoint("d")),
+			},
+			addSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("a")),
+			},
+			removeSet: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("d")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(genNetworkEndpoint("d")),
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		addSet, removeSet := calculateNetworkEndpointDifference(tc.targetSet, tc.currentSet)
+
+		if !reflect.DeepEqual(addSet, tc.addSet) {
+			t.Errorf("Failed to calculate difference for add, expecting %v, but got %v", tc.addSet, addSet)
+		}
+
+		if !reflect.DeepEqual(removeSet, tc.removeSet) {
+			t.Errorf("Failed to calculate difference for remove, expecting %v, but got %v", tc.removeSet, removeSet)
+		}
+	}
+}
+
 func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	zoneGetter := negtypes.NewFakeZoneGetter()
 	testCases := []struct {
 		targetPort string
-		expect     map[string]sets.String
+		expect     map[string]negtypes.NetworkEndpointSet
 	}{
 		// Non exist
 		{
 			targetPort: "8888",
-			expect:     map[string]sets.String{},
+			expect:     map[string]negtypes.NetworkEndpointSet{},
 		},
 		{
 			targetPort: "80",
-			expect: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("10.100.1.1||instance1||80", "10.100.1.2||instance1||80", "10.100.2.1||instance2||80"),
-				negtypes.TestZone2: sets.NewString("10.100.3.1||instance3||80"),
+			expect: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"), networkEndpointFromEncodedEndpoint("10.100.1.2||instance1||80"), networkEndpointFromEncodedEndpoint("10.100.2.1||instance2||80")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80")),
 			},
 		},
 		{
 			targetPort: testNamedPort,
-			expect: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString("10.100.2.2||instance2||81"),
-				negtypes.TestZone2: sets.NewString("10.100.4.1||instance4||81", "10.100.3.2||instance3||8081", "10.100.4.2||instance4||8081"),
+			expect: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(networkEndpointFromEncodedEndpoint("10.100.2.2||instance2||81")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(networkEndpointFromEncodedEndpoint("10.100.4.1||instance4||81"), networkEndpointFromEncodedEndpoint("10.100.3.2||instance3||8081"), networkEndpointFromEncodedEndpoint("10.100.4.2||instance4||8081")),
 			},
 		},
 	}
@@ -210,7 +332,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	testCases := []struct {
 		desc      string
 		mutate    func(cloud negtypes.NetworkEndpointGroupCloud)
-		expect    map[string]sets.String
+		expect    map[string]negtypes.NetworkEndpointSet
 		expectErr bool
 	}{
 		{
@@ -237,9 +359,9 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
 				cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{Name: testNegName}, negtypes.TestZone2)
 			},
-			expect: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString(),
-				negtypes.TestZone2: sets.NewString(),
+			expect: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(),
 			},
 			expectErr: false,
 		},
@@ -254,9 +376,9 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 					},
 				})
 			},
-			expect: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString(encodeEndpoint(testIP1, negtypes.TestInstance1, strconv.Itoa(int(testPort)))),
-				negtypes.TestZone2: sets.NewString(),
+			expect: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))}),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(),
 			},
 			expectErr: false,
 		},
@@ -271,12 +393,12 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 					},
 				})
 			},
-			expect: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString(
-					encodeEndpoint(testIP1, negtypes.TestInstance1, strconv.Itoa(int(testPort))),
-					encodeEndpoint(testIP2, negtypes.TestInstance2, strconv.Itoa(int(testPort))),
+			expect: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))},
+					negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance2, Port: strconv.Itoa(int(testPort))},
 				),
-				negtypes.TestZone2: sets.NewString(),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(),
 			},
 			expectErr: false,
 		},
@@ -296,14 +418,14 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 					},
 				})
 			},
-			expect: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString(
-					encodeEndpoint(testIP1, negtypes.TestInstance1, strconv.Itoa(int(testPort))),
-					encodeEndpoint(testIP2, negtypes.TestInstance2, strconv.Itoa(int(testPort))),
+			expect: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))},
+					negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance2, Port: strconv.Itoa(int(testPort))},
 				),
-				negtypes.TestZone2: sets.NewString(
-					encodeEndpoint(testIP3, negtypes.TestInstance3, strconv.Itoa(int(testPort))),
-					encodeEndpoint(testIP4, negtypes.TestInstance4, strconv.Itoa(int(testPort))),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))},
+					negtypes.NetworkEndpoint{IP: testIP4, Node: negtypes.TestInstance4, Port: strconv.Itoa(int(testPort))},
 				),
 			},
 			expectErr: false,
@@ -319,14 +441,14 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 					},
 				})
 			},
-			expect: map[string]sets.String{
-				negtypes.TestZone1: sets.NewString(
-					encodeEndpoint(testIP1, negtypes.TestInstance1, strconv.Itoa(int(testPort))),
-					encodeEndpoint(testIP2, negtypes.TestInstance2, strconv.Itoa(int(testPort))),
+			expect: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))},
+					negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance2, Port: strconv.Itoa(int(testPort))},
 				),
-				negtypes.TestZone2: sets.NewString(
-					encodeEndpoint(testIP3, negtypes.TestInstance3, strconv.Itoa(int(testPort))),
-					encodeEndpoint(testIP4, negtypes.TestInstance4, strconv.Itoa(int(testPort))),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))},
+					negtypes.NetworkEndpoint{IP: testIP4, Node: negtypes.TestInstance4, Port: strconv.Itoa(int(testPort))},
 				),
 			},
 			expectErr: false,
@@ -425,13 +547,13 @@ func TestMakeEndpointBatch(t *testing.T) {
 	}
 }
 
-func genTestEndpoints(num int) (sets.String, map[string]*compute.NetworkEndpoint) {
-	endpointSet := sets.NewString()
-	endpointMap := map[string]*compute.NetworkEndpoint{}
+func genTestEndpoints(num int) (negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
+	endpointSet := negtypes.NewNetworkEndpointSet()
+	endpointMap := map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint{}
 	ip := "1.2.3.4"
 	instance := "instance"
 	for port := 0; port < num; port++ {
-		key := encodeEndpoint(ip, instance, strconv.Itoa(port))
+		key := negtypes.NetworkEndpoint{IP: ip, Node: instance, Port: strconv.Itoa(port)}
 		endpointSet.Insert(key)
 		endpointMap[key] = &compute.NetworkEndpoint{
 			IpAddress: ip,
@@ -440,4 +562,9 @@ func genTestEndpoints(num int) (sets.String, map[string]*compute.NetworkEndpoint
 		}
 	}
 	return endpointSet, endpointMap
+}
+
+func networkEndpointFromEncodedEndpoint(encodedEndpoint string) negtypes.NetworkEndpoint {
+	ip, node, port := decodeEndpoint(encodedEndpoint)
+	return negtypes.NetworkEndpoint{IP: ip, Node: node, Port: port}
 }
