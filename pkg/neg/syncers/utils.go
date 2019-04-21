@@ -86,7 +86,7 @@ func calculateDifference(targetMap, currentMap map[string]sets.String) (map[stri
 	return addSet, removeSet
 }
 
-// calculateDifference determines what endpoints needs to be added and removed in order to move current state to target state.
+// calculateNetworkEndpointDifference determines what endpoints needs to be added and removed in order to move current state to target state.
 func calculateNetworkEndpointDifference(targetMap, currentMap map[string]negtypes.NetworkEndpointSet) (map[string]negtypes.NetworkEndpointSet, map[string]negtypes.NetworkEndpointSet) {
 	addSet := map[string]negtypes.NetworkEndpointSet{}
 	removeSet := map[string]negtypes.NetworkEndpointSet{}
@@ -254,7 +254,7 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet) (map[negtypes.Netw
 
 		portNum, err := strconv.Atoi(networkEndpoint.Port)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode endpoint %q: %v", networkEndpoint, err)
+			return nil, fmt.Errorf("failed to decode endpoint port %v: %v", networkEndpoint, err)
 		}
 
 		endpointBatch[networkEndpoint] = &compute.NetworkEndpoint{
