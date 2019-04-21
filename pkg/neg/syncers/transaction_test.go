@@ -183,8 +183,8 @@ func TestCommitTransaction(t *testing.T) {
 		desc            string
 		err             error
 		endpointMap     map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint
-		table           func() transactionTable
-		expect          func() transactionTable
+		table           func() networkEndpointTransactionTable
+		expect          func() networkEndpointTransactionTable
 		expectSyncCount int
 		expectNeedInit  bool
 	}{
@@ -192,8 +192,8 @@ func TestCommitTransaction(t *testing.T) {
 			"empty inputs",
 			nil,
 			map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint{},
-			func() transactionTable { return NewTransactionTable() },
-			func() transactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			0,
 			false,
 		},
@@ -201,12 +201,12 @@ func TestCommitTransaction(t *testing.T) {
 			"attach 10 endpoints on 1 instance successfully",
 			nil,
 			generateEndpointBatch(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				return table
 			},
-			func() transactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			0,
 			false,
 		},
@@ -214,13 +214,13 @@ func TestCommitTransaction(t *testing.T) {
 			"detach 20 endpoints on 2 instances successfully",
 			nil,
 			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
 				return table
 			},
-			func() transactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			0,
 			false,
 		},
@@ -228,14 +228,14 @@ func TestCommitTransaction(t *testing.T) {
 			"attach 20 endpoints on 2 instances successfully with unrelated 10 entries in the transaction table",
 			nil,
 			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 				return table
@@ -247,12 +247,12 @@ func TestCommitTransaction(t *testing.T) {
 			"error and retry",
 			fmt.Errorf("dummy error"),
 			map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint{},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 				return table
@@ -264,14 +264,14 @@ func TestCommitTransaction(t *testing.T) {
 			"error and retry #2",
 			fmt.Errorf("dummy error"),
 			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 				return table
@@ -283,12 +283,12 @@ func TestCommitTransaction(t *testing.T) {
 			"detach 20 endpoints on 2 instance but missing transaction entries on 1 instance",
 			nil,
 			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				return table
 			},
-			func() transactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			3,
 			false,
 		},
@@ -296,14 +296,14 @@ func TestCommitTransaction(t *testing.T) {
 			"detach 20 endpoints on 2 instance but 10 endpoints needs reconcile",
 			nil,
 			generateEndpointBatch(negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080"))),
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: true}, net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
 				return table
@@ -341,42 +341,42 @@ func TestReconcileTransactions(t *testing.T) {
 	testCases := []struct {
 		desc        string
 		endpointMap map[string]negtypes.NetworkEndpointSet
-		table       func() transactionTable
-		expect      func() transactionTable
+		table       func() networkEndpointTransactionTable
+		expect      func() networkEndpointTransactionTable
 	}{
 		{
 			"empty inputs",
 			map[string]negtypes.NetworkEndpointSet{},
-			func() transactionTable { return NewTransactionTable() },
-			func() transactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
 		},
 		{
 			"1 endpoint, empty transaction table",
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 1, testInstance1, "8080")),
 			},
-			func() transactionTable { return NewTransactionTable() },
-			func() transactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
 		},
 		{
 			"10 endpoints, empty transaction table",
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 			},
-			func() transactionTable { return NewTransactionTable() },
-			func() transactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
 		},
 		{
 			"10 endpoints and 5 attaching transactions are expected",
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				return table
@@ -387,12 +387,12 @@ func TestReconcileTransactions(t *testing.T) {
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				return table
@@ -403,12 +403,12 @@ func TestReconcileTransactions(t *testing.T) {
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				return table
@@ -419,14 +419,14 @@ func TestReconcileTransactions(t *testing.T) {
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 5, testInstance3, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
@@ -439,14 +439,14 @@ func TestReconcileTransactions(t *testing.T) {
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 5, testInstance3, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: true}, net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
@@ -459,13 +459,13 @@ func TestReconcileTransactions(t *testing.T) {
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: true}, net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
@@ -477,12 +477,12 @@ func TestReconcileTransactions(t *testing.T) {
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: true}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				return table
@@ -493,13 +493,13 @@ func TestReconcileTransactions(t *testing.T) {
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: detachOp, NeedReconcile: true}, net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
@@ -511,12 +511,12 @@ func TestReconcileTransactions(t *testing.T) {
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp, NeedReconcile: true}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
 				return table
@@ -528,11 +528,11 @@ func TestReconcileTransactions(t *testing.T) {
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				return table
 			},
@@ -543,12 +543,12 @@ func TestReconcileTransactions(t *testing.T) {
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 20, testInstance3, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 20, testInstance3, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: detachOp, NeedReconcile: true}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
@@ -561,13 +561,13 @@ func TestReconcileTransactions(t *testing.T) {
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 20, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: detachOp, NeedReconcile: false}, net.ParseIP("1.1.3.1"), 20, testInstance3, "8080")
 				return table
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: true}, net.ParseIP("1.1.1.1"), 20, testInstance1, "8080")
 				generateTransaction(table, transactionEntry{Zone: testZone1, Operation: attachOp, NeedReconcile: false}, net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
@@ -596,13 +596,13 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 	testCases := []struct {
 		desc              string
 		endpointMap       map[string]negtypes.NetworkEndpointSet
-		table             func() transactionTable
+		table             func() networkEndpointTransactionTable
 		expectEndpointMap map[string]negtypes.NetworkEndpointSet
 	}{
 		{
 			"empty map and transactions",
 			map[string]negtypes.NetworkEndpointSet{},
-			func() transactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			map[string]negtypes.NetworkEndpointSet{},
 		},
 		{
@@ -611,7 +611,7 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
-			func() transactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
@@ -620,7 +620,7 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 		{
 			"empty map",
 			map[string]negtypes.NetworkEndpointSet{},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{
 					Operation:     attachOp,
@@ -650,7 +650,7 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{
 					Operation:     attachOp,
@@ -680,7 +680,7 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{
 					Operation:     attachOp,
@@ -710,7 +710,7 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{
 					Operation:     detachOp,
@@ -730,7 +730,7 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{
 					Operation:     detachOp,
@@ -763,19 +763,19 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 	testCases := []struct {
 		desc              string
 		endpointMap       map[string]negtypes.NetworkEndpointSet
-		table             func() transactionTable
+		table             func() networkEndpointTransactionTable
 		expectEndpointMap map[string]negtypes.NetworkEndpointSet
 	}{
 		{
 			"both emtpy",
 			map[string]negtypes.NetworkEndpointSet{},
-			func() transactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			map[string]negtypes.NetworkEndpointSet{},
 		},
 		{
 			"emtpy map",
 			map[string]negtypes.NetworkEndpointSet{},
-			func() transactionTable {
+			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{
 					Operation:     detachOp,
@@ -797,7 +797,7 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
-			func() transactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
@@ -809,7 +809,7 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.6"), 5, testInstance1, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
 			},
-			func() transactionTable { return NewTransactionTable() },
+			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.6"), 5, testInstance1, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
@@ -862,7 +862,7 @@ func copyMap(endpointMap map[string]negtypes.NetworkEndpointSet) map[string]negt
 	return ret
 }
 
-func generateTransaction(table transactionTable, entry transactionEntry, initialIp net.IP, num int, instance string, targetPort string) {
+func generateTransaction(table networkEndpointTransactionTable, entry transactionEntry, initialIp net.IP, num int, instance string, targetPort string) {
 	endpointSet := generateEndpointSet(initialIp, num, instance, targetPort)
 	for _, encodedEndpoint := range endpointSet.List() {
 		table.Put(encodedEndpoint, entry)
@@ -897,7 +897,7 @@ func (s *testSyncer) Sync() bool {
 	return s.syncer.Sync()
 }
 
-func validateTransactionTableEquality(t *testing.T, desc string, table, expectTable transactionTable) {
+func validateTransactionTableEquality(t *testing.T, desc string, table, expectTable networkEndpointTransactionTable) {
 	for _, key := range table.Keys() {
 		expectEntry, ok := expectTable.Get(key)
 		if !ok {
@@ -923,8 +923,6 @@ func validateTransactionTableEquality(t *testing.T, desc string, table, expectTa
 // waitForTransactions waits for transactions to be completed
 func waitForTransactions(syncer *transactionSyncer) error {
 	return wait.PollImmediate(time.Microsecond, 5*time.Second, func() (bool, error) {
-		syncer.syncLock.Lock()
-		defer syncer.syncLock.Unlock()
 		if len(syncer.transactions.Keys()) == 0 {
 			return true, nil
 		}

@@ -73,7 +73,7 @@ func TestTransactionTable(t *testing.T) {
 	verifyTable(t, table, testKeyMap)
 }
 
-func verifyTable(t *testing.T, table transactionTable, expectTransactionMap map[negtypes.NetworkEndpoint]transactionEntry) {
+func verifyTable(t *testing.T, table networkEndpointTransactionTable, expectTransactionMap map[negtypes.NetworkEndpoint]transactionEntry) {
 	keys := table.Keys()
 	if len(expectTransactionMap) != len(keys) {
 		t.Errorf("Expect keys length to be %v, but got %v", len(expectTransactionMap), len(keys))
