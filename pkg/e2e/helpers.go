@@ -40,7 +40,6 @@ const (
 	gclbDeletionTimeout  = 15 * time.Minute
 
 	negPollInterval = 5 * time.Second
-	negPollTimeout  = 3 * time.Minute
 )
 
 // WaitForIngressOptions holds options dictating how we wait for an ingress to stabilize
@@ -105,7 +104,7 @@ func WaitForGCLBDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, optio
 
 // WaitForNEGDeletion waits for all NEGs associated with a GCLB to be deleted via GC
 func WaitForNEGDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, options *fuzz.GCLBDeleteOptions) error {
-	return wait.Poll(negPollInterval, negPollTimeout, func() (bool, error) {
+	return wait.Poll(negPollInterval, gclbDeletionTimeout, func() (bool, error) {
 		if err := g.CheckNEGDeletion(ctx, c, options); err != nil {
 			klog.Infof("WaitForNegDeletion(%q) = %v", g.VIP, err)
 			return false, nil
@@ -117,7 +116,7 @@ func WaitForNEGDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, option
 // WaitForNegConfiguration waits until the NEGStatus of the service is updated to at least one NEG
 // TODO: (shance) make this more robust so it handles multiple NEGS
 func WaitForNEGConfiguration(svc *v1.Service, f *Framework, s *Sandbox) error {
-	return wait.Poll(negPollInterval, negPollTimeout, func() (bool, error) {
+	return wait.Poll(negPollInterval, gclbDeletionTimeout, func() (bool, error) {
 		// Get Annotation
 		svc, _ = f.Clientset.CoreV1().Services(s.Namespace).Get(svc.Name, metav1.GetOptions{})
 
