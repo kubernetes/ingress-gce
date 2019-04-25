@@ -1,0 +1,47 @@
+groups:
+  - name: recording_rules
+    interval: 1m
+    rules:
+      - record: http_404_request_total:rate_1m
+        expr: rate(http_404_request_total[1m])
+      - record: http_404_request_duration_ms:rate_1m
+        expr: rate(http_404_request_duration_ms[1m])
+
+  - name: alerting_rules
+    rules:
+      - alert: InstanceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "Server instance {{ $labels.instance}} is down"
+          description: "$$ $labels.instance }} of job {{ $labels.job }} has been down for more than 1m"
+
+      - alert: HighRequestRate
+        expr: http_404_request_total:rate_1m > 800
+        for: 10s
+        labels:
+          severity: page
+        annotations:
+          summary: "http 404 request is very high"
+          description: "$$ $labels.instance }} of job {{ $labels.job }} having high 404 requests"
+
+      - alert: SlowResponse
+        expr: http_404_request_duration_ms:rate_1m > 0.05
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "http request process is slower than SLO"
+          description: "$$ $labels.instance }} of job {{ $labels.job }} http 404 response time is below SLO"
+          
+
+
+
+
+
+
+
+
+          

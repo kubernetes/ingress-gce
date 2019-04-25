@@ -21,8 +21,10 @@ PKG := k8s.io/ingress-gce
 
 # List of binaries to build. You must have a matching Dockerfile.BINARY
 # for each BINARY.
+# TODO(bannai):  404-server will be deprecated by 404-server-with-metrics in a follow-on checkin
 CONTAINER_BINARIES ?= \
 	404-server \
+	404-server-with-metrics \
 	e2e-test \
 	echo \
 	fuzzer \
