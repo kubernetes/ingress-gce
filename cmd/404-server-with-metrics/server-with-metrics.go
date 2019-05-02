@@ -159,10 +159,19 @@ func (s *server) registerHandlers() {
 	if *isProd == false {
 		mux.HandleFunc("/shutdown", s.shutdownHandler())
 	}
+	mux.HandleFunc("/healthz", s.healthzHandler())
 	mux.Handle("/metrics", promhttp.Handler())
 
 	s.mux = mux
 	s.httpServer.Handler = mux
+}
+
+// healthz handler handles the liveness probing
+func (s *server) healthzHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "alive \n")
+	}
 }
 
 // shutdown handler handles the graceful shutdown of the server
