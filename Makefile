@@ -33,8 +33,8 @@ CONTAINER_BINARIES ?= \
 # Latest commit hash for current branch.
 GIT_COMMIT := $(shell git rev-parse HEAD)
 
-# Registry to push to.
-REGISTRY ?= gcr.io/google_containers
+# Push to the staging registry.
+REGISTRY ?= gcr.io/k8s-image-staging
 
 ARCH ?= amd64
 ALL_ARCH := amd64
