@@ -81,6 +81,7 @@ var (
 		NodePortRanges            PortRanges
 		NegGCPeriod               time.Duration
 		NegSyncerType             string
+		EnableReadinessReflector  bool
 		FinalizerAdd              bool
 		FinalizerRemove           bool
 
@@ -191,6 +192,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.DurationVar(&F.NegGCPeriod, "neg-gc-period", 120*time.Second,
 		`Relist and garbage collect NEGs this often.`)
 	flag.StringVar(&F.NegSyncerType, "neg-syncer-type", "transaction", "Define the NEG syncer type to use. Valid values are \"batch\" and \"transaction\"")
+	flag.BoolVar(&F.EnableReadinessReflector, "enable-readiness-reflector", true, "Enable NEG Readiness Reflector")
 	flag.BoolVar(&F.FinalizerAdd, "enable-finalizer-add",
 		F.FinalizerAdd, "Enable adding Finalizer to Ingress.")
 	flag.BoolVar(&F.FinalizerRemove, "enable-finalizer-remove",
