@@ -62,7 +62,7 @@ func newLoadBalancerController() *LoadBalancerController {
 		HealthCheckPath:               "/",
 		DefaultBackendHealthCheckPath: "/healthz",
 	}
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, fakeGCE, namer, ctxConfig)
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, nil, fakeGCE, namer, ctxConfig)
 	lbc := NewLoadBalancerController(ctx, stopCh)
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instances.NewNodePool(instances.NewFakeInstanceGroups(sets.NewString(), namer), namer)

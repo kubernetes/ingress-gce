@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"math/rand"
 	"os"
 	"time"
@@ -34,6 +35,7 @@ import (
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
+	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 
 	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
@@ -99,6 +101,19 @@ func main() {
 		klog.Fatalf("Failed to create BackendConfig client: %v", err)
 	}
 
+	var frontendConfigClient frontendconfigclient.Interface
+	if flags.F.EnableFrontendConfig {
+		frontendConfigCRDMeta := frontendconfig.CRDMeta()
+		if _, err := crdHandler.EnsureCRD(frontendConfigCRDMeta); err != nil {
+			klog.Fatalf("Failed to ensure FrontendConfig CRD: %v", err)
+		}
+
+		frontendConfigClient, err = frontendconfigclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create FrontendConfig client: %v", err)
+		}
+	}
+
 	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, firewalls.DefaultFirewallName)
 	if err != nil {
 		klog.Fatalf("app.NewNamer(ctx.KubeClient, %q, %q) = %v", flags.F.ClusterName, firewalls.DefaultFirewallName, err)
@@ -117,7 +132,7 @@ func main() {
 		DefaultBackendHealthCheckPath: flags.F.DefaultSvcHealthCheckPath,
 		FrontendConfigEnabled:         flags.F.EnableFrontendConfig,
 	}
-	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, cloud, namer, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, cloud, namer, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {

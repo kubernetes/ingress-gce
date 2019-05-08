@@ -41,7 +41,7 @@ func NewTestSyncer() *batchSyncer {
 		ResyncPeriod:            1 * time.Second,
 		DefaultBackendSvcPortID: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, nil, namer, ctxConfig)
 	svcPort := negtypes.NegSyncerKey{
 		Namespace:  testServiceNamespace,
 		Name:       testServiceName,

@@ -151,6 +151,8 @@ only the port's name - not its number.`)
 external cloud resources as it's shutting down. Mostly used for testing. In
 normal environments the controller should only delete a loadbalancer if the
 associated Ingress is deleted.`)
+	flag.BoolVar(&F.EnableFrontendConfig, "enable-frontend-config", false,
+		`Optional, whether or not to enable FrontendConfig.`)
 	flag.Var(&F.GCERateLimit, "gce-ratelimit",
 		`Optional, can be used to rate limit certain GCE API calls. Example usage:
 --gce-ratelimit=ga.Addresses.Get,qps,1.5,5
