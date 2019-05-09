@@ -39,8 +39,11 @@ We suggest using [Google Container Registry](https://cloud.google.com/container-
 to store your images.
 
 ## Other considerations
-
 The build uses dependencies in the `ingress/vendor` directory, which
 must be installed before building a binary/image. Occasionally, you
-might need to update the dependencies. In that case, you will need to install
-the [dep](https://github.com/golang/dep) tool.
+might need to update the dependencies. In that case, you will need to use go's 
+[built in module tool](https://github.com/golang/go/wiki/Modules#daily-workflow).
+After updating a dependency, make sure to re-run `go mod vendor` to update the 
+vendor directory and update it's corresponding `replace` directive to pin the version.
+
+
