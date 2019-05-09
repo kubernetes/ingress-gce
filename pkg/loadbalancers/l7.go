@@ -25,6 +25,7 @@ import (
 
 	compute "google.golang.org/api/compute/v1"
 
+	corev1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/client-go/tools/record"
 
@@ -126,10 +127,15 @@ func (l *L7) UrlMap() *compute.UrlMap {
 }
 
 func (l *L7) edgeHop() error {
+	// Keeps track if we will "try" to setup frontend resources based on user configuration.
+	// If user configuration dictates we do not, then we emit an event.
+	willConfigureFrontend := false
+
 	if err := l.ensureComputeURLMap(); err != nil {
 		return err
 	}
 	if l.runtimeInfo.AllowHTTP {
+		willConfigureFrontend = true
 		if err := l.edgeHopHttp(); err != nil {
 			return err
 		}
@@ -143,11 +149,17 @@ func (l *L7) edgeHop() error {
 		}
 	}
 	if sslConfigured {
+		willConfigureFrontend = true
 		klog.V(3).Infof("validating https for %v", l.Name)
 		if err := l.edgeHopHttps(); err != nil {
 			return err
 		}
 	}
+
+	if !willConfigureFrontend {
+		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, "WillNotConfigureFrontend", "Will not configure frontend based on Ingress specification. Please check your usage of the 'kubernetes.io/ingress.allow-http' annotation.")
+	}
+
 	return nil
 }
 
