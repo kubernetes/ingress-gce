@@ -20,4 +20,7 @@ COPY cmd/e2e-test/run.sh /run.sh
 RUN apt-get update && apt-get install -y curl python
 RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-206.0.0-linux-x86_64.tar.gz | tar -zxf -
 
+# nobody:nobody
+USER 65534:65534
+
 ENTRYPOINT ["/run.sh"]
