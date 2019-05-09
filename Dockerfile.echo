@@ -15,4 +15,8 @@
 FROM debian:9
 
 ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
+
+# nobody:nobody
+USER 65534:65534
+
 ENTRYPOINT ["/ARG_BIN"]
