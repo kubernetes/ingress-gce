@@ -27,13 +27,14 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog"
 )
 
 type transactionSyncer struct {
 	// metadata
-	NegSyncerKey
+	negtypes.NegSyncerKey
 	negName string
 
 	// syncer provides syncer life cycle interfaces
@@ -50,6 +51,7 @@ type transactionSyncer struct {
 	// transactions stores each transaction
 	transactions networkEndpointTransactionTable
 
+	podLister      cache.Indexer
 	serviceLister  cache.Indexer
 	endpointLister cache.Indexer
 	recorder       record.EventRecorder
@@ -58,20 +60,25 @@ type transactionSyncer struct {
 
 	// retry handles back off retry for NEG API operations
 	retry retryHandler
+
+	// reflector handles NEG readiness gate and conditions for pods in NEG.
+	reflector readiness.Reflector
 }
 
-func NewTransactionSyncer(negSyncerKey NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) negtypes.NegSyncer {
+func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer, reflector readiness.Reflector) negtypes.NegSyncer {
 	// TransactionSyncer implements the syncer core
 	ts := &transactionSyncer{
 		NegSyncerKey:   negSyncerKey,
 		negName:        networkEndpointGroupName,
 		needInit:       true,
 		transactions:   NewTransactionTable(),
+		podLister:      podLister,
 		serviceLister:  serviceLister,
 		endpointLister: endpointLister,
 		recorder:       recorder,
 		cloud:          cloud,
 		zoneGetter:     zoneGetter,
+		reflector:      reflector,
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, networkEndpointGroupName, serviceLister, recorder, ts)
@@ -123,7 +130,7 @@ func (s *transactionSyncer) syncInternal() error {
 		return nil
 	}
 
-	targetMap, err := toZoneNetworkEndpointMap(ep.(*apiv1.Endpoints), s.zoneGetter, s.TargetPort)
+	targetMap, endpointPodMap, err := toZoneNetworkEndpointMap(ep.(*apiv1.Endpoints), s.zoneGetter, s.TargetPort, s.podLister)
 	if err != nil {
 		return err
 	}
@@ -140,12 +147,18 @@ func (s *transactionSyncer) syncInternal() error {
 	reconcileTransactions(targetMap, s.transactions)
 	// Calculate the endpoints to add and delete to transform the current state to desire state
 	addEndpoints, removeEndpoints := calculateNetworkEndpointDifference(targetMap, currentMap)
+	// Calculate Pods that are already in the NEG
+	_, committedEndpoints := calculateNetworkEndpointDifference(addEndpoints, targetMap)
 	// Filter out the endpoints with existing transaction
 	// This mostly happens when transaction entry require reconciliation but the transaction is still progress
 	// e.g. endpoint A is in the process of adding to NEG N, and the new desire state is not to have A in N.
 	// This ensures the endpoint that requires reconciliation to wait till the existing transaction to complete.
 	filterEndpointByTransaction(addEndpoints, s.transactions)
 	filterEndpointByTransaction(removeEndpoints, s.transactions)
+	// filter out the endpoints that are in transaction
+	filterEndpointByTransaction(committedEndpoints, s.transactions)
+
+	s.commitPods(committedEndpoints, endpointPodMap)
 
 	if len(addEndpoints) == 0 && len(removeEndpoints) == 0 {
 		klog.V(4).Infof("No endpoint change for %s/%s, skip syncing NEG. ", s.Namespace, s.Name)
@@ -274,8 +287,6 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 	// If any transaction needs reconciliation, trigger resync.
 	// needRetry indicates if the transaction needs to backoff and retry
 	needRetry := false
-	// needSync indicates if the transaction needs to trigger resync immediately
-	needSync := false
 
 	if err != nil {
 		// Trigger NEG initialization if error occurs
@@ -286,21 +297,16 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 
 	for networkEndpoint := range networkEndpointMap {
 		entry, ok := s.transactions.Get(networkEndpoint)
+		// clear transaction
 		if !ok {
 			klog.Errorf("Endpoint %q was not found in the transaction table.", networkEndpoint)
-			needSync = true
 			continue
 		}
+		// TODO: Remove NeedReconcile in the transation entry (freehan)
 		if entry.NeedReconcile == true {
 			klog.Errorf("Endpoint %q in NEG %q need to be reconciled.", networkEndpoint, s.NegSyncerKey.String())
-			needSync = true
 		}
 		s.transactions.Delete(networkEndpoint)
-	}
-
-	if needSync {
-		s.syncer.Sync()
-		return
 	}
 
 	if needRetry {
@@ -309,8 +315,25 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 		}
 		return
 	}
-
 	s.retry.Reset()
+	// always trigger Sync to commit pods
+	s.syncer.Sync()
+}
+
+// commitPods groups the endpoints by zone and signals the readiness reflector to poll pods of the NEG
+func (s *transactionSyncer) commitPods(endpointMap map[string]negtypes.NetworkEndpointSet, endpointPodMap negtypes.EndpointPodMap) {
+	for zone, endpointSet := range endpointMap {
+		zoneEndpointMap := negtypes.EndpointPodMap{}
+		for _, endpoint := range endpointSet.List() {
+			podName, ok := endpointPodMap[endpoint]
+			if !ok {
+				klog.Warningf("Endpoint %v is not included in the endpointPodMap %v", endpoint, endpointPodMap)
+				continue
+			}
+			zoneEndpointMap[endpoint] = podName
+		}
+		s.reflector.CommitPods(s.NegSyncerKey, s.negName, zone, zoneEndpointMap)
+	}
 }
 
 // filterEndpointByTransaction removes the all endpoints from endpoint map if they exists in the transaction table
