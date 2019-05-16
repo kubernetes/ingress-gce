@@ -20,10 +20,13 @@ import (
 	"fmt"
 	"sync"
 
+	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog"
@@ -32,6 +35,10 @@ import (
 type serviceKey struct {
 	namespace string
 	name      string
+}
+
+func (k serviceKey) Key() string {
+	return fmt.Sprintf("%s/%s", k.namespace, k.name)
 }
 
 // syncerManager contains all the active syncer goroutines and manage their lifecycle.
@@ -43,6 +50,7 @@ type syncerManager struct {
 	cloud      negtypes.NetworkEndpointGroupCloud
 	zoneGetter negtypes.ZoneGetter
 
+	podLister      cache.Indexer
 	serviceLister  cache.Indexer
 	endpointLister cache.Indexer
 
@@ -54,10 +62,12 @@ type syncerManager struct {
 	svcPortMap map[serviceKey]negtypes.PortInfoMap
 	// syncerMap stores the NEG syncer
 	// key consists of service namespace, name and targetPort. Value is the corresponding syncer.
-	syncerMap map[negsyncer.NegSyncerKey]negtypes.NegSyncer
+	syncerMap map[negtypes.NegSyncerKey]negtypes.NegSyncer
+	// reflector handles NEG readiness gate and conditions for pods in NEG.
+	reflector readiness.Reflector
 }
 
-func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer, negSyncerType NegSyncerType) *syncerManager {
+func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer, negSyncerType NegSyncerType) *syncerManager {
 	klog.V(2).Infof("NEG controller will use NEG syncer type: %q", negSyncerType)
 	return &syncerManager{
 		negSyncerType:  negSyncerType,
@@ -65,10 +75,11 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.
 		recorder:       recorder,
 		cloud:          cloud,
 		zoneGetter:     zoneGetter,
+		podLister:      podLister,
 		serviceLister:  serviceLister,
 		endpointLister: endpointLister,
 		svcPortMap:     make(map[serviceKey]negtypes.PortInfoMap),
-		syncerMap:      make(map[negsyncer.NegSyncerKey]negtypes.NegSyncer),
+		syncerMap:      make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
 	}
 }
 
@@ -82,6 +93,10 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		currentPorts = make(negtypes.PortInfoMap)
 	}
 
+	// TODO(freehan): change ignore ReadinessGate bool changes
+	// If the service port has NEG enabled, due to configuration changes,
+	// readinessGate may be turn on or off for the same service port,
+	// The current logic will result in syncer being recreated simply because readiness gate setting changed.
 	removes := currentPorts.Difference(newPorts)
 	adds := newPorts.Difference(currentPorts)
 
@@ -100,7 +115,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	for svcPort, portInfo := range adds {
 		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo.TargetPort)]
 		if !ok {
-			syncerKey := negsyncer.NegSyncerKey{
+			syncerKey := negtypes.NegSyncerKey{
 				Namespace:  namespace,
 				Name:       name,
 				Port:       svcPort,
@@ -114,8 +129,10 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 					manager.recorder,
 					manager.cloud,
 					manager.zoneGetter,
+					manager.podLister,
 					manager.serviceLister,
 					manager.endpointLister,
+					manager.reflector,
 				)
 			} else {
 				// Use batch syncer by default
@@ -139,7 +156,6 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 			}
 		}
 	}
-
 	return utilerrors.NewAggregate(errList)
 }
 
@@ -196,6 +212,53 @@ func (manager *syncerManager) GC() error {
 		return fmt.Errorf("failed to garbage collect negs: %v", err)
 	}
 	return nil
+}
+
+// ReadinessGateEnabledNegs returns a list of NEGs which has readiness gate enabled for the input pod's namespace and labels.
+func (manager *syncerManager) ReadinessGateEnabledNegs(namespace string, podLabels map[string]string) []string {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	ret := sets.NewString()
+	for svcKey, portMap := range manager.svcPortMap {
+		if svcKey.namespace != namespace {
+			continue
+		}
+
+		obj, exists, err := manager.serviceLister.GetByKey(svcKey.Key())
+		if err != nil {
+			klog.Errorf("Failed to retrieve service %s from store: %v", svcKey.Key(), err)
+			continue
+		}
+
+		if !exists {
+			continue
+		}
+
+		service := obj.(*v1.Service)
+
+		if service.Spec.Selector == nil {
+			// services with nil selectors match nothing, not everything.
+			continue
+		}
+
+		selector := labels.Set(service.Spec.Selector).AsSelectorPreValidated()
+		if selector.Matches(labels.Set(podLabels)) {
+			ret = ret.Union(portMap.NegsWithReadinessGate())
+		}
+	}
+	return ret.List()
+}
+
+// ReadinessGateEnabled returns true if the NEG requires readiness feedback
+func (manager *syncerManager) ReadinessGateEnabled(syncerKey negtypes.NegSyncerKey) bool {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	if v, ok := manager.svcPortMap[serviceKey{namespace: syncerKey.Namespace, name: syncerKey.Name}]; ok {
+		if info, ok := v[syncerKey.Port]; ok {
+			return info.ReadinessGate
+		}
+	}
+	return false
 }
 
 // garbageCollectSyncer removes stopped syncer from syncerMap
@@ -262,8 +325,8 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 }
 
 // getSyncerKey encodes a service namespace, name, service port and targetPort into a string key
-func getSyncerKey(namespace, name string, port int32, targetPort string) negsyncer.NegSyncerKey {
-	return negsyncer.NegSyncerKey{
+func getSyncerKey(namespace, name string, port int32, targetPort string) negtypes.NegSyncerKey {
+	return negtypes.NegSyncerKey{
 		Namespace:  namespace,
 		Name:       name,
 		Port:       port,

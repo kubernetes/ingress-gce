@@ -357,6 +357,7 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 	}
 }
 
+// TODO(freehan): include test cases with different ReadinessGate setup
 func TestSyncNegAnnotation(t *testing.T) {
 	t.Parallel()
 	// TODO: test that c.serviceLister.Update is called whenever the annotation
@@ -375,21 +376,21 @@ func TestSyncNegAnnotation(t *testing.T) {
 	}{
 		{
 			desc:    "apply new annotation with no previous annotation",
-			portMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 443: "other_port"}, namer),
+			portMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 443: "other_port"}, namer, false),
 		},
 		{
 			desc:            "same annotation applied twice",
-			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer),
-			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer),
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer, false),
+			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer, false),
 		},
 		{
 			desc:            "apply new annotation and override previous annotation",
-			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer),
-			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{3000: "6000", 4000: "8000"}, namer),
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer, false),
+			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{3000: "6000", 4000: "8000"}, namer, false),
 		},
 		{
 			desc:            "remove previous annotation",
-			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer),
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer, false),
 		},
 		{
 			desc: "remove annotation with no previous annotation",

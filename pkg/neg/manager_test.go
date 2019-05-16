@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	compute "google.golang.org/api/compute/v0.beta"
+	"google.golang.org/api/compute/v0.beta"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -29,7 +29,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/neg/syncers"
+	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -48,18 +48,23 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 		DefaultBackendSvcPortID: defaultBackend,
 	}
 	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, namer, ctxConfig)
+
 	manager := newSyncerManager(
 		namer,
 		record.NewFakeRecorder(100),
 		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		negtypes.NewFakeZoneGetter(),
+		context.PodInformer.GetIndexer(),
 		context.ServiceInformer.GetIndexer(),
 		context.EndpointInformer.GetIndexer(),
 		transactionSyncer,
 	)
+	//TODO(freehan): use real readiness reflector for unit test
+	manager.reflector = &readiness.NoopReflector{}
 	return manager
 }
 
+// TODO(freehan): include test cases with different ReadinessGate setup
 func TestEnsureAndStopSyncer(t *testing.T) {
 	t.Parallel()
 
@@ -68,14 +73,14 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		name      string
 		ports     types.SvcPortMap
 		stop      bool
-		expect    []syncers.NegSyncerKey // keys of running syncers
+		expect    []negtypes.NegSyncerKey // keys of running syncers
 	}{
 		{
 			"ns1",
 			"n1",
 			types.SvcPortMap{1000: "80", 2000: "443"},
 			false,
-			[]syncers.NegSyncerKey{
+			[]negtypes.NegSyncerKey{
 				getSyncerKey("ns1", "n1", 1000, "80"),
 				getSyncerKey("ns1", "n1", 2000, "443"),
 			},
@@ -85,7 +90,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			"n1",
 			types.SvcPortMap{3000: "80", 4000: "namedport"},
 			false,
-			[]syncers.NegSyncerKey{
+			[]negtypes.NegSyncerKey{
 				getSyncerKey("ns1", "n1", 3000, "80"),
 				getSyncerKey("ns1", "n1", 4000, "namedport"),
 			},
@@ -95,7 +100,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			"n1",
 			types.SvcPortMap{3000: "80"},
 			false,
-			[]syncers.NegSyncerKey{
+			[]negtypes.NegSyncerKey{
 				getSyncerKey("ns1", "n1", 3000, "80"),
 				getSyncerKey("ns1", "n1", 4000, "namedport"),
 				getSyncerKey("ns2", "n1", 3000, "80"),
@@ -106,7 +111,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			"n1",
 			types.SvcPortMap{},
 			true,
-			[]syncers.NegSyncerKey{
+			[]negtypes.NegSyncerKey{
 				getSyncerKey("ns2", "n1", 3000, "80"),
 			},
 		},
@@ -117,7 +122,8 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		if tc.stop {
 			manager.StopSyncer(tc.namespace, tc.name)
 		} else {
-			portInfoMap := negtypes.NewPortInfoMap(tc.namespace, tc.name, tc.ports, namer)
+			// TODO(freehan): include test cases with different ReadinessGate setup
+			portInfoMap := negtypes.NewPortInfoMap(tc.namespace, tc.name, tc.ports, namer, false)
 			if err := manager.EnsureSyncers(tc.namespace, tc.name, portInfoMap); err != nil {
 				t.Errorf("Failed to ensure syncer %s/%s-%v: %v", tc.namespace, tc.name, tc.ports, err)
 			}
