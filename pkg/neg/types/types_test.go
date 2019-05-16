@@ -33,6 +33,7 @@ func (*negNamer) IsNEG(name string) bool {
 	return false
 }
 
+// TODO(freehan): include test cases with different ReadinessGate setup
 func TestPortInfoMapMerge(t *testing.T) {
 	namer := &negNamer{}
 	namespace := "namespace"
@@ -54,22 +55,22 @@ func TestPortInfoMapMerge(t *testing.T) {
 		{
 			"empty map union a non-empty map is the non-empty map",
 			PortInfoMap{},
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, false),
 			false,
 		},
 		{
 			"union of two non-empty maps",
-			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8080: "9000"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8080: "9000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer, false),
 			false,
 		},
 		{
 			"error on inconsistent value",
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "3000"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8000: "9000"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "3000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8000: "9000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer, false),
 			true,
 		},
 	}
@@ -94,6 +95,7 @@ func TestPortInfoMapMerge(t *testing.T) {
 	}
 }
 
+// TODO(freehan): include test cases with different ReadinessGate setup
 func TestPortInfoMapDifference(t *testing.T) {
 	namer := &negNamer{}
 	namespace := "namespace"
@@ -113,44 +115,44 @@ func TestPortInfoMapDifference(t *testing.T) {
 		{
 			"empty map difference a non-empty map is empty map",
 			PortInfoMap{},
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, false),
 			PortInfoMap{},
 		},
 		{
 			"non-empty map difference a non-empty map is the non-empty map",
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, false),
 			PortInfoMap{},
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, false),
 		},
 		{
 			"difference of two non-empty maps with the same elements",
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, false),
 			PortInfoMap{},
 		},
 		{
 			"difference of two non-empty maps with no elements in common returns p1",
-			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8080: "9000"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8080: "9000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer, false),
 		},
 		{
 			"difference of two non-empty maps with elements in common",
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8080: "9000"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8080: "9000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer, false),
 		},
 		{
 			"difference of two non-empty maps with a key in common but different in value",
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "8080", 8080: "9000"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "8080", 8080: "9000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport"}, namer, false),
 		},
 		{
 			"difference of two non-empty maps with 2 keys in common but different in values",
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "8443"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "8080", 443: "9443"}, namer),
-			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "8443"}, namer),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "8443"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "8080", 443: "9443"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "8443"}, namer, false),
 		},
 	}
 

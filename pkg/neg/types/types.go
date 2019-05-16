@@ -18,9 +18,12 @@ package types
 
 import (
 	"fmt"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"reflect"
 	"strconv"
+
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/annotations"
 )
 
 // SvcPortMap is a map of ServicePort:TargetPort
@@ -33,34 +36,48 @@ type PortInfo struct {
 	TargetPort string
 	// NegName is the name of the NEG
 	NegName string
+	// ReadinessGate indicates if the NEG associated with the port has NEG readiness gate enabled
+	// This is enabled with service port is reference by ingress.
+	// If the service port is only exposed as stand alone NEG, it should not be enbled.
+	ReadinessGate bool
 }
 
 // PortInfoMap is a map of ServicePort:PortInfo
 type PortInfoMap map[int32]PortInfo
 
-func NewPortInfoMap(namespace, name string, svcPortMap SvcPortMap, namer NetworkEndpointGroupNamer) PortInfoMap {
+func NewPortInfoMap(namespace, name string, svcPortMap SvcPortMap, namer NetworkEndpointGroupNamer, readinessGate bool) PortInfoMap {
 	ret := PortInfoMap{}
 	for svcPort, targetPort := range svcPortMap {
 		ret[svcPort] = PortInfo{
-			TargetPort: targetPort,
-			NegName:    namer.NEG(namespace, name, svcPort),
+			TargetPort:    targetPort,
+			NegName:       namer.NEG(namespace, name, svcPort),
+			ReadinessGate: readinessGate,
 		}
 	}
 	return ret
 }
 
 // Merge merges p2 into p1 PortInfoMap
-// It assumes the same key will have the same PortInfo
+// It assumes the same key (service port) will have the same target port and negName
 // If not, it will throw error
+// If a key in p1 or p2 has readiness gate enabled, the merged port info will also has readiness gate enabled
 func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 	var err error
 	for svcPort, portInfo := range p2 {
+		mergedInfo := PortInfo{}
 		if existingPortInfo, ok := p1[svcPort]; ok {
-			if !reflect.DeepEqual(existingPortInfo, portInfo) {
-				return fmt.Errorf("key %d in PortInfoMaps has different values. Existing value %v while new value: %v", svcPort, existingPortInfo, portInfo)
+			if existingPortInfo.TargetPort != portInfo.TargetPort {
+				return fmt.Errorf("for service port %d, target port in existing map is %q, but the merge map has %q", svcPort, existingPortInfo.TargetPort, portInfo.TargetPort)
 			}
+			if existingPortInfo.NegName != portInfo.NegName {
+				return fmt.Errorf("for service port %d, NEG name in existing map is %q, but the merge map has %q", svcPort, existingPortInfo.NegName, portInfo.NegName)
+			}
+			mergedInfo.ReadinessGate = existingPortInfo.ReadinessGate
 		}
-		p1[svcPort] = portInfo
+		mergedInfo.TargetPort = portInfo.TargetPort
+		mergedInfo.NegName = portInfo.NegName
+		mergedInfo.ReadinessGate = mergedInfo.ReadinessGate || portInfo.ReadinessGate
+		p1[svcPort] = mergedInfo
 	}
 	return err
 }
@@ -87,3 +104,33 @@ func (p1 PortInfoMap) ToPortNegMap() annotations.PortNegMap {
 	}
 	return ret
 }
+
+// NegsWithReadinessGate returns the NegNames which has readiness gate enabled
+func (p1 PortInfoMap) NegsWithReadinessGate() sets.String {
+	ret := sets.NewString()
+	for _, info := range p1 {
+		if info.ReadinessGate {
+			ret.Insert(info.NegName)
+		}
+	}
+	return ret
+}
+
+// NegSyncerKey includes information to uniquely identify a NEG syncer
+type NegSyncerKey struct {
+	// Namespace of service
+	Namespace string
+	// Name of service
+	Name string
+	// Service port
+	Port int32
+	// Service target port
+	TargetPort string
+}
+
+func (key NegSyncerKey) String() string {
+	return fmt.Sprintf("%s/%s-%v/%s", key.Namespace, key.Name, key.Port, key.TargetPort)
+}
+
+// EndpointPodMap is a map from network endpoint to a namespaced name of a pod
+type EndpointPodMap map[NetworkEndpoint]types.NamespacedName

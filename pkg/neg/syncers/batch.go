@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	compute "google.golang.org/api/compute/v0.beta"
+	"google.golang.org/api/compute/v0.beta"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/clock"
@@ -39,7 +39,7 @@ import (
 // batchSyncer handles synchorizing NEGs for one service port. It handles sync, resync and retry on error.
 // It syncs NEG in batch and waits for all operation to complete before continue to the next batch.
 type batchSyncer struct {
-	NegSyncerKey
+	negtypes.NegSyncerKey
 	negName string
 
 	serviceLister  cache.Indexer
@@ -59,7 +59,7 @@ type batchSyncer struct {
 	retryCount     int
 }
 
-func NewBatchSyncer(svcPort NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) *batchSyncer {
+func NewBatchSyncer(svcPort negtypes.NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) *batchSyncer {
 	klog.V(2).Infof("New syncer for service %s/%s Port %s NEG %q", svcPort.Namespace, svcPort.Name, svcPort.TargetPort, networkEndpointGroupName)
 	return &batchSyncer{
 		NegSyncerKey:   svcPort,
