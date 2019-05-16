@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog"
 )
 
@@ -36,7 +37,7 @@ type syncerCore interface {
 // It handles state transitions and backoff retry operations.
 type syncer struct {
 	// metadata
-	NegSyncerKey
+	negtypes.NegSyncerKey
 	negName string
 
 	// NEG sync function
@@ -57,7 +58,7 @@ type syncer struct {
 	backoff backoffHandler
 }
 
-func newSyncer(negSyncerKey NegSyncerKey, networkEndpointGroupName string, serviceLister cache.Indexer, recorder record.EventRecorder, core syncerCore) *syncer {
+func newSyncer(negSyncerKey negtypes.NegSyncerKey, networkEndpointGroupName string, serviceLister cache.Indexer, recorder record.EventRecorder, core syncerCore) *syncer {
 	return &syncer{
 		NegSyncerKey:  negSyncerKey,
 		negName:       networkEndpointGroupName,
