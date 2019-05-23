@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
 
 	compute "google.golang.org/api/compute/v1"
@@ -307,4 +308,17 @@ func GCEResourceName(ingAnnotations map[string]string, resourceName string) stri
 	// parsing logic in a single location.
 	resourceName, _ = ingAnnotations[fmt.Sprintf("%v/%v", annotations.StatusPrefix, resourceName)]
 	return resourceName
+}
+
+// description gets a description for the ingress GCP resources.
+func (l *L7) description() (string, error) {
+	if l.runtimeInfo.Ingress == nil {
+		return "", fmt.Errorf("missing Ingress object to construct description for %s", l.Name)
+	}
+
+	namespace := l.runtimeInfo.Ingress.ObjectMeta.Namespace
+	ingressName := l.runtimeInfo.Ingress.ObjectMeta.Name
+	namespacedName := types.NamespacedName{Name: ingressName, Namespace: namespace}
+
+	return fmt.Sprintf(`{"kubernetes.io/ingress-name": %q}`, namespacedName.String()), nil
 }

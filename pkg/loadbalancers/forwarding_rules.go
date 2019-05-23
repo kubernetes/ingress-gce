@@ -70,12 +70,17 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 	}
 	if fw == nil {
 		klog.V(3).Infof("Creating forwarding rule for proxy %q and ip %v:%v", proxyLink, ip, portRange)
+		description, err := l.description()
+		if err != nil {
+			return nil, err
+		}
 		rule := &compute.ForwardingRule{
-			Name:       name,
-			IPAddress:  ip,
-			Target:     proxyLink,
-			PortRange:  portRange,
-			IPProtocol: "TCP",
+			Name:        name,
+			IPAddress:   ip,
+			Target:      proxyLink,
+			PortRange:   portRange,
+			IPProtocol:  "TCP",
+			Description: description,
 		}
 		if err = l.cloud.CreateGlobalForwardingRule(rule); err != nil {
 			return nil, err

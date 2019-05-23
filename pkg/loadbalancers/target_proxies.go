@@ -34,9 +34,14 @@ func (l *L7) checkProxy() (err error) {
 	proxy, _ := l.cloud.GetTargetHTTPProxy(proxyName)
 	if proxy == nil {
 		klog.V(3).Infof("Creating new http proxy for urlmap %v", l.um.Name)
+		description, err := l.description()
+		if err != nil {
+			return err
+		}
 		newProxy := &compute.TargetHttpProxy{
-			Name:   proxyName,
-			UrlMap: urlMapLink,
+			Name:        proxyName,
+			Description: description,
+			UrlMap:      urlMapLink,
 		}
 		if err = l.cloud.CreateTargetHTTPProxy(newProxy); err != nil {
 			return err
@@ -70,9 +75,14 @@ func (l *L7) checkHttpsProxy() (err error) {
 	proxy, _ := l.cloud.GetTargetHTTPSProxy(proxyName)
 	if proxy == nil {
 		klog.V(3).Infof("Creating new https proxy for urlmap %q", l.um.Name)
+		description, err := l.description()
+		if err != nil {
+			return err
+		}
 		newProxy := &compute.TargetHttpsProxy{
-			Name:   proxyName,
-			UrlMap: urlMapLink,
+			Name:        proxyName,
+			Description: description,
+			UrlMap:      urlMapLink,
 		}
 
 		for _, c := range l.sslCerts {
