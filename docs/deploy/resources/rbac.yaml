@@ -25,6 +25,7 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: system:controller:glbc
+subjects:
 - kind: ServiceAccount
   name: glbc
   namespace: kube-system
