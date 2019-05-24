@@ -15,11 +15,16 @@
 #!/bin/bash
 
 function usage() {
-  echo -e "Usage: ./gke-self-managed.sh -n myCluster -z myZone [-c] [-r]\n"
-  echo    "  -c, --cleanup        Cleanup resources created by a previous run of the script"
-  echo    "  -n, --cluster-name   Name of the cluster (Required)"
-  echo    "  -z, --zone           Zone the cluster is in (Required)"
-  echo -e "      --help           Display this help and exit"
+  echo    "Usage: ./gke-self-managed.sh -n myCluster -z myZone [options]"
+  echo
+  echo    "  -c, --cleanup            Cleanup resources created by a previous run of the script"
+  echo    "  -n, --cluster-name       Name of the cluster (Required)"
+  echo    "  -z, --zone               Zone the cluster is in (Required)"
+  echo    "  --help                   Display this help and exit"
+  echo    "  --network-name           Override for the network-name gce.conf value"
+  echo    "  --subnetwork-name        Override for the subnetwork-name gce.conf value"
+  echo    "  --node-instance-prefix   Override for the node-instance-prefix gce.conf value"
+  echo    "  --network-tags           Override for the node-tags gce.conf value"
   exit
 }
 
@@ -101,6 +106,26 @@ case $key in
   shift
   shift
   ;;
+  --network-name)
+  NETWORK_NAME=$2
+  shift
+  shift
+  ;;
+  --subnetwork-name)
+  SUBNETWORK_NAME=$2
+  shift
+  shift
+  ;;
+  --node-instance-prefix)
+  NODE_INSTANCE_PREFIX=$2
+  shift
+  shift
+  ;;
+  --network-tags)
+  NETWORK_TAGS=$2
+  shift
+  shift
+  ;;
   -z|--zone)
   ZONE=$2
   shift
@@ -113,16 +138,54 @@ done
 
 arg_check
 
-# Check that the gce.conf is valid for the cluster
-NODE_INSTANCE_PREFIX=`cat ../resources/gce.conf | grep node-instance-prefix | awk '{print $3}'`
-[[ "$NODE_INSTANCE_PREFIX" == "gke-${CLUSTER_NAME}" ]] ||  error_exit "Error bot: --cluster-name does not match gce.conf. ${NO_CLEANUP}"
-
 # Get the project id associated with the cluster.
 PROJECT_ID=`gcloud config list --format 'value(core.project)' 2>/dev/null`
 # Store the nodePort for default-http-backend
 NODE_PORT=`kubectl get svc default-http-backend -n kube-system -o yaml | grep "nodePort:" | cut -f2- -d:`
 # Get the GCP user associated with the current gcloud config.
 GCP_USER=`gcloud config list --format 'value(core.account)' 2>/dev/null`
+
+# Populate gce.conf.custom from our template.
+if [[ -z $NETWORK_NAME ]]; then
+  NETWORK_NAME=$(basename $(gcloud container clusters describe $CLUSTER_NAME --zone=$ZONE \
+      --format='value(networkConfig.network)'))
+fi
+if [[ -z $SUBNETWORK_NAME ]]; then
+  SUBNETWORK_NAME=$(basename $(gcloud container clusters describe $CLUSTER_NAME \
+      --zone=$ZONE --format='value(networkConfig.subnetwork)'))
+fi
+if [[ -z $NODE_INSTANCE_PREFIX ]]; then
+  NODE_INSTANCE_PREFIX="gke-${CLUSTER_NAME}"
+fi
+
+# Getting network tags is painful. Get the instance groups, map to an instance,
+# and get the node tag from it (they should be the same across all nodes -- we don't
+# know how to handle it, otherwise).
+if [[ -z $NETWORK_TAGS ]]; then
+  INSTANCE_GROUP=$(gcloud container clusters describe $CLUSTER_NAME --zone=$ZONE \
+      --format='flattened(nodePools[].instanceGroupUrls[].scope().segment())' | \
+      cut -d ':' -f2)
+  INSTANCE=$(gcloud compute instance-groups list-instances $INSTANCE_GROUP \
+      --zone=$ZONE --format="value(instance)" --limit 1)
+  NETWORK_TAGS=$(gcloud compute instances describe $INSTANCE --format="value(tags.items)")
+fi
+
+echo
+echo "== Using values =="
+echo "Project ID: $PROJECT_ID"
+echo "Network name: $NETWORK_NAME"
+echo "Subnetwork name: $SUBNETWORK_NAME"
+echo "Node instance prefix: $NODE_INSTANCE_PREFIX"
+echo "Network tag: $NETWORK_TAGS"
+echo "Zone: $ZONE"
+echo
+
+sed "s/YOUR CLUSTER'S PROJECT/$PROJECT_ID/" ../resources/gce.conf | \
+sed "s/YOUR CLUSTER'S NETWORK/$NETWORK_NAME/" | \
+sed "s/YOUR CLUSTER'S SUBNETWORK/$SUBNETWORK_NAME/" | \
+sed "s/gke-YOUR CLUSTER'S NAME/$NODE_INSTANCE_PREFIX/" | \
+sed "s/NETWORK TAGS FOR YOUR CLUSTER'S INSTANCE GROUP/$NETWORK_TAGS/" | \
+sed "s/YOUR CLUSTER'S ZONE/$ZONE/" > ../resources/gce.conf.custom
 
 # Grant permission to current GCP user to create new k8s ClusterRole's.
 kubectl create clusterrolebinding one-binding-to-rule-them-all --clusterrole=cluster-admin --user=${GCP_USER}
@@ -135,7 +198,7 @@ kubectl create -f ../resources/rbac.yaml
 
 # Inject gce.conf onto the user node as a ConfigMap.
 # This config map is mounted as a volume in glbc.yaml
-kubectl create configmap gce-config --from-file=../resources/gce.conf -n kube-system
+kubectl create configmap gce-config --from-file=../resources/gce.conf.custom -n kube-system
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating gce.conf ConfigMap. ${CLEANUP_HELP}"
 
 # Create new GCP service acccount.
