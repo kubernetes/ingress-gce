@@ -15,16 +15,19 @@
 #!/bin/bash
 
 function usage() {
-  echo    "Usage: ./gke-self-managed.sh -n myCluster -z myZone [options]"
+  echo "Usage: ./gke-self-managed.sh -n myCluster -z myZone [options]"
   echo
-  echo    "  -c, --cleanup            Cleanup resources created by a previous run of the script"
-  echo    "  -n, --cluster-name       Name of the cluster (Required)"
-  echo    "  -z, --zone               Zone the cluster is in (Required)"
-  echo    "  --help                   Display this help and exit"
-  echo    "  --network-name           Override for the network-name gce.conf value"
-  echo    "  --subnetwork-name        Override for the subnetwork-name gce.conf value"
-  echo    "  --node-instance-prefix   Override for the node-instance-prefix gce.conf value"
-  echo    "  --network-tags           Override for the node-tags gce.conf value"
+  echo "  -c, --cleanup            Cleanup resources created by a previous run of the script"
+  echo "  -n, --cluster-name       Name of the cluster (Required)"
+  echo "  -z, --zone               Zone the cluster is in (Required)"
+  echo "  --image-url              URL (with tag) of the glbc image. If not set, we will"
+  echo "                           try and build and push it ourselves (set the"
+  echo "                           REGISTRY env var or we'll use the project GCR)."
+  echo "  --help                   Display this help and exit"
+  echo "  --network-name           Override for the network-name gce.conf value"
+  echo "  --subnetwork-name        Override for the subnetwork-name gce.conf value"
+  echo "  --node-instance-prefix   Override for the node-instance-prefix gce.conf value"
+  echo "  --network-tags           Override for the node-tags gce.conf value"
   exit
 }
 
@@ -126,6 +129,11 @@ case $key in
   shift
   shift
   ;;
+  --image-url)
+  IMAGE_URL=$2
+  shift
+  shift
+  ;;
   -z|--zone)
   ZONE=$2
   shift
@@ -186,6 +194,29 @@ sed "s/YOUR CLUSTER'S SUBNETWORK/$SUBNETWORK_NAME/" | \
 sed "s/gke-YOUR CLUSTER'S NAME/$NODE_INSTANCE_PREFIX/" | \
 sed "s/NETWORK TAGS FOR YOUR CLUSTER'S INSTANCE GROUP/$NETWORK_TAGS/" | \
 sed "s/YOUR CLUSTER'S ZONE/$ZONE/" > ../resources/gce.conf.custom
+
+# Then try to format the GLBC yaml. We will build and push the image if the user
+# didn't provide a URL to use. We wanna do this before making any changes because
+# the build could fail and that should be caught early.
+if [[ -z $IMAGE_URL ]]; then
+  echo "image-url is not set; we will build and push ourselves. This may take a few minutes."
+  if [[ -z $REGISTRY ]]; then
+    REGISTRY="gcr.io/$PROJECT_ID"
+    echo "REGISTRY is not set. Defaulting to: $REGISTRY"
+  fi
+  # Extract just the URL (with tag) from the `make push` output. `sed -n` makes it
+  # not print normally while the `/../../p` makes it print just what it matched.
+  MAKE_PUSH_OUTPUT=$(cd ../../../; REGISTRY="$REGISTRY" make push 2>&1)
+  MAKE_PUSH_CODE=$?
+  if [[ $MAKE_PUSH_CODE -eq 0 ]]; then
+    IMAGE_URL=$(sed -rn 's/pushing\s+:\s+(.+ingress-gce-glbc-.+)/\1/p' <<< $MAKE_PUSH_OUTPUT)
+    echo "Pushed new glbc image to: $IMAGE_URL"
+  else
+    error_exit "Error-bot: Issue building and pushing image. Make exited with code $MAKE_PUSH_CODE. If a push error, consider setting REGISTRY or providing --image-url yourself. Output from make:\n$MAKE_PUSH_OUTPUT"
+  fi
+fi
+
+sed "s|### IMAGE URL HERE ###|$IMAGE_URL|" ../resources/glbc.yaml > ../resources/glbc.yaml.custom
 
 # Grant permission to current GCP user to create new k8s ClusterRole's.
 kubectl create clusterrolebinding one-binding-to-rule-them-all --clusterrole=cluster-admin --user=${GCP_USER}
@@ -281,17 +312,17 @@ if [[ $? -eq 1 ]];
 then
   # Prompt the user to finish the last steps by themselves. We don't want to
   # have to cleanup and start all over again if we are this close to finishing.
-  error_exit "Error-bot: Issue starting default backend. ${PERMISSION_ISSUE}. We are so close to being done so just manually start the default backend with NodePort: ${NODE_PORT} and create glbc.yaml when ready"
+  error_exit "Error-bot: Issue starting default backend. ${PERMISSION_ISSUE}. We are so close to being done so just manually start the default backend with NodePort: ${NODE_PORT} and create glbc.yaml.custom when ready"
 fi
 rm ../resources/default-http-backend-copy.yaml
 
 # Startup glbc
-kubectl create -f ../resources/glbc.yaml
+kubectl create -f ../resources/glbc.yaml.custom
 [[ $? -eq 0 ]] || manual_glbc_provision
 if [[ $? -eq 1 ]];
 then
   # Same idea as above, although this time we only need to prompt the user to start the glbc.
-  error_exit: "Error_bot: Issue starting GLBC. ${PERMISSION_ISSUE}. We are so close to being done so just manually create glbc.yaml when ready"
+  error_exit: "Error_bot: Issue starting GLBC. ${PERMISSION_ISSUE}. We are so close to being done so just manually create glbc.yaml.custom when ready"
 fi
 
 # Do a final verification that the NodePort stayed the same for the

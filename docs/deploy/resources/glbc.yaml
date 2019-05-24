@@ -54,7 +54,7 @@ spec:
         command:
         - /glbc
         - -v2
-        - --config-file-path=/etc/gce/gce.conf
+        - --config-file-path=/etc/gce/gce.conf.custom
         - --healthz-port=8086
         - --logtostderr
         - --sync-period=600s
@@ -71,5 +71,5 @@ spec:
         configMap:
           name: gce-config
           items:
-          - key: gce.conf
-            path: gce.conf
+          - key: gce.conf.custom
+            path: gce.conf.custom
