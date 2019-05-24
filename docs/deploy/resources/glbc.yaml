@@ -23,7 +23,7 @@ spec:
       terminationGracePeriodSeconds: 600
       hostNetwork: true
       containers:
-      - image: ### IMAGE URL HERE ###
+      - image: [IMAGE_URL]
         livenessProbe:
           httpGet:
             path: /healthz
@@ -54,7 +54,7 @@ spec:
         command:
         - /glbc
         - -v2
-        - --config-file-path=/etc/gce/gce.conf.custom
+        - --config-file-path=/etc/gce/gce.conf.gen
         - --healthz-port=8086
         - --logtostderr
         - --sync-period=600s
@@ -71,5 +71,5 @@ spec:
         configMap:
           name: gce-config
           items:
-          - key: gce.conf.custom
-            path: gce.conf.custom
+          - key: gce.conf.gen
+            path: gce.conf.gen

@@ -36,5 +36,4 @@ bin/
 .*-dockerfile
 .*-push
 bin/
-docs/deploy/resources/gce.conf.custom
-docs/deploy/resources/glbc.yaml.custom
+docs/deploy/resources/*.gen

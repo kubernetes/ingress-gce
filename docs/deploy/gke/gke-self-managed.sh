@@ -15,20 +15,27 @@
 #!/bin/bash
 
 function usage() {
-  echo "Usage: ./gke-self-managed.sh -n myCluster -z myZone [options]"
+  echo "Usage: ./gke-self-managed.sh -n CLUSTER -z ZONE [-i IMAGE | --build-and-push] [options]"
+  echo
+  echo "Deploys a GLBC image and default HTTP backend to a GKE server. Note: this must"
+  echo "be run in the script directory."
   echo
   echo "  -c, --cleanup            Cleanup resources created by a previous run of the script"
   echo "  -n, --cluster-name       Name of the cluster (Required)"
   echo "  -z, --zone               Zone the cluster is in (Required)"
-  echo "  --image-url              URL (with tag) of the glbc image. If not set, we will"
-  echo "                           try and build and push it ourselves (set the"
-  echo "                           REGISTRY env var or we'll use the project GCR)."
+  echo "  -i, --image-url          URL (with tag) of the glbc image. One of either this"
+  echo "                           or --build-and-push is required"
+  echo "  --build-and-push         If set, we will instead build the code and push the"
+  echo "                           image, which will be used as the image-url. Set the"
+  echo "                           REGISTRY env var or we'll use the project GCR (see"
+  echo "                           the Makefile for defaults and other configuration)"
   echo "  --help                   Display this help and exit"
   echo "  --network-name           Override for the network-name gce.conf value"
   echo "  --subnetwork-name        Override for the subnetwork-name gce.conf value"
   echo "  --node-instance-prefix   Override for the node-instance-prefix gce.conf value"
   echo "  --network-tags           Override for the node-tags gce.conf value"
   echo "  --no-confirm             Don't ask confirmation to reenable GLBC on cleanup"
+  echo "                           or to check that the API server is ready"
   exit
 }
 
@@ -36,8 +43,33 @@ function arg_check {
   # Check that the necessary arguments were provided and that they are correct.
   if [[ -z "$ZONE" || -z "$CLUSTER_NAME" ]];
   then
-     usage
+    usage
   fi
+
+  if [[ -n $BUILD_AND_PUSH && -n $IMAGE_URL ]];
+  then
+    echo "--image-url and --build-and-push are mutually exclusive."
+    echo
+    usage
+  elif [[ -z $BUILD_AND_PUSH && -z $IMAGE_URL ]];
+  then
+    echo "One of either --image-url or --build-and-push must be set."
+    echo
+    usage
+  fi
+  
+  # CONTAINER_PREFIX is used in the Makefile and is the "ingress-gce" part of the image
+  # name. While we could support parsing the Makefile output with a custom container
+  # prefix, it's liable to break if the user has characters with special meaning in
+  # them.
+  if [[ -n $BUILD_AND_PUSH && -n $CONTAINER_PREFIX && $CONTAINER_PREFIX != "ingress-gce" ]];
+  then
+    echo "--build-and-push doesn't support a customer CONTAINER_PREFIX. Either unset that"
+    echo "or use --image-url."
+    echo
+    usage
+  fi
+
   # Get gcloud credentials for the cluster so kubectl works automatically.
   # Any error/typo in the required command line args will be caught here.
   gcloud container clusters get-credentials ${CLUSTER_NAME} --zone=${ZONE}
@@ -61,8 +93,8 @@ function cleanup() {
   kubectl delete clusterrolebinding one-binding-to-rule-them-all
   kubectl delete -f ../resources/rbac.yaml
   kubectl delete configmap gce-config -n kube-system
-  gcloud iam service-accounts delete glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com
-  gcloud projects remove-iam-policy-binding ${PROJECT_ID} \
+  gcloud iam service-accounts delete ${GCLOUD_EXTRA_FLAGS} glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com
+  gcloud projects remove-iam-policy-binding ${GCLOUD_EXTRA_FLAGS} ${PROJECT_ID} \
     --member serviceAccount:glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com \
     --role roles/compute.admin
   kubectl delete secret glbc-gcp-key -n kube-system
@@ -118,6 +150,11 @@ case $key in
   shift
   shift
   ;;
+  -i|--image-url)
+  IMAGE_URL=$2
+  shift
+  shift
+  ;;
   --network-name)
   NETWORK_NAME=$2
   shift
@@ -138,13 +175,16 @@ case $key in
   shift
   shift
   ;;
-  --image-url)
-  IMAGE_URL=$2
-  shift
+  --build-and-push)
+  BUILD_AND_PUSH=1
   shift
   ;;
   --no-confirm)
   NO_CONFIRM=1
+
+  # --quiet flag makes gloud prompts non-interactive, ensuring this script can be
+  # used in automated flows (user can also use this to provide extra, arbitrary flags).
+  GCLOUD_EXTRA_FLAGS="${GCLOUD_EXTRA_FLAGS} --quiet"
   shift
   ;;
   -z|--zone)
@@ -166,7 +206,7 @@ NODE_PORT=`kubectl get svc default-http-backend -n kube-system -o yaml | grep "n
 # Get the GCP user associated with the current gcloud config.
 GCP_USER=`gcloud config list --format 'value(core.account)' 2>/dev/null`
 
-# Populate gce.conf.custom from our template.
+# Populate gce.conf.gen from our template.
 if [[ -z $NETWORK_NAME ]]; then
   NETWORK_NAME=$(basename $(gcloud container clusters describe $CLUSTER_NAME --zone=$ZONE \
       --format='value(networkConfig.network)'))
@@ -206,20 +246,21 @@ sed "s/YOUR CLUSTER'S NETWORK/$NETWORK_NAME/" | \
 sed "s/YOUR CLUSTER'S SUBNETWORK/$SUBNETWORK_NAME/" | \
 sed "s/gke-YOUR CLUSTER'S NAME/$NODE_INSTANCE_PREFIX/" | \
 sed "s/NETWORK TAGS FOR YOUR CLUSTER'S INSTANCE GROUP/$NETWORK_TAGS/" | \
-sed "s/YOUR CLUSTER'S ZONE/$ZONE/" > ../resources/gce.conf.custom
+sed "s/YOUR CLUSTER'S ZONE/$ZONE/" > ../resources/gce.conf.gen
 
-# Then try to format the GLBC yaml. We will build and push the image if the user
-# didn't provide a URL to use. We wanna do this before making any changes because
-# the build could fail and that should be caught early.
-if [[ -z $IMAGE_URL ]]; then
-  echo "image-url is not set; we will build and push ourselves. This may take a few minutes."
+# If we're using build-and-push, do this early so errors are caught before we start
+# making cluster changes.
+if [[ -n $BUILD_AND_PUSH ]]; then
+  echo "build-and-push is set. This may take a few minutes."
   if [[ -z $REGISTRY ]]; then
     REGISTRY="gcr.io/$PROJECT_ID"
     echo "REGISTRY is not set. Defaulting to: $REGISTRY"
   fi
   # Extract just the URL (with tag) from the `make push` output. `sed -n` makes it
   # not print normally while the `/../../p` makes it print just what it matched.
-  MAKE_PUSH_OUTPUT=$(cd ../../../; REGISTRY="$REGISTRY" make push 2>&1)
+  MAKE_COMMAND="cd ../../../; REGISTRY=\"$REGISTRY\" make push 2>&1"
+  echo "Make command is: ${MAKE_COMMAND}"
+  MAKE_PUSH_OUTPUT=$(eval "${MAKE_COMMAND}")
   MAKE_PUSH_CODE=$?
   if [[ $MAKE_PUSH_CODE -eq 0 ]]; then
     IMAGE_URL=$(sed -rn 's/pushing\s+:\s+(.+ingress-gce-glbc-.+)/\1/p' <<< $MAKE_PUSH_OUTPUT)
@@ -229,7 +270,9 @@ if [[ -z $IMAGE_URL ]]; then
   fi
 fi
 
-sed "s|### IMAGE URL HERE ###|$IMAGE_URL|" ../resources/glbc.yaml > ../resources/glbc.yaml.custom
+# And format the GLBC YAML with the image URL (either from --image-url or parsed from)
+# our Makefile output.
+sed "s|\[IMAGE_URL\]|$IMAGE_URL|" ../resources/glbc.yaml > ../resources/glbc.yaml.gen
 
 # Grant permission to current GCP user to create new k8s ClusterRole's.
 kubectl create clusterrolebinding one-binding-to-rule-them-all --clusterrole=cluster-admin --user=${GCP_USER}
@@ -242,22 +285,22 @@ kubectl create -f ../resources/rbac.yaml
 
 # Inject gce.conf onto the user node as a ConfigMap.
 # This config map is mounted as a volume in glbc.yaml
-kubectl create configmap gce-config --from-file=../resources/gce.conf.custom -n kube-system
+kubectl create configmap gce-config --from-file=../resources/gce.conf.gen -n kube-system
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating gce.conf ConfigMap. ${CLEANUP_HELP}"
 
 # Create new GCP service acccount.
-gcloud iam service-accounts create glbc-service-account \
+gcloud iam service-accounts create glbc-service-account ${GCLOUD_EXTRA_FLAGS} \
   --display-name "Service Account for GLBC"
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating a GCP service account. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
 
 # Give the GCP service account the appropriate roles.
-gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+gcloud projects add-iam-policy-binding ${GCLOUD_EXTRA_FLAGS} ${PROJECT_ID} \
   --member serviceAccount:glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com \
   --role roles/compute.admin
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating IAM role binding for service account. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
 
 # Create key for the GCP service account.
-gcloud iam service-accounts keys create \
+gcloud iam service-accounts keys create ${GCLOUD_EXTRA_FLAGS} \
   key.json \
   --iam-account glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating GCP service account key. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
@@ -274,11 +317,24 @@ rm key.json
 # Turn off the glbc running on the GKE master. This will not only delete the
 # glbc pod, but it will also delete the default-http-backend
 # deployment + service.
-gcloud container clusters update ${CLUSTER_NAME} --zone=${ZONE} \--update-addons=HttpLoadBalancing=DISABLED
+gcloud container clusters update ${CLUSTER_NAME} ${GCLOUD_EXTRA_FLAGS} --zone=${ZONE} \--update-addons=HttpLoadBalancing=DISABLED
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue turning off GLBC. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
 
 # Critical to wait for the API server to be handling responses before continuing.
 wait-for-api-server
+
+# In case the API server isn't actually ready (there's been mention of it succeeding on
+# a request only to fail on the next), prompt user so that they can choose when to proceed.
+while [[ -z $NO_CONFIRM ]]; do
+  echo -e "${GREEN}Script-bot: Before proceeding, please ensure your API server is accepting all requests.
+Failure to do so may result in the script creating a broken state."
+  echo -e "${GREEN}Script-bot: Press [C | c] to continue.${NC}"
+  read input
+  case $input in
+    [Cc]* ) break;;
+    * ) echo -e "${GREEN}Script-bot: Press [C | c] to continue.${NC}"
+  esac
+done
 
 # Recreate the default-http-backend k8s service with the same NodePort as the
 # service which was removed when turning of the glbc previously. This is to
@@ -306,23 +362,23 @@ done
 
 # Recreates the deployment and service for the default backend.
 # Note: We do sed on a copy so that the original file stays clean for future runs.
-sed "/name: http/a \ \ \ \ nodePort: ${NODE_PORT}" ../resources/default-http-backend.yaml > ../resources/default-http-backend.yaml.custom
-kubectl create -f ../resources/default-http-backend.yaml.custom
+sed "/name: http/a \ \ \ \ nodePort: ${NODE_PORT}" ../resources/default-http-backend.yaml > ../resources/default-http-backend.yaml.gen
+kubectl create -f ../resources/default-http-backend.yaml.gen
 if [[ $? -eq 1 ]];
 then
   # Prompt the user to finish the last steps by themselves. We don't want to
   # have to cleanup and start all over again if we are this close to finishing.
-  error_exit "Error-bot: Issue starting default backend. ${PERMISSION_ISSUE}. We are so close to being done so just manually start the default backend with NodePort: ${NODE_PORT} (see default-http-backend.yaml.custom) and create glbc.yaml.custom when ready."
+  error_exit "Error-bot: Issue starting default backend. ${PERMISSION_ISSUE}. We are so close to being done so just manually start the default backend with NodePort: ${NODE_PORT} (see default-http-backend.yaml.gen) and create glbc.yaml.gen when ready."
 fi
-rm ../resources/default-http-backend.yaml.custom # Not useful to keep because the port changes each run.
+rm ../resources/default-http-backend.yaml.gen # Not useful to keep because the port changes each run.
 
 # Startup glbc
-kubectl create -f ../resources/glbc.yaml.custom
+kubectl create -f ../resources/glbc.yaml.gen
 [[ $? -eq 0 ]] || manual_glbc_provision
 if [[ $? -eq 1 ]];
 then
   # Same idea as above, although this time we only need to prompt the user to start the glbc.
-  error_exit: "Error_bot: Issue starting GLBC. ${PERMISSION_ISSUE}. We are so close to being done so just manually create glbc.yaml.custom when ready."
+  error_exit: "Error_bot: Issue starting GLBC. ${PERMISSION_ISSUE}. We are so close to being done so just manually create glbc.yaml.gen when ready."
 fi
 
 # Do a final verification that the NodePort stayed the same for the
