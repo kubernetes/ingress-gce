@@ -28,6 +28,7 @@ function usage() {
   echo "  --subnetwork-name        Override for the subnetwork-name gce.conf value"
   echo "  --node-instance-prefix   Override for the node-instance-prefix gce.conf value"
   echo "  --network-tags           Override for the node-tags gce.conf value"
+  echo "  --no-confirm             Don't ask confirmation to reenable GLBC on cleanup"
   exit
 }
 
@@ -67,7 +68,7 @@ function cleanup() {
   kubectl delete secret glbc-gcp-key -n kube-system
   kubectl delete -f ../resources/glbc.yaml
   # Ask if user wants to reenable GLBC on the GKE master.
-  while true; do
+  while [[ -z $NO_CONFIRM ]]; do
     echo -e "${GREEN}Script-bot: Do you want to reenable GLBC on the GKE master?${NC}"
     echo -e "${GREEN}Script-bot: Press [C | c] to continue.${NC}"
     read input
@@ -79,6 +80,14 @@ function cleanup() {
   gcloud container clusters update ${CLUSTER_NAME} --zone=${ZONE} --update-addons=HttpLoadBalancing=ENABLED
   echo -e "${GREEN}Script-bot: Cleanup successful! You need to cleanup your GCP service account key manually.${NC}"
   exit 0
+}
+
+# Loops until calls to the API server are succeeding.
+function wait-for-api-server() {
+  echo "Waiting for API server to become ready..."
+  until kubectl api-resources > /dev/null 2>&1; do
+    sleep 0.1
+  done
 }
 
 RED='\033[0;31m'
@@ -132,6 +141,10 @@ case $key in
   --image-url)
   IMAGE_URL=$2
   shift
+  shift
+  ;;
+  --no-confirm)
+  NO_CONFIRM=1
   shift
   ;;
   -z|--zone)
@@ -261,30 +274,18 @@ rm key.json
 # Turn off the glbc running on the GKE master. This will not only delete the
 # glbc pod, but it will also delete the default-http-backend
 # deployment + service.
-gcloud container clusters update ${CLUSTER_NAME} --zone=${ZONE} --update-addons=HttpLoadBalancing=DISABLED
-[[ $? -eq 0 ]] || error_exit "Error-bot: Issue turning of GLBC. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
+gcloud container clusters update ${CLUSTER_NAME} --zone=${ZONE} \--update-addons=HttpLoadBalancing=DISABLED
+[[ $? -eq 0 ]] || error_exit "Error-bot: Issue turning off GLBC. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
 
-# Approximate amount of time it takes the API server to start accepting all
-# requests.
-sleep 90
-# In case the previous sleep was not enough, prompt user so that they can choose
-# when to proceed.
-while true; do
-  echo -e "${GREEN}Script-bot: Before proceeding, please ensure your API server is accepting all requests.
-Failure to do so may result in the script creating a broken state."
-  echo -e "${GREEN}Script-bot: Press [C | c] to continue.${NC}"
-  read input
-  case $input in
-    [Cc]* ) break;;
-    * ) echo -e "${GREEN}Script-bot: Press [C | c] to continue.${NC}"
-  esac
-done
+# Critical to wait for the API server to be handling responses before continuing.
+wait-for-api-server
 
 # Recreate the default-http-backend k8s service with the same NodePort as the
 # service which was removed when turning of the glbc previously. This is to
 # ensure that a brand new NodePort is not created.
 
 # Wait till old service is removed
+echo "Waiting for old GLBC service and pod to be removed..."
 while true; do
   kubectl get svc -n kube-system | grep default-http-backend &>/dev/null
   if [[ $? -eq 1 ]];
@@ -305,16 +306,15 @@ done
 
 # Recreates the deployment and service for the default backend.
 # Note: We do sed on a copy so that the original file stays clean for future runs.
-cp ../resources/default-http-backend.yaml ../resources/default-http-backend-copy.yaml
-sed -i "/name: http/a \ \ \ \ nodePort: ${NODE_PORT}" ../resources/default-http-backend-copy.yaml
-kubectl create -f ../resources/default-http-backend-copy.yaml
+sed "/name: http/a \ \ \ \ nodePort: ${NODE_PORT}" ../resources/default-http-backend.yaml > ../resources/default-http-backend.yaml.custom
+kubectl create -f ../resources/default-http-backend.yaml.custom
 if [[ $? -eq 1 ]];
 then
   # Prompt the user to finish the last steps by themselves. We don't want to
   # have to cleanup and start all over again if we are this close to finishing.
-  error_exit "Error-bot: Issue starting default backend. ${PERMISSION_ISSUE}. We are so close to being done so just manually start the default backend with NodePort: ${NODE_PORT} and create glbc.yaml.custom when ready"
+  error_exit "Error-bot: Issue starting default backend. ${PERMISSION_ISSUE}. We are so close to being done so just manually start the default backend with NodePort: ${NODE_PORT} (see default-http-backend.yaml.custom) and create glbc.yaml.custom when ready."
 fi
-rm ../resources/default-http-backend-copy.yaml
+rm ../resources/default-http-backend.yaml.custom # Not useful to keep because the port changes each run.
 
 # Startup glbc
 kubectl create -f ../resources/glbc.yaml.custom
@@ -322,7 +322,7 @@ kubectl create -f ../resources/glbc.yaml.custom
 if [[ $? -eq 1 ]];
 then
   # Same idea as above, although this time we only need to prompt the user to start the glbc.
-  error_exit: "Error_bot: Issue starting GLBC. ${PERMISSION_ISSUE}. We are so close to being done so just manually create glbc.yaml.custom when ready"
+  error_exit: "Error_bot: Issue starting GLBC. ${PERMISSION_ISSUE}. We are so close to being done so just manually create glbc.yaml.custom when ready."
 fi
 
 # Do a final verification that the NodePort stayed the same for the
