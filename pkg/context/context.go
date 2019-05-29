@@ -23,13 +23,15 @@ import (
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	informerv1beta1 "k8s.io/client-go/informers/extensions/v1beta1"
 	"k8s.io/client-go/kubernetes"
-	scheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/kubernetes/scheme"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/common/typed"
+	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
+	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
@@ -49,12 +51,13 @@ type ControllerContext struct {
 
 	ControllerContextConfig
 
-	IngressInformer       cache.SharedIndexInformer
-	ServiceInformer       cache.SharedIndexInformer
-	BackendConfigInformer cache.SharedIndexInformer
-	PodInformer           cache.SharedIndexInformer
-	NodeInformer          cache.SharedIndexInformer
-	EndpointInformer      cache.SharedIndexInformer
+	IngressInformer        cache.SharedIndexInformer
+	ServiceInformer        cache.SharedIndexInformer
+	BackendConfigInformer  cache.SharedIndexInformer
+	FrontendConfigInformer cache.SharedIndexInformer
+	PodInformer            cache.SharedIndexInformer
+	NodeInformer           cache.SharedIndexInformer
+	EndpointInformer       cache.SharedIndexInformer
 
 	healthChecks map[string]func() error
 
@@ -72,12 +75,14 @@ type ControllerContextConfig struct {
 	DefaultBackendSvcPortID       utils.ServicePortID
 	HealthCheckPath               string
 	DefaultBackendHealthCheckPath string
+	FrontendConfigEnabled         bool
 }
 
 // NewControllerContext returns a new shared set of informers.
 func NewControllerContext(
 	kubeClient kubernetes.Interface,
 	backendConfigClient backendconfigclient.Interface,
+	frontendConfigClient frontendconfigclient.Interface,
 	cloud *gce.Cloud,
 	namer *utils.Namer,
 	config ControllerContextConfig) *ControllerContext {
@@ -97,6 +102,10 @@ func NewControllerContext(
 		healthChecks:            make(map[string]func() error),
 	}
 
+	if config.FrontendConfigEnabled {
+		context.FrontendConfigInformer = informerfrontendconfig.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	}
+
 	return context
 }
 
@@ -110,6 +119,11 @@ func (ctx *ControllerContext) HasSynced() bool {
 		ctx.NodeInformer.HasSynced,
 		ctx.EndpointInformer.HasSynced,
 	}
+
+	if ctx.FrontendConfigInformer != nil {
+		funcs = append(funcs, ctx.FrontendConfigInformer.HasSynced)
+	}
+
 	for _, f := range funcs {
 		if !f() {
 			return false
@@ -171,6 +185,9 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	if ctx.BackendConfigInformer != nil {
 		go ctx.BackendConfigInformer.Run(stopCh)
 	}
+	if ctx.FrontendConfigInformer != nil {
+		go ctx.FrontendConfigInformer.Run(stopCh)
+	}
 }
 
 // Ingresses returns the store of Ingresses.
@@ -186,4 +203,12 @@ func (ctx *ControllerContext) Services() *typed.ServiceStore {
 // BackendConfigs returns the store of BackendConfigs.
 func (ctx *ControllerContext) BackendConfigs() *typed.BackendConfigStore {
 	return typed.WrapBackendConfigStore(ctx.BackendConfigInformer.GetStore())
+}
+
+// FrontendConfigs returns the store of FrontendConfigs.
+func (ctx *ControllerContext) FrontendConfigs() *typed.FrontendConfigStore {
+	if ctx.FrontendConfigInformer == nil {
+		return typed.WrapFrontendConfigStore(nil)
+	}
+	return typed.WrapFrontendConfigStore(ctx.FrontendConfigInformer.GetStore())
 }

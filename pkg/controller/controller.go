@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"net/http"
 	"reflect"
 	"sync"
@@ -36,6 +37,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/healthchecks"
@@ -205,6 +207,30 @@ func NewLoadBalancerController(
 			lbc.ingQueue.Enqueue(convert(ings)...)
 		},
 	})
+
+	// FrontendConfig event handlers.
+	if ctx.FrontendConfigEnabled {
+		ctx.FrontendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				feConfig := obj.(*frontendconfigv1beta1.FrontendConfig)
+				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
+				lbc.ingQueue.Enqueue(convert(ings)...)
+
+			},
+			UpdateFunc: func(old, cur interface{}) {
+				if !reflect.DeepEqual(old, cur) {
+					feConfig := cur.(*frontendconfigv1beta1.FrontendConfig)
+					ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
+					lbc.ingQueue.Enqueue(convert(ings)...)
+				}
+			},
+			DeleteFunc: func(obj interface{}) {
+				feConfig := obj.(*frontendconfigv1beta1.FrontendConfig)
+				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
+				lbc.ingQueue.Enqueue(convert(ings)...)
+			},
+		})
+	}
 
 	// Register health check on controller context.
 	ctx.AddHealthCheck("ingress", func() error {
@@ -565,14 +591,26 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress, urlMap
 		}
 	}
 
+	var feConfig *frontendconfigv1beta1.FrontendConfig
+	if lbc.ctx.FrontendConfigEnabled {
+		feConfig, err = frontendconfig.FrontendConfigForIngress(lbc.ctx.FrontendConfigs().List(), ing)
+		if err != nil {
+			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", fmt.Sprintf("%v", err))
+		}
+		// Object in cache could be changed in-flight. Deepcopy to
+		// reduce race conditions.
+		feConfig = feConfig.DeepCopy()
+	}
+
 	return &loadbalancers.L7RuntimeInfo{
-		Name:         k,
-		TLS:          tls,
-		TLSName:      annotations.UseNamedTLS(),
-		Ingress:      ing,
-		AllowHTTP:    annotations.AllowHTTP(),
-		StaticIPName: annotations.StaticIPName(),
-		UrlMap:       urlMap,
+		Name:           k,
+		TLS:            tls,
+		TLSName:        annotations.UseNamedTLS(),
+		Ingress:        ing,
+		AllowHTTP:      annotations.AllowHTTP(),
+		StaticIPName:   annotations.StaticIPName(),
+		UrlMap:         urlMap,
+		FrontendConfig: feConfig,
 	}, nil
 }
 
