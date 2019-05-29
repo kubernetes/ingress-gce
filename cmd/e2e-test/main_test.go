@@ -38,13 +38,14 @@ import (
 
 var (
 	flags struct {
-		run              bool
-		inCluster        bool
-		kubeconfig       string
-		project          string
-		seed             int64
-		destroySandboxes bool
-		handleSIGINT     bool
+		run                 bool
+		inCluster           bool
+		kubeconfig          string
+		project             string
+		seed                int64
+		destroySandboxes    bool
+		handleSIGINT        bool
+		gceEndpointOverride string
 	}
 
 	Framework *e2e.Framework
@@ -63,6 +64,7 @@ func init() {
 	flag.Int64Var(&flags.seed, "seed", -1, "random seed")
 	flag.BoolVar(&flags.destroySandboxes, "destroySandboxes", true, "set to false to leave sandboxed resources for debugging")
 	flag.BoolVar(&flags.handleSIGINT, "handleSIGINT", true, "catch SIGINT to perform clean")
+	flag.StringVar(&flags.gceEndpointOverride, "gce-endpoint-override", "", "If set, talks to a different GCE API Endpoint. By default it talks to https://www.googleapis.com/compute/v1/projects/")
 }
 
 // TestMain is the entrypoint for the end-to-end test suite. This is where
@@ -103,9 +105,10 @@ func TestMain(m *testing.M) {
 	klog.Infof("Using random seed = %d", flags.seed)
 
 	Framework = e2e.NewFramework(kubeconfig, e2e.Options{
-		Project:          flags.project,
-		Seed:             flags.seed,
-		DestroySandboxes: flags.destroySandboxes,
+		Project:             flags.project,
+		Seed:                flags.seed,
+		DestroySandboxes:    flags.destroySandboxes,
+		GceEndpointOverride: flags.gceEndpointOverride,
 	})
 	if flags.handleSIGINT {
 		Framework.CatchSIGINT()

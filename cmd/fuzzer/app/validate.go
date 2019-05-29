@@ -97,7 +97,7 @@ func Validate() {
 		panic(err.Error())
 	}
 
-	gce, err := e2e.NewCloud(validateOptions.project)
+	gce, err := e2e.NewCloud(validateOptions.project, "")
 	if err != nil {
 		panic(err)
 	}
