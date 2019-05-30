@@ -23,6 +23,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"testing"
 
@@ -40,14 +41,15 @@ import (
 
 // Options for the test framework.
 type Options struct {
-	Project          string
-	Seed             int64
-	DestroySandboxes bool
+	Project             string
+	Seed                int64
+	DestroySandboxes    bool
+	GceEndpointOverride string
 }
 
 // NewFramework returns a new test framework to run.
 func NewFramework(config *rest.Config, options Options) *Framework {
-	theCloud, err := NewCloud(options.Project)
+	theCloud, err := NewCloud(options.Project, options.GceEndpointOverride)
 	if err != nil {
 		panic(err)
 	}
@@ -209,7 +211,7 @@ func (f *Framework) RunWithSandbox(name string, t *testing.T, testFunc func(*tes
 }
 
 // NewCloud creates a new cloud for the given project.
-func NewCloud(project string) (cloud.Cloud, error) {
+func NewCloud(project, GceEndpointOverride string) (cloud.Cloud, error) {
 	const computeScope = "https://www.googleapis.com/auth/compute"
 	client, err := google.DefaultClient(context.Background(), computeScope)
 	if err != nil {
@@ -227,6 +229,12 @@ func NewCloud(project string) (cloud.Cloud, error) {
 	serviceBeta, err := computebeta.New(client)
 	if err != nil {
 		return nil, err
+	}
+
+	if GceEndpointOverride != "" {
+		service.BasePath = GceEndpointOverride
+		serviceAlpha.BasePath = strings.Replace(GceEndpointOverride, "v1", "alpha", -1)
+		serviceBeta.BasePath = strings.Replace(GceEndpointOverride, "v1", "beta", -1)
 	}
 
 	cloudService := &cloud.Service{
