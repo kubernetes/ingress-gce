@@ -36,7 +36,36 @@ function usage() {
   echo "  --network-tags           Override for the node-tags gce.conf value"
   echo "  --no-confirm             Don't ask confirmation to reenable GLBC on cleanup"
   echo "                           or to check that the API server is ready"
+  echo "  --dry-run                Does not mutate the cluster and just prints all the"
+  echo "                           commands we would run. This still generates local files"
+  echo "                           and still will perform non-mutating queries on the cluster"
+  echo "                           in a few cases. If using --build-and-push, we will still"
+  echo "                           push (use --image-url to avoid this). kubectl commands"
+  echo "                           will be run with kubectl --dry-run where possible."
   exit
+}
+
+# run_maybe_dry runs a command if we're not using --dry-run and otherwise just echoes
+# it.
+function run_maybe_dry() {
+  if [[ -z $DRY_RUN ]];
+  then
+    eval "$@"
+  else
+    echo "$@"
+  fi
+}
+
+# run_maybe_dry_kubectl runs a command if we're not using --dry-run and otherwise echoes
+# and runs the kubectl command with --dry-run. We can't do this with all kubectl commands.
+function run_maybe_dry_kubectl() {
+  if [[ -z $DRY_RUN ]];
+  then
+    eval "$@"
+  else
+    echo "$@"
+    eval "$@ --dry-run"
+  fi
 }
 
 function arg_check {
@@ -51,7 +80,7 @@ function arg_check {
     echo "--image-url and --build-and-push are mutually exclusive."
     echo
     usage
-  elif [[ -z $BUILD_AND_PUSH && -z $IMAGE_URL ]];
+  elif [[ -z $BUILD_AND_PUSH && -z $IMAGE_URL && -z $CLEANING ]];
   then
     echo "One of either --image-url or --build-and-push must be set."
     echo
@@ -82,7 +111,6 @@ function error_exit {
 }
 
 function cleanup() {
-  arg_check
   # Get the project id associated with the cluster.
   PROJECT_ID=`gcloud config list --format 'value(core.project)' 2>/dev/null`
   # Cleanup k8s and GCP resources in same order they are created.
@@ -90,15 +118,15 @@ function cleanup() {
   # Note: We don't delete the default-http-backend we created so that when the
   # GLBC is restored on the GKE master, the addon manager does not try to create a
   # new one.
-  kubectl delete clusterrolebinding one-binding-to-rule-them-all
-  kubectl delete -f ../resources/rbac.yaml
-  kubectl delete configmap gce-config -n kube-system
-  gcloud iam service-accounts delete ${GCLOUD_EXTRA_FLAGS} glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com
-  gcloud projects remove-iam-policy-binding ${GCLOUD_EXTRA_FLAGS} ${PROJECT_ID} \
+  run_maybe_dry kubectl delete clusterrolebinding one-binding-to-rule-them-all
+  run_maybe_dry kubectl delete -f ../resources/rbac.yaml
+  run_maybe_dry kubectl delete configmap gce-config -n kube-system
+  run_maybe_dry gcloud iam service-accounts delete ${GCLOUD_EXTRA_FLAGS} glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com
+  run_maybe_dry gcloud projects remove-iam-policy-binding ${GCLOUD_EXTRA_FLAGS} ${PROJECT_ID} \
     --member serviceAccount:glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com \
     --role roles/compute.admin
-  kubectl delete secret glbc-gcp-key -n kube-system
-  kubectl delete -f ../resources/glbc.yaml
+  run_maybe_dry kubectl delete secret glbc-gcp-key -n kube-system
+  run_maybe_dry kubectl delete -f ../resources/glbc.yaml
   # Ask if user wants to reenable GLBC on the GKE master.
   while [[ -z $NO_CONFIRM ]]; do
     echo -e "${GREEN}Script-bot: Do you want to reenable GLBC on the GKE master?${NC}"
@@ -109,7 +137,7 @@ function cleanup() {
       * ) echo -e "${GREEN}Script-bot: Press [C | c] to continue.${NC}"
     esac
   done
-  gcloud container clusters update ${CLUSTER_NAME} --zone=${ZONE} --update-addons=HttpLoadBalancing=ENABLED
+  run_maybe_dry gcloud container clusters update ${CLUSTER_NAME} --zone=${ZONE} --update-addons=HttpLoadBalancing=ENABLED
   echo -e "${GREEN}Script-bot: Cleanup successful! You need to cleanup your GCP service account key manually.${NC}"
   exit 0
 }
@@ -117,7 +145,7 @@ function cleanup() {
 # Loops until calls to the API server are succeeding.
 function wait-for-api-server() {
   echo "Waiting for API server to become ready..."
-  until kubectl api-resources > /dev/null 2>&1; do
+  until run_maybe_dry kubectl api-resources > /dev/null 2>&1; do
     sleep 0.1
   done
 }
@@ -135,14 +163,13 @@ do
 key="$1"
 
 case $key in
-  --help)
+  -h|--help)
   usage
   shift
   shift
   ;;
   -c|--cleanup)
-  cleanup
-  shift
+  CLEANING=1
   shift
   ;;
   -n|--cluster-name)
@@ -187,17 +214,29 @@ case $key in
   GCLOUD_EXTRA_FLAGS="${GCLOUD_EXTRA_FLAGS} --quiet"
   shift
   ;;
+  --dry-run)
+  DRY_RUN=1
+  shift
+  ;;
   -z|--zone)
   ZONE=$2
   shift
+  shift
   ;;
   *)
-  shift
+  echo "Unknown argument $1"
+  echo
+  usage
   ;;
 esac
 done
 
 arg_check
+
+if [[ -n $CLEANING ]];
+then
+  cleanup
+fi
 
 # Get the project id associated with the cluster.
 PROJECT_ID=`gcloud config list --format 'value(core.project)' 2>/dev/null`
@@ -275,49 +314,49 @@ fi
 sed "s|\[IMAGE_URL\]|$IMAGE_URL|" ../resources/glbc.yaml > ../resources/glbc.yaml.gen
 
 # Grant permission to current GCP user to create new k8s ClusterRole's.
-kubectl create clusterrolebinding one-binding-to-rule-them-all --clusterrole=cluster-admin --user=${GCP_USER}
+run_maybe_dry_kubectl kubectl create clusterrolebinding one-binding-to-rule-them-all --clusterrole=cluster-admin --user=${GCP_USER}
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating a k8s ClusterRoleBinding. ${PERMISSION_ISSUE} ${NO_CLEANUP}"
 
 # Create a new service account for glbc and give it a
 # ClusterRole allowing it access to API objects it needs.
-kubectl create -f ../resources/rbac.yaml
+run_maybe_dry_kubectl kubectl create -f ../resources/rbac.yaml
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating the RBAC spec. ${CLEANUP_HELP}"
 
 # Inject gce.conf onto the user node as a ConfigMap.
 # This config map is mounted as a volume in glbc.yaml
-kubectl create configmap gce-config --from-file=../resources/gce.conf.gen -n kube-system
+run_maybe_dry_kubectl kubectl create configmap gce-config --from-file=../resources/gce.conf.gen -n kube-system
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating gce.conf ConfigMap. ${CLEANUP_HELP}"
 
 # Create new GCP service acccount.
-gcloud iam service-accounts create glbc-service-account ${GCLOUD_EXTRA_FLAGS} \
+run_maybe_dry gcloud iam service-accounts create glbc-service-account ${GCLOUD_EXTRA_FLAGS} \
   --display-name "Service Account for GLBC"
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating a GCP service account. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
 
 # Give the GCP service account the appropriate roles.
-gcloud projects add-iam-policy-binding ${GCLOUD_EXTRA_FLAGS} ${PROJECT_ID} \
+run_maybe_dry gcloud projects add-iam-policy-binding ${GCLOUD_EXTRA_FLAGS} ${PROJECT_ID} \
   --member serviceAccount:glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com \
   --role roles/compute.admin
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating IAM role binding for service account. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
 
 # Create key for the GCP service account.
-gcloud iam service-accounts keys create ${GCLOUD_EXTRA_FLAGS} \
+run_maybe_dry gcloud iam service-accounts keys create ${GCLOUD_EXTRA_FLAGS} \
   key.json \
   --iam-account glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating GCP service account key. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
 
 # Store the key as a secret in k8s. This secret is mounted
 # as a volume in glbc.yaml
-kubectl create secret generic glbc-gcp-key --from-file=key.json -n kube-system
+run_maybe_dry kubectl create secret generic glbc-gcp-key --from-file=key.json -n kube-system
 if [[ $? -eq 1 ]];
 then
   error_exit "Error-bot: Issue creating a k8s secret from GCP service account key. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
 fi
-rm key.json
+[[ -n $DRY_RUN ]] || rm key.json
 
 # Turn off the glbc running on the GKE master. This will not only delete the
 # glbc pod, but it will also delete the default-http-backend
 # deployment + service.
-gcloud container clusters update ${CLUSTER_NAME} ${GCLOUD_EXTRA_FLAGS} --zone=${ZONE} \--update-addons=HttpLoadBalancing=DISABLED
+run_maybe_dry gcloud container clusters update ${CLUSTER_NAME} ${GCLOUD_EXTRA_FLAGS} --zone=${ZONE} \--update-addons=HttpLoadBalancing=DISABLED
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue turning off GLBC. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
 
 # Critical to wait for the API server to be handling responses before continuing.
@@ -343,7 +382,7 @@ done
 # Wait till old service is removed
 echo "Waiting for old GLBC service and pod to be removed..."
 while true; do
-  kubectl get svc -n kube-system | grep default-http-backend &>/dev/null
+  run_maybe_dry kubectl get svc -n kube-system | grep default-http-backend &>/dev/null
   if [[ $? -eq 1 ]];
   then
     break
@@ -352,7 +391,7 @@ while true; do
 done
 # Wait till old glbc pod is removed
 while true; do
-  kubectl get pod -n kube-system | grep default-backend &>/dev/null
+  run_maybe_dry kubectl get pod -n kube-system | grep default-backend &>/dev/null
   if [[ $? -eq 1 ]];
   then
     break
@@ -363,7 +402,7 @@ done
 # Recreates the deployment and service for the default backend.
 # Note: We do sed on a copy so that the original file stays clean for future runs.
 sed "/name: http/a \ \ \ \ nodePort: ${NODE_PORT}" ../resources/default-http-backend.yaml > ../resources/default-http-backend.yaml.gen
-kubectl create -f ../resources/default-http-backend.yaml.gen
+run_maybe_dry_kubectl kubectl create -f ../resources/default-http-backend.yaml.gen
 if [[ $? -eq 1 ]];
 then
   # Prompt the user to finish the last steps by themselves. We don't want to
@@ -373,7 +412,7 @@ fi
 rm ../resources/default-http-backend.yaml.gen # Not useful to keep because the port changes each run.
 
 # Startup glbc
-kubectl create -f ../resources/glbc.yaml.gen
+run_maybe_dry_kubectl kubectl create -f ../resources/glbc.yaml.gen
 [[ $? -eq 0 ]] || manual_glbc_provision
 if [[ $? -eq 1 ]];
 then
