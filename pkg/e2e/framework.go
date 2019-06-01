@@ -232,9 +232,9 @@ func NewCloud(project, GceEndpointOverride string) (cloud.Cloud, error) {
 	}
 
 	if GceEndpointOverride != "" {
-		service.BasePath = GceEndpointOverride
-		serviceAlpha.BasePath = strings.Replace(GceEndpointOverride, "v1", "alpha", -1)
-		serviceBeta.BasePath = strings.Replace(GceEndpointOverride, "v1", "beta", -1)
+		service.BasePath = fmt.Sprintf("%sprojects/", GceEndpointOverride)
+		serviceBeta.BasePath = fmt.Sprintf("%sprojects/", strings.Replace(GceEndpointOverride, "v1", "beta", -1))
+		serviceAlpha.BasePath = fmt.Sprintf("%sprojects/", strings.Replace(GceEndpointOverride, "v1", "alpha", -1))
 	}
 
 	cloudService := &cloud.Service{
