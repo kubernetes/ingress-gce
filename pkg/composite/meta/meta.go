@@ -14,14 +14,17 @@ limitations under the License.
 package meta
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
+
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 const (
@@ -32,17 +35,13 @@ const (
 // MainServices describes all of the API types that we want to define all the helper functions for
 // The other types that are discovered as dependencies will simply be wrapped with a composite struct
 // The format of the map is ServiceName -> k8s-cloud-provider wrapper name
-// TODO: (shance) Add the commented services and remove dependency on first cloud-provider layer
 var MainServices = map[string]string{
-	"BackendService": "BackendServices",
-	/*
-		"ForwardingRule":   "ForwardingRules",
-		"HttpHealthCheck":  "HttpHealthChecks",
-		"HttpsHealthCheck": "HttpsHealthChecks",
-		"UrlMap":           "UrlMaps",
-		"TargetHttpProxy":  "TargetHttpProxies",
-		"TargetHttpsProxy": "TargetHttpsProxies",
-	*/
+	"BackendService":   "BackendServices",
+	"ForwardingRule":   "ForwardingRules",
+	"HealthCheck":      "HealthChecks",
+	"UrlMap":           "UrlMaps",
+	"TargetHttpProxy":  "TargetHttpProxies",
+	"TargetHttpsProxy": "TargetHttpsProxies",
 }
 
 // TODO: (shance) Replace this with data gathered from meta.AllServices
@@ -59,6 +58,13 @@ var Versions = map[string]string{
 	"GA":    "",
 }
 
+// TODO (shance) Replace this with data gathered from meta.AllServices or discovery doc
+// DefaultRegionalServices contains services which are regional by default.
+// Their global type is explicitly labeled (e.g. GlobalForwardingRule)
+var DefaultRegionalServices = sets.NewString(
+	"ForwardingRule",
+)
+
 // ApiService holds relevant data for generating a composite type + helper methods for a single API service
 type ApiService struct {
 	// Name of the Go struct
@@ -73,6 +79,8 @@ type ApiService struct {
 	VarName string
 	// All of the struct fields
 	Fields []ApiService
+	// Comment describing the field
+	Description string
 }
 
 // IsMainService() returns true if the service name is in the MainServices map
@@ -84,6 +92,10 @@ func (apiService *ApiService) IsMainService() bool {
 // HasUpdate() returns true if the service name is *not* in the NoUpdate() list
 func (apiService *ApiService) HasUpdate() bool {
 	return !NoUpdate.Has(apiService.Name)
+}
+
+func (apiService *ApiService) IsDefaultRegionalService() bool {
+	return DefaultRegionalServices.Has(apiService.Name)
 }
 
 // GetCloudProviderName() returns the name of the cloudprovider type for a service
@@ -165,6 +177,12 @@ func populateApiServices() {
 			}
 			subType.GoType = propType
 			subType.JsonStringOverride = override
+			desc, ok := val.(map[string]interface{})["description"]
+			if !ok {
+				fmt.Printf("WARNING: No description for type: %s.%s\n", typeName, prop)
+			} else {
+				subType.Description = asComment("\t", desc.(string))
+			}
 			apiService.Fields = append(apiService.Fields, subType)
 		}
 
@@ -237,6 +255,42 @@ func getGoType(val interface{}, typesQueue []string) (string, []string, bool, er
 	}
 
 	return propType, typesQueue, override, err
+}
+
+// Convert discovery description to properly formatted comment
+func asComment(pfx, c string) string {
+	var urlRE = regexp.MustCompile(`^http\S+$`)
+	var buf bytes.Buffer
+	const maxLen = 70
+	r := strings.NewReplacer(
+		"\n", "\n"+pfx+"// ",
+		"`\"", `"`,
+		"\"`", `"`,
+	)
+	for len(c) > 0 {
+		line := c
+		if len(line) < maxLen {
+			fmt.Fprintf(&buf, "%s// %s\n", pfx, r.Replace(line))
+			break
+		}
+		// Don't break URLs.
+		if !urlRE.MatchString(line[:maxLen]) {
+			line = line[:maxLen]
+		}
+		si := strings.LastIndex(line, " ")
+		if nl := strings.Index(line, "\n"); nl != -1 && nl < si {
+			si = nl
+		}
+		if si != -1 {
+			line = line[:si]
+		}
+		fmt.Fprintf(&buf, "%s// %s\n", pfx, r.Replace(line))
+		c = c[len(line):]
+		if si != -1 {
+			c = c[1:]
+		}
+	}
+	return buf.String()
 }
 
 func init() {
