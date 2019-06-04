@@ -30,9 +30,6 @@ permission to do basically anything so all commands the script runs should
 theoretically work. If not, the script will do its best to fail gracefully
 and let you know what might have went wrong.
 
-The second step is to make sure you populate the [gce.conf](../resources/gce.conf) file. The instructions
-for populating the file are in the file itself. You just have to fill it in.
-
 # Important Details
 
 Most likely, you want to know what this script is doing to your cluster in order
@@ -41,11 +38,9 @@ can go ahead and skip this section.
 
 Here is a brief summary of each major thing we do and why:
 
-1. Turn off GLBC and turn on new GLBC in the cluster
-    * To be brief, the maintenance cost of running a new controller on the master
-      is actually pretty high. This is why we chose to move the controller
-      to the cluster.
-1. Create a new k8s RBAC role
+1. (If applicable) figure out information you didn't provide from the cluster and
+   build and push the GLBC image.
+2. Create a new k8s RBAC role
     * On the master, the GLBC has unauthenticated access to the k8s API server.
       Once we move the GLBC to the cluster, that path is gone. Therefore, we need to
       configure a new RBAC role that allows GLBC the same access.
@@ -54,10 +49,13 @@ Here is a brief summary of each major thing we do and why:
       token pulled from a private GKE endpoint. Moving to the cluster will result in
       us not being able to utilize this. Therefore, we need to create a new GCP
       service account and a corresponding key which will grant access.
-4. Start new GLBC (and default backend) in the cluster
-    * As stated before, we need to run the GLBC in the cluster. We also need to
-      startup a new default backend because the mechanism we use to turn off the
-      master GLBC removes both the GLBC and the default backend.
+4. Update the cluster to turn off the default GLBC
+    * This restarts the cluster master. The API server will be temporarily unavailable.
+5. Create our own default backend and custom GLBC on the cluster
+    * We need to startup a new default backend because the mechanism we
+      use to turn off the master GLBC removes both the GLBC and the default backend.
+    * This is dependent on the default GLBC being running initially, as we use
+      the same nodeport.
     * Because we have to recreate the default backend, there will be a small
       segment of time when requests to the default backend will time out.
 
@@ -71,30 +69,46 @@ Here is an explanation of each script dependency.
 1. [gce.conf](../resources/gce.conf)
     * This file normally sits on the GKE master and provides important config for
       the GCP Compute API client within the GLBC. The GLBC is configured to know
-      where to look for this file. In this case, we simply mount the file as a
-      volume and tell GLBC to look for it there.
+      where to look for this file. In this case, we simply mount a customized copy
+      of the file as a volume and tell GLBC to look for it there.
 2. [default-http-backend.yaml](../resources/default-http-backend.yaml)
     * This file contains the specifications for both the default-http-backend
       deployment and service. This is no different than what you are used to
       seeing in your cluster. In this case, we need to recreate the default
-      backend since turning off the GLBC on the master removes it.
+      backend since turning off the GLBC on the master removes it. Note that we
+      modify the file to use the same node port as before before we create the resource.
 3. [rbac.yaml](../resources/rbac.yaml)
     * This file contains specification for an RBAC role which gives the GLBC
       access to the resources it needs from the k8s API server.
 4. [glbc.yaml](../resources/glbc.yaml)
     * This file contains the specification for the GLBC deployment. Notice that in
       this case, we need a deployment because we want to preserve the controller
-      in case of node restarts.
+      in case of node restarts. The resource we create is from a customized copy of
+      this file that uses the specified (or newly built) image.
 
 Take a look at the script to understand where each file is used.
 
 # Running the Script
 
-Run the command below to see the usage:
+The script can take in a number of settings, but only really requires the cluster
+name and zone. You can provide other settings for if we incorrectly deduce any
+values. Usage:
 
-`./gke-self-managed.sh --help`
+```shell
+# Must be in the script directory
+cd docs/deploy/gke
+./gke-self-managed.sh -n CLUSTER_NAME -z ZONE
+```
 
-After that, it should be self-explanatory!
+For other options, see the `--help` output.
+
+Can speed things up if you've already pushed an image (or want to use a specific
+version) with `--image-url PATH` (eg,
+`--image-url k8s.gcr.io/ingress-gce-glbc-amd64:v1.5.2`). Can also set the `REGISTRY`
+env var to provide a custom place to push your image to if it's not the same project
+as your cluster is in. The tags pushed to will be that of the
+`git describe --tags --always --dirty` command. If the `VERSION` env var is set, that
+will be used as the tag.
 
 # Common Issues
 

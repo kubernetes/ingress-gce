@@ -23,7 +23,7 @@ spec:
       terminationGracePeriodSeconds: 600
       hostNetwork: true
       containers:
-      - image: k8s.gcr.io/ingress-gce-glbc-amd64:[SET VERSION HERE]
+      - image: [IMAGE_URL]
         livenessProbe:
           httpGet:
             path: /healthz
@@ -52,10 +52,17 @@ spec:
             cpu: 10m
             memory: 50Mi
         command:
-        # TODO: split this out into args when we no longer need to pipe stdout to a file #6428
-        - sh
-        - -c
-        - 'exec /glbc --gce-ratelimit=ga.Operations.Get,qps,10,100 --gce-ratelimit=alpha.Operations.Get,qps,10,100 --gce-ratelimit=ga.BackendServices.Get,qps,1.8,1 --gce-ratelimit=ga.HealthChecks.Get,qps,1.8,1 --gce-ratelimit=alpha.HealthChecks.Get,qps,1.8,1 --verbose --default-backend-service=kube-system/default-http-backend --sync-period=600s --running-in-cluster=true --use-real-cloud=true --config-file-path=/etc/gce/gce.conf --healthz-port=8086 --enable-backend-config 2>&1'
+        - /glbc
+        - -v2
+        - --config-file-path=/etc/gce/gce.conf.gen
+        - --healthz-port=8086
+        - --logtostderr
+        - --sync-period=600s
+        - --gce-ratelimit=ga.Operations.Get,qps,10,100
+        - --gce-ratelimit=alpha.Operations.Get,qps,10,100
+        - --gce-ratelimit=ga.BackendServices.Get,qps,1.8,1
+        - --gce-ratelimit=ga.HealthChecks.Get,qps,1.8,1
+        - --gce-ratelimit=alpha.HealthChecks.Get,qps,1.8,1
       volumes:
       - name: google-cloud-key
         secret:
@@ -64,5 +71,5 @@ spec:
         configMap:
           name: gce-config
           items:
-          - key: gce.conf
-            path: gce.conf
+          - key: gce.conf.gen
+            path: gce.conf.gen
