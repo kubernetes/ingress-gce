@@ -4,7 +4,7 @@ go 1.12
 
 require (
 	cloud.google.com/go v0.37.4 // indirect
-	github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20181220005116-f8e995905100
+	github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190604211444-77eedaf646f1
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/beorn7/perks v1.0.0 // indirect
 	github.com/emicklei/go-restful v2.9.3+incompatible // indirect
@@ -50,7 +50,7 @@ require (
 
 replace (
 	cloud.google.com/go => cloud.google.com/go v0.37.4
-	github.com/GoogleCloudPlatform/k8s-cloud-provider => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20181220005116-f8e995905100
+	github.com/GoogleCloudPlatform/k8s-cloud-provider => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190604211444-77eedaf646f1
 	github.com/PuerkitoBio/purell => github.com/PuerkitoBio/purell v1.1.1
 	github.com/beorn7/perks => github.com/beorn7/perks v1.0.0
 	github.com/emicklei/go-restful => github.com/emicklei/go-restful v2.9.3+incompatible
