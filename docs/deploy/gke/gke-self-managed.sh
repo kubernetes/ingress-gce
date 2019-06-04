@@ -32,7 +32,6 @@ function usage() {
   echo "  --help                   Display this help and exit"
   echo "  --network-name           Override for the network-name gce.conf value"
   echo "  --subnetwork-name        Override for the subnetwork-name gce.conf value"
-  echo "  --node-instance-prefix   Override for the node-instance-prefix gce.conf value"
   echo "  --network-tags           Override for the node-tags gce.conf value"
   echo "  --no-confirm             Don't ask confirmation to reenable GLBC on cleanup"
   echo "                           or to check that the API server is ready"
@@ -50,9 +49,9 @@ function usage() {
 function run_maybe_dry() {
   if [[ -z $DRY_RUN ]];
   then
-    eval "$@"
+    eval $@
   else
-    echo "$@"
+    echo $@
   fi
 }
 
@@ -61,10 +60,10 @@ function run_maybe_dry() {
 function run_maybe_dry_kubectl() {
   if [[ -z $DRY_RUN ]];
   then
-    eval "$@"
+    eval $@
   else
     echo "$@"
-    eval "$@ --dry-run"
+    eval $@ --dry-run
   fi
 }
 
@@ -128,7 +127,7 @@ function cleanup() {
   run_maybe_dry kubectl delete secret glbc-gcp-key -n kube-system
   run_maybe_dry kubectl delete -f ../resources/glbc.yaml
   # Ask if user wants to reenable GLBC on the GKE master.
-  while [[ -z $NO_CONFIRM ]]; do
+  while [[ $CONFIRM -eq 1 ]]; do
     echo -e "${GREEN}Script-bot: Do you want to reenable GLBC on the GKE master?${NC}"
     echo -e "${GREEN}Script-bot: Press [C | c] to continue.${NC}"
     read input
@@ -156,6 +155,7 @@ NC='\033[0m'
 CLEANUP_HELP="Invoking me with the -c option will get you back to a clean slate."
 NO_CLEANUP="Nothing has to be cleaned up :)"
 PERMISSION_ISSUE="If this looks like a permissions problem, see the README."
+CONFIRM=1
 
 # Parsing command line arguments
 while [[ $# -gt 0 ]]
@@ -192,11 +192,6 @@ case $key in
   shift
   shift
   ;;
-  --node-instance-prefix)
-  NODE_INSTANCE_PREFIX=$2
-  shift
-  shift
-  ;;
   --network-tags)
   NETWORK_TAGS=$2
   shift
@@ -207,7 +202,7 @@ case $key in
   shift
   ;;
   --no-confirm)
-  NO_CONFIRM=1
+  CONFIRM=0
 
   # --quiet flag makes gloud prompts non-interactive, ensuring this script can be
   # used in automated flows (user can also use this to provide extra, arbitrary flags).
@@ -254,9 +249,6 @@ if [[ -z $SUBNETWORK_NAME ]]; then
   SUBNETWORK_NAME=$(basename $(gcloud container clusters describe $CLUSTER_NAME \
       --zone=$ZONE --format='value(networkConfig.subnetwork)'))
 fi
-if [[ -z $NODE_INSTANCE_PREFIX ]]; then
-  NODE_INSTANCE_PREFIX="gke-${CLUSTER_NAME}"
-fi
 
 # Getting network tags is painful. Get the instance groups, map to an instance,
 # and get the node tag from it (they should be the same across all nodes -- we don't
@@ -280,12 +272,12 @@ echo "Network tag: $NETWORK_TAGS"
 echo "Zone: $ZONE"
 echo
 
-sed "s/YOUR CLUSTER'S PROJECT/$PROJECT_ID/" ../resources/gce.conf | \
-sed "s/YOUR CLUSTER'S NETWORK/$NETWORK_NAME/" | \
-sed "s/YOUR CLUSTER'S SUBNETWORK/$SUBNETWORK_NAME/" | \
-sed "s/gke-YOUR CLUSTER'S NAME/$NODE_INSTANCE_PREFIX/" | \
-sed "s/NETWORK TAGS FOR YOUR CLUSTER'S INSTANCE GROUP/$NETWORK_TAGS/" | \
-sed "s/YOUR CLUSTER'S ZONE/$ZONE/" > ../resources/gce.conf.gen
+sed "s/\[PROJECT\]/$PROJECT_ID/" ../resources/gce.conf | \
+sed "s/\[NETWORK\]/$NETWORK_NAME/" | \
+sed "s/\[SUBNETWORK\]/$SUBNETWORK_NAME/" | \
+sed "s/\[CLUSTER_NAME\]/$CLUSTER_NAME/" | \
+sed "s/\[NETWORK_TAGS\]/$NETWORK_TAGS/" | \
+sed "s/\[ZONE\]/$ZONE/" > ../resources/gce.conf.gen
 
 # If we're using build-and-push, do this early so errors are caught before we start
 # making cluster changes.
@@ -329,7 +321,7 @@ run_maybe_dry_kubectl kubectl create configmap gce-config --from-file=../resourc
 
 # Create new GCP service acccount.
 run_maybe_dry gcloud iam service-accounts create glbc-service-account ${GCLOUD_EXTRA_FLAGS} \
-  --display-name "Service Account for GLBC"
+  --display-name \"Service Account for GLBC\"
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating a GCP service account. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
 
 # Give the GCP service account the appropriate roles.
@@ -364,7 +356,7 @@ wait-for-api-server
 
 # In case the API server isn't actually ready (there's been mention of it succeeding on
 # a request only to fail on the next), prompt user so that they can choose when to proceed.
-while [[ -z $NO_CONFIRM ]]; do
+while [[ $CONFIRM -eq 1 ]]; do
   echo -e "${GREEN}Script-bot: Before proceeding, please ensure your API server is accepting all requests.
 Failure to do so may result in the script creating a broken state."
   echo -e "${GREEN}Script-bot: Press [C | c] to continue.${NC}"
@@ -409,7 +401,8 @@ then
   # have to cleanup and start all over again if we are this close to finishing.
   error_exit "Error-bot: Issue starting default backend. ${PERMISSION_ISSUE}. We are so close to being done so just manually start the default backend with NodePort: ${NODE_PORT} (see default-http-backend.yaml.gen) and create glbc.yaml.gen when ready."
 fi
-rm ../resources/default-http-backend.yaml.gen # Not useful to keep because the port changes each run.
+# Not useful to keep because the port changes each run.
+rm ../resources/default-http-backend.yaml.gen
 
 # Startup glbc
 run_maybe_dry_kubectl kubectl create -f ../resources/glbc.yaml.gen

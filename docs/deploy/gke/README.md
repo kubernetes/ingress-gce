@@ -91,7 +91,7 @@ Take a look at the script to understand where each file is used.
 # Running the Script
 
 The script can take in a number of settings, but only really requires the cluster
-name and zone. You can provide other settings for if we incorrectly intuit any
+name and zone. You can provide other settings for if we incorrectly deduce any
 values. Usage:
 
 ```shell
