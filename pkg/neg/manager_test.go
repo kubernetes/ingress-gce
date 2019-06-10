@@ -21,8 +21,10 @@ import (
 	"time"
 
 	"google.golang.org/api/compute/v1"
+	"k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
@@ -33,10 +35,30 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
 const (
 	ClusterID = "clusterid"
+
+	namespace1 = "ns1"
+	namespace2 = "ns2"
+	name1      = "svc1"
+	name2      = "svc2"
+	name3      = "svc3"
+
+	port1       = int32(1000)
+	port2       = int32(2000)
+	port3       = int32(3000)
+	port4       = int32(4000)
+	targetPort1 = "80"
+	targetPort2 = "443"
+	targetPort3 = "namedport"
+	targetPort4 = "4000"
+	labelKey1   = "l1"
+	labelKey2   = "l2"
+	labelValue1 = "v1"
+	labelValue2 = "v2"
 )
 
 func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
@@ -47,7 +69,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 		ResyncPeriod:            1 * time.Second,
 		DefaultBackendSvcPortID: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, nil, namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
 
 	manager := newSyncerManager(
 		namer,
@@ -59,89 +81,167 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 		context.EndpointInformer.GetIndexer(),
 		transactionSyncer,
 	)
-	//TODO(freehan): use real readiness reflector for unit test
-	manager.reflector = &readiness.NoopReflector{}
+	manager.reflector = readiness.NewReadinessReflector(context, manager)
 	return manager
 }
 
-// TODO(freehan): include test cases with different ReadinessGate setup
 func TestEnsureAndStopSyncer(t *testing.T) {
 	t.Parallel()
 
+	manager := NewTestSyncerManager(fake.NewSimpleClientset())
+	namer := manager.namer
+
+	svcName := "n1"
+	svcNamespace1 := "ns1"
+	svcNamespace2 := "ns2"
 	testCases := []struct {
-		namespace string
-		name      string
-		ports     types.SvcPortMap
-		stop      bool
-		expect    []negtypes.NegSyncerKey // keys of running syncers
+		desc        string
+		namespace   string
+		name        string
+		portInfoMap negtypes.PortInfoMap
+		stop        bool
+		// NegSyncerKey -> readinessGate
+		expectInternals   map[negtypes.NegSyncerKey]bool
+		expectEnsureError bool
 	}{
 		{
-			"ns1",
-			"n1",
-			types.SvcPortMap{1000: "80", 2000: "443"},
-			false,
-			[]negtypes.NegSyncerKey{
-				getSyncerKey("ns1", "n1", 1000, "80"),
-				getSyncerKey("ns1", "n1", 2000, "443"),
+			desc:        "add 2 new ports",
+			namespace:   svcNamespace1,
+			name:        svcName,
+			portInfoMap: negtypes.NewPortInfoMap(svcNamespace1, svcName, types.SvcPortMap{1000: "80", 2000: "443"}, namer, false),
+			stop:        false,
+			expectInternals: map[negtypes.NegSyncerKey]bool{
+				getSyncerKey(svcNamespace1, svcName, 1000, "80"):  false,
+				getSyncerKey(svcNamespace1, svcName, 2000, "443"): false,
 			},
 		},
 		{
-			"ns1",
-			"n1",
-			types.SvcPortMap{3000: "80", 4000: "namedport"},
-			false,
-			[]negtypes.NegSyncerKey{
-				getSyncerKey("ns1", "n1", 3000, "80"),
-				getSyncerKey("ns1", "n1", 4000, "namedport"),
+			desc:        "modify 1 port to enable readinessGate",
+			namespace:   svcNamespace1,
+			name:        svcName,
+			portInfoMap: portInfoUnion(negtypes.NewPortInfoMap(svcNamespace1, svcName, types.SvcPortMap{1000: "80"}, namer, false), negtypes.NewPortInfoMap(svcNamespace1, svcName, types.SvcPortMap{2000: "443"}, namer, true)),
+			stop:        false,
+			expectInternals: map[negtypes.NegSyncerKey]bool{
+				getSyncerKey(svcNamespace1, svcName, 1000, "80"):  false,
+				getSyncerKey(svcNamespace1, svcName, 2000, "443"): true,
+			},
+			expectEnsureError: true,
+		},
+		{
+			desc:        "add 2 new ports, remove 2 existing ports",
+			namespace:   svcNamespace1,
+			name:        svcName,
+			portInfoMap: negtypes.NewPortInfoMap(svcNamespace1, svcName, types.SvcPortMap{3000: "80", 4000: "namedport"}, namer, false),
+			stop:        false,
+			expectInternals: map[negtypes.NegSyncerKey]bool{
+				getSyncerKey(svcNamespace1, svcName, 3000, "80"):        false,
+				getSyncerKey(svcNamespace1, svcName, 4000, "namedport"): false,
 			},
 		},
 		{
-			"ns2",
-			"n1",
-			types.SvcPortMap{3000: "80"},
-			false,
-			[]negtypes.NegSyncerKey{
-				getSyncerKey("ns1", "n1", 3000, "80"),
-				getSyncerKey("ns1", "n1", 4000, "namedport"),
-				getSyncerKey("ns2", "n1", 3000, "80"),
+			desc:        "modify 2 existing ports to enable readinessGate",
+			namespace:   svcNamespace1,
+			name:        svcName,
+			portInfoMap: negtypes.NewPortInfoMap(svcNamespace1, svcName, types.SvcPortMap{3000: "80", 4000: "namedport"}, namer, true),
+			stop:        false,
+			expectInternals: map[negtypes.NegSyncerKey]bool{
+				getSyncerKey(svcNamespace1, svcName, 3000, "80"):        true,
+				getSyncerKey(svcNamespace1, svcName, 4000, "namedport"): true,
 			},
 		},
 		{
-			"ns1",
-			"n1",
-			types.SvcPortMap{},
-			true,
-			[]negtypes.NegSyncerKey{
-				getSyncerKey("ns2", "n1", 3000, "80"),
+			desc:        "add 1 new port for a different service",
+			namespace:   svcNamespace2,
+			name:        svcName,
+			portInfoMap: negtypes.NewPortInfoMap(svcNamespace2, svcName, types.SvcPortMap{3000: "80"}, namer, false),
+			stop:        false,
+			expectInternals: map[negtypes.NegSyncerKey]bool{
+				getSyncerKey(svcNamespace1, svcName, 3000, "80"):        true,
+				getSyncerKey(svcNamespace1, svcName, 4000, "namedport"): true,
+				getSyncerKey(svcNamespace2, svcName, 3000, "80"):        false,
+			},
+		},
+		{
+			desc:        "change target port of 1 existing port",
+			namespace:   svcNamespace1,
+			name:        svcName,
+			portInfoMap: negtypes.NewPortInfoMap(svcNamespace1, svcName, types.SvcPortMap{3000: "80", 4000: "443"}, namer, true),
+			stop:        false,
+			expectInternals: map[negtypes.NegSyncerKey]bool{
+				getSyncerKey(svcNamespace1, svcName, 3000, "80"):  true,
+				getSyncerKey(svcNamespace1, svcName, 4000, "443"): true,
+				getSyncerKey(svcNamespace2, svcName, 3000, "80"):  false,
+			},
+			expectEnsureError: true,
+		},
+		{
+			desc:      "remove all ports for ns1/n1 service",
+			namespace: svcNamespace1,
+			name:      svcName,
+			stop:      true,
+			expectInternals: map[negtypes.NegSyncerKey]bool{
+				getSyncerKey(svcNamespace2, svcName, 3000, "80"): false,
 			},
 		},
 	}
-	manager := NewTestSyncerManager(fake.NewSimpleClientset())
-	namer := manager.namer
+
 	for _, tc := range testCases {
 		if tc.stop {
 			manager.StopSyncer(tc.namespace, tc.name)
 		} else {
-			// TODO(freehan): include test cases with different ReadinessGate setup
-			portInfoMap := negtypes.NewPortInfoMap(tc.namespace, tc.name, tc.ports, namer, false)
-			if err := manager.EnsureSyncers(tc.namespace, tc.name, portInfoMap); err != nil {
-				t.Errorf("Failed to ensure syncer %s/%s-%v: %v", tc.namespace, tc.name, tc.ports, err)
+			if tc.expectEnsureError {
+				if err := wait.Poll(time.Second, 10*time.Second, func() (bool, error) {
+					if err := manager.EnsureSyncers(tc.namespace, tc.name, tc.portInfoMap); err != nil {
+						return false, nil
+					}
+					return true, nil
+				}); err != nil {
+					t.Errorf("For case %q, timeout waiting for ensure syncer %s/%s-%v: %v", tc.desc, tc.namespace, tc.name, tc.portInfoMap, err)
+				}
+			} else {
+				// Expect EnsureSyncers returns successfully immediately
+				if err := manager.EnsureSyncers(tc.namespace, tc.name, tc.portInfoMap); err != nil {
+					t.Errorf("For case %q, failed to ensure syncer %s/%s-%v: %v", tc.desc, tc.namespace, tc.name, tc.portInfoMap, err)
+				}
 			}
 		}
 
-		for _, key := range tc.expect {
+		// check if all expected syncers are present
+		for key, readinessGate := range tc.expectInternals {
 			syncer, ok := manager.syncerMap[key]
 			if !ok {
-				t.Errorf("Expect syncer key %+v to be present.", key)
+				t.Errorf("For case %q, expect syncer key %+v to be present.", tc.desc, key)
 				continue
 			}
 			if syncer.IsStopped() || syncer.IsShuttingDown() {
-				t.Errorf("Expect syncer %+v to be running.", key)
+				t.Errorf("For case %q, expect syncer %+v to be running.", tc.desc, key)
+			}
+
+			// validate portInfo
+			svcKey := serviceKey{namespace: key.Namespace, name: key.Name}
+			if portInfoMap, svcFound := manager.svcPortMap[svcKey]; svcFound {
+				if info, portFound := portInfoMap[key.Port]; portFound {
+					if info.ReadinessGate != readinessGate {
+						t.Errorf("For case %q, expect readinessGate of key %q to be %v, but got %v", tc.desc, key.String(), readinessGate, info.ReadinessGate)
+					}
+
+					expectNegName := namer.NEG(key.Namespace, key.Name, key.Port)
+					if info.NegName != expectNegName {
+						t.Errorf("For case %q, expect NEG name %q, but got %q", tc.desc, expectNegName, info.NegName)
+					}
+
+				} else {
+					t.Errorf("For case %q, expect port %d of service %q to be registered", tc.desc, key.Port, svcKey.Key())
+				}
+			} else {
+				t.Errorf("For case %q, expect service key %q to be registered", tc.desc, svcKey.Key())
 			}
 		}
+
+		// check if the there is unexpected syncer
 		for key, syncer := range manager.syncerMap {
 			found := false
-			for _, k := range tc.expect {
+			for k := range tc.expectInternals {
 				if k == key {
 					found = true
 					break
@@ -157,8 +257,8 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 	}
 
 	// make sure there is no leaking go routine
-	manager.StopSyncer("ns1", "n1")
-	manager.StopSyncer("ns2", "n1")
+	manager.StopSyncer(svcNamespace1, svcName)
+	manager.StopSyncer(svcNamespace2, svcName)
 }
 
 func TestGarbageCollectionSyncer(t *testing.T) {
@@ -232,6 +332,265 @@ func TestGarbageCollectionNEG(t *testing.T) {
 
 	// make sure there is no leaking go routine
 	manager.StopSyncer(testServiceNamespace, testServiceName)
+}
+
+func TestReadinessGateEnabledNegs(t *testing.T) {
+	t.Parallel()
+
+	kubeClient := fake.NewSimpleClientset()
+	manager := NewTestSyncerManager(kubeClient)
+	populateSyncerManager(manager, kubeClient)
+
+	testCases := []struct {
+		desc      string
+		namespace string
+		labels    map[string]string
+		expect    sets.String
+	}{
+		{
+			desc:   "empty input 1",
+			expect: sets.NewString(),
+		},
+		{
+			desc:      "empty input 2",
+			namespace: namespace1,
+			expect:    sets.NewString(),
+		},
+		{
+			desc:      "does not match 1",
+			namespace: namespace1,
+			labels:    map[string]string{labelKey1: labelValue2},
+			expect:    sets.NewString(),
+		},
+		{
+			desc:      "does not match 2",
+			namespace: namespace2,
+			labels:    map[string]string{labelKey1: "not-matching"},
+			expect:    sets.NewString(),
+		},
+		{
+			desc:      "does not match 3",
+			namespace: namespace2,
+			labels:    map[string]string{labelKey2: labelValue1},
+			expect:    sets.NewString(),
+		},
+		{
+			desc:      "match service ns2/svc1 but not enabled",
+			namespace: namespace2,
+			labels:    map[string]string{labelKey1: labelValue1},
+			expect:    sets.NewString(),
+		},
+		{
+			desc:      "match service ns1/svc1 and enabled 1",
+			namespace: namespace1,
+			labels:    map[string]string{labelKey1: labelValue1},
+			expect: sets.NewString(
+				"k8s1-clusteri-ns1-svc1-3000-03eb18a3",
+				"k8s1-clusteri-ns1-svc1-4000-2afaa36d"),
+		},
+		{
+			desc:      "match 2 services ns2/svc1, ns2/svc2 and enabled 3 ports",
+			namespace: namespace2,
+			labels:    map[string]string{labelKey1: labelValue1, labelKey2: labelValue2},
+			expect: sets.NewString(
+				"k8s1-clusteri-ns2-svc2-1000-d1ff5450",
+				"k8s1-clusteri-ns2-svc2-2000-c83ca053",
+				"k8s1-clusteri-ns2-svc2-3000-ff1b34d8"),
+		},
+		{
+			desc:      "match 2 services ns2/svc2, ns2/svc3 and enabled 4 ports",
+			namespace: namespace2,
+			labels:    map[string]string{labelKey1: labelValue2, labelKey2: labelValue2},
+			expect: sets.NewString(
+				"k8s1-clusteri-ns2-svc3-4000-bcf82183",
+				"k8s1-clusteri-ns2-svc2-1000-d1ff5450",
+				"k8s1-clusteri-ns2-svc2-2000-c83ca053",
+				"k8s1-clusteri-ns2-svc2-3000-ff1b34d8"),
+		},
+	}
+
+	for _, tc := range testCases {
+		ret := manager.ReadinessGateEnabledNegs(tc.namespace, tc.labels)
+		retSet := sets.NewString(ret...)
+		if !retSet.Equal(tc.expect) {
+			t.Errorf("For case %q, expect %v, but got %v", tc.desc, tc.expect, retSet)
+		}
+	}
+}
+
+func TestReadinessGateEnabled(t *testing.T) {
+	t.Parallel()
+
+	kubeClient := fake.NewSimpleClientset()
+	manager := NewTestSyncerManager(kubeClient)
+	populateSyncerManager(manager, kubeClient)
+
+	testCases := []struct {
+		desc   string
+		key    negtypes.NegSyncerKey
+		expect bool
+	}{
+		{
+			desc:   "empty key",
+			expect: false,
+		},
+		{
+			desc: "non exists key 1",
+			key: negtypes.NegSyncerKey{
+				Namespace:  namespace1,
+				Name:       name1,
+				Port:       port1,
+				TargetPort: targetPort2,
+			},
+			expect: false,
+		},
+		{
+			desc: "non exists key 2",
+			key: negtypes.NegSyncerKey{
+				Namespace:  namespace1,
+				Name:       name2,
+				Port:       port1,
+				TargetPort: targetPort1,
+			},
+			expect: false,
+		},
+		{
+			desc: "key exists but not enabled",
+			key: negtypes.NegSyncerKey{
+				Namespace:  namespace1,
+				Name:       name1,
+				Port:       port1,
+				TargetPort: targetPort1,
+			},
+			expect: false,
+		},
+		{
+			desc: "key exists but not enabled 2",
+			key: negtypes.NegSyncerKey{
+				Namespace:  namespace2,
+				Name:       name3,
+				Port:       port2,
+				TargetPort: targetPort2,
+			},
+			expect: false,
+		},
+		{
+			desc: "key exists and enabled 1",
+			key: negtypes.NegSyncerKey{
+				Namespace:  namespace2,
+				Name:       name2,
+				Port:       port1,
+				TargetPort: targetPort1,
+			},
+			expect: true,
+		},
+		{
+			desc: "key exists and enabled 2",
+			key: negtypes.NegSyncerKey{
+				Namespace:  namespace2,
+				Name:       name2,
+				Port:       port2,
+				TargetPort: targetPort2,
+			},
+			expect: true,
+		},
+		{
+			desc: "key exists and enabled 3",
+			key: negtypes.NegSyncerKey{
+				Namespace:  namespace2,
+				Name:       name2,
+				Port:       port3,
+				TargetPort: targetPort3,
+			},
+			expect: true,
+		},
+		{
+			desc: "key exists and enabled 4",
+			key: negtypes.NegSyncerKey{
+				Namespace:  namespace1,
+				Name:       name1,
+				Port:       port3,
+				TargetPort: targetPort3,
+			},
+			expect: true,
+		},
+		{
+			desc: "key exists and enabled 5",
+			key: negtypes.NegSyncerKey{
+				Namespace:  namespace1,
+				Name:       name1,
+				Port:       port4,
+				TargetPort: targetPort4,
+			},
+			expect: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		if manager.ReadinessGateEnabled(tc.key) != tc.expect {
+			t.Errorf("For case %q, expect %v, but got %v", tc.desc, tc.expect, manager.ReadinessGateEnabled(tc.key))
+		}
+	}
+}
+
+// populateSyncerManager for testing
+func populateSyncerManager(manager *syncerManager, kubeClient kubernetes.Interface) {
+	namer := manager.namer
+
+	inputs := []struct {
+		namespace   string
+		name        string
+		portInfoMap negtypes.PortInfoMap
+		selector    map[string]string
+	}{
+		{
+			namespace: namespace1,
+			name:      name1,
+			portInfoMap: portInfoUnion(negtypes.NewPortInfoMap(namespace1, name1, types.SvcPortMap{port1: targetPort1, port2: targetPort2}, namer, false),
+				negtypes.NewPortInfoMap(namespace1, name1, types.SvcPortMap{port3: targetPort3, port4: targetPort4}, namer, true)),
+			selector: map[string]string{labelKey1: labelValue1},
+		},
+		{
+			// nil selector
+			namespace: namespace1,
+			name:      name2,
+			portInfoMap: portInfoUnion(negtypes.NewPortInfoMap(namespace1, name2, types.SvcPortMap{port1: targetPort1, port2: targetPort2}, namer, false),
+				negtypes.NewPortInfoMap(namespace1, name2, types.SvcPortMap{port3: targetPort3, port4: targetPort4}, namer, true)),
+			selector: nil,
+		},
+		{
+			namespace:   namespace2,
+			name:        name1,
+			portInfoMap: negtypes.NewPortInfoMap(namespace1, name1, types.SvcPortMap{port1: targetPort1, port2: targetPort2}, namer, false),
+			selector:    map[string]string{labelKey1: labelValue1},
+		},
+		{
+			namespace:   namespace2,
+			name:        name2,
+			portInfoMap: negtypes.NewPortInfoMap(namespace2, name2, types.SvcPortMap{port1: targetPort1, port2: targetPort2, port3: targetPort3}, namer, true),
+			selector:    map[string]string{labelKey2: labelValue2},
+		},
+		{
+			namespace: namespace2,
+			name:      name3,
+			portInfoMap: portInfoUnion(negtypes.NewPortInfoMap(namespace2, name3, types.SvcPortMap{port1: targetPort1, port2: targetPort2, port3: targetPort3}, namer, false),
+				negtypes.NewPortInfoMap(namespace2, name3, types.SvcPortMap{port4: targetPort4}, namer, true)),
+			selector: map[string]string{labelKey1: labelValue2},
+		},
+	}
+
+	for _, in := range inputs {
+		manager.EnsureSyncers(in.namespace, in.name, in.portInfoMap)
+		manager.serviceLister.Add(&v1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Namespace: in.namespace,
+				Name:      in.name,
+			},
+			Spec: v1.ServiceSpec{
+				Selector: in.selector,
+			},
+		})
+	}
 }
 
 func getDefaultEndpoint() *apiv1.Endpoints {
@@ -312,4 +671,9 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 			},
 		},
 	}
+}
+
+func portInfoUnion(p1, p2 negtypes.PortInfoMap) negtypes.PortInfoMap {
+	p1.Merge(p2)
+	return p1
 }

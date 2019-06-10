@@ -65,7 +65,7 @@ func TestBackoffRetryHandler_Retry(t *testing.T) {
 	handler.clock = fakeClock
 	delay := smallTestRetryDelay
 
-	// Trigger 2 Retries and expect one actual retry happens
+	// Trigger 2 Retries and endpointSets one actual retry happens
 	if err := handler.Retry(); err != nil {
 		t.Fatalf("Expect no error, but got %v", err)
 	}
