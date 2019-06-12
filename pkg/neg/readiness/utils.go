@@ -30,7 +30,10 @@ import (
 )
 
 // NegReadinessConditionStatus return (cond, true) if neg condition exists, otherwise (_, false)
-func NegReadinessConditionStatus(pod *v1.Pod) (negCondition v1.PodCondition, negConditionStatus bool) {
+func NegReadinessConditionStatus(pod *v1.Pod) (negCondition v1.PodCondition, exists bool) {
+	if pod == nil {
+		return v1.PodCondition{}, false
+	}
 	for _, condition := range pod.Status.Conditions {
 		if condition.Type == shared.NegReadinessGate {
 			return condition, true
@@ -41,6 +44,9 @@ func NegReadinessConditionStatus(pod *v1.Pod) (negCondition v1.PodCondition, neg
 
 // evalNegReadinessGate returns if the pod readiness gate includes the NEG readiness condition and the condition status is true
 func evalNegReadinessGate(pod *v1.Pod) (negReady bool, readinessGateExists bool) {
+	if pod == nil {
+		return false, false
+	}
 	for _, gate := range pod.Spec.ReadinessGates {
 		if gate.ConditionType == shared.NegReadinessGate {
 			readinessGateExists = true
@@ -82,6 +88,9 @@ func getPodFromStore(podLister cache.Indexer, namespace, name string) (pod *v1.P
 
 // SetNegReadinessConditionStatus sets the status of the NEG readiness condition
 func SetNegReadinessConditionStatus(pod *v1.Pod, condition v1.PodCondition) {
+	if pod == nil {
+		return
+	}
 	for i, cond := range pod.Status.Conditions {
 		if cond.Type == shared.NegReadinessGate {
 			pod.Status.Conditions[i] = condition
@@ -136,6 +145,9 @@ func removeIrrelevantEndpoints(endpointMap negtypes.EndpointPodMap, podLister ca
 // needToProcess check if the pod needs to be processed by readiness reflector
 // If pod has neg readiness gate and its condition is False, then return true.
 func needToProcess(pod *v1.Pod) bool {
+	if pod == nil {
+		return false
+	}
 	negConditionReady, readinessGateExists := evalNegReadinessGate(pod)
 	return readinessGateExists && !negConditionReady
 }
