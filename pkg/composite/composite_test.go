@@ -29,6 +29,22 @@ import (
 	compute "google.golang.org/api/compute/v1"
 )
 
+func TestAuthenticationPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(AuthenticationPolicy{})
+	alphaType := reflect.TypeOf(computealpha.AuthenticationPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAuthorizationConfig(t *testing.T) {
+	compositeType := reflect.TypeOf(AuthorizationConfig{})
+	alphaType := reflect.TypeOf(computealpha.AuthorizationConfig{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBackend(t *testing.T) {
 	compositeType := reflect.TypeOf(Backend{})
 	alphaType := reflect.TypeOf(computealpha.Backend{})
@@ -184,6 +200,14 @@ func TestBackendServiceIAPOAuth2ClientInfo(t *testing.T) {
 	}
 }
 
+func TestBackendServiceLogConfig(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceLogConfig{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceLogConfig{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCacheKeyPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(CacheKeyPolicy{})
 	alphaType := reflect.TypeOf(computealpha.CacheKeyPolicy{})
@@ -192,9 +216,73 @@ func TestCacheKeyPolicy(t *testing.T) {
 	}
 }
 
+func TestCallCredentials(t *testing.T) {
+	compositeType := reflect.TypeOf(CallCredentials{})
+	alphaType := reflect.TypeOf(computealpha.CallCredentials{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestChannelCredentials(t *testing.T) {
+	compositeType := reflect.TypeOf(ChannelCredentials{})
+	alphaType := reflect.TypeOf(computealpha.ChannelCredentials{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCircuitBreakers(t *testing.T) {
+	compositeType := reflect.TypeOf(CircuitBreakers{})
+	alphaType := reflect.TypeOf(computealpha.CircuitBreakers{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestClientTlsSettings(t *testing.T) {
+	compositeType := reflect.TypeOf(ClientTlsSettings{})
+	alphaType := reflect.TypeOf(computealpha.ClientTlsSettings{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestConnectionDraining(t *testing.T) {
 	compositeType := reflect.TypeOf(ConnectionDraining{})
 	alphaType := reflect.TypeOf(computealpha.ConnectionDraining{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConsistentHashLoadBalancerSettings(t *testing.T) {
+	compositeType := reflect.TypeOf(ConsistentHashLoadBalancerSettings{})
+	alphaType := reflect.TypeOf(computealpha.ConsistentHashLoadBalancerSettings{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConsistentHashLoadBalancerSettingsHttpCookie(t *testing.T) {
+	compositeType := reflect.TypeOf(ConsistentHashLoadBalancerSettingsHttpCookie{})
+	alphaType := reflect.TypeOf(computealpha.ConsistentHashLoadBalancerSettingsHttpCookie{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCorsPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(CorsPolicy{})
+	alphaType := reflect.TypeOf(computealpha.CorsPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDuration(t *testing.T) {
+	compositeType := reflect.TypeOf(Duration{})
+	alphaType := reflect.TypeOf(computealpha.Duration{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
@@ -296,6 +384,14 @@ func TestForwardingRuleToGA(t *testing.T) {
 
 	if !reflect.DeepEqual(result, expected) {
 		t.Fatalf("ForwardingRule.ToGA() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+
+func TestGrpcServiceConfig(t *testing.T) {
+	compositeType := reflect.TypeOf(GrpcServiceConfig{})
+	alphaType := reflect.TypeOf(computealpha.GrpcServiceConfig{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -430,6 +526,174 @@ func TestHostRule(t *testing.T) {
 	}
 }
 
+func TestHttpFaultAbort(t *testing.T) {
+	compositeType := reflect.TypeOf(HttpFaultAbort{})
+	alphaType := reflect.TypeOf(computealpha.HttpFaultAbort{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHttpFaultDelay(t *testing.T) {
+	compositeType := reflect.TypeOf(HttpFaultDelay{})
+	alphaType := reflect.TypeOf(computealpha.HttpFaultDelay{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHttpFaultInjection(t *testing.T) {
+	compositeType := reflect.TypeOf(HttpFaultInjection{})
+	alphaType := reflect.TypeOf(computealpha.HttpFaultInjection{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHttpHeaderAction(t *testing.T) {
+	compositeType := reflect.TypeOf(HttpHeaderAction{})
+	alphaType := reflect.TypeOf(computealpha.HttpHeaderAction{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHttpHeaderMatch(t *testing.T) {
+	compositeType := reflect.TypeOf(HttpHeaderMatch{})
+	alphaType := reflect.TypeOf(computealpha.HttpHeaderMatch{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHttpHeaderOption(t *testing.T) {
+	compositeType := reflect.TypeOf(HttpHeaderOption{})
+	alphaType := reflect.TypeOf(computealpha.HttpHeaderOption{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHttpQueryParameterMatch(t *testing.T) {
+	compositeType := reflect.TypeOf(HttpQueryParameterMatch{})
+	alphaType := reflect.TypeOf(computealpha.HttpQueryParameterMatch{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHttpRedirectAction(t *testing.T) {
+	compositeType := reflect.TypeOf(HttpRedirectAction{})
+	alphaType := reflect.TypeOf(computealpha.HttpRedirectAction{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHttpRetryPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(HttpRetryPolicy{})
+	alphaType := reflect.TypeOf(computealpha.HttpRetryPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHttpRouteAction(t *testing.T) {
+	compositeType := reflect.TypeOf(HttpRouteAction{})
+	alphaType := reflect.TypeOf(computealpha.HttpRouteAction{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHttpRouteRule(t *testing.T) {
+	compositeType := reflect.TypeOf(HttpRouteRule{})
+	alphaType := reflect.TypeOf(computealpha.HttpRouteRule{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHttpRouteRuleMatch(t *testing.T) {
+	compositeType := reflect.TypeOf(HttpRouteRuleMatch{})
+	alphaType := reflect.TypeOf(computealpha.HttpRouteRuleMatch{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInt64RangeMatch(t *testing.T) {
+	compositeType := reflect.TypeOf(Int64RangeMatch{})
+	alphaType := reflect.TypeOf(computealpha.Int64RangeMatch{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJwt(t *testing.T) {
+	compositeType := reflect.TypeOf(Jwt{})
+	alphaType := reflect.TypeOf(computealpha.Jwt{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestJwtHeader(t *testing.T) {
+	compositeType := reflect.TypeOf(JwtHeader{})
+	alphaType := reflect.TypeOf(computealpha.JwtHeader{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMetadataCredentialsFromPlugin(t *testing.T) {
+	compositeType := reflect.TypeOf(MetadataCredentialsFromPlugin{})
+	alphaType := reflect.TypeOf(computealpha.MetadataCredentialsFromPlugin{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMetadataFilter(t *testing.T) {
+	compositeType := reflect.TypeOf(MetadataFilter{})
+	alphaType := reflect.TypeOf(computealpha.MetadataFilter{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMetadataFilterLabelMatch(t *testing.T) {
+	compositeType := reflect.TypeOf(MetadataFilterLabelMatch{})
+	alphaType := reflect.TypeOf(computealpha.MetadataFilterLabelMatch{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMutualTls(t *testing.T) {
+	compositeType := reflect.TypeOf(MutualTls{})
+	alphaType := reflect.TypeOf(computealpha.MutualTls{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOriginAuthenticationMethod(t *testing.T) {
+	compositeType := reflect.TypeOf(OriginAuthenticationMethod{})
+	alphaType := reflect.TypeOf(computealpha.OriginAuthenticationMethod{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOutlierDetection(t *testing.T) {
+	compositeType := reflect.TypeOf(OutlierDetection{})
+	alphaType := reflect.TypeOf(computealpha.OutlierDetection{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestPathMatcher(t *testing.T) {
 	compositeType := reflect.TypeOf(PathMatcher{})
 	alphaType := reflect.TypeOf(computealpha.PathMatcher{})
@@ -446,9 +710,89 @@ func TestPathRule(t *testing.T) {
 	}
 }
 
+func TestPeerAuthenticationMethod(t *testing.T) {
+	compositeType := reflect.TypeOf(PeerAuthenticationMethod{})
+	alphaType := reflect.TypeOf(computealpha.PeerAuthenticationMethod{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPermission(t *testing.T) {
+	compositeType := reflect.TypeOf(Permission{})
+	alphaType := reflect.TypeOf(computealpha.Permission{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPermissionConstraint(t *testing.T) {
+	compositeType := reflect.TypeOf(PermissionConstraint{})
+	alphaType := reflect.TypeOf(computealpha.PermissionConstraint{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPrincipal(t *testing.T) {
+	compositeType := reflect.TypeOf(Principal{})
+	alphaType := reflect.TypeOf(computealpha.Principal{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRbacPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(RbacPolicy{})
+	alphaType := reflect.TypeOf(computealpha.RbacPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRequestMirrorPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(RequestMirrorPolicy{})
+	alphaType := reflect.TypeOf(computealpha.RequestMirrorPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSSLHealthCheck(t *testing.T) {
 	compositeType := reflect.TypeOf(SSLHealthCheck{})
 	alphaType := reflect.TypeOf(computealpha.SSLHealthCheck{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSdsConfig(t *testing.T) {
+	compositeType := reflect.TypeOf(SdsConfig{})
+	alphaType := reflect.TypeOf(computealpha.SdsConfig{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSecuritySettings(t *testing.T) {
+	compositeType := reflect.TypeOf(SecuritySettings{})
+	alphaType := reflect.TypeOf(computealpha.SecuritySettings{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestServerSecuritySettingsSelector(t *testing.T) {
+	compositeType := reflect.TypeOf(ServerSecuritySettingsSelector{})
+	alphaType := reflect.TypeOf(computealpha.ServerSecuritySettingsSelector{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestServiceAccountJwtAccessCredentials(t *testing.T) {
+	compositeType := reflect.TypeOf(ServiceAccountJwtAccessCredentials{})
+	alphaType := reflect.TypeOf(computealpha.ServiceAccountJwtAccessCredentials{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
@@ -660,6 +1004,38 @@ func TestTargetHttpsProxyToGA(t *testing.T) {
 	}
 }
 
+func TestTlsCertificateContext(t *testing.T) {
+	compositeType := reflect.TypeOf(TlsCertificateContext{})
+	alphaType := reflect.TypeOf(computealpha.TlsCertificateContext{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTlsCertificatePaths(t *testing.T) {
+	compositeType := reflect.TypeOf(TlsCertificatePaths{})
+	alphaType := reflect.TypeOf(computealpha.TlsCertificatePaths{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTlsContext(t *testing.T) {
+	compositeType := reflect.TypeOf(TlsContext{})
+	alphaType := reflect.TypeOf(computealpha.TlsContext{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestTlsValidationContext(t *testing.T) {
+	compositeType := reflect.TypeOf(TlsValidationContext{})
+	alphaType := reflect.TypeOf(computealpha.TlsValidationContext{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestUDPHealthCheck(t *testing.T) {
 	compositeType := reflect.TypeOf(UDPHealthCheck{})
 	alphaType := reflect.TypeOf(computealpha.UDPHealthCheck{})
@@ -770,6 +1146,22 @@ func TestUrlMapToGA(t *testing.T) {
 func TestUrlMapTest(t *testing.T) {
 	compositeType := reflect.TypeOf(UrlMapTest{})
 	alphaType := reflect.TypeOf(computealpha.UrlMapTest{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUrlRewrite(t *testing.T) {
+	compositeType := reflect.TypeOf(UrlRewrite{})
+	alphaType := reflect.TypeOf(computealpha.UrlRewrite{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWeightedBackendService(t *testing.T) {
+	compositeType := reflect.TypeOf(WeightedBackendService{})
+	alphaType := reflect.TypeOf(computealpha.WeightedBackendService{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
