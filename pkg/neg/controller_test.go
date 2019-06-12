@@ -37,6 +37,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"strconv"
 )
 
@@ -58,7 +59,7 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		ResyncPeriod:            1 * time.Second,
 		DefaultBackendSvcPortID: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, nil, namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
 	controller := NewController(
 		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		context,

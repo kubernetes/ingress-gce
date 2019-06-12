@@ -21,7 +21,7 @@ import (
 
 	"fmt"
 
-	"google.golang.org/api/compute/v0.beta"
+	"google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
