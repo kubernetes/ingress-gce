@@ -14,7 +14,7 @@ limitations under the License.
 package backends
 
 import (
-	computebeta "google.golang.org/api/compute/v0.beta"
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -42,7 +42,7 @@ func NewNEGLinker(
 
 // Link implements Link.
 func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
-	var negs []*computebeta.NetworkEndpointGroup
+	var negs []*compute.NetworkEndpointGroup
 	var err error
 	for _, group := range groups {
 		// If the group key contains a name, then use that.
@@ -60,7 +60,7 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 
 	cloud := l.backendPool.(*Backends).cloud
 	beName := sp.BackendName(l.namer)
-	backendService, err := cloud.GetBetaGlobalBackendService(beName)
+	backendService, err := cloud.GetGlobalBackendService(beName)
 	if err != nil {
 		return err
 	}
@@ -80,15 +80,15 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 
 	if !oldBackends.Equal(newBackends) {
 		backendService.Backends = targetBackends
-		return cloud.UpdateBetaGlobalBackendService(backendService)
+		return cloud.UpdateGlobalBackendService(backendService)
 	}
 	return nil
 }
 
-func getBackendsForNEGs(negs []*computebeta.NetworkEndpointGroup) []*computebeta.Backend {
-	var backends []*computebeta.Backend
+func getBackendsForNEGs(negs []*compute.NetworkEndpointGroup) []*compute.Backend {
+	var backends []*compute.Backend
 	for _, neg := range negs {
-		b := &computebeta.Backend{
+		b := &compute.Backend{
 			Group:              neg.SelfLink,
 			BalancingMode:      string(Rate),
 			MaxRatePerEndpoint: maxRPS,

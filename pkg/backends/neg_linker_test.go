@@ -19,7 +19,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
-	computebeta "google.golang.org/api/compute/v0.beta"
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -64,7 +64,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	linker.backendPool.Create(svcPort, "fake-healthcheck-link")
 
 	for _, key := range zones {
-		err := fakeNEG.CreateNetworkEndpointGroup(&computebeta.NetworkEndpointGroup{
+		err := fakeNEG.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 			Name: defaultNamer.NEG(namespace, name, svcPort.Port),
 		}, key.Zone)
 		if err != nil {

@@ -40,7 +40,7 @@ var (
 	// version to feature names.
 	versionToFeatures = map[meta.Version][]string{
 		meta.VersionAlpha: []string{},
-		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureNEG, FeatureHTTP2},
+		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureHTTP2},
 	}
 )
 

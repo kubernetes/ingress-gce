@@ -141,7 +141,7 @@ func TestVersionFromFeatures(t *testing.T) {
 		{
 			desc:            "NEG",
 			features:        []string{FeatureNEG},
-			expectedVersion: meta.VersionBeta,
+			expectedVersion: meta.VersionGA,
 		},
 		{
 			desc:            "HTTP2 + SecurityPolicy",
