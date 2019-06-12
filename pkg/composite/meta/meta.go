@@ -237,6 +237,10 @@ func getGoType(val interface{}, typesQueue []string) (string, []string, bool, er
 			propType = "float64"
 		} else if format.(string) == "int32" {
 			propType = "int64"
+		} else if format.(string) == "double" {
+			propType = "float64"
+		} else if format.(string) == "uint32" {
+			propType = "int64"
 		} else {
 			propType = format.(string)
 		}
