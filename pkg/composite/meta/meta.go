@@ -42,6 +42,7 @@ var MainServices = map[string]string{
 	"UrlMap":           "UrlMaps",
 	"TargetHttpProxy":  "TargetHttpProxies",
 	"TargetHttpsProxy": "TargetHttpsProxies",
+	"SslCertificate":   "SslCertificates",
 }
 
 // TODO: (shance) Replace this with data gathered from meta.AllServices
@@ -50,6 +51,7 @@ var NoUpdate = sets.NewString(
 	"ForwardingRule",
 	"TargetHttpProxy",
 	"TargetHttpsProxy",
+	"SslCertificate",
 )
 
 var Versions = map[string]string{

@@ -27,8 +27,9 @@ import (
 
 // Backends handles CRUD operations for backends.
 type Backends struct {
-	cloud *gce.Cloud
-	namer *utils.Namer
+	cloud          *gce.Cloud
+	compositeCloud *composite.Cloud
+	namer          *utils.Namer
 }
 
 // Backends is a Pool.
@@ -39,8 +40,9 @@ var _ Pool = (*Backends)(nil)
 // - namer: procudes names for backends.
 func NewPool(cloud *gce.Cloud, namer *utils.Namer) *Backends {
 	return &Backends{
-		cloud: cloud,
-		namer: namer,
+		cloud:          cloud,
+		compositeCloud: composite.NewCloud(cloud),
+		namer:          namer,
 	}
 }
 
@@ -74,7 +76,7 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 		HealthChecks: []string{hcLink},
 	}
 	ensureDescription(be, &sp)
-	if err := composite.CreateBackendService(be, b.cloud, meta.GlobalKey(be.Name)); err != nil {
+	if err := b.compositeCloud.CreateBackendService(be, meta.GlobalKey(be.Name)); err != nil {
 		return nil, err
 	}
 	// Note: We need to perform a GCE call to re-fetch the object we just created
@@ -87,7 +89,7 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 func (b *Backends) Update(be *composite.BackendService) error {
 	// Ensure the backend service has the proper version before updating.
 	be.Version = features.VersionFromDescription(be.Description)
-	if err := composite.UpdateBackendService(be, b.cloud, meta.GlobalKey(be.Name)); err != nil {
+	if err := b.compositeCloud.UpdateBackendService(be, meta.GlobalKey(be.Name)); err != nil {
 		return err
 	}
 	return nil
@@ -95,7 +97,7 @@ func (b *Backends) Update(be *composite.BackendService) error {
 
 // Get implements Pool.
 func (b *Backends) Get(name string, version meta.Version) (*composite.BackendService, error) {
-	be, err := composite.GetBackendService(version, b.cloud, meta.GlobalKey(name))
+	be, err := b.compositeCloud.GetBackendService(version, meta.GlobalKey(name))
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +106,7 @@ func (b *Backends) Get(name string, version meta.Version) (*composite.BackendSer
 	// the existing backend service.
 	versionRequired := features.VersionFromDescription(be.Description)
 	if features.IsLowerVersion(versionRequired, version) {
-		be, err = composite.GetBackendService(versionRequired, b.cloud, meta.GlobalKey(name))
+		be, err = b.compositeCloud.GetBackendService(versionRequired, meta.GlobalKey(name))
 		if err != nil {
 			return nil, err
 		}
