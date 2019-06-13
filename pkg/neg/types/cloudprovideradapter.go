@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package neg
+package types
 
 import (
 	"fmt"
@@ -23,13 +23,12 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	computebeta "google.golang.org/api/compute/v0.beta"
-	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"google.golang.org/api/compute/v1"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
 // NewAdapter takes a Cloud and returns a NetworkEndpointGroupCloud.
-func NewAdapter(g *gce.Cloud) negtypes.NetworkEndpointGroupCloud {
+func NewAdapter(g *gce.Cloud) NetworkEndpointGroupCloud {
 	return &cloudProviderAdapter{
 		c:             g.Compute(),
 		networkURL:    g.NetworkURL(),
@@ -46,32 +45,32 @@ type cloudProviderAdapter struct {
 }
 
 // GetNetworkEndpointGroup inmplements NetworkEndpointGroupCloud.
-func (a *cloudProviderAdapter) GetNetworkEndpointGroup(name string, zone string) (*computebeta.NetworkEndpointGroup, error) {
+func (a *cloudProviderAdapter) GetNetworkEndpointGroup(name string, zone string) (*compute.NetworkEndpointGroup, error) {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 
-	return a.c.BetaNetworkEndpointGroups().Get(ctx, meta.ZonalKey(name, zone))
+	return a.c.NetworkEndpointGroups().Get(ctx, meta.ZonalKey(name, zone))
 }
 
 // ListNetworkEndpointGroup implements NetworkEndpointGroupCloud.
-func (a *cloudProviderAdapter) ListNetworkEndpointGroup(zone string) ([]*computebeta.NetworkEndpointGroup, error) {
+func (a *cloudProviderAdapter) ListNetworkEndpointGroup(zone string) ([]*compute.NetworkEndpointGroup, error) {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 
-	return a.c.BetaNetworkEndpointGroups().List(ctx, zone, filter.None)
+	return a.c.NetworkEndpointGroups().List(ctx, zone, filter.None)
 }
 
 // AggregatedListNetworkEndpointGroup returns a map of zone -> endpoint group.
-func (a *cloudProviderAdapter) AggregatedListNetworkEndpointGroup() (map[string][]*computebeta.NetworkEndpointGroup, error) {
+func (a *cloudProviderAdapter) AggregatedListNetworkEndpointGroup() (map[string][]*compute.NetworkEndpointGroup, error) {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 
 	// TODO: filter for the region the cluster is in.
-	all, err := a.c.BetaNetworkEndpointGroups().AggregatedList(ctx, filter.None)
+	all, err := a.c.NetworkEndpointGroups().AggregatedList(ctx, filter.None)
 	if err != nil {
 		return nil, err
 	}
-	ret := map[string][]*computebeta.NetworkEndpointGroup{}
+	ret := map[string][]*compute.NetworkEndpointGroup{}
 	for key, byZone := range all {
 		// key is "zones/<zone name>"
 		parts := strings.Split(key, "/")
@@ -85,11 +84,11 @@ func (a *cloudProviderAdapter) AggregatedListNetworkEndpointGroup() (map[string]
 }
 
 // CreateNetworkEndpointGroup implements NetworkEndpointGroupCloud.
-func (a *cloudProviderAdapter) CreateNetworkEndpointGroup(neg *computebeta.NetworkEndpointGroup, zone string) error {
+func (a *cloudProviderAdapter) CreateNetworkEndpointGroup(neg *compute.NetworkEndpointGroup, zone string) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 
-	return a.c.BetaNetworkEndpointGroups().Insert(ctx, meta.ZonalKey(neg.Name, zone), neg)
+	return a.c.NetworkEndpointGroups().Insert(ctx, meta.ZonalKey(neg.Name, zone), neg)
 }
 
 // DeleteNetworkEndpointGroup implements NetworkEndpointGroupCloud.
@@ -97,29 +96,29 @@ func (a *cloudProviderAdapter) DeleteNetworkEndpointGroup(name string, zone stri
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 
-	return a.c.BetaNetworkEndpointGroups().Delete(ctx, meta.ZonalKey(name, zone))
+	return a.c.NetworkEndpointGroups().Delete(ctx, meta.ZonalKey(name, zone))
 }
 
 // AttachNetworkEndpoints implements NetworkEndpointGroupCloud.
-func (a cloudProviderAdapter) AttachNetworkEndpoints(name, zone string, endpoints []*computebeta.NetworkEndpoint) error {
+func (a cloudProviderAdapter) AttachNetworkEndpoints(name, zone string, endpoints []*compute.NetworkEndpoint) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 
-	req := &computebeta.NetworkEndpointGroupsAttachEndpointsRequest{NetworkEndpoints: endpoints}
-	return a.c.BetaNetworkEndpointGroups().AttachNetworkEndpoints(ctx, meta.ZonalKey(name, zone), req)
+	req := &compute.NetworkEndpointGroupsAttachEndpointsRequest{NetworkEndpoints: endpoints}
+	return a.c.NetworkEndpointGroups().AttachNetworkEndpoints(ctx, meta.ZonalKey(name, zone), req)
 }
 
 // DetachNetworkEndpoints implements NetworkEndpointGroupCloud.
-func (a *cloudProviderAdapter) DetachNetworkEndpoints(name, zone string, endpoints []*computebeta.NetworkEndpoint) error {
+func (a *cloudProviderAdapter) DetachNetworkEndpoints(name, zone string, endpoints []*compute.NetworkEndpoint) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 
-	req := &computebeta.NetworkEndpointGroupsDetachEndpointsRequest{NetworkEndpoints: endpoints}
-	return a.c.BetaNetworkEndpointGroups().DetachNetworkEndpoints(ctx, meta.ZonalKey(name, zone), req)
+	req := &compute.NetworkEndpointGroupsDetachEndpointsRequest{NetworkEndpoints: endpoints}
+	return a.c.NetworkEndpointGroups().DetachNetworkEndpoints(ctx, meta.ZonalKey(name, zone), req)
 }
 
 // ListNetworkEndpoints implements NetworkEndpointGroupCloud.
-func (a *cloudProviderAdapter) ListNetworkEndpoints(name, zone string, showHealthStatus bool) ([]*computebeta.NetworkEndpointWithHealthStatus, error) {
+func (a *cloudProviderAdapter) ListNetworkEndpoints(name, zone string, showHealthStatus bool) ([]*compute.NetworkEndpointWithHealthStatus, error) {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 
@@ -127,8 +126,8 @@ func (a *cloudProviderAdapter) ListNetworkEndpoints(name, zone string, showHealt
 	if showHealthStatus {
 		healthStatus = "SHOW"
 	}
-	req := &computebeta.NetworkEndpointGroupsListEndpointsRequest{HealthStatus: healthStatus}
-	return a.c.BetaNetworkEndpointGroups().ListNetworkEndpoints(ctx, meta.ZonalKey(name, zone), req, filter.None)
+	req := &compute.NetworkEndpointGroupsListEndpointsRequest{HealthStatus: healthStatus}
+	return a.c.NetworkEndpointGroups().ListNetworkEndpoints(ctx, meta.ZonalKey(name, zone), req, filter.None)
 }
 
 // NetworkURL implements NetworkEndpointGroupCloud.

@@ -427,6 +427,20 @@ var AllServices = []*ServiceInfo{
 		options: AggregatedList,
 	},
 	{
+		Object:      "NetworkEndpointGroup",
+		Service:     "NetworkEndpointGroups",
+		Resource:    "networkEndpointGroups",
+		version:     VersionGA,
+		keyType:     Zonal,
+		serviceType: reflect.TypeOf(&ga.NetworkEndpointGroupsService{}),
+		additionalMethods: []string{
+			"AttachNetworkEndpoints",
+			"DetachNetworkEndpoints",
+			"ListNetworkEndpoints",
+		},
+		options: AggregatedList,
+	},
+	{
 		Object:   "Project",
 		Service:  "Projects",
 		Resource: "projects",

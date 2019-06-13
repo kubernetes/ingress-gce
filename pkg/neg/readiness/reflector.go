@@ -76,7 +76,7 @@ func NewReadinessReflector(cc *context.ControllerContext, lookup NegLookup) Refl
 		eventRecorder:    recorder,
 		queue:            workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 	}
-	poller := NewPoller(cc.PodInformer.GetIndexer(), lookup, reflector, cc.Cloud)
+	poller := NewPoller(cc.PodInformer.GetIndexer(), lookup, reflector, negtypes.NewAdapter(cc.Cloud))
 	reflector.poller = poller
 	return reflector
 }

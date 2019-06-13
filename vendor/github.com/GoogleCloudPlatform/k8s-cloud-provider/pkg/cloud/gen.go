@@ -72,6 +72,7 @@ type Cloud interface {
 	Networks() Networks
 	AlphaNetworkEndpointGroups() AlphaNetworkEndpointGroups
 	BetaNetworkEndpointGroups() BetaNetworkEndpointGroups
+	NetworkEndpointGroups() NetworkEndpointGroups
 	Projects() Projects
 	Regions() Regions
 	Routes() Routes
@@ -136,6 +137,7 @@ func NewGCE(s *Service) *GCE {
 		gceNetworks:                      &GCENetworks{s},
 		gceAlphaNetworkEndpointGroups:    &GCEAlphaNetworkEndpointGroups{s},
 		gceBetaNetworkEndpointGroups:     &GCEBetaNetworkEndpointGroups{s},
+		gceNetworkEndpointGroups:         &GCENetworkEndpointGroups{s},
 		gceProjects:                      &GCEProjects{s},
 		gceRegions:                       &GCERegions{s},
 		gceRoutes:                        &GCERoutes{s},
@@ -204,6 +206,7 @@ type GCE struct {
 	gceNetworks                      *GCENetworks
 	gceAlphaNetworkEndpointGroups    *GCEAlphaNetworkEndpointGroups
 	gceBetaNetworkEndpointGroups     *GCEBetaNetworkEndpointGroups
+	gceNetworkEndpointGroups         *GCENetworkEndpointGroups
 	gceProjects                      *GCEProjects
 	gceRegions                       *GCERegions
 	gceRoutes                        *GCERoutes
@@ -401,6 +404,11 @@ func (gce *GCE) BetaNetworkEndpointGroups() BetaNetworkEndpointGroups {
 	return gce.gceBetaNetworkEndpointGroups
 }
 
+// NetworkEndpointGroups returns the interface for the ga NetworkEndpointGroups.
+func (gce *GCE) NetworkEndpointGroups() NetworkEndpointGroups {
+	return gce.gceNetworkEndpointGroups
+}
+
 // Projects returns the interface for the ga Projects.
 func (gce *GCE) Projects() Projects {
 	return gce.gceProjects
@@ -596,6 +604,7 @@ func NewMockGCE(projectRouter ProjectRouter) *MockGCE {
 		MockNetworks:                      NewMockNetworks(projectRouter, mockNetworksObjs),
 		MockAlphaNetworkEndpointGroups:    NewMockAlphaNetworkEndpointGroups(projectRouter, mockNetworkEndpointGroupsObjs),
 		MockBetaNetworkEndpointGroups:     NewMockBetaNetworkEndpointGroups(projectRouter, mockNetworkEndpointGroupsObjs),
+		MockNetworkEndpointGroups:         NewMockNetworkEndpointGroups(projectRouter, mockNetworkEndpointGroupsObjs),
 		MockProjects:                      NewMockProjects(projectRouter, mockProjectsObjs),
 		MockRegions:                       NewMockRegions(projectRouter, mockRegionsObjs),
 		MockRoutes:                        NewMockRoutes(projectRouter, mockRoutesObjs),
@@ -664,6 +673,7 @@ type MockGCE struct {
 	MockNetworks                      *MockNetworks
 	MockAlphaNetworkEndpointGroups    *MockAlphaNetworkEndpointGroups
 	MockBetaNetworkEndpointGroups     *MockBetaNetworkEndpointGroups
+	MockNetworkEndpointGroups         *MockNetworkEndpointGroups
 	MockProjects                      *MockProjects
 	MockRegions                       *MockRegions
 	MockRoutes                        *MockRoutes
@@ -859,6 +869,11 @@ func (mock *MockGCE) AlphaNetworkEndpointGroups() AlphaNetworkEndpointGroups {
 // BetaNetworkEndpointGroups returns the interface for the beta NetworkEndpointGroups.
 func (mock *MockGCE) BetaNetworkEndpointGroups() BetaNetworkEndpointGroups {
 	return mock.MockBetaNetworkEndpointGroups
+}
+
+// NetworkEndpointGroups returns the interface for the ga NetworkEndpointGroups.
+func (mock *MockGCE) NetworkEndpointGroups() NetworkEndpointGroups {
+	return mock.MockNetworkEndpointGroups
 }
 
 // Projects returns the interface for the ga Projects.
@@ -1424,6 +1439,19 @@ func (m *MockNetworkEndpointGroupsObj) ToBeta() *beta.NetworkEndpointGroup {
 	ret := &beta.NetworkEndpointGroup{}
 	if err := copyViaJSON(ret, m.Obj); err != nil {
 		klog.Errorf("Could not convert %T to *beta.NetworkEndpointGroup via JSON: %v", m.Obj, err)
+	}
+	return ret
+}
+
+// ToGA retrieves the given version of the object.
+func (m *MockNetworkEndpointGroupsObj) ToGA() *ga.NetworkEndpointGroup {
+	if ret, ok := m.Obj.(*ga.NetworkEndpointGroup); ok {
+		return ret
+	}
+	// Convert the object via JSON copying to the type that was requested.
+	ret := &ga.NetworkEndpointGroup{}
+	if err := copyViaJSON(ret, m.Obj); err != nil {
+		klog.Errorf("Could not convert %T to *ga.NetworkEndpointGroup via JSON: %v", m.Obj, err)
 	}
 	return ret
 }
@@ -15635,6 +15663,566 @@ func (g *GCEBetaNetworkEndpointGroups) ListNetworkEndpoints(ctx context.Context,
 			asStr = append(asStr, fmt.Sprintf("%+v", o))
 		}
 		klog.V(5).Infof("GCEBetaNetworkEndpointGroups.ListNetworkEndpoints(%v, %v, ...) = %v, %v", ctx, key, asStr, nil)
+	}
+	return all, nil
+}
+
+// NetworkEndpointGroups is an interface that allows for mocking of NetworkEndpointGroups.
+type NetworkEndpointGroups interface {
+	Get(ctx context.Context, key *meta.Key) (*ga.NetworkEndpointGroup, error)
+	List(ctx context.Context, zone string, fl *filter.F) ([]*ga.NetworkEndpointGroup, error)
+	Insert(ctx context.Context, key *meta.Key, obj *ga.NetworkEndpointGroup) error
+	Delete(ctx context.Context, key *meta.Key) error
+	AggregatedList(ctx context.Context, fl *filter.F) (map[string][]*ga.NetworkEndpointGroup, error)
+	AttachNetworkEndpoints(context.Context, *meta.Key, *ga.NetworkEndpointGroupsAttachEndpointsRequest) error
+	DetachNetworkEndpoints(context.Context, *meta.Key, *ga.NetworkEndpointGroupsDetachEndpointsRequest) error
+	ListNetworkEndpoints(context.Context, *meta.Key, *ga.NetworkEndpointGroupsListEndpointsRequest, *filter.F) ([]*ga.NetworkEndpointWithHealthStatus, error)
+}
+
+// NewMockNetworkEndpointGroups returns a new mock for NetworkEndpointGroups.
+func NewMockNetworkEndpointGroups(pr ProjectRouter, objs map[meta.Key]*MockNetworkEndpointGroupsObj) *MockNetworkEndpointGroups {
+	mock := &MockNetworkEndpointGroups{
+		ProjectRouter: pr,
+
+		Objects:     objs,
+		GetError:    map[meta.Key]error{},
+		InsertError: map[meta.Key]error{},
+		DeleteError: map[meta.Key]error{},
+	}
+	return mock
+}
+
+// MockNetworkEndpointGroups is the mock for NetworkEndpointGroups.
+type MockNetworkEndpointGroups struct {
+	Lock sync.Mutex
+
+	ProjectRouter ProjectRouter
+
+	// Objects maintained by the mock.
+	Objects map[meta.Key]*MockNetworkEndpointGroupsObj
+
+	// If an entry exists for the given key and operation, then the error
+	// will be returned instead of the operation.
+	GetError            map[meta.Key]error
+	ListError           *error
+	InsertError         map[meta.Key]error
+	DeleteError         map[meta.Key]error
+	AggregatedListError *error
+
+	// xxxHook allow you to intercept the standard processing of the mock in
+	// order to add your own logic. Return (true, _, _) to prevent the normal
+	// execution flow of the mock. Return (false, nil, nil) to continue with
+	// normal mock behavior/ after the hook function executes.
+	GetHook                    func(ctx context.Context, key *meta.Key, m *MockNetworkEndpointGroups) (bool, *ga.NetworkEndpointGroup, error)
+	ListHook                   func(ctx context.Context, zone string, fl *filter.F, m *MockNetworkEndpointGroups) (bool, []*ga.NetworkEndpointGroup, error)
+	InsertHook                 func(ctx context.Context, key *meta.Key, obj *ga.NetworkEndpointGroup, m *MockNetworkEndpointGroups) (bool, error)
+	DeleteHook                 func(ctx context.Context, key *meta.Key, m *MockNetworkEndpointGroups) (bool, error)
+	AggregatedListHook         func(ctx context.Context, fl *filter.F, m *MockNetworkEndpointGroups) (bool, map[string][]*ga.NetworkEndpointGroup, error)
+	AttachNetworkEndpointsHook func(context.Context, *meta.Key, *ga.NetworkEndpointGroupsAttachEndpointsRequest, *MockNetworkEndpointGroups) error
+	DetachNetworkEndpointsHook func(context.Context, *meta.Key, *ga.NetworkEndpointGroupsDetachEndpointsRequest, *MockNetworkEndpointGroups) error
+	ListNetworkEndpointsHook   func(context.Context, *meta.Key, *ga.NetworkEndpointGroupsListEndpointsRequest, *filter.F, *MockNetworkEndpointGroups) ([]*ga.NetworkEndpointWithHealthStatus, error)
+
+	// X is extra state that can be used as part of the mock. Generated code
+	// will not use this field.
+	X interface{}
+}
+
+// Get returns the object from the mock.
+func (m *MockNetworkEndpointGroups) Get(ctx context.Context, key *meta.Key) (*ga.NetworkEndpointGroup, error) {
+	if m.GetHook != nil {
+		if intercept, obj, err := m.GetHook(ctx, key, m); intercept {
+			klog.V(5).Infof("MockNetworkEndpointGroups.Get(%v, %s) = %+v, %v", ctx, key, obj, err)
+			return obj, err
+		}
+	}
+	if !key.Valid() {
+		return nil, fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+
+	if err, ok := m.GetError[*key]; ok {
+		klog.V(5).Infof("MockNetworkEndpointGroups.Get(%v, %s) = nil, %v", ctx, key, err)
+		return nil, err
+	}
+	if obj, ok := m.Objects[*key]; ok {
+		typedObj := obj.ToGA()
+		klog.V(5).Infof("MockNetworkEndpointGroups.Get(%v, %s) = %+v, nil", ctx, key, typedObj)
+		return typedObj, nil
+	}
+
+	err := &googleapi.Error{
+		Code:    http.StatusNotFound,
+		Message: fmt.Sprintf("MockNetworkEndpointGroups %v not found", key),
+	}
+	klog.V(5).Infof("MockNetworkEndpointGroups.Get(%v, %s) = nil, %v", ctx, key, err)
+	return nil, err
+}
+
+// List all of the objects in the mock in the given zone.
+func (m *MockNetworkEndpointGroups) List(ctx context.Context, zone string, fl *filter.F) ([]*ga.NetworkEndpointGroup, error) {
+	if m.ListHook != nil {
+		if intercept, objs, err := m.ListHook(ctx, zone, fl, m); intercept {
+			klog.V(5).Infof("MockNetworkEndpointGroups.List(%v, %q, %v) = [%v items], %v", ctx, zone, fl, len(objs), err)
+			return objs, err
+		}
+	}
+
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+
+	if m.ListError != nil {
+		err := *m.ListError
+		klog.V(5).Infof("MockNetworkEndpointGroups.List(%v, %q, %v) = nil, %v", ctx, zone, fl, err)
+
+		return nil, *m.ListError
+	}
+
+	var objs []*ga.NetworkEndpointGroup
+	for key, obj := range m.Objects {
+		if key.Zone != zone {
+			continue
+		}
+		if !fl.Match(obj.ToGA()) {
+			continue
+		}
+		objs = append(objs, obj.ToGA())
+	}
+
+	klog.V(5).Infof("MockNetworkEndpointGroups.List(%v, %q, %v) = [%v items], nil", ctx, zone, fl, len(objs))
+	return objs, nil
+}
+
+// Insert is a mock for inserting/creating a new object.
+func (m *MockNetworkEndpointGroups) Insert(ctx context.Context, key *meta.Key, obj *ga.NetworkEndpointGroup) error {
+	if m.InsertHook != nil {
+		if intercept, err := m.InsertHook(ctx, key, obj, m); intercept {
+			klog.V(5).Infof("MockNetworkEndpointGroups.Insert(%v, %v, %+v) = %v", ctx, key, obj, err)
+			return err
+		}
+	}
+	if !key.Valid() {
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+
+	if err, ok := m.InsertError[*key]; ok {
+		klog.V(5).Infof("MockNetworkEndpointGroups.Insert(%v, %v, %+v) = %v", ctx, key, obj, err)
+		return err
+	}
+	if _, ok := m.Objects[*key]; ok {
+		err := &googleapi.Error{
+			Code:    http.StatusConflict,
+			Message: fmt.Sprintf("MockNetworkEndpointGroups %v exists", key),
+		}
+		klog.V(5).Infof("MockNetworkEndpointGroups.Insert(%v, %v, %+v) = %v", ctx, key, obj, err)
+		return err
+	}
+
+	obj.Name = key.Name
+	projectID := m.ProjectRouter.ProjectID(ctx, "ga", "networkEndpointGroups")
+	obj.SelfLink = SelfLink(meta.VersionGA, projectID, "networkEndpointGroups", key)
+
+	m.Objects[*key] = &MockNetworkEndpointGroupsObj{obj}
+	klog.V(5).Infof("MockNetworkEndpointGroups.Insert(%v, %v, %+v) = nil", ctx, key, obj)
+	return nil
+}
+
+// Delete is a mock for deleting the object.
+func (m *MockNetworkEndpointGroups) Delete(ctx context.Context, key *meta.Key) error {
+	if m.DeleteHook != nil {
+		if intercept, err := m.DeleteHook(ctx, key, m); intercept {
+			klog.V(5).Infof("MockNetworkEndpointGroups.Delete(%v, %v) = %v", ctx, key, err)
+			return err
+		}
+	}
+	if !key.Valid() {
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+
+	if err, ok := m.DeleteError[*key]; ok {
+		klog.V(5).Infof("MockNetworkEndpointGroups.Delete(%v, %v) = %v", ctx, key, err)
+		return err
+	}
+	if _, ok := m.Objects[*key]; !ok {
+		err := &googleapi.Error{
+			Code:    http.StatusNotFound,
+			Message: fmt.Sprintf("MockNetworkEndpointGroups %v not found", key),
+		}
+		klog.V(5).Infof("MockNetworkEndpointGroups.Delete(%v, %v) = %v", ctx, key, err)
+		return err
+	}
+
+	delete(m.Objects, *key)
+	klog.V(5).Infof("MockNetworkEndpointGroups.Delete(%v, %v) = nil", ctx, key)
+	return nil
+}
+
+// AggregatedList is a mock for AggregatedList.
+func (m *MockNetworkEndpointGroups) AggregatedList(ctx context.Context, fl *filter.F) (map[string][]*ga.NetworkEndpointGroup, error) {
+	if m.AggregatedListHook != nil {
+		if intercept, objs, err := m.AggregatedListHook(ctx, fl, m); intercept {
+			klog.V(5).Infof("MockNetworkEndpointGroups.AggregatedList(%v, %v) = [%v items], %v", ctx, fl, len(objs), err)
+			return objs, err
+		}
+	}
+
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+
+	if m.AggregatedListError != nil {
+		err := *m.AggregatedListError
+		klog.V(5).Infof("MockNetworkEndpointGroups.AggregatedList(%v, %v) = nil, %v", ctx, fl, err)
+		return nil, err
+	}
+
+	objs := map[string][]*ga.NetworkEndpointGroup{}
+	for _, obj := range m.Objects {
+		res, err := ParseResourceURL(obj.ToGA().SelfLink)
+		location := res.Key.Zone
+		if err != nil {
+			klog.V(5).Infof("MockNetworkEndpointGroups.AggregatedList(%v, %v) = nil, %v", ctx, fl, err)
+			return nil, err
+		}
+		if !fl.Match(obj.ToGA()) {
+			continue
+		}
+		objs[location] = append(objs[location], obj.ToGA())
+	}
+	klog.V(5).Infof("MockNetworkEndpointGroups.AggregatedList(%v, %v) = [%v items], nil", ctx, fl, len(objs))
+	return objs, nil
+}
+
+// Obj wraps the object for use in the mock.
+func (m *MockNetworkEndpointGroups) Obj(o *ga.NetworkEndpointGroup) *MockNetworkEndpointGroupsObj {
+	return &MockNetworkEndpointGroupsObj{o}
+}
+
+// AttachNetworkEndpoints is a mock for the corresponding method.
+func (m *MockNetworkEndpointGroups) AttachNetworkEndpoints(ctx context.Context, key *meta.Key, arg0 *ga.NetworkEndpointGroupsAttachEndpointsRequest) error {
+	if m.AttachNetworkEndpointsHook != nil {
+		return m.AttachNetworkEndpointsHook(ctx, key, arg0, m)
+	}
+	return nil
+}
+
+// DetachNetworkEndpoints is a mock for the corresponding method.
+func (m *MockNetworkEndpointGroups) DetachNetworkEndpoints(ctx context.Context, key *meta.Key, arg0 *ga.NetworkEndpointGroupsDetachEndpointsRequest) error {
+	if m.DetachNetworkEndpointsHook != nil {
+		return m.DetachNetworkEndpointsHook(ctx, key, arg0, m)
+	}
+	return nil
+}
+
+// ListNetworkEndpoints is a mock for the corresponding method.
+func (m *MockNetworkEndpointGroups) ListNetworkEndpoints(ctx context.Context, key *meta.Key, arg0 *ga.NetworkEndpointGroupsListEndpointsRequest, fl *filter.F) ([]*ga.NetworkEndpointWithHealthStatus, error) {
+	if m.ListNetworkEndpointsHook != nil {
+		return m.ListNetworkEndpointsHook(ctx, key, arg0, fl, m)
+	}
+	return nil, nil
+}
+
+// GCENetworkEndpointGroups is a simplifying adapter for the GCE NetworkEndpointGroups.
+type GCENetworkEndpointGroups struct {
+	s *Service
+}
+
+// Get the NetworkEndpointGroup named by key.
+func (g *GCENetworkEndpointGroups) Get(ctx context.Context, key *meta.Key) (*ga.NetworkEndpointGroup, error) {
+	klog.V(5).Infof("GCENetworkEndpointGroups.Get(%v, %v): called", ctx, key)
+
+	if !key.Valid() {
+		klog.V(2).Infof("GCENetworkEndpointGroups.Get(%v, %v): key is invalid (%#v)", ctx, key, key)
+		return nil, fmt.Errorf("invalid GCE key (%#v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "ga", "NetworkEndpointGroups")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "Get",
+		Version:   meta.Version("ga"),
+		Service:   "NetworkEndpointGroups",
+	}
+	klog.V(5).Infof("GCENetworkEndpointGroups.Get(%v, %v): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCENetworkEndpointGroups.Get(%v, %v): RateLimiter error: %v", ctx, key, err)
+		return nil, err
+	}
+	call := g.s.GA.NetworkEndpointGroups.Get(projectID, key.Zone, key.Name)
+	call.Context(ctx)
+	v, err := call.Do()
+	klog.V(4).Infof("GCENetworkEndpointGroups.Get(%v, %v) = %+v, %v", ctx, key, v, err)
+	return v, err
+}
+
+// List all NetworkEndpointGroup objects.
+func (g *GCENetworkEndpointGroups) List(ctx context.Context, zone string, fl *filter.F) ([]*ga.NetworkEndpointGroup, error) {
+	klog.V(5).Infof("GCENetworkEndpointGroups.List(%v, %v, %v) called", ctx, zone, fl)
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "ga", "NetworkEndpointGroups")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "List",
+		Version:   meta.Version("ga"),
+		Service:   "NetworkEndpointGroups",
+	}
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		return nil, err
+	}
+	klog.V(5).Infof("GCENetworkEndpointGroups.List(%v, %v, %v): projectID = %v, rk = %+v", ctx, zone, fl, projectID, rk)
+	call := g.s.GA.NetworkEndpointGroups.List(projectID, zone)
+	if fl != filter.None {
+		call.Filter(fl.String())
+	}
+	var all []*ga.NetworkEndpointGroup
+	f := func(l *ga.NetworkEndpointGroupList) error {
+		klog.V(5).Infof("GCENetworkEndpointGroups.List(%v, ..., %v): page %+v", ctx, fl, l)
+		all = append(all, l.Items...)
+		return nil
+	}
+	if err := call.Pages(ctx, f); err != nil {
+		klog.V(4).Infof("GCENetworkEndpointGroups.List(%v, ..., %v) = %v, %v", ctx, fl, nil, err)
+		return nil, err
+	}
+
+	if klog.V(4) {
+		klog.V(4).Infof("GCENetworkEndpointGroups.List(%v, ..., %v) = [%v items], %v", ctx, fl, len(all), nil)
+	} else if klog.V(5) {
+		var asStr []string
+		for _, o := range all {
+			asStr = append(asStr, fmt.Sprintf("%+v", o))
+		}
+		klog.V(5).Infof("GCENetworkEndpointGroups.List(%v, ..., %v) = %v, %v", ctx, fl, asStr, nil)
+	}
+
+	return all, nil
+}
+
+// Insert NetworkEndpointGroup with key of value obj.
+func (g *GCENetworkEndpointGroups) Insert(ctx context.Context, key *meta.Key, obj *ga.NetworkEndpointGroup) error {
+	klog.V(5).Infof("GCENetworkEndpointGroups.Insert(%v, %v, %+v): called", ctx, key, obj)
+	if !key.Valid() {
+		klog.V(2).Infof("GCENetworkEndpointGroups.Insert(%v, %v, ...): key is invalid (%#v)", ctx, key, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "ga", "NetworkEndpointGroups")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "Insert",
+		Version:   meta.Version("ga"),
+		Service:   "NetworkEndpointGroups",
+	}
+	klog.V(5).Infof("GCENetworkEndpointGroups.Insert(%v, %v, ...): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCENetworkEndpointGroups.Insert(%v, %v, ...): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	obj.Name = key.Name
+	call := g.s.GA.NetworkEndpointGroups.Insert(projectID, key.Zone, obj)
+	call.Context(ctx)
+
+	op, err := call.Do()
+	if err != nil {
+		klog.V(4).Infof("GCENetworkEndpointGroups.Insert(%v, %v, ...) = %+v", ctx, key, err)
+		return err
+	}
+
+	err = g.s.WaitForCompletion(ctx, op)
+	klog.V(4).Infof("GCENetworkEndpointGroups.Insert(%v, %v, %+v) = %+v", ctx, key, obj, err)
+	return err
+}
+
+// Delete the NetworkEndpointGroup referenced by key.
+func (g *GCENetworkEndpointGroups) Delete(ctx context.Context, key *meta.Key) error {
+	klog.V(5).Infof("GCENetworkEndpointGroups.Delete(%v, %v): called", ctx, key)
+	if !key.Valid() {
+		klog.V(2).Infof("GCENetworkEndpointGroups.Delete(%v, %v): key is invalid (%#v)", ctx, key, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "ga", "NetworkEndpointGroups")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "Delete",
+		Version:   meta.Version("ga"),
+		Service:   "NetworkEndpointGroups",
+	}
+	klog.V(5).Infof("GCENetworkEndpointGroups.Delete(%v, %v): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCENetworkEndpointGroups.Delete(%v, %v): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	call := g.s.GA.NetworkEndpointGroups.Delete(projectID, key.Zone, key.Name)
+	call.Context(ctx)
+
+	op, err := call.Do()
+	if err != nil {
+		klog.V(4).Infof("GCENetworkEndpointGroups.Delete(%v, %v) = %v", ctx, key, err)
+		return err
+	}
+
+	err = g.s.WaitForCompletion(ctx, op)
+	klog.V(4).Infof("GCENetworkEndpointGroups.Delete(%v, %v) = %v", ctx, key, err)
+	return err
+}
+
+// AggregatedList lists all resources of the given type across all locations.
+func (g *GCENetworkEndpointGroups) AggregatedList(ctx context.Context, fl *filter.F) (map[string][]*ga.NetworkEndpointGroup, error) {
+	klog.V(5).Infof("GCENetworkEndpointGroups.AggregatedList(%v, %v) called", ctx, fl)
+
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "ga", "NetworkEndpointGroups")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "AggregatedList",
+		Version:   meta.Version("ga"),
+		Service:   "NetworkEndpointGroups",
+	}
+
+	klog.V(5).Infof("GCENetworkEndpointGroups.AggregatedList(%v, %v): projectID = %v, rk = %+v", ctx, fl, projectID, rk)
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(5).Infof("GCENetworkEndpointGroups.AggregatedList(%v, %v): RateLimiter error: %v", ctx, fl, err)
+		return nil, err
+	}
+
+	call := g.s.GA.NetworkEndpointGroups.AggregatedList(projectID)
+	call.Context(ctx)
+	if fl != filter.None {
+		call.Filter(fl.String())
+	}
+
+	all := map[string][]*ga.NetworkEndpointGroup{}
+	f := func(l *ga.NetworkEndpointGroupAggregatedList) error {
+		for k, v := range l.Items {
+			klog.V(5).Infof("GCENetworkEndpointGroups.AggregatedList(%v, %v): page[%v]%+v", ctx, fl, k, v)
+			all[k] = append(all[k], v.NetworkEndpointGroups...)
+		}
+		return nil
+	}
+	if err := call.Pages(ctx, f); err != nil {
+		klog.V(4).Infof("GCENetworkEndpointGroups.AggregatedList(%v, %v) = %v, %v", ctx, fl, nil, err)
+		return nil, err
+	}
+	if klog.V(4) {
+		klog.V(4).Infof("GCENetworkEndpointGroups.AggregatedList(%v, %v) = [%v items], %v", ctx, fl, len(all), nil)
+	} else if klog.V(5) {
+		var asStr []string
+		for _, o := range all {
+			asStr = append(asStr, fmt.Sprintf("%+v", o))
+		}
+		klog.V(5).Infof("GCENetworkEndpointGroups.AggregatedList(%v, %v) = %v, %v", ctx, fl, asStr, nil)
+	}
+	return all, nil
+}
+
+// AttachNetworkEndpoints is a method on GCENetworkEndpointGroups.
+func (g *GCENetworkEndpointGroups) AttachNetworkEndpoints(ctx context.Context, key *meta.Key, arg0 *ga.NetworkEndpointGroupsAttachEndpointsRequest) error {
+	klog.V(5).Infof("GCENetworkEndpointGroups.AttachNetworkEndpoints(%v, %v, ...): called", ctx, key)
+
+	if !key.Valid() {
+		klog.V(2).Infof("GCENetworkEndpointGroups.AttachNetworkEndpoints(%v, %v, ...): key is invalid (%#v)", ctx, key, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "ga", "NetworkEndpointGroups")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "AttachNetworkEndpoints",
+		Version:   meta.Version("ga"),
+		Service:   "NetworkEndpointGroups",
+	}
+	klog.V(5).Infof("GCENetworkEndpointGroups.AttachNetworkEndpoints(%v, %v, ...): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCENetworkEndpointGroups.AttachNetworkEndpoints(%v, %v, ...): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	call := g.s.GA.NetworkEndpointGroups.AttachNetworkEndpoints(projectID, key.Zone, key.Name, arg0)
+	call.Context(ctx)
+	op, err := call.Do()
+	if err != nil {
+		klog.V(4).Infof("GCENetworkEndpointGroups.AttachNetworkEndpoints(%v, %v, ...) = %+v", ctx, key, err)
+		return err
+	}
+	err = g.s.WaitForCompletion(ctx, op)
+	klog.V(4).Infof("GCENetworkEndpointGroups.AttachNetworkEndpoints(%v, %v, ...) = %+v", ctx, key, err)
+	return err
+}
+
+// DetachNetworkEndpoints is a method on GCENetworkEndpointGroups.
+func (g *GCENetworkEndpointGroups) DetachNetworkEndpoints(ctx context.Context, key *meta.Key, arg0 *ga.NetworkEndpointGroupsDetachEndpointsRequest) error {
+	klog.V(5).Infof("GCENetworkEndpointGroups.DetachNetworkEndpoints(%v, %v, ...): called", ctx, key)
+
+	if !key.Valid() {
+		klog.V(2).Infof("GCENetworkEndpointGroups.DetachNetworkEndpoints(%v, %v, ...): key is invalid (%#v)", ctx, key, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "ga", "NetworkEndpointGroups")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "DetachNetworkEndpoints",
+		Version:   meta.Version("ga"),
+		Service:   "NetworkEndpointGroups",
+	}
+	klog.V(5).Infof("GCENetworkEndpointGroups.DetachNetworkEndpoints(%v, %v, ...): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCENetworkEndpointGroups.DetachNetworkEndpoints(%v, %v, ...): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	call := g.s.GA.NetworkEndpointGroups.DetachNetworkEndpoints(projectID, key.Zone, key.Name, arg0)
+	call.Context(ctx)
+	op, err := call.Do()
+	if err != nil {
+		klog.V(4).Infof("GCENetworkEndpointGroups.DetachNetworkEndpoints(%v, %v, ...) = %+v", ctx, key, err)
+		return err
+	}
+	err = g.s.WaitForCompletion(ctx, op)
+	klog.V(4).Infof("GCENetworkEndpointGroups.DetachNetworkEndpoints(%v, %v, ...) = %+v", ctx, key, err)
+	return err
+}
+
+// ListNetworkEndpoints is a method on GCENetworkEndpointGroups.
+func (g *GCENetworkEndpointGroups) ListNetworkEndpoints(ctx context.Context, key *meta.Key, arg0 *ga.NetworkEndpointGroupsListEndpointsRequest, fl *filter.F) ([]*ga.NetworkEndpointWithHealthStatus, error) {
+	klog.V(5).Infof("GCENetworkEndpointGroups.ListNetworkEndpoints(%v, %v, ...): called", ctx, key)
+
+	if !key.Valid() {
+		klog.V(2).Infof("GCENetworkEndpointGroups.ListNetworkEndpoints(%v, %v, ...): key is invalid (%#v)", ctx, key, key)
+		return nil, fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "ga", "NetworkEndpointGroups")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "ListNetworkEndpoints",
+		Version:   meta.Version("ga"),
+		Service:   "NetworkEndpointGroups",
+	}
+	klog.V(5).Infof("GCENetworkEndpointGroups.ListNetworkEndpoints(%v, %v, ...): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCENetworkEndpointGroups.ListNetworkEndpoints(%v, %v, ...): RateLimiter error: %v", ctx, key, err)
+		return nil, err
+	}
+	call := g.s.GA.NetworkEndpointGroups.ListNetworkEndpoints(projectID, key.Zone, key.Name, arg0)
+	var all []*ga.NetworkEndpointWithHealthStatus
+	f := func(l *ga.NetworkEndpointGroupsListNetworkEndpoints) error {
+		klog.V(5).Infof("GCENetworkEndpointGroups.ListNetworkEndpoints(%v, %v, ...): page %+v", ctx, key, l)
+		all = append(all, l.Items...)
+		return nil
+	}
+	if err := call.Pages(ctx, f); err != nil {
+		klog.V(4).Infof("GCENetworkEndpointGroups.ListNetworkEndpoints(%v, %v, ...) = %v, %v", ctx, key, nil, err)
+		return nil, err
+	}
+	if klog.V(4) {
+		klog.V(4).Infof("GCENetworkEndpointGroups.ListNetworkEndpoints(%v, %v, ...) = [%v items], %v", ctx, key, len(all), nil)
+	} else if klog.V(5) {
+		var asStr []string
+		for _, o := range all {
+			asStr = append(asStr, fmt.Sprintf("%+v", o))
+		}
+		klog.V(5).Infof("GCENetworkEndpointGroups.ListNetworkEndpoints(%v, %v, ...) = %v, %v", ctx, key, asStr, nil)
 	}
 	return all, nil
 }

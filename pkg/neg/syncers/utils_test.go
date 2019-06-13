@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"testing"
 
-	"google.golang.org/api/compute/v0.beta"
+	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 )

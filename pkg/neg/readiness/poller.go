@@ -18,7 +18,7 @@ package readiness
 
 import (
 	"fmt"
-	computebeta "google.golang.org/api/compute/v0.beta"
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/tools/cache"
@@ -167,7 +167,7 @@ func (p *poller) Poll(key negMeta) (retry bool, err error) {
 
 // processHealthStatus evaluates the health status of the input network endpoint.
 // Assumes p.lock is held when calling this method.
-func (p *poller) processHealthStatus(key negMeta, healthStatus *computebeta.NetworkEndpointWithHealthStatus) (healthy bool, err error) {
+func (p *poller) processHealthStatus(key negMeta, healthStatus *compute.NetworkEndpointWithHealthStatus) (healthy bool, err error) {
 	ne := negtypes.NetworkEndpoint{
 		IP:   healthStatus.NetworkEndpoint.IpAddress,
 		Port: strconv.FormatInt(healthStatus.NetworkEndpoint.Port, 10),

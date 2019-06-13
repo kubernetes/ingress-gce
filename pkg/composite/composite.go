@@ -32,6 +32,45 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
+// AuthenticationPolicy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type AuthenticationPolicy struct {
+	// List of authentication methods that can be used for origin
+	// authentication. Similar to peers, these will be evaluated in order
+	// the first valid one will be used to set origin identity. If none of
+	// these methods pass, the request will be rejected with authentication
+	// failed error (401). Leave the list empty if origin authentication is
+	// not required.
+	Origins []*OriginAuthenticationMethod `json:"origins,omitempty"`
+	// List of authentication methods that can be used for peer
+	// authentication. They will be evaluated in order the first valid one
+	// will be used to set peer identity. If none of these methods pass, the
+	// request will be rejected with authentication failed error (401).
+	// Leave the list empty if peer authentication is not required.
+	Peers []*PeerAuthenticationMethod `json:"peers,omitempty"`
+	// Define whether peer or origin identity should be used for principal.
+	// Default value is USE_PEER. If peer (or origin) identity is not
+	// available, either because peer/origin authentication is not defined,
+	// or failed, principal will be left unset. In other words, binding rule
+	// does not affect the decision to accept or reject request. This field
+	// can be set to one of the following: USE_PEER: Principal will be set
+	// to the identity from peer authentication. USE_ORIGIN: Principal will
+	// be set to the identity from origin authentication.
+	PrincipalBinding string `json:"principalBinding,omitempty"`
+	// Configures the mechanism to obtain server-side security certificates
+	// and identity information.
+	ServerTlsContext *TlsContext `json:"serverTlsContext,omitempty"`
+	ForceSendFields  []string    `json:"-"`
+	NullFields       []string    `json:"-"`
+}
+
+// AuthorizationConfig is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type AuthorizationConfig struct {
+	// List of RbacPolicies.
+	Policies        []*RbacPolicy `json:"policies,omitempty"`
+	ForceSendFields []string      `json:"-"`
+	NullFields      []string      `json:"-"`
+}
+
 // Backend is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type Backend struct {
 	// Specifies the balancing mode for this backend. For global HTTP(S) or
@@ -56,17 +95,28 @@ type Backend struct {
 	// This field designates whether this is a failover backend. More than
 	// one failover backend can be configured for a given BackendService.
 	Failover bool `json:"failover,omitempty"`
-	// The fully-qualified URL of a Instance Group resource. This instance
-	// group defines the list of instances that serve traffic. Member
-	// virtual machine instances from each instance group must live in the
-	// same zone as the instance group itself. No two backends in a backend
-	// service are allowed to use same Instance Group resource.
+	// The fully-qualified URL of an Instance Group or Network Endpoint
+	// Group resource. In case of instance group this defines the list of
+	// instances that serve traffic. Member virtual machine instances from
+	// each instance group must live in the same zone as the instance group
+	// itself. No two backends in a backend service are allowed to use same
+	// Instance Group resource.
 	//
-	// Note that you must specify an Instance Group resource using the
-	// fully-qualified URL, rather than a partial URL.
+	// For Network Endpoint Groups this defines list of endpoints. All
+	// endpoints of Network Endpoint Group must be hosted on instances
+	// located in the same zone as the Network Endpoint Group.
+	//
+	// Backend service can not contain mix of Instance Group and Network
+	// Endpoint Group backends.
+	//
+	// Note that you must specify an Instance Group or Network Endpoint
+	// Group resource using the fully-qualified URL, rather than a partial
+	// URL.
 	//
 	// When the BackendService has load balancing scheme INTERNAL, the
 	// instance group must be within the same region as the BackendService.
+	// Network Endpoint Groups are not supported for INTERNAL load balancing
+	// scheme.
 	Group string `json:"group,omitempty"`
 	// The max number of simultaneous connections for the group. Can be used
 	// with either CONNECTION or UTILIZATION balancing modes. For CONNECTION
@@ -146,10 +196,36 @@ type BackendService struct {
 	Backends []*Backend `json:"backends,omitempty"`
 	// Cloud CDN configuration for this BackendService.
 	CdnPolicy *BackendServiceCdnPolicy `json:"cdnPolicy,omitempty"`
+	// Settings controlling the volume of connections to a backend
+	// service.
+	//
+	// This field is applicable to either:
+	// - A regional backend service with the service_protocol set to HTTP,
+	// HTTPS, or HTTP2, and load_balancing_scheme set to INTERNAL_MANAGED.
+	//
+	// - A global backend service with the load_balancing_scheme set to
+	// INTERNAL_SELF_MANAGED.
+	CircuitBreakers *CircuitBreakers `json:"circuitBreakers,omitempty"`
 	// Directs request to a cloud function. appEngineBackend and backends[]
 	// must be empty if this is set.
 	CloudFunctionBackend *BackendServiceCloudFunctionBackend `json:"cloudFunctionBackend,omitempty"`
 	ConnectionDraining   *ConnectionDraining                 `json:"connectionDraining,omitempty"`
+	// Consistent Hash-based load balancing can be used to provide soft
+	// session affinity based on HTTP headers, cookies or other properties.
+	// This load balancing policy is applicable only for HTTP connections.
+	// The affinity to a particular destination host will be lost when one
+	// or more hosts are added/removed from the destination service. This
+	// field specifies parameters that control consistent hashing. This
+	// field is only applicable when localityLbPolicy is set to MAGLEV or
+	// RING_HASH.
+	//
+	// This field is applicable to either:
+	// - A regional backend service with the service_protocol set to HTTP,
+	// HTTPS, or HTTP2, and load_balancing_scheme set to INTERNAL_MANAGED.
+	//
+	// - A global backend service with the load_balancing_scheme set to
+	// INTERNAL_SELF_MANAGED.
+	ConsistentHash *ConsistentHashLoadBalancerSettings `json:"consistentHash,omitempty"`
 	// [Output Only] Creation timestamp in RFC3339 text format.
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
 	// Headers that the HTTP/S load balancer should add to proxied requests.
@@ -165,7 +241,8 @@ type BackendService struct {
 	// Fingerprint of this resource. A hash of the contents stored in this
 	// object. This field is used in optimistic locking. This field will be
 	// ignored when inserting a BackendService. An up-to-date fingerprint
-	// must be provided in order to update the BackendService.
+	// must be provided in order to update the BackendService, otherwise the
+	// request will fail with error 412 conditionNotMet.
 	//
 	// To see the latest fingerprint, make a get() request to retrieve a
 	// BackendService.
@@ -191,6 +268,38 @@ type BackendService struct {
 	// load balancing cannot be used with the other. Possible values are
 	// INTERNAL and EXTERNAL.
 	LoadBalancingScheme string `json:"loadBalancingScheme,omitempty"`
+	// The load balancing algorithm used within the scope of the locality.
+	// The possible values are:
+	// - ROUND_ROBIN: This is a simple policy in which each healthy backend
+	// is selected in round robin order. This is the default.
+	// - LEAST_REQUEST: An O(1) algorithm which selects two random healthy
+	// hosts and picks the host which has fewer active requests.
+	// - RING_HASH: The ring/modulo hash load balancer implements consistent
+	// hashing to backends. The algorithm has the property that the
+	// addition/removal of a host from a set of N hosts only affects 1/N of
+	// the requests.
+	// - RANDOM: The load balancer selects a random healthy host.
+	// - ORIGINAL_DESTINATION: Backend host is selected based on the client
+	// connection metadata, i.e., connections are opened to the same address
+	// as the destination address of the incoming connection before the
+	// connection was redirected to the load balancer.
+	// - MAGLEV: used as a drop in replacement for the ring hash load
+	// balancer. Maglev is not as stable as ring hash but has faster table
+	// lookup build times and host selection times. For more information
+	// about Maglev, refer to https://ai.google/research/pubs/pub44824
+	//
+	//
+	// This field is applicable to either:
+	// - A regional backend service with the service_protocol set to HTTP,
+	// HTTPS, or HTTP2, and load_balancing_scheme set to INTERNAL_MANAGED.
+	//
+	// - A global backend service with the load_balancing_scheme set to
+	// INTERNAL_SELF_MANAGED.
+	LocalityLbPolicy string `json:"localityLbPolicy,omitempty"`
+	// This field denotes the logging options for the load balancer traffic
+	// served by this backend service. If logging is enabled, logs will be
+	// exported to Stackdriver.
+	LogConfig *BackendServiceLogConfig `json:"logConfig,omitempty"`
 	// Name of the resource. Provided by the client when the resource is
 	// created. The name must be 1-63 characters long, and comply with
 	// RFC1035. Specifically, the name must be 1-63 characters long and
@@ -199,6 +308,14 @@ type BackendService struct {
 	// characters must be a dash, lowercase letter, or digit, except the
 	// last character, which cannot be a dash.
 	Name string `json:"name,omitempty"`
+	// Settings controlling eviction of unhealthy hosts from the load
+	// balancing pool. This field is applicable to either:
+	// - A regional backend service with the service_protocol set to HTTP,
+	// HTTPS, or HTTP2, and load_balancing_scheme set to INTERNAL_MANAGED.
+	//
+	// - A global backend service with the load_balancing_scheme set to
+	// INTERNAL_SELF_MANAGED.
+	OutlierDetection *OutlierDetection `json:"outlierDetection,omitempty"`
 	// Deprecated in favor of portName. The TCP port to connect on the
 	// backend. The default value is 80.
 	//
@@ -227,8 +344,19 @@ type BackendService struct {
 	// [Output Only] The resource URL for the security policy associated
 	// with this backend service.
 	SecurityPolicy string `json:"securityPolicy,omitempty"`
+	// This field specifies the security policy that applies to this backend
+	// service. This field is applicable to either:
+	// - A regional backend service with the service_protocol set to HTTP,
+	// HTTPS, or HTTP2, and load_balancing_scheme set to INTERNAL_MANAGED.
+	//
+	// - A global backend service with the load_balancing_scheme set to
+	// INTERNAL_SELF_MANAGED.
+	SecuritySettings *SecuritySettings `json:"securitySettings,omitempty"`
 	// [Output Only] Server-defined URL for the resource.
 	SelfLink string `json:"selfLink,omitempty"`
+	// [Output Only] Server-defined URL for this resource with the resource
+	// id.
+	SelfLinkWithId string `json:"selfLinkWithId,omitempty"`
 	// Type of session affinity to use. The default is NONE.
 	//
 	// When the load balancing scheme is EXTERNAL, can be NONE, CLIENT_IP,
@@ -271,7 +399,7 @@ type BackendServiceCdnPolicy struct {
 	// revalidated before being served. Defaults to 1hr (3600s). When
 	// serving responses to signed URL requests, Cloud CDN will internally
 	// behave as though all responses from this backend had a
-	// ?Cache-Control: public, max-age=[TTL]? header, regardless of any
+	// "Cache-Control: public, max-age=[TTL]" header, regardless of any
 	// existing Cache-Control header. The actual headers served in responses
 	// will not be altered.
 	SignedUrlCacheMaxAgeSec int64 `json:"signedUrlCacheMaxAgeSec,omitempty,string"`
@@ -357,6 +485,21 @@ type BackendServiceIAPOAuth2ClientInfo struct {
 	NullFields            []string `json:"-"`
 }
 
+// BackendServiceLogConfig is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type BackendServiceLogConfig struct {
+	// This field denotes whether to enable logging for the load balancer
+	// traffic served by this backend service.
+	Enable bool `json:"enable,omitempty"`
+	// This field can only be specified if logging is enabled for this
+	// backend service. The value of the field must be in [0, 1]. This
+	// configures the sampling rate of requests to the load balancer where
+	// 1.0 means all logged requests are reported and 0.0 means no logged
+	// requests are reported. The default value is 1.0.
+	SampleRate      float64  `json:"sampleRate,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
 // CacheKeyPolicy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type CacheKeyPolicy struct {
 	// If true, requests to different hosts will be cached separately.
@@ -382,6 +525,93 @@ type CacheKeyPolicy struct {
 	NullFields           []string `json:"-"`
 }
 
+// CallCredentials is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type CallCredentials struct {
+	// The access token that is used as call credential for the SDS server.
+	// This field is used only if callCredentialType is ACCESS_TOKEN.
+	AccessToken string `json:"accessToken,omitempty"`
+	// The type of call credentials to use for GRPC requests to the SDS
+	// server. This field can be set to one of the following: ACCESS_TOKEN:
+	// An access token is used as call credentials for the SDS server.
+	// GCE_VM: The local GCE VM service account credentials are used to
+	// access the SDS server. JWT_SERVICE_TOKEN: The user provisioned
+	// service account credentials are used to access the SDS server.
+	// FROM_PLUGIN: Custom authenticator credentials are used to access the
+	// SDS server.
+	CallCredentialType string `json:"callCredentialType,omitempty"`
+	// Custom authenticator credentials.
+	FromPlugin *MetadataCredentialsFromPlugin `json:"fromPlugin,omitempty"`
+	// This service account credentials are used as call credentials for the
+	// SDS server. This field is used only if callCredentialType is
+	// JWT_SERVICE_ACCOUNT.
+	JwtServiceAccount *ServiceAccountJwtAccessCredentials `json:"jwtServiceAccount,omitempty"`
+	ForceSendFields   []string                            `json:"-"`
+	NullFields        []string                            `json:"-"`
+}
+
+// ChannelCredentials is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type ChannelCredentials struct {
+	// The call credentials to access the SDS server.
+	Certificates *TlsCertificatePaths `json:"certificates,omitempty"`
+	// The channel credentials to access the SDS server. This field can be
+	// set to one of the following: CERTIFICATES: Use TLS certificates to
+	// access the SDS server. GCE_VM: Use local GCE VM credentials to access
+	// the SDS server.
+	ChannelCredentialType string   `json:"channelCredentialType,omitempty"`
+	ForceSendFields       []string `json:"-"`
+	NullFields            []string `json:"-"`
+}
+
+// CircuitBreakers is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type CircuitBreakers struct {
+	// The timeout for new network connections to hosts.
+	ConnectTimeout *Duration `json:"connectTimeout,omitempty"`
+	// The maximum number of connections to the backend cluster. If not
+	// specified, the default is 1024.
+	MaxConnections int64 `json:"maxConnections,omitempty"`
+	// The maximum number of pending requests allowed to the backend
+	// cluster. If not specified, the default is 1024.
+	MaxPendingRequests int64 `json:"maxPendingRequests,omitempty"`
+	// The maximum number of parallel requests that allowed to the backend
+	// cluster. If not specified, the default is 1024.
+	MaxRequests int64 `json:"maxRequests,omitempty"`
+	// Maximum requests for a single backend connection. This parameter is
+	// respected by both the HTTP/1.1 and HTTP/2 implementations. If not
+	// specified, there is no limit. Setting this parameter to 1 will
+	// effectively disable keep alive.
+	MaxRequestsPerConnection int64 `json:"maxRequestsPerConnection,omitempty"`
+	// The maximum number of parallel retries allowed to the backend
+	// cluster. If not specified, the default is 3.
+	MaxRetries      int64    `json:"maxRetries,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// ClientTlsSettings is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type ClientTlsSettings struct {
+	// Configures the mechanism to obtain client-side security certificates
+	// and identity information. This field is only applicable when mode is
+	// set to MUTUAL.
+	ClientTlsContext *TlsContext `json:"clientTlsContext,omitempty"`
+	// Indicates whether connections to this port should be secured using
+	// TLS. The value of this field determines how TLS is enforced. This can
+	// be set to one of the following values: DISABLE: Do not setup a TLS
+	// connection to the backends. SIMPLE: Originate a TLS connection to the
+	// backends. MUTUAL: Secure connections to the backends using mutual TLS
+	// by presenting client certificates for authentication.
+	Mode string `json:"mode,omitempty"`
+	// SNI string to present to the server during TLS handshake. This field
+	// is applicable only when mode is SIMPLE or MUTUAL.
+	Sni string `json:"sni,omitempty"`
+	// A list of alternate names to verify the subject identity in the
+	// certificate.If specified, the proxy will verify that the server
+	// certificate's subject alt name matches one of the specified values.
+	// This field is applicable only when mode is SIMPLE or MUTUAL.
+	SubjectAltNames []string `json:"subjectAltNames,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
 // ConnectionDraining is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type ConnectionDraining struct {
 	// Time for which instance will be drained (not accept new connections,
@@ -389,6 +619,87 @@ type ConnectionDraining struct {
 	DrainingTimeoutSec int64    `json:"drainingTimeoutSec,omitempty"`
 	ForceSendFields    []string `json:"-"`
 	NullFields         []string `json:"-"`
+}
+
+// ConsistentHashLoadBalancerSettings is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type ConsistentHashLoadBalancerSettings struct {
+	// Hash is based on HTTP Cookie. This field describes a HTTP cookie that
+	// will be used as the hash key for the consistent hash load balancer.
+	// If the cookie is not present, it will be generated. This field is
+	// applicable if the sessionAffinity is set to HTTP_COOKIE.
+	HttpCookie *ConsistentHashLoadBalancerSettingsHttpCookie `json:"httpCookie,omitempty"`
+	// The hash based on the value of the specified header field. This field
+	// is applicable if the sessionAffinity is set to HEADER_FIELD.
+	HttpHeaderName string `json:"httpHeaderName,omitempty"`
+	// The minimum number of virtual nodes to use for the hash ring.
+	// Defaults to 1024. Larger ring sizes result in more granular load
+	// distributions. If the number of hosts in the load balancing pool is
+	// larger than the ring size, each host will be assigned a single
+	// virtual node.
+	MinimumRingSize int64    `json:"minimumRingSize,omitempty,string"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// ConsistentHashLoadBalancerSettingsHttpCookie is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type ConsistentHashLoadBalancerSettingsHttpCookie struct {
+	// Name of the cookie.
+	Name string `json:"name,omitempty"`
+	// Path to set for the cookie.
+	Path string `json:"path,omitempty"`
+	// Lifetime of the cookie.
+	Ttl             *Duration `json:"ttl,omitempty"`
+	ForceSendFields []string  `json:"-"`
+	NullFields      []string  `json:"-"`
+}
+
+// CorsPolicy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type CorsPolicy struct {
+	// In response to a preflight request, setting this to true indicates
+	// that the actual request can include user credentials. This translates
+	// to the Access-Control-Allow-Credentials header.
+	// Default is false.
+	AllowCredentials bool `json:"allowCredentials,omitempty"`
+	// Specifies the content for the Access-Control-Allow-Headers header.
+	AllowHeaders []string `json:"allowHeaders,omitempty"`
+	// Specifies the content for the Access-Control-Allow-Methods header.
+	AllowMethods []string `json:"allowMethods,omitempty"`
+	// Specifies the regualar expression patterns that match allowed
+	// origins. For regular expression grammar please see
+	// en.cppreference.com/w/cpp/regex/ecmascript
+	// An origin is allowed if it matches either allow_origins or
+	// allow_origin_regex.
+	AllowOriginRegexes []string `json:"allowOriginRegexes,omitempty"`
+	// Specifies the list of origins that will be allowed to do CORS
+	// requests.
+	// An origin is allowed if it matches either allow_origins or
+	// allow_origin_regex.
+	AllowOrigins []string `json:"allowOrigins,omitempty"`
+	// If true, specifies the CORS policy is disabled. The default value of
+	// false, which indicates that the CORS policy is in effect.
+	Disabled bool `json:"disabled,omitempty"`
+	// Specifies the content for the Access-Control-Expose-Headers header.
+	ExposeHeaders []string `json:"exposeHeaders,omitempty"`
+	// Specifies how long the results of a preflight request can be cached.
+	// This translates to the content for the Access-Control-Max-Age header.
+	MaxAge          int64    `json:"maxAge,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// Duration is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type Duration struct {
+	// Span of time that's a fraction of a second at nanosecond resolution.
+	// Durations less than one second are represented with a 0 `seconds`
+	// field and a positive `nanos` field. Must be from 0 to 999,999,999
+	// inclusive.
+	Nanos int64 `json:"nanos,omitempty"`
+	// Span of time at a resolution of a second. Must be from 0 to
+	// 315,576,000,000 inclusive. Note: these bounds are computed from: 60
+	// sec/min * 60 min/hr * 24 hr/day * 365.25 days/year * 10000 years
+	Seconds         int64    `json:"seconds,omitempty,string"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
 }
 
 // ForwardingRule is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
@@ -493,7 +804,8 @@ type ForwardingRule struct {
 	// fingerprint is initially generated by Compute Engine and changes
 	// after every request to modify or update labels. You must always
 	// provide an up-to-date fingerprint hash in order to update or change
-	// labels.
+	// labels, otherwise the request will fail with error 412
+	// conditionNotMet.
 	//
 	// To see the latest fingerprint, make a get() request to retrieve a
 	// ForwardingRule.
@@ -510,6 +822,22 @@ type ForwardingRule struct {
 	// value of EXTERNAL means that this will be used for External Load
 	// Balancing (HTTP(S) LB, External TCP/UDP LB, SSL Proxy)
 	LoadBalancingScheme string `json:"loadBalancingScheme,omitempty"`
+	// Opaque filter criteria used by Loadbalancer to restrict routing
+	// configuration to a limited set xDS compliant clients. In their xDS
+	// requests to Loadbalancer, xDS clients present node metadata. If a
+	// match takes place, the relevant routing configuration is made
+	// available to those proxies.
+	// For each metadataFilter in this list, if its filterMatchCriteria is
+	// set to MATCH_ANY, at least one of the filterLabels must match the
+	// corresponding label provided in the metadata. If its
+	// filterMatchCriteria is set to MATCH_ALL, then all of its filterLabels
+	// must match with corresponding labels in the provided
+	// metadata.
+	// metadataFilters specified here can be overridden by those specified
+	// in the UrlMap that this ForwardingRule references.
+	// metadataFilters only applies to Loadbalancers that have their
+	// loadBalancingScheme set to INTERNAL_SELF_MANAGED.
+	MetadataFilters []*MetadataFilter `json:"metadataFilters,omitempty"`
 	// Name of the resource; provided by the client when the resource is
 	// created. The name must be 1-63 characters long, and comply with
 	// RFC1035. Specifically, the name must be 1-63 characters long and
@@ -558,10 +886,10 @@ type ForwardingRule struct {
 	// This field is used along with the backend_service field for internal
 	// load balancing.
 	//
-	// When the load balancing scheme is INTERNAL, a single port or a comma
-	// separated list of ports can be configured. Only packets addressed to
-	// these ports will be forwarded to the backends configured with this
-	// forwarding rule.
+	// When the load balancing scheme is INTERNAL, a list of ports can be
+	// configured, for example, ['80'], ['8000','9000'] etc. Only packets
+	// addressed to these ports will be forwarded to the backends configured
+	// with this forwarding rule.
 	//
 	// You may specify a maximum of up to 5 ports.
 	Ports []string `json:"ports,omitempty"`
@@ -572,6 +900,9 @@ type ForwardingRule struct {
 	Region string `json:"region,omitempty"`
 	// [Output Only] Server-defined URL for the resource.
 	SelfLink string `json:"selfLink,omitempty"`
+	// [Output Only] Server-defined URL for this resource with the resource
+	// id.
+	SelfLinkWithId string `json:"selfLinkWithId,omitempty"`
 	// An optional prefix to the service name for this Forwarding Rule. If
 	// specified, will be the first label of the fully qualified service
 	// name.
@@ -604,12 +935,24 @@ type ForwardingRule struct {
 	// regional forwarding rules, this target must live in the same region
 	// as the forwarding rule. For global forwarding rules, this target must
 	// be a global load balancing resource. The forwarded traffic must be of
-	// a type appropriate to the target object. For INTERNAL_SELF_MANAGED"
+	// a type appropriate to the target object. For INTERNAL_SELF_MANAGED
 	// load balancing, only HTTP and HTTPS targets are valid.
 	Target                   string `json:"target,omitempty"`
 	googleapi.ServerResponse `json:"-"`
 	ForceSendFields          []string `json:"-"`
 	NullFields               []string `json:"-"`
+}
+
+// GrpcServiceConfig is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type GrpcServiceConfig struct {
+	// The call credentials to access the SDS server.
+	CallCredentials *CallCredentials `json:"callCredentials,omitempty"`
+	// The channel credentials to access the SDS server.
+	ChannelCredentials *ChannelCredentials `json:"channelCredentials,omitempty"`
+	// The target URI of the SDS server.
+	TargetUri       string   `json:"targetUri,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
 }
 
 // HTTP2HealthCheck is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
@@ -794,15 +1137,18 @@ type HealthCheck struct {
 	// to global health checks.
 	Region string `json:"region,omitempty"`
 	// [Output Only] Server-defined URL for the resource.
-	SelfLink       string          `json:"selfLink,omitempty"`
+	SelfLink string `json:"selfLink,omitempty"`
+	// [Output Only] Server-defined URL for this resource with the resource
+	// id.
+	SelfLinkWithId string          `json:"selfLinkWithId,omitempty"`
 	SslHealthCheck *SSLHealthCheck `json:"sslHealthCheck,omitempty"`
 	TcpHealthCheck *TCPHealthCheck `json:"tcpHealthCheck,omitempty"`
 	// How long (in seconds) to wait before claiming failure. The default
 	// value is 5 seconds. It is invalid for timeoutSec to have greater
 	// value than checkIntervalSec.
 	TimeoutSec int64 `json:"timeoutSec,omitempty"`
-	// Specifies the type of the healthCheck, either TCP, SSL, HTTP or
-	// HTTPS. If not specified, the default is TCP. Exactly one of the
+	// Specifies the type of the healthCheck, either TCP, SSL, HTTP, HTTPS
+	// or HTTP2. If not specified, the default is TCP. Exactly one of the
 	// protocol-specific health check field must be specified, which must
 	// match type field.
 	Type           string          `json:"type,omitempty"`
@@ -832,27 +1178,619 @@ type HostRule struct {
 	NullFields      []string `json:"-"`
 }
 
+// HttpFaultAbort is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type HttpFaultAbort struct {
+	// The HTTP status code used to abort the request.
+	// The value must be between 200 and 599 inclusive.
+	HttpStatus int64 `json:"httpStatus,omitempty"`
+	// The percentage of traffic (connections/operations/requests) which
+	// will be aborted as part of fault injection.
+	// The value must be between 0.0 and 100.0 inclusive.
+	Percentage      float64  `json:"percentage,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// HttpFaultDelay is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type HttpFaultDelay struct {
+	// Specifies the value of the fixed delay interval.
+	FixedDelay *Duration `json:"fixedDelay,omitempty"`
+	// The percentage of traffic (connections/operations/requests) on which
+	// delay will be introduced as part of fault injection.
+	// The value must be between 0.0 and 100.0 inclusive.
+	Percentage      float64  `json:"percentage,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// HttpFaultInjection is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type HttpFaultInjection struct {
+	// The specification for how client requests are aborted as part of
+	// fault injection.
+	Abort *HttpFaultAbort `json:"abort,omitempty"`
+	// The specification for how client requests are delayed as part of
+	// fault injection, before being sent to a backend service.
+	Delay           *HttpFaultDelay `json:"delay,omitempty"`
+	ForceSendFields []string        `json:"-"`
+	NullFields      []string        `json:"-"`
+}
+
+// HttpHeaderAction is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type HttpHeaderAction struct {
+	// Headers to add to a matching request prior to forwarding the request
+	// to the backendService.
+	RequestHeadersToAdd []*HttpHeaderOption `json:"requestHeadersToAdd,omitempty"`
+	// A list of header names for headers that need to be removed from the
+	// request prior to forwarding the request to the backendService.
+	RequestHeadersToRemove []string `json:"requestHeadersToRemove,omitempty"`
+	// Headers to add the response prior to sending the response back to the
+	// client.
+	ResponseHeadersToAdd []*HttpHeaderOption `json:"responseHeadersToAdd,omitempty"`
+	// A list of header names for headers that need to be removed from the
+	// response prior to sending the response back to the client.
+	ResponseHeadersToRemove []string `json:"responseHeadersToRemove,omitempty"`
+	ForceSendFields         []string `json:"-"`
+	NullFields              []string `json:"-"`
+}
+
+// HttpHeaderMatch is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type HttpHeaderMatch struct {
+	// The value should exactly match contents of exactMatch.
+	// Only one of exactMatch, prefixMatch, suffixMatch, regexMatch,
+	// presentMatch or rangeMatch must be set.
+	ExactMatch string `json:"exactMatch,omitempty"`
+	// The name of the HTTP header to match.
+	// For matching against the HTTP request's authority, use a headerMatch
+	// with the header name ":authority".
+	// For matching a request's method, use the headerName ":method".
+	HeaderName string `json:"headerName,omitempty"`
+	// If set to false, the headerMatch is considered a match if the match
+	// criteria above are met. If set to true, the headerMatch is considered
+	// a match if the match criteria above are NOT met.
+	// The default setting is false.
+	InvertMatch bool `json:"invertMatch,omitempty"`
+	// The value of the header must start with the contents of
+	// prefixMatch.
+	// Only one of exactMatch, prefixMatch, suffixMatch, regexMatch,
+	// presentMatch or rangeMatch must be set.
+	PrefixMatch string `json:"prefixMatch,omitempty"`
+	// A header with the contents of headerName must exist. The match takes
+	// place whether or not the request's header has a value or not.
+	// Only one of exactMatch, prefixMatch, suffixMatch, regexMatch,
+	// presentMatch or rangeMatch must be set.
+	PresentMatch bool `json:"presentMatch,omitempty"`
+	// The header value must be an integer and its value must be in the
+	// range specified in rangeMatch. If the header does not contain an
+	// integer, number or is empty, the match fails.
+	// For example for a range [-5, 0]
+	// - -3 will match.
+	// - 0 will not match.
+	// - 0.25 will not match.
+	// - -3someString will not match.
+	// Only one of exactMatch, prefixMatch, suffixMatch, regexMatch,
+	// presentMatch or rangeMatch must be set.
+	RangeMatch *Int64RangeMatch `json:"rangeMatch,omitempty"`
+	// The value of the header must match the regualar expression specified
+	// in regexMatch. For regular expression grammar, please see:
+	// en.cppreference.com/w/cpp/regex/ecmascript
+	// For matching against a port specified in the HTTP request, use a
+	// headerMatch with headerName set to PORT and a regular expression that
+	// satisfies the RFC2616 Host header's port specifier.
+	// Only one of exactMatch, prefixMatch, suffixMatch, regexMatch,
+	// presentMatch or rangeMatch must be set.
+	RegexMatch string `json:"regexMatch,omitempty"`
+	// The value of the header must end with the contents of
+	// suffixMatch.
+	// Only one of exactMatch, prefixMatch, suffixMatch, regexMatch,
+	// presentMatch or rangeMatch must be set.
+	SuffixMatch     string   `json:"suffixMatch,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// HttpHeaderOption is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type HttpHeaderOption struct {
+	// The name of the header.
+	HeaderName string `json:"headerName,omitempty"`
+	// The value of the header to add.
+	HeaderValue string `json:"headerValue,omitempty"`
+	// If false, headerValue is appended to any values that already exist
+	// for the header. If true, headerValue is set for the header,
+	// discarding any values that were set for that header.
+	// The default value is false.
+	Replace         bool     `json:"replace,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// HttpQueryParameterMatch is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type HttpQueryParameterMatch struct {
+	// The queryParameterMatch matches if the value of the parameter exactly
+	// matches the contents of exactMatch.
+	// Only one of presentMatch, exactMatch and regexMatch must be set.
+	ExactMatch string `json:"exactMatch,omitempty"`
+	// The name of the query parameter to match. The query parameter must
+	// exist in the request, in the absence of which the request match
+	// fails.
+	Name string `json:"name,omitempty"`
+	// Specifies that the queryParameterMatch matches if the request
+	// contains the query parameter, irrespective of whether the parameter
+	// has a value or not.
+	// Only one of presentMatch, exactMatch and regexMatch must be set.
+	PresentMatch bool `json:"presentMatch,omitempty"`
+	// The queryParameterMatch matches if the value of the parameter matches
+	// the regular expression specified by regexMatch. For the regular
+	// expression grammar, please see
+	// en.cppreference.com/w/cpp/regex/ecmascript
+	// Only one of presentMatch, exactMatch and regexMatch must be set.
+	RegexMatch      string   `json:"regexMatch,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// HttpRedirectAction is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type HttpRedirectAction struct {
+	// The host that will be used in the redirect response instead of the
+	// one that was supplied in the request.
+	// The value must be between 1 and 255 characters.
+	HostRedirect string `json:"hostRedirect,omitempty"`
+	// If set to true, the URL scheme in the redirected request is set to
+	// https. If set to false, the URL scheme of the redirected request will
+	// remain the same as that of the request.
+	// This must only be set for UrlMaps used in TargetHttpProxys. Setting
+	// this true for TargetHttpsProxy is not permitted.
+	// The default is set to false.
+	HttpsRedirect bool `json:"httpsRedirect,omitempty"`
+	// The path that will be used in the redirect response instead of the
+	// one that was supplied in the request.
+	// Only one of pathRedirect or prefixRedirect must be specified.
+	// The value must be between 1 and 1024 characters.
+	PathRedirect string `json:"pathRedirect,omitempty"`
+	// The prefix that replaces the prefixMatch specified in the
+	// HttpRouteRuleMatch, retaining the remaining portion of the URL before
+	// redirecting the request.
+	PrefixRedirect string `json:"prefixRedirect,omitempty"`
+	// The HTTP Status code to use for this RedirectAction.
+	// Supported values are:
+	// - MOVED_PERMANENTLY_DEFAULT, which is the default value and
+	// corresponds to 301.
+	// - FOUND, which corresponds to 302.
+	// - SEE_OTHER which corresponds to 303.
+	// - TEMPORARY_REDIRECT, which corresponds to 307. In this case, the
+	// request method will be retained.
+	// - PERMANENT_REDIRECT, which corresponds to 308. In this case, the
+	// request method will be retained.
+	RedirectResponseCode string `json:"redirectResponseCode,omitempty"`
+	// If set to true, any accompanying query portion of the original URL is
+	// removed prior to redirecting the request. If set to false, the query
+	// portion of the original URL is retained.
+	// The default is set to false.
+	StripQuery      bool     `json:"stripQuery,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// HttpRetryPolicy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type HttpRetryPolicy struct {
+	// Specifies the allowed number retries. This number must be > 0.
+	NumRetries int64 `json:"numRetries,omitempty"`
+	// Specifies a non-zero timeout per retry attempt.
+	PerTryTimeout *Duration `json:"perTryTimeout,omitempty"`
+	// Specfies one or more conditions when this retry rule applies. Valid
+	// values are:
+	// - 5xx: Loadbalancer will attempt a retry if the backend service
+	// responds with any 5xx response code, or if the backend service does
+	// not respond at all, example: disconnects, reset, read timeout,
+	// connection failure, and refused streams.
+	// - gateway-error: Similar to 5xx, but only applies to response codes
+	// 502, 503 or 504.
+	// -
+	// - connect-failure: Loadbalancer will retry on failures connecting to
+	// backend services, for example due to connection timeouts.
+	// - retriable-4xx: Loadbalancer will retry for retriable 4xx response
+	// codes. Currently the only retriable error supported is 409.
+	// - refused-stream:Loadbalancer will retry if the backend service
+	// resets the stream with a REFUSED_STREAM error code. This reset type
+	// indicates that it is safe to retry.
+	// - cancelledLoadbalancer will retry if the gRPC status code in the
+	// response header is set to cancelled
+	// - deadline-exceeded: Loadbalancer will retry if the gRPC status code
+	// in the response header is set to deadline-exceeded
+	// - resource-exhausted: Loadbalancer will retry if the gRPC status code
+	// in the response header is set to resource-exhausted
+	// - unavailable: Loadbalancer will retry if the gRPC status code in the
+	// response header is set to unavailable
+	RetryConditions []string `json:"retryConditions,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// HttpRouteAction is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type HttpRouteAction struct {
+	// The specification for allowing client side cross-origin requests.
+	// Please see W3C Recommendation for Cross Origin Resource Sharing
+	CorsPolicy *CorsPolicy `json:"corsPolicy,omitempty"`
+	// The specification for fault injection introduced into traffic to test
+	// the resiliency of clients to backend service failure. As part of
+	// fault injection, when clients send requests to a backend service,
+	// delays can be introduced by Loadbalancer on a percentage of requests
+	// before sending those request to the backend service. Similarly
+	// requests from clients can be aborted by the Loadbalancer for a
+	// percentage of requests.
+	// timeout and retry_policy will be ignored by clients that are
+	// configured with a fault_injection_policy.
+	FaultInjectionPolicy *HttpFaultInjection `json:"faultInjectionPolicy,omitempty"`
+	// Specifies the policy on how requests intended for the route's
+	// backends are shadowed to a separate mirrored backend service.
+	// Loadbalancer does not wait for responses from the shadow service.
+	// Prior to sending traffic to the shadow service, the host / authority
+	// header is suffixed with -shadow.
+	RequestMirrorPolicy *RequestMirrorPolicy `json:"requestMirrorPolicy,omitempty"`
+	// Specifies the retry policy associated with this route.
+	RetryPolicy *HttpRetryPolicy `json:"retryPolicy,omitempty"`
+	// Specifies the timeout for the selected route. Timeout is computed
+	// from the time the request is has been fully processed (i.e.
+	// end-of-stream) up until the response has been completely processed.
+	// Timeout includes all retries.
+	// If not specified, the default value is 15 seconds.
+	Timeout *Duration `json:"timeout,omitempty"`
+	// The spec to modify the URL of the request, prior to forwarding the
+	// request to the matched service
+	UrlRewrite *UrlRewrite `json:"urlRewrite,omitempty"`
+	// A list of weighted backend services to send traffic to when a route
+	// match occurs. The weights determine the fraction of traffic that
+	// flows to their corresponding backend service. If all traffic needs to
+	// go to a single backend service, there must be one
+	// weightedBackendService with weight set to a non 0 number.
+	// Once a backendService is identified and before forwarding the request
+	// to the backend service, advanced routing actions like Url rewrites
+	// and header transformations are applied depending on additional
+	// settings specified in this HttpRouteAction.
+	WeightedBackendServices []*WeightedBackendService `json:"weightedBackendServices,omitempty"`
+	ForceSendFields         []string                  `json:"-"`
+	NullFields              []string                  `json:"-"`
+}
+
+// HttpRouteRule is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type HttpRouteRule struct {
+	// Specifies changes to request and response headers that need to take
+	// effect for the selected backendService.
+	// The headerAction specified here are applied before the matching
+	// pathMatchers[].headerAction and after
+	// pathMatchers[].routeRules[].routeAction.weightedBackendService.backend
+	// ServiceWeightAction[].headerAction
+	HeaderAction *HttpHeaderAction     `json:"headerAction,omitempty"`
+	MatchRules   []*HttpRouteRuleMatch `json:"matchRules,omitempty"`
+	// In response to a matching matchRule, the load balancer performs
+	// advanced routing actions like URL rewrites, header transformations,
+	// etc. prior to forwarding the request to the selected backend. If
+	// routeAction specifies any  weightedBackendServices, service must not
+	// be set. Conversely if service is set, routeAction cannot contain any
+	// weightedBackendServices.
+	// Only one of routeAction or urlRedirect must be set.
+	RouteAction *HttpRouteAction `json:"routeAction,omitempty"`
+	// The full or partial URL of the backend service resource to which
+	// traffic is directed if this rule is matched. If routeAction is
+	// additionally specified, advanced routing actions like URL Rewrites,
+	// etc. take effect prior to sending the request to the backend.
+	// However, if service is specified, routeAction cannot contain any
+	// weightedBackendService s. Conversely, if routeAction specifies any
+	// weightedBackendServices, service must not be specified.
+	// Only one of urlRedirect, service or
+	// routeAction.weightedBackendService must be set.
+	Service string `json:"service,omitempty"`
+	// When this rule is matched, the request is redirected to a URL
+	// specified by urlRedirect.
+	// If urlRedirect is specified, service or routeAction must not be set.
+	UrlRedirect     *HttpRedirectAction `json:"urlRedirect,omitempty"`
+	ForceSendFields []string            `json:"-"`
+	NullFields      []string            `json:"-"`
+}
+
+// HttpRouteRuleMatch is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type HttpRouteRuleMatch struct {
+	// For satifying the matchRule condition, the path of the request must
+	// exactly match the value specified in fullPathMatch after removing any
+	// query parameters and anchor that may be part of the original
+	// URL.
+	// FullPathMatch must be between 1 and 1024 characters.
+	// Only one of prefixMatch, fullPathMatch or regexMatch must be
+	// specified.
+	FullPathMatch string `json:"fullPathMatch,omitempty"`
+	// Specifies a list of header match criteria, all of which must match
+	// corresponding headers in the request.
+	HeaderMatches []*HttpHeaderMatch `json:"headerMatches,omitempty"`
+	// Specifies that prefixMatch and fullPathMatch matches are case
+	// sensitive.
+	// The default value is false.
+	// caseSensitive must not be used with regexMatch.
+	IgnoreCase bool `json:"ignoreCase,omitempty"`
+	// Opaque filter criteria used by Loadbalancer to restrict routing
+	// configuration to a limited set xDS compliant clients. In their xDS
+	// requests to Loadbalancer, xDS clients present node metadata. If a
+	// match takes place, the relevant routing configuration is made
+	// available to those proxies.
+	// For each metadataFilter in this list, if its filterMatchCriteria is
+	// set to MATCH_ANY, at least one of the filterLabels must match the
+	// corresponding label provided in the metadata. If its
+	// filterMatchCriteria is set to MATCH_ALL, then all of its filterLabels
+	// must match with corresponding labels in the provided
+	// metadata.
+	// metadataFilters specified here can be overrides those specified in
+	// ForwardingRule that refers to this UrlMap.
+	// metadataFilters only applies to Loadbalancers that have their
+	// loadBalancingScheme set to INTERNAL_SELF_MANAGED.
+	MetadataFilters []*MetadataFilter `json:"metadataFilters,omitempty"`
+	// For satifying the matchRule condition, the request's path must begin
+	// with the specified prefixMatch. prefixMatch must begin with a /.
+	// The value must be between 1 and 1024 characters.
+	// Only one of prefixMatch, fullPathMatch or regexMatch must be
+	// specified.
+	PrefixMatch string `json:"prefixMatch,omitempty"`
+	// Specifies a list of query parameter match criteria, all of which must
+	// match corresponding query parameters in the request.
+	QueryParameterMatches []*HttpQueryParameterMatch `json:"queryParameterMatches,omitempty"`
+	// For satifying the matchRule condition, the path of the request must
+	// satisfy the regular expression specified in regexMatch after removing
+	// any query parameters and anchor supplied with the original URL. For
+	// regular expression grammar please see
+	// en.cppreference.com/w/cpp/regex/ecmascript
+	// Only one of prefixMatch, fullPathMatch or regexMatch must be
+	// specified.
+	RegexMatch      string   `json:"regexMatch,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// Int64RangeMatch is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type Int64RangeMatch struct {
+	// The end of the range (exclusive) in signed long integer format.
+	RangeEnd int64 `json:"rangeEnd,omitempty,string"`
+	// The start of the range (inclusive) in signed long integer format.
+	RangeStart      int64    `json:"rangeStart,omitempty,string"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// Jwt is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type Jwt struct {
+	// A JWT containing any of these audiences will be accepted. The service
+	// name will be accepted if audiences is empty. Examples:
+	// bookstore_android.apps.googleusercontent.com,
+	// bookstore_web.apps.googleusercontent.com
+	Audiences []string `json:"audiences,omitempty"`
+	// Identifies the issuer that issued the JWT, which is usually a URL or
+	// an email address. Examples: https://securetoken.google.com,
+	// 1234567-compute@developer.gserviceaccount.com
+	Issuer string `json:"issuer,omitempty"`
+	// The provider?s public key set to validate the signature of the JWT.
+	JwksPublicKeys string `json:"jwksPublicKeys,omitempty"`
+	// jwt_headers and jwt_params define where to extract the JWT from an
+	// HTTP request. If no explicit location is specified, the following
+	// default locations are tried in order:
+	//
+	// 1. The Authorization header using the Bearer schema. See `here `_.
+	// Example:
+	//
+	// Authorization: Bearer .
+	//
+	// 2. `access_token` query parameter. See `this `_
+	//
+	// Multiple JWTs can be verified for a request. Each JWT has to be
+	// extracted from the locations its issuer specified or from the default
+	// locations.
+	//
+	// This field is set if JWT is sent in a request header. This field
+	// specifies the header name. For example, if
+	// `header=x-goog-iap-jwt-assertion`, the header format will be
+	// x-goog-iap-jwt-assertion: .
+	JwtHeaders []*JwtHeader `json:"jwtHeaders,omitempty"`
+	// This field is set if JWT is sent in a query parameter. This field
+	// specifies the query parameter name. For example, if jwt_params[0] is
+	// jwt_token, the JWT format in the query parameter is /path?jwt_token=.
+	JwtParams       []string `json:"jwtParams,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// JwtHeader is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type JwtHeader struct {
+	// The HTTP header name.
+	Name string `json:"name,omitempty"`
+	// The value prefix. The value format is "value_prefix" For example, for
+	// "Authorization: Bearer ", value_prefix="Bearer " with a space at the
+	// end.
+	ValuePrefix     string   `json:"valuePrefix,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// MetadataCredentialsFromPlugin is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type MetadataCredentialsFromPlugin struct {
+	// Plugin name.
+	Name string `json:"name,omitempty"`
+	// A text proto that conforms to a Struct type definition interpreted by
+	// the plugin.
+	StructConfig    string   `json:"structConfig,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// MetadataFilter is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type MetadataFilter struct {
+	// The list of label value pairs that must match labels in the provided
+	// metadata based on filterMatchCriteria
+	// This list must not be empty and can have at the most 64 entries.
+	FilterLabels []*MetadataFilterLabelMatch `json:"filterLabels,omitempty"`
+	// Specifies how individual filterLabel matches within the list of
+	// filterLabels contribute towards the overall metadataFilter
+	// match.
+	// Supported values are:
+	// - MATCH_ANY: At least one of the filterLabels must have a matching
+	// label in the provided metadata.
+	// - MATCH_ALL: All filterLabels must have matching labels in the
+	// provided metadata.
+	FilterMatchCriteria string   `json:"filterMatchCriteria,omitempty"`
+	ForceSendFields     []string `json:"-"`
+	NullFields          []string `json:"-"`
+}
+
+// MetadataFilterLabelMatch is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type MetadataFilterLabelMatch struct {
+	// Name of metadata label.
+	// The name can have a maximum length of 1024 characters and must be at
+	// least 1 character long.
+	Name string `json:"name,omitempty"`
+	// The value of the label must match the specified value.
+	// value can have a maximum length of 1024 characters.
+	Value           string   `json:"value,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// MutualTls is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type MutualTls struct {
+	// Specifies if the server TLS is configured to be strict or permissive.
+	// This field can be set to one of the following: STRICT: Client
+	// certificate must be presented, connection is in TLS. PERMISSIVE:
+	// Client certificate can be omitted, connection can be either plaintext
+	// or TLS.
+	Mode            string   `json:"mode,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// OriginAuthenticationMethod is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type OriginAuthenticationMethod struct {
+	Jwt             *Jwt     `json:"jwt,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// OutlierDetection is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type OutlierDetection struct {
+	// The base time that a host is ejected for. The real time is equal to
+	// the base time multiplied by the number of times the host has been
+	// ejected. Defaults to 30000ms or 30s.
+	BaseEjectionTime *Duration `json:"baseEjectionTime,omitempty"`
+	// Number of errors before a host is ejected from the connection pool.
+	// When the backend host is accessed over HTTP, a 5xx return code
+	// qualifies as an error. Defaults to 5.
+	ConsecutiveErrors int64 `json:"consecutiveErrors,omitempty"`
+	// The number of consecutive gateway failures (502, 503, 504 status or
+	// connection errors that are mapped to one of those status codes)
+	// before a consecutive gateway failure ejection occurs. Defaults to 5.
+	ConsecutiveGatewayFailure int64 `json:"consecutiveGatewayFailure,omitempty"`
+	// The percentage chance that a host will be actually ejected when an
+	// outlier status is detected through consecutive 5xx. This setting can
+	// be used to disable ejection or to ramp it up slowly. Defaults to 100.
+	EnforcingConsecutiveErrors int64 `json:"enforcingConsecutiveErrors,omitempty"`
+	// The percentage chance that a host will be actually ejected when an
+	// outlier status is detected through consecutive gateway failures. This
+	// setting can be used to disable ejection or to ramp it up slowly.
+	// Defaults to 0.
+	EnforcingConsecutiveGatewayFailure int64 `json:"enforcingConsecutiveGatewayFailure,omitempty"`
+	// The percentage chance that a host will be actually ejected when an
+	// outlier status is detected through success rate statistics. This
+	// setting can be used to disable ejection or to ramp it up slowly.
+	// Defaults to 100.
+	EnforcingSuccessRate int64 `json:"enforcingSuccessRate,omitempty"`
+	// Time interval between ejection sweep analysis. This can result in
+	// both new ejections as well as hosts being returned to service.
+	// Defaults to 10 seconds.
+	Interval *Duration `json:"interval,omitempty"`
+	// Maximum percentage of hosts in the load balancing pool for the
+	// backend service that can be ejected. Defaults to 10%.
+	MaxEjectionPercent int64 `json:"maxEjectionPercent,omitempty"`
+	// The number of hosts in a cluster that must have enough request volume
+	// to detect success rate outliers. If the number of hosts is less than
+	// this setting, outlier detection via success rate statistics is not
+	// performed for any host in the cluster. Defaults to 5.
+	SuccessRateMinimumHosts int64 `json:"successRateMinimumHosts,omitempty"`
+	// The minimum number of total requests that must be collected in one
+	// interval (as defined by the interval duration above) to include this
+	// host in success rate based outlier detection. If the volume is lower
+	// than this setting, outlier detection via success rate statistics is
+	// not performed for that host. Defaults to 100.
+	SuccessRateRequestVolume int64 `json:"successRateRequestVolume,omitempty"`
+	// This factor is used to determine the ejection threshold for success
+	// rate outlier ejection. The ejection threshold is the difference
+	// between the mean success rate, and the product of this factor and the
+	// standard deviation of the mean success rate: mean - (stdev *
+	// success_rate_stdev_factor). This factor is divided by a thousand to
+	// get a double. That is, if the desired factor is 1.9, the runtime
+	// value should be 1900. Defaults to 1900.
+	SuccessRateStdevFactor int64    `json:"successRateStdevFactor,omitempty"`
+	ForceSendFields        []string `json:"-"`
+	NullFields             []string `json:"-"`
+}
+
 // PathMatcher is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type PathMatcher struct {
+	// defaultRouteAction takes effect when none of the  pathRules or
+	// routeRules match. The load balancer performs advanced routing actions
+	// like URL rewrites, header transformations, etc. prior to forwarding
+	// the request to the selected backend. If defaultRouteAction specifies
+	// any weightedBackendServices, defaultService must not be set.
+	// Conversely if defaultService is set, defaultRouteAction cannot
+	// contain any  weightedBackendServices.
+	// Only one of defaultRouteAction or defaultUrlRedirect must be set.
+	DefaultRouteAction *HttpRouteAction `json:"defaultRouteAction,omitempty"`
 	// The full or partial URL to the BackendService resource. This will be
-	// used if none of the pathRules defined by this PathMatcher is matched
-	// by the URL's path portion. For example, the following are all valid
+	// used if none of the pathRules or routeRules defined by this
+	// PathMatcher are matched. For example, the following are all valid
 	// URLs to a BackendService resource:
 	// -
 	// https://www.googleapis.com/compute/v1/projects/project/global/backendServices/backendService
 	// - compute/v1/projects/project/global/backendServices/backendService
 	//
-	// - global/backendServices/backendService
+	// - global/backendServices/backendService  If defaultRouteAction is
+	// additionally specified, advanced routing actions like URL Rewrites,
+	// etc. take effect prior to sending the request to the backend.
+	// However, if defaultService is specified, defaultRouteAction cannot
+	// contain any weightedBackendServices. Conversely, if
+	// defaultRouteAction specifies any weightedBackendServices,
+	// defaultService must not be specified.
+	// Only one of defaultService, defaultUrlRedirect  or
+	// defaultRouteAction.weightedBackendService must be set.
+	// Authorization requires one or more of the following Google IAM
+	// permissions on the specified resource default_service:
+	// - compute.backendBuckets.use
+	// - compute.backendServices.use
 	DefaultService string `json:"defaultService,omitempty"`
+	// When when none of the specified pathRules or routeRules match, the
+	// request is redirected to a URL specified by defaultUrlRedirect.
+	// If defaultUrlRedirect is specified, defaultService or
+	// defaultRouteAction must not be set.
+	DefaultUrlRedirect *HttpRedirectAction `json:"defaultUrlRedirect,omitempty"`
 	// An optional description of this resource. Provide this property when
 	// you create the resource.
 	Description string `json:"description,omitempty"`
+	// Specifies changes to request and response headers that need to take
+	// effect for the selected backendService.
+	// HeaderAction specified here are applied after the matching
+	// HttpRouteRule HeaderAction and before the HeaderAction in the UrlMap
+	HeaderAction *HttpHeaderAction `json:"headerAction,omitempty"`
 	// The name to which this PathMatcher is referred by the HostRule.
 	Name string `json:"name,omitempty"`
-	// The list of path rules.
-	PathRules       []*PathRule `json:"pathRules,omitempty"`
-	ForceSendFields []string    `json:"-"`
-	NullFields      []string    `json:"-"`
+	// The list of path rules. Use this list instead of routeRules when
+	// routing based on simple path matching is all that's required. The
+	// order by which path rules are specified does not matter. Matches are
+	// always done on the longest-path-first basis.
+	// For example: a pathRule with a path /a/b/c/* will match before /a/b/*
+	// irrespective of the order in which those paths appear in this
+	// list.
+	// Only one of pathRules or routeRules must be set.
+	PathRules []*PathRule `json:"pathRules,omitempty"`
+	// The list of ordered HTTP route rules. Use this list instead of
+	// pathRules when advanced route matching and routing actions are
+	// desired. The order of specifying routeRules matters: the first rule
+	// that matches will cause its specified routing action to take
+	// effect.
+	// Only one of pathRules or routeRules must be set.
+	RouteRules      []*HttpRouteRule `json:"routeRules,omitempty"`
+	ForceSendFields []string         `json:"-"`
+	NullFields      []string         `json:"-"`
 }
 
 // PathRule is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
@@ -862,8 +1800,125 @@ type PathRule struct {
 	// to the path matcher does not include any text after the first ? or #,
 	// and those chars are not allowed here.
 	Paths []string `json:"paths,omitempty"`
-	// The URL of the BackendService resource if this rule is matched.
-	Service         string   `json:"service,omitempty"`
+	// In response to a matching path, the load balancer performs advanced
+	// routing actions like URL rewrites, header transformations, etc. prior
+	// to forwarding the request to the selected backend. If routeAction
+	// specifies any  weightedBackendServices, service must not be set.
+	// Conversely if service is set, routeAction cannot contain any
+	// weightedBackendServices.
+	// Only one of routeAction or urlRedirect must be set.
+	RouteAction *HttpRouteAction `json:"routeAction,omitempty"`
+	// The full or partial URL of the backend service resource to which
+	// traffic is directed if this rule is matched. If routeAction is
+	// additionally specified, advanced routing actions like URL Rewrites,
+	// etc. take effect prior to sending the request to the backend.
+	// However, if service is specified, routeAction cannot contain any
+	// weightedBackendService s. Conversely, if routeAction specifies any
+	// weightedBackendServices, service must not be specified.
+	// Only one of urlRedirect, service or
+	// routeAction.weightedBackendService must be set.
+	Service string `json:"service,omitempty"`
+	// When a path pattern is matched, the request is redirected to a URL
+	// specified by urlRedirect.
+	// If urlRedirect is specified, service or routeAction must not be set.
+	UrlRedirect     *HttpRedirectAction `json:"urlRedirect,omitempty"`
+	ForceSendFields []string            `json:"-"`
+	NullFields      []string            `json:"-"`
+}
+
+// PeerAuthenticationMethod is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type PeerAuthenticationMethod struct {
+	// Set if mTLS is used for peer authentication.
+	Mtls            *MutualTls `json:"mtls,omitempty"`
+	ForceSendFields []string   `json:"-"`
+	NullFields      []string   `json:"-"`
+}
+
+// Permission is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type Permission struct {
+	// Extra custom constraints. The constraints are ANDed together.
+	Constraints []*PermissionConstraint `json:"constraints,omitempty"`
+	// Used in Ingress or Egress Gateway cases to specify hosts that the
+	// policy applies to. Exact match, prefix match, and suffix match are
+	// supported.
+	Hosts []string `json:"hosts,omitempty"`
+	// HTTP method.
+	Methods []string `json:"methods,omitempty"`
+	// Negate of hosts. Specifies exclusions.
+	NotHosts []string `json:"notHosts,omitempty"`
+	// Negate of methods. Specifies exclusions.
+	NotMethods []string `json:"notMethods,omitempty"`
+	// Negate of paths. Specifies exclusions.
+	NotPaths []string `json:"notPaths,omitempty"`
+	// Negate of ports. Specifies exclusions.
+	NotPorts []string `json:"notPorts,omitempty"`
+	// HTTP request paths or gRPC methods. Exact match, prefix match, and
+	// suffix match are supported.
+	Paths []string `json:"paths,omitempty"`
+	// Port names or numbers.
+	Ports           []string `json:"ports,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// PermissionConstraint is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type PermissionConstraint struct {
+	// Key of the constraint.
+	Key string `json:"key,omitempty"`
+	// A list of allowed values.
+	Values          []string `json:"values,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// Principal is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type Principal struct {
+	// An expression to specify custom condition.
+	Condition string `json:"condition,omitempty"`
+	// The groups the principal belongs to. Exact match, prefix match, and
+	// suffix match are supported.
+	Groups []string `json:"groups,omitempty"`
+	// IPv4 or IPv6 address or range (In CIDR format)
+	Ips []string `json:"ips,omitempty"`
+	// The namespaces. Exact match, prefix match, and suffix match are
+	// supported.
+	Namespaces []string `json:"namespaces,omitempty"`
+	// Negate of groups. Specifies exclusions.
+	NotGroups []string `json:"notGroups,omitempty"`
+	// Negate of IPs. Specifies exclusions.
+	NotIps []string `json:"notIps,omitempty"`
+	// Negate of namespaces. Specifies exclusions.
+	NotNamespaces []string `json:"notNamespaces,omitempty"`
+	// Negate of users. Specifies exclusions.
+	NotUsers []string `json:"notUsers,omitempty"`
+	// A map of Istio attribute to expected values. Exact match, prefix
+	// match, and suffix match are supported for values. For example,
+	// `request.headers[version]: ?v1?`. The properties are ANDed together.
+	Properties map[string]string `json:"properties,omitempty"`
+	// The user names/IDs or service accounts. Exact match, prefix match,
+	// and suffix match are supported.
+	Users           []string `json:"users,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// RbacPolicy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type RbacPolicy struct {
+	// Name of the RbacPolicy.
+	Name string `json:"name,omitempty"`
+	// The list of permissions.
+	Permissions []*Permission `json:"permissions,omitempty"`
+	// The list of principals.
+	Principals      []*Principal `json:"principals,omitempty"`
+	ForceSendFields []string     `json:"-"`
+	NullFields      []string     `json:"-"`
+}
+
+// RequestMirrorPolicy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type RequestMirrorPolicy struct {
+	// The full or partial URL to the BackendService resource being mirrored
+	// to.
+	BackendService  string   `json:"backendService,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
 }
@@ -911,6 +1966,52 @@ type SSLHealthCheck struct {
 	Response        string   `json:"response,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
+}
+
+// SdsConfig is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type SdsConfig struct {
+	// The configuration to access the SDS server over GRPC.
+	GrpcServiceConfig *GrpcServiceConfig `json:"grpcServiceConfig,omitempty"`
+	ForceSendFields   []string           `json:"-"`
+	NullFields        []string           `json:"-"`
+}
+
+// SecuritySettings is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type SecuritySettings struct {
+	// Authentication policy defines what authentication methods can be
+	// accepted on backends, and if authenticated, which method/certificate
+	// will set the request principal.
+	AuthenticationPolicy *AuthenticationPolicy `json:"authenticationPolicy,omitempty"`
+	// Authorization config defines the Role Based Access Control (RBAC)
+	// config.
+	AuthorizationConfig *AuthorizationConfig `json:"authorizationConfig,omitempty"`
+	// TLS Settings for the backend service.
+	ClientTlsSettings *ClientTlsSettings `json:"clientTlsSettings,omitempty"`
+	// The listener config of the XDS client is generated if the selector
+	// matches the client.
+	ServerSettingsSelector *ServerSecuritySettingsSelector `json:"serverSettingsSelector,omitempty"`
+	ForceSendFields        []string                        `json:"-"`
+	NullFields             []string                        `json:"-"`
+}
+
+// ServerSecuritySettingsSelector is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type ServerSecuritySettingsSelector struct {
+	// The labels associated with the XDS client.
+	LabelMatches []*MetadataFilterLabelMatch `json:"labelMatches,omitempty"`
+	// The listener port of the XDS client.
+	Port            int64    `json:"port,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// ServiceAccountJwtAccessCredentials is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type ServiceAccountJwtAccessCredentials struct {
+	// Service account key.
+	JsonKey string `json:"jsonKey,omitempty"`
+	// The token lifetime seconds.
+	TokenLifetimeSeconds int64    `json:"tokenLifetimeSeconds,omitempty,string"`
+	ForceSendFields      []string `json:"-"`
+	NullFields           []string `json:"-"`
 }
 
 // TCPHealthCheck is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
@@ -987,11 +2088,18 @@ type TargetHttpProxy struct {
 	// characters must be a dash, lowercase letter, or digit, except the
 	// last character, which cannot be a dash.
 	Name string `json:"name,omitempty"`
+	// This field only applies when the loadBalancingScheme is
+	// INTERNAL_SELF_MANAGED. When set to true the Envoy binds on the IP
+	// address specified by the forwarding rule. Default is false.
+	ProxyBind bool `json:"proxyBind,omitempty"`
 	// [Output Only] URL of the region where the regional Target HTTP Proxy
 	// resides. This field is not applicable to global Target HTTP Proxies.
 	Region string `json:"region,omitempty"`
 	// [Output Only] Server-defined URL for the resource.
 	SelfLink string `json:"selfLink,omitempty"`
+	// [Output Only] Server-defined URL for this resource with the resource
+	// id.
+	SelfLinkWithId string `json:"selfLinkWithId,omitempty"`
 	// URL to the UrlMap resource that defines the mapping from URL to the
 	// BackendService.
 	UrlMap                   string `json:"urlMap,omitempty"`
@@ -1029,6 +2137,10 @@ type TargetHttpsProxy struct {
 	// characters must be a dash, lowercase letter, or digit, except the
 	// last character, which cannot be a dash.
 	Name string `json:"name,omitempty"`
+	// This field only applies when the loadBalancingScheme is
+	// INTERNAL_SELF_MANAGED. When set to true the Envoy binds on the IP
+	// address specified by the forwarding rule. Default is false.
+	ProxyBind bool `json:"proxyBind,omitempty"`
 	// Specifies the QUIC override policy for this TargetHttpsProxy
 	// resource. This determines whether the load balancer will attempt to
 	// negotiate QUIC with clients or not. Can specify one of NONE, ENABLE,
@@ -1043,9 +2155,13 @@ type TargetHttpsProxy struct {
 	Region string `json:"region,omitempty"`
 	// [Output Only] Server-defined URL for the resource.
 	SelfLink string `json:"selfLink,omitempty"`
+	// [Output Only] Server-defined URL for this resource with the resource
+	// id.
+	SelfLinkWithId string `json:"selfLinkWithId,omitempty"`
 	// URLs to SslCertificate resources that are used to authenticate
-	// connections between users and the load balancer. Currently, exactly
-	// one SSL certificate must be specified.
+	// connections between users and the load balancer. At least one SSL
+	// certificate must be specified. Currently, you may specify up to 15
+	// SSL certificates.
 	SslCertificates []string `json:"sslCertificates,omitempty"`
 	// URL of SslPolicy resource that will be associated with the
 	// TargetHttpsProxy resource. If not set, the TargetHttpsProxy resource
@@ -1062,6 +2178,57 @@ type TargetHttpsProxy struct {
 	googleapi.ServerResponse `json:"-"`
 	ForceSendFields          []string `json:"-"`
 	NullFields               []string `json:"-"`
+}
+
+// TlsCertificateContext is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type TlsCertificateContext struct {
+	// Specifies the certificate and private key paths. This field is
+	// applicable only if tlsCertificateSource is set to USE_PATH.
+	CertificatePaths *TlsCertificatePaths `json:"certificatePaths,omitempty"`
+	// Defines how TLS certificates are obtained.
+	CertificateSource string `json:"certificateSource,omitempty"`
+	// Specifies the config to retrieve certificates through SDS. This field
+	// is applicable only if tlsCertificateSource is set to USE_SDS.
+	SdsConfig       *SdsConfig `json:"sdsConfig,omitempty"`
+	ForceSendFields []string   `json:"-"`
+	NullFields      []string   `json:"-"`
+}
+
+// TlsCertificatePaths is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type TlsCertificatePaths struct {
+	// The path to the file holding the client or server TLS certificate to
+	// use.
+	CertificatePath string `json:"certificatePath,omitempty"`
+	// The path to the file holding the client or server private key.
+	PrivateKeyPath  string   `json:"privateKeyPath,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// TlsContext is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type TlsContext struct {
+	// Defines the mechanism to obtain the client or server certificate.
+	CertificateContext *TlsCertificateContext `json:"certificateContext,omitempty"`
+	// Defines the mechanism to obtain the Certificate Authority certificate
+	// to validate the client/server certificate. If omitted, the proxy will
+	// not validate the server or client certificate.
+	ValidationContext *TlsValidationContext `json:"validationContext,omitempty"`
+	ForceSendFields   []string              `json:"-"`
+	NullFields        []string              `json:"-"`
+}
+
+// TlsValidationContext is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type TlsValidationContext struct {
+	// The path to the file holding the CA certificate to validate the
+	// client or server certificate.
+	CertificatePath string `json:"certificatePath,omitempty"`
+	// Specifies the config to retrieve certificates through SDS. This field
+	// is applicable only if tlsCertificateSource is set to USE_SDS.
+	SdsConfig *SdsConfig `json:"sdsConfig,omitempty"`
+	// Defines how TLS certificates are obtained.
+	ValidationSource string   `json:"validationSource,omitempty"`
+	ForceSendFields  []string `json:"-"`
+	NullFields       []string `json:"-"`
 }
 
 // UDPHealthCheck is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
@@ -1094,20 +2261,48 @@ type UrlMap struct {
 
 	// [Output Only] Creation timestamp in RFC3339 text format.
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
-	// The URL of the BackendService resource if none of the hostRules
-	// match.
+	// defaultRouteAction takes effect when none of the  hostRules match.
+	// The load balancer performs advanced routing actions like URL
+	// rewrites, header transformations, etc. prior to forwarding the
+	// request to the selected backend. If defaultRouteAction specifies any
+	// weightedBackendServices, defaultService must not be set. Conversely
+	// if defaultService is set, defaultRouteAction cannot contain any
+	// weightedBackendServices.
+	// Only one of defaultRouteAction or defaultUrlRedirect must be set.
+	DefaultRouteAction *HttpRouteAction `json:"defaultRouteAction,omitempty"`
+	// The full or partial URL of the defaultService resource to which
+	// traffic is directed if none of the hostRules match. If
+	// defaultRouteAction is additionally specified, advanced routing
+	// actions like URL Rewrites, etc. take effect prior to sending the
+	// request to the backend. However, if defaultService is specified,
+	// defaultRouteAction cannot contain any weightedBackendServices.
+	// Conversely, if routeAction specifies any weightedBackendServices,
+	// service must not be specified.
+	// Only one of defaultService, defaultUrlRedirect  or
+	// defaultRouteAction.weightedBackendService must be set.
 	DefaultService string `json:"defaultService,omitempty"`
+	// When none of the specified hostRules match, the request is redirected
+	// to a URL specified by defaultUrlRedirect.
+	// If defaultUrlRedirect is specified, defaultService or
+	// defaultRouteAction must not be set.
+	DefaultUrlRedirect *HttpRedirectAction `json:"defaultUrlRedirect,omitempty"`
 	// An optional description of this resource. Provide this property when
 	// you create the resource.
 	Description string `json:"description,omitempty"`
 	// Fingerprint of this resource. A hash of the contents stored in this
 	// object. This field is used in optimistic locking. This field will be
 	// ignored when inserting a UrlMap. An up-to-date fingerprint must be
-	// provided in order to update the UrlMap.
+	// provided in order to update the UrlMap, otherwise the request will
+	// fail with error 412 conditionNotMet.
 	//
 	// To see the latest fingerprint, make a get() request to retrieve a
 	// UrlMap.
 	Fingerprint string `json:"fingerprint,omitempty"`
+	// Specifies changes to request and response headers that need to take
+	// effect for the selected backendService.
+	// The headerAction specified here take effect after headerAction
+	// specified under pathMatcher.
+	HeaderAction *HttpHeaderAction `json:"headerAction,omitempty"`
 	// The list of HostRules to use against the URL.
 	HostRules []*HostRule `json:"hostRules,omitempty"`
 	// [Output Only] The unique identifier for the resource. This identifier
@@ -1144,14 +2339,60 @@ type UrlMap struct {
 
 // UrlMapTest is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type UrlMapTest struct {
+	// The weight to use for the supplied host and path when using advanced
+	// routing rules that involve traffic splitting.
+	BackendServiceWeight int64 `json:"backendServiceWeight,omitempty"`
 	// Description of this test case.
 	Description string `json:"description,omitempty"`
+	// The expected URL that should be redirected to for the host and path
+	// being tested.
+	ExpectedUrlRedirect string `json:"expectedUrlRedirect,omitempty"`
 	// Host portion of the URL.
 	Host string `json:"host,omitempty"`
 	// Path portion of the URL.
 	Path string `json:"path,omitempty"`
 	// Expected BackendService resource the given URL should be mapped to.
 	Service         string   `json:"service,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// UrlRewrite is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type UrlRewrite struct {
+	// Prior to forwarding the request to the selected service, the
+	// request's host header is replaced with contents of hostRewrite.
+	// The value must be between 1 and 255 characters.
+	HostRewrite string `json:"hostRewrite,omitempty"`
+	// Prior to forwarding the request to the selected backend service, the
+	// matching portion of the request's path is replaced by
+	// pathPrefixRewrite.
+	// The value must be between 1 and 1024 characters.
+	PathPrefixRewrite string   `json:"pathPrefixRewrite,omitempty"`
+	ForceSendFields   []string `json:"-"`
+	NullFields        []string `json:"-"`
+}
+
+// WeightedBackendService is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type WeightedBackendService struct {
+	// The full or partial URL to the default BackendService resource.
+	// Before forwarding the request to backendService, the loadbalancer
+	// applies any relevant headerActions specified as part of this
+	// backendServiceWeight.
+	BackendService string `json:"backendService,omitempty"`
+	// Specifies changes to request and response headers that need to take
+	// effect for the selected backendService.
+	// headerAction specified here take effect before headerAction in the
+	// enclosing HttpRouteRule, PathMatcher and UrlMap.
+	HeaderAction *HttpHeaderAction `json:"headerAction,omitempty"`
+	// Specifies the fraction of traffic sent to backendService, computed as
+	// weight / (sum of all weightedBackendService weights in routeAction)
+	// .
+	// The selection of a backend service is determined only for new
+	// traffic. Once a user's request has been directed to a backendService,
+	// subsequent requests will be sent to the same backendService as
+	// determined by the BackendService's session affinity policy.
+	// The value must be between 0 and 1000
+	Weight          int64    `json:"weight,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
 }

@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/api/compute/v0.beta"
+	"google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/fake"
@@ -51,9 +51,12 @@ const (
 
 func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 	t.Parallel()
-	fakeCloud := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	negtypes.MockNetworkEndpointAPIs(fakeCloud)
+
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	negtypes.MockNetworkEndpointAPIs(fakeGCE)
+	fakeCloud := negtypes.NewAdapter(fakeGCE)
 	_, transactionSyncer := newTestTransactionSyncer(fakeCloud)
+
 	testCases := []struct {
 		desc            string
 		addEndpoints    map[string]negtypes.NetworkEndpointSet
@@ -173,7 +176,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 // TODO(freehan): instead of only checking sync count. Also check the retry count
 func TestCommitTransaction(t *testing.T) {
 	t.Parallel()
-	s, transactionSyncer := newTestTransactionSyncer(gce.NewFakeGCECloud(gce.DefaultTestClusterValues()))
+	s, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())))
 	// use testSyncer to track the number of Sync got triggered
 	testSyncer := &testSyncer{s.(*syncer), 0}
 	transactionSyncer.syncer = testSyncer
@@ -828,7 +831,7 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 	}
 }
 
-func newTestTransactionSyncer(fakeGCE *gce.Cloud) (negtypes.NegSyncer, *transactionSyncer) {
+func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud) (negtypes.NegSyncer, *transactionSyncer) {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := utils.NewNamer(clusterID, "")

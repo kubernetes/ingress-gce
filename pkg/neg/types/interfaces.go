@@ -17,7 +17,7 @@ limitations under the License.
 package types
 
 import (
-	computebeta "google.golang.org/api/compute/v0.beta"
+	compute "google.golang.org/api/compute/v1"
 )
 
 // ZoneGetter is an interface for retrieve zone related information
@@ -28,14 +28,14 @@ type ZoneGetter interface {
 
 // NetworkEndpointGroupCloud is an interface for managing gce network endpoint group.
 type NetworkEndpointGroupCloud interface {
-	GetNetworkEndpointGroup(name string, zone string) (*computebeta.NetworkEndpointGroup, error)
-	ListNetworkEndpointGroup(zone string) ([]*computebeta.NetworkEndpointGroup, error)
-	AggregatedListNetworkEndpointGroup() (map[string][]*computebeta.NetworkEndpointGroup, error)
-	CreateNetworkEndpointGroup(neg *computebeta.NetworkEndpointGroup, zone string) error
+	GetNetworkEndpointGroup(name string, zone string) (*compute.NetworkEndpointGroup, error)
+	ListNetworkEndpointGroup(zone string) ([]*compute.NetworkEndpointGroup, error)
+	AggregatedListNetworkEndpointGroup() (map[string][]*compute.NetworkEndpointGroup, error)
+	CreateNetworkEndpointGroup(neg *compute.NetworkEndpointGroup, zone string) error
 	DeleteNetworkEndpointGroup(name string, zone string) error
-	AttachNetworkEndpoints(name, zone string, endpoints []*computebeta.NetworkEndpoint) error
-	DetachNetworkEndpoints(name, zone string, endpoints []*computebeta.NetworkEndpoint) error
-	ListNetworkEndpoints(name, zone string, showHealthStatus bool) ([]*computebeta.NetworkEndpointWithHealthStatus, error)
+	AttachNetworkEndpoints(name, zone string, endpoints []*compute.NetworkEndpoint) error
+	DetachNetworkEndpoints(name, zone string, endpoints []*compute.NetworkEndpoint) error
+	ListNetworkEndpoints(name, zone string, showHealthStatus bool) ([]*compute.NetworkEndpointWithHealthStatus, error)
 	NetworkURL() string
 	SubnetworkURL() string
 }
