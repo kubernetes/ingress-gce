@@ -15,6 +15,7 @@ package backends
 
 import (
 	"fmt"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"net/http"
 	"strings"
 
@@ -74,23 +75,24 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	beName := sp.BackendName(s.namer)
 	version := features.VersionFromServicePort(&sp)
 
-	be, getErr := s.backendPool.Get(beName, version)
+	be, getErr := s.backendPool.Get(beName, version, sp.ILBEnabled)
 	hasLegacyHC := false
 	if be != nil {
 		// If the backend already exists, find out if it is using a legacy health check.
 		existingHCLink := getHealthCheckLink(be)
+		klog.V(3).Infof("Got exisiting HCLink: %v", existingHCLink)
 		if strings.Contains(existingHCLink, "/httpHealthChecks/") {
 			hasLegacyHC = true
 		}
 	}
 
 	// Ensure health check for backend service exists.
-	hcLink, err := s.ensureHealthCheck(sp, hasLegacyHC)
+	hcLink, err := s.ensureHealthCheck(sp, hasLegacyHC, sp.ILBEnabled)
 	if err != nil {
-		return err
+		return fmt.Errorf("error ensuring health check: %v", err)
 	}
 
-	// Verify existance of a backend service for the proper port
+	// Verify existence of a backend service for the proper port
 	// but do not specify any backends for it (IG / NEG).
 	if getErr != nil {
 		if !utils.IsNotFoundError(getErr) {
@@ -139,21 +141,26 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
 		knownPorts.Insert(name)
 	}
 
-	backendNames, err := s.backendPool.List()
+	backends, err := s.backendPool.List()
 	if err != nil {
 		return fmt.Errorf("error getting the names of controller-managed backends: %v", err)
 	}
 
-	for _, name := range backendNames {
+	for _, be := range backends {
+		name := be.Name
 		if knownPorts.Has(name) {
 			continue
 		}
 
 		klog.V(3).Infof("GCing backendService for port %s", name)
-		if err := s.backendPool.Delete(name); err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+		regional, err := composite.IsRegionalResource(be.SelfLink)
+		if err != nil {
 			return err
 		}
-		if err := s.healthChecker.Delete(name); err != nil {
+		if err := s.backendPool.Delete(name, regional); err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+			return err
+		}
+		if err := s.healthChecker.Delete(name, regional); err != nil {
 			return err
 		}
 	}
@@ -161,8 +168,8 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
 }
 
 // Status implements Syncer.
-func (s *backendSyncer) Status(name string) string {
-	return s.backendPool.Health(name)
+func (s *backendSyncer) Status(name string, version meta.Version, regional bool) string {
+	return s.backendPool.Health(name, version, regional)
 }
 
 // Shutdown implements Syncer.
@@ -173,15 +180,16 @@ func (s *backendSyncer) Shutdown() error {
 	return nil
 }
 
-func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort, hasLegacyHC bool) (string, error) {
+func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort, hasLegacyHC bool, isInternalLB bool) (string, error) {
 	if hasLegacyHC {
 		klog.Errorf("Backend %+v has legacy health check", sp.ID)
 	}
+	//klog.V(3).Infof("ensuring health check: %v, hasLegacyHC=%v, isInternalLB=%v", pretty.Sprint(sp), hasLegacyHC, isInternalLB)
 	hc := s.healthChecker.New(sp)
 	if s.prober != nil {
 		probe, err := s.prober.GetProbe(sp)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("Error getting prober: %v", err)
 		}
 		if probe != nil {
 			klog.V(4).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
@@ -235,6 +243,7 @@ func applyProbeSettingsToHC(p *v1.Probe, hc *healthchecks.HealthCheck) {
 			break
 		}
 	}
+
 	hc.RequestPath = healthPath
 	hc.Host = host
 	hc.Description = "Kubernetes L7 health check generated with readiness probe settings."

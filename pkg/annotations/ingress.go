@@ -54,6 +54,7 @@ const (
 	IngressClassKey      = "kubernetes.io/ingress.class"
 	GceIngressClass      = "gce"
 	GceMultiIngressClass = "gce-multi-cluster"
+	GceILBIngressClass   = "gce-l7-ilb"
 
 	// Label key to denote which GCE zone a Kubernetes node is in.
 	ZoneKey     = "failure-domain.beta.kubernetes.io/zone"

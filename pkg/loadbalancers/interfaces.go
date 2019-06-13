@@ -17,61 +17,66 @@ limitations under the License.
 package loadbalancers
 
 import (
-	compute "google.golang.org/api/compute/v1"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"google.golang.org/api/compute/v1"
+	"k8s.io/ingress-gce/pkg/composite"
 )
 
 // LoadBalancers is an interface for managing all the gce resources needed by L7
 // loadbalancers. We don't have individual pools for each of these resources
-// because none of them are usable (or acquirable) stand-alone, unlinke backends
+// because none of them are usable (or acquirable) stand-alone, unlike backends
 // and instance groups. The dependency graph:
 // ForwardingRule -> UrlMaps -> TargetProxies
 type LoadBalancers interface {
-	// Forwarding Rules
-	GetGlobalForwardingRule(name string) (*compute.ForwardingRule, error)
-	CreateGlobalForwardingRule(rule *compute.ForwardingRule) error
-	DeleteGlobalForwardingRule(name string) error
-	SetProxyForGlobalForwardingRule(fw, proxy string) error
-	ListGlobalForwardingRules() ([]*compute.ForwardingRule, error)
+	// ForwardingRules
+	CreateForwardingRule(forwardingRule *composite.ForwardingRule, key *meta.Key) error
+	GetForwardingRule(version meta.Version, key *meta.Key) (*composite.ForwardingRule, error)
+	DeleteForwardingRule(version meta.Version, key *meta.Key) error
+	ListForwardingRules(version meta.Version, key *meta.Key) ([]*composite.ForwardingRule, error)
+	SetProxyForForwardingRule(forwardingRule *composite.ForwardingRule, key *meta.Key, targetProxyLink string) error
 
-	// UrlMaps
-	GetURLMap(name string) (*compute.UrlMap, error)
-	CreateURLMap(urlMap *compute.UrlMap) error
-	UpdateURLMap(urlMap *compute.UrlMap) error
-	DeleteURLMap(name string) error
-	ListURLMaps() ([]*compute.UrlMap, error)
-
-	// TargetProxies
-	GetTargetHTTPProxy(name string) (*compute.TargetHttpProxy, error)
-	CreateTargetHTTPProxy(proxy *compute.TargetHttpProxy) error
-	DeleteTargetHTTPProxy(name string) error
-	SetURLMapForTargetHTTPProxy(proxy *compute.TargetHttpProxy, urlMapLink string) error
+	// TargetHttpProxies
+	CreateTargetHttpProxy(targetHttpProxy *composite.TargetHttpProxy, key *meta.Key) error
+	GetTargetHttpProxy(version meta.Version, key *meta.Key) (*composite.TargetHttpProxy, error)
+	DeleteTargetHttpProxy(version meta.Version, key *meta.Key) error
+	SetUrlMapForTargetHttpProxy(proxy *composite.TargetHttpProxy, urlMapLink string, key *meta.Key) error
 
 	// TargetHttpsProxies
-	GetTargetHTTPSProxy(name string) (*compute.TargetHttpsProxy, error)
-	CreateTargetHTTPSProxy(proxy *compute.TargetHttpsProxy) error
-	DeleteTargetHTTPSProxy(name string) error
-	SetURLMapForTargetHTTPSProxy(proxy *compute.TargetHttpsProxy, urlMapLink string) error
-	SetSslCertificateForTargetHTTPSProxy(proxy *compute.TargetHttpsProxy, sslCertURLs []string) error
+	CreateTargetHttpsProxy(targetHttpsProxy *composite.TargetHttpsProxy, key *meta.Key) error
+	GetTargetHttpsProxy(version meta.Version, key *meta.Key) (*composite.TargetHttpsProxy, error)
+	DeleteTargetHttpsProxy(version meta.Version, key *meta.Key) error
+	SetSslCertificateForTargetHttpsProxy(targetHttpsProxy *composite.TargetHttpsProxy, sslCertURLs []string, key *meta.Key) error
+	SetUrlMapForTargetHttpsProxy(targetHttpsProxy *composite.TargetHttpsProxy, urlMapLink string, key *meta.Key) error
+
+	// UrlMaps
+	CreateUrlMap(urlMap *composite.UrlMap, key *meta.Key) error
+	GetUrlMap(version meta.Version, key *meta.Key) (*composite.UrlMap, error)
+	UpdateUrlMap(urlMap *composite.UrlMap, key *meta.Key) error
+	DeleteUrlMap(version meta.Version, key *meta.Key) error
+	ListUrlMaps(version meta.Version, key *meta.Key) ([]*composite.UrlMap, error)
 
 	// SslCertificates
-	GetSslCertificate(name string) (*compute.SslCertificate, error)
-	ListSslCertificates() ([]*compute.SslCertificate, error)
-	CreateSslCertificate(certs *compute.SslCertificate) (*compute.SslCertificate, error)
-	DeleteSslCertificate(name string) error
+	GetSslCertificate(version meta.Version, key *meta.Key) (*composite.SslCertificate, error)
+	CreateSslCertificate(sslCertificate *composite.SslCertificate, key *meta.Key) error
+	DeleteSslCertificate(version meta.Version, key *meta.Key) error
+	ListSslCertificates(version meta.Version, key *meta.Key) ([]*composite.SslCertificate, error)
 
 	// Static IP
-
 	ReserveGlobalAddress(addr *compute.Address) error
 	GetGlobalAddress(name string) (*compute.Address, error)
 	DeleteGlobalAddress(name string) error
+
+	// Helpers
+	CreateKey(name string, regional bool) *meta.Key
+	ListAllUrlMaps() ([]*composite.UrlMap, error)
 }
 
 // LoadBalancerPool is an interface to manage the cloud resources associated
 // with a gce loadbalancer.
 type LoadBalancerPool interface {
 	Ensure(ri *L7RuntimeInfo) (*L7, error)
-	Delete(name string) error
+	Delete(name string, regional bool) error
 	GC(names []string) error
 	Shutdown() error
-	List() ([]string, error)
+	List() ([]string, []bool, error)
 }

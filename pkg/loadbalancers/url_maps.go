@@ -20,9 +20,10 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/ingress-gce/pkg/composite"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
-	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -41,16 +42,24 @@ func (l *L7) ensureComputeURLMap() error {
 	}
 
 	// Every update replaces the entire urlmap.
-	expectedMap := toComputeURLMap(l.Name, l.runtimeInfo.UrlMap, l.namer)
+	key := l.CreateKey("")
+	expectedMap := toCompositeURLMap(l.Name, l.runtimeInfo.UrlMap, l.namer, key)
+	key.Name = expectedMap.Name
 
-	currentMap, err := l.cloud.GetURLMap(expectedMap.Name)
+	// Update URLMap for L7-ILB
+	if key.Region != "" {
+		expectedMap.Version = meta.VersionAlpha
+		expectedMap.Region = key.Region
+	}
+
+	currentMap, err := l.cloud.GetUrlMap(l.version, key)
 	if utils.IgnoreHTTPNotFound(err) != nil {
 		return err
 	}
 
 	if currentMap == nil {
 		klog.V(3).Infof("Creating URLMap %q", expectedMap.Name)
-		if err := l.cloud.CreateURLMap(expectedMap); err != nil {
+		if err := l.cloud.CreateUrlMap(expectedMap, key); err != nil {
 			return fmt.Errorf("CreateUrlMap: %v", err)
 		}
 		l.um = expectedMap
@@ -65,7 +74,7 @@ func (l *L7) ensureComputeURLMap() error {
 
 	klog.V(3).Infof("Updating URLMap for %q", l.Name)
 	expectedMap.Fingerprint = currentMap.Fingerprint
-	if err := l.cloud.UpdateURLMap(expectedMap); err != nil {
+	if err := l.cloud.UpdateUrlMap(expectedMap, key); err != nil {
 		return fmt.Errorf("UpdateURLMap: %v", err)
 	}
 
@@ -74,7 +83,7 @@ func (l *L7) ensureComputeURLMap() error {
 }
 
 // getBackendNames returns the names of backends in this L7 urlmap.
-func getBackendNames(computeURLMap *compute.UrlMap) ([]string, error) {
+func getBackendNames(computeURLMap *composite.UrlMap) ([]string, error) {
 	beNames := sets.NewString()
 	for _, pathMatcher := range computeURLMap.PathMatchers {
 		name, err := utils.KeyName(pathMatcher.DefaultService)
@@ -105,7 +114,7 @@ func getBackendNames(computeURLMap *compute.UrlMap) ([]string, error) {
 // mapsEqual compares the structure of two compute.UrlMaps.
 // The service strings are parsed and compared as resource paths (such as
 // "global/backendServices/my-service") to ignore variables: endpoint, version, and project.
-func mapsEqual(a, b *compute.UrlMap) bool {
+func mapsEqual(a, b *composite.UrlMap) bool {
 	if !utils.EqualResourcePaths(a.DefaultService, b.DefaultService) {
 		return false
 	}
@@ -167,7 +176,7 @@ func mapsEqual(a, b *compute.UrlMap) bool {
 	return true
 }
 
-// toComputeURLMap translates the given hostname: endpoint->port mapping into a gce url map.
+// toCompositeURLMap translates the given hostname: endpoint->port mapping into a gce url map.
 //
 // HostRule: Conceptually contains all PathRules for a given host.
 // PathMatcher: Associates a path rule with a host rule. Mostly an optimization.
@@ -208,11 +217,14 @@ func mapsEqual(a, b *compute.UrlMap) bool {
 // and remove the mapping. When a new path is added to a host (happens
 // more frequently than service deletion) we just need to lookup the 1
 // pathmatcher of the host.
-func toComputeURLMap(lbName string, g *utils.GCEURLMap, namer *utils.Namer) *compute.UrlMap {
+func toCompositeURLMap(lbName string, g *utils.GCEURLMap, namer *utils.Namer, key *meta.Key) *composite.UrlMap {
 	defaultBackendName := g.DefaultBackend.BackendName(namer)
-	m := &compute.UrlMap{
+	key.Name = defaultBackendName
+	//resourceID := cloud.ResourceID{"", "backendServices", meta.GlobalKey(defaultBackendName)}
+	resourceID := cloud.ResourceID{ProjectID: "", Resource: "backendServices", Key: key}
+	m := &composite.UrlMap{
 		Name:           namer.UrlMap(lbName),
-		DefaultService: cloud.NewBackendServicesResourceID("", defaultBackendName).ResourcePath(),
+		DefaultService: resourceID.ResourcePath(),
 	}
 
 	for _, hostRule := range g.HostRules {
@@ -220,22 +232,24 @@ func toComputeURLMap(lbName string, g *utils.GCEURLMap, namer *utils.Namer) *com
 		// Create a path matcher
 		// Add all given endpoint:backends to pathRules in path matcher
 		pmName := getNameForPathMatcher(hostRule.Hostname)
-		m.HostRules = append(m.HostRules, &compute.HostRule{
+		m.HostRules = append(m.HostRules, &composite.HostRule{
 			Hosts:       []string{hostRule.Hostname},
 			PathMatcher: pmName,
 		})
 
-		pathMatcher := &compute.PathMatcher{
+		pathMatcher := &composite.PathMatcher{
 			Name:           pmName,
 			DefaultService: m.DefaultService,
-			PathRules:      []*compute.PathRule{},
+			PathRules:      []*composite.PathRule{},
 		}
 
 		// GCE ensures that matched rule with longest prefix wins.
 		for _, rule := range hostRule.Paths {
 			beName := rule.Backend.BackendName(namer)
-			beLink := cloud.NewBackendServicesResourceID("", beName).ResourcePath()
-			pathMatcher.PathRules = append(pathMatcher.PathRules, &compute.PathRule{
+			key.Name = beName
+			resourceID := cloud.ResourceID{ProjectID: "", Resource: "backendServices", Key: key}
+			beLink := resourceID.ResourcePath()
+			pathMatcher.PathRules = append(pathMatcher.PathRules, &composite.PathRule{
 				Paths:   []string{rule.Path},
 				Service: beLink,
 			})

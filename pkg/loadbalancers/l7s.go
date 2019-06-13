@@ -18,12 +18,12 @@ package loadbalancers
 
 import (
 	"fmt"
-
-	"k8s.io/klog"
-
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 // L7s implements LoadBalancerPool.
@@ -59,6 +59,15 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 		recorder:    l.recorderProducer.Recorder(ri.Ingress.Namespace),
 	}
 
+	if utils.IsGCEILBIngress(ri.Ingress) {
+		// All L7-ILB resources are alpha and regional
+		lb.version = ILBVersion
+		lb.resourceType = meta.Regional
+	} else {
+		lb.version = meta.VersionGA
+		lb.resourceType = meta.Global
+	}
+
 	if err := lb.edgeHop(); err != nil {
 		return nil, fmt.Errorf("loadbalancer %v does not exist: %v", lb.Name, err)
 	}
@@ -66,12 +75,17 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 }
 
 // Delete deletes a load balancer by name.
-func (l *L7s) Delete(name string) error {
+func (l *L7s) Delete(name string, regional bool) error {
 	lb := &L7{
 		runtimeInfo: &L7RuntimeInfo{Name: name},
 		Name:        l.namer.LoadBalancer(name),
 		cloud:       l.cloud,
 		namer:       l.namer,
+	}
+
+	if regional {
+		lb.resourceType = meta.Regional
+		lb.version = ILBVersion
 	}
 
 	klog.V(3).Infof("Deleting lb %v", lb.Name)
@@ -83,12 +97,13 @@ func (l *L7s) Delete(name string) error {
 
 // List returns a list of names of L7 resources, by listing all URL maps and
 // deriving the Loadbalancer name from the URL map name
-func (l *L7s) List() ([]string, error) {
+func (l *L7s) List() ([]string, []bool, error) {
 	var names []string
+	var regional []bool
 
-	urlMaps, err := l.cloud.ListURLMaps()
+	urlMaps, err := l.cloud.ListAllUrlMaps()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	for _, um := range urlMaps {
@@ -96,10 +111,15 @@ func (l *L7s) List() ([]string, error) {
 			nameParts := l.namer.ParseName(um.Name)
 			l7Name := l.namer.LoadBalancerFromLbName(nameParts.LbName)
 			names = append(names, l7Name)
+			isRegional, err := composite.IsRegionalUrlMap(um)
+			if err != nil {
+				return nil, nil, err
+			}
+			regional = append(regional, isRegional)
 		}
 	}
 
-	return names, nil
+	return names, regional, nil
 }
 
 // GC garbage collects loadbalancers not in the input list.
@@ -110,18 +130,18 @@ func (l *L7s) GC(names []string) error {
 	for _, n := range names {
 		knownLoadBalancers.Insert(l.namer.LoadBalancer(n))
 	}
-	pool, err := l.List()
+	pool, regional, err := l.List()
 	if err != nil {
 		return err
 	}
 
 	// Delete unknown loadbalancers
-	for _, name := range pool {
+	for i, name := range pool {
 		if knownLoadBalancers.Has(name) {
 			continue
 		}
 		klog.V(2).Infof("GCing loadbalancer %v", name)
-		if err := l.Delete(name); err != nil {
+		if err := l.Delete(name, regional[i]); err != nil {
 			return err
 		}
 	}

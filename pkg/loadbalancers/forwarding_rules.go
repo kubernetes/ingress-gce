@@ -18,8 +18,9 @@ package loadbalancers
 
 import (
 	"fmt"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/ingress-gce/pkg/composite"
 
-	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
@@ -58,12 +59,12 @@ func (l *L7) checkHttpsForwardingRule() (err error) {
 	return nil
 }
 
-func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *compute.ForwardingRule, err error) {
-	fw, _ = l.cloud.GetGlobalForwardingRule(name)
+func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *composite.ForwardingRule, err error) {
+	fw, _ = l.cloud.GetForwardingRule(l.version, l.CreateKey(name))
 	if fw != nil && (ip != "" && fw.IPAddress != ip || fw.PortRange != portRange) {
 		klog.Warningf("Recreating forwarding rule %v(%v), so it has %v(%v)",
 			fw.IPAddress, fw.PortRange, ip, portRange)
-		if err = utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalForwardingRule(name)); err != nil {
+		if err = utils.IgnoreHTTPNotFound(l.cloud.DeleteForwardingRule(l.version, l.CreateKey(name))); err != nil {
 			return nil, err
 		}
 		fw = nil
@@ -74,18 +75,25 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 		if err != nil {
 			return nil, err
 		}
-		rule := &compute.ForwardingRule{
+		rule := &composite.ForwardingRule{
 			Name:        name,
 			IPAddress:   ip,
 			Target:      proxyLink,
 			PortRange:   portRange,
 			IPProtocol:  "TCP",
 			Description: description,
+			Version:     l.version,
 		}
-		if err = l.cloud.CreateGlobalForwardingRule(rule); err != nil {
+
+		// Update rule for L7-ILB
+		if l.resourceType == meta.Regional {
+			rule.LoadBalancingScheme = "INTERNAL_MANAGED"
+		}
+
+		if err = l.cloud.CreateForwardingRule(rule, l.CreateKey(rule.Name)); err != nil {
 			return nil, err
 		}
-		fw, err = l.cloud.GetGlobalForwardingRule(name)
+		fw, err = l.cloud.GetForwardingRule(l.version, l.CreateKey(name))
 		if err != nil {
 			return nil, err
 		}
@@ -96,7 +104,7 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 	} else {
 		klog.V(3).Infof("Forwarding rule %v has the wrong proxy, setting %v overwriting %v",
 			fw.Name, fw.Target, proxyLink)
-		if err := l.cloud.SetProxyForGlobalForwardingRule(fw.Name, proxyLink); err != nil {
+		if err := l.cloud.SetProxyForForwardingRule(fw, l.CreateKey(fw.Name), proxyLink); err != nil {
 			return nil, err
 		}
 	}

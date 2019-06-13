@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"math/rand"
 	"os"
@@ -124,6 +125,7 @@ func main() {
 	}
 
 	cloud := app.NewGCEClient()
+	compositeCloud := composite.NewCloud(cloud)
 	defaultBackendServicePortID := app.DefaultBackendServicePortID(kubeClient)
 	ctxConfig := ingctx.ControllerContextConfig{
 		Namespace:                     flags.F.WatchNamespace,
@@ -133,7 +135,7 @@ func main() {
 		DefaultBackendHealthCheckPath: flags.F.DefaultSvcHealthCheckPath,
 		FrontendConfigEnabled:         flags.F.EnableFrontendConfig,
 	}
-	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, cloud, namer, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, compositeCloud, namer, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
@@ -197,7 +199,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values())
 
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
-	negController := neg.NewController(negtypes.NewAdapter(ctx.Cloud), ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, neg.NegSyncerType(flags.F.NegSyncerType), flags.F.EnableReadinessReflector)
+	negController := neg.NewController(negtypes.NewAdapter(ctx.Cloud.GceCloud()), ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, neg.NegSyncerType(flags.F.NegSyncerType), flags.F.EnableReadinessReflector)
 
 	go negController.Run(stopCh)
 	klog.V(0).Infof("negController started")

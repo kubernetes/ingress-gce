@@ -266,7 +266,7 @@ func IGLinks(igs []*compute.InstanceGroup) (igLinks []string) {
 func IsGCEIngress(ing *extensions.Ingress) bool {
 	class := annotations.FromIngress(ing).IngressClass()
 	if flags.F.IngressClass == "" {
-		return class == "" || class == annotations.GceIngressClass
+		return class == "" || class == annotations.GceIngressClass || class == annotations.GceILBIngressClass
 	}
 	return class == flags.F.IngressClass
 }
@@ -278,9 +278,14 @@ func IsGCEMultiClusterIngress(ing *extensions.Ingress) bool {
 	return class == annotations.GceMultiIngressClass
 }
 
+func IsGCEILBIngress(ing *extensions.Ingress) bool {
+	class := annotations.FromIngress(ing).IngressClass()
+	return class == annotations.GceILBIngressClass
+}
+
 // IsGLBCIngress returns true if the given Ingress should be processed by GLBC
 func IsGLBCIngress(ing *extensions.Ingress) bool {
-	return IsGCEIngress(ing) || IsGCEMultiClusterIngress(ing)
+	return IsGCEIngress(ing) || IsGCEMultiClusterIngress(ing) || IsGCEILBIngress(ing)
 }
 
 // GetReadyNodeNames returns names of schedulable, ready nodes from the node lister

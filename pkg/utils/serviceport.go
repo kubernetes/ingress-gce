@@ -47,6 +47,7 @@ type ServicePort struct {
 	Protocol      annotations.AppProtocol
 	TargetPort    string
 	NEGEnabled    bool
+	ILBEnabled    bool
 	BackendConfig *backendconfigv1beta1.BackendConfig
 }
 

@@ -33,13 +33,15 @@ const (
 	FeatureSecurityPolicy = "SecurityPolicy"
 	// FeatureNEG defines the feature name of NEG.
 	FeatureNEG = "NEG"
+	// FeatureILB defines the feature name of the l7 internal load balancer
+	FeatureILB = "ILB"
 )
 
 var (
 	// versionToFeatures stores the mapping from the required API
 	// version to feature names.
 	versionToFeatures = map[meta.Version][]string{
-		meta.VersionAlpha: []string{},
+		meta.VersionAlpha: []string{FeatureILB},
 		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureHTTP2},
 	}
 )
@@ -61,6 +63,9 @@ func featuresFromServicePort(sp *utils.ServicePort) []string {
 	}
 	if sp.NEGEnabled {
 		features = append(features, FeatureNEG)
+	}
+	if sp.ILBEnabled {
+		features = append(features, FeatureILB)
 	}
 	// Keep feature names sorted to be consistent.
 	sort.Strings(features)

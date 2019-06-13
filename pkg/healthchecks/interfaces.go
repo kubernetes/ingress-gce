@@ -26,6 +26,7 @@ import (
 )
 
 // HealthCheckProvider is an interface to manage a single GCE health check.
+// TODO: (shance) convert this to use composite types
 type HealthCheckProvider interface {
 	CreateHTTPHealthCheck(hc *compute.HttpHealthCheck) error
 	UpdateHTTPHealthCheck(hc *compute.HttpHealthCheck) error
@@ -48,6 +49,6 @@ type HealthCheckProvider interface {
 type HealthChecker interface {
 	New(sp utils.ServicePort) *HealthCheck
 	Sync(hc *HealthCheck) (string, error)
-	Delete(name string) error
-	Get(name string, version meta.Version) (*HealthCheck, error)
+	Delete(name string, regional bool) error
+	Get(name string, version meta.Version, regional bool) (*HealthCheck, error)
 }

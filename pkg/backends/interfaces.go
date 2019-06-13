@@ -35,17 +35,17 @@ type GroupKey struct {
 // Backend Services.
 type Pool interface {
 	// Get a composite BackendService given a required version.
-	Get(name string, version meta.Version) (*composite.BackendService, error)
+	Get(name string, version meta.Version, regional bool) (*composite.BackendService, error)
 	// Create a composite BackendService and returns it.
 	Create(sp utils.ServicePort, hcLink string) (*composite.BackendService, error)
 	// Update a BackendService given the composite type.
 	Update(be *composite.BackendService) error
 	// Delete a BackendService given its name.
-	Delete(name string) error
+	Delete(name string, regional bool) error
 	// Get the health of a BackendService given its name.
-	Health(name string) string
+	Health(name string, version meta.Version, regional bool) string
 	// Get a list of BackendService names that are managed by this pool.
-	List() ([]string, error)
+	List() ([]*composite.BackendService, error)
 }
 
 // Syncer is an interface to sync Kubernetes services to GCE BackendServices.
@@ -58,7 +58,7 @@ type Syncer interface {
 	// GC garbage collects unused BackendService's
 	GC(svcPorts []utils.ServicePort) error
 	// Status returns the status of a BackendService given its name.
-	Status(name string) string
+	Status(name string, version meta.Version, regional bool) string
 	// Shutdown cleans up all BackendService's previously synced.
 	Shutdown() error
 }

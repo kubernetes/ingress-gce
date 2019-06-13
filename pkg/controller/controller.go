@@ -103,9 +103,9 @@ func NewLoadBalancerController(
 		Interface: ctx.KubeClient.CoreV1().Events(""),
 	})
 
-	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendHealthCheckPath, ctx.ClusterNamer, ctx.DefaultBackendSvcPortID.Service)
-	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer)
-	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
+	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud.GceCloud(), ctx.HealthCheckPath, ctx.DefaultBackendHealthCheckPath, ctx.ClusterNamer, ctx.DefaultBackendSvcPortID.Service)
+	instancePool := instances.NewNodePool(ctx.Cloud.GceCloud(), ctx.ClusterNamer)
+	backendPool := backends.NewPool(ctx.Cloud.GceCloud(), ctx.ClusterNamer)
 
 	lbc := LoadBalancerController{
 		ctx:           ctx,
@@ -118,7 +118,7 @@ func NewLoadBalancerController(
 		instancePool:  instancePool,
 		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx),
 		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.ClusterNamer),
-		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.ClusterNamer),
+		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud.GceCloud()), ctx.ClusterNamer),
 		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool, ctx.ClusterNamer),
 	}
 	lbc.ingSyncer = ingsync.NewIngressSyncer(&lbc)
@@ -235,7 +235,7 @@ func NewLoadBalancerController(
 
 	// Register health check on controller context.
 	ctx.AddHealthCheck("ingress", func() error {
-		_, err := backendPool.Get("foo", meta.VersionGA)
+		_, err := backendPool.Get("foo", meta.VersionGA, false)
 
 		// If this container is scheduled on a node without compute/rw it is
 		// effectively useless, but it is healthy. Reporting it as unhealthy
@@ -297,6 +297,18 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 	return nil
 }
 
+func (lbc *LoadBalancerController) UpdateServicePortsForILB(ingSvcPorts []utils.ServicePort, ing *extensions.Ingress) error {
+	if !utils.IsGCEILBIngress(ing) {
+		return nil
+	}
+
+	for svcPortIdx, _ := range ingSvcPorts {
+		ingSvcPorts[svcPortIdx].ILBEnabled = true
+		ingSvcPorts[svcPortIdx].NEGEnabled = true
+	}
+	return nil
+}
+
 // SyncBackends implements Controller.
 func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 	// We expect state to be a syncState
@@ -305,6 +317,11 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 		return fmt.Errorf("expected state type to be syncState, type was %T", state)
 	}
 	ingSvcPorts := syncState.urlMap.AllServicePorts()
+
+	err := lbc.UpdateServicePortsForILB(ingSvcPorts, syncState.ing)
+	if err != nil {
+		return err
+	}
 
 	// Create instance groups and set named ports.
 	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(lbc.ctx.ClusterNamer.InstanceGroup(), nodePorts(ingSvcPorts))

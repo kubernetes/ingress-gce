@@ -18,6 +18,7 @@ package firewalls
 
 import (
 	"fmt"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"reflect"
 	"time"
 
@@ -56,8 +57,7 @@ type FirewallController struct {
 func NewFirewallController(
 	ctx *context.ControllerContext,
 	portRanges []string) *FirewallController {
-
-	firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, gce.LoadBalancerSrcRanges(), portRanges)
+	firewallPool := NewFirewallPool(ctx.Cloud.GceCloud(), ctx.ClusterNamer, gce.LoadBalancerSrcRanges(), portRanges)
 
 	fwc := &FirewallController{
 		ctx:          ctx,
@@ -165,8 +165,13 @@ func (fwc *FirewallController) sync(key string) error {
 	}
 	negPorts := fwc.translator.GatherEndpointPorts(gceSvcPorts)
 
+	ILBSrcRange, err := features.ILBSubnetSourceRange(fwc.ctx.Cloud.GceCloud().Compute(), fwc.ctx.Cloud.GceCloud().Region())
+	if err != nil {
+		return fmt.Errorf("error unable to get ILB subnet source ranges: %v", err)
+	}
+
 	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
-	if err := fwc.firewallPool.Sync(nodeNames, negPorts...); err != nil {
+	if err := fwc.firewallPool.Sync(nodeNames, negPorts, ILBSrcRange); err != nil {
 		if fwErr, ok := err.(*FirewallXPNError); ok {
 			// XPN: Raise an event on each ingress
 			for _, ing := range gceIngresses {

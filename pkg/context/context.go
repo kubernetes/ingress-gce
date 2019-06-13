@@ -14,6 +14,7 @@ limitations under the License.
 package context
 
 import (
+	"k8s.io/ingress-gce/pkg/composite"
 	"sync"
 	"time"
 
@@ -33,7 +34,6 @@ import (
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
 const (
@@ -45,7 +45,7 @@ const (
 type ControllerContext struct {
 	KubeClient kubernetes.Interface
 
-	Cloud *gce.Cloud
+	Cloud *composite.Cloud
 
 	ClusterNamer *utils.Namer
 
@@ -83,7 +83,7 @@ func NewControllerContext(
 	kubeClient kubernetes.Interface,
 	backendConfigClient backendconfigclient.Interface,
 	frontendConfigClient frontendconfigclient.Interface,
-	cloud *gce.Cloud,
+	cloud *composite.Cloud,
 	namer *utils.Namer,
 	config ControllerContextConfig) *ControllerContext {
 

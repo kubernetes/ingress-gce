@@ -93,7 +93,7 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 		igLinks = append(igLinks, ig.SelfLink)
 	}
 
-	be, err := l.backendPool.Get(sp.BackendName(l.namer), meta.VersionGA)
+	be, err := l.backendPool.Get(sp.BackendName(l.namer), meta.VersionGA, false)
 	if err != nil {
 		return err
 	}
