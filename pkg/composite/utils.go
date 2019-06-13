@@ -19,8 +19,126 @@ package composite
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"reflect"
 )
+
+// CreateKey() is a helper function for creating a meta.Key when interacting with the
+// composite functions.  For regional resourceTypes, this function looks up
+// the region of the gceCloud object.  You should use this wherever possible to avoid
+// creating a resource in the wrong region or creating a global resource accidentally.
+// TODO: (shance) implement zonal
+func CreateKey(gceCloud *gce.Cloud, name string, resourceType meta.KeyType) (*meta.Key, error) {
+	switch resourceType {
+	case meta.Regional:
+		region := gceCloud.Region()
+		if region == "" {
+			return nil, fmt.Errorf("error getting region")
+		}
+		return meta.RegionalKey(name, region), nil
+	case meta.Global:
+		return meta.GlobalKey(name), nil
+	}
+
+	return nil, fmt.Errorf("error creating key, invalid resource type: %s", resourceType)
+}
+
+// TODO: (shance) generate this
+// ListAllUrlMaps() merges all configured List() calls into one list of composite UrlMaps
+func ListAllUrlMaps(gceCloud *gce.Cloud) ([]*UrlMap, error) {
+	resultMap := map[string]*UrlMap{}
+	key1, err := CreateKey(gceCloud, "", meta.Global)
+	if err != nil {
+		return nil, err
+	}
+	key2, err := CreateKey(gceCloud, "", meta.Regional)
+	if err != nil {
+		return nil, err
+	}
+
+	// List ga-global and regional-alpha
+	versions := []meta.Version{meta.VersionGA, meta.VersionAlpha}
+	keys := []*meta.Key{key1, key2}
+
+	for i := range versions {
+		list, err := ListUrlMaps(gceCloud, keys[i], versions[i])
+		if err != nil {
+			return nil, fmt.Errorf("error listing all urlmaps: %v", err)
+		}
+		for _, um := range list {
+			resultMap[um.SelfLink] = um
+		}
+	}
+
+	// Convert map to slice
+	result := []*UrlMap{}
+	for _, um := range resultMap {
+		result = append(result, um)
+	}
+
+	return result, nil
+}
+
+// TODO: (shance) generate this
+// ListAllUrlMaps() merges all configured List() calls into one list of composite UrlMaps
+func ListAllBackendServices(gceCloud *gce.Cloud) ([]*BackendService, error) {
+	resultMap := map[string]*BackendService{}
+	key1, err := CreateKey(gceCloud, "", meta.Global)
+	if err != nil {
+		return nil, err
+	}
+	key2, err := CreateKey(gceCloud, "", meta.Regional)
+	if err != nil {
+		return nil, err
+	}
+
+	// List ga-global and regional-alpha
+	versions := []meta.Version{meta.VersionGA, meta.VersionAlpha}
+	keys := []*meta.Key{key1, key2}
+
+	for i := range versions {
+		list, err := ListBackendServices(gceCloud, keys[i], versions[i])
+		if err != nil {
+			return nil, fmt.Errorf("error listing all urlmaps: %v", err)
+		}
+		for _, bs := range list {
+			resultMap[bs.SelfLink] = bs
+		}
+	}
+
+	// Convert map to slice
+	result := []*BackendService{}
+	for _, bs := range resultMap {
+		result = append(result, bs)
+	}
+	return result, nil
+}
+
+// IsRegionalUrlMap() returns if the url map is regional
+func IsRegionalUrlMap(um *UrlMap) (bool, error) {
+	if um != nil {
+		return IsRegionalResource(um.SelfLink)
+	}
+	return false, nil
+}
+
+// IsRegionalResource() returns true if the resource URL is regional
+func IsRegionalResource(selfLink string) (bool, error) {
+	// Figure out if cluster is regional
+	// Update L7 if its regional so we can delete the right resources
+	resourceID, err := cloud.ParseResourceURL(selfLink)
+	if err != nil {
+		return false, fmt.Errorf("error parsing self-link for url-map %s: %v", selfLink, err)
+	}
+
+	if resourceID.Key.Region != "" {
+		return true, nil
+	}
+
+	return false, nil
+}
 
 // compareFields verifies that two fields in a struct have the same relevant metadata.
 // Note: This comparison ignores field offset, index, and pkg path, all of which don't matter.

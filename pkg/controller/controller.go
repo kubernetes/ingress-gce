@@ -105,6 +105,7 @@ func NewLoadBalancerController(
 
 	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendHealthCheckPath, ctx.ClusterNamer, ctx.DefaultBackendSvcPortID.Service)
 	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer)
+
 	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
 
 	lbc := LoadBalancerController{
