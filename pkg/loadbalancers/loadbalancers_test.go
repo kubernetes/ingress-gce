@@ -18,10 +18,11 @@ package loadbalancers
 
 import (
 	"fmt"
+	meta "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/ingress-gce/pkg/composite"
 	"reflect"
 	"testing"
 
-	compute "google.golang.org/api/compute/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -55,6 +56,16 @@ func newIngress() *extensions.Ingress {
 	}
 }
 
+func newILBIngress() *extensions.Ingress {
+	return &extensions.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        ingressName,
+			Namespace:   namespace,
+			Annotations: map[string]string{annotations.IngressClassKey: annotations.GceILBIngressClass},
+		},
+	}
+}
+
 func newFakeLoadBalancerPool(f LoadBalancers, t *testing.T, namer *utils.Namer) LoadBalancerPool {
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
 	nodePool := instances.NewNodePool(fakeIGs, namer)
@@ -76,7 +87,7 @@ func TestCreateHTTPLoadBalancer(t *testing.T) {
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	l7, err := pool.Ensure(lbInfo)
@@ -100,7 +111,53 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
+	pool := newFakeLoadBalancerPool(f, t, namer)
+
+	l7, err := pool.Ensure(lbInfo)
+	if err != nil || l7 == nil {
+		t.Fatalf("Expected l7 not created")
+	}
+	verifyHTTPSForwardingRuleAndProxyLinks(t, f)
+}
+
+// Test creation of a L7-ILB
+func TestCreateHTTPILBLoadBalancer(t *testing.T) {
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+	namer := utils.NewNamer(clusterName, "fw1")
+	lbInfo := &L7RuntimeInfo{
+		Name:      namer.LoadBalancer(ingressName),
+		AllowHTTP: true,
+		UrlMap:    gceUrlMap,
+		Ingress:   newILBIngress(),
+	}
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, ILBVersion, meta.Regional)
+	pool := newFakeLoadBalancerPool(f, t, namer)
+
+	l7, err := pool.Ensure(lbInfo)
+	if err != nil || l7 == nil {
+		t.Fatalf("Expected l7 not created, err: %v", err)
+	}
+	verifyHTTPForwardingRuleAndProxyLinks(t, f)
+}
+
+func TestCreateHTTPSILBLoadBalancer(t *testing.T) {
+	// This should NOT create the forwarding rule and target proxy
+	// associated with the HTTP branch of this loadbalancer.
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+	namer := utils.NewNamer(clusterName, "fw1")
+	lbInfo := &L7RuntimeInfo{
+		Name:      namer.LoadBalancer(ingressName),
+		AllowHTTP: false,
+		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
+		UrlMap:    gceUrlMap,
+		Ingress:   newILBIngress(),
+	}
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, ILBVersion, meta.Regional)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	l7, err := pool.Ensure(lbInfo)
@@ -112,16 +169,20 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 
 func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, f *FakeLoadBalancers) {
 	t.Helper()
+	regional := f.ResourceType == meta.Regional
 
-	um, err := f.GetURLMap(f.UMName())
-	tps, err := f.GetTargetHTTPSProxy(f.TPName(true))
+	um, err := f.GetUrlMap(f.Version, f.CreateKey(f.UMName(), regional))
+	if err != nil {
+		t.Fatalf("f.GetUrlMap(%q) = _, %v; want nil", f.UMName(), err)
+	}
+	tps, err := f.GetTargetHttpsProxy(f.Version, f.CreateKey(f.TPName(true), regional))
 	if err != nil {
 		t.Fatalf("f.GetTargetHTTPSProxy(%q) = _, %v; want nil", f.TPName(true), err)
 	}
 	if !utils.EqualResourcePaths(tps.UrlMap, um.SelfLink) {
 		t.Fatalf("tps.UrlMap = %q, want %q", tps.UrlMap, um.SelfLink)
 	}
-	fws, err := f.GetGlobalForwardingRule(f.FWName(true))
+	fws, err := f.GetForwardingRule(f.Version, f.CreateKey(f.FWName(true), regional))
 	if err != nil {
 		t.Fatalf("f.GetGlobalForwardingRule(%q) = _, %v, want nil", f.FWName(true), err)
 	}
@@ -135,21 +196,25 @@ func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, f *FakeLoadBalancers) 
 
 func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, f *FakeLoadBalancers) {
 	t.Helper()
+	regional := f.ResourceType == meta.Regional
 
-	um, err := f.GetURLMap(f.UMName())
-	tps, err := f.GetTargetHTTPProxy(f.TPName(false))
+	um, err := f.GetUrlMap(f.Version, f.CreateKey(f.UMName(), regional))
+	if err != nil {
+		t.Fatalf("f.GetUrlMap(%q) = _, %v; want nil", f.UMName(), err)
+	}
+	tp, err := f.GetTargetHttpProxy(f.Version, f.CreateKey(f.TPName(false), regional))
 	if err != nil {
 		t.Fatalf("f.GetTargetHTTPProxy(%q) = _, %v; want nil", f.TPName(false), err)
 	}
-	if !utils.EqualResourcePaths(tps.UrlMap, um.SelfLink) {
-		t.Fatalf("tp.UrlMap = %q, want %q", tps.UrlMap, um.SelfLink)
+	if !utils.EqualResourcePaths(tp.UrlMap, um.SelfLink) {
+		t.Fatalf("tp.UrlMap = %q, want %q", tp.UrlMap, um.SelfLink)
 	}
-	fws, err := f.GetGlobalForwardingRule(f.FWName(false))
+	fws, err := f.GetForwardingRule(f.Version, f.CreateKey(f.FWName(false), regional))
 	if err != nil {
 		t.Fatalf("f.GetGlobalForwardingRule(%q) = _, %v, want nil", f.FWName(false), err)
 	}
-	if !utils.EqualResourcePaths(fws.Target, tps.SelfLink) {
-		t.Fatalf("fw.Target = %q, want %q", fws.Target, tps.SelfLink)
+	if !utils.EqualResourcePaths(fws.Target, tp.SelfLink) {
+		t.Fatalf("fw.Target = %q, want %q", fws.Target, tp.SelfLink)
 	}
 	if fws.Description == "" {
 		t.Errorf("fws.Description not set; expected it to be")
@@ -175,7 +240,7 @@ func TestCertUpdate(t *testing.T) {
 		Ingress:   newIngress(),
 	}
 
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	// Sync first cert
@@ -215,7 +280,7 @@ func TestMultipleSecretsWithSameCert(t *testing.T) {
 		UrlMap:  gceUrlMap,
 		Ingress: newIngress(),
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	// Sync first cert
@@ -244,17 +309,17 @@ func TestCertCreationWithCollision(t *testing.T) {
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	// Have the same name used by orphaned cert
 	// Since name of the cert is the same, the contents of Certificate have to be the same too, since name contains a
 	// hash of the contents.
-	f.CreateSslCertificate(&compute.SslCertificate{
+	f.CreateSslCertificate(&composite.SslCertificate{
 		Name:        certName1,
 		Certificate: "cert",
 		SelfLink:    "existing",
-	})
+	}, f.CreateKey(certName1, false))
 
 	// Sync first cert
 	if _, err := pool.Ensure(lbInfo); err != nil {
@@ -266,11 +331,11 @@ func TestCertCreationWithCollision(t *testing.T) {
 
 	// Create another cert where the name matches that of another cert, but contents are different - xyz != cert2.
 	// Simulates a hash collision
-	f.CreateSslCertificate(&compute.SslCertificate{
+	f.CreateSslCertificate(&composite.SslCertificate{
 		Name:        certName2,
 		Certificate: "xyz",
 		SelfLink:    "existing",
-	})
+	}, f.CreateKey(certName2, false))
 
 	// Sync with different cert
 	lbInfo.TLS = []*TLSCerts{createCert("key2", "cert2", "name")}
@@ -306,7 +371,7 @@ func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 	}
 	expectCerts[certName1] = cert1.Cert
 
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	firstPool := newFakeLoadBalancerPool(f, t, namer)
 
 	firstPool.Ensure(lbInfo)
@@ -349,23 +414,21 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 	tlsCert := createCert("key", "cert", "name")
 	lbInfo.TLS = []*TLSCerts{tlsCert}
 	newCertName := namer.SSLCertName(lbName, tlsCert.CertHash)
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	// Manually create a target proxy and assign a legacy cert to it.
-	sslCert := &compute.SslCertificate{Name: oldCertName, Certificate: "cert"}
-	f.CreateSslCertificate(sslCert)
+	sslCert := &composite.SslCertificate{Name: oldCertName, Certificate: "cert"}
+	f.CreateSslCertificate(sslCert, f.CreateKey(sslCert.Name, false))
 	tpName := f.TPName(true)
-	newProxy := &compute.TargetHttpsProxy{
-		Name:            tpName,
-		Description:     "fake",
+	newProxy := &composite.TargetHttpsProxy{Name: tpName,
 		SslCertificates: []string{sslCert.SelfLink},
-	}
-	err := f.CreateTargetHTTPSProxy(newProxy)
+		Description:     "fake"}
+	err := f.CreateTargetHttpsProxy(newProxy, f.CreateKey(tpName, false))
 	if err != nil {
 		t.Fatalf("Failed to create Target proxy %v - %v", newProxy, err)
 	}
-	proxyCerts, err := f.ListSslCertificates()
+	proxyCerts, err := f.ListSslCertificates(f.Version, f.CreateKey("", false))
 	if err != nil {
 		t.Fatalf("Failed to list certs for load balancer %v - %v", f, err)
 	}
@@ -410,7 +473,7 @@ func TestMaxCertsUpload(t *testing.T) {
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	if _, err := pool.Ensure(lbInfo); err != nil {
@@ -476,7 +539,7 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 	// Sync multiple times to make sure ordering is preserved
 	for i := 0; i < 10; i++ {
@@ -486,7 +549,7 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 		verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 		// Fetch the target proxy certs and go through in order
 		verifyProxyCertsInOrder(" foo.com", f, t)
-		pool.Delete(lbInfo.Name)
+		pool.Delete(lbInfo.Name, false)
 	}
 }
 
@@ -501,24 +564,30 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 	// Prepare pre-shared certs.
-	preSharedCert1, _ := f.CreateSslCertificate(&compute.SslCertificate{
+	f.CreateSslCertificate(&composite.SslCertificate{
 		Name:        "test-pre-shared-cert",
 		Certificate: "cert-0 foo.com",
 		SelfLink:    "existing",
-	})
-	preSharedCert2, _ := f.CreateSslCertificate(&compute.SslCertificate{
+	}, f.CreateKey("test-pre-shared-cert", false))
+	preSharedCert1, _ := f.GetSslCertificate(f.Version, f.CreateKey("test-pre-shared-cert", false))
+
+	f.CreateSslCertificate(&composite.SslCertificate{
 		Name:        "test-pre-shared-cert1",
 		Certificate: "cert-1 foo.com",
 		SelfLink:    "existing",
-	})
-	preSharedCert3, _ := f.CreateSslCertificate(&compute.SslCertificate{
+	}, f.CreateKey("test-pre-shared-cert1", false))
+	preSharedCert2, _ := f.GetSslCertificate(f.Version, f.CreateKey("test-pre-shared-cert1", false))
+
+	f.CreateSslCertificate(&composite.SslCertificate{
 		Name:        "test-pre-shared-cert2",
 		Certificate: "cert2",
 		SelfLink:    "existing",
-	})
+	}, f.CreateKey("test-pre-shared-cert2", false))
+	preSharedCert3, _ := f.GetSslCertificate(f.Version, f.CreateKey("test-pre-shared-cert2", false))
+
 	expectCerts := map[string]string{preSharedCert1.Name: preSharedCert1.Certificate,
 		preSharedCert2.Name: preSharedCert2.Certificate, preSharedCert3.Name: preSharedCert3.Certificate}
 
@@ -531,7 +600,7 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 		verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 		// Fetch the target proxy certs and go through in order
 		verifyProxyCertsInOrder(" foo.com", f, t)
-		pool.Delete(lbInfo.Name)
+		pool.Delete(lbInfo.Name, false)
 	}
 }
 
@@ -553,21 +622,24 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 		Ingress:   newIngress(),
 	}
 
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	// Prepare pre-shared certs.
-	preSharedCert1, _ := f.CreateSslCertificate(&compute.SslCertificate{
+	f.CreateSslCertificate(&composite.SslCertificate{
 		Name:        "test-pre-shared-cert",
 		Certificate: "abc",
 		SelfLink:    "existing",
-	})
+	}, f.CreateKey("test-pre-shared-cert", false))
+	preSharedCert1, _ := f.GetSslCertificate(f.Version, f.CreateKey("test-pre-shared-cert", false))
+
 	// Prepare pre-shared certs.
-	preSharedCert2, _ := f.CreateSslCertificate(&compute.SslCertificate{
+	f.CreateSslCertificate(&composite.SslCertificate{
 		Name:        "test-pre-shared-cert2",
 		Certificate: "xyz",
 		SelfLink:    "existing",
-	})
+	}, f.CreateKey("test-pre-shared-cert", false))
+	preSharedCert2, _ := f.GetSslCertificate(f.Version, f.CreateKey("test-pre-shared-cert2", false))
 
 	lbInfo.TLSName = preSharedCert1.Name + "," + preSharedCert2.Name
 
@@ -599,10 +671,10 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCertsProxy, f, t)
 
 	// Check if pre-shared certs are retained.
-	if cert, err := f.GetSslCertificate(preSharedCert1.Name); err != nil || cert == nil {
+	if cert, err := f.GetSslCertificate(f.Version, f.CreateKey(preSharedCert1.Name, false)); err != nil || cert == nil {
 		t.Fatalf("Want pre-shared certificate %v to exist, got none, err: %v", preSharedCert1.Name, err)
 	}
-	if cert, err := f.GetSslCertificate(preSharedCert2.Name); err != nil || cert == nil {
+	if cert, err := f.GetSslCertificate(f.Version, f.CreateKey(preSharedCert2.Name, false)); err != nil || cert == nil {
 		t.Fatalf("Want pre-shared certificate %v to exist, got none, err: %v", preSharedCert2.Name, err)
 	}
 }
@@ -611,7 +683,7 @@ func verifyProxyCertsInOrder(hostname string, f *FakeLoadBalancers, t *testing.T
 	t.Helper()
 	t.Logf("f =\n%s", f.String())
 
-	tps, err := f.GetTargetHTTPSProxy(f.TPName(true))
+	tps, err := f.GetTargetHttpsProxy(f.Version, f.CreateKey(f.TPName(true), false))
 	if err != nil {
 		t.Fatalf("expected https proxy to exist: %v, err: %v", f.TPName(true), err)
 	}
@@ -620,7 +692,7 @@ func verifyProxyCertsInOrder(hostname string, f *FakeLoadBalancers, t *testing.T
 
 	for _, link := range tps.SslCertificates {
 		certName, _ := utils.KeyName(link)
-		cert, err := f.GetSslCertificate(certName)
+		cert, err := f.GetSslCertificate(f.Version, f.CreateKey(certName, false))
 		if err != nil {
 			t.Fatalf("Failed to fetch certificate from link %s - %v", link, err)
 		}
@@ -645,7 +717,7 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	t.Logf("f =\n%s", f.String())
 
 	// f needs to contain only the certs in expectCerts, nothing more, nothing less
-	allCerts, err := f.ListSslCertificates()
+	allCerts, err := f.ListSslCertificates(f.Version, f.CreateKey("", false))
 	if err != nil {
 		t.Fatalf("Failed to list certificates for %v - %v", f, err)
 	}
@@ -654,7 +726,7 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 			len(allCerts))
 	}
 	for certName, certValue := range expectCerts {
-		cert, err := f.GetSslCertificate(certName)
+		cert, err := f.GetSslCertificate(f.Version, f.CreateKey(certName, false))
 		if err != nil {
 			t.Fatalf("expected ssl certificate to exist: %v, err: %v, all certs: %v", certName, err, toCertNames(allCerts))
 		}
@@ -665,7 +737,7 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	}
 
 	// httpsproxy needs to contain only the certs in expectCerts, nothing more, nothing less
-	tps, err := f.GetTargetHTTPSProxy(f.TPName(true))
+	tps, err := f.GetTargetHttpsProxy(f.Version, f.CreateKey(f.TPName(true), false))
 	if err != nil {
 		t.Fatalf("expected https proxy to exist: %v, err: %v", f.TPName(true), err)
 	}
@@ -701,10 +773,10 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 		Ingress:   newIngress(),
 	}
 
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
-	f.CreateSslCertificate(&compute.SslCertificate{
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
+	f.CreateSslCertificate(&composite.SslCertificate{
 		Name: tlsName,
-	})
+	}, f.CreateKey(tlsName, false))
 	pool := newFakeLoadBalancerPool(f, t, namer)
 	if _, err := pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
@@ -731,7 +803,7 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	if _, err := pool.Ensure(lbInfo); err != nil {
@@ -746,8 +818,8 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 	verifyHTTPForwardingRuleAndProxyLinks(t, f)
 
 	// We know the forwarding rules exist, retrieve their addresses.
-	fws, _ := f.GetGlobalForwardingRule(f.FWName(true))
-	fw, _ := f.GetGlobalForwardingRule(f.FWName(false))
+	fws, _ := f.GetForwardingRule(f.Version, f.CreateKey(f.FWName(true), false))
+	fw, _ := f.GetForwardingRule(f.Version, f.CreateKey(f.FWName(false), false))
 	ip, err := f.GetGlobalAddress(f.FWName(false))
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -760,12 +832,11 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 // verifyURLMap gets the created URLMap and compares it against an expected one.
 func verifyURLMap(t *testing.T, f *FakeLoadBalancers, name string, wantGCEURLMap *utils.GCEURLMap) {
 	t.Helper()
-
-	um, err := f.GetURLMap(name)
+	um, err := f.GetUrlMap(f.Version, f.CreateKey(name, f.ResourceType == meta.Regional))
 	if err != nil || um == nil {
 		t.Errorf("f.GetUrlMap(%q) = %v, %v; want _, nil", name, um, err)
 	}
-	wantComputeURLMap := toComputeURLMap(name, wantGCEURLMap, f.namer)
+	wantComputeURLMap := toCompositeURLMap(name, wantGCEURLMap, f.namer, f.CreateKey("", f.ResourceType == meta.Regional))
 	if !mapsEqual(wantComputeURLMap, um) {
 		t.Errorf("mapsEqual() = false, got\n%+v\n  want\n%+v", um, wantComputeURLMap)
 	}
@@ -788,7 +859,7 @@ func TestUrlMapChange(t *testing.T) {
 	namer := utils.NewNamer(clusterName, "fw1")
 	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer(ingressName), AllowHTTP: true, UrlMap: um1, Ingress: newIngress()}
 
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 	if _, err := pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
@@ -832,7 +903,7 @@ func TestPoolSyncNoChanges(t *testing.T) {
 
 	namer := utils.NewNamer(clusterName, "fw1")
 	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer(ingressName), AllowHTTP: true, UrlMap: um1, Ingress: newIngress()}
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 	if _, err := pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
@@ -881,7 +952,7 @@ func TestClusterNameChange(t *testing.T) {
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 	if _, err := pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
@@ -961,9 +1032,9 @@ func TestList(t *testing.T) {
 		"k8s-um-old-l7--uid1", // Expect List() to catch old URL maps
 	}
 
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	for _, name := range names {
-		f.CreateURLMap(&compute.UrlMap{Name: name})
+		f.CreateUrlMap(&composite.UrlMap{Name: name}, f.CreateKey(name, false))
 	}
 
 	pool := newFakeLoadBalancerPool(f, t, namer)
@@ -971,7 +1042,7 @@ func TestList(t *testing.T) {
 		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 
-	lbNames, err := pool.List()
+	lbNames, _, err := pool.List()
 	if err != nil {
 		t.Fatalf("pool.List() = err %v", err)
 	}
@@ -1001,20 +1072,23 @@ func TestSecretBasedAndPreSharedCerts(t *testing.T) {
 		Ingress:   newIngress(),
 	}
 
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	// Prepare pre-shared certs.
-	preSharedCert1, _ := f.CreateSslCertificate(&compute.SslCertificate{
+	f.CreateSslCertificate(&composite.SslCertificate{
 		Name:        "test-pre-shared-cert",
 		Certificate: "abc",
 		SelfLink:    "existing",
-	})
-	preSharedCert2, _ := f.CreateSslCertificate(&compute.SslCertificate{
+	}, f.CreateKey("test-pre-shared-cert", false))
+	preSharedCert1, _ := f.GetSslCertificate(f.Version, f.CreateKey("test-pre-shared-cert", false))
+
+	f.CreateSslCertificate(&composite.SslCertificate{
 		Name:        "test-pre-shared-cert2",
 		Certificate: "xyz",
 		SelfLink:    "existing2",
-	})
+	}, f.CreateKey("test-pre-shared-cert2", false))
+	preSharedCert2, _ := f.GetSslCertificate(f.Version, f.CreateKey("test-pre-shared-cert2", false))
 	lbInfo.TLSName = preSharedCert1.Name + "," + preSharedCert2.Name
 
 	// Secret based certs.
@@ -1065,7 +1139,7 @@ func TestMaxSecretBasedAndPreSharedCerts(t *testing.T) {
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	if _, err := pool.Ensure(lbInfo); err != nil {
@@ -1074,29 +1148,31 @@ func TestMaxSecretBasedAndPreSharedCerts(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 
 	// Create pre-shared certs up to FakeCertQuota.
-	preSharedCerts := []*compute.SslCertificate{}
+	preSharedCerts := []*composite.SslCertificate{}
 	tlsNames := []string{}
 	for ix := TargetProxyCertLimit; ix < FakeCertQuota; ix++ {
 		str := strconv.Itoa(ix)
-		cert, err := f.CreateSslCertificate(&compute.SslCertificate{
+		err := f.CreateSslCertificate(&composite.SslCertificate{
 			Name:        "test-pre-shared-cert-" + str,
 			Certificate: "abc-" + str,
 			SelfLink:    "existing-" + str,
-		})
+		}, f.CreateKey("test-pre-shared-cert-"+str, false))
 		if err != nil {
 			t.Fatalf("f.CreateSslCertificate() = err %v", err)
 		}
+		cert, _ := f.GetSslCertificate(f.Version, f.CreateKey("test-pre-shared-cert-"+str, false))
+
 		preSharedCerts = append(preSharedCerts, cert)
 		tlsNames = append(tlsNames, cert.Name)
 		expectCertsExtra[cert.Name] = cert.Certificate
 	}
 	lbInfo.TLSName = strings.Join(tlsNames, ",")
 
-	_, err := f.CreateSslCertificate(&compute.SslCertificate{
+	err := f.CreateSslCertificate(&composite.SslCertificate{
 		Name:        "test-pre-shared-cert-100",
 		Certificate: "abc-100",
 		SelfLink:    "existing-100",
-	})
+	}, f.CreateKey("test-pre-shared-cert-100", false))
 	if err == nil {
 		t.Fatalf("Creating more than %d certs should have errored out", FakeCertQuota)
 	}
@@ -1143,7 +1219,7 @@ func TestSecretBasedToPreSharedCertUpdate(t *testing.T) {
 		Ingress:   newIngress(),
 	}
 
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	// Sync secret based cert.
@@ -1156,11 +1232,13 @@ func TestSecretBasedToPreSharedCertUpdate(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 
 	// Prepare pre-shared cert.
-	preSharedCert1, _ := f.CreateSslCertificate(&compute.SslCertificate{
+	f.CreateSslCertificate(&composite.SslCertificate{
 		Name:        "test-pre-shared-cert",
 		Certificate: "abc",
 		SelfLink:    "existing",
-	})
+	}, f.CreateKey("test-pre-shared-cert", false))
+	preSharedCert1, _ := f.GetSslCertificate(f.Version, f.CreateKey("test-pre-shared-cert", false))
+
 	lbInfo.TLSName = preSharedCert1.Name
 
 	// Sync certs.
@@ -1196,7 +1274,7 @@ func TestSecretBasedToPreSharedCertUpdateWithErrors(t *testing.T) {
 		Ingress:   newIngress(),
 	}
 
-	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	f := NewFakeLoadBalancers(lbInfo.Name, namer, meta.VersionGA, meta.Global)
 	pool := newFakeLoadBalancerPool(f, t, namer)
 
 	// Sync secret based cert.
@@ -1209,11 +1287,12 @@ func TestSecretBasedToPreSharedCertUpdateWithErrors(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, f, t)
 
 	// Prepare pre-shared certs.
-	preSharedCert1, _ := f.CreateSslCertificate(&compute.SslCertificate{
+	f.CreateSslCertificate(&composite.SslCertificate{
 		Name:        "test-pre-shared-cert",
 		Certificate: "abc",
 		SelfLink:    "existing",
-	})
+	}, f.CreateKey("test-pre-shared-cert", false))
+	preSharedCert1, _ := f.GetSslCertificate(f.Version, f.CreateKey("test-pre-shared-cert", false))
 
 	// Typo in the cert name.
 	lbInfo.TLSName = preSharedCert1.Name + "typo"

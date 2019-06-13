@@ -18,18 +18,20 @@ package loadbalancers
 
 import (
 	"fmt"
+	"k8s.io/ingress-gce/pkg/composite"
 
 	"k8s.io/klog"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const FakeCertQuota = 15
+const FakeRegion = "us-fake1"
 
 var testIPManager = testIP{}
 
@@ -46,16 +48,27 @@ func (t *testIP) ip() string {
 
 // FakeLoadBalancers is a type that fakes out the loadbalancer interface.
 type FakeLoadBalancers struct {
-	Fw    []*compute.ForwardingRule
-	Um    []*compute.UrlMap
-	Tp    []*compute.TargetHttpProxy
-	Tps   []*compute.TargetHttpsProxy
+	Fw    []*composite.ForwardingRule
+	Um    []*composite.UrlMap
+	Tp    []*composite.TargetHttpProxy
+	Tps   []*composite.TargetHttpsProxy
 	IP    []*compute.Address
-	Certs []*compute.SslCertificate
+	Certs []*composite.SslCertificate
 	name  string
 	calls []string // list of calls that were made
 
 	namer *utils.Namer
+
+	Version      meta.Version
+	ResourceType meta.KeyType
+}
+
+// CreateKey implements LoadBalancer
+func (f *FakeLoadBalancers) CreateKey(name string, regional bool) *meta.Key {
+	if regional {
+		return meta.RegionalKey(name, FakeRegion)
+	}
+	return meta.GlobalKey(name)
 }
 
 // FWName returns the name of the firewall given the protocol.
@@ -118,36 +131,50 @@ func (f *FakeLoadBalancers) String() string {
 // Forwarding Rule fakes
 
 // GetGlobalForwardingRule returns a fake forwarding rule.
-func (f *FakeLoadBalancers) GetGlobalForwardingRule(name string) (*compute.ForwardingRule, error) {
-	f.calls = append(f.calls, "GetGlobalForwardingRule")
-	for i := range f.Fw {
-		if f.Fw[i].Name == name {
+func (f *FakeLoadBalancers) GetForwardingRule(version meta.Version, key *meta.Key) (*composite.ForwardingRule, error) {
+	name := key.Name
+	f.calls = append(f.calls, "GetForwardingRule")
+	for i, fw := range f.Fw {
+		if fw.Name == name && fw.Version == version && fw.ResourceType == key.Type() {
 			return f.Fw[i], nil
 		}
 	}
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
-func (f *FakeLoadBalancers) ListGlobalForwardingRules() ([]*compute.ForwardingRule, error) {
-	return f.Fw, nil
+func (f *FakeLoadBalancers) ListForwardingRules(version meta.Version, key *meta.Key) ([]*composite.ForwardingRule, error) {
+	f.calls = append(f.calls, "ListForwardingRules")
+	result := []*composite.ForwardingRule{}
+	for _, fw := range f.Fw {
+		if fw.Version == version && fw.ResourceType == key.Type() {
+			result = append(result, fw)
+		}
+	}
+	return result, nil
 }
 
 // CreateGlobalForwardingRule fakes forwarding rule creation.
-func (f *FakeLoadBalancers) CreateGlobalForwardingRule(rule *compute.ForwardingRule) error {
-	f.calls = append(f.calls, "CreateGlobalForwardingRule")
+func (f *FakeLoadBalancers) CreateForwardingRule(rule *composite.ForwardingRule, key *meta.Key) error {
+	f.calls = append(f.calls, "CreateForwardingRule")
 	if rule.IPAddress == "" {
 		rule.IPAddress = fmt.Sprintf(testIPManager.ip())
 	}
-	rule.SelfLink = cloud.NewGlobalForwardingRulesResourceID("mock-project", rule.Name).SelfLink(meta.VersionGA)
+	rule.SelfLink = cloud.NewGlobalForwardingRulesResourceID("mock-project", rule.Name).SelfLink(rule.Version)
+	rule.ResourceType = key.Type()
+	if rule.Version == "" {
+		rule.Version = meta.VersionGA
+	}
 	f.Fw = append(f.Fw, rule)
 	return nil
 }
 
 // SetProxyForGlobalForwardingRule fakes setting a global forwarding rule.
-func (f *FakeLoadBalancers) SetProxyForGlobalForwardingRule(forwardingRuleName, proxyLink string) error {
-	f.calls = append(f.calls, "SetProxyForGlobalForwardingRule")
+func (f *FakeLoadBalancers) SetProxyForForwardingRule(forwardingRule *composite.ForwardingRule, key *meta.Key, proxyLink string) error {
+	forwardingRuleName := forwardingRule.Name
+	version := forwardingRule.Version
+	f.calls = append(f.calls, "SetProxyForForwardingRule")
 	for i := range f.Fw {
-		if f.Fw[i].Name == forwardingRuleName {
+		if f.Fw[i].Name == forwardingRuleName && f.Fw[i].Version == version && f.Fw[i].ResourceType == key.Type() {
 			f.Fw[i].Target = proxyLink
 		}
 	}
@@ -155,11 +182,12 @@ func (f *FakeLoadBalancers) SetProxyForGlobalForwardingRule(forwardingRuleName, 
 }
 
 // DeleteGlobalForwardingRule fakes deleting a global forwarding rule.
-func (f *FakeLoadBalancers) DeleteGlobalForwardingRule(name string) error {
-	f.calls = append(f.calls, "DeleteGlobalForwardingRule")
-	fw := []*compute.ForwardingRule{}
+func (f *FakeLoadBalancers) DeleteForwardingRule(version meta.Version, key *meta.Key) error {
+	name := key.Name
+	f.calls = append(f.calls, "DeleteForwardingRule")
+	fw := []*composite.ForwardingRule{}
 	for i := range f.Fw {
-		if f.Fw[i].Name != name {
+		if f.Fw[i].Name != name || f.Fw[i].Version != version || f.Fw[i].ResourceType != key.Type() {
 			fw = append(fw, f.Fw[i])
 		}
 	}
@@ -172,7 +200,7 @@ func (f *FakeLoadBalancers) DeleteGlobalForwardingRule(name string) error {
 }
 
 // GetForwardingRulesWithIPs returns all forwarding rules that match the given ips.
-func (f *FakeLoadBalancers) GetForwardingRulesWithIPs(ip []string) (fwRules []*compute.ForwardingRule) {
+func (f *FakeLoadBalancers) GetForwardingRulesWithIPs(ip []string) (fwRules []*composite.ForwardingRule) {
 	f.calls = append(f.calls, "GetForwardingRulesWithIPs")
 	ipSet := sets.NewString(ip...)
 	for i := range f.Fw {
@@ -186,30 +214,43 @@ func (f *FakeLoadBalancers) GetForwardingRulesWithIPs(ip []string) (fwRules []*c
 // UrlMaps fakes
 
 // GetURLMap fakes getting url maps from the cloud.
-func (f *FakeLoadBalancers) GetURLMap(name string) (*compute.UrlMap, error) {
+func (f *FakeLoadBalancers) GetUrlMap(version meta.Version, key *meta.Key) (*composite.UrlMap, error) {
+	name := key.Name
 	f.calls = append(f.calls, "GetURLMap")
-	for i := range f.Um {
-		if f.Um[i].Name == name {
-			return f.Um[i], nil
+	for _, um := range f.Um {
+		if um.Name == name && um.Version == version && um.ResourceType == key.Type() {
+			return um, nil
 		}
 	}
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
 // CreateURLMap fakes url-map creation.
-func (f *FakeLoadBalancers) CreateURLMap(urlMap *compute.UrlMap) error {
+func (f *FakeLoadBalancers) CreateUrlMap(urlMap *composite.UrlMap, key *meta.Key) error {
 	klog.V(4).Infof("CreateURLMap %+v", urlMap)
 	f.calls = append(f.calls, "CreateURLMap")
-	urlMap.SelfLink = cloud.NewUrlMapsResourceID("mock-project", urlMap.Name).SelfLink(meta.VersionGA)
+	if key.Type() == meta.Regional {
+		urlMap.SelfLink = cloud.NewRegionUrlMapsResourceID("mock-project", FakeRegion, urlMap.Name).SelfLink(urlMap.Version)
+	} else {
+		urlMap.SelfLink = cloud.NewUrlMapsResourceID("mock-project", urlMap.Name).SelfLink(urlMap.Version)
+	}
+	urlMap.ResourceType = key.Type()
+	if urlMap.Version == "" {
+		urlMap.Version = meta.VersionGA
+	}
 	f.Um = append(f.Um, urlMap)
 	return nil
 }
 
 // UpdateURLMap fakes updating url-maps.
-func (f *FakeLoadBalancers) UpdateURLMap(urlMap *compute.UrlMap) error {
+func (f *FakeLoadBalancers) UpdateUrlMap(urlMap *composite.UrlMap, key *meta.Key) error {
 	f.calls = append(f.calls, "UpdateURLMap")
-	for i := range f.Um {
-		if f.Um[i].Name == urlMap.Name {
+	if urlMap.Version == "" {
+		urlMap.Version = meta.VersionGA
+	}
+
+	for i, um := range f.Um {
+		if um.Name == urlMap.Name && um.Version == urlMap.Version && um.ResourceType == key.Type() {
 			f.Um[i] = urlMap
 			return nil
 		}
@@ -218,9 +259,10 @@ func (f *FakeLoadBalancers) UpdateURLMap(urlMap *compute.UrlMap) error {
 }
 
 // DeleteURLMap fakes url-map deletion.
-func (f *FakeLoadBalancers) DeleteURLMap(name string) error {
+func (f *FakeLoadBalancers) DeleteUrlMap(version meta.Version, key *meta.Key) error {
+	name := key.Name
 	f.calls = append(f.calls, "DeleteURLMap")
-	um := []*compute.UrlMap{}
+	um := []*composite.UrlMap{}
 	for i := range f.Um {
 		if f.Um[i].Name != name {
 			um = append(um, f.Um[i])
@@ -235,18 +277,31 @@ func (f *FakeLoadBalancers) DeleteURLMap(name string) error {
 }
 
 // ListURLMaps fakes getting url maps from the cloud.
-func (f *FakeLoadBalancers) ListURLMaps() ([]*compute.UrlMap, error) {
+func (f *FakeLoadBalancers) ListUrlMaps(version meta.Version, key *meta.Key) ([]*composite.UrlMap, error) {
 	f.calls = append(f.calls, "ListURLMaps")
+	result := []*composite.UrlMap{}
+	for _, um := range f.Um {
+		if um.Version == version && um.ResourceType == key.Type() {
+			result = append(result, um)
+		}
+	}
+
 	return f.Um, nil
+}
+
+func (f *FakeLoadBalancers) ListAllUrlMaps() ([]*composite.UrlMap, error) {
+	f.calls = append(f.calls, "ListURLMaps")
+	return f.ListUrlMaps(f.Version, f.CreateKey("", false))
 }
 
 // TargetProxies fakes
 
 // GetTargetHTTPProxy fakes getting target http proxies from the cloud.
-func (f *FakeLoadBalancers) GetTargetHTTPProxy(name string) (*compute.TargetHttpProxy, error) {
+func (f *FakeLoadBalancers) GetTargetHttpProxy(version meta.Version, key *meta.Key) (*composite.TargetHttpProxy, error) {
+	name := key.Name
 	f.calls = append(f.calls, "GetTargetHTTPProxy")
-	for i := range f.Tp {
-		if f.Tp[i].Name == name {
+	for i, tp := range f.Tp {
+		if tp.Name == name && tp.Version == version && tp.ResourceType == key.Type() {
 			return f.Tp[i], nil
 		}
 	}
@@ -254,35 +309,40 @@ func (f *FakeLoadBalancers) GetTargetHTTPProxy(name string) (*compute.TargetHttp
 }
 
 // CreateTargetHTTPProxy fakes creating a target http proxy.
-func (f *FakeLoadBalancers) CreateTargetHTTPProxy(proxy *compute.TargetHttpProxy) error {
+func (f *FakeLoadBalancers) CreateTargetHttpProxy(proxy *composite.TargetHttpProxy, key *meta.Key) error {
 	f.calls = append(f.calls, "CreateTargetHTTPProxy")
-	proxy.SelfLink = cloud.NewTargetHttpProxiesResourceID("mock-project", proxy.Name).SelfLink(meta.VersionGA)
+	proxy.SelfLink = cloud.NewTargetHttpProxiesResourceID("mock-project", proxy.Name).SelfLink(proxy.Version)
+	proxy.ResourceType = key.Type()
+	if proxy.Version == "" {
+		proxy.Version = meta.VersionGA
+	}
 	f.Tp = append(f.Tp, proxy)
 	return nil
 }
 
 // DeleteTargetHTTPProxy fakes deleting a target http proxy.
-func (f *FakeLoadBalancers) DeleteTargetHTTPProxy(name string) error {
+func (f *FakeLoadBalancers) DeleteTargetHttpProxy(version meta.Version, key *meta.Key) error {
+	name := key.Name
 	f.calls = append(f.calls, "DeleteTargetHTTPProxy")
-	tp := []*compute.TargetHttpProxy{}
-	for i := range f.Tp {
-		if f.Tp[i].Name != name {
-			tp = append(tp, f.Tp[i])
+	proxies := []*composite.TargetHttpProxy{}
+	for i, tp := range f.Tp {
+		if tp.Name != name || tp.Version != version || tp.ResourceType != key.Type() {
+			proxies = append(proxies, f.Tp[i])
 		}
 	}
-	if len(f.Tp) == len(tp) {
+	if len(f.Tp) == len(proxies) {
 		// Nothing was deleted.
 		return utils.FakeGoogleAPINotFoundErr()
 	}
-	f.Tp = tp
+	f.Tp = proxies
 	return nil
 }
 
 // SetURLMapForTargetHTTPProxy fakes setting an url-map for a target http proxy.
-func (f *FakeLoadBalancers) SetURLMapForTargetHTTPProxy(proxy *compute.TargetHttpProxy, urlMapLink string) error {
+func (f *FakeLoadBalancers) SetUrlMapForTargetHttpProxy(proxy *composite.TargetHttpProxy, urlMapLink string, key *meta.Key) error {
 	f.calls = append(f.calls, "SetURLMapForTargetHTTPProxy")
-	for i := range f.Tp {
-		if f.Tp[i].Name == proxy.Name {
+	for i, tp := range f.Tp {
+		if tp.Name == proxy.Name && tp.Version == proxy.Version && tp.ResourceType == key.Type() {
 			f.Tp[i].UrlMap = urlMapLink
 		}
 	}
@@ -292,10 +352,11 @@ func (f *FakeLoadBalancers) SetURLMapForTargetHTTPProxy(proxy *compute.TargetHtt
 // TargetHttpsProxy fakes
 
 // GetTargetHTTPSProxy fakes getting target http proxies from the cloud.
-func (f *FakeLoadBalancers) GetTargetHTTPSProxy(name string) (*compute.TargetHttpsProxy, error) {
+func (f *FakeLoadBalancers) GetTargetHttpsProxy(version meta.Version, key *meta.Key) (*composite.TargetHttpsProxy, error) {
+	name := key.Name
 	f.calls = append(f.calls, "GetTargetHTTPSProxy")
-	for i := range f.Tps {
-		if f.Tps[i].Name == name {
+	for i, tps := range f.Tps {
+		if tps.Name == name && tps.Version == version && tps.ResourceType == key.Type() {
 			return f.Tps[i], nil
 		}
 	}
@@ -303,19 +364,24 @@ func (f *FakeLoadBalancers) GetTargetHTTPSProxy(name string) (*compute.TargetHtt
 }
 
 // CreateTargetHTTPSProxy fakes creating a target http proxy.
-func (f *FakeLoadBalancers) CreateTargetHTTPSProxy(proxy *compute.TargetHttpsProxy) error {
+func (f *FakeLoadBalancers) CreateTargetHttpsProxy(proxy *composite.TargetHttpsProxy, key *meta.Key) error {
 	f.calls = append(f.calls, "CreateTargetHTTPSProxy")
-	proxy.SelfLink = cloud.NewTargetHttpProxiesResourceID("mock-project", proxy.Name).SelfLink(meta.VersionGA)
+	proxy.SelfLink = cloud.NewTargetHttpProxiesResourceID("mock-project", proxy.Name).SelfLink(proxy.Version)
+	proxy.ResourceType = key.Type()
+	if proxy.Version == "" {
+		proxy.Version = meta.VersionGA
+	}
 	f.Tps = append(f.Tps, proxy)
 	return nil
 }
 
 // DeleteTargetHTTPSProxy fakes deleting a target http proxy.
-func (f *FakeLoadBalancers) DeleteTargetHTTPSProxy(name string) error {
+func (f *FakeLoadBalancers) DeleteTargetHttpsProxy(version meta.Version, key *meta.Key) error {
+	name := key.Name
 	f.calls = append(f.calls, "DeleteTargetHTTPSProxy")
-	tp := []*compute.TargetHttpsProxy{}
-	for i := range f.Tps {
-		if f.Tps[i].Name != name {
+	tp := []*composite.TargetHttpsProxy{}
+	for i, tps := range f.Tps {
+		if tps.Name != name || tps.Version != version || tps.ResourceType != key.Type() {
 			tp = append(tp, f.Tps[i])
 		}
 	}
@@ -328,10 +394,10 @@ func (f *FakeLoadBalancers) DeleteTargetHTTPSProxy(name string) error {
 }
 
 // SetURLMapForTargetHTTPSProxy fakes setting an url-map for a target http proxy.
-func (f *FakeLoadBalancers) SetURLMapForTargetHTTPSProxy(proxy *compute.TargetHttpsProxy, urlMapLink string) error {
+func (f *FakeLoadBalancers) SetUrlMapForTargetHttpsProxy(proxy *composite.TargetHttpsProxy, urlMapLink string, key *meta.Key) error {
 	f.calls = append(f.calls, "SetURLMapForTargetHTTPSProxy")
-	for i := range f.Tps {
-		if f.Tps[i].Name == proxy.Name {
+	for i, tps := range f.Tps {
+		if tps.Name == proxy.Name && tps.Version == proxy.Version && tps.ResourceType == key.Type() {
 			f.Tps[i].UrlMap = urlMapLink
 		}
 	}
@@ -339,11 +405,11 @@ func (f *FakeLoadBalancers) SetURLMapForTargetHTTPSProxy(proxy *compute.TargetHt
 }
 
 // SetSslCertificateForTargetHTTPProxy fakes out setting certificates.
-func (f *FakeLoadBalancers) SetSslCertificateForTargetHTTPSProxy(proxy *compute.TargetHttpsProxy, sslCertURLs []string) error {
+func (f *FakeLoadBalancers) SetSslCertificateForTargetHttpsProxy(proxy *composite.TargetHttpsProxy, sslCertURLs []string, key *meta.Key) error {
 	f.calls = append(f.calls, "SetSslCertificateForTargetHTTPSProxy")
 	found := false
-	for i := range f.Tps {
-		if f.Tps[i].Name == proxy.Name {
+	for i, tps := range f.Tps {
+		if tps.Name == proxy.Name && tps.ResourceType == key.Type() && tps.Version == proxy.Version {
 			if len(sslCertURLs) > TargetProxyCertLimit {
 				return utils.FakeGoogleAPIForbiddenErr()
 			}
@@ -398,40 +464,53 @@ func (f *FakeLoadBalancers) DeleteGlobalAddress(name string) error {
 // SslCertificate fakes
 
 // GetSslCertificate fakes out getting ssl certs.
-func (f *FakeLoadBalancers) GetSslCertificate(name string) (*compute.SslCertificate, error) {
+func (f *FakeLoadBalancers) GetSslCertificate(version meta.Version, key *meta.Key) (*composite.SslCertificate, error) {
+	name := key.Name
 	f.calls = append(f.calls, "GetSslCertificate")
-	for i := range f.Certs {
-		if f.Certs[i].Name == name {
-			return f.Certs[i], nil
+	for _, cert := range f.Certs {
+		if cert.Name == name && cert.Version == version && cert.ResourceType == key.Type() {
+			return cert, nil
 		}
 	}
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
-func (f *FakeLoadBalancers) ListSslCertificates() ([]*compute.SslCertificate, error) {
+func (f *FakeLoadBalancers) ListSslCertificates(version meta.Version, key *meta.Key) ([]*composite.SslCertificate, error) {
 	f.calls = append(f.calls, "ListSslCertificates")
-	return f.Certs, nil
+	result := []*composite.SslCertificate{}
+	for _, cert := range f.Certs {
+		if cert.Version == version && cert.ResourceType == key.Type() {
+			result = append(result, cert)
+		}
+	}
+
+	return result, nil
 }
 
 // CreateSslCertificate fakes out certificate creation.
-func (f *FakeLoadBalancers) CreateSslCertificate(cert *compute.SslCertificate) (*compute.SslCertificate, error) {
+func (f *FakeLoadBalancers) CreateSslCertificate(cert *composite.SslCertificate, key *meta.Key) error {
 	f.calls = append(f.calls, "CreateSslCertificate")
-	cert.SelfLink = cloud.NewSslCertificatesResourceID("mock-project", cert.Name).SelfLink(meta.VersionGA)
+	cert.SelfLink = cloud.NewSslCertificatesResourceID("mock-project", cert.Name).SelfLink(cert.Version)
 	if len(f.Certs) == FakeCertQuota {
 		// Simulate cert creation failure
-		return nil, fmt.Errorf("unable to create cert, Exceeded cert limit of %d.", FakeCertQuota)
+		return fmt.Errorf("unable to create cert, Exceeded cert limit of %d.", FakeCertQuota)
+	}
+	cert.ResourceType = key.Type()
+	if cert.Version == "" {
+		cert.Version = meta.VersionGA
 	}
 	f.Certs = append(f.Certs, cert)
-	return cert, nil
+	return nil
 }
 
 // DeleteSslCertificate fakes out certificate deletion.
-func (f *FakeLoadBalancers) DeleteSslCertificate(name string) error {
+func (f *FakeLoadBalancers) DeleteSslCertificate(version meta.Version, key *meta.Key) error {
+	name := key.Name
 	f.calls = append(f.calls, "DeleteSslCertificate")
-	certs := []*compute.SslCertificate{}
-	for i := range f.Certs {
-		if f.Certs[i].Name != name {
-			certs = append(certs, f.Certs[i])
+	certs := []*composite.SslCertificate{}
+	for _, cert := range f.Certs {
+		if cert.Name != name || cert.Version != version || cert.ResourceType != key.Type() {
+			certs = append(certs, cert)
 		}
 	}
 	if len(f.Certs) == len(certs) {
@@ -445,10 +524,12 @@ func (f *FakeLoadBalancers) DeleteSslCertificate(name string) error {
 // NewFakeLoadBalancers creates a fake cloud client. Name is the name
 // inserted into the selfLink of the associated resources for testing.
 // eg: forwardingRule.SelfLink == k8-fw-name.
-func NewFakeLoadBalancers(name string, namer *utils.Namer) *FakeLoadBalancers {
+func NewFakeLoadBalancers(name string, namer *utils.Namer, version meta.Version, resourceType meta.KeyType) *FakeLoadBalancers {
 	return &FakeLoadBalancers{
-		Fw:    []*compute.ForwardingRule{},
-		name:  name,
-		namer: namer,
+		Fw:           []*composite.ForwardingRule{},
+		name:         name,
+		namer:        namer,
+		Version:      version,
+		ResourceType: resourceType,
 	}
 }

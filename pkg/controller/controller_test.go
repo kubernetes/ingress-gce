@@ -17,6 +17,8 @@ limitations under the License.
 package controller
 
 import (
+	meta "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/ingress-gce/pkg/composite"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/events"
+	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/test"
@@ -51,7 +54,9 @@ var (
 func newLoadBalancerController() *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
+	frontendConfigClient := frontendconfigclient.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	compositeCloud := composite.NewCloud(fakeGCE)
 	namer := utils.NewNamer(clusterUID, "")
 
 	stopCh := make(chan struct{})
@@ -62,11 +67,11 @@ func newLoadBalancerController() *LoadBalancerController {
 		HealthCheckPath:               "/",
 		DefaultBackendHealthCheckPath: "/healthz",
 	}
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, nil, fakeGCE, namer, ctxConfig)
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, compositeCloud, namer, ctxConfig)
 	lbc := NewLoadBalancerController(ctx, stopCh)
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instances.NewNodePool(instances.NewFakeInstanceGroups(sets.NewString(), namer), namer)
-	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(loadbalancers.NewFakeLoadBalancers(clusterUID, namer), namer, events.RecorderProducerMock{})
+	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(loadbalancers.NewFakeLoadBalancers(clusterUID, namer, meta.VersionGA, meta.Global), namer, events.RecorderProducerMock{})
 	lbc.instancePool.Init(&instances.FakeZoneLister{Zones: []string{"zone-a"}})
 
 	lbc.hasSynced = func() bool { return true }

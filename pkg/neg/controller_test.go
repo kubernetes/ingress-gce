@@ -19,6 +19,8 @@ package neg
 import (
 	"encoding/json"
 	"fmt"
+	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"strings"
 	"testing"
 	"time"
@@ -37,7 +39,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"strconv"
 )
 
@@ -53,13 +54,15 @@ var (
 
 func newTestController(kubeClient kubernetes.Interface) *Controller {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
+	compositeCloud := composite.NewCloud(gce.NewFakeGCECloud(gce.DefaultTestClusterValues()))
+	fmt.Printf("%v", compositeCloud)
 	namer := utils.NewNamer(ClusterID, "")
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:               apiv1.NamespaceAll,
 		ResyncPeriod:            1 * time.Second,
 		DefaultBackendSvcPortID: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, compositeCloud, namer, ctxConfig)
 	controller := NewController(
 		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		context,

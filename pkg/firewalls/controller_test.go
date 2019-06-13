@@ -17,6 +17,7 @@ limitations under the License.
 package firewalls
 
 import (
+	"k8s.io/ingress-gce/pkg/composite"
 	"testing"
 	"time"
 
@@ -38,6 +39,7 @@ func newFirewallController() *FirewallController {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	compositeCloud := composite.NewCloud(fakeGCE)
 
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:               api_v1.NamespaceAll,
@@ -45,7 +47,7 @@ func newFirewallController() *FirewallController {
 		DefaultBackendSvcPortID: test.DefaultBeSvcPort.ID,
 	}
 
-	ctx := context.NewControllerContext(kubeClient, backendConfigClient, nil, fakeGCE, namer, ctxConfig)
+	ctx := context.NewControllerContext(kubeClient, backendConfigClient, nil, compositeCloud, namer, ctxConfig)
 	fwc := NewFirewallController(ctx, []string{"30000-32767"})
 	fwc.hasSynced = func() bool { return true }
 
@@ -83,7 +85,7 @@ func TestFirewallCreateDelete(t *testing.T) {
 	}
 
 	// Verify a firewall rule was created.
-	_, err := fwc.ctx.Cloud.GetFirewall(ruleName)
+	_, err := fwc.ctx.Cloud.GceCloud().GetFirewall(ruleName)
 	if err != nil {
 		t.Fatalf("cloud.GetFirewall(%v) = _, %v, want _, nil", ruleName, err)
 	}
@@ -96,7 +98,7 @@ func TestFirewallCreateDelete(t *testing.T) {
 	}
 
 	// Verify the firewall rule was deleted.
-	_, err = fwc.ctx.Cloud.GetFirewall(ruleName)
+	_, err = fwc.ctx.Cloud.GceCloud().GetFirewall(ruleName)
 	if !utils.IsNotFoundError(err) {
 		t.Fatalf("cloud.GetFirewall(%v) = _, %v, want _, 404 error", ruleName, err)
 	}

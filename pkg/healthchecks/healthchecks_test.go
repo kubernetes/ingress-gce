@@ -166,7 +166,7 @@ func TestHealthCheckDelete(t *testing.T) {
 	hcp.CreateHealthCheck(v1hc)
 
 	// Delete only HTTP 1234
-	err = healthChecks.Delete(namer.IGBackend(1234))
+	err = healthChecks.Delete(namer.IGBackend(1234), false)
 	if err != nil {
 		t.Errorf("unexpected error when deleting health check, err: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestHealthCheckDelete(t *testing.T) {
 	}
 
 	// Delete only HTTP 1234
-	err = healthChecks.Delete(namer.IGBackend(1234))
+	err = healthChecks.Delete(namer.IGBackend(1234), false)
 	if err == nil {
 		t.Errorf("expected not-found error when deleting health check, err: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestHTTP2HealthCheckDelete(t *testing.T) {
 	hcp.CreateAlphaHealthCheck(alphahc)
 
 	// Delete only HTTP2 1234
-	err := healthChecks.Delete(namer.IGBackend(1234))
+	err := healthChecks.Delete(namer.IGBackend(1234), false)
 	if err != nil {
 		t.Errorf("unexpected error when deleting health check, err: %v", err)
 	}
@@ -224,7 +224,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	hcp.CreateHealthCheck(v1hc)
 
 	// Verify the health check exists
-	_, err = healthChecks.Get(hc.Name, meta.VersionGA)
+	_, err = healthChecks.Get(hc.Name, meta.VersionGA, false)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -237,7 +237,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists
-	_, err = healthChecks.Get(hc.Name, meta.VersionGA)
+	_, err = healthChecks.Get(hc.Name, meta.VersionGA, false)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists. HTTP2 is alpha-only.
-	_, err = healthChecks.Get(hc.Name, meta.VersionAlpha)
+	_, err = healthChecks.Get(hc.Name, meta.VersionAlpha, false)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -275,7 +275,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists.
-	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha)
+	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha, false)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -295,7 +295,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists.
-	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha)
+	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha, false)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -319,7 +319,7 @@ func TestAlphaHealthCheck(t *testing.T) {
 		t.Fatalf("got %v, want nil", err)
 	}
 
-	ret, err := healthChecks.Get(hc.Name, meta.VersionAlpha)
+	ret, err := healthChecks.Get(hc.Name, meta.VersionAlpha, false)
 	if err != nil {
 		t.Fatalf("got %v, want nil", err)
 	}

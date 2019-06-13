@@ -98,7 +98,7 @@ func TestSync(t *testing.T) {
 			beName := sp.BackendName(defaultNamer)
 
 			// Check that the new backend has the right port
-			be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&sp))
+			be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&sp), false)
 			if err != nil {
 				t.Fatalf("Did not find expected backend with port %v", sp.NodePort)
 			}
@@ -106,7 +106,7 @@ func TestSync(t *testing.T) {
 				t.Fatalf("Backend %v has wrong port %v, expected %v", be.Name, be.Port, sp)
 			}
 
-			hc, err := syncer.healthChecker.Get(beName, features.VersionFromServicePort(&sp))
+			hc, err := syncer.healthChecker.Get(beName, features.VersionFromServicePort(&sp), false)
 			if err != nil {
 				t.Fatalf("Unexpected err when querying fake healthchecker: %v", err)
 			}
@@ -130,7 +130,7 @@ func TestSyncUpdateHTTPS(t *testing.T) {
 	syncer.Sync([]utils.ServicePort{p})
 	beName := p.BackendName(defaultNamer)
 
-	be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p))
+	be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), false)
 	if err != nil {
 		t.Fatalf("Unexpected err: %v", err)
 	}
@@ -140,7 +140,7 @@ func TestSyncUpdateHTTPS(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ := syncer.healthChecker.Get(beName, features.VersionFromServicePort(&p))
+	hc, _ := syncer.healthChecker.Get(beName, features.VersionFromServicePort(&p), false)
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -149,7 +149,7 @@ func TestSyncUpdateHTTPS(t *testing.T) {
 	p.Protocol = annotations.ProtocolHTTPS
 	syncer.Sync([]utils.ServicePort{p})
 
-	be, err = syncer.backendPool.Get(beName, features.VersionFromServicePort(&p))
+	be, err = syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), false)
 	if err != nil {
 		t.Fatalf("Unexpected err retrieving backend service after update: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestSyncUpdateHTTPS(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ = syncer.healthChecker.Get(beName, features.VersionFromServicePort(&p))
+	hc, _ = syncer.healthChecker.Get(beName, features.VersionFromServicePort(&p), false)
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -174,7 +174,7 @@ func TestSyncUpdateHTTP2(t *testing.T) {
 	syncer.Sync([]utils.ServicePort{p})
 	beName := p.BackendName(defaultNamer)
 
-	be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p))
+	be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), false)
 	if err != nil {
 		t.Fatalf("Unexpected err: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestSyncUpdateHTTP2(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ := syncer.healthChecker.Get(beName, features.VersionFromServicePort(&p))
+	hc, _ := syncer.healthChecker.Get(beName, features.VersionFromServicePort(&p), false)
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -193,7 +193,7 @@ func TestSyncUpdateHTTP2(t *testing.T) {
 	p.Protocol = annotations.ProtocolHTTP2
 	syncer.Sync([]utils.ServicePort{p})
 
-	beBeta, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p))
+	beBeta, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), false)
 	if err != nil {
 		t.Fatalf("Unexpected err retrieving backend service after update: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestSyncUpdateHTTP2(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ = syncer.healthChecker.Get(beName, meta.VersionAlpha)
+	hc, _ = syncer.healthChecker.Get(beName, meta.VersionAlpha, false)
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -416,7 +416,7 @@ func TestSyncNEG(t *testing.T) {
 	// GC should garbage collect the Backend on the old naming schema
 	syncer.GC([]utils.ServicePort{svcPort})
 
-	bs, err := syncer.backendPool.Get(nodePortName, features.VersionFromServicePort(&svcPort))
+	bs, err := syncer.backendPool.Get(nodePortName, features.VersionFromServicePort(&svcPort), false)
 	if err == nil {
 		t.Fatalf("Expected not to get BackendService with name %v, got: %+v", nodePortName, bs)
 	}
@@ -489,7 +489,7 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
 				func(t *testing.T) {
 					syncer.Sync([]utils.ServicePort{oldPort})
-					be, err := syncer.backendPool.Get(oldPort.BackendName(defaultNamer), features.VersionFromServicePort(&oldPort))
+					be, err := syncer.backendPool.Get(oldPort.BackendName(defaultNamer), features.VersionFromServicePort(&oldPort), false)
 					if err != nil {
 						t.Fatalf("%v", err)
 					}
@@ -533,7 +533,7 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
 				func(t *testing.T) {
 					syncer.Sync([]utils.ServicePort{oldPort})
-					be, err := syncer.backendPool.Get(oldPort.BackendName(defaultNamer), features.VersionFromServicePort(&oldPort))
+					be, err := syncer.backendPool.Get(oldPort.BackendName(defaultNamer), features.VersionFromServicePort(&oldPort), false)
 					if err != nil {
 						t.Fatalf("%v", err)
 					}
@@ -561,7 +561,7 @@ func TestEnsureBackendServiceHealthCheckLink(t *testing.T) {
 
 	p := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}}
 	syncer.Sync([]utils.ServicePort{p})
-	be, err := syncer.backendPool.Get(p.BackendName(defaultNamer), features.VersionFromServicePort(&p))
+	be, err := syncer.backendPool.Get(p.BackendName(defaultNamer), features.VersionFromServicePort(&p), false)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}

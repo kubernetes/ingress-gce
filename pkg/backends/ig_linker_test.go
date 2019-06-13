@@ -122,6 +122,6 @@ func TestLinkWithCreationModeError(t *testing.T) {
 				t.Fatalf("Wrong balancing mode, expected %v got %v", modes[(i+1)%len(modes)], b.BalancingMode)
 			}
 		}
-		linker.backendPool.Delete(sp.BackendName(defaultNamer))
+		linker.backendPool.Delete(sp.BackendName(defaultNamer), false)
 	}
 }
