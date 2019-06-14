@@ -53,7 +53,7 @@ func (c *Cloud) ListAllUrlMaps() ([]*UrlMap, error) {
 				return nil, fmt.Errorf("error listing all urlmaps: %v", err)
 			}
 			for _, um := range list {
-				resultMap[um.Name] = um
+				resultMap[um.SelfLink] = um
 			}
 		}
 	}
@@ -80,7 +80,7 @@ func (c *Cloud) ListAllBackendServices() ([]*BackendService, error) {
 				return nil, fmt.Errorf("error listing all urlmaps: %v", err)
 			}
 			for _, bs := range list {
-				resultMap[bs.Name] = bs
+				resultMap[bs.SelfLink] = bs
 			}
 		}
 	}

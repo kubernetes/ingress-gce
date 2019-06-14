@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"net/http"
 	"reflect"
@@ -452,7 +453,16 @@ func (lbc *LoadBalancerController) GCLoadBalancers(state interface{}) error {
 		return fmt.Errorf("expected state type to be gcState, type was %T", state)
 	}
 
-	if err := lbc.l7Pool.GC(gcState.lbNames); err != nil {
+	lbNames := []string{}
+	regional := []bool{}
+
+	for _, ing := range gcState.ingresses {
+		// Get ingress class
+		regional = append(regional, utils.IsGCEILBIngress(ing))
+		lbNames = append(lbNames, types.NamespacedName{Namespace: ing.Namespace, Name: ing.Name}.String())
+	}
+
+	if err := lbc.l7Pool.GC(lbNames, regional); err != nil {
 		return err
 	}
 
@@ -654,7 +664,9 @@ func (lbc *LoadBalancerController) ToSvcPorts(ings []*extensions.Ingress) []util
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings {
 		urlMap, _ := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
-		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
+		svcPorts := urlMap.AllServicePorts()
+		lbc.UpdateServicePortsForILB(svcPorts, ing)
+		knownPorts = append(knownPorts, svcPorts...)
 	}
 	return knownPorts
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package neg
 
 import (
+	"k8s.io/ingress-gce/pkg/composite"
 	"testing"
 	"time"
 
@@ -69,7 +70,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 		ResyncPeriod:            1 * time.Second,
 		DefaultBackendSvcPortID: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, composite.NewCloud(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), namer, ctxConfig)
 
 	manager := newSyncerManager(
 		namer,

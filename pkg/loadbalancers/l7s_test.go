@@ -50,18 +50,21 @@ func TestGC(t *testing.T) {
 	testCases := []struct {
 		desc       string
 		ingressLBs []string
+		regional   []bool
 		gcpLBs     []string
 		expectLBs  []string
 	}{
 		{
 			desc:       "empty",
 			ingressLBs: []string{},
+			regional:   []bool{},
 			gcpLBs:     []string{},
 			expectLBs:  []string{},
 		},
 		{
 			desc:       "remove all lbs",
 			ingressLBs: []string{},
+			regional:   []bool{},
 			gcpLBs: []string{
 				generateKey(longName[:10], longName[:10]),
 				generateKey(longName[:20], longName[:20]),
@@ -98,6 +101,7 @@ func TestGC(t *testing.T) {
 				generateKey(longName[:20], longName[:27]),
 				generateKey(longName[:50], longName[:30]),
 			},
+			regional:  []bool{false, false, false, false},
 			gcpLBs:    []string{},
 			expectLBs: []string{},
 		},
@@ -109,6 +113,7 @@ func TestGC(t *testing.T) {
 				generateKey(longName[:20], longName[:30]),
 				generateKey(longName, longName),
 			},
+			regional: []bool{false, false, false, false},
 			gcpLBs: []string{
 				generateKey(longName[:10], longName[:10]),
 				generateKey(longName[:20], longName[:20]),
@@ -128,6 +133,7 @@ func TestGC(t *testing.T) {
 				generateKey(longName[:10], longName[:10]),
 				generateKey(longName, longName),
 			},
+			regional: []bool{false, false},
 			gcpLBs: []string{
 				generateKey(longName[:10], longName[:10]),
 				generateKey(longName[:20], longName[:20]),
@@ -145,6 +151,7 @@ func TestGC(t *testing.T) {
 				generateKey(longName[:10], longName[:10]),
 				generateKey(longName, longName),
 			},
+			regional: []bool{false, false},
 			gcpLBs: []string{
 				generateKey(longName[:10], longName[:10]),
 				generateKey(longName[:20], longName[:20]),
@@ -177,7 +184,7 @@ func TestGC(t *testing.T) {
 			createFakeLoadbalancer(l7sPool.cloud, l7sPool.namer, key)
 		}
 
-		err := l7sPool.GC(tc.ingressLBs)
+		err := l7sPool.GC(tc.ingressLBs, tc.regional)
 		if err != nil {
 			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
 		}
@@ -235,7 +242,7 @@ func TestDoNotGCWantedLB(t *testing.T) {
 
 	for _, tc := range testCases {
 		createFakeLoadbalancer(l7sPool.cloud, namer, tc.key)
-		err := l7sPool.GC([]string{tc.key})
+		err := l7sPool.GC([]string{tc.key}, []bool{false})
 		if err != nil {
 			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
 		}
@@ -269,7 +276,7 @@ func TestGCToLeakLB(t *testing.T) {
 
 	for _, tc := range testCases {
 		createFakeLoadbalancer(l7sPool.cloud, namer, tc.key)
-		err := l7sPool.GC([]string{})
+		err := l7sPool.GC([]string{}, []bool{})
 		if err != nil {
 			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
 		}

@@ -76,7 +76,7 @@ type LoadBalancers interface {
 type LoadBalancerPool interface {
 	Ensure(ri *L7RuntimeInfo) (*L7, error)
 	Delete(name string, regional bool) error
-	GC(names []string) error
+	GC(names []string, regional []bool) error
 	Shutdown() error
 	List() ([]string, []bool, error)
 }

@@ -22,6 +22,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
@@ -59,8 +60,9 @@ func fakeContext() *context.ControllerContext {
 		ResyncPeriod: 1 * time.Second,
 	}
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	compositeCloud := composite.NewCloud(fakeGCE)
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
-	context := context.NewControllerContext(kubeClient, nil, nil, fakeGCE, namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, nil, nil, compositeCloud, namer, ctxConfig)
 	return context
 }
 

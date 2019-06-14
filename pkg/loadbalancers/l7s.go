@@ -24,6 +24,7 @@ import (
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
+	"strconv"
 )
 
 // L7s implements LoadBalancerPool.
@@ -123,25 +124,25 @@ func (l *L7s) List() ([]string, []bool, error) {
 }
 
 // GC garbage collects loadbalancers not in the input list.
-func (l *L7s) GC(names []string) error {
+func (l *L7s) GC(names []string, regional []bool) error {
 	klog.V(2).Infof("GC(%v)", names)
 
 	knownLoadBalancers := sets.NewString()
-	for _, n := range names {
-		knownLoadBalancers.Insert(l.namer.LoadBalancer(n))
+	for i, _ := range names {
+		knownLoadBalancers.Insert(l.namer.LoadBalancer(names[i]) + "-" + strconv.FormatBool(regional[i]))
 	}
-	pool, regional, err := l.List()
+	pool, urlMapRegional, err := l.List()
 	if err != nil {
 		return err
 	}
 
 	// Delete unknown loadbalancers
 	for i, name := range pool {
-		if knownLoadBalancers.Has(name) {
+		if knownLoadBalancers.Has(name + "-" + strconv.FormatBool(urlMapRegional[i])) {
 			continue
 		}
 		klog.V(2).Infof("GCing loadbalancer %v", name)
-		if err := l.Delete(name, regional[i]); err != nil {
+		if err := l.Delete(name, urlMapRegional[i]); err != nil {
 			return err
 		}
 	}
@@ -151,7 +152,7 @@ func (l *L7s) GC(names []string) error {
 
 // Shutdown logs whether or not the pool is empty.
 func (l *L7s) Shutdown() error {
-	if err := l.GC([]string{}); err != nil {
+	if err := l.GC([]string{}, []bool{}); err != nil {
 		return err
 	}
 	klog.V(2).Infof("Loadbalancer pool shutdown.")

@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"k8s.io/api/core/v1"
@@ -138,7 +139,7 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
 	knownPorts := sets.NewString()
 	for _, sp := range svcPorts {
 		name := sp.BackendName(s.namer)
-		knownPorts.Insert(name)
+		knownPorts.Insert(name + "-" + strconv.FormatBool(sp.ILBEnabled))
 	}
 
 	backends, err := s.backendPool.List()
@@ -148,12 +149,15 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
 
 	for _, be := range backends {
 		name := be.Name
-		if knownPorts.Has(name) {
+		regional, err := composite.IsRegionalResource(be.SelfLink)
+		if err != nil {
+			return err
+		}
+		if knownPorts.Has(name + "-" + strconv.FormatBool(regional)) {
 			continue
 		}
 
 		klog.V(3).Infof("GCing backendService for port %s", name)
-		regional, err := composite.IsRegionalResource(be.SelfLink)
 		if err != nil {
 			return err
 		}
