@@ -344,6 +344,8 @@ func (c *Controller) processService(key string) error {
 	return c.manager.EnsureSyncers(namespace, name, portInfoMap)
 }
 
+// syncNegStatusAnnotation syncs the neg status annotation
+// it takes service namespace, name and the expected service ports for NEGs.
 func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap negtypes.PortInfoMap) error {
 	zones, err := c.zoneGetter.ListZones()
 	if err != nil {

@@ -258,24 +258,54 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 			{
 				Addresses: []apiv1.EndpointAddress{
 					{
-						IP:        "10.100.1.1",
-						NodeName:  &instance1,
-						TargetRef: &v1.ObjectReference{},
+						IP:       "10.100.1.1",
+						NodeName: &instance1,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod1",
+						},
 					},
 					{
-						IP:        "10.100.1.2",
-						NodeName:  &instance1,
-						TargetRef: &v1.ObjectReference{},
+						IP:       "10.100.1.2",
+						NodeName: &instance1,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod2",
+						},
 					},
 					{
-						IP:        "10.100.2.1",
-						NodeName:  &instance2,
-						TargetRef: &v1.ObjectReference{},
+						IP:       "10.100.2.1",
+						NodeName: &instance2,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod3",
+						},
 					},
 					{
-						IP:        "10.100.3.1",
-						NodeName:  &instance3,
-						TargetRef: &v1.ObjectReference{},
+						IP:       "10.100.3.1",
+						NodeName: &instance3,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod4",
+						},
+					},
+				},
+				NotReadyAddresses: []apiv1.EndpointAddress{
+					{
+						IP:       "10.100.1.3",
+						NodeName: &instance1,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod5",
+						},
+					},
+					{
+						IP:       "10.100.1.4",
+						NodeName: &instance1,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod6",
+						},
 					},
 				},
 				Ports: []apiv1.EndpointPort{
@@ -285,19 +315,34 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 						Protocol: apiv1.ProtocolTCP,
 					},
 				},
-				NotReadyAddresses: []apiv1.EndpointAddress{},
 			},
 			{
 				Addresses: []apiv1.EndpointAddress{
 					{
-						IP:        "10.100.2.2",
-						NodeName:  &instance2,
-						TargetRef: &v1.ObjectReference{},
+						IP:       "10.100.2.2",
+						NodeName: &instance2,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod7",
+						},
 					},
 					{
-						IP:        "10.100.4.1",
-						NodeName:  &instance4,
-						TargetRef: &v1.ObjectReference{},
+						IP:       "10.100.4.1",
+						NodeName: &instance4,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod8",
+						},
+					},
+				},
+				NotReadyAddresses: []apiv1.EndpointAddress{
+					{
+						IP:       "10.100.4.3",
+						NodeName: &instance4,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod9",
+						},
 					},
 				},
 				Ports: []apiv1.EndpointPort{
@@ -307,19 +352,34 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 						Protocol: apiv1.ProtocolTCP,
 					},
 				},
-				NotReadyAddresses: []apiv1.EndpointAddress{},
 			},
 			{
 				Addresses: []apiv1.EndpointAddress{
 					{
-						IP:        "10.100.3.2",
-						NodeName:  &instance3,
-						TargetRef: &v1.ObjectReference{},
+						IP:       "10.100.3.2",
+						NodeName: &instance3,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod10",
+						},
 					},
 					{
-						IP:        "10.100.4.2",
-						NodeName:  &instance4,
-						TargetRef: &v1.ObjectReference{},
+						IP:       "10.100.4.2",
+						NodeName: &instance4,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod11",
+						},
+					},
+				},
+				NotReadyAddresses: []apiv1.EndpointAddress{
+					{
+						IP:       "10.100.4.4",
+						NodeName: &instance4,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod12",
+						},
 					},
 				},
 				Ports: []apiv1.EndpointPort{
@@ -329,7 +389,6 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 						Protocol: apiv1.ProtocolTCP,
 					},
 				},
-				NotReadyAddresses: []apiv1.EndpointAddress{},
 			},
 		},
 	}

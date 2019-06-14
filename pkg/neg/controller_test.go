@@ -360,7 +360,6 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 	}
 }
 
-// TODO(freehan): include test cases with different ReadinessGate setup
 func TestSyncNegAnnotation(t *testing.T) {
 	t.Parallel()
 	// TODO: test that c.serviceLister.Update is called whenever the annotation
@@ -397,6 +396,16 @@ func TestSyncNegAnnotation(t *testing.T) {
 		},
 		{
 			desc: "remove annotation with no previous annotation",
+		},
+		{
+			desc:            "readiness gate makes no difference 1",
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer, false),
+			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{3000: "6000", 4000: "8000"}, namer, true),
+		},
+		{
+			desc:            "readiness gate makes no difference 2",
+			previousPortMap: negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer, true),
+			portMap:         negtypes.NewPortInfoMap(namespace, name, negtypes.SvcPortMap{80: "named_port", 4040: "other_port"}, namer, false),
 		},
 	}
 

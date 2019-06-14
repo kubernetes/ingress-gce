@@ -26,12 +26,14 @@ import (
 
 	"google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
-	readiness "k8s.io/ingress-gce/pkg/neg/readiness"
+	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
@@ -148,17 +150,17 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 	for _, tc := range testCases {
 		err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints)
 		if err != nil {
-			t.Errorf("For case %q, expect error == nil, but got %v", tc.desc, err)
+			t.Errorf("For case %q, endpointSets error == nil, but got %v", tc.desc, err)
 		}
 
 		if err := waitForTransactions(transactionSyncer); err != nil {
-			t.Errorf("For case %q, expect error == nil, but got %v", tc.desc, err)
+			t.Errorf("For case %q, endpointSets error == nil, but got %v", tc.desc, err)
 		}
 
 		for zone, endpoints := range tc.expectEndpoints {
 			list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.negName, zone, false)
 			if err != nil {
-				t.Errorf("For case %q,, expect error == nil, but got %v", tc.desc, err)
+				t.Errorf("For case %q,, endpointSets error == nil, but got %v", tc.desc, err)
 			}
 
 			endpointSet := negtypes.NewNetworkEndpointSet()
@@ -167,31 +169,32 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 			}
 
 			if !endpoints.Equal(endpointSet) {
-				t.Errorf("For case %q, in zone %q, expect endpoints == %v, but got %v", tc.desc, zone, endpoints, endpointSet)
+				t.Errorf("For case %q, in zone %q, endpointSets endpoints == %v, but got %v", tc.desc, zone, endpoints, endpointSet)
 			}
 		}
 	}
 }
 
-// TODO(freehan): instead of only checking sync count. Also check the retry count
 func TestCommitTransaction(t *testing.T) {
 	t.Parallel()
 	s, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())))
 	// use testSyncer to track the number of Sync got triggered
 	testSyncer := &testSyncer{s.(*syncer), 0}
+	testRetryer := &testRetryHandler{testSyncer, 0}
 	transactionSyncer.syncer = testSyncer
 	// assume NEG is initialized
 	transactionSyncer.needInit = false
-	transactionSyncer.retry = NewDelayRetryHandler(func() { transactionSyncer.syncer.Sync() }, NewExponentialBackendOffHandler(0, 0, 0))
+	transactionSyncer.retry = testRetryer
 
 	testCases := []struct {
-		desc            string
-		err             error
-		endpointMap     map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint
-		table           func() networkEndpointTransactionTable
-		expect          func() networkEndpointTransactionTable
-		expectSyncCount int
-		expectNeedInit  bool
+		desc             string
+		err              error
+		endpointMap      map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint
+		table            func() networkEndpointTransactionTable
+		expect           func() networkEndpointTransactionTable
+		expectSyncCount  int
+		expectRetryCount int
+		expectNeedInit   bool
 	}{
 		{
 			"empty inputs",
@@ -200,6 +203,7 @@ func TestCommitTransaction(t *testing.T) {
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			1,
+			0,
 			false,
 		},
 		{
@@ -213,6 +217,7 @@ func TestCommitTransaction(t *testing.T) {
 			},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			2,
+			0,
 			false,
 		},
 		{
@@ -227,6 +232,7 @@ func TestCommitTransaction(t *testing.T) {
 			},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			3,
+			0,
 			false,
 		},
 		{
@@ -246,6 +252,7 @@ func TestCommitTransaction(t *testing.T) {
 				return table
 			},
 			4,
+			0,
 			false,
 		},
 		{
@@ -263,6 +270,7 @@ func TestCommitTransaction(t *testing.T) {
 				return table
 			},
 			5,
+			1,
 			true,
 		},
 		{
@@ -282,6 +290,7 @@ func TestCommitTransaction(t *testing.T) {
 				return table
 			},
 			6,
+			2,
 			true,
 		},
 		{
@@ -295,6 +304,7 @@ func TestCommitTransaction(t *testing.T) {
 			},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			7,
+			2,
 			false,
 		},
 		{
@@ -314,6 +324,7 @@ func TestCommitTransaction(t *testing.T) {
 				return table
 			},
 			8,
+			2,
 			false,
 		},
 	}
@@ -322,7 +333,7 @@ func TestCommitTransaction(t *testing.T) {
 		transactionSyncer.transactions = tc.table()
 		transactionSyncer.commitTransaction(tc.err, tc.endpointMap)
 		if transactionSyncer.needInit != tc.expectNeedInit {
-			t.Errorf("For case %q, expect needInit == %v, but got %v", tc.desc, tc.expectNeedInit, transactionSyncer.needInit)
+			t.Errorf("For case %q, endpointSets needInit == %v, but got %v", tc.desc, tc.expectNeedInit, transactionSyncer.needInit)
 		}
 		if transactionSyncer.needInit == true {
 			transactionSyncer.needInit = false
@@ -331,12 +342,13 @@ func TestCommitTransaction(t *testing.T) {
 		validateTransactionTableEquality(t, tc.desc, transactionSyncer.transactions, tc.expect())
 		// wait for the sync count to bump
 		if err := wait.PollImmediate(time.Microsecond, 5*time.Second, func() (bool, error) {
-			if tc.expectSyncCount == testSyncer.SyncCount {
+			if tc.expectSyncCount == testSyncer.SyncCount && tc.expectRetryCount == testRetryer.RetryCount {
 				return true, nil
 			}
 			return false, nil
 		}); err != nil {
-			t.Errorf("For case %q, expect sync count == %v, but got %v", tc.desc, tc.expectSyncCount, testSyncer.SyncCount)
+			t.Errorf("For case %q, endpointSets sync count == %v, but got %v", tc.desc, tc.expectSyncCount, testSyncer.SyncCount)
+			t.Errorf("For case %q, endpointSets retry count == %v, but got %v", tc.desc, tc.expectRetryCount, testRetryer.RetryCount)
 		}
 
 	}
@@ -440,7 +452,7 @@ func TestReconcileTransactions(t *testing.T) {
 			},
 		},
 		{
-			"expect 10 endpoints, but unwanted endpoints are being attached",
+			"endpointSets 10 endpoints, but unwanted endpoints are being attached",
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 			},
@@ -590,7 +602,7 @@ func TestReconcileTransactions(t *testing.T) {
 
 		// Check if endpointMap was modified
 		if !reflect.DeepEqual(copy, tc.endpointMap) {
-			t.Errorf("For test case %q, does not expect endpointMap to change", tc.desc)
+			t.Errorf("For test case %q, does not endpointSets endpointMap to change", tc.desc)
 		}
 		// Check if the existing entries are matching expected
 		validateTransactionTableEquality(t, tc.desc, table, tc.expect())
@@ -759,7 +771,7 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 	for _, tc := range testCases {
 		mergeTransactionIntoZoneEndpointMap(tc.endpointMap, tc.table())
 		if !reflect.DeepEqual(tc.endpointMap, tc.expectEndpointMap) {
-			t.Errorf("For test case %q, expect endpoint map to be %+v, but got %+v", tc.desc, tc.expectEndpointMap, tc.endpointMap)
+			t.Errorf("For test case %q, endpointSets endpoint map to be %+v, but got %+v", tc.desc, tc.expectEndpointMap, tc.endpointMap)
 		}
 	}
 }
@@ -826,7 +838,214 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 		input := tc.endpointMap
 		filterEndpointByTransaction(input, tc.table())
 		if !reflect.DeepEqual(tc.endpointMap, tc.expectEndpointMap) {
-			t.Errorf("For test case %q, expect endpoint map to be %+v, but got %+v", tc.desc, tc.expectEndpointMap, tc.endpointMap)
+			t.Errorf("For test case %q, endpointSets endpoint map to be %+v, but got %+v", tc.desc, tc.expectEndpointMap, tc.endpointMap)
+		}
+	}
+}
+
+func TestCommitPods(t *testing.T) {
+	t.Parallel()
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())))
+	reflector := &testReflector{}
+	transactionSyncer.reflector = reflector
+
+	for _, tc := range []struct {
+		desc         string
+		input        func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap)
+		expectOutput func() map[string]negtypes.EndpointPodMap
+	}{
+		{
+			desc: "empty input",
+			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				return nil, nil
+			},
+			expectOutput: func() map[string]negtypes.EndpointPodMap { return map[string]negtypes.EndpointPodMap{} },
+		},
+		{
+			desc: "10 endpoints from 1 instance in 1 zone",
+			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				return map[string]negtypes.NetworkEndpointSet{testZone1: endpointSet}, endpointMap
+			},
+			expectOutput: func() map[string]negtypes.EndpointPodMap {
+				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				return map[string]negtypes.EndpointPodMap{testZone1: endpointMap}
+			},
+		},
+		{
+			desc: "40 endpoints from 4 instances in 2 zone",
+			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				retSet := map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet(),
+					testZone2: negtypes.NewNetworkEndpointSet(),
+				}
+				retMap := negtypes.EndpointPodMap{}
+				endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				retMap = unionEndpointMap(retMap, endpointMap)
+				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				retMap = unionEndpointMap(retMap, endpointMap)
+				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				retMap = unionEndpointMap(retMap, endpointMap)
+				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				retMap = unionEndpointMap(retMap, endpointMap)
+				return retSet, retMap
+			},
+			expectOutput: func() map[string]negtypes.EndpointPodMap {
+				retMap := map[string]negtypes.EndpointPodMap{
+					testZone1: {},
+					testZone2: {},
+				}
+				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				retMap[testZone1] = unionEndpointMap(retMap[testZone1], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				retMap[testZone1] = unionEndpointMap(retMap[testZone1], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				retMap[testZone2] = unionEndpointMap(retMap[testZone2], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+				retMap[testZone2] = unionEndpointMap(retMap[testZone2], endpointMap)
+				return retMap
+			},
+		},
+		{
+			desc: "40 endpoints from 4 instances in 2 zone, but half of the endpoints does not have corresponding pod mapping",
+			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				retSet := map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet(),
+					testZone2: negtypes.NewNetworkEndpointSet(),
+				}
+				retMap := negtypes.EndpointPodMap{}
+
+				endpointSet, _ := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
+				retMap = unionEndpointMap(retMap, endpointMap)
+
+				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
+				retMap = unionEndpointMap(retMap, endpointMap)
+
+				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 5, testInstance3, "8080")
+				retMap = unionEndpointMap(retMap, endpointMap)
+
+				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 5, testInstance4, "8080")
+				retMap = unionEndpointMap(retMap, endpointMap)
+				return retSet, retMap
+			},
+			expectOutput: func() map[string]negtypes.EndpointPodMap {
+				retMap := map[string]negtypes.EndpointPodMap{
+					testZone1: {},
+					testZone2: {},
+				}
+				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 5, testInstance1, "8080")
+				retMap[testZone1] = unionEndpointMap(retMap[testZone1], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 5, testInstance2, "8080")
+				retMap[testZone1] = unionEndpointMap(retMap[testZone1], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 5, testInstance3, "8080")
+				retMap[testZone2] = unionEndpointMap(retMap[testZone2], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 5, testInstance4, "8080")
+				retMap[testZone2] = unionEndpointMap(retMap[testZone2], endpointMap)
+				return retMap
+			},
+		},
+		{
+			desc: "40 endpoints from 4 instances in 2 zone, and more endpoints are in pod mapping",
+			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				retSet := map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet(),
+					testZone2: negtypes.NewNetworkEndpointSet(),
+				}
+				retMap := negtypes.EndpointPodMap{}
+
+				endpointSet, _ := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 15, testInstance1, "8080")
+				retMap = unionEndpointMap(retMap, endpointMap)
+
+				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 15, testInstance2, "8080")
+				retMap = unionEndpointMap(retMap, endpointMap)
+
+				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 15, testInstance3, "8080")
+				retMap = unionEndpointMap(retMap, endpointMap)
+
+				endpointSet, _ = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 15, testInstance4, "8080")
+				retMap = unionEndpointMap(retMap, endpointMap)
+				return retSet, retMap
+			},
+			expectOutput: func() map[string]negtypes.EndpointPodMap {
+				retMap := map[string]negtypes.EndpointPodMap{
+					testZone1: {},
+					testZone2: {},
+				}
+				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				retMap[testZone1] = unionEndpointMap(retMap[testZone1], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				retMap[testZone1] = unionEndpointMap(retMap[testZone1], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				retMap[testZone2] = unionEndpointMap(retMap[testZone2], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+				retMap[testZone2] = unionEndpointMap(retMap[testZone2], endpointMap)
+				return retMap
+			},
+		},
+		{
+			desc: "40 endpoints from 4 instances in 2 zone, but some nodes do not have endpoint pod mapping",
+			input: func() (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+				retSet := map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet(),
+					testZone2: negtypes.NewNetworkEndpointSet(),
+				}
+				retMap := negtypes.EndpointPodMap{}
+				endpointSet, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				retMap = unionEndpointMap(retMap, endpointMap)
+				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")
+				retSet[testZone1] = retSet[testZone1].Union(endpointSet)
+				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				retMap = unionEndpointMap(retMap, endpointMap)
+				endpointSet, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")
+				retSet[testZone2] = retSet[testZone2].Union(endpointSet)
+				return retSet, retMap
+			},
+			expectOutput: func() map[string]negtypes.EndpointPodMap {
+				retMap := map[string]negtypes.EndpointPodMap{
+					testZone1: {},
+					testZone2: {},
+				}
+				_, endpointMap := generateEndpointSetAndMap(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")
+				retMap[testZone1] = unionEndpointMap(retMap[testZone1], endpointMap)
+				_, endpointMap = generateEndpointSetAndMap(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
+				retMap[testZone2] = unionEndpointMap(retMap[testZone2], endpointMap)
+				return retMap
+			},
+		},
+	} {
+		reflector.Flush()
+		endpointMap, endpointPodMap := tc.input()
+		expectOutput := tc.expectOutput()
+		transactionSyncer.commitPods(endpointMap, endpointPodMap)
+		negNameSet := sets.NewString(reflector.negNames...)
+		if len(expectOutput) != 0 && !(negNameSet.Len() == 1 && negNameSet.Has(transactionSyncer.negName)) {
+			t.Errorf("For test case %q, expect neg name to be %v, but got %v", tc.desc, transactionSyncer.negName, negNameSet.List())
+		}
+
+		if !reflect.DeepEqual(expectOutput, reflector.endpointMaps) {
+			t.Errorf("For test case %q, expect endpoint map to be %v, but got %v", tc.desc, expectOutput, reflector.endpointMaps)
 		}
 	}
 }
@@ -880,16 +1099,32 @@ func generateTransaction(table networkEndpointTransactionTable, entry transactio
 }
 
 func generateEndpointSet(initialIp net.IP, num int, instance string, targetPort string) negtypes.NetworkEndpointSet {
-	ret := negtypes.NewNetworkEndpointSet()
+	ret, _ := generateEndpointSetAndMap(initialIp, num, instance, targetPort)
+	return ret
+}
+
+func generateEndpointSetAndMap(initialIp net.IP, num int, instance string, targetPort string) (negtypes.NetworkEndpointSet, negtypes.EndpointPodMap) {
+	retSet := negtypes.NewNetworkEndpointSet()
+	retMap := negtypes.EndpointPodMap{}
 	ip := initialIp.To4()
 	for i := 1; i <= num; i++ {
 		if i%256 == 0 {
 			ip[2]++
 		}
 		ip[3]++
-		ret.Insert(negtypes.NetworkEndpoint{IP: ip.String(), Node: instance, Port: targetPort})
+
+		endpoint := negtypes.NetworkEndpoint{IP: ip.String(), Node: instance, Port: targetPort}
+		retSet.Insert(endpoint)
+		retMap[endpoint] = types.NamespacedName{Namespace: testNamespace, Name: fmt.Sprintf("pod-%s-%d", instance, i)}
 	}
-	return ret
+	return retSet, retMap
+}
+
+func unionEndpointMap(m1, m2 negtypes.EndpointPodMap) negtypes.EndpointPodMap {
+	for k, v := range m2 {
+		m1[k] = v
+	}
+	return m1
 }
 
 func generateEndpointBatch(endpointSet negtypes.NetworkEndpointSet) map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint {
@@ -907,11 +1142,46 @@ func (s *testSyncer) Sync() bool {
 	return s.syncer.Sync()
 }
 
+type testRetryHandler struct {
+	ts         *testSyncer
+	RetryCount int
+}
+
+func (r *testRetryHandler) Retry() error {
+	r.RetryCount++
+	r.ts.Sync()
+	return nil
+}
+
+func (r *testRetryHandler) Reset() {
+	return
+}
+
+type testReflector struct {
+	*readiness.NoopReflector
+	keys     []negtypes.NegSyncerKey
+	negNames []string
+
+	endpointMaps map[string]negtypes.EndpointPodMap
+}
+
+func (tr *testReflector) Flush() {
+	tr.keys = []negtypes.NegSyncerKey{}
+	tr.negNames = []string{}
+	tr.endpointMaps = map[string]negtypes.EndpointPodMap{}
+}
+
+func (tr *testReflector) CommitPods(syncerKey negtypes.NegSyncerKey, negName string, zone string, endpointMap negtypes.EndpointPodMap) {
+	tr.keys = append(tr.keys, syncerKey)
+	tr.negNames = append(tr.negNames, negName)
+	tr.endpointMaps[zone] = endpointMap
+}
+
 func validateTransactionTableEquality(t *testing.T, desc string, table, expectTable networkEndpointTransactionTable) {
 	for _, key := range table.Keys() {
 		expectEntry, ok := expectTable.Get(key)
 		if !ok {
-			t.Errorf("For test case %q, do not expect key %q to exists", desc, key)
+			t.Errorf("For test case %q, do not endpointSets key %q to exists", desc, key)
 			continue
 		}
 		gotEntry, _ := table.Get(key)
@@ -924,7 +1194,7 @@ func validateTransactionTableEquality(t *testing.T, desc string, table, expectTa
 	for _, key := range expectTable.Keys() {
 		_, ok := table.Get(key)
 		if !ok {
-			t.Errorf("For test case %q, expect transaction key %q to exists, but got nil", desc, key)
+			t.Errorf("For test case %q, endpointSets transaction key %q to exists, but got nil", desc, key)
 			continue
 		}
 	}

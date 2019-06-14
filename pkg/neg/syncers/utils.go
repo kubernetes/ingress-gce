@@ -284,6 +284,9 @@ func keyFunc(namespace, name string) string {
 
 // shouldPodBeInNeg returns true if pod is not in graceful termination state
 func shouldPodBeInNeg(podLister cache.Indexer, namespace, name string) bool {
+	if podLister == nil {
+		return false
+	}
 	key := keyFunc(namespace, name)
 	obj, exists, err := podLister.GetByKey(key)
 	if err != nil {

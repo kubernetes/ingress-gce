@@ -18,6 +18,7 @@ package types
 
 import (
 	"fmt"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"reflect"
 	"testing"
@@ -33,7 +34,6 @@ func (*negNamer) IsNEG(name string) bool {
 	return false
 }
 
-// TODO(freehan): include test cases with different ReadinessGate setup
 func TestPortInfoMapMerge(t *testing.T) {
 	namer := &negNamer{}
 	namespace := "namespace"
@@ -60,10 +60,54 @@ func TestPortInfoMapMerge(t *testing.T) {
 			false,
 		},
 		{
-			"union of two non-empty maps",
+			"empty map union a non-empty map is the non-empty map 2",
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, true),
+			PortInfoMap{},
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, true),
+			false,
+		},
+		{
+			"union of two non-empty maps, none has readiness gate enabled",
 			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer, false),
 			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8080: "9000"}, namer, false),
 			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer, false),
+			false,
+		},
+		{
+			"union of two non-empty maps, all have readiness gate enabled ",
+			NewPortInfoMap(namespace, name, SvcPortMap{443: "3000", 5000: "6000"}, namer, true),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8080: "9000"}, namer, true),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer, true),
+			false,
+		},
+		{
+			"union of two non-empty maps with one overlapping service port",
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "3000", 5000: "6000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "3000", 8080: "9000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "3000", 5000: "6000", 8080: "9000"}, namer, false),
+			false,
+		},
+		{
+			"union of two non-empty maps with overlapping service port and difference in readiness gate configurations ",
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "3000", 5000: "6000"}, namer, true),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "3000", 8080: "9000"}, namer, false),
+			PortInfoMap{
+				80: PortInfo{
+					TargetPort:    "3000",
+					NegName:       namer.NEG(namespace, name, 80),
+					ReadinessGate: true,
+				},
+				5000: PortInfo{
+					TargetPort:    "6000",
+					NegName:       namer.NEG(namespace, name, 5000),
+					ReadinessGate: true,
+				},
+				8080: PortInfo{
+					TargetPort:    "9000",
+					NegName:       namer.NEG(namespace, name, 8080),
+					ReadinessGate: false,
+				},
+			},
 			false,
 		},
 		{
@@ -95,7 +139,6 @@ func TestPortInfoMapMerge(t *testing.T) {
 	}
 }
 
-// TODO(freehan): include test cases with different ReadinessGate setup
 func TestPortInfoMapDifference(t *testing.T) {
 	namer := &negNamer{}
 	namespace := "namespace"
@@ -123,6 +166,12 @@ func TestPortInfoMapDifference(t *testing.T) {
 			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, false),
 			PortInfoMap{},
 			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, false),
+		},
+		{
+			"non-empty map difference a non-empty map is the non-empty map 2",
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, true),
+			PortInfoMap{},
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, true),
 		},
 		{
 			"difference of two non-empty maps with the same elements",
@@ -154,6 +203,18 @@ func TestPortInfoMapDifference(t *testing.T) {
 			NewPortInfoMap(namespace, name, SvcPortMap{80: "8080", 443: "9443"}, namer, false),
 			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "8443"}, namer, false),
 		},
+		{
+			"difference of two non-empty maps with a key in common but different in readiness gate fields",
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "8080"}, namer, true),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "8080", 8080: "9000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "8080"}, namer, true),
+		},
+		{
+			"difference of two non-empty maps with 2 keys in common and 2 more items with different readinessGate",
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer, true),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 8080: "9000"}, namer, false),
+			NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer, true),
+		},
 	}
 
 	for _, tc := range testcases {
@@ -167,6 +228,8 @@ func TestPortInfoMapDifference(t *testing.T) {
 }
 
 func TestPortInfoMapToPortNegMap(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		desc             string
 		portInfoMap      PortInfoMap
@@ -198,5 +261,51 @@ func TestPortInfoMapToPortNegMap(t *testing.T) {
 			t.Errorf("For test case %q, expect %v, but got %v", tc.desc, tc.expectPortNegMap, res)
 		}
 	}
+}
 
+func TestNegsWithReadinessGate(t *testing.T) {
+	t.Parallel()
+
+	namer := &negNamer{}
+	namespace := "namespace"
+	name := "name"
+	for _, tc := range []struct {
+		desc           string
+		getPortInfoMap func() PortInfoMap
+		expectNegs     sets.String
+	}{
+		{
+			desc:           "empty PortInfoMap",
+			getPortInfoMap: func() PortInfoMap { return PortInfoMap{} },
+			expectNegs:     sets.NewString(),
+		},
+		{
+			desc: "PortInfoMap with no readiness gate enabled",
+			getPortInfoMap: func() PortInfoMap {
+				return NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer, false)
+			},
+			expectNegs: sets.NewString(),
+		},
+		{
+			desc: "PortInfoMap with all readiness gates enabled",
+			getPortInfoMap: func() PortInfoMap {
+				return NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000", 5000: "6000", 8080: "9000"}, namer, true)
+			},
+			expectNegs: sets.NewString(namer.NEG(namespace, name, 80), namer.NEG(namespace, name, 443), namer.NEG(namespace, name, 5000), namer.NEG(namespace, name, 8080)),
+		},
+		{
+			desc: "PortInfoMap with part of readiness gates enabled",
+			getPortInfoMap: func() PortInfoMap {
+				p := NewPortInfoMap(namespace, name, SvcPortMap{5000: "6000", 8080: "9000"}, namer, true)
+				p.Merge(NewPortInfoMap(namespace, name, SvcPortMap{80: "namedport", 443: "3000"}, namer, false))
+				return p
+			},
+			expectNegs: sets.NewString(namer.NEG(namespace, name, 5000), namer.NEG(namespace, name, 8080)),
+		},
+	} {
+		negs := tc.getPortInfoMap().NegsWithReadinessGate()
+		if !negs.Equal(tc.expectNegs) {
+			t.Errorf("For test case %q, expect %v, but got %v", tc.desc, tc.expectNegs, negs)
+		}
+	}
 }
