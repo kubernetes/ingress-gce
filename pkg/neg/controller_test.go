@@ -68,6 +68,8 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		1*time.Second,
 		1*time.Second,
 		transactionSyncer,
+		// TODO(freehan): enable readiness reflector for unit tests
+		false,
 	)
 	return controller
 }

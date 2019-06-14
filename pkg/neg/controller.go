@@ -81,7 +81,9 @@ func NewController(
 	namer negtypes.NetworkEndpointGroupNamer,
 	resyncPeriod time.Duration,
 	gcPeriod time.Duration,
-	negSyncerType NegSyncerType) *Controller {
+	negSyncerType NegSyncerType,
+	enableReadinessReflector bool,
+) *Controller {
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
 	eventBroadcaster := record.NewBroadcaster()
@@ -93,7 +95,12 @@ func NewController(
 		apiv1.EventSource{Component: "neg-controller"})
 
 	manager := newSyncerManager(namer, recorder, cloud, zoneGetter, ctx.PodInformer.GetIndexer(), ctx.ServiceInformer.GetIndexer(), ctx.EndpointInformer.GetIndexer(), negSyncerType)
-	reflector := readiness.NewReadinessReflector(ctx, manager)
+	var reflector readiness.Reflector
+	if enableReadinessReflector {
+		reflector = readiness.NewReadinessReflector(ctx, manager)
+	} else {
+		reflector = &readiness.NoopReflector{}
+	}
 	manager.reflector = reflector
 
 	negController := &Controller{
