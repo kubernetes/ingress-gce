@@ -122,7 +122,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		_, err := c.ForwardingRules().Get(ctx, &k)
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
-				return err
+				return fmt.Errorf("ForwardingRule %s is not deleted/error to get: %s", k.Name, err)
 			}
 		} else {
 			resources = append(resources, k)
@@ -132,7 +132,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		_, err := c.TargetHttpProxies().Get(ctx, &k)
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
-				return err
+				return fmt.Errorf("TargetHTTPProxy %s is not deleted/error to get: %s", k.Name, err)
 			}
 		} else {
 			resources = append(resources, k)
@@ -142,7 +142,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		_, err := c.TargetHttpsProxies().Get(ctx, &k)
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
-				return err
+				return fmt.Errorf("TargetHTTPSProxy %s is not deleted/error to get: %s", k.Name, err)
 			}
 		} else {
 			resources = append(resources, k)
@@ -152,7 +152,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		_, err := c.UrlMaps().Get(ctx, &k)
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
-				return err
+				return fmt.Errorf("URLMap %s is not deleted/error to get: %s", k.Name, err)
 			}
 		} else {
 			resources = append(resources, k)
@@ -162,7 +162,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		bs, err := c.BackendServices().Get(ctx, &k)
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
-				return err
+				return fmt.Errorf("BackendService %s is not deleted/error to get: %s", k.Name, err)
 			}
 		} else {
 			if options != nil && options.SkipDefaultBackend {
@@ -178,7 +178,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		_, err := c.BetaNetworkEndpointGroups().Get(ctx, &k)
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
-				return err
+				return fmt.Errorf("NetworkEndpointGroup %s is not deleted/error to get: %s", k.Name, err)
 			}
 		} else {
 			resources = append(resources, k)
