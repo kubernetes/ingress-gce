@@ -119,7 +119,12 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 	var resources []meta.Key
 
 	for k := range g.ForwardingRule {
-		_, err := c.ForwardingRules().Get(ctx, &k)
+		var err error
+		if k.Region != "" {
+			_, err = c.ForwardingRules().Get(ctx, &k)
+		} else {
+			_, err = c.GlobalForwardingRules().Get(ctx, &k)
+		}
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
 				return fmt.Errorf("ForwardingRule %s is not deleted/error to get: %s", k.Name, err)
