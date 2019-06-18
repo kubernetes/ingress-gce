@@ -19,7 +19,6 @@ package controller
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/composite"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -387,46 +386,5 @@ func TestToRuntimeInfoCerts(t *testing.T) {
 	}
 	if len(lbInfo.TLS) != 1 || lbInfo.TLS[0] != tlsCerts[0] {
 		t.Errorf("lbInfo.TLS = %v, want %v", lbInfo.TLS, tlsCerts)
-	}
-}
-
-func TestUpdateServicePortsForILB(t *testing.T) {
-	testCases := []struct {
-		svcPorts []utils.ServicePort
-		ing      extensions.Ingress
-		expected []utils.ServicePort
-	}{
-		{
-			svcPorts: []utils.ServicePort{{Port: 80}, {Port: 8080}},
-			ing: extensions.Ingress{
-				ObjectMeta: meta_v1.ObjectMeta{
-					Annotations: map[string]string{annotations.IngressClassKey: annotations.GceILBIngressClass},
-				},
-			},
-			expected: []utils.ServicePort{
-				{Port: 80, ILBEnabled: true, NEGEnabled: true},
-				{Port: 8080, ILBEnabled: true, NEGEnabled: true}},
-		},
-		{
-			svcPorts: []utils.ServicePort{{Port: 80}, {Port: 8080}},
-			ing: extensions.Ingress{
-				ObjectMeta: meta_v1.ObjectMeta{
-					Annotations: map[string]string{},
-				},
-			},
-			expected: []utils.ServicePort{
-				{Port: 80, ILBEnabled: false, NEGEnabled: false},
-				{Port: 8080, ILBEnabled: false, NEGEnabled: false}},
-		},
-	}
-	for _, tc := range testCases {
-		lbc := newLoadBalancerController()
-		err := lbc.UpdateServicePortsForILB(tc.svcPorts, &tc.ing)
-		if err != nil {
-			t.Fatalf("updating service ports for ILB failed: %v", err)
-		}
-		if !reflect.DeepEqual(tc.svcPorts, tc.expected) {
-			t.Fatalf("want %v, got %v", tc.expected, tc.svcPorts)
-		}
 	}
 }

@@ -18,6 +18,7 @@ package firewalls
 
 import (
 	"fmt"
+	"k8s.io/ingress-gce/pkg/controller"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"reflect"
 	"time"
@@ -124,7 +125,9 @@ func (fwc *FirewallController) ToSvcPorts(ings []*extensions.Ingress) []utils.Se
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings {
 		urlMap, _ := fwc.translator.TranslateIngress(ing, fwc.ctx.DefaultBackendSvcPortID)
-		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
+		svcPorts := urlMap.AllServicePorts()
+		controller.UpdateServicePortsForILB(svcPorts, ing)
+		knownPorts = append(knownPorts, svcPorts...)
 	}
 	return knownPorts
 }
@@ -165,13 +168,23 @@ func (fwc *FirewallController) sync(key string) error {
 	}
 	negPorts := fwc.translator.GatherEndpointPorts(gceSvcPorts)
 
-	ILBSrcRange, err := features.ILBSubnetSourceRange(fwc.ctx.Cloud.GceCloud().Compute(), fwc.ctx.Cloud.GceCloud().Region())
-	if err != nil {
-		return fmt.Errorf("error unable to get ILB subnet source ranges: %v", err)
+	var ILBSrcRange string
+	ILBEnabled := false
+	for _, sp := range gceSvcPorts {
+		if sp.ILBEnabled {
+			ILBEnabled = true
+		}
+	}
+
+	if ILBEnabled {
+		ILBSrcRange, err = features.ILBSubnetSourceRange(fwc.ctx.Cloud, fwc.ctx.Cloud.GceCloud().Region())
+		if err != nil {
+			return fmt.Errorf("error unable to get ILB subnet source ranges: %v", err)
+		}
 	}
 
 	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
-	if err := fwc.firewallPool.Sync(nodeNames, negPorts, ILBSrcRange); err != nil {
+	if err := fwc.firewallPool.Sync(nodeNames, negPorts, []string{ILBSrcRange}); err != nil {
 		if fwErr, ok := err.(*FirewallXPNError); ok {
 			// XPN: Raise an event on each ingress
 			for _, ing := range gceIngresses {

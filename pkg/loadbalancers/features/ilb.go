@@ -16,9 +16,9 @@ package features
 import (
 	"context"
 	"fmt"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/ingress-gce/pkg/composite"
 )
 
 const (
@@ -27,8 +27,8 @@ const (
 
 // Get Subnet source range for ILB from FrontendConfig
 // TODO: (shance) refactor to use filter
-func ILBSubnetSourceRange(cloud cloud.Cloud, region string) (string, error) {
-	subnets, err := cloud.AlphaSubnetworks().List(context.Background(), region, filter.None)
+func ILBSubnetSourceRange(cloud *composite.Cloud, region string) (string, error) {
+	subnets, err := cloud.GceCloud().Compute().AlphaSubnetworks().List(context.Background(), region, filter.None)
 	if err != nil {
 		return "", fmt.Errorf("error obtaining subnets for region: %s", region)
 	}
@@ -38,6 +38,5 @@ func ILBSubnetSourceRange(cloud cloud.Cloud, region string) (string, error) {
 			return subnet.IpCidrRange, nil
 		}
 	}
-
 	return "", nil
 }

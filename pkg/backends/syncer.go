@@ -88,7 +88,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	}
 
 	// Ensure health check for backend service exists.
-	hcLink, err := s.ensureHealthCheck(sp, hasLegacyHC, sp.ILBEnabled)
+	hcLink, err := s.ensureHealthCheck(sp, hasLegacyHC)
 	if err != nil {
 		return fmt.Errorf("error ensuring health check: %v", err)
 	}
@@ -184,11 +184,10 @@ func (s *backendSyncer) Shutdown() error {
 	return nil
 }
 
-func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort, hasLegacyHC bool, isInternalLB bool) (string, error) {
+func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort, hasLegacyHC bool) (string, error) {
 	if hasLegacyHC {
 		klog.Errorf("Backend %+v has legacy health check", sp.ID)
 	}
-	//klog.V(3).Infof("ensuring health check: %v, hasLegacyHC=%v, isInternalLB=%v", pretty.Sprint(sp), hasLegacyHC, isInternalLB)
 	hc := s.healthChecker.New(sp)
 	if s.prober != nil {
 		probe, err := s.prober.GetProbe(sp)

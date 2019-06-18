@@ -64,7 +64,7 @@ func NewFirewallPool(cloud Firewall, namer *utils.Namer, l7SrcRanges []string, n
 }
 
 // Sync firewall rules with the cloud.
-func (fr *FirewallRules) Sync(nodeNames, additionalPorts []string, ILBSrcRange string) error {
+func (fr *FirewallRules) Sync(nodeNames, additionalPorts, additionalRanges []string) error {
 	klog.V(4).Infof("Sync(%v)", nodeNames)
 	name := fr.namer.FirewallRule()
 	existingFirewall, _ := fr.cloud.GetFirewall(name)
@@ -77,9 +77,7 @@ func (fr *FirewallRules) Sync(nodeNames, additionalPorts []string, ILBSrcRange s
 	}
 	sort.Strings(targetTags)
 
-	if ILBSrcRange != "" {
-		fr.srcRanges = append(fr.srcRanges, ILBSrcRange)
-	}
+	fr.srcRanges = append(fr.srcRanges, additionalRanges...)
 
 	ports := sets.NewString(additionalPorts...)
 	ports.Insert(fr.portRanges...)

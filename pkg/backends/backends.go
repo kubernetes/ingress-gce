@@ -14,7 +14,7 @@ limitations under the License.
 package backends
 
 import (
-	features2 "k8s.io/ingress-gce/pkg/loadbalancers/features"
+	lbfeatures "k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"net/http"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -42,8 +42,8 @@ var _ Pool = (*Backends)(nil)
 func NewPool(cloud *gce.Cloud, namer *utils.Namer) *Backends {
 	return &Backends{
 		cloud:          cloud,
-		namer:          namer,
 		compositeCloud: composite.NewCloud(cloud),
+		namer:          namer,
 	}
 }
 
@@ -136,7 +136,7 @@ func (b *Backends) Delete(name string, regional bool) (err error) {
 
 	var version meta.Version
 	if regional {
-		version = features2.ILBVersion
+		version = lbfeatures.ILBVersion
 	} else {
 		version = meta.VersionGA
 	}

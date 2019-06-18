@@ -298,18 +298,6 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 	return nil
 }
 
-func (lbc *LoadBalancerController) UpdateServicePortsForILB(ingSvcPorts []utils.ServicePort, ing *extensions.Ingress) error {
-	if !utils.IsGCEILBIngress(ing) {
-		return nil
-	}
-
-	for svcPortIdx, _ := range ingSvcPorts {
-		ingSvcPorts[svcPortIdx].ILBEnabled = true
-		ingSvcPorts[svcPortIdx].NEGEnabled = true
-	}
-	return nil
-}
-
 // SyncBackends implements Controller.
 func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 	// We expect state to be a syncState
@@ -319,7 +307,7 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 	}
 	ingSvcPorts := syncState.urlMap.AllServicePorts()
 
-	err := lbc.UpdateServicePortsForILB(ingSvcPorts, syncState.ing)
+	err := UpdateServicePortsForILB(ingSvcPorts, syncState.ing)
 	if err != nil {
 		return err
 	}
@@ -665,7 +653,7 @@ func (lbc *LoadBalancerController) ToSvcPorts(ings []*extensions.Ingress) []util
 	for _, ing := range ings {
 		urlMap, _ := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
 		svcPorts := urlMap.AllServicePorts()
-		lbc.UpdateServicePortsForILB(svcPorts, ing)
+		UpdateServicePortsForILB(svcPorts, ing)
 		knownPorts = append(knownPorts, svcPorts...)
 	}
 	return knownPorts

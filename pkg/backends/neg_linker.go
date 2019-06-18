@@ -61,7 +61,6 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		negs = append(negs, neg)
 	}
 
-	//cloud := l.backendPool.(*Backends).cloud
 	compositeCloud := l.backendPool.(*Backends).compositeCloud
 	beName := sp.BackendName(l.namer)
 
