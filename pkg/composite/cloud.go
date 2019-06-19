@@ -1,6 +1,7 @@
 package composite
 
 import (
+	"context"
 	"fmt"
 	cloudprovider "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -32,19 +33,41 @@ func (c *Cloud) GceCloud() *gce.Cloud {
 	return c.gceCloud
 }
 
-func (c *Cloud) CreateKey(name string, regional bool) *meta.Key {
-	region := c.gceCloud.Region()
-	if regional && region != "" {
-		return meta.RegionalKey(name, region)
+func (c *Cloud) CreateKey(name string, resourceType meta.KeyType) (*meta.Key, error) {
+	switch resourceType {
+	case meta.Regional:
+		region := c.gceCloud.Region()
+		if region == "" {
+			return nil, fmt.Errorf("error no region for key %s", resourceType)
+		}
+		return meta.RegionalKey(name, region), nil
+	case meta.Zonal:
+		ctx := context.Background()
+		zone, err := c.gceCloud.GetZone(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error getting zone for key %s", resourceType)
+		}
+		return meta.ZonalKey(name, zone.FailureDomain), nil
+	case meta.Global:
+		return meta.GlobalKey(name), nil
 	}
-	return meta.GlobalKey(name)
+
+	return nil, fmt.Errorf("error creating key, invalid resource type: %s", resourceType)
 }
 
 // TODO: (shance) generate this
 // ListAllUrlMaps merges all possible List() calls into one list of composite UrlMaps
 func (c *Cloud) ListAllUrlMaps() ([]*UrlMap, error) {
 	resultMap := map[string]*UrlMap{}
-	keys := []*meta.Key{c.CreateKey("", false), c.CreateKey("", true)}
+	key1, err := c.CreateKey("", meta.Global)
+	if err != nil {
+		return nil, err
+	}
+	key2, err := c.CreateKey("", meta.Regional)
+	if err != nil {
+		return nil, err
+	}
+	keys := []*meta.Key{key1, key2}
 
 	for _, version := range meta.AllVersions {
 		for _, key := range keys {
@@ -71,7 +94,15 @@ func (c *Cloud) ListAllUrlMaps() ([]*UrlMap, error) {
 // ListAllUrlMaps merges all possible List() calls into one list of composite UrlMaps
 func (c *Cloud) ListAllBackendServices() ([]*BackendService, error) {
 	resultMap := map[string]*BackendService{}
-	keys := []*meta.Key{c.CreateKey("", false), c.CreateKey("", true)}
+	key1, err := c.CreateKey("", meta.Global)
+	if err != nil {
+		return nil, err
+	}
+	key2, err := c.CreateKey("", meta.Regional)
+	if err != nil {
+		return nil, err
+	}
+	keys := []*meta.Key{key1, key2}
 
 	for _, version := range meta.AllVersions {
 		for _, key := range keys {
