@@ -3,7 +3,7 @@ package composite
 import (
 	"context"
 	"fmt"
-	cloudprovider "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	cloud "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
@@ -13,27 +13,29 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
-type Cloud struct {
+type CompositeCloud struct {
 	// TODO: (shance) remove this dependency
 	// Keep a copy of gce.Cloud around to make it easier to implement the loadbalancer interface
 	// This will aid in the transition of removing gceCloud entirely
 	gceCloud *gce.Cloud
+	cloud *cloud.Cloud
 }
 
-func NewCloud(c interface{}) *Cloud {
+func NewCompositeCloud(c interface{}) *CompositeCloud {
 	gce, ok := c.(*gce.Cloud)
 	if ok && gce != nil {
-		return &Cloud{gce}
+		compute := gce.Compute()
+		return &CompositeCloud{gceCloud: gce, cloud: &compute}
 	}
 
-	return &Cloud{}
+	return &CompositeCloud{}
 }
 
-func (c *Cloud) GceCloud() *gce.Cloud {
+func (c *CompositeCloud) GceCloud() *gce.Cloud {
 	return c.gceCloud
 }
 
-func (c *Cloud) CreateKey(name string, resourceType meta.KeyType) (*meta.Key, error) {
+func (c *CompositeCloud) CreateKey(name string, resourceType meta.KeyType) (*meta.Key, error) {
 	switch resourceType {
 	case meta.Regional:
 		region := c.gceCloud.Region()
@@ -57,7 +59,7 @@ func (c *Cloud) CreateKey(name string, resourceType meta.KeyType) (*meta.Key, er
 
 // TODO: (shance) generate this
 // ListAllUrlMaps merges all possible List() calls into one list of composite UrlMaps
-func (c *Cloud) ListAllUrlMaps() ([]*UrlMap, error) {
+func (c *CompositeCloud) ListAllUrlMaps() ([]*UrlMap, error) {
 	resultMap := map[string]*UrlMap{}
 	key1, err := c.CreateKey("", meta.Global)
 	if err != nil {
@@ -92,7 +94,7 @@ func (c *Cloud) ListAllUrlMaps() ([]*UrlMap, error) {
 
 // TODO: (shance) generate this
 // ListAllUrlMaps merges all possible List() calls into one list of composite UrlMaps
-func (c *Cloud) ListAllBackendServices() ([]*BackendService, error) {
+func (c *CompositeCloud) ListAllBackendServices() ([]*BackendService, error) {
 	resultMap := map[string]*BackendService{}
 	key1, err := c.CreateKey("", meta.Global)
 	if err != nil {
@@ -135,7 +137,7 @@ func IsRegionalUrlMap(um *UrlMap) (bool, error) {
 func IsRegionalResource(selfLink string) (bool, error) {
 	// Figure out if cluster is regional
 	// Update L7 if its regional so we can delete the right resources
-	resourceID, err := cloudprovider.ParseResourceURL(selfLink)
+	resourceID, err := cloud.ParseResourceURL(selfLink)
 	if err != nil {
 		return false, fmt.Errorf("error parsing self-link for url-map %s: %v", selfLink, err)
 	}
@@ -149,21 +151,21 @@ func IsRegionalResource(selfLink string) (bool, error) {
 
 // Below functions are simply wrapped from gceCloud
 // TODO: (shance) find a way to remove these
-func (c *Cloud) ReserveGlobalAddress(addr *compute.Address) error {
+func (c *CompositeCloud) ReserveGlobalAddress(addr *compute.Address) error {
 	return c.gceCloud.ReserveGlobalAddress(addr)
 }
 
-func (c *Cloud) GetGlobalAddress(name string) (*compute.Address, error) {
+func (c *CompositeCloud) GetGlobalAddress(name string) (*compute.Address, error) {
 	return c.gceCloud.GetGlobalAddress(name)
 }
 
-func (c *Cloud) DeleteGlobalAddress(name string) error {
+func (c *CompositeCloud) DeleteGlobalAddress(name string) error {
 	return c.gceCloud.DeleteGlobalAddress(name)
 }
 
 // TODO: (shance) below functions should be generated
-func (c *Cloud) SetUrlMapForTargetHttpsProxy(targetHttpsProxy *TargetHttpsProxy, urlMapLink string, key *meta.Key) error {
-	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+func (c *CompositeCloud) SetUrlMapForTargetHttpsProxy(targetHttpsProxy *TargetHttpsProxy, urlMapLink string, key *meta.Key) error {
+	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 	mc := metrics.NewMetricContext("TargetHttpsProxy", "set_url_map", key.Region, key.Zone, string(targetHttpsProxy.Version))
 
@@ -176,21 +178,21 @@ func (c *Cloud) SetUrlMapForTargetHttpsProxy(targetHttpsProxy *TargetHttpsProxy,
 		ref := &computealpha.UrlMapReference{UrlMap: urlMapLink}
 		switch key.Type() {
 		case meta.Regional:
-			return mc.Observe(c.gceCloud.Compute().AlphaRegionTargetHttpsProxies().SetUrlMap(ctx, key, ref))
+			return mc.Observe(c.cloud.AlphaRegionTargetHttpsProxies().SetUrlMap(ctx, key, ref))
 		default:
-			return mc.Observe(c.gceCloud.Compute().AlphaTargetHttpsProxies().SetUrlMap(ctx, key, ref))
+			return mc.Observe(c.cloud.AlphaTargetHttpsProxies().SetUrlMap(ctx, key, ref))
 		}
 	case meta.VersionBeta:
 		ref := &computebeta.UrlMapReference{UrlMap: urlMapLink}
-		return mc.Observe(c.gceCloud.Compute().BetaTargetHttpsProxies().SetUrlMap(ctx, key, ref))
+		return mc.Observe(c.cloud.BetaTargetHttpsProxies().SetUrlMap(ctx, key, ref))
 	default:
 		ref := &compute.UrlMapReference{UrlMap: urlMapLink}
-		return mc.Observe(c.gceCloud.Compute().TargetHttpsProxies().SetUrlMap(ctx, key, ref))
+		return mc.Observe(c.cloud.TargetHttpsProxies().SetUrlMap(ctx, key, ref))
 	}
 }
 
-func (c *Cloud) SetSslCertificateForTargetHttpsProxy(targetHttpsProxy *TargetHttpsProxy, sslCertURLs []string, key *meta.Key) error {
-	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+func (c *CompositeCloud) SetSslCertificateForTargetHttpsProxy(targetHttpsProxy *TargetHttpsProxy, sslCertURLs []string, key *meta.Key) error {
+	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 	mc := metrics.NewMetricContext("TargetHttpsProxy", "set_ssl_certificate", key.Region, key.Zone, string(targetHttpsProxy.Version))
 
@@ -205,29 +207,29 @@ func (c *Cloud) SetSslCertificateForTargetHttpsProxy(targetHttpsProxy *TargetHtt
 			req := &computealpha.RegionTargetHttpsProxiesSetSslCertificatesRequest{
 				SslCertificates: sslCertURLs,
 			}
-			return mc.Observe(c.gceCloud.Compute().AlphaRegionTargetHttpsProxies().SetSslCertificates(ctx, key, req))
+			return mc.Observe(c.cloud.AlphaRegionTargetHttpsProxies().SetSslCertificates(ctx, key, req))
 		default:
 			req := &computealpha.TargetHttpsProxiesSetSslCertificatesRequest{
 				SslCertificates: sslCertURLs,
 			}
-			return mc.Observe(c.gceCloud.Compute().AlphaTargetHttpsProxies().SetSslCertificates(ctx, key, req))
+			return mc.Observe(c.cloud.AlphaTargetHttpsProxies().SetSslCertificates(ctx, key, req))
 		}
 	case meta.VersionBeta:
 		req := &computebeta.TargetHttpsProxiesSetSslCertificatesRequest{
 			SslCertificates: sslCertURLs,
 		}
-		return mc.Observe(c.gceCloud.Compute().BetaTargetHttpsProxies().SetSslCertificates(ctx, key, req))
+		return mc.Observe(c.cloud.BetaTargetHttpsProxies().SetSslCertificates(ctx, key, req))
 	default:
 
 		req := &compute.TargetHttpsProxiesSetSslCertificatesRequest{
 			SslCertificates: sslCertURLs,
 		}
-		return mc.Observe(c.gceCloud.Compute().TargetHttpsProxies().SetSslCertificates(ctx, key, req))
+		return mc.Observe(c.cloud.TargetHttpsProxies().SetSslCertificates(ctx, key, req))
 	}
 }
 
-func (c *Cloud) SetUrlMapForTargetHttpProxy(targetHttpProxy *TargetHttpProxy, urlMapLink string, key *meta.Key) error {
-	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+func (c *CompositeCloud) SetUrlMapForTargetHttpProxy(targetHttpProxy *TargetHttpProxy, urlMapLink string, key *meta.Key) error {
+	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 	mc := metrics.NewMetricContext("TargetHttpProxy", "set_url_map", key.Region, key.Zone, string(targetHttpProxy.Version))
 
@@ -240,21 +242,21 @@ func (c *Cloud) SetUrlMapForTargetHttpProxy(targetHttpProxy *TargetHttpProxy, ur
 		ref := &computealpha.UrlMapReference{UrlMap: urlMapLink}
 		switch key.Type() {
 		case meta.Regional:
-			return mc.Observe(c.gceCloud.Compute().AlphaRegionTargetHttpProxies().SetUrlMap(ctx, key, ref))
+			return mc.Observe(c.cloud.AlphaRegionTargetHttpProxies().SetUrlMap(ctx, key, ref))
 		default:
-			return mc.Observe(c.gceCloud.Compute().AlphaTargetHttpProxies().SetUrlMap(ctx, key, ref))
+			return mc.Observe(c.cloud.AlphaTargetHttpProxies().SetUrlMap(ctx, key, ref))
 		}
 	case meta.VersionBeta:
 		ref := &computebeta.UrlMapReference{UrlMap: urlMapLink}
-		return mc.Observe(c.gceCloud.Compute().BetaTargetHttpProxies().SetUrlMap(ctx, key, ref))
+		return mc.Observe(c.cloud.BetaTargetHttpProxies().SetUrlMap(ctx, key, ref))
 	default:
 		ref := &compute.UrlMapReference{UrlMap: urlMapLink}
-		return mc.Observe(c.gceCloud.Compute().TargetHttpProxies().SetUrlMap(ctx, key, ref))
+		return mc.Observe(c.cloud.TargetHttpProxies().SetUrlMap(ctx, key, ref))
 	}
 }
 
-func (c *Cloud) SetProxyForForwardingRule(forwardingRule *ForwardingRule, key *meta.Key, targetProxyLink string) error {
-	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+func (c *CompositeCloud) SetProxyForForwardingRule(forwardingRule *ForwardingRule, key *meta.Key, targetProxyLink string) error {
+	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 	mc := metrics.NewMetricContext("ForwardingRule", "set_proxy", key.Region, key.Zone, string(forwardingRule.Version))
 
@@ -267,25 +269,25 @@ func (c *Cloud) SetProxyForForwardingRule(forwardingRule *ForwardingRule, key *m
 		target := &computealpha.TargetReference{Target: targetProxyLink}
 		switch key.Type() {
 		case meta.Regional:
-			return mc.Observe(c.gceCloud.Compute().AlphaForwardingRules().SetTarget(ctx, key, target))
+			return mc.Observe(c.cloud.AlphaForwardingRules().SetTarget(ctx, key, target))
 		default:
-			return mc.Observe(c.gceCloud.Compute().AlphaGlobalForwardingRules().SetTarget(ctx, key, target))
+			return mc.Observe(c.cloud.AlphaGlobalForwardingRules().SetTarget(ctx, key, target))
 		}
 	case meta.VersionBeta:
 		target := &computebeta.TargetReference{Target: targetProxyLink}
 		switch key.Type() {
 		case meta.Regional:
-			return mc.Observe(c.gceCloud.Compute().BetaForwardingRules().SetTarget(ctx, key, target))
+			return mc.Observe(c.cloud.BetaForwardingRules().SetTarget(ctx, key, target))
 		default:
-			return mc.Observe(c.gceCloud.Compute().BetaGlobalForwardingRules().SetTarget(ctx, key, target))
+			return mc.Observe(c.cloud.BetaGlobalForwardingRules().SetTarget(ctx, key, target))
 		}
 	default:
 		target := &compute.TargetReference{Target: targetProxyLink}
 		switch key.Type() {
 		case meta.Regional:
-			return mc.Observe(c.gceCloud.Compute().ForwardingRules().SetTarget(ctx, key, target))
+			return mc.Observe(c.cloud.ForwardingRules().SetTarget(ctx, key, target))
 		default:
-			return mc.Observe(c.gceCloud.Compute().GlobalForwardingRules().SetTarget(ctx, key, target))
+			return mc.Observe(c.cloud.GlobalForwardingRules().SetTarget(ctx, key, target))
 		}
 	}
 }
