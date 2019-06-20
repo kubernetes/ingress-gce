@@ -28,7 +28,7 @@ import (
 // Backends handles CRUD operations for backends.
 type Backends struct {
 	cloud          *gce.Cloud
-	compositeCloud *composite.Cloud
+	compositeCloud *composite.CompositeCloud
 	namer          *utils.Namer
 }
 
@@ -41,7 +41,7 @@ var _ Pool = (*Backends)(nil)
 func NewPool(cloud *gce.Cloud, namer *utils.Namer) *Backends {
 	return &Backends{
 		cloud:          cloud,
-		compositeCloud: composite.NewCloud(cloud),
+		compositeCloud: composite.NewCompositeCloud(cloud),
 		namer:          namer,
 	}
 }

@@ -18,14 +18,14 @@ type CompositeCloud struct {
 	// Keep a copy of gce.Cloud around to make it easier to implement the loadbalancer interface
 	// This will aid in the transition of removing gceCloud entirely
 	gceCloud *gce.Cloud
-	cloud *cloud.Cloud
+	cloud    cloud.Cloud
 }
 
 func NewCompositeCloud(c interface{}) *CompositeCloud {
 	gce, ok := c.(*gce.Cloud)
 	if ok && gce != nil {
 		compute := gce.Compute()
-		return &CompositeCloud{gceCloud: gce, cloud: &compute}
+		return &CompositeCloud{gceCloud: gce, cloud: compute}
 	}
 
 	return &CompositeCloud{}
@@ -33,6 +33,10 @@ func NewCompositeCloud(c interface{}) *CompositeCloud {
 
 func (c *CompositeCloud) GceCloud() *gce.Cloud {
 	return c.gceCloud
+}
+
+func (c *CompositeCloud) Compute() *cloud.Cloud {
+	return &c.cloud
 }
 
 func (c *CompositeCloud) CreateKey(name string, resourceType meta.KeyType) (*meta.Key, error) {
