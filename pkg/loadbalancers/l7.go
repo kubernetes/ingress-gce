@@ -19,10 +19,11 @@ package loadbalancers
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
-	"strings"
+	"k8s.io/legacy-cloud-providers/gce"
 
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"

@@ -19,15 +19,16 @@ package loadbalancers
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"testing"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"google.golang.org/api/googleapi"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/util/slice"
-	"net/http"
-	"testing"
+	"k8s.io/legacy-cloud-providers/gce"
 
 	"google.golang.org/api/compute/v1"
 	extensions "k8s.io/api/extensions/v1beta1"

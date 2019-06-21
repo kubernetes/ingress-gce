@@ -15,18 +15,18 @@ package backends
 
 import (
 	"fmt"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"net/http"
 	"strings"
 
-	"k8s.io/api/core/v1"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 // backendSyncer manages the lifecycle of backends.

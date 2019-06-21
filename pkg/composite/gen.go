@@ -30,7 +30,7 @@ import (
 	"google.golang.org/api/googleapi"
 	compositemetrics "k8s.io/ingress-gce/pkg/composite/metrics"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 // AuthenticationPolicy is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent

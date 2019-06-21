@@ -25,7 +25,7 @@ import (
 
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"k8s.io/legacy-cloud-providers/gce"
 	netset "k8s.io/utils/net"
 
 	"k8s.io/ingress-gce/pkg/utils"

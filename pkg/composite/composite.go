@@ -25,7 +25,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/composite/metrics"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 // TODO: (shance) below functions should be generated
