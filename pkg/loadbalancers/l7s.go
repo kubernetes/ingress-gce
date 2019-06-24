@@ -18,7 +18,6 @@ package loadbalancers
 
 import (
 	"fmt"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"k8s.io/klog"
 
@@ -29,7 +28,7 @@ import (
 
 // L7s implements LoadBalancerPool.
 type L7s struct {
-	cloud            *gce.Cloud
+	cloud            LoadBalancers
 	namer            *utils.Namer
 	recorderProducer events.RecorderProducer
 }
@@ -42,7 +41,7 @@ func (l *L7s) Namer() *utils.Namer {
 // NewLoadBalancerPool returns a new loadbalancer pool.
 // - cloud: implements LoadBalancers. Used to sync L7 loadbalancer resources
 //	 with the cloud.
-func NewLoadBalancerPool(cloud *gce.Cloud, namer *utils.Namer, recorderProducer events.RecorderProducer) LoadBalancerPool {
+func NewLoadBalancerPool(cloud LoadBalancers, namer *utils.Namer, recorderProducer events.RecorderProducer) LoadBalancerPool {
 	return &L7s{
 		cloud:            cloud,
 		namer:            namer,
