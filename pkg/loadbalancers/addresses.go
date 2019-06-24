@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"net/http"
 
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
