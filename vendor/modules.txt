@@ -1,6 +1,6 @@
 # cloud.google.com/go v0.38.0 => cloud.google.com/go v0.37.4
 cloud.google.com/go/compute/metadata
-# github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190612171043-2e19bb35a278 => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190612171043-2e19bb35a278
+# github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190625070306-c3ad81d637ad => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190625070306-c3ad81d637ad
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter
@@ -124,8 +124,8 @@ golang.org/x/text/transform
 # golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 => golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
 golang.org/x/time/rate
 # google.golang.org/api v0.6.1-0.20190607001116-5213b8090861 => google.golang.org/api v0.6.1-0.20190607001116-5213b8090861
-google.golang.org/api/compute/v0.beta
 google.golang.org/api/compute/v1
+google.golang.org/api/compute/v0.beta
 google.golang.org/api/compute/v0.alpha
 google.golang.org/api/googleapi
 google.golang.org/api/container/v1

@@ -3,7 +3,7 @@ module k8s.io/ingress-gce
 go 1.12
 
 require (
-	github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190612171043-2e19bb35a278
+	github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190625070306-c3ad81d637ad
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/beorn7/perks v1.0.0 // indirect
 	github.com/emicklei/go-restful v2.9.3+incompatible // indirect
@@ -45,7 +45,7 @@ require (
 
 replace (
 	cloud.google.com/go => cloud.google.com/go v0.37.4
-	github.com/GoogleCloudPlatform/k8s-cloud-provider => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190612171043-2e19bb35a278
+	github.com/GoogleCloudPlatform/k8s-cloud-provider => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190625070306-c3ad81d637ad
 	github.com/PuerkitoBio/purell => github.com/PuerkitoBio/purell v1.1.1
 	github.com/beorn7/perks => github.com/beorn7/perks v1.0.0
 	github.com/emicklei/go-restful => github.com/emicklei/go-restful v2.9.3+incompatible
