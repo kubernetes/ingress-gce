@@ -291,7 +291,7 @@ func newTestLoadBalancerPool() LoadBalancerPool {
 	return NewLoadBalancerPool(fakeGCECloud, namer, ctx)
 }
 
-func createFakeLoadbalancer(cloud LoadBalancers, namer *utils.Namer, key string) {
+func createFakeLoadbalancer(cloud *gce.Cloud, namer *utils.Namer, key string) {
 	lbName := namer.LoadBalancer(key)
 	cloud.CreateGlobalForwardingRule(&compute.ForwardingRule{Name: namer.ForwardingRule(lbName, utils.HTTPProtocol)})
 	cloud.CreateTargetHTTPProxy(&compute.TargetHttpProxy{Name: namer.TargetProxy(lbName, utils.HTTPProtocol)})
@@ -299,7 +299,7 @@ func createFakeLoadbalancer(cloud LoadBalancers, namer *utils.Namer, key string)
 	cloud.ReserveGlobalAddress(&compute.Address{Name: namer.ForwardingRule(lbName, utils.HTTPProtocol)})
 }
 
-func removeFakeLoadBalancer(cloud LoadBalancers, namer *utils.Namer, key string) {
+func removeFakeLoadBalancer(cloud *gce.Cloud, namer *utils.Namer, key string) {
 	lbName := namer.LoadBalancer(key)
 	cloud.DeleteGlobalForwardingRule(namer.ForwardingRule(lbName, utils.HTTPProtocol))
 	cloud.DeleteTargetHTTPProxy(namer.TargetProxy(lbName, utils.HTTPProtocol))
@@ -307,7 +307,7 @@ func removeFakeLoadBalancer(cloud LoadBalancers, namer *utils.Namer, key string)
 	cloud.DeleteGlobalAddress(namer.ForwardingRule(lbName, utils.HTTPProtocol))
 }
 
-func checkFakeLoadBalancer(cloud LoadBalancers, namer *utils.Namer, key string, expectPresent bool) error {
+func checkFakeLoadBalancer(cloud *gce.Cloud, namer *utils.Namer, key string, expectPresent bool) error {
 	var err error
 	lbName := namer.LoadBalancer(key)
 	_, err = cloud.GetGlobalForwardingRule(namer.ForwardingRule(lbName, utils.HTTPProtocol))

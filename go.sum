@@ -10,6 +10,8 @@ github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190604211444-77eedaf6
 github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190604211444-77eedaf646f1/go.mod h1:iroGtC8B3tQiqtds1l+mgk/BBOrxbqjH+eUfFQYRc14=
 github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190612171043-2e19bb35a278 h1:TgNrmegr5ot2LQQLFikl4VFrPvTvlOB2zCShOcpa+t8=
 github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190612171043-2e19bb35a278/go.mod h1:iroGtC8B3tQiqtds1l+mgk/BBOrxbqjH+eUfFQYRc14=
+github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190625070306-c3ad81d637ad h1:dmM8d/LQF+cpMG+hl73tMYjinBkSz+wdMxzQUlysfTI=
+github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190625070306-c3ad81d637ad/go.mod h1:iroGtC8B3tQiqtds1l+mgk/BBOrxbqjH+eUfFQYRc14=
 github.com/NYTimes/gziphandler v0.0.0-20170623195520-56545f4a5d46/go.mod h1:3wb06e3pkSAbeQ52E9H9iFoQsEEwGN64994WTCIhntQ=
 github.com/PuerkitoBio/purell v1.1.1 h1:WEQqlqaGbrPkxLJWfBwQmfEAE1Z7ONdDLqrN38tNFfI=
 github.com/PuerkitoBio/purell v1.1.1/go.mod h1:c11w/QuzBsJSee3cPx9rAFu61PvFxuPbtSwDGJws/X0=
@@ -158,6 +160,8 @@ github.com/prometheus/procfs v0.0.0-20190416084830-8368d24ba045/go.mod h1:TjEm7z
 github.com/rcrowley/go-metrics v0.0.0-20181016184325-3113b8401b8a/go.mod h1:bCqnVzQkZxMG4s8nGwiZ5l3QUCyqpo9Y+/ZMZ9VjZe4=
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=
 github.com/soheilhy/cmux v0.1.3/go.mod h1:IM3LyeVVIOuxMH7sFAkER9+bJ4dT7Ms6E4xg4kGIyLM=
+github.com/spencerhance/k8s-cloud-provider v0.0.0-20190622002134-a3b35430794f h1:urtm5AHRaj52wI2J1zo8M7f5W8c7/LQqTKoPnJY2Q+k=
+github.com/spencerhance/k8s-cloud-provider v0.0.0-20190622002134-a3b35430794f/go.mod h1:a2/swOxdL5eTqmC1yPqaY4Xvc0dsL6YBm5MolnXMq5g=
 github.com/spf13/pflag v1.0.3 h1:zPAT6CGy6wXeQ7NtTnaTerfKOsV6V6F8agHXFiazDkg=
 github.com/spf13/pflag v1.0.3/go.mod h1:DYY7MBk1bdzusC3SYhjObp+wFpr4gzcvqqNjLnInEg4=
 github.com/stretchr/objx v0.1.1/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=

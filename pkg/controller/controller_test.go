@@ -17,10 +17,7 @@ limitations under the License.
 package controller
 
 import (
-	"strings"
-	"testing"
-	"time"
-
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	api_v1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,6 +34,9 @@ import (
 	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"strings"
+	"testing"
+	"time"
 
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -52,6 +52,8 @@ func newLoadBalancerController() *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockGlobalForwardingRules.InsertHook = loadbalancers.InsertGlobalForwardingRuleHook
 	namer := utils.NewNamer(clusterUID, "")
 
 	stopCh := make(chan struct{})
@@ -66,7 +68,7 @@ func newLoadBalancerController() *LoadBalancerController {
 	lbc := NewLoadBalancerController(ctx, stopCh)
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instances.NewNodePool(instances.NewFakeInstanceGroups(sets.NewString(), namer), namer)
-	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(loadbalancers.NewFakeLoadBalancers(clusterUID, namer), namer, events.RecorderProducerMock{})
+	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(fakeGCE, namer, events.RecorderProducerMock{})
 	lbc.instancePool.Init(&instances.FakeZoneLister{Zones: []string{"zone-a"}})
 
 	lbc.hasSynced = func() bool { return true }
@@ -259,7 +261,6 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 					if len(updatedIng.GetFinalizers()) != 1 {
 						t.Errorf("GetFinalizers() = %+v, want 0", updatedIng.GetFinalizers())
 					}
-
 					continue
 				}
 

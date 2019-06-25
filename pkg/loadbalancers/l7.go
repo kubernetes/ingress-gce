@@ -19,6 +19,7 @@ package loadbalancers
 import (
 	"encoding/json"
 	"fmt"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -94,7 +95,7 @@ type L7 struct {
 	// runtimeInfo is non-cloudprovider information passed from the controller.
 	runtimeInfo *L7RuntimeInfo
 	// cloud is an interface to manage loadbalancers in the GCE cloud.
-	cloud LoadBalancers
+	cloud *gce.Cloud
 	// um is the UrlMap associated with this L7.
 	um *compute.UrlMap
 	// tp is the TargetHTTPProxy associated with this L7.
