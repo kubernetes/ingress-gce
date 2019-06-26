@@ -17,8 +17,13 @@ limitations under the License.
 package readiness
 
 import (
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"google.golang.org/api/compute/v1"
+	"k8s.io/apimachinery/pkg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/utils"
 	"net"
+	"strconv"
 	"testing"
 )
 
@@ -28,6 +33,8 @@ func newFakePoller() *poller {
 }
 
 func TestPollerEndpointRegistrationAndScanForWork(t *testing.T) {
+	t.Parallel()
+
 	poller := newFakePoller()
 	podLister := poller.podLister
 	fakeLookup := poller.lookup.(*fakeLookUp)
@@ -294,5 +301,98 @@ func TestPollerEndpointRegistrationAndScanForWork(t *testing.T) {
 				t.Errorf("For test case %q, expect endpoint count %v, but got: %v", tc.desc, tc.expectEndpointCount, len(target.endpointMap))
 			}
 		}
+	}
+}
+
+func TestPoll(t *testing.T) {
+	t.Parallel()
+
+	poller := newFakePoller()
+	negCloud := poller.negCloud
+	namer := utils.NewNamer("clusteruid", "")
+
+	ns := "ns"
+	podName := "pod1"
+	negName := namer.NEG(ns, "svc", int32(80))
+	zone := "us-central1-b"
+	key := negMeta{
+		SyncerKey: negtypes.NegSyncerKey{},
+		Name:      negName,
+		Zone:      zone,
+	}
+	ip := "10.1.2.3"
+	port := int64(80)
+	instance := "k8s-node-xxxxxx"
+
+	// mark polling to true
+	poller.pollMap[key] = &pollTarget{
+		endpointMap: negtypes.EndpointPodMap{
+			negtypes.NetworkEndpoint{IP: ip, Port: strconv.FormatInt(port, 10), Node: instance}: types.NamespacedName{Namespace: ns, Name: podName},
+		},
+		polling: true,
+	}
+
+	retry, err := poller.Poll(key)
+	if err != nil {
+		t.Errorf("Does not expect err, but got %v", err)
+	}
+	if retry != true {
+		t.Errorf("Expect retry = true, but got %v", retry)
+	}
+
+	// unmark polling
+	poller.pollMap[key].polling = false
+	retry, err = poller.Poll(key)
+	// expect NEG not exist error
+	if err == nil {
+		t.Errorf("Expect err, but got %v", err)
+	}
+	if retry != true {
+		t.Errorf("Expect retry = true, but got %v", retry)
+	}
+
+	// create NEG, but with no endpoint
+	negCloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{Name: negName, Zone: zone}, zone)
+	retry, err = poller.Poll(key)
+	if err != nil {
+		t.Errorf("Does not expect err, but got %v", err)
+	}
+	if retry != true {
+		t.Errorf("Expect retry = true, but got %v", retry)
+	}
+
+	// add NE to the NEG, but NE not healthy
+	ne := &compute.NetworkEndpoint{
+		IpAddress: ip,
+		Port:      port,
+		Instance:  instance,
+	}
+	negCloud.AttachNetworkEndpoints(negName, zone, []*compute.NetworkEndpoint{ne})
+	retry, err = poller.Poll(key)
+	if err != nil {
+		t.Errorf("Does not expect err, but got %v", err)
+	}
+	if retry != true {
+		t.Errorf("Expect retry = true, but got %v", retry)
+	}
+
+	// add NE with healthy status
+	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), negtypes.NetworkEndpointEntry{
+		NetworkEndpoint: ne,
+		Healths: []*compute.HealthStatusForNetworkEndpoint{
+			{
+				BackendService: &compute.BackendServiceReference{
+					BackendService: negName,
+				},
+				HealthState: healthyState,
+			},
+		},
+	})
+	retry, err = poller.Poll(key)
+	if err != nil {
+		t.Errorf("Does not expect err, but got %v", err)
+	}
+	if retry != false {
+		t.Errorf("Expect retry = false, but got %v", retry)
 	}
 }

@@ -36,6 +36,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"reflect"
 )
 
 const (
@@ -530,6 +531,54 @@ func TestReadinessGateEnabled(t *testing.T) {
 		if manager.ReadinessGateEnabled(tc.key) != tc.expect {
 			t.Errorf("For case %q, expect %v, but got %v", tc.desc, tc.expect, manager.ReadinessGateEnabled(tc.key))
 		}
+	}
+}
+
+func TestFilterCommonPorts(t *testing.T) {
+	t.Parallel()
+	namer := utils.NewNamer(ClusterID, "")
+
+	for _, tc := range []struct {
+		desc     string
+		p1       negtypes.PortInfoMap
+		p2       negtypes.PortInfoMap
+		expectP1 negtypes.PortInfoMap
+		expectP2 negtypes.PortInfoMap
+	}{
+		{
+			desc:     "empty input 1",
+			p1:       negtypes.PortInfoMap{},
+			p2:       negtypes.PortInfoMap{},
+			expectP1: negtypes.PortInfoMap{},
+			expectP2: negtypes.PortInfoMap{},
+		},
+		{
+			desc:     "empty input 2",
+			p1:       negtypes.NewPortInfoMap(namespace1, name1, types.SvcPortMap{port1: targetPort1, port2: targetPort2}, namer, false),
+			p2:       negtypes.PortInfoMap{},
+			expectP1: negtypes.NewPortInfoMap(namespace1, name1, types.SvcPortMap{port1: targetPort1, port2: targetPort2}, namer, false),
+			expectP2: negtypes.PortInfoMap{},
+		},
+		{
+			desc:     "empty input 3",
+			p1:       negtypes.PortInfoMap{},
+			p2:       negtypes.NewPortInfoMap(namespace1, name1, types.SvcPortMap{port1: targetPort1, port2: targetPort2}, namer, true),
+			expectP1: negtypes.PortInfoMap{},
+			expectP2: negtypes.NewPortInfoMap(namespace1, name1, types.SvcPortMap{port1: targetPort1, port2: targetPort2}, namer, true),
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			removeCommonPorts(tc.p1, tc.p2)
+
+			if !reflect.DeepEqual(tc.p1, tc.expectP1) {
+				t.Errorf("Expect p1 to be %v, but got %v", tc.expectP1, tc.p1)
+			}
+
+			if !reflect.DeepEqual(tc.p2, tc.expectP2) {
+				t.Errorf("Expect p2 to be %v, but got %v", tc.expectP2, tc.p2)
+			}
+		})
+
 	}
 }
 

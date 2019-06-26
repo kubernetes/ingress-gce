@@ -99,7 +99,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	// Service/Ingress config changes can cause readinessGate to be turn on or off for the same service port.
 	// By removing the duplicate ports in removes and adds, this prevents disruption of NEG syncer due to the config changes
 	// Hence, Existing NEG syncer for the service port will always work
-	filterPort(adds, removes)
+	removeCommonPorts(adds, removes)
 
 	manager.svcPortMap[key] = newPorts
 	klog.V(3).Infof("EnsureSyncer %v/%v: syncing %v ports, removing %v ports, adding %v ports", namespace, name, newPorts, removes, adds)
@@ -342,20 +342,24 @@ func getServiceKey(namespace, name string) serviceKey {
 	}
 }
 
-// filterPort removes duplicate ports in p1 and p2 if the corresponding port info has the same target port and neg name.
+// removeCommonPorts removes duplicate ports in p1 and p2 if the corresponding port info has the same target port and neg name.
 // This function effectively removes duplicate port with different readiness gate flag if the rest of the field in port info is the same.
-func filterPort(p1, p2 negtypes.PortInfoMap) {
+func removeCommonPorts(p1, p2 negtypes.PortInfoMap) {
 	for port, portInfo1 := range p1 {
-		if portInfo2, ok := p2[port]; ok {
-			if portInfo1.TargetPort != portInfo2.TargetPort {
-				continue
-			}
-			if portInfo1.NegName != portInfo2.NegName {
-				continue
-			}
-
-			delete(p1, port)
-			delete(p2, port)
+		portInfo2, ok := p2[port]
+		if !ok {
+			continue
 		}
+
+		if portInfo1.TargetPort != portInfo2.TargetPort {
+			continue
+		}
+		if portInfo1.NegName != portInfo2.NegName {
+			continue
+		}
+
+		delete(p1, port)
+		delete(p2, port)
+
 	}
 }

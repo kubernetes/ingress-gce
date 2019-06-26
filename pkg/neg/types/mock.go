@@ -36,6 +36,23 @@ type NetworkEndpointEntry struct {
 
 type NetworkEndpointStore map[meta.Key][]NetworkEndpointEntry
 
+func (s NetworkEndpointStore) AddNetworkEndpointHealthStatus(key meta.Key, entry NetworkEndpointEntry) {
+	v, ok := s[key]
+	if !ok {
+		v = []NetworkEndpointEntry{}
+	}
+	v = append(v, entry)
+	s[key] = v
+}
+
+// GetNetworkEndpointStore is a helper function to access the NetworkEndpointStore of the mock NEG cloud
+func GetNetworkEndpointStore(negCloud NetworkEndpointGroupCloud) NetworkEndpointStore {
+	adapter := negCloud.(*cloudProviderAdapter)
+	mockedCloud := adapter.c.(*cloud.MockGCE)
+	ret := mockedCloud.MockNetworkEndpointGroups.X.(NetworkEndpointStore)
+	return ret
+}
+
 func MockNetworkEndpointAPIs(fakeGCE *gce.Cloud) {
 	m := (fakeGCE.Compute().(*cloud.MockGCE))
 	m.MockNetworkEndpointGroups.X = NetworkEndpointStore{}
