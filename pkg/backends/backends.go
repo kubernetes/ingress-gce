@@ -74,7 +74,7 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 		HealthChecks: []string{hcLink},
 	}
 	ensureDescription(be, &sp)
-	if err := composite.CreateBackendService(be, b.cloud, meta.GlobalKey(be.Name)); err != nil {
+	if err := composite.CreateBackendService(b.cloud, meta.GlobalKey(be.Name), be); err != nil {
 		return nil, err
 	}
 	// Note: We need to perform a GCE call to re-fetch the object we just created
@@ -87,7 +87,7 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 func (b *Backends) Update(be *composite.BackendService) error {
 	// Ensure the backend service has the proper version before updating.
 	be.Version = features.VersionFromDescription(be.Description)
-	if err := composite.UpdateBackendService(be, b.cloud, meta.GlobalKey(be.Name)); err != nil {
+	if err := composite.UpdateBackendService(b.cloud, meta.GlobalKey(be.Name), be); err != nil {
 		return err
 	}
 	return nil
@@ -95,7 +95,7 @@ func (b *Backends) Update(be *composite.BackendService) error {
 
 // Get implements Pool.
 func (b *Backends) Get(name string, version meta.Version) (*composite.BackendService, error) {
-	be, err := composite.GetBackendService(version, b.cloud, meta.GlobalKey(name))
+	be, err := composite.GetBackendService(b.cloud, meta.GlobalKey(name), version)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func (b *Backends) Get(name string, version meta.Version) (*composite.BackendSer
 	// the existing backend service.
 	versionRequired := features.VersionFromDescription(be.Description)
 	if features.IsLowerVersion(versionRequired, version) {
-		be, err = composite.GetBackendService(versionRequired, b.cloud, meta.GlobalKey(name))
+		be, err = composite.GetBackendService(b.cloud, meta.GlobalKey(name), versionRequired)
 		if err != nil {
 			return nil, err
 		}

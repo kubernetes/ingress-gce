@@ -797,6 +797,121 @@ func TestServiceAccountJwtAccessCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+func TestSslCertificate(t *testing.T) {
+	// Use reflection to verify that our composite type contains all the
+	// same fields as the alpha type.
+	compositeType := reflect.TypeOf(SslCertificate{})
+	alphaType := reflect.TypeOf(computealpha.SslCertificate{})
+	betaType := reflect.TypeOf(computebeta.SslCertificate{})
+	gaType := reflect.TypeOf(compute.SslCertificate{})
+
+	// For the composite type, remove the Version field from consideration
+	compositeTypeNumFields := compositeType.NumField() - 2
+	if compositeTypeNumFields != alphaType.NumField() {
+		t.Fatalf("%v should contain %v fields. Got %v", alphaType.Name(), alphaType.NumField(), compositeTypeNumFields)
+	}
+
+	// Compare all the fields by doing a lookup since we can't guarantee that they'll be in the same order
+	// Make sure that composite type is strictly alpha fields + internal bookkeeping
+	for i := 2; i < compositeType.NumField(); i++ {
+		lookupField, found := alphaType.FieldByName(compositeType.Field(i).Name)
+		if !found {
+			t.Fatal(fmt.Errorf("Field %v not present in alpha type %v", compositeType.Field(i), alphaType))
+		}
+		if err := compareFields(compositeType.Field(i), lookupField); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Verify that all beta fields are in composite type
+	if err := typeEquality(betaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify that all GA fields are in composite type
+	if err := typeEquality(gaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestToSslCertificate(t *testing.T) {
+	testCases := []struct {
+		input    interface{}
+		expected *SslCertificate
+	}{
+		{
+			computealpha.SslCertificate{},
+			&SslCertificate{},
+		},
+		{
+			computebeta.SslCertificate{},
+			&SslCertificate{},
+		},
+		{
+			compute.SslCertificate{},
+			&SslCertificate{},
+		},
+	}
+	for _, testCase := range testCases {
+		result, _ := ToSslCertificate(testCase.input)
+		if !reflect.DeepEqual(result, testCase.expected) {
+			t.Fatalf("ToSslCertificate(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
+		}
+	}
+}
+
+func TestSslCertificateToAlpha(t *testing.T) {
+	composite := SslCertificate{}
+	expected := &computealpha.SslCertificate{}
+	result, err := composite.ToAlpha()
+	if err != nil {
+		t.Fatalf("SslCertificate.ToAlpha() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("SslCertificate.ToAlpha() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestSslCertificateToBeta(t *testing.T) {
+	composite := SslCertificate{}
+	expected := &computebeta.SslCertificate{}
+	result, err := composite.ToBeta()
+	if err != nil {
+		t.Fatalf("SslCertificate.ToBeta() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("SslCertificate.ToBeta() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestSslCertificateToGA(t *testing.T) {
+	composite := SslCertificate{}
+	expected := &compute.SslCertificate{}
+	result, err := composite.ToGA()
+	if err != nil {
+		t.Fatalf("SslCertificate.ToGA() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("SslCertificate.ToGA() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+
+func TestSslCertificateManagedSslCertificate(t *testing.T) {
+	compositeType := reflect.TypeOf(SslCertificateManagedSslCertificate{})
+	alphaType := reflect.TypeOf(computealpha.SslCertificateManagedSslCertificate{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSslCertificateSelfManagedSslCertificate(t *testing.T) {
+	compositeType := reflect.TypeOf(SslCertificateSelfManagedSslCertificate{})
+	alphaType := reflect.TypeOf(computealpha.SslCertificateSelfManagedSslCertificate{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestTCPHealthCheck(t *testing.T) {
 	compositeType := reflect.TypeOf(TCPHealthCheck{})
