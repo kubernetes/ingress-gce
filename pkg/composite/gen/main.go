@@ -808,12 +808,12 @@ func main() {
 	genTests(testOut)
 
 	var err error
-	err = ioutil.WriteFile("./pkg/composite/composite.go", []byte(gofmtContent(out)), 0644)
+	err = ioutil.WriteFile("./pkg/composite/gen.go", []byte(gofmtContent(out)), 0644)
 	//err = ioutil.WriteFile("./pkg/composite/composite.go", []byte(out.String()), 0644)
 	if err != nil {
 		panic(err)
 	}
-	err = ioutil.WriteFile("./pkg/composite/composite_test.go", []byte(gofmtContent(testOut)), 0644)
+	err = ioutil.WriteFile("./pkg/composite/gen_test.go", []byte(gofmtContent(testOut)), 0644)
 	if err != nil {
 		panic(err)
 	}
