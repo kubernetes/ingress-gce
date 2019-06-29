@@ -31,6 +31,7 @@ import (
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -93,6 +94,8 @@ type L7 struct {
 	Name string
 	// runtimeInfo is non-cloudprovider information passed from the controller.
 	runtimeInfo *L7RuntimeInfo
+	// ingress stores the ingress
+	ingress v1beta1.Ingress
 	// cloud is an interface to manage loadbalancers in the GCE cloud.
 	cloud *gce.Cloud
 	// um is the UrlMap associated with this L7.
@@ -118,10 +121,13 @@ type L7 struct {
 	namer *utils.Namer
 	// recorder is used to generate k8s Events.
 	recorder record.EventRecorder
-	// version stores what version the resources in the loadbalancer should be
-	version meta.Version
 	// resource type stores the KeyType of the resources in the loadbalancer (e.g. Regional)
 	scope meta.KeyType
+}
+
+// Version() returns the required meta.Version for a specific resource
+func (l *L7) Version(resource features.LBResource) meta.Version {
+	return features.VersionFromIngressForResource(&l.ingress, resource)
 }
 
 // CreateKey creates a meta.Key for use with composite types
@@ -226,7 +232,7 @@ func (l *L7) Cleanup() error {
 	if key, err = l.CreateKey(fwName); err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, l.version)); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, l.Version(features.ForwardingRule))); err != nil {
 		return err
 	}
 
@@ -235,7 +241,7 @@ func (l *L7) Cleanup() error {
 	if key, err = l.CreateKey(fwsName); err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, l.version)); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, l.Version(features.ForwardingRule))); err != nil {
 		return err
 	}
 
@@ -252,7 +258,7 @@ func (l *L7) Cleanup() error {
 	if key, err = l.CreateKey(tpName); err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpProxy(l.cloud, key, l.version)); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpProxy(l.cloud, key, l.Version(features.TargetHttpProxy))); err != nil {
 		return err
 	}
 
@@ -261,7 +267,7 @@ func (l *L7) Cleanup() error {
 	if key, err = l.CreateKey(tpsName); err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpsProxy(l.cloud, key, l.version)); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpsProxy(l.cloud, key, l.Version(features.TargetHttpsProxy))); err != nil {
 		return err
 	}
 
@@ -278,7 +284,7 @@ func (l *L7) Cleanup() error {
 			if key, err = l.CreateKey(cert.Name); err != nil {
 				return err
 			}
-			if err := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l.cloud, key, l.version)); err != nil {
+			if err := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l.cloud, key, l.Version(features.SslCertificate))); err != nil {
 				klog.Errorf("Old cert delete failed - %v", err)
 				certErr = err
 			}
@@ -294,7 +300,7 @@ func (l *L7) Cleanup() error {
 	if key, err = l.CreateKey(umName); err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l.cloud, key, l.version)); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l.cloud, key, l.Version(features.UrlMap))); err != nil {
 		return err
 	}
 
@@ -312,7 +318,13 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendSyncer backends
 	}
 	backendState := map[string]string{}
 	for _, beName := range backends {
-		backendState[beName] = backendSyncer.Status(beName, l7.version, l7.scope)
+		version := l7.Version(features.BackendService)
+		state, err := backendSyncer.Status(beName, version, l7.scope)
+		// Don't return error here since we want to keep syncing
+		if err != nil {
+			klog.Errorf("Error syncing backend status for %s - %s - %s: %v", beName, version, l7.scope, err)
+		}
+		backendState[beName] = state
 	}
 	jsonBackendState := "Unknown"
 	b, err := json.Marshal(backendState)

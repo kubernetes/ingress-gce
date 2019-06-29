@@ -18,6 +18,9 @@ package firewalls
 
 import (
 	"fmt"
+	"k8s.io/ingress-gce/pkg/controller"
+	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"reflect"
 	"time"
 
@@ -123,7 +126,11 @@ func (fwc *FirewallController) ToSvcPorts(ings []*v1beta1.Ingress) []utils.Servi
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings {
 		urlMap, _ := fwc.translator.TranslateIngress(ing, fwc.ctx.DefaultBackendSvcPortID)
-		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
+		svcPorts := urlMap.AllServicePorts()
+		if flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(ing) {
+			controller.UpdateServicePortsForILB(svcPorts, ing)
+		}
+		knownPorts = append(knownPorts, svcPorts...)
 	}
 	return knownPorts
 }
@@ -164,8 +171,17 @@ func (fwc *FirewallController) sync(key string) error {
 	}
 	negPorts := fwc.translator.GatherEndpointPorts(gceSvcPorts)
 
+	var additionalRanges []string
+	if flags.F.EnableL7Ilb {
+		ilbRange, err := fwc.ilbFirewallSrcRange(gceIngresses)
+		if err != nil {
+			return err
+		}
+		additionalRanges = append(additionalRanges, ilbRange)
+	}
+
 	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
-	if err := fwc.firewallPool.Sync(nodeNames, negPorts...); err != nil {
+	if err := fwc.firewallPool.Sync(nodeNames, negPorts, additionalRanges); err != nil {
 		if fwErr, ok := err.(*FirewallXPNError); ok {
 			// XPN: Raise an event on each ingress
 			for _, ing := range gceIngresses {
@@ -179,4 +195,24 @@ func (fwc *FirewallController) sync(key string) error {
 		}
 	}
 	return nil
+}
+
+func (fwc *FirewallController) ilbFirewallSrcRange(gceIngresses []*v1beta1.Ingress) (string, error) {
+	ilbEnabled := false
+	for _, ing := range gceIngresses {
+		if utils.IsGCEL7ILBIngress(ing) {
+			ilbEnabled = true
+			break
+		}
+	}
+
+	if ilbEnabled {
+		L7ILBSrcRange, err := features.ILBSubnetSourceRange(fwc.ctx.Cloud, fwc.ctx.Cloud.Region())
+		if err != nil {
+			return "", fmt.Errorf("error unable to get ILB subnet source ranges: %v", err)
+		}
+		return L7ILBSrcRange, nil
+	}
+
+	return "", nil
 }

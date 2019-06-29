@@ -18,6 +18,9 @@ package utils
 
 import (
 	"fmt"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/flags"
 	"testing"
 	"time"
 
@@ -518,6 +521,146 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 	}
 }
 
-func getTestIngress() {
-	return
+// Do not run in parallel since modifies global flags
+// TODO(shance): remove l7-ilb flag tests once flag is removed
+func TestIsGCEIngress(t *testing.T) {
+	testCases := []struct {
+		desc             string
+		ingress          *v1beta1.Ingress
+		ingressClassFlag string
+		enableL7IlbFlag  bool
+		expected         bool
+	}{
+		{
+			desc: "No ingress class",
+			ingress: &v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+			},
+			expected: true,
+		},
+		{
+			desc: "unknown ingress class",
+			ingress: &v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: "foo"},
+				},
+			},
+			expected: false,
+		},
+		{
+			desc: "L7 ILB ingress class with flag disabled",
+			ingress: &v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7ILBIngressClass},
+				},
+			},
+			expected: false,
+		},
+		{
+			desc: "L7 ILB ingress class with flag enabled",
+			ingress: &v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7ILBIngressClass},
+				},
+			},
+			expected:        true,
+			enableL7IlbFlag: true,
+		},
+		{
+			desc: "Set by flag with non-matching class",
+			ingress: &v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: "wrong-class"},
+				},
+			},
+			ingressClassFlag: "right-class",
+			expected:         false,
+		},
+		{
+			desc: "Set by flag with matching class",
+			ingress: &v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: "right-class"},
+				},
+			},
+			ingressClassFlag: "right-class",
+			expected:         true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if tc.ingressClassFlag != "" {
+				flags.F.IngressClass = tc.ingressClassFlag
+			}
+
+			if tc.enableL7IlbFlag {
+				flags.F.EnableL7Ilb = true
+			}
+
+			result := IsGCEIngress(tc.ingress)
+			if result != tc.expected {
+				t.Fatalf("want %v, got %v", tc.expected, result)
+			}
+		})
+	}
+}
+
+func TestIsGCEL7ILBIngress(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc     string
+		ingress  *v1beta1.Ingress
+		expected bool
+	}{
+		{
+			desc: "No ingress class",
+			ingress: &v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+			},
+			expected: false,
+		},
+		{
+			desc:     "Empty Annotations",
+			ingress:  &v1beta1.Ingress{},
+			expected: false,
+		},
+		{
+			desc: "L7 ILB ingress class",
+			ingress: &v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: annotations.GceL7ILBIngressClass},
+				},
+			},
+			expected: true,
+		},
+		{
+			desc: "foo ingress class",
+			ingress: &v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: "foo-class"},
+				},
+			},
+			expected: false,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			result := IsGCEL7ILBIngress(tc.ingress)
+			if result != tc.expected {
+				t.Fatalf("want %v, got %v", tc.expected, result)
+			}
+		})
+	}
 }

@@ -19,6 +19,7 @@ package loadbalancers
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
@@ -41,7 +42,8 @@ func (l *L7) checkProxy() (err error) {
 	if err != nil {
 		return err
 	}
-	proxy, _ := composite.GetTargetHttpProxy(l.cloud, key, l.version)
+	version := l.Version(features.TargetHttpProxy)
+	proxy, _ := composite.GetTargetHttpProxy(l.cloud, key, version)
 	if proxy == nil {
 		klog.V(3).Infof("Creating new http proxy for urlmap %v", l.um.Name)
 		description, err := l.description()
@@ -52,7 +54,7 @@ func (l *L7) checkProxy() (err error) {
 			Name:        proxyName,
 			UrlMap:      urlMapLink,
 			Description: description,
-			Version:     l.version,
+			Version:     version,
 		}
 		key, err := l.CreateKey(newProxy.Name)
 		if err != nil {
@@ -65,7 +67,7 @@ func (l *L7) checkProxy() (err error) {
 		if err != nil {
 			return err
 		}
-		proxy, err = composite.GetTargetHttpProxy(l.cloud, key, l.version)
+		proxy, err = composite.GetTargetHttpProxy(l.cloud, key, version)
 		if err != nil {
 			return err
 		}
@@ -104,7 +106,8 @@ func (l *L7) checkHttpsProxy() (err error) {
 	if err != nil {
 		return err
 	}
-	proxy, _ := composite.GetTargetHttpsProxy(l.cloud, key, l.version)
+	version := l.Version(features.TargetHttpProxy)
+	proxy, _ := composite.GetTargetHttpsProxy(l.cloud, key, version)
 	description, err := l.description()
 	if err != nil {
 		return err
@@ -115,7 +118,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 			Name:        proxyName,
 			UrlMap:      urlMapLink,
 			Description: description,
-			Version:     l.version,
+			Version:     version,
 		}
 
 		for _, c := range l.sslCerts {
@@ -134,7 +137,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 		if err != nil {
 			return err
 		}
-		proxy, err = composite.GetTargetHttpsProxy(l.cloud, key, l.version)
+		proxy, err = composite.GetTargetHttpsProxy(l.cloud, key, version)
 		if err != nil {
 			return err
 		}
@@ -180,7 +183,7 @@ func (l *L7) getSslCertLinkInUse() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	proxy, err := composite.GetTargetHttpsProxy(l.cloud, key, l.version)
+	proxy, err := composite.GetTargetHttpsProxy(l.cloud, key, l.Version(features.TargetHttpsProxy))
 	if err != nil {
 		return nil, err
 	}

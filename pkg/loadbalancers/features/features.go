@@ -21,34 +21,82 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/utils"
+)
+
+type LBResource string
+
+const (
+	FeatureL7ILB string = "L7ILB"
+
+	// L7 Resources
+	UrlMap           LBResource = "UrlMap"
+	ForwardingRule   LBResource = "ForwardingRule"
+	TargetHttpProxy  LBResource = "TargetHttpProxy"
+	TargetHttpsProxy LBResource = "TargetHttpsProxy"
+	SslCertificate   LBResource = "SslCertificate"
+
+	// This is *only* used for backend annotations
+	// TODO(shance): find a way to remove these
+	BackendService LBResource = "BackendService"
+	HealthCheck    LBResource = "HealthCheck"
 )
 
 var (
-	// versionToFeatures stores the mapping from the required API
-	// version to feature names.
-	// TODO: (shance) Add L7-ILB here
-	versionToFeatures = map[meta.Version][]string{}
+	// versionToFeatures stores the mapping from the resource to the required API
+	// version to feature names.  This is necessary since a feature could
+	// require using different versions for each resource.
+	resourceToVersionMap = map[LBResource]map[meta.Version][]string{
+		UrlMap: {
+			meta.VersionAlpha: {FeatureL7ILB},
+		},
+		ForwardingRule: {
+			meta.VersionAlpha: {FeatureL7ILB},
+		},
+		TargetHttpProxy: {
+			meta.VersionAlpha: {FeatureL7ILB},
+		},
+		TargetHttpsProxy: {
+			meta.VersionAlpha: {FeatureL7ILB},
+		},
+		SslCertificate: {
+			meta.VersionAlpha: {FeatureL7ILB},
+		},
+		// *Only used for backend annotations*
+		BackendService: {
+			meta.VersionAlpha: {FeatureL7ILB},
+		},
+		// TODO(shance): find a way to remove this
+		HealthCheck: {
+			meta.VersionAlpha: {FeatureL7ILB},
+		},
+	}
+
 	// scopeToFeatures stores the mapping from the required resource type
 	// to feature names
-	// TODO: (shance) add L7-ILB here
 	// Only add features that have a hard scope requirement
 	// TODO: (shance) refactor scope to be per-resource
-	scopeToFeatures = map[meta.KeyType][]string{}
+	scopeToFeatures = map[meta.KeyType][]string{
+		meta.Regional: []string{FeatureL7ILB},
+	}
 )
 
 // featuresFromIngress returns the features enabled by an ingress
 func featuresFromIngress(ing *v1beta1.Ingress) []string {
-	result := []string{}
+	var result []string
+	if utils.IsGCEL7ILBIngress(ing) {
+		result = append(result, FeatureL7ILB)
+	}
 	return result
 }
 
 // versionFromFeatures returns the meta.Version required for a list of features
-func versionFromFeatures(features []string) meta.Version {
-	fs := sets.NewString(features...)
-	if fs.HasAny(versionToFeatures[meta.VersionAlpha]...) {
+func versionFromFeatures(strings []string, resource LBResource) meta.Version {
+	fs := sets.NewString(strings...)
+	if fs.HasAny(resourceToVersionMap[resource][meta.VersionAlpha]...) {
 		return meta.VersionAlpha
 	}
-	if fs.HasAny(versionToFeatures[meta.VersionBeta]...) {
+	if fs.HasAny(resourceToVersionMap[resource][meta.VersionBeta]...) {
 		return meta.VersionBeta
 	}
 	return meta.VersionGA
@@ -74,6 +122,6 @@ func ScopeFromIngress(ing *v1beta1.Ingress) meta.KeyType {
 }
 
 // VersionFromIngress returns the required meta.Version of features for an Ingress
-func VersionFromIngress(ing *v1beta1.Ingress) meta.Version {
-	return versionFromFeatures(featuresFromIngress(ing))
+func VersionFromIngressForResource(ing *v1beta1.Ingress, resource LBResource) meta.Version {
+	return versionFromFeatures(featuresFromIngress(ing), resource)
 }

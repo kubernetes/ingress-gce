@@ -49,6 +49,6 @@ type HealthCheckProvider interface {
 type HealthChecker interface {
 	New(sp utils.ServicePort) *HealthCheck
 	Sync(hc *HealthCheck) (string, error)
-	Delete(name string) error
-	Get(name string, version meta.Version) (*HealthCheck, error)
+	Delete(name string, scope meta.KeyType) error
+	Get(name string, version meta.Version, scope meta.KeyType) (*HealthCheck, error)
 }

@@ -47,22 +47,34 @@ func CreateKey(gceCloud *gce.Cloud, name string, scope meta.KeyType) (*meta.Key,
 }
 
 // TODO: (shance) generate this
-// TODO: (shance) add regional and alpha
 // TODO: (shance) populate scope
-// ListAllUrlMaps() merges all configured List() calls into one list of composite UrlMaps
+// TODO: (shance) figure out a better way to get version
+// ListAllUrlMaps() merges all configured List() calls into one list of composite UrlMaps.
+// This function combines both global and regional resources into one slice
+// so users must use ScopeFromSelfLink() to determine the correct scope
+// before issuing an API call.
 func ListAllUrlMaps(gceCloud *gce.Cloud) ([]*UrlMap, error) {
 	resultMap := map[string]*UrlMap{}
-	key1, err := CreateKey(gceCloud, "", meta.Global)
+
+	// TODO(shance): this needs to be replaced with 'scope' and not key
+	globalKey, err := CreateKey(gceCloud, "", meta.Global)
+	if err != nil {
+		return nil, err
+	}
+	regionalKey, err := CreateKey(gceCloud, "", meta.Regional)
 	if err != nil {
 		return nil, err
 	}
 
-	// List ga-global and regional-alpha
-	versions := []meta.Version{meta.VersionGA}
-	keys := []*meta.Key{key1}
+	for _, vk := range []struct {
+		v meta.Version
+		k *meta.Key //TODO(shance): change this to scope
+	}{
+		{meta.VersionGA, globalKey},
+		{meta.VersionAlpha, regionalKey},
+	} {
 
-	for i := range versions {
-		list, err := ListUrlMaps(gceCloud, keys[i], versions[i])
+		list, err := ListUrlMaps(gceCloud, vk.k, vk.v)
 		if err != nil {
 			return nil, fmt.Errorf("error listing all urlmaps: %v", err)
 		}
@@ -81,19 +93,26 @@ func ListAllUrlMaps(gceCloud *gce.Cloud) ([]*UrlMap, error) {
 }
 
 // TODO: (shance) generate this
-// TODO: (shance) add regional and alpha
 // TODO: (shance) populate scope
+// TODO: (shance) figure out a more accurate way to obtain version
 // ListAllUrlMaps() merges all configured List() calls into one list of composite UrlMaps
+// This function combines both global and regional resources into one slice
+// so users must use ScopeFromSelfLink() to determine the correct scope
+// before issuing an API call.
 func ListAllBackendServices(gceCloud *gce.Cloud) ([]*BackendService, error) {
 	resultMap := map[string]*BackendService{}
 	key1, err := CreateKey(gceCloud, "", meta.Global)
 	if err != nil {
 		return nil, err
 	}
+	key2, err := CreateKey(gceCloud, "", meta.Regional)
+	if err != nil {
+		return nil, err
+	}
 
 	// List ga-global and regional-alpha
-	versions := []meta.Version{meta.VersionGA}
-	keys := []*meta.Key{key1}
+	versions := []meta.Version{meta.VersionGA, meta.VersionAlpha}
+	keys := []*meta.Key{key1, key2}
 
 	for i := range versions {
 		list, err := ListBackendServices(gceCloud, keys[i], versions[i])

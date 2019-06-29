@@ -14,6 +14,8 @@ limitations under the License.
 package backends
 
 import (
+	"fmt"
+	"k8s.io/ingress-gce/pkg/flags"
 	"net/http"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -73,13 +75,18 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 		PortName:     namedPort.Name,
 		HealthChecks: []string{hcLink},
 	}
-	ensureDescription(be, &sp)
 
+	if sp.L7ILBEnabled {
+		be.LoadBalancingScheme = "INTERNAL"
+	}
+
+	ensureDescription(be, &sp)
 	scope := features.ScopeFromServicePort(&sp)
 	key, err := composite.CreateKey(b.cloud, name, scope)
 	if err != nil {
 		return nil, err
 	}
+
 	if err := composite.CreateBackendService(b.cloud, key, be); err != nil {
 		return nil, err
 	}
@@ -161,10 +168,10 @@ func (b *Backends) Delete(name string, version meta.Version, scope meta.KeyType)
 }
 
 // Health implements Pool.
-func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType) string {
+func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType) (string, error) {
 	be, err := b.Get(name, version, scope)
 	if err != nil || len(be.Backends) == 0 {
-		return "Unknown"
+		return "Unknown", fmt.Errorf("error getting health for backend %s: %v", name, err)
 	}
 
 	// TODO: Look at more than one backend's status
@@ -177,21 +184,28 @@ func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType)
 	case meta.Regional:
 		hs, err = b.cloud.GetRegionalBackendServiceHealth(name, b.cloud.Region(), be.Backends[0].Group)
 	default:
-		return "Unknown"
+		return "Unknown", fmt.Errorf("invalid scope for Health(): %s", scope)
 	}
 
 	if err != nil || len(hs.HealthStatus) == 0 || hs.HealthStatus[0] == nil {
-		return "Unknown"
+		return "Unknown", fmt.Errorf("error getting health for backend %q: %v", name, err)
 	}
 	// TODO: State transition are important, not just the latest.
-	return hs.HealthStatus[0].HealthState
+	return hs.HealthStatus[0].HealthState, nil
 }
 
 // List lists all backends managed by this controller.
 func (b *Backends) List() ([]*composite.BackendService, error) {
 	// TODO: for consistency with the rest of this sub-package this method
 	// should return a list of backend ports.
-	backends, err := composite.ListAllBackendServices(b.cloud)
+	var backends []*composite.BackendService
+	var err error
+	if flags.F.EnableL7Ilb {
+		backends, err = composite.ListAllBackendServices(b.cloud)
+	} else {
+		// TODO: (shance) this needs to be changed to not take a key
+		backends, err = composite.ListBackendServices(b.cloud, meta.GlobalKey(""), meta.VersionGA)
+	}
 	if err != nil {
 		return nil, err
 	}

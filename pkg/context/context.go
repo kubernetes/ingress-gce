@@ -17,8 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/klog"
-
 	apiv1 "k8s.io/api/core/v1"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	informerv1beta1 "k8s.io/client-go/informers/extensions/v1beta1"
@@ -33,6 +31,7 @@ import (
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 

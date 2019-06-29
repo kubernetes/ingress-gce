@@ -84,6 +84,7 @@ var (
 		EnableReadinessReflector  bool
 		FinalizerAdd              bool
 		FinalizerRemove           bool
+		EnableL7Ilb               bool
 
 		LeaderElection LeaderElectionConfiguration
 	}{}
@@ -197,6 +198,8 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 		F.FinalizerAdd, "Enable adding Finalizer to Ingress.")
 	flag.BoolVar(&F.FinalizerRemove, "enable-finalizer-remove",
 		F.FinalizerRemove, "Enable removing Finalizer from Ingress.")
+	flag.BoolVar(&F.EnableL7Ilb, "enable-l7-ilb", false,
+		`Optional, whether or not to enable L7-ILB.`)
 }
 
 type RateLimitSpecs struct {
