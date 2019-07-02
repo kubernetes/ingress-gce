@@ -24,6 +24,7 @@ import (
 )
 
 func TestCreateKey(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		desc         string
 		resourceType meta.KeyType
@@ -73,6 +74,7 @@ func TestCreateKey(t *testing.T) {
 }
 
 func TestIsRegionalResource(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		desc     string
 		selfLink string
@@ -106,6 +108,60 @@ func TestIsRegionalResource(t *testing.T) {
 				} else {
 					return
 				}
+			}
+
+			if err != nil || result != tc.expected {
+				t.Fatalf("IsRegionalResource(%v) = %v, want %v", tc.selfLink, err, tc.expected)
+			}
+		})
+	}
+}
+
+func TestParseScope(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc     string
+		selfLink string
+		expected meta.KeyType
+		wantErr  bool
+	}{
+		{
+			desc:     "Regional resource",
+			selfLink: "https://www.googleapis.com/compute/alpha/projects/gke-dev/regions/us-central1/urlMaps/desc",
+			expected: meta.Regional,
+		},
+		{
+			desc:     "Global resource",
+			selfLink: "https://www.googleapis.com/compute/alpha/projects/gke-dev/global/urlMaps/desc",
+			expected: meta.Global,
+		},
+		{
+			desc:     "Zonal resource",
+			selfLink: "https://www.googleapis.com/compute/alpha/projects/gke-dev/zones/us-central1-a/urlMaps/desc",
+			expected: meta.Zonal,
+		},
+		{
+			desc:     "Invalid resource",
+			selfLink: "a/b/c/d/e/f/",
+			expected: "",
+			wantErr:  true,
+		},
+		{
+			desc:     "Empty string",
+			selfLink: "",
+			expected: "",
+			wantErr:  true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			result, err := ScopeFromSelfLink(tc.selfLink)
+
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("err = nil, want non-nil")
+				}
+				return
 			}
 
 			if err != nil || result != tc.expected {
