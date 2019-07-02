@@ -15,6 +15,7 @@ package backends
 
 import (
 	"context"
+	"k8s.io/ingress-gce/pkg/backends/features"
 	"net/http"
 	"testing"
 
@@ -122,6 +123,6 @@ func TestLinkWithCreationModeError(t *testing.T) {
 				t.Fatalf("Wrong balancing mode, expected %v got %v", modes[(i+1)%len(modes)], b.BalancingMode)
 			}
 		}
-		linker.backendPool.Delete(sp.BackendName(defaultNamer))
+		linker.backendPool.Delete(sp.BackendName(defaultNamer), features.VersionFromServicePort(&sp), features.ScopeFromServicePort(&sp))
 	}
 }

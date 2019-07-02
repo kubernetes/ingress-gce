@@ -93,7 +93,8 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 		igLinks = append(igLinks, ig.SelfLink)
 	}
 
-	be, err := l.backendPool.Get(sp.BackendName(l.namer), meta.VersionGA)
+	// ig_linker only supports L7 HTTP(s) External Load Balancer
+	be, err := l.backendPool.Get(sp.BackendName(l.namer), meta.VersionGA, meta.Global)
 	if err != nil {
 		return err
 	}

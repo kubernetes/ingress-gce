@@ -26,6 +26,7 @@ import (
 )
 
 // HealthCheckProvider is an interface to manage a single GCE health check.
+// TODO: (shance) convert this to use composite types
 type HealthCheckProvider interface {
 	CreateHTTPHealthCheck(hc *compute.HttpHealthCheck) error
 	UpdateHTTPHealthCheck(hc *compute.HttpHealthCheck) error

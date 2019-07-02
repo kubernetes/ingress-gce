@@ -183,7 +183,6 @@ func (h *HealthChecks) update(oldHC, newHC *HealthCheck) error {
 		return h.cloud.UpdateHealthCheck(v1hc)
 	default:
 		return fmt.Errorf("unknown Version: %q", newHC.Version())
-
 	}
 }
 

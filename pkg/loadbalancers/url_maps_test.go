@@ -17,9 +17,10 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/ingress-gce/pkg/composite"
 	"testing"
 
-	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -27,15 +28,15 @@ import (
 func TestComputeURLMapEquals(t *testing.T) {
 	t.Parallel()
 
-	m := testComputeURLMap()
+	m := testCompositeURLMap()
 	// Test equality.
-	same := testComputeURLMap()
+	same := testCompositeURLMap()
 	if !mapsEqual(m, same) {
 		t.Errorf("mapsEqual(%+v, %+v) = true, want false", m, same)
 	}
 
 	// Test different default backend.
-	diffDefault := testComputeURLMap()
+	diffDefault := testCompositeURLMap()
 	diffDefault.DefaultService = "/global/backendServices/some-service"
 	if mapsEqual(m, diffDefault) {
 		t.Errorf("mapsEqual(%+v, %+v) = true, want false", m, diffDefault)
@@ -45,7 +46,7 @@ func TestComputeURLMapEquals(t *testing.T) {
 func TestToComputeURLMap(t *testing.T) {
 	t.Parallel()
 
-	wantComputeMap := testComputeURLMap()
+	wantComputeMap := testCompositeURLMap()
 	gceURLMap := &utils.GCEURLMap{
 		DefaultBackend: &utils.ServicePort{NodePort: 30000},
 		HostRules: []utils.HostRule{
@@ -79,17 +80,17 @@ func TestToComputeURLMap(t *testing.T) {
 	}
 
 	namer := utils.NewNamer("uid1", "fw1")
-	gotComputeURLMap := toComputeURLMap("lb-name", gceURLMap, namer)
+	gotComputeURLMap := toCompositeURLMap("lb-name", gceURLMap, namer, meta.GlobalKey("lb-name"))
 	if !mapsEqual(gotComputeURLMap, wantComputeMap) {
 		t.Errorf("toComputeURLMap() = \n%+v\n   want\n%+v", gotComputeURLMap, wantComputeMap)
 	}
 }
 
-func testComputeURLMap() *compute.UrlMap {
-	return &compute.UrlMap{
+func testCompositeURLMap() *composite.UrlMap {
+	return &composite.UrlMap{
 		Name:           "k8s-um-lb-name",
 		DefaultService: "global/backendServices/k8s-be-30000--uid1",
-		HostRules: []*compute.HostRule{
+		HostRules: []*composite.HostRule{
 			{
 				Hosts:       []string{"abc.com"},
 				PathMatcher: "host929ba26f492f86d4a9d66a080849865a",
@@ -99,11 +100,11 @@ func testComputeURLMap() *compute.UrlMap {
 				PathMatcher: "host2d50cf9711f59181be6a5e5658e42c21",
 			},
 		},
-		PathMatchers: []*compute.PathMatcher{
+		PathMatchers: []*composite.PathMatcher{
 			{
 				DefaultService: "global/backendServices/k8s-be-30000--uid1",
 				Name:           "host929ba26f492f86d4a9d66a080849865a",
-				PathRules: []*compute.PathRule{
+				PathRules: []*composite.PathRule{
 					{
 						Paths:   []string{"/web"},
 						Service: "global/backendServices/k8s-be-32000--uid1",
@@ -117,7 +118,7 @@ func testComputeURLMap() *compute.UrlMap {
 			{
 				DefaultService: "global/backendServices/k8s-be-30000--uid1",
 				Name:           "host2d50cf9711f59181be6a5e5658e42c21",
-				PathRules: []*compute.PathRule{
+				PathRules: []*composite.PathRule{
 					{
 						Paths:   []string{"/"},
 						Service: "global/backendServices/k8s-be-33000--uid1",
@@ -136,17 +137,17 @@ func TestGetBackendNames(t *testing.T) {
 	t.Parallel()
 
 	cases := map[string]struct {
-		urlMap    *compute.UrlMap
+		urlMap    *composite.UrlMap
 		wantNames []string
 		wantErr   bool
 	}{
 		"Valid UrlMap": {
-			urlMap: &compute.UrlMap{
+			urlMap: &composite.UrlMap{
 				DefaultService: "global/backendServices/service-A",
-				PathMatchers: []*compute.PathMatcher{
+				PathMatchers: []*composite.PathMatcher{
 					{
 						DefaultService: "global/backendServices/service-B",
-						PathRules: []*compute.PathRule{
+						PathRules: []*composite.PathRule{
 							{
 								Paths:   []string{"/"},
 								Service: "global/backendServices/service-C",
@@ -158,15 +159,15 @@ func TestGetBackendNames(t *testing.T) {
 			wantNames: []string{"service-A", "service-B", "service-C"},
 		},
 		"Invalid DefaultService": {
-			urlMap: &compute.UrlMap{
+			urlMap: &composite.UrlMap{
 				DefaultService: "/global/backendServices/service-A",
 			},
 			wantErr: true,
 		},
 		"Invalid PathMatcher DefaultService": {
-			urlMap: &compute.UrlMap{
+			urlMap: &composite.UrlMap{
 				DefaultService: "global/backendServices/service-A",
-				PathMatchers: []*compute.PathMatcher{
+				PathMatchers: []*composite.PathMatcher{
 					{
 						DefaultService: "/global/backendServices/service-B",
 					},
@@ -175,12 +176,12 @@ func TestGetBackendNames(t *testing.T) {
 			wantErr: true,
 		},
 		"Invalid PathRule Service": {
-			urlMap: &compute.UrlMap{
+			urlMap: &composite.UrlMap{
 				DefaultService: "global/backendServices/service-A",
-				PathMatchers: []*compute.PathMatcher{
+				PathMatchers: []*composite.PathMatcher{
 					{
 						DefaultService: "global/backendServices/service-B",
-						PathRules: []*compute.PathRule{
+						PathRules: []*composite.PathRule{
 							{
 								Paths:   []string{"/"},
 								Service: "/global/backendServices/service-C",

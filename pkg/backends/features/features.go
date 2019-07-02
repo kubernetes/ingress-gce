@@ -39,9 +39,13 @@ var (
 	// versionToFeatures stores the mapping from the required API
 	// version to feature names.
 	versionToFeatures = map[meta.Version][]string{
-		meta.VersionAlpha: []string{},
-		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureHTTP2},
+		meta.VersionBeta: []string{FeatureSecurityPolicy, FeatureHTTP2},
 	}
+
+	// TODO: (shance) refactor all scope to be above the serviceport level
+	// scopeToFeatures stores the mapping from the required meta.KeyType
+	// to feature names
+	scopeToFeatures = map[meta.KeyType][]string{}
 )
 
 // SetDescription sets the XFeatures field for the given Description.
@@ -73,6 +77,13 @@ func VersionFromServicePort(sp *utils.ServicePort) meta.Version {
 	return VersionFromFeatures(featuresFromServicePort(sp))
 }
 
+// ScopeFromServicePort returns the meta.KeyType for the backend that this ServicePort
+// is associated with
+// TODO: (shance) refactor all scope to be above the serviceport level
+func ScopeFromServicePort(sp *utils.ServicePort) meta.KeyType {
+	return ScopeFromFeatures(featuresFromServicePort(sp))
+}
+
 // VersionFromDescription returns the meta.Version required for the given
 // description.
 func VersionFromDescription(desc string) meta.Version {
@@ -90,6 +101,17 @@ func VersionFromFeatures(features []string) meta.Version {
 		return meta.VersionBeta
 	}
 	return meta.VersionGA
+}
+
+// ScopeFromFeatures returns the meta.KeyType required for the given list of features
+// (e.g.) if a regional feature is added, the backend will be regional
+// TODO: (shance) refactor all scope to be above the serviceport level
+func ScopeFromFeatures(features []string) meta.KeyType {
+	fs := sets.NewString(features...)
+	if fs.HasAny(scopeToFeatures[meta.Regional]...) {
+		return meta.Regional
+	}
+	return meta.Global
 }
 
 var (

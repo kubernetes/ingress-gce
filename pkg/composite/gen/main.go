@@ -190,7 +190,9 @@ func genTypes(wr io.Writer) {
 
 // genFuncs() generates helper methods attached to composite structs.
 // TODO: (shance) Fix force send fields hack
-// TODO: (shance) Have To*() Functions set Scope and Version fields
+// TODO: (shance) Have To*() Functions set ResourceType and Version fields
+// TODO: (shance) Figure out a better solution so that the List() functions don't have to take a meta.Key
+// that ignores the name field
 func genFuncs(wr io.Writer) {
 	const text = `
 {{$All := .All}}

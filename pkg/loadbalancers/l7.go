@@ -19,13 +19,15 @@ package loadbalancers
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
 
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 
 	corev1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
@@ -97,28 +99,42 @@ type L7 struct {
 	// cloud is an interface to manage loadbalancers in the GCE cloud.
 	cloud *gce.Cloud
 	// um is the UrlMap associated with this L7.
-	um *compute.UrlMap
+	um *composite.UrlMap
 	// tp is the TargetHTTPProxy associated with this L7.
-	tp *compute.TargetHttpProxy
+	tp *composite.TargetHttpProxy
 	// tps is the TargetHTTPSProxy associated with this L7.
-	tps *compute.TargetHttpsProxy
+	tps *composite.TargetHttpsProxy
 	// fw is the GlobalForwardingRule that points to the TargetHTTPProxy.
-	fw *compute.ForwardingRule
+	fw *composite.ForwardingRule
 	// fws is the GlobalForwardingRule that points to the TargetHTTPSProxy.
-	fws *compute.ForwardingRule
+	fws *composite.ForwardingRule
 	// ip is the static-ip associated with both GlobalForwardingRules.
 	ip *compute.Address
 	// sslCerts is the list of ssl certs associated with the targetHTTPSProxy.
-	sslCerts []*compute.SslCertificate
+	sslCerts []*composite.SslCertificate
 	// oldSSLCerts is the list of certs that used to be hooked up to the
 	// targetHTTPSProxy. We can't update a cert in place, so we need
 	// to create - update - delete and storing the old certs in a list
 	// prevents leakage if there's a failure along the way.
-	oldSSLCerts []*compute.SslCertificate
+	oldSSLCerts []*composite.SslCertificate
 	// namer is used to compute names of the various sub-components of an L7.
 	namer *utils.Namer
 	// recorder is used to generate k8s Events.
 	recorder record.EventRecorder
+	// version stores what version the resources in the loadbalancer should be
+	version meta.Version
+	// resource type stores the KeyType of the resources in the loadbalancer (e.g. Regional)
+	scope meta.KeyType
+}
+
+// CreateKey creates a meta.Key for use with composite types
+func (l *L7) CreateKey(name string) (*meta.Key, error) {
+	return composite.CreateKey(l.cloud, name, l.scope)
+}
+
+// Regional returns true if the l7 scope is regional
+func (l *L7) Regional() bool {
+	return l.scope == meta.Regional
 }
 
 // RuntimeInfo returns the L7RuntimeInfo associated with the L7 load balancer.
@@ -127,7 +143,7 @@ func (l *L7) RuntimeInfo() *L7RuntimeInfo {
 }
 
 // UrlMap returns the UrlMap associated with the L7 load balancer.
-func (l *L7) UrlMap() *compute.UrlMap {
+func (l *L7) UrlMap() *composite.UrlMap {
 	return l.um
 }
 
@@ -205,15 +221,24 @@ func (l *L7) GetIP() string {
 // forwarding rule -> target proxy -> url map
 // This leaves backends and health checks, which are shared across loadbalancers.
 func (l *L7) Cleanup() error {
+	var key *meta.Key
+	var err error
+
 	fwName := l.namer.ForwardingRule(l.Name, utils.HTTPProtocol)
 	klog.V(2).Infof("Deleting global forwarding rule %v", fwName)
-	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalForwardingRule(fwName)); err != nil {
+	if key, err = l.CreateKey(fwName); err != nil {
+		return err
+	}
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, l.version)); err != nil {
 		return err
 	}
 
 	fwsName := l.namer.ForwardingRule(l.Name, utils.HTTPSProtocol)
 	klog.V(2).Infof("Deleting global forwarding rule %v", fwsName)
-	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalForwardingRule(fwsName)); err != nil {
+	if key, err = l.CreateKey(fwsName); err != nil {
+		return err
+	}
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, l.version)); err != nil {
 		return err
 	}
 
@@ -227,13 +252,19 @@ func (l *L7) Cleanup() error {
 
 	tpName := l.namer.TargetProxy(l.Name, utils.HTTPProtocol)
 	klog.V(2).Infof("Deleting target http proxy %v", tpName)
-	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHTTPProxy(tpName)); err != nil {
+	if key, err = l.CreateKey(tpName); err != nil {
+		return err
+	}
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpProxy(l.cloud, key, l.version)); err != nil {
 		return err
 	}
 
 	tpsName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
 	klog.V(2).Infof("Deleting target https proxy %v", tpsName)
-	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteTargetHTTPSProxy(tpsName)); err != nil {
+	if key, err = l.CreateKey(tpsName); err != nil {
+		return err
+	}
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpsProxy(l.cloud, key, l.version)); err != nil {
 		return err
 	}
 
@@ -247,7 +278,10 @@ func (l *L7) Cleanup() error {
 		var certErr error
 		for _, cert := range secretsSslCerts {
 			klog.V(2).Infof("Deleting sslcert %s", cert.Name)
-			if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteSslCertificate(cert.Name)); err != nil {
+			if key, err = l.CreateKey(cert.Name); err != nil {
+				return err
+			}
+			if err := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l.cloud, key, l.version)); err != nil {
 				klog.Errorf("Old cert delete failed - %v", err)
 				certErr = err
 			}
@@ -260,7 +294,10 @@ func (l *L7) Cleanup() error {
 
 	umName := l.namer.UrlMap(l.Name)
 	klog.V(2).Infof("Deleting URL Map %v", umName)
-	if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteURLMap(umName)); err != nil {
+	if key, err = l.CreateKey(umName); err != nil {
+		return err
+	}
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l.cloud, key, l.version)); err != nil {
 		return err
 	}
 
@@ -278,7 +315,7 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendSyncer backends
 	}
 	backendState := map[string]string{}
 	for _, beName := range backends {
-		backendState[beName] = backendSyncer.Status(beName)
+		backendState[beName] = backendSyncer.Status(beName, l7.version, l7.scope)
 	}
 	jsonBackendState := "Unknown"
 	b, err := json.Marshal(backendState)
