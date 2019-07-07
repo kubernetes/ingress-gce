@@ -67,6 +67,9 @@ const (
 	// This label is feature-gated in kubernetes/kubernetes but we do not have feature gates
 	// This will need to be updated after the end of the alpha
 	LabelNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
+	// ToBeDeletedTaint is the taint that the autoscaler adds when a node is scheduled to be deleted
+	// https://github.com/kubernetes/autoscaler/blob/cluster-autoscaler-0.5.2/cluster-autoscaler/utils/deletetaint/delete.go#L33
+	ToBeDeletedTaint = "ToBeDeletedByClusterAutoscaler"
 )
 
 // FakeGoogleAPIForbiddenErr creates a Forbidden error with type googleapi.Error
@@ -317,6 +320,13 @@ func GetNodeConditionPredicate() listers.NodeConditionPredicate {
 		// the master.
 		if node.Spec.Unschedulable {
 			return false
+		}
+
+		// Get all nodes that have a taint with NoSchedule effect
+		for _, taint := range node.Spec.Taints {
+			if taint.Key == ToBeDeletedTaint {
+				return false
+			}
 		}
 
 		// As of 1.6, we will taint the master, but not necessarily mark it unschedulable.
