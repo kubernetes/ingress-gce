@@ -18,9 +18,9 @@ package features
 import (
 	"reflect"
 
-	"github.com/golang/glog"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 // EnsureCustomRequestHeaders reads the CustomRequestHeaders configuration specified in the ServicePort.BackendConfig
@@ -34,7 +34,7 @@ func EnsureCustomRequestHeaders(sp utils.ServicePort, be *composite.BackendServi
 	applyCustomRequestHeaders(sp, beTemp)
 	if !reflect.DeepEqual(beTemp.CustomRequestHeaders, be.CustomRequestHeaders) {
 		applyCustomRequestHeaders(sp, be)
-		glog.V(2).Infof("Updated Custom Request Headers for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
+		klog.V(2).Infof("Updated Custom Request Headers for service %v/%v.", sp.ID.Service.Namespace, sp.ID.Service.Name)
 		return true
 	}
 
@@ -45,5 +45,5 @@ func EnsureCustomRequestHeaders(sp utils.ServicePort, be *composite.BackendServi
 // to the passed in composite.BackendService. A GCE API call still needs to be made
 // to actually persist the changes.
 func applyCustomRequestHeaders(sp utils.ServicePort, be *composite.BackendService) {
-	be.CustomRequestHeaders = *sp.BackendConfig.Spec.CustomRequestHeaders
+	be.CustomRequestHeaders = sp.BackendConfig.Spec.CustomRequestHeaders.Headers
 }

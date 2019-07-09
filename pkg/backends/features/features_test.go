@@ -74,15 +74,6 @@ var (
 		ID:         fakeSvcPortID,
 		NEGEnabled: true,
 	}
-
-	svcPortWithCustomRequestHeader = utils.ServicePort{
-		ID: fakeSvcPortID,
-		BackendConfig: &backendconfigv1beta1.BackendConfig{
-			Spec: backendconfigv1beta1.BackendConfigSpec{
-				CustomRequestHeaders: &testCustomHeader,
-			},
-		},
-	}
 )
 
 func TestFeaturesFromServicePort(t *testing.T) {
@@ -115,11 +106,6 @@ func TestFeaturesFromServicePort(t *testing.T) {
 			desc:             "HTTP2 + SecurityPolicy",
 			svcPort:          svcPortWithHTTP2SecurityPolicy,
 			expectedFeatures: []string{"HTTP2", "SecurityPolicy"},
-		},
-		{
-			desc:             "CustomRequestHeaders",
-			svcPort:          svcPortWithCustomRequestHeader,
-			expectedFeatures: []string{"CustomRequestHeaders"},
 		},
 	}
 
@@ -160,11 +146,6 @@ func TestVersionFromFeatures(t *testing.T) {
 		{
 			desc:            "HTTP2 + SecurityPolicy",
 			features:        []string{FeatureHTTP2, FeatureSecurityPolicy},
-			expectedVersion: meta.VersionBeta,
-		},
-		{
-			desc:            "CustomRequestHeaders",
-			features:        []string{FeatureCustomRequestHeaders},
 			expectedVersion: meta.VersionBeta,
 		},
 		{
@@ -217,11 +198,6 @@ func TestVersionFromDescription(t *testing.T) {
 			backendServiceDesc: `{"kubernetes.io/service-name":"my-service","kubernetes.io/service-port":"my-port","x-features":["HTTP2","whatisthis"]}`,
 			expectedVersion:    meta.VersionBeta,
 		},
-		{
-			desc:               "CustomRequestHeaders",
-			backendServiceDesc: `{"kubernetes.io/service-name":"my-service","kubernetes.io/service-port":"my-port","x-features":["CustomRequestHeaders"]}`,
-			expectedVersion:    meta.VersionBeta,
-		},
 	}
 
 	for _, tc := range testCases {
@@ -255,11 +231,6 @@ func TestVersionFromServicePort(t *testing.T) {
 		{
 			desc:            "enabled http2 + security policy",
 			svcPort:         svcPortWithHTTP2SecurityPolicy,
-			expectedVersion: meta.VersionBeta,
-		},
-		{
-			desc:            "enabled CustomRequestHeaders",
-			svcPort:         svcPortWithCustomRequestHeader,
 			expectedVersion: meta.VersionBeta,
 		},
 	}

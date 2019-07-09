@@ -44,7 +44,9 @@ func TestEnsureCustomRequestHeaders(t *testing.T) {
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
-						CustomRequestHeaders: &testCustomHeader,
+						CustomRequestHeaders: &backendconfigv1beta1.CustomRequestHeadersConfig{
+							Headers: testCustomHeader,
+						},
 					},
 				},
 			},
@@ -58,7 +60,9 @@ func TestEnsureCustomRequestHeaders(t *testing.T) {
 			sp: utils.ServicePort{
 				BackendConfig: &backendconfigv1beta1.BackendConfig{
 					Spec: backendconfigv1beta1.BackendConfigSpec{
-						CustomRequestHeaders: &testCustomHeader,
+						CustomRequestHeaders: &backendconfigv1beta1.CustomRequestHeadersConfig{
+							Headers: testCustomHeader,
+						},
 					},
 				},
 			},
@@ -83,7 +87,7 @@ func TestEnsureCustomRequestHeaders(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			result := EnsureCustomRequestHeaders(tc.sp, tc.be)
 			if result != tc.updateExpected {
-				t.Errorf("%v: expected %v but got %v", tc.desc, tc.updateExpected, result)
+				t.Errorf("Expected %v but got %v", tc.updateExpected, result)
 			}
 		})
 	}
