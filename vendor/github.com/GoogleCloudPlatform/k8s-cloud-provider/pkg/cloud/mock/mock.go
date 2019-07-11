@@ -419,6 +419,21 @@ func UpdateAlphaHealthCheckHook(ctx context.Context, key *meta.Key, obj *alpha.H
 	return nil
 }
 
+// UpdateBetaHealthCheckHook defines the hook for updating a HealthCheck. It
+// replaces the object with the same key in the mock with the updated object.
+func UpdateBetaHealthCheckHook(ctx context.Context, key *meta.Key, obj *beta.HealthCheck, m *cloud.MockBetaHealthChecks) error {
+	if _, err := m.Get(ctx, key); err != nil {
+		return err
+	}
+
+	obj.Name = key.Name
+	projectID := m.ProjectRouter.ProjectID(ctx, "beta", "healthChecks")
+	obj.SelfLink = cloud.SelfLink(meta.VersionBeta, projectID, "healthChecks", key)
+
+	m.Objects[*key] = &cloud.MockHealthChecksObj{Obj: obj}
+	return nil
+}
+
 // UpdateRegionBackendServiceHook defines the hook for updating a Region
 // BackendsService. It replaces the object with the same key in the mock with
 // the updated object.
