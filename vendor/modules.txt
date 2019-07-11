@@ -1,8 +1,8 @@
 # cloud.google.com/go v0.38.0 => cloud.google.com/go v0.37.4
 cloud.google.com/go/compute/metadata
-# github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190625070306-c3ad81d637ad => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190625070306-c3ad81d637ad
-github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta
+# github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190711003524-c2d87031f3f3 => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190711003524-c2d87031f3f3
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud
+github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock
 # github.com/PuerkitoBio/purell v1.1.1 => github.com/PuerkitoBio/purell v1.1.1
@@ -124,15 +124,15 @@ golang.org/x/text/transform
 # golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 => golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
 golang.org/x/time/rate
 # google.golang.org/api v0.6.1-0.20190607001116-5213b8090861 => google.golang.org/api v0.6.1-0.20190607001116-5213b8090861
-google.golang.org/api/compute/v1
-google.golang.org/api/compute/v0.beta
 google.golang.org/api/compute/v0.alpha
+google.golang.org/api/compute/v0.beta
+google.golang.org/api/compute/v1
 google.golang.org/api/googleapi
-google.golang.org/api/container/v1
-google.golang.org/api/tpu/v1
 google.golang.org/api/gensupport
 google.golang.org/api/option
 google.golang.org/api/transport/http
+google.golang.org/api/container/v1
+google.golang.org/api/tpu/v1
 google.golang.org/api/googleapi/internal/uritemplates
 google.golang.org/api/internal
 google.golang.org/api/googleapi/transport
@@ -256,15 +256,15 @@ k8s.io/apimachinery/pkg/api/meta
 k8s.io/apimachinery/pkg/util/errors
 k8s.io/apimachinery/pkg/util/clock
 k8s.io/apimachinery/pkg/util/strategicpatch
+k8s.io/apimachinery/pkg/api/resource
+k8s.io/apimachinery/pkg/fields
+k8s.io/apimachinery/pkg/util/version
 k8s.io/apimachinery/pkg/util/net
 k8s.io/apimachinery/pkg/util/yaml
-k8s.io/apimachinery/pkg/api/resource
 k8s.io/apimachinery/pkg/conversion
-k8s.io/apimachinery/pkg/fields
 k8s.io/apimachinery/pkg/selection
 k8s.io/apimachinery/pkg/runtime/serializer/streaming
 k8s.io/apimachinery/pkg/util/validation
-k8s.io/apimachinery/pkg/util/version
 k8s.io/apimachinery/pkg/conversion/queryparams
 k8s.io/apimachinery/pkg/util/json
 k8s.io/apimachinery/pkg/util/naming
@@ -307,6 +307,8 @@ k8s.io/client-go/kubernetes/typed/core/v1
 k8s.io/client-go/listers/core/v1
 k8s.io/client-go/util/workqueue
 k8s.io/client-go/kubernetes/typed/extensions/v1beta1
+k8s.io/client-go/informers
+k8s.io/client-go/pkg/version
 k8s.io/client-go/util/retry
 k8s.io/client-go/util/jsonpath
 k8s.io/client-go/kubernetes/typed/admissionregistration/v1beta1
@@ -343,7 +345,6 @@ k8s.io/client-go/kubernetes/typed/settings/v1alpha1
 k8s.io/client-go/kubernetes/typed/storage/v1
 k8s.io/client-go/kubernetes/typed/storage/v1alpha1
 k8s.io/client-go/kubernetes/typed/storage/v1beta1
-k8s.io/client-go/pkg/version
 k8s.io/client-go/plugin/pkg/client/auth/exec
 k8s.io/client-go/rest/watch
 k8s.io/client-go/tools/clientcmd/api
@@ -355,18 +356,10 @@ k8s.io/client-go/tools/clientcmd/api/latest
 k8s.io/client-go/util/homedir
 k8s.io/client-go/tools/record/util
 k8s.io/client-go/tools/reference
-k8s.io/client-go/informers
 k8s.io/client-go/tools/pager
 k8s.io/client-go/kubernetes/fake
 k8s.io/client-go/informers/internalinterfaces
 k8s.io/client-go/listers/extensions/v1beta1
-k8s.io/client-go/third_party/forked/golang/template
-k8s.io/client-go/pkg/apis/clientauthentication
-k8s.io/client-go/pkg/apis/clientauthentication/v1alpha1
-k8s.io/client-go/pkg/apis/clientauthentication/v1beta1
-k8s.io/client-go/util/connrotation
-k8s.io/client-go/util/keyutil
-k8s.io/client-go/tools/clientcmd/api/v1
 k8s.io/client-go/informers/admissionregistration
 k8s.io/client-go/informers/apps
 k8s.io/client-go/informers/auditregistration
@@ -384,6 +377,13 @@ k8s.io/client-go/informers/rbac
 k8s.io/client-go/informers/scheduling
 k8s.io/client-go/informers/settings
 k8s.io/client-go/informers/storage
+k8s.io/client-go/third_party/forked/golang/template
+k8s.io/client-go/pkg/apis/clientauthentication
+k8s.io/client-go/pkg/apis/clientauthentication/v1alpha1
+k8s.io/client-go/pkg/apis/clientauthentication/v1beta1
+k8s.io/client-go/util/connrotation
+k8s.io/client-go/util/keyutil
+k8s.io/client-go/tools/clientcmd/api/v1
 k8s.io/client-go/kubernetes/typed/admissionregistration/v1beta1/fake
 k8s.io/client-go/kubernetes/typed/apps/v1/fake
 k8s.io/client-go/kubernetes/typed/apps/v1beta1/fake

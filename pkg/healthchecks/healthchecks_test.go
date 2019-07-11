@@ -17,6 +17,9 @@ limitations under the License.
 package healthchecks
 
 import (
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"net/http"
 	"testing"
 
@@ -33,8 +36,8 @@ var (
 )
 
 func TestHealthCheckAdd(t *testing.T) {
-	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", namer, defaultBackendSvc)
 
 	sp := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, NEGEnabled: false}
 	hc := healthChecks.New(sp)
@@ -43,7 +46,7 @@ func TestHealthCheckAdd(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Verify the health check exists
-	_, err = hcp.GetHealthCheck(namer.IGBackend(80))
+	_, err = fakeGCE.GetHealthCheck(namer.IGBackend(80))
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -55,7 +58,7 @@ func TestHealthCheckAdd(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Verify the health check exists
-	_, err = hcp.GetHealthCheck(namer.IGBackend(443))
+	_, err = fakeGCE.GetHealthCheck(namer.IGBackend(443))
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -67,15 +70,15 @@ func TestHealthCheckAdd(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Verify the health check exists
-	_, err = hcp.GetHealthCheck(namer.IGBackend(3000))
+	_, err = fakeGCE.GetHealthCheck(namer.IGBackend(3000))
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
 }
 
 func TestHealthCheckAddExisting(t *testing.T) {
-	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", namer, defaultBackendSvc)
 
 	// HTTP
 	// Manually insert a health check
@@ -86,7 +89,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	hcp.CreateHealthCheck(v1hc)
+	fakeGCE.CreateHealthCheck(v1hc)
 
 	sp := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, NEGEnabled: false}
 	// Should not fail adding the same type of health check
@@ -96,7 +99,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Verify the health check exists
-	_, err = hcp.GetHealthCheck(httpHC.Name)
+	_, err = fakeGCE.GetHealthCheck(httpHC.Name)
 	if err != nil {
 		t.Fatalf("expected the health check to continue existing, err: %v", err)
 	}
@@ -110,7 +113,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	hcp.CreateHealthCheck(v1hc)
+	fakeGCE.CreateHealthCheck(v1hc)
 
 	sp = utils.ServicePort{NodePort: 4000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false}
 	hc = healthChecks.New(sp)
@@ -119,7 +122,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Verify the health check exists
-	_, err = hcp.GetHealthCheck(httpsHC.Name)
+	_, err = fakeGCE.GetHealthCheck(httpsHC.Name)
 	if err != nil {
 		t.Fatalf("expected the health check to continue existing, err: %v", err)
 	}
@@ -133,7 +136,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	hcp.CreateHealthCheck(v1hc)
+	fakeGCE.CreateHealthCheck(v1hc)
 
 	sp = utils.ServicePort{NodePort: 5000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false}
 	hc = healthChecks.New(sp)
@@ -142,15 +145,15 @@ func TestHealthCheckAddExisting(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Verify the health check exists
-	_, err = hcp.GetHealthCheck(http2.Name)
+	_, err = fakeGCE.GetHealthCheck(http2.Name)
 	if err != nil {
 		t.Fatalf("expected the health check to continue existing, err: %v", err)
 	}
 }
 
 func TestHealthCheckDelete(t *testing.T) {
-	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", namer, defaultBackendSvc)
 
 	// Create HTTP HC for 1234
 	hc := DefaultHealthCheck(1234, annotations.ProtocolHTTP)
@@ -159,11 +162,11 @@ func TestHealthCheckDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	hcp.CreateHealthCheck(v1hc)
+	fakeGCE.CreateHealthCheck(v1hc)
 
 	// Create HTTPS HC for 1234)
 	v1hc.Type = string(annotations.ProtocolHTTPS)
-	hcp.CreateHealthCheck(v1hc)
+	fakeGCE.CreateHealthCheck(v1hc)
 
 	// Delete only HTTP 1234
 	err = healthChecks.Delete(namer.IGBackend(1234))
@@ -172,7 +175,7 @@ func TestHealthCheckDelete(t *testing.T) {
 	}
 
 	// Validate port is deleted
-	_, err = hcp.GetHealthCheck(hc.Name)
+	_, err = fakeGCE.GetHealthCheck(hc.Name)
 	if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		t.Errorf("expected not-found error, actual: %v", err)
 	}
@@ -185,15 +188,15 @@ func TestHealthCheckDelete(t *testing.T) {
 }
 
 func TestHTTP2HealthCheckDelete(t *testing.T) {
-	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", namer, defaultBackendSvc)
 
 	// Create HTTP2 HC for 1234
 	hc := DefaultHealthCheck(1234, annotations.ProtocolHTTP2)
 	hc.Name = namer.IGBackend(1234)
 
 	alphahc := hc.ToAlphaComputeHealthCheck()
-	hcp.CreateAlphaHealthCheck(alphahc)
+	fakeGCE.CreateAlphaHealthCheck(alphahc)
 
 	// Delete only HTTP2 1234
 	err := healthChecks.Delete(namer.IGBackend(1234))
@@ -202,15 +205,21 @@ func TestHTTP2HealthCheckDelete(t *testing.T) {
 	}
 
 	// Validate port is deleted
-	_, err = hcp.GetAlphaHealthCheck(hc.Name)
+	_, err = fakeGCE.GetAlphaHealthCheck(hc.Name)
 	if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		t.Errorf("expected not-found error, actual: %v", err)
 	}
 }
 
 func TestHealthCheckUpdate(t *testing.T) {
-	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+
+	// Add Hooks
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.UpdateHook = mock.UpdateHealthCheckHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaHealthChecks.UpdateHook = mock.UpdateAlphaHealthCheckHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaHealthChecks.UpdateHook = mock.UpdateBetaHealthCheckHook
+
+	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", namer, defaultBackendSvc)
 
 	// HTTP
 	// Manually insert a health check
@@ -221,7 +230,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	hcp.CreateHealthCheck(v1hc)
+	fakeGCE.CreateHealthCheck(v1hc)
 
 	// Verify the health check exists
 	_, err = healthChecks.Get(hc.Name, meta.VersionGA)
@@ -310,8 +319,8 @@ func TestHealthCheckUpdate(t *testing.T) {
 }
 
 func TestAlphaHealthCheck(t *testing.T) {
-	hcp := NewFakeHealthCheckProvider()
-	healthChecks := NewHealthChecker(hcp, "/", "/healthz", namer, defaultBackendSvc)
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", namer, defaultBackendSvc)
 	sp := utils.ServicePort{NodePort: 8000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true}
 	hc := healthChecks.New(sp)
 	_, err := healthChecks.Sync(hc)

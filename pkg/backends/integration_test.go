@@ -41,8 +41,7 @@ type Jig struct {
 }
 
 func newTestJig(fakeGCE *gce.Cloud) *Jig {
-	fakeHealthCheckProvider := healthchecks.NewFakeHealthCheckProvider()
-	fakeHealthChecks := healthchecks.NewHealthChecker(fakeHealthCheckProvider, "/", "/healthz", defaultNamer, defaultBackendSvc)
+	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", "/healthz", defaultNamer, defaultBackendSvc)
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
@@ -53,6 +52,9 @@ func newTestJig(fakeGCE *gce.Cloud) *Jig {
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.UpdateHook = mock.UpdateBetaBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = mock.UpdateBackendServiceHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.UpdateHook = mock.UpdateHealthCheckHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaHealthChecks.UpdateHook = mock.UpdateAlphaHealthCheckHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaHealthChecks.UpdateHook = mock.UpdateBetaHealthCheckHook
 
 	return &Jig{
 		fakeInstancePool: fakeInstancePool,
