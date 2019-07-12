@@ -17,8 +17,11 @@ limitations under the License.
 package utils
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
+	api_v1 "k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -449,6 +452,69 @@ func TestTraverseIngressBackends(t *testing.T) {
 			counter += 1
 			return false
 		})
+	}
+}
+
+func TestGetNodeConditionPredicate(t *testing.T) {
+	tests := []struct {
+		node         api_v1.Node
+		expectAccept bool
+		name         string
+	}{
+		{
+			node:         api_v1.Node{},
+			expectAccept: false,
+			name:         "empty",
+		},
+		{
+			node: api_v1.Node{
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept: true,
+			name:         "basic",
+		},
+		{
+			node: api_v1.Node{
+				Spec: api_v1.NodeSpec{Unschedulable: true},
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept: false,
+			name:         "unschedulable",
+		}, {
+			node: api_v1.Node{
+				Spec: api_v1.NodeSpec{
+					Taints: []api_v1.Taint{
+						api_v1.Taint{
+							Key:    ToBeDeletedTaint,
+							Value:  fmt.Sprint(time.Now().Unix()),
+							Effect: api_v1.TaintEffectNoSchedule,
+						},
+					},
+				},
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept: false,
+			name:         "ToBeDeletedByClusterAutoscaler-taint",
+		},
+	}
+	pred := GetNodeConditionPredicate()
+	for _, test := range tests {
+		accept := pred(&test.node)
+		if accept != test.expectAccept {
+			t.Errorf("Test failed for %s, expected %v, saw %v", test.name, test.expectAccept, accept)
+		}
 	}
 }
 
