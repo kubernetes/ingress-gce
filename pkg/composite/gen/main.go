@@ -155,9 +155,9 @@ func genTypes(wr io.Writer) {
 			// Note that the compute API's do not contain this field. It is for our
 			// own bookkeeping purposes.
 			Version meta.Version {{$backtick}}json:"-"{{$backtick}}
-			// ResourceType keeps track of the intended type of the service (e.g. Global)
+			// Scope keeps track of the intended type of the service (e.g. Global)
 			// This is also an internal field purely for bookkeeping purposes
-			ResourceType meta.KeyType {{$backtick}}json:"-"{{$backtick}}
+			Scope meta.KeyType {{$backtick}}json:"-"{{$backtick}}
 		{{end}}
 
 		{{- range .Fields}}
@@ -190,7 +190,7 @@ func genTypes(wr io.Writer) {
 
 // genFuncs() generates helper methods attached to composite structs.
 // TODO: (shance) Fix force send fields hack
-// TODO: (shance) Have To*() Functions set ResourceType and Version fields
+// TODO: (shance) Have To*() Functions set Scope and Version fields
 func genFuncs(wr io.Writer) {
 	const text = `
 {{$All := .All}}
@@ -341,7 +341,7 @@ func Get{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*{{
   }
 
 	if key.Type() == meta.Regional {
-    compositeType.ResourceType = meta.Regional
+    compositeType.Scope = meta.Regional
   }
 
   compositeType.Version = version

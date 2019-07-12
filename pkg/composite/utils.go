@@ -26,12 +26,12 @@ import (
 )
 
 // CreateKey() is a helper function for creating a meta.Key when interacting with the
-// composite functions.  For regional resourceTypes, this function looks up
+// composite functions.  For regional scopes, this function looks up
 // the region of the gceCloud object.  You should use this wherever possible to avoid
 // creating a resource in the wrong region or creating a global resource accidentally.
 // TODO: (shance) implement zonal
-func CreateKey(gceCloud *gce.Cloud, name string, resourceType meta.KeyType) (*meta.Key, error) {
-	switch resourceType {
+func CreateKey(gceCloud *gce.Cloud, name string, scope meta.KeyType) (*meta.Key, error) {
+	switch scope {
 	case meta.Regional:
 		region := gceCloud.Region()
 		if region == "" {
@@ -42,7 +42,7 @@ func CreateKey(gceCloud *gce.Cloud, name string, resourceType meta.KeyType) (*me
 		return meta.GlobalKey(name), nil
 	}
 
-	return nil, fmt.Errorf("error creating key, invalid resource type: %s", resourceType)
+	return nil, fmt.Errorf("invalid resource type: %s", scope)
 }
 
 // TODO: (shance) generate this
@@ -126,18 +126,19 @@ func IsRegionalUrlMap(um *UrlMap) (bool, error) {
 
 // IsRegionalResource() returns true if the resource URL is regional
 func IsRegionalResource(selfLink string) (bool, error) {
-	// Figure out if cluster is regional
-	// Update L7 if its regional so we can delete the right resources
+	scope, err := ScopeFromSelfLink(selfLink)
+	if err != nil {
+		return false, err
+	}
+	return scope == meta.Regional, nil
+}
+
+func ScopeFromSelfLink(selfLink string) (meta.KeyType, error) {
 	resourceID, err := cloud.ParseResourceURL(selfLink)
 	if err != nil {
-		return false, fmt.Errorf("error parsing self-link for url-map %s: %v", selfLink, err)
+		return meta.KeyType(""), fmt.Errorf("error parsing self-link %s: %v", selfLink, err)
 	}
-
-	if resourceID.Key.Region != "" {
-		return true, nil
-	}
-
-	return false, nil
+	return resourceID.Key.Type(), nil
 }
 
 // compareFields verifies that two fields in a struct have the same relevant metadata.

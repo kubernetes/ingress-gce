@@ -179,9 +179,9 @@ type BackendService struct {
 	// Note that the compute API's do not contain this field. It is for our
 	// own bookkeeping purposes.
 	Version meta.Version `json:"-"`
-	// ResourceType keeps track of the intended type of the service (e.g. Global)
+	// Scope keeps track of the intended type of the service (e.g. Global)
 	// This is also an internal field purely for bookkeeping purposes
-	ResourceType meta.KeyType `json:"-"`
+	Scope meta.KeyType `json:"-"`
 
 	// Lifetime of cookies in seconds if session_affinity is
 	// GENERATED_COOKIE. If set to 0, the cookie is non-persistent and lasts
@@ -709,9 +709,9 @@ type ForwardingRule struct {
 	// Note that the compute API's do not contain this field. It is for our
 	// own bookkeeping purposes.
 	Version meta.Version `json:"-"`
-	// ResourceType keeps track of the intended type of the service (e.g. Global)
+	// Scope keeps track of the intended type of the service (e.g. Global)
 	// This is also an internal field purely for bookkeeping purposes
-	ResourceType meta.KeyType `json:"-"`
+	Scope meta.KeyType `json:"-"`
 
 	// This field is used along with the backend_service field for internal
 	// load balancing or with the target field for internal TargetInstance.
@@ -1103,9 +1103,9 @@ type HealthCheck struct {
 	// Note that the compute API's do not contain this field. It is for our
 	// own bookkeeping purposes.
 	Version meta.Version `json:"-"`
-	// ResourceType keeps track of the intended type of the service (e.g. Global)
+	// Scope keeps track of the intended type of the service (e.g. Global)
 	// This is also an internal field purely for bookkeeping purposes
-	ResourceType meta.KeyType `json:"-"`
+	Scope meta.KeyType `json:"-"`
 
 	// How often (in seconds) to send a health check. The default value is 5
 	// seconds.
@@ -2021,9 +2021,9 @@ type SslCertificate struct {
 	// Note that the compute API's do not contain this field. It is for our
 	// own bookkeeping purposes.
 	Version meta.Version `json:"-"`
-	// ResourceType keeps track of the intended type of the service (e.g. Global)
+	// Scope keeps track of the intended type of the service (e.g. Global)
 	// This is also an internal field purely for bookkeeping purposes
-	ResourceType meta.KeyType `json:"-"`
+	Scope meta.KeyType `json:"-"`
 
 	// A local certificate file. The certificate must be in PEM format. The
 	// certificate chain must be no greater than 5 certs long. The chain
@@ -2155,9 +2155,9 @@ type TargetHttpProxy struct {
 	// Note that the compute API's do not contain this field. It is for our
 	// own bookkeeping purposes.
 	Version meta.Version `json:"-"`
-	// ResourceType keeps track of the intended type of the service (e.g. Global)
+	// Scope keeps track of the intended type of the service (e.g. Global)
 	// This is also an internal field purely for bookkeeping purposes
-	ResourceType meta.KeyType `json:"-"`
+	Scope meta.KeyType `json:"-"`
 
 	// [Output Only] Creation timestamp in RFC3339 text format.
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
@@ -2204,9 +2204,9 @@ type TargetHttpsProxy struct {
 	// Note that the compute API's do not contain this field. It is for our
 	// own bookkeeping purposes.
 	Version meta.Version `json:"-"`
-	// ResourceType keeps track of the intended type of the service (e.g. Global)
+	// Scope keeps track of the intended type of the service (e.g. Global)
 	// This is also an internal field purely for bookkeeping purposes
-	ResourceType meta.KeyType `json:"-"`
+	Scope meta.KeyType `json:"-"`
 
 	// [Output Only] Creation timestamp in RFC3339 text format.
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
@@ -2345,9 +2345,9 @@ type UrlMap struct {
 	// Note that the compute API's do not contain this field. It is for our
 	// own bookkeeping purposes.
 	Version meta.Version `json:"-"`
-	// ResourceType keeps track of the intended type of the service (e.g. Global)
+	// Scope keeps track of the intended type of the service (e.g. Global)
 	// This is also an internal field purely for bookkeeping purposes
-	ResourceType meta.KeyType `json:"-"`
+	Scope meta.KeyType `json:"-"`
 
 	// [Output Only] Creation timestamp in RFC3339 text format.
 	CreationTimestamp string `json:"creationTimestamp,omitempty"`
@@ -2832,7 +2832,7 @@ func GetForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	}
 
 	if key.Type() == meta.Regional {
-		compositeType.ResourceType = meta.Regional
+		compositeType.Scope = meta.Regional
 	}
 
 	compositeType.Version = version

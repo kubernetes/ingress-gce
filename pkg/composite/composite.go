@@ -37,7 +37,7 @@ func SetUrlMapForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttp
 
 	// Set name in case it is not present in the key
 	key.Name = targetHttpsProxy.Name
-	klog.V(3).Infof("setting URLMap for TargetHttpsProxy %v", targetHttpsProxy.Name)
+	klog.V(3).Infof("setting URLMap for TargetHttpsProxy %v", key)
 
 	switch targetHttpsProxy.Version {
 	case meta.VersionAlpha:
@@ -65,7 +65,7 @@ func SetSslCertificateForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, ta
 
 	// Set name in case it is not present in the key
 	key.Name = targetHttpsProxy.Name
-	klog.V(3).Infof("setting URLMap for TargetHttpsProxy %v", targetHttpsProxy.Name)
+	klog.V(3).Infof("setting SslCertificate for TargetHttpsProxy %v", key)
 
 	switch targetHttpsProxy.Version {
 	case meta.VersionAlpha:
@@ -94,7 +94,7 @@ func SetUrlMapForTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpP
 
 	// Set name in case it is not present in the key
 	key.Name = targetHttpProxy.Name
-	klog.V(3).Infof("setting URLMap for TargetHttpProxy %v", targetHttpProxy.Name)
+	klog.V(3).Infof("setting URLMap for TargetHttpProxy %v", key)
 
 	switch targetHttpProxy.Version {
 	case meta.VersionAlpha:
@@ -122,7 +122,7 @@ func SetProxyForForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRul
 
 	// Set name in case it is not present in the key
 	key.Name = forwardingRule.Name
-	klog.V(3).Infof("setting proxy for forwarding rule ForwardingRule %v", forwardingRule.Name)
+	klog.V(3).Infof("setting proxy for forwarding rule ForwardingRule %v", key)
 
 	switch forwardingRule.Version {
 	case meta.VersionAlpha:
