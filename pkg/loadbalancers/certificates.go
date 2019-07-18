@@ -19,10 +19,11 @@ package loadbalancers
 import (
 	"crypto/sha256"
 	"fmt"
+	"net/http"
 	"strings"
 
-	compute "google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
@@ -63,8 +64,8 @@ func (l *L7) checkSSLCert() error {
 }
 
 // createSslCertificates creates SslCertificates based on kubernetes secrets in Ingress configuration.
-func (l *L7) createSslCertificates(existingCerts []*compute.SslCertificate) ([]*compute.SslCertificate, error) {
-	var result []*compute.SslCertificate
+func (l *L7) createSslCertificates(existingCerts []*composite.SslCertificate) ([]*composite.SslCertificate, error) {
+	var result []*composite.SslCertificate
 
 	existingCertsMap := getMapfromCertList(existingCerts)
 
@@ -98,17 +99,31 @@ func (l *L7) createSslCertificates(existingCerts []*compute.SslCertificate) ([]*
 		// Controller needs to create the certificate, no need to check if it exists and delete. If it did exist, it
 		// would have been listed in the populateSSLCert function and matched in the check above.
 		klog.V(2).Infof("Creating new sslCertificate %q for LB %q", gcpCertName, l.Name)
-		cert, err := l.cloud.CreateSslCertificate(&compute.SslCertificate{
+		cert := &composite.SslCertificate{
 			Name:        gcpCertName,
 			Certificate: ingCert,
 			PrivateKey:  ingKey,
-		})
+			Version:     l.version,
+		}
+		key, err := l.CreateKey(gcpCertName)
+		if err != nil {
+			klog.Errorf("l.CreateKey(%s) = %v", gcpCertName, err)
+			return nil, err
+		}
+		err = composite.CreateSslCertificate(l.cloud, key, cert)
 		if err != nil {
 			klog.Errorf("Failed to create new sslCertificate %q for %q - %v", gcpCertName, l.Name, err)
 			failedCerts = append(failedCerts, gcpCertName+" Error:"+err.Error())
 			continue
 		}
 		visitedCertMap[gcpCertName] = fmt.Sprintf("secret:%q", tlsCert.Name)
+
+		// Get SSLCert
+		cert, err = composite.GetSslCertificate(l.cloud, key, cert.Version)
+		if err != nil {
+			klog.Errorf("GetSslCertificate(_, %v, %v) = %v", key, cert.Version, err)
+			return nil, err
+		}
 		result = append(result, cert)
 	}
 
@@ -120,15 +135,21 @@ func (l *L7) createSslCertificates(existingCerts []*compute.SslCertificate) ([]*
 }
 
 // getSslCertificates fetches GCE SslCertificate resources by names.
-func (l *L7) getSslCertificates(names []string) ([]*compute.SslCertificate, error) {
-	var result []*compute.SslCertificate
+func (l *L7) getSslCertificates(names []string) ([]*composite.SslCertificate, error) {
+	var result []*composite.SslCertificate
 	var failedCerts []string
 	for _, name := range names {
 		// Ask GCE for the cert, checking for problems and existence.
-		cert, err := l.cloud.GetSslCertificate(name)
+		key, err := l.CreateKey(name)
+		if err != nil {
+			return nil, err
+		}
+		cert, err := composite.GetSslCertificate(l.cloud, key, l.version)
 		if err != nil {
 			failedCerts = append(failedCerts, name+": "+err.Error())
-			l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, SslCertificateMissing, err.Error())
+			if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+				l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, SslCertificateMissing, err.Error())
+			}
 			continue
 		}
 		if cert == nil {
@@ -147,7 +168,7 @@ func (l *L7) getSslCertificates(names []string) ([]*compute.SslCertificate, erro
 }
 
 // getPreSharedCertificates fetches SslCertificates specified via pre-shared-cert annotation.
-func (l *L7) getPreSharedCertificates() ([]*compute.SslCertificate, error) {
+func (l *L7) getPreSharedCertificates() ([]*composite.SslCertificate, error) {
 	if l.runtimeInfo.TLSName == "" {
 		return nil, nil
 	}
@@ -160,11 +181,11 @@ func (l *L7) getPreSharedCertificates() ([]*compute.SslCertificate, error) {
 	return sslCerts, nil
 }
 
-func getMapfromCertList(certs []*compute.SslCertificate) map[string]*compute.SslCertificate {
+func getMapfromCertList(certs []*composite.SslCertificate) map[string]*composite.SslCertificate {
 	if len(certs) == 0 {
 		return nil
 	}
-	certMap := make(map[string]*compute.SslCertificate)
+	certMap := make(map[string]*composite.SslCertificate)
 	for _, cert := range certs {
 		certMap[cert.Name] = cert
 	}
@@ -174,13 +195,19 @@ func getMapfromCertList(certs []*compute.SslCertificate) map[string]*compute.Ssl
 // getIngressManagedSslCerts fetches SslCertificate resources created and managed by this load balancer
 // instance. These SslCertificate resources were created based on kubernetes secrets in Ingress
 // configuration.
-func (l *L7) getIngressManagedSslCerts() ([]*compute.SslCertificate, error) {
-	var result []*compute.SslCertificate
+func (l *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
+	var result []*composite.SslCertificate
 
 	// Currently we list all certs available in gcloud and filter the ones managed by this loadbalancer instance. This is
 	// to make sure we garbage collect any old certs that this instance might have lost track of due to crashes.
 	// Can be a performance issue if there are too many global certs, default quota is only 10.
-	certs, err := l.cloud.ListSslCertificates()
+	// Use an empty name parameter since we only care about the scope
+	// TODO: (shance) refactor this so we don't need an empty arg
+	key, err := l.CreateKey("")
+	if err != nil {
+		return nil, err
+	}
+	certs, err := composite.ListSslCertificates(l.cloud, key, l.version)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +236,11 @@ func (l *L7) getIngressManagedSslCerts() ([]*compute.SslCertificate, error) {
 			if !l.namer.IsLegacySSLCert(l.Name, name) {
 				continue
 			}
-			cert, _ := l.cloud.GetSslCertificate(name)
+			key, err := l.CreateKey(name)
+			if err != nil {
+				return nil, err
+			}
+			cert, _ := composite.GetSslCertificate(l.cloud, key, l.version)
 			if cert != nil {
 				klog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l.Name)
 				result = append(result, cert)
@@ -234,8 +265,9 @@ func (l *L7) deleteOldSSLCerts() {
 			continue
 		}
 		klog.V(3).Infof("Cleaning up old SSL Certificate %s", cert.Name)
-		if certErr := utils.IgnoreHTTPNotFound(l.cloud.DeleteSslCertificate(cert.Name)); certErr != nil {
-			klog.Errorf("Old cert delete failed - %v", certErr)
+		key, _ := l.CreateKey(cert.Name)
+		if certErr := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l.cloud, key, l.version)); certErr != nil {
+			klog.Errorf("Old cert %s delete failed - %v", cert.Name, certErr)
 		}
 	}
 }
@@ -271,7 +303,7 @@ func GetCertHash(contents string) string {
 	return fmt.Sprintf("%x", sha256.Sum256([]byte(contents)))[:16]
 }
 
-func toCertNames(certs []*compute.SslCertificate) (names []string) {
+func toCertNames(certs []*composite.SslCertificate) (names []string) {
 	for _, v := range certs {
 		names = append(names, v.Name)
 	}

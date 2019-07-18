@@ -17,7 +17,7 @@ import (
 	"net/http"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -36,7 +36,7 @@ var _ Pool = (*Backends)(nil)
 
 // NewPool returns a new backend pool.
 // - cloud: implements BackendServices
-// - namer: procudes names for backends.
+// - namer: produces names for backends.
 func NewPool(cloud *gce.Cloud, namer *utils.Namer) *Backends {
 	return &Backends{
 		cloud: cloud,
@@ -74,28 +74,47 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 		HealthChecks: []string{hcLink},
 	}
 	ensureDescription(be, &sp)
-	if err := composite.CreateBackendService(b.cloud, meta.GlobalKey(be.Name), be); err != nil {
+
+	scope := features.ScopeFromServicePort(&sp)
+	key, err := composite.CreateKey(b.cloud, name, scope)
+	if err != nil {
+		return nil, err
+	}
+	if err := composite.CreateBackendService(b.cloud, key, be); err != nil {
 		return nil, err
 	}
 	// Note: We need to perform a GCE call to re-fetch the object we just created
 	// so that the "Fingerprint" field is filled in. This is needed to update the
 	// object without error.
-	return b.Get(name, version)
+	return b.Get(name, version, scope)
 }
 
 // Update implements Pool.
 func (b *Backends) Update(be *composite.BackendService) error {
 	// Ensure the backend service has the proper version before updating.
 	be.Version = features.VersionFromDescription(be.Description)
-	if err := composite.UpdateBackendService(b.cloud, meta.GlobalKey(be.Name), be); err != nil {
+	scope, err := composite.ScopeFromSelfLink(be.SelfLink)
+	if err != nil {
+		return err
+	}
+
+	key, err := composite.CreateKey(b.cloud, be.Name, scope)
+	if err != nil {
+		return err
+	}
+	if err := composite.UpdateBackendService(b.cloud, key, be); err != nil {
 		return err
 	}
 	return nil
 }
 
 // Get implements Pool.
-func (b *Backends) Get(name string, version meta.Version) (*composite.BackendService, error) {
-	be, err := composite.GetBackendService(b.cloud, meta.GlobalKey(name), version)
+func (b *Backends) Get(name string, version meta.Version, scope meta.KeyType) (*composite.BackendService, error) {
+	key, err := composite.CreateKey(b.cloud, name, scope)
+	if err != nil {
+		return nil, err
+	}
+	be, err := composite.GetBackendService(b.cloud, key, version)
 	if err != nil {
 		return nil, err
 	}
@@ -103,8 +122,9 @@ func (b *Backends) Get(name string, version meta.Version) (*composite.BackendSer
 	// API version is required so that we don't lose information from
 	// the existing backend service.
 	versionRequired := features.VersionFromDescription(be.Description)
+
 	if features.IsLowerVersion(versionRequired, version) {
-		be, err = composite.GetBackendService(b.cloud, meta.GlobalKey(name), versionRequired)
+		be, err = composite.GetBackendService(b.cloud, key, versionRequired)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +133,7 @@ func (b *Backends) Get(name string, version meta.Version) (*composite.BackendSer
 }
 
 // Delete implements Pool.
-func (b *Backends) Delete(name string) (err error) {
+func (b *Backends) Delete(name string, version meta.Version, scope meta.KeyType) (err error) {
 	defer func() {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			err = nil
@@ -123,22 +143,43 @@ func (b *Backends) Delete(name string) (err error) {
 	klog.V(2).Infof("Deleting backend service %v", name)
 
 	// Try deleting health checks even if a backend is not found.
-	if err = b.cloud.DeleteGlobalBackendService(name); err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+	key, err := composite.CreateKey(b.cloud, name, scope)
+	if err != nil {
 		return err
 	}
+	err = composite.DeleteBackendService(b.cloud, key, version)
+	if err != nil {
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+			klog.Infof("DeleteBackendService(_, %v, %v) = %v; backend service does not exists, ignoring", key, version, err)
+			return nil
+		}
+		klog.Errorf("DeleteBackendService(_, %v, %v) = %v", key, version, err)
+		return err
+	}
+	klog.V(2).Infof("DeleteBackendService(_, %v, %v) ok", key, version)
 	return
 }
 
 // Health implements Pool.
-func (b *Backends) Health(name string) string {
-	be, err := b.Get(name, meta.VersionGA)
+func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType) string {
+	be, err := b.Get(name, version, scope)
 	if err != nil || len(be.Backends) == 0 {
 		return "Unknown"
 	}
 
 	// TODO: Look at more than one backend's status
 	// TODO: Include port, ip in the status, since it's in the health info.
-	hs, err := b.cloud.GetGlobalBackendServiceHealth(name, be.Backends[0].Group)
+	// TODO (shance) convert to composite types
+	var hs *compute.BackendServiceGroupHealth
+	switch scope {
+	case meta.Global:
+		hs, err = b.cloud.GetGlobalBackendServiceHealth(name, be.Backends[0].Group)
+	case meta.Regional:
+		hs, err = b.cloud.GetRegionalBackendServiceHealth(name, b.cloud.Region(), be.Backends[0].Group)
+	default:
+		return "Unknown"
+	}
+
 	if err != nil || len(hs.HealthStatus) == 0 || hs.HealthStatus[0] == nil {
 		return "Unknown"
 	}
@@ -147,20 +188,26 @@ func (b *Backends) Health(name string) string {
 }
 
 // List lists all backends managed by this controller.
-func (b *Backends) List() ([]string, error) {
+func (b *Backends) List() ([]*composite.BackendService, error) {
 	// TODO: for consistency with the rest of this sub-package this method
 	// should return a list of backend ports.
-	backends, err := b.cloud.ListGlobalBackendServices()
+	backends, err := composite.ListAllBackendServices(b.cloud)
 	if err != nil {
 		return nil, err
 	}
 
-	var names []string
+	var clusterBackends []*composite.BackendService
 
 	for _, bs := range backends {
 		if b.namer.NameBelongsToCluster(bs.Name) {
-			names = append(names, bs.Name)
+			scope, err := composite.ScopeFromSelfLink(bs.SelfLink)
+			if err != nil {
+				return nil, err
+			}
+			bs.Scope = scope
+
+			clusterBackends = append(clusterBackends, bs)
 		}
 	}
-	return names, nil
+	return clusterBackends, nil
 }

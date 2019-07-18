@@ -14,8 +14,10 @@ limitations under the License.
 package backends
 
 import (
-	compute "google.golang.org/api/compute/v1"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -60,7 +62,13 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 
 	cloud := l.backendPool.(*Backends).cloud
 	beName := sp.BackendName(l.namer)
-	backendService, err := cloud.GetGlobalBackendService(beName)
+
+	version := meta.VersionGA
+	key, err := composite.CreateKey(cloud, beName, meta.Global)
+	if err != nil {
+		return err
+	}
+	backendService, err := composite.GetBackendService(cloud, key, version)
 	if err != nil {
 		return err
 	}
@@ -80,15 +88,15 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 
 	if !oldBackends.Equal(newBackends) {
 		backendService.Backends = targetBackends
-		return cloud.UpdateGlobalBackendService(backendService)
+		return composite.UpdateBackendService(cloud, key, backendService)
 	}
 	return nil
 }
 
-func getBackendsForNEGs(negs []*compute.NetworkEndpointGroup) []*compute.Backend {
-	var backends []*compute.Backend
+func getBackendsForNEGs(negs []*compute.NetworkEndpointGroup) []*composite.Backend {
+	var backends []*composite.Backend
 	for _, neg := range negs {
-		b := &compute.Backend{
+		b := &composite.Backend{
 			Group:              neg.SelfLink,
 			BalancingMode:      string(Rate),
 			MaxRatePerEndpoint: maxRPS,

@@ -39,7 +39,7 @@ import (
 
 	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
-	neg "k8s.io/ingress-gce/pkg/neg"
+	"k8s.io/ingress-gce/pkg/neg"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 
 	"k8s.io/ingress-gce/cmd/glbc/app"

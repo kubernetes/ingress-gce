@@ -23,6 +23,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	"google.golang.org/api/googleapi"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/util/slice"
 	"net/http"
@@ -43,10 +44,12 @@ import (
 )
 
 const (
-	clusterName = "uid1"
-	ingressName = "test"
-	namespace   = "namespace1"
-	defaultZone = "zone-a"
+	clusterName    = "uid1"
+	ingressName    = "test"
+	namespace      = "namespace1"
+	defaultZone    = "zone-a"
+	defaultVersion = meta.VersionGA
+	defaultScope   = meta.Global
 )
 
 var (
@@ -195,15 +198,23 @@ func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, j *testJig) {
 	t.Helper()
 	lbName := j.namer.LoadBalancer(ingressName)
 
-	um, err := j.fakeGCE.GetURLMap(j.UMName(lbName))
-	tps, err := j.fakeGCE.GetTargetHTTPSProxy(j.TPName(lbName, true))
+	key, err := composite.CreateKey(j.fakeGCE, j.UMName(lbName), defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	um, err := composite.GetUrlMap(j.fakeGCE, key, defaultVersion)
+
+	key.Name = j.TPName(lbName, true)
+	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, defaultVersion)
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetTargetHTTPSProxy(%q) = _, %v; want nil", j.TPName(lbName, true), err)
 	}
 	if !utils.EqualResourcePaths(tps.UrlMap, um.SelfLink) {
 		t.Fatalf("tps.UrlMap = %q, want %q", tps.UrlMap, um.SelfLink)
 	}
-	fws, err := j.fakeGCE.GetGlobalForwardingRule(j.FWName(lbName, true))
+
+	key.Name = j.FWName(lbName, true)
+	fws, err := composite.GetForwardingRule(j.fakeGCE, key, defaultVersion)
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetGlobalForwardingRule(%q) = _, %v, want nil", j.FWName(lbName, true), err)
 	}
@@ -219,15 +230,21 @@ func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, j *testJig) {
 	t.Helper()
 	lbName := j.namer.LoadBalancer(ingressName)
 
-	um, err := j.fakeGCE.GetURLMap(j.UMName(lbName))
-	tps, err := j.fakeGCE.GetTargetHTTPProxy(j.TPName(lbName, false))
+	key, err := composite.CreateKey(j.fakeGCE, j.UMName(lbName), defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	um, err := composite.GetUrlMap(j.fakeGCE, key, defaultVersion)
+	key.Name = j.TPName(lbName, false)
+	tps, err := composite.GetTargetHttpProxy(j.fakeGCE, key, defaultVersion)
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetTargetHTTPProxy(%q) = _, %v; want nil", j.TPName(lbName, false), err)
 	}
 	if !utils.EqualResourcePaths(tps.UrlMap, um.SelfLink) {
 		t.Fatalf("tp.UrlMap = %q, want %q", tps.UrlMap, um.SelfLink)
 	}
-	fws, err := j.fakeGCE.GetGlobalForwardingRule(j.FWName(lbName, false))
+	key.Name = j.FWName(lbName, false)
+	fws, err := composite.GetForwardingRule(j.fakeGCE, key, defaultVersion)
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetGlobalForwardingRule(%q) = _, %v, want nil", j.FWName(lbName, false), err)
 	}
@@ -329,7 +346,11 @@ func TestCertCreationWithCollision(t *testing.T) {
 	// Have the same name used by orphaned cert
 	// Since name of the cert is the same, the contents of Certificate have to be the same too, since name contains a
 	// hash of the contents.
-	j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+	key, err := composite.CreateKey(j.fakeGCE, certName1, defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        certName1,
 		Certificate: "cert",
 		SelfLink:    "existing",
@@ -345,7 +366,8 @@ func TestCertCreationWithCollision(t *testing.T) {
 
 	// Create another cert where the name matches that of another cert, but contents are different - xyz != cert2.
 	// Simulates a hash collision
-	j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+	key.Name = certName2
+	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        certName2,
 		Certificate: "xyz",
 		SelfLink:    "existing",
@@ -431,19 +453,26 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 	newCertName := j.namer.SSLCertName(lbName, tlsCert.CertHash)
 
 	// Manually create a target proxy and assign a legacy cert to it.
-	sslCert := &compute.SslCertificate{Name: oldCertName, Certificate: "cert"}
-	j.fakeGCE.CreateSslCertificate(sslCert)
+	sslCert := &composite.SslCertificate{Name: oldCertName, Certificate: "cert", Version: defaultVersion}
+	key, err := composite.CreateKey(j.fakeGCE, sslCert.Name, defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	composite.CreateSslCertificate(j.fakeGCE, key, sslCert)
+	sslCert, _ = composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
 	tpName := j.TPName(lbName, true)
-	newProxy := &compute.TargetHttpsProxy{
+	newProxy := &composite.TargetHttpsProxy{
 		Name:            tpName,
 		Description:     "fake",
 		SslCertificates: []string{sslCert.SelfLink},
+		Version:         defaultVersion,
 	}
-	err := j.fakeGCE.CreateTargetHTTPSProxy(newProxy)
+	key.Name = tpName
+	err = composite.CreateTargetHttpsProxy(j.fakeGCE, key, newProxy)
 	if err != nil {
 		t.Fatalf("Failed to create Target proxy %v - %v", newProxy, err)
 	}
-	proxyCerts, err := j.fakeGCE.ListSslCertificates()
+	proxyCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion)
 	if err != nil {
 		t.Fatalf("Failed to list certs for load balancer %v - %v", j, err)
 	}
@@ -562,7 +591,7 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 		verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 		// Fetch the target proxy certs and go through in order
 		verifyProxyCertsInOrder(" foo.com", j, t)
-		j.pool.Delete(lbInfo.Name)
+		j.pool.Delete(lbInfo.Name, defaultVersion, defaultScope)
 	}
 }
 
@@ -578,22 +607,34 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
+	key, err := composite.CreateKey(j.fakeGCE, "test-pre-shared-cert", defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Prepare pre-shared certs.
-	preSharedCert1, _ := j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        "test-pre-shared-cert",
 		Certificate: "cert-0 foo.com",
 		SelfLink:    "existing",
 	})
-	preSharedCert2, _ := j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+
+	key.Name = "test-pre-shared-cert1"
+	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        "test-pre-shared-cert1",
 		Certificate: "cert-1 foo.com",
 		SelfLink:    "existing",
 	})
-	preSharedCert3, _ := j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+	preSharedCert2, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+
+	key.Name = "test-pre-shared-cert2"
+	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        "test-pre-shared-cert2",
 		Certificate: "cert2",
 		SelfLink:    "existing",
 	})
+	preSharedCert3, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+
 	expectCerts := map[string]string{preSharedCert1.Name: preSharedCert1.Certificate,
 		preSharedCert2.Name: preSharedCert2.Certificate, preSharedCert3.Name: preSharedCert3.Certificate}
 
@@ -606,7 +647,7 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 		verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 		// Fetch the target proxy certs and go through in order
 		verifyProxyCertsInOrder(" foo.com", j, t)
-		j.pool.Delete(lbInfo.Name)
+		j.pool.Delete(lbInfo.Name, defaultVersion, defaultScope)
 	}
 }
 
@@ -630,17 +671,26 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 	}
 
 	// Prepare pre-shared certs.
-	preSharedCert1, _ := j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+	key, err := composite.CreateKey(j.fakeGCE, "test-pre-shared-cert", defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        "test-pre-shared-cert",
 		Certificate: "abc",
 		SelfLink:    "existing",
 	})
+	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+
 	// Prepare pre-shared certs.
-	preSharedCert2, _ := j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+	key.Name = "test-pre-shared-cert2"
+	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        "test-pre-shared-cert2",
 		Certificate: "xyz",
 		SelfLink:    "existing",
+		Version:     defaultVersion,
 	})
+	preSharedCert2, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
 
 	lbInfo.TLSName = preSharedCert1.Name + "," + preSharedCert2.Name
 
@@ -672,10 +722,12 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCertsProxy, j, t)
 
 	// Check if pre-shared certs are retained.
-	if cert, err := j.fakeGCE.GetSslCertificate(preSharedCert1.Name); err != nil || cert == nil {
+	key.Name = preSharedCert1.Name
+	if cert, err := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion); err != nil || cert == nil {
 		t.Fatalf("Want pre-shared certificate %v to exist, got none, err: %v", preSharedCert1.Name, err)
 	}
-	if cert, err := j.fakeGCE.GetSslCertificate(preSharedCert2.Name); err != nil || cert == nil {
+	key.Name = preSharedCert2.Name
+	if cert, err := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion); err != nil || cert == nil {
 		t.Fatalf("Want pre-shared certificate %v to exist, got none, err: %v", preSharedCert2.Name, err)
 	}
 }
@@ -685,7 +737,11 @@ func verifyProxyCertsInOrder(hostname string, j *testJig, t *testing.T) {
 	t.Logf("f =\n%s", j.String())
 
 	lbName := j.namer.LoadBalancer(ingressName)
-	tps, err := j.fakeGCE.GetTargetHTTPSProxy(j.TPName(lbName, true))
+	key, err := composite.CreateKey(j.fakeGCE, j.TPName(lbName, true), defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, defaultVersion)
 	if err != nil {
 		t.Fatalf("expected https proxy to exist: %v, err: %v", j.TPName(lbName, true), err)
 	}
@@ -694,7 +750,8 @@ func verifyProxyCertsInOrder(hostname string, j *testJig, t *testing.T) {
 
 	for _, link := range tps.SslCertificates {
 		certName, _ := utils.KeyName(link)
-		cert, err := j.fakeGCE.GetSslCertificate(certName)
+		key.Name = certName
+		cert, err := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
 		if err != nil {
 			t.Fatalf("Failed to fetch certificate from link %s - %v", link, err)
 		}
@@ -719,7 +776,11 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	t.Logf("f =\n%s", j.String())
 
 	// f needs to contain only the certs in expectCerts, nothing more, nothing less
-	allCerts, err := j.fakeGCE.ListSslCertificates()
+	key, err := composite.CreateKey(j.fakeGCE, "", defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	allCerts, err := composite.ListSslCertificates(j.fakeGCE, key, defaultVersion)
 	if err != nil {
 		t.Fatalf("Failed to list certificates for %v - %v", j, err)
 	}
@@ -728,7 +789,8 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 			len(allCerts))
 	}
 	for certName, certValue := range expectCerts {
-		cert, err := j.fakeGCE.GetSslCertificate(certName)
+		key.Name = certName
+		cert, err := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
 		if err != nil {
 			t.Fatalf("expected ssl certificate to exist: %v, err: %v, all certs: %v", certName, err, toCertNames(allCerts))
 		}
@@ -740,7 +802,11 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 
 	// httpsproxy needs to contain only the certs in expectCerts, nothing more, nothing less
 	lbName := j.namer.LoadBalancer(ingressName)
-	tps, err := j.fakeGCE.GetTargetHTTPSProxy(j.TPName(lbName, true))
+	key, err = composite.CreateKey(j.fakeGCE, j.TPName(lbName, true), defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, defaultVersion)
 	if err != nil {
 		t.Fatalf("expected https proxy to exist: %v, err: %v", j.TPName(lbName, true), err)
 	}
@@ -748,7 +814,10 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 		t.Fatalf("Expected https proxy to have %d certs, actual %d", len(expectCertsProxy), len(tps.SslCertificates))
 	}
 	for _, link := range tps.SslCertificates {
-		certName, _ := utils.KeyName(link)
+		certName, err := utils.KeyName(link)
+		if err != nil {
+			t.Fatalf("error getting certName: %v", err)
+		}
 		if _, ok := expectCertsProxy[certName]; !ok {
 			t.Fatalf("unexpected ssl certificate '%s' linked in target proxy; Expected : %v; Target Proxy Certs: %v",
 				certName, expectCertsProxy, tps.SslCertificates)
@@ -778,7 +847,11 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 		Ingress:   newIngress(),
 	}
 
-	j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+	key, err := composite.CreateKey(j.fakeGCE, tlsName, defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name: tlsName,
 	})
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
@@ -821,8 +894,15 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 
 	// We know the forwarding rules exist, retrieve their addresses.
 	lbName := j.namer.LoadBalancer(ingressName)
-	fws, _ := j.fakeGCE.GetGlobalForwardingRule(j.FWName(lbName, true))
-	fw, _ := j.fakeGCE.GetGlobalForwardingRule(j.FWName(lbName, false))
+	key, err := composite.CreateKey(j.fakeGCE, "", defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	key.Name = j.FWName(lbName, true)
+	fws, _ := composite.GetForwardingRule(j.fakeGCE, key, defaultVersion)
+	key.Name = j.FWName(lbName, false)
+	fw, _ := composite.GetForwardingRule(j.fakeGCE, key, defaultVersion)
 	ip, err := j.fakeGCE.GetGlobalAddress(j.FWName(lbName, false))
 	if err != nil {
 		t.Fatalf("%v", err)
@@ -836,11 +916,15 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 func verifyURLMap(t *testing.T, j *testJig, name string, wantGCEURLMap *utils.GCEURLMap) {
 	t.Helper()
 
-	um, err := j.fakeGCE.GetURLMap(name)
+	key, err := composite.CreateKey(j.fakeGCE, name, defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	um, err := composite.GetUrlMap(j.fakeGCE, key, defaultVersion)
 	if err != nil || um == nil {
 		t.Errorf("j.fakeGCE.GetUrlMap(%q) = %v, %v; want _, nil", name, um, err)
 	}
-	wantComputeURLMap := toComputeURLMap(name, wantGCEURLMap, j.namer)
+	wantComputeURLMap := toCompositeURLMap(name, wantGCEURLMap, j.namer, key)
 	if !mapsEqual(wantComputeURLMap, um) {
 		t.Errorf("mapsEqual() = false, got\n%+v\n  want\n%+v", um, wantComputeURLMap)
 	}
@@ -1042,15 +1126,20 @@ func TestList(t *testing.T) {
 		"k8s-um-old-l7--uid1", // Expect List() to catch old URL maps
 	}
 
+	key, err := composite.CreateKey(j.fakeGCE, "", defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, name := range names {
-		j.fakeGCE.CreateURLMap(&compute.UrlMap{Name: name})
+		key.Name = name
+		composite.CreateUrlMap(j.fakeGCE, key, &composite.UrlMap{Name: name})
 	}
 
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("j.pool.Ensure() = err %v", err)
 	}
 
-	lbNames, err := j.pool.List()
+	lbNames, _, err := j.pool.List()
 	if err != nil {
 		t.Fatalf("j.pool.List() = err %v", err)
 	}
@@ -1085,16 +1174,25 @@ func TestSecretBasedAndPreSharedCerts(t *testing.T) {
 	}
 
 	// Prepare pre-shared certs.
-	preSharedCert1, _ := j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+	key, err := composite.CreateKey(j.fakeGCE, "", defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key.Name = "test-pre-shared-cert"
+	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        "test-pre-shared-cert",
 		Certificate: "abc",
 		SelfLink:    "existing",
 	})
-	preSharedCert2, _ := j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+
+	key.Name = "test-pre-shared-cert2"
+	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        "test-pre-shared-cert2",
 		Certificate: "xyz",
 		SelfLink:    "existing2",
 	})
+	preSharedCert2, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
 	lbInfo.TLSName = preSharedCert1.Name + "," + preSharedCert2.Name
 
 	// Secret based certs.
@@ -1153,11 +1251,16 @@ func TestMaxSecretBasedAndPreSharedCerts(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 
 	// Create pre-shared certs up to FakeCertQuota.
-	preSharedCerts := []*compute.SslCertificate{}
+	preSharedCerts := []*composite.SslCertificate{}
 	tlsNames := []string{}
+	key, err := composite.CreateKey(j.fakeGCE, "", defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for ix := TargetProxyCertLimit; ix < FakeCertQuota; ix++ {
 		str := strconv.Itoa(ix)
-		cert, err := j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+		key.Name = "test-pre-shared-cert-" + str
+		err := composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 			Name:        "test-pre-shared-cert-" + str,
 			Certificate: "abc-" + str,
 			SelfLink:    "existing-" + str,
@@ -1165,13 +1268,16 @@ func TestMaxSecretBasedAndPreSharedCerts(t *testing.T) {
 		if err != nil {
 			t.Fatalf("j.fakeGCE.CreateSslCertificate() = err %v", err)
 		}
+		cert, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
+
 		preSharedCerts = append(preSharedCerts, cert)
 		tlsNames = append(tlsNames, cert.Name)
 		expectCertsExtra[cert.Name] = cert.Certificate
 	}
 	lbInfo.TLSName = strings.Join(tlsNames, ",")
 
-	_, err := j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+	key.Name = "test-pre-shared-cert-100"
+	err = composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        "test-pre-shared-cert-100",
 		Certificate: "abc-100",
 		SelfLink:    "existing-100",
@@ -1233,11 +1339,16 @@ func TestSecretBasedToPreSharedCertUpdate(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 
 	// Prepare pre-shared cert.
-	preSharedCert1, _ := j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+	key, err := composite.CreateKey(j.fakeGCE, "test-pre-shared-cert", defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        "test-pre-shared-cert",
 		Certificate: "abc",
 		SelfLink:    "existing",
 	})
+	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
 	lbInfo.TLSName = preSharedCert1.Name
 
 	// Sync certs.
@@ -1284,11 +1395,16 @@ func TestSecretBasedToPreSharedCertUpdateWithErrors(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 
 	// Prepare pre-shared certs.
-	preSharedCert1, _ := j.fakeGCE.CreateSslCertificate(&compute.SslCertificate{
+	key, err := composite.CreateKey(j.fakeGCE, "test-pre-shared-cert", defaultScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	composite.CreateSslCertificate(j.fakeGCE, key, &composite.SslCertificate{
 		Name:        "test-pre-shared-cert",
 		Certificate: "abc",
 		SelfLink:    "existing",
 	})
+	preSharedCert1, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
 
 	// Typo in the cert name.
 	lbInfo.TLSName = preSharedCert1.Name + "typo"

@@ -16,12 +16,16 @@ limitations under the License.
 
 package loadbalancers
 
+import (
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+)
+
 // LoadBalancerPool is an interface to manage the cloud resources associated
 // with a gce loadbalancer.
 type LoadBalancerPool interface {
 	Ensure(ri *L7RuntimeInfo) (*L7, error)
-	Delete(name string) error
+	Delete(name string, version meta.Version, scope meta.KeyType) error
 	GC(names []string) error
 	Shutdown() error
-	List() ([]string, error)
+	List() ([]string, []meta.KeyType, error)
 }

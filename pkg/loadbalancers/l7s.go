@@ -18,11 +18,14 @@ package loadbalancers
 
 import (
 	"fmt"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"k8s.io/klog"
 
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -58,6 +61,8 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 		cloud:       l.cloud,
 		namer:       l.namer,
 		recorder:    l.recorderProducer.Recorder(ri.Ingress.Namespace),
+		version:     features.VersionFromIngress(ri.Ingress),
+		scope:       features.ScopeFromIngress(ri.Ingress),
 	}
 
 	if err := lb.edgeHop(); err != nil {
@@ -67,12 +72,14 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 }
 
 // Delete deletes a load balancer by name.
-func (l *L7s) Delete(name string) error {
+func (l *L7s) Delete(name string, version meta.Version, scope meta.KeyType) error {
 	lb := &L7{
 		runtimeInfo: &L7RuntimeInfo{Name: name},
 		Name:        l.namer.LoadBalancer(name),
 		cloud:       l.cloud,
 		namer:       l.namer,
+		scope:       scope,
+		version:     version,
 	}
 
 	klog.V(3).Infof("Deleting lb %v", lb.Name)
@@ -84,12 +91,13 @@ func (l *L7s) Delete(name string) error {
 
 // List returns a list of names of L7 resources, by listing all URL maps and
 // deriving the Loadbalancer name from the URL map name
-func (l *L7s) List() ([]string, error) {
+func (l *L7s) List() ([]string, []meta.KeyType, error) {
 	var names []string
+	var scopes []meta.KeyType
 
-	urlMaps, err := l.cloud.ListURLMaps()
+	urlMaps, err := composite.ListAllUrlMaps(l.cloud)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	for _, um := range urlMaps {
@@ -97,10 +105,15 @@ func (l *L7s) List() ([]string, error) {
 			nameParts := l.namer.ParseName(um.Name)
 			l7Name := l.namer.LoadBalancerFromLbName(nameParts.LbName)
 			names = append(names, l7Name)
+			scope, err := composite.ScopeFromSelfLink(um.SelfLink)
+			if err != nil {
+				return nil, nil, err
+			}
+			scopes = append(scopes, scope)
 		}
 	}
 
-	return names, nil
+	return names, scopes, nil
 }
 
 // GC garbage collects loadbalancers not in the input list.
@@ -111,22 +124,29 @@ func (l *L7s) GC(names []string) error {
 	for _, n := range names {
 		knownLoadBalancers.Insert(l.namer.LoadBalancer(n))
 	}
-	pool, err := l.List()
+	pool, scopes, err := l.List()
 	if err != nil {
 		return err
 	}
 
 	// Delete unknown loadbalancers
-	for _, name := range pool {
+	for i, name := range pool {
 		if knownLoadBalancers.Has(name) {
 			continue
 		}
 		klog.V(2).Infof("GCing loadbalancer %v", name)
-		if err := l.Delete(name); err != nil {
+
+		version := meta.VersionGA
+		// TODO: (shance) figure out a cleaner way to determine this
+		// Regional resources are alpha only
+		if scopes[i] != meta.Global {
+			version = meta.VersionAlpha
+		}
+
+		if err := l.Delete(name, version, scopes[i]); err != nil {
 			return err
 		}
 	}
-
 	return nil
 }
 

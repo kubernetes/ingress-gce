@@ -117,7 +117,7 @@ func TestIsRegionalResource(t *testing.T) {
 	}
 }
 
-func TestParseScope(t *testing.T) {
+func TestScopeFromSelfLink(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
 		desc     string
