@@ -16,7 +16,7 @@ Once the cluster is created, we need to delete the existing Ingress-GCE controll
 that comes by default:
 
 ```console
-kubectl delete pod l7-lb-controller
+kubectl delete pod l7-lb-controller -n kube-system
 ```
 
 This ensures we can run our own copy of the controller locally.
