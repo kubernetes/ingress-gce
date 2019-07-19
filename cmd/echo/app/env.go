@@ -18,6 +18,12 @@ package app
 
 import "os"
 
+const (
+	HostEnvVar      = "node"
+	PodEnvVar       = "pod"
+	NamespaceEnvVar = "namespace"
+)
+
 type Env struct {
 	Node      string
 	Pod       string
@@ -29,7 +35,7 @@ var (
 )
 
 func init() {
-	E.Node = os.Getenv("node")
-	E.Pod = os.Getenv("pod")
-	E.Namespace = os.Getenv("namespace")
+	E.Node = os.Getenv(HostEnvVar)
+	E.Pod = os.Getenv(PodEnvVar)
+	E.Namespace = os.Getenv(NamespaceEnvVar)
 }
