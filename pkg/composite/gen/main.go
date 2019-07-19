@@ -190,7 +190,9 @@ func genTypes(wr io.Writer) {
 
 // genFuncs() generates helper methods attached to composite structs.
 // TODO: (shance) Fix force send fields hack
-// TODO: (shance) Have To*() Functions set Scope and Version fields
+// TODO: (shance) Have To*() Functions set ResourceType and Version fields
+// TODO: (shance) Figure out a better solution so that the List() functions don't have to take a meta.Key
+// that ignores the name field
 func genFuncs(wr io.Writer) {
 	const text = `
 {{$All := .All}}
@@ -471,8 +473,15 @@ func Create{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, {{.VarName}} *{{.Name}}
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating beta {{.Name}} %v", beta.Name)
-		return mc.Observe(gceCloud.Compute().Beta{{.GetCloudProviderName}}().Insert(ctx, key, beta))
+		switch key.Type() {
+		case meta.Regional:
+  		klog.V(3).Infof("Creating beta region {{.Name}} %v", beta.Name)
+			beta.Region = key.Region
+			return mc.Observe(gceCloud.Compute().BetaRegion{{.GetCloudProviderName}}().Insert(ctx, key, beta))
+		default:
+  		klog.V(3).Infof("Creating beta {{.Name}} %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().Beta{{.GetCloudProviderName}}().Insert(ctx, key, beta))
+	}
 	default:
 		ga, err := {{.VarName}}.ToGA()
 		if err != nil {
@@ -507,8 +516,14 @@ func Update{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, {{.VarName}} *{{.Name}}
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Updating beta {{.Name}} %v", beta.Name)
-		return mc.Observe(gceCloud.Compute().Beta{{.GetCloudProviderName}}().Update(ctx, key, beta))
+		switch key.Type() {
+		case meta.Regional:
+		  klog.V(3).Infof("Updating beta region {{.Name}} %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaRegion{{.GetCloudProviderName}}().Update(ctx, key, beta))
+		default:
+			klog.V(3).Infof("Updating beta {{.Name}} %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().Beta{{.GetCloudProviderName}}().Update(ctx, key, beta))
+		}
 	default:
 		ga, err := {{.VarName}}.ToGA()
 		if err != nil {
@@ -536,8 +551,14 @@ func Delete{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) e
 			return mc.Observe(gceCloud.Compute().Alpha{{.GetCloudProviderName}}().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Deleting beta {{.Name}} %v", key.Name)
-		return mc.Observe(gceCloud.Compute().Beta{{.GetCloudProviderName}}().Delete(ctx, key))
+		switch key.Type() {
+		case meta.Regional:
+		  klog.V(3).Infof("Deleting beta region {{.Name}} %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaRegion{{.GetCloudProviderName}}().Delete(ctx, key))
+		default:
+		  klog.V(3).Infof("Deleting beta {{.Name}} %v", key.Name)
+			return mc.Observe(gceCloud.Compute().Beta{{.GetCloudProviderName}}().Delete(ctx, key))
+		}
 	default:
 		klog.V(3).Infof("Deleting ga {{.Name}} %v", key.Name)
 		return mc.Observe(gceCloud.Compute().{{.GetCloudProviderName}}().Delete(ctx, key))
@@ -562,8 +583,14 @@ func Get{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*{{
 				gceObj, err = gceCloud.Compute().Alpha{{.GetCloudProviderName}}().Get(ctx, key)
 		}
 	case meta.VersionBeta:
-    klog.V(3).Infof("Getting beta {{.Name}} %v", key.Name)
-		gceObj, err = gceCloud.Compute().Beta{{.GetCloudProviderName}}().Get(ctx, key)
+		switch key.Type() {
+			case meta.Regional:
+		  	klog.V(3).Infof("Getting beta region {{.Name}} %v", key.Name)
+				gceObj, err = gceCloud.Compute().BetaRegion{{.GetCloudProviderName}}().Get(ctx, key)
+			default:
+		  	klog.V(3).Infof("Getting beta {{.Name}} %v", key.Name)
+				gceObj, err = gceCloud.Compute().Beta{{.GetCloudProviderName}}().Get(ctx, key)
+		}
 	default:
     klog.V(3).Infof("Getting ga {{.Name}} %v", key.Name)
 		gceObj, err = gceCloud.Compute().{{.GetCloudProviderName}}().Get(ctx, key)
@@ -598,8 +625,14 @@ func List{{.GetCloudProviderName}}(gceCloud *gce.Cloud, key *meta.Key, version m
 				gceObjs, err = gceCloud.Compute().Alpha{{.GetCloudProviderName}}().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
-		  klog.V(3).Infof("Listing beta {{.Name}}")
-			gceObjs, err = gceCloud.Compute().Beta{{.GetCloudProviderName}}().List(ctx, filter.None)
+		switch key.Type() {
+			case meta.Regional:
+		  	klog.V(3).Infof("Listing beta region {{.Name}}")
+				gceObjs, err = gceCloud.Compute().BetaRegion{{.GetCloudProviderName}}().List(ctx, key.Region, filter.None)
+			default:
+		  	klog.V(3).Infof("Listing beta {{.Name}}")
+				gceObjs, err = gceCloud.Compute().Beta{{.GetCloudProviderName}}().List(ctx, filter.None)
+		}
 	default:
 		  klog.V(3).Infof("Listing ga {{.Name}}")
 			gceObjs, err = gceCloud.Compute().{{.GetCloudProviderName}}().List(ctx, filter.None)
