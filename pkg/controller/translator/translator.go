@@ -15,6 +15,7 @@ package translator
 
 import (
 	"fmt"
+	"k8s.io/ingress-gce/pkg/flags"
 	"sort"
 	"strconv"
 
@@ -39,6 +40,11 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+// getServicePortParams allows for passing parameters to getServicePort()
+type getServicePortParams struct {
+	isL7ILB bool
+}
+
 // NewTranslator returns a new Translator.
 func NewTranslator(ctx *context.ControllerContext) *Translator {
 	return &Translator{ctx}
@@ -49,13 +55,7 @@ type Translator struct {
 	ctx *context.ControllerContext
 }
 
-// getServicePort looks in the svc store for a matching service:port,
-// and returns the nodeport.
-func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort, error) {
-	// We periodically add information to this ServicePort to ensure that we
-	// always return as much as possible, rather than nil, if there was a non-fatal error.
-	var svcPort *utils.ServicePort
-
+func (t *Translator) getCachedService(id utils.ServicePortID) (*api_v1.Service, error) {
 	obj, exists, err := t.ctx.ServiceInformer.GetIndexer().Get(
 		&api_v1.Service{
 			ObjectMeta: meta_v1.ObjectMeta{
@@ -72,60 +72,109 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 		return nil, fmt.Errorf("error retrieving service %q: %v", id.Service, err)
 	}
 
-	svc := obj.(*api_v1.Service)
-	port := ServicePort(*svc, id.Port)
-	if port == nil {
-		// This is a fatal error.
-		return nil, errors.ErrSvcPortNotFound{ServicePortID: id}
+	svc, ok := obj.(*api_v1.Service)
+	if !ok {
+		return nil, fmt.Errorf("cannot convert to Service (%T)", svc)
 	}
+	return svc, nil
+}
 
-	var negEnabled bool
+// maybeEnableNEG enables NEG on the service port if necessary
+func maybeEnableNEG(sp *utils.ServicePort, svc *api_v1.Service) error {
 	negAnnotation, ok, err := annotations.FromService(svc).NEGAnnotation()
 	if ok && err == nil {
-		negEnabled = negAnnotation.NEGEnabledForIngress()
-	}
-	if !negEnabled && svc.Spec.Type != api_v1.ServiceTypeNodePort &&
-		svc.Spec.Type != api_v1.ServiceTypeLoadBalancer {
-		// This is a fatal error.
-		return nil, errors.ErrBadSvcType{Service: id.Service, ServiceType: svc.Spec.Type}
-	}
-	svcPort = &utils.ServicePort{
-		ID:         id,
-		NodePort:   int64(port.NodePort),
-		Port:       int32(port.Port),
-		TargetPort: port.TargetPort.String(),
-		NEGEnabled: negEnabled,
+		sp.NEGEnabled = negAnnotation.NEGEnabledForIngress()
 	}
 
+	if !sp.NEGEnabled && svc.Spec.Type != api_v1.ServiceTypeNodePort &&
+		svc.Spec.Type != api_v1.ServiceTypeLoadBalancer {
+		// This is a fatal error.
+		return errors.ErrBadSvcType{Service: sp.ID.Service, ServiceType: svc.Spec.Type}
+	}
+
+	if sp.L7ILBEnabled {
+		// L7-ILB Requires NEGs
+		sp.NEGEnabled = true
+	}
+
+	return nil
+}
+
+// setAppProtocol sets the app protocol on the service port
+func setAppProtocol(sp *utils.ServicePort, svc *api_v1.Service, port *api_v1.ServicePort) error {
 	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
 	if err != nil {
-		return svcPort, errors.ErrSvcAppProtosParsing{Service: id.Service, Err: err}
+		return errors.ErrSvcAppProtosParsing{Service: sp.ID.Service, Err: err}
 	}
 
 	proto := annotations.ProtocolHTTP
 	if protoStr, exists := appProtocols[port.Name]; exists {
 		proto = annotations.AppProtocol(protoStr)
 	}
-	svcPort.Protocol = proto
+	sp.Protocol = proto
 
+	return nil
+}
+
+// maybeEnableBackendConfig sets the backendConfig for the service port if necessary
+func (t *Translator) maybeEnableBackendConfig(sp *utils.ServicePort, svc *api_v1.Service, port *api_v1.ServicePort) error {
 	var beConfig *backendconfigv1beta1.BackendConfig
-	beConfig, err = backendconfig.GetBackendConfigForServicePort(t.ctx.BackendConfigInformer.GetIndexer(), svc, port)
+	beConfig, err := backendconfig.GetBackendConfigForServicePort(t.ctx.BackendConfigInformer.GetIndexer(), svc, port)
 	if err != nil {
 		// If we could not find a backend config name for the current
 		// service port, then do not return an error. Removing a reference
 		// to a backend config from the service annotation is a valid
 		// step that a user could take.
 		if err != backendconfig.ErrNoBackendConfigForPort {
-			return svcPort, errors.ErrSvcBackendConfig{ServicePortID: id, Err: err}
+			return errors.ErrSvcBackendConfig{ServicePortID: sp.ID, Err: err}
 		}
 	}
 	// Object in cache could be changed in-flight. Deepcopy to
 	// reduce race conditions.
 	beConfig = beConfig.DeepCopy()
 	if err = backendconfig.Validate(t.ctx.KubeClient, beConfig); err != nil {
-		return svcPort, errors.ErrBackendConfigValidation{BackendConfig: *beConfig, Err: err}
+		return errors.ErrBackendConfigValidation{BackendConfig: *beConfig, Err: err}
 	}
-	svcPort.BackendConfig = beConfig
+
+	sp.BackendConfig = beConfig
+	return nil
+}
+
+// getServicePort looks in the svc store for a matching service:port,
+// and returns the nodeport.
+func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePortParams) (*utils.ServicePort, error) {
+	svc, err := t.getCachedService(id)
+	if err != nil {
+		return nil, err
+	}
+
+	port := ServicePort(*svc, id.Port)
+	if port == nil {
+		// This is a fatal error.
+		return nil, errors.ErrSvcPortNotFound{ServicePortID: id}
+	}
+
+	// We periodically add information to the ServicePort to ensure that we
+	// always return as much as possible, rather than nil, if there was a non-fatal error.
+	svcPort := &utils.ServicePort{
+		ID:           id,
+		NodePort:     int64(port.NodePort),
+		Port:         int32(port.Port),
+		TargetPort:   port.TargetPort.String(),
+		L7ILBEnabled: params.isL7ILB,
+	}
+
+	if err := maybeEnableNEG(svcPort, svc); err != nil {
+		return nil, err
+	}
+
+	if err := setAppProtocol(svcPort, svc, port); err != nil {
+		return svcPort, err
+	}
+
+	if err := t.maybeEnableBackendConfig(svcPort, svc, port); err != nil {
+		return svcPort, err
+	}
 
 	return svcPort, nil
 }
@@ -134,6 +183,10 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend utils.ServicePortID) (*utils.GCEURLMap, []error) {
 	var errs []error
 	urlMap := utils.NewGCEURLMap()
+
+	params := &getServicePortParams{}
+	params.isL7ILB = flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(ing)
+
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {
 			continue
@@ -141,7 +194,7 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 
 		pathRules := []utils.PathRule{}
 		for _, p := range rule.HTTP.Paths {
-			svcPort, err := t.getServicePort(utils.BackendToServicePortID(p.Backend, ing.Namespace))
+			svcPort, err := t.getServicePort(utils.BackendToServicePortID(p.Backend, ing.Namespace), params)
 			if err != nil {
 				errs = append(errs, err)
 			}
@@ -164,7 +217,7 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 	}
 
 	if ing.Spec.Backend != nil {
-		svcPort, err := t.getServicePort(utils.BackendToServicePortID(*ing.Spec.Backend, ing.Namespace))
+		svcPort, err := t.getServicePort(utils.BackendToServicePortID(*ing.Spec.Backend, ing.Namespace), params)
 		if err == nil {
 			urlMap.DefaultBackend = svcPort
 			return urlMap, errs
@@ -174,7 +227,7 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 		return urlMap, errs
 	}
 
-	svcPort, err := t.getServicePort(systemDefaultBackend)
+	svcPort, err := t.getServicePort(systemDefaultBackend, params)
 	if err == nil {
 		urlMap.DefaultBackend = svcPort
 		return urlMap, errs

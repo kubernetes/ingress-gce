@@ -124,11 +124,11 @@ func main() {
 	}
 
 	cloud := app.NewGCEClient()
-	defaultBackendServicePortID := app.DefaultBackendServicePortID(kubeClient)
+	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
 	ctxConfig := ingctx.ControllerContextConfig{
 		Namespace:                     flags.F.WatchNamespace,
 		ResyncPeriod:                  flags.F.ResyncPeriod,
-		DefaultBackendSvcPortID:       defaultBackendServicePortID,
+		DefaultBackendSvcPort:         defaultBackendServicePort,
 		HealthCheckPath:               flags.F.HealthCheckPath,
 		DefaultBackendHealthCheckPath: flags.F.DefaultSvcHealthCheckPath,
 		FrontendConfigEnabled:         flags.F.EnableFrontendConfig,

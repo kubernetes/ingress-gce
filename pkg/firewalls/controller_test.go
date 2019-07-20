@@ -40,9 +40,9 @@ func newFirewallController() *FirewallController {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
 	ctxConfig := context.ControllerContextConfig{
-		Namespace:               api_v1.NamespaceAll,
-		ResyncPeriod:            1 * time.Minute,
-		DefaultBackendSvcPortID: test.DefaultBeSvcPort.ID,
+		Namespace:             api_v1.NamespaceAll,
+		ResyncPeriod:          1 * time.Minute,
+		DefaultBackendSvcPort: test.DefaultBeSvcPort,
 	}
 
 	ctx := context.NewControllerContext(kubeClient, backendConfigClient, nil, fakeGCE, namer, ctxConfig)

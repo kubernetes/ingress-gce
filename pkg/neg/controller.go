@@ -24,6 +24,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -34,6 +35,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -56,10 +58,11 @@ type Controller struct {
 	namer        negtypes.NetworkEndpointGroupNamer
 	zoneGetter   negtypes.ZoneGetter
 
-	hasSynced     func() bool
-	ingressLister cache.Indexer
-	serviceLister cache.Indexer
-	client        kubernetes.Interface
+	hasSynced             func() bool
+	ingressLister         cache.Indexer
+	serviceLister         cache.Indexer
+	client                kubernetes.Interface
+	defaultBackendService utils.ServicePort
 
 	// serviceQueue takes service key as work item. Service key with format "namespace/name".
 	serviceQueue workqueue.RateLimitingInterface
@@ -104,20 +107,21 @@ func NewController(
 	manager.reflector = reflector
 
 	negController := &Controller{
-		client:        ctx.KubeClient,
-		manager:       manager,
-		resyncPeriod:  resyncPeriod,
-		gcPeriod:      gcPeriod,
-		recorder:      recorder,
-		zoneGetter:    zoneGetter,
-		namer:         namer,
-		hasSynced:     ctx.HasSynced,
-		ingressLister: ctx.IngressInformer.GetIndexer(),
-		serviceLister: ctx.ServiceInformer.GetIndexer(),
-		serviceQueue:  workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		endpointQueue: workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		syncTracker:   utils.NewTimeTracker(),
-		reflector:     reflector,
+		client:                ctx.KubeClient,
+		manager:               manager,
+		resyncPeriod:          resyncPeriod,
+		gcPeriod:              gcPeriod,
+		recorder:              recorder,
+		zoneGetter:            zoneGetter,
+		namer:                 namer,
+		defaultBackendService: ctx.DefaultBackendSvcPort,
+		hasSynced:             ctx.HasSynced,
+		ingressLister:         ctx.IngressInformer.GetIndexer(),
+		serviceLister:         ctx.ServiceInformer.GetIndexer(),
+		serviceQueue:          workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		endpointQueue:         workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		syncTracker:           utils.NewTimeTracker(),
+		reflector:             reflector,
 	}
 
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -280,7 +284,7 @@ func (c *Controller) processService(key string) error {
 		return err
 	}
 
-	svc, exists, err := c.serviceLister.GetByKey(key)
+	obj, exists, err := c.serviceLister.GetByKey(key)
 	if err != nil {
 		return err
 	}
@@ -289,39 +293,60 @@ func (c *Controller) processService(key string) error {
 		return nil
 	}
 
-	var service *apiv1.Service
-	var foundNEGAnnotation bool
-	var negAnnotation *annotations.NegAnnotation
-	if exists {
-		service = svc.(*apiv1.Service)
-		negAnnotation, foundNEGAnnotation, err = annotations.FromService(service).NEGAnnotation()
-		if err != nil {
-			return err
+	service := obj.(*apiv1.Service)
+	if service == nil {
+		return fmt.Errorf("cannot convert to Service (%T)", obj)
+	}
+	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
+	if err != nil {
+		return err
+	}
+
+	portInfoMap := make(negtypes.PortInfoMap)
+	needNeg := false
+	// process default backend service
+	// Only enable for L7-ILB for now to limit possible issues
+	// TODO(shance): investigate enabling this for all ingresses
+	if flags.F.EnableL7Ilb && c.defaultBackendService.ID.Service.String() == key {
+		portInfoMap = c.defaultBackendServicePortInfoMap()
+		needNeg = len(portInfoMap) > 0
+	} else {
+		if foundNEGAnnotation && negAnnotation != nil && negAnnotation.NEGEnabled() {
+			needNeg = true
 		}
 	}
 
-	// If neg annotation is not found or NEG is not enabled
-	if !foundNEGAnnotation || negAnnotation == nil || !negAnnotation.NEGEnabled() {
-		c.manager.StopSyncer(namespace, name)
-		// delete the annotation
-		return c.syncNegStatusAnnotation(namespace, name, make(negtypes.PortInfoMap))
+	if needNeg {
+		klog.V(2).Infof("Syncing service %q", key)
+		if err := c.mergeIngressPortInfo(negAnnotation, service, types.NamespacedName{Namespace: namespace, Name: name}, &portInfoMap); err != nil {
+			return err
+		}
+		if err = c.syncNegStatusAnnotation(namespace, name, portInfoMap); err != nil {
+			return err
+		}
+		return c.manager.EnsureSyncers(namespace, name, portInfoMap)
 	}
 
-	klog.V(2).Infof("Syncing service %q", key)
-	portInfoMap := make(negtypes.PortInfoMap)
+	// neg annotation is not found or NEG is not enabled
+	c.manager.StopSyncer(namespace, name)
+	// delete the annotation
+	return c.syncNegStatusAnnotation(namespace, name, make(negtypes.PortInfoMap))
+}
+
+func (c *Controller) mergeIngressPortInfo(negAnnotation *annotations.NegAnnotation, service *apiv1.Service, name types.NamespacedName, portInfoMap *negtypes.PortInfoMap) error {
 	// handle NEGs used by ingress
-	if negAnnotation.NEGEnabledForIngress() {
+	if negAnnotation != nil && negAnnotation.NEGEnabledForIngress() {
 		// Only service ports referenced by ingress are synced for NEG
 		ings := getIngressServicesFromStore(c.ingressLister, service)
 		ingressSvcPorts := gatherPortMappingUsedByIngress(ings, service)
-		ingressPortInfoMap := negtypes.NewPortInfoMap(namespace, name, ingressSvcPorts, c.namer, true)
+		ingressPortInfoMap := negtypes.NewPortInfoMap(name.Namespace, name.Name, ingressSvcPorts, c.namer, true)
 		if err := portInfoMap.Merge(ingressPortInfoMap); err != nil {
 			return fmt.Errorf("failed to merge service ports referenced by ingress (%v): %v", ingressPortInfoMap, err)
 		}
 	}
 
 	// handle Exposed Standalone NEGs
-	if negAnnotation.NEGExposed() {
+	if negAnnotation != nil && negAnnotation.NEGExposed() {
 		knownPorts := make(negtypes.SvcPortMap)
 		for _, sp := range service.Spec.Ports {
 			knownPorts[sp.Port] = sp.TargetPort.String()
@@ -332,16 +357,27 @@ func (c *Controller) processService(key string) error {
 			return err
 		}
 
-		if err := portInfoMap.Merge(negtypes.NewPortInfoMap(namespace, name, exposedNegSvcPort, c.namer, false)); err != nil {
+		if err := portInfoMap.Merge(negtypes.NewPortInfoMap(name.Namespace, name.Name, exposedNegSvcPort, c.namer, false)); err != nil {
 			return fmt.Errorf("failed to merge service ports exposed as standalone NEGs (%v) into ingress referenced service ports (%v): %v", exposedNegSvcPort, portInfoMap, err)
 		}
 	}
 
-	err = c.syncNegStatusAnnotation(namespace, name, portInfoMap)
-	if err != nil {
-		return err
+	return nil
+}
+
+// defaultBackendServicePortInfoMap returns a PortInfoMap for the default backend service
+// The default backend service needs special handling since it is not explicitly referenced
+// in the ingress spec.  It is either inferred and then managed by the controller, or
+// it is passed to the controller via a command line flag.
+// Additionally, supporting NEGs for default backends is only for L7-ILB
+func (c *Controller) defaultBackendServicePortInfoMap() negtypes.PortInfoMap {
+	for _, m := range c.ingressLister.List() {
+		ing := *m.(*v1beta1.Ingress)
+		if utils.IsGCEL7ILBIngress(&ing) && ing.Spec.Backend == nil {
+			return negtypes.NewPortInfoMap(c.defaultBackendService.ID.Service.Namespace, c.defaultBackendService.ID.Service.Name, negtypes.SvcPortMap{80: c.defaultBackendService.TargetPort}, c.namer, false)
+		}
 	}
-	return c.manager.EnsureSyncers(namespace, name, portInfoMap)
+	return make(negtypes.PortInfoMap)
 }
 
 // syncNegStatusAnnotation syncs the neg status annotation

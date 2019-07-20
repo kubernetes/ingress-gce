@@ -29,7 +29,16 @@ const (
 )
 
 var (
-	defaultBackend = utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")}
+	defaultBackend = utils.ServicePort{
+		ID: utils.ServicePortID{
+			Service: types.NamespacedName{
+				Name:      "default-http-backend",
+				Namespace: "kube-system",
+			},
+			Port: intstr.FromString("http"),
+		},
+		TargetPort: "9376",
+	}
 )
 
 func NewTestSyncer() *batchSyncer {
@@ -37,9 +46,9 @@ func NewTestSyncer() *batchSyncer {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := utils.NewNamer(clusterID, "")
 	ctxConfig := context.ControllerContextConfig{
-		Namespace:               apiv1.NamespaceAll,
-		ResyncPeriod:            1 * time.Second,
-		DefaultBackendSvcPortID: defaultBackend,
+		Namespace:             apiv1.NamespaceAll,
+		ResyncPeriod:          1 * time.Second,
+		DefaultBackendSvcPort: defaultBackend,
 	}
 	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, nil, namer, ctxConfig)
 	svcPort := negtypes.NegSyncerKey{
