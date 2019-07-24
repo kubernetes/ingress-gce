@@ -36,13 +36,16 @@ const (
 // The other types that are discovered as dependencies will simply be wrapped with a composite struct
 // The format of the map is ServiceName -> k8s-cloud-provider wrapper name
 var MainServices = map[string]string{
-	"BackendService":   "BackendServices",
-	"ForwardingRule":   "ForwardingRules",
-	"HealthCheck":      "HealthChecks",
-	"UrlMap":           "UrlMaps",
-	"TargetHttpProxy":  "TargetHttpProxies",
-	"TargetHttpsProxy": "TargetHttpsProxies",
-	"SslCertificate":   "SslCertificates",
+	"BackendService":       "BackendServices",
+	"ForwardingRule":       "ForwardingRules",
+	"HealthCheck":          "HealthChecks",
+	"UrlMap":               "UrlMaps",
+	"TargetHttpProxy":      "TargetHttpProxies",
+	"TargetHttpsProxy":     "TargetHttpsProxies",
+	"SslCertificate":       "SslCertificates",
+	"NetworkEndpointGroup": "NetworkEndpointGroups",
+	"NetworkEndpointGroupsAttachEndpointsRequest": "NetworkEndpointGroupsAttachEndpointsRequests",
+	"NetworkEndpointGroupsDetachEndpointsRequest": "NetworkEndpointGroupsDetachEndpointsRequests",
 }
 
 // TODO: (shance) Replace this with data gathered from meta.AllServices
@@ -52,8 +55,14 @@ var NoUpdate = sets.NewString(
 	"TargetHttpProxy",
 	"TargetHttpsProxy",
 	"SslCertificate",
+	"NetworkEndpointGroup",
 )
 
+// Services in NoCRUD will not have Create, Get, Delete, Update, methods generated for them
+var NoCRUD = sets.NewString(
+	"NetworkEndpointGroupsAttachEndpointsRequest",
+	"NetworkEndpointGroupsDetachEndpointsRequest",
+)
 var Versions = map[string]string{
 	"Alpha": "alpha",
 	"Beta":  "beta",
@@ -66,6 +75,25 @@ var Versions = map[string]string{
 var DefaultRegionalServices = sets.NewString(
 	"ForwardingRule",
 )
+
+var DefaultZonalServices = sets.NewString(
+	"NetworkEndpointGroup",
+)
+
+type GroupResourceInfo struct {
+	AttachFuncName string
+	DetachFuncName string
+	AttachReqName  string
+	DetachReqName  string
+}
+
+// GroupResourceServices support adding/removing objects from them. Examples are Instance Groups, NetworkEndpointGroups.
+// Additional APIs to Attach/Detach objects will be created for these services.
+var GroupResourceServices = map[string]*GroupResourceInfo{
+	"NetworkEndpointGroup": &GroupResourceInfo{AttachFuncName: "AttachNetworkEndpoints",
+		DetachFuncName: "DetachNetworkEndpoints", AttachReqName: "NetworkEndpointGroupsAttachEndpointsRequest",
+		DetachReqName: "NetworkEndpointGroupsDetachEndpointsRequest"},
+}
 
 // ApiService holds relevant data for generating a composite type + helper methods for a single API service
 type ApiService struct {
@@ -96,8 +124,29 @@ func (apiService *ApiService) HasUpdate() bool {
 	return !NoUpdate.Has(apiService.Name)
 }
 
+// HasCRUD() returns true if the service name is *not* in the NoCRUD() list
+func (apiService *ApiService) HasCRUD() bool {
+	return !NoCRUD.Has(apiService.Name)
+}
+
 func (apiService *ApiService) IsDefaultRegionalService() bool {
 	return DefaultRegionalServices.Has(apiService.Name)
+}
+
+func (apiService *ApiService) IsDefaultZonalService() bool {
+	return DefaultZonalServices.Has(apiService.Name)
+}
+
+func (apiService *ApiService) IsGroupResourceService() bool {
+	_, ok := GroupResourceServices[apiService.Name]
+	return ok
+}
+
+func (apiService *ApiService) GetGroupResourceInfo() *GroupResourceInfo {
+	if !(apiService.IsGroupResourceService()) {
+		return nil
+	}
+	return GroupResourceServices[apiService.Name]
 }
 
 // GetCloudProviderName() returns the name of the cloudprovider type for a service
