@@ -639,6 +639,7 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
+
 	// Sync multiple times to make sure ordering is preserved
 	for i := 0; i < 10; i++ {
 		if _, err := j.pool.Ensure(lbInfo); err != nil {
