@@ -30,7 +30,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -266,7 +266,7 @@ func IGLinks(igs []*compute.InstanceGroup) (igLinks []string) {
 
 // IsGCEIngress returns true if the Ingress matches the class managed by this
 // controller.
-func IsGCEIngress(ing *extensions.Ingress) bool {
+func IsGCEIngress(ing *v1beta1.Ingress) bool {
 	class := annotations.FromIngress(ing).IngressClass()
 	if flags.F.IngressClass == "" {
 		return class == "" || class == annotations.GceIngressClass
@@ -276,13 +276,13 @@ func IsGCEIngress(ing *extensions.Ingress) bool {
 
 // IsGCEMultiClusterIngress returns true if the given Ingress has
 // ingress.class annotation set to "gce-multi-cluster".
-func IsGCEMultiClusterIngress(ing *extensions.Ingress) bool {
+func IsGCEMultiClusterIngress(ing *v1beta1.Ingress) bool {
 	class := annotations.FromIngress(ing).IngressClass()
 	return class == annotations.GceMultiIngressClass
 }
 
 // IsGLBCIngress returns true if the given Ingress should be processed by GLBC
-func IsGLBCIngress(ing *extensions.Ingress) bool {
+func IsGLBCIngress(ing *v1beta1.Ingress) bool {
 	return IsGCEIngress(ing) || IsGCEMultiClusterIngress(ing)
 }
 
@@ -369,7 +369,7 @@ func JoinErrs(errs []error) error {
 	return errors.New(strings.Join(errStrs, "; "))
 }
 
-func IngressKeyFunc(ing *extensions.Ingress) string {
+func IngressKeyFunc(ing *v1beta1.Ingress) string {
 	if ing == nil {
 		return ""
 	}
@@ -378,7 +378,7 @@ func IngressKeyFunc(ing *extensions.Ingress) string {
 
 // TraverseIngressBackends traverse thru all backends specified in the input ingress and call process
 // If process return true, then return and stop traversing the backends
-func TraverseIngressBackends(ing *extensions.Ingress, process func(id ServicePortID) bool) {
+func TraverseIngressBackends(ing *v1beta1.Ingress, process func(id ServicePortID) bool) {
 	if ing == nil {
 		return
 	}

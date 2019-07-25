@@ -31,7 +31,7 @@ import (
 	"k8s.io/legacy-cloud-providers/gce"
 
 	"google.golang.org/api/compute/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
@@ -133,8 +133,8 @@ func (j *testJig) String() string {
 	return "testJig.String() Not implemented"
 }
 
-func newIngress() *extensions.Ingress {
-	return &extensions.Ingress{
+func newIngress() *v1beta1.Ingress {
+	return &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ingressName,
 			Namespace: namespace,

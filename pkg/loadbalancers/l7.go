@@ -22,22 +22,18 @@ import (
 	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/legacy-cloud-providers/gce"
-
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/klog"
-
 	"google.golang.org/api/compute/v1"
-
 	corev1 "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
-
 	"k8s.io/ingress-gce/pkg/annotations"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (
@@ -61,7 +57,7 @@ type L7RuntimeInfo struct {
 	// TLSName is the name of the preshared cert to use. Multiple certs can be specified as a comma-separated string
 	TLSName string
 	// Ingress is the processed Ingress API object.
-	Ingress *extensions.Ingress
+	Ingress *v1beta1.Ingress
 	// AllowHTTP will not setup :80, if TLS is nil and AllowHTTP is set,
 	// no loadbalancer is created.
 	AllowHTTP bool

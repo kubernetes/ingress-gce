@@ -22,7 +22,7 @@ import (
 	"time"
 
 	api_v1 "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -285,26 +285,26 @@ func TestTraverseIngressBackends(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
 		desc           string
-		ing            *extensions.Ingress
-		expectBackends []extensions.IngressBackend
+		ing            *v1beta1.Ingress
+		expectBackends []v1beta1.IngressBackend
 	}{
 		{
 			"empty spec",
-			&extensions.Ingress{},
-			[]extensions.IngressBackend{},
+			&v1beta1.Ingress{},
+			[]v1beta1.IngressBackend{},
 		},
 		{
 			"one default backend",
-			&extensions.Ingress{
-				Spec: extensions.IngressSpec{
-					Backend: &extensions.IngressBackend{
+			&v1beta1.Ingress{
+				Spec: v1beta1.IngressSpec{
+					Backend: &v1beta1.IngressBackend{
 						ServiceName: "dummy-service",
 						ServicePort: intstr.FromInt(80),
 					},
-					Rules: []extensions.IngressRule{},
+					Rules: []v1beta1.IngressRule{},
 				},
 			},
-			[]extensions.IngressBackend{
+			[]v1beta1.IngressBackend{
 				{
 					ServiceName: "dummy-service",
 					ServicePort: intstr.FromInt(80),
@@ -313,17 +313,17 @@ func TestTraverseIngressBackends(t *testing.T) {
 		},
 		{
 			"one backend in path",
-			&extensions.Ingress{
-				Spec: extensions.IngressSpec{
-					Rules: []extensions.IngressRule{
+			&v1beta1.Ingress{
+				Spec: v1beta1.IngressSpec{
+					Rules: []v1beta1.IngressRule{
 						{
 							Host: "foo.bar",
-							IngressRuleValue: extensions.IngressRuleValue{
-								HTTP: &extensions.HTTPIngressRuleValue{
-									Paths: []extensions.HTTPIngressPath{
+							IngressRuleValue: v1beta1.IngressRuleValue{
+								HTTP: &v1beta1.HTTPIngressRuleValue{
+									Paths: []v1beta1.HTTPIngressPath{
 										{
 											Path: "/foo",
-											Backend: extensions.IngressBackend{
+											Backend: v1beta1.IngressBackend{
 												ServiceName: "foo-service",
 												ServicePort: intstr.FromInt(80),
 											},
@@ -335,7 +335,7 @@ func TestTraverseIngressBackends(t *testing.T) {
 					},
 				},
 			},
-			[]extensions.IngressBackend{
+			[]v1beta1.IngressBackend{
 				{
 					ServiceName: "foo-service",
 					ServicePort: intstr.FromInt(80),
@@ -344,41 +344,41 @@ func TestTraverseIngressBackends(t *testing.T) {
 		},
 		{
 			"one rule with only host",
-			&extensions.Ingress{
-				Spec: extensions.IngressSpec{
-					Rules: []extensions.IngressRule{
+			&v1beta1.Ingress{
+				Spec: v1beta1.IngressSpec{
+					Rules: []v1beta1.IngressRule{
 						{
 							Host: "foo.bar",
 						},
 					},
 				},
 			},
-			[]extensions.IngressBackend{},
+			[]v1beta1.IngressBackend{},
 		},
 		{
 			"complex ingress spec",
-			&extensions.Ingress{
-				Spec: extensions.IngressSpec{
-					Backend: &extensions.IngressBackend{
+			&v1beta1.Ingress{
+				Spec: v1beta1.IngressSpec{
+					Backend: &v1beta1.IngressBackend{
 						ServiceName: "backend-service",
 						ServicePort: intstr.FromInt(81),
 					},
-					Rules: []extensions.IngressRule{
+					Rules: []v1beta1.IngressRule{
 						{
 							Host: "foo.bar",
-							IngressRuleValue: extensions.IngressRuleValue{
-								HTTP: &extensions.HTTPIngressRuleValue{
-									Paths: []extensions.HTTPIngressPath{
+							IngressRuleValue: v1beta1.IngressRuleValue{
+								HTTP: &v1beta1.HTTPIngressRuleValue{
+									Paths: []v1beta1.HTTPIngressPath{
 										{
 											Path: "/foo",
-											Backend: extensions.IngressBackend{
+											Backend: v1beta1.IngressBackend{
 												ServiceName: "foo-service",
 												ServicePort: intstr.FromInt(82),
 											},
 										},
 										{
 											Path: "/bar",
-											Backend: extensions.IngressBackend{
+											Backend: v1beta1.IngressBackend{
 												ServiceName: "bar-service",
 												ServicePort: intstr.FromInt(83),
 											},
@@ -388,19 +388,19 @@ func TestTraverseIngressBackends(t *testing.T) {
 							},
 						},
 						{
-							IngressRuleValue: extensions.IngressRuleValue{
-								HTTP: &extensions.HTTPIngressRuleValue{
-									Paths: []extensions.HTTPIngressPath{
+							IngressRuleValue: v1beta1.IngressRuleValue{
+								HTTP: &v1beta1.HTTPIngressRuleValue{
+									Paths: []v1beta1.HTTPIngressPath{
 										{
 											Path: "/a",
-											Backend: extensions.IngressBackend{
+											Backend: v1beta1.IngressBackend{
 												ServiceName: "a-service",
 												ServicePort: intstr.FromInt(84),
 											},
 										},
 										{
 											Path: "/b",
-											Backend: extensions.IngressBackend{
+											Backend: v1beta1.IngressBackend{
 												ServiceName: "b-service",
 												ServicePort: intstr.FromInt(85),
 											},
@@ -418,7 +418,7 @@ func TestTraverseIngressBackends(t *testing.T) {
 					},
 				},
 			},
-			[]extensions.IngressBackend{
+			[]v1beta1.IngressBackend{
 				{
 					ServiceName: "backend-service",
 					ServicePort: intstr.FromInt(81),

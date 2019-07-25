@@ -7,30 +7,30 @@ import (
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 
 	api_v1 "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 )
 
 // Ingresses returns the wrapper
-func Ingresses(i []*extensions.Ingress) *IngressesOperator {
+func Ingresses(i []*v1beta1.Ingress) *IngressesOperator {
 	return &IngressesOperator{i: i}
 }
 
 // IngressesOperator is an operator wrapper for a list of Ingresses.
 type IngressesOperator struct {
-	i []*extensions.Ingress
+	i []*v1beta1.Ingress
 }
 
 // AsList returns the underlying list of Ingresses.
-func (op *IngressesOperator) AsList() []*extensions.Ingress {
+func (op *IngressesOperator) AsList() []*v1beta1.Ingress {
 	if op.i == nil {
-		return []*extensions.Ingress{}
+		return []*v1beta1.Ingress{}
 	}
 	return op.i
 }
 
 // Filter the list of Ingresses based on a predicate.
-func (op *IngressesOperator) Filter(f func(*extensions.Ingress) bool) *IngressesOperator {
-	var i []*extensions.Ingress
+func (op *IngressesOperator) Filter(f func(*v1beta1.Ingress) bool) *IngressesOperator {
+	var i []*v1beta1.Ingress
 	for _, ing := range op.i {
 		if f(ing) {
 			i = append(i, ing)
@@ -43,7 +43,7 @@ func (op *IngressesOperator) Filter(f func(*extensions.Ingress) bool) *Ingresses
 func (op *IngressesOperator) ReferencesService(svc *api_v1.Service) *IngressesOperator {
 	dupes := map[string]bool{}
 
-	var i []*extensions.Ingress
+	var i []*v1beta1.Ingress
 	for _, ing := range op.i {
 		key := fmt.Sprintf("%s/%s", ing.Namespace, ing.Name)
 		if doesIngressReferenceService(ing, svc) && !dupes[key] {
@@ -58,7 +58,7 @@ func (op *IngressesOperator) ReferencesService(svc *api_v1.Service) *IngressesOp
 func (op *IngressesOperator) ReferencesBackendConfig(beConfig *backendconfigv1beta1.BackendConfig, svcsOp *ServicesOperator) *IngressesOperator {
 	dupes := map[string]bool{}
 
-	var i []*extensions.Ingress
+	var i []*v1beta1.Ingress
 	svcs := svcsOp.ReferencesBackendConfig(beConfig).AsList()
 	for _, ing := range op.i {
 		for _, svc := range svcs {
@@ -76,7 +76,7 @@ func (op *IngressesOperator) ReferencesBackendConfig(beConfig *backendconfigv1be
 func (op *IngressesOperator) ReferencesFrontendConfig(feConfig *frontendconfigv1beta1.FrontendConfig) *IngressesOperator {
 	dupes := map[string]bool{}
 
-	var i []*extensions.Ingress
+	var i []*v1beta1.Ingress
 	for _, ing := range op.i {
 		key := fmt.Sprintf("%s/%s", ing.Namespace, ing.Name)
 		if doesIngressReferenceFrontendConfig(ing, feConfig) && !dupes[key] {

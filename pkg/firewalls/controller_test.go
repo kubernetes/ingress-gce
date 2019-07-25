@@ -21,7 +21,7 @@ import (
 	"time"
 
 	api_v1 "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
@@ -73,8 +73,8 @@ func TestFirewallCreateDelete(t *testing.T) {
 	fwc.ctx.KubeClient.CoreV1().Services(defaultSvc.Namespace).Create(defaultSvc)
 	fwc.ctx.ServiceInformer.GetIndexer().Add(defaultSvc)
 
-	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"}, extensions.IngressSpec{})
-	fwc.ctx.KubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Create(ing)
+	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"}, v1beta1.IngressSpec{})
+	fwc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Create(ing)
 	fwc.ctx.IngressInformer.GetIndexer().Add(ing)
 
 	key, _ := utils.KeyFunc(queueKey)
@@ -88,7 +88,7 @@ func TestFirewallCreateDelete(t *testing.T) {
 		t.Fatalf("cloud.GetFirewall(%v) = _, %v, want _, nil", ruleName, err)
 	}
 
-	fwc.ctx.KubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace).Delete(ing.Name, &meta_v1.DeleteOptions{})
+	fwc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Delete(ing.Name, &meta_v1.DeleteOptions{})
 	fwc.ctx.IngressInformer.GetIndexer().Delete(ing)
 
 	if err := fwc.sync(key); err != nil {

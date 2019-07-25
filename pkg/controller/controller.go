@@ -18,17 +18,18 @@ package controller
 
 import (
 	"fmt"
-	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"net/http"
 	"reflect"
 	"sync"
 	"time"
 
+	"k8s.io/ingress-gce/pkg/frontendconfig"
+
 	"k8s.io/klog"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apiv1 "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
@@ -129,7 +130,7 @@ func NewLoadBalancerController(
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			addIng := obj.(*extensions.Ingress)
+			addIng := obj.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(addIng) {
 				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", utils.IngressKeyFunc(addIng), annotations.IngressClassKey)
 				return
@@ -140,7 +141,7 @@ func NewLoadBalancerController(
 			lbc.ingQueue.Enqueue(obj)
 		},
 		DeleteFunc: func(obj interface{}) {
-			delIng := obj.(*extensions.Ingress)
+			delIng := obj.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(delIng) {
 				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", utils.IngressKeyFunc(delIng), annotations.IngressClassKey)
 				return
@@ -150,9 +151,9 @@ func NewLoadBalancerController(
 			lbc.ingQueue.Enqueue(obj)
 		},
 		UpdateFunc: func(old, cur interface{}) {
-			curIng := cur.(*extensions.Ingress)
+			curIng := cur.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(curIng) {
-				oldIng := old.(*extensions.Ingress)
+				oldIng := old.(*v1beta1.Ingress)
 				// If ingress was GLBC Ingress, we need to track ingress class change
 				// and run GC to delete LB resources.
 				if utils.IsGLBCIngress(oldIng) {
@@ -392,7 +393,7 @@ func (lbc *LoadBalancerController) GCBackends(state interface{}) error {
 
 	for _, ing := range gcState.ingresses {
 		if utils.IsDeletionCandidate(ing.ObjectMeta, utils.FinalizerKey) {
-			ingClient := lbc.ctx.KubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace)
+			ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
 			if flags.F.FinalizerRemove {
 				if err := utils.RemoveFinalizer(ing, ingClient); err != nil {
 					klog.Errorf("Failed to remove Finalizer from Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
@@ -464,7 +465,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	klog.V(3).Infof("Syncing %v", key)
 
 	// Create state needed for GC.
-	gceIngresses := operator.Ingresses(lbc.ctx.Ingresses().List()).Filter(func(ing *extensions.Ingress) bool {
+	gceIngresses := operator.Ingresses(lbc.ctx.Ingresses().List()).Filter(func(ing *v1beta1.Ingress) bool {
 		return utils.IsGCEIngress(ing)
 	}).AsList()
 
@@ -485,7 +486,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 
 	// Get ingress and DeepCopy for assurance that we don't pollute other goroutines with changes.
 	ing = ing.DeepCopy()
-	ingClient := lbc.ctx.KubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace)
+	ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
 	if flags.F.FinalizerAdd {
 		if err := utils.AddFinalizer(ing, ingClient); err != nil {
 			klog.Errorf("Failed to add Finalizer to Ingress %q: %v", key, err)
@@ -532,8 +533,8 @@ func (lbc *LoadBalancerController) sync(key string) error {
 
 // updateIngressStatus updates the IP and annotations of a loadbalancer.
 // The annotations are parsed by kubectl describe.
-func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing *extensions.Ingress) error {
-	ingClient := lbc.ctx.KubeClient.ExtensionsV1beta1().Ingresses(ing.Namespace)
+func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing *v1beta1.Ingress) error {
+	ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
 
 	// Update IP through update/status endpoint
 	ip := l7.GetIP()
@@ -541,7 +542,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 	if err != nil {
 		return err
 	}
-	currIng.Status = extensions.IngressStatus{
+	currIng.Status = v1beta1.IngressStatus{
 		LoadBalancer: apiv1.LoadBalancerStatus{
 			Ingress: []apiv1.LoadBalancerIngress{
 				{IP: ip},
@@ -572,7 +573,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 }
 
 // toRuntimeInfo returns L7RuntimeInfo for the given ingress.
-func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress, urlMap *utils.GCEURLMap) (*loadbalancers.L7RuntimeInfo, error) {
+func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *utils.GCEURLMap) (*loadbalancers.L7RuntimeInfo, error) {
 	k, err := utils.KeyFunc(ing)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get key for Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
@@ -617,7 +618,7 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *extensions.Ingress, urlMap
 }
 
 func updateAnnotations(client kubernetes.Interface, name, namespace string, annotations map[string]string) error {
-	ingClient := client.ExtensionsV1beta1().Ingresses(namespace)
+	ingClient := client.NetworkingV1beta1().Ingresses(namespace)
 	currIng, err := ingClient.Get(name, metav1.GetOptions{})
 	if err != nil {
 		return err
@@ -634,7 +635,7 @@ func updateAnnotations(client kubernetes.Interface, name, namespace string, anno
 
 // ToSvcPorts is a helper method over translator.TranslateIngress to process a list of ingresses.
 // Note: This method is used for GC.
-func (lbc *LoadBalancerController) ToSvcPorts(ings []*extensions.Ingress) []utils.ServicePort {
+func (lbc *LoadBalancerController) ToSvcPorts(ings []*v1beta1.Ingress) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings {
 		urlMap, _ := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)

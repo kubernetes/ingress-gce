@@ -21,7 +21,7 @@ import (
 	"k8s.io/klog"
 
 	api_v1 "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -131,7 +131,7 @@ func (t *Translator) getServicePort(id utils.ServicePortID) (*utils.ServicePort,
 }
 
 // TranslateIngress converts an Ingress into our internal UrlMap representation.
-func (t *Translator) TranslateIngress(ing *extensions.Ingress, systemDefaultBackend utils.ServicePortID) (*utils.GCEURLMap, []error) {
+func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend utils.ServicePortID) (*utils.GCEURLMap, []error) {
 	var errs []error
 	urlMap := utils.NewGCEURLMap()
 	for _, rule := range ing.Spec.Rules {

@@ -24,18 +24,17 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
-	"k8s.io/ingress-gce/pkg/test"
-
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -90,14 +89,14 @@ func TestTranslateIngress(t *testing.T) {
 
 	cases := []struct {
 		desc          string
-		ing           *extensions.Ingress
+		ing           *v1beta1.Ingress
 		wantErrCount  int
 		wantGCEURLMap *utils.GCEURLMap
 	}{
 		{
 			desc: "default backend only",
 			ing: test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
-				extensions.IngressSpec{
+				v1beta1.IngressSpec{
 					Backend: test.Backend("first-service", intstr.FromInt(80)),
 				}),
 			wantErrCount:  0,
@@ -105,7 +104,7 @@ func TestTranslateIngress(t *testing.T) {
 		},
 		{
 			desc:          "no backend",
-			ing:           test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"}, extensions.IngressSpec{}),
+			ing:           test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"}, v1beta1.IngressSpec{}),
 			wantErrCount:  0,
 			wantGCEURLMap: &utils.GCEURLMap{DefaultBackend: &utils.ServicePort{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")}}},
 		},
@@ -154,7 +153,7 @@ func TestTranslateIngress(t *testing.T) {
 		{
 			desc: "missing default service",
 			ing: test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
-				extensions.IngressSpec{
+				v1beta1.IngressSpec{
 					Backend: test.Backend("random-service", intstr.FromInt(80)),
 				}),
 			wantErrCount:  1,
@@ -584,16 +583,16 @@ func newDefaultEndpoint(name string) *apiv1.Endpoints {
 	}
 }
 
-func ingressFromFile(t *testing.T, filename string) *extensions.Ingress {
+func ingressFromFile(t *testing.T, filename string) *v1beta1.Ingress {
 	t.Helper()
 
 	data, err := ioutil.ReadFile("testdata/" + filename)
 	if err != nil {
-		t.Errorf("ioutil.ReadFile(%q) = %v", filename, err)
+		t.Fatalf("ioutil.ReadFile(%q) = %v", filename, err)
 	}
 	ing, err := test.DecodeIngress(data)
 	if err != nil {
-		t.Errorf("test.DecodeIngress(%q) = %v", filename, err)
+		t.Fatalf("test.DecodeIngress(%q) = %v", filename, err)
 	}
 	return ing
 }
@@ -601,11 +600,11 @@ func ingressFromFile(t *testing.T, filename string) *extensions.Ingress {
 func gceURLMapFromFile(t *testing.T, filename string) *utils.GCEURLMap {
 	data, err := ioutil.ReadFile("testdata/" + filename)
 	if err != nil {
-		t.Errorf("ioutil.ReadFile(%q) = %v", filename, err)
+		t.Fatalf("ioutil.ReadFile(%q) = %v", filename, err)
 	}
 	v := &utils.GCEURLMap{}
 	if err := json.Unmarshal(data, v); err != nil {
-		t.Errorf("json.Unmarshal(%q) = %v", filename, err)
+		t.Fatalf("json.Unmarshal(%q) = %v", filename, err)
 	}
 	return v
 }

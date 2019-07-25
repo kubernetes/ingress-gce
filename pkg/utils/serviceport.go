@@ -17,11 +17,12 @@ limitations under the License.
 package utils
 
 import (
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"fmt"
+
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 )
@@ -68,7 +69,7 @@ func (sp ServicePort) BackendName(namer *Namer) string {
 }
 
 // BackendToServicePortID creates a ServicePortID from a given IngressBackend and namespace.
-func BackendToServicePortID(be extensions.IngressBackend, namespace string) ServicePortID {
+func BackendToServicePortID(be v1beta1.IngressBackend, namespace string) ServicePortID {
 	return ServicePortID{
 		Service: types.NamespacedName{
 			Name:      be.ServiceName,

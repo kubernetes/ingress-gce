@@ -19,24 +19,24 @@ package annotations
 import (
 	"testing"
 
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestIngress(t *testing.T) {
 	for _, tc := range []struct {
-		ing          *extensions.Ingress
+		ing          *v1beta1.Ingress
 		allowHTTP    bool
 		useNamedTLS  string
 		staticIPName string
 		ingressClass string
 	}{
 		{
-			ing:       &extensions.Ingress{},
+			ing:       &v1beta1.Ingress{},
 			allowHTTP: true, // defaults to true.
 		},
 		{
-			ing: &extensions.Ingress{
+			ing: &v1beta1.Ingress{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						AllowHTTPKey:     "false",

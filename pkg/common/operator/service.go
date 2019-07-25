@@ -7,7 +7,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 
 	api_v1 "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 )
 
 // Services returns the wrapper
@@ -44,7 +44,7 @@ func (op *ServicesOperator) ReferencesBackendConfig(beConfig *backendconfigv1bet
 }
 
 // ReferencedBackendIngress returns the Services that are referenced by the passed in Ingress.
-func (op *ServicesOperator) ReferencedByIngress(ing *extensions.Ingress) *ServicesOperator {
+func (op *ServicesOperator) ReferencedByIngress(ing *v1beta1.Ingress) *ServicesOperator {
 	dupes := map[string]bool{}
 
 	var s []*api_v1.Service
@@ -60,7 +60,7 @@ func (op *ServicesOperator) ReferencedByIngress(ing *extensions.Ingress) *Servic
 
 // doesIngressReferenceService returns true if the passed in Ingress directly references
 // the passed in Service.
-func doesIngressReferenceService(ing *extensions.Ingress, svc *api_v1.Service) bool {
+func doesIngressReferenceService(ing *v1beta1.Ingress, svc *api_v1.Service) bool {
 	if ing.Namespace != svc.Namespace {
 		return false
 	}

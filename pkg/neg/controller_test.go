@@ -24,7 +24,7 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -36,9 +36,10 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 
+	"strconv"
+
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/legacy-cloud-providers/gce"
-	"strconv"
 )
 
 const (
@@ -260,18 +261,18 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		ings   []extensions.Ingress
+		ings   []v1beta1.Ingress
 		expect []int32
 		desc   string
 	}{
 		{
-			[]extensions.Ingress{{
+			[]v1beta1.Ingress{{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testServiceName,
 					Namespace: testServiceNamespace,
 				},
-				Spec: extensions.IngressSpec{
-					Backend: &extensions.IngressBackend{
+				Spec: v1beta1.IngressSpec{
+					Backend: &v1beta1.IngressBackend{
 						ServiceName: "nonExists",
 						ServicePort: intstr.FromString(testNamedPort),
 					},
@@ -281,13 +282,13 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 			"no match",
 		},
 		{
-			[]extensions.Ingress{{
+			[]v1beta1.Ingress{{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testServiceName,
 					Namespace: testServiceNamespace,
 				},
-				Spec: extensions.IngressSpec{
-					Backend: &extensions.IngressBackend{
+				Spec: v1beta1.IngressSpec{
+					Backend: &v1beta1.IngressBackend{
 						ServiceName: testServiceName,
 						ServicePort: intstr.FromString("NonExisted"),
 					},
@@ -297,27 +298,27 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 			"ingress spec point to non-existed service port",
 		},
 		{
-			[]extensions.Ingress{{
+			[]v1beta1.Ingress{{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testServiceName,
 					Namespace: testServiceNamespace,
 				},
-				Spec: extensions.IngressSpec{
-					Rules: []extensions.IngressRule{
+				Spec: v1beta1.IngressSpec{
+					Rules: []v1beta1.IngressRule{
 						{
-							IngressRuleValue: extensions.IngressRuleValue{
-								HTTP: &extensions.HTTPIngressRuleValue{
-									Paths: []extensions.HTTPIngressPath{
+							IngressRuleValue: v1beta1.IngressRuleValue{
+								HTTP: &v1beta1.HTTPIngressRuleValue{
+									Paths: []v1beta1.HTTPIngressPath{
 										{
 											Path: "/path1",
-											Backend: extensions.IngressBackend{
+											Backend: v1beta1.IngressBackend{
 												ServiceName: testServiceName,
 												ServicePort: intstr.FromInt(80),
 											},
 										},
 										{
 											Path: "/path2",
-											Backend: extensions.IngressBackend{
+											Backend: v1beta1.IngressBackend{
 												ServiceName: "nonExisted",
 												ServicePort: intstr.FromInt(443),
 											},
@@ -333,12 +334,12 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 			"ingress point to multiple services",
 		},
 		{
-			[]extensions.Ingress{*newTestIngress(), *newTestIngress()},
+			[]v1beta1.Ingress{*newTestIngress(), *newTestIngress()},
 			[]int32{80, 443, 8081},
 			"two ingresses with multiple different references to service",
 		},
 		{
-			[]extensions.Ingress{*newTestIngress()},
+			[]v1beta1.Ingress{*newTestIngress()},
 			[]int32{80, 443, 8081},
 			"one ingress with multiple different references to service",
 		},
@@ -516,39 +517,39 @@ func generateNegAnnotation(ingress bool, svcPorts []int32) string {
 	return string(formattedAnnotation)
 }
 
-func newTestIngress() *extensions.Ingress {
-	return &extensions.Ingress{
+func newTestIngress() *v1beta1.Ingress {
+	return &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      testServiceName,
 			Namespace: testServiceNamespace,
 		},
-		Spec: extensions.IngressSpec{
-			Backend: &extensions.IngressBackend{
+		Spec: v1beta1.IngressSpec{
+			Backend: &v1beta1.IngressBackend{
 				ServiceName: testServiceName,
 				ServicePort: intstr.FromString(testNamedPort),
 			},
-			Rules: []extensions.IngressRule{
+			Rules: []v1beta1.IngressRule{
 				{
-					IngressRuleValue: extensions.IngressRuleValue{
-						HTTP: &extensions.HTTPIngressRuleValue{
-							Paths: []extensions.HTTPIngressPath{
+					IngressRuleValue: v1beta1.IngressRuleValue{
+						HTTP: &v1beta1.HTTPIngressRuleValue{
+							Paths: []v1beta1.HTTPIngressPath{
 								{
 									Path: "/path1",
-									Backend: extensions.IngressBackend{
+									Backend: v1beta1.IngressBackend{
 										ServiceName: testServiceName,
 										ServicePort: intstr.FromInt(80),
 									},
 								},
 								{
 									Path: "/path2",
-									Backend: extensions.IngressBackend{
+									Backend: v1beta1.IngressBackend{
 										ServiceName: testServiceName,
 										ServicePort: intstr.FromInt(443),
 									},
 								},
 								{
 									Path: "/path3",
-									Backend: extensions.IngressBackend{
+									Backend: v1beta1.IngressBackend{
 										ServiceName: testServiceName,
 										ServicePort: intstr.FromString(testNamedPort),
 									},

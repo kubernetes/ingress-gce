@@ -21,10 +21,8 @@ import (
 	"fmt"
 
 	compute "google.golang.org/api/compute/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
-
 	api_v1 "k8s.io/api/core/v1"
-
+	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -70,7 +68,7 @@ func nodeStatusChanged(old, cur *api_v1.Node) bool {
 	return false
 }
 
-func convert(ings []*extensions.Ingress) (retVal []interface{}) {
+func convert(ings []*v1beta1.Ingress) (retVal []interface{}) {
 	for _, ing := range ings {
 		retVal = append(retVal, ing)
 	}

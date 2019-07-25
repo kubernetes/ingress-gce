@@ -16,9 +16,9 @@ package utils
 import (
 	"fmt"
 
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	client "k8s.io/client-go/kubernetes/typed/extensions/v1beta1"
+	client "k8s.io/client-go/kubernetes/typed/networking/v1beta1"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/util/slice"
 )
@@ -43,7 +43,7 @@ func HasFinalizer(m meta_v1.ObjectMeta, key string) bool {
 
 // AddFinalizer tries to add a finalizer to an Ingress. If a finalizer
 // already exists, it does nothing.
-func AddFinalizer(ing *extensions.Ingress, ingClient client.IngressInterface) error {
+func AddFinalizer(ing *v1beta1.Ingress, ingClient client.IngressInterface) error {
 	ingKey := FinalizerKey
 	if NeedToAddFinalizer(ing.ObjectMeta, ingKey) {
 		updated := ing.DeepCopy()
@@ -59,7 +59,7 @@ func AddFinalizer(ing *extensions.Ingress, ingClient client.IngressInterface) er
 
 // RemoveFinalizer tries to remove a Finalizer from an Ingress. If a
 // finalizer is not on the Ingress, it does nothing.
-func RemoveFinalizer(ing *extensions.Ingress, ingClient client.IngressInterface) error {
+func RemoveFinalizer(ing *v1beta1.Ingress, ingClient client.IngressInterface) error {
 	ingKey := FinalizerKey
 	if HasFinalizer(ing.ObjectMeta, ingKey) {
 		updated := ing.DeepCopy()

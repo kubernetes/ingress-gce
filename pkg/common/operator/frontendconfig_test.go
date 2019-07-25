@@ -3,7 +3,7 @@ package operator
 import (
 	"testing"
 
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/test"
 )
 
@@ -12,7 +12,7 @@ func TestDoesIngressReferenceFrontendConfig(t *testing.T) {
 
 	testCases := []struct {
 		desc     string
-		ing      *extensions.Ingress
+		ing      *v1beta1.Ingress
 		expected bool
 	}{
 		{
