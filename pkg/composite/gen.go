@@ -1661,6 +1661,150 @@ type MutualTls struct {
 	NullFields      []string `json:"-"`
 }
 
+// NetworkEndpoint is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type NetworkEndpoint struct {
+	// Metadata defined as annotations on the network endpoint.
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// Optional fully qualified domain name of network endpoint. This can
+	// only be specified when NetworkEndpointGroup.network_endpoint_type is
+	// NON_GCP_FQDN_PORT.
+	Fqdn string `json:"fqdn,omitempty"`
+	// The name for a specific VM instance that the IP address belongs to.
+	// This is required for network endpoints of type GCE_VM_IP_PORT. The
+	// instance must be in the same zone of network endpoint group.
+	//
+	// The name must be 1-63 characters long, and comply with RFC1035.
+	Instance string `json:"instance,omitempty"`
+	// Optional IPv4 address of network endpoint. The IP address must belong
+	// to a VM in GCE (either the primary IP or as part of an aliased IP
+	// range). If the IP address is not specified, then the primary IP
+	// address for the VM instance in the network that the network endpoint
+	// group belongs to will be used.
+	IpAddress string `json:"ipAddress,omitempty"`
+	// Optional port number of network endpoint. If not specified and the
+	// NetworkEndpointGroup.network_endpoint_type is GCE_IP_PORT, the
+	// defaultPort for the network endpoint group will be used.
+	Port            int64    `json:"port,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// NetworkEndpointGroup is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type NetworkEndpointGroup struct {
+	// Version keeps track of the intended compute version for this NetworkEndpointGroup.
+	// Note that the compute API's do not contain this field. It is for our
+	// own bookkeeping purposes.
+	Version meta.Version `json:"-"`
+	// Scope keeps track of the intended type of the service (e.g. Global)
+	// This is also an internal field purely for bookkeeping purposes
+	Scope meta.KeyType `json:"-"`
+
+	// Metadata defined as annotations on the network endpoint group.
+	Annotations map[string]string `json:"annotations,omitempty"`
+	// [Output Only] Creation timestamp in RFC3339 text format.
+	CreationTimestamp string `json:"creationTimestamp,omitempty"`
+	// The default port used if the port number is not specified in the
+	// network endpoint.
+	DefaultPort int64 `json:"defaultPort,omitempty"`
+	// An optional description of this resource. Provide this property when
+	// you create the resource.
+	Description string `json:"description,omitempty"`
+	// [Output Only] The unique identifier for the resource. This identifier
+	// is defined by the server.
+	Id uint64 `json:"id,omitempty,string"`
+	// [Output Only] Type of the resource. Always
+	// compute#networkEndpointGroup for network endpoint group.
+	Kind string `json:"kind,omitempty"`
+	// This field is only valid when the network endpoint group is used for
+	// load balancing. [Deprecated] This field is deprecated.
+	LoadBalancer *NetworkEndpointGroupLbNetworkEndpointGroup `json:"loadBalancer,omitempty"`
+	// Name of the resource; provided by the client when the resource is
+	// created. The name must be 1-63 characters long, and comply with
+	// RFC1035. Specifically, the name must be 1-63 characters long and
+	// match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])?` which means
+	// the first character must be a lowercase letter, and all following
+	// characters must be a dash, lowercase letter, or digit, except the
+	// last character, which cannot be a dash.
+	Name string `json:"name,omitempty"`
+	// The URL of the network to which all network endpoints in the NEG
+	// belong. Uses "default" project network if unspecified.
+	Network string `json:"network,omitempty"`
+	// Type of network endpoints in this network endpoint group. Currently
+	// the only supported value is GCE_VM_IP_PORT.
+	NetworkEndpointType string `json:"networkEndpointType,omitempty"`
+	// [Output Only] Server-defined URL for the resource.
+	SelfLink string `json:"selfLink,omitempty"`
+	// [Output Only] Server-defined URL for this resource with the resource
+	// id.
+	SelfLinkWithId string `json:"selfLinkWithId,omitempty"`
+	// [Output only] Number of network endpoints in the network endpoint
+	// group.
+	Size int64 `json:"size,omitempty"`
+	// Optional URL of the subnetwork to which all network endpoints in the
+	// NEG belong.
+	Subnetwork string `json:"subnetwork,omitempty"`
+	// Specify the type of this network endpoint group. Only LOAD_BALANCING
+	// is valid for now.
+	Type string `json:"type,omitempty"`
+	// [Output Only] The URL of the zone where the network endpoint group is
+	// located.
+	Zone                     string `json:"zone,omitempty"`
+	googleapi.ServerResponse `json:"-"`
+	ForceSendFields          []string `json:"-"`
+	NullFields               []string `json:"-"`
+}
+
+// NetworkEndpointGroupLbNetworkEndpointGroup is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type NetworkEndpointGroupLbNetworkEndpointGroup struct {
+	// The default port used if the port number is not specified in the
+	// network endpoint. [Deprecated] This field is deprecated.
+	DefaultPort int64 `json:"defaultPort,omitempty"`
+	// The URL of the network to which all network endpoints in the NEG
+	// belong. Uses "default" project network if unspecified. [Deprecated]
+	// This field is deprecated.
+	Network string `json:"network,omitempty"`
+	// Optional URL of the subnetwork to which all network endpoints in the
+	// NEG belong. [Deprecated] This field is deprecated.
+	Subnetwork string `json:"subnetwork,omitempty"`
+	// [Output Only] The URL of the zone where the network endpoint group is
+	// located. [Deprecated] This field is deprecated.
+	Zone            string   `json:"zone,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
+// NetworkEndpointGroupsAttachEndpointsRequest is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type NetworkEndpointGroupsAttachEndpointsRequest struct {
+	// Version keeps track of the intended compute version for this NetworkEndpointGroupsAttachEndpointsRequest.
+	// Note that the compute API's do not contain this field. It is for our
+	// own bookkeeping purposes.
+	Version meta.Version `json:"-"`
+	// Scope keeps track of the intended type of the service (e.g. Global)
+	// This is also an internal field purely for bookkeeping purposes
+	Scope meta.KeyType `json:"-"`
+
+	// The list of network endpoints to be attached.
+	NetworkEndpoints []*NetworkEndpoint `json:"networkEndpoints,omitempty"`
+	ForceSendFields  []string           `json:"-"`
+	NullFields       []string           `json:"-"`
+}
+
+// NetworkEndpointGroupsDetachEndpointsRequest is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type NetworkEndpointGroupsDetachEndpointsRequest struct {
+	// Version keeps track of the intended compute version for this NetworkEndpointGroupsDetachEndpointsRequest.
+	// Note that the compute API's do not contain this field. It is for our
+	// own bookkeeping purposes.
+	Version meta.Version `json:"-"`
+	// Scope keeps track of the intended type of the service (e.g. Global)
+	// This is also an internal field purely for bookkeeping purposes
+	Scope meta.KeyType `json:"-"`
+
+	// The list of network endpoints to be detached.
+	NetworkEndpoints []*NetworkEndpoint `json:"networkEndpoints,omitempty"`
+	ForceSendFields  []string           `json:"-"`
+	NullFields       []string           `json:"-"`
+}
+
 // OriginAuthenticationMethod is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type OriginAuthenticationMethod struct {
 	Jwt             *Jwt     `json:"jwt,omitempty"`
@@ -2639,7 +2783,6 @@ func GetBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	if err != nil {
 		return nil, err
 	}
-
 	compositeType.Version = version
 	return compositeType, nil
 }
@@ -2695,7 +2838,7 @@ func ToBackendServiceList(objs interface{}) ([]*BackendService, error) {
 
 	err := copyViaJSON(&result, objs)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %v to list of BackendService via JSON: %v", objs, err)
+		return nil, fmt.Errorf("could not copy object %v to %T via JSON: %v", objs, result, err)
 	}
 	return result, nil
 }
@@ -2706,7 +2849,7 @@ func ToBackendService(obj interface{}) (*BackendService, error) {
 	backendService := &BackendService{}
 	err := copyViaJSON(backendService, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to BackendService via JSON: %v", obj, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, backendService, err)
 	}
 
 	return backendService, nil
@@ -2718,7 +2861,7 @@ func (backendService *BackendService) ToAlpha() (*computealpha.BackendService, e
 	alpha := &computealpha.BackendService{}
 	err := copyViaJSON(alpha, backendService)
 	if err != nil {
-		return nil, fmt.Errorf("error converting BackendService to compute alpha type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", backendService, err)
 	}
 	// Set force send fields. This is a temporary hack.
 	if alpha.CdnPolicy != nil && alpha.CdnPolicy.CacheKeyPolicy != nil {
@@ -2737,7 +2880,7 @@ func (backendService *BackendService) ToBeta() (*computebeta.BackendService, err
 	beta := &computebeta.BackendService{}
 	err := copyViaJSON(beta, backendService)
 	if err != nil {
-		return nil, fmt.Errorf("error converting BackendService to compute beta type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", backendService, err)
 	}
 	// Set force send fields. This is a temporary hack.
 	if beta.CdnPolicy != nil && beta.CdnPolicy.CacheKeyPolicy != nil {
@@ -2756,7 +2899,7 @@ func (backendService *BackendService) ToGA() (*compute.BackendService, error) {
 	ga := &compute.BackendService{}
 	err := copyViaJSON(ga, backendService)
 	if err != nil {
-		return nil, fmt.Errorf("error converting BackendService to compute ga type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", backendService, err)
 	}
 	// Set force send fields. This is a temporary hack.
 	if ga.CdnPolicy != nil && ga.CdnPolicy.CacheKeyPolicy != nil {
@@ -2797,6 +2940,7 @@ func CreateForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *Fo
 		switch key.Type() {
 		case meta.Regional:
 			klog.V(3).Infof("Creating beta region ForwardingRule %v", beta.Name)
+			beta.Region = key.Region
 			return mc.Observe(gceCloud.Compute().BetaForwardingRules().Insert(ctx, key, beta))
 		default:
 			klog.V(3).Infof("Creating beta ForwardingRule %v", beta.Name)
@@ -2810,10 +2954,47 @@ func CreateForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *Fo
 		switch key.Type() {
 		case meta.Regional:
 			klog.V(3).Infof("Creating ga region ForwardingRule %v", ga.Name)
+			ga.Region = key.Region
 			return mc.Observe(gceCloud.Compute().ForwardingRules().Insert(ctx, key, ga))
 		default:
 			klog.V(3).Infof("Creating ga ForwardingRule %v", ga.Name)
 			return mc.Observe(gceCloud.Compute().GlobalForwardingRules().Insert(ctx, key, ga))
+		}
+	}
+}
+
+func DeleteForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) error {
+	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+	defer cancel()
+	mc := compositemetrics.NewMetricContext("ForwardingRule", "delete", key.Region, key.Zone, string(version))
+
+	switch version {
+	case meta.VersionAlpha:
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting alpha region ForwardingRule %v", key.Name)
+			return mc.Observe(gceCloud.Compute().AlphaForwardingRules().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting alpha ForwardingRule %v", key.Name)
+			return mc.Observe(gceCloud.Compute().AlphaGlobalForwardingRules().Delete(ctx, key))
+		}
+	case meta.VersionBeta:
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting beta region ForwardingRule %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaForwardingRules().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting beta ForwardingRule %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaGlobalForwardingRules().Delete(ctx, key))
+		}
+	default:
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting ga region ForwardingRule %v", key.Name)
+			return mc.Observe(gceCloud.Compute().ForwardingRules().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting ga ForwardingRule %v", key.Name)
+			return mc.Observe(gceCloud.Compute().GlobalForwardingRules().Delete(ctx, key))
 		}
 	}
 }
@@ -2861,11 +3042,9 @@ func GetForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	if err != nil {
 		return nil, err
 	}
-
 	if key.Type() == meta.Regional {
 		compositeType.Scope = meta.Regional
 	}
-
 	compositeType.Version = version
 	return compositeType, nil
 }
@@ -2909,6 +3088,7 @@ func ListForwardingRules(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 	if err != nil {
 		return nil, mc.Observe(err)
 	}
+
 	compositeObjs, err := ToForwardingRuleList(gceObjs)
 	if err != nil {
 		return nil, err
@@ -2919,42 +3099,6 @@ func ListForwardingRules(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 	return compositeObjs, nil
 }
 
-func DeleteForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) error {
-	ctx, cancel := cloudprovider.ContextWithCallTimeout()
-	defer cancel()
-	mc := compositemetrics.NewMetricContext("ForwardingRule", "delete", key.Region, key.Zone, string(version))
-
-	switch version {
-	case meta.VersionAlpha:
-		switch key.Type() {
-		case meta.Regional:
-			klog.V(3).Infof("Deleting alpha region ForwardingRule %v", key.Name)
-			return mc.Observe(gceCloud.Compute().AlphaForwardingRules().Delete(ctx, key))
-		default:
-			klog.V(3).Infof("Deleting alpha ForwardingRule %v", key.Name)
-			return mc.Observe(gceCloud.Compute().AlphaGlobalForwardingRules().Delete(ctx, key))
-		}
-	case meta.VersionBeta:
-		switch key.Type() {
-		case meta.Regional:
-			klog.V(3).Infof("Deleting beta region ForwardingRule %v", key.Name)
-			return mc.Observe(gceCloud.Compute().BetaForwardingRules().Delete(ctx, key))
-		default:
-			klog.V(3).Infof("Deleting beta ForwardingRule %v", key.Name)
-			return mc.Observe(gceCloud.Compute().BetaGlobalForwardingRules().Delete(ctx, key))
-		}
-	default:
-		switch key.Type() {
-		case meta.Regional:
-			klog.V(3).Infof("Deleting ga region ForwardingRule %v", key.Name)
-			return mc.Observe(gceCloud.Compute().ForwardingRules().Delete(ctx, key))
-		default:
-			klog.V(3).Infof("Deleting ga ForwardingRule %v", key.Name)
-			return mc.Observe(gceCloud.Compute().GlobalForwardingRules().Delete(ctx, key))
-		}
-	}
-}
-
 // ToForwardingRuleList converts a list of compute alpha, beta or GA
 // ForwardingRule into a list of our composite type.
 func ToForwardingRuleList(objs interface{}) ([]*ForwardingRule, error) {
@@ -2962,7 +3106,7 @@ func ToForwardingRuleList(objs interface{}) ([]*ForwardingRule, error) {
 
 	err := copyViaJSON(&result, objs)
 	if err != nil {
-		return nil, fmt.Errorf("Could not copy object %v to list of ForwardingRule via JSON: %v", objs, err)
+		return nil, fmt.Errorf("could not copy object %v to %T via JSON: %v", objs, result, err)
 	}
 	return result, nil
 }
@@ -2973,7 +3117,7 @@ func ToForwardingRule(obj interface{}) (*ForwardingRule, error) {
 	forwardingRule := &ForwardingRule{}
 	err := copyViaJSON(forwardingRule, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to ForwardingRule via JSON: %v", obj, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, forwardingRule, err)
 	}
 
 	return forwardingRule, nil
@@ -2985,7 +3129,7 @@ func (forwardingRule *ForwardingRule) ToAlpha() (*computealpha.ForwardingRule, e
 	alpha := &computealpha.ForwardingRule{}
 	err := copyViaJSON(alpha, forwardingRule)
 	if err != nil {
-		return nil, fmt.Errorf("error converting ForwardingRule to compute alpha type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", forwardingRule, err)
 	}
 
 	return alpha, nil
@@ -2997,7 +3141,7 @@ func (forwardingRule *ForwardingRule) ToBeta() (*computebeta.ForwardingRule, err
 	beta := &computebeta.ForwardingRule{}
 	err := copyViaJSON(beta, forwardingRule)
 	if err != nil {
-		return nil, fmt.Errorf("error converting ForwardingRule to compute beta type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", forwardingRule, err)
 	}
 
 	return beta, nil
@@ -3009,7 +3153,7 @@ func (forwardingRule *ForwardingRule) ToGA() (*compute.ForwardingRule, error) {
 	ga := &compute.ForwardingRule{}
 	err := copyViaJSON(ga, forwardingRule)
 	if err != nil {
-		return nil, fmt.Errorf("error converting ForwardingRule to compute ga type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", forwardingRule, err)
 	}
 
 	return ga, nil
@@ -3167,7 +3311,6 @@ func GetHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*
 	if err != nil {
 		return nil, err
 	}
-
 	compositeType.Version = version
 	return compositeType, nil
 }
@@ -3223,7 +3366,7 @@ func ToHealthCheckList(objs interface{}) ([]*HealthCheck, error) {
 
 	err := copyViaJSON(&result, objs)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %v to list of HealthCheck via JSON: %v", objs, err)
+		return nil, fmt.Errorf("could not copy object %v to %T via JSON: %v", objs, result, err)
 	}
 	return result, nil
 }
@@ -3234,7 +3377,7 @@ func ToHealthCheck(obj interface{}) (*HealthCheck, error) {
 	healthCheck := &HealthCheck{}
 	err := copyViaJSON(healthCheck, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to HealthCheck via JSON: %v", obj, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, healthCheck, err)
 	}
 
 	return healthCheck, nil
@@ -3246,7 +3389,7 @@ func (healthCheck *HealthCheck) ToAlpha() (*computealpha.HealthCheck, error) {
 	alpha := &computealpha.HealthCheck{}
 	err := copyViaJSON(alpha, healthCheck)
 	if err != nil {
-		return nil, fmt.Errorf("error converting HealthCheck to compute alpha type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", healthCheck, err)
 	}
 
 	return alpha, nil
@@ -3258,7 +3401,7 @@ func (healthCheck *HealthCheck) ToBeta() (*computebeta.HealthCheck, error) {
 	beta := &computebeta.HealthCheck{}
 	err := copyViaJSON(beta, healthCheck)
 	if err != nil {
-		return nil, fmt.Errorf("error converting HealthCheck to compute beta type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", healthCheck, err)
 	}
 
 	return beta, nil
@@ -3270,7 +3413,366 @@ func (healthCheck *HealthCheck) ToGA() (*compute.HealthCheck, error) {
 	ga := &compute.HealthCheck{}
 	err := copyViaJSON(ga, healthCheck)
 	if err != nil {
-		return nil, fmt.Errorf("error converting HealthCheck to compute ga type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", healthCheck, err)
+	}
+
+	return ga, nil
+}
+
+func CreateNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, networkEndpointGroup *NetworkEndpointGroup) error {
+	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+	defer cancel()
+	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "create", key.Region, key.Zone, string(networkEndpointGroup.Version))
+	switch key.Type() {
+	case meta.Zonal:
+	default:
+		return fmt.Errorf("Key %v not valid for zonal resource NetworkEndpointGroup %v", key, key.Name)
+	}
+
+	switch networkEndpointGroup.Version {
+	case meta.VersionAlpha:
+		alpha, err := networkEndpointGroup.ToAlpha()
+		if err != nil {
+			return err
+		}
+		klog.V(3).Infof("Creating alpha zonal NetworkEndpointGroup %v", alpha.Name)
+		return mc.Observe(gceCloud.Compute().AlphaNetworkEndpointGroups().Insert(ctx, key, alpha))
+	case meta.VersionBeta:
+		beta, err := networkEndpointGroup.ToBeta()
+		if err != nil {
+			return err
+		}
+		klog.V(3).Infof("Creating beta zonal NetworkEndpointGroup %v", beta.Name)
+		return mc.Observe(gceCloud.Compute().BetaNetworkEndpointGroups().Insert(ctx, key, beta))
+	default:
+		ga, err := networkEndpointGroup.ToGA()
+		if err != nil {
+			return err
+		}
+		klog.V(3).Infof("Creating ga zonal NetworkEndpointGroup %v", ga.Name)
+		return mc.Observe(gceCloud.Compute().NetworkEndpointGroups().Insert(ctx, key, ga))
+	}
+}
+
+func DeleteNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) error {
+	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+	defer cancel()
+	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "delete", key.Region, key.Zone, string(version))
+	switch key.Type() {
+	case meta.Zonal:
+	default:
+		return fmt.Errorf("Key %v not valid for zonal resource NetworkEndpointGroup %v", key, key.Name)
+	}
+
+	switch version {
+	case meta.VersionAlpha:
+		klog.V(3).Infof("Deleting alpha zonal NetworkEndpointGroup %v", key.Name)
+		return mc.Observe(gceCloud.Compute().AlphaNetworkEndpointGroups().Delete(ctx, key))
+	case meta.VersionBeta:
+		klog.V(3).Infof("Deleting beta zonal NetworkEndpointGroup %v", key.Name)
+		return mc.Observe(gceCloud.Compute().BetaNetworkEndpointGroups().Delete(ctx, key))
+	default:
+		klog.V(3).Infof("Deleting ga zonal NetworkEndpointGroup %v", key.Name)
+		return mc.Observe(gceCloud.Compute().NetworkEndpointGroups().Delete(ctx, key))
+	}
+}
+
+func GetNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*NetworkEndpointGroup, error) {
+	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+	defer cancel()
+	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "get", key.Region, key.Zone, string(version))
+
+	var gceObj interface{}
+	var err error
+	switch key.Type() {
+	case meta.Zonal:
+	default:
+		return nil, fmt.Errorf("Key %v not valid for zonal resource NetworkEndpointGroup %v", key, key.Name)
+	}
+	switch version {
+	case meta.VersionAlpha:
+		klog.V(3).Infof("Getting alpha zonal NetworkEndpointGroup %v", key.Name)
+		gceObj, err = gceCloud.Compute().AlphaNetworkEndpointGroups().Get(ctx, key)
+	case meta.VersionBeta:
+		klog.V(3).Infof("Getting beta zonal NetworkEndpointGroup %v", key.Name)
+		gceObj, err = gceCloud.Compute().BetaNetworkEndpointGroups().Get(ctx, key)
+
+	default:
+		klog.V(3).Infof("Getting ga zonal NetworkEndpointGroup %v", key.Name)
+		gceObj, err = gceCloud.Compute().NetworkEndpointGroups().Get(ctx, key)
+	}
+	if err != nil {
+		return nil, mc.Observe(err)
+	}
+	compositeType, err := ToNetworkEndpointGroup(gceObj)
+	if err != nil {
+		return nil, err
+	}
+	compositeType.Scope = meta.Zonal
+	compositeType.Version = version
+	return compositeType, nil
+}
+
+func ListNetworkEndpointGroups(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*NetworkEndpointGroup, error) {
+	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+	defer cancel()
+	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "get", key.Region, key.Zone, string(version))
+
+	var gceObjs interface{}
+	var err error
+	switch key.Type() {
+	case meta.Zonal:
+	default:
+		return nil, fmt.Errorf("Key %v not valid for zonal resource NetworkEndpointGroup %v", key, key.Name)
+	}
+	switch version {
+	case meta.VersionAlpha:
+		klog.V(3).Infof("Listing alpha zoneNetworkEndpointGroup")
+		gceObjs, err = gceCloud.Compute().AlphaNetworkEndpointGroups().List(ctx, key.Zone, filter.None)
+	case meta.VersionBeta:
+		klog.V(3).Infof("Listing beta zoneNetworkEndpointGroup")
+		gceObjs, err = gceCloud.Compute().BetaNetworkEndpointGroups().List(ctx, key.Zone, filter.None)
+	default:
+		klog.V(3).Infof("Listing ga zoneNetworkEndpointGroup")
+		gceObjs, err = gceCloud.Compute().NetworkEndpointGroups().List(ctx, key.Zone, filter.None)
+	}
+	if err != nil {
+		return nil, mc.Observe(err)
+	}
+
+	compositeObjs, err := ToNetworkEndpointGroupList(gceObjs)
+	if err != nil {
+		return nil, err
+	}
+	for _, obj := range compositeObjs {
+		obj.Version = version
+	}
+	return compositeObjs, nil
+}
+
+func AttachNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, req *NetworkEndpointGroupsAttachEndpointsRequest) error {
+	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+	defer cancel()
+	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "attach", key.Region, key.Zone, string(version))
+
+	switch key.Type() {
+	case meta.Zonal:
+	default:
+		return fmt.Errorf("Key %v not valid for zonal resource NetworkEndpointGroup %v", key, key.Name)
+	}
+
+	switch version {
+	case meta.VersionAlpha:
+		alphareq, err := req.ToAlpha()
+		if err != nil {
+			return err
+		}
+		klog.V(3).Infof("Attaching to alpha zonal NetworkEndpointGroup %v", key.Name)
+		return mc.Observe(gceCloud.Compute().AlphaNetworkEndpointGroups().AttachNetworkEndpoints(ctx, key, alphareq))
+	case meta.VersionBeta:
+		betareq, err := req.ToBeta()
+		if err != nil {
+			return err
+		}
+		klog.V(3).Infof("Attaching to beta zonal NetworkEndpointGroup %v", key.Name)
+		return mc.Observe(gceCloud.Compute().BetaNetworkEndpointGroups().AttachNetworkEndpoints(ctx, key, betareq))
+	default:
+		gareq, err := req.ToGA()
+		if err != nil {
+			return err
+		}
+		klog.V(3).Infof("Attaching to ga zonal NetworkEndpointGroup %v", key.Name)
+		return mc.Observe(gceCloud.Compute().NetworkEndpointGroups().AttachNetworkEndpoints(ctx, key, gareq))
+	}
+}
+
+func DetachNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Version, req *NetworkEndpointGroupsDetachEndpointsRequest) error {
+	ctx, cancel := cloudprovider.ContextWithCallTimeout()
+	defer cancel()
+	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "attach", key.Region, key.Zone, string(version))
+
+	switch key.Type() {
+	case meta.Zonal:
+	default:
+		return fmt.Errorf("Key %v not valid for zonal resource NetworkEndpointGroup %v", key, key.Name)
+	}
+
+	switch version {
+	case meta.VersionAlpha:
+		alphareq, err := req.ToAlpha()
+		if err != nil {
+			return err
+		}
+		klog.V(3).Infof("Detaching from alpha zonal NetworkEndpointGroup %v", key.Name)
+		return mc.Observe(gceCloud.Compute().AlphaNetworkEndpointGroups().DetachNetworkEndpoints(ctx, key, alphareq))
+	case meta.VersionBeta:
+		betareq, err := req.ToBeta()
+		if err != nil {
+			return err
+		}
+		klog.V(3).Infof("Detaching from beta zonal NetworkEndpointGroup %v", key.Name)
+		return mc.Observe(gceCloud.Compute().BetaNetworkEndpointGroups().DetachNetworkEndpoints(ctx, key, betareq))
+	default:
+		gareq, err := req.ToGA()
+		if err != nil {
+			return err
+		}
+		klog.V(3).Infof("Detaching from ga zonal NetworkEndpointGroup %v", key.Name)
+		return mc.Observe(gceCloud.Compute().NetworkEndpointGroups().DetachNetworkEndpoints(ctx, key, gareq))
+	}
+}
+
+// ToNetworkEndpointGroupList converts a list of compute alpha, beta or GA
+// NetworkEndpointGroup into a list of our composite type.
+func ToNetworkEndpointGroupList(objs interface{}) ([]*NetworkEndpointGroup, error) {
+	result := []*NetworkEndpointGroup{}
+
+	err := copyViaJSON(&result, objs)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %v to %T via JSON: %v", objs, result, err)
+	}
+	return result, nil
+}
+
+// ToNetworkEndpointGroup converts a compute alpha, beta or GA
+// NetworkEndpointGroup into our composite type.
+func ToNetworkEndpointGroup(obj interface{}) (*NetworkEndpointGroup, error) {
+	networkEndpointGroup := &NetworkEndpointGroup{}
+	err := copyViaJSON(networkEndpointGroup, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, networkEndpointGroup, err)
+	}
+
+	return networkEndpointGroup, nil
+}
+
+// ToAlpha converts our composite type into an alpha type.
+// This alpha type can be used in GCE API calls.
+func (networkEndpointGroup *NetworkEndpointGroup) ToAlpha() (*computealpha.NetworkEndpointGroup, error) {
+	alpha := &computealpha.NetworkEndpointGroup{}
+	err := copyViaJSON(alpha, networkEndpointGroup)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", networkEndpointGroup, err)
+	}
+
+	return alpha, nil
+}
+
+// ToBeta converts our composite type into an beta type.
+// This beta type can be used in GCE API calls.
+func (networkEndpointGroup *NetworkEndpointGroup) ToBeta() (*computebeta.NetworkEndpointGroup, error) {
+	beta := &computebeta.NetworkEndpointGroup{}
+	err := copyViaJSON(beta, networkEndpointGroup)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", networkEndpointGroup, err)
+	}
+
+	return beta, nil
+}
+
+// ToGA converts our composite type into an ga type.
+// This ga type can be used in GCE API calls.
+func (networkEndpointGroup *NetworkEndpointGroup) ToGA() (*compute.NetworkEndpointGroup, error) {
+	ga := &compute.NetworkEndpointGroup{}
+	err := copyViaJSON(ga, networkEndpointGroup)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", networkEndpointGroup, err)
+	}
+
+	return ga, nil
+}
+
+// ToNetworkEndpointGroupsAttachEndpointsRequest converts a compute alpha, beta or GA
+// NetworkEndpointGroupsAttachEndpointsRequest into our composite type.
+func ToNetworkEndpointGroupsAttachEndpointsRequest(obj interface{}) (*NetworkEndpointGroupsAttachEndpointsRequest, error) {
+	networkEndpointGroupsAttachEndpointsRequest := &NetworkEndpointGroupsAttachEndpointsRequest{}
+	err := copyViaJSON(networkEndpointGroupsAttachEndpointsRequest, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, networkEndpointGroupsAttachEndpointsRequest, err)
+	}
+
+	return networkEndpointGroupsAttachEndpointsRequest, nil
+}
+
+// ToAlpha converts our composite type into an alpha type.
+// This alpha type can be used in GCE API calls.
+func (networkEndpointGroupsAttachEndpointsRequest *NetworkEndpointGroupsAttachEndpointsRequest) ToAlpha() (*computealpha.NetworkEndpointGroupsAttachEndpointsRequest, error) {
+	alpha := &computealpha.NetworkEndpointGroupsAttachEndpointsRequest{}
+	err := copyViaJSON(alpha, networkEndpointGroupsAttachEndpointsRequest)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", networkEndpointGroupsAttachEndpointsRequest, err)
+	}
+
+	return alpha, nil
+}
+
+// ToBeta converts our composite type into an beta type.
+// This beta type can be used in GCE API calls.
+func (networkEndpointGroupsAttachEndpointsRequest *NetworkEndpointGroupsAttachEndpointsRequest) ToBeta() (*computebeta.NetworkEndpointGroupsAttachEndpointsRequest, error) {
+	beta := &computebeta.NetworkEndpointGroupsAttachEndpointsRequest{}
+	err := copyViaJSON(beta, networkEndpointGroupsAttachEndpointsRequest)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", networkEndpointGroupsAttachEndpointsRequest, err)
+	}
+
+	return beta, nil
+}
+
+// ToGA converts our composite type into an ga type.
+// This ga type can be used in GCE API calls.
+func (networkEndpointGroupsAttachEndpointsRequest *NetworkEndpointGroupsAttachEndpointsRequest) ToGA() (*compute.NetworkEndpointGroupsAttachEndpointsRequest, error) {
+	ga := &compute.NetworkEndpointGroupsAttachEndpointsRequest{}
+	err := copyViaJSON(ga, networkEndpointGroupsAttachEndpointsRequest)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", networkEndpointGroupsAttachEndpointsRequest, err)
+	}
+
+	return ga, nil
+}
+
+// ToNetworkEndpointGroupsDetachEndpointsRequest converts a compute alpha, beta or GA
+// NetworkEndpointGroupsDetachEndpointsRequest into our composite type.
+func ToNetworkEndpointGroupsDetachEndpointsRequest(obj interface{}) (*NetworkEndpointGroupsDetachEndpointsRequest, error) {
+	networkEndpointGroupsDetachEndpointsRequest := &NetworkEndpointGroupsDetachEndpointsRequest{}
+	err := copyViaJSON(networkEndpointGroupsDetachEndpointsRequest, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, networkEndpointGroupsDetachEndpointsRequest, err)
+	}
+
+	return networkEndpointGroupsDetachEndpointsRequest, nil
+}
+
+// ToAlpha converts our composite type into an alpha type.
+// This alpha type can be used in GCE API calls.
+func (networkEndpointGroupsDetachEndpointsRequest *NetworkEndpointGroupsDetachEndpointsRequest) ToAlpha() (*computealpha.NetworkEndpointGroupsDetachEndpointsRequest, error) {
+	alpha := &computealpha.NetworkEndpointGroupsDetachEndpointsRequest{}
+	err := copyViaJSON(alpha, networkEndpointGroupsDetachEndpointsRequest)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", networkEndpointGroupsDetachEndpointsRequest, err)
+	}
+
+	return alpha, nil
+}
+
+// ToBeta converts our composite type into an beta type.
+// This beta type can be used in GCE API calls.
+func (networkEndpointGroupsDetachEndpointsRequest *NetworkEndpointGroupsDetachEndpointsRequest) ToBeta() (*computebeta.NetworkEndpointGroupsDetachEndpointsRequest, error) {
+	beta := &computebeta.NetworkEndpointGroupsDetachEndpointsRequest{}
+	err := copyViaJSON(beta, networkEndpointGroupsDetachEndpointsRequest)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", networkEndpointGroupsDetachEndpointsRequest, err)
+	}
+
+	return beta, nil
+}
+
+// ToGA converts our composite type into an ga type.
+// This ga type can be used in GCE API calls.
+func (networkEndpointGroupsDetachEndpointsRequest *NetworkEndpointGroupsDetachEndpointsRequest) ToGA() (*compute.NetworkEndpointGroupsDetachEndpointsRequest, error) {
+	ga := &compute.NetworkEndpointGroupsDetachEndpointsRequest{}
+	err := copyViaJSON(ga, networkEndpointGroupsDetachEndpointsRequest)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", networkEndpointGroupsDetachEndpointsRequest, err)
 	}
 
 	return ga, nil
@@ -3387,7 +3889,6 @@ func GetSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	if err != nil {
 		return nil, err
 	}
-
 	compositeType.Version = version
 	return compositeType, nil
 }
@@ -3443,7 +3944,7 @@ func ToSslCertificateList(objs interface{}) ([]*SslCertificate, error) {
 
 	err := copyViaJSON(&result, objs)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %v to list of SslCertificate via JSON: %v", objs, err)
+		return nil, fmt.Errorf("could not copy object %v to %T via JSON: %v", objs, result, err)
 	}
 	return result, nil
 }
@@ -3454,7 +3955,7 @@ func ToSslCertificate(obj interface{}) (*SslCertificate, error) {
 	sslCertificate := &SslCertificate{}
 	err := copyViaJSON(sslCertificate, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to SslCertificate via JSON: %v", obj, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, sslCertificate, err)
 	}
 
 	return sslCertificate, nil
@@ -3466,7 +3967,7 @@ func (sslCertificate *SslCertificate) ToAlpha() (*computealpha.SslCertificate, e
 	alpha := &computealpha.SslCertificate{}
 	err := copyViaJSON(alpha, sslCertificate)
 	if err != nil {
-		return nil, fmt.Errorf("error converting SslCertificate to compute alpha type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", sslCertificate, err)
 	}
 
 	return alpha, nil
@@ -3478,7 +3979,7 @@ func (sslCertificate *SslCertificate) ToBeta() (*computebeta.SslCertificate, err
 	beta := &computebeta.SslCertificate{}
 	err := copyViaJSON(beta, sslCertificate)
 	if err != nil {
-		return nil, fmt.Errorf("error converting SslCertificate to compute beta type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", sslCertificate, err)
 	}
 
 	return beta, nil
@@ -3490,7 +3991,7 @@ func (sslCertificate *SslCertificate) ToGA() (*compute.SslCertificate, error) {
 	ga := &compute.SslCertificate{}
 	err := copyViaJSON(ga, sslCertificate)
 	if err != nil {
-		return nil, fmt.Errorf("error converting SslCertificate to compute ga type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", sslCertificate, err)
 	}
 
 	return ga, nil
@@ -3607,7 +4108,6 @@ func GetTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version
 	if err != nil {
 		return nil, err
 	}
-
 	compositeType.Version = version
 	return compositeType, nil
 }
@@ -3663,7 +4163,7 @@ func ToTargetHttpProxyList(objs interface{}) ([]*TargetHttpProxy, error) {
 
 	err := copyViaJSON(&result, objs)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %v to list of TargetHttpProxy via JSON: %v", objs, err)
+		return nil, fmt.Errorf("could not copy object %v to %T via JSON: %v", objs, result, err)
 	}
 	return result, nil
 }
@@ -3674,7 +4174,7 @@ func ToTargetHttpProxy(obj interface{}) (*TargetHttpProxy, error) {
 	targetHttpProxy := &TargetHttpProxy{}
 	err := copyViaJSON(targetHttpProxy, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to TargetHttpProxy via JSON: %v", obj, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, targetHttpProxy, err)
 	}
 
 	return targetHttpProxy, nil
@@ -3686,7 +4186,7 @@ func (targetHttpProxy *TargetHttpProxy) ToAlpha() (*computealpha.TargetHttpProxy
 	alpha := &computealpha.TargetHttpProxy{}
 	err := copyViaJSON(alpha, targetHttpProxy)
 	if err != nil {
-		return nil, fmt.Errorf("error converting TargetHttpProxy to compute alpha type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", targetHttpProxy, err)
 	}
 
 	return alpha, nil
@@ -3698,7 +4198,7 @@ func (targetHttpProxy *TargetHttpProxy) ToBeta() (*computebeta.TargetHttpProxy, 
 	beta := &computebeta.TargetHttpProxy{}
 	err := copyViaJSON(beta, targetHttpProxy)
 	if err != nil {
-		return nil, fmt.Errorf("error converting TargetHttpProxy to compute beta type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", targetHttpProxy, err)
 	}
 
 	return beta, nil
@@ -3710,7 +4210,7 @@ func (targetHttpProxy *TargetHttpProxy) ToGA() (*compute.TargetHttpProxy, error)
 	ga := &compute.TargetHttpProxy{}
 	err := copyViaJSON(ga, targetHttpProxy)
 	if err != nil {
-		return nil, fmt.Errorf("error converting TargetHttpProxy to compute ga type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", targetHttpProxy, err)
 	}
 
 	return ga, nil
@@ -3827,7 +4327,6 @@ func GetTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 	if err != nil {
 		return nil, err
 	}
-
 	compositeType.Version = version
 	return compositeType, nil
 }
@@ -3883,7 +4382,7 @@ func ToTargetHttpsProxyList(objs interface{}) ([]*TargetHttpsProxy, error) {
 
 	err := copyViaJSON(&result, objs)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %v to list of TargetHttpsProxy via JSON: %v", objs, err)
+		return nil, fmt.Errorf("could not copy object %v to %T via JSON: %v", objs, result, err)
 	}
 	return result, nil
 }
@@ -3894,7 +4393,7 @@ func ToTargetHttpsProxy(obj interface{}) (*TargetHttpsProxy, error) {
 	targetHttpsProxy := &TargetHttpsProxy{}
 	err := copyViaJSON(targetHttpsProxy, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to TargetHttpsProxy via JSON: %v", obj, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, targetHttpsProxy, err)
 	}
 
 	return targetHttpsProxy, nil
@@ -3906,7 +4405,7 @@ func (targetHttpsProxy *TargetHttpsProxy) ToAlpha() (*computealpha.TargetHttpsPr
 	alpha := &computealpha.TargetHttpsProxy{}
 	err := copyViaJSON(alpha, targetHttpsProxy)
 	if err != nil {
-		return nil, fmt.Errorf("error converting TargetHttpsProxy to compute alpha type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", targetHttpsProxy, err)
 	}
 
 	return alpha, nil
@@ -3918,7 +4417,7 @@ func (targetHttpsProxy *TargetHttpsProxy) ToBeta() (*computebeta.TargetHttpsProx
 	beta := &computebeta.TargetHttpsProxy{}
 	err := copyViaJSON(beta, targetHttpsProxy)
 	if err != nil {
-		return nil, fmt.Errorf("error converting TargetHttpsProxy to compute beta type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", targetHttpsProxy, err)
 	}
 
 	return beta, nil
@@ -3930,7 +4429,7 @@ func (targetHttpsProxy *TargetHttpsProxy) ToGA() (*compute.TargetHttpsProxy, err
 	ga := &compute.TargetHttpsProxy{}
 	err := copyViaJSON(ga, targetHttpsProxy)
 	if err != nil {
-		return nil, fmt.Errorf("error converting TargetHttpsProxy to compute ga type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", targetHttpsProxy, err)
 	}
 
 	return ga, nil
@@ -4088,7 +4587,6 @@ func GetUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*UrlMa
 	if err != nil {
 		return nil, err
 	}
-
 	compositeType.Version = version
 	return compositeType, nil
 }
@@ -4144,7 +4642,7 @@ func ToUrlMapList(objs interface{}) ([]*UrlMap, error) {
 
 	err := copyViaJSON(&result, objs)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %v to list of UrlMap via JSON: %v", objs, err)
+		return nil, fmt.Errorf("could not copy object %v to %T via JSON: %v", objs, result, err)
 	}
 	return result, nil
 }
@@ -4155,7 +4653,7 @@ func ToUrlMap(obj interface{}) (*UrlMap, error) {
 	urlMap := &UrlMap{}
 	err := copyViaJSON(urlMap, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to UrlMap via JSON: %v", obj, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, urlMap, err)
 	}
 
 	return urlMap, nil
@@ -4167,7 +4665,7 @@ func (urlMap *UrlMap) ToAlpha() (*computealpha.UrlMap, error) {
 	alpha := &computealpha.UrlMap{}
 	err := copyViaJSON(alpha, urlMap)
 	if err != nil {
-		return nil, fmt.Errorf("error converting UrlMap to compute alpha type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", urlMap, err)
 	}
 
 	return alpha, nil
@@ -4179,7 +4677,7 @@ func (urlMap *UrlMap) ToBeta() (*computebeta.UrlMap, error) {
 	beta := &computebeta.UrlMap{}
 	err := copyViaJSON(beta, urlMap)
 	if err != nil {
-		return nil, fmt.Errorf("error converting UrlMap to compute beta type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", urlMap, err)
 	}
 
 	return beta, nil
@@ -4191,7 +4689,7 @@ func (urlMap *UrlMap) ToGA() (*compute.UrlMap, error) {
 	ga := &compute.UrlMap{}
 	err := copyViaJSON(ga, urlMap)
 	if err != nil {
-		return nil, fmt.Errorf("error converting UrlMap to compute ga type via JSON: %v", err)
+		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", urlMap, err)
 	}
 
 	return ga, nil
