@@ -32,7 +32,7 @@ import (
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 var (

@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 func TestEncodeDecodeEndpoint(t *testing.T) {

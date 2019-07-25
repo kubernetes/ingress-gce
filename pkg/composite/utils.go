@@ -19,10 +19,11 @@ package composite
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
-	"reflect"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 // CreateKey() is a helper function for creating a meta.Key when interacting with the

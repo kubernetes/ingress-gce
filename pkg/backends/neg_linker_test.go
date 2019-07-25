@@ -24,7 +24,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 func newTestNEGLinker(fakeNEG negtypes.NetworkEndpointGroupCloud, fakeGCE *gce.Cloud) *negLinker {

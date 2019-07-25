@@ -26,7 +26,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"k8s.io/legacy-cloud-providers/gce"
 	"reflect"
 	"testing"
 	"time"

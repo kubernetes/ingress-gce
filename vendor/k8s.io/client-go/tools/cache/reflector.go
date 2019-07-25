@@ -25,7 +25,6 @@ import (
 	"net"
 	"net/url"
 	"reflect"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -84,7 +83,7 @@ var (
 // NewNamespaceKeyedIndexerAndReflector creates an Indexer and a Reflector
 // The indexer is configured to key on namespace
 func NewNamespaceKeyedIndexerAndReflector(lw ListerWatcher, expectedType interface{}, resyncPeriod time.Duration) (indexer Indexer, reflector *Reflector) {
-	indexer = NewIndexer(MetaNamespaceKeyFunc, Indexers{"namespace": MetaNamespaceIndexFunc})
+	indexer = NewIndexer(MetaNamespaceKeyFunc, Indexers{NamespaceIndex: MetaNamespaceIndexFunc})
 	reflector = NewReflector(lw, expectedType, indexer, resyncPeriod)
 	return indexer, reflector
 }
@@ -111,11 +110,6 @@ func NewNamedReflector(name string, lw ListerWatcher, expectedType interface{}, 
 		clock:         &clock.RealClock{},
 	}
 	return r
-}
-
-func makeValidPrometheusMetricLabel(in string) string {
-	// this isn't perfect, but it removes our common characters
-	return strings.NewReplacer("/", "_", ".", "_", "-", "_", ":", "_").Replace(in)
 }
 
 // internalPackages are packages that ignored when creating a default reflector name. These packages are in the common
