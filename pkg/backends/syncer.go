@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -258,15 +257,15 @@ func ensureHealthCheckLink(be *composite.BackendService, hcLink string) (needsUp
 	return true
 }
 
-func applyProbeSettingsToHC(p *v1.Probe, hc *healthchecks.HealthCheck) {
-	healthPath := p.Handler.HTTPGet.Path
+func applyProbeSettingsToHC(p *ServicePortAndProbe, hc *healthchecks.HealthCheck) {
+	healthPath := p.Probe.Handler.HTTPGet.Path
 	// GCE requires a leading "/" for health check urls.
 	if !strings.HasPrefix(healthPath, "/") {
 		healthPath = "/" + healthPath
 	}
 	// Extract host from HTTP headers
-	host := p.Handler.HTTPGet.Host
-	for _, header := range p.Handler.HTTPGet.HTTPHeaders {
+	host := p.Probe.Handler.HTTPGet.Host
+	for _, header := range p.Probe.Handler.HTTPGet.HTTPHeaders {
 		if header.Name == "Host" {
 			host = header.Value
 			break
@@ -276,12 +275,16 @@ func applyProbeSettingsToHC(p *v1.Probe, hc *healthchecks.HealthCheck) {
 	hc.RequestPath = healthPath
 	hc.Host = host
 	hc.Description = "Kubernetes L7 health check generated with readiness probe settings."
-	hc.TimeoutSec = int64(p.TimeoutSeconds)
+	hc.TimeoutSec = int64(p.Probe.TimeoutSeconds)
+	if p.Service != nil && p.Probe.HTTPGet != nil {
+		hc.Port = int64(p.Service.NodePort)
+		hc.Type = string(p.Probe.HTTPGet.Scheme)
+	}	
 	if hc.ForNEG {
 		// For NEG mode, we can support more aggressive healthcheck interval.
-		hc.CheckIntervalSec = int64(p.PeriodSeconds)
+		hc.CheckIntervalSec = int64(p.Probe.PeriodSeconds)
 	} else {
 		// For IG mode, short healthcheck interval may health check flooding problem.
-		hc.CheckIntervalSec = int64(p.PeriodSeconds) + int64(healthchecks.DefaultHealthCheckInterval.Seconds())
+		hc.CheckIntervalSec = int64(p.Probe.PeriodSeconds) + int64(healthchecks.DefaultHealthCheckInterval.Seconds())
 	}
 }

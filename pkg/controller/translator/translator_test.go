@@ -335,10 +335,10 @@ func TestGetProbe(t *testing.T) {
 
 	for p, exp := range nodePortToHealthCheck {
 		got, err := translator.GetProbe(p)
-		if err != nil || got == nil {
+		if err != nil || got.Probe == nil {
 			t.Errorf("Failed to get probe for node port %v: %v", p, err)
-		} else if getProbePath(got) != exp {
-			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got), exp)
+		} else if getProbePath(got.Probe) != exp {
+			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got.Probe), exp)
 		}
 	}
 }
@@ -360,8 +360,8 @@ func TestGetProbeNamedPort(t *testing.T) {
 		got, err := translator.GetProbe(p)
 		if err != nil || got == nil {
 			t.Errorf("Failed to get probe for node port %v: %v", p, err)
-		} else if getProbePath(got) != exp {
-			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got), exp)
+		} else if getProbePath(got.Probe) != exp {
+			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got.Probe), exp)
 		}
 	}
 }
@@ -416,8 +416,8 @@ func TestGetProbeCrossNamespace(t *testing.T) {
 		got, err := translator.GetProbe(p)
 		if err != nil || got == nil {
 			t.Errorf("Failed to get probe for node port %v: %v", p, err)
-		} else if getProbePath(got) != exp {
-			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got), exp)
+		} else if getProbePath(got.Probe) != exp {
+			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got.Probe), exp)
 		}
 	}
 }
@@ -556,6 +556,182 @@ func TestGetZoneForNode(t *testing.T) {
 
 	if zone != ret {
 		t.Errorf("Expect zone = %q, but got %q", zone, ret)
+	}
+}
+
+func TestHealthCheckOverride(t *testing.T) {
+	translator := fakeTranslator()
+
+	firstPod := &apiv1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:            map[string]string{"app-3001": "test"},
+			Name:              fmt.Sprintf("test-pod-first-pod"),
+			Namespace:         apiv1.NamespaceDefault,
+			CreationTimestamp: metav1.NewTime(firstPodCreationTime.Add(-time.Duration(time.Hour))),
+		},
+		Spec: apiv1.PodSpec{
+			Containers: []apiv1.Container{
+				{
+					Ports: []apiv1.ContainerPort{{ContainerPort: 80}},
+					ReadinessProbe: &apiv1.Probe{
+						Handler: apiv1.Handler{
+							HTTPGet: &apiv1.HTTPGetAction{
+								Scheme: apiv1.URISchemeHTTP,
+								Path:   "/healthz",
+								Port: intstr.IntOrString{
+									Type:   intstr.Int,
+									IntVal: 80,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	translator.ctx.PodInformer.GetIndexer().Add(firstPod)
+
+	nodePortToHealthCheck := map[utils.ServicePort]string{
+		{NodePort: 3001, Port: 80, Protocol: annotations.ProtocolHTTP}: "/healthz",
+	}
+	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
+		translator.ctx.ServiceInformer.GetIndexer().Add(svc)
+	}
+
+	for p, exp := range nodePortToHealthCheck {
+		got, err := translator.GetProbe(p)
+		if err != nil || got.Probe == nil {
+			t.Errorf("Failed to get probe for node port %v: %v", p, err)
+		} else if getProbePath(got.Probe) != exp {
+			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got.Probe), exp)
+		}
+
+		if got.Service == nil {
+			t.Errorf("Failed to extract Service NodePort for healthcheck")
+		} else if got.Service.NodePort != 3001 {
+			t.Errorf("Failed to match Service NodePort for healthcheck wanted 3001, got %s, %v", got.Service, err)
+		}
+	}
+}
+
+func TestHealthCheckOverrideScheme(t *testing.T) {
+	translator := fakeTranslator()
+
+	firstPod := &apiv1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:            map[string]string{"app-3001": "test"},
+			Name:              fmt.Sprintf("test-pod-first-pod"),
+			Namespace:         apiv1.NamespaceDefault,
+			CreationTimestamp: metav1.NewTime(firstPodCreationTime.Add(-time.Duration(time.Hour))),
+		},
+		Spec: apiv1.PodSpec{
+			Containers: []apiv1.Container{
+				{
+					Ports: []apiv1.ContainerPort{{ContainerPort: 80}},
+					ReadinessProbe: &apiv1.Probe{
+						Handler: apiv1.Handler{
+							HTTPGet: &apiv1.HTTPGetAction{
+								Scheme: apiv1.URISchemeHTTPS,
+								Path:   "/healthz",
+								Port: intstr.IntOrString{
+									Type:   intstr.Int,
+									IntVal: 80,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	translator.ctx.PodInformer.GetIndexer().Add(firstPod)
+	nodePortToHealthCheck := map[utils.ServicePort]string{
+		{NodePort: 3001, Port: 80, Protocol: annotations.ProtocolHTTP}: "/healthz",
+	}
+	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
+		translator.ctx.ServiceInformer.GetIndexer().Add(svc)
+	}
+
+	for p, exp := range nodePortToHealthCheck {
+		got, err := translator.GetProbe(p)
+		if err != nil || got.Probe == nil {
+			t.Errorf("Failed to get probe for node port %v: %v", p, err)
+		} else if string(got.Probe.HTTPGet.Scheme) != "HTTPS" {
+			t.Errorf("Wrong Protocol returned  expected HTTPS, got %v for %v", got.Probe.HTTPGet.Scheme, exp)
+		}
+	}
+}
+
+func TestHealthCheckOverrideOrder(t *testing.T) {
+	translator := fakeTranslator()
+
+	firstPod := &apiv1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Labels:            map[string]string{"app-3001": "test"},
+			Name:              fmt.Sprintf("test-pod-first-pod"),
+			Namespace:         apiv1.NamespaceDefault,
+			CreationTimestamp: metav1.NewTime(firstPodCreationTime.Add(-time.Duration(time.Hour))),
+		},
+		Spec: apiv1.PodSpec{
+			Containers: []apiv1.Container{
+				{
+					Ports: []apiv1.ContainerPort{{ContainerPort: 50051}},
+				},
+				{
+					Ports: []apiv1.ContainerPort{{ContainerPort: 80}},
+					ReadinessProbe: &apiv1.Probe{
+						Handler: apiv1.Handler{
+							Exec: &apiv1.ExecAction{
+								Command: []string{
+									"/bin/hostname",
+								},
+							},
+						},
+					},					
+				},
+				{
+					Ports: []apiv1.ContainerPort{{ContainerPort: 8080}},
+					ReadinessProbe: &apiv1.Probe{
+						Handler: apiv1.Handler{
+							HTTPGet: &apiv1.HTTPGetAction{
+								Scheme: apiv1.URISchemeHTTP,
+								Path:   "/healthz",
+								Port: intstr.IntOrString{
+									Type:   intstr.Int,
+									IntVal: 80,
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	translator.ctx.PodInformer.GetIndexer().Add(firstPod)
+
+	nodePortToHealthCheck := map[utils.ServicePort]string{
+		{NodePort: 3001, Port: 8080, Protocol: annotations.ProtocolHTTP}: "/healthz",
+	}
+	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
+		translator.ctx.ServiceInformer.GetIndexer().Add(svc)
+	}
+
+	for p, exp := range nodePortToHealthCheck {
+		got, err := translator.GetProbe(p)
+		if err != nil || got.Probe == nil {
+			t.Errorf("Failed to get probe for node port %v: %v", p, err)
+		} else if getProbePath(got.Probe) != exp {
+			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got.Probe), exp)
+		}
+
+		if got.Service == nil {
+			t.Errorf("Failed to extract Service NodePort for healthcheck")
+		} else if got.Service.NodePort != 3001 {
+			t.Errorf("Failed to match Service NodePort for healthcheck wanted 80, got %s, %v", got.Service, err)
+		}
 	}
 }
 

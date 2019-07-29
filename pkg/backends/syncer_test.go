@@ -67,7 +67,11 @@ func newTestSyncer(fakeGCE *gce.Cloud) *backendSyncer {
 		namer:         defaultNamer,
 	}
 
-	probes := map[utils.ServicePort]*api_v1.Probe{{NodePort: 443, Protocol: annotations.ProtocolHTTPS}: existingProbe}
+	sp := &ServicePortAndProbe{
+		Service: &api_v1.ServicePort{},
+		Probe:   existingProbe,
+	}
+	probes := map[utils.ServicePort]*ServicePortAndProbe{{NodePort: 443, Protocol: annotations.ProtocolHTTPS}: sp}
 	syncer.Init(NewFakeProbeProvider(probes))
 
 	// Add standard hooks for mocking update calls. Each test can set a different update hook if it chooses to.
@@ -450,13 +454,15 @@ func TestShutdown(t *testing.T) {
 }
 
 func TestApplyProbeSettingsToHC(t *testing.T) {
-	p := "healthz"
+	// set Default HC to listen on HTTPS:8080 for path /healthz
 	hc := healthchecks.DefaultHealthCheck(8080, annotations.ProtocolHTTPS)
+	hc.RequestPath = "/healthz"
+	// make the HCProbe listen on HTTP for path /foo
 	probe := &api_v1.Probe{
 		Handler: api_v1.Handler{
 			HTTPGet: &api_v1.HTTPGetAction{
 				Scheme: api_v1.URISchemeHTTP,
-				Path:   p,
+				Path:   "/foo",
 				Port: intstr.IntOrString{
 					Type:   intstr.Int,
 					IntVal: 80,
@@ -465,12 +471,24 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 		},
 	}
 
-	applyProbeSettingsToHC(probe, hc)
-
-	if hc.Protocol() != annotations.ProtocolHTTPS || hc.Port != 8080 {
-		t.Errorf("Basic HC settings changed")
+	// Alter the default Service HealthCheck to go to NodePort: 30001
+	svc := &api_v1.ServicePort{
+		NodePort: 30001,
 	}
-	if hc.RequestPath != "/"+p {
+	sp := &ServicePortAndProbe{
+		Probe:   probe,
+		Service: svc,
+	}
+
+	// update HC to mirror what was in the probe
+	applyProbeSettingsToHC(sp, hc)
+
+	// verify the HC uses the settings from the probe (i.,e HTTP, path: /foo).
+	// also check if the healthcheck uses the updated NodePort :30001)
+	if hc.Protocol() != annotations.ProtocolHTTP || hc.Port != 30001 {
+		t.Errorf("Basic HC settings changed; expected Protocol %v, Port %v; got %v %v", annotations.ProtocolHTTP, "30001", hc.Protocol(), hc.Port)
+	}
+	if hc.RequestPath != "/foo" {
 		t.Errorf("Failed to apply probe's requestpath")
 	}
 }

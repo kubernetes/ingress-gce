@@ -33,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/backendconfig"
+	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/errors"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
@@ -225,7 +226,7 @@ func (t *Translator) ListZones() ([]string, error) {
 
 // geHTTPProbe returns the http readiness probe from the first container
 // that matches targetPort, from the set of pods matching the given labels.
-func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrString, protocol annotations.AppProtocol) (*api_v1.Probe, error) {
+func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrString, protocol annotations.AppProtocol) (*backends.ServicePortAndProbe, error) {
 	l := svc.Spec.Selector
 
 	// Lookup any container with a matching targetPort from the set of pods
@@ -244,28 +245,17 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 		}
 		logStr := fmt.Sprintf("Pod %v matching service selectors %v (targetport %+v)", pod.Name, l, targetPort)
 		for _, c := range pod.Spec.Containers {
-			if !isSimpleHTTPProbe(c.ReadinessProbe) || getProbeScheme(protocol) != c.ReadinessProbe.HTTPGet.Scheme {
+
+			if !isSimpleHTTPProbe(c.ReadinessProbe) {
 				continue
 			}
-
-			for _, p := range c.Ports {
-				if (targetPort.Type == intstr.Int && targetPort.IntVal == p.ContainerPort) ||
-					(targetPort.Type == intstr.String && targetPort.StrVal == p.Name) {
-
-					readinessProbePort := c.ReadinessProbe.Handler.HTTPGet.Port
-					switch readinessProbePort.Type {
-					case intstr.Int:
-						if readinessProbePort.IntVal == p.ContainerPort {
-							return c.ReadinessProbe, nil
-						}
-					case intstr.String:
-						if readinessProbePort.StrVal == p.Name {
-							return c.ReadinessProbe, nil
-						}
-					}
-
-					klog.Infof("%v: found matching targetPort on container %v, but not on readinessProbe (%+v)",
-						logStr, c.Name, c.ReadinessProbe.Handler.HTTPGet.Port)
+			for _, np := range svc.Spec.Ports {
+				if ((np.TargetPort.Type == intstr.Int && c.ReadinessProbe.HTTPGet.Port.IntValue() == np.TargetPort.IntValue() ) || 
+				    (c.ReadinessProbe.HTTPGet.Port.Type == intstr.String)) {
+					return &backends.ServicePortAndProbe{
+						Probe:   c.ReadinessProbe,
+						Service: &np,
+					}, nil
 				}
 			}
 		}
@@ -314,7 +304,7 @@ func getProbeScheme(protocol annotations.AppProtocol) api_v1.URIScheme {
 }
 
 // GetProbe returns a probe that's used for the given nodeport
-func (t *Translator) GetProbe(port utils.ServicePort) (*api_v1.Probe, error) {
+func (t *Translator) GetProbe(port utils.ServicePort) (*backends.ServicePortAndProbe, error) {
 	sl := t.ctx.ServiceInformer.GetIndexer().List()
 
 	// Find the label and target port of the one service with the given nodePort
