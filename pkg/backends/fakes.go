@@ -17,24 +17,20 @@ limitations under the License.
 package backends
 
 import (
-
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // FakeProbeProvider implements the probeProvider interface for tests.
 type FakeProbeProvider struct {
-	//probes map[utils.ServicePort]*api_v1.Probe
 	probes map[utils.ServicePort]*ServicePortAndProbe
 }
 
 // NewFakeProbeProvider returns a struct which satisfies probeProvider interface
-//func NewFakeProbeProvider(probes map[utils.ServicePort]*api_v1.Probe) *FakeProbeProvider {
 func NewFakeProbeProvider(probes map[utils.ServicePort]*ServicePortAndProbe) *FakeProbeProvider {
 	return &FakeProbeProvider{probes}
 }
 
 // GetProbe returns the probe for a given nodePort
-//func (pp *FakeProbeProvider) GetProbe(port utils.ServicePort) (*api_v1.Probe, error) {
 func (pp *FakeProbeProvider) GetProbe(port utils.ServicePort) (*ServicePortAndProbe, error) {
 	if probe, exists := pp.probes[port]; exists && probe.Probe.HTTPGet != nil {
 		return probe, nil
