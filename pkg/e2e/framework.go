@@ -207,6 +207,8 @@ func (f *Framework) RunWithSandbox(name string, t *testing.T, testFunc func(*tes
 		}
 
 		testFunc(t, sandbox)
+
+		sandbox.DumpSandboxInfo(t)
 	})
 }
 
