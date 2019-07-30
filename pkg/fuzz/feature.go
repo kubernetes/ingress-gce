@@ -19,7 +19,7 @@ package fuzz
 import (
 	"net/http"
 
-	"k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 )
 
 // Feature represents an extension to the "vanilla" behavior of Ingress.

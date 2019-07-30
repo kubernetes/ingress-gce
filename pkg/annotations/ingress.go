@@ -19,7 +19,7 @@ package annotations
 import (
 	"strconv"
 
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 )
 
 const (
@@ -84,7 +84,7 @@ type Ingress struct {
 }
 
 // FromIngress extracts the annotations from an Ingress definition.
-func FromIngress(ing *extensions.Ingress) *Ingress {
+func FromIngress(ing *v1beta1.Ingress) *Ingress {
 	return &Ingress{ing.Annotations}
 }
 

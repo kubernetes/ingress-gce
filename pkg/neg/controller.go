@@ -22,7 +22,7 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -122,7 +122,7 @@ func NewController(
 
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			addIng := obj.(*extensions.Ingress)
+			addIng := obj.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(addIng) {
 				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", utils.IngressKeyFunc(addIng), annotations.IngressClassKey)
 				return
@@ -130,7 +130,7 @@ func NewController(
 			negController.enqueueIngressServices(addIng)
 		},
 		DeleteFunc: func(obj interface{}) {
-			delIng := obj.(*extensions.Ingress)
+			delIng := obj.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(delIng) {
 				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", utils.IngressKeyFunc(delIng), annotations.IngressClassKey)
 				return
@@ -138,8 +138,8 @@ func NewController(
 			negController.enqueueIngressServices(delIng)
 		},
 		UpdateFunc: func(old, cur interface{}) {
-			oldIng := cur.(*extensions.Ingress)
-			curIng := cur.(*extensions.Ingress)
+			oldIng := cur.(*v1beta1.Ingress)
+			curIng := cur.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(curIng) {
 				klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", utils.IngressKeyFunc(curIng), annotations.IngressClassKey)
 				return
@@ -420,7 +420,7 @@ func (c *Controller) enqueueService(obj interface{}) {
 	c.serviceQueue.Add(key)
 }
 
-func (c *Controller) enqueueIngressServices(ing *extensions.Ingress) {
+func (c *Controller) enqueueIngressServices(ing *v1beta1.Ingress) {
 	keys := gatherIngressServiceKeys(ing)
 	for key := range keys {
 		c.enqueueService(cache.ExplicitKey(key))
@@ -435,7 +435,7 @@ func (c *Controller) gc() {
 
 // gatherPortMappingUsedByIngress returns a map containing port:targetport
 // of all service ports of the service that are referenced by ingresses
-func gatherPortMappingUsedByIngress(ings []extensions.Ingress, svc *apiv1.Service) negtypes.SvcPortMap {
+func gatherPortMappingUsedByIngress(ings []v1beta1.Ingress, svc *apiv1.Service) negtypes.SvcPortMap {
 	servicePorts := sets.NewString()
 	ingressSvcPorts := make(negtypes.SvcPortMap)
 	for _, ing := range ings {
@@ -476,7 +476,7 @@ func gatherPortMappingUsedByIngress(ings []extensions.Ingress, svc *apiv1.Servic
 }
 
 // gatherIngressServiceKeys returns all service key (formatted as namespace/name) referenced in the ingress
-func gatherIngressServiceKeys(ing *extensions.Ingress) sets.String {
+func gatherIngressServiceKeys(ing *v1beta1.Ingress) sets.String {
 	set := sets.NewString()
 	if ing == nil {
 		return set
@@ -488,9 +488,9 @@ func gatherIngressServiceKeys(ing *extensions.Ingress) sets.String {
 	return set
 }
 
-func getIngressServicesFromStore(store cache.Store, svc *apiv1.Service) (ings []extensions.Ingress) {
+func getIngressServicesFromStore(store cache.Store, svc *apiv1.Service) (ings []v1beta1.Ingress) {
 	for _, m := range store.List() {
-		ing := *m.(*extensions.Ingress)
+		ing := *m.(*v1beta1.Ingress)
 		if ing.Namespace != svc.Namespace {
 			continue
 		}

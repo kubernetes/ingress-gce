@@ -16,19 +16,19 @@ package utils
 import (
 	"testing"
 
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestStrategicMergePatchBytes(t *testing.T) {
 	// Patch an Ingress w/ a finalizer
-	ing := &extensions.Ingress{}
-	updated := &extensions.Ingress{
+	ing := &v1beta1.Ingress{}
+	updated := &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Finalizers: []string{"foo"},
 		},
 	}
-	b, err := StrategicMergePatchBytes(ing, updated, extensions.Ingress{})
+	b, err := StrategicMergePatchBytes(ing, updated, v1beta1.Ingress{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,8 +39,8 @@ func TestStrategicMergePatchBytes(t *testing.T) {
 
 	// Patch an Ingress with the finalizer removed
 	ing = updated
-	updated = &extensions.Ingress{}
-	b, err = StrategicMergePatchBytes(ing, updated, extensions.Ingress{})
+	updated = &v1beta1.Ingress{}
+	b, err = StrategicMergePatchBytes(ing, updated, v1beta1.Ingress{})
 	if err != nil {
 		t.Fatal(err)
 	}

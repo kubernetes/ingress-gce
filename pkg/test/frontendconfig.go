@@ -1,7 +1,7 @@
 package test
 
 import (
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
 
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -18,14 +18,14 @@ var (
 		},
 	}
 
-	IngressWithoutFrontendConfig = &extensions.Ingress{
+	IngressWithoutFrontendConfig = &v1beta1.Ingress{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      "ing-no-config",
 			Namespace: "test",
 		},
 	}
 
-	IngressWithFrontendConfig = &extensions.Ingress{
+	IngressWithFrontendConfig = &v1beta1.Ingress{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      "ing-with-config",
 			Namespace: "test",
@@ -35,7 +35,7 @@ var (
 		},
 	}
 
-	IngressWithFrontendConfigOtherNamespace = &extensions.Ingress{
+	IngressWithFrontendConfigOtherNamespace = &v1beta1.Ingress{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      "ing-with-config",
 			Namespace: "other-namespace",
@@ -45,7 +45,7 @@ var (
 		},
 	}
 
-	IngressWithOtherFrontendConfig = &extensions.Ingress{
+	IngressWithOtherFrontendConfig = &v1beta1.Ingress{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      "ing-with-config",
 			Namespace: "test",

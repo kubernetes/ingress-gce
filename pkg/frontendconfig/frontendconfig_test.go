@@ -3,7 +3,7 @@ package frontendconfig
 import (
 	"testing"
 
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/test"
 )
@@ -13,7 +13,7 @@ func TestFrontendConfigForIngress(t *testing.T) {
 
 	testCases := []struct {
 		desc     string
-		ing      *extensions.Ingress
+		ing      *v1beta1.Ingress
 		expected *frontendconfigv1beta1.FrontendConfig
 		err      error
 	}{

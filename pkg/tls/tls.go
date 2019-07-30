@@ -22,7 +22,7 @@ import (
 	"k8s.io/klog"
 
 	api_v1 "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
@@ -31,7 +31,7 @@ import (
 // TlsLoader is the interface for loading the relevant TLSCerts for a given ingress.
 type TlsLoader interface {
 	// Load loads the relevant TLSCerts based on ing.Spec.TLS
-	Load(ing *extensions.Ingress) ([]*loadbalancers.TLSCerts, error)
+	Load(ing *v1beta1.Ingress) ([]*loadbalancers.TLSCerts, error)
 	// Validate validates the given TLSCerts and returns an error if they are invalid.
 	Validate(certs *loadbalancers.TLSCerts) error
 }
@@ -52,7 +52,7 @@ type TLSCertsFromSecretsLoader struct {
 // Ensure that TLSCertsFromSecretsLoader implements TlsLoader interface.
 var _ TlsLoader = &TLSCertsFromSecretsLoader{}
 
-func (t *TLSCertsFromSecretsLoader) Load(ing *extensions.Ingress) ([]*loadbalancers.TLSCerts, error) {
+func (t *TLSCertsFromSecretsLoader) Load(ing *v1beta1.Ingress) ([]*loadbalancers.TLSCerts, error) {
 	if len(ing.Spec.TLS) == 0 {
 		return nil, nil
 	}
@@ -97,7 +97,7 @@ type FakeTLSSecretLoader struct {
 // Ensure that FakeTLSSecretLoader implements TlsLoader interface.
 var _ TlsLoader = &FakeTLSSecretLoader{}
 
-func (f *FakeTLSSecretLoader) Load(ing *extensions.Ingress) ([]*loadbalancers.TLSCerts, error) {
+func (f *FakeTLSSecretLoader) Load(ing *v1beta1.Ingress) ([]*loadbalancers.TLSCerts, error) {
 	if len(ing.Spec.TLS) == 0 {
 		return nil, nil
 	}

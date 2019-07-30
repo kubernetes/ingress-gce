@@ -2,7 +2,7 @@ package test
 
 import (
 	api_v1 "k8s.io/api/core/v1"
-	extensions "k8s.io/api/extensions/v1beta1"
+	"k8s.io/api/networking/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -22,11 +22,11 @@ var (
 )
 
 // NewIngress returns an Ingress with the given spec.
-func NewIngress(name types.NamespacedName, spec extensions.IngressSpec) *extensions.Ingress {
-	return &extensions.Ingress{
+func NewIngress(name types.NamespacedName, spec v1beta1.IngressSpec) *v1beta1.Ingress {
+	return &v1beta1.Ingress{
 		TypeMeta: meta_v1.TypeMeta{
 			Kind:       "Ingress",
-			APIVersion: "extensions/v1beta1",
+			APIVersion: "networking/v1beta1",
 		},
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      name.Name,
@@ -63,20 +63,20 @@ func NewBackendConfig(name types.NamespacedName, spec backendconfig.BackendConfi
 }
 
 // Backend returns an IngressBackend with the given service name/port.
-func Backend(name string, port intstr.IntOrString) *extensions.IngressBackend {
-	return &extensions.IngressBackend{
+func Backend(name string, port intstr.IntOrString) *v1beta1.IngressBackend {
+	return &v1beta1.IngressBackend{
 		ServiceName: name,
 		ServicePort: port,
 	}
 }
 
 // DecodeIngress deserializes an Ingress object.
-func DecodeIngress(data []byte) (*extensions.Ingress, error) {
+func DecodeIngress(data []byte) (*v1beta1.Ingress, error) {
 	decode := scheme.Codecs.UniversalDeserializer().Decode
 	obj, _, err := decode(data, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return obj.(*extensions.Ingress), nil
+	return obj.(*v1beta1.Ingress), nil
 }

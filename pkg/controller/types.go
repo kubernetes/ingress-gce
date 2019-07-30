@@ -17,15 +17,14 @@ limitations under the License.
 package controller
 
 import (
+	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
-
-	extensions "k8s.io/api/extensions/v1beta1"
 )
 
 // gcState is used by the controller to maintain state for garbage collection routines.
 type gcState struct {
-	ingresses []*extensions.Ingress
+	ingresses []*v1beta1.Ingress
 	lbNames   []string
 	svcPorts  []utils.ServicePort
 }
@@ -33,6 +32,6 @@ type gcState struct {
 // syncState is used by the controller to maintain state for routines that sync GCP resources of an Ingress.
 type syncState struct {
 	urlMap *utils.GCEURLMap
-	ing    *extensions.Ingress
+	ing    *v1beta1.Ingress
 	l7     *loadbalancers.L7
 }
