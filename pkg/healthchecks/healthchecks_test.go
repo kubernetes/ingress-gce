@@ -23,6 +23,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	computealpha "google.golang.org/api/compute/v0.alpha"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -169,7 +170,7 @@ func TestHealthCheckDelete(t *testing.T) {
 	fakeGCE.CreateHealthCheck(v1hc)
 
 	// Delete only HTTP 1234
-	err = healthChecks.Delete(namer.IGBackend(1234))
+	err = healthChecks.Delete(namer.IGBackend(1234), meta.Global)
 	if err != nil {
 		t.Errorf("unexpected error when deleting health check, err: %v", err)
 	}
@@ -181,7 +182,7 @@ func TestHealthCheckDelete(t *testing.T) {
 	}
 
 	// Delete only HTTP 1234
-	err = healthChecks.Delete(namer.IGBackend(1234))
+	err = healthChecks.Delete(namer.IGBackend(1234), meta.Global)
 	if err == nil {
 		t.Errorf("expected not-found error when deleting health check, err: %v", err)
 	}
@@ -199,7 +200,7 @@ func TestHTTP2HealthCheckDelete(t *testing.T) {
 	fakeGCE.CreateAlphaHealthCheck(alphahc)
 
 	// Delete only HTTP2 1234
-	err := healthChecks.Delete(namer.IGBackend(1234))
+	err := healthChecks.Delete(namer.IGBackend(1234), meta.Global)
 	if err != nil {
 		t.Errorf("unexpected error when deleting health check, err: %v", err)
 	}
@@ -233,7 +234,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	fakeGCE.CreateHealthCheck(v1hc)
 
 	// Verify the health check exists
-	_, err = healthChecks.Get(hc.Name, meta.VersionGA)
+	_, err = healthChecks.Get(hc.Name, meta.VersionGA, meta.Global)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -246,7 +247,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists
-	_, err = healthChecks.Get(hc.Name, meta.VersionGA)
+	_, err = healthChecks.Get(hc.Name, meta.VersionGA, meta.Global)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -264,7 +265,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists. HTTP2 is alpha-only.
-	_, err = healthChecks.Get(hc.Name, meta.VersionAlpha)
+	_, err = healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -284,7 +285,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists.
-	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha)
+	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -304,7 +305,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Verify the health check exists.
-	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha)
+	hc, err = healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global)
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -328,7 +329,7 @@ func TestAlphaHealthCheck(t *testing.T) {
 		t.Fatalf("got %v, want nil", err)
 	}
 
-	ret, err := healthChecks.Get(hc.Name, meta.VersionAlpha)
+	ret, err := healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global)
 	if err != nil {
 		t.Fatalf("got %v, want nil", err)
 	}
@@ -338,4 +339,63 @@ func TestAlphaHealthCheck(t *testing.T) {
 	if ret.PortSpecification != UseServingPortSpecification {
 		t.Errorf("got ret.PortSpecification = %q, want %q", UseServingPortSpecification, ret.PortSpecification)
 	}
+}
+
+func TestVersion(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc    string
+		hc      *HealthCheck
+		version meta.Version
+	}{
+		{
+			desc: "Basic Http Health Check",
+			hc: &HealthCheck{
+				HealthCheck: computealpha.HealthCheck{
+					Type: string(annotations.ProtocolHTTP),
+				},
+			},
+			version: meta.VersionGA,
+		},
+		{
+			desc: "Basic Http2 Health Check",
+			hc: &HealthCheck{
+				HealthCheck: computealpha.HealthCheck{
+					Type: string(annotations.ProtocolHTTP2),
+				},
+			},
+			version: meta.VersionBeta,
+		},
+		{
+			desc: "Http Health Check with NEG",
+			hc: &HealthCheck{
+				HealthCheck: computealpha.HealthCheck{
+					Type: string(annotations.ProtocolHTTP),
+				},
+				ForNEG: true,
+			},
+			version: meta.VersionBeta,
+		},
+		{
+			desc: "Http2 Health Check with ILB and NEG",
+			hc: &HealthCheck{
+				HealthCheck: computealpha.HealthCheck{
+					Type: string(annotations.ProtocolHTTP),
+				},
+				forILB: true,
+				ForNEG: true,
+			},
+			version: meta.VersionAlpha,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			result := tc.hc.Version()
+
+			if result != tc.version {
+				t.Fatalf("hc.Version() = %s, want %s", result, tc.version)
+			}
+		})
+	}
+
 }

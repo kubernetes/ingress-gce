@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -51,8 +52,8 @@ func (l *L7) ensureComputeURLMap() error {
 	expectedMap := toCompositeURLMap(l.Name, l.runtimeInfo.UrlMap, l.namer, key)
 	key.Name = expectedMap.Name
 
-	expectedMap.Version = meta.VersionGA
-	currentMap, err := composite.GetUrlMap(l.cloud, key, l.version)
+	expectedMap.Version = l.Version(features.UrlMap)
+	currentMap, err := composite.GetUrlMap(l.cloud, key, expectedMap.Version)
 	if utils.IgnoreHTTPNotFound(err) != nil {
 		return err
 	}

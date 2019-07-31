@@ -33,19 +33,22 @@ const (
 	FeatureSecurityPolicy = "SecurityPolicy"
 	// FeatureNEG defines the feature name of NEG.
 	FeatureNEG = "NEG"
+	// FeatureL7ILB defines the feature name of L7 Internal Load Balancer
+	// L7-ILB Resources are currently alpha and regional
+	FeatureL7ILB = "L7ILB"
 )
 
 var (
 	// versionToFeatures stores the mapping from the required API
 	// version to feature names.
 	versionToFeatures = map[meta.Version][]string{
-		meta.VersionBeta: []string{FeatureSecurityPolicy, FeatureHTTP2},
+		meta.VersionAlpha: []string{FeatureL7ILB},
+		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureHTTP2},
 	}
-
 	// TODO: (shance) refactor all scope to be above the serviceport level
-	// scopeToFeatures stores the mapping from the required meta.KeyType
-	// to feature names
-	scopeToFeatures = map[meta.KeyType][]string{}
+	scopeToFeatures = map[meta.KeyType][]string{
+		meta.Regional: []string{FeatureL7ILB},
+	}
 )
 
 // SetDescription sets the XFeatures field for the given Description.
@@ -65,6 +68,9 @@ func featuresFromServicePort(sp *utils.ServicePort) []string {
 	}
 	if sp.NEGEnabled {
 		features = append(features, FeatureNEG)
+	}
+	if sp.L7ILBEnabled {
+		features = append(features, FeatureL7ILB)
 	}
 	// Keep feature names sorted to be consistent.
 	sort.Strings(features)

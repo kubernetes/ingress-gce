@@ -19,11 +19,12 @@ package loadbalancers
 import (
 	"crypto/sha256"
 	"fmt"
+	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"net/http"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
@@ -103,7 +104,7 @@ func (l *L7) createSslCertificates(existingCerts []*composite.SslCertificate) ([
 			Name:        gcpCertName,
 			Certificate: ingCert,
 			PrivateKey:  ingKey,
-			Version:     l.version,
+			Version:     l.Version(features.SslCertificate),
 		}
 		key, err := l.CreateKey(gcpCertName)
 		if err != nil {
@@ -144,7 +145,7 @@ func (l *L7) getSslCertificates(names []string) ([]*composite.SslCertificate, er
 		if err != nil {
 			return nil, err
 		}
-		cert, err := composite.GetSslCertificate(l.cloud, key, l.version)
+		cert, err := composite.GetSslCertificate(l.cloud, key, l.Version(features.SslCertificate))
 		if err != nil {
 			failedCerts = append(failedCerts, name+": "+err.Error())
 			if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
@@ -207,7 +208,8 @@ func (l *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 	if err != nil {
 		return nil, err
 	}
-	certs, err := composite.ListSslCertificates(l.cloud, key, l.version)
+	version := l.Version(features.SslCertificate)
+	certs, err := composite.ListSslCertificates(l.cloud, key, version)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +242,7 @@ func (l *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 			if err != nil {
 				return nil, err
 			}
-			cert, _ := composite.GetSslCertificate(l.cloud, key, l.version)
+			cert, _ := composite.GetSslCertificate(l.cloud, key, version)
 			if cert != nil {
 				klog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l.Name)
 				result = append(result, cert)
@@ -266,7 +268,7 @@ func (l *L7) deleteOldSSLCerts() {
 		}
 		klog.V(3).Infof("Cleaning up old SSL Certificate %s", cert.Name)
 		key, _ := l.CreateKey(cert.Name)
-		if certErr := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l.cloud, key, l.version)); certErr != nil {
+		if certErr := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l.cloud, key, l.Version(features.SslCertificate))); certErr != nil {
 			klog.Errorf("Old cert %s delete failed - %v", cert.Name, certErr)
 		}
 	}

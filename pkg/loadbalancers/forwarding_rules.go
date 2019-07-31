@@ -19,6 +19,7 @@ package loadbalancers
 import (
 	"fmt"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -63,11 +64,12 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 	if err != nil {
 		return nil, err
 	}
-	fw, _ = composite.GetForwardingRule(l.cloud, key, l.version)
+	version := l.Version(features.ForwardingRule)
+	fw, _ = composite.GetForwardingRule(l.cloud, key, version)
 	if fw != nil && (ip != "" && fw.IPAddress != ip || fw.PortRange != portRange) {
 		klog.Warningf("Recreating forwarding rule %v(%v), so it has %v(%v)",
 			fw.IPAddress, fw.PortRange, ip, portRange)
-		if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, l.version)); err != nil {
+		if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, version)); err != nil {
 			return nil, err
 		}
 		fw = nil
@@ -78,6 +80,7 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 		if err != nil {
 			return nil, err
 		}
+		version := l.Version(features.ForwardingRule)
 		rule := &composite.ForwardingRule{
 			Name:        name,
 			IPAddress:   ip,
@@ -85,12 +88,12 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 			PortRange:   portRange,
 			IPProtocol:  "TCP",
 			Description: description,
-			Version:     l.version,
+			Version:     version,
 		}
 
-		key, err := l.CreateKey(rule.Name)
-		if err != nil {
-			return nil, err
+		// Update rule for L7-ILB
+		if utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress) {
+			rule.LoadBalancingScheme = "INTERNAL_MANAGED"
 		}
 		if err = composite.CreateForwardingRule(l.cloud, key, rule); err != nil {
 			return nil, err
@@ -99,7 +102,7 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 		if err != nil {
 			return nil, err
 		}
-		fw, err = composite.GetForwardingRule(l.cloud, key, l.version)
+		fw, err = composite.GetForwardingRule(l.cloud, key, version)
 		if err != nil {
 			return nil, err
 		}

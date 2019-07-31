@@ -27,6 +27,8 @@ const (
 	fakeGaFeature    = "fakegafeature"
 	fakeAlphaFeature = "fakealphafeature"
 	fakeBetaFeature  = "fakebetafeature"
+	// This fake feature is used to test per-resource versions
+	fakeAlphaFeatureUrlMapOnly = "fakealphafeatureurlmaponly"
 
 	fakeGlobalFeature   = "fakeglobalfeature"
 	fakeRegionalFeature = "fakeRegionalFeature"
@@ -46,10 +48,21 @@ var (
 		meta.Zonal:    {fakeZonalFeature},
 	}
 
-	fakeVersionToFeatures = map[meta.Version][]string{
-		meta.VersionGA:    {fakeGaFeature},
-		meta.VersionAlpha: {fakeAlphaFeature},
-		meta.VersionBeta:  {fakeBetaFeature},
+	makeEntry = func(ga, alpha, beta string) map[meta.Version][]string {
+		return map[meta.Version][]string{meta.VersionGA: {ga}, meta.VersionAlpha: {alpha}, meta.VersionBeta: {beta}}
+	}
+
+	fakeResourceToVersionMap = map[LBResource]map[meta.Version][]string{
+		UrlMap: {
+			meta.VersionGA:    {fakeGaFeature},
+			meta.VersionAlpha: {fakeAlphaFeature, fakeAlphaFeatureUrlMapOnly},
+			meta.VersionBeta:  {fakeBetaFeature},
+		},
+		ForwardingRule:   makeEntry(fakeGaFeature, fakeAlphaFeature, fakeBetaFeature),
+		TargetHttpProxy:  makeEntry(fakeGaFeature, fakeAlphaFeature, fakeBetaFeature),
+		TargetHttpsProxy: makeEntry(fakeGaFeature, fakeAlphaFeature, fakeBetaFeature),
+		SslCertificate:   makeEntry(fakeGaFeature, fakeAlphaFeature, fakeBetaFeature),
+		BackendService:   makeEntry(fakeGaFeature, fakeAlphaFeature, fakeBetaFeature),
 	}
 )
 
@@ -80,79 +93,71 @@ func TestScopeFromIngress(t *testing.T) {
 	}
 }
 
-// TODO: (shance) add real test cases once features are added
-func TestVersionFromIngress(t *testing.T) {
-	testCases := []struct {
-		desc    string
-		ing     v1beta1.Ingress
-		version meta.Version
-	}{
-		{
-			desc:    "Empty Ingress",
-			ing:     emptyIng,
-			version: meta.VersionGA,
-		},
-	}
-
-	// Override features with fakes
-	versionToFeatures = fakeVersionToFeatures
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			result := VersionFromIngress(&tc.ing)
-
-			if result != tc.version {
-				t.Fatalf("want scope %s, got %s", tc.version, result)
-			}
-		})
-	}
-}
-
 func TestVersionFromFeatures(t *testing.T) {
 	testCases := []struct {
-		desc     string
-		features []string
-		version  meta.Version
+		desc       string
+		features   []string
+		versionMap map[LBResource]meta.Version
 	}{
 		{
-			desc:     "One Ga feature",
-			features: []string{fakeGaFeature},
-			version:  meta.VersionGA,
+			desc: "No Features",
+			versionMap: map[LBResource]meta.Version{
+				UrlMap:           meta.VersionGA,
+				ForwardingRule:   meta.VersionGA,
+				TargetHttpProxy:  meta.VersionGA,
+				TargetHttpsProxy: meta.VersionGA,
+				SslCertificate:   meta.VersionGA,
+				BackendService:   meta.VersionGA,
+			},
 		},
 		{
-			desc:     "One Alpha feature",
+			desc:     "Alpha features",
 			features: []string{fakeAlphaFeature},
-			version:  meta.VersionAlpha,
+			versionMap: map[LBResource]meta.Version{
+				UrlMap:           meta.VersionAlpha,
+				ForwardingRule:   meta.VersionAlpha,
+				TargetHttpProxy:  meta.VersionAlpha,
+				TargetHttpsProxy: meta.VersionAlpha,
+				SslCertificate:   meta.VersionAlpha,
+				BackendService:   meta.VersionAlpha,
+			},
 		},
 		{
-			desc:     "One Beta feature",
+			desc:     "Beta features",
 			features: []string{fakeBetaFeature},
-			version:  meta.VersionBeta,
+			versionMap: map[LBResource]meta.Version{
+				UrlMap:           meta.VersionBeta,
+				ForwardingRule:   meta.VersionBeta,
+				TargetHttpProxy:  meta.VersionBeta,
+				TargetHttpsProxy: meta.VersionBeta,
+				SslCertificate:   meta.VersionBeta,
+				BackendService:   meta.VersionBeta,
+			},
 		},
 		{
-			desc:     "Beta and GA feature",
-			features: []string{fakeBetaFeature, fakeGaFeature},
-			version:  meta.VersionBeta,
-		},
-		{
-			desc:     "Alpha, Beta, and GA feature",
-			features: []string{fakeAlphaFeature, fakeBetaFeature, fakeGaFeature},
-			version:  meta.VersionAlpha,
-		},
-		{
-			desc:     "Unknown features",
-			features: []string{"unknownfeature"},
-			version:  meta.VersionGA,
+			desc:     "Differing versions",
+			features: []string{fakeGaFeature, fakeAlphaFeatureUrlMapOnly},
+			versionMap: map[LBResource]meta.Version{
+				UrlMap:           meta.VersionAlpha,
+				ForwardingRule:   meta.VersionGA,
+				TargetHttpProxy:  meta.VersionGA,
+				TargetHttpsProxy: meta.VersionGA,
+				SslCertificate:   meta.VersionGA,
+				BackendService:   meta.VersionGA,
+			},
 		},
 	}
 
 	// Override features with fakes
-	scopeToFeatures = fakeScopeToFeatures
+	resourceToVersionMap = fakeResourceToVersionMap
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := versionFromFeatures(tc.features)
 
-			if result != tc.version {
-				t.Fatalf("want scope %s, got %s", tc.version, result)
+			for resource, expectedVersion := range tc.versionMap {
+				result := versionFromFeatures(tc.features, resource)
+				if result != expectedVersion {
+					t.Fatalf("want %s, got %s", expectedVersion, result)
+				}
 			}
 		})
 	}

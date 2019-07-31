@@ -63,8 +63,8 @@ func NewFirewallPool(cloud Firewall, namer *utils.Namer, l7SrcRanges []string, n
 	}
 }
 
-// Sync syncs firewall rules with the cloud.
-func (fr *FirewallRules) Sync(nodeNames []string, additionalPorts ...string) error {
+// Sync firewall rules with the cloud.
+func (fr *FirewallRules) Sync(nodeNames, additionalPorts, additionalRanges []string) error {
 	klog.V(4).Infof("Sync(%v)", nodeNames)
 	name := fr.namer.FirewallRule()
 	existingFirewall, _ := fr.cloud.GetFirewall(name)
@@ -78,6 +78,7 @@ func (fr *FirewallRules) Sync(nodeNames []string, additionalPorts ...string) err
 	sort.Strings(targetTags)
 
 	ports := sets.NewString(additionalPorts...)
+	fr.srcRanges = append(fr.srcRanges, additionalRanges...)
 	ports.Insert(fr.portRanges...)
 	expectedFirewall := &compute.Firewall{
 		Name:         name,

@@ -268,10 +268,21 @@ func IGLinks(igs []*compute.InstanceGroup) (igLinks []string) {
 // controller.
 func IsGCEIngress(ing *v1beta1.Ingress) bool {
 	class := annotations.FromIngress(ing).IngressClass()
-	if flags.F.IngressClass == "" {
-		return class == "" || class == annotations.GceIngressClass
+	if flags.F.IngressClass != "" && class == flags.F.IngressClass {
+		return true
 	}
-	return class == flags.F.IngressClass
+
+	switch class {
+	case "":
+		return true
+	case annotations.GceIngressClass:
+		return true
+	case annotations.GceL7ILBIngressClass:
+		// TODO: (shance) remove flag check for L7-ILB once fully rolled out
+		return flags.F.EnableL7Ilb
+	default:
+		return false
+	}
 }
 
 // IsGCEMultiClusterIngress returns true if the given Ingress has
@@ -279,6 +290,13 @@ func IsGCEIngress(ing *v1beta1.Ingress) bool {
 func IsGCEMultiClusterIngress(ing *v1beta1.Ingress) bool {
 	class := annotations.FromIngress(ing).IngressClass()
 	return class == annotations.GceMultiIngressClass
+}
+
+// IsGCEL7ILBIngress returns true if the given Ingress has
+// ingress.class annotation set to "gce-l7-ilb"
+func IsGCEL7ILBIngress(ing *v1beta1.Ingress) bool {
+	class := annotations.FromIngress(ing).IngressClass()
+	return class == annotations.GceL7ILBIngressClass
 }
 
 // IsGLBCIngress returns true if the given Ingress should be processed by GLBC

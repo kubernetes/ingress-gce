@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -60,8 +61,8 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 		cloud:       l.cloud,
 		namer:       l.namer,
 		recorder:    l.recorderProducer.Recorder(ri.Ingress.Namespace),
-		version:     features.VersionFromIngress(ri.Ingress),
 		scope:       features.ScopeFromIngress(ri.Ingress),
+		ingress:     *ri.Ingress,
 	}
 
 	if err := lb.edgeHop(); err != nil {
@@ -78,7 +79,6 @@ func (l *L7s) Delete(name string, version meta.Version, scope meta.KeyType) erro
 		cloud:       l.cloud,
 		namer:       l.namer,
 		scope:       scope,
-		version:     version,
 	}
 
 	klog.V(3).Infof("Deleting lb %v", lb.Name)
@@ -94,7 +94,13 @@ func (l *L7s) List() ([]string, []meta.KeyType, error) {
 	var names []string
 	var scopes []meta.KeyType
 
-	urlMaps, err := composite.ListAllUrlMaps(l.cloud)
+	var urlMaps []*composite.UrlMap
+	var err error
+	if flags.F.EnableL7Ilb {
+		urlMaps, err = composite.ListAllUrlMaps(l.cloud)
+	} else {
+		urlMaps, err = composite.ListUrlMaps(l.cloud, meta.GlobalKey(""), meta.VersionGA)
+	}
 	if err != nil {
 		return nil, nil, err
 	}

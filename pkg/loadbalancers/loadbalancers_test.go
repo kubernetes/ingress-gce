@@ -20,28 +20,26 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
-	"google.golang.org/api/googleapi"
-	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/kubernetes/pkg/util/slice"
-	"k8s.io/legacy-cloud-providers/gce"
-
 	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-
-	"strconv"
-	"strings"
-
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/kubernetes/pkg/util/slice"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (
@@ -150,6 +148,16 @@ func newFakeLoadBalancerPool(cloud *gce.Cloud, t *testing.T, namer *utils.Namer)
 	return NewLoadBalancerPool(cloud, namer, events.RecorderProducerMock{})
 }
 
+func newILBIngress() *v1beta1.Ingress {
+	return &v1beta1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        ingressName,
+			Namespace:   namespace,
+			Annotations: map[string]string{annotations.IngressClassKey: annotations.GceL7ILBIngressClass},
+		},
+	}
+}
+
 func TestCreateHTTPLoadBalancer(t *testing.T) {
 	// This should NOT create the forwarding rule and target proxy
 	// associated with the HTTPS branch of this loadbalancer.
@@ -169,7 +177,52 @@ func TestCreateHTTPLoadBalancer(t *testing.T) {
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created, err: %v", err)
 	}
-	verifyHTTPForwardingRuleAndProxyLinks(t, j)
+	verifyHTTPForwardingRuleAndProxyLinks(t, j, l7)
+}
+
+func TestCreateHTTPILBLoadBalancer(t *testing.T) {
+	// This should NOT create the forwarding rule and target proxy
+	// associated with the HTTPS branch of this loadbalancer.
+	j := newTestJig(t)
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+	lbInfo := &L7RuntimeInfo{
+		Name:      j.namer.LoadBalancer(ingressName),
+		AllowHTTP: true,
+		UrlMap:    gceUrlMap,
+		Ingress:   newILBIngress(),
+	}
+
+	l7, err := j.pool.Ensure(lbInfo)
+	if err != nil || l7 == nil {
+		t.Fatalf("Expected l7 not created, err: %v", err)
+	}
+	verifyHTTPForwardingRuleAndProxyLinks(t, j, l7)
+}
+
+func TestCreateHTTPSILBLoadBalancer(t *testing.T) {
+	// This should NOT create the forwarding rule and target proxy
+	// associated with the HTTP branch of this loadbalancer.
+	j := newTestJig(t)
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
+	lbInfo := &L7RuntimeInfo{
+		Name:      j.namer.LoadBalancer(ingressName),
+		AllowHTTP: false,
+		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
+		UrlMap:    gceUrlMap,
+		Ingress:   newILBIngress(),
+	}
+
+	l7, err := j.pool.Ensure(lbInfo)
+	if err != nil || l7 == nil {
+		t.Fatalf("Expected l7 not created")
+	}
+	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)
 }
 
 func TestCreateHTTPSLoadBalancer(t *testing.T) {
@@ -192,21 +245,21 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
-	verifyHTTPSForwardingRuleAndProxyLinks(t, j)
+	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)
 }
 
-func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, j *testJig) {
+func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7) {
 	t.Helper()
 	lbName := j.namer.LoadBalancer(ingressName)
 
-	key, err := composite.CreateKey(j.fakeGCE, j.UMName(lbName), defaultScope)
+	key, err := composite.CreateKey(j.fakeGCE, j.UMName(lbName), l7.scope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	um, err := composite.GetUrlMap(j.fakeGCE, key, defaultVersion)
+	um, err := composite.GetUrlMap(j.fakeGCE, key, l7.Version(features.UrlMap))
 
 	key.Name = j.TPName(lbName, true)
-	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, defaultVersion)
+	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, l7.Version(features.TargetHttpsProxy))
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetTargetHTTPSProxy(%q) = _, %v; want nil", j.TPName(lbName, true), err)
 	}
@@ -215,7 +268,7 @@ func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, j *testJig) {
 	}
 
 	key.Name = j.FWName(lbName, true)
-	fws, err := composite.GetForwardingRule(j.fakeGCE, key, defaultVersion)
+	fws, err := composite.GetForwardingRule(j.fakeGCE, key, l7.Version(features.ForwardingRule))
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetGlobalForwardingRule(%q) = _, %v, want nil", j.FWName(lbName, true), err)
 	}
@@ -227,17 +280,17 @@ func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, j *testJig) {
 	}
 }
 
-func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, j *testJig) {
+func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7) {
 	t.Helper()
 	lbName := j.namer.LoadBalancer(ingressName)
 
-	key, err := composite.CreateKey(j.fakeGCE, j.UMName(lbName), defaultScope)
+	key, err := composite.CreateKey(j.fakeGCE, j.UMName(lbName), l7.scope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	um, err := composite.GetUrlMap(j.fakeGCE, key, defaultVersion)
+	um, err := composite.GetUrlMap(j.fakeGCE, key, l7.Version(features.UrlMap))
 	key.Name = j.TPName(lbName, false)
-	tps, err := composite.GetTargetHttpProxy(j.fakeGCE, key, defaultVersion)
+	tps, err := composite.GetTargetHttpProxy(j.fakeGCE, key, l7.Version(features.TargetHttpProxy))
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetTargetHTTPProxy(%q) = _, %v; want nil", j.TPName(lbName, false), err)
 	}
@@ -245,7 +298,7 @@ func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, j *testJig) {
 		t.Fatalf("tp.UrlMap = %q, want %q", tps.UrlMap, um.SelfLink)
 	}
 	key.Name = j.FWName(lbName, false)
-	fws, err := composite.GetForwardingRule(j.fakeGCE, key, defaultVersion)
+	fws, err := composite.GetForwardingRule(j.fakeGCE, key, l7.Version(features.ForwardingRule))
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetGlobalForwardingRule(%q) = _, %v, want nil", j.FWName(lbName, false), err)
 	}
@@ -862,7 +915,7 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
-	verifyHTTPSForwardingRuleAndProxyLinks(t, j)
+	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)
 }
 
 func TestCreateBothLoadBalancers(t *testing.T) {
@@ -890,8 +943,8 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 		t.Fatalf("Expected l7 not created")
 	}
 
-	verifyHTTPSForwardingRuleAndProxyLinks(t, j)
-	verifyHTTPForwardingRuleAndProxyLinks(t, j)
+	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)
+	verifyHTTPForwardingRuleAndProxyLinks(t, j, l7)
 
 	// We know the forwarding rules exist, retrieve their addresses.
 	lbName := j.namer.LoadBalancer(ingressName)
@@ -1057,8 +1110,8 @@ func TestClusterNameChange(t *testing.T) {
 	if err != nil || l7 == nil {
 		t.Fatalf("Expected l7 not created")
 	}
-	verifyHTTPSForwardingRuleAndProxyLinks(t, j)
-	verifyHTTPForwardingRuleAndProxyLinks(t, j)
+	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)
+	verifyHTTPForwardingRuleAndProxyLinks(t, j, l7)
 
 	newName := "newName"
 	j.namer.SetUID(newName)
@@ -1069,8 +1122,8 @@ func TestClusterNameChange(t *testing.T) {
 	if err != nil || j.namer.ParseName(l7.Name).ClusterName != newName {
 		t.Fatalf("Expected L7 name to change.")
 	}
-	verifyHTTPSForwardingRuleAndProxyLinks(t, j)
-	verifyHTTPForwardingRuleAndProxyLinks(t, j)
+	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)
+	verifyHTTPForwardingRuleAndProxyLinks(t, j, l7)
 }
 
 func TestInvalidClusterNameChange(t *testing.T) {

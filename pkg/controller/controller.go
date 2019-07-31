@@ -308,6 +308,12 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 	}
 	ingSvcPorts := syncState.urlMap.AllServicePorts()
 
+	if utils.IsGCEL7ILBIngress(syncState.ing) {
+		if err := UpdateServicePortsForILB(ingSvcPorts, syncState.ing); err != nil {
+			return err
+		}
+	}
+
 	// Create instance groups and set named ports.
 	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(lbc.ctx.ClusterNamer.InstanceGroup(), nodePorts(ingSvcPorts))
 	if err != nil {
@@ -639,7 +645,11 @@ func (lbc *LoadBalancerController) ToSvcPorts(ings []*v1beta1.Ingress) []utils.S
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings {
 		urlMap, _ := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
-		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
+		svcPorts := urlMap.AllServicePorts()
+		if utils.IsGCEL7ILBIngress(ing) {
+			UpdateServicePortsForILB(svcPorts, ing)
+		}
+		knownPorts = append(knownPorts, svcPorts...)
 	}
 	return knownPorts
 }

@@ -1,12 +1,9 @@
 /*
 Copyright 2015 The Kubernetes Authors.
-
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
-
     http://www.apache.org/licenses/LICENSE-2.0
-
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -19,14 +16,16 @@ package healthchecks
 import (
 	"encoding/json"
 	"fmt"
+	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
+	"k8s.io/legacy-cloud-providers/gce"
 	"net/http"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
-	compute "google.golang.org/api/compute/v1"
-
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -92,12 +91,14 @@ func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, default
 // New returns a *HealthCheck with default settings and specified port/protocol
 func (h *HealthChecks) New(sp utils.ServicePort) *HealthCheck {
 	var hc *HealthCheck
-	if sp.NEGEnabled {
+	if sp.NEGEnabled && !sp.L7ILBEnabled {
 		hc = DefaultNEGHealthCheck(sp.Protocol)
+	} else if sp.L7ILBEnabled {
+		hc = defaultILBHealthCheck(sp.Protocol)
 	} else {
 		hc = DefaultHealthCheck(sp.NodePort, sp.Protocol)
 	}
-	// port is the key for retriving existing health-check
+	// port is the key for retrieving existing health-check
 	// TODO: rename backend-service and health-check to not use port as key
 	hc.Name = sp.BackendName(h.namer)
 	hc.Port = sp.NodePort
@@ -108,7 +109,15 @@ func (h *HealthChecks) New(sp utils.ServicePort) *HealthCheck {
 // Sync retrieves a health check based on port, checks type and settings and updates/creates if necessary.
 // Sync is only called by the backends.Add func - it's not a pool like other resources.
 func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
-	existingHC, err := h.Get(hc.Name, hc.Version())
+	var scope meta.KeyType
+	// TODO(shance): find a way to remove this
+	if hc.forILB {
+		scope = meta.Regional
+	} else {
+		scope = meta.Global
+	}
+
+	existingHC, err := h.Get(hc.Name, hc.Version(), scope)
 	if err != nil {
 		if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			return "", err
@@ -118,7 +127,7 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 			return "", err
 		}
 
-		return h.getHealthCheckLink(hc.Name, hc.Version())
+		return h.getHealthCheckLink(hc.Name, hc.Version(), scope)
 	}
 
 	if needToUpdate(existingHC, hc) {
@@ -138,7 +147,39 @@ func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
 	return existingHC.SelfLink, nil
 }
 
+// TODO(shance): merge with existing hc code
+func (h *HealthChecks) createILB(hc *HealthCheck) error {
+	cloud := h.cloud.(*gce.Cloud)
+
+	if len(hc.PortSpecification) > 0 {
+		hc.Port = 0
+	}
+	hc.merge()
+	compositeType, err := composite.ToHealthCheck(hc)
+	if err != nil {
+		return fmt.Errorf("Error converting hc to composite: %v", err)
+	}
+	key, err := composite.CreateKey(cloud, hc.Name, features.L7ILBScope())
+	if err != nil {
+		return err
+	}
+
+	compositeType.Version = features.L7ILBVersion(features.HealthCheck)
+	compositeType.Region = key.Region
+	err = composite.CreateHealthCheck(cloud, key, compositeType)
+	if err != nil {
+		return fmt.Errorf("Error creating health check %v: %v", compositeType, err)
+	}
+
+	return nil
+}
+
 func (h *HealthChecks) create(hc *HealthCheck) error {
+	// special case ILB to avoid mucking with stable HC code
+	if hc.forILB {
+		return h.createILB(hc)
+	}
+
 	switch hc.Version() {
 	case meta.VersionAlpha:
 		klog.V(2).Infof("Creating alpha health check with protocol %v", hc.Type)
@@ -162,7 +203,32 @@ func (h *HealthChecks) create(hc *HealthCheck) error {
 	}
 }
 
+// TODO(shance): merge with existing hc code
+func (h *HealthChecks) updateILB(oldHC, newHC *HealthCheck) error {
+	// special case ILB to avoid mucking with stable HC code
+	cloud := h.cloud.(*gce.Cloud)
+
+	compositeType, err := composite.ToHealthCheck(newHC)
+	if err != nil {
+		return fmt.Errorf("Error converting newHC to composite: %v", err)
+	}
+	key, err := composite.CreateKey(cloud, newHC.Name, features.L7ILBScope())
+
+	// Update fields
+	compositeType.Version = features.L7ILBVersion(features.HealthCheck)
+	compositeType.Region = key.Region
+	compositeType.HttpHealthCheck.Port = 0
+	compositeType.HttpHealthCheck.PortSpecification = oldHC.HttpHealthCheck.PortSpecification
+
+	return composite.UpdateHealthCheck(cloud, key, compositeType)
+}
+
 func (h *HealthChecks) update(oldHC, newHC *HealthCheck) error {
+	// special case ILB to avoid mucking with stable HC code
+	if oldHC.forILB {
+		return h.updateILB(oldHC, newHC)
+	}
+
 	switch newHC.Version() {
 	case meta.VersionAlpha:
 		klog.V(2).Infof("Updating alpha health check with protocol %v", newHC.Type)
@@ -206,8 +272,8 @@ func mergeHealthcheck(oldHC, newHC *HealthCheck) *HealthCheck {
 	return newHC
 }
 
-func (h *HealthChecks) getHealthCheckLink(name string, version meta.Version) (string, error) {
-	hc, err := h.Get(name, version)
+func (h *HealthChecks) getHealthCheckLink(name string, version meta.Version, scope meta.KeyType) (string, error) {
+	hc, err := h.Get(name, version, scope)
 	if err != nil {
 		return "", err
 	}
@@ -215,13 +281,51 @@ func (h *HealthChecks) getHealthCheckLink(name string, version meta.Version) (st
 }
 
 // Delete deletes the health check by port.
-func (h *HealthChecks) Delete(name string) error {
+func (h *HealthChecks) Delete(name string, scope meta.KeyType) error {
+	if scope == meta.Regional {
+		cloud := h.cloud.(*gce.Cloud)
+		key, err := composite.CreateKey(cloud, name, meta.Regional)
+		if err != nil {
+			return err
+		}
+		// L7-ILB is the only use of regional right now
+		return composite.DeleteHealthCheck(cloud, key, features.L7ILBVersion(features.HealthCheck))
+	}
+
 	klog.V(2).Infof("Deleting health check %v", name)
+	// Not using composite here since the tests still rely on the fake health check interface
 	return h.cloud.DeleteHealthCheck(name)
 }
 
+// TODO(shance): merge with existing hc code
+func (h *HealthChecks) getILB(name string) (*HealthCheck, error) {
+	klog.V(3).Infof("Getting ILB Health Check, name: %s", name)
+	cloud := h.cloud.(*gce.Cloud)
+	key, err := composite.CreateKey(cloud, name, meta.Regional)
+	if err != nil {
+		return nil, err
+	}
+	// L7-ILB is the only use of regional right now
+	hc, err := composite.GetHealthCheck(cloud, key, features.L7ILBVersion(features.HealthCheck))
+	if err != nil {
+		return nil, err
+	}
+	alphaHC, err := hc.ToAlpha()
+	if err != nil {
+		return nil, err
+	}
+	return NewHealthCheck(alphaHC)
+}
+
 // Get returns the health check by port
-func (h *HealthChecks) Get(name string, version meta.Version) (*HealthCheck, error) {
+func (h *HealthChecks) Get(name string, version meta.Version, scope meta.KeyType) (*HealthCheck, error) {
+	klog.V(3).Infof("Getting Health Check, name: %s, version: %v, scope: %v", name, version, scope)
+
+	// L7-ILB is the only use of regional right now
+	if scope == meta.Regional {
+		return h.getILB(name)
+	}
+
 	var hc *computealpha.HealthCheck
 	var err error
 	switch version {
@@ -253,6 +357,7 @@ func (h *HealthChecks) Get(name string, version meta.Version) (*HealthCheck, err
 
 // DefaultHealthCheck simply returns the default health check.
 func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthCheck {
+	klog.V(3).Infof("DefaultHealthCheck(%v, %v)", port, protocol)
 	httpSettings := computealpha.HTTPHealthCheck{Port: port}
 
 	hcSettings := computealpha.HealthCheck{
@@ -278,6 +383,7 @@ func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthChe
 // DefaultHealthCheck simply returns the default health check.
 func DefaultNEGHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 	httpSettings := computealpha.HTTPHealthCheck{PortSpecification: UseServingPortSpecification}
+	klog.V(3).Infof("DefaultNEGHealthCheck(%v)", protocol)
 
 	hcSettings := computealpha.HealthCheck{
 		// How often to health check.
@@ -299,6 +405,31 @@ func DefaultNEGHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 	}
 }
 
+func defaultILBHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
+	httpSettings := computealpha.HTTPHealthCheck{PortSpecification: UseServingPortSpecification}
+	klog.V(3).Infof("DefaultILBHealthCheck(%v)", protocol)
+
+	hcSettings := computealpha.HealthCheck{
+		// How often to health check.
+		CheckIntervalSec: int64(DefaultNEGHealthCheckInterval.Seconds()),
+		// How long to wait before claiming failure of a health check.
+		TimeoutSec: int64(DefaultNEGTimeout.Seconds()),
+		// Number of healthchecks to pass for a vm to be deemed healthy.
+		HealthyThreshold: DefaultHealthyThreshold,
+		// Number of healthchecks to fail before the vm is deemed unhealthy.
+		UnhealthyThreshold: DefaultNEGUnhealthyThreshold,
+		Description:        "Default kubernetes L7 Loadbalancing health check for ILB.",
+		Type:               string(protocol),
+	}
+
+	return &HealthCheck{
+		HTTPHealthCheck: httpSettings,
+		HealthCheck:     hcSettings,
+		forILB:          true,
+		ForNEG:          true,
+	}
+}
+
 // HealthCheck embeds two types - the generic healthcheck compute.HealthCheck
 // and the HTTP settings compute.HTTPHealthCheck. By embedding both, consumers can modify
 // all relevant settings (HTTP specific and HealthCheck generic) regardless of Type
@@ -307,7 +438,11 @@ func DefaultNEGHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 type HealthCheck struct {
 	computealpha.HTTPHealthCheck
 	computealpha.HealthCheck
+	//compositeHealthCheck composite.HealthCheck
 	ForNEG bool
+	// forILB designates whether the health check is for an ILB
+	// This means that the HC should be alpha + regional
+	forILB bool
 }
 
 // NewHealthCheck creates a HealthCheck which abstracts nested structs away
@@ -315,6 +450,7 @@ func NewHealthCheck(hc *computealpha.HealthCheck) (*HealthCheck, error) {
 	if hc == nil {
 		return nil, nil
 	}
+
 	v := &HealthCheck{HealthCheck: *hc}
 	var err error
 	switch annotations.AppProtocol(hc.Type) {
@@ -404,6 +540,9 @@ func (hc *HealthCheck) isHttp2() bool {
 // Version returns the appropriate API version to handle the health check
 // Use Beta API for NEG as PORT_SPECIFICATION is required, and HTTP2
 func (hc *HealthCheck) Version() meta.Version {
+	if hc.forILB {
+		return features.L7ILBVersion(features.HealthCheck)
+	}
 	if hc.isHttp2() || hc.ForNEG {
 		return meta.VersionBeta
 	}

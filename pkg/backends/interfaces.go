@@ -43,7 +43,7 @@ type Pool interface {
 	// Delete a BackendService given its name.
 	Delete(name string, version meta.Version, scope meta.KeyType) error
 	// Get the health of a BackendService given its name.
-	Health(name string, version meta.Version, scope meta.KeyType) string
+	Health(name string, version meta.Version, scope meta.KeyType) (string, error)
 	// Get a list of BackendService names that are managed by this pool.
 	List() ([]*composite.BackendService, error)
 }
@@ -58,7 +58,7 @@ type Syncer interface {
 	// GC garbage collects unused BackendService's
 	GC(svcPorts []utils.ServicePort) error
 	// Status returns the status of a BackendService given its name.
-	Status(name string, version meta.Version, scope meta.KeyType) string
+	Status(name string, version meta.Version, scope meta.KeyType) (string, error)
 	// Shutdown cleans up all BackendService's previously synced.
 	Shutdown() error
 }

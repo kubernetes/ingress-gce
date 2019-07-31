@@ -65,6 +65,7 @@ func (s *backendSyncer) Sync(svcPorts []utils.ServicePort) error {
 		}
 	}
 	return nil
+
 }
 
 // ensureBackendService will update or create a BackendService for the given port.
@@ -81,7 +82,6 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	if be != nil {
 		// If the backend already exists, find out if it is using a legacy health check.
 		existingHCLink := getHealthCheckLink(be)
-		klog.V(3).Infof("Got exisiting HCLink: %v", existingHCLink)
 		if strings.Contains(existingHCLink, "/httpHealthChecks/") {
 			hasLegacyHC = true
 		}
@@ -175,7 +175,7 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
 			return err
 		}
 
-		if err := s.healthChecker.Delete(name); err != nil {
+		if err := s.healthChecker.Delete(name, scope); err != nil {
 			return err
 		}
 	}
@@ -199,7 +199,7 @@ func knownPortsFromServicePorts(cloud *gce.Cloud, namer *utils.Namer, svcPorts [
 }
 
 // Status implements Syncer.
-func (s *backendSyncer) Status(name string, version meta.Version, scope meta.KeyType) string {
+func (s *backendSyncer) Status(name string, version meta.Version, scope meta.KeyType) (string, error) {
 	return s.backendPool.Health(name, version, scope)
 }
 
@@ -219,7 +219,7 @@ func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort, hasLegacyHC bool
 	if s.prober != nil {
 		probe, err := s.prober.GetProbe(sp)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("Error getting prober: %v", err)
 		}
 		if probe != nil {
 			klog.V(4).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
