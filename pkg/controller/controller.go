@@ -119,8 +119,8 @@ func NewLoadBalancerController(
 		nodes:         NewNodeController(ctx, instancePool),
 		instancePool:  instancePool,
 		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx),
-		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.ClusterNamer),
-		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.ClusterNamer),
+		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.ClusterNamer, ctx.Cloud),
+		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.ClusterNamer, ctx.Cloud),
 		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool, ctx.ClusterNamer),
 	}
 	lbc.ingSyncer = ingsync.NewIngressSyncer(&lbc)

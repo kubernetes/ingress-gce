@@ -35,7 +35,7 @@ func newTestNEGLinker(fakeNEG negtypes.NetworkEndpointGroupCloud, fakeGCE *gce.C
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.UpdateHook = mock.UpdateBetaBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = mock.UpdateBackendServiceHook
 
-	return &negLinker{fakeBackendPool, fakeNEG, defaultNamer}
+	return &negLinker{fakeBackendPool, fakeNEG, defaultNamer, fakeGCE}
 }
 
 func TestLinkBackendServiceToNEG(t *testing.T) {
