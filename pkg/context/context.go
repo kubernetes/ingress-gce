@@ -19,7 +19,7 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	informerv1 "k8s.io/client-go/informers/core/v1"
-	informerv1beta1 "k8s.io/client-go/informers/extensions/v1beta1"
+	informerv1beta1 "k8s.io/client-go/informers/networking/v1beta1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
