@@ -24,8 +24,6 @@ import (
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/fuzz"
-	"sort"
-	"testing"
 )
 
 // Sandbox represents a sandbox for running tests in a Kubernetes cluster.
@@ -94,41 +92,4 @@ func (s *Sandbox) MasterUpgraded() bool {
 // successfully finished upgrading or not
 func (s *Sandbox) MasterUpgrading() bool {
 	return s.f.statusManager.masterUpgrading()
-}
-
-// DumpSandboxInfo dumps information about the sandbox into logs
-func (s *Sandbox) DumpSandboxInfo(t *testing.T) {
-	s.dumpSandboxEvents(t)
-}
-
-// dumpSandboxEvents dumps the events happened in the sandbox namespace into logs
-func (s *Sandbox) dumpSandboxEvents(t *testing.T) {
-	t.Logf("Collecting events from namespace %q.", s.Namespace)
-	events, err := s.f.Clientset.CoreV1().Events(s.Namespace).List(metav1.ListOptions{})
-	if err != nil {
-		t.Logf("Failed to list events in namespace %q", s.Namespace)
-		return
-	}
-	t.Logf("Found %d events.", len(events.Items))
-	// Sort events by their first timestamp
-	sortedEvents := events.Items
-	if len(sortedEvents) > 1 {
-		sort.Sort(byFirstTimestamp(sortedEvents))
-	}
-	for _, e := range sortedEvents {
-		t.Logf("At %v - event for %v/%v: %v %v: %v", e.FirstTimestamp, e.Namespace, e.InvolvedObject.Name, e.Source, e.Reason, e.Message)
-	}
-}
-
-// byFirstTimestamp sorts a slice of events by first timestamp, using their involvedObject's name as a tie breaker.
-type byFirstTimestamp []v1.Event
-
-func (o byFirstTimestamp) Len() int      { return len(o) }
-func (o byFirstTimestamp) Swap(i, j int) { o[i], o[j] = o[j], o[i] }
-
-func (o byFirstTimestamp) Less(i, j int) bool {
-	if o[i].FirstTimestamp.Equal(&o[j].FirstTimestamp) {
-		return o[i].InvolvedObject.Name < o[j].InvolvedObject.Name
-	}
-	return o[i].FirstTimestamp.Before(&o[j].FirstTimestamp)
 }

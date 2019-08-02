@@ -206,7 +206,6 @@ func (f *Framework) RunWithSandbox(name string, t *testing.T, testFunc func(*tes
 			defer sandbox.Destroy()
 		}
 
-		defer sandbox.DumpSandboxInfo(t)
 		testFunc(t, sandbox)
 	})
 }

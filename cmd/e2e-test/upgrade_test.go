@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	"github.com/kr/pretty"
-	"k8s.io/api/networking/v1beta1"
+	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -59,7 +59,7 @@ func TestUpgrade(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(tc.ing); err != nil {
+			if _, err := Framework.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
@@ -85,7 +85,7 @@ func TestUpgrade(t *testing.T) {
 						AddPath("bar.com", "/", "service-1", port80).
 						Build()
 
-					if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Update(newIng); err != nil {
+					if _, err := Framework.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Update(newIng); err != nil {
 						t.Fatalf("error creating Ingress spec: %v", err)
 					} else {
 						// If Ingress upgrade succeeds, we update the status on this Ingress

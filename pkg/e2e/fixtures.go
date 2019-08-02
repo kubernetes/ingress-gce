@@ -25,9 +25,8 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	compute "google.golang.org/api/compute/v1"
-	apps "k8s.io/api/apps/v1"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	"k8s.io/api/core/v1"
+	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/klog"
@@ -89,18 +88,30 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 		},
 	}
 
-	deployment := &apps.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec: apps.DeploymentSpec{
+	deployment := &v1beta1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: v1beta1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
 			Template: podTemplate,
+		},
+	}
+
+	scale := &v1beta1.Scale{
+		Spec: v1beta1.ScaleSpec{
+			Replicas: numReplicas,
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: s.Namespace,
 		},
 	}
 
 	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(name, metav1.GetOptions{})
 
 	if svc == nil || err != nil {
-		if deployment, err = s.f.Clientset.AppsV1().Deployments(s.Namespace).Create(deployment); err != nil {
+		if deployment, err = s.f.Clientset.ExtensionsV1beta1().Deployments(s.Namespace).Create(deployment); err != nil {
 			return nil, err
 		}
 		if svc, err = s.f.Clientset.CoreV1().Services(s.Namespace).Create(expectedSvc); err != nil {
@@ -109,8 +120,7 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 		return svc, err
 	}
 
-	*deployment.Spec.Replicas = numReplicas
-	if _, err = s.f.Clientset.AppsV1().Deployments(s.Namespace).Update(deployment); err != nil {
+	if _, err = s.f.Clientset.ExtensionsV1beta1().Deployments(s.Namespace).UpdateScale(name, scale); err != nil {
 		return nil, fmt.Errorf("Error updating deployment scale: %v", err)
 	}
 
@@ -157,15 +167,15 @@ func DeleteSecret(s *Sandbox, name string) error {
 
 // EnsureIngress creates a new Ingress or updates an existing one.
 func EnsureIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
-	currentIng, err := s.f.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Get(ing.ObjectMeta.Name, metav1.GetOptions{})
+	currentIng, err := s.f.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Get(ing.ObjectMeta.Name, metav1.GetOptions{})
 
 	if currentIng == nil || err != nil {
-		return s.f.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(ing)
+		return s.f.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Create(ing)
 	}
 
 	// Update ingress spec if they are not equal
 	if !reflect.DeepEqual(ing.Spec, currentIng.Spec) {
-		return s.f.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Update(ing)
+		return s.f.Clientset.ExtensionsV1beta1().Ingresses(s.Namespace).Update(ing)
 	}
 
 	return currentIng, nil
