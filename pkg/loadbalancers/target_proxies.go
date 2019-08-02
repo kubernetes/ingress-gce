@@ -19,7 +19,6 @@ package loadbalancers
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
@@ -42,7 +41,7 @@ func (l *L7) checkProxy() (err error) {
 	if err != nil {
 		return err
 	}
-	version := l.Version(features.TargetHttpProxy)
+	version := l.Versions().TargetHttpProxy
 	proxy, _ := composite.GetTargetHttpProxy(l.cloud, key, version)
 	if proxy == nil {
 		klog.V(3).Infof("Creating new http proxy for urlmap %v", l.um.Name)
@@ -106,7 +105,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 	if err != nil {
 		return err
 	}
-	version := l.Version(features.TargetHttpProxy)
+	version := l.Versions().TargetHttpProxy
 	proxy, _ := composite.GetTargetHttpsProxy(l.cloud, key, version)
 	description, err := l.description()
 	if err != nil {
@@ -183,7 +182,7 @@ func (l *L7) getSslCertLinkInUse() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	proxy, err := composite.GetTargetHttpsProxy(l.cloud, key, l.Version(features.TargetHttpsProxy))
+	proxy, err := composite.GetTargetHttpsProxy(l.cloud, key, l.Versions().TargetHttpsProxy)
 	if err != nil {
 		return nil, err
 	}

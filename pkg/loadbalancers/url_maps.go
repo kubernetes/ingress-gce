@@ -20,12 +20,10 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/loadbalancers/features"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
@@ -52,7 +50,7 @@ func (l *L7) ensureComputeURLMap() error {
 	expectedMap := toCompositeURLMap(l.Name, l.runtimeInfo.UrlMap, l.namer, key)
 	key.Name = expectedMap.Name
 
-	expectedMap.Version = l.Version(features.UrlMap)
+	expectedMap.Version = l.Versions().UrlMap
 	currentMap, err := composite.GetUrlMap(l.cloud, key, expectedMap.Version)
 	if utils.IgnoreHTTPNotFound(err) != nil {
 		return err

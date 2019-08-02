@@ -125,9 +125,9 @@ type L7 struct {
 	scope meta.KeyType
 }
 
-// Version() returns the required meta.Version for a specific resource
-func (l *L7) Version(resource features.LBResource) meta.Version {
-	return features.VersionFromIngressForResource(&l.ingress, resource)
+// Version() returns the struct listing the versions for every resource
+func (l *L7) Versions() *features.ResourceVersions {
+	return features.VersionsFromIngress(&l.ingress)
 }
 
 // CreateKey creates a meta.Key for use with composite types
@@ -226,13 +226,14 @@ func (l *L7) GetIP() string {
 func (l *L7) Cleanup() error {
 	var key *meta.Key
 	var err error
+	versions := l.Versions()
 
 	fwName := l.namer.ForwardingRule(l.Name, utils.HTTPProtocol)
 	klog.V(2).Infof("Deleting global forwarding rule %v", fwName)
 	if key, err = l.CreateKey(fwName); err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, l.Version(features.ForwardingRule))); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, versions.ForwardingRule)); err != nil {
 		return err
 	}
 
@@ -241,7 +242,7 @@ func (l *L7) Cleanup() error {
 	if key, err = l.CreateKey(fwsName); err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, l.Version(features.ForwardingRule))); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, versions.ForwardingRule)); err != nil {
 		return err
 	}
 
@@ -258,7 +259,7 @@ func (l *L7) Cleanup() error {
 	if key, err = l.CreateKey(tpName); err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpProxy(l.cloud, key, l.Version(features.TargetHttpProxy))); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpProxy(l.cloud, key, versions.TargetHttpProxy)); err != nil {
 		return err
 	}
 
@@ -267,7 +268,7 @@ func (l *L7) Cleanup() error {
 	if key, err = l.CreateKey(tpsName); err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpsProxy(l.cloud, key, l.Version(features.TargetHttpsProxy))); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpsProxy(l.cloud, key, versions.TargetHttpsProxy)); err != nil {
 		return err
 	}
 
@@ -284,7 +285,7 @@ func (l *L7) Cleanup() error {
 			if key, err = l.CreateKey(cert.Name); err != nil {
 				return err
 			}
-			if err := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l.cloud, key, l.Version(features.SslCertificate))); err != nil {
+			if err := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l.cloud, key, versions.SslCertificate)); err != nil {
 				klog.Errorf("Old cert delete failed - %v", err)
 				certErr = err
 			}
@@ -300,7 +301,7 @@ func (l *L7) Cleanup() error {
 	if key, err = l.CreateKey(umName); err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l.cloud, key, l.Version(features.UrlMap))); err != nil {
+	if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l.cloud, key, versions.UrlMap)); err != nil {
 		return err
 	}
 
@@ -318,7 +319,7 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendSyncer backends
 	}
 	backendState := map[string]string{}
 	for _, beName := range backends {
-		version := l7.Version(features.BackendService)
+		version := l7.Versions().BackendService
 		state, err := backendSyncer.Status(beName, version, l7.scope)
 		// Don't return error here since we want to keep syncing
 		if err != nil {

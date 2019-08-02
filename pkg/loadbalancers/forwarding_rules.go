@@ -19,8 +19,6 @@ package loadbalancers
 import (
 	"fmt"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/loadbalancers/features"
-
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
@@ -64,7 +62,7 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 	if err != nil {
 		return nil, err
 	}
-	version := l.Version(features.ForwardingRule)
+	version := l.Versions().ForwardingRule
 	fw, _ = composite.GetForwardingRule(l.cloud, key, version)
 	if fw != nil && (ip != "" && fw.IPAddress != ip || fw.PortRange != portRange) {
 		klog.Warningf("Recreating forwarding rule %v(%v), so it has %v(%v)",
@@ -80,7 +78,6 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 		if err != nil {
 			return nil, err
 		}
-		version := l.Version(features.ForwardingRule)
 		rule := &composite.ForwardingRule{
 			Name:        name,
 			IPAddress:   ip,

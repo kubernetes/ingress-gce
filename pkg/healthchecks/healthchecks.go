@@ -164,7 +164,7 @@ func (h *HealthChecks) createILB(hc *HealthCheck) error {
 		return err
 	}
 
-	compositeType.Version = features.L7ILBVersion(features.HealthCheck)
+	compositeType.Version = features.L7ILBVersions().HealthCheck
 	compositeType.Region = key.Region
 	err = composite.CreateHealthCheck(cloud, key, compositeType)
 	if err != nil {
@@ -215,7 +215,7 @@ func (h *HealthChecks) updateILB(oldHC, newHC *HealthCheck) error {
 	key, err := composite.CreateKey(cloud, newHC.Name, features.L7ILBScope())
 
 	// Update fields
-	compositeType.Version = features.L7ILBVersion(features.HealthCheck)
+	compositeType.Version = features.L7ILBVersions().HealthCheck
 	compositeType.Region = key.Region
 	compositeType.HttpHealthCheck.Port = 0
 	compositeType.HttpHealthCheck.PortSpecification = oldHC.HttpHealthCheck.PortSpecification
@@ -289,7 +289,7 @@ func (h *HealthChecks) Delete(name string, scope meta.KeyType) error {
 			return err
 		}
 		// L7-ILB is the only use of regional right now
-		return composite.DeleteHealthCheck(cloud, key, features.L7ILBVersion(features.HealthCheck))
+		return composite.DeleteHealthCheck(cloud, key, features.L7ILBVersions().HealthCheck)
 	}
 
 	klog.V(2).Infof("Deleting health check %v", name)
@@ -306,7 +306,7 @@ func (h *HealthChecks) getILB(name string) (*HealthCheck, error) {
 		return nil, err
 	}
 	// L7-ILB is the only use of regional right now
-	hc, err := composite.GetHealthCheck(cloud, key, features.L7ILBVersion(features.HealthCheck))
+	hc, err := composite.GetHealthCheck(cloud, key, features.L7ILBVersions().HealthCheck)
 	if err != nil {
 		return nil, err
 	}
@@ -541,7 +541,7 @@ func (hc *HealthCheck) isHttp2() bool {
 // Use Beta API for NEG as PORT_SPECIFICATION is required, and HTTP2
 func (hc *HealthCheck) Version() meta.Version {
 	if hc.forILB {
-		return features.L7ILBVersion(features.HealthCheck)
+		return features.L7ILBVersions().HealthCheck
 	}
 	if hc.isHttp2() || hc.ForNEG {
 		return meta.VersionBeta
