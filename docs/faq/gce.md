@@ -32,11 +32,7 @@ Table of Contents
 ## How do I deploy an Ingress controller?
 
 On GCP (either GCE or GKE), every Kubernetes cluster has an Ingress controller
-running on the master, no deployment necessary. You can deploy a second,
-different (i.e non-GCE) controller, like [this](README.md#how-do-i-deploy-an-ingress-controller).
-If you wish to deploy a GCE controller as a pod in your cluster, make sure to
-turn down the existing auto-deployed Ingress controller as shown in this
-[example](/examples/deployment/gce/).
+running on the master, no deployment necessary.
 
 ## I created an Ingress and nothing happens, now what?
 
@@ -136,7 +132,7 @@ altogether. Overloaded endpoints are removed from the working set of a
 Service via readiness probes conducted by the kubelet.
 
 If `/` doesn't work for your application, you can have the Ingress controller
-program the GCE health check to point at a readiness probe as shows in [this](/examples/health-checks/)
+program the GCE health check to point at a readiness probe as shows in [this](https://cloud.google.com/kubernetes-engine/docs/concepts/ingress#health_checks)
 example.
 
 We plan to surface health checks through the API soon.
@@ -158,7 +154,7 @@ are therefore better suited for experimentation.
 
 ## Can I pre-allocate a static-ip?
 
-Yes, please see [this](/examples/static-ip) example.
+Yes, please see [this](https://cloud.google.com/kubernetes-engine/docs/concepts/ingress#static_ip_addresses_for_https_load_balancers) example.
 
 ## Does updating a Kubernetes secret update the GCE TLS certs?
 
@@ -174,7 +170,7 @@ Right now, a kube-proxy NodePort service is a necessary condition for Ingress on
 This is because the cloud LB doesn't understand how to route directly to your
 pods. Incorporating kube-proxy and cloud lb algorithms so they cooperate
 toward a common goal is still a work in progress. If you really want fine
-grained control over the algorithm, you should deploy the [nginx controller](/examples/deployment/nginx).
+grained control over the algorithm, you should deploy the [nginx controller](https://github.com/kubernetes/ingress-nginx).
 
 ## Is there a maximum number of Endpoints I can add to the Ingress?
 
@@ -407,6 +403,5 @@ You can now follow the GCP Console wizard for creating an internal load balancer
 
 ## Can I use websockets?
 Yes!  
-The GCP HTTP(S) Load Balancer supports websockets. You do not need to change your HTTP server or Kubernetes deployment. You will need to manually configure the created Backend Service's `timeout` setting. This value is the interpreted as the max connection duration. The default value of 30 seconds is probably too small for your needs. You can increase it to the supported maximum: 86400 (a day) through the GCP Console or the gcloud CLI.
 
-View the [example](/controllers/gce/examples/websocket/).
+View the [example](https://cloud.google.com/kubernetes-engine/docs/concepts/ingress#support_for_websocket).
