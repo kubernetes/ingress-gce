@@ -392,8 +392,8 @@ while true; do
 done
 
 # Recreates the deployment and service for the default backend.
-# Note: We do sed on a copy so that the original file stays clean for future runs.
-sed "/name: http/a \ \ \ \ nodePort: ${NODE_PORT}" ../resources/default-http-backend.yaml > ../resources/default-http-backend.yaml.gen
+# Note: We do awk on a copy so that the original file stays clean for future runs.
+awk "1;/name: http/{ print \"    nodePort: ${NODE_PORT}\" }" ../resources/default-http-backend.yaml > ../resources/default-http-backend.yaml.gen
 run_maybe_dry_kubectl kubectl create -f ../resources/default-http-backend.yaml.gen
 if [[ $? -eq 1 ]];
 then
