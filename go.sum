@@ -18,6 +18,8 @@ github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190625070306-c3ad81d6
 github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190625070306-c3ad81d637ad/go.mod h1:iroGtC8B3tQiqtds1l+mgk/BBOrxbqjH+eUfFQYRc14=
 github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190711003524-c2d87031f3f3 h1:9Wq5A4GNYAz7hInAbQ9ckceEOh/GOZW7D2lzAeE8gRI=
 github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190711003524-c2d87031f3f3/go.mod h1:iroGtC8B3tQiqtds1l+mgk/BBOrxbqjH+eUfFQYRc14=
+github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190803003326-2de84d8b30ca h1:66hItXPey7U1Pk+Z4bt53HSzYSwNh7z7r8VB0qYz8wE=
+github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190803003326-2de84d8b30ca/go.mod h1:iroGtC8B3tQiqtds1l+mgk/BBOrxbqjH+eUfFQYRc14=
 github.com/JeffAshton/win_pdh v0.0.0-20161109143554-76bb4ee9f0ab/go.mod h1:3VYc5hodBMJ5+l/7J4xAyMeuM2PNuepvHlGs8yilUCA=
 github.com/MakeNowJust/heredoc v0.0.0-20170808103936-bb23615498cd/go.mod h1:64YHyfSL2R96J44Nlwm39UHepQbyR5q10x7iYa1ks2E=
 github.com/Microsoft/go-winio v0.4.11/go.mod h1:VhR8bwka0BXejwEJY73c50VrPtXAaKcyvVC4A4RozmA=

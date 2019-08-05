@@ -1,6 +1,6 @@
 # cloud.google.com/go v0.38.0 => cloud.google.com/go v0.37.4
 cloud.google.com/go/compute/metadata
-# github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190711003524-c2d87031f3f3 => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190711003524-c2d87031f3f3
+# github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190803003326-2de84d8b30ca => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190803003326-2de84d8b30ca
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter
@@ -205,7 +205,6 @@ k8s.io/api/core/v1
 k8s.io/api/networking/v1beta1
 k8s.io/api/apps/v1
 k8s.io/api/coordination/v1
-k8s.io/api/extensions/v1beta1
 k8s.io/api/admissionregistration/v1beta1
 k8s.io/api/apps/v1beta1
 k8s.io/api/apps/v1beta2
@@ -223,6 +222,7 @@ k8s.io/api/batch/v2alpha1
 k8s.io/api/certificates/v1beta1
 k8s.io/api/coordination/v1beta1
 k8s.io/api/events/v1beta1
+k8s.io/api/extensions/v1beta1
 k8s.io/api/networking/v1
 k8s.io/api/node/v1alpha1
 k8s.io/api/node/v1beta1
@@ -305,7 +305,7 @@ k8s.io/client-go/util/flowcontrol
 k8s.io/client-go/discovery/fake
 k8s.io/client-go/testing
 k8s.io/client-go/informers/core/v1
-k8s.io/client-go/informers/extensions/v1beta1
+k8s.io/client-go/informers/networking/v1beta1
 k8s.io/client-go/kubernetes/scheme
 k8s.io/client-go/kubernetes/typed/core/v1
 k8s.io/client-go/listers/core/v1
@@ -363,7 +363,7 @@ k8s.io/client-go/informers
 k8s.io/client-go/tools/pager
 k8s.io/client-go/kubernetes/fake
 k8s.io/client-go/informers/internalinterfaces
-k8s.io/client-go/listers/extensions/v1beta1
+k8s.io/client-go/listers/networking/v1beta1
 k8s.io/client-go/third_party/forked/golang/template
 k8s.io/client-go/pkg/apis/clientauthentication
 k8s.io/client-go/pkg/apis/clientauthentication/v1alpha1
@@ -439,8 +439,8 @@ k8s.io/client-go/informers/certificates/v1beta1
 k8s.io/client-go/informers/coordination/v1
 k8s.io/client-go/informers/coordination/v1beta1
 k8s.io/client-go/informers/events/v1beta1
+k8s.io/client-go/informers/extensions/v1beta1
 k8s.io/client-go/informers/networking/v1
-k8s.io/client-go/informers/networking/v1beta1
 k8s.io/client-go/informers/node/v1alpha1
 k8s.io/client-go/informers/node/v1beta1
 k8s.io/client-go/informers/policy/v1beta1
@@ -469,8 +469,8 @@ k8s.io/client-go/listers/certificates/v1beta1
 k8s.io/client-go/listers/coordination/v1
 k8s.io/client-go/listers/coordination/v1beta1
 k8s.io/client-go/listers/events/v1beta1
+k8s.io/client-go/listers/extensions/v1beta1
 k8s.io/client-go/listers/networking/v1
-k8s.io/client-go/listers/networking/v1beta1
 k8s.io/client-go/listers/node/v1alpha1
 k8s.io/client-go/listers/node/v1beta1
 k8s.io/client-go/listers/policy/v1beta1

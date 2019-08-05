@@ -167,6 +167,18 @@ var AllServices = []*ServiceInfo{
 		},
 	},
 	{
+		Object:      "BackendService",
+		Service:     "RegionBackendServices",
+		Resource:    "backendServices",
+		version:     VersionBeta,
+		keyType:     Regional,
+		serviceType: reflect.TypeOf(&beta.RegionBackendServicesService{}),
+		additionalMethods: []string{
+			"GetHealth",
+			"Update",
+		},
+	},
+	{
 		Object:      "Disk",
 		Service:     "Disks",
 		Resource:    "disks",
@@ -300,6 +312,17 @@ var AllServices = []*ServiceInfo{
 		version:     VersionAlpha,
 		keyType:     Regional,
 		serviceType: reflect.TypeOf(&alpha.RegionHealthChecksService{}),
+		additionalMethods: []string{
+			"Update",
+		},
+	},
+	{
+		Object:      "HealthCheck",
+		Service:     "RegionHealthChecks",
+		Resource:    "healthChecks",
+		version:     VersionBeta,
+		keyType:     Regional,
+		serviceType: reflect.TypeOf(&beta.RegionHealthChecksService{}),
 		additionalMethods: []string{
 			"Update",
 		},
@@ -511,6 +534,14 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&alpha.RegionSslCertificatesService{}),
 	},
 	{
+		Object:      "SslCertificate",
+		Service:     "RegionSslCertificates",
+		Resource:    "sslCertificates",
+		version:     VersionBeta,
+		keyType:     Regional,
+		serviceType: reflect.TypeOf(&beta.RegionSslCertificatesService{}),
+	},
+	{
 		Object:      "Subnetwork",
 		Service:     "Subnetworks",
 		Resource:    "subnetworks",
@@ -578,6 +609,17 @@ var AllServices = []*ServiceInfo{
 		},
 	},
 	{
+		Object:      "TargetHttpProxy",
+		Service:     "RegionTargetHttpProxies",
+		Resource:    "targetHttpProxies",
+		version:     VersionBeta,
+		keyType:     Regional,
+		serviceType: reflect.TypeOf(&beta.RegionTargetHttpProxiesService{}),
+		additionalMethods: []string{
+			"SetUrlMap",
+		},
+	},
+	{
 		Object:      "TargetHttpsProxy",
 		Service:     "TargetHttpsProxies",
 		Resource:    "targetHttpsProxies",
@@ -619,6 +661,18 @@ var AllServices = []*ServiceInfo{
 		version:     VersionAlpha,
 		keyType:     Regional,
 		serviceType: reflect.TypeOf(&alpha.RegionTargetHttpsProxiesService{}),
+		additionalMethods: []string{
+			"SetSslCertificates",
+			"SetUrlMap",
+		},
+	},
+	{
+		Object:      "TargetHttpsProxy",
+		Service:     "RegionTargetHttpsProxies",
+		Resource:    "targetHttpsProxies",
+		version:     VersionBeta,
+		keyType:     Regional,
+		serviceType: reflect.TypeOf(&beta.RegionTargetHttpsProxiesService{}),
 		additionalMethods: []string{
 			"SetSslCertificates",
 			"SetUrlMap",
@@ -674,6 +728,17 @@ var AllServices = []*ServiceInfo{
 		version:     VersionAlpha,
 		keyType:     Regional,
 		serviceType: reflect.TypeOf(&alpha.RegionUrlMapsService{}),
+		additionalMethods: []string{
+			"Update",
+		},
+	},
+	{
+		Object:      "UrlMap",
+		Service:     "RegionUrlMaps",
+		Resource:    "urlMaps",
+		version:     VersionBeta,
+		keyType:     Regional,
+		serviceType: reflect.TypeOf(&beta.RegionUrlMapsService{}),
 		additionalMethods: []string{
 			"Update",
 		},
