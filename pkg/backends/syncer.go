@@ -35,6 +35,7 @@ type backendSyncer struct {
 	healthChecker healthchecks.HealthChecker
 	prober        ProbeProvider
 	namer         *utils.Namer
+	cloud         *gce.Cloud
 }
 
 // backendSyncer is a Syncer
@@ -43,11 +44,13 @@ var _ Syncer = (*backendSyncer)(nil)
 func NewBackendSyncer(
 	backendPool Pool,
 	healthChecker healthchecks.HealthChecker,
-	namer *utils.Namer) Syncer {
+	namer *utils.Namer,
+	cloud *gce.Cloud) Syncer {
 	return &backendSyncer{
 		backendPool:   backendPool,
 		healthChecker: healthChecker,
 		namer:         namer,
+		cloud:         cloud,
 	}
 }
 
@@ -125,8 +128,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	}
 
 	if sp.BackendConfig != nil {
-		cloud := s.backendPool.(*Backends).cloud
-		if err := features.EnsureSecurityPolicy(cloud, sp, be, beName); err != nil {
+		if err := features.EnsureSecurityPolicy(s.cloud, sp, be, beName); err != nil {
 			return err
 		}
 	}
@@ -136,10 +138,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 
 // GC implements Syncer.
 func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
-	// TODO: (shance) fix the interface so we don't have this cast
-	cloud := s.backendPool.(*Backends).cloud
-
-	knownPorts, err := knownPortsFromServicePorts(cloud, s.namer, svcPorts)
+	knownPorts, err := knownPortsFromServicePorts(s.cloud, s.namer, svcPorts)
 	if err != nil {
 		return err
 	}
@@ -156,7 +155,7 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
 		if err != nil {
 			return err
 		}
-		if key, err = composite.CreateKey(cloud, name, scope); err != nil {
+		if key, err = composite.CreateKey(s.cloud, name, scope); err != nil {
 			return err
 		}
 		if knownPorts.Has(key.String()) {

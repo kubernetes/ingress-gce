@@ -19,6 +19,7 @@ import (
 	befeatures "k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 // negLinker handles linking backends to NEG's.
@@ -26,6 +27,7 @@ type negLinker struct {
 	backendPool Pool
 	negGetter   NEGGetter
 	namer       *utils.Namer
+	cloud       *gce.Cloud
 }
 
 // negLinker is a Linker
@@ -34,11 +36,13 @@ var _ Linker = (*negLinker)(nil)
 func NewNEGLinker(
 	backendPool Pool,
 	negGetter NEGGetter,
-	namer *utils.Namer) Linker {
+	namer *utils.Namer,
+	cloud *gce.Cloud) Linker {
 	return &negLinker{
 		backendPool: backendPool,
 		negGetter:   negGetter,
 		namer:       namer,
+		cloud:       cloud,
 	}
 }
 
@@ -60,17 +64,16 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		negs = append(negs, neg)
 	}
 
-	cloud := l.backendPool.(*Backends).cloud
 	beName := sp.BackendName(l.namer)
 
 	version := befeatures.VersionFromServicePort(&sp)
 	scope := befeatures.ScopeFromServicePort(&sp)
 
-	key, err := composite.CreateKey(cloud, beName, scope)
+	key, err := composite.CreateKey(l.cloud, beName, scope)
 	if err != nil {
 		return err
 	}
-	backendService, err := composite.GetBackendService(cloud, key, version)
+	backendService, err := composite.GetBackendService(l.cloud, key, version)
 	if err != nil {
 		return err
 	}
@@ -90,7 +93,7 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 
 	if !oldBackends.Equal(newBackends) {
 		backendService.Backends = targetBackends
-		return composite.UpdateBackendService(cloud, key, backendService)
+		return composite.UpdateBackendService(l.cloud, key, backendService)
 	}
 	return nil
 }
