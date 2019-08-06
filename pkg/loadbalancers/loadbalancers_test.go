@@ -36,7 +36,6 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/instances"
-	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/util/slice"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -251,15 +250,16 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7) {
 	t.Helper()
 	lbName := j.namer.LoadBalancer(ingressName)
+	versions := l7.Versions()
 
 	key, err := composite.CreateKey(j.fakeGCE, j.UMName(lbName), l7.scope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	um, err := composite.GetUrlMap(j.fakeGCE, key, l7.Version(features.UrlMap))
+	um, err := composite.GetUrlMap(j.fakeGCE, key, versions.UrlMap)
 
 	key.Name = j.TPName(lbName, true)
-	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, l7.Version(features.TargetHttpsProxy))
+	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, versions.TargetHttpsProxy)
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetTargetHTTPSProxy(%q) = _, %v; want nil", j.TPName(lbName, true), err)
 	}
@@ -268,7 +268,7 @@ func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7) {
 	}
 
 	key.Name = j.FWName(lbName, true)
-	fws, err := composite.GetForwardingRule(j.fakeGCE, key, l7.Version(features.ForwardingRule))
+	fws, err := composite.GetForwardingRule(j.fakeGCE, key, versions.ForwardingRule)
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetGlobalForwardingRule(%q) = _, %v, want nil", j.FWName(lbName, true), err)
 	}
@@ -283,14 +283,15 @@ func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7) {
 func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7) {
 	t.Helper()
 	lbName := j.namer.LoadBalancer(ingressName)
+	versions := l7.Versions()
 
 	key, err := composite.CreateKey(j.fakeGCE, j.UMName(lbName), l7.scope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	um, err := composite.GetUrlMap(j.fakeGCE, key, l7.Version(features.UrlMap))
+	um, err := composite.GetUrlMap(j.fakeGCE, key, versions.UrlMap)
 	key.Name = j.TPName(lbName, false)
-	tps, err := composite.GetTargetHttpProxy(j.fakeGCE, key, l7.Version(features.TargetHttpProxy))
+	tps, err := composite.GetTargetHttpProxy(j.fakeGCE, key, versions.TargetHttpProxy)
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetTargetHTTPProxy(%q) = _, %v; want nil", j.TPName(lbName, false), err)
 	}
@@ -298,7 +299,7 @@ func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7) {
 		t.Fatalf("tp.UrlMap = %q, want %q", tps.UrlMap, um.SelfLink)
 	}
 	key.Name = j.FWName(lbName, false)
-	fws, err := composite.GetForwardingRule(j.fakeGCE, key, l7.Version(features.ForwardingRule))
+	fws, err := composite.GetForwardingRule(j.fakeGCE, key, versions.ForwardingRule)
 	if err != nil {
 		t.Fatalf("j.fakeGCE.GetGlobalForwardingRule(%q) = _, %v, want nil", j.FWName(lbName, false), err)
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"reflect"
 	"testing"
 )
 
@@ -36,6 +37,31 @@ const (
 )
 
 var (
+	fakeAlphaFeatureVersions = ResourceVersions{
+		meta.VersionAlpha,
+		meta.VersionAlpha,
+		meta.VersionAlpha,
+		meta.VersionAlpha,
+		meta.VersionAlpha,
+		meta.VersionAlpha,
+		meta.VersionAlpha,
+	}
+
+	fakeBetaFeatureVersions = ResourceVersions{
+		meta.VersionBeta,
+		meta.VersionBeta,
+		meta.VersionBeta,
+		meta.VersionBeta,
+		meta.VersionBeta,
+		meta.VersionBeta,
+		meta.VersionBeta,
+	}
+
+	// Empty fields are considered meta.VersionGA
+	fakeAlphaFeatureUrlMapOnlyVersions = ResourceVersions{
+		UrlMap: meta.VersionAlpha,
+	}
+
 	emptyIng = v1beta1.Ingress{
 		ObjectMeta: v1.ObjectMeta{
 			Annotations: map[string]string{},
@@ -48,21 +74,11 @@ var (
 		meta.Zonal:    {fakeZonalFeature},
 	}
 
-	makeEntry = func(ga, alpha, beta string) map[meta.Version][]string {
-		return map[meta.Version][]string{meta.VersionGA: {ga}, meta.VersionAlpha: {alpha}, meta.VersionBeta: {beta}}
-	}
-
-	fakeResourceToVersionMap = map[LBResource]map[meta.Version][]string{
-		UrlMap: {
-			meta.VersionGA:    {fakeGaFeature},
-			meta.VersionAlpha: {fakeAlphaFeature, fakeAlphaFeatureUrlMapOnly},
-			meta.VersionBeta:  {fakeBetaFeature},
-		},
-		ForwardingRule:   makeEntry(fakeGaFeature, fakeAlphaFeature, fakeBetaFeature),
-		TargetHttpProxy:  makeEntry(fakeGaFeature, fakeAlphaFeature, fakeBetaFeature),
-		TargetHttpsProxy: makeEntry(fakeGaFeature, fakeAlphaFeature, fakeBetaFeature),
-		SslCertificate:   makeEntry(fakeGaFeature, fakeAlphaFeature, fakeBetaFeature),
-		BackendService:   makeEntry(fakeGaFeature, fakeAlphaFeature, fakeBetaFeature),
+	fakeFeatureToVersions = map[string]*ResourceVersions{
+		fakeGaFeature:              NewResourceVersions(),
+		fakeAlphaFeature:           &fakeAlphaFeatureVersions,
+		fakeBetaFeature:            &fakeBetaFeatureVersions,
+		fakeAlphaFeatureUrlMapOnly: &fakeAlphaFeatureUrlMapOnlyVersions,
 	}
 )
 
@@ -93,71 +109,138 @@ func TestScopeFromIngress(t *testing.T) {
 	}
 }
 
-func TestVersionFromFeatures(t *testing.T) {
+func TestMergeVersions(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
-		desc       string
-		features   []string
-		versionMap map[LBResource]meta.Version
+		desc     string
+		cur      meta.Version
+		new      meta.Version
+		expected meta.Version
 	}{
 		{
-			desc: "No Features",
-			versionMap: map[LBResource]meta.Version{
-				UrlMap:           meta.VersionGA,
-				ForwardingRule:   meta.VersionGA,
-				TargetHttpProxy:  meta.VersionGA,
-				TargetHttpsProxy: meta.VersionGA,
-				SslCertificate:   meta.VersionGA,
-				BackendService:   meta.VersionGA,
-			},
+			desc:     "cur empty",
+			new:      meta.VersionAlpha,
+			expected: meta.VersionAlpha,
+		},
+		{
+			desc:     "new empty",
+			cur:      meta.VersionAlpha,
+			expected: meta.VersionAlpha,
+		},
+		{
+			desc:     "Newer version is lower",
+			cur:      meta.VersionBeta,
+			new:      meta.VersionAlpha,
+			expected: meta.VersionAlpha,
+		},
+		{
+			desc:     "Newer version is higher",
+			cur:      meta.VersionAlpha,
+			new:      meta.VersionBeta,
+			expected: meta.VersionAlpha,
+		},
+		{
+			desc:     "Same version",
+			cur:      meta.VersionGA,
+			new:      meta.VersionGA,
+			expected: meta.VersionGA,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			result := mergeVersions(tc.cur, tc.new)
+
+			if result != tc.expected {
+				t.Fatalf("want %q, got %q", tc.expected, result)
+			}
+		})
+	}
+}
+
+// This test makes sure none of the fields are empty
+func TestL7ILBVersions(t *testing.T) {
+	result := L7ILBVersions()
+	if result.UrlMap == "" ||
+		result.BackendService == "" ||
+		result.HealthCheck == "" ||
+		result.SslCertificate == "" ||
+		result.TargetHttpsProxy == "" ||
+		result.TargetHttpProxy == "" ||
+		result.ForwardingRule == "" {
+		t.Fatalf("L7ILBVersions returned an empty field")
+	}
+}
+
+func TestVersionsFromFeatures(t *testing.T) {
+	testCases := []struct {
+		desc     string
+		features []string
+		expected *ResourceVersions
+	}{
+		{
+			desc:     "No Features",
+			expected: NewResourceVersions(),
 		},
 		{
 			desc:     "Alpha features",
 			features: []string{fakeAlphaFeature},
-			versionMap: map[LBResource]meta.Version{
+			expected: &ResourceVersions{
 				UrlMap:           meta.VersionAlpha,
 				ForwardingRule:   meta.VersionAlpha,
 				TargetHttpProxy:  meta.VersionAlpha,
 				TargetHttpsProxy: meta.VersionAlpha,
 				SslCertificate:   meta.VersionAlpha,
 				BackendService:   meta.VersionAlpha,
+				HealthCheck:      meta.VersionAlpha,
 			},
 		},
 		{
 			desc:     "Beta features",
 			features: []string{fakeBetaFeature},
-			versionMap: map[LBResource]meta.Version{
+			expected: &ResourceVersions{
 				UrlMap:           meta.VersionBeta,
 				ForwardingRule:   meta.VersionBeta,
 				TargetHttpProxy:  meta.VersionBeta,
 				TargetHttpsProxy: meta.VersionBeta,
 				SslCertificate:   meta.VersionBeta,
 				BackendService:   meta.VersionBeta,
+				HealthCheck:      meta.VersionBeta,
 			},
 		},
 		{
 			desc:     "Differing versions",
 			features: []string{fakeGaFeature, fakeAlphaFeatureUrlMapOnly},
-			versionMap: map[LBResource]meta.Version{
+			expected: NewResourceVersions().merge(&ResourceVersions{UrlMap: meta.VersionAlpha}),
+		},
+		{
+			desc: "Many features",
+			features: []string{
+				fakeGaFeature,
+				fakeAlphaFeature,
+				fakeBetaFeature,
+				fakeAlphaFeatureUrlMapOnly,
+			},
+			expected: &ResourceVersions{
 				UrlMap:           meta.VersionAlpha,
-				ForwardingRule:   meta.VersionGA,
-				TargetHttpProxy:  meta.VersionGA,
-				TargetHttpsProxy: meta.VersionGA,
-				SslCertificate:   meta.VersionGA,
-				BackendService:   meta.VersionGA,
+				ForwardingRule:   meta.VersionAlpha,
+				TargetHttpProxy:  meta.VersionAlpha,
+				TargetHttpsProxy: meta.VersionAlpha,
+				SslCertificate:   meta.VersionAlpha,
+				BackendService:   meta.VersionAlpha,
+				HealthCheck:      meta.VersionAlpha,
 			},
 		},
 	}
 
 	// Override features with fakes
-	resourceToVersionMap = fakeResourceToVersionMap
+	featureToVersions = fakeFeatureToVersions
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
+			result := versionsFromFeatures(tc.features)
 
-			for resource, expectedVersion := range tc.versionMap {
-				result := versionFromFeatures(tc.features, resource)
-				if result != expectedVersion {
-					t.Fatalf("want %s, got %s", expectedVersion, result)
-				}
+			if !reflect.DeepEqual(result, tc.expected) {
+				t.Fatalf("want %v, got %v", tc.expected, result)
 			}
 		})
 	}
