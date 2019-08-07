@@ -2512,8 +2512,15 @@ func CreateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *Ba
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating beta BackendService %v", beta.Name)
-		return mc.Observe(gceCloud.Compute().BetaBackendServices().Insert(ctx, key, beta))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Creating beta region BackendService %v", beta.Name)
+			beta.Region = key.Region
+			return mc.Observe(gceCloud.Compute().BetaRegionBackendServices().Insert(ctx, key, beta))
+		default:
+			klog.V(3).Infof("Creating beta BackendService %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaBackendServices().Insert(ctx, key, beta))
+		}
 	default:
 		ga, err := backendService.ToGA()
 		if err != nil {
@@ -2547,8 +2554,14 @@ func UpdateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *Ba
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Updating beta BackendService %v", beta.Name)
-		return mc.Observe(gceCloud.Compute().BetaBackendServices().Update(ctx, key, beta))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Updating beta region BackendService %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaRegionBackendServices().Update(ctx, key, beta))
+		default:
+			klog.V(3).Infof("Updating beta BackendService %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaBackendServices().Update(ctx, key, beta))
+		}
 	default:
 		ga, err := backendService.ToGA()
 		if err != nil {
@@ -2575,8 +2588,14 @@ func DeleteBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Versi
 			return mc.Observe(gceCloud.Compute().AlphaBackendServices().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Deleting beta BackendService %v", key.Name)
-		return mc.Observe(gceCloud.Compute().BetaBackendServices().Delete(ctx, key))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting beta region BackendService %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaRegionBackendServices().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting beta BackendService %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaBackendServices().Delete(ctx, key))
+		}
 	default:
 		klog.V(3).Infof("Deleting ga BackendService %v", key.Name)
 		return mc.Observe(gceCloud.Compute().BackendServices().Delete(ctx, key))
@@ -2601,8 +2620,14 @@ func GetBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 			gceObj, err = gceCloud.Compute().AlphaBackendServices().Get(ctx, key)
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Getting beta BackendService %v", key.Name)
-		gceObj, err = gceCloud.Compute().BetaBackendServices().Get(ctx, key)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Getting beta region BackendService %v", key.Name)
+			gceObj, err = gceCloud.Compute().BetaRegionBackendServices().Get(ctx, key)
+		default:
+			klog.V(3).Infof("Getting beta BackendService %v", key.Name)
+			gceObj, err = gceCloud.Compute().BetaBackendServices().Get(ctx, key)
+		}
 	default:
 		klog.V(3).Infof("Getting ga BackendService %v", key.Name)
 		gceObj, err = gceCloud.Compute().BackendServices().Get(ctx, key)
@@ -2637,8 +2662,14 @@ func ListBackendServices(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 			gceObjs, err = gceCloud.Compute().AlphaBackendServices().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Listing beta BackendService")
-		gceObjs, err = gceCloud.Compute().BetaBackendServices().List(ctx, filter.None)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Listing beta region BackendService")
+			gceObjs, err = gceCloud.Compute().BetaRegionBackendServices().List(ctx, key.Region, filter.None)
+		default:
+			klog.V(3).Infof("Listing beta BackendService")
+			gceObjs, err = gceCloud.Compute().BetaBackendServices().List(ctx, filter.None)
+		}
 	default:
 		klog.V(3).Infof("Listing ga BackendService")
 		gceObjs, err = gceCloud.Compute().BackendServices().List(ctx, filter.None)
@@ -3009,8 +3040,15 @@ func CreateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCh
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating beta HealthCheck %v", beta.Name)
-		return mc.Observe(gceCloud.Compute().BetaHealthChecks().Insert(ctx, key, beta))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Creating beta region HealthCheck %v", beta.Name)
+			beta.Region = key.Region
+			return mc.Observe(gceCloud.Compute().BetaRegionHealthChecks().Insert(ctx, key, beta))
+		default:
+			klog.V(3).Infof("Creating beta HealthCheck %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaHealthChecks().Insert(ctx, key, beta))
+		}
 	default:
 		ga, err := healthCheck.ToGA()
 		if err != nil {
@@ -3044,8 +3082,14 @@ func UpdateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCh
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Updating beta HealthCheck %v", beta.Name)
-		return mc.Observe(gceCloud.Compute().BetaHealthChecks().Update(ctx, key, beta))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Updating beta region HealthCheck %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaRegionHealthChecks().Update(ctx, key, beta))
+		default:
+			klog.V(3).Infof("Updating beta HealthCheck %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaHealthChecks().Update(ctx, key, beta))
+		}
 	default:
 		ga, err := healthCheck.ToGA()
 		if err != nil {
@@ -3072,8 +3116,14 @@ func DeleteHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 			return mc.Observe(gceCloud.Compute().AlphaHealthChecks().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Deleting beta HealthCheck %v", key.Name)
-		return mc.Observe(gceCloud.Compute().BetaHealthChecks().Delete(ctx, key))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting beta region HealthCheck %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaRegionHealthChecks().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting beta HealthCheck %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaHealthChecks().Delete(ctx, key))
+		}
 	default:
 		klog.V(3).Infof("Deleting ga HealthCheck %v", key.Name)
 		return mc.Observe(gceCloud.Compute().HealthChecks().Delete(ctx, key))
@@ -3098,8 +3148,14 @@ func GetHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*
 			gceObj, err = gceCloud.Compute().AlphaHealthChecks().Get(ctx, key)
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Getting beta HealthCheck %v", key.Name)
-		gceObj, err = gceCloud.Compute().BetaHealthChecks().Get(ctx, key)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Getting beta region HealthCheck %v", key.Name)
+			gceObj, err = gceCloud.Compute().BetaRegionHealthChecks().Get(ctx, key)
+		default:
+			klog.V(3).Infof("Getting beta HealthCheck %v", key.Name)
+			gceObj, err = gceCloud.Compute().BetaHealthChecks().Get(ctx, key)
+		}
 	default:
 		klog.V(3).Infof("Getting ga HealthCheck %v", key.Name)
 		gceObj, err = gceCloud.Compute().HealthChecks().Get(ctx, key)
@@ -3134,8 +3190,14 @@ func ListHealthChecks(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) 
 			gceObjs, err = gceCloud.Compute().AlphaHealthChecks().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Listing beta HealthCheck")
-		gceObjs, err = gceCloud.Compute().BetaHealthChecks().List(ctx, filter.None)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Listing beta region HealthCheck")
+			gceObjs, err = gceCloud.Compute().BetaRegionHealthChecks().List(ctx, key.Region, filter.None)
+		default:
+			klog.V(3).Infof("Listing beta HealthCheck")
+			gceObjs, err = gceCloud.Compute().BetaHealthChecks().List(ctx, filter.None)
+		}
 	default:
 		klog.V(3).Infof("Listing ga HealthCheck")
 		gceObjs, err = gceCloud.Compute().HealthChecks().List(ctx, filter.None)
@@ -3239,8 +3301,15 @@ func CreateSslCertificate(gceCloud *gce.Cloud, key *meta.Key, sslCertificate *Ss
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating beta SslCertificate %v", beta.Name)
-		return mc.Observe(gceCloud.Compute().BetaSslCertificates().Insert(ctx, key, beta))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Creating beta region SslCertificate %v", beta.Name)
+			beta.Region = key.Region
+			return mc.Observe(gceCloud.Compute().BetaRegionSslCertificates().Insert(ctx, key, beta))
+		default:
+			klog.V(3).Infof("Creating beta SslCertificate %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaSslCertificates().Insert(ctx, key, beta))
+		}
 	default:
 		ga, err := sslCertificate.ToGA()
 		if err != nil {
@@ -3267,8 +3336,14 @@ func DeleteSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Versi
 			return mc.Observe(gceCloud.Compute().AlphaSslCertificates().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Deleting beta SslCertificate %v", key.Name)
-		return mc.Observe(gceCloud.Compute().BetaSslCertificates().Delete(ctx, key))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting beta region SslCertificate %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaRegionSslCertificates().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting beta SslCertificate %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaSslCertificates().Delete(ctx, key))
+		}
 	default:
 		klog.V(3).Infof("Deleting ga SslCertificate %v", key.Name)
 		return mc.Observe(gceCloud.Compute().SslCertificates().Delete(ctx, key))
@@ -3293,8 +3368,14 @@ func GetSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 			gceObj, err = gceCloud.Compute().AlphaSslCertificates().Get(ctx, key)
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Getting beta SslCertificate %v", key.Name)
-		gceObj, err = gceCloud.Compute().BetaSslCertificates().Get(ctx, key)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Getting beta region SslCertificate %v", key.Name)
+			gceObj, err = gceCloud.Compute().BetaRegionSslCertificates().Get(ctx, key)
+		default:
+			klog.V(3).Infof("Getting beta SslCertificate %v", key.Name)
+			gceObj, err = gceCloud.Compute().BetaSslCertificates().Get(ctx, key)
+		}
 	default:
 		klog.V(3).Infof("Getting ga SslCertificate %v", key.Name)
 		gceObj, err = gceCloud.Compute().SslCertificates().Get(ctx, key)
@@ -3329,8 +3410,14 @@ func ListSslCertificates(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 			gceObjs, err = gceCloud.Compute().AlphaSslCertificates().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Listing beta SslCertificate")
-		gceObjs, err = gceCloud.Compute().BetaSslCertificates().List(ctx, filter.None)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Listing beta region SslCertificate")
+			gceObjs, err = gceCloud.Compute().BetaRegionSslCertificates().List(ctx, key.Region, filter.None)
+		default:
+			klog.V(3).Infof("Listing beta SslCertificate")
+			gceObjs, err = gceCloud.Compute().BetaSslCertificates().List(ctx, filter.None)
+		}
 	default:
 		klog.V(3).Infof("Listing ga SslCertificate")
 		gceObjs, err = gceCloud.Compute().SslCertificates().List(ctx, filter.None)
@@ -3434,8 +3521,15 @@ func CreateTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpProxy *
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating beta TargetHttpProxy %v", beta.Name)
-		return mc.Observe(gceCloud.Compute().BetaTargetHttpProxies().Insert(ctx, key, beta))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Creating beta region TargetHttpProxy %v", beta.Name)
+			beta.Region = key.Region
+			return mc.Observe(gceCloud.Compute().BetaRegionTargetHttpProxies().Insert(ctx, key, beta))
+		default:
+			klog.V(3).Infof("Creating beta TargetHttpProxy %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaTargetHttpProxies().Insert(ctx, key, beta))
+		}
 	default:
 		ga, err := targetHttpProxy.ToGA()
 		if err != nil {
@@ -3462,8 +3556,14 @@ func DeleteTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Vers
 			return mc.Observe(gceCloud.Compute().AlphaTargetHttpProxies().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Deleting beta TargetHttpProxy %v", key.Name)
-		return mc.Observe(gceCloud.Compute().BetaTargetHttpProxies().Delete(ctx, key))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting beta region TargetHttpProxy %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaRegionTargetHttpProxies().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting beta TargetHttpProxy %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaTargetHttpProxies().Delete(ctx, key))
+		}
 	default:
 		klog.V(3).Infof("Deleting ga TargetHttpProxy %v", key.Name)
 		return mc.Observe(gceCloud.Compute().TargetHttpProxies().Delete(ctx, key))
@@ -3488,8 +3588,14 @@ func GetTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version
 			gceObj, err = gceCloud.Compute().AlphaTargetHttpProxies().Get(ctx, key)
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Getting beta TargetHttpProxy %v", key.Name)
-		gceObj, err = gceCloud.Compute().BetaTargetHttpProxies().Get(ctx, key)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Getting beta region TargetHttpProxy %v", key.Name)
+			gceObj, err = gceCloud.Compute().BetaRegionTargetHttpProxies().Get(ctx, key)
+		default:
+			klog.V(3).Infof("Getting beta TargetHttpProxy %v", key.Name)
+			gceObj, err = gceCloud.Compute().BetaTargetHttpProxies().Get(ctx, key)
+		}
 	default:
 		klog.V(3).Infof("Getting ga TargetHttpProxy %v", key.Name)
 		gceObj, err = gceCloud.Compute().TargetHttpProxies().Get(ctx, key)
@@ -3524,8 +3630,14 @@ func ListTargetHttpProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Vers
 			gceObjs, err = gceCloud.Compute().AlphaTargetHttpProxies().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Listing beta TargetHttpProxy")
-		gceObjs, err = gceCloud.Compute().BetaTargetHttpProxies().List(ctx, filter.None)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Listing beta region TargetHttpProxy")
+			gceObjs, err = gceCloud.Compute().BetaRegionTargetHttpProxies().List(ctx, key.Region, filter.None)
+		default:
+			klog.V(3).Infof("Listing beta TargetHttpProxy")
+			gceObjs, err = gceCloud.Compute().BetaTargetHttpProxies().List(ctx, filter.None)
+		}
 	default:
 		klog.V(3).Infof("Listing ga TargetHttpProxy")
 		gceObjs, err = gceCloud.Compute().TargetHttpProxies().List(ctx, filter.None)
@@ -3629,8 +3741,15 @@ func CreateTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating beta TargetHttpsProxy %v", beta.Name)
-		return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().Insert(ctx, key, beta))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Creating beta region TargetHttpsProxy %v", beta.Name)
+			beta.Region = key.Region
+			return mc.Observe(gceCloud.Compute().BetaRegionTargetHttpsProxies().Insert(ctx, key, beta))
+		default:
+			klog.V(3).Infof("Creating beta TargetHttpsProxy %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().Insert(ctx, key, beta))
+		}
 	default:
 		ga, err := targetHttpsProxy.ToGA()
 		if err != nil {
@@ -3657,8 +3776,14 @@ func DeleteTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Ver
 			return mc.Observe(gceCloud.Compute().AlphaTargetHttpsProxies().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Deleting beta TargetHttpsProxy %v", key.Name)
-		return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().Delete(ctx, key))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting beta region TargetHttpsProxy %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaRegionTargetHttpsProxies().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting beta TargetHttpsProxy %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().Delete(ctx, key))
+		}
 	default:
 		klog.V(3).Infof("Deleting ga TargetHttpsProxy %v", key.Name)
 		return mc.Observe(gceCloud.Compute().TargetHttpsProxies().Delete(ctx, key))
@@ -3683,8 +3808,14 @@ func GetTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 			gceObj, err = gceCloud.Compute().AlphaTargetHttpsProxies().Get(ctx, key)
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Getting beta TargetHttpsProxy %v", key.Name)
-		gceObj, err = gceCloud.Compute().BetaTargetHttpsProxies().Get(ctx, key)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Getting beta region TargetHttpsProxy %v", key.Name)
+			gceObj, err = gceCloud.Compute().BetaRegionTargetHttpsProxies().Get(ctx, key)
+		default:
+			klog.V(3).Infof("Getting beta TargetHttpsProxy %v", key.Name)
+			gceObj, err = gceCloud.Compute().BetaTargetHttpsProxies().Get(ctx, key)
+		}
 	default:
 		klog.V(3).Infof("Getting ga TargetHttpsProxy %v", key.Name)
 		gceObj, err = gceCloud.Compute().TargetHttpsProxies().Get(ctx, key)
@@ -3719,8 +3850,14 @@ func ListTargetHttpsProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Ver
 			gceObjs, err = gceCloud.Compute().AlphaTargetHttpsProxies().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Listing beta TargetHttpsProxy")
-		gceObjs, err = gceCloud.Compute().BetaTargetHttpsProxies().List(ctx, filter.None)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Listing beta region TargetHttpsProxy")
+			gceObjs, err = gceCloud.Compute().BetaRegionTargetHttpsProxies().List(ctx, key.Region, filter.None)
+		default:
+			klog.V(3).Infof("Listing beta TargetHttpsProxy")
+			gceObjs, err = gceCloud.Compute().BetaTargetHttpsProxies().List(ctx, filter.None)
+		}
 	default:
 		klog.V(3).Infof("Listing ga TargetHttpsProxy")
 		gceObjs, err = gceCloud.Compute().TargetHttpsProxies().List(ctx, filter.None)
@@ -3824,8 +3961,15 @@ func CreateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap) error {
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating beta UrlMap %v", beta.Name)
-		return mc.Observe(gceCloud.Compute().BetaUrlMaps().Insert(ctx, key, beta))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Creating beta region UrlMap %v", beta.Name)
+			beta.Region = key.Region
+			return mc.Observe(gceCloud.Compute().BetaRegionUrlMaps().Insert(ctx, key, beta))
+		default:
+			klog.V(3).Infof("Creating beta UrlMap %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaUrlMaps().Insert(ctx, key, beta))
+		}
 	default:
 		ga, err := urlMap.ToGA()
 		if err != nil {
@@ -3859,8 +4003,14 @@ func UpdateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap) error {
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Updating beta UrlMap %v", beta.Name)
-		return mc.Observe(gceCloud.Compute().BetaUrlMaps().Update(ctx, key, beta))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Updating beta region UrlMap %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaRegionUrlMaps().Update(ctx, key, beta))
+		default:
+			klog.V(3).Infof("Updating beta UrlMap %v", beta.Name)
+			return mc.Observe(gceCloud.Compute().BetaUrlMaps().Update(ctx, key, beta))
+		}
 	default:
 		ga, err := urlMap.ToGA()
 		if err != nil {
@@ -3887,8 +4037,14 @@ func DeleteUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) erro
 			return mc.Observe(gceCloud.Compute().AlphaUrlMaps().Delete(ctx, key))
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Deleting beta UrlMap %v", key.Name)
-		return mc.Observe(gceCloud.Compute().BetaUrlMaps().Delete(ctx, key))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting beta region UrlMap %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaRegionUrlMaps().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting beta UrlMap %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BetaUrlMaps().Delete(ctx, key))
+		}
 	default:
 		klog.V(3).Infof("Deleting ga UrlMap %v", key.Name)
 		return mc.Observe(gceCloud.Compute().UrlMaps().Delete(ctx, key))
@@ -3913,8 +4069,14 @@ func GetUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*UrlMa
 			gceObj, err = gceCloud.Compute().AlphaUrlMaps().Get(ctx, key)
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Getting beta UrlMap %v", key.Name)
-		gceObj, err = gceCloud.Compute().BetaUrlMaps().Get(ctx, key)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Getting beta region UrlMap %v", key.Name)
+			gceObj, err = gceCloud.Compute().BetaRegionUrlMaps().Get(ctx, key)
+		default:
+			klog.V(3).Infof("Getting beta UrlMap %v", key.Name)
+			gceObj, err = gceCloud.Compute().BetaUrlMaps().Get(ctx, key)
+		}
 	default:
 		klog.V(3).Infof("Getting ga UrlMap %v", key.Name)
 		gceObj, err = gceCloud.Compute().UrlMaps().Get(ctx, key)
@@ -3949,8 +4111,14 @@ func ListUrlMaps(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*U
 			gceObjs, err = gceCloud.Compute().AlphaUrlMaps().List(ctx, filter.None)
 		}
 	case meta.VersionBeta:
-		klog.V(3).Infof("Listing beta UrlMap")
-		gceObjs, err = gceCloud.Compute().BetaUrlMaps().List(ctx, filter.None)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Listing beta region UrlMap")
+			gceObjs, err = gceCloud.Compute().BetaRegionUrlMaps().List(ctx, key.Region, filter.None)
+		default:
+			klog.V(3).Infof("Listing beta UrlMap")
+			gceObjs, err = gceCloud.Compute().BetaUrlMaps().List(ctx, filter.None)
+		}
 	default:
 		klog.V(3).Infof("Listing ga UrlMap")
 		gceObjs, err = gceCloud.Compute().UrlMaps().List(ctx, filter.None)
