@@ -17,14 +17,21 @@ limitations under the License.
 package types
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
+	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
+)
+
+const (
+	// aggregatedListZonalKeyPrefix is the prefix for the zonal key from AggregatedList
+	aggregatedListZonalKeyPrefix = "zones"
+	// aggregatedListGlobalKey is the global key from AggregatedList
+	aggregatedListGlobalKey = "global"
 )
 
 // NewAdapter takes a Cloud and returns a NetworkEndpointGroupCloud.
@@ -72,10 +79,19 @@ func (a *cloudProviderAdapter) AggregatedListNetworkEndpointGroup() (map[string]
 	}
 	ret := map[string][]*compute.NetworkEndpointGroup{}
 	for key, byZone := range all {
-		// key is "zones/<zone name>"
+		// key is scope
+		// zonal key is "zones/<zone name>"
+		// regional key is "regions/<region name>"
+		// global key is "global"
+		// TODO: use cloud provider meta.KeyType and scope name as key
 		parts := strings.Split(key, "/")
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid key for AggregatedListNetworkEndpointGroup: %q", key)
+		if len(parts) == 1 && parts[0] == aggregatedListGlobalKey {
+			klog.V(4).Infof("Ignoring key %q as it is global", key)
+			continue
+		}
+		if len(parts) != 2 || parts[0] != aggregatedListZonalKeyPrefix {
+			klog.Warningf("Key %q is not in a known format, ignoring", key)
+			continue
 		}
 		zone := parts[1]
 		ret[zone] = append(ret[zone], byZone...)
