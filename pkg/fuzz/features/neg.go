@@ -23,6 +23,7 @@ package features
 import (
 	"context"
 	"fmt"
+	"k8s.io/klog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -92,6 +93,9 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 
 	urlMapName := v.env.Namer().UrlMap(v.env.Namer().LoadBalancer(key))
 	if negEnabled {
+		if utils.IsGCEL7ILBIngress(v.ing) {
+			return fuzz.CheckResponseContinue, verifyNegRegionBackend(v.env, negName, negName, urlMapName)
+		}
 		return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName, urlMapName)
 	} else {
 		return fuzz.CheckResponseContinue, verifyIgBackend(v.env, v.env.Namer().IGBackend(int64(svcPort.NodePort)), urlMapName)
@@ -143,6 +147,7 @@ func verifyIgBackend(env fuzz.ValidatorEnv, bsName string, urlMapName string) er
 
 // verifyBackend verifies the backend service and check if the corresponding backend group has the keyword
 func verifyBackend(env fuzz.ValidatorEnv, bsName string, backendKeyword string, urlMapName string) error {
+	klog.V(3).Info("Verifying NEG Global Backend")
 	ctx := context.Background()
 	beService, err := env.Cloud().BackendServices().Get(ctx, &meta.Key{Name: bsName})
 	if err != nil {
@@ -161,6 +166,45 @@ func verifyBackend(env fuzz.ValidatorEnv, bsName string, backendKeyword string, 
 
 	// Examine if ingress url map is targeting the backend service
 	urlMap, err := env.Cloud().UrlMaps().Get(ctx, &meta.Key{Name: urlMapName})
+	if err != nil {
+		return err
+	}
+
+	if strings.Contains(urlMap.DefaultService, beService.Name) {
+		return nil
+	}
+	for _, pathMatcher := range urlMap.PathMatchers {
+		for _, rule := range pathMatcher.PathRules {
+			if strings.Contains(rule.Service, beService.Name) {
+				return nil
+			}
+		}
+	}
+
+	return fmt.Errorf("backend service %q is not used by UrlMap %q", bsName, urlMapName)
+}
+
+// verifyBackend verifies the backend service and check if the corresponding backend group has the keyword
+func verifyNegRegionBackend(env fuzz.ValidatorEnv, bsName string, backendKeyword string, urlMapName string) error {
+	klog.V(3).Info("Verifying NEG Regional Backend")
+	ctx := context.Background()
+	beService, err := env.Cloud().AlphaRegionBackendServices().Get(ctx, &meta.Key{Name: bsName, Region: "us-central1"})
+	if err != nil {
+		return err
+	}
+
+	if beService == nil {
+		return fmt.Errorf("no backend service returned for name %s", bsName)
+	}
+
+	for _, be := range beService.Backends {
+		if !strings.Contains(be.Group, backendKeyword) {
+			return fmt.Errorf("backend group %q of backend service %q does not contain keyword %q", be.Group, bsName, backendKeyword)
+		}
+	}
+
+	// Examine if ingress url map is targeting the backend service
+	urlMap, err := env.Cloud().AlphaRegionUrlMaps().Get(ctx, &meta.Key{Name: urlMapName, Region: "us-central1"})
 	if err != nil {
 		return err
 	}
