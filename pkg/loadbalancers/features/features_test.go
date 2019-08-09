@@ -75,7 +75,7 @@ var (
 	}
 
 	fakeFeatureToVersions = map[string]*ResourceVersions{
-		fakeGaFeature:              NewResourceVersions(),
+		fakeGaFeature:              GAResourceVersions,
 		fakeAlphaFeature:           &fakeAlphaFeatureVersions,
 		fakeBetaFeature:            &fakeBetaFeatureVersions,
 		fakeAlphaFeatureUrlMapOnly: &fakeAlphaFeatureUrlMapOnlyVersions,
@@ -180,7 +180,7 @@ func TestVersionsFromFeatures(t *testing.T) {
 	}{
 		{
 			desc:     "No Features",
-			expected: NewResourceVersions(),
+			expected: GAResourceVersions,
 		},
 		{
 			desc:     "Alpha features",
