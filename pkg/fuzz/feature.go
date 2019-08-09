@@ -70,6 +70,7 @@ type FeatureValidator interface {
 	CheckResponse(host, path string, resp *http.Response, body []byte) (CheckResponseAction, error)
 
 	HasAlphaResource(resourceType string) bool
+	HasAlphaRegionResource(resourceType string) bool
 	HasBetaResource(resourceType string) bool
 }
 
@@ -94,6 +95,10 @@ func (*NullValidator) CheckResponse(string, string, *http.Response, []byte) (Che
 
 // HasAlphaResource implements Feature.
 func (*NullValidator) HasAlphaResource(resourceType string) bool {
+	return false
+}
+
+func (*NullValidator) HasAlphaRegionResource(resourceType string) bool {
 	return false
 }
 

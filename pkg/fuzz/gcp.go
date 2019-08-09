@@ -20,26 +20,29 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/utils"
 	"net/http"
 	"strings"
 
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/klog"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-
-	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const (
 	NegResourceType = "networkEndpointGroup"
+	defaultRegion   = "us-central1" // TODO(shance): plumb this from GCE
 	IgResourceType  = "instanceGroup"
 )
+
+// TODO(shance): convert below to composite types and resourceVersions
 
 // ForwardingRule is a union of the API version types.
 type ForwardingRule struct {
@@ -132,13 +135,13 @@ type GCLBDeleteOptions struct {
 // all of the associated resources no longer exist.
 func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options *GCLBDeleteOptions) error {
 	var resources []meta.Key
+	var err error
 
 	for k := range g.ForwardingRule {
-		var err error
-		if k.Region != "" {
-			_, err = c.ForwardingRules().Get(ctx, &k)
+		if k.Type() == meta.Regional {
+			_, err = c.AlphaForwardingRules().Get(ctx, &k)
 		} else {
-			_, err = c.GlobalForwardingRules().Get(ctx, &k)
+			_, err = c.ForwardingRules().Get(ctx, &k)
 		}
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
@@ -149,7 +152,11 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		}
 	}
 	for k := range g.TargetHTTPProxy {
-		_, err := c.TargetHttpProxies().Get(ctx, &k)
+		if k.Type() == meta.Regional {
+			_, err = c.AlphaRegionTargetHttpProxies().Get(ctx, &k)
+		} else {
+			_, err = c.TargetHttpProxies().Get(ctx, &k)
+		}
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
 				return fmt.Errorf("TargetHTTPProxy %s is not deleted/error to get: %s", k.Name, err)
@@ -159,7 +166,11 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		}
 	}
 	for k := range g.TargetHTTPSProxy {
-		_, err := c.TargetHttpsProxies().Get(ctx, &k)
+		if k.Type() == meta.Regional {
+			_, err = c.AlphaRegionTargetHttpsProxies().Get(ctx, &k)
+		} else {
+			_, err = c.TargetHttpsProxies().Get(ctx, &k)
+		}
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
 				return fmt.Errorf("TargetHTTPSProxy %s is not deleted/error to get: %s", k.Name, err)
@@ -169,7 +180,11 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		}
 	}
 	for k := range g.URLMap {
-		_, err := c.UrlMaps().Get(ctx, &k)
+		if k.Type() == meta.Regional {
+			_, err = c.AlphaRegionUrlMaps().Get(ctx, &k)
+		} else {
+			_, err = c.UrlMaps().Get(ctx, &k)
+		}
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
 				return fmt.Errorf("URLMap %s is not deleted/error to get: %s", k.Name, err)
@@ -179,19 +194,36 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		}
 	}
 	for k := range g.BackendService {
-		bs, err := c.BackendServices().Get(ctx, &k)
-		if err != nil {
-			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
-				return fmt.Errorf("BackendService %s is not deleted/error to get: %s", k.Name, err)
+		if k.Type() == meta.Regional {
+			bs, err := c.AlphaRegionBackendServices().Get(ctx, &k)
+			if err != nil {
+				if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+					return err
+				}
+			} else {
+				if options != nil && options.SkipDefaultBackend {
+					desc := utils.DescriptionFromString(bs.Description)
+					if desc.ServiceName == "kube-system/default-http-backend" {
+						continue
+					}
+				}
+				resources = append(resources, k)
 			}
 		} else {
-			if options != nil && options.SkipDefaultBackend {
-				desc := utils.DescriptionFromString(bs.Description)
-				if desc.ServiceName == "kube-system/default-http-backend" {
-					continue
+			bs, err := c.BackendServices().Get(ctx, &k)
+			if err != nil {
+				if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+					return err
 				}
+			} else {
+				if options != nil && options.SkipDefaultBackend {
+					desc := utils.DescriptionFromString(bs.Description)
+					if desc.ServiceName == "kube-system/default-http-backend" {
+						continue
+					}
+				}
+				resources = append(resources, k)
 			}
-			resources = append(resources, k)
 		}
 	}
 	for k := range g.NetworkEndpointGroup {
@@ -251,6 +283,15 @@ func hasAlphaResource(resourceType string, validators []FeatureValidator) bool {
 	return false
 }
 
+func hasAlphaRegionResource(resourceType string, validators []FeatureValidator) bool {
+	for _, val := range validators {
+		if val.HasAlphaRegionResource(resourceType) {
+			return true
+		}
+	}
+	return false
+}
+
 func hasBetaResource(resourceType string, validators []FeatureValidator) bool {
 	for _, val := range validators {
 		if val.HasBetaResource(resourceType) {
@@ -271,19 +312,52 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 		return nil, err
 	}
 
-	var gfrs []*compute.ForwardingRule
+	var forwardingRules []*composite.ForwardingRule
 	for _, gfr := range allGFRs {
 		if gfr.IPAddress == vip {
-			gfrs = append(gfrs, gfr)
+			compositeGfr, err := composite.ToForwardingRule(gfr)
+			if err != nil {
+				return nil, fmt.Errorf("Error converting forwarding rule to composite")
+			}
+			forwardingRules = append(forwardingRules, compositeGfr)
+		}
+	}
+
+	if hasAlphaRegionResource("forwardingRule", validators) {
+		allRFRs, err := c.AlphaForwardingRules().List(ctx, defaultRegion, filter.None)
+		if err != nil {
+			klog.Warningf("Error listing forwarding rules: %v", err)
+			return nil, err
+		}
+
+		for _, rfr := range allRFRs {
+			if rfr.IPAddress == vip {
+				compositeRfr, err := composite.ToForwardingRule(rfr)
+				if err != nil {
+					return nil, fmt.Errorf("Error converting forwarding rule to composite")
+				}
+				compositeRfr.Scope = meta.Regional
+				forwardingRules = append(forwardingRules, compositeRfr)
+			}
 		}
 	}
 
 	var urlMapKey *meta.Key
-	for _, gfr := range gfrs {
-		frKey := meta.GlobalKey(gfr.Name)
-		gclb.ForwardingRule[*frKey] = &ForwardingRule{GA: gfr}
+	for _, fr := range forwardingRules {
+		frKey := meta.GlobalKey(fr.Name)
+		ga, err := fr.ToGA()
+		gclb.ForwardingRule[*frKey] = &ForwardingRule{GA: ga}
 		if hasAlphaResource("forwardingRule", validators) {
-			fr, err := c.AlphaForwardingRules().Get(ctx, frKey)
+			fr, err := c.AlphaGlobalForwardingRules().Get(ctx, frKey)
+			if err != nil {
+				klog.Warningf("Error getting alpha forwarding rules: %v", err)
+				return nil, err
+			}
+			gclb.ForwardingRule[*frKey].Alpha = fr
+		}
+		if hasAlphaRegionResource("forwardingRule", validators) && fr.Scope == meta.Regional {
+			regionKey := meta.RegionalKey(fr.Name, defaultRegion)
+			fr, err := c.AlphaForwardingRules().Get(ctx, regionKey)
 			if err != nil {
 				klog.Warningf("Error getting alpha forwarding rules: %v", err)
 				return nil, err
@@ -295,27 +369,43 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 		}
 
 		// ForwardingRule => TargetProxy
-		resID, err := cloud.ParseResourceURL(gfr.Target)
+		resID, err := cloud.ParseResourceURL(fr.Target)
 		if err != nil {
-			klog.Warningf("Error parsing Target (%q): %v", gfr.Target, err)
+			klog.Warningf("Error parsing Target (%q): %v", fr.Target, err)
 			return nil, err
 		}
+
+		var urlMapResID *cloud.ResourceID
 		switch resID.Resource {
 		case "targetHttpProxies":
-			p, err := c.TargetHttpProxies().Get(ctx, resID.Key)
-			if err != nil {
-				klog.Warningf("Error getting TargetHttpProxy %s: %v", resID.Key, err)
-				return nil, err
-			}
-			gclb.TargetHTTPProxy[*resID.Key] = &TargetHTTPProxy{GA: p}
-			if hasAlphaResource("targetHttpProxy", validators) || hasBetaResource("targetHttpProxy", validators) {
-				return nil, errors.New("unsupported targetHttpProxy version")
-			}
+			if hasAlphaRegionResource("targetHttpProxy", validators) && resID.Key.Type() == meta.Regional {
+				p, err := c.AlphaRegionTargetHttpProxies().Get(ctx, resID.Key)
+				if err != nil {
+					klog.Warningf("Error getting TargetHttpProxy %s: %v", resID.Key, err)
+					return nil, err
+				}
+				gclb.TargetHTTPProxy[*resID.Key] = &TargetHTTPProxy{Alpha: p}
 
-			urlMapResID, err := cloud.ParseResourceURL(p.UrlMap)
-			if err != nil {
-				klog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
-				return nil, err
+				urlMapResID, err = cloud.ParseResourceURL(p.UrlMap)
+				if err != nil {
+					klog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
+					return nil, err
+				}
+			} else if hasAlphaResource("targetHttpProxy", validators) || hasBetaResource("targetHttpProxy", validators) {
+				return nil, errors.New("unsupported targetHttpProxy version")
+			} else {
+				p, err := c.TargetHttpProxies().Get(ctx, resID.Key)
+				if err != nil {
+					klog.Warningf("Error getting TargetHttpProxy %s: %v", resID.Key, err)
+					return nil, err
+				}
+				gclb.TargetHTTPProxy[*resID.Key] = &TargetHTTPProxy{GA: p}
+
+				urlMapResID, err = cloud.ParseResourceURL(p.UrlMap)
+				if err != nil {
+					klog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
+					return nil, err
+				}
 			}
 			if urlMapKey == nil {
 				urlMapKey = urlMapResID.Key
@@ -325,20 +415,33 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 				return nil, fmt.Errorf("targetHttpProxy references are not the same: %+v != %+v", *urlMapKey, *urlMapResID.Key)
 			}
 		case "targetHttpsProxies":
-			p, err := c.TargetHttpsProxies().Get(ctx, resID.Key)
-			if err != nil {
-				klog.Warningf("Error getting targetHttpsProxy (%s): %v", resID.Key, err)
-				return nil, err
-			}
-			gclb.TargetHTTPSProxy[*resID.Key] = &TargetHTTPSProxy{GA: p}
-			if hasAlphaResource("targetHttpsProxy", validators) || hasBetaResource("targetHttpsProxy", validators) {
+			if hasAlphaRegionResource("targetHttpsProxy", validators) && resID.Key.Type() == meta.Regional {
+				p, err := c.AlphaRegionTargetHttpsProxies().Get(ctx, resID.Key)
+				if err != nil {
+					klog.Warningf("Error getting targetHttpsProxy (%s): %v", resID.Key, err)
+					return nil, err
+				}
+				gclb.TargetHTTPSProxy[*resID.Key] = &TargetHTTPSProxy{Alpha: p}
+				urlMapResID, err = cloud.ParseResourceURL(p.UrlMap)
+				if err != nil {
+					klog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
+					return nil, err
+				}
+			} else if hasAlphaResource("targetHttpsProxy", validators) || hasBetaResource("targetHttpsProxy", validators) {
 				return nil, errors.New("unsupported targetHttpsProxy version")
-			}
+			} else {
+				p, err := c.TargetHttpsProxies().Get(ctx, resID.Key)
+				if err != nil {
+					klog.Warningf("Error getting targetHttpsProxy (%s): %v", resID.Key, err)
+					return nil, err
+				}
+				gclb.TargetHTTPSProxy[*resID.Key] = &TargetHTTPSProxy{GA: p}
 
-			urlMapResID, err := cloud.ParseResourceURL(p.UrlMap)
-			if err != nil {
-				klog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
-				return nil, err
+				urlMapResID, err = cloud.ParseResourceURL(p.UrlMap)
+				if err != nil {
+					klog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
+					return nil, err
+				}
 			}
 			if urlMapKey == nil {
 				urlMapKey = urlMapResID.Key
@@ -348,65 +451,102 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 				return nil, fmt.Errorf("targetHttpsProxy references are not the same: %+v != %+v", *urlMapKey, *urlMapResID.Key)
 			}
 		default:
-			klog.Errorf("Unhandled resource: %q, grf = %+v", resID.Resource, gfr)
+			klog.Errorf("Unhandled resource: %q, grf = %+v", resID.Resource, fr)
 			return nil, fmt.Errorf("unhandled resource %q", resID.Resource)
 		}
 	}
 
 	// TargetProxy => URLMap
-	urlMap, err := c.UrlMaps().Get(ctx, urlMapKey)
-	if err != nil {
-		return nil, err
-	}
-	gclb.URLMap[*urlMapKey] = &URLMap{GA: urlMap}
+	var bsKeys []*meta.Key
 	if hasAlphaResource("urlMap", validators) || hasBetaResource("urlMap", validators) {
 		return nil, errors.New("unsupported urlMap version")
-	}
-
-	// URLMap => BackendService(s)
-	var bsKeys []*meta.Key
-	resID, err := cloud.ParseResourceURL(urlMap.DefaultService)
-	if err != nil {
-		return nil, err
-	}
-	bsKeys = append(bsKeys, resID.Key)
-
-	for _, pm := range urlMap.PathMatchers {
-		resID, err := cloud.ParseResourceURL(pm.DefaultService)
+	} else if hasAlphaRegionResource("urlMap", validators) && urlMapKey.Type() == meta.Regional {
+		urlMap, err := c.AlphaRegionUrlMaps().Get(ctx, urlMapKey)
 		if err != nil {
+			klog.Warningf("Error getting alpha region Url Maps: %v", err)
+			return nil, err
+		}
+		gclb.URLMap[*urlMapKey] = &URLMap{Alpha: urlMap}
+		resID, err := cloud.ParseResourceURL(urlMap.DefaultService)
+		if err != nil {
+			klog.Warningf("Error parsing resource URL: %v", err)
 			return nil, err
 		}
 		bsKeys = append(bsKeys, resID.Key)
 
-		for _, pr := range pm.PathRules {
-			resID, err := cloud.ParseResourceURL(pr.Service)
+		// URLMap => BackendService(s)
+		for _, pm := range urlMap.PathMatchers {
+			resID, err := cloud.ParseResourceURL(pm.DefaultService)
 			if err != nil {
+				klog.Warningf("Error parsing resource URL: %v", err)
 				return nil, err
 			}
 			bsKeys = append(bsKeys, resID.Key)
+
+			for _, pr := range pm.PathRules {
+				resID, err := cloud.ParseResourceURL(pr.Service)
+				if err != nil {
+					klog.Warningf("Error parsing resource URL: %v", err)
+					return nil, err
+				}
+				bsKeys = append(bsKeys, resID.Key)
+			}
+		}
+	} else {
+		urlMap, err := c.UrlMaps().Get(ctx, urlMapKey)
+		if err != nil {
+			klog.Warningf("Error getting URL map: %v", err)
+			return nil, err
+		}
+		gclb.URLMap[*urlMapKey] = &URLMap{GA: urlMap}
+		resID, err := cloud.ParseResourceURL(urlMap.DefaultService)
+		if err != nil {
+			klog.Warningf("Error parsing resource URL: %v", err)
+			return nil, err
+		}
+		bsKeys = append(bsKeys, resID.Key)
+
+		// URLMap => BackendService(s)
+		for _, pm := range urlMap.PathMatchers {
+			resID, err := cloud.ParseResourceURL(pm.DefaultService)
+			if err != nil {
+				klog.Warningf("Error parsing resource URL: %v", err)
+				return nil, err
+			}
+			bsKeys = append(bsKeys, resID.Key)
+
+			for _, pr := range pm.PathRules {
+				resID, err := cloud.ParseResourceURL(pr.Service)
+				if err != nil {
+					klog.Warningf("Error parsing resource URL: %v", err)
+					return nil, err
+				}
+				bsKeys = append(bsKeys, resID.Key)
+			}
 		}
 	}
 
 	for _, bsKey := range bsKeys {
-		bs, err := c.BackendServices().Get(ctx, bsKey)
-		if err != nil {
-			return nil, err
-		}
-		gclb.BackendService[*bsKey] = &BackendService{GA: bs}
-
-		if hasAlphaResource("backendService", validators) {
-			bs, err := c.AlphaBackendServices().Get(ctx, bsKey)
+		if hasAlphaRegionResource("backendService", validators) && bsKey.Type() == meta.Regional {
+			bs, err := c.AlphaRegionBackendServices().Get(ctx, bsKey)
 			if err != nil {
+				klog.Warningf("Error getting alpha region backend service: %v", err)
 				return nil, err
 			}
-			gclb.BackendService[*bsKey].Alpha = bs
-		}
-		if hasBetaResource("backendService", validators) {
+			gclb.BackendService[*bsKey] = &BackendService{Alpha: bs}
+		} else if hasBetaResource("backendService", validators) {
 			bs, err := c.BetaBackendServices().Get(ctx, bsKey)
 			if err != nil {
+				klog.Warningf("Error getting beta backend service: %v", err)
 				return nil, err
 			}
-			gclb.BackendService[*bsKey].Beta = bs
+			gclb.BackendService[*bsKey] = &BackendService{Beta: bs}
+		} else {
+			bs, err := c.BackendServices().Get(ctx, bsKey)
+			if err != nil {
+				return nil, err
+			}
+			gclb.BackendService[*bsKey] = &BackendService{GA: bs}
 		}
 	}
 
@@ -415,9 +555,19 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 	// Fetch NEG Backends
 	for _, bsKey := range bsKeys {
 		beGroups := []string{}
-		if hasAlphaResource("backendService", validators) {
+		if hasAlphaRegionResource("backendService", validators) && bsKey.Type() == meta.Regional {
+			bs, err := c.AlphaRegionBackendServices().Get(ctx, bsKey)
+			if err != nil {
+				klog.Warningf("Error getting alpha region backend service: %v", err)
+				return nil, err
+			}
+			for _, be := range bs.Backends {
+				beGroups = append(beGroups, be.Group)
+			}
+		} else if hasAlphaResource("backendService", validators) {
 			bs, err := c.AlphaBackendServices().Get(ctx, bsKey)
 			if err != nil {
+				klog.Warningf("Error getting alpha backend service: %v", err)
 				return nil, err
 			}
 			for _, be := range bs.Backends {
@@ -426,6 +576,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 		} else {
 			bs, err := c.BetaBackendServices().Get(ctx, bsKey)
 			if err != nil {
+				klog.Warningf("Error getting backend service: %v", err)
 				return nil, err
 			}
 			for _, be := range bs.Backends {
@@ -461,6 +612,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 		if hasAlphaResource(NegResourceType, validators) {
 			neg, err := c.AlphaNetworkEndpointGroups().Get(ctx, negKey)
 			if err != nil {
+				klog.Warningf("Error getting alpha network endpoint groups: %v", err)
 				return nil, err
 			}
 			gclb.NetworkEndpointGroup[*negKey].Alpha = neg
