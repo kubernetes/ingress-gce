@@ -72,7 +72,7 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 }
 
 // Delete deletes a load balancer by name.
-func (l *L7s) Delete(name string, version meta.Version, scope meta.KeyType) error {
+func (l *L7s) Delete(name string, versions *features.ResourceVersions, scope meta.KeyType) error {
 	lb := &L7{
 		runtimeInfo: &L7RuntimeInfo{Name: name},
 		Name:        l.namer.LoadBalancer(name),
@@ -82,46 +82,32 @@ func (l *L7s) Delete(name string, version meta.Version, scope meta.KeyType) erro
 	}
 
 	klog.V(3).Infof("Deleting lb %v", lb.Name)
-	if err := lb.Cleanup(); err != nil {
+
+	if err := lb.Cleanup(versions); err != nil {
 		return err
 	}
 	return nil
 }
 
-// List returns a list of names of L7 resources, by listing all URL maps and
-// deriving the Loadbalancer name from the URL map name
-func (l *L7s) List() ([]string, []meta.KeyType, error) {
-	var names []string
-	var scopes []meta.KeyType
-
-	var urlMaps []*composite.UrlMap
-	var err error
-	if flags.F.EnableL7Ilb {
-		urlMaps, err = composite.ListAllUrlMaps(l.cloud)
-	} else {
-		urlMaps, err = composite.ListUrlMaps(l.cloud, meta.GlobalKey(""), meta.VersionGA)
-	}
+// List returns a list of urlMaps (the top level LB resource) that belong to the cluster
+func (l *L7s) List(key *meta.Key, version meta.Version) ([]*composite.UrlMap, error) {
+	var result []*composite.UrlMap
+	urlMaps, err := composite.ListUrlMaps(l.cloud, key, version)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	for _, um := range urlMaps {
 		if l.namer.NameBelongsToCluster(um.Name) {
-			nameParts := l.namer.ParseName(um.Name)
-			l7Name := l.namer.LoadBalancerFromLbName(nameParts.LbName)
-			names = append(names, l7Name)
-			scope, err := composite.ScopeFromSelfLink(um.SelfLink)
-			if err != nil {
-				return nil, nil, err
-			}
-			scopes = append(scopes, scope)
+			result = append(result, um)
 		}
 	}
 
-	return names, scopes, nil
+	return result, nil
 }
 
 // GC garbage collects loadbalancers not in the input list.
+// TODO(shance): Update to handle regional and global LB with same name
 func (l *L7s) GC(names []string) error {
 	klog.V(2).Infof("GC(%v)", names)
 
@@ -129,27 +115,60 @@ func (l *L7s) GC(names []string) error {
 	for _, n := range names {
 		knownLoadBalancers.Insert(l.namer.LoadBalancer(n))
 	}
-	pool, scopes, err := l.List()
-	if err != nil {
-		return err
+
+	// GC L7-ILB LBs if enabled
+	if flags.F.EnableL7Ilb {
+		key, err := composite.CreateKey(l.cloud, "", meta.Regional)
+		if err != nil {
+			return fmt.Errorf("error getting regional key: %v", err)
+		}
+		urlMaps, err := l.List(key, features.L7ILBVersions().UrlMap)
+		if err != nil {
+			return fmt.Errorf("error listing regional LBs: %v", err)
+		}
+
+		if err := l.gc(urlMaps, knownLoadBalancers, features.L7ILBVersions()); err != nil {
+			return fmt.Errorf("error gc-ing regional LBs: %v", err)
+		}
 	}
 
+	// TODO(shance): fix list taking a key
+	urlMaps, err := l.List(meta.GlobalKey(""), meta.VersionGA)
+	if err != nil {
+		return fmt.Errorf("error listing global LBs: %v", err)
+	}
+
+	if errors := l.gc(urlMaps, knownLoadBalancers, features.GAResourceVersions); errors != nil {
+		return fmt.Errorf("error gcing global LBs: %v", errors)
+	}
+
+	return nil
+}
+
+// gc is a helper for GC
+// TODO(shance): get versions from description
+func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers sets.String, versions *features.ResourceVersions) []error {
+	var errors []error
+
 	// Delete unknown loadbalancers
-	for i, name := range pool {
-		if knownLoadBalancers.Has(name) {
+	for _, um := range urlMaps {
+		nameParts := l.namer.ParseName(um.Name)
+		l7Name := l.namer.LoadBalancerFromLbName(nameParts.LbName)
+
+		if knownLoadBalancers.Has(l7Name) {
+			klog.V(3).Infof("Load balancer %v is still valid, not GC'ing", l7Name)
 			continue
 		}
-		klog.V(2).Infof("GCing loadbalancer %v", name)
 
-		version := meta.VersionGA
-		// TODO: (shance) figure out a cleaner way to determine this
-		// Regional resources are alpha only
-		if scopes[i] != meta.Global {
-			version = meta.VersionAlpha
+		scope, err := composite.ScopeFromSelfLink(um.SelfLink)
+		if err != nil {
+			errors = append(errors, fmt.Errorf("error getting scope from self link for urlMap %v: %v", um, err))
+			continue
 		}
 
-		if err := l.Delete(name, version, scopes[i]); err != nil {
-			return err
+		klog.V(2).Infof("GCing loadbalancer %v", l7Name)
+		if err := l.Delete(l7Name, versions, scope); err != nil {
+			errors = append(errors, fmt.Errorf("error deleting loadbalancer %q", l7Name))
 		}
 	}
 	return nil

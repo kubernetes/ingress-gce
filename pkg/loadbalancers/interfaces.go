@@ -18,14 +18,16 @@ package loadbalancers
 
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 )
 
 // LoadBalancerPool is an interface to manage the cloud resources associated
 // with a gce loadbalancer.
 type LoadBalancerPool interface {
 	Ensure(ri *L7RuntimeInfo) (*L7, error)
-	Delete(name string, version meta.Version, scope meta.KeyType) error
+	Delete(name string, versions *features.ResourceVersions, scope meta.KeyType) error
 	GC(names []string) error
 	Shutdown() error
-	List() ([]string, []meta.KeyType, error)
+	List(key *meta.Key, version meta.Version) ([]*composite.UrlMap, error)
 }
