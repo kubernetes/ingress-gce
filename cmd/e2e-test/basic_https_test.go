@@ -100,6 +100,7 @@ func TestBasicHTTPS(t *testing.T) {
 				}
 			}
 			ing := tc.ingBuilder.Build()
+			ing.Namespace = s.Namespace // namespace depends on sandbox
 
 			_, err := e2e.CreateEchoService(s, "service-1", nil)
 			if err != nil {
@@ -107,7 +108,8 @@ func TestBasicHTTPS(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(ing); err != nil {
+			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			if _, err := crud.Create(ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)

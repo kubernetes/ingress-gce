@@ -43,7 +43,7 @@ func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (
 	return EnsureEchoService(s, name, annotations, v1.ServiceTypeNodePort, 1)
 }
 
-// Ensures that the Echo service with the given description is set up
+// EnsureEchoService that the Echo service with the given description is set up
 func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32) (*v1.Service, error) {
 	expectedSvc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -157,18 +157,16 @@ func DeleteSecret(s *Sandbox, name string) error {
 
 // EnsureIngress creates a new Ingress or updates an existing one.
 func EnsureIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
-	currentIng, err := s.f.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Get(ing.ObjectMeta.Name, metav1.GetOptions{})
-
+	crud := &IngressCRUD{s.f.Clientset}
+	currentIng, err := crud.Get(ing.ObjectMeta.Namespace, ing.ObjectMeta.Name)
 	if currentIng == nil || err != nil {
-		return s.f.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(ing)
+		return crud.Create(ing)
 	}
-
 	// Update ingress spec if they are not equal
 	if !reflect.DeepEqual(ing.Spec, currentIng.Spec) {
-		return s.f.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Update(ing)
+		return crud.Update(ing)
 	}
-
-	return currentIng, nil
+	return ing, nil
 }
 
 // NewGCPAddress reserves a global static IP address with the given name.

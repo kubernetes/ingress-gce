@@ -56,7 +56,7 @@ func buildPolicyDisallowAll(name string) *computebeta.SecurityPolicy {
 	return &computebeta.SecurityPolicy{
 		Name: name,
 		Rules: []*computebeta.SecurityPolicyRule{
-			&computebeta.SecurityPolicyRule{
+			{
 				Action: "deny(403)",
 				Match: &computebeta.SecurityPolicyRuleMatcher{
 					Config: &computebeta.SecurityPolicyRuleMatcherConfig{
@@ -79,11 +79,11 @@ func TestSecurityPolicyEnable(t *testing.T) {
 			buildPolicyAllowAll(fmt.Sprintf("enable-test-allow-all-%s", s.Namespace)),
 		}
 		defer func() {
-			if err := cleanupSecurityPolicies(t, ctx, Framework.Cloud, policies); err != nil {
+			if err := cleanupSecurityPolicies(ctx, t, Framework.Cloud, policies); err != nil {
 				t.Errorf("cleanupSecurityPolicies(...) =  %v, want nil", err)
 			}
 		}()
-		policies, err := createSecurityPolicies(t, ctx, Framework.Cloud, policies)
+		policies, err := createSecurityPolicies(ctx, t, Framework.Cloud, policies)
 		if err != nil {
 			t.Fatalf("createSecurityPolicies(...) = _, %v, want _, nil", err)
 		}
@@ -106,8 +106,12 @@ func TestSecurityPolicyEnable(t *testing.T) {
 		t.Logf("Backend config %s/%s created", s.Namespace, testBackendConfig.Name)
 
 		port80 := intstr.FromInt(80)
-		testIng := fuzz.NewIngressBuilder("", "ingress-1", "").DefaultBackend("service-1", port80).AddPath("test.com", "/", "service-1", port80).Build()
-		testIng, err = Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(testIng)
+		testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
+			DefaultBackend("service-1", port80).
+			AddPath("test.com", "/", "service-1", port80).
+			Build()
+		crud := e2e.IngressCRUD{C: Framework.Clientset}
+		testIng, err = crud.Create(testIng)
 		if err != nil {
 			t.Fatalf("error creating Ingress spec: %v", err)
 		}
@@ -151,11 +155,11 @@ func TestSecurityPolicyTransition(t *testing.T) {
 			buildPolicyDisallowAll(fmt.Sprintf("transition-test-disallow-all-%s", s.Namespace)),
 		}
 		defer func() {
-			if err := cleanupSecurityPolicies(t, ctx, Framework.Cloud, policies); err != nil {
+			if err := cleanupSecurityPolicies(ctx, t, Framework.Cloud, policies); err != nil {
 				t.Errorf("cleanupSecurityPolicies(...) = %v, want nil", err)
 			}
 		}()
-		policies, err := createSecurityPolicies(t, ctx, Framework.Cloud, policies)
+		policies, err := createSecurityPolicies(ctx, t, Framework.Cloud, policies)
 		if err != nil {
 			t.Fatalf("createSecurityPolicies(...) = _, %v, want _, nil", err)
 		}
@@ -178,8 +182,12 @@ func TestSecurityPolicyTransition(t *testing.T) {
 		t.Logf("Backend config %s/%s created", s.Namespace, testBackendConfig.Name)
 
 		port80 := intstr.FromInt(80)
-		testIng := fuzz.NewIngressBuilder("", "ingress-1", "").DefaultBackend("service-1", port80).AddPath("test.com", "/", "service-1", port80).Build()
-		testIng, err = Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(testIng)
+		testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
+			DefaultBackend("service-1", port80).
+			AddPath("test.com", "/", "service-1", port80).
+			Build()
+		crud := e2e.IngressCRUD{C: Framework.Clientset}
+		testIng, err = crud.Create(testIng)
 		if err != nil {
 			t.Fatalf("error creating Ingress spec: %v", err)
 		}
@@ -246,7 +254,7 @@ func TestSecurityPolicyTransition(t *testing.T) {
 	})
 }
 
-func createSecurityPolicies(t *testing.T, ctx context.Context, c cloud.Cloud, policies []*computebeta.SecurityPolicy) ([]*computebeta.SecurityPolicy, error) {
+func createSecurityPolicies(ctx context.Context, t *testing.T, c cloud.Cloud, policies []*computebeta.SecurityPolicy) ([]*computebeta.SecurityPolicy, error) {
 	t.Logf("Creating security policies...")
 	createdPolicies := []*computebeta.SecurityPolicy{}
 	for _, policy := range policies {
@@ -263,7 +271,7 @@ func createSecurityPolicies(t *testing.T, ctx context.Context, c cloud.Cloud, po
 	return createdPolicies, nil
 }
 
-func cleanupSecurityPolicies(t *testing.T, ctx context.Context, c cloud.Cloud, policies []*computebeta.SecurityPolicy) error {
+func cleanupSecurityPolicies(ctx context.Context, t *testing.T, c cloud.Cloud, policies []*computebeta.SecurityPolicy) error {
 	t.Logf("Deleting security policies...")
 	var errs []string
 	for _, policy := range policies {
