@@ -79,6 +79,7 @@ type StatusManager struct {
 	informerRunning bool
 }
 
+// NewStatusManager returns a new status manager.
 func NewStatusManager(f *Framework) *StatusManager {
 	return &StatusManager{
 		cm: &v1.ConfigMap{
@@ -104,7 +105,7 @@ func (sm *StatusManager) init() error {
 	}
 
 	go func() {
-		for _ = range time.NewTicker(flushInterval).C {
+		for range time.NewTicker(flushInterval).C {
 			sm.flush()
 		}
 	}()

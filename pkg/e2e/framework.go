@@ -159,7 +159,7 @@ func (f *Framework) WithSandbox(testFunc func(*Sandbox) error) error {
 	for _, s := range f.sandboxes {
 		if s.Namespace == sandbox.Namespace {
 			f.lock.Unlock()
-			return fmt.Errorf("sandbox %s was created previously by the framework.", s.Namespace)
+			return fmt.Errorf("sandbox %s was created previously by the framework", s.Namespace)
 		}
 	}
 	klog.V(2).Infof("Using namespace %q for test sandbox", sandbox.Namespace)

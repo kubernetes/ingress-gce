@@ -55,7 +55,8 @@ type WaitForIngressOptions struct {
 func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOptions) (*v1beta1.Ingress, error) {
 	err := wait.Poll(ingressPollInterval, ingressPollTimeout, func() (bool, error) {
 		var err error
-		ing, err = s.f.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Get(ing.Name, metav1.GetOptions{})
+		crud := IngressCRUD{s.f.Clientset}
+		ing, err = crud.Get(s.Namespace, ing.Name)
 		if err != nil {
 			return true, err
 		}
@@ -66,12 +67,11 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOpt
 		result := validator.Check(context.Background())
 		if result.Err == nil {
 			return true, nil
-		} else {
-			if options == nil || options.ExpectUnreachable {
-				return false, nil
-			}
-			return true, fmt.Errorf("unexpected error from validation: %v", result.Err)
 		}
+		if options == nil || options.ExpectUnreachable {
+			return false, nil
+		}
+		return true, fmt.Errorf("unexpected error from validation: %v", result.Err)
 	})
 	return ing, err
 }
@@ -79,7 +79,8 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOpt
 // WaitForIngressDeletion deletes the given ingress and waits for the
 // resources associated with it to be deleted.
 func WaitForIngressDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ing *v1beta1.Ingress, options *fuzz.GCLBDeleteOptions) error {
-	if err := s.f.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Delete(ing.Name, &metav1.DeleteOptions{}); err != nil {
+	crud := IngressCRUD{s.f.Clientset}
+	if err := crud.Delete(ing.Namespace, ing.Name); err != nil {
 		return fmt.Errorf("delete(%q) = %v, want nil", ing.Name, err)
 	}
 	klog.Infof("Waiting for GCLB resources to be deleted (%s/%s), IngressDeletionOptions=%+v", s.Namespace, ing.Name, options)
@@ -113,7 +114,7 @@ func WaitForNEGDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, option
 	})
 }
 
-// WaitForNegConfiguration waits until the NEGStatus of the service is updated to at least one NEG
+// WaitForNEGConfiguration waits until the NEGStatus of the service is updated to at least one NEG
 // TODO: (shance) make this more robust so it handles multiple NEGS
 func WaitForNEGConfiguration(svc *v1.Service, f *Framework, s *Sandbox) error {
 	return wait.Poll(negPollInterval, gclbDeletionTimeout, func() (bool, error) {
@@ -135,6 +136,7 @@ func WaitForNEGConfiguration(svc *v1.Service, f *Framework, s *Sandbox) error {
 	})
 }
 
+// CheckGCLB whitebox testing is OK.
 func CheckGCLB(gclb *fuzz.GCLB, numForwardingRules int, numBackendServices int) error {
 	// Do some cursory checks on the GCP objects.
 	if len(gclb.ForwardingRule) != numForwardingRules {

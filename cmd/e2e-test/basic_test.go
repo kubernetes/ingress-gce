@@ -78,7 +78,9 @@ func TestBasic(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(tc.ing); err != nil {
+			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			tc.ing.Namespace = s.Namespace // namespace depends on sandbox
+			if _, err = crud.Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
@@ -132,11 +134,12 @@ func TestBasicStaticIP(t *testing.T) {
 		}
 		defer e2e.DeleteGCPAddress(s, addrName)
 
-		testIng := fuzz.NewIngressBuilder("", "ingress-1", "").
+		testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 			DefaultBackend("service-1", intstr.FromInt(80)).
 			AddStaticIP(addrName).
 			Build()
-		testIng, err = Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(testIng)
+		crud := e2e.IngressCRUD{C: Framework.Clientset}
+		testIng, err = crud.Create(testIng)
 		if err != nil {
 			t.Fatalf("error creating Ingress spec: %v", err)
 		}
@@ -197,8 +200,9 @@ func TestEdge(t *testing.T) {
 				t.Fatalf("error creating echo service: %v", err)
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
-
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(tc.ing); err != nil {
+			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			tc.ing.Namespace = s.Namespace // namespace depends on sandbox
+			if _, err = crud.Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)

@@ -59,7 +59,9 @@ func TestUpgrade(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(tc.ing); err != nil {
+			tc.ing.Namespace = s.Namespace // namespace depends on sandbox
+			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			if _, err := crud.Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
@@ -84,8 +86,9 @@ func TestUpgrade(t *testing.T) {
 					newIng := fuzz.NewIngressBuilderFromExisting(tc.ing).
 						AddPath("bar.com", "/", "service-1", port80).
 						Build()
-
-					if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Update(newIng); err != nil {
+					newIng.Namespace = s.Namespace // namespace depends on sandbox
+					// TODO: does the path need to be different for each upgrade
+					if _, err := crud.Update(newIng); err != nil {
 						t.Fatalf("error creating Ingress spec: %v", err)
 					} else {
 						// If Ingress upgrade succeeds, we update the status on this Ingress
