@@ -85,4 +85,3 @@ type NEGGetter interface {
 type ProbeProvider interface {
 	GetProbe(sp utils.ServicePort) (*ServicePortAndProbe, error)
 }
-
