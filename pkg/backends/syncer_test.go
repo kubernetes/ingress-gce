@@ -67,10 +67,7 @@ func newTestSyncer(fakeGCE *gce.Cloud) *backendSyncer {
 		namer:         defaultNamer,
 	}
 
-	sp := &ServicePortAndProbe{
-		Service: &api_v1.ServicePort{},
-		Probe:   existingProbe,
-	}
+	sp := &ServicePortAndProbe{ServicePort: &api_v1.ServicePort{}, Probe: existingProbe}
 	probes := map[utils.ServicePort]*ServicePortAndProbe{{NodePort: 443, Protocol: annotations.ProtocolHTTPS}: sp}
 	syncer.Init(NewFakeProbeProvider(probes))
 

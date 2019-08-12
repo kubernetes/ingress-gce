@@ -607,10 +607,10 @@ func TestHealthCheckOverride(t *testing.T) {
 			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got.Probe), exp)
 		}
 
-		if got.Service == nil {
+		if got.ServicePort == nil {
 			t.Errorf("Failed to extract Service NodePort for healthcheck")
-		} else if got.Service.NodePort != 3001 {
-			t.Errorf("Failed to match Service NodePort for healthcheck wanted 3001, got %s, %v", got.Service, err)
+		} else if got.ServicePort.NodePort != 3001 {
+			t.Errorf("Failed to match Service NodePort for healthcheck wanted 3001, got %s, %v", got.ServicePort, err)
 		}
 	}
 }
@@ -689,7 +689,7 @@ func TestHealthCheckOverrideOrder(t *testing.T) {
 								},
 							},
 						},
-					},					
+					},
 				},
 				{
 					Ports: []apiv1.ContainerPort{{ContainerPort: 8080}},
@@ -727,10 +727,10 @@ func TestHealthCheckOverrideOrder(t *testing.T) {
 			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got.Probe), exp)
 		}
 
-		if got.Service == nil {
+		if got.ServicePort == nil {
 			t.Errorf("Failed to extract Service NodePort for healthcheck")
-		} else if got.Service.NodePort != 3001 {
-			t.Errorf("Failed to match Service NodePort for healthcheck wanted 80, got %s, %v", got.Service, err)
+		} else if got.ServicePort.NodePort != 3001 {
+			t.Errorf("Failed to match Service NodePort for healthcheck wanted 80, got %s, %v", got.ServicePort, err)
 		}
 	}
 }

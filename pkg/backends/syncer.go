@@ -276,10 +276,10 @@ func applyProbeSettingsToHC(p *ServicePortAndProbe, hc *healthchecks.HealthCheck
 	hc.Host = host
 	hc.Description = "Kubernetes L7 health check generated with readiness probe settings."
 	hc.TimeoutSec = int64(p.Probe.TimeoutSeconds)
-	if p.Service != nil && p.Probe.HTTPGet != nil {
-		hc.Port = int64(p.Service.NodePort)
+	if p.ServicePort != nil && p.Probe.HTTPGet != nil {
+		hc.Port = int64(p.ServicePort.NodePort)
 		hc.Type = string(p.Probe.HTTPGet.Scheme)
-	}	
+	}
 	if hc.ForNEG {
 		// For NEG mode, we can support more aggressive healthcheck interval.
 		hc.CheckIntervalSec = int64(p.Probe.PeriodSeconds)

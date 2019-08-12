@@ -250,11 +250,11 @@ func (t *Translator) getHTTPProbe(svc api_v1.Service, targetPort intstr.IntOrStr
 				continue
 			}
 			for _, np := range svc.Spec.Ports {
-				if ((np.TargetPort.Type == intstr.Int && c.ReadinessProbe.HTTPGet.Port.IntValue() == np.TargetPort.IntValue() ) || 
-				    (c.ReadinessProbe.HTTPGet.Port.Type == intstr.String)) {
+				if (np.TargetPort.Type == intstr.Int && c.ReadinessProbe.HTTPGet.Port.IntValue() == np.TargetPort.IntValue()) ||
+					(c.ReadinessProbe.HTTPGet.Port.Type == intstr.String) {
 					return &backends.ServicePortAndProbe{
-						Probe:   c.ReadinessProbe,
-						Service: &np,
+						Probe:       c.ReadinessProbe,
+						ServicePort: &np,
 					}, nil
 				}
 			}

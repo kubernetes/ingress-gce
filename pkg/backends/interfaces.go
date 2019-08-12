@@ -31,11 +31,11 @@ type GroupKey struct {
 	Name string
 }
 
-// ServicePortAndProbe represents the Node and Container redinessProbe
-// specifications for aservice
+// ServicePortAndProbe encapsulates a service port and the associated
+// readiness probe specification.
 type ServicePortAndProbe struct {
-	Probe   *api_v1.Probe
-	Service *api_v1.ServicePort
+	Probe       *api_v1.Probe
+	ServicePort *api_v1.ServicePort
 }
 
 // Pool is an interface to perform CRUD operations on a pool of GCE
@@ -81,7 +81,7 @@ type NEGGetter interface {
 	GetNetworkEndpointGroup(name string, zone string) (*compute.NetworkEndpointGroup, error)
 }
 
-// ProbeProvider retrieves a ServicePortAndProbe struct given a nodePort
+// ProbeProvider retrieves a ServicePortAndProbe given a ServicePort
 type ProbeProvider interface {
 	GetProbe(sp utils.ServicePort) (*ServicePortAndProbe, error)
 }
