@@ -19,6 +19,7 @@ package loadbalancers
 import (
 	"context"
 	"fmt"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"net/http"
 	"strconv"
 	"strings"
@@ -646,7 +647,7 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 		verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 		// Fetch the target proxy certs and go through in order
 		verifyProxyCertsInOrder(" foo.com", j, t)
-		j.pool.Delete(lbInfo.Name, defaultVersion, defaultScope)
+		j.pool.Delete(lbInfo.Name, features.GAResourceVersions, defaultScope)
 	}
 }
 
@@ -702,7 +703,7 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 		verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 		// Fetch the target proxy certs and go through in order
 		verifyProxyCertsInOrder(" foo.com", j, t)
-		j.pool.Delete(lbInfo.Name, defaultVersion, defaultScope)
+		j.pool.Delete(lbInfo.Name, features.GAResourceVersions, defaultScope)
 	}
 }
 
@@ -1191,20 +1192,24 @@ func TestList(t *testing.T) {
 	}
 
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
-		t.Fatalf("j.pool.Ensure() = err %v", err)
+		t.Fatalf("j.pool.Ensure() = %v; want nil", err)
 	}
 
-	lbNames, _, err := j.pool.List()
+	urlMaps, err := j.pool.List(key, defaultVersion)
 	if err != nil {
-		t.Fatalf("j.pool.List() = err %v", err)
+		t.Fatalf("j.pool.List(%q, %q) = %v, want nil", key, defaultVersion, err)
+	}
+	var umNames []string
+	for _, um := range urlMaps {
+		umNames = append(umNames, um.Name)
 	}
 
-	expected := []string{"old-l7--uid1", "test--uid1"}
+	expected := []string{"k8s-um-test--uid1", "k8s-um-old-l7--uid1"}
 
-	if len(lbNames) != 2 ||
-		!slice.ContainsString(lbNames, expected[0], nil) ||
-		!slice.ContainsString(lbNames, expected[1], nil) {
-		t.Fatalf("j.pool.List() returned %+v, want %+v", lbNames, expected)
+	for _, name := range expected {
+		if !slice.ContainsString(umNames, name, nil) {
+			t.Fatalf("j.pool.List(%q, %q) returned names %v, want %v", key, defaultVersion, umNames, expected)
+		}
 	}
 }
 

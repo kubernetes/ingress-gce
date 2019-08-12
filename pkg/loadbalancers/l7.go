@@ -223,10 +223,9 @@ func (l *L7) GetIP() string {
 // Cleanup deletes resources specific to this l7 in the right order.
 // forwarding rule -> target proxy -> url map
 // This leaves backends and health checks, which are shared across loadbalancers.
-func (l *L7) Cleanup() error {
+func (l *L7) Cleanup(versions *features.ResourceVersions) error {
 	var key *meta.Key
 	var err error
-	versions := l.Versions()
 
 	fwName := l.namer.ForwardingRule(l.Name, utils.HTTPProtocol)
 	klog.V(2).Infof("Deleting global forwarding rule %v", fwName)

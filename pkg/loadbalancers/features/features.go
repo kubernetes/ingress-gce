@@ -28,6 +28,8 @@ const (
 	FeatureL7ILB = "L7ILB"
 )
 
+var GAResourceVersions = NewResourceVersions()
+
 // ResourceVersions allows you to define all the versions required for each resource
 // for a feature.
 type ResourceVersions struct {

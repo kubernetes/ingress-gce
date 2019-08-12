@@ -48,52 +48,6 @@ func CreateKey(gceCloud *gce.Cloud, name string, scope meta.KeyType) (*meta.Key,
 
 // TODO: (shance) generate this
 // TODO: (shance) populate scope
-// TODO: (shance) figure out a better way to get version
-// ListAllUrlMaps() merges all configured List() calls into one list of composite UrlMaps.
-// This function combines both global and regional resources into one slice
-// so users must use ScopeFromSelfLink() to determine the correct scope
-// before issuing an API call.
-func ListAllUrlMaps(gceCloud *gce.Cloud) ([]*UrlMap, error) {
-	resultMap := map[string]*UrlMap{}
-
-	// TODO(shance): this needs to be replaced with 'scope' and not key
-	globalKey, err := CreateKey(gceCloud, "", meta.Global)
-	if err != nil {
-		return nil, err
-	}
-	regionalKey, err := CreateKey(gceCloud, "", meta.Regional)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, vk := range []struct {
-		v meta.Version
-		k *meta.Key //TODO(shance): change this to scope
-	}{
-		{meta.VersionGA, globalKey},
-		{meta.VersionAlpha, regionalKey},
-	} {
-
-		list, err := ListUrlMaps(gceCloud, vk.k, vk.v)
-		if err != nil {
-			return nil, fmt.Errorf("error listing all urlmaps: %v", err)
-		}
-		for _, um := range list {
-			resultMap[um.SelfLink] = um
-		}
-	}
-
-	// Convert map to slice
-	result := []*UrlMap{}
-	for _, um := range resultMap {
-		result = append(result, um)
-	}
-
-	return result, nil
-}
-
-// TODO: (shance) generate this
-// TODO: (shance) populate scope
 // TODO: (shance) figure out a more accurate way to obtain version
 // ListAllUrlMaps() merges all configured List() calls into one list of composite UrlMaps
 // This function combines both global and regional resources into one slice
