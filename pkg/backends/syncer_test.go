@@ -473,8 +473,8 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 		NodePort: 30001,
 	}
 	sp := &ServicePortAndProbe{
-		Probe:   probe,
-		Service: svc,
+		Probe:       probe,
+		ServicePort: svc,
 	}
 
 	// update HC to mirror what was in the probe
