@@ -59,6 +59,39 @@ func MockNetworkEndpointAPIs(fakeGCE *gce.Cloud) {
 	m.MockNetworkEndpointGroups.AttachNetworkEndpointsHook = MockAttachNetworkEndpointsHook
 	m.MockNetworkEndpointGroups.DetachNetworkEndpointsHook = MockDetachNetworkEndpointsHook
 	m.MockNetworkEndpointGroups.ListNetworkEndpointsHook = MockListNetworkEndpointsHook
+	m.MockNetworkEndpointGroups.AggregatedListHook = MockAggregatedListNetworkEndpointGroupHook
+}
+
+// TODO: move this logic into code gen
+// TODO: make AggregateList return map[meta.Key]Object
+func MockAggregatedListNetworkEndpointGroupHook(ctx context.Context, fl *filter.F, m *cloud.MockNetworkEndpointGroups) (bool, map[string][]*compute.NetworkEndpointGroup, error) {
+	objs := map[string][]*compute.NetworkEndpointGroup{}
+	for _, obj := range m.Objects {
+		res, err := cloud.ParseResourceURL(obj.ToGA().SelfLink)
+		if err != nil {
+			return false, nil, err
+		}
+		if !fl.Match(obj.ToGA()) {
+			continue
+		}
+		var location string
+		switch res.Key.Type() {
+		case meta.Regional:
+			location = fmt.Sprintf("regions/%s", res.Key.Region)
+			break
+		case meta.Zonal:
+			location = fmt.Sprintf("zones/%s", res.Key.Zone)
+			break
+		case meta.Global:
+			location = string(meta.Global)
+		}
+		objs[location] = append(objs[location], obj.ToGA())
+	}
+	// Always return global
+	if _, ok := objs[meta.Global]; !ok {
+		objs[meta.Global] = []*compute.NetworkEndpointGroup{}
+	}
+	return true, objs, nil
 }
 
 func MockListNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *compute.NetworkEndpointGroupsListEndpointsRequest, filter *filter.F, m *cloud.MockNetworkEndpointGroups) ([]*compute.NetworkEndpointWithHealthStatus, error) {
