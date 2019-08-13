@@ -19,6 +19,7 @@ package backends
 import (
 	"context"
 	"fmt"
+	"k8s.io/ingress-gce/pkg/composite"
 	"net/http"
 	"reflect"
 	"testing"
@@ -38,6 +39,78 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/legacy-cloud-providers/gce"
 )
+
+// portset helps keep track of service ports during GC tests
+type portset struct {
+	// all represents the set all of service ports in the test
+	all map[utils.ServicePort]bool
+	// existing represents what should exist in GCE
+	existing map[utils.ServicePort]bool
+}
+
+func newPortset(ports []utils.ServicePort) *portset {
+	ps := portset{all: map[utils.ServicePort]bool{}, existing: map[utils.ServicePort]bool{}}
+	for _, sp := range ports {
+		ps.all[sp] = true
+	}
+	return &ps
+}
+
+func (p *portset) existingPorts() []utils.ServicePort {
+	var result []utils.ServicePort
+	for sp, _ := range p.existing {
+		result = append(result, sp)
+	}
+	return result
+}
+
+// Add to 'existing' from all
+func (p *portset) add(ports []utils.ServicePort) error {
+	for _, sp := range ports {
+		// Sanity check
+		if found := p.all[sp]; !found {
+			return fmt.Errorf("%+v not found in p.all", sp)
+		}
+		p.existing[sp] = true
+	}
+	return nil
+}
+
+// Delete from 'existing'
+func (p *portset) del(ports []utils.ServicePort) error {
+	for _, sp := range ports {
+		found := p.existing[sp]
+		if !found {
+			return fmt.Errorf("%+v not found in p.existing", sp)
+		}
+		delete(p.existing, sp)
+	}
+	return nil
+}
+
+// check() iterates through all and checks that the ports in 'existing' exist in gce, and that those
+// that are not in 'existing' do not exist
+func (p *portset) check(fakeGCE *gce.Cloud) error {
+	for sp, _ := range p.all {
+		_, found := p.existing[sp]
+		beName := sp.BackendName(defaultNamer)
+		key, err := composite.CreateKey(fakeGCE, beName, features.ScopeFromServicePort(&sp))
+		if err != nil {
+			return fmt.Errorf("Error creating key for backend service %s: %v", beName, err)
+		}
+
+		if found {
+			if _, err := composite.GetBackendService(fakeGCE, key, features.VersionFromServicePort(&sp)); err != nil {
+				return fmt.Errorf("backend for port %+v should exist, but got: %v", sp.NodePort, err)
+			}
+		} else {
+			if bs, err := composite.GetBackendService(fakeGCE, key, features.VersionFromServicePort(&sp)); !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+				return fmt.Errorf("backend for port %+v should not exist, but got %v", sp, bs)
+			}
+		}
+	}
+	return nil
+}
 
 var (
 	defaultNamer      = utils.NewNamer("uid1", "fw1")
@@ -65,6 +138,7 @@ func newTestSyncer(fakeGCE *gce.Cloud) *backendSyncer {
 		backendPool:   fakeBackendPool,
 		healthChecker: fakeHealthChecks,
 		namer:         defaultNamer,
+		cloud:         fakeGCE,
 	}
 
 	probes := map[utils.ServicePort]*api_v1.Probe{{NodePort: 443, Protocol: annotations.ProtocolHTTPS}: existingProbe}
@@ -76,6 +150,7 @@ func newTestSyncer(fakeGCE *gce.Cloud) *backendSyncer {
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = mock.UpdateBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.UpdateHook = mock.UpdateHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaHealthChecks.UpdateHook = mock.UpdateAlphaHealthCheckHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaRegionHealthChecks.UpdateHook = mock.UpdateAlphaRegionHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaHealthChecks.UpdateHook = mock.UpdateBetaHealthCheckHook
 
 	return syncer
@@ -212,6 +287,7 @@ func TestSyncUpdateHTTP2(t *testing.T) {
 	}
 }
 
+// Test GC with both ELB and ILBs
 func TestGC(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	syncer := newTestSyncer(fakeGCE)
@@ -221,49 +297,88 @@ func TestGC(t *testing.T) {
 		{NodePort: 82, Protocol: annotations.ProtocolHTTPS},
 		{NodePort: 83, Protocol: annotations.ProtocolHTTP},
 	}
+	ps := newPortset(svcNodePorts)
+	if err := ps.add(svcNodePorts); err != nil {
+		t.Fatal(err)
+	}
 
-	if err := syncer.Sync(svcNodePorts); err != nil {
-		t.Fatalf("Expected syncer to add backends with error, err: %v", err)
+	if err := syncer.Sync(ps.existingPorts()); err != nil {
+		t.Fatalf("syncer.Sync(%+v) = %v, want nil ", ps.existingPorts(), err)
 	}
-	// Check that all backends were created.
-	for _, sp := range svcNodePorts {
-		beName := sp.BackendName(defaultNamer)
-		if _, err := fakeGCE.GetGlobalBackendService(beName); err != nil {
-			t.Fatalf("Expected to find backend for port %v, err: %v", sp.NodePort, err)
-		}
+
+	if err := ps.check(fakeGCE); err != nil {
+		t.Fatal(err)
 	}
+
 	// Run a no-op GC (i.e nothing is actually cleaned up)
-	if err := syncer.GC(svcNodePorts); err != nil {
-		t.Fatalf("Expected backend pool to GC, err: %v", err)
-	}
-	// Ensure that no backends were actually deleted
-	for _, sp := range svcNodePorts {
-		beName := sp.BackendName(defaultNamer)
-		if _, err := fakeGCE.GetGlobalBackendService(beName); err != nil {
-			t.Fatalf("Expected to find backend for port %v, err: %v", sp.NodePort, err)
-		}
+	if err := syncer.GC(ps.existingPorts()); err != nil {
+		t.Fatalf("syncer.GC(%+v) = %v, want nil", ps.existingPorts(), err)
 	}
 
-	deletedPorts := []utils.ServicePort{svcNodePorts[1], svcNodePorts[2]}
-	svcNodePorts = []utils.ServicePort{svcNodePorts[0]}
-	if err := syncer.GC(svcNodePorts); err != nil {
-		t.Fatalf("Expected backend pool to GC, err: %v", err)
+	// Check that nothing was deleted
+	if err := ps.check(fakeGCE); err != nil {
+		t.Fatal(err)
 	}
 
-	// Ensure that 2 out of the 3 backends were deleted
-	for _, sp := range deletedPorts {
-		beName := sp.BackendName(defaultNamer)
-		if _, err := fakeGCE.GetGlobalBackendService(beName); err == nil {
-			t.Fatalf("Expected to not find backend for port %v", sp.NodePort)
-		}
+	if err := ps.del([]utils.ServicePort{svcNodePorts[1], svcNodePorts[2]}); err != nil {
+		t.Fatal(err)
 	}
 
-	// Ensure that the 1 remaining backend exists
-	for _, sp := range svcNodePorts {
-		beName := sp.BackendName(defaultNamer)
-		if _, err := fakeGCE.GetGlobalBackendService(beName); err != nil {
-			t.Fatalf("Expected to find backend for port %v, err: %v", sp.NodePort, err)
-		}
+	if err := syncer.GC(ps.existingPorts()); err != nil {
+		t.Fatalf("syncer.GC(%+v) = %v, want nil", ps.existingPorts(), err)
+	}
+
+	if err := ps.check(fakeGCE); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Test GC with both ELB and ILBs
+func TestGCMixed(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	syncer := newTestSyncer(fakeGCE)
+
+	svcNodePorts := []utils.ServicePort{
+		{NodePort: 81, Protocol: annotations.ProtocolHTTP},
+		{NodePort: 82, Protocol: annotations.ProtocolHTTPS},
+		{NodePort: 83, Protocol: annotations.ProtocolHTTP},
+		{NodePort: 84, Protocol: annotations.ProtocolHTTP, NEGEnabled: true, L7ILBEnabled: true},
+		{NodePort: 85, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true, L7ILBEnabled: true},
+		{NodePort: 86, Protocol: annotations.ProtocolHTTP, NEGEnabled: true, L7ILBEnabled: true},
+	}
+	ps := newPortset(svcNodePorts)
+	if err := ps.add(svcNodePorts); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := syncer.Sync(ps.existingPorts()); err != nil {
+		t.Fatalf("syncer.Sync(%+v) = %v, want nil ", ps.existingPorts(), err)
+	}
+
+	if err := ps.check(fakeGCE); err != nil {
+		t.Fatal(err)
+	}
+
+	// Run a no-op GC (i.e nothing is actually cleaned up)
+	if err := syncer.GC(ps.existingPorts()); err != nil {
+		t.Fatalf("syncer.GC(%+v) = %v, want nil", ps.existingPorts(), err)
+	}
+
+	// Check that nothing was deleted
+	if err := ps.check(fakeGCE); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ps.del([]utils.ServicePort{svcNodePorts[1], svcNodePorts[2]}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := syncer.GC(ps.existingPorts()); err != nil {
+		t.Fatalf("syncer.GC(%+v) = %v, want nil", ps.existingPorts(), err)
+	}
+
+	if err := ps.check(fakeGCE); err != nil {
+		t.Fatal(err)
 	}
 }
 

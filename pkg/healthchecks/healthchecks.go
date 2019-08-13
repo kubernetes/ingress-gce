@@ -208,17 +208,16 @@ func (h *HealthChecks) updateILB(oldHC, newHC *HealthCheck) error {
 	// special case ILB to avoid mucking with stable HC code
 	cloud := h.cloud.(*gce.Cloud)
 
-	compositeType, err := composite.ToHealthCheck(newHC)
+	mergedHC := mergeHealthcheck(oldHC, newHC).ToAlphaComputeHealthCheck()
+	compositeType, err := composite.ToHealthCheck(mergedHC)
 	if err != nil {
 		return fmt.Errorf("Error converting newHC to composite: %v", err)
 	}
-	key, err := composite.CreateKey(cloud, newHC.Name, features.L7ILBScope())
+	key, err := composite.CreateKey(cloud, mergedHC.Name, features.L7ILBScope())
 
 	// Update fields
 	compositeType.Version = features.L7ILBVersions().HealthCheck
 	compositeType.Region = key.Region
-	compositeType.HttpHealthCheck.Port = 0
-	compositeType.HttpHealthCheck.PortSpecification = oldHC.HttpHealthCheck.PortSpecification
 
 	return composite.UpdateHealthCheck(cloud, key, compositeType)
 }
@@ -310,11 +309,21 @@ func (h *HealthChecks) getILB(name string) (*HealthCheck, error) {
 	if err != nil {
 		return nil, err
 	}
-	alphaHC, err := hc.ToAlpha()
+	gceHC, err := hc.ToAlpha()
 	if err != nil {
 		return nil, err
 	}
-	return NewHealthCheck(alphaHC)
+
+	newHC, err := NewHealthCheck(gceHC)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update fields for future update() calls
+	newHC.forILB = true
+	newHC.ForNEG = true
+
+	return newHC, nil
 }
 
 // Get returns the health check by port

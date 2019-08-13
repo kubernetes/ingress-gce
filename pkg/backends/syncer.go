@@ -23,7 +23,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/healthchecks"
+	lbfeatures "k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -68,7 +70,6 @@ func (s *backendSyncer) Sync(svcPorts []utils.ServicePort) error {
 		}
 	}
 	return nil
-
 }
 
 // ensureBackendService will update or create a BackendService for the given port.
@@ -143,11 +144,42 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
 		return err
 	}
 
-	backends, err := s.backendPool.List()
-	if err != nil {
-		return fmt.Errorf("error getting the names of controller-managed backends: %v", err)
+	// Only GC L7 ILB backends if it's enabled
+	if flags.F.EnableL7Ilb {
+		// TODO(shance): Refactor out empty key field
+		key, err := composite.CreateKey(s.cloud, "", meta.Regional)
+		if err != nil {
+			return fmt.Errorf("error creating l7 ilb key: %v", err)
+		}
+		ilbBackends, err := s.backendPool.List(key, lbfeatures.L7ILBVersions().BackendService)
+		if err != nil {
+			return fmt.Errorf("error listing regional backends: %v", err)
+		}
+		err = s.gc(ilbBackends, knownPorts)
+		if err != nil {
+			return fmt.Errorf("error GCing regional Backends: %v", err)
+		}
 	}
 
+	// Requires an empty name field until it is refactored out
+	key, err := composite.CreateKey(s.cloud, "", meta.Global)
+	if err != nil {
+		return fmt.Errorf("error creating l7 ilb key: %v", err)
+	}
+	backends, err := s.backendPool.List(key, meta.VersionGA)
+	if err != nil {
+		return fmt.Errorf("error listing backends: %v", err)
+	}
+	err = s.gc(backends, knownPorts)
+	if err != nil {
+		return fmt.Errorf("error GCing Backends: %v", err)
+	}
+
+	return nil
+}
+
+// gc deletes the provided backends
+func (s *backendSyncer) gc(backends []*composite.BackendService, knownPorts sets.String) error {
 	for _, be := range backends {
 		var key *meta.Key
 		name := be.Name
