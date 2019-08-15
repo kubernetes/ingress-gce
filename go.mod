@@ -10,7 +10,6 @@ require (
 	github.com/evanphx/json-patch v4.1.0+incompatible // indirect
 	github.com/go-openapi/spec v0.19.0
 	github.com/go-openapi/swag v0.19.0 // indirect
-	github.com/gogo/protobuf v1.2.1 // indirect
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
 	github.com/google/gofuzz v1.0.0 // indirect
 	github.com/googleapis/gnostic v0.2.0 // indirect
@@ -31,6 +30,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.2.2 // indirect
+	istio.io/api v0.0.0-20190809125725-591cf32c1d0e
 	k8s.io/api v0.0.0
 	k8s.io/apiextensions-apiserver v0.0.0
 	k8s.io/apimachinery v0.0.0
@@ -53,7 +53,7 @@ replace (
 	github.com/evanphx/json-patch => github.com/evanphx/json-patch v4.1.0+incompatible
 	github.com/go-openapi/spec => github.com/go-openapi/spec v0.19.0
 	github.com/go-openapi/swag => github.com/go-openapi/swag v0.19.0
-	github.com/gogo/protobuf => github.com/gogo/protobuf v1.2.1
+	github.com/gogo/protobuf => github.com/gogo/protobuf v1.2.2-0.20190730201129-28a6bbf47e48
 	github.com/golang/groupcache => github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef
 	github.com/golang/protobuf => github.com/golang/protobuf v1.3.1
 	github.com/google/gofuzz => github.com/google/gofuzz v1.0.0
