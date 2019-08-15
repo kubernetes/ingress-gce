@@ -23,8 +23,9 @@ import (
 	"time"
 
 	"google.golang.org/api/compute/v1"
-	"k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
@@ -159,8 +160,8 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	return nil
 }
 
-// toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map
-func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.ZoneGetter, targetPort string, podLister cache.Indexer) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
+// toZoneNetworkEndpointMap translates addresses in endpoints object and Istio:DestinationRule subset into zone and endpoints map
+func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.ZoneGetter, targetPort string, podLister cache.Indexer, subsetLables string) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	if endpoints == nil {
@@ -197,6 +198,17 @@ func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.Zo
 		// processAddressFunc adds the qualified endpoints from the input list into the endpointSet group by zone
 		processAddressFunc := func(addresses []v1.EndpointAddress, includeAllEndpoints bool) error {
 			for _, address := range addresses {
+				// Apply the selector if Istio:DestinationRule subset labels provided.
+				if subsetLables != "" {
+					if address.TargetRef == nil || address.TargetRef.Kind != "Pod" {
+						klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have a Pod as the TargetRef object. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
+						continue
+					}
+					// Skip if the endpoint's pod not matching the subset lables.
+					if !shouldPodBeInDestinationRuleSubset(podLister, address.TargetRef.Namespace, address.TargetRef.Name, subsetLables) {
+						continue
+					}
+				}
 				if address.NodeName == nil {
 					klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
 					continue
@@ -307,4 +319,32 @@ func shouldPodBeInNeg(podLister cache.Indexer, namespace, name string) bool {
 		return false
 	}
 	return true
+}
+
+// shouldPodBeInDestinationRuleSubset return ture if pod match the DestinationRule subset lables.
+func shouldPodBeInDestinationRuleSubset(podLister cache.Indexer, namespace, name string, subsetLables string) bool {
+	if podLister == nil {
+		return false
+	}
+	key := keyFunc(namespace, name)
+	obj, exists, err := podLister.GetByKey(key)
+	if err != nil {
+		klog.Errorf("Failed to retrieve pod %s from pod lister: %v", key, err)
+		return false
+	}
+	if !exists {
+		return false
+	}
+	pod, ok := obj.(*v1.Pod)
+	if !ok {
+		klog.Errorf("Failed to convert obj %s to v1.Pod. The object type is %T", key, obj)
+		return false
+	}
+
+	selector, err := labels.Parse(subsetLables)
+	if err != nil {
+		klog.Errorf("Failed to parse the subset selectors.")
+		return false
+	}
+	return selector.Matches(labels.Set(pod.Labels))
 }

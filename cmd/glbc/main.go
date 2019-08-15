@@ -19,15 +19,16 @@ package main
 import (
 	"context"
 	"fmt"
-	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"math/rand"
 	"os"
 	"time"
 
 	flag "github.com/spf13/pflag"
+	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/klog"
 
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
@@ -78,7 +79,13 @@ func main() {
 	if err != nil {
 		klog.Fatalf("Failed to create kubernetes client: %v", err)
 	}
-
+	var dynamicClient dynamic.Interface
+	if flags.F.EnableCSM {
+		dynamicClient, err = dynamic.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create kubernetes dynamic client: %v", err)
+		}
+	}
 	// Due to scaling issues, leader election must be configured with a separate k8s client.
 	leaderElectKubeClient, err := kubernetes.NewForConfig(restclient.AddUserAgent(kubeConfig, "leader-election"))
 	if err != nil {
@@ -132,8 +139,9 @@ func main() {
 		HealthCheckPath:               flags.F.HealthCheckPath,
 		DefaultBackendHealthCheckPath: flags.F.DefaultSvcHealthCheckPath,
 		FrontendConfigEnabled:         flags.F.EnableFrontendConfig,
+		EnableCSM:                     flags.F.EnableCSM,
 	}
-	ctx := ingctx.NewControllerContext(kubeClient, backendConfigClient, frontendConfigClient, cloud, namer, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeClient, dynamicClient, backendConfigClient, frontendConfigClient, cloud, namer, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
@@ -197,7 +205,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values())
 
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
-	negController := neg.NewController(negtypes.NewAdapter(ctx.Cloud), ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, neg.NegSyncerType(flags.F.NegSyncerType), flags.F.EnableReadinessReflector)
+	negController := neg.NewController(negtypes.NewAdapter(ctx.Cloud), ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, neg.NegSyncerType(flags.F.NegSyncerType), flags.F.EnableReadinessReflector, flags.F.EnableCSM)
 
 	go negController.Run(stopCh)
 	klog.V(0).Infof("negController started")

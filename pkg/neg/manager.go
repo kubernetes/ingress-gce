@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sync"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -105,7 +105,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	klog.V(3).Infof("EnsureSyncer %v/%v: syncing %v ports, removing %v ports, adding %v ports", namespace, name, newPorts, removes, adds)
 
 	for svcPort, portInfo := range removes {
-		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo.TargetPort)]
+		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo)]
 		if ok {
 			syncer.Stop()
 		}
@@ -114,13 +114,15 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	errList := []error{}
 	// Ensure a syncer is running for each port that is being added.
 	for svcPort, portInfo := range adds {
-		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo.TargetPort)]
+		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo)]
 		if !ok {
 			syncerKey := negtypes.NegSyncerKey{
-				Namespace:  namespace,
-				Name:       name,
-				Port:       svcPort,
-				TargetPort: portInfo.TargetPort,
+				Namespace:    namespace,
+				Name:         name,
+				Port:         svcPort.ServicePort,
+				TargetPort:   portInfo.TargetPort,
+				Subset:       portInfo.Subset,
+				SubsetLabels: portInfo.SubsetLabels,
 			}
 
 			if manager.negSyncerType == transactionSyncer {
@@ -145,10 +147,11 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 					manager.zoneGetter,
 					manager.serviceLister,
 					manager.endpointLister,
+					manager.podLister,
 				)
 			}
 
-			manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo.TargetPort)] = syncer
+			manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo)] = syncer
 		}
 
 		if syncer.IsStopped() {
@@ -167,7 +170,7 @@ func (manager *syncerManager) StopSyncer(namespace, name string) {
 	key := getServiceKey(namespace, name)
 	if ports, ok := manager.svcPortMap[key]; ok {
 		for svcPort, portInfo := range ports {
-			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo.TargetPort)]; ok {
+			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo)]; ok {
 				syncer.Stop()
 			}
 		}
@@ -183,7 +186,7 @@ func (manager *syncerManager) Sync(namespace, name string) {
 	key := getServiceKey(namespace, name)
 	if portInfoMap, ok := manager.svcPortMap[key]; ok {
 		for svcPort, portInfo := range portInfoMap {
-			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo.TargetPort)]; ok {
+			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo)]; ok {
 				if !syncer.IsStopped() {
 					syncer.Sync()
 				}
@@ -255,7 +258,7 @@ func (manager *syncerManager) ReadinessGateEnabled(syncerKey negtypes.NegSyncerK
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if v, ok := manager.svcPortMap[serviceKey{namespace: syncerKey.Namespace, name: syncerKey.Name}]; ok {
-		if info, ok := v[syncerKey.Port]; ok {
+		if info, ok := v[negtypes.PortInfoMapKey{syncerKey.Port, syncerKey.Subset}]; ok {
 			return info.ReadinessGate
 		}
 	}
@@ -326,12 +329,14 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 }
 
 // getSyncerKey encodes a service namespace, name, service port and targetPort into a string key
-func getSyncerKey(namespace, name string, port int32, targetPort string) negtypes.NegSyncerKey {
+func getSyncerKey(namespace, name string, servicePortKey negtypes.PortInfoMapKey, portInfo negtypes.PortInfo) negtypes.NegSyncerKey {
 	return negtypes.NegSyncerKey{
-		Namespace:  namespace,
-		Name:       name,
-		Port:       port,
-		TargetPort: targetPort,
+		Namespace:    namespace,
+		Name:         name,
+		Port:         servicePortKey.ServicePort,
+		TargetPort:   portInfo.TargetPort,
+		Subset:       servicePortKey.Subset,
+		SubsetLabels: portInfo.SubsetLabels,
 	}
 }
 
@@ -355,6 +360,9 @@ func removeCommonPorts(p1, p2 negtypes.PortInfoMap) {
 			continue
 		}
 		if portInfo1.NegName != portInfo2.NegName {
+			continue
+		}
+		if portInfo1.SubsetLabels != portInfo2.SubsetLabels {
 			continue
 		}
 

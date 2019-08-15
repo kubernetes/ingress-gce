@@ -25,7 +25,7 @@ import (
 
 	flag "github.com/spf13/pflag"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	"k8s.io/component-base/config"
@@ -85,6 +85,7 @@ var (
 		FinalizerAdd              bool
 		FinalizerRemove           bool
 		EnableL7Ilb               bool
+		EnableCSM                 bool
 
 		LeaderElection LeaderElectionConfiguration
 	}{}
@@ -200,6 +201,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 		F.FinalizerRemove, "Enable removing Finalizer from Ingress.")
 	flag.BoolVar(&F.EnableL7Ilb, "enable-l7-ilb", false,
 		`Optional, whether or not to enable L7-ILB.`)
+	flag.BoolVar(&F.EnableCSM, "enable-csm", false, "Enable CSM(Istio) support")
 }
 
 type RateLimitSpecs struct {

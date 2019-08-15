@@ -427,7 +427,29 @@ func (n *Namer) NEG(namespace, name string, port int32) string {
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
-	return fmt.Sprintf("%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, negSuffix(n.shortUID(), namespace, name, portStr))
+	return fmt.Sprintf("%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, negSuffix(n.shortUID(), namespace, name, portStr, ""))
+}
+
+// NEGWithSubset returns the gce neg name based on the service namespace, name
+// target port and Istio:DestinationRule subset. NEG naming convention:
+//
+//   {prefix}{version}-{clusterid}-{namespace}-{name}-{service port}-{destination rule subset}-{hash}
+//
+// Output name is at most 63 characters. NEG tries to keep as much
+// information as possible.
+//
+// WARNING: Controllers depend on the naming pattern to get the list
+// of all NEGs associated with the current cluster. Any modifications
+// must be backward compatible.
+func (n *Namer) NEGWithSubset(namespace, name, subset string, port int32) string {
+	portStr := fmt.Sprintf("%v", port)
+	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name, portStr, subset)
+	truncNamespace := truncFields[0]
+	truncName := truncFields[1]
+	truncPort := truncFields[2]
+	truncSubset := truncFields[3]
+
+	return fmt.Sprintf("%s-%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, truncSubset, negSuffix(n.shortUID(), namespace, name, portStr, subset))
 }
 
 // IsNEG returns true if the name is a NEG owned by this cluster.
@@ -443,8 +465,11 @@ func (n *Namer) negPrefix() string {
 }
 
 // negSuffix returns hash code with 8 characters
-func negSuffix(uid, namespace, name, port string) string {
+func negSuffix(uid, namespace, name, port, subset string) string {
 	negString := strings.Join([]string{uid, namespace, name, port}, ";")
+	if subset != "" {
+		negString = strings.Join([]string{negString, subset}, ";")
+	}
 	negHash := fmt.Sprintf("%x", sha256.Sum256([]byte(negString)))
 	return negHash[:8]
 }
