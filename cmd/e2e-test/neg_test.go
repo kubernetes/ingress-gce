@@ -78,7 +78,7 @@ func TestNEG(t *testing.T) {
 			t.Logf("Echo service ensured (%s/%s)", s.Namespace, "service-1")
 
 			// Create the ingress
-			ing := fuzz.NewIngressBuilder("", "ingress-1", "").
+			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 				DefaultBackend("service-1", port80).
 				Build()
 			ing, err = e2e.EnsureIngress(s, ing)
@@ -130,7 +130,7 @@ func TestNEGTransition(t *testing.T) {
 
 	Framework.RunWithSandbox("NEG State Transition Tests", t, func(t *testing.T, s *e2e.Sandbox) {
 
-		ing := fuzz.NewIngressBuilder("", "ingress-1", "").
+		ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 			DefaultBackend("service-1", port80).
 			Build()
 
