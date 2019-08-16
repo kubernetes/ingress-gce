@@ -109,7 +109,7 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 		return svc, err
 	}
 
-	*deployment.Spec.Replicas = numReplicas
+	deployment.Spec.Replicas = &numReplicas
 	if _, err = s.f.Clientset.AppsV1().Deployments(s.Namespace).Update(deployment); err != nil {
 		return nil, fmt.Errorf("Error updating deployment scale: %v", err)
 	}
