@@ -359,3 +359,11 @@ func (b *BackendConfigBuilder) SetConnectionDrainingTimeout(timeout int64) *Back
 	b.backendConfig.Spec.ConnectionDraining.DrainingTimeoutSec = timeout
 	return b
 }
+
+func (b *BackendConfigBuilder) AddCustomRequestHeader(header string) *BackendConfigBuilder {
+	if b.backendConfig.Spec.CustomRequestHeaders == nil {
+		b.backendConfig.Spec.CustomRequestHeaders = &backendconfig.CustomRequestHeadersConfig{}
+	}
+	b.backendConfig.Spec.CustomRequestHeaders.Headers = append(b.backendConfig.Spec.CustomRequestHeaders.Headers, header)
+	return b
+}

@@ -36,12 +36,13 @@ type BackendConfig struct {
 // BackendConfigSpec is the spec for a BackendConfig resource
 // +k8s:openapi-gen=true
 type BackendConfigSpec struct {
-	Iap                *IAPConfig                `json:"iap,omitempty"`
-	Cdn                *CDNConfig                `json:"cdn,omitempty"`
-	SecurityPolicy     *SecurityPolicyConfig     `json:"securityPolicy,omitempty"`
-	TimeoutSec         *int64                    `json:"timeoutSec,omitempty"`
-	ConnectionDraining *ConnectionDrainingConfig `json:"connectionDraining,omitempty"`
-	SessionAffinity    *SessionAffinityConfig    `json:"sessionAffinity,omitempty"`
+	Iap                  *IAPConfig                  `json:"iap,omitempty"`
+	Cdn                  *CDNConfig                  `json:"cdn,omitempty"`
+	SecurityPolicy       *SecurityPolicyConfig       `json:"securityPolicy,omitempty"`
+	TimeoutSec           *int64                      `json:"timeoutSec,omitempty"`
+	ConnectionDraining   *ConnectionDrainingConfig   `json:"connectionDraining,omitempty"`
+	SessionAffinity      *SessionAffinityConfig      `json:"sessionAffinity,omitempty"`
+	CustomRequestHeaders *CustomRequestHeadersConfig `json:"customRequestHeaders,omitempty"`
 }
 
 // BackendConfigStatus is the status for a BackendConfig resource
@@ -124,4 +125,10 @@ type ConnectionDrainingConfig struct {
 type SessionAffinityConfig struct {
 	AffinityType         string `json:"affinityType,omitempty"`
 	AffinityCookieTtlSec *int64 `json:"affinityCookieTtlSec,omitempty"`
+}
+
+// CustomRequestHeadersConfig contains configuration for custom request headers
+// +k8s:openapi-gen=true
+type CustomRequestHeadersConfig struct {
+	Headers []string `json:"headers,omitempty"`
 }
