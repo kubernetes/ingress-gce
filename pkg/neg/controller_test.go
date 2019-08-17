@@ -34,6 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -219,6 +220,43 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
 	controller.ingressLister.Add(newTestIngress(testServiceName))
+	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
+	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+	err := controller.processService(svcKey)
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+	validateSyncers(t, controller, 0, true)
+	svc, err := svcClient.Get(testServiceName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
+	}
+
+	controller.serviceLister.Update(newTestService(controller, true, []int32{}))
+	err = controller.processService(svcKey)
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+	validateSyncers(t, controller, 3, false)
+	svc, err = svcClient.Get(testServiceName, metav1.GetOptions{})
+	svcPorts := []int32{80, 8081, 443}
+	if err != nil {
+		t.Fatalf("Service was not created successfully, err: %v", err)
+	}
+	validateServiceStateAnnotation(t, svc, svcPorts, controller.namer)
+}
+
+// TestEnableNEGServiceWithILBIngress tests ILB service with NEG enabled
+func TestEnableNEGServiceWithILBIngress(t *testing.T) {
+	// Not running in parallel since enabling global flag
+	flags.F.EnableL7Ilb = true
+	controller := newTestController(fake.NewSimpleClientset())
+	defer controller.stop()
+	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
+	ing := newTestIngress("ilb-ingress")
+	ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7ILBIngressClass}
+
+	controller.ingressLister.Add(ing)
 	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
 	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
 	err := controller.processService(svcKey)
