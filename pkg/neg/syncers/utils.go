@@ -18,7 +18,6 @@ package syncers
 
 import (
 	"fmt"
-	"k8s.io/ingress-gce/pkg/composite"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/composite"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"

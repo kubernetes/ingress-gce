@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ingress-controller-asm-cm-config
+  namespace: kube-system
+data:
+  enable-asm: "false"
+  asm-skip-namespaces: "kube-system,istio-system"
