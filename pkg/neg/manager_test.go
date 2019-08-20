@@ -20,9 +20,11 @@ import (
 	"testing"
 	"time"
 
+	"reflect"
+
 	"google.golang.org/api/compute/v1"
-	"k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -36,7 +38,6 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/legacy-cloud-providers/gce"
-	"reflect"
 )
 
 const (
@@ -70,7 +71,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 		ResyncPeriod:          1 * time.Second,
 		DefaultBackendSvcPort: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, nil, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
 
 	manager := newSyncerManager(
 		namer,
@@ -112,8 +113,8 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			portInfoMap: negtypes.NewPortInfoMap(svcNamespace1, svcName, types.SvcPortMap{1000: "80", 2000: "443"}, namer, false),
 			stop:        false,
 			expectInternals: map[negtypes.NegSyncerKey]bool{
-				getSyncerKey(svcNamespace1, svcName, 1000, "80"):  false,
-				getSyncerKey(svcNamespace1, svcName, 2000, "443"): false,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 1000, Subset: ""}, negtypes.PortInfo{TargetPort: "80"}):  false,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 2000, Subset: ""}, negtypes.PortInfo{TargetPort: "443"}): false,
 			},
 		},
 		{
@@ -123,8 +124,8 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			portInfoMap: portInfoUnion(negtypes.NewPortInfoMap(svcNamespace1, svcName, types.SvcPortMap{1000: "80"}, namer, false), negtypes.NewPortInfoMap(svcNamespace1, svcName, types.SvcPortMap{2000: "443"}, namer, true)),
 			stop:        false,
 			expectInternals: map[negtypes.NegSyncerKey]bool{
-				getSyncerKey(svcNamespace1, svcName, 1000, "80"):  false,
-				getSyncerKey(svcNamespace1, svcName, 2000, "443"): true,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 1000, Subset: ""}, negtypes.PortInfo{TargetPort: "80"}):  false,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 2000, Subset: ""}, negtypes.PortInfo{TargetPort: "443"}): true,
 			},
 			expectEnsureError: true,
 		},
@@ -135,8 +136,8 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			portInfoMap: negtypes.NewPortInfoMap(svcNamespace1, svcName, types.SvcPortMap{3000: "80", 4000: "namedport"}, namer, false),
 			stop:        false,
 			expectInternals: map[negtypes.NegSyncerKey]bool{
-				getSyncerKey(svcNamespace1, svcName, 3000, "80"):        false,
-				getSyncerKey(svcNamespace1, svcName, 4000, "namedport"): false,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 3000, Subset: ""}, negtypes.PortInfo{TargetPort: "80"}):        false,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 4000, Subset: ""}, negtypes.PortInfo{TargetPort: "namedport"}): false,
 			},
 		},
 		{
@@ -146,8 +147,8 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			portInfoMap: negtypes.NewPortInfoMap(svcNamespace1, svcName, types.SvcPortMap{3000: "80", 4000: "namedport"}, namer, true),
 			stop:        false,
 			expectInternals: map[negtypes.NegSyncerKey]bool{
-				getSyncerKey(svcNamespace1, svcName, 3000, "80"):        true,
-				getSyncerKey(svcNamespace1, svcName, 4000, "namedport"): true,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 3000, Subset: ""}, negtypes.PortInfo{TargetPort: "80"}):        true,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 4000, Subset: ""}, negtypes.PortInfo{TargetPort: "namedport"}): true,
 			},
 		},
 		{
@@ -157,9 +158,9 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			portInfoMap: negtypes.NewPortInfoMap(svcNamespace2, svcName, types.SvcPortMap{3000: "80"}, namer, false),
 			stop:        false,
 			expectInternals: map[negtypes.NegSyncerKey]bool{
-				getSyncerKey(svcNamespace1, svcName, 3000, "80"):        true,
-				getSyncerKey(svcNamespace1, svcName, 4000, "namedport"): true,
-				getSyncerKey(svcNamespace2, svcName, 3000, "80"):        false,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 3000, Subset: ""}, negtypes.PortInfo{TargetPort: "80"}):        true,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 4000, Subset: ""}, negtypes.PortInfo{TargetPort: "namedport"}): true,
+				getSyncerKey(svcNamespace2, svcName, negtypes.PortInfoMapKey{ServicePort: 3000, Subset: ""}, negtypes.PortInfo{TargetPort: "80"}):        false,
 			},
 		},
 		{
@@ -169,9 +170,9 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			portInfoMap: negtypes.NewPortInfoMap(svcNamespace1, svcName, types.SvcPortMap{3000: "80", 4000: "443"}, namer, true),
 			stop:        false,
 			expectInternals: map[negtypes.NegSyncerKey]bool{
-				getSyncerKey(svcNamespace1, svcName, 3000, "80"):  true,
-				getSyncerKey(svcNamespace1, svcName, 4000, "443"): true,
-				getSyncerKey(svcNamespace2, svcName, 3000, "80"):  false,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 3000, Subset: ""}, negtypes.PortInfo{TargetPort: "80"}):  true,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 4000, Subset: ""}, negtypes.PortInfo{TargetPort: "443"}): true,
+				getSyncerKey(svcNamespace2, svcName, negtypes.PortInfoMapKey{ServicePort: 3000, Subset: ""}, negtypes.PortInfo{TargetPort: "80"}):  false,
 			},
 			expectEnsureError: true,
 		},
@@ -181,7 +182,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			name:      svcName,
 			stop:      true,
 			expectInternals: map[negtypes.NegSyncerKey]bool{
-				getSyncerKey(svcNamespace2, svcName, 3000, "80"): false,
+				getSyncerKey(svcNamespace2, svcName, negtypes.PortInfoMapKey{ServicePort: 3000, Subset: ""}, negtypes.PortInfo{TargetPort: "80"}): false,
 			},
 		},
 	}
@@ -221,7 +222,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			// validate portInfo
 			svcKey := serviceKey{namespace: key.Namespace, name: key.Name}
 			if portInfoMap, svcFound := manager.svcPortMap[svcKey]; svcFound {
-				if info, portFound := portInfoMap[key.Port]; portFound {
+				if info, portFound := portInfoMap[negtypes.PortInfoMapKey{ServicePort: key.Port, Subset: ""}]; portFound {
 					if info.ReadinessGate != readinessGate {
 						t.Errorf("For case %q, expect readinessGate of key %q to be %v, but got %v", tc.desc, key.String(), readinessGate, info.ReadinessGate)
 					}
@@ -274,16 +275,16 @@ func TestGarbageCollectionSyncer(t *testing.T) {
 	targetPort1 := "80"
 	targetPort2 := "namedport"
 	portMap := make(types.PortInfoMap)
-	portMap[svcPort1] = types.PortInfo{TargetPort: targetPort1, NegName: namer.NEG(namespace, name, svcPort1)}
-	portMap[svcPort2] = types.PortInfo{TargetPort: targetPort2, NegName: namer.NEG(namespace, name, svcPort2)}
+	portMap[negtypes.PortInfoMapKey{ServicePort: svcPort1, Subset: ""}] = types.PortInfo{TargetPort: targetPort1, NegName: namer.NEG(namespace, name, svcPort1)}
+	portMap[negtypes.PortInfoMapKey{ServicePort: svcPort2, Subset: ""}] = types.PortInfo{TargetPort: targetPort2, NegName: namer.NEG(namespace, name, svcPort2)}
 
 	if err := manager.EnsureSyncers(namespace, name, portMap); err != nil {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}
 	manager.StopSyncer(namespace, name)
 
-	syncer1 := manager.syncerMap[getSyncerKey(namespace, name, svcPort1, targetPort1)]
-	syncer2 := manager.syncerMap[getSyncerKey(namespace, name, svcPort2, targetPort2)]
+	syncer1 := manager.syncerMap[getSyncerKey(namespace, name, negtypes.PortInfoMapKey{ServicePort: svcPort1, Subset: ""}, negtypes.PortInfo{TargetPort: targetPort1})]
+	syncer2 := manager.syncerMap[getSyncerKey(namespace, name, negtypes.PortInfoMapKey{ServicePort: svcPort2, Subset: ""}, negtypes.PortInfo{TargetPort: targetPort2})]
 
 	if err := wait.PollImmediate(time.Second, 30*time.Second, func() (bool, error) {
 		return !syncer1.IsShuttingDown() && syncer1.IsStopped() && !syncer2.IsShuttingDown() && syncer2.IsStopped(), nil
@@ -310,7 +311,7 @@ func TestGarbageCollectionNEG(t *testing.T) {
 	manager := NewTestSyncerManager(kubeClient)
 	svcPort := int32(80)
 	ports := make(types.PortInfoMap)
-	ports[svcPort] = types.PortInfo{TargetPort: "namedport", NegName: manager.namer.NEG(testServiceNamespace, testServiceName, svcPort)}
+	ports[negtypes.PortInfoMapKey{ServicePort: svcPort, Subset: ""}] = types.PortInfo{TargetPort: "namedport", NegName: manager.namer.NEG(testServiceNamespace, testServiceName, svcPort)}
 	if err := manager.EnsureSyncers(testServiceNamespace, testServiceName, ports); err != nil {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}

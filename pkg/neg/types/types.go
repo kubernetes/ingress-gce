@@ -189,7 +189,7 @@ type NegSyncerKey struct {
 }
 
 func (key NegSyncerKey) String() string {
-	return fmt.Sprintf("%s/%s/%s:%s/%s", key.Namespace, key.Name, key.Subset, key.Port, key.TargetPort)
+	return fmt.Sprintf("%s/%s-%s-%v/%s", key.Namespace, key.Name, key.Subset, key.Port, key.TargetPort)
 }
 
 // EndpointPodMap is a map from network endpoint to a namespaced name of a pod

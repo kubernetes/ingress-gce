@@ -18,10 +18,12 @@ package types
 
 import (
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"reflect"
 	"testing"
+
+	istioV1alpha3 "istio.io/api/networking/v1alpha3"
+	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/annotations"
 )
 
 type negNamer struct{}
@@ -30,8 +32,22 @@ func (*negNamer) NEG(namespace, name string, svcPort int32) string {
 	return fmt.Sprintf("%v-%v-%v", namespace, name, svcPort)
 }
 
+func (*negNamer) NEGWithSubset(namespace, name, subset string, svcPort int32) string {
+	return fmt.Sprintf("%v-%v-%v-%v", namespace, name, subset, svcPort)
+}
+
 func (*negNamer) IsNEG(name string) bool {
 	return false
+}
+
+func createDestinationRule(host string, subsets ...string) *istioV1alpha3.DestinationRule {
+	ds := istioV1alpha3.DestinationRule{
+		Host: host,
+	}
+	for _, subset := range subsets {
+		ds.Subsets = append(ds.Subsets, &istioV1alpha3.Subset{Name: subset})
+	}
+	return &ds
 }
 
 func TestPortInfoMapMerge(t *testing.T) {
@@ -92,19 +108,53 @@ func TestPortInfoMapMerge(t *testing.T) {
 			NewPortInfoMap(namespace, name, SvcPortMap{80: "3000", 5000: "6000"}, namer, true),
 			NewPortInfoMap(namespace, name, SvcPortMap{80: "3000", 8080: "9000"}, namer, false),
 			PortInfoMap{
-				80: PortInfo{
+				PortInfoMapKey{80, ""}: PortInfo{
 					TargetPort:    "3000",
 					NegName:       namer.NEG(namespace, name, 80),
 					ReadinessGate: true,
 				},
-				5000: PortInfo{
+				PortInfoMapKey{5000, ""}: PortInfo{
 					TargetPort:    "6000",
 					NegName:       namer.NEG(namespace, name, 5000),
 					ReadinessGate: true,
 				},
-				8080: PortInfo{
+				PortInfoMapKey{8080, ""}: PortInfo{
 					TargetPort:    "9000",
 					NegName:       namer.NEG(namespace, name, 8080),
+					ReadinessGate: false,
+				},
+			},
+			false,
+		},
+		{
+			"union of two non-empty maps with overlapping service port and difference in readiness gate configurations ",
+			NewPortInfoMapWithDestinationRule(namespace, name, SvcPortMap{80: "3000"}, namer, true,
+				createDestinationRule(name, "v1", "v2")),
+			NewPortInfoMapWithDestinationRule(namespace, name, SvcPortMap{80: "3000", 8080: "9000"}, namer, false,
+				createDestinationRule(name, "v3")),
+			PortInfoMap{
+				PortInfoMapKey{80, "v1"}: PortInfo{
+					TargetPort:    "3000",
+					Subset:        "v1",
+					NegName:       namer.NEGWithSubset(namespace, name, "v1", 80),
+					ReadinessGate: true,
+				},
+				PortInfoMapKey{80, "v2"}: PortInfo{
+					TargetPort:    "3000",
+					Subset:        "v2",
+					NegName:       namer.NEGWithSubset(namespace, name, "v2", 80),
+					ReadinessGate: true,
+				},
+				PortInfoMapKey{80, "v3"}: PortInfo{
+					TargetPort:    "3000",
+					Subset:        "v3",
+					NegName:       namer.NEGWithSubset(namespace, name, "v3", 80),
+					ReadinessGate: false,
+				},
+				PortInfoMapKey{8080, "v3"}: PortInfo{
+					TargetPort:    "9000",
+					Subset:        "v3",
+					NegName:       namer.NEGWithSubset(namespace, name, "v3", 8080),
 					ReadinessGate: false,
 				},
 			},
@@ -242,17 +292,17 @@ func TestPortInfoMapToPortNegMap(t *testing.T) {
 		},
 		{
 			desc:             "1 port",
-			portInfoMap:      PortInfoMap{int32(80): PortInfo{NegName: "neg1"}},
+			portInfoMap:      PortInfoMap{PortInfoMapKey{80, ""}: PortInfo{NegName: "neg1"}},
 			expectPortNegMap: annotations.PortNegMap{"80": "neg1"},
 		},
 		{
 			desc:             "2 ports",
-			portInfoMap:      PortInfoMap{int32(80): PortInfo{NegName: "neg1"}, int32(8080): PortInfo{NegName: "neg2"}},
+			portInfoMap:      PortInfoMap{PortInfoMapKey{80, ""}: PortInfo{NegName: "neg1"}, PortInfoMapKey{8080, ""}: PortInfo{NegName: "neg2"}},
 			expectPortNegMap: annotations.PortNegMap{"80": "neg1", "8080": "neg2"},
 		},
 		{
 			desc:             "3 ports",
-			portInfoMap:      PortInfoMap{int32(80): PortInfo{NegName: "neg1"}, int32(443): PortInfo{NegName: "neg2"}, int32(8080): PortInfo{NegName: "neg3"}},
+			portInfoMap:      PortInfoMap{PortInfoMapKey{80, ""}: PortInfo{NegName: "neg1"}, PortInfoMapKey{443, ""}: PortInfo{NegName: "neg2"}, PortInfoMapKey{8080, ""}: PortInfo{NegName: "neg3"}},
 			expectPortNegMap: annotations.PortNegMap{"80": "neg1", "443": "neg2", "8080": "neg3"},
 		},
 	} {

@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -50,7 +50,7 @@ func NewTestSyncer() *batchSyncer {
 		ResyncPeriod:          1 * time.Second,
 		DefaultBackendSvcPort: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, nil, namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, nil, backendConfigClient, nil, nil, namer, ctxConfig)
 	svcPort := negtypes.NegSyncerKey{
 		Namespace:  testServiceNamespace,
 		Name:       testServiceName,
@@ -64,7 +64,8 @@ func NewTestSyncer() *batchSyncer {
 		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-newtork"),
 		negtypes.NewFakeZoneGetter(),
 		context.ServiceInformer.GetIndexer(),
-		context.EndpointInformer.GetIndexer())
+		context.EndpointInformer.GetIndexer(),
+		context.PodInformer.GetIndexer())
 }
 
 func TestStartAndStopSyncer(t *testing.T) {
@@ -162,7 +163,7 @@ func TestToZoneNetworkEndpointMap(t *testing.T) {
 
 	for _, tc := range testCases {
 		syncer.TargetPort = tc.targetPort
-		res, _ := syncer.toZoneNetworkEndpointMap(getDefaultEndpoint())
+		res, _ := syncer.toZoneNetworkEndpointMap(getDefaultEndpoint(), "")
 
 		if !reflect.DeepEqual(res, tc.expect) {
 			t.Errorf("Expect %v, but got %v.", tc.expect, res)

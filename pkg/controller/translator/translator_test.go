@@ -64,7 +64,7 @@ func fakeTranslator() *Translator {
 		HealthCheckPath:               "/",
 		DefaultBackendHealthCheckPath: "/healthz",
 	}
-	ctx := context.NewControllerContext(client, backendConfigClient, nil, nil, namer, ctxConfig)
+	ctx := context.NewControllerContext(client, nil, backendConfigClient, nil, nil, namer, ctxConfig)
 	gce := &Translator{
 		ctx: ctx,
 	}

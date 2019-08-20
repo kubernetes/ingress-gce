@@ -22,8 +22,9 @@ import (
 	"testing"
 
 	"fmt"
+
 	"google.golang.org/api/compute/v1"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -378,7 +379,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		retSet, retMap, err := toZoneNetworkEndpointMap(getDefaultEndpoint(), zoneGetter, tc.targetPort, podLister)
+		retSet, retMap, err := toZoneNetworkEndpointMap(getDefaultEndpoint(), zoneGetter, tc.targetPort, podLister, "")
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}
