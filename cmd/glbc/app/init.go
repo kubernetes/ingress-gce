@@ -20,8 +20,7 @@ import (
 	"fmt"
 	"time"
 
-	"k8s.io/klog"
-
+	"k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -29,11 +28,12 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
-// DefaultBackendServicePortID returns the tuple of service namespace/name and port which will be
+// DefaultBackendServicePort returns the ServicePort which will be
 // used as the default backend for load balancers.
-func DefaultBackendServicePortID(kubeClient kubernetes.Interface) utils.ServicePortID {
+func DefaultBackendServicePort(kubeClient kubernetes.Interface) utils.ServicePort {
 	if flags.F.DefaultSvc == "" {
 		klog.Fatalf("Please specify --default-backend-service")
 	}
@@ -47,27 +47,50 @@ func DefaultBackendServicePortID(kubeClient kubernetes.Interface) utils.ServiceP
 		klog.Fatalf("Failed to parse --default-backend-service: %v", err)
 	}
 
-	if err := waitForServicePort(kubeClient, name, flags.F.DefaultSvcPortName); err != nil {
+	svc, err := waitForServicePort(kubeClient, name, flags.F.DefaultSvcPortName)
+	if err != nil {
 		klog.Fatalf("Failed to verify default backend service: %v", err)
 	}
 
-	return utils.ServicePortID{
-		Service: name,
-		Port:    intstr.FromString(flags.F.DefaultSvcPortName),
+	backendPort := intstr.FromString(flags.F.DefaultSvcPortName)
+	svcPort := servicePortForDefaultService(svc, backendPort, name)
+	if svcPort == nil {
+		klog.Fatalf("could not derive service port for default service: %v", err)
 	}
+
+	return *svcPort
+}
+
+// servicePortForDefaultService returns the service port for the default service; returns nil if not found.
+func servicePortForDefaultService(svc *v1.Service, svcPort intstr.IntOrString, name types.NamespacedName) *utils.ServicePort {
+	// Lookup TargetPort for service port
+	for _, port := range svc.Spec.Ports {
+		if port.Name == svcPort.String() {
+			return &utils.ServicePort{
+				ID: utils.ServicePortID{
+					Service: name,
+					Port:    svcPort,
+				},
+				TargetPort: port.TargetPort.StrVal,
+			}
+		}
+	}
+
+	return nil
 }
 
 // servicePortExists checks that the service and specified port name exists.
-func waitForServicePort(client kubernetes.Interface, name types.NamespacedName, portName string) error {
-	klog.V(2).Infof("Checking existance of default backend service %q", name.String())
+func waitForServicePort(client kubernetes.Interface, name types.NamespacedName, portName string) (*v1.Service, error) {
+	klog.V(2).Infof("Checking existence of default backend service %q", name.String())
+	var svc *v1.Service
 
 	err := wait.Poll(3*time.Second, 5*time.Minute, func() (bool, error) {
-		svc, err := client.CoreV1().Services(name.Namespace).Get(name.Name, meta_v1.GetOptions{})
+		var err error
+		svc, err = client.CoreV1().Services(name.Namespace).Get(name.Name, meta_v1.GetOptions{})
 		if err != nil {
-			klog.V(4).Infof("Service %q does not exist", name.String())
+			klog.V(4).Infof("Error getting service %v", name.String())
 			return false, nil
 		}
-
 		for _, p := range svc.Spec.Ports {
 			if p.Name == portName {
 				return true, nil
@@ -75,5 +98,6 @@ func waitForServicePort(client kubernetes.Interface, name types.NamespacedName, 
 		}
 		return false, fmt.Errorf("port %q not found in service %q", portName, name.String())
 	})
-	return err
+
+	return svc, err
 }

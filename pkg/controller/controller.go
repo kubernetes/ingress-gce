@@ -104,7 +104,7 @@ func NewLoadBalancerController(
 		Interface: ctx.KubeClient.CoreV1().Events(""),
 	})
 
-	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendHealthCheckPath, ctx.ClusterNamer, ctx.DefaultBackendSvcPortID.Service)
+	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendHealthCheckPath, ctx.ClusterNamer, ctx.DefaultBackendSvcPort.ID.Service)
 	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer)
 
 	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
@@ -308,12 +308,6 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 	}
 	ingSvcPorts := syncState.urlMap.AllServicePorts()
 
-	if utils.IsGCEL7ILBIngress(syncState.ing) {
-		if err := UpdateServicePortsForILB(ingSvcPorts, syncState.ing); err != nil {
-			return err
-		}
-	}
-
 	// Create instance groups and set named ports.
 	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(lbc.ctx.ClusterNamer.InstanceGroup(), nodePorts(ingSvcPorts))
 	if err != nil {
@@ -513,7 +507,8 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	}
 
 	// Bootstrap state for GCP sync.
-	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
+	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPort.ID)
+
 	if errs != nil {
 		msg := fmt.Errorf("error while evaluating the ingress spec: %v", utils.JoinErrs(errs))
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Translate", msg.Error())
@@ -644,12 +639,8 @@ func updateAnnotations(client kubernetes.Interface, name, namespace string, anno
 func (lbc *LoadBalancerController) ToSvcPorts(ings []*v1beta1.Ingress) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings {
-		urlMap, _ := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPortID)
-		svcPorts := urlMap.AllServicePorts()
-		if utils.IsGCEL7ILBIngress(ing) {
-			UpdateServicePortsForILB(svcPorts, ing)
-		}
-		knownPorts = append(knownPorts, svcPorts...)
+		urlMap, _ := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPort.ID)
+		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts
 }

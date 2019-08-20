@@ -18,7 +18,6 @@ package firewalls
 
 import (
 	"fmt"
-	"k8s.io/ingress-gce/pkg/controller"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"reflect"
@@ -125,12 +124,8 @@ func NewFirewallController(
 func (fwc *FirewallController) ToSvcPorts(ings []*v1beta1.Ingress) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings {
-		urlMap, _ := fwc.translator.TranslateIngress(ing, fwc.ctx.DefaultBackendSvcPortID)
-		svcPorts := urlMap.AllServicePorts()
-		if flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(ing) {
-			controller.UpdateServicePortsForILB(svcPorts, ing)
-		}
-		knownPorts = append(knownPorts, svcPorts...)
+		urlMap, _ := fwc.translator.TranslateIngress(ing, fwc.ctx.DefaultBackendSvcPort.ID)
+		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts
 }

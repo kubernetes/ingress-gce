@@ -19,6 +19,7 @@ package neg
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -49,16 +51,24 @@ const (
 )
 
 var (
-	defaultBackend = utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")}
+	defaultBackend = utils.ServicePort{
+		ID: utils.ServicePortID{
+			Service: types.NamespacedName{
+				Name:      "default-http-backend",
+				Namespace: "kube-system",
+			},
+			Port: intstr.FromString("http"),
+		},
+		TargetPort: "9376"}
 )
 
 func newTestController(kubeClient kubernetes.Interface) *Controller {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := utils.NewNamer(ClusterID, "")
 	ctxConfig := context.ControllerContextConfig{
-		Namespace:               apiv1.NamespaceAll,
-		ResyncPeriod:            1 * time.Second,
-		DefaultBackendSvcPortID: defaultBackend,
+		Namespace:             apiv1.NamespaceAll,
+		ResyncPeriod:          1 * time.Second,
+		DefaultBackendSvcPort: defaultBackend,
 	}
 	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
 	controller := NewController(
@@ -104,7 +114,7 @@ func TestNewNonNEGService(t *testing.T) {
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
-	controller.ingressLister.Add(newTestIngress())
+	controller.ingressLister.Add(newTestIngress(testServiceName))
 	err := controller.processService(utils.ServiceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
@@ -176,7 +186,7 @@ func TestNewNEGService(t *testing.T) {
 			controller.serviceLister.Add(newTestService(controller, tc.ingress, tc.exposedPorts))
 
 			if tc.ingress {
-				controller.ingressLister.Add(newTestIngress())
+				controller.ingressLister.Add(newTestIngress(testServiceName))
 			}
 
 			err := controller.processService(svcKey)
@@ -209,7 +219,44 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
-	controller.ingressLister.Add(newTestIngress())
+	controller.ingressLister.Add(newTestIngress(testServiceName))
+	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
+	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+	err := controller.processService(svcKey)
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+	validateSyncers(t, controller, 0, true)
+	svc, err := svcClient.Get(testServiceName, metav1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
+	}
+
+	controller.serviceLister.Update(newTestService(controller, true, []int32{}))
+	err = controller.processService(svcKey)
+	if err != nil {
+		t.Fatalf("Failed to process service: %v", err)
+	}
+	validateSyncers(t, controller, 3, false)
+	svc, err = svcClient.Get(testServiceName, metav1.GetOptions{})
+	svcPorts := []int32{80, 8081, 443}
+	if err != nil {
+		t.Fatalf("Service was not created successfully, err: %v", err)
+	}
+	validateServiceStateAnnotation(t, svc, svcPorts, controller.namer)
+}
+
+// TestEnableNEGServiceWithILBIngress tests ILB service with NEG enabled
+func TestEnableNEGServiceWithILBIngress(t *testing.T) {
+	// Not running in parallel since enabling global flag
+	flags.F.EnableL7Ilb = true
+	controller := newTestController(fake.NewSimpleClientset())
+	defer controller.stop()
+	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
+	ing := newTestIngress("ilb-ingress")
+	ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7ILBIngressClass}
+
+	controller.ingressLister.Add(ing)
 	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
 	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
 	err := controller.processService(svcKey)
@@ -242,7 +289,7 @@ func TestDisableNEGServiceWithIngress(t *testing.T) {
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(controller, true, []int32{}))
-	controller.ingressLister.Add(newTestIngress())
+	controller.ingressLister.Add(newTestIngress(testServiceName))
 	err := controller.processService(utils.ServiceKeyFunc(testServiceNamespace, testServiceName))
 	if err != nil {
 		t.Fatalf("Failed to process service: %v", err)
@@ -334,12 +381,12 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 			"ingress point to multiple services",
 		},
 		{
-			[]v1beta1.Ingress{*newTestIngress(), *newTestIngress()},
+			[]v1beta1.Ingress{*newTestIngress(testServiceName), *newTestIngress(testServiceName)},
 			[]int32{80, 443, 8081},
 			"two ingresses with multiple different references to service",
 		},
 		{
-			[]v1beta1.Ingress{*newTestIngress()},
+			[]v1beta1.Ingress{*newTestIngress(testServiceName)},
 			[]int32{80, 443, 8081},
 			"one ingress with multiple different references to service",
 		},
@@ -433,6 +480,114 @@ func TestSyncNegAnnotation(t *testing.T) {
 	}
 }
 
+func TestDefaultBackendServicePortInfoMap(t *testing.T) {
+	// Not using t.Parallel() since we are sharing the controller
+	controller := newTestController(fake.NewSimpleClientset())
+	defer controller.stop()
+	newTestService(controller, false, []int32{})
+
+	testCases := []struct {
+		desc    string
+		ingName string
+		// forIlb sets the annotation for Ilb
+		forIlb bool
+		// defaultOverride sets backend to nil
+		defaultOverride                  bool
+		defaultBackendServiceServicePort utils.ServicePort
+		want                             negtypes.PortInfoMap
+	}{
+		{
+			desc:            "ingress with backend",
+			ingName:         "ingress-name-1",
+			forIlb:          false,
+			defaultOverride: false,
+			want:            negtypes.PortInfoMap{},
+		},
+		{
+			desc:                             "ingress without backend",
+			ingName:                          "ingress-name-2",
+			forIlb:                           false,
+			defaultOverride:                  true,
+			defaultBackendServiceServicePort: defaultBackend,
+			want:                             negtypes.PortInfoMap{},
+		},
+		{
+			desc:            "ingress with backend with ILB",
+			ingName:         "ingress-name-3",
+			forIlb:          true,
+			defaultOverride: false,
+			want:            negtypes.PortInfoMap{},
+		},
+		{
+			desc:                             "ingress without backend with ILB",
+			ingName:                          "ingress-name-4",
+			forIlb:                           true,
+			defaultOverride:                  true,
+			defaultBackendServiceServicePort: defaultBackend,
+			want: negtypes.NewPortInfoMap(
+				defaultBackend.ID.Service.Namespace,
+				defaultBackend.ID.Service.Name,
+				negtypes.SvcPortMap{80: defaultBackend.TargetPort},
+				controller.namer,
+				false,
+			),
+		},
+		{
+			desc:            "User default backend with different port",
+			ingName:         "ingress-name-5",
+			forIlb:          true,
+			defaultOverride: true,
+			defaultBackendServiceServicePort: utils.ServicePort{
+				ID: utils.ServicePortID{
+					Service: types.NamespacedName{
+						Namespace: testServiceNamespace, Name: "newDefaultBackend",
+					},
+					Port: intstr.FromInt(80),
+				},
+				Port:       80,
+				TargetPort: "8888",
+			},
+			want: negtypes.NewPortInfoMap(
+				testServiceNamespace,
+				"newDefaultBackend",
+				negtypes.SvcPortMap{80: "8888"},
+				controller.namer,
+				false,
+			),
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			ing := newTestIngress(tc.ingName)
+
+			if tc.forIlb {
+				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7ILBIngressClass}
+			}
+
+			if tc.defaultOverride {
+				// Override backend service
+				controller.defaultBackendService = tc.defaultBackendServiceServicePort
+				ing.Spec.Backend = nil
+			}
+
+			newIng, err := controller.client.NetworkingV1beta1().Ingresses(testServiceNamespace).Create(ing)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Add to cache directly since the cache doesn't get updated
+			if err := controller.ingressLister.Add(newIng); err != nil {
+				t.Fatal(err)
+			}
+
+			result := controller.defaultBackendServicePortInfoMap()
+			if !reflect.DeepEqual(tc.want, result) {
+				t.Fatalf("got %+v, want %+v", result, tc.want)
+			}
+		})
+	}
+}
+
 func validateSyncers(t *testing.T, controller *Controller, num int, stopped bool) {
 	t.Helper()
 	if len(controller.manager.(*syncerManager).syncerMap) != num {
@@ -517,10 +672,10 @@ func generateNegAnnotation(ingress bool, svcPorts []int32) string {
 	return string(formattedAnnotation)
 }
 
-func newTestIngress() *v1beta1.Ingress {
+func newTestIngress(name string) *v1beta1.Ingress {
 	return &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      testServiceName,
+			Name:      name,
 			Namespace: testServiceNamespace,
 		},
 		Spec: v1beta1.IngressSpec{

@@ -66,9 +66,9 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := utils.NewNamer(ClusterID, "")
 	ctxConfig := context.ControllerContextConfig{
-		Namespace:               apiv1.NamespaceAll,
-		ResyncPeriod:            1 * time.Second,
-		DefaultBackendSvcPortID: defaultBackend,
+		Namespace:             apiv1.NamespaceAll,
+		ResyncPeriod:          1 * time.Second,
+		DefaultBackendSvcPort: defaultBackend,
 	}
 	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
 

@@ -40,7 +40,16 @@ import (
 
 var (
 	firstPodCreationTime = time.Date(2006, 01, 02, 15, 04, 05, 0, time.UTC)
-	defaultBackend       = utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")}
+	defaultBackend       = utils.ServicePort{
+		ID: utils.ServicePortID{
+			Service: types.NamespacedName{
+				Name:      "default-http-backend",
+				Namespace: "kube-system",
+			},
+			Port: intstr.FromString("http"),
+		},
+		TargetPort: "9376",
+	}
 )
 
 func fakeTranslator() *Translator {
@@ -51,7 +60,7 @@ func fakeTranslator() *Translator {
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:                     apiv1.NamespaceAll,
 		ResyncPeriod:                  1 * time.Second,
-		DefaultBackendSvcPortID:       defaultBackend,
+		DefaultBackendSvcPort:         defaultBackend,
 		HealthCheckPath:               "/",
 		DefaultBackendHealthCheckPath: "/healthz",
 	}
@@ -163,7 +172,7 @@ func TestTranslateIngress(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotGCEURLMap, gotErrs := translator.TranslateIngress(tc.ing, defaultBackend)
+			gotGCEURLMap, gotErrs := translator.TranslateIngress(tc.ing, defaultBackend.ID)
 			if len(gotErrs) != tc.wantErrCount {
 				t.Errorf("%s: TranslateIngress() = _, %+v, want %v errs", tc.desc, gotErrs, tc.wantErrCount)
 			}
@@ -184,6 +193,7 @@ func TestGetServicePort(t *testing.T) {
 		id          utils.ServicePortID
 		wantErr     bool
 		wantPort    bool
+		params      getServicePortParams
 	}{
 		{
 			desc: "clusterIP service",
@@ -230,7 +240,7 @@ func TestGetServicePort(t *testing.T) {
 			svcLister.Add(svc)
 			tc.id.Service = svcName
 
-			port, gotErr := translator.getServicePort(tc.id)
+			port, gotErr := translator.getServicePort(tc.id, &tc.params)
 			if (gotErr != nil) != tc.wantErr {
 				t.Errorf("translator.getServicePort(%+v) = _, %v, want err? %v", tc.id, gotErr, tc.wantErr)
 			}
@@ -254,6 +264,7 @@ func TestGetServicePortWithBackendConfigEnabled(t *testing.T) {
 		id          utils.ServicePortID
 		wantErr     bool
 		wantPort    bool
+		params      getServicePortParams
 	}{
 		{
 			desc: "error getting backend config",
@@ -306,7 +317,7 @@ func TestGetServicePortWithBackendConfigEnabled(t *testing.T) {
 			svcLister.Add(svc)
 			backendConfigLister.Add(backendConfig)
 
-			port, gotErr := translator.getServicePort(tc.id)
+			port, gotErr := translator.getServicePort(tc.id, &tc.params)
 			if (gotErr != nil) != tc.wantErr {
 				t.Errorf("%s: translator.getServicePort(%+v) = _, %v, want err? %v", tc.desc, tc.id, gotErr, tc.wantErr)
 			}

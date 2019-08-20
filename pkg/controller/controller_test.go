@@ -60,7 +60,7 @@ func newLoadBalancerController() *LoadBalancerController {
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:                     api_v1.NamespaceAll,
 		ResyncPeriod:                  1 * time.Minute,
-		DefaultBackendSvcPortID:       test.DefaultBeSvcPort.ID,
+		DefaultBackendSvcPort:         test.DefaultBeSvcPort,
 		HealthCheckPath:               "/",
 		DefaultBackendHealthCheckPath: "/healthz",
 	}

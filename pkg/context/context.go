@@ -70,8 +70,8 @@ type ControllerContext struct {
 type ControllerContextConfig struct {
 	Namespace    string
 	ResyncPeriod time.Duration
-	// DefaultBackendSvcPortID is the ServicePortID for the system default backend.
-	DefaultBackendSvcPortID       utils.ServicePortID
+	// DefaultBackendSvcPortID is the ServicePort for the system default backend.
+	DefaultBackendSvcPort         utils.ServicePort
 	HealthCheckPath               string
 	DefaultBackendHealthCheckPath string
 	FrontendConfigEnabled         bool

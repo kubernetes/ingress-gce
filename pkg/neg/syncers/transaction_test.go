@@ -1055,9 +1055,9 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud) (negty
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := utils.NewNamer(clusterID, "")
 	ctxConfig := context.ControllerContextConfig{
-		Namespace:               apiv1.NamespaceAll,
-		ResyncPeriod:            1 * time.Second,
-		DefaultBackendSvcPortID: defaultBackend,
+		Namespace:             apiv1.NamespaceAll,
+		ResyncPeriod:          1 * time.Second,
+		DefaultBackendSvcPort: defaultBackend,
 	}
 	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, nil, namer, ctxConfig)
 	svcPort := negtypes.NegSyncerKey{
