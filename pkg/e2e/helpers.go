@@ -21,15 +21,24 @@ import (
 	"fmt"
 	"time"
 
+	"encoding/json"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"io/ioutil"
+	apps "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/ingress-gce/cmd/echo/app"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/klog"
+	"net/http"
+	"strings"
 )
 
 const (
@@ -40,6 +49,12 @@ const (
 	gclbDeletionTimeout  = 15 * time.Minute
 
 	negPollInterval = 5 * time.Second
+	negPollTimeout  = 2 * time.Minute
+
+	k8sApiPoolInterval = 10 * time.Second
+	k8sApiPollTimeout  = 30 * time.Minute
+
+	healthyState = "HEALTHY"
 )
 
 // WaitForIngressOptions holds options dictating how we wait for an ingress to stabilize
@@ -114,25 +129,64 @@ func WaitForNEGDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, option
 	})
 }
 
-// WaitForNEGConfiguration waits until the NEGStatus of the service is updated to at least one NEG
-// TODO: (shance) make this more robust so it handles multiple NEGS
-func WaitForNEGConfiguration(svc *v1.Service, f *Framework, s *Sandbox) error {
-	return wait.Poll(negPollInterval, gclbDeletionTimeout, func() (bool, error) {
-		// Get Annotation
-		svc, _ = f.Clientset.CoreV1().Services(s.Namespace).Get(svc.Name, metav1.GetOptions{})
+// WaitForEchoDeploymentStable waits until the deployment's readyReplicas, availableReplicas and updatedReplicas are equal to replicas.
+func WaitForEchoDeploymentStable(s *Sandbox, name string) error {
+	return wait.Poll(k8sApiPoolInterval, k8sApiPollTimeout, func() (bool, error) {
+		deployment, err := s.f.Clientset.AppsV1().Deployments(s.Namespace).Get(name, metav1.GetOptions{})
+		if deployment == nil || err != nil {
+			return false, fmt.Errorf("failed to get deployment %s/%s: %v", s.Namespace, name, err)
+		}
+		if err := CheckDeployment(deployment); err != nil {
+			klog.Infof("WaitForEchoDeploymentStable(%s/%s) = %v", s.Namespace, name, err)
+			return false, nil
+		}
+		return true, nil
+	})
+}
 
-		negStatus, found, err := annotations.FromService(svc).NEGStatus()
+// WaitForNegStatus waits util the neg status on the service got to expected state.
+func WaitForNegStatus(s *Sandbox, name string, expectSvcPorts []string) (annotations.NegStatus, error) {
+	var ret annotations.NegStatus
+	var err error
+	err = wait.Poll(negPollInterval, gclbDeletionTimeout, func() (bool, error) {
+		svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(name, metav1.GetOptions{})
+		if svc == nil || err != nil {
+			return false, fmt.Errorf("failed to get service %s/%s: %v", s.Namespace, name, err)
+		}
+		ret, err = CheckNegStatus(svc, expectSvcPorts)
+		if err != nil {
+			klog.Infof("WaitForNegStatus(%s/%s, %v) = %v", s.Namespace, name, expectSvcPorts, err)
+			return false, nil
+		}
+		return true, nil
+	})
+	return ret, err
+}
 
-		if found {
-			if err != nil {
-				return false, fmt.Errorf("Error parsing neg status: %v", err)
-			}
-			if negStatus.NetworkEndpointGroups != nil {
-				return true, nil
-			}
+// WaitForNegs waits until the input NEG got into the expect states.
+func WaitForNegs(ctx context.Context, c cloud.Cloud, negName string, zones []string, expectHealthy bool, expectCount int) error {
+	return wait.Poll(negPollInterval, negPollTimeout, func() (bool, error) {
+		negs, err := fuzz.NetworkEndpointsInNegs(ctx, c, negName, zones)
+		if err != nil {
+			return false, fmt.Errorf("failed to retrieve NEG %v from zones %v: %v", negName, zones, err)
 		}
 
-		return false, nil
+		if err := CheckNegs(negs, expectHealthy, expectCount); err != nil {
+			klog.Infof("WaitForNegs(%q, %v, %v, %v) = %v", negName, zones, expectHealthy, expectCount, err)
+			return false, nil
+		}
+		return true, nil
+	})
+}
+
+// WaitForDistinctHosts waits util
+func WaitForDistinctHosts(ctx context.Context, vip string, expectDistinctHosts int, tolerateTransientError bool) error {
+	return wait.Poll(negPollInterval, negPollTimeout, func() (bool, error) {
+		if err := CheckDistinctResponseHost(vip, expectDistinctHosts, tolerateTransientError); err != nil {
+			klog.Infof("WaitForDistinctHosts(%q, %v, %v) = %v", vip, expectDistinctHosts, tolerateTransientError, err)
+			return false, nil
+		}
+		return true, nil
 	})
 }
 
@@ -147,4 +201,132 @@ func CheckGCLB(gclb *fuzz.GCLB, numForwardingRules int, numBackendServices int) 
 	}
 
 	return nil
+}
+
+// CheckDistinctResponseHost issue GET call to the vip for 100 times, parse the reponses and calculate the number of distinct backends.
+func CheckDistinctResponseHost(vip string, expectDistinctHosts int, tolerateTransientError bool) error {
+	var errs []error
+	const repeat = 100
+	hosts := sets.NewString()
+	for i := 0; i < repeat; i++ {
+		res, err := CheckEchoServerResponse(vip)
+		if err != nil {
+			if tolerateTransientError {
+				klog.Infof("ignoring error from vip %q: %v. ", vip, err)
+				continue
+			}
+			errs = append(errs, err)
+		}
+		hosts.Insert(res.K8sEnv.Pod)
+	}
+	if hosts.Len() != expectDistinctHosts {
+		errs = append(errs, fmt.Errorf("got %v distinct hosts responsing vip %q, want %v", hosts.Len(), vip, expectDistinctHosts))
+	}
+	return utilerrors.NewAggregate(errs)
+}
+
+// CheckEchoServerResponse issue a GET call to the vip and return the ResponseBody.
+func CheckEchoServerResponse(vip string) (app.ResponseBody, error) {
+	url := fmt.Sprintf("http://%s/", vip)
+	var body app.ResponseBody
+	resp, err := http.Get(url)
+	if err != nil {
+		return body, fmt.Errorf("failed to GET %q: %v", url, err)
+	}
+	if resp.StatusCode != 200 {
+		return body, fmt.Errorf("GET %q got status code %d, want 200", url, resp.StatusCode)
+	}
+	bytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return body, fmt.Errorf("failed to read response from GET %q : %v", url, err)
+	}
+	err = json.Unmarshal(bytes, &body)
+	if err != nil {
+		return body, fmt.Errorf("failed to marshal response body %s from %q into ResponseBody of echo server: %v", bytes, url, err)
+	}
+	return body, nil
+}
+
+// CheckDeployment checks if the given deployment is in a stable state.
+func CheckDeployment(deployment *apps.Deployment) error {
+	if deployment.Spec.Replicas == nil {
+		return fmt.Errorf("deployment %s/%s has nil replicas: %v", deployment.Namespace, deployment.Name, deployment)
+	}
+
+	wantedReplicas := *deployment.Spec.Replicas
+
+	for _, f := range []struct {
+		v    *int32
+		name string
+		want int32
+	}{
+		{&deployment.Status.Replicas, "replicas", wantedReplicas},
+		{&deployment.Status.ReadyReplicas, "ready replicas", wantedReplicas},
+		{&deployment.Status.AvailableReplicas, "available replicas", wantedReplicas},
+		{&deployment.Status.UpdatedReplicas, "updated replicas", wantedReplicas},
+		{&deployment.Status.UnavailableReplicas, "unavailable replicas", 0},
+	} {
+		if *f.v != f.want {
+			return fmt.Errorf("deployment %s/%s has %d %s, want %d", deployment.Namespace, deployment.Name, *f.v, f.name, f.want)
+		}
+	}
+	return nil
+}
+
+// CheckNegs checks if the network endpoints in the NEGs is in expected state
+func CheckNegs(negs map[meta.Key]*fuzz.NetworkEndpoints, expectHealthy bool, expectCount int) error {
+	var (
+		count    int
+		errs     []error
+		negNames []string
+	)
+	for key, neg := range negs {
+		count += len(neg.Endpoints)
+		negNames = append(negNames, key.String())
+
+		if expectHealthy {
+			for _, ep := range neg.Endpoints {
+				json, _ := ep.NetworkEndpoint.MarshalJSON()
+				if ep.Healths == nil || len(ep.Healths) != 1 || ep.Healths[0] == nil {
+					errs = append(errs, fmt.Errorf("network endpoint %s in NEG %v has health status %v, want 1 health status", json, key.String(), ep.Healths))
+					continue
+				}
+
+				health := ep.Healths[0].HealthState
+				if health != healthyState {
+					errs = append(errs, fmt.Errorf("network endpoint %s in NEG %v has health status %q, want %q", json, key.String(), health, healthyState))
+				}
+			}
+		}
+	}
+
+	if count != expectCount {
+		return fmt.Errorf("NEGs (%v) have a total %v of endpoints, want %v", strings.Join(negNames, "/"), count, expectCount)
+	}
+
+	return utilerrors.NewAggregate(errs)
+}
+
+// CheckNegStatus checks if the NEG Status annotation is presented and in the expected state
+func CheckNegStatus(svc *v1.Service, expectSvcPors []string) (annotations.NegStatus, error) {
+	annotation, ok := svc.Annotations[annotations.NEGStatusKey]
+	if !ok {
+		return annotations.NegStatus{}, fmt.Errorf("service %s/%s does not have neg status annotation: %v", svc.Namespace, svc.Name, svc)
+	}
+
+	negStatus, err := annotations.ParseNegStatus(annotation)
+	if err != nil {
+		return negStatus, fmt.Errorf("service %s/%s has invalid neg status annotation %q: %v", svc.Namespace, svc.Name, annotation, err)
+	}
+
+	expectPorts := sets.NewString(expectSvcPors...)
+	existingPorts := sets.NewString()
+	for port := range negStatus.NetworkEndpointGroups {
+		existingPorts.Insert(port)
+	}
+
+	if !expectPorts.Equal(existingPorts) {
+		return negStatus, fmt.Errorf("service %s/%s does not have neg status annotation: %q, want ports %q", svc.Namespace, svc.Name, annotation, expectPorts.List())
+	}
+	return negStatus, nil
 }

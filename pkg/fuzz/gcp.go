@@ -38,6 +38,7 @@ import (
 
 const (
 	NegResourceType = "networkEndpointGroup"
+	IgResourceType  = "instanceGroup"
 )
 
 // ForwardingRule is a union of the API version types.
@@ -77,8 +78,20 @@ type BackendService struct {
 
 // NetworkEndpointGroup is a union of the API version types.
 type NetworkEndpointGroup struct {
+	GA    *compute.NetworkEndpointGroup
 	Alpha *computealpha.NetworkEndpointGroup
 	Beta  *computebeta.NetworkEndpointGroup
+}
+
+// InstanceGroup is a union of the API version types.
+type InstanceGroup struct {
+	GA *compute.InstanceGroup
+}
+
+// NetworkEndpoints contains the NEG definition and the network Endpoints in NEG
+type NetworkEndpoints struct {
+	NEG       *compute.NetworkEndpointGroup
+	Endpoints []*compute.NetworkEndpointWithHealthStatus
 }
 
 // GCLB contains the resources for a load balancer.
@@ -91,6 +104,7 @@ type GCLB struct {
 	URLMap               map[meta.Key]*URLMap
 	BackendService       map[meta.Key]*BackendService
 	NetworkEndpointGroup map[meta.Key]*NetworkEndpointGroup
+	InstanceGroup        map[meta.Key]*InstanceGroup
 }
 
 // NewGCLB returns an empty GCLB.
@@ -103,6 +117,7 @@ func NewGCLB(vip string) *GCLB {
 		URLMap:               map[meta.Key]*URLMap{},
 		BackendService:       map[meta.Key]*BackendService{},
 		NetworkEndpointGroup: map[meta.Key]*NetworkEndpointGroup{},
+		InstanceGroup:        map[meta.Key]*InstanceGroup{},
 	}
 }
 
@@ -396,6 +411,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 	}
 
 	negKeys := []*meta.Key{}
+	igKeys := []*meta.Key{}
 	// Fetch NEG Backends
 	for _, bsKey := range bsKeys {
 		beGroups := []string{}
@@ -417,24 +433,31 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 			}
 		}
 		for _, group := range beGroups {
-			// Only fetch NEG backends
-			if !strings.Contains(group, NegResourceType) {
-				continue
+			if strings.Contains(group, NegResourceType) {
+				resourceId, err := cloud.ParseResourceURL(group)
+				if err != nil {
+					return nil, err
+				}
+				negKeys = append(negKeys, resourceId.Key)
 			}
-			resourceId, err := cloud.ParseResourceURL(group)
-			if err != nil {
-				return nil, err
+
+			if strings.Contains(group, IgResourceType) {
+				resourceId, err := cloud.ParseResourceURL(group)
+				if err != nil {
+					return nil, err
+				}
+				igKeys = append(igKeys, resourceId.Key)
 			}
-			negKeys = append(negKeys, resourceId.Key)
+
 		}
 	}
 
 	for _, negKey := range negKeys {
-		neg, err := c.BetaNetworkEndpointGroups().Get(ctx, negKey)
+		neg, err := c.NetworkEndpointGroups().Get(ctx, negKey)
 		if err != nil {
 			return nil, err
 		}
-		gclb.NetworkEndpointGroup[*negKey] = &NetworkEndpointGroup{Beta: neg}
+		gclb.NetworkEndpointGroup[*negKey] = &NetworkEndpointGroup{GA: neg}
 		if hasAlphaResource(NegResourceType, validators) {
 			neg, err := c.AlphaNetworkEndpointGroups().Get(ctx, negKey)
 			if err != nil {
@@ -442,7 +465,44 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 			}
 			gclb.NetworkEndpointGroup[*negKey].Alpha = neg
 		}
+		if hasBetaResource(NegResourceType, validators) {
+			neg, err := c.BetaNetworkEndpointGroups().Get(ctx, negKey)
+			if err != nil {
+				return nil, err
+			}
+			gclb.NetworkEndpointGroup[*negKey].Beta = neg
+		}
+	}
+
+	for _, igKey := range igKeys {
+		ig, err := c.InstanceGroups().Get(ctx, igKey)
+		if err != nil {
+			return nil, err
+		}
+		gclb.InstanceGroup[*igKey] = &InstanceGroup{GA: ig}
 	}
 
 	return gclb, err
+}
+
+// NetworkEndpointsInNegs retrieves the network Endpoints from NEGs with one name in multiple zones
+func NetworkEndpointsInNegs(ctx context.Context, c cloud.Cloud, name string, zones []string) (map[meta.Key]*NetworkEndpoints, error) {
+	ret := map[meta.Key]*NetworkEndpoints{}
+	for _, zone := range zones {
+		key := meta.ZonalKey(name, zone)
+		neg, err := c.NetworkEndpointGroups().Get(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		networkEndpoints := &NetworkEndpoints{
+			NEG: neg,
+		}
+		nes, err := c.NetworkEndpointGroups().ListNetworkEndpoints(ctx, key, &compute.NetworkEndpointGroupsListEndpointsRequest{HealthStatus: "SHOW"}, nil)
+		if err != nil {
+			return nil, err
+		}
+		networkEndpoints.Endpoints = nes
+		ret[*key] = networkEndpoints
+	}
+	return ret, nil
 }

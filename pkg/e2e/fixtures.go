@@ -24,18 +24,22 @@ import (
 	"reflect"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	apps "k8s.io/api/apps/v1"
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/ingress-gce/cmd/echo/app"
 	"k8s.io/klog"
 )
 
 const (
 	echoheadersImage = "gcr.io/k8s-ingress-image-push/ingress-gce-echo-amd64:master"
 )
+
+// NoopModify does not modify the input deployment
+func NoopModify(*apps.Deployment) {}
 
 // CreateEchoService creates the pod and service serving echoheaders
 // Todo: (shance) remove this and replace uses with EnsureEchoService()
@@ -45,6 +49,10 @@ func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (
 
 // EnsureEchoService that the Echo service with the given description is set up
 func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32) (*v1.Service, error) {
+	if err := EnsureEchoDeployment(s, name, numReplicas, NoopModify); err != nil {
+		return nil, err
+	}
+
 	expectedSvc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
@@ -69,7 +77,30 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 			Type:     svcType,
 		},
 	}
+	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(name, metav1.GetOptions{})
 
+	if svc == nil || err != nil {
+		if svc, err = s.f.Clientset.CoreV1().Services(s.Namespace).Create(expectedSvc); err != nil {
+			return nil, err
+		}
+		return svc, err
+	}
+
+	if !reflect.DeepEqual(svc.Spec, expectedSvc.Spec) {
+		// Update the fields individually since we don't want to override everything
+		svc.ObjectMeta.Annotations = expectedSvc.ObjectMeta.Annotations
+		svc.Spec.Ports = expectedSvc.Spec.Ports
+		svc.Spec.Type = expectedSvc.Spec.Type
+
+		if svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Update(svc); err != nil {
+			return nil, fmt.Errorf("svc: %v\nexpectedSvc: %v\nerr: %v", svc, expectedSvc, err)
+		}
+	}
+	return svc, nil
+}
+
+// Ensures that the Echo deployment with the given description is set up
+func EnsureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment)) error {
 	podTemplate := v1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
@@ -84,6 +115,32 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 						{ContainerPort: 8080, Name: "http-port"},
 						{ContainerPort: 8443, Name: "https-port"},
 					},
+					Env: []v1.EnvVar{
+						{
+							Name: app.HostEnvVar,
+							ValueFrom: &v1.EnvVarSource{
+								FieldRef: &v1.ObjectFieldSelector{
+									FieldPath: "spec.nodeName",
+								},
+							},
+						},
+						{
+							Name: app.PodEnvVar,
+							ValueFrom: &v1.EnvVarSource{
+								FieldRef: &v1.ObjectFieldSelector{
+									FieldPath: "metadata.name",
+								},
+							},
+						},
+						{
+							Name: app.NamespaceEnvVar,
+							ValueFrom: &v1.EnvVarSource{
+								FieldRef: &v1.ObjectFieldSelector{
+									FieldPath: "metadata.namespace",
+								},
+							},
+						},
+					},
 				},
 			},
 		},
@@ -94,38 +151,27 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 		Spec: apps.DeploymentSpec{
 			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": name}},
 			Template: podTemplate,
+			Replicas: &numReplicas,
 		},
 	}
+	modify(deployment)
 
-	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(name, metav1.GetOptions{})
-
-	if svc == nil || err != nil {
-		if deployment, err = s.f.Clientset.AppsV1().Deployments(s.Namespace).Create(deployment); err != nil {
-			return nil, err
+	existingDeployment, err := s.f.Clientset.ExtensionsV1beta1().Deployments(s.Namespace).Get(name, metav1.GetOptions{})
+	if existingDeployment == nil || err != nil {
+		if _, err = s.f.Clientset.AppsV1().Deployments(s.Namespace).Create(deployment); err != nil {
+			return err
 		}
-		if svc, err = s.f.Clientset.CoreV1().Services(s.Namespace).Create(expectedSvc); err != nil {
-			return nil, err
+	} else {
+		if _, err = s.f.Clientset.AppsV1().Deployments(s.Namespace).Update(deployment); err != nil {
+			return err
 		}
-		return svc, err
 	}
 
 	deployment.Spec.Replicas = &numReplicas
 	if _, err = s.f.Clientset.AppsV1().Deployments(s.Namespace).Update(deployment); err != nil {
-		return nil, fmt.Errorf("Error updating deployment scale: %v", err)
+		return fmt.Errorf("Error updating deployment scale: %v", err)
 	}
-
-	if !reflect.DeepEqual(svc.Spec, expectedSvc.Spec) {
-		// Update the fields individually since we don't want to override everything
-		svc.ObjectMeta.Annotations = expectedSvc.ObjectMeta.Annotations
-		svc.Spec.Ports = expectedSvc.Spec.Ports
-		svc.Spec.Type = expectedSvc.Spec.Type
-
-		if svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Update(svc); err != nil {
-			return nil, fmt.Errorf("svc: %v\nexpectedSvc: %v\nerr: %v", svc, expectedSvc, err)
-		}
-	}
-
-	return svc, nil
+	return nil
 }
 
 // CreateSecret creates a secret from the given data.
