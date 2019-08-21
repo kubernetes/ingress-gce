@@ -391,7 +391,7 @@ func TestNEGSyncEndpoints(t *testing.T) {
 	}
 }
 
-func TestReadinessReflector(t *testing.T) {
+func TestNEGReadinessReflector(t *testing.T) {
 	t.Parallel()
 	Framework.RunWithSandbox("Readiness reflector should handle pods that are not behind NEG but with NEG readiness gate", t, func(t *testing.T, s *e2e.Sandbox) {
 		name := "deployment1"
