@@ -81,7 +81,7 @@ func (crud *IngressCRUD) Delete(ns, name string) error {
 }
 
 func (crud *IngressCRUD) supportsNewAPI() (bool, error) {
-	if apiList, err := crud.C.Discovery().ServerResourcesForGroupVersion("networking/v1beta1"); err == nil {
+	if apiList, err := crud.C.Discovery().ServerResourcesForGroupVersion("networking.k8s.io/v1beta1"); err == nil {
 		for _, r := range apiList.APIResources {
 			if r.Kind == "Ingress" {
 				return true, nil
