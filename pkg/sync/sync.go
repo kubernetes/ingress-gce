@@ -66,5 +66,6 @@ func (s *IngressSyncer) GC(state interface{}) error {
 	if beErr != nil {
 		return fmt.Errorf("error running backend garbage collection routine: %v", beErr)
 	}
-	return nil
+
+	return s.controller.MaybeRemoveFinalizers(state)
 }

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/google/go-cmp/cmp"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -29,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/fake"
+
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
@@ -46,6 +48,19 @@ var (
 	nodePortCounter = 30000
 	clusterUID      = "aaaaa"
 )
+
+// saveFinalizerFlags captures current value of finalizer flags and
+// restore them after a test is finished.
+type saveFinalizerFlags struct{ add, remove bool }
+
+func (s *saveFinalizerFlags) save() {
+	s.add = flags.F.FinalizerAdd
+	s.remove = flags.F.FinalizerRemove
+}
+func (s *saveFinalizerFlags) reset() {
+	flags.F.FinalizerAdd = s.add
+	flags.F.FinalizerRemove = s.remove
+}
 
 // newLoadBalancerController create a loadbalancer controller.
 func newLoadBalancerController() *LoadBalancerController {
@@ -169,6 +184,9 @@ func TestIngressSyncError(t *testing.T) {
 // Ingresses that need to be deleted, and keep the ones that don't, depending
 // on whether Finalizer Adds and/or Removes are enabled.
 func TestIngressCreateDeleteFinalizer(t *testing.T) {
+	var flagSaver saveFinalizerFlags
+	flagSaver.save()
+	defer flagSaver.reset()
 	testCases := []struct {
 		enableFinalizerAdd    bool
 		enableFinalizerRemove bool
@@ -219,7 +237,7 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 
 				ingStoreKey := getKey(ing, t)
 				if err := lbc.sync(ingStoreKey); err != nil {
-					t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
+					t.Fatalf("lbc.sync(%v) = %v, nil", ingStoreKey, err)
 				}
 
 				updatedIng, _ := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
@@ -246,7 +264,7 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 
 				ingStoreKey := getKey(ing, t)
 				if err := lbc.sync(ingStoreKey); err != nil {
-					t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
+					t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 				}
 
 				updatedIng, _ := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses("default").Get(name, meta_v1.GetOptions{})
@@ -270,15 +288,189 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 
 				remainingIngresses, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses("default").List(meta_v1.ListOptions{})
 				if err != nil {
-					t.Fatalf("List() = err %v", err)
+					t.Fatalf("List() = %v, want nil", err)
 				}
 
-				remainingIngCount := len(tc.ingNames) - i - 1
-				if len(remainingIngresses.Items) != remainingIngCount {
-					t.Fatalf("Expected %d Ingresses, got: %d", remainingIngCount, len(remainingIngresses.Items))
+				expectedRemainingIngCount := len(tc.ingNames) - i - 1
+				remainingIngCount := len(remainingIngresses.Items)
+				if remainingIngCount != expectedRemainingIngCount {
+					t.Errorf("List() = count %d, want %d; ingress count mismatch", remainingIngCount, expectedRemainingIngCount)
 				}
 			}
 		})
+	}
+}
+
+// TestIngressClassChangeWithFinalizer asserts that `sync` will not return an error for
+// a good ingress config status is updated and LB is deleted after class change.
+// Note: This test cannot be run in parallel as it stubs global flags.
+func TestIngressClassChangeWithFinalizer(t *testing.T) {
+	var flagSaver saveFinalizerFlags
+	flagSaver.save()
+	defer flagSaver.reset()
+	flags.F.FinalizerAdd = true
+	flags.F.FinalizerRemove = true
+	lbc := newLoadBalancerController()
+	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
+		Type:  api_v1.ServiceTypeNodePort,
+		Ports: []api_v1.ServicePort{{Port: 80}},
+	})
+	anns := map[string]string{annotations.IngressClassKey: "gce"}
+	addService(lbc, svc)
+	defaultBackend := backend("my-service", intstr.FromInt(80))
+	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
+		v1beta1.IngressSpec{
+			Backend: &defaultBackend,
+		})
+	ing.ObjectMeta.Annotations = anns
+	addIngress(lbc, ing)
+
+	ingStoreKey := getKey(ing, t)
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
+	}
+	// Check if finalizer is added when an Ingress resource is created with finalizer enabled.
+	updatedIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get(%v) = %v, want nil", ingStoreKey, err)
+	}
+	ingFinalizers := updatedIng.GetFinalizers()
+	if len(ingFinalizers) != 1 || ingFinalizers[0] != utils.FinalizerKey {
+		t.Fatalf("updatedIng.GetFinalizers() = %+v, want [%s]; failed to add finalizer, updatedIng = %+v", ingFinalizers, utils.FinalizerKey, updatedIng)
+	}
+
+	anns[annotations.IngressClassKey] = "new-class"
+	updatedIng.ObjectMeta.Annotations = anns
+	updateIngress(lbc, updatedIng)
+
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
+	}
+	// Check if finalizer is removed after class changes.
+	updatedIng, err = lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get(%v) = %v, want nil", ingStoreKey, err)
+	}
+	if l := len(updatedIng.GetFinalizers()); l != 0 {
+		t.Fatalf("len(updatedIng.GetFinalizers()) =  %d, want 0; failed to remove finalizer, updatedIng = %+v", l, updatedIng)
+	}
+}
+
+// TestIngressesWithSharedResourcesWithFinalizer asserts that `sync` does not return error when
+// multiple ingressesToCleanup with shared resources are added or deleted.
+// Note: This test cannot be run in parallel as it stubs global flags.
+func TestIngressesWithSharedResourcesWithFinalizer(t *testing.T) {
+	var flagSaver saveFinalizerFlags
+	flagSaver.save()
+	defer flagSaver.reset()
+	flags.F.FinalizerAdd = true
+	flags.F.FinalizerRemove = true
+	lbc := newLoadBalancerController()
+	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
+		Type:  api_v1.ServiceTypeNodePort,
+		Ports: []api_v1.ServicePort{{Port: 80}},
+	})
+	addService(lbc, svc)
+	defaultBackend := backend("my-service", intstr.FromInt(80))
+	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
+		v1beta1.IngressSpec{
+			Backend: &defaultBackend,
+		})
+	otherIng := test.NewIngress(types.NamespacedName{Name: "my-other-ingress", Namespace: "default"},
+		v1beta1.IngressSpec{
+			Backend: &defaultBackend,
+		})
+	addIngress(lbc, ing)
+	addIngress(lbc, otherIng)
+
+	ingStoreKey := getKey(ing, t)
+	otherIngStoreKey := getKey(otherIng, t)
+	if err1, err2 := lbc.sync(ingStoreKey), lbc.sync(otherIngStoreKey); err1 != nil || err2 != nil {
+		if err1 != nil {
+			t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err1)
+		} else {
+			t.Fatalf("lbc.sync(%v) = %v, want nil", otherIngStoreKey, err2)
+		}
+	}
+
+	// Assert service ports are being shared.
+	ingSvcPorts := lbc.ToSvcPorts([]*v1beta1.Ingress{ing})
+	otherIngSvcPorts := lbc.ToSvcPorts([]*v1beta1.Ingress{otherIng})
+	if diff := cmp.Diff(ingSvcPorts, otherIngSvcPorts); diff != "" {
+		t.Errorf("lbc.ToSVCPorts(_) mismatch (-want +got):\n%s", diff)
+	}
+
+	deleteIngress(lbc, ing)
+	deleteIngress(lbc, otherIng)
+
+	if err1, err2 := lbc.sync(ingStoreKey), lbc.sync(otherIngStoreKey); err1 != nil || err2 != nil {
+		if err1 != nil {
+			t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err1)
+		} else {
+			t.Fatalf("lbc.sync(%v) = %v, want nil", otherIngStoreKey, err2)
+		}
+	}
+
+	remainingIngresses, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses("default").List(meta_v1.ListOptions{})
+	if err != nil {
+		t.Fatalf("List() = %v, want nil", err)
+	}
+
+	// assert if all the ingressesToCleanup deleted safely
+	if l := len(remainingIngresses.Items); l != 0 {
+		t.Fatalf("len(remainingIngresses.Items) = %d, want 0; failed to remove all the ingresses", l)
+	}
+}
+
+// TestEnableFinalizer asserts that `sync` does not return error and finalizer is added
+// to existing ingressesToCleanup when lbc is upgraded to enable finalizer.
+// Note: This test cannot be run in parallel as it stubs global flags.
+func TestEnableFinalizer(t *testing.T) {
+	var flagSaver saveFinalizerFlags
+	flagSaver.save()
+	defer flagSaver.reset()
+	lbc := newLoadBalancerController()
+	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "namespace1"}, api_v1.ServiceSpec{
+		Type:  api_v1.ServiceTypeNodePort,
+		Ports: []api_v1.ServicePort{{Port: 80}},
+	})
+	addService(lbc, svc)
+	defaultBackend := backend("my-service", intstr.FromInt(80))
+	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "namespace1"},
+		v1beta1.IngressSpec{
+			Backend: &defaultBackend,
+		})
+	addIngress(lbc, ing)
+
+	ingStoreKey := getKey(ing, t)
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
+	}
+
+	// Ensure that no finalizer is added.
+	updatedIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get(%v) = %v, want nil", ingStoreKey, err)
+	}
+	if l := len(updatedIng.GetFinalizers()); l != 0 {
+		t.Fatalf("len(updatedIng.GetFinalizers()) =  %d, want 0; failed to remove finalizer, updatedIng = %+v", l, updatedIng)
+	}
+
+	// enable finalizer
+	flags.F.FinalizerAdd = true
+
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
+	}
+
+	// Check if finalizer is added after finalizer is enabled.
+	updatedIng, err = lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get(%v) = %v, want nil", ingStoreKey, err)
+	}
+	ingFinalizers := updatedIng.GetFinalizers()
+	if len(ingFinalizers) != 1 || ingFinalizers[0] != utils.FinalizerKey {
+		t.Fatalf("updatedIng.GetFinalizers() = %+v, want [%s]; failed to add finalizer, updatedIng = %+v", ingFinalizers, utils.FinalizerKey, updatedIng)
 	}
 }
 
@@ -303,7 +495,6 @@ func TestIngressClassChange(t *testing.T) {
 	if err := lbc.sync(ingStoreKey); err != nil {
 		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
 	}
-
 	ing.ObjectMeta.Annotations = map[string]string{"kubernetes.io/ingress.class": "new-class"}
 	updateIngress(lbc, ing)
 
