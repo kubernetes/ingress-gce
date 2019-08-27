@@ -17,11 +17,13 @@ limitations under the License.
 package readiness
 
 import (
+	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
-	"fmt"
 	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -33,13 +35,21 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/klog"
-	"reflect"
 )
 
 const (
-	maxRetries        = 15
-	negReadyReason    = "LoadBalancerNegReady"
+	maxRetries = 15
+	// negReadyReason is the pod condition reason when pod becomes Healthy in NEG or pod no longer belongs to any NEG
+	negReadyReason = "LoadBalancerNegReady"
+	// negReadyTimedOutReason is the pod condition reason when timeout is reached but pod is still not healthy in NEG
+	negReadyTimedOutReason = "LoadBalancerNegTimeout"
+	// negNotReadyReason is the pod condition reason when pod is not healthy in NEG
 	negNotReadyReason = "LoadBalancerNegNotReady"
+	// unreadyTimeout is the timeout for health status feedback for pod readiness. If load balancer health
+	// check is still not showing as Healthy for long than the time out since the pod is created. Skip wating and mark
+	// the pod as load balancer ready.
+	// This is a fail-safe in case that should be longer than any reasonable amount of time for the healthy infrastructure catch up.
+	unreadyTimeout = 10 * time.Minute
 )
 
 // readinessReflector implements the Reflector interface
@@ -47,6 +57,7 @@ type readinessReflector struct {
 	// podUpdateLock ensures that at any time there is only one
 	podUpdateLock sync.Mutex
 	client        kubernetes.Interface
+	clock         clock.Clock
 
 	// pollerLock ensures there is only poll
 	pollerLock sync.Mutex
@@ -71,6 +82,7 @@ func NewReadinessReflector(cc *context.ControllerContext, lookup NegLookup) Refl
 	reflector := &readinessReflector{
 		client:           cc.KubeClient,
 		podLister:        cc.PodInformer.GetIndexer(),
+		clock:            clock.RealClock{},
 		lookup:           lookup,
 		eventBroadcaster: broadcaster,
 		eventRecorder:    recorder,
@@ -151,32 +163,44 @@ func (r *readinessReflector) syncPod(key string, neg string) (err error) {
 	}
 
 	klog.V(4).Infof("Syncing Pod %q", key)
-	expectedCondition := v1.PodCondition{Type: shared.NegReadinessGate}
-	var message, reason string
+	expectedCondition := r.getExpectedNegCondition(pod, neg)
+	return r.ensurePodNegCondition(pod, expectedCondition)
+}
 
+// getExpectedCondition returns the expected NEG readiness condition for the given pod
+func (r *readinessReflector) getExpectedNegCondition(pod *v1.Pod, neg string) v1.PodCondition {
+	expectedCondition := v1.PodCondition{Type: shared.NegReadinessGate}
 	if len(neg) > 0 {
 		expectedCondition.Status = v1.ConditionTrue
-		reason = negReadyReason
-		message = fmt.Sprintf("Pod has become Healthy in NEG %q. Marking condition %q to True.", neg, shared.NegReadinessGate)
-	} else {
-		negs := r.lookup.ReadinessGateEnabledNegs(pod.Namespace, pod.Labels)
-		// mark pod as ready if it belongs to no NEGs
-		if len(negs) == 0 {
-			expectedCondition.Status = v1.ConditionTrue
-			reason = negReadyReason
-			message = fmt.Sprintf("Pod does not belong to any NEG. Marking condition %q to True.", shared.NegReadinessGate)
-		} else {
-			// do not patch condition status in this case to prevent race condition:
-			// 1. poller marks a pod ready
-			// 2. syncPod gets call and does not retrieve the updated pod spec with true neg readiness condition
-			// 3. syncPod patches the neg readiness condition to be false
-			reason = negNotReadyReason
-			message = fmt.Sprintf("Waiting for pod to become healthy in at least one of the NEG(s): %v", negs)
-		}
+		expectedCondition.Reason = negReadyReason
+		expectedCondition.Message = fmt.Sprintf("Pod has become Healthy in NEG %q. Marking condition %q to True.", neg, shared.NegReadinessGate)
+		return expectedCondition
 	}
-	expectedCondition.Reason = reason
-	expectedCondition.Message = message
-	return r.ensurePodNegCondition(pod, expectedCondition)
+
+	negs := r.lookup.ReadinessGateEnabledNegs(pod.Namespace, pod.Labels)
+	// mark pod as ready if it belongs to no NEGs
+	if len(negs) == 0 {
+		expectedCondition.Status = v1.ConditionTrue
+		expectedCondition.Reason = negReadyReason
+		expectedCondition.Message = fmt.Sprintf("Pod does not belong to any NEG. Marking condition %q to True.", shared.NegReadinessGate)
+		return expectedCondition
+	}
+
+	// check if the pod has been waiting for the endpoint to show up as Healthy in NEG for too long
+	if r.clock.Now().After(pod.CreationTimestamp.Add(unreadyTimeout)) {
+		expectedCondition.Status = v1.ConditionTrue
+		expectedCondition.Reason = negReadyTimedOutReason
+		expectedCondition.Message = fmt.Sprintf("Timeout waiting for pod to become healthy in at least one of the NEG(s): %v. Marking condition %q to True.", negs, shared.NegReadinessGate)
+		return expectedCondition
+	}
+
+	// do not patch condition status in this case to prevent race condition:
+	// 1. poller marks a pod ready
+	// 2. syncPod gets call and does not retrieve the updated pod spec with true neg readiness condition
+	// 3. syncPod patches the neg readiness condition to be false
+	expectedCondition.Reason = negNotReadyReason
+	expectedCondition.Message = fmt.Sprintf("Waiting for pod to become healthy in at least one of the NEG(s): %v", negs)
+	return expectedCondition
 }
 
 // SyncPod filter the pods that needed to be processed and put it into queue
