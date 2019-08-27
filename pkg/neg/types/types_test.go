@@ -128,9 +128,9 @@ func TestPortInfoMapMerge(t *testing.T) {
 		},
 		{
 			"union of two non-empty maps with overlapping service port and difference in readiness gate configurations ",
-			NewPortInfoMapWithDestinationRule(namespace, name, SvcPortMap{80: "3000"}, namer, true,
+			helperNewPortInfoMapWithDestinationRule(namespace, name, SvcPortMap{80: "3000"}, namer, true,
 				createDestinationRule(name, "v1", "v2")),
-			NewPortInfoMapWithDestinationRule(namespace, name, SvcPortMap{80: "3000", 8080: "9000"}, namer, false,
+			helperNewPortInfoMapWithDestinationRule(namespace, name, SvcPortMap{80: "3000", 8080: "9000"}, namer, false,
 				createDestinationRule(name, "v3")),
 			PortInfoMap{
 				PortInfoMapKey{80, "v1"}: PortInfo{
@@ -187,6 +187,12 @@ func TestPortInfoMapMerge(t *testing.T) {
 			}
 		})
 	}
+}
+
+func helperNewPortInfoMapWithDestinationRule(namespace, name string, svcPortMap SvcPortMap, namer NetworkEndpointGroupNamer, readinessGate bool,
+	destinationRule *istioV1alpha3.DestinationRule) PortInfoMap {
+	rsl, _ := NewPortInfoMapWithDestinationRule(namespace, name, svcPortMap, namer, readinessGate, destinationRule)
+	return rsl
 }
 
 func TestPortInfoMapDifference(t *testing.T) {

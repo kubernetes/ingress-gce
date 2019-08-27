@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	"k8s.io/apimachinery/pkg/labels"
@@ -75,12 +76,19 @@ func NewPortInfoMap(namespace, name string, svcPortMap SvcPortMap, namer Network
 	return ret
 }
 
+// NewPortInfoMapWithDestinationRule create PortInfoMap based on a gaven DesinationRule.
+// Return error message if the DestinationRule contains duplicated subsets.
 func NewPortInfoMapWithDestinationRule(namespace, name string, svcPortMap SvcPortMap, namer NetworkEndpointGroupNamer, readinessGate bool,
-	destinationRule *istioV1alpha3.DestinationRule) PortInfoMap {
+	destinationRule *istioV1alpha3.DestinationRule) (PortInfoMap, error) {
 	ret := PortInfoMap{}
+	var duplicateSubset []string
 	for _, subset := range destinationRule.Subsets {
 		for svcPort, targetPort := range svcPortMap {
-			ret[PortInfoMapKey{svcPort, subset.Name}] = PortInfo{
+			key := PortInfoMapKey{svcPort, subset.Name}
+			if _, ok := ret[key]; ok {
+				duplicateSubset = append(duplicateSubset, subset.Name)
+			}
+			ret[key] = PortInfo{
 				TargetPort:    targetPort,
 				NegName:       namer.NEGWithSubset(namespace, name, subset.Name, svcPort),
 				ReadinessGate: readinessGate,
@@ -89,7 +97,10 @@ func NewPortInfoMapWithDestinationRule(namespace, name string, svcPortMap SvcPor
 			}
 		}
 	}
-	return ret
+	if len(duplicateSubset) != 0 {
+		return ret, fmt.Errorf("Duplicated subsets: %s", strings.Join(duplicateSubset, ", "))
+	}
+	return ret, nil
 }
 
 // Merge merges p2 into p1 PortInfoMap

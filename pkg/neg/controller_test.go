@@ -82,6 +82,7 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		// TODO(freehan): enable readiness reflector for unit tests
 		false,
 		false,
+		nil,
 	)
 	return controller
 }

@@ -31,6 +31,7 @@ function usage() {
   echo "                           the Makefile for defaults and other configuration)"
   echo "  --help                   Display this help and exit"
   echo "  --network-name           Override for the network-name gce.conf value"
+  echo "  --enable-csm             If set, enable CSM mode which will create NEGs for Istio objects."
   echo "  --subnetwork-name        Override for the subnetwork-name gce.conf value"
   echo "  --network-tags           Override for the node-tags gce.conf value"
   echo "  --no-confirm             Don't ask confirmation to reenable GLBC on cleanup"
@@ -142,7 +143,7 @@ function cleanup() {
 }
 
 # Loops until calls to the API server are succeeding.
-function wait-for-api-server() {
+function wait_for_api_server() {
   echo "Waiting for API server to become ready..."
   until run_maybe_dry kubectl api-resources > /dev/null 2>&1; do
     sleep 0.1
@@ -156,6 +157,7 @@ CLEANUP_HELP="Invoking me with the -c option will get you back to a clean slate.
 NO_CLEANUP="Nothing has to be cleaned up :)"
 PERMISSION_ISSUE="If this looks like a permissions problem, see the README."
 CONFIRM=1
+ENABLE_CSM=false
 
 # Parsing command line arguments
 while [[ $# -gt 0 ]]
@@ -199,6 +201,10 @@ case $key in
   ;;
   --build-and-push)
   BUILD_AND_PUSH=1
+  shift
+  ;;
+  --enable-csm)
+  ENABLE_CSM=true
   shift
   ;;
   --no-confirm)
@@ -303,7 +309,8 @@ fi
 
 # And format the GLBC YAML with the image URL (either from --image-url or parsed from)
 # our Makefile output.
-sed "s|\[IMAGE_URL\]|$IMAGE_URL|" ../resources/glbc.yaml > ../resources/glbc.yaml.gen
+sed "s|\[IMAGE_URL\]|$IMAGE_URL|" ../resources/glbc.yaml | \
+sed -e "s|\[ENABLE_CSM\]|$ENABLE_CSM|" > ../resources/glbc.yaml.gen
 
 # Grant permission to current GCP user to create new k8s ClusterRole's.
 run_maybe_dry_kubectl kubectl create clusterrolebinding one-binding-to-rule-them-all --clusterrole=cluster-admin --user=${GCP_USER}
@@ -352,7 +359,7 @@ run_maybe_dry gcloud container clusters update ${CLUSTER_NAME} ${GCLOUD_EXTRA_FL
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue turning off GLBC. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
 
 # Critical to wait for the API server to be handling responses before continuing.
-wait-for-api-server
+wait_for_api_server
 
 # In case the API server isn't actually ready (there's been mention of it succeeding on
 # a request only to fail on the next), prompt user so that they can choose when to proceed.
