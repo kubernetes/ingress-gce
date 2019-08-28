@@ -40,4 +40,6 @@ type Controller interface {
 	GCLoadBalancers(state interface{}) error
 	// PostProcess allows for doing some post-processing after an Ingress is synced to a GCLB.
 	PostProcess(state interface{}) error
+	// MaybeRemoveFinalizers removes Finalizers after all the resources used by Ingresses are deleted.
+	MaybeRemoveFinalizers(state interface{}) error
 }

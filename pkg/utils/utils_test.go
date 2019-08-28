@@ -18,11 +18,12 @@ package utils
 
 import (
 	"fmt"
+	"testing"
+	"time"
+
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
-	"testing"
-	"time"
 
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
@@ -660,6 +661,62 @@ func TestIsGCEL7ILBIngress(t *testing.T) {
 			result := IsGCEL7ILBIngress(tc.ingress)
 			if result != tc.expected {
 				t.Fatalf("want %v, got %v", tc.expected, result)
+			}
+		})
+	}
+}
+
+func TestNeedsCleanup(t *testing.T) {
+	testCases := []struct {
+		isGLBCIngress       bool
+		withFinalizer       bool
+		withDeleteTimestamp bool
+		expectNeedsCleanup  bool
+	}{
+		{false, false, false, true},
+		{false, false, true, true},
+		{false, true, false, true},
+		{false, true, true, true},
+		{true, false, false, false},
+		{true, false, true, false},
+		{true, true, false, false},
+		{true, true, true, true},
+	}
+
+	for _, tc := range testCases {
+		desc := fmt.Sprintf("isGLBCIngress %t withFinalizer %t withDeleteTimestamp %t", tc.isGLBCIngress, tc.withFinalizer, tc.withDeleteTimestamp)
+		t.Run(desc, func(t *testing.T) {
+			ingressClass := "gce"
+			if !tc.isGLBCIngress {
+				ingressClass = "nginx"
+			}
+			ingress := &v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Name:      "ing",
+					Namespace: "default",
+					Annotations: map[string]string{
+						"kubernetes.io/ingress.class": ingressClass,
+					},
+				},
+				Spec: v1beta1.IngressSpec{
+					Backend: &v1beta1.IngressBackend{
+						ServiceName: "my-service",
+						ServicePort: intstr.FromInt(80),
+					},
+				},
+			}
+
+			if tc.withFinalizer {
+				ingress.ObjectMeta.Finalizers = []string{FinalizerKey}
+			}
+
+			if tc.withDeleteTimestamp {
+				ts := v1.NewTime(time.Now())
+				ingress.SetDeletionTimestamp(&ts)
+			}
+
+			if gotNeedsCleanup := NeedsCleanup(ingress); gotNeedsCleanup != tc.expectNeedsCleanup {
+				t.Errorf("NeedsCleanup() = %t, want %t (tc = %+v)", gotNeedsCleanup, tc.expectNeedsCleanup, tc)
 			}
 		})
 	}

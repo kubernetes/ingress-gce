@@ -23,10 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"k8s.io/ingress-gce/pkg/frontendconfig"
-
-	"k8s.io/klog"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
@@ -37,23 +33,23 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/common/operator"
-	"k8s.io/ingress-gce/pkg/healthchecks"
-	"k8s.io/ingress-gce/pkg/instances"
-
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/frontendconfig"
+	"k8s.io/ingress-gce/pkg/healthchecks"
+	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	ingsync "k8s.io/ingress-gce/pkg/sync"
 	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/kubernetes/pkg/util/slice"
+	"k8s.io/klog"
 )
 
 // LoadBalancerController watches the kubernetes api and adds/removes services
@@ -106,7 +102,6 @@ func NewLoadBalancerController(
 
 	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendHealthCheckPath, ctx.ClusterNamer, ctx.DefaultBackendSvcPort.ID.Service)
 	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer)
-
 	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
 
 	lbc := LoadBalancerController{
@@ -142,6 +137,15 @@ func NewLoadBalancerController(
 		},
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*v1beta1.Ingress)
+			if delIng == nil {
+				klog.Errorf("Invalid object type: %T", obj)
+				return
+			}
+			if delIng.ObjectMeta.DeletionTimestamp != nil {
+				klog.V(2).Infof("Ignoring delete event for Ingress %v, deletion will be handled via the finalizer", utils.IngressKeyFunc(delIng))
+				return
+			}
+
 			if !utils.IsGLBCIngress(delIng) {
 				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", utils.IngressKeyFunc(delIng), annotations.IngressClassKey)
 				return
@@ -378,31 +382,39 @@ func (lbc *LoadBalancerController) GCBackends(state interface{}) error {
 		return fmt.Errorf("expected state type to be gcState, type was %T", state)
 	}
 
-	if err := lbc.backendSyncer.GC(gcState.svcPorts); err != nil {
+	if err := lbc.backendSyncer.GC(gcState.svcPortsToKeep); err != nil {
 		return err
 	}
 
 	// TODO(ingress#120): Move this to the backend pool so it mirrors creation
-	if len(gcState.lbNames) == 0 {
+	if len(gcState.lbNamesToKeep) == 0 {
 		igName := lbc.ctx.ClusterNamer.InstanceGroup()
 		klog.Infof("Deleting instance group %v", igName)
 		if err := lbc.instancePool.DeleteInstanceGroup(igName); err != err {
 			return err
 		}
 	}
+	return nil
+}
 
-	for _, ing := range gcState.ingresses {
-		if utils.IsDeletionCandidate(ing.ObjectMeta, utils.FinalizerKey) {
-			ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
-			if flags.F.FinalizerRemove {
-				if err := utils.RemoveFinalizer(ing, ingClient); err != nil {
-					klog.Errorf("Failed to remove Finalizer from Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
-					return err
-				}
-			}
-		}
+// MaybeRemoveFinalizers cleans up Finalizers if needed.
+func (lbc *LoadBalancerController) MaybeRemoveFinalizers(state interface{}) error {
+	if !flags.F.FinalizerRemove {
+		klog.V(4).Infof("Removing finalizers not enabled")
+		return nil
+	}
+	gcState, ok := state.(*gcState)
+	if !ok {
+		return fmt.Errorf("expected state type to be gcState, type was %T", state)
 	}
 
+	for _, ing := range gcState.ingressesToCleanup {
+		ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
+		if err := utils.RemoveFinalizer(ing, ingClient); err != nil {
+			klog.Errorf("Failed to remove Finalizer from Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
+			return err
+		}
+	}
 	return nil
 }
 
@@ -437,7 +449,7 @@ func (lbc *LoadBalancerController) GCLoadBalancers(state interface{}) error {
 		return fmt.Errorf("expected state type to be gcState, type was %T", state)
 	}
 
-	if err := lbc.l7Pool.GC(gcState.lbNames); err != nil {
+	if err := lbc.l7Pool.GC(gcState.lbNamesToKeep); err != nil {
 		return err
 	}
 
@@ -464,22 +476,14 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	}
 	klog.V(3).Infof("Syncing %v", key)
 
-	// Create state needed for GC.
-	gceIngresses := operator.Ingresses(lbc.ctx.Ingresses().List()).Filter(func(ing *v1beta1.Ingress) bool {
-		return utils.IsGCEIngress(ing)
-	}).AsList()
-
-	// gceSvcPorts contains the ServicePorts used by only single-cluster ingress.
-	gceSvcPorts := lbc.ToSvcPorts(gceIngresses)
-	lbNames := lbc.ctx.Ingresses().ListKeys()
-
 	ing, ingExists, err := lbc.ctx.Ingresses().GetByKey(key)
 	if err != nil {
 		return fmt.Errorf("error getting Ingress for key %s: %v", key, err)
 	}
-	gcState := &gcState{lbc.ctx.Ingresses().List(), lbNames, gceSvcPorts}
-	if !ingExists || utils.IsDeletionCandidate(ing.ObjectMeta, utils.FinalizerKey) {
-		klog.V(2).Infof("Ingress %q no longer exists, triggering GC", key)
+
+	gcState := lbc.createGCState()
+	// Determine if the ingress needs to be GCed.
+	if !ingExists || utils.NeedsCleanup(ing) {
 		// GC will find GCE resources that were used for this ingress and delete them.
 		return lbc.ingSyncer.GC(gcState)
 	}
@@ -492,18 +496,6 @@ func (lbc *LoadBalancerController) sync(key string) error {
 			klog.Errorf("Failed to add Finalizer to Ingress %q: %v", key, err)
 			return err
 		}
-	}
-
-	// Check if ingress class was changed to non-GLBC to remove ingress LB from state and trigger GC
-	if !utils.IsGLBCIngress(ing) {
-		klog.V(2).Infof("Ingress %q class was changed, triggering GC", key)
-		// Remove lb from state for GC
-		gcState.lbNames = slice.RemoveString(gcState.lbNames, key, nil)
-		if gcErr := lbc.ingSyncer.GC(gcState); gcErr != nil {
-			return gcErr
-		}
-
-		return nil
 	}
 
 	// Bootstrap state for GCP sync.
@@ -643,4 +635,32 @@ func (lbc *LoadBalancerController) ToSvcPorts(ings []*v1beta1.Ingress) []utils.S
 		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts
+}
+
+// createGCState constructs GC State for GC.
+func (lbc *LoadBalancerController) createGCState() *gcState {
+	all := lbc.ctx.Ingresses().List()
+	// An Ingress is considered to exist and managed by our controller if:
+	// 1) It is a GCE Ingress.
+	// 2) It is not a candidate for deletion.
+	// Note: Multi-cluster Ingress resources are not managed by this controller, hence filtered out.
+	toKeep := operator.Ingresses(all).Filter(func(ing *v1beta1.Ingress) bool {
+		return utils.IsGCEIngress(ing) && !utils.IsDeletionCandidate(ing.ObjectMeta, utils.FinalizerKey)
+	}).AsList()
+	// List all of the Ingresses that are deletion candidates.
+	toCleanup := operator.Ingresses(all).Filter(utils.NeedsCleanup).AsList()
+	toKeepSvcPorts := lbc.ToSvcPorts(toKeep)
+	toKeepLbNames := toLbNames(toKeep)
+
+	// gcState needs to have all three fields be a snapshot of the current state to avoid inconsistency.
+	return &gcState{toCleanup, toKeepLbNames, toKeepSvcPorts}
+}
+
+// toLbNames translates a list of ingresses into their corresponding load balancer names.
+func toLbNames(ings []*v1beta1.Ingress) []string {
+	lbNames := make([]string, 0, len(ings))
+	for _, ing := range ings {
+		lbNames = append(lbNames, utils.IngressKeyFunc(ing))
+	}
+	return lbNames
 }

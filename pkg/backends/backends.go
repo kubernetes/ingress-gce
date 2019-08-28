@@ -139,31 +139,24 @@ func (b *Backends) Get(name string, version meta.Version, scope meta.KeyType) (*
 }
 
 // Delete implements Pool.
-func (b *Backends) Delete(name string, version meta.Version, scope meta.KeyType) (err error) {
-	defer func() {
-		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-			err = nil
-		}
-	}()
-
+func (b *Backends) Delete(name string, version meta.Version, scope meta.KeyType) error {
 	klog.V(2).Infof("Deleting backend service %v", name)
 
-	// Try deleting health checks even if a backend is not found.
 	key, err := composite.CreateKey(b.cloud, name, scope)
 	if err != nil {
 		return err
 	}
 	err = composite.DeleteBackendService(b.cloud, key, version)
 	if err != nil {
-		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-			klog.Infof("DeleteBackendService(_, %v, %v) = %v; backend service does not exists, ignoring", key, version, err)
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsInUsedByError(err) {
+			klog.Infof("DeleteBackendService(_, %v, %v) = %v; ignorable error", key, version, err)
 			return nil
 		}
 		klog.Errorf("DeleteBackendService(_, %v, %v) = %v", key, version, err)
 		return err
 	}
 	klog.V(2).Infof("DeleteBackendService(_, %v, %v) ok", key, version)
-	return
+	return nil
 }
 
 // Health implements Pool.

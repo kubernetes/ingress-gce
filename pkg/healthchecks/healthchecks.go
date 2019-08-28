@@ -1,9 +1,12 @@
 /*
 Copyright 2015 The Kubernetes Authors.
+
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
 You may obtain a copy of the License at
+
     http://www.apache.org/licenses/LICENSE-2.0
+
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,11 +19,12 @@ package healthchecks
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"time"
+
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/legacy-cloud-providers/gce"
-	"net/http"
-	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	computealpha "google.golang.org/api/compute/v0.alpha"
@@ -293,7 +297,15 @@ func (h *HealthChecks) Delete(name string, scope meta.KeyType) error {
 
 	klog.V(2).Infof("Deleting health check %v", name)
 	// Not using composite here since the tests still rely on the fake health check interface
-	return h.cloud.DeleteHealthCheck(name)
+	if err := h.cloud.DeleteHealthCheck(name); err != nil {
+		// Ignore error if the deletion candidate is being used by another resource.
+		if utils.IsInUsedByError(err) {
+			klog.V(4).Infof("DeleteHealthCheck(%s, _): %v, ignorable error", name, err)
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // TODO(shance): merge with existing hc code
