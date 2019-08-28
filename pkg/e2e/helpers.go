@@ -106,6 +106,31 @@ func WaitForIngressDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ing *
 	return nil
 }
 
+// WaitForFinalizerDeletion waits for gclb resources to be deleted and
+// the finalizer attached to the Ingress resource to be removed.
+func WaitForFinalizerDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ingName string, options *fuzz.GCLBDeleteOptions) error {
+	klog.Infof("Waiting for GCLB resources to be deleted (%s/%s), IngressDeletionOptions=%+v", s.Namespace, ingName, options)
+	if err := WaitForGCLBDeletion(ctx, s.f.Cloud, g, options); err != nil {
+		return fmt.Errorf("WaitForGCLBDeletion(...) = %v, want nil", err)
+	}
+	klog.Infof("GCLB resources deleted (%s/%s)", s.Namespace, ingName)
+
+	crud := IngressCRUD{s.f.Clientset}
+	klog.Infof("Waiting for Finalizer to be removed for Ingress %s/%s", s.Namespace, ingName)
+	return wait.Poll(k8sApiPoolInterval, k8sApiPollTimeout, func() (bool, error) {
+		ing, err := crud.Get(s.Namespace, ingName)
+		if err != nil {
+			klog.Infof("WaitForFinalizerDeletion(%s/%s) = Error retrieving Ingress: %v", s.Namespace, ing.Name, err)
+			return false, nil
+		}
+		if len(ing.GetFinalizers()) != 0 {
+			klog.Infof("WaitForFinalizerDeletion(%s/%s) = %v", s.Namespace, ing.Name, ing.GetFinalizers())
+			return false, nil
+		}
+		return true, nil
+	})
+}
+
 // WaitForGCLBDeletion waits for the resources associated with the GLBC to be
 // deleted.
 func WaitForGCLBDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, options *fuzz.GCLBDeleteOptions) error {

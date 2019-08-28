@@ -258,6 +258,15 @@ func (i *IngressBuilder) AddStaticIP(name string) *IngressBuilder {
 	return i
 }
 
+// SetIngressClass sets Ingress class to given name.
+func (i *IngressBuilder) SetIngressClass(name string) *IngressBuilder {
+	if i.ing.Annotations == nil {
+		i.ing.Annotations = make(map[string]string)
+	}
+	i.ing.Annotations[annotations.IngressClassKey] = name
+	return i
+}
+
 // BackendConfigBuilder is syntactic sugar for creating BackendConfig specs for testing
 // purposes.
 //
