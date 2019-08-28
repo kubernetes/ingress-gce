@@ -42,8 +42,7 @@ var (
 	// versionToFeatures stores the mapping from the required API
 	// version to feature names.
 	versionToFeatures = map[meta.Version][]string{
-		meta.VersionAlpha: []string{FeatureL7ILB},
-		meta.VersionBeta:  []string{FeatureSecurityPolicy, FeatureHTTP2},
+		meta.VersionBeta: []string{FeatureSecurityPolicy, FeatureHTTP2, FeatureL7ILB},
 	}
 	// TODO: (shance) refactor all scope to be above the serviceport level
 	scopeToFeatures = map[meta.KeyType][]string{
