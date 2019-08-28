@@ -385,7 +385,7 @@ func TestVersion(t *testing.T) {
 				forILB: true,
 				ForNEG: true,
 			},
-			version: meta.VersionAlpha,
+			version: meta.VersionBeta,
 		},
 	}
 	for _, tc := range testCases {

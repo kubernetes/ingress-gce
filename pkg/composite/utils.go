@@ -46,54 +46,6 @@ func CreateKey(gceCloud *gce.Cloud, name string, scope meta.KeyType) (*meta.Key,
 	return nil, fmt.Errorf("invalid resource type: %s", scope)
 }
 
-// TODO: (shance) generate this
-// TODO: (shance) populate scope
-// TODO: (shance) figure out a more accurate way to obtain version
-// ListAllUrlMaps() merges all configured List() calls into one list of composite UrlMaps
-// This function combines both global and regional resources into one slice
-// so users must use ScopeFromSelfLink() to determine the correct scope
-// before issuing an API call.
-func ListAllBackendServices(gceCloud *gce.Cloud) ([]*BackendService, error) {
-	resultMap := map[string]*BackendService{}
-	key1, err := CreateKey(gceCloud, "", meta.Global)
-	if err != nil {
-		return nil, err
-	}
-	key2, err := CreateKey(gceCloud, "", meta.Regional)
-	if err != nil {
-		return nil, err
-	}
-
-	// List ga-global and regional-alpha
-	versions := []meta.Version{meta.VersionGA, meta.VersionAlpha}
-	keys := []*meta.Key{key1, key2}
-
-	for i := range versions {
-		list, err := ListBackendServices(gceCloud, keys[i], versions[i])
-		if err != nil {
-			return nil, fmt.Errorf("error listing all urlmaps: %v", err)
-		}
-		for _, bs := range list {
-			resultMap[bs.SelfLink] = bs
-		}
-	}
-
-	// Convert map to slice
-	result := []*BackendService{}
-	for _, bs := range resultMap {
-		result = append(result, bs)
-	}
-	return result, nil
-}
-
-// IsRegionalUrlMap() returns if the url map is regional
-func IsRegionalUrlMap(um *UrlMap) (bool, error) {
-	if um != nil {
-		return IsRegionalResource(um.SelfLink)
-	}
-	return false, nil
-}
-
 // IsRegionalResource() returns true if the resource URL is regional
 func IsRegionalResource(selfLink string) (bool, error) {
 	scope, err := ScopeFromSelfLink(selfLink)
