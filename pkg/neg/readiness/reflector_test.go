@@ -21,6 +21,7 @@ import (
 	"k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/context"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -77,6 +78,9 @@ func TestSyncPod(t *testing.T) {
 	podLister := testReadinessReflector.podLister
 	testlookUp := testReadinessReflector.lookup.(*fakeLookUp)
 	podName := "pod1"
+	fakeClock := clock.NewFakeClock(time.Now())
+	testReadinessReflector.clock = fakeClock
+	now := metav1.NewTime(fakeClock.Now()).Rfc3339Copy()
 
 	for _, tc := range []struct {
 		desc         string
@@ -147,9 +151,10 @@ func TestSyncPod(t *testing.T) {
 			},
 		},
 		{
-			desc: "need to update pod and there is Negs associated",
+			desc: "need to update pod: there is NEGs associated but pod is not healthy",
 			mutateState: func() {
 				pod := generatePod(testNamespace, podName, true, false, false)
+				pod.CreationTimestamp = now
 				podLister.Update(pod)
 				client.CoreV1().Pods(testNamespace).Update(pod)
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
@@ -159,8 +164,9 @@ func TestSyncPod(t *testing.T) {
 			expectExists: true,
 			expectPod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
-					Namespace: testNamespace,
-					Name:      podName,
+					Namespace:         testNamespace,
+					Name:              podName,
+					CreationTimestamp: now,
 				},
 				Spec: v1.PodSpec{
 					ReadinessGates: []v1.PodReadinessGate{
@@ -179,7 +185,7 @@ func TestSyncPod(t *testing.T) {
 			},
 		},
 		{
-			desc: "need to update pod and there is Negs associated",
+			desc: "need to update pod: pod is healthy in a NEG",
 			mutateState: func() {
 				pod := generatePod(testNamespace, podName, true, false, false)
 				podLister.Update(pod)
@@ -211,6 +217,42 @@ func TestSyncPod(t *testing.T) {
 				},
 			},
 		},
+		{
+			desc: "timeout waiting for endpoint to become healthy in NEGs",
+			mutateState: func() {
+				pod := generatePod(testNamespace, podName, true, false, false)
+				pod.CreationTimestamp = now
+				podLister.Update(pod)
+				client.CoreV1().Pods(testNamespace).Update(pod)
+				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
+				fakeClock.Step(unreadyTimeout)
+			},
+			inputKey:     keyFunc(testNamespace, podName),
+			inputNeg:     "",
+			expectExists: true,
+			expectPod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace:         testNamespace,
+					Name:              podName,
+					CreationTimestamp: now,
+				},
+				Spec: v1.PodSpec{
+					ReadinessGates: []v1.PodReadinessGate{
+						{ConditionType: shared.NegReadinessGate},
+					},
+				},
+				Status: v1.PodStatus{
+					Conditions: []v1.PodCondition{
+						{
+							Type:    shared.NegReadinessGate,
+							Reason:  negReadyTimedOutReason,
+							Status:  v1.ConditionTrue,
+							Message: fmt.Sprintf("Timeout waiting for pod to become healthy in at least one of the NEG(s): %v. Marking condition %q to True.", []string{"neg1", "neg2"}, shared.NegReadinessGate),
+						},
+					},
+				},
+			},
+		},
 	} {
 		tc.mutateState()
 		err := testReadinessReflector.syncPod(tc.inputKey, tc.inputNeg)
@@ -223,6 +265,8 @@ func TestSyncPod(t *testing.T) {
 			if err != nil {
 				t.Errorf("For test case %q, expect err to be nil, but got %v", tc.desc, err)
 			}
+			// ignore creation timestamp for comparison
+			pod.CreationTimestamp = tc.expectPod.CreationTimestamp
 			if !reflect.DeepEqual(pod, tc.expectPod) {
 				t.Errorf("For test case %q, expect pod to be %v, but got %v", tc.desc, tc.expectPod, pod)
 			}
