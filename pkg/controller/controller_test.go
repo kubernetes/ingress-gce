@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -237,7 +238,7 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 
 				ingStoreKey := getKey(ing, t)
 				if err := lbc.sync(ingStoreKey); err != nil {
-					t.Fatalf("lbc.sync(%v) = %v, nil", ingStoreKey, err)
+					t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 				}
 
 				updatedIng, _ := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
@@ -540,6 +541,94 @@ func TestEnsureMCIngress(t *testing.T) {
 		t.Errorf("Ingress.Annotations does not contain key %q", igAnnotationKey)
 	} else if val != wantVal {
 		t.Errorf("Ingress.Annotation %q = %q, want %q", igAnnotationKey, val, wantVal)
+	}
+}
+
+// TestMCIngressIG asserts that instances groups are deleted only after multi-cluster ingresses are cleaned up.
+func TestMCIngressIG(t *testing.T) {
+	lbc := newLoadBalancerController()
+
+	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
+		Type:  api_v1.ServiceTypeNodePort,
+		Ports: []api_v1.ServicePort{{Port: 80}},
+	})
+	addService(lbc, svc)
+
+	defaultBackend := backend("my-service", intstr.FromInt(80))
+	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
+		v1beta1.IngressSpec{
+			Backend: &defaultBackend,
+		})
+	mcIng := test.NewIngress(types.NamespacedName{Name: "my-mc-ingress", Namespace: "default"},
+		v1beta1.IngressSpec{
+			Backend: &defaultBackend,
+		})
+	mcIng.ObjectMeta.Annotations = map[string]string{"kubernetes.io/ingress.class": "gce-multi-cluster"}
+	addIngress(lbc, ing)
+	addIngress(lbc, mcIng)
+
+	ingStoreKey := getKey(ing, t)
+	mcIngStoreKey := getKey(mcIng, t)
+	if err1, err2 := lbc.sync(ingStoreKey), lbc.sync(mcIngStoreKey); err1 != nil || err2 != nil {
+		if err1 != nil {
+			t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err1)
+		} else {
+			t.Fatalf("lbc.sync(%v) = %v, want nil", mcIngStoreKey, err2)
+		}
+	}
+
+	// Check multi-cluster Ingress has annotations noting the instance group name.
+	updatedMcIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(mcIng.Namespace).Get(mcIng.Name, meta_v1.GetOptions{})
+	if err != nil {
+		t.Fatalf("Get(%v) = %v, want nil", mcIngStoreKey, err)
+	}
+	igAnnotationKey := annotations.InstanceGroupsAnnotationKey
+	instanceGroupName := fmt.Sprintf("k8s-ig--%s", clusterUID)
+	wantVal := fmt.Sprintf(`[{"Name":%q,"Zone":"zone-a"}]`, instanceGroupName)
+	if val, ok := updatedMcIng.GetAnnotations()[igAnnotationKey]; !ok {
+		t.Errorf("updatedMcIng.GetAnnotations()[%q]= (_, %v), want true; invalid key, updatedMcIng = %v", igAnnotationKey, ok, updatedMcIng)
+	} else if diff := cmp.Diff(val, wantVal); diff != "" {
+		t.Errorf("updatedMcIng.GetAnnotations()[%q] mismatch (-want +got):\n%s", igAnnotationKey, diff)
+	}
+
+	// Ensure that instance group exists.
+	instanceGroups, err := lbc.instancePool.List()
+	if err != nil {
+		t.Errorf("lbc.instancePool.List() = _, %v, want nil", err)
+	}
+	if diff := cmp.Diff(instanceGroups, []string{instanceGroupName}); diff != "" {
+		t.Errorf("lbc.instancePool.List()() mismatch (-want +got):\n%s", diff)
+	}
+
+	// Delete GCE ingress resource ing, ensure that instance group is not deleted.
+	deleteIngress(lbc, ing)
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
+	}
+
+	// Ensure that instance group still exists.
+	instanceGroups, err = lbc.instancePool.List()
+	if err != nil {
+		t.Errorf("lbc.instancePool.List() = _, %v, want nil", err)
+	}
+	if diff := cmp.Diff(instanceGroups, []string{instanceGroupName}); diff != "" {
+		t.Errorf("lbc.instancePool.List()() mismatch (-want +got):\n%s", diff)
+	}
+
+	// Delete GCE multi-cluster ingress mcIng and verify that instance group is deleted.
+	deleteIngress(lbc, updatedMcIng)
+	if err := lbc.sync(mcIngStoreKey); err != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", mcIngStoreKey, err)
+	}
+
+	// Ensure that instance group is cleaned up.
+	instanceGroups, err = lbc.instancePool.List()
+	if err != nil {
+		t.Errorf("lbc.instancePool.List() = _, %v, want nil", err)
+	}
+	var wantInstanceGroups []string
+	if diff := cmp.Diff(instanceGroups, wantInstanceGroups); diff != "" {
+		t.Errorf("lbc.instancePool.List()() mismatch (-want +got):\n%s", diff)
 	}
 }
 

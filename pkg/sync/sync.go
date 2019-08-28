@@ -19,6 +19,10 @@ package sync
 import (
 	"errors"
 	"fmt"
+
+	"k8s.io/api/networking/v1beta1"
+	"k8s.io/ingress-gce/pkg/common/operator"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // ErrSkipBackendsSync is an error that can be returned by a Controller to
@@ -57,9 +61,15 @@ func (s *IngressSyncer) Sync(state interface{}) error {
 }
 
 // GC implements Syncer.
-func (s *IngressSyncer) GC(state interface{}) error {
-	lbErr := s.controller.GCLoadBalancers(state)
-	beErr := s.controller.GCBackends(state)
+func (s *IngressSyncer) GC(ings []*v1beta1.Ingress) error {
+	// Partition GC state into ingresses those need cleanup and those don't.
+	// An Ingress is considered to exist and not considered for cleanup, if:
+	// 1) It is a GCLB Ingress.
+	// 2) It is not a candidate for deletion.
+	toCleanup, toKeep := operator.Ingresses(ings).Partition(utils.NeedsCleanup)
+	toKeepIngresses := toKeep.AsList()
+	lbErr := s.controller.GCLoadBalancers(toKeepIngresses)
+	beErr := s.controller.GCBackends(toKeepIngresses)
 	if lbErr != nil {
 		return fmt.Errorf("error running load balancer garbage collection routine: %v", lbErr)
 	}
@@ -67,5 +77,5 @@ func (s *IngressSyncer) GC(state interface{}) error {
 		return fmt.Errorf("error running backend garbage collection routine: %v", beErr)
 	}
 
-	return s.controller.MaybeRemoveFinalizers(state)
+	return s.controller.MaybeRemoveFinalizers(toCleanup.AsList())
 }
