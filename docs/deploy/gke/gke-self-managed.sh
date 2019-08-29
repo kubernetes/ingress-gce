@@ -32,6 +32,7 @@ function usage() {
   echo "  --help                   Display this help and exit"
   echo "  --network-name           Override for the network-name gce.conf value"
   echo "  --enable-csm             If set, enable CSM mode which will create NEGs for Istio objects."
+  echo "  --gke-api-endpoint       If set, using the provided api-endpoint instead of prod."
   echo "  --subnetwork-name        Override for the subnetwork-name gce.conf value"
   echo "  --network-tags           Override for the node-tags gce.conf value"
   echo "  --no-confirm             Don't ask confirmation to reenable GLBC on cleanup"
@@ -205,6 +206,11 @@ case $key in
   ;;
   --enable-csm)
   ENABLE_CSM=true
+  shift
+  ;;
+  --gke-api-endpoint)
+  export CLOUDSDK_API_ENDPOINT_OVERRIDES_CONTAINER=$2
+  shift
   shift
   ;;
   --no-confirm)
