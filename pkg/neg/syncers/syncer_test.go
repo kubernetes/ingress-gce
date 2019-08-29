@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"fmt"
+
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/fake"
@@ -64,7 +65,7 @@ func newSyncerTester() *syncerTester {
 		ResyncPeriod:          1 * time.Second,
 		DefaultBackendSvcPort: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, nil, namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, nil, backendConfigClient, nil, nil, namer, ctxConfig)
 	negSyncerKey := negtypes.NegSyncerKey{
 		Namespace:  testServiceNamespace,
 		Name:       testServiceName,

@@ -70,7 +70,7 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		ResyncPeriod:          1 * time.Second,
 		DefaultBackendSvcPort: defaultBackend,
 	}
-	context := context.NewControllerContext(kubeClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, nil, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
 	controller := NewController(
 		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		context,
@@ -81,6 +81,8 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		transactionSyncer,
 		// TODO(freehan): enable readiness reflector for unit tests
 		false,
+		false,
+		nil,
 	)
 	return controller
 }
@@ -464,7 +466,7 @@ func TestSyncNegAnnotation(t *testing.T) {
 
 			var oldSvcPorts []int32
 			for port := range tc.previousPortMap {
-				oldSvcPorts = append(oldSvcPorts, port)
+				oldSvcPorts = append(oldSvcPorts, port.ServicePort)
 			}
 			validateServiceStateAnnotation(t, svc, oldSvcPorts, controller.namer)
 
@@ -473,7 +475,7 @@ func TestSyncNegAnnotation(t *testing.T) {
 
 			var svcPorts []int32
 			for port := range tc.portMap {
-				svcPorts = append(svcPorts, port)
+				svcPorts = append(svcPorts, port.ServicePort)
 			}
 			validateServiceStateAnnotation(t, svc, svcPorts, controller.namer)
 		})

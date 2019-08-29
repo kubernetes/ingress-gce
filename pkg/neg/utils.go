@@ -17,8 +17,12 @@ limitations under the License.
 package neg
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 
+	istioV1alpha3 "istio.io/api/networking/v1alpha3"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/neg/types"
@@ -48,4 +52,41 @@ func negServicePorts(ann *annotations.NegAnnotation, knownPorts types.SvcPortMap
 	}
 
 	return portSet, utilerrors.NewAggregate(errList)
+}
+
+// castToDestinationRule cast Unstructured obj to istioV1alpha3.DestinationRule
+// Return targetServiceNamespace, targetSeriveName(DestinationRule.Host), DestionationRule and error.
+func castToDestinationRule(drus *unstructured.Unstructured) (string, string, *istioV1alpha3.DestinationRule, error) {
+	drJSON, err := json.Marshal(drus.Object["spec"])
+	if err != nil {
+		return "", "", nil, err
+	}
+
+	dr := &istioV1alpha3.DestinationRule{}
+	if err := json.Unmarshal(drJSON, &dr); err != nil {
+		return "", "", nil, err
+	}
+
+	targetServiceNamespace := drus.GetNamespace()
+	drHost := dr.Host
+	if strings.Contains(dr.Host, ".") {
+		// If the Host is using a full service name, Istio will ignore the destination rule
+		// namespace and use the namespace in the full name. (e.g. "reviews"
+		// instead of "reviews.default.svc.cluster.local")
+		// For more info, please go to https://github.com/istio/api/blob/1.2.4/networking/v1alpha3/destination_rule.pb.go#L186
+		rsl := strings.Split(dr.Host, ".")
+		targetServiceNamespace = rsl[1]
+		drHost = rsl[0]
+	}
+
+	return targetServiceNamespace, drHost, dr, nil
+}
+
+func contains(ss []string, target string) bool {
+	for _, s := range ss {
+		if s == target {
+			return true
+		}
+	}
+	return false
 }

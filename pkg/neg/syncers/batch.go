@@ -44,6 +44,7 @@ type batchSyncer struct {
 
 	serviceLister  cache.Indexer
 	endpointLister cache.Indexer
+	podLister      cache.Indexer
 
 	recorder   record.EventRecorder
 	cloud      negtypes.NetworkEndpointGroupCloud
@@ -59,7 +60,7 @@ type batchSyncer struct {
 	retryCount     int
 }
 
-func NewBatchSyncer(svcPort negtypes.NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer) *batchSyncer {
+func NewBatchSyncer(svcPort negtypes.NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, serviceLister cache.Indexer, endpointLister cache.Indexer, podLister cache.Indexer) *batchSyncer {
 	klog.V(2).Infof("New syncer for service %s/%s Port %s NEG %q", svcPort.Namespace, svcPort.Name, svcPort.TargetPort, networkEndpointGroupName)
 	return &batchSyncer{
 		NegSyncerKey:   svcPort,
@@ -68,6 +69,7 @@ func NewBatchSyncer(svcPort negtypes.NegSyncerKey, networkEndpointGroupName stri
 		serviceLister:  serviceLister,
 		cloud:          cloud,
 		endpointLister: endpointLister,
+		podLister:      podLister,
 		zoneGetter:     zoneGetter,
 		stopped:        true,
 		shuttingDown:   false,
@@ -201,7 +203,7 @@ func (s *batchSyncer) sync() (err error) {
 		return err
 	}
 
-	targetMap, err := s.toZoneNetworkEndpointMap(ep.(*apiv1.Endpoints))
+	targetMap, err := s.toZoneNetworkEndpointMap(ep.(*apiv1.Endpoints), s.NegSyncerKey.SubsetLabels)
 	if err != nil {
 		return err
 	}
@@ -237,9 +239,9 @@ func (s *batchSyncer) ensureNetworkEndpointGroups() error {
 	return utilerrors.NewAggregate(errList)
 }
 
-// toZoneNetworkEndpointMap translates addresses in endpoints object into zone and endpoints map
+// toZoneNetworkEndpointMap translates addresses in endpoints object and Istio:DestinationRule subset into zone and endpoints map
 // TODO: migrate to use the util function instead
-func (s *batchSyncer) toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints) (map[string]sets.String, error) {
+func (s *batchSyncer) toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, subsetLabels string) (map[string]sets.String, error) {
 	zoneNetworkEndpointMap := map[string]sets.String{}
 	targetPort, _ := strconv.Atoi(s.TargetPort)
 	for _, subset := range endpoints.Subsets {
@@ -271,6 +273,17 @@ func (s *batchSyncer) toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints) (map[
 			if address.NodeName == nil {
 				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
 				continue
+			}
+			// Apply the selector if Istio:DestinationRule subset labels provided.
+			if subsetLabels != "" {
+				if address.TargetRef == nil || address.TargetRef.Kind != "Pod" {
+					klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have a Pod as the TargetRef object. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
+					continue
+				}
+				// Skip if the endpoint's pod not matching the DestinationRule subset lables.
+				if !shouldPodBeInDestinationRuleSubset(s.podLister, address.TargetRef.Namespace, address.TargetRef.Name, subsetLabels) {
+					continue
+				}
 			}
 			zone, err := s.zoneGetter.GetZoneForNode(*address.NodeName)
 			if err != nil {

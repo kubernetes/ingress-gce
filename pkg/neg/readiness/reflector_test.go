@@ -18,8 +18,12 @@ package readiness
 
 import (
 	"fmt"
-	"k8s.io/api/core/v1"
+	"reflect"
+	"testing"
+	"time"
+
 	apiv1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/client-go/kubernetes/fake"
@@ -28,9 +32,6 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/legacy-cloud-providers/gce"
-	"reflect"
-	"testing"
-	"time"
 )
 
 const (
@@ -61,7 +62,7 @@ func fakeContext() *context.ControllerContext {
 	}
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
-	context := context.NewControllerContext(kubeClient, nil, nil, fakeGCE, namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, nil, nil, nil, fakeGCE, namer, ctxConfig)
 	return context
 }
 

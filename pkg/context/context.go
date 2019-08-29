@@ -18,6 +18,9 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	informerv1beta1 "k8s.io/client-go/informers/networking/v1beta1"
 	"k8s.io/client-go/kubernetes"
@@ -42,7 +45,8 @@ const (
 
 // ControllerContext holds the state needed for the execution of the controller.
 type ControllerContext struct {
-	KubeClient kubernetes.Interface
+	KubeClient            kubernetes.Interface
+	DestinationRuleClient dynamic.NamespaceableResourceInterface
 
 	Cloud *gce.Cloud
 
@@ -50,13 +54,14 @@ type ControllerContext struct {
 
 	ControllerContextConfig
 
-	IngressInformer        cache.SharedIndexInformer
-	ServiceInformer        cache.SharedIndexInformer
-	BackendConfigInformer  cache.SharedIndexInformer
-	FrontendConfigInformer cache.SharedIndexInformer
-	PodInformer            cache.SharedIndexInformer
-	NodeInformer           cache.SharedIndexInformer
-	EndpointInformer       cache.SharedIndexInformer
+	IngressInformer         cache.SharedIndexInformer
+	ServiceInformer         cache.SharedIndexInformer
+	BackendConfigInformer   cache.SharedIndexInformer
+	FrontendConfigInformer  cache.SharedIndexInformer
+	PodInformer             cache.SharedIndexInformer
+	NodeInformer            cache.SharedIndexInformer
+	EndpointInformer        cache.SharedIndexInformer
+	DestinationRuleInformer cache.SharedIndexInformer
 
 	healthChecks map[string]func() error
 
@@ -75,11 +80,13 @@ type ControllerContextConfig struct {
 	HealthCheckPath               string
 	DefaultBackendHealthCheckPath string
 	FrontendConfigEnabled         bool
+	EnableCSM                     bool
 }
 
 // NewControllerContext returns a new shared set of informers.
 func NewControllerContext(
 	kubeClient kubernetes.Interface,
+	dynamicClient dynamic.Interface,
 	backendConfigClient backendconfigclient.Interface,
 	frontendConfigClient frontendconfigclient.Interface,
 	cloud *gce.Cloud,
@@ -99,6 +106,16 @@ func NewControllerContext(
 		NodeInformer:            informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		recorders:               map[string]record.EventRecorder{},
 		healthChecks:            make(map[string]func() error),
+	}
+
+	if config.EnableCSM && dynamicClient != nil {
+		klog.Warning("The DestinationRule group version is v1alpha3 in group networking.istio.io. Need to update as istio API graduates.")
+		destrinationGVR := schema.GroupVersionResource{Group: "networking.istio.io", Version: "v1alpha3", Resource: "destinationrules"}
+		drDynamicInformer := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, destrinationGVR, config.Namespace, config.ResyncPeriod,
+			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
+			nil)
+		context.DestinationRuleInformer = drDynamicInformer.Informer()
+		context.DestinationRuleClient = dynamicClient.Resource(destrinationGVR)
 	}
 
 	if config.FrontendConfigEnabled {
@@ -121,6 +138,10 @@ func (ctx *ControllerContext) HasSynced() bool {
 
 	if ctx.FrontendConfigInformer != nil {
 		funcs = append(funcs, ctx.FrontendConfigInformer.HasSynced)
+	}
+
+	if ctx.DestinationRuleInformer != nil {
+		funcs = append(funcs, ctx.DestinationRuleInformer.HasSynced)
 	}
 
 	for _, f := range funcs {
@@ -186,6 +207,9 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	}
 	if ctx.FrontendConfigInformer != nil {
 		go ctx.FrontendConfigInformer.Run(stopCh)
+	}
+	if ctx.DestinationRuleInformer != nil {
+		go ctx.DestinationRuleInformer.Run(stopCh)
 	}
 }
 

@@ -20,7 +20,10 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
+	"strings"
 
+	istioV1alpha3 "istio.io/api/networking/v1alpha3"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -34,6 +37,14 @@ type PortInfo struct {
 	// TargetPort is the target port of the service port
 	// This can be port number or a named port
 	TargetPort string
+
+	// Subset name, subset is defined in Istio:DestinationRule, this is only used
+	// when --enable-csm=true.
+	Subset string
+
+	// Subset label, should set together with Subset.
+	SubsetLabels string
+
 	// NegName is the name of the NEG
 	NegName string
 	// ReadinessGate indicates if the NEG associated with the port has NEG readiness gate enabled
@@ -42,13 +53,21 @@ type PortInfo struct {
 	ReadinessGate bool
 }
 
-// PortInfoMap is a map of ServicePort:PortInfo
-type PortInfoMap map[int32]PortInfo
+// PortInfoMapKey is the Key of PortInfoMap
+type PortInfoMapKey struct {
+	ServicePort int32
+
+	// Istio:DestinationRule Subset, only used when --enable-csm=true
+	Subset string
+}
+
+// PortInfoMap is a map of PortInfoMapKey:PortInfo
+type PortInfoMap map[PortInfoMapKey]PortInfo
 
 func NewPortInfoMap(namespace, name string, svcPortMap SvcPortMap, namer NetworkEndpointGroupNamer, readinessGate bool) PortInfoMap {
 	ret := PortInfoMap{}
 	for svcPort, targetPort := range svcPortMap {
-		ret[svcPort] = PortInfo{
+		ret[PortInfoMapKey{svcPort, ""}] = PortInfo{
 			TargetPort:    targetPort,
 			NegName:       namer.NEG(namespace, name, svcPort),
 			ReadinessGate: readinessGate,
@@ -57,27 +76,60 @@ func NewPortInfoMap(namespace, name string, svcPortMap SvcPortMap, namer Network
 	return ret
 }
 
+// NewPortInfoMapWithDestinationRule create PortInfoMap based on a gaven DesinationRule.
+// Return error message if the DestinationRule contains duplicated subsets.
+func NewPortInfoMapWithDestinationRule(namespace, name string, svcPortMap SvcPortMap, namer NetworkEndpointGroupNamer, readinessGate bool,
+	destinationRule *istioV1alpha3.DestinationRule) (PortInfoMap, error) {
+	ret := PortInfoMap{}
+	var duplicateSubset []string
+	for _, subset := range destinationRule.Subsets {
+		for svcPort, targetPort := range svcPortMap {
+			key := PortInfoMapKey{svcPort, subset.Name}
+			if _, ok := ret[key]; ok {
+				duplicateSubset = append(duplicateSubset, subset.Name)
+			}
+			ret[key] = PortInfo{
+				TargetPort:    targetPort,
+				NegName:       namer.NEGWithSubset(namespace, name, subset.Name, svcPort),
+				ReadinessGate: readinessGate,
+				Subset:        subset.Name,
+				SubsetLabels:  labels.Set(subset.Labels).String(),
+			}
+		}
+	}
+	if len(duplicateSubset) != 0 {
+		return ret, fmt.Errorf("Duplicated subsets: %s", strings.Join(duplicateSubset, ", "))
+	}
+	return ret, nil
+}
+
 // Merge merges p2 into p1 PortInfoMap
 // It assumes the same key (service port) will have the same target port and negName
 // If not, it will throw error
 // If a key in p1 or p2 has readiness gate enabled, the merged port info will also has readiness gate enabled
 func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 	var err error
-	for svcPort, portInfo := range p2 {
+	for mapKey, portInfo := range p2 {
 		mergedInfo := PortInfo{}
-		if existingPortInfo, ok := p1[svcPort]; ok {
+		if existingPortInfo, ok := p1[mapKey]; ok {
 			if existingPortInfo.TargetPort != portInfo.TargetPort {
-				return fmt.Errorf("for service port %d, target port in existing map is %q, but the merge map has %q", svcPort, existingPortInfo.TargetPort, portInfo.TargetPort)
+				return fmt.Errorf("for service port %v, target port in existing map is %q, but the merge map has %q", mapKey, existingPortInfo.TargetPort, portInfo.TargetPort)
 			}
 			if existingPortInfo.NegName != portInfo.NegName {
-				return fmt.Errorf("for service port %d, NEG name in existing map is %q, but the merge map has %q", svcPort, existingPortInfo.NegName, portInfo.NegName)
+				return fmt.Errorf("for service port %v, NEG name in existing map is %q, but the merge map has %q", mapKey, existingPortInfo.NegName, portInfo.NegName)
+			}
+			if existingPortInfo.Subset != portInfo.Subset {
+				return fmt.Errorf("for service port %v, Subset name in existing map is %q, but the merge map has %q", mapKey, existingPortInfo.Subset, portInfo.Subset)
 			}
 			mergedInfo.ReadinessGate = existingPortInfo.ReadinessGate
 		}
 		mergedInfo.TargetPort = portInfo.TargetPort
 		mergedInfo.NegName = portInfo.NegName
 		mergedInfo.ReadinessGate = mergedInfo.ReadinessGate || portInfo.ReadinessGate
-		p1[svcPort] = mergedInfo
+		mergedInfo.Subset = portInfo.Subset
+		mergedInfo.SubsetLabels = portInfo.SubsetLabels
+
+		p1[mapKey] = mergedInfo
 	}
 	return err
 }
@@ -87,20 +139,32 @@ func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 // 2. or the portInfo entry is not the same in p1 and p2.
 func (p1 PortInfoMap) Difference(p2 PortInfoMap) PortInfoMap {
 	result := make(PortInfoMap)
-	for svcPort, p1PortInfo := range p1 {
-		p2PortInfo, ok := p2[svcPort]
-		if ok && reflect.DeepEqual(p1[svcPort], p2PortInfo) {
+	for mapKey, p1PortInfo := range p1 {
+		p2PortInfo, ok := p2[mapKey]
+		if ok && reflect.DeepEqual(p1[mapKey], p2PortInfo) {
 			continue
 		}
-		result[svcPort] = p1PortInfo
+		result[mapKey] = p1PortInfo
 	}
 	return result
 }
 
 func (p1 PortInfoMap) ToPortNegMap() annotations.PortNegMap {
 	ret := annotations.PortNegMap{}
-	for svcPort, portInfo := range p1 {
-		ret[strconv.Itoa(int(svcPort))] = portInfo.NegName
+	for mapKey, portInfo := range p1 {
+		ret[strconv.Itoa(int(mapKey.ServicePort))] = portInfo.NegName
+	}
+	return ret
+}
+
+func (p1 PortInfoMap) ToPortSubsetNegMap() annotations.PortSubsetNegMap {
+	ret := annotations.PortSubsetNegMap{}
+	for mapKey, portInfo := range p1 {
+		if m, ok := ret[mapKey.Subset]; ok {
+			m[strconv.Itoa(int(mapKey.ServicePort))] = portInfo.NegName
+		} else {
+			ret[mapKey.Subset] = map[string]string{strconv.Itoa(int(mapKey.ServicePort)): portInfo.NegName}
+		}
 	}
 	return ret
 }
@@ -126,10 +190,17 @@ type NegSyncerKey struct {
 	Port int32
 	// Service target port
 	TargetPort string
+
+	// Subset name, subset is defined in Istio:DestinationRule, this is only used
+	// when --enable-csm=true.
+	Subset string
+
+	// Subset label, should set together with Subset.
+	SubsetLabels string
 }
 
 func (key NegSyncerKey) String() string {
-	return fmt.Sprintf("%s/%s-%v/%s", key.Namespace, key.Name, key.Port, key.TargetPort)
+	return fmt.Sprintf("%s/%s-%s-%v/%s", key.Namespace, key.Name, key.Subset, key.Port, key.TargetPort)
 }
 
 // EndpointPodMap is a map from network endpoint to a namespaced name of a pod
