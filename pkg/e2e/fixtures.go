@@ -29,6 +29,7 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/cmd/echo/app"
 	"k8s.io/klog"
@@ -36,10 +37,40 @@ import (
 
 const (
 	echoheadersImage = "gcr.io/k8s-ingress-image-push/ingress-gce-echo-amd64:master"
+
+	// TODO: remove beta topology key once it is GAed
+	zoneBetaTopologyKey = "failure-domain.beta.kubernetes.io/zone"
+	zoneGATopologyKey   = "failure-domain.beta.kubernetes.io/zone"
 )
 
 // NoopModify does not modify the input deployment
 func NoopModify(*apps.Deployment) {}
+
+// SpreadPodAcrossZones sets pod anti affinity rules to try to spread pods across zones
+func SpreadPodAcrossZones(deployment *apps.Deployment) {
+	podLabels := deployment.Spec.Template.Labels
+	deployment.Spec.Template.Spec.Affinity = &v1.Affinity{
+		PodAntiAffinity: &v1.PodAntiAffinity{
+			PreferredDuringSchedulingIgnoredDuringExecution: []v1.WeightedPodAffinityTerm{
+				{
+					Weight: int32(1),
+					PodAffinityTerm: v1.PodAffinityTerm{
+						LabelSelector: metav1.SetAsLabelSelector(labels.Set(podLabels)),
+						TopologyKey:   zoneBetaTopologyKey,
+					},
+				},
+				{
+					Weight: int32(2),
+					PodAffinityTerm: v1.PodAffinityTerm{
+						LabelSelector: metav1.SetAsLabelSelector(labels.Set(podLabels)),
+						TopologyKey:   zoneGATopologyKey,
+					},
+				},
+			},
+		},
+	}
+
+}
 
 // CreateEchoService creates the pod and service serving echoheaders
 // Todo: (shance) remove this and replace uses with EnsureEchoService()

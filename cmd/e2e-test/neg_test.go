@@ -331,7 +331,16 @@ func TestNEGSyncEndpoints(t *testing.T) {
 
 			scaleAndValidate := func(replicas int32) {
 				t.Logf("Scaling echo deployment to %v replicas", replicas)
-				if err := e2e.EnsureEchoDeployment(s, svcName, replicas, e2e.NoopModify); err != nil {
+				// The deployment is created with pod anti affinity rules trying to spread the pods across zones.
+				// GCLB only creates the underlying infrastructure in each zone when there is at least one backend.
+				// Since this test tries to validate by sending traffic, it is essential that the LB backends are fully
+				// instantiated in all zones so that the new endpoints can show up faster before test timeout occur.
+				// If the LB backend need to be freshly setup when a new pod is scheduled to the zone, this may lead to
+				// test timeout as it takes more time for the pod to respond to traffic
+				// However, the anti affinity rule may not fully solve this problem in the case where there
+				// is no capacity left in all nodes in a zone. Hence, it may still cause all pods to be scheduled into
+				// other zones. A pod started later may get scheduled to a zone when capacity freed up.
+				if err := e2e.EnsureEchoDeployment(s, svcName, replicas, e2e.SpreadPodAcrossZones); err != nil {
 					t.Fatalf("error ensuring echo deployment: %v", err)
 				}
 
@@ -382,8 +391,9 @@ func TestNEGSyncEndpoints(t *testing.T) {
 			// 1. validate if expected number of network endpoint is in NEGs
 			// 2. validate if the newtork endpoint is healthy
 			// 3. validate by sending traffic to LB VIP and check if expected number of backends can be reached.
-			scaleAndValidate(2)
+			// First scale up the pods to 5 replicas to try to cover all zones where the cluster spans.
 			scaleAndValidate(5)
+			scaleAndValidate(3)
 			scaleAndValidate(1)
 			scaleAndValidate(4)
 			scaleAndValidate(2)
