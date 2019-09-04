@@ -37,10 +37,6 @@ import (
 
 const (
 	echoheadersImage = "gcr.io/k8s-ingress-image-push/ingress-gce-echo-amd64:master"
-
-	// TODO: remove beta topology key once it is GAed
-	zoneBetaTopologyKey = "failure-domain.beta.kubernetes.io/zone"
-	zoneGATopologyKey   = "failure-domain.beta.kubernetes.io/zone"
 )
 
 // NoopModify does not modify the input deployment
@@ -56,20 +52,12 @@ func SpreadPodAcrossZones(deployment *apps.Deployment) {
 					Weight: int32(1),
 					PodAffinityTerm: v1.PodAffinityTerm{
 						LabelSelector: metav1.SetAsLabelSelector(labels.Set(podLabels)),
-						TopologyKey:   zoneBetaTopologyKey,
-					},
-				},
-				{
-					Weight: int32(2),
-					PodAffinityTerm: v1.PodAffinityTerm{
-						LabelSelector: metav1.SetAsLabelSelector(labels.Set(podLabels)),
-						TopologyKey:   zoneGATopologyKey,
+						TopologyKey:   v1.LabelZoneFailureDomain,
 					},
 				},
 			},
 		},
 	}
-
 }
 
 // CreateEchoService creates the pod and service serving echoheaders
