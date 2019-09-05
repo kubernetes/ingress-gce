@@ -267,6 +267,15 @@ func (i *IngressBuilder) SetIngressClass(name string) *IngressBuilder {
 	return i
 }
 
+// Configure for ILB adds the ILB ingress class annotation
+func (i *IngressBuilder) ConfigureForILB() *IngressBuilder {
+	if i.ing.Annotations == nil {
+		i.ing.Annotations = make(map[string]string)
+	}
+	i.ing.Annotations[annotations.IngressClassKey] = annotations.GceL7ILBIngressClass
+	return i
+}
+
 // BackendConfigBuilder is syntactic sugar for creating BackendConfig specs for testing
 // purposes.
 //

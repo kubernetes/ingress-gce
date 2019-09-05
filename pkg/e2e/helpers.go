@@ -19,6 +19,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"net"
 	"time"
 
 	"encoding/json"
@@ -62,6 +63,28 @@ type WaitForIngressOptions struct {
 	// ExpectUnreachable is true when we expect the LB to still be
 	// programming itself (i.e 404's / 502's)
 	ExpectUnreachable bool
+}
+
+// IsRfc1918Addr returns true if the address supplied is an RFC1918 address
+func IsRfc1918Addr(addr string) bool {
+	ip := net.ParseIP(addr)
+	var ipBlocks []*net.IPNet
+	for _, cidr := range []string{
+		"10.0.0.0/8",
+		"172.16.0.0/12",
+		"192.168.0.0/16",
+	} {
+		_, block, _ := net.ParseCIDR(cidr)
+		ipBlocks = append(ipBlocks, block)
+	}
+
+	for _, block := range ipBlocks {
+		if block.Contains(ip) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // WaitForIngress to stabilize.

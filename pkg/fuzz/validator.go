@@ -210,9 +210,9 @@ type IngressValidator struct {
 // the right SSL certificate is presented
 // each path, each host returns the right contents
 
-// vip for the load balancer. This currently uses the first entry, returns nil
+// Vip for the load balancer. This currently uses the first entry, returns nil
 // if the VIP is not available.
-func (v *IngressValidator) vip() *string {
+func (v *IngressValidator) Vip() *string {
 	statuses := v.ing.Status.LoadBalancer.Ingress
 	if len(statuses) == 0 {
 		return nil
@@ -292,10 +292,10 @@ func (v *IngressValidator) CheckPaths(ctx context.Context, vr *IngressResult) er
 
 // checkPath performs a check for scheme://host/path.
 func (v *IngressValidator) checkPath(ctx context.Context, scheme, host, path string) error {
-	if v.vip() == nil {
+	if v.Vip() == nil {
 		return fmt.Errorf("ingress %s/%s does not have a VIP", v.ing.Namespace, v.ing.Name)
 	}
-	vip := *v.vip()
+	vip := *v.Vip()
 
 	url := fmt.Sprintf("%s://%s%s%s", scheme, vip, portStr(v.attribs, scheme), path)
 	klog.V(3).Infof("Checking Ingress %s/%s url=%q", v.ing.Namespace, v.ing.Name, url)

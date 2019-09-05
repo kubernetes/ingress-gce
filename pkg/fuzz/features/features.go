@@ -31,4 +31,5 @@ var All = []fuzz.Feature{
 	Affinity,
 	NEG,
 	AppProtocol,
+	ILB,
 }
