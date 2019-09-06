@@ -126,6 +126,10 @@ type GCLBDeleteOptions struct {
 	// SkipDefaultBackend indicates whether to skip checking for the
 	// system default backend.
 	SkipDefaultBackend bool
+	// SkipBackends indicates whether to skip checking for the backends.
+	// This is enabled only when we know that backends are shared among multiple ingresses
+	// in which case shared backends are not cleaned up on ingress deletion.
+	SkipBackends bool
 }
 
 // CheckResourceDeletion checks the existence of the resources. Returns nil if
@@ -178,20 +182,22 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 			resources = append(resources, k)
 		}
 	}
-	for k := range g.BackendService {
-		bs, err := c.BackendServices().Get(ctx, &k)
-		if err != nil {
-			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
-				return fmt.Errorf("BackendService %s is not deleted/error to get: %s", k.Name, err)
-			}
-		} else {
-			if options != nil && options.SkipDefaultBackend {
-				desc := utils.DescriptionFromString(bs.Description)
-				if desc.ServiceName == "kube-system/default-http-backend" {
-					continue
+	if options == nil || !options.SkipBackends {
+		for k := range g.BackendService {
+			bs, err := c.BackendServices().Get(ctx, &k)
+			if err != nil {
+				if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+					return fmt.Errorf("BackendService %s is not deleted/error to get: %s", k.Name, err)
 				}
+			} else {
+				if options != nil && options.SkipDefaultBackend {
+					desc := utils.DescriptionFromString(bs.Description)
+					if desc.ServiceName == "kube-system/default-http-backend" {
+						continue
+					}
+				}
+				resources = append(resources, k)
 			}
-			resources = append(resources, k)
 		}
 	}
 	for k := range g.NetworkEndpointGroup {

@@ -37,6 +37,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 	"net/http"
 	"strings"
@@ -114,6 +115,27 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOpt
 	return ing, err
 }
 
+// WaitForFinalizer waits for Finalizer to be added.
+// This is used when master is upgraded from version without finalizer.
+// We wait for new lb controller to add finalizer.
+func WaitForFinalizer(s *Sandbox, ingName string) error {
+	crud := IngressCRUD{s.f.Clientset}
+	klog.Infof("Waiting for Finalizer to be added for Ingress %s/%s", s.Namespace, ingName)
+	return wait.Poll(k8sApiPoolInterval, k8sApiPollTimeout, func() (bool, error) {
+		ing, err := crud.Get(s.Namespace, ingName)
+		if err != nil {
+			klog.Infof("WaitForFinalizer(%s/%s) = %v, error retrieving Ingress", s.Namespace, ingName, err)
+			return false, nil
+		}
+		ingFinalizers := ing.GetFinalizers()
+		if len(ingFinalizers) != 1 || ingFinalizers[0] != utils.FinalizerKey {
+			klog.Infof("WaitForFinalizer(%s/%s) = %v, finalizer not added for Ingress %v", s.Namespace, ingName, ingFinalizers, ing)
+			return false, nil
+		}
+		return true, nil
+	})
+}
+
 // WaitForIngressDeletion deletes the given ingress and waits for the
 // resources associated with it to be deleted.
 func WaitForIngressDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ing *v1beta1.Ingress, options *fuzz.GCLBDeleteOptions) error {
@@ -143,7 +165,7 @@ func WaitForFinalizerDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ing
 	return wait.Poll(k8sApiPoolInterval, k8sApiPollTimeout, func() (bool, error) {
 		ing, err := crud.Get(s.Namespace, ingName)
 		if err != nil {
-			klog.Infof("WaitForFinalizerDeletion(%s/%s) = Error retrieving Ingress: %v", s.Namespace, ing.Name, err)
+			klog.Infof("WaitForFinalizerDeletion(%s/%s) = Error retrieving Ingress: %v", s.Namespace, ingName, err)
 			return false, nil
 		}
 		if len(ing.GetFinalizers()) != 0 {
