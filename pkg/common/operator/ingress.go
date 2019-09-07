@@ -39,6 +39,20 @@ func (op *IngressesOperator) Filter(f func(*v1beta1.Ingress) bool) *IngressesOpe
 	return Ingresses(i)
 }
 
+// Partition partitions the list of Ingresses into two: Ingresses that match given predicate and those that don't.
+func (op *IngressesOperator) Partition(f func(*v1beta1.Ingress) bool) (*IngressesOperator, *IngressesOperator) {
+	// A list of ingresses that satisfy the predicate condition and it's complement
+	var i, ci []*v1beta1.Ingress
+	for _, ing := range op.i {
+		if f(ing) {
+			i = append(i, ing)
+		} else {
+			ci = append(ci, ing)
+		}
+	}
+	return Ingresses(i), Ingresses(ci)
+}
+
 // ReferencesService returns the Ingresses that references the given Service.
 func (op *IngressesOperator) ReferencesService(svc *api_v1.Service) *IngressesOperator {
 	dupes := map[string]bool{}
