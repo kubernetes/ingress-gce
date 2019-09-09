@@ -25,7 +25,7 @@ import (
 	"testing"
 )
 
-func TestILBBasic(t *testing.T) {
+func TestILB(t *testing.T) {
 	t.Parallel()
 
 	port80 := intstr.FromInt(80)
