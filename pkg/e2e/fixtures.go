@@ -21,9 +21,13 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"k8s.io/ingress-gce/pkg/utils"
+	"net/http"
 	"reflect"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	computebeta "google.golang.org/api/compute/v0.beta"
 	"google.golang.org/api/compute/v1"
 	apps "k8s.io/api/apps/v1"
 	"k8s.io/api/core/v1"
@@ -38,6 +42,8 @@ import (
 const (
 	echoheadersImage = "gcr.io/k8s-ingress-image-push/ingress-gce-echo-amd64:master"
 )
+
+var ErrSubnetExists = fmt.Errorf("ILB subnet in region already exists")
 
 // NoopModify does not modify the input deployment
 func NoopModify(*apps.Deployment) {}
@@ -253,4 +259,35 @@ func DeleteGCPAddress(s *Sandbox, name string) error {
 	klog.V(2).Infof("Global static IP %s deleted", name)
 
 	return nil
+}
+
+// CreateILBSubnet creates the ILB subnet
+func CreateILBSubnet(s *Sandbox, name string, ipCidrRange string) error {
+	networkID := cloud.ResourceID{ProjectID: s.f.Project, Resource: "networks", Key: meta.GlobalKey("default")}
+	subnet := &computebeta.Subnetwork{
+		Name:        name,
+		IpCidrRange: ipCidrRange,
+		Purpose:     "INTERNAL_HTTPS_LOAD_BALANCER",
+		Network:     networkID.SelfLink(meta.VersionBeta),
+		Role:        "ACTIVE",
+	}
+
+	klog.V(2).Infof("Creating ILB Subnet: %+v", subnet)
+	err := s.f.Cloud.BetaSubnetworks().Insert(context.Background(), meta.RegionalKey(subnet.Name, s.f.Region), subnet)
+	if err != nil {
+		// GCE returns a 409 when there is already an "ACTIVE" subnet set up for ILB
+		if utils.IsHTTPErrorCode(err, http.StatusConflict) {
+			klog.V(3).Info("ILB subnet already exists")
+			return ErrSubnetExists
+		} else {
+			return fmt.Errorf("Error creating ILB subnet: %v", err)
+		}
+	}
+	return nil
+}
+
+// DeleteILBSubnet deletes the ILB subnet
+func DeleteILBSubnet(s *Sandbox, name string) error {
+	klog.V(2).Infof("Deleting ILB Subnet %q", name)
+	return s.f.Cloud.BetaSubnetworks().Delete(context.Background(), meta.RegionalKey(name, s.f.Region))
 }

@@ -42,6 +42,7 @@ import (
 // Options for the test framework.
 type Options struct {
 	Project             string
+	Region              string
 	Seed                int64
 	DestroySandboxes    bool
 	GceEndpointOverride string
@@ -62,6 +63,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		Clientset:           kubernetes.NewForConfigOrDie(config),
 		BackendConfigClient: backendConfigClient,
 		Project:             options.Project,
+		Region:              options.Region,
 		Cloud:               theCloud,
 		Rand:                rand.New(rand.NewSource(options.Seed)),
 		destroySandboxes:    options.DestroySandboxes,
@@ -76,6 +78,7 @@ type Framework struct {
 	Clientset           *kubernetes.Clientset
 	BackendConfigClient *backendconfigclient.Clientset
 	Project             string
+	Region              string
 	Cloud               cloud.Cloud
 	Rand                *rand.Rand
 	statusManager       *StatusManager

@@ -34,10 +34,38 @@ if [[ -z "$PROJECT" ]]; then
   exit
 fi
 
+for ATTEMPT in $(seq 60); do
+  ZONE_INFO=$(curl -H'Metadata-Flavor:Google' metadata.google.internal/computeMetadata/v1/instance/zone)
+  if [[ -n "${ZONE_INFO}" ]]; then
+    break
+  fi
+  echo "Error: could not get zone from the metadata server (attempt ${ATTEMPT})"
+  sleep 1
+done
+
+if [[ -z "${ZONE_INFO}" ]]; then
+  echo "Error: could not get zone info from the metadata server"
+  echo "RESULT: 2"
+  echo '--- END ---'
+  exit
+fi
+echo "ZONE_INFO: ${ZONE_INFO}"
+
+# Get Region information from zone info
+ZONE=$(echo ${ZONE_INFO} | sed 's+projects/.*/zones/++')
+REGION=$(echo ${ZONE} | sed 's/-[a-z]$//')
+
+if [[ -z "${REGION}" ]]; then
+  echo "Error: could not parse region from zone info"
+  echo "Result: 2"
+  exit
+fi
+echo "Using Region: ${REGION}"
+
 echo
 echo ==============================================================================
 echo "PROJECT: ${PROJECT}"
-CMD="/e2e-test -test.v -test.parallel=100 -run -project ${PROJECT} -logtostderr -inCluster -v=2"
+CMD="/e2e-test -test.v -test.parallel=100 -run -project ${PROJECT} -region ${REGION} -logtostderr -inCluster -v=2"
 echo "CMD: ${CMD}" $@
 echo
 
