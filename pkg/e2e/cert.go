@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/api/core/v1"
 	"k8s.io/klog"
@@ -50,6 +51,9 @@ type Cert struct {
 	Host string
 	Name string
 	Type CertType
+	// Regional represents if the cert should be created as regional or global
+	// Not using composites here to avoid additional possible interference
+	Regional bool
 
 	cert []byte
 	key  []byte
@@ -57,17 +61,18 @@ type Cert struct {
 
 // NewCert returns a cert initialized with data but not yet created in the
 // appropriate environment.
-func NewCert(name string, host string, typ CertType) (*Cert, error) {
+func NewCert(name string, host string, typ CertType, regional bool) (*Cert, error) {
 	cert, key, err := generateRSACert(host)
 	if err != nil {
 		return nil, fmt.Errorf("error generating cert + key: %v", err)
 	}
 	return &Cert{
-		Host: host,
-		Name: name,
-		Type: typ,
-		cert: cert,
-		key:  key,
+		Host:     host,
+		Name:     name,
+		Type:     typ,
+		Regional: regional,
+		cert:     cert,
+		key:      key,
 	}, nil
 }
 
@@ -104,6 +109,10 @@ func createSecretCert(s *Sandbox, c *Cert) error {
 
 // createGCPCert creates a SslCertificate in GCP based on the provided Cert.
 func createGCPCert(s *Sandbox, c *Cert) error {
+	if c.Regional {
+		return createRegionalGCPCert(s, c)
+	}
+
 	sslCert := &compute.SslCertificate{
 		Name:        c.Name,
 		Certificate: string(c.cert),
@@ -111,6 +120,23 @@ func createGCPCert(s *Sandbox, c *Cert) error {
 		Description: "gcp cert for ingress testing",
 	}
 	if err := s.f.Cloud.SslCertificates().Insert(context.Background(), meta.GlobalKey(c.Name), sslCert); err != nil {
+		return err
+	}
+	klog.V(2).Infof("SslCertificate %q created", c.Name)
+
+	return nil
+}
+
+// createGCPCert creates a SslCertificate in GCP based on the provided Cert.
+func createRegionalGCPCert(s *Sandbox, c *Cert) error {
+	sslCert := &computebeta.SslCertificate{
+		Name:        c.Name,
+		Certificate: string(c.cert),
+		PrivateKey:  string(c.key),
+		Description: "gcp cert for ingress testing",
+	}
+	// TODO(shance): replace with actual region once #846 gets merged
+	if err := s.f.Cloud.BetaRegionSslCertificates().Insert(context.Background(), meta.RegionalKey(c.Name, "us-central1"), sslCert); err != nil {
 		return err
 	}
 	klog.V(2).Infof("SslCertificate %q created", c.Name)
