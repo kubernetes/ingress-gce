@@ -141,6 +141,10 @@ func TestFirewallPoolSyncRanges(t *testing.T) {
 			desc:             "Multiple ranges",
 			additionalRanges: []string{"10.128.0.0/24", "10.132.0.0/24", "10.134.0.0/24"},
 		},
+		{
+			desc:             "Duplicate ranges",
+			additionalRanges: []string{"10.128.0.0/24", "10.132.0.0/24", "10.134.0.0/24", "10.132.0.0/24", "10.134.0.0/24"},
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
