@@ -77,13 +77,18 @@ func (fr *FirewallRules) Sync(nodeNames, additionalPorts, additionalRanges []str
 	}
 	sort.Strings(targetTags)
 
-	ports := sets.NewString(additionalPorts...)
-	fr.srcRanges = append(fr.srcRanges, additionalRanges...)
-	ports.Insert(fr.portRanges...)
+	// De-dupe ports
+	ports := sets.NewString(fr.portRanges...)
+	ports.Insert(additionalPorts...)
+
+	// De-dupe srcRanges
+	ranges := sets.NewString(fr.srcRanges...)
+	ranges.Insert(additionalRanges...)
+
 	expectedFirewall := &compute.Firewall{
 		Name:         name,
 		Description:  "GCE L7 firewall rule",
-		SourceRanges: fr.srcRanges,
+		SourceRanges: ranges.UnsortedList(),
 		Network:      fr.cloud.NetworkURL(),
 		Allowed: []*compute.FirewallAllowed{
 			{

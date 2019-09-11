@@ -17,9 +17,8 @@ limitations under the License.
 package firewalls
 
 import (
+	"errors"
 	"fmt"
-	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"reflect"
 	"time"
 
@@ -32,6 +31,8 @@ import (
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
+	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -42,6 +43,8 @@ var (
 	queueKey = &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{Name: "queueKey"},
 	}
+
+	ErrNoILBIngress = errors.New("no ILB Ingress found")
 )
 
 // FirewallController synchronizes the firewall rule for all ingresses.
@@ -170,9 +173,12 @@ func (fwc *FirewallController) sync(key string) error {
 	if flags.F.EnableL7Ilb {
 		ilbRange, err := fwc.ilbFirewallSrcRange(gceIngresses)
 		if err != nil {
-			return err
+			if err != features.ErrSubnetNotFound && err != ErrNoILBIngress {
+				return err
+			}
+		} else {
+			additionalRanges = append(additionalRanges, ilbRange)
 		}
-		additionalRanges = append(additionalRanges, ilbRange)
 	}
 
 	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
@@ -204,10 +210,10 @@ func (fwc *FirewallController) ilbFirewallSrcRange(gceIngresses []*v1beta1.Ingre
 	if ilbEnabled {
 		L7ILBSrcRange, err := features.ILBSubnetSourceRange(fwc.ctx.Cloud, fwc.ctx.Cloud.Region())
 		if err != nil {
-			return "", fmt.Errorf("error unable to get ILB subnet source ranges: %v", err)
+			return "", err
 		}
 		return L7ILBSrcRange, nil
 	}
 
-	return "", nil
+	return "", ErrNoILBIngress
 }
