@@ -132,7 +132,7 @@ func TestBasicStaticIP(t *testing.T) {
 		}
 
 		vip := testIng.Status.LoadBalancer.Ingress[0].IP
-		gclb, err := fuzz.GCLBForVIP(ctx, Framework.Cloud, vip, fuzz.FeatureValidators([]fuzz.Feature{features.SecurityPolicy}))
+		gclb, err := fuzz.GCLBForVIP(ctx, Framework.Cloud, vip, "", fuzz.FeatureValidators([]fuzz.Feature{features.SecurityPolicy}))
 		if err != nil {
 			t.Fatalf("fuzz.GCLBForVIP(..., %q, %q) = _, %v; want _, nil", vip, features.SecurityPolicy, err)
 		}
@@ -218,12 +218,12 @@ func whiteboxTest(ing *v1beta1.Ingress, s *e2e.Sandbox, t *testing.T) *fuzz.GCLB
 		t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
 	}
 
-	vip := ing.Status.LoadBalancer.Ingress[0].IP
-	t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
-	gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
-	if err != nil {
-		t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
-	}
+			vip := ing.Status.LoadBalancer.Ingress[0].IP
+			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ing.Name, vip)
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, "", fuzz.FeatureValidators(features.All))
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
 
 	if err := e2e.PerformWhiteboxTests(s, ing, gclb); err != nil {
 		t.Fatalf("Error performing whitebox tests: %v", err)

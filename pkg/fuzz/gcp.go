@@ -153,7 +153,13 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		}
 	}
 	for k := range g.TargetHTTPProxy {
-		_, err := c.TargetHttpProxies().Get(ctx, &k)
+		var err error
+		if k.Region != "" {
+			// Use beta since GA isn't available yet
+			_, err = c.BetaRegionTargetHttpProxies().Get(ctx, &k)
+		} else {
+			_, err = c.TargetHttpProxies().Get(ctx, &k)
+		}
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
 				return fmt.Errorf("TargetHTTPProxy %s is not deleted/error to get: %s", k.Name, err)
@@ -163,7 +169,13 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		}
 	}
 	for k := range g.TargetHTTPSProxy {
-		_, err := c.TargetHttpsProxies().Get(ctx, &k)
+		var err error
+		if k.Region != "" {
+			// Use beta since GA isn't available yet
+			_, err = c.BetaRegionTargetHttpsProxies().Get(ctx, &k)
+		} else {
+			_, err = c.TargetHttpsProxies().Get(ctx, &k)
+		}
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
 				return fmt.Errorf("TargetHTTPSProxy %s is not deleted/error to get: %s", k.Name, err)
@@ -173,7 +185,12 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		}
 	}
 	for k := range g.URLMap {
-		_, err := c.UrlMaps().Get(ctx, &k)
+		var err error
+		if k.Region != "" {
+			_, err = c.BetaRegionUrlMaps().Get(ctx, &k)
+		} else {
+			_, err = c.UrlMaps().Get(ctx, &k)
+		}
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
 				return fmt.Errorf("URLMap %s is not deleted/error to get: %s", k.Name, err)
@@ -184,7 +201,13 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 	}
 	if options == nil || !options.SkipBackends {
 		for k := range g.BackendService {
-			bs, err := c.BackendServices().Get(ctx, &k)
+			var err error
+			var bs *compute.BackendService
+			if k.Region != "" {
+				bs, err = c.RegionBackendServices().Get(ctx, &k)
+			} else {
+				bs, err = c.BackendServices().Get(ctx, &k)
+			}
 			if err != nil {
 				if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
 					return fmt.Errorf("BackendService %s is not deleted/error to get: %s", k.Name, err)
@@ -268,8 +291,14 @@ func hasBetaResource(resourceType string, validators []FeatureValidator) bool {
 
 // GCLBForVIP retrieves all of the resources associated with the GCLB for a
 // given VIP.
-func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []FeatureValidator) (*GCLB, error) {
+func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, region string, validators []FeatureValidator) (*GCLB, error) {
 	gclb := NewGCLB(vip)
+
+	if region != "" {
+		if err := RegionalGCLBForVIP(ctx, c, gclb, vip, region, validators); err != nil {
+			return nil, err
+		}
+	}
 
 	allGFRs, err := c.GlobalForwardingRules().List(ctx, filter.None)
 	if err != nil {
@@ -282,6 +311,11 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 		if gfr.IPAddress == vip {
 			gfrs = append(gfrs, gfr)
 		}
+	}
+
+	if len(gfrs) == 0 {
+		klog.Warningf("No global forwarding rules found, can't get all GCLB resources")
+		return gclb, nil
 	}
 
 	var urlMapKey *meta.Key
@@ -489,6 +523,243 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, validators []Fea
 	}
 
 	return gclb, err
+}
+
+// GCLBForVIP retrieves all of the resources associated with the GCLB for a
+// given VIP.
+func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, vip string, region string, validators []FeatureValidator) error {
+
+	allRFRs, err := c.ForwardingRules().List(ctx, region, filter.None)
+	if err != nil {
+		klog.Warningf("Error listing forwarding rules: %v", err)
+		return err
+	}
+
+	var rfrs []*compute.ForwardingRule
+	for _, gfr := range allRFRs {
+		if gfr.IPAddress == vip {
+			rfrs = append(rfrs, gfr)
+		}
+	}
+
+	if len(rfrs) == 0 {
+		klog.Warningf("No regional forwarding rules found, can't get all GCLB resources")
+		return nil
+	}
+
+	var urlMapKey *meta.Key
+	for _, rfr := range rfrs {
+		frKey := meta.RegionalKey(rfr.Name, region)
+		gclb.ForwardingRule[*frKey] = &ForwardingRule{GA: rfr}
+		if hasAlphaResource("forwardingRule", validators) {
+			fr, err := c.AlphaForwardingRules().Get(ctx, frKey)
+			if err != nil {
+				klog.Warningf("Error getting alpha forwarding rules: %v", err)
+				return err
+			}
+			gclb.ForwardingRule[*frKey].Alpha = fr
+		}
+		if hasBetaResource("forwardingRule", validators) {
+			fr, err := c.BetaForwardingRules().Get(ctx, frKey)
+			if err != nil {
+				klog.Warningf("Error getting alpha forwarding rules: %v", err)
+				return err
+			}
+			gclb.ForwardingRule[*frKey].Beta = fr
+		}
+
+		// ForwardingRule => TargetProxy
+		resID, err := cloud.ParseResourceURL(rfr.Target)
+		if err != nil {
+			klog.Warningf("Error parsing Target (%q): %v", rfr.Target, err)
+			return err
+		}
+		switch resID.Resource {
+		case "targetHttpProxies":
+			// Use beta by default since not GA yet
+			p, err := c.BetaRegionTargetHttpProxies().Get(ctx, resID.Key)
+			if err != nil {
+				klog.Warningf("Error getting TargetHttpProxy %s: %v", resID.Key, err)
+				return err
+			}
+			gclb.TargetHTTPProxy[*resID.Key] = &TargetHTTPProxy{Beta: p}
+			if hasAlphaResource("targetHttpProxy", validators) || hasBetaResource("targetHttpProxy", validators) {
+				return errors.New("unsupported targetHttpProxy version")
+			}
+
+			urlMapResID, err := cloud.ParseResourceURL(p.UrlMap)
+			if err != nil {
+				klog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
+				return err
+			}
+			if urlMapKey == nil {
+				urlMapKey = urlMapResID.Key
+			}
+			if *urlMapKey != *urlMapResID.Key {
+				klog.Warningf("Error targetHttpProxy references are not the same (%s != %s)", *urlMapKey, *urlMapResID.Key)
+				return fmt.Errorf("targetHttpProxy references are not the same: %+v != %+v", *urlMapKey, *urlMapResID.Key)
+			}
+		case "targetHttpsProxies":
+			// Use Beta by default since not GA yet
+			p, err := c.BetaRegionTargetHttpsProxies().Get(ctx, resID.Key)
+			if err != nil {
+				klog.Warningf("Error getting targetHttpsProxy (%s): %v", resID.Key, err)
+				return err
+			}
+			gclb.TargetHTTPSProxy[*resID.Key] = &TargetHTTPSProxy{Beta: p}
+			if hasAlphaResource("targetHttpsProxy", validators) || hasBetaResource("targetHttpsProxy", validators) {
+				return errors.New("unsupported targetHttpsProxy version")
+			}
+
+			urlMapResID, err := cloud.ParseResourceURL(p.UrlMap)
+			if err != nil {
+				klog.Warningf("Error parsing urlmap URL (%q): %v", p.UrlMap, err)
+				return err
+			}
+			if urlMapKey == nil {
+				urlMapKey = urlMapResID.Key
+			}
+			if *urlMapKey != *urlMapResID.Key {
+				klog.Warningf("Error targetHttpsProxy references are not the same (%s != %s)", *urlMapKey, *urlMapResID.Key)
+				return fmt.Errorf("targetHttpsProxy references are not the same: %+v != %+v", *urlMapKey, *urlMapResID.Key)
+			}
+		default:
+			klog.Errorf("Unhandled resource: %q, grf = %+v", resID.Resource, rfr)
+			return fmt.Errorf("unhandled resource %q", resID.Resource)
+		}
+	}
+
+	// TargetProxy => URLMap
+	// Use beta since region is not GA yet
+	urlMap, err := c.BetaRegionUrlMaps().Get(ctx, urlMapKey)
+	if err != nil {
+		return err
+	}
+	gclb.URLMap[*urlMapKey] = &URLMap{Beta: urlMap}
+	if hasAlphaResource("urlMap", validators) || hasBetaResource("urlMap", validators) {
+		return errors.New("unsupported urlMap version")
+	}
+
+	// URLMap => BackendService(s)
+	var bsKeys []*meta.Key
+	resID, err := cloud.ParseResourceURL(urlMap.DefaultService)
+	if err != nil {
+		return err
+	}
+	bsKeys = append(bsKeys, resID.Key)
+
+	for _, pm := range urlMap.PathMatchers {
+		resID, err := cloud.ParseResourceURL(pm.DefaultService)
+		if err != nil {
+			return err
+		}
+		bsKeys = append(bsKeys, resID.Key)
+
+		for _, pr := range pm.PathRules {
+			resID, err := cloud.ParseResourceURL(pr.Service)
+			if err != nil {
+				return err
+			}
+			bsKeys = append(bsKeys, resID.Key)
+		}
+	}
+
+	for _, bsKey := range bsKeys {
+		bs, err := c.RegionBackendServices().Get(ctx, bsKey)
+		if err != nil {
+			return err
+		}
+		gclb.BackendService[*bsKey] = &BackendService{GA: bs}
+
+		if hasAlphaResource("backendService", validators) {
+			bs, err := c.AlphaRegionBackendServices().Get(ctx, bsKey)
+			if err != nil {
+				return err
+			}
+			gclb.BackendService[*bsKey].Alpha = bs
+		}
+		if hasBetaResource("backendService", validators) {
+			bs, err := c.BetaRegionBackendServices().Get(ctx, bsKey)
+			if err != nil {
+				return err
+			}
+			gclb.BackendService[*bsKey].Beta = bs
+		}
+	}
+
+	negKeys := []*meta.Key{}
+	igKeys := []*meta.Key{}
+	// Fetch NEG Backends
+	for _, bsKey := range bsKeys {
+		beGroups := []string{}
+		if hasAlphaResource("backendService", validators) {
+			bs, err := c.AlphaRegionBackendServices().Get(ctx, bsKey)
+			if err != nil {
+				return err
+			}
+			for _, be := range bs.Backends {
+				beGroups = append(beGroups, be.Group)
+			}
+		} else {
+			bs, err := c.BetaRegionBackendServices().Get(ctx, bsKey)
+			if err != nil {
+				return err
+			}
+			for _, be := range bs.Backends {
+				beGroups = append(beGroups, be.Group)
+			}
+		}
+		for _, group := range beGroups {
+			if strings.Contains(group, NegResourceType) {
+				resourceId, err := cloud.ParseResourceURL(group)
+				if err != nil {
+					return err
+				}
+				negKeys = append(negKeys, resourceId.Key)
+			}
+
+			if strings.Contains(group, IgResourceType) {
+				resourceId, err := cloud.ParseResourceURL(group)
+				if err != nil {
+					return err
+				}
+				igKeys = append(igKeys, resourceId.Key)
+			}
+
+		}
+	}
+
+	for _, negKey := range negKeys {
+		neg, err := c.NetworkEndpointGroups().Get(ctx, negKey)
+		if err != nil {
+			return err
+		}
+		gclb.NetworkEndpointGroup[*negKey] = &NetworkEndpointGroup{GA: neg}
+		if hasAlphaResource(NegResourceType, validators) {
+			neg, err := c.AlphaNetworkEndpointGroups().Get(ctx, negKey)
+			if err != nil {
+				return err
+			}
+			gclb.NetworkEndpointGroup[*negKey].Alpha = neg
+		}
+		if hasBetaResource(NegResourceType, validators) {
+			neg, err := c.BetaNetworkEndpointGroups().Get(ctx, negKey)
+			if err != nil {
+				return err
+			}
+			gclb.NetworkEndpointGroup[*negKey].Beta = neg
+		}
+	}
+
+	for _, igKey := range igKeys {
+		ig, err := c.InstanceGroups().Get(ctx, igKey)
+		if err != nil {
+			return err
+		}
+		gclb.InstanceGroup[*igKey] = &InstanceGroup{GA: ig}
+	}
+
+	return err
 }
 
 // NetworkEndpointsInNegs retrieves the network Endpoints from NEGs with one name in multiple zones

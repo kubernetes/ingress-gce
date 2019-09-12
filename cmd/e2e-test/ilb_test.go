@@ -17,12 +17,14 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
+	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/utils"
 	"testing"
 )
@@ -81,7 +83,6 @@ func TestILB(t *testing.T) {
 		tc := tc // Capture tc as we are running this in parallel.
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
 			t.Parallel()
-
 			t.Logf("Ingress = %s", tc.ing.String())
 
 			// Create Subnet if it doesn't already exist
@@ -118,6 +119,21 @@ func TestILB(t *testing.T) {
 			}
 
 			// TODO(shance): update gcp.go for regional resources so that we can check GC here
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, "us-central1", fuzz.FeatureValidators(features.All))
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+
+			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
+				t.Error(err)
+			}
+
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: true,
+			}
+			if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing, deleteOptions); err != nil {
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+			}
 		})
 	}
 }

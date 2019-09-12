@@ -128,7 +128,7 @@ func TestSecurityPolicyEnable(t *testing.T) {
 		}
 
 		vip := testIng.Status.LoadBalancer.Ingress[0].IP
-		gclb, err := fuzz.GCLBForVIP(ctx, Framework.Cloud, vip, fuzz.FeatureValidators([]fuzz.Feature{features.SecurityPolicy}))
+		gclb, err := fuzz.GCLBForVIP(ctx, Framework.Cloud, vip, "", fuzz.FeatureValidators([]fuzz.Feature{features.SecurityPolicy}))
 		if err != nil {
 			t.Fatalf("fuzz.GCLBForVIP(..., %q, %q) = _, %v; want _, nil", vip, features.SecurityPolicy, err)
 		}
@@ -231,7 +231,7 @@ func TestSecurityPolicyTransition(t *testing.T) {
 
 			t.Logf("Waiting %v for security policy to be updated on relevant backend service", policyUpdateTimeout)
 			if err := wait.Poll(policyUpdateInterval, policyUpdateTimeout, func() (bool, error) {
-				gclb, err = fuzz.GCLBForVIP(ctx, Framework.Cloud, vip, fuzz.FeatureValidators([]fuzz.Feature{features.SecurityPolicy}))
+				gclb, err = fuzz.GCLBForVIP(ctx, Framework.Cloud, vip, "", fuzz.FeatureValidators([]fuzz.Feature{features.SecurityPolicy}))
 				if err != nil {
 					t.Fatalf("fuzz.GCLBForVIP(..., %q, %q) = _, %v; want _, nil", vip, features.SecurityPolicy, err)
 				}
