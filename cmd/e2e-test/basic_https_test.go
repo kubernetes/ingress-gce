@@ -84,7 +84,7 @@ func TestBasicHTTPS(t *testing.T) {
 
 			for i, h := range tc.hosts {
 				name := fmt.Sprintf("cert%d--%s", i, s.Namespace)
-				cert, err := e2e.NewCert(name, h, tc.certType)
+				cert, err := e2e.NewCert(name, h, tc.certType, false)
 				if err != nil {
 					t.Fatalf("Error initializing cert: %v", err)
 				}
