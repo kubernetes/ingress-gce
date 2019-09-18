@@ -63,7 +63,7 @@ func TestUpgrade(t *testing.T) {
 			ing := waitForStableIngress(true, tc.ing, s, t)
 			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
 
-			whiteboxTest(ing, s, t)
+			whiteboxTest(ing, s, t, "")
 
 			for {
 				// While k8s master is upgrading, it will return a connection refused
@@ -98,7 +98,7 @@ func TestUpgrade(t *testing.T) {
 			// trigger an Ingress update
 			ing = waitForStableIngress(true, ing, s, t)
 			t.Logf("GCLB is stable (%s/%s)", s.Namespace, tc.ing.Name)
-			gclb := whiteboxTest(ing, s, t)
+			gclb := whiteboxTest(ing, s, t, "")
 
 			// If the Master has upgraded and the Ingress is stable,
 			// we delete the Ingress and exit out of the loop to indicate that

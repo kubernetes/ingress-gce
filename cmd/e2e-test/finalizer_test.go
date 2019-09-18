@@ -18,6 +18,8 @@ package main
 
 import (
 	"context"
+	"k8s.io/api/networking/v1beta1"
+	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -59,7 +61,7 @@ func TestFinalizer(t *testing.T) {
 		}
 
 		// Perform whitebox testing.
-		gclb := whiteboxTest(ing, s, t)
+		gclb := whiteboxTest(ing, s, t, "")
 
 		deleteOptions := &fuzz.GCLBDeleteOptions{
 			SkipDefaultBackend: true,
@@ -103,7 +105,7 @@ func TestFinalizerIngressClassChange(t *testing.T) {
 		}
 
 		// Perform whitebox testing.
-		gclb := whiteboxTest(ing, s, t)
+		gclb := whiteboxTest(ing, s, t, "")
 
 		// Change Ingress class
 		newIngClass := "nginx"
@@ -173,8 +175,8 @@ func TestFinalizerIngressesWithSharedResources(t *testing.T) {
 		}
 
 		// Perform whitebox testing.
-		gclb := whiteboxTest(ing, s, t)
-		otherGclb := whiteboxTest(otherIng, s, t)
+		gclb := whiteboxTest(ing, s, t, "")
+		otherGclb := whiteboxTest(otherIng, s, t, "")
 
 		// SkipBackends ensure that we dont wait on deletion of shared backends.
 		deleteOptions := &fuzz.GCLBDeleteOptions{
@@ -227,7 +229,7 @@ func TestUpdateTo1dot7(t *testing.T) {
 			t.Fatalf("GetFinalizers() = %d, want 0", l)
 		}
 		// Perform whitebox testing.
-		whiteboxTest(ing, s, t)
+		whiteboxTest(ing, s, t, "")
 
 		for {
 			// While k8s master is upgrading, it will return a connection refused
@@ -249,7 +251,7 @@ func TestUpdateTo1dot7(t *testing.T) {
 		}
 
 		// Perform whitebox testing.
-		gclb := whiteboxTest(ing, s, t)
+		gclb := whiteboxTest(ing, s, t, "")
 
 		// If the Master has upgraded and the Ingress is stable,
 		// we delete the Ingress and exit out of the loop to indicate that
@@ -261,4 +263,23 @@ func TestUpdateTo1dot7(t *testing.T) {
 			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
 		}
 	})
+}
+
+func checkGCLB(t *testing.T, s *e2e.Sandbox, ing *v1beta1.Ingress, numForwardingRules, numBackendServices int) *fuzz.GCLB {
+	// Perform whitebox testing.
+	if len(ing.Status.LoadBalancer.Ingress) < 1 {
+		t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
+	}
+	vip := ing.Status.LoadBalancer.Ingress[0].IP
+	t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
+	params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All)}
+	gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+	if err != nil {
+		t.Fatalf("GCLBForVIP(..., %q, _) = %v, want nil; error getting GCP resources for LB with IP", vip, err)
+	}
+
+	if err = e2e.CheckGCLB(gclb, numForwardingRules, numBackendServices); err != nil {
+		t.Error(err)
+	}
+	return gclb
 }

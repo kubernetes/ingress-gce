@@ -147,7 +147,8 @@ func Validate() {
 	}
 
 	vip := ing.Status.LoadBalancer.Ingress[0].IP
-	gclb, err := fuzz.GCLBForVIP(context.Background(), gce, vip, "", []fuzz.FeatureValidator{})
+	params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All)}
+	gclb, err := fuzz.GCLBForVIP(context.Background(), gce, params)
 	if err != nil {
 		panic(err)
 	}

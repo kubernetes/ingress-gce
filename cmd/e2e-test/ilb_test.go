@@ -118,8 +118,8 @@ func TestILB(t *testing.T) {
 				t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 			}
 
-			// TODO(shance): update gcp.go for regional resources so that we can check GC here
-			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, "us-central1", fuzz.FeatureValidators(features.All))
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All), Region: Framework.Region}
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 			if err != nil {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
@@ -263,6 +263,23 @@ func TestILBHttps(t *testing.T) {
 				t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 			}
 
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Region: Framework.Region, Validators: fuzz.FeatureValidators(features.All)}
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+
+			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
+				t.Error(err)
+			}
+
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: false,
+			}
+			if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing, deleteOptions); err != nil {
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+			}
+
 			// TODO(shance): update gcp.go for regional resources so that we can check GC here
 		})
 	}
@@ -387,6 +404,16 @@ func TestILBUpdate(t *testing.T) {
 				t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 			}
 
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Region: Framework.Region, Validators: fuzz.FeatureValidators(features.All)}
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+
+			if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
+				t.Error(err)
+			}
+
 			// Perform update
 			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Update(tc.ingUpdate); err != nil {
 				t.Fatalf("error updating ingress spec: %v", err)
@@ -410,7 +437,12 @@ func TestILBUpdate(t *testing.T) {
 				t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 			}
 
-			// TODO(shance): update gcp.go for regional resources so that we can check GC here
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: true,
+			}
+			if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing, deleteOptions); err != nil {
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+			}
 		})
 	}
 }
@@ -465,8 +497,6 @@ func TestILBError(t *testing.T) {
 			if err == nil {
 				t.Fatalf("want err, got nil")
 			}
-
-			// TODO(shance): update gcp.go for regional resources so that we can check GC here
 		})
 	}
 }
@@ -542,6 +572,7 @@ func TestILBShared(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
+			var gclb *fuzz.GCLB
 			for _, ing := range []*v1beta1.Ingress{tc.ilbIng, tc.elbIng} {
 
 				t.Logf("Ingress = %s", ing.String())
@@ -568,7 +599,15 @@ func TestILBShared(t *testing.T) {
 					t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 				}
 
-				// TODO(shance): update gcp.go for regional resources so that we can check GC here
+				params := &fuzz.GCLBForVIPParams{VIP: vip, Region: Framework.Region, Validators: fuzz.FeatureValidators(features.All)}
+				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+				if err != nil {
+					t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+				}
+
+				if err = e2e.CheckGCLB(gclb, tc.numForwardingRules, tc.numBackendServices); err != nil {
+					t.Error(err)
+				}
 			}
 		})
 	}

@@ -289,13 +289,18 @@ func hasBetaResource(resourceType string, validators []FeatureValidator) bool {
 	return false
 }
 
-// GCLBForVIP retrieves all of the resources associated with the GCLB for a
-// given VIP.
-func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, region string, validators []FeatureValidator) (*GCLB, error) {
-	gclb := NewGCLB(vip)
+type GCLBForVIPParams struct {
+	VIP        string
+	Region     string
+	Validators []FeatureValidator
+}
 
-	if region != "" {
-		if err := RegionalGCLBForVIP(ctx, c, gclb, vip, region, validators); err != nil {
+// GCLBForVIP retrieves all of the resources associated with the GCLB for a given VIP.
+func GCLBForVIP(ctx context.Context, c cloud.Cloud, params *GCLBForVIPParams) (*GCLB, error) {
+	gclb := NewGCLB(params.VIP)
+
+	if params.Region != "" {
+		if err := RegionalGCLBForVIP(ctx, c, gclb, params); err != nil {
 			return nil, err
 		}
 	}
@@ -308,7 +313,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, region string, v
 
 	var gfrs []*compute.ForwardingRule
 	for _, gfr := range allGFRs {
-		if gfr.IPAddress == vip {
+		if gfr.IPAddress == params.VIP {
 			gfrs = append(gfrs, gfr)
 		}
 	}
@@ -322,7 +327,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, region string, v
 	for _, gfr := range gfrs {
 		frKey := meta.GlobalKey(gfr.Name)
 		gclb.ForwardingRule[*frKey] = &ForwardingRule{GA: gfr}
-		if hasAlphaResource("forwardingRule", validators) {
+		if hasAlphaResource("forwardingRule", params.Validators) {
 			fr, err := c.AlphaForwardingRules().Get(ctx, frKey)
 			if err != nil {
 				klog.Warningf("Error getting alpha forwarding rules: %v", err)
@@ -330,7 +335,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, region string, v
 			}
 			gclb.ForwardingRule[*frKey].Alpha = fr
 		}
-		if hasBetaResource("forwardingRule", validators) {
+		if hasBetaResource("forwardingRule", params.Validators) {
 			return nil, errors.New("unsupported forwardingRule version")
 		}
 
@@ -348,7 +353,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, region string, v
 				return nil, err
 			}
 			gclb.TargetHTTPProxy[*resID.Key] = &TargetHTTPProxy{GA: p}
-			if hasAlphaResource("targetHttpProxy", validators) || hasBetaResource("targetHttpProxy", validators) {
+			if hasAlphaResource("targetHttpProxy", params.Validators) || hasBetaResource("targetHttpProxy", params.Validators) {
 				return nil, errors.New("unsupported targetHttpProxy version")
 			}
 
@@ -371,7 +376,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, region string, v
 				return nil, err
 			}
 			gclb.TargetHTTPSProxy[*resID.Key] = &TargetHTTPSProxy{GA: p}
-			if hasAlphaResource("targetHttpsProxy", validators) || hasBetaResource("targetHttpsProxy", validators) {
+			if hasAlphaResource("targetHttpsProxy", params.Validators) || hasBetaResource("targetHttpsProxy", params.Validators) {
 				return nil, errors.New("unsupported targetHttpsProxy version")
 			}
 
@@ -399,7 +404,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, region string, v
 		return nil, err
 	}
 	gclb.URLMap[*urlMapKey] = &URLMap{GA: urlMap}
-	if hasAlphaResource("urlMap", validators) || hasBetaResource("urlMap", validators) {
+	if hasAlphaResource("urlMap", params.Validators) || hasBetaResource("urlMap", params.Validators) {
 		return nil, errors.New("unsupported urlMap version")
 	}
 
@@ -434,14 +439,14 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, region string, v
 		}
 		gclb.BackendService[*bsKey] = &BackendService{GA: bs}
 
-		if hasAlphaResource("backendService", validators) {
+		if hasAlphaResource("backendService", params.Validators) {
 			bs, err := c.AlphaBackendServices().Get(ctx, bsKey)
 			if err != nil {
 				return nil, err
 			}
 			gclb.BackendService[*bsKey].Alpha = bs
 		}
-		if hasBetaResource("backendService", validators) {
+		if hasBetaResource("backendService", params.Validators) {
 			bs, err := c.BetaBackendServices().Get(ctx, bsKey)
 			if err != nil {
 				return nil, err
@@ -450,12 +455,12 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, region string, v
 		}
 	}
 
-	negKeys := []*meta.Key{}
-	igKeys := []*meta.Key{}
+	var negKeys []*meta.Key
+	var igKeys []*meta.Key
 	// Fetch NEG Backends
 	for _, bsKey := range bsKeys {
-		beGroups := []string{}
-		if hasAlphaResource("backendService", validators) {
+		var beGroups []string
+		if hasAlphaResource("backendService", params.Validators) {
 			bs, err := c.AlphaBackendServices().Get(ctx, bsKey)
 			if err != nil {
 				return nil, err
@@ -498,14 +503,14 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, region string, v
 			return nil, err
 		}
 		gclb.NetworkEndpointGroup[*negKey] = &NetworkEndpointGroup{GA: neg}
-		if hasAlphaResource(NegResourceType, validators) {
+		if hasAlphaResource(NegResourceType, params.Validators) {
 			neg, err := c.AlphaNetworkEndpointGroups().Get(ctx, negKey)
 			if err != nil {
 				return nil, err
 			}
 			gclb.NetworkEndpointGroup[*negKey].Alpha = neg
 		}
-		if hasBetaResource(NegResourceType, validators) {
+		if hasBetaResource(NegResourceType, params.Validators) {
 			neg, err := c.BetaNetworkEndpointGroups().Get(ctx, negKey)
 			if err != nil {
 				return nil, err
@@ -525,11 +530,10 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, vip string, region string, v
 	return gclb, err
 }
 
-// GCLBForVIP retrieves all of the resources associated with the GCLB for a
-// given VIP.
-func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, vip string, region string, validators []FeatureValidator) error {
+// GCLBForVIP retrieves all of the resources associated with the GCLB for a given VIP.
+func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, params *GCLBForVIPParams) error {
 
-	allRFRs, err := c.ForwardingRules().List(ctx, region, filter.None)
+	allRFRs, err := c.ForwardingRules().List(ctx, params.Region, filter.None)
 	if err != nil {
 		klog.Warningf("Error listing forwarding rules: %v", err)
 		return err
@@ -537,21 +541,21 @@ func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, vip stri
 
 	var rfrs []*compute.ForwardingRule
 	for _, gfr := range allRFRs {
-		if gfr.IPAddress == vip {
+		if gfr.IPAddress == params.VIP {
 			rfrs = append(rfrs, gfr)
 		}
 	}
 
 	if len(rfrs) == 0 {
-		klog.Warningf("No regional forwarding rules found, can't get all GCLB resources")
+		klog.Warningf("No params.Regional forwarding rules found, can't get all GCLB resources")
 		return nil
 	}
 
 	var urlMapKey *meta.Key
 	for _, rfr := range rfrs {
-		frKey := meta.RegionalKey(rfr.Name, region)
+		frKey := meta.RegionalKey(rfr.Name, params.Region)
 		gclb.ForwardingRule[*frKey] = &ForwardingRule{GA: rfr}
-		if hasAlphaResource("forwardingRule", validators) {
+		if hasAlphaResource("forwardingRule", params.Validators) {
 			fr, err := c.AlphaForwardingRules().Get(ctx, frKey)
 			if err != nil {
 				klog.Warningf("Error getting alpha forwarding rules: %v", err)
@@ -559,7 +563,7 @@ func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, vip stri
 			}
 			gclb.ForwardingRule[*frKey].Alpha = fr
 		}
-		if hasBetaResource("forwardingRule", validators) {
+		if hasBetaResource("forwardingRule", params.Validators) {
 			fr, err := c.BetaForwardingRules().Get(ctx, frKey)
 			if err != nil {
 				klog.Warningf("Error getting alpha forwarding rules: %v", err)
@@ -583,7 +587,7 @@ func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, vip stri
 				return err
 			}
 			gclb.TargetHTTPProxy[*resID.Key] = &TargetHTTPProxy{Beta: p}
-			if hasAlphaResource("targetHttpProxy", validators) || hasBetaResource("targetHttpProxy", validators) {
+			if hasAlphaResource("targetHttpProxy", params.Validators) || hasBetaResource("targetHttpProxy", params.Validators) {
 				return errors.New("unsupported targetHttpProxy version")
 			}
 
@@ -607,7 +611,7 @@ func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, vip stri
 				return err
 			}
 			gclb.TargetHTTPSProxy[*resID.Key] = &TargetHTTPSProxy{Beta: p}
-			if hasAlphaResource("targetHttpsProxy", validators) || hasBetaResource("targetHttpsProxy", validators) {
+			if hasAlphaResource("targetHttpsProxy", params.Validators) || hasBetaResource("targetHttpsProxy", params.Validators) {
 				return errors.New("unsupported targetHttpsProxy version")
 			}
 
@@ -630,13 +634,13 @@ func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, vip stri
 	}
 
 	// TargetProxy => URLMap
-	// Use beta since region is not GA yet
+	// Use beta since params.Region is not GA yet
 	urlMap, err := c.BetaRegionUrlMaps().Get(ctx, urlMapKey)
 	if err != nil {
 		return err
 	}
 	gclb.URLMap[*urlMapKey] = &URLMap{Beta: urlMap}
-	if hasAlphaResource("urlMap", validators) || hasBetaResource("urlMap", validators) {
+	if hasAlphaResource("urlMap", params.Validators) || hasBetaResource("urlMap", params.Validators) {
 		return errors.New("unsupported urlMap version")
 	}
 
@@ -671,14 +675,14 @@ func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, vip stri
 		}
 		gclb.BackendService[*bsKey] = &BackendService{GA: bs}
 
-		if hasAlphaResource("backendService", validators) {
+		if hasAlphaResource("backendService", params.Validators) {
 			bs, err := c.AlphaRegionBackendServices().Get(ctx, bsKey)
 			if err != nil {
 				return err
 			}
 			gclb.BackendService[*bsKey].Alpha = bs
 		}
-		if hasBetaResource("backendService", validators) {
+		if hasBetaResource("backendService", params.Validators) {
 			bs, err := c.BetaRegionBackendServices().Get(ctx, bsKey)
 			if err != nil {
 				return err
@@ -687,12 +691,12 @@ func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, vip stri
 		}
 	}
 
-	negKeys := []*meta.Key{}
-	igKeys := []*meta.Key{}
+	var negKeys []*meta.Key
+	var igKeys []*meta.Key
 	// Fetch NEG Backends
 	for _, bsKey := range bsKeys {
-		beGroups := []string{}
-		if hasAlphaResource("backendService", validators) {
+		var beGroups []string
+		if hasAlphaResource("backendService", params.Validators) {
 			bs, err := c.AlphaRegionBackendServices().Get(ctx, bsKey)
 			if err != nil {
 				return err
@@ -735,14 +739,14 @@ func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, vip stri
 			return err
 		}
 		gclb.NetworkEndpointGroup[*negKey] = &NetworkEndpointGroup{GA: neg}
-		if hasAlphaResource(NegResourceType, validators) {
+		if hasAlphaResource(NegResourceType, params.Validators) {
 			neg, err := c.AlphaNetworkEndpointGroups().Get(ctx, negKey)
 			if err != nil {
 				return err
 			}
 			gclb.NetworkEndpointGroup[*negKey].Alpha = neg
 		}
-		if hasBetaResource(NegResourceType, validators) {
+		if hasBetaResource(NegResourceType, params.Validators) {
 			neg, err := c.BetaNetworkEndpointGroups().Get(ctx, negKey)
 			if err != nil {
 				return err
