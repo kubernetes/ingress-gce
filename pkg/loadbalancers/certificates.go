@@ -76,7 +76,7 @@ func (l *L7) createSslCertificates(existingCerts []*composite.SslCertificate) ([
 	for _, tlsCert := range l.runtimeInfo.TLS {
 		ingCert := tlsCert.Cert
 		ingKey := tlsCert.Key
-		gcpCertName := l.namer.SSLCertName(l.Name, tlsCert.CertHash)
+		gcpCertName := l.namer.SSLCertName(tlsCert.CertHash)
 
 		if addedBy, exists := visitedCertMap[gcpCertName]; exists {
 			klog.V(3).Infof("Secret %q has a certificate already used by %v", tlsCert.Name, addedBy)
@@ -98,7 +98,7 @@ func (l *L7) createSslCertificates(existingCerts []*composite.SslCertificate) ([
 		}
 		// Controller needs to create the certificate, no need to check if it exists and delete. If it did exist, it
 		// would have been listed in the populateSSLCert function and matched in the check above.
-		klog.V(2).Infof("Creating new sslCertificate %q for LB %q", gcpCertName, l.Name)
+		klog.V(2).Infof("Creating new sslCertificate %q for LB %q", gcpCertName, l)
 		cert := &composite.SslCertificate{
 			Name:        gcpCertName,
 			Certificate: ingCert,
@@ -112,7 +112,7 @@ func (l *L7) createSslCertificates(existingCerts []*composite.SslCertificate) ([
 		}
 		err = composite.CreateSslCertificate(l.cloud, key, cert)
 		if err != nil {
-			klog.Errorf("Failed to create new sslCertificate %q for %q - %v", gcpCertName, l.Name, err)
+			klog.Errorf("Failed to create new sslCertificate %q for %q - %v", gcpCertName, l, err)
 			failedCerts = append(failedCerts, gcpCertName+" Error:"+err.Error())
 			continue
 		}
@@ -157,7 +157,7 @@ func (l *L7) getSslCertificates(names []string) ([]*composite.SslCertificate, er
 			continue
 		}
 
-		klog.V(2).Infof("Using existing SslCertificate %v for %v", name, l.Name)
+		klog.V(2).Infof("Using existing SslCertificate %v for %v", name, l)
 		result = append(result, cert)
 	}
 	if len(failedCerts) != 0 {
@@ -213,8 +213,8 @@ func (l *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 		return nil, err
 	}
 	for _, c := range certs {
-		if l.namer.IsCertUsedForLB(l.Name, c.Name) {
-			klog.V(4).Infof("Populating ssl cert %s for l7 %s", c.Name, l.Name)
+		if l.namer.IsCertNameForLB(c.Name) {
+			klog.V(4).Infof("Populating ssl cert %s for l7 %s", c.Name, l)
 			result = append(result, c)
 		}
 	}
@@ -234,7 +234,7 @@ func (l *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 				continue
 			}
 
-			if !l.namer.IsLegacySSLCert(l.Name, name) {
+			if !l.namer.IsLegacySSLCert(name) {
 				continue
 			}
 			key, err := l.CreateKey(name)
@@ -243,7 +243,7 @@ func (l *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 			}
 			cert, _ := composite.GetSslCertificate(l.cloud, key, version)
 			if cert != nil {
-				klog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l.Name)
+				klog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l)
 				result = append(result, cert)
 			}
 		}
@@ -257,7 +257,7 @@ func (l *L7) deleteOldSSLCerts() {
 	}
 	certsMap := getMapfromCertList(l.sslCerts)
 	for _, cert := range l.oldSSLCerts {
-		if !l.namer.IsCertUsedForLB(l.Name, cert.Name) && !l.namer.IsLegacySSLCert(l.Name, cert.Name) {
+		if !l.namer.IsCertNameForLB(cert.Name) && !l.namer.IsLegacySSLCert(cert.Name) {
 			// retain cert if it is managed by GCE(non-ingress)
 			continue
 		}

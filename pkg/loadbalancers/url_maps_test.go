@@ -81,7 +81,9 @@ func TestToComputeURLMap(t *testing.T) {
 		},
 	}
 
-	gotComputeURLMap := toCompositeURLMap("lb-name", gceURLMap, namer, meta.GlobalKey("lb-name"))
+	namerFactory := namer_util.NewFrontendNamerFactory(namer)
+	feNamer := namerFactory.NamerForLbName("ns/lb-name")
+	gotComputeURLMap := toCompositeURLMap(gceURLMap, feNamer, meta.GlobalKey("ns-lb-name"))
 	if !mapsEqual(gotComputeURLMap, wantComputeMap) {
 		t.Errorf("toComputeURLMap() = \n%+v\n   want\n%+v", gotComputeURLMap, wantComputeMap)
 	}

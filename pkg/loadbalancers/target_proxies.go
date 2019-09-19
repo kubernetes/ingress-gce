@@ -37,7 +37,7 @@ func (l *L7) checkProxy() (err error) {
 	}
 	resourceID := cloud.ResourceID{ProjectID: "", Resource: "urlMaps", Key: key}
 	urlMapLink := resourceID.ResourcePath()
-	proxyName := l.namer.TargetProxy(l.Name, namer.HTTPProtocol)
+	proxyName := l.namer.TargetProxy(namer.HTTPProtocol)
 	key, err = l.CreateKey(proxyName)
 	if err != nil {
 		return err
@@ -91,7 +91,7 @@ func (l *L7) checkProxy() (err error) {
 
 func (l *L7) checkHttpsProxy() (err error) {
 	if len(l.sslCerts) == 0 {
-		klog.V(3).Infof("No SSL certificates for %q, will not create HTTPS proxy.", l.Name)
+		klog.V(3).Infof("No SSL certificates for %q, will not create HTTPS proxy.", l)
 		return nil
 	}
 
@@ -101,7 +101,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 	}
 	resourceID := cloud.ResourceID{ProjectID: "", Resource: "urlMaps", Key: key}
 	urlMapLink := resourceID.ResourcePath()
-	proxyName := l.namer.TargetProxy(l.Name, namer.HTTPSProtocol)
+	proxyName := l.namer.TargetProxy(namer.HTTPSProtocol)
 	key, err = l.CreateKey(proxyName)
 	if err != nil {
 		return err
@@ -178,7 +178,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 }
 
 func (l *L7) getSslCertLinkInUse() ([]string, error) {
-	proxyName := l.namer.TargetProxy(l.Name, namer.HTTPSProtocol)
+	proxyName := l.namer.TargetProxy(namer.HTTPSProtocol)
 	key, err := l.CreateKey(proxyName)
 	if err != nil {
 		return nil, err

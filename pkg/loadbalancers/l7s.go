@@ -25,31 +25,30 @@ import (
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
-	"k8s.io/ingress-gce/pkg/utils/namer"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
 // L7s implements LoadBalancerPool.
 type L7s struct {
-	cloud            *gce.Cloud
-	namer            *namer.Namer
+	cloud *gce.Cloud
+	// v1NamerHelper is an interface for helper functions for v1 frontend naming scheme.
+	v1NamerHelper    namer_util.V1FrontendNamer
 	recorderProducer events.RecorderProducer
-}
-
-// Namer returns the namer associated with the L7s.
-func (l *L7s) Namer() *namer.Namer {
-	return l.namer
+	// namerFactory creates frontend naming policy for ingress/ load balancer.
+	namerFactory namer_util.IngressFrontendNamerFactory
 }
 
 // NewLoadBalancerPool returns a new loadbalancer pool.
 // - cloud: implements LoadBalancers. Used to sync L7 loadbalancer resources
 //	 with the cloud.
-func NewLoadBalancerPool(cloud *gce.Cloud, namer *namer.Namer, recorderProducer events.RecorderProducer) LoadBalancerPool {
+func NewLoadBalancerPool(cloud *gce.Cloud, v1NamerHelper namer_util.V1FrontendNamer, recorderProducer events.RecorderProducer, namerFactory namer_util.IngressFrontendNamerFactory) LoadBalancerPool {
 	return &L7s{
 		cloud:            cloud,
-		namer:            namer,
+		v1NamerHelper:    v1NamerHelper,
 		recorderProducer: recorderProducer,
+		namerFactory:     namerFactory,
 	}
 }
 
@@ -57,16 +56,15 @@ func NewLoadBalancerPool(cloud *gce.Cloud, namer *namer.Namer, recorderProducer 
 func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 	lb := &L7{
 		runtimeInfo: ri,
-		Name:        l.namer.LoadBalancer(ri.Name),
 		cloud:       l.cloud,
-		namer:       l.namer,
+		namer:       l.namerFactory.Namer(ri.Ingress),
 		recorder:    l.recorderProducer.Recorder(ri.Ingress.Namespace),
 		scope:       features.ScopeFromIngress(ri.Ingress),
 		ingress:     *ri.Ingress,
 	}
 
 	if err := lb.edgeHop(); err != nil {
-		return nil, fmt.Errorf("loadbalancer %v does not exist: %v", lb.Name, err)
+		return nil, fmt.Errorf("loadbalancer %v does not exist: %v", lb.String(), err)
 	}
 	return lb, nil
 }
@@ -74,14 +72,13 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 // Delete deletes a load balancer by name.
 func (l *L7s) Delete(name string, versions *features.ResourceVersions, scope meta.KeyType) error {
 	lb := &L7{
-		runtimeInfo: &L7RuntimeInfo{Name: name},
-		Name:        l.namer.LoadBalancer(name),
+		runtimeInfo: &L7RuntimeInfo{},
 		cloud:       l.cloud,
-		namer:       l.namer,
+		namer:       l.namerFactory.NamerForLbName(name),
 		scope:       scope,
 	}
 
-	klog.V(3).Infof("Deleting lb %v", lb.Name)
+	klog.V(3).Infof("Deleting lb %v", lb.String())
 
 	if err := lb.Cleanup(versions); err != nil {
 		return err
@@ -98,7 +95,7 @@ func (l *L7s) List(key *meta.Key, version meta.Version) ([]*composite.UrlMap, er
 	}
 
 	for _, um := range urlMaps {
-		if l.namer.NameBelongsToCluster(um.Name) {
+		if l.v1NamerHelper.NameBelongsToCluster(um.Name) {
 			result = append(result, um)
 		}
 	}
@@ -113,7 +110,7 @@ func (l *L7s) GC(names []string) error {
 
 	knownLoadBalancers := sets.NewString()
 	for _, n := range names {
-		knownLoadBalancers.Insert(l.namer.LoadBalancer(n))
+		knownLoadBalancers.Insert(l.v1NamerHelper.LoadBalancer(n))
 	}
 
 	// GC L7-ILB LBs if enabled
@@ -152,8 +149,8 @@ func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers sets.String, ve
 
 	// Delete unknown loadbalancers
 	for _, um := range urlMaps {
-		nameParts := l.namer.ParseName(um.Name)
-		l7Name := l.namer.LoadBalancerFromLbName(nameParts.LbName)
+		nameParts := l.v1NamerHelper.ParseName(um.Name)
+		l7Name := l.v1NamerHelper.LoadBalancerFromLbName(nameParts.LbName)
 
 		if knownLoadBalancers.Has(l7Name) {
 			klog.V(3).Infof("Load balancer %v is still valid, not GC'ing", l7Name)

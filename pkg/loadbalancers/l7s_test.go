@@ -48,6 +48,8 @@ func TestGC(t *testing.T) {
 	pool := newTestLoadBalancerPool()
 	l7sPool := pool.(*L7s)
 	cloud := l7sPool.cloud
+	v1NamerHelper := l7sPool.v1NamerHelper
+	namerFactory := l7sPool.namerFactory
 	testCases := []struct {
 		desc       string
 		ingressLBs []string
@@ -162,6 +164,7 @@ func TestGC(t *testing.T) {
 	}
 
 	otherNamer := namer_util.NewNamer("clusteruid", "fw1")
+	otherFeNamerFactory := namer_util.NewFrontendNamerFactory(otherNamer)
 	otherKeys := []string{
 		"a/a",
 		"namespace/name",
@@ -172,12 +175,14 @@ func TestGC(t *testing.T) {
 	versions := features.GAResourceVersions
 
 	for _, key := range otherKeys {
-		createFakeLoadbalancer(cloud, otherNamer, key, versions, defaultScope)
+		namer := otherFeNamerFactory.NamerForLbName(otherNamer.LoadBalancer(key))
+		createFakeLoadbalancer(cloud, namer, versions, defaultScope)
 	}
 
 	for _, tc := range testCases {
 		for _, key := range tc.gcpLBs {
-			createFakeLoadbalancer(l7sPool.cloud, l7sPool.namer, key, versions, defaultScope)
+			namer := namerFactory.NamerForLbName(v1NamerHelper.LoadBalancer(key))
+			createFakeLoadbalancer(cloud, namer, versions, defaultScope)
 		}
 
 		err := l7sPool.GC(tc.ingressLBs)
@@ -187,7 +192,8 @@ func TestGC(t *testing.T) {
 
 		// check if other LB are not deleted
 		for _, key := range otherKeys {
-			if err := checkFakeLoadBalancer(l7sPool.cloud, otherNamer, key, versions, defaultScope, true); err != nil {
+			namer := otherFeNamerFactory.NamerForLbName(otherNamer.LoadBalancer(key))
+			if err := checkFakeLoadBalancer(cloud, namer, versions, defaultScope, true); err != nil {
 				t.Errorf("For case %q and key %q, do not expect err: %v", tc.desc, key, err)
 			}
 		}
@@ -201,17 +207,19 @@ func TestGC(t *testing.T) {
 		// check if the ones that are expected to be GC is actually GCed.
 		expectRemovedLBs := sets.NewString(tc.gcpLBs...).Difference(sets.NewString(tc.expectLBs...)).Difference(sets.NewString(tc.ingressLBs...))
 		for _, key := range expectRemovedLBs.List() {
-			if err := checkFakeLoadBalancer(l7sPool.cloud, l7sPool.namer, key, versions, defaultScope, false); err != nil {
+			namer := namerFactory.NamerForLbName(v1NamerHelper.LoadBalancer(key))
+			if err := checkFakeLoadBalancer(cloud, namer, versions, defaultScope, false); err != nil {
 				t.Errorf("For case %q and key %q, do not expect err: %v", tc.desc, key, err)
 			}
 		}
 
 		// check if all expected LBs exists
 		for _, key := range tc.expectLBs {
-			if err := checkFakeLoadBalancer(l7sPool.cloud, l7sPool.namer, key, versions, defaultScope, true); err != nil {
+			namer := namerFactory.NamerForLbName(v1NamerHelper.LoadBalancer(key))
+			if err := checkFakeLoadBalancer(cloud, namer, versions, defaultScope, true); err != nil {
 				t.Errorf("For case %q and key %q, do not expect err: %v", tc.desc, key, err)
 			}
-			removeFakeLoadBalancer(l7sPool.cloud, l7sPool.namer, key, versions, defaultScope)
+			removeFakeLoadBalancer(cloud, namer, versions, defaultScope)
 		}
 	}
 }
@@ -220,7 +228,6 @@ func TestDoNotGCWantedLB(t *testing.T) {
 	t.Parallel()
 	pool := newTestLoadBalancerPool()
 	l7sPool := pool.(*L7s)
-	namer := l7sPool.namer
 	type testCase struct {
 		desc string
 		key  string
@@ -238,20 +245,21 @@ func TestDoNotGCWantedLB(t *testing.T) {
 	versions := features.GAResourceVersions
 
 	for _, tc := range testCases {
-		createFakeLoadbalancer(l7sPool.cloud, namer, tc.key, versions, defaultScope)
+		namer := l7sPool.namerFactory.NamerForLbName(l7sPool.v1NamerHelper.LoadBalancer(tc.key))
+		createFakeLoadbalancer(l7sPool.cloud, namer, versions, defaultScope)
 		err := l7sPool.GC([]string{tc.key})
 		if err != nil {
 			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
 		}
 
-		if err := checkFakeLoadBalancer(l7sPool.cloud, namer, tc.key, versions, defaultScope, true); err != nil {
+		if err := checkFakeLoadBalancer(l7sPool.cloud, namer, versions, defaultScope, true); err != nil {
 			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
 		}
 		urlMaps, _ := l7sPool.cloud.ListURLMaps()
 		if len(urlMaps) != 1+numOfExtraUrlMap {
 			t.Errorf("For case %q, expect %d urlmaps, but got %d.", tc.desc, 1+numOfExtraUrlMap, len(urlMaps))
 		}
-		removeFakeLoadBalancer(l7sPool.cloud, namer, tc.key, versions, defaultScope)
+		removeFakeLoadBalancer(l7sPool.cloud, namer, versions, defaultScope)
 	}
 }
 
@@ -261,7 +269,6 @@ func TestGCToLeakLB(t *testing.T) {
 	t.Parallel()
 	pool := newTestLoadBalancerPool()
 	l7sPool := pool.(*L7s)
-	namer := l7sPool.namer
 	type testCase struct {
 		desc string
 		key  string
@@ -274,19 +281,20 @@ func TestGCToLeakLB(t *testing.T) {
 	versions := features.GAResourceVersions
 
 	for _, tc := range testCases {
-		createFakeLoadbalancer(l7sPool.cloud, namer, tc.key, versions, defaultScope)
+		namer := l7sPool.namerFactory.NamerForLbName(l7sPool.v1NamerHelper.LoadBalancer(tc.key))
+		createFakeLoadbalancer(l7sPool.cloud, namer, versions, defaultScope)
 		err := l7sPool.GC([]string{})
 		if err != nil {
 			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
 		}
 
 		if len(tc.key) >= resourceLeakLimit {
-			if err := checkFakeLoadBalancer(l7sPool.cloud, namer, tc.key, versions, defaultScope, true); err != nil {
+			if err := checkFakeLoadBalancer(l7sPool.cloud, namer, versions, defaultScope, true); err != nil {
 				t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
 			}
-			removeFakeLoadBalancer(l7sPool.cloud, namer, tc.key, versions, defaultScope)
+			removeFakeLoadBalancer(l7sPool.cloud, namer, versions, defaultScope)
 		} else {
-			if err := checkFakeLoadBalancer(l7sPool.cloud, namer, tc.key, versions, defaultScope, false); err != nil {
+			if err := checkFakeLoadBalancer(l7sPool.cloud, namer, versions, defaultScope, false); err != nil {
 				t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
 			}
 		}
@@ -297,46 +305,42 @@ func newTestLoadBalancerPool() LoadBalancerPool {
 	namer := namer_util.NewNamer(testClusterName, "fw1")
 	fakeGCECloud := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	ctx := &context.ControllerContext{}
-	return NewLoadBalancerPool(fakeGCECloud, namer, ctx)
+	return NewLoadBalancerPool(fakeGCECloud, namer, ctx, namer_util.NewFrontendNamerFactory(namer))
 }
 
-func createFakeLoadbalancer(cloud *gce.Cloud, namer *namer_util.Namer, lbKey string, versions *features.ResourceVersions, scope meta.KeyType) {
-	lbName := namer.LoadBalancer(lbKey)
+func createFakeLoadbalancer(cloud *gce.Cloud, namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType) {
 	key, _ := composite.CreateKey(cloud, "", scope)
 
-	key.Name = namer.ForwardingRule(lbName, namer_util.HTTPProtocol)
+	key.Name = namer.ForwardingRule(namer_util.HTTPProtocol)
 	composite.CreateForwardingRule(cloud, key, &composite.ForwardingRule{Name: key.Name, Version: versions.ForwardingRule})
 
-	key.Name = namer.TargetProxy(lbName, namer_util.HTTPProtocol)
+	key.Name = namer.TargetProxy(namer_util.HTTPProtocol)
 	composite.CreateTargetHttpProxy(cloud, key, &composite.TargetHttpProxy{Name: key.Name, Version: versions.TargetHttpProxy})
 
-	key.Name = namer.UrlMap(lbName)
+	key.Name = namer.UrlMap()
 	composite.CreateUrlMap(cloud, key, &composite.UrlMap{Name: key.Name, Version: versions.UrlMap})
 
-	cloud.ReserveGlobalAddress(&compute.Address{Name: namer.ForwardingRule(lbName, namer_util.HTTPProtocol)})
+	cloud.ReserveGlobalAddress(&compute.Address{Name: namer.ForwardingRule(namer_util.HTTPProtocol)})
 
 }
 
-func removeFakeLoadBalancer(cloud *gce.Cloud, namer *namer_util.Namer, lbKey string, versions *features.ResourceVersions, scope meta.KeyType) {
-	lbName := namer.LoadBalancer(lbKey)
-
+func removeFakeLoadBalancer(cloud *gce.Cloud, namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType) {
 	key, _ := composite.CreateKey(cloud, "", scope)
-	key.Name = namer.ForwardingRule(lbName, namer_util.HTTPProtocol)
+	key.Name = namer.ForwardingRule(namer_util.HTTPProtocol)
 	composite.DeleteForwardingRule(cloud, key, versions.ForwardingRule)
 
-	key.Name = namer.TargetProxy(lbName, namer_util.HTTPProtocol)
+	key.Name = namer.TargetProxy(namer_util.HTTPProtocol)
 	composite.DeleteTargetHttpProxy(cloud, key, versions.TargetHttpProxy)
 
-	key.Name = namer.UrlMap(lbName)
+	key.Name = namer.UrlMap()
 	composite.DeleteUrlMap(cloud, key, versions.UrlMap)
 
-	cloud.DeleteGlobalAddress(namer.ForwardingRule(lbName, namer_util.HTTPProtocol))
+	cloud.DeleteGlobalAddress(namer.ForwardingRule(namer_util.HTTPProtocol))
 }
 
-func checkFakeLoadBalancer(cloud *gce.Cloud, namer *namer_util.Namer, lbKey string, versions *features.ResourceVersions, scope meta.KeyType, expectPresent bool) error {
+func checkFakeLoadBalancer(cloud *gce.Cloud, namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType, expectPresent bool) error {
 	var err error
-	lbName := namer.LoadBalancer(lbKey)
-	key, _ := composite.CreateKey(cloud, namer.ForwardingRule(lbName, namer_util.HTTPProtocol), scope)
+	key, _ := composite.CreateKey(cloud, namer.ForwardingRule(namer_util.HTTPProtocol), scope)
 
 	_, err = composite.GetForwardingRule(cloud, key, versions.ForwardingRule)
 	if expectPresent && err != nil {
@@ -346,7 +350,7 @@ func checkFakeLoadBalancer(cloud *gce.Cloud, namer *namer_util.Namer, lbKey stri
 		return fmt.Errorf("expect GlobalForwardingRule %q to not present: %v", key, err)
 	}
 
-	key.Name = namer.TargetProxy(lbName, namer_util.HTTPProtocol)
+	key.Name = namer.TargetProxy(namer_util.HTTPProtocol)
 	_, err = composite.GetTargetHttpProxy(cloud, key, versions.TargetHttpProxy)
 	if expectPresent && err != nil {
 		return err
@@ -355,7 +359,7 @@ func checkFakeLoadBalancer(cloud *gce.Cloud, namer *namer_util.Namer, lbKey stri
 		return fmt.Errorf("expect TargetHTTPProxy %q to not present: %v", key, err)
 	}
 
-	key.Name = namer.UrlMap(lbName)
+	key.Name = namer.UrlMap()
 	_, err = composite.GetUrlMap(cloud, key, versions.UrlMap)
 	if expectPresent && err != nil {
 		return err

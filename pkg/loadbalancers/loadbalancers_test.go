@@ -38,6 +38,7 @@ import (
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/kubernetes/pkg/util/slice"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -57,6 +58,8 @@ type testJig struct {
 	fakeGCE *gce.Cloud
 	mock    *cloud.MockGCE
 	namer   *namer_util.Namer
+	ing     *v1beta1.Ingress
+	feNamer namer_util.IngressFrontendNamer
 	t       *testing.T
 }
 
@@ -94,33 +97,18 @@ func newTestJig(t *testing.T) *testJig {
 	}
 	mockGCE.MockGlobalForwardingRules.InsertHook = InsertGlobalForwardingRuleHook
 
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(namer).Namer(ing)
+
 	return &testJig{
 		pool:    newFakeLoadBalancerPool(fakeGCE, t, namer),
 		fakeGCE: fakeGCE,
 		mock:    mockGCE,
 		namer:   namer,
+		ing:     ing,
+		feNamer: feNamer,
 		t:       t,
 	}
-}
-
-func (j *testJig) UMName(lbName string) string {
-	return j.namer.UrlMap(lbName)
-}
-
-func (j *testJig) TPName(lbName string, https bool) string {
-	protocol := namer_util.HTTPProtocol
-	if https {
-		protocol = namer_util.HTTPSProtocol
-	}
-	return j.namer.TargetProxy(lbName, protocol)
-}
-
-func (j *testJig) FWName(lbName string, https bool) string {
-	proto := namer_util.HTTPProtocol
-	if https {
-		proto = namer_util.HTTPSProtocol
-	}
-	return j.namer.ForwardingRule(lbName, proto)
 }
 
 // TODO: (shance) implement this once we switch to composites
@@ -142,7 +130,7 @@ func newFakeLoadBalancerPool(cloud *gce.Cloud, t *testing.T, namer *namer_util.N
 	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 
-	return NewLoadBalancerPool(cloud, namer, events.RecorderProducerMock{})
+	return NewLoadBalancerPool(cloud, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer))
 }
 
 func newILBIngress() *v1beta1.Ingress {
@@ -162,9 +150,8 @@ func TestCreateHTTPLoadBalancer(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
-		Name:      j.namer.LoadBalancer(ingressName),
 		AllowHTTP: true,
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
@@ -184,9 +171,8 @@ func TestCreateHTTPILBLoadBalancer(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
-		Name:      j.namer.LoadBalancer(ingressName),
 		AllowHTTP: true,
 		UrlMap:    gceUrlMap,
 		Ingress:   newILBIngress(),
@@ -206,9 +192,8 @@ func TestCreateHTTPSILBLoadBalancer(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
-		Name:      j.namer.LoadBalancer(ingressName),
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:    gceUrlMap,
@@ -229,9 +214,8 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
-		Name:      j.namer.LoadBalancer(ingressName),
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:    gceUrlMap,
@@ -247,28 +231,29 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 
 func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7) {
 	t.Helper()
-	lbName := j.namer.LoadBalancer(ingressName)
 	versions := l7.Versions()
 
-	key, err := composite.CreateKey(j.fakeGCE, j.UMName(lbName), l7.scope)
+	key, err := composite.CreateKey(j.fakeGCE, l7.namer.UrlMap(), l7.scope)
 	if err != nil {
 		t.Fatal(err)
 	}
 	um, err := composite.GetUrlMap(j.fakeGCE, key, versions.UrlMap)
 
-	key.Name = j.TPName(lbName, true)
+	tpsName := l7.namer.TargetProxy(namer_util.HTTPSProtocol)
+	key.Name = tpsName
 	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, versions.TargetHttpsProxy)
 	if err != nil {
-		t.Fatalf("j.fakeGCE.GetTargetHTTPSProxy(%q) = _, %v; want nil", j.TPName(lbName, true), err)
+		t.Fatalf("j.fakeGCE.GetTargetHTTPSProxy(%q) = _, %v; want nil", tpsName, err)
 	}
 	if !utils.EqualResourcePaths(tps.UrlMap, um.SelfLink) {
 		t.Fatalf("tps.UrlMap = %q, want %q", tps.UrlMap, um.SelfLink)
 	}
 
-	key.Name = j.FWName(lbName, true)
+	fwsName := l7.namer.ForwardingRule(namer_util.HTTPSProtocol)
+	key.Name = fwsName
 	fws, err := composite.GetForwardingRule(j.fakeGCE, key, versions.ForwardingRule)
 	if err != nil {
-		t.Fatalf("j.fakeGCE.GetGlobalForwardingRule(%q) = _, %v, want nil", j.FWName(lbName, true), err)
+		t.Fatalf("j.fakeGCE.GetGlobalForwardingRule(%q) = _, %v, want nil", fwsName, err)
 	}
 	if !utils.EqualResourcePaths(fws.Target, tps.SelfLink) {
 		t.Fatalf("fws.Target = %q, want %q", fws.Target, tps.SelfLink)
@@ -280,26 +265,27 @@ func verifyHTTPSForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7) {
 
 func verifyHTTPForwardingRuleAndProxyLinks(t *testing.T, j *testJig, l7 *L7) {
 	t.Helper()
-	lbName := j.namer.LoadBalancer(ingressName)
 	versions := l7.Versions()
 
-	key, err := composite.CreateKey(j.fakeGCE, j.UMName(lbName), l7.scope)
+	key, err := composite.CreateKey(j.fakeGCE, l7.namer.UrlMap(), l7.scope)
 	if err != nil {
 		t.Fatal(err)
 	}
 	um, err := composite.GetUrlMap(j.fakeGCE, key, versions.UrlMap)
-	key.Name = j.TPName(lbName, false)
+	tpName := l7.namer.TargetProxy(namer_util.HTTPProtocol)
+	key.Name = tpName
 	tps, err := composite.GetTargetHttpProxy(j.fakeGCE, key, versions.TargetHttpProxy)
 	if err != nil {
-		t.Fatalf("j.fakeGCE.GetTargetHTTPProxy(%q) = _, %v; want nil", j.TPName(lbName, false), err)
+		t.Fatalf("j.fakeGCE.GetTargetHTTPProxy(%q) = _, %v; want nil", tpName, err)
 	}
 	if !utils.EqualResourcePaths(tps.UrlMap, um.SelfLink) {
 		t.Fatalf("tp.UrlMap = %q, want %q", tps.UrlMap, um.SelfLink)
 	}
-	key.Name = j.FWName(lbName, false)
+	fwName := l7.namer.ForwardingRule(namer_util.HTTPProtocol)
+	key.Name = fwName
 	fws, err := composite.GetForwardingRule(j.fakeGCE, key, versions.ForwardingRule)
 	if err != nil {
-		t.Fatalf("j.fakeGCE.GetGlobalForwardingRule(%q) = _, %v, want nil", j.FWName(lbName, false), err)
+		t.Fatalf("j.fakeGCE.GetGlobalForwardingRule(%q) = _, %v, want nil", fwName, err)
 	}
 	if !utils.EqualResourcePaths(fws.Target, tps.SelfLink) {
 		t.Fatalf("fw.Target = %q, want %q", fws.Target, tps.SelfLink)
@@ -316,17 +302,17 @@ func TestCertUpdate(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
-	lbName := j.namer.LoadBalancer(ingressName)
-	certName1 := j.namer.SSLCertName(lbName, GetCertHash("cert"))
-	certName2 := j.namer.SSLCertName(lbName, GetCertHash("cert2"))
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(j.namer).Namer(ing)
+	certName1 := feNamer.SSLCertName(GetCertHash("cert"))
+	certName2 := feNamer.SSLCertName(GetCertHash("cert2"))
 
 	lbInfo := &L7RuntimeInfo{
-		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:    gceUrlMap,
-		Ingress:   newIngress(),
+		Ingress:   ing,
 	}
 
 	// Sync first cert
@@ -335,7 +321,7 @@ func TestCertUpdate(t *testing.T) {
 	}
 
 	// Verify certs
-	t.Logf("lbName=%q, name=%q", lbName, certName1)
+	t.Logf("lbName=%q, name=%q", feNamer.LbName(), certName1)
 	expectCerts := map[string]string{certName1: lbInfo.TLS[0].Cert}
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 
@@ -354,25 +340,25 @@ func TestMultipleSecretsWithSameCert(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
-	lbName := j.namer.LoadBalancer(ingressName)
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(j.namer).Namer(ing)
 
 	lbInfo := &L7RuntimeInfo{
-		Name:      lbName,
 		AllowHTTP: false,
 		TLS: []*TLSCerts{
 			createCert("key", "cert", "secret-a"),
 			createCert("key", "cert", "secret-b"),
 		},
 		UrlMap:  gceUrlMap,
-		Ingress: newIngress(),
+		Ingress: ing,
 	}
 
 	// Sync first cert
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
 	}
-	certName := j.namer.SSLCertName(lbName, GetCertHash("cert"))
+	certName := feNamer.SSLCertName(GetCertHash("cert"))
 	expectCerts := map[string]string{certName: lbInfo.TLS[0].Cert}
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 }
@@ -383,17 +369,17 @@ func TestCertCreationWithCollision(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
-	lbName := j.namer.LoadBalancer(ingressName)
-	certName1 := j.namer.SSLCertName(lbName, GetCertHash("cert"))
-	certName2 := j.namer.SSLCertName(lbName, GetCertHash("cert2"))
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(j.namer).Namer(ing)
+	certName1 := feNamer.SSLCertName(GetCertHash("cert"))
+	certName2 := feNamer.SSLCertName(GetCertHash("cert2"))
 
 	lbInfo := &L7RuntimeInfo{
-		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:    gceUrlMap,
-		Ingress:   newIngress(),
+		Ingress:   ing,
 	}
 
 	// Have the same name used by orphaned cert
@@ -441,23 +427,23 @@ func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	cert1 := createCert("key", "cert", "name")
 	cert2 := createCert("key2", "cert2", "name2")
 	cert3 := createCert("key3", "cert3", "name3")
-	lbName := j.namer.LoadBalancer(ingressName)
-	certName1 := j.namer.SSLCertName(lbName, cert1.CertHash)
-	certName2 := j.namer.SSLCertName(lbName, cert2.CertHash)
-	certName3 := j.namer.SSLCertName(lbName, cert3.CertHash)
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(j.namer).Namer(ing)
+	certName1 := feNamer.SSLCertName(cert1.CertHash)
+	certName2 := feNamer.SSLCertName(cert2.CertHash)
+	certName3 := feNamer.SSLCertName(cert3.CertHash)
 
 	expectCerts := map[string]string{}
 
 	lbInfo := &L7RuntimeInfo{
-		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       []*TLSCerts{cert1},
 		UrlMap:    gceUrlMap,
-		Ingress:   newIngress(),
+		Ingress:   ing,
 	}
 	expectCerts[certName1] = cert1.Cert
 
@@ -492,18 +478,18 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
-	lbName := j.namer.LoadBalancer(ingressName)
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(j.namer).Namer(ing)
 	lbInfo := &L7RuntimeInfo{
-		Name:      lbName,
 		AllowHTTP: false,
 		UrlMap:    gceUrlMap,
-		Ingress:   newIngress(),
+		Ingress:   ing,
 	}
-	oldCertName := "k8s-ssl-" + lbInfo.Name
+	oldCertName := "k8s-ssl-" + feNamer.LbName()
 	tlsCert := createCert("key", "cert", "name")
 	lbInfo.TLS = []*TLSCerts{tlsCert}
-	newCertName := j.namer.SSLCertName(lbName, tlsCert.CertHash)
+	newCertName := feNamer.SSLCertName(tlsCert.CertHash)
 
 	// Manually create a target proxy and assign a legacy cert to it.
 	sslCert := &composite.SslCertificate{Name: oldCertName, Certificate: "cert", Version: defaultVersion}
@@ -513,7 +499,7 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 	}
 	composite.CreateSslCertificate(j.fakeGCE, key, sslCert)
 	sslCert, _ = composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
-	tpName := j.TPName(lbName, true)
+	tpName := feNamer.TargetProxy(namer_util.HTTPSProtocol)
 	newProxy := &composite.TargetHttpsProxy{
 		Name:            tpName,
 		Description:     "fake",
@@ -552,24 +538,24 @@ func TestMaxCertsUpload(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	var tlsCerts []*TLSCerts
 	expectCerts := make(map[string]string)
 	expectCertsExtra := make(map[string]string)
-	lbName := j.namer.LoadBalancer(ingressName)
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(j.namer).Namer(ing)
 
 	for ix := 0; ix < FakeCertQuota; ix++ {
 		str := strconv.Itoa(ix)
 		tlsCerts = append(tlsCerts, createCert("key-"+str, "cert-"+str, "name-"+str))
-		certName := j.namer.SSLCertName(lbName, GetCertHash("cert-"+str))
+		certName := feNamer.SSLCertName(GetCertHash("cert-" + str))
 		expectCerts[certName] = "cert-" + str
 	}
 	lbInfo := &L7RuntimeInfo{
-		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       tlsCerts,
 		UrlMap:    gceUrlMap,
-		Ingress:   newIngress(),
+		Ingress:   ing,
 	}
 
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
@@ -587,7 +573,7 @@ func TestMaxCertsUpload(t *testing.T) {
 	// Set cert count less than cert creation limit but more than target proxy limit
 	lbInfo.TLS = lbInfo.TLS[:TargetProxyCertLimit+1]
 	for _, cert := range lbInfo.TLS {
-		expectCertsExtra[j.namer.SSLCertName(lbName, cert.CertHash)] = cert.Cert
+		expectCertsExtra[feNamer.SSLCertName(cert.CertHash)] = cert.Cert
 	}
 	_, err = j.pool.Ensure(lbInfo)
 	if err == nil {
@@ -603,7 +589,7 @@ func TestMaxCertsUpload(t *testing.T) {
 	}
 	expectCerts = make(map[string]string)
 	for _, cert := range lbInfo.TLS {
-		expectCerts[j.namer.SSLCertName(lbName, cert.CertHash)] = cert.Cert
+		expectCerts[feNamer.SSLCertName(cert.CertHash)] = cert.Cert
 	}
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 }
@@ -616,25 +602,25 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	var tlsCerts []*TLSCerts
 	expectCerts := make(map[string]string)
-	lbName := j.namer.LoadBalancer(ingressName)
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(j.namer).Namer(ing)
 	contents := ""
 
 	for ix := 0; ix < 3; ix++ {
 		str := strconv.Itoa(ix)
 		contents = "cert-" + str + " foo.com"
 		tlsCerts = append(tlsCerts, createCert("key-"+str, contents, "name-"+str))
-		certName := j.namer.SSLCertName(lbName, GetCertHash(contents))
+		certName := feNamer.SSLCertName(GetCertHash(contents))
 		expectCerts[certName] = contents
 	}
 	lbInfo := &L7RuntimeInfo{
-		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       tlsCerts,
 		UrlMap:    gceUrlMap,
-		Ingress:   newIngress(),
+		Ingress:   ing,
 	}
 
 	// Sync multiple times to make sure ordering is preserved
@@ -645,7 +631,7 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 		verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 		// Fetch the target proxy certs and go through in order
 		verifyProxyCertsInOrder(" foo.com", j, t)
-		j.pool.Delete(lbInfo.Name, features.GAResourceVersions, defaultScope)
+		j.pool.Delete(common.IngressKeyFunc(lbInfo.Ingress), features.GAResourceVersions, defaultScope)
 	}
 }
 
@@ -654,9 +640,8 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
-		Name:      j.namer.LoadBalancer(ingressName),
 		AllowHTTP: false,
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
@@ -701,7 +686,7 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 		verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 		// Fetch the target proxy certs and go through in order
 		verifyProxyCertsInOrder(" foo.com", j, t)
-		j.pool.Delete(lbInfo.Name, features.GAResourceVersions, defaultScope)
+		j.pool.Delete(common.IngressKeyFunc(lbInfo.Ingress), features.GAResourceVersions, defaultScope)
 	}
 }
 
@@ -712,16 +697,16 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
-	lbName := j.namer.LoadBalancer(ingressName)
-	certName1 := j.namer.SSLCertName(lbName, GetCertHash("cert"))
-	certName2 := j.namer.SSLCertName(lbName, GetCertHash("cert2"))
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(j.namer).Namer(ing)
+	certName1 := feNamer.SSLCertName(GetCertHash("cert"))
+	certName2 := feNamer.SSLCertName(GetCertHash("cert2"))
 
 	lbInfo := &L7RuntimeInfo{
-		Name:      lbName,
 		AllowHTTP: false,
 		UrlMap:    gceUrlMap,
-		Ingress:   newIngress(),
+		Ingress:   ing,
 	}
 
 	// Prepare pre-shared certs.
@@ -790,14 +775,14 @@ func verifyProxyCertsInOrder(hostname string, j *testJig, t *testing.T) {
 	t.Helper()
 	t.Logf("f =\n%s", j.String())
 
-	lbName := j.namer.LoadBalancer(ingressName)
-	key, err := composite.CreateKey(j.fakeGCE, j.TPName(lbName, true), defaultScope)
+	TPName := j.feNamer.TargetProxy(namer_util.HTTPSProtocol)
+	key, err := composite.CreateKey(j.fakeGCE, TPName, defaultScope)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, defaultVersion)
 	if err != nil {
-		t.Fatalf("expected https proxy to exist: %v, err: %v", j.TPName(lbName, true), err)
+		t.Fatalf("expected https proxy to exist: %v, err: %v", TPName, err)
 	}
 	count := 0
 	tmp := ""
@@ -855,14 +840,13 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	}
 
 	// httpsproxy needs to contain only the certs in expectCerts, nothing more, nothing less
-	lbName := j.namer.LoadBalancer(ingressName)
-	key, err = composite.CreateKey(j.fakeGCE, j.TPName(lbName, true), defaultScope)
+	key, err = composite.CreateKey(j.fakeGCE, j.feNamer.TargetProxy(namer_util.HTTPSProtocol), defaultScope)
 	if err != nil {
 		t.Fatal(err)
 	}
 	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, defaultVersion)
 	if err != nil {
-		t.Fatalf("expected https proxy to exist: %v, err: %v", j.TPName(lbName, true), err)
+		t.Fatalf("expected https proxy to exist: %v, err: %v", j.feNamer.TargetProxy(namer_util.HTTPSProtocol), err)
 	}
 	if len(tps.SslCertificates) != len(expectCertsProxy) {
 		t.Fatalf("Expected https proxy to have %d certs, actual %d", len(expectCertsProxy), len(tps.SslCertificates))
@@ -890,11 +874,9 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	tlsName := "external-cert-name"
-	namer := namer_util.NewNamer(clusterName, "fw1")
 	lbInfo := &L7RuntimeInfo{
-		Name:      namer.LoadBalancer(ingressName),
 		AllowHTTP: false,
 		TLSName:   tlsName,
 		UrlMap:    gceUrlMap,
@@ -926,9 +908,8 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
-		Name:      j.namer.LoadBalancer(ingressName),
 		AllowHTTP: true,
 		TLS:       []*TLSCerts{{Key: "key", Cert: "cert"}},
 		UrlMap:    gceUrlMap,
@@ -947,17 +928,16 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 	verifyHTTPForwardingRuleAndProxyLinks(t, j, l7)
 
 	// We know the forwarding rules exist, retrieve their addresses.
-	lbName := j.namer.LoadBalancer(ingressName)
 	key, err := composite.CreateKey(j.fakeGCE, "", defaultScope)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	key.Name = j.FWName(lbName, true)
+	key.Name = j.feNamer.ForwardingRule(namer_util.HTTPSProtocol)
 	fws, _ := composite.GetForwardingRule(j.fakeGCE, key, defaultVersion)
-	key.Name = j.FWName(lbName, false)
+	key.Name = j.feNamer.ForwardingRule(namer_util.HTTPProtocol)
 	fw, _ := composite.GetForwardingRule(j.fakeGCE, key, defaultVersion)
-	ip, err := j.fakeGCE.GetGlobalAddress(j.FWName(lbName, false))
+	ip, err := j.fakeGCE.GetGlobalAddress(j.feNamer.ForwardingRule(namer_util.HTTPProtocol))
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -967,9 +947,10 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 }
 
 // verifyURLMap gets the created URLMap and compares it against an expected one.
-func verifyURLMap(t *testing.T, j *testJig, name string, wantGCEURLMap *utils.GCEURLMap) {
+func verifyURLMap(t *testing.T, j *testJig, feNamer namer_util.IngressFrontendNamer, wantGCEURLMap *utils.GCEURLMap) {
 	t.Helper()
 
+	name := feNamer.UrlMap()
 	key, err := composite.CreateKey(j.fakeGCE, name, defaultScope)
 	if err != nil {
 		t.Fatal(err)
@@ -978,7 +959,7 @@ func verifyURLMap(t *testing.T, j *testJig, name string, wantGCEURLMap *utils.GC
 	if err != nil || um == nil {
 		t.Errorf("j.fakeGCE.GetUrlMap(%q) = %v, %v; want _, nil", name, um, err)
 	}
-	wantComputeURLMap := toCompositeURLMap(name, wantGCEURLMap, j.namer, key)
+	wantComputeURLMap := toCompositeURLMap(wantGCEURLMap, feNamer, key)
 	if !mapsEqual(wantComputeURLMap, um) {
 		t.Errorf("mapsEqual() = false, got\n%+v\n  want\n%+v", um, wantComputeURLMap)
 	}
@@ -990,18 +971,17 @@ func TestUrlMapChange(t *testing.T) {
 	um1 := utils.NewGCEURLMap()
 	um2 := utils.NewGCEURLMap()
 
-	um1.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar2", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	um1.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar2", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	um1.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
 
 	um2.PutPathRulesForHost("foo.example.com", []utils.PathRule{
-		utils.PathRule{Path: "/foo1", Backend: utils.ServicePort{NodePort: 30001, BackendNamer: j.namer}},
-		utils.PathRule{Path: "/foo2", Backend: utils.ServicePort{NodePort: 30002, BackendNamer: j.namer}},
+		{Path: "/foo1", Backend: utils.ServicePort{NodePort: 30001, BackendNamer: j.namer}},
+		{Path: "/foo2", Backend: utils.ServicePort{NodePort: 30002, BackendNamer: j.namer}},
 	})
-	um2.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar1", Backend: utils.ServicePort{NodePort: 30003, BackendNamer: j.namer}}})
+	um2.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar1", Backend: utils.ServicePort{NodePort: 30003, BackendNamer: j.namer}}})
 	um2.DefaultBackend = &utils.ServicePort{NodePort: 30004, BackendNamer: j.namer}
 
-	namer := namer_util.NewNamer(clusterName, "fw1")
-	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer(ingressName), AllowHTTP: true, UrlMap: um1, Ingress: newIngress()}
+	lbInfo := &L7RuntimeInfo{AllowHTTP: true, UrlMap: um1, Ingress: newIngress()}
 
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
@@ -1011,7 +991,7 @@ func TestUrlMapChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	verifyURLMap(t, j, l7.UrlMap().Name, um1)
+	verifyURLMap(t, j, l7.namer, um1)
 
 	// Change url map.
 	lbInfo.UrlMap = um2
@@ -1022,7 +1002,7 @@ func TestUrlMapChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	verifyURLMap(t, j, l7.UrlMap().Name, um2)
+	verifyURLMap(t, j, l7.namer, um2)
 }
 
 func TestPoolSyncNoChanges(t *testing.T) {
@@ -1042,21 +1022,20 @@ func TestPoolSyncNoChanges(t *testing.T) {
 	um2 := utils.NewGCEURLMap()
 
 	um1.PutPathRulesForHost("foo.example.com", []utils.PathRule{
-		utils.PathRule{Path: "/foo1", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}},
-		utils.PathRule{Path: "/foo2", Backend: utils.ServicePort{NodePort: 30001, BackendNamer: j.namer}},
+		{Path: "/foo1", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}},
+		{Path: "/foo2", Backend: utils.ServicePort{NodePort: 30001, BackendNamer: j.namer}},
 	})
-	um1.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar1", Backend: utils.ServicePort{NodePort: 30002, BackendNamer: j.namer}}})
+	um1.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar1", Backend: utils.ServicePort{NodePort: 30002, BackendNamer: j.namer}}})
 	um1.DefaultBackend = &utils.ServicePort{NodePort: 30003, BackendNamer: j.namer}
 
 	um2.PutPathRulesForHost("foo.example.com", []utils.PathRule{
-		utils.PathRule{Path: "/foo1", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}},
-		utils.PathRule{Path: "/foo2", Backend: utils.ServicePort{NodePort: 30001, BackendNamer: j.namer}},
+		{Path: "/foo1", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}},
+		{Path: "/foo2", Backend: utils.ServicePort{NodePort: 30001, BackendNamer: j.namer}},
 	})
-	um2.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar1", Backend: utils.ServicePort{NodePort: 30002, BackendNamer: j.namer}}})
+	um2.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar1", Backend: utils.ServicePort{NodePort: 30002, BackendNamer: j.namer}}})
 	um2.DefaultBackend = &utils.ServicePort{NodePort: 30003, BackendNamer: j.namer}
 
-	namer := namer_util.NewNamer(clusterName, "fw1")
-	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer(ingressName), AllowHTTP: true, UrlMap: um1, Ingress: newIngress()}
+	lbInfo := &L7RuntimeInfo{AllowHTTP: true, UrlMap: um1, Ingress: newIngress()}
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
 	}
@@ -1095,9 +1074,8 @@ func TestClusterNameChange(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
-		Name:      j.namer.LoadBalancer(ingressName),
 		AllowHTTP: true,
 		TLS:       []*TLSCerts{{Key: "key", Cert: "cert"}},
 		UrlMap:    gceUrlMap,
@@ -1117,9 +1095,8 @@ func TestClusterNameChange(t *testing.T) {
 	j.namer.SetUID(newName)
 
 	// Now the components should get renamed with the next suffix.
-	lbInfo.Name = j.namer.LoadBalancer(ingressName)
 	l7, err = j.pool.Ensure(lbInfo)
-	if err != nil || j.namer.ParseName(l7.Name).ClusterName != newName {
+	if err != nil || j.namer.ParseName(l7.namer.LbName()).ClusterName != newName {
 		t.Fatalf("Expected L7 name to change.")
 	}
 	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)
@@ -1164,9 +1141,8 @@ func TestList(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
-		Name:      j.namer.LoadBalancer(ingressName),
 		AllowHTTP: true,
 		TLS:       []*TLSCerts{{Key: "key", Cert: "cert"}},
 		UrlMap:    gceUrlMap,
@@ -1201,8 +1177,7 @@ func TestList(t *testing.T) {
 	for _, um := range urlMaps {
 		umNames = append(umNames, um.Name)
 	}
-
-	expected := []string{"k8s-um-test--uid1", "k8s-um-old-l7--uid1"}
+	expected := []string{"k8s-um-namespace1-test--uid1", "k8s-um-old-l7--uid1"}
 
 	for _, name := range expected {
 		if !slice.ContainsString(umNames, name, nil) {
@@ -1218,17 +1193,17 @@ func TestSecretBasedAndPreSharedCerts(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	namer := namer_util.NewNamer(clusterName, "fw1")
-	lbName := namer.LoadBalancer(ingressName)
-	certName1 := namer.SSLCertName(lbName, GetCertHash("cert"))
-	certName2 := namer.SSLCertName(lbName, GetCertHash("cert2"))
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(namer).Namer(ing)
+	certName1 := feNamer.SSLCertName(GetCertHash("cert"))
+	certName2 := feNamer.SSLCertName(GetCertHash("cert2"))
 
 	lbInfo := &L7RuntimeInfo{
-		Name:      lbName,
 		AllowHTTP: false,
 		UrlMap:    gceUrlMap,
-		Ingress:   newIngress(),
+		Ingress:   ing,
 	}
 
 	// Prepare pre-shared certs.
@@ -1281,26 +1256,26 @@ func TestMaxSecretBasedAndPreSharedCerts(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 
 	var tlsCerts []*TLSCerts
 	expectCerts := make(map[string]string)
 	expectCertsExtra := make(map[string]string)
-	lbName := j.namer.LoadBalancer(ingressName)
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(j.namer).Namer(ing)
 
 	for ix := 0; ix < TargetProxyCertLimit; ix++ {
 		str := strconv.Itoa(ix)
 		tlsCerts = append(tlsCerts, createCert("key-"+str, "cert-"+str, "name-"+str))
-		certName := j.namer.SSLCertName(lbName, GetCertHash("cert-"+str))
+		certName := feNamer.SSLCertName(GetCertHash("cert-" + str))
 		expectCerts[certName] = "cert-" + str
 		expectCertsExtra[certName] = "cert-" + str
 	}
 	lbInfo := &L7RuntimeInfo{
-		Name:      lbName,
 		AllowHTTP: false,
 		TLS:       tlsCerts,
 		UrlMap:    gceUrlMap,
-		Ingress:   newIngress(),
+		Ingress:   ing,
 	}
 
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
@@ -1356,7 +1331,7 @@ func TestMaxSecretBasedAndPreSharedCerts(t *testing.T) {
 	lbInfo.TLS = lbInfo.TLS[:TargetProxyCertLimit-len(preSharedCerts)]
 	expectCerts = make(map[string]string)
 	for _, cert := range lbInfo.TLS {
-		expectCerts[j.namer.SSLCertName(lbName, cert.CertHash)] = cert.Cert
+		expectCerts[feNamer.SSLCertName(cert.CertHash)] = cert.Cert
 	}
 	for _, cert := range preSharedCerts {
 		expectCerts[cert.Name] = cert.Certificate
@@ -1376,15 +1351,15 @@ func TestSecretBasedToPreSharedCertUpdate(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
-	lbName := j.namer.LoadBalancer(ingressName)
-	certName1 := j.namer.SSLCertName(lbName, GetCertHash("cert"))
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(j.namer).Namer(ing)
+	certName1 := feNamer.SSLCertName(GetCertHash("cert"))
 
 	lbInfo := &L7RuntimeInfo{
-		Name:      lbName,
 		AllowHTTP: false,
 		UrlMap:    gceUrlMap,
-		Ingress:   newIngress(),
+		Ingress:   ing,
 	}
 
 	// Sync secret based cert.
@@ -1432,15 +1407,15 @@ func TestSecretBasedToPreSharedCertUpdateWithErrors(t *testing.T) {
 
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
-	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
-	lbName := j.namer.LoadBalancer(ingressName)
-	certName1 := j.namer.SSLCertName(lbName, GetCertHash("cert"))
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(j.namer).Namer(ing)
+	certName1 := feNamer.SSLCertName(GetCertHash("cert"))
 
 	lbInfo := &L7RuntimeInfo{
-		Name:      lbName,
 		AllowHTTP: false,
 		UrlMap:    gceUrlMap,
-		Ingress:   newIngress(),
+		Ingress:   ing,
 	}
 
 	// Sync secret based cert.

@@ -49,7 +49,7 @@ func (l *L7) ensureComputeURLMap() error {
 	if err != nil {
 		return err
 	}
-	expectedMap := toCompositeURLMap(l.Name, l.runtimeInfo.UrlMap, l.namer, key)
+	expectedMap := toCompositeURLMap(l.runtimeInfo.UrlMap, l.namer, key)
 	key.Name = expectedMap.Name
 
 	expectedMap.Version = l.Versions().UrlMap
@@ -68,12 +68,12 @@ func (l *L7) ensureComputeURLMap() error {
 	}
 
 	if mapsEqual(currentMap, expectedMap) {
-		klog.V(4).Infof("URLMap for %q is unchanged", l.Name)
+		klog.V(4).Infof("URLMap for %q is unchanged", l)
 		l.um = currentMap
 		return nil
 	}
 
-	klog.V(3).Infof("Updating URLMap for %q", l.Name)
+	klog.V(3).Infof("Updating URLMap for %q", l)
 	expectedMap.Fingerprint = currentMap.Fingerprint
 	if err := composite.UpdateUrlMap(l.cloud, key, expectedMap); err != nil {
 		return fmt.Errorf("UpdateURLMap: %v", err)
@@ -218,12 +218,12 @@ func mapsEqual(a, b *composite.UrlMap) bool {
 // and remove the mapping. When a new path is added to a host (happens
 // more frequently than service deletion) we just need to lookup the 1
 // pathmatcher of the host.
-func toCompositeURLMap(lbName string, g *utils.GCEURLMap, namer *namer.Namer, key *meta.Key) *composite.UrlMap {
+func toCompositeURLMap(g *utils.GCEURLMap, namer namer.IngressFrontendNamer, key *meta.Key) *composite.UrlMap {
 	defaultBackendName := g.DefaultBackend.BackendName()
 	key.Name = defaultBackendName
 	resourceID := cloud.ResourceID{ProjectID: "", Resource: "backendServices", Key: key}
 	m := &composite.UrlMap{
-		Name:           namer.UrlMap(lbName),
+		Name:           namer.UrlMap(),
 		DefaultService: resourceID.ResourcePath(),
 	}
 

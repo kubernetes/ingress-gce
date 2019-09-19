@@ -36,7 +36,7 @@ func (l *L7) checkStaticIP() (err error) {
 		klog.V(3).Infof("Not managing user specified static IP %v", address)
 		return nil
 	}
-	staticIPName := l.namer.ForwardingRule(l.Name, namer.HTTPProtocol)
+	staticIPName := l.namer.ForwardingRule(namer.HTTPProtocol)
 	ip, _ := l.cloud.GetGlobalAddress(staticIPName)
 	if ip == nil {
 		klog.V(3).Infof("Creating static ip %v", staticIPName)

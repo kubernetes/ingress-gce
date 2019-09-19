@@ -50,6 +50,7 @@ import (
 	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
 
@@ -114,7 +115,7 @@ func NewLoadBalancerController(
 		hasSynced:     ctx.HasSynced,
 		nodes:         NewNodeController(ctx, instancePool),
 		instancePool:  instancePool,
-		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx),
+		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer)),
 		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
 		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud),
 		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool),
@@ -128,12 +129,12 @@ func NewLoadBalancerController(
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(addIng) {
-				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.ToString(addIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.NamespacedName(addIng), annotations.IngressClassKey)
 				return
 			}
 
-			klog.V(3).Infof("Ingress %v added, enqueuing", common.ToString(addIng))
-			lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeNormal, "ADD", common.ToString(addIng))
+			klog.V(3).Infof("Ingress %v added, enqueuing", common.NamespacedName(addIng))
+			lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeNormal, "ADD", common.NamespacedName(addIng))
 			lbc.ingQueue.Enqueue(obj)
 		},
 		DeleteFunc: func(obj interface{}) {
@@ -143,16 +144,16 @@ func NewLoadBalancerController(
 				return
 			}
 			if delIng.ObjectMeta.DeletionTimestamp != nil {
-				klog.V(2).Infof("Ignoring delete event for Ingress %v, deletion will be handled via the finalizer", common.ToString(delIng))
+				klog.V(2).Infof("Ignoring delete event for Ingress %v, deletion will be handled via the finalizer", common.NamespacedName(delIng))
 				return
 			}
 
 			if !utils.IsGLBCIngress(delIng) {
-				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.ToString(delIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.NamespacedName(delIng), annotations.IngressClassKey)
 				return
 			}
 
-			klog.V(3).Infof("Ingress %v deleted, enqueueing", common.ToString(delIng))
+			klog.V(3).Infof("Ingress %v deleted, enqueueing", common.NamespacedName(delIng))
 			lbc.ingQueue.Enqueue(obj)
 		},
 		UpdateFunc: func(old, cur interface{}) {
@@ -162,16 +163,16 @@ func NewLoadBalancerController(
 				// If ingress was GLBC Ingress, we need to track ingress class change
 				// and run GC to delete LB resources.
 				if utils.IsGLBCIngress(oldIng) {
-					klog.V(4).Infof("Ingress %v class was changed, enqueuing", common.ToString(curIng))
+					klog.V(4).Infof("Ingress %v class was changed, enqueuing", common.NamespacedName(curIng))
 					lbc.ingQueue.Enqueue(cur)
 					return
 				}
 				return
 			}
 			if reflect.DeepEqual(old, cur) {
-				klog.V(3).Infof("Periodic enqueueing of %v", common.ToString(curIng))
+				klog.V(3).Infof("Periodic enqueueing of %v", common.NamespacedName(curIng))
 			} else {
-				klog.V(3).Infof("Ingress %v changed, enqueuing", common.ToString(curIng))
+				klog.V(3).Infof("Ingress %v changed, enqueuing", common.NamespacedName(curIng))
 			}
 
 			lbc.ingQueue.Enqueue(cur)
@@ -553,15 +554,8 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 
 // toRuntimeInfo returns L7RuntimeInfo for the given ingress.
 func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *utils.GCEURLMap) (*loadbalancers.L7RuntimeInfo, error) {
-	k, err := common.KeyFunc(ing)
-	if err != nil {
-		return nil, fmt.Errorf("cannot get key for Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
-	}
-
-	var tls []*loadbalancers.TLSCerts
-
 	annotations := annotations.FromIngress(ing)
-	tls, err = lbc.tlsLoader.Load(ing)
+	tls, err := lbc.tlsLoader.Load(ing)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// TODO: this path should be removed when external certificate managers migrate to a better solution.
@@ -585,7 +579,6 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *u
 	}
 
 	return &loadbalancers.L7RuntimeInfo{
-		Name:           k,
 		TLS:            tls,
 		TLSName:        annotations.UseNamedTLS(),
 		Ingress:        ing,
