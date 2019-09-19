@@ -19,6 +19,7 @@ import (
 	befeatures "k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -26,7 +27,7 @@ import (
 type negLinker struct {
 	backendPool Pool
 	negGetter   NEGGetter
-	namer       *utils.Namer
+	namer       *namer.Namer
 	cloud       *gce.Cloud
 }
 
@@ -36,7 +37,7 @@ var _ Linker = (*negLinker)(nil)
 func NewNEGLinker(
 	backendPool Pool,
 	negGetter NEGGetter,
-	namer *utils.Namer,
+	namer *namer.Namer,
 	cloud *gce.Cloud) Linker {
 	return &negLinker{
 		backendPool: backendPool,

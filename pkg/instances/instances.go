@@ -20,9 +20,10 @@ import (
 	"fmt"
 	"net/http"
 
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"k8s.io/ingress-gce/pkg/utils"
@@ -37,13 +38,13 @@ const (
 type Instances struct {
 	cloud InstanceGroups
 	ZoneLister
-	namer *utils.Namer
+	namer *namer.Namer
 }
 
 // NewNodePool creates a new node pool.
 // - cloud: implements InstanceGroups, used to sync Kubernetes nodes with
 //   members of the cloud InstanceGroup.
-func NewNodePool(cloud InstanceGroups, namer *utils.Namer) NodePool {
+func NewNodePool(cloud InstanceGroups, namer *namer.Namer) NodePool {
 	return &Instances{
 		cloud: cloud,
 		namer: namer,

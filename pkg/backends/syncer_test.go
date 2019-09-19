@@ -19,7 +19,6 @@ package backends
 import (
 	"context"
 	"fmt"
-	"k8s.io/ingress-gce/pkg/composite"
 	"net/http"
 	"reflect"
 	"testing"
@@ -28,15 +27,17 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	computebeta "google.golang.org/api/compute/v0.beta"
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends/features"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -113,7 +114,7 @@ func (p *portset) check(fakeGCE *gce.Cloud) error {
 }
 
 var (
-	defaultNamer      = utils.NewNamer("uid1", "fw1")
+	defaultNamer      = namer.NewNamer("uid1", "fw1")
 	defaultBackendSvc = types.NamespacedName{Namespace: "system", Name: "default"}
 	existingProbe     = &api_v1.Probe{
 		Handler: api_v1.Handler{

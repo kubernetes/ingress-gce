@@ -30,7 +30,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
-	"k8s.io/ingress-gce/pkg/utils"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -55,7 +55,7 @@ func (f *fakeLookUp) ReadinessGateEnabled(syncerKey negtypes.NegSyncerKey) bool 
 
 func fakeContext() *context.ControllerContext {
 	kubeClient := fake.NewSimpleClientset()
-	namer := utils.NewNamer(clusterID, "")
+	namer := namer_util.NewNamer(clusterID, "")
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:    apiv1.NamespaceAll,
 		ResyncPeriod: 1 * time.Second,

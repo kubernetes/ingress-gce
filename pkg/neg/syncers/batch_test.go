@@ -18,6 +18,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 const (
@@ -44,7 +45,7 @@ var (
 func NewTestSyncer() *batchSyncer {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
-	namer := utils.NewNamer(clusterID, "")
+	namer := namer_util.NewNamer(clusterID, "")
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:             apiv1.NamespaceAll,
 		ResyncPeriod:          1 * time.Second,

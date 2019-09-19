@@ -25,7 +25,7 @@ import (
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	bcclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 // DefaultValidatorEnv is a ValidatorEnv that gets data from the Kubernetes
@@ -35,7 +35,7 @@ type DefaultValidatorEnv struct {
 	k8s   *kubernetes.Clientset
 	bc    *bcclient.Clientset
 	gce   cloud.Cloud
-	namer *utils.Namer
+	namer *namer.Namer
 }
 
 // NewDefaultValidatorEnv returns a new ValidatorEnv.
@@ -86,6 +86,6 @@ func (e *DefaultValidatorEnv) Cloud() cloud.Cloud {
 }
 
 // DefaultValidatorEnv implements ValidatorEnv.
-func (e *DefaultValidatorEnv) Namer() *utils.Namer {
+func (e *DefaultValidatorEnv) Namer() *namer.Namer {
 	return e.namer
 }

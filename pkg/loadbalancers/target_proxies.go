@@ -20,6 +20,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
 
@@ -36,7 +37,7 @@ func (l *L7) checkProxy() (err error) {
 	}
 	resourceID := cloud.ResourceID{ProjectID: "", Resource: "urlMaps", Key: key}
 	urlMapLink := resourceID.ResourcePath()
-	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPProtocol)
+	proxyName := l.namer.TargetProxy(l.Name, namer.HTTPProtocol)
 	key, err = l.CreateKey(proxyName)
 	if err != nil {
 		return err
@@ -100,7 +101,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 	}
 	resourceID := cloud.ResourceID{ProjectID: "", Resource: "urlMaps", Key: key}
 	urlMapLink := resourceID.ResourcePath()
-	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
+	proxyName := l.namer.TargetProxy(l.Name, namer.HTTPSProtocol)
 	key, err = l.CreateKey(proxyName)
 	if err != nil {
 		return err
@@ -177,7 +178,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 }
 
 func (l *L7) getSslCertLinkInUse() ([]string, error) {
-	proxyName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
+	proxyName := l.namer.TargetProxy(l.Name, namer.HTTPSProtocol)
 	key, err := l.CreateKey(proxyName)
 	if err != nil {
 		return nil, err

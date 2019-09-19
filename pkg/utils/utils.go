@@ -24,8 +24,6 @@ import (
 	"net/http"
 	"strings"
 
-	"k8s.io/klog"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
@@ -36,6 +34,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/klog"
 )
 
 const (
@@ -127,43 +126,6 @@ func IsNotFoundError(err error) bool {
 // IsForbiddenError returns true if the operation was forbidden
 func IsForbiddenError(err error) bool {
 	return IsHTTPErrorCode(err, http.StatusForbidden)
-}
-
-// TrimFieldsEvenly trims the fields evenly and keeps the total length
-// <= max. Truncation is spread in ratio with their original length,
-// meaning smaller fields will be truncated less than longer ones.
-func TrimFieldsEvenly(max int, fields ...string) []string {
-	if max <= 0 {
-		return fields
-	}
-	total := 0
-	for _, s := range fields {
-		total += len(s)
-	}
-	if total <= max {
-		return fields
-	}
-	// Distribute truncation evenly among the fields.
-	excess := total - max
-	remaining := max
-	var lengths []int
-	for _, s := range fields {
-		// Scale truncation to shorten longer fields more than ones that are already short.
-		l := len(s) - len(s)*excess/total - 1
-		lengths = append(lengths, l)
-		remaining -= l
-	}
-	// Add fractional space that was rounded down.
-	for i := 0; i < remaining; i++ {
-		lengths[i]++
-	}
-
-	var ret []string
-	for i, l := range lengths {
-		ret = append(ret, fields[i][:l])
-	}
-
-	return ret
 }
 
 // PrettyJson marshals an object in a human-friendly format.
@@ -385,13 +347,6 @@ func JoinErrs(errs []error) error {
 		errStrs = append(errStrs, e.Error())
 	}
 	return errors.New(strings.Join(errStrs, "; "))
-}
-
-func IngressKeyFunc(ing *v1beta1.Ingress) string {
-	if ing == nil {
-		return ""
-	}
-	return types.NamespacedName{Namespace: ing.Namespace, Name: ing.Name}.String()
 }
 
 // TraverseIngressBackends traverse thru all backends specified in the input ingress and call process

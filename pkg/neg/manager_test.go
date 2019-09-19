@@ -17,10 +17,9 @@ limitations under the License.
 package neg
 
 import (
+	"reflect"
 	"testing"
 	"time"
-
-	"reflect"
 
 	"google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
@@ -36,7 +35,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	"k8s.io/ingress-gce/pkg/utils"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -65,7 +64,7 @@ const (
 
 func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
-	namer := utils.NewNamer(ClusterID, "")
+	namer := namer_util.NewNamer(ClusterID, "")
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:             apiv1.NamespaceAll,
 		ResyncPeriod:          1 * time.Second,
@@ -537,7 +536,7 @@ func TestReadinessGateEnabled(t *testing.T) {
 
 func TestFilterCommonPorts(t *testing.T) {
 	t.Parallel()
-	namer := utils.NewNamer(ClusterID, "")
+	namer := namer_util.NewNamer(ClusterID, "")
 
 	for _, tc := range []struct {
 		desc     string

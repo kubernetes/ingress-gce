@@ -27,6 +27,7 @@ import (
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	lbfeatures "k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -36,7 +37,7 @@ type backendSyncer struct {
 	backendPool   Pool
 	healthChecker healthchecks.HealthChecker
 	prober        ProbeProvider
-	namer         *utils.Namer
+	namer         *namer.Namer
 	cloud         *gce.Cloud
 }
 
@@ -46,7 +47,7 @@ var _ Syncer = (*backendSyncer)(nil)
 func NewBackendSyncer(
 	backendPool Pool,
 	healthChecker healthchecks.HealthChecker,
-	namer *utils.Namer,
+	namer *namer.Namer,
 	cloud *gce.Cloud) Syncer {
 	return &backendSyncer{
 		backendPool:   backendPool,
@@ -215,7 +216,7 @@ func (s *backendSyncer) gc(backends []*composite.BackendService, knownPorts sets
 }
 
 // TODO: (shance) add unit tests
-func knownPortsFromServicePorts(cloud *gce.Cloud, namer *utils.Namer, svcPorts []utils.ServicePort) (sets.String, error) {
+func knownPortsFromServicePorts(cloud *gce.Cloud, namer *namer.Namer, svcPorts []utils.ServicePort) (sets.String, error) {
 	knownPorts := sets.NewString()
 
 	for _, sp := range svcPorts {

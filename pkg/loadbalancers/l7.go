@@ -33,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -118,7 +119,7 @@ type L7 struct {
 	// prevents leakage if there's a failure along the way.
 	oldSSLCerts []*composite.SslCertificate
 	// namer is used to compute names of the various sub-components of an L7.
-	namer *utils.Namer
+	namer *namer.Namer
 	// recorder is used to generate k8s Events.
 	recorder record.EventRecorder
 	// resource type stores the KeyType of the resources in the loadbalancer (e.g. Regional)
@@ -227,7 +228,7 @@ func (l *L7) Cleanup(versions *features.ResourceVersions) error {
 	var key *meta.Key
 	var err error
 
-	fwName := l.namer.ForwardingRule(l.Name, utils.HTTPProtocol)
+	fwName := l.namer.ForwardingRule(l.Name, namer.HTTPProtocol)
 	klog.V(2).Infof("Deleting global forwarding rule %v", fwName)
 	if key, err = l.CreateKey(fwName); err != nil {
 		return err
@@ -236,7 +237,7 @@ func (l *L7) Cleanup(versions *features.ResourceVersions) error {
 		return err
 	}
 
-	fwsName := l.namer.ForwardingRule(l.Name, utils.HTTPSProtocol)
+	fwsName := l.namer.ForwardingRule(l.Name, namer.HTTPSProtocol)
 	klog.V(2).Infof("Deleting global forwarding rule %v", fwsName)
 	if key, err = l.CreateKey(fwsName); err != nil {
 		return err
@@ -253,7 +254,7 @@ func (l *L7) Cleanup(versions *features.ResourceVersions) error {
 		}
 	}
 
-	tpName := l.namer.TargetProxy(l.Name, utils.HTTPProtocol)
+	tpName := l.namer.TargetProxy(l.Name, namer.HTTPProtocol)
 	klog.V(2).Infof("Deleting target http proxy %v", tpName)
 	if key, err = l.CreateKey(tpName); err != nil {
 		return err
@@ -262,7 +263,7 @@ func (l *L7) Cleanup(versions *features.ResourceVersions) error {
 		return err
 	}
 
-	tpsName := l.namer.TargetProxy(l.Name, utils.HTTPSProtocol)
+	tpsName := l.namer.TargetProxy(l.Name, namer.HTTPSProtocol)
 	klog.V(2).Infof("Deleting target https proxy %v", tpsName)
 	if key, err = l.CreateKey(tpsName); err != nil {
 		return err

@@ -22,14 +22,14 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 // NewFakeInstanceGroups creates a new FakeInstanceGroups.
-func NewFakeInstanceGroups(nodes sets.String, namer *utils.Namer) *FakeInstanceGroups {
+func NewFakeInstanceGroups(nodes sets.String, namer *namer.Namer) *FakeInstanceGroups {
 	return &FakeInstanceGroups{
 		instances:        nodes,
 		listResult:       getInstanceList(nodes),
@@ -65,7 +65,7 @@ type FakeInstanceGroups struct {
 	getResult        *compute.InstanceGroup
 	listResult       *compute.InstanceGroupsListInstances
 	calls            []int
-	namer            *utils.Namer
+	namer            *namer.Namer
 	zonesToInstances map[string][]string
 }
 

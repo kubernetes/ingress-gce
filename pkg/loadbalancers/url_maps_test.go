@@ -17,12 +17,13 @@ limitations under the License.
 package loadbalancers
 
 import (
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/ingress-gce/pkg/composite"
 	"testing"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 func TestComputeURLMapEquals(t *testing.T) {
@@ -79,7 +80,7 @@ func TestToComputeURLMap(t *testing.T) {
 		},
 	}
 
-	namer := utils.NewNamer("uid1", "fw1")
+	namer := namer_util.NewNamer("uid1", "fw1")
 	gotComputeURLMap := toCompositeURLMap("lb-name", gceURLMap, namer, meta.GlobalKey("lb-name"))
 	if !mapsEqual(gotComputeURLMap, wantComputeMap) {
 		t.Errorf("toComputeURLMap() = \n%+v\n   want\n%+v", gotComputeURLMap, wantComputeMap)

@@ -25,7 +25,7 @@ import (
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -33,19 +33,19 @@ import (
 // L7s implements LoadBalancerPool.
 type L7s struct {
 	cloud            *gce.Cloud
-	namer            *utils.Namer
+	namer            *namer.Namer
 	recorderProducer events.RecorderProducer
 }
 
 // Namer returns the namer associated with the L7s.
-func (l *L7s) Namer() *utils.Namer {
+func (l *L7s) Namer() *namer.Namer {
 	return l.namer
 }
 
 // NewLoadBalancerPool returns a new loadbalancer pool.
 // - cloud: implements LoadBalancers. Used to sync L7 loadbalancer resources
 //	 with the cloud.
-func NewLoadBalancerPool(cloud *gce.Cloud, namer *utils.Namer, recorderProducer events.RecorderProducer) LoadBalancerPool {
+func NewLoadBalancerPool(cloud *gce.Cloud, namer *namer.Namer, recorderProducer events.RecorderProducer) LoadBalancerPool {
 	return &L7s{
 		cloud:            cloud,
 		namer:            namer,

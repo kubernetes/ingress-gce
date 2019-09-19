@@ -22,6 +22,7 @@ import (
 
 	"google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
 
@@ -35,7 +36,7 @@ func (l *L7) checkStaticIP() (err error) {
 		klog.V(3).Infof("Not managing user specified static IP %v", address)
 		return nil
 	}
-	staticIPName := l.namer.ForwardingRule(l.Name, utils.HTTPProtocol)
+	staticIPName := l.namer.ForwardingRule(l.Name, namer.HTTPProtocol)
 	ip, _ := l.cloud.GetGlobalAddress(staticIPName)
 	if ip == nil {
 		klog.V(3).Infof("Creating static ip %v", staticIPName)

@@ -36,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 var (
@@ -56,7 +57,7 @@ func fakeTranslator() *Translator {
 	client := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 
-	namer := utils.NewNamer("uid1", "")
+	namer := namer_util.NewNamer("uid1", "")
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:                     apiv1.NamespaceAll,
 		ResyncPeriod:                  1 * time.Second,
