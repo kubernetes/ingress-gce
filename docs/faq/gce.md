@@ -148,7 +148,7 @@ are therefore better suited for experimentation.
    * static-ips have limited quota and pure HTTP ingress is often used for testing
 * Creating an Ingress with a TLS section allocates a static IP
 * Modifying an Ingress and adding a TLS section allocates a static IP, but the
-  IP *will* change. This is a beta limitation.
+  IP *will* change.
 * You can [promote](https://cloud.google.com/compute/docs/instances-and-network#promote_ephemeral_ip)
   an ephemeral to a static IP by hand, if required.
 

@@ -1,8 +1,4 @@
-# GLBC: Beta limitations
-
-As of the Kubernetes 1.7 release, the GCE L7 Loadbalancer controller is still a *beta* product.
-
-This is a list of beta limitations:
+# GLBC: Known Limitations
 
 * [IPs](#static-and-ephemeral-ips): Creating a simple HTTP Ingress will allocate an ephemeral IP. Creating an Ingress with a TLS section will allocate a static IP.
 * [Latency](#latency): GLBC is not built for performance. Creating many Ingresses at a time can overwhelm it. It won't fall over, but will take its own time to churn through the Ingress queue.
@@ -93,7 +89,7 @@ Events:
 GCE has a concept of [ephemeral](https://cloud.google.com/compute/docs/instances-and-network#ephemeraladdress) and [static](https://cloud.google.com/compute/docs/instances-and-network#reservedaddress) IPs. A production website would always want a static IP, which ephemeral IPs are cheaper (both in terms of quota and cost), and are therefore better suited for experimentation.
 * Creating a HTTP Ingress (i.e an Ingress without a TLS section) allocates an ephemeral IP, because we don't believe HTTP is the right way to deploy an app.
 * Creating an Ingress with a TLS section allocates a static IP, because GLBC assumes you mean business.
-* Modifying an Ingress and adding a TLS section allocates a static IP, but the IP *will* change. This is a beta limitation.
+* Modifying an Ingress and adding a TLS section allocates a static IP, but the IP *will* change.
 * You can [promote](https://cloud.google.com/compute/docs/instances-and-network#promote_ephemeral_ip) an ephemeral to a static IP by hand, if required.
 
 ## Load Balancing Algorithms
