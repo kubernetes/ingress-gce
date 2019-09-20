@@ -5,14 +5,6 @@
 
 GLBC is a GCE L7 load balancer controller that manages external loadbalancers configured through the Kubernetes Ingress API.
 
-## A word to the wise
-
-Please read the [beta limitations](BETA_LIMITATIONS.md) doc to before using this controller. In summary:
-
-- This is a **work in progress**.
-- It relies on a beta Kubernetes resource.
-- The loadbalancer controller pod is not aware of your GCE quota.
-
 ## Overview
 
 See [here](https://kubernetes.io/docs/concepts/services-networking/ingress/) for high-level concepts on Ingress in Kubernetes.
