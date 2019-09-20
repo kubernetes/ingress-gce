@@ -27,7 +27,6 @@ import (
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	lbfeatures "k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -37,7 +36,6 @@ type backendSyncer struct {
 	backendPool   Pool
 	healthChecker healthchecks.HealthChecker
 	prober        ProbeProvider
-	namer         *namer.Namer
 	cloud         *gce.Cloud
 }
 
@@ -47,12 +45,10 @@ var _ Syncer = (*backendSyncer)(nil)
 func NewBackendSyncer(
 	backendPool Pool,
 	healthChecker healthchecks.HealthChecker,
-	namer *namer.Namer,
 	cloud *gce.Cloud) Syncer {
 	return &backendSyncer{
 		backendPool:   backendPool,
 		healthChecker: healthChecker,
-		namer:         namer,
 		cloud:         cloud,
 	}
 }
@@ -78,7 +74,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	// We must track the ports even if creating the backends failed, because
 	// we might've created health-check for them.
 	be := &composite.BackendService{}
-	beName := sp.BackendName(s.namer)
+	beName := sp.BackendName()
 	version := features.VersionFromServicePort(&sp)
 	scope := features.ScopeFromServicePort(&sp)
 
@@ -141,7 +137,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 
 // GC implements Syncer.
 func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
-	knownPorts, err := knownPortsFromServicePorts(s.cloud, s.namer, svcPorts)
+	knownPorts, err := knownPortsFromServicePorts(s.cloud, svcPorts)
 	if err != nil {
 		return err
 	}
@@ -216,11 +212,11 @@ func (s *backendSyncer) gc(backends []*composite.BackendService, knownPorts sets
 }
 
 // TODO: (shance) add unit tests
-func knownPortsFromServicePorts(cloud *gce.Cloud, namer *namer.Namer, svcPorts []utils.ServicePort) (sets.String, error) {
+func knownPortsFromServicePorts(cloud *gce.Cloud, svcPorts []utils.ServicePort) (sets.String, error) {
 	knownPorts := sets.NewString()
 
 	for _, sp := range svcPorts {
-		name := sp.BackendName(namer)
+		name := sp.BackendName()
 		if key, err := composite.CreateKey(cloud, name, features.ScopeFromServicePort(&sp)); err != nil {
 			return nil, err
 		} else {

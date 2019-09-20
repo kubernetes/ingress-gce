@@ -15,17 +15,17 @@ package backends
 
 import (
 	"context"
-	"k8s.io/ingress-gce/pkg/backends/features"
 	"net/http"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -42,7 +42,7 @@ func newTestIGLinker(fakeGCE *gce.Cloud, fakeInstancePool instances.NodePool) *i
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.UpdateHook = mock.UpdateBetaBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = mock.UpdateBackendServiceHook
 
-	return &instanceGroupLinker{fakeInstancePool, fakeBackendPool, defaultNamer}
+	return &instanceGroupLinker{fakeInstancePool, fakeBackendPool}
 }
 
 func TestLink(t *testing.T) {
@@ -51,7 +51,7 @@ func TestLink(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
-	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP}
+	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
 
 	// Mimic the instance group being created
 	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
@@ -65,7 +65,7 @@ func TestLink(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 
-	be, err := fakeGCE.GetGlobalBackendService(sp.BackendName(defaultNamer))
+	be, err := fakeGCE.GetGlobalBackendService(sp.BackendName())
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -81,7 +81,7 @@ func TestLinkWithCreationModeError(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
-	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP}
+	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
 	modes := []BalancingMode{Rate, Utilization}
 
 	// block the update of Backends with the given balancingMode
@@ -109,7 +109,7 @@ func TestLinkWithCreationModeError(t *testing.T) {
 			t.Fatalf("%v", err)
 		}
 
-		be, err := fakeGCE.GetGlobalBackendService(sp.BackendName(defaultNamer))
+		be, err := fakeGCE.GetGlobalBackendService(sp.BackendName())
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
@@ -123,6 +123,6 @@ func TestLinkWithCreationModeError(t *testing.T) {
 				t.Fatalf("Wrong balancing mode, expected %v got %v", modes[(i+1)%len(modes)], b.BalancingMode)
 			}
 		}
-		linker.backendPool.Delete(sp.BackendName(defaultNamer), features.VersionFromServicePort(&sp), features.ScopeFromServicePort(&sp))
+		linker.backendPool.Delete(sp.BackendName(), features.VersionFromServicePort(&sp), features.ScopeFromServicePort(&sp))
 	}
 }

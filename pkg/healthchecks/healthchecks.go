@@ -31,7 +31,6 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
-	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -79,7 +78,6 @@ type HealthChecks struct {
 	path string
 	// defaultBackend is the default health check path for the default backend.
 	defaultBackendPath string
-	namer              *namer_util.Namer
 	// This is a workaround which allows us to not have to maintain
 	// a separate health checker for the default backend.
 	defaultBackendSvc types.NamespacedName
@@ -88,8 +86,8 @@ type HealthChecks struct {
 // NewHealthChecker creates a new health checker.
 // cloud: the cloud object implementing SingleHealthCheck.
 // defaultHealthCheckPath: is the HTTP path to use for health checks.
-func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendHealthCheckPath string, namer *namer_util.Namer, defaultBackendSvc types.NamespacedName) HealthChecker {
-	return &HealthChecks{cloud, healthCheckPath, defaultBackendHealthCheckPath, namer, defaultBackendSvc}
+func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendHealthCheckPath string, defaultBackendSvc types.NamespacedName) HealthChecker {
+	return &HealthChecks{cloud, healthCheckPath, defaultBackendHealthCheckPath, defaultBackendSvc}
 }
 
 // New returns a *HealthCheck with default settings and specified port/protocol
@@ -104,7 +102,7 @@ func (h *HealthChecks) New(sp utils.ServicePort) *HealthCheck {
 	}
 	// port is the key for retrieving existing health-check
 	// TODO: rename backend-service and health-check to not use port as key
-	hc.Name = sp.BackendName(h.namer)
+	hc.Name = sp.BackendName()
 	hc.Port = sp.NodePort
 	hc.RequestPath = h.pathFromSvcPort(sp)
 	return hc

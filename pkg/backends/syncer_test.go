@@ -94,7 +94,7 @@ func (p *portset) del(ports []utils.ServicePort) error {
 func (p *portset) check(fakeGCE *gce.Cloud) error {
 	for sp, _ := range p.all {
 		_, found := p.existing[sp]
-		beName := sp.BackendName(defaultNamer)
+		beName := sp.BackendName()
 		key, err := composite.CreateKey(fakeGCE, beName, features.ScopeFromServicePort(&sp))
 		if err != nil {
 			return fmt.Errorf("Error creating key for backend service %s: %v", beName, err)
@@ -131,18 +131,17 @@ var (
 )
 
 func newTestSyncer(fakeGCE *gce.Cloud) *backendSyncer {
-	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", "/healthz", defaultNamer, defaultBackendSvc)
+	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", "/healthz", defaultBackendSvc)
 
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
 	syncer := &backendSyncer{
 		backendPool:   fakeBackendPool,
 		healthChecker: fakeHealthChecks,
-		namer:         defaultNamer,
 		cloud:         fakeGCE,
 	}
 
-	probes := map[utils.ServicePort]*api_v1.Probe{{NodePort: 443, Protocol: annotations.ProtocolHTTPS}: existingProbe}
+	probes := map[utils.ServicePort]*api_v1.Probe{{NodePort: 443, Protocol: annotations.ProtocolHTTPS, BackendNamer: defaultNamer}: existingProbe}
 	syncer.Init(NewFakeProbeProvider(probes))
 
 	// Add standard hooks for mocking update calls. Each test can set a different update hook if it chooses to.
@@ -162,10 +161,10 @@ func TestSync(t *testing.T) {
 	syncer := newTestSyncer(fakeGCE)
 
 	testCases := []utils.ServicePort{
-		{NodePort: 80, Protocol: annotations.ProtocolHTTP},
+		{NodePort: 80, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer},
 		// Note: 443 gets its healthcheck from a probe
-		{NodePort: 443, Protocol: annotations.ProtocolHTTPS},
-		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2},
+		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, BackendNamer: defaultNamer},
+		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, BackendNamer: defaultNamer},
 	}
 
 	for _, sp := range testCases {
@@ -173,7 +172,7 @@ func TestSync(t *testing.T) {
 			if err := syncer.Sync([]utils.ServicePort{sp}); err != nil {
 				t.Fatalf("Unexpected error when syncing backend with port %v: %v", sp.NodePort, err)
 			}
-			beName := sp.BackendName(defaultNamer)
+			beName := sp.BackendName()
 
 			// Check that the new backend has the right port
 			be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&sp), features.ScopeFromServicePort(&sp))
@@ -204,9 +203,9 @@ func TestSyncUpdateHTTPS(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	syncer := newTestSyncer(fakeGCE)
 
-	p := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
+	p := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
 	syncer.Sync([]utils.ServicePort{p})
-	beName := p.BackendName(defaultNamer)
+	beName := p.BackendName()
 
 	be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
 	if err != nil {
@@ -248,9 +247,9 @@ func TestSyncUpdateHTTP2(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	syncer := newTestSyncer(fakeGCE)
 
-	p := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
+	p := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
 	syncer.Sync([]utils.ServicePort{p})
-	beName := p.BackendName(defaultNamer)
+	beName := p.BackendName()
 
 	be, err := syncer.backendPool.Get(beName, features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
 	if err != nil {
@@ -294,9 +293,9 @@ func TestGC(t *testing.T) {
 	syncer := newTestSyncer(fakeGCE)
 
 	svcNodePorts := []utils.ServicePort{
-		{NodePort: 81, Protocol: annotations.ProtocolHTTP},
-		{NodePort: 82, Protocol: annotations.ProtocolHTTPS},
-		{NodePort: 83, Protocol: annotations.ProtocolHTTP},
+		{NodePort: 81, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer},
+		{NodePort: 82, Protocol: annotations.ProtocolHTTPS, BackendNamer: defaultNamer},
+		{NodePort: 83, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer},
 	}
 	ps := newPortset(svcNodePorts)
 	if err := ps.add(svcNodePorts); err != nil {
@@ -340,12 +339,12 @@ func TestGCMixed(t *testing.T) {
 	syncer := newTestSyncer(fakeGCE)
 
 	svcNodePorts := []utils.ServicePort{
-		{NodePort: 81, Protocol: annotations.ProtocolHTTP},
-		{NodePort: 82, Protocol: annotations.ProtocolHTTPS},
-		{NodePort: 83, Protocol: annotations.ProtocolHTTP},
-		{NodePort: 84, Protocol: annotations.ProtocolHTTP, NEGEnabled: true, L7ILBEnabled: true},
-		{NodePort: 85, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true, L7ILBEnabled: true},
-		{NodePort: 86, Protocol: annotations.ProtocolHTTP, NEGEnabled: true, L7ILBEnabled: true},
+		{NodePort: 81, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer},
+		{NodePort: 82, Protocol: annotations.ProtocolHTTPS, BackendNamer: defaultNamer},
+		{NodePort: 83, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer},
+		{NodePort: 84, Protocol: annotations.ProtocolHTTP, NEGEnabled: true, L7ILBEnabled: true, BackendNamer: defaultNamer},
+		{NodePort: 85, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true, L7ILBEnabled: true, BackendNamer: defaultNamer},
+		{NodePort: 86, Protocol: annotations.ProtocolHTTP, NEGEnabled: true, L7ILBEnabled: true, BackendNamer: defaultNamer},
 	}
 	ps := newPortset(svcNodePorts)
 	if err := ps.add(svcNodePorts); err != nil {
@@ -391,62 +390,62 @@ func TestSyncQuota(t *testing.T) {
 		desc          string
 	}{
 		{
-			[]utils.ServicePort{{NodePort: 8080}},
-			[]utils.ServicePort{{NodePort: 8080}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}},
 			false,
 			"Same port",
 		},
 		{
-			[]utils.ServicePort{{NodePort: 8080}},
-			[]utils.ServicePort{{NodePort: 9000}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}},
+			[]utils.ServicePort{{NodePort: 9000, BackendNamer: defaultNamer}},
 			true,
 			"Different port",
 		},
 		{
-			[]utils.ServicePort{{NodePort: 8080}},
-			[]utils.ServicePort{{NodePort: 8080}, {NodePort: 443}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}, {NodePort: 443, BackendNamer: defaultNamer}},
 			false,
 			"Same port plus additional port",
 		},
 		{
-			[]utils.ServicePort{{NodePort: 8080}},
-			[]utils.ServicePort{{NodePort: 3000}, {NodePort: 4000}, {NodePort: 5000}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}},
+			[]utils.ServicePort{{NodePort: 3000, BackendNamer: defaultNamer}, {NodePort: 4000, BackendNamer: defaultNamer}, {NodePort: 5000, BackendNamer: defaultNamer}},
 			true,
 			"New set of ports not including the same port",
 		},
 		// Need to fill the TargetPort field on ServicePort to make sure
 		// NEG Backend naming is unique
 		{
-			[]utils.ServicePort{{NodePort: 8080}, {NodePort: 443}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}, {NodePort: 443, BackendNamer: defaultNamer}},
 			[]utils.ServicePort{
-				{Port: 8080, NodePort: 8080, NEGEnabled: true},
-				{Port: 443, NodePort: 443, NEGEnabled: true},
+				{Port: 8080, NodePort: 8080, NEGEnabled: true, BackendNamer: defaultNamer},
+				{Port: 443, NodePort: 443, NEGEnabled: true, BackendNamer: defaultNamer},
 			},
 			true,
 			"Same port converted to NEG, plus one new NEG port",
 		},
 		{
 			[]utils.ServicePort{
-				{Port: 80, NodePort: 80, NEGEnabled: true},
-				{Port: 90, NodePort: 90},
+				{Port: 80, NodePort: 80, NEGEnabled: true, BackendNamer: defaultNamer},
+				{Port: 90, NodePort: 90, BackendNamer: defaultNamer},
 			},
 			[]utils.ServicePort{
-				{Port: 80},
-				{Port: 90, NEGEnabled: true},
+				{Port: 80, BackendNamer: defaultNamer},
+				{Port: 90, NEGEnabled: true, BackendNamer: defaultNamer},
 			},
 			true,
 			"Mixed NEG and non-NEG ports",
 		},
 		{
 			[]utils.ServicePort{
-				{Port: 100, NodePort: 100, NEGEnabled: true},
-				{Port: 110, NodePort: 110, NEGEnabled: true},
-				{Port: 120, NodePort: 120, NEGEnabled: true},
+				{Port: 100, NodePort: 100, NEGEnabled: true, BackendNamer: defaultNamer},
+				{Port: 110, NodePort: 110, NEGEnabled: true, BackendNamer: defaultNamer},
+				{Port: 120, NodePort: 120, NEGEnabled: true, BackendNamer: defaultNamer},
 			},
 			[]utils.ServicePort{
-				{Port: 100, NodePort: 100},
-				{Port: 110, NodePort: 110},
-				{Port: 120, NodePort: 120},
+				{Port: 100, NodePort: 100, BackendNamer: defaultNamer},
+				{Port: 110, NodePort: 110, BackendNamer: defaultNamer},
+				{Port: 120, NodePort: 120, BackendNamer: defaultNamer},
 			},
 			true,
 			"Same ports as NEG, then non-NEG",
@@ -509,12 +508,12 @@ func TestSyncNEG(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	syncer := newTestSyncer(fakeGCE)
 
-	svcPort := utils.ServicePort{NodePort: 81, Protocol: annotations.ProtocolHTTP}
+	svcPort := utils.ServicePort{NodePort: 81, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
 	if err := syncer.Sync([]utils.ServicePort{svcPort}); err != nil {
 		t.Errorf("Expected backend pool to add node ports, err: %v", err)
 	}
 
-	nodePortName := svcPort.BackendName(defaultNamer)
+	nodePortName := svcPort.BackendName()
 	_, err := fakeGCE.GetGlobalBackendService(nodePortName)
 	if err != nil {
 		t.Fatalf("Failed to get backend service: %v", err)
@@ -526,7 +525,7 @@ func TestSyncNEG(t *testing.T) {
 		t.Errorf("Expected backend pool to add node ports, err: %v", err)
 	}
 
-	negName := svcPort.BackendName(defaultNamer)
+	negName := svcPort.BackendName()
 	_, err = fakeGCE.GetGlobalBackendService(negName)
 	if err != nil {
 		t.Fatalf("Failed to get backend service with name %v: %v", negName, err)
@@ -558,7 +557,7 @@ func TestShutdown(t *testing.T) {
 	syncer := newTestSyncer(fakeGCE)
 
 	// Sync a backend and verify that it doesn't exist after Shutdown()
-	syncer.Sync([]utils.ServicePort{{NodePort: 80}})
+	syncer.Sync([]utils.ServicePort{{NodePort: 80, BackendNamer: defaultNamer}})
 	syncer.Shutdown()
 	if _, err := fakeGCE.GetGlobalBackendService(defaultNamer.IGBackend(80)); err == nil {
 		t.Fatalf("%v", err)
@@ -596,9 +595,9 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 	syncer := newTestSyncer(fakeGCE)
 
 	svcPorts := []utils.ServicePort{
-		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}},
-		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, ID: utils.ServicePortID{Port: intstr.FromInt(2)}},
-		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, ID: utils.ServicePortID{Port: intstr.FromInt(3)}},
+		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}, BackendNamer: defaultNamer},
+		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, ID: utils.ServicePortID{Port: intstr.FromInt(2)}, BackendNamer: defaultNamer},
+		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, ID: utils.ServicePortID{Port: intstr.FromInt(3)}, BackendNamer: defaultNamer},
 	}
 
 	for _, oldPort := range svcPorts {
@@ -607,7 +606,7 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
 				func(t *testing.T) {
 					syncer.Sync([]utils.ServicePort{oldPort})
-					be, err := syncer.backendPool.Get(oldPort.BackendName(defaultNamer), features.VersionFromServicePort(&oldPort), features.ScopeFromServicePort(&oldPort))
+					be, err := syncer.backendPool.Get(oldPort.BackendName(), features.VersionFromServicePort(&oldPort), features.ScopeFromServicePort(&oldPort))
 					if err != nil {
 						t.Fatalf("%v", err)
 					}
@@ -640,9 +639,9 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 	syncer := newTestSyncer(fakeGCE)
 
 	svcPorts := []utils.ServicePort{
-		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}},
-		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, ID: utils.ServicePortID{Port: intstr.FromInt(2)}},
-		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, ID: utils.ServicePortID{Port: intstr.FromInt(3)}},
+		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}, BackendNamer: defaultNamer},
+		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, ID: utils.ServicePortID{Port: intstr.FromInt(2)}, BackendNamer: defaultNamer},
+		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, ID: utils.ServicePortID{Port: intstr.FromInt(3)}, BackendNamer: defaultNamer},
 	}
 
 	for _, oldPort := range svcPorts {
@@ -651,7 +650,7 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 				fmt.Sprintf("Updating Port:%v Protocol:%v to Port:%v Protocol:%v", oldPort.NodePort, oldPort.Protocol, newPort.NodePort, newPort.Protocol),
 				func(t *testing.T) {
 					syncer.Sync([]utils.ServicePort{oldPort})
-					be, err := syncer.backendPool.Get(oldPort.BackendName(defaultNamer), features.VersionFromServicePort(&oldPort), features.ScopeFromServicePort(&oldPort))
+					be, err := syncer.backendPool.Get(oldPort.BackendName(), features.VersionFromServicePort(&oldPort), features.ScopeFromServicePort(&oldPort))
 					if err != nil {
 						t.Fatalf("%v", err)
 					}
@@ -677,9 +676,9 @@ func TestEnsureBackendServiceHealthCheckLink(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	syncer := newTestSyncer(fakeGCE)
 
-	p := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}}
+	p := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}, BackendNamer: defaultNamer}
 	syncer.Sync([]utils.ServicePort{p})
-	be, err := syncer.backendPool.Get(p.BackendName(defaultNamer), features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
+	be, err := syncer.backendPool.Get(p.BackendName(), features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
 	if err != nil {
 		t.Fatalf("%v", err)
 	}

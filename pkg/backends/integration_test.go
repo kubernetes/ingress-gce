@@ -41,7 +41,7 @@ type Jig struct {
 }
 
 func newTestJig(fakeGCE *gce.Cloud) *Jig {
-	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", "/healthz", defaultNamer, defaultBackendSvc)
+	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", "/healthz", defaultBackendSvc)
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
@@ -58,8 +58,8 @@ func newTestJig(fakeGCE *gce.Cloud) *Jig {
 
 	return &Jig{
 		fakeInstancePool: fakeInstancePool,
-		linker:           NewInstanceGroupLinker(fakeInstancePool, fakeBackendPool, defaultNamer),
-		syncer:           NewBackendSyncer(fakeBackendPool, fakeHealthChecks, defaultNamer, fakeGCE),
+		linker:           NewInstanceGroupLinker(fakeInstancePool, fakeBackendPool),
+		syncer:           NewBackendSyncer(fakeBackendPool, fakeHealthChecks, fakeGCE),
 		pool:             fakeBackendPool,
 	}
 }
@@ -68,7 +68,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	jig := newTestJig(fakeGCE)
 
-	sp := utils.ServicePort{NodePort: 80}
+	sp := utils.ServicePort{NodePort: 80, BackendNamer: defaultNamer}
 	_, err := jig.fakeInstancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
 	if err != nil {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
@@ -140,7 +140,7 @@ func TestSyncChaosMonkey(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	jig := newTestJig(fakeGCE)
 
-	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP}
+	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
 
 	_, err := jig.fakeInstancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
 	if err != nil {
@@ -154,7 +154,7 @@ func TestSyncChaosMonkey(t *testing.T) {
 		t.Fatalf("Did not expect error when linking backend with port %v to groups, err: %v", sp.NodePort, err)
 	}
 
-	beName := sp.BackendName(defaultNamer)
+	beName := sp.BackendName()
 	be, err := fakeGCE.GetGlobalBackendService(beName)
 	if err != nil {
 		t.Fatalf("%v", err)

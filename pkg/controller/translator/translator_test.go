@@ -51,13 +51,13 @@ var (
 		},
 		TargetPort: "9376",
 	}
+	defaultNamer = namer_util.NewNamer("uid1", "")
 )
 
 func fakeTranslator() *Translator {
 	client := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 
-	namer := namer_util.NewNamer("uid1", "")
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:                     apiv1.NamespaceAll,
 		ResyncPeriod:                  1 * time.Second,
@@ -65,7 +65,7 @@ func fakeTranslator() *Translator {
 		HealthCheckPath:               "/",
 		DefaultBackendHealthCheckPath: "/healthz",
 	}
-	ctx := context.NewControllerContext(client, nil, backendConfigClient, nil, nil, namer, ctxConfig)
+	ctx := context.NewControllerContext(client, nil, backendConfigClient, nil, nil, defaultNamer, ctxConfig)
 	gce := &Translator{
 		ctx: ctx,
 	}
@@ -173,7 +173,7 @@ func TestTranslateIngress(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotGCEURLMap, gotErrs := translator.TranslateIngress(tc.ing, defaultBackend.ID)
+			gotGCEURLMap, gotErrs := translator.TranslateIngress(tc.ing, defaultBackend.ID, defaultNamer)
 			if len(gotErrs) != tc.wantErrCount {
 				t.Errorf("%s: TranslateIngress() = _, %+v, want %v errs", tc.desc, gotErrs, tc.wantErrCount)
 			}
@@ -241,7 +241,7 @@ func TestGetServicePort(t *testing.T) {
 			svcLister.Add(svc)
 			tc.id.Service = svcName
 
-			port, gotErr := translator.getServicePort(tc.id, &tc.params)
+			port, gotErr := translator.getServicePort(tc.id, &tc.params, defaultNamer)
 			if (gotErr != nil) != tc.wantErr {
 				t.Errorf("translator.getServicePort(%+v) = _, %v, want err? %v", tc.id, gotErr, tc.wantErr)
 			}
@@ -318,7 +318,7 @@ func TestGetServicePortWithBackendConfigEnabled(t *testing.T) {
 			svcLister.Add(svc)
 			backendConfigLister.Add(backendConfig)
 
-			port, gotErr := translator.getServicePort(tc.id, &tc.params)
+			port, gotErr := translator.getServicePort(tc.id, &tc.params, defaultNamer)
 			if (gotErr != nil) != tc.wantErr {
 				t.Errorf("%s: translator.getServicePort(%+v) = _, %v, want err? %v", tc.desc, tc.id, gotErr, tc.wantErr)
 			}

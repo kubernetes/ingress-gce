@@ -38,6 +38,7 @@ import (
 	"k8s.io/ingress-gce/pkg/controller/errors"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 // getServicePortParams allows for passing parameters to getServicePort()
@@ -142,7 +143,7 @@ func (t *Translator) maybeEnableBackendConfig(sp *utils.ServicePort, svc *api_v1
 
 // getServicePort looks in the svc store for a matching service:port,
 // and returns the nodeport.
-func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePortParams) (*utils.ServicePort, error) {
+func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePortParams, namer namer_util.BackendNamer) (*utils.ServicePort, error) {
 	svc, err := t.getCachedService(id)
 	if err != nil {
 		return nil, err
@@ -162,6 +163,7 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 		Port:         int32(port.Port),
 		TargetPort:   port.TargetPort.String(),
 		L7ILBEnabled: params.isL7ILB,
+		BackendNamer: namer,
 	}
 
 	if err := maybeEnableNEG(svcPort, svc); err != nil {
@@ -180,7 +182,7 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 }
 
 // TranslateIngress converts an Ingress into our internal UrlMap representation.
-func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend utils.ServicePortID) (*utils.GCEURLMap, []error) {
+func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend utils.ServicePortID, namer namer_util.BackendNamer) (*utils.GCEURLMap, []error) {
 	var errs []error
 	urlMap := utils.NewGCEURLMap()
 
@@ -194,7 +196,7 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 
 		pathRules := []utils.PathRule{}
 		for _, p := range rule.HTTP.Paths {
-			svcPort, err := t.getServicePort(utils.BackendToServicePortID(p.Backend, ing.Namespace), params)
+			svcPort, err := t.getServicePort(utils.BackendToServicePortID(p.Backend, ing.Namespace), params, namer)
 			if err != nil {
 				errs = append(errs, err)
 			}
@@ -217,7 +219,7 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 	}
 
 	if ing.Spec.Backend != nil {
-		svcPort, err := t.getServicePort(utils.BackendToServicePortID(*ing.Spec.Backend, ing.Namespace), params)
+		svcPort, err := t.getServicePort(utils.BackendToServicePortID(*ing.Spec.Backend, ing.Namespace), params, namer)
 		if err == nil {
 			urlMap.DefaultBackend = svcPort
 			return urlMap, errs
@@ -227,7 +229,7 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 		return urlMap, errs
 	}
 
-	svcPort, err := t.getServicePort(systemDefaultBackend, params)
+	svcPort, err := t.getServicePort(systemDefaultBackend, params, namer)
 	if err == nil {
 		urlMap.DefaultBackend = svcPort
 		return urlMap, errs
