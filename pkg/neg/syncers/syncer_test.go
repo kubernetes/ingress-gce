@@ -17,10 +17,9 @@ limitations under the License.
 package syncers
 
 import (
+	"fmt"
 	"testing"
 	"time"
-
-	"fmt"
 
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -29,7 +28,7 @@ import (
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	"k8s.io/ingress-gce/pkg/utils"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 type syncerTester struct {
@@ -59,7 +58,7 @@ func newSyncerTester() *syncerTester {
 	testNegName := "test-neg-name"
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
-	namer := utils.NewNamer(clusterID, "")
+	namer := namer_util.NewNamer(clusterID, "")
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:             apiv1.NamespaceAll,
 		ResyncPeriod:          1 * time.Second,

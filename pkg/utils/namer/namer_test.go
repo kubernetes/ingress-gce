@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package utils
+package namer
 
 import (
 	"crypto/sha256"
@@ -48,9 +48,9 @@ func TestTruncate(t *testing.T) {
 
 func TestNamerUID(t *testing.T) {
 	const uid = "cluster-uid"
-	namer := NewNamer(uid, "cluster-fw")
-	if namer.UID() != uid {
-		t.Errorf("namer.UID() = %q, want %q", namer.UID(), uid)
+	newNamer := NewNamer(uid, "cluster-fw")
+	if newNamer.UID() != uid {
+		t.Errorf("newNamer.UID() = %q, want %q", newNamer.UID(), uid)
 	}
 
 	for _, tc := range []struct {
@@ -64,9 +64,9 @@ func TestNamerUID(t *testing.T) {
 		{"xxx--yyyyy--zzz", "zzz"},
 		{"xxx--yyyyy--zzz--abc", "abc"},
 	} {
-		namer.SetUID(tc.uidToSet)
-		if namer.UID() != tc.want {
-			t.Errorf("namer.UID() = %q, want %q", namer.UID(), tc.want)
+		newNamer.SetUID(tc.uidToSet)
+		if newNamer.UID() != tc.want {
+			t.Errorf("newNamer.UID() = %q, want %q", newNamer.UID(), tc.want)
 		}
 	}
 }
@@ -74,46 +74,46 @@ func TestNamerUID(t *testing.T) {
 func TestNamerFirewall(t *testing.T) {
 	const uid = "cluster-uid"
 	const fw1 = "fw1"
-	namer := NewNamer(uid, fw1)
-	if namer.Firewall() != fw1 {
-		t.Errorf("namer.Firewall() = %q, want %q", namer.Firewall(), fw1)
+	newNamer := NewNamer(uid, fw1)
+	if newNamer.Firewall() != fw1 {
+		t.Errorf("newNamer.Firewall() = %q, want %q", newNamer.Firewall(), fw1)
 	}
 
-	namer = NewNamer(uid, "")
-	if namer.Firewall() != uid {
-		t.Errorf("when initial firewall is empty, namer.Firewall() = %q, want %q", namer.Firewall(), uid)
+	newNamer = NewNamer(uid, "")
+	if newNamer.Firewall() != uid {
+		t.Errorf("when initial firewall is empty, newNamer.Firewall() = %q, want %q", newNamer.Firewall(), uid)
 	}
 
 	const fw2 = "fw2"
-	namer.SetFirewall(fw2)
-	if namer.Firewall() != fw2 {
-		t.Errorf("namer.Firewall() = %q, want %q", namer.Firewall(), fw2)
+	newNamer.SetFirewall(fw2)
+	if newNamer.Firewall() != fw2 {
+		t.Errorf("newNamer.Firewall() = %q, want %q", newNamer.Firewall(), fw2)
 	}
 }
 
 func TestNamerParseName(t *testing.T) {
 	const uid = "uid1"
-	namer := NewNamer(uid, "fw1")
-	lbName := namer.LoadBalancer("key1")
+	newNamer := NewNamer(uid, "fw1")
+	lbName := newNamer.LoadBalancer("key1")
 	secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
 	for _, tc := range []struct {
 		in   string
 		want *NameComponents
 	}{
 		{"", &NameComponents{}}, // TODO: this should really be a parse error.
-		{namer.IGBackend(80), &NameComponents{ClusterName: uid, Resource: "be"}},
-		{namer.InstanceGroup(), &NameComponents{ClusterName: uid, Resource: "ig"}},
-		{namer.TargetProxy(lbName, HTTPProtocol), &NameComponents{ClusterName: uid, Resource: "tp"}},
-		{namer.TargetProxy(lbName, HTTPSProtocol), &NameComponents{ClusterName: uid, Resource: "tps"}},
-		{namer.SSLCertName("default/my-ing", secretHash), &NameComponents{ClusterName: uid, Resource: "ssl"}},
-		{namer.SSLCertName("default/my-ing", secretHash), &NameComponents{ClusterName: uid, Resource: "ssl"}},
-		{namer.ForwardingRule(lbName, HTTPProtocol), &NameComponents{ClusterName: uid, Resource: "fw"}},
-		{namer.ForwardingRule(lbName, HTTPSProtocol), &NameComponents{ClusterName: uid, Resource: "fws"}},
-		{namer.UrlMap(lbName), &NameComponents{ClusterName: uid, Resource: "um", LbName: "key1"}},
+		{newNamer.IGBackend(80), &NameComponents{ClusterName: uid, Resource: "be"}},
+		{newNamer.InstanceGroup(), &NameComponents{ClusterName: uid, Resource: "ig"}},
+		{newNamer.TargetProxy(lbName, HTTPProtocol), &NameComponents{ClusterName: uid, Resource: "tp"}},
+		{newNamer.TargetProxy(lbName, HTTPSProtocol), &NameComponents{ClusterName: uid, Resource: "tps"}},
+		{newNamer.SSLCertName("default/my-ing", secretHash), &NameComponents{ClusterName: uid, Resource: "ssl"}},
+		{newNamer.SSLCertName("default/my-ing", secretHash), &NameComponents{ClusterName: uid, Resource: "ssl"}},
+		{newNamer.ForwardingRule(lbName, HTTPProtocol), &NameComponents{ClusterName: uid, Resource: "fw"}},
+		{newNamer.ForwardingRule(lbName, HTTPSProtocol), &NameComponents{ClusterName: uid, Resource: "fws"}},
+		{newNamer.UrlMap(lbName), &NameComponents{ClusterName: uid, Resource: "um", LbName: "key1"}},
 	} {
-		nc := namer.ParseName(tc.in)
+		nc := newNamer.ParseName(tc.in)
 		if *nc != *tc.want {
-			t.Errorf("namer.ParseName(%q) = %+v, want %+v", tc.in, nc, *tc.want)
+			t.Errorf("newNamer.ParseName(%q) = %+v, want %+v", tc.in, nc, *tc.want)
 		}
 	}
 }
@@ -124,53 +124,53 @@ func TestNameBelongsToCluster(t *testing.T) {
 	longKey := "0123456789"
 	secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
 	for _, prefix := range []string{defaultPrefix, "mci"} {
-		namer := NewNamerWithPrefix(prefix, uid, "fw1")
-		lbName := namer.LoadBalancer("key1")
+		newNamer := NewNamerWithPrefix(prefix, uid, "fw1")
+		lbName := newNamer.LoadBalancer("key1")
 		// longLBName with 40 characters. Triggers truncation
-		longLBName := namer.LoadBalancer(strings.Repeat(longKey, 4))
+		longLBName := newNamer.LoadBalancer(strings.Repeat(longKey, 4))
 		// Positive cases.
 		for _, tc := range []string{
 			// short names
-			namer.IGBackend(80),
-			namer.InstanceGroup(),
-			namer.TargetProxy(lbName, HTTPProtocol),
-			namer.TargetProxy(lbName, HTTPSProtocol),
-			namer.SSLCertName("default/my-ing", secretHash),
-			namer.ForwardingRule(lbName, HTTPProtocol),
-			namer.ForwardingRule(lbName, HTTPSProtocol),
-			namer.UrlMap(lbName),
-			namer.NEG("ns", "n", int32(80)),
+			newNamer.IGBackend(80),
+			newNamer.InstanceGroup(),
+			newNamer.TargetProxy(lbName, HTTPProtocol),
+			newNamer.TargetProxy(lbName, HTTPSProtocol),
+			newNamer.SSLCertName("default/my-ing", secretHash),
+			newNamer.ForwardingRule(lbName, HTTPProtocol),
+			newNamer.ForwardingRule(lbName, HTTPSProtocol),
+			newNamer.UrlMap(lbName),
+			newNamer.NEG("ns", "n", int32(80)),
 			// long names that are truncated
-			namer.TargetProxy(longLBName, HTTPProtocol),
-			namer.TargetProxy(longLBName, HTTPSProtocol),
-			namer.SSLCertName(longLBName, secretHash),
-			namer.ForwardingRule(longLBName, HTTPProtocol),
-			namer.ForwardingRule(longLBName, HTTPSProtocol),
-			namer.UrlMap(longLBName),
-			namer.NEG(strings.Repeat(longKey, 3), strings.Repeat(longKey, 3), int32(88888)),
+			newNamer.TargetProxy(longLBName, HTTPProtocol),
+			newNamer.TargetProxy(longLBName, HTTPSProtocol),
+			newNamer.SSLCertName(longLBName, secretHash),
+			newNamer.ForwardingRule(longLBName, HTTPProtocol),
+			newNamer.ForwardingRule(longLBName, HTTPSProtocol),
+			newNamer.UrlMap(longLBName),
+			newNamer.NEG(strings.Repeat(longKey, 3), strings.Repeat(longKey, 3), int32(88888)),
 		} {
-			if !namer.NameBelongsToCluster(tc) {
-				t.Errorf("namer.NameBelongsToCluster(%q) = false, want true", tc)
+			if !newNamer.NameBelongsToCluster(tc) {
+				t.Errorf("newNamer.NameBelongsToCluster(%q) = false, want true", tc)
 			}
 		}
 	}
 
 	// Negative cases.
-	namer := NewNamer(uid, "fw1")
+	newNamer := NewNamer(uid, "fw1")
 	// longLBName with 60 characters. Triggers truncation to eliminate cluster name suffix
-	longLBName := namer.LoadBalancer(strings.Repeat(longKey, 6))
+	longLBName := newNamer.LoadBalancer(strings.Repeat(longKey, 6))
 	for _, tc := range []string{
 		"",
 		"invalid",
 		"not--the-right-uid",
-		namer.TargetProxy(longLBName, HTTPProtocol),
-		namer.TargetProxy(longLBName, HTTPSProtocol),
-		namer.ForwardingRule(longLBName, HTTPProtocol),
-		namer.ForwardingRule(longLBName, HTTPSProtocol),
-		namer.UrlMap(longLBName),
+		newNamer.TargetProxy(longLBName, HTTPProtocol),
+		newNamer.TargetProxy(longLBName, HTTPSProtocol),
+		newNamer.ForwardingRule(longLBName, HTTPProtocol),
+		newNamer.ForwardingRule(longLBName, HTTPSProtocol),
+		newNamer.UrlMap(longLBName),
 	} {
-		if namer.NameBelongsToCluster(tc) {
-			t.Errorf("namer.NameBelongsToCluster(%q) = true, want false", tc)
+		if newNamer.NameBelongsToCluster(tc) {
+			t.Errorf("newNamer.NameBelongsToCluster(%q) = true, want false", tc)
 		}
 	}
 }
@@ -192,26 +192,26 @@ func TestNamerBackend(t *testing.T) {
 			want: "k8s-be-8080--xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx0",
 		},
 	} {
-		namer := NewNamer("uid1", "fw1")
+		newNamer := NewNamer("uid1", "fw1")
 		if tc.uid != "" {
-			namer.SetUID(tc.uid)
+			newNamer.SetUID(tc.uid)
 		}
-		name := namer.IGBackend(tc.port)
+		name := newNamer.IGBackend(tc.port)
 		if name != tc.want {
-			t.Errorf("%s: namer.Backend() = %q, want %q", tc.desc, name, tc.want)
+			t.Errorf("%s: newNamer.Backend() = %q, want %q", tc.desc, name, tc.want)
 		}
 	}
 	// Prefix.
-	namer := NewNamerWithPrefix("mci", "uid1", "fw1")
-	name := namer.IGBackend(80)
+	newNamer := NewNamerWithPrefix("mci", "uid1", "fw1")
+	name := newNamer.IGBackend(80)
 	const want = "mci-be-80--uid1"
 	if name != want {
-		t.Errorf("with prefix = %q, namer.Backend(80) = %q, want %q", "mci", name, want)
+		t.Errorf("with prefix = %q, newNamer.Backend(80) = %q, want %q", "mci", name, want)
 	}
 }
 
 func TestBackendPort(t *testing.T) {
-	namer := NewNamer("uid1", "fw1")
+	newNamer := NewNamer("uid1", "fw1")
 	for _, tc := range []struct {
 		in    string
 		port  string
@@ -222,19 +222,19 @@ func TestBackendPort(t *testing.T) {
 		{"k8s-be-8080--uid1", "8080", true},
 		{"k8s-be-port1--uid1", "8080", false},
 	} {
-		port, err := namer.IGBackendPort(tc.in)
+		port, err := newNamer.IGBackendPort(tc.in)
 		if err != nil {
 			if tc.valid {
-				t.Errorf("namer.BackendPort(%q) = _, %v, want _, nil", tc.in, err)
+				t.Errorf("newNamer.BackendPort(%q) = _, %v, want _, nil", tc.in, err)
 			}
 			continue
 		}
 		if !tc.valid {
-			t.Errorf("namer.BackendPort(%q) = _, nil, want error", tc.in)
+			t.Errorf("newNamer.BackendPort(%q) = _, nil, want error", tc.in)
 			continue
 		}
 		if port != tc.port {
-			t.Errorf("namer.BackendPort(%q) = %q, nil, want %q, nil", tc.in, port, tc.port)
+			t.Errorf("newNamer.BackendPort(%q) = %q, nil, want %q, nil", tc.in, port, tc.port)
 		}
 	}
 }
@@ -250,42 +250,42 @@ func TestIsSSLCert(t *testing.T) {
 		{defaultPrefix, "k8s-tp-foo--uid", false},
 		{"mci", "mci-ssl-foo--uid", true},
 	} {
-		namer := NewNamerWithPrefix(tc.prefix, "uid", "fw")
-		res := namer.IsLegacySSLCert("foo", tc.in)
+		newNamer := NewNamerWithPrefix(tc.prefix, "uid", "fw")
+		res := newNamer.IsLegacySSLCert("foo", tc.in)
 		if res != tc.want {
-			t.Errorf("with prefix = %q, namer.IsLegacySSLCert(%q) = %v, want %v", tc.prefix, tc.in, res, tc.want)
+			t.Errorf("with prefix = %q, newNamer.IsLegacySSLCert(%q) = %v, want %v", tc.prefix, tc.in, res, tc.want)
 		}
 	}
 }
 
 func TestNamedPort(t *testing.T) {
-	namer := NewNamer("uid1", "fw1")
-	name := namer.NamedPort(80)
+	newNamer := NewNamer("uid1", "fw1")
+	name := newNamer.NamedPort(80)
 	const want = "port80"
 	if name != want {
-		t.Errorf("namer.NamedPort(80) = %q, want %q", name, want)
+		t.Errorf("newNamer.NamedPort(80) = %q, want %q", name, want)
 	}
 }
 
 func TestNamerInstanceGroup(t *testing.T) {
-	namer := NewNamer("uid1", "fw1")
-	name := namer.InstanceGroup()
+	newNamer := NewNamer("uid1", "fw1")
+	name := newNamer.InstanceGroup()
 	if name != "k8s-ig--uid1" {
-		t.Errorf("namer.InstanceGroup() = %q, want %q", name, "k8s-ig--uid1")
+		t.Errorf("newNamer.InstanceGroup() = %q, want %q", name, "k8s-ig--uid1")
 	}
 	// Prefix.
-	namer = NewNamerWithPrefix("mci", "uid1", "fw1")
-	name = namer.InstanceGroup()
+	newNamer = NewNamerWithPrefix("mci", "uid1", "fw1")
+	name = newNamer.InstanceGroup()
 	if name != "mci-ig--uid1" {
-		t.Errorf("namer.InstanceGroup() = %q, want %q", name, "mci-ig--uid1")
+		t.Errorf("newNamer.InstanceGroup() = %q, want %q", name, "mci-ig--uid1")
 	}
 }
 
 func TestNamerFirewallRule(t *testing.T) {
-	namer := NewNamer("uid1", "fw1")
-	name := namer.FirewallRule()
+	newNamer := NewNamer("uid1", "fw1")
+	name := newNamer.FirewallRule()
 	if name != "k8s-fw-l7--fw1" {
-		t.Errorf("namer.FirewallRule() = %q, want %q", name, "k8s-fw-l7--fw1")
+		t.Errorf("newNamer.FirewallRule() = %q, want %q", name, "k8s-fw-l7--fw1")
 	}
 }
 
@@ -323,8 +323,8 @@ func TestNamerLoadBalancer(t *testing.T) {
 			"mci-um-key1--uid1",
 		},
 	} {
-		namer := NewNamerWithPrefix(tc.prefix, "uid1", "fw1")
-		lbName := namer.LoadBalancer("key1")
+		newNamer := NewNamerWithPrefix(tc.prefix, "uid1", "fw1")
+		lbName := newNamer.LoadBalancer("key1")
 		// namespaceHash is calculated the same way as cert hash
 		namespaceHash := fmt.Sprintf("%x", sha256.Sum256([]byte(lbName)))[:16]
 		tc.sslCert = fmt.Sprintf(tc.sslCert, namespaceHash, secretHash)
@@ -333,29 +333,29 @@ func TestNamerLoadBalancer(t *testing.T) {
 			t.Errorf("lbName = %q, want %q", lbName, "key1--uid1")
 		}
 		var name string
-		name = namer.TargetProxy(lbName, HTTPProtocol)
+		name = newNamer.TargetProxy(lbName, HTTPProtocol)
 		if name != tc.targetHTTPProxy {
-			t.Errorf("namer.TargetProxy(%q, HTTPProtocol) = %q, want %q", lbName, name, tc.targetHTTPProxy)
+			t.Errorf("newNamer.TargetProxy(%q, HTTPProtocol) = %q, want %q", lbName, name, tc.targetHTTPProxy)
 		}
-		name = namer.TargetProxy(lbName, HTTPSProtocol)
+		name = newNamer.TargetProxy(lbName, HTTPSProtocol)
 		if name != tc.targetHTTPSProxy {
-			t.Errorf("namer.TargetProxy(%q, HTTPSProtocol) = %q, want %q", lbName, name, tc.targetHTTPSProxy)
+			t.Errorf("newNamer.TargetProxy(%q, HTTPSProtocol) = %q, want %q", lbName, name, tc.targetHTTPSProxy)
 		}
-		name = namer.SSLCertName(lbName, secretHash)
+		name = newNamer.SSLCertName(lbName, secretHash)
 		if name != tc.sslCert {
-			t.Errorf("namer.SSLCertName(%q, true) = %q, want %q", lbName, name, tc.sslCert)
+			t.Errorf("newNamer.SSLCertName(%q, true) = %q, want %q", lbName, name, tc.sslCert)
 		}
-		name = namer.ForwardingRule(lbName, HTTPProtocol)
+		name = newNamer.ForwardingRule(lbName, HTTPProtocol)
 		if name != tc.forwardingRuleHTTP {
-			t.Errorf("namer.ForwardingRule(%q, HTTPProtocol) = %q, want %q", lbName, name, tc.forwardingRuleHTTP)
+			t.Errorf("newNamer.ForwardingRule(%q, HTTPProtocol) = %q, want %q", lbName, name, tc.forwardingRuleHTTP)
 		}
-		name = namer.ForwardingRule(lbName, HTTPSProtocol)
+		name = newNamer.ForwardingRule(lbName, HTTPSProtocol)
 		if name != tc.forwardingRuleHTTPS {
-			t.Errorf("namer.ForwardingRule(%q, HTTPSProtocol) = %q, want %q", lbName, name, tc.forwardingRuleHTTPS)
+			t.Errorf("newNamer.ForwardingRule(%q, HTTPSProtocol) = %q, want %q", lbName, name, tc.forwardingRuleHTTPS)
 		}
-		name = namer.UrlMap(lbName)
+		name = newNamer.UrlMap(lbName)
 		if name != tc.urlMap {
-			t.Errorf("namer.UrlMap(%q) = %q, want %q", lbName, name, tc.urlMap)
+			t.Errorf("newNamer.UrlMap(%q) = %q, want %q", lbName, name, tc.urlMap)
 		}
 	}
 }
@@ -363,9 +363,9 @@ func TestNamerLoadBalancer(t *testing.T) {
 // Ensure that a valid cert name is created if clusterName is empty.
 func TestNamerSSLCertName(t *testing.T) {
 	secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
-	namer := NewNamerWithPrefix("k8s", "", "fw1")
-	lbName := namer.LoadBalancer("key1")
-	certName := namer.SSLCertName(lbName, secretHash)
+	newNamer := NewNamerWithPrefix("k8s", "", "fw1")
+	lbName := newNamer.LoadBalancer("key1")
+	certName := newNamer.SSLCertName(lbName, secretHash)
 	if strings.HasSuffix(certName, clusterNameDelimiter) {
 		t.Errorf("Invalid Cert name %s ending with %s", certName, clusterNameDelimiter)
 	}
@@ -395,13 +395,13 @@ func TestNamerIsCertUsedForLB(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			namer := NewNamerWithPrefix(tc.prefix, "cluster-uid", "fw1")
-			lbName := namer.LoadBalancer(tc.ingName)
+			newNamer := NewNamerWithPrefix(tc.prefix, "cluster-uid", "fw1")
+			lbName := newNamer.LoadBalancer(tc.ingName)
 			secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte(tc.secretValue)))[:16]
 
-			certName := namer.SSLCertName(lbName, secretHash)
-			if v := namer.IsCertUsedForLB(lbName, certName); !v {
-				t.Errorf("namer.IsCertUsedForLB(%q, %q) = %v, want %v", lbName, certName, v, true)
+			certName := newNamer.SSLCertName(lbName, secretHash)
+			if v := newNamer.IsCertUsedForLB(lbName, certName); !v {
+				t.Errorf("newNamer.IsCertUsedForLB(%q, %q) = %v, want %v", lbName, certName, v, true)
 			}
 		})
 	}
@@ -454,9 +454,9 @@ func TestNamerNEG(t *testing.T) {
 		},
 	}
 
-	namer := NewNamer(clusterId, "")
+	newNamer := NewNamer(clusterId, "")
 	for _, tc := range testCases {
-		res := namer.NEG(tc.namespace, tc.name, tc.port)
+		res := newNamer.NEG(tc.namespace, tc.name, tc.port)
 		if len(res) > 63 {
 			t.Errorf("%s: got len(res) == %v, want <= 63", tc.desc, len(res))
 		}
@@ -466,11 +466,11 @@ func TestNamerNEG(t *testing.T) {
 	}
 
 	// Different prefix.
-	namer = NewNamerWithPrefix("mci", clusterId, "fw")
-	name := namer.NEG("ns", "svc", 80)
+	newNamer = NewNamerWithPrefix("mci", clusterId, "fw")
+	name := newNamer.NEG("ns", "svc", 80)
 	const want = "mci1-01234567-ns-svc-80-4890871b"
 	if name != want {
-		t.Errorf(`with prefix %q, namer.NEG("ns", "svc", 80) = %q, want %q`, "mci", name, want)
+		t.Errorf(`with prefix %q, newNamer.NEG("ns", "svc", 80) = %q, want %q`, "mci", name, want)
 	}
 }
 
@@ -492,10 +492,10 @@ func TestIsNEG(t *testing.T) {
 		{defaultPrefix, "k8s-ssl-foo--uid", false},
 		{defaultPrefix, "invalidk8sresourcename", false},
 	} {
-		namer := NewNamerWithPrefix(tc.prefix, "uid1", "fw1")
-		res := namer.IsNEG(tc.in)
+		newNamer := NewNamerWithPrefix(tc.prefix, "uid1", "fw1")
+		res := newNamer.IsNEG(tc.in)
 		if res != tc.want {
-			t.Errorf("with prefix %q, namer.IsNEG(%q) = %v, want %v", tc.prefix, tc.in, res, tc.want)
+			t.Errorf("with prefix %q, newNamer.NEG(%q) = %v, want %v", tc.prefix, tc.in, res, tc.want)
 		}
 	}
 }

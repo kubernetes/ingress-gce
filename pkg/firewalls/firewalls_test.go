@@ -20,13 +20,13 @@ import (
 	"strings"
 	"testing"
 
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
-var namer = utils.NewNamer("ABC", "XYZ")
-var ruleName = namer.FirewallRule()
+var defaultNamer = namer.NewNamer("ABC", "XYZ")
+var ruleName = defaultNamer.FirewallRule()
 var srcRanges = []string{"1.1.1.1/11", "2.2.2.2/22"}
 
 func portRanges() []string {
@@ -35,7 +35,7 @@ func portRanges() []string {
 
 func TestFirewallPoolSync(t *testing.T) {
 	fwp := NewFakeFirewallsProvider(false, false)
-	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
+	fp := NewFirewallPool(fwp, defaultNamer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
 	if err := fp.Sync(nodes, nil, nil); err != nil {
@@ -46,7 +46,7 @@ func TestFirewallPoolSync(t *testing.T) {
 
 func TestFirewallPoolSyncNodes(t *testing.T) {
 	fwp := NewFakeFirewallsProvider(false, false)
-	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
+	fp := NewFirewallPool(fwp, defaultNamer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
 	if err := fp.Sync(nodes, nil, nil); err != nil {
@@ -71,7 +71,7 @@ func TestFirewallPoolSyncNodes(t *testing.T) {
 
 func TestFirewallPoolSyncSrcRanges(t *testing.T) {
 	fwp := NewFakeFirewallsProvider(false, false)
-	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
+	fp := NewFirewallPool(fwp, defaultNamer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
 	if err := fp.Sync(nodes, nil, nil); err != nil {
@@ -94,7 +94,7 @@ func TestFirewallPoolSyncSrcRanges(t *testing.T) {
 
 func TestFirewallPoolSyncPorts(t *testing.T) {
 	fwp := NewFakeFirewallsProvider(false, false)
-	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
+	fp := NewFirewallPool(fwp, defaultNamer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
 	if err := fp.Sync(nodes, nil, nil); err != nil {
@@ -149,7 +149,7 @@ func TestFirewallPoolSyncRanges(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			fwp := NewFakeFirewallsProvider(false, false)
-			fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
+			fp := NewFirewallPool(fwp, defaultNamer, srcRanges, portRanges())
 			nodes := []string{"node-a", "node-b", "node-c"}
 
 			if err := fp.Sync(nodes, nil, tc.additionalRanges); err != nil {
@@ -164,7 +164,7 @@ func TestFirewallPoolSyncRanges(t *testing.T) {
 
 func TestFirewallPoolGC(t *testing.T) {
 	fwp := NewFakeFirewallsProvider(false, false)
-	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
+	fp := NewFirewallPool(fwp, defaultNamer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
 	if err := fp.Sync(nodes, nil, nil); err != nil {
@@ -186,7 +186,7 @@ func TestFirewallPoolGC(t *testing.T) {
 func TestSyncOnXPNWithPermission(t *testing.T) {
 	// Fake XPN cluster with permission
 	fwp := NewFakeFirewallsProvider(true, false)
-	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
+	fp := NewFirewallPool(fwp, defaultNamer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
 	if err := fp.Sync(nodes, nil, nil); err != nil {
@@ -200,7 +200,7 @@ func TestSyncOnXPNWithPermission(t *testing.T) {
 // Specific errors should be returned.
 func TestSyncXPNReadOnly(t *testing.T) {
 	fwp := NewFakeFirewallsProvider(true, true)
-	fp := NewFirewallPool(fwp, namer, srcRanges, portRanges())
+	fp := NewFirewallPool(fwp, defaultNamer, srcRanges, portRanges())
 	nodes := []string{"node-a", "node-b", "node-c"}
 
 	err := fp.Sync(nodes, nil, nil)

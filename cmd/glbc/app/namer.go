@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,7 +31,6 @@ import (
 
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/storage"
-	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const (
@@ -41,7 +41,7 @@ const (
 )
 
 // NewNamer returns a new naming policy given the state of the cluster.
-func NewNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*utils.Namer, error) {
+func NewNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*namer.Namer, error) {
 	namer, err := NewStaticNamer(kubeClient, clusterName, fwName)
 	if err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ func NewNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*uti
 
 // NewStaticNamer returns a new naming policy given a snapshot of cluster state. Note that this
 // implementation does not dynamically change the naming policy based on changes in cluster state.
-func NewStaticNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*utils.Namer, error) {
+func NewStaticNamer(kubeClient kubernetes.Interface, clusterName, fwName string) (*namer.Namer, error) {
 	name, err := getClusterUID(kubeClient, clusterName)
 	if err != nil {
 		return nil, err
@@ -96,7 +96,7 @@ func NewStaticNamer(kubeClient kubernetes.Interface, clusterName, fwName string)
 		return nil, err
 	}
 
-	return utils.NewNamer(name, fw_name), nil
+	return namer.NewNamer(name, fw_name), nil
 }
 
 // useDefaultOrLookupVault returns either a 'defaultName' or if unset, obtains
@@ -166,7 +166,7 @@ func getClusterUID(kubeClient kubernetes.Interface, name string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	namer := utils.NewNamer("", "")
+	namer := namer.NewNamer("", "")
 	for _, ing := range ings.Items {
 		if len(ing.Status.LoadBalancer.Ingress) != 0 {
 			c := namer.ParseName(loadbalancers.GCEResourceName(ing.Annotations, "forwarding-rule"))

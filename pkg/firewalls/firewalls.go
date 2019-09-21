@@ -21,14 +21,13 @@ import (
 	"sort"
 	"strings"
 
-	"k8s.io/klog"
-
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/utils"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 	netset "k8s.io/utils/net"
-
-	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const (
@@ -40,7 +39,7 @@ const (
 // FirewallRules manages firewall rules.
 type FirewallRules struct {
 	cloud     Firewall
-	namer     *utils.Namer
+	namer     *namer_util.Namer
 	srcRanges []string
 	// TODO(rramkumar): Eliminate this variable. We should just pass in
 	// all the port ranges to open with each call to Sync()
@@ -50,7 +49,7 @@ type FirewallRules struct {
 // NewFirewallPool creates a new firewall rule manager.
 // cloud: the cloud object implementing Firewall.
 // namer: cluster namer.
-func NewFirewallPool(cloud Firewall, namer *utils.Namer, l7SrcRanges []string, nodePortRanges []string) SingleFirewallPool {
+func NewFirewallPool(cloud Firewall, namer *namer_util.Namer, l7SrcRanges []string, nodePortRanges []string) SingleFirewallPool {
 	_, err := netset.ParseIPNets(l7SrcRanges...)
 	if err != nil {
 		klog.Fatalf("Could not parse L7 src ranges %v for firewall rule: %v", l7SrcRanges, err)

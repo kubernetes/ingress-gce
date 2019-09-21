@@ -17,14 +17,15 @@ limitations under the License.
 package readiness
 
 import (
+	"net"
+	"strconv"
+	"testing"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	"k8s.io/ingress-gce/pkg/utils"
-	"net"
-	"strconv"
-	"testing"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 func newFakePoller() *poller {
@@ -309,7 +310,7 @@ func TestPoll(t *testing.T) {
 
 	poller := newFakePoller()
 	negCloud := poller.negCloud
-	namer := utils.NewNamer("clusteruid", "")
+	namer := namer_util.NewNamer("clusteruid", "")
 
 	ns := "ns"
 	podName := "pod1"

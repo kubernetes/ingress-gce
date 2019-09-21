@@ -20,11 +20,13 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
 
@@ -216,7 +218,7 @@ func mapsEqual(a, b *composite.UrlMap) bool {
 // and remove the mapping. When a new path is added to a host (happens
 // more frequently than service deletion) we just need to lookup the 1
 // pathmatcher of the host.
-func toCompositeURLMap(lbName string, g *utils.GCEURLMap, namer *utils.Namer, key *meta.Key) *composite.UrlMap {
+func toCompositeURLMap(lbName string, g *utils.GCEURLMap, namer *namer.Namer, key *meta.Key) *composite.UrlMap {
 	defaultBackendName := g.DefaultBackend.BackendName(namer)
 	key.Name = defaultBackendName
 	resourceID := cloud.ResourceID{ProjectID: "", Resource: "backendServices", Key: key}

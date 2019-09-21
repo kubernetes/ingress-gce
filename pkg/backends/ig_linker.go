@@ -23,6 +23,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
 
@@ -65,7 +66,7 @@ const maxRPS = 1
 type instanceGroupLinker struct {
 	instancePool instances.NodePool
 	backendPool  Pool
-	namer        *utils.Namer
+	namer        *namer.Namer
 }
 
 // instanceGroupLinker is a Linker
@@ -74,7 +75,7 @@ var _ Linker = (*instanceGroupLinker)(nil)
 func NewInstanceGroupLinker(
 	instancePool instances.NodePool,
 	backendPool Pool,
-	namer *utils.Namer) Linker {
+	namer *namer.Namer) Linker {
 	return &instanceGroupLinker{
 		instancePool: instancePool,
 		backendPool:  backendPool,

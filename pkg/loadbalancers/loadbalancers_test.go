@@ -19,7 +19,6 @@ package loadbalancers
 import (
 	"context"
 	"fmt"
-	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"net/http"
 	"strconv"
 	"strings"
@@ -37,7 +36,9 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/kubernetes/pkg/util/slice"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -59,12 +60,12 @@ type testJig struct {
 	pool    LoadBalancerPool
 	fakeGCE *gce.Cloud
 	mock    *cloud.MockGCE
-	namer   *utils.Namer
+	namer   *namer_util.Namer
 	t       *testing.T
 }
 
 func newTestJig(t *testing.T) *testJig {
-	namer := utils.NewNamer(clusterName, "fw1")
+	namer := namer_util.NewNamer(clusterName, "fw1")
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
 
@@ -111,17 +112,17 @@ func (j *testJig) UMName(lbName string) string {
 }
 
 func (j *testJig) TPName(lbName string, https bool) string {
-	protocol := utils.HTTPProtocol
+	protocol := namer_util.HTTPProtocol
 	if https {
-		protocol = utils.HTTPSProtocol
+		protocol = namer_util.HTTPSProtocol
 	}
 	return j.namer.TargetProxy(lbName, protocol)
 }
 
 func (j *testJig) FWName(lbName string, https bool) string {
-	proto := utils.HTTPProtocol
+	proto := namer_util.HTTPProtocol
 	if https {
-		proto = utils.HTTPSProtocol
+		proto = namer_util.HTTPSProtocol
 	}
 	return j.namer.ForwardingRule(lbName, proto)
 }
@@ -140,7 +141,7 @@ func newIngress() *v1beta1.Ingress {
 	}
 }
 
-func newFakeLoadBalancerPool(cloud *gce.Cloud, t *testing.T, namer *utils.Namer) LoadBalancerPool {
+func newFakeLoadBalancerPool(cloud *gce.Cloud, t *testing.T, namer *namer_util.Namer) LoadBalancerPool {
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
 	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
@@ -895,7 +896,7 @@ func TestCreateHTTPSLoadBalancerAnnotationCert(t *testing.T) {
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
 	tlsName := "external-cert-name"
-	namer := utils.NewNamer(clusterName, "fw1")
+	namer := namer_util.NewNamer(clusterName, "fw1")
 	lbInfo := &L7RuntimeInfo{
 		Name:      namer.LoadBalancer(ingressName),
 		AllowHTTP: false,
@@ -1003,7 +1004,7 @@ func TestUrlMapChange(t *testing.T) {
 	um2.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar1", Backend: utils.ServicePort{NodePort: 30003}}})
 	um2.DefaultBackend = &utils.ServicePort{NodePort: 30004}
 
-	namer := utils.NewNamer(clusterName, "fw1")
+	namer := namer_util.NewNamer(clusterName, "fw1")
 	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer(ingressName), AllowHTTP: true, UrlMap: um1, Ingress: newIngress()}
 
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
@@ -1058,7 +1059,7 @@ func TestPoolSyncNoChanges(t *testing.T) {
 	um2.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar1", Backend: utils.ServicePort{NodePort: 30002}}})
 	um2.DefaultBackend = &utils.ServicePort{NodePort: 30003}
 
-	namer := utils.NewNamer(clusterName, "fw1")
+	namer := namer_util.NewNamer(clusterName, "fw1")
 	lbInfo := &L7RuntimeInfo{Name: namer.LoadBalancer(ingressName), AllowHTTP: true, UrlMap: um1, Ingress: newIngress()}
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
@@ -1077,8 +1078,8 @@ func TestPoolSyncNoChanges(t *testing.T) {
 func TestNameParsing(t *testing.T) {
 	clusterName := "123"
 	firewallName := clusterName
-	namer := utils.NewNamer(clusterName, firewallName)
-	fullName := namer.ForwardingRule(namer.LoadBalancer("testlb"), utils.HTTPProtocol)
+	namer := namer_util.NewNamer(clusterName, firewallName)
+	fullName := namer.ForwardingRule(namer.LoadBalancer("testlb"), namer_util.HTTPProtocol)
 	annotationsMap := map[string]string{
 		fmt.Sprintf("%v/forwarding-rule", annotations.StatusPrefix): fullName,
 	}
@@ -1130,7 +1131,7 @@ func TestClusterNameChange(t *testing.T) {
 }
 
 func TestInvalidClusterNameChange(t *testing.T) {
-	namer := utils.NewNamer("test--123", "test--123")
+	namer := namer_util.NewNamer("test--123", "test--123")
 	if got := namer.UID(); got != "123" {
 		t.Fatalf("Expected name 123, got %v", got)
 	}
@@ -1222,7 +1223,7 @@ func TestSecretBasedAndPreSharedCerts(t *testing.T) {
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234}
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{utils.PathRule{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000}}})
-	namer := utils.NewNamer(clusterName, "fw1")
+	namer := namer_util.NewNamer(clusterName, "fw1")
 	lbName := namer.LoadBalancer(ingressName)
 	certName1 := namer.SSLCertName(lbName, GetCertHash("cert"))
 	certName2 := namer.SSLCertName(lbName, GetCertHash("cert2"))

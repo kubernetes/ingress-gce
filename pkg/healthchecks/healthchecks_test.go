@@ -27,11 +27,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
 var (
-	namer = utils.NewNamer("uid1", "fw1")
+	namer = namer_util.NewNamer("uid1", "fw1")
 
 	defaultBackendSvc = types.NamespacedName{Namespace: "system", Name: "default"}
 )

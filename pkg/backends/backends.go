@@ -22,6 +22,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -29,7 +30,7 @@ import (
 // Backends handles CRUD operations for backends.
 type Backends struct {
 	cloud *gce.Cloud
-	namer *utils.Namer
+	namer *namer.Namer
 }
 
 // Backends is a Pool.
@@ -38,7 +39,7 @@ var _ Pool = (*Backends)(nil)
 // NewPool returns a new backend pool.
 // - cloud: implements BackendServices
 // - namer: produces names for backends.
-func NewPool(cloud *gce.Cloud, namer *utils.Namer) *Backends {
+func NewPool(cloud *gce.Cloud, namer *namer.Namer) *Backends {
 	return &Backends{
 		cloud: cloud,
 		namer: namer,

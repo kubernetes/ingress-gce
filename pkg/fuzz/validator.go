@@ -29,7 +29,7 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
 
@@ -42,7 +42,7 @@ type ValidatorEnv interface {
 	BackendConfigs() (map[string]*backendconfig.BackendConfig, error)
 	Services() (map[string]*v1.Service, error)
 	Cloud() cloud.Cloud
-	Namer() *utils.Namer
+	Namer() *namer.Namer
 }
 
 // MockValidatorEnv is an environment that is used for mock testing.
@@ -50,7 +50,7 @@ type MockValidatorEnv struct {
 	BackendConfigsMap map[string]*backendconfig.BackendConfig
 	ServicesMap       map[string]*v1.Service
 	MockCloud         *cloud.MockGCE
-	IngressNamer      *utils.Namer
+	IngressNamer      *namer.Namer
 }
 
 // BackendConfigs implements ValidatorEnv.
@@ -69,7 +69,7 @@ func (e *MockValidatorEnv) Cloud() cloud.Cloud {
 }
 
 // Cloud implements ValidatorEnv.
-func (e *MockValidatorEnv) Namer() *utils.Namer {
+func (e *MockValidatorEnv) Namer() *namer.Namer {
 	return e.IngressNamer
 }
 

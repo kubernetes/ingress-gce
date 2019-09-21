@@ -18,18 +18,18 @@ package loadbalancers
 
 import (
 	"fmt"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -161,7 +161,7 @@ func TestGC(t *testing.T) {
 		},
 	}
 
-	otherNamer := utils.NewNamer("clusteruid", "fw1")
+	otherNamer := namer_util.NewNamer("clusteruid", "fw1")
 	otherKeys := []string{
 		"a/a",
 		"namespace/name",
@@ -294,49 +294,49 @@ func TestGCToLeakLB(t *testing.T) {
 }
 
 func newTestLoadBalancerPool() LoadBalancerPool {
-	namer := utils.NewNamer(testClusterName, "fw1")
+	namer := namer_util.NewNamer(testClusterName, "fw1")
 	fakeGCECloud := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	ctx := &context.ControllerContext{}
 	return NewLoadBalancerPool(fakeGCECloud, namer, ctx)
 }
 
-func createFakeLoadbalancer(cloud *gce.Cloud, namer *utils.Namer, lbKey string, versions *features.ResourceVersions, scope meta.KeyType) {
+func createFakeLoadbalancer(cloud *gce.Cloud, namer *namer_util.Namer, lbKey string, versions *features.ResourceVersions, scope meta.KeyType) {
 	lbName := namer.LoadBalancer(lbKey)
 	key, _ := composite.CreateKey(cloud, "", scope)
 
-	key.Name = namer.ForwardingRule(lbName, utils.HTTPProtocol)
+	key.Name = namer.ForwardingRule(lbName, namer_util.HTTPProtocol)
 	composite.CreateForwardingRule(cloud, key, &composite.ForwardingRule{Name: key.Name, Version: versions.ForwardingRule})
 
-	key.Name = namer.TargetProxy(lbName, utils.HTTPProtocol)
+	key.Name = namer.TargetProxy(lbName, namer_util.HTTPProtocol)
 	composite.CreateTargetHttpProxy(cloud, key, &composite.TargetHttpProxy{Name: key.Name, Version: versions.TargetHttpProxy})
 
 	key.Name = namer.UrlMap(lbName)
 	composite.CreateUrlMap(cloud, key, &composite.UrlMap{Name: key.Name, Version: versions.UrlMap})
 
-	cloud.ReserveGlobalAddress(&compute.Address{Name: namer.ForwardingRule(lbName, utils.HTTPProtocol)})
+	cloud.ReserveGlobalAddress(&compute.Address{Name: namer.ForwardingRule(lbName, namer_util.HTTPProtocol)})
 
 }
 
-func removeFakeLoadBalancer(cloud *gce.Cloud, namer *utils.Namer, lbKey string, versions *features.ResourceVersions, scope meta.KeyType) {
+func removeFakeLoadBalancer(cloud *gce.Cloud, namer *namer_util.Namer, lbKey string, versions *features.ResourceVersions, scope meta.KeyType) {
 	lbName := namer.LoadBalancer(lbKey)
 
 	key, _ := composite.CreateKey(cloud, "", scope)
-	key.Name = namer.ForwardingRule(lbName, utils.HTTPProtocol)
+	key.Name = namer.ForwardingRule(lbName, namer_util.HTTPProtocol)
 	composite.DeleteForwardingRule(cloud, key, versions.ForwardingRule)
 
-	key.Name = namer.TargetProxy(lbName, utils.HTTPProtocol)
+	key.Name = namer.TargetProxy(lbName, namer_util.HTTPProtocol)
 	composite.DeleteTargetHttpProxy(cloud, key, versions.TargetHttpProxy)
 
 	key.Name = namer.UrlMap(lbName)
 	composite.DeleteUrlMap(cloud, key, versions.UrlMap)
 
-	cloud.DeleteGlobalAddress(namer.ForwardingRule(lbName, utils.HTTPProtocol))
+	cloud.DeleteGlobalAddress(namer.ForwardingRule(lbName, namer_util.HTTPProtocol))
 }
 
-func checkFakeLoadBalancer(cloud *gce.Cloud, namer *utils.Namer, lbKey string, versions *features.ResourceVersions, scope meta.KeyType, expectPresent bool) error {
+func checkFakeLoadBalancer(cloud *gce.Cloud, namer *namer_util.Namer, lbKey string, versions *features.ResourceVersions, scope meta.KeyType, expectPresent bool) error {
 	var err error
 	lbName := namer.LoadBalancer(lbKey)
-	key, _ := composite.CreateKey(cloud, namer.ForwardingRule(lbName, utils.HTTPProtocol), scope)
+	key, _ := composite.CreateKey(cloud, namer.ForwardingRule(lbName, namer_util.HTTPProtocol), scope)
 
 	_, err = composite.GetForwardingRule(cloud, key, versions.ForwardingRule)
 	if expectPresent && err != nil {
@@ -346,7 +346,7 @@ func checkFakeLoadBalancer(cloud *gce.Cloud, namer *utils.Namer, lbKey string, v
 		return fmt.Errorf("expect GlobalForwardingRule %q to not present: %v", key, err)
 	}
 
-	key.Name = namer.TargetProxy(lbName, utils.HTTPProtocol)
+	key.Name = namer.TargetProxy(lbName, namer_util.HTTPProtocol)
 	_, err = composite.GetTargetHttpProxy(cloud, key, versions.TargetHttpProxy)
 	if expectPresent && err != nil {
 		return err

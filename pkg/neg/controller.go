@@ -22,16 +22,15 @@ import (
 	"time"
 
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
-	"k8s.io/client-go/dynamic"
-
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	apimachinerytypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -45,6 +44,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
+	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
 
@@ -144,7 +144,7 @@ func NewController(
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(addIng) {
-				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", utils.IngressKeyFunc(addIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", namer_util.IngressKeyFunc(addIng), annotations.IngressClassKey)
 				return
 			}
 			negController.enqueueIngressServices(addIng)
@@ -152,7 +152,7 @@ func NewController(
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(delIng) {
-				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", utils.IngressKeyFunc(delIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", namer_util.IngressKeyFunc(delIng), annotations.IngressClassKey)
 				return
 			}
 			negController.enqueueIngressServices(delIng)
@@ -161,7 +161,7 @@ func NewController(
 			oldIng := cur.(*v1beta1.Ingress)
 			curIng := cur.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(curIng) {
-				klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", utils.IngressKeyFunc(curIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", namer_util.IngressKeyFunc(curIng), annotations.IngressClassKey)
 				return
 			}
 			keys := gatherIngressServiceKeys(oldIng)
