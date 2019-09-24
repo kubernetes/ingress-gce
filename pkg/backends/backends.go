@@ -164,7 +164,7 @@ func (b *Backends) Delete(name string, version meta.Version, scope meta.KeyType)
 func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType) (string, error) {
 	be, err := b.Get(name, version, scope)
 	if err != nil || len(be.Backends) == 0 {
-		return "Unknown", fmt.Errorf("error getting health for backend %s: %v", name, err)
+		return "Unknown", fmt.Errorf("error getting backend %q: %v", name, err)
 	}
 
 	// TODO: Look at more than one backend's status
@@ -180,9 +180,14 @@ func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType)
 		return "Unknown", fmt.Errorf("invalid scope for Health(): %s", scope)
 	}
 
-	if err != nil || len(hs.HealthStatus) == 0 || hs.HealthStatus[0] == nil {
+	if err != nil {
 		return "Unknown", fmt.Errorf("error getting health for backend %q: %v", name, err)
 	}
+	if len(hs.HealthStatus) == 0 || hs.HealthStatus[0] == nil {
+		klog.V(3).Infof("backend service %q does not have health status: %v", name, hs.HealthStatus)
+		return "Unknown", nil
+	}
+
 	// TODO: State transition are important, not just the latest.
 	return hs.HealthStatus[0].HealthState, nil
 }
