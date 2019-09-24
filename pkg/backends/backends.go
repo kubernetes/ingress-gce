@@ -163,8 +163,11 @@ func (b *Backends) Delete(name string, version meta.Version, scope meta.KeyType)
 // Health implements Pool.
 func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType) (string, error) {
 	be, err := b.Get(name, version, scope)
-	if err != nil || len(be.Backends) == 0 {
-		return "Unknown", fmt.Errorf("error getting backend %q: %v", name, err)
+	if err != nil {
+		return "Unknown", fmt.Errorf("error getting backend service %s: %v", name, err)
+	}
+	if len(be.Backends) == 0 {
+		return "Unknown", fmt.Errorf("no backends found for backend service %q", name)
 	}
 
 	// TODO: Look at more than one backend's status
