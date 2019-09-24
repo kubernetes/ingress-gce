@@ -226,7 +226,7 @@ func TestUpdateTo1dot7(t *testing.T) {
 			t.Fatalf("create(%s/%s) = %v, want nil; Ingress: %v", ing.Namespace, ing.Name, err, ing)
 		}
 		t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
-		waitForStableIngress(true, ing, s, t)
+		ing = waitForStableIngress(true, ing, s, t)
 
 		// Check that finalizer is not added in old version in which finalizer add is not enabled.
 		ingFinalizers := ing.GetFinalizers()
