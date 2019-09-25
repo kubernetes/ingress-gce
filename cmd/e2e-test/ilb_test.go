@@ -27,11 +27,14 @@ import (
 	"testing"
 )
 
-var negVal = annotations.NegAnnotation{
-	Ingress: true,
-}
-var negAnnotation = map[string]string{
-	annotations.NEGAnnotationKey: negVal.String()}
+var (
+	negVal        = annotations.NegAnnotation{Ingress: true}
+	negAnnotation = map[string]string{
+		annotations.NEGAnnotationKey: negVal.String()}
+
+	// subnetCidr is the default CIDR for ILB subnets for these tests
+	subnetCidr = "10.126.0.0/22"
+)
 
 func TestILB(t *testing.T) {
 	t.Parallel()
@@ -79,6 +82,11 @@ func TestILB(t *testing.T) {
 			t.Parallel()
 
 			t.Logf("Ingress = %s", tc.ing.String())
+
+			// Create Subnet if it doesn't already exist
+			if err := e2e.CreateILBSubnet(s, "ilb-subnet-ingress-e2e", subnetCidr); err != nil && err != e2e.ErrSubnetExists {
+				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
+			}
 
 			_, err := e2e.CreateEchoService(s, "service-1", negAnnotation)
 			if err != nil {
@@ -173,6 +181,11 @@ func TestILBHttps(t *testing.T) {
 		tc := tc // Capture tc as we are running this in parallel.
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
 			t.Parallel()
+
+			// Create Subnet if it doesn't already exist
+			if err := e2e.CreateILBSubnet(s, "ilb-subnet-ingress-e2e", subnetCidr); err != nil && err != e2e.ErrSubnetExists {
+				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
+			}
 
 			for i, h := range tc.hosts {
 				name := fmt.Sprintf("cert%d--%s", i, s.Namespace)
@@ -310,6 +323,11 @@ func TestILBUpdate(t *testing.T) {
 
 			t.Logf("Ingress = %s", tc.ing.String())
 
+			// Create Subnet if it doesn't already exist
+			if err := e2e.CreateILBSubnet(s, "ilb-subnet-ingress-e2e", subnetCidr); err != nil && err != e2e.ErrSubnetExists {
+				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
+			}
+
 			_, err := e2e.CreateEchoService(s, "service-1", negAnnotation)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
@@ -393,6 +411,11 @@ func TestILBError(t *testing.T) {
 
 			t.Logf("Ingress = %s", tc.ing.String())
 
+			// Create Subnet if it doesn't already exist
+			if err := e2e.CreateILBSubnet(s, "ilb-subnet-ingress-e2e", subnetCidr); err != nil && err != e2e.ErrSubnetExists {
+				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
+			}
+
 			_, err := e2e.CreateEchoService(s, "service-1", tc.svcAnnotations)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
@@ -469,6 +492,11 @@ func TestILBShared(t *testing.T) {
 		tc := tc // Capture tc as we are running this in parallel.
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
 			t.Parallel()
+
+			// Create Subnet if it doesn't already exist
+			if err := e2e.CreateILBSubnet(s, "ilb-subnet-ingress-e2e", subnetCidr); err != nil && err != e2e.ErrSubnetExists {
+				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
+			}
 
 			_, err := e2e.CreateEchoService(s, "service-1", negAnnotation)
 			if err != nil {
