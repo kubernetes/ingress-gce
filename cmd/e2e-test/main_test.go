@@ -42,6 +42,7 @@ var (
 		inCluster           bool
 		kubeconfig          string
 		project             string
+		region              string
 		seed                int64
 		destroySandboxes    bool
 		handleSIGINT        bool
@@ -61,6 +62,7 @@ func init() {
 	flag.BoolVar(&flags.run, "run", false, "set to true to run tests (suppresses test suite from 'go test ./...')")
 	flag.BoolVar(&flags.inCluster, "inCluster", false, "set to true if running in the cluster")
 	flag.StringVar(&flags.project, "project", "", "GCP project")
+	flag.StringVar(&flags.region, "region", "", "GCP Region (e.g. us-central1)")
 	flag.Int64Var(&flags.seed, "seed", -1, "random seed")
 	flag.BoolVar(&flags.destroySandboxes, "destroySandboxes", true, "set to false to leave sandboxed resources for debugging")
 	flag.BoolVar(&flags.handleSIGINT, "handleSIGINT", true, "catch SIGINT to perform clean")
@@ -79,6 +81,10 @@ func TestMain(m *testing.M) {
 	}
 	if flags.project == "" {
 		fmt.Fprintln(os.Stderr, "-project must be set to the Google Cloud test project")
+		os.Exit(1)
+	}
+	if flags.region == "" {
+		fmt.Println("-region must be set to the region of the cluster")
 		os.Exit(1)
 	}
 
@@ -106,6 +112,7 @@ func TestMain(m *testing.M) {
 
 	Framework = e2e.NewFramework(kubeconfig, e2e.Options{
 		Project:             flags.project,
+		Region:              flags.region,
 		Seed:                flags.seed,
 		DestroySandboxes:    flags.destroySandboxes,
 		GceEndpointOverride: flags.gceEndpointOverride,
