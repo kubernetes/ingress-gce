@@ -1,0 +1,78 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: l7-lb-controller
+  namespace: kube-system
+  annotations:
+    scheduler.alpha.kubernetes.io/critical-pod: ''
+  labels:
+    k8s-app: gcp-lb-controller
+    kubernetes.io/name: "GLBC"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: gcp-lb-controller
+  template:
+    metadata:
+      labels:
+        k8s-app: gcp-lb-controller
+        name: gcp-lb-controller
+    spec:
+      serviceAccountName: glbc
+      terminationGracePeriodSeconds: 600
+      containers:
+      - image: k8s.gcr.io/ingress-gce-glbc-amd64:v1.7.0
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8086
+            scheme: HTTP
+          initialDelaySeconds: 30
+          # healthz reaches out to GCE
+          periodSeconds: 30
+          timeoutSeconds: 15
+          successThreshold: 1
+          failureThreshold: 5
+        name: l7-lb-controller
+        volumeMounts:
+        - mountPath: /etc/gce/
+          name: gce-config-volume
+        resources:
+          # Request is set to accommodate this pod alongside the other
+          # master components on a single core master.
+          # TODO: Make resource requirements depend on the size of the cluster
+          requests:
+            cpu: 10m
+            memory: 50Mi
+        command:
+        - /glbc
+        - -v2
+        - --config-file-path=/etc/gce/gce.conf
+        - --healthz-port=8086
+        - --logtostderr
+        - --sync-period=600s
+        - --gce-ratelimit=ga.Operations.Get,qps,10,100
+        - --gce-ratelimit=alpha.Operations.Get,qps,10,100
+        - --gce-ratelimit=beta.Operations.Get,qps,10,100
+        - --gce-ratelimit=ga.BackendServices.Get,qps,1.8,1
+        - --gce-ratelimit=beta.BackendServices.Get,qps,1.8,1
+        - --gce-ratelimit=ga.HealthChecks.Get,qps,1.8,1
+        - --gce-ratelimit=alpha.HealthChecks.Get,qps,1.8,1
+        - --gce-ratelimit=beta.NetworkEndpointGroups.Get,qps,1.8,1
+        - --gce-ratelimit=beta.NetworkEndpointGroups.AttachNetworkEndpoints,qps,1.8,1
+        - --gce-ratelimit=beta.NetworkEndpointGroups.DetachNetworkEndpoints,qps,1.8,1
+        - --gce-ratelimit=beta.NetworkEndpointGroups.ListNetworkEndpoints,qps,1.8,1
+        - --gce-ratelimit=ga.NetworkEndpointGroups.Get,qps,1.8,1
+        - --gce-ratelimit=ga.NetworkEndpointGroups.AttachNetworkEndpoints,qps,1.8,1
+        - --gce-ratelimit=ga.NetworkEndpointGroups.DetachNetworkEndpoints,qps,1.8,1
+        - --gce-ratelimit=ga.NetworkEndpointGroups.ListNetworkEndpoints,qps,1.8,1
+        - --enable-csm=true
+        - --csm-service-skip-namespaces=kube-system,istio-system
+      volumes:
+      - name: gce-config-volume
+        configMap:
+          name: gce-config
+          items:
+          - key: gce.conf
+            path: gce.conf
