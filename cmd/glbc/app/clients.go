@@ -46,6 +46,16 @@ const (
 
 // NewKubeConfig returns a Kubernetes client config given the command line settings.
 func NewKubeConfig() (*rest.Config, error) {
+	config, err := newKubeConfig()
+	if err != nil {
+		return nil, err
+	}
+	// Use protobufs for communication with apiserver
+	config.ContentType = "application/vnd.kubernetes.protobuf"
+	return config, nil
+}
+
+func newKubeConfig() (*rest.Config, error) {
 	if flags.F.InCluster {
 		klog.V(0).Infof("Using in cluster configuration")
 		return rest.InClusterConfig()
