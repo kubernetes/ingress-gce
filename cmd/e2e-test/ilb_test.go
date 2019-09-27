@@ -39,6 +39,11 @@ var (
 func TestILB(t *testing.T) {
 	t.Parallel()
 
+	// These names are useful when reading the debug logs
+	testName := "test-ilb-basic"
+	ingressPrefix := testName + "-ing-"
+	serviceName := testName + "-svc"
+
 	port80 := intstr.FromInt(80)
 
 	for _, tc := range []struct {
@@ -50,8 +55,8 @@ func TestILB(t *testing.T) {
 	}{
 		{
 			desc: "http ILB default backend",
-			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
-				DefaultBackend("service-1", port80).
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"1", "").
+				DefaultBackend(serviceName, port80).
 				ConfigureForILB().
 				Build(),
 			numForwardingRules: 1,
@@ -59,7 +64,7 @@ func TestILB(t *testing.T) {
 		},
 		{
 			desc: "http ILB one path",
-			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
 				AddPath("test.com", "/", "service-1", port80).
 				ConfigureForILB().
 				Build(),
@@ -68,9 +73,9 @@ func TestILB(t *testing.T) {
 		},
 		{
 			desc: "http ILB multiple paths",
-			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
-				AddPath("test.com", "/foo", "service-1", port80).
-				AddPath("test.com", "/bar", "service-1", port80).
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"3", "").
+				AddPath("test.com", "/foo", serviceName, port80).
+				AddPath("test.com", "/bar", serviceName, port80).
 				ConfigureForILB().
 				Build(),
 			numForwardingRules: 1,
@@ -92,7 +97,7 @@ func TestILB(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
-			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
+			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
 			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
@@ -124,6 +129,11 @@ func TestILB(t *testing.T) {
 func TestILBHttps(t *testing.T) {
 	t.Parallel()
 
+	// These names are useful when reading the debug logs
+	testName := "test-ilb-https"
+	ingressPrefix := testName + "-ing-"
+	serviceName := testName + "-svc"
+
 	port80 := intstr.FromInt(80)
 
 	for _, tc := range []struct {
@@ -137,8 +147,8 @@ func TestILBHttps(t *testing.T) {
 	}{
 		{
 			desc: "https ILB one path, pre-shared cert",
-			ingBuilder: fuzz.NewIngressBuilder("", "ingress-1", "").
-				AddPath("test.com", "/", "service-1", port80).
+			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"1", "").
+				AddPath("test.com", "/", serviceName, port80).
 				ConfigureForILB(),
 			numForwardingRules: 1,
 			numBackendServices: 2,
@@ -147,8 +157,8 @@ func TestILBHttps(t *testing.T) {
 		},
 		{
 			desc: "https ILB one path, tls",
-			ingBuilder: fuzz.NewIngressBuilder("", "ingress-1", "").
-				AddPath("test.com", "/", "service-1", port80).
+			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
+				AddPath("test.com", "/", serviceName, port80).
 				ConfigureForILB(),
 			numForwardingRules: 1,
 			numBackendServices: 2,
@@ -157,9 +167,9 @@ func TestILBHttps(t *testing.T) {
 		},
 		{
 			desc: "https ILB multiple paths, pre-shared cert",
-			ingBuilder: fuzz.NewIngressBuilder("", "ingress-1", "").
-				AddPath("test.com", "/foo", "service-1", port80).
-				AddPath("baz.com", "/bar", "service-1", port80).
+			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"3", "").
+				AddPath("test.com", "/foo", serviceName, port80).
+				AddPath("baz.com", "/bar", serviceName, port80).
 				ConfigureForILB(),
 			numForwardingRules: 1,
 			numBackendServices: 2,
@@ -168,9 +178,9 @@ func TestILBHttps(t *testing.T) {
 		},
 		{
 			desc: "https ILB multiple paths, tls",
-			ingBuilder: fuzz.NewIngressBuilder("", "ingress-1", "").
-				AddPath("test.com", "/foo", "service-1", port80).
-				AddPath("baz.com", "/bar", "service-1", port80).
+			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"4", "").
+				AddPath("test.com", "/foo", serviceName, port80).
+				AddPath("baz.com", "/bar", serviceName, port80).
 				ConfigureForILB(),
 			numForwardingRules: 1,
 			numBackendServices: 2,
@@ -209,11 +219,11 @@ func TestILBHttps(t *testing.T) {
 
 			t.Logf("Ingress = %s", ing.String())
 
-			_, err := e2e.CreateEchoService(s, "service-1", negAnnotation)
+			_, err := e2e.CreateEchoService(s, serviceName, negAnnotation)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
-			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
+			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
 			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
@@ -246,6 +256,11 @@ func TestILBHttps(t *testing.T) {
 func TestILBUpdate(t *testing.T) {
 	t.Parallel()
 
+	// These names are useful when reading the debug logs
+	testName := "test-ilb-update"
+	ingressPrefix := testName + "-ing-"
+	serviceName := testName + "-svc"
+
 	port80 := intstr.FromInt(80)
 
 	for _, tc := range []struct {
@@ -260,14 +275,14 @@ func TestILBUpdate(t *testing.T) {
 	}{
 		{
 			desc: "http ILB default backend to one path",
-			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
-				DefaultBackend("service-1", port80).
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"1", "").
+				DefaultBackend(serviceName, port80).
 				ConfigureForILB().
 				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 1,
-			ingUpdate: fuzz.NewIngressBuilder("", "ingress-1", "").
-				AddPath("test.com", "/", "service-1", port80).
+			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
+				AddPath("test.com", "/", serviceName, port80).
 				ConfigureForILB().
 				Build(),
 			numForwardingRulesUpdate: 1,
@@ -275,14 +290,14 @@ func TestILBUpdate(t *testing.T) {
 		},
 		{
 			desc: "http ILB one path to default backend",
-			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
-				AddPath("test.com", "/", "service-1", port80).
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"3", "").
+				AddPath("test.com", "/", serviceName, port80).
 				ConfigureForILB().
 				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 2,
-			ingUpdate: fuzz.NewIngressBuilder("", "ingress-1", "").
-				DefaultBackend("service-1", port80).
+			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"4", "").
+				DefaultBackend(serviceName, port80).
 				ConfigureForILB().
 				Build(),
 			numForwardingRulesUpdate: 1,
@@ -290,28 +305,28 @@ func TestILBUpdate(t *testing.T) {
 		},
 		{
 			desc: "http ILB default backend to ELB default backend",
-			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
-				DefaultBackend("service-1", port80).
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"5", "").
+				DefaultBackend(serviceName, port80).
 				ConfigureForILB().
 				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 1,
-			ingUpdate: fuzz.NewIngressBuilder("", "ingress-1", "").
-				DefaultBackend("service-1", port80).
+			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"6", "").
+				DefaultBackend(serviceName, port80).
 				Build(),
 			numForwardingRulesUpdate: 1,
 			numBackendServicesUpdate: 1,
 		},
 		{
 			desc: "ELB default backend to ILB default backend",
-			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
-				DefaultBackend("service-1", port80).
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"7", "").
+				DefaultBackend(serviceName, port80).
 				ConfigureForILB().
 				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 1,
-			ingUpdate: fuzz.NewIngressBuilder("", "ingress-1", "").
-				DefaultBackend("service-1", port80).
+			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"8", "").
+				DefaultBackend(serviceName, port80).
 				Build(),
 			numForwardingRulesUpdate: 1,
 			numBackendServicesUpdate: 1,
@@ -328,11 +343,11 @@ func TestILBUpdate(t *testing.T) {
 				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
 			}
 
-			_, err := e2e.CreateEchoService(s, "service-1", negAnnotation)
+			_, err := e2e.CreateEchoService(s, serviceName, negAnnotation)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
-			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
+			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
 			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
@@ -389,6 +404,11 @@ func TestILBUpdate(t *testing.T) {
 func TestILBError(t *testing.T) {
 	t.Parallel()
 
+	// These names are useful when reading the debug logs
+	testName := "test-ilb-error"
+	ingressPrefix := testName + "-ing-"
+	serviceName := testName + "-svc"
+
 	port80 := intstr.FromInt(80)
 
 	for _, tc := range []struct {
@@ -398,8 +418,8 @@ func TestILBError(t *testing.T) {
 	}{
 		{
 			desc: "No neg annotation",
-			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
-				DefaultBackend("service-1", port80).
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"1", "").
+				DefaultBackend(serviceName, port80).
 				ConfigureForILB().
 				Build(),
 			svcAnnotations: map[string]string{},
@@ -416,11 +436,11 @@ func TestILBError(t *testing.T) {
 				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
 			}
 
-			_, err := e2e.CreateEchoService(s, "service-1", tc.svcAnnotations)
+			_, err := e2e.CreateEchoService(s, serviceName, tc.svcAnnotations)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
-			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
+			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
 			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
@@ -441,6 +461,11 @@ func TestILBError(t *testing.T) {
 func TestILBShared(t *testing.T) {
 	t.Parallel()
 
+	// These names are useful when reading the debug logs
+	testName := "test-ilb-shared"
+	ingressPrefix := testName + "-ing-"
+	serviceName := testName + "-svc"
+
 	port80 := intstr.FromInt(80)
 
 	for _, tc := range []struct {
@@ -452,38 +477,38 @@ func TestILBShared(t *testing.T) {
 	}{
 		{
 			desc: "default backend",
-			ilbIng: fuzz.NewIngressBuilder("", "ilb-ingress-1", "").
-				DefaultBackend("service-1", port80).
+			ilbIng: fuzz.NewIngressBuilder("", ingressPrefix+"ilb-1", "").
+				DefaultBackend(serviceName, port80).
 				ConfigureForILB().
 				Build(),
-			elbIng: fuzz.NewIngressBuilder("", "elb-ingress-1", "").
-				DefaultBackend("service-1", port80).
+			elbIng: fuzz.NewIngressBuilder("", ingressPrefix+"elb-1", "").
+				DefaultBackend(serviceName, port80).
 				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 1,
 		},
 		{
 			desc: "one path",
-			ilbIng: fuzz.NewIngressBuilder("", "ilb-ingress-1", "").
-				AddPath("test.com", "/", "service-1", port80).
+			ilbIng: fuzz.NewIngressBuilder("", ingressPrefix+"ilb-2", "").
+				AddPath("test.com", "/", serviceName, port80).
 				ConfigureForILB().
 				Build(),
-			elbIng: fuzz.NewIngressBuilder("", "elb-ingress-1", "").
-				AddPath("test.com", "/", "service-1", port80).
+			elbIng: fuzz.NewIngressBuilder("", ingressPrefix+"elb-2", "").
+				AddPath("test.com", "/", serviceName, port80).
 				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 2,
 		},
 		{
 			desc: "multiple paths",
-			ilbIng: fuzz.NewIngressBuilder("", "ilb-ingress-1", "").
-				AddPath("test.com", "/foo", "service-1", port80).
-				AddPath("test.com", "/bar", "service-1", port80).
+			ilbIng: fuzz.NewIngressBuilder("", ingressPrefix+"ilb-3", "").
+				AddPath("test.com", "/foo", serviceName, port80).
+				AddPath("test.com", "/bar", serviceName, port80).
 				ConfigureForILB().
 				Build(),
-			elbIng: fuzz.NewIngressBuilder("", "elb-ingress-1", "").
-				AddPath("test.com", "/foo", "service-1", port80).
-				AddPath("test.com", "/bar", "service-1", port80).
+			elbIng: fuzz.NewIngressBuilder("", ingressPrefix+"elb-3", "").
+				AddPath("test.com", "/foo", serviceName, port80).
+				AddPath("test.com", "/bar", serviceName, port80).
 				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 2,
@@ -498,11 +523,11 @@ func TestILBShared(t *testing.T) {
 				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
 			}
 
-			_, err := e2e.CreateEchoService(s, "service-1", negAnnotation)
+			_, err := e2e.CreateEchoService(s, serviceName, negAnnotation)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
-			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
+			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
 			for _, ing := range []*v1beta1.Ingress{tc.ilbIng, tc.elbIng} {
 
