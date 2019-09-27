@@ -20,7 +20,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/kr/pretty"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
@@ -36,17 +35,12 @@ func TestUpgrade(t *testing.T) {
 	for _, tc := range []struct {
 		desc string
 		ing  *v1beta1.Ingress
-
-		numForwardingRules int
-		numBackendServices int
 	}{
 		{
 			desc: "http default backend",
 			ing: fuzz.NewIngressBuilder("", "ingress-1", "").
 				AddPath("foo.com", "/", "service-1", port80).
 				Build(),
-			numForwardingRules: 1,
-			numBackendServices: 2,
 		},
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
@@ -70,7 +64,7 @@ func TestUpgrade(t *testing.T) {
 			ing := waitForStableIngress(true, tc.ing, s, t)
 			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
 
-			whiteboxTest(ing, s, tc.numForwardingRules, tc.numBackendServices, t)
+			whiteboxTest(ing, s, t)
 
 			for {
 				// While k8s master is upgrading, it will return a connection refused
@@ -105,7 +99,7 @@ func TestUpgrade(t *testing.T) {
 			// trigger an Ingress update
 			ing = waitForStableIngress(true, ing, s, t)
 			t.Logf("GCLB is stable (%s/%s)", s.Namespace, tc.ing.Name)
-			whiteboxTest(ing, s, tc.numForwardingRules, tc.numBackendServices, t)
+			whiteboxTest(ing, s, t)
 
 			// If the Master has upgraded and the Ingress is stable,
 			// we delete the Ingress and exit out of the loop to indicate that
@@ -141,7 +135,7 @@ func waitForStableIngress(expectUnreachable bool, ing *v1beta1.Ingress, s *e2e.S
 	return ing
 }
 
-func whiteboxTest(ing *v1beta1.Ingress, s *e2e.Sandbox, numForwardingRules, numBackendServices int, t *testing.T) {
+func whiteboxTest(ing *v1beta1.Ingress, s *e2e.Sandbox, t *testing.T) {
 	if len(ing.Status.LoadBalancer.Ingress) < 1 {
 		t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
 	}
@@ -153,11 +147,7 @@ func whiteboxTest(ing *v1beta1.Ingress, s *e2e.Sandbox, numForwardingRules, numB
 		t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 	}
 
-	// Do some cursory checks on the GCP objects.
-	if len(gclb.ForwardingRule) != numForwardingRules {
-		t.Errorf("got %d fowarding rules, want %d;\n%s", len(gclb.ForwardingRule), numForwardingRules, pretty.Sprint(gclb.ForwardingRule))
-	}
-	if len(gclb.BackendService) != numBackendServices {
-		t.Errorf("got %d backend services, want %d;\n%s", len(gclb.BackendService), numBackendServices, pretty.Sprint(gclb.BackendService))
+	if err := e2e.PerformWhiteboxTests(s, ing, gclb); err != nil {
+		t.Fatalf("Error performing whitebox tests: %v", err)
 	}
 }
