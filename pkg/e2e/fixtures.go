@@ -275,9 +275,9 @@ func CreateILBSubnet(s *Sandbox, name string, ipCidrRange string) error {
 	klog.V(2).Infof("Creating ILB Subnet: %+v", subnet)
 	err := s.f.Cloud.BetaSubnetworks().Insert(context.Background(), meta.RegionalKey(subnet.Name, s.f.Region), subnet)
 	if err != nil {
-		// GCE returns a 409 when there is already an "ACTIVE" subnet set up for ILB
-		if utils.IsHTTPErrorCode(err, http.StatusConflict) {
-			klog.V(3).Info("ILB subnet already exists")
+		// GCE returns a 409 or 400 when there is already an subnet in the range
+		if utils.IsHTTPErrorCode(err, http.StatusConflict) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
+			klog.V(3).Infof("Warning: ILB subnet already exists: %v", err)
 			return ErrSubnetExists
 		} else {
 			return fmt.Errorf("Error creating ILB subnet: %v", err)
