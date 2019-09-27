@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -586,37 +587,40 @@ func TestMakeEndpointBatch(t *testing.T) {
 		},
 	}
 
-	for _, tc := range testCases {
-		endpointSet, endpointMap := genTestEndpoints(tc.endpointNum)
-		out, err := makeEndpointBatch(endpointSet)
+	for _, createHybridNeg := range []bool{true, false} {
+		flags.F.CreateHybridNeg = createHybridNeg
+		for _, tc := range testCases {
+			endpointSet, endpointMap := genTestEndpoints(tc.endpointNum, createHybridNeg)
+			out, err := makeEndpointBatch(endpointSet)
 
-		if err != nil {
-			t.Errorf("Expect err = nil, but got %v", err)
-		}
-
-		if endpointSet.Len() != tc.leftOverNum {
-			t.Errorf("Expect endpoint set has %d endpoints left, but got %d", tc.leftOverNum, endpointSet.Len())
-		}
-
-		expectOutputEndpoints := tc.endpointNum
-		if tc.endpointNum > MAX_NETWORK_ENDPOINTS_PER_BATCH {
-			expectOutputEndpoints = MAX_NETWORK_ENDPOINTS_PER_BATCH
-		}
-
-		if expectOutputEndpoints != len(out) {
-			t.Errorf("Expect %d endpoint(s) in output, but got %d", expectOutputEndpoints, len(out))
-		}
-
-		for key, endpoint := range out {
-			if endpointSet.Has(key) {
-				t.Errorf("Expect %q endpoint to exist in output endpoint map, but not", key)
+			if err != nil {
+				t.Errorf("Expect err = nil, but got %v", err)
 			}
-			expectEndpoint, ok := endpointMap[key]
-			if !ok {
-				t.Errorf("Expect %q endpoint to exist in expected endpoint map, but not", key)
-			} else {
-				if !reflect.DeepEqual(expectEndpoint, endpoint) {
-					t.Errorf("Expect endpoint object %+v, but got %+v", expectEndpoint, endpoint)
+
+			if endpointSet.Len() != tc.leftOverNum {
+				t.Errorf("Expect endpoint set has %d endpoints left, but got %d", tc.leftOverNum, endpointSet.Len())
+			}
+
+			expectOutputEndpoints := tc.endpointNum
+			if tc.endpointNum > MAX_NETWORK_ENDPOINTS_PER_BATCH {
+				expectOutputEndpoints = MAX_NETWORK_ENDPOINTS_PER_BATCH
+			}
+
+			if expectOutputEndpoints != len(out) {
+				t.Errorf("Expect %d endpoint(s) in output, but got %d", expectOutputEndpoints, len(out))
+			}
+
+			for key, endpoint := range out {
+				if endpointSet.Has(key) {
+					t.Errorf("Expect %q endpoint to exist in output endpoint map, but not", key)
+				}
+				expectEndpoint, ok := endpointMap[key]
+				if !ok {
+					t.Errorf("Expect %q endpoint to exist in expected endpoint map, but not", key)
+				} else {
+					if !reflect.DeepEqual(expectEndpoint, endpoint) {
+						t.Errorf("Expect endpoint object %+v, but got %+v", expectEndpoint, endpoint)
+					}
 				}
 			}
 		}
@@ -700,7 +704,7 @@ func TestShouldPodBeInNeg(t *testing.T) {
 
 }
 
-func genTestEndpoints(num int) (negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
+func genTestEndpoints(num int, createHybridNeg bool) (negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
 	endpointSet := negtypes.NewNetworkEndpointSet()
 	endpointMap := map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint{}
 	ip := "1.2.3.4"
@@ -710,8 +714,10 @@ func genTestEndpoints(num int) (negtypes.NetworkEndpointSet, map[negtypes.Networ
 		endpointSet.Insert(key)
 		endpointMap[key] = &compute.NetworkEndpoint{
 			IpAddress: ip,
-			Instance:  instance,
 			Port:      int64(port),
+		}
+		if !createHybridNeg {
+			endpointMap[key].Instance = instance
 		}
 	}
 	return endpointSet, endpointMap

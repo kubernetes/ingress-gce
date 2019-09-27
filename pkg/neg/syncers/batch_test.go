@@ -16,6 +16,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
@@ -116,25 +117,53 @@ func TestStartAndStopSyncer(t *testing.T) {
 }
 
 func TestEnsureNetworkEndpointGroups(t *testing.T) {
-	syncer := NewTestSyncer()
-	if err := syncer.ensureNetworkEndpointGroups(); err != nil {
-		t.Errorf("Failed to ensure NEGs: %v", err)
+	testCases := []struct {
+		createHybridNeg             bool
+		expectedNetworkEdnpointType string
+		expectedSubnetwork          string
+	}{
+		{
+			createHybridNeg:             false,
+			expectedNetworkEdnpointType: negIPPortNetworkEndpointType,
+			expectedSubnetwork:          "test-subnetwork",
+		},
+		{
+			createHybridNeg:             true,
+			expectedNetworkEdnpointType: negPrivateIPPortNetworkEdnpointType,
+			expectedSubnetwork:          "",
+		},
 	}
 
-	ret, _ := syncer.cloud.AggregatedListNetworkEndpointGroup()
-	expectZones := []string{negtypes.TestZone1, negtypes.TestZone2}
-	for _, zone := range expectZones {
-		negs, ok := ret[zone]
-		if !ok {
-			t.Errorf("Failed to find zone %q from ret %v", zone, ret)
-			continue
+	for _, tc := range testCases {
+		flags.F.CreateHybridNeg = tc.createHybridNeg
+		syncer := NewTestSyncer()
+		if err := syncer.ensureNetworkEndpointGroups(); err != nil {
+			t.Errorf("Failed to ensure NEGs: %v", err)
 		}
 
-		if len(negs) != 1 {
-			t.Errorf("Unexpected negs %v", negs)
-		} else {
-			if negs[0].Name != testNegName {
-				t.Errorf("Unexpected neg %q", negs[0].Name)
+		ret, _ := syncer.cloud.AggregatedListNetworkEndpointGroup()
+		expectZones := []string{negtypes.TestZone1, negtypes.TestZone2}
+		for _, zone := range expectZones {
+			negs, ok := ret[zone]
+			if !ok {
+				t.Errorf("Failed to find zone %q from ret %v", zone, ret)
+				continue
+			}
+
+			if len(negs) != 1 {
+				t.Errorf("Unexpected negs %v", negs)
+			} else {
+				if negs[0].Name != testNegName {
+					t.Errorf("Unexpected neg %q", negs[0].Name)
+				}
+
+				if negs[0].NetworkEndpointType != tc.expectedNetworkEdnpointType {
+					t.Errorf("Unexpected NetworkEndpointType, expecting %q but got %q", tc.expectedNetworkEdnpointType, negs[0].NetworkEndpointType)
+				}
+
+				if negs[0].Subnetwork != tc.expectedSubnetwork {
+					t.Errorf("Unexpected Subnetwork, expecting %q but got %q", tc.expectedSubnetwork, negs[0].Subnetwork)
+				}
 			}
 		}
 	}

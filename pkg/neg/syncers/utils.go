@@ -144,13 +144,16 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	if needToCreate {
 		klog.V(2).Infof("Creating NEG %q for %s in %q.", negName, negServicePortName, zone)
 		networkEndpointType := negIPPortNetworkEndpointType
+		subnetwork := cloud.SubnetworkURL()
 		if flags.F.CreateHybridNeg {
 			networkEndpointType = negPrivateIPPortNetworkEdnpointType
+			subnetwork = ""
 		}
 		err = cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 			Name:                negName,
 			NetworkEndpointType: networkEndpointType,
 			Network:             cloud.NetworkURL(),
+			Subnetwork:          subnetwork,
 		}, zone)
 		if err != nil {
 			return err
