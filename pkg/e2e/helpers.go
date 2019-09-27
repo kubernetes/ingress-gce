@@ -47,7 +47,8 @@ import (
 
 const (
 	ingressPollInterval = 30 * time.Second
-	ingressPollTimeout  = 25 * time.Minute
+	// TODO(shance): Find a way to lower this timeout
+	ingressPollTimeout = 45 * time.Minute
 
 	gclbDeletionInterval = 30 * time.Second
 	gclbDeletionTimeout  = 15 * time.Minute
