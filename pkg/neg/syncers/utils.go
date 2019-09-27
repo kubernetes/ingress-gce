@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -39,11 +40,12 @@ const (
 	MAX_NETWORK_ENDPOINTS_PER_BATCH = 500
 	// For each NEG, only retries 15 times to process it.
 	// This is a convention in kube-controller-manager.
-	maxRetries                   = 15
-	minRetryDelay                = 5 * time.Second
-	maxRetryDelay                = 600 * time.Second
-	separator                    = "||"
-	negIPPortNetworkEndpointType = "GCE_VM_IP_PORT"
+	maxRetries                          = 15
+	minRetryDelay                       = 5 * time.Second
+	maxRetryDelay                       = 600 * time.Second
+	separator                           = "||"
+	negIPPortNetworkEndpointType        = "GCE_VM_IP_PORT"
+	negPrivateIPPortNetworkEdnpointType = "NON_GCP_PRIVATE_IP_PORT"
 )
 
 // encodeEndpoint encodes ip and instance into a single string
@@ -141,11 +143,14 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 
 	if needToCreate {
 		klog.V(2).Infof("Creating NEG %q for %s in %q.", negName, negServicePortName, zone)
+		networkEndpointType := negIPPortNetworkEndpointType
+		if flags.F.CreateHybridNeg {
+			networkEndpointType = negPrivateIPPortNetworkEdnpointType
+		}
 		err = cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 			Name:                negName,
-			NetworkEndpointType: negIPPortNetworkEndpointType,
+			NetworkEndpointType: networkEndpointType,
 			Network:             cloud.NetworkURL(),
-			Subnetwork:          cloud.SubnetworkURL(),
 		}, zone)
 		if err != nil {
 			return err
@@ -282,9 +287,12 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet) (map[negtypes.Netw
 		}
 
 		endpointBatch[networkEndpoint] = &compute.NetworkEndpoint{
-			Instance:  networkEndpoint.Node,
 			IpAddress: networkEndpoint.IP,
 			Port:      int64(portNum),
+		}
+
+		if !flags.F.CreateHybridNeg {
+			endpointBatch[networkEndpoint].Instance = networkEndpoint.Node
 		}
 	}
 	return endpointBatch, nil
