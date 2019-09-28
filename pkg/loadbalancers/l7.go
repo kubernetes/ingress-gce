@@ -19,6 +19,7 @@ package loadbalancers
 import (
 	"encoding/json"
 	"fmt"
+	"k8s.io/ingress-gce/pkg/flags"
 	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -154,6 +155,13 @@ func (l *L7) edgeHop() error {
 	// Keeps track if we will "try" to setup frontend resources based on user configuration.
 	// If user configuration dictates we do not, then we emit an event.
 	willConfigureFrontend := false
+	sslConfigured := l.runtimeInfo.TLS != nil || l.runtimeInfo.TLSName != ""
+
+	// Check for invalid L7-ILB HTTPS config before attempting sync
+	if flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress) && sslConfigured && l.runtimeInfo.AllowHTTP {
+		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeWarning, "WillNotConfigureFrontend", "gce-internal Ingress class does not currently support both HTTP and HTTPS served on the same IP (kubernetes.io/ingress.allow-http must be false when using HTTPS).")
+		return fmt.Errorf("error invalid internal ingress https config")
+	}
 
 	if err := l.ensureComputeURLMap(); err != nil {
 		return err
@@ -165,7 +173,6 @@ func (l *L7) edgeHop() error {
 		}
 	}
 	// Defer promoting an ephemeral to a static IP until it's really needed.
-	sslConfigured := l.runtimeInfo.TLS != nil || l.runtimeInfo.TLSName != ""
 	if l.runtimeInfo.AllowHTTP && sslConfigured {
 		klog.V(3).Infof("checking static ip for %v", l)
 		if err := l.checkStaticIP(); err != nil {
