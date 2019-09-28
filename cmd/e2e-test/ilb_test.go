@@ -126,6 +126,7 @@ func TestILB(t *testing.T) {
 	}
 }
 
+// TODO(shance): Remove the SetAllowHttp() calls once L7-ILB supports sharing VIPs
 func TestILBHttps(t *testing.T) {
 	t.Parallel()
 
@@ -149,7 +150,8 @@ func TestILBHttps(t *testing.T) {
 			desc: "https ILB one path, pre-shared cert",
 			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"1", "").
 				AddPath("test.com", "/", serviceName, port80).
-				ConfigureForILB(),
+				ConfigureForILB().
+				SetAllowHttp(false),
 			numForwardingRules: 1,
 			numBackendServices: 2,
 			certType:           e2e.GCPCert,
@@ -159,7 +161,8 @@ func TestILBHttps(t *testing.T) {
 			desc: "https ILB one path, tls",
 			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
 				AddPath("test.com", "/", serviceName, port80).
-				ConfigureForILB(),
+				ConfigureForILB().
+				SetAllowHttp(false),
 			numForwardingRules: 1,
 			numBackendServices: 2,
 			certType:           e2e.K8sCert,
@@ -170,7 +173,8 @@ func TestILBHttps(t *testing.T) {
 			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"3", "").
 				AddPath("test.com", "/foo", serviceName, port80).
 				AddPath("baz.com", "/bar", serviceName, port80).
-				ConfigureForILB(),
+				ConfigureForILB().
+				SetAllowHttp(false),
 			numForwardingRules: 1,
 			numBackendServices: 2,
 			certType:           e2e.GCPCert,
@@ -181,7 +185,8 @@ func TestILBHttps(t *testing.T) {
 			ingBuilder: fuzz.NewIngressBuilder("", ingressPrefix+"4", "").
 				AddPath("test.com", "/foo", serviceName, port80).
 				AddPath("baz.com", "/bar", serviceName, port80).
-				ConfigureForILB(),
+				ConfigureForILB().
+				SetAllowHttp(false),
 			numForwardingRules: 1,
 			numBackendServices: 2,
 			certType:           e2e.K8sCert,
