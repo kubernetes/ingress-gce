@@ -40,6 +40,10 @@ func (t *numBackendServicesTest) Test(ing *v1beta1.Ingress, gclb *fuzz.GCLB) err
 	t.uniqSvcPorts = make(map[utils.ServicePortID]bool)
 	expectedBackendServices := 0
 
+	if ing.Spec.Backend == nil {
+		expectedBackendServices++
+	}
+
 	utils.TraverseIngressBackends(ing, func(id utils.ServicePortID) bool {
 		if _, ok := t.uniqSvcPorts[id]; !ok {
 			expectedBackendServices++
