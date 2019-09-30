@@ -293,6 +293,61 @@ func TestNetworkEndpointCalculateDifference(t *testing.T) {
 	}
 }
 
+func TestEnsureNetworkEndpointGroup(t *testing.T) {
+	testNegName := "test-neg"
+	testZone := "test-zone"
+	testNamedPort := "named-port"
+	testServiceName := "test-svc"
+	testServiceNameSpace := "test-ns"
+	testSubnetwork := "test-subnetwork"
+	testNetwork := "test-network"
+
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+
+	testCases := []struct {
+		createHybridNeg             bool
+		expectedNetworkEdnpointType string
+		expectedSubnetwork          string
+	}{
+		{
+			createHybridNeg:             false,
+			expectedNetworkEdnpointType: negIPPortNetworkEndpointType,
+			expectedSubnetwork:          testSubnetwork,
+		},
+		{
+			createHybridNeg:             true,
+			expectedNetworkEdnpointType: negPrivateIPPortNetworkEdnpointType,
+			expectedSubnetwork:          "",
+		},
+	}
+	for _, tc := range testCases {
+		flags.F.CreateHybridNeg = tc.createHybridNeg
+		ensureNetworkEndpointGroup(
+			testServiceNameSpace,
+			testServiceName,
+			testNegName,
+			testZone,
+			testNamedPort,
+			fakeCloud,
+			nil,
+			nil,
+		)
+
+		neg, err := fakeCloud.GetNetworkEndpointGroup(testNegName, testZone)
+		if err != nil {
+			t.Errorf("Failed to retrieve NEG %q: %q", testZone, err)
+		}
+		if neg.NetworkEndpointType != tc.expectedNetworkEdnpointType {
+			t.Errorf("Unexpected NetworkEndpointType, expecting %q but got %q", tc.expectedNetworkEdnpointType, neg.NetworkEndpointType)
+		}
+
+		if neg.Subnetwork != tc.expectedSubnetwork {
+			t.Errorf("Unexpected Subnetwork, expecting %q but got %q", tc.expectedSubnetwork, neg.Subnetwork)
+		}
+
+	}
+}
+
 func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	t.Parallel()
 	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())))
