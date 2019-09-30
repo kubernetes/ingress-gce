@@ -18,6 +18,7 @@ package fuzz
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"k8s.io/api/core/v1"
@@ -273,6 +274,15 @@ func (i *IngressBuilder) ConfigureForILB() *IngressBuilder {
 		i.ing.Annotations = make(map[string]string)
 	}
 	i.ing.Annotations[annotations.IngressClassKey] = annotations.GceL7ILBIngressClass
+	return i
+}
+
+// SetAllowHttp sets the AllowHTTP annotation on the ingress
+func (i *IngressBuilder) SetAllowHttp(val bool) *IngressBuilder {
+	if i.ing.Annotations == nil {
+		i.ing.Annotations = make(map[string]string)
+	}
+	i.ing.Annotations[annotations.AllowHTTPKey] = strconv.FormatBool(val)
 	return i
 }
 
