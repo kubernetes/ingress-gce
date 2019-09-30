@@ -305,23 +305,23 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
 
 	testCases := []struct {
-		createHybridNeg             bool
-		expectedNetworkEdnpointType string
+		enableHybrid                bool
+		expectedNetworkEndpointType string
 		expectedSubnetwork          string
 	}{
 		{
-			createHybridNeg:             false,
-			expectedNetworkEdnpointType: negIPPortNetworkEndpointType,
+			enableHybrid:                false,
+			expectedNetworkEndpointType: negIPPortNetworkEndpointType,
 			expectedSubnetwork:          testSubnetwork,
 		},
 		{
-			createHybridNeg:             true,
-			expectedNetworkEdnpointType: negPrivateIPPortNetworkEdnpointType,
+			enableHybrid:                true,
+			expectedNetworkEndpointType: negPrivateIPPortNetworkEndpointType,
 			expectedSubnetwork:          "",
 		},
 	}
 	for _, tc := range testCases {
-		flags.F.CreateHybridNeg = tc.createHybridNeg
+		flags.F.EnableHybrid = tc.enableHybrid
 		ensureNetworkEndpointGroup(
 			testServiceNameSpace,
 			testServiceName,
@@ -335,16 +335,16 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 
 		neg, err := fakeCloud.GetNetworkEndpointGroup(testNegName, testZone)
 		if err != nil {
-			t.Errorf("Failed to retrieve NEG %q: %q", testZone, err)
+			t.Errorf("Failed to retrieve NEG %q: %v", testZone, err)
 		}
-		if neg.NetworkEndpointType != tc.expectedNetworkEdnpointType {
-			t.Errorf("Unexpected NetworkEndpointType, expecting %q but got %q", tc.expectedNetworkEdnpointType, neg.NetworkEndpointType)
+
+		if neg.NetworkEndpointType != tc.expectedNetworkEndpointType {
+			t.Errorf("Unexpected NetworkEndpointType, expecting %q but got %q", tc.expectedNetworkEndpointType, neg.NetworkEndpointType)
 		}
 
 		if neg.Subnetwork != tc.expectedSubnetwork {
 			t.Errorf("Unexpected Subnetwork, expecting %q but got %q", tc.expectedSubnetwork, neg.Subnetwork)
 		}
-
 	}
 }
 
@@ -642,10 +642,10 @@ func TestMakeEndpointBatch(t *testing.T) {
 		},
 	}
 
-	for _, createHybridNeg := range []bool{true, false} {
-		flags.F.CreateHybridNeg = createHybridNeg
+	for _, enableHybrid := range []bool{true, false} {
+		flags.F.EnableHybrid = enableHybrid
 		for _, tc := range testCases {
-			endpointSet, endpointMap := genTestEndpoints(tc.endpointNum, createHybridNeg)
+			endpointSet, endpointMap := genTestEndpoints(tc.endpointNum, enableHybrid)
 			out, err := makeEndpointBatch(endpointSet)
 
 			if err != nil {
@@ -759,7 +759,7 @@ func TestShouldPodBeInNeg(t *testing.T) {
 
 }
 
-func genTestEndpoints(num int, createHybridNeg bool) (negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
+func genTestEndpoints(num int, enableHybrid bool) (negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
 	endpointSet := negtypes.NewNetworkEndpointSet()
 	endpointMap := map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint{}
 	ip := "1.2.3.4"
@@ -769,10 +769,11 @@ func genTestEndpoints(num int, createHybridNeg bool) (negtypes.NetworkEndpointSe
 		endpointSet.Insert(key)
 		endpointMap[key] = &compute.NetworkEndpoint{
 			IpAddress: ip,
+			Instance:  instance,
 			Port:      int64(port),
 		}
-		if !createHybridNeg {
-			endpointMap[key].Instance = instance
+		if enableHybrid {
+			endpointMap[key].Instance = ""
 		}
 	}
 	return endpointSet, endpointMap

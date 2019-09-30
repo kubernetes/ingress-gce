@@ -45,7 +45,7 @@ const (
 	maxRetryDelay                       = 600 * time.Second
 	separator                           = "||"
 	negIPPortNetworkEndpointType        = "GCE_VM_IP_PORT"
-	negPrivateIPPortNetworkEdnpointType = "NON_GCP_PRIVATE_IP_PORT"
+	negPrivateIPPortNetworkEndpointType = "NON_GCP_PRIVATE_IP_PORT"
 )
 
 // encodeEndpoint encodes ip and instance into a single string
@@ -145,8 +145,9 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		klog.V(2).Infof("Creating NEG %q for %s in %q.", negName, negServicePortName, zone)
 		networkEndpointType := negIPPortNetworkEndpointType
 		subnetwork := cloud.SubnetworkURL()
-		if flags.F.CreateHybridNeg {
-			networkEndpointType = negPrivateIPPortNetworkEdnpointType
+		if flags.F.EnableHybrid {
+			// Hybrid NEGs have a different NetworkEndpointType and cannot have an associated subnetwork.
+			networkEndpointType = negPrivateIPPortNetworkEndpointType
 			subnetwork = ""
 		}
 		err = cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
@@ -290,12 +291,14 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet) (map[negtypes.Netw
 		}
 
 		endpointBatch[networkEndpoint] = &compute.NetworkEndpoint{
+			Instance:  networkEndpoint.Node,
 			IpAddress: networkEndpoint.IP,
 			Port:      int64(portNum),
 		}
 
-		if !flags.F.CreateHybridNeg {
-			endpointBatch[networkEndpoint].Instance = networkEndpoint.Node
+		if flags.F.EnableHybrid {
+			// Hybrid endpoints cannot have an associated instance.
+			endpointBatch[networkEndpoint].Instance = ""
 		}
 	}
 	return endpointBatch, nil
