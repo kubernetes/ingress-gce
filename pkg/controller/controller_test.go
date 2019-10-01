@@ -19,12 +19,14 @@ package controller
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,6 +36,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
+	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -52,19 +55,6 @@ var (
 	clusterUID      = "aaaaa"
 )
 
-// saveFinalizerFlags captures current value of finalizer flags and
-// restore them after a test is finished.
-type saveFinalizerFlags struct{ add, remove bool }
-
-func (s *saveFinalizerFlags) save() {
-	s.add = flags.F.FinalizerAdd
-	s.remove = flags.F.FinalizerRemove
-}
-func (s *saveFinalizerFlags) reset() {
-	flags.F.FinalizerAdd = s.add
-	flags.F.FinalizerRemove = s.remove
-}
-
 // newLoadBalancerController create a loadbalancer controller.
 func newLoadBalancerController() *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
@@ -82,12 +72,11 @@ func newLoadBalancerController() *LoadBalancerController {
 		HealthCheckPath:               "/",
 		DefaultBackendHealthCheckPath: "/healthz",
 	}
-
-	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, fakeGCE, namer, ctxConfig)
+	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
 	lbc := NewLoadBalancerController(ctx, stopCh)
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instances.NewNodePool(instances.NewFakeInstanceGroups(sets.NewString(), namer), namer)
-	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(fakeGCE, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer))
+	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(fakeGCE, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer, ""))
 	lbc.instancePool.Init(&instances.FakeZoneLister{Zones: []string{"zone-a"}})
 
 	lbc.hasSynced = func() bool { return true }
@@ -139,9 +128,13 @@ func setDeletionTimestamp(lbc *LoadBalancerController, ing *v1beta1.Ingress) {
 
 func deleteIngress(lbc *LoadBalancerController, ing *v1beta1.Ingress) {
 	if len(ing.GetFinalizers()) == 0 {
-		lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Delete(ing.Name, &meta_v1.DeleteOptions{})
-		lbc.ctx.IngressInformer.GetIndexer().Delete(ing)
+		deleteIngressWithFinalizer(lbc, ing)
 	}
+}
+
+func deleteIngressWithFinalizer(lbc *LoadBalancerController, ing *v1beta1.Ingress) {
+	lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Delete(ing.Name, &meta_v1.DeleteOptions{})
+	lbc.ctx.IngressInformer.GetIndexer().Delete(ing)
 }
 
 // getKey returns the key for an ingress.
@@ -188,9 +181,11 @@ func TestIngressSyncError(t *testing.T) {
 // Ingresses that need to be deleted, and keep the ones that don't, depending
 // on whether Finalizer Adds and/or Removes are enabled.
 func TestIngressCreateDeleteFinalizer(t *testing.T) {
-	var flagSaver saveFinalizerFlags
-	flagSaver.save()
-	defer flagSaver.reset()
+	flagSaver := test.NewFlagSaver()
+	flagSaver.Save(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
+	defer flagSaver.Reset(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
+	flagSaver.Save(test.FinalizerRemoveFlag, &flags.F.FinalizerRemove)
+	defer flagSaver.Reset(test.FinalizerRemoveFlag, &flags.F.FinalizerRemove)
 	testCases := []struct {
 		enableFinalizerAdd    bool
 		enableFinalizerRemove bool
@@ -309,9 +304,11 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 // a good ingress config status is updated and LB is deleted after class change.
 // Note: This test cannot be run in parallel as it stubs global flags.
 func TestIngressClassChangeWithFinalizer(t *testing.T) {
-	var flagSaver saveFinalizerFlags
-	flagSaver.save()
-	defer flagSaver.reset()
+	flagSaver := test.NewFlagSaver()
+	flagSaver.Save(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
+	defer flagSaver.Reset(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
+	flagSaver.Save(test.FinalizerRemoveFlag, &flags.F.FinalizerRemove)
+	defer flagSaver.Reset(test.FinalizerRemoveFlag, &flags.F.FinalizerRemove)
 	flags.F.FinalizerAdd = true
 	flags.F.FinalizerRemove = true
 	lbc := newLoadBalancerController()
@@ -364,9 +361,11 @@ func TestIngressClassChangeWithFinalizer(t *testing.T) {
 // multiple ingresses with shared resources are added or deleted.
 // Note: This test cannot be run in parallel as it stubs global flags.
 func TestIngressesWithSharedResourcesWithFinalizer(t *testing.T) {
-	var flagSaver saveFinalizerFlags
-	flagSaver.save()
-	defer flagSaver.reset()
+	flagSaver := test.NewFlagSaver()
+	flagSaver.Save(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
+	defer flagSaver.Reset(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
+	flagSaver.Save(test.FinalizerRemoveFlag, &flags.F.FinalizerRemove)
+	defer flagSaver.Reset(test.FinalizerRemoveFlag, &flags.F.FinalizerRemove)
 	flags.F.FinalizerAdd = true
 	flags.F.FinalizerRemove = true
 	lbc := newLoadBalancerController()
@@ -433,9 +432,9 @@ func TestIngressesWithSharedResourcesWithFinalizer(t *testing.T) {
 // to existing ingressesToCleanup when lbc is upgraded to enable finalizer.
 // Note: This test cannot be run in parallel as it stubs global flags.
 func TestEnableFinalizer(t *testing.T) {
-	var flagSaver saveFinalizerFlags
-	flagSaver.save()
-	defer flagSaver.reset()
+	flagSaver := test.NewFlagSaver()
+	flagSaver.Save(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
+	defer flagSaver.Reset(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
 	lbc := newLoadBalancerController()
 	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "namespace1"}, api_v1.ServiceSpec{
 		Type:  api_v1.ServiceTypeNodePort,
@@ -669,4 +668,310 @@ func TestToRuntimeInfoCerts(t *testing.T) {
 	if len(lbInfo.TLS) != 1 || lbInfo.TLS[0] != tlsCerts[0] {
 		t.Errorf("lbInfo.TLS = %v, want %v", lbInfo.TLS, tlsCerts)
 	}
+}
+
+// TestIngressTagging asserts that appropriate finalizer that defines frontend naming scheme,
+// is added to ingress being synced.
+func TestIngressTagging(t *testing.T) {
+	flagSaver := test.NewFlagSaver()
+	flagSaver.Save(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
+	defer flagSaver.Reset(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
+	flagSaver.Save(test.EnableV2FrontendNamerFlag, &flags.F.EnableV2FrontendNamer)
+	defer flagSaver.Reset(test.EnableV2FrontendNamerFlag, &flags.F.EnableV2FrontendNamer)
+	testCases := []struct {
+		enableFinalizerAdd bool
+		enableV2Namer      bool
+		vipExists          bool
+		urlMapExists       bool
+		expectedFinalizer  string
+	}{
+		{enableFinalizerAdd: false, expectedFinalizer: ""},
+		{enableFinalizerAdd: true, enableV2Namer: false, expectedFinalizer: common.FinalizerKey},
+		{enableFinalizerAdd: true, enableV2Namer: true, vipExists: false, expectedFinalizer: common.FinalizerKeyV2},
+		{enableFinalizerAdd: true, enableV2Namer: true, vipExists: true, urlMapExists: false, expectedFinalizer: common.FinalizerKeyV2},
+		{enableFinalizerAdd: true, enableV2Namer: true, vipExists: true, urlMapExists: true, expectedFinalizer: common.FinalizerKey},
+	}
+
+	for idx, tc := range testCases {
+		var desc string
+		switch idx {
+		case 0:
+			desc = fmt.Sprintf("enableFinalizerAdd %t", tc.enableFinalizerAdd)
+		case 1:
+			desc = fmt.Sprintf("enableFinalizerAdd %t enableV2Namer %t ", tc.enableFinalizerAdd, tc.enableV2Namer)
+		case 2:
+			desc = fmt.Sprintf("enableFinalizerAdd %t enableV2Namer %t vipExists %t", tc.enableFinalizerAdd, tc.enableV2Namer, tc.vipExists)
+		default:
+			desc = fmt.Sprintf("enableFinalizerAdd %t enableV2Namer %t vipExists %t urlMapExists %t", tc.enableFinalizerAdd, tc.enableV2Namer, tc.vipExists, tc.urlMapExists)
+		}
+		t.Run(desc, func(t *testing.T) {
+			flags.F.FinalizerAdd = tc.enableFinalizerAdd
+			flags.F.EnableV2FrontendNamer = tc.enableV2Namer
+
+			lbc := newLoadBalancerController()
+			svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
+				Type:  api_v1.ServiceTypeNodePort,
+				Ports: []api_v1.ServicePort{{Port: 80}},
+			})
+			addService(lbc, svc)
+
+			defaultBackend := backend("my-service", intstr.FromInt(80))
+			ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
+				v1beta1.IngressSpec{
+					Backend: &defaultBackend,
+				})
+			if tc.vipExists {
+				ing.Status.LoadBalancer.Ingress = []api_v1.LoadBalancerIngress{{IP: "0.0.0.0"}}
+			}
+			addIngress(lbc, ing)
+			// Create URL map if enabled.
+			if tc.urlMapExists {
+				lbName := lbc.ctx.ClusterNamer.LoadBalancer(common.IngressKeyFunc(ing))
+				lbc.ctx.Cloud.CreateURLMap(&compute.UrlMap{Name: lbc.ctx.ClusterNamer.UrlMap(lbName)})
+			}
+
+			ingStoreKey := getKey(ing, t)
+			if err := lbc.sync(ingStoreKey); err != nil {
+				t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
+			}
+
+			updatedIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Get(%v) = %v, want nil", ingStoreKey, err)
+			}
+			ingFinalizers := updatedIng.GetFinalizers()
+			// Verify that no finalizer is added when finalizer flag is disabled.
+			if !flags.F.FinalizerAdd {
+				if l := len(ingFinalizers); l != 0 {
+					t.Fatalf("len(updatedIng.GetFinalizers()) =  %d, want 0; updatedIng = %+v", l, updatedIng)
+				}
+				return
+			}
+			// Verify that appropriate finalizer is added
+			if l := len(ingFinalizers); l != 1 {
+				t.Fatalf("len(updatedIng.GetFinalizers()) = %d, want 1; updatedIng = %+v", l, updatedIng)
+			}
+			if diff := cmp.Diff(tc.expectedFinalizer, ingFinalizers[0]); diff != "" {
+				t.Fatalf("Got diff for Finalizer (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestGC asserts that GC workflow deletes multiple ingresses on a single sync
+// if delete events for those ingresses are lost.
+// Note that this workflow is valid only when finalizer is disabled.
+func TestGCMultiple(t *testing.T) {
+	flagSaver := test.NewFlagSaver()
+	flagSaver.Save(test.FinalizerRemoveFlag, &flags.F.FinalizerRemove)
+	defer flagSaver.Reset(test.FinalizerRemoveFlag, &flags.F.FinalizerRemove)
+	flags.F.FinalizerRemove = true
+	const namespace = "namespace"
+
+	ings := []string{"v1-ing1", "v1-ing2", "v1-ing3", "v1-ing4"}
+	expectedIngresses := []string{"namespace/v1-ing3", "namespace/v1-ing4"}
+	// expected ingresses after creation.
+	expectedIngressKeys := make([]string, 0)
+	for _, ingName := range ings {
+		expectedIngressKeys = append(expectedIngressKeys, fmt.Sprintf("%s/%s", namespace, ingName))
+	}
+	lbc := newLoadBalancerController()
+	// Create ingresses and run sync on them.
+	var updatedIngs []*v1beta1.Ingress
+	for _, ing := range ings {
+		updatedIngs = append(updatedIngs, ensureIngress(t, lbc, namespace, ing, namer_util.V1NamingScheme))
+	}
+
+	allIngressKeys := lbc.ctx.Ingresses().ListKeys()
+	sort.Strings(allIngressKeys)
+	if diff := cmp.Diff(expectedIngressKeys, allIngressKeys); diff != "" {
+		t.Fatalf("Got diff for ingresses (-want +got):\n%s", diff)
+	}
+
+	// delete multiple ingresses during a single sync.
+	timestamp := meta_v1.NewTime(time.Now())
+	// Add deletion timestamp to mock ingress deletions.
+	// Delete half of the ingresses.
+	for i := 0; i < len(updatedIngs)/2; i++ {
+		updatedIngs[i].SetDeletionTimestamp(&timestamp)
+		updateIngress(lbc, updatedIngs[i])
+	}
+	// Sync on the last ingress.
+	ingStoreKey := getKey(updatedIngs[len(updatedIngs)-1], t)
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
+	}
+
+	// Update ingress store with any potential changes made by controller.
+	// This step is needed only because we use a mock controller setup.
+	for _, ing := range updatedIngs {
+		lbc.ctx.IngressInformer.GetIndexer().Update(getUpdatedIngress(t, lbc, ing))
+	}
+
+	// Assert that controller returns same ingresses as expected ingresses.
+	// Controller sync removes finalizers from all deletion candidates.
+	// Filter ingresses with finalizer for un-deleted ingresses.
+	allIngresses := operator.Ingresses(lbc.ctx.Ingresses().List()).Filter(func(ing *v1beta1.Ingress) bool {
+		return common.HasFinalizer(ing.ObjectMeta)
+	}).AsList()
+	allIngressKeys = common.ToIngressKeys(allIngresses)
+	sort.Strings(allIngressKeys)
+	if diff := cmp.Diff(expectedIngresses, allIngressKeys); diff != "" {
+		t.Fatalf("Got diff for Ingresses after delete (-want +got):\n%s", diff)
+	}
+}
+
+// TestGC asserts that GC workflow runs as expected during a controller sync.
+func TestGC(t *testing.T) {
+	flagSaver := test.NewFlagSaver()
+	flagSaver.Save(test.FinalizerRemoveFlag, &flags.F.FinalizerRemove)
+	defer flagSaver.Reset(test.FinalizerRemoveFlag, &flags.F.FinalizerRemove)
+	flagSaver.Save(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
+	defer flagSaver.Reset(test.FinalizerAddFlag, &flags.F.FinalizerAdd)
+	flagSaver.Save(test.EnableV2FrontendNamerFlag, &flags.F.EnableV2FrontendNamer)
+	defer flagSaver.Reset(test.EnableV2FrontendNamerFlag, &flags.F.EnableV2FrontendNamer)
+	flags.F.FinalizerRemove = true
+	flags.F.FinalizerAdd = true
+	flags.F.EnableV2FrontendNamer = true
+	const namespace = "namespace"
+	for _, tc := range []struct {
+		desc              string
+		v1IngressNames    []string
+		v2IngressNames    []string
+		expectedIngresses []string
+	}{
+		{
+			desc:              "empty",
+			v1IngressNames:    []string{},
+			v2IngressNames:    []string{},
+			expectedIngresses: []string{},
+		},
+		{
+			desc:              "v1 ingresses only",
+			v1IngressNames:    []string{"v1-ing1", "v1-ing2", "v1-ing3", "v1-ing4"},
+			v2IngressNames:    []string{},
+			expectedIngresses: []string{"namespace/v1-ing3", "namespace/v1-ing4"},
+		},
+		{
+			desc:              "v2 ingresses only",
+			v1IngressNames:    []string{},
+			v2IngressNames:    []string{"v2-ing1", "v2-ing2", "v2-ing3", "v2-ing4"},
+			expectedIngresses: []string{"namespace/v2-ing3", "namespace/v2-ing4"},
+		},
+		{
+			desc:              "both ingresses",
+			v1IngressNames:    []string{"v1-ing1", "v1-ing2", "v1-ing3", "v1-ing4"},
+			v2IngressNames:    []string{"v2-ing1", "v2-ing2", "v2-ing3", "v2-ing4"},
+			expectedIngresses: []string{"namespace/v1-ing3", "namespace/v1-ing4", "namespace/v2-ing3", "namespace/v2-ing4"},
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			// expected ingresses after creation.
+			expectedIngressKeys := make([]string, 0)
+			for _, ingName := range tc.v1IngressNames {
+				expectedIngressKeys = append(expectedIngressKeys, fmt.Sprintf("%s/%s", namespace, ingName))
+			}
+			for _, ingName := range tc.v2IngressNames {
+				expectedIngressKeys = append(expectedIngressKeys, fmt.Sprintf("%s/%s", namespace, ingName))
+			}
+			lbc := newLoadBalancerController()
+			// Create ingresses and run sync on them.
+			var v1Ingresses, v2Ingresses []*v1beta1.Ingress
+			for _, ing := range tc.v1IngressNames {
+				v1Ingresses = append(v1Ingresses, ensureIngress(t, lbc, namespace, ing, namer_util.V1NamingScheme))
+			}
+			for _, ing := range tc.v2IngressNames {
+				v2Ingresses = append(v2Ingresses, ensureIngress(t, lbc, namespace, ing, namer_util.V2NamingScheme))
+			}
+
+			allIngressKeys := lbc.ctx.Ingresses().ListKeys()
+			sort.Strings(allIngressKeys)
+			if diff := cmp.Diff(expectedIngressKeys, allIngressKeys); diff != "" {
+				t.Fatalf("Got diff for ingresses (-want +got):\n%s", diff)
+			}
+
+			// Delete half of the v1 ingresses.
+			for i := 0; i < len(v1Ingresses)/2; i++ {
+				// Add deletion stamp to indicate that ingress is deleted.
+				timestamp := meta_v1.NewTime(time.Now())
+				v1Ingresses[i].SetDeletionTimestamp(&timestamp)
+				updateIngress(lbc, v1Ingresses[i])
+				ingStoreKey := getKey(v1Ingresses[i], t)
+				if err := lbc.sync(ingStoreKey); err != nil {
+					t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
+				}
+			}
+
+			// Delete half of the v2 ingresses.
+			for i := 0; i < len(v2Ingresses)/2; i++ {
+				// Add deletion stamp to indicate that ingress is deleted.
+				timestamp := meta_v1.NewTime(time.Now())
+				v2Ingresses[i].SetDeletionTimestamp(&timestamp)
+				updateIngress(lbc, v2Ingresses[i])
+				ingStoreKey := getKey(v2Ingresses[i], t)
+				if err := lbc.sync(ingStoreKey); err != nil {
+					t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
+				}
+			}
+
+			// Update ingress store with any potential changes made by controller.
+			// This step is needed only because we use a mock controller setup.
+			for _, ing := range v1Ingresses {
+				lbc.ctx.IngressInformer.GetIndexer().Update(getUpdatedIngress(t, lbc, ing))
+			}
+			for _, ing := range v2Ingresses {
+				lbc.ctx.IngressInformer.GetIndexer().Update(getUpdatedIngress(t, lbc, ing))
+			}
+
+			// Assert that controller returns same ingresses as expected ingresses.
+			// Controller sync removes finalizers from all deletion candidates.
+			// Filter ingresses with finalizer for un-deleted ingresses.
+			allIngresses := operator.Ingresses(lbc.ctx.Ingresses().List()).Filter(func(ing *v1beta1.Ingress) bool {
+				return common.HasFinalizer(ing.ObjectMeta)
+			}).AsList()
+			allIngressKeys = common.ToIngressKeys(allIngresses)
+			sort.Strings(allIngressKeys)
+			if diff := cmp.Diff(tc.expectedIngresses, allIngressKeys); diff != "" {
+				t.Fatalf("Got diff for Ingresses after delete (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// ensureIngress creates an ingress and syncs it with ingress controller.
+// This returns updated ingress after sync.
+func ensureIngress(t *testing.T, lbc *LoadBalancerController, namespace, name string, scheme namer_util.Scheme) *v1beta1.Ingress {
+	serviceName := fmt.Sprintf("service-for-%s", name)
+	svc := test.NewService(types.NamespacedName{Name: serviceName, Namespace: namespace}, api_v1.ServiceSpec{
+		Type:  api_v1.ServiceTypeNodePort,
+		Ports: []api_v1.ServicePort{{Port: 80}},
+	})
+	addService(lbc, svc)
+
+	defaultBackend := backend(serviceName, intstr.FromInt(80))
+	ing := test.NewIngress(types.NamespacedName{Name: name, Namespace: namespace},
+		v1beta1.IngressSpec{
+			Backend: &defaultBackend,
+		})
+	if scheme == namer_util.V1NamingScheme {
+		ing.ObjectMeta.Finalizers = []string{common.FinalizerKey}
+	} else if scheme == namer_util.V2NamingScheme {
+		ing.ObjectMeta.Finalizers = []string{common.FinalizerKeyV2}
+	}
+	addIngress(lbc, ing)
+
+	ingStoreKey := getKey(ing, t)
+	if err := lbc.sync(ingStoreKey); err != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
+	}
+
+	return getUpdatedIngress(t, lbc, ing)
+}
+
+func getUpdatedIngress(t *testing.T, lbc *LoadBalancerController, ing *v1beta1.Ingress) *v1beta1.Ingress {
+	updatedIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	if err != nil {
+		t.Fatalf("lbc.ctx.KubeClient...Get(%v) = %v, want nil", getKey(ing, t), err)
+	}
+	return updatedIng
 }

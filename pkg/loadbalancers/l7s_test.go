@@ -25,16 +25,20 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	"k8s.io/api/networking/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (
 	testClusterName = "0123456789abcedf"
+	kubeSystemUID   = "ksuid123"
 
 	// resourceLeakLimit is the limit when ingress namespace and name are too long and ingress
 	// GC will leak the LB resources because the cluster uid got truncated.
@@ -164,7 +168,7 @@ func TestGC(t *testing.T) {
 	}
 
 	otherNamer := namer_util.NewNamer("clusteruid", "fw1")
-	otherFeNamerFactory := namer_util.NewFrontendNamerFactory(otherNamer)
+	otherFeNamerFactory := namer_util.NewFrontendNamerFactory(otherNamer, "")
 	otherKeys := []string{
 		"a/a",
 		"namespace/name",
@@ -185,7 +189,7 @@ func TestGC(t *testing.T) {
 			createFakeLoadbalancer(cloud, namer, versions, defaultScope)
 		}
 
-		err := l7sPool.GC(tc.ingressLBs)
+		err := l7sPool.GCv1(tc.ingressLBs)
 		if err != nil {
 			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
 		}
@@ -247,7 +251,7 @@ func TestDoNotGCWantedLB(t *testing.T) {
 	for _, tc := range testCases {
 		namer := l7sPool.namerFactory.NamerForLbName(l7sPool.v1NamerHelper.LoadBalancer(tc.key))
 		createFakeLoadbalancer(l7sPool.cloud, namer, versions, defaultScope)
-		err := l7sPool.GC([]string{tc.key})
+		err := l7sPool.GCv1([]string{tc.key})
 		if err != nil {
 			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
 		}
@@ -283,7 +287,7 @@ func TestGCToLeakLB(t *testing.T) {
 	for _, tc := range testCases {
 		namer := l7sPool.namerFactory.NamerForLbName(l7sPool.v1NamerHelper.LoadBalancer(tc.key))
 		createFakeLoadbalancer(l7sPool.cloud, namer, versions, defaultScope)
-		err := l7sPool.GC([]string{})
+		err := l7sPool.GCv1([]string{})
 		if err != nil {
 			t.Errorf("For case %q, do not expect err: %v", tc.desc, err)
 		}
@@ -301,11 +305,327 @@ func TestGCToLeakLB(t *testing.T) {
 	}
 }
 
+// TestV2GC asserts that GC workflow for v2 naming scheme deletes load balancer
+// associated with given v2 ingress. This also checks that other v2 ingress
+// associated LBs or v1 ingress associated LBs are not deleted.
+func TestV2GC(t *testing.T) {
+	t.Parallel()
+	pool := newTestLoadBalancerPool()
+	l7sPool := pool.(*L7s)
+	cloud := l7sPool.cloud
+	feNamerFactory := l7sPool.namerFactory
+	testCases := []struct {
+		desc            string
+		ingressToDelete *v1beta1.Ingress
+		addV1Ingresses  bool
+		gcpLBs          []*v1beta1.Ingress
+		expectedLBs     []*v1beta1.Ingress
+	}{
+		{
+			desc:            "empty",
+			ingressToDelete: newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKeyV2),
+			addV1Ingresses:  false,
+			gcpLBs:          []*v1beta1.Ingress{},
+			expectedLBs:     []*v1beta1.Ingress{},
+		},
+		{
+			desc:            "simple case v2 only",
+			ingressToDelete: newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKeyV2),
+			gcpLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:15], longName[:20], common.FinalizerKeyV2),
+			},
+			expectedLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:15], longName[:20], common.FinalizerKeyV2),
+			},
+		},
+		{
+			desc:            "simple case both v1 and v2",
+			ingressToDelete: newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKeyV2),
+			gcpLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:10], longName[:11], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:20], longName[:27], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
+				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
+			},
+			expectedLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:10], longName[:11], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:20], longName[:27], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
+				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
+			},
+		},
+		{
+			desc:            "63 characters v2 only",
+			ingressToDelete: newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
+			gcpLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:19], longName[:18], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+			},
+			expectedLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:19], longName[:18], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+			},
+		},
+		{
+			desc:            "63 characters both v1 and v2",
+			ingressToDelete: newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
+			gcpLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:18], longName[:19], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
+				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
+			},
+			expectedLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:18], longName[:19], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
+				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
+			},
+		},
+		{
+			desc:            "longNameSpace v2 only",
+			ingressToDelete: newIngressWithFinalizer(longName, longName[:1], common.FinalizerKeyV2),
+			gcpLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName, longName[:1], common.FinalizerKeyV2),
+			},
+			expectedLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+			},
+		},
+		{
+			desc:            "longNameSpace both v1 and v2",
+			ingressToDelete: newIngressWithFinalizer(longName, longName[:1], common.FinalizerKeyV2),
+			gcpLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName, longName[:1], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:18], longName[:19], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
+				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
+			},
+			expectedLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:18], longName[:19], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
+				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
+			},
+		},
+		{
+			desc:            "longName v2 only",
+			ingressToDelete: newIngressWithFinalizer(longName[:1], longName, common.FinalizerKeyV2),
+			gcpLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:1], longName, common.FinalizerKeyV2),
+			},
+			expectedLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+			},
+		},
+		{
+			desc:            "longName both v1 and v2",
+			ingressToDelete: newIngressWithFinalizer(longName[:1], longName, common.FinalizerKeyV2),
+			gcpLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:1], longName, common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:18], longName[:19], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
+				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
+			},
+			expectedLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:18], longName[:19], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
+				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
+			},
+		},
+		{
+			desc:            "longNameSpace and longName v2 only",
+			ingressToDelete: newIngressWithFinalizer(longName, longName, common.FinalizerKeyV2),
+			gcpLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName, longName, common.FinalizerKeyV2),
+			},
+			expectedLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+			},
+		},
+		{
+			desc:            "longNameSpace and longName both v1 and v2",
+			ingressToDelete: newIngressWithFinalizer(longName, longName, common.FinalizerKeyV2),
+			gcpLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName, longName, common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:18], longName[:19], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
+				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
+			},
+			expectedLBs: []*v1beta1.Ingress{
+				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
+				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:18], longName[:19], common.FinalizerKey),
+				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
+				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
+			},
+		},
+	}
+
+	// Add LBs owned by another cluster.
+	otherNamer := namer_util.NewNamer("clusteruid", "fw1")
+	otherFeNamerFactory := namer_util.NewFrontendNamerFactory(otherNamer, "ksuid234")
+	otherIngresses := []*v1beta1.Ingress{
+		// ingresses with v1 naming scheme.
+		newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
+		newIngressWithFinalizer(longName[:20], longName[:27], common.FinalizerKey),
+		// ingresses with v2 naming scheme.
+		newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKeyV2),
+		newIngressWithFinalizer(longName[:15], longName[:20], common.FinalizerKeyV2),
+		newIngressWithFinalizer(longName[:16], longName[:20], common.FinalizerKeyV2),
+		newIngressWithFinalizer(longName[:17], longName[:20], common.FinalizerKeyV2),
+		newIngressWithFinalizer(longName, longName, common.FinalizerKeyV2),
+	}
+	versions := features.GAResourceVersions
+
+	for _, ing := range otherIngresses {
+		createFakeLoadbalancer(cloud, otherFeNamerFactory.Namer(ing), versions, defaultScope)
+	}
+
+	for _, tc := range testCases {
+		desc := fmt.Sprintf("%s namespaceLength %d nameLength %d", tc.desc, len(tc.ingressToDelete.Namespace), len(tc.ingressToDelete.Name))
+		t.Run(desc, func(t *testing.T) {
+			for _, ing := range tc.gcpLBs {
+				createFakeLoadbalancer(cloud, feNamerFactory.Namer(ing), versions, defaultScope)
+			}
+
+			err := l7sPool.GCv2(tc.ingressToDelete)
+			if err != nil {
+				t.Errorf("l7sPool.GC(%q) = %v, want nil for case %q", common.NamespacedName(tc.ingressToDelete), err, tc.desc)
+			}
+
+			// Check if LBs associated with other ingresses are not deleted.
+			for _, ing := range otherIngresses {
+				if err := checkFakeLoadBalancer(cloud, otherFeNamerFactory.Namer(ing), versions, defaultScope, true); err != nil {
+					t.Errorf("checkFakeLoadBalancer(...) = %v, want nil for case %q and ingress %q", err, tc.desc, common.NamespacedName(ing))
+				}
+			}
+
+			// Check if the total number of url maps is as expected.
+			urlMaps, _ := l7sPool.cloud.ListURLMaps()
+			if ingCount := len(tc.expectedLBs) + len(otherIngresses); ingCount != len(urlMaps) {
+				t.Errorf("len(l7sPool.cloud.ListURLMaps()) = %d, want %d for case %q", len(urlMaps), ingCount, tc.desc)
+			}
+
+			// Check if the load balancer associated with ingress to be deleted is actually GCed.
+			if err := checkFakeLoadBalancer(cloud, feNamerFactory.Namer(tc.ingressToDelete), versions, defaultScope, false); err != nil {
+				t.Errorf("checkFakeLoadBalancer(...) = %v, want nil for case %q and ingress %q", err, tc.desc, common.NamespacedName(tc.ingressToDelete))
+			}
+
+			// Check if all expected LBs exist.
+			for _, ing := range tc.expectedLBs {
+				feNamer := feNamerFactory.Namer(ing)
+				if err := checkFakeLoadBalancer(cloud, feNamer, versions, defaultScope, true); err != nil {
+					t.Errorf("checkFakeLoadBalancer(...) = %v, want nil for case %q and ingress %q", err, tc.desc, common.NamespacedName(ing))
+				}
+				removeFakeLoadBalancer(cloud, feNamer, versions, defaultScope)
+			}
+		})
+	}
+}
+
+// TestDoNotLeakV2LB asserts that GC workflow for v2 naming scheme does not leak
+// GCE resources for different namespaced names.
+func TestDoNotLeakV2LB(t *testing.T) {
+	t.Parallel()
+	pool := newTestLoadBalancerPool()
+	l7sPool := pool.(*L7s)
+	cloud := l7sPool.cloud
+	feNamerFactory := l7sPool.namerFactory
+
+	type testCase struct {
+		desc string
+		ing  *v1beta1.Ingress
+	}
+	var testCases []testCase
+
+	for i := 3; i <= len(longName)*2; i++ {
+		ing := newIngressWithFinalizer(longName[:i/2], longName[:(i-i/2)], common.FinalizerKeyV2)
+		testCases = append(testCases, testCase{fmt.Sprintf("IngressKeyLength: %d", i), ing})
+	}
+
+	// Add LBs owned by another cluster.
+	otherNamer := namer_util.NewNamer("clusteruid", "fw1")
+	otherFeNamerFactory := namer_util.NewFrontendNamerFactory(otherNamer, "ksuid234")
+	otherIngresses := []*v1beta1.Ingress{
+		// ingresses with v1 naming scheme.
+		newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
+		newIngressWithFinalizer(longName[:20], longName[:27], common.FinalizerKey),
+		// ingresses with v2 naming scheme.
+		newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKeyV2),
+		newIngressWithFinalizer(longName[:15], longName[:20], common.FinalizerKeyV2),
+		newIngressWithFinalizer(longName[:16], longName[:20], common.FinalizerKeyV2),
+		newIngressWithFinalizer(longName[:17], longName[:20], common.FinalizerKeyV2),
+		newIngressWithFinalizer(longName, longName, common.FinalizerKeyV2),
+	}
+	versions := features.GAResourceVersions
+
+	for _, ing := range otherIngresses {
+		createFakeLoadbalancer(cloud, otherFeNamerFactory.Namer(ing), versions, defaultScope)
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			feNamer := feNamerFactory.Namer(tc.ing)
+			createFakeLoadbalancer(l7sPool.cloud, feNamer, versions, defaultScope)
+			err := l7sPool.GCv2(tc.ing)
+			if err != nil {
+				t.Errorf("l7sPool.GC(%q) = %v, want nil for case %q", common.NamespacedName(tc.ing), err, tc.desc)
+			}
+
+			if err := checkFakeLoadBalancer(l7sPool.cloud, feNamer, versions, defaultScope, false); err != nil {
+				t.Errorf("checkFakeLoadBalancer(...) = %v, want nil for case %q", err, tc.desc)
+			}
+			urlMaps, _ := l7sPool.cloud.ListURLMaps()
+			if ingCount := len(otherIngresses); ingCount != len(urlMaps) {
+				t.Errorf("len(l7sPool.cloud.ListURLMaps()) = %d, want %d for case %q", len(urlMaps), ingCount, tc.desc)
+			}
+			removeFakeLoadBalancer(l7sPool.cloud, feNamer, versions, defaultScope)
+		})
+	}
+}
+
 func newTestLoadBalancerPool() LoadBalancerPool {
 	namer := namer_util.NewNamer(testClusterName, "fw1")
 	fakeGCECloud := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	ctx := &context.ControllerContext{}
-	return NewLoadBalancerPool(fakeGCECloud, namer, ctx, namer_util.NewFrontendNamerFactory(namer))
+	return NewLoadBalancerPool(fakeGCECloud, namer, ctx, namer_util.NewFrontendNamerFactory(namer, kubeSystemUID))
 }
 
 func createFakeLoadbalancer(cloud *gce.Cloud, namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType) {
@@ -400,4 +720,14 @@ func generateKeyWithLength(length int) string {
 	}
 	length = length - 1
 	return fmt.Sprintf("%s/%s", longName[:length/2], longName[:length-length/2])
+}
+
+func newIngressWithFinalizer(namespace, name, finalizer string) *v1beta1.Ingress {
+	return &v1beta1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       name,
+			Namespace:  namespace,
+			Finalizers: []string{finalizer},
+		},
+	}
 }

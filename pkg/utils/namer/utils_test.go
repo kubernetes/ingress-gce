@@ -13,7 +13,13 @@ limitations under the License.
 
 package namer
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"k8s.io/ingress-gce/pkg/utils/common"
+)
 
 func TestTrimFieldsEvenly(t *testing.T) {
 	t.Parallel()
@@ -85,5 +91,30 @@ func TestTrimFieldsEvenly(t *testing.T) {
 		if tc.max < totalLen {
 			t.Errorf("%s: expect totalLen to be less than %d, but got %d", tc.desc, tc.max, totalLen)
 		}
+	}
+}
+
+// TestFrontendNamingScheme asserts that correct naming scheme is returned for given ingress.
+func TestFrontendNamingScheme(t *testing.T) {
+	testCases := []struct {
+		finalizer    string
+		expectScheme Scheme
+	}{
+		{"", V1NamingScheme},
+		{common.FinalizerKey, V1NamingScheme},
+		{common.FinalizerKeyV2, V2NamingScheme},
+	}
+	for _, tc := range testCases {
+		desc := fmt.Sprintf("Finalizer %q", tc.finalizer)
+		t.Run(desc, func(t *testing.T) {
+			ing := newIngress("namespace", "name")
+			if tc.finalizer != "" {
+				ing.ObjectMeta.Finalizers = []string{tc.finalizer}
+			}
+
+			if diff := cmp.Diff(tc.expectScheme, FrontendNamingScheme(ing)); diff != "" {
+				t.Fatalf("Got diff for Frontend naming scheme (-want +got):\n%s", diff)
+			}
+		})
 	}
 }

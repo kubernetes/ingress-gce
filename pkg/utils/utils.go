@@ -72,6 +72,20 @@ const (
 	ToBeDeletedTaint = "ToBeDeletedByClusterAutoscaler"
 )
 
+// FrontendGCAlgorithm species GC algorithm used for ingress frontend resources.
+type FrontendGCAlgorithm int
+
+const (
+	// NoCleanUpNeeded specifies that frontend resources need not be deleted.
+	NoCleanUpNeeded FrontendGCAlgorithm = iota
+	// CleanupV1FrontendResources specifies that frontend resources for ingresses
+	// that use v1 naming scheme need to be deleted.
+	CleanupV1FrontendResources
+	// CleanupV2FrontendResources specifies that frontend resources for ingresses
+	// that use v2 naming scheme need to be deleted.
+	CleanupV2FrontendResources
+)
+
 // FakeGoogleAPIForbiddenErr creates a Forbidden error with type googleapi.Error
 func FakeGoogleAPIForbiddenErr() *googleapi.Error {
 	return &googleapi.Error{Code: http.StatusForbidden}
@@ -383,5 +397,16 @@ func ServiceKeyFunc(namespace, name string) string {
 
 // NeedsCleanup returns true if the ingress needs to have its associated resources deleted.
 func NeedsCleanup(ing *v1beta1.Ingress) bool {
-	return common.IsDeletionCandidate(ing.ObjectMeta, common.FinalizerKey) || !IsGLBCIngress(ing)
+	return common.IsDeletionCandidate(ing.ObjectMeta) || !IsGLBCIngress(ing)
+}
+
+// HasVIP returns true if given ingress has a vip.
+func HasVIP(ing *v1beta1.Ingress) bool {
+	if ing == nil {
+		return false
+	}
+	if lbIPs := ing.Status.LoadBalancer.Ingress; len(lbIPs) == 0 || lbIPs[0].IP == "" {
+		return false
+	}
+	return true
 }

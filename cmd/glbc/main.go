@@ -24,6 +24,8 @@ import (
 	"time"
 
 	flag "github.com/spf13/pflag"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/klog"
 
@@ -123,6 +125,16 @@ func main() {
 		klog.V(0).Infof("Cluster name: %+v", namer.UID())
 	}
 
+	var kubeSystemUID types.UID
+	if flags.F.EnableV2FrontendNamer {
+		// Get kube-system UID that will be used for v2 frontend naming scheme.
+		kubeSystemNS, err := kubeClient.CoreV1().Namespaces().Get("kube-system", metav1.GetOptions{})
+		if err != nil {
+			klog.Fatalf("Error getting kube-system namespace: %v", err)
+		}
+		kubeSystemUID = kubeSystemNS.GetUID()
+	}
+
 	cloud := app.NewGCEClient()
 	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
 	ctxConfig := ingctx.ControllerContextConfig{
@@ -136,7 +148,7 @@ func main() {
 		ASMConfigMapNamespace:         flags.F.ASMConfigMapBasedConfigNamespace,
 		ASMConfigMapName:              flags.F.ASMConfigMapBasedConfigCMName,
 	}
-	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, cloud, namer, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {

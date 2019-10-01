@@ -14,6 +14,8 @@ limitations under the License.
 package namer
 
 import (
+	"fmt"
+
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog"
@@ -56,14 +58,27 @@ func TrimFieldsEvenly(max int, fields ...string) []string {
 	return ret
 }
 
-// frontendNamingScheme returns naming scheme for given ingress.
-func frontendNamingScheme(ing *v1beta1.Ingress) Scheme {
-	// TODO(smatti): return V2NamingScheme if ingress has V2 finalizer
+// FrontendNamingScheme returns naming scheme for given ingress based on its finalizer.
+func FrontendNamingScheme(ing *v1beta1.Ingress) Scheme {
 	switch {
-	case common.HasFinalizer(ing.ObjectMeta, common.FinalizerKey):
+	case common.HasGivenFinalizer(ing.ObjectMeta, common.FinalizerKeyV2):
+		return V2NamingScheme
+	case common.HasGivenFinalizer(ing.ObjectMeta, common.FinalizerKey):
 		return V1NamingScheme
 	default:
-		klog.V(3).Infof("No finalizer found on Ingress %v, using Legacy naming scheme", ing)
+		klog.V(3).Infof("No finalizer found on Ingress %v, using v1 naming scheme", ing)
 		return V1NamingScheme
+	}
+}
+
+// FinalizerForNamingScheme returns finalizer corresponding to given frontend naming scheme.
+func FinalizerForNamingScheme(scheme Scheme) (string, error) {
+	switch scheme {
+	case V1NamingScheme:
+		return common.FinalizerKey, nil
+	case V2NamingScheme:
+		return common.FinalizerKeyV2, nil
+	default:
+		return "", fmt.Errorf("unexpected naming scheme: %s", scheme)
 	}
 }

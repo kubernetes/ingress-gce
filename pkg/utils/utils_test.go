@@ -649,3 +649,73 @@ func TestNeedsCleanup(t *testing.T) {
 		})
 	}
 }
+
+func TestHasVIP(t *testing.T) {
+	for _, tc := range []struct {
+		desc         string
+		ing          *v1beta1.Ingress
+		expectHasVIP bool
+	}{
+		{"nil", nil, false},
+		{"empty ingress status", &v1beta1.Ingress{
+			Status: v1beta1.IngressStatus{},
+		},
+			false,
+		},
+		{"empty load-balancer status", &v1beta1.Ingress{
+			Status: v1beta1.IngressStatus{
+				LoadBalancer: api_v1.LoadBalancerStatus{},
+			},
+		},
+			false,
+		},
+		{"empty load-balancer ingress", &v1beta1.Ingress{
+			Status: v1beta1.IngressStatus{
+				LoadBalancer: api_v1.LoadBalancerStatus{
+					Ingress: []api_v1.LoadBalancerIngress{},
+				},
+			},
+		},
+			false,
+		},
+		{"empty IP", &v1beta1.Ingress{
+			Status: v1beta1.IngressStatus{
+				LoadBalancer: api_v1.LoadBalancerStatus{
+					Ingress: []api_v1.LoadBalancerIngress{
+						{IP: ""},
+					},
+				},
+			},
+		},
+			false,
+		},
+		{"valid IP", &v1beta1.Ingress{
+			Status: v1beta1.IngressStatus{
+				LoadBalancer: api_v1.LoadBalancerStatus{
+					Ingress: []api_v1.LoadBalancerIngress{
+						{IP: "0.0.0.0"},
+					},
+				},
+			},
+		},
+			true,
+		},
+		{"random", &v1beta1.Ingress{
+			Status: v1beta1.IngressStatus{
+				LoadBalancer: api_v1.LoadBalancerStatus{
+					Ingress: []api_v1.LoadBalancerIngress{
+						{IP: "xxxxxx"},
+					},
+				},
+			},
+		},
+			true,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			if gotHasVIP := HasVIP(tc.ing); tc.expectHasVIP != gotHasVIP {
+				t.Errorf("Got diff HasVIP, expected %t got %t", tc.expectHasVIP, gotHasVIP)
+			}
+		})
+	}
+}

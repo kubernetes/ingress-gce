@@ -89,6 +89,7 @@ var (
 		ASMConfigMapBasedConfigCMName    string
 		EnableNonGCPMode                 bool
 		EnableDeleteUnusedFrontends      bool
+		EnableV2FrontendNamer            bool
 
 		LeaderElection LeaderElectionConfiguration
 	}{}
@@ -208,6 +209,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.ASMConfigMapBasedConfigCMName, "asm-configmap-based-config-cmname", "ingress-controller-asm-cm-config", "ASM Configmap based config: configmap name")
 	flag.BoolVar(&F.EnableNonGCPMode, "enable-non-gcp-mode", false, "Set to true when running on a non-GCP cluster.")
 	flag.BoolVar(&F.EnableDeleteUnusedFrontends, "enable-delete-unused-frontends", false, "Enable deleting unused gce frontend resources.")
+	flag.BoolVar(&F.EnableV2FrontendNamer, "enable-v2-frontend-namer", false, "Enable v2 ingress frontend naming policy.")
 }
 
 type RateLimitSpecs struct {

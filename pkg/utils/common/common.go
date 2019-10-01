@@ -17,6 +17,9 @@ limitations under the License.
 package common
 
 import (
+	"crypto/sha256"
+	"strconv"
+
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/cache"
@@ -26,6 +29,32 @@ import (
 var (
 	KeyFunc = cache.DeletionHandlingMetaNamespaceKeyFunc
 )
+
+// charMap is a list of string represented values of first 10 integers and lowercase
+// alphabets. This is a lookup table to maintain entropy when converting bytes to string.
+var charMap []string
+
+// WARNING: PLEASE DO NOT CHANGE THE HASH FUNCTION.
+func init() {
+	for i := 0; i < 10; i++ {
+		charMap = append(charMap, strconv.Itoa(i))
+	}
+	for i := 0; i < 26; i++ {
+		charMap = append(charMap, string('a'+rune(i)))
+	}
+}
+
+// ContentHash creates a content hash string of length n of s utilizing sha256.
+// WARNING: PLEASE DO NOT CHANGE THE HASH FUNCTION.
+func ContentHash(s string, n int) string {
+	var h string
+	bytes := sha256.Sum256(([]byte)(s))
+	for i := 0; i < n && i < len(bytes); i++ {
+		idx := int(bytes[i]) % len(charMap)
+		h += charMap[idx]
+	}
+	return h
+}
 
 // NamespacedName returns namespaced name string of a given ingress.
 // Note: This is used for logging.

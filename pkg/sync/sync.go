@@ -23,6 +23,7 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 // ErrSkipBackendsSync is an error that can be returned by a Controller to
@@ -61,21 +62,56 @@ func (s *IngressSyncer) Sync(state interface{}) error {
 }
 
 // GC implements Syncer.
-func (s *IngressSyncer) GC(ings []*v1beta1.Ingress) error {
-	// Partition GC state into ingresses those need cleanup and those don't.
+func (s *IngressSyncer) GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, frontendGCAlgorithm utils.FrontendGCAlgorithm) error {
+	var lbErr, err error
+	var errs []error
+	switch frontendGCAlgorithm {
+	case utils.CleanupV2FrontendResources:
+		lbErr = s.controller.GCv2LoadBalancer(currIng)
+
+		defer func() {
+			if err != nil {
+				return
+			}
+			err = s.controller.EnsureDeleteV2Finalizer(currIng)
+		}()
+	case utils.CleanupV1FrontendResources:
+		// Filter GCE ingresses that use v1 naming scheme.
+		v1Ingresses := operator.Ingresses(ings).Filter(func(ing *v1beta1.Ingress) bool {
+			return namer.FrontendNamingScheme(ing) == namer.V1NamingScheme
+		})
+		// Partition these into ingresses those need cleanup and those don't.
+		toCleanupV1, toKeepV1 := v1Ingresses.Partition(utils.NeedsCleanup)
+		// Note that only GCE ingress associated resources are managed by this controller.
+		toKeepV1Gce := toKeepV1.Filter(utils.IsGCEIngress)
+		lbErr = s.controller.GCv1LoadBalancers(toKeepV1Gce.AsList())
+
+		defer func() {
+			if err != nil {
+				return
+			}
+			err = s.controller.EnsureDeleteV1Finalizers(toCleanupV1.AsList())
+		}()
+	case utils.NoCleanUpNeeded:
+	default:
+		lbErr = fmt.Errorf("unexpected frontend GC algorithm %v", frontendGCAlgorithm)
+	}
+	if lbErr != nil {
+		errs = append(errs, fmt.Errorf("error running load balancer garbage collection routine: %v", lbErr))
+	}
+	// Filter ingresses that needs to exist after GC.
 	// An Ingress is considered to exist and not considered for cleanup, if:
 	// 1) It is a GCLB Ingress.
-	// 2) It is not a candidate for deletion.
-	toCleanup, toKeep := operator.Ingresses(ings).Partition(utils.NeedsCleanup)
-	toKeepIngresses := toKeep.AsList()
-	lbErr := s.controller.GCLoadBalancers(toKeepIngresses)
-	beErr := s.controller.GCBackends(toKeepIngresses)
-	if lbErr != nil {
-		return fmt.Errorf("error running load balancer garbage collection routine: %v", lbErr)
+	// 2) It is not a deletion candidate. A deletion candidate is an ingress
+	//    with deletion stamp and a finalizer.
+	toKeep := operator.Ingresses(ings).Filter(func(ing *v1beta1.Ingress) bool {
+		return !utils.NeedsCleanup(ing)
+	}).AsList()
+	if beErr := s.controller.GCBackends(toKeep); beErr != nil {
+		errs = append(errs, fmt.Errorf("error running backend garbage collection routine: %v", beErr))
 	}
-	if beErr != nil {
-		return fmt.Errorf("error running backend garbage collection routine: %v", beErr)
+	if errs != nil {
+		err = utils.JoinErrs(errs)
 	}
-
-	return s.controller.MaybeRemoveFinalizers(toCleanup.AsList())
+	return err
 }

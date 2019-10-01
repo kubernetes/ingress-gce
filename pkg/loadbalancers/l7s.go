@@ -18,13 +18,18 @@ package loadbalancers
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
+	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -52,7 +57,7 @@ func NewLoadBalancerPool(cloud *gce.Cloud, v1NamerHelper namer_util.V1FrontendNa
 	}
 }
 
-// Ensure ensures a loadbalancer and its resources given the RuntimeInfo
+// Ensure implements LoadBalancerPool.
 func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 	lb := &L7{
 		runtimeInfo: ri,
@@ -69,8 +74,8 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 	return lb, nil
 }
 
-// Delete deletes a load balancer by name.
-func (l *L7s) Delete(name string, versions *features.ResourceVersions, scope meta.KeyType) error {
+// delete deletes a loadbalancer by name.
+func (l *L7s) delete(name string, versions *features.ResourceVersions, scope meta.KeyType) error {
 	lb := &L7{
 		runtimeInfo: &L7RuntimeInfo{},
 		cloud:       l.cloud,
@@ -86,8 +91,25 @@ func (l *L7s) Delete(name string, versions *features.ResourceVersions, scope met
 	return nil
 }
 
-// List returns a list of urlMaps (the top level LB resource) that belong to the cluster
-func (l *L7s) List(key *meta.Key, version meta.Version) ([]*composite.UrlMap, error) {
+// v2Delete deletes a loadbalancer frontend resources by ingress using v2 naming scheme.
+func (l *L7s) v2Delete(ing *v1beta1.Ingress, versions *features.ResourceVersions, scope meta.KeyType) error {
+	lb := &L7{
+		runtimeInfo: &L7RuntimeInfo{Ingress: ing},
+		cloud:       l.cloud,
+		namer:       l.namerFactory.Namer(ing),
+		scope:       scope,
+	}
+
+	klog.V(3).Infof("Deleting lb (using v2 naming scheme) %v", lb)
+
+	if err := lb.Cleanup(versions); err != nil {
+		return err
+	}
+	return nil
+}
+
+// list returns a list of urlMaps (the top level LB resource) that belong to the cluster.
+func (l *L7s) list(key *meta.Key, version meta.Version) ([]*composite.UrlMap, error) {
 	var result []*composite.UrlMap
 	urlMaps, err := composite.ListUrlMaps(l.cloud, key, version)
 	if err != nil {
@@ -103,10 +125,21 @@ func (l *L7s) List(key *meta.Key, version meta.Version) ([]*composite.UrlMap, er
 	return result, nil
 }
 
-// GC garbage collects loadbalancers not in the input list.
+// GCv2 implements LoadBalancerPool.
+func (l *L7s) GCv2(ing *v1beta1.Ingress) error {
+	ingKey := common.NamespacedName(ing)
+	klog.V(2).Infof("GC(%v)", ingKey)
+	if err := l.v2Delete(ing, features.VersionsFromIngress(ing), features.ScopeFromIngress(ing)); err != nil {
+		return err
+	}
+	klog.V(2).Infof("GC(%v) ok", ingKey)
+	return nil
+}
+
+// GCv1 implements LoadBalancerPool.
 // TODO(shance): Update to handle regional and global LB with same name
-func (l *L7s) GC(names []string) error {
-	klog.V(2).Infof("GC(%v)", names)
+func (l *L7s) GCv1(names []string) error {
+	klog.V(2).Infof("GCv1(%v)", names)
 
 	knownLoadBalancers := sets.NewString()
 	for _, n := range names {
@@ -119,7 +152,7 @@ func (l *L7s) GC(names []string) error {
 		if err != nil {
 			return fmt.Errorf("error getting regional key: %v", err)
 		}
-		urlMaps, err := l.List(key, features.L7ILBVersions().UrlMap)
+		urlMaps, err := l.list(key, features.L7ILBVersions().UrlMap)
 		if err != nil {
 			return fmt.Errorf("error listing regional LBs: %v", err)
 		}
@@ -130,7 +163,7 @@ func (l *L7s) GC(names []string) error {
 	}
 
 	// TODO(shance): fix list taking a key
-	urlMaps, err := l.List(meta.GlobalKey(""), meta.VersionGA)
+	urlMaps, err := l.list(meta.GlobalKey(""), meta.VersionGA)
 	if err != nil {
 		return fmt.Errorf("error listing global LBs: %v", err)
 	}
@@ -142,7 +175,7 @@ func (l *L7s) GC(names []string) error {
 	return nil
 }
 
-// gc is a helper for GC
+// gc is a helper for GCv1.
 // TODO(shance): get versions from description
 func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers sets.String, versions *features.ResourceVersions) []error {
 	var errors []error
@@ -164,18 +197,48 @@ func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers sets.String, ve
 		}
 
 		klog.V(2).Infof("GCing loadbalancer %v", l7Name)
-		if err := l.Delete(l7Name, versions, scope); err != nil {
+		if err := l.delete(l7Name, versions, scope); err != nil {
 			errors = append(errors, fmt.Errorf("error deleting loadbalancer %q", l7Name))
 		}
 	}
 	return nil
 }
 
-// Shutdown logs whether or not the pool is empty.
-func (l *L7s) Shutdown() error {
-	if err := l.GC([]string{}); err != nil {
-		return err
+// Shutdown implements LoadBalancerPool.
+func (l *L7s) Shutdown(ings []*v1beta1.Ingress) error {
+	// Delete ingresses that use v1 naming scheme.
+	if err := l.GCv1([]string{}); err != nil {
+		return fmt.Errorf("error deleting load-balancers for v1 naming policy: %v", err)
+	}
+	// Delete ingresses that use v2 naming policy.
+	var errs []error
+	v2Ings := operator.Ingresses(ings).Filter(func(ing *v1beta1.Ingress) bool {
+		return namer_util.FrontendNamingScheme(ing) == namer_util.V2NamingScheme
+	}).AsList()
+	for _, ing := range v2Ings {
+		if err := l.GCv2(ing); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if errs != nil {
+		return fmt.Errorf("error deleting load-balancers for v2 naming policy: %v", utils.JoinErrs(errs))
 	}
 	klog.V(2).Infof("Loadbalancer pool shutdown.")
 	return nil
+}
+
+// HasUrlMap implements LoadBalancerPool.
+func (l *L7s) HasUrlMap(ing *v1beta1.Ingress) (bool, error) {
+	namer := l.namerFactory.Namer(ing)
+	key, err := composite.CreateKey(l.cloud, namer.UrlMap(), features.ScopeFromIngress(ing))
+	if err != nil {
+		return false, err
+	}
+	if _, err := composite.GetUrlMap(l.cloud, key, features.VersionsFromIngress(ing).UrlMap); err != nil {
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }

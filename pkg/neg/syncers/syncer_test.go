@@ -88,7 +88,7 @@ func newSyncerTester() *syncerTester {
 		ResyncPeriod:          1 * time.Second,
 		DefaultBackendSvcPort: defaultBackend,
 	}
-	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, namer, ctxConfig)
+	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, namer, "" /*kubeSystemUID*/, ctxConfig)
 	negSyncerKey := negtypes.NegSyncerKey{
 		Namespace: testServiceNamespace,
 		Name:      testServiceName,

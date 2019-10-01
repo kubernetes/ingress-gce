@@ -26,7 +26,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const clusterUID = "uid1"
+const (
+	clusterUID    = "uid1"
+	kubeSystemUID = "ksuid123"
+)
 
 func newIngress(namespace, name string) *v1beta1.Ingress {
 	return &v1beta1.Ingress{
@@ -144,7 +147,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			"%s-um-01234567890123456789012345678901234567890123456789-01230",
 		},
 	}
-	for _, prefix := range []string{"k8s", "mci"} {
+	for _, prefix := range []string{"k8s", "xyz"} {
 		oldNamer := NewNamerWithPrefix(prefix, clusterUID, "")
 		secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
 		for _, tc := range testCases {
@@ -232,6 +235,155 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 				}
 				if diff := cmp.Diff(urlMapName, namerFromIngress.UrlMap()); diff != "" {
 					t.Errorf("Got diff url map (-want +got):\n%s", diff)
+				}
+			})
+		}
+	}
+}
+
+// TestV2IngressFrontendNamer tests v2 frontend namer workflow.
+func TestV2IngressFrontendNamer(t *testing.T) {
+	longString := "01234567890123456789012345678901234567890123456789"
+	testCases := []struct {
+		desc      string
+		namespace string
+		name      string
+		// Expected values.
+		lbName              string
+		targetHTTPProxy     string
+		targetHTTPSProxy    string
+		sslCert             string
+		forwardingRuleHTTP  string
+		forwardingRuleHTTPS string
+		urlMap              string
+	}{
+		{
+			"simple case",
+			"namespace",
+			"name",
+			"ksuid123-namespace-name-wddys49o",
+			"%s2-tp-ksuid123-namespace-name-wddys49o",
+			"%s2-ts-ksuid123-namespace-name-wddys49o",
+			"%s2-cr-ksuid123-lb75yy4dn9xa8ib0-%s",
+			"%s2-fr-ksuid123-namespace-name-wddys49o",
+			"%s2-fs-ksuid123-namespace-name-wddys49o",
+			"%s2-um-ksuid123-namespace-name-wddys49o",
+		},
+		{
+			"62 characters",
+			longString[:23],
+			longString[:24],
+			"ksuid123-012345678901234567-012345678901234567-sce8socf",
+			"%s2-tp-ksuid123-012345678901234567-012345678901234567-sce8socf",
+			"%s2-ts-ksuid123-012345678901234567-012345678901234567-sce8socf",
+			"%s2-cr-ksuid123-dlz1pf382qzmdac9-%s",
+			"%s2-fr-ksuid123-012345678901234567-012345678901234567-sce8socf",
+			"%s2-fs-ksuid123-012345678901234567-012345678901234567-sce8socf",
+			"%s2-um-ksuid123-012345678901234567-012345678901234567-sce8socf",
+		},
+		{
+			"63 characters",
+			longString[:24],
+			longString[:24],
+			"ksuid123-012345678901234567-012345678901234567-tabdkrlv",
+			"%s2-tp-ksuid123-012345678901234567-012345678901234567-tabdkrlv",
+			"%s2-ts-ksuid123-012345678901234567-012345678901234567-tabdkrlv",
+			"%s2-cr-ksuid123-8ohtur3hfgw0qe3f-%s",
+			"%s2-fr-ksuid123-012345678901234567-012345678901234567-tabdkrlv",
+			"%s2-fs-ksuid123-012345678901234567-012345678901234567-tabdkrlv",
+			"%s2-um-ksuid123-012345678901234567-012345678901234567-tabdkrlv",
+		},
+		{
+			"64 characters",
+			longString[:24],
+			longString[:25],
+			"ksuid123-012345678901234567-012345678901234567-dhfwuws7",
+			"%s2-tp-ksuid123-012345678901234567-012345678901234567-dhfwuws7",
+			"%s2-ts-ksuid123-012345678901234567-012345678901234567-dhfwuws7",
+			"%s2-cr-ksuid123-1vm2cunkgqy1exss-%s",
+			"%s2-fr-ksuid123-012345678901234567-012345678901234567-dhfwuws7",
+			"%s2-fs-ksuid123-012345678901234567-012345678901234567-dhfwuws7",
+			"%s2-um-ksuid123-012345678901234567-012345678901234567-dhfwuws7",
+		},
+		{
+			"long namespace",
+			longString,
+			"0",
+			"ksuid123-012345678901234567890123456789012345--4mg0wxbi",
+			"%s2-tp-ksuid123-012345678901234567890123456789012345--4mg0wxbi",
+			"%s2-ts-ksuid123-012345678901234567890123456789012345--4mg0wxbi",
+			"%s2-cr-ksuid123-wfasfag894xpvmnr-%s",
+			"%s2-fr-ksuid123-012345678901234567890123456789012345--4mg0wxbi",
+			"%s2-fs-ksuid123-012345678901234567890123456789012345--4mg0wxbi",
+			"%s2-um-ksuid123-012345678901234567890123456789012345--4mg0wxbi",
+		},
+		{
+			"long name",
+			"0",
+			longString,
+			"ksuid123-0-01234567890123456789012345678901234-mebui9t8",
+			"%s2-tp-ksuid123-0-01234567890123456789012345678901234-mebui9t8",
+			"%s2-ts-ksuid123-0-01234567890123456789012345678901234-mebui9t8",
+			"%s2-cr-ksuid123-50ba1vszcf9aeh73-%s",
+			"%s2-fr-ksuid123-0-01234567890123456789012345678901234-mebui9t8",
+			"%s2-fs-ksuid123-0-01234567890123456789012345678901234-mebui9t8",
+			"%s2-um-ksuid123-0-01234567890123456789012345678901234-mebui9t8",
+		},
+		{
+			"long name and namespace",
+			longString,
+			longString,
+			"ksuid123-012345678901234567-012345678901234567-4mwbp6m5",
+			"%s2-tp-ksuid123-012345678901234567-012345678901234567-4mwbp6m5",
+			"%s2-ts-ksuid123-012345678901234567-012345678901234567-4mwbp6m5",
+			"%s2-cr-ksuid123-7trbunxyryt39g1b-%s",
+			"%s2-fr-ksuid123-012345678901234567-012345678901234567-4mwbp6m5",
+			"%s2-fs-ksuid123-012345678901234567-012345678901234567-4mwbp6m5",
+			"%s2-um-ksuid123-012345678901234567-012345678901234567-4mwbp6m5",
+		},
+	}
+	for _, prefix := range []string{"k8s", "xyz"} {
+		oldNamer := NewNamerWithPrefix(prefix, clusterUID, "")
+		secretHash := fmt.Sprintf("%x", sha256.Sum256([]byte("test123")))[:16]
+		for _, tc := range testCases {
+			tc.desc = fmt.Sprintf("%s namespaceLength %d nameLength %d prefix %s", tc.desc, len(tc.namespace), len(tc.name), prefix)
+			t.Run(tc.desc, func(t *testing.T) {
+				ing := newIngress(tc.namespace, tc.name)
+				namer := newV2IngressFrontendNamer(ing, kubeSystemUID, oldNamer.prefix)
+				tc.targetHTTPProxy = fmt.Sprintf(tc.targetHTTPProxy, prefix)
+				tc.targetHTTPSProxy = fmt.Sprintf(tc.targetHTTPSProxy, prefix)
+				tc.sslCert = fmt.Sprintf(tc.sslCert, prefix, secretHash)
+				tc.forwardingRuleHTTP = fmt.Sprintf(tc.forwardingRuleHTTP, prefix)
+				tc.forwardingRuleHTTPS = fmt.Sprintf(tc.forwardingRuleHTTPS, prefix)
+				tc.urlMap = fmt.Sprintf(tc.urlMap, prefix)
+
+				// Test behavior of v2 Namer.
+				if diff := cmp.Diff(tc.lbName, namer.LbName()); diff != "" {
+					t.Errorf("namer.GetLbName() mismatch (-want +got):\n%s", diff)
+				}
+				name := namer.TargetProxy(HTTPProtocol)
+				if diff := cmp.Diff(tc.targetHTTPProxy, name); diff != "" {
+					t.Errorf("namer.TargetProxy(HTTPProtocol) mismatch (-want +got):\n%s", diff)
+				}
+				name = namer.TargetProxy(HTTPSProtocol)
+				if diff := cmp.Diff(tc.targetHTTPSProxy, name); diff != "" {
+					t.Errorf("namer.TargetProxy(HTTPSProtocol) mismatch (-want +got):\n%s", diff)
+				}
+				name = namer.SSLCertName(secretHash)
+				if diff := cmp.Diff(tc.sslCert, name); diff != "" {
+					t.Errorf("namer.SSLCertName(%q) mismatch (-want +got):\n%s", secretHash, diff)
+				}
+				name = namer.ForwardingRule(HTTPProtocol)
+				if diff := cmp.Diff(tc.forwardingRuleHTTP, name); diff != "" {
+					t.Errorf("namer.ForwardingRule(HTTPProtocol) mismatch (-want +got):\n%s", diff)
+				}
+				name = namer.ForwardingRule(HTTPSProtocol)
+				if diff := cmp.Diff(tc.forwardingRuleHTTPS, name); diff != "" {
+					t.Errorf("namer.ForwardingRule(HTTPSProtocol) mismatch (-want +got):\n%s", diff)
+				}
+				name = namer.UrlMap()
+				if diff := cmp.Diff(tc.urlMap, name); diff != "" {
+					t.Errorf("namer.UrlMap() mismatch (-want +got):\n%s", diff)
 				}
 			})
 		}

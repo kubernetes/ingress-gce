@@ -12,6 +12,12 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
+const (
+	FinalizerAddFlag          = flag("enable-finalizer-add")
+	FinalizerRemoveFlag       = flag("enable-finalizer-remove")
+	EnableV2FrontendNamerFlag = flag("enable-v2-frontend-namer")
+)
+
 var (
 	BackendPort      = intstr.IntOrString{Type: intstr.Int, IntVal: 80}
 	DefaultBeSvcPort = utils.ServicePort{
@@ -79,4 +85,28 @@ func DecodeIngress(data []byte) (*v1beta1.Ingress, error) {
 	}
 
 	return obj.(*v1beta1.Ingress), nil
+}
+
+// flag is a type representing controller flag.
+type flag string
+
+// FlagSaver is an utility type to capture the value of a flag and reset back to the saved value.
+type FlagSaver struct{ flags map[flag]bool }
+
+// NewFlagSaver returns a flag saver by initializing the map.
+func NewFlagSaver() FlagSaver {
+	return FlagSaver{make(map[flag]bool)}
+}
+
+// Save captures the value of given flag.
+func (s *FlagSaver) Save(key flag, flagPointer *bool) {
+	s.flags[key] = *flagPointer
+}
+
+// Reset resets the value of given flag to a previously saved value.
+// This does nothing if the flag value was not captured.
+func (s *FlagSaver) Reset(key flag, flagPointer *bool) {
+	if val, ok := s.flags[key]; ok {
+		*flagPointer = val
+	}
 }
