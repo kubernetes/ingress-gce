@@ -65,7 +65,7 @@ func TestILB(t *testing.T) {
 		{
 			desc: "http ILB one path",
 			ing: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
-				AddPath("test.com", "/", "service-1", port80).
+				AddPath("test.com", "/", serviceName, port80).
 				ConfigureForILB().
 				Build(),
 			numForwardingRules: 1,
@@ -93,7 +93,7 @@ func TestILB(t *testing.T) {
 				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
 			}
 
-			_, err := e2e.CreateEchoService(s, "service-1", negAnnotation)
+			_, err := e2e.CreateEchoService(s, serviceName, negAnnotation)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
