@@ -49,7 +49,6 @@ import (
 	ingsync "k8s.io/ingress-gce/pkg/sync"
 	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
 
@@ -128,12 +127,12 @@ func NewLoadBalancerController(
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(addIng) {
-				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", namer.IngressKeyFunc(addIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", utils.IngressKeyFunc(addIng), annotations.IngressClassKey)
 				return
 			}
 
-			klog.V(3).Infof("Ingress %v added, enqueuing", namer.IngressKeyFunc(addIng))
-			lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeNormal, "ADD", namer.IngressKeyFunc(addIng))
+			klog.V(3).Infof("Ingress %v added, enqueuing", utils.IngressKeyFunc(addIng))
+			lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeNormal, "ADD", utils.IngressKeyFunc(addIng))
 			lbc.ingQueue.Enqueue(obj)
 		},
 		DeleteFunc: func(obj interface{}) {
@@ -143,16 +142,16 @@ func NewLoadBalancerController(
 				return
 			}
 			if delIng.ObjectMeta.DeletionTimestamp != nil {
-				klog.V(2).Infof("Ignoring delete event for Ingress %v, deletion will be handled via the finalizer", namer.IngressKeyFunc(delIng))
+				klog.V(2).Infof("Ignoring delete event for Ingress %v, deletion will be handled via the finalizer", utils.IngressKeyFunc(delIng))
 				return
 			}
 
 			if !utils.IsGLBCIngress(delIng) {
-				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", namer.IngressKeyFunc(delIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", utils.IngressKeyFunc(delIng), annotations.IngressClassKey)
 				return
 			}
 
-			klog.V(3).Infof("Ingress %v deleted, enqueueing", namer.IngressKeyFunc(delIng))
+			klog.V(3).Infof("Ingress %v deleted, enqueueing", utils.IngressKeyFunc(delIng))
 			lbc.ingQueue.Enqueue(obj)
 		},
 		UpdateFunc: func(old, cur interface{}) {
@@ -162,16 +161,16 @@ func NewLoadBalancerController(
 				// If ingress was GLBC Ingress, we need to track ingress class change
 				// and run GC to delete LB resources.
 				if utils.IsGLBCIngress(oldIng) {
-					klog.V(4).Infof("Ingress %v class was changed, enqueuing", namer.IngressKeyFunc(curIng))
+					klog.V(4).Infof("Ingress %v class was changed, enqueuing", utils.IngressKeyFunc(curIng))
 					lbc.ingQueue.Enqueue(cur)
 					return
 				}
 				return
 			}
 			if reflect.DeepEqual(old, cur) {
-				klog.V(3).Infof("Periodic enqueueing of %v", namer.IngressKeyFunc(curIng))
+				klog.V(3).Infof("Periodic enqueueing of %v", utils.IngressKeyFunc(curIng))
 			} else {
-				klog.V(3).Infof("Ingress %v changed, enqueuing", namer.IngressKeyFunc(curIng))
+				klog.V(3).Infof("Ingress %v changed, enqueuing", utils.IngressKeyFunc(curIng))
 			}
 
 			lbc.ingQueue.Enqueue(cur)
@@ -630,7 +629,14 @@ func toLbNames(ings []*v1beta1.Ingress) []string {
 		if !utils.IsGCEIngress(ing) {
 			continue
 		}
-		lbNames = append(lbNames, namer.IngressKeyFunc(ing))
+		ingKey, err := utils.KeyFunc(ing)
+		// An error is returned only if ingress object does not have a valid meta.
+		// So, logging the error would be sufficient here.
+		if err != nil {
+			klog.Errorf("Cannot get key for Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
+			continue
+		}
+		lbNames = append(lbNames, ingKey)
 	}
 	return lbNames
 }

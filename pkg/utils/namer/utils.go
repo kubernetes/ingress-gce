@@ -13,18 +13,6 @@ limitations under the License.
 
 package namer
 
-import (
-	"k8s.io/api/networking/v1beta1"
-	"k8s.io/apimachinery/pkg/types"
-)
-
-func IngressKeyFunc(ing *v1beta1.Ingress) string {
-	if ing == nil {
-		return ""
-	}
-	return types.NamespacedName{Namespace: ing.Namespace, Name: ing.Name}.String()
-}
-
 // TrimFieldsEvenly trims the fields evenly and keeps the total length
 // <= max. Truncation is spread in ratio with their original length,
 // meaning smaller fields will be truncated less than longer ones.
