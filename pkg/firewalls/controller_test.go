@@ -27,6 +27,7 @@ import (
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	test "k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/legacy-cloud-providers/gce"
 
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -77,7 +78,7 @@ func TestFirewallCreateDelete(t *testing.T) {
 	fwc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Create(ing)
 	fwc.ctx.IngressInformer.GetIndexer().Add(ing)
 
-	key, _ := utils.KeyFunc(queueKey)
+	key, _ := common.KeyFunc(queueKey)
 	if err := fwc.sync(key); err != nil {
 		t.Fatalf("fwc.sync() = %v, want nil", err)
 	}

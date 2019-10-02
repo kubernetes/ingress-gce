@@ -44,6 +44,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog"
 )
 
@@ -143,7 +144,7 @@ func NewController(
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(addIng) {
-				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", utils.IngressKeyFunc(addIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.ToString(addIng), annotations.IngressClassKey)
 				return
 			}
 			negController.enqueueIngressServices(addIng)
@@ -151,7 +152,7 @@ func NewController(
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(delIng) {
-				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", utils.IngressKeyFunc(delIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.ToString(delIng), annotations.IngressClassKey)
 				return
 			}
 			negController.enqueueIngressServices(delIng)
@@ -160,7 +161,7 @@ func NewController(
 			oldIng := cur.(*v1beta1.Ingress)
 			curIng := cur.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(curIng) {
-				klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", utils.IngressKeyFunc(curIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", common.ToString(curIng), annotations.IngressClassKey)
 				return
 			}
 			keys := gatherIngressServiceKeys(oldIng)

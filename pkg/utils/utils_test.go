@@ -24,6 +24,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/utils/common"
 
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
@@ -634,7 +635,7 @@ func TestNeedsCleanup(t *testing.T) {
 			}
 
 			if tc.withFinalizer {
-				ingress.ObjectMeta.Finalizers = []string{FinalizerKey}
+				ingress.ObjectMeta.Finalizers = []string{common.FinalizerKey}
 			}
 
 			if tc.withDeleteTimestamp {
