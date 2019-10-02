@@ -349,6 +349,15 @@ func JoinErrs(errs []error) error {
 	return errors.New(strings.Join(errStrs, "; "))
 }
 
+// IngressKeyFunc returns ingress key for given ingress.
+// Note: This is used for logging.
+func IngressKeyFunc(ing *v1beta1.Ingress) string {
+	if ing == nil {
+		return ""
+	}
+	return types.NamespacedName{Namespace: ing.Namespace, Name: ing.Name}.String()
+}
+
 // TraverseIngressBackends traverse thru all backends specified in the input ingress and call process
 // If process return true, then return and stop traversing the backends
 func TraverseIngressBackends(ing *v1beta1.Ingress, process func(id ServicePortID) bool) {
