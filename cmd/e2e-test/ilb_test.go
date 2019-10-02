@@ -286,7 +286,7 @@ func TestILBUpdate(t *testing.T) {
 				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 1,
-			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
+			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"1", "").
 				AddPath("test.com", "/", serviceName, port80).
 				ConfigureForILB().
 				Build(),
@@ -295,13 +295,13 @@ func TestILBUpdate(t *testing.T) {
 		},
 		{
 			desc: "http ILB one path to default backend",
-			ing: fuzz.NewIngressBuilder("", ingressPrefix+"3", "").
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
 				AddPath("test.com", "/", serviceName, port80).
 				ConfigureForILB().
 				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 2,
-			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"4", "").
+			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"2", "").
 				DefaultBackend(serviceName, port80).
 				ConfigureForILB().
 				Build(),
@@ -310,13 +310,13 @@ func TestILBUpdate(t *testing.T) {
 		},
 		{
 			desc: "http ILB default backend to ELB default backend",
-			ing: fuzz.NewIngressBuilder("", ingressPrefix+"5", "").
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"3", "").
 				DefaultBackend(serviceName, port80).
 				ConfigureForILB().
 				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 1,
-			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"6", "").
+			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"3", "").
 				DefaultBackend(serviceName, port80).
 				Build(),
 			numForwardingRulesUpdate: 1,
@@ -324,13 +324,13 @@ func TestILBUpdate(t *testing.T) {
 		},
 		{
 			desc: "ELB default backend to ILB default backend",
-			ing: fuzz.NewIngressBuilder("", ingressPrefix+"7", "").
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"4", "").
 				DefaultBackend(serviceName, port80).
 				ConfigureForILB().
 				Build(),
 			numForwardingRules: 1,
 			numBackendServices: 1,
-			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"8", "").
+			ingUpdate: fuzz.NewIngressBuilder("", ingressPrefix+"4", "").
 				DefaultBackend(serviceName, port80).
 				Build(),
 			numForwardingRulesUpdate: 1,
