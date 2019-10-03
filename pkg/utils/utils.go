@@ -34,6 +34,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog"
 )
 
@@ -349,15 +350,6 @@ func JoinErrs(errs []error) error {
 	return errors.New(strings.Join(errStrs, "; "))
 }
 
-// IngressKeyFunc returns ingress key for given ingress.
-// Note: This is used for logging.
-func IngressKeyFunc(ing *v1beta1.Ingress) string {
-	if ing == nil {
-		return ""
-	}
-	return types.NamespacedName{Namespace: ing.Namespace, Name: ing.Name}.String()
-}
-
 // TraverseIngressBackends traverse thru all backends specified in the input ingress and call process
 // If process return true, then return and stop traversing the backends
 func TraverseIngressBackends(ing *v1beta1.Ingress, process func(id ServicePortID) bool) {
@@ -391,5 +383,5 @@ func ServiceKeyFunc(namespace, name string) string {
 
 // NeedsCleanup returns true if the ingress needs to have its associated resources deleted.
 func NeedsCleanup(ing *v1beta1.Ingress) bool {
-	return IsDeletionCandidate(ing.ObjectMeta, FinalizerKey) || !IsGLBCIngress(ing)
+	return common.IsDeletionCandidate(ing.ObjectMeta, common.FinalizerKey) || !IsGLBCIngress(ing)
 }

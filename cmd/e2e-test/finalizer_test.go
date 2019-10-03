@@ -25,7 +25,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
 // TestFinalizer asserts that finalizer is added/ removed appropriately during the life cycle
@@ -58,8 +58,8 @@ func TestFinalizer(t *testing.T) {
 		ing = waitForStableIngress(true, ing, s, t)
 
 		ingFinalizers := ing.GetFinalizers()
-		if len(ingFinalizers) != 1 || ingFinalizers[0] != utils.FinalizerKey {
-			t.Fatalf("GetFinalizers() = %+v, want [%q]", ingFinalizers, utils.FinalizerKey)
+		if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
+			t.Fatalf("GetFinalizers() = %+v, want [%q]", ingFinalizers, common.FinalizerKey)
 		}
 
 		gclb := checkGCLB(t, s, ing, numForwardingRules, numBackendServices)
@@ -103,8 +103,8 @@ func TestFinalizerIngressClassChange(t *testing.T) {
 		ing = waitForStableIngress(true, ing, s, t)
 
 		ingFinalizers := ing.GetFinalizers()
-		if len(ingFinalizers) != 1 || ingFinalizers[0] != utils.FinalizerKey {
-			t.Fatalf("GetFinalizers() = %+v, want [%q]", ingFinalizers, utils.FinalizerKey)
+		if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
+			t.Fatalf("GetFinalizers() = %+v, want [%q]", ingFinalizers, common.FinalizerKey)
 		}
 
 		gclb := checkGCLB(t, s, ing, numForwardingRules, numBackendServices)
@@ -170,12 +170,12 @@ func TestFinalizerIngressesWithSharedResources(t *testing.T) {
 		otherIng = waitForStableIngress(true, otherIng, s, t)
 
 		ingFinalizers := ing.GetFinalizers()
-		if len(ingFinalizers) != 1 || ingFinalizers[0] != utils.FinalizerKey {
-			t.Fatalf("GetFinalizers() = %+v, want [%q]", ingFinalizers, utils.FinalizerKey)
+		if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
+			t.Fatalf("GetFinalizers() = %+v, want [%q]", ingFinalizers, common.FinalizerKey)
 		}
 		otherIngFinalizers := otherIng.GetFinalizers()
-		if len(otherIngFinalizers) != 1 || otherIngFinalizers[0] != utils.FinalizerKey {
-			t.Fatalf("GetFinalizers() = %+v, want [%q]", otherIngFinalizers, utils.FinalizerKey)
+		if len(otherIngFinalizers) != 1 || otherIngFinalizers[0] != common.FinalizerKey {
+			t.Fatalf("GetFinalizers() = %+v, want [%q]", otherIngFinalizers, common.FinalizerKey)
 		}
 
 		gclb := checkGCLB(t, s, ing, numForwardingRules, numBackendServices)

@@ -49,6 +49,7 @@ import (
 	ingsync "k8s.io/ingress-gce/pkg/sync"
 	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog"
 )
 
@@ -127,12 +128,12 @@ func NewLoadBalancerController(
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(addIng) {
-				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", utils.IngressKeyFunc(addIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.ToString(addIng), annotations.IngressClassKey)
 				return
 			}
 
-			klog.V(3).Infof("Ingress %v added, enqueuing", utils.IngressKeyFunc(addIng))
-			lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeNormal, "ADD", utils.IngressKeyFunc(addIng))
+			klog.V(3).Infof("Ingress %v added, enqueuing", common.ToString(addIng))
+			lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeNormal, "ADD", common.ToString(addIng))
 			lbc.ingQueue.Enqueue(obj)
 		},
 		DeleteFunc: func(obj interface{}) {
@@ -142,16 +143,16 @@ func NewLoadBalancerController(
 				return
 			}
 			if delIng.ObjectMeta.DeletionTimestamp != nil {
-				klog.V(2).Infof("Ignoring delete event for Ingress %v, deletion will be handled via the finalizer", utils.IngressKeyFunc(delIng))
+				klog.V(2).Infof("Ignoring delete event for Ingress %v, deletion will be handled via the finalizer", common.ToString(delIng))
 				return
 			}
 
 			if !utils.IsGLBCIngress(delIng) {
-				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", utils.IngressKeyFunc(delIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.ToString(delIng), annotations.IngressClassKey)
 				return
 			}
 
-			klog.V(3).Infof("Ingress %v deleted, enqueueing", utils.IngressKeyFunc(delIng))
+			klog.V(3).Infof("Ingress %v deleted, enqueueing", common.ToString(delIng))
 			lbc.ingQueue.Enqueue(obj)
 		},
 		UpdateFunc: func(old, cur interface{}) {
@@ -161,16 +162,16 @@ func NewLoadBalancerController(
 				// If ingress was GLBC Ingress, we need to track ingress class change
 				// and run GC to delete LB resources.
 				if utils.IsGLBCIngress(oldIng) {
-					klog.V(4).Infof("Ingress %v class was changed, enqueuing", utils.IngressKeyFunc(curIng))
+					klog.V(4).Infof("Ingress %v class was changed, enqueuing", common.ToString(curIng))
 					lbc.ingQueue.Enqueue(cur)
 					return
 				}
 				return
 			}
 			if reflect.DeepEqual(old, cur) {
-				klog.V(3).Infof("Periodic enqueueing of %v", utils.IngressKeyFunc(curIng))
+				klog.V(3).Infof("Periodic enqueueing of %v", common.ToString(curIng))
 			} else {
-				klog.V(3).Infof("Ingress %v changed, enqueuing", utils.IngressKeyFunc(curIng))
+				klog.V(3).Infof("Ingress %v changed, enqueuing", common.ToString(curIng))
 			}
 
 			lbc.ingQueue.Enqueue(cur)
@@ -376,11 +377,14 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 
 // GCBackends implements Controller.
 func (lbc *LoadBalancerController) GCBackends(toKeep []*v1beta1.Ingress) error {
-	svcPortsToKeep := lbc.ToSvcPorts(toKeep)
+	// Only GCE ingress associated resources are managed by this controller.
+	GCEIngresses := operator.Ingresses(toKeep).Filter(utils.IsGCEIngress).AsList()
+	svcPortsToKeep := lbc.ToSvcPorts(GCEIngresses)
 	if err := lbc.backendSyncer.GC(svcPortsToKeep); err != nil {
 		return err
 	}
 	// TODO(ingress#120): Move this to the backend pool so it mirrors creation
+	// Do not delete instance group if there exists a GLBC ingress.
 	if len(toKeep) == 0 {
 		igName := lbc.ctx.ClusterNamer.InstanceGroup()
 		klog.Infof("Deleting instance group %v", igName)
@@ -416,7 +420,9 @@ func (lbc *LoadBalancerController) SyncLoadBalancer(state interface{}) error {
 
 // GCLoadBalancers implements Controller.
 func (lbc *LoadBalancerController) GCLoadBalancers(toKeep []*v1beta1.Ingress) error {
-	return lbc.l7Pool.GC(toLbNames(toKeep))
+	// Only GCE ingress associated resources are managed by this controller.
+	GCEIngresses := operator.Ingresses(toKeep).Filter(utils.IsGCEIngress).AsList()
+	return lbc.l7Pool.GC(common.ToIngressKeys(GCEIngresses))
 }
 
 // MaybeRemoveFinalizers cleans up Finalizers if needed.
@@ -427,7 +433,7 @@ func (lbc *LoadBalancerController) MaybeRemoveFinalizers(toCleanup []*v1beta1.In
 	}
 	for _, ing := range toCleanup {
 		ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
-		if err := utils.RemoveFinalizer(ing, ingClient); err != nil {
+		if err := common.RemoveFinalizer(ing, ingClient); err != nil {
 			klog.Errorf("Failed to remove Finalizer from Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 			return err
 		}
@@ -472,7 +478,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	ing = ing.DeepCopy()
 	ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
 	if flags.F.FinalizerAdd {
-		if err := utils.AddFinalizer(ing, ingClient); err != nil {
+		if err := common.AddFinalizer(ing, ingClient); err != nil {
 			klog.Errorf("Failed to add Finalizer to Ingress %q: %v", key, err)
 			return err
 		}
@@ -547,7 +553,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 
 // toRuntimeInfo returns L7RuntimeInfo for the given ingress.
 func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *utils.GCEURLMap) (*loadbalancers.L7RuntimeInfo, error) {
-	k, err := utils.KeyFunc(ing)
+	k, err := common.KeyFunc(ing)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get key for Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
 	}
@@ -606,37 +612,13 @@ func updateAnnotations(client kubernetes.Interface, name, namespace string, anno
 	return nil
 }
 
-// ToSvcPorts returns a list of SVC ports owned by this controller given a list of ingresses.
+// ToSvcPorts returns a list of SVC ports given a list of ingresses.
 // Note: This method is used for GC.
 func (lbc *LoadBalancerController) ToSvcPorts(ings []*v1beta1.Ingress) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings {
-		// Only resources associated with GCE Ingress are managed by this controller.
-		if !utils.IsGCEIngress(ing) {
-			continue
-		}
 		urlMap, _ := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPort.ID)
 		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts
-}
-
-// toLbNames returns a list of load balancers owned by this controller given a list of ingresses.
-func toLbNames(ings []*v1beta1.Ingress) []string {
-	lbNames := make([]string, 0, len(ings))
-	for _, ing := range ings {
-		// Only resources associated with GCE Ingress are managed by this controller.
-		if !utils.IsGCEIngress(ing) {
-			continue
-		}
-		ingKey, err := utils.KeyFunc(ing)
-		// An error is returned only if ingress object does not have a valid meta.
-		// So, logging the error would be sufficient here.
-		if err != nil {
-			klog.Errorf("Cannot get key for Ingress %v/%v: %v", ing.Namespace, ing.Name, err)
-			continue
-		}
-		lbNames = append(lbNames, ingKey)
-	}
-	return lbNames
 }

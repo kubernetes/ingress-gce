@@ -34,6 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
 // NEG is a feature in GCP to support pod as Loadbalancer backends
@@ -86,7 +87,7 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 		return fuzz.CheckResponseContinue, err
 	}
 
-	key, err := utils.KeyFunc(v.ing)
+	key, err := common.KeyFunc(v.ing)
 	if err != nil {
 		return fuzz.CheckResponseContinue, err
 	}

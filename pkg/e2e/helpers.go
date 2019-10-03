@@ -18,14 +18,13 @@ package e2e
 
 import (
 	"context"
-	"fmt"
-	"net"
-	"time"
-
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -41,7 +40,7 @@ import (
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/fuzz/whitebox"
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog"
 )
 
@@ -131,7 +130,7 @@ func WaitForFinalizer(s *Sandbox, ingName string) error {
 			return false, nil
 		}
 		ingFinalizers := ing.GetFinalizers()
-		if len(ingFinalizers) != 1 || ingFinalizers[0] != utils.FinalizerKey {
+		if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
 			klog.Infof("WaitForFinalizer(%s/%s) = %v, finalizer not added for Ingress %v", s.Namespace, ingName, ingFinalizers, ing)
 			return false, nil
 		}

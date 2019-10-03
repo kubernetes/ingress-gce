@@ -41,6 +41,7 @@ import (
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -143,7 +144,7 @@ func deleteIngress(lbc *LoadBalancerController, ing *v1beta1.Ingress) {
 
 // getKey returns the key for an ingress.
 func getKey(ing *v1beta1.Ingress, t *testing.T) string {
-	key, err := utils.KeyFunc(ing)
+	key, err := common.KeyFunc(ing)
 	if err != nil {
 		t.Fatalf("Unexpected error getting key for Ingress %v: %v", ing.Name, err)
 	}
@@ -336,8 +337,8 @@ func TestIngressClassChangeWithFinalizer(t *testing.T) {
 		t.Fatalf("Get(%v) = %v, want nil", ingStoreKey, err)
 	}
 	ingFinalizers := updatedIng.GetFinalizers()
-	if len(ingFinalizers) != 1 || ingFinalizers[0] != utils.FinalizerKey {
-		t.Fatalf("updatedIng.GetFinalizers() = %+v, want [%s]; failed to add finalizer, updatedIng = %+v", ingFinalizers, utils.FinalizerKey, updatedIng)
+	if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
+		t.Fatalf("updatedIng.GetFinalizers() = %+v, want [%s]; failed to add finalizer, updatedIng = %+v", ingFinalizers, common.FinalizerKey, updatedIng)
 	}
 
 	anns[annotations.IngressClassKey] = "new-class"
@@ -470,8 +471,8 @@ func TestEnableFinalizer(t *testing.T) {
 		t.Fatalf("Get(%v) = %v, want nil", ingStoreKey, err)
 	}
 	ingFinalizers := updatedIng.GetFinalizers()
-	if len(ingFinalizers) != 1 || ingFinalizers[0] != utils.FinalizerKey {
-		t.Fatalf("updatedIng.GetFinalizers() = %+v, want [%s]; failed to add finalizer, updatedIng = %+v", ingFinalizers, utils.FinalizerKey, updatedIng)
+	if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
+		t.Fatalf("updatedIng.GetFinalizers() = %+v, want [%s]; failed to add finalizer, updatedIng = %+v", ingFinalizers, common.FinalizerKey, updatedIng)
 	}
 }
 
