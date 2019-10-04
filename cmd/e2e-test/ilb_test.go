@@ -31,9 +31,6 @@ var (
 	negVal        = annotations.NegAnnotation{Ingress: true}
 	negAnnotation = map[string]string{
 		annotations.NEGAnnotationKey: negVal.String()}
-
-	// subnetCidr is the default CIDR for ILB subnets for these tests
-	subnetCidr = "10.126.0.0/22"
 )
 
 func TestILB(t *testing.T) {
@@ -89,7 +86,7 @@ func TestILB(t *testing.T) {
 			t.Logf("Ingress = %s", tc.ing.String())
 
 			// Create Subnet if it doesn't already exist
-			if err := e2e.CreateILBSubnet(s, "ilb-subnet-ingress-e2e", subnetCidr); err != nil && err != e2e.ErrSubnetExists {
+			if err := e2e.CreateILBSubnet(s); err != nil && err != e2e.ErrSubnetExists {
 				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
 			}
 
@@ -198,7 +195,7 @@ func TestILBHttps(t *testing.T) {
 			t.Parallel()
 
 			// Create Subnet if it doesn't already exist
-			if err := e2e.CreateILBSubnet(s, "ilb-subnet-ingress-e2e", subnetCidr); err != nil && err != e2e.ErrSubnetExists {
+			if err := e2e.CreateILBSubnet(s); err != nil && err != e2e.ErrSubnetExists {
 				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
 			}
 
@@ -344,7 +341,7 @@ func TestILBUpdate(t *testing.T) {
 			t.Logf("Ingress = %s", tc.ing.String())
 
 			// Create Subnet if it doesn't already exist
-			if err := e2e.CreateILBSubnet(s, "ilb-subnet-ingress-e2e", subnetCidr); err != nil && err != e2e.ErrSubnetExists {
+			if err := e2e.CreateILBSubnet(s); err != nil && err != e2e.ErrSubnetExists {
 				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
 			}
 
@@ -437,7 +434,7 @@ func TestILBError(t *testing.T) {
 			t.Logf("Ingress = %s", tc.ing.String())
 
 			// Create Subnet if it doesn't already exist
-			if err := e2e.CreateILBSubnet(s, "ilb-subnet-ingress-e2e", subnetCidr); err != nil && err != e2e.ErrSubnetExists {
+			if err := e2e.CreateILBSubnet(s); err != nil && err != e2e.ErrSubnetExists {
 				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
 			}
 
@@ -524,7 +521,7 @@ func TestILBShared(t *testing.T) {
 			t.Parallel()
 
 			// Create Subnet if it doesn't already exist
-			if err := e2e.CreateILBSubnet(s, "ilb-subnet-ingress-e2e", subnetCidr); err != nil && err != e2e.ErrSubnetExists {
+			if err := e2e.CreateILBSubnet(s); err != nil && err != e2e.ErrSubnetExists {
 				t.Fatalf("error ensuring regional subnet for ILB: %v", err)
 			}
 

@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/ingress-gce/pkg/utils"
+	"math/rand"
 	"net/http"
 	"reflect"
 
@@ -262,8 +263,30 @@ func DeleteGCPAddress(s *Sandbox, name string) error {
 }
 
 // CreateILBSubnet creates the ILB subnet
-func CreateILBSubnet(s *Sandbox, name string, ipCidrRange string) error {
+func CreateILBSubnet(s *Sandbox) error {
+	klog.V(3).Info("CreateILBSubnet()")
+	name := "ilb-subnet-ingress-e2e"
+
+	// Try up to 10 different subnets since we can't conflict with anything in the test project
+	// TODO(shance): find a more reliable way to pick the subnet
+	var err error
+	// Start at a random place in the range 0-256
+	start := rand.Int()
+	for i := 0; i < 10; i++ {
+		ipCidrRange := fmt.Sprintf("192.168.%d.0/24", i+start%256)
+		err = trySubnetCreate(s, name, ipCidrRange)
+		if err == nil || err == ErrSubnetExists {
+			return err
+		}
+		klog.V(4).Info(err)
+	}
+	return err
+}
+
+// trySubnetCreate is a helper for CreateILBSubnet
+func trySubnetCreate(s *Sandbox, name, ipCidrRange string) error {
 	networkID := cloud.ResourceID{ProjectID: s.f.Project, Resource: "networks", Key: meta.GlobalKey("default")}
+
 	subnet := &computebeta.Subnetwork{
 		Name:        name,
 		IpCidrRange: ipCidrRange,
@@ -272,17 +295,18 @@ func CreateILBSubnet(s *Sandbox, name string, ipCidrRange string) error {
 		Role:        "ACTIVE",
 	}
 
-	klog.V(2).Infof("Creating ILB Subnet: %+v", subnet)
 	err := s.f.Cloud.BetaSubnetworks().Insert(context.Background(), meta.RegionalKey(subnet.Name, s.f.Region), subnet)
 	if err != nil {
-		// GCE returns a 409 or 400 when there is already an subnet in the range
-		if utils.IsHTTPErrorCode(err, http.StatusConflict) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
-			klog.V(3).Infof("Warning: ILB subnet already exists: %v", err)
+		// GCE returns a 409 when the subnet *with the same name* already exists
+		if utils.IsHTTPErrorCode(err, http.StatusConflict) {
+			klog.V(3).Infof("ILB subnet already exists: %v", err)
 			return ErrSubnetExists
 		} else {
 			return fmt.Errorf("Error creating ILB subnet: %v", err)
 		}
 	}
+
+	klog.V(3).Infof("ILB Subnet created in region %q: %v", s.f.Region, subnet)
 	return nil
 }
 
