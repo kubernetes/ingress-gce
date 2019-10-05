@@ -1,5 +1,163 @@
 # Change Log
 
+## [v1.7.0](https://github.com/kubernetes/ingress-gce/tree/v1.7.0) (2019-09-26)
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.6.0...v1.7.0)
+
+**Fixed bugs:**
+
+- NEG controller should create NEG for default backend when enabled [\#767](https://github.com/kubernetes/ingress-gce/issues/767)
+- Removing Node Pool from Cluster Breaks Ingress Conroller [\#649](https://github.com/kubernetes/ingress-gce/issues/649)
+- Ingress controller should react to node scale down event from autoscaler [\#595](https://github.com/kubernetes/ingress-gce/issues/595)
+- BackendConfig OpenAPI spec [\#563](https://github.com/kubernetes/ingress-gce/issues/563)
+
+**Closed issues:**
+
+- GKE is not creating Load Balancer automatically [\#868](https://github.com/kubernetes/ingress-gce/issues/868)
+- Websockets not working over TLS \(wss\) [\#854](https://github.com/kubernetes/ingress-gce/issues/854)
+- Fix or verify the GC logic for multi-cluster ingress [\#836](https://github.com/kubernetes/ingress-gce/issues/836)
+- Scale test is failing  [\#831](https://github.com/kubernetes/ingress-gce/issues/831)
+- Duplicate rules created in load balancer [\#821](https://github.com/kubernetes/ingress-gce/issues/821)
+- Unable to use TLS 1.3 [\#817](https://github.com/kubernetes/ingress-gce/issues/817)
+- Is there any way an Ingress can send X-Forwarded-\* headers to the service/deployment [\#805](https://github.com/kubernetes/ingress-gce/issues/805)
+- Recently , I have same issue on both clusters.... [\#801](https://github.com/kubernetes/ingress-gce/issues/801)
+- Ingress not redirect to https [\#800](https://github.com/kubernetes/ingress-gce/issues/800)
+- Proposal: Declarative Configuration of Multi-Cluster Ingress [\#794](https://github.com/kubernetes/ingress-gce/issues/794)
+- Links to examples folder are broken in docs [\#791](https://github.com/kubernetes/ingress-gce/issues/791)
+- Backend Config client import Must\(\) method from runtime package that no longer exist [\#777](https://github.com/kubernetes/ingress-gce/issues/777)
+- Source IP only contains ISP address & ephemeral address [\#775](https://github.com/kubernetes/ingress-gce/issues/775)
+- failureThreshold of readinessProbe is not reflected to health check [\#771](https://github.com/kubernetes/ingress-gce/issues/771)
+- jobs failing with "unknown flag: --verbose" [\#700](https://github.com/kubernetes/ingress-gce/issues/700)
+- Does it support a second jump? [\#657](https://github.com/kubernetes/ingress-gce/issues/657)
+- Controller fail on syncing config when a service is not found [\#646](https://github.com/kubernetes/ingress-gce/issues/646)
+- Defaults per cluster or project? [\#632](https://github.com/kubernetes/ingress-gce/issues/632)
+
+**Merged pull requests:**
+
+- Update list subnets call to Beta for L7-ILB [\#869](https://github.com/kubernetes/ingress-gce/pull/869) ([spencerhance](https://github.com/spencerhance))
+- Bugfix: Pass updated ingress for validation [\#865](https://github.com/kubernetes/ingress-gce/pull/865) ([skmatti](https://github.com/skmatti))
+- split the error message in backend syncer health processing [\#864](https://github.com/kubernetes/ingress-gce/pull/864) ([freehan](https://github.com/freehan))
+- Some documentation fixes to reflect current state of world [\#862](https://github.com/kubernetes/ingress-gce/pull/862) ([rramkumar1](https://github.com/rramkumar1))
+- Refactor namer into a separate package [\#859](https://github.com/kubernetes/ingress-gce/pull/859) ([skmatti](https://github.com/skmatti))
+- De-dupe additional source ranges for firewall [\#851](https://github.com/kubernetes/ingress-gce/pull/851) ([spencerhance](https://github.com/spencerhance))
+- Add more e2e tests for L7-ILB [\#848](https://github.com/kubernetes/ingress-gce/pull/848) ([spencerhance](https://github.com/spencerhance))
+- Use protobufs for communication with apiserver [\#847](https://github.com/kubernetes/ingress-gce/pull/847) ([wojtek-t](https://github.com/wojtek-t))
+- e2e test framework add support for ilb subnet [\#846](https://github.com/kubernetes/ingress-gce/pull/846) ([spencerhance](https://github.com/spencerhance))
+- Remove word 'Basic' from ILB e2e test [\#845](https://github.com/kubernetes/ingress-gce/pull/845) ([rramkumar1](https://github.com/rramkumar1))
+- Add supplementary e2e tests for Finalizer [\#844](https://github.com/kubernetes/ingress-gce/pull/844) ([skmatti](https://github.com/skmatti))
+- Update e2e framework for ILB - Part 1 [\#843](https://github.com/kubernetes/ingress-gce/pull/843) ([spencerhance](https://github.com/spencerhance))
+- fix a typo [\#842](https://github.com/kubernetes/ingress-gce/pull/842) ([freehan](https://github.com/freehan))
+- try to spread the pods across zone to avoid test timeout [\#841](https://github.com/kubernetes/ingress-gce/pull/841) ([freehan](https://github.com/freehan))
+- Bugfix: don't GC instance groups while multi-cluster ingresses exist [\#838](https://github.com/kubernetes/ingress-gce/pull/838) ([skmatti](https://github.com/skmatti))
+- Switch L7-ILB versions to Beta [\#835](https://github.com/kubernetes/ingress-gce/pull/835) ([spencerhance](https://github.com/spencerhance))
+- add timeout for polling NEG health status for pod readiness [\#834](https://github.com/kubernetes/ingress-gce/pull/834) ([freehan](https://github.com/freehan))
+- Add e2e tests for Finalizer [\#833](https://github.com/kubernetes/ingress-gce/pull/833) ([skmatti](https://github.com/skmatti))
+- add more neg tests [\#829](https://github.com/kubernetes/ingress-gce/pull/829) ([freehan](https://github.com/freehan))
+- fix possible nil pointer [\#828](https://github.com/kubernetes/ingress-gce/pull/828) ([freehan](https://github.com/freehan))
+- Add CSM NEG support. [\#827](https://github.com/kubernetes/ingress-gce/pull/827) ([cadmuxe](https://github.com/cadmuxe))
+- add namespace in the ingress builder [\#826](https://github.com/kubernetes/ingress-gce/pull/826) ([freehan](https://github.com/freehan))
+- Cleanup finalizer workflow and improve Ingress GC [\#825](https://github.com/kubernetes/ingress-gce/pull/825) ([skmatti](https://github.com/skmatti))
+- follow up for \#820 [\#823](https://github.com/kubernetes/ingress-gce/pull/823) ([freehan](https://github.com/freehan))
+- Legacy api e2e [\#822](https://github.com/kubernetes/ingress-gce/pull/822) ([bowei](https://github.com/bowei))
+- tolerate non zonal NEG included in the AggregatedList API response [\#820](https://github.com/kubernetes/ingress-gce/pull/820) ([freehan](https://github.com/freehan))
+- Refactor LB GC [\#819](https://github.com/kubernetes/ingress-gce/pull/819) ([spencerhance](https://github.com/spencerhance))
+- NEG support default backend for L7-ILB [\#818](https://github.com/kubernetes/ingress-gce/pull/818) ([spencerhance](https://github.com/spencerhance))
+- Get gke-self-managed.sh working on macOS [\#816](https://github.com/kubernetes/ingress-gce/pull/816) ([yfuruyama](https://github.com/yfuruyama))
+- Update k8s-cloud-provider to 1.9.0 [\#815](https://github.com/kubernetes/ingress-gce/pull/815) ([spencerhance](https://github.com/spencerhance))
+- Update gce.md with links that don't return 404 [\#813](https://github.com/kubernetes/ingress-gce/pull/813) ([rramkumar1](https://github.com/rramkumar1))
+- Refactor loadbalancer features [\#812](https://github.com/kubernetes/ingress-gce/pull/812) ([spencerhance](https://github.com/spencerhance))
+- Add cloud pointer to neg linker and backend syncer [\#811](https://github.com/kubernetes/ingress-gce/pull/811) ([spencerhance](https://github.com/spencerhance))
+- Refactor Backend GC [\#810](https://github.com/kubernetes/ingress-gce/pull/810) ([spencerhance](https://github.com/spencerhance))
+- make SandboxEventDump a deferred function to avoid being skipped by t.Fatal [\#809](https://github.com/kubernetes/ingress-gce/pull/809) ([freehan](https://github.com/freehan))
+- fix panic caused by the ingress api migration [\#808](https://github.com/kubernetes/ingress-gce/pull/808) ([freehan](https://github.com/freehan))
+- Change from "extensions.v1beta1" to "networking.v1beta1" [\#806](https://github.com/kubernetes/ingress-gce/pull/806) ([bowei](https://github.com/bowei))
+- Move to k8s 1.15 [\#803](https://github.com/kubernetes/ingress-gce/pull/803) ([prameshj](https://github.com/prameshj))
+- dump events in sandbox [\#802](https://github.com/kubernetes/ingress-gce/pull/802) ([freehan](https://github.com/freehan))
+- Update cluster-setup.md with the right instructions for deleting the ingress-gce pod [\#799](https://github.com/kubernetes/ingress-gce/pull/799) ([rramkumar1](https://github.com/rramkumar1))
+- Add beta regional resources to composite [\#798](https://github.com/kubernetes/ingress-gce/pull/798) ([spencerhance](https://github.com/spencerhance))
+- HealthChecks switch from fakes to fakeGCE [\#796](https://github.com/kubernetes/ingress-gce/pull/796) ([spencerhance](https://github.com/spencerhance))
+- Implement custom request headers for backend config [\#795](https://github.com/kubernetes/ingress-gce/pull/795) ([mcfedr](https://github.com/mcfedr))
+- Added NoSchedule effect to GetNodeConditionPredicate [\#792](https://github.com/kubernetes/ingress-gce/pull/792) ([vinicyusmacedo](https://github.com/vinicyusmacedo))
+- More composite updates for integration [\#790](https://github.com/kubernetes/ingress-gce/pull/790) ([spencerhance](https://github.com/spencerhance))
+- Add support for L7-ILB \(take 2\) [\#789](https://github.com/kubernetes/ingress-gce/pull/789) ([spencerhance](https://github.com/spencerhance))
+- Integrate composite types into controller [\#788](https://github.com/kubernetes/ingress-gce/pull/788) ([spencerhance](https://github.com/spencerhance))
+- Rename composite files [\#787](https://github.com/kubernetes/ingress-gce/pull/787) ([spencerhance](https://github.com/spencerhance))
+- Follow up on \#774 [\#786](https://github.com/kubernetes/ingress-gce/pull/786) ([freehan](https://github.com/freehan))
+- Composite updates for integration [\#785](https://github.com/kubernetes/ingress-gce/pull/785) ([spencerhance](https://github.com/spencerhance))
+- Redo "Remove Loadbalancer interface and use k8s-cloud-provider mocks" [\#784](https://github.com/kubernetes/ingress-gce/pull/784) ([spencerhance](https://github.com/spencerhance))
+- Revert "Remove Loadbalancer interface and use k8s-cloud-provider mocks" [\#783](https://github.com/kubernetes/ingress-gce/pull/783) ([rramkumar1](https://github.com/rramkumar1))
+- Remove Loadbalancer interface and use k8s-cloud-provider mocks [\#781](https://github.com/kubernetes/ingress-gce/pull/781) ([spencerhance](https://github.com/spencerhance))
+- bump draining poll timeout to reduce flakes [\#779](https://github.com/kubernetes/ingress-gce/pull/779) ([krzyzacy](https://github.com/krzyzacy))
+- use GlobalForwardingRules\(\).Get\(\) when detected a global fw rule [\#778](https://github.com/kubernetes/ingress-gce/pull/778) ([krzyzacy](https://github.com/krzyzacy))
+- add explicit logs when fail to get a cloud resource [\#776](https://github.com/kubernetes/ingress-gce/pull/776) ([krzyzacy](https://github.com/krzyzacy))
+
+## [v1.6.0](https://github.com/kubernetes/ingress-gce/tree/v1.6.0) (2019-06-14)
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.5.2...v1.6.0)
+
+**Implemented enhancements:**
+
+- Unclear documentation of spec.rules.http.paths [\#181](https://github.com/kubernetes/ingress-gce/issues/181)
+- Add example using grpc and http2  [\#18](https://github.com/kubernetes/ingress-gce/issues/18)
+
+**Closed issues:**
+
+- HTTS frontend listener isn't deleted after setting ingress.allow-http: "false" annotation [\#766](https://github.com/kubernetes/ingress-gce/issues/766)
+- Backends healthchecks and expected operation [\#762](https://github.com/kubernetes/ingress-gce/issues/762)
+- Update GKE self managed script [\#758](https://github.com/kubernetes/ingress-gce/issues/758)
+- Deploying to GKE self managed has invalid YAML [\#755](https://github.com/kubernetes/ingress-gce/issues/755)
+- problems with spdy/http2 for some urls - net::ERR\_SPDY\_PROTOCOL\_ERROR net::ERR\_INCOMPLETE\_CHUNKED\_ENCODING [\#749](https://github.com/kubernetes/ingress-gce/issues/749)
+- Controller not syncing LoadBalancer IP when certificate is invalid [\#733](https://github.com/kubernetes/ingress-gce/issues/733)
+- Measure and Adjust Resource Request Limit  [\#55](https://github.com/kubernetes/ingress-gce/issues/55)
+
+**Merged pull requests:**
+
+- Follow up on Readiness Reflector [\#774](https://github.com/kubernetes/ingress-gce/pull/774) ([freehan](https://github.com/freehan))
+- Revendor K8s Cloud Provider [\#768](https://github.com/kubernetes/ingress-gce/pull/768) ([freehan](https://github.com/freehan))
+- Parse the gce endpoint flag the same way as k8s [\#763](https://github.com/kubernetes/ingress-gce/pull/763) ([krzyzacy](https://github.com/krzyzacy))
+- Add option to override gce endpoint in test [\#761](https://github.com/kubernetes/ingress-gce/pull/761) ([krzyzacy](https://github.com/krzyzacy))
+- Updates for usability of GKE self managed setup script [\#759](https://github.com/kubernetes/ingress-gce/pull/759) ([KatrinaHoffert](https://github.com/KatrinaHoffert))
+- GCP forwarding rule/target proxy description field populated [\#757](https://github.com/kubernetes/ingress-gce/pull/757) ([KatrinaHoffert](https://github.com/KatrinaHoffert))
+- Deploying to GKE self managed has invalid YAML [\#756](https://github.com/kubernetes/ingress-gce/pull/756) ([KatrinaHoffert](https://github.com/KatrinaHoffert))
+- flag gate readiness reflector [\#754](https://github.com/kubernetes/ingress-gce/pull/754) ([freehan](https://github.com/freehan))
+- Rebase of \#559 "Scaffolding for FrontendConfig" [\#753](https://github.com/kubernetes/ingress-gce/pull/753) ([spencerhance](https://github.com/spencerhance))
+- Emit event if Ingress spec does not contain valid config to setup frontend resources [\#752](https://github.com/kubernetes/ingress-gce/pull/752) ([rramkumar1](https://github.com/rramkumar1))
+- readiness reflector [\#748](https://github.com/kubernetes/ingress-gce/pull/748) ([freehan](https://github.com/freehan))
+- Adding the /healthz handler to the 404-default-server-with-metris to … [\#747](https://github.com/kubernetes/ingress-gce/pull/747) ([vbannai](https://github.com/vbannai))
+- Update canonical rbac.yaml with latest, minimal bindings [\#746](https://github.com/kubernetes/ingress-gce/pull/746) ([dekkagaijin](https://github.com/dekkagaijin))
+- Adding docker configuration file for the 404-server-with-metrics and … [\#745](https://github.com/kubernetes/ingress-gce/pull/745) ([vbannai](https://github.com/vbannai))
+- More composite types [\#742](https://github.com/kubernetes/ingress-gce/pull/742) ([spencerhance](https://github.com/spencerhance))
+- Switch to go modules [\#735](https://github.com/kubernetes/ingress-gce/pull/735) ([spencerhance](https://github.com/spencerhance))
+
+## [v1.5.2](https://github.com/kubernetes/ingress-gce/tree/v1.5.2) (2019-05-01)
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.5.1...v1.5.2)
+
+**Implemented enhancements:**
+
+- Link for the example on deploying ingress controller is not valid [\#686](https://github.com/kubernetes/ingress-gce/issues/686)
+- If readiness probe is on port different than the service \(app\) port - ingress failes to sync the correct healthcheck [\#647](https://github.com/kubernetes/ingress-gce/issues/647)
+
+**Fixed bugs:**
+
+- The networking.gke.io/suppress-firewall-xpn-error: true annotation doesn't in combination with kubernetes.io/ingress.global-static-ip-name [\#569](https://github.com/kubernetes/ingress-gce/issues/569)
+
+**Closed issues:**
+
+- Cannot Disable HTTP when using managed-certificates. Results in infinite Creating ingress and 'no frontend configuration'  [\#738](https://github.com/kubernetes/ingress-gce/issues/738)
+- not picking up TLS secret updates [\#724](https://github.com/kubernetes/ingress-gce/issues/724)
+- HealthCheck cannot get ReadinessProbe [\#717](https://github.com/kubernetes/ingress-gce/issues/717)
+- Configuring SSL Policies [\#716](https://github.com/kubernetes/ingress-gce/issues/716)
+- Add option to enable proxy protocol [\#699](https://github.com/kubernetes/ingress-gce/issues/699)
+- Disabling/Configuring HSTS [\#693](https://github.com/kubernetes/ingress-gce/issues/693)
+- Confusion about the root health check [\#674](https://github.com/kubernetes/ingress-gce/issues/674)
+- ERR\_SPDY\_PROTOCOL\_ERROR when streaming text/event-stream  [\#518](https://github.com/kubernetes/ingress-gce/issues/518)
+- unable to activate gzip [\#493](https://github.com/kubernetes/ingress-gce/issues/493)
+- Deprecate echoserver and add new container image based on cmd/echo  [\#427](https://github.com/kubernetes/ingress-gce/issues/427)
+
+**Merged pull requests:**
+
+- Cherrypick \#728 onto 1.5 branch.  [\#741](https://github.com/kubernetes/ingress-gce/pull/741) ([rramkumar1](https://github.com/rramkumar1))
+
+# Change Log
+
 ## [v1.5.1](https://github.com/kubernetes/ingress-gce/tree/v1.5.1) (2019-03-15)
 [Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.5.0...v1.5.1)
 
@@ -753,7 +911,5 @@
 - Fix issue when setting instance group named ports [\#3](https://github.com/kubernetes/ingress-gce/pull/3) ([nicksardo](https://github.com/nicksardo))
 - Update repo to be GCE specific [\#2](https://github.com/kubernetes/ingress-gce/pull/2) ([nicksardo](https://github.com/nicksardo))
 - Handle forbiddenError for XPN clusters by raising event [\#1](https://github.com/kubernetes/ingress-gce/pull/1) ([nicksardo](https://github.com/nicksardo))
-
-
 
 \* *This Change Log was automatically generated by [github_changelog_generator](https://github.com/skywinder/Github-Changelog-Generator)*
