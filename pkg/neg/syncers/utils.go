@@ -40,12 +40,13 @@ const (
 	MAX_NETWORK_ENDPOINTS_PER_BATCH = 500
 	// For each NEG, only retries 15 times to process it.
 	// This is a convention in kube-controller-manager.
-	maxRetries                          = 15
-	minRetryDelay                       = 5 * time.Second
-	maxRetryDelay                       = 600 * time.Second
-	separator                           = "||"
-	negIPPortNetworkEndpointType        = "GCE_VM_IP_PORT"
-	negPrivateIPPortNetworkEndpointType = "NON_GCP_PRIVATE_IP_PORT"
+	maxRetries    = 15
+	minRetryDelay = 5 * time.Second
+	maxRetryDelay = 600 * time.Second
+
+	separator                 = "||"
+	vmNetworkEndpointType     = "GCE_VM_IP_PORT"
+	nonGCPPrivateEndpointType = "NON_GCP_PRIVATE_IP_PORT"
 )
 
 // encodeEndpoint encodes ip and instance into a single string
@@ -143,12 +144,17 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 
 	if needToCreate {
 		klog.V(2).Infof("Creating NEG %q for %s in %q.", negName, negServicePortName, zone)
-		networkEndpointType := negIPPortNetworkEndpointType
-		subnetwork := cloud.SubnetworkURL()
-		if flags.F.EnableHybrid {
-			// Hybrid NEGs have a different NetworkEndpointType and cannot have an associated subnetwork.
-			networkEndpointType = negPrivateIPPortNetworkEndpointType
+		var networkEndpointType, subnetwork string
+		switch {
+		case flags.F.EnableNonGCPMode:
+			// Non-GCP NEGs have a different NetworkEndpointType and cannot have an associated subnetwork.
+			networkEndpointType = nonGCPPrivateEndpointType
 			subnetwork = ""
+			break
+		default:
+			networkEndpointType = vmNetworkEndpointType
+			subnetwork = cloud.SubnetworkURL()
+
 		}
 		err = cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 			Name:                negName,
@@ -296,8 +302,8 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet) (map[negtypes.Netw
 			Port:      int64(portNum),
 		}
 
-		if flags.F.EnableHybrid {
-			// Hybrid endpoints cannot have an associated instance.
+		if flags.F.EnableNonGCPMode {
+			// Non-GCP endpoints cannot have an associated instance.
 			endpointBatch[networkEndpoint].Instance = ""
 		}
 	}

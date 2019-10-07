@@ -294,34 +294,36 @@ func TestNetworkEndpointCalculateDifference(t *testing.T) {
 }
 
 func TestEnsureNetworkEndpointGroup(t *testing.T) {
-	testNegName := "test-neg"
-	testZone := "test-zone"
-	testNamedPort := "named-port"
-	testServiceName := "test-svc"
-	testServiceNameSpace := "test-ns"
-	testSubnetwork := "test-subnetwork"
-	testNetwork := "test-network"
+	var (
+		testNegName          = "test-neg"
+		testZone             = "test-zone"
+		testNamedPort        = "named-port"
+		testServiceName      = "test-svc"
+		testServiceNameSpace = "test-ns"
+		testSubnetwork       = "test-subnetwork"
+		testNetwork          = "test-network"
+	)
 
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
 
 	testCases := []struct {
-		enableHybrid                bool
+		enableNonGCPMode            bool
 		expectedNetworkEndpointType string
 		expectedSubnetwork          string
 	}{
 		{
-			enableHybrid:                false,
-			expectedNetworkEndpointType: negIPPortNetworkEndpointType,
+			enableNonGCPMode:            false,
+			expectedNetworkEndpointType: vmNetworkEndpointType,
 			expectedSubnetwork:          testSubnetwork,
 		},
 		{
-			enableHybrid:                true,
-			expectedNetworkEndpointType: negPrivateIPPortNetworkEndpointType,
+			enableNonGCPMode:            true,
+			expectedNetworkEndpointType: nonGCPPrivateEndpointType,
 			expectedSubnetwork:          "",
 		},
 	}
 	for _, tc := range testCases {
-		flags.F.EnableHybrid = tc.enableHybrid
+		flags.F.EnableNonGCPMode = tc.enableNonGCPMode
 		ensureNetworkEndpointGroup(
 			testServiceNameSpace,
 			testServiceName,
@@ -642,10 +644,10 @@ func TestMakeEndpointBatch(t *testing.T) {
 		},
 	}
 
-	for _, enableHybrid := range []bool{true, false} {
-		flags.F.EnableHybrid = enableHybrid
+	for _, enableNonGCPMode := range []bool{true, false} {
+		flags.F.EnableNonGCPMode = enableNonGCPMode
 		for _, tc := range testCases {
-			endpointSet, endpointMap := genTestEndpoints(tc.endpointNum, enableHybrid)
+			endpointSet, endpointMap := genTestEndpoints(tc.endpointNum, enableNonGCPMode)
 			out, err := makeEndpointBatch(endpointSet)
 
 			if err != nil {
@@ -759,7 +761,7 @@ func TestShouldPodBeInNeg(t *testing.T) {
 
 }
 
-func genTestEndpoints(num int, enableHybrid bool) (negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
+func genTestEndpoints(num int, enableNonGCPMode bool) (negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
 	endpointSet := negtypes.NewNetworkEndpointSet()
 	endpointMap := map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint{}
 	ip := "1.2.3.4"
@@ -772,7 +774,7 @@ func genTestEndpoints(num int, enableHybrid bool) (negtypes.NetworkEndpointSet, 
 			Instance:  instance,
 			Port:      int64(port),
 		}
-		if enableHybrid {
+		if enableNonGCPMode {
 			endpointMap[key].Instance = ""
 		}
 	}

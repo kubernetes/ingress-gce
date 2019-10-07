@@ -87,7 +87,7 @@ var (
 		EnableL7Ilb                 bool
 		EnableCSM                   bool
 		CSMServiceNEGSkipNamespaces []string
-		EnableHybrid                bool
+		EnableNonGCPMode            bool
 
 		LeaderElection LeaderElectionConfiguration
 	}{}
@@ -205,7 +205,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 		`Optional, whether or not to enable L7-ILB.`)
 	flag.BoolVar(&F.EnableCSM, "enable-csm", false, "Enable CSM(Istio) support")
 	flag.StringSliceVar(&F.CSMServiceNEGSkipNamespaces, "csm-service-skip-namespaces", []string{}, "Only for CSM mode, skip the NEG creation for Services in the given namespaces.")
-	flag.BoolVar(&F.EnableHybrid, "enable-hybrid", false, "Enable hybrid support.")
+	flag.BoolVar(&F.EnableNonGCPMode, "enable-non-gcp-mode", false, "Set to true when running on a non-GCP cluster.")
 }
 
 type RateLimitSpecs struct {
