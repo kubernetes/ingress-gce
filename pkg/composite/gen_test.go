@@ -678,6 +678,319 @@ func TestMutualTls(t *testing.T) {
 	}
 }
 
+func TestNetworkEndpoint(t *testing.T) {
+	compositeType := reflect.TypeOf(NetworkEndpoint{})
+	alphaType := reflect.TypeOf(computealpha.NetworkEndpoint{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+func TestNetworkEndpointGroup(t *testing.T) {
+	// Use reflection to verify that our composite type contains all the
+	// same fields as the alpha type.
+	compositeType := reflect.TypeOf(NetworkEndpointGroup{})
+	alphaType := reflect.TypeOf(computealpha.NetworkEndpointGroup{})
+	betaType := reflect.TypeOf(computebeta.NetworkEndpointGroup{})
+	gaType := reflect.TypeOf(compute.NetworkEndpointGroup{})
+
+	// For the composite type, remove the Version field from consideration
+	compositeTypeNumFields := compositeType.NumField() - 2
+	if compositeTypeNumFields != alphaType.NumField() {
+		t.Fatalf("%v should contain %v fields. Got %v", alphaType.Name(), alphaType.NumField(), compositeTypeNumFields)
+	}
+
+	// Compare all the fields by doing a lookup since we can't guarantee that they'll be in the same order
+	// Make sure that composite type is strictly alpha fields + internal bookkeeping
+	for i := 2; i < compositeType.NumField(); i++ {
+		lookupField, found := alphaType.FieldByName(compositeType.Field(i).Name)
+		if !found {
+			t.Fatal(fmt.Errorf("Field %v not present in alpha type %v", compositeType.Field(i), alphaType))
+		}
+		if err := compareFields(compositeType.Field(i), lookupField); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Verify that all beta fields are in composite type
+	if err := typeEquality(betaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify that all GA fields are in composite type
+	if err := typeEquality(gaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestToNetworkEndpointGroup(t *testing.T) {
+	testCases := []struct {
+		input    interface{}
+		expected *NetworkEndpointGroup
+	}{
+		{
+			computealpha.NetworkEndpointGroup{},
+			&NetworkEndpointGroup{},
+		},
+		{
+			computebeta.NetworkEndpointGroup{},
+			&NetworkEndpointGroup{},
+		},
+		{
+			compute.NetworkEndpointGroup{},
+			&NetworkEndpointGroup{},
+		},
+	}
+	for _, testCase := range testCases {
+		result, _ := ToNetworkEndpointGroup(testCase.input)
+		if !reflect.DeepEqual(result, testCase.expected) {
+			t.Fatalf("ToNetworkEndpointGroup(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
+		}
+	}
+}
+
+func TestNetworkEndpointGroupToAlpha(t *testing.T) {
+	composite := NetworkEndpointGroup{}
+	expected := &computealpha.NetworkEndpointGroup{}
+	result, err := composite.ToAlpha()
+	if err != nil {
+		t.Fatalf("NetworkEndpointGroup.ToAlpha() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("NetworkEndpointGroup.ToAlpha() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestNetworkEndpointGroupToBeta(t *testing.T) {
+	composite := NetworkEndpointGroup{}
+	expected := &computebeta.NetworkEndpointGroup{}
+	result, err := composite.ToBeta()
+	if err != nil {
+		t.Fatalf("NetworkEndpointGroup.ToBeta() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("NetworkEndpointGroup.ToBeta() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestNetworkEndpointGroupToGA(t *testing.T) {
+	composite := NetworkEndpointGroup{}
+	expected := &compute.NetworkEndpointGroup{}
+	result, err := composite.ToGA()
+	if err != nil {
+		t.Fatalf("NetworkEndpointGroup.ToGA() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("NetworkEndpointGroup.ToGA() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+
+func TestNetworkEndpointGroupLbNetworkEndpointGroup(t *testing.T) {
+	compositeType := reflect.TypeOf(NetworkEndpointGroupLbNetworkEndpointGroup{})
+	alphaType := reflect.TypeOf(computealpha.NetworkEndpointGroupLbNetworkEndpointGroup{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+func TestNetworkEndpointGroupsAttachEndpointsRequest(t *testing.T) {
+	// Use reflection to verify that our composite type contains all the
+	// same fields as the alpha type.
+	compositeType := reflect.TypeOf(NetworkEndpointGroupsAttachEndpointsRequest{})
+	alphaType := reflect.TypeOf(computealpha.NetworkEndpointGroupsAttachEndpointsRequest{})
+	betaType := reflect.TypeOf(computebeta.NetworkEndpointGroupsAttachEndpointsRequest{})
+	gaType := reflect.TypeOf(compute.NetworkEndpointGroupsAttachEndpointsRequest{})
+
+	// For the composite type, remove the Version field from consideration
+	compositeTypeNumFields := compositeType.NumField() - 2
+	if compositeTypeNumFields != alphaType.NumField() {
+		t.Fatalf("%v should contain %v fields. Got %v", alphaType.Name(), alphaType.NumField(), compositeTypeNumFields)
+	}
+
+	// Compare all the fields by doing a lookup since we can't guarantee that they'll be in the same order
+	// Make sure that composite type is strictly alpha fields + internal bookkeeping
+	for i := 2; i < compositeType.NumField(); i++ {
+		lookupField, found := alphaType.FieldByName(compositeType.Field(i).Name)
+		if !found {
+			t.Fatal(fmt.Errorf("Field %v not present in alpha type %v", compositeType.Field(i), alphaType))
+		}
+		if err := compareFields(compositeType.Field(i), lookupField); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Verify that all beta fields are in composite type
+	if err := typeEquality(betaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify that all GA fields are in composite type
+	if err := typeEquality(gaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestToNetworkEndpointGroupsAttachEndpointsRequest(t *testing.T) {
+	testCases := []struct {
+		input    interface{}
+		expected *NetworkEndpointGroupsAttachEndpointsRequest
+	}{
+		{
+			computealpha.NetworkEndpointGroupsAttachEndpointsRequest{},
+			&NetworkEndpointGroupsAttachEndpointsRequest{},
+		},
+		{
+			computebeta.NetworkEndpointGroupsAttachEndpointsRequest{},
+			&NetworkEndpointGroupsAttachEndpointsRequest{},
+		},
+		{
+			compute.NetworkEndpointGroupsAttachEndpointsRequest{},
+			&NetworkEndpointGroupsAttachEndpointsRequest{},
+		},
+	}
+	for _, testCase := range testCases {
+		result, _ := ToNetworkEndpointGroupsAttachEndpointsRequest(testCase.input)
+		if !reflect.DeepEqual(result, testCase.expected) {
+			t.Fatalf("ToNetworkEndpointGroupsAttachEndpointsRequest(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
+		}
+	}
+}
+
+func TestNetworkEndpointGroupsAttachEndpointsRequestToAlpha(t *testing.T) {
+	composite := NetworkEndpointGroupsAttachEndpointsRequest{}
+	expected := &computealpha.NetworkEndpointGroupsAttachEndpointsRequest{}
+	result, err := composite.ToAlpha()
+	if err != nil {
+		t.Fatalf("NetworkEndpointGroupsAttachEndpointsRequest.ToAlpha() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("NetworkEndpointGroupsAttachEndpointsRequest.ToAlpha() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestNetworkEndpointGroupsAttachEndpointsRequestToBeta(t *testing.T) {
+	composite := NetworkEndpointGroupsAttachEndpointsRequest{}
+	expected := &computebeta.NetworkEndpointGroupsAttachEndpointsRequest{}
+	result, err := composite.ToBeta()
+	if err != nil {
+		t.Fatalf("NetworkEndpointGroupsAttachEndpointsRequest.ToBeta() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("NetworkEndpointGroupsAttachEndpointsRequest.ToBeta() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestNetworkEndpointGroupsAttachEndpointsRequestToGA(t *testing.T) {
+	composite := NetworkEndpointGroupsAttachEndpointsRequest{}
+	expected := &compute.NetworkEndpointGroupsAttachEndpointsRequest{}
+	result, err := composite.ToGA()
+	if err != nil {
+		t.Fatalf("NetworkEndpointGroupsAttachEndpointsRequest.ToGA() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("NetworkEndpointGroupsAttachEndpointsRequest.ToGA() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestNetworkEndpointGroupsDetachEndpointsRequest(t *testing.T) {
+	// Use reflection to verify that our composite type contains all the
+	// same fields as the alpha type.
+	compositeType := reflect.TypeOf(NetworkEndpointGroupsDetachEndpointsRequest{})
+	alphaType := reflect.TypeOf(computealpha.NetworkEndpointGroupsDetachEndpointsRequest{})
+	betaType := reflect.TypeOf(computebeta.NetworkEndpointGroupsDetachEndpointsRequest{})
+	gaType := reflect.TypeOf(compute.NetworkEndpointGroupsDetachEndpointsRequest{})
+
+	// For the composite type, remove the Version field from consideration
+	compositeTypeNumFields := compositeType.NumField() - 2
+	if compositeTypeNumFields != alphaType.NumField() {
+		t.Fatalf("%v should contain %v fields. Got %v", alphaType.Name(), alphaType.NumField(), compositeTypeNumFields)
+	}
+
+	// Compare all the fields by doing a lookup since we can't guarantee that they'll be in the same order
+	// Make sure that composite type is strictly alpha fields + internal bookkeeping
+	for i := 2; i < compositeType.NumField(); i++ {
+		lookupField, found := alphaType.FieldByName(compositeType.Field(i).Name)
+		if !found {
+			t.Fatal(fmt.Errorf("Field %v not present in alpha type %v", compositeType.Field(i), alphaType))
+		}
+		if err := compareFields(compositeType.Field(i), lookupField); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Verify that all beta fields are in composite type
+	if err := typeEquality(betaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify that all GA fields are in composite type
+	if err := typeEquality(gaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestToNetworkEndpointGroupsDetachEndpointsRequest(t *testing.T) {
+	testCases := []struct {
+		input    interface{}
+		expected *NetworkEndpointGroupsDetachEndpointsRequest
+	}{
+		{
+			computealpha.NetworkEndpointGroupsDetachEndpointsRequest{},
+			&NetworkEndpointGroupsDetachEndpointsRequest{},
+		},
+		{
+			computebeta.NetworkEndpointGroupsDetachEndpointsRequest{},
+			&NetworkEndpointGroupsDetachEndpointsRequest{},
+		},
+		{
+			compute.NetworkEndpointGroupsDetachEndpointsRequest{},
+			&NetworkEndpointGroupsDetachEndpointsRequest{},
+		},
+	}
+	for _, testCase := range testCases {
+		result, _ := ToNetworkEndpointGroupsDetachEndpointsRequest(testCase.input)
+		if !reflect.DeepEqual(result, testCase.expected) {
+			t.Fatalf("ToNetworkEndpointGroupsDetachEndpointsRequest(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
+		}
+	}
+}
+
+func TestNetworkEndpointGroupsDetachEndpointsRequestToAlpha(t *testing.T) {
+	composite := NetworkEndpointGroupsDetachEndpointsRequest{}
+	expected := &computealpha.NetworkEndpointGroupsDetachEndpointsRequest{}
+	result, err := composite.ToAlpha()
+	if err != nil {
+		t.Fatalf("NetworkEndpointGroupsDetachEndpointsRequest.ToAlpha() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("NetworkEndpointGroupsDetachEndpointsRequest.ToAlpha() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestNetworkEndpointGroupsDetachEndpointsRequestToBeta(t *testing.T) {
+	composite := NetworkEndpointGroupsDetachEndpointsRequest{}
+	expected := &computebeta.NetworkEndpointGroupsDetachEndpointsRequest{}
+	result, err := composite.ToBeta()
+	if err != nil {
+		t.Fatalf("NetworkEndpointGroupsDetachEndpointsRequest.ToBeta() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("NetworkEndpointGroupsDetachEndpointsRequest.ToBeta() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestNetworkEndpointGroupsDetachEndpointsRequestToGA(t *testing.T) {
+	composite := NetworkEndpointGroupsDetachEndpointsRequest{}
+	expected := &compute.NetworkEndpointGroupsDetachEndpointsRequest{}
+	result, err := composite.ToGA()
+	if err != nil {
+		t.Fatalf("NetworkEndpointGroupsDetachEndpointsRequest.ToGA() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("NetworkEndpointGroupsDetachEndpointsRequest.ToGA() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+
 func TestOriginAuthenticationMethod(t *testing.T) {
 	compositeType := reflect.TypeOf(OriginAuthenticationMethod{})
 	alphaType := reflect.TypeOf(computealpha.OriginAuthenticationMethod{})
