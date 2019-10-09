@@ -48,19 +48,20 @@ func TestToComputeURLMap(t *testing.T) {
 	t.Parallel()
 
 	wantComputeMap := testCompositeURLMap()
+	namer := namer_util.NewNamer("uid1", "fw1")
 	gceURLMap := &utils.GCEURLMap{
-		DefaultBackend: &utils.ServicePort{NodePort: 30000},
+		DefaultBackend: &utils.ServicePort{NodePort: 30000, BackendNamer: namer},
 		HostRules: []utils.HostRule{
 			{
 				Hostname: "abc.com",
 				Paths: []utils.PathRule{
 					{
 						Path:    "/web",
-						Backend: utils.ServicePort{NodePort: 32000},
+						Backend: utils.ServicePort{NodePort: 32000, BackendNamer: namer},
 					},
 					{
 						Path:    "/other",
-						Backend: utils.ServicePort{NodePort: 32500},
+						Backend: utils.ServicePort{NodePort: 32500, BackendNamer: namer},
 					},
 				},
 			},
@@ -69,18 +70,17 @@ func TestToComputeURLMap(t *testing.T) {
 				Paths: []utils.PathRule{
 					{
 						Path:    "/",
-						Backend: utils.ServicePort{NodePort: 33000},
+						Backend: utils.ServicePort{NodePort: 33000, BackendNamer: namer},
 					},
 					{
 						Path:    "/*",
-						Backend: utils.ServicePort{NodePort: 33500},
+						Backend: utils.ServicePort{NodePort: 33500, BackendNamer: namer},
 					},
 				},
 			},
 		},
 	}
 
-	namer := namer_util.NewNamer("uid1", "fw1")
 	gotComputeURLMap := toCompositeURLMap("lb-name", gceURLMap, namer, meta.GlobalKey("lb-name"))
 	if !mapsEqual(gotComputeURLMap, wantComputeMap) {
 		t.Errorf("toComputeURLMap() = \n%+v\n   want\n%+v", gotComputeURLMap, wantComputeMap)

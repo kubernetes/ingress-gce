@@ -38,13 +38,13 @@ const (
 type Instances struct {
 	cloud InstanceGroups
 	ZoneLister
-	namer *namer.Namer
+	namer namer.BackendNamer
 }
 
 // NewNodePool creates a new node pool.
 // - cloud: implements InstanceGroups, used to sync Kubernetes nodes with
 //   members of the cloud InstanceGroup.
-func NewNodePool(cloud InstanceGroups, namer *namer.Namer) NodePool {
+func NewNodePool(cloud InstanceGroups, namer namer.BackendNamer) NodePool {
 	return &Instances{
 		cloud: cloud,
 		namer: namer,

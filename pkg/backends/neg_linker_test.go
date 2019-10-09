@@ -35,7 +35,7 @@ func newTestNEGLinker(fakeNEG negtypes.NetworkEndpointGroupCloud, fakeGCE *gce.C
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.UpdateHook = mock.UpdateBetaBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.UpdateHook = mock.UpdateBackendServiceHook
 
-	return &negLinker{fakeBackendPool, fakeNEG, defaultNamer, fakeGCE}
+	return &negLinker{fakeBackendPool, fakeNEG, fakeGCE}
 }
 
 func TestLinkBackendServiceToNEG(t *testing.T) {
@@ -53,11 +53,12 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 				Name:      name,
 			},
 		},
-		Port:       80,
-		NodePort:   30001,
-		Protocol:   annotations.ProtocolHTTP,
-		TargetPort: port,
-		NEGEnabled: true,
+		Port:         80,
+		NodePort:     30001,
+		Protocol:     annotations.ProtocolHTTP,
+		TargetPort:   port,
+		NEGEnabled:   true,
+		BackendNamer: defaultNamer,
 	}
 
 	// Mimic how the syncer would create the backend.
@@ -76,7 +77,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 		t.Fatalf("Failed to link backend service to NEG: %v", err)
 	}
 
-	beName := svcPort.BackendName(defaultNamer)
+	beName := svcPort.BackendName()
 	bs, err := fakeGCE.GetGlobalBackendService(beName)
 	if err != nil {
 		t.Fatalf("Failed to retrieve backend service: %v", err)

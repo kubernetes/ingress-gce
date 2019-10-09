@@ -19,7 +19,6 @@ import (
 	befeatures "k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -27,7 +26,6 @@ import (
 type negLinker struct {
 	backendPool Pool
 	negGetter   NEGGetter
-	namer       *namer.Namer
 	cloud       *gce.Cloud
 }
 
@@ -37,12 +35,10 @@ var _ Linker = (*negLinker)(nil)
 func NewNEGLinker(
 	backendPool Pool,
 	negGetter NEGGetter,
-	namer *namer.Namer,
 	cloud *gce.Cloud) Linker {
 	return &negLinker{
 		backendPool: backendPool,
 		negGetter:   negGetter,
-		namer:       namer,
 		cloud:       cloud,
 	}
 }
@@ -53,10 +49,10 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	var err error
 	for _, group := range groups {
 		// If the group key contains a name, then use that.
-		// Otherwise, generate the name using the namer.
+		// Otherwise, get the name from svc port.
 		negName := group.Name
 		if negName == "" {
-			negName = sp.BackendName(l.namer)
+			negName = sp.BackendName()
 		}
 		neg, err := l.negGetter.GetNetworkEndpointGroup(negName, group.Zone)
 		if err != nil {
@@ -65,7 +61,7 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		negs = append(negs, neg)
 	}
 
-	beName := sp.BackendName(l.namer)
+	beName := sp.BackendName()
 
 	version := befeatures.VersionFromServicePort(&sp)
 	scope := befeatures.ScopeFromServicePort(&sp)

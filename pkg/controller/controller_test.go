@@ -18,6 +18,7 @@ package controller
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -359,7 +360,7 @@ func TestIngressClassChangeWithFinalizer(t *testing.T) {
 }
 
 // TestIngressesWithSharedResourcesWithFinalizer asserts that `sync` does not return error when
-// multiple ingressesToCleanup with shared resources are added or deleted.
+// multiple ingresses with shared resources are added or deleted.
 // Note: This test cannot be run in parallel as it stubs global flags.
 func TestIngressesWithSharedResourcesWithFinalizer(t *testing.T) {
 	var flagSaver saveFinalizerFlags
@@ -398,7 +399,10 @@ func TestIngressesWithSharedResourcesWithFinalizer(t *testing.T) {
 	// Assert service ports are being shared.
 	ingSvcPorts := lbc.ToSvcPorts([]*v1beta1.Ingress{ing})
 	otherIngSvcPorts := lbc.ToSvcPorts([]*v1beta1.Ingress{otherIng})
-	if diff := cmp.Diff(ingSvcPorts, otherIngSvcPorts); diff != "" {
+	comparer := cmp.Comparer(func(a, b utils.ServicePort) bool {
+		return reflect.DeepEqual(a, b)
+	})
+	if diff := cmp.Diff(ingSvcPorts, otherIngSvcPorts, comparer); diff != "" {
 		t.Errorf("lbc.ToSVCPorts(_) mismatch (-want +got):\n%s", diff)
 	}
 
@@ -588,7 +592,7 @@ func TestMCIngressIG(t *testing.T) {
 	wantVal := fmt.Sprintf(`[{"Name":%q,"Zone":"zone-a"}]`, instanceGroupName)
 	if val, ok := updatedMcIng.GetAnnotations()[igAnnotationKey]; !ok {
 		t.Errorf("updatedMcIng.GetAnnotations()[%q]= (_, %v), want true; invalid key, updatedMcIng = %v", igAnnotationKey, ok, updatedMcIng)
-	} else if diff := cmp.Diff(val, wantVal); diff != "" {
+	} else if diff := cmp.Diff(wantVal, val); diff != "" {
 		t.Errorf("updatedMcIng.GetAnnotations()[%q] mismatch (-want +got):\n%s", igAnnotationKey, diff)
 	}
 
@@ -597,7 +601,7 @@ func TestMCIngressIG(t *testing.T) {
 	if err != nil {
 		t.Errorf("lbc.instancePool.List() = _, %v, want nil", err)
 	}
-	if diff := cmp.Diff(instanceGroups, []string{instanceGroupName}); diff != "" {
+	if diff := cmp.Diff([]string{instanceGroupName}, instanceGroups); diff != "" {
 		t.Errorf("lbc.instancePool.List()() mismatch (-want +got):\n%s", diff)
 	}
 
@@ -612,7 +616,7 @@ func TestMCIngressIG(t *testing.T) {
 	if err != nil {
 		t.Errorf("lbc.instancePool.List() = _, %v, want nil", err)
 	}
-	if diff := cmp.Diff(instanceGroups, []string{instanceGroupName}); diff != "" {
+	if diff := cmp.Diff([]string{instanceGroupName}, instanceGroups); diff != "" {
 		t.Errorf("lbc.instancePool.List()() mismatch (-want +got):\n%s", diff)
 	}
 
@@ -628,7 +632,7 @@ func TestMCIngressIG(t *testing.T) {
 		t.Errorf("lbc.instancePool.List() = _, %v, want nil", err)
 	}
 	var wantInstanceGroups []string
-	if diff := cmp.Diff(instanceGroups, wantInstanceGroups); diff != "" {
+	if diff := cmp.Diff(wantInstanceGroups, instanceGroups); diff != "" {
 		t.Errorf("lbc.instancePool.List()() mismatch (-want +got):\n%s", diff)
 	}
 }

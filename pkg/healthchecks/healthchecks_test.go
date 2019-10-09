@@ -39,9 +39,9 @@ var (
 
 func TestHealthCheckAdd(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", namer, defaultBackendSvc)
+	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", defaultBackendSvc)
 
-	sp := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, NEGEnabled: false}
+	sp := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: namer}
 	hc := healthChecks.New(sp)
 	_, err := healthChecks.Sync(hc)
 	if err != nil {
@@ -53,7 +53,7 @@ func TestHealthCheckAdd(t *testing.T) {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
 
-	sp = utils.ServicePort{NodePort: 443, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false}
+	sp = utils.ServicePort{NodePort: 443, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: namer}
 	hc = healthChecks.New(sp)
 	_, err = healthChecks.Sync(hc)
 	if err != nil {
@@ -65,7 +65,7 @@ func TestHealthCheckAdd(t *testing.T) {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
 
-	sp = utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, NEGEnabled: false}
+	sp = utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, NEGEnabled: false, BackendNamer: namer}
 	hc = healthChecks.New(sp)
 	_, err = healthChecks.Sync(hc)
 	if err != nil {
@@ -80,7 +80,7 @@ func TestHealthCheckAdd(t *testing.T) {
 
 func TestHealthCheckAddExisting(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", namer, defaultBackendSvc)
+	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", defaultBackendSvc)
 
 	// HTTP
 	// Manually insert a health check
@@ -93,7 +93,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 	fakeGCE.CreateHealthCheck(v1hc)
 
-	sp := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, NEGEnabled: false}
+	sp := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: namer}
 	// Should not fail adding the same type of health check
 	hc := healthChecks.New(sp)
 	_, err = healthChecks.Sync(hc)
@@ -117,7 +117,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 	fakeGCE.CreateHealthCheck(v1hc)
 
-	sp = utils.ServicePort{NodePort: 4000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false}
+	sp = utils.ServicePort{NodePort: 4000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: namer}
 	hc = healthChecks.New(sp)
 	_, err = healthChecks.Sync(hc)
 	if err != nil {
@@ -140,7 +140,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 	fakeGCE.CreateHealthCheck(v1hc)
 
-	sp = utils.ServicePort{NodePort: 5000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false}
+	sp = utils.ServicePort{NodePort: 5000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: namer}
 	hc = healthChecks.New(sp)
 	_, err = healthChecks.Sync(hc)
 	if err != nil {
@@ -155,7 +155,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 func TestHealthCheckDelete(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", namer, defaultBackendSvc)
+	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", defaultBackendSvc)
 
 	// Create HTTP HC for 1234
 	hc := DefaultHealthCheck(1234, annotations.ProtocolHTTP)
@@ -191,7 +191,7 @@ func TestHealthCheckDelete(t *testing.T) {
 
 func TestHTTP2HealthCheckDelete(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", namer, defaultBackendSvc)
+	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", defaultBackendSvc)
 
 	// Create HTTP2 HC for 1234
 	hc := DefaultHealthCheck(1234, annotations.ProtocolHTTP2)
@@ -221,7 +221,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaHealthChecks.UpdateHook = mock.UpdateAlphaHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaHealthChecks.UpdateHook = mock.UpdateBetaHealthCheckHook
 
-	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", namer, defaultBackendSvc)
+	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", defaultBackendSvc)
 
 	// HTTP
 	// Manually insert a health check
@@ -322,8 +322,8 @@ func TestHealthCheckUpdate(t *testing.T) {
 
 func TestAlphaHealthCheck(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", namer, defaultBackendSvc)
-	sp := utils.ServicePort{NodePort: 8000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true}
+	healthChecks := NewHealthChecker(fakeGCE, "/", "/healthz", defaultBackendSvc)
+	sp := utils.ServicePort{NodePort: 8000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true, BackendNamer: namer}
 	hc := healthChecks.New(sp)
 	_, err := healthChecks.Sync(hc)
 	if err != nil {
