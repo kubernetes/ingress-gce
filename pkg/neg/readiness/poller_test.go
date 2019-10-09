@@ -45,16 +45,20 @@ func TestPollerEndpointRegistrationAndScanForWork(t *testing.T) {
 	targetPort1 := "8080"
 	targetPort2 := "namedport"
 	syncerKey1 := negtypes.NegSyncerKey{
-		Namespace:  namespace,
-		Name:       name,
-		Port:       port,
-		TargetPort: targetPort1,
+		Namespace: namespace,
+		Name:      name,
+		PortTuple: negtypes.SvcPortTuple{
+			Port:       port,
+			TargetPort: targetPort1,
+		},
 	}
 	syncerKey2 := negtypes.NegSyncerKey{
-		Namespace:  namespace,
-		Name:       name,
-		Port:       port,
-		TargetPort: targetPort2,
+		Namespace: namespace,
+		Name:      name,
+		PortTuple: negtypes.SvcPortTuple{
+			Port:       port,
+			TargetPort: targetPort2,
+		},
 	}
 	zone1 := "zone1"
 	zone2 := "zone2"

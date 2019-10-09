@@ -36,14 +36,53 @@ const (
 	NonGCPPrivateEndpointType = NetworkEndpointType("NON_GCP_PRIVATE_IP_PORT")
 )
 
-// SvcPortMap is a map of ServicePort:TargetPort
-type SvcPortMap map[int32]string
+// SvcPortTuple is the tuple representing one service port
+type SvcPortTuple struct {
+	// Port is the service port number
+	Port int32
+	// Name is the service port name
+	Name string
+	// TargetPort is the service target port.
+	// This can be a port number or named port
+	TargetPort string
+}
+
+// String returns the string representation of SvcPortTuple
+func (t SvcPortTuple) String() string {
+	return fmt.Sprintf("%s/%v-%s", t.Name, t.Port, t.TargetPort)
+}
+
+// SvcPortTupleSet is a set of SvcPortTuple
+type SvcPortTupleSet map[SvcPortTuple]struct{}
+
+// NewSvcPortTupleSet returns SvcPortTupleSet with the input tuples
+func NewSvcPortTupleSet(tuples ...SvcPortTuple) SvcPortTupleSet {
+	set := SvcPortTupleSet{}
+	set.Insert(tuples...)
+	return set
+}
+
+// Insert inserts a SvcPortTuple into SvcPortTupleSet
+func (set SvcPortTupleSet) Insert(tuples ...SvcPortTuple) {
+	for _, tuple := range tuples {
+		set[tuple] = struct{}{}
+	}
+}
+
+// Get returns the SvcPortTuple with matching svc port if found
+func (set SvcPortTupleSet) Get(svcPort int32) (SvcPortTuple, bool) {
+	for tuple := range set {
+		if svcPort == tuple.Port {
+			return tuple, true
+		}
+	}
+	return SvcPortTuple{}, false
+}
 
 // PortInfo contains information associated with service port
 type PortInfo struct {
-	// TargetPort is the target port of the service port
-	// This can be port number or a named port
-	TargetPort string
+	// PortTuple is port tuple of a service.
+	PortTuple SvcPortTuple
 
 	// Subset name, subset is defined in Istio:DestinationRule, this is only used
 	// when --enable-csm=true.
@@ -62,6 +101,7 @@ type PortInfo struct {
 
 // PortInfoMapKey is the Key of PortInfoMap
 type PortInfoMapKey struct {
+	// ServicePort is the service port
 	ServicePort int32
 
 	// Istio:DestinationRule Subset, only used when --enable-csm=true
@@ -71,12 +111,12 @@ type PortInfoMapKey struct {
 // PortInfoMap is a map of PortInfoMapKey:PortInfo
 type PortInfoMap map[PortInfoMapKey]PortInfo
 
-func NewPortInfoMap(namespace, name string, svcPortMap SvcPortMap, namer NetworkEndpointGroupNamer, readinessGate bool) PortInfoMap {
+func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, namer NetworkEndpointGroupNamer, readinessGate bool) PortInfoMap {
 	ret := PortInfoMap{}
-	for svcPort, targetPort := range svcPortMap {
-		ret[PortInfoMapKey{svcPort, ""}] = PortInfo{
-			TargetPort:    targetPort,
-			NegName:       namer.NEG(namespace, name, svcPort),
+	for svcPortTuple := range svcPortTupleSet {
+		ret[PortInfoMapKey{svcPortTuple.Port, ""}] = PortInfo{
+			PortTuple:     svcPortTuple,
+			NegName:       namer.NEG(namespace, name, svcPortTuple.Port),
 			ReadinessGate: readinessGate,
 		}
 	}
@@ -85,19 +125,19 @@ func NewPortInfoMap(namespace, name string, svcPortMap SvcPortMap, namer Network
 
 // NewPortInfoMapWithDestinationRule create PortInfoMap based on a gaven DesinationRule.
 // Return error message if the DestinationRule contains duplicated subsets.
-func NewPortInfoMapWithDestinationRule(namespace, name string, svcPortMap SvcPortMap, namer NetworkEndpointGroupNamer, readinessGate bool,
+func NewPortInfoMapWithDestinationRule(namespace, name string, svcPortTupleSet SvcPortTupleSet, namer NetworkEndpointGroupNamer, readinessGate bool,
 	destinationRule *istioV1alpha3.DestinationRule) (PortInfoMap, error) {
 	ret := PortInfoMap{}
 	var duplicateSubset []string
 	for _, subset := range destinationRule.Subsets {
-		for svcPort, targetPort := range svcPortMap {
-			key := PortInfoMapKey{svcPort, subset.Name}
+		for tuple := range svcPortTupleSet {
+			key := PortInfoMapKey{tuple.Port, subset.Name}
 			if _, ok := ret[key]; ok {
 				duplicateSubset = append(duplicateSubset, subset.Name)
 			}
 			ret[key] = PortInfo{
-				TargetPort:    targetPort,
-				NegName:       namer.NEGWithSubset(namespace, name, subset.Name, svcPort),
+				PortTuple:     tuple,
+				NegName:       namer.NEGWithSubset(namespace, name, subset.Name, tuple.Port),
 				ReadinessGate: readinessGate,
 				Subset:        subset.Name,
 				SubsetLabels:  labels.Set(subset.Labels).String(),
@@ -119,8 +159,8 @@ func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 	for mapKey, portInfo := range p2 {
 		mergedInfo := PortInfo{}
 		if existingPortInfo, ok := p1[mapKey]; ok {
-			if existingPortInfo.TargetPort != portInfo.TargetPort {
-				return fmt.Errorf("for service port %v, target port in existing map is %q, but the merge map has %q", mapKey, existingPortInfo.TargetPort, portInfo.TargetPort)
+			if existingPortInfo.PortTuple != portInfo.PortTuple {
+				return fmt.Errorf("for service port %v, port tuple in existing map is %q, but the merge map has %q", mapKey, existingPortInfo.PortTuple, portInfo.PortTuple)
 			}
 			if existingPortInfo.NegName != portInfo.NegName {
 				return fmt.Errorf("for service port %v, NEG name in existing map is %q, but the merge map has %q", mapKey, existingPortInfo.NegName, portInfo.NegName)
@@ -130,8 +170,9 @@ func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 			}
 			mergedInfo.ReadinessGate = existingPortInfo.ReadinessGate
 		}
-		mergedInfo.TargetPort = portInfo.TargetPort
+		mergedInfo.PortTuple = portInfo.PortTuple
 		mergedInfo.NegName = portInfo.NegName
+		// Turn on the readiness gate if one of them is on
 		mergedInfo.ReadinessGate = mergedInfo.ReadinessGate || portInfo.ReadinessGate
 		mergedInfo.Subset = portInfo.Subset
 		mergedInfo.SubsetLabels = portInfo.SubsetLabels
@@ -193,10 +234,8 @@ type NegSyncerKey struct {
 	Namespace string
 	// Name of service
 	Name string
-	// Service port
-	Port int32
-	// Service target port
-	TargetPort string
+	// PortTuple is the port tuple of the service backing the NEG
+	PortTuple SvcPortTuple
 
 	// Subset name, subset is defined in Istio:DestinationRule, this is only used
 	// when --enable-csm=true.
@@ -210,7 +249,7 @@ type NegSyncerKey struct {
 }
 
 func (key NegSyncerKey) String() string {
-	return fmt.Sprintf("%s/%s-%s-%v/%s", key.Namespace, key.Name, key.Subset, key.Port, key.TargetPort)
+	return fmt.Sprintf("%s/%s-%s-%s", key.Namespace, key.Name, key.Subset, key.PortTuple.String())
 }
 
 // EndpointPodMap is a map from network endpoint to a namespaced name of a pod

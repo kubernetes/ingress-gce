@@ -31,22 +31,23 @@ import (
 // NegSyncerType represents the the neg syncer type
 type NegSyncerType string
 
-// negServicePorts returns the parsed ServicePorts from the annotation.
-// knownPorts represents the known Port:TargetPort attributes of servicePorts
-// that already exist on the service. This function returns an error if
-// any of the parsed ServicePorts from the annotation is not in knownPorts.
-func negServicePorts(ann *annotations.NegAnnotation, knownPorts types.SvcPortMap) (types.SvcPortMap, error) {
-	portSet := make(types.SvcPortMap)
+// negServicePorts returns the SvcPortTupleSet that matches the exposed service port in the NEG annotation.
+// knownSvcTupleSet represents the known service port tuples that already exist on the service.
+// This function returns an error if any of the service port from the annotation is not in knownSvcTupleSet.
+func negServicePorts(ann *annotations.NegAnnotation, knownSvcTupleSet types.SvcPortTupleSet) (types.SvcPortTupleSet, error) {
+	svcPortTupleSet := make(types.SvcPortTupleSet)
 	var errList []error
 	for port := range ann.ExposedPorts {
 		// TODO: also validate ServicePorts in the exposed NEG annotation via webhook
-		if _, ok := knownPorts[port]; !ok {
+		tuple, ok := knownSvcTupleSet.Get(port)
+		if !ok {
 			errList = append(errList, fmt.Errorf("port %v specified in %q doesn't exist in the service", port, annotations.NEGAnnotationKey))
+		} else {
+			svcPortTupleSet.Insert(tuple)
 		}
-		portSet[port] = knownPorts[port]
 	}
 
-	return portSet, utilerrors.NewAggregate(errList)
+	return svcPortTupleSet, utilerrors.NewAggregate(errList)
 }
 
 // castToDestinationRule cast Unstructured obj to istioV1alpha3.DestinationRule

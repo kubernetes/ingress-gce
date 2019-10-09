@@ -449,10 +449,12 @@ func TestNeedToPoll(t *testing.T) {
 	port := int32(80)
 	targetPort := "8080"
 	key := negtypes.NegSyncerKey{
-		Namespace:  namespace,
-		Name:       name,
-		Port:       port,
-		TargetPort: targetPort,
+		Namespace: namespace,
+		Name:      name,
+		PortTuple: negtypes.SvcPortTuple{
+			Port:       port,
+			TargetPort: targetPort,
+		},
 	}
 
 	for _, tc := range []struct {

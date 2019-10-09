@@ -90,10 +90,12 @@ func newSyncerTester() *syncerTester {
 	}
 	context := context.NewControllerContext(kubeClient, nil, backendConfigClient, nil, nil, namer, ctxConfig)
 	negSyncerKey := negtypes.NegSyncerKey{
-		Namespace:  testServiceNamespace,
-		Name:       testServiceName,
-		Port:       80,
-		TargetPort: "80",
+		Namespace: testServiceNamespace,
+		Name:      testServiceName,
+		PortTuple: negtypes.SvcPortTuple{
+			Port:       80,
+			TargetPort: "80",
+		},
 	}
 
 	st := &syncerTester{

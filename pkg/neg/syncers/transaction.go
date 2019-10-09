@@ -130,7 +130,7 @@ func (s *transactionSyncer) syncInternal() error {
 		return nil
 	}
 
-	targetMap, endpointPodMap, err := toZoneNetworkEndpointMap(ep.(*apiv1.Endpoints), s.zoneGetter, s.TargetPort, s.podLister, s.NegSyncerKey.SubsetLabels, s.NegSyncerKey.NegType)
+	targetMap, endpointPodMap, err := toZoneNetworkEndpointMap(ep.(*apiv1.Endpoints), s.zoneGetter, s.PortTuple.Name, s.podLister, s.NegSyncerKey.SubsetLabels, s.NegSyncerKey.NegType)
 	if err != nil {
 		return err
 	}
