@@ -23,6 +23,8 @@ import (
 
 	"fmt"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -295,28 +297,33 @@ func TestNetworkEndpointCalculateDifference(t *testing.T) {
 
 func TestEnsureNetworkEndpointGroup(t *testing.T) {
 	var (
-		testNegName          = "test-neg"
 		testZone             = "test-zone"
 		testNamedPort        = "named-port"
 		testServiceName      = "test-svc"
 		testServiceNameSpace = "test-ns"
-		testSubnetwork       = "test-subnetwork"
-		testNetwork          = "test-network"
+		testNetwork          = cloud.ResourcePath("network", &meta.Key{Zone: testZone, Name: "test-network"})
+		testSubnetwork       = cloud.ResourcePath("subnetwork", &meta.Key{Zone: testZone, Name: "test-subnetwork"})
 	)
 
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
 
 	testCases := []struct {
+		description                 string
+		negName                     string
 		enableNonGCPMode            bool
 		expectedNetworkEndpointType string
 		expectedSubnetwork          string
 	}{
 		{
+			description:                 "Create NEG of type GCE_VM_IP_PORT",
+			negName:                     "gcp-neg",
 			enableNonGCPMode:            false,
 			expectedNetworkEndpointType: vmNetworkEndpointType,
 			expectedSubnetwork:          testSubnetwork,
 		},
 		{
+			description:                 "Create NEG of type NON_GCP_PRIVATE_IP_PORT",
+			negName:                     "non-gcp-neg",
 			enableNonGCPMode:            true,
 			expectedNetworkEndpointType: nonGCPPrivateEndpointType,
 			expectedSubnetwork:          "",
@@ -327,7 +334,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 		ensureNetworkEndpointGroup(
 			testServiceNameSpace,
 			testServiceName,
-			testNegName,
+			tc.negName,
 			testZone,
 			testNamedPort,
 			fakeCloud,
@@ -335,9 +342,9 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			nil,
 		)
 
-		neg, err := fakeCloud.GetNetworkEndpointGroup(testNegName, testZone)
+		neg, err := fakeCloud.GetNetworkEndpointGroup(tc.negName, testZone)
 		if err != nil {
-			t.Errorf("Failed to retrieve NEG %q: %v", testZone, err)
+			t.Errorf("Failed to retrieve NEG %q: %v", tc.negName, err)
 		}
 
 		if neg.NetworkEndpointType != tc.expectedNetworkEndpointType {
@@ -346,6 +353,22 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 
 		if neg.Subnetwork != tc.expectedSubnetwork {
 			t.Errorf("Unexpected Subnetwork, expecting %q but got %q", tc.expectedSubnetwork, neg.Subnetwork)
+		}
+
+		// Call ensureNetworkEndpointGroup with the same NEG.
+		err = ensureNetworkEndpointGroup(
+			testServiceNameSpace,
+			testServiceName,
+			tc.negName,
+			testZone,
+			testNamedPort,
+			fakeCloud,
+			nil,
+			nil,
+		)
+
+		if err != nil {
+			t.Errorf("Unexpected error when called with duplicated NEG: %v", err)
 		}
 	}
 }

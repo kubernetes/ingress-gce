@@ -126,8 +126,11 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	needToCreate := false
 	if neg == nil {
 		needToCreate = true
-	} else if !utils.EqualResourceIDs(neg.Network, cloud.NetworkURL()) ||
-		!utils.EqualResourceIDs(neg.Subnetwork, cloud.SubnetworkURL()) {
+	} else if neg.NetworkEndpointType != nonGCPPrivateEndpointType &&
+		// Only perform the following checks when the NEGs are not Non-GCP NEGs.
+		// Non-GCP NEGs do not have associated network and subnetwork.
+		(!utils.EqualResourceIDs(neg.Network, cloud.NetworkURL()) ||
+			!utils.EqualResourceIDs(neg.Subnetwork, cloud.SubnetworkURL())) {
 		needToCreate = true
 		klog.V(2).Infof("NEG %q in %q does not match network and subnetwork of the cluster. Deleting NEG.", negName, zone)
 		err = cloud.DeleteNetworkEndpointGroup(negName, zone)
