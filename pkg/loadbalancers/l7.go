@@ -171,6 +171,11 @@ func (l *L7) edgeHop() error {
 		if err := l.edgeHopHttp(); err != nil {
 			return err
 		}
+	} else if flags.F.EnableDeleteUnusedFrontends && requireDeleteFrontend(l.ingress, namer.HTTPProtocol) {
+		if err := l.deleteHttp(features.VersionsFromIngress(&l.ingress)); err != nil {
+			return err
+		}
+		klog.V(2).Infof("Successfully deleted unused HTTP frontend resources for load-balancer %s", l)
 	}
 	// Defer promoting an ephemeral to a static IP until it's really needed.
 	if l.runtimeInfo.AllowHTTP && sslConfigured {
@@ -185,6 +190,11 @@ func (l *L7) edgeHop() error {
 		if err := l.edgeHopHttps(); err != nil {
 			return err
 		}
+	} else if flags.F.EnableDeleteUnusedFrontends && requireDeleteFrontend(l.ingress, namer.HTTPSProtocol) {
+		if err := l.deleteHttps(features.VersionsFromIngress(&l.ingress)); err != nil {
+			return err
+		}
+		klog.V(2).Infof("Successfully deleted unused HTTPS frontend resources for load-balancer %s", l)
 	}
 
 	if !willConfigureFrontend {
@@ -216,6 +226,32 @@ func (l *L7) edgeHopHttps() error {
 	return l.checkHttpsForwardingRule()
 }
 
+// requireDeleteFrontend returns true if gce loadbalancer resources needs to deleted for given protocol.
+func requireDeleteFrontend(ing v1beta1.Ingress, protocol namer.NamerProtocol) bool {
+	var keys []string
+	switch protocol {
+	case namer.HTTPSProtocol:
+		keys = append(keys, []string{
+			annotations.HttpsForwardingRuleKey,
+			annotations.TargetHttpsProxyKey,
+		}...)
+	case namer.HTTPProtocol:
+		keys = append(keys, []string{
+			annotations.HttpForwardingRuleKey,
+			annotations.TargetHttpProxyKey,
+		}...)
+	default:
+		klog.Errorf("Unexpected frontend resource protocol %v", protocol)
+	}
+
+	for _, key := range keys {
+		if _, exists := ing.Annotations[key]; exists {
+			return true
+		}
+	}
+	return false
+}
+
 // GetIP returns the ip associated with the forwarding rule for this l7.
 func (l *L7) GetIP() string {
 	if l.fw != nil {
@@ -227,98 +263,189 @@ func (l *L7) GetIP() string {
 	return ""
 }
 
-// Cleanup deletes resources specific to this l7 in the right order.
-// forwarding rule -> target proxy -> url map
-// This leaves backends and health checks, which are shared across loadbalancers.
-func (l *L7) Cleanup(versions *features.ResourceVersions) error {
-	var key *meta.Key
-	var err error
-
-	fwName := l.namer.ForwardingRule(namer.HTTPProtocol)
-	klog.V(2).Infof("Deleting global forwarding rule %v", fwName)
-	if key, err = l.CreateKey(fwName); err != nil {
+// deleteForwardingRule deletes forwarding rule for given protocol.
+func (l *L7) deleteForwardingRule(versions *features.ResourceVersions, protocol namer.NamerProtocol) error {
+	frName := l.namer.ForwardingRule(protocol)
+	klog.V(2).Infof("Deleting global forwarding rule %v", frName)
+	key, err := l.CreateKey(frName)
+	if err != nil {
 		return err
 	}
 	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, versions.ForwardingRule)); err != nil {
 		return err
 	}
+	return nil
+}
 
-	fwsName := l.namer.ForwardingRule(namer.HTTPSProtocol)
-	klog.V(2).Infof("Deleting global forwarding rule %v", fwsName)
-	if key, err = l.CreateKey(fwsName); err != nil {
+// deleteTargetProxy deletes target proxy for given protocol.
+func (l *L7) deleteTargetProxy(versions *features.ResourceVersions, protocol namer.NamerProtocol) error {
+	tpName := l.namer.TargetProxy(protocol)
+	klog.V(2).Infof("Deleting target %v proxy %v", protocol, tpName)
+	key, err := l.CreateKey(tpName)
+	if err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, versions.ForwardingRule)); err != nil {
+	switch protocol {
+	case namer.HTTPProtocol:
+		if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpProxy(l.cloud, key, versions.TargetHttpProxy)); err != nil {
+			return err
+		}
+	case namer.HTTPSProtocol:
+		if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpsProxy(l.cloud, key, versions.TargetHttpsProxy)); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unexpected frontend resource protocol: %v", protocol)
+	}
+	return nil
+}
+
+// deleteHttp deletes http forwarding rule and target http proxy.
+func (l *L7) deleteHttp(versions *features.ResourceVersions) error {
+	// Delete http forwarding rule.
+	if err := l.deleteForwardingRule(versions, namer.HTTPProtocol); err != nil {
 		return err
 	}
+	// Delete target http proxy.
+	return l.deleteTargetProxy(versions, namer.HTTPProtocol)
+}
 
-	ip, err := l.cloud.GetGlobalAddress(fwName)
+// deleteHttps deletes https forwarding rule, target https proxy and ingress controller
+// managed ssl certificates.
+func (l *L7) deleteHttps(versions *features.ResourceVersions) error {
+	// Delete https forwarding rule.
+	if err := l.deleteForwardingRule(versions, namer.HTTPSProtocol); err != nil {
+		return err
+	}
+	// Get list of ssl certificates owned by this load-balancer that needs to be deleted.
+	// We are using https target proxy to list legacy certs, so this list needs to be
+	// populated before deleting https target proxy.
+	secretsSslCerts, err := l.getIngressManagedSslCerts()
+	if err != nil {
+		return err
+	}
+	// Delete target https proxy.
+	if err := l.deleteTargetProxy(versions, namer.HTTPSProtocol); err != nil {
+		return err
+	}
+	// Delete ingress managed ssl certificates those created from a secret,
+	// not referencing a pre-created GCE cert or managed certificates.
+	return l.deleteSSLCertificates(secretsSslCerts, versions)
+}
+
+// deleteSSLCertificates deletes given ssl certificates.
+func (l *L7) deleteSSLCertificates(sslCertificates []*composite.SslCertificate, versions *features.ResourceVersions) error {
+	if len(sslCertificates) == 0 {
+		return nil
+	}
+	var certErr error
+	for _, cert := range sslCertificates {
+		klog.V(2).Infof("Deleting sslcert %s", cert.Name)
+		key, err := l.CreateKey(cert.Name)
+		if err != nil {
+			return err
+		}
+		if err := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l.cloud, key, versions.SslCertificate)); err != nil {
+			klog.Errorf("Old cert delete failed - %v", err)
+			certErr = err
+		}
+	}
+	l.sslCerts = nil
+	return certErr
+}
+
+// deleteStaticIP deletes ingress managed static ip.
+func (l *L7) deleteStaticIP() error {
+	frName := l.namer.ForwardingRule(namer.HTTPProtocol)
+	ip, err := l.cloud.GetGlobalAddress(frName)
 	if ip != nil && utils.IgnoreHTTPNotFound(err) == nil {
 		klog.V(2).Infof("Deleting static IP %v(%v)", ip.Name, ip.Address)
 		if err := utils.IgnoreHTTPNotFound(l.cloud.DeleteGlobalAddress(ip.Name)); err != nil {
 			return err
 		}
 	}
+	return nil
+}
 
-	tpName := l.namer.TargetProxy(namer.HTTPProtocol)
-	klog.V(2).Infof("Deleting target http proxy %v", tpName)
-	if key, err = l.CreateKey(tpName); err != nil {
+// Cleanup deletes resources specific to this l7 in the right order.
+// forwarding rule -> target proxy -> url map
+// This leaves backends and health checks, which are shared across loadbalancers.
+func (l *L7) Cleanup(versions *features.ResourceVersions) error {
+	var err error
+	// Delete http frontend resources.
+	if err := l.deleteHttp(versions); err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpProxy(l.cloud, key, versions.TargetHttpProxy)); err != nil {
+	// Delete static ip.
+	if err := l.deleteStaticIP(); err != nil {
 		return err
 	}
-
-	tpsName := l.namer.TargetProxy(namer.HTTPSProtocol)
-	klog.V(2).Infof("Deleting target https proxy %v", tpsName)
-	if key, err = l.CreateKey(tpsName); err != nil {
+	// Delete https frontend resources.
+	if err := l.deleteHttps(versions); err != nil {
 		return err
 	}
-	if err := utils.IgnoreHTTPNotFound(composite.DeleteTargetHttpsProxy(l.cloud, key, versions.TargetHttpsProxy)); err != nil {
-		return err
-	}
-
-	// Delete the SSL cert if it is from a secret, not referencing a pre-created GCE cert or managed certificates.
-	secretsSslCerts, err := l.getIngressManagedSslCerts()
-	if err != nil {
-		return err
-	}
-
-	if len(secretsSslCerts) != 0 {
-		var certErr error
-		for _, cert := range secretsSslCerts {
-			klog.V(2).Infof("Deleting sslcert %s", cert.Name)
-			if key, err = l.CreateKey(cert.Name); err != nil {
-				return err
-			}
-			if err := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l.cloud, key, versions.SslCertificate)); err != nil {
-				klog.Errorf("Old cert delete failed - %v", err)
-				certErr = err
-			}
-		}
-		l.sslCerts = nil
-		if certErr != nil {
-			return certErr
-		}
-	}
-
+	// Delete URL map.
 	umName := l.namer.UrlMap()
 	klog.V(2).Infof("Deleting URL Map %v", umName)
-	if key, err = l.CreateKey(umName); err != nil {
+	key, err := l.CreateKey(umName)
+	if err != nil {
 		return err
 	}
 	if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l.cloud, key, versions.UrlMap)); err != nil {
 		return err
 	}
-
 	return nil
+}
+
+func (l *L7) getFrontendAnnotations(existing map[string]string) map[string]string {
+	if existing == nil {
+		existing = map[string]string{}
+	}
+
+	var certs []string
+	for _, cert := range l.sslCerts {
+		certs = append(certs, cert.Name)
+	}
+
+	existing[annotations.UrlMapKey] = l.um.Name
+	// Forwarding rule and target proxy might not exist if allowHTTP == false
+	if l.fw != nil {
+		existing[annotations.HttpForwardingRuleKey] = l.fw.Name
+	} else {
+		delete(existing, annotations.HttpForwardingRuleKey)
+	}
+	if l.tp != nil {
+		existing[annotations.TargetHttpProxyKey] = l.tp.Name
+	} else {
+		delete(existing, annotations.TargetHttpProxyKey)
+	}
+	// HTTPs resources might not exist if TLS == nil
+	if l.fws != nil {
+		existing[annotations.HttpsForwardingRuleKey] = l.fws.Name
+	} else {
+		delete(existing, annotations.HttpsForwardingRuleKey)
+	}
+	if l.tps != nil {
+		existing[annotations.TargetHttpsProxyKey] = l.tps.Name
+	} else {
+		delete(existing, annotations.TargetHttpsProxyKey)
+	}
+	// Note that ingress IP annotation is not deleted when user disables one of http/https.
+	// This is because the promoted static IP is retained for use and will be deleted only
+	// when load-balancer is deleted or user specifies a different IP.
+	if l.ip != nil {
+		existing[annotations.StaticIPKey] = l.ip.Name
+	}
+	if len(certs) > 0 {
+		existing[annotations.SSLCertKey] = strings.Join(certs, ",")
+	} else {
+		delete(existing, annotations.SSLCertKey)
+	}
+	return existing
 }
 
 // GetLBAnnotations returns the annotations of an l7. This includes it's current status.
 func GetLBAnnotations(l7 *L7, existing map[string]string, backendSyncer backends.Syncer) (map[string]string, error) {
-	if existing == nil {
-		existing = map[string]string{}
-	}
 	backends, err := getBackendNames(l7.um)
 	if err != nil {
 		return nil, err
@@ -338,32 +465,8 @@ func GetLBAnnotations(l7 *L7, existing map[string]string, backendSyncer backends
 	if err == nil {
 		jsonBackendState = string(b)
 	}
-	certs := []string{}
-	for _, cert := range l7.sslCerts {
-		certs = append(certs, cert.Name)
-	}
-
-	existing[fmt.Sprintf("%v/url-map", annotations.StatusPrefix)] = l7.um.Name
-	// Forwarding rule and target proxy might not exist if allowHTTP == false
-	if l7.fw != nil {
-		existing[fmt.Sprintf("%v/forwarding-rule", annotations.StatusPrefix)] = l7.fw.Name
-	}
-	if l7.tp != nil {
-		existing[fmt.Sprintf("%v/target-proxy", annotations.StatusPrefix)] = l7.tp.Name
-	}
-	// HTTPs resources might not exist if TLS == nil
-	if l7.fws != nil {
-		existing[fmt.Sprintf("%v/https-forwarding-rule", annotations.StatusPrefix)] = l7.fws.Name
-	}
-	if l7.tps != nil {
-		existing[fmt.Sprintf("%v/https-target-proxy", annotations.StatusPrefix)] = l7.tps.Name
-	}
-	if l7.ip != nil {
-		existing[fmt.Sprintf("%v/static-ip", annotations.StatusPrefix)] = l7.ip.Name
-	}
-	if len(certs) > 0 {
-		existing[fmt.Sprintf("%v/ssl-cert", annotations.StatusPrefix)] = strings.Join(certs, ",")
-	}
+	// Update annotations for frontend resources.
+	existing = l7.getFrontendAnnotations(existing)
 	// TODO: We really want to know *when* a backend flipped states.
 	existing[fmt.Sprintf("%v/backends", annotations.StatusPrefix)] = jsonBackendState
 	return existing, nil
