@@ -43,6 +43,7 @@ import (
 type Options struct {
 	Project             string
 	Region              string
+	Network             string
 	Seed                int64
 	DestroySandboxes    bool
 	GceEndpointOverride string
@@ -64,6 +65,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		BackendConfigClient: backendConfigClient,
 		Project:             options.Project,
 		Region:              options.Region,
+		Network:             options.Network,
 		Cloud:               theCloud,
 		Rand:                rand.New(rand.NewSource(options.Seed)),
 		destroySandboxes:    options.DestroySandboxes,
@@ -79,6 +81,7 @@ type Framework struct {
 	BackendConfigClient *backendconfigclient.Clientset
 	Project             string
 	Region              string
+	Network             string
 	Cloud               cloud.Cloud
 	Rand                *rand.Rand
 	statusManager       *StatusManager
