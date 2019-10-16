@@ -265,6 +265,12 @@ func DeleteGCPAddress(s *Sandbox, name string) error {
 // CreateILBSubnet creates the ILB subnet
 func CreateILBSubnet(s *Sandbox) error {
 	klog.V(3).Info("CreateILBSubnet()")
+
+	// If no network is provided, we don't try to create the subnet
+	if s.f.Network == "" {
+		return ErrSubnetExists
+	}
+
 	name := "ilb-subnet-ingress-e2e"
 
 	// Try up to 10 different subnets since we can't conflict with anything in the test project
@@ -285,7 +291,7 @@ func CreateILBSubnet(s *Sandbox) error {
 
 // trySubnetCreate is a helper for CreateILBSubnet
 func trySubnetCreate(s *Sandbox, name, ipCidrRange string) error {
-	networkID := cloud.ResourceID{ProjectID: s.f.Project, Resource: "networks", Key: meta.GlobalKey("default")}
+	networkID := cloud.ResourceID{ProjectID: s.f.Project, Resource: "networks", Key: meta.GlobalKey(s.f.Network)}
 
 	subnet := &computebeta.Subnetwork{
 		Name:        name,
