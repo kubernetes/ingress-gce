@@ -38,8 +38,8 @@ func TestILB(t *testing.T) {
 
 	// These names are useful when reading the debug logs
 	testName := "test-ilb-basic"
-	ingressPrefix := testName + "-ing-"
-	serviceName := testName + "-svc"
+	ingressPrefix := testName + "-i-"
+	serviceName := testName + "-s-"
 
 	port80 := intstr.FromInt(80)
 
@@ -128,9 +128,9 @@ func TestILBHttps(t *testing.T) {
 	t.Parallel()
 
 	// These names are useful when reading the debug logs
-	testName := "test-ilb-https"
-	ingressPrefix := testName + "-ing-"
-	serviceName := testName + "-svc"
+	testName := "test-ilb-s"
+	ingressPrefix := testName + "-i-"
+	serviceName := testName + "-s-"
 
 	port80 := intstr.FromInt(80)
 
@@ -259,9 +259,9 @@ func TestILBUpdate(t *testing.T) {
 	t.Parallel()
 
 	// These names are useful when reading the debug logs
-	testName := "test-ilb-update"
-	ingressPrefix := testName + "-ing-"
-	serviceName := testName + "-svc"
+	testName := "test-ilb-up"
+	ingressPrefix := testName + "-i-"
+	serviceName := testName + "-s-"
 
 	port80 := intstr.FromInt(80)
 
@@ -407,9 +407,9 @@ func TestILBError(t *testing.T) {
 	t.Parallel()
 
 	// These names are useful when reading the debug logs
-	testName := "test-ilb-error"
-	ingressPrefix := testName + "-ing-"
-	serviceName := testName + "-svc"
+	testName := "test-ilb-err"
+	ingressPrefix := testName + "-i-"
+	serviceName := testName + "-s-"
 
 	port80 := intstr.FromInt(80)
 
@@ -464,9 +464,9 @@ func TestILBShared(t *testing.T) {
 	t.Parallel()
 
 	// These names are useful when reading the debug logs
-	testName := "test-ilb-shared"
-	ingressPrefix := testName + "-ing-"
-	serviceName := testName + "-svc"
+	testName := "test-ilb-share"
+	ingressPrefix := testName + "-i-"
+	serviceName := testName + "-s-"
 
 	port80 := intstr.FromInt(80)
 
@@ -479,11 +479,11 @@ func TestILBShared(t *testing.T) {
 	}{
 		{
 			desc: "default backend",
-			ilbIng: fuzz.NewIngressBuilder("", ingressPrefix+"ilb-1", "").
+			ilbIng: fuzz.NewIngressBuilder("", ingressPrefix+"i-1", "").
 				DefaultBackend(serviceName, port80).
 				ConfigureForILB().
 				Build(),
-			elbIng: fuzz.NewIngressBuilder("", ingressPrefix+"elb-1", "").
+			elbIng: fuzz.NewIngressBuilder("", ingressPrefix+"e-1", "").
 				DefaultBackend(serviceName, port80).
 				Build(),
 			numForwardingRules: 1,
@@ -491,11 +491,11 @@ func TestILBShared(t *testing.T) {
 		},
 		{
 			desc: "one path",
-			ilbIng: fuzz.NewIngressBuilder("", ingressPrefix+"ilb-2", "").
+			ilbIng: fuzz.NewIngressBuilder("", ingressPrefix+"i-2", "").
 				AddPath("test.com", "/", serviceName, port80).
 				ConfigureForILB().
 				Build(),
-			elbIng: fuzz.NewIngressBuilder("", ingressPrefix+"elb-2", "").
+			elbIng: fuzz.NewIngressBuilder("", ingressPrefix+"e-2", "").
 				AddPath("test.com", "/", serviceName, port80).
 				Build(),
 			numForwardingRules: 1,
@@ -503,12 +503,12 @@ func TestILBShared(t *testing.T) {
 		},
 		{
 			desc: "multiple paths",
-			ilbIng: fuzz.NewIngressBuilder("", ingressPrefix+"ilb-3", "").
+			ilbIng: fuzz.NewIngressBuilder("", ingressPrefix+"i-3", "").
 				AddPath("test.com", "/foo", serviceName, port80).
 				AddPath("test.com", "/bar", serviceName, port80).
 				ConfigureForILB().
 				Build(),
-			elbIng: fuzz.NewIngressBuilder("", ingressPrefix+"elb-3", "").
+			elbIng: fuzz.NewIngressBuilder("", ingressPrefix+"e-3", "").
 				AddPath("test.com", "/foo", serviceName, port80).
 				AddPath("test.com", "/bar", serviceName, port80).
 				Build(),
