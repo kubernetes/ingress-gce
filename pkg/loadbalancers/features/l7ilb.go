@@ -33,7 +33,7 @@ var ErrSubnetNotFound = errors.New("active subnet not found")
 // Get Subnet source range for ILB
 // TODO: (shance) refactor to use filter
 func ILBSubnetSourceRange(cloud *gce.Cloud, region string) (string, error) {
-	subnets, err := cloud.Compute().AlphaSubnetworks().List(context.Background(), region, filter.None)
+	subnets, err := cloud.Compute().BetaSubnetworks().List(context.Background(), region, filter.None)
 	if err != nil {
 		return "", fmt.Errorf("error obtaining subnets for region %s, %v", region, err)
 	}
