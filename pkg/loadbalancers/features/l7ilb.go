@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -38,12 +39,30 @@ func ILBSubnetSourceRange(cloud *gce.Cloud, region string) (string, error) {
 	}
 
 	for _, subnet := range subnets {
-		if subnet.Role == "ACTIVE" && subnet.Purpose == "INTERNAL_HTTPS_LOAD_BALANCER" {
+		sameNetwork, err := isSameNetwork(subnet.Network, cloud.NetworkURL())
+		if err != nil {
+			return "", fmt.Errorf("error comparing subnets: %v", err)
+		}
+		if subnet.Role == "ACTIVE" && subnet.Purpose == "INTERNAL_HTTPS_LOAD_BALANCER" && sameNetwork {
 			klog.V(3).Infof("Found L7-ILB Subnet %s - %s", subnet.Name, subnet.IpCidrRange)
 			return subnet.IpCidrRange, nil
 		}
 	}
 	return "", ErrSubnetNotFound
+}
+
+// isSameNetwork() is a helper for comparing networks across API versions
+func isSameNetwork(l, r string) (bool, error) {
+	lID, err := cloud.ParseResourceURL(l)
+	if err != nil {
+		return false, err
+	}
+	rID, err := cloud.ParseResourceURL(r)
+	if err != nil {
+		return false, err
+	}
+
+	return lID.Equal(rID), nil
 }
 
 // L7ILBVersion is a helper to get the version of L7-ILB
