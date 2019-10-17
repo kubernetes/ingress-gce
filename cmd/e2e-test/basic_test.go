@@ -239,3 +239,92 @@ func whiteboxTest(ing *v1beta1.Ingress, s *e2e.Sandbox, t *testing.T, region str
 	}
 	return gclb
 }
+
+// TestFrontendResourceDeletion asserts that unused GCP frontend resources are
+// deleted. This also tests that necessary GCP frontend resources exist.
+func TestFrontendResourceDeletion(t *testing.T) {
+	t.Parallel()
+	port80 := intstr.FromInt(80)
+	svcName := "service-1"
+	host := "foo.com"
+
+	// All the test cases create an ingress with a HTTP + HTTPS load-balancer
+	// at the beginning of the test and turnoff these based on the testcase params.
+	for _, tc := range []struct {
+		desc         string
+		disableHTTP  bool
+		disableHTTPS bool
+	}{
+		// Note that disabling both HTTP & HTTPS would result in a sync error, so excluded.
+		{"http only", false, true},
+		{"https only", true, false},
+	} {
+		tc := tc
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Parallel()
+			ctx := context.Background()
+
+			_, err := e2e.CreateEchoService(s, svcName, nil)
+			if err != nil {
+				t.Fatalf("CreateEchoService(_, %q, nil): %v, want nil", svcName, err)
+			}
+			t.Logf("Echo service created (%s/%s)", s.Namespace, svcName)
+
+			// Create SSL certificate.
+			certName := fmt.Sprintf("cert-1")
+			cert, err := e2e.NewCert(certName, host, e2e.K8sCert, false)
+			if err != nil {
+				t.Fatalf("e2e.NewCert(%q, %q, _, %t) = %v, want nil", certName, host, false, err)
+			}
+			if err := cert.Create(s); err != nil {
+				t.Fatalf("cert.Create(_) = %v, want nil, error creating cert %s", err, cert.Name)
+			}
+			t.Logf("Cert created %s", certName)
+			defer cert.Delete(s)
+
+			ing := fuzz.NewIngressBuilder(s.Namespace, "ing1", "").
+				AddPath(host, "/", svcName, port80).AddTLS([]string{}, cert.Name).Build()
+
+			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			if _, err := crud.Create(ing); err != nil {
+				t.Fatalf("crud.Create(%s/%s) = %v, want nil; Ingress: %v", ing.Namespace, ing.Name, err, ing)
+			}
+			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
+			ing = waitForStableIngress(true, ing, s, t)
+			gclb := whiteboxTest(ing, s, t, "")
+
+			// Update ingress with desired frontend resource configuration.
+			ingBuilder := fuzz.NewIngressBuilderFromExisting(ing)
+			if tc.disableHTTP {
+				ingBuilder = ingBuilder.SetAllowHttp(false)
+			}
+			if tc.disableHTTPS {
+				ingBuilder = ingBuilder.SetTLS(nil)
+			}
+			ing = ingBuilder.Build()
+
+			if _, err := crud.Update(ing); err != nil {
+				t.Fatalf("update(%s/%s) = %v, want nil; ingress: %v", ing.Namespace, ing.Name, err, ing)
+			}
+			t.Logf("Ingress updated (%s/%s)", ing.Namespace, ing.Name)
+			ing = waitForStableIngress(true, ing, s, t)
+
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend:          true,
+				CheckHttpFrontendResources:  tc.disableHTTP,
+				CheckHttpsFrontendResources: tc.disableHTTPS,
+			}
+			// Wait for unused frontend resources to be deleted.
+			if err := e2e.WaitForFrontendResourceDeletion(ctx, Framework.Cloud, gclb, deleteOptions); err != nil {
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, _) = %v, want nil", ing.Name, err)
+			}
+			whiteboxTest(ing, s, t, "")
+			deleteOptions = &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: true,
+			}
+			if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, deleteOptions); err != nil {
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, _) = %v, want nil", ing.Name, err)
+			}
+		})
+	}
+}

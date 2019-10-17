@@ -222,7 +222,7 @@ func DeleteSecret(s *Sandbox, name string) error {
 	if err := s.f.Clientset.CoreV1().Secrets(s.Namespace).Delete(name, &metav1.DeleteOptions{}); err != nil {
 		return err
 	}
-	klog.V(2).Infof("Secret %q:%q created", s.Namespace, name)
+	klog.V(2).Infof("Secret %q:%q deleted", s.Namespace, name)
 
 	return nil
 }
