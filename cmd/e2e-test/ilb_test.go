@@ -39,7 +39,7 @@ func TestILB(t *testing.T) {
 	// These names are useful when reading the debug logs
 	testName := "test-ilb-basic"
 	ingressPrefix := testName + "-i-"
-	serviceName := testName + "-s-"
+	serviceName := testName + "-s"
 
 	port80 := intstr.FromInt(80)
 
@@ -130,7 +130,7 @@ func TestILBHttps(t *testing.T) {
 	// These names are useful when reading the debug logs
 	testName := "test-ilb-s"
 	ingressPrefix := testName + "-i-"
-	serviceName := testName + "-s-"
+	serviceName := testName + "-s"
 
 	port80 := intstr.FromInt(80)
 
@@ -261,7 +261,7 @@ func TestILBUpdate(t *testing.T) {
 	// These names are useful when reading the debug logs
 	testName := "test-ilb-up"
 	ingressPrefix := testName + "-i-"
-	serviceName := testName + "-s-"
+	serviceName := testName + "-s"
 
 	port80 := intstr.FromInt(80)
 
@@ -409,7 +409,7 @@ func TestILBError(t *testing.T) {
 	// These names are useful when reading the debug logs
 	testName := "test-ilb-err"
 	ingressPrefix := testName + "-i-"
-	serviceName := testName + "-s-"
+	serviceName := testName + "-s"
 
 	port80 := intstr.FromInt(80)
 
@@ -466,7 +466,7 @@ func TestILBShared(t *testing.T) {
 	// These names are useful when reading the debug logs
 	testName := "test-ilb-share"
 	ingressPrefix := testName + "-i-"
-	serviceName := testName + "-s-"
+	serviceName := testName + "-s"
 
 	port80 := intstr.FromInt(80)
 
