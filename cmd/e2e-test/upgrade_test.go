@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
-	"k8s.io/ingress-gce/pkg/fuzz/features"
 )
 
 func TestUpgrade(t *testing.T) {
@@ -99,7 +98,7 @@ func TestUpgrade(t *testing.T) {
 			// trigger an Ingress update
 			ing = waitForStableIngress(true, ing, s, t)
 			t.Logf("GCLB is stable (%s/%s)", s.Namespace, tc.ing.Name)
-			whiteboxTest(ing, s, t)
+			gclb := whiteboxTest(ing, s, t)
 
 			// If the Master has upgraded and the Ingress is stable,
 			// we delete the Ingress and exit out of the loop to indicate that
@@ -108,46 +107,9 @@ func TestUpgrade(t *testing.T) {
 				SkipDefaultBackend: true,
 			}
 
-			vip := ing.Status.LoadBalancer.Ingress[0].IP
-			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
-			if err != nil {
-				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
-			}
-
 			if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing, deleteOptions); err != nil { // Sometimes times out waiting
 				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
 			}
 		})
-	}
-}
-
-func waitForStableIngress(expectUnreachable bool, ing *v1beta1.Ingress, s *e2e.Sandbox, t *testing.T) *v1beta1.Ingress {
-	options := &e2e.WaitForIngressOptions{
-		ExpectUnreachable: expectUnreachable,
-	}
-
-	ing, err := e2e.WaitForIngress(s, ing, options)
-	if err != nil {
-		t.Fatalf("error waiting for Ingress to stabilize: %v", err)
-	}
-
-	s.PutStatus(e2e.Stable)
-	return ing
-}
-
-func whiteboxTest(ing *v1beta1.Ingress, s *e2e.Sandbox, t *testing.T) {
-	if len(ing.Status.LoadBalancer.Ingress) < 1 {
-		t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
-	}
-
-	vip := ing.Status.LoadBalancer.Ingress[0].IP
-	t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
-	gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
-	if err != nil {
-		t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
-	}
-
-	if err := e2e.PerformWhiteboxTests(s, ing, gclb); err != nil {
-		t.Fatalf("Error performing whitebox tests: %v", err)
 	}
 }

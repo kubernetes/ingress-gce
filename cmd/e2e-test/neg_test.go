@@ -49,12 +49,11 @@ func TestNEG(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		desc               string
-		ingress            *v1beta1.Ingress
-		services           map[string]serviceAttr
-		expectNegBackend   bool
-		expectIgBackend    bool
-		numBackendServices int
+		desc             string
+		ingress          *v1beta1.Ingress
+		services         map[string]serviceAttr
+		expectNegBackend bool
+		expectIgBackend  bool
 	}{
 		{
 			desc:    "Create a ingress with 2 NEG services of different types",
@@ -69,9 +68,8 @@ func TestNEG(t *testing.T) {
 					svcType:     v1.ServiceTypeNodePort,
 				},
 			},
-			expectNegBackend:   true,
-			expectIgBackend:    false,
-			numBackendServices: 2,
+			expectNegBackend: true,
+			expectIgBackend:  false,
 		},
 		{
 			desc:    "Create a ingress with 1 NEG service and 1 non-NEG service with default backend",
@@ -86,9 +84,8 @@ func TestNEG(t *testing.T) {
 					svcType:     v1.ServiceTypeClusterIP,
 				},
 			},
-			expectNegBackend:   true,
-			expectIgBackend:    true,
-			numBackendServices: 3,
+			expectNegBackend: true,
+			expectIgBackend:  true,
 		},
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
@@ -119,21 +116,7 @@ func TestNEG(t *testing.T) {
 			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
 
 			// Perform whitebox testing.
-			if len(ing.Status.LoadBalancer.Ingress) < 1 {
-				t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
-			}
-
-			vip := ing.Status.LoadBalancer.Ingress[0].IP
-			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
-			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip,
-				fuzz.FeatureValidators(features.All))
-			if err != nil {
-				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
-			}
-
-			if err := e2e.PerformWhiteboxTests(s, ing, gclb); err != nil {
-				t.Fatalf("Error performing whitebox tests: %v", err)
-			}
+			gclb := whiteboxTest(ing, s, t)
 
 			// TODO(mixia): The below checks should be merged into PerformWhiteboxTests().
 			if (len(gclb.NetworkEndpointGroup) > 0) != tc.expectNegBackend {
