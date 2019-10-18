@@ -629,7 +629,14 @@ func toLbNames(ings []*v1beta1.Ingress) []string {
 		if !utils.IsGCEIngress(ing) {
 			continue
 		}
-		lbNames = append(lbNames, utils.IngressKeyFunc(ing))
+		if ingKey, err := utils.KeyFunc(ing); err != nil {
+			// An error is returned only if ingress object does not have a valid meta.
+			// So, this should not happen in production, fall back on utility function to
+			// get ingress key.
+			lbNames = append(lbNames, utils.IngressKeyFunc(ing))
+		} else {
+			lbNames = append(lbNames, ingKey)
+		}
 	}
 	return lbNames
 }
