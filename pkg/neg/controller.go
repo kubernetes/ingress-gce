@@ -567,9 +567,15 @@ func (c *Controller) enqueueService(obj interface{}) {
 }
 
 func (c *Controller) enqueueIngressServices(ing *v1beta1.Ingress) {
+	// enqueue services referenced by ingress
 	keys := gatherIngressServiceKeys(ing)
 	for key := range keys {
 		c.enqueueService(cache.ExplicitKey(key))
+	}
+
+	// enqueue default backend service
+	if flags.F.EnableL7Ilb && ing.Spec.Backend == nil {
+		c.enqueueService(cache.ExplicitKey(c.defaultBackendService.ID.Service.String()))
 	}
 }
 
