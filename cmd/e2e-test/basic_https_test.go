@@ -24,7 +24,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
-	"k8s.io/ingress-gce/pkg/fuzz/features"
 )
 
 func TestBasicHTTPS(t *testing.T) {
@@ -37,19 +36,14 @@ func TestBasicHTTPS(t *testing.T) {
 		ingBuilder *fuzz.IngressBuilder
 		hosts      []string
 		certType   e2e.CertType
-
-		numForwardingRules int
-		numBackendServices int
 	}{
 		{
 			desc: "http(s) one path via pre-shared cert",
 			ingBuilder: fuzz.NewIngressBuilder("", "ingress-1", "").
 				DefaultBackend("service-1", port80).
 				AddPath("test.com", "/", "service-1", port80),
-			hosts:              []string{"test.com"},
-			certType:           e2e.GCPCert,
-			numForwardingRules: 2,
-			numBackendServices: 1,
+			hosts:    []string{"test.com"},
+			certType: e2e.GCPCert,
 		},
 		{
 			desc: "http(s) multi-path multi-TLS",
@@ -58,10 +52,8 @@ func TestBasicHTTPS(t *testing.T) {
 				AddPath("foo.com", "/", "service-1", port80).
 				AddPath("bar.com", "/", "service-1", port80).
 				AddPath("baz.com", "/", "service-1", port80),
-			hosts:              []string{"foo.com", "bar.com", "baz.com"},
-			certType:           e2e.K8sCert,
-			numForwardingRules: 2,
-			numBackendServices: 1,
+			hosts:    []string{"foo.com", "bar.com", "baz.com"},
+			certType: e2e.K8sCert,
 		},
 		{
 			desc:  "http(s) multi-path multi-pre-shared cert",
@@ -71,9 +63,7 @@ func TestBasicHTTPS(t *testing.T) {
 				AddPath("foo.com", "/", "service-1", port80).
 				AddPath("bar.com", "/", "service-1", port80).
 				AddPath("baz.com", "/", "service-1", port80),
-			certType:           e2e.GCPCert,
-			numForwardingRules: 2,
-			numBackendServices: 1,
+			certType: e2e.GCPCert,
 		},
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
@@ -121,20 +111,7 @@ func TestBasicHTTPS(t *testing.T) {
 			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
 
 			// Perform whitebox testing.
-			if len(ing.Status.LoadBalancer.Ingress) < 1 {
-				t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
-			}
-
-			vip := ing.Status.LoadBalancer.Ingress[0].IP
-			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
-			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
-			if err != nil {
-				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
-			}
-
-			if err := e2e.PerformWhiteboxTests(s, ing, gclb); err != nil {
-				t.Fatalf("Error performing whitebox tests: %v", err)
-			}
+			gclb := whiteboxTest(ing, s, t)
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
 				SkipDefaultBackend: true,

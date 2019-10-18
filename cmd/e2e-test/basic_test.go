@@ -82,20 +82,8 @@ func TestBasic(t *testing.T) {
 			}
 			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
 
-			if len(ing.Status.LoadBalancer.Ingress) < 1 {
-				t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
-			}
-
-			vip := ing.Status.LoadBalancer.Ingress[0].IP
-			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ing.Name, vip)
-			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
-			if err != nil {
-				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
-			}
-
-			if err := e2e.PerformWhiteboxTests(s, tc.ing, gclb); err != nil {
-				t.Fatalf("Error performing whitebox tests: %v", err)
-			}
+			// Perform whitebox testing.
+			gclb := whiteboxTest(ing, s, t)
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
 				SkipDefaultBackend: true,
@@ -199,20 +187,7 @@ func TestEdge(t *testing.T) {
 			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
-			if len(ing.Status.LoadBalancer.Ingress) < 1 {
-				t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
-			}
-
-			vip := ing.Status.LoadBalancer.Ingress[0].IP
-			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ing.Name, vip)
-			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
-			if err != nil {
-				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
-			}
-
-			if err := e2e.PerformWhiteboxTests(s, tc.ing, gclb); err != nil {
-				t.Fatalf("Error performing whitebox tests: %v", err)
-			}
+			gclb := whiteboxTest(ing, s, t)
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
 				SkipDefaultBackend: true,
@@ -222,4 +197,36 @@ func TestEdge(t *testing.T) {
 			}
 		})
 	}
+}
+
+func waitForStableIngress(expectUnreachable bool, ing *v1beta1.Ingress, s *e2e.Sandbox, t *testing.T) *v1beta1.Ingress {
+	options := &e2e.WaitForIngressOptions{
+		ExpectUnreachable: expectUnreachable,
+	}
+
+	ing, err := e2e.WaitForIngress(s, ing, options)
+	if err != nil {
+		t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+	}
+
+	s.PutStatus(e2e.Stable)
+	return ing
+}
+
+func whiteboxTest(ing *v1beta1.Ingress, s *e2e.Sandbox, t *testing.T) *fuzz.GCLB {
+	if len(ing.Status.LoadBalancer.Ingress) < 1 {
+		t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
+	}
+
+	vip := ing.Status.LoadBalancer.Ingress[0].IP
+	t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
+	gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
+	if err != nil {
+		t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+	}
+
+	if err := e2e.PerformWhiteboxTests(s, ing, gclb); err != nil {
+		t.Fatalf("Error performing whitebox tests: %v", err)
+	}
+	return gclb
 }
