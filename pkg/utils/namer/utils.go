@@ -13,6 +13,12 @@ limitations under the License.
 
 package namer
 
+import (
+	"k8s.io/api/networking/v1beta1"
+	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/klog"
+)
+
 // TrimFieldsEvenly trims the fields evenly and keeps the total length
 // <= max. Truncation is spread in ratio with their original length,
 // meaning smaller fields will be truncated less than longer ones.
@@ -48,4 +54,16 @@ func TrimFieldsEvenly(max int, fields ...string) []string {
 	}
 
 	return ret
+}
+
+// frontendNamingScheme returns naming scheme for given ingress.
+func frontendNamingScheme(ing *v1beta1.Ingress) Scheme {
+	// TODO(smatti): return V2NamingScheme if ingress has V2 finalizer
+	switch {
+	case common.HasFinalizer(ing.ObjectMeta, common.FinalizerKey):
+		return V1NamingScheme
+	default:
+		klog.V(3).Infof("No finalizer found on Ingress %v, using Legacy naming scheme", ing)
+		return V1NamingScheme
+	}
 }

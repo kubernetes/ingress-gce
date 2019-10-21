@@ -50,8 +50,6 @@ const (
 
 // L7RuntimeInfo is info passed to this module from the controller runtime.
 type L7RuntimeInfo struct {
-	// Name is the name of a loadbalancer.
-	Name string
 	// IP is the desired ip of the loadbalancer, eg from a staticIP.
 	IP string
 	// TLS are the tls certs to use in termination.
@@ -85,14 +83,8 @@ type TLSCerts struct {
 	CertHash string
 }
 
-// String returns the load balancer name
-func (l *L7RuntimeInfo) String() string {
-	return l.Name
-}
-
 // L7 represents a single L7 loadbalancer.
 type L7 struct {
-	Name string
 	// runtimeInfo is non-cloudprovider information passed from the controller.
 	runtimeInfo *L7RuntimeInfo
 	// ingress stores the ingress
@@ -119,11 +111,18 @@ type L7 struct {
 	// prevents leakage if there's a failure along the way.
 	oldSSLCerts []*composite.SslCertificate
 	// namer is used to compute names of the various sub-components of an L7.
-	namer *namer.Namer
+	namer namer.IngressFrontendNamer
 	// recorder is used to generate k8s Events.
 	recorder record.EventRecorder
 	// resource type stores the KeyType of the resources in the loadbalancer (e.g. Regional)
 	scope meta.KeyType
+}
+
+// String returns the name of the loadbalancer.
+// Warning: This should be used only for logging and should not be used to
+// retrieve/ delete gce resource names.
+func (l *L7) String() string {
+	return l.namer.LbName()
 }
 
 // Version() returns the struct listing the versions for every resource
@@ -168,14 +167,14 @@ func (l *L7) edgeHop() error {
 	// Defer promoting an ephemeral to a static IP until it's really needed.
 	sslConfigured := l.runtimeInfo.TLS != nil || l.runtimeInfo.TLSName != ""
 	if l.runtimeInfo.AllowHTTP && sslConfigured {
-		klog.V(3).Infof("checking static ip for %v", l.Name)
+		klog.V(3).Infof("checking static ip for %v", l)
 		if err := l.checkStaticIP(); err != nil {
 			return err
 		}
 	}
 	if sslConfigured {
 		willConfigureFrontend = true
-		klog.V(3).Infof("validating https for %v", l.Name)
+		klog.V(3).Infof("validating https for %v", l)
 		if err := l.edgeHopHttps(); err != nil {
 			return err
 		}
@@ -228,7 +227,7 @@ func (l *L7) Cleanup(versions *features.ResourceVersions) error {
 	var key *meta.Key
 	var err error
 
-	fwName := l.namer.ForwardingRule(l.Name, namer.HTTPProtocol)
+	fwName := l.namer.ForwardingRule(namer.HTTPProtocol)
 	klog.V(2).Infof("Deleting global forwarding rule %v", fwName)
 	if key, err = l.CreateKey(fwName); err != nil {
 		return err
@@ -237,7 +236,7 @@ func (l *L7) Cleanup(versions *features.ResourceVersions) error {
 		return err
 	}
 
-	fwsName := l.namer.ForwardingRule(l.Name, namer.HTTPSProtocol)
+	fwsName := l.namer.ForwardingRule(namer.HTTPSProtocol)
 	klog.V(2).Infof("Deleting global forwarding rule %v", fwsName)
 	if key, err = l.CreateKey(fwsName); err != nil {
 		return err
@@ -254,7 +253,7 @@ func (l *L7) Cleanup(versions *features.ResourceVersions) error {
 		}
 	}
 
-	tpName := l.namer.TargetProxy(l.Name, namer.HTTPProtocol)
+	tpName := l.namer.TargetProxy(namer.HTTPProtocol)
 	klog.V(2).Infof("Deleting target http proxy %v", tpName)
 	if key, err = l.CreateKey(tpName); err != nil {
 		return err
@@ -263,7 +262,7 @@ func (l *L7) Cleanup(versions *features.ResourceVersions) error {
 		return err
 	}
 
-	tpsName := l.namer.TargetProxy(l.Name, namer.HTTPSProtocol)
+	tpsName := l.namer.TargetProxy(namer.HTTPSProtocol)
 	klog.V(2).Infof("Deleting target https proxy %v", tpsName)
 	if key, err = l.CreateKey(tpsName); err != nil {
 		return err
@@ -296,7 +295,7 @@ func (l *L7) Cleanup(versions *features.ResourceVersions) error {
 		}
 	}
 
-	umName := l.namer.UrlMap(l.Name)
+	umName := l.namer.UrlMap()
 	klog.V(2).Infof("Deleting URL Map %v", umName)
 	if key, err = l.CreateKey(umName); err != nil {
 		return err
@@ -376,7 +375,7 @@ func GCEResourceName(ingAnnotations map[string]string, resourceName string) stri
 // description gets a description for the ingress GCP resources.
 func (l *L7) description() (string, error) {
 	if l.runtimeInfo.Ingress == nil {
-		return "", fmt.Errorf("missing Ingress object to construct description for %s", l.Name)
+		return "", fmt.Errorf("missing Ingress object to construct description for %s", l)
 	}
 
 	namespace := l.runtimeInfo.Ingress.ObjectMeta.Namespace

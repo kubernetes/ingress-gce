@@ -34,7 +34,7 @@ func (l *L7) checkHttpForwardingRule() (err error) {
 	if l.tp == nil {
 		return fmt.Errorf("cannot create forwarding rule without proxy")
 	}
-	name := l.namer.ForwardingRule(l.Name, namer.HTTPProtocol)
+	name := l.namer.ForwardingRule(namer.HTTPProtocol)
 	address, _ := l.getEffectiveIP()
 	fw, err := l.checkForwardingRule(name, l.tp.SelfLink, address, httpDefaultPortRange)
 	if err != nil {
@@ -46,10 +46,10 @@ func (l *L7) checkHttpForwardingRule() (err error) {
 
 func (l *L7) checkHttpsForwardingRule() (err error) {
 	if l.tps == nil {
-		klog.V(3).Infof("No https target proxy for %v, not created https forwarding rule", l.Name)
+		klog.V(3).Infof("No https target proxy for %v, not created https forwarding rule", l)
 		return nil
 	}
-	name := l.namer.ForwardingRule(l.Name, namer.HTTPSProtocol)
+	name := l.namer.ForwardingRule(namer.HTTPSProtocol)
 	address, _ := l.getEffectiveIP()
 	fws, err := l.checkForwardingRule(name, l.tps.SelfLink, address, httpsDefaultPortRange)
 	if err != nil {

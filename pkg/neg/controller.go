@@ -144,7 +144,7 @@ func NewController(
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(addIng) {
-				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.ToString(addIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.NamespacedName(addIng), annotations.IngressClassKey)
 				return
 			}
 			negController.enqueueIngressServices(addIng)
@@ -152,7 +152,7 @@ func NewController(
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(delIng) {
-				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.ToString(delIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.NamespacedName(delIng), annotations.IngressClassKey)
 				return
 			}
 			negController.enqueueIngressServices(delIng)
@@ -161,7 +161,7 @@ func NewController(
 			oldIng := cur.(*v1beta1.Ingress)
 			curIng := cur.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(curIng) {
-				klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", common.ToString(curIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", common.NamespacedName(curIng), annotations.IngressClassKey)
 				return
 			}
 			keys := gatherIngressServiceKeys(oldIng)
