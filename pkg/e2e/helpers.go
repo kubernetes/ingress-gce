@@ -188,7 +188,10 @@ func performWhiteboxTests(s *Sandbox, ing *v1beta1.Ingress, gclb *fuzz.GCLB) err
 	if err != nil {
 		return err
 	}
-	return validator.PerformWhiteboxTests(gclb)
+	if err := validator.PerformWhiteboxTests(gclb); err != nil {
+		return err
+	}
+	return validator.FrontendNamingSchemeTest(gclb)
 }
 
 // WaitForIngressDeletion deletes the given ingress and waits for the
@@ -488,7 +491,7 @@ func CheckForAnyFinalizer(ing *v1beta1.Ingress) error {
 	return nil
 }
 
-// CheckV1Finalizer asserts that v1 finalizer exists on Ingress.
+// CheckV1Finalizer asserts that only v1 finalizer exists on Ingress.
 func CheckV1Finalizer(ing *v1beta1.Ingress) error {
 	ingFinalizers := ing.GetFinalizers()
 	if l := len(ingFinalizers); l != 1 {
@@ -496,6 +499,18 @@ func CheckV1Finalizer(ing *v1beta1.Ingress) error {
 	}
 	if ingFinalizers[0] != common.FinalizerKey {
 		return fmt.Errorf("expected Finalizer %q but got %q", common.FinalizerKey, ingFinalizers[0])
+	}
+	return nil
+}
+
+// CheckV2Finalizer asserts that only v2 finalizer exists on Ingress.
+func CheckV2Finalizer(ing *v1beta1.Ingress) error {
+	ingFinalizers := ing.GetFinalizers()
+	if l := len(ingFinalizers); l != 1 {
+		return fmt.Errorf("expected 1 Finalizer but got %d", l)
+	}
+	if ingFinalizers[0] != common.FinalizerKeyV2 {
+		return fmt.Errorf("expected Finalizer %q but got %q", common.FinalizerKeyV2, ingFinalizers[0])
 	}
 	return nil
 }

@@ -97,7 +97,7 @@ func (bh *BasicHTTP) DuringUpgrade() error {
 
 // PostUpgrade implements e2e.UpgradeTest.PostUpgrade
 func (bh *BasicHTTP) PostUpgrade() error {
-	// force ingress update. only add path once
+	// Force ingress update by adding a new path.
 	newIng := fuzz.NewIngressBuilderFromExisting(bh.ing).
 		AddPath("bar.com", "/", svcName, port80).
 		Build()
@@ -107,18 +107,16 @@ func (bh *BasicHTTP) PostUpgrade() error {
 		bh.t.Fatalf("error updating Ingress %s: %v", ingKey, err)
 	} else {
 		// If Ingress upgrade succeeds, we update the status on this Ingress
-		// to Unstable. It is set back to Stable after WaitForIngress below
-		// finishes successfully.
+		// to Unstable. It is set back to Stable after UpgradeTestWaitForIngress
+		// below finishes successfully.
 		bh.s.PutStatus(e2e.Unstable)
 	}
 
-	// Verify the Ingress has stabilized after the master upgrade and we
-	// trigger an Ingress update
-	ing, err := e2e.WaitForIngress(bh.s, bh.ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true})
+	// Verify the Ingress has stabilized after the master upgrade.
+	ing, err := e2e.UpgradeTestWaitForIngress(bh.s, bh.ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true})
 	if err != nil {
 		bh.t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 	}
-	bh.s.PutStatus(e2e.Stable)
 	bh.t.Logf("GCLB is stable (%s)", ingKey)
 	gclb, err := e2e.WhiteboxTest(ing, bh.s, bh.framework.Cloud, "")
 	if err != nil {
