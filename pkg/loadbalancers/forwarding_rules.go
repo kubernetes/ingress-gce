@@ -18,6 +18,8 @@ package loadbalancers
 
 import (
 	"fmt"
+	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -91,9 +93,17 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 		}
 
 		// Update rule for L7-ILB
-		if utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress) {
+		if flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress) {
 			rule.LoadBalancingScheme = "INTERNAL_MANAGED"
+
+			// Custom mode networks require adding the cluster subnetwork
+			if isCustomMode, err := features.IsCustomModeNetwork(l.cloud, l.cloud.NetworkURL()); err != nil {
+				return nil, err
+			} else if isCustomMode {
+				rule.Subnetwork = l.cloud.SubnetworkURL()
+			}
 		}
+
 		if err = composite.CreateForwardingRule(l.cloud, key, rule); err != nil {
 			return nil, err
 		}
