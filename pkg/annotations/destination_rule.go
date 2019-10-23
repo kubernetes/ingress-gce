@@ -40,3 +40,10 @@ func (ns DestinationRuleNEGStatus) Marshal() (string, error) {
 	}
 	return string(bytes), err
 }
+
+// ParseDestinationRuleNEGStatus parses the given annotation into DestinationRuleNEGStatus struct
+func ParseDestinationRuleNEGStatus(annotation string) (DestinationRuleNEGStatus, error) {
+	ret := &DestinationRuleNEGStatus{}
+	err := json.Unmarshal([]byte(annotation), ret)
+	return *ret, err
+}

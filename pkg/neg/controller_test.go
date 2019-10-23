@@ -25,12 +25,16 @@ import (
 	"testing"
 	"time"
 
+	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -64,12 +68,17 @@ var (
 func newTestController(kubeClient kubernetes.Interface) *Controller {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := namer_util.NewNamer(ClusterID, "")
+	dynamicSchema := runtime.NewScheme()
+	//dynamicSchema.AddKnownTypeWithName(schema.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "List"}, &unstructured.UnstructuredList{})
+
+	dynamicClient := dynamicfake.NewSimpleDynamicClient(dynamicSchema)
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:             apiv1.NamespaceAll,
 		ResyncPeriod:          1 * time.Second,
 		DefaultBackendSvcPort: defaultBackend,
+		EnableCSM:             true,
 	}
-	context := context.NewControllerContext(kubeClient, nil, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
+	context := context.NewControllerContext(kubeClient, dynamicClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
 	controller := NewController(
 		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		context,
@@ -80,7 +89,7 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		transactionSyncer,
 		// TODO(freehan): enable readiness reflector for unit tests
 		false,
-		false,
+		true,
 		nil,
 	)
 	return controller
@@ -580,11 +589,183 @@ func TestDefaultBackendServicePortInfoMap(t *testing.T) {
 			if err := controller.ingressLister.Add(newIng); err != nil {
 				t.Fatal(err)
 			}
-
-			result := controller.defaultBackendServicePortInfoMap()
+			result := make(negtypes.PortInfoMap)
+			controller.mergeDefaultBackendServicePortInfoMap(controller.defaultBackendService.ID.Service.String(), result)
 			if !reflect.DeepEqual(tc.want, result) {
 				t.Fatalf("got %+v, want %+v", result, tc.want)
 			}
+		})
+	}
+}
+
+func TestNewDestinationRule(t *testing.T) {
+	controllerHelper := newTestController(fake.NewSimpleClientset())
+	defer controllerHelper.stop()
+	n1s1 := newTestServiceCus(t, controllerHelper, "namespace1", "service1", []int32{80, 90})
+	n2Dr1, n2usDr1 := newTestDestinationRule(t, controllerHelper, "namespace2", "test-destination-rule", "service1.namespace1", []string{"v1", "v2"})
+
+	testcases := []struct {
+		desc              string
+		service           *apiv1.Service
+		destinationRule   *istioV1alpha3.DestinationRule
+		usDestinationRule *unstructured.Unstructured
+		wantSvcPortMap    negtypes.PortInfoMap
+		wantDRPortMap     negtypes.PortInfoMap
+	}{
+		{
+			desc:              "controller should create NEGs for services and destinationrules",
+			service:           n1s1,
+			usDestinationRule: n2usDr1,
+			destinationRule:   n2Dr1,
+			wantSvcPortMap: negtypes.NewPortInfoMap(
+				"namespace1",
+				"service1",
+				negtypes.SvcPortMap{80: "80", 90: "90"},
+				controllerHelper.namer,
+				false,
+			),
+			wantDRPortMap: helperNewPortInfoMapWithDestinationRule(
+				"namespace1",
+				"service1",
+				negtypes.SvcPortMap{80: "80", 90: "90"},
+				controllerHelper.namer,
+				false,
+				n2Dr1,
+			),
+		},
+		{
+			desc:              "controller should create NEGs for services",
+			service:           n1s1,
+			usDestinationRule: nil,
+			destinationRule:   nil,
+			wantSvcPortMap: negtypes.NewPortInfoMap(
+				"namespace1",
+				"service1",
+				negtypes.SvcPortMap{80: "80", 90: "90"},
+				controllerHelper.namer,
+				false,
+			),
+			wantDRPortMap: negtypes.PortInfoMap{},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			controller := newTestController(fake.NewSimpleClientset())
+			defer controller.stop()
+			svcKey := utils.ServiceKeyFunc(tc.service.GetNamespace(), tc.service.GetName())
+
+			controller.serviceLister.Add(tc.service)
+			controller.client.CoreV1().Services(tc.service.GetNamespace()).Create(tc.service)
+
+			expectedPortInfoMap := negtypes.PortInfoMap{}
+			expectedPortInfoMap.Merge(tc.wantSvcPortMap)
+			if tc.wantDRPortMap != nil {
+				expectedPortInfoMap.Merge(tc.wantDRPortMap)
+			}
+
+			if tc.usDestinationRule != nil {
+				controller.destinationRuleLister.Add(tc.usDestinationRule)
+				if _, err := controller.destinationRuleClient.Namespace(tc.usDestinationRule.GetNamespace()).Create(tc.usDestinationRule,
+					metav1.CreateOptions{}); err != nil {
+					t.Fatalf("failed to create destinationrule: %v", err)
+				}
+			}
+
+			err := controller.processService(svcKey)
+			if err != nil {
+				t.Fatalf("Failed to process service: %v", err)
+			}
+
+			validateSyncerManagerWithPortInfoMap(t, controller, tc.service.GetNamespace(), tc.service.GetName(), expectedPortInfoMap)
+
+			svcClient := controller.client.CoreV1().Services(tc.service.GetNamespace())
+			svc, err := svcClient.Get(tc.service.GetName(), metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Service was not created successfully, err: %v", err)
+			}
+			validateServiceAnnotationWithPortInfoMap(t, svc, tc.wantSvcPortMap)
+			if tc.usDestinationRule != nil {
+				usdr, err := controller.destinationRuleClient.Namespace(tc.usDestinationRule.GetNamespace()).Get(tc.usDestinationRule.GetName(), metav1.GetOptions{})
+				if err != nil {
+					t.Fatalf("Destinationrule was not created successfully, err: %v", err)
+				}
+				validateDestinationRuleAnnotationWithPortInfoMap(t, usdr, tc.wantDRPortMap)
+			}
+
+		})
+	}
+}
+
+func TestMergeCSMPortInfoMap(t *testing.T) {
+	controller := newTestController(fake.NewSimpleClientset())
+	defer controller.stop()
+	n1s1 := newTestServiceCus(t, controller, "namespace1", "service1", []int32{80, 90})
+	n2s1 := newTestServiceCus(t, controller, "namespace2", "service1", []int32{90})
+	ds1, usDr1 := newTestDestinationRule(t, controller, "namespac2", "test-destination-rule", "service1.namespace1", []string{"v1", "v2"})
+	if err := controller.destinationRuleLister.Add(usDr1); err != nil {
+		t.Fatal(err)
+	}
+
+	testcases := []struct {
+		desc           string
+		srvNamespace   string
+		srvName        string
+		service        *apiv1.Service
+		wantSvcPortMap negtypes.PortInfoMap
+		wantDRPortMap  negtypes.PortInfoMap
+	}{
+		{
+			desc:         "controller should create NEGs for services and destinationrules",
+			srvNamespace: "namespace1",
+			srvName:      "service1",
+			service:      n1s1,
+			wantSvcPortMap: negtypes.NewPortInfoMap(
+				"namespace1",
+				"service1",
+				negtypes.SvcPortMap{80: "80", 90: "90"},
+				controller.namer,
+				false,
+			),
+			wantDRPortMap: helperNewPortInfoMapWithDestinationRule(
+				"namespace1",
+				"service1",
+				negtypes.SvcPortMap{80: "80", 90: "90"},
+				controller.namer,
+				false,
+				ds1,
+			),
+		},
+		{
+			desc:         "controller should create NEGs for services",
+			srvNamespace: "namespace2",
+			srvName:      "service1",
+			service:      n2s1,
+			wantSvcPortMap: negtypes.NewPortInfoMap(
+				"namespace2",
+				"service1",
+				negtypes.SvcPortMap{90: "90"},
+				controller.namer,
+				false,
+			),
+			wantDRPortMap: negtypes.PortInfoMap{},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			portInfoMap := make(negtypes.PortInfoMap)
+			portInfoMap, destinationRulePortInfoMap, err := controller.getCSMPortInfoMap(tc.srvNamespace, tc.srvName, tc.service)
+			if err != nil {
+				t.Fatalf("Failed to run mergeCSMPortInfoMap: %v", err)
+			}
+			if !reflect.DeepEqual(tc.wantSvcPortMap, portInfoMap) {
+				t.Fatalf("Wrong services PortInfoMap, got %+v, want %+v", portInfoMap, tc.wantSvcPortMap)
+			}
+			if !reflect.DeepEqual(tc.wantDRPortMap, destinationRulePortInfoMap) {
+				t.Fatalf("Wrong DestinationRule PortInfoMap, got %+v, want %+v", destinationRulePortInfoMap, tc.wantDRPortMap)
+			}
+
 		})
 	}
 }
@@ -598,6 +779,72 @@ func validateSyncers(t *testing.T, controller *Controller, num int, stopped bool
 		if syncer.IsStopped() != stopped {
 			t.Errorf("got syncer %q IsStopped() == %v, want %v.", key, syncer.IsStopped(), stopped)
 		}
+	}
+}
+
+func validateSyncerManagerWithPortInfoMap(t *testing.T, controller *Controller, namespace, svcName string, expectedPortInfoMap negtypes.PortInfoMap) {
+	t.Helper()
+	if len(controller.manager.(*syncerManager).syncerMap) != len(expectedPortInfoMap) {
+		t.Errorf("got %v syncer, want %v.", len(controller.manager.(*syncerManager).syncerMap), len(expectedPortInfoMap))
+	}
+	portInfoMap, ok := controller.manager.(*syncerManager).svcPortMap[serviceKey{namespace: namespace, name: svcName}]
+	if !ok {
+		t.Errorf("SyncerManager don't have PortInfoMap for namespace: %v, serviceName: %v", namespace, svcName)
+	}
+	if !reflect.DeepEqual(portInfoMap, expectedPortInfoMap) {
+		t.Errorf("Controller manager gives a different PortInoMap, got %v, want: %v", controller.manager.(*syncerManager).svcPortMap, expectedPortInfoMap)
+	}
+}
+
+func validateServiceAnnotationWithPortInfoMap(t *testing.T, svc *apiv1.Service, portInfoMap negtypes.PortInfoMap) {
+	v, ok := svc.Annotations[annotations.NEGStatusKey]
+	if !ok {
+		t.Fatalf("Failed to apply the NEG service state annotation, got %+v", svc.Annotations)
+	}
+
+	zoneGetter := negtypes.NewFakeZoneGetter()
+	zones, _ := zoneGetter.ListZones()
+	for _, zone := range zones {
+		if !strings.Contains(v, zone) {
+			t.Fatalf("Expected NEG service state annotation to contain zone %v, got %v", zone, v)
+		}
+	}
+
+	// negStatus validation
+	negStatus, err := annotations.ParseNegStatus(v)
+	if err != nil {
+		t.Fatalf("Failed to parse neg status annotation %q: %v", v, err)
+	}
+
+	wantNegStatus := annotations.NewNegStatus(zones, portInfoMap.ToPortNegMap())
+	if !reflect.DeepEqual(negStatus.NetworkEndpointGroups, wantNegStatus.NetworkEndpointGroups) {
+		t.Errorf("Failed to validate the service annotation, got %v, want %v", negStatus, wantNegStatus)
+	}
+}
+
+func validateDestinationRuleAnnotationWithPortInfoMap(t *testing.T, usdr *unstructured.Unstructured, portInfoMap negtypes.PortInfoMap) {
+	v, ok := usdr.GetAnnotations()[annotations.NEGStatusKey]
+	if !ok {
+		t.Fatalf("Failed to apply the NEG service state annotation, got %+v", usdr.GetAnnotations())
+	}
+
+	zoneGetter := negtypes.NewFakeZoneGetter()
+	zones, _ := zoneGetter.ListZones()
+	for _, zone := range zones {
+		if !strings.Contains(v, zone) {
+			t.Fatalf("Expected NEG service state annotation to contain zone %v, got %v", zone, v)
+		}
+	}
+
+	// negStatus validation
+	negStatus, err := annotations.ParseDestinationRuleNEGStatus(v)
+	if err != nil {
+		t.Fatalf("Failed to parse DestinationRule NEG status annotation %q: %v", v, err)
+	}
+
+	wantNegStatus := annotations.NewDestinationRuleNegStatus(zones, portInfoMap.ToPortSubsetNegMap())
+	if !reflect.DeepEqual(negStatus.NetworkEndpointGroups, wantNegStatus.NetworkEndpointGroups) {
+		t.Errorf("Failed to validate the DestinationRule annotation, got %v, want %v", negStatus, wantNegStatus)
 	}
 }
 
@@ -768,4 +1015,58 @@ func newTestService(c *Controller, negIngress bool, negSvcPorts []int32) *apiv1.
 
 	c.client.CoreV1().Services(testServiceNamespace).Create(svc)
 	return svc
+}
+
+func newTestServiceCus(t *testing.T, c *Controller, namespace, name string, ports []int32) *apiv1.Service {
+	svcPorts := []apiv1.ServicePort{}
+	for _, port := range ports {
+		svcPorts = append(svcPorts,
+			apiv1.ServicePort{
+				Port:       port,
+				TargetPort: intstr.FromString(fmt.Sprintf("%v", port)),
+			},
+		)
+	}
+
+	svc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports:    svcPorts,
+			Selector: map[string]string{"v": "v1"},
+		},
+	}
+	c.client.CoreV1().Services(namespace).Create(svc)
+	return svc
+}
+
+func newTestDestinationRule(t *testing.T, c *Controller, namespace, name, host string, versions []string) (*istioV1alpha3.DestinationRule, *unstructured.Unstructured) {
+	dr := istioV1alpha3.DestinationRule{
+		Host: host,
+	}
+	for _, v := range versions {
+		dr.Subsets = append(dr.Subsets, &istioV1alpha3.Subset{Name: v, Labels: map[string]string{"version": v}})
+	}
+	usDr := unstructured.Unstructured{}
+	usDr.SetName(name)
+	usDr.SetNamespace(namespace)
+	usDr.SetKind("DestinationRule")
+	usDr.SetAPIVersion("networking.istio.io/v1alpha3")
+	spec, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&dr)
+	if err != nil {
+		t.Fatalf("failed convert DestinationRule to Unstructured: %v", err)
+	}
+	usDr.Object["spec"] = spec
+	if _, err := c.destinationRuleClient.Namespace(namespace).Create(&usDr, metav1.CreateOptions{}); err != nil {
+		t.Fatalf("failed to create destinationrule: %v", err)
+	}
+	return &dr, &usDr
+}
+
+func helperNewPortInfoMapWithDestinationRule(namespace, name string, svcPortMap negtypes.SvcPortMap, namer negtypes.NetworkEndpointGroupNamer, readinessGate bool,
+	destinationRule *istioV1alpha3.DestinationRule) negtypes.PortInfoMap {
+	rsl, _ := negtypes.NewPortInfoMapWithDestinationRule(namespace, name, svcPortMap, namer, readinessGate, destinationRule)
+	return rsl
 }
