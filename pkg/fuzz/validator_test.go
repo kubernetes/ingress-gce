@@ -306,7 +306,7 @@ func TestValidatorCheck(t *testing.T) {
 				ms.serve()
 			}
 
-			attribs := defaultAttributes()
+			attribs := DefaultAttributes()
 			attribs.HTTPPort = ms.l.Addr().(*net.TCPAddr).Port
 			attribs.HTTPSPort = ms.ls.Addr().(*net.TCPAddr).Port
 			validator, err := NewIngressValidator(&MockValidatorEnv{}, tc.ing, []Feature{}, []WhiteboxTest{}, attribs)
@@ -380,7 +380,7 @@ func TestValidatorCheckFeature(t *testing.T) {
 			}
 			ms.serve()
 
-			attribs := defaultAttributes()
+			attribs := DefaultAttributes()
 			attribs.HTTPPort = ms.l.Addr().(*net.TCPAddr).Port
 			attribs.HTTPSPort = ms.ls.Addr().(*net.TCPAddr).Port
 
@@ -412,13 +412,13 @@ func TestPortStr(t *testing.T) {
 		{
 			desc:   "http, default port",
 			scheme: "http",
-			a:      *defaultAttributes(),
+			a:      *DefaultAttributes(),
 			want:   "",
 		},
 		{
 			desc:   "https, default port",
 			scheme: "https",
-			a:      *defaultAttributes(),
+			a:      *DefaultAttributes(),
 			want:   "",
 		},
 		{

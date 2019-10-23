@@ -81,6 +81,7 @@ type IngressValidatorAttributes struct {
 	CheckHTTPS          bool
 	RejectInsecureCerts bool
 	RequestTimeout      time.Duration
+	Region              string
 	// HTTPPort and HTTPSPort are used only for unit testing.
 	HTTPPort  int
 	HTTPSPort int
@@ -154,8 +155,8 @@ type PathResult struct {
 	Err    error
 }
 
-// defaultAttributes are the base attributes for validation.
-func defaultAttributes() *IngressValidatorAttributes {
+// DefaultAttributes are the base attributes for validation.
+func DefaultAttributes() *IngressValidatorAttributes {
 	return &IngressValidatorAttributes{
 		CheckHTTP:      true,
 		CheckHTTPS:     false,
@@ -175,7 +176,7 @@ func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, features []Feat
 	}
 
 	if attribs == nil {
-		attribs = defaultAttributes()
+		attribs = DefaultAttributes()
 	}
 	attribs.baseAttributes(ing)
 	if err := attribs.applyFeatures(env, ing, fvs); err != nil {

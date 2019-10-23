@@ -57,8 +57,9 @@ func (*NegFeature) Name() string {
 type negValidator struct {
 	fuzz.NullValidator
 
-	ing *v1beta1.Ingress
-	env fuzz.ValidatorEnv
+	ing    *v1beta1.Ingress
+	env    fuzz.ValidatorEnv
+	region string
 }
 
 // Name implements fuzz.FeatureValidator.
@@ -71,6 +72,7 @@ func (v *negValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1beta1.I
 	// Capture the env for use later in CheckResponse.
 	v.ing = ing
 	v.env = env
+	v.region = a.Region
 	return nil
 }
 
@@ -95,7 +97,7 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 	urlMapName := v.env.Namer().UrlMap(v.env.Namer().LoadBalancer(key))
 	if negEnabled {
 		if utils.IsGCEL7ILBIngress(v.ing) {
-			return fuzz.CheckResponseContinue, verifyNegRegionBackend(v.env, negName, negName, urlMapName)
+			return fuzz.CheckResponseContinue, verifyNegRegionBackend(v.env, negName, negName, urlMapName, v.region)
 		}
 		return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName, urlMapName)
 	} else {
@@ -186,10 +188,16 @@ func verifyBackend(env fuzz.ValidatorEnv, bsName string, backendKeyword string, 
 }
 
 // verifyBackend verifies the backend service and check if the corresponding backend group has the keyword
-func verifyNegRegionBackend(env fuzz.ValidatorEnv, bsName string, backendKeyword string, urlMapName string) error {
+func verifyNegRegionBackend(env fuzz.ValidatorEnv, bsName, backendKeyword, urlMapName, region string) error {
 	klog.V(3).Info("Verifying NEG Regional Backend")
+
+	// Region can't be empty
+	if region == "" {
+		return fmt.Errorf("want region, got empty string")
+	}
+
 	ctx := context.Background()
-	beService, err := env.Cloud().AlphaRegionBackendServices().Get(ctx, &meta.Key{Name: bsName, Region: "us-central1"})
+	beService, err := env.Cloud().BetaRegionBackendServices().Get(ctx, &meta.Key{Name: bsName, Region: region})
 	if err != nil {
 		return err
 	}
@@ -205,7 +213,7 @@ func verifyNegRegionBackend(env fuzz.ValidatorEnv, bsName string, backendKeyword
 	}
 
 	// Examine if ingress url map is targeting the backend service
-	urlMap, err := env.Cloud().AlphaRegionUrlMaps().Get(ctx, &meta.Key{Name: urlMapName, Region: "us-central1"})
+	urlMap, err := env.Cloud().BetaRegionUrlMaps().Get(ctx, &meta.Key{Name: urlMapName, Region: region})
 	if err != nil {
 		return err
 	}

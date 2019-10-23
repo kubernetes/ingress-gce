@@ -101,7 +101,9 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOpt
 		if err != nil {
 			return true, err
 		}
-		validator, err := fuzz.NewIngressValidator(s.ValidatorEnv, ing, features.All, []fuzz.WhiteboxTest{}, nil)
+		attrs := fuzz.DefaultAttributes()
+		attrs.Region = s.f.Region
+		validator, err := fuzz.NewIngressValidator(s.ValidatorEnv, ing, features.All, []fuzz.WhiteboxTest{}, attrs)
 		if err != nil {
 			return true, err
 		}
