@@ -432,7 +432,7 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, portInfoM
 		for _, m := range c.ingressLister.List() {
 			ing := *m.(*v1beta1.Ingress)
 			if utils.IsGCEL7ILBIngress(&ing) && ing.Spec.Backend == nil {
-				defaultServicePortInfoMap := negtypes.NewPortInfoMap(c.defaultBackendService.ID.Service.Namespace, c.defaultBackendService.ID.Service.Name, negtypes.SvcPortMap{80: c.defaultBackendService.TargetPort}, c.namer, false)
+				defaultServicePortInfoMap := negtypes.NewPortInfoMap(c.defaultBackendService.ID.Service.Namespace, c.defaultBackendService.ID.Service.Name, negtypes.SvcPortMap{c.defaultBackendService.Port: c.defaultBackendService.TargetPort}, c.namer, false)
 				return portInfoMap.Merge(defaultServicePortInfoMap)
 			}
 		}
