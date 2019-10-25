@@ -207,6 +207,26 @@ func TestCreateHTTPSILBLoadBalancer(t *testing.T) {
 	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)
 }
 
+// Test case with HTTPS ILB Load balancer and AllowHttp set to true (not currently supported)
+// Ensure should throw an error
+func TestCreateHTTPSILBLoadBalancerAllowHTTP(t *testing.T) {
+	j := newTestJig(t)
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	lbInfo := &L7RuntimeInfo{
+		AllowHTTP: true,
+		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
+		UrlMap:    gceUrlMap,
+		Ingress:   newILBIngress(),
+	}
+
+	if _, err := j.pool.Ensure(lbInfo); err == nil {
+		t.Fatalf("j.pool.Ensure(%v) = nil, want err", lbInfo)
+	}
+}
+
 func TestCreateHTTPSLoadBalancer(t *testing.T) {
 	// This should NOT create the forwarding rule and target proxy
 	// associated with the HTTP branch of this loadbalancer.
