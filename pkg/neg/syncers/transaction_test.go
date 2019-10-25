@@ -147,6 +147,25 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 		t.Errorf("Expect error == nil, but got %v", err)
 	}
 
+	// Verify the NEGs are created as expected
+	ret, _ := transactionSyncer.cloud.AggregatedListNetworkEndpointGroup()
+	expectZones := []string{testZone1, testZone2}
+	for _, zone := range expectZones {
+		negs, ok := ret[zone]
+		if !ok {
+			t.Errorf("Failed to find zone %q from ret %v", zone, ret)
+			continue
+		}
+
+		if len(negs) != 1 {
+			t.Errorf("Unexpected negs %v", negs)
+		} else {
+			if negs[0].Name != testNegName {
+				t.Errorf("Unexpected neg %q", negs[0].Name)
+			}
+		}
+	}
+
 	for _, tc := range testCases {
 		err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints)
 		if err != nil {

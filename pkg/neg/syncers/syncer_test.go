@@ -22,13 +22,37 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+)
+
+const (
+	testNegName          = "test-neg-name"
+	testServiceNamespace = "test-ns"
+	testServiceName      = "test-name"
+	testNamedPort        = "named-Port"
+	clusterID            = "clusterid"
+)
+
+var (
+	defaultBackend = utils.ServicePort{
+		ID: utils.ServicePortID{
+			Service: types.NamespacedName{
+				Name:      "default-http-backend",
+				Namespace: "kube-system",
+			},
+			Port: intstr.FromString("http"),
+		},
+		TargetPort: "9376",
+	}
 )
 
 type syncerTester struct {

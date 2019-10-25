@@ -80,7 +80,6 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
 		context.PodInformer.GetIndexer(),
 		context.ServiceInformer.GetIndexer(),
 		context.EndpointInformer.GetIndexer(),
-		transactionSyncer,
 	)
 	manager.reflector = readiness.NewReadinessReflector(context, manager)
 	return manager
