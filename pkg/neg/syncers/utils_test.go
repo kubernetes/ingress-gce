@@ -24,6 +24,7 @@ import (
 	"fmt"
 
 	"google.golang.org/api/compute/v1"
+	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -720,4 +721,154 @@ func genTestEndpoints(num int) (negtypes.NetworkEndpointSet, map[negtypes.Networ
 func networkEndpointFromEncodedEndpoint(encodedEndpoint string) negtypes.NetworkEndpoint {
 	ip, node, port := decodeEndpoint(encodedEndpoint)
 	return negtypes.NetworkEndpoint{IP: ip, Node: node, Port: port}
+}
+
+func getDefaultEndpoint() *apiv1.Endpoints {
+	instance1 := negtypes.TestInstance1
+	instance2 := negtypes.TestInstance2
+	instance3 := negtypes.TestInstance3
+	instance4 := negtypes.TestInstance4
+	return &apiv1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testServiceName,
+			Namespace: testServiceNamespace,
+		},
+		Subsets: []apiv1.EndpointSubset{
+			{
+				Addresses: []apiv1.EndpointAddress{
+					{
+						IP:       "10.100.1.1",
+						NodeName: &instance1,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod1",
+						},
+					},
+					{
+						IP:       "10.100.1.2",
+						NodeName: &instance1,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod2",
+						},
+					},
+					{
+						IP:       "10.100.2.1",
+						NodeName: &instance2,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod3",
+						},
+					},
+					{
+						IP:       "10.100.3.1",
+						NodeName: &instance3,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod4",
+						},
+					},
+				},
+				NotReadyAddresses: []apiv1.EndpointAddress{
+					{
+						IP:       "10.100.1.3",
+						NodeName: &instance1,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod5",
+						},
+					},
+					{
+						IP:       "10.100.1.4",
+						NodeName: &instance1,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod6",
+						},
+					},
+				},
+				Ports: []apiv1.EndpointPort{
+					{
+						Name:     "",
+						Port:     int32(80),
+						Protocol: apiv1.ProtocolTCP,
+					},
+				},
+			},
+			{
+				Addresses: []apiv1.EndpointAddress{
+					{
+						IP:       "10.100.2.2",
+						NodeName: &instance2,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod7",
+						},
+					},
+					{
+						IP:       "10.100.4.1",
+						NodeName: &instance4,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod8",
+						},
+					},
+				},
+				NotReadyAddresses: []apiv1.EndpointAddress{
+					{
+						IP:       "10.100.4.3",
+						NodeName: &instance4,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod9",
+						},
+					},
+				},
+				Ports: []apiv1.EndpointPort{
+					{
+						Name:     testNamedPort,
+						Port:     int32(81),
+						Protocol: apiv1.ProtocolTCP,
+					},
+				},
+			},
+			{
+				Addresses: []apiv1.EndpointAddress{
+					{
+						IP:       "10.100.3.2",
+						NodeName: &instance3,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod10",
+						},
+					},
+					{
+						IP:       "10.100.4.2",
+						NodeName: &instance4,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod11",
+						},
+					},
+				},
+				NotReadyAddresses: []apiv1.EndpointAddress{
+					{
+						IP:       "10.100.4.4",
+						NodeName: &instance4,
+						TargetRef: &v1.ObjectReference{
+							Namespace: testServiceNamespace,
+							Name:      "pod12",
+						},
+					},
+				},
+				Ports: []apiv1.EndpointPort{
+					{
+						Name:     testNamedPort,
+						Port:     int32(8081),
+						Protocol: apiv1.ProtocolTCP,
+					},
+				},
+			},
+		},
+	}
 }

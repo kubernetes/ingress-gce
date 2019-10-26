@@ -28,11 +28,6 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/types"
 )
 
-const (
-	batchSyncer       = NegSyncerType("batch")
-	transactionSyncer = NegSyncerType("transaction")
-)
-
 // NegSyncerType represents the the neg syncer type
 type NegSyncerType string
 

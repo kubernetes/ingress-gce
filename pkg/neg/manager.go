@@ -43,8 +43,6 @@ func (k serviceKey) Key() string {
 
 // syncerManager contains all the active syncer goroutines and manage their lifecycle.
 type syncerManager struct {
-	negSyncerType NegSyncerType
-
 	namer      negtypes.NetworkEndpointGroupNamer
 	recorder   record.EventRecorder
 	cloud      negtypes.NetworkEndpointGroupCloud
@@ -67,10 +65,8 @@ type syncerManager struct {
 	reflector readiness.Reflector
 }
 
-func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer, negSyncerType NegSyncerType) *syncerManager {
-	klog.V(2).Infof("NEG controller will use NEG syncer type: %q", negSyncerType)
+func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer) *syncerManager {
 	return &syncerManager{
-		negSyncerType:  negSyncerType,
 		namer:          namer,
 		recorder:       recorder,
 		cloud:          cloud,
@@ -114,44 +110,22 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	errList := []error{}
 	// Ensure a syncer is running for each port that is being added.
 	for svcPort, portInfo := range adds {
-		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo)]
+		syncerKey := getSyncerKey(namespace, name, svcPort, portInfo)
+		syncer, ok := manager.syncerMap[syncerKey]
 		if !ok {
-			syncerKey := negtypes.NegSyncerKey{
-				Namespace:    namespace,
-				Name:         name,
-				Port:         svcPort.ServicePort,
-				TargetPort:   portInfo.TargetPort,
-				Subset:       portInfo.Subset,
-				SubsetLabels: portInfo.SubsetLabels,
-			}
+			syncer = negsyncer.NewTransactionSyncer(
+				syncerKey,
+				portInfo.NegName,
+				manager.recorder,
+				manager.cloud,
+				manager.zoneGetter,
+				manager.podLister,
+				manager.serviceLister,
+				manager.endpointLister,
+				manager.reflector,
+			)
 
-			if manager.negSyncerType == transactionSyncer {
-				syncer = negsyncer.NewTransactionSyncer(
-					syncerKey,
-					portInfo.NegName,
-					manager.recorder,
-					manager.cloud,
-					manager.zoneGetter,
-					manager.podLister,
-					manager.serviceLister,
-					manager.endpointLister,
-					manager.reflector,
-				)
-			} else {
-				// Use batch syncer by default
-				syncer = negsyncer.NewBatchSyncer(
-					syncerKey,
-					portInfo.NegName,
-					manager.recorder,
-					manager.cloud,
-					manager.zoneGetter,
-					manager.serviceLister,
-					manager.endpointLister,
-					manager.podLister,
-				)
-			}
-
-			manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo)] = syncer
+			manager.syncerMap[syncerKey] = syncer
 		}
 
 		if syncer.IsStopped() {
