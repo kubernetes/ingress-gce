@@ -209,7 +209,24 @@ func NewLoadBalancerController(
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
-			beConfig := obj.(*backendconfigv1beta1.BackendConfig)
+			var beConfig *backendconfigv1beta1.BackendConfig
+			var ok, beOk bool
+			beConfig, ok = obj.(*backendconfigv1beta1.BackendConfig)
+			if !ok {
+				// This can happen if the watch is closed and misses the delete event
+				state, stateOk := obj.(cache.DeletedFinalStateUnknown)
+				if !stateOk {
+					klog.Errorf("Wanted cache.DeleteFinalStateUnknown of backendconfig obj, got: %+v", obj)
+					return
+				}
+
+				beConfig, beOk = state.Obj.(*backendconfigv1beta1.BackendConfig)
+				if !beOk {
+					klog.Errorf("Wanted backendconfig obj, got %+v", state.Obj)
+					return
+				}
+			}
+
 			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 			lbc.ingQueue.Enqueue(convert(ings)...)
 		},
@@ -232,7 +249,24 @@ func NewLoadBalancerController(
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
-				feConfig := obj.(*frontendconfigv1beta1.FrontendConfig)
+				var feConfig *frontendconfigv1beta1.FrontendConfig
+				var ok, feOk bool
+				feConfig, ok = obj.(*frontendconfigv1beta1.FrontendConfig)
+				if !ok {
+					// This can happen if the watch is closed and misses the delete event
+					state, stateOk := obj.(cache.DeletedFinalStateUnknown)
+					if !stateOk {
+						klog.Errorf("Wanted cache.DeleteFinalStateUnknown of frontendconfig obj, got: %+v type: %T", obj, obj)
+						return
+					}
+
+					feConfig, feOk = state.Obj.(*frontendconfigv1beta1.FrontendConfig)
+					if !feOk {
+						klog.Errorf("Wanted frontendconfig obj, got %+v, type %T", state.Obj, state.Obj)
+						return
+					}
+				}
+
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
 			},
