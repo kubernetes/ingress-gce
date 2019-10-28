@@ -314,19 +314,22 @@ func TestGarbageCollectionNEG(t *testing.T) {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}
 
-	negName := manager.namer.NEG("test", "test", 80)
-	manager.cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
-		Name: negName,
-	}, negtypes.TestZone1)
+	for _, networkEndpointType := range []negtypes.NetworkEndpointType{negtypes.VMNetworkEndpointType, negtypes.NonGCPPrivateEndpointType} {
+		negName := manager.namer.NEG("test", "test", 80)
+		manager.cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
+			Name:                negName,
+			NetworkEndpointType: string(networkEndpointType),
+		}, negtypes.TestZone1)
 
-	if err := manager.GC(); err != nil {
-		t.Fatalf("Failed to GC: %v", err)
-	}
+		if err := manager.GC(); err != nil {
+			t.Fatalf("Failed to GC: %v", err)
+		}
 
-	negs, _ := manager.cloud.ListNetworkEndpointGroup(negtypes.TestZone1)
-	for _, neg := range negs {
-		if neg.Name == negName {
-			t.Errorf("Expect NEG %q to be GCed.", negName)
+		negs, _ := manager.cloud.ListNetworkEndpointGroup(negtypes.TestZone1)
+		for _, neg := range negs {
+			if neg.Name == negName {
+				t.Errorf("Expect NEG %q to be GCed.", negName)
+			}
 		}
 	}
 
