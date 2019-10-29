@@ -1091,6 +1091,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud) (negty
 
 	negsyncer := NewTransactionSyncer(svcPort,
 		testNegName,
+		negtypes.VMNetworkEndpointType,
 		record.NewFakeRecorder(100),
 		fakeGCE,
 		negtypes.NewFakeZoneGetter(),

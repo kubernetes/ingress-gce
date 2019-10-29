@@ -39,11 +39,10 @@ const (
 	MAX_NETWORK_ENDPOINTS_PER_BATCH = 500
 	// For each NEG, only retries 15 times to process it.
 	// This is a convention in kube-controller-manager.
-	maxRetries                   = 15
-	minRetryDelay                = 5 * time.Second
-	maxRetryDelay                = 600 * time.Second
-	separator                    = "||"
-	negIPPortNetworkEndpointType = "GCE_VM_IP_PORT"
+	maxRetries    = 15
+	minRetryDelay = 5 * time.Second
+	maxRetryDelay = 600 * time.Second
+	separator     = "||"
 )
 
 // encodeEndpoint encodes ip and instance into a single string
@@ -113,7 +112,7 @@ func getService(serviceLister cache.Indexer, namespace, name string) *apiv1.Serv
 }
 
 // ensureNetworkEndpointGroup ensures corresponding NEG is configured correctly in the specified zone.
-func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName string, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder) error {
+func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder) error {
 	neg, err := cloud.GetNetworkEndpointGroup(negName, zone)
 	if err != nil {
 		// Most likely to be caused by non-existed NEG
@@ -123,8 +122,11 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	needToCreate := false
 	if neg == nil {
 		needToCreate = true
-	} else if !utils.EqualResourceIDs(neg.Network, cloud.NetworkURL()) ||
-		!utils.EqualResourceIDs(neg.Subnetwork, cloud.SubnetworkURL()) {
+	} else if networkEndpointType != negtypes.NonGCPPrivateEndpointType &&
+		// Only perform the following checks when the NEGs are not Non-GCP NEGs.
+		// Non-GCP NEGs do not have associated network and subnetwork.
+		(!utils.EqualResourceIDs(neg.Network, cloud.NetworkURL()) ||
+			!utils.EqualResourceIDs(neg.Subnetwork, cloud.SubnetworkURL())) {
 		needToCreate = true
 		klog.V(2).Infof("NEG %q in %q does not match network and subnetwork of the cluster. Deleting NEG.", negName, zone)
 		err = cloud.DeleteNetworkEndpointGroup(negName, zone)
@@ -141,11 +143,18 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 
 	if needToCreate {
 		klog.V(2).Infof("Creating NEG %q for %s in %q.", negName, negServicePortName, zone)
+		var subnetwork string
+		switch networkEndpointType {
+		case negtypes.NonGCPPrivateEndpointType:
+			subnetwork = ""
+		default:
+			subnetwork = cloud.SubnetworkURL()
+		}
 		err = cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 			Name:                negName,
-			NetworkEndpointType: negIPPortNetworkEndpointType,
+			NetworkEndpointType: string(networkEndpointType),
 			Network:             cloud.NetworkURL(),
-			Subnetwork:          cloud.SubnetworkURL(),
+			Subnetwork:          subnetwork,
 		}, zone)
 		if err != nil {
 			return err
@@ -161,7 +170,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object and Istio:DestinationRule subset into zone and endpoints map
-func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.ZoneGetter, targetPort string, podLister cache.Indexer, subsetLables string) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
+func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.ZoneGetter, targetPort string, podLister cache.Indexer, subsetLables string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	if endpoints == nil {
@@ -227,6 +236,10 @@ func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.Zo
 
 				if includeAllEndpoints || shouldPodBeInNeg(podLister, address.TargetRef.Namespace, address.TargetRef.Name) {
 					networkEndpoint := negtypes.NetworkEndpoint{IP: address.IP, Port: matchPort, Node: *address.NodeName}
+					if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
+						// Non-GCP network endpoints don't have associated nodes.
+						networkEndpoint.Node = ""
+					}
 					zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
 					networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: address.TargetRef.Namespace, Name: address.TargetRef.Name}
 				}

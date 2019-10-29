@@ -23,6 +23,8 @@ import (
 
 	"fmt"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
@@ -293,6 +295,85 @@ func TestNetworkEndpointCalculateDifference(t *testing.T) {
 	}
 }
 
+func TestEnsureNetworkEndpointGroup(t *testing.T) {
+	var (
+		testZone             = "test-zone"
+		testNamedPort        = "named-port"
+		testServiceName      = "test-svc"
+		testServiceNameSpace = "test-ns"
+		testNetwork          = cloud.ResourcePath("network", &meta.Key{Zone: testZone, Name: "test-network"})
+		testSubnetwork       = cloud.ResourcePath("subnetwork", &meta.Key{Zone: testZone, Name: "test-subnetwork"})
+	)
+
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+
+	testCases := []struct {
+		description         string
+		negName             string
+		enableNonGCPMode    bool
+		networkEndpointType negtypes.NetworkEndpointType
+		expectedSubnetwork  string
+	}{
+		{
+			description:         "Create NEG of type GCE_VM_IP_PORT",
+			negName:             "gcp-neg",
+			enableNonGCPMode:    false,
+			networkEndpointType: negtypes.VMNetworkEndpointType,
+			expectedSubnetwork:  testSubnetwork,
+		},
+		{
+			description:         "Create NEG of type NON_GCP_PRIVATE_IP_PORT",
+			negName:             "non-gcp-neg",
+			enableNonGCPMode:    true,
+			networkEndpointType: negtypes.NonGCPPrivateEndpointType,
+			expectedSubnetwork:  "",
+		},
+	}
+	for _, tc := range testCases {
+		ensureNetworkEndpointGroup(
+			testServiceNameSpace,
+			testServiceName,
+			tc.negName,
+			testZone,
+			testNamedPort,
+			tc.networkEndpointType,
+			fakeCloud,
+			nil,
+			nil,
+		)
+
+		neg, err := fakeCloud.GetNetworkEndpointGroup(tc.negName, testZone)
+		if err != nil {
+			t.Errorf("Failed to retrieve NEG %q: %v", tc.negName, err)
+		}
+
+		if neg.NetworkEndpointType != string(tc.networkEndpointType) {
+			t.Errorf("Unexpected NetworkEndpointType, expecting %q but got %q", tc.networkEndpointType, neg.NetworkEndpointType)
+		}
+
+		if neg.Subnetwork != tc.expectedSubnetwork {
+			t.Errorf("Unexpected Subnetwork, expecting %q but got %q", tc.expectedSubnetwork, neg.Subnetwork)
+		}
+
+		// Call ensureNetworkEndpointGroup with the same NEG.
+		err = ensureNetworkEndpointGroup(
+			testServiceNameSpace,
+			testServiceName,
+			tc.negName,
+			testZone,
+			testNamedPort,
+			tc.networkEndpointType,
+			fakeCloud,
+			nil,
+			nil,
+		)
+
+		if err != nil {
+			t.Errorf("Unexpected error when called with duplicated NEG: %v", err)
+		}
+	}
+}
+
 func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	t.Parallel()
 	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())))
@@ -326,16 +407,18 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 
 	zoneGetter := negtypes.NewFakeZoneGetter()
 	testCases := []struct {
-		desc         string
-		targetPort   string
-		endpointSets map[string]negtypes.NetworkEndpointSet
-		expectMap    negtypes.EndpointPodMap
+		desc                string
+		targetPort          string
+		endpointSets        map[string]negtypes.NetworkEndpointSet
+		expectMap           negtypes.EndpointPodMap
+		networkEndpointType negtypes.NetworkEndpointType
 	}{
 		{
-			desc:         "non exist target port",
-			targetPort:   "8888",
-			endpointSets: map[string]negtypes.NetworkEndpointSet{},
-			expectMap:    negtypes.EndpointPodMap{},
+			desc:                "non exist target port",
+			targetPort:          "8888",
+			endpointSets:        map[string]negtypes.NetworkEndpointSet{},
+			expectMap:           negtypes.EndpointPodMap{},
+			networkEndpointType: negtypes.VMNetworkEndpointType,
 		},
 		{
 			desc:       "target port number",
@@ -356,6 +439,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
 				networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod5"},
 			},
+			networkEndpointType: negtypes.VMNetworkEndpointType,
 		},
 		{
 			desc:       "named target port",
@@ -376,11 +460,33 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 				networkEndpointFromEncodedEndpoint("10.100.3.2||instance3||8081"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod10"},
 				networkEndpointFromEncodedEndpoint("10.100.4.2||instance4||8081"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod11"},
 			},
+			networkEndpointType: negtypes.VMNetworkEndpointType,
+		},
+		{
+			desc:       "Non-GCP network endpoints",
+			targetPort: "80",
+			endpointSets: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.1.1||||80"),
+					networkEndpointFromEncodedEndpoint("10.100.1.2||||80"),
+					networkEndpointFromEncodedEndpoint("10.100.2.1||||80"),
+					networkEndpointFromEncodedEndpoint("10.100.1.3||||80")),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					networkEndpointFromEncodedEndpoint("10.100.3.1||||80")),
+			},
+			expectMap: negtypes.EndpointPodMap{
+				networkEndpointFromEncodedEndpoint("10.100.1.1||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod1"},
+				networkEndpointFromEncodedEndpoint("10.100.1.2||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod2"},
+				networkEndpointFromEncodedEndpoint("10.100.2.1||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod3"},
+				networkEndpointFromEncodedEndpoint("10.100.3.1||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
+				networkEndpointFromEncodedEndpoint("10.100.1.3||||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod5"},
+			},
+			networkEndpointType: negtypes.NonGCPPrivateEndpointType,
 		},
 	}
 
 	for _, tc := range testCases {
-		retSet, retMap, err := toZoneNetworkEndpointMap(getDefaultEndpoint(), zoneGetter, tc.targetPort, podLister, "")
+		retSet, retMap, err := toZoneNetworkEndpointMap(getDefaultEndpoint(), zoneGetter, tc.targetPort, podLister, "", tc.networkEndpointType)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}

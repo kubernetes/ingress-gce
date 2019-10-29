@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -113,9 +114,15 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		syncerKey := getSyncerKey(namespace, name, svcPort, portInfo)
 		syncer, ok := manager.syncerMap[syncerKey]
 		if !ok {
+			networkEndpointType := negtypes.VMNetworkEndpointType
+			if flags.F.EnableNonGCPMode {
+				networkEndpointType = negtypes.NonGCPPrivateEndpointType
+			}
+
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
 				portInfo.NegName,
+				networkEndpointType,
 				manager.recorder,
 				manager.cloud,
 				manager.zoneGetter,

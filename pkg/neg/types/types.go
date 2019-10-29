@@ -29,6 +29,13 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 )
 
+type NetworkEndpointType string
+
+const (
+	VMNetworkEndpointType     = NetworkEndpointType("GCE_VM_IP_PORT")
+	NonGCPPrivateEndpointType = NetworkEndpointType("NON_GCP_PRIVATE_IP_PORT")
+)
+
 // SvcPortMap is a map of ServicePort:TargetPort
 type SvcPortMap map[int32]string
 
