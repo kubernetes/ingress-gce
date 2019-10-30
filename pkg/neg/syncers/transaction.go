@@ -36,8 +36,6 @@ type transactionSyncer struct {
 	// metadata
 	negtypes.NegSyncerKey
 	negName string
-	// The type of the network endpoints in this NEG.
-	networkEndpointType negtypes.NetworkEndpointType
 
 	// syncer provides syncer life cycle interfaces
 	syncer negtypes.NegSyncer
@@ -67,21 +65,20 @@ type transactionSyncer struct {
 	reflector readiness.Reflector
 }
 
-func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, networkEndpointGroupName string, networkEndpointType negtypes.NetworkEndpointType, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer, reflector readiness.Reflector) negtypes.NegSyncer {
+func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer, reflector readiness.Reflector) negtypes.NegSyncer {
 	// TransactionSyncer implements the syncer core
 	ts := &transactionSyncer{
-		NegSyncerKey:        negSyncerKey,
-		negName:             networkEndpointGroupName,
-		networkEndpointType: networkEndpointType,
-		needInit:            true,
-		transactions:        NewTransactionTable(),
-		podLister:           podLister,
-		serviceLister:       serviceLister,
-		endpointLister:      endpointLister,
-		recorder:            recorder,
-		cloud:               cloud,
-		zoneGetter:          zoneGetter,
-		reflector:           reflector,
+		NegSyncerKey:   negSyncerKey,
+		negName:        networkEndpointGroupName,
+		needInit:       true,
+		transactions:   NewTransactionTable(),
+		podLister:      podLister,
+		serviceLister:  serviceLister,
+		endpointLister: endpointLister,
+		recorder:       recorder,
+		cloud:          cloud,
+		zoneGetter:     zoneGetter,
+		reflector:      reflector,
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, networkEndpointGroupName, serviceLister, recorder, ts)
@@ -133,7 +130,7 @@ func (s *transactionSyncer) syncInternal() error {
 		return nil
 	}
 
-	targetMap, endpointPodMap, err := toZoneNetworkEndpointMap(ep.(*apiv1.Endpoints), s.zoneGetter, s.TargetPort, s.podLister, s.NegSyncerKey.SubsetLabels, s.networkEndpointType)
+	targetMap, endpointPodMap, err := toZoneNetworkEndpointMap(ep.(*apiv1.Endpoints), s.zoneGetter, s.TargetPort, s.podLister, s.NegSyncerKey.SubsetLabels, s.NegSyncerKey.NegType)
 	if err != nil {
 		return err
 	}
@@ -181,7 +178,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 
 	var errList []error
 	for _, zone := range zones {
-		if err := ensureNetworkEndpointGroup(s.Namespace, s.Name, s.negName, zone, s.NegSyncerKey.String(), s.networkEndpointType, s.cloud, s.serviceLister, s.recorder); err != nil {
+		if err := ensureNetworkEndpointGroup(s.Namespace, s.Name, s.negName, zone, s.NegSyncerKey.String(), s.NegSyncerKey.NegType, s.cloud, s.serviceLister, s.recorder); err != nil {
 			errList = append(errList, err)
 		}
 	}

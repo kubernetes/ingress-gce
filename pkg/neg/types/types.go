@@ -32,7 +32,7 @@ import (
 type NetworkEndpointType string
 
 const (
-	VMNetworkEndpointType     = NetworkEndpointType("GCE_VM_IP_PORT")
+	VmIpPortEndpointType      = NetworkEndpointType("GCE_VM_IP_PORT")
 	NonGCPPrivateEndpointType = NetworkEndpointType("NON_GCP_PRIVATE_IP_PORT")
 )
 
@@ -204,6 +204,9 @@ type NegSyncerKey struct {
 
 	// Subset label, should set together with Subset.
 	SubsetLabels string
+
+	// NegType is the type of the network endpoints in this NEG.
+	NegType NetworkEndpointType
 }
 
 func (key NegSyncerKey) String() string {

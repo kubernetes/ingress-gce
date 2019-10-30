@@ -1082,6 +1082,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud) (negty
 	svcPort := negtypes.NegSyncerKey{
 		Namespace:  testNamespace,
 		Name:       testService,
+		NegType:    negtypes.VmIpPortEndpointType,
 		Port:       80,
 		TargetPort: "8080",
 	}
@@ -1091,7 +1092,6 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud) (negty
 
 	negsyncer := NewTransactionSyncer(svcPort,
 		testNegName,
-		negtypes.VMNetworkEndpointType,
 		record.NewFakeRecorder(100),
 		fakeGCE,
 		negtypes.NewFakeZoneGetter(),
