@@ -318,7 +318,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			description:         "Create NEG of type GCE_VM_IP_PORT",
 			negName:             "gcp-neg",
 			enableNonGCPMode:    false,
-			networkEndpointType: negtypes.VMNetworkEndpointType,
+			networkEndpointType: negtypes.VmIpPortEndpointType,
 			expectedSubnetwork:  testSubnetwork,
 		},
 		{
@@ -418,7 +418,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 			targetPort:          "8888",
 			endpointSets:        map[string]negtypes.NetworkEndpointSet{},
 			expectMap:           negtypes.EndpointPodMap{},
-			networkEndpointType: negtypes.VMNetworkEndpointType,
+			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
 		{
 			desc:       "target port number",
@@ -439,7 +439,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 				networkEndpointFromEncodedEndpoint("10.100.3.1||instance3||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod4"},
 				networkEndpointFromEncodedEndpoint("10.100.1.3||instance1||80"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod5"},
 			},
-			networkEndpointType: negtypes.VMNetworkEndpointType,
+			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
 		{
 			desc:       "named target port",
@@ -460,7 +460,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 				networkEndpointFromEncodedEndpoint("10.100.3.2||instance3||8081"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod10"},
 				networkEndpointFromEncodedEndpoint("10.100.4.2||instance4||8081"): types.NamespacedName{Namespace: testServiceNamespace, Name: "pod11"},
 			},
-			networkEndpointType: negtypes.VMNetworkEndpointType,
+			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
 		{
 			desc:       "Non-GCP network endpoints",

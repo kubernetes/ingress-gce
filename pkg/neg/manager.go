@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sync"
 
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -114,15 +114,9 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		syncerKey := getSyncerKey(namespace, name, svcPort, portInfo)
 		syncer, ok := manager.syncerMap[syncerKey]
 		if !ok {
-			networkEndpointType := negtypes.VMNetworkEndpointType
-			if flags.F.EnableNonGCPMode {
-				networkEndpointType = negtypes.NonGCPPrivateEndpointType
-			}
-
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
 				portInfo.NegName,
-				networkEndpointType,
 				manager.recorder,
 				manager.cloud,
 				manager.zoneGetter,
@@ -311,6 +305,11 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 
 // getSyncerKey encodes a service namespace, name, service port and targetPort into a string key
 func getSyncerKey(namespace, name string, servicePortKey negtypes.PortInfoMapKey, portInfo negtypes.PortInfo) negtypes.NegSyncerKey {
+	networkEndpointType := negtypes.VmIpPortEndpointType
+	if flags.F.EnableNonGCPMode {
+		networkEndpointType = negtypes.NonGCPPrivateEndpointType
+	}
+
 	return negtypes.NegSyncerKey{
 		Namespace:    namespace,
 		Name:         name,
@@ -318,6 +317,7 @@ func getSyncerKey(namespace, name string, servicePortKey negtypes.PortInfoMapKey
 		TargetPort:   portInfo.TargetPort,
 		Subset:       servicePortKey.Subset,
 		SubsetLabels: portInfo.SubsetLabels,
+		NegType:      networkEndpointType,
 	}
 }
 

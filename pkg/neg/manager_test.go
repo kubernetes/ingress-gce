@@ -314,7 +314,7 @@ func TestGarbageCollectionNEG(t *testing.T) {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}
 
-	for _, networkEndpointType := range []negtypes.NetworkEndpointType{negtypes.VMNetworkEndpointType, negtypes.NonGCPPrivateEndpointType} {
+	for _, networkEndpointType := range []negtypes.NetworkEndpointType{negtypes.VmIpPortEndpointType, negtypes.NonGCPPrivateEndpointType} {
 		negName := manager.namer.NEG("test", "test", 80)
 		manager.cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
 			Name:                negName,
