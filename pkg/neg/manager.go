@@ -18,6 +18,7 @@ package neg
 
 import (
 	"fmt"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"sync"
 
 	"k8s.io/api/core/v1"
@@ -254,7 +255,7 @@ func (manager *syncerManager) garbageCollectSyncer() {
 func (manager *syncerManager) garbageCollectNEG() error {
 	// Retrieve aggregated NEG list from cloud
 	// Compare against svcPortMap and Remove unintended NEGs by best effort
-	zoneNEGList, err := manager.cloud.AggregatedListNetworkEndpointGroup()
+	zoneNEGList, err := manager.cloud.AggregatedListNetworkEndpointGroup(meta.VersionGA)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve aggregated NEG list: %v", err)
 	}
@@ -294,13 +295,13 @@ func (manager *syncerManager) garbageCollectNEG() error {
 
 // ensureDeleteNetworkEndpointGroup ensures neg is delete from zone
 func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string) error {
-	_, err := manager.cloud.GetNetworkEndpointGroup(name, zone)
+	_, err := manager.cloud.GetNetworkEndpointGroup(name, zone, meta.VersionGA)
 	if err != nil {
 		// Assume error is caused by not existing
 		return nil
 	}
 	klog.V(2).Infof("Deleting NEG %q in %q.", name, zone)
-	return manager.cloud.DeleteNetworkEndpointGroup(name, zone)
+	return manager.cloud.DeleteNetworkEndpointGroup(name, zone, meta.VersionGA)
 }
 
 // getSyncerKey encodes a service namespace, name, service port and targetPort into a string key

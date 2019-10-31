@@ -14,12 +14,13 @@ limitations under the License.
 package backends
 
 import (
+	"k8s.io/ingress-gce/pkg/composite"
 	"strings"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
-	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -65,8 +66,9 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 	linker.backendPool.Create(svcPort, "fake-healthcheck-link")
 
 	for _, key := range zones {
-		err := fakeNEG.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
-			Name: defaultNamer.NEG(namespace, name, svcPort.Port),
+		err := fakeNEG.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+			Name:    defaultNamer.NEG(namespace, name, svcPort.Port),
+			Version: meta.VersionGA,
 		}, key.Zone)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)

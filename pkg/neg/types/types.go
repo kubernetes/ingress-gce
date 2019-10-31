@@ -22,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -33,6 +35,7 @@ type NetworkEndpointType string
 
 const (
 	VmIpPortEndpointType      = NetworkEndpointType("GCE_VM_IP_PORT")
+	VmPrimaryIpEndpointType   = NetworkEndpointType("GCE_VM_PRIMARY_IP")
 	NonGCPPrivateEndpointType = NetworkEndpointType("NON_GCP_PRIVATE_IP_PORT")
 )
 
@@ -250,6 +253,17 @@ type NegSyncerKey struct {
 
 func (key NegSyncerKey) String() string {
 	return fmt.Sprintf("%s/%s-%s-%s", key.Namespace, key.Name, key.Subset, key.PortTuple.String())
+}
+
+// GetAPIVersion returns the compute API version to be used in order
+// to create the negType specified in the given NegSyncerKey.
+func (key NegSyncerKey) GetAPIVersion() meta.Version {
+	switch key.NegType {
+	case VmPrimaryIpEndpointType:
+		return meta.VersionAlpha
+	default:
+		return meta.VersionGA
+	}
 }
 
 // EndpointPodMap is a map from network endpoint to a namespaced name of a pod

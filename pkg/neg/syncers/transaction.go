@@ -21,12 +21,12 @@ import (
 
 	"fmt"
 
-	"google.golang.org/api/compute/v1"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog"
@@ -135,7 +135,7 @@ func (s *transactionSyncer) syncInternal() error {
 		return err
 	}
 
-	currentMap, err := retrieveExistingZoneNetworkEndpointMap(s.negName, s.zoneGetter, s.cloud)
+	currentMap, err := retrieveExistingZoneNetworkEndpointMap(s.negName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion())
 	if err != nil {
 		return err
 	}
@@ -176,7 +176,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 
 	var errList []error
 	for _, zone := range zones {
-		if err := ensureNetworkEndpointGroup(s.Namespace, s.Name, s.negName, zone, s.NegSyncerKey.String(), s.NegSyncerKey.NegType, s.cloud, s.serviceLister, s.recorder); err != nil {
+		if err := ensureNetworkEndpointGroup(s.Namespace, s.Name, s.negName, zone, s.NegSyncerKey.String(), s.NegSyncerKey.NegType, s.cloud, s.serviceLister, s.recorder, s.NegSyncerKey.GetAPIVersion()); err != nil {
 			errList = append(errList, err)
 		}
 	}
@@ -228,13 +228,13 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 }
 
 // attachNetworkEndpoints creates go routine to run operations for attaching network endpoints
-func (s *transactionSyncer) attachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
+func (s *transactionSyncer) attachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	klog.V(2).Infof("Attaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpointMap), s.NegSyncerKey.String(), s.negName, zone)
 	go s.operationInternal(attachOp, zone, networkEndpointMap)
 }
 
 // detachNetworkEndpoints creates go routine to run operations for detaching network endpoints
-func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
+func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	klog.V(2).Infof("Detaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpointMap), s.NegSyncerKey.String(), s.negName, zone)
 	go s.operationInternal(detachOp, zone, networkEndpointMap)
 }
@@ -242,18 +242,18 @@ func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointM
 // operationInternal executes NEG API call and commits the transactions
 // It will record events when operations are completed
 // If error occurs or any transaction entry requires reconciliation, it will trigger resync
-func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
+func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	var err error
-	networkEndpoints := []*compute.NetworkEndpoint{}
+	networkEndpoints := []*composite.NetworkEndpoint{}
 	for _, ne := range networkEndpointMap {
 		networkEndpoints = append(networkEndpoints, ne)
 	}
 
 	if operation == attachOp {
-		err = s.cloud.AttachNetworkEndpoints(s.negName, zone, networkEndpoints)
+		err = s.cloud.AttachNetworkEndpoints(s.negName, zone, networkEndpoints, s.NegSyncerKey.GetAPIVersion())
 	}
 	if operation == detachOp {
-		err = s.cloud.DetachNetworkEndpoints(s.negName, zone, networkEndpoints)
+		err = s.cloud.DetachNetworkEndpoints(s.negName, zone, networkEndpoints, s.NegSyncerKey.GetAPIVersion())
 	}
 
 	if err == nil {
@@ -276,7 +276,7 @@ func (s *transactionSyncer) recordEvent(eventType, reason, eventDesc string) {
 // It will trigger syncer retry in the following conditions:
 // 1. Any of the transaction committed needed to be reconciled
 // 2. Input error was not nil
-func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
+func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	s.syncLock.Lock()
 	defer s.syncLock.Unlock()
 

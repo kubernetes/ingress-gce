@@ -17,20 +17,18 @@ limitations under the License.
 package syncers
 
 import (
+	"fmt"
 	"reflect"
 	"strconv"
 	"testing"
 
-	"fmt"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"google.golang.org/api/compute/v1"
-	"k8s.io/api/core/v1"
-	apiv1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/composite"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -313,6 +311,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 		enableNonGCPMode    bool
 		networkEndpointType negtypes.NetworkEndpointType
 		expectedSubnetwork  string
+		apiVersion          meta.Version
 	}{
 		{
 			description:         "Create NEG of type GCE_VM_IP_PORT",
@@ -320,6 +319,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			enableNonGCPMode:    false,
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 			expectedSubnetwork:  testSubnetwork,
+			apiVersion:          meta.VersionGA,
 		},
 		{
 			description:         "Create NEG of type NON_GCP_PRIVATE_IP_PORT",
@@ -327,6 +327,15 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			enableNonGCPMode:    true,
 			networkEndpointType: negtypes.NonGCPPrivateEndpointType,
 			expectedSubnetwork:  "",
+			apiVersion:          meta.VersionGA,
+		},
+		{
+			description:         "Create NEG of type GCE_VM_PRIMARY_IP",
+			negName:             "gcp-ip-neg",
+			enableNonGCPMode:    false,
+			networkEndpointType: negtypes.VmPrimaryIpEndpointType,
+			expectedSubnetwork:  testSubnetwork,
+			apiVersion:          meta.VersionAlpha,
 		},
 	}
 	for _, tc := range testCases {
@@ -340,9 +349,10 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			fakeCloud,
 			nil,
 			nil,
+			tc.apiVersion,
 		)
 
-		neg, err := fakeCloud.GetNetworkEndpointGroup(tc.negName, testZone)
+		neg, err := fakeCloud.GetNetworkEndpointGroup(tc.negName, testZone, tc.apiVersion)
 		if err != nil {
 			t.Errorf("Failed to retrieve NEG %q: %v", tc.negName, err)
 		}
@@ -366,6 +376,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			fakeCloud,
 			nil,
 			nil,
+			tc.apiVersion,
 		)
 
 		if err != nil {
@@ -526,21 +537,21 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 		{
 			desc: "neg only exists in one of the zone",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
-				cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{Name: testNegName}, negtypes.TestZone1)
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone1)
 			},
 			expectErr: true,
 		},
 		{
 			desc: "neg only exists in one of the zone plus irrelevant negs",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
-				cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{Name: irrelevantNegName}, negtypes.TestZone2)
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: irrelevantNegName, Version: meta.VersionGA}, negtypes.TestZone2)
 			},
 			expectErr: true,
 		},
 		{
 			desc: "empty negs exists in both zones",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
-				cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{Name: testNegName}, negtypes.TestZone2)
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone2)
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(),
@@ -551,13 +562,13 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 		{
 			desc: "one empty and one non-empty negs",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
-				cloud.AttachNetworkEndpoints(testNegName, negtypes.TestZone1, []*compute.NetworkEndpoint{
+				cloud.AttachNetworkEndpoints(testNegName, negtypes.TestZone1, []*composite.NetworkEndpoint{
 					{
 						Instance:  negtypes.TestInstance1,
 						IpAddress: testIP1,
 						Port:      testPort,
 					},
-				})
+				}, meta.VersionGA)
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))}),
@@ -568,13 +579,13 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 		{
 			desc: "one neg with multiple endpoints",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
-				cloud.AttachNetworkEndpoints(testNegName, negtypes.TestZone1, []*compute.NetworkEndpoint{
+				cloud.AttachNetworkEndpoints(testNegName, negtypes.TestZone1, []*composite.NetworkEndpoint{
 					{
 						Instance:  negtypes.TestInstance2,
 						IpAddress: testIP2,
 						Port:      testPort,
 					},
-				})
+				}, meta.VersionGA)
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
@@ -588,7 +599,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 		{
 			desc: "both negs with multiple endpoints",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
-				cloud.AttachNetworkEndpoints(testNegName, negtypes.TestZone2, []*compute.NetworkEndpoint{
+				cloud.AttachNetworkEndpoints(testNegName, negtypes.TestZone2, []*composite.NetworkEndpoint{
 					{
 						Instance:  negtypes.TestInstance3,
 						IpAddress: testIP3,
@@ -599,7 +610,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 						IpAddress: testIP4,
 						Port:      testPort,
 					},
-				})
+				}, meta.VersionGA)
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
@@ -616,13 +627,13 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 		{
 			desc: "irrelevant neg",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
-				cloud.AttachNetworkEndpoints(irrelevantNegName, negtypes.TestZone2, []*compute.NetworkEndpoint{
+				cloud.AttachNetworkEndpoints(irrelevantNegName, negtypes.TestZone2, []*composite.NetworkEndpoint{
 					{
 						Instance:  negtypes.TestInstance3,
 						IpAddress: testIP4,
 						Port:      testPort,
 					},
-				})
+				}, meta.VersionGA)
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
@@ -640,7 +651,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 
 	for _, tc := range testCases {
 		tc.mutate(negCloud)
-		out, err := retrieveExistingZoneNetworkEndpointMap(negName, zoneGetter, negCloud)
+		out, err := retrieveExistingZoneNetworkEndpointMap(negName, zoneGetter, negCloud, meta.VersionGA)
 
 		if tc.expectErr {
 			if err == nil {
@@ -807,15 +818,15 @@ func TestShouldPodBeInNeg(t *testing.T) {
 
 }
 
-func genTestEndpoints(num int) (negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint) {
+func genTestEndpoints(num int) (negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	endpointSet := negtypes.NewNetworkEndpointSet()
-	endpointMap := map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint{}
+	endpointMap := map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{}
 	ip := "1.2.3.4"
 	instance := "instance"
 	for port := 0; port < num; port++ {
 		key := negtypes.NetworkEndpoint{IP: ip, Node: instance, Port: strconv.Itoa(port)}
 		endpointSet.Insert(key)
-		endpointMap[key] = &compute.NetworkEndpoint{
+		endpointMap[key] = &composite.NetworkEndpoint{
 			IpAddress: ip,
 			Instance:  instance,
 			Port:      int64(port),
@@ -829,19 +840,19 @@ func networkEndpointFromEncodedEndpoint(encodedEndpoint string) negtypes.Network
 	return negtypes.NetworkEndpoint{IP: ip, Node: node, Port: port}
 }
 
-func getDefaultEndpoint() *apiv1.Endpoints {
+func getDefaultEndpoint() *v1.Endpoints {
 	instance1 := negtypes.TestInstance1
 	instance2 := negtypes.TestInstance2
 	instance3 := negtypes.TestInstance3
 	instance4 := negtypes.TestInstance4
-	return &apiv1.Endpoints{
+	return &v1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      testServiceName,
 			Namespace: testServiceNamespace,
 		},
-		Subsets: []apiv1.EndpointSubset{
+		Subsets: []v1.EndpointSubset{
 			{
-				Addresses: []apiv1.EndpointAddress{
+				Addresses: []v1.EndpointAddress{
 					{
 						IP:       "10.100.1.1",
 						NodeName: &instance1,
@@ -875,7 +886,7 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 						},
 					},
 				},
-				NotReadyAddresses: []apiv1.EndpointAddress{
+				NotReadyAddresses: []v1.EndpointAddress{
 					{
 						IP:       "10.100.1.3",
 						NodeName: &instance1,
@@ -893,16 +904,16 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 						},
 					},
 				},
-				Ports: []apiv1.EndpointPort{
+				Ports: []v1.EndpointPort{
 					{
 						Name:     "",
 						Port:     int32(80),
-						Protocol: apiv1.ProtocolTCP,
+						Protocol: v1.ProtocolTCP,
 					},
 				},
 			},
 			{
-				Addresses: []apiv1.EndpointAddress{
+				Addresses: []v1.EndpointAddress{
 					{
 						IP:       "10.100.2.2",
 						NodeName: &instance2,
@@ -920,7 +931,7 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 						},
 					},
 				},
-				NotReadyAddresses: []apiv1.EndpointAddress{
+				NotReadyAddresses: []v1.EndpointAddress{
 					{
 						IP:       "10.100.4.3",
 						NodeName: &instance4,
@@ -930,16 +941,16 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 						},
 					},
 				},
-				Ports: []apiv1.EndpointPort{
+				Ports: []v1.EndpointPort{
 					{
 						Name:     testNamedPort,
 						Port:     int32(81),
-						Protocol: apiv1.ProtocolTCP,
+						Protocol: v1.ProtocolTCP,
 					},
 				},
 			},
 			{
-				Addresses: []apiv1.EndpointAddress{
+				Addresses: []v1.EndpointAddress{
 					{
 						IP:       "10.100.3.2",
 						NodeName: &instance3,
@@ -957,7 +968,7 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 						},
 					},
 				},
-				NotReadyAddresses: []apiv1.EndpointAddress{
+				NotReadyAddresses: []v1.EndpointAddress{
 					{
 						IP:       "10.100.4.4",
 						NodeName: &instance4,
@@ -967,11 +978,11 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 						},
 					},
 				},
-				Ports: []apiv1.EndpointPort{
+				Ports: []v1.EndpointPort{
 					{
 						Name:     testNamedPort,
 						Port:     int32(8081),
-						Protocol: apiv1.ProtocolTCP,
+						Protocol: v1.ProtocolTCP,
 					},
 				},
 			},

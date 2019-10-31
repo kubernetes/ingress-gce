@@ -18,7 +18,6 @@ package backends
 
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	compute "google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -71,7 +70,7 @@ type Linker interface {
 
 // NEGGetter is an interface to retrieve NEG object
 type NEGGetter interface {
-	GetNetworkEndpointGroup(name string, zone string) (*compute.NetworkEndpointGroup, error)
+	GetNetworkEndpointGroup(name string, zone string, version meta.Version) (*composite.NetworkEndpointGroup, error)
 }
 
 // ProbeProvider retrieves a probe struct given a nodePort

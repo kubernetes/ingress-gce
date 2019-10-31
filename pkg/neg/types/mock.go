@@ -20,13 +20,14 @@ import (
 	"context"
 
 	"fmt"
+	"net/http"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/legacy-cloud-providers/gce"
-	"net/http"
 )
 
 type NetworkEndpointEntry struct {
@@ -48,7 +49,7 @@ func (s NetworkEndpointStore) AddNetworkEndpointHealthStatus(key meta.Key, entry
 // GetNetworkEndpointStore is a helper function to access the NetworkEndpointStore of the mock NEG cloud
 func GetNetworkEndpointStore(negCloud NetworkEndpointGroupCloud) NetworkEndpointStore {
 	adapter := negCloud.(*cloudProviderAdapter)
-	mockedCloud := adapter.c.(*cloud.MockGCE)
+	mockedCloud := adapter.c.Compute().(*cloud.MockGCE)
 	ret := mockedCloud.MockNetworkEndpointGroups.X.(NetworkEndpointStore)
 	return ret
 }

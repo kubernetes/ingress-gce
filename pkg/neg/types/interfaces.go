@@ -17,7 +17,8 @@ limitations under the License.
 package types
 
 import (
-	compute "google.golang.org/api/compute/v1"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/ingress-gce/pkg/composite"
 )
 
 // ZoneGetter is an interface for retrieve zone related information
@@ -28,14 +29,14 @@ type ZoneGetter interface {
 
 // NetworkEndpointGroupCloud is an interface for managing gce network endpoint group.
 type NetworkEndpointGroupCloud interface {
-	GetNetworkEndpointGroup(name string, zone string) (*compute.NetworkEndpointGroup, error)
-	ListNetworkEndpointGroup(zone string) ([]*compute.NetworkEndpointGroup, error)
-	AggregatedListNetworkEndpointGroup() (map[string][]*compute.NetworkEndpointGroup, error)
-	CreateNetworkEndpointGroup(neg *compute.NetworkEndpointGroup, zone string) error
-	DeleteNetworkEndpointGroup(name string, zone string) error
-	AttachNetworkEndpoints(name, zone string, endpoints []*compute.NetworkEndpoint) error
-	DetachNetworkEndpoints(name, zone string, endpoints []*compute.NetworkEndpoint) error
-	ListNetworkEndpoints(name, zone string, showHealthStatus bool) ([]*compute.NetworkEndpointWithHealthStatus, error)
+	GetNetworkEndpointGroup(name string, zone string, version meta.Version) (*composite.NetworkEndpointGroup, error)
+	ListNetworkEndpointGroup(zone string, version meta.Version) ([]*composite.NetworkEndpointGroup, error)
+	AggregatedListNetworkEndpointGroup(version meta.Version) (map[string][]*composite.NetworkEndpointGroup, error)
+	CreateNetworkEndpointGroup(neg *composite.NetworkEndpointGroup, zone string) error
+	DeleteNetworkEndpointGroup(name string, zone string, version meta.Version) error
+	AttachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error
+	DetachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error
+	ListNetworkEndpoints(name, zone string, showHealthStatus bool, version meta.Version) ([]*composite.NetworkEndpointWithHealthStatus, error)
 	NetworkURL() string
 	SubnetworkURL() string
 }
