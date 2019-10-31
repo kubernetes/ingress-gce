@@ -65,23 +65,6 @@ func isSameNetwork(l, r string) (bool, error) {
 	return lID.Equal(rID), nil
 }
 
-// IsCustomModeNetwork is a helper for determining if a network is a custom mode network
-// (as opposed to a auto mode network).  This is used for l7-ilb since custom mode networks
-// require an additional field on the forwarding rule
-func IsCustomModeNetwork(c *gce.Cloud, networkURL string) (bool, error) {
-	netID, err := cloud.ParseResourceURL(networkURL)
-	if err != nil {
-		return false, err
-	}
-
-	network, err := c.Compute().Networks().Get(context.Background(), netID.Key)
-	if err != nil {
-		return false, err
-	}
-
-	return !network.AutoCreateSubnetworks, nil
-}
-
 // L7ILBVersion is a helper to get the version of L7-ILB
 func L7ILBVersions() *ResourceVersions {
 	return versionsFromFeatures([]string{FeatureL7ILB})
