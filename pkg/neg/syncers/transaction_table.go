@@ -49,8 +49,6 @@ func (op transactionOp) String() string {
 type transactionEntry struct {
 	// Operation represents the operation type associated with each transaction
 	Operation transactionOp
-	// NeedReconcile indicates whether the entry needs to be reconciled.
-	NeedReconcile bool
 	// Zone represents the zone of the transaction
 	Zone string
 }
