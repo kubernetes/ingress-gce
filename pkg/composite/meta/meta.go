@@ -36,16 +36,18 @@ const (
 // The other types that are discovered as dependencies will simply be wrapped with a composite struct
 // The format of the map is ServiceName -> k8s-cloud-provider wrapper name
 var MainServices = map[string]string{
-	"BackendService":       "BackendServices",
-	"ForwardingRule":       "ForwardingRules",
-	"HealthCheck":          "HealthChecks",
-	"UrlMap":               "UrlMaps",
-	"TargetHttpProxy":      "TargetHttpProxies",
-	"TargetHttpsProxy":     "TargetHttpsProxies",
-	"SslCertificate":       "SslCertificates",
-	"NetworkEndpointGroup": "NetworkEndpointGroups",
+	"BackendService":                  "BackendServices",
+	"ForwardingRule":                  "ForwardingRules",
+	"HealthCheck":                     "HealthChecks",
+	"UrlMap":                          "UrlMaps",
+	"TargetHttpProxy":                 "TargetHttpProxies",
+	"TargetHttpsProxy":                "TargetHttpsProxies",
+	"SslCertificate":                  "SslCertificates",
+	"NetworkEndpointGroup":            "NetworkEndpointGroups",
+	"NetworkEndpointWithHealthStatus": "NetworkEndpointsWithHealthStatus",
 	"NetworkEndpointGroupsAttachEndpointsRequest": "NetworkEndpointGroupsAttachEndpointsRequests",
 	"NetworkEndpointGroupsDetachEndpointsRequest": "NetworkEndpointGroupsDetachEndpointsRequests",
+	"NetworkEndpointGroupsListEndpointsRequest":   "NetworkEndpointGroupsListEndpointsRequests",
 }
 
 // TODO: (shance) Replace this with data gathered from meta.AllServices
@@ -56,12 +58,15 @@ var NoUpdate = sets.NewString(
 	"TargetHttpsProxy",
 	"SslCertificate",
 	"NetworkEndpointGroup",
+	"NetworkEndpointWithHealthStatus",
 )
 
 // Services in NoCRUD will not have Create, Get, Delete, Update, methods generated for them
 var NoCRUD = sets.NewString(
 	"NetworkEndpointGroupsAttachEndpointsRequest",
 	"NetworkEndpointGroupsDetachEndpointsRequest",
+	"NetworkEndpointGroupsListEndpointsRequest",
+	"NetworkEndpointWithHealthStatus",
 )
 var Versions = map[string]string{
 	"Alpha": "alpha",
@@ -81,18 +86,31 @@ var DefaultZonalServices = sets.NewString(
 )
 
 type GroupResourceInfo struct {
-	AttachFuncName string
-	DetachFuncName string
-	AttachReqName  string
-	DetachReqName  string
+	AttachFuncName  string
+	DetachFuncName  string
+	ListFuncName    string
+	AggListFuncName string
+	AttachReqName   string
+	DetachReqName   string
+	ListReqName     string
+	ListRespName    string
+	AggListRespName string
 }
 
 // GroupResourceServices support adding/removing objects from them. Examples are Instance Groups, NetworkEndpointGroups.
 // Additional APIs to Attach/Detach objects will be created for these services.
 var GroupResourceServices = map[string]*GroupResourceInfo{
-	"NetworkEndpointGroup": &GroupResourceInfo{AttachFuncName: "AttachNetworkEndpoints",
-		DetachFuncName: "DetachNetworkEndpoints", AttachReqName: "NetworkEndpointGroupsAttachEndpointsRequest",
-		DetachReqName: "NetworkEndpointGroupsDetachEndpointsRequest"},
+	"NetworkEndpointGroup": &GroupResourceInfo{
+		AttachFuncName:  "AttachNetworkEndpoints",
+		DetachFuncName:  "DetachNetworkEndpoints",
+		AttachReqName:   "NetworkEndpointGroupsAttachEndpointsRequest",
+		DetachReqName:   "NetworkEndpointGroupsDetachEndpointsRequest",
+		ListFuncName:    "ListNetworkEndpoints",
+		ListReqName:     "NetworkEndpointGroupsListEndpointsRequest",
+		ListRespName:    "NetworkEndpointWithHealthStatus",
+		AggListFuncName: "AggregatedList",
+		AggListRespName: "NetworkEndpointGroup",
+	},
 }
 
 // ApiService holds relevant data for generating a composite type + helper methods for a single API service
