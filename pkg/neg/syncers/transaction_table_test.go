@@ -49,7 +49,6 @@ func TestTransactionTable(t *testing.T) {
 		key := negtypes.NetworkEndpoint{IP: fmt.Sprintf("%s%d", ipPrefix, i), Port: fmt.Sprintf("%s%d", portPrefix, i), Node: fmt.Sprintf("%s%d", nodePrefix, i)}
 		entry := transactionEntry{
 			attachOp,
-			false,
 			fmt.Sprintf("%s%d", zonePrefix, i),
 		}
 		table.Put(key, entry)
@@ -63,7 +62,6 @@ func TestTransactionTable(t *testing.T) {
 		key := negtypes.NetworkEndpoint{IP: fmt.Sprintf("%s%d", ipPrefix, i), Port: fmt.Sprintf("%s%d", portPrefix, i), Node: fmt.Sprintf("%s%d", nodePrefix, i)}
 		newEntry := transactionEntry{
 			detachOp,
-			true,
 			fmt.Sprintf("%s%d", zonePrefix, i),
 		}
 		table.Put(key, newEntry)

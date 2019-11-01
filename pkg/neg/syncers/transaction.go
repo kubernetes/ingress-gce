@@ -143,8 +143,6 @@ func (s *transactionSyncer) syncInternal() error {
 	// Merge the current state from cloud with the transaction table together
 	// The combined state represents the eventual result when all transactions completed
 	mergeTransactionIntoZoneEndpointMap(currentMap, s.transactions)
-	// Find transaction entries that needs to be reconciled
-	reconcileTransactions(targetMap, s.transactions)
 	// Calculate the endpoints to add and delete to transform the current state to desire state
 	addEndpoints, removeEndpoints := calculateNetworkEndpointDifference(targetMap, currentMap)
 	// Calculate Pods that are already in the NEG
@@ -200,9 +198,8 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 			}
 
 			transEntry := transactionEntry{
-				Operation:     operation,
-				NeedReconcile: false,
-				Zone:          zone,
+				Operation: operation,
+				Zone:      zone,
 			}
 
 			// Insert networkEndpoint into transaction table
@@ -296,15 +293,11 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 	}
 
 	for networkEndpoint := range networkEndpointMap {
-		entry, ok := s.transactions.Get(networkEndpoint)
+		_, ok := s.transactions.Get(networkEndpoint)
 		// clear transaction
 		if !ok {
 			klog.Errorf("Endpoint %q was not found in the transaction table.", networkEndpoint)
 			continue
-		}
-		// TODO: Remove NeedReconcile in the transation entry (freehan)
-		if entry.NeedReconcile == true {
-			klog.Errorf("Endpoint %q in NEG %q need to be reconciled.", networkEndpoint, s.NegSyncerKey.String())
 		}
 		s.transactions.Delete(networkEndpoint)
 	}
@@ -373,63 +366,5 @@ func mergeTransactionIntoZoneEndpointMap(endpointMap map[string]negtypes.Network
 			endpointMap[entry.Zone].Delete(endpointKey)
 		}
 	}
-	return
-}
-
-// reconcileTransactions compares the endpoint map with existing transaction entries in transaction table
-// if transaction does not cu
-func reconcileTransactions(endpointMap map[string]negtypes.NetworkEndpointSet, transactions networkEndpointTransactionTable) {
-	// Identify endpoints that should be in NEG but the current transaction does not match the intention
-	for zone, endpointSet := range endpointMap {
-		for _, endpointKey := range endpointSet.List() {
-			entry, ok := transactions.Get(endpointKey)
-			// if transaction does not contain endpoints, it will be handled in this sync
-			if !ok {
-				continue
-			}
-			needReconcile := false
-			// if zone does not match, need to reconcile
-			if entry.Zone != zone {
-				needReconcile = true
-			}
-			// if the endpoint entry is in detach transaction but shows up endpointMap
-			if entry.Operation == detachOp {
-				needReconcile = true
-			}
-
-			if needReconcile {
-				entry.NeedReconcile = true
-				transactions.Put(endpointKey, entry)
-			}
-		}
-	}
-
-	// Identify endpoints that should not to be in NEG but the current transaction does not match the intention
-	for _, endpointKey := range transactions.Keys() {
-		entry, ok := transactions.Get(endpointKey)
-		if !ok {
-			continue
-		}
-		needReconcile := false
-		if entry.Operation == attachOp {
-			endpointSet, ok := endpointMap[entry.Zone]
-			// If zone is not in endpointMap, then the endpoint must not exist in the endpointMap
-			if !ok {
-				needReconcile = true
-			}
-
-			// If the endpoint that is in attach transaction does not exists in the endpointMap,
-			// Then it means the endpoint needs to be reconciled after attach operation completes.
-			if !endpointSet.Has(endpointKey) {
-				needReconcile = true
-			}
-		}
-
-		if needReconcile {
-			entry.NeedReconcile = true
-			transactions.Put(endpointKey, entry)
-		}
-	}
-
 	return
 }
