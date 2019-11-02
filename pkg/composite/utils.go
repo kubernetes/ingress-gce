@@ -26,7 +26,7 @@ import (
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
-// CreateKey() is a helper function for creating a meta.Key when interacting with the
+// CreateKey is a helper function for creating a meta.Key when interacting with the
 // composite functions.  For regional scopes, this function looks up
 // the region of the gceCloud object.  You should use this wherever possible to avoid
 // creating a resource in the wrong region or creating a global resource accidentally.
@@ -46,7 +46,7 @@ func CreateKey(gceCloud *gce.Cloud, name string, scope meta.KeyType) (*meta.Key,
 	return nil, fmt.Errorf("invalid resource type: %s", scope)
 }
 
-// IsRegionalResource() returns true if the resource URL is regional
+// IsRegionalResource returns true if the resource URL is regional
 func IsRegionalResource(selfLink string) (bool, error) {
 	scope, err := ScopeFromSelfLink(selfLink)
 	if err != nil {

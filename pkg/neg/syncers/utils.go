@@ -132,11 +132,10 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		err = cloud.DeleteNetworkEndpointGroup(negName, zone)
 		if err != nil {
 			return err
-		} else {
-			if recorder != nil && serviceLister != nil {
-				if svc := getService(serviceLister, svcNamespace, svcName); svc != nil {
-					recorder.Eventf(svc, apiv1.EventTypeNormal, "Delete", "Deleted NEG %q for %s in %q.", negName, negServicePortName, zone)
-				}
+		}
+		if recorder != nil && serviceLister != nil {
+			if svc := getService(serviceLister, svcNamespace, svcName); svc != nil {
+				recorder.Eventf(svc, apiv1.EventTypeNormal, "Delete", "Deleted NEG %q for %s in %q.", negName, negServicePortName, zone)
 			}
 		}
 	}
@@ -158,11 +157,10 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		}, zone)
 		if err != nil {
 			return err
-		} else {
-			if recorder != nil && serviceLister != nil {
-				if svc := getService(serviceLister, svcNamespace, svcName); svc != nil {
-					recorder.Eventf(svc, apiv1.EventTypeNormal, "Create", "Created NEG %q for %s in %q.", negName, negServicePortName, zone)
-				}
+		}
+		if recorder != nil && serviceLister != nil {
+			if svc := getService(serviceLister, svcNamespace, svcName); svc != nil {
+				recorder.Eventf(svc, apiv1.EventTypeNormal, "Create", "Created NEG %q for %s in %q.", negName, negServicePortName, zone)
 			}
 		}
 	}

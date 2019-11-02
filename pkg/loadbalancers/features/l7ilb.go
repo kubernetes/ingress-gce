@@ -30,7 +30,7 @@ import (
 
 var ErrSubnetNotFound = errors.New("active subnet not found")
 
-// Get Subnet source range for ILB
+// ILBSubnetSourceRange gets Subnet source range for ILB
 // TODO: (shance) refactor to use filter
 func ILBSubnetSourceRange(cloud *gce.Cloud, region string) (string, error) {
 	subnets, err := cloud.Compute().BetaSubnetworks().List(context.Background(), region, filter.None)
@@ -65,7 +65,7 @@ func isSameNetwork(l, r string) (bool, error) {
 	return lID.Equal(rID), nil
 }
 
-// L7ILBVersion is a helper to get the version of L7-ILB
+// L7ILBVersions is a helper to get the version of L7-ILB
 func L7ILBVersions() *ResourceVersions {
 	return versionsFromFeatures([]string{FeatureL7ILB})
 }

@@ -80,12 +80,12 @@ func (e *DefaultValidatorEnv) Services() (map[string]*v1.Service, error) {
 	return ret, nil
 }
 
-// DefaultValidatorEnv implements ValidatorEnv.
+// Cloud implements ValidatorEnv.
 func (e *DefaultValidatorEnv) Cloud() cloud.Cloud {
 	return e.gce
 }
 
-// DefaultValidatorEnv implements ValidatorEnv.
+// Namer implements ValidatorEnv.
 func (e *DefaultValidatorEnv) Namer() *namer.Namer {
 	return e.namer
 }

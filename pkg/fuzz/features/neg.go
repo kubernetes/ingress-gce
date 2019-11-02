@@ -100,9 +100,8 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 			return fuzz.CheckResponseContinue, verifyNegRegionBackend(v.env, negName, negName, urlMapName, v.region)
 		}
 		return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName, urlMapName)
-	} else {
-		return fuzz.CheckResponseContinue, verifyIgBackend(v.env, v.env.Namer().IGBackend(int64(svcPort.NodePort)), urlMapName)
 	}
+	return fuzz.CheckResponseContinue, verifyIgBackend(v.env, v.env.Namer().IGBackend(int64(svcPort.NodePort)), urlMapName)
 }
 
 // getNegNameForServicePort returns the NEG name for the service port if it exists.

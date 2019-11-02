@@ -126,7 +126,7 @@ func (l *L7) String() string {
 	return l.namer.LbName()
 }
 
-// Version() returns the struct listing the versions for every resource
+// Versions returns the struct listing the versions for every resource
 func (l *L7) Versions() *features.ResourceVersions {
 	return features.VersionsFromIngress(&l.ingress)
 }
