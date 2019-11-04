@@ -22,16 +22,49 @@ import (
 	"strconv"
 	"testing"
 
+	"fmt"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+	"reflect"
 )
+
+type testPatcher struct {
+	count      int
+	lastPod    string
+	lastNegKey *meta.Key
+	lastBsKey  *meta.Key
+}
+
+func (p *testPatcher) syncPod(pod string, negKey, bsKey *meta.Key) error {
+	p.count++
+	p.lastPod = pod
+	p.lastNegKey = negKey
+	p.lastBsKey = bsKey
+	return nil
+}
+
+func (p *testPatcher) Eval(t *testing.T, pod string, negKey, bsKey *meta.Key) {
+	if p.lastPod != pod {
+		t.Errorf("expect pod = %q, but got %q", pod, p.lastPod)
+	}
+
+	if !reflect.DeepEqual(p.lastNegKey, negKey) {
+		t.Errorf("expect neg key = %v, but got %v", negKey, p.lastNegKey)
+	}
+
+	if !reflect.DeepEqual(p.lastBsKey, bsKey) {
+		t.Errorf("expect backend service key = %v, but got %v", bsKey, p.lastBsKey)
+	}
+}
 
 func newFakePoller() *poller {
 	reflector := newTestReadinessReflector(fakeContext())
-	return reflector.poller
+	poller := reflector.poller
+	poller.patcher = &testPatcher{}
+	return poller
 }
 
 func TestPollerEndpointRegistrationAndScanForWork(t *testing.T) {
@@ -314,6 +347,7 @@ func TestPoll(t *testing.T) {
 	t.Parallel()
 
 	poller := newFakePoller()
+	pacherTester := poller.patcher.(*testPatcher)
 	negCloud := poller.negCloud
 	namer := namer_util.NewNamer("clusteruid", "")
 
@@ -329,8 +363,38 @@ func TestPoll(t *testing.T) {
 	ip := "10.1.2.3"
 	port := int64(80)
 	instance := "k8s-node-xxxxxx"
+	irrelevantEntry := negtypes.NetworkEndpointEntry{
+		NetworkEndpoint: &compute.NetworkEndpoint{
+			IpAddress: ip,
+			Port:      port,
+			Instance:  "foo-instance",
+		},
+		Healths: []*compute.HealthStatusForNetworkEndpoint{
+			{
+				BackendService: &compute.BackendServiceReference{
+					BackendService: negName,
+				},
+				HealthState: "HEALTHY",
+			},
+		},
+	}
 
-	// mark polling to true
+	pollAndValidate := func(desc string, expectErr bool, expectRetry bool, expectPatchCount int) {
+		retry, err := poller.Poll(key)
+		if expectErr && err == nil {
+			t.Errorf("For case %q, expect err, but got %v", desc, err)
+		} else if !expectErr && err != nil {
+			t.Errorf("For case %q, does not expect err, but got %v", desc, err)
+		}
+		if retry != expectRetry {
+			t.Errorf("For case %q, expect retry = %v, but got %v", desc, expectRetry, retry)
+		}
+		if pacherTester.count != expectPatchCount {
+			t.Errorf("For case %q, expect pacherTester.count = %v, but got %v", desc, expectPatchCount, pacherTester.count)
+		}
+	}
+
+	step := "mark polling to true"
 	poller.pollMap[key] = &pollTarget{
 		endpointMap: negtypes.EndpointPodMap{
 			negtypes.NetworkEndpoint{IP: ip, Port: strconv.FormatInt(port, 10), Node: instance}: types.NamespacedName{Namespace: ns, Name: podName},
@@ -338,71 +402,109 @@ func TestPoll(t *testing.T) {
 		polling: true,
 	}
 
-	retry, err := poller.Poll(key)
-	if err != nil {
-		t.Errorf("Does not expect err, but got %v", err)
-	}
-	if retry != true {
-		t.Errorf("Expect retry = true, but got %v", retry)
-	}
+	pollAndValidate(step, false, true, 0)
+	pollAndValidate(step, false, true, 0)
 
-	// unmark polling
+	step = "unmark polling"
 	poller.pollMap[key].polling = false
-	retry, err = poller.Poll(key)
-	// expect NEG not exist error
-	if err == nil {
-		t.Errorf("Expect err, but got %v", err)
-	}
-	if retry != true {
-		t.Errorf("Expect retry = true, but got %v", retry)
-	}
+	pollAndValidate(step, true, true, 0)
+	pollAndValidate(step, true, true, 0)
 
+	step = "NEG exists, but with no endpoint"
 	// create NEG, but with no endpoint
 	negCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: negName, Zone: zone, Version: meta.VersionGA}, zone)
-	retry, err = poller.Poll(key)
-	if err != nil {
-		t.Errorf("Does not expect err, but got %v", err)
-	}
-	if retry != true {
-		t.Errorf("Expect retry = true, but got %v", retry)
-	}
+	pollAndValidate(step, false, true, 0)
+	pollAndValidate(step, false, true, 0)
 
-	// add NE to the NEG, but NE not healthy
-	ne := &composite.NetworkEndpoint{
+	step = "NE added to the NEG, but NE health status is empty"
+	ne := &compute.NetworkEndpoint{
 		IpAddress: ip,
 		Port:      port,
 		Instance:  instance,
 	}
-	negCloud.AttachNetworkEndpoints(negName, zone, []*composite.NetworkEndpoint{ne}, meta.VersionGA)
-	retry, err = poller.Poll(key)
-	if err != nil {
-		t.Errorf("Does not expect err, but got %v", err)
-	}
-	if retry != true {
-		t.Errorf("Expect retry = true, but got %v", retry)
-	}
 
-	// add NE with healthy status
-	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), negtypes.NetworkEndpointEntry{
-		NetworkEndpoint: &compute.NetworkEndpoint{
-			IpAddress: ip,
-			Port:      port,
-			Instance:  instance,
+	negCloud.AttachNetworkEndpoints(negName, zone, []*composite.NetworkEndpoint{{
+		IpAddress: ip,
+		Port:      port,
+		Instance:  instance,
+	}}, meta.VersionGA)
+	// add NE with empty healthy status
+	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), []negtypes.NetworkEndpointEntry{
+		{
+			NetworkEndpoint: ne,
+			Healths:         []*compute.HealthStatusForNetworkEndpoint{},
 		},
-		Healths: []*compute.HealthStatusForNetworkEndpoint{
-			{
-				BackendService: &compute.BackendServiceReference{
-					BackendService: negName,
+	})
+
+	pollAndValidate(step, false, false, 1)
+	pollAndValidate(step, false, false, 2)
+	pacherTester.Eval(t, fmt.Sprintf("%v/%v", ns, podName), meta.ZonalKey(negName, zone), nil)
+
+	step = "NE health status is empty and there are other endpoint with health status in NEG"
+	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), []negtypes.NetworkEndpointEntry{
+		irrelevantEntry,
+		{
+			NetworkEndpoint: ne,
+			Healths:         []*compute.HealthStatusForNetworkEndpoint{},
+		},
+	})
+	pollAndValidate(step, false, true, 2)
+	pollAndValidate(step, false, true, 2)
+
+	step = "NE has nonhealthy status"
+	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), []negtypes.NetworkEndpointEntry{
+		{
+			NetworkEndpoint: ne,
+			Healths: []*compute.HealthStatusForNetworkEndpoint{
+				{
+					BackendService: &compute.BackendServiceReference{
+						BackendService: negName,
+					},
+					HealthState: "UNKNOWN",
 				},
-				HealthState: healthyState,
 			},
 		},
 	})
-	retry, err = poller.Poll(key)
-	if err != nil {
-		t.Errorf("Does not expect err, but got %v", err)
-	}
-	if retry != false {
-		t.Errorf("Expect retry = false, but got %v", retry)
-	}
+	pollAndValidate(step, false, true, 2)
+	pollAndValidate(step, false, true, 2)
+
+	step = "NE has nonhealthy status with irrelevant entry"
+	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), []negtypes.NetworkEndpointEntry{
+		irrelevantEntry,
+		{
+			NetworkEndpoint: ne,
+			Healths: []*compute.HealthStatusForNetworkEndpoint{
+				{
+					BackendService: &compute.BackendServiceReference{
+						BackendService: negName,
+					},
+					HealthState: "UNKNOWN",
+				},
+			},
+		},
+	})
+	pollAndValidate(step, false, true, 2)
+	pollAndValidate(step, false, true, 2)
+
+	step = "NE has healthy status"
+	bsName := "bar"
+	backendServiceUrl := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/foo/global/backendServices/%v", bsName)
+	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), []negtypes.NetworkEndpointEntry{
+		{
+			NetworkEndpoint: ne,
+			Healths: []*compute.HealthStatusForNetworkEndpoint{
+				{
+					BackendService: &compute.BackendServiceReference{
+						BackendService: backendServiceUrl,
+					},
+					HealthState: healthyState,
+				},
+			},
+		},
+		irrelevantEntry,
+	})
+	pollAndValidate(step, false, false, 3)
+	pacherTester.Eval(t, fmt.Sprintf("%v/%v", ns, podName), meta.ZonalKey(negName, zone), meta.GlobalKey(bsName))
+	pollAndValidate(step, false, false, 4)
+	pacherTester.Eval(t, fmt.Sprintf("%v/%v", ns, podName), meta.ZonalKey(negName, zone), meta.GlobalKey(bsName))
 }
