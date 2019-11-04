@@ -3726,23 +3726,23 @@ func ListNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Versi
 
 	switch version {
 	case meta.VersionAlpha:
-		alphareq, err := req.ToAlpha()
-		if err != nil {
-			return nil, err
+		alphareq, reqerr := req.ToAlpha()
+		if reqerr != nil {
+			return nil, reqerr
 		}
 		klog.V(3).Infof("Listing alpha zonal NetworkEndpointGroup %v", key.Name)
 		gceObjs, err = gceCloud.Compute().AlphaNetworkEndpointGroups().ListNetworkEndpoints(ctx, key, alphareq, filter.None)
 	case meta.VersionBeta:
-		betareq, err := req.ToBeta()
-		if err != nil {
-			return nil, err
+		betareq, reqerr := req.ToBeta()
+		if reqerr != nil {
+			return nil, reqerr
 		}
 		klog.V(3).Infof("Listing beta zonal NetworkEndpointGroup %v", key.Name)
 		gceObjs, err = gceCloud.Compute().BetaNetworkEndpointGroups().ListNetworkEndpoints(ctx, key, betareq, filter.None)
 	default:
-		gareq, err := req.ToGA()
-		if err != nil {
-			return nil, err
+		gareq, reqerr := req.ToGA()
+		if reqerr != nil {
+			return nil, reqerr
 		}
 		klog.V(3).Infof("Listing ga zonal NetworkEndpointGroup %v", key.Name)
 		gceObjs, err = gceCloud.Compute().NetworkEndpointGroups().ListNetworkEndpoints(ctx, key, gareq, filter.None)
@@ -3761,43 +3761,66 @@ func ListNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Versi
 	return compositeObjs, nil
 }
 
-func AggregatedListNetworkEndpointGroup(gceCloud *gce.Cloud, version meta.Version) (map[string][]*NetworkEndpointGroup, error) {
+func AggregatedListNetworkEndpointGroup(gceCloud *gce.Cloud, version meta.Version) (map[*meta.Key]*NetworkEndpointGroup, error) {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("NetworkEndpointGroup", "aggregateList", "", "", string(version))
 
+	compositeMap := make(map[*meta.Key]*NetworkEndpointGroup)
 	var gceObjs interface{}
-	compositeMap := make(map[string][]*NetworkEndpointGroup)
-	var err error
 
 	switch version {
 	case meta.VersionAlpha:
 		klog.V(3).Infof("Aggregate List of alpha zonal NetworkEndpointGroup")
-		gceObjs, err = gceCloud.Compute().AlphaNetworkEndpointGroups().AggregatedList(ctx, filter.None)
+		alphaMap, err := gceCloud.Compute().AlphaNetworkEndpointGroups().AggregatedList(ctx, filter.None)
+		if err != nil {
+			return nil, mc.Observe(err)
+		}
+		// Convert from map to list
+		alphaList := []*computealpha.NetworkEndpointGroup{}
+		for _, val := range alphaMap {
+			alphaList = append(alphaList, val...)
+		}
+		gceObjs = alphaList
 	case meta.VersionBeta:
 		klog.V(3).Infof("Aggregate List of beta zonal NetworkEndpointGroup")
-		gceObjs, err = gceCloud.Compute().BetaNetworkEndpointGroups().AggregatedList(ctx, filter.None)
+		betaMap, err := gceCloud.Compute().BetaNetworkEndpointGroups().AggregatedList(ctx, filter.None)
+		if err != nil {
+			return nil, mc.Observe(err)
+		}
+		// Convert from map to list
+		betaList := []*computebeta.NetworkEndpointGroup{}
+		for _, val := range betaMap {
+			betaList = append(betaList, val...)
+		}
+		gceObjs = betaList
 	default:
 		klog.V(3).Infof("Aggregate List of ga zonal NetworkEndpointGroup")
-		gceObjs, err = gceCloud.Compute().NetworkEndpointGroups().AggregatedList(ctx, filter.None)
-	}
-	if err != nil {
-		return nil, mc.Observe(err)
-	}
-	gceMap, ok := gceObjs.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("Failed to convert gceObj to map[string]interface{}")
-	}
-	for keyStr, obj := range gceMap {
-		compositeObjs, err := ToNetworkEndpointGroupList(obj)
+		gaMap, err := gceCloud.Compute().NetworkEndpointGroups().AggregatedList(ctx, filter.None)
 		if err != nil {
-			return nil, err
+			return nil, mc.Observe(err)
 		}
-		for _, o := range compositeObjs {
-			o.Version = version
+		// Convert from map to list
+		gaList := []*compute.NetworkEndpointGroup{}
+		for _, val := range gaMap {
+			gaList = append(gaList, val...)
 		}
-		compositeMap[keyStr] = compositeObjs
+		gceObjs = gaList
 	}
+	compositeObjs, err := ToNetworkEndpointGroupList(gceObjs)
+	if err != nil {
+		return nil, err
+	}
+	for _, obj := range compositeObjs {
+		obj.Version = version
+		resourceID, err := cloudprovider.ParseResourceURL(obj.SelfLink)
+		if err != nil || resourceID == nil || resourceID.Key == nil {
+			klog.Errorf("Failed to parse SelfLink - %s for obj %v, err %v", obj.SelfLink, obj, err)
+			continue
+		}
+		compositeMap[resourceID.Key] = obj
+	}
+
 	return compositeMap, nil
 }
 
