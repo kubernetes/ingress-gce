@@ -222,7 +222,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 	return nil
 }
 
-// Check that all NEGs associated with the GCLB have been deleted
+// CheckNEGDeletion checks all NEGs associated with the GCLB have been deleted
 func (g *GCLB) CheckNEGDeletion(ctx context.Context, c cloud.Cloud, options *GCLBDeleteOptions) error {
 	var resources []meta.Key
 

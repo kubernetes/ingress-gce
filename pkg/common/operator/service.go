@@ -43,7 +43,7 @@ func (op *ServicesOperator) ReferencesBackendConfig(beConfig *backendconfigv1bet
 	return Services(s)
 }
 
-// ReferencedBackendIngress returns the Services that are referenced by the passed in Ingress.
+// ReferencedByIngress returns the Services that are referenced by the passed in Ingress.
 func (op *ServicesOperator) ReferencedByIngress(ing *v1beta1.Ingress) *ServicesOperator {
 	dupes := map[string]bool{}
 

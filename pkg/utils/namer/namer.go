@@ -173,7 +173,7 @@ func (n *Namer) shortUID() string {
 	return uid[:8]
 }
 
-// GetFirewallName returns the firewall name of this cluster.
+// Firewall returns the firewall name of this cluster.
 func (n *Namer) Firewall() string {
 	n.nameLock.Lock()
 	defer n.nameLock.Unlock()

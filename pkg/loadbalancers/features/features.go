@@ -160,7 +160,7 @@ func ScopeFromIngress(ing *v1beta1.Ingress) meta.KeyType {
 	return scopeFromFeatures(featuresFromIngress(ing))
 }
 
-// VersionFromIngress returns a ResourceVersions struct containing all of the resources per version
+// VersionsFromIngress returns a ResourceVersions struct containing all of the resources per version
 func VersionsFromIngress(ing *v1beta1.Ingress) *ResourceVersions {
 	return versionsFromFeatures(featuresFromIngress(ing))
 }

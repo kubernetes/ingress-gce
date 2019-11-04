@@ -125,7 +125,7 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 	return svc, nil
 }
 
-// Ensures that the Echo deployment with the given description is set up
+// EnsureEchoDeployment ensures that the Echo deployment with the given description is set up
 func EnsureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment)) error {
 	podTemplate := v1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
@@ -307,9 +307,8 @@ func trySubnetCreate(s *Sandbox, name, ipCidrRange string) error {
 		if utils.IsHTTPErrorCode(err, http.StatusConflict) {
 			klog.V(3).Infof("ILB subnet already exists: %v", err)
 			return ErrSubnetExists
-		} else {
-			return fmt.Errorf("Error creating ILB subnet: %v", err)
 		}
+		return fmt.Errorf("Error creating ILB subnet: %v", err)
 	}
 
 	klog.V(3).Infof("ILB Subnet created in region %q: %v", s.f.Region, subnet)
