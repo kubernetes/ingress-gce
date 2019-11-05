@@ -28,7 +28,6 @@ import (
 	"k8s.io/klog"
 
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	clientset "k8s.io/client-go/kubernetes"
 	restclient "k8s.io/client-go/rest"
@@ -79,13 +78,7 @@ func main() {
 	if err != nil {
 		klog.Fatalf("Failed to create kubernetes client: %v", err)
 	}
-	var dynamicClient dynamic.Interface
-	if flags.F.EnableCSM {
-		dynamicClient, err = dynamic.NewForConfig(kubeConfig)
-		if err != nil {
-			klog.Fatalf("Failed to create kubernetes dynamic client: %v", err)
-		}
-	}
+
 	// Due to scaling issues, leader election must be configured with a separate k8s client.
 	leaderElectKubeClient, err := kubernetes.NewForConfig(restclient.AddUserAgent(kubeConfig, "leader-election"))
 	if err != nil {
@@ -139,9 +132,11 @@ func main() {
 		HealthCheckPath:               flags.F.HealthCheckPath,
 		DefaultBackendHealthCheckPath: flags.F.DefaultSvcHealthCheckPath,
 		FrontendConfigEnabled:         flags.F.EnableFrontendConfig,
-		EnableCSM:                     flags.F.EnableCSM,
+		EnableASMConfigMapConfig:      flags.F.EnableASMConfigMapBasedConfig,
+		ASMConfigMapNamespace:         flags.F.ASMConfigMapBasedConfigNamespace,
+		ASMConfigMapName:              flags.F.ASMConfigMapBasedConfigCMName,
 	}
-	ctx := ingctx.NewControllerContext(kubeClient, dynamicClient, backendConfigClient, frontendConfigClient, cloud, namer, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, cloud, namer, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
@@ -149,13 +144,17 @@ func main() {
 		return
 	}
 
+	leaderElectionCtx, leaderElectionCancel := context.WithCancel(context.Background())
 	electionConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace), func() {
 		runControllers(ctx)
+		klog.Info("Shutting down leader election")
+		leaderElectionCancel()
 	})
 	if err != nil {
 		klog.Fatalf("%v", err)
 	}
-	leaderelection.RunOrDie(context.Background(), *electionConfig)
+	leaderelection.RunOrDie(leaderElectionCtx, *electionConfig)
+	klog.Warning("Ingress Controller exited.")
 }
 
 // makeLeaderElectionConfig builds a leader election configuration. It will
@@ -192,7 +191,7 @@ func makeLeaderElectionConfig(client clientset.Interface, recorder record.EventR
 				run()
 			},
 			OnStoppedLeading: func() {
-				klog.Fatalf("lost master")
+				klog.Warning("lost master")
 			},
 		},
 	}, nil
@@ -200,12 +199,19 @@ func makeLeaderElectionConfig(client clientset.Interface, recorder record.EventR
 
 func runControllers(ctx *ingctx.ControllerContext) {
 	stopCh := make(chan struct{})
+	ctx.Init()
 	lbc := controller.NewLoadBalancerController(ctx, stopCh)
 
 	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values())
 
+	if ctx.EnableASMConfigMapConfig {
+		ctx.ASMConfigMapBasedConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
+			lbc.Stop(false) // We want to trigger a restart, don't have to clean up all the resources.
+		})
+	}
+
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
-	negController := neg.NewController(negtypes.NewAdapter(ctx.Cloud), ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, flags.F.EnableReadinessReflector, flags.F.EnableCSM, flags.F.CSMServiceNEGSkipNamespaces)
+	negController := neg.NewController(negtypes.NewAdapter(ctx.Cloud), ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, flags.F.EnableReadinessReflector)
 
 	go negController.Run(stopCh)
 	klog.V(0).Infof("negController started")
@@ -220,7 +226,10 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	lbc.Run()
 
 	for {
-		klog.Infof("Handled quit, awaiting pod deletion.")
+		klog.Warning("Handled quit, awaiting pod deletion.")
 		time.Sleep(30 * time.Second)
+		if ctx.EnableASMConfigMapConfig {
+			return
+		}
 	}
 }

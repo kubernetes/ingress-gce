@@ -25,6 +25,11 @@ import (
 	"testing"
 	"time"
 
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic/dynamicinformer"
+	informerv1 "k8s.io/client-go/informers/core/v1"
+	"k8s.io/client-go/tools/cache"
+
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
@@ -39,6 +44,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
+	"k8s.io/ingress-gce/pkg/cmconfig"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -71,14 +77,35 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 	dynamicSchema := runtime.NewScheme()
 	//dynamicSchema.AddKnownTypeWithName(schema.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "List"}, &unstructured.UnstructuredList{})
 
-	dynamicClient := dynamicfake.NewSimpleDynamicClient(dynamicSchema)
+	kubeClient.CoreV1().ConfigMaps("kube-system").Create(&apiv1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ingress-controller-config-test"}, Data: map[string]string{"EnableASM": "true"}})
+
 	ctxConfig := context.ControllerContextConfig{
-		Namespace:             apiv1.NamespaceAll,
-		ResyncPeriod:          1 * time.Second,
-		DefaultBackendSvcPort: defaultBackend,
-		EnableCSM:             true,
+		Namespace:                apiv1.NamespaceAll,
+		ResyncPeriod:             1 * time.Second,
+		DefaultBackendSvcPort:    defaultBackend,
+		EnableASMConfigMapConfig: true,
+		ASMConfigMapNamespace:    "kube-system",
+		ASMConfigMapName:         "ingress-controller-config-test",
 	}
-	context := context.NewControllerContext(kubeClient, dynamicClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
+	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
+
+	// Hack the context.Init func.
+	configMapInformer := informerv1.NewConfigMapInformer(kubeClient, context.Namespace, context.ResyncPeriod, utils.NewNamespaceIndexer())
+	context.ConfigMapInformer = configMapInformer
+	context.ASMConfigMapBasedConfigController = cmconfig.NewConfigMapConfigController(kubeClient, context.ASMConfigMapNamespace, context.ASMConfigMapName)
+
+	cmcController := cmconfig.NewConfigMapConfigController(kubeClient, context.ASMConfigMapNamespace, context.ASMConfigMapName)
+
+	context.ASMConfigMapBasedConfigController = cmcController
+	dynamicClient := dynamicfake.NewSimpleDynamicClient(dynamicSchema)
+
+	destrinationGVR := schema.GroupVersionResource{Group: "networking.istio.io", Version: "v1alpha3", Resource: "destinationrules"}
+	drDynamicInformer := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, destrinationGVR, context.Namespace, context.ResyncPeriod,
+		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
+		nil)
+	context.DestinationRuleInformer = drDynamicInformer.Informer()
+	context.DestinationRuleClient = dynamicClient.Resource(destrinationGVR)
+
 	controller := NewController(
 		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		context,
@@ -88,8 +115,6 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		1*time.Second,
 		// TODO(freehan): enable readiness reflector for unit tests
 		false,
-		true,
-		nil,
 	)
 	return controller
 }
