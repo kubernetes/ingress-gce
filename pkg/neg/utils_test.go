@@ -29,11 +29,15 @@ import (
 )
 
 func TestNEGServicePorts(t *testing.T) {
+	portName0 := ""
+	portName1 := "name1"
+	portName2 := "name2"
+
 	testcases := []struct {
 		desc            string
 		annotation      string
-		knownPortMap    types.SvcPortMap
-		expectedPortMap types.SvcPortMap
+		knownPortMap    []types.SvcPortTuple
+		expectedPortMap []types.SvcPortTuple
 		expectedErr     error
 	}{
 		{
@@ -42,21 +46,107 @@ func TestNEGServicePorts(t *testing.T) {
 			expectedErr: utilerrors.NewAggregate([]error{
 				fmt.Errorf("port %v specified in %q doesn't exist in the service", 3000, annotations.NEGAnnotationKey),
 			}),
-			knownPortMap:    types.SvcPortMap{80: "some_port", 443: "another_port"},
-			expectedPortMap: types.SvcPortMap{3000: ""},
+			knownPortMap: []types.SvcPortTuple{
+				{
+					Name:       portName0,
+					Port:       80,
+					TargetPort: "some_port",
+				},
+				{
+					Name:       portName0,
+					Port:       443,
+					TargetPort: "another_port",
+				},
+			},
 		},
 		{
-			desc:            "NEG annotation references existing service ports",
-			annotation:      `{"exposed_ports":{"80":{},"443":{}}}`,
-			knownPortMap:    types.SvcPortMap{80: "namedport", 443: "3000"},
-			expectedPortMap: types.SvcPortMap{80: "namedport", 443: "3000"},
+			desc:       "NEG annotation references existing service ports",
+			annotation: `{"exposed_ports":{"80":{},"443":{}}}`,
+			knownPortMap: []types.SvcPortTuple{
+				{
+					Name:       portName0,
+					Port:       80,
+					TargetPort: "namedport",
+				},
+				{
+					Name:       portName0,
+					Port:       443,
+					TargetPort: "3000",
+				},
+			},
+			expectedPortMap: []types.SvcPortTuple{
+				{
+					Name:       portName0,
+					Port:       80,
+					TargetPort: "namedport",
+				},
+				{
+					Name:       portName0,
+					Port:       443,
+					TargetPort: "3000",
+				},
+			},
 		},
-
 		{
-			desc:            "NEGServicePort takes the union of known ports and ports referenced in the annotation",
-			annotation:      `{"exposed_ports":{"80":{}}}`,
-			knownPortMap:    types.SvcPortMap{80: "8080", 3000: "3030", 4000: "4040"},
-			expectedPortMap: types.SvcPortMap{80: "8080"},
+			desc:       "NEGServicePort takes the union of known ports and ports referenced in the annotation",
+			annotation: `{"exposed_ports":{"80":{}}}`,
+			knownPortMap: []types.SvcPortTuple{
+				{
+					Name:       portName0,
+					Port:       80,
+					TargetPort: "8080",
+				},
+				{
+					Name:       portName0,
+					Port:       3000,
+					TargetPort: "3030",
+				},
+				{
+					Name:       portName0,
+					Port:       4000,
+					TargetPort: "4040",
+				},
+			},
+			expectedPortMap: []types.SvcPortTuple{
+				{
+					Name:       portName0,
+					Port:       80,
+					TargetPort: "8080",
+				},
+			},
+		},
+		{
+			desc:       "NEGServicePort takes the union of known ports with port names",
+			annotation: `{"exposed_ports":{"80":{}, "3000":{}}}`,
+			knownPortMap: []types.SvcPortTuple{
+				{
+					Name:       portName1,
+					Port:       80,
+					TargetPort: "8080",
+				},
+				{
+					Name:       portName2,
+					Port:       3000,
+					TargetPort: "3030",
+				},
+				{
+					Name:       portName0,
+					Port:       4000,
+					TargetPort: "4040",
+				},
+			},
+			expectedPortMap: []types.SvcPortTuple{
+				{
+					Name:       portName1,
+					Port:       80,
+					TargetPort: "8080",
+				},
+				{
+					Name:       portName2,
+					Port:       3000,
+					TargetPort: "3030",
+				},
+			},
 		},
 	}
 
@@ -75,13 +165,16 @@ func TestNEGServicePorts(t *testing.T) {
 		exposeNegStruct, _, _ := svc.NEGAnnotation()
 
 		t.Run(tc.desc, func(t *testing.T) {
-			svcPorts, err := negServicePorts(exposeNegStruct, tc.knownPortMap)
+			inputSet := types.NewSvcPortTupleSet(tc.knownPortMap...)
+			expectSet := types.NewSvcPortTupleSet(tc.expectedPortMap...)
+
+			outputSet, err := negServicePorts(exposeNegStruct, inputSet)
 			if tc.expectedErr == nil && err != nil {
 				t.Errorf("ExpectedNEGServicePorts to not return an error, got: %v", err)
 			}
 
-			if !reflect.DeepEqual(svcPorts, tc.expectedPortMap) {
-				t.Errorf("Expected negServicePorts to equal: %v; got: %v; err: %v", tc.expectedPortMap, svcPorts, err)
+			if !reflect.DeepEqual(outputSet, expectSet) {
+				t.Errorf("Expected negServicePorts to equal: %v == %v; err: %v", expectSet, outputSet, err)
 			}
 
 			if tc.expectedErr != nil {

@@ -380,8 +380,8 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 	if negAnnotation != nil && negAnnotation.NEGEnabledForIngress() {
 		// Only service ports referenced by ingress are synced for NEG
 		ings := getIngressServicesFromStore(c.ingressLister, service)
-		ingressSvcPorts := gatherPortMappingUsedByIngress(ings, service)
-		ingressPortInfoMap := negtypes.NewPortInfoMap(name.Namespace, name.Name, ingressSvcPorts, c.namer, true)
+		ingressSvcPortTuples := gatherPortMappingUsedByIngress(ings, service)
+		ingressPortInfoMap := negtypes.NewPortInfoMap(name.Namespace, name.Name, ingressSvcPortTuples, c.namer, true)
 		if err := portInfoMap.Merge(ingressPortInfoMap); err != nil {
 			return fmt.Errorf("failed to merge service ports referenced by ingress (%v): %v", ingressPortInfoMap, err)
 		}
@@ -400,12 +400,18 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 	}
 	// handle Exposed Standalone NEGs
 	if negAnnotation != nil && negAnnotation.NEGExposed() {
-		knownPorts := make(negtypes.SvcPortMap)
+		knowSvcPortSet := make(negtypes.SvcPortTupleSet)
 		for _, sp := range service.Spec.Ports {
-			knownPorts[sp.Port] = sp.TargetPort.String()
+			knowSvcPortSet.Insert(
+				negtypes.SvcPortTuple{
+					Port:       sp.Port,
+					Name:       sp.Name,
+					TargetPort: sp.TargetPort.String(),
+				},
+			)
 		}
 
-		exposedNegSvcPort, err := negServicePorts(negAnnotation, knownPorts)
+		exposedNegSvcPort, err := negServicePorts(negAnnotation, knowSvcPortSet)
 		if err != nil {
 			return err
 		}
@@ -427,11 +433,18 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, portInfoM
 	// process default backend service
 	// Only enable for L7-ILB for now to limit possible issues
 	// TODO(shance): investigate enabling this for all ingresses
+
 	if flags.F.EnableL7Ilb && c.defaultBackendService.ID.Service.String() == key {
 		for _, m := range c.ingressLister.List() {
 			ing := *m.(*v1beta1.Ingress)
 			if utils.IsGCEL7ILBIngress(&ing) && ing.Spec.Backend == nil {
-				defaultServicePortInfoMap := negtypes.NewPortInfoMap(c.defaultBackendService.ID.Service.Namespace, c.defaultBackendService.ID.Service.Name, negtypes.SvcPortMap{80: c.defaultBackendService.TargetPort}, c.namer, false)
+				svcPortTupleSet := make(negtypes.SvcPortTupleSet)
+				svcPortTupleSet.Insert(negtypes.SvcPortTuple{
+					Name:       c.defaultBackendService.ID.Port.String(),
+					Port:       c.defaultBackendService.Port,
+					TargetPort: c.defaultBackendService.TargetPort,
+				})
+				defaultServicePortInfoMap := negtypes.NewPortInfoMap(c.defaultBackendService.ID.Service.Namespace, c.defaultBackendService.ID.Service.Name, svcPortTupleSet, c.namer, false)
 				return portInfoMap.Merge(defaultServicePortInfoMap)
 			}
 		}
@@ -633,9 +646,9 @@ func (c *Controller) gc() {
 
 // gatherPortMappingUsedByIngress returns a map containing port:targetport
 // of all service ports of the service that are referenced by ingresses
-func gatherPortMappingUsedByIngress(ings []v1beta1.Ingress, svc *apiv1.Service) negtypes.SvcPortMap {
+func gatherPortMappingUsedByIngress(ings []v1beta1.Ingress, svc *apiv1.Service) negtypes.SvcPortTupleSet {
 	servicePorts := sets.NewString()
-	ingressSvcPorts := make(negtypes.SvcPortMap)
+	ingressSvcPortTuples := make(negtypes.SvcPortTupleSet)
 	for _, ing := range ings {
 		if utils.IsGLBCIngress(&ing) {
 			utils.TraverseIngressBackends(&ing, func(id utils.ServicePortID) bool {
@@ -666,11 +679,15 @@ func gatherPortMappingUsedByIngress(ings []v1beta1.Ingress, svc *apiv1.Service) 
 			}
 		}
 		if found {
-			ingressSvcPorts[svcPort.Port] = svcPort.TargetPort.String()
+			ingressSvcPortTuples.Insert(negtypes.SvcPortTuple{
+				Port:       svcPort.Port,
+				Name:       svcPort.Name,
+				TargetPort: svcPort.TargetPort.String(),
+			})
 		}
 	}
 
-	return ingressSvcPorts
+	return ingressSvcPortTuples
 }
 
 // gatherIngressServiceKeys returns all service key (formatted as namespace/name) referenced in the ingress
@@ -709,12 +726,16 @@ func getIngressServicesFromStore(store cache.Store, svc *apiv1.Service) (ings []
 
 // gatherPortMappingFromService returns PortMapping for all ports of the service.
 // Mapping all ports since Istio DestinationRule is using all ports.
-func gatherPortMappingFromService(svc *apiv1.Service) negtypes.SvcPortMap {
-	servicePortMap := make(negtypes.SvcPortMap)
+func gatherPortMappingFromService(svc *apiv1.Service) negtypes.SvcPortTupleSet {
+	svcPortTupleSet := make(negtypes.SvcPortTupleSet)
 	for _, svcPort := range svc.Spec.Ports {
-		servicePortMap[svcPort.Port] = svcPort.TargetPort.String()
+		svcPortTupleSet.Insert(negtypes.SvcPortTuple{
+			Port:       svcPort.Port,
+			Name:       svcPort.Name,
+			TargetPort: svcPort.TargetPort.String(),
+		})
 	}
-	return servicePortMap
+	return svcPortTupleSet
 }
 
 // getDestinationRulesFromStore returns all DestinationRules that refering service svc.

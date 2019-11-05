@@ -31,6 +31,7 @@ import (
 	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog"
+	"reflect"
 )
 
 type serviceKey struct {
@@ -125,7 +126,6 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.endpointLister,
 				manager.reflector,
 			)
-
 			manager.syncerMap[syncerKey] = syncer
 		}
 
@@ -233,7 +233,7 @@ func (manager *syncerManager) ReadinessGateEnabled(syncerKey negtypes.NegSyncerK
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	if v, ok := manager.svcPortMap[serviceKey{namespace: syncerKey.Namespace, name: syncerKey.Name}]; ok {
-		if info, ok := v[negtypes.PortInfoMapKey{ServicePort: syncerKey.Port, Subset: syncerKey.Subset}]; ok {
+		if info, ok := v[negtypes.PortInfoMapKey{ServicePort: syncerKey.PortTuple.Port, Subset: syncerKey.Subset}]; ok {
 			return info.ReadinessGate
 		}
 	}
@@ -313,8 +313,7 @@ func getSyncerKey(namespace, name string, servicePortKey negtypes.PortInfoMapKey
 	return negtypes.NegSyncerKey{
 		Namespace:    namespace,
 		Name:         name,
-		Port:         servicePortKey.ServicePort,
-		TargetPort:   portInfo.TargetPort,
+		PortTuple:    portInfo.PortTuple,
 		Subset:       servicePortKey.Subset,
 		SubsetLabels: portInfo.SubsetLabels,
 		NegType:      networkEndpointType,
@@ -328,8 +327,9 @@ func getServiceKey(namespace, name string) serviceKey {
 	}
 }
 
-// removeCommonPorts removes duplicate ports in p1 and p2 if the corresponding port info has the same target port and neg name.
-// This function effectively removes duplicate port with different readiness gate flag if the rest of the field in port info is the same.
+// removeCommonPorts removes duplicate ports in p1 and p2 if the corresponding port info is converted to the same syncerKey.
+// When both ports can be converted to the same syncerKey, that means the underlying NEG syncer and NEG configuration is exactly the same.
+// For example, this function effectively removes duplicate port with different readiness gate flag if the rest of the field in port info is the same.
 func removeCommonPorts(p1, p2 negtypes.PortInfoMap) {
 	for port, portInfo1 := range p1 {
 		portInfo2, ok := p2[port]
@@ -337,18 +337,11 @@ func removeCommonPorts(p1, p2 negtypes.PortInfoMap) {
 			continue
 		}
 
-		if portInfo1.TargetPort != portInfo2.TargetPort {
-			continue
+		syncerKey1 := getSyncerKey("", "", port, portInfo1)
+		syncerKey2 := getSyncerKey("", "", port, portInfo2)
+		if reflect.DeepEqual(syncerKey1, syncerKey2) {
+			delete(p1, port)
+			delete(p2, port)
 		}
-		if portInfo1.NegName != portInfo2.NegName {
-			continue
-		}
-		if portInfo1.SubsetLabels != portInfo2.SubsetLabels {
-			continue
-		}
-
-		delete(p1, port)
-		delete(p2, port)
-
 	}
 }

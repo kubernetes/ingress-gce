@@ -26,8 +26,8 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
+	"k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -408,21 +408,21 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	zoneGetter := negtypes.NewFakeZoneGetter()
 	testCases := []struct {
 		desc                string
-		targetPort          string
+		portName            string
 		endpointSets        map[string]negtypes.NetworkEndpointSet
 		expectMap           negtypes.EndpointPodMap
 		networkEndpointType negtypes.NetworkEndpointType
 	}{
 		{
 			desc:                "non exist target port",
-			targetPort:          "8888",
+			portName:            "non-exists",
 			endpointSets:        map[string]negtypes.NetworkEndpointSet{},
 			expectMap:           negtypes.EndpointPodMap{},
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
 		{
-			desc:       "target port number",
-			targetPort: "80",
+			desc:     "target port number",
+			portName: "",
 			endpointSets: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.1.1||instance1||80"),
@@ -442,8 +442,8 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
 		{
-			desc:       "named target port",
-			targetPort: testNamedPort,
+			desc:     "named target port",
+			portName: testNamedPort,
 			endpointSets: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.2.2||instance2||81")),
@@ -463,8 +463,8 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 			networkEndpointType: negtypes.VmIpPortEndpointType,
 		},
 		{
-			desc:       "Non-GCP network endpoints",
-			targetPort: "80",
+			desc:     "Non-GCP network endpoints",
+			portName: "",
 			endpointSets: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
 					networkEndpointFromEncodedEndpoint("10.100.1.1||||80"),
@@ -486,7 +486,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		retSet, retMap, err := toZoneNetworkEndpointMap(getDefaultEndpoint(), zoneGetter, tc.targetPort, podLister, "", tc.networkEndpointType)
+		retSet, retMap, err := toZoneNetworkEndpointMap(getDefaultEndpoint(), zoneGetter, tc.portName, podLister, "", tc.networkEndpointType)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}

@@ -825,11 +825,13 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud) (negty
 	}
 	context := context.NewControllerContext(kubeClient, nil, backendConfigClient, nil, nil, namer, ctxConfig)
 	svcPort := negtypes.NegSyncerKey{
-		Namespace:  testNamespace,
-		Name:       testService,
-		NegType:    negtypes.VmIpPortEndpointType,
-		Port:       80,
-		TargetPort: "8080",
+		Namespace: testNamespace,
+		Name:      testService,
+		NegType:   negtypes.VmIpPortEndpointType,
+		PortTuple: negtypes.SvcPortTuple{
+			Port:       80,
+			TargetPort: "8080",
+		},
 	}
 
 	// TODO(freehan): use real readiness reflector

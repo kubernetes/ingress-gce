@@ -168,31 +168,21 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object and Istio:DestinationRule subset into zone and endpoints map
-func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.ZoneGetter, targetPort string, podLister cache.Indexer, subsetLables string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
+func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.ZoneGetter, servicePortName string, podLister cache.Indexer, subsetLables string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	if endpoints == nil {
 		klog.Errorf("Endpoint object is nil")
 		return zoneNetworkEndpointMap, networkEndpointPodMap, nil
 	}
-	targetPortNum, _ := strconv.Atoi(targetPort)
+
 	for _, subset := range endpoints.Subsets {
 		matchPort := ""
 		// service spec allows target Port to be a named Port.
 		// support both explicit Port and named Port.
 		for _, port := range subset.Ports {
-			if targetPortNum != 0 {
-				// TargetPort is int
-				if int(port.Port) == targetPortNum {
-					matchPort = targetPort
-				}
-			} else {
-				// TargetPort is string
-				if port.Name == targetPort {
-					matchPort = strconv.Itoa(int(port.Port))
-				}
-			}
-			if len(matchPort) > 0 {
+			if port.Name == servicePortName {
+				matchPort = strconv.Itoa(int(port.Port))
 				break
 			}
 		}
