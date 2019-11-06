@@ -67,7 +67,7 @@ const (
 	InstanceGroupsAnnotationKey = "ingress.gcp.kubernetes.io/instance-groups"
 
 	// SuppressFirewallXPNErrorKey is the annotation key used by firewall
-	// controller whether to supress firewallXPNError.
+	// controller whether to suppress firewallXPNError.
 	SuppressFirewallXPNErrorKey = "networking.gke.io/suppress-firewall-xpn-error"
 
 	// FrontendConfigKey is the annotation key used by controller to specify

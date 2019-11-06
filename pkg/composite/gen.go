@@ -1861,7 +1861,7 @@ type NetworkEndpointGroupsListEndpointsRequest struct {
 	EndpointFilters []*NetworkEndpointGroupsListEndpointsRequestNetworkEndpointFilter `json:"endpointFilters,omitempty"`
 	// Optional query parameter for showing the health status of each
 	// network endpoint. Valid options are SKIP or SHOW. If you don't
-	// specifiy this parameter, the health status of network endpoints will
+	// specify this parameter, the health status of network endpoints will
 	// not be provided.
 	HealthStatus    string   `json:"healthStatus,omitempty"`
 	ForceSendFields []string `json:"-"`

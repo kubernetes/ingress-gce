@@ -738,7 +738,7 @@ func gatherPortMappingFromService(svc *apiv1.Service) negtypes.SvcPortTupleSet {
 	return svcPortTupleSet
 }
 
-// getDestinationRulesFromStore returns all DestinationRules that refering service svc.
+// getDestinationRulesFromStore returns all DestinationRules that referring service svc.
 // Please notice that a DestionationRule can point to a service in a different namespace.
 func getDestinationRulesFromStore(store cache.Store, svc *apiv1.Service) (drs map[apimachinerytypes.NamespacedName]*istioV1alpha3.DestinationRule) {
 	drs = make(map[apimachinerytypes.NamespacedName]*istioV1alpha3.DestinationRule)

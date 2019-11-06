@@ -303,7 +303,7 @@ func CheckDistinctResponseHost(vip string, expectDistinctHosts int, tolerateTran
 		hosts.Insert(res.K8sEnv.Pod)
 	}
 	if hosts.Len() != expectDistinctHosts {
-		errs = append(errs, fmt.Errorf("got %v distinct hosts responsing vip %q, want %v", hosts.Len(), vip, expectDistinctHosts))
+		errs = append(errs, fmt.Errorf("got %v distinct hosts responding vip %q, want %v", hosts.Len(), vip, expectDistinctHosts))
 	}
 	return utilerrors.NewAggregate(errs)
 }

@@ -263,7 +263,7 @@ func (n *Namer) NameBelongsToCluster(name string) bool {
 		return true
 	}
 
-	// if the name is longer or equal to 63 charactors and the last character of the resource matches alphaNumericChar,
+	// if the name is longer or equal to 63 characters and the last character of the resource matches alphaNumericChar,
 	// it is likely that the name was truncated.
 	if len(name) > nameLenLimit && len(componentClusterName) > 0 && componentClusterName[len(componentClusterName)-1:] == alphaNumericChar {
 		componentClusterName = componentClusterName[0 : len(componentClusterName)-1]

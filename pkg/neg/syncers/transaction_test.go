@@ -548,13 +548,13 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 		expectEndpointMap map[string]negtypes.NetworkEndpointSet
 	}{
 		{
-			"both emtpy",
+			"both empty",
 			map[string]negtypes.NetworkEndpointSet{},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			map[string]negtypes.NetworkEndpointSet{},
 		},
 		{
-			"emtpy map",
+			"empty map",
 			map[string]negtypes.NetworkEndpointSet{},
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
@@ -573,7 +573,7 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 			map[string]negtypes.NetworkEndpointSet{},
 		},
 		{
-			"emtpy transaction",
+			"empty transaction",
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
@@ -585,7 +585,7 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 			},
 		},
 		{
-			"emtpy transaction",
+			"empty transaction",
 			map[string]negtypes.NetworkEndpointSet{
 				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.6"), 5, testInstance1, "8080")),
 				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
