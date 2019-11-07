@@ -48,10 +48,10 @@ import (
 )
 
 const (
-	testServiceNamespace = "test-ns"
-	testServiceName      = "test-Name"
-	testNamedPort        = "named-Port"
-	testNamePort2        = "http"
+	testServiceNamespace    = "test-ns"
+	testServiceName         = "test-Name"
+	testNamedPort           = "named-Port"
+	testNamedPortWithNumber = "80"
 )
 
 var (
@@ -400,6 +400,35 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 			[]v1beta1.Ingress{*newTestIngress(testServiceName)},
 			[]int32{80, 443, 8081},
 			"one ingress with multiple different references to service",
+		},
+		{
+			[]v1beta1.Ingress{{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      testServiceName,
+					Namespace: testServiceNamespace,
+				},
+				Spec: v1beta1.IngressSpec{
+					Rules: []v1beta1.IngressRule{
+						{
+							IngressRuleValue: v1beta1.IngressRuleValue{
+								HTTP: &v1beta1.HTTPIngressRuleValue{
+									Paths: []v1beta1.HTTPIngressPath{
+										{
+											Path: "/path1",
+											Backend: v1beta1.IngressBackend{
+												ServiceName: testServiceName,
+												ServicePort: intstr.FromString(testNamedPortWithNumber),
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}},
+			[]int32{8881},
+			"ingress reference service with service port name with number",
 		},
 	}
 
@@ -998,6 +1027,11 @@ var ports = []apiv1.ServicePort{
 	{
 		Port:       8888,
 		TargetPort: intstr.FromInt(8888),
+	},
+	{
+		Name:       testNamedPortWithNumber,
+		Port:       8881,
+		TargetPort: intstr.FromInt(8882),
 	},
 }
 
