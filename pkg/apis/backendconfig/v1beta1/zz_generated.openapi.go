@@ -29,15 +29,21 @@ import (
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
-		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.BackendConfig":              schema_pkg_apis_backendconfig_v1beta1_BackendConfig(ref),
-		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.BackendConfigSpec":          schema_pkg_apis_backendconfig_v1beta1_BackendConfigSpec(ref),
-		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig":                  schema_pkg_apis_backendconfig_v1beta1_CDNConfig(ref),
-		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CacheKeyPolicy":             schema_pkg_apis_backendconfig_v1beta1_CacheKeyPolicy(ref),
-		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConnectionDrainingConfig":   schema_pkg_apis_backendconfig_v1beta1_ConnectionDrainingConfig(ref),
-		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CustomRequestHeadersConfig": schema_pkg_apis_backendconfig_v1beta1_CustomRequestHeadersConfig(ref),
-		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.IAPConfig":                  schema_pkg_apis_backendconfig_v1beta1_IAPConfig(ref),
-		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.OAuthClientCredentials":     schema_pkg_apis_backendconfig_v1beta1_OAuthClientCredentials(ref),
-		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SessionAffinityConfig":      schema_pkg_apis_backendconfig_v1beta1_SessionAffinityConfig(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.BackendConfig":                                schema_pkg_apis_backendconfig_v1beta1_BackendConfig(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.BackendConfigSpec":                            schema_pkg_apis_backendconfig_v1beta1_BackendConfigSpec(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig":                                    schema_pkg_apis_backendconfig_v1beta1_CDNConfig(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CacheKeyPolicy":                               schema_pkg_apis_backendconfig_v1beta1_CacheKeyPolicy(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CircuitBreakers":                              schema_pkg_apis_backendconfig_v1beta1_CircuitBreakers(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConnectionDrainingConfig":                     schema_pkg_apis_backendconfig_v1beta1_ConnectionDrainingConfig(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConsistentHashLoadBalancerSettings":           schema_pkg_apis_backendconfig_v1beta1_ConsistentHashLoadBalancerSettings(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConsistentHashLoadBalancerSettingsHttpCookie": schema_pkg_apis_backendconfig_v1beta1_ConsistentHashLoadBalancerSettingsHttpCookie(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CustomRequestHeadersConfig":                   schema_pkg_apis_backendconfig_v1beta1_CustomRequestHeadersConfig(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.Duration":                                     schema_pkg_apis_backendconfig_v1beta1_Duration(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.IAPConfig":                                    schema_pkg_apis_backendconfig_v1beta1_IAPConfig(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.OAuthClientCredentials":                       schema_pkg_apis_backendconfig_v1beta1_OAuthClientCredentials(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.OutlierDetection":                             schema_pkg_apis_backendconfig_v1beta1_OutlierDetection(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SessionAffinityConfig":                        schema_pkg_apis_backendconfig_v1beta1_SessionAffinityConfig(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.TrafficManagementConfig":                      schema_pkg_apis_backendconfig_v1beta1_TrafficManagementConfig(ref),
 	}
 }
 
@@ -127,11 +133,16 @@ func schema_pkg_apis_backendconfig_v1beta1_BackendConfigSpec(ref common.Referenc
 							Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CustomRequestHeadersConfig"),
 						},
 					},
+					"trafficManagement": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.TrafficManagementConfig"),
+						},
+					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConnectionDrainingConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CustomRequestHeadersConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.IAPConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SecurityPolicyConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SessionAffinityConfig"},
+			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CDNConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConnectionDrainingConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CustomRequestHeadersConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.IAPConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SecurityPolicyConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.SessionAffinityConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.TrafficManagementConfig"},
 	}
 }
 
@@ -224,6 +235,62 @@ func schema_pkg_apis_backendconfig_v1beta1_CacheKeyPolicy(ref common.ReferenceCa
 	}
 }
 
+func schema_pkg_apis_backendconfig_v1beta1_CircuitBreakers(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "CircuitBreakers contains configuration for the circuit breakers feature on TrafficManagement based load balancers",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"connectTimeout": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The timeout for new network connections to hosts.",
+							Ref:         ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.Duration"),
+						},
+					},
+					"maxConnections": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The maximum number of connections to the backend cluster. If not specified, the default is 1024.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"maxPendingRequests": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The maximum number of pending requests allowed to the backend cluster. If not specified, the default is 1024.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"maxRequests": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The maximum number of parallel requests that allowed to the backend cluster. If not specified, the default is 1024.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"maxRequestsPerConnection": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Maximum requests for a single backend connection. This parameter is respected by both the HTTP/1.1 and HTTP/2 implementations. If not specified, there is no limit. Setting this parameter to 1 will effectively disable keep alive.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"maxRetries": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The maximum number of parallel retries allowed to the backend cluster. If not specified, the default is 3.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+				},
+			},
+		},
+		Dependencies: []string{
+			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.Duration"},
+	}
+}
+
 func schema_pkg_apis_backendconfig_v1beta1_ConnectionDrainingConfig(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -241,6 +308,76 @@ func schema_pkg_apis_backendconfig_v1beta1_ConnectionDrainingConfig(ref common.R
 				},
 			},
 		},
+	}
+}
+
+func schema_pkg_apis_backendconfig_v1beta1_ConsistentHashLoadBalancerSettings(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "ConsistentHashLoadBalancerSettings contains configuration for consistent hash features on TrafficManagement based load balancers",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"httpCookie": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Hash is based on HTTP Cookie. This field describes a HTTP cookie that will be used as the hash key for the consistent hash load balancer. If the cookie is not present, it will be generated. This field is applicable if the sessionAffinity is set to HTTP_COOKIE.",
+							Ref:         ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConsistentHashLoadBalancerSettingsHttpCookie"),
+						},
+					},
+					"httpHeaderName": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The hash based on the value of the specified header field. This field is applicable if the sessionAffinity is set to HEADER_FIELD.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"minimumRingSize": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The minimum number of virtual nodes to use for the hash ring. Defaults to 1024. Larger ring sizes result in more granular load distributions. If the number of hosts in the load balancing pool is larger than the ring size, each host will be assigned a single virtual node.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+				},
+			},
+		},
+		Dependencies: []string{
+			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConsistentHashLoadBalancerSettingsHttpCookie"},
+	}
+}
+
+func schema_pkg_apis_backendconfig_v1beta1_ConsistentHashLoadBalancerSettingsHttpCookie(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "ConsistentHashLoadBalancerSettingsHttpCookie contains configuration for the HttpCookie for the consistent hash feature",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Name of the cookie.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"path": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Path to set for the cookie.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"ttl": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Lifetime of the cookie.",
+							Ref:         ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.Duration"),
+						},
+					},
+				},
+			},
+		},
+		Dependencies: []string{
+			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.Duration"},
 	}
 }
 
@@ -262,6 +399,33 @@ func schema_pkg_apis_backendconfig_v1beta1_CustomRequestHeadersConfig(ref common
 									},
 								},
 							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func schema_pkg_apis_backendconfig_v1beta1_Duration(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "Duration contains configuration for time intervals",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"nanos": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Span of time that's a fraction of a second at nanosecond resolution. Durations less than one second are represented with a 0 `seconds` field and a positive `nanos` field. Must be from 0 to 999,999,999 inclusive.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"seconds": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Span of time at a resolution of a second. Must be from 0 to 315,576,000,000 inclusive. Note: these bounds are computed from: 60 sec/min * 60 min/hr * 24 hr/day * 365.25 days/year * 10000 years",
+							Type:        []string{"integer"},
+							Format:      "int64",
 						},
 					},
 				},
@@ -332,6 +496,96 @@ func schema_pkg_apis_backendconfig_v1beta1_OAuthClientCredentials(ref common.Ref
 	}
 }
 
+func schema_pkg_apis_backendconfig_v1beta1_OutlierDetection(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "OutlierDetection contains configuration for outlier detection on TrafficManagement based load balancers",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"baseEjectionTime": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The base time that a host is ejected for. The real time is equal to the base time multiplied by the number of times the host has been ejected. Defaults to 30000ms or 30s.",
+							Ref:         ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.Duration"),
+						},
+					},
+					"consecutiveErrors": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Number of errors before a host is ejected from the connection pool. When the backend host is accessed over HTTP, a 5xx return code qualifies as an error. Defaults to 5.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"consecutiveGatewayFailure": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The number of consecutive gateway failures (502, 503, 504 status or connection errors that are mapped to one of those status codes) before a consecutive gateway failure ejection occurs. Defaults to 5.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"enforcingConsecutiveErrors": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The percentage chance that a host will be actually ejected when an outlier status is detected through consecutive 5xx. This setting can be used to disable ejection or to ramp it up slowly. Defaults to 100.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"enforcingConsecutiveGatewayFailure": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The percentage chance that a host will be actually ejected when an outlier status is detected through consecutive gateway failures. This setting can be used to disable ejection or to ramp it up slowly. Defaults to 0.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"enforcingSuccessRate": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The percentage chance that a host will be actually ejected when an outlier status is detected through success rate statistics. This setting can be used to disable ejection or to ramp it up slowly. Defaults to 100.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"interval": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Time interval between ejection sweep analysis. This can result in both new ejections as well as hosts being returned to service. Defaults to 10 seconds.",
+							Ref:         ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.Duration"),
+						},
+					},
+					"maxEjectionPercent": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Maximum percentage of hosts in the load balancing pool for the backend service that can be ejected. Defaults to 10%.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"successRateMinimumHosts": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The number of hosts in a cluster that must have enough request volume to detect success rate outliers. If the number of hosts is less than this setting, outlier detection via success rate statistics is not performed for any host in the cluster. Defaults to 5.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"successRateRequestVolume": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The minimum number of total requests that must be collected in one interval (as defined by the interval duration above) to include this host in success rate based outlier detection. If the volume is lower than this setting, outlier detection via success rate statistics is not performed for that host. Defaults to 100.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"successRateStdevFactor": {
+						SchemaProps: spec.SchemaProps{
+							Description: "This factor is used to determine the ejection threshold for success rate outlier ejection. The ejection threshold is the difference between the mean success rate, and the product of this factor and the standard deviation of the mean success rate: mean - (stdev * success_rate_stdev_factor). This factor is divided by a thousand to get a double. That is, if the desired factor is 1.9, the runtime value should be 1900. Defaults to 1900.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+				},
+			},
+		},
+		Dependencies: []string{
+			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.Duration"},
+	}
+}
+
 func schema_pkg_apis_backendconfig_v1beta1_SessionAffinityConfig(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -354,5 +608,41 @@ func schema_pkg_apis_backendconfig_v1beta1_SessionAffinityConfig(ref common.Refe
 				},
 			},
 		},
+	}
+}
+
+func schema_pkg_apis_backendconfig_v1beta1_TrafficManagementConfig(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "TrafficManagementConfig holds all of the traffic director specific features",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"localityLbPolicy": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"ConsistentHash": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConsistentHashLoadBalancerSettings"),
+						},
+					},
+					"outlierDetection": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.OutlierDetection"),
+						},
+					},
+					"circuitBreakers": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CircuitBreakers"),
+						},
+					},
+				},
+			},
+		},
+		Dependencies: []string{
+			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.CircuitBreakers", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.ConsistentHashLoadBalancerSettings", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.OutlierDetection"},
 	}
 }
