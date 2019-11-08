@@ -1,6 +1,7 @@
 package cmconfig
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 
@@ -29,7 +30,7 @@ func (c *Config) Equals(other *Config) bool {
 }
 
 // LoadValue loads configs from a map, it will ignore any unknow/unvalid field.
-func (c *Config) LoadValue(m map[string]string) {
+func (c *Config) LoadValue(m map[string]string, recordWarning func(msg string)) {
 	rconfigPtr := reflect.ValueOf(c)
 	rconfig := reflect.Indirect(rconfigPtr)
 
@@ -44,7 +45,9 @@ func (c *Config) LoadValue(m map[string]string) {
 				} else if v == sFalse {
 					field.SetBool(false)
 				} else {
-					klog.Errorf("The map provided a unvalid value for field: %s, value: %s, valid values are: %s/%s", k, v, sTrue, sFalse)
+					msg := fmt.Sprintf("The map provided a unvalid value for field: %s, value: %s, valid values are: %s/%s", k, v, sTrue, sFalse)
+					klog.Errorf(msg)
+					recordWarning(msg)
 				}
 			} else if fieldType == reflect.String {
 				field.SetString(v)
@@ -53,13 +56,19 @@ func (c *Config) LoadValue(m map[string]string) {
 					values := strings.Split(v, ",")
 					field.Set(reflect.ValueOf(values))
 				} else {
-					klog.Errorf("config struct using a unsupported slice type: %s, only support []string", field.Elem().Kind().String())
+					msg := fmt.Sprintf("config struct using a unsupported slice type: %s, only support []string", field.Elem().Kind().String())
+					klog.Errorf(msg)
+					recordWarning(msg)
 				}
 			} else {
-				klog.Errorf("config struct using a unsupported type: %s, only support bool/string.", fieldType)
+				msg := fmt.Sprintf("config struct using a unsupported type: %s, only support bool/string.", fieldType)
+				klog.Errorf(msg)
+				recordWarning(msg)
 			}
 		} else {
-			klog.Errorf("The map contains a unknown key-value pair: %s:%s", k, v)
+			msg := fmt.Sprintf("The map contains a unknown key-value pair: %s:%s", k, v)
+			klog.Errorf(msg)
+			recordWarning(msg)
 		}
 	}
 }

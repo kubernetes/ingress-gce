@@ -132,7 +132,7 @@ func main() {
 		HealthCheckPath:               flags.F.HealthCheckPath,
 		DefaultBackendHealthCheckPath: flags.F.DefaultSvcHealthCheckPath,
 		FrontendConfigEnabled:         flags.F.EnableFrontendConfig,
-		EnableASMConfigMapConfig:      flags.F.EnableASMConfigMapBasedConfig,
+		EnableASMConfigMap:            flags.F.EnableASMConfigMapBasedConfig,
 		ASMConfigMapNamespace:         flags.F.ASMConfigMapBasedConfigNamespace,
 		ASMConfigMapName:              flags.F.ASMConfigMapBasedConfigCMName,
 	}
@@ -144,22 +144,17 @@ func main() {
 		return
 	}
 
-	leaderElectionCtx, leaderElectionCancel := context.WithCancel(context.Background())
-	electionConfig, err := makeLeaderElectionConfig(leaderElectKubeClient, ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace), func() {
-		runControllers(ctx)
-		klog.Info("Shutting down leader election")
-		leaderElectionCancel()
-	})
+	electionConfig, err := makeLeaderElectionConfig(ctx, leaderElectKubeClient, ctx.Recorder(flags.F.LeaderElection.LockObjectNamespace))
 	if err != nil {
 		klog.Fatalf("%v", err)
 	}
-	leaderelection.RunOrDie(leaderElectionCtx, *electionConfig)
+	leaderelection.RunOrDie(context.Background(), *electionConfig)
 	klog.Warning("Ingress Controller exited.")
 }
 
 // makeLeaderElectionConfig builds a leader election configuration. It will
 // create a new resource lock associated with the configuration.
-func makeLeaderElectionConfig(client clientset.Interface, recorder record.EventRecorder, run func()) (*leaderelection.LeaderElectionConfig, error) {
+func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, client clientset.Interface, recorder record.EventRecorder) (*leaderelection.LeaderElectionConfig, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get hostname: %v", err)
@@ -177,6 +172,12 @@ func makeLeaderElectionConfig(client clientset.Interface, recorder record.EventR
 		})
 	if err != nil {
 		return nil, fmt.Errorf("couldn't create resource lock: %v", err)
+	}
+
+	run := func() {
+		runControllers(ctx)
+		klog.Info("Shutting down leader election")
+		os.Exit(0)
 	}
 
 	return &leaderelection.LeaderElectionConfig{
@@ -201,14 +202,13 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	stopCh := make(chan struct{})
 	ctx.Init()
 	lbc := controller.NewLoadBalancerController(ctx, stopCh)
-
-	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values())
-
-	if ctx.EnableASMConfigMapConfig {
-		ctx.ASMConfigMapBasedConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
+	if ctx.EnableASMConfigMap {
+		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
 			lbc.Stop(false) // We want to trigger a restart, don't have to clean up all the resources.
 		})
 	}
+
+	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values())
 
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
 	negController := neg.NewController(negtypes.NewAdapter(ctx.Cloud), ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, flags.F.EnableReadinessReflector)
@@ -228,7 +228,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	for {
 		klog.Warning("Handled quit, awaiting pod deletion.")
 		time.Sleep(30 * time.Second)
-		if ctx.EnableASMConfigMapConfig {
+		if ctx.EnableASMConfigMap {
 			return
 		}
 	}

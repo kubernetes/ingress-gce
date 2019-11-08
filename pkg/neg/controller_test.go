@@ -80,23 +80,19 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 	kubeClient.CoreV1().ConfigMaps("kube-system").Create(&apiv1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ingress-controller-config-test"}, Data: map[string]string{"EnableASM": "true"}})
 
 	ctxConfig := context.ControllerContextConfig{
-		Namespace:                apiv1.NamespaceAll,
-		ResyncPeriod:             1 * time.Second,
-		DefaultBackendSvcPort:    defaultBackend,
-		EnableASMConfigMapConfig: true,
-		ASMConfigMapNamespace:    "kube-system",
-		ASMConfigMapName:         "ingress-controller-config-test",
+		Namespace:             apiv1.NamespaceAll,
+		ResyncPeriod:          1 * time.Second,
+		DefaultBackendSvcPort: defaultBackend,
+		EnableASMConfigMap:    true,
+		ASMConfigMapNamespace: "kube-system",
+		ASMConfigMapName:      "ingress-controller-config-test",
 	}
 	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, ctxConfig)
 
 	// Hack the context.Init func.
 	configMapInformer := informerv1.NewConfigMapInformer(kubeClient, context.Namespace, context.ResyncPeriod, utils.NewNamespaceIndexer())
 	context.ConfigMapInformer = configMapInformer
-	context.ASMConfigMapBasedConfigController = cmconfig.NewConfigMapConfigController(kubeClient, context.ASMConfigMapNamespace, context.ASMConfigMapName)
-
-	cmcController := cmconfig.NewConfigMapConfigController(kubeClient, context.ASMConfigMapNamespace, context.ASMConfigMapName)
-
-	context.ASMConfigMapBasedConfigController = cmcController
+	context.ASMConfigController = cmconfig.NewConfigMapConfigController(kubeClient, nil, context.ASMConfigMapNamespace, context.ASMConfigMapName)
 	dynamicClient := dynamicfake.NewSimpleDynamicClient(dynamicSchema)
 
 	destrinationGVR := schema.GroupVersionResource{Group: "networking.istio.io", Version: "v1alpha3", Resource: "destinationrules"}

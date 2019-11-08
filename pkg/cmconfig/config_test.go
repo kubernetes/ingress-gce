@@ -52,7 +52,7 @@ func TestLoadValue(t *testing.T) {
 			}()
 
 			config := NewConfig()
-			config.LoadValue(tc.inputMap)
+			config.LoadValue(tc.inputMap, func(string) {})
 			if !config.Equals(&tc.wantConfig) {
 				t.Errorf("LoadValue loads wrong value, got: %v, want: %v", config, tc.wantConfig)
 			}

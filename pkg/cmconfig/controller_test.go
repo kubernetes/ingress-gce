@@ -28,7 +28,7 @@ func TestNewConfigMapConfigControllerDefaultValue(t *testing.T) {
 	defer func() {
 		klog.SetOutput(os.Stderr)
 	}()
-	cmcController := NewConfigMapConfigController(kubeClient, testNamespace, testConfigMapName)
+	cmcController := NewConfigMapConfigController(kubeClient, nil, testNamespace, testConfigMapName)
 
 	newConfig := NewConfig()
 	config := cmcController.GetConfig()
@@ -109,7 +109,7 @@ func TestController(t *testing.T) {
 					ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: testConfigMapName},
 					Data:       tc.defaultConfigMapData})
 			}
-			controller := NewConfigMapConfigController(fakeClient, testNamespace, testConfigMapName)
+			controller := NewConfigMapConfigController(fakeClient, nil, testNamespace, testConfigMapName)
 			config := controller.GetConfig()
 			if !config.Equals(tc.wantConfig) {
 				t.Errorf("Default Config not equals to wantConfig, got: %v, want: %v", config, tc.wantConfig)

@@ -194,8 +194,8 @@ func NewController(
 		},
 	})
 
-	if ctx.EnableASMConfigMapConfig {
-		cmconfig := ctx.ASMConfigMapBasedConfigController.GetConfig()
+	if ctx.EnableASMConfigMap {
+		cmconfig := ctx.ASMConfigController.GetConfig()
 		if cmconfig.EnableASM {
 			negController.enableASM = cmconfig.EnableASM
 			negController.asmServiceNEGSkipNamespaces = cmconfig.ASMServiceNEGSkipNamespaces

@@ -14,6 +14,7 @@ limitations under the License.
 package context
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -57,7 +58,7 @@ type ControllerContext struct {
 	ClusterNamer *namer.Namer
 
 	ControllerContextConfig
-	ASMConfigMapBasedConfigController *cmconfig.ConfigMapConfigController
+	ASMConfigController *cmconfig.ConfigMapConfigController
 
 	IngressInformer         cache.SharedIndexInformer
 	ServiceInformer         cache.SharedIndexInformer
@@ -86,7 +87,7 @@ type ControllerContextConfig struct {
 	HealthCheckPath               string
 	DefaultBackendHealthCheckPath string
 	FrontendConfigEnabled         bool
-	EnableASMConfigMapConfig      bool
+	EnableASMConfigMap            bool
 	ASMConfigMapNamespace         string
 	ASMConfigMapName              string
 }
@@ -124,17 +125,21 @@ func NewControllerContext(
 	return context
 }
 
+// Init inits the Context, so that we can defers some config until the main thread enter actually get the leader lock.
 func (ctx *ControllerContext) Init() {
-	if ctx.EnableASMConfigMapConfig {
+	// Initialize controller context internals based on ASMConfigMap
+	if ctx.EnableASMConfigMap {
 		configMapInformer := informerv1.NewConfigMapInformer(ctx.KubeClient, ctx.Namespace, ctx.ResyncPeriod, utils.NewNamespaceIndexer())
 		ctx.ConfigMapInformer = configMapInformer
-		ctx.ASMConfigMapBasedConfigController = cmconfig.NewConfigMapConfigController(ctx.KubeClient, ctx.ASMConfigMapNamespace, ctx.ASMConfigMapName)
+		ctx.ASMConfigController = cmconfig.NewConfigMapConfigController(ctx.KubeClient, ctx.Recorder(ctx.ASMConfigMapNamespace), ctx.ASMConfigMapNamespace, ctx.ASMConfigMapName)
 
-		cmConfig := ctx.ASMConfigMapBasedConfigController.GetConfig()
+		cmConfig := ctx.ASMConfigController.GetConfig()
 		if cmConfig.EnableASM {
 			dynamicClient, err := dynamic.NewForConfig(ctx.KubeConfig)
 			if err != nil {
-				klog.Fatalf("Failed to create kubernetes dynamic client: %v", err)
+				msg := fmt.Sprintf("Failed to create kubernetes dynamic client: %v", err)
+				klog.Fatalf(msg)
+				ctx.ASMConfigController.RecordEvent("Warning", "FailedCreateDynamicClient", msg)
 			}
 
 			klog.Warning("The DestinationRule group version is v1alpha3 in group networking.istio.io. Need to update as istio API graduates.")
@@ -239,7 +244,7 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	if ctx.DestinationRuleInformer != nil {
 		go ctx.DestinationRuleInformer.Run(stopCh)
 	}
-	if ctx.EnableASMConfigMapConfig && ctx.ConfigMapInformer != nil {
+	if ctx.EnableASMConfigMap && ctx.ConfigMapInformer != nil {
 		go ctx.ConfigMapInformer.Run(stopCh)
 	}
 }
