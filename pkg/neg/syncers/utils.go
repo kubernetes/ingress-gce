@@ -18,11 +18,12 @@ package syncers
 
 import (
 	"fmt"
+	"k8s.io/ingress-gce/pkg/composite"
 	"strconv"
 	"strings"
 	"time"
 
-	"google.golang.org/api/compute/v1"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -112,8 +113,8 @@ func getService(serviceLister cache.Indexer, namespace, name string) *apiv1.Serv
 }
 
 // ensureNetworkEndpointGroup ensures corresponding NEG is configured correctly in the specified zone.
-func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder) error {
-	neg, err := cloud.GetNetworkEndpointGroup(negName, zone)
+func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version) error {
+	neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version)
 	if err != nil {
 		// Most likely to be caused by non-existed NEG
 		klog.V(4).Infof("Error while retriving %q in zone %q: %v", negName, zone, err)
@@ -129,7 +130,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			!utils.EqualResourceIDs(neg.Subnetwork, cloud.SubnetworkURL())) {
 		needToCreate = true
 		klog.V(2).Infof("NEG %q in %q does not match network and subnetwork of the cluster. Deleting NEG.", negName, zone)
-		err = cloud.DeleteNetworkEndpointGroup(negName, zone)
+		err = cloud.DeleteNetworkEndpointGroup(negName, zone, version)
 		if err != nil {
 			return err
 		}
@@ -149,7 +150,8 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		default:
 			subnetwork = cloud.SubnetworkURL()
 		}
-		err = cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
+		err = cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+			Version:             version,
 			Name:                negName,
 			NetworkEndpointType: string(networkEndpointType),
 			Network:             cloud.NetworkURL(),
@@ -246,7 +248,7 @@ func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.Zo
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
-func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud) (map[string]negtypes.NetworkEndpointSet, error) {
+func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version) (map[string]negtypes.NetworkEndpointSet, error) {
 	zones, err := zoneGetter.ListZones()
 	if err != nil {
 		return nil, err
@@ -255,7 +257,7 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	for _, zone := range zones {
 		zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
-		networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, false)
+		networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, false, version)
 		if err != nil {
 			return nil, err
 		}
@@ -268,8 +270,8 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.
 
 // makeEndpointBatch return a batch of endpoint from the input and remove the endpoints from input set
 // The return map has the encoded endpoint as key and GCE network endpoint object as value
-func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet) (map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint, error) {
-	endpointBatch := map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint{}
+func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet) (map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, error) {
+	endpointBatch := map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{}
 
 	for i := 0; i < MAX_NETWORK_ENDPOINTS_PER_BATCH; i++ {
 		networkEndpoint, ok := endpoints.PopAny()
@@ -282,7 +284,7 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet) (map[negtypes.Netw
 			return nil, fmt.Errorf("failed to decode endpoint port %v: %v", networkEndpoint, err)
 		}
 
-		endpointBatch[networkEndpoint] = &compute.NetworkEndpoint{
+		endpointBatch[networkEndpoint] = &composite.NetworkEndpoint{
 			Instance:  networkEndpoint.Node,
 			IpAddress: networkEndpoint.IP,
 			Port:      int64(portNum),

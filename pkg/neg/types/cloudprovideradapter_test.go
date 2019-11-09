@@ -16,12 +16,13 @@ limitations under the License.
 package types
 
 import (
-	"k8s.io/legacy-cloud-providers/gce"
 	"testing"
 
-	"google.golang.org/api/compute/v1"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/legacy-cloud-providers/gce"
 
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/composite"
 )
 
 func TestAggregatedListNetworkEndpointGroup(t *testing.T) {
@@ -40,7 +41,7 @@ func TestAggregatedListNetworkEndpointGroup(t *testing.T) {
 
 	validateAggregatedList(t, fakeCloud, 0, map[string][]string{})
 
-	neg := &compute.NetworkEndpointGroup{Name: neg1}
+	neg := &composite.NetworkEndpointGroup{Name: neg1, Version: meta.VersionGA}
 	zone := zone1
 	if err := fakeCloud.CreateNetworkEndpointGroup(neg, zone); err != nil {
 		t.Fatalf("Got CreateNetworkEndpointGroup(%v, %v) = %v, want nil", neg, zone, err)
@@ -48,7 +49,7 @@ func TestAggregatedListNetworkEndpointGroup(t *testing.T) {
 
 	validateAggregatedList(t, fakeCloud, 1, map[string][]string{zone1: {neg1}})
 
-	neg = &compute.NetworkEndpointGroup{Name: neg2}
+	neg = &composite.NetworkEndpointGroup{Name: neg2, Version: meta.VersionGA}
 	zone = zone2
 	if err := fakeCloud.CreateNetworkEndpointGroup(neg, zone); err != nil {
 		t.Fatalf("Got CreateNetworkEndpointGroup(%v, %v) = %v, want nil", neg, zone, err)
@@ -56,7 +57,7 @@ func TestAggregatedListNetworkEndpointGroup(t *testing.T) {
 
 	validateAggregatedList(t, fakeCloud, 2, map[string][]string{zone1: {neg1}, zone2: {neg2}})
 
-	neg = &compute.NetworkEndpointGroup{Name: neg1}
+	neg = &composite.NetworkEndpointGroup{Name: neg1, Version: meta.VersionGA}
 	zone = zone2
 	if err := fakeCloud.CreateNetworkEndpointGroup(neg, zone); err != nil {
 		t.Fatalf("Got CreateNetworkEndpointGroup(%v, %v) = %v, want nil", neg, zone, err)
@@ -64,7 +65,7 @@ func TestAggregatedListNetworkEndpointGroup(t *testing.T) {
 
 	validateAggregatedList(t, fakeCloud, 2, map[string][]string{zone1: {neg1}, zone2: {neg1, neg2}})
 
-	if err := fakeCloud.DeleteNetworkEndpointGroup(neg1, zone1); err != nil {
+	if err := fakeCloud.DeleteNetworkEndpointGroup(neg1, zone1, meta.VersionGA); err != nil {
 		t.Fatalf("Got DeleteNetworkEndpointGroup(%v, %v) = %v, want nil", neg1, zone1, err)
 	}
 
@@ -72,7 +73,7 @@ func TestAggregatedListNetworkEndpointGroup(t *testing.T) {
 }
 
 func validateAggregatedList(t *testing.T, adapter NetworkEndpointGroupCloud, expectZoneNum int, expectZoneNegs map[string][]string) {
-	ret, err := adapter.AggregatedListNetworkEndpointGroup()
+	ret, err := adapter.AggregatedListNetworkEndpointGroup(meta.VersionGA)
 	if err != nil {
 		t.Errorf("Expect AggregatedListNetworkEndpointGroup to return nil error, but got %v", err)
 	}

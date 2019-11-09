@@ -18,10 +18,10 @@ package readiness
 
 import (
 	"fmt"
-	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/composite"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog"
 	"strconv"
@@ -139,7 +139,7 @@ func (p *poller) Poll(key negMeta) (retry bool, err error) {
 	var errList []error
 	klog.V(2).Infof("polling NEG %q in zone %q", key.Name, key.Zone)
 	// TODO(freehan): filter the NEs that are in interest once the API supports it
-	res, err := p.negCloud.ListNetworkEndpoints(key.Name, key.Zone /*showHealthStatus*/, true)
+	res, err := p.negCloud.ListNetworkEndpoints(key.Name, key.Zone /*showHealthStatus*/, true, key.SyncerKey.GetAPIVersion())
 	if err != nil {
 		return true, err
 	}
@@ -167,7 +167,7 @@ func (p *poller) Poll(key negMeta) (retry bool, err error) {
 
 // processHealthStatus evaluates the health status of the input network endpoint.
 // Assumes p.lock is held when calling this method.
-func (p *poller) processHealthStatus(key negMeta, healthStatus *compute.NetworkEndpointWithHealthStatus) (healthy bool, err error) {
+func (p *poller) processHealthStatus(key negMeta, healthStatus *composite.NetworkEndpointWithHealthStatus) (healthy bool, err error) {
 	ne := negtypes.NetworkEndpoint{
 		IP:   healthStatus.NetworkEndpoint.IpAddress,
 		Port: strconv.FormatInt(healthStatus.NetworkEndpoint.Port, 10),

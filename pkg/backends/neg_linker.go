@@ -14,7 +14,6 @@ limitations under the License.
 package backends
 
 import (
-	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	befeatures "k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -45,7 +44,7 @@ func NewNEGLinker(
 
 // Link implements Link.
 func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
-	var negs []*compute.NetworkEndpointGroup
+	var negs []*composite.NetworkEndpointGroup
 	var err error
 	for _, group := range groups {
 		// If the group key contains a name, then use that.
@@ -54,7 +53,7 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		if negName == "" {
 			negName = sp.BackendName()
 		}
-		neg, err := l.negGetter.GetNetworkEndpointGroup(negName, group.Zone)
+		neg, err := l.negGetter.GetNetworkEndpointGroup(negName, group.Zone, utils.GetAPIVersionFromServicePort(&sp))
 		if err != nil {
 			return err
 		}
@@ -95,7 +94,7 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	return nil
 }
 
-func getBackendsForNEGs(negs []*compute.NetworkEndpointGroup) []*composite.Backend {
+func getBackendsForNEGs(negs []*composite.NetworkEndpointGroup) []*composite.Backend {
 	var backends []*composite.Backend
 	for _, neg := range negs {
 		b := &composite.Backend{

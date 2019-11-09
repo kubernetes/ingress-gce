@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/api/compute/v1"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -32,6 +32,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -148,7 +149,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 	}
 
 	// Verify the NEGs are created as expected
-	ret, _ := transactionSyncer.cloud.AggregatedListNetworkEndpointGroup()
+	ret, _ := transactionSyncer.cloud.AggregatedListNetworkEndpointGroup(meta.VersionGA)
 	expectZones := []string{testZone1, testZone2}
 	for _, zone := range expectZones {
 		negs, ok := ret[zone]
@@ -177,7 +178,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 		}
 
 		for zone, endpoints := range tc.expectEndpoints {
-			list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.negName, zone, false)
+			list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.negName, zone, false, meta.VersionGA)
 			if err != nil {
 				t.Errorf("For case %q,, endpointSets error == nil, but got %v", tc.desc, err)
 			}
@@ -208,7 +209,7 @@ func TestCommitTransaction(t *testing.T) {
 	testCases := []struct {
 		desc             string
 		err              error
-		endpointMap      map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint
+		endpointMap      map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint
 		table            func() networkEndpointTransactionTable
 		expect           func() networkEndpointTransactionTable
 		expectSyncCount  int
@@ -218,7 +219,7 @@ func TestCommitTransaction(t *testing.T) {
 		{
 			"empty inputs",
 			nil,
-			map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint{},
+			map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{},
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			func() networkEndpointTransactionTable { return NewTransactionTable() },
 			1,
@@ -277,7 +278,7 @@ func TestCommitTransaction(t *testing.T) {
 		{
 			"error and retry",
 			fmt.Errorf("dummy error"),
-			map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint{},
+			map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{},
 			func() networkEndpointTransactionTable {
 				table := NewTransactionTable()
 				generateTransaction(table, transactionEntry{Zone: testZone2, Operation: attachOp}, net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")
@@ -894,7 +895,7 @@ func unionEndpointMap(m1, m2 negtypes.EndpointPodMap) negtypes.EndpointPodMap {
 	return m1
 }
 
-func generateEndpointBatch(endpointSet negtypes.NetworkEndpointSet) map[negtypes.NetworkEndpoint]*compute.NetworkEndpoint {
+func generateEndpointBatch(endpointSet negtypes.NetworkEndpointSet) map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint {
 	ret, _ := makeEndpointBatch(endpointSet)
 	return ret
 }

@@ -17,6 +17,7 @@ limitations under the License.
 package readiness
 
 import (
+	"k8s.io/ingress-gce/pkg/composite"
 	"net"
 	"strconv"
 	"testing"
@@ -357,7 +358,7 @@ func TestPoll(t *testing.T) {
 	}
 
 	// create NEG, but with no endpoint
-	negCloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{Name: negName, Zone: zone}, zone)
+	negCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: negName, Zone: zone, Version: meta.VersionGA}, zone)
 	retry, err = poller.Poll(key)
 	if err != nil {
 		t.Errorf("Does not expect err, but got %v", err)
@@ -367,12 +368,12 @@ func TestPoll(t *testing.T) {
 	}
 
 	// add NE to the NEG, but NE not healthy
-	ne := &compute.NetworkEndpoint{
+	ne := &composite.NetworkEndpoint{
 		IpAddress: ip,
 		Port:      port,
 		Instance:  instance,
 	}
-	negCloud.AttachNetworkEndpoints(negName, zone, []*compute.NetworkEndpoint{ne})
+	negCloud.AttachNetworkEndpoints(negName, zone, []*composite.NetworkEndpoint{ne}, meta.VersionGA)
 	retry, err = poller.Poll(key)
 	if err != nil {
 		t.Errorf("Does not expect err, but got %v", err)
@@ -383,7 +384,11 @@ func TestPoll(t *testing.T) {
 
 	// add NE with healthy status
 	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), negtypes.NetworkEndpointEntry{
-		NetworkEndpoint: ne,
+		NetworkEndpoint: &compute.NetworkEndpoint{
+			IpAddress: ip,
+			Port:      port,
+			Instance:  instance,
+		},
 		Healths: []*compute.HealthStatusForNetworkEndpoint{
 			{
 				BackendService: &compute.BackendServiceReference{

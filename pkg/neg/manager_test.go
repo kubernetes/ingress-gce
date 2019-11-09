@@ -21,7 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"google.golang.org/api/compute/v1"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/ingress-gce/pkg/composite"
+
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -349,7 +351,8 @@ func TestGarbageCollectionNEG(t *testing.T) {
 
 	for _, networkEndpointType := range []negtypes.NetworkEndpointType{negtypes.VmIpPortEndpointType, negtypes.NonGCPPrivateEndpointType} {
 		negName := manager.namer.NEG("test", "test", 80)
-		manager.cloud.CreateNetworkEndpointGroup(&compute.NetworkEndpointGroup{
+		manager.cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+			Version:             meta.VersionGA,
 			Name:                negName,
 			NetworkEndpointType: string(networkEndpointType),
 		}, negtypes.TestZone1)
@@ -358,7 +361,7 @@ func TestGarbageCollectionNEG(t *testing.T) {
 			t.Fatalf("Failed to GC: %v", err)
 		}
 
-		negs, _ := manager.cloud.ListNetworkEndpointGroup(negtypes.TestZone1)
+		negs, _ := manager.cloud.ListNetworkEndpointGroup(negtypes.TestZone1, meta.VersionGA)
 		for _, neg := range negs {
 			if neg.Name == negName {
 				t.Errorf("Expect NEG %q to be GCed.", negName)

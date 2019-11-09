@@ -681,23 +681,23 @@ func {{.GetGroupResourceInfo.ListFuncName}}(gceCloud *gce.Cloud, key *meta.Key, 
 
 	switch version {
 	case meta.VersionAlpha:
-		alphareq, err := req.ToAlpha()
-		if err != nil {
-			return nil, err
+		alphareq, reqerr := req.ToAlpha()
+		if reqerr != nil {
+			return nil, reqerr
 		}
         klog.V(3).Infof("Listing alpha zonal {{.Name}} %v", key.Name)
         gceObjs, err = gceCloud.Compute().Alpha{{.GetCloudProviderName}}().{{.GetGroupResourceInfo.ListFuncName}}(ctx, key, alphareq, filter.None)
 	case meta.VersionBeta:
-		betareq, err := req.ToBeta()
-		if err != nil {
-			return nil, err
+		betareq, reqerr := req.ToBeta()
+		if reqerr != nil {
+			return nil, reqerr
 		}
 		klog.V(3).Infof("Listing beta zonal {{.Name}} %v", key.Name)
 		gceObjs, err = gceCloud.Compute().Beta{{.GetCloudProviderName}}().{{.GetGroupResourceInfo.ListFuncName}}(ctx, key, betareq, filter.None)
 	default:
-		gareq, err := req.ToGA()
-		if err != nil {
-			return nil, err
+		gareq, reqerr := req.ToGA()
+		if reqerr != nil {
+			return nil, reqerr
 		}
 		  klog.V(3).Infof("Listing ga zonal {{.Name}} %v", key.Name)
 			gceObjs, err = gceCloud.Compute().{{.GetCloudProviderName}}().{{.GetGroupResourceInfo.ListFuncName}}(ctx, key, gareq, filter.None)
@@ -716,43 +716,66 @@ func {{.GetGroupResourceInfo.ListFuncName}}(gceCloud *gce.Cloud, key *meta.Key, 
 	return compositeObjs, nil
 }
 
-func {{.GetGroupResourceInfo.AggListFuncName}}{{.GetGroupResourceInfo.AggListRespName}}(gceCloud *gce.Cloud, version meta.Version) (map[string][]*{{.GetGroupResourceInfo.AggListRespName}}, error) {
+func {{.GetGroupResourceInfo.AggListFuncName}}{{.GetGroupResourceInfo.AggListRespName}}(gceCloud *gce.Cloud, version meta.Version) (map[*meta.Key]*{{.GetGroupResourceInfo.AggListRespName}}, error) {
 	ctx, cancel := cloudprovider.ContextWithCallTimeout()
 	defer cancel()
 	mc := compositemetrics.NewMetricContext("{{.Name}}", "aggregateList", "", "", string(version))
 
+	compositeMap := make(map[*meta.Key]*{{.GetGroupResourceInfo.AggListRespName}})
 	var gceObjs interface{}
-	compositeMap := make(map[string][]*{{.GetGroupResourceInfo.AggListRespName}})
-	var err error
 
 	switch version {
 	case meta.VersionAlpha:
 		klog.V(3).Infof("Aggregate List of alpha zonal {{.Name}}")
-		gceObjs, err = gceCloud.Compute().Alpha{{.GetCloudProviderName}}().{{.GetGroupResourceInfo.AggListFuncName}}(ctx, filter.None)
+		alphaMap, err := gceCloud.Compute().Alpha{{.GetCloudProviderName}}().{{.GetGroupResourceInfo.AggListFuncName}}(ctx, filter.None)
+		if err != nil {
+			return nil, mc.Observe(err)
+		}
+		// Convert from map to list
+		alphaList := []*computealpha.{{.GetGroupResourceInfo.AggListRespName}}{}
+		for _, val := range alphaMap {
+			alphaList = append(alphaList, val...)
+		}
+		gceObjs = alphaList
 	case meta.VersionBeta:
 		klog.V(3).Infof("Aggregate List of beta zonal {{.Name}}")
-		gceObjs, err = gceCloud.Compute().Beta{{.GetCloudProviderName}}().{{.GetGroupResourceInfo.AggListFuncName}}(ctx, filter.None)
+		betaMap, err := gceCloud.Compute().Beta{{.GetCloudProviderName}}().{{.GetGroupResourceInfo.AggListFuncName}}(ctx, filter.None)
+		if err != nil {
+			return nil, mc.Observe(err)
+		}
+		// Convert from map to list
+		betaList := []*computebeta.{{.GetGroupResourceInfo.AggListRespName}}{}
+		for _, val := range betaMap {
+			betaList = append(betaList, val...)
+		}
+		gceObjs = betaList
 	default:
 		klog.V(3).Infof("Aggregate List of ga zonal {{.Name}}")
-		gceObjs, err = gceCloud.Compute().{{.GetCloudProviderName}}().{{.GetGroupResourceInfo.AggListFuncName}}(ctx, filter.None)
-	}
-	if err != nil {
-		return nil, mc.Observe(err)
-	}
-	gceMap, ok := gceObjs.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("Failed to convert gceObj to map[string]interface{}")
-	}
-	for keyStr, obj := range gceMap {
-		compositeObjs, err := To{{.GetGroupResourceInfo.AggListRespName}}List(obj)
+		gaMap, err := gceCloud.Compute().{{.GetCloudProviderName}}().{{.GetGroupResourceInfo.AggListFuncName}}(ctx, filter.None)
 		if err != nil {
-			return nil, err
+			return nil, mc.Observe(err)
 		}
-		for _, o := range compositeObjs {
-			o.Version = version
+		// Convert from map to list
+		gaList := []*compute.{{.GetGroupResourceInfo.AggListRespName}}{}
+		for _, val := range gaMap {
+			gaList = append(gaList, val...)
 		}
-		compositeMap[keyStr] = compositeObjs
+		gceObjs = gaList
 	}
+	compositeObjs, err := To{{.GetGroupResourceInfo.AggListRespName}}List(gceObjs)
+	if err != nil {
+		return nil, err
+	}
+	for _, obj := range compositeObjs {
+		obj.Version = version
+		resourceID, err := cloudprovider.ParseResourceURL(obj.SelfLink)
+		if err != nil || resourceID == nil || resourceID.Key == nil {
+			klog.Errorf("Failed to parse SelfLink - %s for obj %v, err %v", obj.SelfLink, obj, err)
+			continue
+		}
+		compositeMap[resourceID.Key] = obj
+	}
+
 	return compositeMap, nil
 }
 {{end}} {{/*IsGroupResourceService*/}}
