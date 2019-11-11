@@ -17,6 +17,9 @@ type Config struct {
 const (
 	sTrue  = "true"
 	sFalse = "false"
+
+	sEnableASM                   = "enable-asm"
+	sASMServiceNEGSkipNamespaces = "asm-skip-namespaces"
 )
 
 // NewConfig returns a Conifg instances with default values.
@@ -31,40 +34,19 @@ func (c *Config) Equals(other *Config) bool {
 
 // LoadValue loads configs from a map, it will ignore any unknow/unvalid field.
 func (c *Config) LoadValue(m map[string]string, recordWarning func(msg string)) {
-	rconfigPtr := reflect.ValueOf(c)
-	rconfig := reflect.Indirect(rconfigPtr)
-
 	for k, v := range m {
-		_, ok := rconfig.Type().FieldByName(k)
-		if ok {
-			field := rconfig.FieldByName(k)
-			fieldType := field.Kind()
-			if fieldType == reflect.Bool {
-				if v == sTrue {
-					field.SetBool(true)
-				} else if v == sFalse {
-					field.SetBool(false)
-				} else {
-					msg := fmt.Sprintf("The map provided a unvalid value for field: %s, value: %s, valid values are: %s/%s", k, v, sTrue, sFalse)
-					klog.Errorf(msg)
-					recordWarning(msg)
-				}
-			} else if fieldType == reflect.String {
-				field.SetString(v)
-			} else if fieldType == reflect.Slice {
-				if field.Type().Elem().Kind() == reflect.String {
-					values := strings.Split(v, ",")
-					field.Set(reflect.ValueOf(values))
-				} else {
-					msg := fmt.Sprintf("config struct using a unsupported slice type: %s, only support []string", field.Elem().Kind().String())
-					klog.Errorf(msg)
-					recordWarning(msg)
-				}
+		if k == sEnableASM {
+			if v == sTrue {
+				c.EnableASM = true
+			} else if v == sFalse {
+				c.EnableASM = false
 			} else {
-				msg := fmt.Sprintf("config struct using a unsupported type: %s, only support bool/string.", fieldType)
+				msg := fmt.Sprintf("The map provided a unvalid value for field: %s, value: %s, valid values are: %s/%s", k, v, sTrue, sFalse)
 				klog.Errorf(msg)
 				recordWarning(msg)
 			}
+		} else if k == sASMServiceNEGSkipNamespaces {
+			c.ASMServiceNEGSkipNamespaces = strings.Split(v, ",")
 		} else {
 			msg := fmt.Sprintf("The map contains a unknown key-value pair: %s:%s", k, v)
 			klog.Errorf(msg)

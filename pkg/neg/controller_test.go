@@ -77,7 +77,7 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 	dynamicSchema := runtime.NewScheme()
 	//dynamicSchema.AddKnownTypeWithName(schema.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "List"}, &unstructured.UnstructuredList{})
 
-	kubeClient.CoreV1().ConfigMaps("kube-system").Create(&apiv1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ingress-controller-config-test"}, Data: map[string]string{"EnableASM": "true"}})
+	kubeClient.CoreV1().ConfigMaps("kube-system").Create(&apiv1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ingress-controller-config-test"}, Data: map[string]string{"enable-asm": "true"}})
 
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:             apiv1.NamespaceAll,

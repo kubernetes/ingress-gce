@@ -1,8 +1,6 @@
 package cmconfig
 
 import (
-	"strings"
-
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -30,10 +28,10 @@ func NewConfigMapConfigController(kubeClient kubernetes.Interface, recorder reco
 	currentConfig := NewConfig()
 	cm, err := kubeClient.CoreV1().ConfigMaps(configMapNamespace).Get(configMapName, metav1.GetOptions{})
 	if err != nil {
-		if !strings.Contains(err.Error(), "not found") {
-			klog.Warningf("ConfigMapConfigController failed to load config from api server, using the defualt config. Error: %v", err)
-		} else {
+		if errors.IsNotFound(err) {
 			klog.Infof("ConfigMapConfigController: Not found the configmap based config, using default config: %v", currentConfig)
+		} else {
+			klog.Warningf("ConfigMapConfigController failed to load config from api server, using the defualt config. Error: %v", err)
 		}
 	} else {
 		currentConfig.LoadValue(cm.Data, func(msg string) {

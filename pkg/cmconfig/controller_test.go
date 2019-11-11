@@ -62,7 +62,7 @@ func TestController(t *testing.T) {
 		{
 			desc:                 "Update a default value shouldn't trigger restart",
 			defaultConfigMapData: nil,
-			updateConifgMapData:  map[string]string{"EnableASM": "false"},
+			updateConifgMapData:  map[string]string{"enable-asm": "false"},
 			wantConfig:           &defaultConfig,
 			wantUpdateConfig:     &defaultConfig,
 			wantStop:             false,
@@ -71,8 +71,8 @@ func TestController(t *testing.T) {
 		},
 		{
 			desc:                 "update the default config should trigger a restart",
-			defaultConfigMapData: map[string]string{"EnableASM": "false"},
-			updateConifgMapData:  map[string]string{"EnableASM": "true"},
+			defaultConfigMapData: map[string]string{"enable-asm": "false"},
+			updateConifgMapData:  map[string]string{"enable-asm": "true"},
 			wantConfig:           &defaultConfig,
 			wantUpdateConfig:     &Config{EnableASM: true, ASMServiceNEGSkipNamespaces: []string{"kube-system"}},
 			wantStop:             true,
@@ -81,7 +81,7 @@ func TestController(t *testing.T) {
 		},
 		{
 			desc:                 "invalide config should give the default config",
-			defaultConfigMapData: map[string]string{"EnableASM": "TTTTT"},
+			defaultConfigMapData: map[string]string{"enable-asm": "TTTTT"},
 			updateConifgMapData:  nil,
 			wantConfig:           &defaultConfig,
 			wantUpdateConfig:     nil,

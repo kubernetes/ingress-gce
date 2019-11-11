@@ -4,5 +4,5 @@ metadata:
   name: ingress-controller-asm-cm-config
   namespace: kube-system
 data:
-  EnableASM: "false"
-  ASMServiceNEGSkipNamespaces: "kube-system,istio-system"
+  enable-asm: "false"
+  asm-skip-namespaces: "kube-system,istio-system"

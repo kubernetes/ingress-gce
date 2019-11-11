@@ -25,15 +25,15 @@ func TestLoadValue(t *testing.T) {
 		},
 		{
 			desc:       "LoadValue should load values from a valid map",
-			inputMap:   map[string]string{"EnableASM": "true", "ASMServiceNEGSkipNamespaces": "name-space1,namespace2"},
+			inputMap:   map[string]string{"enable-asm": "true", "asm-skip-namespaces": "name-space1,namespace2"},
 			wantConfig: Config{EnableASM: true, ASMServiceNEGSkipNamespaces: []string{"name-space1", "namespace2"}},
 			wantLog:    "",
 		},
 		{
 			desc:       "LoadValue should return the default value if EnableASM has a unvalid value.",
-			inputMap:   map[string]string{"EnableASM": "f"},
+			inputMap:   map[string]string{"enable-asm": "f"},
 			wantConfig: Config{EnableASM: false, ASMServiceNEGSkipNamespaces: []string{"kube-system"}},
-			wantLog:    "The map provided a unvalid value for field: EnableASM, value: f, valid values are: true/false",
+			wantLog:    "The map provided a unvalid value for field: enable-asm, value: f, valid values are: true/false",
 		},
 		{
 			desc:       "LoadValue should be tolerant for unknow field.",
