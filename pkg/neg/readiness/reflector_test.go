@@ -62,7 +62,7 @@ func fakeContext() *context.ControllerContext {
 	}
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
-	context := context.NewControllerContext(kubeClient, nil, nil, nil, fakeGCE, namer, ctxConfig)
+	context := context.NewControllerContext(nil, kubeClient, nil, nil, fakeGCE, namer, ctxConfig)
 	return context
 }
 

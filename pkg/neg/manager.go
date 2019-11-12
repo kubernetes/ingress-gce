@@ -18,10 +18,11 @@ package neg
 
 import (
 	"fmt"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"reflect"
 	"sync"
 
-	"k8s.io/api/core/v1"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -32,7 +33,6 @@ import (
 	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog"
-	"reflect"
 )
 
 type serviceKey struct {

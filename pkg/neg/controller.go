@@ -70,8 +70,8 @@ type Controller struct {
 	defaultBackendService       utils.ServicePort
 	destinationRuleLister       cache.Indexer
 	destinationRuleClient       dynamic.NamespaceableResourceInterface
-	enableCSM                   bool
-	csmServiceNEGSkipNamespaces []string
+	enableASM                   bool
+	asmServiceNEGSkipNamespaces []string
 
 	// serviceQueue takes service key as work item. Service key with format "namespace/name".
 	serviceQueue workqueue.RateLimitingInterface
@@ -97,8 +97,6 @@ func NewController(
 	resyncPeriod time.Duration,
 	gcPeriod time.Duration,
 	enableReadinessReflector bool,
-	enableCSM bool,
-	csmServiceNEGSkipNamespaces []string,
 ) *Controller {
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
@@ -120,23 +118,21 @@ func NewController(
 	manager.reflector = reflector
 
 	negController := &Controller{
-		client:                      ctx.KubeClient,
-		manager:                     manager,
-		resyncPeriod:                resyncPeriod,
-		gcPeriod:                    gcPeriod,
-		recorder:                    recorder,
-		zoneGetter:                  zoneGetter,
-		namer:                       namer,
-		defaultBackendService:       ctx.DefaultBackendSvcPort,
-		hasSynced:                   ctx.HasSynced,
-		ingressLister:               ctx.IngressInformer.GetIndexer(),
-		serviceLister:               ctx.ServiceInformer.GetIndexer(),
-		serviceQueue:                workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		endpointQueue:               workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
-		syncTracker:                 utils.NewTimeTracker(),
-		reflector:                   reflector,
-		enableCSM:                   enableCSM,
-		csmServiceNEGSkipNamespaces: csmServiceNEGSkipNamespaces,
+		client:                ctx.KubeClient,
+		manager:               manager,
+		resyncPeriod:          resyncPeriod,
+		gcPeriod:              gcPeriod,
+		recorder:              recorder,
+		zoneGetter:            zoneGetter,
+		namer:                 namer,
+		defaultBackendService: ctx.DefaultBackendSvcPort,
+		hasSynced:             ctx.HasSynced,
+		ingressLister:         ctx.IngressInformer.GetIndexer(),
+		serviceLister:         ctx.ServiceInformer.GetIndexer(),
+		serviceQueue:          workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		endpointQueue:         workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		syncTracker:           utils.NewTimeTracker(),
+		reflector:             reflector,
 	}
 
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -198,16 +194,21 @@ func NewController(
 		},
 	})
 
-	if enableCSM {
-		negController.destinationRuleLister = ctx.DestinationRuleInformer.GetIndexer()
-		ctx.DestinationRuleInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc:    negController.enqueueDestinationRule,
-			DeleteFunc: negController.enqueueDestinationRule,
-			UpdateFunc: func(old, cur interface{}) {
-				negController.enqueueDestinationRule(cur)
-			},
-		})
-		negController.destinationRuleClient = ctx.DestinationRuleClient
+	if ctx.EnableASMConfigMap {
+		cmconfig := ctx.ASMConfigController.GetConfig()
+		if cmconfig.EnableASM {
+			negController.enableASM = cmconfig.EnableASM
+			negController.asmServiceNEGSkipNamespaces = cmconfig.ASMServiceNEGSkipNamespaces
+			negController.destinationRuleLister = ctx.DestinationRuleInformer.GetIndexer()
+			ctx.DestinationRuleInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+				AddFunc:    negController.enqueueDestinationRule,
+				DeleteFunc: negController.enqueueDestinationRule,
+				UpdateFunc: func(old, cur interface{}) {
+					negController.enqueueDestinationRule(cur)
+				},
+			})
+			negController.destinationRuleClient = ctx.DestinationRuleClient
+		}
 	}
 
 	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
@@ -458,7 +459,7 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, portInfoM
 func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Service) (negtypes.PortInfoMap, negtypes.PortInfoMap, error) {
 	destinationRulesPortInfoMap := make(negtypes.PortInfoMap)
 	servicePortInfoMap := make(negtypes.PortInfoMap)
-	if c.enableCSM {
+	if c.enableASM {
 		// Find all destination rules that using this service.
 		destinationRules := getDestinationRulesFromStore(c.destinationRuleLister, service)
 		// Fill all service ports into portinfomap
@@ -478,7 +479,7 @@ func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Se
 		// Create NEGs for every ports of the services.
 		if service.Spec.Selector == nil || len(service.Spec.Selector) == 0 {
 			klog.Infof("Skip NEG creation for services that with no selector: %s:%s", namespace, name)
-		} else if contains(c.csmServiceNEGSkipNamespaces, namespace) {
+		} else if contains(c.asmServiceNEGSkipNamespaces, namespace) {
 			klog.Infof("Skip NEG creation for services in namespace: %s", namespace)
 		} else {
 			servicePortInfoMap = negtypes.NewPortInfoMap(namespace, name, servicePorts, c.namer, false)
