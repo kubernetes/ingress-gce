@@ -261,6 +261,8 @@ func (key NegSyncerKey) GetAPIVersion() meta.Version {
 	switch key.NegType {
 	case VmPrimaryIpEndpointType:
 		return meta.VersionAlpha
+	case NonGCPPrivateEndpointType:
+		return meta.VersionAlpha
 	default:
 		return meta.VersionGA
 	}
