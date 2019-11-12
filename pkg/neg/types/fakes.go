@@ -108,10 +108,16 @@ func (f *FakeNetworkEndpointGroupCloud) ListNetworkEndpointGroup(zone string, ve
 	return f.NetworkEndpointGroups[zone], nil
 }
 
-func (f *FakeNetworkEndpointGroupCloud) AggregatedListNetworkEndpointGroup(version meta.Version) (map[string][]*composite.NetworkEndpointGroup, error) {
+func (f *FakeNetworkEndpointGroupCloud) AggregatedListNetworkEndpointGroup(version meta.Version) (map[*meta.Key]*composite.NetworkEndpointGroup, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.NetworkEndpointGroups, nil
+	result := make(map[*meta.Key]*composite.NetworkEndpointGroup)
+	for zone, negs := range f.NetworkEndpointGroups {
+		for _, neg := range negs {
+			result[&meta.Key{Zone: zone}] = neg
+		}
+	}
+	return result, nil
 }
 
 func (f *FakeNetworkEndpointGroupCloud) CreateNetworkEndpointGroup(neg *composite.NetworkEndpointGroup, zone string) error {

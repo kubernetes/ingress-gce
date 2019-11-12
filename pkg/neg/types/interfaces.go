@@ -31,7 +31,7 @@ type ZoneGetter interface {
 type NetworkEndpointGroupCloud interface {
 	GetNetworkEndpointGroup(name string, zone string, version meta.Version) (*composite.NetworkEndpointGroup, error)
 	ListNetworkEndpointGroup(zone string, version meta.Version) ([]*composite.NetworkEndpointGroup, error)
-	AggregatedListNetworkEndpointGroup(version meta.Version) (map[string][]*composite.NetworkEndpointGroup, error)
+	AggregatedListNetworkEndpointGroup(version meta.Version) (map[*meta.Key]*composite.NetworkEndpointGroup, error)
 	CreateNetworkEndpointGroup(neg *composite.NetworkEndpointGroup, zone string) error
 	DeleteNetworkEndpointGroup(name string, zone string, version meta.Version) error
 	AttachNetworkEndpoints(name, zone string, endpoints []*composite.NetworkEndpoint, version meta.Version) error

@@ -151,19 +151,21 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 	// Verify the NEGs are created as expected
 	ret, _ := transactionSyncer.cloud.AggregatedListNetworkEndpointGroup(meta.VersionGA)
 	expectZones := []string{testZone1, testZone2}
+	retZones := sets.NewString()
+
+	for key, _ := range ret {
+		retZones.Insert(key.Zone)
+	}
 	for _, zone := range expectZones {
-		negs, ok := ret[zone]
+		_, ok := retZones[zone]
 		if !ok {
 			t.Errorf("Failed to find zone %q from ret %v", zone, ret)
 			continue
 		}
-
-		if len(negs) != 1 {
-			t.Errorf("Unexpected negs %v", negs)
-		} else {
-			if negs[0].Name != testNegName {
-				t.Errorf("Unexpected neg %q", negs[0].Name)
-			}
+	}
+	for _, neg := range ret {
+		if neg.Name != testNegName {
+			t.Errorf("Unexpected neg %q", neg.Name)
 		}
 	}
 
