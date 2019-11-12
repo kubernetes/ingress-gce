@@ -18,7 +18,6 @@ package neg
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
@@ -39,6 +38,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
@@ -648,46 +648,26 @@ func (c *Controller) gc() {
 // gatherPortMappingUsedByIngress returns a map containing port:targetport
 // of all service ports of the service that are referenced by ingresses
 func gatherPortMappingUsedByIngress(ings []v1beta1.Ingress, svc *apiv1.Service) negtypes.SvcPortTupleSet {
-	servicePorts := sets.NewString()
 	ingressSvcPortTuples := make(negtypes.SvcPortTupleSet)
 	for _, ing := range ings {
 		if utils.IsGLBCIngress(&ing) {
 			utils.TraverseIngressBackends(&ing, func(id utils.ServicePortID) bool {
-				if id.Service.Name == svc.Name {
-					servicePorts.Insert(id.Port.String())
+				if id.Service.Name == svc.Name && id.Service.Namespace == svc.Namespace {
+					servicePort := translator.ServicePort(*svc, id.Port)
+					if servicePort == nil {
+						klog.Warningf("Port %+v in Service %q not found", id.Port, id.Service.String())
+						return false
+					}
+					ingressSvcPortTuples.Insert(negtypes.SvcPortTuple{
+						Port:       servicePort.Port,
+						Name:       servicePort.Name,
+						TargetPort: servicePort.TargetPort.String(),
+					})
 				}
 				return false
 			})
 		}
 	}
-
-	for _, svcPort := range svc.Spec.Ports {
-		found := false
-		for _, refSvcPort := range servicePorts.List() {
-			port, err := strconv.Atoi(refSvcPort)
-			if err != nil {
-				// port name matches
-				if refSvcPort == svcPort.Name {
-					found = true
-					break
-				}
-			} else {
-				// service port matches
-				if port == int(svcPort.Port) {
-					found = true
-					break
-				}
-			}
-		}
-		if found {
-			ingressSvcPortTuples.Insert(negtypes.SvcPortTuple{
-				Port:       svcPort.Port,
-				Name:       svcPort.Name,
-				TargetPort: svcPort.TargetPort.String(),
-			})
-		}
-	}
-
 	return ingressSvcPortTuples
 }
 
