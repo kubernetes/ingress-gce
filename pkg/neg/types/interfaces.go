@@ -18,6 +18,7 @@ package types
 
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 )
 
@@ -44,6 +45,7 @@ type NetworkEndpointGroupCloud interface {
 // NetworkEndpointGroupNamer is an interface for generating network endpoint group name.
 type NetworkEndpointGroupNamer interface {
 	NEG(namespace, name string, port int32) string
+	PrimaryIPNEG(namespace, name string) string
 	NEGWithSubset(namespace, name, subset string, port int32) string
 	IsNEG(name string) bool
 }
@@ -71,8 +73,18 @@ type NegSyncerManager interface {
 	StopSyncer(namespace, name string)
 	// Sync signals all syncers related to the service to sync. This call is asynchronous.
 	Sync(namespace, name string)
+	// SyncNodes signals all syncers watching nodes to sync. This call is asynchronous.
+	SyncNodes()
 	// GC garbage collects network endpoint group and syncers
 	GC() error
 	// ShutDown shuts down the manager
 	ShutDown()
+}
+
+type NetworkEndpointsCalculator interface {
+	// CalculateEndpoints computes the NEG endpoints based on service endpoints and the current NEG state and returns a
+	// map of zone name to network endpoint set
+	CalculateEndpoints(ep *v1.Endpoints, currentMap map[string]NetworkEndpointSet) (map[string]NetworkEndpointSet, EndpointPodMap, error)
+	// Mode indicates the mode that the EndpointsCalculator is operating in.
+	Mode() EndpointsCalculatorMode
 }

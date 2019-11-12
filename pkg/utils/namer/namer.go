@@ -463,6 +463,25 @@ func (n *Namer) NEGWithSubset(namespace, name, subset string, port int32) string
 	return fmt.Sprintf("%s-%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, truncSubset, negSuffix(n.shortUID(), namespace, name, portStr, subset))
 }
 
+// PrimaryIPNEG returns the gce neg name based on the service namespace and name
+// NEG naming convention:
+//
+//   {prefix}{version}-{clusterid}-{namespace}-{name}-{hash}
+//
+// Output name is at most 63 characters. NEG tries to keep as much
+// information as possible.
+//
+// WARNING: Controllers depend on the naming pattern to get the list
+// of all NEGs associated with the current cluster. Any modifications
+// must be backward compatible.
+func (n *Namer) PrimaryIPNEG(namespace, name string) string {
+	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name)
+	truncNamespace := truncFields[0]
+	truncName := truncFields[1]
+	// Use the full cluster UID in the suffix to reduce chance of collision.
+	return fmt.Sprintf("%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, negSuffix(n.UID(), namespace, name, "", ""))
+}
+
 // IsNEG returns true if the name is a NEG owned by this cluster.
 // It checks that the UID is present and a substring of the
 // cluster uid, since the NEG naming schema truncates it to 8 characters.

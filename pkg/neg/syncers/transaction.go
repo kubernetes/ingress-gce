@@ -24,12 +24,14 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog"
+	"strings"
 )
 
 type transactionSyncer struct {
@@ -51,12 +53,14 @@ type transactionSyncer struct {
 	// transactions stores each transaction
 	transactions networkEndpointTransactionTable
 
-	podLister      cache.Indexer
-	serviceLister  cache.Indexer
-	endpointLister cache.Indexer
-	recorder       record.EventRecorder
-	cloud          negtypes.NetworkEndpointGroupCloud
-	zoneGetter     negtypes.ZoneGetter
+	podLister           cache.Indexer
+	serviceLister       cache.Indexer
+	endpointLister      cache.Indexer
+	nodeLister          cache.Indexer
+	recorder            record.EventRecorder
+	cloud               negtypes.NetworkEndpointGroupCloud
+	zoneGetter          negtypes.ZoneGetter
+	endpointsCalculator negtypes.NetworkEndpointsCalculator
 
 	// retry handles back off retry for NEG API operations
 	retry retryHandler
@@ -65,20 +69,22 @@ type transactionSyncer struct {
 	reflector readiness.Reflector
 }
 
-func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer, reflector readiness.Reflector) negtypes.NegSyncer {
+func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer, nodeLister cache.Indexer, reflector readiness.Reflector, epc negtypes.NetworkEndpointsCalculator) negtypes.NegSyncer {
 	// TransactionSyncer implements the syncer core
 	ts := &transactionSyncer{
-		NegSyncerKey:   negSyncerKey,
-		negName:        networkEndpointGroupName,
-		needInit:       true,
-		transactions:   NewTransactionTable(),
-		podLister:      podLister,
-		serviceLister:  serviceLister,
-		endpointLister: endpointLister,
-		recorder:       recorder,
-		cloud:          cloud,
-		zoneGetter:     zoneGetter,
-		reflector:      reflector,
+		NegSyncerKey:        negSyncerKey,
+		negName:             networkEndpointGroupName,
+		needInit:            true,
+		transactions:        NewTransactionTable(),
+		nodeLister:          nodeLister,
+		podLister:           podLister,
+		serviceLister:       serviceLister,
+		endpointLister:      endpointLister,
+		recorder:            recorder,
+		cloud:               cloud,
+		zoneGetter:          zoneGetter,
+		endpointsCalculator: epc,
+		reflector:           reflector,
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, networkEndpointGroupName, serviceLister, recorder, ts)
@@ -86,6 +92,19 @@ func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, networkEndpointGro
 	ts.syncer = syncer
 	ts.retry = NewDelayRetryHandler(func() { syncer.Sync() }, NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay))
 	return syncer
+}
+
+func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, randomizeEndpoints bool) negtypes.NetworkEndpointsCalculator {
+	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
+	if syncerKey.NegType == negtypes.VmPrimaryIpEndpointType {
+		nodeLister := listers.NewNodeLister(nodeLister)
+		if randomizeEndpoints {
+			return NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey)
+		}
+		return NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey)
+	}
+	return NewL7EndpointsCalculator(zoneGetter, podLister, syncerKey.PortTuple.Name,
+		syncerKey.SubsetLabels, syncerKey.NegType)
 }
 
 func (s *transactionSyncer) sync() error {
@@ -111,7 +130,8 @@ func (s *transactionSyncer) syncInternal() error {
 		klog.V(4).Infof("Skip syncing NEG %q for %s.", s.negName, s.NegSyncerKey.String())
 		return nil
 	}
-	klog.V(2).Infof("Sync NEG %q for %s.", s.negName, s.NegSyncerKey.String())
+	klog.V(2).Infof("Sync NEG %q for %s, Endpoints Calculator mode %s", s.negName,
+		s.NegSyncerKey.String(), s.endpointsCalculator.Mode())
 
 	ep, exists, err := s.endpointLister.Get(
 		&apiv1.Endpoints{
@@ -130,21 +150,22 @@ func (s *transactionSyncer) syncInternal() error {
 		return nil
 	}
 
-	targetMap, endpointPodMap, err := toZoneNetworkEndpointMap(ep.(*apiv1.Endpoints), s.zoneGetter, s.PortTuple.Name, s.podLister, s.NegSyncerKey.SubsetLabels, s.NegSyncerKey.NegType)
-	if err != nil {
-		return err
-	}
-
 	currentMap, err := retrieveExistingZoneNetworkEndpointMap(s.negName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion())
 	if err != nil {
 		return err
 	}
-
 	// Merge the current state from cloud with the transaction table together
 	// The combined state represents the eventual result when all transactions completed
 	mergeTransactionIntoZoneEndpointMap(currentMap, s.transactions)
+
+	targetMap, endpointPodMap, err := s.endpointsCalculator.CalculateEndpoints(ep.(*apiv1.Endpoints), currentMap)
+
 	// Calculate the endpoints to add and delete to transform the current state to desire state
 	addEndpoints, removeEndpoints := calculateNetworkEndpointDifference(targetMap, currentMap)
+	if s.NegType == negtypes.VmPrimaryIpEndpointType && len(removeEndpoints) > 0 {
+		// Make removals minimum since the traffic will be abruptly stopped. Log removals
+		klog.V(3).Infof("Removing endpoints %+v from GCE_VM_PRIMARY_IP NEG %s", removeEndpoints, s.negName)
+	}
 	// Calculate Pods that are already in the NEG
 	_, committedEndpoints := calculateNetworkEndpointDifference(addEndpoints, targetMap)
 	// Filter out the endpoints with existing transaction
@@ -156,6 +177,7 @@ func (s *transactionSyncer) syncInternal() error {
 	// filter out the endpoints that are in transaction
 	filterEndpointByTransaction(committedEndpoints, s.transactions)
 
+	// no-op in case of VmPrimaryIp NEGs.
 	s.commitPods(committedEndpoints, endpointPodMap)
 
 	if len(addEndpoints) == 0 && len(removeEndpoints) == 0 {

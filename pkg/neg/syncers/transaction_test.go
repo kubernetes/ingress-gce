@@ -861,7 +861,9 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		context.PodInformer.GetIndexer(),
 		context.ServiceInformer.GetIndexer(),
 		context.EndpointInformer.GetIndexer(),
-		reflector)
+		context.NodeInformer.GetIndexer(),
+		reflector,
+		false)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
 	return negsyncer, transactionSyncer
 }

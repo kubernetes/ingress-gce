@@ -36,6 +36,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
@@ -78,18 +79,25 @@ type Controller struct {
 	serviceQueue workqueue.RateLimitingInterface
 	// endpointQueue takes endpoint key as work item. Endpoint key with format "namespace/name".
 	endpointQueue workqueue.RateLimitingInterface
+	// nodeQueue takes node name as work item.
+	nodeQueue workqueue.RateLimitingInterface
 
 	// destinationRuleQueue takes Istio DestinationRule key as work item. DestinationRule key with format "namespace/name"
 	destinationRuleQueue workqueue.RateLimitingInterface
 
 	// syncTracker tracks the latest time that service and endpoint changes are processed
 	syncTracker utils.TimeTracker
+	// nodeSyncTracker tracks the latest time that node changes are processed
+	nodeSyncTracker utils.TimeTracker
 
 	// reflector handles NEG readiness gate and conditions for pods in NEG.
 	reflector readiness.Reflector
 
 	// collector collects NEG usage metrics
 	collector usage.NegMetricsCollector
+
+	// runL4 indicates whether to run NEG controller that processes L4 ILB services
+	runL4 bool
 }
 
 // NewController returns a network endpoint group controller.
@@ -101,6 +109,8 @@ func NewController(
 	resyncPeriod time.Duration,
 	gcPeriod time.Duration,
 	enableReadinessReflector bool,
+	runIngress bool,
+	runL4Controller bool,
 ) *Controller {
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
@@ -112,7 +122,7 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
-	manager := newSyncerManager(namer, recorder, cloud, zoneGetter, ctx.PodInformer.GetIndexer(), ctx.ServiceInformer.GetIndexer(), ctx.EndpointInformer.GetIndexer())
+	manager := newSyncerManager(namer, recorder, cloud, zoneGetter, ctx.PodInformer.GetIndexer(), ctx.ServiceInformer.GetIndexer(), ctx.EndpointInformer.GetIndexer(), ctx.NodeInformer.GetIndexer())
 	var reflector readiness.Reflector
 	if enableReadinessReflector {
 		reflector = readiness.NewReadinessReflector(ctx, manager)
@@ -135,43 +145,57 @@ func NewController(
 		serviceLister:         ctx.ServiceInformer.GetIndexer(),
 		serviceQueue:          workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		endpointQueue:         workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		nodeQueue:             workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		syncTracker:           utils.NewTimeTracker(),
 		reflector:             reflector,
 		collector:             ctx.ControllerMetrics,
+		runL4:                 runL4Controller,
 	}
 
-	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			addIng := obj.(*v1beta1.Ingress)
-			if !utils.IsGLBCIngress(addIng) {
-				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.NamespacedName(addIng), annotations.IngressClassKey)
-				return
-			}
-			negController.enqueueIngressServices(addIng)
-		},
-		DeleteFunc: func(obj interface{}) {
-			delIng := obj.(*v1beta1.Ingress)
-			if !utils.IsGLBCIngress(delIng) {
-				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.NamespacedName(delIng), annotations.IngressClassKey)
-				return
-			}
-			negController.enqueueIngressServices(delIng)
-		},
-		UpdateFunc: func(old, cur interface{}) {
-			oldIng := cur.(*v1beta1.Ingress)
-			curIng := cur.(*v1beta1.Ingress)
-			if !utils.IsGLBCIngress(curIng) {
-				klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", common.NamespacedName(curIng), annotations.IngressClassKey)
-				return
-			}
-			keys := gatherIngressServiceKeys(oldIng)
-			keys = keys.Union(gatherIngressServiceKeys(curIng))
-			for _, key := range keys.List() {
-				negController.enqueueService(cache.ExplicitKey(key))
-			}
-		},
-	})
+	if runIngress {
+		ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				addIng := obj.(*v1beta1.Ingress)
+				if !utils.IsGLBCIngress(addIng) {
+					klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.NamespacedName(addIng), annotations.IngressClassKey)
+					return
+				}
+				negController.enqueueIngressServices(addIng)
+			},
+			DeleteFunc: func(obj interface{}) {
+				delIng := obj.(*v1beta1.Ingress)
+				if !utils.IsGLBCIngress(delIng) {
+					klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.NamespacedName(delIng), annotations.IngressClassKey)
+					return
+				}
+				negController.enqueueIngressServices(delIng)
+			},
+			UpdateFunc: func(old, cur interface{}) {
+				oldIng := cur.(*v1beta1.Ingress)
+				curIng := cur.(*v1beta1.Ingress)
+				if !utils.IsGLBCIngress(curIng) {
+					klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", common.NamespacedName(curIng), annotations.IngressClassKey)
+					return
+				}
+				keys := gatherIngressServiceKeys(oldIng)
+				keys = keys.Union(gatherIngressServiceKeys(curIng))
+				for _, key := range keys.List() {
+					negController.enqueueService(cache.ExplicitKey(key))
+				}
+			},
+		})
 
+		ctx.PodInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				pod := obj.(*apiv1.Pod)
+				negController.reflector.SyncPod(pod)
+			},
+			UpdateFunc: func(old, cur interface{}) {
+				pod := cur.(*apiv1.Pod)
+				negController.reflector.SyncPod(pod)
+			},
+		})
+	}
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    negController.enqueueService,
 		DeleteFunc: negController.enqueueService,
@@ -188,16 +212,18 @@ func NewController(
 		},
 	})
 
-	ctx.PodInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: func(obj interface{}) {
-			pod := obj.(*apiv1.Pod)
-			negController.reflector.SyncPod(pod)
-		},
-		UpdateFunc: func(old, cur interface{}) {
-			pod := cur.(*apiv1.Pod)
-			negController.reflector.SyncPod(pod)
-		},
-	})
+	if negController.runL4 {
+		ctx.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(obj interface{}) {
+				node := obj.(*apiv1.Node)
+				negController.enqueueNode(node)
+			},
+			DeleteFunc: func(obj interface{}) {
+				node := obj.(*apiv1.Node)
+				negController.enqueueNode(node)
+			},
+		})
+	}
 
 	if ctx.EnableASMConfigMap {
 		cmconfig := ctx.ASMConfigController.GetConfig()
@@ -234,6 +260,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 
 	go wait.Until(c.serviceWorker, time.Second, stopCh)
 	go wait.Until(c.endpointWorker, time.Second, stopCh)
+	go wait.Until(c.nodeWorker, time.Second, stopCh)
 	go func() {
 		// Wait for gcPeriod to run the first GC
 		// This is to make sure that all services are fully processed before running GC.
@@ -245,6 +272,8 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 }
 
 func (c *Controller) IsHealthy() error {
+	// log the last node sync
+	klog.V(5).Infof("Last node sync was at %v", c.nodeSyncTracker.Get())
 	// check if last seen service and endpoint processing is more than an hour ago
 	if c.syncTracker.Get().Before(time.Now().Add(-time.Hour)) {
 		msg := fmt.Sprintf("NEG controller has not processed any service "+
@@ -274,6 +303,29 @@ func (c *Controller) endpointWorker() {
 			c.endpointQueue.Done(key)
 		}()
 	}
+}
+
+func (c *Controller) nodeWorker() {
+	for {
+		func() {
+			key, quit := c.nodeQueue.Get()
+			if quit {
+				return
+			}
+			c.processNode()
+			c.nodeQueue.Done(key)
+		}()
+	}
+}
+
+// processNode finds the related syncers and signal it to sync
+// use a semaphore approach where all vm_ip syncers can wake up.
+func (c *Controller) processNode() {
+	defer func() {
+		now := c.nodeSyncTracker.Track()
+		metrics.LastSyncTimestamp.WithLabelValues().Set(float64(now.UTC().UnixNano()))
+	}()
+	c.manager.SyncNodes()
 }
 
 // processEndpoint finds the related syncers and signal it to sync
@@ -356,7 +408,11 @@ func (c *Controller) processService(key string) error {
 	if err := svcPortInfoMap.Merge(csmSVCPortInfoMap); err != nil {
 		return fmt.Errorf("failed to merge CSM service PortInfoMap: %v, error: %v", csmSVCPortInfoMap, err)
 	}
-
+	if c.runL4 {
+		if err := c.mergeVmPrimaryIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap); err != nil {
+			return err
+		}
+	}
 	if len(svcPortInfoMap) != 0 || len(destinationRulesPortInfoMap) != 0 {
 		klog.V(2).Infof("Syncing service %q", key)
 		if err = c.syncNegStatusAnnotation(namespace, name, svcPortInfoMap); err != nil {
@@ -402,7 +458,7 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 	return nil
 }
 
-// mergeStandaloneNEGsPortInfo merge Sandaloon NEG PortInfo into portInfoMap
+// mergeStandaloneNEGsPortInfo merge Standalone NEG PortInfo into portInfoMap
 func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap) error {
 	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
 	if err != nil {
@@ -435,6 +491,20 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 	}
 
 	return nil
+}
+
+// mergeVmPrimaryIpNEGsPortInfo merges the PortInfo for ILB services using GCE_VM_PRIMARY_IP NEGs into portInfoMap
+func (c *Controller) mergeVmPrimaryIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap) error {
+	if wantsILB, _ := annotations.WantsL4ILB(service); !wantsILB {
+		return nil
+	}
+	if utils.IsLegacyL4ILBService(service) {
+		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it contains legacy resources created by service controller", service.Name, service.Namespace)
+		klog.Warning(msg)
+		c.recorder.Eventf(service, apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
+	}
+	return portInfoMap.Merge(negtypes.NewPortInfoMapForPrimaryIPNEG(name.Namespace, name.Name, c.namer,
+		!helpers.RequestsOnlyLocalTraffic(service)))
 }
 
 // mergeDefaultBackendServicePortInfoMap merge the PortInfoMap for the default backend service into portInfoMap
@@ -611,6 +681,15 @@ func (c *Controller) enqueueEndpoint(obj interface{}) {
 		return
 	}
 	c.endpointQueue.Add(key)
+}
+
+func (c *Controller) enqueueNode(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		klog.Errorf("Failed to generate endpoint key: %v", err)
+		return
+	}
+	c.nodeQueue.Add(key)
 }
 
 func (c *Controller) enqueueService(obj interface{}) {

@@ -96,6 +96,9 @@ func (s NetworkEndpointSet) HasAny(items ...NetworkEndpoint) bool {
 // s1.Difference(s2) = {a3}
 // s2.Difference(s1) = {a4, a5}
 func (s NetworkEndpointSet) Difference(s2 NetworkEndpointSet) NetworkEndpointSet {
+	if s2 == nil {
+		return s
+	}
 	result := NewNetworkEndpointSet()
 	for key := range s {
 		if !s2.Has(key) {
@@ -130,6 +133,9 @@ func (s1 NetworkEndpointSet) Union(s2 NetworkEndpointSet) NetworkEndpointSet {
 func (s1 NetworkEndpointSet) Intersection(s2 NetworkEndpointSet) NetworkEndpointSet {
 	var walk, other NetworkEndpointSet
 	result := NewNetworkEndpointSet()
+	if s2 == nil {
+		return result
+	}
 	if s1.Len() < s2.Len() {
 		walk = s1
 		other = s2
