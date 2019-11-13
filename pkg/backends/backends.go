@@ -170,29 +170,31 @@ func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType)
 		return "Unknown", fmt.Errorf("no backends found for backend service %q", name)
 	}
 
-	// TODO: Look at more than one backend's status
 	// TODO: Include port, ip in the status, since it's in the health info.
 	// TODO (shance) convert to composite types
-	var hs *compute.BackendServiceGroupHealth
-	switch scope {
-	case meta.Global:
-		hs, err = b.cloud.GetGlobalBackendServiceHealth(name, be.Backends[0].Group)
-	case meta.Regional:
-		hs, err = b.cloud.GetRegionalBackendServiceHealth(name, b.cloud.Region(), be.Backends[0].Group)
-	default:
-		return "Unknown", fmt.Errorf("invalid scope for Health(): %s", scope)
-	}
+	for _, backend := range be.Backends {
+		var hs *compute.BackendServiceGroupHealth
+		switch scope {
+		case meta.Global:
+			hs, err = b.cloud.GetGlobalBackendServiceHealth(name, backend.Group)
+		case meta.Regional:
+			hs, err = b.cloud.GetRegionalBackendServiceHealth(name, b.cloud.Region(), backend.Group)
+		default:
+			return "Unknown", fmt.Errorf("invalid scope for Health(): %s", scope)
+		}
 
-	if err != nil {
-		return "Unknown", fmt.Errorf("error getting health for backend %q: %v", name, err)
-	}
-	if len(hs.HealthStatus) == 0 || hs.HealthStatus[0] == nil {
-		klog.V(3).Infof("backend service %q does not have health status: %v", name, hs.HealthStatus)
-		return "Unknown", nil
-	}
+		if err != nil {
+			return "Unknown", fmt.Errorf("error getting health for backend %q: %v", name, err)
+		}
+		if len(hs.HealthStatus) == 0 || hs.HealthStatus[0] == nil {
+			klog.V(3).Infof("backend service %q does not have health status: %v", name, hs.HealthStatus)
+			continue
+		}
 
-	// TODO: State transition are important, not just the latest.
-	return hs.HealthStatus[0].HealthState, nil
+		// TODO: State transition are important, not just the latest.
+		return hs.HealthStatus[0].HealthState, nil
+	}
+	return "Unknown", nil
 }
 
 // List lists all backends managed by this controller.
