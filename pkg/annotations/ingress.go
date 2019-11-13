@@ -42,7 +42,7 @@ const (
 	StaticIPNameKey = "kubernetes.io/ingress.global-static-ip-name"
 
 	// PreSharedCertKey represents the specific pre-shared SSL
-	// certicate for the Ingress controller to use. The controller *does not*
+	// certificate for the Ingress controller to use. The controller *does not*
 	// manage this certificate, it is the users responsibility to create/delete it.
 	// In GCP, the Ingress controller assigns the SSL certificate with this name
 	// to the target proxies of the Ingress.
@@ -77,6 +77,25 @@ const (
 	// - annotations:
 	//     networking.gke.io/v1beta1.FrontendConfig: 'my-frontendconfig'
 	FrontendConfigKey = "networking.gke.io/v1beta1.FrontendConfig"
+
+	// UrlMapKey is the annotation key used by controller to record GCP URL map.
+	UrlMapKey = StatusPrefix + "/url-map"
+	// HttpForwardingRuleKey is the annotation key used by controller to record
+	// GCP http forwarding rule.
+	HttpForwardingRuleKey = StatusPrefix + "/forwarding-rule"
+	// HttpsForwardingRuleKey is the annotation key used by controller to record
+	// GCP https forwarding rule.
+	HttpsForwardingRuleKey = StatusPrefix + "/https-forwarding-rule"
+	// TargetHttpProxyKey is the annotation key used by controller to record
+	// GCP target http proxy.
+	TargetHttpProxyKey = StatusPrefix + "/target-proxy"
+	// TargetHttpsProxyKey is the annotation key used by controller to record
+	// GCP target https proxy.
+	TargetHttpsProxyKey = StatusPrefix + "/https-target-proxy"
+	// SSLCertKey is the annotation key used by controller to record GCP ssl cert.
+	SSLCertKey = StatusPrefix + "/ssl-cert"
+	// StaticIPKey is the annotation key used by controller to record GCP static ip.
+	StaticIPKey = StatusPrefix + "/static-ip"
 )
 
 // Ingress represents ingress annotations.

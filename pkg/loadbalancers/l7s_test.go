@@ -339,33 +339,50 @@ func removeFakeLoadBalancer(cloud *gce.Cloud, namer namer_util.IngressFrontendNa
 }
 
 func checkFakeLoadBalancer(cloud *gce.Cloud, namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType, expectPresent bool) error {
+	if err := checkFakeLoadBalancerWithProtocol(cloud, namer, versions, scope, expectPresent, namer_util.HTTPProtocol); err != nil {
+		return err
+	}
+	key, _ := composite.CreateKey(cloud, namer.UrlMap(), scope)
+	_, err := composite.GetUrlMap(cloud, key, versions.UrlMap)
+	if expectPresent && err != nil {
+		return err
+	}
+	if !expectPresent && (err == nil || err.(*googleapi.Error).Code != http.StatusNotFound) {
+		return fmt.Errorf("expect URLMap %q to not present: %v", key, err)
+	}
+	return nil
+}
+
+func checkBothFakeLoadBalancers(cloud *gce.Cloud, namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType, expectHttp, expectHttps bool) error {
+	if err := checkFakeLoadBalancerWithProtocol(cloud, namer, versions, scope, expectHttp, namer_util.HTTPProtocol); err != nil {
+		return err
+	}
+	return checkFakeLoadBalancerWithProtocol(cloud, namer, versions, scope, expectHttps, namer_util.HTTPSProtocol)
+}
+
+func checkFakeLoadBalancerWithProtocol(cloud *gce.Cloud, namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType, expectPresent bool, protocol namer_util.NamerProtocol) error {
 	var err error
-	key, _ := composite.CreateKey(cloud, namer.ForwardingRule(namer_util.HTTPProtocol), scope)
+	key, _ := composite.CreateKey(cloud, namer.ForwardingRule(protocol), scope)
 
 	_, err = composite.GetForwardingRule(cloud, key, versions.ForwardingRule)
 	if expectPresent && err != nil {
 		return err
 	}
-	if !expectPresent && err.(*googleapi.Error).Code != http.StatusNotFound {
-		return fmt.Errorf("expect GlobalForwardingRule %q to not present: %v", key, err)
+	if !expectPresent && (err == nil || err.(*googleapi.Error).Code != http.StatusNotFound) {
+		return fmt.Errorf("expect %s GlobalForwardingRule %q to not present: %v", protocol, key, err)
 	}
 
-	key.Name = namer.TargetProxy(namer_util.HTTPProtocol)
-	_, err = composite.GetTargetHttpProxy(cloud, key, versions.TargetHttpProxy)
+	key.Name = namer.TargetProxy(protocol)
+	if protocol == namer_util.HTTPProtocol {
+		_, err = composite.GetTargetHttpProxy(cloud, key, versions.TargetHttpProxy)
+	} else {
+		_, err = composite.GetTargetHttpsProxy(cloud, key, versions.TargetHttpsProxy)
+	}
 	if expectPresent && err != nil {
 		return err
 	}
-	if !expectPresent && err.(*googleapi.Error).Code != http.StatusNotFound {
-		return fmt.Errorf("expect TargetHTTPProxy %q to not present: %v", key, err)
-	}
-
-	key.Name = namer.UrlMap()
-	_, err = composite.GetUrlMap(cloud, key, versions.UrlMap)
-	if expectPresent && err != nil {
-		return err
-	}
-	if !expectPresent && err.(*googleapi.Error).Code != http.StatusNotFound {
-		return fmt.Errorf("expect URLMap %q to not present: %v", key, err)
+	if !expectPresent && (err == nil || err.(*googleapi.Error).Code != http.StatusNotFound) {
+		return fmt.Errorf("expect Target%sProxy %q to not present: %v", protocol, key, err)
 	}
 	return nil
 }

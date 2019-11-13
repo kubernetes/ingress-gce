@@ -27,6 +27,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/api/networking/v1beta1"
@@ -35,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -866,6 +868,10 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 	}
 	tps, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, defaultVersion)
 	if err != nil {
+		// Return immediately if expected certs is an empty map.
+		if len(expectCertsProxy) == 0 && err.(*googleapi.Error).Code == http.StatusNotFound {
+			return
+		}
 		t.Fatalf("expected https proxy to exist: %v, err: %v", j.feNamer.TargetProxy(namer_util.HTTPSProtocol), err)
 	}
 	if len(tps.SslCertificates) != len(expectCertsProxy) {
@@ -1076,7 +1082,7 @@ func TestNameParsing(t *testing.T) {
 	namer := namer_util.NewNamer(clusterName, firewallName)
 	fullName := namer.ForwardingRule(namer.LoadBalancer("testlb"), namer_util.HTTPProtocol)
 	annotationsMap := map[string]string{
-		fmt.Sprintf("%v/forwarding-rule", annotations.StatusPrefix): fullName,
+		fmt.Sprintf(annotations.HttpForwardingRuleKey): fullName,
 	}
 	components := namer.ParseName(GCEResourceName(annotationsMap, "forwarding-rule"))
 	t.Logf("components = %+v", components)
@@ -1475,4 +1481,136 @@ func TestSecretBasedToPreSharedCertUpdateWithErrors(t *testing.T) {
 		t.Fatalf("pool.Ensure() = err %v", err)
 	}
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
+}
+
+// TestResourceDeletionWithProtocol asserts that unused resources are cleaned up
+// on updating ingress configuration to disable http/https traffic.
+func TestResourceDeletionWithProtocol(t *testing.T) {
+	// TODO(smatti): Add flag saver to capture current value and reset back.
+	flags.F.EnableDeleteUnusedFrontends = true
+	j := newTestJig(t)
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	ing := newIngress()
+	feNamer := namer_util.NewFrontendNamerFactory(j.namer).Namer(ing)
+	versions := features.GAResourceVersions
+	certName1 := feNamer.SSLCertName(GetCertHash("cert1"))
+
+	for _, tc := range []struct {
+		desc         string
+		disableHTTP  bool
+		disableHTTPS bool
+	}{
+		{"both enabled", false, false},
+		{"http only", false, true},
+		{"https only", true, false},
+		{"both disabled", true, true},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			lbInfo := &L7RuntimeInfo{
+				AllowHTTP: true,
+				TLS: []*TLSCerts{
+					createCert("key1", "cert1", "secret1"),
+				},
+				UrlMap:  gceUrlMap,
+				Ingress: ing,
+			}
+			lb, err := j.pool.Ensure(lbInfo)
+			if err != nil {
+				t.Fatalf("pool.Ensure(%+v) = %v, want nil", lbInfo, err)
+			}
+			// Update ingress annotations
+			ing.Annotations = lb.getFrontendAnnotations(make(map[string]string))
+			verifyLBAnnotations(t, lb, ing.Annotations)
+
+			expectCerts := map[string]string{certName1: lbInfo.TLS[0].Cert}
+			verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
+			if err := checkBothFakeLoadBalancers(j.fakeGCE, feNamer, versions, defaultScope, true, true); err != nil {
+				t.Errorf("checkFakeLoadBalancer(..., true, true) = %v, want nil for case %q and key %q", err, tc.desc, common.NamespacedName(ing))
+			}
+
+			expectHttp, expectHttps := true, true
+			if tc.disableHTTP {
+				lbInfo.AllowHTTP = false
+				expectHttp = false
+			}
+			if tc.disableHTTPS {
+				lbInfo.TLS = nil
+				expectHttps = false
+				delete(expectCerts, certName1)
+			}
+
+			if lb, err = j.pool.Ensure(lbInfo); err != nil {
+				t.Fatalf("pool.Ensure(%+v) = %v, want nil", lbInfo, err)
+			}
+			// Update ingress annotations
+			ing.Annotations = lb.getFrontendAnnotations(make(map[string]string))
+			verifyLBAnnotations(t, lb, ing.Annotations)
+
+			verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
+			if err := checkBothFakeLoadBalancers(j.fakeGCE, feNamer, versions, defaultScope, expectHttp, expectHttps); err != nil {
+				t.Errorf("checkFakeLoadBalancer(..., %t, %t) = %v, want nil for case %q and key %q", expectHttp, expectHttps, err, tc.desc, common.NamespacedName(ing))
+			}
+		})
+	}
+}
+
+// verifyLBAnnotations asserts that ingress annotations updated correctly.
+func verifyLBAnnotations(t *testing.T, l7 *L7, ingAnnotations map[string]string) {
+	var l7Certs []string
+	for _, cert := range l7.sslCerts {
+		l7Certs = append(l7Certs, cert.Name)
+	}
+	fw, exists := ingAnnotations[annotations.HttpForwardingRuleKey]
+	if l7.fw != nil {
+		if !exists {
+			t.Errorf("Expected http forwarding rule annotation to exist")
+		} else if diff := cmp.Diff(l7.fw.Name, fw); diff != "" {
+			t.Errorf("Got diff for http forwarding rule (-want +got):\n%s", diff)
+		}
+	} else if exists {
+		t.Errorf("Expected http forwarding rule annotation to not exist")
+	}
+	tp, exists := ingAnnotations[annotations.TargetHttpProxyKey]
+	if l7.tp != nil {
+		if !exists {
+			t.Errorf("Expected target http proxy annotation to exist")
+		} else if diff := cmp.Diff(l7.tp.Name, tp); diff != "" {
+			t.Errorf("Got diff for target http proxy (-want +got):\n%s", diff)
+		}
+	} else if exists {
+		t.Errorf("Expected target http proxy annotation to not exist")
+	}
+	fws, exists := ingAnnotations[annotations.HttpsForwardingRuleKey]
+	if l7.fws != nil {
+		if !exists {
+			t.Errorf("Expected https forwarding rule annotation to exist")
+		} else if diff := cmp.Diff(l7.fws.Name, fws); diff != "" {
+			t.Errorf("Got diff for https forwarding rule (-want +got):\n%s", diff)
+		}
+	} else if exists {
+		t.Errorf("Expected https forwarding rule annotation to not exist")
+	}
+	tps, exists := ingAnnotations[annotations.TargetHttpsProxyKey]
+	if l7.tps != nil {
+		if !exists {
+			t.Errorf("Expected target https proxy annotation to exist")
+		} else if diff := cmp.Diff(l7.tps.Name, tps); diff != "" {
+			t.Errorf("Got diff for target https proxy (-want +got):\n%s", diff)
+		}
+	} else if exists {
+		t.Errorf("Expected target https proxy annotation to not exist")
+	}
+	certs, exists := ingAnnotations[annotations.SSLCertKey]
+	if len(l7Certs) > 0 {
+		if !exists {
+			t.Errorf("Expected ssl cert annotation to exist")
+		} else if diff := cmp.Diff(strings.Join(l7Certs, ","), certs); diff != "" {
+			t.Errorf("Got diff for ssl certs (-want +got):\n%s", diff)
+		}
+	} else if exists {
+		t.Errorf("Expected ssl cert annotation to not exist")
+	}
 }

@@ -21,6 +21,8 @@ import (
 	"net/http"
 
 	"google.golang.org/api/compute/v1"
+	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -31,26 +33,33 @@ func (l *L7) checkStaticIP() (err error) {
 	if l.fw == nil || l.fw.IPAddress == "" {
 		return fmt.Errorf("will not create static IP without a forwarding rule")
 	}
+	managedStaticIPName := l.namer.ForwardingRule(namer.HTTPProtocol)
 	// Don't manage staticIPs if the user has specified an IP.
 	if address, manageStaticIP := l.getEffectiveIP(); !manageStaticIP {
 		klog.V(3).Infof("Not managing user specified static IP %v", address)
+		if flags.F.EnableDeleteUnusedFrontends {
+			// Delete ingress controller managed static ip if exists.
+			if ip, ok := l.ingress.Annotations[annotations.StaticIPKey]; ok && ip == managedStaticIPName {
+				return l.deleteStaticIP()
+			}
+		}
 		return nil
 	}
-	staticIPName := l.namer.ForwardingRule(namer.HTTPProtocol)
-	ip, _ := l.cloud.GetGlobalAddress(staticIPName)
+
+	ip, _ := l.cloud.GetGlobalAddress(managedStaticIPName)
 	if ip == nil {
-		klog.V(3).Infof("Creating static ip %v", staticIPName)
-		err = l.cloud.ReserveGlobalAddress(&compute.Address{Name: staticIPName, Address: l.fw.IPAddress})
+		klog.V(3).Infof("Creating static ip %v", managedStaticIPName)
+		err = l.cloud.ReserveGlobalAddress(&compute.Address{Name: managedStaticIPName, Address: l.fw.IPAddress})
 		if err != nil {
 			if utils.IsHTTPErrorCode(err, http.StatusConflict) ||
 				utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
 				klog.V(3).Infof("IP %v(%v) is already reserved, assuming it is OK to use.",
-					l.fw.IPAddress, staticIPName)
+					l.fw.IPAddress, managedStaticIPName)
 				return nil
 			}
 			return err
 		}
-		ip, err = l.cloud.GetGlobalAddress(staticIPName)
+		ip, err = l.cloud.GetGlobalAddress(managedStaticIPName)
 		if err != nil {
 			return err
 		}
