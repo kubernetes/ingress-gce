@@ -22,7 +22,7 @@ import (
 	"sync"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -255,17 +255,23 @@ func (manager *syncerManager) garbageCollectSyncer() {
 func (manager *syncerManager) garbageCollectNEG() error {
 	// Retrieve aggregated NEG list from cloud
 	// Compare against svcPortMap and Remove unintended NEGs by best effort
-	zoneNEGList, err := manager.cloud.AggregatedListNetworkEndpointGroup(meta.VersionGA)
+	negList, err := manager.cloud.AggregatedListNetworkEndpointGroup(meta.VersionGA)
 	if err != nil {
 		return fmt.Errorf("failed to retrieve aggregated NEG list: %v", err)
 	}
 
-	negNames := sets.String{}
-	for _, list := range zoneNEGList {
-		for _, neg := range list {
-			if manager.namer.IsNEG(neg.Name) {
-				negNames.Insert(neg.Name)
+	deleteCandidates := map[string][]string{}
+	for key, neg := range negList {
+		if key.Type() != meta.Zonal {
+			// covers the case when key.Zone is not populated
+			klog.V(4).Infof("Ignoring key %v as it is not zonal", key)
+			continue
+		}
+		if manager.namer.IsNEG(neg.Name) {
+			if _, ok := deleteCandidates[neg.Name]; !ok {
+				deleteCandidates[neg.Name] = []string{}
 			}
+			deleteCandidates[neg.Name] = append(deleteCandidates[neg.Name], key.Zone)
 		}
 	}
 
@@ -274,7 +280,7 @@ func (manager *syncerManager) garbageCollectNEG() error {
 		defer manager.mu.Unlock()
 		for _, portInfoMap := range manager.svcPortMap {
 			for _, portInfo := range portInfoMap {
-				negNames.Delete(portInfo.NegName)
+				delete(deleteCandidates, portInfo.NegName)
 			}
 		}
 	}()
@@ -283,8 +289,8 @@ func (manager *syncerManager) garbageCollectNEG() error {
 	// The worst outcome of the race condition is that neg is deleted in the end but user actually specifies a neg.
 	// This would be resolved (sync neg) when the next endpoint update or resync arrives.
 	// TODO: avoid race condition here
-	for zone := range zoneNEGList {
-		for _, name := range negNames.List() {
+	for name, zones := range deleteCandidates {
+		for _, zone := range zones {
 			if err := manager.ensureDeleteNetworkEndpointGroup(name, zone); err != nil {
 				return fmt.Errorf("failed to delete NEG %q in %q: %v", name, zone, err)
 			}

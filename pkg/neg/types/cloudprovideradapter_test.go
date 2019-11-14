@@ -77,36 +77,25 @@ func validateAggregatedList(t *testing.T, adapter NetworkEndpointGroupCloud, exp
 	if err != nil {
 		t.Errorf("Expect AggregatedListNetworkEndpointGroup to return nil error, but got %v", err)
 	}
-	if len(ret) != expectZoneNum {
-		t.Errorf("Expect len(ret) == %v, got %v", expectZoneNum, len(ret))
-	}
 
 	zoneNames := sets.NewString()
 	expectZoneNames := sets.NewString()
-	for key := range expectZoneNegs {
-		expectZoneNames.Insert(key)
-	}
-	for zone, negs := range ret {
-		zoneNames.Insert(zone)
-		negNames := sets.NewString()
-		expectNegNames := sets.NewString()
+	negNames := sets.NewString()
+	expectNegNames := sets.NewString()
 
-		for _, neg := range negs {
-			negNames.Insert(neg.Name)
-		}
-
-		expectNegs, ok := expectZoneNegs[zone]
-		if !ok {
-			t.Errorf("Zone %v from return is not expected", zone)
-			continue
-		}
-
+	for zone, expectNegs := range expectZoneNegs {
+		expectZoneNames.Insert(zone)
 		for _, neg := range expectNegs {
 			expectNegNames.Insert(neg)
 		}
-		if !negNames.Equal(expectNegNames) {
-			t.Errorf("Expect NEG names %v, but got %v", expectNegNames.List(), negNames.List())
-		}
+	}
+	for key, neg := range ret {
+		zoneNames.Insert(key.Zone)
+		negNames.Insert(neg.Name)
+	}
+
+	if !negNames.Equal(expectNegNames) {
+		t.Errorf("Expect NEG names %v, but got %v", expectNegNames.List(), negNames.List())
 	}
 
 	if !zoneNames.Equal(expectZoneNames) {

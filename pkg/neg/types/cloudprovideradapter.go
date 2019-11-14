@@ -19,7 +19,6 @@ package types
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -59,30 +58,9 @@ func (a *cloudProviderAdapter) ListNetworkEndpointGroup(zone string, version met
 }
 
 // AggregatedListNetworkEndpointGroup returns a map of zone -> endpoint group.
-func (a *cloudProviderAdapter) AggregatedListNetworkEndpointGroup(version meta.Version) (map[string][]*composite.NetworkEndpointGroup, error) {
+func (a *cloudProviderAdapter) AggregatedListNetworkEndpointGroup(version meta.Version) (map[*meta.Key]*composite.NetworkEndpointGroup, error) {
 	// TODO: filter for the region the cluster is in.
-	all, err := composite.AggregatedListNetworkEndpointGroup(a.c, version)
-	if err != nil {
-		return nil, err
-	}
-	ret := map[string][]*composite.NetworkEndpointGroup{}
-	for key, obj := range all {
-		// key is scope
-		// zonal key is "zones/<zone name>"
-		// regional key is "regions/<region name>"
-		// global key is "global"
-		// TODO: use cloud provider meta.KeyType and scope name as key
-		if key.Type() == meta.Global {
-			klog.V(4).Infof("Ignoring key %v as it is global", key)
-			continue
-		}
-		if key.Zone == "" {
-			klog.Warningf("Key %v does not have zone populated, ignoring", key)
-			continue
-		}
-		ret[key.Zone] = append(ret[key.Zone], obj)
-	}
-	return ret, nil
+	return composite.AggregatedListNetworkEndpointGroup(a.c, version)
 }
 
 // CreateNetworkEndpointGroup implements NetworkEndpointGroupCloud.
