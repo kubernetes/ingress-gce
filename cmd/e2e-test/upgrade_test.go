@@ -123,6 +123,10 @@ func TestGenericUpgrade(t *testing.T) {
 		desc string
 		test e2e.UpgradeTest
 	}{
+		{
+			desc: "standalone NEG should work for upgrade",
+			test: upgrade.NewStandaloneNegUpgradeTest(),
+		},
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
