@@ -356,15 +356,21 @@ func TestGarbageCollectionNEG(t *testing.T) {
 			Name:                negName,
 			NetworkEndpointType: string(networkEndpointType),
 		}, negtypes.TestZone1)
+		manager.cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+			Version:             meta.VersionGA,
+			Name:                negName,
+			NetworkEndpointType: string(networkEndpointType),
+		}, negtypes.TestZone2)
 
 		if err := manager.GC(); err != nil {
 			t.Fatalf("Failed to GC: %v", err)
 		}
-
-		negs, _ := manager.cloud.ListNetworkEndpointGroup(negtypes.TestZone1, meta.VersionGA)
-		for _, neg := range negs {
-			if neg.Name == negName {
-				t.Errorf("Expect NEG %q to be GCed.", negName)
+		for _, zone := range []string{negtypes.TestZone1, negtypes.TestZone2} {
+			negs, _ := manager.cloud.ListNetworkEndpointGroup(zone, meta.VersionGA)
+			for _, neg := range negs {
+				if neg.Name == negName {
+					t.Errorf("Expect NEG %q in zone %q to be GCed.", negName, zone)
+				}
 			}
 		}
 	}
