@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/clock"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -43,6 +44,8 @@ const (
 	negReadyReason = "LoadBalancerNegReady"
 	// negReadyTimedOutReason is the pod condition reason when timeout is reached but pod is still not healthy in NEG
 	negReadyTimedOutReason = "LoadBalancerNegTimeout"
+	// negReadyUnhealthCheckedReason is the pod condition reason when pod is in a NEG without associated health checking
+	negReadyUnhealthCheckedReason = "LoadBalancerNegWithoutHealthCheck"
 	// negNotReadyReason is the pod condition reason when pod is not healthy in NEG
 	negNotReadyReason = "LoadBalancerNegNotReady"
 	// unreadyTimeout is the timeout for health status feedback for pod readiness. If load balancer health
@@ -114,7 +117,7 @@ func (r *readinessReflector) processNextWorkItem() bool {
 	}
 	defer r.queue.Done(key)
 
-	err := r.syncPod(key.(string), "")
+	err := r.syncPod(key.(string), nil, nil)
 	r.handleErr(err, key)
 	return true
 }
@@ -137,13 +140,13 @@ func (r *readinessReflector) handleErr(err error, key interface{}) {
 }
 
 // syncPod process pod and patch the NEG readiness condition if needed
-// if neg is specified, it means pod is Healthy in the NEG.
-func (r *readinessReflector) syncPod(key string, neg string) (err error) {
+// if neg and backendService is specified, it means pod is Healthy in the NEG attached to backendService.
+func (r *readinessReflector) syncPod(podKey string, neg, backendService *meta.Key) (err error) {
 	// podUpdateLock to ensure there is no race in pod status update
 	r.podUpdateLock.Lock()
 	defer r.podUpdateLock.Unlock()
 
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	namespace, name, err := cache.SplitMetaNamespaceKey(podKey)
 	if err != nil {
 		return err
 	}
@@ -153,7 +156,7 @@ func (r *readinessReflector) syncPod(key string, neg string) (err error) {
 		return err
 	}
 	if !exists {
-		klog.V(5).Infof("Pod %q is no longer exists. Skipping", key)
+		klog.V(5).Infof("Pod %q is no longer exists. Skipping", podKey)
 		return nil
 	}
 
@@ -162,18 +165,29 @@ func (r *readinessReflector) syncPod(key string, neg string) (err error) {
 		return nil
 	}
 
-	klog.V(4).Infof("Syncing Pod %q", key)
-	expectedCondition := r.getExpectedNegCondition(pod, neg)
+	klog.V(4).Infof("syncPod(%q, %v, %v)", podKey, neg, backendService)
+	expectedCondition := r.getExpectedNegCondition(pod, neg, backendService)
 	return r.ensurePodNegCondition(pod, expectedCondition)
 }
 
 // getExpectedCondition returns the expected NEG readiness condition for the given pod
-func (r *readinessReflector) getExpectedNegCondition(pod *v1.Pod, neg string) v1.PodCondition {
+func (r *readinessReflector) getExpectedNegCondition(pod *v1.Pod, neg, backendService *meta.Key) v1.PodCondition {
 	expectedCondition := v1.PodCondition{Type: shared.NegReadinessGate}
-	if len(neg) > 0 {
-		expectedCondition.Status = v1.ConditionTrue
-		expectedCondition.Reason = negReadyReason
-		expectedCondition.Message = fmt.Sprintf("Pod has become Healthy in NEG %q. Marking condition %q to True.", neg, shared.NegReadinessGate)
+	if pod == nil {
+		expectedCondition.Message = fmt.Sprintf("Unkown status for unkown pod.")
+		return expectedCondition
+	}
+
+	if neg != nil {
+		if backendService != nil {
+			expectedCondition.Status = v1.ConditionTrue
+			expectedCondition.Reason = negReadyReason
+			expectedCondition.Message = fmt.Sprintf("Pod has become Healthy in NEG %q attached to BackendService %q. Marking condition %q to True.", neg.String(), backendService.String(), shared.NegReadinessGate)
+		} else {
+			expectedCondition.Status = v1.ConditionTrue
+			expectedCondition.Reason = negReadyUnhealthCheckedReason
+			expectedCondition.Message = fmt.Sprintf("Pod is in NEG %q. NEG is not attached to any BackendService with health checking. Marking condition %q to True.", neg.String(), shared.NegReadinessGate)
+		}
 		return expectedCondition
 	}
 
@@ -252,6 +266,9 @@ func (r *readinessReflector) pollNeg(key negMeta) {
 // ensurePodNegCondition ensures the pod neg condition is as expected
 // TODO(freehan): also populate lastTransitionTime in the condition
 func (r *readinessReflector) ensurePodNegCondition(pod *v1.Pod, expectedCondition v1.PodCondition) error {
+	if pod == nil {
+		return nil
+	}
 	// check if it is necessary to patch
 	condition, ok := NegReadinessConditionStatus(pod)
 	if ok && reflect.DeepEqual(expectedCondition, condition) {

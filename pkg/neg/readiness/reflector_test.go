@@ -22,6 +22,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -84,12 +85,13 @@ func TestSyncPod(t *testing.T) {
 	now := metav1.NewTime(fakeClock.Now()).Rfc3339Copy()
 
 	for _, tc := range []struct {
-		desc         string
-		mutateState  func()
-		inputKey     string
-		inputNeg     string
-		expectExists bool
-		expectPod    *v1.Pod
+		desc                string
+		mutateState         func()
+		inputKey            string
+		inputNeg            *meta.Key
+		inputBackendService *meta.Key
+		expectExists        bool
+		expectPod           *v1.Pod
 	}{
 		{
 			desc:        "empty input",
@@ -103,7 +105,7 @@ func TestSyncPod(t *testing.T) {
 				client.CoreV1().Pods(testNamespace).Create(pod)
 			},
 			inputKey:     keyFunc(testNamespace, podName),
-			inputNeg:     "",
+			inputNeg:     nil,
 			expectExists: true,
 			expectPod:    generatePod(testNamespace, podName, false, true, true),
 		},
@@ -115,7 +117,7 @@ func TestSyncPod(t *testing.T) {
 				client.CoreV1().Pods(testNamespace).Update(pod)
 			},
 			inputKey:     keyFunc(testNamespace, podName),
-			inputNeg:     "",
+			inputNeg:     nil,
 			expectExists: true,
 			expectPod:    generatePod(testNamespace, podName, true, true, true),
 		},
@@ -127,7 +129,7 @@ func TestSyncPod(t *testing.T) {
 				client.CoreV1().Pods(testNamespace).Update(pod)
 			},
 			inputKey:     keyFunc(testNamespace, podName),
-			inputNeg:     "",
+			inputNeg:     nil,
 			expectExists: true,
 			expectPod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -161,7 +163,7 @@ func TestSyncPod(t *testing.T) {
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
 			},
 			inputKey:     keyFunc(testNamespace, podName),
-			inputNeg:     "",
+			inputNeg:     nil,
 			expectExists: true,
 			expectPod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -186,16 +188,17 @@ func TestSyncPod(t *testing.T) {
 			},
 		},
 		{
-			desc: "need to update pod: pod is healthy in a NEG",
+			desc: "need to update pod: pod is not attached to health check",
 			mutateState: func() {
 				pod := generatePod(testNamespace, podName, true, false, false)
 				podLister.Update(pod)
 				client.CoreV1().Pods(testNamespace).Update(pod)
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
 			},
-			inputKey:     keyFunc(testNamespace, podName),
-			inputNeg:     "neg1",
-			expectExists: true,
+			inputKey:            keyFunc(testNamespace, podName),
+			inputNeg:            meta.ZonalKey("neg1", "zone1"),
+			inputBackendService: nil,
+			expectExists:        true,
 			expectPod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace: testNamespace,
@@ -210,9 +213,9 @@ func TestSyncPod(t *testing.T) {
 					Conditions: []v1.PodCondition{
 						{
 							Type:    shared.NegReadinessGate,
-							Reason:  negReadyReason,
+							Reason:  negReadyUnhealthCheckedReason,
 							Status:  v1.ConditionTrue,
-							Message: fmt.Sprintf("Pod has become Healthy in NEG %q. Marking condition %q to True.", "neg1", shared.NegReadinessGate),
+							Message: fmt.Sprintf("Pod is in NEG %q. NEG is not attached to any BackendService with health checking. Marking condition %q to True.", meta.ZonalKey("neg1", "zone1").String(), shared.NegReadinessGate),
 						},
 					},
 				},
@@ -229,7 +232,7 @@ func TestSyncPod(t *testing.T) {
 				fakeClock.Step(unreadyTimeout)
 			},
 			inputKey:     keyFunc(testNamespace, podName),
-			inputNeg:     "",
+			inputNeg:     nil,
 			expectExists: true,
 			expectPod: &v1.Pod{
 				ObjectMeta: metav1.ObjectMeta{
@@ -254,9 +257,43 @@ func TestSyncPod(t *testing.T) {
 				},
 			},
 		},
+		{
+			desc: "need to update pod: pod is healthy in NEG ",
+			mutateState: func() {
+				pod := generatePod(testNamespace, podName, true, false, false)
+				podLister.Update(pod)
+				client.CoreV1().Pods(testNamespace).Update(pod)
+				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
+			},
+			inputKey:            keyFunc(testNamespace, podName),
+			inputNeg:            meta.ZonalKey("neg1", "zone1"),
+			inputBackendService: meta.GlobalKey("k8s-backendservice"),
+			expectExists:        true,
+			expectPod: &v1.Pod{
+				ObjectMeta: metav1.ObjectMeta{
+					Namespace: testNamespace,
+					Name:      podName,
+				},
+				Spec: v1.PodSpec{
+					ReadinessGates: []v1.PodReadinessGate{
+						{ConditionType: shared.NegReadinessGate},
+					},
+				},
+				Status: v1.PodStatus{
+					Conditions: []v1.PodCondition{
+						{
+							Type:    shared.NegReadinessGate,
+							Reason:  negReadyReason,
+							Status:  v1.ConditionTrue,
+							Message: fmt.Sprintf("Pod has become Healthy in NEG %q attached to BackendService %q. Marking condition %q to True.", meta.ZonalKey("neg1", "zone1").String(), meta.GlobalKey("k8s-backendservice").String(), shared.NegReadinessGate),
+						},
+					},
+				},
+			},
+		},
 	} {
 		tc.mutateState()
-		err := testReadinessReflector.syncPod(tc.inputKey, tc.inputNeg)
+		err := testReadinessReflector.syncPod(tc.inputKey, tc.inputNeg, tc.inputBackendService)
 		if err != nil {
 			t.Errorf("For test case %q, expect err to be nil, but got %v", tc.desc, err)
 		}
