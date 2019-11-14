@@ -24,7 +24,7 @@ const (
 
 // NewConfig returns a Conifg instances with default values.
 func NewConfig() Config {
-	return Config{ASMServiceNEGSkipNamespaces: []string{"kube-system"}}
+	return Config{EnableASM: false, ASMServiceNEGSkipNamespaces: []string{"kube-system", "istio-system"}}
 }
 
 // Equals returns true if c equals to other.

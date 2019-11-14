@@ -1,12 +1,16 @@
 package cmconfig
 
 import (
+	"fmt"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apimachinerytypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
 
@@ -44,11 +48,12 @@ func NewConfigMapConfigController(kubeClient kubernetes.Interface, recorder reco
 	}
 
 	c := &ConfigMapConfigController{
-		configMapNamespace: configMapNamespace,
-		configMapName:      configMapName,
-		currentConfig:      &currentConfig,
-		kubeClient:         kubeClient,
-		recorder:           recorder,
+		configMapNamespace:     configMapNamespace,
+		configMapName:          configMapName,
+		currentConfig:          &currentConfig,
+		kubeClient:             kubeClient,
+		recorder:               recorder,
+		currentConfigMapObject: cm,
 	}
 	return c
 }
@@ -56,6 +61,23 @@ func NewConfigMapConfigController(kubeClient kubernetes.Interface, recorder reco
 // GetConfig returns the internal Config
 func (c *ConfigMapConfigController) GetConfig() Config {
 	return *c.currentConfig
+}
+
+// DisableASMMode disables the ASM Mode by updating the ConfigMap and setting the internal flag.
+func (c *ConfigMapConfigController) DisableASMMode() {
+	patchBytes, err := utils.StrategicMergePatchBytes(v1.ConfigMap{Data: map[string]string{enableASM: trueValue}},
+		v1.ConfigMap{Data: map[string]string{enableASM: falseValue}}, v1.ConfigMap{})
+	if err != nil {
+		c.RecordEvent("Warning", "FailedDisableASMMode", fmt.Sprintf("Failed to disable ASM Mode, failed to create patch for ASM ConfigMap, error: %s", err))
+		return
+	}
+	cm, err := c.kubeClient.CoreV1().ConfigMaps(c.configMapNamespace).Patch(c.configMapName, apimachinerytypes.MergePatchType, patchBytes, "")
+	if err != nil {
+		c.RecordEvent("Warning", "FailedDisableASMMode", fmt.Sprintf("Failed to patch ASM ConfigMap, error: %s", err))
+		return
+	}
+	c.currentConfigMapObject = cm
+	c.currentConfig.EnableASM = false
 }
 
 // RecordEvent records a event to the ASMConfigmap
@@ -105,12 +127,10 @@ func (c *ConfigMapConfigController) processItem(obj interface{}, cancel func()) 
 		c.currentConfigMapObject = cm
 		if err := config.LoadValue(cm.Data); err != nil {
 			c.RecordEvent("Warning", "LoadValueError", err.Error())
-			klog.Warningf("LoadValue error: %s", err.Error())
 		}
 	}
 
 	if !config.Equals(c.currentConfig) {
-		klog.Warningf("ConfigMapConfigController: Get a update on the ConfigMapConfig. Old config: %v, new config: %v. Restarting Ingress controller...", *c.currentConfig, config)
 		c.RecordEvent("Normal", "ASMConfigMapTiggerRestart", "ConfigMapConfigController: Get a update on the ConfigMapConfig, Restarting Ingress controller")
 		cancel()
 	}

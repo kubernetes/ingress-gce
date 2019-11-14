@@ -19,6 +19,9 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
+	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	"k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
@@ -127,6 +130,7 @@ func NewControllerContext(
 
 // Init inits the Context, so that we can defers some config until the main thread enter actually get the leader lock.
 func (ctx *ControllerContext) Init() {
+	klog.V(2).Infof("Controller Context initializing with %v", ctx.ControllerContextConfig)
 	// Initialize controller context internals based on ASMConfigMap
 	if ctx.EnableASMConfigMap {
 		configMapInformer := informerv1.NewConfigMapInformer(ctx.KubeClient, ctx.Namespace, ctx.ResyncPeriod, utils.NewNamespaceIndexer())
@@ -135,23 +139,61 @@ func (ctx *ControllerContext) Init() {
 
 		cmConfig := ctx.ASMConfigController.GetConfig()
 		if cmConfig.EnableASM {
-			dynamicClient, err := dynamic.NewForConfig(ctx.KubeConfig)
-			if err != nil {
-				msg := fmt.Sprintf("Failed to create kubernetes dynamic client: %v", err)
-				klog.Fatalf(msg)
-				ctx.ASMConfigController.RecordEvent("Warning", "FailedCreateDynamicClient", msg)
-			}
-
-			klog.Warning("The DestinationRule group version is v1alpha3 in group networking.istio.io. Need to update as istio API graduates.")
-			destrinationGVR := schema.GroupVersionResource{Group: "networking.istio.io", Version: "v1alpha3", Resource: "destinationrules"}
-			drDynamicInformer := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, destrinationGVR, ctx.Namespace, ctx.ResyncPeriod,
-				cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
-				nil)
-			ctx.DestinationRuleInformer = drDynamicInformer.Informer()
-			ctx.DestinationRuleClient = dynamicClient.Resource(destrinationGVR)
+			ctx.initEnableASM()
 		}
 	}
 
+}
+
+func (ctx *ControllerContext) initEnableASM() {
+	const (
+		destinationRuleGroup      = "networking.istio.io"
+		destinationRuleAPIVersion = "v1alpha3"
+		destinationRulePlural     = "destinationrules"
+		// This must match the spec fields below, and be in the form: <plural>.<group>
+		destinationRuleCRDName = "destinationrules.networking.istio.io"
+	)
+
+	apiextensionClient, err := apiextensionsclientset.NewForConfig(ctx.KubeConfig)
+	if err != nil {
+		msg := fmt.Sprintf("Failed to create ApiextensionClient for DestinationRule, disabling ASM Mode, error: %s", err)
+		ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", msg)
+		ctx.ASMConfigController.DisableASMMode()
+		return
+	}
+	destinationRuleCRD, err := apiextensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(destinationRuleCRDName, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", "Cannot find DestinationRule CRD, disabling ASM Mode, please check Istio setup.")
+		} else {
+			ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", fmt.Sprintf("Failed to load DestinationRule CRD, disabling the ASM Mode, please check Istio setup. Error: %s", err))
+		}
+		ctx.ASMConfigController.DisableASMMode()
+		return
+	}
+	if destinationRuleCRD.Spec.Version != destinationRuleAPIVersion {
+		ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", fmt.Sprintf("Only Support Istio API: %s, but found %s, disabling the ASM Mode, please check Istio setup.",
+			destinationRuleAPIVersion, destinationRuleCRD.Spec.Version))
+		ctx.ASMConfigController.DisableASMMode()
+		return
+	}
+
+	dynamicClient, err := dynamic.NewForConfig(ctx.KubeConfig)
+	if err != nil {
+		msg := fmt.Sprintf("Failed to create kubernetes dynamic client, disabling ASM Mode, please retry. Error: %v", err)
+		klog.Fatalf(msg)
+		ctx.ASMConfigController.RecordEvent("Warning", "FailedCreateDynamicClient", msg)
+		ctx.ASMConfigController.DisableASMMode()
+		return
+	}
+
+	klog.V(2).Infof("The supported DestinationRule group version is %s in group %s. Need to update as istio API graduates.", destinationRuleAPIVersion, destinationRuleGroup)
+	destrinationGVR := schema.GroupVersionResource{Group: destinationRuleGroup, Version: destinationRuleAPIVersion, Resource: destinationRulePlural}
+	drDynamicInformer := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, destrinationGVR, ctx.Namespace, ctx.ResyncPeriod,
+		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
+		nil)
+	ctx.DestinationRuleInformer = drDynamicInformer.Informer()
+	ctx.DestinationRuleClient = dynamicClient.Resource(destrinationGVR)
 }
 
 // HasSynced returns true if all relevant informers has been synced.
