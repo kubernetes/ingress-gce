@@ -76,7 +76,8 @@ func TestAppProtocol(t *testing.T) {
 
 			vip := ing.Status.LoadBalancer.Ingress[0].IP
 			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
-			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All)}
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 			if err != nil {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
@@ -160,7 +161,8 @@ func TestAppProtocolTransition(t *testing.T) {
 
 			vip := ing.Status.LoadBalancer.Ingress[0].IP
 			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
-			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All)}
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 			if err != nil {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}

@@ -111,7 +111,7 @@ func TestBasicHTTPS(t *testing.T) {
 			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
 
 			// Perform whitebox testing.
-			gclb := whiteboxTest(ing, s, t)
+			gclb := whiteboxTest(ing, s, t, "")
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
 				SkipDefaultBackend: true,

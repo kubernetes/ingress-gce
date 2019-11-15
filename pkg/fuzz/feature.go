@@ -69,6 +69,7 @@ type FeatureValidator interface {
 	// an error.
 	CheckResponse(host, path string, resp *http.Response, body []byte) (CheckResponseAction, error)
 
+	// TODO(shance): ideally we should use features.ResourceVersions and scope here
 	HasAlphaResource(resourceType string) bool
 	HasBetaResource(resourceType string) bool
 }

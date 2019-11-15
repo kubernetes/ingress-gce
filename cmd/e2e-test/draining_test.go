@@ -100,7 +100,8 @@ func TestDraining(t *testing.T) {
 
 			vip := ing.Status.LoadBalancer.Ingress[0].IP
 			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
-			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All)}
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 			if err != nil {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
@@ -132,7 +133,8 @@ func TestDraining(t *testing.T) {
 			}
 
 			if err := wait.Poll(drainingTansitionPollInterval, drainingTransitionPollTimeout, func() (bool, error) {
-				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
+				params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All)}
+				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 				if err != nil {
 					t.Logf("error getting GCP resources for LB with IP = %q: %v", vip, err)
 					return false, nil

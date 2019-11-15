@@ -83,7 +83,7 @@ func TestBasic(t *testing.T) {
 			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
-			gclb := whiteboxTest(ing, s, t)
+			gclb := whiteboxTest(ing, s, t, "")
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
 				SkipDefaultBackend: true,
@@ -132,7 +132,11 @@ func TestBasicStaticIP(t *testing.T) {
 		}
 
 		vip := testIng.Status.LoadBalancer.Ingress[0].IP
-		gclb, err := fuzz.GCLBForVIP(ctx, Framework.Cloud, vip, fuzz.FeatureValidators([]fuzz.Feature{features.SecurityPolicy}))
+		params := &fuzz.GCLBForVIPParams{
+			VIP:        vip,
+			Validators: fuzz.FeatureValidators([]fuzz.Feature{features.SecurityPolicy}),
+		}
+		gclb, err := fuzz.GCLBForVIP(ctx, Framework.Cloud, params)
 		if err != nil {
 			t.Fatalf("fuzz.GCLBForVIP(..., %q, %q) = _, %v; want _, nil", vip, features.SecurityPolicy, err)
 		}
@@ -187,7 +191,7 @@ func TestEdge(t *testing.T) {
 			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
-			gclb := whiteboxTest(ing, s, t)
+			gclb := whiteboxTest(ing, s, t, "")
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
 				SkipDefaultBackend: true,
@@ -213,14 +217,19 @@ func waitForStableIngress(expectUnreachable bool, ing *v1beta1.Ingress, s *e2e.S
 	return ing
 }
 
-func whiteboxTest(ing *v1beta1.Ingress, s *e2e.Sandbox, t *testing.T) *fuzz.GCLB {
+func whiteboxTest(ing *v1beta1.Ingress, s *e2e.Sandbox, t *testing.T, region string) *fuzz.GCLB {
 	if len(ing.Status.LoadBalancer.Ingress) < 1 {
 		t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
 	}
 
 	vip := ing.Status.LoadBalancer.Ingress[0].IP
 	t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
-	gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, vip, fuzz.FeatureValidators(features.All))
+	params := &fuzz.GCLBForVIPParams{
+		VIP:        vip,
+		Region:     region,
+		Validators: fuzz.FeatureValidators(features.All),
+	}
+	gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 	if err != nil {
 		t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 	}
