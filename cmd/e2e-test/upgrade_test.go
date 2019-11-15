@@ -130,6 +130,8 @@ func TestGenericUpgrade(t *testing.T) {
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Parallel()
+
 			t.Logf("Running upgrade test %v", tc.desc)
 			if err := tc.test.Init(t, s, Framework); err != nil {
 				t.Fatalf("For upgrade test %v, step Init failed due to %v", tc.desc, err)
