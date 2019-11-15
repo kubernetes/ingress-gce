@@ -74,7 +74,7 @@ func TestController(t *testing.T) {
 			defaultConfigMapData: map[string]string{"enable-asm": "false"},
 			updateConifgMapData:  map[string]string{"enable-asm": "true"},
 			wantConfig:           &defaultConfig,
-			wantUpdateConfig:     &Config{EnableASM: true, ASMServiceNEGSkipNamespaces: []string{"kube-system"}},
+			wantUpdateConfig:     &Config{EnableASM: true, ASMServiceNEGSkipNamespaces: []string{"kube-system", "istio-system"}},
 			wantStop:             true,
 			wantLog:              "",
 			donotWantLog:         "Not found the configmap based config",

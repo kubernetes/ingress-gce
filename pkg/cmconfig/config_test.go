@@ -28,7 +28,7 @@ func TestLoadValue(t *testing.T) {
 		{
 			desc:       "LoadValue should return the default value if EnableASM has a unvalid value.",
 			inputMap:   map[string]string{"enable-asm": "f"},
-			wantConfig: Config{EnableASM: false, ASMServiceNEGSkipNamespaces: []string{"kube-system"}},
+			wantConfig: Config{EnableASM: false, ASMServiceNEGSkipNamespaces: []string{"kube-system", "istio-system"}},
 			wantLog:    "The map provided a unvalid value for field: enable-asm, value: f, valid values are: true/false",
 		},
 		{
