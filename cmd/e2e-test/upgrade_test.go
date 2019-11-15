@@ -22,6 +22,7 @@ import (
 
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/ingress-gce/cmd/e2e-test/upgrade"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
 )
@@ -110,6 +111,59 @@ func TestUpgrade(t *testing.T) {
 			if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing, deleteOptions); err != nil { // Sometimes times out waiting
 				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
 			}
+		})
+	}
+}
+
+// TODO: migrate existing upgrade tests to the generic upgrade test.
+func TestGenericUpgrade(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc string
+		test e2e.UpgradeTest
+	}{
+		{
+			desc: "standalone NEG should work for upgrade",
+			test: upgrade.NewStandaloneNegUpgradeTest(),
+		},
+	} {
+		tc := tc // Capture tc as we are running this in parallel.
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Logf("Running upgrade test %v", tc.desc)
+			if err := tc.test.Init(t, s, Framework); err != nil {
+				t.Fatalf("For upgrade test %v, step Init failed due to %v", tc.desc, err)
+			}
+
+			s.PutStatus(e2e.Unstable)
+			func() {
+				// always mark the test as stable in order to unblock other upgrade tests.
+				defer s.PutStatus(e2e.Stable)
+				if err := tc.test.PreUpgrade(); err != nil {
+					t.Fatalf("For upgrade test %v, step PreUpgrade failed due to %v", tc.desc, err)
+				}
+			}()
+
+			for {
+				// While k8s master is upgrading, it will return a connection refused
+				// error for any k8s resource we try to hit. We loop until the
+				// master upgrade has finished.
+				if s.MasterUpgrading() {
+					if err := tc.test.DuringUpgrade(); err != nil {
+						t.Fatalf("For upgrade test %v, step DuringUpgrade failed due to %v", tc.desc, err)
+					}
+					continue
+				}
+
+				if s.MasterUpgraded() {
+					t.Logf("Detected master upgrade, continuing upgrade test %v", tc.desc)
+					break
+				}
+			}
+			if err := tc.test.PostUpgrade(); err != nil {
+				t.Fatalf("For upgrade test %v, step PostUpgrade failed due to %v", tc.desc, err)
+			}
+
 		})
 	}
 }

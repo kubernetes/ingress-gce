@@ -318,6 +318,10 @@ func TestNEGSyncEndpoints(t *testing.T) {
 					t.Fatalf("error ensuring echo deployment: %v", err)
 				}
 
+				if err := e2e.WaitForEchoDeploymentStable(s, svcName); err != nil {
+					t.Fatalf("Echo deployment failed to become stable: %v", err)
+				}
+
 				// validate via sending traffic
 				if tc.checkBackendReachability {
 					// only ensure ingress if we check reachability
