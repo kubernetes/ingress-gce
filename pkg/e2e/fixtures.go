@@ -182,7 +182,7 @@ func EnsureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify fun
 	}
 	modify(deployment)
 
-	existingDeployment, err := s.f.Clientset.ExtensionsV1beta1().Deployments(s.Namespace).Get(name, metav1.GetOptions{})
+	existingDeployment, err := s.f.Clientset.AppsV1().Deployments(s.Namespace).Get(name, metav1.GetOptions{})
 	if existingDeployment == nil || err != nil {
 		if _, err = s.f.Clientset.AppsV1().Deployments(s.Namespace).Create(deployment); err != nil {
 			return err
