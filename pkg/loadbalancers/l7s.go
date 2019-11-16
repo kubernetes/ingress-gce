@@ -74,33 +74,16 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 	return lb, nil
 }
 
-// delete deletes a loadbalancer by name.
-func (l *L7s) delete(name string, versions *features.ResourceVersions, scope meta.KeyType) error {
+// delete deletes a loadbalancer by frontend namer.
+func (l *L7s) delete(namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType) error {
 	lb := &L7{
 		runtimeInfo: &L7RuntimeInfo{},
 		cloud:       l.cloud,
-		namer:       l.namerFactory.NamerForLbName(name),
+		namer:       namer,
 		scope:       scope,
 	}
 
-	klog.V(3).Infof("Deleting lb %v", lb.String())
-
-	if err := lb.Cleanup(versions); err != nil {
-		return err
-	}
-	return nil
-}
-
-// v2Delete deletes a loadbalancer frontend resources by ingress using v2 naming scheme.
-func (l *L7s) v2Delete(ing *v1beta1.Ingress, versions *features.ResourceVersions, scope meta.KeyType) error {
-	lb := &L7{
-		runtimeInfo: &L7RuntimeInfo{Ingress: ing},
-		cloud:       l.cloud,
-		namer:       l.namerFactory.Namer(ing),
-		scope:       scope,
-	}
-
-	klog.V(3).Infof("Deleting lb (using v2 naming scheme) %v", lb)
+	klog.V(2).Infof("Deleting loadbalancer %s", lb.String())
 
 	if err := lb.Cleanup(versions); err != nil {
 		return err
@@ -128,11 +111,11 @@ func (l *L7s) list(key *meta.Key, version meta.Version) ([]*composite.UrlMap, er
 // GCv2 implements LoadBalancerPool.
 func (l *L7s) GCv2(ing *v1beta1.Ingress) error {
 	ingKey := common.NamespacedName(ing)
-	klog.V(2).Infof("GC(%v)", ingKey)
-	if err := l.v2Delete(ing, features.VersionsFromIngress(ing), features.ScopeFromIngress(ing)); err != nil {
+	klog.V(2).Infof("GCv2(%v)", ingKey)
+	if err := l.delete(l.namerFactory.Namer(ing), features.VersionsFromIngress(ing), features.ScopeFromIngress(ing)); err != nil {
 		return err
 	}
-	klog.V(2).Infof("GC(%v) ok", ingKey)
+	klog.V(2).Infof("GCv2(%v) ok", ingKey)
 	return nil
 }
 
@@ -196,8 +179,7 @@ func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers sets.String, ve
 			continue
 		}
 
-		klog.V(2).Infof("GCing loadbalancer %v", l7Name)
-		if err := l.delete(l7Name, versions, scope); err != nil {
+		if err := l.delete(l.namerFactory.NamerForLbName(l7Name), versions, scope); err != nil {
 			errors = append(errors, fmt.Errorf("error deleting loadbalancer %q", l7Name))
 		}
 	}

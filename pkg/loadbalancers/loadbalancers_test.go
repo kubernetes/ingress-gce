@@ -653,7 +653,7 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 		verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 		// Fetch the target proxy certs and go through in order
 		verifyProxyCertsInOrder(" foo.com", j, t)
-		j.pool.delete(common.IngressKeyFunc(lbInfo.Ingress), features.GAResourceVersions, defaultScope)
+		j.pool.delete(feNamer, features.GAResourceVersions, defaultScope)
 	}
 }
 
@@ -708,7 +708,8 @@ func TestIdenticalHostnameCertsPreShared(t *testing.T) {
 		verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 		// Fetch the target proxy certs and go through in order
 		verifyProxyCertsInOrder(" foo.com", j, t)
-		j.pool.delete(common.IngressKeyFunc(lbInfo.Ingress), features.GAResourceVersions, defaultScope)
+		feNamer := namer_util.NewFrontendNamerFactory(j.namer, "").Namer(lbInfo.Ingress)
+		j.pool.delete(feNamer, features.GAResourceVersions, defaultScope)
 	}
 }
 
