@@ -17,17 +17,20 @@ limitations under the License.
 package loadbalancers
 
 import (
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/loadbalancers/features"
+	"k8s.io/api/networking/v1beta1"
 )
 
 // LoadBalancerPool is an interface to manage the cloud resources associated
 // with a gce loadbalancer.
 type LoadBalancerPool interface {
+	// Ensure ensures a loadbalancer and its resources given the RuntimeInfo.
 	Ensure(ri *L7RuntimeInfo) (*L7, error)
-	Delete(name string, versions *features.ResourceVersions, scope meta.KeyType) error
-	GC(names []string) error
-	Shutdown() error
-	List(key *meta.Key, version meta.Version) ([]*composite.UrlMap, error)
+	// GCv2 garbage collects loadbalancer associated with given ingress using v2 naming scheme.
+	GCv2(ing *v1beta1.Ingress) error
+	// GCv1 garbage collects loadbalancers not in the input list using v1 naming scheme.
+	GCv1(names []string) error
+	// Shutdown deletes all loadbalancers for given list of ingresses.
+	Shutdown(ings []*v1beta1.Ingress) error
+	// HasUrlMap returns true if an URL map exists in GCE for given ingress.
+	HasUrlMap(ing *v1beta1.Ingress) (bool, error)
 }

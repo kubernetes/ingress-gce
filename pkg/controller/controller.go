@@ -115,7 +115,7 @@ func NewLoadBalancerController(
 		hasSynced:     ctx.HasSynced,
 		nodes:         NewNodeController(ctx, instancePool),
 		instancePool:  instancePool,
-		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer)),
+		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID)),
 		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
 		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud),
 		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool),
@@ -330,9 +330,10 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 	// TODO(rramkumar): Do we need deleteAll? Can we get rid of its' flag?
 	if deleteAll {
 		klog.Infof("Shutting down cluster manager.")
-		if err := lbc.l7Pool.Shutdown(); err != nil {
+		if err := lbc.l7Pool.Shutdown(lbc.ctx.Ingresses().List()); err != nil {
 			return err
 		}
+
 		// The backend pool will also delete instance groups.
 		return lbc.backendSyncer.Shutdown()
 	}
@@ -453,25 +454,42 @@ func (lbc *LoadBalancerController) SyncLoadBalancer(state interface{}) error {
 	return nil
 }
 
-// GCLoadBalancers implements Controller.
-func (lbc *LoadBalancerController) GCLoadBalancers(toKeep []*v1beta1.Ingress) error {
-	// Only GCE ingress associated resources are managed by this controller.
-	GCEIngresses := operator.Ingresses(toKeep).Filter(utils.IsGCEIngress).AsList()
-	return lbc.l7Pool.GC(common.ToIngressKeys(GCEIngresses))
+// GCv1LoadBalancers implements Controller.
+func (lbc *LoadBalancerController) GCv1LoadBalancers(toKeep []*v1beta1.Ingress) error {
+	return lbc.l7Pool.GCv1(common.ToIngressKeys(toKeep))
 }
 
-// MaybeRemoveFinalizers cleans up Finalizers if needed.
-func (lbc *LoadBalancerController) MaybeRemoveFinalizers(toCleanup []*v1beta1.Ingress) error {
+// GCv2LoadBalancer implements Controller.
+func (lbc *LoadBalancerController) GCv2LoadBalancer(ing *v1beta1.Ingress) error {
+	return lbc.l7Pool.GCv2(ing)
+}
+
+// EnsureDeleteV1Finalizers implements Controller.
+func (lbc *LoadBalancerController) EnsureDeleteV1Finalizers(toCleanup []*v1beta1.Ingress) error {
 	if !flags.F.FinalizerRemove {
 		klog.V(4).Infof("Removing finalizers not enabled")
 		return nil
 	}
 	for _, ing := range toCleanup {
 		ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
-		if err := common.RemoveFinalizer(ing, ingClient); err != nil {
-			klog.Errorf("Failed to remove Finalizer from Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
+		if err := common.EnsureDeleteFinalizer(ing, ingClient, common.FinalizerKey); err != nil {
+			klog.Errorf("Failed to ensure delete finalizer %s for ingress %s: %v", common.FinalizerKey, common.NamespacedName(ing), err)
 			return err
 		}
+	}
+	return nil
+}
+
+// EnsureDeleteV2Finalizer implements Controller.
+func (lbc *LoadBalancerController) EnsureDeleteV2Finalizer(ing *v1beta1.Ingress) error {
+	if !flags.F.FinalizerRemove {
+		klog.V(4).Infof("Removing finalizers not enabled")
+		return nil
+	}
+	ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
+	if err := common.EnsureDeleteFinalizer(ing, ingClient, common.FinalizerKeyV2); err != nil {
+		klog.Errorf("Failed to ensure delete finalizer %s for ingress %s: %v", common.FinalizerKeyV2, common.NamespacedName(ing), err)
+		return err
 	}
 	return nil
 }
@@ -501,20 +519,24 @@ func (lbc *LoadBalancerController) sync(key string) error {
 		return fmt.Errorf("error getting Ingress for key %s: %v", key, err)
 	}
 
-	// Snapshot of list of ingresses.
+	// Capture GC state for ingress.
 	allIngresses := lbc.ctx.Ingresses().List()
+
 	// Determine if the ingress needs to be GCed.
 	if !ingExists || utils.NeedsCleanup(ing) {
+		frontendGCAlgorithm := frontendGCAlgorithm(ingExists, ing)
+		klog.V(3).Infof("Using algorithm %v to GC ingress %v", frontendGCAlgorithm, ing)
 		// GC will find GCE resources that were used for this ingress and delete them.
-		return lbc.ingSyncer.GC(allIngresses)
+		err := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm)
+		if err != nil {
+			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "GC", fmt.Sprintf("Error during GC: %v", err))
+		}
+		return err
 	}
 
-	// Get ingress and DeepCopy for assurance that we don't pollute other goroutines with changes.
-	ing = ing.DeepCopy()
-	ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
+	// Ensure that a finalizer is attached.
 	if flags.F.FinalizerAdd {
-		if err := common.AddFinalizer(ing, ingClient); err != nil {
-			klog.Errorf("Failed to add Finalizer to Ingress %q: %v", key, err)
+		if err = lbc.ensureFinalizer(ing); err != nil {
 			return err
 		}
 	}
@@ -538,7 +560,10 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	// Garbage collection will occur regardless of an error occurring. If an error occurred,
 	// it could have been caused by quota issues; therefore, garbage collecting now may
 	// free up enough quota for the next sync to pass.
-	if gcErr := lbc.ingSyncer.GC(allIngresses); gcErr != nil {
+	frontendGCAlgorithm := frontendGCAlgorithm(ingExists, ing)
+	klog.V(3).Infof("Using algorithm %v to GC ingress %v", frontendGCAlgorithm, ing)
+	if gcErr := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm); gcErr != nil {
+		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "GC", fmt.Sprintf("Error during GC: %v", gcErr))
 		return fmt.Errorf("error during sync %v, error during GC %v", syncErr, gcErr)
 	}
 
@@ -648,4 +673,92 @@ func (lbc *LoadBalancerController) ToSvcPorts(ings []*v1beta1.Ingress) []utils.S
 		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts
+}
+
+// defaultFrontendNamingScheme returns frontend naming scheme for an ingress without finalizer.
+// This is used for adding an appropriate finalizer on the ingress.
+func (lbc *LoadBalancerController) defaultFrontendNamingScheme(ing *v1beta1.Ingress) (namer.Scheme, error) {
+	// Ingress frontend naming scheme is determined based on the following logic,
+	// V2 frontend namer is disabled         : v1 frontend naming scheme
+	// V2 frontend namer is enabled
+	//     - VIP does not exists             : v2 frontend naming scheme
+	//     - VIP exists
+	//         - GCE URL Map exists          : v1 frontend naming scheme
+	//         - GCE URL Map does not exists : v2 frontend naming scheme
+	if !flags.F.EnableV2FrontendNamer {
+		return namer.V1NamingScheme, nil
+	}
+	if !utils.HasVIP(ing) {
+		return namer.V2NamingScheme, nil
+	}
+	urlMapExists, err := lbc.l7Pool.HasUrlMap(ing)
+	if err != nil {
+		return "", err
+	}
+	if urlMapExists {
+		return namer.V1NamingScheme, nil
+	}
+	return namer.V2NamingScheme, nil
+}
+
+// ensureFinalizer ensures that a finalizer is attached.
+func (lbc *LoadBalancerController) ensureFinalizer(ing *v1beta1.Ingress) error {
+	ingKey := common.NamespacedName(ing)
+	if common.HasFinalizer(ing.ObjectMeta) {
+		klog.V(4).Infof("Finalizer exists for ingress %s", ingKey)
+		return nil
+	}
+	// Get ingress and DeepCopy for assurance that we don't pollute other goroutines with changes.
+	ing = ing.DeepCopy()
+	ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
+	namingScheme, err := lbc.defaultFrontendNamingScheme(ing)
+	if err != nil {
+		return err
+	}
+	finalizerKey, err := namer.FinalizerForNamingScheme(namingScheme)
+	if err != nil {
+		return err
+	}
+	if err := common.EnsureFinalizer(ing, ingClient, finalizerKey); err != nil {
+		klog.Errorf("Failed to ensure finalizer %s for ingress %s: %v", finalizerKey, ingKey, err)
+		return err
+	}
+	return nil
+}
+
+// frontendGCAlgorithm returns the naming scheme using which frontend resources needs to be cleanedup.
+// This also returns a boolean to specify if we need to delete frontend resources.
+// GC path is
+// If ingress does not exist :   v1 frontends and all backends
+// If ingress exists
+//    - Needs cleanup
+//      - If v1 naming scheme  :    v1 frontends and all backends
+//      - If v2 naming scheme  :    v2 frontends and all backends
+//    - Does not need cleanup
+//      - Finalizer enabled    :    all backends
+//      - Finalizer disabled   :    v1 frontends and all backends
+func frontendGCAlgorithm(ingExists bool, ing *v1beta1.Ingress) utils.FrontendGCAlgorithm {
+	// If ingress does not exist, that means its pre-finalizer era.
+	// Run GC via v1 naming scheme.
+	if !ingExists {
+		return utils.CleanupV1FrontendResources
+	}
+	// Determine if we do not need to delete current ingress.
+	if !utils.NeedsCleanup(ing) {
+		// GC backends only if current ingress does not need cleanup and finalizers is enabled.
+		if flags.F.FinalizerAdd {
+			return utils.NoCleanUpNeeded
+		}
+		return utils.CleanupV1FrontendResources
+	}
+	namingScheme := namer.FrontendNamingScheme(ing)
+	switch namingScheme {
+	case namer.V2NamingScheme:
+		return utils.CleanupV2FrontendResources
+	case namer.V1NamingScheme:
+		return utils.CleanupV1FrontendResources
+	default:
+		klog.Errorf("Unexpected naming scheme %v", namingScheme)
+		return utils.NoCleanUpNeeded
+	}
 }

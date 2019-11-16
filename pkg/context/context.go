@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	informerv1 "k8s.io/client-go/informers/core/v1"
@@ -58,7 +59,8 @@ type ControllerContext struct {
 
 	Cloud *gce.Cloud
 
-	ClusterNamer *namer.Namer
+	ClusterNamer  *namer.Namer
+	KubeSystemUID types.UID
 
 	ControllerContextConfig
 	ASMConfigController *cmconfig.ConfigMapConfigController
@@ -103,6 +105,7 @@ func NewControllerContext(
 	frontendConfigClient frontendconfigclient.Interface,
 	cloud *gce.Cloud,
 	namer *namer.Namer,
+	kubeSystemUID types.UID,
 	config ControllerContextConfig) *ControllerContext {
 
 	context := &ControllerContext{
@@ -110,6 +113,7 @@ func NewControllerContext(
 		KubeClient:              kubeClient,
 		Cloud:                   cloud,
 		ClusterNamer:            namer,
+		KubeSystemUID:           kubeSystemUID,
 		ControllerContextConfig: config,
 		IngressInformer:         informerv1beta1.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
