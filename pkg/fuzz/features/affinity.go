@@ -106,9 +106,11 @@ func haveGCLBCookie(resp *http.Response) bool {
 		return false
 	}
 
-	if !strings.HasPrefix(cookie, "GCLB") {
-		return false
+	fmt.Printf("cookie = %+v\n", cookie)
+
+	if strings.HasPrefix(cookie, "GCLB") || strings.HasPrefix(cookie, "GCILB") {
+		return true
 	}
 
-	return true
+	return false
 }
