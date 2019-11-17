@@ -201,7 +201,7 @@ func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers sets.String, ve
 			errors = append(errors, fmt.Errorf("error deleting loadbalancer %q", l7Name))
 		}
 	}
-	return nil
+	return errors
 }
 
 // Shutdown implements LoadBalancerPool.
