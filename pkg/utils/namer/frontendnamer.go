@@ -123,15 +123,15 @@ type V2IngressFrontendNamer struct {
 
 // newV2IngressFrontendNamer returns a v2 frontend namer for given ingress, cluster uid and prefix.
 // Example:
-// For Ingress - namespace/ingress, clusterUID - uid0123, prefix - k8s
+// For Ingress - namespace/ingress, clusterUID - uid01234, prefix - k8s
 // The resource names are -
 // LoadBalancer          : uid0123-namespace-ingress-cysix1wq
-// HTTP Forwarding Rule  : k8s2-fr-uid0123-namespace-ingress-cysix1wq
-// HTTPS Forwarding Rule : k8s2-fs-uid0123-namespace-ingress-cysix1wq
-// Target HTTP Proxy     : k8s2-tp-uid0123-namespace-ingress-cysix1wq
-// Target HTTPS Proxy    : k8s2-ts-uid0123-namespace-ingress-cysix1wq
-// URL Map               : k8s2-um-uid0123-namespace-ingress-cysix1wq
-// SSL Certificate       : k8s2-cr-uid0123-<lb-hash>-<secret-hash>
+// HTTP Forwarding Rule  : k8s2-fr-uid01234-namespace-ingress-cysix1wq
+// HTTPS Forwarding Rule : k8s2-fs-uid01234-namespace-ingress-cysix1wq
+// Target HTTP Proxy     : k8s2-tp-uid01234-namespace-ingress-cysix1wq
+// Target HTTPS Proxy    : k8s2-ts-uid01234-namespace-ingress-cysix1wq
+// URL Map               : k8s2-um-uid01234-namespace-ingress-cysix1wq
+// SSL Certificate       : k8s2-cr-uid01234-<lb-hash>-<secret-hash>
 func newV2IngressFrontendNamer(ing *v1beta1.Ingress, clusterUID string, prefix string) IngressFrontendNamer {
 	namer := &V2IngressFrontendNamer{ing: ing, prefix: prefix, clusterUID: clusterUID}
 	// Initialize LbName.
@@ -195,15 +195,6 @@ func (vn *V2IngressFrontendNamer) IsLegacySSLCert(certName string) bool {
 // Note that this is used for generating GCE resource names.
 func (vn *V2IngressFrontendNamer) LbName() string {
 	return vn.lbName
-}
-
-// setLbName sets loadbalancer name.
-func (vn *V2IngressFrontendNamer) setLbName() {
-	truncFields := TrimFieldsEvenly(maximumAllowedCombinedLength, vn.ing.Namespace, vn.ing.Name)
-	truncNamespace := truncFields[0]
-	truncName := truncFields[1]
-	suffix := vn.suffix(vn.clusterUID, vn.ing.Namespace, vn.ing.Name)
-	vn.lbName = fmt.Sprintf("%s-%s-%s-%s", vn.clusterUID, truncNamespace, truncName, suffix)
 }
 
 // suffix returns hash string of length 8 of a concatenated string generated from
