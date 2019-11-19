@@ -23,7 +23,9 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog"
 )
 
 // ErrSkipBackendsSync is an error that can be returned by a Controller to
@@ -67,6 +69,7 @@ func (s *IngressSyncer) GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, fr
 	var errs []error
 	switch frontendGCAlgorithm {
 	case utils.CleanupV2FrontendResources:
+		klog.V(3).Infof("Using algorithm CleanupV2FrontendResources to GC frontend of ingress %s", common.NamespacedName(currIng))
 		lbErr = s.controller.GCv2LoadBalancer(currIng)
 
 		defer func() {
@@ -76,6 +79,7 @@ func (s *IngressSyncer) GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, fr
 			err = s.controller.EnsureDeleteV2Finalizer(currIng)
 		}()
 	case utils.CleanupV1FrontendResources:
+		klog.V(3).Infof("Using algorithm CleanupV1FrontendResources to GC frontend of ingress %s", common.NamespacedName(currIng))
 		// Filter GCE ingresses that use v1 naming scheme.
 		v1Ingresses := operator.Ingresses(ings).Filter(func(ing *v1beta1.Ingress) bool {
 			return namer.FrontendNamingScheme(ing) == namer.V1NamingScheme
@@ -93,6 +97,7 @@ func (s *IngressSyncer) GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, fr
 			err = s.controller.EnsureDeleteV1Finalizers(toCleanupV1.AsList())
 		}()
 	case utils.NoCleanUpNeeded:
+		klog.V(3).Infof("Using algorithm NoCleanUpNeeded to GC frontend of ingress %s", common.NamespacedName(currIng))
 	default:
 		lbErr = fmt.Errorf("unexpected frontend GC algorithm %v", frontendGCAlgorithm)
 	}
