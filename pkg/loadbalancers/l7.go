@@ -47,6 +47,8 @@ const (
 	// DefaultPath is the path used if none is specified. It is a valid path
 	// recognized by GCE.
 	DefaultPath = "/*"
+
+	invalidConfigErrorMessage = "invalid ingress frontend configuration, please check your usage of the 'kubernetes.io/ingress.allow-http' annotation."
 )
 
 // L7RuntimeInfo is info passed to this module from the controller runtime.
@@ -152,10 +154,11 @@ func (l *L7) UrlMap() *composite.UrlMap {
 }
 
 func (l *L7) edgeHop() error {
-	// Keeps track if we will "try" to setup frontend resources based on user configuration.
-	// If user configuration dictates we do not, then we emit an event.
-	willConfigureFrontend := false
 	sslConfigured := l.runtimeInfo.TLS != nil || l.runtimeInfo.TLSName != ""
+	// Return an error if user configuration species that both HTTP & HTTPS are not to be configured.
+	if !l.runtimeInfo.AllowHTTP && !sslConfigured {
+		return fmt.Errorf(invalidConfigErrorMessage)
+	}
 
 	// Check for invalid L7-ILB HTTPS config before attempting sync
 	if flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress) && sslConfigured && l.runtimeInfo.AllowHTTP {
@@ -167,7 +170,6 @@ func (l *L7) edgeHop() error {
 		return err
 	}
 	if l.runtimeInfo.AllowHTTP {
-		willConfigureFrontend = true
 		if err := l.edgeHopHttp(); err != nil {
 			return err
 		}
@@ -185,7 +187,6 @@ func (l *L7) edgeHop() error {
 		}
 	}
 	if sslConfigured {
-		willConfigureFrontend = true
 		klog.V(3).Infof("validating https for %v", l)
 		if err := l.edgeHopHttps(); err != nil {
 			return err
@@ -196,11 +197,6 @@ func (l *L7) edgeHop() error {
 		}
 		klog.V(2).Infof("Successfully deleted unused HTTPS frontend resources for load-balancer %s", l)
 	}
-
-	if !willConfigureFrontend {
-		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, "WillNotConfigureFrontend", "Will not configure frontend based on Ingress specification. Please check your usage of the 'kubernetes.io/ingress.allow-http' annotation.")
-	}
-
 	return nil
 }
 
