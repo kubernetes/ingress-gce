@@ -52,18 +52,18 @@ func HasGivenFinalizer(m meta_v1.ObjectMeta, key string) bool {
 }
 
 // EnsureFinalizer ensures that the specified finalizer exists on given Ingress.
-func EnsureFinalizer(ing *v1beta1.Ingress, ingClient client.IngressInterface, finalizerKey string) error {
+func EnsureFinalizer(ing *v1beta1.Ingress, ingClient client.IngressInterface, finalizerKey string) (*v1beta1.Ingress, error) {
+	updated := ing.DeepCopy()
 	if needToAddFinalizer(ing.ObjectMeta, finalizerKey) {
-		updated := ing.DeepCopy()
 		updated.ObjectMeta.Finalizers = append(updated.ObjectMeta.Finalizers, finalizerKey)
 		// TODO(smatti): Make this optimistic concurrency control compliant on write.
 		// Refer: https://github.com/eBay/Kubernetes/blob/master/docs/devel/api-conventions.md#concurrency-control-and-consistency
 		if _, err := ingClient.Update(updated); err != nil {
-			return fmt.Errorf("error updating Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
+			return nil, fmt.Errorf("error updating Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 		}
 		klog.V(2).Infof("Added finalizer %q for Ingress %s/%s", finalizerKey, ing.Namespace, ing.Name)
 	}
-	return nil
+	return updated, nil
 }
 
 // needToAddFinalizer is true if the passed in meta does not contain the specified finalizer.

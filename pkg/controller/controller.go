@@ -525,7 +525,6 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	// Determine if the ingress needs to be GCed.
 	if !ingExists || utils.NeedsCleanup(ing) {
 		frontendGCAlgorithm := frontendGCAlgorithm(ingExists, ing)
-		klog.V(3).Infof("Using algorithm %v to GC ingress %v", frontendGCAlgorithm, ing)
 		// GC will find GCE resources that were used for this ingress and delete them.
 		err := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm)
 		if err != nil {
@@ -536,7 +535,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 
 	// Ensure that a finalizer is attached.
 	if flags.F.FinalizerAdd {
-		if err = lbc.ensureFinalizer(ing); err != nil {
+		if ing, err = lbc.ensureFinalizer(ing); err != nil {
 			return err
 		}
 	}
@@ -561,7 +560,6 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	// it could have been caused by quota issues; therefore, garbage collecting now may
 	// free up enough quota for the next sync to pass.
 	frontendGCAlgorithm := frontendGCAlgorithm(ingExists, ing)
-	klog.V(3).Infof("Using algorithm %v to GC ingress %v", frontendGCAlgorithm, ing)
 	if gcErr := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm); gcErr != nil {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "GC", fmt.Sprintf("Error during GC: %v", gcErr))
 		return fmt.Errorf("error during sync %v, error during GC %v", syncErr, gcErr)
@@ -702,28 +700,30 @@ func (lbc *LoadBalancerController) defaultFrontendNamingScheme(ing *v1beta1.Ingr
 }
 
 // ensureFinalizer ensures that a finalizer is attached.
-func (lbc *LoadBalancerController) ensureFinalizer(ing *v1beta1.Ingress) error {
+func (lbc *LoadBalancerController) ensureFinalizer(ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
 	ingKey := common.NamespacedName(ing)
 	if common.HasFinalizer(ing.ObjectMeta) {
 		klog.V(4).Infof("Finalizer exists for ingress %s", ingKey)
-		return nil
+		return ing, nil
 	}
-	// Get ingress and DeepCopy for assurance that we don't pollute other goroutines with changes.
-	ing = ing.DeepCopy()
-	ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
 	namingScheme, err := lbc.defaultFrontendNamingScheme(ing)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	finalizerKey, err := namer.FinalizerForNamingScheme(namingScheme)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := common.EnsureFinalizer(ing, ingClient, finalizerKey); err != nil {
+	ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
+	// Update ingress with finalizer so that load-balancer pool uses correct naming scheme
+	// while ensuring frontend resources. Note that this updates only the finalizer annotation
+	// which may be inconsistent with ingress store for a short period.
+	updatedIng, err := common.EnsureFinalizer(ing, ingClient, finalizerKey)
+	if err != nil {
 		klog.Errorf("Failed to ensure finalizer %s for ingress %s: %v", finalizerKey, ingKey, err)
-		return err
+		return nil, err
 	}
-	return nil
+	return updatedIng, nil
 }
 
 // frontendGCAlgorithm returns the naming scheme using which frontend resources needs to be cleanedup.
