@@ -1543,7 +1543,15 @@ func TestResourceDeletionWithProtocol(t *testing.T) {
 				delete(expectCerts, certName1)
 			}
 
-			if lb, err = j.pool.Ensure(lbInfo); err != nil {
+			lb, err = j.pool.Ensure(lbInfo)
+			if tc.disableHTTP && tc.disableHTTPS {
+				// we expect an invalid ingress configuration error here.
+				if err == nil || !strings.Contains(err.Error(), invalidConfigErrorMessage) {
+					t.Fatalf("pool.Ensure(%+v) = %v, want %v", lbInfo, err, fmt.Errorf(invalidConfigErrorMessage))
+				}
+				return
+			}
+			if err != nil {
 				t.Fatalf("pool.Ensure(%+v) = %v, want nil", lbInfo, err)
 			}
 			// Update ingress annotations
