@@ -23,6 +23,8 @@ import (
 // UpgradeTest is an interface for writing generic upgrade test.
 // TODO: add version compatibility into the interface
 type UpgradeTest interface {
+	// Name returns the name/description of the test.
+	Name() string
 	// Init initialized the Upgrade Test.
 	Init(t *testing.T, s *Sandbox, framework *Framework) error
 	// PreUpgrade runs before master upgrade.

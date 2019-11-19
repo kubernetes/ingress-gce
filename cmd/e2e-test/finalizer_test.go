@@ -18,13 +18,13 @@ package main
 
 import (
 	"context"
-	"k8s.io/api/networking/v1beta1"
-	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"testing"
 
+	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
+	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
@@ -49,11 +49,16 @@ func TestFinalizer(t *testing.T) {
 
 		crud := e2e.IngressCRUD{C: Framework.Clientset}
 		ing.Namespace = s.Namespace
+		ingKey := common.NamespacedName(ing)
 		if _, err := crud.Create(ing); err != nil {
-			t.Fatalf("create(%s/%s) = %v, want nil; Ingress: %v", ing.Namespace, ing.Name, err, ing)
+			t.Fatalf("create(%s) = %v, want nil; Ingress: %v", ingKey, err, ing)
 		}
-		t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
-		ing = waitForStableIngress(true, ing, s, t)
+		t.Logf("Ingress created (%s)", ingKey)
+
+		ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true})
+		if err != nil {
+			t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
+		}
 
 		ingFinalizers := ing.GetFinalizers()
 		if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
@@ -61,13 +66,16 @@ func TestFinalizer(t *testing.T) {
 		}
 
 		// Perform whitebox testing.
-		gclb := whiteboxTest(ing, s, t, "")
+		gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
+		if err != nil {
+			t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
+		}
 
 		deleteOptions := &fuzz.GCLBDeleteOptions{
 			SkipDefaultBackend: true,
 		}
 		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, deleteOptions); err != nil {
-			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ingKey, err)
 		}
 	})
 }
@@ -93,11 +101,15 @@ func TestFinalizerIngressClassChange(t *testing.T) {
 
 		crud := e2e.IngressCRUD{C: Framework.Clientset}
 		ing.Namespace = s.Namespace
+		ingKey := common.NamespacedName(ing)
 		if _, err := crud.Create(ing); err != nil {
-			t.Fatalf("create(%s/%s) = %v, want nil; Ingress: %v", ing.Namespace, ing.Name, err, ing)
+			t.Fatalf("create(%s) = %v, want nil; Ingress: %v", ingKey, err, ing)
 		}
-		t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
-		ing = waitForStableIngress(true, ing, s, t)
+		t.Logf("Ingress created (%s)", ingKey)
+		ing, err := e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true})
+		if err != nil {
+			t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
+		}
 
 		ingFinalizers := ing.GetFinalizers()
 		if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
@@ -105,16 +117,19 @@ func TestFinalizerIngressClassChange(t *testing.T) {
 		}
 
 		// Perform whitebox testing.
-		gclb := whiteboxTest(ing, s, t, "")
+		gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
+		if err != nil {
+			t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
+		}
 
 		// Change Ingress class
 		newIngClass := "nginx"
 		ing = fuzz.NewIngressBuilderFromExisting(ing).SetIngressClass(newIngClass).Build()
 
 		if _, err := crud.Update(ing); err != nil {
-			t.Fatalf("update(%s/%s) = %v, want nil; ingress: %v", ing.Namespace, ing.Name, err, ing)
+			t.Fatalf("update(%s) = %v, want nil; ingress: %v", ingKey, err, ing)
 		}
-		t.Logf("Ingress (%s/%s) class changed to %s", s.Namespace, ing.Name, newIngClass)
+		t.Logf("Ingress (%s) class changed to %s", ingKey, newIngClass)
 
 		deleteOptions := &fuzz.GCLBDeleteOptions{
 			SkipDefaultBackend: true,
@@ -122,7 +137,7 @@ func TestFinalizerIngressClassChange(t *testing.T) {
 		if err := e2e.WaitForFinalizerDeletion(ctx, gclb, s, ing.Name, deleteOptions); err != nil {
 			t.Errorf("e2e.WaitForFinalizerDeletion(..., %q, _) = %v, want nil", ing.Name, err)
 		}
-		t.Logf("Finalizer for Ingress (%s/%s) deleted", s.Namespace, ing.Name)
+		t.Logf("Finalizer for Ingress (%s) deleted", ingKey)
 	})
 }
 
@@ -151,19 +166,25 @@ func TestFinalizerIngressesWithSharedResources(t *testing.T) {
 
 		crud := e2e.IngressCRUD{C: Framework.Clientset}
 		ing.Namespace = s.Namespace
+		ingKey := common.NamespacedName(ing)
 		if _, err := crud.Create(ing); err != nil {
-			t.Fatalf("create(%s/%s) = %v, want nil; Ingress: %v", ing.Namespace, ing.Name, err, ing)
+			t.Fatalf("create(%s) = %v, want nil; Ingress: %v", ingKey, err, ing)
 		}
-		t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
+		t.Logf("Ingress created (%s)", ingKey)
 
 		otherIng.Namespace = s.Namespace
+		otherIngKey := common.NamespacedName(ing)
 		if _, err := crud.Create(otherIng); err != nil {
-			t.Fatalf("create(%s/%s) = %v, want nil; Ingress: %v", otherIng.Namespace, otherIng.Name, err, otherIng)
+			t.Fatalf("create(%s) = %v, want nil; Ingress: %v", otherIngKey, err, otherIng)
 		}
-		t.Logf("Ingress created (%s/%s)", s.Namespace, otherIng.Name)
+		t.Logf("Ingress created (%s)", otherIngKey)
 
-		ing = waitForStableIngress(true, ing, s, t)
-		otherIng = waitForStableIngress(true, otherIng, s, t)
+		if ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+			t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
+		}
+		if otherIng, err = e2e.WaitForIngress(s, otherIng, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+			t.Fatalf("error waiting for Ingress %s to stabilize: %v", otherIngKey, err)
+		}
 
 		ingFinalizers := ing.GetFinalizers()
 		if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
@@ -175,8 +196,14 @@ func TestFinalizerIngressesWithSharedResources(t *testing.T) {
 		}
 
 		// Perform whitebox testing.
-		gclb := whiteboxTest(ing, s, t, "")
-		otherGclb := whiteboxTest(otherIng, s, t, "")
+		gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
+		if err != nil {
+			t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
+		}
+		otherGclb, err := e2e.WhiteboxTest(otherIng, s, Framework.Cloud, "")
+		if err != nil {
+			t.Fatalf("e2e.WhiteboxTest(%s)", otherIngKey)
+		}
 
 		// SkipBackends ensure that we dont wait on deletion of shared backends.
 		deleteOptions := &fuzz.GCLBDeleteOptions{
@@ -184,13 +211,13 @@ func TestFinalizerIngressesWithSharedResources(t *testing.T) {
 			SkipBackends:       true,
 		}
 		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, deleteOptions); err != nil {
-			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ingKey, err)
 		}
 		deleteOptions = &fuzz.GCLBDeleteOptions{
 			SkipDefaultBackend: true,
 		}
 		if err := e2e.WaitForIngressDeletion(ctx, otherGclb, s, otherIng, deleteOptions); err != nil {
-			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", otherIng.Name, err)
+			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", otherIngKey, err)
 		}
 	})
 }
@@ -217,11 +244,15 @@ func TestUpdateTo1dot7(t *testing.T) {
 
 		crud := e2e.IngressCRUD{C: Framework.Clientset}
 		ing.Namespace = s.Namespace
+		ingKey := common.NamespacedName(ing)
 		if _, err := crud.Create(ing); err != nil {
-			t.Fatalf("create(%s/%s) = %v, want nil; Ingress: %v", ing.Namespace, ing.Name, err, ing)
+			t.Fatalf("create(%s) = %v, want nil; Ingress: %v", ingKey, err, ing)
 		}
-		t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
-		ing = waitForStableIngress(true, ing, s, t)
+		t.Logf("Ingress created (%s)", ingKey)
+
+		if ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+			t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
+		}
 
 		// Check that finalizer is not added in old version in which finalizer add is not enabled.
 		ingFinalizers := ing.GetFinalizers()
@@ -229,7 +260,10 @@ func TestUpdateTo1dot7(t *testing.T) {
 			t.Fatalf("GetFinalizers() = %d, want 0", l)
 		}
 		// Perform whitebox testing.
-		whiteboxTest(ing, s, t, "")
+		gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
+		if err != nil {
+			t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
+		}
 
 		for {
 			// While k8s master is upgrading, it will return a connection refused
@@ -247,11 +281,13 @@ func TestUpdateTo1dot7(t *testing.T) {
 
 		// Wait for finalizer to be added and verify that correct finalizer is added to the ingress after the upgrade.
 		if err := e2e.WaitForFinalizer(s, ing.Name); err != nil {
-			t.Errorf("e2e.WaitForFinalizer(_, %q) = %v, want nil", ing.Name, err)
+			t.Errorf("e2e.WaitForFinalizer(_, %q) = %v, want nil", ingKey, err)
 		}
 
 		// Perform whitebox testing.
-		gclb := whiteboxTest(ing, s, t, "")
+		if gclb, err = e2e.WhiteboxTest(ing, s, Framework.Cloud, ""); err != nil {
+			t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
+		}
 
 		// If the Master has upgraded and the Ingress is stable,
 		// we delete the Ingress and exit out of the loop to indicate that
@@ -260,7 +296,7 @@ func TestUpdateTo1dot7(t *testing.T) {
 			SkipDefaultBackend: true,
 		}
 		if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing, deleteOptions); err != nil {
-			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
+			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ingKey, err)
 		}
 	})
 }
