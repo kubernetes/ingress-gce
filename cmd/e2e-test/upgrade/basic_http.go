@@ -78,13 +78,12 @@ func (bh *BasicHTTP) PreUpgrade() error {
 	}
 	bh.t.Logf("Ingress created (%s)", ingKey)
 
-	if ing, err = e2e.WaitForIngress(bh.s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+	if bh.ing, err = e2e.UpgradeTestWaitForIngress(bh.s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
 		bh.t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 	}
-	bh.s.PutStatus(e2e.Stable)
 	bh.t.Logf("GCLB resources created (%s)", ingKey)
 
-	if _, err := e2e.WhiteboxTest(ing, bh.s, bh.framework.Cloud, ""); err != nil {
+	if _, err := e2e.WhiteboxTest(bh.ing, bh.s, bh.framework.Cloud, ""); err != nil {
 		bh.t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 	}
 	return nil
