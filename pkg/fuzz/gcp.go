@@ -37,9 +37,16 @@ import (
 )
 
 const (
-	NegResourceType = "networkEndpointGroup"
-	IgResourceType  = "instanceGroup"
+	NegResourceType          = "networkEndpointGroup"
+	IgResourceType           = "instanceGroup"
+	HttpProtocol             = Protocol("HTTP")
+	HttpsProtocol            = Protocol("HTTPS")
+	targetHTTPProxyResource  = "targetHttpProxies"
+	targetHTTPSProxyResource = "targetHttpsProxies"
 )
+
+// Protocol specifies GCE loadbalancer protocol.
+type Protocol string
 
 // ForwardingRule is a union of the API version types.
 type ForwardingRule struct {
@@ -130,6 +137,12 @@ type GCLBDeleteOptions struct {
 	// This is enabled only when we know that backends are shared among multiple ingresses
 	// in which case shared backends are not cleaned up on ingress deletion.
 	SkipBackends bool
+	// CheckHttpFrontendResources indicates whether to check just the http
+	// frontend resources.
+	CheckHttpFrontendResources bool
+	// CheckHttpsFrontendResources indicates whether to check just the https
+	// frontend resources.
+	CheckHttpsFrontendResources bool
 }
 
 // CheckResourceDeletion checks the existence of the resources. Returns nil if
@@ -245,7 +258,89 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 	return nil
 }
 
-// CheckNEGDeletion checks all NEGs associated with the GCLB have been deleted
+// CheckResourceDeletionByProtocol checks the existence of the resources for given protocol.
+// Returns nil if all of the associated frontend resources no longer exist.
+func (g *GCLB) CheckResourceDeletionByProtocol(ctx context.Context, c cloud.Cloud, options *GCLBDeleteOptions, protocol Protocol) error {
+	var resources []meta.Key
+
+	for k, gfr := range g.ForwardingRule {
+		// Check if forwarding rule matches given protocol.
+		if gfrProtocol, err := getForwardingRuleProtocol(gfr.GA); err != nil {
+			return err
+		} else if gfrProtocol != protocol {
+			continue
+		}
+
+		var err error
+		if k.Region != "" {
+			_, err = c.ForwardingRules().Get(ctx, &k)
+		} else {
+			_, err = c.GlobalForwardingRules().Get(ctx, &k)
+		}
+		if err != nil {
+			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+				return fmt.Errorf("ForwardingRule %s is not deleted/error to get: %s", k.Name, err)
+			}
+		} else {
+			resources = append(resources, k)
+		}
+	}
+
+	switch protocol {
+	case HttpProtocol:
+		for k := range g.TargetHTTPProxy {
+			_, err := c.TargetHttpProxies().Get(ctx, &k)
+			if err != nil {
+				if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+					return fmt.Errorf("TargetHTTPProxy %s is not deleted/error to get: %s", k.Name, err)
+				}
+			} else {
+				resources = append(resources, k)
+			}
+		}
+	case HttpsProtocol:
+		for k := range g.TargetHTTPSProxy {
+			_, err := c.TargetHttpsProxies().Get(ctx, &k)
+			if err != nil {
+				if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+					return fmt.Errorf("TargetHTTPSProxy %s is not deleted/error to get: %s", k.Name, err)
+				}
+			} else {
+				resources = append(resources, k)
+			}
+		}
+	default:
+		return fmt.Errorf("invalid protocol %q", protocol)
+	}
+
+	if len(resources) != 0 {
+		var s []string
+		for _, r := range resources {
+			s = append(s, r.String())
+		}
+		return fmt.Errorf("resources still exist (%s)", strings.Join(s, ", "))
+	}
+
+	return nil
+}
+
+// getForwardingRuleProtocol returns the protocol for given forwarding rule.
+func getForwardingRuleProtocol(forwardingRule *compute.ForwardingRule) (Protocol, error) {
+	resID, err := cloud.ParseResourceURL(forwardingRule.Target)
+	if err != nil {
+		return "", fmt.Errorf("error parsing Target (%q): %v", forwardingRule.Target, err)
+	}
+	switch resID.Resource {
+	case targetHTTPProxyResource:
+		return HttpProtocol, nil
+	case targetHTTPSProxyResource:
+		return HttpsProtocol, nil
+	default:
+		return "", fmt.Errorf("unhandled resource %q", resID.Resource)
+	}
+}
+
+// CheckNEGDeletion checks that all NEGs associated with the GCLB have been deleted
 func (g *GCLB) CheckNEGDeletion(ctx context.Context, c cloud.Cloud, options *GCLBDeleteOptions) error {
 	var resources []meta.Key
 
@@ -318,6 +413,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, params *GCLBForVIPParams) (*
 		}
 	}
 
+	// Return immediately if there are no forwarding rules exist.
 	if len(gfrs) == 0 {
 		klog.Warningf("No global forwarding rules found, can't get all GCLB resources")
 		return gclb, nil
@@ -346,7 +442,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, params *GCLBForVIPParams) (*
 			return nil, err
 		}
 		switch resID.Resource {
-		case "targetHttpProxies":
+		case targetHTTPProxyResource:
 			p, err := c.TargetHttpProxies().Get(ctx, resID.Key)
 			if err != nil {
 				klog.Warningf("Error getting TargetHttpProxy %s: %v", resID.Key, err)
@@ -369,7 +465,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, params *GCLBForVIPParams) (*
 				klog.Warningf("Error targetHttpProxy references are not the same (%s != %s)", *urlMapKey, *urlMapResID.Key)
 				return nil, fmt.Errorf("targetHttpProxy references are not the same: %+v != %+v", *urlMapKey, *urlMapResID.Key)
 			}
-		case "targetHttpsProxies":
+		case targetHTTPSProxyResource:
 			p, err := c.TargetHttpsProxies().Get(ctx, resID.Key)
 			if err != nil {
 				klog.Warningf("Error getting targetHttpsProxy (%s): %v", resID.Key, err)

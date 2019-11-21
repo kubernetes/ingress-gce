@@ -22,4 +22,5 @@ import "k8s.io/ingress-gce/pkg/fuzz"
 var AllTests = []fuzz.WhiteboxTest{
 	&numBackendServicesTest{},
 	&numForwardingRulesTest{},
+	&numTargetProxiesTest{},
 }

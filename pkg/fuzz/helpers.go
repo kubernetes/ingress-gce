@@ -230,6 +230,12 @@ func (i *IngressBuilder) Path(host, path, service string, port intstr.IntOrStrin
 	return &h.HTTP.Paths[len(h.HTTP.Paths)-1]
 }
 
+// SetTLS sets TLS certs to given list.
+func (i *IngressBuilder) SetTLS(tlsCerts []v1beta1.IngressTLS) *IngressBuilder {
+	i.ing.Spec.TLS = tlsCerts
+	return i
+}
+
 // AddTLS adds a TLS secret reference.
 func (i *IngressBuilder) AddTLS(hosts []string, secretName string) *IngressBuilder {
 	i.ing.Spec.TLS = append(i.ing.Spec.TLS, v1beta1.IngressTLS{

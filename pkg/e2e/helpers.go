@@ -201,6 +201,26 @@ func WaitForGCLBDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, optio
 	})
 }
 
+// WaitForFrontendResourceDeletion waits for frontend resources associated with the GLBC to be
+// deleted for given protocol.
+func WaitForFrontendResourceDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, options *fuzz.GCLBDeleteOptions) error {
+	return wait.Poll(gclbDeletionInterval, gclbDeletionTimeout, func() (bool, error) {
+		if options.CheckHttpFrontendResources {
+			if err := g.CheckResourceDeletionByProtocol(ctx, c, options, fuzz.HttpProtocol); err != nil {
+				klog.Infof("WaitForGCLBDeletionByProtocol(..., %q, %q) = %v", g.VIP, fuzz.HttpsProtocol, err)
+				return false, nil
+			}
+		}
+		if options.CheckHttpsFrontendResources {
+			if err := g.CheckResourceDeletionByProtocol(ctx, c, options, fuzz.HttpsProtocol); err != nil {
+				klog.Infof("WaitForGCLBDeletionByProtocol(..., %q, %q) = %v", g.VIP, fuzz.HttpsProtocol, err)
+				return false, nil
+			}
+		}
+		return true, nil
+	})
+}
+
 // WaitForNEGDeletion waits for all NEGs associated with a GCLB to be deleted via GC
 func WaitForNEGDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, options *fuzz.GCLBDeleteOptions) error {
 	return wait.Poll(negPollInterval, gclbDeletionTimeout, func() (bool, error) {

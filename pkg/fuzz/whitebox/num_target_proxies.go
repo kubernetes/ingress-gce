@@ -24,30 +24,33 @@ import (
 	"k8s.io/ingress-gce/pkg/fuzz"
 )
 
-// Implements a whitebox test to check that the GCLB has the expected number of ForwardingRule's.
-type numForwardingRulesTest struct {
+// Implements a whitebox test to check that the GCLB has the expected number of TargetHTTPSProxy's.
+type numTargetProxiesTest struct {
 }
 
 // Name implements WhiteboxTest.
-func (t *numForwardingRulesTest) Name() string {
-	return "NumForwardingRulesTest"
+func (t *numTargetProxiesTest) Name() string {
+	return "NumTargetProxiesTest"
 
 }
 
 // Test implements WhiteboxTest.
-func (t *numForwardingRulesTest) Test(ing *v1beta1.Ingress, gclb *fuzz.GCLB) error {
-	expectedForwardingRules := 0
+func (t *numTargetProxiesTest) Test(ing *v1beta1.Ingress, gclb *fuzz.GCLB) error {
+	expectedHTTPTargetProxies, expectedHTTPSTargetProxies := 0, 0
 
 	an := annotations.FromIngress(ing)
 	if an.AllowHTTP() {
-		expectedForwardingRules += 1
+		expectedHTTPTargetProxies = 1
 	}
 	if len(ing.Spec.TLS) > 0 || an.UseNamedTLS() != "" {
-		expectedForwardingRules += 1
+		expectedHTTPSTargetProxies = 1
 	}
 
-	if len(gclb.ForwardingRule) != expectedForwardingRules {
-		return fmt.Errorf("expected %d ForwardingRule's but got %d", expectedForwardingRules, len(gclb.ForwardingRule))
+	if l := len(gclb.TargetHTTPProxy); l != expectedHTTPTargetProxies {
+		return fmt.Errorf("expected %d TargetHTTPProxy's but got %d", expectedHTTPTargetProxies, l)
+	}
+	if l := len(gclb.TargetHTTPSProxy); l != expectedHTTPSTargetProxies {
+		return fmt.Errorf("expected %d TargetHTTPSProxy's but got %d", expectedHTTPSTargetProxies, l)
 	}
 
 	return nil
