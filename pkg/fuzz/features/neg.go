@@ -23,10 +23,11 @@ package features
 import (
 	"context"
 	"fmt"
-	"k8s.io/klog"
 	"net/http"
 	"strconv"
 	"strings"
+
+	"k8s.io/klog"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/api/core/v1"
@@ -34,7 +35,6 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
 // NEG is a feature in GCP to support pod as Loadbalancer backends
@@ -89,19 +89,14 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 		return fuzz.CheckResponseContinue, err
 	}
 
-	key, err := common.KeyFunc(v.ing)
-	if err != nil {
-		return fuzz.CheckResponseContinue, err
-	}
-
-	urlMapName := v.env.Namer().UrlMap(v.env.Namer().LoadBalancer(key))
+	urlMapName := v.env.FrontendNamerFactory().Namer(v.ing).UrlMap()
 	if negEnabled {
 		if utils.IsGCEL7ILBIngress(v.ing) {
 			return fuzz.CheckResponseContinue, verifyNegRegionBackend(v.env, negName, negName, urlMapName, v.region)
 		}
 		return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName, urlMapName)
 	}
-	return fuzz.CheckResponseContinue, verifyIgBackend(v.env, v.env.Namer().IGBackend(int64(svcPort.NodePort)), urlMapName)
+	return fuzz.CheckResponseContinue, verifyIgBackend(v.env, v.env.BackendNamer().IGBackend(int64(svcPort.NodePort)), urlMapName)
 }
 
 // getNegNameForServicePort returns the NEG name for the service port if it exists.

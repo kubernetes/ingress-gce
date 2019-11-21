@@ -36,22 +36,31 @@ type DefaultValidatorEnv struct {
 	bc    *bcclient.Clientset
 	gce   cloud.Cloud
 	namer *namer.Namer
+	// feNamerFactory is frontend namer factory that creates frontend naming policy
+	// for given ingress/ load-balancer.
+	feNamerFactory namer.IngressFrontendNamerFactory
 }
 
 // NewDefaultValidatorEnv returns a new ValidatorEnv.
 func NewDefaultValidatorEnv(config *rest.Config, ns string, gce cloud.Cloud) (ValidatorEnv, error) {
 	ret := &DefaultValidatorEnv{ns: ns, gce: gce}
 	var err error
-	ret.k8s, err = kubernetes.NewForConfig(config)
+	if ret.k8s, err = kubernetes.NewForConfig(config); err != nil {
+		return nil, err
+	}
+	if ret.bc, err = bcclient.NewForConfig(config); err != nil {
+		return nil, err
+	}
+	if ret.namer, err = app.NewStaticNamer(ret.k8s, "", ""); err != nil {
+		return nil, err
+	}
+	// Get kube-system uid.
+	kubeSystemNS, err := ret.k8s.CoreV1().Namespaces().Get("kube-system", metav1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
-	ret.bc, err = bcclient.NewForConfig(config)
-	if err != nil {
-		return nil, err
-	}
-	ret.namer, err = app.NewStaticNamer(ret.k8s, "", "")
-	return ret, err
+	ret.feNamerFactory = namer.NewFrontendNamerFactory(ret.namer, kubeSystemNS.GetUID())
+	return ret, nil
 }
 
 // BackendConfigs implements ValidatorEnv.
@@ -86,6 +95,11 @@ func (e *DefaultValidatorEnv) Cloud() cloud.Cloud {
 }
 
 // Namer implements ValidatorEnv.
-func (e *DefaultValidatorEnv) Namer() *namer.Namer {
+func (e *DefaultValidatorEnv) BackendNamer() namer.BackendNamer {
 	return e.namer
+}
+
+// DefaultValidatorEnv implements ValidatorEnv.
+func (e *DefaultValidatorEnv) FrontendNamerFactory() namer.IngressFrontendNamerFactory {
+	return e.feNamerFactory
 }
