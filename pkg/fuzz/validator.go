@@ -26,9 +26,11 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/google/go-cmp/cmp"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
@@ -42,15 +44,17 @@ type ValidatorEnv interface {
 	BackendConfigs() (map[string]*backendconfig.BackendConfig, error)
 	Services() (map[string]*v1.Service, error)
 	Cloud() cloud.Cloud
-	Namer() *namer.Namer
+	BackendNamer() namer.BackendNamer
+	FrontendNamerFactory() namer.IngressFrontendNamerFactory
 }
 
 // MockValidatorEnv is an environment that is used for mock testing.
 type MockValidatorEnv struct {
-	BackendConfigsMap map[string]*backendconfig.BackendConfig
-	ServicesMap       map[string]*v1.Service
-	MockCloud         *cloud.MockGCE
-	IngressNamer      *namer.Namer
+	BackendConfigsMap    map[string]*backendconfig.BackendConfig
+	ServicesMap          map[string]*v1.Service
+	MockCloud            *cloud.MockGCE
+	IngressNamer         *namer.Namer
+	frontendNamerFactory namer.IngressFrontendNamerFactory
 }
 
 // BackendConfigs implements ValidatorEnv.
@@ -68,9 +72,14 @@ func (e *MockValidatorEnv) Cloud() cloud.Cloud {
 	return e.MockCloud
 }
 
-// Cloud implements ValidatorEnv.
-func (e *MockValidatorEnv) Namer() *namer.Namer {
+// Namer implements ValidatorEnv.
+func (e *MockValidatorEnv) BackendNamer() namer.BackendNamer {
 	return e.IngressNamer
+}
+
+// FrontendNamerFactory implements ValidatorEnv.
+func (e *MockValidatorEnv) FrontendNamerFactory() namer.IngressFrontendNamerFactory {
+	return e.frontendNamerFactory
 }
 
 // IngressValidatorAttributes are derived attributes governing how the Ingress
@@ -190,8 +199,10 @@ func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, features []Feat
 			return http.ErrUseLastResponse
 		},
 	}
+	frontendNamer := env.FrontendNamerFactory().Namer(ing)
 	return &IngressValidator{
 		ing:           ing,
+		frontendNamer: frontendNamer,
 		features:      fvs,
 		whiteboxTests: whiteboxTests,
 		attribs:       attribs,
@@ -203,6 +214,7 @@ func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, features []Feat
 // is behaving correctly.
 type IngressValidator struct {
 	ing           *v1beta1.Ingress
+	frontendNamer namer.IngressFrontendNamer
 	features      []FeatureValidator
 	whiteboxTests []WhiteboxTest
 
@@ -229,6 +241,27 @@ func (v *IngressValidator) PerformWhiteboxTests(gclb *GCLB) error {
 	for _, w := range v.whiteboxTests {
 		if err := w.Test(v.ing, gclb); err != nil {
 			return fmt.Errorf("%s failed with error: %v", w.Name(), err)
+		}
+	}
+	return nil
+}
+
+// FrontendNamingSchemeTest asserts that correct naming scheme is used.
+func (v *IngressValidator) FrontendNamingSchemeTest(gclb *GCLB) error {
+	// Do not need to validate naming scheme if ingress has no finalizer.
+	if !common.HasFinalizer(v.ing.ObjectMeta) {
+		return nil
+	}
+
+	// Verify that only one url map exists.
+	if l := len(gclb.URLMap); l != 1 {
+		return fmt.Errorf("expected 1 url map to exist but got %d", l)
+	}
+
+	// Verify that url map is created with correct naming scheme.
+	for key := range gclb.URLMap {
+		if diff := cmp.Diff(v.frontendNamer.UrlMap(), key.Name); diff != "" {
+			return fmt.Errorf("got diff for url map name (-want +got):\n%s", diff)
 		}
 	}
 	return nil
