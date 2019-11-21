@@ -541,12 +541,103 @@ func TestHealthCheckReference(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
 func TestHealthStatusForNetworkEndpoint(t *testing.T) {
+	// Use reflection to verify that our composite type contains all the
+	// same fields as the alpha type.
 	compositeType := reflect.TypeOf(HealthStatusForNetworkEndpoint{})
 	alphaType := reflect.TypeOf(computealpha.HealthStatusForNetworkEndpoint{})
-	if err := typeEquality(compositeType, alphaType, true); err != nil {
+	betaType := reflect.TypeOf(computebeta.HealthStatusForNetworkEndpoint{})
+	gaType := reflect.TypeOf(compute.HealthStatusForNetworkEndpoint{})
+
+	// For the composite type, remove the Version field from consideration
+	compositeTypeNumFields := compositeType.NumField() - 2
+	if compositeTypeNumFields != alphaType.NumField() {
+		t.Fatalf("%v should contain %v fields. Got %v", alphaType.Name(), alphaType.NumField(), compositeTypeNumFields)
+	}
+
+	// Compare all the fields by doing a lookup since we can't guarantee that they'll be in the same order
+	// Make sure that composite type is strictly alpha fields + internal bookkeeping
+	for i := 2; i < compositeType.NumField(); i++ {
+		lookupField, found := alphaType.FieldByName(compositeType.Field(i).Name)
+		if !found {
+			t.Fatal(fmt.Errorf("Field %v not present in alpha type %v", compositeType.Field(i), alphaType))
+		}
+		if err := compareFields(compositeType.Field(i), lookupField); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Verify that all beta fields are in composite type
+	if err := typeEquality(betaType, compositeType, false); err != nil {
 		t.Fatal(err)
+	}
+
+	// Verify that all GA fields are in composite type
+	if err := typeEquality(gaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestToHealthStatusForNetworkEndpoint(t *testing.T) {
+	testCases := []struct {
+		input    interface{}
+		expected *HealthStatusForNetworkEndpoint
+	}{
+		{
+			computealpha.HealthStatusForNetworkEndpoint{},
+			&HealthStatusForNetworkEndpoint{},
+		},
+		{
+			computebeta.HealthStatusForNetworkEndpoint{},
+			&HealthStatusForNetworkEndpoint{},
+		},
+		{
+			compute.HealthStatusForNetworkEndpoint{},
+			&HealthStatusForNetworkEndpoint{},
+		},
+	}
+	for _, testCase := range testCases {
+		result, _ := ToHealthStatusForNetworkEndpoint(testCase.input)
+		if !reflect.DeepEqual(result, testCase.expected) {
+			t.Fatalf("ToHealthStatusForNetworkEndpoint(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
+		}
+	}
+}
+
+func TestHealthStatusForNetworkEndpointToAlpha(t *testing.T) {
+	composite := HealthStatusForNetworkEndpoint{}
+	expected := &computealpha.HealthStatusForNetworkEndpoint{}
+	result, err := composite.ToAlpha()
+	if err != nil {
+		t.Fatalf("HealthStatusForNetworkEndpoint.ToAlpha() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("HealthStatusForNetworkEndpoint.ToAlpha() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestHealthStatusForNetworkEndpointToBeta(t *testing.T) {
+	composite := HealthStatusForNetworkEndpoint{}
+	expected := &computebeta.HealthStatusForNetworkEndpoint{}
+	result, err := composite.ToBeta()
+	if err != nil {
+		t.Fatalf("HealthStatusForNetworkEndpoint.ToBeta() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("HealthStatusForNetworkEndpoint.ToBeta() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestHealthStatusForNetworkEndpointToGA(t *testing.T) {
+	composite := HealthStatusForNetworkEndpoint{}
+	expected := &compute.HealthStatusForNetworkEndpoint{}
+	result, err := composite.ToGA()
+	if err != nil {
+		t.Fatalf("HealthStatusForNetworkEndpoint.ToGA() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("HealthStatusForNetworkEndpoint.ToGA() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
 	}
 }
 
@@ -709,12 +800,103 @@ func TestMutualTls(t *testing.T) {
 		t.Fatal(err)
 	}
 }
-
 func TestNetworkEndpoint(t *testing.T) {
+	// Use reflection to verify that our composite type contains all the
+	// same fields as the alpha type.
 	compositeType := reflect.TypeOf(NetworkEndpoint{})
 	alphaType := reflect.TypeOf(computealpha.NetworkEndpoint{})
-	if err := typeEquality(compositeType, alphaType, true); err != nil {
+	betaType := reflect.TypeOf(computebeta.NetworkEndpoint{})
+	gaType := reflect.TypeOf(compute.NetworkEndpoint{})
+
+	// For the composite type, remove the Version field from consideration
+	compositeTypeNumFields := compositeType.NumField() - 2
+	if compositeTypeNumFields != alphaType.NumField() {
+		t.Fatalf("%v should contain %v fields. Got %v", alphaType.Name(), alphaType.NumField(), compositeTypeNumFields)
+	}
+
+	// Compare all the fields by doing a lookup since we can't guarantee that they'll be in the same order
+	// Make sure that composite type is strictly alpha fields + internal bookkeeping
+	for i := 2; i < compositeType.NumField(); i++ {
+		lookupField, found := alphaType.FieldByName(compositeType.Field(i).Name)
+		if !found {
+			t.Fatal(fmt.Errorf("Field %v not present in alpha type %v", compositeType.Field(i), alphaType))
+		}
+		if err := compareFields(compositeType.Field(i), lookupField); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Verify that all beta fields are in composite type
+	if err := typeEquality(betaType, compositeType, false); err != nil {
 		t.Fatal(err)
+	}
+
+	// Verify that all GA fields are in composite type
+	if err := typeEquality(gaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestToNetworkEndpoint(t *testing.T) {
+	testCases := []struct {
+		input    interface{}
+		expected *NetworkEndpoint
+	}{
+		{
+			computealpha.NetworkEndpoint{},
+			&NetworkEndpoint{},
+		},
+		{
+			computebeta.NetworkEndpoint{},
+			&NetworkEndpoint{},
+		},
+		{
+			compute.NetworkEndpoint{},
+			&NetworkEndpoint{},
+		},
+	}
+	for _, testCase := range testCases {
+		result, _ := ToNetworkEndpoint(testCase.input)
+		if !reflect.DeepEqual(result, testCase.expected) {
+			t.Fatalf("ToNetworkEndpoint(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
+		}
+	}
+}
+
+func TestNetworkEndpointToAlpha(t *testing.T) {
+	composite := NetworkEndpoint{}
+	expected := &computealpha.NetworkEndpoint{}
+	result, err := composite.ToAlpha()
+	if err != nil {
+		t.Fatalf("NetworkEndpoint.ToAlpha() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("NetworkEndpoint.ToAlpha() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestNetworkEndpointToBeta(t *testing.T) {
+	composite := NetworkEndpoint{}
+	expected := &computebeta.NetworkEndpoint{}
+	result, err := composite.ToBeta()
+	if err != nil {
+		t.Fatalf("NetworkEndpoint.ToBeta() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("NetworkEndpoint.ToBeta() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestNetworkEndpointToGA(t *testing.T) {
+	composite := NetworkEndpoint{}
+	expected := &compute.NetworkEndpoint{}
+	result, err := composite.ToGA()
+	if err != nil {
+		t.Fatalf("NetworkEndpoint.ToGA() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("NetworkEndpoint.ToGA() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
 	}
 }
 func TestNetworkEndpointGroup(t *testing.T) {
