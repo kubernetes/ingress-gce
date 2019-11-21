@@ -26,6 +26,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
+	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
 func TestBasic(t *testing.T) {
@@ -83,7 +84,10 @@ func TestBasic(t *testing.T) {
 			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
-			gclb := whiteboxTest(ing, s, t, "")
+			gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
+			if err != nil {
+				t.Fatalf("e2e.WhiteboxTest(%s/%s, ...) = %v, want nil", ing.Namespace, ing.Name, err)
+			}
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
 				SkipDefaultBackend: true,
@@ -191,7 +195,10 @@ func TestEdge(t *testing.T) {
 			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
-			gclb := whiteboxTest(ing, s, t, "")
+			gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
+			if err != nil {
+				t.Fatalf("e2e.WhiteboxTest(%s/%s, ...) = %v, want nil", ing.Namespace, ing.Name, err)
+			}
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
 				SkipDefaultBackend: true,
@@ -201,43 +208,6 @@ func TestEdge(t *testing.T) {
 			}
 		})
 	}
-}
-
-func waitForStableIngress(expectUnreachable bool, ing *v1beta1.Ingress, s *e2e.Sandbox, t *testing.T) *v1beta1.Ingress {
-	options := &e2e.WaitForIngressOptions{
-		ExpectUnreachable: expectUnreachable,
-	}
-
-	ing, err := e2e.WaitForIngress(s, ing, options)
-	if err != nil {
-		t.Fatalf("error waiting for Ingress to stabilize: %v", err)
-	}
-
-	s.PutStatus(e2e.Stable)
-	return ing
-}
-
-func whiteboxTest(ing *v1beta1.Ingress, s *e2e.Sandbox, t *testing.T, region string) *fuzz.GCLB {
-	if len(ing.Status.LoadBalancer.Ingress) < 1 {
-		t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
-	}
-
-	vip := ing.Status.LoadBalancer.Ingress[0].IP
-	t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
-	params := &fuzz.GCLBForVIPParams{
-		VIP:        vip,
-		Region:     region,
-		Validators: fuzz.FeatureValidators(features.All),
-	}
-	gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
-	if err != nil {
-		t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
-	}
-
-	if err := e2e.PerformWhiteboxTests(s, ing, gclb); err != nil {
-		t.Fatalf("Error performing whitebox tests: %v", err)
-	}
-	return gclb
 }
 
 // TestFrontendResourceDeletion asserts that unused GCP frontend resources are
@@ -284,14 +254,20 @@ func TestFrontendResourceDeletion(t *testing.T) {
 
 			ing := fuzz.NewIngressBuilder(s.Namespace, "ing1", "").
 				AddPath(host, "/", svcName, port80).AddTLS([]string{}, cert.Name).Build()
+			ingKey := common.NamespacedName(ing)
 
 			crud := e2e.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {
-				t.Fatalf("crud.Create(%s/%s) = %v, want nil; Ingress: %v", ing.Namespace, ing.Name, err, ing)
+				t.Fatalf("crud.Create(%s) = %v, want nil; Ingress: %v", ingKey, err, ing)
 			}
-			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
-			ing = waitForStableIngress(true, ing, s, t)
-			gclb := whiteboxTest(ing, s, t, "")
+			t.Logf("Ingress created (%s)", ingKey)
+			if ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+				t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
+			}
+			gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
+			if err != nil {
+				t.Fatalf("e2e.WhiteboxTest(%s, ...)", ingKey)
+			}
 
 			// Update ingress with desired frontend resource configuration.
 			ingBuilder := fuzz.NewIngressBuilderFromExisting(ing)
@@ -304,10 +280,12 @@ func TestFrontendResourceDeletion(t *testing.T) {
 			ing = ingBuilder.Build()
 
 			if _, err := crud.Update(ing); err != nil {
-				t.Fatalf("update(%s/%s) = %v, want nil; ingress: %v", ing.Namespace, ing.Name, err, ing)
+				t.Fatalf("Update(%s) = %v, want nil; ingress: %v", ingKey, err, ing)
 			}
-			t.Logf("Ingress updated (%s/%s)", ing.Namespace, ing.Name)
-			ing = waitForStableIngress(true, ing, s, t)
+			t.Logf("Ingress updated (%s)", ingKey)
+			if ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+				t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
+			}
 
 			deleteOptions := &fuzz.GCLBDeleteOptions{
 				SkipDefaultBackend:          true,
@@ -316,14 +294,16 @@ func TestFrontendResourceDeletion(t *testing.T) {
 			}
 			// Wait for unused frontend resources to be deleted.
 			if err := e2e.WaitForFrontendResourceDeletion(ctx, Framework.Cloud, gclb, deleteOptions); err != nil {
-				t.Errorf("e2e.WaitForIngressDeletion(..., %q, _) = %v, want nil", ing.Name, err)
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, _) = %v, want nil", ingKey, err)
 			}
-			whiteboxTest(ing, s, t, "")
+			if gclb, err = e2e.WhiteboxTest(ing, s, Framework.Cloud, ""); err != nil {
+				t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
+			}
 			deleteOptions = &fuzz.GCLBDeleteOptions{
 				SkipDefaultBackend: true,
 			}
 			if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, deleteOptions); err != nil {
-				t.Errorf("e2e.WaitForIngressDeletion(..., %q, _) = %v, want nil", ing.Name, err)
+				t.Errorf("e2e.WaitForIngressDeletion(..., %q, _) = %v, want nil", ingKey, err)
 			}
 		})
 	}

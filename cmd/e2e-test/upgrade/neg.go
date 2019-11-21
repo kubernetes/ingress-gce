@@ -47,6 +47,11 @@ func NewStandaloneNegUpgradeTest() e2e.UpgradeTest {
 	return &StandaloneNeg{}
 }
 
+// Name implements e2e.UpgradeTest.Init.
+func (sn *StandaloneNeg) Name() string {
+	return "StandaloneNegUpgrade"
+}
+
 // Init implements e2e.UpgradeTest.Init.
 func (sn *StandaloneNeg) Init(t *testing.T, s *e2e.Sandbox, framework *e2e.Framework) error {
 	sn.t = t

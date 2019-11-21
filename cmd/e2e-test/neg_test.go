@@ -28,7 +28,6 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
-	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 )
 
@@ -116,7 +115,10 @@ func TestNEG(t *testing.T) {
 			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
 
 			// Perform whitebox testing.
-			gclb := whiteboxTest(ing, s, t, "")
+			gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
+			if err != nil {
+				t.Fatalf("e2e.WhiteboxTest(%s/%s, ...) = %v, want nil", ing.Namespace, ing.Name, err)
+			}
 
 			// TODO(mixia): The below checks should be merged into PerformWhiteboxTests().
 			if (len(gclb.NetworkEndpointGroup) > 0) != tc.expectNegBackend {
@@ -205,20 +207,9 @@ func TestNEGTransition(t *testing.T) {
 			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
 
 			// Perform whitebox testing.
-			if len(ing.Status.LoadBalancer.Ingress) < 1 {
-				t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
-			}
-
-			vip := ing.Status.LoadBalancer.Ingress[0].IP
-			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
-			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All)}
-			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+			gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
 			if err != nil {
-				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
-			}
-
-			if err := e2e.PerformWhiteboxTests(s, ing, gclb); err != nil {
-				t.Fatalf("Error performing whitebox tests: %v", err)
+				t.Fatalf("e2e.WhiteboxTest(%s/%s, ...)", ing.Namespace, ing.Name)
 			}
 
 			if tc.negGC {

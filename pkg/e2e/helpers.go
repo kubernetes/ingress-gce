@@ -140,8 +140,32 @@ func WaitForFinalizer(s *Sandbox, ingName string) error {
 	})
 }
 
-// PerformWhiteboxTests runs the whitebox tests against the Ingress.
-func PerformWhiteboxTests(s *Sandbox, ing *v1beta1.Ingress, gclb *fuzz.GCLB) error {
+// WhiteboxTest retrieves GCP load-balancer for Ingress VIP and runs the whitebox tests.
+func WhiteboxTest(ing *v1beta1.Ingress, s *Sandbox, cloud cloud.Cloud, region string) (*fuzz.GCLB, error) {
+	if len(ing.Status.LoadBalancer.Ingress) < 1 {
+		return nil, fmt.Errorf("ingress does not have an IP: %+v", ing.Status)
+	}
+
+	vip := ing.Status.LoadBalancer.Ingress[0].IP
+	klog.Infof("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
+	params := &fuzz.GCLBForVIPParams{
+		VIP:        vip,
+		Region:     region,
+		Validators: fuzz.FeatureValidators(features.All),
+	}
+	gclb, err := fuzz.GCLBForVIP(context.Background(), cloud, params)
+	if err != nil {
+		return nil, fmt.Errorf("error getting GCP resources for LB with IP = %q: %v", vip, err)
+	}
+
+	if err := performWhiteboxTests(s, ing, gclb); err != nil {
+		return nil, fmt.Errorf("error performing whitebox tests: %v", err)
+	}
+	return gclb, nil
+}
+
+// performWhiteboxTests runs the whitebox tests against the Ingress.
+func performWhiteboxTests(s *Sandbox, ing *v1beta1.Ingress, gclb *fuzz.GCLB) error {
 	validator, err := fuzz.NewIngressValidator(s.ValidatorEnv, ing, []fuzz.Feature{}, whitebox.AllTests, nil)
 	if err != nil {
 		return err
