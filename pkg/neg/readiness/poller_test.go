@@ -17,18 +17,19 @@ limitations under the License.
 package readiness
 
 import (
-	"k8s.io/ingress-gce/pkg/composite"
 	"net"
 	"strconv"
 	"testing"
 
+	"k8s.io/ingress-gce/pkg/composite"
+
 	"fmt"
+	"reflect"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
-	"reflect"
 )
 
 type testPatcher struct {
@@ -364,14 +365,14 @@ func TestPoll(t *testing.T) {
 	port := int64(80)
 	instance := "k8s-node-xxxxxx"
 	irrelevantEntry := negtypes.NetworkEndpointEntry{
-		NetworkEndpoint: &compute.NetworkEndpoint{
+		NetworkEndpoint: &composite.NetworkEndpoint{
 			IpAddress: ip,
 			Port:      port,
 			Instance:  "foo-instance",
 		},
-		Healths: []*compute.HealthStatusForNetworkEndpoint{
+		Healths: []*composite.HealthStatusForNetworkEndpoint{
 			{
-				BackendService: &compute.BackendServiceReference{
+				BackendService: &composite.BackendServiceReference{
 					BackendService: negName,
 				},
 				HealthState: "HEALTHY",
@@ -417,22 +418,18 @@ func TestPoll(t *testing.T) {
 	pollAndValidate(step, false, true, 0)
 
 	step = "NE added to the NEG, but NE health status is empty"
-	ne := &compute.NetworkEndpoint{
+	ne := &composite.NetworkEndpoint{
 		IpAddress: ip,
 		Port:      port,
 		Instance:  instance,
 	}
 
-	negCloud.AttachNetworkEndpoints(negName, zone, []*composite.NetworkEndpoint{{
-		IpAddress: ip,
-		Port:      port,
-		Instance:  instance,
-	}}, meta.VersionGA)
+	negCloud.AttachNetworkEndpoints(negName, zone, []*composite.NetworkEndpoint{ne}, meta.VersionGA)
 	// add NE with empty healthy status
 	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), []negtypes.NetworkEndpointEntry{
 		{
 			NetworkEndpoint: ne,
-			Healths:         []*compute.HealthStatusForNetworkEndpoint{},
+			Healths:         []*composite.HealthStatusForNetworkEndpoint{},
 		},
 	})
 
@@ -445,7 +442,7 @@ func TestPoll(t *testing.T) {
 		irrelevantEntry,
 		{
 			NetworkEndpoint: ne,
-			Healths:         []*compute.HealthStatusForNetworkEndpoint{},
+			Healths:         []*composite.HealthStatusForNetworkEndpoint{},
 		},
 	})
 	pollAndValidate(step, false, true, 2)
@@ -455,9 +452,9 @@ func TestPoll(t *testing.T) {
 	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), []negtypes.NetworkEndpointEntry{
 		{
 			NetworkEndpoint: ne,
-			Healths: []*compute.HealthStatusForNetworkEndpoint{
+			Healths: []*composite.HealthStatusForNetworkEndpoint{
 				{
-					BackendService: &compute.BackendServiceReference{
+					BackendService: &composite.BackendServiceReference{
 						BackendService: negName,
 					},
 					HealthState: "UNKNOWN",
@@ -473,9 +470,9 @@ func TestPoll(t *testing.T) {
 		irrelevantEntry,
 		{
 			NetworkEndpoint: ne,
-			Healths: []*compute.HealthStatusForNetworkEndpoint{
+			Healths: []*composite.HealthStatusForNetworkEndpoint{
 				{
-					BackendService: &compute.BackendServiceReference{
+					BackendService: &composite.BackendServiceReference{
 						BackendService: negName,
 					},
 					HealthState: "UNKNOWN",
@@ -492,9 +489,9 @@ func TestPoll(t *testing.T) {
 	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), []negtypes.NetworkEndpointEntry{
 		{
 			NetworkEndpoint: ne,
-			Healths: []*compute.HealthStatusForNetworkEndpoint{
+			Healths: []*composite.HealthStatusForNetworkEndpoint{
 				{
-					BackendService: &compute.BackendServiceReference{
+					BackendService: &composite.BackendServiceReference{
 						BackendService: backendServiceUrl,
 					},
 					HealthState: healthyState,

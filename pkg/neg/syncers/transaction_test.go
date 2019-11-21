@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -58,148 +57,158 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
 	fakeCloud := negtypes.NewAdapter(fakeGCE)
-	_, transactionSyncer := newTestTransactionSyncer(fakeCloud)
-
-	testCases := []struct {
-		desc            string
-		addEndpoints    map[string]negtypes.NetworkEndpointSet
-		removeEndpoints map[string]negtypes.NetworkEndpointSet
-		expectEndpoints map[string]negtypes.NetworkEndpointSet
-	}{
-		{
-			"empty input",
-			map[string]negtypes.NetworkEndpointSet{},
-			map[string]negtypes.NetworkEndpointSet{},
-			map[string]negtypes.NetworkEndpointSet{},
-		},
-		{
-			"add some endpoints",
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
-			},
-			map[string]negtypes.NetworkEndpointSet{},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
-			},
-		},
-		{
-			"remove some endpoints",
-			map[string]negtypes.NetworkEndpointSet{},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
-			},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
-			},
-		},
-		{
-			"add duplicate endpoints",
-			map[string]negtypes.NetworkEndpointSet{
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
-			},
-			map[string]negtypes.NetworkEndpointSet{},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
-			},
-		},
-		{
-			"add and remove endpoints",
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
-			},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
-			},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
-			},
-		},
-		{
-			"add more endpoints",
-			map[string]negtypes.NetworkEndpointSet{
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
-			},
-			map[string]negtypes.NetworkEndpointSet{},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
-			},
-		},
-		{
-			"add and remove endpoints in both zones",
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
-			},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
-			},
-			map[string]negtypes.NetworkEndpointSet{
-				testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
-				testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
-			},
-		},
+	testNegTypes := []negtypes.NetworkEndpointType{
+		negtypes.VmPrimaryIpEndpointType,
+		negtypes.VmIpPortEndpointType,
 	}
 
-	if err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
-		t.Errorf("Expect error == nil, but got %v", err)
-	}
-
-	// Verify the NEGs are created as expected
-	ret, _ := transactionSyncer.cloud.AggregatedListNetworkEndpointGroup(meta.VersionGA)
-	expectZones := []string{testZone1, testZone2}
-	retZones := sets.NewString()
-
-	for key, _ := range ret {
-		retZones.Insert(key.Zone)
-	}
-	for _, zone := range expectZones {
-		_, ok := retZones[zone]
-		if !ok {
-			t.Errorf("Failed to find zone %q from ret %v", zone, ret)
-			continue
-		}
-	}
-	for _, neg := range ret {
-		if neg.Name != testNegName {
-			t.Errorf("Unexpected neg %q", neg.Name)
-		}
-	}
-
-	for _, tc := range testCases {
-		err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints)
-		if err != nil {
-			t.Errorf("For case %q, endpointSets error == nil, but got %v", tc.desc, err)
+	for _, testNegType := range testNegTypes {
+		_, transactionSyncer := newTestTransactionSyncer(fakeCloud, testNegType)
+		if err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
+			t.Errorf("Expect error == nil, but got %v", err)
 		}
 
-		if err := waitForTransactions(transactionSyncer); err != nil {
-			t.Errorf("For case %q, endpointSets error == nil, but got %v", tc.desc, err)
+		// Verify the NEGs are created as expected
+		ret, _ := transactionSyncer.cloud.AggregatedListNetworkEndpointGroup(transactionSyncer.NegSyncerKey.GetAPIVersion())
+		expectZones := []string{testZone1, testZone2}
+		retZones := sets.NewString()
+
+		for key, _ := range ret {
+			retZones.Insert(key.Zone)
+		}
+		for _, zone := range expectZones {
+			_, ok := retZones[zone]
+			if !ok {
+				t.Errorf("Failed to find zone %q from ret %v", zone, ret)
+				continue
+			}
+		}
+		for _, neg := range ret {
+			if neg.Name != testNegName {
+				t.Errorf("Unexpected neg %q, expected %q", neg.Name, testNegName)
+			}
+			if neg.NetworkEndpointType != string(testNegType) {
+				t.Errorf("Unexpected neg type %q, expected %q", neg.Type, testNegType)
+			}
+		}
+		testCases := []struct {
+			desc            string
+			addEndpoints    map[string]negtypes.NetworkEndpointSet
+			removeEndpoints map[string]negtypes.NetworkEndpointSet
+			expectEndpoints map[string]negtypes.NetworkEndpointSet
+		}{
+			{
+				"empty input",
+				map[string]negtypes.NetworkEndpointSet{},
+				map[string]negtypes.NetworkEndpointSet{},
+				map[string]negtypes.NetworkEndpointSet{},
+			},
+			{
+				"add some endpoints",
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+				},
+				map[string]negtypes.NetworkEndpointSet{},
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+				},
+			},
+			{
+				"remove some endpoints",
+				map[string]negtypes.NetworkEndpointSet{},
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
+				},
+				map[string]negtypes.NetworkEndpointSet{
+					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+				},
+			},
+			{
+				"add duplicate endpoints",
+				map[string]negtypes.NetworkEndpointSet{
+					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+				},
+				map[string]negtypes.NetworkEndpointSet{},
+				map[string]negtypes.NetworkEndpointSet{
+					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+				},
+			},
+			{
+				"add and remove endpoints",
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				},
+				map[string]negtypes.NetworkEndpointSet{
+					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")).Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+				},
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+				},
+			},
+			{
+				"add more endpoints",
+				map[string]negtypes.NetworkEndpointSet{
+					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+				},
+				map[string]negtypes.NetworkEndpointSet{},
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+				},
+			},
+			{
+				"add and remove endpoints in both zones",
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+				},
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.1.1"), 10, testInstance1, "8080")),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.3.1"), 10, testInstance3, "8080")),
+				},
+				map[string]negtypes.NetworkEndpointSet{
+					testZone1: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.2.1"), 10, testInstance2, "8080")),
+					testZone2: negtypes.NewNetworkEndpointSet().Union(generateEndpointSet(net.ParseIP("1.1.4.1"), 10, testInstance4, "8080")),
+				},
+			},
 		}
 
-		for zone, endpoints := range tc.expectEndpoints {
-			list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.negName, zone, false, meta.VersionGA)
+		for _, tc := range testCases {
+			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints)
 			if err != nil {
-				t.Errorf("For case %q,, endpointSets error == nil, but got %v", tc.desc, err)
+				t.Errorf("For case %q, endpointSets error == nil, but got %v", tc.desc, err)
 			}
 
-			endpointSet := negtypes.NewNetworkEndpointSet()
-			for _, ep := range list {
-				endpointSet.Insert(negtypes.NetworkEndpoint{IP: ep.NetworkEndpoint.IpAddress, Node: ep.NetworkEndpoint.Instance, Port: strconv.FormatInt(ep.NetworkEndpoint.Port, 10)})
+			if err := waitForTransactions(transactionSyncer); err != nil {
+				t.Errorf("For case %q, endpointSets error == nil, but got %v", tc.desc, err)
 			}
 
-			if !endpoints.Equal(endpointSet) {
-				t.Errorf("For case %q, in zone %q, endpointSets endpoints == %v, but got %v", tc.desc, zone, endpoints, endpointSet)
+			for zone, endpoints := range tc.expectEndpoints {
+				list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.negName, zone, false, transactionSyncer.NegSyncerKey.GetAPIVersion())
+				if err != nil {
+					t.Errorf("For case %q,, endpointSets error == nil, but got %v", tc.desc, err)
+				}
+
+				endpointSet := negtypes.NewNetworkEndpointSet()
+				for _, ep := range list {
+					endpointSet.Insert(negtypes.NetworkEndpoint{IP: ep.NetworkEndpoint.IpAddress, Node: ep.NetworkEndpoint.Instance, Port: strconv.FormatInt(ep.NetworkEndpoint.Port, 10)})
+				}
+
+				if !endpoints.Equal(endpointSet) {
+					t.Errorf("For case %q, in zone %q, negType %q, endpointSets endpoints == %v, but got %v, difference %v", tc.desc, zone, testNegType, endpoints, endpointSet, endpoints.Difference(endpointSet))
+				}
 			}
 		}
+		transactionSyncer.cloud.DeleteNetworkEndpointGroup(testNegName, testZone1, transactionSyncer.NegSyncerKey.GetAPIVersion())
+		transactionSyncer.cloud.DeleteNetworkEndpointGroup(testNegName, testZone2, transactionSyncer.NegSyncerKey.GetAPIVersion())
 	}
 }
 
 func TestCommitTransaction(t *testing.T) {
 	t.Parallel()
-	s, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())))
+	s, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType)
 	// use testSyncer to track the number of Sync got triggered
 	testSyncer := &testSyncer{s.(*syncer), 0}
 	testRetryer := &testRetryHandler{testSyncer, 0}
@@ -612,7 +621,7 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 
 func TestCommitPods(t *testing.T) {
 	t.Parallel()
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())))
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType)
 	reflector := &testReflector{}
 	transactionSyncer.reflector = reflector
 
@@ -817,7 +826,7 @@ func TestCommitPods(t *testing.T) {
 	}
 }
 
-func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud) (negtypes.NegSyncer, *transactionSyncer) {
+func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType) (negtypes.NegSyncer, *transactionSyncer) {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := namer_util.NewNamer(clusterID, "")
@@ -830,11 +839,15 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud) (negty
 	svcPort := negtypes.NegSyncerKey{
 		Namespace: testNamespace,
 		Name:      testService,
-		NegType:   negtypes.VmIpPortEndpointType,
+		NegType:   negType,
 		PortTuple: negtypes.SvcPortTuple{
 			Port:       80,
 			TargetPort: "8080",
 		},
+	}
+	if negType == negtypes.VmPrimaryIpEndpointType {
+		svcPort.PortTuple.Port = 0
+		svcPort.PortTuple.TargetPort = ""
 	}
 
 	// TODO(freehan): use real readiness reflector
