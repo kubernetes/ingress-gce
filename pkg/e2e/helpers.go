@@ -90,6 +90,17 @@ func IsRfc1918Addr(addr string) bool {
 	return false
 }
 
+// UpgradeTestWaitForIngress waits for ingress to stabilize and set sandbox status to stable.
+// Note that this is used only for upgrade tests.
+func UpgradeTestWaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOptions) (*v1beta1.Ingress, error) {
+	ing, err := WaitForIngress(s, ing, options)
+	if err != nil {
+		return nil, err
+	}
+	s.PutStatus(Stable)
+	return ing, nil
+}
+
 // WaitForIngress to stabilize.
 // We expect the ingress to be unreachable at first as LB is
 // still programming itself (i.e 404's / 502's)
@@ -120,24 +131,29 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOpt
 }
 
 // WaitForFinalizer waits for Finalizer to be added.
-// This is used when master is upgraded from version without finalizer.
-// We wait for new lb controller to add finalizer.
-func WaitForFinalizer(s *Sandbox, ingName string) error {
-	crud := IngressCRUD{s.f.Clientset}
-	klog.Infof("Waiting for Finalizer to be added for Ingress %s/%s", s.Namespace, ingName)
-	return wait.Poll(k8sApiPoolInterval, k8sApiPollTimeout, func() (bool, error) {
-		ing, err := crud.Get(s.Namespace, ingName)
-		if err != nil {
-			klog.Infof("WaitForFinalizer(%s/%s) = %v, error retrieving Ingress", s.Namespace, ingName, err)
+// Note that this is used only for upgrade tests.
+func WaitForFinalizer(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
+	ingKey := fmt.Sprintf("%s/%s", s.Namespace, ing.Name)
+	klog.Infof("Waiting for Finalizer to be added for Ingress %s", ingKey)
+	err := wait.Poll(k8sApiPoolInterval, k8sApiPollTimeout, func() (bool, error) {
+		var err error
+		crud := IngressCRUD{s.f.Clientset}
+		if ing, err = crud.Get(s.Namespace, ing.Name); err != nil {
+			klog.Infof("WaitForFinalizer(%s) = %v, error retrieving Ingress", ingKey, err)
 			return false, nil
 		}
 		ingFinalizers := ing.GetFinalizers()
 		if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
-			klog.Infof("WaitForFinalizer(%s/%s) = %v, finalizer not added for Ingress %v", s.Namespace, ingName, ingFinalizers, ing)
+			klog.Infof("WaitForFinalizer(%s) = %v, finalizer not added for Ingress %v", ingKey, ingFinalizers, ing)
 			return false, nil
 		}
 		return true, nil
 	})
+	if err == nil {
+		// Set status back to stable.
+		s.PutStatus(Stable)
+	}
+	return ing, err
 }
 
 // WhiteboxTest retrieves GCP load-balancer for Ingress VIP and runs the whitebox tests.
