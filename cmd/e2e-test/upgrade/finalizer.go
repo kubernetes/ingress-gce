@@ -103,10 +103,14 @@ func (fr *Finalizer) PostUpgrade() error {
 	// Ingress status is updated to unstable, which would be set back to stable
 	// after WaitForFinalizer below finishes successfully.
 	fr.s.PutStatus(e2e.Unstable)
-	// Wait for finalizer to be added and verify that correct finalizer is added to the ingress after the upgrade.
+	// Wait for an ingress finalizer to be added on the ingress after the upgrade.
 	ing, err := e2e.WaitForFinalizer(fr.s, fr.ing)
 	if err != nil {
 		fr.t.Fatalf("e2e.WaitForFinalizer(_, %q) = _, %v, want nil", ingKey, err)
+	}
+	// Assert that v1 finalizer is added.
+	if err := e2e.CheckV1Finalizer(ing); err != nil {
+		fr.t.Fatalf("CheckV1Finalizer(%s) = %v, want nil", ingKey, err)
 	}
 	gclb, err := e2e.WhiteboxTest(ing, fr.s, fr.framework.Cloud, "")
 	if err != nil {

@@ -143,7 +143,9 @@ func WaitForFinalizer(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error
 			return false, nil
 		}
 		ingFinalizers := ing.GetFinalizers()
-		if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
+		if l := len(ingFinalizers); l > 1 {
+			return true, fmt.Errorf("unexpected number of finalizers for ingress %v, got %d", ing, l)
+		} else if l != 1 {
 			klog.Infof("WaitForFinalizer(%s) = %v, finalizer not added for Ingress %v", ingKey, ingFinalizers, ing)
 			return false, nil
 		}
@@ -472,4 +474,28 @@ func CheckNegStatus(svc *v1.Service, expectSvcPors []string) (annotations.NegSta
 		return negStatus, fmt.Errorf("service %s/%s does not have neg status annotation: %q, want ports %q", svc.Namespace, svc.Name, annotation, expectPorts.List())
 	}
 	return negStatus, nil
+}
+
+// CheckForAnyFinalizer asserts that an ingress finalizer exists on Ingress.
+func CheckForAnyFinalizer(ing *v1beta1.Ingress) error {
+	ingFinalizers := ing.GetFinalizers()
+	if l := len(ingFinalizers); l != 1 {
+		return fmt.Errorf("expected 1 Finalizer but got %d", l)
+	}
+	if ingFinalizers[0] != common.FinalizerKey && ingFinalizers[0] != common.FinalizerKeyV2 {
+		return fmt.Errorf("unexpected finalizer %q found", ingFinalizers[0])
+	}
+	return nil
+}
+
+// CheckV1Finalizer asserts that v1 finalizer exists on Ingress.
+func CheckV1Finalizer(ing *v1beta1.Ingress) error {
+	ingFinalizers := ing.GetFinalizers()
+	if l := len(ingFinalizers); l != 1 {
+		return fmt.Errorf("expected 1 Finalizer but got %d", l)
+	}
+	if ingFinalizers[0] != common.FinalizerKey {
+		return fmt.Errorf("expected Finalizer %q but got %q", common.FinalizerKey, ingFinalizers[0])
+	}
+	return nil
 }
