@@ -68,22 +68,23 @@ func (bh *BasicHTTP) PreUpgrade() error {
 	}
 	bh.t.Logf("Echo service created (%s/%s)", bh.s.Namespace, svcName)
 
-	ing := fuzz.NewIngressBuilder(bh.s.Namespace, ingName, "").
+	bh.ing = fuzz.NewIngressBuilder(bh.s.Namespace, ingName, "").
 		AddPath("foo.com", "/", svcName, port80).
 		Build()
-	ingKey := common.NamespacedName(ing)
+	ingKey := common.NamespacedName(bh.ing)
 	bh.crud = e2e.IngressCRUD{C: bh.framework.Clientset}
-	if _, err := bh.crud.Create(ing); err != nil {
+	if _, err := bh.crud.Create(bh.ing); err != nil {
 		bh.t.Fatalf("error creating Ingress %s: %v", ingKey, err)
 	}
 	bh.t.Logf("Ingress created (%s)", ingKey)
 
-	if bh.ing, err = e2e.UpgradeTestWaitForIngress(bh.s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+	ing, err := e2e.UpgradeTestWaitForIngress(bh.s, bh.ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true})
+	if err != nil {
 		bh.t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 	}
 	bh.t.Logf("GCLB resources created (%s)", ingKey)
 
-	if _, err := e2e.WhiteboxTest(bh.ing, bh.s, bh.framework.Cloud, ""); err != nil {
+	if _, err := e2e.WhiteboxTest(ing, bh.s, bh.framework.Cloud, ""); err != nil {
 		bh.t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 	}
 	return nil
