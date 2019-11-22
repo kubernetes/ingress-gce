@@ -58,9 +58,8 @@ func TestFinalizer(t *testing.T) {
 			t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 		}
 
-		ingFinalizers := ing.GetFinalizers()
-		if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
-			t.Fatalf("GetFinalizers() = %+v, want [%q]", ingFinalizers, common.FinalizerKey)
+		if err := e2e.CheckForAnyFinalizer(ing); err != nil {
+			t.Fatalf("CheckForAnyFinalizer(%s) = %v, want nil", ingKey, err)
 		}
 
 		// Perform whitebox testing.
@@ -109,9 +108,8 @@ func TestFinalizerIngressClassChange(t *testing.T) {
 			t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 		}
 
-		ingFinalizers := ing.GetFinalizers()
-		if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
-			t.Fatalf("GetFinalizers() = %+v, want [%q]", ingFinalizers, common.FinalizerKey)
+		if err := e2e.CheckForAnyFinalizer(ing); err != nil {
+			t.Fatalf("CheckForAnyFinalizer(%s) = %v, want nil", ingKey, err)
 		}
 
 		// Perform whitebox testing.
@@ -184,13 +182,11 @@ func TestFinalizerIngressesWithSharedResources(t *testing.T) {
 			t.Fatalf("error waiting for Ingress %s to stabilize: %v", otherIngKey, err)
 		}
 
-		ingFinalizers := ing.GetFinalizers()
-		if len(ingFinalizers) != 1 || ingFinalizers[0] != common.FinalizerKey {
-			t.Fatalf("GetFinalizers() = %+v, want [%q]", ingFinalizers, common.FinalizerKey)
+		if err := e2e.CheckForAnyFinalizer(ing); err != nil {
+			t.Fatalf("CheckForAnyFinalizer(%s) = %v, want nil", ingKey, err)
 		}
-		otherIngFinalizers := otherIng.GetFinalizers()
-		if len(otherIngFinalizers) != 1 || otherIngFinalizers[0] != common.FinalizerKey {
-			t.Fatalf("GetFinalizers() = %+v, want [%q]", otherIngFinalizers, common.FinalizerKey)
+		if err := e2e.CheckForAnyFinalizer(otherIng); err != nil {
+			t.Fatalf("CheckForAnyFinalizer(%s) = %v, want nil", otherIngKey, err)
 		}
 
 		// Perform whitebox testing.
