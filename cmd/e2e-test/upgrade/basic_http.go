@@ -98,7 +98,7 @@ func (bh *BasicHTTP) DuringUpgrade() error {
 func (bh *BasicHTTP) PostUpgrade() error {
 	// force ingress update. only add path once
 	newIng := fuzz.NewIngressBuilderFromExisting(bh.ing).
-		AddPath("bar.com", "/", "service-1", port80).
+		AddPath("bar.com", "/", svcName, port80).
 		Build()
 	ingKey := common.NamespacedName(newIng)
 	// TODO: does the path need to be different for each upgrade
