@@ -35,15 +35,15 @@ func TestBasicSubset(t *testing.T) {
 		{ObjectMeta: metav1.ObjectMeta{Name: "node25"}},
 	}
 	count := 3
-	subset1 := PickSubsetsNoRemovals(nodes, "svc123", count, nil)
+	subset1 := pickSubsetsMinRemovals(nodes, "svc123", count, nil)
 	if len(subset1) < 3 {
 		t.Errorf("Expected %d subsets, got only %d - %v", count, len(subset1), subset1)
 	}
 	if !validateSubset(subset1, nodes) {
 		t.Errorf("Invalid subset list %v from %v", subset1, nodes)
 	}
-	subset2 := PickSubsetsNoRemovals(nodes, "svc345", count, nil)
-	subset3 := PickSubsetsNoRemovals(nodes, "svc56", count, nil)
+	subset2 := pickSubsetsMinRemovals(nodes, "svc345", count, nil)
+	subset3 := pickSubsetsMinRemovals(nodes, "svc56", count, nil)
 	t.Logf("Subset2 is %s", nodeNames(subset2))
 	t.Logf("Subset3 is %s", nodeNames(subset3))
 	if isIdentical(subset1, subset2) || isIdentical(subset3, subset2) || isIdentical(subset1, subset3) {
@@ -54,7 +54,7 @@ func TestBasicSubset(t *testing.T) {
 func TestEmptyNodes(t *testing.T) {
 	t.Parallel()
 	count := 3
-	subset1 := PickSubsetsNoRemovals(nil, "svc123", count, nil)
+	subset1 := pickSubsetsMinRemovals(nil, "svc123", count, nil)
 	if len(subset1) != 0 {
 		t.Errorf("Expected empty subset, got - %s", nodeNames(subset1))
 	}
@@ -71,7 +71,7 @@ func TestFewerNodes(t *testing.T) {
 		{ObjectMeta: metav1.ObjectMeta{Name: "node25"}},
 	}
 	count := 10
-	subset1 := PickSubsetsNoRemovals(nodes, "svc123", count, nil)
+	subset1 := pickSubsetsMinRemovals(nodes, "svc123", count, nil)
 	if len(subset1) != len(nodes) {
 		t.Errorf("Expected subset of length %d, got %d, subsets - %s", len(nodes), len(subset1), nodeNames(subset1))
 	}
@@ -90,14 +90,14 @@ func TestNoRemovals(t *testing.T) {
 		{ObjectMeta: metav1.ObjectMeta{Name: "node25"}},
 	}
 	count := 5
-	subset1 := PickSubsetsNoRemovals(nodes, "svc123", count, nil)
+	subset1 := pickSubsetsMinRemovals(nodes, "svc123", count, nil)
 	if len(subset1) < 5 {
 		t.Errorf("Expected %d subsets, got only %d - %v", count, len(subset1), subset1)
 	}
 	// nodeName abcd shows up 2nd in the sorted list for the given salt. So picking a subset of 5 will remove one of the
 	// existing nodes.
 	nodes = append(nodes, &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node:abcd"}})
-	subset2 := PickSubsetsNoRemovals(nodes, "svc123", count, nil)
+	subset2 := pickSubsetsMinRemovals(nodes, "svc123", count, nil)
 	if len(subset2) < 5 {
 		t.Errorf("Expected %d subsets, got only %d - %v", count, len(subset2), subset2)
 	}
@@ -108,39 +108,12 @@ func TestNoRemovals(t *testing.T) {
 	for _, node := range subset1 {
 		existingEp = append(existingEp, types.NetworkEndpoint{Node: node.Name})
 	}
-	subset3 := PickSubsetsNoRemovals(nodes, "svc123", count, existingEp)
+	subset3 := pickSubsetsMinRemovals(nodes, "svc123", count, existingEp)
 	if len(subset3) < 5 {
 		t.Errorf("Expected %d subsets, got only %d - %v", count, len(subset3), subset3)
 	}
 	if !isIdentical(subset1, subset3) {
 		t.Errorf("Got subsets %+v and %+v, expected identical subsets %+v", subset1, subset3, subset1)
-	}
-}
-
-func TestGetSubsetCount(t *testing.T) {
-	t.Parallel()
-	zoneCount := 3
-	tcs := []struct {
-		desc          string
-		randomize     bool
-		startCount    int
-		endCount      int
-		expectedCount int
-	}{
-		{desc: "start with endpoints, drop to none", startCount: 5, endCount: 0, expectedCount: zoneCount},
-		{desc: "no endpoints", startCount: 0, endCount: 0, expectedCount: zoneCount},
-		{desc: "valid endpoints increase", startCount: 5, endCount: 10, expectedCount: 10},
-		{desc: "valid endpoints decrease", startCount: 5, endCount: 2, expectedCount: 2},
-		{desc: "start with endpoints, drop to none, random true", randomize: true, startCount: 5, endCount: 0, expectedCount: 5},
-		{desc: "no endpoints, random true", randomize: true, startCount: 0, endCount: 0, expectedCount: zoneCount},
-		{desc: "valid endpoints increase, random true", randomize: true, startCount: 5, endCount: 10, expectedCount: 10},
-		{desc: "valid endpoints decrease, random true", randomize: true, startCount: 5, endCount: 2, expectedCount: 5},
-	}
-	for _, tc := range tcs {
-		result := getSubsetCount(tc.startCount, tc.endCount, zoneCount, tc.randomize)
-		if result != tc.expectedCount {
-			t.Errorf("For test case '%s', expected subsetCount of %d, but got %d", tc.desc, tc.expectedCount, result)
-		}
 	}
 }
 

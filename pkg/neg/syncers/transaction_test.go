@@ -47,6 +47,8 @@ const (
 	testZone2     = "zone2"
 	testInstance3 = "instance3"
 	testInstance4 = "instance4"
+	testInstance5 = "instance5"
+	testInstance6 = "instance6"
 	testNamespace = "ns"
 	testService   = "svc"
 )
@@ -826,6 +828,12 @@ func TestCommitPods(t *testing.T) {
 	}
 }
 
+func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, randomize bool) (negtypes.NegSyncer, *transactionSyncer) {
+	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmPrimaryIpEndpointType)
+	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, randomize)
+	return negsyncer, ts
+}
+
 func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType) (negtypes.NegSyncer, *transactionSyncer) {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
@@ -848,6 +856,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 	if negType == negtypes.VmPrimaryIpEndpointType {
 		svcPort.PortTuple.Port = 0
 		svcPort.PortTuple.TargetPort = ""
+		svcPort.PortTuple.Name = string(negtypes.VmPrimaryIpEndpointType)
 	}
 
 	// TODO(freehan): use real readiness reflector
@@ -863,7 +872,8 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		context.EndpointInformer.GetIndexer(),
 		context.NodeInformer.GetIndexer(),
 		reflector,
-		false)
+		GetEndpointsCalculator(context.NodeInformer.GetIndexer(), context.PodInformer.GetIndexer(), negtypes.NewFakeZoneGetter(),
+			svcPort, false))
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
 	return negsyncer, transactionSyncer
 }

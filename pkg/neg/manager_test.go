@@ -217,6 +217,20 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 			},
 			expectEnsureError: false,
 		},
+		{
+			desc:        "add a new l4 ilb port for ns2/n1 service",
+			namespace:   svcNamespace1,
+			name:        svcName,
+			stop:        false,
+			portInfoMap: negtypes.NewPortInfoMap(svcNamespace1, svcName, types.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: portName2, Port: 3000, TargetPort: "80"}, negtypes.SvcPortTuple{Name: portName0, Port: 4000, TargetPort: "bar"}, negtypes.SvcPortTuple{Name: string(negtypes.VmPrimaryIpEndpointType), Port: 0}), namer, true),
+			expectInternals: map[negtypes.NegSyncerKey]bool{
+				getSyncerKey(svcNamespace2, svcName, negtypes.PortInfoMapKey{ServicePort: 3000, Subset: ""}, negtypes.PortInfo{PortTuple: negtypes.SvcPortTuple{Port: 3000, TargetPort: "80"}}):                         false,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 3000, Subset: ""}, negtypes.PortInfo{PortTuple: negtypes.SvcPortTuple{Name: portName2, Port: 3000, TargetPort: "80"}}):        true,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 4000, Subset: ""}, negtypes.PortInfo{PortTuple: negtypes.SvcPortTuple{Name: portName0, Port: 4000, TargetPort: "bar"}}):       true,
+				getSyncerKey(svcNamespace1, svcName, negtypes.PortInfoMapKey{ServicePort: 0, Subset: ""}, negtypes.PortInfo{PortTuple: negtypes.SvcPortTuple{Name: string(negtypes.VmPrimaryIpEndpointType), Port: 0}}): true,
+			},
+			expectEnsureError: false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -350,15 +364,19 @@ func TestGarbageCollectionNEG(t *testing.T) {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}
 
-	for _, networkEndpointType := range []negtypes.NetworkEndpointType{negtypes.VmIpPortEndpointType, negtypes.NonGCPPrivateEndpointType} {
+	version := meta.VersionGA
+	for _, networkEndpointType := range []negtypes.NetworkEndpointType{negtypes.VmIpPortEndpointType, negtypes.NonGCPPrivateEndpointType, negtypes.VmPrimaryIpEndpointType} {
+		if networkEndpointType == negtypes.VmPrimaryIpEndpointType {
+			version = meta.VersionAlpha
+		}
 		negName := manager.namer.NEG("test", "test", 80)
 		manager.cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
-			Version:             meta.VersionGA,
+			Version:             version,
 			Name:                negName,
 			NetworkEndpointType: string(networkEndpointType),
 		}, negtypes.TestZone1)
 		manager.cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
-			Version:             meta.VersionGA,
+			Version:             version,
 			Name:                negName,
 			NetworkEndpointType: string(networkEndpointType),
 		}, negtypes.TestZone2)
@@ -367,7 +385,7 @@ func TestGarbageCollectionNEG(t *testing.T) {
 			t.Fatalf("Failed to GC: %v", err)
 		}
 		for _, zone := range []string{negtypes.TestZone1, negtypes.TestZone2} {
-			negs, _ := manager.cloud.ListNetworkEndpointGroup(zone, meta.VersionGA)
+			negs, _ := manager.cloud.ListNetworkEndpointGroup(zone, version)
 			for _, neg := range negs {
 				if neg.Name == negName {
 					t.Errorf("Expect NEG %q in zone %q to be GCed.", negName, zone)

@@ -34,6 +34,8 @@ const (
 	TestInstance2 = "instance2"
 	TestInstance3 = "instance3"
 	TestInstance4 = "instance4"
+	TestInstance5 = "instance5"
+	TestInstance6 = "instance6"
 )
 
 type fakeZoneGetter struct {
@@ -44,7 +46,7 @@ func NewFakeZoneGetter() *fakeZoneGetter {
 	return &fakeZoneGetter{
 		zoneInstanceMap: map[string]sets.String{
 			TestZone1: sets.NewString(TestInstance1, TestInstance2),
-			TestZone2: sets.NewString(TestInstance3, TestInstance4),
+			TestZone2: sets.NewString(TestInstance3, TestInstance4, TestInstance5, TestInstance6),
 		},
 	}
 }
