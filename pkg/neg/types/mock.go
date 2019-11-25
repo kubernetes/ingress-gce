@@ -134,14 +134,18 @@ func MockAttachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *com
 	newList := m.X.(NetworkEndpointStore)[*key]
 	for _, newEp := range obj.NetworkEndpoints {
 		found := false
+		newComposite, err := composite.ToNetworkEndpoint(newEp)
+		if err != nil {
+			return err
+		}
 		for _, oldEp := range m.X.(NetworkEndpointStore)[*key] {
-			if isNetworkEndpointsEqual(oldEp.NetworkEndpoint, toComposite(newEp)) {
+			if isNetworkEndpointsEqual(oldEp.NetworkEndpoint, newComposite) {
 				found = true
 				break
 			}
 		}
 		if !found {
-			newList = append(newList, generateNetworkEndpointEntry(toComposite(newEp)))
+			newList = append(newList, generateNetworkEndpointEntry(newComposite))
 		}
 	}
 	m.X.(NetworkEndpointStore)[*key] = newList
@@ -166,8 +170,12 @@ func MockDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *com
 
 	for _, left := range obj.NetworkEndpoints {
 		found := false
+		leftComposite, err := composite.ToNetworkEndpoint(left)
+		if err != nil {
+			return err
+		}
 		for _, right := range m.X.(NetworkEndpointStore)[*key] {
-			if isNetworkEndpointsEqual(toComposite(left), right.NetworkEndpoint) {
+			if isNetworkEndpointsEqual(leftComposite, right.NetworkEndpoint) {
 				found = true
 				break
 			}
@@ -185,7 +193,11 @@ func MockDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *com
 	for _, ep := range m.X.(NetworkEndpointStore)[*key] {
 		found := false
 		for _, del := range obj.NetworkEndpoints {
-			if isNetworkEndpointsEqual(ep.NetworkEndpoint, toComposite(del)) {
+			delComposite, err := composite.ToNetworkEndpoint(del)
+			if err != nil {
+				return err
+			}
+			if isNetworkEndpointsEqual(ep.NetworkEndpoint, delComposite) {
 				found = true
 				break
 			}
@@ -266,14 +278,18 @@ func MockAlphaAttachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj
 	newList := m.X.(NetworkEndpointStore)[*key]
 	for _, newEp := range obj.NetworkEndpoints {
 		found := false
+		newComposite, err := composite.ToNetworkEndpoint(newEp)
+		if err != nil {
+			return err
+		}
 		for _, oldEp := range m.X.(NetworkEndpointStore)[*key] {
-			if isNetworkEndpointsEqual(oldEp.NetworkEndpoint, toComposite(newEp)) {
+			if isNetworkEndpointsEqual(oldEp.NetworkEndpoint, newComposite) {
 				found = true
 				break
 			}
 		}
 		if !found {
-			newList = append(newList, generateNetworkEndpointEntry(toComposite(newEp)))
+			newList = append(newList, generateNetworkEndpointEntry(newComposite))
 		}
 	}
 	m.X.(NetworkEndpointStore)[*key] = newList
@@ -298,8 +314,12 @@ func MockAlphaDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj
 
 	for _, left := range obj.NetworkEndpoints {
 		found := false
+		leftComposite, err := composite.ToNetworkEndpoint(left)
+		if err != nil {
+			return err
+		}
 		for _, right := range m.X.(NetworkEndpointStore)[*key] {
-			if isNetworkEndpointsEqual(toComposite(left), right.NetworkEndpoint) {
+			if isNetworkEndpointsEqual(leftComposite, right.NetworkEndpoint) {
 				found = true
 				break
 			}
@@ -317,7 +337,11 @@ func MockAlphaDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj
 	for _, ep := range m.X.(NetworkEndpointStore)[*key] {
 		found := false
 		for _, del := range obj.NetworkEndpoints {
-			if isNetworkEndpointsEqual(ep.NetworkEndpoint, toComposite(del)) {
+			delComposite, err := composite.ToNetworkEndpoint(del)
+			if err != nil {
+				return err
+			}
+			if isNetworkEndpointsEqual(ep.NetworkEndpoint, delComposite) {
 				found = true
 				break
 			}
@@ -330,11 +354,6 @@ func MockAlphaDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj
 
 	m.X.(NetworkEndpointStore)[*key] = generateNetworkEndpointEntryList(newList)
 	return nil
-}
-
-func toComposite(input interface{}) *composite.NetworkEndpoint {
-	out, _ := composite.ToNetworkEndpoint(input)
-	return out
 }
 
 func isNetworkEndpointsEqual(left, right *composite.NetworkEndpoint) bool {

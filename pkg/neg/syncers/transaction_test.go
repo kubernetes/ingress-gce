@@ -178,17 +178,17 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 		for _, tc := range testCases {
 			err := transactionSyncer.syncNetworkEndpoints(tc.addEndpoints, tc.removeEndpoints)
 			if err != nil {
-				t.Errorf("For case %q, endpointSets error == nil, but got %v", tc.desc, err)
+				t.Errorf("For case %q, syncNetworkEndpoints() got %v, want nil", tc.desc, err)
 			}
 
 			if err := waitForTransactions(transactionSyncer); err != nil {
-				t.Errorf("For case %q, endpointSets error == nil, but got %v", tc.desc, err)
+				t.Errorf("For case %q, waitForTransactions() got %v, want nil", tc.desc, err)
 			}
 
 			for zone, endpoints := range tc.expectEndpoints {
 				list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.negName, zone, false, transactionSyncer.NegSyncerKey.GetAPIVersion())
 				if err != nil {
-					t.Errorf("For case %q,, endpointSets error == nil, but got %v", tc.desc, err)
+					t.Errorf("For case %q, ListNetworkEndpoints() got %v, want nil", tc.desc, err)
 				}
 
 				endpointSet := negtypes.NewNetworkEndpointSet()

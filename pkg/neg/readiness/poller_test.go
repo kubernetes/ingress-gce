@@ -17,17 +17,15 @@ limitations under the License.
 package readiness
 
 import (
+	"fmt"
 	"net"
+	"reflect"
 	"strconv"
 	"testing"
 
-	"k8s.io/ingress-gce/pkg/composite"
-
-	"fmt"
-	"reflect"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/ingress-gce/pkg/composite"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
