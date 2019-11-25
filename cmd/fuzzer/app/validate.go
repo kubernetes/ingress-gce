@@ -157,6 +157,10 @@ func Validate() {
 	if err := iv.PerformWhiteboxTests(gclb); err != nil {
 		panic(err)
 	}
+
+	if err := iv.FrontendNamingSchemeTest(gclb); err != nil {
+		panic(err)
+	}
 }
 
 func homeDir() string {
