@@ -387,7 +387,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 
 func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	t.Parallel()
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())))
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType)
 	podLister := transactionSyncer.podLister
 
 	// add all pods in default endpoint into podLister
@@ -744,7 +744,7 @@ func TestMakeEndpointBatch(t *testing.T) {
 func TestShouldPodBeInNeg(t *testing.T) {
 	t.Parallel()
 
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())))
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType)
 
 	podLister := transactionSyncer.podLister
 

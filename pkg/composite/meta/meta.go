@@ -39,11 +39,13 @@ var MainServices = map[string]string{
 	"BackendService":                  "BackendServices",
 	"ForwardingRule":                  "ForwardingRules",
 	"HealthCheck":                     "HealthChecks",
+	"HealthStatusForNetworkEndpoint":  "HealthStatusForNetworkEndpoints",
 	"UrlMap":                          "UrlMaps",
 	"TargetHttpProxy":                 "TargetHttpProxies",
 	"TargetHttpsProxy":                "TargetHttpsProxies",
 	"SslCertificate":                  "SslCertificates",
 	"NetworkEndpointGroup":            "NetworkEndpointGroups",
+	"NetworkEndpoint":                 "NetworkEndpoints",
 	"NetworkEndpointWithHealthStatus": "NetworkEndpointsWithHealthStatus",
 	"NetworkEndpointGroupsAttachEndpointsRequest": "NetworkEndpointGroupsAttachEndpointsRequests",
 	"NetworkEndpointGroupsDetachEndpointsRequest": "NetworkEndpointGroupsDetachEndpointsRequests",
@@ -54,18 +56,22 @@ var MainServices = map[string]string{
 // Services in NoUpdate will not have an Update() method generated for them
 var NoUpdate = sets.NewString(
 	"ForwardingRule",
+	"HealthStatusForNetworkEndpoint",
 	"TargetHttpProxy",
 	"TargetHttpsProxy",
 	"SslCertificate",
 	"NetworkEndpointGroup",
+	"NetworkEndpoint",
 	"NetworkEndpointWithHealthStatus",
 )
 
 // Services in NoCRUD will not have Create, Get, Delete, Update, methods generated for them
 var NoCRUD = sets.NewString(
+	"HealthStatusForNetworkEndpoint",
 	"NetworkEndpointGroupsAttachEndpointsRequest",
 	"NetworkEndpointGroupsDetachEndpointsRequest",
 	"NetworkEndpointGroupsListEndpointsRequest",
+	"NetworkEndpoint",
 	"NetworkEndpointWithHealthStatus",
 )
 var Versions = map[string]string{

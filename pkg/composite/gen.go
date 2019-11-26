@@ -1185,6 +1185,14 @@ type HealthCheckReference struct {
 
 // HealthStatusForNetworkEndpoint is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type HealthStatusForNetworkEndpoint struct {
+	// Version keeps track of the intended compute version for this HealthStatusForNetworkEndpoint.
+	// Note that the compute API's do not contain this field. It is for our
+	// own bookkeeping purposes.
+	Version meta.Version `json:"-"`
+	// Scope keeps track of the intended type of the service (e.g. Global)
+	// This is also an internal field purely for bookkeeping purposes
+	Scope meta.KeyType `json:"-"`
+
 	// URL of the backend service associated with the health state of the
 	// network endpoint.
 	BackendService *BackendServiceReference `json:"backendService,omitempty"`
@@ -1702,6 +1710,14 @@ type MutualTls struct {
 
 // NetworkEndpoint is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type NetworkEndpoint struct {
+	// Version keeps track of the intended compute version for this NetworkEndpoint.
+	// Note that the compute API's do not contain this field. It is for our
+	// own bookkeeping purposes.
+	Version meta.Version `json:"-"`
+	// Scope keeps track of the intended type of the service (e.g. Global)
+	// This is also an internal field purely for bookkeeping purposes
+	Scope meta.KeyType `json:"-"`
+
 	// Metadata defined as annotations on the network endpoint.
 	Annotations map[string]string `json:"annotations,omitempty"`
 	// Optional fully qualified domain name of network endpoint. This can
@@ -3502,6 +3518,126 @@ func (healthCheck *HealthCheck) ToGA() (*compute.HealthCheck, error) {
 	err := copyViaJSON(ga, healthCheck)
 	if err != nil {
 		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", healthCheck, err)
+	}
+
+	return ga, nil
+}
+
+// ToHealthStatusForNetworkEndpointList converts a list of compute alpha, beta or GA
+// HealthStatusForNetworkEndpoint into a list of our composite type.
+func ToHealthStatusForNetworkEndpointList(objs interface{}) ([]*HealthStatusForNetworkEndpoint, error) {
+	result := []*HealthStatusForNetworkEndpoint{}
+
+	err := copyViaJSON(&result, objs)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %v to %T via JSON: %v", objs, result, err)
+	}
+	return result, nil
+}
+
+// ToHealthStatusForNetworkEndpoint converts a compute alpha, beta or GA
+// HealthStatusForNetworkEndpoint into our composite type.
+func ToHealthStatusForNetworkEndpoint(obj interface{}) (*HealthStatusForNetworkEndpoint, error) {
+	healthStatusForNetworkEndpoint := &HealthStatusForNetworkEndpoint{}
+	err := copyViaJSON(healthStatusForNetworkEndpoint, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, healthStatusForNetworkEndpoint, err)
+	}
+
+	return healthStatusForNetworkEndpoint, nil
+}
+
+// ToAlpha converts our composite type into an alpha type.
+// This alpha type can be used in GCE API calls.
+func (healthStatusForNetworkEndpoint *HealthStatusForNetworkEndpoint) ToAlpha() (*computealpha.HealthStatusForNetworkEndpoint, error) {
+	alpha := &computealpha.HealthStatusForNetworkEndpoint{}
+	err := copyViaJSON(alpha, healthStatusForNetworkEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", healthStatusForNetworkEndpoint, err)
+	}
+
+	return alpha, nil
+}
+
+// ToBeta converts our composite type into an beta type.
+// This beta type can be used in GCE API calls.
+func (healthStatusForNetworkEndpoint *HealthStatusForNetworkEndpoint) ToBeta() (*computebeta.HealthStatusForNetworkEndpoint, error) {
+	beta := &computebeta.HealthStatusForNetworkEndpoint{}
+	err := copyViaJSON(beta, healthStatusForNetworkEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", healthStatusForNetworkEndpoint, err)
+	}
+
+	return beta, nil
+}
+
+// ToGA converts our composite type into an ga type.
+// This ga type can be used in GCE API calls.
+func (healthStatusForNetworkEndpoint *HealthStatusForNetworkEndpoint) ToGA() (*compute.HealthStatusForNetworkEndpoint, error) {
+	ga := &compute.HealthStatusForNetworkEndpoint{}
+	err := copyViaJSON(ga, healthStatusForNetworkEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", healthStatusForNetworkEndpoint, err)
+	}
+
+	return ga, nil
+}
+
+// ToNetworkEndpointList converts a list of compute alpha, beta or GA
+// NetworkEndpoint into a list of our composite type.
+func ToNetworkEndpointList(objs interface{}) ([]*NetworkEndpoint, error) {
+	result := []*NetworkEndpoint{}
+
+	err := copyViaJSON(&result, objs)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %v to %T via JSON: %v", objs, result, err)
+	}
+	return result, nil
+}
+
+// ToNetworkEndpoint converts a compute alpha, beta or GA
+// NetworkEndpoint into our composite type.
+func ToNetworkEndpoint(obj interface{}) (*NetworkEndpoint, error) {
+	networkEndpoint := &NetworkEndpoint{}
+	err := copyViaJSON(networkEndpoint, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, networkEndpoint, err)
+	}
+
+	return networkEndpoint, nil
+}
+
+// ToAlpha converts our composite type into an alpha type.
+// This alpha type can be used in GCE API calls.
+func (networkEndpoint *NetworkEndpoint) ToAlpha() (*computealpha.NetworkEndpoint, error) {
+	alpha := &computealpha.NetworkEndpoint{}
+	err := copyViaJSON(alpha, networkEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", networkEndpoint, err)
+	}
+
+	return alpha, nil
+}
+
+// ToBeta converts our composite type into an beta type.
+// This beta type can be used in GCE API calls.
+func (networkEndpoint *NetworkEndpoint) ToBeta() (*computebeta.NetworkEndpoint, error) {
+	beta := &computebeta.NetworkEndpoint{}
+	err := copyViaJSON(beta, networkEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", networkEndpoint, err)
+	}
+
+	return beta, nil
+}
+
+// ToGA converts our composite type into an ga type.
+// This ga type can be used in GCE API calls.
+func (networkEndpoint *NetworkEndpoint) ToGA() (*compute.NetworkEndpoint, error) {
+	ga := &compute.NetworkEndpoint{}
+	err := copyViaJSON(ga, networkEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", networkEndpoint, err)
 	}
 
 	return ga, nil
