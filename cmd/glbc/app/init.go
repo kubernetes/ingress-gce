@@ -72,6 +72,7 @@ func servicePortForDefaultService(svc *v1.Service, svcPort intstr.IntOrString, n
 					Port:    svcPort,
 				},
 				TargetPort: port.TargetPort.StrVal,
+				Port:       port.Port,
 			}
 		}
 	}
