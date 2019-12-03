@@ -134,7 +134,7 @@ func NewControllerContext(
 
 // Init inits the Context, so that we can defers some config until the main thread enter actually get the leader lock.
 func (ctx *ControllerContext) Init() {
-	klog.V(2).Infof("Controller Context initializing with %v", ctx.ControllerContextConfig)
+	klog.V(2).Infof("Controller Context initializing with %+v", ctx.ControllerContextConfig)
 	// Initialize controller context internals based on ASMConfigMap
 	if ctx.EnableASMConfigMap {
 		configMapInformer := informerv1.NewConfigMapInformer(ctx.KubeClient, ctx.Namespace, ctx.ResyncPeriod, utils.NewNamespaceIndexer())
