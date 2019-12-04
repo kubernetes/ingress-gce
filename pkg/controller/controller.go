@@ -527,7 +527,8 @@ func (lbc *LoadBalancerController) sync(key string) error {
 		frontendGCAlgorithm := frontendGCAlgorithm(ingExists, ing)
 		// GC will find GCE resources that were used for this ingress and delete them.
 		err := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm)
-		if err != nil {
+		// Skip emitting an event if ingress does not exist as we cannot retrieve ingress namespace.
+		if err != nil && ingExists {
 			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "GC", fmt.Sprintf("Error during GC: %v", err))
 		}
 		return err
