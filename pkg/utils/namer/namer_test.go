@@ -109,7 +109,7 @@ func TestNamerParseName(t *testing.T) {
 		{newNamer.SSLCertName("default/my-ing", secretHash), &NameComponents{ClusterName: uid, Resource: "ssl"}},
 		{newNamer.ForwardingRule(lbName, HTTPProtocol), &NameComponents{ClusterName: uid, Resource: "fw"}},
 		{newNamer.ForwardingRule(lbName, HTTPSProtocol), &NameComponents{ClusterName: uid, Resource: "fws"}},
-		{newNamer.UrlMap(lbName), &NameComponents{ClusterName: uid, Resource: "um", LbName: "key1"}},
+		{newNamer.UrlMap(lbName), &NameComponents{ClusterName: uid, Resource: "um", LbNamePrefix: "key1"}},
 	} {
 		nc := newNamer.ParseName(tc.in)
 		if *nc != *tc.want {
@@ -294,7 +294,7 @@ func TestNamerLoadBalancer(t *testing.T) {
 	for _, tc := range []struct {
 		prefix string
 
-		lbName              string
+		lbName              LoadBalancerName
 		targetHTTPProxy     string
 		targetHTTPSProxy    string
 		sslCert             string
@@ -304,7 +304,7 @@ func TestNamerLoadBalancer(t *testing.T) {
 	}{
 		{
 			"k8s",
-			"key1--uid1",
+			LoadBalancerName("key1--uid1"),
 			"k8s-tp-key1--uid1",
 			"k8s-tps-key1--uid1",
 			"k8s-ssl-%s-%s--uid1",
@@ -314,7 +314,7 @@ func TestNamerLoadBalancer(t *testing.T) {
 		},
 		{
 			"mci",
-			"key1--uid1",
+			LoadBalancerName("key1--uid1"),
 			"mci-tp-key1--uid1",
 			"mci-tps-key1--uid1",
 			"mci-ssl-%s-%s--uid1",

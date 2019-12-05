@@ -179,13 +179,13 @@ func TestGC(t *testing.T) {
 	versions := features.GAResourceVersions
 
 	for _, key := range otherKeys {
-		namer := otherFeNamerFactory.NamerForLbName(otherNamer.LoadBalancer(key))
+		namer := otherFeNamerFactory.NamerForLoadBalancer(otherNamer.LoadBalancer(key))
 		createFakeLoadbalancer(cloud, namer, versions, defaultScope)
 	}
 
 	for _, tc := range testCases {
 		for _, key := range tc.gcpLBs {
-			namer := namerFactory.NamerForLbName(v1NamerHelper.LoadBalancer(key))
+			namer := namerFactory.NamerForLoadBalancer(v1NamerHelper.LoadBalancer(key))
 			createFakeLoadbalancer(cloud, namer, versions, defaultScope)
 		}
 
@@ -196,7 +196,7 @@ func TestGC(t *testing.T) {
 
 		// check if other LB are not deleted
 		for _, key := range otherKeys {
-			namer := otherFeNamerFactory.NamerForLbName(otherNamer.LoadBalancer(key))
+			namer := otherFeNamerFactory.NamerForLoadBalancer(otherNamer.LoadBalancer(key))
 			if err := checkFakeLoadBalancer(cloud, namer, versions, defaultScope, true); err != nil {
 				t.Errorf("For case %q and key %q, do not expect err: %v", tc.desc, key, err)
 			}
@@ -211,7 +211,7 @@ func TestGC(t *testing.T) {
 		// check if the ones that are expected to be GC is actually GCed.
 		expectRemovedLBs := sets.NewString(tc.gcpLBs...).Difference(sets.NewString(tc.expectLBs...)).Difference(sets.NewString(tc.ingressLBs...))
 		for _, key := range expectRemovedLBs.List() {
-			namer := namerFactory.NamerForLbName(v1NamerHelper.LoadBalancer(key))
+			namer := namerFactory.NamerForLoadBalancer(v1NamerHelper.LoadBalancer(key))
 			if err := checkFakeLoadBalancer(cloud, namer, versions, defaultScope, false); err != nil {
 				t.Errorf("For case %q and key %q, do not expect err: %v", tc.desc, key, err)
 			}
@@ -219,7 +219,7 @@ func TestGC(t *testing.T) {
 
 		// check if all expected LBs exists
 		for _, key := range tc.expectLBs {
-			namer := namerFactory.NamerForLbName(v1NamerHelper.LoadBalancer(key))
+			namer := namerFactory.NamerForLoadBalancer(v1NamerHelper.LoadBalancer(key))
 			if err := checkFakeLoadBalancer(cloud, namer, versions, defaultScope, true); err != nil {
 				t.Errorf("For case %q and key %q, do not expect err: %v", tc.desc, key, err)
 			}
@@ -249,7 +249,7 @@ func TestDoNotGCWantedLB(t *testing.T) {
 	versions := features.GAResourceVersions
 
 	for _, tc := range testCases {
-		namer := l7sPool.namerFactory.NamerForLbName(l7sPool.v1NamerHelper.LoadBalancer(tc.key))
+		namer := l7sPool.namerFactory.NamerForLoadBalancer(l7sPool.v1NamerHelper.LoadBalancer(tc.key))
 		createFakeLoadbalancer(l7sPool.cloud, namer, versions, defaultScope)
 		err := l7sPool.GCv1([]string{tc.key})
 		if err != nil {
@@ -285,7 +285,7 @@ func TestGCToLeakLB(t *testing.T) {
 	versions := features.GAResourceVersions
 
 	for _, tc := range testCases {
-		namer := l7sPool.namerFactory.NamerForLbName(l7sPool.v1NamerHelper.LoadBalancer(tc.key))
+		namer := l7sPool.namerFactory.NamerForLoadBalancer(l7sPool.v1NamerHelper.LoadBalancer(tc.key))
 		createFakeLoadbalancer(l7sPool.cloud, namer, versions, defaultScope)
 		err := l7sPool.GCv1([]string{})
 		if err != nil {

@@ -343,7 +343,7 @@ func TestCertUpdate(t *testing.T) {
 	}
 
 	// Verify certs
-	t.Logf("lbName=%q, name=%q", feNamer.LbName(), certName1)
+	t.Logf("lbName=%q, name=%q", feNamer.LoadBalancer(), certName1)
 	expectCerts := map[string]string{certName1: lbInfo.TLS[0].Cert}
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 
@@ -508,7 +508,7 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 		UrlMap:    gceUrlMap,
 		Ingress:   ing,
 	}
-	oldCertName := "k8s-ssl-" + feNamer.LbName()
+	oldCertName := fmt.Sprintf("k8s-ssl-%s", feNamer.LoadBalancer())
 	tlsCert := createCert("key", "cert", "name")
 	lbInfo.TLS = []*TLSCerts{tlsCert}
 	newCertName := feNamer.SSLCertName(tlsCert.CertHash)
@@ -1123,7 +1123,7 @@ func TestClusterNameChange(t *testing.T) {
 
 	// Now the components should get renamed with the next suffix.
 	l7, err = j.pool.Ensure(lbInfo)
-	if err != nil || j.namer.ParseName(l7.namer.LbName()).ClusterName != newName {
+	if err != nil || j.namer.ParseName(l7.namer.LoadBalancer().String()).ClusterName != newName {
 		t.Fatalf("Expected L7 name to change.")
 	}
 	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)

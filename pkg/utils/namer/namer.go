@@ -87,6 +87,14 @@ const (
 // parameters to Namer.
 type NamerProtocol string
 
+// LoadBalancerName is the name of a GCE load-balancer for an ingress.
+type LoadBalancerName string
+
+// String typecasts LoadBalancerName to string type.
+func (lbName LoadBalancerName) String() string {
+	return string(lbName)
+}
+
 const (
 	HTTPProtocol  NamerProtocol = "HTTP"
 	HTTPSProtocol NamerProtocol = "HTTPS"
@@ -121,9 +129,9 @@ func NewNamerWithPrefix(prefix, clusterName, firewallName string) *Namer {
 // NameComponents is a struct representing the components of a a GCE
 // resource name constructed by the namer. The format of such a name
 // is: k8s-resource-<metadata, eg port>--uid
-// Note that the LbName field is empty if the resource is a BackendService.
+// Note that the LbNamePrefix field is empty if the resource is a BackendService.
 type NameComponents struct {
-	ClusterName, Resource, Metadata, LbName string
+	ClusterName, Resource, Metadata, LbNamePrefix string
 }
 
 // SetUID sets the UID/name of this cluster.
@@ -211,14 +219,14 @@ func (n *Namer) decorateName(name string) string {
 // Backend, InstanceGroup, UrlMap.
 func (n *Namer) ParseName(name string) *NameComponents {
 	l := strings.Split(name, clusterNameDelimiter)
-	var uid, resource, lbName string
+	var uid, resource, lbNamePrefix string
 	if len(l) >= 2 {
 		uid = l[len(l)-1]
 	}
 
 	// We want to split the remainder of the name, minus the cluster-delimited
 	// portion. This should resemble:
-	// UID-resource-loadbalancername
+	// prefix-resource-loadbalancernameprefix
 	c := strings.Split(l[0], "-")
 	if len(c) >= 2 {
 		resource = c[1]
@@ -231,13 +239,13 @@ func (n *Namer) ParseName(name string) *NameComponents {
 	if resource == urlMapPrefix {
 		// It is possible for the loadbalancer name to have dashes in it - so we
 		// join the remaining name parts.
-		lbName = strings.Join(c[2:], "-")
+		lbNamePrefix = strings.Join(c[2:], "-")
 	}
 
 	return &NameComponents{
-		ClusterName: uid,
-		Resource:    resource,
-		LbName:      lbName,
+		ClusterName:  uid,
+		Resource:     resource,
+		LbNamePrefix: lbNamePrefix,
 	}
 }
 
@@ -326,7 +334,7 @@ func (n *Namer) FirewallRule() string {
 
 // LoadBalancer constructs a loadbalancer name from the given key. The key
 // is usually the namespace/name of a Kubernetes Ingress.
-func (n *Namer) LoadBalancer(key string) string {
+func (n *Namer) LoadBalancer(key string) LoadBalancerName {
 	// TODO: Pipe the clusterName through, for now it saves code churn
 	// to just grab it globally, especially since we haven't decided how
 	// to handle namespace conflicts in the Ubernetes context.
@@ -334,20 +342,19 @@ func (n *Namer) LoadBalancer(key string) string {
 	scrubbedName := strings.Replace(key, "/", "-", -1)
 	clusterName := n.UID()
 	if clusterName == "" || parts[len(parts)-1] == clusterName {
-		return scrubbedName
+		return LoadBalancerName(scrubbedName)
 	}
-	return truncate(fmt.Sprintf("%v%v%v", scrubbedName, clusterNameDelimiter, clusterName))
+	return LoadBalancerName(truncate(fmt.Sprintf("%v%v%v", scrubbedName, clusterNameDelimiter, clusterName)))
 }
 
-// LoadBalancerFromLbName reconstructs the full loadbalancer name, given the
-// lbName portion from NameComponents
-func (n *Namer) LoadBalancerFromLbName(lbName string) string {
-	return truncate(fmt.Sprintf("%v%v%v", lbName, clusterNameDelimiter, n.UID()))
+// LoadBalancerForURLMap returns the loadbalancer name for given URL map.
+func (n *Namer) LoadBalancerForURLMap(urlMap string) LoadBalancerName {
+	return LoadBalancerName(truncate(fmt.Sprintf("%v%v%v", n.ParseName(urlMap).LbNamePrefix, clusterNameDelimiter, n.UID())))
 }
 
 // TargetProxy returns the name for target proxy given the load
 // balancer name and the protocol.
-func (n *Namer) TargetProxy(lbName string, protocol NamerProtocol) string {
+func (n *Namer) TargetProxy(lbName LoadBalancerName, protocol NamerProtocol) string {
 	switch protocol {
 	case HTTPProtocol:
 		return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, targetHTTPProxyPrefix, lbName))
@@ -360,20 +367,20 @@ func (n *Namer) TargetProxy(lbName string, protocol NamerProtocol) string {
 
 // IsCertUsedForLB returns true if the resourceName belongs to this cluster's ingress.
 // It checks that the hashed lbName exists and
-func (n *Namer) IsCertUsedForLB(lbName, resourceName string) bool {
+func (n *Namer) IsCertUsedForLB(lbName LoadBalancerName, resourceName string) bool {
 	lbNameHash := n.lbNameToHash(lbName)
 	prefix := fmt.Sprintf("%s-%s-%s", n.prefix, sslCertPrefix, lbNameHash)
 	return strings.HasPrefix(resourceName, prefix) && strings.HasSuffix(resourceName, n.UID())
 }
 
-func (n *Namer) lbNameToHash(lbName string) string {
+func (n *Namer) lbNameToHash(lbName LoadBalancerName) string {
 	ingHash := fmt.Sprintf("%x", sha256.Sum256([]byte(lbName)))
 	return ingHash[:16]
 }
 
 // IsLegacySSLCert returns true if certName is an Ingress managed name following the older naming convention. The check
 // also ensures that the cert is managed by the specific ingress instance - lbName
-func (n *Namer) IsLegacySSLCert(lbName string, resourceName string) bool {
+func (n *Namer) IsLegacySSLCert(lbName LoadBalancerName, resourceName string) bool {
 	// old style name is of the form k8s-ssl-<lbname> or k8s-ssl-1-<lbName>.
 	legacyPrefixPrimary := truncate(fmt.Sprintf("%s-%s-%s", n.prefix, sslCertPrefix, lbName))
 	legacyPrefixSec := truncate(fmt.Sprintf("%s-%s-1-%s", n.prefix, sslCertPrefix, lbName))
@@ -381,14 +388,14 @@ func (n *Namer) IsLegacySSLCert(lbName string, resourceName string) bool {
 }
 
 // SSLCertName returns the name of the certificate.
-func (n *Namer) SSLCertName(lbName string, secretHash string) string {
+func (n *Namer) SSLCertName(lbName LoadBalancerName, secretHash string) string {
 	lbNameHash := n.lbNameToHash(lbName)
 	// k8s-ssl-[lbNameHash]-[certhash]--[clusterUID]
 	return n.decorateName(fmt.Sprintf("%s-%s-%s-%s", n.prefix, sslCertPrefix, lbNameHash, secretHash))
 }
 
 // ForwardingRule returns the name of the forwarding rule prefix.
-func (n *Namer) ForwardingRule(lbName string, protocol NamerProtocol) string {
+func (n *Namer) ForwardingRule(lbName LoadBalancerName, protocol NamerProtocol) string {
 	switch protocol {
 	case HTTPProtocol:
 		return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, forwardingRulePrefix, lbName))
@@ -400,7 +407,7 @@ func (n *Namer) ForwardingRule(lbName string, protocol NamerProtocol) string {
 }
 
 // UrlMap returns the name for the UrlMap for a given load balancer.
-func (n *Namer) UrlMap(lbName string) string {
+func (n *Namer) UrlMap(lbName LoadBalancerName) string {
 	return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, urlMapPrefix, lbName))
 }
 
