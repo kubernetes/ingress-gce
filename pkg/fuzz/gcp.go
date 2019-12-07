@@ -387,6 +387,7 @@ func hasBetaResource(resourceType string, validators []FeatureValidator) bool {
 type GCLBForVIPParams struct {
 	VIP        string
 	Region     string
+	Network    string
 	Validators []FeatureValidator
 }
 
@@ -398,6 +399,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, params *GCLBForVIPParams) (*
 		if err := RegionalGCLBForVIP(ctx, c, gclb, params); err != nil {
 			return nil, err
 		}
+		return gclb, nil
 	}
 
 	allGFRs, err := c.GlobalForwardingRules().List(ctx, filter.None)
@@ -628,7 +630,6 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, params *GCLBForVIPParams) (*
 
 // GCLBForVIP retrieves all of the resources associated with the GCLB for a given VIP.
 func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, params *GCLBForVIPParams) error {
-
 	allRFRs, err := c.ForwardingRules().List(ctx, params.Region, filter.None)
 	if err != nil {
 		klog.Warningf("Error listing forwarding rules: %v", err)
@@ -636,14 +637,14 @@ func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, params *
 	}
 
 	var rfrs []*compute.ForwardingRule
-	for _, gfr := range allRFRs {
-		if gfr.IPAddress == params.VIP {
-			rfrs = append(rfrs, gfr)
+	for _, rfr := range allRFRs {
+		if rfr.IPAddress == params.VIP && rfr.Network == params.Network {
+			rfrs = append(rfrs, rfr)
 		}
 	}
 
 	if len(rfrs) == 0 {
-		klog.Warningf("No params.Regional forwarding rules found, can't get all GCLB resources")
+		klog.Warningf("No regional forwarding rules found, can't get all GCLB resources")
 		return nil
 	}
 

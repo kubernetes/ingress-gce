@@ -119,7 +119,7 @@ func TestILB(t *testing.T) {
 				t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 			}
 
-			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All), Region: Framework.Region}
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All), Region: Framework.Region, Network: Framework.Network}
 			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 			if err != nil {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
@@ -265,7 +265,7 @@ func TestILBHttps(t *testing.T) {
 				t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 			}
 
-			params := &fuzz.GCLBForVIPParams{VIP: vip, Region: Framework.Region, Validators: fuzz.FeatureValidators(features.All)}
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Region: Framework.Region, Network: Framework.Network, Validators: fuzz.FeatureValidators(features.All)}
 			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 			if err != nil {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
@@ -407,7 +407,7 @@ func TestILBUpdate(t *testing.T) {
 				t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 			}
 
-			params := &fuzz.GCLBForVIPParams{VIP: vip, Region: Framework.Region, Validators: fuzz.FeatureValidators(features.All)}
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Region: Framework.Region, Network: Framework.Network, Validators: fuzz.FeatureValidators(features.All)}
 			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 			if err != nil {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
@@ -604,7 +604,7 @@ func TestILBShared(t *testing.T) {
 					t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 				}
 
-				params := &fuzz.GCLBForVIPParams{VIP: vip, Region: Framework.Region, Validators: fuzz.FeatureValidators(features.All)}
+				params := &fuzz.GCLBForVIPParams{VIP: vip, Region: Framework.Region, Network: Framework.Network, Validators: fuzz.FeatureValidators(features.All)}
 				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 				if err != nil {
 					t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
