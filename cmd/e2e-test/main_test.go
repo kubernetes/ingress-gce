@@ -48,6 +48,7 @@ var (
 		destroySandboxes    bool
 		handleSIGINT        bool
 		gceEndpointOverride string
+		createILBSubnet     bool
 	}
 
 	Framework *e2e.Framework
@@ -64,11 +65,12 @@ func init() {
 	flag.BoolVar(&flags.inCluster, "inCluster", false, "set to true if running in the cluster")
 	flag.StringVar(&flags.project, "project", "", "GCP project")
 	flag.StringVar(&flags.region, "region", "", "GCP Region (e.g. us-central1)")
-	flag.StringVar(&flags.network, "network", "", "GCP network name (e.g. default) to use for ilb subnet")
+	flag.StringVar(&flags.network, "network", "", "GCP network name (e.g. default)")
 	flag.Int64Var(&flags.seed, "seed", -1, "random seed")
 	flag.BoolVar(&flags.destroySandboxes, "destroySandboxes", true, "set to false to leave sandboxed resources for debugging")
 	flag.BoolVar(&flags.handleSIGINT, "handleSIGINT", true, "catch SIGINT to perform clean")
 	flag.StringVar(&flags.gceEndpointOverride, "gce-endpoint-override", "", "If set, talks to a different GCE API Endpoint. By default it talks to https://www.googleapis.com/compute/v1/")
+	flag.BoolVar(&flags.createILBSubnet, "createILBSubnet", false, "If set, creates a proxy subnet for the L7 ILB")
 }
 
 // TestMain is the entrypoint for the end-to-end test suite. This is where
@@ -89,9 +91,9 @@ func TestMain(m *testing.M) {
 		fmt.Println("-region must be set to the region of the cluster")
 		os.Exit(1)
 	}
-
 	if flags.network == "" {
-		klog.Info("No network provided, will not create ILB Subnet")
+		// TODO(shance): Make this a required flag, error out here
+		fmt.Println("-network must be set to the network of the cluster")
 	}
 
 	fmt.Printf("Version: %q, Commit: %q\n", version.Version, version.GitCommit)
@@ -123,6 +125,7 @@ func TestMain(m *testing.M) {
 		Seed:                flags.seed,
 		DestroySandboxes:    flags.destroySandboxes,
 		GceEndpointOverride: flags.gceEndpointOverride,
+		CreateILBSubnet:     flags.createILBSubnet,
 	})
 	if flags.handleSIGINT {
 		Framework.CatchSIGINT()

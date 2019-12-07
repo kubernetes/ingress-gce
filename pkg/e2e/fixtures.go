@@ -264,11 +264,11 @@ func DeleteGCPAddress(s *Sandbox, name string) error {
 
 // CreateILBSubnet creates the ILB subnet
 func CreateILBSubnet(s *Sandbox) error {
-	klog.V(3).Info("CreateILBSubnet()")
+	klog.V(2).Info("CreateILBSubnet()")
 
 	// If no network is provided, we don't try to create the subnet
 	if s.f.Network == "" {
-		return ErrSubnetExists
+		return fmt.Errorf("error no network provided, cannot create ILB Subnet")
 	}
 
 	name := "ilb-subnet-ingress-e2e"
