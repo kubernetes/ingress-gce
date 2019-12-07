@@ -121,7 +121,7 @@ type V2IngressFrontendNamer struct {
 	clusterUID string
 }
 
-// newV2IngressFrontendNamer returns a v2 frontend namer for given ingress, cluster uid and prefix.
+// newV2IngressFrontendNamer returns a v2 frontend namer for given ingress, kube-system uid and prefix.
 // Example:
 // For Ingress - namespace/ingress, clusterUID - uid01234, prefix - k8s
 // The resource names are -
@@ -132,13 +132,14 @@ type V2IngressFrontendNamer struct {
 // Target HTTPS Proxy    : k8s2-ts-uid01234-namespace-ingress-cysix1wq
 // URL Map               : k8s2-um-uid01234-namespace-ingress-cysix1wq
 // SSL Certificate       : k8s2-cr-uid01234-<lb-hash>-<secret-hash>
-func newV2IngressFrontendNamer(ing *v1beta1.Ingress, clusterUID string, prefix string) IngressFrontendNamer {
+func newV2IngressFrontendNamer(ing *v1beta1.Ingress, kubeSystemUID string, prefix string) IngressFrontendNamer {
+	clusterUID := common.ContentHash(kubeSystemUID, clusterUIDLength)
 	namer := &V2IngressFrontendNamer{ing: ing, prefix: prefix, clusterUID: clusterUID}
 	// Initialize LbName.
 	truncFields := TrimFieldsEvenly(maximumAllowedCombinedLength, ing.Namespace, ing.Name)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
-	suffix := namer.suffix(clusterUID, ing.Namespace, ing.Name)
+	suffix := namer.suffix(kubeSystemUID, ing.Namespace, ing.Name)
 	namer.lbName = fmt.Sprintf("%s-%s-%s-%s", clusterUID, truncNamespace, truncName, suffix)
 	return namer
 }
@@ -198,8 +199,7 @@ func (vn *V2IngressFrontendNamer) LbName() string {
 }
 
 // suffix returns hash string of length 8 of a concatenated string generated from
-// uid (an 8 character hash of kube-system uid), namespace and name.
-// These fields define an ingress/ load-balancer uniquely.
+// uid, namespace and name. These fields in combination define an ingress/load-balancer uniquely.
 func (vn *V2IngressFrontendNamer) suffix(uid, namespace, name string) string {
 	lbString := strings.Join([]string{uid, namespace, name}, ";")
 	return common.ContentHash(lbString, 8)
@@ -213,16 +213,14 @@ func (vn *V2IngressFrontendNamer) lbNameToHash() string {
 // FrontendNamerFactory implements IngressFrontendNamerFactory.
 type FrontendNamerFactory struct {
 	namer *Namer
-	// clusterUID is an 8 character hash of kube-system UID that is included
-	// in resource names.
+	// kubeSystemUID is the UID of kube-system namespace which is unique for a k8s cluster.
 	// Note that this is used only for V2IngressFrontendNamer.
-	clusterUID string
+	kubeSystemUID string
 }
 
-// NewFrontendNamerFactory returns IngressFrontendNamerFactory given a v1 namer and uid.
-func NewFrontendNamerFactory(namer *Namer, uid types.UID) IngressFrontendNamerFactory {
-	clusterUID := common.ContentHash(string(uid), clusterUIDLength)
-	return &FrontendNamerFactory{namer: namer, clusterUID: clusterUID}
+// NewFrontendNamerFactory returns IngressFrontendNamerFactory given a v1 namer and kube-system uid.
+func NewFrontendNamerFactory(namer *Namer, kubeSystemUID types.UID) IngressFrontendNamerFactory {
+	return &FrontendNamerFactory{namer: namer, kubeSystemUID: string(kubeSystemUID)}
 }
 
 // Namer implements IngressFrontendNamerFactory.
@@ -232,7 +230,7 @@ func (rn *FrontendNamerFactory) Namer(ing *v1beta1.Ingress) IngressFrontendNamer
 	case V1NamingScheme:
 		return newV1IngressFrontendNamer(ing, rn.namer)
 	case V2NamingScheme:
-		return newV2IngressFrontendNamer(ing, rn.clusterUID, rn.namer.prefix)
+		return newV2IngressFrontendNamer(ing, rn.kubeSystemUID, rn.namer.prefix)
 	default:
 		klog.Errorf("Unexpected frontend naming scheme %s", namingScheme)
 		return newV1IngressFrontendNamer(ing, rn.namer)
