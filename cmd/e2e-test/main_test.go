@@ -92,8 +92,8 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	if flags.network == "" {
-		// TODO(shance): Make this a required flag, error out here
-		fmt.Println("-network must be set to the network of the cluster")
+		fmt.Fprintln(os.Stderr, "-network must be set to the network of the cluster")
+		os.Exit(1)
 	}
 
 	fmt.Printf("Version: %q, Commit: %q\n", version.Version, version.GitCommit)
