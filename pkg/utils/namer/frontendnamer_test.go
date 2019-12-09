@@ -51,7 +51,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 		namespace string
 		name      string
 		// Expected values.
-		lbName              string
+		lbName              LoadBalancerName
 		targetHTTPProxy     string
 		targetHTTPSProxy    string
 		sslCert             string
@@ -63,7 +63,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			"simple case",
 			"namespace",
 			"name",
-			"namespace-name--uid1",
+			LoadBalancerName("namespace-name--uid1"),
 			"%s-tp-namespace-name--uid1",
 			"%s-tps-namespace-name--uid1",
 			"%s-ssl-9a60a5272f6eee97-%s--uid1",
@@ -76,7 +76,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			// Total combined length of namespace and name is 47.
 			longString[:23],
 			longString[:24],
-			"01234567890123456789012-012345678901234567890123--uid1",
+			LoadBalancerName("01234567890123456789012-012345678901234567890123--uid1"),
 			"%s-tp-01234567890123456789012-012345678901234567890123--uid1",
 			"%s-tps-01234567890123456789012-012345678901234567890123--uid1",
 			"%s-ssl-4169c63684f5e4cd-%s--uid1",
@@ -89,7 +89,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			// Total combined length of namespace and name is 48.
 			longString[:24],
 			longString[:24],
-			"012345678901234567890123-012345678901234567890123--uid1",
+			LoadBalancerName("012345678901234567890123-012345678901234567890123--uid1"),
 			"%s-tp-012345678901234567890123-012345678901234567890123--uid1",
 			"%s-tps-012345678901234567890123-012345678901234567890123--uid0",
 			"%s-ssl-c7616cb0f76c2df2-%s--uid1",
@@ -102,7 +102,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			// Total combined length of namespace and name is 49.
 			longString[:24],
 			longString[:25],
-			"012345678901234567890123-0123456789012345678901234--uid1",
+			LoadBalancerName("012345678901234567890123-0123456789012345678901234--uid1"),
 			"%s-tp-012345678901234567890123-0123456789012345678901234--uid0",
 			"%s-tps-012345678901234567890123-0123456789012345678901234--ui0",
 			"%s-ssl-537beba3a874a029-%s--uid1",
@@ -114,7 +114,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			"long namespace",
 			longString,
 			"0",
-			"01234567890123456789012345678901234567890123456789-0--uid1",
+			LoadBalancerName("01234567890123456789012345678901234567890123456789-0--uid1"),
 			"%s-tp-01234567890123456789012345678901234567890123456789-0--u0",
 			"%s-tps-01234567890123456789012345678901234567890123456789-0--0",
 			"%s-ssl-92bdb5e4d378b3ce-%s--uid1",
@@ -126,7 +126,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			"long name",
 			"0",
 			longString,
-			"0-01234567890123456789012345678901234567890123456789--uid1",
+			LoadBalancerName("0-01234567890123456789012345678901234567890123456789--uid1"),
 			"%s-tp-0-01234567890123456789012345678901234567890123456789--u0",
 			"%s-tps-0-01234567890123456789012345678901234567890123456789--0",
 			"%s-ssl-8f3d42933afb5d1c-%s--uid1",
@@ -138,7 +138,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			"long name and namespace",
 			longString,
 			longString,
-			"01234567890123456789012345678901234567890123456789-012345678900",
+			LoadBalancerName("01234567890123456789012345678901234567890123456789-012345678900"),
 			"%s-tp-01234567890123456789012345678901234567890123456789-01230",
 			"%s-tps-01234567890123456789012345678901234567890123456789-0120",
 			"%s-ssl-a04f7492b36aeb20-%s--uid1",
@@ -155,7 +155,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			t.Run(tc.desc, func(t *testing.T) {
 				key := fmt.Sprintf("%s/%s", tc.namespace, tc.name)
 				t.Logf("Ingress key %s", key)
-				namer := newV1IngressFrontendNamerFromLBName(oldNamer.LoadBalancer(key), oldNamer)
+				namer := newV1IngressFrontendNamerForLoadBalancer(oldNamer.LoadBalancer(key), oldNamer)
 				tc.targetHTTPProxy = fmt.Sprintf(tc.targetHTTPProxy, prefix)
 				tc.targetHTTPSProxy = fmt.Sprintf(tc.targetHTTPSProxy, prefix)
 				tc.sslCert = fmt.Sprintf(tc.sslCert, prefix, secretHash)
@@ -164,8 +164,8 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 				tc.urlMap = fmt.Sprintf(tc.urlMap, prefix)
 
 				// Test behavior of V1 Namer created using load-balancer name.
-				if diff := cmp.Diff(tc.lbName, namer.LbName()); diff != "" {
-					t.Errorf("namer.LbName() mismatch (-want +got):\n%s", diff)
+				if diff := cmp.Diff(tc.lbName, namer.LoadBalancer()); diff != "" {
+					t.Errorf("namer.LoadBalancer() mismatch (-want +got):\n%s", diff)
 				}
 				targetHTTPProxyName := namer.TargetProxy(HTTPProtocol)
 				if diff := cmp.Diff(tc.targetHTTPProxy, targetHTTPProxyName); diff != "" {
@@ -194,7 +194,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 
 				// Ensure that V1 Namer returns same values as old namer.
 				lbName := oldNamer.LoadBalancer(key)
-				if diff := cmp.Diff(lbName, namer.LbName()); diff != "" {
+				if diff := cmp.Diff(lbName, namer.LoadBalancer()); diff != "" {
 					t.Errorf("Got diff between old and V1 namers, lbName mismatch (-want +got):\n%s", diff)
 				}
 				if diff := cmp.Diff(oldNamer.TargetProxy(lbName, HTTPProtocol), targetHTTPProxyName); diff != "" {
@@ -249,7 +249,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 		namespace string
 		name      string
 		// Expected values.
-		lbName              string
+		lbName              LoadBalancerName
 		targetHTTPProxy     string
 		targetHTTPSProxy    string
 		sslCert             string
@@ -273,7 +273,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 			"62 characters",
 			longString[:23],
 			longString[:24],
-			"7kpbhpki-012345678901234567-012345678901234567-hg17g9tx",
+			LoadBalancerName("7kpbhpki-012345678901234567-012345678901234567-hg17g9tx"),
 			"%s2-tp-7kpbhpki-012345678901234567-012345678901234567-hg17g9tx",
 			"%s2-ts-7kpbhpki-012345678901234567-012345678901234567-hg17g9tx",
 			"%s2-cr-7kpbhpki-ktiggo5yie4uh72b-%s",
@@ -285,7 +285,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 			"63 characters",
 			longString[:24],
 			longString[:24],
-			"7kpbhpki-012345678901234567-012345678901234567-o0dahbae",
+			LoadBalancerName("7kpbhpki-012345678901234567-012345678901234567-o0dahbae"),
 			"%s2-tp-7kpbhpki-012345678901234567-012345678901234567-o0dahbae",
 			"%s2-ts-7kpbhpki-012345678901234567-012345678901234567-o0dahbae",
 			"%s2-cr-7kpbhpki-kk38dnbt6k8zrg76-%s",
@@ -297,7 +297,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 			"64 characters",
 			longString[:24],
 			longString[:25],
-			"7kpbhpki-012345678901234567-012345678901234567-sxo4pxda",
+			LoadBalancerName("7kpbhpki-012345678901234567-012345678901234567-sxo4pxda"),
 			"%s2-tp-7kpbhpki-012345678901234567-012345678901234567-sxo4pxda",
 			"%s2-ts-7kpbhpki-012345678901234567-012345678901234567-sxo4pxda",
 			"%s2-cr-7kpbhpki-n2b7ixc007o1ddma-%s",
@@ -309,7 +309,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 			"long namespace",
 			longString,
 			"0",
-			"7kpbhpki-012345678901234567890123456789012345--v8ajgbg3",
+			LoadBalancerName("7kpbhpki-012345678901234567890123456789012345--v8ajgbg3"),
 			"%s2-tp-7kpbhpki-012345678901234567890123456789012345--v8ajgbg3",
 			"%s2-ts-7kpbhpki-012345678901234567890123456789012345--v8ajgbg3",
 			"%s2-cr-7kpbhpki-m6a592dazogk94ra-%s",
@@ -321,7 +321,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 			"long name",
 			"0",
 			longString,
-			"7kpbhpki-0-01234567890123456789012345678901234-fyhus2f6",
+			LoadBalancerName("7kpbhpki-0-01234567890123456789012345678901234-fyhus2f6"),
 			"%s2-tp-7kpbhpki-0-01234567890123456789012345678901234-fyhus2f6",
 			"%s2-ts-7kpbhpki-0-01234567890123456789012345678901234-fyhus2f6",
 			"%s2-cr-7kpbhpki-a33x986k79kbu0me-%s",
@@ -333,7 +333,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 			"long name and namespace",
 			longString,
 			longString,
-			"7kpbhpki-012345678901234567-012345678901234567-69z4wrm0",
+			LoadBalancerName("7kpbhpki-012345678901234567-012345678901234567-69z4wrm0"),
 			"%s2-tp-7kpbhpki-012345678901234567-012345678901234567-69z4wrm0",
 			"%s2-ts-7kpbhpki-012345678901234567-012345678901234567-69z4wrm0",
 			"%s2-cr-7kpbhpki-5pu4c55s4c47rr9e-%s",
@@ -358,8 +358,8 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 				tc.urlMap = fmt.Sprintf(tc.urlMap, prefix)
 
 				// Test behavior of v2 Namer.
-				if diff := cmp.Diff(tc.lbName, namer.LbName()); diff != "" {
-					t.Errorf("namer.GetLbName() mismatch (-want +got):\n%s", diff)
+				if diff := cmp.Diff(tc.lbName, namer.LoadBalancer()); diff != "" {
+					t.Errorf("namer.LoadBalancer() mismatch (-want +got):\n%s", diff)
 				}
 				name := namer.TargetProxy(HTTPProtocol)
 				if diff := cmp.Diff(tc.targetHTTPProxy, name); diff != "" {

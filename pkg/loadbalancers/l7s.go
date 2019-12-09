@@ -22,7 +22,6 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/api/networking/v1beta1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
@@ -124,9 +123,9 @@ func (l *L7s) GCv2(ing *v1beta1.Ingress) error {
 func (l *L7s) GCv1(names []string) error {
 	klog.V(2).Infof("GCv1(%v)", names)
 
-	knownLoadBalancers := sets.NewString()
+	knownLoadBalancers := make(map[namer_util.LoadBalancerName]bool)
 	for _, n := range names {
-		knownLoadBalancers.Insert(l.v1NamerHelper.LoadBalancer(n))
+		knownLoadBalancers[l.v1NamerHelper.LoadBalancer(n)] = true
 	}
 
 	// GC L7-ILB LBs if enabled
@@ -160,15 +159,14 @@ func (l *L7s) GCv1(names []string) error {
 
 // gc is a helper for GCv1.
 // TODO(shance): get versions from description
-func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers sets.String, versions *features.ResourceVersions) []error {
+func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers map[namer_util.LoadBalancerName]bool, versions *features.ResourceVersions) []error {
 	var errors []error
 
 	// Delete unknown loadbalancers
 	for _, um := range urlMaps {
-		nameParts := l.v1NamerHelper.ParseName(um.Name)
-		l7Name := l.v1NamerHelper.LoadBalancerFromLbName(nameParts.LbName)
+		l7Name := l.v1NamerHelper.LoadBalancerForURLMap(um.Name)
 
-		if knownLoadBalancers.Has(l7Name) {
+		if knownLoadBalancers[l7Name] {
 			klog.V(3).Infof("Load balancer %v is still valid, not GC'ing", l7Name)
 			continue
 		}
@@ -179,7 +177,7 @@ func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers sets.String, ve
 			continue
 		}
 
-		if err := l.delete(l.namerFactory.NamerForLbName(l7Name), versions, scope); err != nil {
+		if err := l.delete(l.namerFactory.NamerForLoadBalancer(l7Name), versions, scope); err != nil {
 			errors = append(errors, fmt.Errorf("error deleting loadbalancer %q", l7Name))
 		}
 	}

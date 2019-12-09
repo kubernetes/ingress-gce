@@ -125,7 +125,7 @@ type L7 struct {
 // Warning: This should be used only for logging and should not be used to
 // retrieve/ delete gce resource names.
 func (l *L7) String() string {
-	return l.namer.LbName()
+	return l.namer.LoadBalancer().String()
 }
 
 // Versions returns the struct listing the versions for every resource

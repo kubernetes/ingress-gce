@@ -59,7 +59,7 @@ type Scheme string
 type V1IngressFrontendNamer struct {
 	ing    *v1beta1.Ingress
 	namer  *Namer
-	lbName string
+	lbName LoadBalancerName
 }
 
 // newV1IngressFrontendNamer returns v1 frontend namer for given ingress.
@@ -68,8 +68,8 @@ func newV1IngressFrontendNamer(ing *v1beta1.Ingress, namer *Namer) IngressFronte
 	return &V1IngressFrontendNamer{ing: ing, namer: namer, lbName: lbName}
 }
 
-// newV1IngressFrontendNamerFromLBName returns v1 frontend namer for load balancer.
-func newV1IngressFrontendNamerFromLBName(lbName string, namer *Namer) IngressFrontendNamer {
+// newV1IngressFrontendNamerForLoadBalancer returns v1 frontend namer for load balancer.
+func newV1IngressFrontendNamerForLoadBalancer(lbName LoadBalancerName, namer *Namer) IngressFrontendNamer {
 	return &V1IngressFrontendNamer{namer: namer, lbName: lbName}
 }
 
@@ -103,8 +103,8 @@ func (ln *V1IngressFrontendNamer) IsLegacySSLCert(certName string) bool {
 	return ln.namer.IsLegacySSLCert(ln.lbName, certName)
 }
 
-// LbName implements IngressFrontendNamer.
-func (ln *V1IngressFrontendNamer) LbName() string {
+// LoadBalancer implements IngressFrontendNamer.
+func (ln *V1IngressFrontendNamer) LoadBalancer() LoadBalancerName {
 	return ln.lbName
 }
 
@@ -114,7 +114,7 @@ type V2IngressFrontendNamer struct {
 	// prefix for all resource names (ex.: "k8s").
 	prefix string
 	// Load balancer name to be included in resource name.
-	lbName string
+	lbName LoadBalancerName
 	// clusterUID is an 8 character hash to be included in resource names.
 	// This is immutable after the cluster is created. Kube-system uid which is
 	// immutable is used as cluster UID for v2 naming scheme.
@@ -135,12 +135,12 @@ type V2IngressFrontendNamer struct {
 func newV2IngressFrontendNamer(ing *v1beta1.Ingress, kubeSystemUID string, prefix string) IngressFrontendNamer {
 	clusterUID := common.ContentHash(kubeSystemUID, clusterUIDLength)
 	namer := &V2IngressFrontendNamer{ing: ing, prefix: prefix, clusterUID: clusterUID}
-	// Initialize LbName.
+	// Initialize lbName.
 	truncFields := TrimFieldsEvenly(maximumAllowedCombinedLength, ing.Namespace, ing.Name)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	suffix := namer.suffix(kubeSystemUID, ing.Namespace, ing.Name)
-	namer.lbName = fmt.Sprintf("%s-%s-%s-%s", clusterUID, truncNamespace, truncName, suffix)
+	namer.lbName = LoadBalancerName(fmt.Sprintf("%s-%s-%s-%s", clusterUID, truncNamespace, truncName, suffix))
 	return namer
 }
 
@@ -192,9 +192,9 @@ func (vn *V2IngressFrontendNamer) IsLegacySSLCert(certName string) bool {
 	return false
 }
 
-// LbName returns loadbalancer name.
+// LoadBalancer returns loadbalancer name.
 // Note that this is used for generating GCE resource names.
-func (vn *V2IngressFrontendNamer) LbName() string {
+func (vn *V2IngressFrontendNamer) LoadBalancer() LoadBalancerName {
 	return vn.lbName
 }
 
@@ -207,7 +207,7 @@ func (vn *V2IngressFrontendNamer) suffix(uid, namespace, name string) string {
 
 // lbNameToHash returns hash string of length 16 of lbName.
 func (vn *V2IngressFrontendNamer) lbNameToHash() string {
-	return common.ContentHash(vn.lbName, 16)
+	return common.ContentHash(vn.lbName.String(), 16)
 }
 
 // FrontendNamerFactory implements IngressFrontendNamerFactory.
@@ -237,7 +237,7 @@ func (rn *FrontendNamerFactory) Namer(ing *v1beta1.Ingress) IngressFrontendNamer
 	}
 }
 
-// NamerForLbName implements IngressFrontendNamerFactory.
-func (rn *FrontendNamerFactory) NamerForLbName(lbName string) IngressFrontendNamer {
-	return newV1IngressFrontendNamerFromLBName(lbName, rn.namer)
+// NamerForLoadBalancer implements IngressFrontendNamerFactory.
+func (rn *FrontendNamerFactory) NamerForLoadBalancer(lbName LoadBalancerName) IngressFrontendNamer {
+	return newV1IngressFrontendNamerForLoadBalancer(lbName, rn.namer)
 }
