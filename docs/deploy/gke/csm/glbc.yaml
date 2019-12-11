@@ -22,7 +22,7 @@ spec:
       serviceAccountName: glbc
       terminationGracePeriodSeconds: 600
       containers:
-      - image: k8s.gcr.io/ingress-gce-glbc-amd64:v1.7.0
+      - image: k8s.gcr.io/ingress-gce-glbc-amd64:v1.8.0
         livenessProbe:
           httpGet:
             path: /healthz
@@ -67,8 +67,7 @@ spec:
         - --gce-ratelimit=ga.NetworkEndpointGroups.AttachNetworkEndpoints,qps,1.8,1
         - --gce-ratelimit=ga.NetworkEndpointGroups.DetachNetworkEndpoints,qps,1.8,1
         - --gce-ratelimit=ga.NetworkEndpointGroups.ListNetworkEndpoints,qps,1.8,1
-        - --enable-csm=true
-        - --csm-service-skip-namespaces=kube-system,istio-system
+        - --enable-asm-config-map-config=true
       volumes:
       - name: gce-config-volume
         configMap:
