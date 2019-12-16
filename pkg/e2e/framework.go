@@ -47,6 +47,7 @@ type Options struct {
 	Seed                int64
 	DestroySandboxes    bool
 	GceEndpointOverride string
+	CreateILBSubnet     bool
 }
 
 // NewFramework returns a new test framework to run.
@@ -69,6 +70,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		Cloud:               theCloud,
 		Rand:                rand.New(rand.NewSource(options.Seed)),
 		destroySandboxes:    options.DestroySandboxes,
+		CreateILBSubnet:     options.CreateILBSubnet,
 	}
 	f.statusManager = NewStatusManager(f)
 	return f
@@ -87,6 +89,7 @@ type Framework struct {
 	statusManager       *StatusManager
 
 	destroySandboxes bool
+	CreateILBSubnet  bool
 
 	lock      sync.Mutex
 	sandboxes []*Sandbox
