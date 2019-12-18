@@ -62,10 +62,29 @@ if [[ -z "${REGION}" ]]; then
 fi
 echo "Using Region: ${REGION}"
 
+# Get network information
+for ATTEMPT in $(seq 60); do
+  NETWORK_INFO=$(curl -H'Metadata-Flavor:Google' metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/network)
+  if [[ -n "${NETWORK_INFO}" ]]; then
+    break
+  fi
+  echo "Error: could not get network from the metadata server (attempt ${ATTEMPT})"
+  sleep 1
+done
+
+NETWORK = NETWORK_INFO | sed 's+projects/.*/networks/++'
+
+if [[ -z "${NETWORK}" ]]; then
+  echo "Error: could not parse network from network info"
+  echo "Result: 2"
+  exit
+fi
+echo "Using Network: ${NETWORK}"
+
 echo
 echo ==============================================================================
 echo "PROJECT: ${PROJECT}"
-CMD="/e2e-test -test.v -test.parallel=100 -run -project ${PROJECT} -region ${REGION} -logtostderr -inCluster -v=2"
+CMD="/e2e-test -test.v -test.parallel=100 -run -project ${PROJECT} -region ${REGION} -network ${NETWORK} -logtostderr -inCluster -v=2"
 echo "CMD: ${CMD}" $@
 echo
 
