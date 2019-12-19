@@ -1,6 +1,7 @@
 package cmconfig
 
 import (
+	"flag"
 	"strings"
 	"testing"
 	"time"
@@ -8,7 +9,7 @@ import (
 	"bytes"
 	"os"
 
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/kubernetes/fake"
@@ -39,6 +40,8 @@ func TestNewConfigMapConfigControllerDefaultValue(t *testing.T) {
 
 func TestController(t *testing.T) {
 	defaultConfig := NewConfig()
+	klog.InitFlags(nil)
+	flag.CommandLine.Parse([]string{"--logtostderr=false"})
 	testcases := []struct {
 		desc                 string
 		defaultConfigMapData map[string]string
@@ -90,7 +93,6 @@ func TestController(t *testing.T) {
 			donotWantLog:         "",
 		},
 	}
-
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
 			var logBuf bytes.Buffer
