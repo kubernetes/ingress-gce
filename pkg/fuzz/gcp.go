@@ -396,10 +396,8 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, params *GCLBForVIPParams) (*
 	gclb := NewGCLB(params.VIP)
 
 	if params.Region != "" {
-		if err := RegionalGCLBForVIP(ctx, c, gclb, params); err != nil {
-			return nil, err
-		}
-		return gclb, nil
+		err := RegionalGCLBForVIP(ctx, c, gclb, params)
+		return gclb, err
 	}
 
 	allGFRs, err := c.GlobalForwardingRules().List(ctx, filter.None)

@@ -72,7 +72,7 @@ for ATTEMPT in $(seq 60); do
   sleep 1
 done
 
-NETWORK = NETWORK_INFO | sed 's+projects/.*/networks/++'
+NETWORK=$(echo ${NETWORK_INFO} | sed 's+projects/.*/networks/++')
 
 if [[ -z "${NETWORK}" ]]; then
   echo "Error: could not parse network from network info"
