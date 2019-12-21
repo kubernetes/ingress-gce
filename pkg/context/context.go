@@ -40,6 +40,7 @@ import (
 	"k8s.io/ingress-gce/pkg/common/typed"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
+	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -74,6 +75,8 @@ type ControllerContext struct {
 	EndpointInformer        cache.SharedIndexInformer
 	DestinationRuleInformer cache.SharedIndexInformer
 	ConfigMapInformer       cache.SharedIndexInformer
+
+	ControllerMetrics *metrics.ControllerMetrics
 
 	healthChecks map[string]func() error
 
@@ -114,6 +117,7 @@ func NewControllerContext(
 		Cloud:                   cloud,
 		ClusterNamer:            namer,
 		KubeSystemUID:           kubeSystemUID,
+		ControllerMetrics:       metrics.NewControllerMetrics(),
 		ControllerContextConfig: config,
 		IngressInformer:         informerv1beta1.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
@@ -293,6 +297,8 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	if ctx.EnableASMConfigMap && ctx.ConfigMapInformer != nil {
 		go ctx.ConfigMapInformer.Run(stopCh)
 	}
+	// Export ingress usage metrics.
+	go ctx.ControllerMetrics.Run(stopCh)
 }
 
 // Ingresses returns the store of Ingresses.
