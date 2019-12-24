@@ -87,7 +87,7 @@ Testing for the Ingress controllers is divided between:
 
 The configuration for jenkins e2e tests are located [here](https://github.com/kubernetes/test-infra).
 The Ingress E2Es are located [here](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/network/ingress.go),
-each controller added to that suite must consistently pass the [conformance suite](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/framework/ingress_utils.go#L129).
+each controller added to that suite must consistently pass the [conformance suite](https://github.com/kubernetes/kubernetes/blob/master/test/e2e/framework/ingress/ingress_utils.go#L208).
 
 ## An Ingress controller E2E is failing, what should I do?
 
