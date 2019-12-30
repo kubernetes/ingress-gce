@@ -1,21 +1,31 @@
 package test
 
 import (
+	"fmt"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/legacy-cloud-providers/gce"
+	"strings"
+	"time"
 )
 
 const (
 	FinalizerAddFlag          = flag("enable-finalizer-add")
 	FinalizerRemoveFlag       = flag("enable-finalizer-remove")
 	EnableV2FrontendNamerFlag = flag("enable-v2-frontend-namer")
+	testServiceName           = "ilbtest"
+	testServiceNamespace      = "default"
 )
 
 var (
@@ -55,6 +65,28 @@ func NewService(name types.NamespacedName, spec api_v1.ServiceSpec) *api_v1.Serv
 		},
 		Spec: spec,
 	}
+}
+
+// NewL4ILBService creates a Service of type LoadBalancer with the Internal annotation.
+func NewL4ILBService(onlyLocal bool, port int) *api_v1.Service {
+	svc := &api_v1.Service{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:        testServiceName,
+			Namespace:   testServiceNamespace,
+			Annotations: map[string]string{gce.ServiceAnnotationLoadBalancerType: string(gce.LBTypeInternal)},
+		},
+		Spec: api_v1.ServiceSpec{
+			Type:            api_v1.ServiceTypeLoadBalancer,
+			SessionAffinity: api_v1.ServiceAffinityClientIP,
+			Ports: []api_v1.ServicePort{
+				{Name: "testport", Port: int32(port), Protocol: "TCP"},
+			},
+		},
+	}
+	if onlyLocal {
+		svc.Spec.ExternalTrafficPolicy = api_v1.ServiceExternalTrafficPolicyTypeLocal
+	}
+	return svc
 }
 
 // NewBackendConfig returns a BackendConfig with the given spec.
@@ -108,5 +140,99 @@ func (s *FlagSaver) Save(key flag, flagPointer *bool) {
 func (s *FlagSaver) Reset(key flag, flagPointer *bool) {
 	if val, ok := s.flags[key]; ok {
 		*flagPointer = val
+	}
+}
+
+// CreateAndInsertNodes adds the given nodeNames in the given zone as GCE instances, so they can be looked up in tests.
+func CreateAndInsertNodes(gce *gce.Cloud, nodeNames []string, zoneName string) ([]*api_v1.Node, error) {
+	nodes := []*api_v1.Node{}
+
+	for _, name := range nodeNames {
+		// Inserting the same node name twice causes an error - here we check if
+		// the instance exists already before insertion.
+		exists, err := GCEInstanceExists(name, gce)
+		if err != nil {
+			return nil, err
+		}
+		if !exists {
+			err := gce.InsertInstance(
+				gce.ProjectID(),
+				zoneName,
+				&compute.Instance{
+					Name: name,
+					Tags: &compute.Tags{
+						Items: []string{name},
+					},
+				},
+			)
+			if err != nil {
+				return nodes, err
+			}
+		}
+
+		nodes = append(
+			nodes,
+			&api_v1.Node{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Name: name,
+					Labels: map[string]string{
+						api_v1.LabelHostname:          name,
+						api_v1.LabelZoneFailureDomain: zoneName,
+					},
+				},
+				Status: api_v1.NodeStatus{
+					NodeInfo: api_v1.NodeSystemInfo{
+						KubeProxyVersion: "v1.7.2",
+					},
+				},
+			},
+		)
+
+	}
+	return nodes, nil
+}
+
+// GCEInstanceExists returns if a given instance name exists.
+func GCEInstanceExists(name string, g *gce.Cloud) (bool, error) {
+	zones, err := g.GetAllCurrentZones()
+	if err != nil {
+		return false, err
+	}
+	for _, zone := range zones.List() {
+		ctx, cancel := cloud.ContextWithCallTimeout()
+		defer cancel()
+		if _, err := g.Compute().Instances().Get(ctx, meta.ZonalKey(name, zone)); err != nil {
+			if utils.IsNotFoundError(err) {
+				return false, nil
+			} else {
+				return false, err
+			}
+		} else {
+			// instance has been found
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// CheckEvent watches for events in the given FakeRecorder and checks if it matches the given string.
+// It will be used in the l4 firewall XPN tests once TestEnsureLoadBalancerDeletedSucceedsOnXPN and others are
+// uncommented.
+func CheckEvent(recorder *record.FakeRecorder, expected string, shouldMatch bool) error {
+	select {
+	case received := <-recorder.Events:
+		if strings.HasPrefix(received, expected) != shouldMatch {
+			if shouldMatch {
+				return fmt.Errorf("Should receive message \"%v\" but got \"%v\".", expected, received)
+			} else {
+				return fmt.Errorf("Unexpected event \"%v\".", received)
+			}
+		}
+		return nil
+	case <-time.After(2 * time.Second):
+		if shouldMatch {
+			return fmt.Errorf("Should receive message \"%v\" but got timed out.", expected)
+		}
+		return nil
 	}
 }

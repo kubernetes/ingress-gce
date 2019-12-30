@@ -22,14 +22,20 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
+	"strconv"
 	"strings"
 
+	"k8s.io/kubernetes/pkg/util/slice"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -70,7 +76,8 @@ const (
 	LabelNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
 	// ToBeDeletedTaint is the taint that the autoscaler adds when a node is scheduled to be deleted
 	// https://github.com/kubernetes/autoscaler/blob/cluster-autoscaler-0.5.2/cluster-autoscaler/utils/deletetaint/delete.go#L33
-	ToBeDeletedTaint = "ToBeDeletedByClusterAutoscaler"
+	ToBeDeletedTaint    = "ToBeDeletedByClusterAutoscaler"
+	L4ILBServiceDescKey = "networking.gke.io/service-name"
 )
 
 // FrontendGCAlgorithm species GC algorithm used for ingress frontend resources.
@@ -85,6 +92,10 @@ const (
 	// CleanupV2FrontendResources specifies that frontend resources for ingresses
 	// that use v2 naming scheme need to be deleted.
 	CleanupV2FrontendResources
+	// AffinityTypeNone - no session affinity.
+	gceAffinityTypeNone = "NONE"
+	// AffinityTypeClientIP - affinity based on Client IP.
+	gceAffinityTypeClientIP = "CLIENT_IP"
 )
 
 // FakeGoogleAPIForbiddenErr creates a Forbidden error with type googleapi.Error
@@ -429,15 +440,120 @@ func NumEndpoints(ep *api_v1.Endpoints) (result int) {
 	return result
 }
 
+// EqualStringSets returns true if 2 given string slices contain the same elements, in any order.
+func EqualStringSets(x, y []string) bool {
+	if len(x) != len(y) {
+		return false
+	}
+	xString := sets.NewString(x...)
+	yString := sets.NewString(y...)
+	return xString.Equal(yString)
+}
+
+// GetPortRanges returns a list of port ranges, given a list of ports.
+func GetPortRanges(ports []int) (ranges []string) {
+	if len(ports) < 1 {
+		return ranges
+	}
+	sort.Ints(ports)
+
+	start := ports[0]
+	prev := ports[0]
+	for ix, current := range ports {
+		switch {
+		case current == prev:
+			// Loop over duplicates, except if the end of list is reached.
+			if ix == len(ports)-1 {
+				if start == current {
+					ranges = append(ranges, fmt.Sprintf("%d", current))
+				} else {
+					ranges = append(ranges, fmt.Sprintf("%d-%d", start, current))
+				}
+			}
+		case current == prev+1:
+			// continue the streak, create the range if this is the last element in the list.
+			if ix == len(ports)-1 {
+				ranges = append(ranges, fmt.Sprintf("%d-%d", start, current))
+			}
+		default:
+			// current is not prev + 1, streak is broken. Construct the range and handle last element case.
+			if start == prev {
+				ranges = append(ranges, fmt.Sprintf("%d", prev))
+			} else {
+				ranges = append(ranges, fmt.Sprintf("%d-%d", start, prev))
+			}
+			if ix == len(ports)-1 {
+				ranges = append(ranges, fmt.Sprintf("%d", current))
+			}
+			// reset start element
+			start = current
+		}
+		prev = current
+	}
+	return ranges
+}
+
+// GetPortsAndProtocol returns the list of ports, list of port ranges and the protocol given the list of k8s port info.
+func GetPortsAndProtocol(svcPorts []api_v1.ServicePort) (ports []string, portRanges []string, protocol api_v1.Protocol) {
+	if len(svcPorts) == 0 {
+		return []string{}, []string{}, api_v1.ProtocolUDP
+	}
+
+	// GCP doesn't support multiple protocols for a single load balancer
+	protocol = svcPorts[0].Protocol
+	portInts := []int{}
+	for _, p := range svcPorts {
+		ports = append(ports, strconv.Itoa(int(p.Port)))
+		portInts = append(portInts, int(p.Port))
+	}
+
+	return ports, GetPortRanges(portInts), protocol
+}
+
+// TranslateAffinityType converts the k8s affinity type to the GCE affinity type.
+func TranslateAffinityType(affinityType string) string {
+	switch affinityType {
+	case string(api_v1.ServiceAffinityClientIP):
+		return gceAffinityTypeClientIP
+	case string(api_v1.ServiceAffinityNone):
+		return gceAffinityTypeNone
+	default:
+		klog.Errorf("Unexpected affinity type: %v", affinityType)
+		return gceAffinityTypeNone
+	}
+}
+
 // IsLegacyL4ILBService returns true if the given LoadBalancer service is managed by service controller.
 func IsLegacyL4ILBService(svc *api_v1.Service) bool {
-	for _, key := range svc.ObjectMeta.Finalizers {
-		if key == common.FinalizerKeyL4V1 {
-			// service has v1 finalizer, this is handled by service controller code.
-			return true
-		}
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.LegacyILBFinalizer, nil)
+}
+
+// L4ILBResourceDescription stores the description fields for L4 ILB resources.
+// This is useful to indetify which resources correspond to which L4 ILB service.
+type L4ILBResourceDescription struct {
+	// ServiceName indicates the name of the service the resource is for.
+	ServiceName string `json:"networking.gke.io/service-name"`
+	// APIVersion stores the version og the compute API used to create this resource.
+	APIVersion meta.Version `json:"networking.gke.io/api-version,omitempty"`
+	ServiceIP  string       `json:"networking.gke.io/service-ip,omitempty"`
+}
+
+// Marshal returns the description as a JSON-encoded string.
+func (d *L4ILBResourceDescription) Marshal() (string, error) {
+	out, err := json.Marshal(d)
+	if err != nil {
+		return "", err
 	}
-	return false
+	return string(out), err
+}
+
+// Unmarshal converts the JSON-encoded description string into the struct.
+func (d *L4ILBResourceDescription) Unmarshal(desc string) error {
+	return json.Unmarshal([]byte(desc), d)
+}
+
+func MakeL4ILBServiceDescription(svcName, ip string, version meta.Version) (string, error) {
+	return (&L4ILBResourceDescription{ServiceName: svcName, ServiceIP: ip, APIVersion: version}).Marshal()
 }
 
 // NewStringPointer returns a pointer to the provided string literal

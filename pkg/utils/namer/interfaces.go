@@ -55,6 +55,8 @@ type BackendNamer interface {
 	// NEG returns the gce neg name based on the service namespace, name
 	// and target port.
 	NEG(namespace, name string, Port int32) string
+	// PrimaryIPNEG returns the gce neg name based on the service namespace and name
+	PrimaryIPNEG(namespace, name string) string
 	// InstanceGroup constructs the name for an Instance Group.
 	InstanceGroup() string
 	// NamedPort returns the name for a named port.

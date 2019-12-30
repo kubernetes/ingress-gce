@@ -15,6 +15,7 @@ package backends
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
@@ -169,6 +170,12 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
 // gc deletes the provided backends
 func (s *backendSyncer) gc(backends []*composite.BackendService, knownPorts sets.String) error {
 	for _, be := range backends {
+		// Skip L4 LB backend services
+		// backendSyncer currently only GC backend services for L7 XLB/ILB.
+		// L4 LB is GC as part of the deletion flow as there is no shared backend services among L4 ILBs.
+		if strings.Contains(be.Description, utils.L4ILBServiceDescKey) {
+			continue
+		}
 		var key *meta.Key
 		name := be.Name
 		scope, err := composite.ScopeFromSelfLink(be.SelfLink)
@@ -181,7 +188,6 @@ func (s *backendSyncer) gc(backends []*composite.BackendService, knownPorts sets
 		if knownPorts.Has(key.String()) {
 			continue
 		}
-
 		klog.V(2).Infof("GCing backendService for port %s", name)
 		err = s.backendPool.Delete(name, be.Version, scope)
 		if err != nil {

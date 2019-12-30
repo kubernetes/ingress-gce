@@ -21,7 +21,9 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/google/go-cmp/cmp"
+
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -762,7 +764,7 @@ func TestIsLegacyL4ILBService(t *testing.T) {
 			Name:        "testsvc",
 			Namespace:   "default",
 			Annotations: map[string]string{gce.ServiceAnnotationLoadBalancerType: string(gce.LBTypeInternal)},
-			Finalizers:  []string{common.FinalizerKeyL4V1},
+			Finalizers:  []string{common.LegacyILBFinalizer},
 		},
 		Spec: api_v1.ServiceSpec{
 			Type: api_v1.ServiceTypeLoadBalancer,
@@ -780,5 +782,29 @@ func TestIsLegacyL4ILBService(t *testing.T) {
 	if IsLegacyL4ILBService(svc) {
 		t.Errorf("Expected False for Legacy service %s, got True", svc.Name)
 	}
+}
 
+func TestGetPortRanges(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		Desc   string
+		Input  []int
+		Result []string
+	}{
+		{Desc: "All Unique", Input: []int{8, 66, 23, 13, 89}, Result: []string{"8", "13", "23", "66", "89"}},
+		{Desc: "All Unique Sorted", Input: []int{1, 7, 9, 16, 26}, Result: []string{"1", "7", "9", "16", "26"}},
+		{Desc: "Ranges", Input: []int{56, 78, 67, 79, 21, 80, 12}, Result: []string{"12", "21", "56", "67", "78-80"}},
+		{Desc: "Ranges Sorted", Input: []int{5, 7, 90, 1002, 1003, 1004, 1005, 2501}, Result: []string{"5", "7", "90", "1002-1005", "2501"}},
+		{Desc: "Ranges Duplicates", Input: []int{15, 37, 900, 2002, 2003, 2003, 2004, 2004}, Result: []string{"15", "37", "900", "2002-2004"}},
+		{Desc: "Duplicates", Input: []int{10, 10, 10, 10, 10}, Result: []string{"10"}},
+		{Desc: "Only ranges", Input: []int{18, 19, 20, 21, 22, 55, 56, 77, 78, 79, 3504, 3505, 3506}, Result: []string{"18-22", "55-56", "77-79", "3504-3506"}},
+		{Desc: "Single Range", Input: []int{6000, 6001, 6002, 6003, 6004, 6005}, Result: []string{"6000-6005"}},
+		{Desc: "One value", Input: []int{12}, Result: []string{"12"}},
+		{Desc: "Empty", Input: []int{}, Result: nil},
+	} {
+		result := GetPortRanges(tc.Input)
+		if diff := cmp.Diff(result, tc.Result); diff != "" {
+			t.Errorf("GetPortRanges(%s) mismatch, (-want +got): \n%s", tc.Desc, diff)
+		}
+	}
 }

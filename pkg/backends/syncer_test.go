@@ -105,7 +105,12 @@ func (p *portset) check(fakeGCE *gce.Cloud) error {
 				return fmt.Errorf("backend for port %+v should exist, but got: %v", sp.NodePort, err)
 			}
 		} else {
-			if bs, err := composite.GetBackendService(fakeGCE, key, features.VersionFromServicePort(&sp)); !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+			bs, err := composite.GetBackendService(fakeGCE, key, features.VersionFromServicePort(&sp))
+			if err == nil || !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+				if sp.PrimaryIPNEGEnabled {
+					// It is expected that these Backends should not get cleaned up in the GC loop.
+					continue
+				}
 				return fmt.Errorf("backend for port %+v should not exist, but got %v", sp, bs)
 			}
 		}
@@ -333,7 +338,7 @@ func TestGC(t *testing.T) {
 	}
 }
 
-// Test GC with both ELB and ILBs
+// Test GC with both ELB and ILBs. Add in an L4 ILB NEG which should not be deleted as part of GC.
 func TestGCMixed(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	syncer := newTestSyncer(fakeGCE)
@@ -345,6 +350,7 @@ func TestGCMixed(t *testing.T) {
 		{NodePort: 84, Protocol: annotations.ProtocolHTTP, NEGEnabled: true, L7ILBEnabled: true, BackendNamer: defaultNamer},
 		{NodePort: 85, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true, L7ILBEnabled: true, BackendNamer: defaultNamer},
 		{NodePort: 86, Protocol: annotations.ProtocolHTTP, NEGEnabled: true, L7ILBEnabled: true, BackendNamer: defaultNamer},
+		{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "testsvc"}}, PrimaryIPNEGEnabled: true, BackendNamer: defaultNamer},
 	}
 	ps := newPortset(svcNodePorts)
 	if err := ps.add(svcNodePorts); err != nil {

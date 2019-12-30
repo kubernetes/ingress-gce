@@ -19,12 +19,17 @@ package loadbalancers
 import (
 	"fmt"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (
@@ -180,4 +185,167 @@ func (l *L7) getEffectiveIP() (string, bool) {
 		return l.ip.Address, true
 	}
 	return "", true
+}
+
+// ensureForwardingRule creates a forwarding rule with the given name, if it does not exist. It updates the existing
+// forwarding rule if needed.
+func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.ILBOptions) (*composite.ForwardingRule, error) {
+	key, err := l.CreateKey(loadBalancerName)
+	if err != nil {
+		return nil, err
+	}
+	desc := utils.L4ILBResourceDescription{}
+	// version used for creating the existing forwarding rule.
+	existingVersion := meta.VersionGA
+	// version to use for the new forwarding rule
+	newVersion := getAPIVersion(options)
+
+	// Get the GA version forwarding rule, use the description to identify the version it was created with.
+	existingFwdRule, err := composite.GetForwardingRule(l.cloud, key, meta.VersionGA)
+	if utils.IgnoreHTTPNotFound(err) != nil {
+		return nil, err
+	}
+	if existingFwdRule != nil {
+		if err = desc.Unmarshal(existingFwdRule.Description); err != nil {
+			klog.Warningf("Failed to lookup forwarding rule version from description, err %v. Using GA Version.", err)
+		} else {
+			existingVersion = desc.APIVersion
+		}
+	}
+	// Fetch the right forwarding rule in case it is not using GA
+	if existingVersion != meta.VersionGA {
+		existingFwdRule, err = composite.GetForwardingRule(l.cloud, key, existingVersion)
+		if utils.IgnoreHTTPNotFound(err) != nil {
+			klog.Errorf("Failed to lookup forwarding rule '%s' at version - %s, err %v", key.Name, existingVersion, err)
+			return nil, err
+		}
+	}
+
+	if l.cloud.IsLegacyNetwork() {
+		l.recorder.Event(l.Service, v1.EventTypeWarning, "ILBOptionsIgnored", "Internal LoadBalancer options are not supported with Legacy Networks.")
+		options = gce.ILBOptions{}
+	}
+	subnetworkURL := l.cloud.SubnetworkURL()
+
+	if !l.cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureILBCustomSubnet) {
+		if options.SubnetName != "" {
+			l.recorder.Event(l.Service, v1.EventTypeWarning, "ILBCustomSubnetOptionIgnored", "Internal LoadBalancer CustomSubnet options ignored as the feature gate is disabled.")
+			options.SubnetName = ""
+		}
+	}
+	if l.cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureILBCustomSubnet) {
+		// If this feature is enabled, changes to subnet annotation will be
+		// picked up and reflected in the forwarding rule.
+		// Removing the annotation will set the forwarding rule to use the default subnet.
+		if options.SubnetName != "" {
+			subnetKey := *key
+			subnetKey.Name = options.SubnetName
+			subnetworkURL = cloud.SelfLink(meta.VersionGA, l.cloud.ProjectID(), "subnetworks", &subnetKey)
+		}
+	} else {
+		// TODO(84885) remove this once ILBCustomSubnet goes beta.
+		if existingFwdRule != nil && existingFwdRule.Subnetwork != "" {
+			// If the ILB already exists, continue using the subnet that it's already using.
+			// This is to support existing ILBs that were setup using the wrong subnet - https://github.com/kubernetes/kubernetes/pull/57861
+			subnetworkURL = existingFwdRule.Subnetwork
+		}
+	}
+	// Determine IP which will be used for this LB. If no forwarding rule has been established
+	// or specified in the Service spec, then requestedIP = "".
+	ipToUse := ilbIPToUse(l.Service, existingFwdRule, subnetworkURL)
+	klog.V(2).Infof("ensureForwardingRule(%v): Using subnet %s for LoadBalancer IP %s", loadBalancerName, options.SubnetName, ipToUse)
+
+	var addrMgr *addressManager
+	// If the network is not a legacy network, use the address manager
+	if !l.cloud.IsLegacyNetwork() {
+		nm := types.NamespacedName{Namespace: l.Service.Namespace, Name: l.Service.Name}.String()
+		addrMgr = newAddressManager(l.cloud, nm, l.cloud.Region(), subnetworkURL, loadBalancerName, ipToUse, cloud.SchemeInternal)
+		ipToUse, err = addrMgr.HoldAddress()
+		if err != nil {
+			return nil, err
+		}
+		klog.V(2).Infof("ensureForwardingRule(%v): reserved IP %q for the forwarding rule", loadBalancerName, ipToUse)
+	}
+
+	ports, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
+	// Create the forwarding rule
+	frDesc, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(l.Service.Namespace, l.Service.Name), ipToUse,
+		newVersion)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %v", loadBalancerName,
+			err)
+	}
+
+	fr := &composite.ForwardingRule{
+		Name:                loadBalancerName,
+		IPAddress:           ipToUse,
+		Ports:               ports,
+		IPProtocol:          string(protocol),
+		LoadBalancingScheme: string(cloud.SchemeInternal),
+		Subnetwork:          subnetworkURL,
+		Network:             l.cloud.NetworkURL(),
+		Version:             newVersion,
+		BackendService:      bsLink,
+		AllowGlobalAccess:   options.AllowGlobalAccess,
+		Description:         frDesc,
+	}
+
+	if existingFwdRule != nil {
+		if Equal(existingFwdRule, fr) {
+			// nothing to do
+			klog.V(2).Infof("ensureForwardingRule: Skipping update of unchanged forwarding rule - %s", fr.Name)
+			return existingFwdRule, nil
+		} else {
+			klog.V(2).Infof("ensureForwardingRule: Deleting existing forwarding rule - %s, will be recreated", fr.Name)
+			if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, existingVersion)); err != nil {
+				return nil, err
+			}
+		}
+	}
+	klog.V(2).Infof("ensureForwardingRule: Recreating forwarding rule - %s", fr.Name)
+	if err = composite.CreateForwardingRule(l.cloud, key, fr); err != nil {
+		return nil, err
+	}
+
+	return composite.GetForwardingRule(l.cloud, key, fr.Version)
+}
+
+func Equal(fr1, fr2 *composite.ForwardingRule) bool {
+	// If one of the IP addresses is empty, do not consider it as an inequality.
+	// If the IP address drops from a valid IP to empty, we do not want to apply
+	// the change if it is the only change in the forwarding rule. Similarly, if
+	// the forwarding rule changes from an empty IP to an allocated IP address, the
+	// subnetwork will change as well.
+	return (fr1.IPAddress == "" || fr2.IPAddress == "" || fr1.IPAddress == fr2.IPAddress) &&
+		fr1.IPProtocol == fr2.IPProtocol &&
+		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
+		utils.EqualStringSets(fr1.Ports, fr2.Ports) &&
+		fr1.BackendService == fr2.BackendService &&
+		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
+		fr1.Subnetwork == fr2.Subnetwork
+}
+
+// ilbIPToUse determines which IP address needs to be used in the ForwardingRule. If an IP has been
+// specified by the user, that is used. If there is an existing ForwardingRule, the ip address from
+// that is reused. In case a subnetwork change is requested, the existing ForwardingRule IP is ignored.
+func ilbIPToUse(svc *v1.Service, fwdRule *composite.ForwardingRule, requestedSubnet string) string {
+	if svc.Spec.LoadBalancerIP != "" {
+		return svc.Spec.LoadBalancerIP
+	}
+	if fwdRule == nil {
+		return ""
+	}
+	if requestedSubnet != fwdRule.Subnetwork {
+		// reset ip address since subnet is being changed.
+		return ""
+	}
+	return fwdRule.IPAddress
+}
+
+// getAPIVersion returns the API version to use for CRUD of Forwarding rules, given the options enabled.
+func getAPIVersion(options gce.ILBOptions) meta.Version {
+	if options.AllowGlobalAccess {
+		return meta.VersionBeta
+	}
+	return meta.VersionGA
 }

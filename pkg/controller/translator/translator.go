@@ -276,10 +276,10 @@ func (t *Translator) GetZoneForNode(name string) (string, error) {
 // ListZones returns a list of zones this Kubernetes cluster spans.
 func (t *Translator) ListZones() ([]string, error) {
 	nodeLister := t.ctx.NodeInformer.GetIndexer()
-	return t.ListZonesWithLister(listers.NewNodeLister(nodeLister))
+	return t.listZonesWithLister(listers.NewNodeLister(nodeLister))
 }
 
-func (t *Translator) ListZonesWithLister(lister listers.NodeLister) ([]string, error) {
+func (t *Translator) listZonesWithLister(lister listers.NodeLister) ([]string, error) {
 	zones := sets.String{}
 	readyNodes, err := lister.ListWithPredicate(utils.GetNodeConditionPredicate())
 	if err != nil {
