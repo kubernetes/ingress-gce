@@ -40,14 +40,6 @@ import (
 )
 
 const (
-	// DefaultHost is the host used if none is specified. It is a valid value
-	// for the "Host" field recognized by GCE.
-	DefaultHost = "*"
-
-	// DefaultPath is the path used if none is specified. It is a valid path
-	// recognized by GCE.
-	DefaultPath = "/*"
-
 	invalidConfigErrorMessage = "invalid ingress frontend configuration, please check your usage of the 'kubernetes.io/ingress.allow-http' annotation."
 )
 
