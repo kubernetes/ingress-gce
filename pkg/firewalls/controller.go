@@ -61,7 +61,7 @@ type FirewallController struct {
 func NewFirewallController(
 	ctx *context.ControllerContext,
 	portRanges []string) *FirewallController {
-	firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, gce.LoadBalancerSrcRanges(), portRanges)
+	firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, gce.L4LoadBalancerSrcRanges(), portRanges)
 
 	fwc := &FirewallController{
 		ctx:          ctx,
