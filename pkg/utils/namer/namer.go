@@ -79,6 +79,11 @@ const (
 	// - 8 (truncated cluster id) - 8 (suffix hash) - 4 (hyphen connector) = 38
 	maxNEGDescriptiveLabel = 38
 
+	// maxNEGDescriptiveLabelASM is the max length for namespace, name,
+	// port and DestinationRule subset for neg name. It use one more hypen
+	// connector compared to maxNEGDescriptiveLabel
+	maxNEGDescriptiveLabelASM = maxNEGDescriptiveLabel - 1
+
 	// schemaVersionV1 is the version 1 naming scheme for NEG
 	schemaVersionV1 = "1"
 )
@@ -442,7 +447,7 @@ func (n *Namer) NEG(namespace, name string, port int32) string {
 // must be backward compatible.
 func (n *Namer) NEGWithSubset(namespace, name, subset string, port int32) string {
 	portStr := fmt.Sprintf("%v", port)
-	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name, portStr, subset)
+	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabelASM, namespace, name, portStr, subset)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	truncPort := truncFields[2]
