@@ -118,6 +118,7 @@ kubectl create configmap gce-config --from-file=gce.conf -n kube-system
 
 ```sh
 kubectl create -f default-http-backend.yaml
+kubectl create -f ../../resources/configmap-based-config.yaml
 kubectl create -f glbc.yaml
 ```
 
