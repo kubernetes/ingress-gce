@@ -526,6 +526,8 @@ k8s.io/legacy-cloud-providers v0.0.0-20190620090159-a9e4f3cb5bf3 h1:M7/X/e8icd2q
 k8s.io/legacy-cloud-providers v0.0.0-20190620090159-a9e4f3cb5bf3/go.mod h1:vN4qQ5sBl+8105txtOVlFFNAXTc8lYvM41krV0K7xXc=
 k8s.io/legacy-cloud-providers v0.0.0-20191114112650-b5fed2ccee23 h1:bTJRQQAdp8b4KQ7Km30l7JjQbgPsjeEaRWbrQhmOFVs=
 k8s.io/legacy-cloud-providers v0.0.0-20191114112650-b5fed2ccee23/go.mod h1:DdzaepJ3RtRy+e5YhNtrCYwlgyK87j/5+Yfp0L9Syp8=
+k8s.io/legacy-cloud-providers v0.0.0-20191210234026-b5fed2ccee23 h1:OGjiUCSaoiv+WWO35dN2txDvwX8htOCyb8MAkd5vuQU=
+k8s.io/legacy-cloud-providers v0.0.0-20191210234026-b5fed2ccee23/go.mod h1:DdzaepJ3RtRy+e5YhNtrCYwlgyK87j/5+Yfp0L9Syp8=
 k8s.io/metrics v0.0.0-20190620085627-5b02f62e9559/go.mod h1:f5M7Wu7aoJPaYxys9OpQdzhfOVWhuS/WE20voRy8KEY=
 k8s.io/repo-infra v0.0.0-20181204233714-00fe14e3d1a3/go.mod h1:+G1xBfZDfVFsm1Tj/HNCvg4QqWx8rJ2Fxpqr1rqp/gQ=
 k8s.io/sample-apiserver v0.0.0-20190620085357-8191e314a1f7/go.mod h1:RVMdQ03C5ZqPz82uV82L72wju27+zFFnyzKje9DVBZI=
