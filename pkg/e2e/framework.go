@@ -33,6 +33,8 @@ import (
 	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
@@ -48,7 +50,16 @@ type Options struct {
 	DestroySandboxes    bool
 	GceEndpointOverride string
 	CreateILBSubnet     bool
+	EnableIstio         bool
 }
+
+const (
+	destinationRuleGroup      = "networking.istio.io"
+	destinationRuleAPIVersion = "v1alpha3"
+	destinationRulePlural     = "destinationrules"
+	// This must match the spec fields below, and be in the form: <plural>.<group>
+	destinationRuleCRDName = "destinationrules.networking.istio.io"
+)
 
 // NewFramework returns a new test framework to run.
 func NewFramework(config *rest.Config, options Options) *Framework {
@@ -60,6 +71,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 	if err != nil {
 		klog.Fatalf("Failed to create BackendConfig client: %v", err)
 	}
+
 	f := &Framework{
 		RestConfig:          config,
 		Clientset:           kubernetes.NewForConfigOrDie(config),
@@ -73,13 +85,24 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		CreateILBSubnet:     options.CreateILBSubnet,
 	}
 	f.statusManager = NewStatusManager(f)
+	if options.EnableIstio {
+		dynamicClient, err := dynamic.NewForConfig(config)
+		if err != nil {
+			klog.Fatalf("Failed to create Dynamic client: %v", err)
+		}
+		destrinationGVR := schema.GroupVersionResource{Group: destinationRuleGroup, Version: destinationRuleAPIVersion, Resource: destinationRulePlural}
+		f.DestinationRuleClient = dynamicClient.Resource(destrinationGVR)
+	}
+
 	return f
 }
 
 // Framework is the end-to-end test framework.
 type Framework struct {
-	RestConfig          *rest.Config
-	Clientset           *kubernetes.Clientset
+	RestConfig            *rest.Config
+	Clientset             *kubernetes.Clientset
+	DestinationRuleClient dynamic.NamespaceableResourceInterface
+
 	BackendConfigClient *backendconfigclient.Clientset
 	Project             string
 	Region              string

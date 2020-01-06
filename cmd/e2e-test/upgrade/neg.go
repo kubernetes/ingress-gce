@@ -18,10 +18,11 @@ package upgrade
 
 import (
 	"context"
-	"k8s.io/api/core/v1"
+	"testing"
+
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
-	"testing"
 )
 
 var (
@@ -105,7 +106,7 @@ func (sn *StandaloneNeg) scaleAndValidate(replicas int32) {
 // validate check if the NEG status annotation and the corresponding NEGs are correctly configured.
 func (sn *StandaloneNeg) validate(replicas int32) {
 	// validate neg status
-	negStatus, err := e2e.WaitForNegStatus(sn.s, svcName, expectServicePort)
+	negStatus, err := e2e.WaitForNegStatus(sn.s, svcName, expectServicePort, false)
 	if err != nil {
 		sn.t.Fatalf("error waiting for NEG status to update: %v", err)
 	}

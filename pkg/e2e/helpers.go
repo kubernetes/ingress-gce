@@ -23,6 +23,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -66,6 +68,15 @@ type WaitForIngressOptions struct {
 	// ExpectUnreachable is true when we expect the LB to still be
 	// programming itself (i.e 404's / 502's)
 	ExpectUnreachable bool
+}
+
+// Scheme is the default instance of runtime.Scheme to which types in the Kubernetes API are already registered.
+// This is needed for ConfigMap search.
+var Scheme = runtime.NewScheme()
+
+func init() {
+	// Register external types for Scheme
+	v1.AddToScheme(Scheme)
 }
 
 // IsRfc1918Addr returns true if the address supplied is an RFC1918 address
@@ -293,10 +304,15 @@ func WaitForEchoDeploymentStable(s *Sandbox, name string) error {
 }
 
 // WaitForNegStatus waits util the neg status on the service got to expected state.
-func WaitForNegStatus(s *Sandbox, name string, expectSvcPorts []string) (annotations.NegStatus, error) {
+// if noPresentTest set to true, WaitForNegStatus makes sure no NEG annotation is added until timeout(5 mins).
+func WaitForNegStatus(s *Sandbox, name string, expectSvcPorts []string, noPresentTest bool) (*annotations.NegStatus, error) {
 	var ret annotations.NegStatus
 	var err error
-	err = wait.Poll(negPollInterval, gclbDeletionTimeout, func() (bool, error) {
+	timeout := gclbDeletionTimeout
+	if noPresentTest {
+		timeout = 2 * time.Minute
+	}
+	err = wait.Poll(negPollInterval, timeout, func() (bool, error) {
 		svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(name, metav1.GetOptions{})
 		if svc == nil || err != nil {
 			return false, fmt.Errorf("failed to get service %s/%s: %v", s.Namespace, name, err)
@@ -308,7 +324,10 @@ func WaitForNegStatus(s *Sandbox, name string, expectSvcPorts []string) (annotat
 		}
 		return true, nil
 	})
-	return ret, err
+	if noPresentTest && err == wait.ErrWaitTimeout {
+		return nil, nil
+	}
+	return &ret, err
 }
 
 // WaitForNegs waits until the input NEG got into the expect states.
@@ -514,4 +533,68 @@ func CheckV2Finalizer(ing *v1beta1.Ingress) error {
 		return fmt.Errorf("expected Finalizer %q but got %q", common.FinalizerKeyV2, ingFinalizers[0])
 	}
 	return nil
+}
+
+// WaitDestinationRuleAnnotation waits until the DestinationRule NEG annotation count equal to negCount.
+func WaitDestinationRuleAnnotation(s *Sandbox, namespace, name string, negCount int, timeout time.Duration) (*annotations.DestinationRuleNEGStatus, error) {
+	var rsl annotations.DestinationRuleNEGStatus
+	if err := wait.Poll(5*time.Second, timeout, func() (bool, error) {
+		unsDr, err := s.f.DestinationRuleClient.Namespace(namespace).Get(name, metav1.GetOptions{})
+		if err != nil {
+			return false, err
+		}
+		ann := unsDr.GetAnnotations()
+		klog.Infof("Wait for DestinationRule NEG annotation, want count: %d, got annotation: %v", negCount, ann)
+		if ann != nil {
+			if val, ok := ann[annotations.NEGStatusKey]; ok {
+				rsl, err = annotations.ParseDestinationRuleNEGStatus(val)
+				if err != nil {
+					return false, err
+				}
+				if len(rsl.NetworkEndpointGroups) == negCount {
+					return true, nil
+				}
+			}
+		}
+		return false, nil
+	}); err != nil {
+		return nil, err
+	}
+	return &rsl, nil
+}
+
+// WaitConfigMapEvents waits the msgs messages present for namespace:name ConfigMap until timeout.
+func WaitConfigMapEvents(s *Sandbox, namespace, name string, msgs []string, timeout time.Duration) error {
+	cm, err := s.f.Clientset.CoreV1().ConfigMaps(namespace).Get(name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if cm == nil {
+		return fmt.Errorf("Cannot find ConfigMap: %s/%s", namespace, name)
+	}
+	return wait.Poll(5*time.Second, timeout, func() (bool, error) {
+		eventList, err := s.f.Clientset.CoreV1().Events(namespace).Search(Scheme, cm)
+		if err != nil {
+			return false, err
+		}
+		if len(eventList.Items) < len(msgs) {
+			return false, nil
+		}
+		allMsg := ""
+		events := eventList.Items
+		sort.Slice(events, func(i, j int) bool {
+			return events[i].LastTimestamp.Before(&events[j].LastTimestamp)
+		})
+		for _, event := range events[len(events)-len(msgs):] {
+			allMsg += event.Message
+		}
+		klog.Infof("WaitDestinationRuleAnnotation, allMsg: %s, want: %v", allMsg, msgs)
+
+		for _, msg := range msgs {
+			if !strings.Contains(allMsg, msg) {
+				return false, nil
+			}
+		}
+		return true, nil
+	})
 }

@@ -21,17 +21,24 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
-	"k8s.io/ingress-gce/pkg/utils"
 	"math/rand"
 	"net/http"
 	"reflect"
+
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	istioV1alpha3 "istio.io/api/networking/v1alpha3"
+	apiappsv1 "k8s.io/api/apps/v1"
+	apiv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	computebeta "google.golang.org/api/compute/v0.beta"
 	"google.golang.org/api/compute/v1"
 	apps "k8s.io/api/apps/v1"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -42,6 +49,7 @@ import (
 
 const (
 	echoheadersImage = "gcr.io/k8s-ingress-image-push/ingress-gce-echo-amd64:master"
+	porterPort       = 80
 )
 
 var ErrSubnetExists = fmt.Errorf("ILB subnet in region already exists")
@@ -319,4 +327,110 @@ func trySubnetCreate(s *Sandbox, name, ipCidrRange string) error {
 func DeleteILBSubnet(s *Sandbox, name string) error {
 	klog.V(2).Infof("Deleting ILB Subnet %q", name)
 	return s.f.Cloud.BetaSubnetworks().Delete(context.Background(), meta.RegionalKey(name, s.f.Region))
+}
+
+// CreatePorterDeployment creates a Deployment with porter image.
+func CreatePorterDeployment(s *Sandbox, name string, replics int32, version string) error {
+	env := fmt.Sprintf("SERVE_PORT_%d", porterPort)
+	labels := map[string]string{"app": "porter", "version": version}
+	deployment := apiappsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{Namespace: s.Namespace, Name: name},
+		Spec: apiappsv1.DeploymentSpec{
+			Replicas: &replics,
+			Selector: &metav1.LabelSelector{MatchLabels: labels},
+			Template: apiv1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Labels: labels},
+				Spec: apiv1.PodSpec{
+					Containers: []apiv1.Container{
+						{
+							Name:  "hostname",
+							Image: "gcr.io/kubernetes-e2e-test-images/porter-alpine:1.0",
+							Env:   []apiv1.EnvVar{{Name: env, Value: env}},
+							Ports: []apiv1.ContainerPort{{Name: "server", ContainerPort: porterPort}},
+						},
+					},
+				},
+			},
+		},
+	}
+	_, err := s.f.Clientset.AppsV1().Deployments(s.Namespace).Create(&deployment)
+	return err
+}
+
+// CreatePorterService creates a service that refers to Porter pods.
+func CreatePorterService(s *Sandbox, name string) error {
+	svc := apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{Namespace: s.Namespace, Name: name},
+		Spec: apiv1.ServiceSpec{
+			Selector: map[string]string{"app": "porter"},
+			Ports: []apiv1.ServicePort{
+				{
+					Port: porterPort,
+					Name: "http",
+				},
+			},
+		},
+	}
+	_, err := s.f.Clientset.CoreV1().Services(svc.Namespace).Create(&svc)
+	return err
+}
+
+// GetConfigMap gets ConfigMap and returns the Data field.
+func GetConfigMap(s *Sandbox, namespace, name string) (map[string]string, error) {
+	cm, err := s.f.Clientset.CoreV1().ConfigMaps(namespace).Get(name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return cm.Data, nil
+}
+
+// EnsureConfigMap ensures the namespace:name ConfigMap Data fieled, create if the target not exist.
+func EnsureConfigMap(s *Sandbox, namespace, name string, data map[string]string) error {
+	cm := v1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}, Data: data}
+	_, err := s.f.Clientset.CoreV1().ConfigMaps(namespace).Update(&cm)
+	if err != nil && errors.IsNotFound(err) {
+		_, err = s.f.Clientset.CoreV1().ConfigMaps(namespace).Create(&cm)
+	}
+	return err
+}
+
+// DeleteConfigMap deletes the namespace:name ConfigMap
+func DeleteConfigMap(s *Sandbox, namespace, name string) error {
+	return s.f.Clientset.CoreV1().ConfigMaps(namespace).Delete(name, &metav1.DeleteOptions{})
+}
+
+// EnsurePorterDestinationRule ensures the namespace:name DestinationRule.
+func EnsurePorterDestinationRule(s *Sandbox, name, svcName string, versions []string) error {
+	destinationRule := istioV1alpha3.DestinationRule{}
+	subset := []*istioV1alpha3.Subset{}
+	for _, v := range versions {
+		subset = append(subset, &istioV1alpha3.Subset{Name: v, Labels: map[string]string{"version": v}})
+	}
+	destinationRule.Subsets = subset
+	destinationRule.Host = svcName
+	spec, err := runtime.DefaultUnstructuredConverter.ToUnstructured(&destinationRule)
+	if err != nil {
+		return fmt.Errorf("Failed convert DestinationRule to Unstructured: %v", err)
+	}
+
+	usDr, err := s.f.DestinationRuleClient.Namespace(s.Namespace).Get(name, metav1.GetOptions{})
+	if err != nil && errors.IsNotFound(err) {
+		usDr := unstructured.Unstructured{}
+		usDr.SetName(name)
+		usDr.SetNamespace(s.Namespace)
+		usDr.SetKind("DestinationRule")
+		usDr.SetAPIVersion("networking.istio.io/v1alpha3")
+		usDr.Object["spec"] = spec
+
+		_, err = s.f.DestinationRuleClient.Namespace(s.Namespace).Create(&usDr, metav1.CreateOptions{})
+		return err
+	}
+	usDr.Object["spec"] = spec
+	_, err = s.f.DestinationRuleClient.Namespace(s.Namespace).Update(usDr, metav1.UpdateOptions{})
+	return err
+}
+
+// DeleteDestinationRule deletes the namespace:name DestinationRule.
+func DeleteDestinationRule(s *Sandbox, namespace, name string) error {
+	return s.f.DestinationRuleClient.Namespace(namespace).Delete(name, &metav1.DeleteOptions{})
 }
