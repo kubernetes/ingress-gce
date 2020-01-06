@@ -45,6 +45,7 @@ import (
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	ingsync "k8s.io/ingress-gce/pkg/sync"
 	"k8s.io/ingress-gce/pkg/tls"
@@ -89,6 +90,9 @@ type LoadBalancerController struct {
 
 	// Ingress sync + GC implementation
 	ingSyncer ingsync.Syncer
+
+	// Ingress usage metrics.
+	metrics metrics.IngressMetricsCollector
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
@@ -119,6 +123,7 @@ func NewLoadBalancerController(
 		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
 		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud),
 		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool),
+		metrics:       ctx.ControllerMetrics,
 	}
 	lbc.ingSyncer = ingsync.NewIngressSyncer(&lbc)
 
@@ -531,6 +536,10 @@ func (lbc *LoadBalancerController) sync(key string) error {
 		if err != nil && ingExists {
 			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "GC", fmt.Sprintf("Error during GC: %v", err))
 		}
+		// Delete the ingress state for metrics after GC is successful.
+		if err == nil && ingExists {
+			lbc.metrics.DeleteIngress(key)
+		}
 		return err
 	}
 
@@ -555,6 +564,9 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	syncErr := lbc.ingSyncer.Sync(syncState)
 	if syncErr != nil {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", fmt.Sprintf("Error during sync: %v", syncErr.Error()))
+	} else {
+		// Insert/update the ingress state for metrics after successful sync.
+		lbc.metrics.SetIngress(key, metrics.NewIngressState(ing, urlMap.AllServicePorts()))
 	}
 
 	// Garbage collection will occur regardless of an error occurring. If an error occurred,
