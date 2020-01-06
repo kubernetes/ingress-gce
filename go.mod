@@ -92,7 +92,7 @@ replace (
 	k8s.io/kube-scheduler => k8s.io/kube-scheduler v0.0.0-20190620085909-5dfb14b3a101
 	k8s.io/kubelet => k8s.io/kubelet v0.0.0-20190620085837-98477dc0c87c
 	k8s.io/kubernetes => k8s.io/kubernetes v1.15.0
-	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.0.0-20191114112650-b5fed2ccee23
+	k8s.io/legacy-cloud-providers => k8s.io/legacy-cloud-providers v0.0.0-20191210234026-b5fed2ccee23
 	k8s.io/metrics => k8s.io/metrics v0.0.0-20190620085627-5b02f62e9559
 	k8s.io/sample-apiserver => k8s.io/sample-apiserver v0.0.0-20190620085357-8191e314a1f7
 )
