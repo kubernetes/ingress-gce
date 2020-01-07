@@ -43,6 +43,8 @@ const (
 	HttpsProtocol            = Protocol("HTTPS")
 	targetHTTPProxyResource  = "targetHttpProxies"
 	targetHTTPSProxyResource = "targetHttpsProxies"
+	kubeSystemNS             = "kube-system"
+	defaultHTTPBackend       = "default-http-backend"
 )
 
 // Protocol specifies GCE loadbalancer protocol.
@@ -228,7 +230,7 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 			} else {
 				if options != nil && options.SkipDefaultBackend {
 					desc := utils.DescriptionFromString(bs.Description)
-					if desc.ServiceName == "kube-system/default-http-backend" {
+					if desc.ServiceName == fmt.Sprintf("%s/%s", kubeSystemNS, defaultHTTPBackend) {
 						continue
 					}
 				}
@@ -237,12 +239,20 @@ func (g *GCLB) CheckResourceDeletion(ctx context.Context, c cloud.Cloud, options
 		}
 	}
 	for k := range g.NetworkEndpointGroup {
-		_, err := c.BetaNetworkEndpointGroups().Get(ctx, &k)
+		ns, err := c.BetaNetworkEndpointGroups().Get(ctx, &k)
 		if err != nil {
 			if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
 				return fmt.Errorf("NetworkEndpointGroup %s is not deleted/error to get: %s", k.Name, err)
 			}
 		} else {
+			// TODO(smatti): Add NEG description to make this less error prone.
+			// This is to ensure that ILB tests that use NEGs are not blocked on default NEG deletion.
+			// Also, the default NEG may not get recognized here if default http backend name is changed
+			// to cause truncation.
+			if options != nil && options.SkipDefaultBackend &&
+				strings.Contains(ns.Name, fmt.Sprintf("%s-%s", kubeSystemNS, defaultHTTPBackend)) {
+				continue
+			}
 			resources = append(resources, k)
 		}
 	}
