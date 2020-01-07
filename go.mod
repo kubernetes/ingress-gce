@@ -18,6 +18,7 @@ require (
 	github.com/mdempsky/maligned v0.0.0-20180708014732-6e39bd26a8c8 // indirect
 	github.com/prometheus/client_golang v1.0.0
 	github.com/spf13/pflag v1.0.5
+	github.com/stretchr/testify v1.3.0
 	github.com/tsenart/deadcode v0.0.0-20160724212837-210d2dc333e9 // indirect
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	google.golang.org/api v0.6.1-0.20190607001116-5213b8090861
