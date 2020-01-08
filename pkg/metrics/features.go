@@ -59,10 +59,11 @@ const (
 	managedCertsForTLS     = feature("ManagedCertsForTLS")
 	staticGlobalIP         = feature("StaticGlobalIP")
 
-	servicePort               = feature("L7LBServicePort")
-	externalServicePort       = feature("L7XLBServicePort")
-	internalServicePort       = feature("L7ILBServicePort")
-	neg                       = feature("NEG")
+	servicePort         = feature("L7LBServicePort")
+	externalServicePort = feature("L7XLBServicePort")
+	internalServicePort = feature("L7ILBServicePort")
+	neg                 = feature("NEG")
+
 	cloudCDN                  = feature("CloudCDN")
 	cloudArmor                = feature("CloudArmor")
 	cloudIAP                  = feature("CloudIAP")
@@ -71,6 +72,10 @@ const (
 	clientIPAffinity          = feature("ClientIPAffinity")
 	cookieAffinity            = feature("CookieAffinity")
 	customRequestHeaders      = feature("CustomRequestHeaders")
+
+	standaloneNeg = feature("StandaloneNEG")
+	ingressNeg    = feature("IngressNEG")
+	asmNeg        = feature("AsmNEG")
 )
 
 // featuresForIngress returns the list of features for given ingress.

@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"reflect"
 )
 
 var (
@@ -491,7 +492,7 @@ func TestFeaturesForServicePort(t *testing.T) {
 	}
 }
 
-func TestComputeMetrics(t *testing.T) {
+func TestComputeIngressMetrics(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		desc               string
@@ -696,7 +697,7 @@ func TestComputeMetrics(t *testing.T) {
 				ingKey := fmt.Sprintf("%s/%s", defaultNamespace, ingState.ingress.Name)
 				newMetrics.SetIngress(ingKey, ingState)
 			}
-			gotIngressCount, gotSvcPortCount := newMetrics.computeMetrics()
+			gotIngressCount, gotSvcPortCount := newMetrics.computeIngressMetrics()
 			if diff := cmp.Diff(tc.expectIngressCount, gotIngressCount); diff != "" {
 				t.Errorf("Got diff for ingress features count (-want +got):\n%s", diff)
 			}
@@ -704,5 +705,73 @@ func TestComputeMetrics(t *testing.T) {
 				t.Fatalf("Got diff for service port features count (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestComputeNegMetrics(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		desc           string
+		negStates      []NegServiceState
+		expectNegCount map[feature]int
+	}{
+		{
+			"empty input",
+			[]NegServiceState{},
+			map[feature]int{
+				standaloneNeg: 0,
+				ingressNeg:    0,
+				asmNeg:        0,
+				neg:           0,
+			},
+		},
+		{
+			"one neg service",
+			[]NegServiceState{
+				newNegState(0, 0, 1),
+			},
+			map[feature]int{
+				standaloneNeg: 0,
+				ingressNeg:    0,
+				asmNeg:        1,
+				neg:           1,
+			},
+		},
+		{
+			"many neg services",
+			[]NegServiceState{
+				newNegState(0, 0, 1),
+				newNegState(0, 1, 0),
+				newNegState(5, 0, 0),
+				newNegState(5, 3, 2),
+			},
+			map[feature]int{
+				standaloneNeg: 10,
+				ingressNeg:    4,
+				asmNeg:        3,
+				neg:           17,
+			},
+		},
+	} {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			newMetrics := NewControllerMetrics()
+			for i, negState := range tc.negStates {
+				newMetrics.SetNegService(string(i), negState)
+			}
+			output := newMetrics.computeNegMetrics()
+			if !reflect.DeepEqual(output, tc.expectNegCount) {
+				t.Errorf("For case %q, expect output %v, but got %v", tc.desc, tc.expectNegCount, output)
+			}
+		})
+	}
+}
+
+func newNegState(standalone, ingress, asm int) NegServiceState {
+	return NegServiceState{
+		IngressNeg:    ingress,
+		StandaloneNeg: standalone,
+		AsmNeg:        asm,
 	}
 }

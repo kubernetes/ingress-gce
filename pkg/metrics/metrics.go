@@ -48,6 +48,13 @@ var (
 		},
 		[]string{label},
 	)
+	networkEndpointGroupCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "number_of_negs",
+			Help: "Number of NEGs",
+		},
+		[]string{label},
+	)
 )
 
 // init registers ingress usage metrics.
@@ -63,13 +70,16 @@ func NewIngressState(ing *v1beta1.Ingress, svcPorts []utils.ServicePort) Ingress
 
 // ControllerMetrics contains the state of the all ingresses.
 type ControllerMetrics struct {
+	// ingressMap is a map between ingress key to ingress state
 	ingressMap map[string]IngressState
+	// negMap is a map between service key to neg state
+	negMap map[string]NegServiceState
 	sync.Mutex
 }
 
 // NewControllerMetrics initializes ControllerMetrics and starts a go routine to compute and export metrics periodically.
 func NewControllerMetrics() *ControllerMetrics {
-	return &ControllerMetrics{ingressMap: make(map[string]IngressState)}
+	return &ControllerMetrics{ingressMap: make(map[string]IngressState), negMap: make(map[string]NegServiceState)}
 }
 
 // servicePortKey defines a service port uniquely.
@@ -101,7 +111,7 @@ func (im *ControllerMetrics) Run(stopCh <-chan struct{}) {
 	<-stopCh
 }
 
-// SetIngress implements ControllerMetrics.
+// SetIngress implements IngressMetricsCollector.
 func (im *ControllerMetrics) SetIngress(ingKey string, ing IngressState) {
 	im.Lock()
 	defer im.Unlock()
@@ -112,7 +122,7 @@ func (im *ControllerMetrics) SetIngress(ingKey string, ing IngressState) {
 	im.ingressMap[ingKey] = ing
 }
 
-// DeleteIngress implements ControllerMetrics.
+// DeleteIngress implements IngressMetricsCollector.
 func (im *ControllerMetrics) DeleteIngress(ingKey string) {
 	im.Lock()
 	defer im.Unlock()
@@ -120,9 +130,29 @@ func (im *ControllerMetrics) DeleteIngress(ingKey string) {
 	delete(im.ingressMap, ingKey)
 }
 
+// SetIngress implements NegMetricsCollector.
+func (im *ControllerMetrics) SetNegService(svcKey string, negState NegServiceState) {
+	im.Lock()
+	defer im.Unlock()
+
+	if im.negMap == nil {
+		klog.Fatalf("Ingress Metrics failed to initialize correctly.")
+	}
+	im.negMap[svcKey] = negState
+}
+
+// DeleteIngress implements NegMetricsCollector.
+func (im *ControllerMetrics) DeleteNegService(svcKey string) {
+	im.Lock()
+	defer im.Unlock()
+
+	delete(im.negMap, svcKey)
+}
+
 // export computes and exports ingress usage metrics.
 func (im *ControllerMetrics) export() {
-	ingCount, svcPortCount := im.computeMetrics()
+	ingCount, svcPortCount := im.computeIngressMetrics()
+	negCount := im.computeNegMetrics()
 
 	klog.V(3).Infof("Exporting ingress usage metrics. Ingress Count: %#v, Service Port count: %#v", ingCount, svcPortCount)
 	for feature, count := range ingCount {
@@ -132,13 +162,17 @@ func (im *ControllerMetrics) export() {
 	for feature, count := range svcPortCount {
 		servicePortCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
+
+	for feature, count := range negCount {
+		networkEndpointGroupCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
+	}
 	klog.V(3).Infof("Ingress usage metrics exported.")
 }
 
-// computeMetrics traverses all ingresses and computes,
+// computeIngressMetrics traverses all ingresses and computes,
 // 1. Count of GCE ingresses for each feature.
 // 2. Count of service-port pairs that backs up a GCE ingress for each feature.
-func (im *ControllerMetrics) computeMetrics() (map[feature]int, map[feature]int) {
+func (im *ControllerMetrics) computeIngressMetrics() (map[feature]int, map[feature]int) {
 	ingCount, svcPortCount := initializeCounts()
 	// servicePortFeatures tracks the list of service-ports and their features.
 	// This is to avoid re-computing features for a service-port.
@@ -188,6 +222,25 @@ func (im *ControllerMetrics) computeMetrics() (map[feature]int, map[feature]int)
 
 	klog.V(4).Infof("Ingress usage metrics computed.")
 	return ingCount, svcPortCount
+}
+
+// computeNegMetrics aggregates NEG metrics in the cache
+func (im *ControllerMetrics) computeNegMetrics() map[feature]int {
+	counts := map[feature]int{
+		standaloneNeg: 0,
+		ingressNeg:    0,
+		asmNeg:        0,
+		neg:           0,
+	}
+
+	for key, negState := range im.negMap {
+		klog.V(6).Infof("For service %s, it has standaloneNegs:%v, ingressNegs:%v and asmNeg:%v", key, negState.StandaloneNeg, negState.IngressNeg, negState.AsmNeg)
+		counts[standaloneNeg] += negState.StandaloneNeg
+		counts[ingressNeg] += negState.IngressNeg
+		counts[asmNeg] += negState.AsmNeg
+		counts[neg] += negState.AsmNeg + negState.StandaloneNeg + negState.IngressNeg
+	}
+	return counts
 }
 
 // initializeCounts initializes feature count maps for ingress and service ports.
