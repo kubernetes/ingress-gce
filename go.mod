@@ -3,7 +3,7 @@ module k8s.io/ingress-gce
 go 1.12
 
 require (
-	github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190822182118-27a4ced34534
+	github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20200108224937-97aee3f17ab3
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/beorn7/perks v1.0.0 // indirect
 	github.com/emicklei/go-restful v2.9.3+incompatible // indirect
@@ -18,10 +18,10 @@ require (
 	github.com/mdempsky/maligned v0.0.0-20180708014732-6e39bd26a8c8 // indirect
 	github.com/prometheus/client_golang v1.0.0
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.3.0
+	github.com/stretchr/testify v1.4.0
 	github.com/tsenart/deadcode v0.0.0-20160724212837-210d2dc333e9 // indirect
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
-	google.golang.org/api v0.6.1-0.20190607001116-5213b8090861
+	google.golang.org/api v0.15.0
 	gopkg.in/gcfg.v1 v1.2.3 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	istio.io/api v0.0.0-20190809125725-591cf32c1d0e
@@ -40,7 +40,7 @@ require (
 
 replace (
 	cloud.google.com/go => cloud.google.com/go v0.37.4
-	github.com/GoogleCloudPlatform/k8s-cloud-provider => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20190803003326-2de84d8b30ca
+	github.com/GoogleCloudPlatform/k8s-cloud-provider => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20200108224937-97aee3f17ab3
 	github.com/PuerkitoBio/purell => github.com/PuerkitoBio/purell v1.1.1
 	github.com/beorn7/perks => github.com/beorn7/perks v1.0.0
 	github.com/emicklei/go-restful => github.com/emicklei/go-restful v2.9.3+incompatible
@@ -68,7 +68,7 @@ replace (
 	golang.org/x/oauth2 => golang.org/x/oauth2 v0.0.0-20190402181905-9f3314589c9a
 	golang.org/x/sys => golang.org/x/sys v0.0.0-20190422165155-953cdadca894
 	golang.org/x/time => golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
-	google.golang.org/api => google.golang.org/api v0.6.1-0.20190607001116-5213b8090861
+	google.golang.org/api => google.golang.org/api v0.15.0
 	gopkg.in/gcfg.v1 => gopkg.in/gcfg.v1 v1.2.3
 	gopkg.in/inf.v0 => gopkg.in/inf.v0 v0.9.1
 	gopkg.in/warnings.v0 => gopkg.in/warnings.v0 v0.1.2
