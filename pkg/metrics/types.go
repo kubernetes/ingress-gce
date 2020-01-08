@@ -27,6 +27,16 @@ type IngressState struct {
 	servicePorts []utils.ServicePort
 }
 
+// NegServiceState contains all the neg usage associated with one service
+type NegServiceState struct {
+	// standaloneNeg is the count of standalone NEG
+	StandaloneNeg int
+	// ingressNeg is the count of NEGs created for ingress
+	IngressNeg int
+	// asmNeg is the count of NEGs created for ASM
+	AsmNeg int
+}
+
 // IngressMetricsCollector is an interface to update/delete ingress states in the cache
 // that is used for computing ingress usage metrics.
 type IngressMetricsCollector interface {
@@ -34,4 +44,13 @@ type IngressMetricsCollector interface {
 	SetIngress(ingKey string, ing IngressState)
 	// DeleteIngress removes the given ingress key.
 	DeleteIngress(ingKey string)
+}
+
+// NegMetricsCollector is an interface to update/delete Neg states in the cache
+// that is used for computing neg usage metrics.
+type NegMetricsCollector interface {
+	// SetNegService adds/updates neg state for given service key.
+	SetNegService(svcKey string, negState NegServiceState)
+	// DeleteNegService removes the given service key.
+	DeleteNegService(svcKey string)
 }
