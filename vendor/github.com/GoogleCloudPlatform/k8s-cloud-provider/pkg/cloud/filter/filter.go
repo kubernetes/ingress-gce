@@ -43,32 +43,32 @@ var (
 	None *F
 )
 
-// Regexp returns a filter for fieldName ~ regexp v.
+// Regexp returns a filter for fieldName eq regexp v.
 func Regexp(fieldName, v string) *F {
 	return (&F{}).AndRegexp(fieldName, v)
 }
 
-// NotRegexp returns a filter for fieldName !~ regexp v.
+// NotRegexp returns a filter for fieldName ne regexp v.
 func NotRegexp(fieldName, v string) *F {
 	return (&F{}).AndNotRegexp(fieldName, v)
 }
 
-// EqualInt returns a filter for fieldName = v.
+// EqualInt returns a filter for fieldName eq v.
 func EqualInt(fieldName string, v int) *F {
 	return (&F{}).AndEqualInt(fieldName, v)
 }
 
-// NotEqualInt returns a filter for fieldName != v.
+// NotEqualInt returns a filter for fieldName ne v.
 func NotEqualInt(fieldName string, v int) *F {
 	return (&F{}).AndNotEqualInt(fieldName, v)
 }
 
-// EqualBool returns a filter for fieldName = v.
+// EqualBool returns a filter for fieldName eq v.
 func EqualBool(fieldName string, v bool) *F {
 	return (&F{}).AndEqualBool(fieldName, v)
 }
 
-// NotEqualBool returns a filter for fieldName != v.
+// NotEqualBool returns a filter for fieldName ne v.
 func NotEqualBool(fieldName string, v bool) *F {
 	return (&F{}).AndNotEqualBool(fieldName, v)
 }
@@ -199,13 +199,16 @@ func (fp *filterPredicate) String() string {
 	var op string
 	switch fp.op {
 	case regexpEquals:
-		op = "~"
+		// GCE API maps regexp comparison to 'eq'
+		op = "eq"
 	case regexpNotEquals:
-		op = "!~"
+		op = "ne"
+	// Since GCE API does not allow using a mix of 'eq' and '=' operators,
+	// we use 'eq' everywhere
 	case equals:
-		op = "="
+		op = "eq"
 	case notEquals:
-		op = "!="
+		op = "ne"
 	default:
 		op = "invalidOp"
 	}
