@@ -316,7 +316,8 @@ func WaitForNegs(ctx context.Context, c cloud.Cloud, negName string, zones []str
 	return wait.Poll(negPollInterval, negPollTimeout, func() (bool, error) {
 		negs, err := fuzz.NetworkEndpointsInNegs(ctx, c, negName, zones)
 		if err != nil {
-			return false, fmt.Errorf("failed to retrieve NEG %v from zones %v: %v", negName, zones, err)
+			klog.Infof("WaitForNegs(%q, %v, %v, %v) failed to retrieve NEGs: %v", negName, zones, expectHealthy, expectCount, err)
+			return false, nil
 		}
 
 		if err := CheckNegs(negs, expectHealthy, expectCount); err != nil {
