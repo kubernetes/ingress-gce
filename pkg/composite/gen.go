@@ -3050,8 +3050,14 @@ func GetBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 			gceObj, err = gceCloud.Compute().BetaBackendServices().Get(ctx, key)
 		}
 	default:
-		klog.V(3).Infof("Getting ga BackendService %v", key.Name)
-		gceObj, err = gceCloud.Compute().BackendServices().Get(ctx, key)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Getting ga region BackendService %v", key.Name)
+			gceObj, err = gceCloud.Compute().RegionBackendServices().Get(ctx, key)
+		default:
+			klog.V(3).Infof("Getting ga BackendService %v", key.Name)
+			gceObj, err = gceCloud.Compute().BackendServices().Get(ctx, key)
+		}
 	}
 	if err != nil {
 		return nil, mc.Observe(err)
@@ -3091,8 +3097,14 @@ func ListBackendServices(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 			gceObjs, err = gceCloud.Compute().BetaBackendServices().List(ctx, filter.None)
 		}
 	default:
-		klog.V(3).Infof("Listing ga BackendService")
-		gceObjs, err = gceCloud.Compute().BackendServices().List(ctx, filter.None)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Listing ga region BackendService")
+			gceObjs, err = gceCloud.Compute().RegionBackendServices().List(ctx, key.Region, filter.None)
+		default:
+			klog.V(3).Infof("Listing ga BackendService")
+			gceObjs, err = gceCloud.Compute().BackendServices().List(ctx, filter.None)
+		}
 	}
 	if err != nil {
 		return nil, mc.Observe(err)
@@ -3597,8 +3609,14 @@ func GetHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*
 			gceObj, err = gceCloud.Compute().BetaHealthChecks().Get(ctx, key)
 		}
 	default:
-		klog.V(3).Infof("Getting ga HealthCheck %v", key.Name)
-		gceObj, err = gceCloud.Compute().HealthChecks().Get(ctx, key)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Getting ga region HealthCheck %v", key.Name)
+			gceObj, err = gceCloud.Compute().RegionHealthChecks().Get(ctx, key)
+		default:
+			klog.V(3).Infof("Getting ga HealthCheck %v", key.Name)
+			gceObj, err = gceCloud.Compute().HealthChecks().Get(ctx, key)
+		}
 	}
 	if err != nil {
 		return nil, mc.Observe(err)
@@ -3638,8 +3656,14 @@ func ListHealthChecks(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) 
 			gceObjs, err = gceCloud.Compute().BetaHealthChecks().List(ctx, filter.None)
 		}
 	default:
-		klog.V(3).Infof("Listing ga HealthCheck")
-		gceObjs, err = gceCloud.Compute().HealthChecks().List(ctx, filter.None)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Listing ga region HealthCheck")
+			gceObjs, err = gceCloud.Compute().RegionHealthChecks().List(ctx, key.Region, filter.None)
+		default:
+			klog.V(3).Infof("Listing ga HealthCheck")
+			gceObjs, err = gceCloud.Compute().HealthChecks().List(ctx, filter.None)
+		}
 	}
 	if err != nil {
 		return nil, mc.Observe(err)
@@ -4566,8 +4590,14 @@ func GetSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 			gceObj, err = gceCloud.Compute().BetaSslCertificates().Get(ctx, key)
 		}
 	default:
-		klog.V(3).Infof("Getting ga SslCertificate %v", key.Name)
-		gceObj, err = gceCloud.Compute().SslCertificates().Get(ctx, key)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Getting ga region SslCertificate %v", key.Name)
+			gceObj, err = gceCloud.Compute().RegionSslCertificates().Get(ctx, key)
+		default:
+			klog.V(3).Infof("Getting ga SslCertificate %v", key.Name)
+			gceObj, err = gceCloud.Compute().SslCertificates().Get(ctx, key)
+		}
 	}
 	if err != nil {
 		return nil, mc.Observe(err)
@@ -4607,8 +4637,14 @@ func ListSslCertificates(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 			gceObjs, err = gceCloud.Compute().BetaSslCertificates().List(ctx, filter.None)
 		}
 	default:
-		klog.V(3).Infof("Listing ga SslCertificate")
-		gceObjs, err = gceCloud.Compute().SslCertificates().List(ctx, filter.None)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Listing ga region SslCertificate")
+			gceObjs, err = gceCloud.Compute().RegionSslCertificates().List(ctx, key.Region, filter.None)
+		default:
+			klog.V(3).Infof("Listing ga SslCertificate")
+			gceObjs, err = gceCloud.Compute().SslCertificates().List(ctx, filter.None)
+		}
 	}
 	if err != nil {
 		return nil, mc.Observe(err)
@@ -4798,8 +4834,14 @@ func GetTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version
 			gceObj, err = gceCloud.Compute().BetaTargetHttpProxies().Get(ctx, key)
 		}
 	default:
-		klog.V(3).Infof("Getting ga TargetHttpProxy %v", key.Name)
-		gceObj, err = gceCloud.Compute().TargetHttpProxies().Get(ctx, key)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Getting ga region TargetHttpProxy %v", key.Name)
+			gceObj, err = gceCloud.Compute().RegionTargetHttpProxies().Get(ctx, key)
+		default:
+			klog.V(3).Infof("Getting ga TargetHttpProxy %v", key.Name)
+			gceObj, err = gceCloud.Compute().TargetHttpProxies().Get(ctx, key)
+		}
 	}
 	if err != nil {
 		return nil, mc.Observe(err)
@@ -4839,8 +4881,14 @@ func ListTargetHttpProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Vers
 			gceObjs, err = gceCloud.Compute().BetaTargetHttpProxies().List(ctx, filter.None)
 		}
 	default:
-		klog.V(3).Infof("Listing ga TargetHttpProxy")
-		gceObjs, err = gceCloud.Compute().TargetHttpProxies().List(ctx, filter.None)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Listing ga region TargetHttpProxy")
+			gceObjs, err = gceCloud.Compute().RegionTargetHttpProxies().List(ctx, key.Region, filter.None)
+		default:
+			klog.V(3).Infof("Listing ga TargetHttpProxy")
+			gceObjs, err = gceCloud.Compute().TargetHttpProxies().List(ctx, filter.None)
+		}
 	}
 	if err != nil {
 		return nil, mc.Observe(err)
@@ -5030,8 +5078,14 @@ func GetTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 			gceObj, err = gceCloud.Compute().BetaTargetHttpsProxies().Get(ctx, key)
 		}
 	default:
-		klog.V(3).Infof("Getting ga TargetHttpsProxy %v", key.Name)
-		gceObj, err = gceCloud.Compute().TargetHttpsProxies().Get(ctx, key)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Getting ga region TargetHttpsProxy %v", key.Name)
+			gceObj, err = gceCloud.Compute().RegionTargetHttpsProxies().Get(ctx, key)
+		default:
+			klog.V(3).Infof("Getting ga TargetHttpsProxy %v", key.Name)
+			gceObj, err = gceCloud.Compute().TargetHttpsProxies().Get(ctx, key)
+		}
 	}
 	if err != nil {
 		return nil, mc.Observe(err)
@@ -5071,8 +5125,14 @@ func ListTargetHttpsProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Ver
 			gceObjs, err = gceCloud.Compute().BetaTargetHttpsProxies().List(ctx, filter.None)
 		}
 	default:
-		klog.V(3).Infof("Listing ga TargetHttpsProxy")
-		gceObjs, err = gceCloud.Compute().TargetHttpsProxies().List(ctx, filter.None)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Listing ga region TargetHttpsProxy")
+			gceObjs, err = gceCloud.Compute().RegionTargetHttpsProxies().List(ctx, key.Region, filter.None)
+		default:
+			klog.V(3).Infof("Listing ga TargetHttpsProxy")
+			gceObjs, err = gceCloud.Compute().TargetHttpsProxies().List(ctx, filter.None)
+		}
 	}
 	if err != nil {
 		return nil, mc.Observe(err)
@@ -5309,8 +5369,14 @@ func GetUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*UrlMa
 			gceObj, err = gceCloud.Compute().BetaUrlMaps().Get(ctx, key)
 		}
 	default:
-		klog.V(3).Infof("Getting ga UrlMap %v", key.Name)
-		gceObj, err = gceCloud.Compute().UrlMaps().Get(ctx, key)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Getting ga region UrlMap %v", key.Name)
+			gceObj, err = gceCloud.Compute().RegionUrlMaps().Get(ctx, key)
+		default:
+			klog.V(3).Infof("Getting ga UrlMap %v", key.Name)
+			gceObj, err = gceCloud.Compute().UrlMaps().Get(ctx, key)
+		}
 	}
 	if err != nil {
 		return nil, mc.Observe(err)
@@ -5350,8 +5416,14 @@ func ListUrlMaps(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*U
 			gceObjs, err = gceCloud.Compute().BetaUrlMaps().List(ctx, filter.None)
 		}
 	default:
-		klog.V(3).Infof("Listing ga UrlMap")
-		gceObjs, err = gceCloud.Compute().UrlMaps().List(ctx, filter.None)
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Listing ga region UrlMap")
+			gceObjs, err = gceCloud.Compute().RegionUrlMaps().List(ctx, key.Region, filter.None)
+		default:
+			klog.V(3).Infof("Listing ga UrlMap")
+			gceObjs, err = gceCloud.Compute().UrlMaps().List(ctx, filter.None)
+		}
 	}
 	if err != nil {
 		return nil, mc.Observe(err)
