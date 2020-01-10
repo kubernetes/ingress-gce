@@ -473,7 +473,7 @@ func Get{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*{{
 	{{- if $onlyZonalKeySupported}}
 		klog.V(3).Infof("Getting ga zonal {{.Name}} %v", key.Name)
 		gceObj, err = gceCloud.Compute().{{.GetCloudProviderName}}().Get(ctx, key)
-	{{- else if .IsDefaultRegionalService}}{{/* In GA, only Global<ResourceName> api exists, no Region<ResourceName> */}}
+	{{- else}}
 		switch key.Type() {
 		case meta.Regional:
       		klog.V(3).Infof("Getting ga region {{.Name}} %v", key.Name)
@@ -482,9 +482,6 @@ func Get{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*{{
       		klog.V(3).Infof("Getting ga {{.Name}} %v", key.Name)
 		gceObj, err = gceCloud.Compute().{{$globalKeyFiller}}{{.GetCloudProviderName}}().Get(ctx, key)
 		}
-	{{- else}}
-		klog.V(3).Infof("Getting ga {{.Name}} %v", key.Name)
-		gceObj, err = gceCloud.Compute().{{$globalKeyFiller}}{{.GetCloudProviderName}}().Get(ctx, key)
 	{{- end}} {{/* $onlyZonalKeySupported*/}}
 	}
 	if err != nil {
@@ -555,7 +552,7 @@ func List{{.GetCloudProviderName}}(gceCloud *gce.Cloud, key *meta.Key, version m
 	{{- if $onlyZonalKeySupported}}
 		klog.V(3).Infof("Listing ga zone{{.Name}}")
 		gceObjs, err = gceCloud.Compute().{{.GetCloudProviderName}}().List(ctx, key.Zone, filter.None)
-    {{- else if .IsDefaultRegionalService}}{{/* In GA, only Global<ResourceName> api exists, no Region<ResourceName> */}}
+    {{- else}}
 		switch key.Type() {
 		case meta.Regional:
  			klog.V(3).Infof("Listing ga region {{.Name}}")
@@ -564,9 +561,6 @@ func List{{.GetCloudProviderName}}(gceCloud *gce.Cloud, key *meta.Key, version m
  			klog.V(3).Infof("Listing ga {{.Name}}")
 			gceObjs, err = gceCloud.Compute().{{$globalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, filter.None)
 		}
-    {{- else}}
-		klog.V(3).Infof("Listing ga {{.Name}}")
-		gceObjs, err = gceCloud.Compute().{{$globalKeyFiller}}{{.GetCloudProviderName}}().List(ctx, filter.None)
     {{- end}} {{/* $onlyZonalKeySupported*/}}
 	}
 	if err != nil {
