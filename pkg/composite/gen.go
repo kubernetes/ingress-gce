@@ -2928,8 +2928,15 @@ func CreateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *Ba
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating ga BackendService %v", ga.Name)
-		return mc.Observe(gceCloud.Compute().BackendServices().Insert(ctx, key, ga))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Creating ga region BackendService %v", ga.Name)
+			ga.Region = key.Region
+			return mc.Observe(gceCloud.Compute().RegionBackendServices().Insert(ctx, key, ga))
+		default:
+			klog.V(3).Infof("Creating ga BackendService %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().BackendServices().Insert(ctx, key, ga))
+		}
 	}
 }
 
@@ -2969,8 +2976,14 @@ func UpdateBackendService(gceCloud *gce.Cloud, key *meta.Key, backendService *Ba
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Updating ga BackendService %v", ga.Name)
-		return mc.Observe(gceCloud.Compute().BackendServices().Update(ctx, key, ga))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Updating ga region BackendService %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().RegionBackendServices().Update(ctx, key, ga))
+		default:
+			klog.V(3).Infof("Updating ga BackendService %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().BackendServices().Update(ctx, key, ga))
+		}
 	}
 }
 
@@ -2999,8 +3012,14 @@ func DeleteBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Versi
 			return mc.Observe(gceCloud.Compute().BetaBackendServices().Delete(ctx, key))
 		}
 	default:
-		klog.V(3).Infof("Deleting ga BackendService %v", key.Name)
-		return mc.Observe(gceCloud.Compute().BackendServices().Delete(ctx, key))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting ga region BackendService %v", key.Name)
+			return mc.Observe(gceCloud.Compute().RegionBackendServices().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting ga BackendService %v", key.Name)
+			return mc.Observe(gceCloud.Compute().BackendServices().Delete(ctx, key))
+		}
 	}
 }
 
@@ -3456,8 +3475,15 @@ func CreateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCh
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating ga HealthCheck %v", ga.Name)
-		return mc.Observe(gceCloud.Compute().HealthChecks().Insert(ctx, key, ga))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Creating ga region HealthCheck %v", ga.Name)
+			ga.Region = key.Region
+			return mc.Observe(gceCloud.Compute().RegionHealthChecks().Insert(ctx, key, ga))
+		default:
+			klog.V(3).Infof("Creating ga HealthCheck %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().HealthChecks().Insert(ctx, key, ga))
+		}
 	}
 }
 
@@ -3497,8 +3523,14 @@ func UpdateHealthCheck(gceCloud *gce.Cloud, key *meta.Key, healthCheck *HealthCh
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Updating ga HealthCheck %v", ga.Name)
-		return mc.Observe(gceCloud.Compute().HealthChecks().Update(ctx, key, ga))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Updating ga region HealthCheck %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().RegionHealthChecks().Update(ctx, key, ga))
+		default:
+			klog.V(3).Infof("Updating ga HealthCheck %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().HealthChecks().Update(ctx, key, ga))
+		}
 	}
 }
 
@@ -3527,8 +3559,14 @@ func DeleteHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 			return mc.Observe(gceCloud.Compute().BetaHealthChecks().Delete(ctx, key))
 		}
 	default:
-		klog.V(3).Infof("Deleting ga HealthCheck %v", key.Name)
-		return mc.Observe(gceCloud.Compute().HealthChecks().Delete(ctx, key))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting ga region HealthCheck %v", key.Name)
+			return mc.Observe(gceCloud.Compute().RegionHealthChecks().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting ga HealthCheck %v", key.Name)
+			return mc.Observe(gceCloud.Compute().HealthChecks().Delete(ctx, key))
+		}
 	}
 }
 
@@ -4453,8 +4491,15 @@ func CreateSslCertificate(gceCloud *gce.Cloud, key *meta.Key, sslCertificate *Ss
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating ga SslCertificate %v", ga.Name)
-		return mc.Observe(gceCloud.Compute().SslCertificates().Insert(ctx, key, ga))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Creating ga region SslCertificate %v", ga.Name)
+			ga.Region = key.Region
+			return mc.Observe(gceCloud.Compute().RegionSslCertificates().Insert(ctx, key, ga))
+		default:
+			klog.V(3).Infof("Creating ga SslCertificate %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().SslCertificates().Insert(ctx, key, ga))
+		}
 	}
 }
 
@@ -4483,8 +4528,14 @@ func DeleteSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Versi
 			return mc.Observe(gceCloud.Compute().BetaSslCertificates().Delete(ctx, key))
 		}
 	default:
-		klog.V(3).Infof("Deleting ga SslCertificate %v", key.Name)
-		return mc.Observe(gceCloud.Compute().SslCertificates().Delete(ctx, key))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting ga region SslCertificate %v", key.Name)
+			return mc.Observe(gceCloud.Compute().RegionSslCertificates().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting ga SslCertificate %v", key.Name)
+			return mc.Observe(gceCloud.Compute().SslCertificates().Delete(ctx, key))
+		}
 	}
 }
 
@@ -4672,8 +4723,15 @@ func CreateTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpProxy *
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating ga TargetHttpProxy %v", ga.Name)
-		return mc.Observe(gceCloud.Compute().TargetHttpProxies().Insert(ctx, key, ga))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Creating ga region TargetHttpProxy %v", ga.Name)
+			ga.Region = key.Region
+			return mc.Observe(gceCloud.Compute().RegionTargetHttpProxies().Insert(ctx, key, ga))
+		default:
+			klog.V(3).Infof("Creating ga TargetHttpProxy %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().TargetHttpProxies().Insert(ctx, key, ga))
+		}
 	}
 }
 
@@ -4702,8 +4760,14 @@ func DeleteTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Vers
 			return mc.Observe(gceCloud.Compute().BetaTargetHttpProxies().Delete(ctx, key))
 		}
 	default:
-		klog.V(3).Infof("Deleting ga TargetHttpProxy %v", key.Name)
-		return mc.Observe(gceCloud.Compute().TargetHttpProxies().Delete(ctx, key))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting ga region TargetHttpProxy %v", key.Name)
+			return mc.Observe(gceCloud.Compute().RegionTargetHttpProxies().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting ga TargetHttpProxy %v", key.Name)
+			return mc.Observe(gceCloud.Compute().TargetHttpProxies().Delete(ctx, key))
+		}
 	}
 }
 
@@ -4891,8 +4955,15 @@ func CreateTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating ga TargetHttpsProxy %v", ga.Name)
-		return mc.Observe(gceCloud.Compute().TargetHttpsProxies().Insert(ctx, key, ga))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Creating ga region TargetHttpsProxy %v", ga.Name)
+			ga.Region = key.Region
+			return mc.Observe(gceCloud.Compute().RegionTargetHttpsProxies().Insert(ctx, key, ga))
+		default:
+			klog.V(3).Infof("Creating ga TargetHttpsProxy %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().TargetHttpsProxies().Insert(ctx, key, ga))
+		}
 	}
 }
 
@@ -4921,8 +4992,14 @@ func DeleteTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Ver
 			return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().Delete(ctx, key))
 		}
 	default:
-		klog.V(3).Infof("Deleting ga TargetHttpsProxy %v", key.Name)
-		return mc.Observe(gceCloud.Compute().TargetHttpsProxies().Delete(ctx, key))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting ga region TargetHttpsProxy %v", key.Name)
+			return mc.Observe(gceCloud.Compute().RegionTargetHttpsProxies().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting ga TargetHttpsProxy %v", key.Name)
+			return mc.Observe(gceCloud.Compute().TargetHttpsProxies().Delete(ctx, key))
+		}
 	}
 }
 
@@ -5110,8 +5187,15 @@ func CreateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap) error {
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Creating ga UrlMap %v", ga.Name)
-		return mc.Observe(gceCloud.Compute().UrlMaps().Insert(ctx, key, ga))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Creating ga region UrlMap %v", ga.Name)
+			ga.Region = key.Region
+			return mc.Observe(gceCloud.Compute().RegionUrlMaps().Insert(ctx, key, ga))
+		default:
+			klog.V(3).Infof("Creating ga UrlMap %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().UrlMaps().Insert(ctx, key, ga))
+		}
 	}
 }
 
@@ -5151,8 +5235,14 @@ func UpdateUrlMap(gceCloud *gce.Cloud, key *meta.Key, urlMap *UrlMap) error {
 		if err != nil {
 			return err
 		}
-		klog.V(3).Infof("Updating ga UrlMap %v", ga.Name)
-		return mc.Observe(gceCloud.Compute().UrlMaps().Update(ctx, key, ga))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Updating ga region UrlMap %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().RegionUrlMaps().Update(ctx, key, ga))
+		default:
+			klog.V(3).Infof("Updating ga UrlMap %v", ga.Name)
+			return mc.Observe(gceCloud.Compute().UrlMaps().Update(ctx, key, ga))
+		}
 	}
 }
 
@@ -5181,8 +5271,14 @@ func DeleteUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) erro
 			return mc.Observe(gceCloud.Compute().BetaUrlMaps().Delete(ctx, key))
 		}
 	default:
-		klog.V(3).Infof("Deleting ga UrlMap %v", key.Name)
-		return mc.Observe(gceCloud.Compute().UrlMaps().Delete(ctx, key))
+		switch key.Type() {
+		case meta.Regional:
+			klog.V(3).Infof("Deleting ga region UrlMap %v", key.Name)
+			return mc.Observe(gceCloud.Compute().RegionUrlMaps().Delete(ctx, key))
+		default:
+			klog.V(3).Infof("Deleting ga UrlMap %v", key.Name)
+			return mc.Observe(gceCloud.Compute().UrlMaps().Delete(ctx, key))
+		}
 	}
 }
 

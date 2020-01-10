@@ -278,7 +278,7 @@ func Create{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, {{.VarName}} *{{.Name}}
 	{{- if $onlyZonalKeySupported}}
 		klog.V(3).Infof("Creating ga zonal {{.Name}} %v", ga.Name)
 		return mc.Observe(gceCloud.Compute().{{.GetCloudProviderName}}().Insert(ctx, key, ga))
-	{{- else if .IsDefaultRegionalService}} {{/* In GA, only Global<ResourceName> api exists, no Region<ResourceName> */}}
+	{{- else}}
 		switch key.Type() {
 		case meta.Regional:
 			klog.V(3).Infof("Creating ga region {{.Name}} %v", ga.Name)
@@ -288,9 +288,6 @@ func Create{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, {{.VarName}} *{{.Name}}
 			klog.V(3).Infof("Creating ga {{.Name}} %v", ga.Name)
 			return mc.Observe(gceCloud.Compute().{{$globalKeyFiller}}{{.GetCloudProviderName}}().Insert(ctx, key, ga))
 		}
-	{{- else}}
-		klog.V(3).Infof("Creating ga {{.Name}} %v", ga.Name)
-		return mc.Observe(gceCloud.Compute().{{.GetCloudProviderName}}().Insert(ctx, key, ga))
 	{{- end}} {{/* $onlyZonalKeySupported*/}}
 	}
 }
@@ -354,7 +351,7 @@ func Update{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, {{.VarName}} *{{.Name}}
 	{{- if $onlyZonalKeySupported}}
 		klog.V(3).Infof("Updating ga zonal {{.Name}} %v", ga.Name)
 		return mc.Observe(gceCloud.Compute().{{.GetCloudProviderName}}().Update(ctx, key, ga))
-	{{- else if .IsDefaultRegionalService}} {{/* In GA, only Global<ResourceName> api exists, no Region<ResourceName> */}}
+	{{- else}}
 		switch key.Type() {
 		case meta.Regional:
 			klog.V(3).Infof("Updating ga region {{.Name}} %v", ga.Name)
@@ -363,9 +360,6 @@ func Update{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, {{.VarName}} *{{.Name}}
 			klog.V(3).Infof("Updating ga {{.Name}} %v", ga.Name)
 			return mc.Observe(gceCloud.Compute().{{$globalKeyFiller}}{{.GetCloudProviderName}}().Update(ctx, key, ga))
 		}
-	{{- else}}
-		klog.V(3).Infof("Updating ga {{.Name}} %v", ga.Name)
-		return mc.Observe(gceCloud.Compute().{{$globalKeyFiller}}{{.GetCloudProviderName}}().Update(ctx, key, ga))
 	{{- end}} {{/* $onlyZonalKeySupported*/}}
 	}
 }
@@ -417,7 +411,7 @@ func Delete{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) e
 	{{- if $onlyZonalKeySupported}}
 		klog.V(3).Infof("Deleting ga zonal {{.Name}} %v", key.Name)
 		return mc.Observe(gceCloud.Compute().{{.GetCloudProviderName}}().Delete(ctx, key))
-	{{- else if .IsDefaultRegionalService}}
+	{{- else}}
 		switch key.Type() {
 		case meta.Regional:
 			klog.V(3).Infof("Deleting ga region {{.Name}} %v", key.Name)
@@ -426,9 +420,6 @@ func Delete{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) e
 			klog.V(3).Infof("Deleting ga {{.Name}} %v", key.Name)
 			return mc.Observe(gceCloud.Compute().{{$globalKeyFiller}}{{.GetCloudProviderName}}().Delete(ctx, key))
 		}
-	{{- else}}
-		klog.V(3).Infof("Deleting ga {{.Name}} %v", key.Name)
-		return mc.Observe(gceCloud.Compute().{{$globalKeyFiller}}{{.GetCloudProviderName}}().Delete(ctx, key))
 	{{- end}} {{/* $onlyZonalKeySupported*/}}
 	}
 }
