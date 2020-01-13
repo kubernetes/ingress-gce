@@ -59,8 +59,8 @@ var (
 
 // init registers ingress usage metrics.
 func init() {
-	klog.V(3).Infof("Registering Ingress usage metrics %v and %v", ingressCount, servicePortCount)
-	prometheus.MustRegister(ingressCount, servicePortCount)
+	klog.V(3).Infof("Registering Ingress usage metrics %v, %v and %v", ingressCount, servicePortCount, networkEndpointGroupCount)
+	prometheus.MustRegister(ingressCount, servicePortCount, networkEndpointGroupCount)
 }
 
 // NewIngressState returns ingress state for given ingress and service ports.
@@ -154,7 +154,7 @@ func (im *ControllerMetrics) export() {
 	ingCount, svcPortCount := im.computeIngressMetrics()
 	negCount := im.computeNegMetrics()
 
-	klog.V(3).Infof("Exporting ingress usage metrics. Ingress Count: %#v, Service Port count: %#v", ingCount, svcPortCount)
+	klog.V(3).Infof("Exporting ingress usage metrics. Ingress Count: %#v, Service Port count: %#v, NEG count: %#v", ingCount, svcPortCount, negCount)
 	for feature, count := range ingCount {
 		ingressCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
