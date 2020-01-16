@@ -21,7 +21,7 @@ import (
 	"testing"
 
 	apps "k8s.io/api/apps/v1"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -338,7 +338,7 @@ func TestNEGSyncEndpoints(t *testing.T) {
 				}
 
 				// validate neg status
-				negStatus, err := e2e.WaitForNegStatus(s, svcName, tc.expectServicePort.List())
+				negStatus, err := e2e.WaitForNegStatus(s, svcName, tc.expectServicePort.List(), false)
 				if err != nil {
 					t.Fatalf("error waiting for NEG status to update: %v", err)
 				}
