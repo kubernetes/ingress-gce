@@ -42,5 +42,6 @@ The table below describes what version of Ingress-GCE is running on GKE. Note th
        * 1.12.7-gke.16+ -> v1.5.2
        * 1.13.7-gke.5+ -> v1.6.0
        * 1.15.3-gke.1+ -> v1.7.0
+       * 1.16.0-gke.20+ -> v1.8.0
 
 [![Analytics](https://kubernetes-site.appspot.com/UA-36037335-10/GitHub/contrib/service-loadbalancer/gce/README.md?pixel)]()
