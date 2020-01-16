@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"k8s.io/api/core/v1"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (
@@ -160,6 +161,22 @@ type Service struct {
 // FromService extracts the annotations from an Service definition.
 func FromService(obj *v1.Service) *Service {
 	return &Service{obj.Annotations}
+}
+
+// WantsL4ILB checks if the given service requires L4 ILB.
+// the function returns a boolean as well as the loadbalancer type(string).
+func WantsL4ILB(service *v1.Service) (bool, string) {
+	if service == nil {
+		return false, ""
+	}
+	if service.Spec.Type != v1.ServiceTypeLoadBalancer {
+		return false, fmt.Sprintf("Type : %s", service.Spec.Type)
+	}
+	ltype := gce.GetLoadBalancerAnnotationType(service)
+	if ltype == gce.LBTypeInternal {
+		return true, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
+	}
+	return false, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
 }
 
 // ApplicationProtocols returns a map of port (name or number) to the protocol

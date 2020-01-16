@@ -113,6 +113,8 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		1*time.Second,
 		// TODO(freehan): enable readiness reflector for unit tests
 		false,
+		true,
+		false,
 	)
 	return controller
 }
@@ -276,6 +278,31 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 		t.Fatalf("Service was not created successfully, err: %v", err)
 	}
 	validateServiceStateAnnotation(t, svc, svcPorts, controller.namer)
+}
+
+//TestEnableNEGSeviceWithL4ILB tests L4 ILB service with NEGs enabled.
+func TestEnableNEGServiceWithL4ILB(t *testing.T) {
+	controller := newTestController(fake.NewSimpleClientset())
+	controller.runL4 = true
+	defer controller.stop()
+	for _, randomize := range []bool{false, true} {
+		controller.serviceLister.Add(newTestILBService(controller, !randomize, 80))
+		svcClient := controller.client.CoreV1().Services(testServiceNamespace)
+		svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+		err := controller.processService(svcKey)
+		if err != nil {
+			t.Fatalf("Failed to process service: %v", err)
+		}
+		svc, err := svcClient.Get(testServiceName, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
+		}
+		validateSyncers(t, controller, 1, false)
+		expectedPortInfoMap := negtypes.NewPortInfoMapForPrimaryIPNEG(testServiceNamespace, testServiceName,
+			controller.namer, randomize)
+		validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
+		validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap)
+	}
 }
 
 // TestEnableNEGServiceWithILBIngress tests ILB service with NEG enabled
@@ -1067,6 +1094,28 @@ func getTestSvcPortTuple(svcPort int32) negtypes.SvcPortTuple {
 		}
 	}
 	return negtypes.SvcPortTuple{}
+}
+
+func newTestILBService(c *Controller, onlyLocal bool, port int) *apiv1.Service {
+	svc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        testServiceName,
+			Namespace:   testServiceNamespace,
+			Annotations: map[string]string{gce.ServiceAnnotationLoadBalancerType: string(gce.LBTypeInternal)},
+		},
+		Spec: apiv1.ServiceSpec{
+			Type: apiv1.ServiceTypeLoadBalancer,
+			Ports: []apiv1.ServicePort{
+				{Name: "testport", Port: int32(port)},
+			},
+		},
+	}
+	if onlyLocal {
+		svc.Spec.ExternalTrafficPolicy = apiv1.ServiceExternalTrafficPolicyTypeLocal
+	}
+
+	c.client.CoreV1().Services(testServiceNamespace).Create(svc)
+	return svc
 }
 
 func newTestService(c *Controller, negIngress bool, negSvcPorts []int32) *apiv1.Service {

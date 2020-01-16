@@ -59,7 +59,7 @@ type ServicePort struct {
 // for creating NEGs associated with the given ServicePort.
 func GetAPIVersionFromServicePort(sp *ServicePort) meta.Version {
 	if sp == nil {
-		// this uses VM_PRIMARY_IP_NEGS which requires alpha API
+		// this uses GCE_VM_PRIMARY_IP NEGS which requires alpha API
 		return meta.VersionAlpha
 	}
 	return meta.VersionGA

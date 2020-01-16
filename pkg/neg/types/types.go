@@ -32,11 +32,15 @@ import (
 )
 
 type NetworkEndpointType string
+type EndpointsCalculatorMode string
 
 const (
 	VmIpPortEndpointType      = NetworkEndpointType("GCE_VM_IP_PORT")
 	VmPrimaryIpEndpointType   = NetworkEndpointType("GCE_VM_PRIMARY_IP")
 	NonGCPPrivateEndpointType = NetworkEndpointType("NON_GCP_PRIVATE_IP_PORT")
+	L7Mode                    = EndpointsCalculatorMode("L7")
+	L4LocalMode               = EndpointsCalculatorMode("L4, ExternalTrafficPolicy:Local")
+	L4ClusterMode             = EndpointsCalculatorMode("L4, ExternalTrafficPolicy:Cluster")
 )
 
 // SvcPortTuple is the tuple representing one service port
@@ -48,6 +52,10 @@ type SvcPortTuple struct {
 	// TargetPort is the service target port.
 	// This can be a port number or named port
 	TargetPort string
+}
+
+func (t SvcPortTuple) Empty() bool {
+	return t.Port == 0 && t.Name == "" && t.TargetPort == ""
 }
 
 // String returns the string representation of SvcPortTuple
@@ -100,6 +108,10 @@ type PortInfo struct {
 	// This is enabled with service port is reference by ingress.
 	// If the service port is only exposed as stand alone NEG, it should not be enbled.
 	ReadinessGate bool
+	// RandomizeEndpoints indicates if the endpoints for the NEG associated with this port need to
+	// be selected at random, rather than selecting the endpoints of this service. This is applicable
+	// in GCE_VM_PRIMARY_IP where the endpoints are the nodes instead of pods.
+	RandomizeEndpoints bool
 }
 
 // PortInfoMapKey is the Key of PortInfoMap
@@ -121,6 +133,25 @@ func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, nam
 			PortTuple:     svcPortTuple,
 			NegName:       namer.NEG(namespace, name, svcPortTuple.Port),
 			ReadinessGate: readinessGate,
+		}
+	}
+	return ret
+}
+
+// NewPortInfoMapForPrimaryIPNEG creates PortInfoMap with empty port tuple. Since PRIMARY_VM_IP NEGs target
+// the node instead of the pod, there is no port info to be stored.
+func NewPortInfoMapForPrimaryIPNEG(namespace, name string, namer NetworkEndpointGroupNamer, randomize bool) PortInfoMap {
+	ret := PortInfoMap{}
+	svcPortSet := make(SvcPortTupleSet)
+	svcPortSet.Insert(
+		// Insert Empty PortTuple for VmPrimaryIp NEGs.
+		SvcPortTuple{},
+	)
+	for svcPortTuple := range svcPortSet {
+		ret[PortInfoMapKey{svcPortTuple.Port, ""}] = PortInfo{
+			PortTuple:          svcPortTuple,
+			NegName:            namer.PrimaryIPNEG(namespace, name),
+			RandomizeEndpoints: randomize,
 		}
 	}
 	return ret
@@ -157,6 +188,8 @@ func NewPortInfoMapWithDestinationRule(namespace, name string, svcPortTupleSet S
 // It assumes the same key (service port) will have the same target port and negName
 // If not, it will throw error
 // If a key in p1 or p2 has readiness gate enabled, the merged port info will also has readiness gate enabled
+// If a key in p1 or p2 has randomize endpoints enabled, the merged port info will also has randomize endpoints enabled.
+// This field is only applicable for VMPrimaryIP NEGs.
 func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 	var err error
 	for mapKey, portInfo := range p2 {
@@ -171,12 +204,16 @@ func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 			if existingPortInfo.Subset != portInfo.Subset {
 				return fmt.Errorf("for service port %v, Subset name in existing map is %q, but the merge map has %q", mapKey, existingPortInfo.Subset, portInfo.Subset)
 			}
+			if existingPortInfo.RandomizeEndpoints != portInfo.RandomizeEndpoints {
+				return fmt.Errorf("For service port %v, Existing map has RandomizeEndpoints %v, but the merge map has %v", mapKey, existingPortInfo.RandomizeEndpoints, portInfo.RandomizeEndpoints)
+			}
 			mergedInfo.ReadinessGate = existingPortInfo.ReadinessGate
 		}
 		mergedInfo.PortTuple = portInfo.PortTuple
 		mergedInfo.NegName = portInfo.NegName
 		// Turn on the readiness gate if one of them is on
 		mergedInfo.ReadinessGate = mergedInfo.ReadinessGate || portInfo.ReadinessGate
+		mergedInfo.RandomizeEndpoints = portInfo.RandomizeEndpoints
 		mergedInfo.Subset = portInfo.Subset
 		mergedInfo.SubsetLabels = portInfo.SubsetLabels
 
@@ -252,7 +289,7 @@ type NegSyncerKey struct {
 }
 
 func (key NegSyncerKey) String() string {
-	return fmt.Sprintf("%s/%s-%s-%s", key.Namespace, key.Name, key.Subset, key.PortTuple.String())
+	return fmt.Sprintf("%s/%s-%s-%s-%s", key.Namespace, key.Name, key.Subset, key.PortTuple.String(), string(key.NegType))
 }
 
 // GetAPIVersion returns the compute API version to be used in order

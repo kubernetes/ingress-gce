@@ -36,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog"
+	"k8s.io/kubernetes/pkg/util/node"
 )
 
 const (
@@ -350,6 +351,15 @@ func GetNodeConditionPredicate() listers.NodeConditionPredicate {
 	}
 }
 
+// GetNodePrimaryIP returns a primary internal IP address of the node.
+func GetNodePrimaryIP(inputNode *api_v1.Node) string {
+	ip, err := node.GetPreferredNodeAddress(inputNode, []api_v1.NodeAddressType{api_v1.NodeInternalIP})
+	if err != nil {
+		klog.Errorf("Failed to get IP address for node %s", inputNode.Name)
+	}
+	return ip
+}
+
 // NewNamespaceIndexer returns a new Indexer for use by SharedIndexInformers
 func NewNamespaceIndexer() cache.Indexers {
 	return cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}
@@ -409,4 +419,23 @@ func HasVIP(ing *v1beta1.Ingress) bool {
 		return false
 	}
 	return true
+}
+
+// NumEndpoints returns the count of endpoints in the given endpoints object.
+func NumEndpoints(ep *api_v1.Endpoints) (result int) {
+	for _, subset := range ep.Subsets {
+		result = result + len(subset.Addresses)*len(subset.Ports)
+	}
+	return result
+}
+
+// IsLegacyL4ILBService returns true if the given LoadBalancer service is managed by service controller.
+func IsLegacyL4ILBService(svc *api_v1.Service) bool {
+	for _, key := range svc.ObjectMeta.Finalizers {
+		if key == common.FinalizerKeyL4V1 {
+			// service has v1 finalizer, this is handled by service controller code.
+			return true
+		}
+	}
+	return false
 }

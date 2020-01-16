@@ -1,0 +1,210 @@
+/*
+Copyright 2020 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package syncers
+
+import (
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/util/sets"
+	listers "k8s.io/client-go/listers/core/v1"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
+)
+
+// LocalL4ILBEndpointGetter implements the NetworkEndpointsCalculator interface.
+// It exposes methods to calculate Network endpoints for VM_PRIMARY_IP NEGs when the service
+// uses "ExternalTrafficPolicy: Local" mode.
+// In this mode, the endpoints of the NEG are calculated by listing the nodes that host the service endpoints(pods)
+// for the given service. These candidate nodes picked as is, if the count is less than the subset size limit(250).
+// Otherwise, a subset of nodes is selected.
+// In a cluster with nodes node1... node 50. If nodes node10 to node 45 run the pods for a given ILB service, all these
+// nodes - node10, node 11 ... node45 will be part of the subset.
+type LocalL4ILBEndpointsCalculator struct {
+	nodeLister      listers.NodeLister
+	zoneGetter      types.ZoneGetter
+	subsetSizeLimit int
+	svcId           string
+}
+
+func NewLocalL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter types.ZoneGetter, svcId string) *LocalL4ILBEndpointsCalculator {
+	return &LocalL4ILBEndpointsCalculator{nodeLister: nodeLister, zoneGetter: zoneGetter, subsetSizeLimit: maxSubsetSizeLocal, svcId: svcId}
+}
+
+// Mode indicates the mode that the EndpointsCalculator is operating in.
+func (l *LocalL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
+	return types.L4LocalMode
+}
+
+// CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
+func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+	// List all nodes where the service endpoints are running. Get a subset of the desired count.
+	zoneNodeMap := make(map[string][]*v1.Node)
+	nodeNames := sets.String{}
+	numEndpoints := 0
+	for _, curEp := range ep.Subsets {
+		for _, addr := range curEp.Addresses {
+			if addr.NodeName == nil {
+				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", addr.IP, ep.Namespace, ep.Name)
+				continue
+			}
+			if addr.TargetRef == nil {
+				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", addr.IP, ep.Namespace, ep.Name)
+				continue
+			}
+			numEndpoints++
+			if nodeNames.Has(*addr.NodeName) {
+				continue
+			}
+			nodeNames.Insert(*addr.NodeName)
+			node, err := l.nodeLister.Get(*addr.NodeName)
+			if err != nil {
+				klog.Errorf("failed to retrieve node object for %q: %v", *addr.NodeName, err)
+				continue
+			}
+			zone, err := l.zoneGetter.GetZoneForNode(node.Name)
+			if err != nil {
+				klog.Errorf("Unable to find zone for node %s, err %v, skipping", node.Name, err)
+				continue
+			}
+			zoneNodeMap[zone] = append(zoneNodeMap[zone], node)
+		}
+	}
+	if numEndpoints == 0 {
+		// TODO verify the behavior seen by a client when accessing an ILB whose NEGs have no endpoints.
+		return nil, nil, nil
+	}
+	// This denotes zones where the endpoint pods are running
+	numZones := len(zoneNodeMap)
+	perZoneCount := l.getPerZoneSubsetCount(numZones, numEndpoints)
+	// Compute the networkEndpoints, with endpointSet size in each zone being atmost `perZoneCount` in size
+	// TODO fix this logic to pick upto a total of l.SubsetSizeLimit if there are more than perZoneCount nodes in one
+	// zone and fewer in another.
+	subsetMap, err := getSubsetPerZone(zoneNodeMap, perZoneCount, l.svcId, currentMap)
+	return subsetMap, nil, err
+}
+
+// getPerZoneSubsetCount returns the max size limit of each zonal NEG, given the number of zones and service endpoints.
+// The subset size will be proportional to the endpoint size, as long as endpoints size is within the limit.
+func (l *LocalL4ILBEndpointsCalculator) getPerZoneSubsetCount(numZones, numEndpoints int) int {
+	if numZones == 0 {
+		return 0
+	}
+	// Dividing by numZones can cause an off-by-one error depending on the numZones value.
+	// For instance, 250/3 = 83, 83*3 = 249, i.e 250 - 1
+	if numEndpoints > l.subsetSizeLimit {
+		return l.subsetSizeLimit / numZones
+	}
+	// If there are 2 endpoints and 3 zones, we want to pick atleast one per zone.
+	if numEndpoints > 0 && numEndpoints < numZones {
+		return 1
+	}
+	return numEndpoints / numZones
+}
+
+// ClusterL4ILBEndpointGetter implements the NetworkEndpointsCalculator interface.
+// It exposes methods to calculate Network endpoints for VM_PRIMARY_IP NEGs when the service
+// uses "ExternalTrafficPolicy: Cluster" mode This is the default mode.
+// In this mode, the endpoints of the NEG are calculated by selecting nodes at random. Upto 25(subset size limit in this
+// mode) are selected.
+type ClusterL4ILBEndpointsCalculator struct {
+	// nodeLister is used for listing all the nodes in the cluster when calculating the subset.
+	nodeLister listers.NodeLister
+	// zoneGetter looks up the zone for a given node when calculating subsets.
+	zoneGetter types.ZoneGetter
+	// subsetSizeLimit is the max value of the subset size in this mode.
+	subsetSizeLimit int
+	// svcId is the unique identifier for the service, that is used as a salt when hashing nodenames.
+	svcId string
+}
+
+func NewClusterL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter types.ZoneGetter, svcId string) *ClusterL4ILBEndpointsCalculator {
+	return &ClusterL4ILBEndpointsCalculator{nodeLister: nodeLister, zoneGetter: zoneGetter,
+		subsetSizeLimit: maxSubsetSizeDefault, svcId: svcId}
+}
+
+// Mode indicates the mode that the EndpointsCalculator is operating in.
+func (l *ClusterL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
+	return types.L4ClusterMode
+}
+
+// CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
+func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
+	nodes, _ := l.nodeLister.ListWithPredicate(utils.GetNodeConditionPredicate())
+
+	nodeZoneMap := make(map[string][]*v1.Node)
+	for _, node := range nodes {
+		zone, err := l.zoneGetter.GetZoneForNode(node.Name)
+		if err != nil {
+			klog.Errorf("Unable to find zone for node %s, err %v, skipping", node.Name, err)
+			continue
+		}
+		nodeZoneMap[zone] = append(nodeZoneMap[zone], node)
+	}
+	numZones := len(nodeZoneMap)
+	// This value is always SubsetSizeLimit/numZones, in this mode. Passing in numEndpoints as 0 to avoid unnecessary
+	// calculation.
+	// If number of endpoints matter in the calculation, this can be changed to:
+	// perZoneCount := l.getPerZoneSubsetCount(numZones, utils.NumEndpoints(ep))
+	perZoneCount := l.getPerZoneSubsetCount(numZones, 0)
+	// Compute the networkEndpoints, with endpointSet size in each zone being atmost `perZoneCount` in size
+	// TODO fix this logic to pick upto a total of l.SubsetSizeLimit if there are more than perZoneCount nodes in one
+	// zone and fewer in another.
+	subsetMap, err := getSubsetPerZone(nodeZoneMap, perZoneCount, l.svcId, currentMap)
+	return subsetMap, nil, err
+}
+
+// getPerZoneSubsetCount returns the max size limit of each zonal NEG, given the number of zones and service endpoints.
+func (l *ClusterL4ILBEndpointsCalculator) getPerZoneSubsetCount(numZones, numEndpoints int) int {
+	if numZones == 0 {
+		return 0
+	}
+	// Use the static limit instead of making it proportional to service size.
+	// This will help minimize changes to the NEGs. Since NEG endpoints are picked at random in this mode,
+	// irrespective of service endpoints, using the static limit is ok.
+	return l.subsetSizeLimit / numZones
+}
+
+// L7EndpointsCalculator implements methods to calculate Network endpoints for VM_IP_PORT NEGs
+type L7EndpointsCalculator struct {
+	zoneGetter          types.ZoneGetter
+	servicePortName     string
+	podLister           cache.Indexer
+	subsetLabels        string
+	networkEndpointType types.NetworkEndpointType
+}
+
+func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister cache.Indexer, svcPortName, subsetLabels string, endpointType types.NetworkEndpointType) *L7EndpointsCalculator {
+	return &L7EndpointsCalculator{
+		zoneGetter:          zoneGetter,
+		servicePortName:     svcPortName,
+		podLister:           podLister,
+		subsetLabels:        subsetLabels,
+		networkEndpointType: endpointType,
+	}
+}
+
+// Mode indicates the mode that the EndpointsCalculator is operating in.
+func (l *L7EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
+	return types.L7Mode
+}
+
+// CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
+func (l *L7EndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+	return toZoneNetworkEndpointMap(ep, l.zoneGetter, l.servicePortName, l.podLister, l.subsetLabels, "")
+}

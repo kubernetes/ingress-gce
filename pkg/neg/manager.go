@@ -51,6 +51,7 @@ type syncerManager struct {
 	cloud      negtypes.NetworkEndpointGroupCloud
 	zoneGetter negtypes.ZoneGetter
 
+	nodeLister     cache.Indexer
 	podLister      cache.Indexer
 	serviceLister  cache.Indexer
 	endpointLister cache.Indexer
@@ -68,12 +69,13 @@ type syncerManager struct {
 	reflector readiness.Reflector
 }
 
-func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer) *syncerManager {
+func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister, serviceLister, endpointLister, nodeLister cache.Indexer) *syncerManager {
 	return &syncerManager{
 		namer:          namer,
 		recorder:       recorder,
 		cloud:          cloud,
 		zoneGetter:     zoneGetter,
+		nodeLister:     nodeLister,
 		podLister:      podLister,
 		serviceLister:  serviceLister,
 		endpointLister: endpointLister,
@@ -116,6 +118,9 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		syncerKey := getSyncerKey(namespace, name, svcPort, portInfo)
 		syncer, ok := manager.syncerMap[syncerKey]
 		if !ok {
+			// determine the implementation that calculates NEG endpoints on each sync.
+			epc := negsyncer.GetEndpointsCalculator(manager.nodeLister, manager.podLister, manager.zoneGetter,
+				syncerKey, portInfo.RandomizeEndpoints)
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
 				portInfo.NegName,
@@ -125,7 +130,9 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.podLister,
 				manager.serviceLister,
 				manager.endpointLister,
+				manager.nodeLister,
 				manager.reflector,
+				epc,
 			)
 			manager.syncerMap[syncerKey] = syncer
 		}
@@ -167,6 +174,18 @@ func (manager *syncerManager) Sync(namespace, name string) {
 					syncer.Sync()
 				}
 			}
+		}
+	}
+}
+
+// SyncNodes signals all GCE_VM_PRIMARY_IP syncers to sync.
+// Only these use nodes selected at random as endpoints and hence need to sync upon node updates.
+func (manager *syncerManager) SyncNodes() {
+	manager.mu.Lock()
+	defer manager.mu.Unlock()
+	for key, syncer := range manager.syncerMap {
+		if key.NegType == negtypes.VmPrimaryIpEndpointType && !syncer.IsStopped() {
+			syncer.Sync()
 		}
 	}
 }
@@ -315,6 +334,9 @@ func getSyncerKey(namespace, name string, servicePortKey negtypes.PortInfoMapKey
 	networkEndpointType := negtypes.VmIpPortEndpointType
 	if flags.F.EnableNonGCPMode {
 		networkEndpointType = negtypes.NonGCPPrivateEndpointType
+	}
+	if portInfo.PortTuple.Empty() {
+		networkEndpointType = negtypes.VmPrimaryIpEndpointType
 	}
 
 	return negtypes.NegSyncerKey{

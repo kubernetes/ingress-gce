@@ -29,6 +29,11 @@ const (
 	// FinalizerKeyV2 is the string representing the Ingress finalizer version.
 	// Ingress with V2 finalizer uses V2 frontend naming scheme.
 	FinalizerKeyV2 = "networking.gke.io/ingress-finalizer-V2"
+	// FinalizerKeyL4 is the string representing the L4 ILB controller finalizer in this repo.
+	FinalizerKeyL4 = "networking.gke.io/l4-ilb-v2"
+	// FinalizerKeyL4V1 is the string representing the service controller finalizer. A service with this finalizer
+	// is managed by k/k service controller.
+	FinalizerKeyL4V1 = "networking.gke.io/l4-ilb-v1"
 )
 
 // IsDeletionCandidate is true if the passed in meta contains an ingress finalizer.

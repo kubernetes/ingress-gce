@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -30,6 +30,7 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 func TestResourcePath(t *testing.T) {
@@ -718,4 +719,66 @@ func TestHasVIP(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetNodePrimaryIP(t *testing.T) {
+	t.Parallel()
+	internalIP := "1.2.3.4"
+	node := &api_v1.Node{
+		Status: api_v1.NodeStatus{
+			Addresses: []api_v1.NodeAddress{
+				{
+					Type:    api_v1.NodeInternalIP,
+					Address: internalIP,
+				},
+			},
+		},
+	}
+	out := GetNodePrimaryIP(node)
+	if out != internalIP {
+		t.Errorf("Expected Primary IP %s, got %s", internalIP, out)
+	}
+
+	node = &api_v1.Node{
+		Status: api_v1.NodeStatus{
+			Addresses: []api_v1.NodeAddress{
+				{
+					Type:    api_v1.NodeExternalIP,
+					Address: "11.12.13.14",
+				},
+			},
+		},
+	}
+	out = GetNodePrimaryIP(node)
+	if out != "" {
+		t.Errorf("Expected Primary IP '', got %s", out)
+	}
+}
+
+func TestIsLegacyL4ILBService(t *testing.T) {
+	t.Parallel()
+	svc := &api_v1.Service{
+		ObjectMeta: v1.ObjectMeta{
+			Name:        "testsvc",
+			Namespace:   "default",
+			Annotations: map[string]string{gce.ServiceAnnotationLoadBalancerType: string(gce.LBTypeInternal)},
+			Finalizers:  []string{common.FinalizerKeyL4V1},
+		},
+		Spec: api_v1.ServiceSpec{
+			Type: api_v1.ServiceTypeLoadBalancer,
+			Ports: []api_v1.ServicePort{
+				{Name: "testport", Port: int32(80)},
+			},
+		},
+	}
+	if !IsLegacyL4ILBService(svc) {
+		t.Errorf("Expected True for Legacy service %s, got False", svc.Name)
+	}
+
+	// Remove the finalizer and ensure the check returns False.
+	svc.ObjectMeta.Finalizers = nil
+	if IsLegacyL4ILBService(svc) {
+		t.Errorf("Expected False for Legacy service %s, got True", svc.Name)
+	}
+
 }
