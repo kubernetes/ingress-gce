@@ -18,6 +18,8 @@ package loadbalancers
 
 import (
 	"fmt"
+
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -75,6 +77,22 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 		fw = nil
 	}
 	if fw == nil {
+		// This is a special case where exactly one of http or https forwarding rule
+		// existed before and the existing forwarding rule uses ingress managed static ip address.
+		// In this case, the forwarding rule needs to be created with the same static ip.
+		// Note that this is not needed when user specifies a static IP.
+		if ip == "" {
+			managedStaticIPName := l.namer.ForwardingRule(namer.HTTPProtocol)
+			// Get static IP address if ingress has static IP annotation.
+			// Note that this Static IP annotation is applied by ingress controller.
+			if currentIPName, exists := l.ingress.Annotations[annotations.StaticIPKey]; exists && currentIPName == managedStaticIPName {
+				currentIP, _ := l.cloud.GetGlobalAddress(managedStaticIPName)
+				if currentIP != nil {
+					klog.V(3).Infof("Ingress managed static IP %s(%s) exists, using it to create forwarding rule %s", currentIPName, currentIP.Address, name)
+					ip = currentIP.Address
+				}
+			}
+		}
 		klog.V(3).Infof("Creating forwarding rule for proxy %q and ip %v:%v", proxyLink, ip, portRange)
 		description, err := l.description()
 		if err != nil {
