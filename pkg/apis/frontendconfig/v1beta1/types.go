@@ -28,9 +28,7 @@ import (
 type FrontendConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-
 	Spec   FrontendConfigSpec   `json:"spec"`
-	Status FrontendConfigStatus `json:"status"`
 }
 
 // FrontendConfigSpec is the spec for a FrontendConfig resource
@@ -38,9 +36,6 @@ type FrontendConfig struct {
 type FrontendConfigSpec struct {
 	// Add individual features here
 }
-
-// FrontendConfigStatus is the status for a FrontendConfig resource
-type FrontendConfigStatus struct{}
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
