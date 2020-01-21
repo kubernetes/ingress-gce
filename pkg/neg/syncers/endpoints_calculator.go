@@ -88,32 +88,9 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, cur
 		// TODO verify the behavior seen by a client when accessing an ILB whose NEGs have no endpoints.
 		return nil, nil, nil
 	}
-	// This denotes zones where the endpoint pods are running
-	numZones := len(zoneNodeMap)
-	perZoneCount := l.getPerZoneSubsetCount(numZones, numEndpoints)
-	// Compute the networkEndpoints, with endpointSet size in each zone being atmost `perZoneCount` in size
-	// TODO fix this logic to pick upto a total of l.SubsetSizeLimit if there are more than perZoneCount nodes in one
-	// zone and fewer in another.
-	subsetMap, err := getSubsetPerZone(zoneNodeMap, perZoneCount, l.svcId, currentMap)
+	// Compute the networkEndpoints, with total endpoints count <= l.subsetSizeLimit
+	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap)
 	return subsetMap, nil, err
-}
-
-// getPerZoneSubsetCount returns the max size limit of each zonal NEG, given the number of zones and service endpoints.
-// The subset size will be proportional to the endpoint size, as long as endpoints size is within the limit.
-func (l *LocalL4ILBEndpointsCalculator) getPerZoneSubsetCount(numZones, numEndpoints int) int {
-	if numZones == 0 {
-		return 0
-	}
-	// Dividing by numZones can cause an off-by-one error depending on the numZones value.
-	// For instance, 250/3 = 83, 83*3 = 249, i.e 250 - 1
-	if numEndpoints > l.subsetSizeLimit {
-		return l.subsetSizeLimit / numZones
-	}
-	// If there are 2 endpoints and 3 zones, we want to pick atleast one per zone.
-	if numEndpoints > 0 && numEndpoints < numZones {
-		return 1
-	}
-	return numEndpoints / numZones
 }
 
 // ClusterL4ILBEndpointGetter implements the NetworkEndpointsCalculator interface.
@@ -156,28 +133,9 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, c
 		}
 		nodeZoneMap[zone] = append(nodeZoneMap[zone], node)
 	}
-	numZones := len(nodeZoneMap)
-	// This value is always SubsetSizeLimit/numZones, in this mode. Passing in numEndpoints as 0 to avoid unnecessary
-	// calculation.
-	// If number of endpoints matter in the calculation, this can be changed to:
-	// perZoneCount := l.getPerZoneSubsetCount(numZones, utils.NumEndpoints(ep))
-	perZoneCount := l.getPerZoneSubsetCount(numZones, 0)
-	// Compute the networkEndpoints, with endpointSet size in each zone being atmost `perZoneCount` in size
-	// TODO fix this logic to pick upto a total of l.SubsetSizeLimit if there are more than perZoneCount nodes in one
-	// zone and fewer in another.
-	subsetMap, err := getSubsetPerZone(nodeZoneMap, perZoneCount, l.svcId, currentMap)
+	// Compute the networkEndpoints, with total endpoints <= l.subsetSizeLimit.
+	subsetMap, err := getSubsetPerZone(nodeZoneMap, l.subsetSizeLimit, l.svcId, currentMap)
 	return subsetMap, nil, err
-}
-
-// getPerZoneSubsetCount returns the max size limit of each zonal NEG, given the number of zones and service endpoints.
-func (l *ClusterL4ILBEndpointsCalculator) getPerZoneSubsetCount(numZones, numEndpoints int) int {
-	if numZones == 0 {
-		return 0
-	}
-	// Use the static limit instead of making it proportional to service size.
-	// This will help minimize changes to the NEGs. Since NEG endpoints are picked at random in this mode,
-	// irrespective of service endpoints, using the static limit is ok.
-	return l.subsetSizeLimit / numZones
 }
 
 // L7EndpointsCalculator implements methods to calculate Network endpoints for VM_IP_PORT NEGs
