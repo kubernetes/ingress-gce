@@ -17,9 +17,11 @@ limitations under the License.
 package syncers
 
 import (
-	"k8s.io/ingress-gce/pkg/neg/types"
+	"fmt"
 	"strings"
 	"testing"
+
+	"k8s.io/ingress-gce/pkg/neg/types"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,13 +65,7 @@ func TestEmptyNodes(t *testing.T) {
 // Tests the case where there are fewer nodes than subsets
 func TestFewerNodes(t *testing.T) {
 	t.Parallel()
-	nodes := []*v1.Node{
-		{ObjectMeta: metav1.ObjectMeta{Name: "node0"}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "node1"}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "node73"}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "node986"}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "node25"}},
-	}
+	nodes := makeNodes(0, 5)
 	count := 10
 	subset1 := pickSubsetsMinRemovals(nodes, "svc123", count, nil)
 	if len(subset1) != len(nodes) {
@@ -80,15 +76,152 @@ func TestFewerNodes(t *testing.T) {
 	}
 }
 
+// Tests the case where there is unever distribution of nodes in various zones. The goal is to select as many nodes as
+// possible in all cases.
+func TestUnevenNodesInZones(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		description   string
+		nodesMap      map[string][]*v1.Node
+		svcKey        string
+		subsetLimit   int
+		expectedCount int
+		// expectEmpty indicates that some zones can have empty subsets
+		expectEmpty bool
+	}{
+		{
+			description: "Total number of nodes > limit(250), some zones have only a couple of nodes.",
+			nodesMap: map[string][]*v1.Node{
+				"zone1": makeNodes(1, 1),
+				"zone2": makeNodes(2, 5),
+				"zone3": makeNodes(7, 10),
+				"zone4": makeNodes(17, 250),
+			},
+			svcKey:        "svc123",
+			subsetLimit:   maxSubsetSizeLocal,
+			expectedCount: maxSubsetSizeLocal,
+		},
+		{
+			description: "Total number of nodes > limit(250), 3 zones, some zones have only a couple of nodes.",
+			nodesMap: map[string][]*v1.Node{
+				"zone1": makeNodes(1, 1),
+				"zone2": makeNodes(2, 5),
+				"zone4": makeNodes(7, 250),
+			},
+			svcKey:        "svc123",
+			subsetLimit:   maxSubsetSizeLocal,
+			expectedCount: maxSubsetSizeLocal,
+		},
+		{
+			description: "Total number of nodes > limit(250), all zones have 100 nodes.",
+			nodesMap: map[string][]*v1.Node{
+				"zone1": makeNodes(1, 100),
+				"zone2": makeNodes(100, 100),
+				"zone3": makeNodes(200, 100),
+				"zone4": makeNodes(300, 100),
+			},
+			svcKey:        "svc123",
+			subsetLimit:   maxSubsetSizeLocal,
+			expectedCount: maxSubsetSizeLocal,
+		},
+		{
+			description: "Total number of nodes > limit(250), 3 zones, all zones have 100 nodes.",
+			nodesMap: map[string][]*v1.Node{
+				"zone1": makeNodes(1, 100),
+				"zone2": makeNodes(100, 100),
+				"zone3": makeNodes(200, 100),
+			},
+			svcKey:        "svc123",
+			subsetLimit:   maxSubsetSizeLocal,
+			expectedCount: maxSubsetSizeLocal,
+		},
+		{
+			description: "Total number of nodes < limit(250), some have only a couple of nodes.",
+			nodesMap: map[string][]*v1.Node{
+				"zone1": makeNodes(1, 1),
+				"zone2": makeNodes(2, 5),
+				"zone3": makeNodes(7, 10),
+				"zone4": makeNodes(17, 33),
+			},
+			svcKey:      "svc123",
+			subsetLimit: maxSubsetSizeLocal,
+			// All the nodes should be picked
+			expectedCount: 49,
+		},
+		{
+			description: "Total number of nodes < limit(250), all have only a couple of nodes.",
+			nodesMap: map[string][]*v1.Node{
+				"zone1": makeNodes(1, 1),
+				"zone2": makeNodes(2, 5),
+				"zone3": makeNodes(7, 3),
+				"zone4": makeNodes(10, 4),
+			},
+			svcKey:      "svc123",
+			subsetLimit: maxSubsetSizeLocal,
+			// All the nodes should be picked
+			expectedCount: 13,
+		},
+		{
+			description: "Total number of nodes > limit(25), some zones have only a couple of nodes.",
+			nodesMap: map[string][]*v1.Node{
+				"zone1": makeNodes(1, 1),
+				"zone2": makeNodes(2, 5),
+				"zone3": makeNodes(7, 10),
+				"zone4": makeNodes(17, 250),
+			},
+			svcKey:        "svc123",
+			subsetLimit:   maxSubsetSizeDefault,
+			expectedCount: maxSubsetSizeDefault,
+		},
+		{
+			description: "Total number of nodes > limit(25), one zone has no nodes.",
+			nodesMap: map[string][]*v1.Node{
+				"zone1": makeNodes(1, 1),
+				"zone2": makeNodes(2, 5),
+				"zone3": nil,
+				"zone4": makeNodes(17, 250),
+			},
+			svcKey:        "svc123",
+			subsetLimit:   maxSubsetSizeDefault,
+			expectedCount: maxSubsetSizeDefault,
+			expectEmpty:   true,
+		},
+	}
+	for _, tc := range testCases {
+		subsetMap, err := getSubsetPerZone(tc.nodesMap, tc.subsetLimit, tc.svcKey, nil)
+		if err != nil {
+			t.Errorf("Failed to get subset for test '%s', err %v", tc.description, err)
+		}
+		if len(subsetMap) != len(tc.nodesMap) {
+			t.Errorf("Not all input zones were included in the subset.  subset map - %v, nodesMap %v, test '%s'",
+				subsetMap, tc.nodesMap, tc.description)
+		}
+		totalSubsetSize := 0
+		for zone, subset := range subsetMap {
+			if subset.Len() == 0 && !tc.expectEmpty {
+				t.Errorf("Got empty subset in zone %s for test '%s'", zone, tc.description)
+			}
+			totalSubsetSize += subset.Len()
+		}
+		if totalSubsetSize != tc.expectedCount {
+			t.Errorf("Expected %d nodes in subset, Got %d for test '%s'", maxSubsetSizeLocal, totalSubsetSize,
+				tc.description)
+		}
+	}
+}
+
+func makeNodes(startIndex, count int) []*v1.Node {
+	nodes := []*v1.Node{}
+	for i := startIndex; i < startIndex+count; i++ {
+		nodes = append(nodes, &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("node%d", i)}})
+	}
+	return nodes
+}
+
 func TestNoRemovals(t *testing.T) {
 	t.Parallel()
-	nodes := []*v1.Node{
-		{ObjectMeta: metav1.ObjectMeta{Name: "node0"}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "node1"}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "node73"}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "node986"}},
-		{ObjectMeta: metav1.ObjectMeta{Name: "node25"}},
-	}
+	// pick a random startIndex which is used to construct nodeName.
+	nodes := makeNodes(78, 5)
 	count := 5
 	subset1 := pickSubsetsMinRemovals(nodes, "svc123", count, nil)
 	if len(subset1) < 5 {
