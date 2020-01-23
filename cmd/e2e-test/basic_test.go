@@ -299,6 +299,42 @@ func TestFrontendResourceDeletion(t *testing.T) {
 			if gclb, err = e2e.WhiteboxTest(ing, s, Framework.Cloud, ""); err != nil {
 				t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 			}
+
+			expectedVIP := ing.Status.LoadBalancer.Ingress[0].IP
+			// Re-enable http/https and verify that the ingress uses same VIP.
+			if ing, err = crud.Get(ing.Namespace, ing.Name); err != nil {
+				t.Fatalf("crud.Get(%s) = %v, want nil", ingKey, err)
+			}
+			ingBuilder = fuzz.NewIngressBuilderFromExisting(ing)
+			if tc.disableHTTP {
+				ingBuilder = ingBuilder.SetAllowHttp(true)
+			}
+			if tc.disableHTTPS {
+				ingBuilder.SetTLS([]v1beta1.IngressTLS{
+					{
+						Hosts:      []string{},
+						SecretName: cert.Name,
+					},
+				})
+			}
+			ing = ingBuilder.Build()
+			if _, err := crud.Update(ing); err != nil {
+				t.Fatalf("Update(%s) = %v, want nil; ingress: %v", ingKey, err, ing)
+			}
+			t.Logf("Ingress updated (%s)", ingKey)
+			if ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+				t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
+			}
+			gclb, err = e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
+			if err != nil {
+				t.Fatalf("e2e.WhiteboxTest(%s, ...)", ingKey)
+			}
+			// Verify that ingress VIP is retained.
+			gotVIP := ing.Status.LoadBalancer.Ingress[0].IP
+			if expectedVIP != gotVIP {
+				t.Fatalf("Two separate VIPs are created. expected %s, got %s", expectedVIP, gotVIP)
+			}
+
 			deleteOptions = &fuzz.GCLBDeleteOptions{
 				SkipDefaultBackend: true,
 			}
