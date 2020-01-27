@@ -266,7 +266,7 @@ func TestFrontendResourceDeletion(t *testing.T) {
 			}
 			gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
 			if err != nil {
-				t.Fatalf("e2e.WhiteboxTest(%s, ...)", ingKey)
+				t.Fatalf("e2e.WhiteboxTest(%s, ...)= %v, want nil", ingKey, err)
 			}
 
 			// Update ingress with desired frontend resource configuration.
@@ -327,7 +327,7 @@ func TestFrontendResourceDeletion(t *testing.T) {
 			}
 			gclb, err = e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
 			if err != nil {
-				t.Fatalf("e2e.WhiteboxTest(%s, ...)", ingKey)
+				t.Fatalf("e2e.WhiteboxTest(%s, ...)= %v, want nil", ingKey, err)
 			}
 			// Verify that ingress VIP is retained.
 			gotVIP := ing.Status.LoadBalancer.Ingress[0].IP
