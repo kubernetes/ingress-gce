@@ -293,7 +293,7 @@ func WaitForFrontendResourceDeletion(ctx context.Context, c cloud.Cloud, g *fuzz
 	return wait.Poll(gclbDeletionInterval, gclbDeletionTimeout, func() (bool, error) {
 		if options.CheckHttpFrontendResources {
 			if err := g.CheckResourceDeletionByProtocol(ctx, c, options, fuzz.HttpProtocol); err != nil {
-				klog.Infof("WaitForGCLBDeletionByProtocol(..., %q, %q) = %v", g.VIP, fuzz.HttpsProtocol, err)
+				klog.Infof("WaitForGCLBDeletionByProtocol(..., %q, %q) = %v", g.VIP, fuzz.HttpProtocol, err)
 				return false, nil
 			}
 		}

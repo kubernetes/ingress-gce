@@ -23,8 +23,9 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/legacy"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -61,7 +62,9 @@ func TestTimeout(t *testing.T) {
 				annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
 			}
 
-			if _, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Create(tc.beConfig); err != nil {
+			bcCRUD := legacy.BackendConfigCRUD{C: Framework.BackendConfigClient}
+			tc.beConfig.Namespace = s.Namespace
+			if _, err := bcCRUD.Create(tc.beConfig); err != nil {
 				t.Fatalf("error creating BackendConfig: %v", err)
 			}
 			t.Logf("BackendConfig created (%s/%s) ", s.Namespace, tc.beConfig.Name)
@@ -149,7 +152,9 @@ func TestILBCT(t *testing.T) {
 				annotations.NEGAnnotationKey:     negVal.String(),
 			}
 
-			if _, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Create(tc.beConfig); err != nil {
+			bcCRUD := legacy.BackendConfigCRUD{C: Framework.BackendConfigClient}
+			tc.beConfig.Namespace = s.Namespace
+			if _, err := bcCRUD.Create(tc.beConfig); err != nil {
 				t.Fatalf("error creating BackendConfig: %v", err)
 			}
 			t.Logf("BackendConfig created (%s/%s) ", s.Namespace, tc.beConfig.Name)

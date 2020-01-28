@@ -241,3 +241,8 @@ func CheckEvent(recorder *record.FakeRecorder, expected string, shouldMatch bool
 func Float64ToPtr(val float64) *float64 {
 	return &val
 }
+
+// Int64ToPtr returns int ptr for given int.
+func Int64ToPtr(val int64) *int64 {
+	return &val
+}
