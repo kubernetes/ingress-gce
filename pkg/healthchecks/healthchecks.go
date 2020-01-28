@@ -290,7 +290,13 @@ func (h *HealthChecks) Delete(name string, scope meta.KeyType) error {
 			return err
 		}
 		// L7-ILB is the only use of regional right now
-		return composite.DeleteHealthCheck(cloud, key, features.L7ILBVersions().HealthCheck)
+		err = composite.DeleteHealthCheck(cloud, key, features.L7ILBVersions().HealthCheck)
+		// Ignore error if the deletion candidate is being used by another resource.
+		// In most of the cases, this is the associated backend resource itself.
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsInUsedByError(err) {
+			klog.V(4).Infof("DeleteRegionalHealthCheck(%s, _): %v, ignorable error", name, err)
+			return nil
+		}
 	}
 
 	klog.V(2).Infof("Deleting health check %v", name)
