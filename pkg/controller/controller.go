@@ -34,7 +34,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/common/operator"
@@ -204,21 +204,21 @@ func NewLoadBalancerController(
 	// BackendConfig event handlers.
 	ctx.BackendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			beConfig := obj.(*backendconfigv1beta1.BackendConfig)
+			beConfig := obj.(*backendconfigv1.BackendConfig)
 			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 			lbc.ingQueue.Enqueue(convert(ings)...)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
-				beConfig := cur.(*backendconfigv1beta1.BackendConfig)
+				beConfig := cur.(*backendconfigv1.BackendConfig)
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
-			var beConfig *backendconfigv1beta1.BackendConfig
+			var beConfig *backendconfigv1.BackendConfig
 			var ok, beOk bool
-			beConfig, ok = obj.(*backendconfigv1beta1.BackendConfig)
+			beConfig, ok = obj.(*backendconfigv1.BackendConfig)
 			if !ok {
 				// This can happen if the watch is closed and misses the delete event
 				state, stateOk := obj.(cache.DeletedFinalStateUnknown)
@@ -227,7 +227,7 @@ func NewLoadBalancerController(
 					return
 				}
 
-				beConfig, beOk = state.Obj.(*backendconfigv1beta1.BackendConfig)
+				beConfig, beOk = state.Obj.(*backendconfigv1.BackendConfig)
 				if !beOk {
 					klog.Errorf("Wanted backendconfig obj, got %+v", state.Obj)
 					return

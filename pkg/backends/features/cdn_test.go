@@ -19,7 +19,7 @@ package features
 import (
 	"testing"
 
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -34,8 +34,8 @@ func TestEnsureCDN(t *testing.T) {
 		{
 			desc: "cdn setting are missing from spec, no update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
+				BackendConfig: &backendconfigv1.BackendConfig{
+					Spec: backendconfigv1.BackendConfigSpec{
 						Cdn: nil,
 					},
 				},
@@ -53,9 +53,9 @@ func TestEnsureCDN(t *testing.T) {
 		{
 			desc: "cache policies are missing from spec, no update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						Cdn: &backendconfigv1beta1.CDNConfig{
+				BackendConfig: &backendconfigv1.BackendConfig{
+					Spec: backendconfigv1.BackendConfigSpec{
+						Cdn: &backendconfigv1.CDNConfig{
 							Enabled: true,
 						},
 					},
@@ -74,11 +74,11 @@ func TestEnsureCDN(t *testing.T) {
 		{
 			desc: "settings are identical, no update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						Cdn: &backendconfigv1beta1.CDNConfig{
+				BackendConfig: &backendconfigv1.BackendConfig{
+					Spec: backendconfigv1.BackendConfigSpec{
+						Cdn: &backendconfigv1.CDNConfig{
 							Enabled: true,
-							CachePolicy: &backendconfigv1beta1.CacheKeyPolicy{
+							CachePolicy: &backendconfigv1.CacheKeyPolicy{
 								IncludeHost: true,
 							},
 						},
@@ -98,11 +98,11 @@ func TestEnsureCDN(t *testing.T) {
 		{
 			desc: "cache settings are different, update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						Cdn: &backendconfigv1beta1.CDNConfig{
+				BackendConfig: &backendconfigv1.BackendConfig{
+					Spec: backendconfigv1.BackendConfigSpec{
+						Cdn: &backendconfigv1.CDNConfig{
 							Enabled: true,
-							CachePolicy: &backendconfigv1beta1.CacheKeyPolicy{
+							CachePolicy: &backendconfigv1.CacheKeyPolicy{
 								IncludeHost:        true,
 								IncludeQueryString: false,
 								IncludeProtocol:    false,
@@ -126,9 +126,9 @@ func TestEnsureCDN(t *testing.T) {
 		{
 			desc: "enabled setting is different, update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
-						Cdn: &backendconfigv1beta1.CDNConfig{
+				BackendConfig: &backendconfigv1.BackendConfig{
+					Spec: backendconfigv1.BackendConfigSpec{
+						Cdn: &backendconfigv1.CDNConfig{
 							Enabled: true,
 						},
 					},

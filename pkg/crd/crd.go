@@ -34,6 +34,8 @@ const (
 	checkCRDEstablishedInterval = time.Second
 	// Timeout for checking the Established condition of CRD.
 	checkCRDEstablishedTimeout = 60 * time.Second
+	v1String                   = "v1"
+	v1beta1String              = "v1beta1"
 )
 
 // CRDHandler takes care of ensuring CRD's for a cluster.
@@ -98,9 +100,9 @@ func crd(meta *CRDMeta) *apiextensionsv1beta1.CustomResourceDefinition {
 	crd := &apiextensionsv1beta1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{Name: meta.plural + "." + meta.groupName},
 		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
-			Group:   meta.groupName,
-			Version: meta.version,
-			Scope:   apiextensionsv1beta1.NamespaceScoped,
+			Group:    meta.groupName,
+			Versions: getCRDVersions(meta.version),
+			Scope:    apiextensionsv1beta1.NamespaceScoped,
 			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
 				Kind:       meta.kind,
 				ListKind:   meta.listKind,
@@ -118,4 +120,33 @@ func crd(meta *CRDMeta) *apiextensionsv1beta1.CustomResourceDefinition {
 		crd.Spec.Validation = validationSpec
 	}
 	return crd
+}
+
+func getCRDVersions(version string) []apiextensionsv1beta1.CustomResourceDefinitionVersion {
+	switch version {
+	case v1String:
+		return []apiextensionsv1beta1.CustomResourceDefinitionVersion{
+			{
+				Name:    v1String,
+				Served:  true,
+				Storage: true,
+			},
+			{
+				Name:    v1beta1String,
+				Served:  true,
+				Storage: false,
+			},
+		}
+	case v1beta1String:
+		return []apiextensionsv1beta1.CustomResourceDefinitionVersion{
+			{
+				Name:    v1beta1String,
+				Served:  true,
+				Storage: true,
+			},
+		}
+	default:
+		klog.Errorf("Unexpected CRD version %s", version)
+		return []apiextensionsv1beta1.CustomResourceDefinitionVersion{}
+	}
 }

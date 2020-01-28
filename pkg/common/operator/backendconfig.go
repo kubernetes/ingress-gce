@@ -4,14 +4,14 @@ import (
 	"k8s.io/klog"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 
 	api_v1 "k8s.io/api/core/v1"
 )
 
 // doesServiceReferenceBackendConfig returns true if the passed in Service directly references
 // the passed in BackendConfig.
-func doesServiceReferenceBackendConfig(svc *api_v1.Service, beConfig *backendconfigv1beta1.BackendConfig) bool {
+func doesServiceReferenceBackendConfig(svc *api_v1.Service, beConfig *backendconfigv1.BackendConfig) bool {
 	if svc.Namespace != beConfig.Namespace {
 		return false
 	}

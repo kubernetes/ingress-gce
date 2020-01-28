@@ -19,7 +19,7 @@ package features
 import (
 	"testing"
 
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -35,15 +35,15 @@ func TestEnsureTimeout(t *testing.T) {
 	}{
 		{
 			desc:           "timeout setting missing from both ends, no update needed",
-			sp:             utils.ServicePort{BackendConfig: &backendconfigv1beta1.BackendConfig{}},
+			sp:             utils.ServicePort{BackendConfig: &backendconfigv1.BackendConfig{}},
 			be:             &composite.BackendService{},
 			updateExpected: false,
 		},
 		{
 			desc: "settings are identical, no update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
+				BackendConfig: &backendconfigv1.BackendConfig{
+					Spec: backendconfigv1.BackendConfigSpec{
 						TimeoutSec: &testPortBC,
 					},
 				},
@@ -56,8 +56,8 @@ func TestEnsureTimeout(t *testing.T) {
 		{
 			desc: "settings are different, update needed",
 			sp: utils.ServicePort{
-				BackendConfig: &backendconfigv1beta1.BackendConfig{
-					Spec: backendconfigv1beta1.BackendConfigSpec{
+				BackendConfig: &backendconfigv1.BackendConfig{
+					Spec: backendconfigv1.BackendConfigSpec{
 						TimeoutSec: &testPortBC,
 					},
 				},

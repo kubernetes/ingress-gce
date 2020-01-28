@@ -3,7 +3,7 @@ package operator
 import (
 	"fmt"
 
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/utils"
 
 	api_v1 "k8s.io/api/core/v1"
@@ -29,7 +29,7 @@ func (op *ServicesOperator) AsList() []*api_v1.Service {
 }
 
 // ReferencesBackendConfig returns the Services that reference the given BackendConfig.
-func (op *ServicesOperator) ReferencesBackendConfig(beConfig *backendconfigv1beta1.BackendConfig) *ServicesOperator {
+func (op *ServicesOperator) ReferencesBackendConfig(beConfig *backendconfigv1.BackendConfig) *ServicesOperator {
 	dupes := map[string]bool{}
 
 	var s []*api_v1.Service

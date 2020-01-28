@@ -21,7 +21,7 @@ import (
 
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 )
 
 const (
@@ -35,7 +35,7 @@ var supportedAffinities = map[string]bool{
 	"GENERATED_COOKIE": true,
 }
 
-func Validate(kubeClient kubernetes.Interface, beConfig *backendconfigv1beta1.BackendConfig) error {
+func Validate(kubeClient kubernetes.Interface, beConfig *backendconfigv1.BackendConfig) error {
 	if beConfig == nil {
 		return nil
 	}
@@ -53,7 +53,7 @@ func Validate(kubeClient kubernetes.Interface, beConfig *backendconfigv1beta1.Ba
 
 // TODO(rramkumar): Return errors as constants so that the unit tests can distinguish
 // between which error is returned.
-func validateIAP(kubeClient kubernetes.Interface, beConfig *backendconfigv1beta1.BackendConfig) error {
+func validateIAP(kubeClient kubernetes.Interface, beConfig *backendconfigv1.BackendConfig) error {
 	// If IAP settings are not found or IAP is not enabled then don't bother continuing.
 	if beConfig.Spec.Iap == nil || beConfig.Spec.Iap.Enabled == false {
 		return nil
@@ -83,7 +83,7 @@ func validateIAP(kubeClient kubernetes.Interface, beConfig *backendconfigv1beta1
 	return nil
 }
 
-func validateSessionAffinity(kubeClient kubernetes.Interface, beConfig *backendconfigv1beta1.BackendConfig) error {
+func validateSessionAffinity(kubeClient kubernetes.Interface, beConfig *backendconfigv1.BackendConfig) error {
 	if beConfig.Spec.SessionAffinity == nil {
 		return nil
 	}

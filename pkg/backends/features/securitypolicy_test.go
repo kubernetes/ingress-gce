@@ -28,7 +28,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/legacy-cloud-providers/gce"
 
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -46,15 +46,15 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 	testCases := []struct {
 		desc                  string
 		currentBackendService *composite.BackendService
-		desiredConfig         *backendconfigv1beta1.BackendConfig
+		desiredConfig         *backendconfigv1.BackendConfig
 		expectSetCall         bool
 	}{
 		{
 			desc:                  "attach-policy",
 			currentBackendService: &composite.BackendService{},
-			desiredConfig: &backendconfigv1beta1.BackendConfig{
-				Spec: backendconfigv1beta1.BackendConfigSpec{
-					SecurityPolicy: &backendconfigv1beta1.SecurityPolicyConfig{
+			desiredConfig: &backendconfigv1.BackendConfig{
+				Spec: backendconfigv1.BackendConfigSpec{
+					SecurityPolicy: &backendconfigv1.SecurityPolicyConfig{
 						Name: "policy-1",
 					},
 				},
@@ -66,9 +66,9 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 			currentBackendService: &composite.BackendService{
 				SecurityPolicy: "https://www.googleapis.com/compute/beta/projects/test-project/global/securityPolicies/policy-2",
 			},
-			desiredConfig: &backendconfigv1beta1.BackendConfig{
-				Spec: backendconfigv1beta1.BackendConfigSpec{
-					SecurityPolicy: &backendconfigv1beta1.SecurityPolicyConfig{
+			desiredConfig: &backendconfigv1.BackendConfig{
+				Spec: backendconfigv1.BackendConfigSpec{
+					SecurityPolicy: &backendconfigv1.SecurityPolicyConfig{
 						Name: "policy-1",
 					},
 				},
@@ -80,9 +80,9 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 			currentBackendService: &composite.BackendService{
 				SecurityPolicy: "https://www.googleapis.com/compute/beta/projects/test-project/global/securityPolicies/policy-1",
 			},
-			desiredConfig: &backendconfigv1beta1.BackendConfig{
-				Spec: backendconfigv1beta1.BackendConfigSpec{
-					SecurityPolicy: &backendconfigv1beta1.SecurityPolicyConfig{
+			desiredConfig: &backendconfigv1.BackendConfig{
+				Spec: backendconfigv1.BackendConfigSpec{
+					SecurityPolicy: &backendconfigv1.SecurityPolicyConfig{
 						Name: "",
 					},
 				},
@@ -94,9 +94,9 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 			currentBackendService: &composite.BackendService{
 				SecurityPolicy: "https://www.googleapis.com/compute/beta/projects/test-project/global/securityPolicies/policy-1",
 			},
-			desiredConfig: &backendconfigv1beta1.BackendConfig{
-				Spec: backendconfigv1beta1.BackendConfigSpec{
-					SecurityPolicy: &backendconfigv1beta1.SecurityPolicyConfig{
+			desiredConfig: &backendconfigv1.BackendConfig{
+				Spec: backendconfigv1.BackendConfigSpec{
+					SecurityPolicy: &backendconfigv1.SecurityPolicyConfig{
 						Name: "policy-1",
 					},
 				},
@@ -105,14 +105,14 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 		{
 			desc:                  "empty-policy",
 			currentBackendService: &composite.BackendService{},
-			desiredConfig:         &backendconfigv1beta1.BackendConfig{},
+			desiredConfig:         &backendconfigv1.BackendConfig{},
 		},
 		{
 			desc: "no-specified-policy",
 			currentBackendService: &composite.BackendService{
 				SecurityPolicy: "https://www.googleapis.com/compute/beta/projects/test-project/global/securityPolicies/policy-1",
 			},
-			desiredConfig: &backendconfigv1beta1.BackendConfig{},
+			desiredConfig: &backendconfigv1.BackendConfig{},
 			expectSetCall: false,
 		},
 	}

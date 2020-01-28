@@ -17,7 +17,7 @@ import (
 	"strconv"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,7 +25,7 @@ import (
 
 // The below vars are used for sharing unit testing types with multiple packages.
 var (
-	TestBackendConfig = &backendconfigv1beta1.BackendConfig{
+	TestBackendConfig = &backendconfigv1.BackendConfig{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "config-test",
 			Namespace: "test",
@@ -50,6 +50,21 @@ var (
 			Namespace: "test",
 			Annotations: map[string]string{
 				annotations.BackendConfigKey: `{"ports": {"port1": "config-test"}}`,
+			},
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: []apiv1.ServicePort{
+				{Name: "port1"},
+			},
+		},
+	}
+
+	SvcWithTestConfigBeta = &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "svc-test-config-beta",
+			Namespace: "test",
+			Annotations: map[string]string{
+				annotations.BetaBackendConfigKey: `{"ports": {"port1": "config-test"}}`,
 			},
 		},
 		Spec: apiv1.ServiceSpec{

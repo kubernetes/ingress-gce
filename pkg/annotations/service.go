@@ -48,14 +48,17 @@ const (
 	// on the Service, and is applied by the NEG Controller.
 	NEGStatusKey = "cloud.google.com/neg-status"
 
-	// BackendConfigKey is a stringified JSON with two fields:
+	// BetaBackendConfigKey is a stringified JSON with two fields:
 	// - "ports": a map of port names or port numbers to backendConfig names
 	// - "default": denotes the default backendConfig name for all ports except
 	// those are explicitly referenced.
 	// Examples:
 	// - '{"ports":{"my-https-port":"config-https","my-http-port":"config-http"}}'
 	// - '{"default":"config-default","ports":{"my-https-port":"config-https"}}'
-	BackendConfigKey = "beta.cloud.google.com/backend-config"
+	BetaBackendConfigKey = "beta.cloud.google.com/backend-config"
+
+	// BackendConfigKey is GA version of backend config key.
+	BackendConfigKey = "cloud.google.com/backend-config"
 
 	// ProtocolHTTP protocol for a service
 	ProtocolHTTP AppProtocol = "HTTP"
@@ -256,7 +259,7 @@ type BackendConfigs struct {
 
 // GetBackendConfigs returns BackendConfigs for the service.
 func (svc *Service) GetBackendConfigs() (*BackendConfigs, error) {
-	val, ok := svc.v[BackendConfigKey]
+	val, ok := svc.getBackendConfigAnnotation()
 	if !ok {
 		return nil, ErrBackendConfigAnnotationMissing
 	}
@@ -269,4 +272,17 @@ func (svc *Service) GetBackendConfigs() (*BackendConfigs, error) {
 		return nil, ErrBackendConfigNoneFound
 	}
 	return &configs, nil
+}
+
+// getBackendConfigAnnotation returns specified backendconfig annotation value.
+// Returns false if both beta and ga annotations are not specified.
+// Note that GA annotation is returned if both beta and ga annotations are specified.
+func (svc *Service) getBackendConfigAnnotation() (string, bool) {
+	for _, bcKey := range []string{BackendConfigKey, BetaBackendConfigKey} {
+		val, ok := svc.v[bcKey]
+		if ok {
+			return val, ok
+		}
+	}
+	return "", false
 }

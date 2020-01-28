@@ -24,7 +24,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 )
 
 func TestGetBackendConfigForServicePort(t *testing.T) {
@@ -33,9 +33,18 @@ func TestGetBackendConfigForServicePort(t *testing.T) {
 		svc            *apiv1.Service
 		svcPort        *apiv1.ServicePort
 		getFunc        func(obj interface{}) (item interface{}, exists bool, err error)
-		expectedConfig *backendconfigv1beta1.BackendConfig
+		expectedConfig *backendconfigv1.BackendConfig
 		expectedErr    error
 	}{
+		{
+			desc:    "service port name with backend config beta annotation key",
+			svc:     SvcWithTestConfigBeta,
+			svcPort: &apiv1.ServicePort{Name: "port1"},
+			getFunc: func(obj interface{}) (interface{}, bool, error) {
+				return TestBackendConfig, true, nil
+			},
+			expectedConfig: TestBackendConfig,
+		},
 		{
 			desc:    "service port name with backend config",
 			svc:     SvcWithTestConfig,
