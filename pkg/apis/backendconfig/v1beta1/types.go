@@ -43,6 +43,7 @@ type BackendConfigSpec struct {
 	ConnectionDraining   *ConnectionDrainingConfig   `json:"connectionDraining,omitempty"`
 	SessionAffinity      *SessionAffinityConfig      `json:"sessionAffinity,omitempty"`
 	CustomRequestHeaders *CustomRequestHeadersConfig `json:"customRequestHeaders,omitempty"`
+	HealthCheck          *HealthCheckConfig          `json:"healthCheck,omitempty"`
 }
 
 // BackendConfigStatus is the status for a BackendConfig resource
@@ -131,4 +132,16 @@ type SessionAffinityConfig struct {
 // +k8s:openapi-gen=true
 type CustomRequestHeadersConfig struct {
 	Headers []string `json:"headers,omitempty"`
+}
+
+// HealthCheckConfig contains configuration for the health check.
+// +k8s:openapi-gen=true
+type HealthCheckConfig struct {
+	CheckIntervalSec   *int64  `json:"checkIntervalSec,omitempty"`
+	TimeoutSec         *int64  `json:"timeoutSec,omitempty"`
+	HealthyThreshold   *int64  `json:"healthyThreshold,omitempty"`
+	UnhealthyThreshold *int64  `json:"unhealthyThreshold,omitempty"`
+	Type               *string `json:"type,omitempty"`
+	Port               *int64  `json:"port,omitempty"`
+	RequestPath        *string `json:"requestPath,omitempty"`
 }
