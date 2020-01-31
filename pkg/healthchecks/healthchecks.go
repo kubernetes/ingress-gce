@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -76,8 +77,6 @@ type HealthChecks struct {
 	cloud HealthCheckProvider
 	// path is the default health check path for backends.
 	path string
-	// defaultBackend is the default health check path for the default backend.
-	defaultBackendPath string
 	// This is a workaround which allows us to not have to maintain
 	// a separate health checker for the default backend.
 	defaultBackendSvc types.NamespacedName
@@ -86,8 +85,8 @@ type HealthChecks struct {
 // NewHealthChecker creates a new health checker.
 // cloud: the cloud object implementing SingleHealthCheck.
 // defaultHealthCheckPath: is the HTTP path to use for health checks.
-func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendHealthCheckPath string, defaultBackendSvc types.NamespacedName) HealthChecker {
-	return &HealthChecks{cloud, healthCheckPath, defaultBackendHealthCheckPath, defaultBackendSvc}
+func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendSvc types.NamespacedName) HealthChecker {
+	return &HealthChecks{cloud, healthCheckPath, defaultBackendSvc}
 }
 
 // New returns a *HealthCheck with default settings and specified port/protocol
@@ -623,7 +622,7 @@ func betaToAlphaHealthCheck(hc *computebeta.HealthCheck) (*computealpha.HealthCh
 // the passed in ServicePort is associated with the system default backend.
 func (h *HealthChecks) pathFromSvcPort(sp utils.ServicePort) string {
 	if h.defaultBackendSvc == sp.ID.Service {
-		return h.defaultBackendPath
+		return flags.F.DefaultSvcHealthCheckPath
 	}
 	return h.path
 }

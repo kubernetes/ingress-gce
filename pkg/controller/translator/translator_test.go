@@ -59,11 +59,10 @@ func fakeTranslator() *Translator {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 
 	ctxConfig := context.ControllerContextConfig{
-		Namespace:                     apiv1.NamespaceAll,
-		ResyncPeriod:                  1 * time.Second,
-		DefaultBackendSvcPort:         defaultBackend,
-		HealthCheckPath:               "/",
-		DefaultBackendHealthCheckPath: "/healthz",
+		Namespace:             apiv1.NamespaceAll,
+		ResyncPeriod:          1 * time.Second,
+		DefaultBackendSvcPort: defaultBackend,
+		HealthCheckPath:       "/",
 	}
 	ctx := context.NewControllerContext(nil, client, backendConfigClient, nil, nil, defaultNamer, "" /*kubeSystemUID*/, ctxConfig)
 	gce := &Translator{
