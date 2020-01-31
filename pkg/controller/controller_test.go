@@ -66,11 +66,10 @@ func newLoadBalancerController() *LoadBalancerController {
 
 	stopCh := make(chan struct{})
 	ctxConfig := context.ControllerContextConfig{
-		Namespace:                     api_v1.NamespaceAll,
-		ResyncPeriod:                  1 * time.Minute,
-		DefaultBackendSvcPort:         test.DefaultBeSvcPort,
-		HealthCheckPath:               "/",
-		DefaultBackendHealthCheckPath: "/healthz",
+		Namespace:             api_v1.NamespaceAll,
+		ResyncPeriod:          1 * time.Minute,
+		DefaultBackendSvcPort: test.DefaultBeSvcPort,
+		HealthCheckPath:       "/",
 	}
 	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
 	lbc := NewLoadBalancerController(ctx, stopCh)

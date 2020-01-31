@@ -91,13 +91,12 @@ type ControllerContextConfig struct {
 	Namespace    string
 	ResyncPeriod time.Duration
 	// DefaultBackendSvcPortID is the ServicePort for the system default backend.
-	DefaultBackendSvcPort         utils.ServicePort
-	HealthCheckPath               string
-	DefaultBackendHealthCheckPath string
-	FrontendConfigEnabled         bool
-	EnableASMConfigMap            bool
-	ASMConfigMapNamespace         string
-	ASMConfigMapName              string
+	DefaultBackendSvcPort utils.ServicePort
+	HealthCheckPath       string
+	FrontendConfigEnabled bool
+	EnableASMConfigMap    bool
+	ASMConfigMapNamespace string
+	ASMConfigMapName      string
 }
 
 // NewControllerContext returns a new shared set of informers.

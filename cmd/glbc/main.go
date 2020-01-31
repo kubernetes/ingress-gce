@@ -134,15 +134,14 @@ func main() {
 	cloud := app.NewGCEClient()
 	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
 	ctxConfig := ingctx.ControllerContextConfig{
-		Namespace:                     flags.F.WatchNamespace,
-		ResyncPeriod:                  flags.F.ResyncPeriod,
-		DefaultBackendSvcPort:         defaultBackendServicePort,
-		HealthCheckPath:               flags.F.HealthCheckPath,
-		DefaultBackendHealthCheckPath: flags.F.DefaultSvcHealthCheckPath,
-		FrontendConfigEnabled:         flags.F.EnableFrontendConfig,
-		EnableASMConfigMap:            flags.F.EnableASMConfigMapBasedConfig,
-		ASMConfigMapNamespace:         flags.F.ASMConfigMapBasedConfigNamespace,
-		ASMConfigMapName:              flags.F.ASMConfigMapBasedConfigCMName,
+		Namespace:             flags.F.WatchNamespace,
+		ResyncPeriod:          flags.F.ResyncPeriod,
+		DefaultBackendSvcPort: defaultBackendServicePort,
+		HealthCheckPath:       flags.F.HealthCheckPath,
+		FrontendConfigEnabled: flags.F.EnableFrontendConfig,
+		EnableASMConfigMap:    flags.F.EnableASMConfigMapBasedConfig,
+		ASMConfigMapNamespace: flags.F.ASMConfigMapBasedConfigNamespace,
+		ASMConfigMapName:      flags.F.ASMConfigMapBasedConfigCMName,
 	}
 	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
