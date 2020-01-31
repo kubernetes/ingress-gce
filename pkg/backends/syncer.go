@@ -15,7 +15,6 @@ package backends
 
 import (
 	"fmt"
-	"net/http"
 	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -195,11 +194,6 @@ func (s *backendSyncer) gc(backends []*composite.BackendService, knownPorts sets
 		klog.V(2).Infof("GCing backendService for port %s", name)
 		err = s.backendPool.Delete(name, be.Version, scope)
 		if err != nil {
-			if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-				klog.Infof("backendPool.Delete(%v, %v, %v) = %v; backend service not found, ignoring", name, be.Version, scope, err)
-				return nil
-			}
-
 			klog.Errorf("backendPool.Delete(%v, %v, %v) = %v", name, be.Version, scope, err)
 			return err
 		}
