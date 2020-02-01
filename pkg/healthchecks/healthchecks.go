@@ -567,7 +567,7 @@ func (hc *HealthCheck) Version() meta.Version {
 	if hc.forILB {
 		return features.L7ILBVersions().HealthCheck
 	}
-	if hc.isHttp2() || hc.ForNEG {
+	if hc.isHttp2() {
 		return meta.VersionBeta
 	}
 	return meta.VersionGA
