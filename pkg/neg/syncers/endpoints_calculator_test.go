@@ -172,38 +172,3 @@ func TestClusterGetEndpointSet(t *testing.T) {
 		}
 	}
 }
-
-// TestGetPerZoneSubsetCount verifies the perZoneSubsetCount method.
-func TestGetPerZoneSubsetCount(t *testing.T) {
-	t.Parallel()
-	zoneCount := 3
-	result := 0
-	tcs := []struct {
-		desc          string
-		randomize     bool
-		startCount    int
-		endCount      int
-		expectedCount int
-	}{
-		{desc: "start with endpoints, drop to none, ExternalTrafficPolicy:Local", startCount: 5, endCount: 0, expectedCount: 0},
-		{desc: "no endpoints, ExternalTrafficPolicy:Local", startCount: 0, endCount: 0, expectedCount: 0},
-		{desc: "valid endpoints increase, ExternalTrafficPolicy:Local", startCount: 5, endCount: 10, expectedCount: 10 / zoneCount},
-		// If total number of nodes is less than the number of zones, per zone count will be 1.
-		{desc: "valid endpoints decrease, ExternalTrafficPolicy:Local", startCount: 5, endCount: 2, expectedCount: 1},
-		{desc: "valid endpoints > limit, ExternalTrafficPolicy:Local", startCount: 5, endCount: 258, expectedCount: maxSubsetSizeLocal / zoneCount},
-		{desc: "start with endpoints, drop to none, ExternalTrafficPolicy:Cluster", randomize: true, startCount: 5, endCount: 0, expectedCount: maxSubsetSizeDefault / zoneCount},
-		{desc: "no endpoints, random true, ExternalTrafficPolicy:Cluster", randomize: true, startCount: 0, endCount: 0, expectedCount: maxSubsetSizeDefault / zoneCount},
-		{desc: "valid endpoints increase, ExternalTrafficPolicy:Cluster", randomize: true, startCount: 5, endCount: 10, expectedCount: maxSubsetSizeDefault / zoneCount},
-		{desc: "valid endpoints decrease, ExternalTrafficPolicy:Cluster", randomize: true, startCount: 5, endCount: 2, expectedCount: maxSubsetSizeDefault / zoneCount},
-	}
-	for _, tc := range tcs {
-		if tc.randomize {
-			result = NewClusterL4ILBEndpointsCalculator(nil, nil, "test").getPerZoneSubsetCount(zoneCount, tc.endCount)
-		} else {
-			result = NewLocalL4ILBEndpointsCalculator(nil, nil, "test").getPerZoneSubsetCount(zoneCount, tc.endCount)
-		}
-		if result != tc.expectedCount {
-			t.Errorf("For test case '%s', expected subsetCount of %d, but got %d", tc.desc, tc.expectedCount, result)
-		}
-	}
-}
