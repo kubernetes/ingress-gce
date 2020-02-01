@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	label = "Feature"
+	label = "feature"
 )
 
 var (
