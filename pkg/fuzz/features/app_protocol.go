@@ -82,7 +82,7 @@ func (v *appProtocolValidator) CheckResponse(host, path string, resp *http.Respo
 	}
 
 	if resp.StatusCode != 200 {
-		// This test is contigent on a proper response being returned so
+		// This test is contingent on a proper response being returned so
 		// bail if don't get a 200.
 		return fuzz.CheckResponseContinue, nil
 	}

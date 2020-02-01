@@ -142,7 +142,7 @@ func (f *Framework) SanityCheck() error {
 	}
 	klog.V(2).Info("Checking status manager initialization")
 	if err := f.statusManager.init(); err != nil {
-		klog.Errorf("Error initalizing status manager: %v", err)
+		klog.Errorf("Error initializing status manager: %v", err)
 		return err
 	}
 	return nil
