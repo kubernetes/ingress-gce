@@ -211,11 +211,12 @@ func knownPortsFromServicePorts(cloud *gce.Cloud, svcPorts []utils.ServicePort) 
 
 	for _, sp := range svcPorts {
 		name := sp.BackendName()
-		if key, err := composite.CreateKey(cloud, name, features.ScopeFromServicePort(&sp)); err != nil {
+		key, err := composite.CreateKey(cloud, name, features.ScopeFromServicePort(&sp))
+		if err != nil {
 			return nil, err
-		} else {
-			knownPorts.Insert(key.String())
 		}
+		knownPorts.Insert(key.String())
+
 	}
 
 	return knownPorts, nil

@@ -20,7 +20,7 @@ import (
 	compute "google.golang.org/api/compute/v1"
 )
 
-// zoneLister manages lookups for GCE instance groups/instances to zones.
+// ZoneLister manages lookups for GCE instance groups/instances to zones.
 type ZoneLister interface {
 	ListZones() ([]string, error)
 	GetZoneForNode(name string) (string, error)

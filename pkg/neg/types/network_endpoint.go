@@ -27,7 +27,7 @@ type NetworkEndpoint struct {
 	Node string
 }
 
-// sets.NetworkEndpointSet is a set of NetworkEndpoints, implemented via map[NetworkEndpoint]struct{} for minimal memory consumption.
+// NetworkEndpointSet is a set of NetworkEndpoints, implemented via map[NetworkEndpoint]struct{} for minimal memory consumption.
 type NetworkEndpointSet map[NetworkEndpoint]struct{}
 
 // NewNetworkEndpointSet creates a NetworkEndpointSet from a list of values.
@@ -177,7 +177,7 @@ func (s NetworkEndpointSet) List() []NetworkEndpoint {
 	return []NetworkEndpoint(res)
 }
 
-// Returns a single element from the set.
+// PopAny returns a single element from the set.
 func (s NetworkEndpointSet) PopAny() (NetworkEndpoint, bool) {
 	for key := range s {
 		s.Delete(key)

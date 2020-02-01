@@ -56,10 +56,10 @@ const (
 	DefaultNEGUnhealthyThreshold = 2
 	// DefaultTimeout defines the timeout of each probe for IG
 	DefaultTimeout = 60 * time.Second
-	// DefaultTimeout defines the timeout of each probe for NEG
+	// DefaultNEGTimeout defines the timeout of each probe for NEG
 	DefaultNEGTimeout = 15 * time.Second
 
-	// This is a constant for GCE API.
+	// UseServingPortSpecification is a constant for GCE API.
 	// USE_SERVING_PORT: For NetworkEndpointGroup, the port specified for
 	// each network endpoint is used for health checking. For other
 	// backends, the port or named port specified in the Backend Service is
@@ -404,7 +404,7 @@ func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthChe
 	}
 }
 
-// DefaultHealthCheck simply returns the default health check.
+// DefaultNEGHealthCheck simply returns the default health check.
 func DefaultNEGHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 	httpSettings := computealpha.HTTPHealthCheck{PortSpecification: UseServingPortSpecification}
 	klog.V(3).Infof("DefaultNEGHealthCheck(%v)", protocol)
