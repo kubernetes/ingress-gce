@@ -17,17 +17,21 @@ limitations under the License.
 package firewalls
 
 import (
+	"k8s.io/kubernetes/pkg/util/slice"
 	"strings"
 	"testing"
 
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 var defaultNamer = namer.NewNamer("ABC", "XYZ")
 var ruleName = defaultNamer.FirewallRule()
-var srcRanges = []string{"1.1.1.1/11", "2.2.2.2/22"}
+
+//var srcRanges = []string{"1.1.1.1/11", "2.2.2.2/22"}
+var srcRanges = gce.L7LoadBalancerSrcRanges()
 
 func portRanges() []string {
 	return []string{"20000-23000"}
@@ -182,7 +186,7 @@ func TestFirewallPoolGC(t *testing.T) {
 	}
 }
 
-// TestSyncOnXPNWithPermission tests that firwall sync continues to work when OnXPN=true
+// TestSyncOnXPNWithPermission tests that firewall sync continues to work when OnXPN=true
 func TestSyncOnXPNWithPermission(t *testing.T) {
 	// Fake XPN cluster with permission
 	fwp := NewFakeFirewallsProvider(true, false)
@@ -204,9 +208,7 @@ func TestSyncXPNReadOnly(t *testing.T) {
 	nodes := []string{"node-a", "node-b", "node-c"}
 
 	err := fp.Sync(nodes, nil, nil)
-	if fwErr, ok := err.(*FirewallXPNError); !ok || !strings.Contains(fwErr.Message, "create") {
-		t.Errorf("Expected firewall sync error with a user message. Received err: %v", err)
-	}
+	validateXPNError(err, "create", t)
 
 	// Manually create the firewall
 	expectedFirewall := &compute.Firewall{
@@ -232,13 +234,43 @@ func TestSyncXPNReadOnly(t *testing.T) {
 
 	nodes = append(nodes, "node-d")
 	err = fp.Sync(nodes, nil, nil)
-	if fwErr, ok := err.(*FirewallXPNError); !ok || !strings.Contains(fwErr.Message, "update") {
-		t.Errorf("Expected firewall sync error with a user message. Received err: %v", err)
-	}
+	validateXPNError(err, "update", t)
 
 	err = fp.GC()
-	if fwErr, ok := err.(*FirewallXPNError); !ok || !strings.Contains(fwErr.Message, "delete") {
+	validateXPNError(err, "delete", t)
+}
+
+func validateXPNError(err error, op string, t *testing.T) {
+	fwErr, ok := err.(*FirewallXPNError)
+	if !ok || !strings.Contains(fwErr.Message, op) {
 		t.Errorf("Expected firewall sync error with a user message. Received err: %v", err)
+		return
+	}
+	// Ensure that the error message and the source ranges are correct
+	errString := fwErr.Error()
+	if !strings.Contains(errString, "Firewall change required by security admin") {
+		t.Errorf("XPN error does not contain the expected string, got '%s'", errString)
+	}
+	if op == "delete" {
+		return
+	}
+	// Check source ranges for update/create operations.
+	expectedSourceRanges := gce.L7LoadBalancerSrcRanges()
+	incorrectSourceRanges := gce.L4LoadBalancerSrcRanges()
+	// incorrectSourceRanges are those included for L4 LB but not L7 LB. These should not be present in the error
+	// message emitted for L7 LB.
+	for _, val := range expectedSourceRanges {
+		incorrectSourceRanges = slice.RemoveString(incorrectSourceRanges, val, nil)
+	}
+	for _, val := range expectedSourceRanges {
+		if !strings.Contains(errString, val) {
+			t.Errorf("Expected source ranges '%s' in XPN error, Got '%s'", expectedSourceRanges, errString)
+		}
+	}
+	for _, val := range incorrectSourceRanges {
+		if strings.Contains(errString, val) {
+			t.Errorf("Expected source ranges '%s' in XPN error, Got '%s'", expectedSourceRanges, errString)
+		}
 	}
 }
 

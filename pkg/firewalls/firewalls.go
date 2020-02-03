@@ -163,7 +163,7 @@ func (fr *FirewallRules) deleteFirewall(name string) error {
 func newFirewallXPNError(internal error, cmd string) *FirewallXPNError {
 	return &FirewallXPNError{
 		Internal: internal,
-		Message:  fmt.Sprintf("Firewall change required by network admin: `%v`", cmd),
+		Message:  fmt.Sprintf("Firewall change required by security admin: `%v`", cmd),
 	}
 }
 
