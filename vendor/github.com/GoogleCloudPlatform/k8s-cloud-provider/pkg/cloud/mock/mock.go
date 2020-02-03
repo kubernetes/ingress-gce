@@ -861,6 +861,16 @@ func SetSslCertificateAlphaTargetHTTPSProxyHook(ctx context.Context, key *meta.K
 	return nil
 }
 
+// SetSslCertificateAlphaTargetHTTPSProxyHook defines the hook for setting ssl certificates on a TargetHttpsProxy.
+func SetSslCertificateBetaTargetHTTPSProxyHook(ctx context.Context, key *meta.Key, req *beta.TargetHttpsProxiesSetSslCertificatesRequest, m *cloud.MockBetaTargetHttpsProxies) error {
+	tp, err := m.Get(ctx, key)
+	if err != nil {
+		return err
+	}
+	tp.SslCertificates = req.SslCertificates
+	return nil
+}
+
 // SetSslCertificateAlphaRegionTargetHTTPSProxyHook defines the hook for setting ssl certificates on a TargetHttpsProxy.
 func SetSslCertificateAlphaRegionTargetHTTPSProxyHook(ctx context.Context, key *meta.Key, req *alpha.TargetHttpsProxiesSetSslCertificatesRequest, m *cloud.MockAlphaRegionTargetHttpsProxies) error {
 	tp, err := m.Get(ctx, key)
@@ -891,6 +901,37 @@ func SetSslCertificateRegionTargetHTTPSProxyHook(ctx context.Context, key *meta.
 	}
 
 	tp.SslCertificates = req.SslCertificates
+	return nil
+}
+
+// SetSslCertificateTargetHTTPSProxyHook defines the hook for setting ssl certificates on a TargetHttpsProxy.
+func SetSslPolicyTargetHTTPSProxyHook(ctx context.Context, key *meta.Key, ref *ga.SslPolicyReference, m *cloud.MockTargetHttpsProxies) error {
+	tp, err := m.Get(ctx, key)
+	if err != nil {
+		return err
+	}
+
+	tp.SslPolicy = ref.SslPolicy
+	return nil
+}
+
+// SetSslCertificateAlphaTargetHTTPSProxyHook defines the hook for setting ssl certificates on a TargetHttpsProxy.
+func SetSslPolicyAlphaTargetHTTPSProxyHook(ctx context.Context, key *meta.Key, ref *alpha.SslPolicyReference, m *cloud.MockAlphaTargetHttpsProxies) error {
+	tp, err := m.Get(ctx, key)
+	if err != nil {
+		return err
+	}
+	tp.SslPolicy = ref.SslPolicy
+	return nil
+}
+
+// SetSslCertificateAlphaTargetHTTPSProxyHook defines the hook for setting ssl certificates on a TargetHttpsProxy.
+func SetSslPolicyBetaTargetHTTPSProxyHook(ctx context.Context, key *meta.Key, ref *beta.SslPolicyReference, m *cloud.MockBetaTargetHttpsProxies) error {
+	tp, err := m.Get(ctx, key)
+	if err != nil {
+		return err
+	}
+	tp.SslPolicy = ref.SslPolicy
 	return nil
 }
 
