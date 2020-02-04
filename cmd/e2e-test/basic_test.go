@@ -29,7 +29,15 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
+func TestWindows(t *testing.T) {
+	testBasicOS(t, e2e.Windows)
+}
+
 func TestBasic(t *testing.T) {
+	testBasicOS(t, e2e.Linux)
+}
+
+func testBasicOS(t *testing.T, os e2e.OS) {
 	t.Parallel()
 
 	port80 := intstr.FromInt(80)
@@ -64,7 +72,7 @@ func TestBasic(t *testing.T) {
 
 			ctx := context.Background()
 
-			_, err := e2e.CreateEchoService(s, "service-1", nil)
+			_, err := e2e.CreateEchoServiceWithOS(s, "service-1", nil, os)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}

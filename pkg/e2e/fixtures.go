@@ -48,8 +48,16 @@ import (
 )
 
 const (
-	echoheadersImage = "gcr.io/k8s-ingress-image-push/ingress-gce-echo-amd64:master"
-	porterPort       = 80
+	echoheadersImage        = "gcr.io/k8s-ingress-image-push/ingress-gce-echo-amd64:master"
+	echoheadersImageWindows = "gcr.io/gke-windows-testing/ingress-gce-echo-amd64-windows:master"
+	porterPort              = 80
+)
+
+type OS int
+
+const (
+	Linux OS = iota
+	Windows
 )
 
 var ErrSubnetExists = fmt.Errorf("ILB subnet in region already exists")
@@ -81,9 +89,19 @@ func CreateEchoService(s *Sandbox, name string, annotations map[string]string) (
 	return EnsureEchoService(s, name, annotations, v1.ServiceTypeNodePort, 1)
 }
 
+// CreateEchoServiceWithOS creates the pod and service serving echoheaders
+// Todo: (shance) remove this and replace uses with EnsureEchoService()
+func CreateEchoServiceWithOS(s *Sandbox, name string, annotations map[string]string, os OS) (*v1.Service, error) {
+	return ensureEchoService(s, name, annotations, v1.ServiceTypeNodePort, 1, os)
+}
+
 // EnsureEchoService that the Echo service with the given description is set up
 func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32) (*v1.Service, error) {
-	if err := EnsureEchoDeployment(s, name, numReplicas, NoopModify); err != nil {
+	return ensureEchoService(s, name, annotations, svcType, numReplicas, Linux)
+}
+
+func ensureEchoService(s *Sandbox, name string, annotations map[string]string, svcType v1.ServiceType, numReplicas int32, os OS) (*v1.Service, error) {
+	if err := ensureEchoDeployment(s, name, numReplicas, NoopModify, os); err != nil {
 		return nil, err
 	}
 
@@ -135,16 +153,27 @@ func EnsureEchoService(s *Sandbox, name string, annotations map[string]string, s
 
 // EnsureEchoDeployment ensures that the Echo deployment with the given description is set up
 func EnsureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment)) error {
+	return ensureEchoDeployment(s, name, numReplicas, modify, Linux)
+}
+
+func ensureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment), os OS) error {
+	image := echoheadersImage
+	var nodeSelector map[string]string
+	if os == Windows {
+		image = echoheadersImageWindows
+		nodeSelector = map[string]string{"kubernetes.io/os": "windows"}
+	}
 	podTemplate := v1.PodTemplateSpec{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   name,
 			Labels: map[string]string{"app": name},
 		},
 		Spec: v1.PodSpec{
+			NodeSelector: nodeSelector,
 			Containers: []v1.Container{
 				{
 					Name:  "echoheaders",
-					Image: echoheadersImage,
+					Image: image,
 					Ports: []v1.ContainerPort{
 						{ContainerPort: 8080, Name: "http-port"},
 						{ContainerPort: 8443, Name: "https-port"},
@@ -179,7 +208,6 @@ func EnsureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify fun
 			},
 		},
 	}
-
 	deployment := &apps.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec: apps.DeploymentSpec{
