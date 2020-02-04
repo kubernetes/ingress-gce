@@ -19,6 +19,7 @@ package loadbalancers
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -133,6 +134,12 @@ func (l *L7) checkHttpsProxy() (err error) {
 			return err
 		}
 
+		if flags.F.EnableFrontendConfig {
+			if err := l.ensureSslPolicy(newProxy); err != nil {
+				return err
+			}
+		}
+
 		key, err = l.CreateKey(proxyName)
 		if err != nil {
 			return err
@@ -171,8 +178,14 @@ func (l *L7) checkHttpsProxy() (err error) {
 		if err := composite.SetSslCertificateForTargetHttpsProxy(l.cloud, key, proxy, sslCertURLs); err != nil {
 			return err
 		}
-
 	}
+
+	if flags.F.EnableFrontendConfig {
+		if err := l.ensureSslPolicy(proxy); err != nil {
+			return err
+		}
+	}
+
 	l.tps = proxy
 	return nil
 }
@@ -189,4 +202,57 @@ func (l *L7) getSslCertLinkInUse() ([]string, error) {
 	}
 
 	return proxy.SslCertificates, nil
+}
+
+// ensureSslPolicy ensures that the SslPolicy described in the frontendconfig is
+// properly applied to the proxy.
+func (l *L7) ensureSslPolicy(proxy *composite.TargetHttpsProxy) error {
+	policyLink, err := l.getSslPolicyLink()
+	if err != nil {
+		return err
+	}
+
+	if policyLink != nil && !utils.EqualResourceIDs(*policyLink, proxy.SslPolicy) {
+		key, err := l.CreateKey(proxy.Name)
+		if err != nil {
+			return err
+		}
+		if err := composite.SetSslPolicyForTargetHttpsProxy(l.cloud, key, proxy, *policyLink); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// getSslPolicyLink returns the ref to the ssl policy that is described by the
+// frontend config.  Since Ssl Policy is a *string, there are three possible I/O situations
+// 1) policy is nil -> this returns nil
+// 2) policy is an empty string -> this returns an empty string
+// 3) policy is non-empty -> this constructs the resourcce path and returns it
+func (l *L7) getSslPolicyLink() (*string, error) {
+	var link string
+
+	if l.runtimeInfo.FrontendConfig == nil {
+		return nil, nil
+	}
+
+	policyName := l.runtimeInfo.FrontendConfig.Spec.SslPolicy
+	if policyName == nil {
+		return nil, nil
+	}
+	if *policyName == "" {
+		return &link, nil
+	}
+
+	key, err := l.CreateKey(*policyName)
+	if err != nil {
+		return nil, err
+	}
+	resourceID := cloud.ResourceID{
+		Resource: "sslPolicies",
+		Key:      key,
+	}
+	resID := resourceID.ResourcePath()
+
+	return &resID, nil
 }
