@@ -20,7 +20,7 @@ set -o pipefail
 
 SCRIPT_ROOT=$(dirname ${BASH_SOURCE})/..
 CODEGEN_PKG=${CODEGEN_PKG:-$(cd ${SCRIPT_ROOT}; ls -d -1 ./vendor/k8s.io/code-generator 2>/dev/null || echo ../code-generator)}
-OPENAPI_PKG=${GOPATH}/src/k8s.io/kube-openapi
+OPENAPI_PKG=k8s.io/kube-openapi
 
 echo "Generating composite types"
 go run ${SCRIPT_ROOT}/pkg/composite/gen/main.go
@@ -52,7 +52,7 @@ echo "Performing code generation for FrontendConfig CRD"
 ${CODEGEN_PKG}/generate-groups.sh \
   "deepcopy,client,informer,lister" \
   k8s.io/ingress-gce/pkg/frontendconfig/client k8s.io/ingress-gce/pkg/apis \
-  frontendconfig:v1beta1 \
+  "frontendconfig:v1beta1" \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
 
 echo "Generating openapi for FrontendConfig v1beta1"

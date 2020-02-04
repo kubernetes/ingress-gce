@@ -28,15 +28,14 @@ import (
 type FrontendConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-
-	Spec   FrontendConfigSpec   `json:"spec"`
-	Status FrontendConfigStatus `json:"status"`
+	Spec              FrontendConfigSpec   `json:"spec"`
+	Status            FrontendConfigStatus `json:"status"`
 }
 
 // FrontendConfigSpec is the spec for a FrontendConfig resource
 // +k8s:openapi-gen=true
 type FrontendConfigSpec struct {
-	// Add individual features here
+	SslPolicy *string `json:"sslPolicy,omitempty"`
 }
 
 // FrontendConfigStatus is the status for a FrontendConfig resource
