@@ -18,6 +18,7 @@ limitations under the License.
 package composite
 
 import (
+	"fmt"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	computealpha "google.golang.org/api/compute/v0.alpha"
@@ -83,6 +84,44 @@ func SetSslCertificateForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, ta
 	default:
 		req := &compute.TargetHttpsProxiesSetSslCertificatesRequest{SslCertificates: sslCertURLs}
 		return mc.Observe(gceCloud.Compute().TargetHttpsProxies().SetSslCertificates(ctx, key, req))
+	}
+}
+
+// SetSslPolicyForTargetHttpsProxy() sets the url map for a target proxy
+func SetSslPolicyForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, SslPolicyLink string) error {
+	ctx, cancel := cloud.ContextWithCallTimeout()
+	defer cancel()
+	mc := metrics.NewMetricContext("TargetHttpProxy", "set_url_map", key.Region, key.Zone, string(targetHttpsProxy.Version))
+
+	// Set name in case it is not present in the key
+	key.Name = targetHttpsProxy.Name
+	klog.V(3).Infof("Setting SslPolicy for TargetHttpProxy %v", key)
+
+	switch targetHttpsProxy.Version {
+	case meta.VersionAlpha:
+		ref := &computealpha.SslPolicyReference{SslPolicy: SslPolicyLink}
+		switch key.Type() {
+		case meta.Regional:
+			return fmt.Errorf("SetSslPolicy() is not supported for regional Target Https Proxies")
+		default:
+			return mc.Observe(gceCloud.Compute().AlphaTargetHttpsProxies().SetSslPolicy(ctx, key, ref))
+		}
+	case meta.VersionBeta:
+		ref := &computebeta.SslPolicyReference{SslPolicy: SslPolicyLink}
+		switch key.Type() {
+		case meta.Regional:
+			return fmt.Errorf("SetSslPolicy() is not supported for regional Target Https Proxies")
+		default:
+			return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().SetSslPolicy(ctx, key, ref))
+		}
+	default:
+		ref := &compute.SslPolicyReference{SslPolicy: SslPolicyLink}
+		switch key.Type() {
+		case meta.Regional:
+			return fmt.Errorf("SetSslPolicy() is not supported for regional Target Https Proxies")
+		default:
+			return mc.Observe(gceCloud.Compute().TargetHttpsProxies().SetSslPolicy(ctx, key, ref))
+		}
 	}
 }
 
