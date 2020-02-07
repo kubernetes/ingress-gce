@@ -32,6 +32,8 @@ import (
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
+	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
@@ -50,7 +52,6 @@ type Options struct {
 	DestroySandboxes    bool
 	GceEndpointOverride string
 	CreateILBSubnet     bool
-	EnableIstio         bool
 }
 
 const (
@@ -85,15 +86,32 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		CreateILBSubnet:     options.CreateILBSubnet,
 	}
 	f.statusManager = NewStatusManager(f)
-	if options.EnableIstio {
-		dynamicClient, err := dynamic.NewForConfig(config)
-		if err != nil {
-			klog.Fatalf("Failed to create Dynamic client: %v", err)
-		}
-		destrinationGVR := schema.GroupVersionResource{Group: destinationRuleGroup, Version: destinationRuleAPIVersion, Resource: destinationRulePlural}
-		f.DestinationRuleClient = dynamicClient.Resource(destrinationGVR)
-	}
 
+	// Preparing dynamic client if Istio:DestinationRule CRD exisits and matches the required version.
+	// The client is used by the ASM e2e tests.
+	apiextensionClient, err := apiextensionsclientset.NewForConfig(config)
+	if err != nil {
+		klog.Fatalf("Failed to create ApiextensionClient for DestinationRule, disabling ASM Mode, error: %s", err)
+	}
+	destinationRuleCRD, err := apiextensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(destinationRuleCRDName, metav1.GetOptions{})
+	if err != nil {
+		if errors.IsNotFound(err) {
+			klog.Infof("Cannot load DestinationRule CRD, Istio is disabled on this cluster.")
+		} else {
+			klog.Fatalf("Failed to load DestinationRule CRD, error: %s", err)
+		}
+	} else {
+		if destinationRuleCRD.Spec.Version != destinationRuleAPIVersion {
+			klog.Fatalf("The cluster Istio version not meet the testing requirement, want: %s, got: %s.", destinationRuleAPIVersion, destinationRuleCRD.Spec.Version)
+		} else {
+			dynamicClient, err := dynamic.NewForConfig(config)
+			if err != nil {
+				klog.Fatalf("Failed to create Dynamic client: %v", err)
+			}
+			destrinationGVR := schema.GroupVersionResource{Group: destinationRuleGroup, Version: destinationRuleAPIVersion, Resource: destinationRulePlural}
+			f.DestinationRuleClient = dynamicClient.Resource(destrinationGVR)
+		}
+	}
 	return f
 }
 

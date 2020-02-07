@@ -24,6 +24,9 @@ const (
 // TestASMConfig tests the ASM enable/disable, it can't run parallel with other tests.
 func TestASMConfig(t *testing.T) {
 	Framework.RunWithSandbox("TestASMConfig", t, func(t *testing.T, s *e2e.Sandbox) {
+		if !s.IstioEnabled() {
+			t.Fatalf("This test must run against a cluster with Istio on.")
+		}
 		for _, tc := range []struct {
 			desc                string
 			configMap           map[string]string
@@ -71,6 +74,9 @@ func TestASMServiceAndDestinationRule(t *testing.T) {
 	// This test case will need two namespaces, one will in asm-skip-namespaces.
 	Framework.RunWithSandbox("TestASMServiceAndDestinationRule", t, func(t *testing.T, sSkip *e2e.Sandbox) {
 		Framework.RunWithSandbox("TestASMServiceAndDestinationRule", t, func(t *testing.T, s *e2e.Sandbox) {
+			if !s.IstioEnabled() {
+				t.Fatalf("This test must run against a cluster with Istio on.")
+			}
 			// Enable ASM mode
 			ctx := context.Background()
 
@@ -202,6 +208,9 @@ func TestASMServiceAndDestinationRule(t *testing.T) {
 func TestNoIstioASM(t *testing.T) {
 
 	Framework.RunWithSandbox("TestASMConfigOnNoIstioCluster", t, func(t *testing.T, s *e2e.Sandbox) {
+		if s.IstioEnabled() {
+			t.Fatalf("This test must run against a cluster with Istio off.")
+		}
 
 		cm := map[string]string{"enable-asm": "true"}
 		wantConfigMapEvents := []string{"ConfigMapConfigController: Get a update on the ConfigMapConfig, Restarting Ingress controller",

@@ -21,11 +21,12 @@ import (
 
 	"k8s.io/klog"
 
-	"k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/ingress-gce/pkg/fuzz"
 	"sort"
 	"testing"
+
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/fuzz"
 )
 
 // Sandbox represents a sandbox for running tests in a Kubernetes cluster.
@@ -61,6 +62,11 @@ func (s *Sandbox) Create() error {
 	}
 
 	return nil
+}
+
+// IstioEnabled returns true if Istio is enabled for target cluster.
+func (s *Sandbox) IstioEnabled() bool {
+	return s.f.DestinationRuleClient != nil
 }
 
 // Destroy the sandbox and all resources associated with the sandbox.

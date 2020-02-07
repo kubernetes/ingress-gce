@@ -49,7 +49,6 @@ var (
 		handleSIGINT        bool
 		gceEndpointOverride string
 		createILBSubnet     bool
-		enableIstio         bool
 	}
 
 	Framework *e2e.Framework
@@ -72,7 +71,6 @@ func init() {
 	flag.BoolVar(&flags.handleSIGINT, "handleSIGINT", true, "catch SIGINT to perform clean")
 	flag.StringVar(&flags.gceEndpointOverride, "gce-endpoint-override", "", "If set, talks to a different GCE API Endpoint. By default it talks to https://www.googleapis.com/compute/v1/")
 	flag.BoolVar(&flags.createILBSubnet, "createILBSubnet", false, "If set, creates a proxy subnet for the L7 ILB")
-	flag.BoolVar(&flags.enableIstio, "enable-istio", false, "set to true if Istio is enabled.")
 }
 
 // TestMain is the entrypoint for the end-to-end test suite. This is where
@@ -128,7 +126,6 @@ func TestMain(m *testing.M) {
 		DestroySandboxes:    flags.destroySandboxes,
 		GceEndpointOverride: flags.gceEndpointOverride,
 		CreateILBSubnet:     flags.createILBSubnet,
-		EnableIstio:         flags.enableIstio,
 	})
 	if flags.handleSIGINT {
 		Framework.CatchSIGINT()
