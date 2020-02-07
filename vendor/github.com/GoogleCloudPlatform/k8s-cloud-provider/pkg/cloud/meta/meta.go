@@ -561,6 +561,14 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&ga.RegionSslCertificatesService{}),
 	},
 	{
+		Object:      "SslPolicy",
+		Service:     "SslPolicies",
+		Resource:    "sslPolicies",
+		keyType:     Global,
+		serviceType: reflect.TypeOf(&ga.SslPoliciesService{}),
+		options: NoList, // List() naming convention is different in GCE API for this resource
+	},
+	{
 		Object:      "Subnetwork",
 		Service:     "Subnetworks",
 		Resource:    "subnetworks",
@@ -657,6 +665,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&ga.TargetHttpsProxiesService{}),
 		additionalMethods: []string{
 			"SetSslCertificates",
+			"SetSslPolicy",
 			"SetUrlMap",
 		},
 	},
@@ -669,6 +678,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&alpha.TargetHttpsProxiesService{}),
 		additionalMethods: []string{
 			"SetSslCertificates",
+			"SetSslPolicy",
 			"SetUrlMap",
 		},
 	},
@@ -681,6 +691,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&beta.TargetHttpsProxiesService{}),
 		additionalMethods: []string{
 			"SetSslCertificates",
+			"SetSslPolicy",
 			"SetUrlMap",
 		},
 	},

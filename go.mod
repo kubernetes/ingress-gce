@@ -3,7 +3,7 @@ module k8s.io/ingress-gce
 go 1.12
 
 require (
-	github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20200108224937-97aee3f17ab3
+	github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20200203062548-7bdc6cbb875a
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/beorn7/perks v1.0.0 // indirect
 	github.com/emicklei/go-restful v2.9.3+incompatible // indirect
@@ -20,8 +20,8 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.4.0
 	github.com/tsenart/deadcode v0.0.0-20160724212837-210d2dc333e9 // indirect
-	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
-	google.golang.org/api v0.15.0
+	golang.org/x/oauth2 v0.0.0-20191202225959-858c2ad4c8b6
+	google.golang.org/api v0.15.1-0.20200106000736-b8fc810ca6b5
 	gopkg.in/gcfg.v1 v1.2.3 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	istio.io/api v0.0.0-20190809125725-591cf32c1d0e
@@ -40,7 +40,7 @@ require (
 
 replace (
 	cloud.google.com/go => cloud.google.com/go v0.37.4
-	github.com/GoogleCloudPlatform/k8s-cloud-provider => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20200108224937-97aee3f17ab3
+	github.com/GoogleCloudPlatform/k8s-cloud-provider => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20200203062548-7bdc6cbb875a
 	github.com/PuerkitoBio/purell => github.com/PuerkitoBio/purell v1.1.1
 	github.com/beorn7/perks => github.com/beorn7/perks v1.0.0
 	github.com/emicklei/go-restful => github.com/emicklei/go-restful v2.9.3+incompatible
