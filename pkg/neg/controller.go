@@ -40,6 +40,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
+	usage "k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -86,6 +87,9 @@ type Controller struct {
 
 	// reflector handles NEG readiness gate and conditions for pods in NEG.
 	reflector readiness.Reflector
+
+	// collector collects NEG usage metrics
+	collector usage.NegMetricsCollector
 }
 
 // NewController returns a network endpoint group controller.
@@ -133,6 +137,7 @@ func NewController(
 		endpointQueue:         workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		syncTracker:           utils.NewTimeTracker(),
 		reflector:             reflector,
+		collector:             ctx.ControllerMetrics,
 	}
 
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -317,6 +322,7 @@ func (c *Controller) processService(key string) error {
 		return err
 	}
 	if !exists {
+		c.collector.DeleteNegService(key)
 		c.manager.StopSyncer(namespace, name)
 		return nil
 	}
@@ -325,22 +331,26 @@ func (c *Controller) processService(key string) error {
 	if service == nil {
 		return fmt.Errorf("cannot convert to Service (%T)", obj)
 	}
-
+	negUsage := usage.NegServiceState{}
 	svcPortInfoMap := make(negtypes.PortInfoMap)
 	if err := c.mergeDefaultBackendServicePortInfoMap(key, svcPortInfoMap); err != nil {
 		return err
 	}
+	negUsage.IngressNeg = len(svcPortInfoMap)
 	if err := c.mergeIngressPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap); err != nil {
 		return err
 	}
+	negUsage.IngressNeg = len(svcPortInfoMap)
 	if err := c.mergeStandaloneNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap); err != nil {
 		return err
 	}
-
+	negUsage.StandaloneNeg = len(svcPortInfoMap) - negUsage.IngressNeg
 	csmSVCPortInfoMap, destinationRulesPortInfoMap, err := c.getCSMPortInfoMap(namespace, name, service)
 	if err != nil {
 		return err
 	}
+	negUsage.AsmNeg = len(csmSVCPortInfoMap) + len(destinationRulesPortInfoMap)
+
 	// merges csmSVCPortInfoMap, because eventually those NEG will sync with the service annotation.
 	// merges destinationRulesPortInfoMap later, because we only want them sync with the DestinationRule annotation.
 	if err := svcPortInfoMap.Merge(csmSVCPortInfoMap); err != nil {
@@ -356,11 +366,13 @@ func (c *Controller) processService(key string) error {
 		if err := svcPortInfoMap.Merge(destinationRulesPortInfoMap); err != nil {
 			return fmt.Errorf("failed to merge service ports referenced by Istio:DestinationRule (%v): %v", destinationRulesPortInfoMap, err)
 		}
+		c.collector.SetNegService(key, negUsage)
 		return c.manager.EnsureSyncers(namespace, name, svcPortInfoMap)
 	}
 
 	// do not need Neg
 	klog.V(4).Infof("Service %q does not need any NEG. Skipping", key)
+	c.collector.DeleteNegService(key)
 	// neg annotation is not found or NEG is not enabled
 	c.manager.StopSyncer(namespace, name)
 	// delete the annotation
