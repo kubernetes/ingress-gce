@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"reflect"
 )
@@ -42,20 +42,20 @@ var (
 				},
 				Port: intstr.FromInt(80),
 			},
-			BackendConfig: &backendconfigv1beta1.BackendConfig{
-				Spec: backendconfigv1beta1.BackendConfigSpec{
-					Cdn: &backendconfigv1beta1.CDNConfig{
+			BackendConfig: &backendconfigv1.BackendConfig{
+				Spec: backendconfigv1.BackendConfigSpec{
+					Cdn: &backendconfigv1.CDNConfig{
 						Enabled:     true,
-						CachePolicy: &backendconfigv1beta1.CacheKeyPolicy{},
+						CachePolicy: &backendconfigv1.CacheKeyPolicy{},
 					},
-					SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+					SessionAffinity: &backendconfigv1.SessionAffinityConfig{
 						AffinityType:         "GENERATED_COOKIE",
 						AffinityCookieTtlSec: &testTTL,
 					},
-					SecurityPolicy: &backendconfigv1beta1.SecurityPolicyConfig{
+					SecurityPolicy: &backendconfigv1.SecurityPolicyConfig{
 						Name: "security-policy-1",
 					},
-					ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
+					ConnectionDraining: &backendconfigv1.ConnectionDrainingConfig{
 						DrainingTimeoutSec: testTTL,
 					},
 				},
@@ -70,17 +70,17 @@ var (
 				Port: intstr.FromInt(80),
 			},
 			NEGEnabled: true,
-			BackendConfig: &backendconfigv1beta1.BackendConfig{
-				Spec: backendconfigv1beta1.BackendConfigSpec{
-					Iap: &backendconfigv1beta1.IAPConfig{
+			BackendConfig: &backendconfigv1.BackendConfig{
+				Spec: backendconfigv1.BackendConfigSpec{
+					Iap: &backendconfigv1.IAPConfig{
 						Enabled: true,
 					},
-					SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+					SessionAffinity: &backendconfigv1.SessionAffinityConfig{
 						AffinityType:         "CLIENT_IP",
 						AffinityCookieTtlSec: &testTTL,
 					},
 					TimeoutSec: &testTTL,
-					CustomRequestHeaders: &backendconfigv1beta1.CustomRequestHeadersConfig{
+					CustomRequestHeaders: &backendconfigv1.CustomRequestHeadersConfig{
 						Headers: []string{},
 					},
 				},
@@ -108,16 +108,16 @@ var (
 			},
 			NEGEnabled:   true,
 			L7ILBEnabled: true,
-			BackendConfig: &backendconfigv1beta1.BackendConfig{
-				Spec: backendconfigv1beta1.BackendConfigSpec{
-					Iap: &backendconfigv1beta1.IAPConfig{
+			BackendConfig: &backendconfigv1.BackendConfig{
+				Spec: backendconfigv1.BackendConfigSpec{
+					Iap: &backendconfigv1.IAPConfig{
 						Enabled: true,
 					},
-					SessionAffinity: &backendconfigv1beta1.SessionAffinityConfig{
+					SessionAffinity: &backendconfigv1.SessionAffinityConfig{
 						AffinityType:         "GENERATED_COOKIE",
 						AffinityCookieTtlSec: &testTTL,
 					},
-					ConnectionDraining: &backendconfigv1beta1.ConnectionDrainingConfig{
+					ConnectionDraining: &backendconfigv1.ConnectionDrainingConfig{
 						DrainingTimeoutSec: testTTL,
 					},
 				},

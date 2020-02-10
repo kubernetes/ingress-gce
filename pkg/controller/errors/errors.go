@@ -23,7 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -83,7 +83,7 @@ func (e ErrSvcBackendConfig) Error() string {
 
 // ErrBackendConfigValidation is returned when there was an error validating a BackendConfig.
 type ErrBackendConfigValidation struct {
-	backendconfigv1beta1.BackendConfig
+	backendconfigv1.BackendConfig
 	Err error
 }
 

@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
@@ -51,7 +51,7 @@ type ServicePort struct {
 	TargetPort    string
 	NEGEnabled    bool
 	L7ILBEnabled  bool
-	BackendConfig *backendconfigv1beta1.BackendConfig
+	BackendConfig *backendconfigv1.BackendConfig
 	BackendNamer  namer.BackendNamer
 }
 
