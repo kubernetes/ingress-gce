@@ -32,6 +32,12 @@ func TestLoadValue(t *testing.T) {
 			wantLog:    "The map provided a unvalid value for field: enable-asm, value: f, valid values are: true/false",
 		},
 		{
+			desc:       "LoadValue and compare func should ignore the asm-ready field",
+			inputMap:   map[string]string{"enable-asm": "f", "asm-ready": "true"},
+			wantConfig: Config{EnableASM: false, ASMServiceNEGSkipNamespaces: []string{"kube-system", "istio-system"}},
+			wantLog:    "",
+		},
+		{
 			desc:       "LoadValue should be tolerant for unknow field.",
 			inputMap:   map[string]string{"A": "B"},
 			wantConfig: NewConfig(),

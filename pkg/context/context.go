@@ -147,6 +147,8 @@ func (ctx *ControllerContext) Init() {
 		cmConfig := ctx.ASMConfigController.GetConfig()
 		if cmConfig.EnableASM {
 			ctx.initEnableASM()
+		} else {
+			ctx.ASMConfigController.SetASMReadyFalse()
 		}
 	}
 
@@ -165,7 +167,7 @@ func (ctx *ControllerContext) initEnableASM() {
 	if err != nil {
 		msg := fmt.Sprintf("Failed to create ApiextensionClient for DestinationRule, disabling ASM Mode, error: %s", err)
 		ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", msg)
-		ctx.ASMConfigController.DisableASMMode()
+		ctx.ASMConfigController.DisableASM()
 		return
 	}
 	destinationRuleCRD, err := apiextensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(destinationRuleCRDName, metav1.GetOptions{})
@@ -175,22 +177,22 @@ func (ctx *ControllerContext) initEnableASM() {
 		} else {
 			ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", fmt.Sprintf("Failed to load DestinationRule CRD, disabling the ASM Mode, please check Istio setup. Error: %s", err))
 		}
-		ctx.ASMConfigController.DisableASMMode()
+		ctx.ASMConfigController.DisableASM()
 		return
 	}
 	if destinationRuleCRD.Spec.Version != destinationRuleAPIVersion {
 		ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", fmt.Sprintf("Only Support Istio API: %s, but found %s, disabling the ASM Mode, please check Istio setup.",
 			destinationRuleAPIVersion, destinationRuleCRD.Spec.Version))
-		ctx.ASMConfigController.DisableASMMode()
+		ctx.ASMConfigController.DisableASM()
 		return
 	}
 
 	dynamicClient, err := dynamic.NewForConfig(ctx.KubeConfig)
 	if err != nil {
 		msg := fmt.Sprintf("Failed to create kubernetes dynamic client, disabling ASM Mode, please retry. Error: %v", err)
-		klog.Fatalf(msg)
+		klog.Error(msg)
 		ctx.ASMConfigController.RecordEvent("Warning", "FailedCreateDynamicClient", msg)
-		ctx.ASMConfigController.DisableASMMode()
+		ctx.ASMConfigController.DisableASM()
 		return
 	}
 
@@ -201,6 +203,8 @@ func (ctx *ControllerContext) initEnableASM() {
 		nil)
 	ctx.DestinationRuleInformer = drDynamicInformer.Informer()
 	ctx.DestinationRuleClient = dynamicClient.Resource(destrinationGVR)
+	ctx.ASMConfigController.RecordEvent("Normal", "ASMModeOn", fmt.Sprintf("NEG controller is running in ASM Mode with Istio API: %s.", destinationRuleAPIVersion))
+	ctx.ASMConfigController.SetASMReadyTrue()
 }
 
 // HasSynced returns true if all relevant informers has been synced.

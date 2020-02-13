@@ -63,21 +63,38 @@ func (c *ConfigMapConfigController) GetConfig() Config {
 	return *c.currentConfig
 }
 
-// DisableASMMode disables the ASM Mode by updating the ConfigMap and setting the internal flag.
-func (c *ConfigMapConfigController) DisableASMMode() {
-	patchBytes, err := utils.StrategicMergePatchBytes(v1.ConfigMap{Data: map[string]string{enableASM: trueValue}},
-		v1.ConfigMap{Data: map[string]string{enableASM: falseValue}}, v1.ConfigMap{})
+func (c *ConfigMapConfigController) updateASMReady(status string) {
+	patchBytes, err := utils.StrategicMergePatchBytes(v1.ConfigMap{Data: map[string]string{}},
+		v1.ConfigMap{Data: map[string]string{asmReady: status}}, v1.ConfigMap{})
 	if err != nil {
-		c.RecordEvent("Warning", "FailedDisableASMMode", fmt.Sprintf("Failed to disable ASM Mode, failed to create patch for ASM ConfigMap, error: %s", err))
+		c.RecordEvent("Warning", "FailedToUpdateASMStatus", fmt.Sprintf("Failed to update ASM Status, failed to create patch for ASM ConfigMap, error: %s", err))
 		return
 	}
 	cm, err := c.kubeClient.CoreV1().ConfigMaps(c.configMapNamespace).Patch(c.configMapName, apimachinerytypes.MergePatchType, patchBytes, "")
 	if err != nil {
-		c.RecordEvent("Warning", "FailedDisableASMMode", fmt.Sprintf("Failed to patch ASM ConfigMap, error: %s", err))
+		if errors.IsNotFound(err) {
+			return
+		}
+		c.RecordEvent("Warning", "FailedToUpdateASMStatus", fmt.Sprintf("Failed to patch ASM ConfigMap, error: %s", err))
 		return
 	}
 	c.currentConfigMapObject = cm
+}
+
+// DisableASM sets the internal ASM mode to off and update the ASMReady to False.
+func (c *ConfigMapConfigController) DisableASM() {
 	c.currentConfig.EnableASM = false
+	c.updateASMReady(falseValue)
+}
+
+// SetASMReadyTrue update the ASMReady to True.
+func (c *ConfigMapConfigController) SetASMReadyTrue() {
+	c.updateASMReady(trueValue)
+}
+
+// SetASMReadyFalse update the ASMReady to False.
+func (c *ConfigMapConfigController) SetASMReadyFalse() {
+	c.updateASMReady(falseValue)
 }
 
 // RecordEvent records a event to the ASMConfigmap
@@ -133,5 +150,12 @@ func (c *ConfigMapConfigController) processItem(obj interface{}, cancel func()) 
 	if !config.Equals(c.currentConfig) {
 		c.RecordEvent("Normal", "ASMConfigMapTiggerRestart", "ConfigMapConfigController: Get a update on the ConfigMapConfig, Restarting Ingress controller")
 		cancel()
+	} else {
+		// If the config has no change, make sure the ASMReady is updated.
+		if config.EnableASM {
+			c.SetASMReadyTrue()
+		} else {
+			c.SetASMReadyFalse()
+		}
 	}
 }

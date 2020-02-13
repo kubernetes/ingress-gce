@@ -30,27 +30,32 @@ func TestASMConfig(t *testing.T) {
 		for _, tc := range []struct {
 			desc                string
 			configMap           map[string]string
+			wantASMReady        bool
 			wantConfigMapEvents []string
 		}{
 			{
 				desc:                "Invalid ConfigMap value equals to disable",
 				configMap:           map[string]string{"enable-asm": "INVALID"},
+				wantASMReady:        false,
 				wantConfigMapEvents: []string{"The map provided a unvalid value for field: enable-asm, value: INVALID"},
 			},
 			{
 				desc:                "Invalid ConfigMap filed equals to disable",
 				configMap:           map[string]string{"enable-unknow-feild": "INVALID1"},
+				wantASMReady:        false,
 				wantConfigMapEvents: []string{"The map contains a unknown key-value pair: enable-unknow-feild:INVALID1"},
 			},
 			{
-				desc:                "Set enable-asm to true should restart the controller",
-				configMap:           map[string]string{"enable-asm": "true"},
-				wantConfigMapEvents: []string{"ConfigMapConfigController: Get a update on the ConfigMapConfig, Restarting Ingress controller"},
+				desc:         "Set enable-asm to true should restart the controller",
+				configMap:    map[string]string{"enable-asm": "true"},
+				wantASMReady: true,
+				wantConfigMapEvents: []string{"ConfigMapConfigController: Get a update on the ConfigMapConfig, Restarting Ingress controller",
+					"NEG controller is running in ASM Mode with Istio API: v1alpha3"},
 			},
-			// TODO(koonwah): The below case is not fully tested, should update the neg controller to include a enable-asm event to the target CM.
 			{
-				desc:      "Invalid ConfigMap value equals to disable",
-				configMap: map[string]string{"enable-asm": "INVALID2"},
+				desc:         "Invalid ConfigMap value equals to disable",
+				configMap:    map[string]string{"enable-asm": "INVALID2"},
+				wantASMReady: false,
 				wantConfigMapEvents: []string{"The map provided a unvalid value for field: enable-asm, value: INVALID2",
 					"ConfigMapConfigController: Get a update on the ConfigMapConfig, Restarting Ingress controller"},
 			},
@@ -59,10 +64,26 @@ func TestASMConfig(t *testing.T) {
 			if err := e2e.EnsureConfigMap(s, asmConfigNamespace, asmConfigName, tc.configMap); err != nil {
 				t.Errorf("Failed to ensure ConfigMap, error: %s", err)
 			}
+
+			if err := wait.Poll(5*time.Second, 3*time.Minute, func() (bool, error) {
+				cmData, err := e2e.GetConfigMap(s, asmConfigNamespace, asmConfigName)
+				if err != nil {
+					return false, err
+				}
+				if val, ok := cmData["asm-ready"]; ok {
+					return val == strconv.FormatBool(tc.wantASMReady), nil
+				}
+				return false, nil
+
+			}); err != nil {
+				t.Fatalf("Failed to validate asm-ready = %s. Error: %s", strconv.FormatBool(tc.wantASMReady), err)
+			}
+
 			if err := e2e.WaitConfigMapEvents(s, asmConfigNamespace, asmConfigName, tc.wantConfigMapEvents, negControllerRestartTimeout); err != nil {
 				t.Fatalf("Failed to get events: %v; Error %e", strings.Join(tc.wantConfigMapEvents, ";"), err)
 			}
 		}
+		e2e.DeleteConfigMap(s, asmConfigNamespace, asmConfigName)
 	})
 }
 
@@ -229,13 +250,13 @@ func TestNoIstioASM(t *testing.T) {
 			if err != nil {
 				return false, err
 			}
-			if val, ok := cmData["enable-asm"]; ok && val == "false" {
+			if val, ok := cmData["asm-ready"]; ok && val == "false" {
 				return true, nil
 			}
-			return false, fmt.Errorf("ConfigMap: %s/%s, nable-asm is not false. Value: %v", asmConfigNamespace, asmConfigName, cmData)
+			return false, fmt.Errorf("ConfigMap: %s/%s, asm-ready is not false. Value: %v", asmConfigNamespace, asmConfigName, cmData)
 
 		}); err != nil {
-			t.Fatalf("Failed to validate enable-asm = false. Error: %s", err)
+			t.Fatalf("Failed to validate asm-ready = false. Error: %s", err)
 		}
 
 	})

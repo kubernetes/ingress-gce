@@ -588,7 +588,7 @@ func WaitConfigMapEvents(s *Sandbox, namespace, name string, msgs []string, time
 		for _, event := range events[len(events)-len(msgs):] {
 			allMsg += event.Message
 		}
-		klog.Infof("WaitDestinationRuleAnnotation, allMsg: %s, want: %v", allMsg, msgs)
+		klog.Infof("WaitConfigMapEvents, allMsg: %s, want: %v", allMsg, msgs)
 
 		for _, msg := range msgs {
 			if !strings.Contains(allMsg, msg) {
