@@ -2046,7 +2046,7 @@ type NetworkEndpointGroupsListEndpointsRequest struct {
 	EndpointFilters []*NetworkEndpointGroupsListEndpointsRequestNetworkEndpointFilter `json:"endpointFilters,omitempty"`
 	// Optional query parameter for showing the health status of each
 	// network endpoint. Valid options are SKIP or SHOW. If you don't
-	// specify this parameter, the health status of network endpoints will
+	// specifiy this parameter, the health status of network endpoints will
 	// not be provided.
 	HealthStatus    string   `json:"healthStatus,omitempty"`
 	ForceSendFields []string `json:"-"`
@@ -3062,7 +3062,7 @@ func GetBackendService(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	if err != nil {
 		return nil, mc.Observe(err)
 	}
-	compositeType, err := ToBackendService(gceObj)
+	compositeType, err := toBackendService(gceObj)
 	if err != nil {
 		return nil, err
 	}
@@ -3110,7 +3110,7 @@ func ListBackendServices(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 		return nil, mc.Observe(err)
 	}
 
-	compositeObjs, err := ToBackendServiceList(gceObjs)
+	compositeObjs, err := toBackendServiceList(gceObjs)
 	if err != nil {
 		return nil, err
 	}
@@ -3120,9 +3120,9 @@ func ListBackendServices(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 	return compositeObjs, nil
 }
 
-// ToBackendServiceList converts a list of compute alpha, beta or GA
+// toBackendServiceList converts a list of compute alpha, beta or GA
 // BackendService into a list of our composite type.
-func ToBackendServiceList(objs interface{}) ([]*BackendService, error) {
+func toBackendServiceList(objs interface{}) ([]*BackendService, error) {
 	result := []*BackendService{}
 
 	err := copyViaJSON(&result, objs)
@@ -3132,16 +3132,47 @@ func ToBackendServiceList(objs interface{}) ([]*BackendService, error) {
 	return result, nil
 }
 
-// ToBackendService converts a compute alpha, beta or GA
-// BackendService into our composite type.
-func ToBackendService(obj interface{}) (*BackendService, error) {
-	backendService := &BackendService{}
-	err := copyViaJSON(backendService, obj)
+// toBackendService is for package internal use only (not type-safe).
+func toBackendService(obj interface{}) (*BackendService, error) {
+	x := &BackendService{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, backendService, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return backendService, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToBackendService convert to a composite type.
+func AlphaToBackendService(obj *computealpha.BackendService) (*BackendService, error) {
+	x := &BackendService{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToBackendService convert to a composite type.
+func BetaToBackendService(obj *computebeta.BackendService) (*BackendService, error) {
+	x := &BackendService{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToBackendService convert to a composite type.
+func GAToBackendService(obj *compute.BackendService) (*BackendService, error) {
+	x := &BackendService{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.
@@ -3327,7 +3358,7 @@ func GetForwardingRule(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	if err != nil {
 		return nil, mc.Observe(err)
 	}
-	compositeType, err := ToForwardingRule(gceObj)
+	compositeType, err := toForwardingRule(gceObj)
 	if err != nil {
 		return nil, err
 	}
@@ -3378,7 +3409,7 @@ func ListForwardingRules(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 		return nil, mc.Observe(err)
 	}
 
-	compositeObjs, err := ToForwardingRuleList(gceObjs)
+	compositeObjs, err := toForwardingRuleList(gceObjs)
 	if err != nil {
 		return nil, err
 	}
@@ -3388,9 +3419,9 @@ func ListForwardingRules(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 	return compositeObjs, nil
 }
 
-// ToForwardingRuleList converts a list of compute alpha, beta or GA
+// toForwardingRuleList converts a list of compute alpha, beta or GA
 // ForwardingRule into a list of our composite type.
-func ToForwardingRuleList(objs interface{}) ([]*ForwardingRule, error) {
+func toForwardingRuleList(objs interface{}) ([]*ForwardingRule, error) {
 	result := []*ForwardingRule{}
 
 	err := copyViaJSON(&result, objs)
@@ -3400,16 +3431,47 @@ func ToForwardingRuleList(objs interface{}) ([]*ForwardingRule, error) {
 	return result, nil
 }
 
-// ToForwardingRule converts a compute alpha, beta or GA
-// ForwardingRule into our composite type.
-func ToForwardingRule(obj interface{}) (*ForwardingRule, error) {
-	forwardingRule := &ForwardingRule{}
-	err := copyViaJSON(forwardingRule, obj)
+// toForwardingRule is for package internal use only (not type-safe).
+func toForwardingRule(obj interface{}) (*ForwardingRule, error) {
+	x := &ForwardingRule{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, forwardingRule, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return forwardingRule, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToForwardingRule convert to a composite type.
+func AlphaToForwardingRule(obj *computealpha.ForwardingRule) (*ForwardingRule, error) {
+	x := &ForwardingRule{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToForwardingRule convert to a composite type.
+func BetaToForwardingRule(obj *computebeta.ForwardingRule) (*ForwardingRule, error) {
+	x := &ForwardingRule{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToForwardingRule convert to a composite type.
+func GAToForwardingRule(obj *compute.ForwardingRule) (*ForwardingRule, error) {
+	x := &ForwardingRule{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.
@@ -3621,7 +3683,7 @@ func GetHealthCheck(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*
 	if err != nil {
 		return nil, mc.Observe(err)
 	}
-	compositeType, err := ToHealthCheck(gceObj)
+	compositeType, err := toHealthCheck(gceObj)
 	if err != nil {
 		return nil, err
 	}
@@ -3669,7 +3731,7 @@ func ListHealthChecks(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) 
 		return nil, mc.Observe(err)
 	}
 
-	compositeObjs, err := ToHealthCheckList(gceObjs)
+	compositeObjs, err := toHealthCheckList(gceObjs)
 	if err != nil {
 		return nil, err
 	}
@@ -3679,9 +3741,9 @@ func ListHealthChecks(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) 
 	return compositeObjs, nil
 }
 
-// ToHealthCheckList converts a list of compute alpha, beta or GA
+// toHealthCheckList converts a list of compute alpha, beta or GA
 // HealthCheck into a list of our composite type.
-func ToHealthCheckList(objs interface{}) ([]*HealthCheck, error) {
+func toHealthCheckList(objs interface{}) ([]*HealthCheck, error) {
 	result := []*HealthCheck{}
 
 	err := copyViaJSON(&result, objs)
@@ -3691,16 +3753,47 @@ func ToHealthCheckList(objs interface{}) ([]*HealthCheck, error) {
 	return result, nil
 }
 
-// ToHealthCheck converts a compute alpha, beta or GA
-// HealthCheck into our composite type.
-func ToHealthCheck(obj interface{}) (*HealthCheck, error) {
-	healthCheck := &HealthCheck{}
-	err := copyViaJSON(healthCheck, obj)
+// toHealthCheck is for package internal use only (not type-safe).
+func toHealthCheck(obj interface{}) (*HealthCheck, error) {
+	x := &HealthCheck{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, healthCheck, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return healthCheck, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToHealthCheck convert to a composite type.
+func AlphaToHealthCheck(obj *computealpha.HealthCheck) (*HealthCheck, error) {
+	x := &HealthCheck{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToHealthCheck convert to a composite type.
+func BetaToHealthCheck(obj *computebeta.HealthCheck) (*HealthCheck, error) {
+	x := &HealthCheck{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToHealthCheck convert to a composite type.
+func GAToHealthCheck(obj *compute.HealthCheck) (*HealthCheck, error) {
+	x := &HealthCheck{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.
@@ -3739,9 +3832,9 @@ func (healthCheck *HealthCheck) ToGA() (*compute.HealthCheck, error) {
 	return ga, nil
 }
 
-// ToHealthStatusForNetworkEndpointList converts a list of compute alpha, beta or GA
+// toHealthStatusForNetworkEndpointList converts a list of compute alpha, beta or GA
 // HealthStatusForNetworkEndpoint into a list of our composite type.
-func ToHealthStatusForNetworkEndpointList(objs interface{}) ([]*HealthStatusForNetworkEndpoint, error) {
+func toHealthStatusForNetworkEndpointList(objs interface{}) ([]*HealthStatusForNetworkEndpoint, error) {
 	result := []*HealthStatusForNetworkEndpoint{}
 
 	err := copyViaJSON(&result, objs)
@@ -3751,16 +3844,47 @@ func ToHealthStatusForNetworkEndpointList(objs interface{}) ([]*HealthStatusForN
 	return result, nil
 }
 
-// ToHealthStatusForNetworkEndpoint converts a compute alpha, beta or GA
-// HealthStatusForNetworkEndpoint into our composite type.
-func ToHealthStatusForNetworkEndpoint(obj interface{}) (*HealthStatusForNetworkEndpoint, error) {
-	healthStatusForNetworkEndpoint := &HealthStatusForNetworkEndpoint{}
-	err := copyViaJSON(healthStatusForNetworkEndpoint, obj)
+// toHealthStatusForNetworkEndpoint is for package internal use only (not type-safe).
+func toHealthStatusForNetworkEndpoint(obj interface{}) (*HealthStatusForNetworkEndpoint, error) {
+	x := &HealthStatusForNetworkEndpoint{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, healthStatusForNetworkEndpoint, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return healthStatusForNetworkEndpoint, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToHealthStatusForNetworkEndpoint convert to a composite type.
+func AlphaToHealthStatusForNetworkEndpoint(obj *computealpha.HealthStatusForNetworkEndpoint) (*HealthStatusForNetworkEndpoint, error) {
+	x := &HealthStatusForNetworkEndpoint{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToHealthStatusForNetworkEndpoint convert to a composite type.
+func BetaToHealthStatusForNetworkEndpoint(obj *computebeta.HealthStatusForNetworkEndpoint) (*HealthStatusForNetworkEndpoint, error) {
+	x := &HealthStatusForNetworkEndpoint{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToHealthStatusForNetworkEndpoint convert to a composite type.
+func GAToHealthStatusForNetworkEndpoint(obj *compute.HealthStatusForNetworkEndpoint) (*HealthStatusForNetworkEndpoint, error) {
+	x := &HealthStatusForNetworkEndpoint{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.
@@ -3799,9 +3923,9 @@ func (healthStatusForNetworkEndpoint *HealthStatusForNetworkEndpoint) ToGA() (*c
 	return ga, nil
 }
 
-// ToNetworkEndpointList converts a list of compute alpha, beta or GA
+// toNetworkEndpointList converts a list of compute alpha, beta or GA
 // NetworkEndpoint into a list of our composite type.
-func ToNetworkEndpointList(objs interface{}) ([]*NetworkEndpoint, error) {
+func toNetworkEndpointList(objs interface{}) ([]*NetworkEndpoint, error) {
 	result := []*NetworkEndpoint{}
 
 	err := copyViaJSON(&result, objs)
@@ -3811,16 +3935,47 @@ func ToNetworkEndpointList(objs interface{}) ([]*NetworkEndpoint, error) {
 	return result, nil
 }
 
-// ToNetworkEndpoint converts a compute alpha, beta or GA
-// NetworkEndpoint into our composite type.
-func ToNetworkEndpoint(obj interface{}) (*NetworkEndpoint, error) {
-	networkEndpoint := &NetworkEndpoint{}
-	err := copyViaJSON(networkEndpoint, obj)
+// toNetworkEndpoint is for package internal use only (not type-safe).
+func toNetworkEndpoint(obj interface{}) (*NetworkEndpoint, error) {
+	x := &NetworkEndpoint{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, networkEndpoint, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return networkEndpoint, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToNetworkEndpoint convert to a composite type.
+func AlphaToNetworkEndpoint(obj *computealpha.NetworkEndpoint) (*NetworkEndpoint, error) {
+	x := &NetworkEndpoint{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToNetworkEndpoint convert to a composite type.
+func BetaToNetworkEndpoint(obj *computebeta.NetworkEndpoint) (*NetworkEndpoint, error) {
+	x := &NetworkEndpoint{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToNetworkEndpoint convert to a composite type.
+func GAToNetworkEndpoint(obj *compute.NetworkEndpoint) (*NetworkEndpoint, error) {
+	x := &NetworkEndpoint{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.
@@ -3944,7 +4099,7 @@ func GetNetworkEndpointGroup(gceCloud *gce.Cloud, key *meta.Key, version meta.Ve
 	if err != nil {
 		return nil, mc.Observe(err)
 	}
-	compositeType, err := ToNetworkEndpointGroup(gceObj)
+	compositeType, err := toNetworkEndpointGroup(gceObj)
 	if err != nil {
 		return nil, err
 	}
@@ -3980,7 +4135,7 @@ func ListNetworkEndpointGroups(gceCloud *gce.Cloud, key *meta.Key, version meta.
 		return nil, mc.Observe(err)
 	}
 
-	compositeObjs, err := ToNetworkEndpointGroupList(gceObjs)
+	compositeObjs, err := toNetworkEndpointGroupList(gceObjs)
 	if err != nil {
 		return nil, err
 	}
@@ -4103,7 +4258,7 @@ func ListNetworkEndpoints(gceCloud *gce.Cloud, key *meta.Key, version meta.Versi
 		return nil, mc.Observe(err)
 	}
 
-	compositeObjs, err := ToNetworkEndpointWithHealthStatusList(gceObjs)
+	compositeObjs, err := toNetworkEndpointWithHealthStatusList(gceObjs)
 	if err != nil {
 		return nil, err
 	}
@@ -4159,7 +4314,7 @@ func AggregatedListNetworkEndpointGroup(gceCloud *gce.Cloud, version meta.Versio
 		}
 		gceObjs = gaList
 	}
-	compositeObjs, err := ToNetworkEndpointGroupList(gceObjs)
+	compositeObjs, err := toNetworkEndpointGroupList(gceObjs)
 	if err != nil {
 		return nil, err
 	}
@@ -4176,9 +4331,9 @@ func AggregatedListNetworkEndpointGroup(gceCloud *gce.Cloud, version meta.Versio
 	return compositeMap, nil
 }
 
-// ToNetworkEndpointGroupList converts a list of compute alpha, beta or GA
+// toNetworkEndpointGroupList converts a list of compute alpha, beta or GA
 // NetworkEndpointGroup into a list of our composite type.
-func ToNetworkEndpointGroupList(objs interface{}) ([]*NetworkEndpointGroup, error) {
+func toNetworkEndpointGroupList(objs interface{}) ([]*NetworkEndpointGroup, error) {
 	result := []*NetworkEndpointGroup{}
 
 	err := copyViaJSON(&result, objs)
@@ -4188,16 +4343,47 @@ func ToNetworkEndpointGroupList(objs interface{}) ([]*NetworkEndpointGroup, erro
 	return result, nil
 }
 
-// ToNetworkEndpointGroup converts a compute alpha, beta or GA
-// NetworkEndpointGroup into our composite type.
-func ToNetworkEndpointGroup(obj interface{}) (*NetworkEndpointGroup, error) {
-	networkEndpointGroup := &NetworkEndpointGroup{}
-	err := copyViaJSON(networkEndpointGroup, obj)
+// toNetworkEndpointGroup is for package internal use only (not type-safe).
+func toNetworkEndpointGroup(obj interface{}) (*NetworkEndpointGroup, error) {
+	x := &NetworkEndpointGroup{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, networkEndpointGroup, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return networkEndpointGroup, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToNetworkEndpointGroup convert to a composite type.
+func AlphaToNetworkEndpointGroup(obj *computealpha.NetworkEndpointGroup) (*NetworkEndpointGroup, error) {
+	x := &NetworkEndpointGroup{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToNetworkEndpointGroup convert to a composite type.
+func BetaToNetworkEndpointGroup(obj *computebeta.NetworkEndpointGroup) (*NetworkEndpointGroup, error) {
+	x := &NetworkEndpointGroup{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToNetworkEndpointGroup convert to a composite type.
+func GAToNetworkEndpointGroup(obj *compute.NetworkEndpointGroup) (*NetworkEndpointGroup, error) {
+	x := &NetworkEndpointGroup{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.
@@ -4236,9 +4422,9 @@ func (networkEndpointGroup *NetworkEndpointGroup) ToGA() (*compute.NetworkEndpoi
 	return ga, nil
 }
 
-// ToNetworkEndpointGroupsAttachEndpointsRequestList converts a list of compute alpha, beta or GA
+// toNetworkEndpointGroupsAttachEndpointsRequestList converts a list of compute alpha, beta or GA
 // NetworkEndpointGroupsAttachEndpointsRequest into a list of our composite type.
-func ToNetworkEndpointGroupsAttachEndpointsRequestList(objs interface{}) ([]*NetworkEndpointGroupsAttachEndpointsRequest, error) {
+func toNetworkEndpointGroupsAttachEndpointsRequestList(objs interface{}) ([]*NetworkEndpointGroupsAttachEndpointsRequest, error) {
 	result := []*NetworkEndpointGroupsAttachEndpointsRequest{}
 
 	err := copyViaJSON(&result, objs)
@@ -4248,16 +4434,47 @@ func ToNetworkEndpointGroupsAttachEndpointsRequestList(objs interface{}) ([]*Net
 	return result, nil
 }
 
-// ToNetworkEndpointGroupsAttachEndpointsRequest converts a compute alpha, beta or GA
-// NetworkEndpointGroupsAttachEndpointsRequest into our composite type.
-func ToNetworkEndpointGroupsAttachEndpointsRequest(obj interface{}) (*NetworkEndpointGroupsAttachEndpointsRequest, error) {
-	networkEndpointGroupsAttachEndpointsRequest := &NetworkEndpointGroupsAttachEndpointsRequest{}
-	err := copyViaJSON(networkEndpointGroupsAttachEndpointsRequest, obj)
+// toNetworkEndpointGroupsAttachEndpointsRequest is for package internal use only (not type-safe).
+func toNetworkEndpointGroupsAttachEndpointsRequest(obj interface{}) (*NetworkEndpointGroupsAttachEndpointsRequest, error) {
+	x := &NetworkEndpointGroupsAttachEndpointsRequest{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, networkEndpointGroupsAttachEndpointsRequest, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return networkEndpointGroupsAttachEndpointsRequest, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToNetworkEndpointGroupsAttachEndpointsRequest convert to a composite type.
+func AlphaToNetworkEndpointGroupsAttachEndpointsRequest(obj *computealpha.NetworkEndpointGroupsAttachEndpointsRequest) (*NetworkEndpointGroupsAttachEndpointsRequest, error) {
+	x := &NetworkEndpointGroupsAttachEndpointsRequest{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToNetworkEndpointGroupsAttachEndpointsRequest convert to a composite type.
+func BetaToNetworkEndpointGroupsAttachEndpointsRequest(obj *computebeta.NetworkEndpointGroupsAttachEndpointsRequest) (*NetworkEndpointGroupsAttachEndpointsRequest, error) {
+	x := &NetworkEndpointGroupsAttachEndpointsRequest{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToNetworkEndpointGroupsAttachEndpointsRequest convert to a composite type.
+func GAToNetworkEndpointGroupsAttachEndpointsRequest(obj *compute.NetworkEndpointGroupsAttachEndpointsRequest) (*NetworkEndpointGroupsAttachEndpointsRequest, error) {
+	x := &NetworkEndpointGroupsAttachEndpointsRequest{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.
@@ -4296,9 +4513,9 @@ func (networkEndpointGroupsAttachEndpointsRequest *NetworkEndpointGroupsAttachEn
 	return ga, nil
 }
 
-// ToNetworkEndpointGroupsDetachEndpointsRequestList converts a list of compute alpha, beta or GA
+// toNetworkEndpointGroupsDetachEndpointsRequestList converts a list of compute alpha, beta or GA
 // NetworkEndpointGroupsDetachEndpointsRequest into a list of our composite type.
-func ToNetworkEndpointGroupsDetachEndpointsRequestList(objs interface{}) ([]*NetworkEndpointGroupsDetachEndpointsRequest, error) {
+func toNetworkEndpointGroupsDetachEndpointsRequestList(objs interface{}) ([]*NetworkEndpointGroupsDetachEndpointsRequest, error) {
 	result := []*NetworkEndpointGroupsDetachEndpointsRequest{}
 
 	err := copyViaJSON(&result, objs)
@@ -4308,16 +4525,47 @@ func ToNetworkEndpointGroupsDetachEndpointsRequestList(objs interface{}) ([]*Net
 	return result, nil
 }
 
-// ToNetworkEndpointGroupsDetachEndpointsRequest converts a compute alpha, beta or GA
-// NetworkEndpointGroupsDetachEndpointsRequest into our composite type.
-func ToNetworkEndpointGroupsDetachEndpointsRequest(obj interface{}) (*NetworkEndpointGroupsDetachEndpointsRequest, error) {
-	networkEndpointGroupsDetachEndpointsRequest := &NetworkEndpointGroupsDetachEndpointsRequest{}
-	err := copyViaJSON(networkEndpointGroupsDetachEndpointsRequest, obj)
+// toNetworkEndpointGroupsDetachEndpointsRequest is for package internal use only (not type-safe).
+func toNetworkEndpointGroupsDetachEndpointsRequest(obj interface{}) (*NetworkEndpointGroupsDetachEndpointsRequest, error) {
+	x := &NetworkEndpointGroupsDetachEndpointsRequest{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, networkEndpointGroupsDetachEndpointsRequest, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return networkEndpointGroupsDetachEndpointsRequest, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToNetworkEndpointGroupsDetachEndpointsRequest convert to a composite type.
+func AlphaToNetworkEndpointGroupsDetachEndpointsRequest(obj *computealpha.NetworkEndpointGroupsDetachEndpointsRequest) (*NetworkEndpointGroupsDetachEndpointsRequest, error) {
+	x := &NetworkEndpointGroupsDetachEndpointsRequest{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToNetworkEndpointGroupsDetachEndpointsRequest convert to a composite type.
+func BetaToNetworkEndpointGroupsDetachEndpointsRequest(obj *computebeta.NetworkEndpointGroupsDetachEndpointsRequest) (*NetworkEndpointGroupsDetachEndpointsRequest, error) {
+	x := &NetworkEndpointGroupsDetachEndpointsRequest{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToNetworkEndpointGroupsDetachEndpointsRequest convert to a composite type.
+func GAToNetworkEndpointGroupsDetachEndpointsRequest(obj *compute.NetworkEndpointGroupsDetachEndpointsRequest) (*NetworkEndpointGroupsDetachEndpointsRequest, error) {
+	x := &NetworkEndpointGroupsDetachEndpointsRequest{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.
@@ -4356,9 +4604,9 @@ func (networkEndpointGroupsDetachEndpointsRequest *NetworkEndpointGroupsDetachEn
 	return ga, nil
 }
 
-// ToNetworkEndpointGroupsListEndpointsRequestList converts a list of compute alpha, beta or GA
+// toNetworkEndpointGroupsListEndpointsRequestList converts a list of compute alpha, beta or GA
 // NetworkEndpointGroupsListEndpointsRequest into a list of our composite type.
-func ToNetworkEndpointGroupsListEndpointsRequestList(objs interface{}) ([]*NetworkEndpointGroupsListEndpointsRequest, error) {
+func toNetworkEndpointGroupsListEndpointsRequestList(objs interface{}) ([]*NetworkEndpointGroupsListEndpointsRequest, error) {
 	result := []*NetworkEndpointGroupsListEndpointsRequest{}
 
 	err := copyViaJSON(&result, objs)
@@ -4368,16 +4616,47 @@ func ToNetworkEndpointGroupsListEndpointsRequestList(objs interface{}) ([]*Netwo
 	return result, nil
 }
 
-// ToNetworkEndpointGroupsListEndpointsRequest converts a compute alpha, beta or GA
-// NetworkEndpointGroupsListEndpointsRequest into our composite type.
-func ToNetworkEndpointGroupsListEndpointsRequest(obj interface{}) (*NetworkEndpointGroupsListEndpointsRequest, error) {
-	networkEndpointGroupsListEndpointsRequest := &NetworkEndpointGroupsListEndpointsRequest{}
-	err := copyViaJSON(networkEndpointGroupsListEndpointsRequest, obj)
+// toNetworkEndpointGroupsListEndpointsRequest is for package internal use only (not type-safe).
+func toNetworkEndpointGroupsListEndpointsRequest(obj interface{}) (*NetworkEndpointGroupsListEndpointsRequest, error) {
+	x := &NetworkEndpointGroupsListEndpointsRequest{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, networkEndpointGroupsListEndpointsRequest, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return networkEndpointGroupsListEndpointsRequest, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToNetworkEndpointGroupsListEndpointsRequest convert to a composite type.
+func AlphaToNetworkEndpointGroupsListEndpointsRequest(obj *computealpha.NetworkEndpointGroupsListEndpointsRequest) (*NetworkEndpointGroupsListEndpointsRequest, error) {
+	x := &NetworkEndpointGroupsListEndpointsRequest{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToNetworkEndpointGroupsListEndpointsRequest convert to a composite type.
+func BetaToNetworkEndpointGroupsListEndpointsRequest(obj *computebeta.NetworkEndpointGroupsListEndpointsRequest) (*NetworkEndpointGroupsListEndpointsRequest, error) {
+	x := &NetworkEndpointGroupsListEndpointsRequest{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToNetworkEndpointGroupsListEndpointsRequest convert to a composite type.
+func GAToNetworkEndpointGroupsListEndpointsRequest(obj *compute.NetworkEndpointGroupsListEndpointsRequest) (*NetworkEndpointGroupsListEndpointsRequest, error) {
+	x := &NetworkEndpointGroupsListEndpointsRequest{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.
@@ -4416,9 +4695,9 @@ func (networkEndpointGroupsListEndpointsRequest *NetworkEndpointGroupsListEndpoi
 	return ga, nil
 }
 
-// ToNetworkEndpointWithHealthStatusList converts a list of compute alpha, beta or GA
+// toNetworkEndpointWithHealthStatusList converts a list of compute alpha, beta or GA
 // NetworkEndpointWithHealthStatus into a list of our composite type.
-func ToNetworkEndpointWithHealthStatusList(objs interface{}) ([]*NetworkEndpointWithHealthStatus, error) {
+func toNetworkEndpointWithHealthStatusList(objs interface{}) ([]*NetworkEndpointWithHealthStatus, error) {
 	result := []*NetworkEndpointWithHealthStatus{}
 
 	err := copyViaJSON(&result, objs)
@@ -4428,16 +4707,47 @@ func ToNetworkEndpointWithHealthStatusList(objs interface{}) ([]*NetworkEndpoint
 	return result, nil
 }
 
-// ToNetworkEndpointWithHealthStatus converts a compute alpha, beta or GA
-// NetworkEndpointWithHealthStatus into our composite type.
-func ToNetworkEndpointWithHealthStatus(obj interface{}) (*NetworkEndpointWithHealthStatus, error) {
-	networkEndpointWithHealthStatus := &NetworkEndpointWithHealthStatus{}
-	err := copyViaJSON(networkEndpointWithHealthStatus, obj)
+// toNetworkEndpointWithHealthStatus is for package internal use only (not type-safe).
+func toNetworkEndpointWithHealthStatus(obj interface{}) (*NetworkEndpointWithHealthStatus, error) {
+	x := &NetworkEndpointWithHealthStatus{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, networkEndpointWithHealthStatus, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return networkEndpointWithHealthStatus, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToNetworkEndpointWithHealthStatus convert to a composite type.
+func AlphaToNetworkEndpointWithHealthStatus(obj *computealpha.NetworkEndpointWithHealthStatus) (*NetworkEndpointWithHealthStatus, error) {
+	x := &NetworkEndpointWithHealthStatus{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToNetworkEndpointWithHealthStatus convert to a composite type.
+func BetaToNetworkEndpointWithHealthStatus(obj *computebeta.NetworkEndpointWithHealthStatus) (*NetworkEndpointWithHealthStatus, error) {
+	x := &NetworkEndpointWithHealthStatus{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToNetworkEndpointWithHealthStatus convert to a composite type.
+func GAToNetworkEndpointWithHealthStatus(obj *compute.NetworkEndpointWithHealthStatus) (*NetworkEndpointWithHealthStatus, error) {
+	x := &NetworkEndpointWithHealthStatus{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.
@@ -4602,7 +4912,7 @@ func GetSslCertificate(gceCloud *gce.Cloud, key *meta.Key, version meta.Version)
 	if err != nil {
 		return nil, mc.Observe(err)
 	}
-	compositeType, err := ToSslCertificate(gceObj)
+	compositeType, err := toSslCertificate(gceObj)
 	if err != nil {
 		return nil, err
 	}
@@ -4650,7 +4960,7 @@ func ListSslCertificates(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 		return nil, mc.Observe(err)
 	}
 
-	compositeObjs, err := ToSslCertificateList(gceObjs)
+	compositeObjs, err := toSslCertificateList(gceObjs)
 	if err != nil {
 		return nil, err
 	}
@@ -4660,9 +4970,9 @@ func ListSslCertificates(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 	return compositeObjs, nil
 }
 
-// ToSslCertificateList converts a list of compute alpha, beta or GA
+// toSslCertificateList converts a list of compute alpha, beta or GA
 // SslCertificate into a list of our composite type.
-func ToSslCertificateList(objs interface{}) ([]*SslCertificate, error) {
+func toSslCertificateList(objs interface{}) ([]*SslCertificate, error) {
 	result := []*SslCertificate{}
 
 	err := copyViaJSON(&result, objs)
@@ -4672,16 +4982,47 @@ func ToSslCertificateList(objs interface{}) ([]*SslCertificate, error) {
 	return result, nil
 }
 
-// ToSslCertificate converts a compute alpha, beta or GA
-// SslCertificate into our composite type.
-func ToSslCertificate(obj interface{}) (*SslCertificate, error) {
-	sslCertificate := &SslCertificate{}
-	err := copyViaJSON(sslCertificate, obj)
+// toSslCertificate is for package internal use only (not type-safe).
+func toSslCertificate(obj interface{}) (*SslCertificate, error) {
+	x := &SslCertificate{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, sslCertificate, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return sslCertificate, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToSslCertificate convert to a composite type.
+func AlphaToSslCertificate(obj *computealpha.SslCertificate) (*SslCertificate, error) {
+	x := &SslCertificate{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToSslCertificate convert to a composite type.
+func BetaToSslCertificate(obj *computebeta.SslCertificate) (*SslCertificate, error) {
+	x := &SslCertificate{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToSslCertificate convert to a composite type.
+func GAToSslCertificate(obj *compute.SslCertificate) (*SslCertificate, error) {
+	x := &SslCertificate{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.
@@ -4846,7 +5187,7 @@ func GetTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Version
 	if err != nil {
 		return nil, mc.Observe(err)
 	}
-	compositeType, err := ToTargetHttpProxy(gceObj)
+	compositeType, err := toTargetHttpProxy(gceObj)
 	if err != nil {
 		return nil, err
 	}
@@ -4894,7 +5235,7 @@ func ListTargetHttpProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Vers
 		return nil, mc.Observe(err)
 	}
 
-	compositeObjs, err := ToTargetHttpProxyList(gceObjs)
+	compositeObjs, err := toTargetHttpProxyList(gceObjs)
 	if err != nil {
 		return nil, err
 	}
@@ -4904,9 +5245,9 @@ func ListTargetHttpProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Vers
 	return compositeObjs, nil
 }
 
-// ToTargetHttpProxyList converts a list of compute alpha, beta or GA
+// toTargetHttpProxyList converts a list of compute alpha, beta or GA
 // TargetHttpProxy into a list of our composite type.
-func ToTargetHttpProxyList(objs interface{}) ([]*TargetHttpProxy, error) {
+func toTargetHttpProxyList(objs interface{}) ([]*TargetHttpProxy, error) {
 	result := []*TargetHttpProxy{}
 
 	err := copyViaJSON(&result, objs)
@@ -4916,16 +5257,47 @@ func ToTargetHttpProxyList(objs interface{}) ([]*TargetHttpProxy, error) {
 	return result, nil
 }
 
-// ToTargetHttpProxy converts a compute alpha, beta or GA
-// TargetHttpProxy into our composite type.
-func ToTargetHttpProxy(obj interface{}) (*TargetHttpProxy, error) {
-	targetHttpProxy := &TargetHttpProxy{}
-	err := copyViaJSON(targetHttpProxy, obj)
+// toTargetHttpProxy is for package internal use only (not type-safe).
+func toTargetHttpProxy(obj interface{}) (*TargetHttpProxy, error) {
+	x := &TargetHttpProxy{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, targetHttpProxy, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return targetHttpProxy, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToTargetHttpProxy convert to a composite type.
+func AlphaToTargetHttpProxy(obj *computealpha.TargetHttpProxy) (*TargetHttpProxy, error) {
+	x := &TargetHttpProxy{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToTargetHttpProxy convert to a composite type.
+func BetaToTargetHttpProxy(obj *computebeta.TargetHttpProxy) (*TargetHttpProxy, error) {
+	x := &TargetHttpProxy{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToTargetHttpProxy convert to a composite type.
+func GAToTargetHttpProxy(obj *compute.TargetHttpProxy) (*TargetHttpProxy, error) {
+	x := &TargetHttpProxy{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.
@@ -5090,7 +5462,7 @@ func GetTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, version meta.Versio
 	if err != nil {
 		return nil, mc.Observe(err)
 	}
-	compositeType, err := ToTargetHttpsProxy(gceObj)
+	compositeType, err := toTargetHttpsProxy(gceObj)
 	if err != nil {
 		return nil, err
 	}
@@ -5138,7 +5510,7 @@ func ListTargetHttpsProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Ver
 		return nil, mc.Observe(err)
 	}
 
-	compositeObjs, err := ToTargetHttpsProxyList(gceObjs)
+	compositeObjs, err := toTargetHttpsProxyList(gceObjs)
 	if err != nil {
 		return nil, err
 	}
@@ -5148,9 +5520,9 @@ func ListTargetHttpsProxies(gceCloud *gce.Cloud, key *meta.Key, version meta.Ver
 	return compositeObjs, nil
 }
 
-// ToTargetHttpsProxyList converts a list of compute alpha, beta or GA
+// toTargetHttpsProxyList converts a list of compute alpha, beta or GA
 // TargetHttpsProxy into a list of our composite type.
-func ToTargetHttpsProxyList(objs interface{}) ([]*TargetHttpsProxy, error) {
+func toTargetHttpsProxyList(objs interface{}) ([]*TargetHttpsProxy, error) {
 	result := []*TargetHttpsProxy{}
 
 	err := copyViaJSON(&result, objs)
@@ -5160,16 +5532,47 @@ func ToTargetHttpsProxyList(objs interface{}) ([]*TargetHttpsProxy, error) {
 	return result, nil
 }
 
-// ToTargetHttpsProxy converts a compute alpha, beta or GA
-// TargetHttpsProxy into our composite type.
-func ToTargetHttpsProxy(obj interface{}) (*TargetHttpsProxy, error) {
-	targetHttpsProxy := &TargetHttpsProxy{}
-	err := copyViaJSON(targetHttpsProxy, obj)
+// toTargetHttpsProxy is for package internal use only (not type-safe).
+func toTargetHttpsProxy(obj interface{}) (*TargetHttpsProxy, error) {
+	x := &TargetHttpsProxy{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, targetHttpsProxy, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return targetHttpsProxy, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToTargetHttpsProxy convert to a composite type.
+func AlphaToTargetHttpsProxy(obj *computealpha.TargetHttpsProxy) (*TargetHttpsProxy, error) {
+	x := &TargetHttpsProxy{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToTargetHttpsProxy convert to a composite type.
+func BetaToTargetHttpsProxy(obj *computebeta.TargetHttpsProxy) (*TargetHttpsProxy, error) {
+	x := &TargetHttpsProxy{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToTargetHttpsProxy convert to a composite type.
+func GAToTargetHttpsProxy(obj *compute.TargetHttpsProxy) (*TargetHttpsProxy, error) {
+	x := &TargetHttpsProxy{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.
@@ -5381,7 +5784,7 @@ func GetUrlMap(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*UrlMa
 	if err != nil {
 		return nil, mc.Observe(err)
 	}
-	compositeType, err := ToUrlMap(gceObj)
+	compositeType, err := toUrlMap(gceObj)
 	if err != nil {
 		return nil, err
 	}
@@ -5429,7 +5832,7 @@ func ListUrlMaps(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*U
 		return nil, mc.Observe(err)
 	}
 
-	compositeObjs, err := ToUrlMapList(gceObjs)
+	compositeObjs, err := toUrlMapList(gceObjs)
 	if err != nil {
 		return nil, err
 	}
@@ -5439,9 +5842,9 @@ func ListUrlMaps(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) ([]*U
 	return compositeObjs, nil
 }
 
-// ToUrlMapList converts a list of compute alpha, beta or GA
+// toUrlMapList converts a list of compute alpha, beta or GA
 // UrlMap into a list of our composite type.
-func ToUrlMapList(objs interface{}) ([]*UrlMap, error) {
+func toUrlMapList(objs interface{}) ([]*UrlMap, error) {
 	result := []*UrlMap{}
 
 	err := copyViaJSON(&result, objs)
@@ -5451,16 +5854,47 @@ func ToUrlMapList(objs interface{}) ([]*UrlMap, error) {
 	return result, nil
 }
 
-// ToUrlMap converts a compute alpha, beta or GA
-// UrlMap into our composite type.
-func ToUrlMap(obj interface{}) (*UrlMap, error) {
-	urlMap := &UrlMap{}
-	err := copyViaJSON(urlMap, obj)
+// toUrlMap is for package internal use only (not type-safe).
+func toUrlMap(obj interface{}) (*UrlMap, error) {
+	x := &UrlMap{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, urlMap, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
+	return x, nil
+}
 
-	return urlMap, nil
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToUrlMap convert to a composite type.
+func AlphaToUrlMap(obj *computealpha.UrlMap) (*UrlMap, error) {
+	x := &UrlMap{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToUrlMap convert to a composite type.
+func BetaToUrlMap(obj *computebeta.UrlMap) (*UrlMap, error) {
+	x := &UrlMap{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToUrlMap convert to a composite type.
+func GAToUrlMap(obj *compute.UrlMap) (*UrlMap, error) {
+	x := &UrlMap{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
 }
 
 // ToAlpha converts our composite type into an alpha type.

@@ -89,31 +89,8 @@ func TestBackendService(t *testing.T) {
 	}
 }
 
-func TestToBackendService(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *BackendService
-	}{
-		{
-			computealpha.BackendService{},
-			&BackendService{},
-		},
-		{
-			computebeta.BackendService{},
-			&BackendService{},
-		},
-		{
-			compute.BackendService{},
-			&BackendService{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToBackendService(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToBackendService(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToBackendService(t *testing.T)
 
 func TestBackendServiceToAlpha(t *testing.T) {
 	composite := BackendService{}
@@ -316,31 +293,8 @@ func TestForwardingRule(t *testing.T) {
 	}
 }
 
-func TestToForwardingRule(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *ForwardingRule
-	}{
-		{
-			computealpha.ForwardingRule{},
-			&ForwardingRule{},
-		},
-		{
-			computebeta.ForwardingRule{},
-			&ForwardingRule{},
-		},
-		{
-			compute.ForwardingRule{},
-			&ForwardingRule{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToForwardingRule(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToForwardingRule(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToForwardingRule(t *testing.T)
 
 func TestForwardingRuleToAlpha(t *testing.T) {
 	composite := ForwardingRule{}
@@ -455,31 +409,8 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
-func TestToHealthCheck(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *HealthCheck
-	}{
-		{
-			computealpha.HealthCheck{},
-			&HealthCheck{},
-		},
-		{
-			computebeta.HealthCheck{},
-			&HealthCheck{},
-		},
-		{
-			compute.HealthCheck{},
-			&HealthCheck{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToHealthCheck(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToHealthCheck(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToHealthCheck(t *testing.T)
 
 func TestHealthCheckToAlpha(t *testing.T) {
 	composite := HealthCheck{}
@@ -578,31 +509,8 @@ func TestHealthStatusForNetworkEndpoint(t *testing.T) {
 	}
 }
 
-func TestToHealthStatusForNetworkEndpoint(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *HealthStatusForNetworkEndpoint
-	}{
-		{
-			computealpha.HealthStatusForNetworkEndpoint{},
-			&HealthStatusForNetworkEndpoint{},
-		},
-		{
-			computebeta.HealthStatusForNetworkEndpoint{},
-			&HealthStatusForNetworkEndpoint{},
-		},
-		{
-			compute.HealthStatusForNetworkEndpoint{},
-			&HealthStatusForNetworkEndpoint{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToHealthStatusForNetworkEndpoint(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToHealthStatusForNetworkEndpoint(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToHealthStatusForNetworkEndpoint(t *testing.T)
 
 func TestHealthStatusForNetworkEndpointToAlpha(t *testing.T) {
 	composite := HealthStatusForNetworkEndpoint{}
@@ -837,31 +745,8 @@ func TestNetworkEndpoint(t *testing.T) {
 	}
 }
 
-func TestToNetworkEndpoint(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *NetworkEndpoint
-	}{
-		{
-			computealpha.NetworkEndpoint{},
-			&NetworkEndpoint{},
-		},
-		{
-			computebeta.NetworkEndpoint{},
-			&NetworkEndpoint{},
-		},
-		{
-			compute.NetworkEndpoint{},
-			&NetworkEndpoint{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToNetworkEndpoint(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToNetworkEndpoint(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToNetworkEndpoint(t *testing.T)
 
 func TestNetworkEndpointToAlpha(t *testing.T) {
 	composite := NetworkEndpoint{}
@@ -936,31 +821,8 @@ func TestNetworkEndpointGroup(t *testing.T) {
 	}
 }
 
-func TestToNetworkEndpointGroup(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *NetworkEndpointGroup
-	}{
-		{
-			computealpha.NetworkEndpointGroup{},
-			&NetworkEndpointGroup{},
-		},
-		{
-			computebeta.NetworkEndpointGroup{},
-			&NetworkEndpointGroup{},
-		},
-		{
-			compute.NetworkEndpointGroup{},
-			&NetworkEndpointGroup{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToNetworkEndpointGroup(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToNetworkEndpointGroup(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToNetworkEndpointGroup(t *testing.T)
 
 func TestNetworkEndpointGroupToAlpha(t *testing.T) {
 	composite := NetworkEndpointGroup{}
@@ -1067,31 +929,8 @@ func TestNetworkEndpointGroupsAttachEndpointsRequest(t *testing.T) {
 	}
 }
 
-func TestToNetworkEndpointGroupsAttachEndpointsRequest(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *NetworkEndpointGroupsAttachEndpointsRequest
-	}{
-		{
-			computealpha.NetworkEndpointGroupsAttachEndpointsRequest{},
-			&NetworkEndpointGroupsAttachEndpointsRequest{},
-		},
-		{
-			computebeta.NetworkEndpointGroupsAttachEndpointsRequest{},
-			&NetworkEndpointGroupsAttachEndpointsRequest{},
-		},
-		{
-			compute.NetworkEndpointGroupsAttachEndpointsRequest{},
-			&NetworkEndpointGroupsAttachEndpointsRequest{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToNetworkEndpointGroupsAttachEndpointsRequest(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToNetworkEndpointGroupsAttachEndpointsRequest(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToNetworkEndpointGroupsAttachEndpointsRequest(t *testing.T)
 
 func TestNetworkEndpointGroupsAttachEndpointsRequestToAlpha(t *testing.T) {
 	composite := NetworkEndpointGroupsAttachEndpointsRequest{}
@@ -1166,31 +1005,8 @@ func TestNetworkEndpointGroupsDetachEndpointsRequest(t *testing.T) {
 	}
 }
 
-func TestToNetworkEndpointGroupsDetachEndpointsRequest(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *NetworkEndpointGroupsDetachEndpointsRequest
-	}{
-		{
-			computealpha.NetworkEndpointGroupsDetachEndpointsRequest{},
-			&NetworkEndpointGroupsDetachEndpointsRequest{},
-		},
-		{
-			computebeta.NetworkEndpointGroupsDetachEndpointsRequest{},
-			&NetworkEndpointGroupsDetachEndpointsRequest{},
-		},
-		{
-			compute.NetworkEndpointGroupsDetachEndpointsRequest{},
-			&NetworkEndpointGroupsDetachEndpointsRequest{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToNetworkEndpointGroupsDetachEndpointsRequest(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToNetworkEndpointGroupsDetachEndpointsRequest(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToNetworkEndpointGroupsDetachEndpointsRequest(t *testing.T)
 
 func TestNetworkEndpointGroupsDetachEndpointsRequestToAlpha(t *testing.T) {
 	composite := NetworkEndpointGroupsDetachEndpointsRequest{}
@@ -1265,31 +1081,8 @@ func TestNetworkEndpointGroupsListEndpointsRequest(t *testing.T) {
 	}
 }
 
-func TestToNetworkEndpointGroupsListEndpointsRequest(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *NetworkEndpointGroupsListEndpointsRequest
-	}{
-		{
-			computealpha.NetworkEndpointGroupsListEndpointsRequest{},
-			&NetworkEndpointGroupsListEndpointsRequest{},
-		},
-		{
-			computebeta.NetworkEndpointGroupsListEndpointsRequest{},
-			&NetworkEndpointGroupsListEndpointsRequest{},
-		},
-		{
-			compute.NetworkEndpointGroupsListEndpointsRequest{},
-			&NetworkEndpointGroupsListEndpointsRequest{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToNetworkEndpointGroupsListEndpointsRequest(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToNetworkEndpointGroupsListEndpointsRequest(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToNetworkEndpointGroupsListEndpointsRequest(t *testing.T)
 
 func TestNetworkEndpointGroupsListEndpointsRequestToAlpha(t *testing.T) {
 	composite := NetworkEndpointGroupsListEndpointsRequest{}
@@ -1372,31 +1165,8 @@ func TestNetworkEndpointWithHealthStatus(t *testing.T) {
 	}
 }
 
-func TestToNetworkEndpointWithHealthStatus(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *NetworkEndpointWithHealthStatus
-	}{
-		{
-			computealpha.NetworkEndpointWithHealthStatus{},
-			&NetworkEndpointWithHealthStatus{},
-		},
-		{
-			computebeta.NetworkEndpointWithHealthStatus{},
-			&NetworkEndpointWithHealthStatus{},
-		},
-		{
-			compute.NetworkEndpointWithHealthStatus{},
-			&NetworkEndpointWithHealthStatus{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToNetworkEndpointWithHealthStatus(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToNetworkEndpointWithHealthStatus(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToNetworkEndpointWithHealthStatus(t *testing.T)
 
 func TestNetworkEndpointWithHealthStatusToAlpha(t *testing.T) {
 	composite := NetworkEndpointWithHealthStatus{}
@@ -1575,31 +1345,8 @@ func TestSslCertificate(t *testing.T) {
 	}
 }
 
-func TestToSslCertificate(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *SslCertificate
-	}{
-		{
-			computealpha.SslCertificate{},
-			&SslCertificate{},
-		},
-		{
-			computebeta.SslCertificate{},
-			&SslCertificate{},
-		},
-		{
-			compute.SslCertificate{},
-			&SslCertificate{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToSslCertificate(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToSslCertificate(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToSslCertificate(t *testing.T)
 
 func TestSslCertificateToAlpha(t *testing.T) {
 	composite := SslCertificate{}
@@ -1698,31 +1445,8 @@ func TestTargetHttpProxy(t *testing.T) {
 	}
 }
 
-func TestToTargetHttpProxy(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *TargetHttpProxy
-	}{
-		{
-			computealpha.TargetHttpProxy{},
-			&TargetHttpProxy{},
-		},
-		{
-			computebeta.TargetHttpProxy{},
-			&TargetHttpProxy{},
-		},
-		{
-			compute.TargetHttpProxy{},
-			&TargetHttpProxy{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToTargetHttpProxy(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToTargetHttpProxy(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToTargetHttpProxy(t *testing.T)
 
 func TestTargetHttpProxyToAlpha(t *testing.T) {
 	composite := TargetHttpProxy{}
@@ -1797,31 +1521,8 @@ func TestTargetHttpsProxy(t *testing.T) {
 	}
 }
 
-func TestToTargetHttpsProxy(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *TargetHttpsProxy
-	}{
-		{
-			computealpha.TargetHttpsProxy{},
-			&TargetHttpsProxy{},
-		},
-		{
-			computebeta.TargetHttpsProxy{},
-			&TargetHttpsProxy{},
-		},
-		{
-			compute.TargetHttpsProxy{},
-			&TargetHttpsProxy{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToTargetHttpsProxy(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToTargetHttpsProxy(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToTargetHttpsProxy(t *testing.T)
 
 func TestTargetHttpsProxyToAlpha(t *testing.T) {
 	composite := TargetHttpsProxy{}
@@ -1936,31 +1637,8 @@ func TestUrlMap(t *testing.T) {
 	}
 }
 
-func TestToUrlMap(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *UrlMap
-	}{
-		{
-			computealpha.UrlMap{},
-			&UrlMap{},
-		},
-		{
-			computebeta.UrlMap{},
-			&UrlMap{},
-		},
-		{
-			compute.UrlMap{},
-			&UrlMap{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := ToUrlMap(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("ToUrlMap(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToUrlMap(t *testing.T)
 
 func TestUrlMapToAlpha(t *testing.T) {
 	composite := UrlMap{}

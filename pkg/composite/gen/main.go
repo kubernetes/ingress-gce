@@ -890,31 +890,8 @@ func genTests(wr io.Writer) {
 	}
 }
 
-func TestTo{{.Name}}(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *{{.Name}}
-	}{
-		{
-			computealpha.{{.Name}}{},
-			&{{.Name}}{},
-		},
-		{
-			computebeta.{{.Name}}{},
-			&{{.Name}}{},
-		},
-		{
-			compute.{{.Name}}{},
-			&{{.Name}}{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := To{{.Name}}(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("To{{.Name}}(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestTo{{.Name}}(t *testing.T)
 
 {{range $version, $extension := $.Versions}}
 func Test{{$type.Name}}To{{$version}}(t *testing.T) {
