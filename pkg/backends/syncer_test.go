@@ -564,32 +564,6 @@ func TestShutdown(t *testing.T) {
 	}
 }
 
-func TestApplyProbeSettingsToHC(t *testing.T) {
-	p := "healthz"
-	hc := healthchecks.DefaultHealthCheck(8080, annotations.ProtocolHTTPS)
-	probe := &api_v1.Probe{
-		Handler: api_v1.Handler{
-			HTTPGet: &api_v1.HTTPGetAction{
-				Scheme: api_v1.URISchemeHTTP,
-				Path:   p,
-				Port: intstr.IntOrString{
-					Type:   intstr.Int,
-					IntVal: 80,
-				},
-			},
-		},
-	}
-
-	applyProbeSettingsToHC(probe, hc)
-
-	if hc.Protocol() != annotations.ProtocolHTTPS || hc.Port != 8080 {
-		t.Errorf("Basic HC settings changed")
-	}
-	if hc.RequestPath != "/"+p {
-		t.Errorf("Failed to apply probe's requestpath")
-	}
-}
-
 func TestEnsureBackendServiceProtocol(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	syncer := newTestSyncer(fakeGCE)

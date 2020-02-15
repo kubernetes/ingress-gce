@@ -20,12 +20,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
 	"google.golang.org/api/compute/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -638,4 +640,33 @@ func copyViaJSON(dest interface{}, src jsonConvertable) error {
 		return err
 	}
 	return json.Unmarshal(bytes, dest)
+}
+
+// ApplyProbeSettingsToHC TODO
+func ApplyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
+	healthPath := p.Handler.HTTPGet.Path
+	// GCE requires a leading "/" for health check urls.
+	if !strings.HasPrefix(healthPath, "/") {
+		healthPath = "/" + healthPath
+	}
+	// Extract host from HTTP headers
+	host := p.Handler.HTTPGet.Host
+	for _, header := range p.Handler.HTTPGet.HTTPHeaders {
+		if header.Name == "Host" {
+			host = header.Value
+			break
+		}
+	}
+
+	hc.RequestPath = healthPath
+	hc.Host = host
+	hc.Description = "Kubernetes L7 health check generated with readiness probe settings."
+	hc.TimeoutSec = int64(p.TimeoutSeconds)
+	if hc.ForNEG {
+		// For NEG mode, we can support more aggressive healthcheck interval.
+		hc.CheckIntervalSec = int64(p.PeriodSeconds)
+	} else {
+		// For IG mode, short healthcheck interval may health check flooding problem.
+		hc.CheckIntervalSec = int64(p.PeriodSeconds) + int64(DefaultHealthCheckInterval.Seconds())
+	}
 }
