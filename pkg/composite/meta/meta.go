@@ -74,6 +74,10 @@ var NoCRUD = sets.NewString(
 	"NetworkEndpoint",
 	"NetworkEndpointWithHealthStatus",
 )
+
+// TODO: This should be a list, not a map so the generated code ordering is stable
+// across generations.
+
 var Versions = map[string]string{
 	"Alpha": "alpha",
 	"Beta":  "beta",
