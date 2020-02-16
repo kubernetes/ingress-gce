@@ -91,8 +91,8 @@ func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, default
 	return &HealthChecks{cloud, healthCheckPath, defaultBackendSvc}
 }
 
-// New returns a *HealthCheck with default settings and specified port/protocol
-func (h *HealthChecks) New(sp utils.ServicePort) *HealthCheck {
+// new returns a *HealthCheck with default settings and specified port/protocol
+func (h *HealthChecks) new(sp utils.ServicePort) *HealthCheck {
 	var hc *HealthCheck
 	if sp.NEGEnabled && !sp.L7ILBEnabled {
 		hc = DefaultNEGHealthCheck(sp.Protocol)
@@ -111,7 +111,7 @@ func (h *HealthChecks) New(sp utils.ServicePort) *HealthCheck {
 
 // SyncServicePort implements HealthChecker.
 func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (string, error) {
-	hc := h.New(*sp)
+	hc := h.new(*sp)
 	if probe != nil {
 		klog.V(4).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
 		applyProbeSettingsToHC(probe, hc)

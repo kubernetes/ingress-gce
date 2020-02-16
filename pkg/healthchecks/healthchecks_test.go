@@ -320,7 +320,7 @@ func TestAlphaHealthCheck(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
 	sp := utils.ServicePort{NodePort: 8000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true, BackendNamer: namer}
-	hc := healthChecks.New(sp)
+	hc := healthChecks.new(sp)
 	_, err := healthChecks.sync(hc)
 	if err != nil {
 		t.Fatalf("got %v, want nil", err)

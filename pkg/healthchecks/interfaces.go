@@ -48,7 +48,6 @@ type HealthCheckProvider interface {
 
 // HealthChecker is an interface to manage cloud HTTPHealthChecks.
 type HealthChecker interface {
-	New(utils.ServicePort) *HealthCheck
 	// SyncServicePort syncs the healthcheck associated with the given
 	// ServicePort and Pod Probe definition.
 	//
