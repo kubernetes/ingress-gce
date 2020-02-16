@@ -20,9 +20,10 @@ import (
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // HealthCheckProvider is an interface to manage a single GCE health check.
@@ -47,8 +48,12 @@ type HealthCheckProvider interface {
 
 // HealthChecker is an interface to manage cloud HTTPHealthChecks.
 type HealthChecker interface {
-	New(sp utils.ServicePort) *HealthCheck
-	Sync(hc *HealthCheck) (string, error)
+	New(utils.ServicePort) *HealthCheck
+	// SyncServicePort syncs the healthcheck associated with the given
+	// ServicePort and Pod Probe definition.
+	//
+	// `probe` can be nil if no probe exists.
+	SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (string, error)
 	Delete(name string, scope meta.KeyType) error
 	Get(name string, version meta.Version, scope meta.KeyType) (*HealthCheck, error)
 }

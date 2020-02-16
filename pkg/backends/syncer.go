@@ -15,9 +15,9 @@ package backends
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -77,17 +77,9 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	scope := features.ScopeFromServicePort(&sp)
 
 	be, getErr := s.backendPool.Get(beName, version, scope)
-	hasLegacyHC := false
-	if be != nil {
-		// If the backend already exists, find out if it is using a legacy health check.
-		existingHCLink := getHealthCheckLink(be)
-		if strings.Contains(existingHCLink, "/httpHealthChecks/") {
-			hasLegacyHC = true
-		}
-	}
 
 	// Ensure health check for backend service exists.
-	hcLink, err := s.ensureHealthCheck(sp, hasLegacyHC)
+	hcLink, err := s.ensureHealthCheck(sp)
 	if err != nil {
 		return fmt.Errorf("error ensuring health check: %v", err)
 	}
@@ -234,23 +226,17 @@ func (s *backendSyncer) Shutdown() error {
 	return nil
 }
 
-func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort, hasLegacyHC bool) (string, error) {
-	if hasLegacyHC {
-		klog.Errorf("Backend %+v has legacy health check", sp.ID)
-	}
-	hc := s.healthChecker.New(sp)
+func (s *backendSyncer) ensureHealthCheck(sp utils.ServicePort) (string, error) {
+	var probe *v1.Probe
+	var err error
+
 	if s.prober != nil {
-		probe, err := s.prober.GetProbe(sp)
+		probe, err = s.prober.GetProbe(sp)
 		if err != nil {
 			return "", fmt.Errorf("Error getting prober: %v", err)
 		}
-		if probe != nil {
-			klog.V(4).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
-			healthchecks.ApplyProbeSettingsToHC(probe, hc)
-		}
 	}
-
-	return s.healthChecker.Sync(hc)
+	return s.healthChecker.SyncServicePort(&sp, probe)
 }
 
 // getHealthCheckLink gets the Healthcheck link off the BackendService
