@@ -18,6 +18,7 @@ package types
 
 import (
 	"context"
+
 	"k8s.io/ingress-gce/pkg/composite"
 
 	"fmt"
@@ -134,7 +135,7 @@ func MockAttachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *com
 	newList := m.X.(NetworkEndpointStore)[*key]
 	for _, newEp := range obj.NetworkEndpoints {
 		found := false
-		newComposite, err := composite.ToNetworkEndpoint(newEp)
+		newComposite, err := composite.GAToNetworkEndpoint(newEp)
 		if err != nil {
 			return err
 		}
@@ -170,7 +171,7 @@ func MockDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *com
 
 	for _, left := range obj.NetworkEndpoints {
 		found := false
-		leftComposite, err := composite.ToNetworkEndpoint(left)
+		leftComposite, err := composite.GAToNetworkEndpoint(left)
 		if err != nil {
 			return err
 		}
@@ -193,7 +194,7 @@ func MockDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *com
 	for _, ep := range m.X.(NetworkEndpointStore)[*key] {
 		found := false
 		for _, del := range obj.NetworkEndpoints {
-			delComposite, err := composite.ToNetworkEndpoint(del)
+			delComposite, err := composite.GAToNetworkEndpoint(del)
 			if err != nil {
 				return err
 			}
@@ -278,7 +279,7 @@ func MockAlphaAttachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj
 	newList := m.X.(NetworkEndpointStore)[*key]
 	for _, newEp := range obj.NetworkEndpoints {
 		found := false
-		newComposite, err := composite.ToNetworkEndpoint(newEp)
+		newComposite, err := composite.AlphaToNetworkEndpoint(newEp)
 		if err != nil {
 			return err
 		}
@@ -314,7 +315,7 @@ func MockAlphaDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj
 
 	for _, left := range obj.NetworkEndpoints {
 		found := false
-		leftComposite, err := composite.ToNetworkEndpoint(left)
+		leftComposite, err := composite.AlphaToNetworkEndpoint(left)
 		if err != nil {
 			return err
 		}
@@ -337,7 +338,7 @@ func MockAlphaDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj
 	for _, ep := range m.X.(NetworkEndpointStore)[*key] {
 		found := false
 		for _, del := range obj.NetworkEndpoints {
-			delComposite, err := composite.ToNetworkEndpoint(del)
+			delComposite, err := composite.AlphaToNetworkEndpoint(del)
 			if err != nil {
 				return err
 			}

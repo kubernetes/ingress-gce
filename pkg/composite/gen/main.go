@@ -487,7 +487,7 @@ func Get{{.Name}}(gceCloud *gce.Cloud, key *meta.Key, version meta.Version) (*{{
 	if err != nil {
 		return nil, mc.Observe(err)
 	}
-	compositeType, err := To{{.Name}}(gceObj)
+	compositeType, err := to{{.Name}}(gceObj)
   	if err != nil {
     	return nil, err
   	}
@@ -567,7 +567,7 @@ func List{{.GetCloudProviderName}}(gceCloud *gce.Cloud, key *meta.Key, version m
 		return nil, mc.Observe(err)
 	}
 
-	compositeObjs, err := To{{.Name}}List(gceObjs)
+	compositeObjs, err := to{{.Name}}List(gceObjs)
 	if err != nil {
 		return nil, err
 	}
@@ -691,7 +691,7 @@ func {{.GetGroupResourceInfo.ListFuncName}}(gceCloud *gce.Cloud, key *meta.Key, 
 		return nil, mc.Observe(err)
 	}
 
-	compositeObjs, err := To{{.GetGroupResourceInfo.ListRespName}}List(gceObjs)
+	compositeObjs, err := to{{.GetGroupResourceInfo.ListRespName}}List(gceObjs)
 	if err != nil {
 		return nil, err
 	}
@@ -747,7 +747,7 @@ func {{.GetGroupResourceInfo.AggListFuncName}}{{.GetGroupResourceInfo.AggListRes
 		}
 		gceObjs = gaList
 	}
-	compositeObjs, err := To{{.GetGroupResourceInfo.AggListRespName}}List(gceObjs)
+	compositeObjs, err := to{{.GetGroupResourceInfo.AggListRespName}}List(gceObjs)
 	if err != nil {
 		return nil, err
 	}
@@ -765,9 +765,10 @@ func {{.GetGroupResourceInfo.AggListFuncName}}{{.GetGroupResourceInfo.AggListRes
 }
 {{end}} {{/*IsGroupResourceService*/}}
 {{- end}} {{/*HasCRUD*/}}
-// To{{.Name}}List converts a list of compute alpha, beta or GA
+
+// to{{.Name}}List converts a list of compute alpha, beta or GA
 // {{.Name}} into a list of our composite type.
-func To{{.Name}}List(objs interface{}) ([]*{{.Name}}, error) {
+func to{{.Name}}List(objs interface{}) ([]*{{.Name}}, error) {
 	result := []*{{.Name}}{}
 
 	err := copyViaJSON(&result, objs)
@@ -777,17 +778,32 @@ func To{{.Name}}List(objs interface{}) ([]*{{.Name}}, error) {
 	return result, nil
 }
 
-// To{{.Name}} converts a compute alpha, beta or GA
-// {{.Name}} into our composite type.
-func To{{.Name}}(obj interface{}) (*{{.Name}}, error) {
-	{{.VarName}} := &{{.Name}}{}
-	err := copyViaJSON({{.VarName}}, obj)
+// to{{.Name}} is for package internal use only (not type-safe).
+func to{{.Name}}(obj interface{}) (*{{.Name}}, error) {
+	x := &{{.Name}}{}
+	err := copyViaJSON(x, obj)
 	if err != nil {
-		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, {{.VarName}}, err)
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
 	}
-
-	return {{.VarName}}, nil
+	return x, nil
 }
+
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+{{- range $version, $extension := $.Versions}}
+
+// {{$version}}To{{$type.Name}} convert to a composite type.
+func {{$version}}To{{$type.Name}}(obj *compute{{$extension}}.{{$type.Name}}) (*{{$type.Name}}, error) {
+	x := &{{$type.Name}}{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+{{- end}} {{/* range versions */}}
 
 {{- range $version, $extension := $.Versions}}
 {{$lower := $version | ToLower}}
@@ -874,31 +890,8 @@ func genTests(wr io.Writer) {
 	}
 }
 
-func TestTo{{.Name}}(t *testing.T) {
-	testCases := []struct {
-		input    interface{}
-		expected *{{.Name}}
-	}{
-		{
-			computealpha.{{.Name}}{},
-			&{{.Name}}{},
-		},
-		{
-			computebeta.{{.Name}}{},
-			&{{.Name}}{},
-		},
-		{
-			compute.{{.Name}}{},
-			&{{.Name}}{},
-		},
-	}
-	for _, testCase := range testCases {
-		result, _ := To{{.Name}}(testCase.input)
-		if !reflect.DeepEqual(result, testCase.expected) {
-			t.Fatalf("To{{.Name}}(input) = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(testCase.input), pretty.Sprint(result), pretty.Sprint(testCase.expected))
-		}
-	}
-}
+// TODO: these tests don't do anything as they are currently structured.
+// func TestTo{{.Name}}(t *testing.T)
 
 {{range $version, $extension := $.Versions}}
 func Test{{$type.Name}}To{{$version}}(t *testing.T) {

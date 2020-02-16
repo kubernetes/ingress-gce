@@ -156,7 +156,7 @@ func (h *HealthChecks) createILB(hc *HealthCheck) error {
 		hc.Port = 0
 	}
 	hc.merge()
-	compositeType, err := composite.ToHealthCheck(hc)
+	compositeType, err := composite.AlphaToHealthCheck(&hc.HealthCheck)
 	if err != nil {
 		return fmt.Errorf("Error converting hc to composite: %v", err)
 	}
@@ -210,7 +210,7 @@ func (h *HealthChecks) updateILB(oldHC, newHC *HealthCheck) error {
 	cloud := h.cloud.(*gce.Cloud)
 
 	mergedHC := mergeHealthcheck(oldHC, newHC).ToAlphaComputeHealthCheck()
-	compositeType, err := composite.ToHealthCheck(mergedHC)
+	compositeType, err := composite.AlphaToHealthCheck(mergedHC)
 	if err != nil {
 		return fmt.Errorf("Error converting newHC to composite: %v", err)
 	}
