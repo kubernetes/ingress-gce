@@ -24,7 +24,9 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	computealpha "google.golang.org/api/compute/v0.alpha"
+	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
@@ -398,5 +400,30 @@ func TestVersion(t *testing.T) {
 			}
 		})
 	}
+}
 
+func TestApplyProbeSettingsToHC(t *testing.T) {
+	p := "healthz"
+	hc := DefaultHealthCheck(8080, annotations.ProtocolHTTPS)
+	probe := &api_v1.Probe{
+		Handler: api_v1.Handler{
+			HTTPGet: &api_v1.HTTPGetAction{
+				Scheme: api_v1.URISchemeHTTP,
+				Path:   p,
+				Port: intstr.IntOrString{
+					Type:   intstr.Int,
+					IntVal: 80,
+				},
+			},
+		},
+	}
+
+	ApplyProbeSettingsToHC(probe, hc)
+
+	if hc.Protocol() != annotations.ProtocolHTTPS || hc.Port != 8080 {
+		t.Errorf("Basic HC settings changed")
+	}
+	if hc.RequestPath != "/"+p {
+		t.Errorf("Failed to apply probe's requestpath")
+	}
 }
