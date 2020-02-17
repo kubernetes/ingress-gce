@@ -439,3 +439,8 @@ func IsLegacyL4ILBService(svc *api_v1.Service) bool {
 	}
 	return false
 }
+
+// NewStringPointer returns a pointer to the provided string literal
+func NewStringPointer(s string) *string {
+	return &s
+}

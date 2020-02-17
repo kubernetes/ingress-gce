@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -34,6 +35,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
+	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -86,7 +88,7 @@ func newTestJig(t *testing.T) *testJig {
 		if err != nil {
 			return &googleapi.Error{
 				Code:    http.StatusNotFound,
-				Message: fmt.Sprintf("Key: %s was not found in UrlMaps", key.String()),
+				Message: fmt.Sprintf("Key: %s was not found in TargetHttpsProxies", key.String()),
 			}
 		}
 
@@ -95,6 +97,18 @@ func newTestJig(t *testing.T) *testJig {
 		}
 
 		tp.SslCertificates = request.SslCertificates
+		return nil
+	}
+	mockGCE.MockTargetHttpsProxies.SetSslPolicyHook = func(ctx context.Context, key *meta.Key, ref *compute.SslPolicyReference, proxies *cloud.MockTargetHttpsProxies) error {
+		tps, err := proxies.Get(ctx, key)
+		fmt.Printf("tps = %+v, err = %v\n\n", tps, err)
+		if err != nil {
+			return &googleapi.Error{
+				Code:    http.StatusNotFound,
+				Message: fmt.Sprintf("Key: %s was not found in TargetHttpsProxies", key.String()),
+			}
+		}
+		tps.SslPolicy = ref.SslPolicy
 		return nil
 	}
 	mockGCE.MockGlobalForwardingRules.InsertHook = InsertGlobalForwardingRuleHook
@@ -970,6 +984,159 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 	}
 	if ip.Address != fw.IPAddress || ip.Address != fws.IPAddress {
 		t.Fatalf("ip.Address = %q, want %q and %q all equal", ip.Address, fw.IPAddress, fws.IPAddress)
+	}
+}
+
+// Test setting frontendconfig Ssl policy
+func TestFrontendConfigSslPolicy(t *testing.T) {
+	flags.F.EnableFrontendConfig = true
+	defer func() { flags.F.EnableFrontendConfig = false }()
+
+	j := newTestJig(t)
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	lbInfo := &L7RuntimeInfo{
+		AllowHTTP:      false,
+		TLS:            []*TLSCerts{createCert("key", "cert", "name")},
+		UrlMap:         gceUrlMap,
+		Ingress:        newIngress(),
+		FrontendConfig: &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
+	}
+
+	l7, err := j.pool.Ensure(lbInfo)
+	if err != nil {
+		t.Fatalf("j.pool.Ensure(%v) = %v, want nil", lbInfo, err)
+	}
+
+	tpsName := l7.tps.Name
+	tps, _ := composite.GetTargetHttpsProxy(j.fakeGCE, meta.GlobalKey(tpsName), meta.VersionGA)
+
+	resourceID, err := cloud.ParseResourceURL(tps.SslPolicy)
+	if err != nil {
+		t.Errorf("ParseResourceURL(%+v) = %v, want nil", tps.SslPolicy, err)
+	}
+
+	path := resourceID.ResourcePath()
+	want := "global/sslPolicies/test-policy"
+
+	if path != want {
+		t.Errorf("tps ssl policy = %q, want %q", path, want)
+	}
+}
+
+func TestGetSslPolicyLink(t *testing.T) {
+	t.Parallel()
+	j := newTestJig(t)
+
+	testCases := []struct {
+		desc string
+		fc   *frontendconfigv1beta1.FrontendConfig
+		want *string
+	}{
+		{
+			desc: "Empty frontendconfig",
+			fc:   nil,
+			want: nil,
+		},
+		{
+			desc: "frontendconfig with no ssl policy",
+			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{}},
+			want: nil,
+		},
+		{
+			desc: "frontendconfig with ssl policy",
+			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
+			want: utils.NewStringPointer("global/sslPolicies/test-policy"),
+		},
+		{
+			desc: "frontendconfig with empty string ssl policy",
+			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("")}},
+			want: utils.NewStringPointer(""),
+		},
+	}
+
+	for _, tc := range testCases {
+		l7 := L7{runtimeInfo: &L7RuntimeInfo{FrontendConfig: tc.fc}, cloud: j.fakeGCE, scope: meta.Global}
+		result, err := l7.getSslPolicyLink()
+		if err != nil {
+			t.Errorf("desc: %q, l7.getSslPolicyLink() = %v, want nil", tc.desc, err)
+		}
+
+		if !reflect.DeepEqual(result, tc.want) {
+			t.Errorf("desc: %q, l7.getSslPolicyLink() = %v, want %+v", tc.desc, result, tc.want)
+		}
+	}
+}
+
+func TestEnsureSslPolicy(t *testing.T) {
+	t.Parallel()
+	j := newTestJig(t)
+
+	testCases := []struct {
+		desc  string
+		fc    *frontendconfigv1beta1.FrontendConfig
+		proxy *composite.TargetHttpsProxy
+		want  string
+	}{
+		{
+			desc:  "Empty frontendconfig",
+			proxy: &composite.TargetHttpsProxy{Name: "test-proxy-0"},
+			fc:    nil,
+			want:  "",
+		},
+		{
+			desc:  "frontendconfig with no ssl policy",
+			fc:    &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{}},
+			proxy: &composite.TargetHttpsProxy{Name: "test-proxy-1"},
+			want:  "",
+		},
+		{
+			desc:  "frontendconfig with ssl policy",
+			fc:    &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
+			proxy: &composite.TargetHttpsProxy{Name: "test-proxy-2"},
+			want:  "global/sslPolicies/test-policy",
+		},
+		{
+			desc:  "proxy with different ssl policy",
+			fc:    &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
+			proxy: &composite.TargetHttpsProxy{Name: "test-proxy-3", SslPolicy: "global/sslPolicies/wrong-policy"},
+			want:  "global/sslPolicies/test-policy",
+		},
+		{
+			desc:  "proxy with ssl policy and frontend config policy is nil",
+			fc:    &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: nil}},
+			proxy: &composite.TargetHttpsProxy{Name: "test-proxy-4", SslPolicy: "global/sslPolicies/test-policy"},
+			want:  "global/sslPolicies/test-policy",
+		},
+		{
+			desc:  "remove ssl policy",
+			fc:    &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("")}},
+			proxy: &composite.TargetHttpsProxy{Name: "test-proxy-5", SslPolicy: "global/sslPolicies/wrong-policy"},
+			want:  "",
+		},
+	}
+
+	for _, tc := range testCases {
+		key := meta.GlobalKey(tc.proxy.Name)
+		if err := composite.CreateTargetHttpsProxy(j.fakeGCE, key, tc.proxy); err != nil {
+			t.Error(err)
+		}
+		l7 := L7{runtimeInfo: &L7RuntimeInfo{FrontendConfig: tc.fc}, cloud: j.fakeGCE, scope: meta.Global}
+
+		if err := l7.ensureSslPolicy(tc.proxy); err != nil {
+			t.Errorf("desc: %q, l7.ensureSslPolicy() = %v, want nil", tc.desc, err)
+		}
+
+		result, err := composite.GetTargetHttpsProxy(j.fakeGCE, key, meta.VersionGA)
+		if err != nil {
+			t.Error(err)
+		}
+
+		if result.SslPolicy != tc.want {
+			t.Errorf("desc: %q, want %q, got %q", tc.desc, tc.want, result.SslPolicy)
+		}
 	}
 }
 
