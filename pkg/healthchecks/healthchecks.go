@@ -87,12 +87,12 @@ type HealthChecks struct {
 // NewHealthChecker creates a new health checker.
 // cloud: the cloud object implementing SingleHealthCheck.
 // defaultHealthCheckPath: is the HTTP path to use for health checks.
-func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendSvc types.NamespacedName) HealthChecker {
+func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendSvc types.NamespacedName) *HealthChecks {
 	return &HealthChecks{cloud, healthCheckPath, defaultBackendSvc}
 }
 
-// New returns a *HealthCheck with default settings and specified port/protocol
-func (h *HealthChecks) New(sp utils.ServicePort) *HealthCheck {
+// new returns a *HealthCheck with default settings and specified port/protocol
+func (h *HealthChecks) new(sp utils.ServicePort) *HealthCheck {
 	var hc *HealthCheck
 	if sp.NEGEnabled && !sp.L7ILBEnabled {
 		hc = DefaultNEGHealthCheck(sp.Protocol)
@@ -109,9 +109,19 @@ func (h *HealthChecks) New(sp utils.ServicePort) *HealthCheck {
 	return hc
 }
 
-// Sync retrieves a health check based on port, checks type and settings and updates/creates if necessary.
-// Sync is only called by the backends.Add func - it's not a pool like other resources.
-func (h *HealthChecks) Sync(hc *HealthCheck) (string, error) {
+// SyncServicePort implements HealthChecker.
+func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (string, error) {
+	hc := h.new(*sp)
+	if probe != nil {
+		klog.V(4).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
+		applyProbeSettingsToHC(probe, hc)
+	}
+	return h.sync(hc)
+}
+
+// sync retrieves a health check based on port, checks type and settings and updates/creates if necessary.
+// sync is only called by the backends.Add func - it's not a pool like other resources.
+func (h *HealthChecks) sync(hc *HealthCheck) (string, error) {
 	var scope meta.KeyType
 	// TODO(shance): find a way to remove this
 	if hc.forILB {
@@ -642,8 +652,8 @@ func copyViaJSON(dest interface{}, src jsonConvertable) error {
 	return json.Unmarshal(bytes, dest)
 }
 
-// ApplyProbeSettingsToHC TODO
-func ApplyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
+// applyProbeSettingsToHC TODO
+func applyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
 	healthPath := p.Handler.HTTPGet.Path
 	// GCE requires a leading "/" for health check urls.
 	if !strings.HasPrefix(healthPath, "/") {

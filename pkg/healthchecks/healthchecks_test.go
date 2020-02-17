@@ -43,9 +43,8 @@ func TestHealthCheckAdd(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
 
-	sp := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: namer}
-	hc := healthChecks.New(sp)
-	_, err := healthChecks.Sync(hc)
+	sp := &utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: namer}
+	_, err := healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -55,9 +54,8 @@ func TestHealthCheckAdd(t *testing.T) {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
 
-	sp = utils.ServicePort{NodePort: 443, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: namer}
-	hc = healthChecks.New(sp)
-	_, err = healthChecks.Sync(hc)
+	sp = &utils.ServicePort{NodePort: 443, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: namer}
+	_, err = healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -67,9 +65,8 @@ func TestHealthCheckAdd(t *testing.T) {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
 
-	sp = utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, NEGEnabled: false, BackendNamer: namer}
-	hc = healthChecks.New(sp)
-	_, err = healthChecks.Sync(hc)
+	sp = &utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, NEGEnabled: false, BackendNamer: namer}
+	_, err = healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -95,10 +92,9 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 	fakeGCE.CreateHealthCheck(v1hc)
 
-	sp := utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: namer}
+	sp := &utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: namer}
 	// Should not fail adding the same type of health check
-	hc := healthChecks.New(sp)
-	_, err = healthChecks.Sync(hc)
+	_, err = healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -119,9 +115,8 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 	fakeGCE.CreateHealthCheck(v1hc)
 
-	sp = utils.ServicePort{NodePort: 4000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: namer}
-	hc = healthChecks.New(sp)
-	_, err = healthChecks.Sync(hc)
+	sp = &utils.ServicePort{NodePort: 4000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: namer}
+	_, err = healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -142,9 +137,8 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 	fakeGCE.CreateHealthCheck(v1hc)
 
-	sp = utils.ServicePort{NodePort: 5000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: namer}
-	hc = healthChecks.New(sp)
-	_, err = healthChecks.Sync(hc)
+	sp = &utils.ServicePort{NodePort: 5000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: namer}
+	_, err = healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -244,7 +238,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 
 	// Change to HTTPS
 	hc.Type = string(annotations.ProtocolHTTPS)
-	_, err = healthChecks.Sync(hc)
+	_, err = healthChecks.sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
@@ -262,7 +256,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 
 	// Change to HTTP2
 	hc.Type = string(annotations.ProtocolHTTP2)
-	_, err = healthChecks.Sync(hc)
+	_, err = healthChecks.sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
@@ -281,7 +275,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	// Change to NEG Health Check
 	hc.ForNEG = true
 	hc.PortSpecification = UseServingPortSpecification
-	_, err = healthChecks.Sync(hc)
+	_, err = healthChecks.sync(hc)
 
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
@@ -302,7 +296,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	hc.Port = 3000
 	hc.PortSpecification = ""
 
-	_, err = healthChecks.Sync(hc)
+	_, err = healthChecks.sync(hc)
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
@@ -326,8 +320,8 @@ func TestAlphaHealthCheck(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
 	sp := utils.ServicePort{NodePort: 8000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true, BackendNamer: namer}
-	hc := healthChecks.New(sp)
-	_, err := healthChecks.Sync(hc)
+	hc := healthChecks.new(sp)
+	_, err := healthChecks.sync(hc)
 	if err != nil {
 		t.Fatalf("got %v, want nil", err)
 	}
@@ -418,7 +412,7 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 		},
 	}
 
-	ApplyProbeSettingsToHC(probe, hc)
+	applyProbeSettingsToHC(probe, hc)
 
 	if hc.Protocol() != annotations.ProtocolHTTPS || hc.Port != 8080 {
 		t.Errorf("Basic HC settings changed")
