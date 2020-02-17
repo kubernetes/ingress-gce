@@ -111,6 +111,9 @@ func FakeGoogleAPINotFoundErr() *googleapi.Error {
 // IsHTTPErrorCode checks if the given error matches the given HTTP Error code.
 // For this to work the error must be a googleapi Error.
 func IsHTTPErrorCode(err error, code int) bool {
+	if err == nil {
+		return false
+	}
 	apiErr, ok := err.(*googleapi.Error)
 	return ok && apiErr.Code == code
 }

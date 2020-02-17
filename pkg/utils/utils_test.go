@@ -17,12 +17,13 @@ limitations under the License.
 package utils
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-
+	"google.golang.org/api/googleapi"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -805,6 +806,26 @@ func TestGetPortRanges(t *testing.T) {
 		result := GetPortRanges(tc.Input)
 		if diff := cmp.Diff(result, tc.Result); diff != "" {
 			t.Errorf("GetPortRanges(%s) mismatch, (-want +got): \n%s", tc.Desc, diff)
+		}
+	}
+}
+
+func TestIsHTTPErrorCode(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		err  error
+		code int
+		want bool
+	}{
+		{nil, 400, false},
+		{errors.New("xxx"), 400, false},
+		{&googleapi.Error{Code: 200}, 400, false},
+		{&googleapi.Error{Code: 400}, 400, true},
+	} {
+		got := IsHTTPErrorCode(tc.err, tc.code)
+		if got != tc.want {
+			t.Errorf("IsHTTPErrorCode(%v, %d) = %t; want %t", tc.err, tc.code, got, tc.want)
 		}
 	}
 }
