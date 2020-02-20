@@ -24,6 +24,8 @@ import (
 	"strings"
 	"sync"
 
+	"k8s.io/ingress-gce/pkg/utils/common"
+
 	"k8s.io/klog"
 )
 
@@ -479,7 +481,8 @@ func (n *Namer) PrimaryIPNEG(namespace, name string) string {
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	// Use the full cluster UID in the suffix to reduce chance of collision.
-	return fmt.Sprintf("%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, negSuffix(n.UID(), namespace, name, "", ""))
+	return fmt.Sprintf("%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName,
+		primaryIPNegSuffix(n.UID(), namespace, name))
 }
 
 // IsNEG returns true if the name is a NEG owned by this cluster.
@@ -492,6 +495,11 @@ func (n *Namer) IsNEG(name string) bool {
 
 func (n *Namer) negPrefix() string {
 	return fmt.Sprintf("%s%s-%s", n.prefix, schemaVersionV1, n.shortUID())
+}
+
+// primaryIPNegSuffix returns an 8 character hash code to be used as suffix in GCE_PRIMARY_VM_IP NEG.
+func primaryIPNegSuffix(uid, namespace, name string) string {
+	return common.ContentHash(strings.Join([]string{uid, namespace, name}, ";"), 8)
 }
 
 // negSuffix returns hash code with 8 characters

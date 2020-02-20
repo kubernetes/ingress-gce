@@ -46,20 +46,21 @@ type ServicePort struct {
 
 	NodePort int64
 	// Numerical port of the Service, retrieved from the Service
-	Port          int32
-	Protocol      annotations.AppProtocol
-	TargetPort    string
-	NEGEnabled    bool
-	L7ILBEnabled  bool
-	BackendConfig *backendconfigv1.BackendConfig
-	BackendNamer  namer.BackendNamer
+	Port                int32
+	Protocol            annotations.AppProtocol
+	TargetPort          string
+	NEGEnabled          bool
+	PrimaryIPNEGEnabled bool
+	L7ILBEnabled        bool
+	BackendConfig       *backendconfigv1.BackendConfig
+	BackendNamer        namer.BackendNamer
 }
 
 // GetAPIVersionFromServicePort returns the compute API version to be used
 // for creating NEGs associated with the given ServicePort.
 func GetAPIVersionFromServicePort(sp *ServicePort) meta.Version {
-	if sp == nil {
-		// this uses GCE_VM_PRIMARY_IP NEGS which requires alpha API
+	if sp.PrimaryIPNEGEnabled {
+		// this uses VM_PRIMARY_IP_NEGS which requires alpha API
 		return meta.VersionAlpha
 	}
 	return meta.VersionGA
@@ -77,6 +78,8 @@ func (sp ServicePort) GetDescription() Description {
 func (sp ServicePort) BackendName() string {
 	if sp.NEGEnabled {
 		return sp.BackendNamer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.Port)
+	} else if sp.PrimaryIPNEGEnabled {
+		return sp.BackendNamer.PrimaryIPNEG(sp.ID.Service.Namespace, sp.ID.Service.Name)
 	}
 	return sp.BackendNamer.IGBackend(sp.NodePort)
 }

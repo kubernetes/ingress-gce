@@ -1,0 +1,270 @@
+/*
+Copyright 2020 The Kubernetes Authors.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+
+package l4
+
+import (
+	"reflect"
+	"testing"
+	"time"
+
+	"k8s.io/client-go/kubernetes"
+	testing2 "k8s.io/client-go/testing"
+	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/neg/types"
+
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	api_v1 "k8s.io/api/core/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/test"
+	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/legacy-cloud-providers/gce"
+)
+
+const (
+	clusterUID    = "aaaaa"
+	resetLBStatus = "{\"status\":{\"loadBalancer\":{\"ingress\":null}}}"
+)
+
+func newServiceController() *L4Controller {
+	kubeClient := fake.NewSimpleClientset()
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = loadbalancers.InsertForwardingRuleHook
+
+	namer := namer.NewNamer(clusterUID, "")
+
+	stopCh := make(chan struct{})
+	ctxConfig := context.ControllerContextConfig{
+		Namespace:    api_v1.NamespaceAll,
+		ResyncPeriod: 1 * time.Minute,
+	}
+	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
+	return NewController(ctx, stopCh)
+}
+
+func addILBService(l4c *L4Controller, svc *api_v1.Service) {
+	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Create(svc)
+	l4c.ctx.ServiceInformer.GetIndexer().Add(svc)
+}
+
+func updateILBService(l4c *L4Controller, svc *api_v1.Service) {
+	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Update(svc)
+	l4c.ctx.ServiceInformer.GetIndexer().Update(svc)
+}
+
+func deleteILBService(l4c *L4Controller, svc *api_v1.Service) {
+	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Delete(svc.Name, &v1.DeleteOptions{})
+	l4c.ctx.ServiceInformer.GetIndexer().Delete(svc)
+}
+
+func addNEG(l4c *L4Controller, svc *api_v1.Service) {
+	// Also create a fake NEG for this service since the sync code will try to link the backend service to NEG
+	negName := l4c.ctx.ClusterNamer.PrimaryIPNEG(svc.Namespace, svc.Name)
+	neg := &composite.NetworkEndpointGroup{Name: negName}
+	key := meta.ZonalKey(negName, types.TestZone1)
+	composite.CreateNetworkEndpointGroup(l4c.ctx.Cloud, key, neg)
+}
+
+func getKeyForSvc(svc *api_v1.Service, t *testing.T) string {
+	key, err := common.KeyFunc(svc)
+	if err != nil {
+		t.Fatalf("Failed to get key for service %v, err : %v", svc, err)
+	}
+	return key
+}
+
+// validatePatchRequest validates that the given client patched the resource with the given change.
+// This is needed because there is a bug in go-client test implementation where a patch operation cannot be used
+// to delete fields - https://github.com/kubernetes/client-go/issues/607
+// TODO remove this once https://github.com/kubernetes/client-go/issues/607 has been fixed.
+func validatePatchRequest(client kubernetes.Interface, patchVal string, t *testing.T) {
+	fakeClient := client.(*fake.Clientset)
+	actionLen := len(fakeClient.Actions())
+	if actionLen == 0 {
+		t.Errorf("Expected atleast one action in fake client")
+	}
+	// The latest action should be the one setting status to the given value
+	patchAction := fakeClient.Actions()[actionLen-1].(testing2.PatchAction)
+	if !reflect.DeepEqual(patchAction.GetPatch(), []byte(patchVal)) {
+		t.Errorf("Expected patch '%s', got '%s'", patchVal, string(patchAction.GetPatch()))
+	}
+}
+
+func validateSvcStatus(svc *api_v1.Service, expectStatus bool, t *testing.T) {
+	if common.HasGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) != expectStatus {
+		t.Fatalf("Expected L4 finalizer present to be %v, but it was %v", expectStatus, !expectStatus)
+	}
+	if len(svc.Status.LoadBalancer.Ingress) == 0 || svc.Status.LoadBalancer.Ingress[0].IP == "" {
+		if expectStatus {
+			t.Fatalf("Invalid LoadBalancer status field in service - %+v", svc.Status.LoadBalancer)
+		}
+	}
+	if len(svc.Status.LoadBalancer.Ingress) > 0 && !expectStatus {
+		// TODO uncomment below once https://github.com/kubernetes/client-go/issues/607 has been fixed.
+		// t.Fatalf("Expected LoadBalancer status to be empty, Got %v", svc.Status.LoadBalancer)
+	}
+}
+
+// TestProcessCreateOrUpdate verifies the processing loop in L4Controller.
+// This test adds a new service, then performs a valid update and then modifies the service type to External and ensures
+// that the status field is as expected in each case.
+func TestProcessCreateOrUpdate(t *testing.T) {
+	l4c := newServiceController()
+	newSvc := test.NewL4ILBService(false, 8080)
+	addILBService(l4c, newSvc)
+	addNEG(l4c, newSvc)
+	err := l4c.sync(getKeyForSvc(newSvc, t))
+	if err != nil {
+		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
+	}
+	// List the service and ensure that it contains the finalizer as well as Status field.
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+	}
+	validateSvcStatus(newSvc, true, t)
+
+	// set the TrafficPolicy of the service to Local
+	newSvc.Spec.ExternalTrafficPolicy = api_v1.ServiceExternalTrafficPolicyTypeLocal
+	updateILBService(l4c, newSvc)
+	err = l4c.sync(getKeyForSvc(newSvc, t))
+	if err != nil {
+		t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
+	}
+	// List the service and ensure that it contains the finalizer as well as Status field.
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+	}
+	validateSvcStatus(newSvc, true, t)
+
+	// Remove the Internal LoadBalancer annotation, this should trigger a cleanup.
+	delete(newSvc.Annotations, gce.ServiceAnnotationLoadBalancerType)
+	updateILBService(l4c, newSvc)
+	err = l4c.sync(getKeyForSvc(newSvc, t))
+	if err != nil {
+		t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
+	}
+	// TODO remove this once https://github.com/kubernetes/client-go/issues/607 has been fixed.
+	validatePatchRequest(l4c.client, resetLBStatus, t)
+	// List the service and ensure that it contains the finalizer as well as Status field.
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+	}
+	validateSvcStatus(newSvc, false, t)
+}
+
+func TestProcessDeletion(t *testing.T) {
+	l4c := newServiceController()
+	newSvc := test.NewL4ILBService(false, 8080)
+	addILBService(l4c, newSvc)
+	addNEG(l4c, newSvc)
+	err := l4c.sync(getKeyForSvc(newSvc, t))
+	if err != nil {
+		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
+	}
+	// List the service and ensure that it contains the finalizer as well as Status field.
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+	}
+	validateSvcStatus(newSvc, true, t)
+
+	// Mark the service for deletion by updating timestamp. Use svc instead of newSvc since that has the finalizer.
+	newSvc.DeletionTimestamp = &v1.Time{}
+	updateILBService(l4c, newSvc)
+	if !needsDeletion(newSvc) {
+		t.Errorf("Incorrectly marked service %v as not needing ILB deletion", newSvc)
+	}
+	err = l4c.sync(getKeyForSvc(newSvc, t))
+	if err != nil {
+		t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
+	}
+	// TODO remove this once https://github.com/kubernetes/client-go/issues/607 has been fixed.
+	validatePatchRequest(l4c.client, resetLBStatus, t)
+	// List the service and ensure that it contains the finalizer as well as Status field.
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+	}
+	validateSvcStatus(newSvc, false, t)
+	deleteILBService(l4c, newSvc)
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	if newSvc != nil {
+		t.Errorf("Expected service to be deleted, but was found - %v", newSvc)
+	}
+}
+
+func TestProcessCreateLegacyService(t *testing.T) {
+	l4c := newServiceController()
+	newSvc := test.NewL4ILBService(false, 8080)
+	// Set the legacy finalizer
+	newSvc.Finalizers = append(newSvc.Finalizers, common.LegacyILBFinalizer)
+	addILBService(l4c, newSvc)
+	err := l4c.sync(getKeyForSvc(newSvc, t))
+	if err != nil {
+		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
+	}
+	// List the service and ensure that the status field is not updated.
+	svc, err := l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+	}
+	validateSvcStatus(svc, false, t)
+}
+
+func TestProcessUpdateClusterIPToILBService(t *testing.T) {
+	l4c := newServiceController()
+	clusterSvc := &api_v1.Service{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      "testsvc",
+			Namespace: "testns",
+		},
+	}
+	addILBService(l4c, clusterSvc)
+	if needsILB, _ := annotations.WantsL4ILB(clusterSvc); needsILB {
+		t.Errorf("Incorrectly marked service %v as needing ILB", clusterSvc)
+	}
+	if needsDeletion(clusterSvc) {
+		t.Errorf("Incorrectly marked service %v as needing ILB deletion", clusterSvc)
+	}
+	// Change to Internal LoadBalancer type
+	newSvc := clusterSvc.DeepCopy()
+	newSvc.Spec.Type = api_v1.ServiceTypeLoadBalancer
+	newSvc.Annotations = make(map[string]string)
+	newSvc.Annotations[gce.ServiceAnnotationLoadBalancerType] = string(gce.LBTypeInternal)
+	updateILBService(l4c, newSvc)
+	if !l4c.needsUpdate(clusterSvc, newSvc) {
+		t.Errorf("Incorrectly marked service %v as not needing update", newSvc)
+	}
+	err := l4c.sync(getKeyForSvc(newSvc, t))
+	if err != nil {
+		t.Errorf("Failed to sync newly updated service %s, err %v", newSvc.Name, err)
+	}
+	// List the service and ensure that the status field is updated.
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+	}
+	validateSvcStatus(newSvc, true, t)
+}

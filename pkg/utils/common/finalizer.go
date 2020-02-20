@@ -16,8 +16,10 @@ package common
 import (
 	"fmt"
 
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	client "k8s.io/client-go/kubernetes/typed/networking/v1beta1"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/util/slice"
@@ -29,11 +31,11 @@ const (
 	// FinalizerKeyV2 is the string representing the Ingress finalizer version.
 	// Ingress with V2 finalizer uses V2 frontend naming scheme.
 	FinalizerKeyV2 = "networking.gke.io/ingress-finalizer-V2"
-	// FinalizerKeyL4 is the string representing the L4 ILB controller finalizer in this repo.
-	FinalizerKeyL4 = "networking.gke.io/l4-ilb-v2"
-	// FinalizerKeyL4V1 is the string representing the service controller finalizer. A service with this finalizer
-	// is managed by k/k service controller.
-	FinalizerKeyL4V1 = "networking.gke.io/l4-ilb-v1"
+	// TODO remove the 2 definitions once they are added in legacy-cloud-providers/gce
+	// LegacyILBFinalizer key is used to identify ILB services whose resources are managed by service controller.
+	LegacyILBFinalizer = "gke.networking.io/l4-ilb-v1"
+	// ILBFinalizerV2 is the finalizer used by newer controllers that implement Internal LoadBalancer services.
+	ILBFinalizerV2 = "gke.networking.io/l4-ilb-v2"
 )
 
 // IsDeletionCandidate is true if the passed in meta contains an ingress finalizer.
@@ -87,4 +89,34 @@ func EnsureDeleteFinalizer(ing *v1beta1.Ingress, ingClient client.IngressInterfa
 		klog.V(2).Infof("Removed finalizer %q for Ingress %s/%s", finalizerKey, ing.Namespace, ing.Name)
 	}
 	return nil
+}
+
+// EnsureServiceFinalizer patches the service to add finalizer.
+func EnsureServiceFinalizer(service *v1.Service, key string, kubeClient kubernetes.Interface) error {
+	if HasGivenFinalizer(service.ObjectMeta, key) {
+		return nil
+	}
+
+	// Make a copy so we don't mutate the shared informer cache.
+	updated := service.DeepCopy()
+	updated.ObjectMeta.Finalizers = append(updated.ObjectMeta.Finalizers, key)
+
+	klog.V(2).Infof("Adding finalizer %s to service %s/%s", key, updated.Namespace, updated.Name)
+	_, err := kubeClient.CoreV1().Services(updated.Namespace).Update(updated)
+	return err
+}
+
+// removeFinalizer patches the service to remove finalizer.
+func EnsureDeleteServiceFinalizer(service *v1.Service, key string, kubeClient kubernetes.Interface) error {
+	if !HasGivenFinalizer(service.ObjectMeta, key) {
+		return nil
+	}
+
+	// Make a copy so we don't mutate the shared informer cache.
+	updated := service.DeepCopy()
+	updated.ObjectMeta.Finalizers = slice.RemoveString(updated.ObjectMeta.Finalizers, key, nil)
+
+	klog.V(2).Infof("Removing finalizer from service %s/%s", updated.Namespace, updated.Name)
+	_, err := kubeClient.CoreV1().Services(updated.Namespace).Update(updated)
+	return err
 }

@@ -19,12 +19,18 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
+)
+
+const (
+	DefaultConnectionDrainingTimeoutSeconds = 30
 )
 
 // Backends handles CRUD operations for backends.
@@ -223,4 +229,95 @@ func (b *Backends) List(key *meta.Key, version meta.Version) ([]*composite.Backe
 		}
 	}
 	return clusterBackends, nil
+}
+
+// EnsureL4BackendService creates or updates the backend service with the given name.
+func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, nm types.NamespacedName, version meta.Version) (*composite.BackendService, error) {
+	klog.V(2).Infof("EnsureL4BackendService(%v, %v, %v): checking existing backend service", name, scheme, protocol)
+	key, err := composite.CreateKey(b.cloud, name, meta.Regional)
+	if err != nil {
+		return nil, err
+	}
+	bs, err := composite.GetBackendService(b.cloud, key, meta.VersionGA)
+	if err != nil && !utils.IsNotFoundError(err) {
+		return nil, err
+	}
+	desc, err := utils.MakeL4ILBServiceDescription(nm.String(), "", meta.VersionGA)
+	if err != nil {
+		klog.Warningf("EnsureL4BackendService: Failed to generate description for BackendService %s, err %v",
+			name, err)
+	}
+	expectedBS := &composite.BackendService{
+		Name:                name,
+		Protocol:            string(protocol),
+		Description:         desc,
+		HealthChecks:        []string{hcLink},
+		SessionAffinity:     utils.TranslateAffinityType(sessionAffinity),
+		LoadBalancingScheme: string(scheme),
+		ConnectionDraining:  &composite.ConnectionDraining{DrainingTimeoutSec: DefaultConnectionDrainingTimeoutSeconds},
+	}
+
+	// Create backend service if none was found
+	if bs == nil {
+		klog.V(2).Infof("EnsureL4BackendService: creating backend service %v", name)
+		err := composite.CreateBackendService(b.cloud, key, expectedBS)
+		if err != nil {
+			return nil, err
+		}
+		klog.V(2).Infof("EnsureL4BackendService: created backend service %v successfully", name)
+		// We need to perform a GCE call to re-fetch the object we just created
+		// so that the "Fingerprint" field is filled in. This is needed to update the
+		// object without error. The lookup is also needed to populate the selfLink.
+		return composite.GetBackendService(b.cloud, key, meta.VersionGA)
+	}
+
+	if backendSvcEqual(expectedBS, bs) {
+		return bs, nil
+	}
+	if bs.ConnectionDraining != nil && bs.ConnectionDraining.DrainingTimeoutSec > 0 {
+		// if user overrides this value, continue using that.
+		expectedBS.ConnectionDraining.DrainingTimeoutSec = bs.ConnectionDraining.DrainingTimeoutSec
+	}
+	klog.V(2).Infof("EnsureL4BackendService: updating backend service %v", name)
+	// Set fingerprint for optimistic locking
+	expectedBS.Fingerprint = bs.Fingerprint
+	if err := composite.UpdateBackendService(b.cloud, key, expectedBS); err != nil {
+		return nil, err
+	}
+	klog.V(2).Infof("EnsureL4BackendService: updated backend service %v successfully", name)
+	return composite.GetBackendService(b.cloud, key, meta.VersionGA)
+}
+
+// backendsListEqual asserts that backend lists are equal by group link only
+func backendsListEqual(a, b []*composite.Backend) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	if len(a) == 0 {
+		return true
+	}
+
+	aSet := sets.NewString()
+	for _, v := range a {
+		aSet.Insert(v.Group)
+	}
+	bSet := sets.NewString()
+	for _, v := range b {
+		bSet.Insert(v.Group)
+	}
+
+	return aSet.Equal(bSet)
+}
+
+// backendSvcEqual returns true if the 2 BackendService objects are equal.
+// ConnectionDraining timeout is not checked for equality, if user changes
+// this timeout and no other backendService parameters change, the backend
+// service will not be updated.
+func backendSvcEqual(a, b *composite.BackendService) bool {
+	return a.Protocol == b.Protocol &&
+		a.Description == b.Description &&
+		a.SessionAffinity == b.SessionAffinity &&
+		a.LoadBalancingScheme == b.LoadBalancingScheme &&
+		utils.EqualStringSets(a.HealthChecks, b.HealthChecks) &&
+		backendsListEqual(a.Backends, b.Backends)
 }

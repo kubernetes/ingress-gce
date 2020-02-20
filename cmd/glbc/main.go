@@ -49,6 +49,7 @@ import (
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
 	_ "k8s.io/ingress-gce/pkg/klog"
+	"k8s.io/ingress-gce/pkg/l4"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
@@ -216,6 +217,12 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	}
 
 	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values())
+
+	if flags.F.RunL4Controller {
+		l4Controller := l4.NewController(ctx, stopCh)
+		go l4Controller.Run()
+		klog.V(0).Infof("L4 controller started")
+	}
 
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
 	negController := neg.NewController(negtypes.NewAdapter(ctx.Cloud), ctx, lbc.Translator, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, flags.F.EnableReadinessReflector, flags.F.RunIngressController, flags.F.RunL4Controller)

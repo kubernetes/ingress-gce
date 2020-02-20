@@ -182,6 +182,29 @@ func WantsL4ILB(service *v1.Service) (bool, string) {
 	return false, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
 }
 
+// OnlyNEGStatusChanged returns true if the only annotation change between the 2 services is the NEG status annotation.
+// This will be true if neg annotation was added or removed in the new service.
+// Note : This assumes that the annotations in old and new service are different. If they are identical, this will
+// return true.
+func OnlyNEGStatusChanged(oldService, newService *v1.Service) bool {
+	return onlyNEGStatusChanged(oldService, newService) && onlyNEGStatusChanged(newService, oldService)
+}
+
+// onlyNEGStatusChanged returns true if the NEG Status annotation is the only extra annotation present in the new
+// service but not in the old service.
+// Note : This assumes that the annotations in old and new service are different. If they are identical, this will
+// return true.
+func onlyNEGStatusChanged(oldService, newService *v1.Service) bool {
+	for key, _ := range newService.ObjectMeta.Annotations {
+		if _, ok := oldService.ObjectMeta.Annotations[key]; !ok {
+			if key != NEGStatusKey {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // ApplicationProtocols returns a map of port (name or number) to the protocol
 // on the port.
 func (svc *Service) ApplicationProtocols() (map[string]AppProtocol, error) {

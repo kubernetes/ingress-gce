@@ -36,9 +36,18 @@ import (
 	"k8s.io/ingress-gce/pkg/backendconfig"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/errors"
-	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+)
+
+const (
+	// DefaultHost is the host used if none is specified. It is a valid value
+	// for the "Host" field recognized by GCE.
+	DefaultHost = "*"
+
+	// DefaultPath is the path used if none is specified. It is a valid path
+	// recognized by GCE.
+	DefaultPath = "/*"
 )
 
 // getServicePortParams allows for passing parameters to getServicePort()
@@ -206,14 +215,14 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 				// sent to one of the last backend in the rules list.
 				path := p.Path
 				if path == "" {
-					path = loadbalancers.DefaultPath
+					path = DefaultPath
 				}
 				pathRules = append(pathRules, utils.PathRule{Path: path, Backend: *svcPort})
 			}
 		}
 		host := rule.Host
 		if host == "" {
-			host = loadbalancers.DefaultHost
+			host = DefaultHost
 		}
 		urlMap.PutPathRulesForHost(host, pathRules)
 	}
@@ -266,9 +275,13 @@ func (t *Translator) GetZoneForNode(name string) (string, error) {
 
 // ListZones returns a list of zones this Kubernetes cluster spans.
 func (t *Translator) ListZones() ([]string, error) {
-	zones := sets.String{}
 	nodeLister := t.ctx.NodeInformer.GetIndexer()
-	readyNodes, err := listers.NewNodeLister(nodeLister).ListWithPredicate(utils.GetNodeConditionPredicate())
+	return t.listZonesWithLister(listers.NewNodeLister(nodeLister))
+}
+
+func (t *Translator) listZonesWithLister(lister listers.NodeLister) ([]string, error) {
+	zones := sets.String{}
+	readyNodes, err := lister.ListWithPredicate(utils.GetNodeConditionPredicate())
 	if err != nil {
 		return zones.List(), err
 	}

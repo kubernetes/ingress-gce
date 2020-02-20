@@ -43,3 +43,10 @@ func InsertGlobalForwardingRuleHook(ctx context.Context, key *meta.Key, obj *com
 	}
 	return false, nil
 }
+
+func InsertForwardingRuleHook(ctx context.Context, key *meta.Key, obj *compute.ForwardingRule, m *cloud.MockForwardingRules) (b bool, e error) {
+	if obj.IPAddress == "" {
+		obj.IPAddress = "10.0.0.1"
+	}
+	return false, nil
+}
