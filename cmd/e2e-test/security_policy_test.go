@@ -91,7 +91,7 @@ func TestSecurityPolicyEnable(t *testing.T) {
 		testSecurityPolicy := policies[0]
 
 		testBackendConfigAnnotation := map[string]string{
-			annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
+			annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
 		}
 		testSvc, err := e2e.CreateEchoService(s, "service-1", testBackendConfigAnnotation)
 		if err != nil {
@@ -168,7 +168,7 @@ func TestSecurityPolicyTransition(t *testing.T) {
 		testSecurityPolicyAllow, testSecurityPolicyDisallow := policies[0], policies[1]
 
 		testBackendConfigAnnotation := map[string]string{
-			annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
+			annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
 		}
 		testSvc, err := e2e.CreateEchoService(s, "service-1", testBackendConfigAnnotation)
 		if err != nil {
