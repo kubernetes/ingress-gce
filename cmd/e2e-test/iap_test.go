@@ -53,7 +53,7 @@ func TestIAP(t *testing.T) {
 			ctx := context.Background()
 
 			backendConfigAnnotation := map[string]string{
-				annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
+				annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
 			}
 
 			if _, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Create(tc.beConfig); err != nil {

@@ -51,21 +51,21 @@ func TestBackendConfigNegatives(t *testing.T) {
 		{
 			desc: "backend config not exist",
 			svcAnnotations: map[string]string{
-				annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
+				annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
 			},
 			expectedMsg: "no BackendConfig",
 		},
 		{
 			desc: "invalid format in backend config annotation",
 			svcAnnotations: map[string]string{
-				annotations.BackendConfigKey: `invalid`,
+				annotations.BetaBackendConfigKey: `invalid`,
 			},
 			expectedMsg: fmt.Sprintf("%v", annotations.ErrBackendConfigInvalidJSON),
 		},
 		{
 			desc: "enable both IAP and CDN in backend config",
 			svcAnnotations: map[string]string{
-				annotations.BackendConfigKey: `{"default":"backendconfig-1"}`,
+				annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
 			},
 			backendConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
 				EnableCDN(true).
