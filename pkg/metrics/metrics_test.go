@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/utils"
-	"reflect"
 )
 
 var (
@@ -719,37 +718,61 @@ func TestComputeNegMetrics(t *testing.T) {
 			"empty input",
 			[]NegServiceState{},
 			map[feature]int{
-				standaloneNeg: 0,
-				ingressNeg:    0,
-				asmNeg:        0,
-				neg:           0,
+				standaloneNeg:         0,
+				ingressNeg:            0,
+				asmNeg:                0,
+				neg:                   0,
+				vmPrimaryIpNeg:        0,
+				vmPrimaryIpNegLocal:   0,
+				vmPrimaryIpNegCluster: 0,
 			},
 		},
 		{
 			"one neg service",
 			[]NegServiceState{
-				newNegState(0, 0, 1),
+				newNegState(0, 0, 1, nil),
 			},
 			map[feature]int{
-				standaloneNeg: 0,
-				ingressNeg:    0,
-				asmNeg:        1,
-				neg:           1,
+				standaloneNeg:         0,
+				ingressNeg:            0,
+				asmNeg:                1,
+				neg:                   1,
+				vmPrimaryIpNeg:        0,
+				vmPrimaryIpNegLocal:   0,
+				vmPrimaryIpNegCluster: 0,
+			},
+		},
+		{
+			"vm primary ip neg in traffic policy cluster mode",
+			[]NegServiceState{
+				newNegState(0, 0, 1, &VmPrimaryIpNegType{trafficPolicyLocal: false}),
+			},
+			map[feature]int{
+				standaloneNeg:         0,
+				ingressNeg:            0,
+				asmNeg:                1,
+				neg:                   2,
+				vmPrimaryIpNeg:        1,
+				vmPrimaryIpNegLocal:   0,
+				vmPrimaryIpNegCluster: 1,
 			},
 		},
 		{
 			"many neg services",
 			[]NegServiceState{
-				newNegState(0, 0, 1),
-				newNegState(0, 1, 0),
-				newNegState(5, 0, 0),
-				newNegState(5, 3, 2),
+				newNegState(0, 0, 1, nil),
+				newNegState(0, 1, 0, &VmPrimaryIpNegType{trafficPolicyLocal: false}),
+				newNegState(5, 0, 0, &VmPrimaryIpNegType{trafficPolicyLocal: true}),
+				newNegState(5, 3, 2, nil),
 			},
 			map[feature]int{
-				standaloneNeg: 10,
-				ingressNeg:    4,
-				asmNeg:        3,
-				neg:           17,
+				standaloneNeg:         10,
+				ingressNeg:            4,
+				asmNeg:                3,
+				neg:                   19,
+				vmPrimaryIpNeg:        2,
+				vmPrimaryIpNegLocal:   1,
+				vmPrimaryIpNegCluster: 1,
 			},
 		},
 	} {
@@ -760,18 +783,117 @@ func TestComputeNegMetrics(t *testing.T) {
 			for i, negState := range tc.negStates {
 				newMetrics.SetNegService(string(i), negState)
 			}
-			output := newMetrics.computeNegMetrics()
-			if !reflect.DeepEqual(output, tc.expectNegCount) {
-				t.Errorf("For case %q, expect output %v, but got %v", tc.desc, tc.expectNegCount, output)
+
+			gotNegCount := newMetrics.computeNegMetrics()
+			if diff := cmp.Diff(tc.expectNegCount, gotNegCount); diff != "" {
+				t.Errorf("Got diff for NEG counts (-want +got):\n%s", diff)
 			}
 		})
 	}
 }
 
-func newNegState(standalone, ingress, asm int) NegServiceState {
+func newNegState(standalone, ingress, asm int, negType *VmPrimaryIpNegType) NegServiceState {
 	return NegServiceState{
-		IngressNeg:    ingress,
-		StandaloneNeg: standalone,
-		AsmNeg:        asm,
+		IngressNeg:     ingress,
+		StandaloneNeg:  standalone,
+		AsmNeg:         asm,
+		VmPrimaryIpNeg: negType,
+	}
+}
+
+func TestComputeL4ILBMetrics(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		desc             string
+		serviceStates    []L4ILBServiceState
+		expectL4ILBCount map[feature]int
+	}{
+		{
+			desc:          "empty input",
+			serviceStates: []L4ILBServiceState{},
+			expectL4ILBCount: map[feature]int{
+				l4ILBService:      0,
+				l4IlbGlobalAccess: 0,
+				l4IlbCustomSubnet: 0,
+			},
+		},
+		{
+			desc: "one l4 ilb service",
+			serviceStates: []L4ILBServiceState{
+				newL4IlbServiceState(false, false),
+			},
+			expectL4ILBCount: map[feature]int{
+				l4ILBService:      1,
+				l4IlbGlobalAccess: 0,
+				l4IlbCustomSubnet: 0,
+			},
+		},
+		{
+			desc: "global access for l4 ilb service enabled",
+			serviceStates: []L4ILBServiceState{
+				newL4IlbServiceState(true, false),
+			},
+			expectL4ILBCount: map[feature]int{
+				l4ILBService:      1,
+				l4IlbGlobalAccess: 1,
+				l4IlbCustomSubnet: 0,
+			},
+		},
+		{
+			desc: "custom subnet for l4 ilb service enabled",
+			serviceStates: []L4ILBServiceState{
+				newL4IlbServiceState(false, true),
+			},
+			expectL4ILBCount: map[feature]int{
+				l4ILBService:      1,
+				l4IlbGlobalAccess: 0,
+				l4IlbCustomSubnet: 1,
+			},
+		},
+		{
+			desc: "both global access and custom subnet for l4 ilb service enabled",
+			serviceStates: []L4ILBServiceState{
+				newL4IlbServiceState(true, true),
+			},
+			expectL4ILBCount: map[feature]int{
+				l4ILBService:      1,
+				l4IlbGlobalAccess: 1,
+				l4IlbCustomSubnet: 1,
+			},
+		},
+		{
+			desc: "many l4 ilb services",
+			serviceStates: []L4ILBServiceState{
+				newL4IlbServiceState(false, false),
+				newL4IlbServiceState(false, true),
+				newL4IlbServiceState(true, false),
+				newL4IlbServiceState(true, true),
+			},
+			expectL4ILBCount: map[feature]int{
+				l4ILBService:      4,
+				l4IlbGlobalAccess: 2,
+				l4IlbCustomSubnet: 2,
+			},
+		},
+	} {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			newMetrics := NewControllerMetrics()
+			for i, serviceState := range tc.serviceStates {
+				newMetrics.SetL4ILBService(string(i), serviceState)
+			}
+			got := newMetrics.computeL4ILBMetrics()
+			if diff := cmp.Diff(tc.expectL4ILBCount, got); diff != "" {
+				t.Fatalf("Got diff for L4 ILB service counts (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func newL4IlbServiceState(globalAccess, customSubnet bool) L4ILBServiceState {
+	return L4ILBServiceState{
+		EnabledGlobalAccess: globalAccess,
+		EnabledCustomSubnet: customSubnet,
 	}
 }

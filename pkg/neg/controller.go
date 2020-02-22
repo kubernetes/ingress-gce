@@ -409,7 +409,7 @@ func (c *Controller) processService(key string) error {
 		return fmt.Errorf("failed to merge CSM service PortInfoMap: %v, error: %v", csmSVCPortInfoMap, err)
 	}
 	if c.runL4 {
-		if err := c.mergeVmPrimaryIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap); err != nil {
+		if err := c.mergeVmPrimaryIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, negUsage); err != nil {
 			return err
 		}
 	}
@@ -494,7 +494,7 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 }
 
 // mergeVmPrimaryIpNEGsPortInfo merges the PortInfo for ILB services using GCE_VM_PRIMARY_IP NEGs into portInfoMap
-func (c *Controller) mergeVmPrimaryIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap) error {
+func (c *Controller) mergeVmPrimaryIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage usage.NegServiceState) error {
 	if wantsILB, _ := annotations.WantsL4ILB(service); !wantsILB {
 		return nil
 	}
@@ -502,9 +502,14 @@ func (c *Controller) mergeVmPrimaryIpNEGsPortInfo(service *apiv1.Service, name t
 		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it contains legacy resources created by service controller", service.Name, service.Namespace)
 		klog.Warning(msg)
 		c.recorder.Eventf(service, apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
+		return nil
 	}
-	return portInfoMap.Merge(negtypes.NewPortInfoMapForPrimaryIPNEG(name.Namespace, name.Name, c.namer,
-		!helpers.RequestsOnlyLocalTraffic(service)))
+
+	onlyLocal := helpers.RequestsOnlyLocalTraffic(service)
+	// Update usage metrics.
+	negUsage.VmPrimaryIpNeg = usage.NewVmPrimaryIpNegType(onlyLocal)
+
+	return portInfoMap.Merge(negtypes.NewPortInfoMapForPrimaryIPNEG(name.Namespace, name.Name, c.namer, !onlyLocal))
 }
 
 // mergeDefaultBackendServicePortInfoMap merge the PortInfoMap for the default backend service into portInfoMap

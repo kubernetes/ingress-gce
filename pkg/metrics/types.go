@@ -35,6 +35,28 @@ type NegServiceState struct {
 	IngressNeg int
 	// asmNeg is the count of NEGs created for ASM
 	AsmNeg int
+	// VmPrimaryIpNeg specifies if a service uses GCE_VM_PRIMARY_IP NEG.
+	VmPrimaryIpNeg *VmPrimaryIpNegType
+}
+
+// VmPrimaryIpNegType contains whether a GCE_VM_PRIMARY_IP NEG is requesting for
+// local traffic (or service external policy set to local).
+type VmPrimaryIpNegType struct {
+	trafficPolicyLocal bool
+}
+
+// NewVmPrimaryIpNegType returns a new VmPrimaryIpNegType.
+func NewVmPrimaryIpNegType(trafficPolicyLocal bool) *VmPrimaryIpNegType {
+	return &VmPrimaryIpNegType{trafficPolicyLocal: trafficPolicyLocal}
+}
+
+// L4ILBServiceState defines if global access and subnet features are enabled
+// for an L4 ILB service.
+type L4ILBServiceState struct {
+	// EnabledGlobalAccess specifies if Global Access is enabled.
+	EnabledGlobalAccess bool
+	// EnabledCustomSubNet specifies if Custom Subnet is enabled.
+	EnabledCustomSubnet bool
 }
 
 // IngressMetricsCollector is an interface to update/delete ingress states in the cache
@@ -53,4 +75,13 @@ type NegMetricsCollector interface {
 	SetNegService(svcKey string, negState NegServiceState)
 	// DeleteNegService removes the given service key.
 	DeleteNegService(svcKey string)
+}
+
+// L4ILBMetricsCollector is an interface to update/delete L4 ILb service states
+// in the cache that is used for computing L4 ILB usage metrics.
+type L4ILBMetricsCollector interface {
+	// SetL4ILBService adds/updates L4 ILB service state for given service key.
+	SetL4ILBService(svcKey string, state L4ILBServiceState)
+	// DeleteL4ILBService removes the given L4 ILB service key.
+	DeleteL4ILBService(svcKey string)
 }
