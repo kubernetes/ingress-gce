@@ -137,11 +137,23 @@ type CustomRequestHeadersConfig struct {
 // HealthCheckConfig contains configuration for the health check.
 // +k8s:openapi-gen=true
 type HealthCheckConfig struct {
-	CheckIntervalSec   *int64  `json:"checkIntervalSec,omitempty"`
-	TimeoutSec         *int64  `json:"timeoutSec,omitempty"`
-	HealthyThreshold   *int64  `json:"healthyThreshold,omitempty"`
-	UnhealthyThreshold *int64  `json:"unhealthyThreshold,omitempty"`
-	Type               *string `json:"type,omitempty"`
-	Port               *int64  `json:"port,omitempty"`
-	RequestPath        *string `json:"requestPath,omitempty"`
+	// CheckIntervalSec is a health check parameter. See
+	// https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.
+	CheckIntervalSec *int64 `json:"checkIntervalSec,omitempty"`
+	// TimeoutSec is a health check parameter. See
+	// https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.
+	TimeoutSec *int64 `json:"timeoutSec,omitempty"`
+	// HealthyThreshold is a health check parameter. See
+	// https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.
+	HealthyThreshold *int64 `json:"healthyThreshold,omitempty"`
+	// UnhealthyThreshold is a health check parameter. See
+	// https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.
+	UnhealthyThreshold *int64 `json:"unhealthyThreshold,omitempty"`
+	// Type is a health check parameter. See
+	// https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.
+	Type *string `json:"type,omitempty"`
+	Port *int64  `json:"port,omitempty"`
+	// RequestPath is a health check parameter. See
+	// https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.
+	RequestPath *string `json:"requestPath,omitempty"`
 }

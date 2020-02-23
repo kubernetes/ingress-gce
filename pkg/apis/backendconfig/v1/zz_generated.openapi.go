@@ -35,6 +35,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CacheKeyPolicy":             schema_pkg_apis_backendconfig_v1_CacheKeyPolicy(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.ConnectionDrainingConfig":   schema_pkg_apis_backendconfig_v1_ConnectionDrainingConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CustomRequestHeadersConfig": schema_pkg_apis_backendconfig_v1_CustomRequestHeadersConfig(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.HealthCheckConfig":          schema_pkg_apis_backendconfig_v1_HealthCheckConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.IAPConfig":                  schema_pkg_apis_backendconfig_v1_IAPConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.OAuthClientCredentials":     schema_pkg_apis_backendconfig_v1_OAuthClientCredentials(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SessionAffinityConfig":      schema_pkg_apis_backendconfig_v1_SessionAffinityConfig(ref),
@@ -127,11 +128,16 @@ func schema_pkg_apis_backendconfig_v1_BackendConfigSpec(ref common.ReferenceCall
 							Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CustomRequestHeadersConfig"),
 						},
 					},
+					"healthCheck": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.HealthCheckConfig"),
+						},
+					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CDNConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.ConnectionDrainingConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CustomRequestHeadersConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.IAPConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SecurityPolicyConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SessionAffinityConfig"},
+			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CDNConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.ConnectionDrainingConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CustomRequestHeadersConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.HealthCheckConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.IAPConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SecurityPolicyConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SessionAffinityConfig"},
 	}
 }
 
@@ -262,6 +268,67 @@ func schema_pkg_apis_backendconfig_v1_CustomRequestHeadersConfig(ref common.Refe
 									},
 								},
 							},
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func schema_pkg_apis_backendconfig_v1_HealthCheckConfig(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "HealthCheckConfig contains configuration for the health check.",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"checkIntervalSec": {
+						SchemaProps: spec.SchemaProps{
+							Description: "CheckIntervalSec is a health check parameter. See https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"timeoutSec": {
+						SchemaProps: spec.SchemaProps{
+							Description: "TimeoutSec is a health check parameter. See https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"healthyThreshold": {
+						SchemaProps: spec.SchemaProps{
+							Description: "HealthyThreshold is a health check parameter. See https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"unhealthyThreshold": {
+						SchemaProps: spec.SchemaProps{
+							Description: "UnhealthyThreshold is a health check parameter. See https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"type": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Type is a health check parameter. See https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"port": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"integer"},
+							Format: "int64",
+						},
+					},
+					"requestPath": {
+						SchemaProps: spec.SchemaProps{
+							Description: "RequestPath is a health check parameter. See https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.",
+							Type:        []string{"string"},
+							Format:      "",
 						},
 					},
 				},

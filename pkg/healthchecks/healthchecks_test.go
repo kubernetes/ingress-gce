@@ -17,61 +17,126 @@ limitations under the License.
 package healthchecks
 
 import (
+	"context"
+	"fmt"
 	"net/http"
+	"reflect"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	"github.com/kr/pretty"
 	computealpha "google.golang.org/api/compute/v0.alpha"
+	computebeta "google.golang.org/api/compute/v0.beta"
+	"google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
 var (
-	namer = namer_util.NewNamer("uid1", "fw1")
-
+	testNamer         = namer_util.NewNamer("uid1", "fw1")
+	testSPs           = map[string]*utils.ServicePort{}
 	defaultBackendSvc = types.NamespacedName{Namespace: "system", Name: "default"}
 )
+
+func init() {
+	// Init klog flags so we can see the V logs.
+	klog.InitFlags(nil)
+	// var logLevel string
+	// flag.StringVar(&logLevel, "logLevel", "4", "test")
+	// flag.Lookup("v").Value.Set(logLevel)
+
+	// Generate many types of ServicePorts.
+	// Example: sps["HTTP-8000-neg-nil"] is a ServicePort for HTTP with NEG-enabled.
+	testSPs = map[string]*utils.ServicePort{}
+	for _, p := range []annotations.AppProtocol{
+		annotations.ProtocolHTTP,
+		annotations.ProtocolHTTPS,
+		annotations.ProtocolHTTP2,
+	} {
+		path := "/foo"
+		num := int64(1234)
+
+		for npk, np := range map[string]int64{"80": 80, "8000": 8000} {
+			for _, mode := range []string{"reg", "neg", "ilb"} {
+				for bck, bc := range map[string]*backendconfigv1.HealthCheckConfig{
+					"nil": nil,
+					"bc":  &backendconfigv1.HealthCheckConfig{RequestPath: &path},
+					"bcall": &backendconfigv1.HealthCheckConfig{
+						RequestPath:        &path,
+						CheckIntervalSec:   &num,
+						TimeoutSec:         &num,
+						HealthyThreshold:   &num,
+						UnhealthyThreshold: &num,
+					},
+				} {
+					sp := &utils.ServicePort{
+						NodePort:     np,
+						Protocol:     p,
+						BackendNamer: testNamer,
+					}
+					switch mode {
+					case "reg":
+					case "neg":
+						sp.NEGEnabled = true
+					case "ilb":
+						sp.NEGEnabled = true
+						sp.L7ILBEnabled = true
+					}
+					if bc != nil {
+						sp.BackendConfig = &backendconfigv1.BackendConfig{
+							Spec: backendconfigv1.BackendConfigSpec{HealthCheck: bc},
+						}
+					}
+					testSPs[fmt.Sprintf("%s-%s-%s-%s", p, npk, mode, bck)] = sp
+				}
+			}
+		}
+	}
+}
 
 func TestHealthCheckAdd(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
 
-	sp := &utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: namer}
+	sp := &utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: testNamer}
 	_, err := healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Verify the health check exists
-	_, err = fakeGCE.GetHealthCheck(namer.IGBackend(80))
+	_, err = fakeGCE.GetHealthCheck(testNamer.IGBackend(80))
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
 
-	sp = &utils.ServicePort{NodePort: 443, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: namer}
+	sp = &utils.ServicePort{NodePort: 443, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: testNamer}
 	_, err = healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Verify the health check exists
-	_, err = fakeGCE.GetHealthCheck(namer.IGBackend(443))
+	_, err = fakeGCE.GetHealthCheck(testNamer.IGBackend(443))
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
 
-	sp = &utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, NEGEnabled: false, BackendNamer: namer}
+	sp = &utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, NEGEnabled: false, BackendNamer: testNamer}
 	_, err = healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	// Verify the health check exists
-	_, err = fakeGCE.GetHealthCheck(namer.IGBackend(3000))
+	_, err = fakeGCE.GetHealthCheck(testNamer.IGBackend(3000))
 	if err != nil {
 		t.Fatalf("expected the health check to exist, err: %v", err)
 	}
@@ -84,7 +149,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	// HTTP
 	// Manually insert a health check
 	httpHC := DefaultHealthCheck(3000, annotations.ProtocolHTTP)
-	httpHC.Name = namer.IGBackend(3000)
+	httpHC.Name = testNamer.IGBackend(3000)
 	httpHC.RequestPath = "/my-probes-health"
 	v1hc, err := httpHC.ToComputeHealthCheck()
 	if err != nil {
@@ -92,7 +157,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 	fakeGCE.CreateHealthCheck(v1hc)
 
-	sp := &utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: namer}
+	sp := &utils.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP, NEGEnabled: false, BackendNamer: testNamer}
 	// Should not fail adding the same type of health check
 	_, err = healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
@@ -107,7 +172,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	// HTTPS
 	// Manually insert a health check
 	httpsHC := DefaultHealthCheck(4000, annotations.ProtocolHTTPS)
-	httpsHC.Name = namer.IGBackend(4000)
+	httpsHC.Name = testNamer.IGBackend(4000)
 	httpsHC.RequestPath = "/my-probes-health"
 	v1hc, err = httpHC.ToComputeHealthCheck()
 	if err != nil {
@@ -115,7 +180,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 	fakeGCE.CreateHealthCheck(v1hc)
 
-	sp = &utils.ServicePort{NodePort: 4000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: namer}
+	sp = &utils.ServicePort{NodePort: 4000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: testNamer}
 	_, err = healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -129,7 +194,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	// HTTP2
 	// Manually insert a health check
 	http2 := DefaultHealthCheck(5000, annotations.ProtocolHTTP2)
-	http2.Name = namer.IGBackend(5000)
+	http2.Name = testNamer.IGBackend(5000)
 	http2.RequestPath = "/my-probes-health"
 	v1hc, err = httpHC.ToComputeHealthCheck()
 	if err != nil {
@@ -137,7 +202,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 	}
 	fakeGCE.CreateHealthCheck(v1hc)
 
-	sp = &utils.ServicePort{NodePort: 5000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: namer}
+	sp = &utils.ServicePort{NodePort: 5000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: false, BackendNamer: testNamer}
 	_, err = healthChecks.SyncServicePort(sp, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -155,7 +220,7 @@ func TestHealthCheckDelete(t *testing.T) {
 
 	// Create HTTP HC for 1234
 	hc := DefaultHealthCheck(1234, annotations.ProtocolHTTP)
-	hc.Name = namer.IGBackend(1234)
+	hc.Name = testNamer.IGBackend(1234)
 	v1hc, err := hc.ToComputeHealthCheck()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -167,7 +232,7 @@ func TestHealthCheckDelete(t *testing.T) {
 	fakeGCE.CreateHealthCheck(v1hc)
 
 	// Delete only HTTP 1234
-	err = healthChecks.Delete(namer.IGBackend(1234), meta.Global)
+	err = healthChecks.Delete(testNamer.IGBackend(1234), meta.Global)
 	if err != nil {
 		t.Errorf("unexpected error when deleting health check, err: %v", err)
 	}
@@ -179,7 +244,7 @@ func TestHealthCheckDelete(t *testing.T) {
 	}
 
 	// Delete only HTTP 1234
-	err = healthChecks.Delete(namer.IGBackend(1234), meta.Global)
+	err = healthChecks.Delete(testNamer.IGBackend(1234), meta.Global)
 	if err == nil {
 		t.Errorf("expected not-found error when deleting health check, err: %v", err)
 	}
@@ -191,13 +256,13 @@ func TestHTTP2HealthCheckDelete(t *testing.T) {
 
 	// Create HTTP2 HC for 1234
 	hc := DefaultHealthCheck(1234, annotations.ProtocolHTTP2)
-	hc.Name = namer.IGBackend(1234)
+	hc.Name = testNamer.IGBackend(1234)
 
 	alphahc := hc.ToAlphaComputeHealthCheck()
 	fakeGCE.CreateAlphaHealthCheck(alphahc)
 
 	// Delete only HTTP2 1234
-	err := healthChecks.Delete(namer.IGBackend(1234), meta.Global)
+	err := healthChecks.Delete(testNamer.IGBackend(1234), meta.Global)
 	if err != nil {
 		t.Errorf("unexpected error when deleting health check, err: %v", err)
 	}
@@ -222,7 +287,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	// HTTP
 	// Manually insert a health check
 	hc := DefaultHealthCheck(3000, annotations.ProtocolHTTP)
-	hc.Name = namer.IGBackend(3000)
+	hc.Name = testNamer.IGBackend(3000)
 	hc.RequestPath = "/my-probes-health"
 	v1hc, err := hc.ToComputeHealthCheck()
 	if err != nil {
@@ -238,7 +303,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 
 	// Change to HTTPS
 	hc.Type = string(annotations.ProtocolHTTPS)
-	_, err = healthChecks.sync(hc)
+	_, err = healthChecks.sync(hc, nil)
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
@@ -256,7 +321,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 
 	// Change to HTTP2
 	hc.Type = string(annotations.ProtocolHTTP2)
-	_, err = healthChecks.sync(hc)
+	_, err = healthChecks.sync(hc, nil)
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
@@ -273,9 +338,9 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Change to NEG Health Check
-	hc.ForNEG = true
+	hc.forNEG = true
 	hc.PortSpecification = UseServingPortSpecification
-	_, err = healthChecks.sync(hc)
+	_, err = healthChecks.sync(hc, nil)
 
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
@@ -292,11 +357,11 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Change back to regular Health Check
-	hc.ForNEG = false
+	hc.forNEG = false
 	hc.Port = 3000
 	hc.PortSpecification = ""
 
-	_, err = healthChecks.sync(hc)
+	_, err = healthChecks.sync(hc, nil)
 	if err != nil {
 		t.Fatalf("unexpected err while syncing healthcheck, err %v", err)
 	}
@@ -313,28 +378,6 @@ func TestHealthCheckUpdate(t *testing.T) {
 
 	if hc.Port == 0 {
 		t.Fatalf("expected health check with PortSpecification to have Port")
-	}
-}
-
-func TestAlphaHealthCheck(t *testing.T) {
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
-	sp := utils.ServicePort{NodePort: 8000, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true, BackendNamer: namer}
-	hc := healthChecks.new(sp)
-	_, err := healthChecks.sync(hc)
-	if err != nil {
-		t.Fatalf("got %v, want nil", err)
-	}
-
-	ret, err := healthChecks.Get(hc.Name, meta.VersionAlpha, meta.Global)
-	if err != nil {
-		t.Fatalf("got %v, want nil", err)
-	}
-	if ret.Port != 0 {
-		t.Errorf("got ret.Port == %d, want 0", ret.Port)
-	}
-	if ret.PortSpecification != UseServingPortSpecification {
-		t.Errorf("got ret.PortSpecification = %q, want %q", UseServingPortSpecification, ret.PortSpecification)
 	}
 }
 
@@ -369,7 +412,7 @@ func TestVersion(t *testing.T) {
 				HealthCheck: computealpha.HealthCheck{
 					Type: string(annotations.ProtocolHTTP),
 				},
-				ForNEG: true,
+				forNEG: true,
 			},
 			version: meta.VersionBeta,
 		},
@@ -380,7 +423,7 @@ func TestVersion(t *testing.T) {
 					Type: string(annotations.ProtocolHTTP),
 				},
 				forILB: true,
-				ForNEG: true,
+				forNEG: true,
 			},
 			version: meta.VersionBeta,
 		},
@@ -397,27 +440,751 @@ func TestVersion(t *testing.T) {
 }
 
 func TestApplyProbeSettingsToHC(t *testing.T) {
-	p := "healthz"
-	hc := DefaultHealthCheck(8080, annotations.ProtocolHTTPS)
-	probe := &api_v1.Probe{
-		Handler: api_v1.Handler{
-			HTTPGet: &api_v1.HTTPGetAction{
-				Scheme: api_v1.URISchemeHTTP,
-				Path:   p,
-				Port: intstr.IntOrString{
-					Type:   intstr.Int,
-					IntVal: 80,
+	type ws struct {
+		host             string
+		path             string
+		timeoutSec       int64
+		checkIntervalSec int64
+		port             int64
+	}
+	for _, tc := range []struct {
+		desc  string
+		neg   bool
+		probe *api_v1.Probe
+		want  ws
+	}{
+		{
+			desc:  "no override",
+			probe: &api_v1.Probe{},
+			want:  ws{timeoutSec: 60, checkIntervalSec: 60, port: 8080},
+		},
+		{
+			desc: "override path",
+			probe: &api_v1.Probe{
+				TimeoutSeconds: 1234,
+				Handler: api_v1.Handler{
+					HTTPGet: &api_v1.HTTPGetAction{Path: "/override"},
 				},
 			},
+			want: ws{path: "/override", timeoutSec: 1234, checkIntervalSec: 60, port: 8080},
+		},
+		{
+			desc: "override host",
+			probe: &api_v1.Probe{
+				TimeoutSeconds: 1234,
+				Handler: api_v1.Handler{
+					HTTPGet: &api_v1.HTTPGetAction{Host: "foo.com"},
+				},
+			},
+			want: ws{host: "foo.com", path: "/", timeoutSec: 1234, checkIntervalSec: 60, port: 8080},
+		},
+		{
+			desc: "override host (via header)",
+			probe: &api_v1.Probe{
+				TimeoutSeconds: 1234,
+				Handler: api_v1.Handler{
+					HTTPGet: &api_v1.HTTPGetAction{
+						HTTPHeaders: []api_v1.HTTPHeader{{Name: "Host", Value: "foo.com"}},
+					},
+				},
+			},
+			want: ws{host: "foo.com", path: "/", timeoutSec: 1234, checkIntervalSec: 60, port: 8080},
+		},
+		{
+			// TODO(bowei): this is somewhat subtle behavior.
+			desc: "ignore port",
+			probe: &api_v1.Probe{
+				TimeoutSeconds: 1234,
+				Handler: api_v1.Handler{
+					HTTPGet: &api_v1.HTTPGetAction{Port: intstr.FromInt(3000)},
+				},
+			},
+			want: ws{path: "/", timeoutSec: 1234, checkIntervalSec: 60, port: 8080},
+		},
+		{
+			desc: "override timeouts",
+			probe: &api_v1.Probe{
+				TimeoutSeconds: 50,
+				PeriodSeconds:  100,
+				Handler: api_v1.Handler{
+					HTTPGet: &api_v1.HTTPGetAction{Port: intstr.FromInt(3000)},
+				},
+			},
+			want: ws{path: "/", timeoutSec: 50, checkIntervalSec: 160, port: 8080},
+		},
+		{
+			desc: "override timeouts (neg)",
+			neg:  true,
+			probe: &api_v1.Probe{
+				TimeoutSeconds: 50,
+				PeriodSeconds:  100,
+				Handler: api_v1.Handler{
+					HTTPGet: &api_v1.HTTPGetAction{Port: intstr.FromInt(3000)},
+				},
+			},
+			want: ws{path: "/", timeoutSec: 50, checkIntervalSec: 100, port: 0},
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			var got *HealthCheck
+			if tc.neg {
+				got = DefaultNEGHealthCheck(annotations.ProtocolHTTP)
+			} else {
+				got = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+			}
+			applyProbeSettingsToHC(tc.probe, got)
+
+			if got.Host != tc.want.host {
+				t.Errorf("got.Host = %q, want %q", got.Host, tc.want.host)
+			}
+			if got.RequestPath != tc.want.path {
+				t.Errorf("got.RequestPath = %q, want %q", got.RequestPath, tc.want.path)
+			}
+			if got.TimeoutSec != tc.want.timeoutSec {
+				t.Errorf("got.TimeoutSec = %d, want %d", got.TimeoutSec, tc.want.timeoutSec)
+			}
+			if got.CheckIntervalSec != tc.want.checkIntervalSec {
+				t.Errorf("got.CheckIntervalSec = %d, want %d", got.CheckIntervalSec, tc.want.checkIntervalSec)
+			}
+			if got.Port != tc.want.port {
+				t.Errorf("got.Port = %d, want %d", got.Port, tc.want.port)
+			}
+		})
+	}
+}
+
+func TestCalculateDiff(t *testing.T) {
+	t.Parallel()
+
+	type tc struct {
+		desc     string
+		old, new *HealthCheck
+		c        *backendconfigv1.HealthCheckConfig
+		hasDiff  bool
+	}
+	cases := []tc{
+		{
+			desc: "HTTP, no change",
+			old:  DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+			new:  DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		},
+		{
+			desc:    "HTTP => HTTPS",
+			old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+			new:     DefaultHealthCheck(8080, annotations.ProtocolHTTPS),
+			hasDiff: true,
+		},
+		{
+			// TODO(bowei) -- this seems wrong.
+			desc: "Port change",
+			old:  DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+			new:  DefaultHealthCheck(443, annotations.ProtocolHTTP),
+			// hasDiff: true
+		},
+		{
+			desc:    "PortSpecification",
+			old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+			new:     DefaultNEGHealthCheck(annotations.ProtocolHTTP),
+			hasDiff: true,
 		},
 	}
 
-	applyProbeSettingsToHC(probe, hc)
+	// TODO(bowei) -- this seems wrong, we should be checking for Port changes.
+	newHC := DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC.Port = 80
+	cases = append(cases, tc{
+		desc: "Port",
+		old:  DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		new:  newHC,
+		// hasDiff: true
+	})
 
-	if hc.Protocol() != annotations.ProtocolHTTPS || hc.Port != 8080 {
-		t.Errorf("Basic HC settings changed")
-	}
-	if hc.RequestPath != "/"+p {
-		t.Errorf("Failed to apply probe's requestpath")
+	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC.CheckIntervalSec = 1000
+	cases = append(cases, tc{
+		desc: "ignore changes without backend config",
+		old:  DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		new:  newHC,
+	})
+
+	i64 := func(i int64) *int64 { return &i }
+	s := func(s string) *string { return &s }
+
+	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC.CheckIntervalSec = 1000
+	cases = append(cases, tc{
+		desc:    "CheckIntervalSec",
+		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		new:     newHC,
+		c:       &backendconfigv1.HealthCheckConfig{CheckIntervalSec: i64(1000)},
+		hasDiff: true,
+	})
+
+	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC.TimeoutSec = 1000
+	cases = append(cases, tc{
+		desc:    "TimeoutSec",
+		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		new:     newHC,
+		c:       &backendconfigv1.HealthCheckConfig{TimeoutSec: i64(1000)},
+		hasDiff: true,
+	})
+
+	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC.HealthyThreshold = 1000
+	cases = append(cases, tc{
+		desc:    "HealthyThreshold",
+		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		new:     newHC,
+		c:       &backendconfigv1.HealthCheckConfig{HealthyThreshold: i64(1000)},
+		hasDiff: true,
+	})
+
+	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC.UnhealthyThreshold = 1000
+	cases = append(cases, tc{
+		desc:    "UnhealthyThreshold",
+		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		new:     newHC,
+		c:       &backendconfigv1.HealthCheckConfig{UnhealthyThreshold: i64(1000)},
+		hasDiff: true,
+	})
+
+	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC.RequestPath = "/foo"
+	cases = append(cases, tc{
+		desc:    "RequestPath",
+		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		new:     newHC,
+		c:       &backendconfigv1.HealthCheckConfig{RequestPath: s("/foo")},
+		hasDiff: true,
+	})
+
+	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC.RequestPath = "/foo"
+	cases = append(cases, tc{
+		desc: "non-backendconfig field is not a diff",
+		old:  DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		new:  newHC,
+		c:    &backendconfigv1.HealthCheckConfig{},
+	})
+
+	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC.TimeoutSec = 1000
+	newHC.RequestPath = "/foo"
+	cases = append(cases, tc{
+		desc:    "multiple changes",
+		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		new:     newHC,
+		c:       &backendconfigv1.HealthCheckConfig{TimeoutSec: i64(1000), RequestPath: s("/foo")},
+		hasDiff: true,
+	})
+
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			diffs := calculateDiff(tc.old, tc.new, tc.c)
+			t.Logf("\nold=%+v\nnew=%+v\ndiffs = %s", tc.old, tc.new, diffs)
+			if diffs.hasDiff() != tc.hasDiff {
+				t.Errorf("calculateDiff(%+v, %+v, %+v) = %s; hasDiff = %t, want %t", tc.old, tc.new, tc.c, diffs, diffs.hasDiff(), tc.hasDiff)
+			}
+		})
 	}
 }
+
+const (
+	regSelfLink = "https://www.googleapis.com/compute/v1/projects/test-project/global/healthChecks/k8s-be-80--uid1"
+	negSelfLink = "https://www.googleapis.com/compute/beta/projects/test-project/global/healthChecks/k8s1-uid1---0-56ff9a48"
+	ilbSelfLink = "https://www.googleapis.com/compute/beta/projects/test-project/regions/us-central1/healthChecks/k8s1-uid1---0-56ff9a48"
+)
+
+type syncSPFixture struct{}
+
+func (*syncSPFixture) hc() *compute.HealthCheck {
+	return &compute.HealthCheck{
+		Name:               "k8s-be-80--uid1",
+		CheckIntervalSec:   60,
+		HealthyThreshold:   1,
+		TimeoutSec:         60,
+		Type:               "HTTP",
+		UnhealthyThreshold: 10,
+		SelfLink:           regSelfLink,
+		HttpHealthCheck: &compute.HTTPHealthCheck{
+			Port:        80,
+			RequestPath: "/",
+		},
+	}
+}
+
+func (f *syncSPFixture) hcs() *compute.HealthCheck  { return f.toS(f.hc()) }
+func (f *syncSPFixture) hc2() *compute.HealthCheck  { return f.to2(f.hc()) }
+func (f *syncSPFixture) negs() *compute.HealthCheck { return f.toS(f.neg()) }
+func (f *syncSPFixture) neg2() *compute.HealthCheck { return f.to2(f.neg()) }
+func (f *syncSPFixture) ilbs() *compute.HealthCheck { return f.toS(f.ilb()) }
+func (f *syncSPFixture) ilb2() *compute.HealthCheck { return f.to2(f.ilb()) }
+
+func (f *syncSPFixture) toS(h *compute.HealthCheck) *compute.HealthCheck {
+	h.Type = "HTTPS"
+	c := (compute.HTTPSHealthCheck)(*h.HttpHealthCheck)
+	h.HttpsHealthCheck = &c
+	h.HttpHealthCheck = nil
+	return h
+}
+
+func (f *syncSPFixture) to2(h *compute.HealthCheck) *compute.HealthCheck {
+	h.Type = "HTTP2"
+	c := (compute.HTTP2HealthCheck)(*h.HttpHealthCheck)
+	h.Http2HealthCheck = &c
+	h.HttpHealthCheck = nil
+	return h
+}
+
+func (*syncSPFixture) neg() *compute.HealthCheck {
+	return &compute.HealthCheck{
+		Name:               "k8s1-uid1---0-56ff9a48",
+		CheckIntervalSec:   15,
+		HealthyThreshold:   1,
+		TimeoutSec:         15,
+		Type:               "HTTP",
+		UnhealthyThreshold: 2,
+		SelfLink:           negSelfLink,
+		HttpHealthCheck: &compute.HTTPHealthCheck{
+			PortSpecification: UseServingPortSpecification,
+			RequestPath:       "/",
+		},
+	}
+}
+
+func (f *syncSPFixture) ilb() *compute.HealthCheck {
+	h := f.neg()
+	h.Region = "us-central1"
+	h.SelfLink = ilbSelfLink
+	return h
+}
+
+func (f *syncSPFixture) setupExistingHCFunc(hc *compute.HealthCheck) func(m *cloud.MockGCE) {
+	return func(m *cloud.MockGCE) {
+		key := meta.GlobalKey(hc.Name)
+		m.HealthChecks().Insert(context.Background(), key, hc)
+	}
+}
+
+func (f *syncSPFixture) setupExistingRegionalHCFunc(region string, hc *compute.HealthCheck) func(m *cloud.MockGCE) {
+	return func(m *cloud.MockGCE) {
+		key := meta.RegionalKey(hc.Name, region)
+		m.RegionHealthChecks().Insert(context.Background(), key, hc)
+	}
+}
+
+func setupMockUpdate(mock *cloud.MockGCE) {
+	// Mock does not know how to autogenerate update() methods.
+	mock.MockHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *compute.HealthCheck, m *cloud.MockHealthChecks) error {
+		m.Objects[*k].Obj = hc
+		return nil
+	}
+	mock.MockAlphaHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *computealpha.HealthCheck, m *cloud.MockAlphaHealthChecks) error {
+		m.Objects[*k].Obj = hc
+		return nil
+	}
+	mock.MockBetaHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *computebeta.HealthCheck, m *cloud.MockBetaHealthChecks) error {
+		m.Objects[*k].Obj = hc
+		return nil
+	}
+	mock.MockRegionHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *compute.HealthCheck, m *cloud.MockRegionHealthChecks) error {
+		m.Objects[*k].Obj = hc
+		return nil
+	}
+	mock.MockAlphaRegionHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *computealpha.HealthCheck, m *cloud.MockAlphaRegionHealthChecks) error {
+		m.Objects[*k].Obj = hc
+		return nil
+	}
+	mock.MockBetaRegionHealthChecks.UpdateHook = func(ctx context.Context, k *meta.Key, hc *computebeta.HealthCheck, m *cloud.MockBetaRegionHealthChecks) error {
+		m.Objects[*k].Obj = hc
+		return nil
+	}
+}
+
+func TestSyncServicePort(t *testing.T) {
+	type tc struct {
+		desc     string
+		setup    func(*cloud.MockGCE)
+		sp       *utils.ServicePort
+		probe    *v1.Probe
+		regional bool
+
+		wantSelfLink  string
+		wantErr       bool
+		wantComputeHC *compute.HealthCheck
+	}
+	fixture := syncSPFixture{}
+
+	var cases []*tc
+
+	cases = append(cases, &tc{desc: "create http", sp: testSPs["HTTP-80-reg-nil"], wantComputeHC: fixture.hc()})
+	cases = append(cases, &tc{desc: "create https", sp: testSPs["HTTPS-80-reg-nil"], wantComputeHC: fixture.hcs()})
+	cases = append(cases, &tc{desc: "create http2", sp: testSPs["HTTP2-80-reg-nil"], wantComputeHC: fixture.hc2()})
+	cases = append(cases, &tc{desc: "create neg", sp: testSPs["HTTP-80-neg-nil"], wantComputeHC: fixture.neg()})
+	cases = append(cases, &tc{desc: "create ilb", sp: testSPs["HTTP-80-ilb-nil"], regional: true, wantComputeHC: fixture.ilb()})
+
+	// Probe override
+	chc := fixture.hc()
+	chc.HttpHealthCheck.RequestPath = "/foo"
+	chc.HttpHealthCheck.Host = "foo.com"
+	chc.CheckIntervalSec = 61
+	chc.TimeoutSec = 1234
+	cases = append(cases, &tc{
+		desc: "create probe",
+		sp:   testSPs["HTTP-80-reg-nil"],
+		probe: &v1.Probe{
+			Handler: v1.Handler{
+				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
+			},
+			PeriodSeconds:  1,
+			TimeoutSeconds: 1234,
+		},
+		wantComputeHC: chc,
+	})
+
+	// Probe override (NEG)
+	chc = fixture.neg()
+	chc.HttpHealthCheck.RequestPath = "/foo"
+	chc.HttpHealthCheck.Host = "foo.com"
+	chc.CheckIntervalSec = 1234
+	chc.TimeoutSec = 5678
+	cases = append(cases, &tc{
+		desc: "create probe neg",
+		sp:   testSPs["HTTP-80-neg-nil"],
+		probe: &v1.Probe{
+			Handler: v1.Handler{
+				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
+			},
+			PeriodSeconds:  1234,
+			TimeoutSeconds: 5678,
+		},
+		wantComputeHC: chc,
+	})
+
+	// Probe override (ILB)
+	chc = fixture.ilb()
+	chc.HttpHealthCheck.RequestPath = "/foo"
+	chc.HttpHealthCheck.Host = "foo.com"
+	chc.CheckIntervalSec = 1234
+	chc.TimeoutSec = 5678
+	cases = append(cases, &tc{
+		desc:     "create probe ilb",
+		sp:       testSPs["HTTP-80-ilb-nil"],
+		regional: true,
+		probe: &v1.Probe{
+			Handler: v1.Handler{
+				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
+			},
+			PeriodSeconds:  1234,
+			TimeoutSeconds: 5678,
+		},
+		wantComputeHC: chc,
+	})
+
+	// BackendConfig
+	chc = fixture.hc()
+	chc.HttpHealthCheck.RequestPath = "/foo"
+	cases = append(cases, &tc{desc: "create backendconfig", sp: testSPs["HTTP-80-reg-bc"], wantComputeHC: chc})
+
+	// BackendConfig all
+	chc = fixture.hc()
+	chc.HttpHealthCheck.RequestPath = "/foo"
+	chc.CheckIntervalSec = 1234
+	chc.HealthyThreshold = 1234
+	chc.UnhealthyThreshold = 1234
+	chc.TimeoutSec = 1234
+	cases = append(cases, &tc{desc: "create backendconfig all", sp: testSPs["HTTP-80-reg-bcall"], wantComputeHC: chc})
+
+	// BackendConfig neg
+	chc = fixture.neg()
+	chc.HttpHealthCheck.RequestPath = "/foo"
+	cases = append(cases, &tc{
+		desc:          "create backendconfig neg",
+		sp:            testSPs["HTTP-80-neg-bc"],
+		wantComputeHC: chc,
+	})
+
+	// BackendConfig ilb
+	chc = fixture.ilb()
+	chc.HttpHealthCheck.RequestPath = "/foo"
+	cases = append(cases, &tc{
+		desc:          "create backendconfig ilb",
+		sp:            testSPs["HTTP-80-ilb-bc"],
+		regional:      true,
+		wantComputeHC: chc,
+	})
+
+	// Probe and BackendConfig override
+	chc = fixture.hc()
+	chc.HttpHealthCheck.RequestPath = "/foo"
+	chc.HttpHealthCheck.Host = "foo.com"
+	chc.CheckIntervalSec = 61
+	chc.TimeoutSec = 1234
+	cases = append(cases, &tc{
+		desc: "create probe and backendconfig",
+		sp:   testSPs["HTTP-80-reg-bc"],
+		probe: &v1.Probe{
+			Handler: v1.Handler{
+				HTTPGet: &v1.HTTPGetAction{Path: "/bar", Host: "foo.com"},
+			},
+			PeriodSeconds:  1,
+			TimeoutSeconds: 1234,
+		},
+		wantComputeHC: chc,
+	})
+
+	// Update tests
+	cases = append(cases, &tc{
+		desc:          "update http no change",
+		setup:         fixture.setupExistingHCFunc(fixture.hc()),
+		sp:            testSPs["HTTP-80-reg-nil"],
+		wantComputeHC: fixture.hc(),
+	})
+	cases = append(cases, &tc{
+		desc:          "update https no change",
+		setup:         fixture.setupExistingHCFunc(fixture.hcs()),
+		sp:            testSPs["HTTPS-80-reg-nil"],
+		wantComputeHC: fixture.hcs(),
+	})
+	cases = append(cases, &tc{
+		desc:          "update http2 no change",
+		setup:         fixture.setupExistingHCFunc(fixture.hc2()),
+		sp:            testSPs["HTTP2-80-reg-nil"],
+		wantComputeHC: fixture.hc2(),
+	})
+	cases = append(cases, &tc{
+		desc:          "update neg no change",
+		setup:         fixture.setupExistingHCFunc(fixture.neg()),
+		sp:            testSPs["HTTP-80-neg-nil"],
+		wantComputeHC: fixture.neg(),
+	})
+	cases = append(cases, &tc{
+		desc:          "update ilb no change",
+		setup:         fixture.setupExistingHCFunc(fixture.ilb()),
+		sp:            testSPs["HTTP-80-ilb-nil"],
+		regional:      true,
+		wantComputeHC: fixture.ilb(),
+	})
+
+	// Update protocol
+	cases = append(cases, &tc{
+		desc:          "update http to https",
+		setup:         fixture.setupExistingHCFunc(fixture.hc()),
+		sp:            testSPs["HTTPS-80-reg-nil"],
+		wantComputeHC: fixture.hcs(),
+	})
+	cases = append(cases, &tc{
+		desc:          "update http to http2",
+		setup:         fixture.setupExistingHCFunc(fixture.hc()),
+		sp:            testSPs["HTTP2-80-reg-nil"],
+		wantComputeHC: fixture.hc2(),
+	})
+	cases = append(cases, &tc{
+		desc:          "update https to http",
+		setup:         fixture.setupExistingHCFunc(fixture.hcs()),
+		sp:            testSPs["HTTP-80-reg-nil"],
+		wantComputeHC: fixture.hc(),
+	})
+	cases = append(cases, &tc{
+		desc:          "update https to http2",
+		setup:         fixture.setupExistingHCFunc(fixture.hcs()),
+		sp:            testSPs["HTTP2-80-reg-nil"],
+		wantComputeHC: fixture.hc2(),
+	})
+	cases = append(cases, &tc{
+		desc:          "update neg protocol",
+		setup:         fixture.setupExistingHCFunc(fixture.neg()),
+		sp:            testSPs["HTTPS-80-neg-nil"],
+		wantComputeHC: fixture.negs(),
+	})
+	cases = append(cases, &tc{
+		desc:          "update ilb protocol",
+		setup:         fixture.setupExistingRegionalHCFunc("us-central1", fixture.ilb()),
+		sp:            testSPs["HTTPS-80-ilb-nil"],
+		regional:      true,
+		wantComputeHC: fixture.ilbs(),
+	})
+
+	// Preserve user settings.
+	chc = fixture.hc()
+	chc.HttpHealthCheck.RequestPath = "/user-path"
+	chc.CheckIntervalSec = 1234
+	cases = append(cases, &tc{
+		desc:          "update preserve",
+		setup:         fixture.setupExistingHCFunc(chc),
+		sp:            testSPs["HTTP-80-reg-nil"],
+		wantComputeHC: chc,
+	})
+
+	// Preserve user settings while changing the protocol
+	chc = fixture.hc()
+	chc.HttpHealthCheck.RequestPath = "/user-path"
+	chc.CheckIntervalSec = 1234
+	wantCHC := fixture.hcs()
+	wantCHC.HttpsHealthCheck.RequestPath = "/user-path"
+	wantCHC.CheckIntervalSec = 1234
+	cases = append(cases, &tc{
+		desc:          "update preserve across protocol change",
+		setup:         fixture.setupExistingHCFunc(chc),
+		sp:            testSPs["HTTPS-80-reg-nil"],
+		wantComputeHC: wantCHC,
+	})
+
+	// Preserve user settings while changing the protocol (neg)
+	chc = fixture.neg()
+	chc.HttpHealthCheck.RequestPath = "/user-path"
+	chc.CheckIntervalSec = 1234
+	wantCHC = fixture.negs()
+	wantCHC.HttpsHealthCheck.RequestPath = "/user-path"
+	wantCHC.CheckIntervalSec = 1234
+	cases = append(cases, &tc{
+		desc:          "update preserve across protocol change neg",
+		setup:         fixture.setupExistingHCFunc(chc),
+		sp:            testSPs["HTTPS-80-neg-nil"],
+		wantComputeHC: wantCHC,
+	})
+
+	// Preserve user settings while changing the protocol (ilb)
+	chc = fixture.ilb()
+	chc.HttpHealthCheck.RequestPath = "/user-path"
+	chc.CheckIntervalSec = 1234
+	wantCHC = fixture.ilbs()
+	wantCHC.HttpsHealthCheck.RequestPath = "/user-path"
+	wantCHC.CheckIntervalSec = 1234
+	cases = append(cases, &tc{
+		desc:          "update preserve across protocol change ilb",
+		setup:         fixture.setupExistingRegionalHCFunc("us-central1", chc),
+		sp:            testSPs["HTTPS-80-ilb-nil"],
+		regional:      true,
+		wantComputeHC: wantCHC,
+	})
+
+	// Preserve some settings, but override some in the backend config
+	chc = fixture.hc()
+	chc.HttpHealthCheck.RequestPath = "/user-path"
+	chc.CheckIntervalSec = 1234
+	wantCHC = fixture.hc()
+	wantCHC.HttpHealthCheck.RequestPath = "/foo" // from bc
+	wantCHC.CheckIntervalSec = 1234              // same
+	cases = append(cases, &tc{
+		desc:          "update preserve and backendconfig (path)",
+		sp:            testSPs["HTTP-80-reg-bc"],
+		setup:         fixture.setupExistingHCFunc(chc),
+		wantComputeHC: wantCHC,
+	})
+
+	// Override all settings from backendconfig.
+	chc = fixture.hc()
+	chc.HttpHealthCheck.RequestPath = "/user-path"
+	chc.CheckIntervalSec = 1234
+	wantCHC = fixture.hc()
+	wantCHC.HttpHealthCheck.RequestPath = "/foo" // from bc
+	wantCHC.CheckIntervalSec = 1234
+	wantCHC.HealthyThreshold = 1234
+	wantCHC.UnhealthyThreshold = 1234
+	wantCHC.TimeoutSec = 1234
+	cases = append(cases, &tc{
+		desc:          "update preserve backendconfig all",
+		setup:         fixture.setupExistingHCFunc(chc),
+		sp:            testSPs["HTTP-80-reg-bcall"],
+		wantComputeHC: wantCHC,
+	})
+
+	// BUG: changing probe settings has not effect on the healthcheck
+	// update.
+	// TODO(bowei): document this.
+	chc = fixture.hc()
+	chc.HttpHealthCheck.RequestPath = "/user-path"
+	cases = append(cases, &tc{
+		desc:  "update probe has no effect (bug)",
+		setup: fixture.setupExistingHCFunc(chc),
+		sp:    testSPs["HTTP-80-reg-nil"],
+		probe: &v1.Probe{
+			Handler: v1.Handler{
+				HTTPGet: &v1.HTTPGetAction{Path: "/foo", Host: "foo.com"},
+			},
+			PeriodSeconds:  1,
+			TimeoutSeconds: 1234,
+		},
+		wantComputeHC: chc,
+	})
+
+	// BUG: Enable NEG, leaks old healthcheck, does not preserve old
+	// settings.
+
+	// BUG: Switch to/from ILB, leaks old healthcheck, does not preserve old
+	// settings.
+
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+
+			mock := fakeGCE.Compute().(*cloud.MockGCE)
+			setupMockUpdate(mock)
+
+			if tc.setup != nil {
+				tc.setup(mock)
+			}
+
+			hcs := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
+
+			gotSelfLink, err := hcs.SyncServicePort(tc.sp, tc.probe)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = _, %v; gotErr = %t, want %t\nsp = %s\nprobe = %s", err, gotErr, tc.wantErr, pretty.Sprint(tc.sp), pretty.Sprint(tc.probe))
+			}
+			if tc.wantSelfLink != "" && gotSelfLink != tc.wantSelfLink {
+				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = %q, _; want = %q", gotSelfLink, tc.wantSelfLink)
+			}
+
+			verify := func() {
+				t.Helper()
+				var computeHCs []*compute.HealthCheck
+				if tc.regional {
+					computeHCs, _ = fakeGCE.Compute().RegionHealthChecks().List(context.Background(), fakeGCE.Region(), nil)
+				} else {
+					computeHCs, _ = fakeGCE.Compute().HealthChecks().List(context.Background(), nil)
+				}
+				if len(computeHCs) != 1 {
+					t.Fatalf("Got %d healthchecks, want 1\n%s", len(computeHCs), pretty.Sprint(computeHCs))
+				}
+
+				gotHC := computeHCs[0]
+				// Filter out fields that are hard to deal with in the mock and
+				// test cases.
+				filter := func(hc *compute.HealthCheck) {
+					hc.Description = ""
+					hc.SelfLink = ""
+				}
+				filter(gotHC)
+				filter(tc.wantComputeHC)
+
+				if !reflect.DeepEqual(gotHC, tc.wantComputeHC) {
+					t.Fatalf("Compute healthcheck is:\n%s, want:\n%s", pretty.Sprint(gotHC), pretty.Sprint(tc.wantComputeHC))
+				}
+			}
+
+			verify()
+
+			// Check that resync should not have an effect and does not issue
+			// an update to GCE. Hook Update() to fail.
+			mock.MockHealthChecks.UpdateHook = func(context.Context, *meta.Key, *compute.HealthCheck, *cloud.MockHealthChecks) error {
+				t.Fatalf("resync should not result in an update")
+				return nil
+			}
+
+			gotSelfLink, err = hcs.SyncServicePort(tc.sp, tc.probe)
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = %v; gotErr = %t, want %t\nsp = %s\nprobe = %s", err, gotErr, tc.wantErr, pretty.Sprint(tc.sp), pretty.Sprint(tc.probe))
+			}
+			if tc.wantSelfLink != "" && gotSelfLink != tc.wantSelfLink {
+				t.Errorf("hcs.SyncServicePort(tc.sp, tc.probe) = %q, _; want = %q", gotSelfLink, tc.wantSelfLink)
+			}
+			verify()
+		})
+	}
+}
+
+// TODO(bowei): test regional delete
+// TODO(bowei): test errors from GCE

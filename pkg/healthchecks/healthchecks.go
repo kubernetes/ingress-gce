@@ -18,8 +18,10 @@ package healthchecks
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +32,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
@@ -116,12 +119,16 @@ func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (
 		klog.V(4).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
 		applyProbeSettingsToHC(probe, hc)
 	}
-	return h.sync(hc)
+	var bchcc *backendconfigv1.HealthCheckConfig
+	if sp.BackendConfig != nil {
+		bchcc = sp.BackendConfig.Spec.HealthCheck
+	}
+	return h.sync(hc, bchcc)
 }
 
 // sync retrieves a health check based on port, checks type and settings and updates/creates if necessary.
 // sync is only called by the backends.Add func - it's not a pool like other resources.
-func (h *HealthChecks) sync(hc *HealthCheck) (string, error) {
+func (h *HealthChecks) sync(hc *HealthCheck, bchcc *backendconfigv1.HealthCheckConfig) (string, error) {
 	var scope meta.KeyType
 	// TODO(shance): find a way to remove this
 	if hc.forILB {
@@ -131,47 +138,57 @@ func (h *HealthChecks) sync(hc *HealthCheck) (string, error) {
 	}
 
 	existingHC, err := h.Get(hc.Name, hc.Version(), scope)
+	if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+		klog.V(2).Infof("Health check %q does not exist, creating (hc=%+v, bchcc=%+v)", hc.Name, hc, bchcc)
+		if err = h.create(hc, bchcc); err != nil {
+			klog.Errorf("Health check %q creation error: %v", hc.Name, err)
+			return "", err
+		}
+		// TODO(bowei) -- we don't need to fetch the self-link here as it is
+		// returned as part of the GCE call.
+		selfLink, err := h.getHealthCheckLink(hc.Name, hc.Version(), scope)
+		klog.V(2).Infof("Health check %q selflink = %q", hc.Name, selfLink)
+		return selfLink, err
+	}
 	if err != nil {
-		if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-			return "", err
-		}
-
-		if err = h.create(hc); err != nil {
-			return "", err
-		}
-
-		return h.getHealthCheckLink(hc.Name, hc.Version(), scope)
+		return "", err
 	}
 
-	if needToUpdate(existingHC, hc) {
-		err = h.update(existingHC, hc)
+	// First, merge in the configuration from the existing healthcheck to cover
+	// the case where the user has changed healthcheck settings outside of
+	// GKE.
+	premergeHC := hc
+	hc = mergeUserSettings(existingHC, hc)
+	klog.V(3).Infof("mergeHealthcheck(%+v,%+v) = %+v", existingHC, premergeHC, hc)
+	// Then, BackendConfig will override any fields that are explicitly set.
+	if bchcc != nil {
+		klog.V(2).Infof("Health check %q has backendconfig override (%+v)", hc.Name, bchcc)
+		// BackendConfig healthcheck settings always take precedence.
+		hc.updateFromBackendConfig(bchcc)
+	}
+
+	changes := calculateDiff(existingHC, hc, bchcc)
+	if changes.hasDiff() {
+		klog.V(2).Infof("Health check %q needs update (%s)", existingHC.Name, changes)
+		err := h.update(hc)
+		if err != nil {
+			klog.Errorf("Health check %q update error: %v", existingHC.Name, err)
+		}
 		return existingHC.SelfLink, err
 	}
 
-	if existingHC.RequestPath != hc.RequestPath {
-		// TODO: reconcile health checks, and compare headers interval etc.
-		// Currently Ingress doesn't expose all the health check params
-		// natively, so some users prefer to hand modify the check.
-		klog.V(2).Infof("Unexpected request path on health check %v, has %v want %v, NOT reconciling", hc.Name, existingHC.RequestPath, hc.RequestPath)
-	} else {
-		klog.V(2).Infof("Health check %v already exists and has the expected path %v", hc.Name, hc.RequestPath)
-	}
-
+	klog.V(2).Infof("Health check %q already exists and needs no update", hc.Name)
 	return existingHC.SelfLink, nil
 }
 
 // TODO(shance): merge with existing hc code
 func (h *HealthChecks) createILB(hc *HealthCheck) error {
-	cloud := h.cloud.(*gce.Cloud)
-
-	if len(hc.PortSpecification) > 0 {
-		hc.Port = 0
-	}
-	hc.merge()
-	compositeType, err := composite.AlphaToHealthCheck(&hc.HealthCheck)
+	compositeType, err := composite.AlphaToHealthCheck(hc.ToAlphaComputeHealthCheck())
 	if err != nil {
 		return fmt.Errorf("Error converting hc to composite: %v", err)
 	}
+
+	cloud := h.cloud.(*gce.Cloud)
 	key, err := composite.CreateKey(cloud, hc.Name, features.L7ILBScope())
 	if err != nil {
 		return err
@@ -187,7 +204,12 @@ func (h *HealthChecks) createILB(hc *HealthCheck) error {
 	return nil
 }
 
-func (h *HealthChecks) create(hc *HealthCheck) error {
+func (h *HealthChecks) create(hc *HealthCheck, bchcc *backendconfigv1.HealthCheckConfig) error {
+	if bchcc != nil {
+		klog.V(2).Infof("Health check %q has backendconfig override (%+v)", hc.Name, bchcc)
+		// BackendConfig healthcheck settings always take precedence.
+		hc.updateFromBackendConfig(bchcc)
+	}
 	// special case ILB to avoid mucking with stable HC code
 	if hc.forILB {
 		return h.createILB(hc)
@@ -217,16 +239,14 @@ func (h *HealthChecks) create(hc *HealthCheck) error {
 }
 
 // TODO(shance): merge with existing hc code
-func (h *HealthChecks) updateILB(oldHC, newHC *HealthCheck) error {
+func (h *HealthChecks) updateILB(hc *HealthCheck) error {
 	// special case ILB to avoid mucking with stable HC code
-	cloud := h.cloud.(*gce.Cloud)
-
-	mergedHC := mergeHealthcheck(oldHC, newHC).ToAlphaComputeHealthCheck()
-	compositeType, err := composite.AlphaToHealthCheck(mergedHC)
+	compositeType, err := composite.AlphaToHealthCheck(hc.ToAlphaComputeHealthCheck())
 	if err != nil {
 		return fmt.Errorf("Error converting newHC to composite: %v", err)
 	}
-	key, err := composite.CreateKey(cloud, mergedHC.Name, features.L7ILBScope())
+	cloud := h.cloud.(*gce.Cloud)
+	key, err := composite.CreateKey(cloud, hc.Name, features.L7ILBScope())
 
 	// Update fields
 	compositeType.Version = features.L7ILBVersions().HealthCheck
@@ -235,53 +255,68 @@ func (h *HealthChecks) updateILB(oldHC, newHC *HealthCheck) error {
 	return composite.UpdateHealthCheck(cloud, key, compositeType)
 }
 
-func (h *HealthChecks) update(oldHC, newHC *HealthCheck) error {
-	// special case ILB to avoid mucking with stable HC code
-	if oldHC.forILB {
-		return h.updateILB(oldHC, newHC)
+func (h *HealthChecks) update(hc *HealthCheck) error {
+	if hc.forILB {
+		return h.updateILB(hc)
 	}
-
-	switch newHC.Version() {
+	switch hc.Version() {
 	case meta.VersionAlpha:
-		klog.V(2).Infof("Updating alpha health check with protocol %v", newHC.Type)
-		return h.cloud.UpdateAlphaHealthCheck(mergeHealthcheck(oldHC, newHC).ToAlphaComputeHealthCheck())
+		klog.V(2).Infof("Updating alpha health check with protocol %v", hc.Type)
+		return h.cloud.UpdateAlphaHealthCheck(hc.ToAlphaComputeHealthCheck())
 	case meta.VersionBeta:
-		klog.V(2).Infof("Updating beta health check with protocol %v", newHC.Type)
-		betaHC, err := mergeHealthcheck(oldHC, newHC).ToBetaComputeHealthCheck()
+		klog.V(2).Infof("Updating beta health check with protocol %v", hc.Type)
+		beta, err := hc.ToBetaComputeHealthCheck()
 		if err != nil {
 			return err
 		}
-		return h.cloud.UpdateBetaHealthCheck(betaHC)
+		return h.cloud.UpdateBetaHealthCheck(beta)
 	case meta.VersionGA:
-		klog.V(2).Infof("Updating health check for port %v with protocol %v", newHC.Port, newHC.Type)
-		v1hc, err := newHC.ToComputeHealthCheck()
+		klog.V(2).Infof("Updating health check %q for port %v with protocol %v", hc.Name, hc.Port, hc.Type)
+		ga, err := hc.ToComputeHealthCheck()
 		if err != nil {
 			return err
 		}
-		return h.cloud.UpdateHealthCheck(v1hc)
+		return h.cloud.UpdateHealthCheck(ga)
 	default:
-		return fmt.Errorf("unknown Version: %q", newHC.Version())
+		return fmt.Errorf("unknown Version: %q", hc.Version())
 	}
 }
 
-// mergeHealthcheck merges old health check configuration (potentially for IG) with the new one.
-// This is to preserve the existing health check setting as much as possible.
+// mergeUserSettings merges old health check configuration that the user may
+// have customized. This is to preserve the existing health check setting as
+// much as possible.
+//
+// TODO(bowei) -- fix below.
 // WARNING: if a service backend is converted from IG mode to NEG mode,
-// the existing health check setting will be preserve, although it may not suit the customer needs.
-func mergeHealthcheck(oldHC, newHC *HealthCheck) *HealthCheck {
-	portSpec := newHC.PortSpecification
-	port := newHC.Port
-	newHC.HTTPHealthCheck = oldHC.HTTPHealthCheck
+// the existing health check setting will be preserved, although it may not
+// suit the customer needs.
+//
+// TODO(bowei): this is very unstable in combination with Probe, we do not
+// have a clear signal as to where the settings are coming from. Once a
+// healthcheck is created, it will basically not change.
+func mergeUserSettings(existing, newHC *HealthCheck) *HealthCheck {
+	hc := *newHC // return a copy
+
+	hc.HTTPHealthCheck = existing.HTTPHealthCheck
+	hc.HealthCheck.CheckIntervalSec = existing.HealthCheck.CheckIntervalSec
+	hc.HealthCheck.HealthyThreshold = existing.HealthCheck.HealthyThreshold
+	hc.HealthCheck.TimeoutSec = existing.HealthCheck.TimeoutSec
+	hc.HealthCheck.UnhealthyThreshold = existing.HealthCheck.UnhealthyThreshold
+
+	if existing.HealthCheck.LogConfig != nil {
+		l := *existing.HealthCheck.LogConfig
+		hc.HealthCheck.LogConfig = &l
+	}
 
 	// Cannot specify both portSpecification and port field.
-	if newHC.ForNEG {
-		newHC.HTTPHealthCheck.Port = 0
-		newHC.PortSpecification = portSpec
+	if hc.forNEG {
+		hc.HTTPHealthCheck.Port = 0
+		hc.PortSpecification = newHC.PortSpecification
 	} else {
-		newHC.PortSpecification = ""
-		newHC.Port = port
+		hc.PortSpecification = ""
+		hc.Port = newHC.Port
 	}
-	return newHC
+	return &hc
 }
 
 func (h *HealthChecks) getHealthCheckLink(name string, version meta.Version, scope meta.KeyType) (string, error) {
@@ -348,7 +383,7 @@ func (h *HealthChecks) getILB(name string) (*HealthCheck, error) {
 
 	// Update fields for future update() calls
 	newHC.forILB = true
-	newHC.ForNEG = true
+	newHC.forNEG = true
 
 	return newHC, nil
 }
@@ -412,7 +447,7 @@ func DefaultHealthCheck(port int64, protocol annotations.AppProtocol) *HealthChe
 	return &HealthCheck{
 		HTTPHealthCheck: httpSettings,
 		HealthCheck:     hcSettings,
-		ForNEG:          false,
+		forNEG:          false,
 	}
 }
 
@@ -437,7 +472,7 @@ func DefaultNEGHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 	return &HealthCheck{
 		HTTPHealthCheck: httpSettings,
 		HealthCheck:     hcSettings,
-		ForNEG:          true,
+		forNEG:          true,
 	}
 }
 
@@ -462,50 +497,46 @@ func defaultILBHealthCheck(protocol annotations.AppProtocol) *HealthCheck {
 		HTTPHealthCheck: httpSettings,
 		HealthCheck:     hcSettings,
 		forILB:          true,
-		ForNEG:          true,
+		forNEG:          true,
 	}
 }
 
-// HealthCheck embeds two types - the generic healthcheck compute.HealthCheck
-// and the HTTP settings compute.HTTPHealthCheck. By embedding both, consumers can modify
-// all relevant settings (HTTP specific and HealthCheck generic) regardless of Type
-// Consumers should call .Out() func to generate a compute.HealthCheck
-// with the proper child struct (.HttpHealthCheck, .HttpshealthCheck, etc).
+// HealthCheck is a wrapper for different versions of the compute struct.
+// TODO(bowei): replace inner workings with composite.
 type HealthCheck struct {
+	// As the {HTTP, HTTPS, HTTP2} settings are identical, we mantain the
+	// settings at the outer-level and copy into the appropriate struct
+	// in the HealthCheck embedded struct (see `merge()`) when getting the
+	// compute struct back.
 	computealpha.HTTPHealthCheck
 	computealpha.HealthCheck
-	//compositeHealthCheck composite.HealthCheck
-	ForNEG bool
-	// forILB designates whether the health check is for an ILB
-	// This means that the HC should be alpha + regional
+
+	forNEG bool
 	forILB bool
 }
 
 // NewHealthCheck creates a HealthCheck which abstracts nested structs away
 func NewHealthCheck(hc *computealpha.HealthCheck) (*HealthCheck, error) {
+	// TODO(bowei): should never handle nil like this.
 	if hc == nil {
-		return nil, nil
+		return nil, errors.New("nil hc to NewHealthCheck")
 	}
 
 	v := &HealthCheck{HealthCheck: *hc}
-	var err error
 	switch annotations.AppProtocol(hc.Type) {
 	case annotations.ProtocolHTTP:
 		if hc.HttpHealthCheck == nil {
-			err = fmt.Errorf(newHealthCheckErrorMessageTemplate, annotations.ProtocolHTTP, hc.Name)
-			return nil, err
+			return nil, fmt.Errorf(newHealthCheckErrorMessageTemplate, annotations.ProtocolHTTP, hc.Name)
 		}
 		v.HTTPHealthCheck = *hc.HttpHealthCheck
 	case annotations.ProtocolHTTPS:
 		if hc.HttpsHealthCheck == nil {
-			err = fmt.Errorf(newHealthCheckErrorMessageTemplate, annotations.ProtocolHTTPS, hc.Name)
-			return nil, err
+			return nil, fmt.Errorf(newHealthCheckErrorMessageTemplate, annotations.ProtocolHTTPS, hc.Name)
 		}
 		v.HTTPHealthCheck = computealpha.HTTPHealthCheck(*hc.HttpsHealthCheck)
 	case annotations.ProtocolHTTP2:
 		if hc.Http2HealthCheck == nil {
-			err = fmt.Errorf(newHealthCheckErrorMessageTemplate, annotations.ProtocolHTTP2, hc.Name)
-			return nil, err
+			return nil, fmt.Errorf(newHealthCheckErrorMessageTemplate, annotations.ProtocolHTTP2, hc.Name)
 		}
 		v.HTTPHealthCheck = computealpha.HTTPHealthCheck(*hc.Http2HealthCheck)
 	}
@@ -516,7 +547,7 @@ func NewHealthCheck(hc *computealpha.HealthCheck) (*HealthCheck, error) {
 	v.HealthCheck.HttpsHealthCheck = nil
 	v.HealthCheck.Http2HealthCheck = nil
 
-	return v, err
+	return v, nil
 }
 
 // Protocol returns the type cased to AppProtocol
@@ -532,25 +563,23 @@ func (hc *HealthCheck) ToComputeHealthCheck() (*compute.HealthCheck, error) {
 
 // ToBetaComputeHealthCheck returns a valid computebeta.HealthCheck object
 func (hc *HealthCheck) ToBetaComputeHealthCheck() (*computebeta.HealthCheck, error) {
-	// Cannot specify both portSpecification and port field.
-	if len(hc.PortSpecification) > 0 {
-		hc.Port = 0
-	}
 	hc.merge()
 	return toBetaHealthCheck(&hc.HealthCheck)
 }
 
 // ToAlphaComputeHealthCheck returns a valid computealpha.HealthCheck object
 func (hc *HealthCheck) ToAlphaComputeHealthCheck() *computealpha.HealthCheck {
-	// Cannot specify both portSpecification and port field.
-	if len(hc.PortSpecification) > 0 {
-		hc.Port = 0
-	}
 	hc.merge()
-	return &hc.HealthCheck
+	x := hc.HealthCheck // Make a copy to ensure no aliasing.
+	return &x
 }
 
 func (hc *HealthCheck) merge() {
+	// Cannot specify both portSpecification and port field.
+	if hc.PortSpecification != "" {
+		hc.Port = 0
+	}
+
 	// Zeroing out child settings as a precaution. GoogleAPI throws an error
 	// if the wrong child struct is set.
 	hc.HealthCheck.Http2HealthCheck = nil
@@ -559,7 +588,8 @@ func (hc *HealthCheck) merge() {
 
 	switch hc.Protocol() {
 	case annotations.ProtocolHTTP:
-		hc.HealthCheck.HttpHealthCheck = &hc.HTTPHealthCheck
+		x := hc.HTTPHealthCheck // Make a copy to ensure no aliasing.
+		hc.HealthCheck.HttpHealthCheck = &x
 	case annotations.ProtocolHTTPS:
 		https := computealpha.HTTPSHealthCheck(hc.HTTPHealthCheck)
 		hc.HealthCheck.HttpsHealthCheck = &https
@@ -569,33 +599,89 @@ func (hc *HealthCheck) merge() {
 	}
 }
 
-func (hc *HealthCheck) isHttp2() bool {
-	return hc.Protocol() == annotations.ProtocolHTTP2
-}
-
 // Version returns the appropriate API version to handle the health check
 // Use Beta API for NEG as PORT_SPECIFICATION is required, and HTTP2
 func (hc *HealthCheck) Version() meta.Version {
 	if hc.forILB {
 		return features.L7ILBVersions().HealthCheck
 	}
-	if hc.isHttp2() || hc.ForNEG {
+	if hc.Protocol() == annotations.ProtocolHTTP2 || hc.forNEG {
 		return meta.VersionBeta
 	}
 	return meta.VersionGA
 }
 
-func needToUpdate(old, new *HealthCheck) bool {
+func (hc *HealthCheck) updateFromBackendConfig(c *backendconfigv1.HealthCheckConfig) {
+	if c.CheckIntervalSec != nil {
+		hc.CheckIntervalSec = *c.CheckIntervalSec
+	}
+	if c.TimeoutSec != nil {
+		hc.TimeoutSec = *c.TimeoutSec
+	}
+	if c.HealthyThreshold != nil {
+		hc.HealthyThreshold = *c.HealthyThreshold
+	}
+	if c.UnhealthyThreshold != nil {
+		hc.UnhealthyThreshold = *c.UnhealthyThreshold
+	}
+	if c.Type != nil {
+		hc.Type = *c.Type
+	}
+	if c.RequestPath != nil {
+		hc.RequestPath = *c.RequestPath
+	}
+	if c.Port != nil {
+		klog.Warningf("Setting Port is not supported (healthcheck %q, backendconfig = %+v)", hc.Name, c)
+	}
+}
+
+// fieldDiffs encapsulate which fields are different between health checks.
+type fieldDiffs struct {
+	f []string
+}
+
+func (c *fieldDiffs) add(field, oldv, newv string) {
+	c.f = append(c.f, fmt.Sprintf("%s:%s -> %s", field, oldv, newv))
+}
+func (c *fieldDiffs) String() string { return strings.Join(c.f, ", ") }
+func (c *fieldDiffs) hasDiff() bool  { return len(c.f) > 0 }
+
+func calculateDiff(old, new *HealthCheck, c *backendconfigv1.HealthCheckConfig) *fieldDiffs {
+	var changes fieldDiffs
+
 	if old.Protocol() != new.Protocol() {
-		klog.V(2).Infof("Updating health check %v because it has protocol %v but need %v", old.Name, old.Type, new.Type)
-		return true
+		changes.add("Protocol", string(old.Protocol()), string(new.Protocol()))
+	}
+	if old.PortSpecification != new.PortSpecification {
+		changes.add("PortSpecification", old.PortSpecification, new.PortSpecification)
 	}
 
-	if old.PortSpecification != new.PortSpecification {
-		klog.V(2).Infof("Updating health check %v because it has port specification %q but need %q", old.Name, old.PortSpecification, new.PortSpecification)
-		return true
+	// TODO(bowei): why don't we check Port, timeout etc.
+
+	if c == nil {
+		return &changes
 	}
-	return false
+
+	// This code assumes that the changes wrt to `c` has been applied to `new`.
+	if c.CheckIntervalSec != nil && old.CheckIntervalSec != new.CheckIntervalSec {
+		changes.add("CheckIntervalSec", strconv.FormatInt(old.CheckIntervalSec, 10), strconv.FormatInt(new.CheckIntervalSec, 10))
+	}
+	if c.TimeoutSec != nil && old.TimeoutSec != new.TimeoutSec {
+		changes.add("TimeoutSec", strconv.FormatInt(old.TimeoutSec, 10), strconv.FormatInt(new.TimeoutSec, 10))
+	}
+	if c.HealthyThreshold != nil && old.HealthyThreshold != new.HealthyThreshold {
+		changes.add("HeathyThreshold", strconv.FormatInt(old.HealthyThreshold, 10), strconv.FormatInt(new.HealthyThreshold, 10))
+	}
+	if c.UnhealthyThreshold != nil && old.UnhealthyThreshold != new.UnhealthyThreshold {
+		changes.add("UnhealthyThreshold", strconv.FormatInt(old.UnhealthyThreshold, 10), strconv.FormatInt(new.UnhealthyThreshold, 10))
+	}
+	// c.Type is handled by Protocol above.
+	if c.RequestPath != nil && old.RequestPath != new.RequestPath {
+		changes.add("RequestPath", old.RequestPath, new.RequestPath)
+	}
+	// TODO(bowei): Host seems to be missing.
+
+	return &changes
 }
 
 // toV1HealthCheck converts alpha health check to v1 health check.
@@ -652,13 +738,23 @@ func copyViaJSON(dest interface{}, src jsonConvertable) error {
 	return json.Unmarshal(bytes, dest)
 }
 
-// applyProbeSettingsToHC TODO
+// applyProbeSettingsToHC takes the Pod healthcheck settings and applies it
+// to the healthcheck.
+//
+// TODO: what if the port changes?
+// TODO: does not handle protocol?
 func applyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
+	if p.Handler.HTTPGet == nil {
+		return
+	}
+
 	healthPath := p.Handler.HTTPGet.Path
 	// GCE requires a leading "/" for health check urls.
 	if !strings.HasPrefix(healthPath, "/") {
 		healthPath = "/" + healthPath
 	}
+	hc.RequestPath = healthPath
+
 	// Extract host from HTTP headers
 	host := p.Handler.HTTPGet.Host
 	for _, header := range p.Handler.HTTPGet.HTTPHeaders {
@@ -667,16 +763,16 @@ func applyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
 			break
 		}
 	}
-
-	hc.RequestPath = healthPath
 	hc.Host = host
-	hc.Description = "Kubernetes L7 health check generated with readiness probe settings."
+
 	hc.TimeoutSec = int64(p.TimeoutSeconds)
-	if hc.ForNEG {
+	if hc.forNEG {
 		// For NEG mode, we can support more aggressive healthcheck interval.
 		hc.CheckIntervalSec = int64(p.PeriodSeconds)
 	} else {
 		// For IG mode, short healthcheck interval may health check flooding problem.
 		hc.CheckIntervalSec = int64(p.PeriodSeconds) + int64(DefaultHealthCheckInterval.Seconds())
 	}
+
+	hc.Description = "Kubernetes L7 health check generated with readiness probe settings."
 }
