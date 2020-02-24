@@ -56,5 +56,15 @@ func (t *numBackendServicesTest) Test(ing *v1beta1.Ingress, gclb *fuzz.GCLB) err
 		return fmt.Errorf("Expected %d BackendService's but got %d", expectedBackendServices, len(gclb.BackendService))
 	}
 
+	// Verify that access logs are enabled for GA version.
+	for _, cbe := range gclb.BackendService {
+		if cbe.GA != nil {
+			continue
+		}
+		if !cbe.GA.LogConfig.Enable {
+			return fmt.Errorf("access logs are disabled, expected to be enabled")
+		}
+	}
+
 	return nil
 }

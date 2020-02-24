@@ -6,6 +6,7 @@
 package option
 
 import (
+	"crypto/tls"
 	"net/http"
 
 	"golang.org/x/oauth2"
@@ -150,8 +151,7 @@ func WithGRPCConnectionPool(size int) ClientOption {
 type withGRPCConnectionPool int
 
 func (w withGRPCConnectionPool) Apply(o *internal.DialSettings) {
-	balancer := grpc.RoundRobin(internal.NewPoolResolver(int(w), o))
-	o.GRPCDialOpts = append(o.GRPCDialOpts, grpc.WithBalancer(balancer))
+	o.GRPCConnPoolSize = int(w)
 }
 
 // WithAPIKey returns a ClientOption that specifies an API key to be used
@@ -235,4 +235,30 @@ type withTelemetryDisabledOption struct{}
 
 func (w withTelemetryDisabledOption) Apply(o *internal.DialSettings) {
 	o.TelemetryDisabled = true
+}
+
+// WithGetClientCertificate returns a ClientOption that specifies a
+// callback function for obtaining a TLS client certificate.
+//
+// This option is used for supporting mTLS authentication, where the
+// server validates the client certifcate when establishing a connection.
+//
+// The callback function will be invoked whenever the server requests a
+// certificate from the client. Implementations of the callback function
+// should try to ensure that a valid certificate can be repeatedly returned
+// on demand for the entire life cycle of the transport client. If a nil
+// Certificate is returned (i.e. no Certificate can be obtained), an error
+// should be returned.
+//
+// This is an EXPERIMENTAL API and may be changed or removed in the future.
+func WithGetClientCertificate(getClientCertificate func(*tls.CertificateRequestInfo) (*tls.Certificate, error)) ClientOption {
+	return withGetClientCertificate{getClientCertificate: getClientCertificate}
+}
+
+type withGetClientCertificate struct {
+	getClientCertificate func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
+}
+
+func (w withGetClientCertificate) Apply(o *internal.DialSettings) {
+	o.GetClientCertificate = w.getClientCertificate
 }
