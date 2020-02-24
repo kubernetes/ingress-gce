@@ -21,7 +21,7 @@ require (
 	github.com/stretchr/testify v1.4.0
 	github.com/tsenart/deadcode v0.0.0-20160724212837-210d2dc333e9 // indirect
 	golang.org/x/oauth2 v0.0.0-20191202225959-858c2ad4c8b6
-	google.golang.org/api v0.15.1-0.20200106000736-b8fc810ca6b5
+	google.golang.org/api v0.17.1-0.20200224000813-c3b745b3f301
 	gopkg.in/gcfg.v1 v1.2.3 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	istio.io/api v0.0.0-20190809125725-591cf32c1d0e
@@ -68,7 +68,7 @@ replace (
 	golang.org/x/oauth2 => golang.org/x/oauth2 v0.0.0-20190402181905-9f3314589c9a
 	golang.org/x/sys => golang.org/x/sys v0.0.0-20190422165155-953cdadca894
 	golang.org/x/time => golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
-	google.golang.org/api => google.golang.org/api v0.15.0
+	google.golang.org/api => google.golang.org/api v0.17.1-0.20200224000813-c3b745b3f301
 	gopkg.in/gcfg.v1 => gopkg.in/gcfg.v1 v1.2.3
 	gopkg.in/inf.v0 => gopkg.in/inf.v0 v0.9.1
 	gopkg.in/warnings.v0 => gopkg.in/warnings.v0 v0.1.2
