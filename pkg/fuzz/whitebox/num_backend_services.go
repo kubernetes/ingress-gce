@@ -58,7 +58,7 @@ func (t *numBackendServicesTest) Test(ing *v1beta1.Ingress, gclb *fuzz.GCLB) err
 
 	// Verify that access logs are enabled for GA version.
 	for _, cbe := range gclb.BackendService {
-		if cbe.GA != nil {
+		if cbe.GA == nil {
 			continue
 		}
 		if !cbe.GA.LogConfig.Enable {
