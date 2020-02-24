@@ -1,0 +1,63 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: l7-default-backend
+  namespace: kube-system
+  labels:
+    k8s-app: glbc
+    kubernetes.io/name: "GLBC"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: glbc
+  template:
+    metadata:
+      labels:
+        k8s-app: glbc
+        name: glbc
+    spec:
+      containers:
+      - name: default-http-backend
+        # Any image is permissible as long as:
+        # 1. It serves a 404 page at /
+        # 2. It serves 200 on a /healthz endpoint
+        image: k8s.gcr.io/defaultbackend-amd64:1.5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          timeoutSeconds: 5
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            cpu: 10m
+            memory: 20Mi
+          requests:
+            cpu: 10m
+            memory: 20Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  # This must match the --default-backend-service argument of the l7 lb
+  # controller and is required because GCE mandates a default backend.
+  name: default-http-backend
+  namespace: kube-system
+  labels:
+    k8s-app: glbc
+    kubernetes.io/name: "GLBCDefaultBackend"
+spec:
+  # The default backend must be of type NodePort.
+  type: NodePort
+  ports:
+  - port: 80
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    k8s-app: glbc
+
