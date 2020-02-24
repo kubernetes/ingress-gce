@@ -1,21 +1,12 @@
-// Copyright 2017 Google LLC
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2017 Google LLC.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
 // Package option contains options for Google API clients.
 package option
 
 import (
+	"crypto/tls"
 	"net/http"
 
 	"golang.org/x/oauth2"
@@ -124,7 +115,7 @@ func (w withHTTPClient) Apply(o *internal.DialSettings) {
 }
 
 // WithGRPCConn returns a ClientOption that specifies the gRPC client
-// connection to use as the basis of communications. This option many only be
+// connection to use as the basis of communications. This option may only be
 // used with services that support gRPC as their communication transport. When
 // used, the WithGRPCConn option takes precedent over all other supplied
 // options.
@@ -160,8 +151,7 @@ func WithGRPCConnectionPool(size int) ClientOption {
 type withGRPCConnectionPool int
 
 func (w withGRPCConnectionPool) Apply(o *internal.DialSettings) {
-	balancer := grpc.RoundRobin(internal.NewPoolResolver(int(w), o))
-	o.GRPCDialOpts = append(o.GRPCDialOpts, grpc.WithBalancer(balancer))
+	o.GRPCConnPoolSize = int(w)
 }
 
 // WithAPIKey returns a ClientOption that specifies an API key to be used
@@ -232,4 +222,43 @@ type withRequestReason string
 
 func (w withRequestReason) Apply(o *internal.DialSettings) {
 	o.RequestReason = string(w)
+}
+
+// WithTelemetryDisabled returns a ClientOption that disables default telemetry (OpenCensus)
+// settings on gRPC and HTTP clients.
+// An example reason would be to bind custom telemetry that overrides the defaults.
+func WithTelemetryDisabled() ClientOption {
+	return withTelemetryDisabledOption{}
+}
+
+type withTelemetryDisabledOption struct{}
+
+func (w withTelemetryDisabledOption) Apply(o *internal.DialSettings) {
+	o.TelemetryDisabled = true
+}
+
+// WithGetClientCertificate returns a ClientOption that specifies a
+// callback function for obtaining a TLS client certificate.
+//
+// This option is used for supporting mTLS authentication, where the
+// server validates the client certifcate when establishing a connection.
+//
+// The callback function will be invoked whenever the server requests a
+// certificate from the client. Implementations of the callback function
+// should try to ensure that a valid certificate can be repeatedly returned
+// on demand for the entire life cycle of the transport client. If a nil
+// Certificate is returned (i.e. no Certificate can be obtained), an error
+// should be returned.
+//
+// This is an EXPERIMENTAL API and may be changed or removed in the future.
+func WithGetClientCertificate(getClientCertificate func(*tls.CertificateRequestInfo) (*tls.Certificate, error)) ClientOption {
+	return withGetClientCertificate{getClientCertificate: getClientCertificate}
+}
+
+type withGetClientCertificate struct {
+	getClientCertificate func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
+}
+
+func (w withGetClientCertificate) Apply(o *internal.DialSettings) {
+	o.GetClientCertificate = w.getClientCertificate
 }
