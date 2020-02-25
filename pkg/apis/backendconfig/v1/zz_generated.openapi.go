@@ -37,6 +37,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CustomRequestHeadersConfig": schema_pkg_apis_backendconfig_v1_CustomRequestHeadersConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.HealthCheckConfig":          schema_pkg_apis_backendconfig_v1_HealthCheckConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.IAPConfig":                  schema_pkg_apis_backendconfig_v1_IAPConfig(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.LogConfig":                  schema_pkg_apis_backendconfig_v1_LogConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.OAuthClientCredentials":     schema_pkg_apis_backendconfig_v1_OAuthClientCredentials(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SessionAffinityConfig":      schema_pkg_apis_backendconfig_v1_SessionAffinityConfig(ref),
 	}
@@ -133,11 +134,17 @@ func schema_pkg_apis_backendconfig_v1_BackendConfigSpec(ref common.ReferenceCall
 							Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.HealthCheckConfig"),
 						},
 					},
+					"log": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Log specifies logging specification for Backend Services.",
+							Ref:         ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.LogConfig"),
+						},
+					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CDNConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.ConnectionDrainingConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CustomRequestHeadersConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.HealthCheckConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.IAPConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SecurityPolicyConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SessionAffinityConfig"},
+			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CDNConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.ConnectionDrainingConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CustomRequestHeadersConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.HealthCheckConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.IAPConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.LogConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SecurityPolicyConfig", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SessionAffinityConfig"},
 	}
 }
 
@@ -361,6 +368,33 @@ func schema_pkg_apis_backendconfig_v1_IAPConfig(ref common.ReferenceCallback) co
 		},
 		Dependencies: []string{
 			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.OAuthClientCredentials"},
+	}
+}
+
+func schema_pkg_apis_backendconfig_v1_LogConfig(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "LogConfig contains configuration for logging.",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"enable": {
+						SchemaProps: spec.SchemaProps{
+							Description: "This field denotes whether to enable logging for the load balancer traffic served by this backend service.",
+							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
+					"sampleRate": {
+						SchemaProps: spec.SchemaProps{
+							Description: "This field can only be specified if logging is enabled for this backend service. The value of the field must be in [0, 1]. This configures the sampling rate of requests to the load balancer where 1.0 means all logged requests are reported and 0.0 means no logged requests are reported. The default value is 1.0.",
+							Type:        []string{"number"},
+							Format:      "double",
+						},
+					},
+				},
+			},
+		},
 	}
 }
 
