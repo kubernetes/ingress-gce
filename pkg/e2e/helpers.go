@@ -60,6 +60,9 @@ const (
 	k8sApiPoolInterval = 10 * time.Second
 	k8sApiPollTimeout  = 30 * time.Minute
 
+	updateIngressPollInterval = 30 * time.Second
+	updateIngressPollTimeout  = 15 * time.Minute
+
 	healthyState = "HEALTHY"
 )
 
@@ -137,6 +140,33 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOpt
 			return false, nil
 		}
 		return true, fmt.Errorf("unexpected error from validation: %v", result.Err)
+	})
+	return ing, err
+}
+
+// WaitForHTTPResourceAnnotations waits for http forwarding rule annotation to
+// be added on ingress.
+// This is to handle a special case where ingress updates from https only to http
+// or both http and https enabled. Turns out port 80 on ingress VIP is accessible
+// even when http forwarding rule and target proxy do not exist. So, ingress
+// validator thinks that http load balancer is configured when https only
+// configuration exists.
+// TODO(smatti): Remove this when the above issue is fixed.
+func WaitForHTTPResourceAnnotations(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
+	ingKey := fmt.Sprintf("%s/%s", s.Namespace, ing.Name)
+	klog.V(3).Infof("Waiting for HTTP annotations to be added on Ingress %s", ingKey)
+	err := wait.Poll(updateIngressPollInterval, updateIngressPollTimeout, func() (bool, error) {
+		var err error
+		crud := IngressCRUD{s.f.Clientset}
+		if ing, err = crud.Get(s.Namespace, ing.Name); err != nil {
+			return true, err
+		}
+		if _, ok := ing.Annotations[annotations.HttpForwardingRuleKey]; !ok {
+			klog.V(3).Infof("HTTP forwarding rule annotation not found on ingress %s, retrying", ingKey)
+			return false, nil
+		}
+		klog.V(3).Infof("HTTP forwarding rule annotation found on ingress %s", ingKey)
+		return true, nil
 	})
 	return ing, err
 }

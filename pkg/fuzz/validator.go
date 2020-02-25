@@ -29,6 +29,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
+	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -119,7 +120,13 @@ func (a *IngressValidatorAttributes) schemes() []string {
 
 // baseAttributes apply settings for the vanilla Ingress spec.
 func (a *IngressValidatorAttributes) baseAttributes(ing *v1beta1.Ingress) {
-	a.CheckHTTP = true
+	// Check HTTP endpoint only if its enabled.
+	if annotations.FromIngress(ing).AllowHTTP() {
+		a.CheckHTTP = true
+	} else {
+		a.CheckHTTP = false
+	}
+
 	if len(ing.Spec.TLS) != 0 {
 		a.CheckHTTPS = true
 	}
