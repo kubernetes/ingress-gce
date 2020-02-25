@@ -236,3 +236,8 @@ func CheckEvent(recorder *record.FakeRecorder, expected string, shouldMatch bool
 		return nil
 	}
 }
+
+// Float64ToPtr returns float ptr for given float.
+func Float64ToPtr(val float64) *float64 {
+	return &val
+}

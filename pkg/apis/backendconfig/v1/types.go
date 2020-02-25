@@ -44,7 +44,7 @@ type BackendConfigSpec struct {
 	SessionAffinity      *SessionAffinityConfig      `json:"sessionAffinity,omitempty"`
 	CustomRequestHeaders *CustomRequestHeadersConfig `json:"customRequestHeaders,omitempty"`
 	HealthCheck          *HealthCheckConfig          `json:"healthCheck,omitempty"`
-	// Log specifies logging specification for Backend Services.
+	// Logging specifies the configuration for access logs.
 	Logging *LogConfig `json:"log,omitempty"`
 }
 

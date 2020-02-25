@@ -109,6 +109,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 		needUpdate = features.EnsureDraining(sp, be) || needUpdate
 		needUpdate = features.EnsureAffinity(sp, be) || needUpdate
 		needUpdate = features.EnsureCustomRequestHeaders(sp, be) || needUpdate
+		needUpdate = features.EnsureLogging(sp, be) || needUpdate
 	}
 
 	if needUpdate {

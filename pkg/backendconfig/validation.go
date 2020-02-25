@@ -48,6 +48,10 @@ func Validate(kubeClient kubernetes.Interface, beConfig *backendconfigv1.Backend
 		return err
 	}
 
+	if err := validateLogging(beConfig); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -100,6 +104,19 @@ func validateSessionAffinity(kubeClient kubernetes.Interface, beConfig *backendc
 			return fmt.Errorf("unsupported AffinityCookieTtlSec: %d, should be between 0 and 86400",
 				*beConfig.Spec.SessionAffinity.AffinityCookieTtlSec)
 		}
+	}
+
+	return nil
+}
+
+func validateLogging(beConfig *backendconfigv1.BackendConfig) error {
+	if beConfig.Spec.Logging == nil || beConfig.Spec.Logging.SampleRate == nil {
+		return nil
+	}
+
+	if *beConfig.Spec.Logging.SampleRate < 0.0 || *beConfig.Spec.Logging.SampleRate > 1.0 {
+		return fmt.Errorf("unsupported SampleRate: %f, should be between 0.0 and 1.0",
+			*beConfig.Spec.Logging.SampleRate)
 	}
 
 	return nil
