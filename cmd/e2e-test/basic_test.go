@@ -294,7 +294,7 @@ func TestFrontendResourceDeletion(t *testing.T) {
 			}
 			// Wait for unused frontend resources to be deleted.
 			if err := e2e.WaitForFrontendResourceDeletion(ctx, Framework.Cloud, gclb, deleteOptions); err != nil {
-				t.Errorf("e2e.WaitForIngressDeletion(..., %q, _) = %v, want nil", ingKey, err)
+				t.Errorf("e2e.WaitForFrontendResourceDeletion(..., %q, _) = %v, want nil", ingKey, err)
 			}
 			if gclb, err = e2e.WhiteboxTest(ing, s, Framework.Cloud, ""); err != nil {
 				t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
@@ -325,6 +325,10 @@ func TestFrontendResourceDeletion(t *testing.T) {
 			if ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
 				t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 			}
+			if ing, err = e2e.WaitForHTTPResourceAnnotations(s, ing); err != nil {
+				t.Fatalf("error waiting for http annotations on Ingress %s: %v", ingKey, err)
+			}
+
 			gclb, err = e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
 			if err != nil {
 				t.Fatalf("e2e.WhiteboxTest(%s, ...)", ingKey)
