@@ -120,8 +120,11 @@ func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (
 		applyProbeSettingsToHC(probe, hc)
 	}
 	var bchcc *backendconfigv1.HealthCheckConfig
-	if sp.BackendConfig != nil {
+	if flags.F.EnableBackendConfigHealthCheck && sp.BackendConfig != nil {
 		bchcc = sp.BackendConfig.Spec.HealthCheck
+	}
+	if bchcc != nil {
+		klog.V(2).Infof("ServicePort %v has BackendConfig healthcheck override", sp.ID)
 	}
 	return h.sync(hc, bchcc)
 }

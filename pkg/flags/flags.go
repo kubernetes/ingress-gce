@@ -61,39 +61,41 @@ var (
 	// F are global flags for the controller.
 	F = struct {
 		APIServerHost                    string
+		ASMConfigMapBasedConfigCMName    string
+		ASMConfigMapBasedConfigNamespace string
 		ClusterName                      string
 		ConfigFilePath                   string
-		DefaultSvcHealthCheckPath        string
 		DefaultSvc                       string
+		DefaultSvcHealthCheckPath        string
 		DefaultSvcPortName               string
 		DeleteAllOnQuit                  bool
-		EnableFrontendConfig             bool
-		GCERateLimit                     RateLimitSpecs
 		GCEOperationPollInterval         time.Duration
+		GCERateLimit                     RateLimitSpecs
 		HealthCheckPath                  string
 		HealthzPort                      int
 		InCluster                        bool
 		IngressClass                     string
 		KubeConfigFile                   string
-		ResyncPeriod                     time.Duration
-		Version                          bool
-		WatchNamespace                   string
-		NodePortRanges                   PortRanges
 		NegGCPeriod                      time.Duration
-		EnableReadinessReflector         bool
-		FinalizerAdd                     bool
-		FinalizerRemove                  bool
-		EnableL7Ilb                      bool
-		EnableASMConfigMapBasedConfig    bool
-		ASMConfigMapBasedConfigNamespace string
-		ASMConfigMapBasedConfigCMName    string
-		EnableNonGCPMode                 bool
-		EnableDeleteUnusedFrontends      bool
-		EnableV2FrontendNamer            bool
+		NodePortRanges                   PortRanges
+		ResyncPeriod                     time.Duration
 		RunIngressController             bool
 		RunL4Controller                  bool
+		Version                          bool
+		WatchNamespace                   string
+		LeaderElection                   LeaderElectionConfiguration
 
-		LeaderElection LeaderElectionConfiguration
+		// Feature flags should be named Enablexxx.
+		EnableASMConfigMapBasedConfig  bool
+		EnableBackendConfigHealthCheck bool
+		EnableDeleteUnusedFrontends    bool
+		EnableFrontendConfig           bool
+		EnableL7Ilb                    bool
+		EnableNonGCPMode               bool
+		EnableReadinessReflector       bool
+		EnableV2FrontendNamer          bool
+		FinalizerAdd                   bool // Should have been named Enablexxx.
+		FinalizerRemove                bool // Should have been named Enablexxx.
 	}{}
 )
 
@@ -214,6 +216,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableV2FrontendNamer, "enable-v2-frontend-namer", false, "Enable v2 ingress frontend naming policy.")
 	flag.BoolVar(&F.RunIngressController, "run-ingress-controller", true, `Optional, whether or not to run IngressController as part of glbc. If set to false, ingress resources will not be processed. Only the L4 Service controller will be run, if that flag is set to true.`)
 	flag.BoolVar(&F.RunL4Controller, "run-l4-controller", false, `Optional, whether or not to run L4 Service Controller as part of glbc. If set to true, services of Type:LoadBalancer with Internal annotation will be processed by this controller.`)
+	flag.BoolVar(&F.EnableBackendConfigHealthCheck, "enable-backendconfig-healthcheck", false, "Enable configuration of HealthChecks from the BackendConfig")
 }
 
 type RateLimitSpecs struct {

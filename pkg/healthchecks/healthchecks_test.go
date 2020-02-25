@@ -36,6 +36,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -804,6 +805,11 @@ func setupMockUpdate(mock *cloud.MockGCE) {
 }
 
 func TestSyncServicePort(t *testing.T) {
+	// No parallel().
+	oldEnable := flags.F.EnableBackendConfigHealthCheck
+	flags.F.EnableBackendConfigHealthCheck = true
+	defer func() { flags.F.EnableBackendConfigHealthCheck = oldEnable }()
+
 	type tc struct {
 		desc     string
 		setup    func(*cloud.MockGCE)
