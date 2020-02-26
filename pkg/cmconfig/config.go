@@ -11,6 +11,7 @@ import (
 // Config holds configmap based configurations.
 type Config struct {
 	EnableASM                   bool
+	ASMReady                    bool
 	ASMServiceNEGSkipNamespaces []string
 }
 
@@ -19,6 +20,7 @@ const (
 	falseValue = "false"
 
 	enableASM         = "enable-asm"
+	asmReady          = "asm-ready"
 	asmSkipNamespaces = "asm-skip-namespaces"
 )
 
@@ -29,7 +31,7 @@ func NewConfig() Config {
 
 // Equals returns true if c equals to other.
 func (c *Config) Equals(other *Config) bool {
-	return reflect.DeepEqual(c, other)
+	return c.EnableASM == other.EnableASM && reflect.DeepEqual(c.ASMServiceNEGSkipNamespaces, other.ASMServiceNEGSkipNamespaces)
 }
 
 // LoadValue loads configs from a map, it will ignore any unknow/unvalid field.
@@ -46,6 +48,9 @@ func (c *Config) LoadValue(m map[string]string) error {
 			}
 		} else if k == asmSkipNamespaces {
 			c.ASMServiceNEGSkipNamespaces = strings.Split(v, ",")
+		} else if k == asmReady {
+			// Ignore this because it's a status.
+			continue
 		} else {
 			errList = append(errList, fmt.Errorf("The map contains a unknown key-value pair: %s:%s", k, v))
 		}
