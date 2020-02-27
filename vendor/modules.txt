@@ -31,7 +31,7 @@ github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/sortkeys
 # github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef => github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef
 github.com/golang/groupcache/lru
-# github.com/golang/protobuf v1.3.1 => github.com/golang/protobuf v1.3.1
+# github.com/golang/protobuf v1.3.2 => github.com/golang/protobuf v1.3.1
 github.com/golang/protobuf/proto
 github.com/golang/protobuf/ptypes/any
 github.com/golang/protobuf/ptypes
@@ -39,6 +39,8 @@ github.com/golang/protobuf/ptypes/duration
 github.com/golang/protobuf/ptypes/timestamp
 # github.com/google/gofuzz v1.0.0 => github.com/google/gofuzz v1.0.0
 github.com/google/gofuzz
+# github.com/googleapis/gax-go/v2 v2.0.5
+github.com/googleapis/gax-go/v2
 # github.com/googleapis/gnostic v0.2.0 => github.com/googleapis/gnostic v0.2.0
 github.com/googleapis/gnostic/OpenAPIv2
 github.com/googleapis/gnostic/compiler
@@ -68,7 +70,7 @@ github.com/modern-go/reflect2
 github.com/prometheus/client_golang/prometheus
 github.com/prometheus/client_golang/prometheus/promhttp
 github.com/prometheus/client_golang/prometheus/internal
-# github.com/prometheus/client_model v0.0.0-20190129233127-fd36f4220a90 => github.com/prometheus/client_model v0.0.0-20190129233127-fd36f4220a90
+# github.com/prometheus/client_model v0.0.0-20190812154241-14fe0d1b01d4 => github.com/prometheus/client_model v0.0.0-20190129233127-fd36f4220a90
 github.com/prometheus/client_model/go
 # github.com/prometheus/common v0.3.0 => github.com/prometheus/common v0.3.0
 github.com/prometheus/common/expfmt
@@ -123,17 +125,18 @@ golang.org/x/text/width
 golang.org/x/text/transform
 # golang.org/x/time v0.0.0-20190308202827-9d24e82272b4 => golang.org/x/time v0.0.0-20190308202827-9d24e82272b4
 golang.org/x/time/rate
-# google.golang.org/api v0.6.1-0.20190607001116-5213b8090861 => google.golang.org/api v0.6.1-0.20190607001116-5213b8090861
-google.golang.org/api/compute/v0.beta
+# google.golang.org/api v0.17.1-0.20200224000813-c3b745b3f301 => google.golang.org/api v0.17.1-0.20200224000813-c3b745b3f301
 google.golang.org/api/compute/v1
+google.golang.org/api/compute/v0.beta
 google.golang.org/api/compute/v0.alpha
 google.golang.org/api/googleapi
 google.golang.org/api/container/v1
 google.golang.org/api/tpu/v1
-google.golang.org/api/gensupport
+google.golang.org/api/internal/gensupport
 google.golang.org/api/option
+google.golang.org/api/option/internaloption
 google.golang.org/api/transport/http
-google.golang.org/api/googleapi/internal/uritemplates
+google.golang.org/api/internal/third_party/uritemplates
 google.golang.org/api/internal
 google.golang.org/api/googleapi/transport
 google.golang.org/api/transport/http/internal/propagation
@@ -148,14 +151,17 @@ google.golang.org/appengine/internal/base
 google.golang.org/appengine/internal/datastore
 google.golang.org/appengine/internal/log
 google.golang.org/appengine/internal/remote_api
-# google.golang.org/genproto v0.0.0-20190502173448-54afdca5d873
+# google.golang.org/genproto v0.0.0-20190819201941-24fa4b261c55
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.20.1
+# google.golang.org/grpc v1.27.0
 google.golang.org/grpc
-google.golang.org/grpc/naming
-google.golang.org/grpc/balancer
-google.golang.org/grpc/balancer/roundrobin
 google.golang.org/grpc/codes
+google.golang.org/grpc/status
+google.golang.org/grpc/naming
+google.golang.org/grpc/backoff
+google.golang.org/grpc/balancer
+google.golang.org/grpc/balancer/base
+google.golang.org/grpc/balancer/roundrobin
 google.golang.org/grpc/connectivity
 google.golang.org/grpc/credentials
 google.golang.org/grpc/encoding
@@ -165,24 +171,25 @@ google.golang.org/grpc/internal
 google.golang.org/grpc/internal/backoff
 google.golang.org/grpc/internal/balancerload
 google.golang.org/grpc/internal/binarylog
+google.golang.org/grpc/internal/buffer
 google.golang.org/grpc/internal/channelz
 google.golang.org/grpc/internal/envconfig
 google.golang.org/grpc/internal/grpcrand
 google.golang.org/grpc/internal/grpcsync
+google.golang.org/grpc/internal/resolver/dns
+google.golang.org/grpc/internal/resolver/passthrough
 google.golang.org/grpc/internal/transport
 google.golang.org/grpc/keepalive
 google.golang.org/grpc/metadata
 google.golang.org/grpc/peer
 google.golang.org/grpc/resolver
-google.golang.org/grpc/resolver/dns
-google.golang.org/grpc/resolver/passthrough
+google.golang.org/grpc/serviceconfig
 google.golang.org/grpc/stats
-google.golang.org/grpc/status
 google.golang.org/grpc/tap
-google.golang.org/grpc/balancer/base
 google.golang.org/grpc/credentials/internal
 google.golang.org/grpc/binarylog/grpc_binarylog_v1
 google.golang.org/grpc/internal/syscall
+google.golang.org/grpc/attributes
 # gopkg.in/gcfg.v1 v1.2.3 => gopkg.in/gcfg.v1 v1.2.3
 gopkg.in/gcfg.v1
 gopkg.in/gcfg.v1/scanner
