@@ -295,9 +295,11 @@ type BackendService struct {
 	Fingerprint string `json:"fingerprint,omitempty"`
 	// The list of URLs to the HttpHealthCheck or HttpsHealthCheck resource
 	// for health checking this BackendService. Currently at most one health
-	// check can be specified, and a health check is required for Compute
-	// Engine backend services. A health check must not be specified for App
-	// Engine backend and Cloud Function backend.
+	// check can be specified. Health check is optional for Compute Engine
+	// backend services if there is no backend. A health check must not be
+	// specified when adding Internet Network Endpoint Group or Serverless
+	// Network Endpoint Group as backends. In all other cases, a health
+	// check is required for Compute Engine backend services.
 	//
 	// For internal load balancing, a URL to a HealthCheck resource must be
 	// specified instead.
@@ -344,6 +346,9 @@ type BackendService struct {
 	//
 	// - A global backend service with the load_balancing_scheme set to
 	// INTERNAL_SELF_MANAGED.
+	//
+	// If sessionAffinity is not NONE, and this field is not set to >MAGLEV
+	// or RING_HASH, session affinity settings will not take effect.
 	LocalityLbPolicy string `json:"localityLbPolicy,omitempty"`
 	// This field denotes the logging options for the load balancer traffic
 	// served by this backend service. If logging is enabled, logs will be
@@ -428,9 +433,9 @@ type BackendService struct {
 	// When the loadBalancingScheme is INTERNAL, possible values are NONE,
 	// CLIENT_IP, CLIENT_IP_PROTO, or CLIENT_IP_PORT_PROTO.
 	//
-	// When the loadBalancingScheme is INTERNAL_SELF_MANAGED, possible
-	// values are NONE, CLIENT_IP, GENERATED_COOKIE, HEADER_FIELD, or
-	// HTTP_COOKIE.
+	// When the loadBalancingScheme is INTERNAL_SELF_MANAGED, or
+	// INTERNAL_MANAGED, possible values are NONE, CLIENT_IP,
+	// GENERATED_COOKIE, HEADER_FIELD, or HTTP_COOKIE.
 	SessionAffinity string `json:"sessionAffinity,omitempty"`
 	// The backend service timeout has a different meaning depending on the
 	// type of load balancer. For more information read,  Backend service
@@ -708,8 +713,8 @@ type CorsPolicy struct {
 	Disabled bool `json:"disabled,omitempty"`
 	// Specifies the content for the Access-Control-Expose-Headers header.
 	ExposeHeaders []string `json:"exposeHeaders,omitempty"`
-	// Specifies how long the results of a preflight request can be cached.
-	// This translates to the content for the Access-Control-Max-Age header.
+	// Specifies how long results of a preflight request can be cached in
+	// seconds. This translates to the Access-Control-Max-Age header.
 	MaxAge          int64    `json:"maxAge,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
@@ -789,8 +794,8 @@ type ForwardingRule struct {
 	// specifications](/load-balancing/docs/forwarding-rule-concepts#ip_addre
 	// ss_specifications).
 	IPAddress string `json:"IPAddress,omitempty"`
-	// The IP protocol to which this rule applies. Valid options are TCP,
-	// UDP, ESP, AH, SCTP or ICMP.
+	// The IP protocol to which this rule applies. For protocol forwarding,
+	// valid options are TCP, UDP, ESP, AH, SCTP or ICMP.
 	//
 	// For Internal TCP/UDP Load Balancing, the load balancing scheme is
 	// INTERNAL, and one of TCP or UDP are valid. For Traffic Director, the
@@ -833,35 +838,41 @@ type ForwardingRule struct {
 	// setLabels method. Each label key/value pair must comply with RFC1035.
 	// Label values may be empty.
 	Labels map[string]string `json:"labels,omitempty"`
-	// Specifies the forwarding rule type. EXTERNAL is used for: - Classic
-	// Cloud VPN gateways - Protocol forwarding to VMs from an external IP
-	// address - The following load balancers: HTTP(S), SSL Proxy, TCP
-	// Proxy, and Network TCP/UDP.
+	// Specifies the forwarding rule type.
 	//
-	// INTERNAL is used for: - Protocol forwarding to VMs from an internal
-	// IP address - Internal TCP/UDP load balancers
 	//
-	// INTERNAL_MANAGED is used for: - Internal HTTP(S) load
-	// balancers
-	//
-	// INTERNAL_SELF_MANAGED is used for: - Traffic Director
+	// - EXTERNAL is used for:
+	// - Classic Cloud VPN gateways
+	// - Protocol forwarding to VMs from an external IP address
+	// - The following load balancers: HTTP(S), SSL Proxy, TCP Proxy, and
+	// Network TCP/UDP
+	// - INTERNAL is used for:
+	// - Protocol forwarding to VMs from an internal IP address
+	// - Internal TCP/UDP load balancers
+	// - INTERNAL_MANAGED is used for:
+	// - Internal HTTP(S) load balancers
+	// - >INTERNAL_SELF_MANAGED is used for:
+	// - Traffic Director
 	//
 	// For more information about forwarding rules, refer to Forwarding rule
 	// concepts.
 	LoadBalancingScheme string `json:"loadBalancingScheme,omitempty"`
 	// Opaque filter criteria used by Loadbalancer to restrict routing
-	// configuration to a limited set xDS compliant clients. In their xDS
+	// configuration to a limited set of xDS compliant clients. In their xDS
 	// requests to Loadbalancer, xDS clients present node metadata. If a
-	// match takes place, the relevant routing configuration is made
-	// available to those proxies.
+	// match takes place, the relevant configuration is made available to
+	// those proxies. Otherwise, all the resources (e.g. TargetHttpProxy,
+	// UrlMap) referenced by the ForwardingRule will not be visible to those
+	// proxies.
 	// For each metadataFilter in this list, if its filterMatchCriteria is
 	// set to MATCH_ANY, at least one of the filterLabels must match the
 	// corresponding label provided in the metadata. If its
 	// filterMatchCriteria is set to MATCH_ALL, then all of its filterLabels
-	// must match with corresponding labels in the provided
+	// must match with corresponding labels provided in the
 	// metadata.
-	// metadataFilters specified here can be overridden by those specified
-	// in the UrlMap that this ForwardingRule references.
+	// metadataFilters specified here will be applifed before those
+	// specified in the UrlMap that this ForwardingRule
+	// references.
 	// metadataFilters only applies to Loadbalancers that have their
 	// loadBalancingScheme set to INTERNAL_SELF_MANAGED.
 	MetadataFilters []*MetadataFilter `json:"metadataFilters,omitempty"`
@@ -891,23 +902,21 @@ type ForwardingRule struct {
 	// IPAddress is specified, this value must be equal to the networkTier
 	// of the Address.
 	NetworkTier string `json:"networkTier,omitempty"`
-	// This field is deprecated. See the port
-	// field.
-	PortRange string `json:"portRange,omitempty"`
-	// List of comma-separated ports. The forwarding rule forwards packets
-	// with matching destination ports. If the forwarding rule's
-	// loadBalancingScheme is EXTERNAL, and the forwarding rule references a
-	// target pool, specifying ports is optional. You can specify an
-	// unlimited number of ports, but they must be contiguous. If you omit
-	// ports, GCP forwards traffic on any port of the forwarding rule's
-	// protocol.
+	// When the load balancing scheme is EXTERNAL, INTERNAL_SELF_MANAGED and
+	// INTERNAL_MANAGED, you can specify a port_range. Use with a forwarding
+	// rule that points to a target proxy or a target pool. Do not use with
+	// a forwarding rule that points to a backend service. This field is
+	// used along with the target field for TargetHttpProxy,
+	// TargetHttpsProxy, TargetSslProxy, TargetTcpProxy, TargetVpnGateway,
+	// TargetPool, TargetInstance.
 	//
-	// If the forwarding rule's loadBalancingScheme is EXTERNAL, and the
-	// forwarding rule references a target HTTP proxy, target HTTPS proxy,
-	// target TCP proxy, target SSL proxy, or target VPN gateway, you must
-	// specify ports using the following constraints:
+	// Applicable only when IPProtocol is TCP, UDP, or SCTP, only packets
+	// addressed to ports in the specified range will be forwarded to
+	// target. Forwarding rules with the same [IPAddress, IPProtocol] pair
+	// must have disjoint port ranges.
 	//
-	//
+	// Some types of forwarding target have constraints on the acceptable
+	// ports:
 	// - TargetHttpProxy: 80, 8080
 	// - TargetHttpsProxy: 443
 	// - TargetTcpProxy: 25, 43, 110, 143, 195, 443, 465, 587, 700, 993,
@@ -915,21 +924,21 @@ type ForwardingRule struct {
 	// - TargetSslProxy: 25, 43, 110, 143, 195, 443, 465, 587, 700, 993,
 	// 995, 1688, 1883, 5222
 	// - TargetVpnGateway: 500, 4500
+	PortRange string `json:"portRange,omitempty"`
+	// This field is used along with the backend_service field for internal
+	// load balancing.
 	//
-	// If the forwarding rule's loadBalancingScheme is INTERNAL, you must
+	// When the load balancing scheme is INTERNAL, a list of ports can be
+	// configured, for example, ['80'], ['8000','9000']. Only packets
+	// addressed to these ports are forwarded to the backends configured
+	// with the forwarding rule.
+	//
+	// If the forwarding rule's loadBalancingScheme is INTERNAL, you can
 	// specify ports in one of the following ways:
 	//
 	// * A list of up to five ports, which can be non-contiguous * Keyword
 	// ALL, which causes the forwarding rule to forward traffic on any port
 	// of the forwarding rule's protocol.
-	//
-	// The ports field is used along with the target field for
-	// TargetHttpProxy, TargetHttpsProxy, TargetSslProxy, TargetTcpProxy,
-	// TargetVpnGateway, TargetPool, TargetInstance.
-	//
-	// Applicable only when IPProtocol is TCP, UDP, or SCTP. Forwarding
-	// rules with the same [IPAddress, IPProtocol] pair must have disjoint
-	// port ranges.
 	Ports []string `json:"ports,omitempty"`
 	// [Output Only] URL of the region where the regional forwarding rule
 	// resides. This field is not applicable to global forwarding rules. You
@@ -974,7 +983,7 @@ type ForwardingRule struct {
 	// as the forwarding rule. For global forwarding rules, this target must
 	// be a global load balancing resource. The forwarded traffic must be of
 	// a type appropriate to the target object. For INTERNAL_SELF_MANAGED
-	// load balancing, only HTTP and HTTPS targets are valid.
+	// load balancing, only targetHttpProxy is valid, not targetHttpsProxy.
 	Target                   string `json:"target,omitempty"`
 	googleapi.ServerResponse `json:"-"`
 	ForceSendFields          []string `json:"-"`
@@ -1014,24 +1023,18 @@ type HTTP2HealthCheck struct {
 	PortName string `json:"portName,omitempty"`
 	// Specifies how port is selected for health checking, can be one of
 	// following values:
-	// USE_FIXED_PORT: The port number in
-	// port
-	// is used for health checking.
-	// USE_NAMED_PORT: The
-	// portName
-	// is used for health checking.
+	// USE_FIXED_PORT: The port number in port is used for health
+	// checking.
+	// USE_NAMED_PORT: The portName is used for health
+	// checking.
 	// USE_SERVING_PORT: For NetworkEndpointGroup, the port specified for
 	// each network endpoint is used for health checking. For other
 	// backends, the port or named port specified in the Backend Service is
 	// used for health checking.
 	//
 	//
-	// If not specified, HTTP2 health check follows behavior specified
-	// in
-	// port
-	// and
-	// portName
-	// fields.
+	// If not specified, HTTP2 health check follows behavior specified in
+	// port and portName fields.
 	PortSpecification string `json:"portSpecification,omitempty"`
 	// Specifies the type of proxy header to append before sending data to
 	// the backend, either NONE or PROXY_V1. The default is NONE.
@@ -1061,24 +1064,18 @@ type HTTPHealthCheck struct {
 	PortName string `json:"portName,omitempty"`
 	// Specifies how port is selected for health checking, can be one of
 	// following values:
-	// USE_FIXED_PORT: The port number in
-	// port
-	// is used for health checking.
-	// USE_NAMED_PORT: The
-	// portName
-	// is used for health checking.
+	// USE_FIXED_PORT: The port number in port is used for health
+	// checking.
+	// USE_NAMED_PORT: The portName is used for health
+	// checking.
 	// USE_SERVING_PORT: For NetworkEndpointGroup, the port specified for
 	// each network endpoint is used for health checking. For other
 	// backends, the port or named port specified in the Backend Service is
 	// used for health checking.
 	//
 	//
-	// If not specified, HTTP health check follows behavior specified
-	// in
-	// port
-	// and
-	// portName
-	// fields.
+	// If not specified, HTTP health check follows behavior specified in
+	// port and portName fields.
 	PortSpecification string `json:"portSpecification,omitempty"`
 	// Specifies the type of proxy header to append before sending data to
 	// the backend, either NONE or PROXY_V1. The default is NONE.
@@ -1108,24 +1105,18 @@ type HTTPSHealthCheck struct {
 	PortName string `json:"portName,omitempty"`
 	// Specifies how port is selected for health checking, can be one of
 	// following values:
-	// USE_FIXED_PORT: The port number in
-	// port
-	// is used for health checking.
-	// USE_NAMED_PORT: The
-	// portName
-	// is used for health checking.
+	// USE_FIXED_PORT: The port number in port is used for health
+	// checking.
+	// USE_NAMED_PORT: The portName is used for health
+	// checking.
 	// USE_SERVING_PORT: For NetworkEndpointGroup, the port specified for
 	// each network endpoint is used for health checking. For other
 	// backends, the port or named port specified in the Backend Service is
 	// used for health checking.
 	//
 	//
-	// If not specified, HTTPS health check follows behavior specified
-	// in
-	// port
-	// and
-	// portName
-	// fields.
+	// If not specified, HTTPS health check follows behavior specified in
+	// port and portName fields.
 	PortSpecification string `json:"portSpecification,omitempty"`
 	// Specifies the type of proxy header to append before sending data to
 	// the backend, either NONE or PROXY_V1. The default is NONE.
@@ -1354,7 +1345,7 @@ type HttpHeaderMatch struct {
 	// presentMatch or rangeMatch must be set.
 	PrefixMatch string `json:"prefixMatch,omitempty"`
 	// A header with the contents of headerName must exist. The match takes
-	// place whether or not the request's header has a value or not.
+	// place whether or not the request's header has a value.
 	// Only one of exactMatch, prefixMatch, suffixMatch, regexMatch,
 	// presentMatch or rangeMatch must be set.
 	PresentMatch bool `json:"presentMatch,omitempty"`
@@ -1368,8 +1359,10 @@ type HttpHeaderMatch struct {
 	// - -3someString will not match.
 	// Only one of exactMatch, prefixMatch, suffixMatch, regexMatch,
 	// presentMatch or rangeMatch must be set.
+	// Note that rangeMatch is not supported for Loadbalancers that have
+	// their loadBalancingScheme set to EXTERNAL.
 	RangeMatch *Int64RangeMatch `json:"rangeMatch,omitempty"`
-	// The value of the header must match the regualar expression specified
+	// The value of the header must match the regular expression specified
 	// in regexMatch. For regular expression grammar, please see:
 	// en.cppreference.com/w/cpp/regex/ecmascript
 	// For matching against a port specified in the HTTP request, use a
@@ -1377,6 +1370,8 @@ type HttpHeaderMatch struct {
 	// satisfies the RFC2616 Host header's port specifier.
 	// Only one of exactMatch, prefixMatch, suffixMatch, regexMatch,
 	// presentMatch or rangeMatch must be set.
+	// Note that regexMatch only applies to Loadbalancers that have their
+	// loadBalancingScheme set to INTERNAL_SELF_MANAGED.
 	RegexMatch string `json:"regexMatch,omitempty"`
 	// The value of the header must end with the contents of
 	// suffixMatch.
@@ -1406,7 +1401,7 @@ type HttpHeaderOption struct {
 type HttpQueryParameterMatch struct {
 	// The queryParameterMatch matches if the value of the parameter exactly
 	// matches the contents of exactMatch.
-	// Only one of presentMatch, exactMatch and regexMatch must be set.
+	// Only one of presentMatch, exactMatch or regexMatch must be set.
 	ExactMatch string `json:"exactMatch,omitempty"`
 	// The name of the query parameter to match. The query parameter must
 	// exist in the request, in the absence of which the request match
@@ -1415,13 +1410,15 @@ type HttpQueryParameterMatch struct {
 	// Specifies that the queryParameterMatch matches if the request
 	// contains the query parameter, irrespective of whether the parameter
 	// has a value or not.
-	// Only one of presentMatch, exactMatch and regexMatch must be set.
+	// Only one of presentMatch, exactMatch or regexMatch must be set.
 	PresentMatch bool `json:"presentMatch,omitempty"`
 	// The queryParameterMatch matches if the value of the parameter matches
 	// the regular expression specified by regexMatch. For the regular
 	// expression grammar, please see
 	// en.cppreference.com/w/cpp/regex/ecmascript
-	// Only one of presentMatch, exactMatch and regexMatch must be set.
+	// Only one of presentMatch, exactMatch or regexMatch must be set.
+	// Note that regexMatch only applies when the loadBalancingScheme is set
+	// to INTERNAL_SELF_MANAGED.
 	RegexMatch      string   `json:"regexMatch,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
@@ -1442,12 +1439,18 @@ type HttpRedirectAction struct {
 	HttpsRedirect bool `json:"httpsRedirect,omitempty"`
 	// The path that will be used in the redirect response instead of the
 	// one that was supplied in the request.
-	// Only one of pathRedirect or prefixRedirect must be specified.
+	// pathRedirect cannot be supplied together with prefixRedirect. Supply
+	// one alone or neither. If neither is supplied, the path of the
+	// original request will be used for the redirect.
 	// The value must be between 1 and 1024 characters.
 	PathRedirect string `json:"pathRedirect,omitempty"`
 	// The prefix that replaces the prefixMatch specified in the
 	// HttpRouteRuleMatch, retaining the remaining portion of the URL before
 	// redirecting the request.
+	// prefixRedirect cannot be supplied together with pathRedirect. Supply
+	// one alone or neither. If neither is supplied, the path of the
+	// original request will be used for the redirect.
+	// The value must be between 1 and 1024 characters.
 	PrefixRedirect string `json:"prefixRedirect,omitempty"`
 	// The HTTP Status code to use for this RedirectAction.
 	// Supported values are:
@@ -1539,7 +1542,7 @@ type HttpRouteAction struct {
 	// services associated with the route.
 	Timeout *Duration `json:"timeout,omitempty"`
 	// The spec to modify the URL of the request, prior to forwarding the
-	// request to the matched service
+	// request to the matched service.
 	UrlRewrite *UrlRewrite `json:"urlRewrite,omitempty"`
 	// A list of weighted backend services to send traffic to when a route
 	// match occurs. The weights determine the fraction of traffic that
@@ -1588,7 +1591,8 @@ type HttpRouteRule struct {
 	// routeAction specifies any  weightedBackendServices, service must not
 	// be set. Conversely if service is set, routeAction cannot contain any
 	// weightedBackendServices.
-	// Only one of routeAction or urlRedirect must be set.
+	// Only one of urlRedirect, service or
+	// routeAction.weightedBackendService must be set.
 	RouteAction *HttpRouteAction `json:"routeAction,omitempty"`
 	// The full or partial URL of the backend service resource to which
 	// traffic is directed if this rule is matched. If routeAction is
@@ -1610,11 +1614,11 @@ type HttpRouteRule struct {
 
 // HttpRouteRuleMatch is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type HttpRouteRuleMatch struct {
-	// For satifying the matchRule condition, the path of the request must
+	// For satisfying the matchRule condition, the path of the request must
 	// exactly match the value specified in fullPathMatch after removing any
 	// query parameters and anchor that may be part of the original
 	// URL.
-	// FullPathMatch must be between 1 and 1024 characters.
+	// fullPathMatch must be between 1 and 1024 characters.
 	// Only one of prefixMatch, fullPathMatch or regexMatch must be
 	// specified.
 	FullPathMatch string `json:"fullPathMatch,omitempty"`
@@ -1624,10 +1628,10 @@ type HttpRouteRuleMatch struct {
 	// Specifies that prefixMatch and fullPathMatch matches are case
 	// sensitive.
 	// The default value is false.
-	// caseSensitive must not be used with regexMatch.
+	// ignoreCase must not be used with regexMatch.
 	IgnoreCase bool `json:"ignoreCase,omitempty"`
 	// Opaque filter criteria used by Loadbalancer to restrict routing
-	// configuration to a limited set xDS compliant clients. In their xDS
+	// configuration to a limited set of xDS compliant clients. In their xDS
 	// requests to Loadbalancer, xDS clients present node metadata. If a
 	// match takes place, the relevant routing configuration is made
 	// available to those proxies.
@@ -1635,14 +1639,15 @@ type HttpRouteRuleMatch struct {
 	// set to MATCH_ANY, at least one of the filterLabels must match the
 	// corresponding label provided in the metadata. If its
 	// filterMatchCriteria is set to MATCH_ALL, then all of its filterLabels
-	// must match with corresponding labels in the provided
+	// must match with corresponding labels provided in the
 	// metadata.
-	// metadataFilters specified here can be overrides those specified in
-	// ForwardingRule that refers to this UrlMap.
+	// metadataFilters specified here will be applied after those specified
+	// in ForwardingRule that refers to the UrlMap this HttpRouteRuleMatch
+	// belongs to.
 	// metadataFilters only applies to Loadbalancers that have their
 	// loadBalancingScheme set to INTERNAL_SELF_MANAGED.
 	MetadataFilters []*MetadataFilter `json:"metadataFilters,omitempty"`
-	// For satifying the matchRule condition, the request's path must begin
+	// For satisfying the matchRule condition, the request's path must begin
 	// with the specified prefixMatch. prefixMatch must begin with a /.
 	// The value must be between 1 and 1024 characters.
 	// Only one of prefixMatch, fullPathMatch or regexMatch must be
@@ -1651,13 +1656,15 @@ type HttpRouteRuleMatch struct {
 	// Specifies a list of query parameter match criteria, all of which must
 	// match corresponding query parameters in the request.
 	QueryParameterMatches []*HttpQueryParameterMatch `json:"queryParameterMatches,omitempty"`
-	// For satifying the matchRule condition, the path of the request must
+	// For satisfying the matchRule condition, the path of the request must
 	// satisfy the regular expression specified in regexMatch after removing
 	// any query parameters and anchor supplied with the original URL. For
 	// regular expression grammar please see
 	// en.cppreference.com/w/cpp/regex/ecmascript
 	// Only one of prefixMatch, fullPathMatch or regexMatch must be
 	// specified.
+	// Note that regexMatch only applies to Loadbalancers that have their
+	// loadBalancingScheme set to INTERNAL_SELF_MANAGED.
 	RegexMatch      string   `json:"regexMatch,omitempty"`
 	ForceSendFields []string `json:"-"`
 	NullFields      []string `json:"-"`
@@ -1684,7 +1691,7 @@ type Jwt struct {
 	// an email address. Examples: https://securetoken.google.com,
 	// 1234567-compute@developer.gserviceaccount.com
 	Issuer string `json:"issuer,omitempty"`
-	// The provider?s public key set to validate the signature of the JWT.
+	// The provider's public key set to validate the signature of the JWT.
 	JwksPublicKeys string `json:"jwksPublicKeys,omitempty"`
 	// jwt_headers and jwt_params define where to extract the JWT from an
 	// HTTP request. If no explicit location is specified, the following
@@ -1929,8 +1936,8 @@ type NetworkEndpointGroupAppEngine struct {
 type NetworkEndpointGroupCloudFunction struct {
 	// A user-defined name of the Cloud Function.
 	//
-	// The service name must be 1-63 characters long, and comply with
-	// RFC1035.
+	// The function name is case-sensitive and must be 1-63 characters
+	// long.
 	//
 	// Example value: "func1".
 	Function string `json:"function,omitempty"`
@@ -1951,7 +1958,7 @@ type NetworkEndpointGroupCloudFunction struct {
 type NetworkEndpointGroupCloudRun struct {
 	// Cloud Run service is the main resource of Cloud Run.
 	//
-	// The tag must be 1-63 characters long, and comply with
+	// The service must be 1-63 characters long, and comply with
 	// RFC1035.
 	//
 	// Example value: "run-service".
@@ -2176,8 +2183,8 @@ type PathMatcher struct {
 	// - compute.backendBuckets.use
 	// - compute.backendServices.use
 	DefaultService string `json:"defaultService,omitempty"`
-	// When when none of the specified pathRules or routeRules match, the
-	// request is redirected to a URL specified by defaultUrlRedirect.
+	// When none of the specified pathRules or routeRules match, the request
+	// is redirected to a URL specified by defaultUrlRedirect.
 	// If defaultUrlRedirect is specified, defaultService or
 	// defaultRouteAction must not be set.
 	DefaultUrlRedirect *HttpRedirectAction `json:"defaultUrlRedirect,omitempty"`
@@ -2201,15 +2208,12 @@ type PathMatcher struct {
 	// Within a given pathMatcher, only one of pathRules or routeRules must
 	// be set.
 	PathRules []*PathRule `json:"pathRules,omitempty"`
-	// The list of ordered HTTP route rules. Use this list instead of
-	// pathRules when advanced route matching and routing actions are
-	// desired. The order of specifying routeRules matters: the first rule
-	// that matches will cause its specified routing action to take
-	// effect.
-	// Within a given pathMatcher, only one of pathRules or routeRules must
-	// be set.
-	// routeRules are not supported in UrlMaps intended for External Load
-	// balancers.
+	// The list of HTTP route rules. Use this list instead of pathRules when
+	// advanced route matching and routing actions are desired. routeRules
+	// are evaluated in order of priority, from the lowest to highest
+	// number.
+	// Within a given pathMatcher, you can set only one of pathRules or
+	// routeRules.
 	RouteRules      []*HttpRouteRule `json:"routeRules,omitempty"`
 	ForceSendFields []string         `json:"-"`
 	NullFields      []string         `json:"-"`
@@ -2355,24 +2359,18 @@ type SSLHealthCheck struct {
 	PortName string `json:"portName,omitempty"`
 	// Specifies how port is selected for health checking, can be one of
 	// following values:
-	// USE_FIXED_PORT: The port number in
-	// port
-	// is used for health checking.
-	// USE_NAMED_PORT: The
-	// portName
-	// is used for health checking.
+	// USE_FIXED_PORT: The port number in port is used for health
+	// checking.
+	// USE_NAMED_PORT: The portName is used for health
+	// checking.
 	// USE_SERVING_PORT: For NetworkEndpointGroup, the port specified for
 	// each network endpoint is used for health checking. For other
 	// backends, the port or named port specified in the Backend Service is
 	// used for health checking.
 	//
 	//
-	// If not specified, SSL health check follows behavior specified
-	// in
-	// port
-	// and
-	// portName
-	// fields.
+	// If not specified, SSL health check follows behavior specified in port
+	// and portName fields.
 	PortSpecification string `json:"portSpecification,omitempty"`
 	// Specifies the type of proxy header to append before sending data to
 	// the backend, either NONE or PROXY_V1. The default is NONE.
@@ -2512,24 +2510,18 @@ type TCPHealthCheck struct {
 	PortName string `json:"portName,omitempty"`
 	// Specifies how port is selected for health checking, can be one of
 	// following values:
-	// USE_FIXED_PORT: The port number in
-	// port
-	// is used for health checking.
-	// USE_NAMED_PORT: The
-	// portName
-	// is used for health checking.
+	// USE_FIXED_PORT: The port number in port is used for health
+	// checking.
+	// USE_NAMED_PORT: The portName is used for health
+	// checking.
 	// USE_SERVING_PORT: For NetworkEndpointGroup, the port specified for
 	// each network endpoint is used for health checking. For other
 	// backends, the port or named port specified in the Backend Service is
 	// used for health checking.
 	//
 	//
-	// If not specified, TCP health check follows behavior specified
-	// in
-	// port
-	// and
-	// portName
-	// fields.
+	// If not specified, TCP health check follows behavior specified in port
+	// and portName fields.
 	PortSpecification string `json:"portSpecification,omitempty"`
 	// Specifies the type of proxy header to append before sending data to
 	// the backend, either NONE or PROXY_V1. The default is NONE.

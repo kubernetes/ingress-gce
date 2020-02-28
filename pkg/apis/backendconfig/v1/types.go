@@ -44,6 +44,8 @@ type BackendConfigSpec struct {
 	SessionAffinity      *SessionAffinityConfig      `json:"sessionAffinity,omitempty"`
 	CustomRequestHeaders *CustomRequestHeadersConfig `json:"customRequestHeaders,omitempty"`
 	HealthCheck          *HealthCheckConfig          `json:"healthCheck,omitempty"`
+	// Log specifies logging specification for Backend Services.
+	Logging *LogConfig `json:"log,omitempty"`
 }
 
 // BackendConfigStatus is the status for a BackendConfig resource
@@ -156,4 +158,18 @@ type HealthCheckConfig struct {
 	// RequestPath is a health check parameter. See
 	// https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.
 	RequestPath *string `json:"requestPath,omitempty"`
+}
+
+// LogConfig contains configuration for logging.
+// +k8s:openapi-gen=true
+type LogConfig struct {
+	// This field denotes whether to enable logging for the load balancer
+	// traffic served by this backend service.
+	Enable bool `json:"enable,omitempty"`
+	// This field can only be specified if logging is enabled for this
+	// backend service. The value of the field must be in [0, 1]. This
+	// configures the sampling rate of requests to the load balancer where
+	// 1.0 means all logged requests are reported and 0.0 means no logged
+	// requests are reported. The default value is 1.0.
+	SampleRate *float64 `json:"sampleRate,omitempty"`
 }
