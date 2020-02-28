@@ -72,6 +72,10 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 		Port:         namedPort.Port,
 		PortName:     namedPort.Name,
 		HealthChecks: []string{hcLink},
+		// LogConfig is using GA API so this is not considered for computing API version.
+		LogConfig: &composite.BackendServiceLogConfig{
+			Enable: true,
+		},
 	}
 	ensureDescription(be, &sp)
 	if err := composite.CreateBackendService(be, b.cloud, meta.GlobalKey(be.Name)); err != nil {

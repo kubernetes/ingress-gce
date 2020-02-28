@@ -1,5 +1,5 @@
 /*
-Copyright 2019 The Kubernetes Authors.
+Copyright 2020 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -152,25 +152,9 @@ func TestBackendServiceToGA(t *testing.T) {
 	}
 }
 
-func TestBackendServiceAppEngineBackend(t *testing.T) {
-	compositeType := reflect.TypeOf(BackendServiceAppEngineBackend{})
-	alphaType := reflect.TypeOf(computealpha.BackendServiceAppEngineBackend{})
-	if err := typeEquality(compositeType, alphaType, true); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestBackendServiceCdnPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceCdnPolicy{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceCdnPolicy{})
-	if err := typeEquality(compositeType, alphaType, true); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestBackendServiceCloudFunctionBackend(t *testing.T) {
-	compositeType := reflect.TypeOf(BackendServiceCloudFunctionBackend{})
-	alphaType := reflect.TypeOf(computealpha.BackendServiceCloudFunctionBackend{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
@@ -518,6 +502,14 @@ func TestHealthCheckToGA(t *testing.T) {
 	}
 }
 
+func TestHealthCheckLogConfig(t *testing.T) {
+	compositeType := reflect.TypeOf(HealthCheckLogConfig{})
+	alphaType := reflect.TypeOf(computealpha.HealthCheckLogConfig{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestHostRule(t *testing.T) {
 	compositeType := reflect.TypeOf(HostRule{})
 	alphaType := reflect.TypeOf(computealpha.HostRule{})
@@ -777,22 +769,6 @@ func TestSdsConfig(t *testing.T) {
 func TestSecuritySettings(t *testing.T) {
 	compositeType := reflect.TypeOf(SecuritySettings{})
 	alphaType := reflect.TypeOf(computealpha.SecuritySettings{})
-	if err := typeEquality(compositeType, alphaType, true); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestServerSecuritySettingsSelector(t *testing.T) {
-	compositeType := reflect.TypeOf(ServerSecuritySettingsSelector{})
-	alphaType := reflect.TypeOf(computealpha.ServerSecuritySettingsSelector{})
-	if err := typeEquality(compositeType, alphaType, true); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestServiceAccountJwtAccessCredentials(t *testing.T) {
-	compositeType := reflect.TypeOf(ServiceAccountJwtAccessCredentials{})
-	alphaType := reflect.TypeOf(computealpha.ServiceAccountJwtAccessCredentials{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
