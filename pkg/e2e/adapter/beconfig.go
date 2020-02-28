@@ -22,7 +22,7 @@ import (
 	"errors"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	v1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	client "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	"k8s.io/klog"
@@ -39,11 +39,11 @@ func (crud *BackendConfigCRUD) Get(ns, name string) (*v1.BackendConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	klog.V(2).Infof("Get BackendConfig %s/%s", ns, name)
+	klog.V(3).Infof("Get BackendConfig %s/%s", ns, name)
 	if isV1 {
 		return crud.C.CloudV1().BackendConfigs(ns).Get(name, metav1.GetOptions{})
 	}
-	klog.V(2).Info("Using BackendConfig V1beta1 API")
+	klog.V(4).Info("Using BackendConfig V1beta1 API")
 	bc, err := crud.C.CloudV1beta1().BackendConfigs(ns).Get(name, metav1.GetOptions{})
 	return toV1(bc), err
 }
@@ -100,11 +100,11 @@ func (crud *BackendConfigCRUD) List(ns string) (*v1.BackendConfigList, error) {
 	if err != nil {
 		return nil, err
 	}
-	klog.V(2).Infof("List BackendConfigs in namespace(%s)", ns)
+	klog.V(3).Infof("List BackendConfigs in namespace(%s)", ns)
 	if isV1 {
 		return crud.C.CloudV1().BackendConfigs(ns).List(metav1.ListOptions{})
 	}
-	klog.V(2).Info("Using BackendConfig V1beta1 API")
+	klog.V(4).Info("Using BackendConfig V1beta1 API")
 	bcl, err := crud.C.CloudV1beta1().BackendConfigs(ns).List(metav1.ListOptions{})
 	return toV1List(bcl), err
 }
