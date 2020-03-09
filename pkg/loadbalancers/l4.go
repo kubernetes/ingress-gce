@@ -31,6 +31,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/healthchecks"
+	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -50,11 +51,13 @@ type L4 struct {
 	ServicePort         utils.ServicePort
 	NamespacedName      types.NamespacedName
 	sharedResourcesLock *sync.Mutex
+	// metricsCollector exports L4 ILB service controller usage metrics.
+	metricsCollector metrics.L4ILBMetricsCollector
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
-func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer *namer.Namer, recorder record.EventRecorder, lock *sync.Mutex) *L4 {
-	l := &L4{cloud: cloud, scope: scope, namer: namer, recorder: recorder, Service: service, sharedResourcesLock: lock}
+func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer *namer.Namer, recorder record.EventRecorder, lock *sync.Mutex, collector metrics.L4ILBMetricsCollector) *L4 {
+	l := &L4{cloud: cloud, scope: scope, namer: namer, recorder: recorder, Service: service, sharedResourcesLock: lock, metricsCollector: collector}
 	l.NamespacedName = types.NamespacedName{Name: service.Name, Namespace: service.Namespace}
 	l.backendPool = backends.NewPool(l.cloud, l.namer)
 	l.ServicePort = utils.ServicePort{ID: utils.ServicePortID{Service: l.NamespacedName}, BackendNamer: l.namer,
@@ -135,13 +138,17 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) error {
 	}
 	err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l.cloud, hcName))
 	if err != nil {
-		// This error will be hit if this is a shared healthcheck.
-		if utils.IsInUsedByError(err) {
-			klog.V(2).Infof("Failed to delete healthcheck %s: health check in use.", hcName)
-			return retErr
+		if !utils.IsInUsedByError(err) {
+			klog.Errorf("Failed to delete healthcheck for internal loadbalancer service %s, err %v", l.NamespacedName.String(), err)
+			return err
 		}
-		klog.Errorf("Failed to delete healthcheck for internal loadbalancer service %s, err %v", l.NamespacedName.String(), err)
-		return err
+		// Ignore deletion error due to health check in use by another resource.
+		// This will be hit if this is a shared healthcheck.
+		klog.V(2).Infof("Failed to delete healthcheck %s: health check in use.", hcName)
+	}
+	if retErr == nil {
+		klog.V(6).Infof("Service %s deleted, removing its state from metrics cache", l.NamespacedName.String())
+		l.metricsCollector.DeleteL4ILBService(l.NamespacedName.String())
 	}
 	return retErr
 }
@@ -226,5 +233,19 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 		klog.Errorf("EnsureInternalLoadBalancer: Failed to create forwarding rule - %v", err)
 		return nil, err
 	}
+
+	var serviceState metrics.L4ILBServiceState
+	if options.AllowGlobalAccess {
+		serviceState.EnabledGlobalAccess = true
+	}
+	// SubnetName is overrided to nil value if Alpha feature gate for custom subnet
+	// is not enabled. So, a non empty subnet name at this point implies that the
+	// feature is in use.
+	if options.SubnetName != "" {
+		serviceState.EnabledCustomSubnet = true
+	}
+	klog.V(6).Infof("Service %s ensured, updating its state %v in metrics cache", l.NamespacedName.String(), serviceState)
+	l.metricsCollector.SetL4ILBService(l.NamespacedName.String(), serviceState)
+
 	return &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}, nil
 }

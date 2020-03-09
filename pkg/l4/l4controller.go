@@ -136,7 +136,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
 		return fmt.Errorf("Failed to attach finalizer to service %s/%s, err %v", service.Namespace, service.Name, err)
 	}
-	l4 := loadbalancers.NewL4Handler(service, l4c.ctx.Cloud, meta.Regional, l4c.ctx.ClusterNamer, l4c.ctx.Recorder(service.Namespace), &l4c.sharedResourcesLock)
+	l4 := loadbalancers.NewL4Handler(service, l4c.ctx.Cloud, meta.Regional, l4c.ctx.ClusterNamer, l4c.ctx.Recorder(service.Namespace), &l4c.sharedResourcesLock, l4c.ctx.ControllerMetrics)
 	nodeNames, err := utils.GetReadyNodeNames(l4c.nodeLister)
 	if err != nil {
 		return err
@@ -172,7 +172,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 }
 
 func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) error {
-	l4 := loadbalancers.NewL4Handler(svc, l4c.ctx.Cloud, meta.Regional, l4c.ctx.ClusterNamer, l4c.ctx.Recorder(svc.Namespace), &l4c.sharedResourcesLock)
+	l4 := loadbalancers.NewL4Handler(svc, l4c.ctx.Cloud, meta.Regional, l4c.ctx.ClusterNamer, l4c.ctx.Recorder(svc.Namespace), &l4c.sharedResourcesLock, l4c.ctx.ControllerMetrics)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
 	if err := l4.EnsureInternalLoadBalancerDeleted(svc); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed", "Error deleting load balancer: %v", err)

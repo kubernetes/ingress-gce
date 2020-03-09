@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
@@ -55,12 +56,24 @@ var (
 		},
 		[]string{label},
 	)
+	l4ILBCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "number_of_l4_ilbs",
+			Help: "Number of L4 ILBs",
+		},
+		[]string{label},
+	)
 )
 
 // init registers ingress usage metrics.
 func init() {
-	klog.V(3).Infof("Registering Ingress usage metrics %v, %v and %v", ingressCount, servicePortCount, networkEndpointGroupCount)
+	klog.V(3).Infof("Registering Ingress usage metrics %v and %v, NEG usage metrics %v", ingressCount, servicePortCount, networkEndpointGroupCount)
 	prometheus.MustRegister(ingressCount, servicePortCount, networkEndpointGroupCount)
+
+	if flags.F.RunL4Controller {
+		klog.V(3).Infof("Registering L4 ILB usage metrics %v", l4ILBCount)
+		prometheus.MustRegister(l4ILBCount)
+	}
 }
 
 // NewIngressState returns ingress state for given ingress and service ports.
@@ -74,12 +87,18 @@ type ControllerMetrics struct {
 	ingressMap map[string]IngressState
 	// negMap is a map between service key to neg state
 	negMap map[string]NegServiceState
+	// l4ILBServiceMap is a map between service key and L4 ILB service state.
+	l4ILBServiceMap map[string]L4ILBServiceState
 	sync.Mutex
 }
 
 // NewControllerMetrics initializes ControllerMetrics and starts a go routine to compute and export metrics periodically.
 func NewControllerMetrics() *ControllerMetrics {
-	return &ControllerMetrics{ingressMap: make(map[string]IngressState), negMap: make(map[string]NegServiceState)}
+	return &ControllerMetrics{
+		ingressMap:      make(map[string]IngressState),
+		negMap:          make(map[string]NegServiceState),
+		l4ILBServiceMap: make(map[string]L4ILBServiceState),
+	}
 }
 
 // servicePortKey defines a service port uniquely.
@@ -130,7 +149,7 @@ func (im *ControllerMetrics) DeleteIngress(ingKey string) {
 	delete(im.ingressMap, ingKey)
 }
 
-// SetIngress implements NegMetricsCollector.
+// SetNegService implements NegMetricsCollector.
 func (im *ControllerMetrics) SetNegService(svcKey string, negState NegServiceState) {
 	im.Lock()
 	defer im.Unlock()
@@ -141,12 +160,31 @@ func (im *ControllerMetrics) SetNegService(svcKey string, negState NegServiceSta
 	im.negMap[svcKey] = negState
 }
 
-// DeleteIngress implements NegMetricsCollector.
+// DeleteNegService implements NegMetricsCollector.
 func (im *ControllerMetrics) DeleteNegService(svcKey string) {
 	im.Lock()
 	defer im.Unlock()
 
 	delete(im.negMap, svcKey)
+}
+
+// SetL4ILBService implements L4ILBMetricsCollector.
+func (im *ControllerMetrics) SetL4ILBService(svcKey string, state L4ILBServiceState) {
+	im.Lock()
+	defer im.Unlock()
+
+	if im.l4ILBServiceMap == nil {
+		klog.Fatalf("Ingress Metrics failed to initialize correctly.")
+	}
+	im.l4ILBServiceMap[svcKey] = state
+}
+
+// DeleteL4ILBService implements L4ILBMetricsCollector.
+func (im *ControllerMetrics) DeleteL4ILBService(svcKey string) {
+	im.Lock()
+	defer im.Unlock()
+
+	delete(im.l4ILBServiceMap, svcKey)
 }
 
 // export computes and exports ingress usage metrics.
@@ -166,6 +204,16 @@ func (im *ControllerMetrics) export() {
 	for feature, count := range negCount {
 		networkEndpointGroupCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
+
+	if flags.F.RunL4Controller {
+		ilbCount := im.computeL4ILBMetrics()
+		klog.V(5.).Infof("Exporting L4 ILB usage metrics: %#v", ilbCount)
+		for feature, count := range ilbCount {
+			l4ILBCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
+		}
+		klog.V(5.).Infof("L4 ILB usage metrics exported.")
+	}
+
 	klog.V(3).Infof("Ingress usage metrics exported.")
 }
 
@@ -226,20 +274,63 @@ func (im *ControllerMetrics) computeIngressMetrics() (map[feature]int, map[featu
 
 // computeNegMetrics aggregates NEG metrics in the cache
 func (im *ControllerMetrics) computeNegMetrics() map[feature]int {
+	im.Lock()
+	defer im.Unlock()
+	klog.V(4).Infof("Computing NEG usage metrics from neg state map: %#v", im.negMap)
+
 	counts := map[feature]int{
-		standaloneNeg: 0,
-		ingressNeg:    0,
-		asmNeg:        0,
-		neg:           0,
+		standaloneNeg:         0,
+		ingressNeg:            0,
+		asmNeg:                0,
+		neg:                   0,
+		vmPrimaryIpNeg:        0,
+		vmPrimaryIpNegLocal:   0,
+		vmPrimaryIpNegCluster: 0,
 	}
 
 	for key, negState := range im.negMap {
-		klog.V(6).Infof("For service %s, it has standaloneNegs:%v, ingressNegs:%v and asmNeg:%v", key, negState.StandaloneNeg, negState.IngressNeg, negState.AsmNeg)
+		klog.V(6).Infof("For service %s, it has standaloneNegs:%d, ingressNegs:%d, asmNeg:%d and vmPrimaryNeg:%v",
+			key, negState.StandaloneNeg, negState.IngressNeg, negState.AsmNeg, negState.VmPrimaryIpNeg)
 		counts[standaloneNeg] += negState.StandaloneNeg
 		counts[ingressNeg] += negState.IngressNeg
 		counts[asmNeg] += negState.AsmNeg
 		counts[neg] += negState.AsmNeg + negState.StandaloneNeg + negState.IngressNeg
+		if negState.VmPrimaryIpNeg != nil {
+			counts[neg] += 1
+			counts[vmPrimaryIpNeg] += 1
+			if negState.VmPrimaryIpNeg.trafficPolicyLocal {
+				counts[vmPrimaryIpNegLocal] += 1
+			} else {
+				counts[vmPrimaryIpNegCluster] += 1
+			}
+		}
 	}
+	klog.V(4).Info("NEG usage metrics computed.")
+	return counts
+}
+
+// computeL4ILBMetrics aggregates L4 ILB metrics in the cache.
+func (im *ControllerMetrics) computeL4ILBMetrics() map[feature]int {
+	im.Lock()
+	defer im.Unlock()
+	klog.V(4).Infof("Computing L4 ILB usage metrics from service state map: %#v", im.l4ILBServiceMap)
+	counts := map[feature]int{
+		l4ILBService:      0,
+		l4IlbGlobalAccess: 0,
+		l4IlbCustomSubnet: 0,
+	}
+
+	for key, state := range im.l4ILBServiceMap {
+		klog.V(6).Infof("ILB Service %s has EnabledGlobalAccess: %t, EnabledCustomSubnet: %t", key, state.EnabledGlobalAccess, state.EnabledCustomSubnet)
+		counts[l4ILBService] += 1
+		if state.EnabledGlobalAccess {
+			counts[l4IlbGlobalAccess] += 1
+		}
+		if state.EnabledCustomSubnet {
+			counts[l4IlbCustomSubnet] += 1
+		}
+	}
+	klog.V(4).Info("L4 ILB usage metrics computed.")
 	return counts
 }
 

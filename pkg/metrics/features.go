@@ -73,9 +73,16 @@ const (
 	cookieAffinity            = feature("CookieAffinity")
 	customRequestHeaders      = feature("CustomRequestHeaders")
 
-	standaloneNeg = feature("StandaloneNEG")
-	ingressNeg    = feature("IngressNEG")
-	asmNeg        = feature("AsmNEG")
+	standaloneNeg         = feature("StandaloneNEG")
+	ingressNeg            = feature("IngressNEG")
+	asmNeg                = feature("AsmNEG")
+	vmPrimaryIpNeg        = feature("VmPrimaryIpNEG")
+	vmPrimaryIpNegLocal   = feature("VmPrimaryIpNegLocal")
+	vmPrimaryIpNegCluster = feature("VmPrimaryIpNegCluster")
+
+	l4ILBService      = feature("L4ILBService")
+	l4IlbGlobalAccess = feature("L4ILBGlobalAccess")
+	l4IlbCustomSubnet = feature("L4ILBCustomSubnet")
 )
 
 // featuresForIngress returns the list of features for given ingress.
