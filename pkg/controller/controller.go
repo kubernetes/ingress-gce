@@ -191,19 +191,40 @@ func NewLoadBalancerController(
 	// BackendConfig event handlers.
 	ctx.BackendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			beConfig := obj.(*backendconfigv1beta1.BackendConfig)
+			beConfig, ok := obj.(*backendconfigv1beta1.BackendConfig)
+			if !ok {
+				klog.Errorf("Cannot cast obj to BackendConfig (obj type is %T)", obj)
+				return
+			}
 			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 			lbc.ingQueue.Enqueue(convert(ings)...)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
-				beConfig := cur.(*backendconfigv1beta1.BackendConfig)
+				beConfig, ok := cur.(*backendconfigv1beta1.BackendConfig)
+				if !ok {
+					klog.Errorf("Cannot cast obj to BackendConfig (obj type is %T)", cur)
+					return
+				}
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
-			beConfig := obj.(*backendconfigv1beta1.BackendConfig)
+			beConfig, ok := obj.(*backendconfigv1beta1.BackendConfig)
+			if !ok {
+				klog.V(3).Infof("Cannot cast obj to BackendConfig (obj type is %T), casting into DeletedFinalStateUnknown", obj)
+				var tombstone cache.DeletedFinalStateUnknown
+				tombstone, ok = obj.(cache.DeletedFinalStateUnknown)
+				if !ok {
+					klog.Errorf("Cannot cast obj to DeletedFinalStateUnknown (obj type is %T)", obj)
+					return
+				}
+				if beConfig, ok = tombstone.Obj.(*backendconfigv1beta1.BackendConfig); !ok {
+					klog.Errorf("Cannot cast DeletedFinalStateUnknown.obj to BackendConfig (obj type is %T)", tombstone.Obj)
+					return
+				}
+			}
 			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 			lbc.ingQueue.Enqueue(convert(ings)...)
 		},
