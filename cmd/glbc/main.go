@@ -71,20 +71,28 @@ func main() {
 
 	klog.V(2).Infof("Flags = %+v", flags.F)
 	defer klog.Flush()
-	kubeConfig, err := app.NewKubeConfig()
+	// Create kube-config that uses protobufs to communicate with API server.
+	kubeConfigForProtobuf, err := app.NewKubeConfigForProtobuf()
 	if err != nil {
-		klog.Fatalf("Failed to create kubernetes client config: %v", err)
+		klog.Fatalf("Failed to create kubernetes client config for protobuf: %v", err)
 	}
 
-	kubeClient, err := kubernetes.NewForConfig(kubeConfig)
+	kubeClient, err := kubernetes.NewForConfig(kubeConfigForProtobuf)
 	if err != nil {
 		klog.Fatalf("Failed to create kubernetes client: %v", err)
 	}
 
 	// Due to scaling issues, leader election must be configured with a separate k8s client.
-	leaderElectKubeClient, err := kubernetes.NewForConfig(restclient.AddUserAgent(kubeConfig, "leader-election"))
+	leaderElectKubeClient, err := kubernetes.NewForConfig(restclient.AddUserAgent(kubeConfigForProtobuf, "leader-election"))
 	if err != nil {
 		klog.Fatalf("Failed to create kubernetes client for leader election: %v", err)
+	}
+
+	// Create kube-config for CRDs.
+	// TODO(smatti): Migrate to use protobuf once CRD supports.
+	kubeConfig, err := app.NewKubeConfig()
+	if err != nil {
+		klog.Fatalf("Failed to create kubernetes client config: %v", err)
 	}
 
 	var backendConfigClient backendconfigclient.Interface
