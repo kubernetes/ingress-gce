@@ -24,6 +24,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	testutils "k8s.io/ingress-gce/pkg/test"
 )
 
 var (
@@ -237,5 +238,92 @@ func TestValidateSessionAffinity(t *testing.T) {
 		if !testCase.expectError && err != nil {
 			t.Errorf("%v: Did not expect error but got: %v", testCase.desc, err)
 		}
+	}
+}
+
+func TestValidateLogging(t *testing.T) {
+	for _, tc := range []struct {
+		desc        string
+		beConfig    *backendconfigv1.BackendConfig
+		expectError bool
+	}{
+		{
+			desc: "nil access log config",
+			beConfig: &backendconfigv1.BackendConfig{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: backendconfigv1.BackendConfigSpec{},
+			},
+			expectError: false,
+		},
+		{
+			desc: "empty access log config",
+			beConfig: &backendconfigv1.BackendConfig{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: backendconfigv1.BackendConfigSpec{
+					Logging: &backendconfigv1.LogConfig{},
+				},
+			},
+			expectError: false,
+		},
+		{
+			desc: "invalid sample rate",
+			beConfig: &backendconfigv1.BackendConfig{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: backendconfigv1.BackendConfigSpec{
+					Logging: &backendconfigv1.LogConfig{
+						Enable:     false,
+						SampleRate: testutils.Float64ToPtr(1.01),
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			desc: "valid sample rate",
+			beConfig: &backendconfigv1.BackendConfig{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: backendconfigv1.BackendConfigSpec{
+					Logging: &backendconfigv1.LogConfig{
+						Enable:     true,
+						SampleRate: testutils.Float64ToPtr(0.5),
+					},
+				},
+			},
+			expectError: false,
+		},
+		{
+			desc: "valid integer sample rate",
+			beConfig: &backendconfigv1.BackendConfig{
+				ObjectMeta: meta_v1.ObjectMeta{
+					Namespace: "default",
+				},
+				Spec: backendconfigv1.BackendConfigSpec{
+					Logging: &backendconfigv1.LogConfig{
+						Enable:     true,
+						SampleRate: testutils.Float64ToPtr(1),
+					},
+				},
+			},
+			expectError: false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			kubeClient := fake.NewSimpleClientset()
+			err := Validate(kubeClient, tc.beConfig)
+			if tc.expectError && err == nil {
+				t.Errorf("Expected error but got nil")
+			}
+			if !tc.expectError && err != nil {
+				t.Errorf("Did not expect error but got: %v", err)
+			}
+		})
 	}
 }
