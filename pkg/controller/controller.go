@@ -197,18 +197,21 @@ func NewLoadBalancerController(
 	// BackendConfig event handlers.
 	ctx.BackendConfigInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
+			klog.V(3).Infof("obj(type %T) added", obj)
 			beConfig := obj.(*backendconfigv1beta1.BackendConfig)
 			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 			lbc.ingQueue.Enqueue(convert(ings)...)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
+				klog.V(3).Infof("obj(type %T) updated", cur)
 				beConfig := cur.(*backendconfigv1beta1.BackendConfig)
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
+			klog.V(3).Infof("obj(type %T) deleted", obj)
 			var beConfig *backendconfigv1beta1.BackendConfig
 			var ok, beOk bool
 			beConfig, ok = obj.(*backendconfigv1beta1.BackendConfig)
