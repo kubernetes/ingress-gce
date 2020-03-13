@@ -44,9 +44,10 @@ const (
 	cloudClientRetryInterval = 10 * time.Second
 )
 
-// NewKubeConfig returns a Kubernetes client config given the command line settings.
-func NewKubeConfig() (*rest.Config, error) {
-	config, err := newKubeConfig()
+// NewKubeConfigForProtobuf returns a Kubernetes client config that uses protobufs
+// for given the command line settings.
+func NewKubeConfigForProtobuf() (*rest.Config, error) {
+	config, err := NewKubeConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +56,8 @@ func NewKubeConfig() (*rest.Config, error) {
 	return config, nil
 }
 
-func newKubeConfig() (*rest.Config, error) {
+// NewKubeConfig returns a Kubernetes client config given the command line settings.
+func NewKubeConfig() (*rest.Config, error) {
 	if flags.F.InCluster {
 		klog.V(0).Infof("Using in cluster configuration")
 		return rest.InClusterConfig()
