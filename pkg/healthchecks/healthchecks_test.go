@@ -243,12 +243,6 @@ func TestHealthCheckDelete(t *testing.T) {
 	if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		t.Errorf("expected not-found error, actual: %v", err)
 	}
-
-	// Delete only HTTP 1234
-	err = healthChecks.Delete(testNamer.IGBackend(1234), meta.Global)
-	if err == nil {
-		t.Errorf("expected not-found error when deleting health check, err: %v", err)
-	}
 }
 
 func TestHTTP2HealthCheckDelete(t *testing.T) {
