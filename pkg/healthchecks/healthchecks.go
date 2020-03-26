@@ -297,21 +297,26 @@ func (h *HealthChecks) Delete(name string, scope meta.KeyType) error {
 		if err != nil {
 			return err
 		}
+		klog.V(2).Infof("Deleting regional health check %v", name)
 		// L7-ILB is the only use of regional right now
-		err = composite.DeleteHealthCheck(cloud, key, features.L7ILBVersions().HealthCheck)
-		// Ignore error if the deletion candidate is being used by another resource.
-		// In most of the cases, this is the associated backend resource itself.
-		if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsInUsedByError(err) {
-			klog.V(4).Infof("DeleteRegionalHealthCheck(%s, _): %v, ignorable error", name, err)
-			return nil
+		if err = composite.DeleteHealthCheck(cloud, key, features.L7ILBVersions().HealthCheck); err != nil {
+			// Ignore error if the deletion candidate is being used by another resource.
+			// In most of the cases, this is the associated backend resource itself.
+			if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsInUsedByError(err) {
+				klog.V(4).Infof("DeleteRegionalHealthCheck(%s, _): %v, ignorable error", name, err)
+				return nil
+			}
+			return err
 		}
+		return nil
 	}
 
 	klog.V(2).Infof("Deleting health check %v", name)
 	// Not using composite here since the tests still rely on the fake health check interface
 	if err := h.cloud.DeleteHealthCheck(name); err != nil {
-		// Ignore error if the deletion candidate is being used by another resource.
-		if utils.IsInUsedByError(err) {
+		// Ignore error if the deletion candidate does not exist or is being used
+		// by another resource.
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsInUsedByError(err) {
 			klog.V(4).Infof("DeleteHealthCheck(%s, _): %v, ignorable error", name, err)
 			return nil
 		}
