@@ -52,7 +52,9 @@ const (
 	ingressPollTimeout = 45 * time.Minute
 
 	gclbDeletionInterval = 30 * time.Second
-	gclbDeletionTimeout  = 15 * time.Minute
+	// TODO(smatti): Change this back to 15 when the issue
+	// is fixed.
+	gclbDeletionTimeout = 25 * time.Minute
 
 	negPollInterval = 5 * time.Second
 	negPollTimeout  = 2 * time.Minute
