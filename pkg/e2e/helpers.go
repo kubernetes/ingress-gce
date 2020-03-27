@@ -54,7 +54,7 @@ const (
 	gclbDeletionInterval = 30 * time.Second
 	// TODO(smatti): Change this back to 15 when the issue
 	// is fixed.
-	gclbDeletionTimeout = 25 * time.Minute
+	gclbDeletionTimeout = 60 * time.Minute
 
 	negPollInterval = 5 * time.Second
 	negPollTimeout  = 2 * time.Minute
