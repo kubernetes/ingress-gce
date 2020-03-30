@@ -44,20 +44,30 @@ const (
 	// certificate for the Ingress controller to use.
 	preSharedCertKey = "ingress.gcp.kubernetes.io/pre-shared-cert"
 	managedCertKey   = "networking.gke.io/managed-certificates"
+	// StaticIPNameKey tells the Ingress controller to use a specific GCE
+	// static ip for its forwarding rules. If specified, the Ingress controller
+	// assigns the static ip by this name to the forwarding rules of the given
+	// Ingress. The controller *does not* manage this ip, it is the users
+	// responsibility to create/delete it.
+	StaticIPNameKey = "kubernetes.io/ingress.global-static-ip-name"
 	// staticIPKey is the annotation key used by controller to record GCP static ip.
 	staticIPKey = "ingress.kubernetes.io/static-ip"
+	// SSLCertKey is the annotation key used by controller to record GCP ssl cert.
+	SSLCertKey = "ingress.kubernetes.io/ssl-cert"
 
-	ingress                = feature("Ingress")
-	externalIngress        = feature("ExternalIngress")
-	internalIngress        = feature("InternalIngress")
-	httpEnabled            = feature("HTTPEnabled")
-	hostBasedRouting       = feature("HostBasedRouting")
-	pathBasedRouting       = feature("PathBasedRouting")
-	tlsTermination         = feature("TLSTermination")
-	secretBasedCertsForTLS = feature("SecretBasedCertsForTLS")
-	preSharedCertsForTLS   = feature("PreSharedCertsForTLS")
-	managedCertsForTLS     = feature("ManagedCertsForTLS")
-	staticGlobalIP         = feature("StaticGlobalIP")
+	ingress                 = feature("Ingress")
+	externalIngress         = feature("ExternalIngress")
+	internalIngress         = feature("InternalIngress")
+	httpEnabled             = feature("HTTPEnabled")
+	hostBasedRouting        = feature("HostBasedRouting")
+	pathBasedRouting        = feature("PathBasedRouting")
+	tlsTermination          = feature("TLSTermination")
+	secretBasedCertsForTLS  = feature("SecretBasedCertsForTLS")
+	preSharedCertsForTLS    = feature("PreSharedCertsForTLS")
+	managedCertsForTLS      = feature("ManagedCertsForTLS")
+	staticGlobalIP          = feature("StaticGlobalIP")
+	managedStaticGlobalIP   = feature("ManagedStaticGlobalIP")
+	specifiedStaticGlobalIP = feature("SpecifiedStaticGlobalIP")
 
 	servicePort         = feature("L7LBServicePort")
 	externalServicePort = feature("L7XLBServicePort")
@@ -144,32 +154,47 @@ func featuresForIngress(ing *v1beta1.Ingress) []feature {
 	}
 
 	// SSL certificate based features.
-	sslConfigured := false
-	if val, ok := ingAnnotations[preSharedCertKey]; ok {
-		klog.V(6).Infof("Specified pre-shared certs for ingress %s: %v", ingKey, val)
-		sslConfigured = true
-		features = append(features, preSharedCertsForTLS)
-	}
-	if val, ok := ingAnnotations[managedCertKey]; ok {
-		klog.V(6).Infof("Specified google managed certs for ingress %s: %v", ingKey, val)
-		sslConfigured = true
-		features = append(features, managedCertsForTLS)
-	}
-	if hasSecretBasedCerts(ing) {
-		sslConfigured = true
-		features = append(features, secretBasedCertsForTLS)
-	}
-	if sslConfigured {
-		klog.V(6).Infof("TLS termination is configured for ingress %s", ingKey)
+	// If user specifies a SSL certificate and controller does not add SSL certificate
+	// annotation on ingress, then SSL cert is invalid in some sense. Ignore reporting
+	// these SSL certificates.
+	if cert, ok := ingAnnotations[SSLCertKey]; ok {
+		klog.V(6).Infof("Configured SSL certificate for ingress %s: %v", ingKey, cert)
 		features = append(features, tlsTermination)
+
+		certSpecified := false
+		if val, ok := ingAnnotations[preSharedCertKey]; ok {
+			klog.V(6).Infof("Specified pre-shared certs for ingress %s: %v", ingKey, val)
+			certSpecified = true
+			features = append(features, preSharedCertsForTLS)
+		}
+		if val, ok := ingAnnotations[managedCertKey]; ok {
+			klog.V(6).Infof("Specified google managed certs for ingress %s: %v", ingKey, val)
+			certSpecified = true
+			features = append(features, managedCertsForTLS)
+		}
+		if hasSecretBasedCerts(ing) {
+			certSpecified = true
+			features = append(features, secretBasedCertsForTLS)
+		}
+		if !certSpecified {
+			klog.Errorf("Unexpected TLS termination(cert: %s) for ingress %s", cert, ingKey)
+		}
 	}
 
 	// Both user specified and ingress controller managed global static ips are reported.
 	if val, ok := ingAnnotations[staticIPKey]; ok && val != "" {
-		klog.V(6).Infof("Specified static for ingress %s: %s", ingKey, val)
+		klog.V(6).Infof("Static IP for ingress %s: %s", ingKey, val)
 		features = append(features, staticGlobalIP)
+
+		// Check if user specified static ip annotation exists.
+		if val, ok = ingAnnotations[StaticIPNameKey]; ok {
+			klog.V(6).Infof("User specified static IP for ingress %s: %s", ingKey, val)
+			features = append(features, specifiedStaticGlobalIP)
+		} else {
+			features = append(features, managedStaticGlobalIP)
+		}
 	}
-	klog.V(4).Infof("Features for ingress %s/%s: %v", ing.Namespace, ing.Name, features)
+	klog.V(4).Infof("Features for ingress %s: %v", ingKey, features)
 	return features
 }
 
