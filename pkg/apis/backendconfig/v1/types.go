@@ -45,7 +45,7 @@ type BackendConfigSpec struct {
 	CustomRequestHeaders *CustomRequestHeadersConfig `json:"customRequestHeaders,omitempty"`
 	HealthCheck          *HealthCheckConfig          `json:"healthCheck,omitempty"`
 	// Logging specifies the configuration for access logs.
-	Logging *LogConfig `json:"log,omitempty"`
+	Logging *LogConfig `json:"logging,omitempty"`
 }
 
 // BackendConfigStatus is the status for a BackendConfig resource
