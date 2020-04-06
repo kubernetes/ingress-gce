@@ -23,6 +23,7 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/utils/common"
 )
@@ -37,7 +38,7 @@ type BasicHTTP struct {
 	t         *testing.T
 	s         *e2e.Sandbox
 	framework *e2e.Framework
-	crud      e2e.IngressCRUD
+	crud      adapter.IngressCRUD
 	ing       *v1beta1.Ingress
 }
 
@@ -72,7 +73,7 @@ func (bh *BasicHTTP) PreUpgrade() error {
 		AddPath("foo.com", "/", svcName, port80).
 		Build()
 	ingKey := common.NamespacedName(bh.ing)
-	bh.crud = e2e.IngressCRUD{C: bh.framework.Clientset}
+	bh.crud = adapter.IngressCRUD{C: bh.framework.Clientset}
 	if _, err := bh.crud.Create(bh.ing); err != nil {
 		bh.t.Fatalf("error creating Ingress %s: %v", ingKey, err)
 	}

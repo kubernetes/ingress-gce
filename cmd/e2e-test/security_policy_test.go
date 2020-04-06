@@ -112,7 +112,7 @@ func TestSecurityPolicyEnable(t *testing.T) {
 			DefaultBackend("service-1", port80).
 			AddPath("test.com", "/", "service-1", port80).
 			Build()
-		crud := e2e.IngressCRUD{C: Framework.Clientset}
+		crud := adapter.IngressCRUD{C: Framework.Clientset}
 		testIng, err = crud.Create(testIng)
 		if err != nil {
 			t.Fatalf("error creating Ingress spec: %v", err)
@@ -190,7 +190,7 @@ func TestSecurityPolicyTransition(t *testing.T) {
 			DefaultBackend("service-1", port80).
 			AddPath("test.com", "/", "service-1", port80).
 			Build()
-		crud := e2e.IngressCRUD{C: Framework.Clientset}
+		crud := adapter.IngressCRUD{C: Framework.Clientset}
 		testIng, err = crud.Create(testIng)
 		if err != nil {
 			t.Fatalf("error creating Ingress spec: %v", err)

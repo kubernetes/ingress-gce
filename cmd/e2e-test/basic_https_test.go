@@ -23,6 +23,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 )
 
@@ -98,7 +99,7 @@ func TestBasicHTTPS(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
-			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}

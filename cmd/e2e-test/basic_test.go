@@ -24,6 +24,7 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -78,7 +79,7 @@ func testBasicOS(t *testing.T, os e2e.OS) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
-			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			tc.ing.Namespace = s.Namespace // namespace depends on sandbox
 			if _, err = crud.Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
@@ -128,7 +129,7 @@ func TestBasicStaticIP(t *testing.T) {
 			DefaultBackend("service-1", intstr.FromInt(80)).
 			AddStaticIP(addrName).
 			Build()
-		crud := e2e.IngressCRUD{C: Framework.Clientset}
+		crud := adapter.IngressCRUD{C: Framework.Clientset}
 		testIng, err = crud.Create(testIng)
 		if err != nil {
 			t.Fatalf("error creating Ingress spec: %v", err)
@@ -189,7 +190,7 @@ func TestEdge(t *testing.T) {
 				t.Fatalf("error creating echo service: %v", err)
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
-			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			tc.ing.Namespace = s.Namespace // namespace depends on sandbox
 			if _, err = crud.Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
@@ -264,7 +265,7 @@ func TestFrontendResourceDeletion(t *testing.T) {
 				AddPath(host, "/", svcName, port80).AddTLS([]string{}, cert.Name).Build()
 			ingKey := common.NamespacedName(ing)
 
-			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {
 				t.Fatalf("crud.Create(%s) = %v, want nil; Ingress: %v", ingKey, err, ing)
 			}

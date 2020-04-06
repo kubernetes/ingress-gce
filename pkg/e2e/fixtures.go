@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -265,7 +266,7 @@ func DeleteSecret(s *Sandbox, name string) error {
 
 // EnsureIngress creates a new Ingress or updates an existing one.
 func EnsureIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
-	crud := &IngressCRUD{s.f.Clientset}
+	crud := &adapter.IngressCRUD{C: s.f.Clientset}
 	currentIng, err := crud.Get(ing.ObjectMeta.Namespace, ing.ObjectMeta.Name)
 	if currentIng == nil || err != nil {
 		return crud.Create(ing)

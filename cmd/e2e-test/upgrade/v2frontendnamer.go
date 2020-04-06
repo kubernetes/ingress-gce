@@ -22,6 +22,7 @@ import (
 
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/utils/common"
 )
@@ -31,7 +32,7 @@ type V2FrontendNamer struct {
 	t         *testing.T
 	s         *e2e.Sandbox
 	framework *e2e.Framework
-	crud      e2e.IngressCRUD
+	crud      adapter.IngressCRUD
 	ing       *v1beta1.Ingress
 }
 
@@ -67,7 +68,7 @@ func (vf *V2FrontendNamer) PreUpgrade() error {
 		SetIngressClass("gce").
 		Build()
 	ingKey := common.NamespacedName(vf.ing)
-	vf.crud = e2e.IngressCRUD{C: vf.framework.Clientset}
+	vf.crud = adapter.IngressCRUD{C: vf.framework.Clientset}
 
 	if _, err := vf.crud.Create(vf.ing); err != nil {
 		vf.t.Fatalf("Create(%s) = %v, want nil; Ingress: %v", ingKey, err, vf.ing)

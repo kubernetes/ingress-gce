@@ -107,7 +107,7 @@ func TestBackendConfigNegatives(t *testing.T) {
 			testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 				AddPath("test.com", "/", "service-1", port80).
 				Build()
-			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			testIng, err := crud.Create(testIng)
 			if err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)

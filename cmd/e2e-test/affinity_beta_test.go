@@ -28,6 +28,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigbeta "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 )
@@ -79,7 +80,7 @@ func TestAffinityBeta(t *testing.T) {
 		ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 			AddPath("test.com", "/", svcName, intstr.FromInt(80)).
 			Build()
-		crud := e2e.IngressCRUD{C: Framework.Clientset}
+		crud := adapter.IngressCRUD{C: Framework.Clientset}
 		if _, err := crud.Create(ing); err != nil {
 			t.Fatalf("crud.Create(%#v) = %v, want nil", ing, err)
 		}

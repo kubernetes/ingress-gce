@@ -92,7 +92,7 @@ func TestCDN(t *testing.T) {
 			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 				AddPath("test.com", "/", "service-1", intstr.FromInt(80)).
 				Build()
-			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
