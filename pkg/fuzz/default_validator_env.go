@@ -25,7 +25,7 @@ import (
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	bcclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
-	"k8s.io/ingress-gce/pkg/e2e/legacy"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
@@ -66,7 +66,7 @@ func NewDefaultValidatorEnv(config *rest.Config, ns string, gce cloud.Cloud) (Va
 
 // BackendConfigs implements ValidatorEnv.
 func (e *DefaultValidatorEnv) BackendConfigs() (map[string]*backendconfig.BackendConfig, error) {
-	bcCRUD := legacy.BackendConfigCRUD{C: e.bc}
+	bcCRUD := adapter.BackendConfigCRUD{C: e.bc}
 	bcl, err := bcCRUD.List(e.ns)
 	if err != nil {
 		return nil, err

@@ -24,7 +24,7 @@ import (
 	"time"
 
 	computebeta "google.golang.org/api/compute/v0.beta"
-	"k8s.io/ingress-gce/pkg/e2e/legacy"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -100,7 +100,7 @@ func TestSecurityPolicyEnable(t *testing.T) {
 		}
 
 		testBackendConfig := fuzz.NewBackendConfigBuilder(s.Namespace, "backendconfig-1").SetSecurityPolicy(testSecurityPolicy.Name).Build()
-		bcCRUD := legacy.BackendConfigCRUD{C: Framework.BackendConfigClient}
+		bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
 		testBackendConfig, err = bcCRUD.Create(testBackendConfig)
 		if err != nil {
 			t.Fatalf("Error creating test backend config: %v", err)
@@ -178,7 +178,7 @@ func TestSecurityPolicyTransition(t *testing.T) {
 		}
 
 		testBackendConfig := fuzz.NewBackendConfigBuilder(s.Namespace, "backendconfig-1").SetSecurityPolicy(testSecurityPolicyAllow.Name).Build()
-		bcCRUD := legacy.BackendConfigCRUD{C: Framework.BackendConfigClient}
+		bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
 		testBackendConfig, err = bcCRUD.Create(testBackendConfig)
 		if err != nil {
 			t.Fatalf("Error creating test backend config: %v", err)
@@ -227,7 +227,7 @@ func TestSecurityPolicyTransition(t *testing.T) {
 
 		for _, step := range steps {
 			testBackendConfig.Spec.SecurityPolicy.Name = step.securityPolicyToSet
-			bcCRUD := legacy.BackendConfigCRUD{C: Framework.BackendConfigClient}
+			bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
 			testBackendConfig, err = bcCRUD.Update(testBackendConfig)
 			if err != nil {
 				t.Fatalf("Error updating test backend config: %v", err)

@@ -26,7 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/ingress-gce/pkg/e2e/legacy"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
@@ -82,7 +82,7 @@ func TestBackendConfigNegatives(t *testing.T) {
 
 			if tc.backendConfig != nil {
 				tc.backendConfig.Namespace = s.Namespace
-				bcCRUD := legacy.BackendConfigCRUD{C: Framework.BackendConfigClient}
+				bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
 				if _, err := bcCRUD.Create(tc.backendConfig); err != nil {
 					t.Fatalf("Error creating backend config: %v", err)
 				}
