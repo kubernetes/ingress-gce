@@ -350,6 +350,8 @@ func initializeCounts() (map[feature]int, map[feature]int) {
 			preSharedCertsForTLS:      0,
 			managedCertsForTLS:        0,
 			staticGlobalIP:            0,
+			managedStaticGlobalIP:     0,
+			specifiedStaticGlobalIP:   0,
 			neg:                       0,
 			cloudCDN:                  0,
 			cloudArmor:                0,
