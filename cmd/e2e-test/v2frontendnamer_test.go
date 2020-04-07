@@ -24,6 +24,7 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/utils/common"
 )
@@ -69,7 +70,7 @@ func TestV2FrontendNamer(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, svcName)
 
-			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			var gclbs []*fuzz.GCLB
 			var updatedIngs []*v1beta1.Ingress
 

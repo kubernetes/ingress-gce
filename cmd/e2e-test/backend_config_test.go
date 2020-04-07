@@ -26,9 +26,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
 )
@@ -44,7 +45,7 @@ func TestBackendConfigNegatives(t *testing.T) {
 	for _, tc := range []struct {
 		desc           string
 		svcAnnotations map[string]string
-		backendConfig  *backendconfigv1beta1.BackendConfig
+		backendConfig  *backendconfigv1.BackendConfig
 		secretName     string
 		expectedMsg    string
 	}{
@@ -80,7 +81,9 @@ func TestBackendConfigNegatives(t *testing.T) {
 			t.Parallel()
 
 			if tc.backendConfig != nil {
-				if _, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Create(tc.backendConfig); err != nil {
+				tc.backendConfig.Namespace = s.Namespace
+				bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+				if _, err := bcCRUD.Create(tc.backendConfig); err != nil {
 					t.Fatalf("Error creating backend config: %v", err)
 				}
 				t.Logf("Backend config %s/%s created", s.Namespace, tc.backendConfig.Name)
@@ -104,7 +107,7 @@ func TestBackendConfigNegatives(t *testing.T) {
 			testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 				AddPath("test.com", "/", "service-1", port80).
 				Build()
-			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			testIng, err := crud.Create(testIng)
 			if err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)

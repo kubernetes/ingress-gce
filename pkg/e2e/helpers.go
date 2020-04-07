@@ -39,6 +39,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/ingress-gce/cmd/echo/app"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/fuzz/whitebox"
@@ -123,7 +124,7 @@ func UpgradeTestWaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitFo
 func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOptions) (*v1beta1.Ingress, error) {
 	err := wait.Poll(ingressPollInterval, ingressPollTimeout, func() (bool, error) {
 		var err error
-		crud := IngressCRUD{s.f.Clientset}
+		crud := adapter.IngressCRUD{C: s.f.Clientset}
 		ing, err = crud.Get(s.Namespace, ing.Name)
 		if err != nil {
 			return true, err
@@ -159,7 +160,7 @@ func WaitForHTTPResourceAnnotations(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.
 	klog.V(3).Infof("Waiting for HTTP annotations to be added on Ingress %s", ingKey)
 	err := wait.Poll(updateIngressPollInterval, updateIngressPollTimeout, func() (bool, error) {
 		var err error
-		crud := IngressCRUD{s.f.Clientset}
+		crud := adapter.IngressCRUD{C: s.f.Clientset}
 		if ing, err = crud.Get(s.Namespace, ing.Name); err != nil {
 			return true, err
 		}
@@ -180,7 +181,7 @@ func WaitForFinalizer(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error
 	klog.Infof("Waiting for Finalizer to be added for Ingress %s", ingKey)
 	err := wait.Poll(k8sApiPoolInterval, k8sApiPollTimeout, func() (bool, error) {
 		var err error
-		crud := IngressCRUD{s.f.Clientset}
+		crud := adapter.IngressCRUD{C: s.f.Clientset}
 		if ing, err = crud.Get(s.Namespace, ing.Name); err != nil {
 			klog.Infof("WaitForFinalizer(%s) = %v, error retrieving Ingress", ingKey, err)
 			return false, nil
@@ -240,7 +241,7 @@ func performWhiteboxTests(s *Sandbox, ing *v1beta1.Ingress, gclb *fuzz.GCLB) err
 // WaitForIngressDeletion deletes the given ingress and waits for the
 // resources associated with it to be deleted.
 func WaitForIngressDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ing *v1beta1.Ingress, options *fuzz.GCLBDeleteOptions) error {
-	crud := IngressCRUD{s.f.Clientset}
+	crud := adapter.IngressCRUD{C: s.f.Clientset}
 	if err := crud.Delete(ing.Namespace, ing.Name); err != nil {
 		return fmt.Errorf("delete(%q) = %v, want nil", ing.Name, err)
 	}
@@ -261,7 +262,7 @@ func WaitForFinalizerDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ing
 	}
 	klog.Infof("GCLB resources deleted (%s/%s)", s.Namespace, ingName)
 
-	crud := IngressCRUD{s.f.Clientset}
+	crud := adapter.IngressCRUD{C: s.f.Clientset}
 	klog.Infof("Waiting for Finalizer to be removed for Ingress %s/%s", s.Namespace, ingName)
 	return wait.Poll(k8sApiPoolInterval, k8sApiPollTimeout, func() (bool, error) {
 		ing, err := crud.Get(s.Namespace, ingName)
@@ -295,7 +296,7 @@ func WaitForFrontendResourceDeletion(ctx context.Context, c cloud.Cloud, g *fuzz
 	return wait.Poll(gclbDeletionInterval, gclbDeletionTimeout, func() (bool, error) {
 		if options.CheckHttpFrontendResources {
 			if err := g.CheckResourceDeletionByProtocol(ctx, c, options, fuzz.HttpProtocol); err != nil {
-				klog.Infof("WaitForGCLBDeletionByProtocol(..., %q, %q) = %v", g.VIP, fuzz.HttpsProtocol, err)
+				klog.Infof("WaitForGCLBDeletionByProtocol(..., %q, %q) = %v", g.VIP, fuzz.HttpProtocol, err)
 				return false, nil
 			}
 		}

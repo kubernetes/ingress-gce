@@ -1,4 +1,4 @@
-package e2e
+package adapter
 
 // Legacy conversion code for the old extensions v1beta1 API group.
 

@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 )
@@ -62,7 +63,7 @@ func TestAppProtocol(t *testing.T) {
 				DefaultBackend("service-1", intstr.FromString("https-port")).
 				AddPath("test.com", "/", "service-1", intstr.FromString("https-port")).
 				Build()
-			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
@@ -132,7 +133,7 @@ func TestAppProtocolTransition(t *testing.T) {
 				DefaultBackend("service-1", intstr.FromString("https-port")).
 				AddPath("test.com", "/", "service-1", intstr.FromString("https-port")).
 				Build()
-			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}

@@ -22,13 +22,13 @@ import (
 	"testing"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -71,7 +71,9 @@ func TestDraining(t *testing.T) {
 				annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
 			}
 
-			if _, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Create(tc.beConfig); err != nil {
+			bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+			tc.beConfig.Namespace = s.Namespace
+			if _, err := bcCRUD.Create(tc.beConfig); err != nil {
 				t.Fatalf("error creating BackendConfig: %v", err)
 			}
 			t.Logf("BackendConfig created (%s/%s) ", s.Namespace, tc.beConfig.Name)
@@ -85,7 +87,7 @@ func TestDraining(t *testing.T) {
 			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 				AddPath("test.com", "/", "service-1", intstr.FromInt(80)).
 				Build()
-			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
@@ -118,7 +120,7 @@ func TestDraining(t *testing.T) {
 
 			// Test modifications/transitions
 			if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-				bc, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Get(tc.beConfig.Name, metav1.GetOptions{})
+				bc, err := bcCRUD.Get(tc.beConfig.Namespace, tc.beConfig.Name)
 				if err != nil {
 					return err
 				}
@@ -126,7 +128,7 @@ func TestDraining(t *testing.T) {
 					bc.Spec.ConnectionDraining = &backendconfig.ConnectionDrainingConfig{}
 				}
 				bc.Spec.ConnectionDraining.DrainingTimeoutSec = tc.transitionTo
-				_, err = Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Update(bc)
+				_, err = bcCRUD.Update(bc)
 				return err
 			}); err != nil {
 				t.Errorf("Failed to update BackendConfig ConnectionDraining settings for %s: %v", t.Name(), err)

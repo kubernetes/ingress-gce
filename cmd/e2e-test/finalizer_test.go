@@ -22,6 +22,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/utils/common"
 )
@@ -45,7 +46,7 @@ func TestFinalizer(t *testing.T) {
 		}
 		t.Logf("Echo service created (%s/%s)", s.Namespace, svcName)
 
-		crud := e2e.IngressCRUD{C: Framework.Clientset}
+		crud := adapter.IngressCRUD{C: Framework.Clientset}
 		ing.Namespace = s.Namespace
 		ingKey := common.NamespacedName(ing)
 		if _, err := crud.Create(ing); err != nil {
@@ -96,7 +97,7 @@ func TestFinalizerIngressClassChange(t *testing.T) {
 		}
 		t.Logf("Echo service created (%s/%s)", s.Namespace, svcName)
 
-		crud := e2e.IngressCRUD{C: Framework.Clientset}
+		crud := adapter.IngressCRUD{C: Framework.Clientset}
 		ing.Namespace = s.Namespace
 		ingKey := common.NamespacedName(ing)
 		if _, err := crud.Create(ing); err != nil {
@@ -160,7 +161,7 @@ func TestFinalizerIngressesWithSharedResources(t *testing.T) {
 		}
 		t.Logf("Echo service created (%s/%s)", s.Namespace, svcName)
 
-		crud := e2e.IngressCRUD{C: Framework.Clientset}
+		crud := adapter.IngressCRUD{C: Framework.Clientset}
 		ing.Namespace = s.Namespace
 		ingKey := common.NamespacedName(ing)
 		if _, err := crud.Create(ing); err != nil {

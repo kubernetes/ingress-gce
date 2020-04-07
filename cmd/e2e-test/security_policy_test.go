@@ -24,6 +24,7 @@ import (
 	"time"
 
 	computebeta "google.golang.org/api/compute/v0.beta"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -98,8 +99,9 @@ func TestSecurityPolicyEnable(t *testing.T) {
 			t.Fatalf("e2e.CreateEchoService(s, service-1, %q) = _, _, %v, want _, _, nil", testBackendConfigAnnotation, err)
 		}
 
-		testBackendConfig := fuzz.NewBackendConfigBuilder("", "backendconfig-1").SetSecurityPolicy(testSecurityPolicy.Name).Build()
-		testBackendConfig, err = Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Create(testBackendConfig)
+		testBackendConfig := fuzz.NewBackendConfigBuilder(s.Namespace, "backendconfig-1").SetSecurityPolicy(testSecurityPolicy.Name).Build()
+		bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+		testBackendConfig, err = bcCRUD.Create(testBackendConfig)
 		if err != nil {
 			t.Fatalf("Error creating test backend config: %v", err)
 		}
@@ -110,7 +112,7 @@ func TestSecurityPolicyEnable(t *testing.T) {
 			DefaultBackend("service-1", port80).
 			AddPath("test.com", "/", "service-1", port80).
 			Build()
-		crud := e2e.IngressCRUD{C: Framework.Clientset}
+		crud := adapter.IngressCRUD{C: Framework.Clientset}
 		testIng, err = crud.Create(testIng)
 		if err != nil {
 			t.Fatalf("error creating Ingress spec: %v", err)
@@ -175,8 +177,9 @@ func TestSecurityPolicyTransition(t *testing.T) {
 			t.Fatalf("e2e.CreateEchoService(s, service-1, %q) = _, _, %v, want _, _, nil", testBackendConfigAnnotation, err)
 		}
 
-		testBackendConfig := fuzz.NewBackendConfigBuilder("", "backendconfig-1").SetSecurityPolicy(testSecurityPolicyAllow.Name).Build()
-		testBackendConfig, err = Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Create(testBackendConfig)
+		testBackendConfig := fuzz.NewBackendConfigBuilder(s.Namespace, "backendconfig-1").SetSecurityPolicy(testSecurityPolicyAllow.Name).Build()
+		bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+		testBackendConfig, err = bcCRUD.Create(testBackendConfig)
 		if err != nil {
 			t.Fatalf("Error creating test backend config: %v", err)
 		}
@@ -187,7 +190,7 @@ func TestSecurityPolicyTransition(t *testing.T) {
 			DefaultBackend("service-1", port80).
 			AddPath("test.com", "/", "service-1", port80).
 			Build()
-		crud := e2e.IngressCRUD{C: Framework.Clientset}
+		crud := adapter.IngressCRUD{C: Framework.Clientset}
 		testIng, err = crud.Create(testIng)
 		if err != nil {
 			t.Fatalf("error creating Ingress spec: %v", err)
@@ -224,7 +227,8 @@ func TestSecurityPolicyTransition(t *testing.T) {
 
 		for _, step := range steps {
 			testBackendConfig.Spec.SecurityPolicy.Name = step.securityPolicyToSet
-			testBackendConfig, err = Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Update(testBackendConfig)
+			bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+			testBackendConfig, err = bcCRUD.Update(testBackendConfig)
 			if err != nil {
 				t.Fatalf("Error updating test backend config: %v", err)
 			}

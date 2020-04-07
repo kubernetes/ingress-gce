@@ -22,21 +22,21 @@ import (
 	"testing"
 	"time"
 
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/ingress-gce/pkg/annotations"
-	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
+	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const (
-	transitionPollTimeout = 10 * time.Minute
-	tansitionPollInterval = 30 * time.Second
+	transitionPollTimeout  = 10 * time.Minute
+	transitionPollInterval = 30 * time.Second
 )
 
 type affinityTransition struct {
@@ -89,7 +89,9 @@ func TestAffinity(t *testing.T) {
 				annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
 			}
 
-			if _, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Create(tc.beConfig); err != nil {
+			bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+			tc.beConfig.Namespace = s.Namespace
+			if _, err := bcCRUD.Create(tc.beConfig); err != nil {
 				t.Fatalf("error creating BackendConfig: %v", err)
 			}
 			t.Logf("BackendConfig created (%s/%s) ", s.Namespace, tc.beConfig.Name)
@@ -103,7 +105,7 @@ func TestAffinity(t *testing.T) {
 			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 				AddPath("test.com", "/", "service-1", intstr.FromInt(80)).
 				Build()
-			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
@@ -131,7 +133,7 @@ func TestAffinity(t *testing.T) {
 
 			// Test modifications
 			if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-				bc, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Get(tc.beConfig.Name, metav1.GetOptions{})
+				bc, err := bcCRUD.Get(tc.beConfig.Namespace, tc.beConfig.Name)
 				if err != nil {
 					return err
 				}
@@ -140,13 +142,13 @@ func TestAffinity(t *testing.T) {
 				}
 				bc.Spec.SessionAffinity.AffinityType = tc.transition.affinity
 				bc.Spec.SessionAffinity.AffinityCookieTtlSec = &tc.transition.ttl
-				_, err = Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Update(bc)
+				_, err = bcCRUD.Update(bc)
 				return err
 			}); err != nil {
 				t.Errorf("Failed to update BackendConfig affinity settings for %s: %v", t.Name(), err)
 			}
 
-			if err := wait.Poll(tansitionPollInterval, transitionPollTimeout, func() (bool, error) {
+			if err := wait.Poll(transitionPollInterval, transitionPollTimeout, func() (bool, error) {
 				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 				if err != nil {
 					t.Logf("error getting GCP resources for LB with IP = %q: %v", vip, err)
@@ -225,7 +227,9 @@ func TestILBSA(t *testing.T) {
 				annotations.NEGAnnotationKey:     negVal.String(),
 			}
 
-			if _, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Create(tc.beConfig); err != nil {
+			bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+			tc.beConfig.Namespace = s.Namespace
+			if _, err := bcCRUD.Create(tc.beConfig); err != nil {
 				t.Fatalf("error creating BackendConfig: %v", err)
 			}
 			t.Logf("BackendConfig created (%s/%s) ", s.Namespace, tc.beConfig.Name)
@@ -240,7 +244,7 @@ func TestILBSA(t *testing.T) {
 				AddPath("test.com", "/", "service-1", intstr.FromInt(80)).
 				ConfigureForILB().
 				Build()
-			crud := e2e.IngressCRUD{C: Framework.Clientset}
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
@@ -268,7 +272,7 @@ func TestILBSA(t *testing.T) {
 
 			// Test modifications
 			if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-				bc, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Get(tc.beConfig.Name, metav1.GetOptions{})
+				bc, err := bcCRUD.Get(tc.beConfig.Namespace, tc.beConfig.Name)
 				if err != nil {
 					return err
 				}
@@ -277,13 +281,13 @@ func TestILBSA(t *testing.T) {
 				}
 				bc.Spec.SessionAffinity.AffinityType = tc.transition.affinity
 				bc.Spec.SessionAffinity.AffinityCookieTtlSec = &tc.transition.ttl
-				_, err = Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Update(bc)
+				_, err = bcCRUD.Update(bc)
 				return err
 			}); err != nil {
 				t.Errorf("Failed to update BackendConfig affinity settings for %s: %v", t.Name(), err)
 			}
 
-			if err := wait.Poll(tansitionPollInterval, transitionPollTimeout, func() (bool, error) {
+			if err := wait.Poll(transitionPollInterval, transitionPollTimeout, func() (bool, error) {
 				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 				if err != nil {
 					t.Logf("error getting GCP resources for LB with IP = %q: %v", vip, err)

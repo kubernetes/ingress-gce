@@ -22,6 +22,7 @@ import (
 
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/utils/common"
 )
@@ -31,7 +32,7 @@ type Finalizer struct {
 	t         *testing.T
 	s         *e2e.Sandbox
 	framework *e2e.Framework
-	crud      e2e.IngressCRUD
+	crud      adapter.IngressCRUD
 	ing       *v1beta1.Ingress
 }
 
@@ -67,7 +68,7 @@ func (fr *Finalizer) PreUpgrade() error {
 		AddPath("foo.com", "/", svcName, port80).
 		Build()
 	ingKey := common.NamespacedName(ing)
-	fr.crud = e2e.IngressCRUD{C: fr.framework.Clientset}
+	fr.crud = adapter.IngressCRUD{C: fr.framework.Clientset}
 	if _, err := fr.crud.Create(ing); err != nil {
 		fr.t.Fatalf("error creating Ingress %s: %v", ingKey, err)
 	}
