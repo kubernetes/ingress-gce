@@ -17,6 +17,7 @@ limitations under the License.
 package app
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -87,7 +88,7 @@ func waitForServicePort(client kubernetes.Interface, name types.NamespacedName, 
 
 	err := wait.Poll(3*time.Second, 5*time.Minute, func() (bool, error) {
 		var err error
-		svc, err = client.CoreV1().Services(name.Namespace).Get(name.Name, meta_v1.GetOptions{})
+		svc, err = client.CoreV1().Services(name.Namespace).Get(context.TODO(), name.Name, meta_v1.GetOptions{})
 		if err != nil {
 			klog.V(4).Infof("Error getting service %v", name.String())
 			return false, nil

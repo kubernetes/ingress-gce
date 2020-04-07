@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	context2 "context"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -591,7 +592,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 
 	// Update IP through update/status endpoint
 	ip := l7.GetIP()
-	currIng, err := ingClient.Get(ing.Name, metav1.GetOptions{})
+	currIng, err := ingClient.Get(context2.TODO(), ing.Name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -608,7 +609,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 			// TODO: If this update fails it's probably resource version related,
 			// which means it's advantageous to retry right away vs requeuing.
 			klog.Infof("Updating loadbalancer %v/%v with IP %v", ing.Namespace, ing.Name, ip)
-			if _, err := ingClient.UpdateStatus(currIng); err != nil {
+			if _, err := ingClient.UpdateStatus(context2.TODO(), currIng, metav1.UpdateOptions{}); err != nil {
 				return err
 			}
 			lbc.ctx.Recorder(ing.Namespace).Eventf(currIng, apiv1.EventTypeNormal, "CREATE", "ip: %v", ip)
@@ -664,14 +665,14 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *u
 
 func updateAnnotations(client kubernetes.Interface, name, namespace string, annotations map[string]string) error {
 	ingClient := client.NetworkingV1beta1().Ingresses(namespace)
-	currIng, err := ingClient.Get(name, metav1.GetOptions{})
+	currIng, err := ingClient.Get(context2.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
 	if !reflect.DeepEqual(currIng.Annotations, annotations) {
 		klog.V(3).Infof("Updating annotations of %v/%v", namespace, name)
 		currIng.Annotations = annotations
-		if _, err := ingClient.Update(currIng); err != nil {
+		if _, err := ingClient.Update(context2.TODO(), currIng, metav1.UpdateOptions{}); err != nil {
 			return err
 		}
 	}

@@ -17,6 +17,7 @@ limitations under the License.
 package neg
 
 import (
+	context2 "context"
 	"reflect"
 	"testing"
 	"time"
@@ -353,7 +354,7 @@ func TestGarbageCollectionNEG(t *testing.T) {
 	t.Parallel()
 
 	kubeClient := fake.NewSimpleClientset()
-	if _, err := kubeClient.CoreV1().Endpoints(testServiceNamespace).Create(getDefaultEndpoint()); err != nil {
+	if _, err := kubeClient.CoreV1().Endpoints(testServiceNamespace).Create(context2.TODO(), getDefaultEndpoint(), metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Failed to create endpoint: %v", err)
 	}
 	manager := NewTestSyncerManager(kubeClient)

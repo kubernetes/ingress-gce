@@ -93,7 +93,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 	if err != nil {
 		klog.Fatalf("Failed to create ApiextensionClient for DestinationRule, disabling ASM Mode, error: %s", err)
 	}
-	destinationRuleCRD, err := apiextensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(destinationRuleCRDName, metav1.GetOptions{})
+	destinationRuleCRD, err := apiextensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(context.TODO(), destinationRuleCRDName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			klog.Infof("Cannot load DestinationRule CRD, Istio is disabled on this cluster.")
@@ -139,7 +139,7 @@ type Framework struct {
 // SanityCheck the test environment before proceeding.
 func (f *Framework) SanityCheck() error {
 	klog.V(2).Info("Checking connectivity with Kubernetes API")
-	if _, err := f.Clientset.CoreV1().Pods("default").List(metav1.ListOptions{}); err != nil {
+	if _, err := f.Clientset.CoreV1().Pods("default").List(context.TODO(), metav1.ListOptions{}); err != nil {
 		klog.Errorf("Error accessing Kubernetes API: %v", err)
 		return err
 	}

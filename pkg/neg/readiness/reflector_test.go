@@ -17,6 +17,7 @@ limitations under the License.
 package readiness
 
 import (
+	context2 "context"
 	"fmt"
 	"reflect"
 	"testing"
@@ -102,7 +103,7 @@ func TestSyncPod(t *testing.T) {
 			mutateState: func() {
 				pod := generatePod(testNamespace, podName, false, true, true)
 				podLister.Add(pod)
-				client.CoreV1().Pods(testNamespace).Create(pod)
+				client.CoreV1().Pods(testNamespace).Create(context2.TODO(), pod, metav1.CreateOptions{})
 			},
 			inputKey:     keyFunc(testNamespace, podName),
 			inputNeg:     nil,
@@ -114,7 +115,7 @@ func TestSyncPod(t *testing.T) {
 			mutateState: func() {
 				pod := generatePod(testNamespace, podName, true, true, true)
 				podLister.Update(pod)
-				client.CoreV1().Pods(testNamespace).Update(pod)
+				client.CoreV1().Pods(testNamespace).Update(context2.TODO(), pod, metav1.UpdateOptions{})
 			},
 			inputKey:     keyFunc(testNamespace, podName),
 			inputNeg:     nil,
@@ -126,7 +127,7 @@ func TestSyncPod(t *testing.T) {
 			mutateState: func() {
 				pod := generatePod(testNamespace, podName, true, false, false)
 				podLister.Update(pod)
-				client.CoreV1().Pods(testNamespace).Update(pod)
+				client.CoreV1().Pods(testNamespace).Update(context2.TODO(), pod, metav1.UpdateOptions{})
 			},
 			inputKey:     keyFunc(testNamespace, podName),
 			inputNeg:     nil,
@@ -159,7 +160,7 @@ func TestSyncPod(t *testing.T) {
 				pod := generatePod(testNamespace, podName, true, false, false)
 				pod.CreationTimestamp = now
 				podLister.Update(pod)
-				client.CoreV1().Pods(testNamespace).Update(pod)
+				client.CoreV1().Pods(testNamespace).Update(context2.TODO(), pod, metav1.UpdateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
 			},
 			inputKey:     keyFunc(testNamespace, podName),
@@ -192,7 +193,7 @@ func TestSyncPod(t *testing.T) {
 			mutateState: func() {
 				pod := generatePod(testNamespace, podName, true, false, false)
 				podLister.Update(pod)
-				client.CoreV1().Pods(testNamespace).Update(pod)
+				client.CoreV1().Pods(testNamespace).Update(context2.TODO(), pod, metav1.UpdateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
 			},
 			inputKey:            keyFunc(testNamespace, podName),
@@ -227,7 +228,7 @@ func TestSyncPod(t *testing.T) {
 				pod := generatePod(testNamespace, podName, true, false, false)
 				pod.CreationTimestamp = now
 				podLister.Update(pod)
-				client.CoreV1().Pods(testNamespace).Update(pod)
+				client.CoreV1().Pods(testNamespace).Update(context2.TODO(), pod, metav1.UpdateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
 				fakeClock.Step(unreadyTimeout)
 			},
@@ -262,7 +263,7 @@ func TestSyncPod(t *testing.T) {
 			mutateState: func() {
 				pod := generatePod(testNamespace, podName, true, false, false)
 				podLister.Update(pod)
-				client.CoreV1().Pods(testNamespace).Update(pod)
+				client.CoreV1().Pods(testNamespace).Update(context2.TODO(), pod, metav1.UpdateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
 			},
 			inputKey:            keyFunc(testNamespace, podName),
@@ -299,7 +300,7 @@ func TestSyncPod(t *testing.T) {
 		}
 
 		if tc.expectExists {
-			pod, err := fakeContext.KubeClient.CoreV1().Pods(testNamespace).Get(tc.expectPod.Name, metav1.GetOptions{})
+			pod, err := fakeContext.KubeClient.CoreV1().Pods(testNamespace).Get(context2.TODO(), tc.expectPod.Name, metav1.GetOptions{})
 			if err != nil {
 				t.Errorf("For test case %q, expect err to be nil, but got %v", tc.desc, err)
 			}

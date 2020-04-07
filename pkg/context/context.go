@@ -14,6 +14,7 @@ limitations under the License.
 package context
 
 import (
+	context2 "context"
 	"fmt"
 	"sync"
 	"time"
@@ -170,7 +171,7 @@ func (ctx *ControllerContext) initEnableASM() {
 		ctx.ASMConfigController.DisableASM()
 		return
 	}
-	destinationRuleCRD, err := apiextensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(destinationRuleCRDName, metav1.GetOptions{})
+	destinationRuleCRD, err := apiextensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(context2.TODO(), destinationRuleCRDName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", "Cannot find DestinationRule CRD, disabling ASM Mode, please check Istio setup.")

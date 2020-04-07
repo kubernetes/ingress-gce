@@ -1,6 +1,7 @@
 package cmconfig
 
 import (
+	"context"
 	"flag"
 	"strings"
 	"testing"
@@ -107,9 +108,9 @@ func TestController(t *testing.T) {
 			cmLister := cmInformer.GetIndexer()
 
 			if tc.defaultConfigMapData != nil {
-				fakeClient.CoreV1().ConfigMaps(testNamespace).Create(&v1.ConfigMap{
+				fakeClient.CoreV1().ConfigMaps(testNamespace).Create(context.TODO(), &v1.ConfigMap{
 					ObjectMeta: metav1.ObjectMeta{Namespace: testNamespace, Name: testConfigMapName},
-					Data:       tc.defaultConfigMapData})
+					Data:       tc.defaultConfigMapData}, metav1.CreateOptions{})
 			}
 			controller := NewConfigMapConfigController(fakeClient, nil, testNamespace, testConfigMapName)
 			config := controller.GetConfig()
@@ -126,7 +127,7 @@ func TestController(t *testing.T) {
 					Data:       tc.updateConifgMapData}
 
 				cmLister.Add(&updateConfigMap)
-				fakeClient.CoreV1().ConfigMaps(testNamespace).Update(&updateConfigMap)
+				fakeClient.CoreV1().ConfigMaps(testNamespace).Update(context.TODO(), &updateConfigMap, metav1.UpdateOptions{})
 				controller.processItem(&updateConfigMap, func() {
 					stopped = true
 				})

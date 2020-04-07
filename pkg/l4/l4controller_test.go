@@ -17,6 +17,7 @@ limitations under the License.
 package l4
 
 import (
+	context2 "context"
 	"reflect"
 	"testing"
 	"time"
@@ -62,17 +63,17 @@ func newServiceController() *L4Controller {
 }
 
 func addILBService(l4c *L4Controller, svc *api_v1.Service) {
-	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Create(svc)
+	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Create(context2.TODO(), svc, v1.CreateOptions{})
 	l4c.ctx.ServiceInformer.GetIndexer().Add(svc)
 }
 
 func updateILBService(l4c *L4Controller, svc *api_v1.Service) {
-	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Update(svc)
+	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Update(context2.TODO(), svc, v1.UpdateOptions{})
 	l4c.ctx.ServiceInformer.GetIndexer().Update(svc)
 }
 
 func deleteILBService(l4c *L4Controller, svc *api_v1.Service) {
-	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Delete(svc.Name, &v1.DeleteOptions{})
+	l4c.ctx.KubeClient.CoreV1().Services(svc.Namespace).Delete(context2.TODO(), svc.Name, v1.DeleteOptions{})
 	l4c.ctx.ServiceInformer.GetIndexer().Delete(svc)
 }
 
@@ -137,7 +138,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
 	}
 	// List the service and ensure that it contains the finalizer as well as Status field.
-	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
@@ -151,7 +152,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 		t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
 	}
 	// List the service and ensure that it contains the finalizer as well as Status field.
-	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
@@ -167,7 +168,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 	// TODO remove this once https://github.com/kubernetes/client-go/issues/607 has been fixed.
 	validatePatchRequest(l4c.client, resetLBStatus, t)
 	// List the service and ensure that it contains the finalizer as well as Status field.
-	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
@@ -184,7 +185,7 @@ func TestProcessDeletion(t *testing.T) {
 		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
 	}
 	// List the service and ensure that it contains the finalizer as well as Status field.
-	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
@@ -203,13 +204,13 @@ func TestProcessDeletion(t *testing.T) {
 	// TODO remove this once https://github.com/kubernetes/client-go/issues/607 has been fixed.
 	validatePatchRequest(l4c.client, resetLBStatus, t)
 	// List the service and ensure that it contains the finalizer as well as Status field.
-	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(newSvc, false, t)
 	deleteILBService(l4c, newSvc)
-	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if newSvc != nil {
 		t.Errorf("Expected service to be deleted, but was found - %v", newSvc)
 	}
@@ -226,7 +227,7 @@ func TestProcessCreateLegacyService(t *testing.T) {
 		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
 	}
 	// List the service and ensure that the status field is not updated.
-	svc, err := l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	svc, err := l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
@@ -262,7 +263,7 @@ func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 		t.Errorf("Failed to sync newly updated service %s, err %v", newSvc.Name, err)
 	}
 	// List the service and ensure that the status field is updated.
-	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(newSvc.Name, v1.GetOptions{})
+	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}

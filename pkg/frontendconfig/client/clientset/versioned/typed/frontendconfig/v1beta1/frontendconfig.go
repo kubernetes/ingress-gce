@@ -19,6 +19,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	"context"
 	"time"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -70,7 +71,7 @@ func (c *frontendConfigs) Get(name string, options v1.GetOptions) (result *v1bet
 		Resource("frontendconfigs").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 	return
 }
@@ -87,7 +88,7 @@ func (c *frontendConfigs) List(opts v1.ListOptions) (result *v1beta1.FrontendCon
 		Resource("frontendconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 	return
 }
@@ -104,7 +105,7 @@ func (c *frontendConfigs) Watch(opts v1.ListOptions) (watch.Interface, error) {
 		Resource("frontendconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
-		Watch()
+		Watch(context.TODO())
 }
 
 // Create takes the representation of a frontendConfig and creates it.  Returns the server's representation of the frontendConfig, and an error, if there is any.
@@ -114,7 +115,7 @@ func (c *frontendConfigs) Create(frontendConfig *v1beta1.FrontendConfig) (result
 		Namespace(c.ns).
 		Resource("frontendconfigs").
 		Body(frontendConfig).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 	return
 }
@@ -127,7 +128,7 @@ func (c *frontendConfigs) Update(frontendConfig *v1beta1.FrontendConfig) (result
 		Resource("frontendconfigs").
 		Name(frontendConfig.Name).
 		Body(frontendConfig).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 	return
 }
@@ -139,7 +140,7 @@ func (c *frontendConfigs) Delete(name string, options *v1.DeleteOptions) error {
 		Resource("frontendconfigs").
 		Name(name).
 		Body(options).
-		Do().
+		Do(context.TODO()).
 		Error()
 }
 
@@ -155,7 +156,7 @@ func (c *frontendConfigs) DeleteCollection(options *v1.DeleteOptions, listOption
 		VersionedParams(&listOptions, scheme.ParameterCodec).
 		Timeout(timeout).
 		Body(options).
-		Do().
+		Do(context.TODO()).
 		Error()
 }
 
@@ -168,7 +169,7 @@ func (c *frontendConfigs) Patch(name string, pt types.PatchType, data []byte, su
 		SubResource(subresources...).
 		Name(name).
 		Body(data).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 	return
 }

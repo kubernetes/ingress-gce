@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"k8s.io/api/networking/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
@@ -97,7 +98,7 @@ func TestILB(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(tc.ing); err != nil {
+			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(context.TODO(), tc.ing, metav1.CreateOptions{}); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
@@ -243,7 +244,7 @@ func TestILBHttps(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(ing); err != nil {
+			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(context.TODO(), ing, metav1.CreateOptions{}); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
@@ -384,7 +385,7 @@ func TestILBUpdate(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(tc.ing); err != nil {
+			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(context.TODO(), tc.ing, metav1.CreateOptions{}); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
@@ -418,7 +419,7 @@ func TestILBUpdate(t *testing.T) {
 			}
 
 			// Perform update
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Update(tc.ingUpdate); err != nil {
+			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Update(context.TODO(), tc.ingUpdate, metav1.UpdateOptions{}); err != nil {
 				t.Fatalf("error updating ingress spec: %v", err)
 			}
 
@@ -492,7 +493,7 @@ func TestILBError(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(tc.ing); err != nil {
+			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(context.TODO(), tc.ing, metav1.CreateOptions{}); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
@@ -582,7 +583,7 @@ func TestILBShared(t *testing.T) {
 
 				t.Logf("Ingress = %s", ing.String())
 
-				if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(ing); err != nil {
+				if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(context.TODO(), ing, metav1.CreateOptions{}); err != nil {
 					t.Fatalf("error creating Ingress spec: %v", err)
 				}
 				t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)

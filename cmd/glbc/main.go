@@ -134,7 +134,7 @@ func main() {
 	}
 
 	// Get kube-system UID that will be used for v2 frontend naming scheme.
-	kubeSystemNS, err := kubeClient.CoreV1().Namespaces().Get("kube-system", metav1.GetOptions{})
+	kubeSystemNS, err := kubeClient.CoreV1().Namespaces().Get(context.TODO(), "kube-system", metav1.GetOptions{})
 	if err != nil {
 		klog.Fatalf("Error getting kube-system namespace: %v", err)
 	}

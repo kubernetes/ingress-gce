@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -116,7 +117,7 @@ func TestBackendConfigNegatives(t *testing.T) {
 
 			t.Logf("Waiting %v for warning event to be emitted", eventPollTimeout)
 			if err := wait.Poll(eventPollInterval, eventPollTimeout, func() (bool, error) {
-				events, err := Framework.Clientset.CoreV1().Events(s.Namespace).List(metav1.ListOptions{})
+				events, err := Framework.Clientset.CoreV1().Events(s.Namespace).List(context.TODO(), metav1.ListOptions{})
 				if err != nil {
 					return false, fmt.Errorf("error in listing events: %s", err)
 				}

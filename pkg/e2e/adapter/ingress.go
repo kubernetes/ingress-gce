@@ -4,6 +4,7 @@ package adapter
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 
@@ -27,10 +28,10 @@ func (crud *IngressCRUD) Get(ns, name string) (*v1beta1.Ingress, error) {
 	}
 	klog.Infof("Get %s/%s", ns, name)
 	if new {
-		return crud.C.NetworkingV1beta1().Ingresses(ns).Get(name, metav1.GetOptions{})
+		return crud.C.NetworkingV1beta1().Ingresses(ns).Get(context.TODO(), name, metav1.GetOptions{})
 	}
 	klog.Warning("Using legacy API")
-	ing, err := crud.C.ExtensionsV1beta1().Ingresses(ns).Get(name, metav1.GetOptions{})
+	ing, err := crud.C.ExtensionsV1beta1().Ingresses(ns).Get(context.TODO(), name, metav1.GetOptions{})
 	return toIngressNetworkingGroup(ing), err
 }
 
@@ -42,11 +43,11 @@ func (crud *IngressCRUD) Create(ing *v1beta1.Ingress) (*v1beta1.Ingress, error) 
 	}
 	klog.Infof("Create %s/%s", ing.Namespace, ing.Name)
 	if new {
-		return crud.C.NetworkingV1beta1().Ingresses(ing.Namespace).Create(ing)
+		return crud.C.NetworkingV1beta1().Ingresses(ing.Namespace).Create(context.TODO(), ing, metav1.CreateOptions{})
 	}
 	klog.Warning("Using legacy API")
 	legacyIng := toIngressExtensionsGroup(ing)
-	legacyIng, err = crud.C.ExtensionsV1beta1().Ingresses(ing.Namespace).Create(legacyIng)
+	legacyIng, err = crud.C.ExtensionsV1beta1().Ingresses(ing.Namespace).Create(context.TODO(), legacyIng, metav1.CreateOptions{})
 	return toIngressNetworkingGroup(legacyIng), err
 }
 
@@ -58,11 +59,11 @@ func (crud *IngressCRUD) Update(ing *v1beta1.Ingress) (*v1beta1.Ingress, error) 
 	}
 	klog.Infof("Update %s/%s", ing.Namespace, ing.Name)
 	if new {
-		return crud.C.NetworkingV1beta1().Ingresses(ing.Namespace).Update(ing)
+		return crud.C.NetworkingV1beta1().Ingresses(ing.Namespace).Update(context.TODO(), ing, metav1.UpdateOptions{})
 	}
 	klog.Warning("Using legacy API")
 	legacyIng := toIngressExtensionsGroup(ing)
-	legacyIng, err = crud.C.ExtensionsV1beta1().Ingresses(ing.Namespace).Update(legacyIng)
+	legacyIng, err = crud.C.ExtensionsV1beta1().Ingresses(ing.Namespace).Update(context.TODO(), legacyIng, metav1.UpdateOptions{})
 	return toIngressNetworkingGroup(legacyIng), err
 }
 
@@ -74,10 +75,10 @@ func (crud *IngressCRUD) Delete(ns, name string) error {
 	}
 	klog.Infof("Delete %s/%s", ns, name)
 	if new {
-		return crud.C.NetworkingV1beta1().Ingresses(ns).Delete(name, &metav1.DeleteOptions{})
+		return crud.C.NetworkingV1beta1().Ingresses(ns).Delete(context.TODO(), name, metav1.DeleteOptions{})
 	}
 	klog.Warning("Using legacy API")
-	return crud.C.ExtensionsV1beta1().Ingresses(ns).Delete(name, &metav1.DeleteOptions{})
+	return crud.C.ExtensionsV1beta1().Ingresses(ns).Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
 func (crud *IngressCRUD) supportsNewAPI() (bool, error) {

@@ -324,7 +324,7 @@ func WaitForNEGDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, option
 // WaitForEchoDeploymentStable waits until the deployment's readyReplicas, availableReplicas and updatedReplicas are equal to replicas.
 func WaitForEchoDeploymentStable(s *Sandbox, name string) error {
 	return wait.Poll(k8sApiPoolInterval, k8sApiPollTimeout, func() (bool, error) {
-		deployment, err := s.f.Clientset.AppsV1().Deployments(s.Namespace).Get(name, metav1.GetOptions{})
+		deployment, err := s.f.Clientset.AppsV1().Deployments(s.Namespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if deployment == nil || err != nil {
 			return false, fmt.Errorf("failed to get deployment %s/%s: %v", s.Namespace, name, err)
 		}
@@ -346,7 +346,7 @@ func WaitForNegStatus(s *Sandbox, name string, expectSvcPorts []string, noPresen
 		timeout = 2 * time.Minute
 	}
 	err = wait.Poll(negPollInterval, timeout, func() (bool, error) {
-		svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(name, metav1.GetOptions{})
+		svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if svc == nil || err != nil {
 			return false, fmt.Errorf("failed to get service %s/%s: %v", s.Namespace, name, err)
 		}
@@ -572,7 +572,7 @@ func CheckV2Finalizer(ing *v1beta1.Ingress) error {
 func WaitDestinationRuleAnnotation(s *Sandbox, namespace, name string, negCount int, timeout time.Duration) (*annotations.DestinationRuleNEGStatus, error) {
 	var rsl annotations.DestinationRuleNEGStatus
 	if err := wait.Poll(5*time.Second, timeout, func() (bool, error) {
-		unsDr, err := s.f.DestinationRuleClient.Namespace(namespace).Get(name, metav1.GetOptions{})
+		unsDr, err := s.f.DestinationRuleClient.Namespace(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -598,7 +598,7 @@ func WaitDestinationRuleAnnotation(s *Sandbox, namespace, name string, negCount 
 
 // WaitConfigMapEvents waits the msgs messages present for namespace:name ConfigMap until timeout.
 func WaitConfigMapEvents(s *Sandbox, namespace, name string, msgs []string, timeout time.Duration) error {
-	cm, err := s.f.Clientset.CoreV1().ConfigMaps(namespace).Get(name, metav1.GetOptions{})
+	cm, err := s.f.Clientset.CoreV1().ConfigMaps(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}

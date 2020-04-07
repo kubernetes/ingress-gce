@@ -17,6 +17,7 @@ limitations under the License.
 package crd
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -59,7 +60,7 @@ func (h *CRDHandler) EnsureCRD(meta *CRDMeta) (*apiextensionsv1beta1.CustomResou
 	// to be created. Keeps watching the Established condition of BackendConfig
 	// CRD to be true.
 	if err := wait.PollImmediate(checkCRDEstablishedInterval, checkCRDEstablishedTimeout, func() (bool, error) {
-		crd, err = h.client.ApiextensionsV1beta1().CustomResourceDefinitions().Get(crd.Name, metav1.GetOptions{})
+		crd, err = h.client.ApiextensionsV1beta1().CustomResourceDefinitions().Get(context.TODO(), crd.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
 		}
@@ -80,7 +81,7 @@ func (h *CRDHandler) EnsureCRD(meta *CRDMeta) (*apiextensionsv1beta1.CustomResou
 
 func (h *CRDHandler) createOrUpdateCRD(meta *CRDMeta) (*apiextensionsv1beta1.CustomResourceDefinition, error) {
 	crd := crd(meta)
-	existingCRD, err := h.client.ApiextensionsV1beta1().CustomResourceDefinitions().Get(crd.Name, metav1.GetOptions{})
+	existingCRD, err := h.client.ApiextensionsV1beta1().CustomResourceDefinitions().Get(context.TODO(), crd.Name, metav1.GetOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, fmt.Errorf("failed to verify the existence of %v CRD: %v", meta.kind, err)
 	}
@@ -89,11 +90,11 @@ func (h *CRDHandler) createOrUpdateCRD(meta *CRDMeta) (*apiextensionsv1beta1.Cus
 	if err == nil {
 		klog.V(0).Infof("Updating existing %v CRD...", meta.kind)
 		crd.ResourceVersion = existingCRD.ResourceVersion
-		return h.client.ApiextensionsV1beta1().CustomResourceDefinitions().Update(crd)
+		return h.client.ApiextensionsV1beta1().CustomResourceDefinitions().Update(context.TODO(), crd, metav1.UpdateOptions{})
 	}
 
 	klog.V(0).Infof("Creating %v CRD...", meta.kind)
-	return h.client.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd)
+	return h.client.ApiextensionsV1beta1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{})
 }
 
 func crd(meta *CRDMeta) *apiextensionsv1beta1.CustomResourceDefinition {

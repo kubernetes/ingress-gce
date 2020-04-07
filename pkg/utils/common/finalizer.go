@@ -14,6 +14,7 @@ limitations under the License.
 package common
 
 import (
+	"context"
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
@@ -65,7 +66,7 @@ func EnsureFinalizer(ing *v1beta1.Ingress, ingClient client.IngressInterface, fi
 		updated.ObjectMeta.Finalizers = append(updated.ObjectMeta.Finalizers, finalizerKey)
 		// TODO(smatti): Make this optimistic concurrency control compliant on write.
 		// Refer: https://github.com/eBay/Kubernetes/blob/master/docs/devel/api-conventions.md#concurrency-control-and-consistency
-		if _, err := ingClient.Update(updated); err != nil {
+		if _, err := ingClient.Update(context.TODO(), updated, meta_v1.UpdateOptions{}); err != nil {
 			return nil, fmt.Errorf("error updating Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 		}
 		klog.V(2).Infof("Added finalizer %q for Ingress %s/%s", finalizerKey, ing.Namespace, ing.Name)
@@ -83,7 +84,7 @@ func EnsureDeleteFinalizer(ing *v1beta1.Ingress, ingClient client.IngressInterfa
 	if HasGivenFinalizer(ing.ObjectMeta, finalizerKey) {
 		updated := ing.DeepCopy()
 		updated.ObjectMeta.Finalizers = slice.RemoveString(updated.ObjectMeta.Finalizers, finalizerKey, nil)
-		if _, err := ingClient.Update(updated); err != nil {
+		if _, err := ingClient.Update(context.TODO(), updated, meta_v1.UpdateOptions{}); err != nil {
 			return fmt.Errorf("error updating Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 		}
 		klog.V(2).Infof("Removed finalizer %q for Ingress %s/%s", finalizerKey, ing.Namespace, ing.Name)
@@ -102,7 +103,7 @@ func EnsureServiceFinalizer(service *v1.Service, key string, kubeClient kubernet
 	updated.ObjectMeta.Finalizers = append(updated.ObjectMeta.Finalizers, key)
 
 	klog.V(2).Infof("Adding finalizer %s to service %s/%s", key, updated.Namespace, updated.Name)
-	_, err := kubeClient.CoreV1().Services(updated.Namespace).Update(updated)
+	_, err := kubeClient.CoreV1().Services(updated.Namespace).Update(context.TODO(), updated, meta_v1.UpdateOptions{})
 	return err
 }
 
@@ -117,6 +118,6 @@ func EnsureDeleteServiceFinalizer(service *v1.Service, key string, kubeClient ku
 	updated.ObjectMeta.Finalizers = slice.RemoveString(updated.ObjectMeta.Finalizers, key, nil)
 
 	klog.V(2).Infof("Removing finalizer from service %s/%s", updated.Namespace, updated.Name)
-	_, err := kubeClient.CoreV1().Services(updated.Namespace).Update(updated)
+	_, err := kubeClient.CoreV1().Services(updated.Namespace).Update(context.TODO(), updated, meta_v1.UpdateOptions{})
 	return err
 }
