@@ -122,7 +122,7 @@ func (l *ClusterL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
 	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
-	nodes, _ := l.nodeLister.ListWithPredicate(utils.GetNodeConditionPredicate())
+	nodes, _ := utils.ListWithPredicate(l.nodeLister, utils.GetNodeConditionPredicate())
 
 	nodeZoneMap := make(map[string][]*v1.Node)
 	for _, node := range nodes {

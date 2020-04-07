@@ -26,14 +26,13 @@ import (
 	"strconv"
 	"strings"
 
-	"k8s.io/kubernetes/pkg/util/slice"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
@@ -43,6 +42,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/util/node"
+	"k8s.io/kubernetes/pkg/util/slice"
 )
 
 const (
@@ -78,6 +78,21 @@ const (
 	// https://github.com/kubernetes/autoscaler/blob/cluster-autoscaler-0.5.2/cluster-autoscaler/utils/deletetaint/delete.go#L33
 	ToBeDeletedTaint    = "ToBeDeletedByClusterAutoscaler"
 	L4ILBServiceDescKey = "networking.gke.io/service-name"
+
+	// ServiceNodeExclusionFeature is the feature gate name that
+	// enables nodes to exclude themselves from service load balancers
+	// originated from: https://github.com/kubernetes/kubernetes/blob/28e800245e/pkg/features/kube_features.go#L178
+	ServiceNodeExclusionFeature = "ServiceNodeExclusion"
+
+	// LabelAlphaNodeRoleExcludeBalancer specifies that the node should be
+	// exclude from load balancers created by a cloud provider. This label is deprecated and will
+	// be removed in 1.18.
+	LabelAlphaNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
+
+	// LegacyNodeRoleBehaviorFeature is the feature gate name that enables legacy
+	// behavior to vary cluster functionality on the node-role.kubernetes.io
+	// labels.
+	LegacyNodeRoleBehaviorFeature = "LegacyNodeRoleBehavior"
 )
 
 // FrontendGCAlgorithm species GC algorithm used for ingress frontend resources.
@@ -301,7 +316,7 @@ func IsGLBCIngress(ing *v1beta1.Ingress) bool {
 // TODO(rramkumar): Add a test for this.
 func GetReadyNodeNames(lister listers.NodeLister) ([]string, error) {
 	var nodeNames []string
-	nodes, err := lister.ListWithPredicate(GetNodeConditionPredicate())
+	nodes, err := ListWithPredicate(lister, GetNodeConditionPredicate())
 	if err != nil {
 		return nodeNames, err
 	}
@@ -322,9 +337,13 @@ func NodeIsReady(node *api_v1.Node) bool {
 	return false
 }
 
+// NodeConditionPredicate is a function that indicates whether the given node's conditions meet
+// some set of criteria defined by the function.
+type NodeConditionPredicate func(node *api_v1.Node) bool
+
 // This is a duplicate definition of the function in:
 // kubernetes/kubernetes/pkg/controller/service/service_controller.go
-func GetNodeConditionPredicate() listers.NodeConditionPredicate {
+func GetNodeConditionPredicate() NodeConditionPredicate {
 	return func(node *api_v1.Node) bool {
 		// We add the master to the node list, but its unschedulable.  So we use this to filter
 		// the master.
@@ -342,6 +361,11 @@ func GetNodeConditionPredicate() listers.NodeConditionPredicate {
 		// As of 1.6, we will taint the master, but not necessarily mark it unschedulable.
 		// Recognize nodes labeled as master, and filter them also, as we were doing previously.
 		if _, hasMasterRoleLabel := node.Labels[LabelNodeRoleMaster]; hasMasterRoleLabel {
+			return false
+		}
+
+		// Will be removed in 1.18
+		if _, hasExcludeBalancerLabel := node.Labels[LabelAlphaNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
 			return false
 		}
 
@@ -363,6 +387,23 @@ func GetNodeConditionPredicate() listers.NodeConditionPredicate {
 		}
 		return true
 	}
+}
+
+// ListWithPredicate gets nodes that matches predicate function.
+func ListWithPredicate(nodeLister listers.NodeLister, predicate NodeConditionPredicate) ([]*api_v1.Node, error) {
+	nodes, err := nodeLister.List(labels.Everything())
+	if err != nil {
+		return nil, err
+	}
+
+	var filtered []*api_v1.Node
+	for i := range nodes {
+		if predicate(nodes[i]) {
+			filtered = append(filtered, nodes[i])
+		}
+	}
+
+	return filtered, nil
 }
 
 // GetNodePrimaryIP returns a primary internal IP address of the node.
