@@ -208,6 +208,28 @@ func ToCompositeURLMap(g *utils.GCEURLMap, namer namer.IngressFrontendNamer, key
 	return m
 }
 
+// ToRedirectUrlMap returns the UrlMap used for HTTPS Redirects on a L7 ELB
+// This function returns nil if no url map needs to be created
+func (t *Translator) ToRedirectUrlMap(env *Env, version meta.Version) *composite.UrlMap {
+	if env.FrontendConfig == nil || env.FrontendConfig.Spec.RedirectToHttps == nil {
+		return nil
+	}
+
+	if !env.FrontendConfig.Spec.RedirectToHttps.Enabled {
+		return nil
+	}
+
+	// Second arg is handled upstream
+	name, _ := t.FrontendNamer.RedirectUrlMap()
+	redirectConfig := env.FrontendConfig.Spec.RedirectToHttps
+	expectedMap := &composite.UrlMap{
+		Name:               name,
+		DefaultUrlRedirect: &composite.HttpRedirectAction{HttpsRedirect: redirectConfig.Enabled, RedirectResponseCode: redirectConfig.ResponseCodeName},
+		Version:            version,
+	}
+	return expectedMap
+}
+
 // getNameForPathMatcher returns a name for a pathMatcher based on the given host rule.
 // The host rule can be a regex, the path matcher name used to associate the 2 cannot.
 func getNameForPathMatcher(hostRule string) string {

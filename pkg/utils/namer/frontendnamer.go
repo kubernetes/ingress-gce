@@ -38,6 +38,8 @@ const (
 	maximumAllowedCombinedLength = 36
 	// urlMapPrefixV2 is URL map prefix for v2 naming scheme.
 	urlMapPrefixV2 = "um"
+	// urlMapPrefixV2 is Https-Redirect-Only URL map prefix for v2 naming scheme.
+	redirectUrlMapPrefixV2 = "rm"
 	// forwardingRulePrefixV2 is http forwarding rule prefix for v2 naming scheme.
 	forwardingRulePrefixV2 = "fr"
 	// httpsForwardingRulePrefixV2 is https forwarding rule prefix for v2 naming scheme.
@@ -86,6 +88,11 @@ func (ln *V1IngressFrontendNamer) TargetProxy(protocol NamerProtocol) string {
 // UrlMap implements IngressFrontendNamer.
 func (ln *V1IngressFrontendNamer) UrlMap() string {
 	return ln.namer.UrlMap(ln.lbName)
+}
+
+// RedirectUrlMap implements IngressFrontendNamer.
+func (ln *V1IngressFrontendNamer) RedirectUrlMap() (string, bool) {
+	return "", false
 }
 
 // SSLCertName implements IngressFrontendNamer.
@@ -173,6 +180,11 @@ func (vn *V2IngressFrontendNamer) TargetProxy(protocol NamerProtocol) string {
 // UrlMap returns the name of URL map.
 func (vn *V2IngressFrontendNamer) UrlMap() string {
 	return fmt.Sprintf("%s%s-%s-%s", vn.prefix, schemaVersionV2, urlMapPrefixV2, vn.lbName)
+}
+
+// RedirectUrlMap returns the name of Redirect URL map.
+func (vn *V2IngressFrontendNamer) RedirectUrlMap() (string, bool) {
+	return fmt.Sprintf("%s%s-%s-%s", vn.prefix, schemaVersionV2, redirectUrlMapPrefixV2, vn.lbName), true
 }
 
 // SSLCertName returns the name of the certificate.

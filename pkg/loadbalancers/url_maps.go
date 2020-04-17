@@ -23,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -78,6 +79,74 @@ func (l *L7) ensureComputeURLMap() error {
 	l.um = expectedMap
 
 	return nil
+}
+
+func (l *L7) ensureRedirectURLMap() error {
+	feConfig := l.runtimeInfo.FrontendConfig
+	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(&l.ingress)
+
+	t := translator.NewTranslator(isL7ILB, l.namer)
+	env := &translator.Env{FrontendConfig: feConfig, Ing: &l.ingress}
+
+	name, namerSupported := l.namer.RedirectUrlMap()
+	expectedMap := t.ToRedirectUrlMap(env, l.Versions().UrlMap)
+
+	key, err := l.CreateKey(name)
+	if err != nil {
+		return err
+	}
+
+	// TODO(shance): Remove this get unless the ingress status has the redirectUrlMap
+	currentMap, err := composite.GetUrlMap(l.cloud, key, l.Versions().UrlMap)
+	if utils.IgnoreHTTPNotFound(err) != nil {
+		return err
+	}
+
+	// Do not expect to have a RedirectUrlMap
+	if expectedMap == nil {
+		if currentMap == nil {
+			return nil
+		} else {
+			if err := composite.DeleteUrlMap(l.cloud, key, l.Versions().UrlMap); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Cannot enable for internal ingress
+	if isL7ILB {
+		return fmt.Errorf("error: cannot enable HTTPS Redirects with L7 ILB")
+	}
+
+	if !namerSupported {
+		return fmt.Errorf("error: cannot enable HTTPS Redirects with the V1 Ingress naming scheme.  Please recreate your ingress to use the newest naming scheme.")
+	}
+
+	if currentMap == nil {
+		if err := composite.CreateUrlMap(l.cloud, key, expectedMap); err != nil {
+			return err
+		}
+	} else if compareRedirectUrlMaps(expectedMap, currentMap) {
+		expectedMap.Fingerprint = currentMap.Fingerprint
+		if err := composite.UpdateUrlMap(l.cloud, key, expectedMap); err != nil {
+			return err
+		}
+	}
+
+	l.redirectUm = expectedMap
+
+	return nil
+}
+
+// compareRedirectUrlMaps() compares the fields specified on the url map by the frontendconfig and returns true
+// if there's a diff, false otherwise
+func compareRedirectUrlMaps(a, b *composite.UrlMap) bool {
+	if a.DefaultUrlRedirect.HttpsRedirect != b.DefaultUrlRedirect.HttpsRedirect ||
+		a.DefaultUrlRedirect.RedirectResponseCode != b.DefaultUrlRedirect.RedirectResponseCode {
+		return true
+	}
+	return false
 }
 
 // getBackendNames returns the names of backends in this L7 urlmap.

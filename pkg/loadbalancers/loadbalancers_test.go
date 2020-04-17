@@ -1098,6 +1098,58 @@ func TestFrontendConfigSslPolicy(t *testing.T) {
 	}
 }
 
+func TestFrontendConfigRedirects(t *testing.T) {
+	flags.F.EnableFrontendConfig = true
+	defer func() { flags.F.EnableFrontendConfig = false }()
+
+	j := newTestJig(t)
+	ing := newIngress()
+
+	// Use v2 naming scheme since v1 is not supported
+	ing.ObjectMeta.Finalizers = []string{common.FinalizerKeyV2}
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	lbInfo := &L7RuntimeInfo{
+		AllowHTTP:      true,
+		TLS:            []*translator.TLSCerts{createCert("key", "cert", "name")},
+		UrlMap:         gceUrlMap,
+		Ingress:        ing,
+		FrontendConfig: &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{RedirectToHttps: &frontendconfigv1beta1.HttpsRedirectConfig{Enabled: true}}},
+	}
+
+	l7, err := j.pool.Ensure(lbInfo)
+	if err != nil {
+		t.Fatalf("j.pool.Ensure(%v) = %v, want nil", lbInfo, err)
+	}
+
+	// Only verify HTTPS since the HTTP Target Proxy points to the redirect url map
+	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)
+
+	if l7.redirectUm == nil {
+		t.Errorf("l7.redirectUm is nil")
+	}
+
+	tpName := l7.tp.Name
+	tp, err := composite.GetTargetHttpProxy(j.fakeGCE, meta.GlobalKey(tpName), meta.VersionGA)
+	if err != nil {
+		t.Error(err)
+	}
+
+	resourceID, err := cloud.ParseResourceURL(tp.UrlMap)
+	if err != nil {
+		t.Errorf("ParseResourceURL(%+v) = %v, want nil", tp.UrlMap, err)
+	}
+
+	path := resourceID.ResourcePath()
+	want := "global/urlMaps/" + l7.redirectUm.Name
+
+	if path != want {
+		t.Errorf("tps ssl policy = %q, want %q", path, want)
+	}
+}
+
 func TestEnsureSslPolicy(t *testing.T) {
 	t.Parallel()
 	j := newTestJig(t)
