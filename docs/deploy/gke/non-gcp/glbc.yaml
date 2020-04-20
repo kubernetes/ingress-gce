@@ -21,6 +21,7 @@ spec:
     spec:
       serviceAccountName: glbc
       terminationGracePeriodSeconds: 600
+      hostNetwork: true
       containers:
       - image: k8s.gcr.io/ingress-gce-glbc-amd64:v1.8.0
         livenessProbe:
@@ -38,6 +39,11 @@ spec:
         volumeMounts:
         - mountPath: /etc/gce/
           name: gce-config-volume
+        - mountPath: /var/secrets/google
+          name: google-cloud-key
+        env:
+        - name: GOOGLE_APPLICATION_CREDENTIALS
+          value: /var/secrets/google/key.json
         resources:
           # Request is set to accommodate this pod alongside the other
           # master components on a single core master.
@@ -54,21 +60,14 @@ spec:
         - --sync-period=600s
         - --gce-ratelimit=ga.Operations.Get,qps,10,100
         - --gce-ratelimit=alpha.Operations.Get,qps,10,100
-        - --gce-ratelimit=beta.Operations.Get,qps,10,100
         - --gce-ratelimit=ga.BackendServices.Get,qps,1.8,1
-        - --gce-ratelimit=beta.BackendServices.Get,qps,1.8,1
         - --gce-ratelimit=ga.HealthChecks.Get,qps,1.8,1
         - --gce-ratelimit=alpha.HealthChecks.Get,qps,1.8,1
-        - --gce-ratelimit=beta.NetworkEndpointGroups.Get,qps,1.8,1
-        - --gce-ratelimit=beta.NetworkEndpointGroups.AttachNetworkEndpoints,qps,1.8,1
-        - --gce-ratelimit=beta.NetworkEndpointGroups.DetachNetworkEndpoints,qps,1.8,1
-        - --gce-ratelimit=beta.NetworkEndpointGroups.ListNetworkEndpoints,qps,1.8,1
-        - --gce-ratelimit=ga.NetworkEndpointGroups.Get,qps,1.8,1
-        - --gce-ratelimit=ga.NetworkEndpointGroups.AttachNetworkEndpoints,qps,1.8,1
-        - --gce-ratelimit=ga.NetworkEndpointGroups.DetachNetworkEndpoints,qps,1.8,1
-        - --gce-ratelimit=ga.NetworkEndpointGroups.ListNetworkEndpoints,qps,1.8,1
         - --enable-non-gcp-mode=true
       volumes:
+      - name: google-cloud-key
+        secret:
+          secretName: glbc-gcp-key
       - name: gce-config-volume
         configMap:
           name: gce-config
