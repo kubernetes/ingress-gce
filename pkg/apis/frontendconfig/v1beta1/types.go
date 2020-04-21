@@ -28,8 +28,8 @@ import (
 type FrontendConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
-	Spec              FrontendConfigSpec   `json:"spec"`
-	Status            FrontendConfigStatus `json:"status"`
+	Spec              FrontendConfigSpec   `json:"spec,omitempty"`
+	Status            FrontendConfigStatus `json:"status,omitempty"`
 }
 
 // FrontendConfigSpec is the spec for a FrontendConfig resource
