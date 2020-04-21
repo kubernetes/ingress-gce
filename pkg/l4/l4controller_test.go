@@ -18,12 +18,9 @@ package l4
 
 import (
 	context2 "context"
-	"reflect"
 	"testing"
 	"time"
 
-	"k8s.io/client-go/kubernetes"
-	testing2 "k8s.io/client-go/testing"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/neg/types"
 
@@ -42,8 +39,7 @@ import (
 )
 
 const (
-	clusterUID    = "aaaaa"
-	resetLBStatus = "{\"status\":{\"loadBalancer\":{\"ingress\":null}}}"
+	clusterUID = "aaaaa"
 )
 
 func newServiceController() *L4Controller {
@@ -93,23 +89,6 @@ func getKeyForSvc(svc *api_v1.Service, t *testing.T) string {
 	return key
 }
 
-// validatePatchRequest validates that the given client patched the resource with the given change.
-// This is needed because there is a bug in go-client test implementation where a patch operation cannot be used
-// to delete fields - https://github.com/kubernetes/client-go/issues/607
-// TODO remove this once https://github.com/kubernetes/client-go/issues/607 has been fixed.
-func validatePatchRequest(client kubernetes.Interface, patchVal string, t *testing.T) {
-	fakeClient := client.(*fake.Clientset)
-	actionLen := len(fakeClient.Actions())
-	if actionLen == 0 {
-		t.Errorf("Expected atleast one action in fake client")
-	}
-	// The latest action should be the one setting status to the given value
-	patchAction := fakeClient.Actions()[actionLen-1].(testing2.PatchAction)
-	if !reflect.DeepEqual(patchAction.GetPatch(), []byte(patchVal)) {
-		t.Errorf("Expected patch '%s', got '%s'", patchVal, string(patchAction.GetPatch()))
-	}
-}
-
 func validateSvcStatus(svc *api_v1.Service, expectStatus bool, t *testing.T) {
 	if common.HasGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) != expectStatus {
 		t.Fatalf("Expected L4 finalizer present to be %v, but it was %v", expectStatus, !expectStatus)
@@ -120,8 +99,7 @@ func validateSvcStatus(svc *api_v1.Service, expectStatus bool, t *testing.T) {
 		}
 	}
 	if len(svc.Status.LoadBalancer.Ingress) > 0 && !expectStatus {
-		// TODO uncomment below once https://github.com/kubernetes/client-go/issues/607 has been fixed.
-		// t.Fatalf("Expected LoadBalancer status to be empty, Got %v", svc.Status.LoadBalancer)
+		t.Fatalf("Expected LoadBalancer status to be empty, Got %v", svc.Status.LoadBalancer)
 	}
 }
 
@@ -165,8 +143,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
 	}
-	// TODO remove this once https://github.com/kubernetes/client-go/issues/607 has been fixed.
-	validatePatchRequest(l4c.client, resetLBStatus, t)
+
 	// List the service and ensure that it contains the finalizer as well as Status field.
 	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if err != nil {
@@ -184,7 +161,7 @@ func TestProcessDeletion(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
 	}
-	// List the service and ensure that it contains the finalizer as well as Status field.
+	// List the service and ensure that it does not contain the finalizer or the status field
 	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
@@ -201,9 +178,8 @@ func TestProcessDeletion(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
 	}
-	// TODO remove this once https://github.com/kubernetes/client-go/issues/607 has been fixed.
-	validatePatchRequest(l4c.client, resetLBStatus, t)
-	// List the service and ensure that it contains the finalizer as well as Status field.
+
+	// List the service and ensure that it does not contain the finalizer or the status field
 	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
