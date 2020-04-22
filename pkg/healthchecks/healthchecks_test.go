@@ -412,7 +412,7 @@ func TestVersion(t *testing.T) {
 			version: meta.VersionBeta,
 		},
 		{
-			desc: "Http2 Health Check with ILB and NEG",
+			desc: "Http Health Check with ILB and NEG",
 			hc: &HealthCheck{
 				HealthCheck: computealpha.HealthCheck{
 					Type: string(annotations.ProtocolHTTP),
@@ -420,7 +420,7 @@ func TestVersion(t *testing.T) {
 				forILB: true,
 				forNEG: true,
 			},
-			version: meta.VersionBeta,
+			version: meta.VersionGA,
 		},
 	}
 	for _, tc := range testCases {
