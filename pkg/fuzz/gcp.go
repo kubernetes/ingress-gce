@@ -85,6 +85,11 @@ type BackendService struct {
 	Beta  *computebeta.BackendService
 }
 
+// HealthCheck is a union of the API version types.
+type HealthCheck struct {
+	GA *compute.HealthCheck
+}
+
 // NetworkEndpointGroup is a union of the API version types.
 type NetworkEndpointGroup struct {
 	GA    *compute.NetworkEndpointGroup
@@ -114,6 +119,7 @@ type GCLB struct {
 	BackendService       map[meta.Key]*BackendService
 	NetworkEndpointGroup map[meta.Key]*NetworkEndpointGroup
 	InstanceGroup        map[meta.Key]*InstanceGroup
+	HealthCheck          map[meta.Key]*HealthCheck
 }
 
 // NewGCLB returns an empty GCLB.
@@ -127,6 +133,7 @@ func NewGCLB(vip string) *GCLB {
 		BackendService:       map[meta.Key]*BackendService{},
 		NetworkEndpointGroup: map[meta.Key]*NetworkEndpointGroup{},
 		InstanceGroup:        map[meta.Key]*InstanceGroup{},
+		HealthCheck:          map[meta.Key]*HealthCheck{},
 	}
 }
 
@@ -559,6 +566,20 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, params *GCLBForVIPParams) (*
 			}
 			gclb.BackendService[*bsKey].Beta = bs
 		}
+
+		for _, hcURL := range bs.HealthChecks {
+			rID, err := cloud.ParseResourceURL(hcURL)
+			if err != nil {
+				return nil, err
+			}
+			hc, err := c.HealthChecks().Get(ctx, rID.Key)
+			if err != nil {
+				return nil, err
+			}
+			gclb.HealthCheck[*rID.Key] = &HealthCheck{
+				GA: hc,
+			}
+		}
 	}
 
 	var negKeys []*meta.Key
@@ -798,6 +819,19 @@ func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, params *
 				return err
 			}
 			gclb.BackendService[*bsKey].Beta = bs
+		}
+		for _, hcURL := range bs.HealthChecks {
+			rID, err := cloud.ParseResourceURL(hcURL)
+			if err != nil {
+				return err
+			}
+			hc, err := c.RegionHealthChecks().Get(ctx, rID.Key)
+			if err != nil {
+				return err
+			}
+			gclb.HealthCheck[*rID.Key] = &HealthCheck{
+				GA: hc,
+			}
 		}
 	}
 

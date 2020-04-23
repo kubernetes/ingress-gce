@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kr/pretty"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/ingress-gce/pkg/e2e"
@@ -77,6 +78,8 @@ func init() {
 // global resource setup should be done.
 func TestMain(m *testing.M) {
 	flag.Parse()
+
+	fmt.Fprintf(os.Stderr, "Flags:\n%s\n", pretty.Sprint(flags))
 
 	if !flags.inCluster && !flags.run {
 		fmt.Fprintln(os.Stderr, "Set -run to run the tests.")

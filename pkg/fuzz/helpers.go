@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"strings"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -394,10 +394,20 @@ func (b *BackendConfigBuilder) SetConnectionDrainingTimeout(timeout int64) *Back
 	return b
 }
 
+// AddCustomRequestHeader adds a custom request header to the BackendConfig.
 func (b *BackendConfigBuilder) AddCustomRequestHeader(header string) *BackendConfigBuilder {
 	if b.backendConfig.Spec.CustomRequestHeaders == nil {
 		b.backendConfig.Spec.CustomRequestHeaders = &backendconfig.CustomRequestHeadersConfig{}
 	}
 	b.backendConfig.Spec.CustomRequestHeaders.Headers = append(b.backendConfig.Spec.CustomRequestHeaders.Headers, header)
+	return b
+}
+
+// SetHealthCheckPath adds a health check path override.
+func (b *BackendConfigBuilder) SetHealthCheckPath(path string) *BackendConfigBuilder {
+	if b.backendConfig.Spec.HealthCheck == nil {
+		b.backendConfig.Spec.HealthCheck = &backendconfig.HealthCheckConfig{}
+	}
+	b.backendConfig.Spec.HealthCheck.RequestPath = &path
 	return b
 }
