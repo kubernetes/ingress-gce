@@ -302,6 +302,7 @@ func NewLoadBalancerController(
 	return &lbc
 }
 
+// Init the controller.
 func (lbc *LoadBalancerController) Init() {
 	// TODO(rramkumar): Try to get rid of this "Init".
 	lbc.instancePool.Init(lbc.Translator)

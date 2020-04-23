@@ -640,7 +640,7 @@ func TestMCIngressIG(t *testing.T) {
 // are included in the RuntimeInfo.
 func TestToRuntimeInfoCerts(t *testing.T) {
 	lbc := newLoadBalancerController()
-	tlsCerts := []*loadbalancers.TLSCerts{&loadbalancers.TLSCerts{Key: "key", Cert: "cert", Name: "tlsCert"}}
+	tlsCerts := []*loadbalancers.TLSCerts{{Key: "key", Cert: "cert", Name: "tlsCert"}}
 	fakeLoader := &tls.FakeTLSSecretLoader{FakeCerts: map[string]*loadbalancers.TLSCerts{"tlsCert": tlsCerts[0]}}
 	lbc.tlsLoader = fakeLoader
 	presharedCertName := "preSharedCert"
@@ -650,7 +650,7 @@ func TestToRuntimeInfoCerts(t *testing.T) {
 		},
 		Spec: v1beta1.IngressSpec{
 			TLS: []v1beta1.IngressTLS{
-				v1beta1.IngressTLS{
+				{
 					SecretName: tlsCerts[0].Name,
 				},
 			},
