@@ -18,10 +18,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
@@ -42,7 +45,7 @@ func TestHealthCheck(t *testing.T) {
 		want     *backendconfig.HealthCheckConfig
 	}{
 		{
-			desc:     "override healthcheck path",
+			desc:     "override healthcheck",
 			beConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").Build(),
 			want: &backendconfig.HealthCheckConfig{
 				CheckIntervalSec:   pint64(7),
@@ -64,7 +67,9 @@ func TestHealthCheck(t *testing.T) {
 			}
 			tc.beConfig.Spec.HealthCheck = tc.want
 
-			if _, err := Framework.BackendConfigClient.CloudV1().BackendConfigs(s.Namespace).Create(tc.beConfig); err != nil {
+			becrud := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+			tc.beConfig.Namespace = s.Namespace
+			if _, err := becrud.Create(tc.beConfig); err != nil {
 				t.Fatalf("error creating BackendConfig: %v", err)
 			}
 			t.Logf("BackendConfig created (%s/%s) ", s.Namespace, tc.beConfig.Name)
@@ -97,8 +102,36 @@ func TestHealthCheck(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
+			if err := verifyHealthCheck(t, gclb, tc.want); err != nil {
+				t.Fatal(err)
+			}
 
-			verifyHealthCheck(t, gclb, tc.want)
+			// Change the configuration and wait for stabilization.
+			if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+				newBEConfig, err := becrud.Get(s.Namespace, tc.beConfig.Name)
+				if err != nil {
+					t.Fatalf("becrud.Get(%q, %q) = %v, want nil", s.Namespace, tc.beConfig.Name, err)
+				}
+				newBEConfig.Spec.HealthCheck.RequestPath = pstring("/other-path")
+				if _, err := becrud.Update(newBEConfig); err != nil {
+					return err
+				}
+				t.Logf("BackendConfig updated (%s/%s) ", s.Namespace, tc.beConfig.Name)
+				return nil
+			}); err != nil {
+				t.Fatalf("error updating BackendConfig %s/%s: %v", s.Namespace, tc.beConfig.Name, err)
+			}
+
+			if err := wait.Poll(transitionPollInterval, transitionPollTimeout, func() (bool, error) {
+				err := verifyHealthCheck(t, gclb, tc.want)
+				if err == nil {
+					return true, nil
+				}
+				t.Logf("Waiting for healthcheck to be updated: %v", err)
+				return false, nil
+			}); err != nil {
+				t.Fatal(err)
+			}
 
 			// Wait for GCLB resources to be deleted.
 			if err := crud.Delete(s.Namespace, ing.Name); err != nil {
@@ -117,7 +150,7 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
-func verifyHealthCheck(t *testing.T, gclb *fuzz.GCLB, want *backendconfig.HealthCheckConfig) {
+func verifyHealthCheck(t *testing.T, gclb *fuzz.GCLB, want *backendconfig.HealthCheckConfig) error {
 	// We assume there is a single service for now. The logic will have to be
 	// changed if there is more than one backend service.
 	for _, bs := range gclb.BackendService {
@@ -150,26 +183,27 @@ func verifyHealthCheck(t *testing.T, gclb *fuzz.GCLB, want *backendconfig.Health
 			}
 
 			if want.CheckIntervalSec != nil && hc.GA.CheckIntervalSec != *want.CheckIntervalSec {
-				t.Errorf("HealthCheck %v checkIntervalSec = %d, want %d", rID.Key, hc.GA.CheckIntervalSec, *want.CheckIntervalSec)
+				return fmt.Errorf("HealthCheck %v checkIntervalSec = %d, want %d", rID.Key, hc.GA.CheckIntervalSec, *want.CheckIntervalSec)
 			}
 			if want.TimeoutSec != nil && hc.GA.TimeoutSec != *want.TimeoutSec {
-				t.Errorf("HealthCheck %v timeoutSec = %d, want %d", rID.Key, hc.GA.TimeoutSec, *want.TimeoutSec)
+				return fmt.Errorf("HealthCheck %v timeoutSec = %d, want %d", rID.Key, hc.GA.TimeoutSec, *want.TimeoutSec)
 			}
 			if want.HealthyThreshold != nil && hc.GA.HealthyThreshold != *want.HealthyThreshold {
-				t.Errorf("HealthCheck %v healthyThreshold = %d, want %d", rID.Key, hc.GA.HealthyThreshold, *want.HealthyThreshold)
+				return fmt.Errorf("HealthCheck %v healthyThreshold = %d, want %d", rID.Key, hc.GA.HealthyThreshold, *want.HealthyThreshold)
 			}
 			if want.UnhealthyThreshold != nil && hc.GA.UnhealthyThreshold != *want.UnhealthyThreshold {
-				t.Errorf("HealthCheck %v unhealthThreshold = %d, want %d", rID.Key, hc.GA.UnhealthyThreshold, *want.UnhealthyThreshold)
+				return fmt.Errorf("HealthCheck %v unhealthThreshold = %d, want %d", rID.Key, hc.GA.UnhealthyThreshold, *want.UnhealthyThreshold)
 			}
 			if want.Type != nil {
-				t.Errorf("HealthCheck %v type = %s, want %s", rID.Key, hc.GA.Type, *want.Type)
+				return fmt.Errorf("HealthCheck %v type = %s, want %s", rID.Key, hc.GA.Type, *want.Type)
 			}
 			if want.Port != nil && common.port != *want.Port {
-				t.Errorf("HealthCheck %v port = %d, want %d", rID.Key, common.port, *want.Port)
+				return fmt.Errorf("HealthCheck %v port = %d, want %d", rID.Key, common.port, *want.Port)
 			}
 			if want.RequestPath != nil && common.requestPath != *want.RequestPath {
-				t.Errorf("HealthCheck %v requestPath = %q, want %q", rID.Key, common.requestPath, *want.RequestPath)
+				return fmt.Errorf("HealthCheck %v requestPath = %q, want %q", rID.Key, common.requestPath, *want.RequestPath)
 			}
 		}
 	}
+	return nil
 }
