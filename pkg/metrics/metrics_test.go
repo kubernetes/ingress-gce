@@ -782,13 +782,13 @@ func TestComputeNegMetrics(t *testing.T) {
 			"empty input",
 			[]NegServiceState{},
 			map[feature]int{
-				standaloneNeg:         0,
-				ingressNeg:            0,
-				asmNeg:                0,
-				neg:                   0,
-				vmPrimaryIpNeg:        0,
-				vmPrimaryIpNegLocal:   0,
-				vmPrimaryIpNegCluster: 0,
+				standaloneNeg:  0,
+				ingressNeg:     0,
+				asmNeg:         0,
+				neg:            0,
+				vmIpNeg:        0,
+				vmIpNegLocal:   0,
+				vmIpNegCluster: 0,
 			},
 		},
 		{
@@ -797,46 +797,46 @@ func TestComputeNegMetrics(t *testing.T) {
 				newNegState(0, 0, 1, nil),
 			},
 			map[feature]int{
-				standaloneNeg:         0,
-				ingressNeg:            0,
-				asmNeg:                1,
-				neg:                   1,
-				vmPrimaryIpNeg:        0,
-				vmPrimaryIpNegLocal:   0,
-				vmPrimaryIpNegCluster: 0,
+				standaloneNeg:  0,
+				ingressNeg:     0,
+				asmNeg:         1,
+				neg:            1,
+				vmIpNeg:        0,
+				vmIpNegLocal:   0,
+				vmIpNegCluster: 0,
 			},
 		},
 		{
 			"vm primary ip neg in traffic policy cluster mode",
 			[]NegServiceState{
-				newNegState(0, 0, 1, &VmPrimaryIpNegType{trafficPolicyLocal: false}),
+				newNegState(0, 0, 1, &VmIpNegType{trafficPolicyLocal: false}),
 			},
 			map[feature]int{
-				standaloneNeg:         0,
-				ingressNeg:            0,
-				asmNeg:                1,
-				neg:                   2,
-				vmPrimaryIpNeg:        1,
-				vmPrimaryIpNegLocal:   0,
-				vmPrimaryIpNegCluster: 1,
+				standaloneNeg:  0,
+				ingressNeg:     0,
+				asmNeg:         1,
+				neg:            2,
+				vmIpNeg:        1,
+				vmIpNegLocal:   0,
+				vmIpNegCluster: 1,
 			},
 		},
 		{
 			"many neg services",
 			[]NegServiceState{
 				newNegState(0, 0, 1, nil),
-				newNegState(0, 1, 0, &VmPrimaryIpNegType{trafficPolicyLocal: false}),
-				newNegState(5, 0, 0, &VmPrimaryIpNegType{trafficPolicyLocal: true}),
+				newNegState(0, 1, 0, &VmIpNegType{trafficPolicyLocal: false}),
+				newNegState(5, 0, 0, &VmIpNegType{trafficPolicyLocal: true}),
 				newNegState(5, 3, 2, nil),
 			},
 			map[feature]int{
-				standaloneNeg:         10,
-				ingressNeg:            4,
-				asmNeg:                3,
-				neg:                   19,
-				vmPrimaryIpNeg:        2,
-				vmPrimaryIpNegLocal:   1,
-				vmPrimaryIpNegCluster: 1,
+				standaloneNeg:  10,
+				ingressNeg:     4,
+				asmNeg:         3,
+				neg:            19,
+				vmIpNeg:        2,
+				vmIpNegLocal:   1,
+				vmIpNegCluster: 1,
 			},
 		},
 	} {
@@ -856,12 +856,12 @@ func TestComputeNegMetrics(t *testing.T) {
 	}
 }
 
-func newNegState(standalone, ingress, asm int, negType *VmPrimaryIpNegType) NegServiceState {
+func newNegState(standalone, ingress, asm int, negType *VmIpNegType) NegServiceState {
 	return NegServiceState{
-		IngressNeg:     ingress,
-		StandaloneNeg:  standalone,
-		AsmNeg:         asm,
-		VmPrimaryIpNeg: negType,
+		IngressNeg:    ingress,
+		StandaloneNeg: standalone,
+		AsmNeg:        asm,
+		VmIpNeg:       negType,
 	}
 }
 

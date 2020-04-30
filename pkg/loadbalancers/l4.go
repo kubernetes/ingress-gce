@@ -61,7 +61,7 @@ func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType,
 	l.NamespacedName = types.NamespacedName{Name: service.Name, Namespace: service.Namespace}
 	l.backendPool = backends.NewPool(l.cloud, l.namer)
 	l.ServicePort = utils.ServicePort{ID: utils.ServicePortID{Service: l.NamespacedName}, BackendNamer: l.namer,
-		PrimaryIPNEGEnabled: true}
+		VMIPNEGEnabled: true}
 	return l
 }
 
@@ -81,7 +81,7 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) error {
 	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): attempting delete of load balancer resources", l.NamespacedName.String())
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
 	// All resources use the NEG Name, except forwarding rule.
-	name := l.namer.PrimaryIPNEG(svc.Namespace, svc.Name)
+	name := l.namer.VMIPNEG(svc.Namespace, svc.Name)
 	frName := l.GetFRName()
 	key, err := l.CreateKey(frName)
 	if err != nil {
@@ -158,7 +158,7 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) error {
 // service.
 func (l *L4) GetFRName() string {
 	_, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
-	lbName := l.namer.PrimaryIPNEG(l.Service.Namespace, l.Service.Name)
+	lbName := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
 	return lbName + "-" + strings.ToLower(string(protocol))
 }
 
@@ -167,7 +167,7 @@ func (l *L4) GetFRName() string {
 func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) (*corev1.LoadBalancerStatus, error) {
 	// Use the same resource name for NEG, BackendService as well as FR, FWRule.
 	l.Service = svc
-	name := l.namer.PrimaryIPNEG(l.Service.Namespace, l.Service.Name)
+	name := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
 	options := getILBOptions(l.Service)
 
 	// create healthcheck

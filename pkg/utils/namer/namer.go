@@ -465,7 +465,7 @@ func (n *Namer) NEGWithSubset(namespace, name, subset string, port int32) string
 	return fmt.Sprintf("%s-%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, truncSubset, negSuffix(n.shortUID(), namespace, name, portStr, subset))
 }
 
-// PrimaryIPNEG returns the gce neg name based on the service namespace and name
+// VMIPNEG returns the gce neg name based on the service namespace and name
 // NEG naming convention:
 //
 //   {prefix}{version}-{clusterid}-{namespace}-{name}-{hash}
@@ -476,13 +476,13 @@ func (n *Namer) NEGWithSubset(namespace, name, subset string, port int32) string
 // WARNING: Controllers depend on the naming pattern to get the list
 // of all NEGs associated with the current cluster. Any modifications
 // must be backward compatible.
-func (n *Namer) PrimaryIPNEG(namespace, name string) string {
+func (n *Namer) VMIPNEG(namespace, name string) string {
 	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
 	// Use the full cluster UID in the suffix to reduce chance of collision.
 	return fmt.Sprintf("%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName,
-		primaryIPNegSuffix(n.UID(), namespace, name))
+		vmIPNegSuffix(n.UID(), namespace, name))
 }
 
 // IsNEG returns true if the name is a NEG owned by this cluster.
@@ -497,8 +497,8 @@ func (n *Namer) negPrefix() string {
 	return fmt.Sprintf("%s%s-%s", n.prefix, schemaVersionV1, n.shortUID())
 }
 
-// primaryIPNegSuffix returns an 8 character hash code to be used as suffix in GCE_PRIMARY_VM_IP NEG.
-func primaryIPNegSuffix(uid, namespace, name string) string {
+// vmIPNegSuffix returns an 8 character hash code to be used as suffix in GCE_VM_IP NEG.
+func vmIPNegSuffix(uid, namespace, name string) string {
 	return common.ContentHash(strings.Join([]string{uid, namespace, name}, ";"), 8)
 }
 

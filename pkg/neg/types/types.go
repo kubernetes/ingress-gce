@@ -36,7 +36,7 @@ type EndpointsCalculatorMode string
 
 const (
 	VmIpPortEndpointType      = NetworkEndpointType("GCE_VM_IP_PORT")
-	VmPrimaryIpEndpointType   = NetworkEndpointType("GCE_VM_PRIMARY_IP")
+	VmIpEndpointType          = NetworkEndpointType("GCE_VM_IP")
 	NonGCPPrivateEndpointType = NetworkEndpointType("NON_GCP_PRIVATE_IP_PORT")
 	L7Mode                    = EndpointsCalculatorMode("L7")
 	L4LocalMode               = EndpointsCalculatorMode("L4, ExternalTrafficPolicy:Local")
@@ -110,7 +110,7 @@ type PortInfo struct {
 	ReadinessGate bool
 	// RandomizeEndpoints indicates if the endpoints for the NEG associated with this port need to
 	// be selected at random, rather than selecting the endpoints of this service. This is applicable
-	// in GCE_VM_PRIMARY_IP where the endpoints are the nodes instead of pods.
+	// in GCE_VM_IP NEGs where the endpoints are the nodes instead of pods.
 	RandomizeEndpoints bool
 }
 
@@ -138,19 +138,19 @@ func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, nam
 	return ret
 }
 
-// NewPortInfoMapForPrimaryIPNEG creates PortInfoMap with empty port tuple. Since PRIMARY_VM_IP NEGs target
+// NewPortInfoMapForVMIPNEG creates PortInfoMap with empty port tuple. Since VM_IP NEGs target
 // the node instead of the pod, there is no port info to be stored.
-func NewPortInfoMapForPrimaryIPNEG(namespace, name string, namer NetworkEndpointGroupNamer, randomize bool) PortInfoMap {
+func NewPortInfoMapForVMIPNEG(namespace, name string, namer NetworkEndpointGroupNamer, randomize bool) PortInfoMap {
 	ret := PortInfoMap{}
 	svcPortSet := make(SvcPortTupleSet)
 	svcPortSet.Insert(
-		// Insert Empty PortTuple for VmPrimaryIp NEGs.
+		// Insert Empty PortTuple for VmIp NEGs.
 		SvcPortTuple{},
 	)
 	for svcPortTuple := range svcPortSet {
 		ret[PortInfoMapKey{svcPortTuple.Port, ""}] = PortInfo{
 			PortTuple:          svcPortTuple,
-			NegName:            namer.PrimaryIPNEG(namespace, name),
+			NegName:            namer.VMIPNEG(namespace, name),
 			RandomizeEndpoints: randomize,
 		}
 	}
@@ -296,7 +296,7 @@ func (key NegSyncerKey) String() string {
 // to create the negType specified in the given NegSyncerKey.
 func (key NegSyncerKey) GetAPIVersion() meta.Version {
 	switch key.NegType {
-	case VmPrimaryIpEndpointType:
+	case VmIpEndpointType:
 		return meta.VersionAlpha
 	case NonGCPPrivateEndpointType:
 		return meta.VersionAlpha
