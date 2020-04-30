@@ -409,7 +409,7 @@ func (c *Controller) processService(key string) error {
 		return fmt.Errorf("failed to merge CSM service PortInfoMap: %v, error: %v", csmSVCPortInfoMap, err)
 	}
 	if c.runL4 {
-		if err := c.mergeVmPrimaryIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, negUsage); err != nil {
+		if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, negUsage); err != nil {
 			return err
 		}
 	}
@@ -493,8 +493,8 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 	return nil
 }
 
-// mergeVmPrimaryIpNEGsPortInfo merges the PortInfo for ILB services using GCE_VM_PRIMARY_IP NEGs into portInfoMap
-func (c *Controller) mergeVmPrimaryIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage usage.NegServiceState) error {
+// mergeVmIpNEGsPortInfo merges the PortInfo for ILB services using GCE_VM_IP NEGs into portInfoMap
+func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage usage.NegServiceState) error {
 	if wantsILB, _ := annotations.WantsL4ILB(service); !wantsILB {
 		return nil
 	}
@@ -507,9 +507,9 @@ func (c *Controller) mergeVmPrimaryIpNEGsPortInfo(service *apiv1.Service, name t
 
 	onlyLocal := helpers.RequestsOnlyLocalTraffic(service)
 	// Update usage metrics.
-	negUsage.VmPrimaryIpNeg = usage.NewVmPrimaryIpNegType(onlyLocal)
+	negUsage.VmIpNeg = usage.NewVmIpNegType(onlyLocal)
 
-	return portInfoMap.Merge(negtypes.NewPortInfoMapForPrimaryIPNEG(name.Namespace, name.Name, c.namer, !onlyLocal))
+	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.namer, !onlyLocal))
 }
 
 // mergeDefaultBackendServicePortInfoMap merge the PortInfoMap for the default backend service into portInfoMap

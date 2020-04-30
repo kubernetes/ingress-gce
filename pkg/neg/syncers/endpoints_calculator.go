@@ -27,7 +27,7 @@ import (
 )
 
 // LocalL4ILBEndpointGetter implements the NetworkEndpointsCalculator interface.
-// It exposes methods to calculate Network endpoints for VM_PRIMARY_IP NEGs when the service
+// It exposes methods to calculate Network endpoints for GCE_VM_IP NEGs when the service
 // uses "ExternalTrafficPolicy: Local" mode.
 // In this mode, the endpoints of the NEG are calculated by listing the nodes that host the service endpoints(pods)
 // for the given service. These candidate nodes picked as is, if the count is less than the subset size limit(250).
@@ -94,7 +94,7 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, cur
 }
 
 // ClusterL4ILBEndpointGetter implements the NetworkEndpointsCalculator interface.
-// It exposes methods to calculate Network endpoints for VM_PRIMARY_IP NEGs when the service
+// It exposes methods to calculate Network endpoints for GCE_VM_IP NEGs when the service
 // uses "ExternalTrafficPolicy: Cluster" mode This is the default mode.
 // In this mode, the endpoints of the NEG are calculated by selecting nodes at random. Upto 25(subset size limit in this
 // mode) are selected.

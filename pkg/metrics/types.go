@@ -35,19 +35,19 @@ type NegServiceState struct {
 	IngressNeg int
 	// asmNeg is the count of NEGs created for ASM
 	AsmNeg int
-	// VmPrimaryIpNeg specifies if a service uses GCE_VM_PRIMARY_IP NEG.
-	VmPrimaryIpNeg *VmPrimaryIpNegType
+	// VmIpNeg specifies if a service uses GCE_VM_IP NEG.
+	VmIpNeg *VmIpNegType
 }
 
-// VmPrimaryIpNegType contains whether a GCE_VM_PRIMARY_IP NEG is requesting for
+// VmIpNegType contains whether a GCE_VM_IP NEG is requesting for
 // local traffic (or service external policy set to local).
-type VmPrimaryIpNegType struct {
+type VmIpNegType struct {
 	trafficPolicyLocal bool
 }
 
-// NewVmPrimaryIpNegType returns a new VmPrimaryIpNegType.
-func NewVmPrimaryIpNegType(trafficPolicyLocal bool) *VmPrimaryIpNegType {
-	return &VmPrimaryIpNegType{trafficPolicyLocal: trafficPolicyLocal}
+// NewVmIpNegType returns a new VmIpNegType.
+func NewVmIpNegType(trafficPolicyLocal bool) *VmIpNegType {
+	return &VmIpNegType{trafficPolicyLocal: trafficPolicyLocal}
 }
 
 // L4ILBServiceState defines if global access and subnet features are enabled

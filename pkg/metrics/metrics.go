@@ -279,29 +279,29 @@ func (im *ControllerMetrics) computeNegMetrics() map[feature]int {
 	klog.V(4).Infof("Computing NEG usage metrics from neg state map: %#v", im.negMap)
 
 	counts := map[feature]int{
-		standaloneNeg:         0,
-		ingressNeg:            0,
-		asmNeg:                0,
-		neg:                   0,
-		vmPrimaryIpNeg:        0,
-		vmPrimaryIpNegLocal:   0,
-		vmPrimaryIpNegCluster: 0,
+		standaloneNeg:  0,
+		ingressNeg:     0,
+		asmNeg:         0,
+		neg:            0,
+		vmIpNeg:        0,
+		vmIpNegLocal:   0,
+		vmIpNegCluster: 0,
 	}
 
 	for key, negState := range im.negMap {
 		klog.V(6).Infof("For service %s, it has standaloneNegs:%d, ingressNegs:%d, asmNeg:%d and vmPrimaryNeg:%v",
-			key, negState.StandaloneNeg, negState.IngressNeg, negState.AsmNeg, negState.VmPrimaryIpNeg)
+			key, negState.StandaloneNeg, negState.IngressNeg, negState.AsmNeg, negState.VmIpNeg)
 		counts[standaloneNeg] += negState.StandaloneNeg
 		counts[ingressNeg] += negState.IngressNeg
 		counts[asmNeg] += negState.AsmNeg
 		counts[neg] += negState.AsmNeg + negState.StandaloneNeg + negState.IngressNeg
-		if negState.VmPrimaryIpNeg != nil {
+		if negState.VmIpNeg != nil {
 			counts[neg] += 1
-			counts[vmPrimaryIpNeg] += 1
-			if negState.VmPrimaryIpNeg.trafficPolicyLocal {
-				counts[vmPrimaryIpNegLocal] += 1
+			counts[vmIpNeg] += 1
+			if negState.VmIpNeg.trafficPolicyLocal {
+				counts[vmIpNegLocal] += 1
 			} else {
-				counts[vmPrimaryIpNegCluster] += 1
+				counts[vmIpNegCluster] += 1
 			}
 		}
 	}
