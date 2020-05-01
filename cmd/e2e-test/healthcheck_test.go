@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
@@ -45,7 +46,7 @@ func TestHealthCheck(t *testing.T) {
 		want     *backendconfig.HealthCheckConfig
 	}{
 		{
-			desc:     "override healthcheck",
+			desc:     "override healthcheck with IG",
 			beConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").Build(),
 			want: &backendconfig.HealthCheckConfig{
 				CheckIntervalSec:   pint64(7),
@@ -53,6 +54,14 @@ func TestHealthCheck(t *testing.T) {
 				HealthyThreshold:   pint64(3),
 				UnhealthyThreshold: pint64(5),
 				RequestPath:        pstring("/my-path"),
+			},
+		},
+		{
+			desc:     "override healthcheck and port with NEG",
+			beConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").Build(),
+			want: &backendconfig.HealthCheckConfig{
+				RequestPath: pstring("/my-path"),
+				Port:        pint64(8080), // Matches the targetPort
 			},
 		},
 	} {
@@ -74,11 +83,19 @@ func TestHealthCheck(t *testing.T) {
 			}
 			t.Logf("BackendConfig created (%s/%s) ", s.Namespace, tc.beConfig.Name)
 
-			_, err := e2e.CreateEchoService(s, "service-1", backendConfigAnnotation)
+			svc, err := e2e.CreateEchoService(s, "service-1", backendConfigAnnotation)
 			if err != nil {
 				t.Fatalf("error creating echo service: %v", err)
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
+
+			// Update service for NEG
+			if tc.want.Port != nil {
+				svc.Annotations[annotations.NEGAnnotationKey] = `{"ingress":true}`
+				if _, err := Framework.Clientset.CoreV1().Services(s.Namespace).Update(ctx, svc, v1.UpdateOptions{}); err != nil {
+					t.Fatalf("error updating port on svc: %v", err)
+				}
+			}
 
 			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 				DefaultBackend("service-1", intstr.FromInt(80)).
