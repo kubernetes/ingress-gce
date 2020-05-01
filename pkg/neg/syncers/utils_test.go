@@ -330,10 +330,10 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			apiVersion:          meta.VersionGA,
 		},
 		{
-			description:         "Create NEG of type GCE_VM_PRIMARY_IP",
+			description:         "Create NEG of type GCE_VM_IP",
 			negName:             "gcp-ip-neg",
 			enableNonGCPMode:    false,
-			networkEndpointType: negtypes.VmPrimaryIpEndpointType,
+			networkEndpointType: negtypes.VmIpEndpointType,
 			expectedSubnetwork:  testSubnetwork,
 			apiVersion:          meta.VersionAlpha,
 		},

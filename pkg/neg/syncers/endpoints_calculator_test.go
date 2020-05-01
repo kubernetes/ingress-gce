@@ -76,14 +76,14 @@ func TestLocalGetEndpointSet(t *testing.T) {
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
 			},
-			networkEndpointType: negtypes.VmPrimaryIpEndpointType,
+			networkEndpointType: negtypes.VmIpEndpointType,
 		},
 		{
 			desc:      "no endpoints",
 			endpoints: &v1.Endpoints{},
 			// No nodes are picked as there are no service endpoints.
 			endpointSets:        nil,
-			networkEndpointType: negtypes.VmPrimaryIpEndpointType,
+			networkEndpointType: negtypes.VmIpEndpointType,
 		},
 	}
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
@@ -145,7 +145,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
 			},
-			networkEndpointType: negtypes.VmPrimaryIpEndpointType,
+			networkEndpointType: negtypes.VmIpEndpointType,
 		},
 		{
 			desc: "no endpoints",
@@ -157,7 +157,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
 					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
 			},
-			networkEndpointType: negtypes.VmPrimaryIpEndpointType,
+			networkEndpointType: negtypes.VmIpEndpointType,
 		},
 	}
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)

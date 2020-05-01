@@ -21,6 +21,8 @@ import (
 
 	"fmt"
 
+	"strings"
+
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -31,7 +33,6 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog"
-	"strings"
 )
 
 type transactionSyncer struct {
@@ -96,7 +97,7 @@ func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, networkEndpointGro
 
 func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, randomizeEndpoints bool) negtypes.NetworkEndpointsCalculator {
 	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
-	if syncerKey.NegType == negtypes.VmPrimaryIpEndpointType {
+	if syncerKey.NegType == negtypes.VmIpEndpointType {
 		nodeLister := listers.NewNodeLister(nodeLister)
 		if randomizeEndpoints {
 			return NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey)
@@ -162,9 +163,9 @@ func (s *transactionSyncer) syncInternal() error {
 
 	// Calculate the endpoints to add and delete to transform the current state to desire state
 	addEndpoints, removeEndpoints := calculateNetworkEndpointDifference(targetMap, currentMap)
-	if s.NegType == negtypes.VmPrimaryIpEndpointType && len(removeEndpoints) > 0 {
+	if s.NegType == negtypes.VmIpEndpointType && len(removeEndpoints) > 0 {
 		// Make removals minimum since the traffic will be abruptly stopped. Log removals
-		klog.V(3).Infof("Removing endpoints %+v from GCE_VM_PRIMARY_IP NEG %s", removeEndpoints, s.negName)
+		klog.V(3).Infof("Removing endpoints %+v from GCE_VM_IP NEG %s", removeEndpoints, s.negName)
 	}
 	// Calculate Pods that are already in the NEG
 	_, committedEndpoints := calculateNetworkEndpointDifference(addEndpoints, targetMap)
@@ -177,7 +178,7 @@ func (s *transactionSyncer) syncInternal() error {
 	// filter out the endpoints that are in transaction
 	filterEndpointByTransaction(committedEndpoints, s.transactions)
 
-	// no-op in case of VmPrimaryIp NEGs.
+	// no-op in case of VmIp NEGs.
 	s.commitPods(committedEndpoints, endpointPodMap)
 
 	if len(addEndpoints) == 0 && len(removeEndpoints) == 0 {

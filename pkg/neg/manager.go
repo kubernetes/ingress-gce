@@ -178,13 +178,13 @@ func (manager *syncerManager) Sync(namespace, name string) {
 	}
 }
 
-// SyncNodes signals all GCE_VM_PRIMARY_IP syncers to sync.
+// SyncNodes signals all GCE_VM_IP syncers to sync.
 // Only these use nodes selected at random as endpoints and hence need to sync upon node updates.
 func (manager *syncerManager) SyncNodes() {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
 	for key, syncer := range manager.syncerMap {
-		if key.NegType == negtypes.VmPrimaryIpEndpointType && !syncer.IsStopped() {
+		if key.NegType == negtypes.VmIpEndpointType && !syncer.IsStopped() {
 			syncer.Sync()
 		}
 	}
@@ -336,7 +336,7 @@ func getSyncerKey(namespace, name string, servicePortKey negtypes.PortInfoMapKey
 		networkEndpointType = negtypes.NonGCPPrivateEndpointType
 	}
 	if portInfo.PortTuple.Empty() {
-		networkEndpointType = negtypes.VmPrimaryIpEndpointType
+		networkEndpointType = negtypes.VmIpEndpointType
 	}
 
 	return negtypes.NegSyncerKey{

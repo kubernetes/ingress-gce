@@ -32,7 +32,7 @@ func (*negNamer) NEG(namespace, name string, svcPort int32) string {
 	return fmt.Sprintf("%v-%v-%v", namespace, name, svcPort)
 }
 
-func (*negNamer) PrimaryIPNEG(namespace, name string) string {
+func (*negNamer) VMIPNEG(namespace, name string) string {
 	return fmt.Sprintf("%v-%v", namespace, name)
 }
 

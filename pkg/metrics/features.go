@@ -83,12 +83,12 @@ const (
 	cookieAffinity            = feature("CookieAffinity")
 	customRequestHeaders      = feature("CustomRequestHeaders")
 
-	standaloneNeg         = feature("StandaloneNEG")
-	ingressNeg            = feature("IngressNEG")
-	asmNeg                = feature("AsmNEG")
-	vmPrimaryIpNeg        = feature("VmPrimaryIpNEG")
-	vmPrimaryIpNegLocal   = feature("VmPrimaryIpNegLocal")
-	vmPrimaryIpNegCluster = feature("VmPrimaryIpNegCluster")
+	standaloneNeg  = feature("StandaloneNEG")
+	ingressNeg     = feature("IngressNEG")
+	asmNeg         = feature("AsmNEG")
+	vmIpNeg        = feature("VmIpNEG")
+	vmIpNegLocal   = feature("VmIpNegLocal")
+	vmIpNegCluster = feature("VmIpNegCluster")
 
 	l4ILBService      = feature("L4ILBService")
 	l4IlbGlobalAccess = feature("L4ILBGlobalAccess")

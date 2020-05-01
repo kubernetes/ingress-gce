@@ -107,7 +107,7 @@ func (p *portset) check(fakeGCE *gce.Cloud) error {
 		} else {
 			bs, err := composite.GetBackendService(fakeGCE, key, features.VersionFromServicePort(&sp))
 			if err == nil || !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-				if sp.PrimaryIPNEGEnabled {
+				if sp.VMIPNEGEnabled {
 					// It is expected that these Backends should not get cleaned up in the GC loop.
 					continue
 				}
@@ -350,7 +350,7 @@ func TestGCMixed(t *testing.T) {
 		{NodePort: 84, Protocol: annotations.ProtocolHTTP, NEGEnabled: true, L7ILBEnabled: true, BackendNamer: defaultNamer},
 		{NodePort: 85, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true, L7ILBEnabled: true, BackendNamer: defaultNamer},
 		{NodePort: 86, Protocol: annotations.ProtocolHTTP, NEGEnabled: true, L7ILBEnabled: true, BackendNamer: defaultNamer},
-		{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "testsvc"}}, PrimaryIPNEGEnabled: true, BackendNamer: defaultNamer},
+		{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "testsvc"}}, VMIPNEGEnabled: true, BackendNamer: defaultNamer},
 	}
 	ps := newPortset(svcNodePorts)
 	if err := ps.add(svcNodePorts); err != nil {
