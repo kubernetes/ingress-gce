@@ -70,7 +70,6 @@ func schema_pkg_apis_frontendconfig_v1beta1_FrontendConfig(ref common.ReferenceC
 						},
 					},
 				},
-				Required: []string{"spec", "status"},
 			},
 		},
 		Dependencies: []string{
