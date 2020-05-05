@@ -63,15 +63,8 @@ var (
 	}
 
 	// All of these fields must be filled in to allow L7ILBVersions() to work
-	l7IlbVersions = ResourceVersions{
-		UrlMap:           meta.VersionBeta,
-		ForwardingRule:   meta.VersionBeta,
-		TargetHttpProxy:  meta.VersionBeta,
-		TargetHttpsProxy: meta.VersionBeta,
-		SslCertificate:   meta.VersionBeta,
-		BackendService:   meta.VersionBeta,
-		HealthCheck:      meta.VersionBeta,
-	}
+	// TODO(shance) Remove this entirely
+	l7IlbVersions = *NewResourceVersions()
 )
 
 func NewResourceVersions() *ResourceVersions {
