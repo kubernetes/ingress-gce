@@ -15,9 +15,10 @@ package translator
 
 import (
 	"fmt"
-	"k8s.io/ingress-gce/pkg/flags"
 	"sort"
 	"strconv"
+
+	"k8s.io/ingress-gce/pkg/flags"
 
 	"k8s.io/klog"
 
@@ -281,7 +282,7 @@ func (t *Translator) ListZones() ([]string, error) {
 
 func (t *Translator) listZonesWithLister(lister listers.NodeLister) ([]string, error) {
 	zones := sets.String{}
-	readyNodes, err := lister.ListWithPredicate(utils.GetNodeConditionPredicate())
+	readyNodes, err := utils.ListWithPredicate(lister, utils.GetNodeConditionPredicate())
 	if err != nil {
 		return zones.List(), err
 	}

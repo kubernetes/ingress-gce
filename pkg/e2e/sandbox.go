@@ -17,6 +17,7 @@ limitations under the License.
 package e2e
 
 import (
+	"context"
 	"sync"
 
 	"k8s.io/klog"
@@ -49,7 +50,7 @@ func (s *Sandbox) Create() error {
 			Name: s.Namespace,
 		},
 	}
-	if _, err := s.f.Clientset.CoreV1().Namespaces().Create(ns); err != nil {
+	if _, err := s.f.Clientset.CoreV1().Namespaces().Create(context.TODO(), ns, metav1.CreateOptions{}); err != nil {
 		klog.Errorf("Error creating namespace %q: %v", s.Namespace, err)
 		return err
 	}
@@ -80,7 +81,7 @@ func (s *Sandbox) Destroy() {
 		return
 	}
 
-	if err := s.f.Clientset.CoreV1().Namespaces().Delete(s.Namespace, &metav1.DeleteOptions{}); err != nil {
+	if err := s.f.Clientset.CoreV1().Namespaces().Delete(context.TODO(), s.Namespace, metav1.DeleteOptions{}); err != nil {
 		klog.Errorf("Error deleting namespace %q: %v", s.Namespace, err)
 	}
 	s.destroyed = true
@@ -111,7 +112,7 @@ func (s *Sandbox) DumpSandboxInfo(t *testing.T) {
 // dumpSandboxEvents dumps the events happened in the sandbox namespace into logs
 func (s *Sandbox) dumpSandboxEvents(t *testing.T) {
 	t.Logf("Collecting events from namespace %q.", s.Namespace)
-	events, err := s.f.Clientset.CoreV1().Events(s.Namespace).List(metav1.ListOptions{})
+	events, err := s.f.Clientset.CoreV1().Events(s.Namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		t.Logf("Failed to list events in namespace %q", s.Namespace)
 		return

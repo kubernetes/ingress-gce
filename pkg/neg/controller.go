@@ -17,6 +17,7 @@ limitations under the License.
 package neg
 
 import (
+	context2 "context"
 	"fmt"
 	"time"
 
@@ -584,7 +585,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		return err
 	}
 	svcClient := c.client.CoreV1().Services(namespace)
-	service, err := svcClient.Get(name, metav1.GetOptions{})
+	service, err := svcClient.Get(context2.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -595,7 +596,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 			// TODO: use PATCH to remove annotation
 			delete(service.Annotations, annotations.NEGStatusKey)
 			klog.V(2).Infof("Removing NEG status annotation from service: %s/%s", namespace, name)
-			_, err = svcClient.Update(service)
+			_, err = svcClient.Update(context2.TODO(), service, metav1.UpdateOptions{})
 			return err
 		}
 		// service doesn't have the expose NEG annotation and doesn't need update
@@ -617,7 +618,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	}
 	service.Annotations[annotations.NEGStatusKey] = annotation
 	klog.V(2).Infof("Updating NEG visibility annotation %q on service %s/%s.", annotation, namespace, name)
-	_, err = svcClient.Update(service)
+	_, err = svcClient.Update(context2.TODO(), service, metav1.UpdateOptions{})
 	return err
 }
 
@@ -628,7 +629,7 @@ func (c *Controller) syncDestinationRuleNegStatusAnnotation(namespace, destinati
 		return err
 	}
 	dsClient := c.destinationRuleClient.Namespace(namespace)
-	destinationRule, err := dsClient.Get(destinationRuleName, metav1.GetOptions{})
+	destinationRule, err := dsClient.Get(context2.TODO(), destinationRuleName, metav1.GetOptions{})
 	drAnnotations := destinationRule.GetAnnotations()
 	if drAnnotations == nil {
 		drAnnotations = make(map[string]string)
@@ -659,7 +660,7 @@ func (c *Controller) syncDestinationRuleNegStatusAnnotation(namespace, destinati
 		return err
 	}
 	klog.V(2).Infof("Updating NEG visibility annotation %q on Istio:DestinationRule %s/%s.", string(patchBytes), namespace, destinationRuleName)
-	_, err = dsClient.Patch(destinationRuleName, apimachinerytypes.MergePatchType, patchBytes, metav1.PatchOptions{})
+	_, err = dsClient.Patch(context2.TODO(), destinationRuleName, apimachinerytypes.MergePatchType, patchBytes, metav1.PatchOptions{})
 	return err
 }
 

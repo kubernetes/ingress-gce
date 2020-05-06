@@ -17,6 +17,7 @@ limitations under the License.
 package tls
 
 import (
+	"context"
 	"fmt"
 
 	"k8s.io/klog"
@@ -64,7 +65,7 @@ func (t *TLSCertsFromSecretsLoader) Load(ing *v1beta1.Ingress) ([]*loadbalancers
 		}
 		// TODO: Replace this for a secret watcher.
 		klog.V(3).Infof("Retrieving secret for ing %v with name %v", ing.Name, tlsSecret.SecretName)
-		secret, err := t.Client.CoreV1().Secrets(ing.Namespace).Get(tlsSecret.SecretName, meta_v1.GetOptions{})
+		secret, err := t.Client.CoreV1().Secrets(ing.Namespace).Get(context.TODO(), tlsSecret.SecretName, meta_v1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}

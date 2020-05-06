@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	context2 "context"
 	"fmt"
 	"reflect"
 	"sort"
@@ -105,17 +106,17 @@ func addService(lbc *LoadBalancerController, svc *api_v1.Service) {
 		}
 	}
 
-	lbc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Create(svc)
+	lbc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Create(context2.TODO(), svc, meta_v1.CreateOptions{})
 	lbc.ctx.ServiceInformer.GetIndexer().Add(svc)
 }
 
 func addIngress(lbc *LoadBalancerController, ing *v1beta1.Ingress) {
-	lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Create(ing)
+	lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Create(context2.TODO(), ing, meta_v1.CreateOptions{})
 	lbc.ctx.IngressInformer.GetIndexer().Add(ing)
 }
 
 func updateIngress(lbc *LoadBalancerController, ing *v1beta1.Ingress) {
-	lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Update(ing)
+	lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Update(context2.TODO(), ing, meta_v1.UpdateOptions{})
 	lbc.ctx.IngressInformer.GetIndexer().Update(ing)
 }
 
@@ -132,7 +133,7 @@ func deleteIngress(lbc *LoadBalancerController, ing *v1beta1.Ingress) {
 }
 
 func deleteIngressWithFinalizer(lbc *LoadBalancerController, ing *v1beta1.Ingress) {
-	lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Delete(ing.Name, &meta_v1.DeleteOptions{})
+	lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Delete(context2.TODO(), ing.Name, meta_v1.DeleteOptions{})
 	lbc.ctx.IngressInformer.GetIndexer().Delete(ing)
 }
 
@@ -238,7 +239,7 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 					t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 				}
 
-				updatedIng, _ := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+				updatedIng, _ := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(context2.TODO(), ing.Name, meta_v1.GetOptions{})
 
 				// Check Ingress status has IP.
 				if len(updatedIng.Status.LoadBalancer.Ingress) != 1 || updatedIng.Status.LoadBalancer.Ingress[0].IP == "" {
@@ -257,7 +258,7 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 			}
 
 			for i, name := range tc.ingNames {
-				ing, _ := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses("default").Get(name, meta_v1.GetOptions{})
+				ing, _ := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses("default").Get(context2.TODO(), name, meta_v1.GetOptions{})
 				setDeletionTimestamp(lbc, ing)
 
 				ingStoreKey := getKey(ing, t)
@@ -265,10 +266,10 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 					t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 				}
 
-				updatedIng, _ := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses("default").Get(name, meta_v1.GetOptions{})
+				updatedIng, _ := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses("default").Get(context2.TODO(), name, meta_v1.GetOptions{})
 				deleteIngress(lbc, updatedIng)
 
-				updatedIng, _ = lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses("default").Get(name, meta_v1.GetOptions{})
+				updatedIng, _ = lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses("default").Get(context2.TODO(), name, meta_v1.GetOptions{})
 				if tc.enableFinalizerAdd && !tc.enableFinalizerRemove {
 					if updatedIng == nil {
 						t.Fatalf("Expected Ingress not to be deleted")
@@ -284,7 +285,7 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 					t.Fatalf("Ingress was not deleted, got: %+v", updatedIng)
 				}
 
-				remainingIngresses, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses("default").List(meta_v1.ListOptions{})
+				remainingIngresses, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses("default").List(context2.TODO(), meta_v1.ListOptions{})
 				if err != nil {
 					t.Fatalf("List() = %v, want nil", err)
 				}
@@ -330,7 +331,7 @@ func TestIngressClassChangeWithFinalizer(t *testing.T) {
 		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 	}
 	// Check if finalizer is added when an Ingress resource is created with finalizer enabled.
-	updatedIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	updatedIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(context2.TODO(), ing.Name, meta_v1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Get(%v) = %v, want nil", ingStoreKey, err)
 	}
@@ -347,7 +348,7 @@ func TestIngressClassChangeWithFinalizer(t *testing.T) {
 		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 	}
 	// Check if finalizer is removed after class changes.
-	updatedIng, err = lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	updatedIng, err = lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(context2.TODO(), ing.Name, meta_v1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Get(%v) = %v, want nil", ingStoreKey, err)
 	}
@@ -416,7 +417,7 @@ func TestIngressesWithSharedResourcesWithFinalizer(t *testing.T) {
 		}
 	}
 
-	remainingIngresses, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses("default").List(meta_v1.ListOptions{})
+	remainingIngresses, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses("default").List(context2.TODO(), meta_v1.ListOptions{})
 	if err != nil {
 		t.Fatalf("List() = %v, want nil", err)
 	}
@@ -453,7 +454,7 @@ func TestEnableFinalizer(t *testing.T) {
 	}
 
 	// Ensure that no finalizer is added.
-	updatedIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	updatedIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(context2.TODO(), ing.Name, meta_v1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Get(%v) = %v, want nil", ingStoreKey, err)
 	}
@@ -469,7 +470,7 @@ func TestEnableFinalizer(t *testing.T) {
 	}
 
 	// Check if finalizer is added after finalizer is enabled.
-	updatedIng, err = lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	updatedIng, err = lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(context2.TODO(), ing.Name, meta_v1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Get(%v) = %v, want nil", ingStoreKey, err)
 	}
@@ -508,7 +509,7 @@ func TestIngressClassChange(t *testing.T) {
 	}
 
 	// Check status of LoadBalancer is updated after class changes
-	updatedIng, _ := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	updatedIng, _ := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(context2.TODO(), ing.Name, meta_v1.GetOptions{})
 	if len(updatedIng.Status.LoadBalancer.Ingress) != 0 {
 		t.Error("Ingress status wasn't updated after class changed")
 	}
@@ -538,7 +539,7 @@ func TestEnsureMCIngress(t *testing.T) {
 	}
 
 	// Check Ingress has annotations noting the instance group name.
-	updatedIng, _ := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	updatedIng, _ := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(context2.TODO(), ing.Name, meta_v1.GetOptions{})
 	igAnnotationKey := "ingress.gcp.kubernetes.io/instance-groups"
 	wantVal := `[{"Name":"k8s-ig--aaaaa","Zone":"zone-a"}]`
 	if val, ok := updatedIng.GetAnnotations()[igAnnotationKey]; !ok {
@@ -582,7 +583,7 @@ func TestMCIngressIG(t *testing.T) {
 	}
 
 	// Check multi-cluster Ingress has annotations noting the instance group name.
-	updatedMcIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(mcIng.Namespace).Get(mcIng.Name, meta_v1.GetOptions{})
+	updatedMcIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(mcIng.Namespace).Get(context2.TODO(), mcIng.Name, meta_v1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Get(%v) = %v, want nil", mcIngStoreKey, err)
 	}
@@ -734,7 +735,7 @@ func TestIngressTagging(t *testing.T) {
 				t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 			}
 
-			updatedIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+			updatedIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(context2.TODO(), ing.Name, meta_v1.GetOptions{})
 			if err != nil {
 				t.Fatalf("Get(%v) = %v, want nil", ingStoreKey, err)
 			}
@@ -968,7 +969,7 @@ func ensureIngress(t *testing.T, lbc *LoadBalancerController, namespace, name st
 }
 
 func getUpdatedIngress(t *testing.T, lbc *LoadBalancerController, ing *v1beta1.Ingress) *v1beta1.Ingress {
-	updatedIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(ing.Name, meta_v1.GetOptions{})
+	updatedIng, err := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Get(context2.TODO(), ing.Name, meta_v1.GetOptions{})
 	if err != nil {
 		t.Fatalf("lbc.ctx.KubeClient...Get(%v) = %v, want nil", getKey(ing, t), err)
 	}

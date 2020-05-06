@@ -17,6 +17,7 @@ limitations under the License.
 package neg
 
 import (
+	context2 "context"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -79,7 +80,7 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 	dynamicSchema := runtime.NewScheme()
 	//dynamicSchema.AddKnownTypeWithName(schema.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "List"}, &unstructured.UnstructuredList{})
 
-	kubeClient.CoreV1().ConfigMaps("kube-system").Create(&apiv1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ingress-controller-config-test"}, Data: map[string]string{"enable-asm": "true"}})
+	kubeClient.CoreV1().ConfigMaps("kube-system").Create(context2.TODO(), &apiv1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ingress-controller-config-test"}, Data: map[string]string{"enable-asm": "true"}}, metav1.CreateOptions{})
 
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:             apiv1.NamespaceAll,
@@ -238,7 +239,7 @@ func TestNewNEGService(t *testing.T) {
 			}
 			validateSyncers(t, controller, expectedSyncers, false)
 			svcClient := controller.client.CoreV1().Services(testServiceNamespace)
-			svc, err := svcClient.Get(testServiceName, metav1.GetOptions{})
+			svc, err := svcClient.Get(context2.TODO(), testServiceName, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("Service was not created successfully, err: %v", err)
 			}
@@ -261,7 +262,7 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 		t.Fatalf("Failed to process service: %v", err)
 	}
 	validateSyncers(t, controller, 0, true)
-	svc, err := svcClient.Get(testServiceName, metav1.GetOptions{})
+	svc, err := svcClient.Get(context2.TODO(), testServiceName, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
@@ -272,7 +273,7 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 		t.Fatalf("Failed to process service: %v", err)
 	}
 	validateSyncers(t, controller, 3, false)
-	svc, err = svcClient.Get(testServiceName, metav1.GetOptions{})
+	svc, err = svcClient.Get(context2.TODO(), testServiceName, metav1.GetOptions{})
 	svcPorts := []int32{80, 8081, 443}
 	if err != nil {
 		t.Fatalf("Service was not created successfully, err: %v", err)
@@ -293,7 +294,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Failed to process service: %v", err)
 		}
-		svc, err := svcClient.Get(testServiceName, metav1.GetOptions{})
+		svc, err := svcClient.Get(context2.TODO(), testServiceName, metav1.GetOptions{})
 		if err != nil {
 			t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 		}
@@ -323,7 +324,7 @@ func TestEnableNEGServiceWithILBIngress(t *testing.T) {
 		t.Fatalf("Failed to process service: %v", err)
 	}
 	validateSyncers(t, controller, 0, true)
-	svc, err := svcClient.Get(testServiceName, metav1.GetOptions{})
+	svc, err := svcClient.Get(context2.TODO(), testServiceName, metav1.GetOptions{})
 	if err != nil {
 		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
@@ -334,7 +335,7 @@ func TestEnableNEGServiceWithILBIngress(t *testing.T) {
 		t.Fatalf("Failed to process service: %v", err)
 	}
 	validateSyncers(t, controller, 3, false)
-	svc, err = svcClient.Get(testServiceName, metav1.GetOptions{})
+	svc, err = svcClient.Get(context2.TODO(), testServiceName, metav1.GetOptions{})
 	svcPorts := []int32{80, 8081, 443}
 	if err != nil {
 		t.Fatalf("Service was not created successfully, err: %v", err)
@@ -562,7 +563,7 @@ func TestSyncNegAnnotation(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			controller.syncNegStatusAnnotation(namespace, name, tc.previousPortMap)
-			svc, _ := svcClient.Get(name, metav1.GetOptions{})
+			svc, _ := svcClient.Get(context2.TODO(), name, metav1.GetOptions{})
 
 			var oldSvcPorts []int32
 			for port := range tc.previousPortMap {
@@ -571,7 +572,7 @@ func TestSyncNegAnnotation(t *testing.T) {
 			validateServiceStateAnnotation(t, svc, oldSvcPorts, controller.namer)
 
 			controller.syncNegStatusAnnotation(namespace, name, tc.portMap)
-			svc, _ = svcClient.Get(name, metav1.GetOptions{})
+			svc, _ = svcClient.Get(context2.TODO(), name, metav1.GetOptions{})
 
 			var svcPorts []int32
 			for port := range tc.portMap {
@@ -672,7 +673,7 @@ func TestDefaultBackendServicePortInfoMap(t *testing.T) {
 				ing.Spec.Backend = nil
 			}
 
-			newIng, err := controller.client.NetworkingV1beta1().Ingresses(testServiceNamespace).Create(ing)
+			newIng, err := controller.client.NetworkingV1beta1().Ingresses(testServiceNamespace).Create(context2.TODO(), ing, metav1.CreateOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -748,7 +749,7 @@ func TestNewDestinationRule(t *testing.T) {
 			svcKey := utils.ServiceKeyFunc(tc.service.GetNamespace(), tc.service.GetName())
 
 			controller.serviceLister.Add(tc.service)
-			controller.client.CoreV1().Services(tc.service.GetNamespace()).Create(tc.service)
+			controller.client.CoreV1().Services(tc.service.GetNamespace()).Create(context2.TODO(), tc.service, metav1.CreateOptions{})
 
 			expectedPortInfoMap := negtypes.PortInfoMap{}
 			expectedPortInfoMap.Merge(tc.wantSvcPortMap)
@@ -758,7 +759,8 @@ func TestNewDestinationRule(t *testing.T) {
 
 			if tc.usDestinationRule != nil {
 				controller.destinationRuleLister.Add(tc.usDestinationRule)
-				if _, err := controller.destinationRuleClient.Namespace(tc.usDestinationRule.GetNamespace()).Create(tc.usDestinationRule,
+				if _, err := controller.destinationRuleClient.Namespace(tc.usDestinationRule.GetNamespace()).Create(context2.TODO(),
+					tc.usDestinationRule,
 					metav1.CreateOptions{}); err != nil {
 					t.Fatalf("failed to create destinationrule: %v", err)
 				}
@@ -772,13 +774,13 @@ func TestNewDestinationRule(t *testing.T) {
 			validateSyncerManagerWithPortInfoMap(t, controller, tc.service.GetNamespace(), tc.service.GetName(), expectedPortInfoMap)
 
 			svcClient := controller.client.CoreV1().Services(tc.service.GetNamespace())
-			svc, err := svcClient.Get(tc.service.GetName(), metav1.GetOptions{})
+			svc, err := svcClient.Get(context2.TODO(), tc.service.GetName(), metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("Service was not created successfully, err: %v", err)
 			}
 			validateServiceAnnotationWithPortInfoMap(t, svc, tc.wantSvcPortMap)
 			if tc.usDestinationRule != nil {
-				usdr, err := controller.destinationRuleClient.Namespace(tc.usDestinationRule.GetNamespace()).Get(tc.usDestinationRule.GetName(), metav1.GetOptions{})
+				usdr, err := controller.destinationRuleClient.Namespace(tc.usDestinationRule.GetNamespace()).Get(context2.TODO(), tc.usDestinationRule.GetName(), metav1.GetOptions{})
 				if err != nil {
 					t.Fatalf("Destinationrule was not created successfully, err: %v", err)
 				}
@@ -1114,7 +1116,7 @@ func newTestILBService(c *Controller, onlyLocal bool, port int) *apiv1.Service {
 		svc.Spec.ExternalTrafficPolicy = apiv1.ServiceExternalTrafficPolicyTypeLocal
 	}
 
-	c.client.CoreV1().Services(testServiceNamespace).Create(svc)
+	c.client.CoreV1().Services(testServiceNamespace).Create(context2.TODO(), svc, metav1.CreateOptions{})
 	return svc
 }
 
@@ -1158,7 +1160,7 @@ func newTestService(c *Controller, negIngress bool, negSvcPorts []int32) *apiv1.
 		},
 	}
 
-	c.client.CoreV1().Services(testServiceNamespace).Create(svc)
+	c.client.CoreV1().Services(testServiceNamespace).Create(context2.TODO(), svc, metav1.CreateOptions{})
 	return svc
 }
 
@@ -1184,7 +1186,7 @@ func newTestServiceCus(t *testing.T, c *Controller, namespace, name string, port
 			Selector: map[string]string{"v": "v1"},
 		},
 	}
-	c.client.CoreV1().Services(namespace).Create(svc)
+	c.client.CoreV1().Services(namespace).Create(context2.TODO(), svc, metav1.CreateOptions{})
 	return svc
 }
 
@@ -1205,7 +1207,7 @@ func newTestDestinationRule(t *testing.T, c *Controller, namespace, name, host s
 		t.Fatalf("failed convert DestinationRule to Unstructured: %v", err)
 	}
 	usDr.Object["spec"] = spec
-	if _, err := c.destinationRuleClient.Namespace(namespace).Create(&usDr, metav1.CreateOptions{}); err != nil {
+	if _, err := c.destinationRuleClient.Namespace(namespace).Create(context2.TODO(), &usDr, metav1.CreateOptions{}); err != nil {
 		t.Fatalf("failed to create destinationrule: %v", err)
 	}
 	return &dr, &usDr

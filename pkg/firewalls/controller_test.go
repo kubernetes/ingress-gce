@@ -17,6 +17,7 @@ limitations under the License.
 package firewalls
 
 import (
+	context2 "context"
 	"testing"
 	"time"
 
@@ -71,11 +72,11 @@ func TestFirewallCreateDelete(t *testing.T) {
 		},
 	})
 
-	fwc.ctx.KubeClient.CoreV1().Services(defaultSvc.Namespace).Create(defaultSvc)
+	fwc.ctx.KubeClient.CoreV1().Services(defaultSvc.Namespace).Create(context2.TODO(), defaultSvc, meta_v1.CreateOptions{})
 	fwc.ctx.ServiceInformer.GetIndexer().Add(defaultSvc)
 
 	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"}, v1beta1.IngressSpec{})
-	fwc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Create(ing)
+	fwc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Create(context2.TODO(), ing, meta_v1.CreateOptions{})
 	fwc.ctx.IngressInformer.GetIndexer().Add(ing)
 
 	key, _ := common.KeyFunc(queueKey)
@@ -89,7 +90,7 @@ func TestFirewallCreateDelete(t *testing.T) {
 		t.Fatalf("cloud.GetFirewall(%v) = _, %v, want _, nil", ruleName, err)
 	}
 
-	fwc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Delete(ing.Name, &meta_v1.DeleteOptions{})
+	fwc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace).Delete(context2.TODO(), ing.Name, meta_v1.DeleteOptions{})
 	fwc.ctx.IngressInformer.GetIndexer().Delete(ing)
 
 	if err := fwc.sync(key); err != nil {

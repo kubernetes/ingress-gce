@@ -17,6 +17,8 @@ limitations under the License.
 package crd
 
 import (
+	"context"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"reflect"
 	"testing"
 
@@ -51,7 +53,7 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 				crd := crd(crdMeta)
 				crd.Spec.Names.Kind = "wrongname"
 				crd.Spec.Names.ListKind = "wrongnameList"
-				if _, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(crd); err != nil {
+				if _, err := clientset.ApiextensionsV1beta1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{}); err != nil {
 					return err
 				}
 				return nil

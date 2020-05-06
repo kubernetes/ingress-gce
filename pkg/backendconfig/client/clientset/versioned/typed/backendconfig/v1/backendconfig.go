@@ -19,6 +19,7 @@ limitations under the License.
 package v1
 
 import (
+	"context"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -70,7 +71,7 @@ func (c *backendConfigs) Get(name string, options metav1.GetOptions) (result *v1
 		Resource("backendconfigs").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 	return
 }
@@ -87,7 +88,7 @@ func (c *backendConfigs) List(opts metav1.ListOptions) (result *v1.BackendConfig
 		Resource("backendconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 	return
 }
@@ -104,7 +105,7 @@ func (c *backendConfigs) Watch(opts metav1.ListOptions) (watch.Interface, error)
 		Resource("backendconfigs").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
-		Watch()
+		Watch(context.TODO())
 }
 
 // Create takes the representation of a backendConfig and creates it.  Returns the server's representation of the backendConfig, and an error, if there is any.
@@ -114,7 +115,7 @@ func (c *backendConfigs) Create(backendConfig *v1.BackendConfig) (result *v1.Bac
 		Namespace(c.ns).
 		Resource("backendconfigs").
 		Body(backendConfig).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 	return
 }
@@ -127,7 +128,7 @@ func (c *backendConfigs) Update(backendConfig *v1.BackendConfig) (result *v1.Bac
 		Resource("backendconfigs").
 		Name(backendConfig.Name).
 		Body(backendConfig).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 	return
 }
@@ -139,7 +140,7 @@ func (c *backendConfigs) Delete(name string, options *metav1.DeleteOptions) erro
 		Resource("backendconfigs").
 		Name(name).
 		Body(options).
-		Do().
+		Do(context.TODO()).
 		Error()
 }
 
@@ -155,7 +156,7 @@ func (c *backendConfigs) DeleteCollection(options *metav1.DeleteOptions, listOpt
 		VersionedParams(&listOptions, scheme.ParameterCodec).
 		Timeout(timeout).
 		Body(options).
-		Do().
+		Do(context.TODO()).
 		Error()
 }
 
@@ -168,7 +169,7 @@ func (c *backendConfigs) Patch(name string, pt types.PatchType, data []byte, sub
 		SubResource(subresources...).
 		Name(name).
 		Body(data).
-		Do().
+		Do(context.TODO()).
 		Into(result)
 	return
 }

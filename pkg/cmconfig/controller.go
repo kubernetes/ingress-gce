@@ -1,6 +1,7 @@
 package cmconfig
 
 import (
+	"context"
 	"fmt"
 
 	v1 "k8s.io/api/core/v1"
@@ -30,7 +31,7 @@ type ConfigMapConfigController struct {
 func NewConfigMapConfigController(kubeClient kubernetes.Interface, recorder record.EventRecorder, configMapNamespace, configMapName string) *ConfigMapConfigController {
 
 	currentConfig := NewConfig()
-	cm, err := kubeClient.CoreV1().ConfigMaps(configMapNamespace).Get(configMapName, metav1.GetOptions{})
+	cm, err := kubeClient.CoreV1().ConfigMaps(configMapNamespace).Get(context.TODO(), configMapName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			klog.Infof("ConfigMapConfigController: Not found the configmap based config, using default config: %v", currentConfig)
@@ -70,7 +71,7 @@ func (c *ConfigMapConfigController) updateASMReady(status string) {
 		c.RecordEvent("Warning", "FailedToUpdateASMStatus", fmt.Sprintf("Failed to update ASM Status, failed to create patch for ASM ConfigMap, error: %s", err))
 		return
 	}
-	cm, err := c.kubeClient.CoreV1().ConfigMaps(c.configMapNamespace).Patch(c.configMapName, apimachinerytypes.MergePatchType, patchBytes, "")
+	cm, err := c.kubeClient.CoreV1().ConfigMaps(c.configMapNamespace).Patch(context.TODO(), c.configMapName, apimachinerytypes.MergePatchType, patchBytes, metav1.PatchOptions{}, "")
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return
@@ -133,7 +134,7 @@ func (c *ConfigMapConfigController) processItem(obj interface{}, cancel func()) 
 	}
 
 	config := NewConfig()
-	cm, err := c.kubeClient.CoreV1().ConfigMaps(c.configMapNamespace).Get(c.configMapName, metav1.GetOptions{})
+	cm, err := c.kubeClient.CoreV1().ConfigMaps(c.configMapNamespace).Get(context.TODO(), c.configMapName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			klog.Infof("ConfigMapConfigController: Not found the configmap based config, using default config: %v", config)

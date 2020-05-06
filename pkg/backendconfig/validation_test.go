@@ -17,6 +17,7 @@ limitations under the License.
 package backendconfig
 
 import (
+	"context"
 	"testing"
 
 	v1 "k8s.io/api/core/v1"
@@ -63,7 +64,7 @@ func TestValidateIAP(t *testing.T) {
 						Name:      "foo",
 					},
 				}
-				kubeClient.CoreV1().Secrets("wrong-namespace").Create(secret)
+				kubeClient.CoreV1().Secrets("wrong-namespace").Create(context.TODO(), secret, meta_v1.CreateOptions{})
 			},
 			expectError: true,
 		},
@@ -80,7 +81,7 @@ func TestValidateIAP(t *testing.T) {
 						"client_secret": []byte("my-secret"),
 					},
 				}
-				kubeClient.CoreV1().Secrets("default").Create(secret)
+				kubeClient.CoreV1().Secrets("default").Create(context.TODO(), secret, meta_v1.CreateOptions{})
 			},
 			expectError: true,
 		},
@@ -97,7 +98,7 @@ func TestValidateIAP(t *testing.T) {
 						"client_id": []byte("my-id"),
 					},
 				}
-				kubeClient.CoreV1().Secrets("default").Create(secret)
+				kubeClient.CoreV1().Secrets("default").Create(context.TODO(), secret, meta_v1.CreateOptions{})
 			},
 			expectError: true,
 		},
@@ -115,7 +116,7 @@ func TestValidateIAP(t *testing.T) {
 						"client_secret": []byte("my-secret"),
 					},
 				}
-				kubeClient.CoreV1().Secrets("default").Create(secret)
+				kubeClient.CoreV1().Secrets("default").Create(context.TODO(), secret, meta_v1.CreateOptions{})
 			},
 			expectError: false,
 		},
@@ -145,7 +146,7 @@ func TestValidateIAP(t *testing.T) {
 						"client_secret": []byte("my-secret"),
 					},
 				}
-				kubeClient.CoreV1().Secrets("default").Create(secret)
+				kubeClient.CoreV1().Secrets("default").Create(context.TODO(), secret, meta_v1.CreateOptions{})
 			},
 			expectError: true,
 		},

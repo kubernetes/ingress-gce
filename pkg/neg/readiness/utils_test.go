@@ -17,6 +17,7 @@ limitations under the License.
 package readiness
 
 import (
+	"context"
 	"fmt"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -256,12 +257,12 @@ func TestPatchPodStatus(t *testing.T) {
 	ns := "ns"
 	name := "name"
 	client := &fake.Clientset{}
-	client.CoreV1().Pods(ns).Create(&v1.Pod{
+	client.CoreV1().Pods(ns).Create(context.TODO(), &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: ns,
 			Name:      name,
 		},
-	})
+	}, metav1.CreateOptions{})
 
 	testCases := []struct {
 		description        string
