@@ -64,3 +64,18 @@ ${GOPATH}/bin/openapi-gen \
   --input-dirs k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1\
   --output-package k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1 \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
+
+echo "Performing code generation for ServiceNetworkEndpointGroup CRD"
+${CODEGEN_PKG}/generate-groups.sh \
+  "deepcopy,client,informer,lister" \
+  k8s.io/ingress-gce/pkg/svcneg/client k8s.io/ingress-gce/pkg/apis \
+  "svcneg:v1beta1" \
+  --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
+
+echo "Generating openapi for ServiceNetworkEndpointGroup v1beta1"
+go install ${OPENAPI_PKG}/cmd/openapi-gen
+${GOPATH}/bin/openapi-gen \
+  --output-file-base zz_generated.openapi \
+  --input-dirs k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1\
+  --output-package k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1 \
+  --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
