@@ -180,7 +180,7 @@ func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers sets.String, ve
 		}
 
 		if err := l.delete(l.namerFactory.NamerForLbName(l7Name), versions, scope); err != nil {
-			errors = append(errors, fmt.Errorf("error deleting loadbalancer %q", l7Name))
+			errors = append(errors, fmt.Errorf("error deleting loadbalancer %q: %v", l7Name, err))
 		}
 	}
 	return errors
