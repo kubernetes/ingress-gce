@@ -168,7 +168,7 @@ func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers sets.String, ve
 
 		klog.V(2).Infof("GCing loadbalancer %v", l7Name)
 		if err := l.Delete(l7Name, versions, scope); err != nil {
-			errors = append(errors, fmt.Errorf("error deleting loadbalancer %q", l7Name))
+			errors = append(errors, fmt.Errorf("error deleting loadbalancer %q: %v", l7Name, err))
 		}
 	}
 	return errors
