@@ -498,9 +498,33 @@ func TestILBError(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 
+			// Retrieve service NEG annotation
+			// TODO(freehan): remove this once NEG is default for all qualified cluster versions
+			svc, err := Framework.Clientset.CoreV1().Services(s.Namespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("expect err = nil, but got %v", err)
+			}
+			svcAnnotation := annotations.FromService(svc)
+			negAnnotation, ok, err := svcAnnotation.NEGAnnotation()
+			if err != nil {
+				t.Fatalf("expect err = nil, but got %v", err)
+			}
+
+			// Proceed with error expectation according to NEG annotation
+			// TODO(freehan): remove this once NEG is default for all qualified cluster versions
+			expectError := true
+			if ok && negAnnotation.Ingress {
+				expectError = false
+			}
+
 			_, err = e2e.WaitForIngress(s, tc.ing, nil)
-			if err == nil {
+
+			if expectError && err == nil {
 				t.Fatalf("want err, got nil")
+			}
+
+			if !expectError && err != nil {
+				t.Fatalf("want err nil, got err %v", err)
 			}
 		})
 	}
