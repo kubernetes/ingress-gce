@@ -17,36 +17,23 @@ limitations under the License.
 package tls
 
 import (
-	"context"
 	"fmt"
-
-	"k8s.io/klog"
 
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
-	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/translator"
 )
 
 // TlsLoader is the interface for loading the relevant TLSCerts for a given ingress.
 type TlsLoader interface {
 	// Load loads the relevant TLSCerts based on ing.Spec.TLS
 	Load(ing *v1beta1.Ingress) ([]*loadbalancers.TLSCerts, error)
-	// Validate validates the given TLSCerts and returns an error if they are invalid.
-	Validate(certs *loadbalancers.TLSCerts) error
-}
-
-// TODO: Add better cert validation.
-type noOPValidator struct{}
-
-func (n *noOPValidator) Validate(certs *loadbalancers.TLSCerts) error {
-	return nil
 }
 
 // TLSCertsFromSecretsLoader loads TLS certs from kubernetes secrets.
 type TLSCertsFromSecretsLoader struct {
-	noOPValidator
 	Client kubernetes.Interface
 }
 
@@ -54,33 +41,24 @@ type TLSCertsFromSecretsLoader struct {
 var _ TlsLoader = &TLSCertsFromSecretsLoader{}
 
 func (t *TLSCertsFromSecretsLoader) Load(ing *v1beta1.Ingress) ([]*loadbalancers.TLSCerts, error) {
-	if len(ing.Spec.TLS) == 0 {
-		return nil, nil
+	env, err := translator.NewEnv(ing, t.Client)
+	if err != nil {
+		return nil, fmt.Errorf("error initializing translator env: %v", err)
 	}
+
 	var certs []*loadbalancers.TLSCerts
 
-	for _, tlsSecret := range ing.Spec.TLS {
-		if tlsSecret.SecretName == "" {
-			continue
-		}
-		// TODO: Replace this for a secret watcher.
-		klog.V(3).Infof("Retrieving secret for ing %v with name %v", ing.Name, tlsSecret.SecretName)
-		secret, err := t.Client.CoreV1().Secrets(ing.Namespace).Get(context.TODO(), tlsSecret.SecretName, meta_v1.GetOptions{})
-		if err != nil {
-			return nil, err
-		}
-		cert, ok := secret.Data[api_v1.TLSCertKey]
-		if !ok {
-			return nil, fmt.Errorf("secret %v has no 'tls.crt'", tlsSecret.SecretName)
-		}
-		key, ok := secret.Data[api_v1.TLSPrivateKeyKey]
-		if !ok {
-			return nil, fmt.Errorf("secret %v has no 'tls.key'", tlsSecret.SecretName)
-		}
-		newCert := &loadbalancers.TLSCerts{Key: string(key), Cert: string(cert), Name: tlsSecret.SecretName,
-			CertHash: loadbalancers.GetCertHash(string(cert))}
-		if err := t.Validate(newCert); err != nil {
-			return nil, err
+	secrets, err := translator.Secrets(env)
+	if err != nil {
+		return nil, fmt.Errorf("error getting secrets for Ingress: %v", err)
+	}
+	for _, secret := range secrets {
+		cert := string(secret.Data[api_v1.TLSCertKey])
+		newCert := &loadbalancers.TLSCerts{
+			Key:      string(secret.Data[api_v1.TLSPrivateKeyKey]),
+			Cert:     cert,
+			Name:     secret.Name,
+			CertHash: loadbalancers.GetCertHash(cert),
 		}
 		certs = append(certs, newCert)
 	}
@@ -91,7 +69,6 @@ func (t *TLSCertsFromSecretsLoader) Load(ing *v1beta1.Ingress) ([]*loadbalancers
 
 // FakeTLSSecretLoader fakes out TLS loading.
 type FakeTLSSecretLoader struct {
-	noOPValidator
 	FakeCerts map[string]*loadbalancers.TLSCerts
 }
 

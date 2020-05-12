@@ -16,16 +16,76 @@ limitations under the License.
 package translator
 
 import (
+	"context"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	api_v1 "k8s.io/api/core/v1"
+	"k8s.io/api/networking/v1beta1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
+
+// Env contains all k8s-style configuration needed to perform the translation.
+type Env struct {
+	// Ing is the Ingress we are translating.
+	Ing *v1beta1.Ingress
+	// SecretsMap contains a mapping from Secret name to the actual resource.
+	// It is assumed that the map contains resources from a single namespace.
+	// This is the same namespace as the Ingress namespace.
+	SecretsMap map[string]*api_v1.Secret
+}
+
+// NewEnv returns an Env for the given Ingress.
+func NewEnv(ing *v1beta1.Ingress, client kubernetes.Interface) (*Env, error) {
+	ret := &Env{Ing: ing, SecretsMap: make(map[string]*api_v1.Secret)}
+	secrets, err := client.CoreV1().Secrets(ing.Namespace).List(context.TODO(), meta_v1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range secrets.Items {
+		s := s
+		ret.SecretsMap[s.Name] = &s
+	}
+	return ret, nil
+}
+
+// Translator implements the mapping between an MCI and its corresponding GCE resources.
+type Translator struct{}
+
+// NewTranslator returns a new Translator.
+func NewTranslator() *Translator {
+	return &Translator{}
+}
+
+// Secrets returns the Secrets from the environment which are specified in the Ingress.
+func Secrets(env *Env) ([]*api_v1.Secret, error) {
+	var ret []*api_v1.Secret
+	spec := env.Ing.Spec
+	for _, tlsSpec := range spec.TLS {
+		secret, ok := env.SecretsMap[tlsSpec.SecretName]
+		if !ok {
+			return nil, fmt.Errorf("secret %q does not exist", tlsSpec.SecretName)
+		}
+		// Fail-fast if the user's secret does not have the proper fields specified.
+		if secret.Data[api_v1.TLSCertKey] == nil {
+			return nil, fmt.Errorf("secret %q does not specify cert as string data", tlsSpec.SecretName)
+		}
+		if secret.Data[api_v1.TLSPrivateKeyKey] == nil {
+			return nil, fmt.Errorf("secret %q does not specify private key as string data", tlsSpec.SecretName)
+		}
+		ret = append(ret, secret)
+	}
+
+	return ret, nil
+}
 
 // The gce api uses the name of a path rule to match a host rule.
 const hostRulePrefix = "host"

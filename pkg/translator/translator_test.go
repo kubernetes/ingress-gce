@@ -14,10 +14,15 @@ limitations under the License.
 package translator
 
 import (
+	"context"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
+	api_v1 "k8s.io/api/core/v1"
+	"k8s.io/api/networking/v1beta1"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -113,5 +118,146 @@ func testCompositeURLMap() *composite.UrlMap {
 				},
 			},
 		},
+	}
+}
+
+func TestSecrets(t *testing.T) {
+	secretsMap := map[string]*api_v1.Secret{
+		"first-secret": &api_v1.Secret{
+			ObjectMeta: meta_v1.ObjectMeta{
+				Name: "first-secret",
+			},
+			Data: map[string][]byte{
+				// TODO(rramkumar): Use real data here.
+				api_v1.TLSCertKey:       []byte("cert"),
+				api_v1.TLSPrivateKeyKey: []byte("private key"),
+			},
+		},
+		"second-secret": &api_v1.Secret{
+			ObjectMeta: meta_v1.ObjectMeta{
+				Name: "second-secret",
+			},
+			Data: map[string][]byte{
+				api_v1.TLSCertKey:       []byte("cert"),
+				api_v1.TLSPrivateKeyKey: []byte("private key"),
+			},
+		},
+		"third-secret": &api_v1.Secret{
+			ObjectMeta: meta_v1.ObjectMeta{
+				Name: "third-secret",
+			},
+			Data: map[string][]byte{
+				api_v1.TLSCertKey:       []byte("cert"),
+				api_v1.TLSPrivateKeyKey: []byte("private key"),
+			},
+		},
+		"secret-no-cert": &api_v1.Secret{
+			ObjectMeta: meta_v1.ObjectMeta{
+				Name: "secret-no-cert",
+			},
+			Data: map[string][]byte{
+				api_v1.TLSPrivateKeyKey: []byte("private key"),
+			},
+		},
+		"secret-no-key": &api_v1.Secret{
+			ObjectMeta: meta_v1.ObjectMeta{
+				Name: "secret-no-key",
+			},
+			Data: map[string][]byte{
+				api_v1.TLSCertKey: []byte("private key"),
+			},
+		},
+	}
+
+	cases := []struct {
+		desc    string
+		ing     *v1beta1.Ingress
+		want    []*api_v1.Secret
+		wantErr bool
+	}{
+		{
+			desc: "ingress-single-secret",
+			// TODO(rramkumar): Read Ingress spec from a file.
+			ing: &v1beta1.Ingress{
+				Spec: v1beta1.IngressSpec{
+					TLS: []v1beta1.IngressTLS{
+						{SecretName: "first-secret"},
+					},
+				},
+			},
+			want: []*api_v1.Secret{secretsMap["first-secret"]},
+		},
+		{
+			desc: "ingress-multi-secret",
+			ing: &v1beta1.Ingress{
+				Spec: v1beta1.IngressSpec{
+					TLS: []v1beta1.IngressTLS{
+						{SecretName: "first-secret"},
+						{SecretName: "second-secret"},
+						{SecretName: "third-secret"},
+					},
+				},
+			},
+			want: []*api_v1.Secret{secretsMap["first-secret"], secretsMap["second-secret"], secretsMap["third-secret"]},
+		},
+		{
+			desc: "mci-missing-secret",
+			ing: &v1beta1.Ingress{
+				Spec: v1beta1.IngressSpec{
+					TLS: []v1beta1.IngressTLS{
+						{SecretName: "does-not-exist-secret"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			desc: "mci-secret-empty-cert",
+			ing: &v1beta1.Ingress{
+				Spec: v1beta1.IngressSpec{
+					TLS: []v1beta1.IngressTLS{
+						{SecretName: "secret-no-cert"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+		{
+			desc: "mci-secret-empty-priv-key",
+			ing: &v1beta1.Ingress{
+				Spec: v1beta1.IngressSpec{
+					TLS: []v1beta1.IngressTLS{
+						{SecretName: "secret-no-key"},
+					},
+				},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			kubeClient := fake.NewSimpleClientset()
+			for _, v := range secretsMap {
+				kubeClient.CoreV1().Secrets(tc.ing.Namespace).Create(context.TODO(), v, meta_v1.CreateOptions{})
+			}
+
+			env, err := NewEnv(tc.ing, kubeClient)
+			if err != nil {
+				t.Fatalf("NewEnv(): %v", err)
+			}
+
+			got, err := Secrets(env)
+			if tc.wantErr && err == nil {
+				t.Fatal("expected Secrets() to return an error")
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("Secrets(): %v", err)
+			}
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Got diff (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
