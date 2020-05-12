@@ -17,22 +17,13 @@ limitations under the License.
 package loadbalancers
 
 import (
-	"crypto/md5"
-	"encoding/hex"
 	"fmt"
 
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
-)
-
-const (
-	// The gce api uses the name of a path rule to match a host rule.
-	hostRulePrefix = "host"
 )
 
 // ensureComputeURLMap retrieves the current URLMap and overwrites it if incorrect. If the resource
@@ -49,7 +40,7 @@ func (l *L7) ensureComputeURLMap() error {
 	if err != nil {
 		return err
 	}
-	expectedMap := toCompositeURLMap(l.runtimeInfo.UrlMap, l.namer, key)
+	expectedMap := translator.ToCompositeURLMap(l.runtimeInfo.UrlMap, l.namer, key)
 	key.Name = expectedMap.Name
 
 	expectedMap.Version = l.Versions().UrlMap
@@ -175,94 +166,4 @@ func mapsEqual(a, b *composite.UrlMap) bool {
 		}
 	}
 	return true
-}
-
-// toCompositeURLMap translates the given hostname: endpoint->port mapping into a gce url map.
-//
-// HostRule: Conceptually contains all PathRules for a given host.
-// PathMatcher: Associates a path rule with a host rule. Mostly an optimization.
-// PathRule: Maps a single path regex to a backend.
-//
-// The GCE url map allows multiple hosts to share url->backend mappings without duplication, eg:
-//   Host: foo(PathMatcher1), bar(PathMatcher1,2)
-//   PathMatcher1:
-//     /a -> b1
-//     /b -> b2
-//   PathMatcher2:
-//     /c -> b1
-// This leads to a lot of complexity in the common case, where all we want is a mapping of
-// host->{/path: backend}.
-//
-// Consider some alternatives:
-// 1. Using a single backend per PathMatcher:
-//   Host: foo(PathMatcher1,3) bar(PathMatcher1,2,3)
-//   PathMatcher1:
-//     /a -> b1
-//   PathMatcher2:
-//     /c -> b1
-//   PathMatcher3:
-//     /b -> b2
-// 2. Using a single host per PathMatcher:
-//   Host: foo(PathMatcher1)
-//   PathMatcher1:
-//     /a -> b1
-//     /b -> b2
-//   Host: bar(PathMatcher2)
-//   PathMatcher2:
-//     /a -> b1
-//     /b -> b2
-//     /c -> b1
-// In the context of kubernetes services, 2 makes more sense, because we
-// rarely want to lookup backends (service:nodeport). When a service is
-// deleted, we need to find all host PathMatchers that have the backend
-// and remove the mapping. When a new path is added to a host (happens
-// more frequently than service deletion) we just need to lookup the 1
-// pathmatcher of the host.
-func toCompositeURLMap(g *utils.GCEURLMap, namer namer.IngressFrontendNamer, key *meta.Key) *composite.UrlMap {
-	defaultBackendName := g.DefaultBackend.BackendName()
-	key.Name = defaultBackendName
-	resourceID := cloud.ResourceID{ProjectID: "", Resource: "backendServices", Key: key}
-	m := &composite.UrlMap{
-		Name:           namer.UrlMap(),
-		DefaultService: resourceID.ResourcePath(),
-	}
-
-	for _, hostRule := range g.HostRules {
-		// Create a host rule
-		// Create a path matcher
-		// Add all given endpoint:backends to pathRules in path matcher
-		pmName := getNameForPathMatcher(hostRule.Hostname)
-		m.HostRules = append(m.HostRules, &composite.HostRule{
-			Hosts:       []string{hostRule.Hostname},
-			PathMatcher: pmName,
-		})
-
-		pathMatcher := &composite.PathMatcher{
-			Name:           pmName,
-			DefaultService: m.DefaultService,
-			PathRules:      []*composite.PathRule{},
-		}
-
-		// GCE ensures that matched rule with longest prefix wins.
-		for _, rule := range hostRule.Paths {
-			beName := rule.Backend.BackendName()
-			key.Name = beName
-			resourceID := cloud.ResourceID{ProjectID: "", Resource: "backendServices", Key: key}
-			beLink := resourceID.ResourcePath()
-			pathMatcher.PathRules = append(pathMatcher.PathRules, &composite.PathRule{
-				Paths:   []string{rule.Path},
-				Service: beLink,
-			})
-		}
-		m.PathMatchers = append(m.PathMatchers, pathMatcher)
-	}
-	return m
-}
-
-// getNameForPathMatcher returns a name for a pathMatcher based on the given host rule.
-// The host rule can be a regex, the path matcher name used to associate the 2 cannot.
-func getNameForPathMatcher(hostRule string) string {
-	hasher := md5.New()
-	hasher.Write([]byte(hostRule))
-	return fmt.Sprintf("%v%v", hostRulePrefix, hex.EncodeToString(hasher.Sum(nil)))
 }
