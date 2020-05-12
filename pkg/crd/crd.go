@@ -28,6 +28,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	utilpointer "k8s.io/utils/pointer"
 )
 
 const (
@@ -119,6 +120,9 @@ func crd(meta *CRDMeta) *apiextensionsv1beta1.CustomResourceDefinition {
 			klog.Errorf("Error adding simple validation for %v CRD: %v", meta.kind, err)
 		}
 		crd.Spec.Validation = validationSpec
+		// Drop unknown fields of a CRD resource. Note that this needs be specified
+		// in conjunction with validation spec.
+		crd.Spec.PreserveUnknownFields = utilpointer.BoolPtr(false)
 	}
 	return crd
 }
