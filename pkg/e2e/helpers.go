@@ -32,6 +32,9 @@ import (
 	apps "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
+	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -65,6 +68,10 @@ const (
 
 	updateIngressPollInterval = 30 * time.Second
 	updateIngressPollTimeout  = 15 * time.Minute
+
+	backendConfigEnsurePollInterval = 5 * time.Second
+	backendConfigEnsurePollTimeout  = 15 * time.Minute
+	backendConfigCRDName            = "backendconfigs.cloud.google.com"
 
 	healthyState = "HEALTHY"
 )
@@ -630,4 +637,30 @@ func WaitConfigMapEvents(s *Sandbox, namespace, name string, msgs []string, time
 		}
 		return true, nil
 	})
+}
+
+// waitForBackendConfigCRDEstablish waits for backendconfig CRD to be ensured
+// by the ingress controller.
+func waitForBackendConfigCRDEstablish(crdClient *apiextensionsclient.Clientset) error {
+	condition := func() (bool, error) {
+		bcCRD, err := crdClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(context.TODO(), backendConfigCRDName, metav1.GetOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				klog.V(3).Infof("CRD %s is not found, retrying", backendConfigCRDName)
+				return false, nil
+			}
+			return false, err
+		}
+		for _, c := range bcCRD.Status.Conditions {
+			if c.Type == apiextensionsv1beta1.Established && c.Status == apiextensionsv1beta1.ConditionTrue {
+				return true, nil
+			}
+		}
+		klog.V(3).Infof("CRD %s is not established, retrying", backendConfigCRDName)
+		return false, nil
+	}
+	if err := wait.Poll(backendConfigEnsurePollInterval, backendConfigEnsurePollTimeout, condition); err != nil {
+		return fmt.Errorf("error waiting for CRD established: %v", err)
+	}
+	return nil
 }
