@@ -19,11 +19,11 @@ package loadbalancers
 import (
 	"encoding/json"
 	"fmt"
-	"k8s.io/ingress-gce/pkg/flags"
 	"strings"
 
+	"k8s.io/ingress-gce/pkg/flags"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"google.golang.org/api/compute/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
@@ -56,8 +56,9 @@ type L7RuntimeInfo struct {
 	// AllowHTTP will not setup :80, if TLS is nil and AllowHTTP is set,
 	// no loadbalancer is created.
 	AllowHTTP bool
-	// The name of a Global Static IP. If specified, the IP associated with
+	// The name of a Global/Regional Static IP. If specified, the IP associated with
 	// this name is used in the Forwarding Rules for this loadbalancer.
+	// If this is an l7-ILB ingress, the static IP is assumed to be internal
 	StaticIPName string
 	// UrlMap is our internal representation of a url map.
 	UrlMap *utils.GCEURLMap
@@ -96,8 +97,8 @@ type L7 struct {
 	fw *composite.ForwardingRule
 	// fws is the GlobalForwardingRule that points to the TargetHTTPSProxy.
 	fws *composite.ForwardingRule
-	// ip is the static-ip associated with both GlobalForwardingRules.
-	ip *compute.Address
+	// ip is the static-ip associated with both ForwardingRules.
+	ip *composite.Address
 	// sslCerts is the list of ssl certs associated with the targetHTTPSProxy.
 	sslCerts []*composite.SslCertificate
 	// oldSSLCerts is the list of certs that used to be hooked up to the

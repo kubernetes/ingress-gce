@@ -672,12 +672,17 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *u
 		feConfig = feConfig.DeepCopy()
 	}
 
+	staticIPName, err := annotations.StaticIPName()
+	if err != nil {
+		return nil, err
+	}
+
 	return &loadbalancers.L7RuntimeInfo{
 		TLS:            tls,
 		TLSName:        annotations.UseNamedTLS(),
 		Ingress:        ing,
 		AllowHTTP:      annotations.AllowHTTP(),
-		StaticIPName:   annotations.StaticIPName(),
+		StaticIPName:   staticIPName,
 		UrlMap:         urlMap,
 		FrontendConfig: feConfig,
 	}, nil

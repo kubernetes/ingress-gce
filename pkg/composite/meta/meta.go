@@ -36,7 +36,7 @@ const (
 // The other types that are discovered as dependencies will simply be wrapped with a composite struct
 // The format of the map is ServiceName -> k8s-cloud-provider wrapper name
 var MainServices = map[string]string{
-	"Address": 												 "Addresses",
+	"Address":                         "Addresses",
 	"BackendService":                  "BackendServices",
 	"ForwardingRule":                  "ForwardingRules",
 	"HealthCheck":                     "HealthChecks",

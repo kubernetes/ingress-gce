@@ -21,28 +21,49 @@ import (
 
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/flags"
 )
 
 func TestIngress(t *testing.T) {
 	for _, tc := range []struct {
+		desc         string
 		ing          *v1beta1.Ingress
 		allowHTTP    bool
 		useNamedTLS  string
 		staticIPName string
 		ingressClass string
+		wantErr      bool
 	}{
 		{
+			desc:      "Empty ingress",
 			ing:       &v1beta1.Ingress{},
 			allowHTTP: true, // defaults to true.
 		},
 		{
+			desc: "Global and Regional StaticIP Specified",
 			ing: &v1beta1.Ingress{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
-						AllowHTTPKey:     "false",
-						IngressClassKey:  "gce",
-						PreSharedCertKey: "shared-cert-key",
-						StaticIPNameKey:  "1.2.3.4",
+						GlobalStaticIPNameKey:   "1.2.3.4",
+						RegionalStaticIPNameKey: "10.0.0.0",
+						IngressClassKey:         GceL7ILBIngressClass,
+					},
+				},
+			},
+			ingressClass: GceL7ILBIngressClass,
+			staticIPName: "",
+			allowHTTP:    true,
+			wantErr:      true,
+		},
+		{
+			desc: "Test most annotations",
+			ing: &v1beta1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Annotations: map[string]string{
+						AllowHTTPKey:          "false",
+						IngressClassKey:       "gce",
+						PreSharedCertKey:      "shared-cert-key",
+						GlobalStaticIPNameKey: "1.2.3.4",
 					},
 				},
 			},
@@ -53,14 +74,23 @@ func TestIngress(t *testing.T) {
 		},
 	} {
 		ing := FromIngress(tc.ing)
+
+		if tc.ingressClass == GceL7ILBIngressClass {
+			flags.F.EnableL7Ilb = true
+		}
+
 		if x := ing.AllowHTTP(); x != tc.allowHTTP {
 			t.Errorf("ingress %+v; AllowHTTP() = %v, want %v", tc.ing, x, tc.allowHTTP)
 		}
 		if x := ing.UseNamedTLS(); x != tc.useNamedTLS {
 			t.Errorf("ingress %+v; UseNamedTLS() = %v, want %v", tc.ing, x, tc.useNamedTLS)
 		}
-		if x := ing.StaticIPName(); x != tc.staticIPName {
-			t.Errorf("ingress %+v; StaticIPName() = %v, want %v", tc.ing, x, tc.staticIPName)
+		staticIp, err := ing.StaticIPName()
+		if (err != nil) != tc.wantErr {
+			t.Errorf("ingress: %+v, err = %v, wantErr = %v", tc.ing, err, tc.wantErr)
+		}
+		if staticIp != tc.staticIPName {
+			t.Errorf("ingress %+v; GlobalStaticIPName() = %v, want %v", tc.ing, staticIp, tc.staticIPName)
 		}
 		if x := ing.IngressClass(); x != tc.ingressClass {
 			t.Errorf("ingress %+v; IngressClass() = %v, want %v", tc.ing, x, tc.ingressClass)
