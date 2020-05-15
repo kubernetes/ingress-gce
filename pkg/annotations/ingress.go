@@ -17,9 +17,11 @@ limitations under the License.
 package annotations
 
 import (
+	"errors"
 	"strconv"
 
 	"k8s.io/api/networking/v1beta1"
+	"k8s.io/ingress-gce/pkg/flags"
 )
 
 const (
@@ -34,12 +36,19 @@ const (
 	// rules for port 443 based on the TLS section.
 	AllowHTTPKey = "kubernetes.io/ingress.allow-http"
 
-	// StaticIPNameKey tells the Ingress controller to use a specific GCE
+	// GlobalStaticIPNameKey tells the Ingress controller to use a specific GCE
 	// static ip for its forwarding rules. If specified, the Ingress controller
 	// assigns the static ip by this name to the forwarding rules of the given
 	// Ingress. The controller *does not* manage this ip, it is the users
 	// responsibility to create/delete it.
-	StaticIPNameKey = "kubernetes.io/ingress.global-static-ip-name"
+	GlobalStaticIPNameKey = "kubernetes.io/ingress.global-static-ip-name"
+
+	// RegionalStaticIPNameKey tells the Ingress controller to use a specific GCE
+	// internal static ip for its forwarding rules. If specified, the Ingress controller
+	// assigns the static ip by this name to the forwarding rules of the given
+	// Ingress. The controller *does not* manage this ip, it is the users
+	// responsibility to create/delete it.
+	RegionalStaticIPNameKey = "kubernetes.io/ingress.regional-static-ip-name"
 
 	// PreSharedCertKey represents the specific pre-shared SSL
 	// certificate for the Ingress controller to use. The controller *does not*
@@ -50,7 +59,7 @@ const (
 
 	// IngressClassKey picks a specific "class" for the Ingress. The controller
 	// only processes Ingresses with this annotation either unset, or set
-	// to either gceIngessClass or the empty string.
+	// to either gceIngressClass or the empty string.
 	IngressClassKey      = "kubernetes.io/ingress.class"
 	GceIngressClass      = "gce"
 	GceMultiIngressClass = "gce-multi-cluster"
@@ -131,8 +140,35 @@ func (ing *Ingress) UseNamedTLS() string {
 	return val
 }
 
-func (ing *Ingress) StaticIPName() string {
-	val, ok := ing.v[StaticIPNameKey]
+func (ing *Ingress) StaticIPName() (string, error) {
+	if !flags.F.EnableL7Ilb {
+		return ing.GlobalStaticIPName(), nil
+	}
+
+	globalIp := ing.GlobalStaticIPName()
+	regionalIp := ing.RegionalStaticIPName()
+
+	if globalIp != "" && regionalIp != "" {
+		return "", errors.New("Error: both global-static-ip and regional-static-ip cannot be specified")
+	}
+
+	if regionalIp != "" {
+		return regionalIp, nil
+	}
+
+	return globalIp, nil
+}
+
+func (ing *Ingress) GlobalStaticIPName() string {
+	val, ok := ing.v[GlobalStaticIPNameKey]
+	if !ok {
+		return ""
+	}
+	return val
+}
+
+func (ing *Ingress) RegionalStaticIPName() string {
+	val, ok := ing.v[RegionalStaticIPNameKey]
 	if !ok {
 		return ""
 	}

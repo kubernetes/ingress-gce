@@ -163,10 +163,16 @@ func (l *L7) getEffectiveIP() (string, bool, error) {
 	// TODO: Handle the last case better.
 
 	if l.runtimeInfo.StaticIPName != "" {
+		key, err := l.CreateKey(l.runtimeInfo.StaticIPName)
+		if err != nil {
+			return "", false, err
+		}
+
 		// Existing static IPs allocated to forwarding rules will get orphaned
 		// till the Ingress is torn down.
-		if ip, err := l.cloud.GetGlobalAddress(l.runtimeInfo.StaticIPName); err != nil || ip == nil {
-			return "", false, fmt.Errorf("the given static IP name %v doesn't translate to an existing global static IP.",
+		// TODO(shance): Replace version
+		if ip, err := composite.GetAddress(l.cloud, key, meta.VersionGA); err != nil || ip == nil {
+			return "", false, fmt.Errorf("the given static IP name %v doesn't translate to an existing static IP.",
 				l.runtimeInfo.StaticIPName)
 		} else {
 			return ip.Address, false, nil
