@@ -21,7 +21,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -42,7 +42,10 @@ func (l *L7) checkHttpForwardingRule() (err error) {
 		return fmt.Errorf("cannot create forwarding rule without proxy")
 	}
 	name := l.namer.ForwardingRule(namer.HTTPProtocol)
-	address, _ := l.getEffectiveIP()
+	address, _, err := l.getEffectiveIP()
+	if err != nil {
+		return err
+	}
 	fw, err := l.checkForwardingRule(name, l.tp.SelfLink, address, httpDefaultPortRange)
 	if err != nil {
 		return err
@@ -57,7 +60,10 @@ func (l *L7) checkHttpsForwardingRule() (err error) {
 		return nil
 	}
 	name := l.namer.ForwardingRule(namer.HTTPSProtocol)
-	address, _ := l.getEffectiveIP()
+	address, _, err := l.getEffectiveIP()
+	if err != nil {
+		return err
+	}
 	fws, err := l.checkForwardingRule(name, l.tps.SelfLink, address, httpsDefaultPortRange)
 	if err != nil {
 		return err
@@ -150,15 +156,14 @@ func (l *L7) checkForwardingRule(name, proxyLink, ip, portRange string) (fw *com
 }
 
 // getEffectiveIP returns a string with the IP to use in the HTTP and HTTPS
-// forwarding rules, and a boolean indicating if this is an IP the controller
-// should manage or not.
-func (l *L7) getEffectiveIP() (string, bool) {
+// forwarding rules, a boolean indicating if this is an IP the controller
+// should manage or not and an error if the specified IP was not found.
+func (l *L7) getEffectiveIP() (string, bool, error) {
 
 	// A note on IP management:
 	// User specifies a different IP on startup:
 	//	- We create a forwarding rule with the given IP.
-	//		- If this ip doesn't exist in GCE, we create another one in the hope
-	//		  that they will rectify it later on.
+	//		- If this ip doesn't exist in GCE, an error is thrown which fails ingress creation.
 	//	- In the happy case, no static ip is created or deleted by this controller.
 	// Controller allocates a staticIP/ephemeralIP, but user changes it:
 	//  - We still delete the old static IP, but only when we tear down the
@@ -175,16 +180,16 @@ func (l *L7) getEffectiveIP() (string, bool) {
 		// Existing static IPs allocated to forwarding rules will get orphaned
 		// till the Ingress is torn down.
 		if ip, err := l.cloud.GetGlobalAddress(l.runtimeInfo.StaticIPName); err != nil || ip == nil {
-			klog.Warningf("The given static IP name %v doesn't translate to an existing global static IP, ignoring it and allocating a new IP: %v",
-				l.runtimeInfo.StaticIPName, err)
+			return "", false, fmt.Errorf("the given static IP name %v doesn't translate to an existing global static IP.",
+				l.runtimeInfo.StaticIPName)
 		} else {
-			return ip.Address, false
+			return ip.Address, false, nil
 		}
 	}
 	if l.ip != nil {
-		return l.ip.Address, true
+		return l.ip.Address, true, nil
 	}
-	return "", true
+	return "", true, nil
 }
 
 // ensureForwardingRule creates a forwarding rule with the given name, if it does not exist. It updates the existing
