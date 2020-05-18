@@ -32,7 +32,7 @@ import (
 	computealpha "google.golang.org/api/compute/v0.alpha"
 	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
-	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
+	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -76,6 +76,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 	f := &Framework{
 		RestConfig:          config,
 		Clientset:           kubernetes.NewForConfigOrDie(config),
+		crdClient:           apiextensionsclient.NewForConfigOrDie(config),
 		BackendConfigClient: backendConfigClient,
 		Project:             options.Project,
 		Region:              options.Region,
@@ -89,11 +90,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 
 	// Preparing dynamic client if Istio:DestinationRule CRD exisits and matches the required version.
 	// The client is used by the ASM e2e tests.
-	apiextensionClient, err := apiextensionsclientset.NewForConfig(config)
-	if err != nil {
-		klog.Fatalf("Failed to create ApiextensionClient for DestinationRule, disabling ASM Mode, error: %s", err)
-	}
-	destinationRuleCRD, err := apiextensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(context.TODO(), destinationRuleCRDName, metav1.GetOptions{})
+	destinationRuleCRD, err := f.crdClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(context.TODO(), destinationRuleCRDName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			klog.Infof("Cannot load DestinationRule CRD, Istio is disabled on this cluster.")
@@ -121,6 +118,7 @@ type Framework struct {
 	Clientset             *kubernetes.Clientset
 	DestinationRuleClient dynamic.NamespaceableResourceInterface
 
+	crdClient           *apiextensionsclient.Clientset
 	BackendConfigClient *backendconfigclient.Clientset
 	Project             string
 	Region              string
@@ -161,6 +159,11 @@ func (f *Framework) SanityCheck() error {
 	klog.V(2).Info("Checking status manager initialization")
 	if err := f.statusManager.init(); err != nil {
 		klog.Errorf("Error initializing status manager: %v", err)
+		return err
+	}
+	klog.V(2).Info("Waiting for BackendConfig CRD to be established")
+	if err := waitForBackendConfigCRDEstablish(f.crdClient); err != nil {
+		klog.Errorf("Error waiting for BackendConfig CRD to be established: %v", err)
 		return err
 	}
 	return nil
