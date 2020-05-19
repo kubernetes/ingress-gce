@@ -286,7 +286,7 @@ func NewLoadBalancerController(
 
 	// Register health check on controller context.
 	ctx.AddHealthCheck("ingress", func() error {
-		_, err := backendPool.Get("foo", meta.VersionGA, meta.Global)
+		_, err := backendPool.Get("k8s-ingress-svc-acct-permission-check-probe", meta.VersionGA, meta.Global)
 
 		// If this container is scheduled on a node without compute/rw it is
 		// effectively useless, but it is healthy. Reporting it as unhealthy
