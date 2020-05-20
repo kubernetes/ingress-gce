@@ -298,7 +298,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 			t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 		}
 		validateSyncers(t, controller, 1, false)
-		expectedPortInfoMap := negtypes.NewPortInfoMapForPrimaryIPNEG(testServiceNamespace, testServiceName,
+		expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName,
 			controller.namer, randomize)
 		validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
 		validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap)

@@ -60,7 +60,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 	negtypes.MockNetworkEndpointAPIs(fakeGCE)
 	fakeCloud := negtypes.NewAdapter(fakeGCE)
 	testNegTypes := []negtypes.NetworkEndpointType{
-		negtypes.VmPrimaryIpEndpointType,
+		negtypes.VmIpEndpointType,
 		negtypes.VmIpPortEndpointType,
 	}
 
@@ -829,7 +829,7 @@ func TestCommitPods(t *testing.T) {
 }
 
 func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, randomize bool) (negtypes.NegSyncer, *transactionSyncer) {
-	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmPrimaryIpEndpointType)
+	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmIpEndpointType)
 	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, randomize)
 	return negsyncer, ts
 }
@@ -853,10 +853,10 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 			TargetPort: "8080",
 		},
 	}
-	if negType == negtypes.VmPrimaryIpEndpointType {
+	if negType == negtypes.VmIpEndpointType {
 		svcPort.PortTuple.Port = 0
 		svcPort.PortTuple.TargetPort = ""
-		svcPort.PortTuple.Name = string(negtypes.VmPrimaryIpEndpointType)
+		svcPort.PortTuple.Name = string(negtypes.VmIpEndpointType)
 	}
 
 	// TODO(freehan): use real readiness reflector
