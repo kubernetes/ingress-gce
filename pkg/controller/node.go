@@ -17,12 +17,15 @@ limitations under the License.
 package controller
 
 import (
+	"time"
+
 	apiv1 "k8s.io/api/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 // NodeController synchronizes the state of the nodes to the unmanaged instance
@@ -34,6 +37,9 @@ type NodeController struct {
 	queue utils.TaskQueue
 	// instancePool is a NodePool to manage kubernetes nodes.
 	instancePool instances.NodePool
+	// hasSynced returns true if relevant caches have done their initial
+	// synchronization.
+	hasSynced func() bool
 }
 
 // NewNodeController returns a new node update controller.
@@ -41,6 +47,7 @@ func NewNodeController(ctx *context.ControllerContext, instancePool instances.No
 	c := &NodeController{
 		lister:       ctx.NodeInformer.GetIndexer(),
 		instancePool: instancePool,
+		hasSynced:    ctx.HasSynced,
 	}
 	c.queue = utils.NewPeriodicTaskQueue("", "nodes", c.sync)
 
@@ -60,8 +67,15 @@ func NewNodeController(ctx *context.ControllerContext, instancePool instances.No
 	return c
 }
 
-// Run a goroutine to process updates for the controller.
+// Run the queue to process updates for the controller. This must be run in a
+// separate goroutine (method will block until queue shutdown).
 func (c *NodeController) Run() {
+	start := time.Now()
+	for !c.hasSynced() {
+		klog.V(2).Infof("Waiting for hasSynced (%s elapsed)", time.Now().Sub(start))
+		time.Sleep(1 * time.Second)
+	}
+	klog.V(2).Infof("Caches synced (took %s)", time.Now().Sub(start))
 	c.queue.Run()
 }
 
