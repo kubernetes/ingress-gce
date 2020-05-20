@@ -402,6 +402,7 @@ func (h *HealthChecks) pathFromSvcPort(sp utils.ServicePort) string {
 	return h.path
 }
 
+// formatBackendConfigHC returns a human readable string version of the HealthCheckConfig
 func formatBackendConfigHC(b *backendconfigv1.HealthCheckConfig) string {
 	var ret []string
 
@@ -413,6 +414,7 @@ func formatBackendConfigHC(b *backendconfigv1.HealthCheckConfig) string {
 		{k: "healthyThreshold", v: b.HealthyThreshold},
 		{k: "unhealthyThreshold", v: b.UnhealthyThreshold},
 		{k: "timeoutSec", v: b.TimeoutSec},
+		{k: "port", v: b.Port},
 	} {
 		if e.v != nil {
 			ret = append(ret, fmt.Sprintf("%s=%d", e.k, *e.v))
