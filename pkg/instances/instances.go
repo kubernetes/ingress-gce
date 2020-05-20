@@ -19,6 +19,7 @@ package instances
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -277,9 +278,9 @@ func (i *Instances) Remove(groupName string, names []string) error {
 	return fmt.Errorf("%v", errs)
 }
 
-// Sync syncs kubernetes instances with the instances in the instance group.
+// Sync nodes with the instances in the instance group.
 func (i *Instances) Sync(nodes []string) (err error) {
-	klog.V(4).Infof("Syncing nodes %v", nodes)
+	klog.V(2).Infof("Syncing nodes %v", nodes)
 
 	defer func() {
 		// The node pool is only responsible for syncing nodes to instance
@@ -296,6 +297,7 @@ func (i *Instances) Sync(nodes []string) (err error) {
 
 	pool, err := i.List()
 	if err != nil {
+		klog.Errorf("List error: %v", err)
 		return err
 	}
 
@@ -303,6 +305,7 @@ func (i *Instances) Sync(nodes []string) (err error) {
 		gceNodes := sets.NewString()
 		gceNodes, err = i.list(igName)
 		if err != nil {
+			klog.Errorf("list(%q) error: %v", igName, err)
 			return err
 		}
 		kubeNodes := sets.NewString(nodes...)
@@ -313,16 +316,23 @@ func (i *Instances) Sync(nodes []string) (err error) {
 
 		removeNodes := gceNodes.Difference(kubeNodes).List()
 		addNodes := kubeNodes.Difference(gceNodes).List()
+
+		klog.V(2).Infof("Removing %d, adding %d nodes", len(removeNodes), len(addNodes))
+
+		start := time.Now()
 		if len(removeNodes) != 0 {
-			klog.V(4).Infof("Removing nodes from IG: %v", removeNodes)
-			if err = i.Remove(igName, removeNodes); err != nil {
+			err = i.Remove(igName, removeNodes)
+			klog.V(2).Infof("Remove(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), removeNodes)
+			if err != nil {
 				return err
 			}
 		}
 
+		start = time.Now()
 		if len(addNodes) != 0 {
-			klog.V(4).Infof("Adding nodes to IG: %v", addNodes)
-			if err = i.Add(igName, addNodes); err != nil {
+			err = i.Add(igName, addNodes)
+			klog.V(2).Infof("Add(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), addNodes)
+			if err != nil {
 				return err
 			}
 		}
