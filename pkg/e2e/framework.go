@@ -40,6 +40,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
+	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	"k8s.io/klog"
 )
 
@@ -73,18 +74,24 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		klog.Fatalf("Failed to create BackendConfig client: %v", err)
 	}
 
+	frontendConfigClient, err := frontendconfigclient.NewForConfig(config)
+	if err != nil {
+		klog.Fatalf("Failed to create BackendConfig client: %v", err)
+	}
+
 	f := &Framework{
-		RestConfig:          config,
-		Clientset:           kubernetes.NewForConfigOrDie(config),
-		crdClient:           apiextensionsclient.NewForConfigOrDie(config),
-		BackendConfigClient: backendConfigClient,
-		Project:             options.Project,
-		Region:              options.Region,
-		Network:             options.Network,
-		Cloud:               theCloud,
-		Rand:                rand.New(rand.NewSource(options.Seed)),
-		destroySandboxes:    options.DestroySandboxes,
-		CreateILBSubnet:     options.CreateILBSubnet,
+		RestConfig:           config,
+		Clientset:            kubernetes.NewForConfigOrDie(config),
+		crdClient:            apiextensionsclient.NewForConfigOrDie(config),
+		FrontendConfigClient: frontendConfigClient,
+		BackendConfigClient:  backendConfigClient,
+		Project:              options.Project,
+		Region:               options.Region,
+		Network:              options.Network,
+		Cloud:                theCloud,
+		Rand:                 rand.New(rand.NewSource(options.Seed)),
+		destroySandboxes:     options.DestroySandboxes,
+		CreateILBSubnet:      options.CreateILBSubnet,
 	}
 	f.statusManager = NewStatusManager(f)
 
@@ -117,15 +124,15 @@ type Framework struct {
 	RestConfig            *rest.Config
 	Clientset             *kubernetes.Clientset
 	DestinationRuleClient dynamic.NamespaceableResourceInterface
-
-	crdClient           *apiextensionsclient.Clientset
-	BackendConfigClient *backendconfigclient.Clientset
-	Project             string
-	Region              string
-	Network             string
-	Cloud               cloud.Cloud
-	Rand                *rand.Rand
-	statusManager       *StatusManager
+	crdClient             *apiextensionsclient.Clientset
+	BackendConfigClient   *backendconfigclient.Clientset
+	FrontendConfigClient  *frontendconfigclient.Clientset
+	Project               string
+	Region                string
+	Network               string
+	Cloud                 cloud.Cloud
+	Rand                  *rand.Rand
+	statusManager         *StatusManager
 
 	destroySandboxes bool
 	CreateILBSubnet  bool

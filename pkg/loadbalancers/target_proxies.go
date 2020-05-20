@@ -249,8 +249,9 @@ func (l *L7) getSslPolicyLink() (*string, error) {
 		return nil, err
 	}
 	resourceID := cloud.ResourceID{
-		Resource: "sslPolicies",
-		Key:      key,
+		Resource:  "sslPolicies",
+		Key:       key,
+		ProjectID: l.cloud.ProjectID(),
 	}
 	resID := resourceID.ResourcePath()
 
