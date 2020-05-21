@@ -183,8 +183,9 @@ func (hc *HealthCheck) ToAlphaComputeHealthCheck() *computealpha.HealthCheck {
 }
 
 func (hc *HealthCheck) merge() {
-	// Cannot specify both portSpecification and port field.
-	if hc.PortSpecification != "" {
+	// Cannot specify both portSpecification and port field unless fixed port is specified.
+	// This can happen if the user overrides the port using backendconfig
+	if hc.PortSpecification != "" && hc.PortSpecification != "USE_FIXED_PORT" {
 		hc.Port = 0
 	}
 
@@ -239,7 +240,9 @@ func (hc *HealthCheck) updateFromBackendConfig(c *backendconfigv1.HealthCheckCon
 		hc.RequestPath = *c.RequestPath
 	}
 	if c.Port != nil {
-		klog.Warningf("Setting Port is not supported (healthcheck %q, backendconfig = %+v)", hc.Name, c)
+		hc.Port = *c.Port
+		// This override is necessary regardless of type
+		hc.PortSpecification = "USE_FIXED_PORT"
 	}
 }
 
@@ -287,6 +290,10 @@ func calculateDiff(old, new *HealthCheck, c *backendconfigv1.HealthCheckConfig) 
 	if c.RequestPath != nil && old.RequestPath != new.RequestPath {
 		changes.add("RequestPath", old.RequestPath, new.RequestPath)
 	}
+	if c.Port != nil && old.Port != new.Port {
+		changes.add("Port", strconv.FormatInt(old.Port, 10), strconv.FormatInt(new.Port, 10))
+	}
+
 	// TODO(bowei): Host seems to be missing.
 
 	return &changes

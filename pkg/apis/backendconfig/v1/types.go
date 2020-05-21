@@ -154,7 +154,10 @@ type HealthCheckConfig struct {
 	// Type is a health check parameter. See
 	// https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.
 	Type *string `json:"type,omitempty"`
-	Port *int64  `json:"port,omitempty"`
+	// Port is a health check parameter. See
+	// https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.
+	// If Port is used, the controller updates portSpecification as well
+	Port *int64 `json:"port,omitempty"`
 	// RequestPath is a health check parameter. See
 	// https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks.
 	RequestPath *string `json:"requestPath,omitempty"`

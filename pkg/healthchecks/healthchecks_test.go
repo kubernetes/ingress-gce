@@ -78,6 +78,7 @@ func init() {
 						TimeoutSec:         &num,
 						HealthyThreshold:   &num,
 						UnhealthyThreshold: &num,
+						Port:               &num,
 					},
 				} {
 					sp := &utils.ServicePort{
@@ -675,6 +676,16 @@ func TestCalculateDiff(t *testing.T) {
 		hasDiff: true,
 	})
 
+	newHC = DefaultHealthCheck(500, annotations.ProtocolHTTP)
+	newHC.Port = 500
+	cases = append(cases, tc{
+		desc:    "Backendconfig Port",
+		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		new:     newHC,
+		c:       &backendconfigv1.HealthCheckConfig{Port: i64(500)},
+		hasDiff: true,
+	})
+
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
 			diffs := calculateDiff(tc.old, tc.new, tc.c)
@@ -895,7 +906,25 @@ func TestSyncServicePort(t *testing.T) {
 	chc.HealthyThreshold = 1234
 	chc.UnhealthyThreshold = 1234
 	chc.TimeoutSec = 1234
+	chc.HttpHealthCheck.Port = 1234
+	// PortSpecification is set by the controller
+	chc.HttpHealthCheck.PortSpecification = "USE_FIXED_PORT"
 	cases = append(cases, &tc{desc: "create backendconfig all", sp: testSPs["HTTP-80-reg-bcall"], wantComputeHC: chc})
+
+	i64 := func(i int64) *int64 { return &i }
+
+	// BackendConfig port
+	chc = fixture.hc()
+	chc.HttpHealthCheck.Port = 1234
+	// PortSpecification is set by the controller
+	chc.HttpHealthCheck.PortSpecification = "USE_FIXED_PORT"
+	sp := utils.ServicePort{
+		NodePort:      80,
+		Protocol:      annotations.ProtocolHTTP,
+		BackendNamer:  testNamer,
+		BackendConfig: &backendconfigv1.BackendConfig{Spec: backendconfigv1.BackendConfigSpec{HealthCheck: &backendconfigv1.HealthCheckConfig{Port: i64(1234)}}},
+	}
+	cases = append(cases, &tc{desc: "create backendconfig port", sp: &sp, wantComputeHC: chc})
 
 	// BackendConfig neg
 	chc = fixture.neg()
@@ -1085,6 +1114,8 @@ func TestSyncServicePort(t *testing.T) {
 	wantCHC.HealthyThreshold = 1234
 	wantCHC.UnhealthyThreshold = 1234
 	wantCHC.TimeoutSec = 1234
+	wantCHC.HttpHealthCheck.Port = 1234
+	wantCHC.HttpHealthCheck.PortSpecification = "USE_FIXED_PORT"
 	cases = append(cases, &tc{
 		desc:          "update preserve backendconfig all",
 		setup:         fixture.setupExistingHCFunc(chc),
