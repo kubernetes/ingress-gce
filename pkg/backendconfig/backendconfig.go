@@ -43,6 +43,7 @@ func CRDMeta() *crd.CRDMeta {
 		"BackendConfigList",
 		"backendconfig",
 		"backendconfigs",
+		"bc",
 	)
 	meta.AddValidationInfo("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.BackendConfig", backendconfigv1.GetOpenAPIDefinitions)
 	return meta
