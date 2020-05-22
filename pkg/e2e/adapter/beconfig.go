@@ -18,6 +18,7 @@ package adapter
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 
@@ -41,10 +42,10 @@ func (crud *BackendConfigCRUD) Get(ns, name string) (*v1.BackendConfig, error) {
 	}
 	klog.V(3).Infof("Get BackendConfig %s/%s", ns, name)
 	if isV1 {
-		return crud.C.CloudV1().BackendConfigs(ns).Get(name, metav1.GetOptions{})
+		return crud.C.CloudV1().BackendConfigs(ns).Get(context.TODO(), name, metav1.GetOptions{})
 	}
 	klog.V(4).Info("Using BackendConfig V1beta1 API")
-	bc, err := crud.C.CloudV1beta1().BackendConfigs(ns).Get(name, metav1.GetOptions{})
+	bc, err := crud.C.CloudV1beta1().BackendConfigs(ns).Get(context.TODO(), name, metav1.GetOptions{})
 	return toV1(bc), err
 }
 
@@ -56,11 +57,11 @@ func (crud *BackendConfigCRUD) Create(bc *v1.BackendConfig) (*v1.BackendConfig, 
 	}
 	klog.V(2).Infof("Create BackendConfig %s/%s", bc.Namespace, bc.Name)
 	if isV1 {
-		return crud.C.CloudV1().BackendConfigs(bc.Namespace).Create(bc)
+		return crud.C.CloudV1().BackendConfigs(bc.Namespace).Create(context.TODO(), bc, metav1.CreateOptions{})
 	}
 	klog.V(2).Info("Using BackendConfig V1beta1 API")
 	legacyBc := toV1beta1(bc)
-	legacyBc, err = crud.C.CloudV1beta1().BackendConfigs(bc.Namespace).Create(legacyBc)
+	legacyBc, err = crud.C.CloudV1beta1().BackendConfigs(bc.Namespace).Create(context.TODO(), legacyBc, metav1.CreateOptions{})
 	return toV1(legacyBc), err
 }
 
@@ -72,11 +73,11 @@ func (crud *BackendConfigCRUD) Update(bc *v1.BackendConfig) (*v1.BackendConfig, 
 	}
 	klog.V(2).Infof("Update %s/%s", bc.Namespace, bc.Name)
 	if isV1 {
-		return crud.C.CloudV1().BackendConfigs(bc.Namespace).Update(bc)
+		return crud.C.CloudV1().BackendConfigs(bc.Namespace).Update(context.TODO(), bc, metav1.UpdateOptions{})
 	}
 	klog.V(2).Infof("Using BackendConfig V1beta1 API")
 	legacyBC := toV1beta1(bc)
-	legacyBC, err = crud.C.CloudV1beta1().BackendConfigs(bc.Namespace).Update(legacyBC)
+	legacyBC, err = crud.C.CloudV1beta1().BackendConfigs(bc.Namespace).Update(context.TODO(), legacyBC, metav1.UpdateOptions{})
 	return toV1(legacyBC), err
 }
 
@@ -88,10 +89,10 @@ func (crud *BackendConfigCRUD) Delete(ns, name string) error {
 	}
 	klog.V(2).Infof("Delete BackendConfig %s/%s", ns, name)
 	if isV1 {
-		return crud.C.CloudV1().BackendConfigs(ns).Delete(name, &metav1.DeleteOptions{})
+		return crud.C.CloudV1().BackendConfigs(ns).Delete(context.TODO(), name, metav1.DeleteOptions{})
 	}
 	klog.V(2).Info("Using BackendConfig V1beta1 API")
-	return crud.C.CloudV1beta1().BackendConfigs(ns).Delete(name, &metav1.DeleteOptions{})
+	return crud.C.CloudV1beta1().BackendConfigs(ns).Delete(context.TODO(), name, metav1.DeleteOptions{})
 }
 
 // List BackendConfig resources in given namespace.
@@ -102,10 +103,10 @@ func (crud *BackendConfigCRUD) List(ns string) (*v1.BackendConfigList, error) {
 	}
 	klog.V(3).Infof("List BackendConfigs in namespace(%s)", ns)
 	if isV1 {
-		return crud.C.CloudV1().BackendConfigs(ns).List(metav1.ListOptions{})
+		return crud.C.CloudV1().BackendConfigs(ns).List(context.TODO(), metav1.ListOptions{})
 	}
 	klog.V(4).Info("Using BackendConfig V1beta1 API")
-	bcl, err := crud.C.CloudV1beta1().BackendConfigs(ns).List(metav1.ListOptions{})
+	bcl, err := crud.C.CloudV1beta1().BackendConfigs(ns).List(context.TODO(), metav1.ListOptions{})
 	return toV1List(bcl), err
 }
 
