@@ -51,14 +51,14 @@ func schema_pkg_apis_backendconfig_v1_BackendConfig(ref common.ReferenceCallback
 				Properties: map[string]spec.Schema{
 					"kind": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#types-kinds",
+							Description: "Kind is a string value representing the REST resource this object represents. Servers may infer this from the endpoint the client submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds",
 							Type:        []string{"string"},
 							Format:      "",
 						},
 					},
 					"apiVersion": {
 						SchemaProps: spec.SchemaProps{
-							Description: "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/api-conventions.md#resources",
+							Description: "APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources",
 							Type:        []string{"string"},
 							Format:      "",
 						},
@@ -134,9 +134,9 @@ func schema_pkg_apis_backendconfig_v1_BackendConfigSpec(ref common.ReferenceCall
 							Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.HealthCheckConfig"),
 						},
 					},
-					"log": {
+					"logging": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Log specifies logging specification for Backend Services.",
+							Description: "Logging specifies the configuration for access logs.",
 							Ref:         ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.LogConfig"),
 						},
 					},
@@ -327,8 +327,9 @@ func schema_pkg_apis_backendconfig_v1_HealthCheckConfig(ref common.ReferenceCall
 					},
 					"port": {
 						SchemaProps: spec.SchemaProps{
-							Type:   []string{"integer"},
-							Format: "int64",
+							Description: "Port is a health check parameter. See https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks. If Port is used, the controller updates portSpecification as well",
+							Type:        []string{"integer"},
+							Format:      "int64",
 						},
 					},
 					"requestPath": {
