@@ -134,9 +134,9 @@ func schema_pkg_apis_backendconfig_v1_BackendConfigSpec(ref common.ReferenceCall
 							Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.HealthCheckConfig"),
 						},
 					},
-					"log": {
+					"logging": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Log specifies logging specification for Backend Services.",
+							Description: "Logging specifies the configuration for access logs.",
 							Ref:         ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.LogConfig"),
 						},
 					},
@@ -327,8 +327,9 @@ func schema_pkg_apis_backendconfig_v1_HealthCheckConfig(ref common.ReferenceCall
 					},
 					"port": {
 						SchemaProps: spec.SchemaProps{
-							Type:   []string{"integer"},
-							Format: "int64",
+							Description: "Port is a health check parameter. See https://cloud.google.com/compute/docs/reference/rest/v1/healthChecks. If Port is used, the controller updates portSpecification as well",
+							Type:        []string{"integer"},
+							Format:      "int64",
 						},
 					},
 					"requestPath": {
