@@ -24,13 +24,14 @@ import (
 func CRDMeta() *crd.CRDMeta {
 	meta := crd.NewCRDMeta(
 		apisneg.GroupName,
-		"v1beta1",
 		"ServiceNetworkEndpointGroup",
 		"ServiceNetworkEndpointGroupList",
 		"servicenetworkendpointgroup",
 		"servicenetworkendpointgroups",
+		[]*crd.Version{
+			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1.ServiceNetworkEndpointGroup", negv1beta1.GetOpenAPIDefinitions),
+		},
 		"svcneg",
 	)
-	meta.AddValidationInfo("k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1.ServiceNetworkEndpointGroup", negv1beta1.GetOpenAPIDefinitions)
 	return meta
 }

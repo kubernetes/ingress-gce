@@ -26,6 +26,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	apisbackendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/crd"
 )
 
@@ -38,14 +39,16 @@ var (
 func CRDMeta() *crd.CRDMeta {
 	meta := crd.NewCRDMeta(
 		apisbackendconfig.GroupName,
-		"v1",
 		"BackendConfig",
 		"BackendConfigList",
 		"backendconfig",
 		"backendconfigs",
+		[]*crd.Version{
+			crd.NewVersion("v1", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.BackendConfig", backendconfigv1.GetOpenAPIDefinitions),
+			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.BackendConfig", backendconfigv1beta1.GetOpenAPIDefinitions),
+		},
 		"bc",
 	)
-	meta.AddValidationInfo("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.BackendConfig", backendconfigv1.GetOpenAPIDefinitions)
 	return meta
 }
 

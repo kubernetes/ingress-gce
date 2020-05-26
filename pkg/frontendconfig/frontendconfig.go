@@ -34,13 +34,14 @@ var (
 func CRDMeta() *crd.CRDMeta {
 	meta := crd.NewCRDMeta(
 		apisfrontendconfig.GroupName,
-		"v1beta1",
 		"FrontendConfig",
 		"FrontendConfigList",
 		"frontendconfig",
 		"frontendconfigs",
+		[]*crd.Version{
+			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1.FrontendConfig", frontendconfigv1beta1.GetOpenAPIDefinitions),
+		},
 	)
-	meta.AddValidationInfo("k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1.FrontendConfig", frontendconfigv1beta1.GetOpenAPIDefinitions)
 	return meta
 }
 

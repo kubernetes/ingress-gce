@@ -22,8 +22,10 @@ import (
 
 // CRDMeta contains version, validation and API information for a CRD.
 type CRDMeta struct {
-	groupName  string
-	version    string
+	groupName string
+	// versions is a slice of supported API versions for the CRD.
+	// The latest version should be the first element in the slice.
+	versions   []*Version
 	kind       string
 	listKind   string
 	singular   string
@@ -35,10 +37,10 @@ type CRDMeta struct {
 
 // NewCRDMeta creates a CRDMeta type which can be passed to a CRDHandler in
 // order to create/ensure a CRD.
-func NewCRDMeta(groupName, version, kind, listKind, singular, plural string, shortNames ...string) *CRDMeta {
+func NewCRDMeta(groupName, kind, listKind, singular, plural string, versions []*Version, shortNames ...string) *CRDMeta {
 	return &CRDMeta{
 		groupName:  groupName,
-		version:    version,
+		versions:   versions,
 		kind:       kind,
 		listKind:   listKind,
 		singular:   singular,
@@ -47,9 +49,19 @@ func NewCRDMeta(groupName, version, kind, listKind, singular, plural string, sho
 	}
 }
 
-// AddValidationInfo adds information that is needed to ensure validation is
-// properly added to a CRD when CRDHandler.EnsureCRD is called.
-func (m *CRDMeta) AddValidationInfo(typeSource string, fn common.GetOpenAPIDefinitions) {
-	m.typeSource = typeSource
-	m.fn = fn
+// Version specifies the API version and meta information that is needed to
+// generate OpenAPI schema based CRD validation.
+type Version struct {
+	name       string
+	typeSource string
+	fn         common.GetOpenAPIDefinitions
+}
+
+// NewVersion returns a CRD API version with validation metadata.
+func NewVersion(name, typeSource string, fn common.GetOpenAPIDefinitions) *Version {
+	return &Version{
+		name:       name,
+		typeSource: typeSource,
+		fn:         fn,
+	}
 }
