@@ -824,6 +824,9 @@ func ({{$type.VarName}} *{{$type.Name}}) To{{$version}}() (*compute{{$extension}
 	if {{$lower}}.Iap != nil {
 		{{$lower}}.Iap.ForceSendFields = []string{"Enabled", "Oauth2ClientId", "Oauth2ClientSecret"}
 	}
+	if {{$lower}}.LogConfig != nil {
+		{{$lower}}.LogConfig.ForceSendFields = []string{"Enable"}
+	}
 	{{- end}}
 
 	return {{$lower}}, nil

@@ -40,7 +40,7 @@ func EnsureLogging(sp utils.ServicePort, be *composite.BackendService) bool {
 	if be.LogConfig == nil || expectedLogConfig.Enable != be.LogConfig.Enable ||
 		expectedLogConfig.SampleRate != be.LogConfig.SampleRate {
 		be.LogConfig = expectedLogConfig
-		klog.V(2).Infof("Updated Logging settings for service %s(Enable: %t, SampleRate: %f)", svcKey, be.LogConfig.Enable, be.LogConfig.SampleRate)
+		klog.V(2).Infof("Updated Logging settings for service %s and port %d (Enable: %t, SampleRate: %f)", svcKey, sp.Port, be.LogConfig.Enable, be.LogConfig.SampleRate)
 		return true
 	}
 	return false
