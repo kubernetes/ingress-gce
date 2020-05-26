@@ -422,6 +422,24 @@ func (b *BackendConfigBuilder) SetHealthCheckPath(path string) *BackendConfigBui
 	return b
 }
 
+// EnableLogging enables or disables access logging.
+func (b *BackendConfigBuilder) EnableLogging(enabled bool) *BackendConfigBuilder {
+	if b.backendConfig.Spec.Logging == nil {
+		b.backendConfig.Spec.Logging = &backendconfig.LogConfig{}
+	}
+	b.backendConfig.Spec.Logging.Enable = enabled
+	return b
+}
+
+// SetSampleRate sets log sampling rate.
+func (b *BackendConfigBuilder) SetSampleRate(sampleRate *float64) *BackendConfigBuilder {
+	if b.backendConfig.Spec.Logging == nil {
+		b.backendConfig.Spec.Logging = &backendconfig.LogConfig{}
+	}
+	b.backendConfig.Spec.Logging.SampleRate = sampleRate
+	return b
+}
+
 // FrontendConfigBuilder is syntactic sugar for creating FrontendConfig specs for testing
 // purposes.
 //
