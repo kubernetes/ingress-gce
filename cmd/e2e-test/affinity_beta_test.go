@@ -65,7 +65,7 @@ func TestAffinityBeta(t *testing.T) {
 				},
 			},
 		}
-		if _, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Create(beConfig); err != nil {
+		if _, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Create(context.TODO(), beConfig, metav1.CreateOptions{}); err != nil {
 			t.Fatalf("CloudV1beta1().BackendConfigs(%q).Create(%#v) = %v, want nil", s.Namespace, beConfig, err)
 		}
 		t.Logf("BackendConfig created (%s/%s) ", s.Namespace, beConfig.Name)
@@ -110,7 +110,7 @@ func TestAffinityBeta(t *testing.T) {
 		for _, transition := range affinityTransitions {
 			// Test modifications.
 			if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-				bc, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Get(beConfig.Name, metav1.GetOptions{})
+				bc, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Get(context.TODO(), beConfig.Name, metav1.GetOptions{})
 				if err != nil {
 					return err
 				}
@@ -119,7 +119,7 @@ func TestAffinityBeta(t *testing.T) {
 				}
 				bc.Spec.SessionAffinity.AffinityType = transition.affinity
 				bc.Spec.SessionAffinity.AffinityCookieTtlSec = &transition.ttl
-				_, err = Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Update(bc)
+				_, err = Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Update(context.TODO(), bc, metav1.UpdateOptions{})
 				return err
 			}); err != nil {
 				t.Errorf("CloudV1beta1().BackendConfigs(%q).Update(%#v) = %v, want nil", s.Namespace, transition, err)

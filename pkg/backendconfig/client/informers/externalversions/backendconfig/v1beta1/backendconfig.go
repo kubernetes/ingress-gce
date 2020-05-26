@@ -19,6 +19,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	"context"
 	time "time"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -61,13 +62,13 @@ func NewFilteredBackendConfigInformer(client versioned.Interface, namespace stri
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.CloudV1beta1().BackendConfigs(namespace).List(options)
+				return client.CloudV1beta1().BackendConfigs(namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.CloudV1beta1().BackendConfigs(namespace).Watch(options)
+				return client.CloudV1beta1().BackendConfigs(namespace).Watch(context.TODO(), options)
 			},
 		},
 		&backendconfigv1beta1.BackendConfig{},
