@@ -19,11 +19,8 @@ package loadbalancers
 import (
 	"testing"
 
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/utils"
-	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 func TestComputeURLMapEquals(t *testing.T) {
@@ -33,7 +30,7 @@ func TestComputeURLMapEquals(t *testing.T) {
 	// Test equality.
 	same := testCompositeURLMap()
 	if !mapsEqual(m, same) {
-		t.Errorf("mapsEqual(%+v, %+v) = true, want false", m, same)
+		t.Errorf("mapsEqual(%+v, %+v) = false, want true", m, same)
 	}
 
 	// Test different default backend.
@@ -41,51 +38,6 @@ func TestComputeURLMapEquals(t *testing.T) {
 	diffDefault.DefaultService = "/global/backendServices/some-service"
 	if mapsEqual(m, diffDefault) {
 		t.Errorf("mapsEqual(%+v, %+v) = true, want false", m, diffDefault)
-	}
-}
-
-func TestToComputeURLMap(t *testing.T) {
-	t.Parallel()
-
-	wantComputeMap := testCompositeURLMap()
-	namer := namer_util.NewNamer("uid1", "fw1")
-	gceURLMap := &utils.GCEURLMap{
-		DefaultBackend: &utils.ServicePort{NodePort: 30000, BackendNamer: namer},
-		HostRules: []utils.HostRule{
-			{
-				Hostname: "abc.com",
-				Paths: []utils.PathRule{
-					{
-						Path:    "/web",
-						Backend: utils.ServicePort{NodePort: 32000, BackendNamer: namer},
-					},
-					{
-						Path:    "/other",
-						Backend: utils.ServicePort{NodePort: 32500, BackendNamer: namer},
-					},
-				},
-			},
-			{
-				Hostname: "foo.bar.com",
-				Paths: []utils.PathRule{
-					{
-						Path:    "/",
-						Backend: utils.ServicePort{NodePort: 33000, BackendNamer: namer},
-					},
-					{
-						Path:    "/*",
-						Backend: utils.ServicePort{NodePort: 33500, BackendNamer: namer},
-					},
-				},
-			},
-		},
-	}
-
-	namerFactory := namer_util.NewFrontendNamerFactory(namer, "")
-	feNamer := namerFactory.NamerForLoadBalancer("ns/lb-name")
-	gotComputeURLMap := toCompositeURLMap(gceURLMap, feNamer, meta.GlobalKey("ns-lb-name"))
-	if !mapsEqual(gotComputeURLMap, wantComputeMap) {
-		t.Errorf("toComputeURLMap() = \n%+v\n   want\n%+v", gotComputeURLMap, wantComputeMap)
 	}
 }
 

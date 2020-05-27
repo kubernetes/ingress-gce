@@ -41,6 +41,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
+	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
@@ -1185,7 +1186,7 @@ func verifyURLMap(t *testing.T, j *testJig, feNamer namer_util.IngressFrontendNa
 	if err != nil || um == nil {
 		t.Errorf("j.fakeGCE.GetUrlMap(%q) = %v, %v; want _, nil", name, um, err)
 	}
-	wantComputeURLMap := toCompositeURLMap(wantGCEURLMap, feNamer, key)
+	wantComputeURLMap := translator.ToCompositeURLMap(wantGCEURLMap, feNamer, key)
 	if !mapsEqual(wantComputeURLMap, um) {
 		t.Errorf("mapsEqual() = false, got\n%+v\n  want\n%+v", um, wantComputeURLMap)
 	}
