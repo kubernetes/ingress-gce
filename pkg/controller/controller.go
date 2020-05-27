@@ -357,36 +357,14 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 	}
 	ingSvcPorts := syncState.urlMap.AllServicePorts()
 
-	// Create instance groups and set named ports.
-	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(lbc.ctx.ClusterNamer.InstanceGroup(), nodePorts(ingSvcPorts))
-	if err != nil {
-		return err
-	}
-
-	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
-	if err != nil {
-		return err
-	}
-	// Add/remove instances to the instance groups.
-	if err = lbc.instancePool.Sync(nodeNames); err != nil {
-		return err
-	}
-
-	// TODO: Remove this after deprecation
-	ing := syncState.ing
-	if utils.IsGCEMultiClusterIngress(syncState.ing) {
-		// Add instance group names as annotation on the ingress and return.
-		if ing.Annotations == nil {
-			ing.Annotations = map[string]string{}
-		}
-		if err = setInstanceGroupsAnnotation(ing.Annotations, igs); err != nil {
+	// Only sync instance group when IG is used for this ingress
+	if len(nodePorts(ingSvcPorts)) > 0 {
+		if err := lbc.syncInstanceGroup(syncState.ing, ingSvcPorts); err != nil {
+			klog.Errorf("Failed to sync instance group for ingress %v: %v", syncState.ing, err)
 			return err
 		}
-		if err = updateAnnotations(lbc.ctx.KubeClient, ing.Name, ing.Namespace, ing.Annotations); err != nil {
-			return err
-		}
-		// This short-circuit will stop the syncer from moving to next step.
-		return ingsync.ErrSkipBackendsSync
+	} else {
+		klog.V(2).Infof("Skip syncing instance groups for ingress %v/%v", syncState.ing.Namespace, syncState.ing.Name)
 	}
 
 	// Sync the backends
@@ -396,6 +374,10 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 
 	// Get the zones our groups live in.
 	zones, err := lbc.Translator.ListZones()
+	if err != nil {
+		klog.Errorf("lbc.Translator.ListZones() = %v", err)
+		return err
+	}
 	var groupKeys []backends.GroupKey
 	for _, zone := range zones {
 		groupKeys = append(groupKeys, backends.GroupKey{Zone: zone})
@@ -416,6 +398,43 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 		}
 	}
 
+	return nil
+}
+
+// syncInstanceGroup creates instance groups, syncs instances, sets named ports and updates instance group annotation
+func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1beta1.Ingress, ingSvcPorts []utils.ServicePort) error {
+	nodePorts := nodePorts(ingSvcPorts)
+	klog.V(2).Infof("Syncing Instance Group for ingress %v/%v with nodeports %v", ing.Namespace, ing.Name, nodePorts)
+	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(lbc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
+	if err != nil {
+		return err
+	}
+
+	nodeNames, err := utils.GetReadyNodeNames(listers.NewNodeLister(lbc.nodeLister))
+	if err != nil {
+		return err
+	}
+	// Add/remove instances to the instance groups.
+	if err = lbc.instancePool.Sync(nodeNames); err != nil {
+		return err
+	}
+
+	// TODO: Remove this after deprecation
+	if utils.IsGCEMultiClusterIngress(ing) {
+		klog.Warningf("kubemci is used for ingress %v", ing)
+		// Add instance group names as annotation on the ingress and return.
+		if ing.Annotations == nil {
+			ing.Annotations = map[string]string{}
+		}
+		if err = setInstanceGroupsAnnotation(ing.Annotations, igs); err != nil {
+			return err
+		}
+		if err = updateAnnotations(lbc.ctx.KubeClient, ing.Name, ing.Namespace, ing.Annotations); err != nil {
+			return err
+		}
+		// This short-circuit will stop the syncer from moving to next step.
+		return ingsync.ErrSkipBackendsSync
+	}
 	return nil
 }
 
