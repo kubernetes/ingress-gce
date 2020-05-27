@@ -35,7 +35,11 @@ func (l *L7) checkStaticIP() (err error) {
 	}
 	managedStaticIPName := l.namer.ForwardingRule(namer.HTTPProtocol)
 	// Don't manage staticIPs if the user has specified an IP.
-	if address, manageStaticIP := l.getEffectiveIP(); !manageStaticIP {
+	address, manageStaticIP, err := l.getEffectiveIP()
+	if err != nil {
+		return err
+	}
+	if !manageStaticIP {
 		klog.V(3).Infof("Not managing user specified static IP %v", address)
 		if flags.F.EnableDeleteUnusedFrontends {
 			// Delete ingress controller managed static ip if exists.
