@@ -19,6 +19,7 @@ package controller
 import (
 	context2 "context"
 	"fmt"
+	"net/http"
 	"reflect"
 	"sort"
 	"strings"
@@ -54,6 +55,7 @@ import (
 var (
 	nodePortCounter = 30000
 	clusterUID      = "aaaaa"
+	fakeZone        = "zone-a"
 )
 
 // newLoadBalancerController create a loadbalancer controller.
@@ -77,7 +79,7 @@ func newLoadBalancerController() *LoadBalancerController {
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
 	lbc.instancePool = instances.NewNodePool(instances.NewFakeInstanceGroups(sets.NewString(), namer), namer)
 	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(fakeGCE, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer, ""))
-	lbc.instancePool.Init(&instances.FakeZoneLister{Zones: []string{"zone-a"}})
+	lbc.instancePool.Init(&instances.FakeZoneLister{Zones: []string{fakeZone}})
 
 	lbc.hasSynced = func() bool { return true }
 
@@ -173,6 +175,38 @@ func TestIngressSyncError(t *testing.T) {
 
 	if !strings.Contains(err.Error(), someBackend.ServiceName) {
 		t.Errorf("lbc.sync(%v) = %v, want error containing %q", ingStoreKey, err, someBackend.ServiceName)
+	}
+}
+
+// TestNEGOnlyIngress asserts that `sync` will not create IG when there is only NEG backends for the ingress
+func TestNEGOnlyIngress(t *testing.T) {
+	lbc := newLoadBalancerController()
+
+	svc := test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, api_v1.ServiceSpec{
+		Type:  api_v1.ServiceTypeNodePort,
+		Ports: []api_v1.ServicePort{{Port: 80}},
+	})
+	negAnnotation := annotations.NegAnnotation{Ingress: true}
+	svc.Annotations = map[string]string{
+		annotations.NEGAnnotationKey: negAnnotation.String(),
+	}
+	addService(lbc, svc)
+	someBackend := backend("my-service", intstr.FromInt(80))
+	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
+		v1beta1.IngressSpec{
+			Backend: &someBackend,
+		})
+	addIngress(lbc, ing)
+
+	ingStoreKey := getKey(ing, t)
+	err := lbc.sync(ingStoreKey)
+	if err != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
+	}
+
+	ig, err := lbc.instancePool.Get(lbc.ctx.ClusterNamer.InstanceGroup(), fakeZone)
+	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+		t.Errorf("lbc.ctx.Cloud.ListInstanceGroups(%v) = %v, %v, want [], http.StatusNotFound", fakeZone, ig, err)
 	}
 }
 
