@@ -3182,6 +3182,9 @@ func (backendService *BackendService) ToAlpha() (*computealpha.BackendService, e
 	if alpha.Iap != nil {
 		alpha.Iap.ForceSendFields = []string{"Enabled", "Oauth2ClientId", "Oauth2ClientSecret"}
 	}
+	if alpha.LogConfig != nil {
+		alpha.LogConfig.ForceSendFields = []string{"Enable"}
+	}
 
 	return alpha, nil
 }
@@ -3201,6 +3204,9 @@ func (backendService *BackendService) ToBeta() (*computebeta.BackendService, err
 	if beta.Iap != nil {
 		beta.Iap.ForceSendFields = []string{"Enabled", "Oauth2ClientId", "Oauth2ClientSecret"}
 	}
+	if beta.LogConfig != nil {
+		beta.LogConfig.ForceSendFields = []string{"Enable"}
+	}
 
 	return beta, nil
 }
@@ -3219,6 +3225,9 @@ func (backendService *BackendService) ToGA() (*compute.BackendService, error) {
 	}
 	if ga.Iap != nil {
 		ga.Iap.ForceSendFields = []string{"Enabled", "Oauth2ClientId", "Oauth2ClientSecret"}
+	}
+	if ga.LogConfig != nil {
+		ga.LogConfig.ForceSendFields = []string{"Enable"}
 	}
 
 	return ga, nil
