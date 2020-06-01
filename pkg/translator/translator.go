@@ -33,7 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
-// Env contains all k8s-style configuration needed to perform the translation.
+// Env contains all k8s & GCP configuration needed to perform the translation.
 type Env struct {
 	// Ing is the Ingress we are translating.
 	Ing *v1beta1.Ingress
@@ -41,11 +41,16 @@ type Env struct {
 	// It is assumed that the map contains resources from a single namespace.
 	// This is the same namespace as the Ingress namespace.
 	SecretsMap map[string]*api_v1.Secret
+	// VIP is the IP address assigned to the Ingress. This could be a raw IP address in GCP or the
+	// name of an Address resource.
+	VIP        string
+	Network    string
+	Subnetwork string
 }
 
 // NewEnv returns an Env for the given Ingress.
-func NewEnv(ing *v1beta1.Ingress, client kubernetes.Interface) (*Env, error) {
-	ret := &Env{Ing: ing, SecretsMap: make(map[string]*api_v1.Secret)}
+func NewEnv(ing *v1beta1.Ingress, client kubernetes.Interface, vip, net, subnet string) (*Env, error) {
+	ret := &Env{Ing: ing, SecretsMap: make(map[string]*api_v1.Secret), VIP: vip, Network: net, Subnetwork: subnet}
 	secrets, err := client.CoreV1().Secrets(ing.Namespace).List(context.TODO(), meta_v1.ListOptions{})
 	if err != nil {
 		return nil, err
@@ -57,12 +62,17 @@ func NewEnv(ing *v1beta1.Ingress, client kubernetes.Interface) (*Env, error) {
 	return ret, nil
 }
 
-// Translator implements the mapping between an MCI and its corresponding GCE resources.
-type Translator struct{}
+// Translator implements the mapping between an Ingress and its corresponding GCE resources.
+type Translator struct {
+	// IsL7ILB is true if the Ingress will be translated into an L7 ILB (as opposed to an XLB).
+	IsL7ILB bool
+	// FrontendNamer generates names for frontend resources.
+	FrontendNamer namer.IngressFrontendNamer
+}
 
 // NewTranslator returns a new Translator.
-func NewTranslator() *Translator {
-	return &Translator{}
+func NewTranslator(isL7ILB bool, frontendNamer namer.IngressFrontendNamer) *Translator {
+	return &Translator{IsL7ILB: isL7ILB, FrontendNamer: frontendNamer}
 }
 
 // Secrets returns the Secrets from the environment which are specified in the Ingress.
@@ -178,4 +188,37 @@ func getNameForPathMatcher(hostRule string) string {
 	hasher := md5.New()
 	hasher.Write([]byte(hostRule))
 	return fmt.Sprintf("%v%v", hostRulePrefix, hex.EncodeToString(hasher.Sum(nil)))
+}
+
+const (
+	httpDefaultPortRange  = "80-80"
+	httpsDefaultPortRange = "443-443"
+)
+
+// ToCompositeForwardingRule returns a composite.ForwardingRule of type HTTP or HTTPS.
+func (t *Translator) ToCompositeForwardingRule(env *Env, protocol namer.NamerProtocol, version meta.Version, proxyLink, description string) *composite.ForwardingRule {
+	var portRange string
+	if protocol == namer.HTTPProtocol {
+		portRange = httpDefaultPortRange
+	} else {
+		portRange = httpsDefaultPortRange
+	}
+
+	fr := &composite.ForwardingRule{
+		Name:        t.FrontendNamer.ForwardingRule(protocol),
+		IPAddress:   env.VIP,
+		Target:      proxyLink,
+		PortRange:   portRange,
+		IPProtocol:  "TCP",
+		Description: description,
+		Version:     version,
+	}
+
+	if t.IsL7ILB {
+		fr.LoadBalancingScheme = "INTERNAL_MANAGED"
+		fr.Network = env.Network
+		fr.Subnetwork = env.Subnetwork
+	}
+
+	return fr
 }
