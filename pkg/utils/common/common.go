@@ -17,11 +17,17 @@ limitations under the License.
 package common
 
 import (
+	"context"
 	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"strconv"
 
 	"k8s.io/api/networking/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
+	client "k8s.io/client-go/kubernetes/typed/networking/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog"
 )
@@ -88,4 +94,45 @@ func ToIngressKeys(ings []*v1beta1.Ingress) []string {
 		ingKeys = append(ingKeys, IngressKeyFunc(ing))
 	}
 	return ingKeys
+}
+
+// PatchIngressObjectMetadata patches the given ingress's metadata based on new
+// ingress metadata.
+func PatchIngressObjectMetadata(ic client.IngressInterface, ing *v1beta1.Ingress, newObjectMetadata metav1.ObjectMeta) (*v1beta1.Ingress, error) {
+	newIng := ing.DeepCopy()
+	newIng.ObjectMeta = newObjectMetadata
+	return patchIngress(ic, ing, newIng)
+}
+
+// PatchIngressStatus patches the given ingress's Status based on new ingress
+// status.
+func PatchIngressStatus(ic client.IngressInterface, ing *v1beta1.Ingress, newStatus v1beta1.IngressStatus) (*v1beta1.Ingress, error) {
+	newIng := ing.DeepCopy()
+	newIng.Status = newStatus
+	return patchIngress(ic, ing, newIng)
+}
+
+// patchIngress patches the given ingress's Status or ObjectMetadata based on
+// the old and new ingresses.
+// Note that both Status and ObjectMetadata (annotations and finalizers)
+// can be patched via `status` subresource API endpoint.
+func patchIngress(ic client.IngressInterface, oldIngress, newIngress *v1beta1.Ingress) (*v1beta1.Ingress, error) {
+	ingKey := fmt.Sprintf("%s/%s", oldIngress.Namespace, oldIngress.Name)
+	oldData, err := json.Marshal(oldIngress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to Marshal oldData for ingress %s: %v", ingKey, err)
+	}
+
+	newData, err := json.Marshal(newIngress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to Marshal newData for ingress %s: %v", ingKey, err)
+	}
+
+	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, v1beta1.Ingress{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create TwoWayMergePatch for ingress %s: %v", ingKey, err)
+	}
+
+	klog.V(4).Infof("Patch bytes for ingress %s: %s", ingKey, patchBytes)
+	return ic.Patch(context.TODO(), oldIngress.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{}, "status")
 }

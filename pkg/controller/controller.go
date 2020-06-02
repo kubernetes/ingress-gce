@@ -616,7 +616,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 	if err != nil {
 		return err
 	}
-	currIng.Status = v1beta1.IngressStatus{
+	updatedIngStatus := v1beta1.IngressStatus{
 		LoadBalancer: apiv1.LoadBalancerStatus{
 			Ingress: []apiv1.LoadBalancerIngress{
 				{IP: ip},
@@ -629,7 +629,8 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 			// TODO: If this update fails it's probably resource version related,
 			// which means it's advantageous to retry right away vs requeuing.
 			klog.Infof("Updating loadbalancer %v/%v with IP %v", ing.Namespace, ing.Name, ip)
-			if _, err := ingClient.UpdateStatus(context2.TODO(), currIng, metav1.UpdateOptions{}); err != nil {
+			if _, err := common.PatchIngressStatus(ingClient, currIng, updatedIngStatus); err != nil {
+				klog.Errorf("PatchIngressStatus(%s/%s) failed: %v", currIng.Namespace, currIng.Name, err)
 				return err
 			}
 			lbc.ctx.Recorder(ing.Namespace).Eventf(currIng, apiv1.EventTypeNormal, "CREATE", "ip: %v", ip)
@@ -691,8 +692,10 @@ func updateAnnotations(client kubernetes.Interface, name, namespace string, anno
 	}
 	if !reflect.DeepEqual(currIng.Annotations, annotations) {
 		klog.V(3).Infof("Updating annotations of %v/%v", namespace, name)
-		currIng.Annotations = annotations
-		if _, err := ingClient.Update(context2.TODO(), currIng, metav1.UpdateOptions{}); err != nil {
+		updatedObjectMeta := currIng.ObjectMeta.DeepCopy()
+		updatedObjectMeta.Annotations = annotations
+		if _, err := common.PatchIngressObjectMetadata(ingClient, currIng, *updatedObjectMeta); err != nil {
+			klog.Errorf("PatchIngressObjectMetadata(%s/%s) failed: %v", currIng.Namespace, currIng.Name, err)
 			return err
 		}
 	}

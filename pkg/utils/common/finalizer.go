@@ -68,7 +68,7 @@ func EnsureFinalizer(ing *v1beta1.Ingress, ingClient client.IngressInterface, fi
 	updated := ing.DeepCopy()
 	if needToAddFinalizer(ing.ObjectMeta, finalizerKey) {
 		updated.ObjectMeta.Finalizers = append(updated.ObjectMeta.Finalizers, finalizerKey)
-		if _, err := patchIngressFinalizer(ingClient, ing, updated); err != nil {
+		if _, err := PatchIngressObjectMetadata(ingClient, ing, updated.ObjectMeta); err != nil {
 			return nil, fmt.Errorf("error patching Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 		}
 		klog.V(2).Infof("Added finalizer %q for Ingress %s/%s", finalizerKey, ing.Namespace, ing.Name)
@@ -84,35 +84,14 @@ func needToAddFinalizer(m meta_v1.ObjectMeta, key string) bool {
 // EnsureDeleteFinalizer ensures that the specified finalizer is deleted from given Ingress.
 func EnsureDeleteFinalizer(ing *v1beta1.Ingress, ingClient client.IngressInterface, finalizerKey string) error {
 	if HasGivenFinalizer(ing.ObjectMeta, finalizerKey) {
-		updated := ing.DeepCopy()
-		updated.ObjectMeta.Finalizers = slice.RemoveString(updated.ObjectMeta.Finalizers, finalizerKey, nil)
-		if _, err := patchIngressFinalizer(ingClient, ing, updated); err != nil {
+		updatedObjectMeta := ing.ObjectMeta.DeepCopy()
+		updatedObjectMeta.Finalizers = slice.RemoveString(updatedObjectMeta.Finalizers, finalizerKey, nil)
+		if _, err := PatchIngressObjectMetadata(ingClient, ing, *updatedObjectMeta); err != nil {
 			return fmt.Errorf("error patching Ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 		}
 		klog.V(2).Infof("Removed finalizer %q for Ingress %s/%s", finalizerKey, ing.Namespace, ing.Name)
 	}
 	return nil
-}
-
-func patchIngressFinalizer(ic client.IngressInterface, oldIngress, newIngress *v1beta1.Ingress) (*v1beta1.Ingress, error) {
-	ingKey := fmt.Sprintf("%s/%s", oldIngress.Namespace, oldIngress.Name)
-	oldData, err := json.Marshal(oldIngress)
-	if err != nil {
-		return nil, fmt.Errorf("failed to Marshal oldData for ingress %s: %v", ingKey, err)
-	}
-
-	newData, err := json.Marshal(newIngress)
-	if err != nil {
-		return nil, fmt.Errorf("failed to Marshal newData for ingress %s: %v", ingKey, err)
-	}
-
-	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, v1beta1.Ingress{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create TwoWayMergePatch for ingress %s: %v", ingKey, err)
-	}
-
-	klog.V(3).Infof("Patch bytes for ingress %s: %s", ingKey, patchBytes)
-	return ic.Patch(context.TODO(), oldIngress.Name, types.StrategicMergePatchType, patchBytes, meta_v1.PatchOptions{}, "status")
 }
 
 // EnsureServiceFinalizer patches the service to add finalizer.
