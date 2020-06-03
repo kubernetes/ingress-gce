@@ -17,19 +17,16 @@ limitations under the License.
 package l4
 
 import (
-	context2 "context"
 	"fmt"
 	"reflect"
 	"sync"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
@@ -40,6 +37,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/apis/core/v1/helper"
 )
@@ -186,7 +184,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 	}
 	l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
 		"Successfully ensured load balancer resources")
-	if err = l4c.updateAnnotations(service.Name, service.Namespace, annotationsMap); err != nil {
+	if err = l4c.updateAnnotations(service, annotationsMap); err != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Failed to update annotations for load balancer, err: %v", err)
 		return fmt.Errorf("failed to set resource annotations, err: %v", err)
@@ -202,7 +200,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) err
 		return err
 	}
 	// Also remove any ILB annotations from the service metadata
-	if err := l4c.updateAnnotations(svc.Name, svc.Namespace, nil); err != nil {
+	if err := l4c.updateAnnotations(svc, nil); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting resource annotations for load balancer: %v", err)
 		return fmt.Errorf("failed to reset resource annotations, err: %v", err)
@@ -272,36 +270,17 @@ func (l4c *L4Controller) updateServiceStatus(svc *v1.Service, newStatus *v1.Load
 	if helper.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
 		return nil
 	}
-	updated := svc.DeepCopy()
-	updated.Status.LoadBalancer = *newStatus
-	if _, err := helpers.PatchService(l4c.ctx.KubeClient.CoreV1(), svc, updated); err != nil {
-		return err
-	}
-	return nil
+	return patch.PatchServiceLoadBalancerStatus(l4c.ctx.KubeClient.CoreV1(), svc, *newStatus)
 }
 
-func (l4c *L4Controller) updateServiceMetadata(svc *v1.Service, newObjectMetadata metav1.ObjectMeta) error {
-	updated := svc.DeepCopy()
-	updated.ObjectMeta = newObjectMetadata
-	if _, err := helpers.PatchService(l4c.ctx.KubeClient.CoreV1(), svc, updated); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (l4c *L4Controller) updateAnnotations(name, namespace string, newILBAnnotations map[string]string) error {
-	svcClient := l4c.ctx.KubeClient.CoreV1().Services(namespace)
-	currSvc, err := svcClient.Get(context2.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	newObjectMeta := currSvc.ObjectMeta.DeepCopy()
+func (l4c *L4Controller) updateAnnotations(svc *v1.Service, newILBAnnotations map[string]string) error {
+	newObjectMeta := svc.ObjectMeta.DeepCopy()
 	newObjectMeta.Annotations = mergeAnnotations(newObjectMeta.Annotations, newILBAnnotations)
-	if reflect.DeepEqual(currSvc.Annotations, newObjectMeta.Annotations) {
+	if reflect.DeepEqual(svc.Annotations, newObjectMeta.Annotations) {
 		return nil
 	}
-	klog.V(3).Infof("Updating annotations of service %v/%v", namespace, name)
-	return l4c.updateServiceMetadata(currSvc, *newObjectMeta)
+	klog.V(3).Infof("Patching annotations of service %v/%v", svc.Namespace, svc.Name)
+	return patch.PatchServiceObjectMetadata(l4c.ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
 // mergeAnnotations merges the new set of ilb resource annotations with the pre-existing service annotations.

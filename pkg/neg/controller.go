@@ -625,8 +625,8 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	if err != nil {
 		return err
 	}
-	svcClient := c.client.CoreV1().Services(namespace)
-	service, err := svcClient.Get(context2.TODO(), name, metav1.GetOptions{})
+	coreClient := c.client.CoreV1()
+	service, err := coreClient.Services(namespace).Get(context2.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -634,11 +634,10 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	// Remove NEG Status Annotation when no NEG is needed
 	if len(portMap) == 0 {
 		if _, ok := service.Annotations[annotations.NEGStatusKey]; ok {
-			// TODO: use PATCH to remove annotation
-			delete(service.Annotations, annotations.NEGStatusKey)
+			newSvcObjectMeta := service.ObjectMeta.DeepCopy()
+			delete(newSvcObjectMeta.Annotations, annotations.NEGStatusKey)
 			klog.V(2).Infof("Removing NEG status annotation from service: %s/%s", namespace, name)
-			_, err = svcClient.Update(context2.TODO(), service, metav1.UpdateOptions{})
-			return err
+			return patch.PatchServiceObjectMetadata(coreClient, service, *newSvcObjectMeta)
 		}
 		// service doesn't have the expose NEG annotation and doesn't need update
 		return nil
@@ -653,14 +652,14 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 	if ok && existingAnnotation == annotation {
 		return nil
 	}
+	newSvcObjectMeta := service.ObjectMeta.DeepCopy()
 	// If enableCSM=true, it's possible a service having nil Annotations.
-	if service.Annotations == nil {
-		service.Annotations = make(map[string]string)
+	if newSvcObjectMeta.Annotations == nil {
+		newSvcObjectMeta.Annotations = make(map[string]string)
 	}
-	service.Annotations[annotations.NEGStatusKey] = annotation
+	newSvcObjectMeta.Annotations[annotations.NEGStatusKey] = annotation
 	klog.V(2).Infof("Updating NEG visibility annotation %q on service %s/%s.", annotation, namespace, name)
-	_, err = svcClient.Update(context2.TODO(), service, metav1.UpdateOptions{})
-	return err
+	return patch.PatchServiceObjectMetadata(coreClient, service, *newSvcObjectMeta)
 }
 
 // syncDestinationRuleNegStatusAnnotation syncs the destinationrule related neg status annotation

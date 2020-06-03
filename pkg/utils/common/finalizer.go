@@ -14,18 +14,14 @@ limitations under the License.
 package common
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/client-go/kubernetes"
-	coreclient "k8s.io/client-go/kubernetes/typed/core/v1"
 	client "k8s.io/client-go/kubernetes/typed/networking/v1beta1"
+	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/util/slice"
 )
@@ -102,12 +98,12 @@ func EnsureServiceFinalizer(service *corev1.Service, key string, kubeClient kube
 		return nil
 	}
 
-	// Make a copy so we don't mutate the shared informer cache.
-	updated := service.DeepCopy()
-	updated.ObjectMeta.Finalizers = append(updated.ObjectMeta.Finalizers, key)
+	// Make a copy of object metadata so we don't mutate the shared informer cache.
+	updatedObjectMeta := service.ObjectMeta.DeepCopy()
+	updatedObjectMeta.Finalizers = append(updatedObjectMeta.Finalizers, key)
 
-	klog.V(2).Infof("Adding finalizer %s to service %s/%s", key, updated.Namespace, updated.Name)
-	return patchServiceFinalizer(kubeClient.CoreV1().Services(updated.Namespace), service, updated)
+	klog.V(2).Infof("Adding finalizer %s to service %s/%s", key, service.Namespace, service.Name)
+	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
 }
 
 // removeFinalizer patches the service to remove finalizer.
@@ -116,32 +112,10 @@ func EnsureDeleteServiceFinalizer(service *corev1.Service, key string, kubeClien
 		return nil
 	}
 
-	// Make a copy so we don't mutate the shared informer cache.
-	updated := service.DeepCopy()
-	updated.ObjectMeta.Finalizers = slice.RemoveString(updated.ObjectMeta.Finalizers, key, nil)
+	// Make a copy of object metadata so we don't mutate the shared informer cache.
+	updatedObjectMeta := service.ObjectMeta.DeepCopy()
+	updatedObjectMeta.Finalizers = slice.RemoveString(updatedObjectMeta.Finalizers, key, nil)
 
-	klog.V(2).Infof("Removing finalizer from service %s/%s", updated.Namespace, updated.Name)
-	return patchServiceFinalizer(kubeClient.CoreV1().Services(updated.Namespace), service, updated)
-}
-
-func patchServiceFinalizer(sc coreclient.ServiceInterface, oldSvc, newSvc *corev1.Service) error {
-	svcKey := fmt.Sprintf("%s/%s", oldSvc.Namespace, oldSvc.Name)
-	oldData, err := json.Marshal(oldSvc)
-	if err != nil {
-		return fmt.Errorf("failed to Marshal oldData for service %s: %v", svcKey, err)
-	}
-
-	newData, err := json.Marshal(newSvc)
-	if err != nil {
-		return fmt.Errorf("failed to Marshal newData for service %s: %v", svcKey, err)
-	}
-
-	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, corev1.Service{})
-	if err != nil {
-		return fmt.Errorf("failed to create TwoWayMergePatch for service %s: %v", svcKey, err)
-	}
-
-	klog.V(3).Infof("Patch bytes for service %s: %s", svcKey, patchBytes)
-	_, err = sc.Patch(context.TODO(), oldSvc.Name, types.StrategicMergePatchType, patchBytes, meta_v1.PatchOptions{}, "status")
-	return err
+	klog.V(2).Infof("Removing finalizer from service %s/%s", service.Namespace, service.Name)
+	return patch.PatchServiceObjectMetadata(kubeClient.CoreV1(), service, *updatedObjectMeta)
 }
