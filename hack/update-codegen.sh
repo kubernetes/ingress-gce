@@ -14,6 +14,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+# **NOTE** When adding new CRDs. Make sure to include the new rbac permissions in docs/deploy/resources/rbac.yaml
+
 set -o errexit
 set -o nounset
 set -o pipefail
