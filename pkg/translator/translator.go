@@ -27,6 +27,8 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
+	"k8s.io/ingress-gce/pkg/flags"
 
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -37,6 +39,9 @@ import (
 type Env struct {
 	// Ing is the Ingress we are translating.
 	Ing *v1beta1.Ingress
+	// TODO(shance): this should be a map, similar to SecretsMap
+	// FrontendConfig is the frontendconfig associated with the Ingress
+	FrontendConfig *frontendconfigv1beta1.FrontendConfig
 	// SecretsMap contains a mapping from Secret name to the actual resource.
 	// It is assumed that the map contains resources from a single namespace.
 	// This is the same namespace as the Ingress namespace.
@@ -221,4 +226,81 @@ func (t *Translator) ToCompositeForwardingRule(env *Env, protocol namer.NamerPro
 	}
 
 	return fr
+}
+
+func (t *Translator) ToCompositeTargetHttpProxy(description string, version meta.Version, urlMapKey *meta.Key) *composite.TargetHttpProxy {
+	resourceID := cloud.ResourceID{ProjectID: "", Resource: "urlMaps", Key: urlMapKey}
+	urlMapLink := resourceID.ResourcePath()
+	proxyName := t.FrontendNamer.TargetProxy(namer.HTTPProtocol)
+
+	proxy := &composite.TargetHttpProxy{
+		Name:        proxyName,
+		UrlMap:      urlMapLink,
+		Description: description,
+		Version:     version,
+	}
+
+	return proxy
+}
+
+//TODO(shance): find a way to remove the second return value for sslPolicySet.  We currently need to this to maintain the behavior where we do not update the policy if the frontendconfig is empty/deleted
+func (t *Translator) ToCompositeTargetHttpsProxy(env *Env, description string, version meta.Version, urlMapKey *meta.Key, sslCerts []*composite.SslCertificate) (*composite.TargetHttpsProxy, bool, error) {
+	resourceID := cloud.ResourceID{ProjectID: "", Resource: "urlMaps", Key: urlMapKey}
+	urlMapLink := resourceID.ResourcePath()
+	proxyName := t.FrontendNamer.TargetProxy(namer.HTTPSProtocol)
+
+	var certs []string
+	for _, c := range sslCerts {
+		certs = append(certs, c.SelfLink)
+	}
+
+	proxy := &composite.TargetHttpsProxy{
+		Name:            proxyName,
+		UrlMap:          urlMapLink,
+		Description:     description,
+		SslCertificates: certs,
+		Version:         version,
+	}
+	var sslPolicySet bool
+	if flags.F.EnableFrontendConfig {
+		sslPolicy, err := sslPolicyLink(env)
+		if err != nil {
+			return nil, sslPolicySet, err
+		}
+		if sslPolicy != nil {
+			proxy.SslPolicy = *sslPolicy
+			sslPolicySet = true
+		}
+	}
+
+	return proxy, sslPolicySet, nil
+}
+
+// sslPolicyLink returns the ref to the ssl policy that is described by the
+// frontend config.  Since Ssl Policy is a *string, there are three possible I/O situations
+// 1) policy is nil -> this returns nil
+// 2) policy is an empty string -> this returns an empty string
+// 3) policy is non-empty -> this constructs the resource path and returns it
+func sslPolicyLink(env *Env) (*string, error) {
+	var link string
+
+	if env.FrontendConfig == nil {
+		return nil, nil
+	}
+
+	policyName := env.FrontendConfig.Spec.SslPolicy
+	if policyName == nil {
+		return nil, nil
+	}
+	if *policyName == "" {
+		return &link, nil
+	}
+
+	resourceID := cloud.ResourceID{
+		Resource: "sslPolicies",
+		Key:      meta.GlobalKey(*policyName),
+	}
+	resID := resourceID.ResourcePath()
+
+	return &resID, nil
 }

@@ -17,9 +17,9 @@ limitations under the License.
 package loadbalancers
 
 import (
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -32,161 +32,148 @@ const (
 
 // checkProxy ensures the correct TargetHttpProxy for a loadbalancer
 func (l *L7) checkProxy() (err error) {
-	key, err := l.CreateKey(l.um.Name)
-	if err != nil {
-		return err
-	}
-	resourceID := cloud.ResourceID{ProjectID: "", Resource: "urlMaps", Key: key}
-	urlMapLink := resourceID.ResourcePath()
-	proxyName := l.namer.TargetProxy(namer.HTTPProtocol)
-	key, err = l.CreateKey(proxyName)
-	if err != nil {
-		return err
-	}
-	version := l.Versions().TargetHttpProxy
-	proxy, _ := composite.GetTargetHttpProxy(l.cloud, key, version)
-	if proxy == nil {
-		klog.V(3).Infof("Creating new http proxy for urlmap %v", l.um.Name)
-		description, err := l.description()
-		if err != nil {
-			return err
-		}
-		newProxy := &composite.TargetHttpProxy{
-			Name:        proxyName,
-			UrlMap:      urlMapLink,
-			Description: description,
-			Version:     version,
-		}
-		key, err := l.CreateKey(newProxy.Name)
-		if err != nil {
-			return err
-		}
-		if err = composite.CreateTargetHttpProxy(l.cloud, key, newProxy); err != nil {
-			return err
-		}
-		key, err = l.CreateKey(proxyName)
-		if err != nil {
-			return err
-		}
-		proxy, err = composite.GetTargetHttpProxy(l.cloud, key, version)
-		if err != nil {
-			return err
-		}
-		l.tp = proxy
-		return nil
-	}
-	if !utils.EqualResourcePaths(proxy.UrlMap, urlMapLink) {
-		klog.V(3).Infof("Proxy %v has the wrong url map, setting %v overwriting %v",
-			proxy.Name, urlMapLink, proxy.UrlMap)
-		key, err := l.CreateKey(proxy.Name)
-		if err != nil {
-			return err
-		}
-		if err := composite.SetUrlMapForTargetHttpProxy(l.cloud, key, proxy, urlMapLink); err != nil {
-			return err
-		}
-	}
-	l.tp = proxy
-	return nil
-}
+	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
+	tr := translator.NewTranslator(isL7ILB, l.namer)
 
-func (l *L7) checkHttpsProxy() (err error) {
-	if len(l.sslCerts) == 0 {
-		klog.V(3).Infof("No SSL certificates for %q, will not create HTTPS proxy.", l)
-		return nil
-	}
-
-	key, err := l.CreateKey(l.um.Name)
-	if err != nil {
-		return err
-	}
-	resourceID := cloud.ResourceID{ProjectID: "", Resource: "urlMaps", Key: key}
-	urlMapLink := resourceID.ResourcePath()
-	proxyName := l.namer.TargetProxy(namer.HTTPSProtocol)
-	key, err = l.CreateKey(proxyName)
-	if err != nil {
-		return err
-	}
-	version := l.Versions().TargetHttpProxy
-	proxy, _ := composite.GetTargetHttpsProxy(l.cloud, key, version)
 	description, err := l.description()
 	if err != nil {
 		return err
 	}
-	if proxy == nil {
-		klog.V(3).Infof("Creating new https proxy for urlmap %q", l.um.Name)
-		newProxy := &composite.TargetHttpsProxy{
-			Name:        proxyName,
-			UrlMap:      urlMapLink,
-			Description: description,
-			Version:     version,
-		}
-
-		for _, c := range l.sslCerts {
-			newProxy.SslCertificates = append(newProxy.SslCertificates, c.SelfLink)
-		}
-
-		key, err := l.CreateKey(newProxy.Name)
-		if err != nil {
-			return err
-		}
-		if err = composite.CreateTargetHttpsProxy(l.cloud, key, newProxy); err != nil {
-			return err
-		}
-
-		if flags.F.EnableFrontendConfig {
-			if err := l.ensureSslPolicy(newProxy); err != nil {
-				return err
-			}
-		}
-
-		key, err = l.CreateKey(proxyName)
-		if err != nil {
-			return err
-		}
-		proxy, err = composite.GetTargetHttpsProxy(l.cloud, key, version)
-		if err != nil {
-			return err
-		}
-
-		l.tps = proxy
-		return nil
+	urlMapKey, err := l.CreateKey(l.um.Name)
+	if err != nil {
+		return err
 	}
-	if !utils.EqualResourcePaths(proxy.UrlMap, urlMapLink) {
-		klog.V(3).Infof("Https proxy %v has the wrong url map, setting %v overwriting %v",
-			proxy.Name, urlMapLink, proxy.UrlMap)
+
+	version := l.Versions().TargetHttpProxy
+	proxy := tr.ToCompositeTargetHttpProxy(description, version, urlMapKey)
+
+	key, err := l.CreateKey(proxy.Name)
+	if err != nil {
+		return err
+	}
+
+	currentProxy, _ := composite.GetTargetHttpProxy(l.cloud, key, version)
+	if currentProxy == nil {
+		klog.V(3).Infof("Creating new http proxy for urlmap %v", l.um.Name)
+
 		key, err := l.CreateKey(proxy.Name)
 		if err != nil {
 			return err
 		}
-		if err := composite.SetUrlMapForTargetHttpsProxy(l.cloud, key, proxy, urlMapLink); err != nil {
+		if err = composite.CreateTargetHttpProxy(l.cloud, key, proxy); err != nil {
+			return err
+		}
+		key, err = l.CreateKey(proxy.Name)
+		if err != nil {
+			return err
+		}
+		currentProxy, err = composite.GetTargetHttpProxy(l.cloud, key, version)
+		if err != nil {
+			return err
+		}
+		l.tp = currentProxy
+		return nil
+	}
+	if !utils.EqualResourcePaths(currentProxy.UrlMap, proxy.UrlMap) {
+		klog.V(3).Infof("Proxy %v has the wrong url map, setting %v overwriting %v",
+			currentProxy.Name, proxy.UrlMap, currentProxy.UrlMap)
+		key, err := l.CreateKey(currentProxy.Name)
+		if err != nil {
+			return err
+		}
+		if err := composite.SetUrlMapForTargetHttpProxy(l.cloud, key, currentProxy, proxy.UrlMap); err != nil {
+			return err
+		}
+	}
+	l.tp = currentProxy
+	return nil
+}
+
+func (l *L7) checkHttpsProxy() (err error) {
+	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
+	tr := translator.NewTranslator(isL7ILB, l.namer)
+	env := &translator.Env{FrontendConfig: l.runtimeInfo.FrontendConfig}
+
+	if len(l.sslCerts) == 0 {
+		klog.V(3).Infof("No SSL certificates for %q, will not create HTTPS Proxy.", l)
+		return nil
+	}
+
+	urlMapKey, err := l.CreateKey(l.um.Name)
+	if err != nil {
+		return err
+	}
+	description, err := l.description()
+	version := l.Versions().TargetHttpProxy
+	proxy, sslPolicySet, err := tr.ToCompositeTargetHttpsProxy(env, description, version, urlMapKey, l.sslCerts)
+	if err != nil {
+		return err
+	}
+
+	key, err := l.CreateKey(proxy.Name)
+	if err != nil {
+		return err
+	}
+
+	currentProxy, _ := composite.GetTargetHttpsProxy(l.cloud, key, version)
+	if err != nil {
+		return err
+	}
+
+	if currentProxy == nil {
+		klog.V(3).Infof("Creating new https Proxy for urlmap %q", l.um.Name)
+
+		if err = composite.CreateTargetHttpsProxy(l.cloud, key, proxy); err != nil {
+			return err
+		}
+
+		key, err = l.CreateKey(proxy.Name)
+		if err != nil {
+			return err
+		}
+		currentProxy, err = composite.GetTargetHttpsProxy(l.cloud, key, version)
+		if err != nil {
+			return err
+		}
+
+		l.tps = currentProxy
+		return nil
+	}
+	if !utils.EqualResourcePaths(currentProxy.UrlMap, proxy.UrlMap) {
+		klog.V(3).Infof("Https Proxy %v has the wrong url map, setting %v overwriting %v",
+			currentProxy.Name, proxy.UrlMap, currentProxy.UrlMap)
+		key, err := l.CreateKey(currentProxy.Name)
+		if err != nil {
+			return err
+		}
+		if err := composite.SetUrlMapForTargetHttpsProxy(l.cloud, key, currentProxy, proxy.UrlMap); err != nil {
 			return err
 		}
 	}
 
-	if !l.compareCerts(proxy.SslCertificates) {
-		klog.V(3).Infof("Https proxy %q has the wrong ssl certs, setting %v overwriting %v",
-			proxy.Name, toCertNames(l.sslCerts), proxy.SslCertificates)
+	if !l.compareCerts(currentProxy.SslCertificates) {
+		klog.V(3).Infof("Https Proxy %q has the wrong ssl certs, setting %v overwriting %v",
+			currentProxy.Name, toCertNames(l.sslCerts), currentProxy.SslCertificates)
 		var sslCertURLs []string
 		for _, cert := range l.sslCerts {
 			sslCertURLs = append(sslCertURLs, cert.SelfLink)
 		}
-		key, err := l.CreateKey(proxy.Name)
+		key, err := l.CreateKey(currentProxy.Name)
 		if err != nil {
 			return err
 		}
-		if err := composite.SetSslCertificateForTargetHttpsProxy(l.cloud, key, proxy, sslCertURLs); err != nil {
+		if err := composite.SetSslCertificateForTargetHttpsProxy(l.cloud, key, currentProxy, sslCertURLs); err != nil {
 			return err
 		}
 	}
 
-	if flags.F.EnableFrontendConfig {
-		if err := l.ensureSslPolicy(proxy); err != nil {
+	if flags.F.EnableFrontendConfig && sslPolicySet {
+		if err := l.ensureSslPolicy(env, currentProxy, proxy.SslPolicy); err != nil {
 			return err
 		}
 	}
 
-	l.tps = proxy
+	l.tps = currentProxy
 	return nil
 }
 
@@ -206,54 +193,15 @@ func (l *L7) getSslCertLinkInUse() ([]string, error) {
 
 // ensureSslPolicy ensures that the SslPolicy described in the frontendconfig is
 // properly applied to the proxy.
-func (l *L7) ensureSslPolicy(proxy *composite.TargetHttpsProxy) error {
-	policyLink, err := l.getSslPolicyLink()
-	if err != nil {
-		return err
-	}
-
-	if policyLink != nil && !utils.EqualResourceIDs(*policyLink, proxy.SslPolicy) {
-		key, err := l.CreateKey(proxy.Name)
+func (l *L7) ensureSslPolicy(env *translator.Env, currentProxy *composite.TargetHttpsProxy, policyLink string) error {
+	if !utils.EqualResourceIDs(policyLink, currentProxy.SslPolicy) {
+		key, err := l.CreateKey(currentProxy.Name)
 		if err != nil {
 			return err
 		}
-		if err := composite.SetSslPolicyForTargetHttpsProxy(l.cloud, key, proxy, *policyLink); err != nil {
+		if err := composite.SetSslPolicyForTargetHttpsProxy(l.cloud, key, currentProxy, policyLink); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-// getSslPolicyLink returns the ref to the ssl policy that is described by the
-// frontend config.  Since Ssl Policy is a *string, there are three possible I/O situations
-// 1) policy is nil -> this returns nil
-// 2) policy is an empty string -> this returns an empty string
-// 3) policy is non-empty -> this constructs the resourcce path and returns it
-func (l *L7) getSslPolicyLink() (*string, error) {
-	var link string
-
-	if l.runtimeInfo.FrontendConfig == nil {
-		return nil, nil
-	}
-
-	policyName := l.runtimeInfo.FrontendConfig.Spec.SslPolicy
-	if policyName == nil {
-		return nil, nil
-	}
-	if *policyName == "" {
-		return &link, nil
-	}
-
-	key, err := l.CreateKey(*policyName)
-	if err != nil {
-		return nil, err
-	}
-	resourceID := cloud.ResourceID{
-		Resource:  "sslPolicies",
-		Key:       key,
-		ProjectID: l.cloud.ProjectID(),
-	}
-	resID := resourceID.ResourcePath()
-
-	return &resID, nil
 }

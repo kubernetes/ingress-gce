@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -1059,59 +1058,16 @@ func TestFrontendConfigSslPolicy(t *testing.T) {
 	}
 }
 
-func TestGetSslPolicyLink(t *testing.T) {
-	t.Parallel()
-	j := newTestJig(t)
-
-	testCases := []struct {
-		desc string
-		fc   *frontendconfigv1beta1.FrontendConfig
-		want *string
-	}{
-		{
-			desc: "Empty frontendconfig",
-			fc:   nil,
-			want: nil,
-		},
-		{
-			desc: "frontendconfig with no ssl policy",
-			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{}},
-			want: nil,
-		},
-		{
-			desc: "frontendconfig with ssl policy",
-			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
-			want: utils.NewStringPointer("global/sslPolicies/test-policy"),
-		},
-		{
-			desc: "frontendconfig with empty string ssl policy",
-			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("")}},
-			want: utils.NewStringPointer(""),
-		},
-	}
-
-	for _, tc := range testCases {
-		l7 := L7{runtimeInfo: &L7RuntimeInfo{FrontendConfig: tc.fc}, cloud: j.fakeGCE, scope: meta.Global}
-		result, err := l7.getSslPolicyLink()
-		if err != nil {
-			t.Errorf("desc: %q, l7.getSslPolicyLink() = %v, want nil", tc.desc, err)
-		}
-
-		if !reflect.DeepEqual(result, tc.want) {
-			t.Errorf("desc: %q, l7.getSslPolicyLink() = %v, want %+v", tc.desc, result, tc.want)
-		}
-	}
-}
-
 func TestEnsureSslPolicy(t *testing.T) {
 	t.Parallel()
 	j := newTestJig(t)
 
 	testCases := []struct {
-		desc  string
-		fc    *frontendconfigv1beta1.FrontendConfig
-		proxy *composite.TargetHttpsProxy
-		want  string
+		desc       string
+		fc         *frontendconfigv1beta1.FrontendConfig
+		proxy      *composite.TargetHttpsProxy
+		policyLink string
+		want       string
 	}{
 		{
 			desc:  "Empty frontendconfig",
@@ -1126,22 +1082,25 @@ func TestEnsureSslPolicy(t *testing.T) {
 			want:  "",
 		},
 		{
-			desc:  "frontendconfig with ssl policy",
-			fc:    &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
-			proxy: &composite.TargetHttpsProxy{Name: "test-proxy-2"},
-			want:  "global/sslPolicies/test-policy",
+			desc:       "frontendconfig with ssl policy",
+			fc:         &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
+			proxy:      &composite.TargetHttpsProxy{Name: "test-proxy-2"},
+			policyLink: "global/sslPolicies/test-policy",
+			want:       "global/sslPolicies/test-policy",
 		},
 		{
-			desc:  "proxy with different ssl policy",
-			fc:    &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
-			proxy: &composite.TargetHttpsProxy{Name: "test-proxy-3", SslPolicy: "global/sslPolicies/wrong-policy"},
-			want:  "global/sslPolicies/test-policy",
+			desc:       "proxy with different ssl policy",
+			fc:         &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
+			proxy:      &composite.TargetHttpsProxy{Name: "test-proxy-3", SslPolicy: "global/sslPolicies/wrong-policy"},
+			policyLink: "global/sslPolicies/test-policy",
+			want:       "global/sslPolicies/test-policy",
 		},
 		{
-			desc:  "proxy with ssl policy and frontend config policy is nil",
-			fc:    &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: nil}},
-			proxy: &composite.TargetHttpsProxy{Name: "test-proxy-4", SslPolicy: "global/sslPolicies/test-policy"},
-			want:  "global/sslPolicies/test-policy",
+			desc:       "proxy with ssl policy and frontend config policy is nil",
+			fc:         &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: nil}},
+			proxy:      &composite.TargetHttpsProxy{Name: "test-proxy-4", SslPolicy: "global/sslPolicies/test-policy"},
+			policyLink: "global/sslPolicies/test-policy",
+			want:       "global/sslPolicies/test-policy",
 		},
 		{
 			desc:  "remove ssl policy",
@@ -1157,8 +1116,9 @@ func TestEnsureSslPolicy(t *testing.T) {
 			t.Error(err)
 		}
 		l7 := L7{runtimeInfo: &L7RuntimeInfo{FrontendConfig: tc.fc}, cloud: j.fakeGCE, scope: meta.Global}
+		env := &translator.Env{FrontendConfig: tc.fc}
 
-		if err := l7.ensureSslPolicy(tc.proxy); err != nil {
+		if err := l7.ensureSslPolicy(env, tc.proxy, tc.policyLink); err != nil {
 			t.Errorf("desc: %q, l7.ensureSslPolicy() = %v, want nil", tc.desc, err)
 		}
 

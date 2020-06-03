@@ -16,6 +16,7 @@ package translator
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -24,6 +25,8 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
+	"k8s.io/ingress-gce/pkg/flags"
 
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -379,6 +382,188 @@ func TestToForwardingRule(t *testing.T) {
 			got := tr.ToCompositeForwardingRule(env, tc.protocol, version, proxyLink, description)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Fatalf("Got diff for ForwardingRule (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestToCompositeTargetHttpProxy(t *testing.T) {
+	t.Parallel()
+	description := "foo"
+
+	testCases := []struct {
+		desc      string
+		urlMapKey *meta.Key
+		version   meta.Version
+		want      *composite.TargetHttpProxy
+	}{
+		{
+			desc:      "http xlb",
+			urlMapKey: meta.GlobalKey("my-url-map"),
+			version:   meta.VersionGA,
+			want: &composite.TargetHttpProxy{
+				Name:        "foo-tp",
+				Description: description,
+				Version:     meta.VersionGA,
+				UrlMap:      "global/urlMaps/my-url-map",
+			},
+		},
+		{
+			desc:      "http ilb",
+			urlMapKey: meta.RegionalKey("my-url-map", "fakeRegion"),
+			version:   meta.VersionGA,
+			want: &composite.TargetHttpProxy{
+				Name:        "foo-tp",
+				Description: description,
+				Version:     meta.VersionGA,
+				UrlMap:      "regions/fakeRegion/urlMaps/my-url-map",
+			},
+		},
+		{
+			desc:      "http xlb with beta version",
+			urlMapKey: meta.GlobalKey("my-url-map"),
+			version:   meta.VersionBeta,
+			want: &composite.TargetHttpProxy{
+				Name:        "foo-tp",
+				Description: description,
+				Version:     meta.VersionBeta,
+				UrlMap:      "global/urlMaps/my-url-map",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// isL7ILB doesn't affect the outcome here since the key is creating during ensure
+			tr := NewTranslator(false, &testNamer{"foo"})
+			got := tr.ToCompositeTargetHttpProxy(description, tc.version, tc.urlMapKey)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Got diff for TargetHttpProxy (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestToCompositeTargetHttpsProxy(t *testing.T) {
+	t.Parallel()
+	flags.F.EnableFrontendConfig = true
+	description := "foo"
+
+	testCases := []struct {
+		desc      string
+		urlMapKey *meta.Key
+		sslCerts  []*composite.SslCertificate
+		sslPolicy *string
+		version   meta.Version
+		want      *composite.TargetHttpsProxy
+	}{
+		{
+			desc:      "https xlb",
+			urlMapKey: meta.GlobalKey("my-url-map"),
+			version:   meta.VersionGA,
+			want: &composite.TargetHttpsProxy{
+				Name:        "foo-tp",
+				Description: description,
+				Version:     meta.VersionGA,
+				UrlMap:      "global/urlMaps/my-url-map",
+			},
+		},
+		{
+			desc:      "https ilb",
+			urlMapKey: meta.RegionalKey("my-url-map", "fakeRegion"),
+			version:   meta.VersionGA,
+			want: &composite.TargetHttpsProxy{
+				Name:        "foo-tp",
+				Description: description,
+				Version:     meta.VersionGA,
+				UrlMap:      "regions/fakeRegion/urlMaps/my-url-map",
+			},
+		},
+		{
+			desc:      "https elb with beta version",
+			urlMapKey: meta.GlobalKey("my-url-map"),
+			version:   meta.VersionBeta,
+			want: &composite.TargetHttpsProxy{
+				Name:        "foo-tp",
+				Description: description,
+				Version:     meta.VersionBeta,
+				UrlMap:      "global/urlMaps/my-url-map",
+			},
+		},
+		{
+			desc:      "https xlb with ssl policy",
+			urlMapKey: meta.GlobalKey("my-url-map"),
+			version:   meta.VersionGA,
+			sslPolicy: utils.NewStringPointer("test-policy"),
+			want: &composite.TargetHttpsProxy{
+				Name:        "foo-tp",
+				Description: description,
+				Version:     meta.VersionGA,
+				UrlMap:      "global/urlMaps/my-url-map",
+				SslPolicy:   "global/sslPolicies/test-policy",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// isL7ILB doesn't affect the outcome here since the key is creating during ensure
+			tr := NewTranslator(false, &testNamer{"foo"})
+			env := &Env{FrontendConfig: &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: tc.sslPolicy}}}
+			got, sslPolicySet, err := tr.ToCompositeTargetHttpsProxy(env, description, tc.version, tc.urlMapKey, tc.sslCerts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantSslPolicySet := tc.sslPolicy != nil
+			if sslPolicySet != wantSslPolicySet {
+				t.Errorf("sslPolicySet = %v, want %v", sslPolicySet, wantSslPolicySet)
+			}
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Got diff for TargetHttpProxy (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestSslPolicyLink(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc string
+		fc   *frontendconfigv1beta1.FrontendConfig
+		want *string
+	}{
+		{
+			desc: "Empty frontendconfig",
+			fc:   nil,
+			want: nil,
+		},
+		{
+			desc: "frontendconfig with no ssl policy",
+			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{}},
+			want: nil,
+		},
+		{
+			desc: "frontendconfig with ssl policy",
+			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
+			want: utils.NewStringPointer("global/sslPolicies/test-policy"),
+		},
+		{
+			desc: "frontendconfig with empty string ssl policy",
+			fc:   &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("")}},
+			want: utils.NewStringPointer(""),
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			env := &Env{FrontendConfig: tc.fc}
+			result, err := sslPolicyLink(env)
+			if err != nil {
+				t.Errorf("sslPolicyLink() = %v, want nil", err)
+			}
+
+			if !reflect.DeepEqual(result, tc.want) {
+				t.Errorf("sslPolicyLink() = %v, want %+v", result, tc.want)
 			}
 		})
 	}
