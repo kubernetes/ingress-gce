@@ -21,10 +21,12 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -92,6 +94,7 @@ func (l *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, 
 			return nil, err
 		}
 		existing = nil
+		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", key.Name)
 	}
 	if existing == nil {
 		// This is a special case where exactly one of http or https forwarding rule
@@ -115,6 +118,8 @@ func (l *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, 
 		if err = composite.CreateForwardingRule(l.cloud, key, fr); err != nil {
 			return nil, err
 		}
+		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q created", key.Name)
+
 		key, err = l.CreateKey(name)
 		if err != nil {
 			return nil, err
@@ -293,6 +298,7 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 			if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, existingVersion)); err != nil {
 				return nil, err
 			}
+			l.recorder.Eventf(l.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", key.Name)
 		}
 	}
 	klog.V(2).Infof("ensureForwardingRule: Recreating forwarding rule - %s", fr.Name)
@@ -302,9 +308,11 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	if addrMgr != nil {
 		// Now that the controller knows the forwarding rule exists, we can release the address.
 		if err := addrMgr.ReleaseAddress(); err != nil {
-			klog.Errorf("ensureInternalLoadBalancer: failed to release address reservation, possibly causing an orphan: %v", err)
+			klog.Errorf("ensureInternalLoadBalancer: - %s, failed to release address reservation, possibly causing an orphan: %v", fr.Name, err)
 		}
 	}
+	l.recorder.Eventf(l.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q created", key.Name)
+
 	return composite.GetForwardingRule(l.cloud, key, fr.Version)
 }
 

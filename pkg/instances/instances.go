@@ -21,10 +21,13 @@ import (
 	"net/http"
 	"time"
 
+	"google.golang.org/api/compute/v1"
+	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 
-	"google.golang.org/api/compute/v1"
+	core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"k8s.io/ingress-gce/pkg/utils"
@@ -39,16 +42,22 @@ const (
 type Instances struct {
 	cloud InstanceGroups
 	ZoneLister
-	namer namer.BackendNamer
+	namer    namer.BackendNamer
+	recorder record.EventRecorder
+}
+
+type recorderSource interface {
+	Recorder(ns string) record.EventRecorder
 }
 
 // NewNodePool creates a new node pool.
 // - cloud: implements InstanceGroups, used to sync Kubernetes nodes with
 //   members of the cloud InstanceGroup.
-func NewNodePool(cloud InstanceGroups, namer namer.BackendNamer) NodePool {
+func NewNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource) NodePool {
 	return &Instances{
-		cloud: cloud,
-		namer: namer,
+		cloud:    cloud,
+		namer:    namer,
+		recorder: recorders.Recorder(""), // No namespace
 	}
 }
 
@@ -250,7 +259,8 @@ func (i *Instances) splitNodesByZone(names []string) map[string][]string {
 
 // Add adds the given instances to the appropriately zoned Instance Group.
 func (i *Instances) Add(groupName string, names []string) error {
-	errs := []error{}
+	events.GlobalEventf(i.recorder, core.EventTypeNormal, events.AddNodes, "Adding %s to InstanceGroup %q", events.TruncatedStringList(names), groupName)
+	var errs []error
 	for zone, nodeNames := range i.splitNodesByZone(names) {
 		klog.V(1).Infof("Adding nodes %v to %v in zone %v", nodeNames, groupName, zone)
 		if err := i.cloud.AddInstancesToInstanceGroup(groupName, zone, i.cloud.ToInstanceReferences(zone, nodeNames)); err != nil {
@@ -260,12 +270,16 @@ func (i *Instances) Add(groupName string, names []string) error {
 	if len(errs) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%v", errs)
+
+	err := fmt.Errorf("AddInstances: %v", errs)
+	events.GlobalEventf(i.recorder, core.EventTypeWarning, events.AddNodes, "Error adding %s to InstanceGroup %q: %v", events.TruncatedStringList(names), groupName, err)
+	return err
 }
 
 // Remove removes the given instances from the appropriately zoned Instance Group.
 func (i *Instances) Remove(groupName string, names []string) error {
-	errs := []error{}
+	events.GlobalEventf(i.recorder, core.EventTypeNormal, events.RemoveNodes, "Removing %s from InstanceGroup %q", events.TruncatedStringList(names), groupName)
+	var errs []error
 	for zone, nodeNames := range i.splitNodesByZone(names) {
 		klog.V(1).Infof("Removing nodes %v from %v in zone %v", nodeNames, groupName, zone)
 		if err := i.cloud.RemoveInstancesFromInstanceGroup(groupName, zone, i.cloud.ToInstanceReferences(zone, nodeNames)); err != nil {
@@ -275,7 +289,10 @@ func (i *Instances) Remove(groupName string, names []string) error {
 	if len(errs) == 0 {
 		return nil
 	}
-	return fmt.Errorf("%v", errs)
+
+	err := fmt.Errorf("RemoveInstances: %v", errs)
+	events.GlobalEventf(i.recorder, core.EventTypeWarning, events.RemoveNodes, "Error removing nodes %s from InstanceGroup %q: %v", events.TruncatedStringList(names), groupName, err)
+	return err
 }
 
 // Sync nodes with the instances in the instance group.

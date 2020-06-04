@@ -17,7 +17,9 @@ limitations under the License.
 package loadbalancers
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -55,7 +57,6 @@ func (l *L7) checkProxy() (err error) {
 	currentProxy, _ := composite.GetTargetHttpProxy(l.cloud, key, version)
 	if currentProxy == nil {
 		klog.V(3).Infof("Creating new http proxy for urlmap %v", l.um.Name)
-
 		key, err := l.CreateKey(proxy.Name)
 		if err != nil {
 			return err
@@ -63,11 +64,8 @@ func (l *L7) checkProxy() (err error) {
 		if err = composite.CreateTargetHttpProxy(l.cloud, key, proxy); err != nil {
 			return err
 		}
-		key, err = l.CreateKey(proxy.Name)
-		if err != nil {
-			return err
-		}
 		currentProxy, err = composite.GetTargetHttpProxy(l.cloud, key, version)
+		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q created", key.Name)
 		if err != nil {
 			return err
 		}
@@ -84,6 +82,7 @@ func (l *L7) checkProxy() (err error) {
 		if err := composite.SetUrlMapForTargetHttpProxy(l.cloud, key, currentProxy, proxy.UrlMap); err != nil {
 			return err
 		}
+		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q updated", key.Name)
 	}
 	l.tp = currentProxy
 	return nil
@@ -95,7 +94,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 	env := &translator.Env{FrontendConfig: l.runtimeInfo.FrontendConfig}
 
 	if len(l.sslCerts) == 0 {
-		klog.V(3).Infof("No SSL certificates for %q, will not create HTTPS Proxy.", l)
+		klog.V(2).Infof("No SSL certificates for %q, will not create HTTPS Proxy.", l)
 		return nil
 	}
 
@@ -126,6 +125,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 		if err = composite.CreateTargetHttpsProxy(l.cloud, key, proxy); err != nil {
 			return err
 		}
+		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q created", key.Name)
 
 		key, err = l.CreateKey(proxy.Name)
 		if err != nil {
@@ -139,9 +139,9 @@ func (l *L7) checkHttpsProxy() (err error) {
 		l.tps = currentProxy
 		return nil
 	}
+
 	if !utils.EqualResourcePaths(currentProxy.UrlMap, proxy.UrlMap) {
-		klog.V(3).Infof("Https Proxy %v has the wrong url map, setting %v overwriting %v",
-			currentProxy.Name, proxy.UrlMap, currentProxy.UrlMap)
+		klog.V(2).Infof("Https Proxy %v has the wrong url map, setting %v overwriting %v", currentProxy.Name, proxy.UrlMap, currentProxy.UrlMap)
 		key, err := l.CreateKey(currentProxy.Name)
 		if err != nil {
 			return err
@@ -149,10 +149,11 @@ func (l *L7) checkHttpsProxy() (err error) {
 		if err := composite.SetUrlMapForTargetHttpsProxy(l.cloud, key, currentProxy, proxy.UrlMap); err != nil {
 			return err
 		}
+		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q updated", key.Name)
 	}
 
 	if !l.compareCerts(currentProxy.SslCertificates) {
-		klog.V(3).Infof("Https Proxy %q has the wrong ssl certs, setting %v overwriting %v",
+		klog.V(2).Infof("Https Proxy %q has the wrong ssl certs, setting %v overwriting %v",
 			currentProxy.Name, toCertNames(l.sslCerts), currentProxy.SslCertificates)
 		var sslCertURLs []string
 		for _, cert := range l.sslCerts {
@@ -165,6 +166,7 @@ func (l *L7) checkHttpsProxy() (err error) {
 		if err := composite.SetSslCertificateForTargetHttpsProxy(l.cloud, key, currentProxy, sslCertURLs); err != nil {
 			return err
 		}
+		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q certs updated", key.Name)
 	}
 
 	if flags.F.EnableFrontendConfig && sslPolicySet {
@@ -200,6 +202,7 @@ func (l *L7) ensureSslPolicy(env *translator.Env, currentProxy *composite.Target
 			return err
 		}
 		if err := composite.SetSslPolicyForTargetHttpsProxy(l.cloud, key, currentProxy, policyLink); err != nil {
+			l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "TargetProxy %q SSLPolicy updated", key.Name)
 			return err
 		}
 	}

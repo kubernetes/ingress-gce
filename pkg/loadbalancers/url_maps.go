@@ -19,8 +19,10 @@ package loadbalancers
 import (
 	"fmt"
 
+	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -50,11 +52,13 @@ func (l *L7) ensureComputeURLMap() error {
 	}
 
 	if currentMap == nil {
-		klog.V(3).Infof("Creating URLMap %q", expectedMap.Name)
+		klog.V(2).Infof("Creating URLMap %q", expectedMap.Name)
 		if err := composite.CreateUrlMap(l.cloud, key, expectedMap); err != nil {
 			return fmt.Errorf("CreateUrlMap: %v", err)
 		}
+		l.recorder.Eventf(&l.ingress, apiv1.EventTypeNormal, events.SyncIngress, "UrlMap %q created", key.Name)
 		l.um = expectedMap
+
 		return nil
 	}
 
@@ -64,13 +68,15 @@ func (l *L7) ensureComputeURLMap() error {
 		return nil
 	}
 
-	klog.V(3).Infof("Updating URLMap for %q", l)
+	klog.V(2).Infof("Updating URLMap for %q", l)
 	expectedMap.Fingerprint = currentMap.Fingerprint
 	if err := composite.UpdateUrlMap(l.cloud, key, expectedMap); err != nil {
 		return fmt.Errorf("UpdateURLMap: %v", err)
 	}
 
+	l.recorder.Eventf(&l.ingress, apiv1.EventTypeNormal, events.SyncIngress, "UrlMap %q updated", key.Name)
 	l.um = expectedMap
+
 	return nil
 }
 

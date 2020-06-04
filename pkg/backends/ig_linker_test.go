@@ -27,6 +27,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -47,7 +48,7 @@ func newTestIGLinker(fakeGCE *gce.Cloud, fakeInstancePool instances.NodePool) *i
 
 func TestLink(t *testing.T) {
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer)
+	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{})
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
@@ -77,7 +78,7 @@ func TestLink(t *testing.T) {
 
 func TestLinkWithCreationModeError(t *testing.T) {
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer)
+	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{})
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 

@@ -2,6 +2,9 @@ package test
 
 import (
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
@@ -16,8 +19,6 @@ import (
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/legacy-cloud-providers/gce"
-	"strings"
-	"time"
 )
 
 const (
@@ -245,4 +246,10 @@ func Float64ToPtr(val float64) *float64 {
 // Int64ToPtr returns int ptr for given int.
 func Int64ToPtr(val int64) *int64 {
 	return &val
+}
+
+type FakeRecorderSource struct{}
+
+func (_ *FakeRecorderSource) Recorder(ns string) record.EventRecorder {
+	return record.NewFakeRecorder(100)
 }
