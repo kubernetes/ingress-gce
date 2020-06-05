@@ -1,3 +1,206 @@
+# Changelog
+
+## [v1.9.5](https://github.com/kubernetes/ingress-gce/tree/v1.9.5) (2020-06-03)
+
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.9.4...v1.9.5)
+
+**Closed issues:**
+
+- docs: creating HTTP LB and adding GKE services as backends after the fact [\#1122](https://github.com/kubernetes/ingress-gce/issues/1122)
+- Ingress Update Issue/s \(Changing Backend/Rules\) [\#1117](https://github.com/kubernetes/ingress-gce/issues/1117)
+
+**Merged pull requests:**
+
+- Cherry-pick \#1128 to release-1.9 \[Add rbac permissions for networking.gke.io/frontendconfigs\] [\#1129](https://github.com/kubernetes/ingress-gce/pull/1129) ([spencerhance](https://github.com/spencerhance))
+- Cherrypick PR 1080 into release-1.9 [\#1112](https://github.com/kubernetes/ingress-gce/pull/1112) ([prameshj](https://github.com/prameshj))
+
+## [v1.9.4](https://github.com/kubernetes/ingress-gce/tree/v1.9.4) (2020-05-27)
+
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.9.3...v1.9.4)
+
+**Fixed bugs:**
+
+- Ingress stuck in "Creating ingress" state [\#1095](https://github.com/kubernetes/ingress-gce/issues/1095)
+- OpenAPI v2 schema not published for BackendConfig [\#1055](https://github.com/kubernetes/ingress-gce/issues/1055)
+- Orphaned Resources After Cluster Delete [\#136](https://github.com/kubernetes/ingress-gce/issues/136)
+
+**Closed issues:**
+
+- GCE resource leak with v1 frontend namer  [\#965](https://github.com/kubernetes/ingress-gce/issues/965)
+- Backend syncer should not block syncing if one backend fails GC [\#797](https://github.com/kubernetes/ingress-gce/issues/797)
+- Feature request: ssl-redirect on gce controller [\#51](https://github.com/kubernetes/ingress-gce/issues/51)
+
+**Merged pull requests:**
+
+- Cherrypick \#1105 into Release-1.9 [\#1121](https://github.com/kubernetes/ingress-gce/pull/1121) ([freehan](https://github.com/freehan))
+- Cherrpick \#1119 \[Force send Enable field for LogConfig\] into release-1.9 [\#1120](https://github.com/kubernetes/ingress-gce/pull/1120) ([skmatti](https://github.com/skmatti))
+- Update generated code for BackendConfig in release-1.9 [\#1115](https://github.com/kubernetes/ingress-gce/pull/1115) ([skmatti](https://github.com/skmatti))
+- Cherry Pick \#1107 \[Wait for caches to sync before running node sync\] to release-1.9 [\#1114](https://github.com/kubernetes/ingress-gce/pull/1114) ([spencerhance](https://github.com/spencerhance))
+- Cherry Pick \#1104 \[Change project permissions check from 'foo' to 'k8s-ingress-svc-acct-...\] to release-1.9… [\#1113](https://github.com/kubernetes/ingress-gce/pull/1113) ([spencerhance](https://github.com/spencerhance))
+- Cherrypick \#1096\[Enable pruning of unknown fields for CRDs\] into release-1.9 [\#1111](https://github.com/kubernetes/ingress-gce/pull/1111) ([skmatti](https://github.com/skmatti))
+- Cherrypick PR 1090 to release-1.9 [\#1109](https://github.com/kubernetes/ingress-gce/pull/1109) ([prameshj](https://github.com/prameshj))
+- Cherry-Pick \#1092 \[Add support for Port to BackendConfig HealthCheckConfig\] to release-1.9 [\#1108](https://github.com/kubernetes/ingress-gce/pull/1108) ([spencerhance](https://github.com/spencerhance))
+- Cherrypick \#1076\[Return GCE LB deletion error\] into release-1.9 [\#1099](https://github.com/kubernetes/ingress-gce/pull/1099) ([skmatti](https://github.com/skmatti))
+- Cherry-pick \#1082 to release-1.9 \[Update FrontendConfig v1beta1 API so that Spec and Status fields are omitempty\] [\#1089](https://github.com/kubernetes/ingress-gce/pull/1089) ([spencerhance](https://github.com/spencerhance))
+
+## [v1.9.3](https://github.com/kubernetes/ingress-gce/tree/v1.9.3) (2020-04-23)
+
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.9.2...v1.9.3)
+
+**Closed issues:**
+
+- Can't create firewall when running in self-controlled mode [\#1085](https://github.com/kubernetes/ingress-gce/issues/1085)
+- Cannot patch new rules onto this resource [\#1078](https://github.com/kubernetes/ingress-gce/issues/1078)
+- Reverse certificate dependencies [\#1068](https://github.com/kubernetes/ingress-gce/issues/1068)
+- WebSocket not works using GCE Ingress. Ingress set UNHEALTHY status always  [\#1067](https://github.com/kubernetes/ingress-gce/issues/1067)
+- Invalid value for field 'resource.IPAddress' when creating service type LoadBalancer [\#1057](https://github.com/kubernetes/ingress-gce/issues/1057)
+- fix inaccessible links in the CHANGELOG.md [\#1042](https://github.com/kubernetes/ingress-gce/issues/1042)
+
+**Merged pull requests:**
+
+- Cherry Pick \#1062 to Release 1.9 \[Update BackendConfig LoadBalancingScheme for L7-ILB to INTERNAL\_MANAGED\] [\#1081](https://github.com/kubernetes/ingress-gce/pull/1081) ([spencerhance](https://github.com/spencerhance))
+
+## [v1.9.2](https://github.com/kubernetes/ingress-gce/tree/v1.9.2) (2020-04-07)
+
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.9.1...v1.9.2)
+
+**Closed issues:**
+
+- GKE: IAP \> L7 \> custom host and path rules \> Error code 11 [\#765](https://github.com/kubernetes/ingress-gce/issues/765)
+
+**Merged pull requests:**
+
+- Cherrypick \#1065\[User specified Static Global IPs\] into release-1.9 [\#1071](https://github.com/kubernetes/ingress-gce/pull/1071) ([skmatti](https://github.com/skmatti))
+- Cherrypick \#1066\[Fix json tag for Logging\] [\#1069](https://github.com/kubernetes/ingress-gce/pull/1069) ([skmatti](https://github.com/skmatti))
+- Cherrypick \#1058\[Handle health check not found error gracefully\] into release-1.9 [\#1060](https://github.com/kubernetes/ingress-gce/pull/1060) ([skmatti](https://github.com/skmatti))
+
+## [v1.9.1](https://github.com/kubernetes/ingress-gce/tree/v1.9.1) (2020-03-13)
+
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.9.0...v1.9.1)
+
+**Closed issues:**
+
+- Backendconfig and Frontendconfig CRD informers break with protobuf [\#1049](https://github.com/kubernetes/ingress-gce/issues/1049)
+
+**Merged pull requests:**
+
+- Cherrypick \#1041\[Add support for Access Logs in BackendConfig\] into release-1.9 [\#1056](https://github.com/kubernetes/ingress-gce/pull/1056) ([skmatti](https://github.com/skmatti))
+- Cherrypick \#1051\[Fix kube-config for CRD informers\] into release-1.9 [\#1054](https://github.com/kubernetes/ingress-gce/pull/1054) ([skmatti](https://github.com/skmatti))
+
+## [v1.9.0](https://github.com/kubernetes/ingress-gce/tree/v1.9.0) (2020-03-09)
+
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.8.0...v1.9.0)
+
+**Implemented enhancements:**
+
+- How do I set up RPS limit [\#670](https://github.com/kubernetes/ingress-gce/issues/670)
+
+**Closed issues:**
+
+- BUG \> Internal Load Balancer attempts to use regional cert [\#1047](https://github.com/kubernetes/ingress-gce/issues/1047)
+- Add release tags for v1.6.2, v1.7.3 and v1.8.2 [\#1038](https://github.com/kubernetes/ingress-gce/issues/1038)
+- Websocket not working with HTTP2 backend [\#855](https://github.com/kubernetes/ingress-gce/issues/855)
+- Ingress not Working With Websocket [\#793](https://github.com/kubernetes/ingress-gce/issues/793)
+
+**Merged pull requests:**
+
+- Add feature flag `EnableBackendConfigHealthCheck` [\#1040](https://github.com/kubernetes/ingress-gce/pull/1040) ([bowei](https://github.com/bowei))
+- Add Access Log field to BackendConfig API [\#1039](https://github.com/kubernetes/ingress-gce/pull/1039) ([skmatti](https://github.com/skmatti))
+- Bugfix: Fix frontend resource deletion test  [\#1037](https://github.com/kubernetes/ingress-gce/pull/1037) ([skmatti](https://github.com/skmatti))
+- Fix Access logs enable whitebox test [\#1036](https://github.com/kubernetes/ingress-gce/pull/1036) ([skmatti](https://github.com/skmatti))
+- Split large file healthchecks.go =\> healthcheck.go,healthchecks.go [\#1032](https://github.com/kubernetes/ingress-gce/pull/1032) ([bowei](https://github.com/bowei))
+- Add L4 ILB usage metrics [\#1031](https://github.com/kubernetes/ingress-gce/pull/1031) ([skmatti](https://github.com/skmatti))
+- Fix backendconfig annotation key for beta [\#1030](https://github.com/kubernetes/ingress-gce/pull/1030) ([skmatti](https://github.com/skmatti))
+- Set healthcheck from BackendConfig [\#1029](https://github.com/kubernetes/ingress-gce/pull/1029) ([bowei](https://github.com/bowei))
+- Reduce surface area of healthchecks [\#1028](https://github.com/kubernetes/ingress-gce/pull/1028) ([bowei](https://github.com/bowei))
+- Typesafe composite conversion [\#1027](https://github.com/kubernetes/ingress-gce/pull/1027) ([bowei](https://github.com/bowei))
+- Move apply probe to healthchecks package [\#1026](https://github.com/kubernetes/ingress-gce/pull/1026) ([bowei](https://github.com/bowei))
+- Add asm-ready as the status signal of asm mode. [\#1025](https://github.com/kubernetes/ingress-gce/pull/1025) ([cadmuxe](https://github.com/cadmuxe))
+- Add whitebox test for access logs [\#1024](https://github.com/kubernetes/ingress-gce/pull/1024) ([skmatti](https://github.com/skmatti))
+- Add deployment guide for GLBC in non-gcp mode. [\#1022](https://github.com/kubernetes/ingress-gce/pull/1022) ([cxhiano](https://github.com/cxhiano))
+- Add SetSslPolicyForTargetHttpsProxy\(\) to composite [\#1021](https://github.com/kubernetes/ingress-gce/pull/1021) ([spencerhance](https://github.com/spencerhance))
+- Add SslPolicy Field to FrontendConfig [\#1020](https://github.com/kubernetes/ingress-gce/pull/1020) ([spencerhance](https://github.com/spencerhance))
+- Implement SslPolicies for TargetHttpsProxy [\#1019](https://github.com/kubernetes/ingress-gce/pull/1019) ([spencerhance](https://github.com/spencerhance))
+- Update k8s-cloud-provider to 1.12.0 [\#1017](https://github.com/kubernetes/ingress-gce/pull/1017) ([spencerhance](https://github.com/spencerhance))
+- Cherrypick \#976, \#984, \#990 and \#1012 \[Ingress Usage metrics\] into release 1.8 [\#1015](https://github.com/kubernetes/ingress-gce/pull/1015) ([skmatti](https://github.com/skmatti))
+- Remove `DefaultBackendHealthCheckPath` as a parameter [\#1013](https://github.com/kubernetes/ingress-gce/pull/1013) ([bowei](https://github.com/bowei))
+- Make metrics label Snake case compliant  [\#1012](https://github.com/kubernetes/ingress-gce/pull/1012) ([skmatti](https://github.com/skmatti))
+- Remove enable-istio flag for e2e test. [\#1011](https://github.com/kubernetes/ingress-gce/pull/1011) ([cadmuxe](https://github.com/cadmuxe))
+- Add HealthCheckConfig to v1beta1 BackendConfig CRD [\#1010](https://github.com/kubernetes/ingress-gce/pull/1010) ([AnishShah](https://github.com/AnishShah))
+- Ignore 'resource being used by' error [\#1008](https://github.com/kubernetes/ingress-gce/pull/1008) ([skmatti](https://github.com/skmatti))
+- Fix error log [\#1007](https://github.com/kubernetes/ingress-gce/pull/1007) ([skmatti](https://github.com/skmatti))
+- added test case TestBasicWindows [\#1006](https://github.com/kubernetes/ingress-gce/pull/1006) ([yliaog](https://github.com/yliaog))
+- Handle zones with non-uniform node count in L4 ILB Subsetting [\#1004](https://github.com/kubernetes/ingress-gce/pull/1004) ([prameshj](https://github.com/prameshj))
+- Add changelog for v1.8.0 [\#998](https://github.com/kubernetes/ingress-gce/pull/998) ([spencerhance](https://github.com/spencerhance))
+- Add version mapping for v1.8.0 [\#997](https://github.com/kubernetes/ingress-gce/pull/997) ([skmatti](https://github.com/skmatti))
+- Adding support for healthchecks to the backend configs. [\#996](https://github.com/kubernetes/ingress-gce/pull/996) ([vbannai](https://github.com/vbannai))
+- Make frontend resource deletion test verify that ingress VIP is unchanged  [\#995](https://github.com/kubernetes/ingress-gce/pull/995) ([skmatti](https://github.com/skmatti))
+- Bugfix: Use Static IP to create forwarding rule when available [\#994](https://github.com/kubernetes/ingress-gce/pull/994) ([skmatti](https://github.com/skmatti))
+- Graduate backendconfig to GA [\#992](https://github.com/kubernetes/ingress-gce/pull/992) ([skmatti](https://github.com/skmatti))
+- Add a controller for handling L4 Internal LoadBalancer services [\#991](https://github.com/kubernetes/ingress-gce/pull/991) ([prameshj](https://github.com/prameshj))
+- Register NEG usage metrics [\#990](https://github.com/kubernetes/ingress-gce/pull/990) ([skmatti](https://github.com/skmatti))
+- Fix the 'Get' & 'List' Composite API to call the underlying Regional service API  [\#988](https://github.com/kubernetes/ingress-gce/pull/988) ([prameshj](https://github.com/prameshj))
+- Use the Regional Service API in composite types [\#987](https://github.com/kubernetes/ingress-gce/pull/987) ([prameshj](https://github.com/prameshj))
+- Fix e2e helper: WaitForNegs [\#986](https://github.com/kubernetes/ingress-gce/pull/986) ([cadmuxe](https://github.com/cadmuxe))
+- Update to latest ks8-cloud-provider and compute api versions. [\#985](https://github.com/kubernetes/ingress-gce/pull/985) ([prameshj](https://github.com/prameshj))
+- add neg usage metrics [\#984](https://github.com/kubernetes/ingress-gce/pull/984) ([freehan](https://github.com/freehan))
+- Skip checking delete for default NEG [\#983](https://github.com/kubernetes/ingress-gce/pull/983) ([skmatti](https://github.com/skmatti))
+- Fix issue with Network name [\#981](https://github.com/kubernetes/ingress-gce/pull/981) ([skmatti](https://github.com/skmatti))
+- Add e2e tests for NEG asm mode. [\#980](https://github.com/kubernetes/ingress-gce/pull/980) ([cadmuxe](https://github.com/cadmuxe))
+- Fix timestamp of legacy-cloud-providers dependency [\#979](https://github.com/kubernetes/ingress-gce/pull/979) ([prameshj](https://github.com/prameshj))
+- Fix the TrimField max length for ASM NEG name. [\#978](https://github.com/kubernetes/ingress-gce/pull/978) ([cadmuxe](https://github.com/cadmuxe))
+- fix broken link [\#977](https://github.com/kubernetes/ingress-gce/pull/977) ([ydcool](https://github.com/ydcool))
+- Add Ingress usage metrics [\#976](https://github.com/kubernetes/ingress-gce/pull/976) ([skmatti](https://github.com/skmatti))
+- Update legacy-cloud-provider code to pickup ILB subnet changes. [\#975](https://github.com/kubernetes/ingress-gce/pull/975) ([prameshj](https://github.com/prameshj))
+- Copy the address manager code for L4 ILB from k/legacy-cloud-providers [\#974](https://github.com/kubernetes/ingress-gce/pull/974) ([prameshj](https://github.com/prameshj))
+- update yaml and doc for enabling asm neg. [\#972](https://github.com/kubernetes/ingress-gce/pull/972) ([cadmuxe](https://github.com/cadmuxe))
+- e2e test run.sh add network [\#971](https://github.com/kubernetes/ingress-gce/pull/971) ([spencerhance](https://github.com/spencerhance))
+- Add createIlbSubnet flag to ilb e2e tests [\#970](https://github.com/kubernetes/ingress-gce/pull/970) ([spencerhance](https://github.com/spencerhance))
+- RegionalGCLBForVIP\(\) Fix [\#969](https://github.com/kubernetes/ingress-gce/pull/969) ([spencerhance](https://github.com/spencerhance))
+- Use kube-system UID instead of its hash to compute resource suffix [\#967](https://github.com/kubernetes/ingress-gce/pull/967) ([skmatti](https://github.com/skmatti))
+- Use type LoadBalancer instead of string [\#966](https://github.com/kubernetes/ingress-gce/pull/966) ([skmatti](https://github.com/skmatti))
+- Emit events only for non-nil ingresses [\#963](https://github.com/kubernetes/ingress-gce/pull/963) ([skmatti](https://github.com/skmatti))
+- Fix default backend port bug for ilb neg [\#961](https://github.com/kubernetes/ingress-gce/pull/961) ([spencerhance](https://github.com/spencerhance))
+- Update cloud-provider repo versions. [\#960](https://github.com/kubernetes/ingress-gce/pull/960) ([prameshj](https://github.com/prameshj))
+- Support creation of GCE\_VM\_PRIMARY\_IP NEGs for L4 ILB Services. [\#959](https://github.com/kubernetes/ingress-gce/pull/959) ([prameshj](https://github.com/prameshj))
+- Bugfix: Fix ingress passed to postUpgrade [\#958](https://github.com/kubernetes/ingress-gce/pull/958) ([skmatti](https://github.com/skmatti))
+- Bugfix: Fix service name in upgrade test [\#957](https://github.com/kubernetes/ingress-gce/pull/957) ([skmatti](https://github.com/skmatti))
+- Update finalizer tests to validate against an ingress finalizer [\#956](https://github.com/kubernetes/ingress-gce/pull/956) ([skmatti](https://github.com/skmatti))
+- Add NEG mocks for alpha API and a new transactions test [\#955](https://github.com/kubernetes/ingress-gce/pull/955) ([prameshj](https://github.com/prameshj))
+- Migrate Neg validator to use frontend namer factory [\#953](https://github.com/kubernetes/ingress-gce/pull/953) ([skmatti](https://github.com/skmatti))
+- Migrate Finalizer upgrade test to use the upgrade framework [\#952](https://github.com/kubernetes/ingress-gce/pull/952) ([skmatti](https://github.com/skmatti))
+- Migrate upgrade tests to use the upgrade framework [\#951](https://github.com/kubernetes/ingress-gce/pull/951) ([skmatti](https://github.com/skmatti))
+- Error out on invalid ingress frontend configuration [\#950](https://github.com/kubernetes/ingress-gce/pull/950) ([skmatti](https://github.com/skmatti))
+- Fix naming scheme on creation [\#948](https://github.com/kubernetes/ingress-gce/pull/948) ([skmatti](https://github.com/skmatti))
+- fix golint failures [\#930](https://github.com/kubernetes/ingress-gce/pull/930) ([huyuwen0222](https://github.com/huyuwen0222))
+- Add e2e tests for v2 frontend namer  [\#921](https://github.com/kubernetes/ingress-gce/pull/921) ([skmatti](https://github.com/skmatti))
+- Add e2e tests for frontend resource leak fix [\#905](https://github.com/kubernetes/ingress-gce/pull/905) ([skmatti](https://github.com/skmatti))
+
+## [v1.8.2](https://github.com/kubernetes/ingress-gce/tree/v1.8.2) (2020-02-24)
+
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.8.0...v1.8.2)
+
+**Fixed bugs:**
+
+- Cannot Disable HTTP when using managed-certificates. HTTPS + HTTP are both provisioned [\#764](https://github.com/kubernetes/ingress-gce/issues/764)
+- Container Native Load Balancing Umbrella Issue [\#583](https://github.com/kubernetes/ingress-gce/issues/583)
+
+**Closed issues:**
+
+- Traefik behind GCP Load Balancer, [\#1018](https://github.com/kubernetes/ingress-gce/issues/1018)
+- standard\_init\_linux.go:211: exec user process caused "permission denied" [\#1000](https://github.com/kubernetes/ingress-gce/issues/1000)
+- Ingress with both http and https enabled yields two separate IPs [\#993](https://github.com/kubernetes/ingress-gce/issues/993)
+- Add release note for 1.8 [\#989](https://github.com/kubernetes/ingress-gce/issues/989)
+- GCE Ingress multi-namespace routing [\#973](https://github.com/kubernetes/ingress-gce/issues/973)
+- GCE ingress health checks [\#937](https://github.com/kubernetes/ingress-gce/issues/937)
+- Consider throwing events when Readiness Reflector failed to patch pod [\#863](https://github.com/kubernetes/ingress-gce/issues/863)
+- Move e2e tests from k/k into this repository [\#667](https://github.com/kubernetes/ingress-gce/issues/667)
+
+**Merged pull requests:**
+
+- Enable Access Logs by default [\#1035](https://github.com/kubernetes/ingress-gce/pull/1035) ([skmatti](https://github.com/skmatti))
+- Cherrypick \#994\[Use Static IP to create forwarding rule when available\] into release 1.8 [\#999](https://github.com/kubernetes/ingress-gce/pull/999) ([skmatti](https://github.com/skmatti))
+
 # Change Log
 
 ## [v1.8.0](https://github.com/kubernetes/ingress-gce/tree/v1.8.0) (2019-12-07)
@@ -108,6 +311,31 @@
 - Add support for composite types for zonal resources [\#804](https://github.com/kubernetes/ingress-gce/pull/804) ([prameshj](https://github.com/prameshj))
 - Add scaffolding for supporting additional whitebox testing [\#603](https://github.com/kubernetes/ingress-gce/pull/603) ([rramkumar1](https://github.com/rramkumar1))
 
+## [v1.7.4](https://github.com/kubernetes/ingress-gce/tree/v1.7.4) (2020-05-11)
+
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.7.3...v1.7.4)
+
+**Merged pull requests:**
+
+- Cherrypick \#1076\[Return GCE LB deletion error\] into release-1.7 [\#1097](https://github.com/kubernetes/ingress-gce/pull/1097) ([skmatti](https://github.com/skmatti))
+- Cherrypick \#1051\[Fix kube-config for CRD informers\] into release-1.7 [\#1053](https://github.com/kubernetes/ingress-gce/pull/1053) ([skmatti](https://github.com/skmatti))
+
+## [v1.7.3](https://github.com/kubernetes/ingress-gce/tree/v1.7.3) (2020-02-24)
+
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.7.0...v1.7.3)
+
+**Merged pull requests:**
+
+- Update dependency google.golang.org/api to c3b745b [\#1033](https://github.com/kubernetes/ingress-gce/pull/1033) ([skmatti](https://github.com/skmatti))
+- Enable Access Logs by default [\#1023](https://github.com/kubernetes/ingress-gce/pull/1023) ([skmatti](https://github.com/skmatti))
+- Cherrypick \#946 into Release 1.7 [\#947](https://github.com/kubernetes/ingress-gce/pull/947) ([skmatti](https://github.com/skmatti))
+- Cherry pick \#912 \[Handle cache.DeletedFinalStateUnknown\] to release-1.7 [\#918](https://github.com/kubernetes/ingress-gce/pull/918) ([spencerhance](https://github.com/spencerhance))
+- Cherry Pick \#906 \(Fix ILB forwarding rule bug\) to release-1.7 [\#907](https://github.com/kubernetes/ingress-gce/pull/907) ([spencerhance](https://github.com/spencerhance))
+- Cherry pick \#900 into release-1.7 [\#903](https://github.com/kubernetes/ingress-gce/pull/903) ([spencerhance](https://github.com/spencerhance))
+- Cherry pick \#881 into 1.7 [\#902](https://github.com/kubernetes/ingress-gce/pull/902) ([skmatti](https://github.com/skmatti))
+- Cherry pick \#895 into 1 7 [\#897](https://github.com/kubernetes/ingress-gce/pull/897) ([spencerhance](https://github.com/spencerhance))
+- Cherry Pick \#869 \[Update list subnets call to Beta for L7-ILB\] to release-1.7 [\#890](https://github.com/kubernetes/ingress-gce/pull/890) ([spencerhance](https://github.com/spencerhance))
+
 ## [v1.7.0](https://github.com/kubernetes/ingress-gce/tree/v1.7.0) (2019-09-26)
 [Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.6.0...v1.7.0)
 
@@ -197,6 +425,14 @@
 - bump draining poll timeout to reduce flakes [\#779](https://github.com/kubernetes/ingress-gce/pull/779) ([krzyzacy](https://github.com/krzyzacy))
 - use GlobalForwardingRules\(\).Get\(\) when detected a global fw rule [\#778](https://github.com/kubernetes/ingress-gce/pull/778) ([krzyzacy](https://github.com/krzyzacy))
 - add explicit logs when fail to get a cloud resource [\#776](https://github.com/kubernetes/ingress-gce/pull/776) ([krzyzacy](https://github.com/krzyzacy))
+
+## [v1.6.2](https://github.com/kubernetes/ingress-gce/tree/v1.6.2) (2020-02-28)
+
+[Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.6.1...v1.6.2)
+
+**Merged pull requests:**
+
+- Enable Logging for BackendService by default [\#1044](https://github.com/kubernetes/ingress-gce/pull/1044) ([skmatti](https://github.com/skmatti))
 
 ## [v1.6.0](https://github.com/kubernetes/ingress-gce/tree/v1.6.0) (2019-06-14)
 [Full Changelog](https://github.com/kubernetes/ingress-gce/compare/v1.5.2...v1.6.0)
@@ -1020,4 +1256,4 @@
 - Update repo to be GCE specific [\#2](https://github.com/kubernetes/ingress-gce/pull/2) ([nicksardo](https://github.com/nicksardo))
 - Handle forbiddenError for XPN clusters by raising event [\#1](https://github.com/kubernetes/ingress-gce/pull/1) ([nicksardo](https://github.com/nicksardo))
 
-\* *This Change Log was automatically generated by [github_changelog_generator](https://github.com/skywinder/Github-Changelog-Generator)*
+\* *This Changelog was automatically generated by [github_changelog_generator](https://github.com/github-changelog-generator/github-changelog-generator)*
