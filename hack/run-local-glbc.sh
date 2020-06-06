@@ -43,4 +43,4 @@ ${GLBC} \
     --running-in-cluster=false \
     --logtostderr --v=${V} \
     --config-file-path=${GCECONF} \
-    | tee -a /tmp/glbc.log
+    2>&1 | tee -a /tmp/glbc.log
