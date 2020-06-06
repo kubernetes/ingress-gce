@@ -38,7 +38,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/apis/core"
 )
@@ -546,7 +546,7 @@ func getNegFromStore(svcNegLister cache.Indexer, namespace, negName string) (*ne
 
 // patchNegStatus patches the specified NegCR status with the provided new status
 func patchNegStatus(svcNegClient svcnegclient.Interface, oldStatus, newStatus negv1beta1.ServiceNetworkEndpointGroupStatus, namespace, negName string) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
-	patchBytes, err := utils.MergePatchBytes(negv1beta1.ServiceNetworkEndpointGroup{Status: oldStatus}, negv1beta1.ServiceNetworkEndpointGroup{Status: newStatus})
+	patchBytes, err := patch.MergePatchBytes(negv1beta1.ServiceNetworkEndpointGroup{Status: oldStatus}, negv1beta1.ServiceNetworkEndpointGroup{Status: newStatus})
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare patch bytes: %s", err)
 	}

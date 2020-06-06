@@ -44,6 +44,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
 	utilpointer "k8s.io/utils/pointer"
 )
@@ -576,7 +577,7 @@ func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.Servi
 
 // patchNegStatus patches the specified NegCR status with the provided new status
 func patchNegStatus(svcNegClient svcnegclient.Interface, oldNeg, newNeg negv1beta1.ServiceNetworkEndpointGroup) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
-	patchBytes, err := utils.MergePatchBytes(oldNeg, newNeg)
+	patchBytes, err := patch.MergePatchBytes(oldNeg, newNeg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to prepare patch bytes: %s", err)
 	}

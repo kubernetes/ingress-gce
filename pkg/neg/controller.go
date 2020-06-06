@@ -49,6 +49,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer2 "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
 )
 
@@ -693,7 +694,7 @@ func (c *Controller) syncDestinationRuleNegStatusAnnotation(namespace, destinati
 	newDestinationRule := destinationRule.DeepCopy()
 	newDestinationRule.SetAnnotations(drAnnotations)
 	// Get the diff, we only need the Object meta diff.
-	patchBytes, err := utils.StrategicMergePatchBytes(destinationRule, newDestinationRule, struct {
+	patchBytes, err := patch.StrategicMergePatchBytes(destinationRule, newDestinationRule, struct {
 		metav1.ObjectMeta `json:"metadata,omitempty" protobuf:"bytes,1,opt,name=metadata"`
 	}{})
 	if err != nil {

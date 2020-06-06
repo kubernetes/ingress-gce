@@ -31,7 +31,7 @@ import (
 	workloadv1a1 "k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1"
 	workloadclient "k8s.io/ingress-gce/pkg/experimental/workload/client/clientset/versioned"
 	daemonutils "k8s.io/ingress-gce/pkg/experimental/workload/daemon/utils"
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
 )
 
@@ -177,7 +177,7 @@ func OutputCredentials(credentials daemonutils.ClusterCredentials) {
 
 // preparePatchBytesforWorkloadStatus generates patch bytes based on the old and new workload status
 func preparePatchBytesforWorkloadStatus(oldStatus, newStatus workloadv1a1.WorkloadStatus) ([]byte, error) {
-	patchBytes, err := utils.StrategicMergePatchBytes(
+	patchBytes, err := patch.StrategicMergePatchBytes(
 		workloadv1a1.Workload{Status: oldStatus},
 		workloadv1a1.Workload{Status: newStatus},
 		workloadv1a1.Workload{},
