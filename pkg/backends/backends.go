@@ -83,6 +83,8 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 		// LogConfig is using GA API so this is not considered for computing API version.
 		LogConfig: &composite.BackendServiceLogConfig{
 			Enable: true,
+			// Sampling rate needs to be specified explicitly.
+			SampleRate: 1.0,
 		},
 	}
 
