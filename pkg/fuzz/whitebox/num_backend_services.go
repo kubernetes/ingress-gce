@@ -64,6 +64,10 @@ func (t *numBackendServicesTest) Test(ing *v1beta1.Ingress, gclb *fuzz.GCLB) err
 		if !cbe.GA.LogConfig.Enable {
 			return fmt.Errorf("access logs are disabled, expected to be enabled")
 		}
+		// Verify that sampling rate is 1.0
+		if cbe.GA.LogConfig.SampleRate != 1.0 {
+			return fmt.Errorf("unexpected access log sampling rate %f, expected to be 1.0", cbe.GA.LogConfig.SampleRate)
+		}
 	}
 
 	return nil
