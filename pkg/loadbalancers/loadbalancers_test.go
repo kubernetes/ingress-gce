@@ -1382,7 +1382,7 @@ func TestClusterNameChange(t *testing.T) {
 	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)
 	verifyHTTPForwardingRuleAndProxyLinks(t, j, l7, "")
 
-	newName := "newName"
+	newName := "new-name"
 	j.namer.SetUID(newName)
 
 	// Now the components should get renamed with the next suffix.

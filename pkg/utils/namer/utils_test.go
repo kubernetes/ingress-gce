@@ -118,3 +118,44 @@ func TestFrontendNamingScheme(t *testing.T) {
 		})
 	}
 }
+
+func TestIsValidGCEResourceName(t *testing.T) {
+	for _, tc := range []struct {
+		desc          string
+		name          string
+		expectIsValid bool
+	}{
+		{
+			desc: "nil string",
+		},
+		{
+			desc: "invalid name starts with numeric",
+			name: "2testname",
+		},
+		{
+			desc: "invalid name with dot character",
+			name: "test.name",
+		},
+		{
+			desc: "invalid name with capitals",
+			name: "testName",
+		},
+		{
+			desc: "invalid name with trailing -",
+			name: "test-name-",
+		},
+		{
+			desc: "invalid name with all numerics",
+			name: "123243",
+		},
+		{
+			desc:          "valid name",
+			name:          "test-name-123243",
+			expectIsValid: true,
+		},
+	} {
+		if got := isValidGCEResourceName(tc.name); got != tc.expectIsValid {
+			t.Errorf("isValidGCEResourceName(%s) = %t, want %t", tc.name, got, tc.expectIsValid)
+		}
+	}
+}
