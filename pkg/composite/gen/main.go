@@ -826,6 +826,9 @@ func ({{$type.VarName}} *{{$type.Name}}) To{{$version}}() (*compute{{$extension}
 	}
 	if {{$lower}}.LogConfig != nil {
 		{{$lower}}.LogConfig.ForceSendFields = []string{"Enable"}
+		if {{$lower}}.LogConfig.Enable {
+			{{$lower}}.LogConfig.ForceSendFields = []string{"Enable", "SampleRate"}
+		}
 	}
 	{{- end}}
 
