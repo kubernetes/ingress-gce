@@ -4030,6 +4030,9 @@ func (backendService *BackendService) ToAlpha() (*computealpha.BackendService, e
 	}
 	if alpha.LogConfig != nil {
 		alpha.LogConfig.ForceSendFields = []string{"Enable"}
+		if alpha.LogConfig.Enable {
+			alpha.LogConfig.ForceSendFields = []string{"Enable", "SampleRate"}
+		}
 	}
 
 	return alpha, nil
@@ -4052,6 +4055,9 @@ func (backendService *BackendService) ToBeta() (*computebeta.BackendService, err
 	}
 	if beta.LogConfig != nil {
 		beta.LogConfig.ForceSendFields = []string{"Enable"}
+		if beta.LogConfig.Enable {
+			beta.LogConfig.ForceSendFields = []string{"Enable", "SampleRate"}
+		}
 	}
 
 	return beta, nil
@@ -4074,6 +4080,9 @@ func (backendService *BackendService) ToGA() (*compute.BackendService, error) {
 	}
 	if ga.LogConfig != nil {
 		ga.LogConfig.ForceSendFields = []string{"Enable"}
+		if ga.LogConfig.Enable {
+			ga.LogConfig.ForceSendFields = []string{"Enable", "SampleRate"}
+		}
 	}
 
 	return ga, nil
