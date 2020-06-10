@@ -37,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/annotations"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
@@ -967,6 +968,136 @@ func TestGC(t *testing.T) {
 			sort.Strings(allIngressKeys)
 			if diff := cmp.Diff(tc.expectedIngresses, allIngressKeys); diff != "" {
 				t.Fatalf("Got diff for Ingresses after delete (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestOrphanedBackendConfig(t *testing.T) {
+	beConfig := &backendconfigv1.BackendConfig{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:      "test-bc",
+			Namespace: "test-ns",
+		},
+	}
+
+	cases := []struct {
+		desc    string
+		svcList []*api_v1.Service
+		want    bool
+	}{
+		{
+			desc: "wrong-namespace",
+			svcList: []*api_v1.Service{
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "svc-1",
+						Namespace: "wrong-ns",
+					},
+				},
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "svc-2",
+						Namespace: "wrong-ns",
+					},
+				},
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "svc-3",
+						Namespace: "wrong-ns",
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			desc: "no-annotation",
+			svcList: []*api_v1.Service{
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "svc-1",
+						Namespace: "test-ns",
+					},
+				},
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "svc-2",
+						Namespace: "test-ns",
+					},
+				},
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "svc-3",
+						Namespace: "test-ns",
+					},
+				},
+			},
+			want: true,
+		},
+		{
+			desc: "not-orphan-specified-in-ports",
+			svcList: []*api_v1.Service{
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "svc-1",
+						Namespace: "test-ns",
+					},
+				},
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "svc-2",
+						Namespace: "test-ns",
+					},
+				},
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "svc-3",
+						Namespace: "test-ns",
+						Annotations: map[string]string{
+							annotations.BackendConfigKey: `{"ports": {"8080": "test-bc"}}`,
+						},
+					},
+				},
+			},
+		},
+		{
+			desc: "not-orphan-specified-in-default",
+			svcList: []*api_v1.Service{
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "svc-1",
+						Namespace: "test-ns",
+					},
+				},
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "svc-2",
+						Namespace: "test-ns",
+					},
+				},
+				{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Name:      "svc-3",
+						Namespace: "test-ns",
+						Annotations: map[string]string{
+							annotations.BackendConfigKey: `{"default": "test-bc"}`,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			c := newLoadBalancerController()
+			for _, s := range tc.svcList {
+				addService(c, s)
+			}
+
+			got := c.orphanedBackendConfig(beConfig)
+			if got != tc.want {
+				t.Fatalf("Got %v but want %v", got, tc.want)
 			}
 		})
 	}

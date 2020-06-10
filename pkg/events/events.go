@@ -20,6 +20,8 @@ import (
 	"k8s.io/client-go/tools/record"
 )
 
+const OrphanResource = "OrphanResource"
+
 type RecorderProducer interface {
 	Recorder(ns string) record.EventRecorder
 }

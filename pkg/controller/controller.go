@@ -41,6 +41,7 @@ import (
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
+	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/healthchecks"
@@ -211,9 +212,12 @@ func NewLoadBalancerController(
 			lbc.ingQueue.Enqueue(convert(ings)...)
 		},
 		UpdateFunc: func(old, cur interface{}) {
+			beConfig := cur.(*backendconfigv1.BackendConfig)
+			if lbc.orphanedBackendConfig(beConfig) {
+				lbc.ctx.Recorder(beConfig.Namespace).Eventf(beConfig, apiv1.EventTypeWarning, events.OrphanResource, "BackendConfig does not have a Service associated with it.")
+			}
 			if !reflect.DeepEqual(old, cur) {
 				klog.V(3).Infof("obj(type %T) updated", cur)
-				beConfig := cur.(*backendconfigv1.BackendConfig)
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
 				lbc.ingQueue.Enqueue(convert(ings)...)
 			}
@@ -801,4 +805,9 @@ func frontendGCAlgorithm(ingExists bool, ing *v1beta1.Ingress) utils.FrontendGCA
 		klog.Errorf("Unexpected naming scheme %v", namingScheme)
 		return utils.NoCleanUpNeeded
 	}
+}
+
+func (lbc *LoadBalancerController) orphanedBackendConfig(bc *backendconfigv1.BackendConfig) bool {
+	l := operator.Services(lbc.ctx.Services().List()).ReferencesBackendConfig(bc)
+	return len(l.AsList()) == 0
 }
