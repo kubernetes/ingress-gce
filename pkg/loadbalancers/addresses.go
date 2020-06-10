@@ -34,7 +34,11 @@ func (l *L7) checkStaticIP() (err error) {
 		return fmt.Errorf("will not create static IP without a forwarding rule")
 	}
 	managedStaticIPName := l.namer.ForwardingRule(namer.HTTPProtocol)
-	// Don't manage staticIPs if the user has specified an IP.
+	if l.runtimeInfo.StaticIPName != "" {
+		managedStaticIPName = l.runtimeInfo.StaticIPName
+	}
+
+	// Don't manage staticIPs if the user has specified an IP that already exists.
 	address, manageStaticIP, err := l.getEffectiveIP()
 	if err != nil {
 		return err
