@@ -177,7 +177,7 @@ func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.Zo
 		klog.Errorf("Endpoint object is nil")
 		return zoneNetworkEndpointMap, networkEndpointPodMap, nil
 	}
-
+	var foundMatchingPort bool
 	for _, subset := range endpoints.Subsets {
 		matchPort := ""
 		// service spec allows target Port to be a named Port.
@@ -193,6 +193,7 @@ func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.Zo
 		if len(matchPort) == 0 {
 			continue
 		}
+		foundMatchingPort = true
 
 		// processAddressFunc adds the qualified endpoints from the input list into the endpointSet group by zone
 		processAddressFunc := func(addresses []v1.EndpointAddress, includeAllEndpoints bool) error {
@@ -243,6 +244,13 @@ func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.Zo
 		if err := processAddressFunc(subset.NotReadyAddresses, false); err != nil {
 			return nil, nil, err
 		}
+	}
+	if !foundMatchingPort {
+		klog.Errorf("Service port name %q was not found in the endpoints object %+v", servicePortName, endpoints)
+	}
+
+	if len(zoneNetworkEndpointMap) == 0 || len(networkEndpointPodMap) == 0 {
+		klog.V(3).Infof("Generated empty endpoint maps (zoneNetworkEndpointMap: %+v, networkEndpointPodMap: %v) from Endpoints object: %+v", zoneNetworkEndpointMap, networkEndpointPodMap, endpoints)
 	}
 	return zoneNetworkEndpointMap, networkEndpointPodMap, nil
 }
