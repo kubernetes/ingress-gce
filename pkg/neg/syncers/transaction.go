@@ -155,18 +155,18 @@ func (s *transactionSyncer) syncInternal() error {
 	if err != nil {
 		return err
 	}
+	s.logStats(currentMap, "current NEG endpoints")
+
 	// Merge the current state from cloud with the transaction table together
 	// The combined state represents the eventual result when all transactions completed
 	mergeTransactionIntoZoneEndpointMap(currentMap, s.transactions)
+	s.logStats(currentMap, "after in-progress operations have completed, NEG endpoints")
 
 	targetMap, endpointPodMap, err := s.endpointsCalculator.CalculateEndpoints(ep.(*apiv1.Endpoints), currentMap)
+	s.logStats(targetMap, "desired NEG endpoints")
 
 	// Calculate the endpoints to add and delete to transform the current state to desire state
 	addEndpoints, removeEndpoints := calculateNetworkEndpointDifference(targetMap, currentMap)
-	if s.NegType == negtypes.VmIpEndpointType && len(removeEndpoints) > 0 {
-		// Make removals minimum since the traffic will be abruptly stopped. Log removals
-		klog.V(3).Infof("Removing endpoints %+v from GCE_VM_IP NEG %s", removeEndpoints, s.negName)
-	}
 	// Calculate Pods that are already in the NEG
 	_, committedEndpoints := calculateNetworkEndpointDifference(addEndpoints, targetMap)
 	// Filter out the endpoints with existing transaction
@@ -185,7 +185,8 @@ func (s *transactionSyncer) syncInternal() error {
 		klog.V(4).Infof("No endpoint change for %s/%s, skip syncing NEG. ", s.Namespace, s.Name)
 		return nil
 	}
-
+	s.logEndpoints(addEndpoints, "adding endpoint")
+	s.logEndpoints(removeEndpoints, "removing endpoint")
 	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
 }
 
@@ -390,4 +391,18 @@ func mergeTransactionIntoZoneEndpointMap(endpointMap map[string]negtypes.Network
 		}
 	}
 	return
+}
+
+// logStats logs aggregated stats of the input endpointMap
+func (s *transactionSyncer) logStats(endpointMap map[string]negtypes.NetworkEndpointSet, desc string) {
+	stats := []string{}
+	for zone, endpointSet := range endpointMap {
+		stats = append(stats, fmt.Sprintf("%d endpoints in zone %q", endpointSet.Len(), zone))
+	}
+	klog.V(3).Infof("For NEG %q, %s: %s.", s.negName, desc, strings.Join(stats, ","))
+}
+
+// logEndpoints logs individual endpoint in the input endpointMap
+func (s *transactionSyncer) logEndpoints(endpointMap map[string]negtypes.NetworkEndpointSet, desc string) {
+	klog.V(3).Infof("For NEG %q, %s: %+v", s.negName, desc, endpointMap)
 }
