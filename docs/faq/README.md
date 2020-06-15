@@ -37,7 +37,7 @@ insufficient to debug, consult the controller specific FAQ.
 
 The following platforms currently deploy an Ingress controller addon: GCE, GKE,
 minikube. If you're running on any other platform, you can deploy an Ingress
-controller by following [this](/examples/deployment) example.
+controller by following [this](/docs/deploy) example.
 
 ## Are Ingress controllers namespaced?
 
