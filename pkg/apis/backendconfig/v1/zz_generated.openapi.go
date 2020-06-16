@@ -39,6 +39,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.IAPConfig":                  schema_pkg_apis_backendconfig_v1_IAPConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.LogConfig":                  schema_pkg_apis_backendconfig_v1_LogConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.OAuthClientCredentials":     schema_pkg_apis_backendconfig_v1_OAuthClientCredentials(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SecurityPolicyConfig":       schema_pkg_apis_backendconfig_v1_SecurityPolicyConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SessionAffinityConfig":      schema_pkg_apis_backendconfig_v1_SessionAffinityConfig(ref),
 	}
 }
@@ -429,6 +430,27 @@ func schema_pkg_apis_backendconfig_v1_OAuthClientCredentials(ref common.Referenc
 					},
 				},
 				Required: []string{"secretName"},
+			},
+		},
+	}
+}
+
+func schema_pkg_apis_backendconfig_v1_SecurityPolicyConfig(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "SecurityPolicyConfig contains configuration for CloudArmor-enabled backends.",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"name": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Name of the security policy that should be associated.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"name"},
 			},
 		},
 	}
