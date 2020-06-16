@@ -19,6 +19,8 @@ limitations under the License.
 package fake
 
 import (
+	"context"
+
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
@@ -39,7 +41,7 @@ var frontendconfigsResource = schema.GroupVersionResource{Group: "networking.gke
 var frontendconfigsKind = schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1beta1", Kind: "FrontendConfig"}
 
 // Get takes name of the frontendConfig, and returns the corresponding frontendConfig object, and an error if there is any.
-func (c *FakeFrontendConfigs) Get(name string, options v1.GetOptions) (result *v1beta1.FrontendConfig, err error) {
+func (c *FakeFrontendConfigs) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.FrontendConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewGetAction(frontendconfigsResource, c.ns, name), &v1beta1.FrontendConfig{})
 
@@ -50,7 +52,7 @@ func (c *FakeFrontendConfigs) Get(name string, options v1.GetOptions) (result *v
 }
 
 // List takes label and field selectors, and returns the list of FrontendConfigs that match those selectors.
-func (c *FakeFrontendConfigs) List(opts v1.ListOptions) (result *v1beta1.FrontendConfigList, err error) {
+func (c *FakeFrontendConfigs) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.FrontendConfigList, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewListAction(frontendconfigsResource, frontendconfigsKind, c.ns, opts), &v1beta1.FrontendConfigList{})
 
@@ -72,14 +74,14 @@ func (c *FakeFrontendConfigs) List(opts v1.ListOptions) (result *v1beta1.Fronten
 }
 
 // Watch returns a watch.Interface that watches the requested frontendConfigs.
-func (c *FakeFrontendConfigs) Watch(opts v1.ListOptions) (watch.Interface, error) {
+func (c *FakeFrontendConfigs) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
 		InvokesWatch(testing.NewWatchAction(frontendconfigsResource, c.ns, opts))
 
 }
 
 // Create takes the representation of a frontendConfig and creates it.  Returns the server's representation of the frontendConfig, and an error, if there is any.
-func (c *FakeFrontendConfigs) Create(frontendConfig *v1beta1.FrontendConfig) (result *v1beta1.FrontendConfig, err error) {
+func (c *FakeFrontendConfigs) Create(ctx context.Context, frontendConfig *v1beta1.FrontendConfig, opts v1.CreateOptions) (result *v1beta1.FrontendConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewCreateAction(frontendconfigsResource, c.ns, frontendConfig), &v1beta1.FrontendConfig{})
 
@@ -90,7 +92,7 @@ func (c *FakeFrontendConfigs) Create(frontendConfig *v1beta1.FrontendConfig) (re
 }
 
 // Update takes the representation of a frontendConfig and updates it. Returns the server's representation of the frontendConfig, and an error, if there is any.
-func (c *FakeFrontendConfigs) Update(frontendConfig *v1beta1.FrontendConfig) (result *v1beta1.FrontendConfig, err error) {
+func (c *FakeFrontendConfigs) Update(ctx context.Context, frontendConfig *v1beta1.FrontendConfig, opts v1.UpdateOptions) (result *v1beta1.FrontendConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewUpdateAction(frontendconfigsResource, c.ns, frontendConfig), &v1beta1.FrontendConfig{})
 
@@ -101,7 +103,7 @@ func (c *FakeFrontendConfigs) Update(frontendConfig *v1beta1.FrontendConfig) (re
 }
 
 // Delete takes name of the frontendConfig and deletes it. Returns an error if one occurs.
-func (c *FakeFrontendConfigs) Delete(name string, options *v1.DeleteOptions) error {
+func (c *FakeFrontendConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
 		Invokes(testing.NewDeleteAction(frontendconfigsResource, c.ns, name), &v1beta1.FrontendConfig{})
 
@@ -109,15 +111,15 @@ func (c *FakeFrontendConfigs) Delete(name string, options *v1.DeleteOptions) err
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *FakeFrontendConfigs) DeleteCollection(options *v1.DeleteOptions, listOptions v1.ListOptions) error {
-	action := testing.NewDeleteCollectionAction(frontendconfigsResource, c.ns, listOptions)
+func (c *FakeFrontendConfigs) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+	action := testing.NewDeleteCollectionAction(frontendconfigsResource, c.ns, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1beta1.FrontendConfigList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched frontendConfig.
-func (c *FakeFrontendConfigs) Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1beta1.FrontendConfig, err error) {
+func (c *FakeFrontendConfigs) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.FrontendConfig, err error) {
 	obj, err := c.Fake.
 		Invokes(testing.NewPatchSubresourceAction(frontendconfigsResource, c.ns, name, pt, data, subresources...), &v1beta1.FrontendConfig{})
 
