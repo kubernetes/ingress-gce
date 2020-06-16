@@ -110,6 +110,7 @@ type CacheKeyPolicy struct {
 }
 
 // SecurityPolicyConfig contains configuration for CloudArmor-enabled backends.
+// +k8s:openapi-gen=true
 type SecurityPolicyConfig struct {
 	// Name of the security policy that should be associated.
 	Name string `json:"name"`
