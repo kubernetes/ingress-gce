@@ -41,7 +41,7 @@ type TLSCertsFromSecretsLoader struct {
 var _ TlsLoader = &TLSCertsFromSecretsLoader{}
 
 func (t *TLSCertsFromSecretsLoader) Load(ing *v1beta1.Ingress) ([]*loadbalancers.TLSCerts, error) {
-	env, err := translator.NewEnv(ing, t.Client)
+	env, err := translator.NewEnv(ing, t.Client, "", "", "")
 	if err != nil {
 		return nil, fmt.Errorf("error initializing translator env: %v", err)
 	}

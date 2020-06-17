@@ -15,6 +15,7 @@ package translator
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -28,6 +29,39 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
+
+// testNamer implements IngressFrontendNamer
+type testNamer struct {
+	prefix string
+}
+
+func (n *testNamer) ForwardingRule(namer_util.NamerProtocol) string {
+	return fmt.Sprintf("%s-fr", n.prefix)
+}
+
+func (n *testNamer) TargetProxy(namer_util.NamerProtocol) string {
+	return fmt.Sprintf("%s-tp", n.prefix)
+}
+
+func (n *testNamer) UrlMap() string {
+	return fmt.Sprintf("%s-um", n.prefix)
+}
+
+func (n *testNamer) SSLCertName(secretHash string) string {
+	return fmt.Sprintf("%s-cert-%s", n.prefix, secretHash)
+}
+
+func (n *testNamer) IsCertNameForLB(string) bool {
+	panic("Unimplemented")
+}
+
+func (n *testNamer) IsLegacySSLCert(string) bool {
+	panic("Unimplemented")
+}
+
+func (n *testNamer) LoadBalancer() namer_util.LoadBalancerName {
+	panic("Unimplemented")
+}
 
 func TestToComputeURLMap(t *testing.T) {
 	t.Parallel()
@@ -242,7 +276,7 @@ func TestSecrets(t *testing.T) {
 				kubeClient.CoreV1().Secrets(tc.ing.Namespace).Create(context.TODO(), v, meta_v1.CreateOptions{})
 			}
 
-			env, err := NewEnv(tc.ing, kubeClient)
+			env, err := NewEnv(tc.ing, kubeClient, "", "", "")
 			if err != nil {
 				t.Fatalf("NewEnv(): %v", err)
 			}
@@ -257,6 +291,94 @@ func TestSecrets(t *testing.T) {
 
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Fatalf("Got diff (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestToForwardingRule(t *testing.T) {
+	proxyLink := "my-proxy"
+	description := "foo"
+	version := meta.VersionGA
+	network := "my-network"
+	subnetwork := "my-subnetwork"
+	vip := "127.0.0.1"
+
+	cases := []struct {
+		desc     string
+		isL7ILB  bool
+		protocol namer_util.NamerProtocol
+		want     *composite.ForwardingRule
+	}{
+		{
+			desc:     "http-xlb",
+			protocol: namer_util.HTTPProtocol,
+			want: &composite.ForwardingRule{
+				Name:        "foo-fr",
+				IPAddress:   vip,
+				Target:      proxyLink,
+				PortRange:   httpDefaultPortRange,
+				IPProtocol:  "TCP",
+				Description: description,
+				Version:     version,
+			},
+		},
+		{
+			desc:     "https-xlb",
+			protocol: namer_util.HTTPSProtocol,
+			want: &composite.ForwardingRule{
+				Name:        "foo-fr",
+				IPAddress:   vip,
+				Target:      proxyLink,
+				PortRange:   httpsDefaultPortRange,
+				IPProtocol:  "TCP",
+				Description: description,
+				Version:     version,
+			},
+		},
+		{
+			desc:     "http-ilb",
+			isL7ILB:  true,
+			protocol: namer_util.HTTPProtocol,
+			want: &composite.ForwardingRule{
+				Name:                "foo-fr",
+				IPAddress:           vip,
+				Target:              proxyLink,
+				PortRange:           httpDefaultPortRange,
+				IPProtocol:          "TCP",
+				Description:         description,
+				Version:             version,
+				LoadBalancingScheme: "INTERNAL_MANAGED",
+				Network:             network,
+				Subnetwork:          subnetwork,
+			},
+		},
+		{
+			desc:     "https-ilb",
+			isL7ILB:  true,
+			protocol: namer_util.HTTPSProtocol,
+			want: &composite.ForwardingRule{
+				Name:                "foo-fr",
+				IPAddress:           vip,
+				Target:              proxyLink,
+				PortRange:           httpsDefaultPortRange,
+				IPProtocol:          "TCP",
+				Description:         description,
+				Version:             version,
+				LoadBalancingScheme: "INTERNAL_MANAGED",
+				Network:             network,
+				Subnetwork:          subnetwork,
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			tr := NewTranslator(tc.isL7ILB, &testNamer{"foo"})
+			env := &Env{VIP: vip, Network: network, Subnetwork: subnetwork}
+			got := tr.ToCompositeForwardingRule(env, tc.protocol, version, proxyLink, description)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Got diff for ForwardingRule (-want +got):\n%s", diff)
 			}
 		})
 	}
