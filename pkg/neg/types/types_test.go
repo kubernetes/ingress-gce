@@ -75,42 +75,42 @@ func TestPortInfoMapMerge(t *testing.T) {
 		{
 			"empty map union a non-empty map is the non-empty map",
 			PortInfoMap{},
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false, nil),
 			false,
 		},
 		{
 			"empty map union a non-empty map is the non-empty map 2",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, true),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, true, nil),
 			PortInfoMap{},
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, true),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, true, nil),
 			false,
 		},
 		{
 			"union of two non-empty maps, none has readiness gate enabled",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
 			false,
 		},
 		{
 			"union of two non-empty maps, all have readiness gate enabled ",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, true),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, true),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, true),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, true, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, true, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, true, nil),
 			false,
 		},
 		{
 			"union of two non-empty maps with one overlapping service port",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
 			false,
 		},
 		{
 			"union of two non-empty maps with overlapping service port and difference in readiness gate configurations ",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, true),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, true, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
 			PortInfoMap{
 				PortInfoMapKey{80, ""}: PortInfo{
 					PortTuple: SvcPortTuple{
@@ -141,8 +141,8 @@ func TestPortInfoMapMerge(t *testing.T) {
 		},
 		{
 			"union of two non-empty maps with overlapping service port and difference in readiness gate configurations with named port",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "foo", TargetPort: "3000"}, SvcPortTuple{Port: 5000, Name: "bar", TargetPort: "6000"}), namer, true),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "foo", TargetPort: "3000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "foo", TargetPort: "3000"}, SvcPortTuple{Port: 5000, Name: "bar", TargetPort: "6000"}), namer, true, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "foo", TargetPort: "3000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
 			PortInfoMap{
 				PortInfoMapKey{80, ""}: PortInfo{
 					PortTuple: SvcPortTuple{
@@ -221,15 +221,22 @@ func TestPortInfoMapMerge(t *testing.T) {
 		},
 		{
 			"error on inconsistent value",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8000, TargetPort: "9000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "3000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8000, TargetPort: "9000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
 			true,
 		},
 		{
 			"error on inconsistent port name",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "foo", TargetPort: "3000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "bar", TargetPort: "3000"}, SvcPortTuple{Port: 8000, TargetPort: "9000"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "foo", TargetPort: "3000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "bar", TargetPort: "3000"}, SvcPortTuple{Port: 8000, TargetPort: "9000"}), namer, false, nil),
+			PortInfoMap{},
+			true,
+		},
+		{
+			"error on inconsistent neg name",
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "foo", TargetPort: "3000"}), namer, false, map[SvcPortTuple]string{SvcPortTuple{Port: 80, Name: "foo", TargetPort: "3000"}: "neg-1"}),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "bar", TargetPort: "3000"}, SvcPortTuple{Port: 8000, TargetPort: "9000"}), namer, false, nil),
 			PortInfoMap{},
 			true,
 		},
@@ -280,62 +287,68 @@ func TestPortInfoMapDifference(t *testing.T) {
 		{
 			"empty map difference a non-empty map is empty map",
 			PortInfoMap{},
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false, nil),
 			PortInfoMap{},
 		},
 		{
 			"non-empty map difference a non-empty map is the non-empty map",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false, nil),
 			PortInfoMap{},
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false, nil),
 		},
 		{
 			"non-empty map difference a non-empty map is the non-empty map 2",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, true),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, true, nil),
 			PortInfoMap{},
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, true),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, true, nil),
 		},
 		{
 			"difference of two non-empty maps with the same elements",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false, nil),
 			PortInfoMap{},
 		},
 		{
 			"difference of two non-empty maps with no elements in common returns p1",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, false, nil),
 		},
 		{
 			"difference of two non-empty maps with elements in common",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}), namer, false, nil),
 		},
 		{
 			"difference of two non-empty maps with a key in common but different in value",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}), namer, false, nil),
 		},
 		{
 			"difference of two non-empty maps with 2 keys in common but different in values",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "8443"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}, SvcPortTuple{Port: 443, TargetPort: "9443"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "8443"}), namer, false),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "8443"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}, SvcPortTuple{Port: 443, TargetPort: "9443"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "8443"}), namer, false, nil),
 		},
 		{
 			"difference of two non-empty maps with a key in common but different in readiness gate fields",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}), namer, true),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}), namer, true),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}), namer, true, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}), namer, true, nil),
 		},
 		{
 			"difference of two non-empty maps with 2 keys in common and 2 more items with different readinessGate",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, true),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, true),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, true, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, true, nil),
+		},
+		{
+			"difference of two non-empty maps with a key in common but different neg names",
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}), namer, true, map[SvcPortTuple]string{SvcPortTuple{Port: 80, TargetPort: "8080"}: "neg-1"}),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}), namer, true, map[SvcPortTuple]string{SvcPortTuple{Port: 80, TargetPort: "8080"}: "neg-1"}),
 		},
 	}
 
@@ -404,22 +417,22 @@ func TestNegsWithReadinessGate(t *testing.T) {
 		{
 			desc: "PortInfoMap with no readiness gate enabled",
 			getPortInfoMap: func() PortInfoMap {
-				return NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false)
+				return NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil)
 			},
 			expectNegs: sets.NewString(),
 		},
 		{
 			desc: "PortInfoMap with all readiness gates enabled",
 			getPortInfoMap: func() PortInfoMap {
-				return NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, true)
+				return NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}, SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, true, nil)
 			},
 			expectNegs: sets.NewString(namer.NEG(namespace, name, 80), namer.NEG(namespace, name, 443), namer.NEG(namespace, name, 5000), namer.NEG(namespace, name, 8080)),
 		},
 		{
 			desc: "PortInfoMap with part of readiness gates enabled",
 			getPortInfoMap: func() PortInfoMap {
-				p := NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, true)
-				p.Merge(NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false))
+				p := NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 5000, TargetPort: "6000"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, true, nil)
+				p.Merge(NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "namedport"}, SvcPortTuple{Port: 443, TargetPort: "3000"}), namer, false, nil))
 				return p
 			},
 			expectNegs: sets.NewString(namer.NEG(namespace, name, 5000), namer.NEG(namespace, name, 8080)),
@@ -429,5 +442,63 @@ func TestNegsWithReadinessGate(t *testing.T) {
 		if !negs.Equal(tc.expectNegs) {
 			t.Errorf("For test case %q, expect %v, but got %v", tc.desc, tc.expectNegs, negs)
 		}
+	}
+}
+
+func TestCustomNamedNegs(t *testing.T) {
+	var (
+		svcNamespace  = "namespace"
+		svcName       = "svc-name"
+		negName1      = "neg1"
+		negName2      = "neg2"
+		port1         = int32(80)
+		port2         = int32(432)
+		targetPort1   = "3000"
+		targetPort2   = "3001"
+		namer         = &negNamer{}
+		svcPortTuple1 = SvcPortTuple{Port: port1, TargetPort: targetPort1}
+		svcPortTuple2 = SvcPortTuple{Port: port2, TargetPort: targetPort2}
+	)
+	testcases := []struct {
+		desc                string
+		svcPortTuples       SvcPortTupleSet
+		customNamedNegs     map[SvcPortTuple]string
+		expectedPortInfoMap PortInfoMap
+	}{
+		{
+			desc:          "no custom named negs",
+			svcPortTuples: NewSvcPortTupleSet(svcPortTuple1, svcPortTuple2),
+			expectedPortInfoMap: PortInfoMap{
+				PortInfoMapKey{port1, ""}: PortInfo{PortTuple: svcPortTuple1, NegName: namer.NEG(svcNamespace, svcName, port1), ReadinessGate: false},
+				PortInfoMapKey{port2, ""}: PortInfo{PortTuple: svcPortTuple2, NegName: namer.NEG(svcNamespace, svcName, port2), ReadinessGate: false},
+			},
+		},
+		{
+			desc:            "all custom named negs",
+			svcPortTuples:   NewSvcPortTupleSet(svcPortTuple1, svcPortTuple2),
+			customNamedNegs: map[SvcPortTuple]string{svcPortTuple1: negName1, svcPortTuple2: negName2},
+			expectedPortInfoMap: PortInfoMap{
+				PortInfoMapKey{port1, ""}: PortInfo{PortTuple: svcPortTuple1, NegName: negName1, ReadinessGate: false},
+				PortInfoMapKey{port2, ""}: PortInfo{PortTuple: svcPortTuple2, NegName: negName2, ReadinessGate: false},
+			},
+		},
+		{
+			desc:            "1 custom named negs, 1 autogenerated named neg",
+			svcPortTuples:   NewSvcPortTupleSet(svcPortTuple1, svcPortTuple2),
+			customNamedNegs: map[SvcPortTuple]string{svcPortTuple1: negName1},
+			expectedPortInfoMap: PortInfoMap{
+				PortInfoMapKey{port1, ""}: PortInfo{PortTuple: svcPortTuple1, NegName: negName1, ReadinessGate: false},
+				PortInfoMapKey{port2, ""}: PortInfo{PortTuple: svcPortTuple2, NegName: namer.NEG(svcNamespace, svcName, port2), ReadinessGate: false},
+			},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			result := NewPortInfoMap(svcNamespace, svcName, tc.svcPortTuples, namer, false, tc.customNamedNegs)
+			if !reflect.DeepEqual(tc.expectedPortInfoMap, result) {
+				t.Errorf("Expected portInfoMap to equal: %v; got: %v", tc.expectedPortInfoMap, result)
+			}
+		})
 	}
 }

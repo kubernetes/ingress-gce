@@ -126,12 +126,16 @@ type PortInfoMapKey struct {
 // PortInfoMap is a map of PortInfoMapKey:PortInfo
 type PortInfoMap map[PortInfoMapKey]PortInfo
 
-func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, namer NetworkEndpointGroupNamer, readinessGate bool) PortInfoMap {
+func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, namer NetworkEndpointGroupNamer, readinessGate bool, customNegNames map[SvcPortTuple]string) PortInfoMap {
 	ret := PortInfoMap{}
 	for svcPortTuple := range svcPortTupleSet {
+		negName, ok := customNegNames[svcPortTuple]
+		if !ok {
+			negName = namer.NEG(namespace, name, svcPortTuple.Port)
+		}
 		ret[PortInfoMapKey{svcPortTuple.Port, ""}] = PortInfo{
 			PortTuple:     svcPortTuple,
-			NegName:       namer.NEG(namespace, name, svcPortTuple.Port),
+			NegName:       negName,
 			ReadinessGate: readinessGate,
 		}
 	}
