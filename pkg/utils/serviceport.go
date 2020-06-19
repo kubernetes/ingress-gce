@@ -19,6 +19,8 @@ package utils
 import (
 	"fmt"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -52,6 +54,16 @@ type ServicePort struct {
 	L7ILBEnabled   bool
 	BackendConfig  *backendconfigv1.BackendConfig
 	BackendNamer   namer.BackendNamer
+}
+
+// GetAPIVersionFromServicePort returns the compute API version to be used
+// for creating NEGs associated with the given ServicePort.
+func GetAPIVersionFromServicePort(sp *ServicePort) meta.Version {
+	if sp.VMIPNEGEnabled {
+		// this uses VM_IP NEGS which requires alpha API
+		return meta.VersionAlpha
+	}
+	return meta.VersionGA
 }
 
 // GetDescription returns a Description for this ServicePort.
