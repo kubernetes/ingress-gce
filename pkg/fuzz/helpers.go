@@ -302,6 +302,15 @@ func (i *IngressBuilder) SetFrontendConfig(name string) *IngressBuilder {
 	return i
 }
 
+// SetPathPrefixRewrite sets the PathPrefixRewrite annotation on the ingress
+func (i *IngressBuilder) SetPathPrefixRewrite(val string) *IngressBuilder {
+	if i.ing.Annotations == nil {
+		i.ing.Annotations = make(map[string]string)
+	}
+	i.ing.Annotations[annotations.PathPrefixRewriteKey] = val
+	return i
+}
+
 // BackendConfigBuilder is syntactic sugar for creating BackendConfig specs for testing
 // purposes.
 //
