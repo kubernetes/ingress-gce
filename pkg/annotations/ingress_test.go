@@ -33,6 +33,7 @@ func TestIngress(t *testing.T) {
 		staticIPName string
 		ingressClass string
 		wantErr      bool
+		urlRewrite   string
 	}{
 		{
 			desc:      "Empty ingress",
@@ -64,6 +65,7 @@ func TestIngress(t *testing.T) {
 						IngressClassKey:       "gce",
 						PreSharedCertKey:      "shared-cert-key",
 						GlobalStaticIPNameKey: "1.2.3.4",
+						PathPrefixRewriteKey: "/api/v1",
 					},
 				},
 			},
@@ -71,6 +73,7 @@ func TestIngress(t *testing.T) {
 			useNamedTLS:  "shared-cert-key",
 			staticIPName: "1.2.3.4",
 			ingressClass: "gce",
+			urlRewrite:   "/api/v1",
 		},
 	} {
 		ing := FromIngress(tc.ing)
@@ -94,6 +97,9 @@ func TestIngress(t *testing.T) {
 		}
 		if x := ing.IngressClass(); x != tc.ingressClass {
 			t.Errorf("ingress %+v; IngressClass() = %v, want %v", tc.ing, x, tc.ingressClass)
+		}
+		if x := ing.PathPrefixRewrite(); x != tc.urlRewrite {
+			t.Errorf("ingress %+v; PathPrefixRewrite() = %v, want %v", tc.ing, x, tc.urlRewrite)
 		}
 	}
 }

@@ -30,6 +30,8 @@ type GCEURLMap struct {
 	DefaultBackend *ServicePort
 	// HostRules is an ordered list of hostnames, path rule tuples.
 	HostRules []HostRule
+	// PathPrefixRewrite is a global rewrite rule that is added to all path rules in the URL map
+	PathPrefixRewrite string
 	// hosts is a map of existing hosts.
 	hosts map[string]bool
 }
@@ -58,6 +60,10 @@ func EqualMapping(a, b *GCEURLMap) bool {
 		return false
 	}
 	if a.DefaultBackend != nil && a.DefaultBackend.ID != b.DefaultBackend.ID {
+		return false
+	}
+
+	if a.PathPrefixRewrite != b.PathPrefixRewrite {
 		return false
 	}
 
@@ -188,5 +194,6 @@ func (g *GCEURLMap) String() string {
 		}
 	}
 	b.WriteString(fmt.Sprintf("Default Backend: %+v", g.DefaultBackend))
+	b.WriteString(fmt.Sprintf("Path Prefix Rewrite: %+v", g.PathPrefixRewrite))
 	return b.String()
 }

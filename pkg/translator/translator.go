@@ -187,6 +187,11 @@ func ToCompositeURLMap(g *utils.GCEURLMap, namer namer.IngressFrontendNamer, key
 			pathMatcher.PathRules = append(pathMatcher.PathRules, &composite.PathRule{
 				Paths:   []string{rule.Path},
 				Service: beLink,
+				RouteAction: &composite.HttpRouteAction{
+					UrlRewrite: &composite.UrlRewrite{
+						PathPrefixRewrite: g.PathPrefixRewrite,
+					},
+				},
 			})
 		}
 		m.PathMatchers = append(m.PathMatchers, pathMatcher)

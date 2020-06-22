@@ -681,6 +681,8 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *u
 	if err != nil {
 		return nil, err
 	}
+	
+	urlMap.PathPrefixRewrite = annotations.PathPrefixRewrite()
 
 	return &loadbalancers.L7RuntimeInfo{
 		TLS:            tls,

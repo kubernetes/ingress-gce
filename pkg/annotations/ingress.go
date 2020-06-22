@@ -87,6 +87,10 @@ const (
 	//     networking.gke.io/v1beta1.FrontendConfig: 'my-frontendconfig'
 	FrontendConfigKey = "networking.gke.io/v1beta1.FrontendConfig"
 
+	// PathPrefixRewriteKey is the annotation key used by controller to
+	// configure an URL rewrite rule used by the load balancer.
+	PathPrefixRewriteKey = "ingress.gcp.kubernetes.io/path-prefix-rewrite"
+
 	// UrlMapKey is the annotation key used by controller to record GCP URL map.
 	UrlMapKey = StatusPrefix + "/url-map"
 	// HttpForwardingRuleKey is the annotation key used by controller to record
@@ -199,6 +203,14 @@ func (ing *Ingress) SuppressFirewallXPNError() bool {
 
 func (ing *Ingress) FrontendConfig() string {
 	val, ok := ing.v[FrontendConfigKey]
+	if !ok {
+		return ""
+	}
+	return val
+}
+
+func (ing *Ingress) PathPrefixRewrite() string {
+	val, ok := ing.v[PathPrefixRewriteKey]
 	if !ok {
 		return ""
 	}

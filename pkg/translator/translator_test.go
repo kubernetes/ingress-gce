@@ -72,7 +72,8 @@ func TestToComputeURLMap(t *testing.T) {
 	wantComputeMap := testCompositeURLMap()
 	namer := namer_util.NewNamer("uid1", "fw1")
 	gceURLMap := &utils.GCEURLMap{
-		DefaultBackend: &utils.ServicePort{NodePort: 30000, BackendNamer: namer},
+		DefaultBackend:    &utils.ServicePort{NodePort: 30000, BackendNamer: namer},
+		PathPrefixRewrite: "/",
 		HostRules: []utils.HostRule{
 			{
 				Hostname: "abc.com",
@@ -133,10 +134,20 @@ func testCompositeURLMap() *composite.UrlMap {
 					{
 						Paths:   []string{"/web"},
 						Service: "global/backendServices/k8s-be-32000--uid1",
+						RouteAction: &composite.HttpRouteAction{
+							UrlRewrite: &composite.UrlRewrite{
+								PathPrefixRewrite: "/",
+							},
+						},
 					},
 					{
 						Paths:   []string{"/other"},
 						Service: "global/backendServices/k8s-be-32500--uid1",
+						RouteAction: &composite.HttpRouteAction{
+							UrlRewrite: &composite.UrlRewrite{
+								PathPrefixRewrite: "/",
+							},
+						},
 					},
 				},
 			},
@@ -147,10 +158,20 @@ func testCompositeURLMap() *composite.UrlMap {
 					{
 						Paths:   []string{"/"},
 						Service: "global/backendServices/k8s-be-33000--uid1",
+						RouteAction: &composite.HttpRouteAction{
+							UrlRewrite: &composite.UrlRewrite{
+								PathPrefixRewrite: "/",
+							},
+						},
 					},
 					{
 						Paths:   []string{"/*"},
 						Service: "global/backendServices/k8s-be-33500--uid1",
+						RouteAction: &composite.HttpRouteAction{
+							UrlRewrite: &composite.UrlRewrite{
+								PathPrefixRewrite: "/",
+							},
+						},
 					},
 				},
 			},
