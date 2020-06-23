@@ -19,7 +19,6 @@ package healthchecks
 import (
 	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	computealpha "google.golang.org/api/compute/v0.alpha"
@@ -38,8 +37,6 @@ import (
 // HealthChecks manages health checks.
 type HealthChecks struct {
 	cloud HealthCheckProvider
-	// path is the default health check path for backends.
-	path string
 	// This is a workaround which allows us to not have to maintain
 	// a separate health checker for the default backend.
 	defaultBackendSvc types.NamespacedName
@@ -48,43 +45,19 @@ type HealthChecks struct {
 // NewHealthChecker creates a new health checker.
 // cloud: the cloud object implementing SingleHealthCheck.
 // defaultHealthCheckPath: is the HTTP path to use for health checks.
-func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, defaultBackendSvc types.NamespacedName) *HealthChecks {
-	return &HealthChecks{cloud, healthCheckPath, defaultBackendSvc}
-}
-
-// new returns a *HealthCheck with default settings and specified port/protocol
-func (h *HealthChecks) new(sp utils.ServicePort) *translator.HealthCheck {
-	var hc *translator.HealthCheck
-	if sp.NEGEnabled && !sp.L7ILBEnabled {
-		hc = translator.DefaultNEGHealthCheck(sp.Protocol)
-	} else if sp.L7ILBEnabled {
-		hc = translator.DefaultILBHealthCheck(sp.Protocol)
-	} else {
-		hc = translator.DefaultHealthCheck(sp.NodePort, sp.Protocol)
-	}
-	// port is the key for retrieving existing health-check
-	// TODO: rename backend-service and health-check to not use port as key
-	hc.Name = sp.BackendName()
-	hc.Port = sp.NodePort
-	hc.RequestPath = h.pathFromSvcPort(sp)
-	return hc
+func NewHealthChecker(cloud HealthCheckProvider, defaultBackendSvc types.NamespacedName) *HealthChecks {
+	return &HealthChecks{cloud, defaultBackendSvc}
 }
 
 // SyncServicePort implements HealthChecker.
 func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (string, error) {
-	hc := h.new(*sp)
-	if probe != nil {
-		klog.V(2).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
-		translator.ApplyProbeSettingsToHC(probe, hc)
-	}
+	hc := translator.ToLegacyHealthCheck(*sp, probe, h.defaultBackendSvc)
 	var bchcc *backendconfigv1.HealthCheckConfig
 	if flags.F.EnableBackendConfigHealthCheck && sp.BackendConfig != nil && sp.BackendConfig.Spec.HealthCheck != nil {
 		bchcc = sp.BackendConfig.Spec.HealthCheck
-		klog.V(2).Infof("ServicePort (%v) has BackendConfig health check override (%+s)", sp.ID, formatBackendConfigHC(bchcc))
-	}
-	if bchcc != nil {
 		klog.V(2).Infof("ServicePort %v has BackendConfig healthcheck override", sp.ID)
 	}
+
 	return h.sync(hc, bchcc)
 }
 
@@ -101,8 +74,8 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 
 	existingHC, err := h.Get(hc.Name, hc.Version(), scope)
 	if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-		klog.V(2).Infof("Health check %q does not exist, creating (hc=%+v, bchcc=%+v)", hc.Name, hc, bchcc)
-		if err = h.create(hc, bchcc); err != nil {
+		klog.V(2).Infof("Health check %q does not exist, creating (hc=%+v)", hc.Name, hc)
+		if err = h.create(hc); err != nil {
 			klog.Errorf("Health check %q creation error: %v", hc.Name, err)
 			return "", err
 		}
@@ -116,7 +89,7 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 		return "", err
 	}
 
-	// First, merge in the configuration from the existing healthcheck to cover
+	// Merge in the configuration from the existing healthcheck to cover
 	// the case where the user has changed healthcheck settings outside of
 	// GKE.
 	premergeHC := hc
@@ -168,11 +141,7 @@ func (h *HealthChecks) createILB(hc *translator.HealthCheck) error {
 	return nil
 }
 
-func (h *HealthChecks) create(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig) error {
-	if bchcc != nil {
-		// BackendConfig healthcheck settings always take precedence.
-		hc.UpdateFromBackendConfig(bchcc)
-	}
+func (h *HealthChecks) create(hc *translator.HealthCheck) error {
 	// special case ILB to avoid mucking with stable HC code
 	if hc.ForILB {
 		return h.createILB(hc)
@@ -355,40 +324,4 @@ func (h *HealthChecks) Get(name string, version meta.Version, scope meta.KeyType
 		return nil, err
 	}
 	return translator.NewHealthCheck(hc)
-}
-
-// pathFromSvcPort returns the default path for a health check based on whether
-// the passed in ServicePort is associated with the system default backend.
-func (h *HealthChecks) pathFromSvcPort(sp utils.ServicePort) string {
-	if h.defaultBackendSvc == sp.ID.Service {
-		return flags.F.DefaultSvcHealthCheckPath
-	}
-	return h.path
-}
-
-// formatBackendConfigHC returns a human readable string version of the HealthCheckConfig
-func formatBackendConfigHC(b *backendconfigv1.HealthCheckConfig) string {
-	var ret []string
-
-	for _, e := range []struct {
-		v *int64
-		k string
-	}{
-		{k: "checkIntervalSec", v: b.CheckIntervalSec},
-		{k: "healthyThreshold", v: b.HealthyThreshold},
-		{k: "unhealthyThreshold", v: b.UnhealthyThreshold},
-		{k: "timeoutSec", v: b.TimeoutSec},
-		{k: "port", v: b.Port},
-	} {
-		if e.v != nil {
-			ret = append(ret, fmt.Sprintf("%s=%d", e.k, *e.v))
-		}
-	}
-	if b.Type != nil {
-		ret = append(ret, fmt.Sprintf("type=%s", *b.Type))
-	}
-	if b.RequestPath != nil {
-		ret = append(ret, fmt.Sprintf("requestPath=%q", *b.RequestPath))
-	}
-	return strings.Join(ret, ", ")
 }

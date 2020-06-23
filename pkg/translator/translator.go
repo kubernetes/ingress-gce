@@ -24,15 +24,18 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	api_v1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
+	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
-	"k8s.io/ingress-gce/pkg/flags"
-
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog"
 )
 
 // Env contains all k8s & GCP configuration needed to perform the translation.
@@ -310,4 +313,48 @@ func sslPolicyLink(env *Env) (*string, error) {
 	resID := resourceID.ResourcePath()
 
 	return &resID, nil
+}
+
+// ToLegacyHealthCheck returns a HealthCheck in its legacy "composite" representation. Eventually, we want this to return a composite.HealthCheck.
+func ToLegacyHealthCheck(sp utils.ServicePort, probe *v1.Probe, defaultBackendSvc types.NamespacedName) *HealthCheck {
+	var hc *HealthCheck
+	if sp.NEGEnabled && !sp.L7ILBEnabled {
+		hc = DefaultNEGHealthCheck(sp.Protocol)
+	} else if sp.L7ILBEnabled {
+		hc = DefaultILBHealthCheck(sp.Protocol)
+	} else {
+		hc = DefaultHealthCheck(sp.NodePort, sp.Protocol)
+	}
+
+	// port is the key for retrieving existing health-check
+	// TODO: rename backend-service and health-check to not use port as key
+	hc.Name = sp.BackendName()
+	hc.Port = sp.NodePort
+	hc.RequestPath = pathFromSvcPort(sp, defaultBackendSvc)
+
+	if probe != nil {
+		klog.V(2).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
+		ApplyProbeSettingsToHC(probe, hc)
+	}
+
+	var bchcc *backendconfigv1.HealthCheckConfig
+	if flags.F.EnableBackendConfigHealthCheck && sp.BackendConfig != nil && sp.BackendConfig.Spec.HealthCheck != nil {
+		bchcc = sp.BackendConfig.Spec.HealthCheck
+		klog.V(2).Infof("ServicePort (%v) has BackendConfig health check override (%+s)", sp.ID, formatBackendConfigHC(bchcc))
+	}
+	if bchcc != nil {
+		klog.V(2).Infof("ServicePort %v has BackendConfig healthcheck override", sp.ID)
+		hc.UpdateFromBackendConfig(bchcc)
+	}
+
+	return hc
+}
+
+// pathFromSvcPort returns the default path for a health check based on whether
+// the passed in ServicePort is associated with the system default backend.
+func pathFromSvcPort(sp utils.ServicePort, defaultBackendSvc types.NamespacedName) string {
+	if defaultBackendSvc == sp.ID.Service {
+		return flags.F.DefaultSvcHealthCheckPath
+	}
+	return flags.F.HealthCheckPath
 }

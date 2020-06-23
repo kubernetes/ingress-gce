@@ -317,3 +317,30 @@ func ApplyProbeSettingsToHC(p *v1.Probe, hc *HealthCheck) {
 
 	hc.Description = "Kubernetes L7 health check generated with readiness probe settings."
 }
+
+// formatBackendConfigHC returns a human readable string version of the HealthCheckConfig
+func formatBackendConfigHC(b *backendconfigv1.HealthCheckConfig) string {
+	var ret []string
+
+	for _, e := range []struct {
+		v *int64
+		k string
+	}{
+		{k: "checkIntervalSec", v: b.CheckIntervalSec},
+		{k: "healthyThreshold", v: b.HealthyThreshold},
+		{k: "unhealthyThreshold", v: b.UnhealthyThreshold},
+		{k: "timeoutSec", v: b.TimeoutSec},
+		{k: "port", v: b.Port},
+	} {
+		if e.v != nil {
+			ret = append(ret, fmt.Sprintf("%s=%d", e.k, *e.v))
+		}
+	}
+	if b.Type != nil {
+		ret = append(ret, fmt.Sprintf("type=%s", *b.Type))
+	}
+	if b.RequestPath != nil {
+		ret = append(ret, fmt.Sprintf("requestPath=%q", *b.RequestPath))
+	}
+	return strings.Join(ret, ", ")
+}

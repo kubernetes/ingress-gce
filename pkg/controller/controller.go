@@ -108,7 +108,7 @@ func NewLoadBalancerController(
 		Interface: ctx.KubeClient.CoreV1().Events(""),
 	})
 
-	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendSvcPort.ID.Service)
+	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.DefaultBackendSvcPort.ID.Service)
 	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer, ctx)
 	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
 

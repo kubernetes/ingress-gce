@@ -162,7 +162,6 @@ func main() {
 		Namespace:             flags.F.WatchNamespace,
 		ResyncPeriod:          flags.F.ResyncPeriod,
 		DefaultBackendSvcPort: defaultBackendServicePort,
-		HealthCheckPath:       flags.F.HealthCheckPath,
 		FrontendConfigEnabled: flags.F.EnableFrontendConfig,
 		EnableASMConfigMap:    flags.F.EnableASMConfigMapBasedConfig,
 		ASMConfigMapNamespace: flags.F.ASMConfigMapBasedConfigNamespace,
