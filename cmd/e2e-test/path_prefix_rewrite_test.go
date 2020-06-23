@@ -93,4 +93,5 @@ func verifyRewrite(gclb *fuzz.GCLB, want string) error {
 			}
 		}
 	}
+	return nil
 }
