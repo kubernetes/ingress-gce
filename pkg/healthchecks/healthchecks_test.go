@@ -37,6 +37,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -150,7 +151,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 	// HTTP
 	// Manually insert a health check
-	httpHC := DefaultHealthCheck(3000, annotations.ProtocolHTTP)
+	httpHC := translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP)
 	httpHC.Name = testNamer.IGBackend(3000)
 	httpHC.RequestPath = "/my-probes-health"
 	v1hc, err := httpHC.ToComputeHealthCheck()
@@ -173,7 +174,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 	// HTTPS
 	// Manually insert a health check
-	httpsHC := DefaultHealthCheck(4000, annotations.ProtocolHTTPS)
+	httpsHC := translator.DefaultHealthCheck(4000, annotations.ProtocolHTTPS)
 	httpsHC.Name = testNamer.IGBackend(4000)
 	httpsHC.RequestPath = "/my-probes-health"
 	v1hc, err = httpHC.ToComputeHealthCheck()
@@ -195,7 +196,7 @@ func TestHealthCheckAddExisting(t *testing.T) {
 
 	// HTTP2
 	// Manually insert a health check
-	http2 := DefaultHealthCheck(5000, annotations.ProtocolHTTP2)
+	http2 := translator.DefaultHealthCheck(5000, annotations.ProtocolHTTP2)
 	http2.Name = testNamer.IGBackend(5000)
 	http2.RequestPath = "/my-probes-health"
 	v1hc, err = httpHC.ToComputeHealthCheck()
@@ -221,7 +222,7 @@ func TestHealthCheckDelete(t *testing.T) {
 	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
 
 	// Create HTTP HC for 1234
-	hc := DefaultHealthCheck(1234, annotations.ProtocolHTTP)
+	hc := translator.DefaultHealthCheck(1234, annotations.ProtocolHTTP)
 	hc.Name = testNamer.IGBackend(1234)
 	v1hc, err := hc.ToComputeHealthCheck()
 	if err != nil {
@@ -251,7 +252,7 @@ func TestHTTP2HealthCheckDelete(t *testing.T) {
 	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
 
 	// Create HTTP2 HC for 1234
-	hc := DefaultHealthCheck(1234, annotations.ProtocolHTTP2)
+	hc := translator.DefaultHealthCheck(1234, annotations.ProtocolHTTP2)
 	hc.Name = testNamer.IGBackend(1234)
 
 	alphahc := hc.ToAlphaComputeHealthCheck()
@@ -282,7 +283,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 
 	// HTTP
 	// Manually insert a health check
-	hc := DefaultHealthCheck(3000, annotations.ProtocolHTTP)
+	hc := translator.DefaultHealthCheck(3000, annotations.ProtocolHTTP)
 	hc.Name = testNamer.IGBackend(3000)
 	hc.RequestPath = "/my-probes-health"
 	v1hc, err := hc.ToComputeHealthCheck()
@@ -334,8 +335,8 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Change to NEG Health Check
-	hc.forNEG = true
-	hc.PortSpecification = UseServingPortSpecification
+	hc.ForNEG = true
+	hc.PortSpecification = "USE_SERVING_PORT"
 	_, err = healthChecks.sync(hc, nil)
 
 	if err != nil {
@@ -353,7 +354,7 @@ func TestHealthCheckUpdate(t *testing.T) {
 	}
 
 	// Change back to regular Health Check
-	hc.forNEG = false
+	hc.ForNEG = false
 	hc.Port = 3000
 	hc.PortSpecification = ""
 
@@ -381,12 +382,12 @@ func TestVersion(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
 		desc    string
-		hc      *HealthCheck
+		hc      *translator.HealthCheck
 		version meta.Version
 	}{
 		{
 			desc: "Basic Http Health Check",
-			hc: &HealthCheck{
+			hc: &translator.HealthCheck{
 				HealthCheck: computealpha.HealthCheck{
 					Type: string(annotations.ProtocolHTTP),
 				},
@@ -395,7 +396,7 @@ func TestVersion(t *testing.T) {
 		},
 		{
 			desc: "Basic Http2 Health Check",
-			hc: &HealthCheck{
+			hc: &translator.HealthCheck{
 				HealthCheck: computealpha.HealthCheck{
 					Type: string(annotations.ProtocolHTTP2),
 				},
@@ -404,22 +405,22 @@ func TestVersion(t *testing.T) {
 		},
 		{
 			desc: "Http Health Check with NEG",
-			hc: &HealthCheck{
+			hc: &translator.HealthCheck{
 				HealthCheck: computealpha.HealthCheck{
 					Type: string(annotations.ProtocolHTTP),
 				},
-				forNEG: true,
+				ForNEG: true,
 			},
 			version: meta.VersionBeta,
 		},
 		{
 			desc: "Http Health Check with ILB and NEG",
-			hc: &HealthCheck{
+			hc: &translator.HealthCheck{
 				HealthCheck: computealpha.HealthCheck{
 					Type: string(annotations.ProtocolHTTP),
 				},
-				forILB: true,
-				forNEG: true,
+				ForILB: true,
+				ForNEG: true,
 			},
 			version: meta.VersionGA,
 		},
@@ -522,13 +523,13 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			var got *HealthCheck
+			var got *translator.HealthCheck
 			if tc.neg {
-				got = DefaultNEGHealthCheck(annotations.ProtocolHTTP)
+				got = translator.DefaultNEGHealthCheck(annotations.ProtocolHTTP)
 			} else {
-				got = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+				got = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
 			}
-			applyProbeSettingsToHC(tc.probe, got)
+			translator.ApplyProbeSettingsToHC(tc.probe, got)
 
 			if got.Host != tc.want.host {
 				t.Errorf("got.Host = %q, want %q", got.Host, tc.want.host)
@@ -554,133 +555,133 @@ func TestCalculateDiff(t *testing.T) {
 
 	type tc struct {
 		desc     string
-		old, new *HealthCheck
+		old, new *translator.HealthCheck
 		c        *backendconfigv1.HealthCheckConfig
 		hasDiff  bool
 	}
 	cases := []tc{
 		{
 			desc: "HTTP, no change",
-			old:  DefaultHealthCheck(8080, annotations.ProtocolHTTP),
-			new:  DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+			old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+			new:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
 		},
 		{
 			desc:    "HTTP => HTTPS",
-			old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
-			new:     DefaultHealthCheck(8080, annotations.ProtocolHTTPS),
+			old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+			new:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTPS),
 			hasDiff: true,
 		},
 		{
 			// TODO(bowei) -- this seems wrong.
 			desc: "Port change",
-			old:  DefaultHealthCheck(8080, annotations.ProtocolHTTP),
-			new:  DefaultHealthCheck(443, annotations.ProtocolHTTP),
+			old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+			new:  translator.DefaultHealthCheck(443, annotations.ProtocolHTTP),
 			// hasDiff: true
 		},
 		{
 			desc:    "PortSpecification",
-			old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
-			new:     DefaultNEGHealthCheck(annotations.ProtocolHTTP),
+			old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+			new:     translator.DefaultNEGHealthCheck(annotations.ProtocolHTTP),
 			hasDiff: true,
 		},
 	}
 
 	// TODO(bowei) -- this seems wrong, we should be checking for Port changes.
-	newHC := DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC := translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
 	newHC.Port = 80
 	cases = append(cases, tc{
 		desc: "Port",
-		old:  DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
 		new:  newHC,
 		// hasDiff: true
 	})
 
-	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
 	newHC.CheckIntervalSec = 1000
 	cases = append(cases, tc{
 		desc: "ignore changes without backend config",
-		old:  DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
 		new:  newHC,
 	})
 
 	i64 := func(i int64) *int64 { return &i }
 	s := func(s string) *string { return &s }
 
-	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
 	newHC.CheckIntervalSec = 1000
 	cases = append(cases, tc{
 		desc:    "CheckIntervalSec",
-		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{CheckIntervalSec: i64(1000)},
 		hasDiff: true,
 	})
 
-	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
 	newHC.TimeoutSec = 1000
 	cases = append(cases, tc{
 		desc:    "TimeoutSec",
-		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{TimeoutSec: i64(1000)},
 		hasDiff: true,
 	})
 
-	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
 	newHC.HealthyThreshold = 1000
 	cases = append(cases, tc{
 		desc:    "HealthyThreshold",
-		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{HealthyThreshold: i64(1000)},
 		hasDiff: true,
 	})
 
-	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
 	newHC.UnhealthyThreshold = 1000
 	cases = append(cases, tc{
 		desc:    "UnhealthyThreshold",
-		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{UnhealthyThreshold: i64(1000)},
 		hasDiff: true,
 	})
 
-	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
 	newHC.RequestPath = "/foo"
 	cases = append(cases, tc{
 		desc:    "RequestPath",
-		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{RequestPath: s("/foo")},
 		hasDiff: true,
 	})
 
-	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
 	newHC.RequestPath = "/foo"
 	cases = append(cases, tc{
 		desc: "non-backendconfig field is not a diff",
-		old:  DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:  translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
 		new:  newHC,
 		c:    &backendconfigv1.HealthCheckConfig{},
 	})
 
-	newHC = DefaultHealthCheck(8080, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP)
 	newHC.TimeoutSec = 1000
 	newHC.RequestPath = "/foo"
 	cases = append(cases, tc{
 		desc:    "multiple changes",
-		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{TimeoutSec: i64(1000), RequestPath: s("/foo")},
 		hasDiff: true,
 	})
 
-	newHC = DefaultHealthCheck(500, annotations.ProtocolHTTP)
+	newHC = translator.DefaultHealthCheck(500, annotations.ProtocolHTTP)
 	newHC.Port = 500
 	cases = append(cases, tc{
 		desc:    "Backendconfig Port",
-		old:     DefaultHealthCheck(8080, annotations.ProtocolHTTP),
+		old:     translator.DefaultHealthCheck(8080, annotations.ProtocolHTTP),
 		new:     newHC,
 		c:       &backendconfigv1.HealthCheckConfig{Port: i64(500)},
 		hasDiff: true,
@@ -754,7 +755,7 @@ func (*syncSPFixture) neg() *compute.HealthCheck {
 		UnhealthyThreshold: 2,
 		SelfLink:           negSelfLink,
 		HttpHealthCheck: &compute.HTTPHealthCheck{
-			PortSpecification: UseServingPortSpecification,
+			PortSpecification: "USE_SERVING_PORT",
 			RequestPath:       "/",
 		},
 	}
