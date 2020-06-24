@@ -26,6 +26,7 @@ import (
 	flag "github.com/spf13/pflag"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
+	"k8s.io/ingress-gce/pkg/svcneg"
 	"k8s.io/klog"
 
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -122,6 +123,13 @@ func main() {
 		frontendConfigClient, err = frontendconfigclient.NewForConfig(kubeConfig)
 		if err != nil {
 			klog.Fatalf("Failed to create FrontendConfig client: %v", err)
+		}
+	}
+
+	if flags.F.EnableNegCrd {
+		negCRDMeta := svcneg.CRDMeta()
+		if _, err := crdHandler.EnsureCRD(negCRDMeta); err != nil {
+			klog.Fatalf("Failed to ensure ServiceNetworkEndpointGroup CRD: %v", err)
 		}
 	}
 
