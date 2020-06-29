@@ -270,7 +270,11 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.
 			return nil, err
 		}
 		for _, ne := range networkEndpointsWithHealthStatus {
-			zoneNetworkEndpointMap[zone].Insert(negtypes.NetworkEndpoint{IP: ne.NetworkEndpoint.IpAddress, Node: ne.NetworkEndpoint.Instance, Port: strconv.FormatInt(ne.NetworkEndpoint.Port, 10)})
+			newNE := negtypes.NetworkEndpoint{IP: ne.NetworkEndpoint.IpAddress, Node: ne.NetworkEndpoint.Instance}
+			if ne.NetworkEndpoint.Port != 0 {
+				newNE.Port = strconv.FormatInt(ne.NetworkEndpoint.Port, 10)
+			}
+			zoneNetworkEndpointMap[zone].Insert(newNE)
 		}
 	}
 	return zoneNetworkEndpointMap, nil
@@ -278,7 +282,7 @@ func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.
 
 // makeEndpointBatch return a batch of endpoint from the input and remove the endpoints from input set
 // The return map has the encoded endpoint as key and GCE network endpoint object as value
-func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet) (map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, error) {
+func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.NetworkEndpointType) (map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint, error) {
 	endpointBatch := map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{}
 
 	for i := 0; i < MAX_NETWORK_ENDPOINTS_PER_BATCH; i++ {
@@ -286,16 +290,21 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet) (map[negtypes.Netw
 		if !ok {
 			break
 		}
-
-		portNum, err := strconv.Atoi(networkEndpoint.Port)
-		if err != nil {
-			return nil, fmt.Errorf("failed to decode endpoint port %v: %v", networkEndpoint, err)
-		}
-
-		endpointBatch[networkEndpoint] = &composite.NetworkEndpoint{
-			Instance:  networkEndpoint.Node,
-			IpAddress: networkEndpoint.IP,
-			Port:      int64(portNum),
+		if negType == negtypes.VmIpEndpointType {
+			endpointBatch[networkEndpoint] = &composite.NetworkEndpoint{
+				Instance:  networkEndpoint.Node,
+				IpAddress: networkEndpoint.IP,
+			}
+		} else {
+			portNum, err := strconv.Atoi(networkEndpoint.Port)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode endpoint port %v: %v", networkEndpoint, err)
+			}
+			endpointBatch[networkEndpoint] = &composite.NetworkEndpoint{
+				Instance:  networkEndpoint.Node,
+				IpAddress: networkEndpoint.IP,
+				Port:      int64(portNum),
+			}
 		}
 	}
 	return endpointBatch, nil

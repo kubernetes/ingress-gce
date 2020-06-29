@@ -178,8 +178,9 @@ func (s *transactionSyncer) syncInternal() error {
 	// filter out the endpoints that are in transaction
 	filterEndpointByTransaction(committedEndpoints, s.transactions)
 
-	// no-op in case of VmIp NEGs.
-	s.commitPods(committedEndpoints, endpointPodMap)
+	if s.needCommit() {
+		s.commitPods(committedEndpoints, endpointPodMap)
+	}
 
 	if len(addEndpoints) == 0 && len(removeEndpoints) == 0 {
 		klog.V(4).Infof("No endpoint change for %s/%s, skip syncing NEG. ", s.Namespace, s.Name)
@@ -216,7 +217,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 				continue
 			}
 
-			batch, err := makeEndpointBatch(endpointSet)
+			batch, err := makeEndpointBatch(endpointSet, s.NegType)
 			if err != nil {
 				return err
 			}
@@ -335,6 +336,12 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 	s.retry.Reset()
 	// always trigger Sync to commit pods
 	s.syncer.Sync()
+}
+
+// needCommit determines if commitPods need to be invoked.
+func (s *transactionSyncer) needCommit() bool {
+	// commitPods will be a no-op in case of VM_IP NEGs, but skip it to avoid printing non-relevant warning logs.
+	return s.NegType != negtypes.VmIpEndpointType
 }
 
 // commitPods groups the endpoints by zone and signals the readiness reflector to poll pods of the NEG
