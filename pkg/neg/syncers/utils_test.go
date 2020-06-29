@@ -18,6 +18,7 @@ package syncers
 
 import (
 	"fmt"
+	"net"
 	"reflect"
 	"strconv"
 	"testing"
@@ -703,38 +704,39 @@ func TestMakeEndpointBatch(t *testing.T) {
 			500,
 		},
 	}
+	for _, negType := range []negtypes.NetworkEndpointType{negtypes.VmIpPortEndpointType, negtypes.VmIpEndpointType} {
+		for _, tc := range testCases {
+			endpointSet, endpointMap := genTestEndpoints(tc.endpointNum, negType)
+			out, err := makeEndpointBatch(endpointSet, negType)
 
-	for _, tc := range testCases {
-		endpointSet, endpointMap := genTestEndpoints(tc.endpointNum)
-		out, err := makeEndpointBatch(endpointSet)
-
-		if err != nil {
-			t.Errorf("Expect err = nil, but got %v", err)
-		}
-
-		if endpointSet.Len() != tc.leftOverNum {
-			t.Errorf("Expect endpoint set has %d endpoints left, but got %d", tc.leftOverNum, endpointSet.Len())
-		}
-
-		expectOutputEndpoints := tc.endpointNum
-		if tc.endpointNum > MAX_NETWORK_ENDPOINTS_PER_BATCH {
-			expectOutputEndpoints = MAX_NETWORK_ENDPOINTS_PER_BATCH
-		}
-
-		if expectOutputEndpoints != len(out) {
-			t.Errorf("Expect %d endpoint(s) in output, but got %d", expectOutputEndpoints, len(out))
-		}
-
-		for key, endpoint := range out {
-			if endpointSet.Has(key) {
-				t.Errorf("Expect %q endpoint to exist in output endpoint map, but not", key)
+			if err != nil {
+				t.Errorf("Expect err = nil, but got %v", err)
 			}
-			expectEndpoint, ok := endpointMap[key]
-			if !ok {
-				t.Errorf("Expect %q endpoint to exist in expected endpoint map, but not", key)
-			} else {
-				if !reflect.DeepEqual(expectEndpoint, endpoint) {
-					t.Errorf("Expect endpoint object %+v, but got %+v", expectEndpoint, endpoint)
+
+			if endpointSet.Len() != tc.leftOverNum {
+				t.Errorf("Expect endpoint set has %d endpoints left, but got %d", tc.leftOverNum, endpointSet.Len())
+			}
+
+			expectOutputEndpoints := tc.endpointNum
+			if tc.endpointNum > MAX_NETWORK_ENDPOINTS_PER_BATCH {
+				expectOutputEndpoints = MAX_NETWORK_ENDPOINTS_PER_BATCH
+			}
+
+			if expectOutputEndpoints != len(out) {
+				t.Errorf("Expect %d endpoint(s) in output, but got %d", expectOutputEndpoints, len(out))
+			}
+
+			for key, endpoint := range out {
+				if endpointSet.Has(key) {
+					t.Errorf("Expect %q endpoint to exist in output endpoint map, but not", key)
+				}
+				expectEndpoint, ok := endpointMap[key]
+				if !ok {
+					t.Errorf("Expect %q endpoint to exist in expected endpoint map, but not", key)
+				} else {
+					if !reflect.DeepEqual(expectEndpoint, endpoint) {
+						t.Errorf("Expect endpoint object %+v, but got %+v", expectEndpoint, endpoint)
+					}
 				}
 			}
 		}
@@ -818,18 +820,44 @@ func TestShouldPodBeInNeg(t *testing.T) {
 
 }
 
-func genTestEndpoints(num int) (negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
+// numToIP converts the given number to an IP address.
+// assumes that the input is smaller than 2^32.
+func numToIP(input int) string {
+	ip := []byte{0, 0, 0, 0}
+	div := 256
+	ip[3] = byte(input % div)
+	for i := 1; i < 4; i++ {
+		ip[3-i] = byte(input / div)
+		div = div * 256
+	}
+	return net.IP(ip).String()
+}
+
+func genTestEndpoints(num int, epType negtypes.NetworkEndpointType) (negtypes.NetworkEndpointSet, map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	endpointSet := negtypes.NewNetworkEndpointSet()
 	endpointMap := map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint{}
 	ip := "1.2.3.4"
 	instance := "instance"
-	for port := 0; port < num; port++ {
-		key := negtypes.NetworkEndpoint{IP: ip, Node: instance, Port: strconv.Itoa(port)}
-		endpointSet.Insert(key)
-		endpointMap[key] = &composite.NetworkEndpoint{
-			IpAddress: ip,
-			Instance:  instance,
-			Port:      int64(port),
+	port := 0
+	for count := 0; count < num; count++ {
+		switch epType {
+		case negtypes.VmIpEndpointType:
+			ip = numToIP(count)
+			key := negtypes.NetworkEndpoint{IP: ip, Node: instance}
+			endpointSet.Insert(key)
+			endpointMap[key] = &composite.NetworkEndpoint{
+				IpAddress: ip,
+				Instance:  instance,
+			}
+		case negtypes.VmIpPortEndpointType:
+			port++
+			key := negtypes.NetworkEndpoint{IP: ip, Node: instance, Port: strconv.Itoa(port)}
+			endpointSet.Insert(key)
+			endpointMap[key] = &composite.NetworkEndpoint{
+				IpAddress: ip,
+				Instance:  instance,
+				Port:      int64(port),
+			}
 		}
 	}
 	return endpointSet, endpointMap
