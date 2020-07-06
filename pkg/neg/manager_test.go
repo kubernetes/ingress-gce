@@ -18,6 +18,7 @@ package neg
 
 import (
 	context2 "context"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -28,16 +29,22 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	apitypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
+	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
+
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -68,24 +75,35 @@ const (
 )
 
 func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
+	return NewTestSyncerManagerWithNegClient(kubeClient, nil)
+}
+
+func NewTestSyncerManagerWithNegClient(kubeClient kubernetes.Interface, svcNegClient svcnegclient.Interface) *syncerManager {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := namer_util.NewNamer(ClusterID, "")
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:             apiv1.NamespaceAll,
-		ResyncPeriod:          1 * time.Second,
+		ResyncPeriod:          0 * time.Second,
 		DefaultBackendSvcPort: defaultBackend,
 	}
-	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, "" /*kubeSystemUID*/, ctxConfig)
+	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, svcNegClient, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, "" /*kubeSystemUID*/, ctxConfig)
+
+	var svcNegInformer cache.Indexer
+	if svcNegClient != nil {
+		svcNegInformer = context.SvcNegInformer.GetIndexer()
+	}
 
 	manager := newSyncerManager(
 		namer,
 		record.NewFakeRecorder(100),
 		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		negtypes.NewFakeZoneGetter(),
+		svcNegClient,
 		context.PodInformer.GetIndexer(),
 		context.ServiceInformer.GetIndexer(),
 		context.EndpointInformer.GetIndexer(),
 		context.NodeInformer.GetIndexer(),
+		svcNegInformer,
 	)
 	manager.reflector = readiness.NewReadinessReflector(context, manager)
 	return manager
@@ -678,6 +696,420 @@ func TestFilterCommonPorts(t *testing.T) {
 	}
 }
 
+func TestNegCRCreations(t *testing.T) {
+	t.Parallel()
+
+	svcNegClient := negfake.NewSimpleClientset()
+
+	manager := NewTestSyncerManagerWithNegClient(fake.NewSimpleClientset(), svcNegClient)
+	namer := manager.namer
+
+	svcName := "n1"
+	svcNamespace := "ns1"
+	customNegName := "neg-name"
+	var svcUID apitypes.UID = "svc-uid"
+	svc := &v1.Service{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Service",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: svcNamespace,
+			Name:      svcName,
+		},
+	}
+	svc.SetUID(svcUID)
+	if err := manager.serviceLister.Add(svc); err != nil {
+		t.Errorf("failed to add sample service to service store: %s", err)
+	}
+
+	expectedPortInfoMap := negtypes.NewPortInfoMap(
+		svcNamespace,
+		svcName,
+		types.NewSvcPortTupleSet(
+			negtypes.SvcPortTuple{Port: port1, TargetPort: targetPort1},
+			negtypes.SvcPortTuple{Port: port2, TargetPort: targetPort2}),
+		namer, false,
+		map[negtypes.SvcPortTuple]string{negtypes.SvcPortTuple{Port: port1, TargetPort: targetPort1}: customNegName})
+
+	if err := manager.EnsureSyncers(svcNamespace, svcName, expectedPortInfoMap); err != nil {
+		t.Errorf("failed to ensure syncer %s/%s-%v: %v", svcNamespace, svcName, expectedPortInfoMap, err)
+	}
+
+	// validate portInfo
+	if len(manager.svcPortMap) != 1 {
+		t.Errorf("manager should have one service has %d", len(manager.svcPortMap))
+	}
+
+	svcKey := serviceKey{namespace: svcNamespace, name: svcName}
+	if portInfoMap, svcFound := manager.svcPortMap[svcKey]; svcFound {
+		for key, expectedInfo := range expectedPortInfoMap {
+			if info, portFound := portInfoMap[key]; portFound {
+				if info.NegName != expectedInfo.NegName {
+					t.Errorf("expected NEG name %q, but got %q", expectedInfo.NegName, info.NegName)
+				}
+
+				if info.PortTuple.Port == port1 && info.NegName != customNegName {
+					t.Errorf("expected Neg name for port %d, to be %s, but was %s", port1, customNegName, info.NegName)
+				}
+			} else {
+				t.Errorf("expected port %d of service %q to be registered", key.ServicePort, svcKey.Key())
+			}
+
+			neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Get(context2.TODO(), expectedInfo.NegName, metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("error getting neg from neg client: %s", err)
+			}
+			checkNegCR(t, neg, svcKey, svcUID, expectedInfo)
+		}
+
+	} else {
+		t.Errorf("expect service key %q to be registered", svcKey.Key())
+	}
+
+	// Second call of EnsureSyncers shouldn't cause any changes or errors
+	if err := manager.EnsureSyncers(svcNamespace, svcName, expectedPortInfoMap); err != nil {
+		t.Errorf("failed to ensure syncer after creating %s/%s-%v: %v", svcNamespace, svcName, expectedPortInfoMap, err)
+	}
+
+	for _, expectedInfo := range expectedPortInfoMap {
+		neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Get(context2.TODO(), expectedInfo.NegName, metav1.GetOptions{})
+		if err != nil {
+			t.Errorf("error getting neg from neg client: %s", err)
+		}
+		checkNegCR(t, neg, svcKey, svcUID, expectedInfo)
+	}
+}
+
+func TestNegCRDuplicateCreations(t *testing.T) {
+	t.Parallel()
+
+	svc1Name := "svc1"
+	svc2Name := "svc2"
+	namespace := "ns1"
+	customNegName := "neg-name"
+
+	var svc1UID apitypes.UID = "svc-1-uid"
+	var svc2UID apitypes.UID = "svc-2-uid"
+	svc1 := &v1.Service{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Service",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      svc1Name,
+		},
+	}
+	svc1.SetUID(svc1UID)
+
+	svc2 := svc1.DeepCopy()
+	svc2.Name = svc2Name
+	svc2.SetUID(svc2UID)
+
+	svcTuple1 := negtypes.SvcPortTuple{Port: port1, TargetPort: targetPort1}
+	svcTuple2 := negtypes.SvcPortTuple{Port: port2, TargetPort: targetPort1}
+
+	testCases := []struct {
+		desc              string
+		svc               *v1.Service
+		svcTuple          negtypes.SvcPortTuple
+		markedForDeletion bool
+		expectErr         bool
+		modifyObjectMeta  bool
+		crExists          bool
+	}{
+		{desc: "no cr exists yet",
+			crExists: false,
+		},
+		{desc: "same service, same port configuration, original cr is not marked for deletion",
+			svc:               svc1,
+			svcTuple:          svcTuple1,
+			markedForDeletion: false,
+			expectErr:         false,
+			crExists:          true,
+		},
+		{desc: "same service, same port configuration, original cr is not marked for deletion and has unexpected labels",
+			svc:               svc1,
+			svcTuple:          svcTuple1,
+			markedForDeletion: false,
+			expectErr:         false,
+			modifyObjectMeta:  true,
+			crExists:          true,
+		},
+		{desc: "same service, same port configuration, original cr is marked for deletion",
+			svc:               svc1,
+			svcTuple:          svcTuple1,
+			markedForDeletion: true,
+			expectErr:         true,
+			crExists:          true,
+		},
+		{desc: "same service, different port configuration, original cr is not marked for deletion",
+			svc:               svc1,
+			svcTuple:          svcTuple2,
+			markedForDeletion: false,
+			expectErr:         true,
+			crExists:          true,
+		},
+		{desc: "same service, different port configuration, original cr is marked for deletion",
+			svc:               svc1,
+			svcTuple:          svcTuple2,
+			markedForDeletion: true,
+			expectErr:         true,
+			crExists:          true,
+		},
+		{desc: "different service name",
+			svc:               svc2,
+			svcTuple:          svcTuple1,
+			markedForDeletion: false,
+			expectErr:         true,
+			crExists:          true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+
+			svcNegClient := negfake.NewSimpleClientset()
+
+			manager := NewTestSyncerManagerWithNegClient(fake.NewSimpleClientset(), svcNegClient)
+			namer := manager.namer
+
+			var testNeg negv1beta1.ServiceNetworkEndpointGroup
+			if tc.crExists {
+				if err := manager.serviceLister.Add(tc.svc); err != nil {
+					t.Errorf("failed to add original service to service store: %s", err)
+				}
+				svcKey := serviceKey{namespace: namespace, name: tc.svc.Name}
+				portInfo := negtypes.PortInfo{PortTuple: tc.svcTuple, NegName: customNegName}
+				testNeg = createNegCR(tc.svc, svcKey, portInfo)
+				if tc.markedForDeletion {
+					deletionTS := metav1.Now()
+					testNeg.SetDeletionTimestamp(&deletionTS)
+				}
+
+				if tc.modifyObjectMeta {
+					testNeg.Labels["extra-label"] = "extra-value"
+					testNeg.OwnerReferences = append(testNeg.OwnerReferences, metav1.OwnerReference{UID: "extra-uid"})
+				}
+
+				_, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace1).Create(context2.TODO(), &testNeg, metav1.CreateOptions{})
+				if err != nil {
+					t.Errorf("error creating test neg")
+				}
+			}
+
+			if err := manager.serviceLister.Add(svc1); err != nil {
+				t.Errorf("failed to add sample service to service store: %s", err)
+			}
+
+			portInfoMap := negtypes.NewPortInfoMap(
+				namespace,
+				svc1.Name,
+				types.NewSvcPortTupleSet(svcTuple1),
+				namer, false,
+				map[negtypes.SvcPortTuple]string{svcTuple1: customNegName},
+			)
+
+			err := manager.EnsureSyncers(namespace, svc1.Name, portInfoMap)
+			if tc.expectErr && err == nil {
+				t.Errorf("expected error when ensuring syncer %s/%s %+v", namespace, svc1.Name, portInfoMap)
+			} else if !tc.expectErr && err != nil {
+				t.Errorf("unexpected error when ensuring syncer %s/%s %+v: %s", namespace, svc1.Name, portInfoMap, err)
+			}
+
+			negs, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).List(context2.TODO(), metav1.ListOptions{})
+			if len(negs.Items) != 1 {
+				t.Errorf("expected to retrieve one negs, retrieved %d", len(negs.Items))
+			}
+
+			if tc.expectErr || tc.markedForDeletion {
+				// If errored, marked for deletion or neg cr is already correct, no update should occur
+				if !reflect.DeepEqual(testNeg, negs.Items[0]) {
+					t.Errorf("test neg should not have been updated")
+				}
+			} else {
+				svcKey := serviceKey{namespace: namespace, name: svc1Name}
+				portInfo := portInfoMap[negtypes.PortInfoMapKey{ServicePort: svcTuple1.Port, Subset: ""}]
+				checkNegCR(t, &negs.Items[0], svcKey, svc1.UID, portInfo)
+			}
+
+			// make sure there is no leaking go routine
+			manager.StopSyncer(namespace, svc1Name)
+		})
+	}
+}
+
+func TestNegCRDeletions(t *testing.T) {
+	t.Parallel()
+	svcName := "n1"
+	svcNamespace := "ns1"
+	customNegName := "neg-name"
+	svcKey := serviceKey{namespace: svcNamespace, name: svcName}
+	var svcUID apitypes.UID = "svc-uid"
+	svc := &v1.Service{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Service",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: svcNamespace,
+			Name:      svcName,
+		},
+	}
+	svc.SetUID(svcUID)
+
+	testCases := []struct {
+		desc          string
+		negsExist     bool
+		hasDeletionTS bool
+	}{
+		{
+			desc:          "negs exist, no deletion timestamp, remove desired ports",
+			negsExist:     true,
+			hasDeletionTS: false,
+		},
+		{
+			desc:          "negs already have deletion timestamp, remove desired ports",
+			negsExist:     true,
+			hasDeletionTS: true,
+		},
+		{
+			desc:          "negs don't exist, remove desired ports",
+			negsExist:     false,
+			hasDeletionTS: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			svcNegClient := negfake.NewSimpleClientset()
+			manager := NewTestSyncerManagerWithNegClient(fake.NewSimpleClientset(), svcNegClient)
+			if err := manager.serviceLister.Add(svc); err != nil {
+				t.Errorf("failed to add sample service to service store: %s", err)
+			}
+
+			// set up manager current state before deleting
+			namer := manager.namer
+			expectedPortInfoMap := negtypes.NewPortInfoMap(
+				svcNamespace,
+				svcName,
+				types.NewSvcPortTupleSet(
+					negtypes.SvcPortTuple{Port: port1, TargetPort: targetPort1},
+					negtypes.SvcPortTuple{Port: port2, TargetPort: targetPort2}),
+				namer, false,
+				map[negtypes.SvcPortTuple]string{negtypes.SvcPortTuple{Port: port1, TargetPort: targetPort1}: customNegName},
+			)
+
+			svcPortMap := map[serviceKey]negtypes.PortInfoMap{
+				serviceKey{namespace: svcNamespace, name: svcName}: expectedPortInfoMap,
+			}
+			manager.svcPortMap = svcPortMap
+
+			var deletionTS metav1.Time
+			if tc.hasDeletionTS {
+				deletionTS = metav1.Now()
+			}
+
+			if tc.negsExist {
+				for _, portInfo := range expectedPortInfoMap {
+					neg := createNegCR(svc, svcKey, portInfo)
+					if tc.hasDeletionTS {
+						neg.SetDeletionTimestamp(&deletionTS)
+					}
+					manager.svcNegLister.Add(&neg)
+					if _, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Create(context2.TODO(), &neg, metav1.CreateOptions{}); err != nil {
+						t.Errorf("failed adding neg %s to fake neg client: %s", portInfo.NegName, err)
+					}
+				}
+			}
+
+			if err := manager.EnsureSyncers(svcNamespace, svcName, nil); err != nil {
+
+				t.Errorf("unexpected error when deleting negs: %s", err)
+			}
+
+			negs, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).List(context2.TODO(), metav1.ListOptions{})
+			if err != nil {
+				t.Errorf("error retrieving negs : %s", err)
+			}
+
+			if tc.hasDeletionTS {
+				if len(negs.Items) != 2 {
+					t.Errorf("expected to retrieve two neg, retrieved %d", len(negs.Items))
+				}
+
+				for _, neg := range negs.Items {
+					if tc.hasDeletionTS && !neg.GetDeletionTimestamp().Equal(&deletionTS) {
+						t.Errorf("Expected neg cr %s deletion timestamp to be unchanged", neg.Name)
+					} else if !tc.hasDeletionTS && neg.GetDeletionTimestamp().IsZero() {
+						t.Errorf("Expected neg cr %s deletion timestamp to be set", neg.Name)
+					}
+				}
+				//clear all existing neg CRs
+				for _, portInfo := range expectedPortInfoMap {
+					if err = svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Delete(context2.TODO(), portInfo.NegName, metav1.DeleteOptions{}); err != nil {
+						t.Errorf("failed deleting neg %s in fake neg client: %s", portInfo.NegName, err)
+					}
+				}
+			} else {
+				if len(negs.Items) != 0 {
+					t.Errorf("expected to retrieve zero negs, retrieved %d", len(negs.Items))
+				}
+			}
+			//ensure all goroutines are stopped
+			manager.StopSyncer(svcNamespace, svcName)
+		})
+	}
+}
+
+// Check that NEG CR Conditions exist and are in the expected condition
+func checkNegCR(t *testing.T, neg *negv1beta1.ServiceNetworkEndpointGroup, svcKey serviceKey, svcUID apitypes.UID, expectedInfo negtypes.PortInfo) {
+
+	if neg.GetNamespace() != svcKey.namespace {
+		t.Errorf("neg namespace is %s, expected %s", neg.GetNamespace(), svcKey.namespace)
+	}
+
+	// TODO Add check for finalizer after Neg CRD Garbage Collection is implemented.
+
+	//check labels
+	labels := neg.GetLabels()
+	if len(labels) != 3 {
+		t.Errorf("Expected 3 labels for neg %s, found %d", neg.Name, len(labels))
+	} else {
+
+		if val, ok := labels[negtypes.NegCRManagedByKey]; !ok || val != negtypes.NegCRControllerValue {
+			t.Errorf("Expected neg to have label %s, with value %s found %s", negtypes.NegCRManagedByKey, negtypes.NegCRControllerValue, val)
+		}
+
+		if val, ok := labels[negtypes.NegCRServiceNameKey]; !ok || val != svcKey.name {
+			t.Errorf("Expected neg to have label %s, with value %s found %s", negtypes.NegCRServiceNameKey, expectedInfo.NegName, val)
+		}
+
+		if val, ok := labels[negtypes.NegCRServicePortKey]; !ok || val != fmt.Sprint(expectedInfo.PortTuple.Port) {
+			t.Errorf("Expected neg to have label %s, with value %d found %s", negtypes.NegCRServicePortKey, expectedInfo.PortTuple.Port, val)
+		}
+	}
+
+	ownerRefs := neg.GetOwnerReferences()
+	if len(ownerRefs) != 1 {
+		t.Errorf("Expected neg to have one owner ref, has %d", len(ownerRefs))
+	} else {
+
+		if ownerRefs[0].Name != svcKey.name {
+			t.Errorf("Expected neg owner ref to have name %s, instead has %s", svcKey.name, ownerRefs[0].Name)
+		}
+
+		if ownerRefs[0].UID != svcUID {
+			t.Errorf("Expected neg owner ref to have UID %s, instead has %s", svcUID, ownerRefs[0].UID)
+		}
+
+		if *ownerRefs[0].BlockOwnerDeletion != false {
+			t.Errorf("Expected neg owner ref not block owner deltion")
+		}
+	}
+}
+
 // populateSyncerManager for testing
 func populateSyncerManager(manager *syncerManager, kubeClient kubernetes.Interface) {
 	namer := manager.namer
@@ -821,4 +1253,25 @@ func getDefaultEndpoint() *apiv1.Endpoints {
 func portInfoUnion(p1, p2 negtypes.PortInfoMap) negtypes.PortInfoMap {
 	p1.Merge(p2)
 	return p1
+}
+
+func createNegCR(service *v1.Service, svcKey serviceKey, portInfo negtypes.PortInfo) negv1beta1.ServiceNetworkEndpointGroup {
+	ownerReference := metav1.NewControllerRef(service, service.GroupVersionKind())
+	*ownerReference.BlockOwnerDeletion = false
+	labels := map[string]string{
+		negtypes.NegCRManagedByKey:   negtypes.NegCRControllerValue,
+		negtypes.NegCRServiceNameKey: svcKey.name,
+		negtypes.NegCRServicePortKey: fmt.Sprint(portInfo.PortTuple.Port),
+	}
+
+	// TODO: Add finalizer once NEG CRD GC is implemented
+	return negv1beta1.ServiceNetworkEndpointGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            portInfo.NegName,
+			Namespace:       svcKey.namespace,
+			OwnerReferences: []metav1.OwnerReference{*ownerReference},
+			Labels:          labels,
+			ResourceVersion: "rv",
+		},
+	}
 }

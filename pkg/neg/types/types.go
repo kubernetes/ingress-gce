@@ -41,6 +41,14 @@ const (
 	L7Mode                    = EndpointsCalculatorMode("L7")
 	L4LocalMode               = EndpointsCalculatorMode("L4, ExternalTrafficPolicy:Local")
 	L4ClusterMode             = EndpointsCalculatorMode("L4, ExternalTrafficPolicy:Cluster")
+
+	// These keys are to be used as label keys for NEG CRs when enabled
+
+	NegCRManagedByKey   = "networking.gke.io/managed-by"
+	NegCRServiceNameKey = "networking.gke.io/service-name"
+	NegCRServicePortKey = "networking.gke.io/service-port"
+	// NegCRControllerValue is used as the value for the managed-by label on NEG CRs when enabled.
+	NegCRControllerValue = "neg-controller"
 )
 
 // SvcPortTuple is the tuple representing one service port
