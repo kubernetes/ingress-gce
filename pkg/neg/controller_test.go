@@ -90,7 +90,7 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		ASMConfigMapNamespace: "kube-system",
 		ASMConfigMapName:      "ingress-controller-config-test",
 	}
-	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, "" /*kubeSystemUID*/, ctxConfig)
+	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, "" /*kubeSystemUID*/, ctxConfig)
 
 	// Hack the context.Init func.
 	configMapInformer := informerv1.NewConfigMapInformer(kubeClient, context.Namespace, context.ResyncPeriod, utils.NewNamespaceIndexer())
