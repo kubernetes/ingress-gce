@@ -51,13 +51,11 @@ type L4 struct {
 	ServicePort         utils.ServicePort
 	NamespacedName      types.NamespacedName
 	sharedResourcesLock *sync.Mutex
-	// metricsCollector exports L4 ILB service controller usage metrics.
-	metricsCollector metrics.L4ILBMetricsCollector
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
-func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer *namer.Namer, recorder record.EventRecorder, lock *sync.Mutex, collector metrics.L4ILBMetricsCollector) *L4 {
-	l := &L4{cloud: cloud, scope: scope, namer: namer, recorder: recorder, Service: service, sharedResourcesLock: lock, metricsCollector: collector}
+func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer *namer.Namer, recorder record.EventRecorder, lock *sync.Mutex) *L4 {
+	l := &L4{cloud: cloud, scope: scope, namer: namer, recorder: recorder, Service: service, sharedResourcesLock: lock}
 	l.NamespacedName = types.NamespacedName{Name: service.Name, Namespace: service.Namespace}
 	l.backendPool = backends.NewPool(l.cloud, l.namer)
 	l.ServicePort = utils.ServicePort{ID: utils.ServicePortID{Service: l.NamespacedName}, BackendNamer: l.namer,
@@ -146,10 +144,6 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) error {
 		// This will be hit if this is a shared healthcheck.
 		klog.V(2).Infof("Failed to delete healthcheck %s: health check in use.", hcName)
 	}
-	if retErr == nil {
-		klog.V(6).Infof("Service %s deleted, removing its state from metrics cache", l.NamespacedName.String())
-		l.metricsCollector.DeleteL4ILBService(l.NamespacedName.String())
-	}
 	return retErr
 }
 
@@ -168,7 +162,7 @@ func (l *L4) getFRNameWithProtocol(protocol string) string {
 
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
-func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) (*corev1.LoadBalancerStatus, error) {
+func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service, metricsState *metrics.L4ILBServiceState) (*corev1.LoadBalancerStatus, error) {
 	// Use the same resource name for NEG, BackendService as well as FR, FWRule.
 	l.Service = svc
 	name := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
@@ -252,18 +246,17 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 		return nil, err
 	}
 
-	var serviceState metrics.L4ILBServiceState
+	metricsState.InSuccess = true
 	if options.AllowGlobalAccess {
-		serviceState.EnabledGlobalAccess = true
+		metricsState.EnabledGlobalAccess = true
 	}
-	// SubnetName is overrided to nil value if Alpha feature gate for custom subnet
+	// SubnetName is overwritten to nil value if Alpha feature gate for custom subnet
 	// is not enabled. So, a non empty subnet name at this point implies that the
 	// feature is in use.
 	if options.SubnetName != "" {
-		serviceState.EnabledCustomSubnet = true
+		metricsState.EnabledCustomSubnet = true
 	}
-	klog.V(6).Infof("Service %s ensured, updating its state %v in metrics cache", l.NamespacedName.String(), serviceState)
-	l.metricsCollector.SetL4ILBService(l.NamespacedName.String(), serviceState)
+	klog.V(6).Infof("Internal L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", l.NamespacedName, metricsState)
 
 	return &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}, nil
 }

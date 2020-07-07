@@ -877,66 +877,109 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 			serviceStates: []L4ILBServiceState{},
 			expectL4ILBCount: map[feature]int{
 				l4ILBService:      0,
-				l4IlbGlobalAccess: 0,
-				l4IlbCustomSubnet: 0,
+				l4ILBGlobalAccess: 0,
+				l4ILBCustomSubnet: 0,
+				l4ILBInSuccess:    0,
+				l4ILBInError:      0,
 			},
 		},
 		{
 			desc: "one l4 ilb service",
 			serviceStates: []L4ILBServiceState{
-				newL4IlbServiceState(false, false),
+				newL4ILBServiceState(false, false, true),
 			},
 			expectL4ILBCount: map[feature]int{
 				l4ILBService:      1,
-				l4IlbGlobalAccess: 0,
-				l4IlbCustomSubnet: 0,
+				l4ILBGlobalAccess: 0,
+				l4ILBCustomSubnet: 0,
+				l4ILBInSuccess:    1,
+				l4ILBInError:      0,
+			},
+		},
+		{
+			desc: "l4 ilb service in error state",
+			serviceStates: []L4ILBServiceState{
+				newL4ILBServiceState(false, true, false),
+			},
+			expectL4ILBCount: map[feature]int{
+				l4ILBService:      1,
+				l4ILBGlobalAccess: 0,
+				l4ILBCustomSubnet: 0,
+				l4ILBInSuccess:    0,
+				l4ILBInError:      1,
 			},
 		},
 		{
 			desc: "global access for l4 ilb service enabled",
 			serviceStates: []L4ILBServiceState{
-				newL4IlbServiceState(true, false),
+				newL4ILBServiceState(true, false, true),
 			},
 			expectL4ILBCount: map[feature]int{
 				l4ILBService:      1,
-				l4IlbGlobalAccess: 1,
-				l4IlbCustomSubnet: 0,
+				l4ILBGlobalAccess: 1,
+				l4ILBCustomSubnet: 0,
+				l4ILBInSuccess:    1,
+				l4ILBInError:      0,
 			},
 		},
 		{
 			desc: "custom subnet for l4 ilb service enabled",
 			serviceStates: []L4ILBServiceState{
-				newL4IlbServiceState(false, true),
+				newL4ILBServiceState(false, true, true),
 			},
 			expectL4ILBCount: map[feature]int{
 				l4ILBService:      1,
-				l4IlbGlobalAccess: 0,
-				l4IlbCustomSubnet: 1,
+				l4ILBGlobalAccess: 0,
+				l4ILBCustomSubnet: 1,
+				l4ILBInSuccess:    1,
+				l4ILBInError:      0,
 			},
 		},
 		{
 			desc: "both global access and custom subnet for l4 ilb service enabled",
 			serviceStates: []L4ILBServiceState{
-				newL4IlbServiceState(true, true),
+				newL4ILBServiceState(true, true, true),
 			},
 			expectL4ILBCount: map[feature]int{
 				l4ILBService:      1,
-				l4IlbGlobalAccess: 1,
-				l4IlbCustomSubnet: 1,
+				l4ILBGlobalAccess: 1,
+				l4ILBCustomSubnet: 1,
+				l4ILBInSuccess:    1,
+				l4ILBInError:      0,
 			},
 		},
 		{
 			desc: "many l4 ilb services",
 			serviceStates: []L4ILBServiceState{
-				newL4IlbServiceState(false, false),
-				newL4IlbServiceState(false, true),
-				newL4IlbServiceState(true, false),
-				newL4IlbServiceState(true, true),
+				newL4ILBServiceState(false, false, true),
+				newL4ILBServiceState(false, true, true),
+				newL4ILBServiceState(true, false, true),
+				newL4ILBServiceState(true, true, true),
 			},
 			expectL4ILBCount: map[feature]int{
 				l4ILBService:      4,
-				l4IlbGlobalAccess: 2,
-				l4IlbCustomSubnet: 2,
+				l4ILBGlobalAccess: 2,
+				l4ILBCustomSubnet: 2,
+				l4ILBInSuccess:    4,
+				l4ILBInError:      0,
+			},
+		},
+		{
+			desc: "many l4 ilb services with some in error state",
+			serviceStates: []L4ILBServiceState{
+				newL4ILBServiceState(false, false, true),
+				newL4ILBServiceState(false, true, false),
+				newL4ILBServiceState(false, true, true),
+				newL4ILBServiceState(true, false, true),
+				newL4ILBServiceState(true, false, false),
+				newL4ILBServiceState(true, true, true),
+			},
+			expectL4ILBCount: map[feature]int{
+				l4ILBService:      6,
+				l4ILBGlobalAccess: 2,
+				l4ILBCustomSubnet: 2,
+				l4ILBInSuccess:    4,
+				l4ILBInError:      2,
 			},
 		},
 	} {
@@ -955,9 +998,10 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 	}
 }
 
-func newL4IlbServiceState(globalAccess, customSubnet bool) L4ILBServiceState {
+func newL4ILBServiceState(globalAccess, customSubnet, inSuccess bool) L4ILBServiceState {
 	return L4ILBServiceState{
 		EnabledGlobalAccess: globalAccess,
 		EnabledCustomSubnet: customSubnet,
+		InSuccess:           inSuccess,
 	}
 }

@@ -57,6 +57,8 @@ type L4ILBServiceState struct {
 	EnabledGlobalAccess bool
 	// EnabledCustomSubNet specifies if Custom Subnet is enabled.
 	EnabledCustomSubnet bool
+	// InSuccess specifies if the ILB service VIP is configured.
+	InSuccess bool
 }
 
 // IngressMetricsCollector is an interface to update/delete ingress states in the cache

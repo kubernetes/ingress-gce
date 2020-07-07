@@ -49,10 +49,6 @@ const (
 	// eventMsgFirewallChange = "XPN Firewall change required by network admin"
 )
 
-var (
-	fakeMetricsCollector = metrics.NewControllerMetrics()
-)
-
 func getFakeGCECloud(vals gce.TestClusterValues) *gce.Cloud {
 	fakeGCE := gce.NewFakeGCECloud(vals)
 	// InsertHook required to assign an IP Address for forwarding rule
@@ -72,7 +68,7 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 	fakeGCE := getFakeGCECloud(gce.DefaultTestClusterValues())
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	bsName := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
 	_, err := l.backendPool.EnsureL4BackendService(bsName, "", "TCP", string(svc.Spec.SessionAffinity), string(cloud.SchemeInternal), l.NamespacedName, meta.VersionGA)
 	if err != nil {
@@ -121,13 +117,13 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
 
-	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -136,7 +132,7 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 	}
 	assertInternalLbResources(t, svc, l, nodeNames)
 	// Simulate a periodic sync
-	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -154,12 +150,12 @@ func TestEnsureInternalLoadBalancerTypeChange(t *testing.T) {
 
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Unexpected error %v", err)
 	}
@@ -187,7 +183,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 	fakeGCE := getFakeGCECloud(vals)
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -208,7 +204,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to create backendservice, err %v", err)
 	}
-	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -229,7 +225,7 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 	fakeGCE := getFakeGCECloud(vals)
 	svc := test.NewL4ILBService(true, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -289,7 +285,7 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 	}
 	existingFwdRule.BackendService = existingBS.Name
 
-	if _, err = l.EnsureInternalLoadBalancer(nodeNames, svc); err != nil {
+	if _, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{}); err != nil {
 		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, err)
 	}
 	key.Name = frName
@@ -339,7 +335,7 @@ func TestUpdateResourceLinks(t *testing.T) {
 	fakeGCE := getFakeGCECloud(vals)
 	svc := test.NewL4ILBService(true, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -381,7 +377,7 @@ func TestUpdateResourceLinks(t *testing.T) {
 	if !reflect.DeepEqual(bs.HealthChecks, []string{"hc1", "hc2"}) {
 		t.Errorf("Unexpected healthchecks in backend service - %v", bs.HealthChecks)
 	}
-	if _, err = l.EnsureInternalLoadBalancer(nodeNames, svc); err != nil {
+	if _, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{}); err != nil {
 		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, err)
 	}
 	if err != nil {
@@ -416,7 +412,7 @@ func TestEnsureInternalLoadBalancerHealthCheckConfigurable(t *testing.T) {
 	fakeGCE := getFakeGCECloud(vals)
 	svc := test.NewL4ILBService(true, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -435,7 +431,7 @@ func TestEnsureInternalLoadBalancerHealthCheckConfigurable(t *testing.T) {
 		t.Errorf("Failed to create fake healthcheck %s, err %v", hcName, err)
 	}
 
-	if _, err = l.EnsureInternalLoadBalancer(nodeNames, svc); err != nil {
+	if _, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{}); err != nil {
 		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, err)
 	}
 
@@ -456,12 +452,12 @@ func TestEnsureInternalLoadBalancerDeleted(t *testing.T) {
 	nodeNames := []string{"test-node-1"}
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -486,12 +482,12 @@ func TestEnsureInternalLoadBalancerDeletedTwiceDoesNotError(t *testing.T) {
 	nodeNames := []string{"test-node-1"}
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -521,7 +517,7 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 	nodeNames := []string{"test-node-1"}
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -532,7 +528,7 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 	svc.Spec.Type = v1.ServiceTypeLoadBalancer
 	svc.Spec.ExternalTrafficPolicy = v1.ServiceExternalTrafficPolicyTypeLocal
 
-	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -626,7 +622,7 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 				tc.adjustParams(params)
 			}
 			namer := namer_util.NewNamer(clusterUID, "")
-			l := NewL4Handler(params.service, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+			l := NewL4Handler(params.service, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 			//lbName := l.namer.VMIPNEG(params.service.Namespace, params.service.Name)
 			frName := l.GetFRName()
 			key, err := composite.CreateKey(l.cloud, frName, meta.Regional)
@@ -645,7 +641,7 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 			if tc.injectMock != nil {
 				tc.injectMock(fakeGCE.Compute().(*cloud.MockGCE))
 			}
-			status, err := l.EnsureInternalLoadBalancer(nodeNames, params.service)
+			status, err := l.EnsureInternalLoadBalancer(nodeNames, params.service, &metrics.L4ILBServiceState{})
 			if err == nil {
 				t.Errorf("Expected error when %s", desc)
 			}
@@ -674,7 +670,7 @@ func TestEnsureLoadBalancerDeletedSucceedsOnXPN(t *testing.T) {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
 	fwName := l.namer.VMIPNEG(svc.Namespace, svc.Name)
-	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -707,13 +703,13 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	nodeNames := []string{"test-node-1"}
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
 	frName := l.GetFRName()
-	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -724,7 +720,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 
 	// Change service to include the global access annotation
 	svc.Annotations[gce.ServiceAnnotationILBAllowGlobalAccess] = "true"
-	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -752,7 +748,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	}
 	// remove the annotation and disable global access.
 	delete(svc.Annotations, gce.ServiceAnnotationILBAllowGlobalAccess)
-	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -787,12 +783,12 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -813,7 +809,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	requestedIP := "4.5.6.7"
 	svc.Annotations[gce.ServiceAnnotationILBSubnet] = "test-subnet"
 	svc.Spec.LoadBalancerIP = requestedIP
-	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -833,7 +829,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 
 	// Change to a different subnet
 	svc.Annotations[gce.ServiceAnnotationILBSubnet] = "another-subnet"
-	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -852,7 +848,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	}
 	// remove the annotation - ILB should revert to default subnet.
 	delete(svc.Annotations, gce.ServiceAnnotationILBSubnet)
-	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -879,7 +875,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	fakeGCE := getFakeGCECloud(vals)
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	fwName := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
 	tc := struct {
 		Input  []int
@@ -931,7 +927,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	nodeNames := []string{"test-node-1"}
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -959,7 +955,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	}
 
 	frName := l.getFRNameWithProtocol("TCP")
-	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
@@ -979,7 +975,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	}
 	// change the protocol to UDP
 	svc.Spec.Ports[0].Protocol = v1.ProtocolUDP
-	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
