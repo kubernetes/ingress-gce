@@ -21,7 +21,7 @@ import (
 	"reflect"
 	"testing"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -34,11 +34,12 @@ func TestNEGServicePorts(t *testing.T) {
 	portName2 := "name2"
 
 	testcases := []struct {
-		desc            string
-		annotation      string
-		knownPortMap    []types.SvcPortTuple
-		expectedPortMap []types.SvcPortTuple
-		expectedErr     error
+		desc                  string
+		annotation            string
+		knownPortMap          []types.SvcPortTuple
+		expectedPortMap       []types.SvcPortTuple
+		expectedCustomNameMap map[types.SvcPortTuple]string
+		expectedErr           error
 	}{
 		{
 			desc:       "NEG annotation references port that Service does not have",
@@ -148,6 +149,37 @@ func TestNEGServicePorts(t *testing.T) {
 				},
 			},
 		},
+		{
+			desc:       "NEG annotation has custom names for negs",
+			annotation: `{"exposed_ports":{"80":{"name":"neg-name"},"443":{}}}`,
+			knownPortMap: []types.SvcPortTuple{
+				{
+					Name:       portName0,
+					Port:       80,
+					TargetPort: "namedport",
+				},
+				{
+					Name:       portName0,
+					Port:       443,
+					TargetPort: "3000",
+				},
+			},
+			expectedPortMap: []types.SvcPortTuple{
+				{
+					Name:       portName0,
+					Port:       80,
+					TargetPort: "namedport",
+				},
+				{
+					Name:       portName0,
+					Port:       443,
+					TargetPort: "3000",
+				},
+			},
+			expectedCustomNameMap: map[types.SvcPortTuple]string{
+				types.SvcPortTuple{Name: portName0, Port: 80, TargetPort: "namedport"}: "neg-name",
+			},
+		},
 	}
 
 	for _, tc := range testcases {
@@ -168,7 +200,7 @@ func TestNEGServicePorts(t *testing.T) {
 			inputSet := types.NewSvcPortTupleSet(tc.knownPortMap...)
 			expectSet := types.NewSvcPortTupleSet(tc.expectedPortMap...)
 
-			outputSet, err := negServicePorts(exposeNegStruct, inputSet)
+			outputSet, customNameMap, err := negServicePorts(exposeNegStruct, inputSet)
 			if tc.expectedErr == nil && err != nil {
 				t.Errorf("ExpectedNEGServicePorts to not return an error, got: %v", err)
 			}
@@ -180,6 +212,20 @@ func TestNEGServicePorts(t *testing.T) {
 			if tc.expectedErr != nil {
 				if !reflect.DeepEqual(err, tc.expectedErr) {
 					t.Errorf("Expected negServicePorts to return a %v error, got: %v", tc.expectedErr, err)
+				}
+			}
+
+			if len(tc.expectedCustomNameMap) == 0 && len(customNameMap) != 0 {
+				t.Errorf("Expected no custom names, but found %+v", customNameMap)
+			}
+
+			for expectedTuple, expectedNegName := range tc.expectedCustomNameMap {
+				if negName, ok := customNameMap[expectedTuple]; ok {
+					if negName != expectedNegName {
+						t.Errorf("Expected neg name for tuple %+v to be %s, but was %s", expectedTuple, expectedNegName, negName)
+					}
+				} else {
+					t.Errorf("Expected tuple %+v to be a key in customNameMap", expectedTuple)
 				}
 			}
 		})
