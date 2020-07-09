@@ -3,7 +3,7 @@ module k8s.io/ingress-gce
 go 1.13
 
 require (
-	github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20200203062548-7bdc6cbb875a
+	github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20200609233750-ea56f58e187a
 	github.com/go-openapi/spec v0.19.3
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
 	github.com/google/go-cmp v0.3.0
@@ -21,7 +21,6 @@ require (
 	k8s.io/api v0.18.0
 	k8s.io/apiextensions-apiserver v0.0.0
 	k8s.io/apimachinery v0.18.0
-	k8s.io/apiserver v0.18.0
 	k8s.io/client-go v0.18.0
 	k8s.io/cloud-provider v0.18.0
 	k8s.io/component-base v0.18.0
@@ -34,7 +33,7 @@ require (
 
 replace (
 	cloud.google.com/go => cloud.google.com/go v0.37.4
-	github.com/GoogleCloudPlatform/k8s-cloud-provider => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20200203062548-7bdc6cbb875a
+	github.com/GoogleCloudPlatform/k8s-cloud-provider => github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20200609233750-ea56f58e187a
 	k8s.io/api => k8s.io/api v0.18.0
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.18.0
 	k8s.io/apimachinery => k8s.io/apimachinery v0.18.0
