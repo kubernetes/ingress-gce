@@ -103,6 +103,14 @@ var AllServices = []*ServiceInfo{
 		Object:      "Address",
 		Service:     "GlobalAddresses",
 		Resource:    "addresses",
+		version:     VersionBeta,
+		keyType:     Global,
+		serviceType: reflect.TypeOf(&beta.GlobalAddressesService{}),
+	},
+	{
+		Object:      "Address",
+		Service:     "GlobalAddresses",
+		Resource:    "addresses",
 		keyType:     Global,
 		serviceType: reflect.TypeOf(&ga.GlobalAddressesService{}),
 	},
@@ -197,6 +205,28 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&ga.RegionDisksService{}),
 		additionalMethods: []string{
 			"Resize",
+		},
+	},
+	{
+		Object:      "Firewall",
+		Service:     "Firewalls",
+		Resource:    "firewalls",
+		version:     VersionAlpha,
+		keyType:     Global,
+		serviceType: reflect.TypeOf(&alpha.FirewallsService{}),
+		additionalMethods: []string{
+			"Update",
+		},
+	},
+	{
+		Object:      "Firewall",
+		Service:     "Firewalls",
+		Resource:    "firewalls",
+		version:     VersionBeta,
+		keyType:     Global,
+		serviceType: reflect.TypeOf(&beta.FirewallsService{}),
+		additionalMethods: []string{
+			"Update",
 		},
 	},
 	{
@@ -566,7 +596,7 @@ var AllServices = []*ServiceInfo{
 		Resource:    "sslPolicies",
 		keyType:     Global,
 		serviceType: reflect.TypeOf(&ga.SslPoliciesService{}),
-		options: NoList, // List() naming convention is different in GCE API for this resource
+		options:     NoList, // List() naming convention is different in GCE API for this resource
 	},
 	{
 		Object:      "Subnetwork",
@@ -740,6 +770,28 @@ var AllServices = []*ServiceInfo{
 		additionalMethods: []string{
 			"AddInstance",
 			"RemoveInstance",
+		},
+	},
+	{
+		Object:      "TargetTcpProxy",
+		Service:     "TargetTcpProxies",
+		Resource:    "targetTcpProxies",
+		version:     VersionAlpha,
+		keyType:     Global,
+		serviceType: reflect.TypeOf(&alpha.TargetTcpProxiesService{}),
+		additionalMethods: []string{
+			"SetBackendService",
+		},
+	},
+	{
+		Object:      "TargetTcpProxy",
+		Service:     "TargetTcpProxies",
+		Resource:    "targetTcpProxies",
+		version:     VersionBeta,
+		keyType:     Global,
+		serviceType: reflect.TypeOf(&beta.TargetTcpProxiesService{}),
+		additionalMethods: []string{
+			"SetBackendService",
 		},
 	},
 	{
