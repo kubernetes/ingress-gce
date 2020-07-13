@@ -19,6 +19,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
+	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/backends/features"
@@ -261,7 +262,9 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 		HealthChecks:        []string{hcLink},
 		SessionAffinity:     utils.TranslateAffinityType(sessionAffinity),
 		LoadBalancingScheme: string(scheme),
-		ConnectionDraining:  &composite.ConnectionDraining{DrainingTimeoutSec: DefaultConnectionDrainingTimeoutSeconds},
+	}
+	if protocol == string(api_v1.ProtocolTCP) {
+		expectedBS.ConnectionDraining = &composite.ConnectionDraining{DrainingTimeoutSec: DefaultConnectionDrainingTimeoutSeconds}
 	}
 
 	// Create backend service if none was found
