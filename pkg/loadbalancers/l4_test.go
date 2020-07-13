@@ -17,20 +17,21 @@ limitations under the License.
 */
 
 import (
-	"google.golang.org/api/compute/v1"
-	"k8s.io/ingress-gce/pkg/backends"
-	"k8s.io/ingress-gce/pkg/firewalls"
-	"k8s.io/ingress-gce/pkg/metrics"
-	"k8s.io/ingress-gce/pkg/utils"
 	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
+	"google.golang.org/api/compute/v1"
+	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/metrics"
+	"k8s.io/ingress-gce/pkg/utils"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	servicehelper "k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -1062,6 +1063,10 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 		t.Errorf("Unexpected subnetwork '%s' in forwarding rule, expected '%s'",
 			fwdRule.Subnetwork, l.cloud.NetworkURL())
 	}
+	addr, err := l.cloud.GetRegionAddress(frName, l.cloud.Region())
+	if err == nil || addr != nil {
+		t.Errorf("Expected error when looking up ephemeral address, got %v", addr)
+	}
 }
 
 func assertInternalLbResourcesDeleted(t *testing.T, apiService *v1.Service, firewallsDeleted bool, l *L4) {
@@ -1098,6 +1103,10 @@ func assertInternalLbResourcesDeleted(t *testing.T, apiService *v1.Service, fire
 	}
 	bs, err := l.cloud.GetRegionBackendService(resourceName, l.cloud.Region())
 	if err == nil || bs != nil {
+		t.Errorf("Expected error when looking up backend service after deletion")
+	}
+	addr, err := l.cloud.GetRegionAddress(resourceName, l.cloud.Region())
+	if err == nil || addr != nil {
 		t.Errorf("Expected error when looking up backend service after deletion")
 	}
 }

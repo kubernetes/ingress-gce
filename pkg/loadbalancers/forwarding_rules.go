@@ -287,6 +287,8 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 			klog.V(2).Infof("ensureForwardingRule: Skipping update of unchanged forwarding rule - %s", fr.Name)
 			return existingFwdRule, nil
 		} else {
+			// If the forwarding rule pointed to a backend service which does not match the controller naming scheme,
+			// that resouce could be leaked. It is not being deleted here because that is a user-managed resource.
 			klog.V(2).Infof("ensureForwardingRule: Deleting existing forwarding rule - %s, will be recreated", fr.Name)
 			if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, existingVersion)); err != nil {
 				return nil, err
@@ -297,7 +299,12 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	if err = composite.CreateForwardingRule(l.cloud, key, fr); err != nil {
 		return nil, err
 	}
-
+	if addrMgr != nil {
+		// Now that the controller knows the forwarding rule exists, we can release the address.
+		if err := addrMgr.ReleaseAddress(); err != nil {
+			klog.Errorf("ensureInternalLoadBalancer: failed to release address reservation, possibly causing an orphan: %v", err)
+		}
+	}
 	return composite.GetForwardingRule(l.cloud, key, fr.Version)
 }
 
