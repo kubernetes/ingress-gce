@@ -685,13 +685,14 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *u
 	}
 
 	return &loadbalancers.L7RuntimeInfo{
-		TLS:            tls,
-		TLSName:        annotations.UseNamedTLS(),
-		Ingress:        ing,
-		AllowHTTP:      annotations.AllowHTTP(),
-		StaticIPName:   staticIPName,
-		UrlMap:         urlMap,
-		FrontendConfig: feConfig,
+		TLS:                       tls,
+		TLSName:                   annotations.UseNamedTLS(),
+		Ingress:                   ing,
+		AllowHTTP:                 annotations.AllowHTTP(),
+		StaticIPName:              staticIPName,
+		ReserveGlobalStaticIPName: annotations.ReserveGlobalStaticIPName(),
+		UrlMap:                    urlMap,
+		FrontendConfig:            feConfig,
 	}, nil
 }
 

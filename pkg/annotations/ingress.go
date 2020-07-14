@@ -50,6 +50,13 @@ const (
 	// responsibility to create/delete it.
 	RegionalStaticIPNameKey = "kubernetes.io/ingress.regional-static-ip-name"
 
+	// ReserveGlobalStaticIPNameKey tells the Ingress controller to manage a specific
+	// GCE static ip for its forwarding rules. If specified, the Ingress controller
+	// reserves and assigns the static ip by this name to the forwarding rules of the
+	// given ingress. It differs from StaticIPNameKey, since the controller does manage
+	// this ip.
+	ReserveGlobalStaticIPNameKey = "kubernetes.io/ingress.reserve-global-static-ip-name"
+
 	// PreSharedCertKey represents the specific pre-shared SSL
 	// certificate for the Ingress controller to use. The controller *does not*
 	// manage this certificate, it is the users responsibility to create/delete it.
@@ -119,17 +126,12 @@ func FromIngress(ing *v1beta1.Ingress) *Ingress {
 	return &Ingress{ing.Annotations}
 }
 
-// AllowHTTP returns the allowHTTP flag. True by default.
-func (ing *Ingress) AllowHTTP() bool {
-	val, ok := ing.v[AllowHTTPKey]
+func (ing *Ingress) ReserveGlobalStaticIPName() string {
+	val, ok := ing.v[ReserveGlobalStaticIPNameKey]
 	if !ok {
-		return true
+		return ""
 	}
-	v, err := strconv.ParseBool(val)
-	if err != nil {
-		return true
-	}
-	return v
+	return val
 }
 
 // UseNamedTLS returns the name of the GCE SSL certificate. Empty by default.
@@ -175,6 +177,19 @@ func (ing *Ingress) RegionalStaticIPName() string {
 		return ""
 	}
 	return val
+}
+
+// AllowHTTP returns the allowHTTP flag. True by default.
+func (ing *Ingress) AllowHTTP() bool {
+	val, ok := ing.v[AllowHTTPKey]
+	if !ok {
+		return true
+	}
+	v, err := strconv.ParseBool(val)
+	if err != nil {
+		return true
+	}
+	return v
 }
 
 func (ing *Ingress) IngressClass() string {
