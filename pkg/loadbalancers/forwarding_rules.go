@@ -261,6 +261,13 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 			return nil, err
 		}
 		klog.V(2).Infof("ensureForwardingRule(%v): reserved IP %q for the forwarding rule", loadBalancerName, ipToUse)
+		defer func() {
+			// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
+			// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
+			if err := addrMgr.ReleaseAddress(); err != nil {
+				klog.Errorf("ensureInternalLoadBalancer: failed to release address reservation, possibly causing an orphan: %v", err)
+			}
+		}()
 	}
 
 	ports, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
@@ -305,14 +312,6 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	if err = composite.CreateForwardingRule(l.cloud, key, fr); err != nil {
 		return nil, err
 	}
-	if addrMgr != nil {
-		// Now that the controller knows the forwarding rule exists, we can release the address.
-		if err := addrMgr.ReleaseAddress(); err != nil {
-			klog.Errorf("ensureInternalLoadBalancer: - %s, failed to release address reservation, possibly causing an orphan: %v", fr.Name, err)
-		}
-	}
-	l.recorder.Eventf(l.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q created", key.Name)
-
 	return composite.GetForwardingRule(l.cloud, key, fr.Version)
 }
 
