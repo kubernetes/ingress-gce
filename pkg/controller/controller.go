@@ -590,7 +590,14 @@ func (lbc *LoadBalancerController) sync(key string) error {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", fmt.Sprintf("Error during sync: %v", syncErr.Error()))
 	} else {
 		// Insert/update the ingress state for metrics after successful sync.
-		lbc.metrics.SetIngress(key, metrics.NewIngressState(ing, urlMap.AllServicePorts()))
+		var fc *frontendconfigv1beta1.FrontendConfig
+		if flags.F.EnableFrontendConfig {
+			fc, err = frontendconfig.FrontendConfigForIngress(lbc.ctx.FrontendConfigs().List(), ing)
+			if err != nil {
+				return err
+			}
+		}
+		lbc.metrics.SetIngress(key, metrics.NewIngressState(ing, fc, urlMap.AllServicePorts()))
 	}
 
 	// Garbage collection will occur regardless of an error occurring. If an error occurred,

@@ -21,6 +21,8 @@ import (
 	"strconv"
 
 	"k8s.io/api/networking/v1beta1"
+	"k8s.io/ingress-gce/pkg/annotations"
+	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
@@ -44,36 +46,38 @@ const (
 	// certificate for the Ingress controller to use.
 	preSharedCertKey = "ingress.gcp.kubernetes.io/pre-shared-cert"
 	managedCertKey   = "networking.gke.io/managed-certificates"
-	// StaticIPNameKey tells the Ingress controller to use a specific GCE
+	// StaticGlobalIPNameKey tells the Ingress controller to use a specific GCE
 	// static ip for its forwarding rules. If specified, the Ingress controller
 	// assigns the static ip by this name to the forwarding rules of the given
 	// Ingress. The controller *does not* manage this ip, it is the users
 	// responsibility to create/delete it.
-	StaticIPNameKey = "kubernetes.io/ingress.global-static-ip-name"
+	StaticGlobalIPNameKey = "kubernetes.io/ingress.global-static-ip-name"
 	// staticIPKey is the annotation key used by controller to record GCP static ip.
 	staticIPKey = "ingress.kubernetes.io/static-ip"
 	// SSLCertKey is the annotation key used by controller to record GCP ssl cert.
 	SSLCertKey = "ingress.kubernetes.io/ssl-cert"
 
-	ingress                 = feature("Ingress")
-	externalIngress         = feature("ExternalIngress")
-	internalIngress         = feature("InternalIngress")
-	httpEnabled             = feature("HTTPEnabled")
-	hostBasedRouting        = feature("HostBasedRouting")
-	pathBasedRouting        = feature("PathBasedRouting")
-	tlsTermination          = feature("TLSTermination")
-	secretBasedCertsForTLS  = feature("SecretBasedCertsForTLS")
-	preSharedCertsForTLS    = feature("PreSharedCertsForTLS")
-	managedCertsForTLS      = feature("ManagedCertsForTLS")
-	staticGlobalIP          = feature("StaticGlobalIP")
-	managedStaticGlobalIP   = feature("ManagedStaticGlobalIP")
-	specifiedStaticGlobalIP = feature("SpecifiedStaticGlobalIP")
+	ingress                   = feature("Ingress")
+	externalIngress           = feature("ExternalIngress")
+	internalIngress           = feature("InternalIngress")
+	httpEnabled               = feature("HTTPEnabled")
+	hostBasedRouting          = feature("HostBasedRouting")
+	pathBasedRouting          = feature("PathBasedRouting")
+	tlsTermination            = feature("TLSTermination")
+	secretBasedCertsForTLS    = feature("SecretBasedCertsForTLS")
+	preSharedCertsForTLS      = feature("PreSharedCertsForTLS")
+	managedCertsForTLS        = feature("ManagedCertsForTLS")
+	staticGlobalIP            = feature("StaticGlobalIP")
+	managedStaticGlobalIP     = feature("ManagedStaticGlobalIP")
+	specifiedStaticGlobalIP   = feature("SpecifiedStaticGlobalIP")
+	specifiedStaticRegionalIP = feature("SpecifiedStaticRegionalIP")
 
 	servicePort         = feature("L7LBServicePort")
 	externalServicePort = feature("L7XLBServicePort")
 	internalServicePort = feature("L7ILBServicePort")
 	neg                 = feature("NEG")
 
+	// BackendConfig Features
 	cloudCDN                  = feature("CloudCDN")
 	cloudArmor                = feature("CloudArmor")
 	cloudIAP                  = feature("CloudIAP")
@@ -82,6 +86,10 @@ const (
 	clientIPAffinity          = feature("ClientIPAffinity")
 	cookieAffinity            = feature("CookieAffinity")
 	customRequestHeaders      = feature("CustomRequestHeaders")
+	customHealthChecks        = feature("CustomHealthChecks")
+
+	// FrontendConfig Features
+	sslPolicy = feature("SSLPolicy")
 
 	standaloneNeg  = feature("StandaloneNEG")
 	ingressNeg     = feature("IngressNEG")
@@ -96,7 +104,7 @@ const (
 )
 
 // featuresForIngress returns the list of features for given ingress.
-func featuresForIngress(ing *v1beta1.Ingress) []feature {
+func featuresForIngress(ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig) []feature {
 	features := []feature{ingress}
 
 	ingKey := fmt.Sprintf("%s/%s", ing.Namespace, ing.Name)
@@ -185,15 +193,27 @@ func featuresForIngress(ing *v1beta1.Ingress) []feature {
 	if val, ok := ingAnnotations[staticIPKey]; ok && val != "" {
 		klog.V(6).Infof("Static IP for ingress %s: %s", ingKey, val)
 		features = append(features, staticGlobalIP)
-
 		// Check if user specified static ip annotation exists.
-		if val, ok = ingAnnotations[StaticIPNameKey]; ok {
+		if val, ok = ingAnnotations[StaticGlobalIPNameKey]; ok {
 			klog.V(6).Infof("User specified static IP for ingress %s: %s", ingKey, val)
 			features = append(features, specifiedStaticGlobalIP)
 		} else {
 			features = append(features, managedStaticGlobalIP)
 		}
 	}
+
+	// Check for regional static IP
+	// We do this separately from the global static IP because Controller does not
+	// populate StaticIPKey annotation when processing Regional static IP.
+	if val, ok := ingAnnotations[annotations.RegionalStaticIPNameKey]; ok && val != "" {
+		features = append(features, specifiedStaticRegionalIP)
+	}
+
+	// FrontendConfig Features
+	if fc != nil && fc.Spec.SslPolicy != nil && *fc.Spec.SslPolicy != "" {
+		features = append(features, sslPolicy)
+	}
+
 	klog.V(4).Infof("Features for ingress %s: %v", ingKey, features)
 	return features
 }
@@ -269,6 +289,11 @@ func featuresForServicePort(sp utils.ServicePort) []feature {
 		klog.V(6).Infof("Custom request headers configured for service port %s: %v", svcPortKey, sp.BackendConfig.Spec.CustomRequestHeaders.Headers)
 		features = append(features, customRequestHeaders)
 	}
+	if sp.BackendConfig.Spec.HealthCheck != nil {
+		klog.V(6).Infof("Custom health check configured for service port %s: %v", svcPortKey, sp.BackendConfig.Spec.HealthCheck)
+		features = append(features, customHealthChecks)
+	}
+
 	klog.V(4).Infof("Features for Service port %s: %v", svcPortKey, features)
 	return features
 }
