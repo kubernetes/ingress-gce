@@ -32,7 +32,8 @@ import (
 // The L7 implementation is tested in TestToZoneNetworkEndpointMapUtil.
 func TestLocalGetEndpointSet(t *testing.T) {
 	t.Parallel()
-	_, transactionSyncer := newL4ILBTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), false)
+	mode := negtypes.L4LocalMode
+	_, transactionSyncer := newL4ILBTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), mode)
 	nodeNames := []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6}
 	for i := 0; i < len(nodeNames); i++ {
 		err := transactionSyncer.nodeLister.Add(&v1.Node{
@@ -102,7 +103,8 @@ func TestLocalGetEndpointSet(t *testing.T) {
 // TestClusterGetEndpointSet verifies the GetEndpointSet method implemented by the ClusterL4ILBEndpointsCalculator.
 func TestClusterGetEndpointSet(t *testing.T) {
 	t.Parallel()
-	_, transactionSyncer := newL4ILBTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), true)
+	mode := negtypes.L4ClusterMode
+	_, transactionSyncer := newL4ILBTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), mode)
 	nodeNames := []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6}
 	for i := 0; i < len(nodeNames); i++ {
 		err := transactionSyncer.nodeLister.Add(&v1.Node{
