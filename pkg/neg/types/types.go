@@ -122,10 +122,11 @@ type PortInfo struct {
 	// This is enabled with service port is reference by ingress.
 	// If the service port is only exposed as stand alone NEG, it should not be enbled.
 	ReadinessGate bool
-	// RandomizeEndpoints indicates if the endpoints for the NEG associated with this port need to
-	// be selected at random, rather than selecting the endpoints of this service. This is applicable
-	// in GCE_VM_IP NEGs where the endpoints are the nodes instead of pods.
-	RandomizeEndpoints bool
+	// EpCalculatorMode indicates if the endpoints for the NEG associated with this port need to
+	// be selected at random(L4ClusterMode), or by following service endpoints(L4LocalMode).
+	// This is applicable in GCE_VM_IP NEGs where the endpoints are the nodes instead of pods.
+	// L7 NEGs will have either "" or L7Mode.
+	EpCalculatorMode EndpointsCalculatorMode
 }
 
 // PortInfoMapKey is the Key of PortInfoMap
@@ -158,7 +159,7 @@ func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, nam
 
 // NewPortInfoMapForVMIPNEG creates PortInfoMap with empty port tuple. Since VM_IP NEGs target
 // the node instead of the pod, there is no port info to be stored.
-func NewPortInfoMapForVMIPNEG(namespace, name string, namer NetworkEndpointGroupNamer, randomize bool) PortInfoMap {
+func NewPortInfoMapForVMIPNEG(namespace, name string, namer NetworkEndpointGroupNamer, local bool) PortInfoMap {
 	ret := PortInfoMap{}
 	svcPortSet := make(SvcPortTupleSet)
 	svcPortSet.Insert(
@@ -166,10 +167,14 @@ func NewPortInfoMapForVMIPNEG(namespace, name string, namer NetworkEndpointGroup
 		SvcPortTuple{},
 	)
 	for svcPortTuple := range svcPortSet {
+		mode := L4ClusterMode
+		if local {
+			mode = L4LocalMode
+		}
 		ret[PortInfoMapKey{svcPortTuple.Port, ""}] = PortInfo{
-			PortTuple:          svcPortTuple,
-			NegName:            namer.VMIPNEG(namespace, name),
-			RandomizeEndpoints: randomize,
+			PortTuple:        svcPortTuple,
+			NegName:          namer.VMIPNEG(namespace, name),
+			EpCalculatorMode: mode,
 		}
 	}
 	return ret
@@ -206,8 +211,8 @@ func NewPortInfoMapWithDestinationRule(namespace, name string, svcPortTupleSet S
 // It assumes the same key (service port) will have the same target port and negName
 // If not, it will throw error
 // If a key in p1 or p2 has readiness gate enabled, the merged port info will also has readiness gate enabled
-// If a key in p1 or p2 has randomize endpoints enabled, the merged port info will also has randomize endpoints enabled.
-// This field is only applicable for VMPrimaryIP NEGs.
+// The merged port info will have the same Endpoints Calculator mode as p1 and p2. This field is important for VM_IP NEGs.
+// L7 NEGs can have an empty string or L7Mode value.
 func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 	var err error
 	for mapKey, portInfo := range p2 {
@@ -222,8 +227,8 @@ func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 			if existingPortInfo.Subset != portInfo.Subset {
 				return fmt.Errorf("for service port %v, Subset name in existing map is %q, but the merge map has %q", mapKey, existingPortInfo.Subset, portInfo.Subset)
 			}
-			if existingPortInfo.RandomizeEndpoints != portInfo.RandomizeEndpoints {
-				return fmt.Errorf("For service port %v, Existing map has RandomizeEndpoints %v, but the merge map has %v", mapKey, existingPortInfo.RandomizeEndpoints, portInfo.RandomizeEndpoints)
+			if existingPortInfo.EpCalculatorMode != portInfo.EpCalculatorMode {
+				return fmt.Errorf("For service port %v, Existing map has Calculator mode %v, but the merge map has %v", mapKey, existingPortInfo.EpCalculatorMode, portInfo.EpCalculatorMode)
 			}
 			mergedInfo.ReadinessGate = existingPortInfo.ReadinessGate
 		}
@@ -231,7 +236,7 @@ func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 		mergedInfo.NegName = portInfo.NegName
 		// Turn on the readiness gate if one of them is on
 		mergedInfo.ReadinessGate = mergedInfo.ReadinessGate || portInfo.ReadinessGate
-		mergedInfo.RandomizeEndpoints = portInfo.RandomizeEndpoints
+		mergedInfo.EpCalculatorMode = portInfo.EpCalculatorMode
 		mergedInfo.Subset = portInfo.Subset
 		mergedInfo.SubsetLabels = portInfo.SubsetLabels
 
@@ -304,10 +309,17 @@ type NegSyncerKey struct {
 
 	// NegType is the type of the network endpoints in this NEG.
 	NegType NetworkEndpointType
+
+	// EpCalculatorMode indicates how the endpoints for the NEG are determined.
+	// GCE_VM_IP_PORT NEGs get L7Mode or "".
+	// In case of GCE_VM_IP NEGs:
+	//   The endpoints are nodes selected at random in case of Cluster trafficPolicy(L4ClusterMode).
+	//   The endpoints are nodes running backends of this service in case of Local trafficPolicy(L4LocalMode).
+	EpCalculatorMode EndpointsCalculatorMode
 }
 
 func (key NegSyncerKey) String() string {
-	return fmt.Sprintf("%s/%s-%s-%s-%s", key.Namespace, key.Name, key.Subset, key.PortTuple.String(), string(key.NegType))
+	return fmt.Sprintf("%s/%s-%s-%s-%s-%s", key.Namespace, key.Name, key.Subset, key.PortTuple.String(), string(key.NegType), key.EpCalculatorMode)
 }
 
 // GetAPIVersion returns the compute API version to be used in order

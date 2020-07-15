@@ -111,14 +111,16 @@ func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, networkEndpointGro
 	return syncer
 }
 
-func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, randomizeEndpoints bool) negtypes.NetworkEndpointsCalculator {
+func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode) negtypes.NetworkEndpointsCalculator {
 	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
 	if syncerKey.NegType == negtypes.VmIpEndpointType {
 		nodeLister := listers.NewNodeLister(nodeLister)
-		if randomizeEndpoints {
+		switch mode {
+		case negtypes.L4LocalMode:
+			return NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey)
+		default:
 			return NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey)
 		}
-		return NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey)
 	}
 	return NewL7EndpointsCalculator(zoneGetter, podLister, syncerKey.PortTuple.Name,
 		syncerKey.SubsetLabels, syncerKey.NegType)

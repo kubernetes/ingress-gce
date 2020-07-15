@@ -85,7 +85,7 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, cur
 		}
 	}
 	if numEndpoints == 0 {
-		// TODO verify the behavior seen by a client when accessing an ILB whose NEGs have no endpoints.
+		// Not having backends will cause clients to see connection timeout instead of an "ICMP ConnectionRefused".
 		return nil, nil, nil
 	}
 	// Compute the networkEndpoints, with total endpoints count <= l.subsetSizeLimit
