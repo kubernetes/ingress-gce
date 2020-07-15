@@ -41,6 +41,7 @@ import (
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
+	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/healthchecks"
@@ -108,7 +109,7 @@ func NewLoadBalancerController(
 	})
 
 	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendSvcPort.ID.Service)
-	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer)
+	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer, ctx)
 	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
 
 	lbc := LoadBalancerController{
@@ -139,8 +140,8 @@ func NewLoadBalancerController(
 				return
 			}
 
-			klog.V(3).Infof("Ingress %v added, enqueuing", common.NamespacedName(addIng))
-			lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeNormal, "ADD", common.NamespacedName(addIng))
+			klog.V(2).Infof("Ingress %v added, enqueuing", common.NamespacedName(addIng))
+			lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeNormal, events.SyncIngress, "Scheduled for sync")
 			lbc.ingQueue.Enqueue(obj)
 		},
 		DeleteFunc: func(obj interface{}) {
@@ -176,11 +177,11 @@ func NewLoadBalancerController(
 				return
 			}
 			if reflect.DeepEqual(old, cur) {
-				klog.V(3).Infof("Periodic enqueueing of %v", common.NamespacedName(curIng))
+				klog.V(2).Infof("Periodic enqueueing of %v", common.NamespacedName(curIng))
 			} else {
-				klog.V(3).Infof("Ingress %v changed, enqueuing", common.NamespacedName(curIng))
+				klog.V(2).Infof("Ingress %v changed, enqueuing", common.NamespacedName(curIng))
 			}
-
+			lbc.ctx.Recorder(curIng.Namespace).Eventf(curIng, apiv1.EventTypeNormal, events.SyncIngress, "Scheduled for sync")
 			lbc.ingQueue.Enqueue(cur)
 		},
 	})
@@ -558,7 +559,8 @@ func (lbc *LoadBalancerController) sync(key string) error {
 		err := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm)
 		// Skip emitting an event if ingress does not exist as we cannot retrieve ingress namespace.
 		if err != nil && ingExists {
-			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "GC", fmt.Sprintf("Error during GC: %v", err))
+			klog.Errorf("Error in GC for %s/%s: %v", ing.Namespace, ing.Name, err)
+			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.GarbageCollection, "Error: %v", err)
 		}
 		// Delete the ingress state for metrics after GC is successful.
 		if err == nil && ingExists {
@@ -578,8 +580,8 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	urlMap, errs := lbc.Translator.TranslateIngress(ing, lbc.ctx.DefaultBackendSvcPort.ID, lbc.ctx.ClusterNamer)
 
 	if errs != nil {
-		msg := fmt.Errorf("error while evaluating the ingress spec: %v", utils.JoinErrs(errs))
-		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Translate", msg.Error())
+		msg := fmt.Errorf("invalid ingress spec: %v", utils.JoinErrs(errs))
+		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.TranslateIngress, "Translation failed: %v", msg)
 		return msg
 	}
 
@@ -587,7 +589,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	syncState := &syncState{urlMap, ing, nil}
 	syncErr := lbc.ingSyncer.Sync(syncState)
 	if syncErr != nil {
-		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", fmt.Sprintf("Error during sync: %v", syncErr.Error()))
+		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.SyncIngress, "Error syncing to GCP: %v", syncErr.Error())
 	} else {
 		// Insert/update the ingress state for metrics after successful sync.
 		lbc.metrics.SetIngress(key, metrics.NewIngressState(ing, urlMap.AllServicePorts()))
@@ -598,7 +600,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	// free up enough quota for the next sync to pass.
 	frontendGCAlgorithm := frontendGCAlgorithm(ingExists, ing)
 	if gcErr := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm); gcErr != nil {
-		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "GC", fmt.Sprintf("Error during GC: %v", gcErr))
+		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.GarbageCollection, "Error during garbage collection: %v", gcErr)
 		return fmt.Errorf("error during sync %v, error during GC %v", syncErr, gcErr)
 	}
 
@@ -633,7 +635,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 				klog.Errorf("PatchIngressStatus(%s/%s) failed: %v", currIng.Namespace, currIng.Name, err)
 				return err
 			}
-			lbc.ctx.Recorder(ing.Namespace).Eventf(currIng, apiv1.EventTypeNormal, "CREATE", "ip: %v", ip)
+			lbc.ctx.Recorder(ing.Namespace).Eventf(currIng, apiv1.EventTypeNormal, events.IPChanged, "IP is now %v", ip)
 		}
 	}
 	annotations, err := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.backendSyncer)
@@ -655,7 +657,7 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *u
 		if apierrors.IsNotFound(err) {
 			// TODO: this path should be removed when external certificate managers migrate to a better solution.
 			const msg = "Could not find TLS certificates. Continuing setup for the load balancer to serve HTTP. Note: this behavior is deprecated and will be removed in a future version of ingress-gce"
-			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", msg)
+			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.SyncIngress, msg)
 		} else {
 			klog.Errorf("Could not get certificates for ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 			return nil, err
@@ -666,7 +668,7 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *u
 	if lbc.ctx.FrontendConfigEnabled {
 		feConfig, err = frontendconfig.FrontendConfigForIngress(lbc.ctx.FrontendConfigs().List(), ing)
 		if err != nil {
-			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, "Sync", fmt.Sprintf("%v", err))
+			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.SyncIngress, "Error: %v", err)
 		}
 		// Object in cache could be changed in-flight. Deepcopy to
 		// reduce race conditions.

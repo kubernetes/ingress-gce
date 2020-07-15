@@ -29,6 +29,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -45,7 +46,7 @@ func newTestJig(fakeGCE *gce.Cloud) *Jig {
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	fakeInstancePool := instances.NewNodePool(fakeIGs, defaultNamer)
+	fakeInstancePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{})
 	fakeInstancePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 
 	// Add standard hooks for mocking update calls. Each test can set a different update hook if it chooses to.
