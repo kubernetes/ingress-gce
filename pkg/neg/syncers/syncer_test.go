@@ -40,6 +40,7 @@ const (
 	testServiceName      = "test-name"
 	testNamedPort        = "named-Port"
 	clusterID            = "clusterid"
+	kubeSystemUID        = "kube-system-id"
 )
 
 var (

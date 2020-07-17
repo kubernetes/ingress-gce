@@ -49,6 +49,12 @@ const (
 	NegCRServicePortKey = "networking.gke.io/service-port"
 	// NegCRControllerValue is used as the value for the managed-by label on NEG CRs when enabled.
 	NegCRControllerValue = "neg-controller"
+
+	// NEG CR Condition Reasons
+	NegSyncSuccessful           = "NegSyncSuccessful"
+	NegSyncFailed               = "NegSyncFailed"
+	NegInitializationSuccessful = "NegInitializationSuccessful"
+	NegInitializationFailed     = "NegInitializationFailed"
 )
 
 // SvcPortTuple is the tuple representing one service port

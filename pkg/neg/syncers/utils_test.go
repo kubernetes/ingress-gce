@@ -29,8 +29,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -302,9 +305,9 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 		testServiceNameSpace = "test-ns"
 		testNetwork          = cloud.ResourcePath("network", &meta.Key{Zone: testZone, Name: "test-network"})
 		testSubnetwork       = cloud.ResourcePath("subnetwork", &meta.Key{Zone: testZone, Name: "test-subnetwork"})
+		testKubesystemUID    = "kube-system-uid"
+		testPort             = "80"
 	)
-
-	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
 
 	testCases := []struct {
 		description         string
@@ -313,6 +316,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 		networkEndpointType negtypes.NetworkEndpointType
 		expectedSubnetwork  string
 		apiVersion          meta.Version
+		enableNegCRD        bool
 	}{
 		{
 			description:         "Create NEG of type GCE_VM_IP_PORT",
@@ -338,20 +342,54 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			expectedSubnetwork:  testSubnetwork,
 			apiVersion:          meta.VersionAlpha,
 		},
+		{
+			description:         "Create NEG of type GCE_VM_IP_PORT with Neg CRD",
+			negName:             "gcp-neg",
+			enableNonGCPMode:    false,
+			networkEndpointType: negtypes.VmIpPortEndpointType,
+			expectedSubnetwork:  testSubnetwork,
+			apiVersion:          meta.VersionGA,
+			enableNegCRD:        true,
+		},
+		{
+			description:         "Create NEG of type NON_GCP_PRIVATE_IP_PORT with Neg CRD",
+			negName:             "non-gcp-neg",
+			enableNonGCPMode:    true,
+			networkEndpointType: negtypes.NonGCPPrivateEndpointType,
+			expectedSubnetwork:  "",
+			apiVersion:          meta.VersionGA,
+			enableNegCRD:        true,
+		},
+		{
+			description:         "Create NEG of type GCE_VM_IP with Neg CRD",
+			negName:             "gcp-ip-neg",
+			enableNonGCPMode:    false,
+			networkEndpointType: negtypes.VmIpEndpointType,
+			expectedSubnetwork:  testSubnetwork,
+			apiVersion:          meta.VersionAlpha,
+			enableNegCRD:        true,
+		},
 	}
 	for _, tc := range testCases {
-		ensureNetworkEndpointGroup(
+		fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+		flags.F.EnableNegCrd = tc.enableNegCRD
+		_, err := ensureNetworkEndpointGroup(
 			testServiceNameSpace,
 			testServiceName,
 			tc.negName,
 			testZone,
 			testNamedPort,
+			testKubesystemUID,
+			testPort,
 			tc.networkEndpointType,
 			fakeCloud,
 			nil,
 			nil,
 			tc.apiVersion,
 		)
+		if err != nil {
+			t.Errorf("unexpected error: %s", err)
+		}
 
 		neg, err := fakeCloud.GetNetworkEndpointGroup(tc.negName, testZone, tc.apiVersion)
 		if err != nil {
@@ -366,13 +404,38 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			t.Errorf("Unexpected Subnetwork, expecting %q but got %q", tc.expectedSubnetwork, neg.Subnetwork)
 		}
 
+		if tc.enableNegCRD {
+			expectedNegDesc := utils.NegDescription{
+				ClusterUID:  testKubesystemUID,
+				Namespace:   testServiceNamespace,
+				ServiceName: testServiceName,
+				Port:        testPort,
+			}
+
+			actualNegDesc, err := utils.NegDescriptionFromString(neg.Description)
+			if err != nil {
+				t.Errorf("Invalid neg description: %s", err)
+			}
+
+			if !reflect.DeepEqual(*actualNegDesc, expectedNegDesc) {
+				t.Errorf("Unexpected neg description: %s, expected %s", neg.Description, expectedNegDesc.String())
+			}
+
+		} else {
+			if neg.Description != "" {
+				t.Errorf("Unexpected neg description. Expecting no description but got %s", neg.Description)
+			}
+		}
+
 		// Call ensureNetworkEndpointGroup with the same NEG.
-		err = ensureNetworkEndpointGroup(
+		_, err = ensureNetworkEndpointGroup(
 			testServiceNameSpace,
 			testServiceName,
 			tc.negName,
 			testZone,
 			testNamedPort,
+			testKubesystemUID,
+			testPort,
 			tc.networkEndpointType,
 			fakeCloud,
 			nil,
@@ -817,7 +880,203 @@ func TestShouldPodBeInNeg(t *testing.T) {
 			t.Errorf("For test case %q, endpointSets output = %+v, but got %+v", tc.desc, tc.expect, ret)
 		}
 	}
+}
 
+func TestNameUniqueness(t *testing.T) {
+	var (
+		testZone             = "test-zone"
+		testNamedPort        = "named-port"
+		testServiceName      = "test-svc"
+		testServiceNameSpace = "test-ns"
+		testNetwork          = cloud.ResourcePath("network", &meta.Key{Zone: testZone, Name: "test-network"})
+		testSubnetwork       = cloud.ResourcePath("subnetwork", &meta.Key{Zone: testZone, Name: "test-subnetwork"})
+		testKubesystemUID    = "cluster-uid"
+		testPort             = "80"
+		testServiceName2     = "test-svc-2"
+		negName              = "test-neg"
+		apiVersion           = meta.VersionGA
+		networkEndpointType  = negtypes.VmIpPortEndpointType
+	)
+
+	for _, tc := range []struct {
+		description      string
+		enableNegInitial bool
+		enableNegFinal   bool
+		expectError      bool
+	}{
+		{
+			description:      "both calls have NEG CRD enabled",
+			enableNegInitial: true,
+			enableNegFinal:   true,
+			expectError:      true,
+		},
+		{
+			description:      "first call has NEG CRD enabled",
+			enableNegInitial: true,
+			enableNegFinal:   false,
+			expectError:      true,
+		},
+		{
+			// This case is unlikely. If neg is created when NEG CRD is not enabled, the name is guaranteed to be unique due to naming convention.
+			description:      "final call have NEG CRD enabled",
+			enableNegInitial: false,
+			enableNegFinal:   true,
+			expectError:      false,
+		},
+		{
+			// This case is unlikely. If neg is created when NEG CRD is not enabled, the name is guaranteed to be unique due to naming convention.
+			description:      "neither call has NEG CRD enabled",
+			enableNegInitial: false,
+			enableNegFinal:   false,
+			expectError:      false,
+		},
+	} {
+		fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+		flags.F.EnableNegCrd = tc.enableNegInitial
+
+		_, err := ensureNetworkEndpointGroup(
+			testServiceNameSpace,
+			testServiceName,
+			negName,
+			testZone,
+			testNamedPort,
+			testKubesystemUID,
+			testPort,
+			networkEndpointType,
+			fakeCloud,
+			nil,
+			nil,
+			apiVersion,
+		)
+		if err != nil {
+			t.Errorf("Errored while ensuring network endpoint groups: %s", err)
+		}
+
+		neg, err := fakeCloud.GetNetworkEndpointGroup(negName, testZone, apiVersion)
+		if err != nil {
+			t.Errorf("Failed to retrieve NEG %q: %v", negName, err)
+		}
+
+		if neg == nil {
+			t.Errorf("Failed to find neg")
+		}
+
+		// Call ensureNetworkEndpointGroup with the same NEG name and different service name
+		flags.F.EnableNegCrd = tc.enableNegFinal
+		_, err = ensureNetworkEndpointGroup(
+			testServiceNameSpace,
+			testServiceName2,
+			negName,
+			testZone,
+			testNamedPort,
+			testKubesystemUID,
+			testPort,
+			networkEndpointType,
+			fakeCloud,
+			nil,
+			nil,
+			apiVersion,
+		)
+
+		if tc.expectError && err == nil {
+			t.Errorf("Expected error when called with duplicate NEG name")
+		} else if !tc.expectError && err != nil {
+			t.Errorf("Unexpected error when ensuring NEG: %s", err)
+		}
+	}
+}
+
+func TestNegObjectCrd(t *testing.T) {
+
+	var (
+		testZone             = "test-zone"
+		testNamedPort        = "named-port"
+		testServiceName      = "test-svc"
+		testServiceNameSpace = "test-ns"
+		testNetwork          = cloud.ResourcePath("network", &meta.Key{Zone: testZone, Name: "test-network"})
+		testSubnetwork       = cloud.ResourcePath("subnetwork", &meta.Key{Zone: testZone, Name: "test-subnetwork"})
+		testKubesystemUID    = "cluster-uid"
+		testPort             = "80"
+		negName              = "test-neg"
+		apiVersion           = meta.VersionGA
+	)
+
+	for _, networkEndpointType := range []negtypes.NetworkEndpointType{
+		negtypes.VmIpPortEndpointType,
+		negtypes.VmIpEndpointType,
+		negtypes.NonGCPPrivateEndpointType,
+	} {
+		// Ensure that the Neg Object Resource returned does not change based on the enableNegCRD input
+		for _, enableNegCRD := range []bool{true, false} {
+			fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+			flags.F.EnableNegCrd = enableNegCRD
+			negObj, err := ensureNetworkEndpointGroup(
+				testServiceNameSpace,
+				testServiceName,
+				negName,
+				testZone,
+				testNamedPort,
+				testKubesystemUID,
+				testPort,
+				networkEndpointType,
+				fakeCloud,
+				nil,
+				nil,
+				apiVersion,
+			)
+			if err != nil {
+				t.Errorf("Errored while ensuring network endpoint groups: %s", err)
+			}
+
+			neg, err := fakeCloud.GetNetworkEndpointGroup(negName, testZone, apiVersion)
+			if err != nil {
+				t.Errorf("Failed to retrieve NEG %q: %v", negName, err)
+			}
+
+			if neg == nil {
+				t.Errorf("Failed to find neg")
+			}
+
+			var expectedNegObj negv1beta1.NegObjectReference
+			if enableNegCRD {
+				expectedNegObj = negv1beta1.NegObjectReference{
+					Id:                  neg.Id,
+					SelfLink:            neg.SelfLink,
+					NetworkEndpointType: negv1beta1.NetworkEndpointType(networkEndpointType),
+				}
+			} else {
+				expectedNegObj = negv1beta1.NegObjectReference{}
+			}
+
+			if negObj != expectedNegObj {
+				t.Errorf("Expected neg object %+v, but received %+v", expectedNegObj, negObj)
+			}
+
+			// Call ensureNetworkEndpointGroup with the same NEG name and different service name
+			negObj, err = ensureNetworkEndpointGroup(
+				testServiceNameSpace,
+				testServiceName,
+				negName,
+				testZone,
+				testNamedPort,
+				testKubesystemUID,
+				testPort,
+				networkEndpointType,
+				fakeCloud,
+				nil,
+				nil,
+				apiVersion,
+			)
+
+			if err != nil {
+				t.Errorf("Unexpected error when ensuring NEG: %s", err)
+			}
+
+			if negObj != expectedNegObj {
+				t.Errorf("Expected neg object %+v, but received %+v", expectedNegObj, negObj)
+			}
+		}
+	}
 }
 
 // numToIP converts the given number to an IP address.
