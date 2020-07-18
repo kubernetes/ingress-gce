@@ -56,13 +56,20 @@ type Env struct {
 // NewEnv returns an Env for the given Ingress.
 func NewEnv(ing *v1beta1.Ingress, client kubernetes.Interface, vip, net, subnet string) (*Env, error) {
 	ret := &Env{Ing: ing, SecretsMap: make(map[string]*api_v1.Secret), VIP: vip, Network: net, Subnetwork: subnet}
-	secrets, err := client.CoreV1().Secrets(ing.Namespace).List(context.TODO(), meta_v1.ListOptions{})
-	if err != nil {
-		return nil, err
-	}
-	for _, s := range secrets.Items {
-		s := s
-		ret.SecretsMap[s.Name] = &s
+	for _, tlsSpec := range ing.Spec.TLS {
+		if len(tlsSpec.SecretName) == 0 {
+			// doesn't use a secret
+			continue
+		}
+		if _, ok := ret.SecretsMap[tlsSpec.SecretName]; ok {
+			// already fetched
+			continue
+		}
+		secret, err := client.CoreV1().Secrets(ing.Namespace).Get(context.TODO(), tlsSpec.SecretName, meta_v1.GetOptions{})
+		if err != nil {
+			return nil, err
+		}
+		ret.SecretsMap[tlsSpec.SecretName] = secret
 	}
 	return ret, nil
 }
