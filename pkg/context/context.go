@@ -42,6 +42,8 @@ import (
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/metrics"
+	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
+	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -57,6 +59,7 @@ const (
 type ControllerContext struct {
 	KubeConfig            *rest.Config
 	KubeClient            kubernetes.Interface
+	SvcNegClient          svcnegclient.Interface
 	DestinationRuleClient dynamic.NamespaceableResourceInterface
 
 	Cloud *gce.Cloud
@@ -76,6 +79,7 @@ type ControllerContext struct {
 	EndpointInformer        cache.SharedIndexInformer
 	DestinationRuleInformer cache.SharedIndexInformer
 	ConfigMapInformer       cache.SharedIndexInformer
+	SvcNegInformer          cache.SharedIndexInformer
 
 	ControllerMetrics *metrics.ControllerMetrics
 
@@ -106,6 +110,7 @@ func NewControllerContext(
 	kubeClient kubernetes.Interface,
 	backendConfigClient backendconfigclient.Interface,
 	frontendConfigClient frontendconfigclient.Interface,
+	svcnegClient svcnegclient.Interface,
 	cloud *gce.Cloud,
 	namer *namer.Namer,
 	kubeSystemUID types.UID,
@@ -114,6 +119,7 @@ func NewControllerContext(
 	context := &ControllerContext{
 		KubeConfig:              kubeConfig,
 		KubeClient:              kubeClient,
+		SvcNegClient:            svcnegClient,
 		Cloud:                   cloud,
 		ClusterNamer:            namer,
 		KubeSystemUID:           kubeSystemUID,
@@ -131,6 +137,10 @@ func NewControllerContext(
 
 	if config.FrontendConfigEnabled {
 		context.FrontendConfigInformer = informerfrontendconfig.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	}
+
+	if svcnegClient != nil {
+		context.SvcNegInformer = informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 
 	return context
@@ -231,6 +241,10 @@ func (ctx *ControllerContext) HasSynced() bool {
 		funcs = append(funcs, ctx.ConfigMapInformer.HasSynced)
 	}
 
+	if ctx.SvcNegInformer != nil {
+		funcs = append(funcs, ctx.SvcNegInformer.HasSynced)
+	}
+
 	for _, f := range funcs {
 		if !f() {
 			return false
@@ -300,6 +314,9 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	}
 	if ctx.EnableASMConfigMap && ctx.ConfigMapInformer != nil {
 		go ctx.ConfigMapInformer.Run(stopCh)
+	}
+	if ctx.SvcNegInformer != nil {
+		go ctx.SvcNegInformer.Run(stopCh)
 	}
 	// Export ingress usage metrics.
 	go ctx.ControllerMetrics.Run(stopCh)

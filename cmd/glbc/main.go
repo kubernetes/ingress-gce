@@ -38,6 +38,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
+	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 
 	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
@@ -126,11 +127,18 @@ func main() {
 		}
 	}
 
+	var svcNegClient svcnegclient.Interface
 	if flags.F.EnableNegCrd {
 		negCRDMeta := svcneg.CRDMeta()
 		if _, err := crdHandler.EnsureCRD(negCRDMeta); err != nil {
 			klog.Fatalf("Failed to ensure ServiceNetworkEndpointGroup CRD: %v", err)
 		}
+
+		svcNegClient, err = svcnegclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create NetworkEndpointGroup client: %v", err)
+		}
+
 	}
 
 	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, firewalls.DefaultFirewallName)
@@ -160,7 +168,7 @@ func main() {
 		ASMConfigMapNamespace: flags.F.ASMConfigMapBasedConfigNamespace,
 		ASMConfigMapName:      flags.F.ASMConfigMapBasedConfigCMName,
 	}
-	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, cloud, namer, kubeSystemUID, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
@@ -253,7 +261,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	}
 
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
-	negController := neg.NewController(negtypes.NewAdapter(ctx.Cloud), ctx, zoneGetter, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, flags.F.EnableReadinessReflector, flags.F.RunIngressController, flags.F.RunL4Controller)
+	negController := neg.NewController(negtypes.NewAdapter(ctx.Cloud), ctx, zoneGetter, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, flags.F.EnableReadinessReflector, flags.F.RunIngressController, flags.F.RunL4Controller, flags.F.EnableNegCrd)
 
 	go negController.Run(stopCh)
 	klog.V(0).Infof("negController started")

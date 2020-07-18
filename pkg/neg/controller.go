@@ -99,6 +99,9 @@ type Controller struct {
 
 	// runL4 indicates whether to run NEG controller that processes L4 ILB services
 	runL4 bool
+
+	// indicates whether neg crd have been enabled
+	enableNegCrd bool
 }
 
 // NewController returns a network endpoint group controller.
@@ -112,6 +115,7 @@ func NewController(
 	enableReadinessReflector bool,
 	runIngress bool,
 	runL4Controller bool,
+	enableNegCrd bool,
 ) *Controller {
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
@@ -123,7 +127,11 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
-	manager := newSyncerManager(namer, recorder, cloud, zoneGetter, ctx.PodInformer.GetIndexer(), ctx.ServiceInformer.GetIndexer(), ctx.EndpointInformer.GetIndexer(), ctx.NodeInformer.GetIndexer())
+	var svcNegInformer cache.Indexer
+	if enableNegCrd {
+		svcNegInformer = ctx.SvcNegInformer.GetIndexer()
+	}
+	manager := newSyncerManager(namer, recorder, cloud, zoneGetter, ctx.SvcNegClient, ctx.PodInformer.GetIndexer(), ctx.ServiceInformer.GetIndexer(), ctx.EndpointInformer.GetIndexer(), ctx.NodeInformer.GetIndexer(), svcNegInformer)
 	var reflector readiness.Reflector
 	if enableReadinessReflector {
 		reflector = readiness.NewReadinessReflector(ctx, manager)
@@ -151,6 +159,7 @@ func NewController(
 		reflector:             reflector,
 		collector:             ctx.ControllerMetrics,
 		runL4:                 runL4Controller,
+		enableNegCrd:          enableNegCrd,
 	}
 
 	if runIngress {
@@ -432,6 +441,7 @@ func (c *Controller) processService(key string) error {
 	c.collector.DeleteNegService(key)
 	// neg annotation is not found or NEG is not enabled
 	c.manager.StopSyncer(namespace, name)
+
 	// delete the annotation
 	return c.syncNegStatusAnnotation(namespace, name, make(negtypes.PortInfoMap))
 }
@@ -481,12 +491,19 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 			)
 		}
 
-		exposedNegSvcPort, _, err := negServicePorts(negAnnotation, knowSvcPortSet)
+		exposedNegSvcPort, customNames, err := negServicePorts(negAnnotation, knowSvcPortSet)
 		if err != nil {
 			return err
 		}
 
-		if err := portInfoMap.Merge(negtypes.NewPortInfoMap(name.Namespace, name.Name, exposedNegSvcPort, c.namer /*readinessGate*/, true, nil)); err != nil {
+		if !c.enableNegCrd && len(customNames) != 0 {
+			return fmt.Errorf("custom neg name specified in service (%s) but neg crd is not enabled", name.String())
+		}
+		if negAnnotation.NEGEnabledForIngress() && len(customNames) != 0 {
+			return fmt.Errorf("configuration for negs in service (%s) is invalid, custom neg name cannot be used with ingress enabled", name.String())
+		}
+
+		if err := portInfoMap.Merge(negtypes.NewPortInfoMap(name.Namespace, name.Name, exposedNegSvcPort, c.namer /*readinessGate*/, true, customNames)); err != nil {
 			return fmt.Errorf("failed to merge service ports exposed as standalone NEGs (%v) into ingress referenced service ports (%v): %v", exposedNegSvcPort, portInfoMap, err)
 		}
 	}

@@ -54,7 +54,7 @@ func newServiceController() *L4Controller {
 		Namespace:    api_v1.NamespaceAll,
 		ResyncPeriod: 1 * time.Minute,
 	}
-	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
+	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
 	return NewController(ctx, stopCh)
 }
 

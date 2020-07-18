@@ -26,7 +26,7 @@ func CRDMeta() *crd.CRDMeta {
 		apisneg.GroupName,
 		"v1beta1",
 		"ServiceNetworkEndpointGroup",
-		"ServiceNetworkingEndpointGroupList",
+		"ServiceNetworkEndpointGroupList",
 		"servicenetworkendpointgroup",
 		"servicenetworkendpointgroups",
 	)

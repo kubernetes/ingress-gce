@@ -33,6 +33,7 @@ import (
 
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	apiv1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -49,6 +50,8 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
+	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -75,6 +78,10 @@ var (
 )
 
 func newTestController(kubeClient kubernetes.Interface) *Controller {
+	return newTestControllerWithNegClient(kubeClient, nil)
+}
+
+func newTestControllerWithNegClient(kubeClient kubernetes.Interface, svcNegClient svcnegclient.Interface) *Controller {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := namer_util.NewNamer(ClusterID, "")
 	dynamicSchema := runtime.NewScheme()
@@ -90,7 +97,7 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		ASMConfigMapNamespace: "kube-system",
 		ASMConfigMapName:      "ingress-controller-config-test",
 	}
-	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, "" /*kubeSystemUID*/, ctxConfig)
+	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, svcNegClient, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, "" /*kubeSystemUID*/, ctxConfig)
 
 	// Hack the context.Init func.
 	configMapInformer := informerv1.NewConfigMapInformer(kubeClient, context.Namespace, context.ResyncPeriod, utils.NewNamespaceIndexer())
@@ -105,6 +112,11 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 	context.DestinationRuleInformer = drDynamicInformer.Informer()
 	context.DestinationRuleClient = dynamicClient.Resource(destrinationGVR)
 
+	enableNegCrd := false
+	if svcNegClient != nil {
+		enableNegCrd = true
+	}
+
 	controller := NewController(
 		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		context,
@@ -116,6 +128,7 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		false,
 		true,
 		false,
+		enableNegCrd,
 	)
 	return controller
 }
@@ -870,6 +883,147 @@ func TestMergeCSMPortInfoMap(t *testing.T) {
 	}
 }
 
+func TestEnableNegCRD(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc             string
+		exposedPortNames map[int32]string
+		expectNegPorts   []int32
+		svcNegClient     svcnegclient.Interface
+		ingress          bool
+		expectErr        bool
+	}{
+		{
+			desc:             "No ingress, multiple ports all custom names",
+			exposedPortNames: map[int32]string{80: "neg-1", 443: "neg-2", 8081: "neg-3", 8080: "neg-4"},
+			expectNegPorts:   []int32{80, 443, 8081, 8080},
+			svcNegClient:     negfake.NewSimpleClientset(),
+		},
+		{
+			desc:             "No ingress, multiple ports, mix of custom names",
+			exposedPortNames: map[int32]string{80: "neg-1", 443: "", 8081: "neg-3"},
+			expectNegPorts:   []int32{80, 443, 8081},
+			svcNegClient:     negfake.NewSimpleClientset(),
+		},
+		{
+			desc:             "No ingress, one port, custom name",
+			exposedPortNames: map[int32]string{80: "neg-1"},
+			expectNegPorts:   []int32{80},
+			svcNegClient:     negfake.NewSimpleClientset(),
+		},
+		{
+			desc:             "No ingress, one port, custom name, neg crd is not enabled",
+			exposedPortNames: map[int32]string{80: "neg-1"},
+			expectNegPorts:   []int32{80},
+			svcNegClient:     nil,
+			expectErr:        true,
+		},
+		{
+			desc:             "ingress, one port, custom name, neg crd is enabled",
+			exposedPortNames: map[int32]string{80: "neg-1"},
+			expectNegPorts:   []int32{80},
+			svcNegClient:     negfake.NewSimpleClientset(),
+			ingress:          true,
+			expectErr:        true,
+		},
+		{
+			desc:             "ingress, one port, neg crd is enabled",
+			exposedPortNames: map[int32]string{80: ""},
+			expectNegPorts:   []int32{80},
+			svcNegClient:     negfake.NewSimpleClientset(),
+			ingress:          true,
+			expectErr:        false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			controller := newTestControllerWithNegClient(fake.NewSimpleClientset(), tc.svcNegClient)
+			manager := controller.manager.(*syncerManager)
+			defer controller.stop()
+			svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+			service := newTestServiceCustomNamedNeg(controller, tc.exposedPortNames, tc.ingress)
+			controller.serviceLister.Add(service)
+
+			err := controller.processService(svcKey)
+			if !tc.expectErr && err != nil {
+				t.Fatalf("Failed to process service: %v", err)
+			} else if tc.expectErr && err == nil {
+				t.Fatalf("Expected an error when processing service")
+			} else if tc.expectErr && err != nil {
+				// ensure no leaked goroutines
+				controller.serviceLister.Delete(service)
+				err = controller.processService(svcKey)
+				if err != nil {
+					t.Fatalf("Failed to process service: %v", err)
+				}
+				return
+			}
+
+			expectedSyncers := len(tc.exposedPortNames)
+			validateSyncers(t, controller, expectedSyncers, false)
+			svcClient := controller.client.CoreV1().Services(testServiceNamespace)
+			svc, err := svcClient.Get(context2.TODO(), testServiceName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Service was not created successfully, err: %v", err)
+			}
+			if tc.svcNegClient != nil && !tc.ingress {
+				validateServiceStateAnnotationWithPortNameMap(t, svc, tc.expectNegPorts, controller.namer, tc.exposedPortNames)
+				validateNegCRs(t, svc, tc.svcNegClient, controller.namer, tc.exposedPortNames)
+
+			} else {
+				validateServiceStateAnnotation(t, svc, tc.expectNegPorts, controller.namer)
+			}
+
+			if tc.svcNegClient != nil {
+				// Populate manager's ServiceNetworkEndpointGroup Cache
+				negs, err := tc.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svc.Namespace).List(context2.TODO(), metav1.ListOptions{})
+				if err != nil {
+					t.Errorf("failed to retrieve negs")
+				}
+
+				for _, neg := range negs.Items {
+					n := neg
+					manager.svcNegLister.Add(&n)
+				}
+			}
+
+			controller.serviceLister.Delete(service)
+			err = controller.processService(svcKey)
+			if err != nil {
+				t.Fatalf("Failed to process service: %v", err)
+			}
+
+			validateSyncers(t, controller, expectedSyncers, true)
+		})
+	}
+}
+
+func validateNegCRs(t *testing.T, svc *v1.Service, svcNegClient svcnegclient.Interface, namer negtypes.NetworkEndpointGroupNamer, negPortNameMap map[int32]string) {
+	t.Helper()
+
+	for port, expectedName := range negPortNameMap {
+		name := expectedName
+		if name == "" {
+			name = namer.NEG(svc.Namespace, svc.Name, port)
+		}
+		neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svc.Namespace).Get(context2.TODO(), name, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("neg cr was not created successfully: err: %s", err)
+		}
+
+		ownerReferences := neg.GetOwnerReferences()
+		if len(ownerReferences) != 1 {
+			t.Fatalf("neg cr should only have 1 owner reference, has %d", len(ownerReferences))
+		}
+
+		if ownerReferences[0].UID != svc.UID {
+			t.Fatalf("neg cr owner reference does not point to service %s/%s", svc.Namespace, svc.Name)
+		}
+	}
+}
+
 func validateSyncers(t *testing.T, controller *Controller, num int, stopped bool) {
 	t.Helper()
 	if len(controller.manager.(*syncerManager).syncerMap) != num {
@@ -948,14 +1102,51 @@ func validateDestinationRuleAnnotationWithPortInfoMap(t *testing.T, usdr *unstru
 	}
 }
 
+// validateServiceStateAnnotationWithPortNameMap validates all aspects of the service annotation
+// and also checks for custon names if specified in given portNameMap
+func validateServiceStateAnnotationWithPortNameMap(t *testing.T, svc *apiv1.Service, svcPorts []int32, namer negtypes.NetworkEndpointGroupNamer, portNameMap map[int32]string) {
+
+	negStatus := validateServiceStateAnnotationExceptNames(t, svc, svcPorts)
+	for svcPort, name := range portNameMap {
+		negName, ok := negStatus.NetworkEndpointGroups[strconv.Itoa(int(svcPort))]
+		if !ok {
+			t.Fatalf("NEG for port %d was not found", svcPort)
+		}
+		var expectName = name
+		if name == "" {
+			expectName = namer.NEG(svc.Namespace, svc.Name, svcPort)
+		}
+		if negName != expectName {
+			t.Fatalf("Expect NEG name of service port %d to be %q, but got %q", svcPort, expectName, negName)
+		}
+	}
+}
+
 func validateServiceStateAnnotation(t *testing.T, svc *apiv1.Service, svcPorts []int32, namer negtypes.NetworkEndpointGroupNamer) {
+	t.Helper()
+
+	negStatus := validateServiceStateAnnotationExceptNames(t, svc, svcPorts)
+	for _, svcPort := range svcPorts {
+		negName, ok := negStatus.NetworkEndpointGroups[strconv.Itoa(int(svcPort))]
+		if !ok {
+			t.Fatalf("NEG for port %d was not found", svcPort)
+		}
+		expectName := namer.NEG(svc.Namespace, svc.Name, svcPort)
+		if negName != expectName {
+			t.Fatalf("Expect NEG name of service port %d to be %q, but got %q", svcPort, expectName, negName)
+		}
+	}
+}
+
+// validateServiceStateAnnotationExceptNames will validate all aspects of the status annotation except for the name
+func validateServiceStateAnnotationExceptNames(t *testing.T, svc *apiv1.Service, svcPorts []int32) annotations.NegStatus {
 	t.Helper()
 	if len(svcPorts) == 0 {
 		v, ok := svc.Annotations[annotations.NEGStatusKey]
 		if ok {
 			t.Fatalf("Expected no NEG service state annotation when there are no servicePorts, got: %v", v)
 		}
-		return
+		return annotations.NegStatus{}
 	}
 
 	v, ok := svc.Annotations[annotations.NEGStatusKey]
@@ -988,23 +1179,13 @@ func validateServiceStateAnnotation(t *testing.T, svc *apiv1.Service, svcPorts [
 		t.Fatalf("Expect # of NEG to be %d, but got %d", len(svcPorts), len(negStatus.NetworkEndpointGroups))
 	}
 
-	for _, svcPort := range svcPorts {
-		negName, ok := negStatus.NetworkEndpointGroups[strconv.Itoa(int(svcPort))]
-		if !ok {
-			t.Fatalf("NEG for port %d was not found", svcPort)
-		}
-		expectName := namer.NEG(svc.Namespace, svc.Name, svcPort)
-		if negName != expectName {
-			t.Fatalf("Expect NEG name of service port %d to be %q, but got %q", svcPort, expectName, negName)
-		}
-	}
-
 	zoneInStatus := sets.NewString(negStatus.Zones...)
 	expectedZones := sets.NewString(zones...)
 
 	if !zoneInStatus.Equal(expectedZones) {
 		t.Fatalf("Expect Zone %v, but got %v", expectedZones.List(), zoneInStatus.List())
 	}
+	return negStatus
 }
 
 func generateNegAnnotation(ingress bool, svcPorts []int32) string {
@@ -1012,6 +1193,23 @@ func generateNegAnnotation(ingress bool, svcPorts []int32) string {
 	enabledPorts := make(map[int32]annotations.NegAttributes)
 	for _, port := range svcPorts {
 		enabledPorts[port] = annotations.NegAttributes{}
+	}
+
+	annotation.Ingress = ingress
+	annotation.ExposedPorts = enabledPorts
+	formattedAnnotation, _ := json.Marshal(annotation)
+	return string(formattedAnnotation)
+}
+
+func generateCustomNamedNegAnnotation(ingress bool, svcPorts map[int32]string) string {
+	var annotation annotations.NegAnnotation
+	enabledPorts := make(map[int32]annotations.NegAttributes)
+	for port, name := range svcPorts {
+		if name != "" {
+			enabledPorts[port] = annotations.NegAttributes{Name: name}
+		} else {
+			enabledPorts[port] = annotations.NegAttributes{}
+		}
 	}
 
 	annotation.Ingress = ingress
@@ -1134,6 +1332,50 @@ func newTestService(c *Controller, negIngress bool, negSvcPorts []int32) *apiv1.
 
 	// append additional ports if the service does not contain the service port
 	for _, port := range negSvcPorts {
+		exists := false
+
+		for _, svcPort := range ports {
+			if svcPort.Port == port {
+				exists = true
+				break
+			}
+		}
+
+		if !exists {
+			ports = append(
+				ports,
+				apiv1.ServicePort{
+					Name:       fmt.Sprintf("port%v", port),
+					Port:       port,
+					TargetPort: intstr.FromString(fmt.Sprintf("%v", port)),
+				},
+			)
+		}
+	}
+
+	svc := &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        testServiceName,
+			Namespace:   testServiceNamespace,
+			Annotations: svcAnnotations,
+		},
+		Spec: apiv1.ServiceSpec{
+			Ports: ports,
+		},
+	}
+
+	c.client.CoreV1().Services(testServiceNamespace).Create(context2.TODO(), svc, metav1.CreateOptions{})
+	return svc
+}
+
+func newTestServiceCustomNamedNeg(c *Controller, negSvcPorts map[int32]string, ingress bool) *apiv1.Service {
+	svcAnnotations := map[string]string{}
+	if len(negSvcPorts) > 0 {
+		svcAnnotations[annotations.NEGAnnotationKey] = generateCustomNamedNegAnnotation(ingress, negSvcPorts)
+	}
+
+	// append additional ports if the service does not contain the service port
+	for port, _ := range negSvcPorts {
 		exists := false
 
 		for _, svcPort := range ports {
