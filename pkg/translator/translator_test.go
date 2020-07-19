@@ -281,6 +281,10 @@ func TestSecrets(t *testing.T) {
 
 			env, err := NewEnv(tc.ing, kubeClient, "", "", "")
 			if err != nil {
+				if tc.wantErr {
+					// we look up secrets in NewEnv, so an error here is ok
+					return
+				}
 				t.Fatalf("NewEnv(): %v", err)
 			}
 

@@ -37,7 +37,7 @@ metadata:
 rules:
 - apiGroups: [""]
   resources: ["secrets"]
-  verbs: ["get", "list"]
+  verbs: ["get"]
 - apiGroups: [""]
   resources: ["events"]
   verbs: ["get", "list", "watch", "update", "create", "patch"]
