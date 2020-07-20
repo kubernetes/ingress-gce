@@ -133,6 +133,15 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
 	assertInternalLbResources(t, svc, l, nodeNames)
+	// Simulate a periodic sync
+	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if err != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	}
+	if len(status.Ingress) == 0 {
+		t.Errorf("Got empty loadBalancer status using handler %v", l)
+	}
+	assertInternalLbResources(t, svc, l, nodeNames)
 }
 
 func TestEnsureInternalLoadBalancerTypeChange(t *testing.T) {
@@ -1107,6 +1116,6 @@ func assertInternalLbResourcesDeleted(t *testing.T, apiService *v1.Service, fire
 	}
 	addr, err := l.cloud.GetRegionAddress(resourceName, l.cloud.Region())
 	if err == nil || addr != nil {
-		t.Errorf("Expected error when looking up backend service after deletion")
+		t.Errorf("Expected error when looking up IP address after deletion")
 	}
 }
