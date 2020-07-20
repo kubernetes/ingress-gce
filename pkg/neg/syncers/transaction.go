@@ -163,6 +163,9 @@ func (s *transactionSyncer) syncInternal() error {
 	s.logStats(currentMap, "after in-progress operations have completed, NEG endpoints")
 
 	targetMap, endpointPodMap, err := s.endpointsCalculator.CalculateEndpoints(ep.(*apiv1.Endpoints), currentMap)
+	if err != nil {
+		return fmt.Errorf("endpoints calculation error in mode %q, err: %v", s.endpointsCalculator.Mode(), err)
+	}
 	s.logStats(targetMap, "desired NEG endpoints")
 
 	// Calculate the endpoints to add and delete to transform the current state to desire state
