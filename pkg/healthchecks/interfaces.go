@@ -21,6 +21,7 @@ import (
 	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -54,5 +55,5 @@ type HealthChecker interface {
 	// `probe` can be nil if no probe exists.
 	SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (string, error)
 	Delete(name string, scope meta.KeyType) error
-	Get(name string, version meta.Version, scope meta.KeyType) (*HealthCheck, error)
+	Get(name string, version meta.Version, scope meta.KeyType) (*translator.HealthCheck, error)
 }

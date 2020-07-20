@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	computealpha "google.golang.org/api/compute/v0.alpha"
@@ -30,45 +29,10 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
+	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
-)
-
-const (
-	// These values set a low health threshold and a high failure threshold.
-	// We're just trying to detect if the node networking is
-	// borked, service level outages will get detected sooner
-	// by kube-proxy.
-	// DefaultHealthCheckInterval defines how frequently a probe runs with IG backends
-	DefaultHealthCheckInterval = 60 * time.Second
-	// DefaultNEGHealthCheckInterval defines how frequently a probe runs with NEG backends
-	DefaultNEGHealthCheckInterval = 15 * time.Second
-	// DefaultHealthyThreshold defines the threshold of success probes that declare a backend "healthy"
-	DefaultHealthyThreshold = 1
-	// DefaultUnhealthyThreshold defines the threshold of failure probes that declare a instance "unhealthy"
-	DefaultUnhealthyThreshold = 10
-	// DefaultNEGUnhealthyThreshold defines the threshold of failure probes that declare a network endpoint "unhealthy"
-	// In NEG mode, cloud loadbalancer health check request will no longer be loadbalanced by kube-proxy(iptables).
-	// Instead, health checks can reach endpoints directly. Hence the loadbalancer health check can get a clear signal
-	// of endpoint health status. As a result, we are able to tune down the unhealthy threshold to 2.
-	DefaultNEGUnhealthyThreshold = 2
-	// DefaultTimeout defines the timeout of each probe for IG
-	DefaultTimeout = 60 * time.Second
-	// DefaultNEGTimeout defines the timeout of each probe for NEG
-	DefaultNEGTimeout = 15 * time.Second
-
-	// UseServingPortSpecification is a constant for GCE API.
-	// USE_SERVING_PORT: For NetworkEndpointGroup, the port specified for
-	// each network endpoint is used for health checking. For other
-	// backends, the port or named port specified in the Backend Service is
-	// used for health checking.
-	UseServingPortSpecification = "USE_SERVING_PORT"
-
-	// TODO: revendor the GCE API go client so that this error will not be hit.
-	newHealthCheckErrorMessageTemplate = "the %v health check configuration on the existing health check %v is nil. " +
-		"This is usually caused by an application protocol change on the k8s service spec. " +
-		"Please revert the change on application protocol to avoid this error message."
 )
 
 // HealthChecks manages health checks.
@@ -89,14 +53,14 @@ func NewHealthChecker(cloud HealthCheckProvider, healthCheckPath string, default
 }
 
 // new returns a *HealthCheck with default settings and specified port/protocol
-func (h *HealthChecks) new(sp utils.ServicePort) *HealthCheck {
-	var hc *HealthCheck
+func (h *HealthChecks) new(sp utils.ServicePort) *translator.HealthCheck {
+	var hc *translator.HealthCheck
 	if sp.NEGEnabled && !sp.L7ILBEnabled {
-		hc = DefaultNEGHealthCheck(sp.Protocol)
+		hc = translator.DefaultNEGHealthCheck(sp.Protocol)
 	} else if sp.L7ILBEnabled {
-		hc = defaultILBHealthCheck(sp.Protocol)
+		hc = translator.DefaultILBHealthCheck(sp.Protocol)
 	} else {
-		hc = DefaultHealthCheck(sp.NodePort, sp.Protocol)
+		hc = translator.DefaultHealthCheck(sp.NodePort, sp.Protocol)
 	}
 	// port is the key for retrieving existing health-check
 	// TODO: rename backend-service and health-check to not use port as key
@@ -111,7 +75,7 @@ func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (
 	hc := h.new(*sp)
 	if probe != nil {
 		klog.V(2).Infof("Applying httpGet settings of readinessProbe to health check on port %+v", sp)
-		applyProbeSettingsToHC(probe, hc)
+		translator.ApplyProbeSettingsToHC(probe, hc)
 	}
 	var bchcc *backendconfigv1.HealthCheckConfig
 	if flags.F.EnableBackendConfigHealthCheck && sp.BackendConfig != nil && sp.BackendConfig.Spec.HealthCheck != nil {
@@ -126,10 +90,10 @@ func (h *HealthChecks) SyncServicePort(sp *utils.ServicePort, probe *v1.Probe) (
 
 // sync retrieves a health check based on port, checks type and settings and updates/creates if necessary.
 // sync is only called by the backends.Add func - it's not a pool like other resources.
-func (h *HealthChecks) sync(hc *HealthCheck, bchcc *backendconfigv1.HealthCheckConfig) (string, error) {
+func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig) (string, error) {
 	var scope meta.KeyType
 	// TODO(shance): find a way to remove this
-	if hc.forILB {
+	if hc.ForILB {
 		scope = meta.Regional
 	} else {
 		scope = meta.Global
@@ -164,7 +128,7 @@ func (h *HealthChecks) sync(hc *HealthCheck, bchcc *backendconfigv1.HealthCheckC
 	// Then, BackendConfig will override any fields that are explicitly set.
 	if bchcc != nil {
 		// BackendConfig healthcheck settings always take precedence.
-		hc.updateFromBackendConfig(bchcc)
+		hc.UpdateFromBackendConfig(bchcc)
 	}
 
 	changes := calculateDiff(existingHC, hc, bchcc)
@@ -182,7 +146,7 @@ func (h *HealthChecks) sync(hc *HealthCheck, bchcc *backendconfigv1.HealthCheckC
 }
 
 // TODO(shance): merge with existing hc code
-func (h *HealthChecks) createILB(hc *HealthCheck) error {
+func (h *HealthChecks) createILB(hc *translator.HealthCheck) error {
 	compositeType, err := composite.AlphaToHealthCheck(hc.ToAlphaComputeHealthCheck())
 	if err != nil {
 		return fmt.Errorf("Error converting hc to composite: %v", err)
@@ -204,13 +168,13 @@ func (h *HealthChecks) createILB(hc *HealthCheck) error {
 	return nil
 }
 
-func (h *HealthChecks) create(hc *HealthCheck, bchcc *backendconfigv1.HealthCheckConfig) error {
+func (h *HealthChecks) create(hc *translator.HealthCheck, bchcc *backendconfigv1.HealthCheckConfig) error {
 	if bchcc != nil {
 		// BackendConfig healthcheck settings always take precedence.
-		hc.updateFromBackendConfig(bchcc)
+		hc.UpdateFromBackendConfig(bchcc)
 	}
 	// special case ILB to avoid mucking with stable HC code
-	if hc.forILB {
+	if hc.ForILB {
 		return h.createILB(hc)
 	}
 
@@ -238,7 +202,7 @@ func (h *HealthChecks) create(hc *HealthCheck, bchcc *backendconfigv1.HealthChec
 }
 
 // TODO(shance): merge with existing hc code
-func (h *HealthChecks) updateILB(hc *HealthCheck) error {
+func (h *HealthChecks) updateILB(hc *translator.HealthCheck) error {
 	// special case ILB to avoid mucking with stable HC code
 	compositeType, err := composite.AlphaToHealthCheck(hc.ToAlphaComputeHealthCheck())
 	if err != nil {
@@ -254,8 +218,8 @@ func (h *HealthChecks) updateILB(hc *HealthCheck) error {
 	return composite.UpdateHealthCheck(cloud, key, compositeType)
 }
 
-func (h *HealthChecks) update(hc *HealthCheck) error {
-	if hc.forILB {
+func (h *HealthChecks) update(hc *translator.HealthCheck) error {
+	if hc.ForILB {
 		return h.updateILB(hc)
 	}
 	switch hc.Version() {
@@ -326,7 +290,7 @@ func (h *HealthChecks) Delete(name string, scope meta.KeyType) error {
 }
 
 // TODO(shance): merge with existing hc code
-func (h *HealthChecks) getILB(name string) (*HealthCheck, error) {
+func (h *HealthChecks) getILB(name string) (*translator.HealthCheck, error) {
 	klog.V(3).Infof("Getting ILB Health Check, name: %s", name)
 	cloud := h.cloud.(*gce.Cloud)
 	key, err := composite.CreateKey(cloud, name, meta.Regional)
@@ -343,20 +307,20 @@ func (h *HealthChecks) getILB(name string) (*HealthCheck, error) {
 		return nil, err
 	}
 
-	newHC, err := NewHealthCheck(gceHC)
+	newHC, err := translator.NewHealthCheck(gceHC)
 	if err != nil {
 		return nil, err
 	}
 
 	// Update fields for future update() calls
-	newHC.forILB = true
-	newHC.forNEG = true
+	newHC.ForILB = true
+	newHC.ForNEG = true
 
 	return newHC, nil
 }
 
 // Get returns the health check by port
-func (h *HealthChecks) Get(name string, version meta.Version, scope meta.KeyType) (*HealthCheck, error) {
+func (h *HealthChecks) Get(name string, version meta.Version, scope meta.KeyType) (*translator.HealthCheck, error) {
 	klog.V(3).Infof("Getting Health Check, name: %s, version: %v, scope: %v", name, version, scope)
 
 	// L7-ILB is the only use of regional right now
@@ -377,20 +341,20 @@ func (h *HealthChecks) Get(name string, version meta.Version, scope meta.KeyType
 		if err != nil {
 			return nil, err
 		}
-		hc, err = betaToAlphaHealthCheck(betaHC)
+		hc, err = utils.BetaToAlphaHealthCheck(betaHC)
 	case meta.VersionGA:
 		v1hc, err := h.cloud.GetHealthCheck(name)
 		if err != nil {
 			return nil, err
 		}
-		hc, err = v1ToAlphaHealthCheck(v1hc)
+		hc, err = utils.V1ToAlphaHealthCheck(v1hc)
 	default:
 		return nil, fmt.Errorf("unknown version %v", version)
 	}
 	if err != nil {
 		return nil, err
 	}
-	return NewHealthCheck(hc)
+	return translator.NewHealthCheck(hc)
 }
 
 // pathFromSvcPort returns the default path for a health check based on whether
