@@ -166,20 +166,22 @@ func NewLoadBalancerController(
 		UpdateFunc: func(old, cur interface{}) {
 			curIng := cur.(*v1beta1.Ingress)
 			if !utils.IsGLBCIngress(curIng) {
-				oldIng := old.(*v1beta1.Ingress)
-				// If ingress was GLBC Ingress, we need to track ingress class change
-				// and run GC to delete LB resources.
-				if utils.IsGLBCIngress(oldIng) {
-					klog.V(4).Infof("Ingress %v class was changed, enqueuing", common.NamespacedName(curIng))
+				// Ingress needs to be enqueued if a ingress finalizer exists.
+				// An existing finalizer means that
+				// 1. Ingress update for class change.
+				// 2. Ingress cleanup failed and re-queued.
+				// 3. Finalizer remove failed and re-queued.
+				if common.HasFinalizer(curIng.ObjectMeta) {
+					klog.V(2).Infof("Ingress %s class was changed but has a glbc finalizer, enqueuing", common.NamespacedName(curIng))
 					lbc.ingQueue.Enqueue(cur)
 					return
 				}
 				return
 			}
 			if reflect.DeepEqual(old, cur) {
-				klog.V(2).Infof("Periodic enqueueing of %v", common.NamespacedName(curIng))
+				klog.V(2).Infof("Periodic enqueueing of %s", common.NamespacedName(curIng))
 			} else {
-				klog.V(2).Infof("Ingress %v changed, enqueuing", common.NamespacedName(curIng))
+				klog.V(2).Infof("Ingress %s changed, enqueuing", common.NamespacedName(curIng))
 			}
 			lbc.ctx.Recorder(curIng.Namespace).Eventf(curIng, apiv1.EventTypeNormal, events.SyncIngress, "Scheduled for sync")
 			lbc.ingQueue.Enqueue(cur)
