@@ -21,6 +21,7 @@ import (
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
@@ -39,6 +40,27 @@ func StrategicMergePatchBytes(old, cur, refStruct interface{}) ([]byte, error) {
 	}
 
 	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldBytes, newBytes, refStruct)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create patch: %v", err)
+	}
+
+	return patchBytes, nil
+}
+
+// MergePatchBytes returns a patch between the old and new object using a strategic merge patch.
+// Note: refStruct is a empty struct of the type which the patch is being generated for.
+func MergePatchBytes(old, cur interface{}) ([]byte, error) {
+	oldBytes, err := json.Marshal(old)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal old object: %v", err)
+	}
+
+	newBytes, err := json.Marshal(cur)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal new object: %v", err)
+	}
+
+	patchBytes, err := jsonmergepatch.CreateThreeWayJSONMergePatch(oldBytes, newBytes, oldBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create patch: %v", err)
 	}
