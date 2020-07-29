@@ -17,13 +17,12 @@ limitations under the License.
 package loadbalancers
 
 import (
-	"crypto/sha256"
 	"fmt"
-	"k8s.io/ingress-gce/pkg/composite"
 	"net/http"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
@@ -298,10 +297,6 @@ func (l *L7) compareCerts(certLinks []string) bool {
 		}
 	}
 	return true
-}
-
-func GetCertHash(contents string) string {
-	return fmt.Sprintf("%x", sha256.Sum256([]byte(contents)))[:16]
 }
 
 func toCertNames(certs []*composite.SslCertificate) (names []string) {

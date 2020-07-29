@@ -40,7 +40,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/controller/translator"
+	legacytranslator "k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
@@ -50,7 +50,7 @@ import (
 	"k8s.io/ingress-gce/pkg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	ingsync "k8s.io/ingress-gce/pkg/sync"
-	"k8s.io/ingress-gce/pkg/tls"
+	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -67,15 +67,13 @@ type LoadBalancerController struct {
 
 	// TODO: Watch secrets
 	ingQueue   utils.TaskQueue
-	Translator *translator.Translator
+	Translator *legacytranslator.Translator
 	stopCh     chan struct{}
 	// stopLock is used to enforce only a single call to Stop is active.
 	// Needed because we allow stopping through an http endpoint and
 	// allowing concurrent stoppers leads to stack traces.
 	stopLock sync.Mutex
 	shutdown bool
-	// tlsLoader loads secrets from the Kubernetes apiserver for Ingresses.
-	tlsLoader tls.TlsLoader
 	// hasSynced returns true if all associated sub-controllers have synced.
 	// Abstracted into a func for testing.
 	hasSynced func() bool
@@ -115,8 +113,7 @@ func NewLoadBalancerController(
 	lbc := LoadBalancerController{
 		ctx:           ctx,
 		nodeLister:    ctx.NodeInformer.GetIndexer(),
-		Translator:    translator.NewTranslator(ctx),
-		tlsLoader:     &tls.TLSCertsFromSecretsLoader{Client: ctx.KubeClient},
+		Translator:    legacytranslator.NewTranslator(ctx),
 		stopCh:        stopCh,
 		hasSynced:     ctx.HasSynced,
 		nodes:         NewNodeController(ctx, instancePool),
@@ -654,7 +651,12 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 // toRuntimeInfo returns L7RuntimeInfo for the given ingress.
 func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *utils.GCEURLMap) (*loadbalancers.L7RuntimeInfo, error) {
 	annotations := annotations.FromIngress(ing)
-	tls, err := lbc.tlsLoader.Load(ing)
+	env, err := translator.NewEnv(ing, lbc.ctx.KubeClient, "", "", "")
+	if err != nil {
+		return nil, fmt.Errorf("error initializing translator env: %v", err)
+	}
+
+	tls, err := translator.ToTLSCerts(env)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// TODO: this path should be removed when external certificate managers migrate to a better solution.

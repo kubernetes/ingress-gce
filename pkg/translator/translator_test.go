@@ -288,7 +288,7 @@ func TestSecrets(t *testing.T) {
 				t.Fatalf("NewEnv(): %v", err)
 			}
 
-			got, err := Secrets(env)
+			got, err := secrets(env)
 			if tc.wantErr && err == nil {
 				t.Fatal("expected Secrets() to return an error")
 			}

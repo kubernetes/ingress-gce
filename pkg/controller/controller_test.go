@@ -45,7 +45,7 @@ import (
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/test"
-	"k8s.io/ingress-gce/pkg/tls"
+	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
@@ -675,9 +675,23 @@ func TestMCIngressIG(t *testing.T) {
 // are included in the RuntimeInfo.
 func TestToRuntimeInfoCerts(t *testing.T) {
 	lbc := newLoadBalancerController()
-	tlsCerts := []*loadbalancers.TLSCerts{{Key: "key", Cert: "cert", Name: "tlsCert"}}
-	fakeLoader := &tls.FakeTLSSecretLoader{FakeCerts: map[string]*loadbalancers.TLSCerts{"tlsCert": tlsCerts[0]}}
-	lbc.tlsLoader = fakeLoader
+	secretsMap := map[string]*api_v1.Secret{
+		"tlsCert": &api_v1.Secret{
+			ObjectMeta: meta_v1.ObjectMeta{
+				Name: "tlsCert",
+			},
+			Data: map[string][]byte{
+				api_v1.TLSCertKey:       []byte("cert"),
+				api_v1.TLSPrivateKeyKey: []byte("key"),
+			},
+		},
+	}
+	tlsCerts := []*translator.TLSCerts{{Key: "key", Cert: "cert", Name: "tlsCert", CertHash: translator.GetCertHash("cert")}}
+
+	for _, v := range secretsMap {
+		lbc.ctx.KubeClient.CoreV1().Secrets("").Create(context2.TODO(), v, meta_v1.CreateOptions{})
+	}
+
 	presharedCertName := "preSharedCert"
 	ing := &v1beta1.Ingress{
 		ObjectMeta: meta_v1.ObjectMeta{
@@ -699,8 +713,10 @@ func TestToRuntimeInfoCerts(t *testing.T) {
 	if lbInfo.TLSName != presharedCertName {
 		t.Errorf("lbInfo.TLSName = %v, want %v", lbInfo.TLSName, presharedCertName)
 	}
-	if len(lbInfo.TLS) != 1 || lbInfo.TLS[0] != tlsCerts[0] {
-		t.Errorf("lbInfo.TLS = %v, want %v", lbInfo.TLS, tlsCerts)
+
+	diff := cmp.Diff(tlsCerts[0], lbInfo.TLS[0])
+	if len(lbInfo.TLS) != 1 || diff != "" {
+		t.Errorf("got diff comparing tls certs (-want, +got) %v", diff)
 	}
 }
 
