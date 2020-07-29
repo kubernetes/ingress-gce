@@ -29,6 +29,83 @@ import (
 	compute "google.golang.org/api/compute/v1"
 )
 
+func TestAddress(t *testing.T) {
+	// Use reflection to verify that our composite type contains all the
+	// same fields as the alpha type.
+	compositeType := reflect.TypeOf(Address{})
+	alphaType := reflect.TypeOf(computealpha.Address{})
+	betaType := reflect.TypeOf(computebeta.Address{})
+	gaType := reflect.TypeOf(compute.Address{})
+
+	// For the composite type, remove the Version field from consideration
+	compositeTypeNumFields := compositeType.NumField() - 2
+	if compositeTypeNumFields != alphaType.NumField() {
+		t.Fatalf("%v should contain %v fields. Got %v", alphaType.Name(), alphaType.NumField(), compositeTypeNumFields)
+	}
+
+	// Compare all the fields by doing a lookup since we can't guarantee that they'll be in the same order
+	// Make sure that composite type is strictly alpha fields + internal bookkeeping
+	for i := 2; i < compositeType.NumField(); i++ {
+		lookupField, found := alphaType.FieldByName(compositeType.Field(i).Name)
+		if !found {
+			t.Fatal(fmt.Errorf("Field %v not present in alpha type %v", compositeType.Field(i), alphaType))
+		}
+		if err := compareFields(compositeType.Field(i), lookupField); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Verify that all beta fields are in composite type
+	if err := typeEquality(betaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify that all GA fields are in composite type
+	if err := typeEquality(gaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToAddress(t *testing.T)
+
+func TestAddressToAlpha(t *testing.T) {
+	composite := Address{}
+	expected := &computealpha.Address{}
+	result, err := composite.ToAlpha()
+	if err != nil {
+		t.Fatalf("Address.ToAlpha() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("Address.ToAlpha() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestAddressToBeta(t *testing.T) {
+	composite := Address{}
+	expected := &computebeta.Address{}
+	result, err := composite.ToBeta()
+	if err != nil {
+		t.Fatalf("Address.ToBeta() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("Address.ToBeta() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestAddressToGA(t *testing.T) {
+	composite := Address{}
+	expected := &compute.Address{}
+	result, err := composite.ToGA()
+	if err != nil {
+		t.Fatalf("Address.ToGA() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("Address.ToGA() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+
 func TestAuthenticationPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(AuthenticationPolicy{})
 	alphaType := reflect.TypeOf(computealpha.AuthenticationPolicy{})

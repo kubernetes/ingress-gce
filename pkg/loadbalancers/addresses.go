@@ -20,15 +20,16 @@ import (
 	"fmt"
 	"net/http"
 
-	"google.golang.org/api/compute/v1"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
 
-// checkStaticIP reserves a static IP allocated to the Forwarding Rule.
+// checkStaticIP reserves a regional or global static IP allocated to the Forwarding Rule.
 func (l *L7) checkStaticIP() (err error) {
 	if l.fw == nil || l.fw.IPAddress == "" {
 		return fmt.Errorf("will not create static IP without a forwarding rule")
@@ -50,10 +51,17 @@ func (l *L7) checkStaticIP() (err error) {
 		return nil
 	}
 
-	ip, _ := l.cloud.GetGlobalAddress(managedStaticIPName)
+	key, err := l.CreateKey(managedStaticIPName)
+	if err != nil {
+		return err
+	}
+
+	ip, _ := composite.GetAddress(l.cloud, key, meta.VersionGA)
 	if ip == nil {
 		klog.V(3).Infof("Creating static ip %v", managedStaticIPName)
-		err = l.cloud.ReserveGlobalAddress(&compute.Address{Name: managedStaticIPName, Address: l.fw.IPAddress})
+		address := l.newStaticAddress(managedStaticIPName)
+
+		err = composite.CreateAddress(l.cloud, key, address)
 		if err != nil {
 			if utils.IsHTTPErrorCode(err, http.StatusConflict) ||
 				utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
@@ -63,11 +71,22 @@ func (l *L7) checkStaticIP() (err error) {
 			}
 			return err
 		}
-		ip, err = l.cloud.GetGlobalAddress(managedStaticIPName)
+		ip, err = composite.GetAddress(l.cloud, key, meta.VersionGA)
 		if err != nil {
 			return err
 		}
 	}
 	l.ip = ip
 	return nil
+}
+
+func (l *L7) newStaticAddress(name string) *composite.Address {
+	isInternal := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(&l.ingress)
+	address := &composite.Address{Name: name, Address: l.fw.IPAddress, Version: meta.VersionGA}
+	if isInternal {
+		// Used for L7 ILB
+		address.AddressType = "INTERNAL"
+	}
+
+	return address
 }
