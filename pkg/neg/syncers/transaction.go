@@ -17,6 +17,7 @@ limitations under the License.
 package syncers
 
 import (
+	"context"
 	"sync"
 
 	"fmt"
@@ -25,14 +26,19 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
+	"k8s.io/kubernetes/pkg/apis/core"
 )
 
 type transactionSyncer struct {
@@ -58,6 +64,7 @@ type transactionSyncer struct {
 	serviceLister       cache.Indexer
 	endpointLister      cache.Indexer
 	nodeLister          cache.Indexer
+	svcNegLister        cache.Indexer
 	recorder            record.EventRecorder
 	cloud               negtypes.NetworkEndpointGroupCloud
 	zoneGetter          negtypes.ZoneGetter
@@ -68,9 +75,15 @@ type transactionSyncer struct {
 
 	// reflector handles NEG readiness gate and conditions for pods in NEG.
 	reflector readiness.Reflector
+
+	//kubeSystemUID used to populate Cluster UID on Neg Description when using NEG CRD
+	kubeSystemUID string
+
+	//svcNegClient used to update status on corresponding NEG CRs when not nil
+	svcNegClient svcnegclient.Interface
 }
 
-func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer, nodeLister cache.Indexer, reflector readiness.Reflector, epc negtypes.NetworkEndpointsCalculator) negtypes.NegSyncer {
+func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, networkEndpointGroupName string, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer, nodeLister cache.Indexer, svcNegLister cache.Indexer, reflector readiness.Reflector, epc negtypes.NetworkEndpointsCalculator, kubeSystemUID string, svcNegClient svcnegclient.Interface) negtypes.NegSyncer {
 	// TransactionSyncer implements the syncer core
 	ts := &transactionSyncer{
 		NegSyncerKey:        negSyncerKey,
@@ -81,11 +94,14 @@ func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, networkEndpointGro
 		podLister:           podLister,
 		serviceLister:       serviceLister,
 		endpointLister:      endpointLister,
+		svcNegLister:        svcNegLister,
 		recorder:            recorder,
 		cloud:               cloud,
 		zoneGetter:          zoneGetter,
 		endpointsCalculator: epc,
 		reflector:           reflector,
+		kubeSystemUID:       kubeSystemUID,
+		svcNegClient:        svcNegClient,
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, networkEndpointGroupName, serviceLister, recorder, ts)
@@ -121,10 +137,16 @@ func (s *transactionSyncer) sync() error {
 func (s *transactionSyncer) syncInternal() error {
 	s.syncLock.Lock()
 	defer s.syncLock.Unlock()
+	// NOTE: Error will be used to update the status on corresponding Neg CR if Neg CRD is enabled
+	// Please reuse and set err before returning
+	var err error
+	defer s.updateStatus(err)
+
 	if s.needInit {
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
 			return err
 		}
+		s.needInit = false
 	}
 
 	if s.syncer.IsStopped() || s.syncer.IsShuttingDown() {
@@ -164,7 +186,8 @@ func (s *transactionSyncer) syncInternal() error {
 
 	targetMap, endpointPodMap, err := s.endpointsCalculator.CalculateEndpoints(ep.(*apiv1.Endpoints), currentMap)
 	if err != nil {
-		return fmt.Errorf("endpoints calculation error in mode %q, err: %v", s.endpointsCalculator.Mode(), err)
+		err = fmt.Errorf("endpoints calculation error in mode %q, err: %v", s.endpointsCalculator.Mode(), err)
+		return err
 	}
 	s.logStats(targetMap, "desired NEG endpoints")
 
@@ -191,7 +214,10 @@ func (s *transactionSyncer) syncInternal() error {
 	}
 	s.logEndpoints(addEndpoints, "adding endpoint")
 	s.logEndpoints(removeEndpoints, "removing endpoint")
-	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
+
+	// set err instead of returning directly so that synced condition on neg crd is properly updated in defer
+	err = s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
+	return err
 }
 
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
@@ -203,11 +229,33 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	}
 
 	var errList []error
+	var negObjRefs []negv1beta1.NegObjectReference
 	for _, zone := range zones {
-		if err := ensureNetworkEndpointGroup(s.Namespace, s.Name, s.negName, zone, s.NegSyncerKey.String(), s.NegSyncerKey.NegType, s.cloud, s.serviceLister, s.recorder, s.NegSyncerKey.GetAPIVersion()); err != nil {
+		var negObj negv1beta1.NegObjectReference
+		negObj, err = ensureNetworkEndpointGroup(
+			s.Namespace,
+			s.Name,
+			s.negName,
+			zone,
+			s.NegSyncerKey.String(),
+			s.kubeSystemUID,
+			fmt.Sprint(s.NegSyncerKey.PortTuple.Port),
+			s.NegSyncerKey.NegType,
+			s.cloud,
+			s.serviceLister,
+			s.recorder,
+			s.NegSyncerKey.GetAPIVersion(),
+		)
+		if err != nil {
 			errList = append(errList, err)
 		}
+
+		if s.svcNegClient != nil && err == nil {
+			negObjRefs = append(negObjRefs, negObj)
+		}
 	}
+
+	s.updateInitStatus(negObjRefs, errList)
 	return utilerrors.NewAggregate(errList)
 }
 
@@ -415,4 +463,151 @@ func (s *transactionSyncer) logStats(endpointMap map[string]negtypes.NetworkEndp
 // logEndpoints logs individual endpoint in the input endpointMap
 func (s *transactionSyncer) logEndpoints(endpointMap map[string]negtypes.NetworkEndpointSet, desc string) {
 	klog.V(3).Infof("For NEG %q, %s: %+v", s.negName, desc, endpointMap)
+}
+
+// updateInitStatus queries the k8s api server for the current NEG CR and updates the Initialized condition and neg objects as appropriate.
+// If neg client is nil, will return immediately
+func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectReference, errList []error) {
+	if s.svcNegClient == nil {
+		return
+	}
+
+	origNeg, err := getNegFromStore(s.svcNegLister, s.Namespace, s.negName)
+	if err != nil {
+		klog.Errorf("failed getting neg from store: %s", err)
+		return
+	}
+
+	neg := origNeg.DeepCopy()
+
+	if len(negObjRefs) != 0 {
+		neg.Status.NetworkEndpointGroups = negObjRefs
+	}
+
+	ensureCondition(neg, getInitializedCondition(utilerrors.NewAggregate(errList)))
+
+	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.negName)
+	if err != nil {
+		klog.Errorf("Error updating Neg CR %s : %s", s.negName, err)
+	}
+}
+
+// updateStatus will update the Synced condition as needed on the corresponding neg cr. If the Initialized condition or NetworkEndpointGroups are missing, needInit will be set to true. LastSyncTime will be updated as well.
+func (s *transactionSyncer) updateStatus(syncErr error) {
+	if s.svcNegClient == nil {
+		return
+	}
+	origNeg, err := getNegFromStore(s.svcNegLister, s.Namespace, s.negName)
+	if err != nil {
+		klog.Errorf("failed getting neg from store: %s", err)
+		return
+	}
+	neg := origNeg.DeepCopy()
+
+	ts := metav1.Now()
+	if _, _, exists := findCondition(neg.Status.Conditions, negv1beta1.Initialized); !exists {
+		s.needInit = true
+	}
+
+	ensureCondition(neg, getSyncedCondition(syncErr))
+	neg.Status.LastSyncTime = ts
+
+	if len(neg.Status.NetworkEndpointGroups) == 0 {
+		s.needInit = true
+	}
+
+	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.negName)
+	if err != nil {
+		klog.Errorf("Error updating Neg CR %s : %s", s.negName, err)
+	}
+}
+
+// getNegFromStore returns the neg associated with the provided namespace and neg name if it exists otherwise throws an error
+func getNegFromStore(svcNegLister cache.Indexer, namespace, negName string) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
+	n, exists, err := svcNegLister.GetByKey(fmt.Sprintf("%s/%s", namespace, negName))
+	if err != nil {
+		return nil, fmt.Errorf("Error getting neg %s/%s from cache: %s", namespace, negName, err)
+	}
+	if !exists {
+		return nil, fmt.Errorf("neg %s/%s is not in store", namespace, negName)
+	}
+
+	return n.(*negv1beta1.ServiceNetworkEndpointGroup), nil
+}
+
+// patchNegStatus patches the specified NegCR status with the provided new status
+func patchNegStatus(svcNegClient svcnegclient.Interface, oldStatus, newStatus negv1beta1.ServiceNetworkEndpointGroupStatus, namespace, negName string) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
+	patchBytes, err := utils.MergePatchBytes(negv1beta1.ServiceNetworkEndpointGroup{Status: oldStatus}, negv1beta1.ServiceNetworkEndpointGroup{Status: newStatus})
+	if err != nil {
+		return nil, fmt.Errorf("failed to prepare patch bytes: %s", err)
+	}
+
+	return svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Patch(context.Background(), negName, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+}
+
+// ensureCondition will update the condition on the neg object if necessary
+func ensureCondition(neg *negv1beta1.ServiceNetworkEndpointGroup, expectedCondition negv1beta1.Condition) {
+	condition, index, exists := findCondition(neg.Status.Conditions, expectedCondition.Type)
+	if !exists {
+		neg.Status.Conditions = append(neg.Status.Conditions, expectedCondition)
+		return
+	}
+
+	if condition.Status == expectedCondition.Status {
+		expectedCondition.LastTransitionTime = condition.LastTransitionTime
+	}
+
+	neg.Status.Conditions[index] = expectedCondition
+}
+
+// getSyncedCondition returns the expected synced condition based on given error
+func getSyncedCondition(err error) negv1beta1.Condition {
+	if err != nil {
+		return negv1beta1.Condition{
+			Type:               negv1beta1.Synced,
+			Status:             core.ConditionFalse,
+			Reason:             negtypes.NegSyncFailed,
+			LastTransitionTime: metav1.Now(),
+			Message:            err.Error(),
+		}
+	}
+
+	return negv1beta1.Condition{
+		Type:               negv1beta1.Synced,
+		Status:             core.ConditionTrue,
+		Reason:             negtypes.NegSyncSuccessful,
+		LastTransitionTime: metav1.Now(),
+	}
+}
+
+// getInitializedCondition returns the expected initialized condition based on given error
+func getInitializedCondition(err error) negv1beta1.Condition {
+	if err != nil {
+		return negv1beta1.Condition{
+			Type:               negv1beta1.Initialized,
+			Status:             core.ConditionFalse,
+			Reason:             negtypes.NegInitializationFailed,
+			LastTransitionTime: metav1.Now(),
+			Message:            err.Error(),
+		}
+	}
+
+	return negv1beta1.Condition{
+		Type:               negv1beta1.Initialized,
+		Status:             core.ConditionTrue,
+		Reason:             negtypes.NegInitializationSuccessful,
+		LastTransitionTime: metav1.Now(),
+	}
+}
+
+// findCondition finds a condition in the given list of conditions that has the type conditionType and returns the condition and its index.
+// If no condition is found, an empty condition, -1 and false will be returned to indicate the condition does not exist.
+func findCondition(conditions []negv1beta1.Condition, conditionType string) (negv1beta1.Condition, int, bool) {
+	for i, c := range conditions {
+		if c.Type == conditionType {
+			return c, i, true
+		}
+	}
+
+	return negv1beta1.Condition{}, -1, false
 }

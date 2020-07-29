@@ -49,3 +49,48 @@ func TestStrategicMergePatchBytes(t *testing.T) {
 		t.Errorf("StrategicMergePatchBytes(%+v, %+v) = %s ; want %s", ing, updated, string(b), expected)
 	}
 }
+
+func TestJSONMergePatchBytes(t *testing.T) {
+	// Patch an Ingress w/ a finalizer
+	ing := &v1beta1.Ingress{}
+	updated := &v1beta1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Finalizers: []string{"foo"},
+		},
+	}
+	b, err := MergePatchBytes(ing, updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := `{"metadata":{"finalizers":["foo"]}}`
+	if string(b) != expected {
+		t.Errorf("MergePatchBytes(%+v, %+v) = %s ; want %s", ing, updated, string(b), expected)
+	}
+
+	// Patch an Ingress with an additional finalizer
+	ing = updated
+	updated = &v1beta1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Finalizers: []string{"foo", "bar"},
+		},
+	}
+	b, err = MergePatchBytes(ing, updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected = `{"metadata":{"finalizers":["foo","bar"]}}`
+	if string(b) != expected {
+		t.Errorf("MergePatchBytes(%+v, %+v) = %s ; want %s", ing, updated, string(b), expected)
+	}
+	// Patch an Ingress with the finalizer removed
+	ing = updated
+	updated = &v1beta1.Ingress{}
+	b, err = MergePatchBytes(ing, updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected = `{"metadata":{"finalizers":null}}`
+	if string(b) != expected {
+		t.Errorf("MergePatchBytes(%+v, %+v) = %s ; want %s", ing, updated, string(b), expected)
+	}
+}

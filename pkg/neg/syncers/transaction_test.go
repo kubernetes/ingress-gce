@@ -17,6 +17,7 @@ limitations under the License.
 package syncers
 
 import (
+	context2 "context"
 	"fmt"
 	"net"
 	"reflect"
@@ -24,18 +25,29 @@ import (
 	"testing"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apiv1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
+	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
+	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -96,7 +108,11 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 			if neg.NetworkEndpointType != string(testNegType) {
 				t.Errorf("Unexpected neg type %q, expected %q", neg.Type, testNegType)
 			}
+			if neg.Description != "" {
+				t.Errorf("Neg Description should not be populated when NEG CRD is not enabled")
+			}
 		}
+
 		testCases := []struct {
 			desc            string
 			addEndpoints    map[string]negtypes.NetworkEndpointSet
@@ -836,6 +852,356 @@ func TestCommitPods(t *testing.T) {
 	}
 }
 
+func TestTransactionSyncerWithNegCR(t *testing.T) {
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+	testNegType := negtypes.VmIpPortEndpointType
+	negClient := negfake.NewSimpleClientset()
+
+	testCases := []struct {
+		desc              string
+		negExists         bool
+		negDesc           string
+		crStatusPopulated bool
+		expectErr         bool
+	}{
+		{
+			desc:              "Neg does not exist",
+			negExists:         false,
+			negDesc:           "",
+			crStatusPopulated: false,
+			expectErr:         false,
+		},
+		{
+			desc:              "Neg exists, cr has populated status, without neg description",
+			negExists:         true,
+			negDesc:           "",
+			crStatusPopulated: true,
+			expectErr:         false,
+		},
+		{
+			desc:      "Neg exists, cr has with populated status, with correct neg description",
+			negExists: true,
+			negDesc: utils.NegDescription{
+				ClusterUID:  kubeSystemUID,
+				Namespace:   testNamespace,
+				ServiceName: testService,
+				Port:        "80",
+			}.String(),
+			crStatusPopulated: true,
+			expectErr:         false,
+		},
+		{
+			desc:              "Neg exists, without neg description",
+			negExists:         true,
+			negDesc:           "",
+			crStatusPopulated: false,
+			expectErr:         false,
+		},
+		{
+			desc:      "Neg exists, with correct neg description",
+			negExists: true,
+			negDesc: utils.NegDescription{
+				ClusterUID:  kubeSystemUID,
+				Namespace:   testNamespace,
+				ServiceName: testService,
+				Port:        "80",
+			}.String(),
+			crStatusPopulated: false,
+			expectErr:         false,
+		},
+		{
+			desc:      "Neg exists, with conflicting cluster id in neg description",
+			negExists: true,
+			negDesc: utils.NegDescription{
+				ClusterUID:  "cluster-2",
+				Namespace:   testNamespace,
+				ServiceName: testService,
+				Port:        "80",
+			}.String(),
+			crStatusPopulated: false,
+			expectErr:         true,
+		},
+		{
+			desc:      "Neg exists, with conflicting namespace in neg description",
+			negExists: true,
+			negDesc: utils.NegDescription{
+				ClusterUID:  kubeSystemUID,
+				Namespace:   "namespace-2",
+				ServiceName: testService,
+				Port:        "80",
+			}.String(),
+			crStatusPopulated: false,
+			expectErr:         true,
+		},
+		{
+			desc:      "Neg exists, with conflicting service in neg description",
+			negExists: true,
+			negDesc: utils.NegDescription{
+				ClusterUID:  kubeSystemUID,
+				Namespace:   testNamespace,
+				ServiceName: "service-2",
+				Port:        "80",
+			}.String(),
+			crStatusPopulated: false,
+			expectErr:         true,
+		},
+		{
+			desc:      "Neg exists, with conflicting port in neg description",
+			negExists: true,
+			negDesc: utils.NegDescription{
+				ClusterUID:  kubeSystemUID,
+				Namespace:   testNamespace,
+				ServiceName: testService,
+				Port:        "81",
+			}.String(),
+			crStatusPopulated: false,
+			expectErr:         true,
+		},
+		{
+			desc:      "Neg exists, cr has populated status, but error during initialization",
+			negExists: true,
+			// Cause error by having a conflicting neg description
+			negDesc: utils.NegDescription{
+				ClusterUID:  kubeSystemUID,
+				Namespace:   testNamespace,
+				ServiceName: testService,
+				Port:        "81",
+			}.String(),
+			crStatusPopulated: true,
+			expectErr:         true,
+		},
+	}
+
+	for _, tc := range testCases {
+		_, syncer := newTestTransactionSyncerWithNegClient(fakeCloud, testNegType, negClient)
+		t.Run(tc.desc, func(t *testing.T) {
+
+			expectZones := sets.NewString(testZone1, testZone2)
+
+			var expectedNegRefs map[string]negv1beta1.NegObjectReference
+			if tc.negExists {
+				for zone := range expectZones {
+					fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+						Version:             syncer.NegSyncerKey.GetAPIVersion(),
+						Name:                testNegName,
+						NetworkEndpointType: string(syncer.NegSyncerKey.NegType),
+						Network:             fakeCloud.NetworkURL(),
+						Subnetwork:          fakeCloud.SubnetworkURL(),
+						Description:         tc.negDesc,
+					}, zone)
+				}
+				ret, _ := fakeCloud.AggregatedListNetworkEndpointGroup(syncer.NegSyncerKey.GetAPIVersion())
+				expectedNegRefs = negObjectReferences(ret)
+			}
+			var refs []negv1beta1.NegObjectReference
+			if tc.crStatusPopulated {
+				for _, neg := range expectedNegRefs {
+					refs = append(refs, neg)
+				}
+			}
+
+			// Since timestamp gets truncated to the second, there is a chance that the timestamps will be the same as LastTransitionTime or LastSyncTime so use creation TS from an earlier date.
+			creationTS := v1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
+			//Create NEG CR for Syncer to update status on
+			origCR := createNegCR(testNegName, creationTS, tc.crStatusPopulated, tc.crStatusPopulated, refs)
+			neg, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Create(context2.Background(), origCR, v1.CreateOptions{})
+			if err != nil {
+				t.Errorf("Failed to create test NEG CR: %s", err)
+			}
+			syncer.svcNegLister.Add(neg)
+
+			err = syncer.ensureNetworkEndpointGroups()
+			if !tc.expectErr && err != nil {
+				t.Errorf("Expected no error, but got: %v", err)
+			} else if tc.expectErr && err == nil {
+				t.Errorf("Expected error, but got none")
+			}
+
+			negCR, err := negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Get(context2.Background(), testNegName, v1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to get NEG from neg client: %s", err)
+			}
+			ret, _ := fakeCloud.AggregatedListNetworkEndpointGroup(syncer.NegSyncerKey.GetAPIVersion())
+			if len(expectedNegRefs) == 0 && !tc.expectErr {
+				expectedNegRefs = negObjectReferences(ret)
+			}
+			// if error occurs, expect that neg object references are not populated
+			if tc.expectErr && !tc.crStatusPopulated {
+				expectedNegRefs = nil
+			}
+
+			checkNegCR(t, negCR, creationTS, expectZones, expectedNegRefs, false, tc.expectErr)
+			if tc.expectErr {
+				// If status is already populated, expect no change even when error occurs
+				checkCondition(t, negCR.Status.Conditions, negv1beta1.Initialized, creationTS, core.ConditionFalse, true)
+			} else if tc.crStatusPopulated {
+				checkCondition(t, negCR.Status.Conditions, negv1beta1.Initialized, creationTS, core.ConditionTrue, false)
+			} else {
+				checkCondition(t, negCR.Status.Conditions, negv1beta1.Initialized, creationTS, core.ConditionTrue, true)
+			}
+
+			if tc.expectErr || tc.negExists {
+				// Errored, so no expectation on created negs or negs were created beforehand
+				return
+			}
+
+			// Verify the NEGs are created as expected
+			retZones := sets.NewString()
+
+			for key, neg := range ret {
+				retZones.Insert(key.Zone)
+				if neg.Name != testNegName {
+					t.Errorf("Unexpected neg %q, expected %q", neg.Name, testNegName)
+				}
+
+				checkNegDescription(t, syncer, neg.Description)
+			}
+
+			if !expectZones.Equal(retZones) {
+				t.Errorf("Expected to find these zones: %+v, instead found: %+v", expectZones, retZones)
+			}
+		})
+
+		negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Delete(context2.TODO(), testNegName, v1.DeleteOptions{})
+
+		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, testZone1, syncer.NegSyncerKey.GetAPIVersion())
+		syncer.cloud.DeleteNetworkEndpointGroup(testNegName, testZone2, syncer.NegSyncerKey.GetAPIVersion())
+
+	}
+}
+
+func TestUpdateStatus(t *testing.T) {
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
+	testNegType := negtypes.VmIpPortEndpointType
+	testNegRefs := []negv1beta1.NegObjectReference{
+		negv1beta1.NegObjectReference{
+			Id:                  0,
+			SelfLink:            "self-link-0",
+			NetworkEndpointType: "neg-type-0",
+		},
+		negv1beta1.NegObjectReference{
+			Id:                  1,
+			SelfLink:            "self-link-1",
+			NetworkEndpointType: "neg-type-1",
+		},
+	}
+
+	testCases := []struct {
+		desc               string
+		populateConditions map[string]bool
+		negRefs            []negv1beta1.NegObjectReference
+		expectedNeedInit   bool
+	}{
+		{desc: "conditions don't exist, neg refs don't exist",
+			populateConditions: map[string]bool{
+				negv1beta1.Initialized: false,
+				negv1beta1.Synced:      false,
+			},
+			expectedNeedInit: true,
+		},
+		{desc: "both conditions exist, neg refs exist",
+			populateConditions: map[string]bool{
+				negv1beta1.Initialized: true,
+				negv1beta1.Synced:      true,
+			},
+			negRefs:          testNegRefs,
+			expectedNeedInit: false,
+		},
+		{desc: "both conditions exist, neg refs don't exist",
+			populateConditions: map[string]bool{
+				negv1beta1.Initialized: true,
+				negv1beta1.Synced:      true,
+			},
+			expectedNeedInit: true,
+		},
+		{desc: "initialized exists, neg refs exist",
+			populateConditions: map[string]bool{
+				negv1beta1.Initialized: true,
+				negv1beta1.Synced:      false,
+			},
+			negRefs:          testNegRefs,
+			expectedNeedInit: false,
+		},
+		{desc: "synced exists, neg refs exist",
+			populateConditions: map[string]bool{
+				negv1beta1.Initialized: false,
+				negv1beta1.Synced:      true,
+			},
+			negRefs:          testNegRefs,
+			expectedNeedInit: true,
+		},
+		{desc: "conditions don't exist, negRefs exist",
+			populateConditions: map[string]bool{
+				negv1beta1.Initialized: false,
+				negv1beta1.Synced:      false,
+			},
+			negRefs:          testNegRefs,
+			expectedNeedInit: true,
+		},
+	}
+
+	for _, syncErr := range []error{nil, fmt.Errorf("error")} {
+		for _, tc := range testCases {
+			t.Run(tc.desc, func(t *testing.T) {
+				svcNegClient := negfake.NewSimpleClientset()
+				fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+				_, syncer := newTestTransactionSyncerWithNegClient(fakeCloud, testNegType, svcNegClient)
+				syncer.needInit = false
+				if len(tc.negRefs) == 0 {
+					err := fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+						Version:             syncer.NegSyncerKey.GetAPIVersion(),
+						Name:                testNegName,
+						NetworkEndpointType: string(syncer.NegSyncerKey.NegType),
+						Network:             fakeCloud.NetworkURL(),
+						Subnetwork:          fakeCloud.SubnetworkURL(),
+						Description:         "",
+					}, testZone1)
+
+					_, err = fakeCloud.GetNetworkEndpointGroup(testNegName, testZone1, syncer.NegSyncerKey.GetAPIVersion())
+					if err != nil {
+						t.Errorf("failed to get neg from cloud: %s ", err)
+					}
+				}
+
+				// Since timestamp gets truncated to the second, there is a chance that the timestamps will be the same as LastTransitionTime or LastSyncTime so use creation TS from an earlier date
+				creationTS := v1.Date(2020, time.July, 23, 0, 0, 0, 0, time.UTC)
+				origCR := createNegCR(testNegName, creationTS, tc.populateConditions[negv1beta1.Initialized], tc.populateConditions[negv1beta1.Synced], tc.negRefs)
+				origCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Create(context2.Background(), origCR, v1.CreateOptions{})
+				if err != nil {
+					t.Errorf("Failed to create test NEG CR: %s", err)
+				}
+				syncer.svcNegLister.Add(origCR)
+
+				syncer.updateStatus(syncErr)
+
+				negCR, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Get(context2.Background(), testNegName, v1.GetOptions{})
+				if err != nil {
+					t.Errorf("Failed to create test NEG CR: %s", err)
+				}
+
+				if syncErr != nil {
+					checkCondition(t, negCR.Status.Conditions, negv1beta1.Synced, creationTS, core.ConditionFalse, true)
+				} else if tc.populateConditions[negv1beta1.Synced] {
+					checkCondition(t, negCR.Status.Conditions, negv1beta1.Synced, creationTS, core.ConditionTrue, false)
+				} else {
+					checkCondition(t, negCR.Status.Conditions, negv1beta1.Synced, creationTS, core.ConditionTrue, true)
+				}
+
+				if syncer.needInit != tc.expectedNeedInit {
+					t.Errorf("expected manager.needInit to be %t, but was %t", tc.expectedNeedInit, syncer.needInit)
+				}
+
+				if !creationTS.Before(&negCR.Status.LastSyncTime) {
+					t.Errorf("neg cr should have an updated LastSyncTime")
+				}
+			})
+		}
+	}
+}
+
 func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, randomize bool) (negtypes.NegSyncer, *transactionSyncer) {
 	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmIpEndpointType)
 	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, randomize)
@@ -843,6 +1209,10 @@ func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, r
 }
 
 func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType) (negtypes.NegSyncer, *transactionSyncer) {
+	return newTestTransactionSyncerWithNegClient(fakeGCE, negType, nil)
+}
+
+func newTestTransactionSyncerWithNegClient(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, negClient svcnegclient.Interface) (negtypes.NegSyncer, *transactionSyncer) {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := namer_util.NewNamer(clusterID, "")
@@ -851,7 +1221,8 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		ResyncPeriod:          1 * time.Second,
 		DefaultBackendSvcPort: defaultBackend,
 	}
-	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, namer, "" /*kubeSystemUID*/, ctxConfig)
+
+	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, negClient, nil, namer, kubeSystemUID, ctxConfig)
 	svcPort := negtypes.NegSyncerKey{
 		Namespace: testNamespace,
 		Name:      testService,
@@ -861,6 +1232,11 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 			TargetPort: "8080",
 		},
 	}
+
+	if negClient != nil {
+		flags.F.EnableNegCrd = true
+	}
+
 	if negType == negtypes.VmIpEndpointType {
 		svcPort.PortTuple.Port = 0
 		svcPort.PortTuple.TargetPort = ""
@@ -869,6 +1245,11 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 
 	// TODO(freehan): use real readiness reflector
 	reflector := &readiness.NoopReflector{}
+
+	var svcNegLister cache.Indexer
+	if negClient != nil {
+		svcNegLister = context.SvcNegInformer.GetIndexer()
+	}
 
 	negsyncer := NewTransactionSyncer(svcPort,
 		testNegName,
@@ -879,9 +1260,13 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		context.ServiceInformer.GetIndexer(),
 		context.EndpointInformer.GetIndexer(),
 		context.NodeInformer.GetIndexer(),
+		svcNegLister,
 		reflector,
 		GetEndpointsCalculator(context.NodeInformer.GetIndexer(), context.PodInformer.GetIndexer(), negtypes.NewFakeZoneGetter(),
-			svcPort, false))
+			svcPort, false),
+		string(kubeSystemUID),
+		context.SvcNegClient,
+	)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
 	return negsyncer, transactionSyncer
 }
@@ -1011,4 +1396,145 @@ func waitForTransactions(syncer *transactionSyncer) error {
 		}
 		return false, nil
 	})
+}
+
+// negObjectReferences returns objectReferences for NEG CRs from NEG Objects
+func negObjectReferences(negs map[*meta.Key]*composite.NetworkEndpointGroup) map[string]negv1beta1.NegObjectReference {
+
+	negObjs := make(map[string]negv1beta1.NegObjectReference)
+	for _, neg := range negs {
+		negObjs[neg.SelfLink] = negv1beta1.NegObjectReference{
+			Id:                  neg.Id,
+			SelfLink:            neg.SelfLink,
+			NetworkEndpointType: negv1beta1.NetworkEndpointType(neg.NetworkEndpointType),
+		}
+	}
+	return negObjs
+}
+
+// checks the NEG Description on the cloud NEG Object and verifies with expected
+// description from the syncer.
+func checkNegDescription(t *testing.T, syncer *transactionSyncer, desc string) {
+	expectedNegDesc := utils.NegDescription{
+		ClusterUID:  syncer.kubeSystemUID,
+		Namespace:   syncer.NegSyncerKey.Namespace,
+		ServiceName: syncer.NegSyncerKey.Name,
+		Port:        fmt.Sprint(syncer.NegSyncerKey.PortTuple.Port),
+	}
+	actualNegDesc, err := utils.NegDescriptionFromString(desc)
+	if err != nil {
+		t.Errorf("Invalid neg description: %s", err)
+	}
+
+	if !reflect.DeepEqual(*actualNegDesc, expectedNegDesc) {
+		t.Errorf("Unexpected neg description %s, expected %s", desc, expectedNegDesc.String())
+	}
+}
+
+// checkCondition looks for the condition of the specified type and validates it has has the expectedStatus.
+// It will also validate that the transition timestamp is updated as expected, which is specified by expectTransitionTSUpdate.
+func checkCondition(t *testing.T, conditions []negv1beta1.Condition, conditionType string, previousTS metav1.Time, expectedStatus core.ConditionStatus, expectTransitionTSUpdate bool) metav1.Time {
+	var condition negv1beta1.Condition
+	found := false
+	for _, c := range conditions {
+		if c.Type == conditionType {
+			found = true
+			condition = c
+			break
+		}
+	}
+
+	if !found {
+		t.Errorf("conditions did not include a condition for type %s", conditionType)
+		return metav1.Time{}
+	}
+
+	if condition.Status != expectedStatus {
+		t.Errorf("condition %s status should be set to %+v but was %+v", conditionType, expectedStatus, condition.Status)
+	}
+
+	if expectTransitionTSUpdate && !previousTS.Before(&condition.LastTransitionTime) {
+		t.Errorf("condition %s LastTransitionTime should have been updated", conditionType)
+	} else if !expectTransitionTSUpdate && !previousTS.Equal(&condition.LastTransitionTime) {
+		t.Errorf("condition %s LastTransitionTime should not have been updated", conditionType)
+
+	}
+
+	if condition.Reason == "" {
+		t.Errorf("condition %s cannot have an empty reason", conditionType)
+	}
+
+	if condition.Message == "" && expectedStatus != core.ConditionTrue {
+		t.Errorf("condition %s cannot have an empty message", conditionType)
+	} else if condition.Message != "" && expectedStatus == core.ConditionTrue {
+		t.Errorf("condition %s should not have a message since status is ConditionTrue", conditionType)
+	}
+	return condition.LastTransitionTime
+}
+
+// createNegCR generates a NegCR with given neg name, and if statusPopulated is true, conditions are initialized in the ConditionTrue state
+func createNegCR(testNegName string, creationTS metav1.Time, populateInitialized, populateSynced bool, negRefs []negv1beta1.NegObjectReference) *negv1beta1.ServiceNetworkEndpointGroup {
+
+	neg := &negv1beta1.ServiceNetworkEndpointGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:              testNegName,
+			CreationTimestamp: creationTS,
+		},
+	}
+
+	var conditions []negv1beta1.Condition
+	if populateInitialized {
+		conditions = append(conditions, negv1beta1.Condition{
+			Type:               negv1beta1.Initialized,
+			Status:             core.ConditionTrue,
+			LastTransitionTime: creationTS,
+			Reason:             negtypes.NegInitializationSuccessful,
+		})
+	}
+	if populateSynced {
+		conditions = append(conditions, negv1beta1.Condition{
+			Type:               negv1beta1.Synced,
+			Status:             core.ConditionTrue,
+			LastTransitionTime: creationTS,
+			Reason:             negtypes.NegInitializationSuccessful,
+		})
+	}
+
+	neg.Status.Conditions = conditions
+	neg.Status.NetworkEndpointGroups = negRefs
+
+	return neg
+}
+
+// checkNegCR validates the the NegObjectReferences and the LastSyncTime. It will not validate the conditions fields but ensures at most 2 conditions exist
+func checkNegCR(t *testing.T, negCR *negv1beta1.ServiceNetworkEndpointGroup, previousLastSyncTime metav1.Time, expectZones sets.String, expectedNegRefs map[string]negv1beta1.NegObjectReference, expectSyncTimeUpdate, expectErr bool) {
+	if expectSyncTimeUpdate && !previousLastSyncTime.Before(&negCR.Status.LastSyncTime) {
+		t.Errorf("Expected Neg CR to have an updated LastSyncTime")
+	} else if !expectSyncTimeUpdate && !negCR.Status.LastSyncTime.IsZero() && !previousLastSyncTime.Equal(&negCR.Status.LastSyncTime) {
+		t.Errorf("Expected Neg CR to not have an updated LastSyncTime")
+	}
+
+	var foundNegObjs []string
+	if len(negCR.Status.NetworkEndpointGroups) != len(expectedNegRefs) {
+		t.Errorf("Expected Neg CR to have %d corresponding neg object references, but has %d", len(expectedNegRefs), len(negCR.Status.NetworkEndpointGroups))
+	}
+
+	for _, negObj := range negCR.Status.NetworkEndpointGroups {
+		if expectedObj, ok := expectedNegRefs[negObj.SelfLink]; ok {
+			foundNegObjs = append(foundNegObjs, negObj.SelfLink)
+			if negObj != expectedObj {
+				t.Errorf("Expected Neg Object %+v to be %+v", negObj, expectedObj)
+			}
+		} else {
+			t.Errorf("Unexpected neg object in Neg CR: %+v", negObj)
+		}
+	}
+
+	if len(foundNegObjs) != len(expectedNegRefs) {
+		t.Errorf("Expected to have %d neg objects, but only found these negs %+v ", len(expectedNegRefs), foundNegObjs)
+	}
+
+	if len(negCR.Status.Conditions) > 2 {
+		t.Errorf("Expected to have at most 2 conditions, found %d", len(negCR.Status.Conditions))
+	}
 }

@@ -30,7 +30,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -113,13 +115,14 @@ func getService(serviceLister cache.Indexer, namespace, name string) *apiv1.Serv
 }
 
 // ensureNetworkEndpointGroup ensures corresponding NEG is configured correctly in the specified zone.
-func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version) error {
+func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName, kubeSystemUID, port string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version) (negv1beta1.NegObjectReference, error) {
 	neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version)
 	if err != nil {
 		// Most likely to be caused by non-existed NEG
 		klog.V(4).Infof("Error while retriving %q in zone %q: %v", negName, zone, err)
 	}
 
+	var negRef negv1beta1.NegObjectReference
 	needToCreate := false
 	if neg == nil {
 		needToCreate = true
@@ -128,15 +131,30 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		// Non-GCP NEGs do not have associated network and subnetwork.
 		(!utils.EqualResourceIDs(neg.Network, cloud.NetworkURL()) ||
 			!utils.EqualResourceIDs(neg.Subnetwork, cloud.SubnetworkURL())) {
+
 		needToCreate = true
 		klog.V(2).Infof("NEG %q in %q does not match network and subnetwork of the cluster. Deleting NEG.", negName, zone)
 		err = cloud.DeleteNetworkEndpointGroup(negName, zone, version)
 		if err != nil {
-			return err
+			return negRef, err
 		}
 		if recorder != nil && serviceLister != nil {
 			if svc := getService(serviceLister, svcNamespace, svcName); svc != nil {
 				recorder.Eventf(svc, apiv1.EventTypeNormal, "Delete", "Deleted NEG %q for %s in %q.", negName, negServicePortName, zone)
+			}
+		}
+	} else {
+		// Skip checking description if the neg object has an empty description
+		if neg.Description != "" {
+			description, err := utils.NegDescriptionFromString(neg.Description)
+			if err != nil {
+				klog.Warningf("Error unmarshalling Neg Description %s/%s err:%s", negName, zone, err)
+			} else {
+				if description.ClusterUID != kubeSystemUID || description.Namespace != svcNamespace || description.ServiceName != svcName || description.Port != port {
+
+					klog.Errorf("Neg Name %s is already in use", negName)
+					return negv1beta1.NegObjectReference{}, fmt.Errorf("neg name %s is already in use", negName)
+				}
 			}
 		}
 	}
@@ -150,15 +168,27 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		default:
 			subnetwork = cloud.SubnetworkURL()
 		}
+
+		desc := ""
+		if flags.F.EnableNegCrd {
+			negDesc := utils.NegDescription{
+				ClusterUID:  kubeSystemUID,
+				Namespace:   svcNamespace,
+				ServiceName: svcName,
+				Port:        port,
+			}
+			desc = negDesc.String()
+		}
 		err = cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
 			Version:             version,
 			Name:                negName,
 			NetworkEndpointType: string(networkEndpointType),
 			Network:             cloud.NetworkURL(),
 			Subnetwork:          subnetwork,
+			Description:         desc,
 		}, zone)
 		if err != nil {
-			return err
+			return negRef, err
 		}
 		if recorder != nil && serviceLister != nil {
 			if svc := getService(serviceLister, svcNamespace, svcName); svc != nil {
@@ -166,7 +196,23 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			}
 		}
 	}
-	return nil
+	if flags.F.EnableNegCrd {
+		if neg == nil {
+			var err error
+			neg, err = cloud.GetNetworkEndpointGroup(negName, zone, version)
+			if err != nil {
+				klog.V(4).Infof("Error while retriving %q in zone %q: %v after initialization", negName, zone, err)
+				return negRef, nil
+			}
+		}
+
+		negRef = negv1beta1.NegObjectReference{
+			Id:                  neg.Id,
+			SelfLink:            neg.SelfLink,
+			NetworkEndpointType: negv1beta1.NetworkEndpointType(neg.NetworkEndpointType),
+		}
+	}
+	return negRef, nil
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object and Istio:DestinationRule subset into zone and endpoints map

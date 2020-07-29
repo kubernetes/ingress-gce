@@ -50,7 +50,7 @@ type ServiceNetworkEndpointGroupStatus struct {
 
 	// Last time the NEG syncer syncs associated NEGs.
 	// +optional
-	LastSyncTime metav1.Time `json:"lastTransitionTime,omitempty"`
+	LastSyncTime metav1.Time `json:"lastSyncTime,omitempty"`
 }
 
 // NegObjectReference is the object reference to the NEG resource in GCE

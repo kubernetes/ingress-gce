@@ -173,6 +173,7 @@ func (n *Namer) SetFirewall(name string) {
 }
 
 // UID returns the UID/name of this cluster.
+// WARNING: Use KubeSystemUID instead
 func (n *Namer) UID() string {
 	n.nameLock.Lock()
 	defer n.nameLock.Unlock()

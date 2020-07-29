@@ -28,6 +28,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
@@ -77,9 +78,12 @@ type syncerManager struct {
 	reflector readiness.Reflector
 	//svcNegClient handles lifecycle operations for NEG CRs
 	svcNegClient svcnegclient.Interface
+
+	// kubeSystemUID is used to by syncers when NEG CRD is enabled
+	kubeSystemUID types.UID
 }
 
-func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, svcNegClient svcnegclient.Interface, podLister, serviceLister, endpointLister, nodeLister, svcNegLister cache.Indexer) *syncerManager {
+func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, svcNegClient svcnegclient.Interface, kubeSystemUID types.UID, podLister, serviceLister, endpointLister, nodeLister, svcNegLister cache.Indexer) *syncerManager {
 	return &syncerManager{
 		namer:          namer,
 		recorder:       recorder,
@@ -93,6 +97,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.
 		svcPortMap:     make(map[serviceKey]negtypes.PortInfoMap),
 		syncerMap:      make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
 		svcNegClient:   svcNegClient,
+		kubeSystemUID:  kubeSystemUID,
 	}
 }
 
@@ -149,8 +154,11 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.serviceLister,
 				manager.endpointLister,
 				manager.nodeLister,
+				manager.svcNegLister,
 				manager.reflector,
 				epc,
+				string(manager.kubeSystemUID),
+				manager.svcNegClient,
 			)
 			manager.syncerMap[syncerKey] = syncer
 		}
