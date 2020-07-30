@@ -28,9 +28,9 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
-	"k8s.io/ingress-gce/pkg/flags"
-
+	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -310,4 +310,35 @@ func sslPolicyLink(env *Env) (*string, error) {
 	resID := resourceID.ResourcePath()
 
 	return &resID, nil
+}
+
+func ToCompositeBackendService(sp utils.ServicePort, namer namer.BackendNamer, hcLink string) *composite.BackendService {
+	name := sp.BackendName()
+
+	version := features.VersionFromServicePort(&sp)
+	be := &composite.BackendService{
+		Version:      version,
+		Name:         name,
+		Protocol:     string(sp.Protocol),
+		Port:         sp.NodePort,
+		PortName:     namer.NamedPort(sp.NodePort),
+		HealthChecks: []string{hcLink},
+		// LogConfig is using GA API so this is not considered for computing API version.
+		LogConfig: &composite.BackendServiceLogConfig{
+			Enable: true,
+			// Sampling rate needs to be specified explicitly.
+			SampleRate: 1.0,
+		},
+	}
+
+	if sp.L7ILBEnabled {
+		// This enables l7-ILB and advanced traffic management features
+		be.LoadBalancingScheme = "INTERNAL_MANAGED"
+	}
+
+	desc := sp.GetDescription()
+	features.SetDescription(&desc, &sp)
+	be.Description = desc.String()
+
+	return be
 }

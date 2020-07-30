@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -67,36 +68,9 @@ func ensureDescription(be *composite.BackendService, sp *utils.ServicePort) (nee
 
 // Create implements Pool.
 func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.BackendService, error) {
-	name := sp.BackendName()
-	namedPort := &compute.NamedPort{
-		Name: b.namer.NamedPort(sp.NodePort),
-		Port: sp.NodePort,
-	}
-
-	version := features.VersionFromServicePort(&sp)
-	be := &composite.BackendService{
-		Version:      version,
-		Name:         name,
-		Protocol:     string(sp.Protocol),
-		Port:         namedPort.Port,
-		PortName:     namedPort.Name,
-		HealthChecks: []string{hcLink},
-		// LogConfig is using GA API so this is not considered for computing API version.
-		LogConfig: &composite.BackendServiceLogConfig{
-			Enable: true,
-			// Sampling rate needs to be specified explicitly.
-			SampleRate: 1.0,
-		},
-	}
-
-	if sp.L7ILBEnabled {
-		// This enables l7-ILB and advanced traffic management features
-		be.LoadBalancingScheme = "INTERNAL_MANAGED"
-	}
-
-	ensureDescription(be, &sp)
+	be := translator.ToCompositeBackendService(sp, b.namer, hcLink)
 	scope := features.ScopeFromServicePort(&sp)
-	key, err := composite.CreateKey(b.cloud, name, scope)
+	key, err := composite.CreateKey(b.cloud, be.Name, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -107,7 +81,7 @@ func (b *Backends) Create(sp utils.ServicePort, hcLink string) (*composite.Backe
 	// Note: We need to perform a GCE call to re-fetch the object we just created
 	// so that the "Fingerprint" field is filled in. This is needed to update the
 	// object without error.
-	return b.Get(name, version, scope)
+	return b.Get(be.Name, be.Version, scope)
 }
 
 // Update implements Pool.
