@@ -842,7 +842,7 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 			svc:               svc1,
 			svcTuple:          svcTuple1,
 			markedForDeletion: true,
-			expectErr:         true,
+			expectErr:         false,
 			crExists:          true,
 		},
 		{desc: "same service, different port configuration, original cr is not marked for deletion",
