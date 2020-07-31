@@ -265,6 +265,9 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	}
 	if protocol == string(api_v1.ProtocolTCP) {
 		expectedBS.ConnectionDraining = &composite.ConnectionDraining{DrainingTimeoutSec: DefaultConnectionDrainingTimeoutSeconds}
+	} else {
+		// This config is not supported in UDP mode, explicitly set to 0 to reset, if proto was TCP previously.
+		expectedBS.ConnectionDraining = &composite.ConnectionDraining{DrainingTimeoutSec: 0}
 	}
 
 	// Create backend service if none was found
@@ -284,8 +287,8 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	if backendSvcEqual(expectedBS, bs) {
 		return bs, nil
 	}
-	if bs.ConnectionDraining != nil && bs.ConnectionDraining.DrainingTimeoutSec > 0 {
-		// if user overrides this value, continue using that.
+	if bs.ConnectionDraining != nil && bs.ConnectionDraining.DrainingTimeoutSec > 0 && protocol == string(api_v1.ProtocolTCP) {
+		// only preserves user overridden timeout value when the protocol is TCP
 		expectedBS.ConnectionDraining.DrainingTimeoutSec = bs.ConnectionDraining.DrainingTimeoutSec
 	}
 	klog.V(2).Infof("EnsureL4BackendService: updating backend service %v", name)
