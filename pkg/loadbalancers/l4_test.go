@@ -17,6 +17,8 @@ limitations under the License.
 */
 
 import (
+	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"sync"
@@ -730,7 +732,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
 	assertInternalLbResources(t, svc, l, nodeNames)
-	betaRuleDescString, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(svc.Namespace, svc.Name), "1.2.3.0", meta.VersionBeta)
+	descString, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(svc.Namespace, svc.Name), "1.2.3.0", meta.VersionGA)
 	if err != nil {
 		t.Errorf("Unexpected error when creating description - %v", err)
 	}
@@ -738,15 +740,15 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error when creating key - %v", err)
 	}
-	fwdRule, err := composite.GetForwardingRule(l.cloud, key, meta.VersionBeta)
+	fwdRule, err := composite.GetForwardingRule(l.cloud, key, meta.VersionGA)
 	if err != nil {
 		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
 	}
 	if !fwdRule.AllowGlobalAccess {
 		t.Errorf("Unexpected false value for AllowGlobalAccess")
 	}
-	if fwdRule.Description != betaRuleDescString {
-		t.Errorf("Expected description %s, Got %s", betaRuleDescString, fwdRule.Description)
+	if fwdRule.Description != descString {
+		t.Errorf("Expected description %s, Got %s", descString, fwdRule.Description)
 	}
 	// remove the annotation and disable global access.
 	delete(svc.Annotations, gce.ServiceAnnotationILBAllowGlobalAccess)
@@ -757,13 +759,8 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	if len(status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	gaRuleDescString, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(svc.Namespace, svc.Name), "1.2.3.0", meta.VersionGA)
-	if err != nil {
-		t.Errorf("Unexpected error when creating description - %v", err)
-	}
-	// Fetch the beta version of the rule to make sure GlobalAccess field is off. Calling the GA API will always show
-	// this field as false.
-	fwdRule, err = composite.GetForwardingRule(l.cloud, key, meta.VersionBeta)
+	// make sure GlobalAccess field is off.
+	fwdRule, err = composite.GetForwardingRule(l.cloud, key, meta.VersionGA)
 	if err != nil {
 		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
 	}
@@ -771,71 +768,9 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	if fwdRule.AllowGlobalAccess {
 		t.Errorf("Unexpected true value for AllowGlobalAccess")
 	}
-	if fwdRule.Description != gaRuleDescString {
-		t.Errorf("Expected description %s, Got %s", gaRuleDescString, fwdRule.Description)
+	if fwdRule.Description != descString {
+		t.Errorf("Expected description %s, Got %s", descString, fwdRule.Description)
 	}
-	// Delete the service
-	err = l.EnsureInternalLoadBalancerDeleted(svc)
-	if err != nil {
-		t.Errorf("Unexpected error %v", err)
-	}
-	assertInternalLbResourcesDeleted(t, svc, true, l)
-}
-
-func TestEnsureInternalLoadBalancerDisableGlobalAccess(t *testing.T) {
-	t.Parallel()
-
-	vals := gce.DefaultTestClusterValues()
-	fakeGCE := getFakeGCECloud(vals)
-
-	nodeNames := []string{"test-node-1"}
-	svc := test.NewL4ILBService(false, 8080)
-	namer := namer_util.NewNamer(clusterUID, "")
-	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
-	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
-	if err != nil {
-		t.Errorf("Unexpected error when adding nodes %v", err)
-	}
-	svc.Annotations[gce.ServiceAnnotationILBAllowGlobalAccess] = "true"
-	frName := l.GetFRName()
-	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc)
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
-	}
-	if len(status.Ingress) == 0 {
-		t.Errorf("Got empty loadBalancer status using handler %v", l)
-	}
-	assertInternalLbResources(t, svc, l, nodeNames)
-	key, err := composite.CreateKey(l.cloud, frName, meta.Regional)
-	if err != nil {
-		t.Errorf("Unexpected error when creating key - %v", err)
-	}
-
-	fwdRule, err := composite.GetForwardingRule(l.cloud, key, meta.VersionBeta)
-	if err != nil {
-		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
-	}
-	if !fwdRule.AllowGlobalAccess {
-		t.Errorf("Unexpected false value for AllowGlobalAccess")
-	}
-
-	// disable global access - setting the annotation to false or removing annotation will disable it
-	svc.Annotations[gce.ServiceAnnotationILBAllowGlobalAccess] = "false"
-	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc)
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
-	}
-	if len(status.Ingress) == 0 {
-		t.Errorf("Got empty loadBalancer status using handler %v", l)
-	}
-	fwdRule, err = composite.GetForwardingRule(l.cloud, key, meta.VersionBeta)
-	if err != nil {
-		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
-	}
-	if fwdRule.AllowGlobalAccess {
-		t.Errorf("Unexpected 'true' value for AllowGlobalAccess")
-	}
-
 	// Delete the service
 	err = l.EnsureInternalLoadBalancerDeleted(svc)
 	if err != nil {
@@ -849,7 +784,6 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	nodeNames := []string{"test-node-1"}
 	vals := gce.DefaultTestClusterValues()
 	fakeGCE := getFakeGCECloud(vals)
-	fakeGCE.AlphaFeatureGate = gce.NewAlphaFeatureGate([]string{gce.AlphaFeatureILBCustomSubnet})
 
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewNamer(clusterUID, "")
@@ -986,6 +920,94 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	if !reflect.DeepEqual(existingPorts, tc.Result) {
 		t.Errorf("Expected firewall rule with ports %v,got %v", tc.Result, existingPorts)
 	}
+}
+
+func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
+	t.Parallel()
+
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := getFakeGCECloud(vals)
+	c := fakeGCE.Compute().(*cloud.MockGCE)
+	nodeNames := []string{"test-node-1"}
+	svc := test.NewL4ILBService(false, 8080)
+	namer := namer_util.NewNamer(clusterUID, "")
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{}, fakeMetricsCollector)
+	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
+	if err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+	// This function simulates the error where backend service protocol cannot be changed
+	// before deleting the forwarding rule.
+	c.MockRegionBackendServices.UpdateHook = func(ctx context.Context, key *meta.Key, be *compute.BackendService, m *cloud.MockRegionBackendServices) error {
+		// Check FRnames with both protocols to make sure there is no leak or incorrect update.
+		frNames := []string{l.getFRNameWithProtocol("TCP"), l.getFRNameWithProtocol("UDP")}
+		for _, name := range frNames {
+			key, err := composite.CreateKey(l.cloud, name, meta.Regional)
+			if err != nil {
+				return fmt.Errorf("unexpected error when creating key - %v", err)
+			}
+			fr, err := c.MockForwardingRules.Get(ctx, key)
+			if utils.IgnoreHTTPNotFound(err) != nil {
+				return err
+			}
+			if fr != nil && fr.IPProtocol != be.Protocol {
+				return fmt.Errorf("protocol mismatch between Forwarding Rule value %q and Backend service value %q", fr.IPProtocol, be.Protocol)
+			}
+
+		}
+		return mock.UpdateRegionBackendServiceHook(ctx, key, be, m)
+	}
+
+	frName := l.getFRNameWithProtocol("TCP")
+	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if err != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	}
+	if len(status.Ingress) == 0 {
+		t.Errorf("Got empty loadBalancer status using handler %v", l)
+	}
+	key, err := composite.CreateKey(l.cloud, frName, meta.Regional)
+	if err != nil {
+		t.Errorf("Unexpected error when creating key - %v", err)
+	}
+	fwdRule, err := composite.GetForwardingRule(l.cloud, key, meta.VersionGA)
+	if err != nil {
+		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
+	}
+	if fwdRule.IPProtocol != "TCP" {
+		t.Errorf("Unexpected protocol value %s, expected TCP", fwdRule.IPProtocol)
+	}
+	// change the protocol to UDP
+	svc.Spec.Ports[0].Protocol = v1.ProtocolUDP
+	status, err = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if err != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	}
+	if len(status.Ingress) == 0 {
+		t.Errorf("Got empty loadBalancer status using handler %v", l)
+	}
+	// Make sure the old forwarding rule is deleted
+	fwdRule, err = composite.GetForwardingRule(l.cloud, key, meta.VersionGA)
+	if !utils.IsNotFoundError(err) {
+		t.Errorf("Failed to delete ForwardingRule %s", frName)
+	}
+	frName = l.getFRNameWithProtocol("UDP")
+	if key, err = composite.CreateKey(l.cloud, frName, meta.Regional); err != nil {
+		t.Errorf("Unexpected error when creating key - %v", err)
+	}
+	if fwdRule, err = composite.GetForwardingRule(l.cloud, key, meta.VersionGA); err != nil {
+		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
+	}
+	if fwdRule.IPProtocol != "UDP" {
+		t.Errorf("Unexpected protocol value %s, expected UDP", fwdRule.IPProtocol)
+	}
+
+	// Delete the service
+	err = l.EnsureInternalLoadBalancerDeleted(svc)
+	if err != nil {
+		t.Errorf("Unexpected error %v", err)
+	}
+	assertInternalLbResourcesDeleted(t, svc, true, l)
 }
 
 func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, nodeNames []string) {
