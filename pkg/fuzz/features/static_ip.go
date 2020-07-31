@@ -69,7 +69,7 @@ func (v *staticIPValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1be
 
 // CheckResponse implements fuzz.FeatureValidator
 func (v *staticIPValidator) CheckResponse(host, path string, resp *http.Response, body []byte) (fuzz.CheckResponseAction, error) {
-	addrName := annotations.FromIngress(v.ing).StaticIPName()
+	addrName := annotations.FromIngress(v.ing).GlobalStaticIPName()
 	if addrName == "" {
 		return fuzz.CheckResponseContinue, nil
 	}

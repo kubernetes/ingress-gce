@@ -36,6 +36,7 @@ const (
 // The other types that are discovered as dependencies will simply be wrapped with a composite struct
 // The format of the map is ServiceName -> k8s-cloud-provider wrapper name
 var MainServices = map[string]string{
+	"Address":                         "Addresses",
 	"BackendService":                  "BackendServices",
 	"ForwardingRule":                  "ForwardingRules",
 	"HealthCheck":                     "HealthChecks",
@@ -55,6 +56,7 @@ var MainServices = map[string]string{
 // TODO: (shance) Replace this with data gathered from meta.AllServices
 // Services in NoUpdate will not have an Update() method generated for them
 var NoUpdate = sets.NewString(
+	"Address",
 	"ForwardingRule",
 	"HealthStatusForNetworkEndpoint",
 	"TargetHttpProxy",
@@ -88,6 +90,7 @@ var Versions = map[string]string{
 // DefaultRegionalServices contains services which are regional by default.
 // Their global type is explicitly labeled (e.g. GlobalForwardingRule)
 var DefaultRegionalServices = sets.NewString(
+	"Address",
 	"ForwardingRule",
 )
 

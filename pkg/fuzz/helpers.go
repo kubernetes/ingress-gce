@@ -261,7 +261,7 @@ func (i *IngressBuilder) AddStaticIP(name string) *IngressBuilder {
 	if i.ing.Annotations == nil {
 		i.ing.Annotations = make(map[string]string)
 	}
-	i.ing.Annotations[annotations.StaticIPNameKey] = name
+	i.ing.Annotations[annotations.GlobalStaticIPNameKey] = name
 	return i
 }
 
