@@ -1202,9 +1202,9 @@ func TestUpdateStatus(t *testing.T) {
 	}
 }
 
-func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, randomize bool) (negtypes.NegSyncer, *transactionSyncer) {
+func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, mode negtypes.EndpointsCalculatorMode) (negtypes.NegSyncer, *transactionSyncer) {
 	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmIpEndpointType)
-	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, randomize)
+	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, mode)
 	return negsyncer, ts
 }
 
@@ -1237,10 +1237,12 @@ func newTestTransactionSyncerWithNegClient(fakeGCE negtypes.NetworkEndpointGroup
 		flags.F.EnableNegCrd = true
 	}
 
+	var mode negtypes.EndpointsCalculatorMode
 	if negType == negtypes.VmIpEndpointType {
 		svcPort.PortTuple.Port = 0
 		svcPort.PortTuple.TargetPort = ""
 		svcPort.PortTuple.Name = string(negtypes.VmIpEndpointType)
+		mode = negtypes.L4LocalMode
 	}
 
 	// TODO(freehan): use real readiness reflector
@@ -1263,7 +1265,7 @@ func newTestTransactionSyncerWithNegClient(fakeGCE negtypes.NetworkEndpointGroup
 		svcNegLister,
 		reflector,
 		GetEndpointsCalculator(context.NodeInformer.GetIndexer(), context.PodInformer.GetIndexer(), negtypes.NewFakeZoneGetter(),
-			svcPort, false),
+			svcPort, mode),
 		string(kubeSystemUID),
 		context.SvcNegClient,
 	)

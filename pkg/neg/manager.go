@@ -149,8 +149,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 
 			// determine the implementation that calculates NEG endpoints on each sync.
 			epc := negsyncer.GetEndpointsCalculator(manager.nodeLister, manager.podLister, manager.zoneGetter,
-				syncerKey, portInfo.RandomizeEndpoints)
-
+				syncerKey, portInfo.EpCalculatorMode)
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
 				portInfo.NegName,
@@ -474,20 +473,23 @@ func ensureNegCROwnerRef(negCR *negv1beta1.ServiceNetworkEndpointGroup, expected
 // getSyncerKey encodes a service namespace, name, service port and targetPort into a string key
 func getSyncerKey(namespace, name string, servicePortKey negtypes.PortInfoMapKey, portInfo negtypes.PortInfo) negtypes.NegSyncerKey {
 	networkEndpointType := negtypes.VmIpPortEndpointType
+	calculatorMode := negtypes.L7Mode
 	if flags.F.EnableNonGCPMode {
 		networkEndpointType = negtypes.NonGCPPrivateEndpointType
 	}
 	if portInfo.PortTuple.Empty() {
 		networkEndpointType = negtypes.VmIpEndpointType
+		calculatorMode = portInfo.EpCalculatorMode
 	}
 
 	return negtypes.NegSyncerKey{
-		Namespace:    namespace,
-		Name:         name,
-		PortTuple:    portInfo.PortTuple,
-		Subset:       servicePortKey.Subset,
-		SubsetLabels: portInfo.SubsetLabels,
-		NegType:      networkEndpointType,
+		Namespace:        namespace,
+		Name:             name,
+		PortTuple:        portInfo.PortTuple,
+		Subset:           servicePortKey.Subset,
+		SubsetLabels:     portInfo.SubsetLabels,
+		NegType:          networkEndpointType,
+		EpCalculatorMode: calculatorMode,
 	}
 }
 
