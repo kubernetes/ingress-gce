@@ -140,6 +140,13 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		syncerKey := getSyncerKey(namespace, name, svcPort, portInfo)
 		syncer, ok := manager.syncerMap[syncerKey]
 		if !ok {
+
+			// To ensure that a NEG CR always exists during the lifecyle of a NEG, do not create a syncer for the NEG until the NEG CR is successfully created. This will reduce the possibility of invalid states and reduces complexity of garbage collection
+			if err := manager.ensureSvcNegCR(key, portInfo); err != nil {
+				errList = append(errList, err)
+				continue
+			}
+
 			// determine the implementation that calculates NEG endpoints on each sync.
 			epc := negsyncer.GetEndpointsCalculator(manager.nodeLister, manager.podLister, manager.zoneGetter,
 				syncerKey, portInfo.RandomizeEndpoints)
@@ -161,10 +168,6 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.svcNegClient,
 			)
 			manager.syncerMap[syncerKey] = syncer
-		}
-
-		if err := manager.ensureSvcNegCR(key, portInfo); err != nil {
-			errList = append(errList, err)
 		}
 
 		if syncer.IsStopped() {
@@ -428,11 +431,6 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 		// Neg does not exist so create it
 		_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Create(context.Background(), &newCR, metav1.CreateOptions{})
 		return err
-	}
-
-	if !negCR.GetDeletionTimestamp().IsZero() {
-		// Allow GC to complete
-		return fmt.Errorf("Neg CR already exists with this name and is marked for deletion. Allow GC to complete before recreating.")
 	}
 
 	needUpdate, err := ensureNegCRLabels(negCR, labels)
