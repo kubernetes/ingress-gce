@@ -300,6 +300,8 @@ type NegSyncerKey struct {
 	Namespace string
 	// Name of service
 	Name string
+	// Name of neg
+	NegName string
 	// PortTuple is the port tuple of the service backing the NEG
 	PortTuple SvcPortTuple
 
@@ -322,7 +324,7 @@ type NegSyncerKey struct {
 }
 
 func (key NegSyncerKey) String() string {
-	return fmt.Sprintf("%s/%s-%s-%s-%s-%s", key.Namespace, key.Name, key.Subset, key.PortTuple.String(), string(key.NegType), key.EpCalculatorMode)
+	return fmt.Sprintf("%s/%s-%s-%s-%s-%s-%s", key.Namespace, key.Name, key.NegName, key.Subset, key.PortTuple.String(), string(key.NegType), key.EpCalculatorMode)
 }
 
 // GetAPIVersion returns the compute API version to be used in order

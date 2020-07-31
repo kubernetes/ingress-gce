@@ -579,6 +579,7 @@ func getSyncerKey(namespace, name string, servicePortKey negtypes.PortInfoMapKey
 	return negtypes.NegSyncerKey{
 		Namespace:        namespace,
 		Name:             name,
+		NegName:          portInfo.NegName,
 		PortTuple:        portInfo.PortTuple,
 		Subset:           servicePortKey.Subset,
 		SubsetLabels:     portInfo.SubsetLabels,
