@@ -65,7 +65,7 @@ func TestIngress(t *testing.T) {
 						IngressClassKey:       "gce",
 						PreSharedCertKey:      "shared-cert-key",
 						GlobalStaticIPNameKey: "1.2.3.4",
-						PathPrefixRewriteKey: "/api/v1",
+						PathPrefixRewriteKey:  "/api/v1",
 					},
 				},
 			},
