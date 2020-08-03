@@ -55,6 +55,9 @@ const (
 	NegSyncFailed               = "NegSyncFailed"
 	NegInitializationSuccessful = "NegInitializationSuccessful"
 	NegInitializationFailed     = "NegInitializationFailed"
+
+	// NEG CRD Enabled Garbage Collection Event Reasons
+	NegGCError = "NegCRError"
 )
 
 // SvcPortTuple is the tuple representing one service port
