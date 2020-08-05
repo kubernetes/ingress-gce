@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/translator"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
@@ -48,7 +49,7 @@ type L7RuntimeInfo struct {
 	// IP is the desired ip of the loadbalancer, eg from a staticIP.
 	IP string
 	// TLS are the tls certs to use in termination.
-	TLS []*TLSCerts
+	TLS []*translator.TLSCerts
 	// TLSName is the name of the preshared cert to use. Multiple certs can be specified as a comma-separated string
 	TLSName string
 	// Ingress is the processed Ingress API object.
@@ -64,19 +65,6 @@ type L7RuntimeInfo struct {
 	UrlMap *utils.GCEURLMap
 	// FrontendConfig is the type which encapsulates features for the load balancer.
 	FrontendConfig *frontendconfigv1beta1.FrontendConfig
-}
-
-// TLSCerts encapsulates .pem encoded TLS information.
-type TLSCerts struct {
-	// Key is private key.
-	Key string
-	// Cert is a public key.
-	Cert string
-	// Chain is a certificate chain.
-	Chain string
-	Name  string
-	// md5 hash(first 8 bytes) of the cert contents
-	CertHash string
 }
 
 // L7 represents a single L7 loadbalancer.

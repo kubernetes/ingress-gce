@@ -246,7 +246,7 @@ func TestCreateHTTPSILBLoadBalancer(t *testing.T) {
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: false,
-		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
+		TLS:       []*translator.TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:    gceUrlMap,
 		Ingress:   newILBIngress(),
 	}
@@ -268,7 +268,7 @@ func TestCreateHTTPSILBLoadBalancerAllowHTTP(t *testing.T) {
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: true,
-		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
+		TLS:       []*translator.TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:    gceUrlMap,
 		Ingress:   newILBIngress(),
 	}
@@ -288,7 +288,7 @@ func TestCreateHTTPSLoadBalancer(t *testing.T) {
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: false,
-		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
+		TLS:       []*translator.TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
@@ -381,12 +381,12 @@ func TestCertUpdate(t *testing.T) {
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	ing := newIngress()
 	feNamer := namer_util.NewFrontendNamerFactory(j.namer, "").Namer(ing)
-	certName1 := feNamer.SSLCertName(GetCertHash("cert"))
-	certName2 := feNamer.SSLCertName(GetCertHash("cert2"))
+	certName1 := feNamer.SSLCertName(translator.GetCertHash("cert"))
+	certName2 := feNamer.SSLCertName(translator.GetCertHash("cert2"))
 
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: false,
-		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
+		TLS:       []*translator.TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:    gceUrlMap,
 		Ingress:   ing,
 	}
@@ -402,7 +402,7 @@ func TestCertUpdate(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 
 	// Sync with different cert
-	lbInfo.TLS = []*TLSCerts{createCert("key2", "cert2", "name")}
+	lbInfo.TLS = []*translator.TLSCerts{createCert("key2", "cert2", "name")}
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
 	}
@@ -422,7 +422,7 @@ func TestMultipleSecretsWithSameCert(t *testing.T) {
 
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: false,
-		TLS: []*TLSCerts{
+		TLS: []*translator.TLSCerts{
 			createCert("key", "cert", "secret-a"),
 			createCert("key", "cert", "secret-b"),
 		},
@@ -434,7 +434,7 @@ func TestMultipleSecretsWithSameCert(t *testing.T) {
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
 	}
-	certName := feNamer.SSLCertName(GetCertHash("cert"))
+	certName := feNamer.SSLCertName(translator.GetCertHash("cert"))
 	expectCerts := map[string]string{certName: lbInfo.TLS[0].Cert}
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 }
@@ -448,12 +448,12 @@ func TestCertCreationWithCollision(t *testing.T) {
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	ing := newIngress()
 	feNamer := namer_util.NewFrontendNamerFactory(j.namer, "").Namer(ing)
-	certName1 := feNamer.SSLCertName(GetCertHash("cert"))
-	certName2 := feNamer.SSLCertName(GetCertHash("cert2"))
+	certName1 := feNamer.SSLCertName(translator.GetCertHash("cert"))
+	certName2 := feNamer.SSLCertName(translator.GetCertHash("cert2"))
 
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: false,
-		TLS:       []*TLSCerts{createCert("key", "cert", "name")},
+		TLS:       []*translator.TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:    gceUrlMap,
 		Ingress:   ing,
 	}
@@ -489,7 +489,7 @@ func TestCertCreationWithCollision(t *testing.T) {
 	})
 
 	// Sync with different cert
-	lbInfo.TLS = []*TLSCerts{createCert("key2", "cert2", "name")}
+	lbInfo.TLS = []*translator.TLSCerts{createCert("key2", "cert2", "name")}
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
 	}
@@ -517,7 +517,7 @@ func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: false,
-		TLS:       []*TLSCerts{cert1},
+		TLS:       []*translator.TLSCerts{cert1},
 		UrlMap:    gceUrlMap,
 		Ingress:   ing,
 	}
@@ -528,7 +528,7 @@ func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 	firstPool.Ensure(lbInfo)
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 	// Update config to use 2 certs
-	lbInfo.TLS = []*TLSCerts{cert1, cert2}
+	lbInfo.TLS = []*translator.TLSCerts{cert1, cert2}
 	expectCerts[certName2] = cert2.Cert
 	firstPool.Ensure(lbInfo)
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
@@ -540,7 +540,7 @@ func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 
 	// Replace the 2 certs with a different, single cert
-	lbInfo.TLS = []*TLSCerts{cert3}
+	lbInfo.TLS = []*translator.TLSCerts{cert3}
 	expectCerts = map[string]string{certName3: cert3.Cert}
 	secondPool.Ensure(lbInfo)
 	// Only the new cert should be present
@@ -564,7 +564,7 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 	}
 	oldCertName := fmt.Sprintf("k8s-ssl-%s", feNamer.LoadBalancer())
 	tlsCert := createCert("key", "cert", "name")
-	lbInfo.TLS = []*TLSCerts{tlsCert}
+	lbInfo.TLS = []*translator.TLSCerts{tlsCert}
 	newCertName := feNamer.SSLCertName(tlsCert.CertHash)
 
 	// Manually create a target proxy and assign a legacy cert to it.
@@ -615,7 +615,7 @@ func TestMaxCertsUpload(t *testing.T) {
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
-	var tlsCerts []*TLSCerts
+	var tlsCerts []*translator.TLSCerts
 	expectCerts := make(map[string]string)
 	expectCertsExtra := make(map[string]string)
 	ing := newIngress()
@@ -624,7 +624,7 @@ func TestMaxCertsUpload(t *testing.T) {
 	for ix := 0; ix < FakeCertQuota; ix++ {
 		str := strconv.Itoa(ix)
 		tlsCerts = append(tlsCerts, createCert("key-"+str, "cert-"+str, "name-"+str))
-		certName := feNamer.SSLCertName(GetCertHash("cert-" + str))
+		certName := feNamer.SSLCertName(translator.GetCertHash("cert-" + str))
 		expectCerts[certName] = "cert-" + str
 	}
 	lbInfo := &L7RuntimeInfo{
@@ -679,7 +679,7 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 	gceUrlMap := utils.NewGCEURLMap()
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
-	var tlsCerts []*TLSCerts
+	var tlsCerts []*translator.TLSCerts
 	expectCerts := make(map[string]string)
 	ing := newIngress()
 	feNamer := namer_util.NewFrontendNamerFactory(j.namer, "").Namer(ing)
@@ -689,7 +689,7 @@ func TestIdenticalHostnameCerts(t *testing.T) {
 		str := strconv.Itoa(ix)
 		contents = "cert-" + str + " foo.com"
 		tlsCerts = append(tlsCerts, createCert("key-"+str, contents, "name-"+str))
-		certName := feNamer.SSLCertName(GetCertHash(contents))
+		certName := feNamer.SSLCertName(translator.GetCertHash(contents))
 		expectCerts[certName] = contents
 	}
 	lbInfo := &L7RuntimeInfo{
@@ -777,8 +777,8 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	ing := newIngress()
 	feNamer := namer_util.NewFrontendNamerFactory(j.namer, "").Namer(ing)
-	certName1 := feNamer.SSLCertName(GetCertHash("cert"))
-	certName2 := feNamer.SSLCertName(GetCertHash("cert2"))
+	certName1 := feNamer.SSLCertName(translator.GetCertHash("cert"))
+	certName2 := feNamer.SSLCertName(translator.GetCertHash("cert2"))
 
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: false,
@@ -819,7 +819,7 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 
 	// Updates from pre-shared cert to secret based cert.
-	lbInfo.TLS = []*TLSCerts{createCert("key", "cert", "name")}
+	lbInfo.TLS = []*translator.TLSCerts{createCert("key", "cert", "name")}
 	lbInfo.TLSName = ""
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
@@ -830,7 +830,7 @@ func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCertsProxy, j, t)
 
 	// Sync a different cert.
-	lbInfo.TLS = []*TLSCerts{createCert("key2", "cert2", "name")}
+	lbInfo.TLS = []*translator.TLSCerts{createCert("key2", "cert2", "name")}
 	j.pool.Ensure(lbInfo)
 	delete(expectCerts, certName1)
 	expectCerts[certName2] = lbInfo.TLS[0].Cert
@@ -992,7 +992,7 @@ func TestCreateBothLoadBalancers(t *testing.T) {
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: true,
-		TLS:       []*TLSCerts{{Key: "key", Cert: "cert"}},
+		TLS:       []*translator.TLSCerts{{Key: "key", Cert: "cert"}},
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
@@ -1040,7 +1040,7 @@ func TestStaticIP(t *testing.T) {
 	}
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP:    true,
-		TLS:          []*TLSCerts{{Key: "key", Cert: "cert"}},
+		TLS:          []*translator.TLSCerts{{Key: "key", Cert: "cert"}},
 		UrlMap:       gceUrlMap,
 		Ingress:      ing,
 		StaticIPName: "teststaticip",
@@ -1071,7 +1071,7 @@ func TestFrontendConfigSslPolicy(t *testing.T) {
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP:      false,
-		TLS:            []*TLSCerts{createCert("key", "cert", "name")},
+		TLS:            []*translator.TLSCerts{createCert("key", "cert", "name")},
 		UrlMap:         gceUrlMap,
 		Ingress:        newIngress(),
 		FrontendConfig: &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: utils.NewStringPointer("test-policy")}},
@@ -1304,7 +1304,7 @@ func TestClusterNameChange(t *testing.T) {
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: true,
-		TLS:       []*TLSCerts{{Key: "key", Cert: "cert"}},
+		TLS:       []*translator.TLSCerts{{Key: "key", Cert: "cert"}},
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
@@ -1349,8 +1349,8 @@ func TestInvalidClusterNameChange(t *testing.T) {
 	}
 }
 
-func createCert(key string, contents string, name string) *TLSCerts {
-	return &TLSCerts{Key: key, Cert: contents, Name: name, CertHash: GetCertHash(contents)}
+func createCert(key string, contents string, name string) *translator.TLSCerts {
+	return &translator.TLSCerts{Key: key, Cert: contents, Name: name, CertHash: translator.GetCertHash(contents)}
 }
 
 func syncPool(j *testJig, t *testing.T, lbInfo *L7RuntimeInfo) {
@@ -1371,7 +1371,7 @@ func TestList(t *testing.T) {
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: true,
-		TLS:       []*TLSCerts{{Key: "key", Cert: "cert"}},
+		TLS:       []*translator.TLSCerts{{Key: "key", Cert: "cert"}},
 		UrlMap:    gceUrlMap,
 		Ingress:   newIngress(),
 	}
@@ -1424,8 +1424,8 @@ func TestSecretBasedAndPreSharedCerts(t *testing.T) {
 	namer := namer_util.NewNamer(clusterName, "fw1")
 	ing := newIngress()
 	feNamer := namer_util.NewFrontendNamerFactory(namer, "").Namer(ing)
-	certName1 := feNamer.SSLCertName(GetCertHash("cert"))
-	certName2 := feNamer.SSLCertName(GetCertHash("cert2"))
+	certName1 := feNamer.SSLCertName(translator.GetCertHash("cert"))
+	certName2 := feNamer.SSLCertName(translator.GetCertHash("cert2"))
 
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: false,
@@ -1456,7 +1456,7 @@ func TestSecretBasedAndPreSharedCerts(t *testing.T) {
 	lbInfo.TLSName = preSharedCert1.Name + "," + preSharedCert2.Name
 
 	// Secret based certs.
-	lbInfo.TLS = []*TLSCerts{
+	lbInfo.TLS = []*translator.TLSCerts{
 		createCert("key", "cert", "name"),
 		createCert("key2", "cert2", "name"),
 	}
@@ -1485,7 +1485,7 @@ func TestMaxSecretBasedAndPreSharedCerts(t *testing.T) {
 	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 
-	var tlsCerts []*TLSCerts
+	var tlsCerts []*translator.TLSCerts
 	expectCerts := make(map[string]string)
 	expectCertsExtra := make(map[string]string)
 	ing := newIngress()
@@ -1494,7 +1494,7 @@ func TestMaxSecretBasedAndPreSharedCerts(t *testing.T) {
 	for ix := 0; ix < TargetProxyCertLimit; ix++ {
 		str := strconv.Itoa(ix)
 		tlsCerts = append(tlsCerts, createCert("key-"+str, "cert-"+str, "name-"+str))
-		certName := feNamer.SSLCertName(GetCertHash("cert-" + str))
+		certName := feNamer.SSLCertName(translator.GetCertHash("cert-" + str))
 		expectCerts[certName] = "cert-" + str
 		expectCertsExtra[certName] = "cert-" + str
 	}
@@ -1581,7 +1581,7 @@ func TestSecretBasedToPreSharedCertUpdate(t *testing.T) {
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	ing := newIngress()
 	feNamer := namer_util.NewFrontendNamerFactory(j.namer, "").Namer(ing)
-	certName1 := feNamer.SSLCertName(GetCertHash("cert"))
+	certName1 := feNamer.SSLCertName(translator.GetCertHash("cert"))
 
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: false,
@@ -1590,7 +1590,7 @@ func TestSecretBasedToPreSharedCertUpdate(t *testing.T) {
 	}
 
 	// Sync secret based cert.
-	lbInfo.TLS = []*TLSCerts{createCert("key", "cert", "name")}
+	lbInfo.TLS = []*translator.TLSCerts{createCert("key", "cert", "name")}
 	lbInfo.TLSName = ""
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
@@ -1619,7 +1619,7 @@ func TestSecretBasedToPreSharedCertUpdate(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 
 	// Delete the secret.
-	lbInfo.TLS = []*TLSCerts{}
+	lbInfo.TLS = []*translator.TLSCerts{}
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
 	}
@@ -1637,7 +1637,7 @@ func TestSecretBasedToPreSharedCertUpdateWithErrors(t *testing.T) {
 	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
 	ing := newIngress()
 	feNamer := namer_util.NewFrontendNamerFactory(j.namer, "").Namer(ing)
-	certName1 := feNamer.SSLCertName(GetCertHash("cert"))
+	certName1 := feNamer.SSLCertName(translator.GetCertHash("cert"))
 
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP: false,
@@ -1646,7 +1646,7 @@ func TestSecretBasedToPreSharedCertUpdateWithErrors(t *testing.T) {
 	}
 
 	// Sync secret based cert.
-	lbInfo.TLS = []*TLSCerts{createCert("key", "cert", "name")}
+	lbInfo.TLS = []*translator.TLSCerts{createCert("key", "cert", "name")}
 	lbInfo.TLSName = ""
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
@@ -1697,7 +1697,7 @@ func TestResourceDeletionWithProtocol(t *testing.T) {
 	ing := newIngress()
 	feNamer := namer_util.NewFrontendNamerFactory(j.namer, "").Namer(ing)
 	versions := features.GAResourceVersions
-	certName1 := feNamer.SSLCertName(GetCertHash("cert1"))
+	certName1 := feNamer.SSLCertName(translator.GetCertHash("cert1"))
 
 	for _, tc := range []struct {
 		desc         string
@@ -1712,7 +1712,7 @@ func TestResourceDeletionWithProtocol(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			lbInfo := &L7RuntimeInfo{
 				AllowHTTP: true,
-				TLS: []*TLSCerts{
+				TLS: []*translator.TLSCerts{
 					createCert("key1", "cert1", "secret1"),
 				},
 				UrlMap:  gceUrlMap,

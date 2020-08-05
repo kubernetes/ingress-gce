@@ -18,6 +18,7 @@ package translator
 import (
 	"context"
 	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 
@@ -28,9 +29,8 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
-	"k8s.io/ingress-gce/pkg/flags"
-
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -87,8 +87,22 @@ func NewTranslator(isL7ILB bool, frontendNamer namer.IngressFrontendNamer) *Tran
 	return &Translator{IsL7ILB: isL7ILB, FrontendNamer: frontendNamer}
 }
 
+// TLSCerts encapsulates .pem encoded TLS information.
+// TODO(shance): Remove this intermediate representation
+type TLSCerts struct {
+	// Key is private key.
+	Key string
+	// Cert is a public key.
+	Cert string
+	// Chain is a certificate chain.
+	Chain string
+	Name  string
+	// md5 hash(first 8 bytes) of the cert contents
+	CertHash string
+}
+
 // Secrets returns the Secrets from the environment which are specified in the Ingress.
-func Secrets(env *Env) ([]*api_v1.Secret, error) {
+func secrets(env *Env) ([]*api_v1.Secret, error) {
 	var ret []*api_v1.Secret
 	spec := env.Ing.Spec
 	for _, tlsSpec := range spec.TLS {
@@ -310,4 +324,29 @@ func sslPolicyLink(env *Env) (*string, error) {
 	resID := resourceID.ResourcePath()
 
 	return &resID, nil
+}
+
+// TODO(shance): find a way to unexport this
+func GetCertHash(contents string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(contents)))[:16]
+}
+
+func ToTLSCerts(env *Env) ([]*TLSCerts, error) {
+	var certs []*TLSCerts
+
+	secrets, err := secrets(env)
+	if err != nil {
+		return nil, fmt.Errorf("error getting secrets for Ingress: %v", err)
+	}
+	for _, secret := range secrets {
+		cert := string(secret.Data[api_v1.TLSCertKey])
+		newCert := &TLSCerts{
+			Key:      string(secret.Data[api_v1.TLSPrivateKeyKey]),
+			Cert:     cert,
+			Name:     secret.Name,
+			CertHash: GetCertHash(cert),
+		}
+		certs = append(certs, newCert)
+	}
+	return certs, nil
 }
