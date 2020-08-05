@@ -97,6 +97,7 @@ func newSyncerTester() *syncerTester {
 			Port:       80,
 			TargetPort: "80",
 		},
+		NegName: testNegName,
 	}
 
 	st := &syncerTester{
@@ -108,7 +109,6 @@ func newSyncerTester() *syncerTester {
 
 	s := newSyncer(
 		negSyncerKey,
-		testNegName,
 		context.ServiceInformer.GetIndexer(),
 		record.NewFakeRecorder(100),
 		st,
