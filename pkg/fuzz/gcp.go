@@ -932,3 +932,38 @@ func NetworkEndpointsInNegs(ctx context.Context, c cloud.Cloud, name string, zon
 	}
 	return ret, nil
 }
+
+// CheckStandaloneNEGDeletion checks that specified NEG has been deleted
+func CheckStandaloneNEGDeletion(ctx context.Context, c cloud.Cloud, negName, port string, zones []string) (bool, error) {
+	var foundNegs []string
+
+	for _, zone := range zones {
+		key := meta.ZonalKey(negName, zone)
+		neg, err := c.NetworkEndpointGroups().Get(ctx, key)
+		if err != nil {
+			if e, ok := err.(*googleapi.Error); ok && e.Code == http.StatusNotFound {
+				continue
+			}
+			return false, err
+		}
+
+		if neg.Description != "" {
+			desc, err := utils.NegDescriptionFromString(neg.Description)
+			if err == nil && desc.Port != port {
+				continue
+			}
+
+			if err != nil {
+				return false, err
+			}
+		}
+		foundNegs = append(foundNegs, negName)
+	}
+
+	if len(foundNegs) != 0 {
+		klog.Infof("CheckStandaloneNEGDeletion(), expected neg %s not to exist", negName)
+		return false, nil
+	}
+
+	return true, nil
+}
