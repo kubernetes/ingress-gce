@@ -155,7 +155,6 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				syncerKey, portInfo.EpCalculatorMode)
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
-				portInfo.NegName,
 				manager.recorder,
 				manager.cloud,
 				manager.zoneGetter,

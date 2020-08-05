@@ -208,7 +208,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 			}
 
 			for zone, endpoints := range tc.expectEndpoints {
-				list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.negName, zone, false, transactionSyncer.NegSyncerKey.GetAPIVersion())
+				list, err := fakeCloud.ListNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, zone, false, transactionSyncer.NegSyncerKey.GetAPIVersion())
 				if err != nil {
 					t.Errorf("For case %q, ListNetworkEndpoints() got %v, want nil", tc.desc, err)
 				}
@@ -842,8 +842,8 @@ func TestCommitPods(t *testing.T) {
 		expectOutput := tc.expectOutput()
 		transactionSyncer.commitPods(endpointMap, endpointPodMap)
 		negNameSet := sets.NewString(reflector.negNames...)
-		if len(expectOutput) != 0 && !(negNameSet.Len() == 1 && negNameSet.Has(transactionSyncer.negName)) {
-			t.Errorf("For test case %q, expect neg name to be %v, but got %v", tc.desc, transactionSyncer.negName, negNameSet.List())
+		if len(expectOutput) != 0 && !(negNameSet.Len() == 1 && negNameSet.Has(transactionSyncer.NegSyncerKey.NegName)) {
+			t.Errorf("For test case %q, expect neg name to be %v, but got %v", tc.desc, transactionSyncer.NegSyncerKey.NegName, negNameSet.List())
 		}
 
 		if !reflect.DeepEqual(expectOutput, reflector.endpointMaps) {
@@ -1231,6 +1231,7 @@ func newTestTransactionSyncerWithNegClient(fakeGCE negtypes.NetworkEndpointGroup
 			Port:       80,
 			TargetPort: "8080",
 		},
+		NegName: testNegName,
 	}
 
 	if negClient != nil {
@@ -1254,7 +1255,6 @@ func newTestTransactionSyncerWithNegClient(fakeGCE negtypes.NetworkEndpointGroup
 	}
 
 	negsyncer := NewTransactionSyncer(svcPort,
-		testNegName,
 		record.NewFakeRecorder(100),
 		fakeGCE,
 		negtypes.NewFakeZoneGetter(),

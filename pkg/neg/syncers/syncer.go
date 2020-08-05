@@ -38,7 +38,6 @@ type syncerCore interface {
 type syncer struct {
 	// metadata
 	negtypes.NegSyncerKey
-	negName string
 
 	// NEG sync function
 	core syncerCore
@@ -58,10 +57,9 @@ type syncer struct {
 	backoff backoffHandler
 }
 
-func newSyncer(negSyncerKey negtypes.NegSyncerKey, networkEndpointGroupName string, serviceLister cache.Indexer, recorder record.EventRecorder, core syncerCore) *syncer {
+func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, recorder record.EventRecorder, core syncerCore) *syncer {
 	return &syncer{
 		NegSyncerKey:  negSyncerKey,
-		negName:       networkEndpointGroupName,
 		core:          core,
 		serviceLister: serviceLister,
 		recorder:      recorder,
@@ -98,7 +96,7 @@ func (s *syncer) Start() error {
 				}
 
 				if svc := getService(s.serviceLister, s.Namespace, s.Name); svc != nil {
-					s.recorder.Eventf(svc, apiv1.EventTypeWarning, "SyncNetworkEndpointGroupFailed", "Failed to sync NEG %q %s: %v", s.negName, retryMesg, err)
+					s.recorder.Eventf(svc, apiv1.EventTypeWarning, "SyncNetworkEndpointGroupFailed", "Failed to sync NEG %q %s: %v", s.NegSyncerKey.NegName, retryMesg, err)
 				}
 			} else {
 				s.backoff.ResetRetryDelay()
