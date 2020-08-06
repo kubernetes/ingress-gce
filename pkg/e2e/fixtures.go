@@ -302,23 +302,38 @@ func EnsureFrontendConfig(s *Sandbox, fc *frontendconfig.FrontendConfig) (*front
 }
 
 // NewGCPAddress reserves a global static IP address with the given name.
-func NewGCPAddress(s *Sandbox, name string) error {
+func NewGCPAddress(s *Sandbox, name string, region string) error {
 	addr := &compute.Address{Name: name}
-	if err := s.f.Cloud.GlobalAddresses().Insert(context.Background(), meta.GlobalKey(addr.Name), addr); err != nil {
-		return err
+
+	if region == "" {
+		if err := s.f.Cloud.GlobalAddresses().Insert(context.Background(), meta.GlobalKey(addr.Name), addr); err != nil {
+			return err
+		}
+		klog.V(2).Infof("Global static IP %s created", name)
+	} else {
+		addr.AddressType = "INTERNAL"
+		if err := s.f.Cloud.Addresses().Insert(context.Background(), meta.RegionalKey(addr.Name, region), addr); err != nil {
+			return err
+		}
+		klog.V(2).Infof("Regional static IP %s created", name)
 	}
-	klog.V(2).Infof("Global static IP %s created", name)
 
 	return nil
 }
 
 // DeleteGCPAddress deletes a global static IP address with the given name.
-func DeleteGCPAddress(s *Sandbox, name string) error {
-	if err := s.f.Cloud.GlobalAddresses().Delete(context.Background(), meta.GlobalKey(name)); err != nil {
-		return err
+func DeleteGCPAddress(s *Sandbox, name string, region string) error {
+	if region == "" {
+		if err := s.f.Cloud.GlobalAddresses().Delete(context.Background(), meta.GlobalKey(name)); err != nil {
+			return err
+		}
+		klog.V(2).Infof("Global static IP %s deleted", name)
+	} else {
+		if err := s.f.Cloud.Addresses().Delete(context.Background(), meta.RegionalKey(name, region)); err != nil {
+			return err
+		}
+		klog.V(2).Infof("Regional static IP %s deleted", name)
 	}
-	klog.V(2).Infof("Global static IP %s deleted", name)
-
 	return nil
 }
 

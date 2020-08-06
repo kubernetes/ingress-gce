@@ -275,11 +275,16 @@ func (i *IngressBuilder) AddPresharedCerts(names []string) *IngressBuilder {
 
 // AddStaticIP adds the name of an address that exists in GCP via the annotation.
 // Note that a value added in a previous call to this function will be overwritten.
-func (i *IngressBuilder) AddStaticIP(name string) *IngressBuilder {
+func (i *IngressBuilder) AddStaticIP(name string, regional bool) *IngressBuilder {
 	if i.ing.Annotations == nil {
 		i.ing.Annotations = make(map[string]string)
 	}
-	i.ing.Annotations[annotations.GlobalStaticIPNameKey] = name
+
+	if regional {
+		i.ing.Annotations[annotations.RegionalStaticIPNameKey] = name
+	} else {
+		i.ing.Annotations[annotations.GlobalStaticIPNameKey] = name
+	}
 	return i
 }
 
