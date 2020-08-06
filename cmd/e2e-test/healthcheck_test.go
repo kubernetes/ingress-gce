@@ -61,7 +61,7 @@ func TestHealthCheck(t *testing.T) {
 			beConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").Build(),
 			want: &backendconfig.HealthCheckConfig{
 				RequestPath: pstring("/my-path"),
-				Port:        pint64(8080), // Matches the targetPort
+				Port:        pint64(9000), // Purposely does not match deployment, we verify it separately
 			},
 		},
 	} {
@@ -106,9 +106,15 @@ func TestHealthCheck(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
 
-			ing, err = e2e.WaitForIngress(s, ing, nil)
-			if err != nil {
-				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+			// If health check port does not match deployment, then the deployment will be unreachable
+			if tc.want.Port != nil {
+				options := &e2e.WaitForIngressOptions{ExpectUnreachable: true}
+				ing, _ = e2e.WaitForIngress(s, ing, options)
+			} else {
+				ing, err = e2e.WaitForIngress(s, ing, nil)
+				if err != nil {
+					t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+				}
 			}
 			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
 
