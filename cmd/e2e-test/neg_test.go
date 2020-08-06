@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	apps "k8s.io/api/apps/v1"
@@ -384,5 +385,171 @@ func TestReadinessReflector(t *testing.T) {
 		if err := e2e.WaitForEchoDeploymentStable(s, name); err != nil {
 			t.Errorf("Echo deployment failed to become stable: %v", err)
 		}
+	})
+}
+
+func TestNegCRDTransitions(t *testing.T) {
+	t.Parallel()
+	port80 := intstr.FromInt(80)
+	port443 := intstr.FromInt(443)
+	serviceName := "neg-service"
+	ctx := context.Background()
+
+	Framework.RunWithSandbox("NEGs with custom names", t, func(t *testing.T, s *e2e.Sandbox) {
+		var previousNegStatus annotations.NegStatus
+		expectedNEGName := fmt.Sprintf("test-neg-name-%x", s.RandInt)
+
+		for _, tc := range []struct {
+			desc               string
+			annotations        annotations.NegAnnotation
+			replicas           int32
+			expectedNegAttrs   map[string]string
+			expectedGCNegPorts []string
+		}{
+			{desc: "one NEG with custom name, one neg with generated name",
+				annotations: annotations.NegAnnotation{
+					Ingress: false,
+					ExposedPorts: map[int32]annotations.NegAttributes{
+						int32(port80.IntValue()):  annotations.NegAttributes{Name: expectedNEGName},
+						int32(port443.IntValue()): annotations.NegAttributes{},
+					}},
+				replicas:         2,
+				expectedNegAttrs: map[string]string{port80.String(): expectedNEGName, port443.String(): ""},
+			},
+			{desc: "remove custom name",
+				annotations: annotations.NegAnnotation{
+					Ingress: false,
+					ExposedPorts: map[int32]annotations.NegAttributes{
+						int32(port80.IntValue()):  annotations.NegAttributes{},
+						int32(port443.IntValue()): annotations.NegAttributes{},
+					}},
+				replicas:           2,
+				expectedNegAttrs:   map[string]string{port80.String(): "", port443.String(): ""},
+				expectedGCNegPorts: []string{port80.String()},
+			},
+			{desc: "add custom name",
+				annotations: annotations.NegAnnotation{
+					Ingress: false,
+					ExposedPorts: map[int32]annotations.NegAttributes{
+						int32(port80.IntValue()):  annotations.NegAttributes{},
+						int32(port443.IntValue()): annotations.NegAttributes{Name: expectedNEGName},
+					}},
+				replicas:           2,
+				expectedNegAttrs:   map[string]string{port80.String(): "", port443.String(): expectedNEGName},
+				expectedGCNegPorts: []string{port443.String()},
+			},
+			{desc: "no NEGs",
+				annotations: annotations.NegAnnotation{
+					Ingress:      false,
+					ExposedPorts: map[int32]annotations.NegAttributes{}},
+				replicas:           2,
+				expectedGCNegPorts: []string{port80.String(), port443.String()},
+			},
+		} {
+			_, err := e2e.EnsureEchoService(s, serviceName, map[string]string{
+				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ServiceTypeClusterIP, tc.replicas)
+			if err != nil {
+				t.Fatalf("error ensuring echo service: %v", err)
+			}
+			t.Logf("Echo service ensured (%s/%s)", s.Namespace, serviceName)
+
+			if len(tc.expectedGCNegPorts) > 0 {
+				for _, port := range tc.expectedGCNegPorts {
+					if err = e2e.WaitForStandaloneNegDeletion(ctx, s.ValidatorEnv.Cloud(), s, port, previousNegStatus); err != nil {
+						t.Errorf("Error waiting for NEGDeletion: %v", err)
+					}
+				}
+			}
+
+			negStatus, err := e2e.WaitForNegCRs(s, serviceName, tc.expectedNegAttrs)
+			if err != nil {
+				t.Fatalf("Error: e2e.WaitForNegCRs(%s,%+v) = %s, want nil", serviceName, tc.expectedNegAttrs, err)
+			}
+
+			for port, negName := range negStatus.NetworkEndpointGroups {
+				err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, negStatus.Zones, false, int(tc.replicas))
+				if err != nil {
+					t.Fatalf("Error: e2e.WaitForNegs service %s/%s neg port/name %s/%s", serviceName, s.Namespace, port, negName)
+				}
+			}
+			previousNegStatus = negStatus
+		}
+	})
+}
+
+func TestNegCRDErrorEvents(t *testing.T) {
+	t.Parallel()
+	port80 := intstr.FromInt(80)
+	svc1 := "svc1"
+	svc2 := "svc2"
+	replicas := int32(2)
+	ctx := context.Background()
+
+	Framework.RunWithSandbox("two services, same neg name", t, func(t *testing.T, s *e2e.Sandbox) {
+		expectedNEGName := fmt.Sprintf("test-neg-name-%x", s.RandInt)
+		annotation := annotations.NegAnnotation{
+			Ingress: true,
+			ExposedPorts: map[int32]annotations.NegAttributes{
+				int32(port80.IntValue()): annotations.NegAttributes{Name: expectedNEGName},
+			},
+		}
+
+		_, err := e2e.EnsureEchoService(s, svc1, map[string]string{
+			annotations.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
+		if err != nil {
+			t.Fatalf("error ensuring echo service: %v", err)
+		}
+
+		// Ingress true with a custom name should cause an event
+		if err = e2e.WaitForSvcNegErrorEvents(s, svc1, 1); err != nil {
+			t.Errorf("error waiting for error events: %s", err)
+		}
+
+		// Ensure service with ingress true and wait for neg to be created
+		annotation.Ingress = false
+		_, err = e2e.EnsureEchoService(s, svc1, map[string]string{
+			annotations.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
+		if err != nil {
+			t.Fatalf("error ensuring echo service: %v", err)
+		}
+		t.Logf("Echo service ensured (%s/%s)", s.Namespace, svc1)
+
+		expectedNegAttrs := map[string]string{port80.String(): expectedNEGName}
+		negStatus, err := e2e.WaitForNegCRs(s, svc1, expectedNegAttrs)
+		if err != nil {
+			t.Fatalf("Error: e2e.WaitForNegCRs(%s,%+v) = %s, want nil", svc1, expectedNegAttrs, err)
+		}
+
+		for port, negName := range negStatus.NetworkEndpointGroups {
+			err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, negStatus.Zones, false, int(replicas))
+			if err != nil {
+				t.Fatalf("Error: e2e.WaitForNegs service %s/%s neg port/name %s/%s", svc1, s.Namespace, port, negName)
+			}
+		}
+
+		// Ensure a second service requesting the same neg name
+		_, err = e2e.EnsureEchoService(s, svc2, map[string]string{
+			annotations.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
+		if err != nil {
+			t.Fatalf("error ensuring echo service: %v", err)
+		}
+
+		// Requesting the same neg name should cause an error event on the second service
+		if err = e2e.WaitForSvcNegErrorEvents(s, svc2, 1); err != nil {
+			t.Errorf("error waiting for error events: %s", err)
+		}
+
+		// GC existing negs
+		_, err = e2e.EnsureEchoService(s, svc1, map[string]string{}, v1.ServiceTypeClusterIP, replicas)
+		if err != nil {
+			t.Fatalf("error ensuring echo service: %v", err)
+		}
+
+		_, err = e2e.EnsureEchoService(s, svc2, map[string]string{}, v1.ServiceTypeClusterIP, replicas)
+		if err != nil {
+			t.Fatalf("error ensuring echo service: %v", err)
+		}
+
+		e2e.WaitForStandaloneNegDeletion(ctx, Framework.Cloud, s, port80.String(), negStatus)
 	})
 }

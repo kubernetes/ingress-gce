@@ -41,6 +41,7 @@ import (
 	"k8s.io/client-go/rest"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
+	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/klog"
 )
 
@@ -76,7 +77,12 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 
 	frontendConfigClient, err := frontendconfigclient.NewForConfig(config)
 	if err != nil {
-		klog.Fatalf("Failed to create BackendConfig client: %v", err)
+		klog.Fatalf("Failed to create FrontendConfig client: %v", err)
+	}
+
+	svcNegClient, err := svcnegclient.NewForConfig(config)
+	if err != nil {
+		klog.Fatalf("Failed to create SvcNeg client: %v", err)
 	}
 
 	f := &Framework{
@@ -85,6 +91,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		crdClient:            apiextensionsclient.NewForConfigOrDie(config),
 		FrontendConfigClient: frontendConfigClient,
 		BackendConfigClient:  backendConfigClient,
+		SvcNegClient:         svcNegClient,
 		Project:              options.Project,
 		Region:               options.Region,
 		Network:              options.Network,
@@ -127,6 +134,7 @@ type Framework struct {
 	crdClient             *apiextensionsclient.Clientset
 	BackendConfigClient   *backendconfigclient.Clientset
 	FrontendConfigClient  *frontendconfigclient.Clientset
+	SvcNegClient          *svcnegclient.Clientset
 	Project               string
 	Region                string
 	Network               string
@@ -243,9 +251,12 @@ func (f *Framework) WithSandbox(testFunc func(*Sandbox) error) error {
 func (f *Framework) RunWithSandbox(name string, t *testing.T, testFunc func(*testing.T, *Sandbox)) {
 	t.Run(name, func(t *testing.T) {
 		f.lock.Lock()
+		randInt := f.Rand.Int63()
 		sandbox := &Sandbox{
-			Namespace: fmt.Sprintf("test-sandbox-%x", f.Rand.Int63()),
+
+			Namespace: fmt.Sprintf("test-sandbox-%x", randInt),
 			f:         f,
+			RandInt:   randInt,
 		}
 		for _, s := range f.sandboxes {
 			if s.Namespace == sandbox.Namespace {

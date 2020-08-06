@@ -41,6 +41,8 @@ type Sandbox struct {
 	lock      sync.Mutex
 	f         *Framework
 	destroyed bool
+	//Rand int that is used to generate the Namespace name
+	RandInt int64
 }
 
 // Create the sandbox.
