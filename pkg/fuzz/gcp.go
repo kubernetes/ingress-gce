@@ -384,6 +384,24 @@ func (g *GCLB) CheckNEGDeletion(ctx context.Context, c cloud.Cloud, options *GCL
 	return nil
 }
 
+// CheckRedirectURLMapDeletion checks that the Redirect URL map associated with the GCLB is deleted
+// This assumes that there is only one redirect url map
+func (g *GCLB) CheckRedirectUrlMapDeletion(ctx context.Context, c cloud.Cloud) error {
+	for k := range g.URLMap {
+		if strings.Contains(k.Name, "-rm") {
+			_, err := c.UrlMaps().Get(ctx, &k)
+			if err != nil {
+				if err.(*googleapi.Error) == nil || err.(*googleapi.Error).Code != http.StatusNotFound {
+					return err
+				}
+			} else {
+				return fmt.Errorf("Redirect URL Map still exists: %v", k)
+			}
+		}
+	}
+	return nil
+}
+
 func hasAlphaResource(resourceType string, validators []FeatureValidator) bool {
 	for _, val := range validators {
 		if val.HasAlphaResource(resourceType) {
@@ -500,6 +518,15 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, params *GCLBForVIPParams) (*
 				return nil, err
 			}
 			if urlMapKey == nil {
+				urlMapKey = urlMapResID.Key
+			}
+			// Ignore redirect urlmaps since they will not have backends, but add them to the gclb map
+			if strings.Contains(urlMapKey.Name, "-rm-") {
+				urlMap, err := c.UrlMaps().Get(ctx, urlMapKey)
+				if err != nil {
+					return nil, err
+				}
+				gclb.URLMap[*urlMapKey] = &URLMap{GA: urlMap}
 				urlMapKey = urlMapResID.Key
 			}
 			if *urlMapKey != *urlMapResID.Key {

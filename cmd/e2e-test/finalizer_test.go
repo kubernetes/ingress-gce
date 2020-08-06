@@ -54,7 +54,7 @@ func TestFinalizer(t *testing.T) {
 		}
 		t.Logf("Ingress created (%s)", ingKey)
 
-		ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true})
+		ing, err = e2e.WaitForIngress(s, ing, nil, &e2e.WaitForIngressOptions{ExpectUnreachable: true})
 		if err != nil {
 			t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 		}
@@ -104,7 +104,7 @@ func TestFinalizerIngressClassChange(t *testing.T) {
 			t.Fatalf("create(%s) = %v, want nil; Ingress: %v", ingKey, err, ing)
 		}
 		t.Logf("Ingress created (%s)", ingKey)
-		ing, err := e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true})
+		ing, err := e2e.WaitForIngress(s, ing, nil, &e2e.WaitForIngressOptions{ExpectUnreachable: true})
 		if err != nil {
 			t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 		}
@@ -176,10 +176,10 @@ func TestFinalizerIngressesWithSharedResources(t *testing.T) {
 		}
 		t.Logf("Ingress created (%s)", otherIngKey)
 
-		if ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+		if ing, err = e2e.WaitForIngress(s, ing, nil, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
 			t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 		}
-		if otherIng, err = e2e.WaitForIngress(s, otherIng, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+		if otherIng, err = e2e.WaitForIngress(s, otherIng, nil, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
 			t.Fatalf("error waiting for Ingress %s to stabilize: %v", otherIngKey, err)
 		}
 

@@ -23,4 +23,5 @@ var AllTests = []fuzz.WhiteboxTest{
 	&numBackendServicesTest{},
 	&numForwardingRulesTest{},
 	&numTargetProxiesTest{},
+	&redirectURLMapTest{},
 }

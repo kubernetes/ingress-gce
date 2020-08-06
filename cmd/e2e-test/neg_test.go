@@ -109,7 +109,7 @@ func TestNEG(t *testing.T) {
 			}
 			t.Logf("Ingress ensured (%s/%s)", s.Namespace, ing.Name)
 
-			ing, err = e2e.WaitForIngress(s, ing, nil)
+			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
@@ -201,7 +201,7 @@ func TestNEGTransition(t *testing.T) {
 			}
 			t.Logf("Ingress ensured (%s/%s)", s.Namespace, ing.Name)
 
-			ing, err = e2e.WaitForIngress(s, ing, nil)
+			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
@@ -326,7 +326,7 @@ func TestNEGSyncEndpoints(t *testing.T) {
 					}
 					t.Logf("Ingress ensured (%s/%s)", s.Namespace, ing.Name)
 
-					ing, err = e2e.WaitForIngress(s, ing, nil)
+					ing, err = e2e.WaitForIngress(s, ing, nil, nil)
 					if err != nil {
 						t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 					}

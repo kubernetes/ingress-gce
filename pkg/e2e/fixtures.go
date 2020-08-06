@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -276,6 +277,28 @@ func EnsureIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
 		return crud.Update(ing)
 	}
 	return ing, nil
+}
+
+// TODO(shance) add frontendconfig CRUD
+func EnsureFrontendConfig(s *Sandbox, fc *frontendconfig.FrontendConfig) (*frontendconfig.FrontendConfig, error) {
+	currentFc, err := s.f.FrontendConfigClient.NetworkingV1beta1().FrontendConfigs(s.Namespace).Get(context.TODO(), fc.Name, metav1.GetOptions{})
+	if currentFc == nil || err != nil {
+		return s.f.FrontendConfigClient.NetworkingV1beta1().FrontendConfigs(s.Namespace).Create(context.TODO(), fc, metav1.CreateOptions{})
+	}
+	// Update fc spec if they are not equal
+	if !reflect.DeepEqual(fc.Spec, currentFc.Spec) {
+		//fc.ResourceVersion = "1"
+		//if currentFc.ResourceVersion != "" {
+		//	curVersion, err := strconv.Atoi(currentFc.ResourceVersion)
+		//	if err != nil {
+		//		return nil, err
+		//	}
+		//	fc.ResourceVersion = strconv.Itoa(curVersion + 1)
+		//}
+		currentFc.Spec = fc.Spec
+		return s.f.FrontendConfigClient.NetworkingV1beta1().FrontendConfigs(s.Namespace).Update(context.TODO(), currentFc, metav1.UpdateOptions{})
+	}
+	return fc, nil
 }
 
 // NewGCPAddress reserves a global static IP address with the given name.

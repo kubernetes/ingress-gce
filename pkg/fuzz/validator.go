@@ -31,6 +31,7 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -43,6 +44,7 @@ const pathForDefaultBackend = "/edeaaff3f1774ad2888673770c6d64097e391bc362d7d6fb
 // set of validations and Features.
 type ValidatorEnv interface {
 	BackendConfigs() (map[string]*backendconfig.BackendConfig, error)
+	FrontendConfigs() (map[string]*frontendconfig.FrontendConfig, error)
 	Services() (map[string]*v1.Service, error)
 	Cloud() cloud.Cloud
 	BackendNamer() namer.BackendNamer
@@ -52,6 +54,7 @@ type ValidatorEnv interface {
 // MockValidatorEnv is an environment that is used for mock testing.
 type MockValidatorEnv struct {
 	BackendConfigsMap    map[string]*backendconfig.BackendConfig
+	FrontendConfigMap    map[string]*frontendconfig.FrontendConfig
 	ServicesMap          map[string]*v1.Service
 	MockCloud            *cloud.MockGCE
 	IngressNamer         *namer.Namer
@@ -61,6 +64,11 @@ type MockValidatorEnv struct {
 // BackendConfigs implements ValidatorEnv.
 func (e *MockValidatorEnv) BackendConfigs() (map[string]*backendconfig.BackendConfig, error) {
 	return e.BackendConfigsMap, nil
+}
+
+// FrontendConfigs implements ValidatorEnv.
+func (e *MockValidatorEnv) FrontendConfigs() (map[string]*frontendconfig.FrontendConfig, error) {
+	return e.FrontendConfigMap, nil
 }
 
 // Services implements ValidatorEnv.
@@ -185,7 +193,7 @@ func DefaultAttributes() *IngressValidatorAttributes {
 // NewIngressValidator returns a new validator for checking the correctness of
 // an Ingress spec against the behavior of the instantiated load balancer.
 // If attribs is nil, then the default set of attributes will be used.
-func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, features []Feature, whiteboxTests []WhiteboxTest, attribs *IngressValidatorAttributes) (*IngressValidator, error) {
+func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, fc *frontendconfig.FrontendConfig, whiteboxTests []WhiteboxTest, attribs *IngressValidatorAttributes, features []Feature) (*IngressValidator, error) {
 	var fvs []FeatureValidator
 	for _, f := range features {
 		fvs = append(fvs, f.NewValidator())
@@ -209,6 +217,7 @@ func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, features []Feat
 	frontendNamer := env.FrontendNamerFactory().Namer(ing)
 	return &IngressValidator{
 		ing:           ing,
+		fc:            fc,
 		frontendNamer: frontendNamer,
 		features:      fvs,
 		whiteboxTests: whiteboxTests,
@@ -221,6 +230,7 @@ func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, features []Feat
 // is behaving correctly.
 type IngressValidator struct {
 	ing           *v1beta1.Ingress
+	fc            *frontendconfig.FrontendConfig
 	frontendNamer namer.IngressFrontendNamer
 	features      []FeatureValidator
 	whiteboxTests []WhiteboxTest
@@ -246,7 +256,7 @@ func (v *IngressValidator) Vip() *string {
 // PerformWhiteboxTests runs additional whitebox tests.
 func (v *IngressValidator) PerformWhiteboxTests(gclb *GCLB) error {
 	for _, w := range v.whiteboxTests {
-		if err := w.Test(v.ing, gclb); err != nil {
+		if err := w.Test(v.ing, v.fc, gclb); err != nil {
 			return fmt.Errorf("%s failed with error: %v", w.Name(), err)
 		}
 	}
