@@ -89,6 +89,8 @@ const (
 
 	// UrlMapKey is the annotation key used by controller to record GCP URL map.
 	UrlMapKey = StatusPrefix + "/url-map"
+	// UrlMapKey is the annotation key used by controller to record GCP URL map used for Https Redirects only.
+	RedirectUrlMapKey = StatusPrefix + "/redirect-url-map"
 	// HttpForwardingRuleKey is the annotation key used by controller to record
 	// GCP http forwarding rule.
 	HttpForwardingRuleKey = StatusPrefix + "/forwarding-rule"

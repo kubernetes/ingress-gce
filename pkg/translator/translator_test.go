@@ -50,6 +50,10 @@ func (n *testNamer) UrlMap() string {
 	return fmt.Sprintf("%s-um", n.prefix)
 }
 
+func (n *testNamer) RedirectUrlMap() (string, bool) {
+	return fmt.Sprintf("%s-rm", n.prefix), true
+}
+
 func (n *testNamer) SSLCertName(secretHash string) string {
 	return fmt.Sprintf("%s-cert-%s", n.prefix, secretHash)
 }
@@ -108,6 +112,53 @@ func TestToComputeURLMap(t *testing.T) {
 	gotComputeURLMap := ToCompositeURLMap(gceURLMap, feNamer, meta.GlobalKey("ns-lb-name"))
 	if diff := cmp.Diff(wantComputeMap, gotComputeURLMap); diff != "" {
 		t.Errorf("Unexpected diff from ToComputeURLMap() (-want +got):\n%s", diff)
+	}
+}
+
+func TestToRedirectUrlMap(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc   string
+		fc     *frontendconfigv1beta1.FrontendConfig
+		expect *composite.UrlMap
+	}{
+		{
+			desc:   "Not included in FrontendConfig",
+			expect: nil,
+		},
+		{
+			desc:   "Enabled with no response code set",
+			fc:     &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{RedirectToHttps: &frontendconfigv1beta1.HttpsRedirectConfig{Enabled: true}}},
+			expect: &composite.UrlMap{Name: "foo-rm", DefaultUrlRedirect: &composite.HttpRedirectAction{HttpsRedirect: true}, Version: meta.VersionGA},
+		},
+		{
+			desc:   "Enabled with response code set",
+			fc:     &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{RedirectToHttps: &frontendconfigv1beta1.HttpsRedirectConfig{Enabled: true, ResponseCodeName: "MOVED_PERMANENTLY_DEFAULT"}}},
+			expect: &composite.UrlMap{Name: "foo-rm", DefaultUrlRedirect: &composite.HttpRedirectAction{HttpsRedirect: true, RedirectResponseCode: "MOVED_PERMANENTLY_DEFAULT"}, Version: meta.VersionGA},
+		},
+		{
+			desc:   "Disabled with response code set",
+			fc:     &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{RedirectToHttps: &frontendconfigv1beta1.HttpsRedirectConfig{Enabled: false, ResponseCodeName: "MOVED_PERMANENTLY_DEFAULT"}}},
+			expect: nil,
+		},
+		{
+			desc:   "Disabled with with no response code set",
+			fc:     &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{RedirectToHttps: &frontendconfigv1beta1.HttpsRedirectConfig{Enabled: false}}},
+			expect: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			tr := NewTranslator(false, &testNamer{"foo"})
+			env := &Env{FrontendConfig: tc.fc}
+
+			result := tr.ToRedirectUrlMap(env, meta.VersionGA)
+			if diff := cmp.Diff(tc.expect, result); diff != "" {
+				t.Errorf("Unexpected diff from ToRedirectUrlMap() (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

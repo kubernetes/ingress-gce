@@ -29,8 +29,9 @@ import (
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
-		"k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1.FrontendConfig":     schema_pkg_apis_frontendconfig_v1beta1_FrontendConfig(ref),
-		"k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1.FrontendConfigSpec": schema_pkg_apis_frontendconfig_v1beta1_FrontendConfigSpec(ref),
+		"k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1.FrontendConfig":      schema_pkg_apis_frontendconfig_v1beta1_FrontendConfig(ref),
+		"k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1.FrontendConfigSpec":  schema_pkg_apis_frontendconfig_v1beta1_FrontendConfigSpec(ref),
+		"k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1.HttpsRedirectConfig": schema_pkg_apis_frontendconfig_v1beta1_HttpsRedirectConfig(ref),
 	}
 }
 
@@ -90,7 +91,41 @@ func schema_pkg_apis_frontendconfig_v1beta1_FrontendConfigSpec(ref common.Refere
 							Format: "",
 						},
 					},
+					"redirectToHttps": {
+						SchemaProps: spec.SchemaProps{
+							Ref: ref("k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1.HttpsRedirectConfig"),
+						},
+					},
 				},
+			},
+		},
+		Dependencies: []string{
+			"k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1.HttpsRedirectConfig"},
+	}
+}
+
+func schema_pkg_apis_frontendconfig_v1beta1_HttpsRedirectConfig(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "HttpsRedirectConfig representing the configuration of Https redirects",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"enabled": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"boolean"},
+							Format: "",
+						},
+					},
+					"responseCodeName": {
+						SchemaProps: spec.SchemaProps{
+							Description: "String representing the HTTP response code Options are MOVED_PERMANENTLY_DEFAULT, FOUND, TEMPORARY_REDIRECT, or PERMANENT_REDIRECT",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"enabled"},
 			},
 		},
 	}

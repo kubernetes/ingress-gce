@@ -43,6 +43,7 @@ const (
 	forwardingRulePrefix      = "fw"
 	httpsForwardingRulePrefix = "fws"
 	urlMapPrefix              = "um"
+	redirectMapPrefix         = "rm"
 
 	// This allows sharing of backends across loadbalancers.
 	backendPrefix = "be"
@@ -417,6 +418,11 @@ func (n *Namer) ForwardingRule(lbName LoadBalancerName, protocol NamerProtocol) 
 // UrlMap returns the name for the UrlMap for a given load balancer.
 func (n *Namer) UrlMap(lbName LoadBalancerName) string {
 	return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, urlMapPrefix, lbName))
+}
+
+// UrlMap returns the name for the UrlMap for a given load balancer.
+func (n *Namer) RedirectUrlMap(lbName LoadBalancerName) string {
+	return truncate(fmt.Sprintf("%v-%v-%v", n.prefix, redirectMapPrefix, lbName))
 }
 
 // NamedPort returns the name for a named port.

@@ -77,6 +77,8 @@ type L7 struct {
 	cloud *gce.Cloud
 	// um is the UrlMap associated with this L7.
 	um *composite.UrlMap
+	// rum is the Http Redirect only UrlMap associated with this L7.
+	redirectUm *composite.UrlMap
 	// tp is the TargetHTTPProxy associated with this L7.
 	tp *composite.TargetHttpProxy
 	// tps is the TargetHTTPSProxy associated with this L7.
@@ -150,6 +152,13 @@ func (l *L7) edgeHop() error {
 	if err := l.ensureComputeURLMap(); err != nil {
 		return err
 	}
+
+	if flags.F.EnableFrontendConfig {
+		if err := l.ensureRedirectURLMap(); err != nil {
+			return fmt.Errorf("ensureRedirectUrlMap() = %v", err)
+		}
+	}
+
 	if l.runtimeInfo.AllowHTTP {
 		if err := l.edgeHopHttp(); err != nil {
 			return err
@@ -371,6 +380,23 @@ func (l *L7) Cleanup(versions *features.ResourceVersions) error {
 	if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l.cloud, key, versions.UrlMap)); err != nil {
 		return err
 	}
+
+	// Delete RedirectUrlMap if exists
+	if flags.F.EnableFrontendConfig {
+		umName, supported := l.namer.RedirectUrlMap()
+		if !supported {
+			// Skip deletion
+			return nil
+		}
+		klog.V(2).Infof("Deleting Redirect URL Map %v", umName)
+		key, err := l.CreateKey(umName)
+		if err != nil {
+			return err
+		}
+		if err := utils.IgnoreHTTPNotFound(composite.DeleteUrlMap(l.cloud, key, versions.UrlMap)); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -407,6 +433,16 @@ func (l *L7) getFrontendAnnotations(existing map[string]string) map[string]strin
 	} else {
 		delete(existing, annotations.TargetHttpsProxyKey)
 	}
+
+	// Handle Https Redirect Map
+	if flags.F.EnableFrontendConfig {
+		if l.redirectUm != nil {
+			existing[annotations.RedirectUrlMapKey] = l.redirectUm.Name
+		} else {
+			delete(existing, annotations.RedirectUrlMapKey)
+		}
+	}
+
 	// Note that ingress IP annotation is not deleted when user disables one of http/https.
 	// This is because the promoted static IP is retained for use and will be deleted only
 	// when load-balancer is deleted or user specifies a different IP.

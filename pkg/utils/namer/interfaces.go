@@ -25,6 +25,8 @@ type IngressFrontendNamer interface {
 	TargetProxy(protocol NamerProtocol) string
 	// UrlMap returns the name of the URL Map.
 	UrlMap() string
+	// RedirectUrlMap returns the name of the URL Map and if the namer supports naming redirectUrlMap
+	RedirectUrlMap() (string, bool)
 	// SSLCertName returns the SSL certificate name given secret hash.
 	SSLCertName(secretHash string) string
 	// IsCertNameForLB returns true if certName belongs to this ingress.

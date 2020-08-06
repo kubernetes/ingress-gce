@@ -35,7 +35,17 @@ type FrontendConfig struct {
 // FrontendConfigSpec is the spec for a FrontendConfig resource
 // +k8s:openapi-gen=true
 type FrontendConfigSpec struct {
-	SslPolicy *string `json:"sslPolicy,omitempty"`
+	SslPolicy       *string              `json:"sslPolicy,omitempty"`
+	RedirectToHttps *HttpsRedirectConfig `json:"redirectToHttps,omitempty"`
+}
+
+// HttpsRedirectConfig representing the configuration of Https redirects
+// +k8s:openapi-gen=true
+type HttpsRedirectConfig struct {
+	Enabled bool `json:"enabled"`
+	// String representing the HTTP response code
+	// Options are MOVED_PERMANENTLY_DEFAULT, FOUND, TEMPORARY_REDIRECT, or PERMANENT_REDIRECT
+	ResponseCodeName string `json:"responseCodeName,omitempty"`
 }
 
 // FrontendConfigStatus is the status for a FrontendConfig resource

@@ -34,14 +34,29 @@ const (
 
 // checkProxy ensures the correct TargetHttpProxy for a loadbalancer
 func (l *L7) checkProxy() (err error) {
+	// Get UrlMap Name, could be the url map or the redirect url map
+	// TODO(shance): move to translator
+	var umName string
+	if flags.F.EnableFrontendConfig {
+		// TODO(shance): check for empty name?
+		if l.redirectUm != nil && l.runtimeInfo.FrontendConfig.Spec.RedirectToHttps != nil && l.runtimeInfo.FrontendConfig.Spec.RedirectToHttps.Enabled {
+			umName = l.redirectUm.Name
+		} else {
+			umName = l.um.Name
+		}
+	} else {
+		umName = l.um.Name
+	}
+
+	urlMapKey, err := l.CreateKey(umName)
+	if err != nil {
+		return err
+	}
+
 	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
 	tr := translator.NewTranslator(isL7ILB, l.namer)
 
 	description, err := l.description()
-	if err != nil {
-		return err
-	}
-	urlMapKey, err := l.CreateKey(l.um.Name)
 	if err != nil {
 		return err
 	}
