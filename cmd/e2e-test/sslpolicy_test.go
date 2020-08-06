@@ -25,6 +25,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
@@ -91,7 +92,7 @@ func TestSSLPolicy(t *testing.T) {
 			}
 			feConfig := builder.Build()
 
-			if _, err := Framework.FrontendConfigClient.NetworkingV1beta1().FrontendConfigs(s.Namespace).Create(feConfig); err != nil {
+			if _, err := Framework.FrontendConfigClient.NetworkingV1beta1().FrontendConfigs(s.Namespace).Create(context.TODO(), feConfig, metav1.CreateOptions{}); err != nil {
 				t.Errorf("FrontendConfigs(%q).Create(%v) = %v, want nil", s.Namespace, feConfig, err)
 			}
 

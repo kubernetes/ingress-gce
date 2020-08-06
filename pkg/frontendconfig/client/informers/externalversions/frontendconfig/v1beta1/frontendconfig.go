@@ -19,6 +19,7 @@ limitations under the License.
 package v1beta1
 
 import (
+	"context"
 	time "time"
 
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -61,13 +62,13 @@ func NewFilteredFrontendConfigInformer(client versioned.Interface, namespace str
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1beta1().FrontendConfigs(namespace).List(options)
+				return client.NetworkingV1beta1().FrontendConfigs(namespace).List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1beta1().FrontendConfigs(namespace).Watch(options)
+				return client.NetworkingV1beta1().FrontendConfigs(namespace).Watch(context.TODO(), options)
 			},
 		},
 		&frontendconfigv1beta1.FrontendConfig{},
