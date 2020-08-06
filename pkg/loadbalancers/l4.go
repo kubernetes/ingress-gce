@@ -90,7 +90,7 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) error {
 	}
 	retErr := err
 	// If any resource deletion fails, log the error and continue cleanup.
-	if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, getAPIVersion(getILBOptions(l.Service)))); err != nil {
+	if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, meta.VersionGA)); err != nil {
 		klog.Errorf("Failed to delete forwarding rule for internal loadbalancer service %s, err %v", l.NamespacedName.String(), err)
 		retErr = err
 	}
@@ -158,8 +158,12 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) error {
 // service.
 func (l *L4) GetFRName() string {
 	_, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
+	return l.getFRNameWithProtocol(string(protocol))
+}
+
+func (l *L4) getFRNameWithProtocol(protocol string) string {
 	lbName := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
-	return lbName + "-" + strings.ToLower(string(protocol))
+	return lbName + "-" + strings.ToLower(protocol)
 }
 
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
@@ -220,6 +224,20 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	if err != nil {
 		return nil, err
 	}
+
+	// Check if protocol has changed for this service. In this case, forwarding rule should be deleted before
+	// the backend service can be updated.
+	existingBS, err := l.backendPool.Get(name, meta.VersionGA, l.scope)
+	err = utils.IgnoreHTTPNotFound(err)
+	if err != nil {
+		klog.Errorf("Failed to lookup existing backend service, ignoring err: %v", err)
+	}
+	if existingBS != nil && existingBS.Protocol != string(protocol) {
+		klog.Infof("Protocol changed from %q to %q for service %s", existingBS.Protocol, string(protocol), l.NamespacedName)
+		// Delete forwarding rule if it exists
+		l.deleteForwardingRule(l.getFRNameWithProtocol(existingBS.Protocol), meta.VersionGA)
+	}
+
 	// ensure backend service
 	bs, err := l.backendPool.EnsureL4BackendService(name, hcLink, string(protocol), string(l.Service.Spec.SessionAffinity),
 		string(cloud.SchemeInternal), l.NamespacedName, meta.VersionGA)
