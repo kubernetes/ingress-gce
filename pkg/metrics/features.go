@@ -91,8 +91,13 @@ const (
 	vmIpNegCluster = feature("VmIpNegCluster")
 
 	l4ILBService      = feature("L4ILBService")
-	l4IlbGlobalAccess = feature("L4ILBGlobalAccess")
-	l4IlbCustomSubnet = feature("L4ILBCustomSubnet")
+	l4ILBGlobalAccess = feature("L4ILBGlobalAccess")
+	l4ILBCustomSubnet = feature("L4ILBCustomSubnet")
+	// l4ILBInSuccess feature specifies that ILB VIP is configured.
+	l4ILBInSuccess = feature("L4ILBInSuccess")
+	// l4ILBInInError feature specifies that an error had occurred while creating/
+	// updating GCE Load Balancer.
+	l4ILBInError = feature("L4ILBInError")
 )
 
 // featuresForIngress returns the list of features for given ingress.

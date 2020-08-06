@@ -23,6 +23,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -31,6 +32,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -132,18 +134,26 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 		return nil
 	}
 
+	var serviceMetricsState metrics.L4ILBServiceState
+	// Mark the service InSuccess state as false to begin with.
+	// This will be updated to true if the VIP is configured successfully.
+	serviceMetricsState.InSuccess = false
+	defer func() {
+		l4c.ctx.ControllerMetrics.SetL4ILBService(types.NamespacedName{Name: service.Name, Namespace: service.Namespace}.String(), serviceMetricsState)
+	}()
+
 	// Ensure v2 finalizer
 	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
 		return fmt.Errorf("Failed to attach finalizer to service %s/%s, err %v", service.Namespace, service.Name, err)
 	}
-	l4 := loadbalancers.NewL4Handler(service, l4c.ctx.Cloud, meta.Regional, l4c.ctx.ClusterNamer, l4c.ctx.Recorder(service.Namespace), &l4c.sharedResourcesLock, l4c.ctx.ControllerMetrics)
+	l4 := loadbalancers.NewL4Handler(service, l4c.ctx.Cloud, meta.Regional, l4c.ctx.ClusterNamer, l4c.ctx.Recorder(service.Namespace), &l4c.sharedResourcesLock)
 	nodeNames, err := utils.GetReadyNodeNames(l4c.nodeLister)
 	if err != nil {
 		return err
 	}
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
-	status, err := l4.EnsureInternalLoadBalancer(nodeNames, service)
+	status, err := l4.EnsureInternalLoadBalancer(nodeNames, service, &serviceMetricsState)
 	if err != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Error syncing load balancer: %v", err)
@@ -172,7 +182,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 }
 
 func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) error {
-	l4 := loadbalancers.NewL4Handler(svc, l4c.ctx.Cloud, meta.Regional, l4c.ctx.ClusterNamer, l4c.ctx.Recorder(svc.Namespace), &l4c.sharedResourcesLock, l4c.ctx.ControllerMetrics)
+	l4 := loadbalancers.NewL4Handler(svc, l4c.ctx.Cloud, meta.Regional, l4c.ctx.ClusterNamer, l4c.ctx.Recorder(svc.Namespace), &l4c.sharedResourcesLock)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
 	if err := l4.EnsureInternalLoadBalancerDeleted(svc); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed", "Error deleting load balancer: %v", err)
@@ -183,6 +193,11 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) err
 			"Error removing finalizer from load balancer: %v", err)
 		return err
 	}
+
+	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
+	klog.V(6).Infof("Internal L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
+	l4c.ctx.ControllerMetrics.DeleteL4ILBService(namespacedName.String())
+
 	// Reset the loadbalancer status, Ignore NotFound error since the service can already be deleted at this point.
 	if err := l4c.updateServiceStatus(svc, &v1.LoadBalancerStatus{}); utils.IgnoreHTTPNotFound(err) != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",

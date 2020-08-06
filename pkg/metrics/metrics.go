@@ -316,18 +316,26 @@ func (im *ControllerMetrics) computeL4ILBMetrics() map[feature]int {
 	klog.V(4).Infof("Computing L4 ILB usage metrics from service state map: %#v", im.l4ILBServiceMap)
 	counts := map[feature]int{
 		l4ILBService:      0,
-		l4IlbGlobalAccess: 0,
-		l4IlbCustomSubnet: 0,
+		l4ILBGlobalAccess: 0,
+		l4ILBCustomSubnet: 0,
+		l4ILBInSuccess:    0,
+		l4ILBInError:      0,
 	}
 
 	for key, state := range im.l4ILBServiceMap {
-		klog.V(6).Infof("ILB Service %s has EnabledGlobalAccess: %t, EnabledCustomSubnet: %t", key, state.EnabledGlobalAccess, state.EnabledCustomSubnet)
-		counts[l4ILBService] += 1
+		klog.V(6).Infof("ILB Service %s has EnabledGlobalAccess: %t, EnabledCustomSubnet: %t, InSuccess: %t", key, state.EnabledGlobalAccess, state.EnabledCustomSubnet, state.InSuccess)
+		counts[l4ILBService]++
+		if !state.InSuccess {
+			counts[l4ILBInError]++
+			// Skip counting other features if the service is in error state.
+			continue
+		}
+		counts[l4ILBInSuccess]++
 		if state.EnabledGlobalAccess {
-			counts[l4IlbGlobalAccess] += 1
+			counts[l4ILBGlobalAccess]++
 		}
 		if state.EnabledCustomSubnet {
-			counts[l4IlbCustomSubnet] += 1
+			counts[l4ILBCustomSubnet]++
 		}
 	}
 	klog.V(4).Info("L4 ILB usage metrics computed.")
