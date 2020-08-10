@@ -16,8 +16,8 @@ limitations under the License.
 package svcneg
 
 import (
-	negv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	apisneg "k8s.io/ingress-gce/pkg/apis/svcneg"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/crd"
 )
 
@@ -29,6 +29,7 @@ func CRDMeta() *crd.CRDMeta {
 		"ServiceNetworkEndpointGroupList",
 		"servicenetworkendpointgroup",
 		"servicenetworkendpointgroups",
+		"svcneg",
 	)
 	meta.AddValidationInfo("k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1.ServiceNetworkEndpointGroup", negv1beta1.GetOpenAPIDefinitions)
 	return meta
