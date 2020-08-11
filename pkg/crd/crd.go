@@ -38,6 +38,7 @@ const (
 	checkCRDEstablishedTimeout = 60 * time.Second
 	v1String                   = "v1"
 	v1beta1String              = "v1beta1"
+	v1alpha1String             = "v1alpha1"
 )
 
 // CRDHandler takes care of ensuring CRD's for a cluster.
@@ -146,6 +147,14 @@ func getCRDVersions(version string) []apiextensionsv1beta1.CustomResourceDefinit
 		return []apiextensionsv1beta1.CustomResourceDefinitionVersion{
 			{
 				Name:    v1beta1String,
+				Served:  true,
+				Storage: true,
+			},
+		}
+	case v1alpha1String:
+		return []apiextensionsv1beta1.CustomResourceDefinitionVersion{
+			{
+				Name:    v1alpha1String,
 				Served:  true,
 				Storage: true,
 			},
