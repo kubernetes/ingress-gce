@@ -23,10 +23,10 @@ import (
 // Workload represents an external workload such as VM
 
 // +genclient
-// +genclient:noStatus
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 //
 // +k8s:openapi-gen=true
+// +kubebuilder:subresource:status
 type Workload struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -45,14 +45,16 @@ type WorkloadSpec struct {
 }
 
 // WorkloadStatus is the status for a Workload resource
+// +k8s:openapi-gen=true
 type WorkloadStatus struct {
 	// Last time the workload updated its status.
+	// metav1.Time does not work for some reason. Since CRD needs to be refactored anyway, temporarily use string.
 	// +optional
-	Heartbeat metav1.Time `json:"heartbeat,omitempty"`
+	Heartbeat string `json:"heartbeat,omitempty"`
 
 	// Last time the controller successfully pinged the workload.
 	// +optional
-	Ping metav1.Time `json:"ping,omitempty"`
+	Ping string `json:"ping,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

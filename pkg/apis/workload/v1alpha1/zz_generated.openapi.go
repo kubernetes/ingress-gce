@@ -29,8 +29,9 @@ import (
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
-		"k8s.io/ingress-gce/pkg/apis/workload/v1alpha1.Workload":     schema_pkg_apis_workload_v1alpha1_Workload(ref),
-		"k8s.io/ingress-gce/pkg/apis/workload/v1alpha1.WorkloadSpec": schema_pkg_apis_workload_v1alpha1_WorkloadSpec(ref),
+		"k8s.io/ingress-gce/pkg/apis/workload/v1alpha1.Workload":       schema_pkg_apis_workload_v1alpha1_Workload(ref),
+		"k8s.io/ingress-gce/pkg/apis/workload/v1alpha1.WorkloadSpec":   schema_pkg_apis_workload_v1alpha1_WorkloadSpec(ref),
+		"k8s.io/ingress-gce/pkg/apis/workload/v1alpha1.WorkloadStatus": schema_pkg_apis_workload_v1alpha1_WorkloadStatus(ref),
 	}
 }
 
@@ -110,6 +111,33 @@ func schema_pkg_apis_workload_v1alpha1_WorkloadSpec(ref common.ReferenceCallback
 					},
 				},
 				Required: []string{"instanceName", "hostName", "locality", "ip"},
+			},
+		},
+	}
+}
+
+func schema_pkg_apis_workload_v1alpha1_WorkloadStatus(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "WorkloadStatus is the status for a Workload resource",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"heartbeat": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Last time the workload updated its status.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"ping": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Last time the controller successfully pinged the workload.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
 			},
 		},
 	}
