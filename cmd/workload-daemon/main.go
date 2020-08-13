@@ -123,7 +123,7 @@ func getWorkloadCR(workload app.WorkloadInfo) *workloadv1a1.Workload {
 			Locality:     workload.Locality(),
 		},
 		Status: workloadv1a1.WorkloadStatus{
-			Heartbeat: time.Now().UTC().Format(time.RFC3339),
+			Heartbeat: &metav1.Time{Time: time.Now()},
 		},
 	}
 }
