@@ -604,3 +604,8 @@ func MakeL4ILBServiceDescription(svcName, ip string, version meta.Version) (stri
 func NewStringPointer(s string) *string {
 	return &s
 }
+
+// NewInt64Pointer returns a pointer to the provided int64 literal
+func NewInt64Pointer(i int64) *int64 {
+	return &i
+}
