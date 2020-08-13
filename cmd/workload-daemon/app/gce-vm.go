@@ -21,13 +21,13 @@ import (
 	"strings"
 	"time"
 
-	"cloud.google.com/go/compute/metadata"
 	gkev1 "google.golang.org/api/container/v1"
 	"google.golang.org/api/option"
 	"google.golang.org/api/transport"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
+	"k8s.io/ingress-gce/cmd/workload-daemon/metadata"
 	"k8s.io/klog"
 )
 
