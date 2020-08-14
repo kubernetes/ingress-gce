@@ -55,15 +55,15 @@ func main() {
 
 		// Generate KubeConfig and connect to it
 		config := helper.KubeConfig()
-		var clientSet workloadclient.Interface
-		clientSet, err := workloadclient.NewForConfig(config)
+		var clientset workloadclient.Interface
+		clientset, err := workloadclient.NewForConfig(config)
 		if err != nil {
 			klog.Fatalf("unable to connect to the cluster: %+v", err)
 		}
 
 		// Create the workload resource
-		client := clientSet.NetworkingV1alpha1().Workloads(corev1.NamespaceDefault)
-		_, err = client.Create(context.TODO(), getWorkloadCR(workload), metav1.CreateOptions{})
+		client := clientset.NetworkingV1alpha1().Workloads(corev1.NamespaceDefault)
+		_, err = client.Create(context.Background(), getWorkloadCR(workload), metav1.CreateOptions{})
 		if err != nil {
 			klog.Fatalf("unable to create the workload cr: %+v", err)
 		}
@@ -73,13 +73,17 @@ func main() {
 		ticker := time.NewTicker(updateInterval)
 		quit := make(chan interface{})
 		sigs := make(chan os.Signal, 1)
-		go updatingCR(workload, clientSet, ticker, sigs, quit)
+		go updateCR(workload, clientset, ticker, sigs, quit)
 
 		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 		<-quit
 
-		client.Delete(context.TODO(), workload.Name(), metav1.DeleteOptions{})
-		klog.V(0).Infof("CR deleted")
+		err = client.Delete(context.Background(), workload.Name(), metav1.DeleteOptions{})
+		if err != nil {
+			klog.Errorf("unable to delete the workload cr: %+v", err)
+		} else {
+			klog.V(0).Infof("CR deleted")
+		}
 
 		return
 	default:
@@ -88,15 +92,15 @@ func main() {
 	}
 }
 
-func updatingCR(workload app.WorkloadInfo, clientSet workloadclient.Interface, ticker *time.Ticker,
+func updateCR(workload app.WorkloadInfo, clientset workloadclient.Interface, ticker *time.Ticker,
 	sigs chan os.Signal, quit chan interface{}) {
 	for {
 		select {
 		case <-ticker.C:
 			patchStr := `[{"op": "replace", "path": "/status/heartbeat", "value": "%s"}]`
 			patch := []byte(fmt.Sprintf(patchStr, time.Now().UTC().Format(time.RFC3339)))
-			vmInstClient := clientSet.NetworkingV1alpha1().Workloads(corev1.NamespaceDefault)
-			_, err := vmInstClient.Patch(context.TODO(), workload.Name(), types.JSONPatchType, patch, metav1.PatchOptions{})
+			vmInstClient := clientset.NetworkingV1alpha1().Workloads(corev1.NamespaceDefault)
+			_, err := vmInstClient.Patch(context.Background(), workload.Name(), types.JSONPatchType, patch, metav1.PatchOptions{})
 			if err != nil {
 				klog.V(0).Infof("CR update failed: %+v", err)
 			} else {

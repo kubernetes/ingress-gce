@@ -1,64 +1,81 @@
 package app
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"text/template"
 
 	"k8s.io/klog"
 )
 
+// TODO: Use go-templates
 const kubeConfigUserTemp = `
 apiVersion: v1
 clusters:
 - cluster:
-    certificate-authority-data: %[1]s
-    server: https://%[2]s
-  name: %[3]s
+    certificate-authority-data: {{.clusterCa}}
+    server: https://{{.clusterIP}}
+  name: {{.clusterName}}
 contexts:
 - context:
-    cluster: %[3]s
-    user: %[3]s
-  name: %[3]s
-current-context: %[3]s
+    cluster: {{.clusterName}}
+    user: {{.clusterName}}
+  name: {{.clusterName}}
+current-context: {{.clusterName}}
 kind: Config
 preferences: {}
 users:
-- name: %[3]s
+- name: {{.clusterName}}
   user:
     auth-provider:
       config:
         cmd-args: get-credentials
-        cmd-path: %[4]s
+        cmd-path: {{.path}}
         expiry-key: '{.token_expiry}'
         token-key: '{.access_token}'
-      name: %[5]s`
+      name: {{.authProvider}}`
 
 const kubeConfigKsaTemp = `
 apiVersion: v1
 clusters:
 - cluster:
-    certificate-authority-data: %[1]s
-    server: https://%[2]s
-  name: %[3]s
+    certificate-authority-data: {{.clusterCa}}
+    server: https://{{.clusterIP}}
+  name: {{.clusterName}}
 contexts:
 - context:
-    cluster: %[3]s
-    user: %[4]s
-  name: %[3]s
-current-context: %[3]s
+    cluster: {{.clusterName}}
+    user: {{.saName}}
+  name: {{.clusterName}}
+current-context: {{.clusterName}}
 kind: Config
 preferences: {}
 users:
-- name: %[4]s
+- name: {{.saName}}
   user:
-    token: %[5]s`
+    token: {{.accessToken}}`
 
 // GenKubeConfigForKSA generates a KubeConfig to access the cluster using a Kubernetes service account
 func GenKubeConfigForKSA(clusterCa, clusterIP, clusterName, saName, accessToken string) []byte {
-	kubeConfig := fmt.Sprintf(kubeConfigKsaTemp, clusterCa, clusterIP, clusterName, saName, accessToken)
-	return []byte(kubeConfig)
+	var kubeConfig bytes.Buffer
+	t, err := template.New("user").Parse(kubeConfigUserTemp)
+	if err != nil {
+		klog.Fatalf("unablt to create KubeConfig template: %+v", err)
+	}
+	err = t.Execute(&kubeConfig, map[string]string{
+		"clusterCa":   clusterCa,
+		"clusterIP":   clusterIP,
+		"clusterName": clusterName,
+		"saName":      saName,
+		"accessToken": accessToken,
+	})
+	if err != nil {
+		klog.Fatalf("unablt to execute KubeConfig template: %+v", err)
+	}
+	return kubeConfig.Bytes()
 }
 
 // GenKubeConfigForUser generates a KubeConfig to access the cluster using a third-party identity
@@ -69,8 +86,22 @@ func GenKubeConfigForUser(clusterCa, clusterIP, clusterName, authProvider string
 	}
 	path := filepath.Join(pwd, os.Args[0])
 
-	kubeConfig := fmt.Sprintf(kubeConfigUserTemp, clusterCa, clusterIP, clusterName, path, authProvider)
-	return []byte(kubeConfig)
+	var kubeConfig bytes.Buffer
+	t, err := template.New("user").Parse(kubeConfigUserTemp)
+	if err != nil {
+		klog.Fatalf("unablt to create KubeConfig template: %+v", err)
+	}
+	err = t.Execute(&kubeConfig, map[string]string{
+		"clusterCa":    clusterCa,
+		"clusterIP":    clusterIP,
+		"clusterName":  clusterName,
+		"path":         path,
+		"authProvider": authProvider,
+	})
+	if err != nil {
+		klog.Fatalf("unablt to execute KubeConfig template: %+v", err)
+	}
+	return kubeConfig.Bytes()
 }
 
 // OutputCredentials prints the credentials to stdout
