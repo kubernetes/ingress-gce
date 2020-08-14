@@ -10,6 +10,7 @@ import (
 
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	apiv1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/klog"
@@ -60,28 +61,34 @@ func TestASMConfig(t *testing.T) {
 					"ConfigMapConfigController: Get a update on the ConfigMapConfig, Restarting Ingress controller"},
 			},
 		} {
-			t.Logf("Running test case: %s", tc.desc)
-			if err := e2e.EnsureConfigMap(s, asmConfigNamespace, asmConfigName, tc.configMap); err != nil {
-				t.Errorf("Failed to ensure ConfigMap, error: %s", err)
-			}
-
-			if err := wait.Poll(5*time.Second, 3*time.Minute, func() (bool, error) {
-				cmData, err := e2e.GetConfigMap(s, asmConfigNamespace, asmConfigName)
-				if err != nil {
-					return false, err
+			t.Run(tc.desc, func(t *testing.T) {
+				var err error
+				if err = e2e.EnsureConfigMap(s, asmConfigNamespace, asmConfigName, tc.configMap); err != nil {
+					t.Errorf("Failed to ensure ConfigMap, error: %s", err)
 				}
-				if val, ok := cmData["asm-ready"]; ok {
-					return val == strconv.FormatBool(tc.wantASMReady), nil
+
+				if waitErr := wait.Poll(5*time.Second, 10*time.Minute, func() (bool, error) {
+					cmData, err := e2e.GetConfigMap(s, asmConfigNamespace, asmConfigName)
+					if err != nil {
+						return false, err
+					}
+					if val, ok := cmData["asm-ready"]; ok {
+						return val == strconv.FormatBool(tc.wantASMReady), nil
+					}
+					return false, nil
+
+				}); waitErr != nil {
+					if apierrors.IsTimeout(waitErr) {
+						t.Fatalf("Failed to validate asm-ready = %t. Error time out, last seen error: %v", tc.wantASMReady, err)
+					} else {
+						t.Fatalf("Failed to validate asm-ready = %t. Error: %v", tc.wantASMReady, waitErr)
+					}
 				}
-				return false, nil
 
-			}); err != nil {
-				t.Fatalf("Failed to validate asm-ready = %s. Error: %s", strconv.FormatBool(tc.wantASMReady), err)
-			}
-
-			if err := e2e.WaitConfigMapEvents(s, asmConfigNamespace, asmConfigName, tc.wantConfigMapEvents, negControllerRestartTimeout); err != nil {
-				t.Fatalf("Failed to get events: %v; Error %e", strings.Join(tc.wantConfigMapEvents, ";"), err)
-			}
+				if err := e2e.WaitConfigMapEvents(s, asmConfigNamespace, asmConfigName, tc.wantConfigMapEvents, negControllerRestartTimeout); err != nil {
+					t.Fatalf("Failed to get events: %v; Error %e", strings.Join(tc.wantConfigMapEvents, ";"), err)
+				}
+			})
 		}
 		e2e.DeleteConfigMap(s, asmConfigNamespace, asmConfigName)
 	})
