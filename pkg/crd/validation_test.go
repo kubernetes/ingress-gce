@@ -40,6 +40,23 @@ var (
 								Ref: spec.MustCreateRef("Baz"),
 							},
 						},
+						"quuxs": {
+							SchemaProps: spec.SchemaProps{
+								Type: []string{"array"},
+								Items: &spec.SchemaOrArray{
+									Schema: &spec.Schema{
+										SchemaProps: spec.SchemaProps{
+											Ref: spec.MustCreateRef("Quux"),
+										},
+									},
+								},
+							},
+						},
+						"ts": {
+							SchemaProps: spec.SchemaProps{
+								Ref: spec.MustCreateRef("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
+							},
+						},
 					},
 				},
 			},
@@ -88,6 +105,20 @@ var (
 				},
 			},
 		},
+		"Quux": {
+			Schema: spec.Schema{
+				SchemaProps: spec.SchemaProps{
+					Description: "Quux",
+					Properties: map[string]spec.Schema{
+						"qux": {
+							SchemaProps: spec.SchemaProps{
+								Ref: spec.MustCreateRef("Qux"),
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 )
 
@@ -104,5 +135,24 @@ func TestCondenseSchema(t *testing.T) {
 	condensedBarSchema := condensedFooSchema.SchemaProps.Properties["bar"]
 	if condensedBarSchema.SchemaProps.Properties["qux"].SchemaProps.Description != "Qux" {
 		t.Errorf("Expected Foo's schema for Bar to contain the Description for Qux.")
+	}
+	if condensedFooSchema.SchemaProps.Properties["quuxs"].SchemaProps.Items.Schema.SchemaProps.Description != "Quux" {
+		t.Errorf("Expected Foo's schema to contain the Description for Quux.")
+	}
+
+	condensedQuuxSchema := condensedFooSchema.SchemaProps.Properties["quuxs"].SchemaProps.Items.Schema
+	if condensedQuuxSchema.SchemaProps.Properties["qux"].Description != "Qux" {
+		t.Errorf("Expected Foo's schema to contain the Description for Qux.")
+	}
+
+	tsProp := condensedFooSchema.SchemaProps.Properties["ts"]
+	if !tsProp.SchemaProps.Type.Contains("string") {
+		t.Errorf("Expected Foo's ts property to have type string")
+	}
+	if tsProp.SchemaProps.Format != "date-time" {
+		t.Errorf("Expected Foo's ts property to have format 'date-time'")
+	}
+	if !tsProp.SchemaProps.Nullable {
+		t.Errorf("Expected Foo's ts property to be Nullable")
 	}
 }
