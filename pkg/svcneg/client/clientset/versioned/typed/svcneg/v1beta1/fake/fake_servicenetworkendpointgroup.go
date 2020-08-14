@@ -102,6 +102,18 @@ func (c *FakeServiceNetworkEndpointGroups) Update(ctx context.Context, serviceNe
 	return obj.(*v1beta1.ServiceNetworkEndpointGroup), err
 }
 
+// UpdateStatus was generated because the type contains a Status member.
+// Add a +genclient:noStatus comment above the type to avoid generating UpdateStatus().
+func (c *FakeServiceNetworkEndpointGroups) UpdateStatus(ctx context.Context, serviceNetworkEndpointGroup *v1beta1.ServiceNetworkEndpointGroup, opts v1.UpdateOptions) (*v1beta1.ServiceNetworkEndpointGroup, error) {
+	obj, err := c.Fake.
+		Invokes(testing.NewUpdateSubresourceAction(servicenetworkendpointgroupsResource, "status", c.ns, serviceNetworkEndpointGroup), &v1beta1.ServiceNetworkEndpointGroup{})
+
+	if obj == nil {
+		return nil, err
+	}
+	return obj.(*v1beta1.ServiceNetworkEndpointGroup), err
+}
+
 // Delete takes name of the serviceNetworkEndpointGroup and deletes it. Returns an error if one occurs.
 func (c *FakeServiceNetworkEndpointGroups) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
