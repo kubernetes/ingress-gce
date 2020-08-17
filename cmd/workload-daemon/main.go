@@ -40,23 +40,39 @@ const updateInterval time.Duration = 30 * time.Second
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Printf("Usage: %v [command] \n", os.Args[0])
+		outputHelp()
 		return
 	}
 	switch os.Args[1] {
 	case "get-credentials":
-		credentials := app.NewCloudVM().Credentials()
+		vm, err := app.NewCloudVM()
+		if err != nil {
+			klog.Fatalf("unable to initialize CloudVM: %+v", err)
+		}
+		credentials, err := vm.Credentials()
+		if err != nil {
+			klog.Fatalf("unable to get credentials: %+v", err)
+		}
 		app.OutputCredentials(credentials)
 		return
 	case "start":
-		vm := app.NewCloudVM()
+		klog.V(0).Infof("Workload daemon started")
+
+		vm, err := app.NewCloudVM()
+		if err != nil {
+			klog.Fatalf("unable to initialize CloudVM: %+v", err)
+		}
+
 		var workload app.WorkloadInfo = vm
 		var helper app.ConnectionHelper = vm
 
 		// Generate KubeConfig and connect to it
-		config := helper.KubeConfig()
+		config, err := helper.KubeConfig()
+		if err != nil {
+			klog.Fatalf("unable to create KubeConfig: %+v", err)
+		}
 		var clientset workloadclient.Interface
-		clientset, err := workloadclient.NewForConfig(config)
+		clientset, err = workloadclient.NewForConfig(config)
 		if err != nil {
 			klog.Fatalf("unable to connect to the cluster: %+v", err)
 		}
@@ -65,9 +81,9 @@ func main() {
 		client := clientset.NetworkingV1alpha1().Workloads(corev1.NamespaceDefault)
 		_, err = client.Create(context.Background(), getWorkloadCR(workload), metav1.CreateOptions{})
 		if err != nil {
-			klog.Fatalf("unable to create the workload cr: %+v", err)
+			klog.Fatalf("unable to create the workload resource: %+v", err)
 		}
-		klog.V(0).Infof("CR created %s", workload.Name())
+		klog.V(2).Infof("workload resource created: %s", workload.Name())
 
 		// Update the heartbeat regularly
 		ticker := time.NewTicker(updateInterval)
@@ -77,19 +93,25 @@ func main() {
 
 		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 		<-quit
+		klog.V(0).Infof("receiving quit signal, try to delete the workload resource")
 
 		err = client.Delete(context.Background(), workload.Name(), metav1.DeleteOptions{})
 		if err != nil {
-			klog.Errorf("unable to delete the workload cr: %+v", err)
+			klog.Errorf("unable to delete the workload resource: %+v", err)
 		} else {
-			klog.V(0).Infof("CR deleted")
+			klog.V(2).Infof("workload resource deleted")
 		}
 
 		return
 	default:
-		fmt.Printf("Usage: %v [command] \n", os.Args[0])
+		outputHelp()
 		return
 	}
+}
+
+func outputHelp() {
+	fmt.Printf("Usage: %v [command]\n", os.Args[0])
+	fmt.Printf("command:\n    start\n    get-credentials\n")
 }
 
 func updateCR(workload app.WorkloadInfo, clientset workloadclient.Interface, ticker *time.Ticker,
@@ -102,9 +124,9 @@ func updateCR(workload app.WorkloadInfo, clientset workloadclient.Interface, tic
 			vmInstClient := clientset.NetworkingV1alpha1().Workloads(corev1.NamespaceDefault)
 			_, err := vmInstClient.Patch(context.Background(), workload.Name(), types.JSONPatchType, patch, metav1.PatchOptions{})
 			if err != nil {
-				klog.V(0).Infof("CR update failed: %+v", err)
+				klog.Errorf("failed to update the workload resource: %+v", err)
 			} else {
-				klog.V(0).Infof("CR updated %s", workload.Name())
+				klog.V(2).Infof("workload resource updated")
 			}
 		case <-sigs:
 			ticker.Stop()

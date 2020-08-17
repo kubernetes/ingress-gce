@@ -96,28 +96,35 @@ func (vm *CloudVM) Locality() string {
 	return vm.zone
 }
 
-func decodeGsaAccessToken(jsonData string) gsaAccessToken {
-	token := gsaAccessToken{}
-	err := json.Unmarshal([]byte(jsonData), &token)
+func decodeGsaAccessToken(jsonData string) (token gsaAccessToken, err error) {
+	token = gsaAccessToken{}
+	err = json.Unmarshal([]byte(jsonData), &token)
 	if err != nil {
-		klog.Fatalf("malformed service account access token: %+v", err)
+		klog.Errorf("malformed service account access token: %+v", err)
+		return
 	}
-	return token
+	return
 }
 
 // Credentials contain the credentials used for the daemon to access the cluster
-func (vm *CloudVM) Credentials() ClusterCredentials {
+func (vm *CloudVM) Credentials() (ClusterCredentials, error) {
 	jsonData, err := metadata.Get("instance/service-accounts/default/token")
 	if err != nil {
-		klog.Fatalf("failed to get service account access token: %+v", err)
+		klog.Errorf("failed to get service account access token: %+v", err)
+		return ClusterCredentials{}, err
 	}
 
-	token := decodeGsaAccessToken(jsonData)
+	token, err := decodeGsaAccessToken(jsonData)
+	if err != nil {
+		klog.Errorf("failed to decode service account access token: %+v", err)
+		return ClusterCredentials{}, err
+	}
 	expiryTime := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
-	return ClusterCredentials{
+	ret := ClusterCredentials{
 		AccessToken: token.AccessToken,
 		TokenExpiry: expiryTime.UTC().Format(time.RFC3339),
 	}
+	return ret, nil
 }
 
 // getCluster returns the cluster info
@@ -162,22 +169,28 @@ func (vm *CloudVM) getCluster() (cluster *gkev1.Cluster, err error) {
 	return
 }
 
-// KubeConfig yields the config used to create Kubernetes clientset
-func (vm *CloudVM) KubeConfig() (config *rest.Config) {
+// KubeConfig yields the config used to create Kubernetes clientset.
+// It tries the following ways in order:
+// - Use ~/.kube/config file.
+// - Use Kubernetes service account (KSA) specified by metadata.
+// - Use gcloud IAM service account (GSA) associated with this instance.
+func (vm *CloudVM) KubeConfig() (config *rest.Config, err error) {
 	// CASE1: If there is a kubeConfig file, use that file. E.g. testing on a cloudtop.
 	configFile := filepath.Join(homedir.HomeDir(), ".kube", "config")
-	config, err := clientcmd.BuildConfigFromFlags("", configFile)
+	config, err = clientcmd.BuildConfigFromFlags("", configFile)
 	if err == nil {
 		return
 	}
 	if !os.IsNotExist(err) {
-		klog.Fatalf("unable to build config from kubeConfig file: %+v", err)
+		klog.Errorf("unable to build config from kubeConfig file: %+v", err)
+		return
 	}
 
 	// Get contianer master address and CA
 	cluster, err := vm.getCluster()
 	if err != nil {
-		klog.Fatalf("unable to get the cluster info: %+v", err)
+		klog.Errorf("unable to get the cluster info: %+v", err)
+		return
 	}
 
 	var kubeConfig []byte
@@ -192,16 +205,19 @@ func (vm *CloudVM) KubeConfig() (config *rest.Config) {
 
 	config, err = clientcmd.RESTConfigFromKubeConfig([]byte(kubeConfig))
 	if err != nil {
-		klog.Fatalf("failed to create kubeconfig: %+v", err)
+		klog.Errorf("failed to create kubeconfig: %+v", err)
+		return
 	}
 
 	return
 }
 
-func getAttrOrFatal(getter func() (string, error), name string) string {
+func getAttrOrPanic(getter func() (string, error), name string) string {
 	ret, err := getter()
 	if err != nil {
-		klog.Fatalf("failed to get %s from metadata server: %+v", name, err)
+		klog.Errorf("failed to get %s from metadata server: %+v", name, err)
+		// This will be recovered by the NewCloudVM function.
+		panic(err)
 	}
 	return ret
 }
@@ -215,15 +231,22 @@ func getOptionalMetadata(attr string) string {
 }
 
 // NewCloudVM fetches all data needed from the metadata server to create CloudVM
-func NewCloudVM() *CloudVM {
-	vm := CloudVM{
+func NewCloudVM() (vm *CloudVM, err error) {
+	// Catch the error in getAttrOrPanic
+	defer func() {
+		e := recover()
+		if e != nil {
+			err = e.(error)
+		}
+	}()
+	vm = &CloudVM{
 		// Fetch basic info that every GCP Instance has
-		instanceName: getAttrOrFatal(metadata.InstanceName, "InstanceName"),
-		hostname:     getAttrOrFatal(metadata.Hostname, "Hostname"),
-		internalIP:   getAttrOrFatal(metadata.InternalIP, "InternalIP"),
-		externalIP:   getAttrOrFatal(metadata.ExternalIP, "ExternalIP"),
-		projectID:    getAttrOrFatal(metadata.ProjectID, "ProjectID"),
-		zone:         getAttrOrFatal(metadata.Zone, "Zone"),
+		instanceName: getAttrOrPanic(metadata.InstanceName, "InstanceName"),
+		hostname:     getAttrOrPanic(metadata.Hostname, "Hostname"),
+		internalIP:   getAttrOrPanic(metadata.InternalIP, "InternalIP"),
+		externalIP:   getAttrOrPanic(metadata.ExternalIP, "ExternalIP"),
+		projectID:    getAttrOrPanic(metadata.ProjectID, "ProjectID"),
+		zone:         getAttrOrPanic(metadata.Zone, "Zone"),
 		// Fetch the cluster name and zone
 		// Not specified if the user want to use ~/.kube/config file
 		clusterName: getOptionalMetadata("k8s-cluster-name"),
@@ -243,7 +266,8 @@ func NewCloudVM() *CloudVM {
 	// Fetch labels
 	attrs, err := metadata.InstanceAttributes()
 	if err != nil {
-		klog.Fatalf("failed to get attribute list from metadata server: %+v", err)
+		klog.Errorf("failed to get attribute list from metadata server: %+v", err)
+		return nil, err
 	}
 	for _, name := range attrs {
 		if strings.HasPrefix(name, labelPrefix) {
@@ -255,5 +279,5 @@ func NewCloudVM() *CloudVM {
 		}
 	}
 
-	return &vm
+	return
 }

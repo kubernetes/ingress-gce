@@ -36,9 +36,9 @@ type WorkloadInfo interface {
 type ConnectionHelper interface {
 	// Credentials contain the credentials used for the deamon to access the cluster.
 	// This is output to stdout, for Kubernetes clients to use.
-	Credentials() ClusterCredentials
+	Credentials() (ClusterCredentials, error)
 	// KubeConfig yields the config used to create Kubernetes clientset.
-	KubeConfig() *rest.Config
+	KubeConfig() (*rest.Config, error)
 }
 
 // ClusterCredentials contains the access token to the cluster and its expiry time
