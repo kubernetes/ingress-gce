@@ -11,7 +11,6 @@ import (
 	"k8s.io/klog"
 )
 
-// TODO: Use go-templates
 const kubeConfigUserTemp = `
 apiVersion: v1
 clusters:

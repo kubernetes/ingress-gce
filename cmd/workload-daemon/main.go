@@ -28,11 +28,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/cmd/workload-daemon/app"
-	"k8s.io/klog"
-
 	workloadv1a1 "k8s.io/ingress-gce/pkg/apis/workload/v1alpha1"
 	workloadclient "k8s.io/ingress-gce/pkg/experimental/workload/client/clientset/versioned"
+	"k8s.io/klog"
 
+	// GCP Authentication
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
 
