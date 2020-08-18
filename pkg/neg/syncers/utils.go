@@ -207,7 +207,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		}
 
 		negRef = negv1beta1.NegObjectReference{
-			Id:                  neg.Id,
+			Id:                  fmt.Sprint(neg.Id),
 			SelfLink:            neg.SelfLink,
 			NetworkEndpointType: negv1beta1.NetworkEndpointType(neg.NetworkEndpointType),
 		}

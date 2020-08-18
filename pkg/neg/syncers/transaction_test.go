@@ -1078,12 +1078,12 @@ func TestUpdateStatus(t *testing.T) {
 	testNegType := negtypes.VmIpPortEndpointType
 	testNegRefs := []negv1beta1.NegObjectReference{
 		negv1beta1.NegObjectReference{
-			Id:                  0,
+			Id:                  "0",
 			SelfLink:            "self-link-0",
 			NetworkEndpointType: "neg-type-0",
 		},
 		negv1beta1.NegObjectReference{
-			Id:                  1,
+			Id:                  "1",
 			SelfLink:            "self-link-1",
 			NetworkEndpointType: "neg-type-1",
 		},
@@ -1406,7 +1406,7 @@ func negObjectReferences(negs map[*meta.Key]*composite.NetworkEndpointGroup) map
 	negObjs := make(map[string]negv1beta1.NegObjectReference)
 	for _, neg := range negs {
 		negObjs[neg.SelfLink] = negv1beta1.NegObjectReference{
-			Id:                  neg.Id,
+			Id:                  fmt.Sprint(neg.Id),
 			SelfLink:            neg.SelfLink,
 			NetworkEndpointType: negv1beta1.NetworkEndpointType(neg.NetworkEndpointType),
 		}

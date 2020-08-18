@@ -22,8 +22,21 @@ import (
 
 	spec "github.com/go-openapi/spec"
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kube-openapi/pkg/common"
 )
+
+var metav1OpenAPISpec = map[string]common.OpenAPIDefinition{
+	"k8s.io/apimachinery/pkg/apis/meta/v1.Time": common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Type:     metav1.Time{}.OpenAPISchemaType(),
+				Format:   metav1.Time{}.OpenAPISchemaFormat(),
+				Nullable: true,
+			},
+		},
+	},
+}
 
 // validation returns a validation specification based on OpenAPI schema's.
 func validation(typeSource string, fn common.GetOpenAPIDefinitions) (*apiextensionsv1beta1.CustomResourceValidation, error) {
@@ -47,10 +60,21 @@ func validation(typeSource string, fn common.GetOpenAPIDefinitions) (*apiextensi
 func condenseSchema(currentSchema spec.Schema, openapiSpec map[string]common.OpenAPIDefinition) spec.Schema {
 	currentSchemaProperties := currentSchema.SchemaProps.Properties
 	for property, propertySchema := range currentSchemaProperties {
+
+		if propertySchema.SchemaProps.Type.Contains("array") {
+			ref := propertySchema.Items.Schema.SchemaProps.Ref.String()
+			if ref != "" {
+				referencedSchema := getReferenceSchema(ref, propertySchema, openapiSpec)
+				condensedRefSchema := condenseSchema(referencedSchema, openapiSpec)
+				propertySchema.SchemaProps.Items.Schema.SchemaProps = condensedRefSchema.SchemaProps
+				currentSchemaProperties[property] = propertySchema
+			}
+			continue
+		}
+
 		ref := propertySchema.SchemaProps.Ref.String()
 		if ref != "" {
-			referencedSchema := openapiSpec[ref].Schema
-			referencedSchema.SchemaProps.Type = spec.StringOrArray{"object"}
+			referencedSchema := getReferenceSchema(ref, propertySchema, openapiSpec)
 			propertySchema.SchemaProps = referencedSchema.SchemaProps
 			currentSchemaProperties[property] = propertySchema
 			condenseSchema(propertySchema, openapiSpec)
@@ -59,4 +83,18 @@ func condenseSchema(currentSchema spec.Schema, openapiSpec map[string]common.Ope
 	// Apply fixes for certain known issues.
 	currentSchema.AdditionalProperties = nil
 	return currentSchema
+}
+
+func getReferenceSchema(ref string, propertySchema spec.Schema, openapiSpec map[string]common.OpenAPIDefinition) spec.Schema {
+	var referencedSchema spec.Schema
+	// Check if reference exists in existing metav1 specs, otherwise look in provided openapi specs
+	if refDef, ok := metav1OpenAPISpec[ref]; ok {
+		referencedSchema = refDef.Schema
+		referencedSchema.SchemaProps.Description = propertySchema.SchemaProps.Description
+	} else {
+		// If ref doesn't exist in either map, this will generate standard object one
+		referencedSchema = openapiSpec[ref].Schema
+		referencedSchema.SchemaProps.Type = spec.StringOrArray{"object"}
+	}
+	return referencedSchema
 }
