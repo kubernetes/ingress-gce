@@ -135,14 +135,14 @@ func (vm *CloudVM) getCluster() (cluster *gkev1.Cluster, err error) {
 	if vm.clusterName == "" {
 		vm.clusterName, err = metadata.InstanceAttributeValue("k8s-cluster-name")
 		if err != nil {
-			klog.Errorf("failed to get k8s-cluster-name from metadata server", err)
+			klog.Errorf("failed to get k8s-cluster-name from metadata server: %+v", err)
 			return
 		}
 	}
 	if vm.clusterZone == "" {
 		vm.clusterZone, err = metadata.InstanceAttributeValue("k8s-cluster-zone")
 		if err != nil {
-			klog.Errorf("failed to get k8s-cluster-zone from metadata server", err)
+			klog.Errorf("failed to get k8s-cluster-zone from metadata server: %+v", err)
 			return
 		}
 	}
