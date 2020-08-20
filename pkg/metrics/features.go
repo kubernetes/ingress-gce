@@ -89,6 +89,7 @@ const (
 	vmIpNeg        = feature("VmIpNEG")
 	vmIpNegLocal   = feature("VmIpNegLocal")
 	vmIpNegCluster = feature("VmIpNegCluster")
+	customNamedNeg = feature("CustomNamedNEG")
 
 	l4ILBService      = feature("L4ILBService")
 	l4ILBGlobalAccess = feature("L4ILBGlobalAccess")

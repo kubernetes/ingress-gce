@@ -403,7 +403,7 @@ func (c *Controller) processService(key string) error {
 		return err
 	}
 	negUsage.IngressNeg = len(svcPortInfoMap)
-	if err := c.mergeStandaloneNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap); err != nil {
+	if err := c.mergeStandaloneNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage); err != nil {
 		return err
 	}
 	negUsage.StandaloneNeg = len(svcPortInfoMap) - negUsage.IngressNeg
@@ -470,7 +470,7 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 }
 
 // mergeStandaloneNEGsPortInfo merge Standalone NEG PortInfo into portInfoMap
-func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap) error {
+func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *usage.NegServiceState) error {
 	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
 	if err != nil {
 		return err
@@ -502,6 +502,7 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 		if negAnnotation.NEGEnabledForIngress() && len(customNames) != 0 {
 			return fmt.Errorf("configuration for negs in service (%s) is invalid, custom neg name cannot be used with ingress enabled", name.String())
 		}
+		negUsage.CustomNamedNeg = len(customNames)
 
 		if err := portInfoMap.Merge(negtypes.NewPortInfoMap(name.Namespace, name.Name, exposedNegSvcPort, c.namer /*readinessGate*/, true, customNames)); err != nil {
 			return fmt.Errorf("failed to merge service ports exposed as standalone NEGs (%v) into ingress referenced service ports (%v): %v", exposedNegSvcPort, portInfoMap, err)
