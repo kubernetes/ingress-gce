@@ -106,11 +106,13 @@ func (in *WorkloadStatus) DeepCopyInto(out *WorkloadStatus) {
 	*out = *in
 	if in.Heartbeat != nil {
 		in, out := &in.Heartbeat, &out.Heartbeat
-		*out = (*in).DeepCopy()
+		*out = new(string)
+		**out = **in
 	}
 	if in.Ping != nil {
 		in, out := &in.Ping, &out.Ping
-		*out = (*in).DeepCopy()
+		*out = new(string)
+		**out = **in
 	}
 	return
 }

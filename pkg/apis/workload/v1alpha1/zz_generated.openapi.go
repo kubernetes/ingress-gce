@@ -125,20 +125,20 @@ func schema_pkg_apis_workload_v1alpha1_WorkloadStatus(ref common.ReferenceCallba
 				Properties: map[string]spec.Schema{
 					"heartbeat": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Last time the workload updated its status. metav1.Time does not work for some reason. Since CRD needs to be refactored anyway, temporarily use string.",
-							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
+							Description: "Last time the workload updated its status.",
+							Type:        []string{"string"},
+							Format:      "",
 						},
 					},
 					"ping": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Last time the controller successfully pinged the workload.",
-							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
+							Type:        []string{"string"},
+							Format:      "",
 						},
 					},
 				},
 			},
 		},
-		Dependencies: []string{
-			"k8s.io/apimachinery/pkg/apis/meta/v1.Time"},
 	}
 }

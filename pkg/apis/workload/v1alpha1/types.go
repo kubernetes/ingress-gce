@@ -47,13 +47,19 @@ type WorkloadSpec struct {
 // WorkloadStatus is the status for a Workload resource
 // +k8s:openapi-gen=true
 type WorkloadStatus struct {
+	// TODO: figure out why metav1.Time does not work.
+	// It seems that in CRD, metav1.Time is specified as type "object"
+	// But client-go will cast metav1.Time into type "string"
+
 	// Last time the workload updated its status.
 	// +optional
-	Heartbeat *metav1.Time `json:"heartbeat,omitempty"`
+	Heartbeat *string `json:"heartbeat,omitempty"`
+	// Heartbeat *metav1.Time `json:"heartbeat,omitempty"`
 
 	// Last time the controller successfully pinged the workload.
 	// +optional
-	Ping *metav1.Time `json:"ping,omitempty"`
+	Ping *string `json:"ping,omitempty"`
+	// Ping *metav1.Time `json:"ping,omitempty"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object

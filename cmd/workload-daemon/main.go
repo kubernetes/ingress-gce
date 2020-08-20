@@ -137,6 +137,7 @@ func updateCR(workload app.WorkloadInfo, clientset workloadclient.Interface, tic
 }
 
 func getWorkloadCR(workload app.WorkloadInfo) *workloadv1a1.Workload {
+	heartbeat := time.Now().UTC().Format(time.RFC3339)
 	return &workloadv1a1.Workload{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   workload.Name(),
@@ -149,7 +150,8 @@ func getWorkloadCR(workload app.WorkloadInfo) *workloadv1a1.Workload {
 			Locality:     workload.Locality(),
 		},
 		Status: workloadv1a1.WorkloadStatus{
-			Heartbeat: &metav1.Time{Time: time.Now()},
+			// Heartbeat: &metav1.Time{Time: time.Now()},
+			Heartbeat: &heartbeat,
 		},
 	}
 }
