@@ -333,7 +333,7 @@ func (c *Controller) nodeWorker() {
 func (c *Controller) processNode() {
 	defer func() {
 		now := c.nodeSyncTracker.Track()
-		metrics.LastSyncTimestamp.WithLabelValues().Set(float64(now.UTC().UnixNano()))
+		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
 	}()
 	c.manager.SyncNodes()
 }
@@ -342,7 +342,7 @@ func (c *Controller) processNode() {
 func (c *Controller) processEndpoint(key string) {
 	defer func() {
 		now := c.syncTracker.Track()
-		metrics.LastSyncTimestamp.WithLabelValues().Set(float64(now.UTC().UnixNano()))
+		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
 	}()
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
@@ -371,7 +371,7 @@ func (c *Controller) serviceWorker() {
 func (c *Controller) processService(key string) error {
 	defer func() {
 		now := c.syncTracker.Track()
-		metrics.LastSyncTimestamp.WithLabelValues().Set(float64(now.UTC().UnixNano()))
+		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
 	}()
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
