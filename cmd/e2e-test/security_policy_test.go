@@ -121,7 +121,7 @@ func TestSecurityPolicyEnable(t *testing.T) {
 
 		t.Logf("Checking on relevant backend service whether security policy is properly attached")
 
-		testIng, err = e2e.WaitForIngress(s, testIng, nil)
+		testIng, err = e2e.WaitForIngress(s, testIng, nil, nil)
 		if err != nil {
 			t.Fatalf("e2e.WaitForIngress(s, %q) = _, %v; want _, nil", testIng.Name, err)
 		}
@@ -197,7 +197,7 @@ func TestSecurityPolicyTransition(t *testing.T) {
 		}
 		t.Logf("Ingress %s/%s created", s.Namespace, testIng.Name)
 
-		ing, err := e2e.WaitForIngress(s, testIng, nil)
+		ing, err := e2e.WaitForIngress(s, testIng, nil, nil)
 		if err != nil {
 			t.Fatalf("e2e.WaitForIngress(s, %q) = _, %v; want _, nil", testIng.Name, err)
 		}

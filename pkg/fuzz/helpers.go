@@ -135,6 +135,23 @@ func ServiceMapFromIngress(ing *v1beta1.Ingress) ServiceMap {
 	return ret
 }
 
+func FrontendConfigForIngress(ing *v1beta1.Ingress, env ValidatorEnv) (*frontendconfig.FrontendConfig, error) {
+	name := annotations.FromIngress(ing).FrontendConfig()
+	if name != "" {
+		fcMap, err := env.FrontendConfigs()
+		if err != nil {
+			return nil, err
+		}
+
+		if fc, ok := fcMap[name]; ok {
+			return fc, nil
+		}
+	}
+
+	// No FrontendConfig found
+	return nil, nil
+}
+
 // IngressBuilder is syntactic sugar for creating Ingress specs for testing
 // purposes.
 //

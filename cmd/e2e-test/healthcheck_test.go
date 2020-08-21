@@ -109,9 +109,9 @@ func TestHealthCheck(t *testing.T) {
 			// If health check port does not match deployment, then the deployment will be unreachable
 			if tc.want.Port != nil {
 				options := &e2e.WaitForIngressOptions{ExpectUnreachable: true}
-				ing, _ = e2e.WaitForIngress(s, ing, options)
+				ing, _ = e2e.WaitForIngress(s, ing, nil, options)
 			} else {
-				ing, err = e2e.WaitForIngress(s, ing, nil)
+				ing, err = e2e.WaitForIngress(s, ing, nil, nil)
 				if err != nil {
 					t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 				}

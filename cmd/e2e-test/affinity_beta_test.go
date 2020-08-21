@@ -87,7 +87,7 @@ func TestAffinityBeta(t *testing.T) {
 		ingKey := fmt.Sprintf("%s/%s", s.Namespace, ing.Name)
 		t.Logf("Ingress created (%s)", ingKey)
 
-		ing, err = e2e.WaitForIngress(s, ing, nil)
+		ing, err = e2e.WaitForIngress(s, ing, nil, nil)
 		if err != nil {
 			t.Fatalf("e2e.WaitForIngress(_, %q, nil) = %v, want nil", ingKey, err)
 		}

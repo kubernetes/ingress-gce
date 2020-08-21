@@ -111,7 +111,7 @@ func TestSSLPolicy(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
 
-			ing, err = e2e.WaitForIngress(s, ing, nil)
+			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
 			if err != nil {
 				t.Fatalf("Error waiting for Ingress to stabilize: %v", err)
 			}

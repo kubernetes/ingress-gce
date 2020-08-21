@@ -127,7 +127,7 @@ func TestLogging(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s)", ingKey)
 
-			ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true})
+			ing, err = e2e.WaitForIngress(s, ing, nil, &e2e.WaitForIngressOptions{ExpectUnreachable: true})
 			if err != nil {
 				t.Fatalf("Error waiting for Ingress %s to stabilize: %v", ingKey, err)
 			}

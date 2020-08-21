@@ -103,7 +103,7 @@ func TestILB(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 
-			ing, err := e2e.WaitForIngress(s, tc.ing, nil)
+			ing, err := e2e.WaitForIngress(s, tc.ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
@@ -249,7 +249,7 @@ func TestILBHttps(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
 
-			ing, err = e2e.WaitForIngress(s, ing, nil)
+			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
@@ -390,7 +390,7 @@ func TestILBUpdate(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 
-			ing, err := e2e.WaitForIngress(s, tc.ing, nil)
+			ing, err := e2e.WaitForIngress(s, tc.ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
@@ -424,7 +424,7 @@ func TestILBUpdate(t *testing.T) {
 			}
 
 			// Verify everything works
-			ing, err = e2e.WaitForIngress(s, tc.ingUpdate, nil)
+			ing, err = e2e.WaitForIngress(s, tc.ingUpdate, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
@@ -517,7 +517,7 @@ func TestILBError(t *testing.T) {
 				expectError = false
 			}
 
-			_, err = e2e.WaitForIngress(s, tc.ing, nil)
+			_, err = e2e.WaitForIngress(s, tc.ing, nil, nil)
 
 			if expectError && err == nil {
 				t.Fatalf("want err, got nil")
@@ -612,7 +612,7 @@ func TestILBShared(t *testing.T) {
 				}
 				t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
 
-				ing, err := e2e.WaitForIngress(s, ing, nil)
+				ing, err := e2e.WaitForIngress(s, ing, nil, nil)
 				if err != nil {
 					t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 				}

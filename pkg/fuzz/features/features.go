@@ -32,4 +32,5 @@ var All = []fuzz.Feature{
 	NEG,
 	AppProtocol,
 	ILB,
+	HTTPSRedirects,
 }
