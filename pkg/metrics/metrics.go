@@ -286,6 +286,7 @@ func (im *ControllerMetrics) computeNegMetrics() map[feature]int {
 		vmIpNeg:        0,
 		vmIpNegLocal:   0,
 		vmIpNegCluster: 0,
+		customNamedNeg: 0,
 	}
 
 	for key, negState := range im.negMap {
@@ -295,6 +296,7 @@ func (im *ControllerMetrics) computeNegMetrics() map[feature]int {
 		counts[ingressNeg] += negState.IngressNeg
 		counts[asmNeg] += negState.AsmNeg
 		counts[neg] += negState.AsmNeg + negState.StandaloneNeg + negState.IngressNeg
+		counts[customNamedNeg] += negState.CustomNamedNeg
 		if negState.VmIpNeg != nil {
 			counts[neg] += 1
 			counts[vmIpNeg] += 1
