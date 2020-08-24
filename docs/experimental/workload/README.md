@@ -189,6 +189,12 @@ the cluster:
 kubectl get workload
 ```
 
+The output should be like follows:
+```text
+NAME                AGE
+workload-mig-3p1x   35s
+```
+
 ### Step 5: create service
 
 Kubernetes services whose selectors match with this workload can have it as a
@@ -210,3 +216,22 @@ Then, we can validate that the corresponding endpointslice is created:
 ```bash
 kubectl get endpointslice
 ```
+
+The output should be like follows:
+```text
+NAME                                          ADDRESSTYPE   PORTS   ENDPOINTS       AGE
+workload-service-workload-controller.k8s.io   IPv4          80      10.168.15.209   91s
+```
+
+# Toubleshooting
+
+## Service Account Email
+
+By default the VM does not have the `userinfo-email` scope, so the Kubernetes
+cluster can only recognize its unique ID, but not the email.
+See [Role-based access control](https://cloud.google.com/kubernetes-engine/docs/how-to/role-based-access-control#forbidden_error_for_service_accounts_on_vm_instances)
+for details.
+
+## Firewall Setting
+
+<!-- Write something here? -->
