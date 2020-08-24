@@ -61,6 +61,8 @@ type L7RuntimeInfo struct {
 	// this name is used in the Forwarding Rules for this loadbalancer.
 	// If this is an l7-ILB ingress, the static IP is assumed to be internal
 	StaticIPName string
+	// The name of the static IP subnet, this is only used for L7-ILB Ingress static IPs
+	StaticIPSubnet string
 	// UrlMap is our internal representation of a url map.
 	UrlMap *utils.GCEURLMap
 	// FrontendConfig is the type which encapsulates features for the load balancer.
