@@ -1072,7 +1072,7 @@ func TestReserveGlobalStaticIPName(t *testing.T) {
 	}
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP:                 true,
-		TLS:                       []*TLSCerts{{Key: "key", Cert: "cert"}},
+		TLS:                       []*translator.TLSCerts{{Key: "key", Cert: "cert"}},
 		UrlMap:                    gceUrlMap,
 		Ingress:                   ing,
 		ReserveGlobalStaticIPName: "testmanagedstaticip",
@@ -1100,7 +1100,7 @@ func TestReserveGlobalStaticIPNameExistingValue(t *testing.T) {
 	}
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP:                 true,
-		TLS:                       []*TLSCerts{{Key: "key", Cert: "cert"}},
+		TLS:                       []*translator.TLSCerts{{Key: "key", Cert: "cert"}},
 		UrlMap:                    gceUrlMap,
 		Ingress:                   ing,
 		ReserveGlobalStaticIPName: "testmanagedstaticip",
@@ -1133,7 +1133,7 @@ func TestReserveGlobalStaticIPNameLateChange(t *testing.T) {
 	}
 	lbInfo := &L7RuntimeInfo{
 		AllowHTTP:    true,
-		TLS:          []*TLSCerts{{Key: "key", Cert: "cert"}},
+		TLS:          []*translator.TLSCerts{{Key: "key", Cert: "cert"}},
 		UrlMap:       gceUrlMap,
 		Ingress:      ing,
 		StaticIPName: "teststaticip",
