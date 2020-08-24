@@ -13,7 +13,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/ingress-gce/pkg/e2e"
-	"k8s.io/klog"
 )
 
 const (
@@ -189,46 +188,46 @@ func TestASMServiceAndDestinationRule(t *testing.T) {
 				{desc: "NEG controller should update NEGs for destinationrule", destinationRuleName: "porter-destinationrule", subsetEndpointCountMap: map[string]int{"v1": 1, "v2": 2}, crossNamespace: false},
 				{desc: "NEG controller should create NEGs for cross namespace destinationrule", destinationRuleName: "porter-destinationrule-1", subsetEndpointCountMap: map[string]int{"v1": 1}, crossNamespace: true},
 			} {
-				t.Logf("Running test case: %s", tc.desc)
-				sandbox := s
-				drHost := svcName
-				// crossNamespace will test DestinationRules that refering a serive located in a different namespace
-				if tc.crossNamespace {
-					sandbox = sSkip
-					drHost = fmt.Sprintf("%s.%s.svc.cluster.local", svcName, s.Namespace)
-				}
-
-				versions := []string{}
-				for k := range tc.subsetEndpointCountMap {
-					versions = append(versions, k)
-				}
-				if err := e2e.EnsurePorterDestinationRule(sandbox, tc.destinationRuleName, drHost, versions); err != nil {
-					klog.Errorf("Failed to create destinationRule, error: %s", err)
-				}
-
-				// One DestinationRule should have count(NEGs) = count(subset)* count(port)
-				dsNEGStatus, err := e2e.WaitDestinationRuleAnnotation(sandbox, sandbox.Namespace, tc.destinationRuleName, len(tc.subsetEndpointCountMap)*1, 5*time.Minute)
-				if err != nil {
-					klog.Errorf("Failed to validate the NEG count. Error: %s", err)
-				}
-
-				zones := dsNEGStatus.Zones
-				for subsetVersion, endpointCount := range tc.subsetEndpointCountMap {
-					negNames, ok := dsNEGStatus.NetworkEndpointGroups[subsetVersion]
-					if !ok {
-						t.Fatalf("DestinationRule annotation doesn't contain the desired NEG status, want: %s, have: %v", subsetVersion, dsNEGStatus.NetworkEndpointGroups)
+				t.Run(tc.desc, func(t *testing.T) {
+					sandbox := s
+					drHost := svcName
+					// crossNamespace will test DestinationRules that refering a serive located in a different namespace
+					if tc.crossNamespace {
+						sandbox = sSkip
+						drHost = fmt.Sprintf("%s.%s.svc.cluster.local", svcName, s.Namespace)
 					}
-					negName, ok := negNames[strconv.Itoa(int(porterPort))]
-					if !ok {
-						t.Fatalf("DestinationRule annotation doesn't contain the desired NEG status, want: %d, have: %v", porterPort, negNames)
-					}
-					if err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, zones, false, endpointCount); err != nil {
-						t.Errorf("Failed to wait Negs, error: %s", err)
-					}
-				}
 
+					versions := []string{}
+					for k := range tc.subsetEndpointCountMap {
+						versions = append(versions, k)
+					}
+					if err := e2e.EnsurePorterDestinationRule(sandbox, tc.destinationRuleName, drHost, versions); err != nil {
+						t.Errorf("Failed to create destinationRule, error: %s", err)
+					}
+
+					// One DestinationRule should have count(NEGs) = count(subset)* count(port)
+					dsNEGStatus, err := e2e.WaitDestinationRuleAnnotation(sandbox, sandbox.Namespace, tc.destinationRuleName, len(tc.subsetEndpointCountMap)*1, 5*time.Minute)
+					if err != nil {
+						t.Errorf("Failed to validate the NEG count. Error: %s", err)
+					}
+
+					zones := dsNEGStatus.Zones
+					for subsetVersion, endpointCount := range tc.subsetEndpointCountMap {
+						negNames, ok := dsNEGStatus.NetworkEndpointGroups[subsetVersion]
+						if !ok {
+							t.Fatalf("DestinationRule annotation doesn't contain the desired NEG status, want: %s, have: %v", subsetVersion, dsNEGStatus.NetworkEndpointGroups)
+						}
+						negName, ok := negNames[strconv.Itoa(int(porterPort))]
+						if !ok {
+							t.Fatalf("DestinationRule annotation doesn't contain the desired NEG status, want: %d, have: %v", porterPort, negNames)
+						}
+						if err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, zones, false, endpointCount); err != nil {
+							t.Errorf("Failed to wait Negs, error: %s", err)
+						}
+					}
+
+				})
 			}
-
 		})
 	})
 }

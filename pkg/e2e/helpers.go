@@ -67,7 +67,7 @@ const (
 	gclbDeletionTimeout = 60 * time.Minute
 
 	negPollInterval  = 5 * time.Second
-	negPollTimeout   = 2 * time.Minute
+	negPollTimeout   = 3 * time.Minute
 	negGCPollTimeout = 3 * time.Minute
 
 	k8sApiPoolInterval = 10 * time.Second
