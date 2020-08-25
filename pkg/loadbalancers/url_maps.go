@@ -21,6 +21,7 @@ import (
 
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -91,20 +92,29 @@ func (l *L7) ensureRedirectURLMap() error {
 	name, namerSupported := l.namer.RedirectUrlMap()
 	expectedMap := t.ToRedirectUrlMap(env, l.Versions().UrlMap)
 
+	// Cannot enable for internal ingress
+	if expectedMap != nil && isL7ILB {
+		return fmt.Errorf("error: cannot enable HTTPS Redirects with L7 ILB")
+	}
+
+	// Cannot enable on older naming schemes
+	if !namerSupported {
+		if expectedMap != nil {
+			return fmt.Errorf("error: cannot enable HTTPS Redirects with the V1 Ingress naming scheme.  Please recreate your ingress to use the newest naming scheme.")
+		}
+		return nil
+	}
+
 	key, err := l.CreateKey(name)
 	if err != nil {
 		return err
 	}
 
-	// TODO(shance): Remove this get unless the ingress status has the redirectUrlMap
-	currentMap, err := composite.GetUrlMap(l.cloud, key, l.Versions().UrlMap)
-	if utils.IgnoreHTTPNotFound(err) != nil {
-		return err
-	}
-
 	// Do not expect to have a RedirectUrlMap
 	if expectedMap == nil {
-		if currentMap == nil {
+		// Check if we need to GC
+		status, ok := l.ingress.Annotations[annotations.RedirectUrlMapKey]
+		if !ok || status == "" {
 			return nil
 		} else {
 			if err := composite.DeleteUrlMap(l.cloud, key, l.Versions().UrlMap); err != nil {
@@ -114,13 +124,9 @@ func (l *L7) ensureRedirectURLMap() error {
 		return nil
 	}
 
-	// Cannot enable for internal ingress
-	if isL7ILB {
-		return fmt.Errorf("error: cannot enable HTTPS Redirects with L7 ILB")
-	}
-
-	if !namerSupported {
-		return fmt.Errorf("error: cannot enable HTTPS Redirects with the V1 Ingress naming scheme.  Please recreate your ingress to use the newest naming scheme.")
+	currentMap, err := composite.GetUrlMap(l.cloud, key, l.Versions().UrlMap)
+	if utils.IgnoreHTTPNotFound(err) != nil {
+		return err
 	}
 
 	if currentMap == nil {
@@ -135,7 +141,6 @@ func (l *L7) ensureRedirectURLMap() error {
 	}
 
 	l.redirectUm = expectedMap
-
 	return nil
 }
 
