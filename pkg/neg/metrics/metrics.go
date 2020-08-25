@@ -21,48 +21,101 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"k8s.io/ingress-gce/pkg/metrics"
 )
 
 const (
-	negControllerSubsystem = "neg_controller"
-	syncLatencyKey         = "neg_sync_duration_seconds"
-	lastSyncTimestampKey   = "sync_timestamp"
+	negControllerSubsystem   = "neg_controller"
+	syncerLatencyKey         = "syncer_sync_duration_seconds"
+	managerProcessLatencyKey = "manager_process_duration_seconds"
+	initLatencyKey           = "neg_initialization_duration_seconds"
+	negOpLatencyKey          = "endpoint_operation_duration_seconds"
+	negOpEndpointsKey        = "neg_operation_endpoints"
+	lastSyncTimestampKey     = "sync_timestamp"
 
 	resultSuccess = "success"
 	resultError   = "error"
 
-	AttachSync = syncType("attach")
-	DetachSync = syncType("detach")
+	GCProcess   = "GC"
+	SyncProcess = "Sync"
 )
 
 type syncType string
 
 var (
-	syncMetricsLabels = []string{
-		"key",    // The key to uniquely identify the NEG syncer.
-		"type",   // Type of the NEG sync
-		"result", // Result of the sync.
+	negOpLatencyMetricsLabels = []string{
+		"operation",   // endpoint operation
+		"neg_type",    // type of neg
+		"api_version", // GCE API version
+		"result",      // result of the sync
 	}
 
-	SyncLatency = prometheus.NewHistogramVec(
+	negOpEndpointsMetricsLabels = []string{
+		"operation", // endpoint operation
+		"neg_type",  // type of neg
+		"result",    // result of the sync
+	}
+
+	negProcessMetricsLabels = []string{
+		"process", // type of manager process loop
+		"result",  // result of the process
+	}
+
+	syncerMetricsLabels = []string{
+		"neg_type",                 //type of neg
+		"endpoint_calculator_mode", // type of endpoint calculator used
+		"result",                   // result of the sync
+	}
+
+	NegOperationLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Namespace: metrics.GLBC_NAMESPACE,
 			Subsystem: negControllerSubsystem,
-			Name:      syncLatencyKey,
-			Help:      "Sync latency of a NEG syncer",
+			Name:      negOpLatencyKey,
+			Help:      "Latency of a NEG Operation",
 		},
-		syncMetricsLabels,
+		negOpLatencyMetricsLabels,
 	)
 
-	LastSyncTimestamp = prometheus.NewGaugeVec(
+	NegOperationEndpoints = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      negOpEndpointsKey,
+			Help:      "Number of Endpoints during an NEG Operation",
+		},
+		negOpEndpointsMetricsLabels,
+	)
+
+	SyncerSyncLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      syncerLatencyKey,
+			Help:      "Sync latency for NEG Syncer",
+		},
+		syncerMetricsLabels,
+	)
+
+	ManagerProcessLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      managerProcessLatencyKey,
+			Help:      "Process latency for NEG Manager",
+		},
+		negProcessMetricsLabels,
+	)
+
+	InitializationLatency = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      initLatencyKey,
+			Help:      "Initialization latency of a NEG",
+		},
+	)
+
+	LastSyncTimestamp = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Namespace: metrics.GLBC_NAMESPACE,
 			Subsystem: negControllerSubsystem,
 			Name:      lastSyncTimestampKey,
 			Help:      "The timestamp of the last execution of NEG controller sync loop.",
 		},
-		[]string{},
 	)
 )
 
@@ -70,16 +123,44 @@ var register sync.Once
 
 func RegisterMetrics() {
 	register.Do(func() {
-		prometheus.MustRegister(SyncLatency)
+		prometheus.MustRegister(NegOperationLatency)
+		prometheus.MustRegister(NegOperationEndpoints)
+		prometheus.MustRegister(ManagerProcessLatency)
+		prometheus.MustRegister(SyncerSyncLatency)
 		prometheus.MustRegister(LastSyncTimestamp)
+		prometheus.MustRegister(InitializationLatency)
 	})
 }
 
-// ObserveNegSync publish collected metrics for the sync of NEG
-func ObserveNegSync(negName string, syncType syncType, err error, start time.Time) {
-	result := resultSuccess
+// PublishNegOperationMetrics publishes collected metrics for neg operations
+func PublishNegOperationMetrics(operation, negType, apiVersion string, err error, numEndpoints int, start time.Time) {
+	result := getResult(err)
+
+	NegOperationLatency.WithLabelValues(operation, negType, apiVersion, result).Observe(time.Since(start).Seconds())
+	NegOperationEndpoints.WithLabelValues(operation, negType, result).Observe(float64(numEndpoints))
+}
+
+// PublishNegSyncMetrics publishes collected metrics for the sync of NEG
+func PublishNegSyncMetrics(negType, endpointCalculator string, err error, start time.Time) {
+	result := getResult(err)
+
+	SyncerSyncLatency.WithLabelValues(negType, endpointCalculator, result).Observe(time.Since(start).Seconds())
+}
+
+// PublishNegManagerProcessMetrics publishes collected metrics for the neg manager loops
+func PublishNegManagerProcessMetrics(process string, err error, start time.Time) {
+	result := getResult(err)
+	ManagerProcessLatency.WithLabelValues(process, result).Observe(time.Since(start).Seconds())
+}
+
+// PublishNegInitializationMetrics publishes collected metrics for time from request to initialization of NEG
+func PublishNegInitializationMetrics(latency time.Duration) {
+	InitializationLatency.Observe(latency.Seconds())
+}
+
+func getResult(err error) string {
 	if err != nil {
-		result = resultError
+		return resultError
 	}
-	SyncLatency.WithLabelValues(negName, string(syncType), result).Observe(time.Since(start).Seconds())
+	return resultSuccess
 }

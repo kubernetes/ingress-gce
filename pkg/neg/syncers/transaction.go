@@ -19,6 +19,7 @@ package syncers
 import (
 	"context"
 	"sync"
+	"time"
 
 	"fmt"
 
@@ -33,6 +34,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
@@ -137,10 +139,13 @@ func (s *transactionSyncer) sync() error {
 func (s *transactionSyncer) syncInternal() error {
 	s.syncLock.Lock()
 	defer s.syncLock.Unlock()
+
 	// NOTE: Error will be used to update the status on corresponding Neg CR if Neg CRD is enabled
 	// Please reuse and set err before returning
 	var err error
 	defer s.updateStatus(err)
+	start := time.Now()
+	defer metrics.PublishNegSyncMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), err, start)
 
 	if s.needInit {
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
@@ -320,6 +325,7 @@ func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointM
 // If error occurs or any transaction entry requires reconciliation, it will trigger resync
 func (s *transactionSyncer) operationInternal(operation transactionOp, zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
 	var err error
+	start := time.Now()
 	networkEndpoints := []*composite.NetworkEndpoint{}
 	for _, ne := range networkEndpointMap {
 		networkEndpoints = append(networkEndpoints, ne)
@@ -340,6 +346,7 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 
 	// WARNING: commitTransaction must be called at last for analyzing the operation result
 	s.commitTransaction(err, networkEndpointMap)
+	metrics.PublishNegOperationMetrics(operation.String(), string(s.NegSyncerKey.NegType), string(s.NegSyncerKey.GetAPIVersion()), err, len(networkEndpointMap), start)
 }
 
 func (s *transactionSyncer) recordEvent(eventType, reason, eventDesc string) {
@@ -484,7 +491,9 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 		neg.Status.NetworkEndpointGroups = negObjRefs
 	}
 
-	ensureCondition(neg, getInitializedCondition(utilerrors.NewAggregate(errList)))
+	initializedCondition := getInitializedCondition(utilerrors.NewAggregate(errList))
+	finalCondition := ensureCondition(neg, initializedCondition)
+	metrics.PublishNegInitializationMetrics(finalCondition.LastTransitionTime.Sub(origNeg.GetCreationTimestamp().Time))
 
 	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
@@ -546,11 +555,11 @@ func patchNegStatus(svcNegClient svcnegclient.Interface, oldStatus, newStatus ne
 }
 
 // ensureCondition will update the condition on the neg object if necessary
-func ensureCondition(neg *negv1beta1.ServiceNetworkEndpointGroup, expectedCondition negv1beta1.Condition) {
+func ensureCondition(neg *negv1beta1.ServiceNetworkEndpointGroup, expectedCondition negv1beta1.Condition) negv1beta1.Condition {
 	condition, index, exists := findCondition(neg.Status.Conditions, expectedCondition.Type)
 	if !exists {
 		neg.Status.Conditions = append(neg.Status.Conditions, expectedCondition)
-		return
+		return negv1beta1.Condition{}
 	}
 
 	if condition.Status == expectedCondition.Status {
@@ -558,6 +567,7 @@ func ensureCondition(neg *negv1beta1.ServiceNetworkEndpointGroup, expectedCondit
 	}
 
 	neg.Status.Conditions[index] = expectedCondition
+	return expectedCondition
 }
 
 // getSyncedCondition returns the expected synced condition based on given error
