@@ -17,16 +17,19 @@ limitations under the License.
 package l4
 
 import (
+	context2 "context"
 	"fmt"
 	"reflect"
 	"sync"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
@@ -90,8 +93,10 @@ func NewController(ctx *context.ControllerContext, stopCh chan struct{}) *L4Cont
 			curSvc := cur.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(curSvc.Namespace, curSvc.Name)
 			oldSvc := old.(*v1.Service)
-			if l4c.needsUpdate(curSvc, oldSvc) || needsDeletion(curSvc) {
-				klog.V(3).Infof("Service %v changed, enqueuing", svcKey)
+			needsUpdate := l4c.needsUpdate(oldSvc, curSvc)
+			needsDeletion := needsDeletion(curSvc)
+			if needsUpdate || needsDeletion {
+				klog.V(3).Infof("Service %v changed, needsUpdate %v, needsDeletion %v, enqueuing", svcKey, needsUpdate, needsDeletion)
 				l4c.svcQueue.Enqueue(curSvc)
 				return
 			}
@@ -153,7 +158,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 	}
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
-	status, err := l4.EnsureInternalLoadBalancer(nodeNames, service, &serviceMetricsState)
+	status, annotationsMap, err := l4.EnsureInternalLoadBalancer(nodeNames, service, &serviceMetricsState)
 	if err != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Error syncing load balancer: %v", err)
@@ -178,6 +183,11 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 	}
 	l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
 		"Successfully ensured load balancer resources")
+	if err = l4c.updateAnnotations(service.Name, service.Namespace, l4.MergeAnnotations(service, annotationsMap)); err != nil {
+		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
+			"Failed to update annotations for load balancer, err: %v", err)
+		return fmt.Errorf("failed to set resource annotations, err: %v", err)
+	}
 	return nil
 }
 
@@ -188,10 +198,16 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) err
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed", "Error deleting load balancer: %v", err)
 		return err
 	}
+	// Also remove any ILB annotations from the service metadata
+	if err := l4c.updateAnnotations(svc.Name, svc.Namespace, l4.MergeAnnotations(svc, nil)); err != nil {
+		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
+			"Error resetting resource annotations for load balancer: %v", err)
+		return fmt.Errorf("failed to reset resource annotations, err: %v", err)
+	}
 	if err := common.EnsureDeleteServiceFinalizer(svc, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error removing finalizer from load balancer: %v", err)
-		return err
+		return fmt.Errorf("failed to remove ILB finalizer, err: %v", err)
 	}
 
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
@@ -202,7 +218,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) err
 	if err := l4c.updateServiceStatus(svc, &v1.LoadBalancerStatus{}); utils.IgnoreHTTPNotFound(err) != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error reseting load balancer status to empty: %v", err)
-		return err
+		return fmt.Errorf("failed to reset ILB status, err: %v", err)
 	}
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletedLoadBalancer", "Deleted load balancer")
 	return nil
@@ -237,7 +253,16 @@ func (l4c *L4Controller) sync(key string) error {
 		klog.V(2).Infof("Deleting ILB resources for service %s managed by L4 controller", key)
 		return l4c.processServiceDeletion(key, svc)
 	}
-	return l4c.processServiceCreateOrUpdate(key, svc)
+	// Check again here, to avoid time-of check, time-of-use race. A service deletion can get queued multiple times
+	// as annotations change and a service to be deleted can incorrectly get requeued here. This can happen if svc had
+	// finalizer when enqueuing, but when listing it here, the finalizer already got removed. It will skip needsDeletion
+	// and queue-up here.
+	if wantsILB, _ := annotations.WantsL4ILB(svc); wantsILB {
+		klog.V(2).Infof("Ensuring ILB resources for service %s managed by L4 controller", key)
+		return l4c.processServiceCreateOrUpdate(key, svc)
+	}
+	klog.V(3).Infof("Ignoring sync of service %s, neither delete nor ensure needed.", key)
+	return nil
 }
 
 func (l4c *L4Controller) updateServiceStatus(svc *v1.Service, newStatus *v1.LoadBalancerStatus) error {
@@ -246,12 +271,35 @@ func (l4c *L4Controller) updateServiceStatus(svc *v1.Service, newStatus *v1.Load
 	}
 	updated := svc.DeepCopy()
 	updated.Status.LoadBalancer = *newStatus
-	if _, err := utils.PatchService(l4c.ctx.KubeClient.CoreV1(), svc, updated); err != nil {
+	if _, err := helpers.PatchService(l4c.ctx.KubeClient.CoreV1(), svc, updated); err != nil {
 		return err
 	}
 	return nil
 }
 
+func (l4c *L4Controller) updateServiceMetadata(svc *v1.Service, newObjectMetadata metav1.ObjectMeta) error {
+	updated := svc.DeepCopy()
+	updated.ObjectMeta = newObjectMetadata
+	if _, err := helpers.PatchService(l4c.ctx.KubeClient.CoreV1(), svc, updated); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (l4c *L4Controller) updateAnnotations(name, namespace string, annotations map[string]string) error {
+	svcClient := l4c.ctx.KubeClient.CoreV1().Services(namespace)
+	currSvc, err := svcClient.Get(context2.TODO(), name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(currSvc.Annotations, annotations) {
+		klog.V(3).Infof("Updating annotations of service %v/%v", namespace, name)
+		updatedObjectMeta := currSvc.ObjectMeta.DeepCopy()
+		updatedObjectMeta.Annotations = annotations
+		return l4c.updateServiceMetadata(currSvc, *updatedObjectMeta)
+	}
+	return nil
+}
 func needsDeletion(svc *v1.Service) bool {
 	if !common.HasGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) {
 		return false
@@ -265,12 +313,17 @@ func needsDeletion(svc *v1.Service) bool {
 
 // needsUpdate checks if load balancer needs to be updated due to change in attributes.
 func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Service) bool {
-	oldSvcWantsILB, _ := annotations.WantsL4ILB(oldService)
-	newSvcWantsILB, _ := annotations.WantsL4ILB(newService)
+	oldSvcWantsILB, oldType := annotations.WantsL4ILB(oldService)
+	newSvcWantsILB, newType := annotations.WantsL4ILB(newService)
 	recorder := l4c.ctx.Recorder(oldService.Namespace)
 	if oldSvcWantsILB != newSvcWantsILB {
-		recorder.Eventf(newService, v1.EventTypeNormal, "Type", "%v -> %v", oldService.Spec.Type, newService.Spec.Type)
+		recorder.Eventf(newService, v1.EventTypeNormal, "Type", "%v -> %v", oldType, newType)
 		return true
+	}
+
+	if !newSvcWantsILB && !oldSvcWantsILB {
+		// Ignore any other changes if both the previous and new service do not need ILB.
+		return false
 	}
 
 	if !reflect.DeepEqual(oldService.Spec.LoadBalancerSourceRanges, newService.Spec.LoadBalancerSourceRanges) {
@@ -280,10 +333,14 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 	}
 
 	if !portsEqualForLBService(oldService, newService) || oldService.Spec.SessionAffinity != newService.Spec.SessionAffinity {
+		recorder.Eventf(newService, v1.EventTypeNormal, "Ports/SessionAffinity", "Ports %v, SessionAffinity %v -> Ports %v, SessionAffinity  %v",
+			oldService.Spec.Ports, oldService.Spec.SessionAffinity, newService.Spec.Ports, newService.Spec.SessionAffinity)
 		return true
 	}
 
 	if !reflect.DeepEqual(oldService.Spec.SessionAffinityConfig, newService.Spec.SessionAffinityConfig) {
+		recorder.Eventf(newService, v1.EventTypeNormal, "SessionAffinityConfig", "%v -> %v",
+			oldService.Spec.SessionAffinityConfig, newService.Spec.SessionAffinityConfig)
 		return true
 	}
 	if oldService.Spec.LoadBalancerIP != newService.Spec.LoadBalancerIP {
@@ -304,8 +361,10 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 		}
 	}
 	if !reflect.DeepEqual(oldService.Annotations, newService.Annotations) {
-		// Ignore update if only neg annotation changed, this is added by the neg controller.
-		if !annotations.OnlyNEGStatusChanged(oldService, newService) {
+		// Ignore update if only neg or ilb resources annotations changed, these are added by the neg/l4 controller.
+		if !annotations.OnlyStatusAnnotationsChanged(oldService, newService) {
+			recorder.Eventf(newService, v1.EventTypeNormal, "Annotations", "%v -> %v",
+				oldService.Annotations, newService.Annotations)
 			return true
 		}
 	}
