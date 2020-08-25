@@ -109,7 +109,7 @@ func (l *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, 
 				currentIP, _ := l.cloud.GetGlobalAddress(managedStaticIPName)
 				if currentIP != nil {
 					klog.V(3).Infof("Ingress managed static IP %s(%s) exists, using it to create forwarding rule %s", currentIPName, currentIP.Address, name)
-					ip = currentIP.Address
+					fr.IPAddress = currentIP.Address
 				}
 			}
 		}
