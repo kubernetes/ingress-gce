@@ -54,7 +54,7 @@ const (
 	// GCE static ip for its forwarding rules. If specified, the Ingress controller
 	// reserves and assigns the static ip by this name to the forwarding rules of the
 	// given ingress. It differs from StaticIPNameKey, since the controller does manage
-	// this ip.
+	// this ip. Do not use the same value for both this annotation and GlobalStaticIPNameKey.
 	ReserveGlobalStaticIPNameKey = "kubernetes.io/ingress.reserve-global-static-ip-name"
 
 	// PreSharedCertKey represents the specific pre-shared SSL
@@ -126,6 +126,7 @@ func FromIngress(ing *v1beta1.Ingress) *Ingress {
 	return &Ingress{ing.Annotations}
 }
 
+// ReserveGlobalStaticIPName returns the value for the ReserveGlobalStaticIPNameKey annotation.
 func (ing *Ingress) ReserveGlobalStaticIPName() string {
 	val, ok := ing.v[ReserveGlobalStaticIPNameKey]
 	if !ok {
