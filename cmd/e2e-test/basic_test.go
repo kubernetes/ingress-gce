@@ -120,14 +120,14 @@ func TestBasicStaticIP(t *testing.T) {
 		}
 
 		addrName := fmt.Sprintf("test-addr-%s", s.Namespace)
-		if err := e2e.NewGCPAddress(s, addrName); err != nil {
+		if err := e2e.NewGCPAddress(s, addrName, ""); err != nil {
 			t.Fatalf("e2e.NewGCPAddress(..., %s) = %v, want nil", addrName, err)
 		}
-		defer e2e.DeleteGCPAddress(s, addrName)
+		defer e2e.DeleteGCPAddress(s, addrName, "")
 
 		testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 			DefaultBackend("service-1", intstr.FromInt(80)).
-			AddStaticIP(addrName).
+			AddStaticIP(addrName, false).
 			Build()
 		crud := adapter.IngressCRUD{C: Framework.Clientset}
 		testIng, err = crud.Create(testIng)
