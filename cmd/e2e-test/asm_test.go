@@ -162,8 +162,7 @@ func TestASMServiceAndDestinationRule(t *testing.T) {
 					}
 				} else {
 					if negName, ok := negStatus.NetworkEndpointGroups[strconv.Itoa(int(porterPort))]; ok {
-						// No backend pod exists, so the NEG has 0 endpoint.
-						if err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, negStatus.Zones, false, 0); err != nil {
+						if err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, negStatus.Zones, false, 6); err != nil {
 							t.Errorf("Failed to wait Negs, error: %s", err)
 						}
 					} else {
