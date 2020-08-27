@@ -17,13 +17,13 @@ limitations under the License.
 package firewalls
 
 import (
-	"k8s.io/kubernetes/pkg/util/slice"
 	"strings"
 	"testing"
 
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/kubernetes/pkg/util/slice"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 

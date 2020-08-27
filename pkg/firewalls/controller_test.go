@@ -21,10 +21,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
+	v1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	test "k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -101,5 +103,41 @@ func TestFirewallCreateDelete(t *testing.T) {
 	_, err = fwc.ctx.Cloud.GetFirewall(ruleName)
 	if !utils.IsNotFoundError(err) {
 		t.Fatalf("cloud.GetFirewall(%v) = _, %v, want _, 404 error", ruleName, err)
+	}
+}
+
+func TestGetCustomHealthCheckPorts(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		desc     string
+		svcPorts []utils.ServicePort
+		expect   []string
+	}{
+		{
+			desc:     "One service port with custom port",
+			svcPorts: []utils.ServicePort{utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}}},
+			expect:   []string{"8000"},
+		},
+		{
+			desc: "Two service ports with custom port",
+			svcPorts: []utils.ServicePort{utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}},
+				utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(9000)}}}}},
+			expect: []string{"8000", "9000"},
+		},
+		{
+			desc:   "No service ports",
+			expect: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			fwc := newFirewallController()
+			result := fwc.getCustomHealthCheckPorts(tc.svcPorts)
+			if diff := cmp.Diff(tc.expect, result); diff != "" {
+				t.Errorf("unexpected diff of ports (-want +got): \n%s", diff)
+			}
+		})
 	}
 }
