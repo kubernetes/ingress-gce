@@ -84,7 +84,7 @@ func (l *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, 
 	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
 	tr := translator.NewTranslator(isL7ILB, l.namer)
 	env := &translator.Env{VIP: ip, Network: l.cloud.NetworkURL(), Subnetwork: l.cloud.SubnetworkURL()}
-	fr := tr.ToCompositeForwardingRule(env, protocol, version, proxyLink, description)
+	fr := tr.ToCompositeForwardingRule(env, protocol, version, proxyLink, description, l.runtimeInfo.StaticIPSubnet)
 
 	existing, _ = composite.GetForwardingRule(l.cloud, key, version)
 	if existing != nil && (fr.IPAddress != "" && existing.IPAddress != fr.IPAddress || existing.PortRange != fr.PortRange) {
@@ -180,6 +180,7 @@ func (l *L7) getEffectiveIP() (string, bool, error) {
 			return "", false, fmt.Errorf("the given static IP name %v doesn't translate to an existing static IP.",
 				l.runtimeInfo.StaticIPName)
 		} else {
+			l.runtimeInfo.StaticIPSubnet = ip.Subnetwork
 			return ip.Address, false, nil
 		}
 	}
