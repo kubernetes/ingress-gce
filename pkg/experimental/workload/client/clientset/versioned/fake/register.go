@@ -24,7 +24,7 @@ import (
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	networkingv1alpha1 "k8s.io/ingress-gce/pkg/apis/workload/v1alpha1"
+	networkingv1alpha1 "k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1"
 )
 
 var scheme = runtime.NewScheme()

@@ -30,7 +30,7 @@ go run ${SCRIPT_ROOT}/pkg/composite/gen/main.go
 echo "Performing code generation for Workload CRD"
 ${CODEGEN_PKG}/generate-groups.sh \
   "deepcopy,client,informer,lister" \
-  k8s.io/ingress-gce/pkg/experimental/workload/client k8s.io/ingress-gce/pkg/apis \
+  k8s.io/ingress-gce/pkg/experimental/workload/client k8s.io/ingress-gce/pkg/experimental/apis \
   "workload:v1alpha1" \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
 
@@ -38,7 +38,7 @@ echo "Generating openapi for Workload v1beta1"
 go install ${OPENAPI_PKG}/cmd/openapi-gen
 ${GOPATH}/bin/openapi-gen \
   --output-file-base zz_generated.openapi \
-  --input-dirs k8s.io/ingress-gce/pkg/apis/workload/v1alpha1 \
-  --output-package k8s.io/ingress-gce/pkg/apis/workload/v1alpha1 \
+  --input-dirs k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1 \
+  --output-package k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1 \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
 

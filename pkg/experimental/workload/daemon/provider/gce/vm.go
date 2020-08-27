@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package app
+package gce
 
 import (
 	"context"
@@ -30,18 +30,20 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
-	"k8s.io/ingress-gce/cmd/workload-daemon/metadata"
+	"k8s.io/ingress-gce/pkg/experimental/metadata"
+	daemonutils "k8s.io/ingress-gce/pkg/experimental/workload/daemon/utils"
 	"k8s.io/klog"
 )
 
-// CloudVM represents a VM instance running on Google Cloud.
+// VM represents a VM instance running on Google Cloud.
 // It uses the metadata server to fetch all required information.
-type CloudVM struct {
+type VM struct {
 	instanceName string
 	hostname     string
 	internalIP   string
 	externalIP   string
 	projectID    string
+	region       string
 	zone         string
 
 	// The following fields are used to access Kubernetes cluster and create resources.
@@ -72,28 +74,33 @@ type gsaAccessToken struct {
 }
 
 // Name is the name of the workload
-func (vm *CloudVM) Name() string {
-	return vm.instanceName
+func (vm *VM) Name() (string, bool) {
+	return vm.instanceName, true
 }
 
 // Hostname is the hostname or DNS address of the workload
-func (vm *CloudVM) Hostname() string {
-	return vm.hostname
+func (vm *VM) Hostname() (string, bool) {
+	return vm.hostname, true
 }
 
 // IP is the IP used to access this workload from the cluster
-func (vm *CloudVM) IP() string {
-	return vm.internalIP
+func (vm *VM) IP() (string, bool) {
+	return vm.internalIP, true
 }
 
 // Labels are one or more labels associated with the workload
-func (vm *CloudVM) Labels() map[string]string {
+func (vm *VM) Labels() map[string]string {
 	return vm.vmLabels
 }
 
-// Locality associated with the endpoint. A locality corresponds to a failure domain.
-func (vm *CloudVM) Locality() string {
-	return vm.zone
+// Region associated with the endpoint.
+func (vm *VM) Region() (string, bool) {
+	return vm.region, true
+}
+
+// Zone associated with the endpoint.
+func (vm *VM) Zone() (string, bool) {
+	return vm.zone, true
 }
 
 func decodeGsaAccessToken(jsonData string) (token gsaAccessToken, err error) {
@@ -107,20 +114,20 @@ func decodeGsaAccessToken(jsonData string) (token gsaAccessToken, err error) {
 }
 
 // Credentials contain the credentials used for the daemon to access the cluster
-func (vm *CloudVM) Credentials() (ClusterCredentials, error) {
+func (vm *VM) Credentials() (daemonutils.ClusterCredentials, error) {
 	jsonData, err := metadata.Get("instance/service-accounts/default/token")
 	if err != nil {
 		klog.Errorf("failed to get service account access token: %+v", err)
-		return ClusterCredentials{}, err
+		return daemonutils.ClusterCredentials{}, err
 	}
 
 	token, err := decodeGsaAccessToken(jsonData)
 	if err != nil {
 		klog.Errorf("failed to decode service account access token: %+v", err)
-		return ClusterCredentials{}, err
+		return daemonutils.ClusterCredentials{}, err
 	}
 	expiryTime := time.Now().Add(time.Duration(token.ExpiresIn) * time.Second)
-	ret := ClusterCredentials{
+	ret := daemonutils.ClusterCredentials{
 		AccessToken: token.AccessToken,
 		TokenExpiry: expiryTime.UTC().Format(time.RFC3339),
 	}
@@ -128,8 +135,8 @@ func (vm *CloudVM) Credentials() (ClusterCredentials, error) {
 }
 
 // getCluster returns the cluster info
-func (vm *CloudVM) getCluster() (cluster *gkev1.Cluster, err error) {
-	// These fields should be fetched in NewCloudVM(), but the error info was ignored,
+func (vm *VM) getCluster() (cluster *gkev1.Cluster, err error) {
+	// These fields should be fetched in NewVM(), but the error info was ignored,
 	// as they are optional fields when "~/.kube/config" is used.
 	// Therefore, if they are not present, try to fetch again to return the exact error.
 	if vm.clusterName == "" {
@@ -174,7 +181,7 @@ func (vm *CloudVM) getCluster() (cluster *gkev1.Cluster, err error) {
 // - Use ~/.kube/config file.
 // - Use Kubernetes service account (KSA) specified by metadata.
 // - Use gcloud IAM service account (GSA) associated with this instance.
-func (vm *CloudVM) KubeConfig() (config *rest.Config, err error) {
+func (vm *VM) KubeConfig() (config *rest.Config, err error) {
 	// CASE1: If there is a kubeConfig file, use that file. E.g. testing on a cloudtop.
 	configFile := filepath.Join(homedir.HomeDir(), ".kube", "config")
 	config, err = clientcmd.BuildConfigFromFlags("", configFile)
@@ -196,11 +203,12 @@ func (vm *CloudVM) KubeConfig() (config *rest.Config, err error) {
 	var kubeConfig []byte
 	if vm.ksaName != "" && vm.ksaToken != "" {
 		// CASE2: If there is a KSA specified as metadata, use it
-		kubeConfig = GenKubeConfigForKSA(cluster.MasterAuth.ClusterCaCertificate, cluster.Endpoint,
+		kubeConfig = daemonutils.GenKubeConfigForKSA(cluster.MasterAuth.ClusterCaCertificate, cluster.Endpoint,
 			cluster.Name, vm.ksaName, vm.ksaToken)
 	} else {
 		// CASE3: Use gcloud SA to authenticate as a Kubernetes user
-		kubeConfig = GenKubeConfigForUser(cluster.MasterAuth.ClusterCaCertificate, cluster.Endpoint, cluster.Name, "gcp")
+		kubeConfig = daemonutils.GenKubeConfigForUser(cluster.MasterAuth.ClusterCaCertificate, cluster.Endpoint,
+			cluster.Name, "gcp")
 	}
 
 	config, err = clientcmd.RESTConfigFromKubeConfig([]byte(kubeConfig))
@@ -216,7 +224,7 @@ func getAttrOrPanic(getter func() (string, error), name string) string {
 	ret, err := getter()
 	if err != nil {
 		klog.Errorf("failed to get %s from metadata server: %+v", name, err)
-		// This will be recovered by the NewCloudVM function.
+		// This will be recovered by the NewVM function.
 		panic(err)
 	}
 	return ret
@@ -230,8 +238,8 @@ func getOptionalMetadata(attr string) string {
 	return ret
 }
 
-// NewCloudVM fetches all data needed from the metadata server to create CloudVM
-func NewCloudVM() (vm *CloudVM, err error) {
+// NewVM fetches all data needed from the metadata server to create VM
+func NewVM() (vm *VM, err error) {
 	// Catch the error in getAttrOrPanic
 	defer func() {
 		e := recover()
@@ -239,7 +247,7 @@ func NewCloudVM() (vm *CloudVM, err error) {
 			err = e.(error)
 		}
 	}()
-	vm = &CloudVM{
+	vm = &VM{
 		// Fetch basic info that every GCP Instance has
 		instanceName: getAttrOrPanic(metadata.InstanceName, "InstanceName"),
 		hostname:     getAttrOrPanic(metadata.Hostname, "Hostname"),
@@ -256,6 +264,13 @@ func NewCloudVM() (vm *CloudVM, err error) {
 		ksaToken: getOptionalMetadata("k8s-sa-token"),
 		// Labels to use in the workload resource
 		vmLabels: make(map[string]string),
+	}
+
+	lastDash := strings.LastIndex(vm.zone, "-")
+	if lastDash >= 0 {
+		vm.region = vm.zone[:lastDash]
+	} else {
+		vm.region = ""
 	}
 
 	const (

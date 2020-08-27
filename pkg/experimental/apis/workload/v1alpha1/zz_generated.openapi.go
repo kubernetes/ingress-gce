@@ -29,13 +29,13 @@ import (
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
-		"k8s.io/ingress-gce/pkg/apis/workload/v1alpha1.Workload":       schema_pkg_apis_workload_v1alpha1_Workload(ref),
-		"k8s.io/ingress-gce/pkg/apis/workload/v1alpha1.WorkloadSpec":   schema_pkg_apis_workload_v1alpha1_WorkloadSpec(ref),
-		"k8s.io/ingress-gce/pkg/apis/workload/v1alpha1.WorkloadStatus": schema_pkg_apis_workload_v1alpha1_WorkloadStatus(ref),
+		"k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.Workload":       schema_experimental_apis_workload_v1alpha1_Workload(ref),
+		"k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.WorkloadSpec":   schema_experimental_apis_workload_v1alpha1_WorkloadSpec(ref),
+		"k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.WorkloadStatus": schema_experimental_apis_workload_v1alpha1_WorkloadStatus(ref),
 	}
 }
 
-func schema_pkg_apis_workload_v1alpha1_Workload(ref common.ReferenceCallback) common.OpenAPIDefinition {
+func schema_experimental_apis_workload_v1alpha1_Workload(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
@@ -62,23 +62,23 @@ func schema_pkg_apis_workload_v1alpha1_Workload(ref common.ReferenceCallback) co
 					},
 					"spec": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("k8s.io/ingress-gce/pkg/apis/workload/v1alpha1.WorkloadSpec"),
+							Ref: ref("k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.WorkloadSpec"),
 						},
 					},
 					"status": {
 						SchemaProps: spec.SchemaProps{
-							Ref: ref("k8s.io/ingress-gce/pkg/apis/workload/v1alpha1.WorkloadStatus"),
+							Ref: ref("k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.WorkloadStatus"),
 						},
 					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta", "k8s.io/ingress-gce/pkg/apis/workload/v1alpha1.WorkloadSpec", "k8s.io/ingress-gce/pkg/apis/workload/v1alpha1.WorkloadStatus"},
+			"k8s.io/apimachinery/pkg/apis/meta/v1.ObjectMeta", "k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.WorkloadSpec", "k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.WorkloadStatus"},
 	}
 }
 
-func schema_pkg_apis_workload_v1alpha1_WorkloadSpec(ref common.ReferenceCallback) common.OpenAPIDefinition {
+func schema_experimental_apis_workload_v1alpha1_WorkloadSpec(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
@@ -116,7 +116,7 @@ func schema_pkg_apis_workload_v1alpha1_WorkloadSpec(ref common.ReferenceCallback
 	}
 }
 
-func schema_pkg_apis_workload_v1alpha1_WorkloadStatus(ref common.ReferenceCallback) common.OpenAPIDefinition {
+func schema_experimental_apis_workload_v1alpha1_WorkloadStatus(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{

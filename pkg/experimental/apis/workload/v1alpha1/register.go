@@ -20,7 +20,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/ingress-gce/pkg/apis/workload"
+	"k8s.io/ingress-gce/pkg/experimental/apis/workload"
 )
 
 // SchemeGroupVersion is group version used to register these objects

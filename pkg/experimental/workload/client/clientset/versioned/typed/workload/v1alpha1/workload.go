@@ -26,7 +26,7 @@ import (
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	rest "k8s.io/client-go/rest"
-	v1alpha1 "k8s.io/ingress-gce/pkg/apis/workload/v1alpha1"
+	v1alpha1 "k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1"
 	scheme "k8s.io/ingress-gce/pkg/experimental/workload/client/clientset/versioned/scheme"
 )
 

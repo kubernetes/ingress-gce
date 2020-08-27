@@ -14,22 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package app
+package utils
 
 import "k8s.io/client-go/rest"
 
 // WorkloadInfo represents basic information of this workload
 type WorkloadInfo interface {
 	// Name is the name of the workload
-	Name() string
+	Name() (string, bool)
 	// Hostname is the hostname or DNS address of the workload
-	Hostname() string
+	Hostname() (string, bool)
 	// IP is the IP used to access this workload from the cluster
-	IP() string
+	IP() (string, bool)
 	// Labels are one or more labels associated with the workload
 	Labels() map[string]string
-	// Locality associated with the endpoint. A locality corresponds to a failure domain.
-	Locality() string
+	// Region associated with the endpoint.
+	Region() (string, bool)
+	// Zone associated with the endpoint.
+	Zone() (string, bool)
 }
 
 // ConnectionHelper provides the identity and config used to connect to the cluster

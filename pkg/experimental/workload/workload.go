@@ -17,9 +17,9 @@ limitations under the License.
 package workload
 
 import (
-	apisworkload "k8s.io/ingress-gce/pkg/apis/workload"
-	workloadv1a1 "k8s.io/ingress-gce/pkg/apis/workload/v1alpha1"
 	"k8s.io/ingress-gce/pkg/crd"
+	apisworkload "k8s.io/ingress-gce/pkg/experimental/apis/workload"
+	workloadv1a1 "k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1"
 )
 
 func CRDMeta() *crd.CRDMeta {

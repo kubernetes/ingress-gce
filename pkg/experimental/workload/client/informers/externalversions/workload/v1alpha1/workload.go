@@ -26,7 +26,7 @@ import (
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	watch "k8s.io/apimachinery/pkg/watch"
 	cache "k8s.io/client-go/tools/cache"
-	workloadv1alpha1 "k8s.io/ingress-gce/pkg/apis/workload/v1alpha1"
+	workloadv1alpha1 "k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1"
 	versioned "k8s.io/ingress-gce/pkg/experimental/workload/client/clientset/versioned"
 	internalinterfaces "k8s.io/ingress-gce/pkg/experimental/workload/client/informers/externalversions/internalinterfaces"
 	v1alpha1 "k8s.io/ingress-gce/pkg/experimental/workload/client/listers/workload/v1alpha1"

@@ -17,6 +17,11 @@
 //
 // This package is a wrapper around the GCE metadata service,
 // as documented at https://developers.google.com/compute/docs/metadata.
+
+// TODO: this is copied from "cloud.google.com/go/compute/metadata"
+// Because we want to use metadata server without depending on the module cloud.google.com/go.
+// Need to consider how to handle this when writing up an official version.
+
 package metadata // import "cloud.google.com/go/compute/metadata"
 
 import (

@@ -27,7 +27,7 @@ import (
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
-	v1alpha1 "k8s.io/ingress-gce/pkg/apis/workload/v1alpha1"
+	v1alpha1 "k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1"
 )
 
 // FakeWorkloads implements WorkloadInterface

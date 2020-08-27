@@ -34,7 +34,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	workloadv1a1 "k8s.io/ingress-gce/pkg/apis/workload/v1alpha1"
+	workloadv1a1 "k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1"
 	workloadclient "k8s.io/ingress-gce/pkg/experimental/workload/client/clientset/versioned"
 	informerworkload "k8s.io/ingress-gce/pkg/experimental/workload/client/informers/externalversions/workload/v1alpha1"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -279,21 +279,13 @@ func (c *Controller) processService(key string) error {
 	// To simplify the complexity, assume there is only one slice managed by this controller.
 	// TODO: fix this
 	// SA: https://github.com/kubernetes/kubernetes/blob/bdb99c8e0954c6b2d4c40233ded94455a343af73/pkg/controller/endpointslice/reconciler.go#L58:22
-	wls := c.workloadLister.List()
 	subsets := []discovery.Endpoint{}
-	for _, obj := range wls {
-		workload := obj.(*workloadv1a1.Workload)
-		if workload.Namespace != namespace {
-			continue
-		}
-		if !wlSelector.Matches(labels.Set(workload.Labels)) {
-			continue
-		}
-
+	listMachedWorkload(c.workloadLister, namespace, wlSelector, func(workload *workloadv1a1.Workload) {
 		subsets = append(subsets, workloadToEndpoint(workload, service))
-	}
+	})
 
 	// Create or update EndpointSlice
+	// WARNING: Change this name scheme may break endpointslices created by old versions
 	sliceName := name + "-" + controllerName
 	obj, exists, err = c.endpointSliceLister.GetByKey(namespace + "/" + sliceName)
 	var curEs *discovery.EndpointSlice
@@ -390,4 +382,24 @@ func getEndpointPortsFromServicePorts(svcPorts []corev1.ServicePort) []discovery
 		})
 	}
 	return ret
+}
+
+func listMachedWorkload(
+	lister cache.Indexer,
+	namespace string,
+	selector labels.Selector,
+	callback func(*workloadv1a1.Workload),
+) {
+	wls := lister.List()
+	for _, obj := range wls {
+		workload := obj.(*workloadv1a1.Workload)
+		if workload.Namespace != namespace {
+			continue
+		}
+		if !selector.Matches(labels.Set(workload.Labels)) {
+			continue
+		}
+
+		callback(workload)
+	}
 }
