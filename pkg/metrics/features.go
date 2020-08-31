@@ -89,7 +89,8 @@ const (
 	customHealthChecks        = feature("CustomHealthChecks")
 
 	// FrontendConfig Features
-	sslPolicy = feature("SSLPolicy")
+	sslPolicy      = feature("SSLPolicy")
+	httpsRedirects = feature("HTTPSRedirects")
 
 	standaloneNeg  = feature("StandaloneNEG")
 	ingressNeg     = feature("IngressNEG")
@@ -216,8 +217,13 @@ func featuresForIngress(ing *v1beta1.Ingress, fc *frontendconfigv1beta1.Frontend
 	}
 
 	// FrontendConfig Features
-	if fc != nil && fc.Spec.SslPolicy != nil && *fc.Spec.SslPolicy != "" {
-		features = append(features, sslPolicy)
+	if fc != nil {
+		if fc.Spec.SslPolicy != nil && *fc.Spec.SslPolicy != "" {
+			features = append(features, sslPolicy)
+		}
+		if fc.Spec.RedirectToHttps != nil && fc.Spec.RedirectToHttps.Enabled {
+			features = append(features, httpsRedirects)
+		}
 	}
 
 	klog.V(4).Infof("Features for ingress %s: %v", ingKey, features)
