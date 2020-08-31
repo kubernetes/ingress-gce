@@ -226,9 +226,11 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service,
 	if err != nil {
 		klog.Errorf("Failed to lookup existing backend service, ignoring err: %v", err)
 	}
+	existingFR := l.getForwardingRule(l.GetFRName(), meta.VersionGA)
 	if existingBS != nil && existingBS.Protocol != string(protocol) {
 		klog.Infof("Protocol changed from %q to %q for service %s", existingBS.Protocol, string(protocol), l.NamespacedName)
 		// Delete forwarding rule if it exists
+		existingFR = l.getForwardingRule(l.getFRNameWithProtocol(existingBS.Protocol), meta.VersionGA)
 		l.deleteForwardingRule(l.getFRNameWithProtocol(existingBS.Protocol), meta.VersionGA)
 	}
 
@@ -240,7 +242,7 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service,
 	}
 
 	// create fr rule
-	fr, err := l.ensureForwardingRule(l.GetFRName(), bs.SelfLink, options)
+	fr, err := l.ensureForwardingRule(l.GetFRName(), bs.SelfLink, options, existingFR)
 	if err != nil {
 		klog.Errorf("EnsureInternalLoadBalancer: Failed to create forwarding rule - %v", err)
 		return nil, err
