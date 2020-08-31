@@ -37,13 +37,13 @@ func TestASMConfig(t *testing.T) {
 				desc:                "Invalid ConfigMap value equals to disable",
 				configMap:           map[string]string{"enable-asm": "INVALID"},
 				wantASMReady:        false,
-				wantConfigMapEvents: []string{"The map provided a unvalid value for field: enable-asm, value: INVALID"},
+				wantConfigMapEvents: []string{"The map provided a invalid value for field: enable-asm, value: INVALID"},
 			},
 			{
 				desc:                "Invalid ConfigMap filed equals to disable",
-				configMap:           map[string]string{"enable-unknow-feild": "INVALID1"},
+				configMap:           map[string]string{"enable-unknow-field": "INVALID1"},
 				wantASMReady:        false,
-				wantConfigMapEvents: []string{"The map contains a unknown key-value pair: enable-unknow-feild:INVALID1"},
+				wantConfigMapEvents: []string{"The map contains a unknown key-value pair: enable-unknow-field:INVALID1"},
 			},
 			{
 				desc:         "Set enable-asm to true should restart the controller",
@@ -56,7 +56,7 @@ func TestASMConfig(t *testing.T) {
 				desc:         "Invalid ConfigMap value equals to disable",
 				configMap:    map[string]string{"enable-asm": "INVALID2"},
 				wantASMReady: false,
-				wantConfigMapEvents: []string{"The map provided a unvalid value for field: enable-asm, value: INVALID2",
+				wantConfigMapEvents: []string{"The map provided a invalid value for field: enable-asm, value: INVALID2",
 					"ConfigMapConfigController: Get a update on the ConfigMapConfig, Restarting Ingress controller"},
 			},
 		} {
@@ -190,7 +190,7 @@ func TestASMServiceAndDestinationRule(t *testing.T) {
 				t.Run(tc.desc, func(t *testing.T) {
 					sandbox := s
 					drHost := svcName
-					// crossNamespace will test DestinationRules that refering a serive located in a different namespace
+					// crossNamespace will test DestinationRules that refering a service located in a different namespace
 					if tc.crossNamespace {
 						sandbox = sSkip
 						drHost = fmt.Sprintf("%s.%s.svc.cluster.local", svcName, s.Namespace)
