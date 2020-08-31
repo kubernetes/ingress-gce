@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"k8s.io/api/core/v1"
 	"k8s.io/legacy-cloud-providers/gce"
+	"strings"
 )
 
 const (
@@ -66,6 +67,25 @@ const (
 	ProtocolHTTPS AppProtocol = "HTTPS"
 	// ProtocolHTTP2 protocol for a service
 	ProtocolHTTP2 AppProtocol = "HTTP2"
+
+	// ServiceStatusPrefix is the prefix used in annotations used to record
+	// debug information in the Service annotations. This is applicable to L4 ILB services.
+	ServiceStatusPrefix = "service.kubernetes.io"
+	// TCPForwardingRuleKey is the annotation key used by l4 controller to record
+	// GCP TCP forwarding rule name.
+	TCPForwardingRuleKey = ServiceStatusPrefix + "/tcp-forwarding-rule"
+	// UDPForwardingRuleKey is the annotation key used by l4 controller to record
+	// GCP UDP forwarding rule name.
+	UDPForwardingRuleKey = ServiceStatusPrefix + "/udp-forwarding-rule"
+	// BackendServiceKey is the annotation key used by l4 controller to record
+	// GCP Backend service name.
+	BackendServiceKey = ServiceStatusPrefix + "/backend-service"
+	// FirewallRuleKey is the annotation key used by l4 controller to record
+	// GCP Firewall rule name.
+	FirewallRuleKey = ServiceStatusPrefix + "/firewall-rule"
+	// HealthcheckKey is the annotation key used by l4 controller to record
+	// GCP Healthcheck name.
+	HealthcheckKey = ServiceStatusPrefix + "/healthcheck"
 )
 
 // NegAnnotation is the format of the annotation associated with the
@@ -182,24 +202,25 @@ func WantsL4ILB(service *v1.Service) (bool, string) {
 	return false, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
 }
 
-// OnlyNEGStatusChanged returns true if the only annotation change between the 2 services is the NEG status annotation.
-// This will be true if neg annotation was added or removed in the new service.
+// OnlyStatusAnnotationsChanged returns true if the only annotation change between the 2 services is the NEG or ILB
+// resources annotations.
 // Note : This assumes that the annotations in old and new service are different. If they are identical, this will
 // return true.
-func OnlyNEGStatusChanged(oldService, newService *v1.Service) bool {
-	return onlyNEGStatusChanged(oldService, newService) && onlyNEGStatusChanged(newService, oldService)
+func OnlyStatusAnnotationsChanged(oldService, newService *v1.Service) bool {
+	return onlyStatusAnnotationsChanged(oldService, newService) && onlyStatusAnnotationsChanged(newService, oldService)
 }
 
-// onlyNEGStatusChanged returns true if the NEG Status annotation is the only extra annotation present in the new
-// service but not in the old service.
+// onlyStatusAnnotationsChanged returns true if the NEG Status or ILB resources annotations are the only extra
+// annotations present in the new service but not in the old service.
 // Note : This assumes that the annotations in old and new service are different. If they are identical, this will
 // return true.
-func onlyNEGStatusChanged(oldService, newService *v1.Service) bool {
-	for key, _ := range newService.ObjectMeta.Annotations {
-		if _, ok := oldService.ObjectMeta.Annotations[key]; !ok {
-			if key != NEGStatusKey {
-				return false
+func onlyStatusAnnotationsChanged(oldService, newService *v1.Service) bool {
+	for key, val := range newService.ObjectMeta.Annotations {
+		if oldVal, ok := oldService.ObjectMeta.Annotations[key]; !ok || oldVal != val {
+			if key == NEGStatusKey || strings.HasPrefix(key, ServiceStatusPrefix) {
+				continue
 			}
+			return false
 		}
 	}
 	return true

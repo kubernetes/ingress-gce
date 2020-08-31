@@ -14,16 +14,11 @@ limitations under the License.
 package utils
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 
-	"k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/jsonmergepatch"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
-	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
 )
 
 // StrategicMergePatchBytes returns a patch between the old and new object using a strategic merge patch.
@@ -66,39 +61,4 @@ func MergePatchBytes(old, cur interface{}) ([]byte, error) {
 	}
 
 	return patchBytes, nil
-}
-
-// TODO remove these after picking up https://github.com/kubernetes/kubernetes/pull/87217
-// PatchService patches the given service's Status or ObjectMeta based on the original and
-// updated ones. Change to spec will be ignored.
-func PatchService(c corev1.CoreV1Interface, oldSvc, newSvc *v1.Service) (*v1.Service, error) {
-	// Reset spec to make sure only patch for Status or ObjectMeta.
-	newSvc.Spec = oldSvc.Spec
-
-	patchBytes, err := getPatchBytes(oldSvc, newSvc)
-	if err != nil {
-		return nil, err
-	}
-
-	return c.Services(oldSvc.Namespace).Patch(context.TODO(), oldSvc.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{}, "status")
-
-}
-
-func getPatchBytes(oldSvc, newSvc *v1.Service) ([]byte, error) {
-	oldData, err := json.Marshal(oldSvc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to Marshal oldData for svc %s/%s: %v", oldSvc.Namespace, oldSvc.Name, err)
-	}
-
-	newData, err := json.Marshal(newSvc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to Marshal newData for svc %s/%s: %v", newSvc.Namespace, newSvc.Name, err)
-	}
-
-	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, v1.Service{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to CreateTwoWayMergePatch for svc %s/%s: %v", oldSvc.Namespace, oldSvc.Name, err)
-	}
-	return patchBytes, nil
-
 }
