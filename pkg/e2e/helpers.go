@@ -219,7 +219,7 @@ func WaitForFinalizer(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error
 }
 
 // WhiteboxTest retrieves GCP load-balancer for Ingress VIP and runs the whitebox tests.
-func WhiteboxTest(ing *v1beta1.Ingress, s *Sandbox, cloud cloud.Cloud, region string) (*fuzz.GCLB, error) {
+func WhiteboxTest(ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, cloud cloud.Cloud, region string, s *Sandbox) (*fuzz.GCLB, error) {
 	if len(ing.Status.LoadBalancer.Ingress) < 1 {
 		return nil, fmt.Errorf("ingress does not have an IP: %+v", ing.Status)
 	}
@@ -236,7 +236,7 @@ func WhiteboxTest(ing *v1beta1.Ingress, s *Sandbox, cloud cloud.Cloud, region st
 		return nil, fmt.Errorf("error getting GCP resources for LB with IP = %q: %v", vip, err)
 	}
 
-	if err := performWhiteboxTests(s, ing, nil, gclb); err != nil {
+	if err := performWhiteboxTests(s, ing, fc, gclb); err != nil {
 		return nil, fmt.Errorf("error performing whitebox tests: %v", err)
 	}
 	return gclb, nil

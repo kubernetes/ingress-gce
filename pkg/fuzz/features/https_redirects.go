@@ -59,6 +59,7 @@ func (v *HTTPSRedirectsFeature) ConfigureAttributes(env fuzz.ValidatorEnv, ing *
 		return err
 	}
 	if fc == nil || fc.Spec.RedirectToHttps == nil || !fc.Spec.RedirectToHttps.Enabled {
+		v.expectedResponseCode = 200
 		return nil
 	}
 
@@ -79,7 +80,7 @@ func (v *HTTPSRedirectsFeature) ConfigureAttributes(env fuzz.ValidatorEnv, ing *
 
 // CheckResponse implements fuzz.FeatureValidator.
 func (v *HTTPSRedirectsFeature) CheckResponse(host, path string, resp *http.Response, body []byte) (fuzz.CheckResponseAction, error) {
-	if v.expectedResponseCode != 0 && resp.Request.URL.Scheme == "http" {
+	if v.expectedResponseCode != 200 && resp.Request.URL.Scheme == "http" {
 		if resp.StatusCode == v.expectedResponseCode {
 			return fuzz.CheckResponseSkip, nil
 		} else {

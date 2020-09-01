@@ -116,7 +116,7 @@ func TestNEG(t *testing.T) {
 			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
 
 			// Perform whitebox testing.
-			gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
+			gclb, err := e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)
 			if err != nil {
 				t.Fatalf("e2e.WhiteboxTest(%s/%s, ...) = %v, want nil", ing.Namespace, ing.Name, err)
 			}
@@ -208,7 +208,7 @@ func TestNEGTransition(t *testing.T) {
 			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
 
 			// Perform whitebox testing.
-			gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
+			gclb, err := e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)
 			if err != nil {
 				t.Fatalf("e2e.WhiteboxTest(%s/%s, ...)", ing.Namespace, ing.Name)
 			}

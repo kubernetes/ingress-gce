@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -270,16 +271,24 @@ func (v *IngressValidator) FrontendNamingSchemeTest(gclb *GCLB) error {
 		return nil
 	}
 
+	// Find all URL Maps that are not redirect maps
+	mapName := ""
+	foundMaps := 0
+	for k := range gclb.URLMap {
+		if !strings.Contains(k.Name, "-rm-") {
+			foundMaps += 1
+			mapName = k.Name
+		}
+	}
+
 	// Verify that only one url map exists.
-	if l := len(gclb.URLMap); l != 1 {
-		return fmt.Errorf("expected 1 url map to exist but got %d", l)
+	if foundMaps != 1 {
+		return fmt.Errorf("expected 1 url map to exist but got %d", foundMaps)
 	}
 
 	// Verify that url map is created with correct naming scheme.
-	for key := range gclb.URLMap {
-		if diff := cmp.Diff(v.frontendNamer.UrlMap(), key.Name); diff != "" {
-			return fmt.Errorf("got diff for url map name (-want +got):\n%s", diff)
-		}
+	if diff := cmp.Diff(v.frontendNamer.UrlMap(), mapName); diff != "" {
+		return fmt.Errorf("got diff for url map name (-want +got):\n%s", diff)
 	}
 	return nil
 }
