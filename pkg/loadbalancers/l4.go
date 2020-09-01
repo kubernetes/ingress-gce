@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider/service/helpers"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
@@ -52,6 +53,13 @@ type L4 struct {
 	NamespacedName      types.NamespacedName
 	sharedResourcesLock *sync.Mutex
 }
+
+var ILBResourceAnnotationKeys = []string{
+	annotations.BackendServiceKey,
+	annotations.TCPForwardingRuleKey,
+	annotations.UDPForwardingRuleKey,
+	annotations.HealthcheckKey,
+	annotations.FirewallRuleKey}
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
 func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer *namer.Namer, recorder record.EventRecorder, lock *sync.Mutex) *L4 {
@@ -162,8 +170,9 @@ func (l *L4) getFRNameWithProtocol(protocol string) string {
 
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
-func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service, metricsState *metrics.L4ILBServiceState) (*corev1.LoadBalancerStatus, error) {
+func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service, metricsState *metrics.L4ILBServiceState) (*corev1.LoadBalancerStatus, map[string]string, error) {
 	// Use the same resource name for NEG, BackendService as well as FR, FWRule.
+	annotationsMap := make(map[string]string)
 	l.Service = svc
 	name := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
 	options := getILBOptions(l.Service)
@@ -184,15 +193,16 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service,
 		l.sharedResourcesLock.Unlock()
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	annotationsMap[annotations.HealthcheckKey] = hcName
 
 	_, portRanges, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
 
 	// ensure firewalls
 	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l.Service)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	hcSourceRanges := gce.L4LoadBalancerSrcRanges()
 	ensureFunc := func(name, IP string, sourceRanges, portRanges []string, proto string) error {
@@ -210,13 +220,14 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service,
 	// Add firewall rule for ILB traffic to nodes
 	err = ensureFunc(name, "", sourceRanges.StringSlice(), portRanges, string(protocol))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	annotationsMap[annotations.FirewallRuleKey] = name
 
 	// Add firewall rule for healthchecks to nodes
 	err = ensureFunc(hcFwName, "", hcSourceRanges, []string{strconv.Itoa(int(hcPort))}, string(corev1.ProtocolTCP))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Check if protocol has changed for this service. In this case, forwarding rule should be deleted before
@@ -238,14 +249,20 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service,
 	bs, err := l.backendPool.EnsureL4BackendService(name, hcLink, string(protocol), string(l.Service.Spec.SessionAffinity),
 		string(cloud.SchemeInternal), l.NamespacedName, meta.VersionGA)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-
+	annotationsMap[annotations.BackendServiceKey] = name
 	// create fr rule
-	fr, err := l.ensureForwardingRule(l.GetFRName(), bs.SelfLink, options, existingFR)
+	frName := l.GetFRName()
+	fr, err := l.ensureForwardingRule(frName, bs.SelfLink, options, existingFR)
 	if err != nil {
 		klog.Errorf("EnsureInternalLoadBalancer: Failed to create forwarding rule - %v", err)
-		return nil, err
+		return nil, nil, err
+	}
+	if fr.IPProtocol == string(corev1.ProtocolTCP) {
+		annotationsMap[annotations.TCPForwardingRuleKey] = frName
+	} else {
+		annotationsMap[annotations.UDPForwardingRuleKey] = frName
 	}
 
 	metricsState.InSuccess = true
@@ -260,5 +277,19 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service,
 	}
 	klog.V(6).Infof("Internal L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", l.NamespacedName, metricsState)
 
-	return &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}, nil
+	return &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}, annotationsMap, nil
+}
+
+// MergeAnnotations merges the new set of ilb resource annotations with the pre-existing service annotations.
+// Existing ILB resource annotation values will be replaced with the values in the new map.
+func (l *L4) MergeAnnotations(svc *corev1.Service, ilbAnnotations map[string]string) map[string]string {
+	// Delete existing ILB annotations.
+	for _, key := range ILBResourceAnnotationKeys {
+		delete(svc.Annotations, key)
+	}
+	// merge existing annotations with the newly added annotations
+	for key, val := range ilbAnnotations {
+		svc.Annotations[key] = val
+	}
+	return svc.Annotations
 }

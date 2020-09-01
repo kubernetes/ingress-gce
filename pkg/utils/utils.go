@@ -540,7 +540,7 @@ func GetPortRanges(ports []int) (ranges []string) {
 // GetPortsAndProtocol returns the list of ports, list of port ranges and the protocol given the list of k8s port info.
 func GetPortsAndProtocol(svcPorts []api_v1.ServicePort) (ports []string, portRanges []string, protocol api_v1.Protocol) {
 	if len(svcPorts) == 0 {
-		return []string{}, []string{}, api_v1.ProtocolUDP
+		return []string{}, []string{}, api_v1.ProtocolTCP
 	}
 
 	// GCP doesn't support multiple protocols for a single load balancer

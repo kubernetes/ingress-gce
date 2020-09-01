@@ -101,6 +101,27 @@ func validateSvcStatus(svc *api_v1.Service, expectStatus bool, t *testing.T) {
 	if len(svc.Status.LoadBalancer.Ingress) > 0 && !expectStatus {
 		t.Fatalf("Expected LoadBalancer status to be empty, Got %v", svc.Status.LoadBalancer)
 	}
+
+	expectedAnnotationKeys := []string{annotations.FirewallRuleKey, annotations.BackendServiceKey, annotations.HealthcheckKey,
+		annotations.TCPForwardingRuleKey}
+
+	missingKeys := []string{}
+	for _, key := range expectedAnnotationKeys {
+		if _, ok := svc.Annotations[key]; !ok {
+			missingKeys = append(missingKeys, key)
+		}
+	}
+	if expectStatus {
+		// All annotations are expected to be present in this case
+		if len(missingKeys) > 0 {
+			t.Fatalf("Cannot find annotations %v in ILB service, Got %v", missingKeys, svc.Annotations)
+		}
+	} else {
+		//None of the ILB keys should be present since the ILB has been deleted.
+		if len(missingKeys) != len(expectedAnnotationKeys) {
+			t.Fatalf("Unexpected ILB annotations still present, Got %v", svc.Annotations)
+		}
+	}
 }
 
 // TestProcessCreateOrUpdate verifies the processing loop in L4Controller.
@@ -144,7 +165,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 		t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
 	}
 
-	// List the service and ensure that it contains the finalizer as well as Status field.
+	// List the service and ensure that it doesn't contain the finalizer as well as Status field.
 	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
@@ -161,7 +182,7 @@ func TestProcessDeletion(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
 	}
-	// List the service and ensure that it does not contain the finalizer or the status field
+	// List the service and ensure that it contains the finalizer and the status field
 	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
