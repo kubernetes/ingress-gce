@@ -41,7 +41,7 @@ In the command above, two service accounts and ClusterRoles are created
 
 Use the following commands to deploy the workload controller:
 ```bash
-kubectl apply -f docs/experimental/workload/control-deploy.yaml
+kubectl apply -f docs/experimental/workload/controller-deploy.yaml
 ```
 
 ### Step 3: create VM instance template

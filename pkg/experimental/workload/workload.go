@@ -32,6 +32,6 @@ func CRDMeta() *crd.CRDMeta {
 		"workloads",
 		"wl",
 	)
-	meta.AddValidationInfo("k8s.io/ingress-gce/pkg/apis/workload/v1alpha1.Workload", workloadv1a1.GetOpenAPIDefinitions)
+	meta.AddValidationInfo("k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.Workload", workloadv1a1.GetOpenAPIDefinitions)
 	return meta
 }
