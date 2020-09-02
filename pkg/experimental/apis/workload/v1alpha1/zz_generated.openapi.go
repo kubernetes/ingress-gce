@@ -29,9 +29,94 @@ import (
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
-		"k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.Workload":       schema_experimental_apis_workload_v1alpha1_Workload(ref),
-		"k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.WorkloadSpec":   schema_experimental_apis_workload_v1alpha1_WorkloadSpec(ref),
-		"k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.WorkloadStatus": schema_experimental_apis_workload_v1alpha1_WorkloadStatus(ref),
+		"k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.Condition":               schema_experimental_apis_workload_v1alpha1_Condition(ref),
+		"k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.ExternalWorkloadAddress": schema_experimental_apis_workload_v1alpha1_ExternalWorkloadAddress(ref),
+		"k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.Workload":                schema_experimental_apis_workload_v1alpha1_Workload(ref),
+		"k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.WorkloadSpec":            schema_experimental_apis_workload_v1alpha1_WorkloadSpec(ref),
+		"k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.WorkloadStatus":          schema_experimental_apis_workload_v1alpha1_WorkloadStatus(ref),
+	}
+}
+
+func schema_experimental_apis_workload_v1alpha1_Condition(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Type: []string{"object"},
+				Properties: map[string]spec.Schema{
+					"type": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Type of condition in CamelCase or in foo.example.com/CamelCase. Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be useful (see .node.status.conditions), the ability to deconflict is important.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"status": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Status of the condition, one of True, False, Unknown.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"observedGeneration": {
+						SchemaProps: spec.SchemaProps{
+							Description: "If set, this represents the .metadata.generation that the condition was set based upon. For instance, if .metadata.generation is currently 12, but the .status.condition[x].observedGeneration is 9, the condition is out of date with respect to the current state of the instance.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"lastTransitionTime": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Last time the condition transitioned from one status to another. This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"reason": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The reason for the condition's last transition in CamelCase. The specific API may choose whether or not this field is considered a guaranteed API. This field may not be empty.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"message": {
+						SchemaProps: spec.SchemaProps{
+							Description: "A human readable message indicating details about the transition. This field may be empty.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"type", "status", "lastTransitionTime", "reason", "message"},
+			},
+		},
+	}
+}
+
+func schema_experimental_apis_workload_v1alpha1_ExternalWorkloadAddress(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "ExternalWorkloadAddress represents an address used by an ExternalWorkload",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"address": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Address is the address of the workload exposed to the cluster.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"addressType": {
+						SchemaProps: spec.SchemaProps{
+							Description: "AddressType specifies the address type of the external workload.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"address", "addressType"},
+			},
+		},
 	}
 }
 
@@ -85,34 +170,51 @@ func schema_experimental_apis_workload_v1alpha1_WorkloadSpec(ref common.Referenc
 				Description: "WorkloadSpec is the spec for a Workload resource",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
-					"instanceName": {
+					"enableHeartbeat": {
 						SchemaProps: spec.SchemaProps{
-							Type:   []string{"string"},
-							Format: "",
+							Description: "EnableHeartbeat indicates whether Heartbeat condition is enabled on this ExternalWorkload.",
+							Type:        []string{"boolean"},
+							Format:      "",
 						},
 					},
-					"hostName": {
+					"enablePing": {
 						SchemaProps: spec.SchemaProps{
-							Type:   []string{"string"},
-							Format: "",
+							Description: "EnablePing indicates whether Ping condition is enabled on this ExternalWorkload.",
+							Type:        []string{"boolean"},
+							Format:      "",
 						},
 					},
-					"locality": {
+					"hostname": {
 						SchemaProps: spec.SchemaProps{
-							Type:   []string{"string"},
-							Format: "",
+							Description: "Hostname is the hostname of this workload.",
+							Type:        []string{"string"},
+							Format:      "",
 						},
 					},
-					"ip": {
+					"addresses": {
+						VendorExtensible: spec.VendorExtensible{
+							Extensions: spec.Extensions{
+								"x-kubernetes-list-type": "atomic",
+							},
+						},
 						SchemaProps: spec.SchemaProps{
-							Type:   []string{"string"},
-							Format: "",
+							Description: "Addresses specifies the addresses that can be used to access the workload from the cluster.",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.ExternalWorkloadAddress"),
+									},
+								},
+							},
 						},
 					},
 				},
-				Required: []string{"instanceName", "hostName", "locality", "ip"},
+				Required: []string{"enableHeartbeat", "enablePing", "addresses"},
 			},
 		},
+		Dependencies: []string{
+			"k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.ExternalWorkloadAddress"},
 	}
 }
 
@@ -123,22 +225,30 @@ func schema_experimental_apis_workload_v1alpha1_WorkloadStatus(ref common.Refere
 				Description: "WorkloadStatus is the status for a Workload resource",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
-					"heartbeat": {
-						SchemaProps: spec.SchemaProps{
-							Description: "Last time the workload updated its status.",
-							Type:        []string{"string"},
-							Format:      "",
+					"conditions": {
+						VendorExtensible: spec.VendorExtensible{
+							Extensions: spec.Extensions{
+								"x-kubernetes-list-map-keys": []interface{}{
+									"type",
+								},
+								"x-kubernetes-list-type": "map",
+							},
 						},
-					},
-					"ping": {
 						SchemaProps: spec.SchemaProps{
-							Description: "Last time the controller successfully pinged the workload.",
-							Type:        []string{"string"},
-							Format:      "",
+							Type: []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.Condition"),
+									},
+								},
+							},
 						},
 					},
 				},
 			},
 		},
+		Dependencies: []string{
+			"k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.Condition"},
 	}
 }

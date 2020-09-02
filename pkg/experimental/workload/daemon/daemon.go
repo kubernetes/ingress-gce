@@ -31,6 +31,7 @@ import (
 	workloadv1a1 "k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1"
 	workloadclient "k8s.io/ingress-gce/pkg/experimental/workload/client/clientset/versioned"
 	daemonutils "k8s.io/ingress-gce/pkg/experimental/workload/daemon/utils"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
 
@@ -106,23 +107,35 @@ func updateCR(workload daemonutils.WorkloadInfo, clientset workloadclient.Interf
 }
 
 func getWorkloadCR(workload daemonutils.WorkloadInfo) *workloadv1a1.Workload {
-	heartbeat := time.Now().UTC().Format(time.RFC3339)
-	return &workloadv1a1.Workload{
+	ret := workloadv1a1.Workload{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:   stringOrEmpty(workload.Name()),
 			Labels: workload.Labels(),
 		},
 		Spec: workloadv1a1.WorkloadSpec{
-			InstanceName: stringOrEmpty(workload.Name()),
-			HostName:     stringOrEmpty(workload.Hostname()),
-			IP:           stringOrEmpty(workload.IP()),
-			Locality:     stringOrEmpty(workload.Region()) + "/" + stringOrEmpty(workload.Zone()),
+			EnableHeartbeat: true,
+			EnablePing:      true,
 		},
-		Status: workloadv1a1.WorkloadStatus{
-			// Heartbeat: &metav1.Time{Time: time.Now()},
-			Heartbeat: &heartbeat,
-		},
+		Status: generateHeartbeatStatus(),
 	}
+	if region, exist := workload.Region(); exist {
+		ret.ObjectMeta.Labels["topology.kubernetes.io/region"] = region
+	}
+	if zone, exist := workload.Zone(); exist {
+		ret.ObjectMeta.Labels["topology.kubernetes.io/region"] = zone
+	}
+	if hostname, exist := workload.Hostname(); exist {
+		ret.Spec.Hostname = &hostname
+	}
+	if ip, exist := workload.IP(); exist {
+		ret.Spec.Addresses = []workloadv1a1.ExternalWorkloadAddress{
+			{
+				Address:     ip,
+				AddressType: workloadv1a1.AddressTypeIPv4,
+			},
+		}
+	}
+	return &ret
 }
 
 func stringOrEmpty(str string, exist bool) string {
@@ -140,4 +153,28 @@ func OutputCredentials(credentials daemonutils.ClusterCredentials) {
 		klog.Fatalf("unable to serialize credentials: %+v", err)
 	}
 	fmt.Println(string(ret))
+}
+
+// preparePatchBytesforWorkloadStatus generates patch bytes based on the old and new workload status
+func preparePatchBytesforWorkloadStatus(oldStatus, newStatus workloadv1a1.WorkloadStatus) ([]byte, error) {
+	patchBytes, err := utils.StrategicMergePatchBytes(
+		workloadv1a1.Workload{Status: oldStatus},
+		workloadv1a1.Workload{Status: newStatus},
+		workloadv1a1.Workload{},
+	)
+	return patchBytes, err
+}
+
+func generateHeartbeatStatus() workloadv1a1.WorkloadStatus {
+	heartbeat := time.Now().UTC().Format(time.RFC3339)
+	return workloadv1a1.WorkloadStatus{
+		Conditions: []workloadv1a1.Condition{
+			{
+				Type:               workloadv1a1.WorkloadConditionHeartbeat,
+				Status:             workloadv1a1.ConditionStatusTrue,
+				LastTransitionTime: heartbeat,
+				Reason:             "Heartbeat",
+			},
+		},
+	}
 }

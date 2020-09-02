@@ -26,8 +26,10 @@ import (
 )
 
 // WorkloadLister helps list Workloads.
+// All objects returned here must be treated as read-only.
 type WorkloadLister interface {
 	// List lists all Workloads in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.Workload, err error)
 	// Workloads returns an object that can list and get Workloads.
 	Workloads(namespace string) WorkloadNamespaceLister
@@ -58,10 +60,13 @@ func (s *workloadLister) Workloads(namespace string) WorkloadNamespaceLister {
 }
 
 // WorkloadNamespaceLister helps list and get Workloads.
+// All objects returned here must be treated as read-only.
 type WorkloadNamespaceLister interface {
 	// List lists all Workloads in the indexer for a given namespace.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1alpha1.Workload, err error)
 	// Get retrieves the Workload from the indexer for a given namespace and name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1alpha1.Workload, error)
 	WorkloadNamespaceListerExpansion
 }

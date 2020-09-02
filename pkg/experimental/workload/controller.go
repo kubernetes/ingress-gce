@@ -331,7 +331,7 @@ func (c *Controller) processService(key string) error {
 func workloadToEndpoint(workload *workloadv1a1.Workload, service *corev1.Service) discovery.Endpoint {
 	ready := true
 	ep := discovery.Endpoint{
-		Addresses: []string{workload.Spec.IP},
+		Addresses: []string{},
 		Conditions: discovery.EndpointConditions{
 			Ready: &ready,
 		},
@@ -343,6 +343,11 @@ func workloadToEndpoint(workload *workloadv1a1.Workload, service *corev1.Service
 			UID:             workload.UID,
 			ResourceVersion: workload.ResourceVersion,
 		},
+	}
+	for _, addr := range workload.Spec.Addresses {
+		if addr.AddressType == workloadv1a1.AddressTypeIPv4 {
+			ep.Addresses = append(ep.Addresses, addr.Address)
+		}
 	}
 	return ep
 }
