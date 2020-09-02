@@ -67,8 +67,7 @@ func schema_experimental_apis_workload_v1alpha1_Condition(ref common.ReferenceCa
 					"lastTransitionTime": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Last time the condition transitioned from one status to another. This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.",
-							Type:        []string{"string"},
-							Format:      "",
+							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
 						},
 					},
 					"reason": {
@@ -89,6 +88,8 @@ func schema_experimental_apis_workload_v1alpha1_Condition(ref common.ReferenceCa
 				Required: []string{"type", "status", "lastTransitionTime", "reason", "message"},
 			},
 		},
+		Dependencies: []string{
+			"k8s.io/apimachinery/pkg/apis/meta/v1.Time"},
 	}
 }
 

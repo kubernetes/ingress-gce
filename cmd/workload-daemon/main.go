@@ -31,14 +31,15 @@ import (
 )
 
 func main() {
-	provider := flag.String("provider", "gce", "The provider of this external workload.")
-	updateInterval := flag.Duration("interval", 30*time.Second, "The resync interval.")
+	cmdSet := flag.NewFlagSet("cmd", flag.ExitOnError)
+	provider := cmdSet.String("provider", "gce", "The provider of this external workload.")
+	updateInterval := cmdSet.Duration("interval", 30*time.Second, "The resync interval.")
 
 	if len(os.Args) < 2 {
 		outputHelp()
 		return
 	}
-	flag.Parse()
+	cmdSet.Parse(os.Args[2:])
 	if *provider != "gce" {
 		klog.Fatalf("Current implementation only supports gce provider.")
 	}

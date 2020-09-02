@@ -59,7 +59,8 @@ func RunDaemon(
 
 	// Create the workload resource
 	client := clientset.NetworkingV1alpha1().Workloads(corev1.NamespaceDefault)
-	_, err = client.Create(context.Background(), getWorkloadCR(workload), metav1.CreateOptions{})
+	wlcr := getWorkloadCR(workload)
+	_, err = client.Create(context.Background(), wlcr, metav1.CreateOptions{})
 	if err != nil {
 		klog.Fatalf("unable to create the workload resource: %+v", err)
 	}
@@ -69,7 +70,7 @@ func RunDaemon(
 	ticker := time.NewTicker(updateInterval)
 	quit := make(chan interface{})
 	sigs := make(chan os.Signal, 1)
-	go updateCR(workload, clientset, ticker, sigs, quit)
+	go updateCR(wlcr, clientset, ticker, sigs, quit)
 
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
@@ -83,15 +84,27 @@ func RunDaemon(
 	}
 }
 
-func updateCR(workload daemonutils.WorkloadInfo, clientset workloadclient.Interface, ticker *time.Ticker,
-	sigs chan os.Signal, quit chan interface{}) {
+func updateCR(
+	workload *workloadv1a1.Workload,
+	clientset workloadclient.Interface,
+	ticker *time.Ticker,
+	sigs chan os.Signal,
+	quit chan interface{},
+) {
+	oldStatus := workload.Status
 	for {
 		select {
 		case <-ticker.C:
-			patchStr := `[{"op": "replace", "path": "/status/heartbeat", "value": "%s"}]`
-			patch := []byte(fmt.Sprintf(patchStr, time.Now().UTC().Format(time.RFC3339)))
+			newStatus := generateHeartbeatStatus()
+			patch, err := preparePatchBytesforWorkloadStatus(oldStatus, newStatus)
+			if err != nil {
+				klog.Errorf("failed to prepare the patch for workload resource: %+v", err)
+				continue
+			}
+			oldStatus = newStatus
+
 			vmInstClient := clientset.NetworkingV1alpha1().Workloads(corev1.NamespaceDefault)
-			_, err := vmInstClient.Patch(context.Background(), stringOrEmpty(workload.Name()), types.JSONPatchType,
+			_, err = vmInstClient.Patch(context.Background(), workload.Name, types.MergePatchType,
 				patch, metav1.PatchOptions{})
 			if err != nil {
 				klog.Errorf("failed to update the workload resource: %+v", err)
@@ -166,13 +179,12 @@ func preparePatchBytesforWorkloadStatus(oldStatus, newStatus workloadv1a1.Worklo
 }
 
 func generateHeartbeatStatus() workloadv1a1.WorkloadStatus {
-	heartbeat := time.Now().UTC().Format(time.RFC3339)
 	return workloadv1a1.WorkloadStatus{
 		Conditions: []workloadv1a1.Condition{
 			{
 				Type:               workloadv1a1.WorkloadConditionHeartbeat,
 				Status:             workloadv1a1.ConditionStatusTrue,
-				LastTransitionTime: heartbeat,
+				LastTransitionTime: metav1.Now(),
 				Reason:             "Heartbeat",
 			},
 		},
