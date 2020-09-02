@@ -134,7 +134,7 @@ func Validate() {
 
 	fmt.Printf("Ingress =\n%s\n\n", pretty.Sprint(*ing))
 
-	iv, err := fuzz.NewIngressValidator(env, ing, fs, whitebox.AllTests, nil)
+	iv, err := fuzz.NewIngressValidator(env, ing, nil, whitebox.AllTests, nil, fs)
 	if err != nil {
 		panic(err)
 	}

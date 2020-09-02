@@ -18,6 +18,7 @@ package fuzz
 
 import (
 	"k8s.io/api/networking/v1beta1"
+	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 )
 
 // WhiteboxTest represents a whitebox test than can be run for an Ingress.
@@ -26,5 +27,5 @@ type WhiteboxTest interface {
 	// Name of the test.
 	Name() string
 	// Test is the test to run.
-	Test(ing *v1beta1.Ingress, gclb *GCLB) error
+	Test(ing *v1beta1.Ingress, fc *frontendconfig.FrontendConfig, gclb *GCLB) error
 }

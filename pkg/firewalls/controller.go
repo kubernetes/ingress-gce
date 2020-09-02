@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -181,8 +182,15 @@ func (fwc *FirewallController) sync(key string) error {
 		}
 	}
 
+	var additionalPorts []string
+	if flags.F.EnableBackendConfigHealthCheck {
+		hcPorts := fwc.getCustomHealthCheckPorts(gceSvcPorts)
+		additionalPorts = append(additionalPorts, hcPorts...)
+	}
+	additionalPorts = append(additionalPorts, negPorts...)
+
 	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
-	if err := fwc.firewallPool.Sync(nodeNames, negPorts, additionalRanges); err != nil {
+	if err := fwc.firewallPool.Sync(nodeNames, additionalPorts, additionalRanges); err != nil {
 		if fwErr, ok := err.(*FirewallXPNError); ok {
 			// XPN: Raise an event on each ingress
 			for _, ing := range gceIngresses {
@@ -216,4 +224,16 @@ func (fwc *FirewallController) ilbFirewallSrcRange(gceIngresses []*v1beta1.Ingre
 	}
 
 	return "", ErrNoILBIngress
+}
+
+func (fwc *FirewallController) getCustomHealthCheckPorts(svcPorts []utils.ServicePort) []string {
+	var result []string
+
+	for _, svcPort := range svcPorts {
+		if svcPort.BackendConfig != nil && svcPort.BackendConfig.Spec.HealthCheck != nil && svcPort.BackendConfig.Spec.HealthCheck.Port != nil {
+			result = append(result, strconv.FormatInt(*svcPort.BackendConfig.Spec.HealthCheck.Port, 10))
+		}
+	}
+
+	return result
 }

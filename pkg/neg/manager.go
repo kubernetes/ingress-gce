@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -36,6 +37,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -108,6 +110,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.
 func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts negtypes.PortInfoMap) error {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+	start := time.Now()
 	key := getServiceKey(namespace, name)
 	currentPorts, ok := manager.svcPortMap[key]
 	if !ok {
@@ -177,7 +180,9 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 			}
 		}
 	}
-	return utilerrors.NewAggregate(errList)
+	err := utilerrors.NewAggregate(errList)
+	metrics.PublishNegManagerProcessMetrics(metrics.SyncProcess, err, start)
+	return err
 }
 
 // StopSyncer stops all syncers for the input service.
@@ -236,6 +241,7 @@ func (manager *syncerManager) ShutDown() {
 func (manager *syncerManager) GC() error {
 	klog.V(2).Infof("Start NEG garbage collection.")
 	defer klog.V(2).Infof("NEG garbage collection finished.")
+	start := time.Now()
 	// Garbage collect Syncers
 	manager.garbageCollectSyncer()
 
@@ -249,6 +255,7 @@ func (manager *syncerManager) GC() error {
 	if err != nil {
 		err = fmt.Errorf("failed to garbage collect negs: %v", err)
 	}
+	metrics.PublishNegManagerProcessMetrics(metrics.GCProcess, err, start)
 	return err
 }
 

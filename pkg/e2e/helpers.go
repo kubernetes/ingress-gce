@@ -44,6 +44,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/ingress-gce/cmd/echo/app"
 	"k8s.io/ingress-gce/pkg/annotations"
+	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -66,7 +67,7 @@ const (
 	gclbDeletionTimeout = 60 * time.Minute
 
 	negPollInterval  = 5 * time.Second
-	negPollTimeout   = 2 * time.Minute
+	negPollTimeout   = 3 * time.Minute
 	negGCPollTimeout = 3 * time.Minute
 
 	k8sApiPoolInterval = 10 * time.Second
@@ -78,6 +79,8 @@ const (
 	backendConfigEnsurePollInterval = 5 * time.Second
 	backendConfigEnsurePollTimeout  = 15 * time.Minute
 	backendConfigCRDName            = "backendconfigs.cloud.google.com"
+
+	redirectURLMapPollTimeout = 10 * time.Minute
 
 	healthyState = "HEALTHY"
 )
@@ -123,7 +126,7 @@ func IsRfc1918Addr(addr string) bool {
 // UpgradeTestWaitForIngress waits for ingress to stabilize and set sandbox status to stable.
 // Note that this is used only for upgrade tests.
 func UpgradeTestWaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOptions) (*v1beta1.Ingress, error) {
-	ing, err := WaitForIngress(s, ing, options)
+	ing, err := WaitForIngress(s, ing, nil, options)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +137,7 @@ func UpgradeTestWaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitFo
 // WaitForIngress to stabilize.
 // We expect the ingress to be unreachable at first as LB is
 // still programming itself (i.e 404's / 502's)
-func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOptions) (*v1beta1.Ingress, error) {
+func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, options *WaitForIngressOptions) (*v1beta1.Ingress, error) {
 	err := wait.Poll(ingressPollInterval, ingressPollTimeout, func() (bool, error) {
 		var err error
 		crud := adapter.IngressCRUD{C: s.f.Clientset}
@@ -144,7 +147,7 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOpt
 		}
 		attrs := fuzz.DefaultAttributes()
 		attrs.Region = s.f.Region
-		validator, err := fuzz.NewIngressValidator(s.ValidatorEnv, ing, features.All, []fuzz.WhiteboxTest{}, attrs)
+		validator, err := fuzz.NewIngressValidator(s.ValidatorEnv, ing, fc, []fuzz.WhiteboxTest{}, attrs, features.All)
 		if err != nil {
 			return true, err
 		}
@@ -233,15 +236,15 @@ func WhiteboxTest(ing *v1beta1.Ingress, s *Sandbox, cloud cloud.Cloud, region st
 		return nil, fmt.Errorf("error getting GCP resources for LB with IP = %q: %v", vip, err)
 	}
 
-	if err := performWhiteboxTests(s, ing, gclb); err != nil {
+	if err := performWhiteboxTests(s, ing, nil, gclb); err != nil {
 		return nil, fmt.Errorf("error performing whitebox tests: %v", err)
 	}
 	return gclb, nil
 }
 
 // performWhiteboxTests runs the whitebox tests against the Ingress.
-func performWhiteboxTests(s *Sandbox, ing *v1beta1.Ingress, gclb *fuzz.GCLB) error {
-	validator, err := fuzz.NewIngressValidator(s.ValidatorEnv, ing, []fuzz.Feature{}, whitebox.AllTests, nil)
+func performWhiteboxTests(s *Sandbox, ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, gclb *fuzz.GCLB) error {
+	validator, err := fuzz.NewIngressValidator(s.ValidatorEnv, ing, fc, whitebox.AllTests, nil, []fuzz.Feature{})
 	if err != nil {
 		return err
 	}
@@ -328,6 +331,16 @@ func WaitForNEGDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB, option
 	return wait.Poll(negPollInterval, gclbDeletionTimeout, func() (bool, error) {
 		if err := g.CheckNEGDeletion(ctx, c, options); err != nil {
 			klog.Infof("WaitForNegDeletion(%q) = %v", g.VIP, err)
+			return false, nil
+		}
+		return true, nil
+	})
+}
+
+func WaitForRedirectURLMapDeletion(ctx context.Context, c cloud.Cloud, g *fuzz.GCLB) error {
+	return wait.Poll(gclbDeletionInterval, redirectURLMapPollTimeout, func() (bool, error) {
+		if err := g.CheckRedirectUrlMapDeletion(ctx, c); err != nil {
+			klog.Infof("WaitForRedirectURLMapDeletion(%q) = %v", g.VIP, err)
 			return false, nil
 		}
 		return true, nil

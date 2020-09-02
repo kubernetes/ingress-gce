@@ -92,7 +92,7 @@ func TestV2FrontendNamer(t *testing.T) {
 					isV1Finalizer = true
 				}
 				var err error
-				if ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+				if ing, err = e2e.WaitForIngress(s, ing, nil, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
 					t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 				}
 				if isV1Finalizer {

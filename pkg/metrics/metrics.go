@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/util/wait"
+	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -77,8 +78,8 @@ func init() {
 }
 
 // NewIngressState returns ingress state for given ingress and service ports.
-func NewIngressState(ing *v1beta1.Ingress, svcPorts []utils.ServicePort) IngressState {
-	return IngressState{ingress: ing, servicePorts: svcPorts}
+func NewIngressState(ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, svcPorts []utils.ServicePort) IngressState {
+	return IngressState{ingress: ing, frontendconfig: fc, servicePorts: svcPorts}
 }
 
 // ControllerMetrics contains the state of the all ingresses.
@@ -234,7 +235,7 @@ func (im *ControllerMetrics) computeIngressMetrics() (map[feature]int, map[featu
 		currIngFeatures := make(map[feature]bool)
 		klog.V(6).Infof("Computing frontend based features for ingress %s", ingKey)
 		// Add frontend associated ingress features.
-		for _, feature := range featuresForIngress(ingState.ingress) {
+		for _, feature := range featuresForIngress(ingState.ingress, ingState.frontendconfig) {
 			currIngFeatures[feature] = true
 		}
 		klog.V(6).Infof("Frontend based features for ingress %s: %v", ingKey, currIngFeatures)
@@ -286,6 +287,7 @@ func (im *ControllerMetrics) computeNegMetrics() map[feature]int {
 		vmIpNeg:        0,
 		vmIpNegLocal:   0,
 		vmIpNegCluster: 0,
+		customNamedNeg: 0,
 	}
 
 	for key, negState := range im.negMap {
@@ -295,6 +297,7 @@ func (im *ControllerMetrics) computeNegMetrics() map[feature]int {
 		counts[ingressNeg] += negState.IngressNeg
 		counts[asmNeg] += negState.AsmNeg
 		counts[neg] += negState.AsmNeg + negState.StandaloneNeg + negState.IngressNeg
+		counts[customNamedNeg] += negState.CustomNamedNeg
 		if negState.VmIpNeg != nil {
 			counts[neg] += 1
 			counts[vmIpNeg] += 1
@@ -369,6 +372,7 @@ func initializeCounts() (map[feature]int, map[feature]int) {
 			clientIPAffinity:          0,
 			cookieAffinity:            0,
 			customRequestHeaders:      0,
+			sslPolicy:                 0,
 		},
 		// service port counts
 		map[feature]int{

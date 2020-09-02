@@ -69,7 +69,7 @@ func TestAppProtocol(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
 
-			ing, err = e2e.WaitForIngress(s, ing, nil)
+			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
@@ -139,7 +139,7 @@ func TestAppProtocolTransition(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
 
-			_, err = e2e.WaitForIngress(s, ing, nil)
+			_, err = e2e.WaitForIngress(s, ing, nil, nil)
 			if err != nil {
 				t.Fatalf("Error waiting for Ingress to stabilize: %v", err)
 			}
@@ -155,7 +155,7 @@ func TestAppProtocolTransition(t *testing.T) {
 				t.Fatalf("Error updating echo service: %v", err)
 			}
 
-			ing, err = e2e.WaitForIngress(s, ing, nil)
+			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}

@@ -86,7 +86,7 @@ func testBasicOS(t *testing.T, os e2e.OS) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 
-			ing, err := e2e.WaitForIngress(s, tc.ing, nil)
+			ing, err := e2e.WaitForIngress(s, tc.ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
@@ -120,14 +120,14 @@ func TestBasicStaticIP(t *testing.T) {
 		}
 
 		addrName := fmt.Sprintf("test-addr-%s", s.Namespace)
-		if err := e2e.NewGCPAddress(s, addrName); err != nil {
+		if err := e2e.NewGCPAddress(s, addrName, ""); err != nil {
 			t.Fatalf("e2e.NewGCPAddress(..., %s) = %v, want nil", addrName, err)
 		}
-		defer e2e.DeleteGCPAddress(s, addrName)
+		defer e2e.DeleteGCPAddress(s, addrName, "")
 
 		testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 			DefaultBackend("service-1", intstr.FromInt(80)).
-			AddStaticIP(addrName).
+			AddStaticIP(addrName, false).
 			Build()
 		crud := adapter.IngressCRUD{C: Framework.Clientset}
 		testIng, err = crud.Create(testIng)
@@ -136,7 +136,7 @@ func TestBasicStaticIP(t *testing.T) {
 		}
 		t.Logf("Ingress %s/%s created", s.Namespace, testIng.Name)
 
-		testIng, err = e2e.WaitForIngress(s, testIng, nil)
+		testIng, err = e2e.WaitForIngress(s, testIng, nil, nil)
 		if err != nil {
 			t.Fatalf("e2e.WaitForIngress(s, %q) = _, %v; want _, nil", testIng.Name, err)
 		}
@@ -197,7 +197,7 @@ func TestEdge(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 
-			ing, err := e2e.WaitForIngress(s, tc.ing, nil)
+			ing, err := e2e.WaitForIngress(s, tc.ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
@@ -270,7 +270,7 @@ func TestFrontendResourceDeletion(t *testing.T) {
 				t.Fatalf("crud.Create(%s) = %v, want nil; Ingress: %v", ingKey, err, ing)
 			}
 			t.Logf("Ingress created (%s)", ingKey)
-			if ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+			if ing, err = e2e.WaitForIngress(s, ing, nil, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
 				t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 			}
 			gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
@@ -292,7 +292,7 @@ func TestFrontendResourceDeletion(t *testing.T) {
 				t.Fatalf("Update(%s) = %v, want nil; ingress: %v", ingKey, err, ing)
 			}
 			t.Logf("Ingress updated (%s)", ingKey)
-			if ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+			if ing, err = e2e.WaitForIngress(s, ing, nil, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
 				t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 			}
 
@@ -331,7 +331,7 @@ func TestFrontendResourceDeletion(t *testing.T) {
 				t.Fatalf("Update(%s) = %v, want nil; ingress: %v", ingKey, err, ing)
 			}
 			t.Logf("Ingress updated (%s)", ingKey)
-			if ing, err = e2e.WaitForIngress(s, ing, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
+			if ing, err = e2e.WaitForIngress(s, ing, nil, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
 				t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 			}
 			if ing, err = e2e.WaitForHTTPResourceAnnotations(s, ing); err != nil {

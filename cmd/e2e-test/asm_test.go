@@ -10,9 +10,9 @@ import (
 
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	apiv1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/ingress-gce/pkg/e2e"
-	"k8s.io/klog"
 )
 
 const (
@@ -60,28 +60,34 @@ func TestASMConfig(t *testing.T) {
 					"ConfigMapConfigController: Get a update on the ConfigMapConfig, Restarting Ingress controller"},
 			},
 		} {
-			t.Logf("Running test case: %s", tc.desc)
-			if err := e2e.EnsureConfigMap(s, asmConfigNamespace, asmConfigName, tc.configMap); err != nil {
-				t.Errorf("Failed to ensure ConfigMap, error: %s", err)
-			}
-
-			if err := wait.Poll(5*time.Second, 3*time.Minute, func() (bool, error) {
-				cmData, err := e2e.GetConfigMap(s, asmConfigNamespace, asmConfigName)
-				if err != nil {
-					return false, err
+			t.Run(tc.desc, func(t *testing.T) {
+				var err error
+				if err = e2e.EnsureConfigMap(s, asmConfigNamespace, asmConfigName, tc.configMap); err != nil {
+					t.Errorf("Failed to ensure ConfigMap, error: %s", err)
 				}
-				if val, ok := cmData["asm-ready"]; ok {
-					return val == strconv.FormatBool(tc.wantASMReady), nil
+
+				if waitErr := wait.Poll(5*time.Second, 10*time.Minute, func() (bool, error) {
+					cmData, err := e2e.GetConfigMap(s, asmConfigNamespace, asmConfigName)
+					if err != nil {
+						return false, err
+					}
+					if val, ok := cmData["asm-ready"]; ok {
+						return val == strconv.FormatBool(tc.wantASMReady), nil
+					}
+					return false, nil
+
+				}); waitErr != nil {
+					if apierrors.IsTimeout(waitErr) {
+						t.Fatalf("Failed to validate asm-ready = %t. Error time out, last seen error: %v", tc.wantASMReady, err)
+					} else {
+						t.Fatalf("Failed to validate asm-ready = %t. Error: %v", tc.wantASMReady, waitErr)
+					}
 				}
-				return false, nil
 
-			}); err != nil {
-				t.Fatalf("Failed to validate asm-ready = %s. Error: %s", strconv.FormatBool(tc.wantASMReady), err)
-			}
-
-			if err := e2e.WaitConfigMapEvents(s, asmConfigNamespace, asmConfigName, tc.wantConfigMapEvents, negControllerRestartTimeout); err != nil {
-				t.Fatalf("Failed to get events: %v; Error %e", strings.Join(tc.wantConfigMapEvents, ";"), err)
-			}
+				if err := e2e.WaitConfigMapEvents(s, asmConfigNamespace, asmConfigName, tc.wantConfigMapEvents, negControllerRestartTimeout); err != nil {
+					t.Fatalf("Failed to get events: %v; Error %e", strings.Join(tc.wantConfigMapEvents, ";"), err)
+				}
+			})
 		}
 		e2e.DeleteConfigMap(s, asmConfigNamespace, asmConfigName)
 	})
@@ -162,8 +168,7 @@ func TestASMServiceAndDestinationRule(t *testing.T) {
 					}
 				} else {
 					if negName, ok := negStatus.NetworkEndpointGroups[strconv.Itoa(int(porterPort))]; ok {
-						// No backend pod exists, so the NEG has 0 endpoint.
-						if err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, negStatus.Zones, false, 0); err != nil {
+						if err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, negStatus.Zones, false, 6); err != nil {
 							t.Errorf("Failed to wait Negs, error: %s", err)
 						}
 					} else {
@@ -182,46 +187,46 @@ func TestASMServiceAndDestinationRule(t *testing.T) {
 				{desc: "NEG controller should update NEGs for destinationrule", destinationRuleName: "porter-destinationrule", subsetEndpointCountMap: map[string]int{"v1": 1, "v2": 2}, crossNamespace: false},
 				{desc: "NEG controller should create NEGs for cross namespace destinationrule", destinationRuleName: "porter-destinationrule-1", subsetEndpointCountMap: map[string]int{"v1": 1}, crossNamespace: true},
 			} {
-				t.Logf("Running test case: %s", tc.desc)
-				sandbox := s
-				drHost := svcName
-				// crossNamespace will test DestinationRules that refering a serive located in a different namespace
-				if tc.crossNamespace {
-					sandbox = sSkip
-					drHost = fmt.Sprintf("%s.%s.svc.cluster.local", svcName, s.Namespace)
-				}
-
-				versions := []string{}
-				for k := range tc.subsetEndpointCountMap {
-					versions = append(versions, k)
-				}
-				if err := e2e.EnsurePorterDestinationRule(sandbox, tc.destinationRuleName, drHost, versions); err != nil {
-					klog.Errorf("Failed to create destinationRule, error: %s", err)
-				}
-
-				// One DestinationRule should have count(NEGs) = count(subset)* count(port)
-				dsNEGStatus, err := e2e.WaitDestinationRuleAnnotation(sandbox, sandbox.Namespace, tc.destinationRuleName, len(tc.subsetEndpointCountMap)*1, 5*time.Minute)
-				if err != nil {
-					klog.Errorf("Failed to validate the NEG count. Error: %s", err)
-				}
-
-				zones := dsNEGStatus.Zones
-				for subsetVersion, endpointCount := range tc.subsetEndpointCountMap {
-					negNames, ok := dsNEGStatus.NetworkEndpointGroups[subsetVersion]
-					if !ok {
-						t.Fatalf("DestinationRule annotation doesn't contain the desired NEG status, want: %s, have: %v", subsetVersion, dsNEGStatus.NetworkEndpointGroups)
+				t.Run(tc.desc, func(t *testing.T) {
+					sandbox := s
+					drHost := svcName
+					// crossNamespace will test DestinationRules that refering a serive located in a different namespace
+					if tc.crossNamespace {
+						sandbox = sSkip
+						drHost = fmt.Sprintf("%s.%s.svc.cluster.local", svcName, s.Namespace)
 					}
-					negName, ok := negNames[strconv.Itoa(int(porterPort))]
-					if !ok {
-						t.Fatalf("DestinationRule annotation doesn't contain the desired NEG status, want: %d, have: %v", porterPort, negNames)
-					}
-					if err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, zones, false, endpointCount); err != nil {
-						t.Errorf("Failed to wait Negs, error: %s", err)
-					}
-				}
 
+					versions := []string{}
+					for k := range tc.subsetEndpointCountMap {
+						versions = append(versions, k)
+					}
+					if err := e2e.EnsurePorterDestinationRule(sandbox, tc.destinationRuleName, drHost, versions); err != nil {
+						t.Errorf("Failed to create destinationRule, error: %s", err)
+					}
+
+					// One DestinationRule should have count(NEGs) = count(subset)* count(port)
+					dsNEGStatus, err := e2e.WaitDestinationRuleAnnotation(sandbox, sandbox.Namespace, tc.destinationRuleName, len(tc.subsetEndpointCountMap)*1, 5*time.Minute)
+					if err != nil {
+						t.Errorf("Failed to validate the NEG count. Error: %s", err)
+					}
+
+					zones := dsNEGStatus.Zones
+					for subsetVersion, endpointCount := range tc.subsetEndpointCountMap {
+						negNames, ok := dsNEGStatus.NetworkEndpointGroups[subsetVersion]
+						if !ok {
+							t.Fatalf("DestinationRule annotation doesn't contain the desired NEG status, want: %s, have: %v", subsetVersion, dsNEGStatus.NetworkEndpointGroups)
+						}
+						negName, ok := negNames[strconv.Itoa(int(porterPort))]
+						if !ok {
+							t.Fatalf("DestinationRule annotation doesn't contain the desired NEG status, want: %d, have: %v", porterPort, negNames)
+						}
+						if err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, zones, false, endpointCount); err != nil {
+							t.Errorf("Failed to wait Negs, error: %s", err)
+						}
+					}
+
+				})
 			}
-
 		})
 	})
 }

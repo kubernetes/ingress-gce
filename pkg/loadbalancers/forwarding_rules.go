@@ -84,7 +84,7 @@ func (l *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, 
 	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
 	tr := translator.NewTranslator(isL7ILB, l.namer)
 	env := &translator.Env{VIP: ip, Network: l.cloud.NetworkURL(), Subnetwork: l.cloud.SubnetworkURL()}
-	fr := tr.ToCompositeForwardingRule(env, protocol, version, proxyLink, description)
+	fr := tr.ToCompositeForwardingRule(env, protocol, version, proxyLink, description, l.runtimeInfo.StaticIPSubnet)
 
 	existing, _ = composite.GetForwardingRule(l.cloud, key, version)
 	if existing != nil && (fr.IPAddress != "" && existing.IPAddress != fr.IPAddress || existing.PortRange != fr.PortRange) {
@@ -109,7 +109,7 @@ func (l *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, 
 				currentIP, _ := l.cloud.GetGlobalAddress(managedStaticIPName)
 				if currentIP != nil {
 					klog.V(3).Infof("Ingress managed static IP %s(%s) exists, using it to create forwarding rule %s", currentIPName, currentIP.Address, name)
-					ip = currentIP.Address
+					fr.IPAddress = currentIP.Address
 				}
 			}
 		}
@@ -180,6 +180,7 @@ func (l *L7) getEffectiveIP() (string, bool, error) {
 			return "", false, fmt.Errorf("the given static IP name %v doesn't translate to an existing static IP.",
 				l.runtimeInfo.StaticIPName)
 		} else {
+			l.runtimeInfo.StaticIPSubnet = ip.Subnetwork
 			return ip.Address, false, nil
 		}
 	}
@@ -191,7 +192,7 @@ func (l *L7) getEffectiveIP() (string, bool, error) {
 
 // ensureForwardingRule creates a forwarding rule with the given name, if it does not exist. It updates the existing
 // forwarding rule if needed.
-func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.ILBOptions) (*composite.ForwardingRule, error) {
+func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.ILBOptions, existingFwdRule *composite.ForwardingRule) (*composite.ForwardingRule, error) {
 	key, err := l.CreateKey(loadBalancerName)
 	if err != nil {
 		return nil, err
@@ -199,11 +200,6 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	// version used for creating the existing forwarding rule.
 	version := meta.VersionGA
 
-	// Get the GA version forwarding rule, use the description to identify the version it was created with.
-	existingFwdRule, err := composite.GetForwardingRule(l.cloud, key, meta.VersionGA)
-	if utils.IgnoreHTTPNotFound(err) != nil {
-		return nil, err
-	}
 	if l.cloud.IsLegacyNetwork() {
 		l.recorder.Event(l.Service, v1.EventTypeWarning, "ILBOptionsIgnored", "Internal LoadBalancer options are not supported with Legacy Networks.")
 		options = gce.ILBOptions{}
@@ -287,6 +283,20 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	return composite.GetForwardingRule(l.cloud, key, fr.Version)
 }
 
+func (l *L4) getForwardingRule(name string, version meta.Version) *composite.ForwardingRule {
+	key, err := l.CreateKey(name)
+	if err != nil {
+		klog.Errorf("Failed to create key for fetching existing forwarding rule %s, err: %v", name, err)
+		return nil
+	}
+	fr, err := composite.GetForwardingRule(l.cloud, key, version)
+	if utils.IgnoreHTTPNotFound(err) != nil {
+		klog.Errorf("Failed to lookup existing forwarding rule %s, err: %v", name, err)
+		return nil
+	}
+	return fr
+}
+
 func (l *L4) deleteForwardingRule(name string, version meta.Version) {
 	key, err := l.CreateKey(name)
 	if err != nil {
@@ -316,11 +326,6 @@ func ilbIPToUse(svc *v1.Service, fwdRule *composite.ForwardingRule, requestedSub
 		return svc.Spec.LoadBalancerIP
 	}
 	if fwdRule == nil {
-		// Reuse the already assigned IP address for this ILB. This is most likely the case
-		// where ILB protocol changed and the forwarding rule got deleted.
-		if len(svc.Status.LoadBalancer.Ingress) > 0 {
-			return svc.Status.LoadBalancer.Ingress[0].IP
-		}
 		return ""
 	}
 	if requestedSubnet != fwdRule.Subnetwork {

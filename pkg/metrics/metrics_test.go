@@ -25,7 +25,9 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -57,6 +59,7 @@ var (
 					ConnectionDraining: &backendconfigv1.ConnectionDrainingConfig{
 						DrainingTimeoutSec: testTTL,
 					},
+					HealthCheck: &backendconfigv1.HealthCheckConfig{RequestPath: utils.NewStringPointer("/foo")},
 				},
 			},
 		},
@@ -126,6 +129,7 @@ var (
 	ingressStates = []struct {
 		desc             string
 		ing              *v1beta1.Ingress
+		fc               *frontendconfigv1beta1.FrontendConfig
 		frontendFeatures []feature
 		svcPorts         []utils.ServicePort
 		backendFeatures  []feature
@@ -138,6 +142,7 @@ var (
 					Name:      "ingress0",
 				},
 			},
+			nil,
 			[]feature{ingress, externalIngress, httpEnabled},
 			[]utils.ServicePort{},
 			nil,
@@ -152,6 +157,7 @@ var (
 						allowHTTPKey: "false"},
 				},
 			},
+			nil,
 			[]feature{ingress, externalIngress},
 			[]utils.ServicePort{},
 			nil,
@@ -171,10 +177,11 @@ var (
 					Rules: []v1beta1.IngressRule{},
 				},
 			},
+			nil,
 			[]feature{ingress, externalIngress, httpEnabled},
 			[]utils.ServicePort{testServicePorts[0]},
 			[]feature{servicePort, externalServicePort, cloudCDN,
-				cookieAffinity, cloudArmor, backendConnectionDraining},
+				cookieAffinity, cloudArmor, backendConnectionDraining, customHealthChecks},
 		},
 		{
 			"host rule only",
@@ -191,6 +198,7 @@ var (
 					},
 				},
 			},
+			nil,
 			[]feature{ingress, externalIngress, httpEnabled, hostBasedRouting},
 			[]utils.ServicePort{},
 			nil,
@@ -223,6 +231,7 @@ var (
 					},
 				},
 			},
+			nil,
 			[]feature{ingress, externalIngress, httpEnabled,
 				hostBasedRouting, pathBasedRouting},
 			[]utils.ServicePort{testServicePorts[1]},
@@ -261,11 +270,12 @@ var (
 					},
 				},
 			},
+			nil,
 			[]feature{ingress, externalIngress, httpEnabled,
 				hostBasedRouting, pathBasedRouting},
 			testServicePorts[:2],
 			[]feature{servicePort, externalServicePort, cloudCDN,
-				cookieAffinity, cloudArmor, backendConnectionDraining, neg, cloudIAP,
+				cookieAffinity, cloudArmor, backendConnectionDraining, customHealthChecks, neg, cloudIAP,
 				clientIPAffinity, backendTimeout, customRequestHeaders},
 		},
 		{
@@ -287,11 +297,12 @@ var (
 					Rules: []v1beta1.IngressRule{},
 				},
 			},
+			nil,
 			[]feature{ingress, externalIngress, httpEnabled,
 				tlsTermination, preSharedCertsForTLS},
 			[]utils.ServicePort{testServicePorts[0]},
 			[]feature{servicePort, externalServicePort, cloudCDN,
-				cookieAffinity, cloudArmor, backendConnectionDraining},
+				cookieAffinity, cloudArmor, backendConnectionDraining, customHealthChecks},
 		},
 		{
 			"tls termination with google managed certs",
@@ -312,11 +323,12 @@ var (
 					Rules: []v1beta1.IngressRule{},
 				},
 			},
+			nil,
 			[]feature{ingress, externalIngress, httpEnabled,
 				tlsTermination, managedCertsForTLS},
 			[]utils.ServicePort{testServicePorts[0]},
 			[]feature{servicePort, externalServicePort, cloudCDN,
-				cookieAffinity, cloudArmor, backendConnectionDraining},
+				cookieAffinity, cloudArmor, backendConnectionDraining, customHealthChecks},
 		},
 		{
 			"tls termination with pre-shared and google managed certs",
@@ -338,11 +350,12 @@ var (
 					Rules: []v1beta1.IngressRule{},
 				},
 			},
+			nil,
 			[]feature{ingress, externalIngress, httpEnabled,
 				tlsTermination, preSharedCertsForTLS, managedCertsForTLS},
 			[]utils.ServicePort{testServicePorts[0]},
 			[]feature{servicePort, externalServicePort, cloudCDN,
-				cookieAffinity, cloudArmor, backendConnectionDraining},
+				cookieAffinity, cloudArmor, backendConnectionDraining, customHealthChecks},
 		},
 		{
 			"tls termination with pre-shared and secret based certs",
@@ -382,6 +395,7 @@ var (
 					},
 				},
 			},
+			nil,
 			[]feature{ingress, externalIngress, httpEnabled, hostBasedRouting,
 				pathBasedRouting, tlsTermination, preSharedCertsForTLS, secretBasedCertsForTLS},
 			[]utils.ServicePort{testServicePorts[1]},
@@ -408,11 +422,12 @@ var (
 					Rules: []v1beta1.IngressRule{},
 				},
 			},
+			nil,
 			[]feature{ingress, externalIngress, httpEnabled,
 				tlsTermination, preSharedCertsForTLS, staticGlobalIP, managedStaticGlobalIP},
 			[]utils.ServicePort{testServicePorts[0]},
 			[]feature{servicePort, externalServicePort, cloudCDN,
-				cookieAffinity, cloudArmor, backendConnectionDraining},
+				cookieAffinity, cloudArmor, backendConnectionDraining, customHealthChecks},
 		},
 		{
 			"default backend, host rule for internal load-balancer",
@@ -449,6 +464,7 @@ var (
 					},
 				},
 			},
+			nil,
 			[]feature{ingress, internalIngress, httpEnabled,
 				hostBasedRouting, pathBasedRouting},
 			[]utils.ServicePort{testServicePorts[2], testServicePorts[3]},
@@ -473,6 +489,7 @@ var (
 					Rules: []v1beta1.IngressRule{},
 				},
 			},
+			nil,
 			[]feature{ingress, externalIngress, httpEnabled},
 			[]utils.ServicePort{},
 			nil,
@@ -484,8 +501,8 @@ var (
 					Namespace: defaultNamespace,
 					Name:      "ingress13",
 					Annotations: map[string]string{
-						StaticIPNameKey: "user-spec-static-ip",
-						staticIPKey:     "user-spec-static-ip",
+						StaticGlobalIPNameKey: "user-spec-static-ip",
+						staticIPKey:           "user-spec-static-ip",
 					},
 				},
 				Spec: v1beta1.IngressSpec{
@@ -496,8 +513,150 @@ var (
 					Rules: []v1beta1.IngressRule{},
 				},
 			},
+			nil,
 			[]feature{ingress, externalIngress, httpEnabled,
 				staticGlobalIP, specifiedStaticGlobalIP},
+			[]utils.ServicePort{},
+			nil,
+		},
+		{
+			"sslpolicy and tls termination with pre-shared certs",
+			&v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Namespace: defaultNamespace,
+					Name:      "ingress14",
+					Annotations: map[string]string{
+						preSharedCertKey: "pre-shared-cert1,pre-shared-cert2",
+						SSLCertKey:       "pre-shared-cert1,pre-shared-cert2",
+					},
+				},
+				Spec: v1beta1.IngressSpec{
+					Backend: &v1beta1.IngressBackend{
+						ServiceName: "dummy-service",
+						ServicePort: intstr.FromInt(80),
+					},
+					Rules: []v1beta1.IngressRule{},
+				},
+			},
+			&frontendconfigv1beta1.FrontendConfig{
+				Spec: frontendconfigv1beta1.FrontendConfigSpec{
+					SslPolicy: utils.NewStringPointer("test-policy"),
+				},
+			},
+			[]feature{ingress, externalIngress, httpEnabled,
+				tlsTermination, preSharedCertsForTLS, sslPolicy},
+			[]utils.ServicePort{},
+			nil,
+		},
+		{
+			"user specified regional static IP",
+			&v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Namespace: defaultNamespace,
+					Name:      "ingress15",
+					Annotations: map[string]string{
+						annotations.RegionalStaticIPNameKey: "user-spec-static-ip",
+						ingressClassKey:                     "gce-internal",
+					},
+				},
+				Spec: v1beta1.IngressSpec{
+					Backend: &v1beta1.IngressBackend{
+						ServiceName: "dummy-service",
+						ServicePort: intstr.FromInt(80),
+					},
+					Rules: []v1beta1.IngressRule{},
+				},
+			},
+			nil,
+			[]feature{ingress, internalIngress, httpEnabled,
+				specifiedStaticRegionalIP},
+			[]utils.ServicePort{},
+			nil,
+		},
+		{
+			"HTTPS Redirects and tls termination with pre-shared certs",
+			&v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Namespace: defaultNamespace,
+					Name:      "ingress16",
+					Annotations: map[string]string{
+						preSharedCertKey: "pre-shared-cert1,pre-shared-cert2",
+						SSLCertKey:       "pre-shared-cert1,pre-shared-cert2",
+					},
+				},
+				Spec: v1beta1.IngressSpec{
+					Backend: &v1beta1.IngressBackend{
+						ServiceName: "dummy-service",
+						ServicePort: intstr.FromInt(80),
+					},
+					Rules: []v1beta1.IngressRule{},
+				},
+			},
+			&frontendconfigv1beta1.FrontendConfig{
+				Spec: frontendconfigv1beta1.FrontendConfigSpec{
+					RedirectToHttps: &frontendconfigv1beta1.HttpsRedirectConfig{Enabled: true},
+				},
+			},
+			[]feature{ingress, externalIngress, httpEnabled,
+				tlsTermination, preSharedCertsForTLS, httpsRedirects},
+			[]utils.ServicePort{},
+			nil,
+		},
+		{
+			"HTTPS Redirects Disabled and tls termination with pre-shared certs",
+			&v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Namespace: defaultNamespace,
+					Name:      "ingress17",
+					Annotations: map[string]string{
+						preSharedCertKey: "pre-shared-cert1,pre-shared-cert2",
+						SSLCertKey:       "pre-shared-cert1,pre-shared-cert2",
+					},
+				},
+				Spec: v1beta1.IngressSpec{
+					Backend: &v1beta1.IngressBackend{
+						ServiceName: "dummy-service",
+						ServicePort: intstr.FromInt(80),
+					},
+					Rules: []v1beta1.IngressRule{},
+				},
+			},
+			&frontendconfigv1beta1.FrontendConfig{
+				Spec: frontendconfigv1beta1.FrontendConfigSpec{
+					RedirectToHttps: &frontendconfigv1beta1.HttpsRedirectConfig{Enabled: false},
+				},
+			},
+			[]feature{ingress, externalIngress, httpEnabled,
+				tlsTermination, preSharedCertsForTLS},
+			[]utils.ServicePort{},
+			nil,
+		},
+		{
+			"empty sslpolicy and tls termination with pre-shared certs",
+			&v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Namespace: defaultNamespace,
+					Name:      "ingress18",
+					Annotations: map[string]string{
+						preSharedCertKey: "pre-shared-cert1,pre-shared-cert2",
+						SSLCertKey:       "pre-shared-cert1,pre-shared-cert2",
+					},
+				},
+				Spec: v1beta1.IngressSpec{
+					Backend: &v1beta1.IngressBackend{
+						ServiceName: "dummy-service",
+						ServicePort: intstr.FromInt(80),
+					},
+					Rules: []v1beta1.IngressRule{},
+				},
+			},
+			&frontendconfigv1beta1.FrontendConfig{
+				Spec: frontendconfigv1beta1.FrontendConfigSpec{
+					SslPolicy: utils.NewStringPointer(""),
+				},
+			},
+			[]feature{ingress, externalIngress, httpEnabled,
+				tlsTermination, preSharedCertsForTLS},
 			[]utils.ServicePort{},
 			nil,
 		},
@@ -510,7 +669,7 @@ func TestFeaturesForIngress(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			gotFrontendFeatures := featuresForIngress(tc.ing)
+			gotFrontendFeatures := featuresForIngress(tc.ing, tc.fc)
 			if diff := cmp.Diff(tc.frontendFeatures, gotFrontendFeatures); diff != "" {
 				t.Fatalf("Got diff for frontend features (-want +got):\n%s", diff)
 			}
@@ -553,10 +712,12 @@ func TestComputeIngressMetrics(t *testing.T) {
 		{
 			"frontend features only",
 			[]IngressState{
-				NewIngressState(ingressStates[0].ing, ingressStates[0].svcPorts),
-				NewIngressState(ingressStates[1].ing, ingressStates[1].svcPorts),
-				NewIngressState(ingressStates[3].ing, ingressStates[3].svcPorts),
-				NewIngressState(ingressStates[13].ing, ingressStates[13].svcPorts),
+				NewIngressState(ingressStates[0].ing, nil, ingressStates[0].svcPorts),
+				NewIngressState(ingressStates[1].ing, nil, ingressStates[1].svcPorts),
+				NewIngressState(ingressStates[3].ing, nil, ingressStates[3].svcPorts),
+				NewIngressState(ingressStates[13].ing, nil, ingressStates[13].svcPorts),
+				NewIngressState(ingressStates[14].ing, ingressStates[14].fc, ingressStates[13].svcPorts),
+				NewIngressState(ingressStates[16].ing, ingressStates[16].fc, ingressStates[16].svcPorts),
 			},
 			map[feature]int{
 				backendConnectionDraining: 0,
@@ -567,20 +728,22 @@ func TestComputeIngressMetrics(t *testing.T) {
 				cloudIAP:                  0,
 				cookieAffinity:            0,
 				customRequestHeaders:      0,
-				externalIngress:           4,
-				httpEnabled:               3,
+				externalIngress:           6,
+				httpEnabled:               5,
 				hostBasedRouting:          1,
-				ingress:                   4,
+				ingress:                   6,
 				internalIngress:           0,
 				managedCertsForTLS:        0,
 				managedStaticGlobalIP:     0,
 				neg:                       0,
 				pathBasedRouting:          0,
-				preSharedCertsForTLS:      0,
+				preSharedCertsForTLS:      2,
 				secretBasedCertsForTLS:    0,
 				specifiedStaticGlobalIP:   1,
 				staticGlobalIP:            1,
-				tlsTermination:            0,
+				tlsTermination:            2,
+				sslPolicy:                 1,
+				httpsRedirects:            1,
 			},
 			map[feature]int{
 				backendConnectionDraining: 0,
@@ -600,11 +763,11 @@ func TestComputeIngressMetrics(t *testing.T) {
 		{
 			"features for internal and external load-balancers",
 			[]IngressState{
-				NewIngressState(ingressStates[0].ing, ingressStates[0].svcPorts),
-				NewIngressState(ingressStates[1].ing, ingressStates[1].svcPorts),
-				NewIngressState(ingressStates[3].ing, ingressStates[3].svcPorts),
-				NewIngressState(ingressStates[11].ing, ingressStates[11].svcPorts),
-				NewIngressState(ingressStates[13].ing, ingressStates[13].svcPorts),
+				NewIngressState(ingressStates[0].ing, nil, ingressStates[0].svcPorts),
+				NewIngressState(ingressStates[1].ing, nil, ingressStates[1].svcPorts),
+				NewIngressState(ingressStates[3].ing, nil, ingressStates[3].svcPorts),
+				NewIngressState(ingressStates[11].ing, nil, ingressStates[11].svcPorts),
+				NewIngressState(ingressStates[13].ing, nil, ingressStates[13].svcPorts),
 			},
 			map[feature]int{
 				backendConnectionDraining: 1,
@@ -629,6 +792,7 @@ func TestComputeIngressMetrics(t *testing.T) {
 				specifiedStaticGlobalIP:   1,
 				staticGlobalIP:            1,
 				tlsTermination:            0,
+				sslPolicy:                 0,
 			},
 			map[feature]int{
 				backendConnectionDraining: 1,
@@ -648,12 +812,12 @@ func TestComputeIngressMetrics(t *testing.T) {
 		{
 			"frontend and backend features",
 			[]IngressState{
-				NewIngressState(ingressStates[2].ing, ingressStates[2].svcPorts),
-				NewIngressState(ingressStates[4].ing, ingressStates[4].svcPorts),
-				NewIngressState(ingressStates[6].ing, ingressStates[6].svcPorts),
-				NewIngressState(ingressStates[8].ing, ingressStates[8].svcPorts),
-				NewIngressState(ingressStates[10].ing, ingressStates[10].svcPorts),
-				NewIngressState(ingressStates[12].ing, ingressStates[12].svcPorts),
+				NewIngressState(ingressStates[2].ing, nil, ingressStates[2].svcPorts),
+				NewIngressState(ingressStates[4].ing, nil, ingressStates[4].svcPorts),
+				NewIngressState(ingressStates[6].ing, nil, ingressStates[6].svcPorts),
+				NewIngressState(ingressStates[8].ing, nil, ingressStates[8].svcPorts),
+				NewIngressState(ingressStates[10].ing, nil, ingressStates[10].svcPorts),
+				NewIngressState(ingressStates[12].ing, nil, ingressStates[12].svcPorts),
 			},
 			map[feature]int{
 				backendConnectionDraining: 4,
@@ -664,6 +828,7 @@ func TestComputeIngressMetrics(t *testing.T) {
 				cloudIAP:                  1,
 				cookieAffinity:            4,
 				customRequestHeaders:      1,
+				customHealthChecks:        4,
 				externalIngress:           6,
 				httpEnabled:               6,
 				hostBasedRouting:          1,
@@ -678,6 +843,7 @@ func TestComputeIngressMetrics(t *testing.T) {
 				specifiedStaticGlobalIP:   0,
 				staticGlobalIP:            1,
 				tlsTermination:            3,
+				sslPolicy:                 0,
 			},
 			map[feature]int{
 				backendConnectionDraining: 1,
@@ -692,25 +858,29 @@ func TestComputeIngressMetrics(t *testing.T) {
 				servicePort:               2,
 				externalServicePort:       2,
 				neg:                       1,
+				customHealthChecks:        1,
 			},
 		},
 		{
 			"all ingress features",
 			[]IngressState{
-				NewIngressState(ingressStates[0].ing, ingressStates[0].svcPorts),
-				NewIngressState(ingressStates[1].ing, ingressStates[1].svcPorts),
-				NewIngressState(ingressStates[2].ing, ingressStates[2].svcPorts),
-				NewIngressState(ingressStates[3].ing, ingressStates[3].svcPorts),
-				NewIngressState(ingressStates[4].ing, ingressStates[4].svcPorts),
-				NewIngressState(ingressStates[5].ing, ingressStates[5].svcPorts),
-				NewIngressState(ingressStates[6].ing, ingressStates[6].svcPorts),
-				NewIngressState(ingressStates[7].ing, ingressStates[7].svcPorts),
-				NewIngressState(ingressStates[8].ing, ingressStates[8].svcPorts),
-				NewIngressState(ingressStates[9].ing, ingressStates[9].svcPorts),
-				NewIngressState(ingressStates[10].ing, ingressStates[10].svcPorts),
-				NewIngressState(ingressStates[11].ing, ingressStates[11].svcPorts),
-				NewIngressState(ingressStates[12].ing, ingressStates[12].svcPorts),
-				NewIngressState(ingressStates[13].ing, ingressStates[13].svcPorts),
+				NewIngressState(ingressStates[0].ing, nil, ingressStates[0].svcPorts),
+				NewIngressState(ingressStates[1].ing, nil, ingressStates[1].svcPorts),
+				NewIngressState(ingressStates[2].ing, nil, ingressStates[2].svcPorts),
+				NewIngressState(ingressStates[3].ing, nil, ingressStates[3].svcPorts),
+				NewIngressState(ingressStates[4].ing, nil, ingressStates[4].svcPorts),
+				NewIngressState(ingressStates[5].ing, nil, ingressStates[5].svcPorts),
+				NewIngressState(ingressStates[6].ing, nil, ingressStates[6].svcPorts),
+				NewIngressState(ingressStates[7].ing, nil, ingressStates[7].svcPorts),
+				NewIngressState(ingressStates[8].ing, nil, ingressStates[8].svcPorts),
+				NewIngressState(ingressStates[9].ing, nil, ingressStates[9].svcPorts),
+				NewIngressState(ingressStates[10].ing, nil, ingressStates[10].svcPorts),
+				NewIngressState(ingressStates[11].ing, nil, ingressStates[11].svcPorts),
+				NewIngressState(ingressStates[12].ing, nil, ingressStates[12].svcPorts),
+				NewIngressState(ingressStates[13].ing, nil, ingressStates[13].svcPorts),
+				NewIngressState(ingressStates[14].ing, ingressStates[14].fc, ingressStates[14].svcPorts),
+				NewIngressState(ingressStates[15].ing, nil, ingressStates[15].svcPorts),
+				NewIngressState(ingressStates[16].ing, ingressStates[16].fc, ingressStates[16].svcPorts),
 			},
 			map[feature]int{
 				backendConnectionDraining: 7,
@@ -721,20 +891,24 @@ func TestComputeIngressMetrics(t *testing.T) {
 				cloudIAP:                  4,
 				cookieAffinity:            7,
 				customRequestHeaders:      3,
-				externalIngress:           13,
-				httpEnabled:               13,
+				customHealthChecks:        6,
+				externalIngress:           15,
+				httpEnabled:               16,
 				hostBasedRouting:          5,
-				ingress:                   14,
-				internalIngress:           1,
+				ingress:                   17,
+				internalIngress:           2,
 				managedCertsForTLS:        2,
 				managedStaticGlobalIP:     1,
 				neg:                       4,
 				pathBasedRouting:          4,
-				preSharedCertsForTLS:      4,
+				preSharedCertsForTLS:      6,
 				secretBasedCertsForTLS:    1,
 				specifiedStaticGlobalIP:   1,
+				specifiedStaticRegionalIP: 1,
 				staticGlobalIP:            2,
-				tlsTermination:            5,
+				tlsTermination:            7,
+				sslPolicy:                 1,
+				httpsRedirects:            1,
 			},
 			map[feature]int{
 				backendConnectionDraining: 2,
@@ -745,6 +919,7 @@ func TestComputeIngressMetrics(t *testing.T) {
 				cloudIAP:                  2,
 				cookieAffinity:            2,
 				customRequestHeaders:      1,
+				customHealthChecks:        1,
 				internalServicePort:       2,
 				servicePort:               4,
 				externalServicePort:       2,
@@ -789,12 +964,13 @@ func TestComputeNegMetrics(t *testing.T) {
 				vmIpNeg:        0,
 				vmIpNegLocal:   0,
 				vmIpNegCluster: 0,
+				customNamedNeg: 0,
 			},
 		},
 		{
 			"one neg service",
 			[]NegServiceState{
-				newNegState(0, 0, 1, nil),
+				newNegState(0, 0, 1, 0, nil),
 			},
 			map[feature]int{
 				standaloneNeg:  0,
@@ -804,12 +980,13 @@ func TestComputeNegMetrics(t *testing.T) {
 				vmIpNeg:        0,
 				vmIpNegLocal:   0,
 				vmIpNegCluster: 0,
+				customNamedNeg: 0,
 			},
 		},
 		{
 			"vm primary ip neg in traffic policy cluster mode",
 			[]NegServiceState{
-				newNegState(0, 0, 1, &VmIpNegType{trafficPolicyLocal: false}),
+				newNegState(0, 0, 1, 0, &VmIpNegType{trafficPolicyLocal: false}),
 			},
 			map[feature]int{
 				standaloneNeg:  0,
@@ -819,15 +996,32 @@ func TestComputeNegMetrics(t *testing.T) {
 				vmIpNeg:        1,
 				vmIpNegLocal:   0,
 				vmIpNegCluster: 1,
+				customNamedNeg: 0,
+			},
+		},
+		{
+			"custom named neg",
+			[]NegServiceState{
+				newNegState(1, 0, 0, 1, nil),
+			},
+			map[feature]int{
+				standaloneNeg:  1,
+				ingressNeg:     0,
+				asmNeg:         0,
+				neg:            1,
+				vmIpNeg:        0,
+				vmIpNegLocal:   0,
+				vmIpNegCluster: 0,
+				customNamedNeg: 1,
 			},
 		},
 		{
 			"many neg services",
 			[]NegServiceState{
-				newNegState(0, 0, 1, nil),
-				newNegState(0, 1, 0, &VmIpNegType{trafficPolicyLocal: false}),
-				newNegState(5, 0, 0, &VmIpNegType{trafficPolicyLocal: true}),
-				newNegState(5, 3, 2, nil),
+				newNegState(0, 0, 1, 0, nil),
+				newNegState(0, 1, 0, 0, &VmIpNegType{trafficPolicyLocal: false}),
+				newNegState(5, 0, 0, 0, &VmIpNegType{trafficPolicyLocal: true}),
+				newNegState(5, 3, 2, 0, nil),
 			},
 			map[feature]int{
 				standaloneNeg:  10,
@@ -837,6 +1031,7 @@ func TestComputeNegMetrics(t *testing.T) {
 				vmIpNeg:        2,
 				vmIpNegLocal:   1,
 				vmIpNegCluster: 1,
+				customNamedNeg: 0,
 			},
 		},
 	} {
@@ -856,12 +1051,13 @@ func TestComputeNegMetrics(t *testing.T) {
 	}
 }
 
-func newNegState(standalone, ingress, asm int, negType *VmIpNegType) NegServiceState {
+func newNegState(standalone, ingress, asm, customNamed int, negType *VmIpNegType) NegServiceState {
 	return NegServiceState{
-		IngressNeg:    ingress,
-		StandaloneNeg: standalone,
-		AsmNeg:        asm,
-		VmIpNeg:       negType,
+		IngressNeg:     ingress,
+		StandaloneNeg:  standalone,
+		AsmNeg:         asm,
+		VmIpNeg:        negType,
+		CustomNamedNeg: customNamed,
 	}
 }
 

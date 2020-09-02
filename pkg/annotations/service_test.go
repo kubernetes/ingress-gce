@@ -459,3 +459,173 @@ func TestParseNegStatus(t *testing.T) {
 		})
 	}
 }
+
+func TestOnlyStatusAnnotationsChanged(t *testing.T) {
+	for _, tc := range []struct {
+		desc           string
+		service1       *v1.Service
+		service2       *v1.Service
+		expectedResult bool
+	}{
+		{
+			desc: "Test add neg annotation",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			desc: "Test valid diff",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+					Annotations: map[string]string{
+						NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+					},
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						"RandomAnnotation": "abcde",
+					},
+				},
+			},
+			expectedResult: false,
+		},
+		{
+			desc: "Test no change",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+					Annotations: map[string]string{
+						"RandomAnnotation": "abcde",
+					},
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						"RandomAnnotation": "abcde",
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			desc: "Test remove NEG annotation",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+					Annotations: map[string]string{
+						NEGStatusKey:       `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation": "abcde",
+					},
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						"RandomAnnotation": "abcde",
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			desc: "Test only ILB ForwardingRule annotation diff",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+					Annotations: map[string]string{
+						FirewallRuleKey:      "rule1",
+						TCPForwardingRuleKey: "tcprule",
+						NEGStatusKey:         `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":   "abcde",
+					},
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						FirewallRuleKey:      "rule1",
+						UDPForwardingRuleKey: "udprule",
+						NEGStatusKey:         `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":   "abcde",
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			desc: "Test all status annotations removed",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+					Annotations: map[string]string{
+						FirewallRuleKey:      "rule1",
+						TCPForwardingRuleKey: "tcprule",
+						NEGStatusKey:         `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":   "abcde",
+					},
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						"RandomAnnotation": "abcde",
+					},
+				},
+			},
+			expectedResult: true,
+		},
+		{
+			desc: "Test change value of non-status annotation",
+			service1: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service1",
+					Annotations: map[string]string{
+						FirewallRuleKey:      "rule1",
+						TCPForwardingRuleKey: "tcprule",
+						NEGStatusKey:         `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":   "abcde",
+					},
+				},
+			},
+			service2: &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "service2",
+					Annotations: map[string]string{
+						FirewallRuleKey:      "rule1",
+						TCPForwardingRuleKey: "tcprule",
+						NEGStatusKey:         `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
+						"RandomAnnotation":   "xyz",
+					},
+				},
+			},
+			expectedResult: false,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			result := OnlyStatusAnnotationsChanged(tc.service1, tc.service2)
+			if result != tc.expectedResult {
+				t.Errorf("%s: Expected result for input %v, %v to be %v, got %v instead", tc.desc, tc.service1.Annotations, tc.service2.Annotations, tc.expectedResult, result)
+			}
+		})
+	}
+}

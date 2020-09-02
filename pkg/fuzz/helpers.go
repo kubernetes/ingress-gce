@@ -135,6 +135,23 @@ func ServiceMapFromIngress(ing *v1beta1.Ingress) ServiceMap {
 	return ret
 }
 
+func FrontendConfigForIngress(ing *v1beta1.Ingress, env ValidatorEnv) (*frontendconfig.FrontendConfig, error) {
+	name := annotations.FromIngress(ing).FrontendConfig()
+	if name != "" {
+		fcMap, err := env.FrontendConfigs()
+		if err != nil {
+			return nil, err
+		}
+
+		if fc, ok := fcMap[name]; ok {
+			return fc, nil
+		}
+	}
+
+	// No FrontendConfig found
+	return nil, nil
+}
+
 // IngressBuilder is syntactic sugar for creating Ingress specs for testing
 // purposes.
 //
@@ -258,11 +275,16 @@ func (i *IngressBuilder) AddPresharedCerts(names []string) *IngressBuilder {
 
 // AddStaticIP adds the name of an address that exists in GCP via the annotation.
 // Note that a value added in a previous call to this function will be overwritten.
-func (i *IngressBuilder) AddStaticIP(name string) *IngressBuilder {
+func (i *IngressBuilder) AddStaticIP(name string, regional bool) *IngressBuilder {
 	if i.ing.Annotations == nil {
 		i.ing.Annotations = make(map[string]string)
 	}
-	i.ing.Annotations[annotations.GlobalStaticIPNameKey] = name
+
+	if regional {
+		i.ing.Annotations[annotations.RegionalStaticIPNameKey] = name
+	} else {
+		i.ing.Annotations[annotations.GlobalStaticIPNameKey] = name
+	}
 	return i
 }
 

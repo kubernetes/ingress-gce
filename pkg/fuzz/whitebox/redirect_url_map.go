@@ -18,37 +18,40 @@ package whitebox
 
 import (
 	"fmt"
+	"strings"
 
 	"k8s.io/api/networking/v1beta1"
-	"k8s.io/ingress-gce/pkg/annotations"
 	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/fuzz"
 )
 
 // Implements a whitebox test to check that the GCLB has the expected number of ForwardingRule's.
-type numForwardingRulesTest struct {
+type redirectURLMapTest struct {
 }
 
 // Name implements WhiteboxTest.
-func (t *numForwardingRulesTest) Name() string {
-	return "NumForwardingRulesTest"
+func (t *redirectURLMapTest) Name() string {
+	return "RedirectURLMapTest"
 
 }
 
 // Test implements WhiteboxTest.
-func (t *numForwardingRulesTest) Test(ing *v1beta1.Ingress, fc *frontendconfig.FrontendConfig, gclb *fuzz.GCLB) error {
-	expectedForwardingRules := 0
+func (t *redirectURLMapTest) Test(ing *v1beta1.Ingress, fc *frontendconfig.FrontendConfig, gclb *fuzz.GCLB) error {
+	expectedMaps := 0
 
-	an := annotations.FromIngress(ing)
-	if an.AllowHTTP() {
-		expectedForwardingRules += 1
-	}
-	if len(ing.Spec.TLS) > 0 || an.UseNamedTLS() != "" {
-		expectedForwardingRules += 1
+	if fc != nil && fc.Spec.RedirectToHttps != nil && fc.Spec.RedirectToHttps.Enabled {
+		expectedMaps = 1
 	}
 
-	if len(gclb.ForwardingRule) != expectedForwardingRules {
-		return fmt.Errorf("expected %d ForwardingRule's but got %d", expectedForwardingRules, len(gclb.ForwardingRule))
+	foundMaps := 0
+	for k := range gclb.URLMap {
+		if strings.Contains(k.Name, "-rm-") {
+			foundMaps += 1
+		}
+	}
+
+	if expectedMaps != foundMaps {
+		return fmt.Errorf("expectedMaps = %d, got %d", expectedMaps, foundMaps)
 	}
 
 	return nil

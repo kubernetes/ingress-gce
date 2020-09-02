@@ -21,6 +21,7 @@ import (
 
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
+	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/fuzz"
 )
 
@@ -35,7 +36,7 @@ func (t *numTargetProxiesTest) Name() string {
 }
 
 // Test implements WhiteboxTest.
-func (t *numTargetProxiesTest) Test(ing *v1beta1.Ingress, gclb *fuzz.GCLB) error {
+func (t *numTargetProxiesTest) Test(ing *v1beta1.Ingress, fc *frontendconfig.FrontendConfig, gclb *fuzz.GCLB) error {
 	expectedHTTPTargetProxies, expectedHTTPSTargetProxies := 0, 0
 
 	an := annotations.FromIngress(ing)

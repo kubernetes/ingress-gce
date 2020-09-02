@@ -366,6 +366,7 @@ func TestToForwardingRule(t *testing.T) {
 		desc     string
 		isL7ILB  bool
 		protocol namer_util.NamerProtocol
+		ipSubnet string
 		want     *composite.ForwardingRule
 	}{
 		{
@@ -428,13 +429,31 @@ func TestToForwardingRule(t *testing.T) {
 				Subnetwork:          subnetwork,
 			},
 		},
+		{
+			desc:     "http-ilb with different subnet for ip",
+			isL7ILB:  true,
+			protocol: namer_util.HTTPProtocol,
+			ipSubnet: "different-subnet",
+			want: &composite.ForwardingRule{
+				Name:                "foo-fr",
+				IPAddress:           vip,
+				Target:              proxyLink,
+				PortRange:           httpDefaultPortRange,
+				IPProtocol:          "TCP",
+				Description:         description,
+				Version:             version,
+				LoadBalancingScheme: "INTERNAL_MANAGED",
+				Network:             network,
+				Subnetwork:          "different-subnet",
+			},
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
 			tr := NewTranslator(tc.isL7ILB, &testNamer{"foo"})
 			env := &Env{VIP: vip, Network: network, Subnetwork: subnetwork}
-			got := tr.ToCompositeForwardingRule(env, tc.protocol, version, proxyLink, description)
+			got := tr.ToCompositeForwardingRule(env, tc.protocol, version, proxyLink, description, tc.ipSubnet)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Fatalf("Got diff for ForwardingRule (-want +got):\n%s", diff)
 			}

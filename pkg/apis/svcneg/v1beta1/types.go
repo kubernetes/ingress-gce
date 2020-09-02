@@ -24,7 +24,6 @@ import (
 // ServiceNetworkEndpointGroup represents a group of Network Endpoint Groups associated with a service.
 
 // +genclient
-// +genclient:noStatus
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 //
 // +k8s:openapi-gen=true
@@ -37,15 +36,19 @@ type ServiceNetworkEndpointGroup struct {
 }
 
 // ServiceNetworkEndpointGroupSpec is the spec for a ServiceNetworkEndpointGroup resource
-// +k8s:openapi-gen=true
 type ServiceNetworkEndpointGroupSpec struct{}
 
 // ServiceNetworkEndpointGroupStatus is the status for a ServiceNetworkEndpointGroup resource
+// +k8s:openapi-gen=true
 type ServiceNetworkEndpointGroupStatus struct {
+	// +listType=map
+	// +listMapKey=id
 	NetworkEndpointGroups []NegObjectReference `json:"networkEndpointGroups,omitempty"`
 
 	// Last time the NEG syncer syncs associated NEGs.
 	// +optional
+	// +listType=map
+	// +listMapKey=type
 	Conditions []Condition `json:"conditions,omitempty"`
 
 	// Last time the NEG syncer syncs associated NEGs.
@@ -54,9 +57,10 @@ type ServiceNetworkEndpointGroupStatus struct {
 }
 
 // NegObjectReference is the object reference to the NEG resource in GCE
+// +k8s:openapi-gen=true
 type NegObjectReference struct {
 	// The unique identifier for the NEG resource in GCE API.
-	Id uint64 `json:"id,omitempty,string"`
+	Id string `json:"id,omitempty"`
 
 	// SelfLink is the GCE Server-defined fully-qualified URL for the GCE NEG resource
 	SelfLink string `json:"selfLink,omitempty"`
@@ -66,6 +70,7 @@ type NegObjectReference struct {
 	NetworkEndpointType NetworkEndpointType `json:"networkEndpointType,omitempty"`
 }
 
+// +k8s:openapi-gen=true
 type NetworkEndpointType string
 
 const (
@@ -76,6 +81,7 @@ const (
 
 // TODO: Replace Condition with standard Condition
 // NegCondition contains details for the current condition of this NEG.
+// +k8s:openapi-gen=true
 type Condition struct {
 	// Type is the type of the condition.
 	// +required

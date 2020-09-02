@@ -24,6 +24,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -80,6 +81,15 @@ func TestILB(t *testing.T) {
 			numForwardingRules: 1,
 			numBackendServices: 2,
 		},
+		{
+			desc: "http ILB with static IP",
+			ing: fuzz.NewIngressBuilder("", ingressPrefix+"1", "").
+				DefaultBackend(serviceName, port80).
+				ConfigureForILB().
+				Build(),
+			numForwardingRules: 1,
+			numBackendServices: 1,
+		},
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
@@ -103,7 +113,7 @@ func TestILB(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 
-			ing, err := e2e.WaitForIngress(s, tc.ing, nil)
+			ing, err := e2e.WaitForIngress(s, tc.ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
@@ -138,6 +148,81 @@ func TestILB(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestILBStaticIP is a transition test:
+// 1) static IP disabled
+// 2) static IP enabled
+// 3) static IP disabled
+func TestILBStaticIP(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	Framework.RunWithSandbox("ilb-static-ip", t, func(t *testing.T, s *e2e.Sandbox) {
+		if Framework.CreateILBSubnet {
+			if err := e2e.CreateILBSubnet(s); err != nil && err != e2e.ErrSubnetExists {
+				t.Fatalf("e2e.CreateILBSubnet(%+v) = %v", s, err)
+			}
+		}
+
+		_, err := e2e.CreateEchoService(s, "service-1", nil)
+		if err != nil {
+			t.Fatalf("e2e.CreateEchoService(s, service-1, nil) = _, %v; want _, nil", err)
+		}
+
+		addrName := fmt.Sprintf("test-addr-%s", s.Namespace)
+		if err := e2e.NewGCPAddress(s, addrName, Framework.Region); err != nil {
+			t.Fatalf("e2e.NewGCPAddress(..., %s) = %v, want nil", addrName, err)
+		}
+		defer e2e.DeleteGCPAddress(s, addrName, Framework.Region)
+
+		testIngEnabled := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
+			DefaultBackend("service-1", intstr.FromInt(80)).
+			ConfigureForILB().
+			AddStaticIP(addrName, true).
+			Build()
+		testIngDisabled := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
+			DefaultBackend("service-1", intstr.FromInt(80)).
+			ConfigureForILB().
+			Build()
+
+		// Create original ingress
+		crud := adapter.IngressCRUD{C: Framework.Clientset}
+		testIng, err := crud.Create(testIngDisabled)
+		if err != nil {
+			t.Fatalf("error creating Ingress spec: %v", err)
+		}
+		t.Logf("Ingress %s/%s created", s.Namespace, testIng.Name)
+
+		var gclb *fuzz.GCLB
+		for _, ing := range []*v1beta1.Ingress{testIngDisabled, testIngEnabled, testIngDisabled} {
+			testIng, err := crud.Update(testIngDisabled)
+			if err != nil {
+				t.Fatalf("error updating Ingress spec: %v", err)
+			}
+			t.Logf("Ingress %s/%s updated", s.Namespace, testIng.Name)
+
+			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
+			if err != nil {
+				t.Fatalf("e2e.WaitForIngress(s, %q) = _, %v; want _, nil", ing.Name, err)
+			}
+			if len(ing.Status.LoadBalancer.Ingress) < 1 {
+				t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
+			}
+
+			vip := ing.Status.LoadBalancer.Ingress[0].IP
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All), Region: Framework.Region, Network: Framework.Network}
+			gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+		}
+
+		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, testIng, deleteOptions); err != nil {
+			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", testIng.Name, err)
+		}
+	})
 }
 
 // TODO(shance): Remove the SetAllowHttp() calls once L7-ILB supports sharing VIPs
@@ -249,7 +334,7 @@ func TestILBHttps(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
 
-			ing, err = e2e.WaitForIngress(s, ing, nil)
+			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
@@ -390,7 +475,7 @@ func TestILBUpdate(t *testing.T) {
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
 
-			ing, err := e2e.WaitForIngress(s, tc.ing, nil)
+			ing, err := e2e.WaitForIngress(s, tc.ing, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
@@ -424,7 +509,7 @@ func TestILBUpdate(t *testing.T) {
 			}
 
 			// Verify everything works
-			ing, err = e2e.WaitForIngress(s, tc.ingUpdate, nil)
+			ing, err = e2e.WaitForIngress(s, tc.ingUpdate, nil, nil)
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
@@ -517,7 +602,7 @@ func TestILBError(t *testing.T) {
 				expectError = false
 			}
 
-			_, err = e2e.WaitForIngress(s, tc.ing, nil)
+			_, err = e2e.WaitForIngress(s, tc.ing, nil, nil)
 
 			if expectError && err == nil {
 				t.Fatalf("want err, got nil")
@@ -612,7 +697,7 @@ func TestILBShared(t *testing.T) {
 				}
 				t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
 
-				ing, err := e2e.WaitForIngress(s, ing, nil)
+				ing, err := e2e.WaitForIngress(s, ing, nil, nil)
 				if err != nil {
 					t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 				}

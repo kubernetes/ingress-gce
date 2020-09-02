@@ -18,13 +18,15 @@ package metrics
 
 import (
 	"k8s.io/api/networking/v1beta1"
+	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // IngressState defines an ingress and its associated service ports.
 type IngressState struct {
-	ingress      *v1beta1.Ingress
-	servicePorts []utils.ServicePort
+	ingress        *v1beta1.Ingress
+	frontendconfig *frontendconfigv1beta1.FrontendConfig
+	servicePorts   []utils.ServicePort
 }
 
 // NegServiceState contains all the neg usage associated with one service
@@ -37,6 +39,8 @@ type NegServiceState struct {
 	AsmNeg int
 	// VmIpNeg specifies if a service uses GCE_VM_IP NEG.
 	VmIpNeg *VmIpNegType
+	// CustomNamedNeg is the count of standalone negs with custom names
+	CustomNamedNeg int
 }
 
 // VmIpNegType contains whether a GCE_VM_IP NEG is requesting for

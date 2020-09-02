@@ -32,6 +32,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -278,24 +279,61 @@ func EnsureIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
 	return ing, nil
 }
 
-// NewGCPAddress reserves a global static IP address with the given name.
-func NewGCPAddress(s *Sandbox, name string) error {
-	addr := &compute.Address{Name: name}
-	if err := s.f.Cloud.GlobalAddresses().Insert(context.Background(), meta.GlobalKey(addr.Name), addr); err != nil {
-		return err
+// TODO(shance) add frontendconfig CRUD
+func EnsureFrontendConfig(s *Sandbox, fc *frontendconfig.FrontendConfig) (*frontendconfig.FrontendConfig, error) {
+	currentFc, err := s.f.FrontendConfigClient.NetworkingV1beta1().FrontendConfigs(s.Namespace).Get(context.TODO(), fc.Name, metav1.GetOptions{})
+	if currentFc == nil || err != nil {
+		return s.f.FrontendConfigClient.NetworkingV1beta1().FrontendConfigs(s.Namespace).Create(context.TODO(), fc, metav1.CreateOptions{})
 	}
-	klog.V(2).Infof("Global static IP %s created", name)
+	// Update fc spec if they are not equal
+	if !reflect.DeepEqual(fc.Spec, currentFc.Spec) {
+		//fc.ResourceVersion = "1"
+		//if currentFc.ResourceVersion != "" {
+		//	curVersion, err := strconv.Atoi(currentFc.ResourceVersion)
+		//	if err != nil {
+		//		return nil, err
+		//	}
+		//	fc.ResourceVersion = strconv.Itoa(curVersion + 1)
+		//}
+		currentFc.Spec = fc.Spec
+		return s.f.FrontendConfigClient.NetworkingV1beta1().FrontendConfigs(s.Namespace).Update(context.TODO(), currentFc, metav1.UpdateOptions{})
+	}
+	return fc, nil
+}
+
+// NewGCPAddress reserves a global static IP address with the given name.
+func NewGCPAddress(s *Sandbox, name string, region string) error {
+	addr := &compute.Address{Name: name}
+
+	if region == "" {
+		if err := s.f.Cloud.GlobalAddresses().Insert(context.Background(), meta.GlobalKey(addr.Name), addr); err != nil {
+			return err
+		}
+		klog.V(2).Infof("Global static IP %s created", name)
+	} else {
+		addr.AddressType = "INTERNAL"
+		if err := s.f.Cloud.Addresses().Insert(context.Background(), meta.RegionalKey(addr.Name, region), addr); err != nil {
+			return err
+		}
+		klog.V(2).Infof("Regional static IP %s created", name)
+	}
 
 	return nil
 }
 
 // DeleteGCPAddress deletes a global static IP address with the given name.
-func DeleteGCPAddress(s *Sandbox, name string) error {
-	if err := s.f.Cloud.GlobalAddresses().Delete(context.Background(), meta.GlobalKey(name)); err != nil {
-		return err
+func DeleteGCPAddress(s *Sandbox, name string, region string) error {
+	if region == "" {
+		if err := s.f.Cloud.GlobalAddresses().Delete(context.Background(), meta.GlobalKey(name)); err != nil {
+			return err
+		}
+		klog.V(2).Infof("Global static IP %s deleted", name)
+	} else {
+		if err := s.f.Cloud.Addresses().Delete(context.Background(), meta.RegionalKey(name, region)); err != nil {
+			return err
+		}
+		klog.V(2).Infof("Regional static IP %s deleted", name)
 	}
-	klog.V(2).Infof("Global static IP %s deleted", name)
-
 	return nil
 }
 

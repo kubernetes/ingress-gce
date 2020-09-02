@@ -112,7 +112,7 @@ func (vf *V2FrontendNamer) PostUpgrade() error {
 		vf.s.PutStatus(e2e.Unstable)
 	}
 	// Wait for ingress to stabilize after the master upgrade.
-	if _, err := e2e.WaitForIngress(vf.s, vf.ing, nil); err != nil {
+	if _, err := e2e.WaitForIngress(vf.s, vf.ing, nil, nil); err != nil {
 		vf.t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 	}
 	// Wait for an ingress finalizer to be added.

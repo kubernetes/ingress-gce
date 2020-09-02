@@ -25,8 +25,10 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	bcclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
+	fcclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
@@ -36,6 +38,7 @@ type DefaultValidatorEnv struct {
 	ns    string
 	k8s   *kubernetes.Clientset
 	bc    *bcclient.Clientset
+	fc    *fcclient.Clientset
 	gce   cloud.Cloud
 	namer *namer.Namer
 	// feNamerFactory is frontend namer factory that creates frontend naming policy
@@ -51,6 +54,9 @@ func NewDefaultValidatorEnv(config *rest.Config, ns string, gce cloud.Cloud) (Va
 		return nil, err
 	}
 	if ret.bc, err = bcclient.NewForConfig(config); err != nil {
+		return nil, err
+	}
+	if ret.fc, err = fcclient.NewForConfig(config); err != nil {
 		return nil, err
 	}
 	if ret.namer, err = app.NewStaticNamer(ret.k8s, "", ""); err != nil {
@@ -77,6 +83,18 @@ func (e *DefaultValidatorEnv) BackendConfigs() (map[string]*backendconfig.Backen
 		ret[bc.Name] = bc.DeepCopy()
 	}
 	return ret, nil
+}
+
+func (e *DefaultValidatorEnv) FrontendConfigs() (map[string]*frontendconfig.FrontendConfig, error) {
+	fcl, err := e.fc.NetworkingV1beta1().FrontendConfigs(e.ns).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	result := map[string]*frontendconfig.FrontendConfig{}
+	for _, fc := range fcl.Items {
+		result[fc.Name] = fc.DeepCopy()
+	}
+	return result, nil
 }
 
 // Services implements ValidatorEnv.
