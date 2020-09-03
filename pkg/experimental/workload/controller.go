@@ -45,7 +45,8 @@ const controllerName = "workload-controller.k8s.io"
 
 // ControllerContext holds the state needed for the execution of the workload controller.
 type ControllerContext struct {
-	KubeClient kubernetes.Interface
+	KubeClient     kubernetes.Interface
+	WorkloadClient workloadclient.Interface
 
 	WorkloadInformer      cache.SharedIndexInformer
 	ServiceInformer       cache.SharedIndexInformer
@@ -61,6 +62,7 @@ func NewControllerContext(
 ) *ControllerContext {
 	return &ControllerContext{
 		KubeClient:            kubeClient,
+		WorkloadClient:        workloadClient,
 		WorkloadInformer:      informerworkload.NewWorkloadInformer(workloadClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:       informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
 		EndpointSliceInformer: disinformer.NewEndpointSliceInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
@@ -75,6 +77,7 @@ type Controller struct {
 	serviceLister       cache.Indexer
 	endpointSliceLister cache.Indexer
 	kubeClient          kubernetes.Interface
+	ctx                 *ControllerContext
 }
 
 // HasSynced returns true if all relevant informers has been synced.
@@ -98,6 +101,7 @@ func NewController(ctx *ControllerContext) *Controller {
 		serviceLister:       ctx.ServiceInformer.GetIndexer(),
 		endpointSliceLister: ctx.EndpointSliceInformer.GetIndexer(),
 		kubeClient:          ctx.KubeClient,
+		ctx:                 ctx,
 	}
 
 	ctx.WorkloadInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -285,8 +289,7 @@ func (c *Controller) processService(key string) error {
 	})
 
 	// Create or update EndpointSlice
-	// WARNING: Change this name scheme may break endpointslices created by old versions
-	sliceName := name + "-" + controllerName
+	sliceName := endpointsliceName(name)
 	obj, exists, err = c.endpointSliceLister.GetByKey(namespace + "/" + sliceName)
 	var curEs *discovery.EndpointSlice
 	if exists {
@@ -407,4 +410,9 @@ func listMachedWorkload(
 
 		callback(workload)
 	}
+}
+
+func endpointsliceName(svcName string) string {
+	// WARNING: Change this name scheme may break endpointslices created by old versions
+	return svcName + "-" + controllerName
 }
