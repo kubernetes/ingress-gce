@@ -85,7 +85,7 @@ func schema_pkg_apis_svcneg_v1beta1_Condition(ref common.ReferenceCallback) comm
 						},
 					},
 				},
-				Required: []string{"type", "status", "reason", "message"},
+				Required: []string{"type", "status", "lastTransitionTime", "reason", "message"},
 			},
 		},
 		Dependencies: []string{
@@ -122,6 +122,7 @@ func schema_pkg_apis_svcneg_v1beta1_NegObjectReference(ref common.ReferenceCallb
 						},
 					},
 				},
+				Required: []string{"id"},
 			},
 		},
 	}
