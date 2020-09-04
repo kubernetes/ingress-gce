@@ -60,7 +60,8 @@ type ServiceNetworkEndpointGroupStatus struct {
 // +k8s:openapi-gen=true
 type NegObjectReference struct {
 	// The unique identifier for the NEG resource in GCE API.
-	Id string `json:"id,omitempty"`
+	// +required
+	Id string `json:"id"`
 
 	// SelfLink is the GCE Server-defined fully-qualified URL for the GCE NEG resource
 	SelfLink string `json:"selfLink,omitempty"`
