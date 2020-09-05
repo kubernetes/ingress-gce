@@ -226,30 +226,32 @@ func TestSecurityPolicyTransition(t *testing.T) {
 		}
 
 		for _, step := range steps {
-			testBackendConfig.Spec.SecurityPolicy.Name = step.securityPolicyToSet
-			bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
-			testBackendConfig, err = bcCRUD.Update(testBackendConfig)
-			if err != nil {
-				t.Fatalf("Error updating test backend config: %v", err)
-			}
-			t.Logf("Backend config %s/%s updated", testBackendConfig.Name, s.Namespace)
-
-			t.Logf("Waiting %v for security policy to be updated on relevant backend service", policyUpdateTimeout)
-			if err := wait.Poll(policyUpdateInterval, policyUpdateTimeout, func() (bool, error) {
-				params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All)}
-				gclb, err = fuzz.GCLBForVIP(ctx, Framework.Cloud, params)
+			t.Run(step.desc, func(t *testing.T) {
+				testBackendConfig.Spec.SecurityPolicy.Name = step.securityPolicyToSet
+				bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+				testBackendConfig, err = bcCRUD.Update(testBackendConfig)
 				if err != nil {
-					t.Fatalf("fuzz.GCLBForVIP(..., %q, %q) = _, %v; want _, nil", vip, features.SecurityPolicy, err)
+					t.Fatalf("Error updating test backend config: %v", err)
 				}
+				t.Logf("Backend config %s/%s updated", testBackendConfig.Name, s.Namespace)
 
-				if err := verifySecurityPolicy(t, gclb, s.Namespace, testSvc.Name, step.expectedpolicyLink); err != nil {
-					t.Logf("verifySecurityPolicy(..., %q, %q, %q) = %v, want nil", s.Namespace, testSvc.Name, step.expectedpolicyLink, err)
-					return false, nil
+				t.Logf("Waiting %v for security policy to be updated on relevant backend service", policyUpdateTimeout)
+				if err := wait.Poll(policyUpdateInterval, policyUpdateTimeout, func() (bool, error) {
+					params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All)}
+					gclb, err = fuzz.GCLBForVIP(ctx, Framework.Cloud, params)
+					if err != nil {
+						t.Fatalf("fuzz.GCLBForVIP(..., %q, %q) = _, %v; want _, nil", vip, features.SecurityPolicy, err)
+					}
+
+					if err := verifySecurityPolicy(t, gclb, s.Namespace, testSvc.Name, step.expectedpolicyLink); err != nil {
+						t.Logf("verifySecurityPolicy(..., %q, %q, %q) = %v, want nil", s.Namespace, testSvc.Name, step.expectedpolicyLink, err)
+						return false, nil
+					}
+					return true, nil
+				}); err != nil {
+					t.Errorf("Failed to wait for security policy updated: %v", err)
 				}
-				return true, nil
-			}); err != nil {
-				t.Errorf("Failed to wait for security policy updated: %v", err)
-			}
+			})
 		}
 
 		t.Logf("Cleaning up test")

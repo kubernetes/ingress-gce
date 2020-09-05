@@ -179,53 +179,53 @@ func TestNEGTransition(t *testing.T) {
 				negGC:       true,
 			},
 		} {
-			t.Logf("Running test case: %s", tc.desc)
-
-			svcAnnotations := map[string]string{}
-			if tc.annotations != nil {
-				svcAnnotations[annotations.NEGAnnotationKey] = tc.annotations.String()
-			}
-			// First create the echo service, we will be adapting it throughout the basic tests
-			_, err := e2e.EnsureEchoService(s, "service-1", svcAnnotations, v1.ServiceTypeNodePort, 1)
-
-			if err != nil {
-				t.Fatalf("error ensuring echo service: %v", err)
-			}
-			t.Logf("Echo service ensured (%s/%s)", s.Namespace, "service-1")
-
-			ing.Namespace = s.Namespace
-			// Create the ingress
-			ing, err = e2e.EnsureIngress(s, ing)
-			if err != nil {
-				t.Fatalf("error ensuring Ingress spec: %v", err)
-			}
-			t.Logf("Ingress ensured (%s/%s)", s.Namespace, ing.Name)
-
-			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
-			if err != nil {
-				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
-			}
-			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
-
-			// Perform whitebox testing.
-			gclb, err := e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)
-			if err != nil {
-				t.Fatalf("e2e.WhiteboxTest(%s/%s, ...)", ing.Namespace, ing.Name)
-			}
-
-			if tc.negGC {
-				if len(gclb.NetworkEndpointGroup) != 0 {
-					t.Errorf("NegGC = true, expected 0 negs for gclb %v, got %d", gclb, len(gclb.NetworkEndpointGroup))
+			t.Run(tc.desc, func(t *testing.T) {
+				svcAnnotations := map[string]string{}
+				if tc.annotations != nil {
+					svcAnnotations[annotations.NEGAnnotationKey] = tc.annotations.String()
 				}
-				if err = e2e.WaitForNEGDeletion(ctx, s.ValidatorEnv.Cloud(), previousGCLBState, nil); err != nil {
-					t.Errorf("Error waiting for NEGDeletion: %v", err)
+				// First create the echo service, we will be adapting it throughout the basic tests
+				_, err := e2e.EnsureEchoService(s, "service-1", svcAnnotations, v1.ServiceTypeNodePort, 1)
+
+				if err != nil {
+					t.Fatalf("error ensuring echo service: %v", err)
 				}
-			} else {
-				if len(gclb.NetworkEndpointGroup) < 1 {
-					t.Errorf("Error, no NEGS associated with gclb %v, expected at least one", gclb)
+				t.Logf("Echo service ensured (%s/%s)", s.Namespace, "service-1")
+
+				ing.Namespace = s.Namespace
+				// Create the ingress
+				ing, err = e2e.EnsureIngress(s, ing)
+				if err != nil {
+					t.Fatalf("error ensuring Ingress spec: %v", err)
 				}
-			}
-			previousGCLBState = gclb
+				t.Logf("Ingress ensured (%s/%s)", s.Namespace, ing.Name)
+
+				ing, err = e2e.WaitForIngress(s, ing, nil, nil)
+				if err != nil {
+					t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+				}
+				t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
+
+				// Perform whitebox testing.
+				gclb, err := e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)
+				if err != nil {
+					t.Fatalf("e2e.WhiteboxTest(%s/%s, ...)", ing.Namespace, ing.Name)
+				}
+
+				if tc.negGC {
+					if len(gclb.NetworkEndpointGroup) != 0 {
+						t.Errorf("NegGC = true, expected 0 negs for gclb %v, got %d", gclb, len(gclb.NetworkEndpointGroup))
+					}
+					if err = e2e.WaitForNEGDeletion(ctx, s.ValidatorEnv.Cloud(), previousGCLBState, nil); err != nil {
+						t.Errorf("Error waiting for NEGDeletion: %v", err)
+					}
+				} else {
+					if len(gclb.NetworkEndpointGroup) < 1 {
+						t.Errorf("Error, no NEGS associated with gclb %v, expected at least one", gclb)
+					}
+				}
+				previousGCLBState = gclb
+			})
 		}
 
 		if ing != nil && previousGCLBState != nil {
@@ -446,33 +446,35 @@ func TestNegCRDTransitions(t *testing.T) {
 				expectedGCNegPorts: []string{port80.String(), port443.String()},
 			},
 		} {
-			_, err := e2e.EnsureEchoService(s, serviceName, map[string]string{
-				annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ServiceTypeClusterIP, tc.replicas)
-			if err != nil {
-				t.Fatalf("error ensuring echo service: %v", err)
-			}
-			t.Logf("Echo service ensured (%s/%s)", s.Namespace, serviceName)
+			t.Run(tc.desc, func(t *testing.T) {
+				_, err := e2e.EnsureEchoService(s, serviceName, map[string]string{
+					annotations.NEGAnnotationKey: tc.annotations.String()}, v1.ServiceTypeClusterIP, tc.replicas)
+				if err != nil {
+					t.Fatalf("error ensuring echo service: %v", err)
+				}
+				t.Logf("Echo service ensured (%s/%s)", s.Namespace, serviceName)
 
-			if len(tc.expectedGCNegPorts) > 0 {
-				for _, port := range tc.expectedGCNegPorts {
-					if err = e2e.WaitForStandaloneNegDeletion(ctx, s.ValidatorEnv.Cloud(), s, port, previousNegStatus); err != nil {
-						t.Errorf("Error waiting for NEGDeletion: %v", err)
+				if len(tc.expectedGCNegPorts) > 0 {
+					for _, port := range tc.expectedGCNegPorts {
+						if err = e2e.WaitForStandaloneNegDeletion(ctx, s.ValidatorEnv.Cloud(), s, port, previousNegStatus); err != nil {
+							t.Errorf("Error waiting for NEGDeletion: %v", err)
+						}
 					}
 				}
-			}
 
-			negStatus, err := e2e.WaitForNegCRs(s, serviceName, tc.expectedNegAttrs)
-			if err != nil {
-				t.Fatalf("Error: e2e.WaitForNegCRs(%s,%+v) = %s, want nil", serviceName, tc.expectedNegAttrs, err)
-			}
-
-			for port, negName := range negStatus.NetworkEndpointGroups {
-				err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, negStatus.Zones, false, int(tc.replicas))
+				negStatus, err := e2e.WaitForNegCRs(s, serviceName, tc.expectedNegAttrs)
 				if err != nil {
-					t.Fatalf("Error: e2e.WaitForNegs service %s/%s neg port/name %s/%s", serviceName, s.Namespace, port, negName)
+					t.Fatalf("Error: e2e.WaitForNegCRs(%s,%+v) = %s, want nil", serviceName, tc.expectedNegAttrs, err)
 				}
-			}
-			previousNegStatus = negStatus
+
+				for port, negName := range negStatus.NetworkEndpointGroups {
+					err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, negStatus.Zones, false, int(tc.replicas))
+					if err != nil {
+						t.Fatalf("Error: e2e.WaitForNegs service %s/%s neg port/name %s/%s", serviceName, s.Namespace, port, negName)
+					}
+				}
+				previousNegStatus = negStatus
+			})
 		}
 	})
 }

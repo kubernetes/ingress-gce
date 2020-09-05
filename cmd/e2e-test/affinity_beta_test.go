@@ -108,36 +108,38 @@ func TestAffinityBeta(t *testing.T) {
 		}
 
 		for _, transition := range affinityTransitions {
-			// Test modifications.
-			if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-				bc, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Get(context.TODO(), beConfig.Name, metav1.GetOptions{})
-				if err != nil {
+			t.Run(fmt.Sprintf("%v", transition), func(t *testing.T) {
+				// Test modifications.
+				if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+					bc, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Get(context.TODO(), beConfig.Name, metav1.GetOptions{})
+					if err != nil {
+						return err
+					}
+					if bc.Spec.SessionAffinity == nil {
+						bc.Spec.SessionAffinity = &backendconfigbeta.SessionAffinityConfig{}
+					}
+					bc.Spec.SessionAffinity.AffinityType = transition.affinity
+					bc.Spec.SessionAffinity.AffinityCookieTtlSec = &transition.ttl
+					_, err = Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Update(context.TODO(), bc, metav1.UpdateOptions{})
 					return err
+				}); err != nil {
+					t.Errorf("CloudV1beta1().BackendConfigs(%q).Update(%#v) = %v, want nil", s.Namespace, transition, err)
 				}
-				if bc.Spec.SessionAffinity == nil {
-					bc.Spec.SessionAffinity = &backendconfigbeta.SessionAffinityConfig{}
-				}
-				bc.Spec.SessionAffinity.AffinityType = transition.affinity
-				bc.Spec.SessionAffinity.AffinityCookieTtlSec = &transition.ttl
-				_, err = Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(s.Namespace).Update(context.TODO(), bc, metav1.UpdateOptions{})
-				return err
-			}); err != nil {
-				t.Errorf("CloudV1beta1().BackendConfigs(%q).Update(%#v) = %v, want nil", s.Namespace, transition, err)
-			}
 
-			if waitErr := wait.Poll(transitionPollInterval, transitionPollTimeout, func() (bool, error) {
-				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
-				if err != nil {
-					t.Logf("Error getting GCP resources for LB with IP(%q): %v", vip, err)
-					return false, nil
+				if waitErr := wait.Poll(transitionPollInterval, transitionPollTimeout, func() (bool, error) {
+					gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+					if err != nil {
+						t.Logf("Error getting GCP resources for LB with IP(%q): %v", vip, err)
+						return false, nil
+					}
+					if err := verifyAffinity(t, gclb, s.Namespace, svcName, transition.affinity, transition.ttl); err != nil {
+						return false, nil
+					}
+					return true, nil
+				}); waitErr != nil {
+					t.Errorf("Error waiting for BackendConfig affinity transition propagation to GCLB, last seen error: %v", err)
 				}
-				if err := verifyAffinity(t, gclb, s.Namespace, svcName, transition.affinity, transition.ttl); err != nil {
-					return false, nil
-				}
-				return true, nil
-			}); waitErr != nil {
-				t.Errorf("Error waiting for BackendConfig affinity transition propagation to GCLB, last seen error: %v", err)
-			}
+			})
 		}
 
 		// Wait for GCLB resources to be deleted.
