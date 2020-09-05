@@ -81,15 +81,6 @@ func TestILB(t *testing.T) {
 			numForwardingRules: 1,
 			numBackendServices: 2,
 		},
-		{
-			desc: "http ILB with static IP",
-			ing: fuzz.NewIngressBuilder("", ingressPrefix+"1", "").
-				DefaultBackend(serviceName, port80).
-				ConfigureForILB().
-				Build(),
-			numForwardingRules: 1,
-			numBackendServices: 1,
-		},
 	} {
 		tc := tc // Capture tc as we are running this in parallel.
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
