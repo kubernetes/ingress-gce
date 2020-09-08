@@ -37,8 +37,6 @@ const (
 	gceHcHealthyThreshold = int64(1)
 	// Defaults to 3 * 8 = 24 seconds before the LB will steer traffic away.
 	gceHcUnhealthyThreshold = int64(3)
-	sharedHcSuffix          = "l4-shared-hc"
-	firewallHcSuffix        = sharedHcSuffix + "-fw"
 )
 
 // EnsureL4HealthCheck creates a new HTTP health check for an L4 LoadBalancer service, based on the parameters provided.
@@ -86,18 +84,6 @@ func DeleteHealthCheck(cloud *gce.Cloud, name string) error {
 		return fmt.Errorf("Failed to create composite key for healthcheck %s - %v", name, err)
 	}
 	return composite.DeleteHealthCheck(cloud, key, meta.VersionGA)
-}
-
-// HealthCheckName returns the name of the healthcheck as well as the name of the associated firewall rule
-// that opens up access for the healthheck.
-func HealthCheckName(shared bool, clusteruid, lbName string) (string, string) {
-	hcName := lbName
-	fwName := lbName
-	if shared {
-		hcName = "k8s1-" + clusteruid + sharedHcSuffix
-		fwName = "k8s1-" + clusteruid + firewallHcSuffix
-	}
-	return hcName, fwName
 }
 
 func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, path string, port int32) *composite.HealthCheck {

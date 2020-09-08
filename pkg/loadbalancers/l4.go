@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 
+	"fmt"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
@@ -45,7 +46,7 @@ type L4 struct {
 	cloud       *gce.Cloud
 	backendPool *backends.Backends
 	scope       meta.KeyType
-	namer       *namer.Namer
+	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
 	recorder            record.EventRecorder
 	Service             *corev1.Service
@@ -62,7 +63,7 @@ var ILBResourceAnnotationKeys = []string{
 	annotations.FirewallRuleKey}
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
-func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer *namer.Namer, recorder record.EventRecorder, lock *sync.Mutex) *L4 {
+func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder, lock *sync.Mutex) *L4 {
 	l := &L4{cloud: cloud, scope: scope, namer: namer, recorder: recorder, Service: service, sharedResourcesLock: lock}
 	l.NamespacedName = types.NamespacedName{Name: service.Name, Namespace: service.Namespace}
 	l.backendPool = backends.NewPool(l.cloud, l.namer)
@@ -87,7 +88,10 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) error {
 	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): attempting delete of load balancer resources", l.NamespacedName.String())
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
 	// All resources use the NEG Name, except forwarding rule.
-	name := l.namer.VMIPNEG(svc.Namespace, svc.Name)
+	name, ok := l.namer.VMIPNEG(svc.Namespace, svc.Name)
+	if !ok {
+		return fmt.Errorf("Namer does not support L4 VMIPNEGs")
+	}
 	frName := l.GetFRName()
 	key, err := l.CreateKey(frName)
 	if err != nil {
@@ -104,7 +108,7 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) error {
 		klog.Errorf("Failed to delete address for internal loadbalancer service %s, err %v", l.NamespacedName.String(), err)
 		retErr = err
 	}
-	hcName, hcFwName := healthchecks.HealthCheckName(sharedHC, l.namer.UID(), name)
+	hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	// delete fw rules
 	deleteFunc := func(name string) error {
 		err := firewalls.EnsureL4InternalFirewallRuleDeleted(l.cloud, name)
@@ -164,8 +168,7 @@ func (l *L4) GetFRName() string {
 }
 
 func (l *L4) getFRNameWithProtocol(protocol string) string {
-	lbName := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
-	return lbName + "-" + strings.ToLower(protocol)
+	return l.namer.L4ForwardingRule(l.Service.Namespace, l.Service.Name, strings.ToLower(protocol))
 }
 
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
@@ -174,12 +177,15 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service,
 	// Use the same resource name for NEG, BackendService as well as FR, FWRule.
 	annotationsMap := make(map[string]string)
 	l.Service = svc
-	name := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
+	name, ok := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
+	if !ok {
+		return nil, nil, fmt.Errorf("Namer does not support L4 VMIPNEGs")
+	}
 	options := getILBOptions(l.Service)
 
 	// create healthcheck
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l.Service)
-	hcName, hcFwName := healthchecks.HealthCheckName(sharedHC, l.namer.UID(), name)
+	hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
 	if !sharedHC {
 		hcPath, hcPort = helpers.GetServiceHealthCheckPathPort(l.Service)

@@ -66,6 +66,7 @@ type ControllerContext struct {
 
 	ClusterNamer  *namer.Namer
 	KubeSystemUID types.UID
+	L4Namer       namer.L4ResourcesNamer
 
 	ControllerContextConfig
 	ASMConfigController *cmconfig.ConfigMapConfigController
@@ -112,7 +113,7 @@ func NewControllerContext(
 	frontendConfigClient frontendconfigclient.Interface,
 	svcnegClient svcnegclient.Interface,
 	cloud *gce.Cloud,
-	namer *namer.Namer,
+	clusterNamer *namer.Namer,
 	kubeSystemUID types.UID,
 	config ControllerContextConfig) *ControllerContext {
 
@@ -121,7 +122,8 @@ func NewControllerContext(
 		KubeClient:              kubeClient,
 		SvcNegClient:            svcnegClient,
 		Cloud:                   cloud,
-		ClusterNamer:            namer,
+		ClusterNamer:            clusterNamer,
+		L4Namer:                 namer.NewL4Namer(string(kubeSystemUID), clusterNamer),
 		KubeSystemUID:           kubeSystemUID,
 		ControllerMetrics:       metrics.NewControllerMetrics(),
 		ControllerContextConfig: config,
