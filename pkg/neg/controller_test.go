@@ -316,7 +316,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
 	}
 	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName,
-		controller.namer, localMode)
+		controller.l4Namer, localMode)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		prevSyncerKey = getSyncerKey(testServiceNamespace, testServiceName, key, val)
@@ -334,7 +334,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 		t.Fatalf("Failed to process updated L4 ILB srvice: %v", err)
 	}
 	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName,
-		controller.namer, localMode)
+		controller.l4Namer, localMode)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
 		updatedSyncerKey = getSyncerKey(testServiceNamespace, testServiceName, key, val)
