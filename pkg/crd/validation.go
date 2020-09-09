@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	spec "github.com/go-openapi/spec"
-	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kube-openapi/pkg/common"
 )
@@ -39,21 +39,24 @@ var metav1OpenAPISpec = map[string]common.OpenAPIDefinition{
 }
 
 // validation returns a validation specification based on OpenAPI schema's.
-func validation(typeSource string, fn common.GetOpenAPIDefinitions) (*apiextensionsv1beta1.CustomResourceValidation, error) {
-	openapiSpec := fn(spec.MustCreateRef)
+func (v *Version) validation() (*apiextensionsv1.CustomResourceValidation, error) {
+	if v.typeSource == "" || v.fn == nil {
+		return nil, nil
+	}
+	openapiSpec := v.fn(spec.MustCreateRef)
 	// Condense schema for nested types into one master schema.
-	condensedSchema := condenseSchema(openapiSpec[typeSource].Schema, openapiSpec)
+	condensedSchema := condenseSchema(openapiSpec[v.typeSource].Schema, openapiSpec)
 	// Convert master schema into JSONSchemaProps by marshalling + unmarshalling.
-	jsonSchemaProps := &apiextensionsv1beta1.JSONSchemaProps{}
+	jsonSchemaProps := &apiextensionsv1.JSONSchemaProps{}
 	bytes, err := json.Marshal(condensedSchema)
 	if err != nil {
-		return nil, fmt.Errorf("error marshalling OpenAPI schema to JSON: %v", err)
+		return nil, fmt.Errorf("error marshalling OpenAPI schema to JSON for %s API: %v", v.name, err)
 	}
 	err = json.Unmarshal(bytes, jsonSchemaProps)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshalling OpenAPI JSON: %v", err)
+		return nil, fmt.Errorf("error unmarshalling OpenAPI JSON for %s API: %v", v.name, err)
 	}
-	return &apiextensionsv1beta1.CustomResourceValidation{OpenAPIV3Schema: jsonSchemaProps}, nil
+	return &apiextensionsv1.CustomResourceValidation{OpenAPIV3Schema: jsonSchemaProps}, nil
 }
 
 // condenseSchema replaces type references from a schema with the schema's for the referenced types.
