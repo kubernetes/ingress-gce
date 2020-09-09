@@ -599,6 +599,90 @@ func TestToCompositeTargetHttpsProxy(t *testing.T) {
 	}
 }
 
+func TestToCompositeSSLCertificates(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc     string
+		region   string
+		want     []*composite.SslCertificate
+		tlsName  string
+		tlsCerts []*TLSCerts
+	}{
+		{
+			desc:    "One pre-shared cert",
+			tlsName: "pre-shared-1",
+			want: []*composite.SslCertificate{
+				&composite.SslCertificate{Name: "pre-shared-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-1"},
+			},
+		},
+		{
+			desc:    "Two pre-shared cert",
+			tlsName: "pre-shared-1,pre-shared-2",
+			want: []*composite.SslCertificate{
+				&composite.SslCertificate{Name: "pre-shared-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-1"},
+				&composite.SslCertificate{Name: "pre-shared-2", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-2"},
+			},
+		},
+		{
+			desc: "One tls cert",
+			tlsCerts: []*TLSCerts{
+				&TLSCerts{Key: "key-1", Cert: "cert-1", Name: "tlscert-1", CertHash: "hash-1"},
+			},
+			want: []*composite.SslCertificate{
+				&composite.SslCertificate{Name: "foo-cert-hash-1", Certificate: "cert-1", PrivateKey: "key-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-1"},
+			},
+		},
+		{
+			desc: "Two tls cert",
+			tlsCerts: []*TLSCerts{
+				&TLSCerts{Key: "key-1", Cert: "cert-1", Name: "tlscert-1", CertHash: "hash-1"},
+				&TLSCerts{Key: "key-2", Cert: "cert-2", Name: "tlscert-2", CertHash: "hash-2"},
+			},
+			want: []*composite.SslCertificate{
+				&composite.SslCertificate{Name: "foo-cert-hash-1", Certificate: "cert-1", PrivateKey: "key-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-1"},
+				&composite.SslCertificate{Name: "foo-cert-hash-2", Certificate: "cert-2", PrivateKey: "key-2", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-2"},
+			},
+		},
+		{
+			desc: "One pre-shared, one tls cert",
+			tlsCerts: []*TLSCerts{
+				&TLSCerts{Key: "key-1", Cert: "cert-1", Name: "tlscert-1", CertHash: "hash-1"},
+			},
+			tlsName: "pre-shared-1",
+			want: []*composite.SslCertificate{
+				&composite.SslCertificate{Name: "pre-shared-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-1"},
+				&composite.SslCertificate{Name: "foo-cert-hash-1", Certificate: "cert-1", PrivateKey: "key-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-1"},
+			},
+		},
+		{
+			desc: "Two pre-shared, two tls cert",
+			tlsCerts: []*TLSCerts{
+				&TLSCerts{Key: "key-1", Cert: "cert-1", Name: "tlscert-1", CertHash: "hash-1"},
+				&TLSCerts{Key: "key-2", Cert: "cert-2", Name: "tlscert-2", CertHash: "hash-2"},
+			},
+			tlsName: "pre-shared-1,pre-shared-2",
+			want: []*composite.SslCertificate{
+				&composite.SslCertificate{Name: "pre-shared-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-1"},
+				&composite.SslCertificate{Name: "pre-shared-2", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/pre-shared-2"},
+				&composite.SslCertificate{Name: "foo-cert-hash-1", Certificate: "cert-1", PrivateKey: "key-1", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-1"},
+				&composite.SslCertificate{Name: "foo-cert-hash-2", Certificate: "cert-2", PrivateKey: "key-2", SelfLink: "https://www.googleapis.com/compute/v1/projects//global/sslCertificates/foo-cert-hash-2"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			tr := NewTranslator(false, &testNamer{"foo"})
+			env := &Env{Region: tc.region}
+			got := tr.ToCompositeSSLCertificates(env, tc.tlsName, tc.tlsCerts, meta.VersionGA)
+
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Fatalf("Got diff for SSLCertificates (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestSslPolicyLink(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {

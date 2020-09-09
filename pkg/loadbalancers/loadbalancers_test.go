@@ -97,6 +97,18 @@ func newTestJig(t *testing.T) *testJig {
 			return fmt.Errorf("error exceeded target proxy cert limit")
 		}
 
+		// Check that cert exists
+		for _, certName := range request.SslCertificates {
+			resID, err := cloud.ParseResourceURL(certName)
+			if err != nil {
+				return err
+			}
+			_, err = composite.GetSslCertificate(fakeGCE, resID.Key, defaultVersion)
+			if err != nil {
+				return err
+			}
+		}
+
 		tp.SslCertificates = request.SslCertificates
 		return nil
 	}
@@ -1581,7 +1593,6 @@ func TestMaxSecretBasedAndPreSharedCerts(t *testing.T) {
 			t.Fatalf("j.fakeGCE.CreateSslCertificate() = err %v", err)
 		}
 		cert, _ := composite.GetSslCertificate(j.fakeGCE, key, defaultVersion)
-
 		preSharedCerts = append(preSharedCerts, cert)
 		tlsNames = append(tlsNames, cert.Name)
 		expectCertsExtra[cert.Name] = cert.Certificate
