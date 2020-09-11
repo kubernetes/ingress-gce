@@ -113,8 +113,8 @@ func (l *L7) ensureRedirectURLMap() error {
 	// Do not expect to have a RedirectUrlMap
 	if expectedMap == nil {
 		// Check if we need to GC
-		status, ok := l.ingress.Annotations[annotations.RedirectUrlMapKey]
-		if !ok || status == "" {
+		_, ok := l.ingress.Annotations[annotations.RedirectUrlMapKey]
+		if !ok {
 			return nil
 		} else {
 			if err := composite.DeleteUrlMap(l.cloud, key, l.Versions().UrlMap); err != nil {
