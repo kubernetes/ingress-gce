@@ -85,7 +85,7 @@ func (bh *BasicHTTP) PreUpgrade() error {
 	}
 	bh.t.Logf("GCLB resources created (%s)", ingKey)
 
-	if _, err := e2e.WhiteboxTest(ing, bh.s, bh.framework.Cloud, ""); err != nil {
+	if _, err := e2e.WhiteboxTest(ing, nil, bh.framework.Cloud, "", bh.s); err != nil {
 		bh.t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 	}
 	return nil
@@ -119,7 +119,7 @@ func (bh *BasicHTTP) PostUpgrade() error {
 		bh.t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 	}
 	bh.t.Logf("GCLB is stable (%s)", ingKey)
-	gclb, err := e2e.WhiteboxTest(ing, bh.s, bh.framework.Cloud, "")
+	gclb, err := e2e.WhiteboxTest(ing, nil, bh.framework.Cloud, "", bh.s)
 	if err != nil {
 		bh.t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 	}

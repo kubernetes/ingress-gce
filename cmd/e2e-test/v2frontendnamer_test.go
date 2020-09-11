@@ -107,7 +107,7 @@ func TestV2FrontendNamer(t *testing.T) {
 					}
 				}
 				// Perform whitebox testing. This also tests naming scheme.
-				gclb, err := e2e.WhiteboxTest(ing, s, Framework.Cloud, "")
+				gclb, err := e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)
 				if err != nil {
 					t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 				}
@@ -139,7 +139,7 @@ func TestV2FrontendNamer(t *testing.T) {
 			}
 			ingKey := common.NamespacedName(updatedIngs[1])
 			// Verify that GCLB resources of second ingress are intact.
-			gclb, err := e2e.WhiteboxTest(updatedIngs[1], s, Framework.Cloud, "")
+			gclb, err := e2e.WhiteboxTest(updatedIngs[1], nil, Framework.Cloud, "", s)
 			if err != nil {
 				t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 			}
