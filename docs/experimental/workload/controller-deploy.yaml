@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workload-controller
+spec:
+  selector:
+    matchLabels:
+      app: workload-controller
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: workload-controller
+    spec:
+      serviceAccountName: workload-controller
+      containers:
+      - name: workload-controller
+        image: gcr.io/mixia-cube/workload-controller:latest
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        ports:
+        - containerPort: 80

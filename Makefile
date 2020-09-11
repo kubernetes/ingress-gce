@@ -28,7 +28,9 @@ CONTAINER_BINARIES ?= \
 	e2e-test \
 	echo \
 	fuzzer \
-	glbc
+	glbc \
+	workload-controller \
+	workload-daemon
 
 # Latest commit hash for current branch.
 GIT_COMMIT := $(shell git rev-parse HEAD)
