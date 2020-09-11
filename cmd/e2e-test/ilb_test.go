@@ -187,29 +187,30 @@ func TestILBStaticIP(t *testing.T) {
 		t.Logf("Ingress %s/%s created", s.Namespace, testIng.Name)
 
 		var gclb *fuzz.GCLB
-		for _, ing := range []*v1beta1.Ingress{testIngDisabled, testIngEnabled, testIngDisabled} {
-			testIng, err := crud.Update(testIngDisabled)
-			if err != nil {
-				t.Fatalf("error updating Ingress spec: %v", err)
-			}
-			t.Logf("Ingress %s/%s updated", s.Namespace, testIng.Name)
+		for i, ing := range []*v1beta1.Ingress{testIngDisabled, testIngEnabled, testIngDisabled} {
+			t.Run(fmt.Sprintf("Transition-%d", i), func(t *testing.T) {
+				testIng, err := crud.Update(testIngDisabled)
+				if err != nil {
+					t.Fatalf("error updating Ingress spec: %v", err)
+				}
+				t.Logf("Ingress %s/%s updated", s.Namespace, testIng.Name)
 
-			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
-			if err != nil {
-				t.Fatalf("e2e.WaitForIngress(s, %q) = _, %v; want _, nil", ing.Name, err)
-			}
-			if len(ing.Status.LoadBalancer.Ingress) < 1 {
-				t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
-			}
+				ing, err = e2e.WaitForIngress(s, ing, nil, nil)
+				if err != nil {
+					t.Fatalf("e2e.WaitForIngress(s, %q) = _, %v; want _, nil", ing.Name, err)
+				}
+				if len(ing.Status.LoadBalancer.Ingress) < 1 {
+					t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
+				}
 
-			vip := ing.Status.LoadBalancer.Ingress[0].IP
-			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All), Region: Framework.Region, Network: Framework.Network}
-			gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
-			if err != nil {
-				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
-			}
+				vip := ing.Status.LoadBalancer.Ingress[0].IP
+				params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All), Region: Framework.Region, Network: Framework.Network}
+				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+				if err != nil {
+					t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+				}
+			})
 		}
-
 		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, testIng, deleteOptions); err != nil {
 			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", testIng.Name, err)
 		}
