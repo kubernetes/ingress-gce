@@ -38,3 +38,9 @@ The table below describes what version of Ingress-GCE is running on GKE. Note th
        * 1.16.9-gke.2+ -> 1.9.3
        * 1.16.10-gke.6+ -> 1.9.7
        * 1.17.6-gke.11+ -> 1.9.7
+       * 1.18.4-gke.1201+ -> 1.9.7
+       * 1.16.13-gke.400+ -> 1.9.8
+       * 1.17.9-gke.600+ -> 1.9.8
+       * 1.18.6-gke.500+ -> 1.9.8
+       * 1.18.6-gke.4800+ -> 1.9.9
+       
