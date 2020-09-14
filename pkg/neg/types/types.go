@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 type NetworkEndpointType string
@@ -162,7 +163,7 @@ func NewPortInfoMap(namespace, name string, svcPortTupleSet SvcPortTupleSet, nam
 
 // NewPortInfoMapForVMIPNEG creates PortInfoMap with empty port tuple. Since VM_IP NEGs target
 // the node instead of the pod, there is no port info to be stored.
-func NewPortInfoMapForVMIPNEG(namespace, name string, namer NetworkEndpointGroupNamer, local bool) PortInfoMap {
+func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNamer, local bool) PortInfoMap {
 	ret := PortInfoMap{}
 	svcPortSet := make(SvcPortTupleSet)
 	svcPortSet.Insert(
@@ -174,9 +175,10 @@ func NewPortInfoMapForVMIPNEG(namespace, name string, namer NetworkEndpointGroup
 		if local {
 			mode = L4LocalMode
 		}
+		negName, _ := namer.VMIPNEG(namespace, name)
 		ret[PortInfoMapKey{svcPortTuple.Port, ""}] = PortInfo{
 			PortTuple:        svcPortTuple,
-			NegName:          namer.VMIPNEG(namespace, name),
+			NegName:          negName,
 			EpCalculatorMode: mode,
 		}
 	}

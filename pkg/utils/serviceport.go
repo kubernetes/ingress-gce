@@ -67,7 +67,8 @@ func (sp ServicePort) BackendName() string {
 	if sp.NEGEnabled {
 		return sp.BackendNamer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.Port)
 	} else if sp.VMIPNEGEnabled {
-		return sp.BackendNamer.VMIPNEG(sp.ID.Service.Namespace, sp.ID.Service.Name)
+		negName, _ := sp.BackendNamer.VMIPNEG(sp.ID.Service.Namespace, sp.ID.Service.Name)
+		return negName
 	}
 	return sp.BackendNamer.IGBackend(sp.NodePort)
 }

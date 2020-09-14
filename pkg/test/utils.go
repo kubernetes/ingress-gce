@@ -185,6 +185,9 @@ func CreateAndInsertNodes(gce *gce.Cloud, nodeNames []string, zoneName string) (
 					NodeInfo: api_v1.NodeSystemInfo{
 						KubeProxyVersion: "v1.7.2",
 					},
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
 				},
 			},
 		)

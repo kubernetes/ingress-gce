@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"k8s.io/ingress-gce/pkg/loadbalancers"
-	"k8s.io/ingress-gce/pkg/neg/types"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -40,11 +39,14 @@ import (
 
 const (
 	clusterUID = "aaaaa"
+	// This is one of the zones used in gce_fake.go
+	testGCEZone = "us-central1-b"
 )
 
-func newServiceController() *L4Controller {
+func newServiceController(t *testing.T) *L4Controller {
 	kubeClient := fake.NewSimpleClientset()
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := gce.NewFakeGCECloud(vals)
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = loadbalancers.InsertForwardingRuleHook
 
 	namer := namer.NewNamer(clusterUID, "")
@@ -55,6 +57,14 @@ func newServiceController() *L4Controller {
 		ResyncPeriod: 1 * time.Minute,
 	}
 	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
+	// Add some nodes so that NEG linker kicks in during ILB creation.
+	nodes, err := test.CreateAndInsertNodes(ctx.Cloud, []string{"instance-1"}, vals.ZoneName)
+	if err != nil {
+		t.Errorf("Failed to add new nodes, err  %v", err)
+	}
+	for _, n := range nodes {
+		ctx.NodeInformer.GetIndexer().Add(n)
+	}
 	return NewController(ctx, stopCh)
 }
 
@@ -75,9 +85,9 @@ func deleteILBService(l4c *L4Controller, svc *api_v1.Service) {
 
 func addNEG(l4c *L4Controller, svc *api_v1.Service) {
 	// Also create a fake NEG for this service since the sync code will try to link the backend service to NEG
-	negName := l4c.ctx.ClusterNamer.VMIPNEG(svc.Namespace, svc.Name)
+	negName, _ := l4c.namer.VMIPNEG(svc.Namespace, svc.Name)
 	neg := &composite.NetworkEndpointGroup{Name: negName}
-	key := meta.ZonalKey(negName, types.TestZone1)
+	key := meta.ZonalKey(negName, testGCEZone)
 	composite.CreateNetworkEndpointGroup(l4c.ctx.Cloud, key, neg)
 }
 
@@ -128,7 +138,7 @@ func validateSvcStatus(svc *api_v1.Service, expectStatus bool, t *testing.T) {
 // This test adds a new service, then performs a valid update and then modifies the service type to External and ensures
 // that the status field is as expected in each case.
 func TestProcessCreateOrUpdate(t *testing.T) {
-	l4c := newServiceController()
+	l4c := newServiceController(t)
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	addNEG(l4c, newSvc)
@@ -174,7 +184,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 }
 
 func TestProcessDeletion(t *testing.T) {
-	l4c := newServiceController()
+	l4c := newServiceController(t)
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	addNEG(l4c, newSvc)
@@ -214,7 +224,7 @@ func TestProcessDeletion(t *testing.T) {
 }
 
 func TestProcessCreateLegacyService(t *testing.T) {
-	l4c := newServiceController()
+	l4c := newServiceController(t)
 	newSvc := test.NewL4ILBService(false, 8080)
 	// Set the legacy finalizer
 	newSvc.Finalizers = append(newSvc.Finalizers, common.LegacyILBFinalizer)
@@ -232,7 +242,7 @@ func TestProcessCreateLegacyService(t *testing.T) {
 }
 
 func TestProcessUpdateClusterIPToILBService(t *testing.T) {
-	l4c := newServiceController()
+	l4c := newServiceController(t)
 	clusterSvc := &api_v1.Service{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      "testsvc",
@@ -255,6 +265,7 @@ func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 	if !l4c.needsUpdate(clusterSvc, newSvc) {
 		t.Errorf("Incorrectly marked service %v as not needing update", newSvc)
 	}
+	addNEG(l4c, newSvc)
 	err := l4c.sync(getKeyForSvc(newSvc, t))
 	if err != nil {
 		t.Errorf("Failed to sync newly updated service %s, err %v", newSvc.Name, err)
