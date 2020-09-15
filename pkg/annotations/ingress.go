@@ -114,7 +114,11 @@ type Ingress struct {
 
 // FromIngress extracts the annotations from an Ingress definition.
 func FromIngress(ing *v1beta1.Ingress) *Ingress {
-	return &Ingress{ing.Annotations}
+	result := &Ingress{}
+	if ing != nil {
+		result.v = ing.Annotations
+	}
+	return result
 }
 
 // AllowHTTP returns the allowHTTP flag. True by default.
