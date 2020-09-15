@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -64,13 +65,13 @@ func (s *IngressSyncer) Sync(state interface{}) error {
 }
 
 // GC implements Syncer.
-func (s *IngressSyncer) GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, frontendGCAlgorithm utils.FrontendGCAlgorithm) error {
+func (s *IngressSyncer) GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, frontendGCAlgorithm utils.FrontendGCAlgorithm, scope meta.KeyType) error {
 	var lbErr, err error
 	var errs []error
 	switch frontendGCAlgorithm {
 	case utils.CleanupV2FrontendResources:
 		klog.V(3).Infof("Using algorithm CleanupV2FrontendResources to GC frontend of ingress %s", common.NamespacedName(currIng))
-		lbErr = s.controller.GCv2LoadBalancer(currIng)
+		lbErr = s.controller.GCv2LoadBalancer(currIng, scope)
 
 		defer func() {
 			if err != nil {
@@ -78,6 +79,9 @@ func (s *IngressSyncer) GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, fr
 			}
 			err = s.controller.EnsureDeleteV2Finalizer(currIng)
 		}()
+	case utils.CleanupV2FrontendResourcesScopeChange:
+		klog.V(3).Infof("Using algorithm CleanupV2FrontendResourcesScopeChange to GC frontend of ingress %s", common.NamespacedName(currIng))
+		lbErr = s.controller.GCv2LoadBalancer(currIng, scope)
 	case utils.CleanupV1FrontendResources:
 		klog.V(3).Infof("Using algorithm CleanupV1FrontendResources to GC frontend of ingress %s", common.NamespacedName(currIng))
 		// Filter GCE ingresses that use v1 naming scheme.
