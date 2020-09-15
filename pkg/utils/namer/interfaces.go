@@ -57,8 +57,9 @@ type BackendNamer interface {
 	// NEG returns the gce neg name based on the service namespace, name
 	// and target port.
 	NEG(namespace, name string, Port int32) string
-	// VMIPNEG returns the gce neg name based on the service namespace and name
-	VMIPNEG(namespace, name string) string
+	// VMIPNEG returns the gce neg name based on the service namespace and name.
+	// The second output parameter indicates if the namer supports VM_IP_NEGs.
+	VMIPNEG(namespace, name string) (string, bool)
 	// InstanceGroup constructs the name for an Instance Group.
 	InstanceGroup() string
 	// NamedPort returns the name for a named port.
@@ -77,4 +78,16 @@ type V1FrontendNamer interface {
 	// NameBelongsToCluster checks if a given frontend resource name is tagged with
 	// this cluster's UID.
 	NameBelongsToCluster(resourceName string) bool
+}
+
+// L4ResourcesNamer is an interface to name L4 LoadBalancing resources.
+type L4ResourcesNamer interface {
+	// BackendNamer is included so implementations of this interface can be used along with backendPools for linking VM_IP_NEGs.
+	BackendNamer
+	// L4ForwardingRule returns the name of the forwarding rule for the given service and protocol.
+	L4ForwardingRule(namespace, name, protocol string) string
+	// L4HealthCheck returns the names of the Healthcheck and HC-firewall rule.
+	L4HealthCheck(namespace, name string, shared bool) (string, string)
+	// IsNEG returns if the given name is a VM_IP_NEG name.
+	IsNEG(name string) bool
 }

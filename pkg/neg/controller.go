@@ -48,6 +48,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	namer2 "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
 
@@ -64,6 +65,7 @@ type Controller struct {
 	gcPeriod     time.Duration
 	recorder     record.EventRecorder
 	namer        negtypes.NetworkEndpointGroupNamer
+	l4Namer      namer2.L4ResourcesNamer
 	zoneGetter   negtypes.ZoneGetter
 
 	hasSynced                   func() bool
@@ -148,6 +150,7 @@ func NewController(
 		recorder:              recorder,
 		zoneGetter:            zoneGetter,
 		namer:                 namer,
+		l4Namer:               ctx.L4Namer,
 		defaultBackendService: ctx.DefaultBackendSvcPort,
 		hasSynced:             ctx.HasSynced,
 		ingressLister:         ctx.IngressInformer.GetIndexer(),
@@ -161,7 +164,6 @@ func NewController(
 		runL4:                 runL4Controller,
 		enableNegCrd:          enableNegCrd,
 	}
-
 	if runIngress {
 		ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
@@ -528,7 +530,7 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 	// Update usage metrics.
 	negUsage.VmIpNeg = usage.NewVmIpNegType(onlyLocal)
 
-	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.namer, onlyLocal))
+	return portInfoMap.Merge(negtypes.NewPortInfoMapForVMIPNEG(name.Namespace, name.Name, c.l4Namer, onlyLocal))
 }
 
 // mergeDefaultBackendServicePortInfoMap merge the PortInfoMap for the default backend service into portInfoMap

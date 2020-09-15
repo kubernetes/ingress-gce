@@ -24,8 +24,6 @@ import (
 	"strings"
 	"sync"
 
-	"k8s.io/ingress-gce/pkg/utils/common"
-
 	"k8s.io/klog"
 )
 
@@ -472,26 +470,6 @@ func (n *Namer) NEGWithSubset(namespace, name, subset string, port int32) string
 	return fmt.Sprintf("%s-%s-%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName, truncPort, truncSubset, negSuffix(n.shortUID(), namespace, name, portStr, subset))
 }
 
-// VMIPNEG returns the gce neg name based on the service namespace and name
-// NEG naming convention:
-//
-//   {prefix}{version}-{clusterid}-{namespace}-{name}-{hash}
-//
-// Output name is at most 63 characters. NEG tries to keep as much
-// information as possible.
-//
-// WARNING: Controllers depend on the naming pattern to get the list
-// of all NEGs associated with the current cluster. Any modifications
-// must be backward compatible.
-func (n *Namer) VMIPNEG(namespace, name string) string {
-	truncFields := TrimFieldsEvenly(maxNEGDescriptiveLabel, namespace, name)
-	truncNamespace := truncFields[0]
-	truncName := truncFields[1]
-	// Use the full cluster UID in the suffix to reduce chance of collision.
-	return fmt.Sprintf("%s-%s-%s-%s", n.negPrefix(), truncNamespace, truncName,
-		vmIPNegSuffix(n.UID(), namespace, name))
-}
-
 // IsNEG returns true if the name is a NEG owned by this cluster.
 // It checks that the UID is present and a substring of the
 // cluster uid, since the NEG naming schema truncates it to 8 characters.
@@ -500,13 +478,13 @@ func (n *Namer) IsNEG(name string) bool {
 	return strings.HasPrefix(name, n.negPrefix())
 }
 
-func (n *Namer) negPrefix() string {
-	return fmt.Sprintf("%s%s-%s", n.prefix, schemaVersionV1, n.shortUID())
+// VMIPNEG is only supported by L4Namer.
+func (namer *Namer) VMIPNEG(namespace, name string) (string, bool) {
+	return "", false
 }
 
-// vmIPNegSuffix returns an 8 character hash code to be used as suffix in GCE_VM_IP NEG.
-func vmIPNegSuffix(uid, namespace, name string) string {
-	return common.ContentHash(strings.Join([]string{uid, namespace, name}, ";"), 8)
+func (n *Namer) negPrefix() string {
+	return fmt.Sprintf("%s%s-%s", n.prefix, schemaVersionV1, n.shortUID())
 }
 
 // negSuffix returns hash code with 8 characters
