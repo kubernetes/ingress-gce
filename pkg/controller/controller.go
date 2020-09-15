@@ -47,6 +47,7 @@ import (
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/metrics"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	ingsync "k8s.io/ingress-gce/pkg/sync"
@@ -303,7 +304,7 @@ func NewLoadBalancerController(
 	return &lbc
 }
 
-// Init the controller.
+// Init the controller
 func (lbc *LoadBalancerController) Init() {
 	// TODO(rramkumar): Try to get rid of this "Init".
 	lbc.instancePool.Init(lbc.Translator)
@@ -489,8 +490,8 @@ func (lbc *LoadBalancerController) GCv1LoadBalancers(toKeep []*v1beta1.Ingress) 
 }
 
 // GCv2LoadBalancer implements Controller.
-func (lbc *LoadBalancerController) GCv2LoadBalancer(ing *v1beta1.Ingress) error {
-	return lbc.l7Pool.GCv2(ing)
+func (lbc *LoadBalancerController) GCv2LoadBalancer(ing *v1beta1.Ingress, scope meta.KeyType) error {
+	return lbc.l7Pool.GCv2(ing, scope)
 }
 
 // EnsureDeleteV1Finalizers implements Controller.
@@ -550,12 +551,13 @@ func (lbc *LoadBalancerController) sync(key string) error {
 
 	// Capture GC state for ingress.
 	allIngresses := lbc.ctx.Ingresses().List()
+	scope := features.ScopeFromIngress(ing)
 
 	// Determine if the ingress needs to be GCed.
 	if !ingExists || utils.NeedsCleanup(ing) {
-		frontendGCAlgorithm := frontendGCAlgorithm(ingExists, ing)
+		frontendGCAlgorithm := frontendGCAlgorithm(ingExists, false, ing)
 		// GC will find GCE resources that were used for this ingress and delete them.
-		err := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm)
+		err := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm, scope)
 		// Skip emitting an event if ingress does not exist as we cannot retrieve ingress namespace.
 		if err != nil && ingExists {
 			klog.Errorf("Error in GC for %s/%s: %v", ing.Namespace, ing.Name, err)
@@ -601,11 +603,23 @@ func (lbc *LoadBalancerController) sync(key string) error {
 		lbc.metrics.SetIngress(key, metrics.NewIngressState(ing, fc, urlMap.AllServicePorts()))
 	}
 
+	// Check for scope change GC
+	var oldScope *meta.KeyType
+	if flags.F.EnableL7Ilb {
+		oldScope, err = lbc.l7Pool.FrontendScopeChangeGC(ing)
+		if err != nil {
+			return err
+		}
+		if oldScope != nil {
+			scope = *oldScope
+		}
+	}
+
 	// Garbage collection will occur regardless of an error occurring. If an error occurred,
 	// it could have been caused by quota issues; therefore, garbage collecting now may
 	// free up enough quota for the next sync to pass.
-	frontendGCAlgorithm := frontendGCAlgorithm(ingExists, ing)
-	if gcErr := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm); gcErr != nil {
+	frontendGCAlgorithm := frontendGCAlgorithm(ingExists, oldScope != nil, ing)
+	if gcErr := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm, scope); gcErr != nil {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.GarbageCollection, "Error during garbage collection: %v", gcErr)
 		return fmt.Errorf("error during sync %v, error during GC %v", syncErr, gcErr)
 	}
@@ -795,7 +809,8 @@ func (lbc *LoadBalancerController) ensureFinalizer(ing *v1beta1.Ingress) (*v1bet
 //    - Does not need cleanup
 //      - Finalizer enabled    :    all backends
 //      - Finalizer disabled   :    v1 frontends and all backends
-func frontendGCAlgorithm(ingExists bool, ing *v1beta1.Ingress) utils.FrontendGCAlgorithm {
+//      - Scope changed        :    v2 frontends for all scope
+func frontendGCAlgorithm(ingExists bool, scopeChange bool, ing *v1beta1.Ingress) utils.FrontendGCAlgorithm {
 	// If ingress does not exist, that means its pre-finalizer era.
 	// Run GC via v1 naming scheme.
 	if !ingExists {
@@ -805,6 +820,9 @@ func frontendGCAlgorithm(ingExists bool, ing *v1beta1.Ingress) utils.FrontendGCA
 	if !utils.NeedsCleanup(ing) {
 		// GC backends only if current ingress does not need cleanup and finalizers is enabled.
 		if flags.F.FinalizerAdd {
+			if scopeChange {
+				return utils.CleanupV2FrontendResourcesScopeChange
+			}
 			return utils.NoCleanUpNeeded
 		}
 		return utils.CleanupV1FrontendResources
