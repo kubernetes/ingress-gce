@@ -35,6 +35,7 @@ var (
 		},
 	}
 	expectServicePort = []string{"80", "443"}
+	expectedNegAttrs  = map[string]string{"80": "", "443": ""}
 )
 
 // StandaloneNeg implements e2e.UpgradeTest interface
@@ -73,8 +74,8 @@ func (sn *StandaloneNeg) PreUpgrade() error {
 	}
 	sn.t.Logf("Echo service ensured (%s/%s)", sn.s.Namespace, svcName)
 
-	sn.scaleAndValidate(1)
-	sn.scaleAndValidate(3)
+	negScaleAndValidate(sn.t, sn.s, sn.framework, 1)
+	negScaleAndValidate(sn.t, sn.s, sn.framework, 3)
 	return nil
 }
 
@@ -85,37 +86,109 @@ func (sn *StandaloneNeg) DuringUpgrade() error {
 
 // PostUpgrade implements e2e.UpgradeTest.PostUpgrade
 func (sn *StandaloneNeg) PostUpgrade() error {
-	sn.validate(3)
-	sn.scaleAndValidate(5)
-	sn.scaleAndValidate(2)
+	negValidate(sn.t, sn.s, sn.framework, 3)
+	negScaleAndValidate(sn.t, sn.s, sn.framework, 5)
+	negScaleAndValidate(sn.t, sn.s, sn.framework, 2)
 	return nil
 }
 
-// scaleAndValidate scales the deployment and validate if NEGs are reflected.
-func (sn *StandaloneNeg) scaleAndValidate(replicas int32) {
-	sn.t.Logf("Scaling echo deployment to %v replicas", replicas)
-	if err := e2e.EnsureEchoDeployment(sn.s, svcName, replicas, e2e.NoopModify); err != nil {
-		sn.t.Fatalf("Error ensuring echo deployment: %v", err)
-	}
-	if err := e2e.WaitForEchoDeploymentStable(sn.s, svcName); err != nil {
-		sn.t.Errorf("Echo deployment failed to become stable: %v", err)
-	}
-	sn.validate(replicas)
+// NegCRD implements e2e.UpgradeTest interface
+type NegCRD struct {
+	t         *testing.T
+	s         *e2e.Sandbox
+	framework *e2e.Framework
 }
 
-// validate check if the NEG status annotation and the corresponding NEGs are correctly configured.
-func (sn *StandaloneNeg) validate(replicas int32) {
-	// validate neg status
-	negStatus, err := e2e.WaitForNegStatus(sn.s, svcName, expectServicePort, false)
+func NewNegCRDUpgradeTest() e2e.UpgradeTest {
+	return &NegCRD{}
+}
+
+// Name implements e2e.UpgradeTest.Init.
+func (n *NegCRD) Name() string {
+	return "NegCRDUpgrade"
+}
+
+// Init implements e2e.UpgradeTest.Init.
+func (n *NegCRD) Init(t *testing.T, s *e2e.Sandbox, framework *e2e.Framework) error {
+	n.t = t
+	n.s = s
+	n.framework = framework
+	return nil
+}
+
+// PreUpgrade implements e2e.UpgradeTest.PreUpgrade.
+func (n *NegCRD) PreUpgrade() error {
+	svcAnnotations := map[string]string{
+		annotations.NEGAnnotationKey: negAnnotation.String(),
+	}
+	_, err := e2e.EnsureEchoService(n.s, svcName, svcAnnotations, v1.ServiceTypeClusterIP, 0)
+
 	if err != nil {
-		sn.t.Fatalf("error waiting for NEG status to update: %v", err)
+		n.t.Fatalf("error ensuring echo service: %v", err)
+	}
+	n.t.Logf("Echo service ensured with neg annotation (%s/%s)", n.s.Namespace, svcName)
+
+	negScaleAndValidate(n.t, n.s, n.framework, 1)
+	return nil
+}
+
+// DuringUpgrade implements e2e.UpgradeTest.DuringUpgrade.
+func (n *NegCRD) DuringUpgrade() error {
+	return nil
+}
+
+// PostUpgrade implements e2e.UpgradeTest.PostUpgrade
+func (n *NegCRD) PostUpgrade() error {
+	negValidate(n.t, n.s, n.framework, 1)
+
+	negStatus, err := e2e.WaitForNegCRs(n.s, svcName, expectedNegAttrs)
+	if err != nil {
+		n.t.Fatalf("error waiting for Neg CRs")
+	}
+	negScaleAndValidate(n.t, n.s, n.framework, 3)
+
+	_, err = e2e.EnsureEchoService(n.s, svcName, map[string]string{}, v1.ServiceTypeClusterIP, 0)
+	if err != nil {
+		n.t.Fatalf("error ensuring echo service: %v", err)
+	}
+
+	n.t.Logf("Echo service ensured with no annotation (%s/%s)", n.s.Namespace, svcName)
+
+	// Test that garbage collection works properly after upgrade
+	for _, port := range expectServicePort {
+		if err = e2e.WaitForStandaloneNegDeletion(context.Background(), n.s.ValidatorEnv.Cloud(), n.s, port, negStatus); err != nil {
+			n.t.Errorf("error waiting for NEGDeletion: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// negScaleAndValidate scales the deployment and validate if NEGs are reflected.
+func negScaleAndValidate(t *testing.T, s *e2e.Sandbox, framework *e2e.Framework, replicas int32) {
+	t.Logf("Scaling echo deployment to %v replicas", replicas)
+	if err := e2e.EnsureEchoDeployment(s, svcName, replicas, e2e.NoopModify); err != nil {
+		t.Fatalf("Error ensuring echo deployment: %v", err)
+	}
+	if err := e2e.WaitForEchoDeploymentStable(s, svcName); err != nil {
+		t.Errorf("Echo deployment failed to become stable: %v", err)
+	}
+	negValidate(t, s, framework, replicas)
+}
+
+// negValidate check if the NEG status annotation and the corresponding NEGs are correctly configured.
+func negValidate(t *testing.T, s *e2e.Sandbox, framework *e2e.Framework, replicas int32) {
+	// validate neg status
+	negStatus, err := e2e.WaitForNegStatus(s, svcName, expectServicePort, false)
+	if err != nil {
+		t.Fatalf("error waiting for NEG status to update: %v", err)
 	}
 
 	// validate neg configurations
 	for port, negName := range negStatus.NetworkEndpointGroups {
 		ctx := context.Background()
-		if err := e2e.WaitForNegs(ctx, sn.framework.Cloud, negName, negStatus.Zones, false, int(replicas)); err != nil {
-			sn.t.Errorf("Unexpected port %v and NEG %q in NEG Status %v", port, negName, negStatus)
+		if err := e2e.WaitForNegs(ctx, framework.Cloud, negName, negStatus.Zones, false, int(replicas)); err != nil {
+			t.Errorf("Unexpected port %v and NEG %q in NEG Status %v", port, negName, negStatus)
 		}
 	}
 }
