@@ -47,6 +47,12 @@ func TestUpgradeToV1dot8(t *testing.T) {
 	runUpgradeTest(t, upgrade.NewV2FrontendNamerTest())
 }
 
+// TestUpgradeToV1dot10 runs upgrade tests for features that are introduced in v1.10.0.
+// Note that this test runs only when an upgrade results in enabling these features.
+func TestUpgradeToV1dot10(t *testing.T) {
+	runUpgradeTest(t, upgrade.NewNegCRDUpgradeTest())
+}
+
 func runUpgradeTest(t *testing.T, test e2e.UpgradeTest) {
 	desc := test.Name()
 	Framework.RunWithSandbox(desc, t, func(t *testing.T, s *e2e.Sandbox) {
