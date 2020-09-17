@@ -359,8 +359,6 @@ func TestILBHttps(t *testing.T) {
 			if err := e2e.WaitForIngressDeletion(context.Background(), gclb, s, ing, deleteOptions); err != nil {
 				t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
 			}
-
-			// TODO(shance): update gcp.go for regional resources so that we can check GC here
 		})
 	}
 }
