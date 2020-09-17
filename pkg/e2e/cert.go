@@ -30,7 +30,6 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	computebeta "google.golang.org/api/compute/v0.beta"
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/api/core/v1"
 	"k8s.io/klog"
@@ -129,14 +128,13 @@ func createGCPCert(s *Sandbox, c *Cert) error {
 
 // createGCPCert creates a SslCertificate in GCP based on the provided Cert.
 func createRegionalGCPCert(s *Sandbox, c *Cert) error {
-	sslCert := &computebeta.SslCertificate{
+	sslCert := &compute.SslCertificate{
 		Name:        c.Name,
 		Certificate: string(c.cert),
 		PrivateKey:  string(c.key),
 		Description: "gcp cert for ingress testing",
 	}
-	// TODO(shance): replace with actual region once #846 gets merged
-	if err := s.f.Cloud.BetaRegionSslCertificates().Insert(context.Background(), meta.RegionalKey(c.Name, "us-central1"), sslCert); err != nil {
+	if err := s.f.Cloud.RegionSslCertificates().Insert(context.Background(), meta.RegionalKey(c.Name, s.f.Region), sslCert); err != nil {
 		return err
 	}
 	klog.V(2).Infof("SslCertificate %q created", c.Name)
