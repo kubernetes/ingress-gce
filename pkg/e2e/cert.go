@@ -126,7 +126,7 @@ func createGCPCert(s *Sandbox, c *Cert) error {
 	return nil
 }
 
-// createGCPCert creates a SslCertificate in GCP based on the provided Cert.
+// createRegionalGCPCert creates a Regional SslCertificate in GCP based on the provided Cert.
 func createRegionalGCPCert(s *Sandbox, c *Cert) error {
 	sslCert := &compute.SslCertificate{
 		Name:        c.Name,
@@ -144,10 +144,24 @@ func createRegionalGCPCert(s *Sandbox, c *Cert) error {
 
 // deleteGCPCert deletes the SslCertificate with the provided name.
 func deleteGCPCert(s *Sandbox, c *Cert) error {
+	if c.Regional {
+		return deleteRegionalGCPCert(s, c)
+	}
+
 	if err := s.f.Cloud.SslCertificates().Delete(context.Background(), meta.GlobalKey(c.Name)); err != nil {
 		return err
 	}
 	klog.V(2).Infof("SslCertificate %q deleted", c.Name)
+
+	return nil
+}
+
+// deleteRegionalGCPCert deletes the Regional SslCertificate with the provided name.
+func deleteRegionalGCPCert(s *Sandbox, c *Cert) error {
+	if err := s.f.Cloud.RegionSslCertificates().Delete(context.Background(), meta.RegionalKey(c.Name, s.f.Region)); err != nil {
+		return err
+	}
+	klog.V(2).Infof("Regional SslCertificate %q deleted", c.Name)
 
 	return nil
 }
