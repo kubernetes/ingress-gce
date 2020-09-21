@@ -119,6 +119,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 
 	removes := currentPorts.Difference(newPorts)
 	adds := newPorts.Difference(currentPorts)
+	samePorts := newPorts.Difference(adds)
 	// There may be duplicate ports in adds and removes due to difference in readinessGate flag
 	// Service/Ingress config changes can cause readinessGate to be turn on or off for the same service port.
 	// By removing the duplicate ports in removes and adds, this prevents disruption of NEG syncer due to the config changes
@@ -141,13 +142,23 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		}
 	}
 
+	for _, portInfo := range samePorts {
+		// To reduce the possibility of NEGs being leaked, ensure a SvcNeg CR exists for every
+		// desired port.
+		if err := manager.ensureSvcNegCR(key, portInfo); err != nil {
+			errList = append(errList, err)
+		}
+	}
+
 	// Ensure a syncer is running for each port that is being added.
 	for svcPort, portInfo := range adds {
 		syncerKey := getSyncerKey(namespace, name, svcPort, portInfo)
 		syncer, ok := manager.syncerMap[syncerKey]
 		if !ok {
 
-			// To ensure that a NEG CR always exists during the lifecyle of a NEG, do not create a syncer for the NEG until the NEG CR is successfully created. This will reduce the possibility of invalid states and reduces complexity of garbage collection
+			// To ensure that a NEG CR always exists during the lifecyle of a NEG, do not create a
+			// syncer for the NEG until the NEG CR is successfully created. This will reduce the
+			// possibility of invalid states and reduces complexity of garbage collection
 			if err := manager.ensureSvcNegCR(key, portInfo); err != nil {
 				errList = append(errList, err)
 				continue
@@ -417,6 +428,10 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 		}
 	}()
 
+	// This section includes a potential race condition between deleting neg here and users adds the neg annotation.
+	// The worst outcome of the race condition is that neg is deleted in the end but user actually specifies a neg.
+	// This would be resolved (sync neg) when the next endpoint update or resync arrives.
+	// TODO: avoid race condition here
 	var errList []error
 	for _, cr := range deletionCandidates {
 		shouldDeleteNegCR := true
@@ -487,7 +502,6 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 		negtypes.NegCRServicePortKey: fmt.Sprint(portInfo.PortTuple.Port),
 	}
 
-	//TODO: Add finalizer after Neg CRD Garbage Collection is implemented.
 	newCR := negv1beta1.ServiceNetworkEndpointGroup{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            portInfo.NegName,
