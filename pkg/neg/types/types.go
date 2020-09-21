@@ -251,7 +251,7 @@ func (p1 PortInfoMap) Merge(p2 PortInfoMap) error {
 }
 
 // Difference returns the entries of PortInfoMap which satisfies one of the following 2 conditions:
-// 1. portInfo entry is not the present in p1
+// 1. portInfo entry is in p1 and not present in p2
 // 2. or the portInfo entry is not the same in p1 and p2.
 func (p1 PortInfoMap) Difference(p2 PortInfoMap) PortInfoMap {
 	result := make(PortInfoMap)

@@ -792,9 +792,34 @@ func TestNegCRCreations(t *testing.T) {
 		neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Get(context2.TODO(), expectedInfo.NegName, metav1.GetOptions{})
 		if err != nil {
 			t.Errorf("error getting neg from neg client: %s", err)
+			continue
 		}
 		checkNegCR(t, neg, svcKey, svcUID, expectedInfo)
 	}
+
+	// Delete Neg CRs
+	for _, expectedInfo := range expectedPortInfoMap {
+		err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace1).Delete(context2.TODO(), expectedInfo.NegName, metav1.DeleteOptions{})
+		if err != nil {
+			t.Errorf("error deleting neg from neg client: %s", err)
+			continue
+		}
+	}
+
+	// EnsureSyncers should recreate the deleted CRs
+	if err := manager.EnsureSyncers(svcNamespace, svcName, expectedPortInfoMap); err != nil {
+		t.Errorf("failed to ensure syncer after creating %s/%s-%v: %v", svcNamespace, svcName, expectedPortInfoMap, err)
+	}
+
+	for _, expectedInfo := range expectedPortInfoMap {
+		neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Get(context2.TODO(), expectedInfo.NegName, metav1.GetOptions{})
+		if err != nil {
+			t.Errorf("error getting neg from neg client: %s", err)
+			continue
+		}
+		checkNegCR(t, neg, svcKey, svcUID, expectedInfo)
+	}
+
 }
 
 func TestNegCRDuplicateCreations(t *testing.T) {
