@@ -139,10 +139,10 @@ func getFirewallName(kubeClient kubernetes.Interface, name, clusterUID string) (
 	if firewallName, err := useDefaultOrLookupVault(cfgVault, storage.ProviderDataKey, name); err != nil {
 		return "", err
 	} else if firewallName != "" {
-		return firewallName, cfgVault.Put(storage.ProviderDataKey, firewallName)
+		return firewallName, cfgVault.Put(storage.ProviderDataKey, firewallName, false)
 	} else {
 		klog.Infof("Using cluster UID %v as firewall name", clusterUID)
-		return clusterUID, cfgVault.Put(storage.ProviderDataKey, clusterUID)
+		return clusterUID, cfgVault.Put(storage.ProviderDataKey, clusterUID, false)
 	}
 }
 
@@ -172,18 +172,19 @@ func getClusterUID(kubeClient kubernetes.Interface, name string) (string, error)
 		if len(ing.Status.LoadBalancer.Ingress) != 0 {
 			c := namer.ParseName(loadbalancers.GCEResourceName(ing.Annotations, "forwarding-rule"))
 			if c.ClusterName != "" {
-				return c.ClusterName, cfgVault.Put(storage.UIDDataKey, c.ClusterName)
+				return c.ClusterName, cfgVault.Put(storage.UIDDataKey, c.ClusterName, false)
 			}
 			klog.Infof("Found a working Ingress, assuming uid is empty string")
-			return "", cfgVault.Put(storage.UIDDataKey, "")
+			return "", cfgVault.Put(storage.UIDDataKey, "", false)
 		}
 	}
 
+	// Generate a random uid if it does not exist
 	uid, err := randomUID()
 	if err != nil {
 		return "", err
 	}
-	return uid, cfgVault.Put(storage.UIDDataKey, uid)
+	return uid, cfgVault.Put(storage.UIDDataKey, uid, true)
 }
 
 func randomUID() (string, error) {
