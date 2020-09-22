@@ -43,7 +43,7 @@ type FirewallRules struct {
 	srcRanges []string
 	// TODO(rramkumar): Eliminate this variable. We should just pass in
 	// all the port ranges to open with each call to Sync()
-	portRanges []string
+	nodePortRanges []string
 }
 
 // NewFirewallPool creates a new firewall rule manager.
@@ -55,15 +55,15 @@ func NewFirewallPool(cloud Firewall, namer *namer_util.Namer, l7SrcRanges []stri
 		klog.Fatalf("Could not parse L7 src ranges %v for firewall rule: %v", l7SrcRanges, err)
 	}
 	return &FirewallRules{
-		cloud:      cloud,
-		namer:      namer,
-		srcRanges:  l7SrcRanges,
-		portRanges: nodePortRanges,
+		cloud:          cloud,
+		namer:          namer,
+		srcRanges:      l7SrcRanges,
+		nodePortRanges: nodePortRanges,
 	}
 }
 
 // Sync firewall rules with the cloud.
-func (fr *FirewallRules) Sync(nodeNames, additionalPorts, additionalRanges []string) error {
+func (fr *FirewallRules) Sync(nodeNames, additionalPorts, additionalRanges []string, allowNodePort bool) error {
 	klog.V(4).Infof("Sync(%v)", nodeNames)
 	name := fr.namer.FirewallRule()
 	existingFirewall, _ := fr.cloud.GetFirewall(name)
@@ -77,7 +77,10 @@ func (fr *FirewallRules) Sync(nodeNames, additionalPorts, additionalRanges []str
 	sort.Strings(targetTags)
 
 	// De-dupe ports
-	ports := sets.NewString(fr.portRanges...)
+	ports := sets.NewString()
+	if allowNodePort {
+		ports.Insert(fr.nodePortRanges...)
+	}
 	ports.Insert(additionalPorts...)
 
 	// De-dupe srcRanges
