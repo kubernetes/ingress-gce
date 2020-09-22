@@ -71,7 +71,7 @@ func (c *ConfigMapVault) Get(key string) (string, bool, error) {
 
 // Put inserts a key/value pair in the cluster config map.
 // If the key already exists, the value provided is stored.
-func (c *ConfigMapVault) Put(key, val string) error {
+func (c *ConfigMapVault) Put(key, val string, createOnly bool) error {
 	c.storeLock.Lock()
 	defer c.storeLock.Unlock()
 	apiObj := &api_v1.ConfigMap{
@@ -85,6 +85,9 @@ func (c *ConfigMapVault) Put(key, val string) error {
 	item, exists, err := c.configMapStore.GetByKey(cfgMapKey)
 	if err == nil && exists {
 		data := item.(*api_v1.ConfigMap).Data
+		if createOnly {
+			return fmt.Errorf("failed to create configmap %v, it is already existed with data %v.", cfgMapKey, data)
+		}
 		existingVal, ok := data[key]
 		if ok && existingVal == val {
 			// duplicate, no need to update.

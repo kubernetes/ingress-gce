@@ -22,6 +22,49 @@ import (
 	api "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+func TestCreateOnlyConfigMap(t *testing.T) {
+	vault := NewFakeConfigMapVault(api.NamespaceSystem, "ingress-uid")
+	// Get value from an empty vault.
+	val, exists, err := vault.Get(UIDDataKey)
+	if exists {
+		t.Errorf("Got value from an empty vault")
+	}
+
+	// Store empty value for UIDDataKey.
+	uid := "foo"
+	err = vault.Put(UIDDataKey, uid, true)
+	if err != nil {
+		t.Errorf("expect err == nil, got %v", err)
+	}
+	val, exists, err = vault.Get(UIDDataKey)
+	if !exists || err != nil {
+		t.Errorf("Failed to retrieve value from vault: %v", err)
+	}
+	if val != "foo" {
+		t.Errorf("expect val == foo, but got %v", val)
+	}
+
+	// Store empty value for UIDDataKey.
+	uid = "bar"
+	err = vault.Put(UIDDataKey, uid, true)
+	if err == nil {
+		t.Errorf("expect err != nil, got %v", err)
+	}
+
+	uid = "bar"
+	err = vault.Put(UIDDataKey, uid, false)
+	if err != nil {
+		t.Errorf("expect err == nil, got %v", err)
+	}
+	val, exists, err = vault.Get(UIDDataKey)
+	if !exists || err != nil {
+		t.Errorf("Failed to retrieve value from vault: %v", err)
+	}
+	if val != "bar" {
+		t.Errorf("expect val == bar, but got %v", val)
+	}
+}
+
 func TestFakeConfigMapVaule(t *testing.T) {
 	vault := NewFakeConfigMapVault(api.NamespaceSystem, "ingress-uid")
 	// Get value from an empty vault.
@@ -32,7 +75,7 @@ func TestFakeConfigMapVaule(t *testing.T) {
 
 	// Store empty value for UIDDataKey.
 	uid := ""
-	vault.Put(UIDDataKey, uid)
+	vault.Put(UIDDataKey, uid, false)
 	val, exists, err = vault.Get(UIDDataKey)
 	if !exists || err != nil {
 		t.Errorf("Failed to retrieve value from vault: %v", err)
@@ -43,7 +86,7 @@ func TestFakeConfigMapVaule(t *testing.T) {
 
 	// Store actual value in key.
 	storedVal := "newuid"
-	vault.Put(UIDDataKey, storedVal)
+	vault.Put(UIDDataKey, storedVal, false)
 	val, exists, err = vault.Get(UIDDataKey)
 	if !exists || err != nil {
 		t.Errorf("Failed to retrieve value from vault")
@@ -54,7 +97,7 @@ func TestFakeConfigMapVaule(t *testing.T) {
 	// Store second value which will have the affect of updating to Store
 	// rather than adding.
 	secondVal := "bar"
-	vault.Put("foo", secondVal)
+	vault.Put("foo", secondVal, false)
 	val, exists, err = vault.Get("foo")
 	if !exists || err != nil || val != secondVal {
 		t.Errorf("Failed to retrieve second value from vault")
