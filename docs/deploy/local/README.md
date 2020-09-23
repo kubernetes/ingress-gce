@@ -25,6 +25,13 @@ local-zone=us-central1-c
 
 Once you have filled out the config, store it somewhere.
 
+Alternatively you can run the [provided script](../../../hack/setup-local.sh)
+from the root of this repo:
+
+```console
+$ hack/setup-local.sh <cluster-name>
+```
+
 ## Setup GCE permissions
 
 When running locally, the Ingress-GCE controller looks on the local machine
@@ -44,11 +51,31 @@ export GOOGLE_APPLICATION_CREDENTIALS=/path/to/key/file
 
 ## Run the controller
 
+All of the following should be run from the root of this repo.
+
 First build the binary:
+
+For Linux users, you can use the following make target which will build the
+binary in a container and place it in `bin/amd64`.
 
 ```console
 make build
 ```
+
+For Mac OS users or to build the binary locally and output it in the
+`bin/amd64` directory run:
+
+```console
+env CGO_ENABLED=0 go build -a -o bin/amd64/glbc  k8s.io/ingress-gce/cmd/glbc
+```
+
+Run controller from the root of this repo using the [provided script](../../../hack/run-local-glbc.sh).
+
+```console
+GLBC=bin/amd64/glbc hack/run-local-glbc.sh
+```
+
+Alternatively you can run the controller manually by doing the following:
 
 Proxy connections to your k8s cluster via your local machine:
 
