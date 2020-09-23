@@ -1818,6 +1818,95 @@ func TestResourceDeletionWithProtocol(t *testing.T) {
 	}
 }
 
+// TestResourceDeletionWithScopeChange asserts that unused resources are cleaned up
+// on updating ingress configuration to change from ELB to ILB or vice versa.
+// This test applies to the V2 naming scheme only
+func TestResourceDeletionWithScopeChange(t *testing.T) {
+	flags.F.EnableL7Ilb = true
+	j := newTestJig(t)
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+
+	testCases := []struct {
+		desc        string
+		beforeClass string
+		afterClass  string
+		gcScope     meta.KeyType
+		ing         *v1beta1.Ingress
+	}{
+		{
+			desc:        "ELB to ILB",
+			beforeClass: "gce",
+			afterClass:  "gce-internal",
+			gcScope:     meta.Global,
+			ing: &v1beta1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "ing-1",
+					Namespace:   namespace,
+					Annotations: map[string]string{},
+				},
+			},
+		},
+		{
+			desc:        "ILB to ELB",
+			beforeClass: "gce-internal",
+			afterClass:  "gce",
+			gcScope:     meta.Regional,
+			ing: &v1beta1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "ing-2",
+					Namespace:   namespace,
+					Annotations: map[string]string{},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			tc.ing.ObjectMeta.Finalizers = []string{common.FinalizerKeyV2}
+
+			lbInfo := &L7RuntimeInfo{
+				AllowHTTP: true,
+				UrlMap:    gceUrlMap,
+				Ingress:   tc.ing,
+			}
+
+			tc.ing.Annotations[annotations.IngressClassKey] = tc.beforeClass
+			l7, err := j.pool.Ensure(lbInfo)
+			if err != nil || l7 == nil {
+				t.Fatalf("Expected l7 not created, err: %v", err)
+			}
+			verifyHTTPForwardingRuleAndProxyLinks(t, j, l7, "")
+
+			tc.ing.Annotations[annotations.IngressClassKey] = tc.afterClass
+			l7, err = j.pool.Ensure(lbInfo)
+			if err != nil || l7 == nil {
+				t.Fatalf("Expected l7 not created, err: %v", err)
+			}
+			verifyHTTPForwardingRuleAndProxyLinks(t, j, l7, "")
+
+			// Check to make sure that there is something to GC
+			scope, err := j.pool.FrontendScopeChangeGC(tc.ing)
+			if scope == nil || *scope != tc.gcScope || err != nil {
+				t.Errorf("FrontendScopeChangeGC(%v) = (%v, %v), want (%q, nil)", tc.ing, scope, err, tc.gcScope)
+			}
+
+			if err := j.pool.GCv2(tc.ing, tc.gcScope); err != nil {
+				t.Errorf("GCv2(%v, %q) = %v, want nil", tc.ing, tc.gcScope, err)
+			}
+
+			// Check to make sure that there is nothing to GC
+			scope, err = j.pool.FrontendScopeChangeGC(tc.ing)
+			if scope != nil || err != nil {
+				t.Errorf("FrontendScopeChangeGC(%v) = (%v, %v), want (nil, nil)", tc.ing, scope, err)
+			}
+		})
+	}
+}
+
 // verifyLBAnnotations asserts that ingress annotations updated correctly.
 func verifyLBAnnotations(t *testing.T, l7 *L7, ingAnnotations map[string]string) {
 	var l7Certs []string

@@ -17,6 +17,7 @@ limitations under the License.
 package sync
 
 import (
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -30,7 +31,7 @@ type Syncer interface {
 	// GC workflow performs frontend resource deletion based on given gc algorithm.
 	// TODO(rramkumar): Do we need to rethink the strategy of GC'ing
 	// all Ingresses at once?
-	GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, frontendGCAlgorithm utils.FrontendGCAlgorithm) error
+	GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, frontendGCAlgorithm utils.FrontendGCAlgorithm, scope meta.KeyType) error
 }
 
 // Controller is an interface for ingress controllers and declares methods
@@ -47,7 +48,7 @@ type Controller interface {
 	GCv1LoadBalancers(toKeep []*v1beta1.Ingress) error
 	// GCv2LoadBalancer garbage collects front-end load balancer resources for given ingress
 	// with v2 naming policy.
-	GCv2LoadBalancer(ing *v1beta1.Ingress) error
+	GCv2LoadBalancer(ing *v1beta1.Ingress, scope meta.KeyType) error
 	// PostProcess allows for doing some post-processing after an Ingress is synced to a GCLB.
 	PostProcess(state interface{}) error
 	// EnsureDeleteV1Finalizers ensures that v1 finalizers are removed for given list of ingresses.

@@ -54,6 +54,8 @@ func (l *L7) ensureComputeURLMap() error {
 	}
 
 	if currentMap == nil {
+		// Check for transitions between elb and ilb
+
 		klog.V(2).Infof("Creating URLMap %q", expectedMap.Name)
 		if err := composite.CreateUrlMap(l.cloud, key, expectedMap); err != nil {
 			return fmt.Errorf("CreateUrlMap: %v", err)
