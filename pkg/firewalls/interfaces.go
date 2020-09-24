@@ -23,7 +23,7 @@ import (
 // SingleFirewallPool syncs the firewall rule for L7 traffic.
 type SingleFirewallPool interface {
 	// Sync syncs firewall rules with the cloud
-	Sync(nodeNames, additionalPorts, additionalRanges []string) error
+	Sync(nodeNames, additionalPorts, additionalRanges []string, allowNodePort bool) error
 	GC() error
 }
 
