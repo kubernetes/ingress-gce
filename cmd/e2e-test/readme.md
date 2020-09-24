@@ -28,6 +28,20 @@ immediately within each call to `RunWithSandbox()`.
 
 ## Running the tests
 
+### Building the tests
+
+For Linux users, the `e2e-test` binary will be built in a container using the
+build make target:
+
+```console
+make build
+```
+
+For Mac Users, or to build the tests locally:
+```console
+go test -c -o bin/amd64/e2e-test k8s.io/ingress-gce/cmd/e2e-test
+```
+
 ### From the command line
 
 Run tests against your cluster and GCP environment. This uses your default
