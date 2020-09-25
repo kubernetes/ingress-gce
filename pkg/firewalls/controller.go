@@ -170,6 +170,16 @@ func (fwc *FirewallController) sync(key string) error {
 	}
 	negPorts := fwc.translator.GatherEndpointPorts(gceSvcPorts)
 
+	// check if any nodeport based service backend exists
+	// if so, then need to include nodePort ranges for firewall
+	needNodePort := false
+	for _, svcPort := range gceSvcPorts {
+		if !svcPort.NEGEnabled {
+			needNodePort = true
+			break
+		}
+	}
+
 	var additionalRanges []string
 	if flags.F.EnableL7Ilb {
 		ilbRange, err := fwc.ilbFirewallSrcRange(gceIngresses)
@@ -190,7 +200,7 @@ func (fwc *FirewallController) sync(key string) error {
 	additionalPorts = append(additionalPorts, negPorts...)
 
 	// Ensure firewall rule for the cluster and pass any NEG endpoint ports.
-	if err := fwc.firewallPool.Sync(nodeNames, additionalPorts, additionalRanges); err != nil {
+	if err := fwc.firewallPool.Sync(nodeNames, additionalPorts, additionalRanges, needNodePort); err != nil {
 		if fwErr, ok := err.(*FirewallXPNError); ok {
 			// XPN: Raise an event on each ingress
 			for _, ing := range gceIngresses {
