@@ -108,14 +108,48 @@ func (l *L7s) list(key *meta.Key, version meta.Version) ([]*composite.UrlMap, er
 }
 
 // GCv2 implements LoadBalancerPool.
-func (l *L7s) GCv2(ing *v1beta1.Ingress) error {
+func (l *L7s) GCv2(ing *v1beta1.Ingress, scope meta.KeyType) error {
 	ingKey := common.NamespacedName(ing)
 	klog.V(2).Infof("GCv2(%v)", ingKey)
-	if err := l.delete(l.namerFactory.Namer(ing), features.VersionsFromIngress(ing), features.ScopeFromIngress(ing)); err != nil {
+	if err := l.delete(l.namerFactory.Namer(ing), features.VersionsFromIngress(ing), scope); err != nil {
 		return err
 	}
 	klog.V(2).Infof("GCv2(%v) ok", ingKey)
 	return nil
+}
+
+// FrontendScopeChangeGC returns the scope to GC if the LB has changed scopes
+// (e.g. when a user migrates from ILB to ELB on the same ingress or vice versa.)
+// This only applies to the V2 Naming Scheme
+// TODO(shance): Refactor to avoid calling GCE every sync loop
+func (l *L7s) FrontendScopeChangeGC(ing *v1beta1.Ingress) (*meta.KeyType, error) {
+	if ing == nil {
+		return nil, nil
+	}
+
+	namer := l.namerFactory.Namer(ing)
+	urlMapName := namer.UrlMap()
+	currentScope := features.ScopeFromIngress(ing)
+
+	for _, scope := range []meta.KeyType{meta.Global, meta.Regional} {
+		if scope != currentScope {
+			key, err := composite.CreateKey(l.cloud, urlMapName, scope)
+			if err != nil {
+				return nil, err
+			}
+
+			// Look for existing LBs with the same name but of a different scope
+			_, err = composite.GetUrlMap(l.cloud, key, features.VersionsFromIngress(ing).UrlMap)
+			if err == nil {
+				klog.V(2).Infof("GC'ing ing %v for scope %q", ing, scope)
+				return &scope, nil
+			}
+			if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+				return nil, err
+			}
+		}
+	}
+	return nil, nil
 }
 
 // GCv1 implements LoadBalancerPool.
@@ -196,7 +230,7 @@ func (l *L7s) Shutdown(ings []*v1beta1.Ingress) error {
 		return namer_util.FrontendNamingScheme(ing) == namer_util.V2NamingScheme
 	}).AsList()
 	for _, ing := range v2Ings {
-		if err := l.GCv2(ing); err != nil {
+		if err := l.GCv2(ing, features.ScopeFromIngress(ing)); err != nil {
 			errs = append(errs, err)
 		}
 	}

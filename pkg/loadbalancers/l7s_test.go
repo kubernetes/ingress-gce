@@ -525,7 +525,7 @@ func TestV2GC(t *testing.T) {
 				createFakeLoadbalancer(cloud, feNamerFactory.Namer(ing), versions, defaultScope)
 			}
 
-			err := l7sPool.GCv2(tc.ingressToDelete)
+			err := l7sPool.GCv2(tc.ingressToDelete, features.ScopeFromIngress(tc.ingressToDelete))
 			if err != nil {
 				t.Errorf("l7sPool.GC(%q) = %v, want nil for case %q", common.NamespacedName(tc.ingressToDelete), err, tc.desc)
 			}
@@ -604,7 +604,7 @@ func TestDoNotLeakV2LB(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			feNamer := feNamerFactory.Namer(tc.ing)
 			createFakeLoadbalancer(l7sPool.cloud, feNamer, versions, defaultScope)
-			err := l7sPool.GCv2(tc.ing)
+			err := l7sPool.GCv2(tc.ing, features.ScopeFromIngress(tc.ing))
 			if err != nil {
 				t.Errorf("l7sPool.GC(%q) = %v, want nil for case %q", common.NamespacedName(tc.ing), err, tc.desc)
 			}

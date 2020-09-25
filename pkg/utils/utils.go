@@ -107,6 +107,10 @@ const (
 	// CleanupV2FrontendResources specifies that frontend resources for ingresses
 	// that use v2 naming scheme need to be deleted.
 	CleanupV2FrontendResources
+	// CleanupV2FrontendResourcesScopeChange specifies that frontend resources for ingresses
+	// that use v2 naming scheme and have changed their LB scope (e.g. ILB -> ELB or vice versa)
+	// need to be deleted
+	CleanupV2FrontendResourcesScopeChange
 	// AffinityTypeNone - no session affinity.
 	gceAffinityTypeNone = "NONE"
 	// AffinityTypeClientIP - affinity based on Client IP.
