@@ -543,7 +543,7 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 		return nil
 	}
 
-	scanIngress := func(qualify func(*v1beta1.Ingress) bool) error {
+	scanIngress := func(qualify func(*v1beta1.Ingress) bool) negtypes.PortInfoMap {
 		for _, m := range c.ingressLister.List() {
 			ing := *m.(*v1beta1.Ingress)
 			if qualify(&ing) && ing.Spec.Backend == nil {
@@ -553,8 +553,7 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 					Port:       c.defaultBackendService.Port,
 					TargetPort: c.defaultBackendService.TargetPort,
 				})
-				defaultServicePortInfoMap := negtypes.NewPortInfoMap(c.defaultBackendService.ID.Service.Namespace, c.defaultBackendService.ID.Service.Name, svcPortTupleSet, c.namer, false, nil)
-				return portInfoMap.Merge(defaultServicePortInfoMap)
+				return negtypes.NewPortInfoMap(c.defaultBackendService.ID.Service.Namespace, c.defaultBackendService.ID.Service.Name, svcPortTupleSet, c.namer, false, nil)
 			}
 		}
 		return nil
@@ -562,8 +561,9 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 
 	// process default backend service for L7 ILB
 	if flags.F.EnableL7Ilb {
-		if err := scanIngress(utils.IsGCEL7ILBIngress); err != nil {
-			return err
+		defaultBackendPortInfoMap := scanIngress(utils.IsGCEL7ILBIngress)
+		if defaultBackendPortInfoMap != nil {
+			return portInfoMap.Merge(defaultBackendPortInfoMap)
 		}
 	}
 
@@ -578,7 +578,12 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 	if negAnnotation.Ingress == false {
 		return nil
 	}
-	return scanIngress(utils.IsGCEIngress)
+
+	defaultBackendPortInfoMap := scanIngress(utils.IsGCEIngress)
+	if defaultBackendPortInfoMap != nil {
+		return portInfoMap.Merge(defaultBackendPortInfoMap)
+	}
+	return nil
 }
 
 // getCSMPortInfoMap gets the PortInfoMap for service and DestinationRules.
