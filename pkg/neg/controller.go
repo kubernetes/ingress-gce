@@ -385,7 +385,7 @@ func (c *Controller) processService(key string) error {
 	}
 	negUsage := usage.NegServiceState{}
 	svcPortInfoMap := make(negtypes.PortInfoMap)
-	if err := c.mergeDefaultBackendServicePortInfoMap(key, svcPortInfoMap); err != nil {
+	if err := c.mergeDefaultBackendServicePortInfoMap(key, service, svcPortInfoMap); err != nil {
 		return err
 	}
 	negUsage.IngressNeg = len(svcPortInfoMap)
@@ -517,15 +517,15 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 // in the ingress spec.  It is either inferred and then managed by the controller, or
 // it is passed to the controller via a command line flag.
 // Additionally, supporting NEGs for default backends is only for L7-ILB
-func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, portInfoMap negtypes.PortInfoMap) error {
-	// process default backend service
-	// Only enable for L7-ILB for now to limit possible issues
-	// TODO(shance): investigate enabling this for all ingresses
+func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *apiv1.Service, portInfoMap negtypes.PortInfoMap) error {
+	if c.defaultBackendService.ID.Service.String() != key {
+		return nil
+	}
 
-	if flags.F.EnableL7Ilb && c.defaultBackendService.ID.Service.String() == key {
+	scanIngress := func(qualify func(*v1beta1.Ingress) bool) error {
 		for _, m := range c.ingressLister.List() {
 			ing := *m.(*v1beta1.Ingress)
-			if utils.IsGCEL7ILBIngress(&ing) && ing.Spec.Backend == nil {
+			if qualify(&ing) && ing.Spec.Backend == nil {
 				svcPortTupleSet := make(negtypes.SvcPortTupleSet)
 				svcPortTupleSet.Insert(negtypes.SvcPortTuple{
 					Name:       c.defaultBackendService.ID.Port.String(),
@@ -536,8 +536,28 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, portInfoM
 				return portInfoMap.Merge(defaultServicePortInfoMap)
 			}
 		}
+		return nil
 	}
-	return nil
+
+	// process default backend service for L7 ILB
+	if flags.F.EnableL7Ilb {
+		if err := scanIngress(utils.IsGCEL7ILBIngress); err != nil {
+			return err
+		}
+	}
+
+	// process default backend service for L7 XLB
+	negAnnotation, foundNEGAnnotation, err := annotations.FromService(service).NEGAnnotation()
+	if err != nil {
+		return err
+	}
+	if !foundNEGAnnotation {
+		return nil
+	}
+	if negAnnotation.Ingress == false {
+		return nil
+	}
+	return scanIngress(utils.IsGCEIngress)
 }
 
 // getCSMPortInfoMap gets the PortInfoMap for service and DestinationRules.
