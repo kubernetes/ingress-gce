@@ -71,6 +71,47 @@ var (
 		},
 		Port:       80,
 		TargetPort: "9376"}
+
+	defaultBackendService = &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "default-http-backend",
+		},
+		Spec: apiv1.ServiceSpec{
+			ClusterIP: "1.2.3.4",
+			Type:      apiv1.ServiceTypeNodePort,
+			Ports: []apiv1.ServicePort{
+				{
+					Name:       "http",
+					Port:       80,
+					TargetPort: intstr.FromInt(9376),
+					NodePort:   30001,
+				},
+			},
+		},
+	}
+
+	defaultBackendServiceWithNeg = &apiv1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: "kube-system",
+			Name:      "default-http-backend",
+			Annotations: map[string]string{
+				annotations.NEGAnnotationKey: "{\"ingress\":true}",
+			},
+		},
+		Spec: apiv1.ServiceSpec{
+			ClusterIP: "1.2.3.4",
+			Type:      apiv1.ServiceTypeNodePort,
+			Ports: []apiv1.ServicePort{
+				{
+					Name:       "http",
+					Port:       80,
+					TargetPort: intstr.FromInt(9376),
+					NodePort:   30001,
+				},
+			},
+		},
+	}
 )
 
 func newTestController(kubeClient kubernetes.Interface) *Controller {
@@ -582,7 +623,7 @@ func TestSyncNegAnnotation(t *testing.T) {
 	}
 }
 
-func TestDefaultBackendServicePortInfoMap(t *testing.T) {
+func TestDefaultBackendServicePortInfoMapForL7ILB(t *testing.T) {
 	// Not using t.Parallel() since we are sharing the controller
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
@@ -682,9 +723,129 @@ func TestDefaultBackendServicePortInfoMap(t *testing.T) {
 				t.Fatal(err)
 			}
 			result := make(negtypes.PortInfoMap)
-			controller.mergeDefaultBackendServicePortInfoMap(controller.defaultBackendService.ID.Service.String(), result)
+			controller.mergeDefaultBackendServicePortInfoMap(controller.defaultBackendService.ID.Service.String(), defaultBackendService, result)
 			if !reflect.DeepEqual(tc.want, result) {
 				t.Fatalf("got %+v, want %+v", result, tc.want)
+			}
+		})
+	}
+}
+
+func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
+	controller := newTestController(fake.NewSimpleClientset())
+	controller.defaultBackendService = defaultBackend
+	newTestService(controller, false, []int32{})
+	defaultBackendServiceKey := defaultBackend.ID.Service.String()
+	expectPortMap := negtypes.NewPortInfoMap(
+		defaultBackend.ID.Service.Namespace,
+		defaultBackend.ID.Service.Name,
+		negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort}),
+		controller.namer,
+		false,
+	)
+	expectEmptyPortmap := make(negtypes.PortInfoMap)
+
+	for _, tc := range []struct {
+		desc           string
+		getIngress     func() *v1beta1.Ingress
+		defaultService *apiv1.Service
+		expectNeg      bool
+	}{
+		{
+			desc:           "no ingress",
+			getIngress:     func() *v1beta1.Ingress { return nil },
+			defaultService: defaultBackendService,
+			expectNeg:      false,
+		},
+		{
+			desc:           "no ingress and default backend service has NEG annotation",
+			getIngress:     func() *v1beta1.Ingress { return nil },
+			defaultService: defaultBackendServiceWithNeg,
+			expectNeg:      false,
+		},
+		{
+			desc: "ing1 has backend and default backend service does not have NEG annotation",
+			getIngress: func() *v1beta1.Ingress {
+				ing := newTestIngress("ing1")
+				ing.Spec.Backend = &v1beta1.IngressBackend{
+					ServiceName: "svc1",
+				}
+				return ing
+			},
+			defaultService: defaultBackendService,
+			expectNeg:      false,
+		},
+		{
+			desc:           "ing1 has backend and default backend service has NEG annotation",
+			getIngress:     func() *v1beta1.Ingress { return nil },
+			defaultService: defaultBackendServiceWithNeg,
+			expectNeg:      false,
+		},
+		{
+			desc: "ing2 does not backend and default backend service does not have NEG annotation",
+			getIngress: func() *v1beta1.Ingress {
+				ing := newTestIngress("ing2")
+				ing.Spec.Backend = nil
+				return ing
+			},
+			defaultService: defaultBackendService,
+			expectNeg:      false,
+		},
+		{
+			desc:           "ing2 does not backend and default backend service has NEG annotation",
+			getIngress:     func() *v1beta1.Ingress { return nil },
+			defaultService: defaultBackendServiceWithNeg,
+			expectNeg:      true,
+		},
+		{
+			desc: "ing3 is L7 ILB, has backend and default backend service does not have NEG annotation",
+			getIngress: func() *v1beta1.Ingress {
+				ing := newTestIngress("ing3")
+				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7ILBIngressClass}
+				return ing
+			},
+			defaultService: defaultBackendService,
+			expectNeg:      false,
+		},
+		{
+			desc: "ing4 is L7 ILB, does not has backend and default backend service does not have NEG annotation",
+			getIngress: func() *v1beta1.Ingress {
+				ing := newTestIngress("ing4")
+				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7ILBIngressClass}
+				ing.Spec.Backend = nil
+				return ing
+			},
+			defaultService: defaultBackendService,
+			expectNeg:      true,
+		},
+		{
+			desc:           "cluster has many ingresses (ILB and XLB) without backend and default backend service has NEG annotation",
+			getIngress:     func() *v1beta1.Ingress { return nil },
+			defaultService: defaultBackendServiceWithNeg,
+			expectNeg:      true,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			ing := tc.getIngress()
+			if ing != nil {
+				if err := controller.ingressLister.Add(ing); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			portMap := make(negtypes.PortInfoMap)
+			if err := controller.mergeDefaultBackendServicePortInfoMap(defaultBackendServiceKey, tc.defaultService, portMap); err != nil {
+				t.Errorf("for test case %q, expect err == nil; but got %v", tc.desc, err)
+			}
+
+			if tc.expectNeg {
+				if !reflect.DeepEqual(portMap, expectPortMap) {
+					t.Errorf("for test case %q, expect port map == %v, but got %v", tc.desc, expectPortMap, portMap)
+				}
+			} else {
+				if !reflect.DeepEqual(portMap, expectEmptyPortmap) {
+					t.Errorf("for test case %q, expect port map == %v, but got %v", tc.desc, expectEmptyPortmap, portMap)
+				}
 			}
 		})
 	}
@@ -1157,7 +1318,6 @@ func newTestService(c *Controller, negIngress bool, negSvcPorts []int32) *apiv1.
 			Ports: ports,
 		},
 	}
-
 	c.client.CoreV1().Services(testServiceNamespace).Create(svc)
 	return svc
 }
