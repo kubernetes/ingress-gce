@@ -286,12 +286,12 @@ func TestFrontendResourceDeletion(t *testing.T) {
 			if tc.disableHTTPS {
 				ingBuilder = ingBuilder.SetTLS(nil)
 			}
-			ing = ingBuilder.Build()
+			newIng := ingBuilder.Build()
 
-			if _, err := crud.Update(ing); err != nil {
-				t.Fatalf("Update(%s) = %v, want nil; ingress: %v", ingKey, err, ing)
+			if _, err := crud.Patch(ing, newIng); err != nil {
+				t.Fatalf("Patch(%s) = %v, want nil; current ingress: %+v new ingress: %+v", ingKey, err, ing, newIng)
 			}
-			t.Logf("Ingress updated (%s)", ingKey)
+			t.Logf("Ingress patched (%s)", ingKey)
 			if ing, err = e2e.WaitForIngress(s, ing, nil, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
 				t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 			}
@@ -326,11 +326,11 @@ func TestFrontendResourceDeletion(t *testing.T) {
 					},
 				})
 			}
-			ing = ingBuilder.Build()
-			if _, err := crud.Update(ing); err != nil {
-				t.Fatalf("Update(%s) = %v, want nil; ingress: %v", ingKey, err, ing)
+			newIng = ingBuilder.Build()
+			if _, err := crud.Patch(ing, newIng); err != nil {
+				t.Fatalf("Patch(%s) = %v, want nil; current ingress: %+v new ingress %+v", ingKey, err, ing, newIng)
 			}
-			t.Logf("Ingress updated (%s)", ingKey)
+			t.Logf("Ingress patched (%s)", ingKey)
 			if ing, err = e2e.WaitForIngress(s, ing, nil, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
 				t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 			}

@@ -103,8 +103,8 @@ func (vf *V2FrontendNamer) PostUpgrade() error {
 		AddPath("bar.com", "/", svcName, port80).
 		Build()
 	ingKey := common.NamespacedName(newIng)
-	if _, err := vf.crud.Update(newIng); err != nil {
-		vf.t.Fatalf("error updating ingress %s: %v", ingKey, err)
+	if _, err := vf.crud.Patch(vf.ing, newIng); err != nil {
+		vf.t.Fatalf("error patching ingress %s: %v; current ingress: %+v new ingress: %+v", ingKey, err, vf.ing, newIng)
 	} else {
 		// If Ingress upgrade succeeds, we update the status on this Ingress
 		// to Unstable. It is set back to Stable after WaitForFinalizer below

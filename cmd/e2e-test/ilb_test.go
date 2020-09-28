@@ -180,24 +180,26 @@ func TestILBStaticIP(t *testing.T) {
 
 		// Create original ingress
 		crud := adapter.IngressCRUD{C: Framework.Clientset}
-		testIng, err := crud.Create(testIngDisabled)
+		ing, err := crud.Create(testIngDisabled)
 		if err != nil {
 			t.Fatalf("error creating Ingress spec: %v", err)
 		}
-		t.Logf("Ingress %s/%s created", s.Namespace, testIng.Name)
+		t.Logf("Ingress %s/%s created", s.Namespace, ing.Name)
 
 		var gclb *fuzz.GCLB
-		for i, ing := range []*v1beta1.Ingress{testIngDisabled, testIngEnabled, testIngDisabled} {
+		for i, testIng := range []*v1beta1.Ingress{testIngDisabled, testIngEnabled, testIngDisabled} {
 			t.Run(fmt.Sprintf("Transition-%d", i), func(t *testing.T) {
-				testIng, err := crud.Update(testIngDisabled)
+				newIng := ing.DeepCopy()
+				newIng.Spec = testIng.Spec
+				ing, err = crud.Patch(ing, newIng)
 				if err != nil {
-					t.Fatalf("error updating Ingress spec: %v", err)
+					t.Fatalf("error patching Ingress spec: %v", err)
 				}
 				t.Logf("Ingress %s/%s updated", s.Namespace, testIng.Name)
 
 				ing, err = e2e.WaitForIngress(s, ing, nil, nil)
 				if err != nil {
-					t.Fatalf("e2e.WaitForIngress(s, %q) = _, %v; want _, nil", ing.Name, err)
+					t.Fatalf("e2e.WaitForIngress(s, %q) = _, %v; want _, nil", testIng.Name, err)
 				}
 				if len(ing.Status.LoadBalancer.Ingress) < 1 {
 					t.Fatalf("Ingress does not have an IP: %+v", ing.Status)
@@ -211,8 +213,8 @@ func TestILBStaticIP(t *testing.T) {
 				}
 			})
 		}
-		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, testIng, deleteOptions); err != nil {
-			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", testIng.Name, err)
+		if err := e2e.WaitForIngressDeletion(ctx, gclb, s, ing, deleteOptions); err != nil {
+			t.Errorf("e2e.WaitForIngressDeletion(..., %q, nil) = %v, want nil", ing.Name, err)
 		}
 	})
 }

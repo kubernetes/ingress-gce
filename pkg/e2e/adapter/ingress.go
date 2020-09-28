@@ -7,10 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	extv1beta1 "k8s.io/api/extensions/v1beta1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 )
@@ -64,6 +67,35 @@ func (crud *IngressCRUD) Update(ing *v1beta1.Ingress) (*v1beta1.Ingress, error) 
 	klog.Warning("Using legacy API")
 	legacyIng := toIngressExtensionsGroup(ing)
 	legacyIng, err = crud.C.ExtensionsV1beta1().Ingresses(ing.Namespace).Update(context.TODO(), legacyIng, metav1.UpdateOptions{})
+	return toIngressNetworkingGroup(legacyIng), err
+}
+
+// Patch Ingress resource.
+func (crud *IngressCRUD) Patch(oldIng, newIng *v1beta1.Ingress) (*v1beta1.Ingress, error) {
+	ingKey := fmt.Sprintf("%s/%s", oldIng.Namespace, oldIng.Name)
+	oldData, err := json.Marshal(oldIng)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal ingress %+v: %v", oldIng, err)
+	}
+	newData, err := json.Marshal(newIng)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal ingress %+v: %v", newIng, err)
+	}
+	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, v1beta1.Ingress{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create TwoWayMergePatch for ingress %s: %v, old ingress: %+v new ingress: %+v", ingKey, err, oldIng, newIng)
+	}
+
+	new, err := crud.supportsNewAPI()
+	if err != nil {
+		return nil, err
+	}
+	klog.Infof("Patch %s/%s", oldIng.Namespace, oldIng.Name)
+	if new {
+		return crud.C.NetworkingV1beta1().Ingresses(oldIng.Namespace).Patch(context.TODO(), oldIng.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
+	}
+	klog.Warning("Using legacy API")
+	legacyIng, err := crud.C.ExtensionsV1beta1().Ingresses(oldIng.Namespace).Patch(context.TODO(), oldIng.Name, types.StrategicMergePatchType, patchBytes, metav1.PatchOptions{})
 	return toIngressNetworkingGroup(legacyIng), err
 }
 
