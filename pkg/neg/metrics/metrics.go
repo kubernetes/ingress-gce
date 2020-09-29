@@ -28,7 +28,7 @@ const (
 	syncerLatencyKey         = "syncer_sync_duration_seconds"
 	managerProcessLatencyKey = "manager_process_duration_seconds"
 	initLatencyKey           = "neg_initialization_duration_seconds"
-	negOpLatencyKey          = "endpoint_operation_duration_seconds"
+	negOpLatencyKey          = "neg_operation_duration_seconds"
 	negOpEndpointsKey        = "neg_operation_endpoints"
 	lastSyncTimestampKey     = "sync_timestamp"
 
