@@ -17,7 +17,6 @@ limitations under the License.
 package controller
 
 import (
-	context2 "context"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -28,7 +27,6 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	unversionedcore "k8s.io/client-go/kubernetes/typed/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
@@ -426,13 +424,14 @@ func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1beta1.Ingress, ingSv
 	if utils.IsGCEMultiClusterIngress(ing) {
 		klog.Warningf("kubemci is used for ingress %v", ing)
 		// Add instance group names as annotation on the ingress and return.
-		if ing.Annotations == nil {
-			ing.Annotations = map[string]string{}
+		newAnnotations := ing.ObjectMeta.DeepCopy().Annotations
+		if newAnnotations == nil {
+			newAnnotations = make(map[string]string)
 		}
-		if err = setInstanceGroupsAnnotation(ing.Annotations, igs); err != nil {
+		if err = setInstanceGroupsAnnotation(newAnnotations, igs); err != nil {
 			return err
 		}
-		if err = updateAnnotations(lbc.ctx.KubeClient, ing.Name, ing.Namespace, ing.Annotations); err != nil {
+		if err = updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations); err != nil {
 			return err
 		}
 		// This short-circuit will stop the syncer from moving to next step.
@@ -634,10 +633,6 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 
 	// Update IP through update/status endpoint
 	ip := l7.GetIP()
-	currIng, err := ingClient.Get(context2.TODO(), ing.Name, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
 	updatedIngStatus := v1beta1.IngressStatus{
 		LoadBalancer: apiv1.LoadBalancerStatus{
 			Ingress: []apiv1.LoadBalancerIngress{
@@ -648,22 +643,21 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 	if ip != "" {
 		lbIPs := ing.Status.LoadBalancer.Ingress
 		if len(lbIPs) == 0 || lbIPs[0].IP != ip {
-			// TODO: If this update fails it's probably resource version related,
-			// which means it's advantageous to retry right away vs requeuing.
 			klog.Infof("Updating loadbalancer %v/%v with IP %v", ing.Namespace, ing.Name, ip)
-			if _, err := common.PatchIngressStatus(ingClient, currIng, updatedIngStatus); err != nil {
-				klog.Errorf("PatchIngressStatus(%s/%s) failed: %v", currIng.Namespace, currIng.Name, err)
+			if _, err := common.PatchIngressStatus(ingClient, ing, updatedIngStatus); err != nil {
+				klog.Errorf("PatchIngressStatus(%s/%s) failed: %v", ing.Namespace, ing.Name, err)
 				return err
 			}
-			lbc.ctx.Recorder(ing.Namespace).Eventf(currIng, apiv1.EventTypeNormal, events.IPChanged, "IP is now %v", ip)
+			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeNormal, events.IPChanged, "IP is now %v", ip)
 		}
 	}
-	annotations, err := loadbalancers.GetLBAnnotations(l7, currIng.Annotations, lbc.backendSyncer)
+
+	newAnnotations, err := loadbalancers.GetLBAnnotations(l7, ing.ObjectMeta.DeepCopy().Annotations, lbc.backendSyncer)
 	if err != nil {
 		return err
 	}
 
-	if err := updateAnnotations(lbc.ctx.KubeClient, ing.Name, ing.Namespace, annotations); err != nil {
+	if err := updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations); err != nil {
 		return err
 	}
 	return nil
@@ -716,20 +710,16 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *u
 	}, nil
 }
 
-func updateAnnotations(client kubernetes.Interface, name, namespace string, annotations map[string]string) error {
-	ingClient := client.NetworkingV1beta1().Ingresses(namespace)
-	currIng, err := ingClient.Get(context2.TODO(), name, metav1.GetOptions{})
-	if err != nil {
-		return err
+func updateAnnotations(client kubernetes.Interface, ing *v1beta1.Ingress, newAnnotations map[string]string) error {
+	if reflect.DeepEqual(ing.Annotations, newAnnotations) {
+		return nil
 	}
-	if !reflect.DeepEqual(currIng.Annotations, annotations) {
-		klog.V(3).Infof("Updating annotations of %v/%v", namespace, name)
-		updatedObjectMeta := currIng.ObjectMeta.DeepCopy()
-		updatedObjectMeta.Annotations = annotations
-		if _, err := common.PatchIngressObjectMetadata(ingClient, currIng, *updatedObjectMeta); err != nil {
-			klog.Errorf("PatchIngressObjectMetadata(%s/%s) failed: %v", currIng.Namespace, currIng.Name, err)
-			return err
-		}
+	ingClient := client.NetworkingV1beta1().Ingresses(ing.Namespace)
+	newObjectMeta := ing.ObjectMeta.DeepCopy()
+	newObjectMeta.Annotations = newAnnotations
+	if _, err := common.PatchIngressObjectMetadata(ingClient, ing, *newObjectMeta); err != nil {
+		klog.Errorf("PatchIngressObjectMetadata(%s/%s) failed: %v", ing.Namespace, ing.Name, err)
+		return err
 	}
 	return nil
 }
