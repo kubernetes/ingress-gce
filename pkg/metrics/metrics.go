@@ -25,7 +25,6 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
@@ -71,10 +70,8 @@ func init() {
 	klog.V(3).Infof("Registering Ingress usage metrics %v and %v, NEG usage metrics %v", ingressCount, servicePortCount, networkEndpointGroupCount)
 	prometheus.MustRegister(ingressCount, servicePortCount, networkEndpointGroupCount)
 
-	if flags.F.RunL4Controller {
-		klog.V(3).Infof("Registering L4 ILB usage metrics %v", l4ILBCount)
-		prometheus.MustRegister(l4ILBCount)
-	}
+	klog.V(3).Infof("Registering L4 ILB usage metrics %v", l4ILBCount)
+	prometheus.MustRegister(l4ILBCount)
 }
 
 // NewIngressState returns ingress state for given ingress and service ports.
@@ -206,14 +203,12 @@ func (im *ControllerMetrics) export() {
 		networkEndpointGroupCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
 
-	if flags.F.RunL4Controller {
-		ilbCount := im.computeL4ILBMetrics()
-		klog.V(5.).Infof("Exporting L4 ILB usage metrics: %#v", ilbCount)
-		for feature, count := range ilbCount {
-			l4ILBCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
-		}
-		klog.V(5.).Infof("L4 ILB usage metrics exported.")
+	ilbCount := im.computeL4ILBMetrics()
+	klog.V(3).Infof("Exporting L4 ILB usage metrics: %#v", ilbCount)
+	for feature, count := range ilbCount {
+		l4ILBCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
+	klog.V(3).Infof("L4 ILB usage metrics exported.")
 
 	klog.V(3).Infof("Ingress usage metrics exported.")
 }
