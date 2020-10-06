@@ -104,8 +104,8 @@ func (bh *BasicHTTP) PostUpgrade() error {
 		Build()
 	ingKey := common.NamespacedName(newIng)
 	// TODO: does the path need to be different for each upgrade
-	if _, err := bh.crud.Update(newIng); err != nil {
-		bh.t.Fatalf("error updating Ingress %s: %v", ingKey, err)
+	if _, err := bh.crud.Patch(bh.ing, newIng); err != nil {
+		bh.t.Fatalf("error patching Ingress %s: %v; current ingress %+v new ingress %+v", ingKey, err, bh.ing, newIng)
 	} else {
 		// If Ingress upgrade succeeds, we update the status on this Ingress
 		// to Unstable. It is set back to Stable after UpgradeTestWaitForIngress

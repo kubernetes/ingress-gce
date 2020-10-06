@@ -173,21 +173,26 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, fc *frontendconfigv1beta1.
 // TODO(smatti): Remove this when the above issue is fixed.
 func WaitForHTTPResourceAnnotations(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
 	ingKey := fmt.Sprintf("%s/%s", s.Namespace, ing.Name)
-	klog.V(3).Infof("Waiting for HTTP annotations to be added on Ingress %s", ingKey)
-	err := wait.Poll(updateIngressPollInterval, updateIngressPollTimeout, func() (bool, error) {
-		var err error
+	klog.Infof("Waiting for HTTP annotations to be added on Ingress %s", ingKey)
+	var err error
+	if waitErr := wait.Poll(updateIngressPollInterval, updateIngressPollTimeout, func() (bool, error) {
 		crud := adapter.IngressCRUD{C: s.f.Clientset}
 		if ing, err = crud.Get(s.Namespace, ing.Name); err != nil {
 			return true, err
 		}
 		if _, ok := ing.Annotations[annotations.HttpForwardingRuleKey]; !ok {
-			klog.V(3).Infof("HTTP forwarding rule annotation not found on ingress %s, retrying", ingKey)
+			klog.Infof("HTTP forwarding rule annotation not found on ingress %s, retrying", ingKey)
 			return false, nil
 		}
-		klog.V(3).Infof("HTTP forwarding rule annotation found on ingress %s", ingKey)
+		klog.Infof("HTTP forwarding rule annotation found on ingress %s", ingKey)
 		return true, nil
-	})
-	return ing, err
+	}); waitErr != nil {
+		if waitErr == wait.ErrWaitTimeout {
+			return nil, fmt.Errorf("error time out, last seem error: %v", err)
+		}
+		return nil, waitErr
+	}
+	return ing, nil
 }
 
 // WaitForFinalizer waits for Finalizer to be added.

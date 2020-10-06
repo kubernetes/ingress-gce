@@ -274,7 +274,9 @@ func EnsureIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
 	}
 	// Update ingress spec if they are not equal
 	if !reflect.DeepEqual(ing.Spec, currentIng.Spec) {
-		return crud.Update(ing)
+		newIng := currentIng.DeepCopy()
+		newIng.Spec = ing.Spec
+		return crud.Patch(currentIng, newIng)
 	}
 	return ing, nil
 }

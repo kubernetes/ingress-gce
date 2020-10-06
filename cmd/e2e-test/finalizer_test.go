@@ -121,10 +121,10 @@ func TestFinalizerIngressClassChange(t *testing.T) {
 
 		// Change Ingress class
 		newIngClass := "nginx"
-		ing = fuzz.NewIngressBuilderFromExisting(ing).SetIngressClass(newIngClass).Build()
+		newIng := fuzz.NewIngressBuilderFromExisting(ing).SetIngressClass(newIngClass).Build()
 
-		if _, err := crud.Update(ing); err != nil {
-			t.Fatalf("update(%s) = %v, want nil; ingress: %v", ingKey, err, ing)
+		if _, err := crud.Patch(ing, newIng); err != nil {
+			t.Fatalf("Patch(%s) = %v, want nil; current ingress: %+v new ingress %+v", ingKey, err, ing, newIng)
 		}
 		t.Logf("Ingress (%s) class changed to %s", ingKey, newIngClass)
 
