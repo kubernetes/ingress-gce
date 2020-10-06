@@ -503,7 +503,7 @@ func TestNegCRDErrorEvents(t *testing.T) {
 		}
 
 		// Ingress true with a custom name should cause an event
-		if err = e2e.WaitForSvcNegErrorEvents(s, svc1, 1); err != nil {
+		if err = e2e.WaitForSvcNegErrorEvents(s, svc1, []string{"custom neg name cannot be used with ingress enabled"}); err != nil {
 			t.Errorf("error waiting for error events: %s", err)
 		}
 
@@ -537,7 +537,7 @@ func TestNegCRDErrorEvents(t *testing.T) {
 		}
 
 		// Requesting the same neg name should cause an error event on the second service
-		if err = e2e.WaitForSvcNegErrorEvents(s, svc2, 1); err != nil {
+		if err = e2e.WaitForSvcNegErrorEvents(s, svc2, []string{"Neg already exists"}); err != nil {
 			t.Errorf("error waiting for error events: %s", err)
 		}
 
