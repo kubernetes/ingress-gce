@@ -36,7 +36,9 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
+	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
@@ -268,6 +270,52 @@ func TestHTTP2HealthCheckDelete(t *testing.T) {
 	_, err = fakeGCE.GetAlphaHealthCheck(hc.Name)
 	if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		t.Errorf("expected not-found error, actual: %v", err)
+	}
+}
+
+func TestRegionalHealthCheckDelete(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	healthChecks := NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
+
+	hc := healthChecks.new(
+		utils.ServicePort{
+			ID: utils.ServicePortID{
+				Service: types.NamespacedName{
+					Namespace: "ns2",
+					Name:      "svc2",
+				},
+			},
+			Port:         80,
+			Protocol:     annotations.ProtocolHTTP,
+			NEGEnabled:   true,
+			L7ILBEnabled: true,
+			BackendNamer: testNamer,
+		},
+	)
+	hcName := testNamer.NEG("ns2", "svc2", 80)
+
+	if err := healthChecks.create(hc, nil); err != nil {
+		t.Fatalf("healthchecks.Create(%q) = %v, want nil", hc.Name, err)
+	}
+
+	key, err := composite.CreateKey(fakeGCE, hc.Name, features.L7ILBScope())
+	if err != nil {
+		t.Fatalf("Unexpected error creating composite key: %v", err)
+	}
+
+	// Verify that Health-check exists.
+	if existingHC, err := composite.GetHealthCheck(fakeGCE, key, features.L7ILBVersions().HealthCheck); err != nil || existingHC == nil {
+		t.Fatalf("GetHealthCheck(%q) = %v, %v, want nil", hc.Name, existingHC, err)
+	}
+
+	// Delete HTTP health-check.
+	if err = healthChecks.Delete(hcName, meta.Regional); err != nil {
+		t.Errorf("healthchecks.Delete(%q, %q) = %v, want nil", hcName, meta.Regional, err)
+	}
+
+	// Validate health-check is deleted.
+	if _, err = composite.GetHealthCheck(fakeGCE, key, features.L7ILBVersions().HealthCheck); !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+		t.Errorf("Expected not-found error, actual: %v", err)
 	}
 }
 
