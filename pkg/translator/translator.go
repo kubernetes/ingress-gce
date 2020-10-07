@@ -51,6 +51,8 @@ type Env struct {
 	VIP        string
 	Network    string
 	Subnetwork string
+	Region     string
+	Project    string
 }
 
 // NewEnv returns an Env for the given Ingress.
@@ -321,6 +323,43 @@ func (t *Translator) ToCompositeTargetHttpsProxy(env *Env, description string, v
 	}
 
 	return proxy, sslPolicySet, nil
+}
+
+func (t *Translator) ToCompositeSSLCertificates(env *Env, tlsName string, tls []*TLSCerts, version meta.Version) []*composite.SslCertificate {
+	var certs []*composite.SslCertificate
+
+	// Pre-shared certs
+	tlsNames := utils.SplitAnnotation(tlsName)
+	for _, name := range tlsNames {
+		resID := cloud.ResourceID{Resource: "sslCertificates", Key: &meta.Key{Name: name}, ProjectID: env.Project}
+		if t.IsL7ILB {
+			resID.Key.Region = env.Region
+		}
+		preSharedCert := &composite.SslCertificate{
+			Name:     name,
+			SelfLink: resID.SelfLink(version),
+		}
+		certs = append(certs, preSharedCert)
+	}
+
+	for _, tlsCert := range tls {
+		ingCert := tlsCert.Cert
+		ingKey := tlsCert.Key
+		gcpCertName := t.FrontendNamer.SSLCertName(tlsCert.CertHash)
+		resID := cloud.ResourceID{Resource: "sslCertificates", Key: &meta.Key{Name: gcpCertName}, ProjectID: env.Project}
+		if t.IsL7ILB {
+			resID.Key.Region = env.Region
+		}
+		cert := &composite.SslCertificate{
+			Name:        gcpCertName,
+			Certificate: ingCert,
+			PrivateKey:  ingKey,
+			SelfLink:    resID.SelfLink(version),
+		}
+		certs = append(certs, cert)
+	}
+
+	return certs
 }
 
 // sslPolicyLink returns the ref to the ssl policy that is described by the
