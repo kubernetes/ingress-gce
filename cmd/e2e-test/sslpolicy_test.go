@@ -66,7 +66,7 @@ func TestSSLPolicy(t *testing.T) {
 				ingBuilder: fuzz.NewIngressBuilder("", "ingress-1", "").
 					DefaultBackend("service-1", port80).
 					AddPath("test.com", "/", "service-1", port80),
-				policy: &compute.SslPolicy{Name: "e2e-ssl-policy", MinTlsVersion: "TLS_1_0", Profile: "COMPATIBLE"},
+				policy: &compute.SslPolicy{Name: e2e.Truncate("e2e-ssl-policy-" + s.Namespace), MinTlsVersion: "TLS_1_0", Profile: "COMPATIBLE"},
 			},
 		} {
 			tc := tc // Capture tc as we are running this in parallel.
@@ -79,10 +79,19 @@ func TestSSLPolicy(t *testing.T) {
 			// Create Ssl Policy
 			var policyName string
 			if tc.policy != nil && tc.policy.Name != "" {
-				if err := Framework.Cloud.SslPolicies().Insert(ctx, meta.GlobalKey(tc.policy.Name), tc.policy); err != nil && !utils.IsHTTPErrorCode(err, http.StatusConflict) {
-					t.Errorf("SslPolicies().Insert(%v, %v) = %v, want nil", meta.GlobalKey(tc.policy.Name), tc.policy, err)
+				err := Framework.Cloud.SslPolicies().Insert(ctx, meta.GlobalKey(tc.policy.Name), tc.policy)
+				if err != nil {
+					if !utils.IsHTTPErrorCode(err, http.StatusConflict) {
+						t.Errorf("SslPolicies().Insert(%v, %v) = %v, want nil", meta.GlobalKey(tc.policy.Name), tc.policy, err)
+					} else {
+						t.Logf("SslPolicies().Insert(%v, %v) = %v, want nil", meta.GlobalKey(tc.policy.Name), tc.policy, err)
+					}
+				} else {
+					t.Logf("SslPolicy %q Created", tc.policy.Name)
 				}
 				policyName = tc.policy.Name
+			} else {
+				t.Logf("Not creating sslPolicy for testcase %q", tc.desc)
 			}
 
 			// policyname will be an empty string if no policy/empty policy is provided, and won't be omitted unless nil
