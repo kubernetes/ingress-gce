@@ -27,7 +27,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
 )
 
@@ -113,7 +113,7 @@ func patchPodStatus(c clientset.Interface, namespace, name string, patchBytes []
 
 // preparePatchBytesforPodStatus generates patch bytes based on the old and new pod status
 func preparePatchBytesforPodStatus(oldPodStatus, newPodStatus v1.PodStatus) ([]byte, error) {
-	patchBytes, err := utils.StrategicMergePatchBytes(v1.Pod{Status: oldPodStatus}, v1.Pod{Status: newPodStatus}, v1.Pod{})
+	patchBytes, err := patch.StrategicMergePatchBytes(v1.Pod{Status: oldPodStatus}, v1.Pod{Status: newPodStatus}, v1.Pod{})
 	return patchBytes, err
 }
 

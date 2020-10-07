@@ -11,7 +11,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
 )
 
@@ -65,7 +65,7 @@ func (c *ConfigMapConfigController) GetConfig() Config {
 }
 
 func (c *ConfigMapConfigController) updateASMReady(status string) {
-	patchBytes, err := utils.StrategicMergePatchBytes(v1.ConfigMap{Data: map[string]string{}},
+	patchBytes, err := patch.StrategicMergePatchBytes(v1.ConfigMap{Data: map[string]string{}},
 		v1.ConfigMap{Data: map[string]string{asmReady: status}}, v1.ConfigMap{})
 	if err != nil {
 		c.RecordEvent("Warning", "FailedToUpdateASMStatus", fmt.Sprintf("Failed to update ASM Status, failed to create patch for ASM ConfigMap, error: %s", err))
