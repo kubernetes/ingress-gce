@@ -75,6 +75,7 @@ type FakeNetworkEndpointGroupCloud struct {
 	mu                    sync.Mutex
 }
 
+// DEPRECATED: Please do not use this mock function. Use the pkg/neg/types/mock.go instead.
 func NewFakeNetworkEndpointGroupCloud(subnetwork, network string) NetworkEndpointGroupCloud {
 	return &FakeNetworkEndpointGroupCloud{
 		Subnetwork:            subnetwork,

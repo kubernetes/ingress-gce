@@ -460,6 +460,7 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 			errList = append(errList, err)
 		}
 	}
+
 	return utilerrors.NewAggregate(errList)
 }
 
@@ -467,8 +468,7 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string) error {
 	_, err := manager.cloud.GetNetworkEndpointGroup(name, zone, meta.VersionGA)
 	if err != nil {
-		// Assume error is caused by not existing
-		return nil
+		return utils.IgnoreHTTPNotFound(err)
 	}
 	klog.V(2).Infof("Deleting NEG %q in %q.", name, zone)
 	return manager.cloud.DeleteNetworkEndpointGroup(name, zone, meta.VersionGA)
