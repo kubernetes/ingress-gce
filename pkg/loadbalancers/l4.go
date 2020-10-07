@@ -285,17 +285,3 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service,
 
 	return &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}, annotationsMap, nil
 }
-
-// MergeAnnotations merges the new set of ilb resource annotations with the pre-existing service annotations.
-// Existing ILB resource annotation values will be replaced with the values in the new map.
-func (l *L4) MergeAnnotations(svc *corev1.Service, ilbAnnotations map[string]string) map[string]string {
-	// Delete existing ILB annotations.
-	for _, key := range ILBResourceAnnotationKeys {
-		delete(svc.Annotations, key)
-	}
-	// merge existing annotations with the newly added annotations
-	for key, val := range ilbAnnotations {
-		svc.Annotations[key] = val
-	}
-	return svc.Annotations
-}

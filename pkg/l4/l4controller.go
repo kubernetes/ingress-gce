@@ -186,7 +186,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 	}
 	l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
 		"Successfully ensured load balancer resources")
-	if err = l4c.updateAnnotations(service.Name, service.Namespace, l4.MergeAnnotations(service, annotationsMap)); err != nil {
+	if err = l4c.updateAnnotations(service.Name, service.Namespace, annotationsMap); err != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Failed to update annotations for load balancer, err: %v", err)
 		return fmt.Errorf("failed to set resource annotations, err: %v", err)
@@ -202,7 +202,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) err
 		return err
 	}
 	// Also remove any ILB annotations from the service metadata
-	if err := l4c.updateAnnotations(svc.Name, svc.Namespace, l4.MergeAnnotations(svc, nil)); err != nil {
+	if err := l4c.updateAnnotations(svc.Name, svc.Namespace, nil); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting resource annotations for load balancer: %v", err)
 		return fmt.Errorf("failed to reset resource annotations, err: %v", err)
@@ -289,20 +289,38 @@ func (l4c *L4Controller) updateServiceMetadata(svc *v1.Service, newObjectMetadat
 	return nil
 }
 
-func (l4c *L4Controller) updateAnnotations(name, namespace string, annotations map[string]string) error {
+func (l4c *L4Controller) updateAnnotations(name, namespace string, newILBAnnotations map[string]string) error {
 	svcClient := l4c.ctx.KubeClient.CoreV1().Services(namespace)
 	currSvc, err := svcClient.Get(context2.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
-	if !reflect.DeepEqual(currSvc.Annotations, annotations) {
-		klog.V(3).Infof("Updating annotations of service %v/%v", namespace, name)
-		updatedObjectMeta := currSvc.ObjectMeta.DeepCopy()
-		updatedObjectMeta.Annotations = annotations
-		return l4c.updateServiceMetadata(currSvc, *updatedObjectMeta)
+	newObjectMeta := currSvc.ObjectMeta.DeepCopy()
+	newObjectMeta.Annotations = mergeAnnotations(newObjectMeta.Annotations, newILBAnnotations)
+	if reflect.DeepEqual(currSvc.Annotations, newObjectMeta.Annotations) {
+		return nil
 	}
-	return nil
+	klog.V(3).Infof("Updating annotations of service %v/%v", namespace, name)
+	return l4c.updateServiceMetadata(currSvc, *newObjectMeta)
 }
+
+// mergeAnnotations merges the new set of ilb resource annotations with the pre-existing service annotations.
+// Existing ILB resource annotation values will be replaced with the values in the new map.
+func mergeAnnotations(existing, ilbAnnotations map[string]string) map[string]string {
+	if existing == nil {
+		existing = make(map[string]string)
+	}
+	// Delete existing ILB annotations.
+	for _, key := range loadbalancers.ILBResourceAnnotationKeys {
+		delete(existing, key)
+	}
+	// merge existing annotations with the newly added annotations
+	for key, val := range ilbAnnotations {
+		existing[key] = val
+	}
+	return existing
+}
+
 func needsDeletion(svc *v1.Service) bool {
 	if !common.HasGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) {
 		return false
