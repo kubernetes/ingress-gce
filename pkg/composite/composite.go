@@ -29,7 +29,6 @@ import (
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
-// TODO: (shance) below functions should be generated
 // SetUrlMapForTargetHttpsProxy() sets the UrlMap for a target https proxy
 func SetUrlMapForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, urlMapLink string) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
@@ -51,10 +50,20 @@ func SetUrlMapForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttp
 		}
 	case meta.VersionBeta:
 		ref := &computebeta.UrlMapReference{UrlMap: urlMapLink}
-		return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().SetUrlMap(ctx, key, ref))
+		switch key.Type() {
+		case meta.Regional:
+			return mc.Observe(gceCloud.Compute().BetaRegionTargetHttpsProxies().SetUrlMap(ctx, key, ref))
+		default:
+			return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().SetUrlMap(ctx, key, ref))
+		}
 	default:
 		ref := &compute.UrlMapReference{UrlMap: urlMapLink}
-		return mc.Observe(gceCloud.Compute().TargetHttpsProxies().SetUrlMap(ctx, key, ref))
+		switch key.Type() {
+		case meta.Regional:
+			return mc.Observe(gceCloud.Compute().RegionTargetHttpsProxies().SetUrlMap(ctx, key, ref))
+		default:
+			return mc.Observe(gceCloud.Compute().TargetHttpsProxies().SetUrlMap(ctx, key, ref))
+		}
 	}
 }
 
@@ -79,11 +88,23 @@ func SetSslCertificateForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, ta
 			return mc.Observe(gceCloud.Compute().AlphaTargetHttpsProxies().SetSslCertificates(ctx, key, req))
 		}
 	case meta.VersionBeta:
-		req := &computebeta.TargetHttpsProxiesSetSslCertificatesRequest{SslCertificates: sslCertURLs}
-		return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().SetSslCertificates(ctx, key, req))
+		switch key.Type() {
+		case meta.Regional:
+			req := &computebeta.RegionTargetHttpsProxiesSetSslCertificatesRequest{SslCertificates: sslCertURLs}
+			return mc.Observe(gceCloud.Compute().BetaRegionTargetHttpsProxies().SetSslCertificates(ctx, key, req))
+		default:
+			req := &computebeta.TargetHttpsProxiesSetSslCertificatesRequest{SslCertificates: sslCertURLs}
+			return mc.Observe(gceCloud.Compute().BetaTargetHttpsProxies().SetSslCertificates(ctx, key, req))
+		}
 	default:
-		req := &compute.TargetHttpsProxiesSetSslCertificatesRequest{SslCertificates: sslCertURLs}
-		return mc.Observe(gceCloud.Compute().TargetHttpsProxies().SetSslCertificates(ctx, key, req))
+		switch key.Type() {
+		case meta.Regional:
+			req := &compute.RegionTargetHttpsProxiesSetSslCertificatesRequest{SslCertificates: sslCertURLs}
+			return mc.Observe(gceCloud.Compute().RegionTargetHttpsProxies().SetSslCertificates(ctx, key, req))
+		default:
+			req := &compute.TargetHttpsProxiesSetSslCertificatesRequest{SslCertificates: sslCertURLs}
+			return mc.Observe(gceCloud.Compute().TargetHttpsProxies().SetSslCertificates(ctx, key, req))
+		}
 	}
 }
 
@@ -146,10 +167,20 @@ func SetUrlMapForTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpP
 		}
 	case meta.VersionBeta:
 		ref := &computebeta.UrlMapReference{UrlMap: urlMapLink}
-		return mc.Observe(gceCloud.Compute().BetaTargetHttpProxies().SetUrlMap(ctx, key, ref))
+		switch key.Type() {
+		case meta.Regional:
+			return mc.Observe(gceCloud.Compute().BetaRegionTargetHttpProxies().SetUrlMap(ctx, key, ref))
+		default:
+			return mc.Observe(gceCloud.Compute().BetaTargetHttpProxies().SetUrlMap(ctx, key, ref))
+		}
 	default:
 		ref := &compute.UrlMapReference{UrlMap: urlMapLink}
-		return mc.Observe(gceCloud.Compute().TargetHttpProxies().SetUrlMap(ctx, key, ref))
+		switch key.Type() {
+		case meta.Regional:
+			return mc.Observe(gceCloud.Compute().RegionTargetHttpProxies().SetUrlMap(ctx, key, ref))
+		default:
+			return mc.Observe(gceCloud.Compute().TargetHttpProxies().SetUrlMap(ctx, key, ref))
+		}
 	}
 }
 
