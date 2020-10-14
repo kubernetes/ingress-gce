@@ -437,7 +437,9 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 	for _, cr := range deletionCandidates {
 		shouldDeleteNegCR := true
 		if len(cr.Status.NetworkEndpointGroups) == 0 {
-			klog.V(2).Infof("Deletetion candidate %v/%v has 0 NEG reference: %v", cr.Namespace, cr.Name, cr)
+			klog.V(2).Infof("Deletion candidate %v/%v has 0 NEG reference: %v", cr.Namespace, cr.Name, cr)
+		} else {
+			klog.V(2).Infof("Deletion candidate %v/%v has %d NEG references", cr.Namespace, cr.Name, len(cr.Status.NetworkEndpointGroups))
 		}
 		for _, negRef := range cr.Status.NetworkEndpointGroups {
 			resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
@@ -569,7 +571,11 @@ func ensureNegCROwnerRef(negCR *negv1beta1.ServiceNetworkEndpointGroup, expected
 func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.ServiceNetworkEndpointGroup) error {
 	updatedCR := negCR.DeepCopy()
 	updatedCR.Finalizers = []string{}
-	patchNegStatus(svcNegClient, *negCR, *updatedCR)
+	if _, err := patchNegStatus(svcNegClient, *negCR, *updatedCR); err != nil {
+		return err
+	}
+
+	klog.V(2).Infof("Removed finalizer on ServiceNetworkEndpointGroup CR %v/%v", negCR.Namespace, negCR.Name)
 
 	// If CR does not have a deletion timestamp, delete
 	if negCR.GetDeletionTimestamp().IsZero() {
