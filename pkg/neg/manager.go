@@ -436,6 +436,9 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 	var errList []error
 	for _, cr := range deletionCandidates {
 		shouldDeleteNegCR := true
+		if len(cr.Status.NetworkEndpointGroups) == 0 {
+			klog.V(2).Infof("Deletetion candidate %v/%v has 0 NEG reference: %v", cr.Namespace, cr.Name, cr)
+		}
 		for _, negRef := range cr.Status.NetworkEndpointGroups {
 			resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
 			if err != nil {
@@ -570,6 +573,7 @@ func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.Servi
 
 	// If CR does not have a deletion timestamp, delete
 	if negCR.GetDeletionTimestamp().IsZero() {
+		klog.V(2).Infof("Deleting ServiceNetworkEndpointGroup CR %v/%v", negCR.Namespace, negCR.Name)
 		return svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(negCR.Namespace).Delete(context.Background(), negCR.Name, metav1.DeleteOptions{})
 	}
 	return nil
