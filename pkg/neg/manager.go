@@ -390,7 +390,7 @@ func (manager *syncerManager) garbageCollectNEG() error {
 	// TODO: avoid race condition here
 	for name, zones := range deleteCandidates {
 		for _, zone := range zones {
-			if err := manager.ensureDeleteNetworkEndpointGroup(name, zone); err != nil {
+			if err := manager.ensureDeleteNetworkEndpointGroup(name, zone, nil); err != nil {
 				return fmt.Errorf("failed to delete NEG %q in %q: %v", name, zone, err)
 			}
 		}
@@ -433,13 +433,36 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 	// This would be resolved (sync neg) when the next endpoint update or resync arrives.
 	// TODO: avoid race condition here
 	var errList []error
+	zones, err := manager.zoneGetter.ListZones()
+	if err != nil {
+		errList = append(errList, fmt.Errorf("failed to get zones during garbage collection: %s", err))
+	}
+
+	// deleteNegOrReportErr will attempt to delete the specified NEG resource in the cloud. If an error
+	// occurs, it will report an error as an event on the given CR. If an error does occur, false will
+	// be returned to indicate that the CR should not be deleted.
+	deleteNegOrReportErr := func(name, zone string, cr *negv1beta1.ServiceNetworkEndpointGroup) bool {
+		expectedDesc := &utils.NegDescription{
+			ClusterUID:  string(manager.kubeSystemUID),
+			Namespace:   cr.Namespace,
+			ServiceName: cr.GetLabels()[negtypes.NegCRServiceNameKey],
+			Port:        cr.GetLabels()[negtypes.NegCRServicePortKey],
+		}
+		if err := manager.ensureDeleteNetworkEndpointGroup(name, zone, expectedDesc); err != nil {
+			err = fmt.Errorf("failed to delete NEG %s in %s: %s", name, zone, err)
+			manager.recorder.Eventf(cr, v1.EventTypeWarning, negtypes.NegGCError, err.Error())
+			errList = append(errList, err)
+
+			// Error when deleting NEG and return false to indicate not to delete Neg CR
+			return false
+		}
+
+		return true
+	}
+
 	for _, cr := range deletionCandidates {
 		shouldDeleteNegCR := true
-		if len(cr.Status.NetworkEndpointGroups) == 0 {
-			klog.V(2).Infof("Deletion candidate %v/%v has 0 NEG reference: %v", cr.Namespace, cr.Name, cr)
-		} else {
-			klog.V(2).Infof("Deletion candidate %v/%v has %d NEG references", cr.Namespace, cr.Name, len(cr.Status.NetworkEndpointGroups))
-		}
+		klog.V(2).Infof("Deletion candidate %s/%s has %d NEG references", cr.Namespace, cr.Name, len(cr.Status.NetworkEndpointGroups))
 		for _, negRef := range cr.Status.NetworkEndpointGroups {
 			resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
 			if err != nil {
@@ -447,13 +470,13 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 				continue
 			}
 
-			if err := manager.ensureDeleteNetworkEndpointGroup(resourceID.Key.Name, resourceID.Key.Zone); err != nil {
-				err = fmt.Errorf("failed to delete NEG %s in %s: %s", resourceID.Key.Name, resourceID.Key.Zone, err)
-				manager.recorder.Eventf(cr, v1.EventTypeWarning, negtypes.NegGCError, err.Error())
-				errList = append(errList, err)
+			shouldDeleteNegCR = shouldDeleteNegCR && deleteNegOrReportErr(resourceID.Key.Name, resourceID.Key.Zone, cr)
+		}
 
-				// Error when deleting NEG, do not delete Neg CR
-				shouldDeleteNegCR = false
+		if len(cr.Status.NetworkEndpointGroups) == 0 {
+			klog.V(2).Infof("Deletion candidate %s/%s has 0 NEG reference: %+v", cr.Namespace, cr.Name, cr)
+			for _, zone := range zones {
+				shouldDeleteNegCR = shouldDeleteNegCR && deleteNegOrReportErr(cr.Name, zone, cr)
 			}
 		}
 
@@ -470,11 +493,19 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 }
 
 // ensureDeleteNetworkEndpointGroup ensures neg is delete from zone
-func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string) error {
-	_, err := manager.cloud.GetNetworkEndpointGroup(name, zone, meta.VersionGA)
+func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string, expectedDesc *utils.NegDescription) error {
+	neg, err := manager.cloud.GetNetworkEndpointGroup(name, zone, meta.VersionGA)
 	if err != nil {
 		return utils.IgnoreHTTPNotFound(err)
 	}
+
+	if expectedDesc != nil {
+		if matches, err := utils.VerifyDescription(*expectedDesc, neg.Description, name, zone); !matches {
+			klog.V(2).Infof("Skipping deletion of Neg %s in %s because of conflicting description: %s", name, zone, err)
+			return nil
+		}
+	}
+
 	klog.V(2).Infof("Deleting NEG %q in %q.", name, zone)
 	return manager.cloud.DeleteNetworkEndpointGroup(name, zone, meta.VersionGA)
 }

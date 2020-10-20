@@ -144,18 +144,15 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			}
 		}
 	} else {
-		// Skip checking description if the neg object has an empty description
-		if neg.Description != "" {
-			description, err := utils.NegDescriptionFromString(neg.Description)
-			if err != nil {
-				klog.Warningf("Error unmarshalling Neg Description %s/%s err:%s", negName, zone, err)
-			} else {
-				if description.ClusterUID != kubeSystemUID || description.Namespace != svcNamespace || description.ServiceName != svcName || description.Port != port {
-
-					klog.Errorf("Neg Name %s is already in use", negName)
-					return negv1beta1.NegObjectReference{}, fmt.Errorf("neg name %s is already in use", negName)
-				}
-			}
+		expectedDesc := utils.NegDescription{
+			ClusterUID:  kubeSystemUID,
+			Namespace:   svcNamespace,
+			ServiceName: svcName,
+			Port:        port,
+		}
+		if matches, err := utils.VerifyDescription(expectedDesc, neg.Description, negName, zone); !matches {
+			klog.Errorf("Neg Name %s is already in use: %s", negName, err)
+			return negv1beta1.NegObjectReference{}, fmt.Errorf("neg name %s is already in use, found conflicting description: %s", negName, err)
 		}
 	}
 
