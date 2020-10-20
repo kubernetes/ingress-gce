@@ -485,9 +485,26 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 			continue
 		}
 
-		if err := deleteSvcNegCR(manager.svcNegClient, cr); err != nil {
-			errList = append(errList, err)
-		}
+		func() {
+			manager.mu.Lock()
+			defer manager.mu.Unlock()
+
+			// Verify that the NEG is still not wanted before deleting the CR. Mitigates the possibility of the race
+			// condition mentioned above
+			svcKey := getServiceKey(cr.Namespace, cr.GetLabels()[negtypes.NegCRServiceNameKey])
+			portInfoMap := manager.svcPortMap[svcKey]
+			for _, portInfo := range portInfoMap {
+				if portInfo.NegName == cr.Name {
+					klog.V(2).Infof("NEG CR %s/%s is still desired, skipping deletion", cr.Namespace, cr.Name)
+					return
+				}
+			}
+
+			klog.V(2).Infof("Deleting NEG CR %s/%s", cr.Namespace, cr.Name)
+			if err := deleteSvcNegCR(manager.svcNegClient, cr); err != nil {
+				errList = append(errList, err)
+			}
+		}()
 	}
 
 	return utilerrors.NewAggregate(errList)
