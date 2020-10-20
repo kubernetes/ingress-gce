@@ -101,3 +101,99 @@ func TestNegDescriptionFromString(t *testing.T) {
 		}
 	}
 }
+
+func TestVerifyDescription(t *testing.T) {
+	negDesc := NegDescription{
+		ClusterUID:  "00000000001",
+		Namespace:   "my-namespace",
+		ServiceName: "my-service",
+		Port:        "80",
+	}.String()
+
+	testCases := []struct {
+		desc          string
+		negDescString string
+		expectNegDesc NegDescription
+		shouldMatch   bool
+	}{
+		{
+			desc:          "fields match",
+			negDescString: negDesc,
+			expectNegDesc: NegDescription{
+				ClusterUID:  "00000000001",
+				Namespace:   "my-namespace",
+				ServiceName: "my-service",
+				Port:        "80",
+			},
+			shouldMatch: true,
+		},
+		{
+			desc:          "empty description",
+			negDescString: "",
+			expectNegDesc: NegDescription{
+				ClusterUID:  "00000000001",
+				Namespace:   "my-namespace",
+				ServiceName: "my-service",
+				Port:        "80",
+			},
+			shouldMatch: true,
+		},
+		{
+			desc:          "cluster uid doesn't match",
+			negDescString: negDesc,
+			expectNegDesc: NegDescription{
+				ClusterUID:  "00000000002",
+				Namespace:   "my-namespace",
+				ServiceName: "my-service",
+				Port:        "80",
+			},
+			shouldMatch: false,
+		},
+		{
+			desc:          "namespace doesn't match",
+			negDescString: negDesc,
+			expectNegDesc: NegDescription{
+				ClusterUID:  "00000000002",
+				Namespace:   "not-my-namespace",
+				ServiceName: "my-service",
+				Port:        "80",
+			},
+			shouldMatch: false,
+		},
+		{
+			desc:          "service name doesn't match",
+			negDescString: negDesc,
+			expectNegDesc: NegDescription{
+				ClusterUID:  "00000000002",
+				Namespace:   "my-namespace",
+				ServiceName: "not-my-service",
+				Port:        "80",
+			},
+			shouldMatch: false,
+		},
+		{
+			desc:          "port doesn't match",
+			negDescString: negDesc,
+			expectNegDesc: NegDescription{
+				ClusterUID:  "00000000002",
+				Namespace:   "my-namespace",
+				ServiceName: "my-service",
+				Port:        "81",
+			},
+			shouldMatch: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		matches, err := VerifyDescription(tc.expectNegDesc, tc.negDescString, "my-neg", "zone")
+		if tc.shouldMatch && err != nil {
+			t.Errorf("%s: VerifyDescription(%+v, %s) had an unexpected error: %s", tc.desc, tc.expectNegDesc, tc.negDescString, err)
+		} else if !tc.shouldMatch && err == nil {
+			t.Errorf("%s: VerifyDescription(%+v, %s) should have returned an error", tc.desc, tc.expectNegDesc, tc.negDescString)
+		}
+
+		if matches != tc.shouldMatch {
+			t.Errorf("%s: VerifyDescription(%+v, %s) should result in %t, but was %t", tc.desc, tc.expectNegDesc, tc.negDescString, tc.shouldMatch, matches)
+		}
+	}
+}

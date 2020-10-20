@@ -25,6 +25,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
@@ -1125,6 +1126,20 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 	port80 := int32(80)
 	zones := []string{negtypes.TestZone1, negtypes.TestZone2}
 
+	matchingDesc := utils.NegDescription{
+		ClusterUID:  KubeSystemUID,
+		Namespace:   testServiceNamespace,
+		ServiceName: testServiceName,
+		Port:        fmt.Sprintf("%v", port80),
+	}
+
+	wrongDesc := utils.NegDescription{
+		ClusterUID:  "another-cluster",
+		Namespace:   "another-namespace",
+		ServiceName: "another-svc",
+		Port:        "another-port",
+	}
+
 	testCases := []struct {
 		desc              string
 		negsExist         bool
@@ -1133,6 +1148,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 		expectNegGC       bool
 		expectCrGC        bool
 		emptyNegRefList   bool
+		negDesc           string
 	}{
 		{desc: "neg config not in svcPortMap, marked for deletion",
 			negsExist:         true,
@@ -1150,15 +1166,31 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			negsExist:         true,
 			markedForDeletion: true,
 			emptyNegRefList:   true,
-			expectNegGC:       false,
+			expectNegGC:       true,
 			expectCrGC:        true,
 		},
 		{desc: "neg config not in svcPortMap, empty neg list",
 			negsExist:         true,
 			markedForDeletion: false,
 			emptyNegRefList:   true,
+			expectNegGC:       true,
+			expectCrGC:        true,
+		},
+		{desc: "neg config not in svcPortMap, empty neg list, neg has matching description",
+			negsExist:         true,
+			markedForDeletion: false,
+			emptyNegRefList:   true,
+			expectNegGC:       true,
+			expectCrGC:        true,
+			negDesc:           matchingDesc.String(),
+		},
+		{desc: "neg config not in svcPortMap, empty neg list, neg does not have matching description",
+			negsExist:         true,
+			markedForDeletion: false,
+			emptyNegRefList:   true,
 			expectNegGC:       false,
 			expectCrGC:        true,
+			negDesc:           wrongDesc.String(),
 		},
 		{desc: "neg config in svcPortMap, marked for deletion",
 			negsExist:         true,
@@ -1212,6 +1244,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 							Version:             version,
 							Name:                negName,
 							NetworkEndpointType: string(networkEndpointType),
+							Description:         tc.negDesc,
 						}, zone)
 					}
 
