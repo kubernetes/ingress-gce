@@ -481,7 +481,7 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 
 	origNeg, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
-		klog.Errorf("failed getting neg from store: %s", err)
+		klog.Errorf("Error updating init status for neg %s, failed getting neg from store: %s", s.NegSyncerKey.NegName, err)
 		return
 	}
 
@@ -508,7 +508,7 @@ func (s *transactionSyncer) updateStatus(syncErr error) {
 	}
 	origNeg, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
-		klog.Errorf("failed getting neg from store: %s", err)
+		klog.Errorf("Error updating status for neg %s, failed getting neg from store: %s", s.NegSyncerKey.NegName, err)
 		return
 	}
 	neg := origNeg.DeepCopy()

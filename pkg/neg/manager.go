@@ -146,7 +146,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		// To reduce the possibility of NEGs being leaked, ensure a SvcNeg CR exists for every
 		// desired port.
 		if err := manager.ensureSvcNegCR(key, portInfo); err != nil {
-			errList = append(errList, err)
+			errList = append(errList, fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for existing port: %s", namespace, portInfo.NegName, portInfo.PortTuple.Port, err))
 		}
 	}
 
@@ -160,7 +160,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 			// syncer for the NEG until the NEG CR is successfully created. This will reduce the
 			// possibility of invalid states and reduces complexity of garbage collection
 			if err := manager.ensureSvcNegCR(key, portInfo); err != nil {
-				errList = append(errList, err)
+				errList = append(errList, fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for new port: %s ", namespace, portInfo.NegName, svcPort.ServicePort, err))
 				continue
 			}
 
@@ -334,8 +334,10 @@ func (manager *syncerManager) ensureDeleteSvcNegCR(namespace, negName string) er
 	neg := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
 
 	if neg.GetDeletionTimestamp().IsZero() {
-		err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Delete(context.Background(), negName, metav1.DeleteOptions{})
-		return err
+		if err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Delete(context.Background(), negName, metav1.DeleteOptions{}); err != nil {
+			return fmt.Errorf("errored while deleting neg cr %s/%s: %s", negName, namespace, err)
+		}
+		klog.V(2).Infof("Deleted neg cr %s/%s", negName, namespace)
 	}
 	return nil
 }
@@ -573,6 +575,7 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 
 		// Neg does not exist so create it
 		_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Create(context.Background(), &newCR, metav1.CreateOptions{})
+		klog.V(2).Infof("Created ServiceNetworkEndpointGroup CR for neg %s/%s", svcKey.namespace, portInfo.NegName)
 		return err
 	}
 
@@ -622,11 +625,11 @@ func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.Servi
 		return err
 	}
 
-	klog.V(2).Infof("Removed finalizer on ServiceNetworkEndpointGroup CR %v/%v", negCR.Namespace, negCR.Name)
+	klog.V(2).Infof("Removed finalizer on ServiceNetworkEndpointGroup CR %s/%s", negCR.Namespace, negCR.Name)
 
 	// If CR does not have a deletion timestamp, delete
 	if negCR.GetDeletionTimestamp().IsZero() {
-		klog.V(2).Infof("Deleting ServiceNetworkEndpointGroup CR %v/%v", negCR.Namespace, negCR.Name)
+		klog.V(2).Infof("Deleting ServiceNetworkEndpointGroup CR %s/%s", negCR.Namespace, negCR.Name)
 		return svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(negCR.Namespace).Delete(context.Background(), negCR.Name, metav1.DeleteOptions{})
 	}
 	return nil
