@@ -1079,6 +1079,171 @@ func TestNegObjectCrd(t *testing.T) {
 	}
 }
 
+func TestNEGRecreate(t *testing.T) {
+
+	var (
+		testZone             = "test-zone"
+		testNamedPort        = "named-port"
+		testServiceName      = "test-svc"
+		testServiceNameSpace = "test-ns"
+		testNetwork          = cloud.ResourcePath("network", &meta.Key{Zone: testZone, Name: "test-network"})
+		testSubnetwork       = cloud.ResourcePath("subnetwork", &meta.Key{Zone: testZone, Name: "test-subnetwork"})
+		diffNetwork          = "another-network"
+		diffSubnetwork       = "another-subnetwork"
+		testKubesystemUID    = "cluster-uid"
+		testPort             = "80"
+		negName              = "test-neg"
+		apiVersion           = meta.VersionGA
+	)
+
+	matchingNegDesc := utils.NegDescription{
+		ClusterUID:  testKubesystemUID,
+		Namespace:   testServiceNamespace,
+		ServiceName: testServiceName,
+		Port:        testPort,
+	}.String()
+
+	anotherNegDesc := utils.NegDescription{
+		ClusterUID:  "another-cluster",
+		Namespace:   testServiceNamespace,
+		ServiceName: testServiceName,
+		Port:        testPort,
+	}.String()
+
+	testCases := []struct {
+		desc           string
+		network        string
+		subnetwork     string
+		negType        negtypes.NetworkEndpointType
+		negDescription string
+		expectRecreate bool
+		expectError    bool
+	}{
+		{
+			desc:           "incorrect network, empty neg description, GCP endpoint type",
+			network:        diffNetwork,
+			subnetwork:     diffSubnetwork,
+			negType:        negtypes.VmIpPortEndpointType,
+			negDescription: "",
+			expectRecreate: true,
+			expectError:    false,
+		},
+		{
+			desc:           "correct network, incorrect subnetwork, empty neg description, GCP endpoint type",
+			network:        testNetwork,
+			subnetwork:     diffSubnetwork,
+			negType:        negtypes.VmIpPortEndpointType,
+			negDescription: "",
+			expectRecreate: true,
+			expectError:    false,
+		},
+		{
+			desc:           "incorrect network, matching neg description, GCP endpoint type",
+			network:        diffNetwork,
+			subnetwork:     diffSubnetwork,
+			negType:        negtypes.VmIpPortEndpointType,
+			negDescription: matchingNegDesc,
+			expectRecreate: true,
+			expectError:    false,
+		},
+		{
+			desc:           "correct network, incorrect subnetwork, matching neg description, GCP endpoint type",
+			network:        testNetwork,
+			subnetwork:     diffSubnetwork,
+			negType:        negtypes.VmIpPortEndpointType,
+			negDescription: matchingNegDesc,
+			expectRecreate: true,
+			expectError:    false,
+		},
+		{
+			desc:           "incorrect network, different neg description, GCP endpoint type",
+			network:        diffNetwork,
+			subnetwork:     diffSubnetwork,
+			negType:        negtypes.VmIpPortEndpointType,
+			negDescription: anotherNegDesc,
+			expectRecreate: false,
+			expectError:    true,
+		},
+		{
+			desc:           "correct network, incorrect subnetwork, different neg description, GCP endpoint type",
+			network:        testNetwork,
+			subnetwork:     diffSubnetwork,
+			negType:        negtypes.VmIpPortEndpointType,
+			negDescription: anotherNegDesc,
+			expectRecreate: false,
+			expectError:    true,
+		},
+		{
+			desc:           "incorrect network, Non GCP endpoint type",
+			network:        diffNetwork,
+			subnetwork:     diffSubnetwork,
+			negType:        negtypes.NonGCPPrivateEndpointType,
+			negDescription: "",
+			expectRecreate: false,
+			expectError:    false,
+		},
+		{
+			desc:           "correct network, incorrect subnetwork, Non GCP endpoint type",
+			network:        testNetwork,
+			subnetwork:     diffSubnetwork,
+			negType:        negtypes.NonGCPPrivateEndpointType,
+			negDescription: "",
+			expectRecreate: false,
+			expectError:    false,
+		},
+	}
+
+	for _, tc := range testCases {
+		fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+		negtypes.MockNetworkEndpointAPIs(fakeGCE)
+		fakeCloud := negtypes.NewAdapterWithNetwork(fakeGCE, testNetwork, testSubnetwork)
+		fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+			Version:             apiVersion,
+			Name:                negName,
+			NetworkEndpointType: string(tc.negType),
+			Network:             tc.network,
+			Subnetwork:          tc.subnetwork,
+			Description:         tc.negDescription,
+		}, testZone)
+
+		// Ensure with the correct network and subnet
+		_, err := ensureNetworkEndpointGroup(
+			testServiceNameSpace,
+			testServiceName,
+			negName,
+			testZone,
+			testNamedPort,
+			testKubesystemUID,
+			testPort,
+			tc.negType,
+			fakeCloud,
+			nil,
+			nil,
+			apiVersion,
+		)
+		if !tc.expectError && err != nil {
+			t.Errorf("TestCase: %s, Errored while ensuring network endpoint groups: %s", tc.desc, err)
+		} else if tc.expectError && err == nil {
+			t.Errorf("TestCase: %s, Expected error when ensure network endpoint groups", tc.desc)
+		}
+
+		neg, err := fakeCloud.GetNetworkEndpointGroup(negName, testZone, apiVersion)
+		if err != nil {
+			t.Errorf("TestCase: %s, Failed to retrieve NEG %q: %v", tc.desc, negName, err)
+		}
+
+		if neg == nil {
+			t.Errorf("TestCase: %s, Failed to find neg", tc.desc)
+		}
+
+		if tc.expectRecreate && (neg.Subnetwork != testSubnetwork || neg.Network != testNetwork) {
+			t.Errorf("TestCase: %s\n Neg should have been recreated. Expected subnetwork %s, and found %s. Expected network %s, and found %s", tc.desc, testSubnetwork, neg.Subnetwork, testNetwork, testNetwork)
+		} else if !tc.expectRecreate && (neg.Subnetwork != tc.subnetwork || neg.Network != tc.network) {
+			t.Errorf("TestCase: %s\n Neg should not have been recreated. Expected subnetwork %s, and found %s. Expected network %s, and found %s", tc.desc, tc.subnetwork, neg.Subnetwork, tc.network, neg.Network)
+		}
+	}
+}
+
 // numToIP converts the given number to an IP address.
 // assumes that the input is smaller than 2^32.
 func numToIP(input int) string {

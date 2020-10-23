@@ -147,7 +147,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		// To reduce the possibility of NEGs being leaked, ensure a SvcNeg CR exists for every
 		// desired port.
 		if err := manager.ensureSvcNegCR(key, portInfo); err != nil {
-			errList = append(errList, err)
+			errList = append(errList, fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for existing port: %s", namespace, portInfo.NegName, portInfo.PortTuple.Port, err))
 		}
 	}
 
@@ -161,7 +161,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 			// syncer for the NEG until the NEG CR is successfully created. This will reduce the
 			// possibility of invalid states and reduces complexity of garbage collection
 			if err := manager.ensureSvcNegCR(key, portInfo); err != nil {
-				errList = append(errList, err)
+				errList = append(errList, fmt.Errorf("failed to ensure svc neg cr %s/%s/%d for new port: %s ", namespace, portInfo.NegName, svcPort.ServicePort, err))
 				continue
 			}
 
@@ -335,8 +335,10 @@ func (manager *syncerManager) ensureDeleteSvcNegCR(namespace, negName string) er
 	neg := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
 
 	if neg.GetDeletionTimestamp().IsZero() {
-		err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Delete(context.Background(), negName, metav1.DeleteOptions{})
-		return err
+		if err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Delete(context.Background(), negName, metav1.DeleteOptions{}); err != nil {
+			return fmt.Errorf("errored while deleting neg cr %s/%s: %s", negName, namespace, err)
+		}
+		klog.V(2).Infof("Deleted neg cr %s/%s", negName, namespace)
 	}
 	return nil
 }
@@ -391,7 +393,7 @@ func (manager *syncerManager) garbageCollectNEG() error {
 	// TODO: avoid race condition here
 	for name, zones := range deleteCandidates {
 		for _, zone := range zones {
-			if err := manager.ensureDeleteNetworkEndpointGroup(name, zone); err != nil {
+			if err := manager.ensureDeleteNetworkEndpointGroup(name, zone, nil); err != nil {
 				return fmt.Errorf("failed to delete NEG %q in %q: %v", name, zone, err)
 			}
 		}
@@ -434,13 +436,36 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 	// This would be resolved (sync neg) when the next endpoint update or resync arrives.
 	// TODO: avoid race condition here
 	var errList []error
+	zones, err := manager.zoneGetter.ListZones()
+	if err != nil {
+		errList = append(errList, fmt.Errorf("failed to get zones during garbage collection: %s", err))
+	}
+
+	// deleteNegOrReportErr will attempt to delete the specified NEG resource in the cloud. If an error
+	// occurs, it will report an error as an event on the given CR. If an error does occur, false will
+	// be returned to indicate that the CR should not be deleted.
+	deleteNegOrReportErr := func(name, zone string, cr *negv1beta1.ServiceNetworkEndpointGroup) bool {
+		expectedDesc := &utils.NegDescription{
+			ClusterUID:  string(manager.kubeSystemUID),
+			Namespace:   cr.Namespace,
+			ServiceName: cr.GetLabels()[negtypes.NegCRServiceNameKey],
+			Port:        cr.GetLabels()[negtypes.NegCRServicePortKey],
+		}
+		if err := manager.ensureDeleteNetworkEndpointGroup(name, zone, expectedDesc); err != nil {
+			err = fmt.Errorf("failed to delete NEG %s in %s: %s", name, zone, err)
+			manager.recorder.Eventf(cr, v1.EventTypeWarning, negtypes.NegGCError, err.Error())
+			errList = append(errList, err)
+
+			// Error when deleting NEG and return false to indicate not to delete Neg CR
+			return false
+		}
+
+		return true
+	}
+
 	for _, cr := range deletionCandidates {
 		shouldDeleteNegCR := true
-		if len(cr.Status.NetworkEndpointGroups) == 0 {
-			klog.V(2).Infof("Deletion candidate %v/%v has 0 NEG reference: %v", cr.Namespace, cr.Name, cr)
-		} else {
-			klog.V(2).Infof("Deletion candidate %v/%v has %d NEG references", cr.Namespace, cr.Name, len(cr.Status.NetworkEndpointGroups))
-		}
+		klog.V(2).Infof("Deletion candidate %s/%s has %d NEG references", cr.Namespace, cr.Name, len(cr.Status.NetworkEndpointGroups))
 		for _, negRef := range cr.Status.NetworkEndpointGroups {
 			resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
 			if err != nil {
@@ -448,13 +473,13 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 				continue
 			}
 
-			if err := manager.ensureDeleteNetworkEndpointGroup(resourceID.Key.Name, resourceID.Key.Zone); err != nil {
-				err = fmt.Errorf("failed to delete NEG %s in %s: %s", resourceID.Key.Name, resourceID.Key.Zone, err)
-				manager.recorder.Eventf(cr, v1.EventTypeWarning, negtypes.NegGCError, err.Error())
-				errList = append(errList, err)
+			shouldDeleteNegCR = shouldDeleteNegCR && deleteNegOrReportErr(resourceID.Key.Name, resourceID.Key.Zone, cr)
+		}
 
-				// Error when deleting NEG, do not delete Neg CR
-				shouldDeleteNegCR = false
+		if len(cr.Status.NetworkEndpointGroups) == 0 {
+			klog.V(2).Infof("Deletion candidate %s/%s has 0 NEG reference: %+v", cr.Namespace, cr.Name, cr)
+			for _, zone := range zones {
+				shouldDeleteNegCR = shouldDeleteNegCR && deleteNegOrReportErr(cr.Name, zone, cr)
 			}
 		}
 
@@ -462,20 +487,45 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 			continue
 		}
 
-		if err := deleteSvcNegCR(manager.svcNegClient, cr); err != nil {
-			errList = append(errList, err)
-		}
+		func() {
+			manager.mu.Lock()
+			defer manager.mu.Unlock()
+
+			// Verify that the NEG is still not wanted before deleting the CR. Mitigates the possibility of the race
+			// condition mentioned above
+			svcKey := getServiceKey(cr.Namespace, cr.GetLabels()[negtypes.NegCRServiceNameKey])
+			portInfoMap := manager.svcPortMap[svcKey]
+			for _, portInfo := range portInfoMap {
+				if portInfo.NegName == cr.Name {
+					klog.V(2).Infof("NEG CR %s/%s is still desired, skipping deletion", cr.Namespace, cr.Name)
+					return
+				}
+			}
+
+			klog.V(2).Infof("Deleting NEG CR %s/%s", cr.Namespace, cr.Name)
+			if err := deleteSvcNegCR(manager.svcNegClient, cr); err != nil {
+				errList = append(errList, err)
+			}
+		}()
 	}
 
 	return utilerrors.NewAggregate(errList)
 }
 
 // ensureDeleteNetworkEndpointGroup ensures neg is delete from zone
-func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string) error {
-	_, err := manager.cloud.GetNetworkEndpointGroup(name, zone, meta.VersionGA)
+func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string, expectedDesc *utils.NegDescription) error {
+	neg, err := manager.cloud.GetNetworkEndpointGroup(name, zone, meta.VersionGA)
 	if err != nil {
 		return utils.IgnoreHTTPNotFound(err)
 	}
+
+	if expectedDesc != nil {
+		if matches, err := utils.VerifyDescription(*expectedDesc, neg.Description, name, zone); !matches {
+			klog.V(2).Infof("Skipping deletion of Neg %s in %s because of conflicting description: %s", name, zone, err)
+			return nil
+		}
+	}
+
 	klog.V(2).Infof("Deleting NEG %q in %q.", name, zone)
 	return manager.cloud.DeleteNetworkEndpointGroup(name, zone, meta.VersionGA)
 }
@@ -526,6 +576,7 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 
 		// Neg does not exist so create it
 		_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Create(context.Background(), &newCR, metav1.CreateOptions{})
+		klog.V(2).Infof("Created ServiceNetworkEndpointGroup CR for neg %s/%s", svcKey.namespace, portInfo.NegName)
 		return err
 	}
 
@@ -575,11 +626,11 @@ func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.Servi
 		return err
 	}
 
-	klog.V(2).Infof("Removed finalizer on ServiceNetworkEndpointGroup CR %v/%v", negCR.Namespace, negCR.Name)
+	klog.V(2).Infof("Removed finalizer on ServiceNetworkEndpointGroup CR %s/%s", negCR.Namespace, negCR.Name)
 
 	// If CR does not have a deletion timestamp, delete
 	if negCR.GetDeletionTimestamp().IsZero() {
-		klog.V(2).Infof("Deleting ServiceNetworkEndpointGroup CR %v/%v", negCR.Namespace, negCR.Name)
+		klog.V(2).Infof("Deleting ServiceNetworkEndpointGroup CR %s/%s", negCR.Namespace, negCR.Name)
 		return svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(negCR.Namespace).Delete(context.Background(), negCR.Name, metav1.DeleteOptions{})
 	}
 	return nil
