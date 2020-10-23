@@ -38,6 +38,14 @@ func NewAdapter(g *gce.Cloud) NetworkEndpointGroupCloud {
 	}
 }
 
+func NewAdapterWithNetwork(g *gce.Cloud, network, subnetwork string) NetworkEndpointGroupCloud {
+	return &cloudProviderAdapter{
+		c:             g,
+		networkURL:    network,
+		subnetworkURL: subnetwork,
+	}
+}
+
 // cloudProviderAdapter is a temporary shim to consolidate accesses to
 // Cloud and push them outside of this package.
 type cloudProviderAdapter struct {
