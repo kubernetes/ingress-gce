@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
@@ -39,7 +40,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/apis/core/v1/helper"
 )
 
 // L4Controller manages the create/update delete of all L4 Internal LoadBalancer services.
@@ -267,7 +267,7 @@ func (l4c *L4Controller) sync(key string) error {
 }
 
 func (l4c *L4Controller) updateServiceStatus(svc *v1.Service, newStatus *v1.LoadBalancerStatus) error {
-	if helper.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
+	if helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
 		return nil
 	}
 	return patch.PatchServiceLoadBalancerStatus(l4c.ctx.KubeClient.CoreV1(), svc, *newStatus)
