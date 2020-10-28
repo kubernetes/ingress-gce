@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	apiv1 "k8s.io/api/core/v1"
+	core "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -40,7 +41,6 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/apis/core"
 )
 
 type transactionSyncer struct {
