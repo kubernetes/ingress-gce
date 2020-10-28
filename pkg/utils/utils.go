@@ -285,7 +285,10 @@ func IsGCEIngress(ing *v1beta1.Ingress) bool {
 
 	switch class {
 	case "":
-		return true
+		// Ingress controller does not have any ingress classes that can be
+		// specified by spec.IngressClassName. If spec.IngressClassName
+		// is nil, then consider GCEIngress.
+		return ing.Spec.IngressClassName == nil
 	case annotations.GceIngressClass:
 		return true
 	case annotations.GceL7ILBIngressClass:

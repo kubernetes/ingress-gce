@@ -457,6 +457,7 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 // Do not run in parallel since modifies global flags
 // TODO(shance): remove l7-ilb flag tests once flag is removed
 func TestIsGCEIngress(t *testing.T) {
+	var wrongClassName = "wrong-class"
 	testCases := []struct {
 		desc             string
 		ingress          *v1beta1.Ingress
@@ -509,7 +510,7 @@ func TestIsGCEIngress(t *testing.T) {
 			ingress: &v1beta1.Ingress{
 				ObjectMeta: v1.ObjectMeta{
 					Annotations: map[string]string{
-						annotations.IngressClassKey: "wrong-class"},
+						annotations.IngressClassKey: wrongClassName},
 				},
 			},
 			ingressClassFlag: "right-class",
@@ -521,6 +522,33 @@ func TestIsGCEIngress(t *testing.T) {
 				ObjectMeta: v1.ObjectMeta{
 					Annotations: map[string]string{
 						annotations.IngressClassKey: "right-class"},
+				},
+			},
+			ingressClassFlag: "right-class",
+			expected:         true,
+		},
+		{
+			desc: "No ingress class annotation, ingressClassName set",
+			ingress: &v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{},
+				},
+				Spec: v1beta1.IngressSpec{
+					IngressClassName: &wrongClassName,
+				},
+			},
+			expected: false,
+		},
+		{
+			// Annotation supercedes spec.ingressClassName
+			desc: "Set by flag with matching class, and ingressClassName set",
+			ingress: &v1beta1.Ingress{
+				ObjectMeta: v1.ObjectMeta{
+					Annotations: map[string]string{
+						annotations.IngressClassKey: "right-class"},
+				},
+				Spec: v1beta1.IngressSpec{
+					IngressClassName: &wrongClassName,
 				},
 			},
 			ingressClassFlag: "right-class",
