@@ -36,6 +36,7 @@ import (
 
 var (
 	port              = flag.Int("port", 8080, "Port number to serve default backend 404 page.")
+	metricsPort       = flag.Int("metricsPort", 8081, "Port number to serve metrics for the default  backend 404 page.")
 	serverTimeout     = flag.Duration("timeout", 5*time.Second, "Time in seconds to wait before forcefully terminating the server.")
 	readTimeout       = flag.Duration("read_timeout", 10*time.Second, "Time in seconds to read the entire request before timing out.")
 	readHeaderTimeout = flag.Duration("read_header_timeout", 10*time.Second, "Time in seconds to read the request header before timing out.")
@@ -56,10 +57,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	server := newServer(hostName, *port)
+	server := newServer(hostName, *port, *metricsPort)
 	server.registerHandlers()
 	klog.Infof("Default 404 server is running with GOMAXPROCS(%d) on %s:%d\n", runtime.GOMAXPROCS(-1), hostName, *port)
 
+	// The main http server for handling NotFound and healthzrequests
 	go func() {
 		err := server.httpServer.ListenAndServe()
 		if err != nil {
@@ -71,6 +73,23 @@ func main() {
 				klog.Warningf("handler timed out: %v\n", err)
 			default:
 				klog.Fatalf("could not start http server or internal error: %v\n", err)
+				os.Exit(1)
+			}
+		}
+	}()
+
+	// The server handling metrics
+	go func() {
+		err := server.metricsServer.ListenAndServe()
+		if err != nil {
+			switch err {
+			case http.ErrServerClosed:
+				klog.Infof("server shutting down or received shutdown: %v\n", err)
+				os.Exit(0)
+			case http.ErrHandlerTimeout:
+				klog.Warningf("metrics handler timed out: %v\n", err)
+			default:
+				klog.Fatalf("could not start metrics http server or internal error: %v\n", err)
 				os.Exit(1)
 			}
 		}
@@ -96,10 +115,13 @@ type server struct {
 	totalRequests *prometheus.CounterVec
 	// requestDuration is a prometheus vector histogram for tracking duration time for requests
 	requestDuration *prometheus.HistogramVec
-	// httpServer is a private pointer to the http.Server
-	httpServer *http.Server
+	// metricsServer is the http.Server that handles the metrics requests
+	// and registers the mux
+	metricsServer *http.Server
 	// mux is a pointer to the ServerMux
 	mux *http.ServeMux
+	// httpServer is a private pointer to the http.Server that handles NotFoundHandler requests
+	httpServer *http.Server
 	// context used to signal cancel for shutdown and interrupts
 	ctx context.Context
 	// cancel function for the context
@@ -109,8 +131,16 @@ type server struct {
 }
 
 // newServer returns server that implements the http.Handler interface
-func newServer(hostName string, port int) *server {
+func newServer(hostName string, port int, metricsPort int) *server {
 	s := &server{
+		metricsServer: &http.Server{
+			// TODO(bannai): make the binding to the hostname, instead of all the names
+			Addr:              fmt.Sprintf(":%d", metricsPort),
+			ReadTimeout:       *readTimeout,
+			ReadHeaderTimeout: *readHeaderTimeout,
+			WriteTimeout:      *writeTimeout,
+			IdleTimeout:       *idleTimeout,
+		},
 		httpServer: &http.Server{
 			// TODO(bannai): make the binding to the hostname, instead of all the names
 			Addr:              fmt.Sprintf(":%d", port),
@@ -153,17 +183,23 @@ func newServer(hostName string, port int) *server {
 
 // registerHandlers registers the callbacks for the various URIs supported by the default HTTP server.
 func (s *server) registerHandlers() {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.notFoundHandler())
+	httpMux := http.NewServeMux()
+	metricsMux := http.NewServeMux()
+
+	// Register the default notFoundHandler, healthz with the main http server
+	httpMux.HandleFunc("/", s.notFoundHandler())
 	// enable shutdown handler only for non-prod environments
 	if *isProd == false {
-		mux.HandleFunc("/shutdown", s.shutdownHandler())
+		httpMux.HandleFunc("/shutdown", s.shutdownHandler())
 	}
-	mux.HandleFunc("/healthz", s.healthzHandler())
-	mux.Handle("/metrics", promhttp.Handler())
+	httpMux.HandleFunc("/healthz", s.healthzHandler())
 
-	s.mux = mux
-	s.httpServer.Handler = mux
+	// Register the healthz and metrics handlers with the metrics server
+	metricsMux.Handle("/metrics", promhttp.Handler())
+
+	s.mux = httpMux
+	s.httpServer.Handler = httpMux
+	s.metricsServer.Handler = metricsMux
 }
 
 // healthz handler handles the liveness probing
@@ -218,10 +254,11 @@ func gracefulShutdown(s *server) {
 
 	select {
 	case interrupt := <-c:
-		klog.Infof("received interrupt, doing a graceful shutdown: %v \n", interrupt)
+		klog.Infof("received interrupt, doing a graceful shutdown of http and metrics servers: %v \n", interrupt)
 	case <-s.ctx.Done():
-		klog.Infof("received /shutdown message, doing a graceful shutdown: \n")
+		klog.Infof("received /shutdown message, doing a graceful shutdown of http and metrics servers: \n")
 	}
 
 	s.httpServer.Shutdown(context.Background())
+	s.metricsServer.Shutdown(context.Background())
 }
