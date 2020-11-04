@@ -923,3 +923,15 @@ func CreateNegCR(s *Sandbox, negName string, servicePort string) error {
 func DeleteNegCR(s *Sandbox, negName string) error {
 	return s.f.SvcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(s.Namespace).Delete(context.Background(), negName, metav1.DeleteOptions{})
 }
+
+// Truncate truncates a gce resource name if it exceeds 62 chars
+// This function is based on the one in pkg/namer/namer.go
+func Truncate(key string) string {
+	if len(key) > 62 {
+		// GCE requires names to end with an alphanumeric, but allows
+		// characters like '-', so make sure the trucated name ends
+		// legally.
+		return fmt.Sprintf("%v%v", key[:62], "0")
+	}
+	return key
+}
