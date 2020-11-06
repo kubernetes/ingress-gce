@@ -214,13 +214,21 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 				// The Ingress spec defines empty path as catch-all, so if a user
 				// asks for a single host and multiple empty paths, all traffic is
 				// sent to one of the last backend in the rules list.
-				path := p.Path
-				if path == "" {
-					path = DefaultPath
+
+				paths, err := validateAndGetPaths(p)
+				if err != nil {
+					errs = append(errs, err)
+					continue
 				}
-				pathRules = append(pathRules, utils.PathRule{Path: path, Backend: *svcPort})
+				for _, path := range paths {
+					if path == "" {
+						path = DefaultPath
+					}
+					pathRules = append(pathRules, utils.PathRule{Path: path, Backend: *svcPort})
+				}
 			}
 		}
+
 		host := rule.Host
 		if host == "" {
 			host = DefaultHost
@@ -247,6 +255,24 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 
 	errs = append(errs, fmt.Errorf("failed to retrieve the system default backend service %q with port %q: %v", systemDefaultBackend.Service.String(), systemDefaultBackend.Port.String(), err))
 	return urlMap, errs
+}
+
+// validateAndGetPaths will validate the path based on the specifed path type and will return the
+// the path rules that should be used. If no path type is provided, the path type will be assumed
+// to be ImplementationSpecific. If a non existent path type is provided, an error will be returned.
+func validateAndGetPaths(path v1beta1.HTTPIngressPath) ([]string, error) {
+	pathType := v1beta1.PathTypeImplementationSpecific
+	if path.PathType != nil {
+		pathType = *path.PathType
+	}
+
+	switch pathType {
+	case v1beta1.PathTypeImplementationSpecific:
+		// ImplementationSpecific will have no validation to continue backwards compatibility
+		return []string{path.Path}, nil
+	default:
+		return nil, fmt.Errorf("unsupported path type: %s", pathType)
+	}
 }
 
 func getZone(n *api_v1.Node) string {

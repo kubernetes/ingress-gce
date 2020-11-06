@@ -433,6 +433,136 @@ func TestGetProbeCrossNamespace(t *testing.T) {
 	}
 }
 
+func TestPathValidation(t *testing.T) {
+	hostname := "foo.bar.com"
+	translator := fakeTranslator()
+	svcLister := translator.ctx.ServiceInformer.GetIndexer()
+
+	// default backend
+	svc := test.NewService(types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, apiv1.ServiceSpec{
+		Type:  apiv1.ServiceTypeNodePort,
+		Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
+	})
+	svcLister.Add(svc)
+
+	svc = test.NewService(types.NamespacedName{Name: "my-service", Namespace: "default"}, apiv1.ServiceSpec{
+		Type:  apiv1.ServiceTypeNodePort,
+		Ports: []apiv1.ServicePort{{Port: 80}},
+	})
+	svcLister.Add(svc)
+
+	expectedBackend := &utils.ServicePort{
+		ID: utils.ServicePortID{
+			Service: types.NamespacedName{Name: "my-service", Namespace: "default"},
+			Port:    intstr.FromInt(80),
+		}}
+
+	testcases := []struct {
+		desc          string
+		pathType      v1beta1.PathType
+		path          string
+		expectValid   bool
+		expectedPaths []string
+	}{
+		{
+			desc:          "Valid ImplementationSpecific path",
+			pathType:      v1beta1.PathTypeImplementationSpecific,
+			path:          "/test",
+			expectValid:   true,
+			expectedPaths: []string{"/test"},
+		},
+		{
+			desc:          "Empty path type, valid path type",
+			pathType:      "",
+			path:          "/test",
+			expectValid:   true,
+			expectedPaths: []string{"/test"},
+		},
+		{
+			desc:          "Empty path type valid path without wildcard",
+			pathType:      "",
+			path:          "/test",
+			expectValid:   true,
+			expectedPaths: []string{"/test"},
+		},
+		{
+			desc:          "Empty path type valid path with wildcard",
+			pathType:      "",
+			path:          "/test/*",
+			expectValid:   true,
+			expectedPaths: []string{"/test/*"},
+		},
+		{
+			desc:          "Empty path type valid empty path",
+			pathType:      "",
+			path:          "",
+			expectValid:   true,
+			expectedPaths: []string{"/*"},
+		},
+		{
+			desc:        "Invalid Path Type",
+			pathType:    v1beta1.PathType("InvalidType"),
+			path:        "/test/*",
+			expectValid: false,
+		},
+	}
+
+	for _, tc := range testcases {
+
+		path := v1beta1.HTTPIngressPath{
+			Path: tc.path,
+			Backend: v1beta1.IngressBackend{
+				ServiceName: "my-service",
+				ServicePort: intstr.FromInt(80),
+			},
+		}
+
+		// Empty Path Types should be nil, not an empty string in the spec
+		if tc.pathType != v1beta1.PathType("") {
+			path.PathType = &tc.pathType
+		}
+
+		spec := v1beta1.IngressSpec{
+			Rules: []v1beta1.IngressRule{
+				{
+					Host: hostname,
+					IngressRuleValue: v1beta1.IngressRuleValue{
+						HTTP: &v1beta1.HTTPIngressRuleValue{
+							Paths: []v1beta1.HTTPIngressPath{path},
+						},
+					},
+				},
+			},
+		}
+		ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"}, spec)
+
+		expectedGCEURLMap := &utils.GCEURLMap{
+			DefaultBackend: &utils.ServicePort{
+				ID: utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")},
+			},
+		}
+
+		var expectedPathRules []utils.PathRule
+		for _, p := range tc.expectedPaths {
+			pathRule := utils.PathRule{Path: p, Backend: *expectedBackend}
+			expectedPathRules = append(expectedPathRules, pathRule)
+		}
+		expectedGCEURLMap.HostRules = []utils.HostRule{{Hostname: hostname, Paths: expectedPathRules}}
+
+		gotGCEURLMap, gotErrs := translator.TranslateIngress(ing, defaultBackend.ID, defaultNamer)
+		if tc.expectValid && len(gotErrs) > 0 {
+			t.Errorf("%s: TranslateIngress() = _, %+v, want no errs", tc.desc, gotErrs)
+		} else if !tc.expectValid && len(gotErrs) == 0 {
+			t.Errorf("%s: TranslateIngress() should result in errors but got none", tc.desc)
+		}
+
+		// Check that the GCEURLMaps have expected host path rules
+		if tc.expectValid && !utils.EqualMapping(gotGCEURLMap, expectedGCEURLMap) {
+			t.Errorf("%s: TranslateIngress() = %+v\nwant\n%+v", tc.desc, gotGCEURLMap.String(), expectedGCEURLMap.String())
+		}
+	}
+}
+
 func makePods(nodePortToHealthCheck map[utils.ServicePort]string, ns string) []*apiv1.Pod {
 	delay := 1 * time.Minute
 
