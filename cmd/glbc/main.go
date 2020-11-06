@@ -25,6 +25,7 @@ import (
 
 	flag "github.com/spf13/pflag"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/svcneg"
 	"k8s.io/klog"
@@ -170,6 +171,16 @@ func main() {
 	}
 	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
+
+	// Delete unsupported/ malformed spec in backendconfig resources that may
+	// crash the controller.
+	dynamicClient, err := dynamic.NewForConfig(kubeConfig)
+	if err != nil {
+		klog.Fatalf("Failed to create Dynamic client: %v", err)
+	}
+	if err := backendconfig.OverrideUnsupportedSpec(dynamicClient); err != nil {
+		klog.Warningf("Failed to override malformed spec for backendconfig resources: %v", err)
+	}
 
 	if !flags.F.LeaderElection.LeaderElect {
 		runControllers(ctx)

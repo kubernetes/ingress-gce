@@ -20,8 +20,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
@@ -324,6 +329,215 @@ func TestValidateLogging(t *testing.T) {
 			}
 			if !tc.expectError && err != nil {
 				t.Errorf("Did not expect error but got: %v", err)
+			}
+		})
+	}
+}
+
+func TestOverrideUnsupportedSpec(t *testing.T) {
+	backendConfigClient := dynamicfake.NewSimpleDynamicClient(runtime.NewScheme())
+
+	for _, tc := range []struct {
+		desc           string
+		namespacedName types.NamespacedName
+		backendConfig  *unstructured.Unstructured
+		expected       *unstructured.Unstructured
+	}{
+		{
+			desc: "invalid custom resource headers and non-compatible",
+			namespacedName: types.NamespacedName{
+				Namespace: "ns1",
+				Name:      "invalid-custom-req-headers-1",
+			},
+			backendConfig: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"customResourceHeaders": []interface{}{"abcde"},
+					},
+				},
+			},
+			expected: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{},
+				},
+			},
+		},
+		{
+			desc: "invalid custom resource headers but compatible",
+			namespacedName: types.NamespacedName{
+				Namespace: "ns1",
+				Name:      "invalid-custom-req-headers-2",
+			},
+			backendConfig: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"customResourceHeaders": map[string]interface{}{
+							"headers":         []interface{}{"abcde"},
+							"unsupported-key": "unsupported-value",
+						},
+					},
+				},
+			},
+			expected: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"customResourceHeaders": map[string]interface{}{
+							"headers":         []interface{}{"abcde"},
+							"unsupported-key": "unsupported-value",
+						},
+					},
+				},
+			},
+		},
+		{
+			desc: "valid custom resource headers",
+			namespacedName: types.NamespacedName{
+				Namespace: "ns1",
+				Name:      "valid-custom-req-headers",
+			},
+			backendConfig: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"customResourceHeaders": map[string]interface{}{
+							"headers": []interface{}{"abcde"},
+						},
+					},
+				},
+			},
+			expected: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"customResourceHeaders": map[string]interface{}{
+							"headers": []interface{}{"abcde"},
+						},
+					},
+				},
+			},
+		},
+		{
+			desc: "invalid logging",
+			namespacedName: types.NamespacedName{
+				Namespace: "ns1",
+				Name:      "invalid-logging",
+			},
+			backendConfig: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"logging": map[string]interface{}{
+							"enable": "non-bool",
+						},
+					},
+				},
+			},
+			expected: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{},
+				},
+			},
+		},
+		{
+			desc: "some valid",
+			namespacedName: types.NamespacedName{
+				Namespace: "ns1",
+				Name:      "some-valid-spec",
+			},
+			backendConfig: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"customResourceHeaders": []interface{}{"abcde"},
+						"logging": map[string]interface{}{
+							"enable": interface{}(false),
+						},
+						"healthCheck": false,
+					},
+				},
+			},
+			expected: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"logging": map[string]interface{}{
+							"enable": false,
+						},
+					},
+				},
+			},
+		},
+		{
+			desc: "some valid in default namespace",
+			namespacedName: types.NamespacedName{
+				Name: "some-valid-spec",
+			},
+			backendConfig: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"customResourceHeaders": []interface{}{"abcde"},
+						"logging": map[string]interface{}{
+							"enable": interface{}(false),
+						},
+						"healthCheck": false,
+					},
+				},
+			},
+			expected: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"logging": map[string]interface{}{
+							"enable": false,
+						},
+					},
+				},
+			},
+		},
+		{
+			desc: "all invalid",
+			namespacedName: types.NamespacedName{
+				Namespace: "ns1",
+				Name:      "invalid-spec",
+			},
+			backendConfig: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{
+						"customResourceHeaders": []interface{}{"abcde"},
+						"logging": map[string]interface{}{
+							"enable": "non-bool",
+						},
+						"healthCheck": false,
+					},
+				},
+			},
+			expected: &unstructured.Unstructured{
+				Object: map[string]interface{}{
+					"spec": map[string]interface{}{},
+				},
+			},
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			tc.backendConfig.Object["kind"] = "BackendConfig"
+			tc.expected.Object["kind"] = "BackendConfig"
+			objectMeta := map[string]interface{}{
+				"name": tc.namespacedName.Name,
+			}
+			if tc.namespacedName.Namespace != "" {
+				objectMeta["namespace"] = tc.namespacedName.Namespace
+			}
+			tc.backendConfig.Object["metadata"] = objectMeta
+			tc.expected.Object["metadata"] = objectMeta
+			if _, err := backendConfigClient.Resource(groupVersionResource).Namespace(tc.namespacedName.Namespace).Create(context.TODO(), tc.backendConfig, meta_v1.CreateOptions{}); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := OverrideUnsupportedSpec(backendConfigClient); err != nil {
+				t.Fatal(err)
+			}
+
+			gotBC, err := backendConfigClient.Resource(groupVersionResource).Namespace(tc.namespacedName.Namespace).Get(context.TODO(), tc.namespacedName.Name, meta_v1.GetOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if diff := cmp.Diff(tc.expected, gotBC); diff != "" {
+				t.Fatalf("Got diff for backendconfig %s (-want +got):%s\n", tc.namespacedName, diff)
 			}
 		})
 	}

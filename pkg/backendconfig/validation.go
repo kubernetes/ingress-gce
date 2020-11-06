@@ -18,11 +18,21 @@ package backendconfig
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
+	jsonpatch "github.com/evanphx/json-patch"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	apisbackendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 const (
@@ -120,5 +130,122 @@ func validateLogging(beConfig *backendconfigv1.BackendConfig) error {
 			*beConfig.Spec.Logging.SampleRate)
 	}
 
+	return nil
+}
+
+type overridableSpec string
+
+const (
+	// These features are added in v1.8+ versions which means that a malformed spec
+	// can be added for these in v1.7 and below. Upgrading to 1.8 with these
+	// malformed resource will crash the ingress controller.
+	// These values should match json tags in pkg/backendconfig/apis/v1/types.go
+	customResourceHeaders overridableSpec = "customResourceHeaders"
+	logging               overridableSpec = "logging"
+	healthCheck           overridableSpec = "healthCheck"
+
+	spec = "spec"
+)
+
+var groupVersionResource = schema.GroupVersionResource{
+	Group:    apisbackendconfig.GroupName,
+	Version:  "v1",
+	Resource: "backendconfigs",
+}
+
+// OverrideUnsupportedSpec deletes the feature spec that may cause the ingress
+// controller to crash.
+// Usually these crashes should not occur but there are some unique sequence of
+// steps that lead to a crash,
+// 1. Create a BackendConfig resource with malformed spec for a unsupported
+// feature. (Ex. custom resource headers in v1.6)
+// 2. Upgrade to a ingress version that supports this feature. The malformed
+// backendconfig resource will cause the generated client library to panic
+// and crash the controller.
+// Note that beginning v1.9 the unsupported fields are automatically dropped so
+// we will not run into this problem.
+func OverrideUnsupportedSpec(dynamicClient dynamic.Interface) error {
+	unstructuredBCList, err := dynamicClient.Resource(groupVersionResource).List(context.TODO(), meta_v1.ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	var errs []error
+	for _, existingBC := range unstructuredBCList.Items {
+		updatedBC := *existingBC.DeepCopy()
+		bcKey := fmt.Sprintf("%s/%s", existingBC.GetNamespace(), existingBC.GetName())
+		// All objects must have spec and the spec should be of map type.
+		// Skipping in case of these unusual errors.
+		bcSpec, ok := existingBC.Object[spec]
+		if !ok {
+			continue
+		}
+		typedBCSpec, ok := bcSpec.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		var needsPatch bool
+		for _, specKey := range []overridableSpec{customResourceHeaders, logging, healthCheck} {
+			// Skip if overridable feature spec is not present.
+			oSpec, ok := typedBCSpec[string(specKey)]
+			if !ok {
+				continue
+			}
+
+			marshalledSpec, err := json.Marshal(oSpec)
+			if err != nil {
+				klog.Warningf("Failed to marshall %s spec %v for backendconfig %s: %v", specKey, oSpec, bcKey, err)
+				continue
+			}
+
+			switch specKey {
+			case customResourceHeaders:
+				err = json.Unmarshal(marshalledSpec, &backendconfigv1.CustomRequestHeadersConfig{})
+			case logging:
+				err = json.Unmarshal(marshalledSpec, &backendconfigv1.LogConfig{})
+			case healthCheck:
+				err = json.Unmarshal(marshalledSpec, &backendconfigv1.HealthCheckConfig{})
+			default:
+			}
+
+			if err != nil {
+				klog.V(0).Infof("Deleting malformed %s spec %s for backendconfig %s, unmarshall error: %v", specKey, marshalledSpec, bcKey, err)
+				unstructured.RemoveNestedField(updatedBC.Object, spec, string(specKey))
+				needsPatch = true
+			}
+		}
+
+		if needsPatch {
+			if err := patchUnstructuredResource(dynamicClient, existingBC, updatedBC); err != nil {
+				errs = append(errs, fmt.Errorf("failed to patch backendconfig %s: %v", bcKey, err))
+			}
+		}
+	}
+	if errs != nil {
+		return utils.JoinErrs(errs)
+	}
+	return nil
+}
+
+func patchUnstructuredResource(dynamicClient dynamic.Interface, old, new unstructured.Unstructured) error {
+	oldData, err := json.Marshal(old.Object)
+	if err != nil {
+		return fmt.Errorf("failed to Marshal old object: %v", err)
+	}
+
+	newData, err := json.Marshal(new.Object)
+	if err != nil {
+		return fmt.Errorf("failed to Marshal new object: %v", err)
+	}
+
+	patchBytes, err := jsonpatch.CreateMergePatch(oldData, newData)
+	if err != nil {
+		return fmt.Errorf("failed to create json merge patch: %v", err)
+	}
+
+	if _, err := dynamicClient.Resource(groupVersionResource).Namespace(old.GetNamespace()).Patch(context.TODO(), old.GetName(), types.MergePatchType, patchBytes, meta_v1.PatchOptions{}); err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
 	return nil
 }

@@ -4,6 +4,7 @@ go 1.13
 
 require (
 	github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20200609233750-ea56f58e187a
+	github.com/evanphx/json-patch v4.2.0+incompatible
 	github.com/go-openapi/spec v0.19.3
 	github.com/golang/groupcache v0.0.0-20190129154638-5b532d6fd5ef // indirect
 	github.com/google/go-cmp v0.3.0
