@@ -465,6 +465,32 @@ func TestPathValidation(t *testing.T) {
 		expectedPaths []string
 	}{
 		{
+			desc:          "Valid path for exact path type",
+			pathType:      v1beta1.PathTypeExact,
+			path:          "/test",
+			expectValid:   true,
+			expectedPaths: []string{"/test"},
+		},
+		{
+			desc:          "Valid path for exact path type with trailing '/'",
+			pathType:      v1beta1.PathTypeExact,
+			path:          "/test/",
+			expectValid:   true,
+			expectedPaths: []string{"/test/"},
+		},
+		{
+			desc:        "Invalid Exact Path includes a wildcard",
+			pathType:    v1beta1.PathTypeExact,
+			path:        "/test/*",
+			expectValid: false,
+		},
+		{
+			desc:        "Invalid empty Exact Path",
+			pathType:    v1beta1.PathTypeExact,
+			path:        "",
+			expectValid: false,
+		},
+		{
 			desc:          "Valid ImplementationSpecific path",
 			pathType:      v1beta1.PathTypeImplementationSpecific,
 			path:          "/test",

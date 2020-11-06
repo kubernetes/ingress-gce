@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	"k8s.io/ingress-gce/pkg/flags"
 
@@ -270,9 +271,24 @@ func validateAndGetPaths(path v1beta1.HTTPIngressPath) ([]string, error) {
 	case v1beta1.PathTypeImplementationSpecific:
 		// ImplementationSpecific will have no validation to continue backwards compatibility
 		return []string{path.Path}, nil
+	case v1beta1.PathTypeExact:
+		return validateExactPathType(path)
 	default:
 		return nil, fmt.Errorf("unsupported path type: %s", pathType)
 	}
+}
+
+// validateExactPathType will validate the path provided does not have any wildcards and will
+// return the path unmodified. If the path is in valid, an empty list and error is returned.
+func validateExactPathType(path v1beta1.HTTPIngressPath) ([]string, error) {
+	if path.Path == "" {
+		return nil, fmt.Errorf("failed to validate exact path type due to empty path")
+	}
+
+	if strings.Contains(path.Path, "*") {
+		return nil, fmt.Errorf("failed to validate exact path %s due to invalid wildcard", path.Path)
+	}
+	return []string{path.Path}, nil
 }
 
 func getZone(n *api_v1.Node) string {
