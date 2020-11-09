@@ -465,18 +465,20 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 
 	for _, cr := range deletionCandidates {
 		shouldDeleteNegCR := true
+		deleteByZone := len(cr.Status.NetworkEndpointGroups) == 0
 		klog.V(2).Infof("Deletion candidate %s/%s has %d NEG references", cr.Namespace, cr.Name, len(cr.Status.NetworkEndpointGroups))
 		for _, negRef := range cr.Status.NetworkEndpointGroups {
 			resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
 			if err != nil {
 				errList = append(errList, fmt.Errorf("failed to parse selflink for neg cr %s/%s: %s", cr.Namespace, cr.Name, err))
+				deleteByZone = true
 				continue
 			}
 
 			shouldDeleteNegCR = shouldDeleteNegCR && deleteNegOrReportErr(resourceID.Key.Name, resourceID.Key.Zone, cr)
 		}
 
-		if len(cr.Status.NetworkEndpointGroups) == 0 {
+		if deleteByZone {
 			klog.V(2).Infof("Deletion candidate %s/%s has 0 NEG reference: %+v", cr.Namespace, cr.Name, cr)
 			for _, zone := range zones {
 				shouldDeleteNegCR = shouldDeleteNegCR && deleteNegOrReportErr(cr.Name, zone, cr)
