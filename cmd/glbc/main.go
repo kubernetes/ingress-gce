@@ -26,6 +26,7 @@ import (
 	flag "github.com/spf13/pflag"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
+	"k8s.io/ingress-gce/pkg/serviceattachment"
 	"k8s.io/ingress-gce/pkg/svcneg"
 	"k8s.io/klog"
 
@@ -136,6 +137,13 @@ func main() {
 	svcNegClient, err = svcnegclient.NewForConfig(kubeConfig)
 	if err != nil {
 		klog.Fatalf("Failed to create NetworkEndpointGroup client: %v", err)
+	}
+
+	if flags.F.EnablePSC {
+		serviceAttachmentCRDMeta := serviceattachment.CRDMeta()
+		if _, err := crdHandler.EnsureCRD(serviceAttachmentCRDMeta); err != nil {
+			klog.Fatalf("Failed to ensure ServiceAttachment CRD: %v", err)
+		}
 	}
 
 	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, firewalls.DefaultFirewallName)
