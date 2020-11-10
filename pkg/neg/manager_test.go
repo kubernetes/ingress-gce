@@ -1141,14 +1141,16 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 	}
 
 	testCases := []struct {
-		desc              string
-		negsExist         bool
-		markedForDeletion bool
-		desiredConfig     bool
-		expectNegGC       bool
-		expectCrGC        bool
-		emptyNegRefList   bool
-		negDesc           string
+		desc                 string
+		negsExist            bool
+		markedForDeletion    bool
+		desiredConfig        bool
+		emptyNegRefList      bool
+		negDesc              string
+		malformedNegSelflink bool
+		expectNegGC          bool
+		expectCrGC           bool
+		expectErr            bool
 	}{
 		{desc: "neg config not in svcPortMap, marked for deletion",
 			negsExist:         true,
@@ -1175,6 +1177,15 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			emptyNegRefList:   true,
 			expectNegGC:       true,
 			expectCrGC:        true,
+		},
+		{desc: "neg config not in svcPortMap, malformed neg selflink",
+			negsExist:            true,
+			markedForDeletion:    false,
+			malformedNegSelflink: true,
+			emptyNegRefList:      false,
+			expectNegGC:          true,
+			expectCrGC:           true,
+			expectErr:            true,
 		},
 		{desc: "neg config not in svcPortMap, empty neg list, neg has matching description",
 			negsExist:         true,
@@ -1256,8 +1267,11 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 					}
 
 					if !tc.emptyNegRefList {
-						negRefs := getNegObjectRefs(t, fakeCloud, zones, negName, version)
-						cr.Status.NetworkEndpointGroups = negRefs
+						if !tc.malformedNegSelflink {
+							cr.Status.NetworkEndpointGroups = getNegObjectRefs(t, fakeCloud, zones, negName, version)
+						} else {
+							cr.Status.NetworkEndpointGroups = []negv1beta1.NegObjectReference{{SelfLink: ""}}
+						}
 					}
 
 					if _, err := manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(cr.Namespace).Create(context2.TODO(), &cr, metav1.CreateOptions{}); err != nil {
@@ -1282,8 +1296,11 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						}
 					}
 
-					if err := manager.GC(); err != nil {
+					err := manager.GC()
+					if !tc.expectErr && err != nil {
 						t.Fatalf("failed to GC: %v", err)
+					} else if tc.expectErr && err == nil {
+						t.Errorf("expected GC to error")
 					}
 
 					negs, err := fakeCloud.AggregatedListNetworkEndpointGroup(version)

@@ -116,13 +116,16 @@ func getService(serviceLister cache.Indexer, namespace, name string) *apiv1.Serv
 
 // ensureNetworkEndpointGroup ensures corresponding NEG is configured correctly in the specified zone.
 func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName, kubeSystemUID, port string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version) (negv1beta1.NegObjectReference, error) {
+	var negRef negv1beta1.NegObjectReference
 	neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version)
 	if err != nil {
-		// Most likely to be caused by non-existed NEG
-		klog.V(4).Infof("Error while retriving %q in zone %q: %v", negName, zone, err)
+		if !utils.IsNotFoundError(err) {
+			klog.Errorf("Failed to get Neg %q in zone %q: %s", negName, zone, err)
+			return negRef, err
+		}
+		klog.V(4).Infof("Neg %q in zone %q was not found: %s", negName, zone, err)
 	}
 
-	var negRef negv1beta1.NegObjectReference
 	needToCreate := false
 	if neg == nil {
 		needToCreate = true
@@ -200,8 +203,8 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			var err error
 			neg, err = cloud.GetNetworkEndpointGroup(negName, zone, version)
 			if err != nil {
-				klog.V(4).Infof("Error while retriving %q in zone %q: %v after initialization", negName, zone, err)
-				return negRef, nil
+				klog.Errorf("Error while retriving %q in zone %q: %v after initialization", negName, zone, err)
+				return negRef, err
 			}
 		}
 
