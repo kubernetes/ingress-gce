@@ -20,12 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"k8s.io/ingress-gce/pkg/metrics"
 	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"k8s.io/ingress-gce/pkg/metrics"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic/dynamicinformer"

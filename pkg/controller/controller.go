@@ -92,6 +92,9 @@ type LoadBalancerController struct {
 
 	// Ingress usage metrics.
 	metrics metrics.IngressMetricsCollector
+
+	ingClassLister  cache.Indexer
+	ingParamsLister cache.Indexer
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
@@ -123,6 +126,12 @@ func NewLoadBalancerController(
 		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool),
 		metrics:       ctx.ControllerMetrics,
 	}
+
+	if ctx.IngClassInformer != nil {
+		lbc.ingClassLister = ctx.IngClassInformer.GetIndexer()
+		lbc.ingParamsLister = ctx.IngParamsInformer.GetIndexer()
+	}
+
 	lbc.ingSyncer = ingsync.NewIngressSyncer(&lbc)
 
 	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingress", "ingresses", lbc.sync)

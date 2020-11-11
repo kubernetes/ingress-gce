@@ -26,6 +26,7 @@ import (
 	flag "github.com/spf13/pflag"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
+	"k8s.io/ingress-gce/pkg/ingparams"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
 	"k8s.io/ingress-gce/pkg/svcneg"
 	"k8s.io/klog"
@@ -39,6 +40,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
+	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 
 	ingctx "k8s.io/ingress-gce/pkg/context"
@@ -106,7 +108,7 @@ func main() {
 	// TODO(rramkumar): Reuse this CRD handler for other CRD's coming.
 	crdHandler := crd.NewCRDHandler(crdClient)
 	backendConfigCRDMeta := backendconfig.CRDMeta()
-	if _, err := crdHandler.EnsureCRD(backendConfigCRDMeta); err != nil {
+	if _, err := crdHandler.EnsureCRD(backendConfigCRDMeta, true); err != nil {
 		klog.Fatalf("Failed to ensure BackendConfig CRD: %v", err)
 	}
 
@@ -118,7 +120,7 @@ func main() {
 	var frontendConfigClient frontendconfigclient.Interface
 	if flags.F.EnableFrontendConfig {
 		frontendConfigCRDMeta := frontendconfig.CRDMeta()
-		if _, err := crdHandler.EnsureCRD(frontendConfigCRDMeta); err != nil {
+		if _, err := crdHandler.EnsureCRD(frontendConfigCRDMeta, true); err != nil {
 			klog.Fatalf("Failed to ensure FrontendConfig CRD: %v", err)
 		}
 
@@ -130,7 +132,7 @@ func main() {
 
 	var svcNegClient svcnegclient.Interface
 	negCRDMeta := svcneg.CRDMeta()
-	if _, err := crdHandler.EnsureCRD(negCRDMeta); err != nil {
+	if _, err := crdHandler.EnsureCRD(negCRDMeta, true); err != nil {
 		klog.Fatalf("Failed to ensure ServiceNetworkEndpointGroup CRD: %v", err)
 	}
 
@@ -141,8 +143,21 @@ func main() {
 
 	if flags.F.EnablePSC {
 		serviceAttachmentCRDMeta := serviceattachment.CRDMeta()
-		if _, err := crdHandler.EnsureCRD(serviceAttachmentCRDMeta); err != nil {
+		if _, err := crdHandler.EnsureCRD(serviceAttachmentCRDMeta, true); err != nil {
 			klog.Fatalf("Failed to ensure ServiceAttachment CRD: %v", err)
+		}
+	}
+
+	ingClassEnabled := app.IngressClassEnabled(kubeClient)
+	var ingParamsClient ingparamsclient.Interface
+	if ingClassEnabled {
+		ingParamsCRDMeta := ingparams.CRDMeta()
+		if _, err := crdHandler.EnsureCRD(ingParamsCRDMeta, false); err != nil {
+			klog.Fatalf("Failed to ensure GCPIngressParams CRD: %v", err)
+		}
+
+		if ingParamsClient, err = ingparamsclient.NewForConfig(kubeConfig); err != nil {
+			klog.Fatalf("Failed to create GCPIngressParams client: %v", err)
 		}
 	}
 
@@ -173,7 +188,7 @@ func main() {
 		ASMConfigMapNamespace: flags.F.ASMConfigMapBasedConfigNamespace,
 		ASMConfigMapName:      flags.F.ASMConfigMapBasedConfigCMName,
 	}
-	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, cloud, namer, kubeSystemUID, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, ingParamsClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
