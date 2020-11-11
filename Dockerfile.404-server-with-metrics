@@ -16,5 +16,5 @@ FROM gcr.io/distroless/static:latest
 ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
 # nobody:nobody
 USER 65534:65534
-EXPOSE 8080
+EXPOSE 8080 8081
 ENTRYPOINT ["/ARG_BIN"]
