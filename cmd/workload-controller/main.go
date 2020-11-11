@@ -76,7 +76,7 @@ func main() {
 	}
 	crdHandler := crd.NewCRDHandler(crdClient)
 	workloadCRDMeta := workload.CRDMeta()
-	if _, err := crdHandler.EnsureCRD(workloadCRDMeta); err != nil {
+	if _, err := crdHandler.EnsureCRD(workloadCRDMeta, true); err != nil {
 		klog.Fatalf("Failed to ensure Workload CRD: %v", err)
 	}
 	workloadClient, err := workloadclient.NewForConfig(kubeConfig)

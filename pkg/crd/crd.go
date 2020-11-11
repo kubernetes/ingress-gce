@@ -48,8 +48,8 @@ func NewCRDHandler(client crdclient.Interface) *CRDHandler {
 }
 
 // EnsureCRD ensures a CRD in a cluster given the CRD's metadata.
-func (h *CRDHandler) EnsureCRD(meta *CRDMeta) (*apiextensionsv1.CustomResourceDefinition, error) {
-	crd, err := h.createOrUpdateCRD(meta)
+func (h *CRDHandler) EnsureCRD(meta *CRDMeta, namespacedScoped bool) (*apiextensionsv1.CustomResourceDefinition, error) {
+	crd, err := h.createOrUpdateCRD(meta, namespacedScoped)
 	if err != nil {
 		return nil, err
 	}
@@ -77,8 +77,8 @@ func (h *CRDHandler) EnsureCRD(meta *CRDMeta) (*apiextensionsv1.CustomResourceDe
 	return crd, nil
 }
 
-func (h *CRDHandler) createOrUpdateCRD(meta *CRDMeta) (*apiextensionsv1.CustomResourceDefinition, error) {
-	crd := crd(meta)
+func (h *CRDHandler) createOrUpdateCRD(meta *CRDMeta, namespacedScoped bool) (*apiextensionsv1.CustomResourceDefinition, error) {
+	crd := crd(meta, namespacedScoped)
 	existingCRD, err := h.client.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), crd.Name, metav1.GetOptions{})
 	if err != nil && !apierrors.IsNotFound(err) {
 		return nil, fmt.Errorf("failed to verify the existence of %v CRD: %v", meta.kind, err)
@@ -95,12 +95,16 @@ func (h *CRDHandler) createOrUpdateCRD(meta *CRDMeta) (*apiextensionsv1.CustomRe
 	return h.client.ApiextensionsV1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{})
 }
 
-func crd(meta *CRDMeta) *apiextensionsv1.CustomResourceDefinition {
+func crd(meta *CRDMeta, namespacedScoped bool) *apiextensionsv1.CustomResourceDefinition {
+	scope := apiextensionsv1.NamespaceScoped
+	if !namespacedScoped {
+		scope = apiextensionsv1.ClusterScoped
+	}
 	crd := &apiextensionsv1.CustomResourceDefinition{
 		ObjectMeta: metav1.ObjectMeta{Name: meta.plural + "." + meta.groupName},
 		Spec: apiextensionsv1.CustomResourceDefinitionSpec{
 			Group: meta.groupName,
-			Scope: apiextensionsv1.NamespaceScoped,
+			Scope: scope,
 			Names: apiextensionsv1.CustomResourceDefinitionNames{
 				Kind:       meta.kind,
 				ListKind:   meta.listKind,

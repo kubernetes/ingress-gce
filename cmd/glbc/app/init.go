@@ -21,7 +21,8 @@ import (
 	"fmt"
 	"time"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -60,6 +61,35 @@ func DefaultBackendServicePort(kubeClient kubernetes.Interface) utils.ServicePor
 	}
 
 	return *svcPort
+}
+
+// IngressClassEnabled returns whether the IngressClass API exists on the kubernetes cluster
+func IngressClassEnabled(client kubernetes.Interface) bool {
+	klog.V(2).Info("Checking if Ingress Class API exists")
+
+	err := wait.Poll(3*time.Second, 5*time.Minute, func() (bool, error) {
+		var err error
+		_, err = client.NetworkingV1beta1().IngressClasses().List(context.TODO(), meta_v1.ListOptions{})
+		if err == nil {
+			klog.V(2).Info("Ingress Class API is supported")
+			return true, nil
+		}
+
+		if apierrors.IsNotFound(err) {
+			klog.V(2).Infof("Ingress Class API is not supported: %s", err)
+			return true, err
+		}
+		klog.Errorf("Errored checking for Ingress Class API: %s", err)
+		return false, nil
+	})
+
+	if err != nil {
+		klog.V(2).Infof("Ingress Class support disabled. Received error while checking for Ingress Class API: %s", err)
+		return false
+	}
+
+	klog.V(2).Info("Ingress Class support enabled")
+	return true
 }
 
 // servicePortForDefaultService returns the service port for the default service; returns nil if not found.
