@@ -21,6 +21,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/google/go-cmp/cmp"
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -266,15 +267,15 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 			// nothing to do
 			klog.V(2).Infof("ensureForwardingRule: Skipping update of unchanged forwarding rule - %s", fr.Name)
 			return existingFwdRule, nil
-		} else {
-			// If the forwarding rule pointed to a backend service which does not match the controller naming scheme,
-			// that resouce could be leaked. It is not being deleted here because that is a user-managed resource.
-			klog.V(2).Infof("ensureForwardingRule: Deleting existing forwarding rule - %s, will be recreated", fr.Name)
-			if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, version)); err != nil {
-				return nil, err
-			}
-			l.recorder.Eventf(l.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", key.Name)
 		}
+		frDiff := cmp.Diff(existingFwdRule, fr)
+		// If the forwarding rule pointed to a backend service which does not match the controller naming scheme,
+		// that resouce could be leaked. It is not being deleted here because that is a user-managed resource.
+		klog.V(2).Infof("ensureForwardingRule: forwarding rule changed - Existing - %+v\n, New - %+v\n, Diff(-existing, +new) - %s\n. Deleting existing forwarding rule.", existingFwdRule, fr, frDiff)
+		if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, version)); err != nil {
+			return nil, err
+		}
+		l.recorder.Eventf(l.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", key.Name)
 	}
 	klog.V(2).Infof("ensureForwardingRule: Recreating forwarding rule - %s", fr.Name)
 	if err = composite.CreateForwardingRule(l.cloud, key, fr); err != nil {
