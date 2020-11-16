@@ -119,17 +119,13 @@ var (
 )
 
 func newTestController(kubeClient kubernetes.Interface) *Controller {
-	return newTestControllerWithNegClient(kubeClient, nil)
-}
-
-func newTestControllerWithNegClient(kubeClient kubernetes.Interface, svcNegClient svcnegclient.Interface) *Controller {
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := namer_util.NewNamer(ClusterID, "")
 	dynamicSchema := runtime.NewScheme()
 	//dynamicSchema.AddKnownTypeWithName(schema.GroupVersionKind{Group: "networking.istio.io", Version: "v1alpha3", Kind: "List"}, &unstructured.UnstructuredList{})
 
 	kubeClient.CoreV1().ConfigMaps("kube-system").Create(context2.TODO(), &apiv1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ingress-controller-config-test"}, Data: map[string]string{"enable-asm": "true"}}, metav1.CreateOptions{})
-
+	svcNegClient := negfake.NewSimpleClientset()
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:             apiv1.NamespaceAll,
 		ResyncPeriod:          1 * time.Second,
@@ -153,11 +149,6 @@ func newTestControllerWithNegClient(kubeClient kubernetes.Interface, svcNegClien
 	context.DestinationRuleInformer = drDynamicInformer.Informer()
 	context.DestinationRuleClient = dynamicClient.Resource(destrinationGVR)
 
-	enableNegCrd := false
-	if svcNegClient != nil {
-		enableNegCrd = true
-	}
-
 	controller := NewController(
 		negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network"),
 		context,
@@ -169,7 +160,6 @@ func newTestControllerWithNegClient(kubeClient kubernetes.Interface, svcNegClien
 		false,
 		true,
 		false,
-		enableNegCrd,
 		false,
 	)
 	return controller
@@ -1084,7 +1074,6 @@ func TestEnableNegCRD(t *testing.T) {
 		desc             string
 		exposedPortNames map[int32]string
 		expectNegPorts   []int32
-		svcNegClient     svcnegclient.Interface
 		ingress          bool
 		expectErr        bool
 	}{
@@ -1092,32 +1081,21 @@ func TestEnableNegCRD(t *testing.T) {
 			desc:             "No ingress, multiple ports all custom names",
 			exposedPortNames: map[int32]string{80: "neg-1", 443: "neg-2", 8081: "neg-3", 8080: "neg-4"},
 			expectNegPorts:   []int32{80, 443, 8081, 8080},
-			svcNegClient:     negfake.NewSimpleClientset(),
 		},
 		{
 			desc:             "No ingress, multiple ports, mix of custom names",
 			exposedPortNames: map[int32]string{80: "neg-1", 443: "", 8081: "neg-3"},
 			expectNegPorts:   []int32{80, 443, 8081},
-			svcNegClient:     negfake.NewSimpleClientset(),
 		},
 		{
 			desc:             "No ingress, one port, custom name",
 			exposedPortNames: map[int32]string{80: "neg-1"},
 			expectNegPorts:   []int32{80},
-			svcNegClient:     negfake.NewSimpleClientset(),
-		},
-		{
-			desc:             "No ingress, one port, custom name, neg crd is not enabled",
-			exposedPortNames: map[int32]string{80: "neg-1"},
-			expectNegPorts:   []int32{80},
-			svcNegClient:     nil,
-			expectErr:        true,
 		},
 		{
 			desc:             "ingress, one port, custom name, neg crd is enabled",
 			exposedPortNames: map[int32]string{80: "neg-1"},
 			expectNegPorts:   []int32{80},
-			svcNegClient:     negfake.NewSimpleClientset(),
 			ingress:          true,
 			expectErr:        true,
 		},
@@ -1125,7 +1103,6 @@ func TestEnableNegCRD(t *testing.T) {
 			desc:             "ingress, one port, neg crd is enabled",
 			exposedPortNames: map[int32]string{80: ""},
 			expectNegPorts:   []int32{80},
-			svcNegClient:     negfake.NewSimpleClientset(),
 			ingress:          true,
 			expectErr:        false,
 		},
@@ -1133,7 +1110,8 @@ func TestEnableNegCRD(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := newTestControllerWithNegClient(fake.NewSimpleClientset(), tc.svcNegClient)
+			controller := newTestController(fake.NewSimpleClientset())
+			svcNegClient := controller.manager.(*syncerManager).svcNegClient
 			manager := controller.manager.(*syncerManager)
 			defer controller.stop()
 			svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
@@ -1162,25 +1140,23 @@ func TestEnableNegCRD(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Service was not created successfully, err: %v", err)
 			}
-			if tc.svcNegClient != nil && !tc.ingress {
+			if !tc.ingress {
 				validateServiceStateAnnotationWithPortNameMap(t, svc, tc.expectNegPorts, controller.namer, tc.exposedPortNames)
-				validateNegCRs(t, svc, tc.svcNegClient, controller.namer, tc.exposedPortNames)
+				validateNegCRs(t, svc, svcNegClient, controller.namer, tc.exposedPortNames)
 
 			} else {
 				validateServiceStateAnnotation(t, svc, tc.expectNegPorts, controller.namer)
 			}
 
-			if tc.svcNegClient != nil {
-				// Populate manager's ServiceNetworkEndpointGroup Cache
-				negs, err := tc.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svc.Namespace).List(context2.TODO(), metav1.ListOptions{})
-				if err != nil {
-					t.Errorf("failed to retrieve negs")
-				}
+			// Populate manager's ServiceNetworkEndpointGroup Cache
+			negs, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svc.Namespace).List(context2.TODO(), metav1.ListOptions{})
+			if err != nil {
+				t.Errorf("failed to retrieve negs")
+			}
 
-				for _, neg := range negs.Items {
-					n := neg
-					manager.svcNegLister.Add(&n)
-				}
+			for _, neg := range negs.Items {
+				n := neg
+				manager.svcNegLister.Add(&n)
 			}
 
 			controller.serviceLister.Delete(service)

@@ -133,6 +133,7 @@ func NewControllerContext(
 		EndpointInformer:        informerv1.NewEndpointsInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		PodInformer:             informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		NodeInformer:            informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		recorders:               map[string]record.EventRecorder{},
 		healthChecks:            make(map[string]func() error),
 	}
@@ -140,11 +141,6 @@ func NewControllerContext(
 	if config.FrontendConfigEnabled {
 		context.FrontendConfigInformer = informerfrontendconfig.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
-
-	if svcnegClient != nil {
-		context.SvcNegInformer = informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
-	}
-
 	return context
 }
 
@@ -229,6 +225,7 @@ func (ctx *ControllerContext) HasSynced() bool {
 		ctx.PodInformer.HasSynced,
 		ctx.NodeInformer.HasSynced,
 		ctx.EndpointInformer.HasSynced,
+		ctx.SvcNegInformer.HasSynced,
 	}
 
 	if ctx.FrontendConfigInformer != nil {
@@ -241,10 +238,6 @@ func (ctx *ControllerContext) HasSynced() bool {
 
 	if ctx.ConfigMapInformer != nil {
 		funcs = append(funcs, ctx.ConfigMapInformer.HasSynced)
-	}
-
-	if ctx.SvcNegInformer != nil {
-		funcs = append(funcs, ctx.SvcNegInformer.HasSynced)
 	}
 
 	for _, f := range funcs {

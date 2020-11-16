@@ -32,7 +32,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -172,15 +171,14 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		}
 
 		desc := ""
-		if flags.F.EnableNegCrd {
-			negDesc := utils.NegDescription{
-				ClusterUID:  kubeSystemUID,
-				Namespace:   svcNamespace,
-				ServiceName: svcName,
-				Port:        port,
-			}
-			desc = negDesc.String()
+		negDesc := utils.NegDescription{
+			ClusterUID:  kubeSystemUID,
+			Namespace:   svcNamespace,
+			ServiceName: svcName,
+			Port:        port,
 		}
+		desc = negDesc.String()
+
 		err = cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
 			Version:             version,
 			Name:                negName,
@@ -198,21 +196,20 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			}
 		}
 	}
-	if flags.F.EnableNegCrd {
-		if neg == nil {
-			var err error
-			neg, err = cloud.GetNetworkEndpointGroup(negName, zone, version)
-			if err != nil {
-				klog.Errorf("Error while retriving %q in zone %q: %v after initialization", negName, zone, err)
-				return negRef, err
-			}
-		}
 
-		negRef = negv1beta1.NegObjectReference{
-			Id:                  fmt.Sprint(neg.Id),
-			SelfLink:            neg.SelfLink,
-			NetworkEndpointType: negv1beta1.NetworkEndpointType(neg.NetworkEndpointType),
+	if neg == nil {
+		var err error
+		neg, err = cloud.GetNetworkEndpointGroup(negName, zone, version)
+		if err != nil {
+			klog.Errorf("Error while retriving %q in zone %q: %v after initialization", negName, zone, err)
+			return negRef, err
 		}
+	}
+
+	negRef = negv1beta1.NegObjectReference{
+		Id:                  fmt.Sprint(neg.Id),
+		SelfLink:            neg.SelfLink,
+		NetworkEndpointType: negv1beta1.NetworkEndpointType(neg.NetworkEndpointType),
 	}
 	return negRef, nil
 }

@@ -128,17 +128,14 @@ func main() {
 	}
 
 	var svcNegClient svcnegclient.Interface
-	if flags.F.EnableNegCrd {
-		negCRDMeta := svcneg.CRDMeta()
-		if _, err := crdHandler.EnsureCRD(negCRDMeta); err != nil {
-			klog.Fatalf("Failed to ensure ServiceNetworkEndpointGroup CRD: %v", err)
-		}
+	negCRDMeta := svcneg.CRDMeta()
+	if _, err := crdHandler.EnsureCRD(negCRDMeta); err != nil {
+		klog.Fatalf("Failed to ensure ServiceNetworkEndpointGroup CRD: %v", err)
+	}
 
-		svcNegClient, err = svcnegclient.NewForConfig(kubeConfig)
-		if err != nil {
-			klog.Fatalf("Failed to create NetworkEndpointGroup client: %v", err)
-		}
-
+	svcNegClient, err = svcnegclient.NewForConfig(kubeConfig)
+	if err != nil {
+		klog.Fatalf("Failed to create NetworkEndpointGroup client: %v", err)
 	}
 
 	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, firewalls.DefaultFirewallName)
@@ -261,7 +258,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	}
 
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
-	negController := neg.NewController(negtypes.NewAdapter(ctx.Cloud), ctx, zoneGetter, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, flags.F.EnableReadinessReflector, flags.F.RunIngressController, flags.F.RunL4Controller, flags.F.EnableNegCrd, flags.F.EnableNonGCPMode)
+	negController := neg.NewController(negtypes.NewAdapter(ctx.Cloud), ctx, zoneGetter, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, flags.F.EnableReadinessReflector, flags.F.RunIngressController, flags.F.RunL4Controller, flags.F.EnableNonGCPMode)
 
 	go negController.Run(stopCh)
 	klog.V(0).Infof("negController started")
