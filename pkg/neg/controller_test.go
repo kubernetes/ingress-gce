@@ -170,6 +170,7 @@ func newTestControllerWithNegClient(kubeClient kubernetes.Interface, svcNegClien
 		true,
 		false,
 		enableNegCrd,
+		false,
 	)
 	return controller
 }
@@ -340,6 +341,7 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 //take effect.
 func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	controller := newTestController(fake.NewSimpleClientset())
+	manager := controller.manager.(*syncerManager)
 	controller.runL4 = true
 	defer controller.stop()
 	var prevSyncerKey, updatedSyncerKey negtypes.NegSyncerKey
@@ -360,7 +362,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 		controller.l4Namer, localMode)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
-		prevSyncerKey = getSyncerKey(testServiceNamespace, testServiceName, key, val)
+		prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
 	}
 	ValidateSyncerByKey(t, controller, 1, prevSyncerKey, false)
 	validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
@@ -378,7 +380,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 		controller.l4Namer, localMode)
 	// There will be only one entry in the map
 	for key, val := range expectedPortInfoMap {
-		updatedSyncerKey = getSyncerKey(testServiceNamespace, testServiceName, key, val)
+		updatedSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
 	}
 	// there should only be 2 syncers - one stopped and one running.
 	ValidateSyncerByKey(t, controller, 2, updatedSyncerKey, false)

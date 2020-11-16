@@ -119,6 +119,7 @@ func NewController(
 	runIngress bool,
 	runL4Controller bool,
 	enableNegCrd bool,
+	enableNonGcpMode bool,
 ) *Controller {
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
@@ -134,7 +135,7 @@ func NewController(
 	if enableNegCrd {
 		svcNegInformer = ctx.SvcNegInformer.GetIndexer()
 	}
-	manager := newSyncerManager(namer, recorder, cloud, zoneGetter, ctx.SvcNegClient, ctx.KubeSystemUID, ctx.PodInformer.GetIndexer(), ctx.ServiceInformer.GetIndexer(), ctx.EndpointInformer.GetIndexer(), ctx.NodeInformer.GetIndexer(), svcNegInformer)
+	manager := newSyncerManager(namer, recorder, cloud, zoneGetter, ctx.SvcNegClient, ctx.KubeSystemUID, ctx.PodInformer.GetIndexer(), ctx.ServiceInformer.GetIndexer(), ctx.EndpointInformer.GetIndexer(), ctx.NodeInformer.GetIndexer(), svcNegInformer, enableNonGcpMode)
 	var reflector readiness.Reflector
 	if enableReadinessReflector {
 		reflector = readiness.NewReadinessReflector(ctx, manager)
