@@ -237,7 +237,7 @@ func (s *server) notFoundHandler() http.HandlerFunc {
 		path := r.URL.Path
 		w.WriteHeader(http.StatusNotFound)
 		// we log 1 out of 10 requests (by default) to the logs
-		fmt.Fprintf(w, "response 404 (backend NotFound), service rules for [ %s ] non-existent \n", path)
+		fmt.Fprintf(w, "response 404 (backend NotFound), service rules for the path non-existent \n")
 		s.idleChannel <- true
 		if rand.Float64() < *logSampleRequests {
 			klog.Infof("response 404 (backend NotFound), service rules for [ %s ] non-existent \n", path)
