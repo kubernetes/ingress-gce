@@ -36,7 +36,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negsyncer "k8s.io/ingress-gce/pkg/neg/syncers"
@@ -87,23 +86,39 @@ type syncerManager struct {
 
 	// kubeSystemUID is used to by syncers when NEG CRD is enabled
 	kubeSystemUID types.UID
+
+	// enableNonGcpMode indicates whether nonGcpMode have been enabled
+	// This will make all NEGs created by NEG controller to be NON_GCP_PRIVATE_IP_PORT type.
+	enableNonGcpMode bool
 }
 
-func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, svcNegClient svcnegclient.Interface, kubeSystemUID types.UID, podLister, serviceLister, endpointLister, nodeLister, svcNegLister cache.Indexer) *syncerManager {
+func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
+	recorder record.EventRecorder,
+	cloud negtypes.NetworkEndpointGroupCloud,
+	zoneGetter negtypes.ZoneGetter,
+	svcNegClient svcnegclient.Interface,
+	kubeSystemUID types.UID,
+	podLister,
+	serviceLister,
+	endpointLister,
+	nodeLister,
+	svcNegLister cache.Indexer,
+	enableNonGcpMode bool) *syncerManager {
 	return &syncerManager{
-		namer:          namer,
-		recorder:       recorder,
-		cloud:          cloud,
-		zoneGetter:     zoneGetter,
-		nodeLister:     nodeLister,
-		podLister:      podLister,
-		serviceLister:  serviceLister,
-		endpointLister: endpointLister,
-		svcNegLister:   svcNegLister,
-		svcPortMap:     make(map[serviceKey]negtypes.PortInfoMap),
-		syncerMap:      make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
-		svcNegClient:   svcNegClient,
-		kubeSystemUID:  kubeSystemUID,
+		namer:            namer,
+		recorder:         recorder,
+		cloud:            cloud,
+		zoneGetter:       zoneGetter,
+		nodeLister:       nodeLister,
+		podLister:        podLister,
+		serviceLister:    serviceLister,
+		endpointLister:   endpointLister,
+		svcNegLister:     svcNegLister,
+		svcPortMap:       make(map[serviceKey]negtypes.PortInfoMap),
+		syncerMap:        make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
+		svcNegClient:     svcNegClient,
+		kubeSystemUID:    kubeSystemUID,
+		enableNonGcpMode: enableNonGcpMode,
 	}
 }
 
@@ -125,14 +140,14 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	// Service/Ingress config changes can cause readinessGate to be turn on or off for the same service port.
 	// By removing the duplicate ports in removes and adds, this prevents disruption of NEG syncer due to the config changes
 	// Hence, Existing NEG syncer for the service port will always work
-	removeCommonPorts(adds, removes)
+	manager.removeCommonPorts(adds, removes)
 
 	manager.svcPortMap[key] = newPorts
 	klog.V(3).Infof("EnsureSyncer %v/%v: syncing %v ports, removing %v ports, adding %v ports", namespace, name, newPorts, removes, adds)
 
 	errList := []error{}
 	for svcPort, portInfo := range removes {
-		syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo)]
+		syncer, ok := manager.syncerMap[manager.getSyncerKey(namespace, name, svcPort, portInfo)]
 		if ok {
 			syncer.Stop()
 		}
@@ -153,7 +168,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 
 	// Ensure a syncer is running for each port that is being added.
 	for svcPort, portInfo := range adds {
-		syncerKey := getSyncerKey(namespace, name, svcPort, portInfo)
+		syncerKey := manager.getSyncerKey(namespace, name, svcPort, portInfo)
 		syncer, ok := manager.syncerMap[syncerKey]
 		if !ok {
 
@@ -204,7 +219,7 @@ func (manager *syncerManager) StopSyncer(namespace, name string) {
 	key := getServiceKey(namespace, name)
 	if ports, ok := manager.svcPortMap[key]; ok {
 		for svcPort, portInfo := range ports {
-			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo)]; ok {
+			if syncer, ok := manager.syncerMap[manager.getSyncerKey(namespace, name, svcPort, portInfo)]; ok {
 				syncer.Stop()
 			}
 		}
@@ -219,7 +234,7 @@ func (manager *syncerManager) Sync(namespace, name string) {
 	key := getServiceKey(namespace, name)
 	if portInfoMap, ok := manager.svcPortMap[key]; ok {
 		for svcPort, portInfo := range portInfoMap {
-			if syncer, ok := manager.syncerMap[getSyncerKey(namespace, name, svcPort, portInfo)]; ok {
+			if syncer, ok := manager.syncerMap[manager.getSyncerKey(namespace, name, svcPort, portInfo)]; ok {
 				if !syncer.IsStopped() {
 					syncer.Sync()
 				}
@@ -649,10 +664,10 @@ func patchNegStatus(svcNegClient svcnegclient.Interface, oldNeg, newNeg negv1bet
 }
 
 // getSyncerKey encodes a service namespace, name, service port and targetPort into a string key
-func getSyncerKey(namespace, name string, servicePortKey negtypes.PortInfoMapKey, portInfo negtypes.PortInfo) negtypes.NegSyncerKey {
+func (manager *syncerManager) getSyncerKey(namespace, name string, servicePortKey negtypes.PortInfoMapKey, portInfo negtypes.PortInfo) negtypes.NegSyncerKey {
 	networkEndpointType := negtypes.VmIpPortEndpointType
 	calculatorMode := negtypes.L7Mode
-	if flags.F.EnableNonGCPMode {
+	if manager.enableNonGcpMode {
 		networkEndpointType = negtypes.NonGCPPrivateEndpointType
 	}
 	if portInfo.PortTuple.Empty() {
@@ -682,15 +697,15 @@ func getServiceKey(namespace, name string) serviceKey {
 // removeCommonPorts removes duplicate ports in p1 and p2 if the corresponding port info is converted to the same syncerKey.
 // When both ports can be converted to the same syncerKey, that means the underlying NEG syncer and NEG configuration is exactly the same.
 // For example, this function effectively removes duplicate port with different readiness gate flag if the rest of the field in port info is the same.
-func removeCommonPorts(p1, p2 negtypes.PortInfoMap) {
+func (manager *syncerManager) removeCommonPorts(p1, p2 negtypes.PortInfoMap) {
 	for port, portInfo1 := range p1 {
 		portInfo2, ok := p2[port]
 		if !ok {
 			continue
 		}
 
-		syncerKey1 := getSyncerKey("", "", port, portInfo1)
-		syncerKey2 := getSyncerKey("", "", port, portInfo2)
+		syncerKey1 := manager.getSyncerKey("", "", port, portInfo1)
+		syncerKey2 := manager.getSyncerKey("", "", port, portInfo2)
 		if reflect.DeepEqual(syncerKey1, syncerKey2) {
 			delete(p1, port)
 			delete(p2, port)
