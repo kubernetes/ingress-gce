@@ -35,20 +35,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
-	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
-	"k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/neg/readiness"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
-	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
-
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
-	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (
@@ -79,43 +72,21 @@ const (
 )
 
 func NewTestSyncerManager(kubeClient kubernetes.Interface) *syncerManager {
-	return NewTestSyncerManagerWithNegClient(kubeClient, nil)
-}
-
-func NewTestSyncerManagerWithNegClient(kubeClient kubernetes.Interface, svcNegClient svcnegclient.Interface) *syncerManager {
-	backendConfigClient := backendconfigclient.NewSimpleClientset()
-	namer := namer_util.NewNamer(ClusterID, "")
-	ctxConfig := context.ControllerContextConfig{
-		Namespace:             apiv1.NamespaceAll,
-		ResyncPeriod:          0 * time.Second,
-		DefaultBackendSvcPort: defaultBackend,
-	}
-	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, svcNegClient, gce.NewFakeGCECloud(gce.DefaultTestClusterValues()), namer, KubeSystemUID, ctxConfig)
-
-	var svcNegInformer cache.Indexer
-	if svcNegClient != nil {
-		svcNegInformer = context.SvcNegInformer.GetIndexer()
-	}
-
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	negtypes.MockNetworkEndpointAPIs(fakeGCE)
-	fakeCloud := negtypes.NewAdapter(fakeGCE)
-
+	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
 	manager := newSyncerManager(
-		namer,
+		testContext.NegNamer,
 		record.NewFakeRecorder(100),
-		fakeCloud,
+		negtypes.NewAdapter(testContext.Cloud),
 		negtypes.NewFakeZoneGetter(),
-		svcNegClient,
-		context.KubeSystemUID,
-		context.PodInformer.GetIndexer(),
-		context.ServiceInformer.GetIndexer(),
-		context.EndpointInformer.GetIndexer(),
-		context.NodeInformer.GetIndexer(),
-		svcNegInformer,
+		testContext.SvcNegClient,
+		testContext.KubeSystemUID,
+		testContext.PodInformer.GetIndexer(),
+		testContext.ServiceInformer.GetIndexer(),
+		testContext.EndpointInformer.GetIndexer(),
+		testContext.NodeInformer.GetIndexer(),
+		testContext.SvcNegInformer.GetIndexer(),
 		false,
 	)
-	manager.reflector = readiness.NewReadinessReflector(context, manager)
 	return manager
 }
 
@@ -263,6 +234,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		manager.serviceLister.Add(&v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: tc.namespace, Name: tc.name}})
 		if tc.stop {
 			manager.StopSyncer(tc.namespace, tc.name)
 		} else {
@@ -360,6 +332,8 @@ func TestGarbageCollectionSyncer(t *testing.T) {
 	portMap[negtypes.PortInfoMapKey{ServicePort: svcPort1, Subset: ""}] = portInfo1
 	portMap[negtypes.PortInfoMapKey{ServicePort: svcPort2, Subset: ""}] = portInfo2
 
+	manager.serviceLister.Add(&v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}})
+
 	if err := manager.EnsureSyncers(namespace, name, portMap); err != nil {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}
@@ -385,7 +359,6 @@ func TestGarbageCollectionSyncer(t *testing.T) {
 
 func TestGarbageCollectionNEG(t *testing.T) {
 	t.Parallel()
-
 	kubeClient := fake.NewSimpleClientset()
 	if _, err := kubeClient.CoreV1().Endpoints(testServiceNamespace).Create(context2.TODO(), getDefaultEndpoint(), metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Failed to create endpoint: %v", err)
@@ -393,6 +366,7 @@ func TestGarbageCollectionNEG(t *testing.T) {
 	manager := NewTestSyncerManager(kubeClient)
 	svcPort := int32(80)
 	ports := make(types.PortInfoMap)
+	manager.serviceLister.Add(&v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: testServiceNamespace, Name: testServiceName}})
 	ports[negtypes.PortInfoMapKey{ServicePort: svcPort, Subset: ""}] = types.PortInfo{PortTuple: negtypes.SvcPortTuple{TargetPort: "namedport"}, NegName: manager.namer.NEG(testServiceNamespace, testServiceName, svcPort)}
 	if err := manager.EnsureSyncers(testServiceNamespace, testServiceName, ports); err != nil {
 		t.Fatalf("Failed to ensure syncer: %v", err)
@@ -400,6 +374,7 @@ func TestGarbageCollectionNEG(t *testing.T) {
 
 	version := meta.VersionGA
 	for _, networkEndpointType := range []negtypes.NetworkEndpointType{negtypes.VmIpPortEndpointType, negtypes.NonGCPPrivateEndpointType, negtypes.VmIpEndpointType} {
+
 		if networkEndpointType == negtypes.VmIpEndpointType {
 			version = meta.VersionAlpha
 		}
@@ -414,6 +389,14 @@ func TestGarbageCollectionNEG(t *testing.T) {
 			Name:                negName,
 			NetworkEndpointType: string(networkEndpointType),
 		}, negtypes.TestZone2)
+
+		svcNeg := &negv1beta1.ServiceNetworkEndpointGroup{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "test", Name: negName},
+			Spec:       negv1beta1.ServiceNetworkEndpointGroupSpec{},
+			Status:     negv1beta1.ServiceNetworkEndpointGroupStatus{},
+		}
+		manager.svcNegLister.Add(svcNeg)
+		manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups("test").Create(context2.Background(), svcNeg, metav1.CreateOptions{})
 
 		if err := manager.GC(); err != nil {
 			t.Fatalf("Failed to GC: %v", err)
@@ -722,10 +705,8 @@ func TestFilterCommonPorts(t *testing.T) {
 
 func TestNegCRCreations(t *testing.T) {
 	t.Parallel()
-
-	svcNegClient := negfake.NewSimpleClientset()
-
-	manager := NewTestSyncerManagerWithNegClient(fake.NewSimpleClientset(), svcNegClient)
+	manager := NewTestSyncerManager(fake.NewSimpleClientset())
+	svcNegClient := manager.svcNegClient
 	namer := manager.namer
 
 	svcName := "n1"
@@ -918,10 +899,9 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
+			manager := NewTestSyncerManager(fake.NewSimpleClientset())
+			svcNegClient := manager.svcNegClient
 
-			svcNegClient := negfake.NewSimpleClientset()
-
-			manager := NewTestSyncerManagerWithNegClient(fake.NewSimpleClientset(), svcNegClient)
 			namer := manager.namer
 
 			var testNeg negv1beta1.ServiceNetworkEndpointGroup
@@ -1032,8 +1012,9 @@ func TestNegCRDeletions(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			svcNegClient := negfake.NewSimpleClientset()
-			manager := NewTestSyncerManagerWithNegClient(fake.NewSimpleClientset(), svcNegClient)
+			manager := NewTestSyncerManager(fake.NewSimpleClientset())
+			svcNegClient := manager.svcNegClient
+
 			if err := manager.serviceLister.Add(svc); err != nil {
 				t.Errorf("failed to add sample service to service store: %s", err)
 			}
@@ -1238,8 +1219,9 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 				for _, networkEndpointType := range []negtypes.NetworkEndpointType{negtypes.VmIpPortEndpointType, negtypes.NonGCPPrivateEndpointType, negtypes.VmIpEndpointType} {
 
 					kubeClient := fake.NewSimpleClientset()
-					svcNegClient := negfake.NewSimpleClientset()
-					manager := NewTestSyncerManagerWithNegClient(kubeClient, svcNegClient)
+					manager := NewTestSyncerManager(kubeClient)
+					svcNegClient := manager.svcNegClient
+
 					manager.serviceLister.Add(svc)
 					fakeCloud := manager.cloud
 

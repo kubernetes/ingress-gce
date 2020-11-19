@@ -60,7 +60,7 @@ func (p *testPatcher) Eval(t *testing.T, pod string, negKey, bsKey *meta.Key) {
 }
 
 func newFakePoller() *poller {
-	reflector := newTestReadinessReflector(fakeContext())
+	reflector := newTestReadinessReflector(negtypes.NewTestContext())
 	poller := reflector.poller
 	poller.patcher = &testPatcher{}
 	return poller

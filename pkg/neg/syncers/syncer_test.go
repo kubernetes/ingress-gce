@@ -21,17 +21,12 @@ import (
 	"testing"
 	"time"
 
-	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/record"
-	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
-	"k8s.io/ingress-gce/pkg/context"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
-	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 const (
@@ -81,15 +76,7 @@ func (t *syncerTester) sync() error {
 
 func newSyncerTester() *syncerTester {
 	testNegName := "test-neg-name"
-	kubeClient := fake.NewSimpleClientset()
-	backendConfigClient := backendconfigclient.NewSimpleClientset()
-	namer := namer_util.NewNamer(clusterID, "")
-	ctxConfig := context.ControllerContextConfig{
-		Namespace:             apiv1.NamespaceAll,
-		ResyncPeriod:          1 * time.Second,
-		DefaultBackendSvcPort: defaultBackend,
-	}
-	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, namer, "" /*kubeSystemUID*/, ctxConfig)
+	testContext := negtypes.NewTestContext()
 	negSyncerKey := negtypes.NegSyncerKey{
 		Namespace: testServiceNamespace,
 		Name:      testServiceName,
@@ -109,7 +96,7 @@ func newSyncerTester() *syncerTester {
 
 	s := newSyncer(
 		negSyncerKey,
-		context.ServiceInformer.GetIndexer(),
+		testContext.ServiceInformer.GetIndexer(),
 		record.NewFakeRecorder(100),
 		st,
 	)

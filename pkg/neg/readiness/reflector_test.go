@@ -17,27 +17,18 @@ limitations under the License.
 package readiness
 
 import (
-	context2 "context"
+	"context"
 	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/clock"
-	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/ingress-gce/pkg/context"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
-	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
-	"k8s.io/legacy-cloud-providers/gce"
-)
-
-const (
-	clusterID = "cluster-uid"
 )
 
 // fakeLookUp implements LookUp interface
@@ -55,27 +46,14 @@ func (f *fakeLookUp) ReadinessGateEnabled(syncerKey negtypes.NegSyncerKey) bool 
 	return f.readinessGateEnabled
 }
 
-func fakeContext() *context.ControllerContext {
-	kubeClient := fake.NewSimpleClientset()
-	namer := namer_util.NewNamer(clusterID, "")
-	ctxConfig := context.ControllerContextConfig{
-		Namespace:    apiv1.NamespaceAll,
-		ResyncPeriod: 1 * time.Second,
-	}
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	negtypes.MockNetworkEndpointAPIs(fakeGCE)
-	context := context.NewControllerContext(nil, kubeClient, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
-	return context
-}
-
-func newTestReadinessReflector(cc *context.ControllerContext) *readinessReflector {
-	reflector := NewReadinessReflector(cc, &fakeLookUp{})
+func newTestReadinessReflector(testContext *negtypes.TestContext) *readinessReflector {
+	reflector := NewReadinessReflector(testContext.KubeClient, testContext.PodInformer.GetIndexer(), negtypes.NewAdapter(testContext.Cloud), &fakeLookUp{})
 	ret := reflector.(*readinessReflector)
 	return ret
 }
 
 func TestSyncPod(t *testing.T) {
-	fakeContext := fakeContext()
+	fakeContext := negtypes.NewTestContext()
 	testReadinessReflector := newTestReadinessReflector(fakeContext)
 	client := fakeContext.KubeClient
 	podLister := testReadinessReflector.podLister
@@ -103,7 +81,7 @@ func TestSyncPod(t *testing.T) {
 			mutateState: func() {
 				pod := generatePod(testNamespace, podName, false, true, true)
 				podLister.Add(pod)
-				client.CoreV1().Pods(testNamespace).Create(context2.TODO(), pod, metav1.CreateOptions{})
+				client.CoreV1().Pods(testNamespace).Create(context.TODO(), pod, metav1.CreateOptions{})
 			},
 			inputKey:     keyFunc(testNamespace, podName),
 			inputNeg:     nil,
@@ -115,7 +93,7 @@ func TestSyncPod(t *testing.T) {
 			mutateState: func() {
 				pod := generatePod(testNamespace, podName, true, true, true)
 				podLister.Update(pod)
-				client.CoreV1().Pods(testNamespace).Update(context2.TODO(), pod, metav1.UpdateOptions{})
+				client.CoreV1().Pods(testNamespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
 			},
 			inputKey:     keyFunc(testNamespace, podName),
 			inputNeg:     nil,
@@ -127,7 +105,7 @@ func TestSyncPod(t *testing.T) {
 			mutateState: func() {
 				pod := generatePod(testNamespace, podName, true, false, false)
 				podLister.Update(pod)
-				client.CoreV1().Pods(testNamespace).Update(context2.TODO(), pod, metav1.UpdateOptions{})
+				client.CoreV1().Pods(testNamespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
 			},
 			inputKey:     keyFunc(testNamespace, podName),
 			inputNeg:     nil,
@@ -160,7 +138,7 @@ func TestSyncPod(t *testing.T) {
 				pod := generatePod(testNamespace, podName, true, false, false)
 				pod.CreationTimestamp = now
 				podLister.Update(pod)
-				client.CoreV1().Pods(testNamespace).Update(context2.TODO(), pod, metav1.UpdateOptions{})
+				client.CoreV1().Pods(testNamespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
 			},
 			inputKey:     keyFunc(testNamespace, podName),
@@ -193,7 +171,7 @@ func TestSyncPod(t *testing.T) {
 			mutateState: func() {
 				pod := generatePod(testNamespace, podName, true, false, false)
 				podLister.Update(pod)
-				client.CoreV1().Pods(testNamespace).Update(context2.TODO(), pod, metav1.UpdateOptions{})
+				client.CoreV1().Pods(testNamespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
 			},
 			inputKey:            keyFunc(testNamespace, podName),
@@ -228,7 +206,7 @@ func TestSyncPod(t *testing.T) {
 				pod := generatePod(testNamespace, podName, true, false, false)
 				pod.CreationTimestamp = now
 				podLister.Update(pod)
-				client.CoreV1().Pods(testNamespace).Update(context2.TODO(), pod, metav1.UpdateOptions{})
+				client.CoreV1().Pods(testNamespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
 				fakeClock.Step(unreadyTimeout)
 			},
@@ -263,7 +241,7 @@ func TestSyncPod(t *testing.T) {
 			mutateState: func() {
 				pod := generatePod(testNamespace, podName, true, false, false)
 				podLister.Update(pod)
-				client.CoreV1().Pods(testNamespace).Update(context2.TODO(), pod, metav1.UpdateOptions{})
+				client.CoreV1().Pods(testNamespace).Update(context.TODO(), pod, metav1.UpdateOptions{})
 				testlookUp.readinessGateEnabledNegs = []string{"neg1", "neg2"}
 			},
 			inputKey:            keyFunc(testNamespace, podName),
@@ -300,7 +278,7 @@ func TestSyncPod(t *testing.T) {
 		}
 
 		if tc.expectExists {
-			pod, err := fakeContext.KubeClient.CoreV1().Pods(testNamespace).Get(context2.TODO(), tc.expectPod.Name, metav1.GetOptions{})
+			pod, err := fakeContext.KubeClient.CoreV1().Pods(testNamespace).Get(context.TODO(), tc.expectPod.Name, metav1.GetOptions{})
 			if err != nil {
 				t.Errorf("For test case %q, expect err to be nil, but got %v", tc.desc, err)
 			}
