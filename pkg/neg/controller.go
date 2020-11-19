@@ -102,9 +102,6 @@ type Controller struct {
 
 	// runL4 indicates whether to run NEG controller that processes L4 ILB services
 	runL4 bool
-
-	// indicates whether neg crd have been enabled
-	enableNegCrd bool
 }
 
 // NewController returns a network endpoint group controller.
@@ -118,7 +115,6 @@ func NewController(
 	enableReadinessReflector bool,
 	runIngress bool,
 	runL4Controller bool,
-	enableNegCrd bool,
 	enableNonGcpMode bool,
 ) *Controller {
 	// init event recorder
@@ -131,11 +127,8 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
-	var svcNegInformer cache.Indexer
-	if enableNegCrd {
-		svcNegInformer = ctx.SvcNegInformer.GetIndexer()
-	}
-	manager := newSyncerManager(namer, recorder, cloud, zoneGetter, ctx.SvcNegClient, ctx.KubeSystemUID, ctx.PodInformer.GetIndexer(), ctx.ServiceInformer.GetIndexer(), ctx.EndpointInformer.GetIndexer(), ctx.NodeInformer.GetIndexer(), svcNegInformer, enableNonGcpMode)
+	manager := newSyncerManager(namer, recorder, cloud, zoneGetter, ctx.SvcNegClient, ctx.KubeSystemUID, ctx.PodInformer.GetIndexer(), ctx.ServiceInformer.GetIndexer(), ctx.EndpointInformer.GetIndexer(), ctx.NodeInformer.GetIndexer(), ctx.SvcNegInformer.GetIndexer(), enableNonGcpMode)
+
 	var reflector readiness.Reflector
 	if enableReadinessReflector {
 		reflector = readiness.NewReadinessReflector(ctx, manager)
@@ -164,7 +157,6 @@ func NewController(
 		reflector:             reflector,
 		collector:             ctx.ControllerMetrics,
 		runL4:                 runL4Controller,
-		enableNegCrd:          enableNegCrd,
 	}
 	if runIngress {
 		ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -500,9 +492,6 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 			return err
 		}
 
-		if !c.enableNegCrd && len(customNames) != 0 {
-			return fmt.Errorf("custom neg name specified in service (%s) but neg crd is not enabled", name.String())
-		}
 		if negAnnotation.NEGEnabledForIngress() && len(customNames) != 0 {
 			return fmt.Errorf("configuration for negs in service (%s) is invalid, custom neg name cannot be used with ingress enabled", name.String())
 		}

@@ -40,10 +40,8 @@ import (
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
@@ -91,7 +89,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 		expectZones := []string{testZone1, testZone2}
 		retZones := sets.NewString()
 
-		for key, _ := range ret {
+		for key := range ret {
 			retZones.Insert(key.Zone)
 		}
 		for _, zone := range expectZones {
@@ -108,8 +106,8 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 			if neg.NetworkEndpointType != string(testNegType) {
 				t.Errorf("Unexpected neg type %q, expected %q", neg.Type, testNegType)
 			}
-			if neg.Description != "" {
-				t.Errorf("Neg Description should not be populated when NEG CRD is not enabled")
+			if neg.Description == "" {
+				t.Errorf("Neg Description should  be populated when NEG CRD is enabled")
 			}
 		}
 
@@ -857,7 +855,6 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
 	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
 	testNegType := negtypes.VmIpPortEndpointType
-	negClient := negfake.NewSimpleClientset()
 
 	testCases := []struct {
 		desc              string
@@ -975,7 +972,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		_, syncer := newTestTransactionSyncerWithNegClient(fakeCloud, testNegType, negClient)
+		_, syncer := newTestTransactionSyncer(fakeCloud, testNegType)
+		negClient := syncer.svcNegClient
 		t.Run(tc.desc, func(t *testing.T) {
 
 			expectZones := sets.NewString(testZone1, testZone2)
@@ -1077,12 +1075,12 @@ func TestUpdateStatus(t *testing.T) {
 	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
 	testNegType := negtypes.VmIpPortEndpointType
 	testNegRefs := []negv1beta1.NegObjectReference{
-		negv1beta1.NegObjectReference{
+		{
 			Id:                  "0",
 			SelfLink:            "self-link-0",
 			NetworkEndpointType: "neg-type-0",
 		},
-		negv1beta1.NegObjectReference{
+		{
 			Id:                  "1",
 			SelfLink:            "self-link-1",
 			NetworkEndpointType: "neg-type-1",
@@ -1146,9 +1144,9 @@ func TestUpdateStatus(t *testing.T) {
 	for _, syncErr := range []error{nil, fmt.Errorf("error")} {
 		for _, tc := range testCases {
 			t.Run(tc.desc, func(t *testing.T) {
-				svcNegClient := negfake.NewSimpleClientset()
 				fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
-				_, syncer := newTestTransactionSyncerWithNegClient(fakeCloud, testNegType, svcNegClient)
+				_, syncer := newTestTransactionSyncer(fakeCloud, testNegType)
+				svcNegClient := syncer.svcNegClient
 				syncer.needInit = false
 				if len(tc.negRefs) == 0 {
 					err := fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
@@ -1209,13 +1207,10 @@ func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, m
 }
 
 func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType) (negtypes.NegSyncer, *transactionSyncer) {
-	return newTestTransactionSyncerWithNegClient(fakeGCE, negType, nil)
-}
-
-func newTestTransactionSyncerWithNegClient(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, negClient svcnegclient.Interface) (negtypes.NegSyncer, *transactionSyncer) {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := namer_util.NewNamer(clusterID, "")
+	negClient := negfake.NewSimpleClientset()
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:             apiv1.NamespaceAll,
 		ResyncPeriod:          1 * time.Second,
@@ -1232,10 +1227,6 @@ func newTestTransactionSyncerWithNegClient(fakeGCE negtypes.NetworkEndpointGroup
 			TargetPort: "8080",
 		},
 		NegName: testNegName,
-	}
-
-	if negClient != nil {
-		flags.F.EnableNegCrd = true
 	}
 
 	var mode negtypes.EndpointsCalculatorMode
