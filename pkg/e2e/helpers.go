@@ -68,7 +68,7 @@ const (
 
 	negPollInterval  = 5 * time.Second
 	negPollTimeout   = 3 * time.Minute
-	negGCPollTimeout = 3 * time.Minute
+	negGCPollTimeout = 5 * time.Minute
 
 	k8sApiPoolInterval = 10 * time.Second
 	k8sApiPollTimeout  = 30 * time.Minute
