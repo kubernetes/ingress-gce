@@ -19,20 +19,27 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/googleapi"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
+	ingparamsv1beta1 "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
+	ingparamsfake "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned/fake"
+	informeringparams "k8s.io/ingress-gce/pkg/ingparams/client/informers/externalversions/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils/common"
 
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	informerv1beta1 "k8s.io/client-go/informers/networking/v1beta1"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -856,4 +863,181 @@ func TestIsHTTPErrorCode(t *testing.T) {
 			t.Errorf("IsHTTPErrorCode(%v, %d) = %t; want %t", tc.err, tc.code, got, tc.want)
 		}
 	}
+}
+
+func TestIsGCPIngressClass(t *testing.T) {
+	paramsAPIGroup := GCPIngParamsAPIGroup
+	matchingParamsRef := &api_v1.TypedLocalObjectReference{
+		APIGroup: &paramsAPIGroup,
+		Kind:     GCPIngParamsKind,
+		Name:     "my-params",
+	}
+
+	testCases := []struct {
+		desc           string
+		ingClass       *v1beta1.IngressClass
+		ingParams      *ingparamsv1beta1.GCPIngressParams
+		supportedClass bool
+	}{
+		{
+			desc:     "IngressClass is nil",
+			ingClass: nil,
+		},
+		{
+			desc: "IngressClass provided has a different controller",
+			ingClass: &v1beta1.IngressClass{
+				Spec: v1beta1.IngressClassSpec{
+					Controller: "some-controller",
+				}},
+			supportedClass: false,
+		},
+		{
+			desc: "IngressClass has the right controller, parameters of the wrong type",
+			ingClass: &v1beta1.IngressClass{
+				Spec: v1beta1.IngressClassSpec{
+					Controller: GCPIngressControllerKey,
+					Parameters: &api_v1.TypedLocalObjectReference{
+						APIGroup: &paramsAPIGroup,
+						Kind:     "some-parameters-crd",
+						Name:     "my-params",
+					},
+				},
+			},
+			supportedClass: false,
+		},
+		{
+			desc: "IngressClass has the right controller, parameters do not exist",
+			ingClass: &v1beta1.IngressClass{
+				Spec: v1beta1.IngressClassSpec{
+					Controller: GCPIngressControllerKey,
+					Parameters: matchingParamsRef,
+				},
+			},
+			supportedClass: false,
+		},
+		{
+			desc: "IngressClass has the right controller, parameters of the right type",
+			ingClass: &v1beta1.IngressClass{
+				Spec: v1beta1.IngressClassSpec{
+					Controller: GCPIngressControllerKey,
+					Parameters: matchingParamsRef,
+				},
+			},
+			ingParams:      &ingparamsv1beta1.GCPIngressParams{},
+			supportedClass: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if isGCPClass := IsGCPIngressClass(tc.ingClass, tc.ingParams); isGCPClass != tc.supportedClass {
+				t.Errorf("%s: IsGCPIngressClass() should have return %t but returned %t", tc.desc, tc.supportedClass, isGCPClass)
+			}
+		})
+	}
+}
+
+func TestGetIngressClassAndParams(t *testing.T) {
+	paramsAPIGroup := GCPIngParamsAPIGroup
+	ingressClass := "my-class"
+	testCases := []struct {
+		desc               string
+		ingressClassExists bool
+		ingressParamsExist bool
+		nilListers         bool
+		className          *string
+	}{
+		{
+			desc:               "class and params do not exist",
+			ingressClassExists: false,
+			ingressParamsExist: false,
+			nilListers:         false,
+			className:          &ingressClass,
+		},
+		{
+			desc:               "stores are nil",
+			ingressClassExists: false,
+			ingressParamsExist: false,
+			nilListers:         true,
+			className:          &ingressClass,
+		},
+		{
+			desc:               "only class exists",
+			ingressClassExists: true,
+			ingressParamsExist: false,
+			className:          &ingressClass,
+		},
+		{
+			desc:               "class and params exist",
+			ingressClassExists: true,
+			ingressParamsExist: true,
+			className:          &ingressClass,
+		},
+		{
+			desc: "ingress class name is empty",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+
+			var ingClassLister, ingParamsLister cache.Indexer
+			if !tc.nilListers {
+				ingClassLister, ingParamsLister = setupListers()
+			}
+
+			var expectedClass *v1beta1.IngressClass
+			var expectedParams *ingparamsv1beta1.GCPIngressParams
+			if tc.ingressClassExists && tc.className != nil {
+				paramsRef := &api_v1.TypedLocalObjectReference{
+					APIGroup: &paramsAPIGroup,
+					Kind:     GCPIngParamsKind,
+					Name:     "my-params",
+				}
+
+				expectedClass = testIngressClass(*tc.className, "my-controller", paramsRef)
+				ingClassLister.Add(expectedClass)
+
+				if tc.ingressParamsExist {
+					expectedParams = &ingparamsv1beta1.GCPIngressParams{ObjectMeta: v1.ObjectMeta{Name: "my-params"}}
+					ingParamsLister.Add(expectedParams)
+				}
+			}
+
+			class, params := GetIngressClassAndParams(tc.className, ingClassLister, ingParamsLister)
+			if !reflect.DeepEqual(class, expectedClass) {
+				t.Errorf("Expected GetIngressClassAndParams to return %+v, but got %+v", expectedClass, class)
+			}
+
+			if !reflect.DeepEqual(params, expectedParams) {
+				t.Errorf("Expected GetIngressClassAndParams to return %+v, but got %+v", expectedParams, params)
+			}
+		})
+	}
+}
+
+// testIngressClass returns a test IngressClass resource with the given name, controller and params ref
+func testIngressClass(name, controller string, params *api_v1.TypedLocalObjectReference) *v1beta1.IngressClass {
+	return &v1beta1.IngressClass{
+		ObjectMeta: v1.ObjectMeta{
+			Name: name,
+		},
+
+		Spec: v1beta1.IngressClassSpec{
+			Controller: controller,
+			Parameters: params,
+		},
+	}
+}
+
+// setupListers will create and return ingClassLister and an ingParamsLister
+func setupListers() (cache.Indexer, cache.Indexer) {
+	kubeClient := fake.NewSimpleClientset()
+	ingParamsClient := ingparamsfake.NewSimpleClientset()
+	ingClassInformer := informerv1beta1.NewIngressClassInformer(kubeClient, 1*time.Minute, NewNamespaceIndexer())
+	ingClassLister := ingClassInformer.GetIndexer()
+	ingParamsInformer := informeringparams.NewGCPIngressParamsInformer(ingParamsClient, 1*time.Minute, NewNamespaceIndexer())
+	ingParamsLister := ingParamsInformer.GetIndexer()
+
+	return ingClassLister, ingParamsLister
 }

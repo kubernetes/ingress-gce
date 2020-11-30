@@ -38,6 +38,7 @@ import (
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
+	ingparamsv1beta1 "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog"
@@ -316,6 +317,54 @@ func IsGCEL7ILBIngress(ing *v1beta1.Ingress) bool {
 // IsGLBCIngress returns true if the given Ingress should be processed by GLBC
 func IsGLBCIngress(ing *v1beta1.Ingress) bool {
 	return IsGCEIngress(ing) || IsGCEMultiClusterIngress(ing)
+}
+
+// IsGCPIngressClass returns whether the specified IngressClass and GCPIngressParams resource are
+// a GCPIngressClass by checking for the the GCPIngressControllerKey and the Parameters reference.
+// If either resource is nil, IsGCPIngressClass will return false.
+func IsGCPIngressClass(class *v1beta1.IngressClass, params *ingparamsv1beta1.GCPIngressParams) bool {
+
+	if class == nil || params == nil {
+		return false
+	}
+
+	if class.Spec.Controller != GCPIngressControllerKey ||
+		class.Spec.Parameters.APIGroup == nil ||
+		*class.Spec.Parameters.APIGroup != GCPIngParamsAPIGroup ||
+		class.Spec.Parameters.Kind != GCPIngParamsKind {
+		return false
+	}
+
+	return true
+}
+
+// GetIngressClassAndParams will return the relevant IngressClass and if applicable GCPIngressParams resource
+// from the store from the given className.
+func GetIngressClassAndParams(className *string, ingClassLister, ingParamsLister cache.Indexer) (*v1beta1.IngressClass, *ingparamsv1beta1.GCPIngressParams) {
+
+	if ingClassLister == nil || ingParamsLister == nil || className == nil {
+		return nil, nil
+	}
+
+	obj, exists, err := ingClassLister.GetByKey(*className)
+	if !exists || err != nil {
+		if err != nil {
+			klog.Errorf("failed to get ingress class %s from store: %s", *className, err)
+		}
+		return nil, nil
+	}
+
+	class := obj.(*v1beta1.IngressClass)
+	obj, exists, err = ingParamsLister.GetByKey(class.Spec.Parameters.Name)
+	if !exists || err != nil {
+		if err != nil {
+			klog.Errorf("failed to get gcp ingress params %s from store: %s", class.Spec.Parameters.Name, err)
+		}
+		return class, nil
+	}
+	params := obj.(*ingparamsv1beta1.GCPIngressParams)
+
+	return class, params
 }
 
 // GetReadyNodeNames returns names of schedulable, ready nodes from the node lister
