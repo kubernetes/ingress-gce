@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	"k8s.io/ingress-gce/pkg/flags"
 
@@ -214,13 +215,21 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 				// The Ingress spec defines empty path as catch-all, so if a user
 				// asks for a single host and multiple empty paths, all traffic is
 				// sent to one of the last backend in the rules list.
-				path := p.Path
-				if path == "" {
-					path = DefaultPath
+
+				paths, err := validateAndGetPaths(p)
+				if err != nil {
+					errs = append(errs, err)
+					continue
 				}
-				pathRules = append(pathRules, utils.PathRule{Path: path, Backend: *svcPort})
+				for _, path := range paths {
+					if path == "" {
+						path = DefaultPath
+					}
+					pathRules = append(pathRules, utils.PathRule{Path: path, Backend: *svcPort})
+				}
 			}
 		}
+
 		host := rule.Host
 		if host == "" {
 			host = DefaultHost
@@ -247,6 +256,68 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 
 	errs = append(errs, fmt.Errorf("failed to retrieve the system default backend service %q with port %q: %v", systemDefaultBackend.Service.String(), systemDefaultBackend.Port.String(), err))
 	return urlMap, errs
+}
+
+// validateAndGetPaths will validate the path based on the specifed path type and will return the
+// the path rules that should be used. If no path type is provided, the path type will be assumed
+// to be ImplementationSpecific. If a non existent path type is provided, an error will be returned.
+func validateAndGetPaths(path v1beta1.HTTPIngressPath) ([]string, error) {
+	pathType := v1beta1.PathTypeImplementationSpecific
+	if path.PathType != nil {
+		pathType = *path.PathType
+	}
+
+	switch pathType {
+	case v1beta1.PathTypeImplementationSpecific:
+		// ImplementationSpecific will have no validation to continue backwards compatibility
+		return []string{path.Path}, nil
+	case v1beta1.PathTypeExact:
+		return validateExactPathType(path)
+	case v1beta1.PathTypePrefix:
+		return validateAndModifyPrefixPathType(path)
+	default:
+		return nil, fmt.Errorf("unsupported path type: %s", pathType)
+	}
+}
+
+// validateExactPathType will validate the path provided does not have any wildcards and will
+// return the path unmodified. If the path is in valid, an empty list and error is returned.
+func validateExactPathType(path v1beta1.HTTPIngressPath) ([]string, error) {
+	if path.Path == "" {
+		return nil, fmt.Errorf("failed to validate exact path type due to empty path")
+	}
+
+	if strings.Contains(path.Path, "*") {
+		return nil, fmt.Errorf("failed to validate exact path %s due to invalid wildcard", path.Path)
+	}
+	return []string{path.Path}, nil
+}
+
+// validateAndModifyPrefixPathType will validate the path provided does not have any wildcards
+// and will return the path unmodified. If the path is in valid, an empty list and error is
+// returned.
+func validateAndModifyPrefixPathType(path v1beta1.HTTPIngressPath) ([]string, error) {
+	if path.Path == "" {
+		return nil, fmt.Errorf("failed to validate prefix path type due to empty path")
+	}
+
+	// The Ingress spec defines Prefx path "/" as matching all paths
+	if path.Path == "/" {
+		return []string{"/*"}, nil
+	}
+
+	if strings.Contains(path.Path, "*") {
+		return nil, fmt.Errorf("failed to validate prefix path %s due to invalid wildcard", path.Path)
+	}
+
+	// Prefix path `/foo` or `/foo/` should support requests for `/foo`, `/foo/` and `/foo/bar`. URLMap requires two
+	// path rules 1) `/foo` & 2) `/foo/*` to support all three requests.
+	// Therefore each prefix path should result in two paths for the URLMap, one without a
+	// trailing '/' and one that ends with '/*'
+	if path.Path[len(path.Path)-1] == '/' {
+		return []string{path.Path[0 : len(path.Path)-1], path.Path + "*"}, nil
+	}
+	return []string{path.Path, path.Path + "/*"}, nil
 }
 
 func getZone(n *api_v1.Node) string {
