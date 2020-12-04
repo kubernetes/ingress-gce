@@ -27,7 +27,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	computealpha "google.golang.org/api/compute/v0.alpha"
+	computebeta "google.golang.org/api/compute/v0.beta"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -60,11 +60,11 @@ func MockNetworkEndpointAPIs(fakeGCE *gce.Cloud) {
 	m.MockNetworkEndpointGroups.ListNetworkEndpointsHook = MockListNetworkEndpointsHook
 	m.MockNetworkEndpointGroups.AggregatedListHook = MockAggregatedListNetworkEndpointGroupHook
 
-	m.MockAlphaNetworkEndpointGroups.X = NetworkEndpointStore{}
-	m.MockAlphaNetworkEndpointGroups.AttachNetworkEndpointsHook = MockAlphaAttachNetworkEndpointsHook
-	m.MockAlphaNetworkEndpointGroups.DetachNetworkEndpointsHook = MockAlphaDetachNetworkEndpointsHook
-	m.MockAlphaNetworkEndpointGroups.ListNetworkEndpointsHook = MockAlphaListNetworkEndpointsHook
-	m.MockAlphaNetworkEndpointGroups.AggregatedListHook = MockAlphaAggregatedListNetworkEndpointGroupHook
+	m.MockBetaNetworkEndpointGroups.X = NetworkEndpointStore{}
+	m.MockBetaNetworkEndpointGroups.AttachNetworkEndpointsHook = MockBetaAttachNetworkEndpointsHook
+	m.MockBetaNetworkEndpointGroups.DetachNetworkEndpointsHook = MockBetaDetachNetworkEndpointsHook
+	m.MockBetaNetworkEndpointGroups.ListNetworkEndpointsHook = MockBetaListNetworkEndpointsHook
+	m.MockBetaNetworkEndpointGroups.AggregatedListHook = MockBetaAggregatedListNetworkEndpointGroupHook
 }
 
 // TODO: move this logic into code gen
@@ -213,14 +213,14 @@ func MockDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *com
 	return nil
 }
 
-func MockAlphaAggregatedListNetworkEndpointGroupHook(ctx context.Context, fl *filter.F, m *cloud.MockAlphaNetworkEndpointGroups) (bool, map[string][]*computealpha.NetworkEndpointGroup, error) {
-	objs := map[string][]*computealpha.NetworkEndpointGroup{}
+func MockBetaAggregatedListNetworkEndpointGroupHook(ctx context.Context, fl *filter.F, m *cloud.MockBetaNetworkEndpointGroups) (bool, map[string][]*computebeta.NetworkEndpointGroup, error) {
+	objs := map[string][]*computebeta.NetworkEndpointGroup{}
 	for _, obj := range m.Objects {
-		res, err := cloud.ParseResourceURL(obj.ToAlpha().SelfLink)
+		res, err := cloud.ParseResourceURL(obj.ToBeta().SelfLink)
 		if err != nil {
 			return false, nil, err
 		}
-		if !fl.Match(obj.ToAlpha()) {
+		if !fl.Match(obj.ToBeta()) {
 			continue
 		}
 		var location string
@@ -234,16 +234,16 @@ func MockAlphaAggregatedListNetworkEndpointGroupHook(ctx context.Context, fl *fi
 		case meta.Global:
 			location = string(meta.Global)
 		}
-		objs[location] = append(objs[location], obj.ToAlpha())
+		objs[location] = append(objs[location], obj.ToBeta())
 	}
 	// Always return global
 	if _, ok := objs[meta.Global]; !ok {
-		objs[meta.Global] = []*computealpha.NetworkEndpointGroup{}
+		objs[meta.Global] = []*computebeta.NetworkEndpointGroup{}
 	}
 	return true, objs, nil
 }
 
-func MockAlphaListNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *computealpha.NetworkEndpointGroupsListEndpointsRequest, filter *filter.F, m *cloud.MockAlphaNetworkEndpointGroups) ([]*computealpha.NetworkEndpointWithHealthStatus, error) {
+func MockBetaListNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *computebeta.NetworkEndpointGroupsListEndpointsRequest, filter *filter.F, m *cloud.MockBetaNetworkEndpointGroups) ([]*computebeta.NetworkEndpointWithHealthStatus, error) {
 	_, err := m.Get(ctx, key)
 	if err != nil {
 		return nil, &googleapi.Error{
@@ -257,10 +257,10 @@ func MockAlphaListNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *
 	if _, ok := m.X.(NetworkEndpointStore)[*key]; !ok {
 		m.X.(NetworkEndpointStore)[*key] = []NetworkEndpointEntry{}
 	}
-	return generateAlphaNetworkEndpointWithHealthStatusList(m.X.(NetworkEndpointStore)[*key]), nil
+	return generateBetaNetworkEndpointWithHealthStatusList(m.X.(NetworkEndpointStore)[*key]), nil
 }
 
-func MockAlphaAttachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *computealpha.NetworkEndpointGroupsAttachEndpointsRequest, m *cloud.MockAlphaNetworkEndpointGroups) error {
+func MockBetaAttachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *computebeta.NetworkEndpointGroupsAttachEndpointsRequest, m *cloud.MockBetaNetworkEndpointGroups) error {
 	_, err := m.Get(ctx, key)
 	if err != nil {
 		return &googleapi.Error{
@@ -279,7 +279,7 @@ func MockAlphaAttachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj
 	newList := m.X.(NetworkEndpointStore)[*key]
 	for _, newEp := range obj.NetworkEndpoints {
 		found := false
-		newComposite, err := composite.AlphaToNetworkEndpoint(newEp)
+		newComposite, err := composite.BetaToNetworkEndpoint(newEp)
 		if err != nil {
 			return err
 		}
@@ -297,7 +297,7 @@ func MockAlphaAttachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj
 	return nil
 }
 
-func MockAlphaDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *computealpha.NetworkEndpointGroupsDetachEndpointsRequest, m *cloud.MockAlphaNetworkEndpointGroups) error {
+func MockBetaDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj *computebeta.NetworkEndpointGroupsDetachEndpointsRequest, m *cloud.MockBetaNetworkEndpointGroups) error {
 	_, err := m.Get(ctx, key)
 	if err != nil {
 		return &googleapi.Error{
@@ -315,7 +315,7 @@ func MockAlphaDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj
 
 	for _, left := range obj.NetworkEndpoints {
 		found := false
-		leftComposite, err := composite.AlphaToNetworkEndpoint(left)
+		leftComposite, err := composite.BetaToNetworkEndpoint(left)
 		if err != nil {
 			return err
 		}
@@ -338,7 +338,7 @@ func MockAlphaDetachNetworkEndpointsHook(ctx context.Context, key *meta.Key, obj
 	for _, ep := range m.X.(NetworkEndpointStore)[*key] {
 		found := false
 		for _, del := range obj.NetworkEndpoints {
-			delComposite, err := composite.AlphaToNetworkEndpoint(del)
+			delComposite, err := composite.BetaToNetworkEndpoint(del)
 			if err != nil {
 				return err
 			}
@@ -390,12 +390,12 @@ func generateNetworkEndpointWithHealthStatus(networkEndpointEntry NetworkEndpoin
 	return ret
 }
 
-func generateAlphaNetworkEndpointWithHealthStatus(networkEndpointEntry NetworkEndpointEntry) *computealpha.NetworkEndpointWithHealthStatus {
-	ret := &computealpha.NetworkEndpointWithHealthStatus{}
-	ret.NetworkEndpoint, _ = networkEndpointEntry.NetworkEndpoint.ToAlpha()
+func generateBetaNetworkEndpointWithHealthStatus(networkEndpointEntry NetworkEndpointEntry) *computebeta.NetworkEndpointWithHealthStatus {
+	ret := &computebeta.NetworkEndpointWithHealthStatus{}
+	ret.NetworkEndpoint, _ = networkEndpointEntry.NetworkEndpoint.ToBeta()
 
 	for _, health := range networkEndpointEntry.Healths {
-		h, _ := health.ToAlpha()
+		h, _ := health.ToBeta()
 		ret.Healths = append(ret.Healths, h)
 	}
 	return ret
@@ -409,10 +409,10 @@ func generateNetworkEndpointWithHealthStatusList(networkEndpointEntryList []Netw
 	return ret
 }
 
-func generateAlphaNetworkEndpointWithHealthStatusList(networkEndpointEntryList []NetworkEndpointEntry) []*computealpha.NetworkEndpointWithHealthStatus {
-	ret := []*computealpha.NetworkEndpointWithHealthStatus{}
+func generateBetaNetworkEndpointWithHealthStatusList(networkEndpointEntryList []NetworkEndpointEntry) []*computebeta.NetworkEndpointWithHealthStatus {
+	ret := []*computebeta.NetworkEndpointWithHealthStatus{}
 	for _, ne := range networkEndpointEntryList {
-		ret = append(ret, generateAlphaNetworkEndpointWithHealthStatus(ne))
+		ret = append(ret, generateBetaNetworkEndpointWithHealthStatus(ne))
 	}
 	return ret
 }
