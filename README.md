@@ -21,7 +21,7 @@ Please visit our [docs](docs/) for more information on how to run, contribute, t
 
 ## GKE Version Mapping
 
-The table below describes what version of Ingress-GCE is running on GKE. Note that these versions are simply the defaults. 
+The table below describes what version of Ingress-GCE is running on GKE. Note that these versions are simply the defaults.
 
    *Format: k8s version -> glbc version* ('+' indicates that version or above)
 
@@ -43,4 +43,5 @@ The table below describes what version of Ingress-GCE is running on GKE. Note th
        * 1.17.9-gke.600+ -> 1.9.8
        * 1.18.6-gke.500+ -> 1.9.8
        * 1.18.6-gke.4800+ -> 1.9.9
-       
+       * 1.18.10-gke.1500+ -> 1.10.8
+
