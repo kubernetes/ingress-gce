@@ -42,15 +42,19 @@ import (
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-gce/cmd/echo/app"
 	"k8s.io/ingress-gce/pkg/annotations"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
+	ingparamsv1beta1 "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/fuzz/whitebox"
+	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog"
 	utilpointer "k8s.io/utils/pointer"
@@ -147,7 +151,13 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, fc *frontendconfigv1beta1.
 		}
 		attrs := fuzz.DefaultAttributes()
 		attrs.Region = s.f.Region
-		validator, err := fuzz.NewIngressValidator(s.ValidatorEnv, ing, fc, []fuzz.WhiteboxTest{}, attrs, features.All)
+
+		ingClass, ingParams, err := GetGCPIngressClassAndParams(s.f.Clientset, s.f.IngParamsClient, ing)
+		if err != nil {
+			return true, err
+		}
+
+		validator, err := fuzz.NewIngressValidator(s.ValidatorEnv, ing, ingClass, ingParams, fc, []fuzz.WhiteboxTest{}, attrs, features.All)
 		if err != nil {
 			return true, err
 		}
@@ -224,7 +234,7 @@ func WaitForFinalizer(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error
 }
 
 // WhiteboxTest retrieves GCP load-balancer for Ingress VIP and runs the whitebox tests.
-func WhiteboxTest(ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, cloud cloud.Cloud, region string, s *Sandbox) (*fuzz.GCLB, error) {
+func WhiteboxTest(ing *v1beta1.Ingress, ingClass *v1beta1.IngressClass, ingParams *ingparamsv1beta1.GCPIngressParams, fc *frontendconfigv1beta1.FrontendConfig, cloud cloud.Cloud, region string, s *Sandbox) (*fuzz.GCLB, error) {
 	if len(ing.Status.LoadBalancer.Ingress) < 1 {
 		return nil, fmt.Errorf("ingress does not have an IP: %+v", ing.Status)
 	}
@@ -241,15 +251,15 @@ func WhiteboxTest(ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig
 		return nil, fmt.Errorf("error getting GCP resources for LB with IP = %q: %v", vip, err)
 	}
 
-	if err := performWhiteboxTests(s, ing, fc, gclb); err != nil {
+	if err := performWhiteboxTests(s, ing, ingClass, ingParams, fc, gclb); err != nil {
 		return nil, fmt.Errorf("error performing whitebox tests: %v", err)
 	}
 	return gclb, nil
 }
 
 // performWhiteboxTests runs the whitebox tests against the Ingress.
-func performWhiteboxTests(s *Sandbox, ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, gclb *fuzz.GCLB) error {
-	validator, err := fuzz.NewIngressValidator(s.ValidatorEnv, ing, fc, whitebox.AllTests, nil, []fuzz.Feature{})
+func performWhiteboxTests(s *Sandbox, ing *v1beta1.Ingress, ingClass *v1beta1.IngressClass, ingParams *ingparamsv1beta1.GCPIngressParams, fc *frontendconfigv1beta1.FrontendConfig, gclb *fuzz.GCLB) error {
+	validator, err := fuzz.NewIngressValidator(s.ValidatorEnv, ing, ingClass, ingParams, fc, whitebox.AllTests, nil, []fuzz.Feature{})
 	if err != nil {
 		return err
 	}
@@ -934,4 +944,32 @@ func Truncate(key string) string {
 		return fmt.Sprintf("%v%v", key[:62], "0")
 	}
 	return key
+}
+
+// GetGCPIngressClassAndParams will get the corresponding IngressClass and GCPIngressParams resources if
+// applicable based on the `ing.Spec.IngressClassName` field
+func GetGCPIngressClassAndParams(kubeClient *kubernetes.Clientset, ingParamsClient *ingparamsclient.Clientset, ing *v1beta1.Ingress) (*v1beta1.IngressClass, *ingparamsv1beta1.GCPIngressParams, error) {
+	// var ingClass *v1beta1.IngressClass
+	// var ingParams *ingparamsv1beta1.GCPIngressParams
+	if ing.Spec.IngressClassName != nil {
+		ingClass, err := kubeClient.NetworkingV1beta1().IngressClasses().Get(context.TODO(), *ing.Spec.IngressClassName, metav1.GetOptions{})
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, nil, err
+			}
+			return nil, nil, nil
+		}
+
+		if ingClass.Spec.Controller != utils.GCPIngressControllerKey ||
+			ingClass.Spec.Parameters != nil || ingClass.Spec.Parameters.Kind != utils.GCPIngParamsKind {
+			return nil, nil, fmt.Errorf("ingress class is not a GCE ingress class")
+		}
+
+		ingParams, err := ingParamsClient.NetworkingV1beta1().GCPIngressParamses().Get(context.TODO(), ingClass.Spec.Parameters.Name, metav1.GetOptions{})
+		if err != nil && !apierrors.IsNotFound(err) {
+			return nil, nil, err
+		}
+		return ingClass, ingParams, nil
+	}
+	return nil, nil, nil
 }

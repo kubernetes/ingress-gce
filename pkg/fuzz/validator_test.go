@@ -24,12 +24,13 @@ import (
 	"sync"
 	"testing"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/cmd/glbc/app"
+	ingparamsv1beta1 "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
@@ -75,7 +76,7 @@ func (m *mockFeature) NewValidator() FeatureValidator {
 	return m
 }
 
-func (m *mockFeature) ConfigureAttributes(env ValidatorEnv, ing *v1beta1.Ingress, a *IngressValidatorAttributes) error {
+func (m *mockFeature) ConfigureAttributes(env ValidatorEnv, ing *v1beta1.Ingress, ingClass *v1beta1.IngressClass, ingParams *ingparamsv1beta1.GCPIngressParams, a *IngressValidatorAttributes) error {
 	switch m.mode {
 	case mockValidatorUnstable:
 		a.CheckHTTP = !a.CheckHTTP
@@ -162,7 +163,7 @@ func TestNewIngressValidator(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			_, err := NewIngressValidator(&MockValidatorEnv{frontendNamerFactory: mockNamerFactory}, tc.ing, nil, []WhiteboxTest{}, nil, tc.features)
+			_, err := NewIngressValidator(&MockValidatorEnv{frontendNamerFactory: mockNamerFactory}, tc.ing, nil, nil, nil, []WhiteboxTest{}, nil, tc.features)
 			gotErr := err != nil
 			if gotErr != tc.wantErr {
 				t.Errorf("NewIngressValidator() = %v; gotErr = %t, wantErr =%t", err, gotErr, tc.wantErr)
@@ -317,7 +318,7 @@ func TestValidatorCheck(t *testing.T) {
 			attribs := DefaultAttributes()
 			attribs.HTTPPort = ms.l.Addr().(*net.TCPAddr).Port
 			attribs.HTTPSPort = ms.ls.Addr().(*net.TCPAddr).Port
-			validator, err := NewIngressValidator(&MockValidatorEnv{frontendNamerFactory: mockNamerFactory}, tc.ing, nil, []WhiteboxTest{}, attribs, []Feature{})
+			validator, err := NewIngressValidator(&MockValidatorEnv{frontendNamerFactory: mockNamerFactory}, tc.ing, nil, nil, nil, []WhiteboxTest{}, attribs, []Feature{})
 			if err != nil {
 				t.Fatalf("NewIngressValidator(...) = _, %v; want _, nil", err)
 			}
@@ -392,7 +393,7 @@ func TestValidatorCheckFeature(t *testing.T) {
 			attribs.HTTPPort = ms.l.Addr().(*net.TCPAddr).Port
 			attribs.HTTPSPort = ms.ls.Addr().(*net.TCPAddr).Port
 
-			validator, err := NewIngressValidator(&MockValidatorEnv{frontendNamerFactory: mockNamerFactory}, tc.ing, nil, []WhiteboxTest{}, attribs, []Feature{tc.feature})
+			validator, err := NewIngressValidator(&MockValidatorEnv{frontendNamerFactory: mockNamerFactory}, tc.ing, nil, nil, nil, []WhiteboxTest{}, attribs, []Feature{tc.feature})
 			if gotErr := err != nil; gotErr != tc.wantNewValidatorErr {
 				t.Errorf("NewIngressValidator(...) = _, %v; gotErr = %t, want %t", err, gotErr, tc.wantNewValidatorErr)
 			}

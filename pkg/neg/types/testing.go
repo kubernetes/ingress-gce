@@ -26,6 +26,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
+	ingparamsfake "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned/fake"
+	informeringparams "k8s.io/ingress-gce/pkg/ingparams/client/informers/externalversions/ingparams/v1beta1"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions/svcneg/v1beta1"
@@ -50,12 +52,14 @@ type TestContext struct {
 	NegNamer NetworkEndpointGroupNamer
 	L4Namer  namer.L4ResourcesNamer
 
-	IngressInformer  cache.SharedIndexInformer
-	PodInformer      cache.SharedIndexInformer
-	ServiceInformer  cache.SharedIndexInformer
-	NodeInformer     cache.SharedIndexInformer
-	EndpointInformer cache.SharedIndexInformer
-	SvcNegInformer   cache.SharedIndexInformer
+	IngressInformer   cache.SharedIndexInformer
+	PodInformer       cache.SharedIndexInformer
+	ServiceInformer   cache.SharedIndexInformer
+	NodeInformer      cache.SharedIndexInformer
+	EndpointInformer  cache.SharedIndexInformer
+	SvcNegInformer    cache.SharedIndexInformer
+	IngClassInformer  cache.SharedIndexInformer
+	IngParamsInformer cache.SharedIndexInformer
 
 	KubeSystemUID types.UID
 	ResyncPeriod  time.Duration
@@ -68,6 +72,7 @@ func NewTestContext() *TestContext {
 
 func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext {
 	negClient := negfake.NewSimpleClientset()
+	ingParamsClient := ingparamsfake.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	MockNetworkEndpointAPIs(fakeGCE)
 
@@ -75,18 +80,20 @@ func NewTestContextWithKubeClient(kubeClient kubernetes.Interface) *TestContext 
 	l4namer := namer.NewL4Namer(kubeSystemUID, clusterNamer)
 
 	return &TestContext{
-		KubeClient:       kubeClient,
-		SvcNegClient:     negClient,
-		Cloud:            fakeGCE,
-		NegNamer:         clusterNamer,
-		L4Namer:          l4namer,
-		IngressInformer:  informerv1beta1.NewIngressInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
-		PodInformer:      informerv1.NewPodInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
-		ServiceInformer:  informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
-		EndpointInformer: informerv1.NewEndpointsInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
-		NodeInformer:     informerv1.NewNodeInformer(kubeClient, resyncPeriod, utils.NewNamespaceIndexer()),
-		SvcNegInformer:   informersvcneg.NewServiceNetworkEndpointGroupInformer(negClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
-		KubeSystemUID:    kubeSystemUID,
-		ResyncPeriod:     resyncPeriod,
+		KubeClient:        kubeClient,
+		SvcNegClient:      negClient,
+		Cloud:             fakeGCE,
+		NegNamer:          clusterNamer,
+		L4Namer:           l4namer,
+		IngressInformer:   informerv1beta1.NewIngressInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
+		PodInformer:       informerv1.NewPodInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
+		ServiceInformer:   informerv1.NewServiceInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
+		EndpointInformer:  informerv1.NewEndpointsInformer(kubeClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
+		NodeInformer:      informerv1.NewNodeInformer(kubeClient, resyncPeriod, utils.NewNamespaceIndexer()),
+		SvcNegInformer:    informersvcneg.NewServiceNetworkEndpointGroupInformer(negClient, namespace, resyncPeriod, utils.NewNamespaceIndexer()),
+		IngClassInformer:  informerv1beta1.NewIngressClassInformer(kubeClient, resyncPeriod, utils.NewNamespaceIndexer()),
+		IngParamsInformer: informeringparams.NewGCPIngressParamsInformer(ingParamsClient, resyncPeriod, utils.NewNamespaceIndexer()),
+		KubeSystemUID:     kubeSystemUID,
+		ResyncPeriod:      resyncPeriod,
 	}
 }

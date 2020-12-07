@@ -19,6 +19,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"testing"
+
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -28,7 +30,6 @@ import (
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/utils"
-	"testing"
 )
 
 var (
@@ -481,7 +482,12 @@ func TestILBUpdate(t *testing.T) {
 			vip := ing.Status.LoadBalancer.Ingress[0].IP
 			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ing.Name, vip)
 
-			if utils.IsGCEL7ILBIngress(ing) && !e2e.IsRfc1918Addr(vip) {
+			_, ingParams, err := e2e.GetGCPIngressClassAndParams(Framework.Clientset, Framework.IngParamsClient, ing)
+			if err != nil {
+				t.Fatalf("error querying for ingress class and parameters: %s", err)
+			}
+
+			if utils.IsGCEL7ILBIngress(ing, ingParams) && !e2e.IsRfc1918Addr(vip) {
 				t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 			}
 
@@ -514,7 +520,13 @@ func TestILBUpdate(t *testing.T) {
 
 			vip = ing.Status.LoadBalancer.Ingress[0].IP
 			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, tc.ingUpdate.Name, vip)
-			if utils.IsGCEL7ILBIngress(ing) && !e2e.IsRfc1918Addr(vip) {
+
+			_, ingParams, err = e2e.GetGCPIngressClassAndParams(Framework.Clientset, Framework.IngParamsClient, ing)
+			if err != nil {
+				t.Logf("error querying for ingress class and parameters: %s", err)
+			}
+
+			if utils.IsGCEL7ILBIngress(ing, ingParams) && !e2e.IsRfc1918Addr(vip) {
 				t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 			}
 
@@ -702,7 +714,13 @@ func TestILBShared(t *testing.T) {
 
 				vip := ing.Status.LoadBalancer.Ingress[0].IP
 				t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
-				if utils.IsGCEL7ILBIngress(ing) && !e2e.IsRfc1918Addr(vip) {
+
+				_, ingParams, err := e2e.GetGCPIngressClassAndParams(Framework.Clientset, Framework.IngParamsClient, ing)
+				if err != nil {
+					t.Logf("error querying for ingress class and parameters: %s", err)
+				}
+
+				if utils.IsGCEL7ILBIngress(ing, ingParams) && !e2e.IsRfc1918Addr(vip) {
 					t.Fatalf("got %v, want RFC1918 address, ing: %v", vip, ing)
 				}
 

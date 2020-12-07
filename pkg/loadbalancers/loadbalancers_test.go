@@ -159,7 +159,7 @@ func newFakeLoadBalancerPool(cloud *gce.Cloud, t *testing.T, namer *namer_util.N
 	nodePool := instances.NewNodePool(fakeIGs, namer, &test.FakeRecorderSource{})
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 
-	return L7s{cloud, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer, "")}
+	return L7s{cloud, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer, ""), nil, nil}
 }
 
 func newILBIngress() *v1beta1.Ingress {

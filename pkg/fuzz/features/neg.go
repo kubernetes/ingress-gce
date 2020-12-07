@@ -30,9 +30,10 @@ import (
 	"k8s.io/klog"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
+	ingparamsv1beta1 "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -57,9 +58,11 @@ func (*NegFeature) Name() string {
 type negValidator struct {
 	fuzz.NullValidator
 
-	ing    *v1beta1.Ingress
-	env    fuzz.ValidatorEnv
-	region string
+	ing       *v1beta1.Ingress
+	ingClass  *v1beta1.IngressClass
+	ingParams *ingparamsv1beta1.GCPIngressParams
+	env       fuzz.ValidatorEnv
+	region    string
 }
 
 // Name implements fuzz.FeatureValidator.
@@ -68,9 +71,11 @@ func (*negValidator) Name() string {
 }
 
 // ConfigureAttributes implements fuzz.FeatureValidator.
-func (v *negValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1beta1.Ingress, a *fuzz.IngressValidatorAttributes) error {
+func (v *negValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1beta1.Ingress, ingClass *v1beta1.IngressClass, ingParams *ingparamsv1beta1.GCPIngressParams, a *fuzz.IngressValidatorAttributes) error {
 	// Capture the env for use later in CheckResponse.
 	v.ing = ing
+	v.ingClass = ingClass
+	v.ingParams = ingParams
 	v.env = env
 	v.region = a.Region
 	return nil
@@ -91,7 +96,7 @@ func (v *negValidator) CheckResponse(host, path string, resp *http.Response, bod
 
 	urlMapName := v.env.FrontendNamerFactory().Namer(v.ing).UrlMap()
 	if negEnabled {
-		if utils.IsGCEL7ILBIngress(v.ing) {
+		if utils.IsGCEL7ILBIngress(v.ing, v.ingParams) {
 			return fuzz.CheckResponseContinue, verifyNegRegionBackend(v.env, negName, negName, urlMapName, v.region)
 		}
 		return fuzz.CheckResponseContinue, verifyNegBackend(v.env, negName, urlMapName)

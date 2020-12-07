@@ -93,7 +93,7 @@ func testBasicOS(t *testing.T, os e2e.OS) {
 			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
-			gclb, err := e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)
+			gclb, err := e2e.WhiteboxTest(ing, nil, nil, nil, Framework.Cloud, "", s)
 			if err != nil {
 				t.Fatalf("e2e.WhiteboxTest(%s/%s, ...) = %v, want nil", ing.Namespace, ing.Name, err)
 			}
@@ -204,7 +204,7 @@ func TestEdge(t *testing.T) {
 			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
-			gclb, err := e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)
+			gclb, err := e2e.WhiteboxTest(ing, nil, nil, nil, Framework.Cloud, "", s)
 			if err != nil {
 				t.Fatalf("e2e.WhiteboxTest(%s/%s, ...) = %v, want nil", ing.Namespace, ing.Name, err)
 			}
@@ -273,7 +273,7 @@ func TestFrontendResourceDeletion(t *testing.T) {
 			if ing, err = e2e.WaitForIngress(s, ing, nil, &e2e.WaitForIngressOptions{ExpectUnreachable: true}); err != nil {
 				t.Fatalf("error waiting for Ingress %s to stabilize: %v", ingKey, err)
 			}
-			gclb, err := e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)
+			gclb, err := e2e.WhiteboxTest(ing, nil, nil, nil, Framework.Cloud, "", s)
 			if err != nil {
 				t.Fatalf("e2e.WhiteboxTest(%s, ...)= %v, want nil", ingKey, err)
 			}
@@ -305,7 +305,7 @@ func TestFrontendResourceDeletion(t *testing.T) {
 			if err := e2e.WaitForFrontendResourceDeletion(ctx, Framework.Cloud, gclb, deleteOptions); err != nil {
 				t.Errorf("e2e.WaitForFrontendResourceDeletion(..., %q, _) = %v, want nil", ingKey, err)
 			}
-			if gclb, err = e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s); err != nil {
+			if gclb, err = e2e.WhiteboxTest(ing, nil, nil, nil, Framework.Cloud, "", s); err != nil {
 				t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 			}
 
@@ -338,7 +338,7 @@ func TestFrontendResourceDeletion(t *testing.T) {
 				t.Fatalf("error waiting for http annotations on Ingress %s: %v", ingKey, err)
 			}
 
-			gclb, err = e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)
+			gclb, err = e2e.WhiteboxTest(ing, nil, nil, nil, Framework.Cloud, "", s)
 			if err != nil {
 				t.Fatalf("e2e.WhiteboxTest(%s, ...)= %v, want nil", ingKey, err)
 			}

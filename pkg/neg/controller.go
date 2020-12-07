@@ -72,6 +72,8 @@ type Controller struct {
 	hasSynced                   func() bool
 	ingressLister               cache.Indexer
 	serviceLister               cache.Indexer
+	ingClassLister              cache.Indexer
+	ingParamsLister             cache.Indexer
 	client                      kubernetes.Interface
 	defaultBackendService       utils.ServicePort
 	destinationRuleLister       cache.Indexer
@@ -117,6 +119,8 @@ func NewController(
 	endpointInformer cache.SharedIndexInformer,
 	destinationRuleInformer cache.SharedIndexInformer,
 	svcNegInformer cache.SharedIndexInformer,
+	ingClassInformer cache.SharedIndexInformer,
+	ingParamsInformer cache.SharedIndexInformer,
 	hasSynced func() bool,
 	controllerMetrics *usage.ControllerMetrics,
 	l4Namer namer2.L4ResourcesNamer,
@@ -189,11 +193,20 @@ func NewController(
 		collector:             controllerMetrics,
 		runL4:                 runL4Controller,
 	}
+
+	if ingClassInformer != nil {
+		negController.ingClassLister = ingClassInformer.GetIndexer()
+	}
+
+	if ingParamsInformer != nil {
+		negController.ingParamsLister = ingParamsInformer.GetIndexer()
+	}
+
 	if runIngress {
 		ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				addIng := obj.(*v1beta1.Ingress)
-				if !utils.IsGLBCIngress(addIng) {
+				if !utils.IsGLBCIngress(addIng, negController.ingClassLister, negController.ingParamsLister) {
 					klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.NamespacedName(addIng), annotations.IngressClassKey)
 					return
 				}
@@ -201,7 +214,7 @@ func NewController(
 			},
 			DeleteFunc: func(obj interface{}) {
 				delIng := obj.(*v1beta1.Ingress)
-				if !utils.IsGLBCIngress(delIng) {
+				if !utils.IsGLBCIngress(delIng, negController.ingClassLister, negController.ingParamsLister) {
 					klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.NamespacedName(delIng), annotations.IngressClassKey)
 					return
 				}
@@ -210,7 +223,7 @@ func NewController(
 			UpdateFunc: func(old, cur interface{}) {
 				oldIng := cur.(*v1beta1.Ingress)
 				curIng := cur.(*v1beta1.Ingress)
-				if !utils.IsGLBCIngress(curIng) {
+				if !utils.IsGLBCIngress(curIng, negController.ingClassLister, negController.ingParamsLister) {
 					klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", common.NamespacedName(curIng), annotations.IngressClassKey)
 					return
 				}
@@ -481,8 +494,8 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 	// handle NEGs used by ingress
 	if negAnnotation != nil && negAnnotation.NEGEnabledForIngress() {
 		// Only service ports referenced by ingress are synced for NEG
-		ings := getIngressServicesFromStore(c.ingressLister, service)
-		ingressSvcPortTuples := gatherPortMappingUsedByIngress(ings, service)
+		ings := getIngressServicesFromStore(c.ingressLister, service, c.ingClassLister, c.ingParamsLister)
+		ingressSvcPortTuples := gatherPortMappingUsedByIngress(ings, service, c.ingClassLister, c.ingParamsLister)
 		ingressPortInfoMap := negtypes.NewPortInfoMap(name.Namespace, name.Name, ingressSvcPortTuples, c.namer, true, nil)
 		if err := portInfoMap.Merge(ingressPortInfoMap); err != nil {
 			return fmt.Errorf("failed to merge service ports referenced by ingress (%v): %v", ingressPortInfoMap, err)
@@ -579,7 +592,12 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 
 	// process default backend service for L7 ILB
 	if flags.F.EnableL7Ilb {
-		if err := scanIngress(utils.IsGCEL7ILBIngress); err != nil {
+		if err := scanIngress(func(ing *v1beta1.Ingress) bool {
+
+			_, params := utils.GetIngressClassAndParams(ing.Spec.IngressClassName, c.ingClassLister, c.ingParamsLister)
+			return utils.IsGCEL7ILBIngress(ing, params)
+
+		}); err != nil {
 			return err
 		}
 	}
@@ -595,7 +613,7 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 	if negAnnotation.Ingress == false {
 		return nil
 	}
-	return scanIngress(utils.IsGCEIngress)
+	return scanIngress(func(ing *v1beta1.Ingress) bool { return utils.IsGCEIngress(ing, c.ingClassLister, c.ingParamsLister) })
 }
 
 // getCSMPortInfoMap gets the PortInfoMap for service and DestinationRules.
@@ -800,10 +818,10 @@ func (c *Controller) gc() {
 
 // gatherPortMappingUsedByIngress returns a map containing port:targetport
 // of all service ports of the service that are referenced by ingresses
-func gatherPortMappingUsedByIngress(ings []v1beta1.Ingress, svc *apiv1.Service) negtypes.SvcPortTupleSet {
+func gatherPortMappingUsedByIngress(ings []v1beta1.Ingress, svc *apiv1.Service, ingClassLister, ingParamsLister cache.Indexer) negtypes.SvcPortTupleSet {
 	ingressSvcPortTuples := make(negtypes.SvcPortTupleSet)
 	for _, ing := range ings {
-		if utils.IsGLBCIngress(&ing) {
+		if utils.IsGLBCIngress(&ing, ingClassLister, ingParamsLister) {
 			utils.TraverseIngressBackends(&ing, func(id utils.ServicePortID) bool {
 				if id.Service.Name == svc.Name && id.Service.Namespace == svc.Namespace {
 					servicePort := translator.ServicePort(*svc, id.Port)
@@ -837,14 +855,14 @@ func gatherIngressServiceKeys(ing *v1beta1.Ingress) sets.String {
 	return set
 }
 
-func getIngressServicesFromStore(store cache.Store, svc *apiv1.Service) (ings []v1beta1.Ingress) {
+func getIngressServicesFromStore(store cache.Store, svc *apiv1.Service, ingClassLister, ingParamsLister cache.Indexer) (ings []v1beta1.Ingress) {
 	for _, m := range store.List() {
 		ing := *m.(*v1beta1.Ingress)
 		if ing.Namespace != svc.Namespace {
 			continue
 		}
 
-		if utils.IsGLBCIngress(&ing) {
+		if utils.IsGLBCIngress(&ing, ingClassLister, ingParamsLister) {
 			utils.TraverseIngressBackends(&ing, func(id utils.ServicePortID) bool {
 				if id.Service.Name == svc.Name {
 					ings = append(ings, ing)

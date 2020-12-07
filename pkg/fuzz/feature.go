@@ -20,6 +20,7 @@ import (
 	"net/http"
 
 	"k8s.io/api/networking/v1beta1"
+	ingparamsv1beta1 "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1"
 )
 
 // Feature represents an extension to the "vanilla" behavior of Ingress.
@@ -57,7 +58,7 @@ type FeatureValidator interface {
 	Name() string
 	// ConfigureAttributes of the validation for given the environment and
 	// the Ingress object.
-	ConfigureAttributes(env ValidatorEnv, ing *v1beta1.Ingress, a *IngressValidatorAttributes) error
+	ConfigureAttributes(env ValidatorEnv, ing *v1beta1.Ingress, ingClass *v1beta1.IngressClass, ingParams *ingparamsv1beta1.GCPIngressParams, a *IngressValidatorAttributes) error
 	// ModifyRequest adds the appropriate headers for testing the feature, if
 	// necessary.
 	ModifyRequest(host, path string, req *http.Request)
@@ -81,7 +82,7 @@ type NullValidator struct {
 }
 
 // ConfigureAttributes implements Feature.
-func (*NullValidator) ConfigureAttributes(env ValidatorEnv, ing *v1beta1.Ingress, a *IngressValidatorAttributes) error {
+func (*NullValidator) ConfigureAttributes(env ValidatorEnv, ing *v1beta1.Ingress, ingClass *v1beta1.IngressClass, ingParams *ingparamsv1beta1.GCPIngressParams, a *IngressValidatorAttributes) error {
 	return nil
 }
 

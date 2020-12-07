@@ -41,6 +41,7 @@ import (
 	"k8s.io/client-go/rest"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
+	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/klog"
 )
@@ -85,6 +86,11 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		klog.Fatalf("Failed to create SvcNeg client: %v", err)
 	}
 
+	ingParamsClient, err := ingparamsclient.NewForConfig(config)
+	if err != nil {
+		klog.Fatalf("Failed to create IngParams client: %v", err)
+	}
+
 	f := &Framework{
 		RestConfig:           config,
 		Clientset:            kubernetes.NewForConfigOrDie(config),
@@ -92,6 +98,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		FrontendConfigClient: frontendConfigClient,
 		BackendConfigClient:  backendConfigClient,
 		SvcNegClient:         svcNegClient,
+		IngParamsClient:      ingParamsClient,
 		Project:              options.Project,
 		Region:               options.Region,
 		Network:              options.Network,
@@ -135,6 +142,7 @@ type Framework struct {
 	BackendConfigClient   *backendconfigclient.Clientset
 	FrontendConfigClient  *frontendconfigclient.Clientset
 	SvcNegClient          *svcnegclient.Clientset
+	IngParamsClient       *ingparamsclient.Clientset
 	Project               string
 	Region                string
 	Network               string

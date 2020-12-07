@@ -86,7 +86,7 @@ func (l *L7) ensureComputeURLMap() error {
 
 func (l *L7) ensureRedirectURLMap() error {
 	feConfig := l.runtimeInfo.FrontendConfig
-	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(&l.ingress)
+	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(&l.ingress, l.runtimeInfo.IngressParams)
 
 	t := translator.NewTranslator(isL7ILB, l.namer)
 	env := &translator.Env{FrontendConfig: feConfig, Ing: &l.ingress}

@@ -301,6 +301,8 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		ctx.EndpointInformer,
 		ctx.DestinationRuleInformer,
 		ctx.SvcNegInformer,
+		ctx.IngClassInformer,
+		ctx.IngParamsInformer,
 		ctx.HasSynced,
 		ctx.ControllerMetrics,
 		ctx.L4Namer,

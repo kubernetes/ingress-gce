@@ -135,6 +135,8 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		testContext.EndpointInformer,
 		drDynamicInformer.Informer(),
 		testContext.SvcNegInformer,
+		testContext.IngClassInformer,
+		testContext.IngParamsInformer,
 		func() bool { return true },
 		metrics.NewControllerMetrics(),
 		testContext.L4Namer,
@@ -551,7 +553,7 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 	for _, tc := range testCases {
 		controller := newTestController(fake.NewSimpleClientset())
 		defer controller.stop()
-		portTupleSet := gatherPortMappingUsedByIngress(tc.ings, newTestService(controller, true, []int32{}))
+		portTupleSet := gatherPortMappingUsedByIngress(tc.ings, newTestService(controller, true, []int32{}), nil, nil)
 		if len(portTupleSet) != len(tc.expect) {
 			t.Errorf("Expect %v ports, but got %v.", len(tc.expect), len(portTupleSet))
 		}

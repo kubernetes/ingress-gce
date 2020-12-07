@@ -25,15 +25,19 @@ import (
 	"regexp"
 
 	"github.com/kr/pretty"
+	"k8s.io/api/networking/v1beta1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	ingparamsv1beta1 "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1"
 	backendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/fuzz/whitebox"
+	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
 
 	// Pull in the auth library for GCP.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
@@ -131,10 +135,23 @@ func Validate() {
 	if err != nil {
 		panic(err)
 	}
-
 	fmt.Printf("Ingress =\n%s\n\n", pretty.Sprint(*ing))
 
-	iv, err := fuzz.NewIngressValidator(env, ing, nil, whitebox.AllTests, nil, fs)
+	ingParamsClient, err := ingparamsclient.NewForConfig(config)
+	if err != nil && !apierrors.IsNotFound(err) {
+		panic(err)
+	}
+
+	var ingClass *v1beta1.IngressClass
+	var ingParams *ingparamsv1beta1.GCPIngressParams
+	if ingParamsClient != nil {
+		ingClass, ingParams, err = e2e.GetGCPIngressClassAndParams(k8s, ingParamsClient, ing)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	iv, err := fuzz.NewIngressValidator(env, ing, ingClass, ingParams, nil, whitebox.AllTests, nil, fs)
 	if err != nil {
 		panic(err)
 	}

@@ -64,7 +64,7 @@ func TestFinalizer(t *testing.T) {
 		}
 
 		// Perform whitebox testing.
-		gclb, err := e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)
+		gclb, err := e2e.WhiteboxTest(ing, nil, nil, nil, Framework.Cloud, "", s)
 		if err != nil {
 			t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 		}
@@ -114,7 +114,7 @@ func TestFinalizerIngressClassChange(t *testing.T) {
 		}
 
 		// Perform whitebox testing.
-		gclb, err := e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)
+		gclb, err := e2e.WhiteboxTest(ing, nil, nil, nil, Framework.Cloud, "", s)
 		if err != nil {
 			t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 		}
@@ -191,11 +191,11 @@ func TestFinalizerIngressesWithSharedResources(t *testing.T) {
 		}
 
 		// Perform whitebox testing.
-		gclb, err := e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)
+		gclb, err := e2e.WhiteboxTest(ing, nil, nil, nil, Framework.Cloud, "", s)
 		if err != nil {
 			t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 		}
-		otherGclb, err := e2e.WhiteboxTest(otherIng, nil, Framework.Cloud, "", s)
+		otherGclb, err := e2e.WhiteboxTest(otherIng, nil, nil, nil, Framework.Cloud, "", s)
 		if err != nil {
 			t.Fatalf("e2e.WhiteboxTest(%s)", otherIngKey)
 		}

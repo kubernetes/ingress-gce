@@ -50,12 +50,14 @@ var (
 
 // FirewallController synchronizes the firewall rule for all ingresses.
 type FirewallController struct {
-	ctx          *context.ControllerContext
-	firewallPool SingleFirewallPool
-	queue        utils.TaskQueue
-	translator   *translator.Translator
-	nodeLister   cache.Indexer
-	hasSynced    func() bool
+	ctx             *context.ControllerContext
+	firewallPool    SingleFirewallPool
+	queue           utils.TaskQueue
+	translator      *translator.Translator
+	nodeLister      cache.Indexer
+	ingClassLister  cache.Indexer
+	ingParamsLister cache.Indexer
+	hasSynced       func() bool
 }
 
 // NewFirewallController returns a new firewall controller.
@@ -72,27 +74,35 @@ func NewFirewallController(
 		hasSynced:    ctx.HasSynced,
 	}
 
+	if ctx.IngClassInformer != nil {
+		fwc.ingClassLister = ctx.IngClassInformer.GetIndexer()
+	}
+
+	if ctx.IngParamsInformer != nil {
+		fwc.ingParamsLister = ctx.IngParamsInformer.GetIndexer()
+	}
+
 	fwc.queue = utils.NewPeriodicTaskQueue("", "firewall", fwc.sync)
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*v1beta1.Ingress)
-			if !utils.IsGCEIngress(addIng) && !utils.IsGCEMultiClusterIngress(addIng) {
+			if !utils.IsGLBCIngress(addIng, fwc.ingClassLister, fwc.ingParamsLister) {
 				return
 			}
 			fwc.queue.Enqueue(queueKey)
 		},
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*v1beta1.Ingress)
-			if !utils.IsGCEIngress(delIng) && !utils.IsGCEMultiClusterIngress(delIng) {
+			if !utils.IsGLBCIngress(delIng, fwc.ingClassLister, fwc.ingParamsLister) {
 				return
 			}
 			fwc.queue.Enqueue(queueKey)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			curIng := cur.(*v1beta1.Ingress)
-			if !utils.IsGCEIngress(curIng) && !utils.IsGCEMultiClusterIngress(curIng) {
+			if !utils.IsGLBCIngress(curIng, fwc.ingClassLister, fwc.ingParamsLister) {
 				return
 			}
 			fwc.queue.Enqueue(queueKey)
@@ -128,7 +138,7 @@ func NewFirewallController(
 func (fwc *FirewallController) ToSvcPorts(ings []*v1beta1.Ingress) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings {
-		urlMap, _ := fwc.translator.TranslateIngress(ing, fwc.ctx.DefaultBackendSvcPort.ID, fwc.ctx.ClusterNamer)
+		urlMap, _ := fwc.translator.TranslateIngress(ing, fwc.ctx.DefaultBackendSvcPort.ID, fwc.ctx.ClusterNamer, fwc.ingClassLister, fwc.ingParamsLister)
 		knownPorts = append(knownPorts, urlMap.AllServicePorts()...)
 	}
 	return knownPorts
@@ -153,7 +163,7 @@ func (fwc *FirewallController) sync(key string) error {
 	klog.V(3).Infof("Syncing firewall")
 
 	gceIngresses := operator.Ingresses(fwc.ctx.Ingresses().List()).Filter(func(ing *v1beta1.Ingress) bool {
-		return utils.IsGCEIngress(ing)
+		return utils.IsGCEIngress(ing, fwc.ingClassLister, fwc.ingParamsLister)
 	}).AsList()
 
 	// If there are no more ingresses, then delete the firewall rule.
@@ -219,7 +229,8 @@ func (fwc *FirewallController) sync(key string) error {
 func (fwc *FirewallController) ilbFirewallSrcRange(gceIngresses []*v1beta1.Ingress) (string, error) {
 	ilbEnabled := false
 	for _, ing := range gceIngresses {
-		if utils.IsGCEL7ILBIngress(ing) {
+		_, params := utils.GetIngressClassAndParams(ing.Spec.IngressClassName, fwc.ingClassLister, fwc.ingParamsLister)
+		if utils.IsGCEL7ILBIngress(ing, params) {
 			ilbEnabled = true
 			break
 		}

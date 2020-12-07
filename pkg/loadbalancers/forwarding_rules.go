@@ -82,7 +82,7 @@ func (l *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, 
 		return nil, err
 	}
 
-	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
+	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress, l.runtimeInfo.IngressParams)
 	tr := translator.NewTranslator(isL7ILB, l.namer)
 	env := &translator.Env{VIP: ip, Network: l.cloud.NetworkURL(), Subnetwork: l.cloud.SubnetworkURL()}
 	fr := tr.ToCompositeForwardingRule(env, protocol, version, proxyLink, description, l.runtimeInfo.StaticIPSubnet)

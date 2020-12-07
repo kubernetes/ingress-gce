@@ -54,8 +54,9 @@ func TestNewStaticAddress(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			l7 := &L7{
-				ingress: v1beta1.Ingress{Spec: v1beta1.IngressSpec{}},
-				fw:      &composite.ForwardingRule{IPAddress: tc.ip},
+				ingress:     v1beta1.Ingress{Spec: v1beta1.IngressSpec{}},
+				fw:          &composite.ForwardingRule{IPAddress: tc.ip},
+				runtimeInfo: &L7RuntimeInfo{},
 			}
 
 			if tc.isInternal {

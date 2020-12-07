@@ -22,6 +22,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/api/networking/v1beta1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
@@ -42,17 +43,23 @@ type L7s struct {
 	recorderProducer events.RecorderProducer
 	// namerFactory creates frontend naming policy for ingress/ load balancer.
 	namerFactory namer_util.IngressFrontendNamerFactory
+	// ingClassLister is the store of IngressClass resources
+	ingClassLister cache.Indexer
+	// ingClassLister is the store of GCPIngressParams resources
+	ingParamsLister cache.Indexer
 }
 
 // NewLoadBalancerPool returns a new loadbalancer pool.
 // - cloud: implements LoadBalancers. Used to sync L7 loadbalancer resources
 //	 with the cloud.
-func NewLoadBalancerPool(cloud *gce.Cloud, v1NamerHelper namer_util.V1FrontendNamer, recorderProducer events.RecorderProducer, namerFactory namer_util.IngressFrontendNamerFactory) LoadBalancerPool {
+func NewLoadBalancerPool(cloud *gce.Cloud, v1NamerHelper namer_util.V1FrontendNamer, recorderProducer events.RecorderProducer, namerFactory namer_util.IngressFrontendNamerFactory, ingClassLister, ingParamsLister cache.Indexer) LoadBalancerPool {
 	return &L7s{
 		cloud:            cloud,
 		v1NamerHelper:    v1NamerHelper,
 		recorderProducer: recorderProducer,
 		namerFactory:     namerFactory,
+		ingClassLister:   ingClassLister,
+		ingParamsLister:  ingParamsLister,
 	}
 }
 
@@ -63,7 +70,7 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 		cloud:       l.cloud,
 		namer:       l.namerFactory.Namer(ri.Ingress),
 		recorder:    l.recorderProducer.Recorder(ri.Ingress.Namespace),
-		scope:       features.ScopeFromIngress(ri.Ingress),
+		scope:       features.ScopeFromIngress(ri.Ingress, ri.IngressParams),
 		ingress:     *ri.Ingress,
 	}
 
@@ -111,7 +118,8 @@ func (l *L7s) list(key *meta.Key, version meta.Version) ([]*composite.UrlMap, er
 func (l *L7s) GCv2(ing *v1beta1.Ingress, scope meta.KeyType) error {
 	ingKey := common.NamespacedName(ing)
 	klog.V(2).Infof("GCv2(%v)", ingKey)
-	if err := l.delete(l.namerFactory.Namer(ing), features.VersionsFromIngress(ing), scope); err != nil {
+	_, params := utils.GetIngressClassAndParams(ing.Spec.IngressClassName, l.ingClassLister, l.ingParamsLister)
+	if err := l.delete(l.namerFactory.Namer(ing), features.VersionsFromIngress(ing, params), scope); err != nil {
 		return err
 	}
 	klog.V(2).Infof("GCv2(%v) ok", ingKey)
@@ -129,7 +137,8 @@ func (l *L7s) FrontendScopeChangeGC(ing *v1beta1.Ingress) (*meta.KeyType, error)
 
 	namer := l.namerFactory.Namer(ing)
 	urlMapName := namer.UrlMap()
-	currentScope := features.ScopeFromIngress(ing)
+	_, params := utils.GetIngressClassAndParams(ing.Spec.IngressClassName, l.ingClassLister, l.ingParamsLister)
+	currentScope := features.ScopeFromIngress(ing, params)
 
 	for _, scope := range []meta.KeyType{meta.Global, meta.Regional} {
 		if scope != currentScope {
@@ -139,7 +148,7 @@ func (l *L7s) FrontendScopeChangeGC(ing *v1beta1.Ingress) (*meta.KeyType, error)
 			}
 
 			// Look for existing LBs with the same name but of a different scope
-			_, err = composite.GetUrlMap(l.cloud, key, features.VersionsFromIngress(ing).UrlMap)
+			_, err = composite.GetUrlMap(l.cloud, key, features.VersionsFromIngress(ing, params).UrlMap)
 			if err == nil {
 				klog.V(2).Infof("GC'ing ing %v for scope %q", ing, scope)
 				return &scope, nil
@@ -230,7 +239,8 @@ func (l *L7s) Shutdown(ings []*v1beta1.Ingress) error {
 		return namer_util.FrontendNamingScheme(ing) == namer_util.V2NamingScheme
 	}).AsList()
 	for _, ing := range v2Ings {
-		if err := l.GCv2(ing, features.ScopeFromIngress(ing)); err != nil {
+		_, params := utils.GetIngressClassAndParams(ing.Spec.IngressClassName, l.ingClassLister, l.ingParamsLister)
+		if err := l.GCv2(ing, features.ScopeFromIngress(ing, params)); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -244,11 +254,12 @@ func (l *L7s) Shutdown(ings []*v1beta1.Ingress) error {
 // HasUrlMap implements LoadBalancerPool.
 func (l *L7s) HasUrlMap(ing *v1beta1.Ingress) (bool, error) {
 	namer := l.namerFactory.Namer(ing)
-	key, err := composite.CreateKey(l.cloud, namer.UrlMap(), features.ScopeFromIngress(ing))
+	_, params := utils.GetIngressClassAndParams(ing.Spec.IngressClassName, l.ingClassLister, l.ingParamsLister)
+	key, err := composite.CreateKey(l.cloud, namer.UrlMap(), features.ScopeFromIngress(ing, params))
 	if err != nil {
 		return false, err
 	}
-	if _, err := composite.GetUrlMap(l.cloud, key, features.VersionsFromIngress(ing).UrlMap); err != nil {
+	if _, err := composite.GetUrlMap(l.cloud, key, features.VersionsFromIngress(ing, params).UrlMap); err != nil {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			return false, nil
 		}

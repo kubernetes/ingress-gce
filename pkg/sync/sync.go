@@ -22,6 +22,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/api/networking/v1beta1"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -37,11 +38,17 @@ var ErrSkipBackendsSync = errors.New("ingress skip backends sync and beyond")
 // IngressSyncer processes an Ingress spec and produces a load balancer given
 // an implementation of Controller.
 type IngressSyncer struct {
-	controller Controller
+	controller      Controller
+	ingClassLister  cache.Indexer
+	ingParamsLister cache.Indexer
 }
 
-func NewIngressSyncer(controller Controller) Syncer {
-	return &IngressSyncer{controller}
+func NewIngressSyncer(controller Controller, ingClassLister, ingParamsLister cache.Indexer) Syncer {
+	return &IngressSyncer{
+		controller:      controller,
+		ingClassLister:  ingClassLister,
+		ingParamsLister: ingParamsLister,
+	}
 }
 
 // Sync implements Syncer.
@@ -89,9 +96,13 @@ func (s *IngressSyncer) GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, fr
 			return namer.FrontendNamingScheme(ing) == namer.V1NamingScheme
 		})
 		// Partition these into ingresses those need cleanup and those don't.
-		toCleanupV1, toKeepV1 := v1Ingresses.Partition(utils.NeedsCleanup)
+		toCleanupV1, toKeepV1 := v1Ingresses.Partition(func(ing *v1beta1.Ingress) bool {
+			return utils.NeedsCleanup(ing, s.ingClassLister, s.ingParamsLister)
+		})
 		// Note that only GCE ingress associated resources are managed by this controller.
-		toKeepV1Gce := toKeepV1.Filter(utils.IsGCEIngress)
+		toKeepV1Gce := toKeepV1.Filter(func(ing *v1beta1.Ingress) bool {
+			return utils.IsGCEIngress(ing, s.ingClassLister, s.ingParamsLister)
+		})
 		lbErr = s.controller.GCv1LoadBalancers(toKeepV1Gce.AsList())
 
 		defer func() {
@@ -114,7 +125,7 @@ func (s *IngressSyncer) GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, fr
 	// 2) It is not a deletion candidate. A deletion candidate is an ingress
 	//    with deletion stamp and a finalizer.
 	toKeep := operator.Ingresses(ings).Filter(func(ing *v1beta1.Ingress) bool {
-		return !utils.NeedsCleanup(ing)
+		return !utils.NeedsCleanup(ing, s.ingClassLister, s.ingParamsLister)
 	}).AsList()
 	if beErr := s.controller.GCBackends(toKeep); beErr != nil {
 		errs = append(errs, fmt.Errorf("error running backend garbage collection routine: %v", beErr))

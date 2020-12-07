@@ -278,7 +278,7 @@ func IGLinks(igs []*compute.InstanceGroup) (igLinks []string) {
 
 // IsGCEIngress returns true if the Ingress matches the class managed by this
 // controller.
-func IsGCEIngress(ing *v1beta1.Ingress) bool {
+func IsGCEIngress(ing *v1beta1.Ingress, ingClassLister, ingParamsLister cache.Indexer) bool {
 	class := annotations.FromIngress(ing).IngressClass()
 	if flags.F.IngressClass != "" && class == flags.F.IngressClass {
 		return true
@@ -289,7 +289,11 @@ func IsGCEIngress(ing *v1beta1.Ingress) bool {
 		// Ingress controller does not have any ingress classes that can be
 		// specified by spec.IngressClassName. If spec.IngressClassName
 		// is nil, then consider GCEIngress.
-		return ing.Spec.IngressClassName == nil
+		if ing.Spec.IngressClassName == nil {
+			return true
+		}
+		class, params := GetIngressClassAndParams(ing.Spec.IngressClassName, ingClassLister, ingParamsLister)
+		return IsGCPIngressClass(class, params)
 	case annotations.GceIngressClass:
 		return true
 	case annotations.GceL7ILBIngressClass:
@@ -309,21 +313,28 @@ func IsGCEMultiClusterIngress(ing *v1beta1.Ingress) bool {
 
 // IsGCEL7ILBIngress returns true if the given Ingress has
 // ingress.class annotation set to "gce-l7-ilb"
-func IsGCEL7ILBIngress(ing *v1beta1.Ingress) bool {
+func IsGCEL7ILBIngress(ing *v1beta1.Ingress, ingParams *ingparamsv1beta1.GCPIngressParams) bool {
+
 	class := annotations.FromIngress(ing).IngressClass()
-	return class == annotations.GceL7ILBIngressClass
+	if class != "" {
+		return class == annotations.GceL7ILBIngressClass
+	}
+
+	if ingParams != nil {
+		return ingParams.Spec.Internal == true
+	}
+	return false
 }
 
 // IsGLBCIngress returns true if the given Ingress should be processed by GLBC
-func IsGLBCIngress(ing *v1beta1.Ingress) bool {
-	return IsGCEIngress(ing) || IsGCEMultiClusterIngress(ing)
+func IsGLBCIngress(ing *v1beta1.Ingress, ingClassLister, ingParamsLister cache.Indexer) bool {
+	return IsGCEIngress(ing, ingClassLister, ingParamsLister) || IsGCEMultiClusterIngress(ing)
 }
 
 // IsGCPIngressClass returns whether the specified IngressClass and GCPIngressParams resource are
 // a GCPIngressClass by checking for the the GCPIngressControllerKey and the Parameters reference.
 // If either resource is nil, IsGCPIngressClass will return false.
 func IsGCPIngressClass(class *v1beta1.IngressClass, params *ingparamsv1beta1.GCPIngressParams) bool {
-
 	if class == nil || params == nil {
 		return false
 	}
@@ -517,8 +528,8 @@ func ServiceKeyFunc(namespace, name string) string {
 }
 
 // NeedsCleanup returns true if the ingress needs to have its associated resources deleted.
-func NeedsCleanup(ing *v1beta1.Ingress) bool {
-	return common.IsDeletionCandidate(ing.ObjectMeta) || !IsGLBCIngress(ing)
+func NeedsCleanup(ing *v1beta1.Ingress, ingClassLister, ingParamsLister cache.Indexer) bool {
+	return common.IsDeletionCandidate(ing.ObjectMeta) || !IsGLBCIngress(ing, ingClassLister, ingParamsLister)
 }
 
 // HasVIP returns true if given ingress has a vip.

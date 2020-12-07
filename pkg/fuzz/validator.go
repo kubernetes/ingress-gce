@@ -28,11 +28,13 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/google/go-cmp/cmp"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
+	ingparams "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1"
+	ingparamsv1beta1 "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -142,10 +144,10 @@ func (a *IngressValidatorAttributes) baseAttributes(ing *v1beta1.Ingress) {
 }
 
 // applyFeatures applies the settings for each of the additional features.
-func (a *IngressValidatorAttributes) applyFeatures(env ValidatorEnv, ing *v1beta1.Ingress, features []FeatureValidator) error {
+func (a *IngressValidatorAttributes) applyFeatures(env ValidatorEnv, ing *v1beta1.Ingress, ingClass *v1beta1.IngressClass, ingParams *ingparamsv1beta1.GCPIngressParams, features []FeatureValidator) error {
 	for _, f := range features {
 		klog.V(4).Infof("Applying feature %q", f.Name())
-		if err := f.ConfigureAttributes(env, ing, a); err != nil {
+		if err := f.ConfigureAttributes(env, ing, ingClass, ingParams, a); err != nil {
 			klog.Warningf("Feature %q could not be applied: %v", f.Name(), err)
 			return err
 		}
@@ -155,7 +157,7 @@ func (a *IngressValidatorAttributes) applyFeatures(env ValidatorEnv, ing *v1beta
 	// commutative and should be fixed.
 	copy := a.clone()
 	for _, f := range features {
-		if err := f.ConfigureAttributes(env, ing, copy); err != nil {
+		if err := f.ConfigureAttributes(env, ing, ingClass, ingParams, copy); err != nil {
 			return err
 		}
 		if !a.equal(copy) {
@@ -194,7 +196,7 @@ func DefaultAttributes() *IngressValidatorAttributes {
 // NewIngressValidator returns a new validator for checking the correctness of
 // an Ingress spec against the behavior of the instantiated load balancer.
 // If attribs is nil, then the default set of attributes will be used.
-func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, fc *frontendconfig.FrontendConfig, whiteboxTests []WhiteboxTest, attribs *IngressValidatorAttributes, features []Feature) (*IngressValidator, error) {
+func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, ingClass *v1beta1.IngressClass, ingParams *ingparams.GCPIngressParams, fc *frontendconfig.FrontendConfig, whiteboxTests []WhiteboxTest, attribs *IngressValidatorAttributes, features []Feature) (*IngressValidator, error) {
 	var fvs []FeatureValidator
 	for _, f := range features {
 		fvs = append(fvs, f.NewValidator())
@@ -204,7 +206,7 @@ func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, fc *frontendcon
 		attribs = DefaultAttributes()
 	}
 	attribs.baseAttributes(ing)
-	if err := attribs.applyFeatures(env, ing, fvs); err != nil {
+	if err := attribs.applyFeatures(env, ing, ingClass, ingParams, fvs); err != nil {
 		return nil, err
 	}
 	client := &http.Client{
@@ -218,6 +220,8 @@ func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, fc *frontendcon
 	frontendNamer := env.FrontendNamerFactory().Namer(ing)
 	return &IngressValidator{
 		ing:           ing,
+		ingClass:      ingClass,
+		ingParams:     ingParams,
 		fc:            fc,
 		frontendNamer: frontendNamer,
 		features:      fvs,
@@ -231,6 +235,8 @@ func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, fc *frontendcon
 // is behaving correctly.
 type IngressValidator struct {
 	ing           *v1beta1.Ingress
+	ingClass      *v1beta1.IngressClass
+	ingParams     *ingparams.GCPIngressParams
 	fc            *frontendconfig.FrontendConfig
 	frontendNamer namer.IngressFrontendNamer
 	features      []FeatureValidator

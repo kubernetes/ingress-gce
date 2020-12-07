@@ -172,7 +172,7 @@ func TestTranslateIngress(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
-			gotGCEURLMap, gotErrs := translator.TranslateIngress(tc.ing, defaultBackend.ID, defaultNamer)
+			gotGCEURLMap, gotErrs := translator.TranslateIngress(tc.ing, defaultBackend.ID, defaultNamer, nil, nil)
 			if len(gotErrs) != tc.wantErrCount {
 				t.Errorf("%s: TranslateIngress() = _, %+v, want %v errs", tc.desc, gotErrs, tc.wantErrCount)
 			}
@@ -608,7 +608,7 @@ func TestPathValidation(t *testing.T) {
 		}
 		expectedGCEURLMap.HostRules = []utils.HostRule{{Hostname: hostname, Paths: expectedPathRules}}
 
-		gotGCEURLMap, gotErrs := translator.TranslateIngress(ing, defaultBackend.ID, defaultNamer)
+		gotGCEURLMap, gotErrs := translator.TranslateIngress(ing, defaultBackend.ID, defaultNamer, nil, nil)
 		if tc.expectValid && len(gotErrs) > 0 {
 			t.Errorf("%s: TranslateIngress() = _, %+v, want no errs", tc.desc, gotErrs)
 		} else if !tc.expectValid && len(gotErrs) == 0 {

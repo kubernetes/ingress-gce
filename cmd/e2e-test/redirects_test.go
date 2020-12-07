@@ -137,7 +137,7 @@ func TestHttpsRedirects(t *testing.T) {
 				//}
 
 				// Perform whitebox testing.
-				gclb, err = e2e.WhiteboxTest(ing, feConfig, Framework.Cloud, "", s)
+				gclb, err = e2e.WhiteboxTest(ing, nil, nil, feConfig, Framework.Cloud, "", s)
 				if err != nil {
 					t.Fatalf("e2e.WhiteboxTest(%s/%s, ...) = %v, want nil", ing.Namespace, ing.Name, err)
 				}

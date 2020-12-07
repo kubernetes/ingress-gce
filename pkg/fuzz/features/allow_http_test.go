@@ -34,7 +34,7 @@ func TestAllowHTTPFeature(t *testing.T) {
 	ing.Annotations = map[string]string{}
 	ing.Annotations[annotations.AllowHTTPKey] = "false"
 
-	if err := v.ConfigureAttributes(env, ing, a); err != nil {
+	if err := v.ConfigureAttributes(env, ing, nil, nil, a); err != nil {
 		t.Fatalf("v.ConfigureAttributes(%+v) = %v, want nil", ing, err)
 	}
 	if a.CheckHTTP {

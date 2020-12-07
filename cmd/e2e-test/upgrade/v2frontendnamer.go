@@ -85,7 +85,7 @@ func (vf *V2FrontendNamer) PreUpgrade() error {
 	}
 
 	// Perform whitebox testing.
-	if _, err := e2e.WhiteboxTest(ing, nil, vf.framework.Cloud, "", vf.s); err != nil {
+	if _, err := e2e.WhiteboxTest(ing, nil, nil, nil, vf.framework.Cloud, "", vf.s); err != nil {
 		vf.t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 	}
 	return nil
@@ -127,7 +127,7 @@ func (vf *V2FrontendNamer) PostUpgrade() error {
 	}
 
 	// Perform whitebox testing.
-	gclb, err := e2e.WhiteboxTest(ing, nil, vf.framework.Cloud, "", vf.s)
+	gclb, err := e2e.WhiteboxTest(ing, nil, nil, nil, vf.framework.Cloud, "", vf.s)
 	if err != nil {
 		vf.t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 	}

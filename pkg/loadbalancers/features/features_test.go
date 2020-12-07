@@ -17,11 +17,12 @@ limitations under the License.
 package features
 
 import (
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/api/networking/v1beta1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"reflect"
 	"testing"
+
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -100,7 +101,7 @@ func TestScopeFromIngress(t *testing.T) {
 	scopeToFeatures = fakeScopeToFeatures
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			result := ScopeFromIngress(&tc.ing)
+			result := ScopeFromIngress(&tc.ing, nil)
 
 			if result != tc.scope {
 				t.Fatalf("want scope %s, got %s", tc.scope, result)

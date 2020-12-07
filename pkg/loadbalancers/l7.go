@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
+	ingparamsv1beta1 "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
@@ -67,6 +68,8 @@ type L7RuntimeInfo struct {
 	UrlMap *utils.GCEURLMap
 	// FrontendConfig is the type which encapsulates features for the load balancer.
 	FrontendConfig *frontendconfigv1beta1.FrontendConfig
+	// IngressParams is the parameters of the Ingress Class
+	IngressParams *ingparamsv1beta1.GCPIngressParams
 }
 
 // L7 represents a single L7 loadbalancer.
@@ -115,7 +118,7 @@ func (l *L7) String() string {
 
 // Versions returns the struct listing the versions for every resource
 func (l *L7) Versions() *features.ResourceVersions {
-	return features.VersionsFromIngress(&l.ingress)
+	return features.VersionsFromIngress(&l.ingress, l.runtimeInfo.IngressParams)
 }
 
 // CreateKey creates a meta.Key for use with composite types
@@ -146,7 +149,7 @@ func (l *L7) edgeHop() error {
 	}
 
 	// Check for invalid L7-ILB HTTPS config before attempting sync
-	if flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress) && sslConfigured && l.runtimeInfo.AllowHTTP {
+	if flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress, l.runtimeInfo.IngressParams) && sslConfigured && l.runtimeInfo.AllowHTTP {
 		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeWarning, "WillNotConfigureFrontend", "gce-internal Ingress class does not currently support both HTTP and HTTPS served on the same IP (kubernetes.io/ingress.allow-http must be false when using HTTPS).")
 		return fmt.Errorf("error invalid internal ingress https config")
 	}
@@ -166,7 +169,7 @@ func (l *L7) edgeHop() error {
 			return err
 		}
 	} else if flags.F.EnableDeleteUnusedFrontends && requireDeleteFrontend(l.ingress, namer.HTTPProtocol) {
-		if err := l.deleteHttp(features.VersionsFromIngress(&l.ingress)); err != nil {
+		if err := l.deleteHttp(features.VersionsFromIngress(&l.ingress, l.runtimeInfo.IngressParams)); err != nil {
 			return err
 		}
 		klog.V(2).Infof("Successfully deleted unused HTTP frontend resources for load-balancer %s", l)
@@ -184,7 +187,7 @@ func (l *L7) edgeHop() error {
 			return err
 		}
 	} else if flags.F.EnableDeleteUnusedFrontends && requireDeleteFrontend(l.ingress, namer.HTTPSProtocol) {
-		if err := l.deleteHttps(features.VersionsFromIngress(&l.ingress)); err != nil {
+		if err := l.deleteHttps(features.VersionsFromIngress(&l.ingress, l.runtimeInfo.IngressParams)); err != nil {
 			return err
 		}
 		klog.V(2).Infof("Successfully deleted unused HTTPS frontend resources for load-balancer %s", l)

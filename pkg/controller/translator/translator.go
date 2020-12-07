@@ -193,12 +193,13 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 }
 
 // TranslateIngress converts an Ingress into our internal UrlMap representation.
-func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend utils.ServicePortID, namer namer_util.BackendNamer) (*utils.GCEURLMap, []error) {
+func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend utils.ServicePortID, namer namer_util.BackendNamer, ingClassLister, ingParamsLister cache.Indexer) (*utils.GCEURLMap, []error) {
 	var errs []error
 	urlMap := utils.NewGCEURLMap()
 
 	params := &getServicePortParams{}
-	params.isL7ILB = flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(ing)
+	_, ingParams := utils.GetIngressClassAndParams(ing.Spec.IngressClassName, ingClassLister, ingParamsLister)
+	params.isL7ILB = flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(ing, ingParams)
 
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {

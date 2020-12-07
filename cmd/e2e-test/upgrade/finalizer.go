@@ -86,7 +86,7 @@ func (fr *Finalizer) PreUpgrade() error {
 		fr.t.Fatalf("len(GetFinalizers()) = %d, want 0", l)
 	}
 
-	if _, err := e2e.WhiteboxTest(fr.ing, nil, fr.framework.Cloud, "", fr.s); err != nil {
+	if _, err := e2e.WhiteboxTest(fr.ing, nil, nil, nil, fr.framework.Cloud, "", fr.s); err != nil {
 		fr.t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 	}
 	return nil
@@ -113,7 +113,7 @@ func (fr *Finalizer) PostUpgrade() error {
 	if err := e2e.CheckV1Finalizer(ing); err != nil {
 		fr.t.Fatalf("CheckV1Finalizer(%s) = %v, want nil", ingKey, err)
 	}
-	gclb, err := e2e.WhiteboxTest(ing, nil, fr.framework.Cloud, "", fr.s)
+	gclb, err := e2e.WhiteboxTest(ing, nil, nil, nil, fr.framework.Cloud, "", fr.s)
 	if err != nil {
 		fr.t.Fatalf("e2e.WhiteboxTest(%s, ...) = %v, want nil", ingKey, err)
 	}
