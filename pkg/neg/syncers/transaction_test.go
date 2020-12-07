@@ -27,24 +27,17 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
-	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	negfake "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/utils"
-	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -1207,17 +1200,7 @@ func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, m
 }
 
 func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType) (negtypes.NegSyncer, *transactionSyncer) {
-	kubeClient := fake.NewSimpleClientset()
-	backendConfigClient := backendconfigclient.NewSimpleClientset()
-	namer := namer_util.NewNamer(clusterID, "")
-	negClient := negfake.NewSimpleClientset()
-	ctxConfig := context.ControllerContextConfig{
-		Namespace:             apiv1.NamespaceAll,
-		ResyncPeriod:          1 * time.Second,
-		DefaultBackendSvcPort: defaultBackend,
-	}
-
-	context := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, negClient, nil, namer, kubeSystemUID, ctxConfig)
+	testContext := negtypes.NewTestContext()
 	svcPort := negtypes.NegSyncerKey{
 		Namespace: testNamespace,
 		Name:      testService,
@@ -1240,25 +1223,20 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 	// TODO(freehan): use real readiness reflector
 	reflector := &readiness.NoopReflector{}
 
-	var svcNegLister cache.Indexer
-	if negClient != nil {
-		svcNegLister = context.SvcNegInformer.GetIndexer()
-	}
-
 	negsyncer := NewTransactionSyncer(svcPort,
 		record.NewFakeRecorder(100),
 		fakeGCE,
 		negtypes.NewFakeZoneGetter(),
-		context.PodInformer.GetIndexer(),
-		context.ServiceInformer.GetIndexer(),
-		context.EndpointInformer.GetIndexer(),
-		context.NodeInformer.GetIndexer(),
-		svcNegLister,
+		testContext.PodInformer.GetIndexer(),
+		testContext.ServiceInformer.GetIndexer(),
+		testContext.EndpointInformer.GetIndexer(),
+		testContext.NodeInformer.GetIndexer(),
+		testContext.SvcNegInformer.GetIndexer(),
 		reflector,
-		GetEndpointsCalculator(context.NodeInformer.GetIndexer(), context.PodInformer.GetIndexer(), negtypes.NewFakeZoneGetter(),
+		GetEndpointsCalculator(testContext.NodeInformer.GetIndexer(), testContext.PodInformer.GetIndexer(), negtypes.NewFakeZoneGetter(),
 			svcPort, mode),
 		string(kubeSystemUID),
-		context.SvcNegClient,
+		testContext.SvcNegClient,
 	)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
 	return negsyncer, transactionSyncer

@@ -32,7 +32,6 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
-	"k8s.io/ingress-gce/pkg/context"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/klog"
@@ -75,23 +74,23 @@ type readinessReflector struct {
 	queue workqueue.RateLimitingInterface
 }
 
-func NewReadinessReflector(cc *context.ControllerContext, lookup NegLookup) Reflector {
+func NewReadinessReflector(kubeClient kubernetes.Interface, podLister cache.Indexer, negCloud negtypes.NetworkEndpointGroupCloud, lookup NegLookup) Reflector {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(klog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
-		Interface: cc.KubeClient.CoreV1().Events(""),
+		Interface: kubeClient.CoreV1().Events(""),
 	})
 	recorder := broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "neg-readiness-reflector"})
 	reflector := &readinessReflector{
-		client:           cc.KubeClient,
-		podLister:        cc.PodInformer.GetIndexer(),
+		client:           kubeClient,
+		podLister:        podLister,
 		clock:            clock.RealClock{},
 		lookup:           lookup,
 		eventBroadcaster: broadcaster,
 		eventRecorder:    recorder,
 		queue:            workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 	}
-	poller := NewPoller(cc.PodInformer.GetIndexer(), lookup, reflector, negtypes.NewAdapter(cc.Cloud))
+	poller := NewPoller(podLister, lookup, reflector, negCloud)
 	reflector.poller = poller
 	return reflector
 }

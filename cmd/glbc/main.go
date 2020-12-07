@@ -265,8 +265,45 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		}
 	}
 
+	enableAsm := false
+	asmServiceNEGSkipNamespaces := []string{}
+	if ctx.EnableASMConfigMap {
+		cmconfig := ctx.ASMConfigController.GetConfig()
+		enableAsm = cmconfig.EnableASM
+		asmServiceNEGSkipNamespaces = cmconfig.ASMServiceNEGSkipNamespaces
+	}
+
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
-	negController := neg.NewController(negtypes.NewAdapter(ctx.Cloud), ctx, zoneGetter, ctx.ClusterNamer, flags.F.ResyncPeriod, flags.F.NegGCPeriod, flags.F.EnableReadinessReflector, flags.F.RunIngressController, flags.F.RunL4Controller, flags.F.EnableNonGCPMode)
+	negController := neg.NewController(
+		ctx.KubeClient,
+		ctx.SvcNegClient,
+		ctx.DestinationRuleClient,
+		ctx.KubeSystemUID,
+		ctx.IngressInformer,
+		ctx.ServiceInformer,
+		ctx.PodInformer,
+		ctx.NodeInformer,
+		ctx.EndpointInformer,
+		ctx.DestinationRuleInformer,
+		ctx.SvcNegInformer,
+		ctx.HasSynced,
+		ctx.ControllerMetrics,
+		ctx.L4Namer,
+		ctx.DefaultBackendSvcPort,
+		negtypes.NewAdapter(ctx.Cloud),
+		zoneGetter,
+		ctx.ClusterNamer,
+		flags.F.ResyncPeriod,
+		flags.F.NegGCPeriod,
+		flags.F.EnableReadinessReflector,
+		flags.F.RunIngressController,
+		flags.F.RunL4Controller,
+		flags.F.EnableNonGCPMode,
+		enableAsm,
+		asmServiceNEGSkipNamespaces,
+	)
+
+	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
 
 	go negController.Run(stopCh)
 	klog.V(0).Infof("negController started")

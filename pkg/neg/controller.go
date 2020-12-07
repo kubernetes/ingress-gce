@@ -17,7 +17,7 @@ limitations under the License.
 package neg
 
 import (
-	context2 "context"
+	"context"
 	"fmt"
 	"time"
 
@@ -39,13 +39,13 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
 	usage "k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
+	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer2 "k8s.io/ingress-gce/pkg/utils/namer"
@@ -106,8 +106,22 @@ type Controller struct {
 
 // NewController returns a network endpoint group controller.
 func NewController(
+	kubeClient kubernetes.Interface,
+	svcNegClient svcnegclient.Interface,
+	destinationRuleClient dynamic.NamespaceableResourceInterface,
+	kubeSystemUID types.UID,
+	ingressInformer cache.SharedIndexInformer,
+	serviceInformer cache.SharedIndexInformer,
+	podInformer cache.SharedIndexInformer,
+	nodeInformer cache.SharedIndexInformer,
+	endpointInformer cache.SharedIndexInformer,
+	destinationRuleInformer cache.SharedIndexInformer,
+	svcNegInformer cache.SharedIndexInformer,
+	hasSynced func() bool,
+	controllerMetrics *usage.ControllerMetrics,
+	l4Namer namer2.L4ResourcesNamer,
+	defaultBackendService utils.ServicePort,
 	cloud negtypes.NetworkEndpointGroupCloud,
-	ctx *context.ControllerContext,
 	zoneGetter negtypes.ZoneGetter,
 	namer negtypes.NetworkEndpointGroupNamer,
 	resyncPeriod time.Duration,
@@ -116,50 +130,67 @@ func NewController(
 	runIngress bool,
 	runL4Controller bool,
 	enableNonGcpMode bool,
+	enableAsm bool,
+	asmServiceNEGSkipNamespaces []string,
 ) *Controller {
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
 	eventBroadcaster := record.NewBroadcaster()
 	eventBroadcaster.StartLogging(klog.Infof)
 	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
-		Interface: ctx.KubeClient.CoreV1().Events(""),
+		Interface: kubeClient.CoreV1().Events(""),
 	})
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
-	manager := newSyncerManager(namer, recorder, cloud, zoneGetter, ctx.SvcNegClient, ctx.KubeSystemUID, ctx.PodInformer.GetIndexer(), ctx.ServiceInformer.GetIndexer(), ctx.EndpointInformer.GetIndexer(), ctx.NodeInformer.GetIndexer(), ctx.SvcNegInformer.GetIndexer(), enableNonGcpMode)
+	manager := newSyncerManager(
+		namer,
+		recorder,
+		cloud,
+		zoneGetter,
+		svcNegClient,
+		kubeSystemUID,
+		podInformer.GetIndexer(),
+		serviceInformer.GetIndexer(),
+		endpointInformer.GetIndexer(),
+		nodeInformer.GetIndexer(),
+		svcNegInformer.GetIndexer(),
+		enableNonGcpMode)
 
 	var reflector readiness.Reflector
 	if enableReadinessReflector {
-		reflector = readiness.NewReadinessReflector(ctx, manager)
+		reflector = readiness.NewReadinessReflector(
+			kubeClient,
+			podInformer.GetIndexer(),
+			cloud, manager)
 	} else {
 		reflector = &readiness.NoopReflector{}
 	}
 	manager.reflector = reflector
 
 	negController := &Controller{
-		client:                ctx.KubeClient,
+		client:                kubeClient,
 		manager:               manager,
 		resyncPeriod:          resyncPeriod,
 		gcPeriod:              gcPeriod,
 		recorder:              recorder,
 		zoneGetter:            zoneGetter,
 		namer:                 namer,
-		l4Namer:               ctx.L4Namer,
-		defaultBackendService: ctx.DefaultBackendSvcPort,
-		hasSynced:             ctx.HasSynced,
-		ingressLister:         ctx.IngressInformer.GetIndexer(),
-		serviceLister:         ctx.ServiceInformer.GetIndexer(),
+		l4Namer:               l4Namer,
+		defaultBackendService: defaultBackendService,
+		hasSynced:             hasSynced,
+		ingressLister:         ingressInformer.GetIndexer(),
+		serviceLister:         serviceInformer.GetIndexer(),
 		serviceQueue:          workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		endpointQueue:         workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		nodeQueue:             workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		syncTracker:           utils.NewTimeTracker(),
 		reflector:             reflector,
-		collector:             ctx.ControllerMetrics,
+		collector:             controllerMetrics,
 		runL4:                 runL4Controller,
 	}
 	if runIngress {
-		ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				addIng := obj.(*v1beta1.Ingress)
 				if !utils.IsGLBCIngress(addIng) {
@@ -191,7 +222,7 @@ func NewController(
 			},
 		})
 
-		ctx.PodInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				pod := obj.(*apiv1.Pod)
 				negController.reflector.SyncPod(pod)
@@ -202,7 +233,7 @@ func NewController(
 			},
 		})
 	}
-	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	serviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    negController.enqueueService,
 		DeleteFunc: negController.enqueueService,
 		UpdateFunc: func(old, cur interface{}) {
@@ -210,7 +241,7 @@ func NewController(
 		},
 	})
 
-	ctx.EndpointInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	endpointInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    negController.enqueueEndpoint,
 		DeleteFunc: negController.enqueueEndpoint,
 		UpdateFunc: func(old, cur interface{}) {
@@ -219,7 +250,7 @@ func NewController(
 	})
 
 	if negController.runL4 {
-		ctx.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				node := obj.(*apiv1.Node)
 				negController.enqueueNode(node)
@@ -231,24 +262,19 @@ func NewController(
 		})
 	}
 
-	if ctx.EnableASMConfigMap {
-		cmconfig := ctx.ASMConfigController.GetConfig()
-		if cmconfig.EnableASM {
-			negController.enableASM = cmconfig.EnableASM
-			negController.asmServiceNEGSkipNamespaces = cmconfig.ASMServiceNEGSkipNamespaces
-			negController.destinationRuleLister = ctx.DestinationRuleInformer.GetIndexer()
-			ctx.DestinationRuleInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-				AddFunc:    negController.enqueueDestinationRule,
-				DeleteFunc: negController.enqueueDestinationRule,
-				UpdateFunc: func(old, cur interface{}) {
-					negController.enqueueDestinationRule(cur)
-				},
-			})
-			negController.destinationRuleClient = ctx.DestinationRuleClient
-		}
+	if enableAsm {
+		negController.enableASM = enableAsm
+		negController.asmServiceNEGSkipNamespaces = asmServiceNEGSkipNamespaces
+		negController.destinationRuleLister = destinationRuleInformer.GetIndexer()
+		destinationRuleInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    negController.enqueueDestinationRule,
+			DeleteFunc: negController.enqueueDestinationRule,
+			UpdateFunc: func(old, cur interface{}) {
+				negController.enqueueDestinationRule(cur)
+			},
+		})
+		negController.destinationRuleClient = destinationRuleClient
 	}
-
-	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
 	return negController
 }
 
@@ -616,7 +642,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		return err
 	}
 	coreClient := c.client.CoreV1()
-	service, err := coreClient.Services(namespace).Get(context2.TODO(), name, metav1.GetOptions{})
+	service, err := coreClient.Services(namespace).Get(context.TODO(), name, metav1.GetOptions{})
 	if err != nil {
 		return err
 	}
@@ -659,7 +685,7 @@ func (c *Controller) syncDestinationRuleNegStatusAnnotation(namespace, destinati
 		return err
 	}
 	dsClient := c.destinationRuleClient.Namespace(namespace)
-	destinationRule, err := dsClient.Get(context2.TODO(), destinationRuleName, metav1.GetOptions{})
+	destinationRule, err := dsClient.Get(context.TODO(), destinationRuleName, metav1.GetOptions{})
 	drAnnotations := destinationRule.GetAnnotations()
 	if drAnnotations == nil {
 		drAnnotations = make(map[string]string)
@@ -690,7 +716,7 @@ func (c *Controller) syncDestinationRuleNegStatusAnnotation(namespace, destinati
 		return err
 	}
 	klog.V(2).Infof("Updating NEG visibility annotation %q on Istio:DestinationRule %s/%s.", string(patchBytes), namespace, destinationRuleName)
-	_, err = dsClient.Patch(context2.TODO(), destinationRuleName, apimachinerytypes.MergePatchType, patchBytes, metav1.PatchOptions{})
+	_, err = dsClient.Patch(context.TODO(), destinationRuleName, apimachinerytypes.MergePatchType, patchBytes, metav1.PatchOptions{})
 	return err
 }
 
