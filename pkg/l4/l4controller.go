@@ -40,6 +40,13 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/apis/core/v1/helper"
+	"time"
+)
+
+const (
+	syncTypeCreate = "create"
+	syncTypeUpdate = "update"
+	syncTypeDelete = "delete"
 )
 
 // L4Controller manages the create/update delete of all L4 Internal LoadBalancer services.
@@ -144,8 +151,18 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 	// Mark the service InSuccess state as false to begin with.
 	// This will be updated to true if the VIP is configured successfully.
 	serviceMetricsState.InSuccess = false
+
+	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
+	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
+	// But this is still the easiest way to identify create vs update in the common case.
+	syncType := syncTypeCreate
+	if len(service.Status.LoadBalancer.Ingress) > 0 {
+		syncType = syncTypeUpdate
+	}
+	startTime := time.Now()
 	defer func() {
 		l4c.ctx.ControllerMetrics.SetL4ILBService(types.NamespacedName{Name: service.Name, Namespace: service.Namespace}.String(), serviceMetricsState)
+		metrics.PublishL4ILBSyncLatency(serviceMetricsState.InSuccess, syncType, startTime)
 	}()
 
 	// Ensure v2 finalizer
@@ -195,8 +212,10 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) error {
 	l4 := loadbalancers.NewL4Handler(svc, l4c.ctx.Cloud, meta.Regional, l4c.namer, l4c.ctx.Recorder(svc.Namespace), &l4c.sharedResourcesLock)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
+	startTime := time.Now()
 	if err := l4.EnsureInternalLoadBalancerDeleted(svc); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed", "Error deleting load balancer: %v", err)
+		metrics.PublishL4ILBSyncLatency(false, syncTypeDelete, startTime)
 		return err
 	}
 	// Also remove any ILB annotations from the service metadata
@@ -214,6 +233,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) err
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
 	klog.V(6).Infof("Internal L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
 	l4c.ctx.ControllerMetrics.DeleteL4ILBService(namespacedName.String())
+	metrics.PublishL4ILBSyncLatency(true, syncTypeDelete, startTime)
 
 	// Reset the loadbalancer status, Ignore NotFound error since the service can already be deleted at this point.
 	if err := l4c.updateServiceStatus(svc, &v1.LoadBalancerStatus{}); utils.IgnoreHTTPNotFound(err) != nil {
