@@ -30,7 +30,9 @@ import (
 )
 
 const (
-	label = "feature"
+	label         = "feature"
+	statusSuccess = "success"
+	statusError   = "error"
 )
 
 var (
@@ -63,6 +65,17 @@ var (
 		},
 		[]string{label},
 	)
+	l4ILBSyncLatencyMetricsLabels = []string{
+		"sync_result", // result of the sync
+		"sync_type",   // whether this is a new service or an update
+	}
+	l4ILBSyncLatency = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name: "l4_ilb_sync_duration_seconds",
+			Help: "Latency of an L4 ILB Sync",
+		},
+		l4ILBSyncLatencyMetricsLabels,
+	)
 )
 
 // init registers ingress usage metrics.
@@ -71,12 +84,21 @@ func init() {
 	prometheus.MustRegister(ingressCount, servicePortCount, networkEndpointGroupCount)
 
 	klog.V(3).Infof("Registering L4 ILB usage metrics %v", l4ILBCount)
-	prometheus.MustRegister(l4ILBCount)
+	prometheus.MustRegister(l4ILBCount, l4ILBSyncLatency)
 }
 
 // NewIngressState returns ingress state for given ingress and service ports.
 func NewIngressState(ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, svcPorts []utils.ServicePort) IngressState {
 	return IngressState{ingress: ing, frontendconfig: fc, servicePorts: svcPorts}
+}
+
+// PublishL4ILBSyncLatency exports the given sync latency datapoint.
+func PublishL4ILBSyncLatency(success bool, syncType string, startTime time.Time) {
+	status := statusSuccess
+	if !success {
+		status = statusError
+	}
+	l4ILBSyncLatency.WithLabelValues(status, syncType).Observe(time.Since(startTime).Seconds())
 }
 
 // ControllerMetrics contains the state of the all ingresses.
