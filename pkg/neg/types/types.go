@@ -334,7 +334,7 @@ func (key NegSyncerKey) String() string {
 func (key NegSyncerKey) GetAPIVersion() meta.Version {
 	switch key.NegType {
 	case VmIpEndpointType:
-		return meta.VersionAlpha
+		return meta.VersionBeta
 	case NonGCPPrivateEndpointType:
 		return meta.VersionAlpha
 	default:
