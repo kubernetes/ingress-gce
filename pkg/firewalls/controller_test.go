@@ -49,7 +49,7 @@ func newFirewallController() *FirewallController {
 		DefaultBackendSvcPort: test.DefaultBeSvcPort,
 	}
 
-	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, fakeGCE, defaultNamer, "" /*kubeSystemUID*/, ctxConfig)
+	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, fakeGCE, defaultNamer, "" /*kubeSystemUID*/, ctxConfig)
 	fwc := NewFirewallController(ctx, []string{"30000-32767"})
 	fwc.hasSynced = func() bool { return true }
 

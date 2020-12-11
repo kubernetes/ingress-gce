@@ -64,7 +64,7 @@ func fakeTranslator() *Translator {
 		DefaultBackendSvcPort: defaultBackend,
 		HealthCheckPath:       "/",
 	}
-	ctx := context.NewControllerContext(nil, client, backendConfigClient, nil, nil, nil, defaultNamer, "" /*kubeSystemUID*/, ctxConfig)
+	ctx := context.NewControllerContext(nil, client, backendConfigClient, nil, nil, nil, nil, defaultNamer, "" /*kubeSystemUID*/, ctxConfig)
 	gce := &Translator{
 		ctx: ctx,
 	}
