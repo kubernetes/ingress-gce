@@ -289,14 +289,6 @@ func EnsureFrontendConfig(s *Sandbox, fc *frontendconfig.FrontendConfig) (*front
 	}
 	// Update fc spec if they are not equal
 	if !reflect.DeepEqual(fc.Spec, currentFc.Spec) {
-		//fc.ResourceVersion = "1"
-		//if currentFc.ResourceVersion != "" {
-		//	curVersion, err := strconv.Atoi(currentFc.ResourceVersion)
-		//	if err != nil {
-		//		return nil, err
-		//	}
-		//	fc.ResourceVersion = strconv.Itoa(curVersion + 1)
-		//}
 		currentFc.Spec = fc.Spec
 		return s.f.FrontendConfigClient.NetworkingV1beta1().FrontendConfigs(s.Namespace).Update(context.TODO(), currentFc, metav1.UpdateOptions{})
 	}
