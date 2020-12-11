@@ -7,6 +7,8 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
@@ -255,4 +257,17 @@ type FakeRecorderSource struct{}
 
 func (_ *FakeRecorderSource) Recorder(ns string) record.EventRecorder {
 	return record.NewFakeRecorder(100)
+}
+
+func GetPrometheusMetric(name string) (*dto.MetricFamily, error) {
+	metrics, err := prometheus.DefaultGatherer.Gather()
+	if err != nil {
+		return nil, err
+	}
+	for _, m := range metrics {
+		if m.GetName() == name {
+			return m, nil
+		}
+	}
+	return nil, nil
 }
