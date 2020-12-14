@@ -134,11 +134,89 @@ func validateSvcStatus(svc *api_v1.Service, expectStatus bool, t *testing.T) {
 	}
 }
 
+type latencyMetricInfo struct {
+	createCount       uint64
+	deleteCount       uint64
+	updateCount       uint64
+	createSum         float64
+	updateSum         float64
+	deleteSum         float64
+	upperBoundSeconds float64
+}
+
+func getLatencyMetric(t *testing.T) *latencyMetricInfo {
+	var createCount, updateCount, deleteCount uint64
+	var createSum, updateSum, deleteSum float64
+	var result latencyMetricInfo
+
+	latencyMetric, err := test.GetPrometheusMetric("l4_ilb_sync_duration_seconds")
+	if err != nil {
+		t.Errorf("Failed to get L4 ILB prometheus metric 'l4_ilb_sync_duration_seconds', err: %v", err)
+		return nil
+	}
+	for _, val := range latencyMetric.GetMetric() {
+		for _, label := range val.Label {
+			if label.GetName() == "sync_type" {
+				switch label.GetValue() {
+				case "create":
+					createCount += val.GetHistogram().GetSampleCount()
+					createSum += val.GetHistogram().GetSampleSum()
+				case "update":
+					updateCount += val.GetHistogram().GetSampleCount()
+					updateSum += val.GetHistogram().GetSampleSum()
+				case "delete":
+					deleteCount += val.GetHistogram().GetSampleCount()
+					deleteSum += val.GetHistogram().GetSampleSum()
+				default:
+					t.Errorf("Invalid label %s:%s", label.GetName(), label.GetValue())
+				}
+			}
+		}
+		result.createCount = createCount
+		result.updateCount = updateCount
+		result.deleteCount = deleteCount
+		result.createSum = createSum
+		result.deleteSum = deleteSum
+		result.updateSum = updateSum
+	}
+	return &result
+}
+
+// ValidateDiff ensures that the diff between the old and the new metric is as expected.
+// The test uses diff rather than absolute values since the metrics are cumulative of all test cases.
+func (old *latencyMetricInfo) ValidateDiff(new, expect *latencyMetricInfo, t *testing.T) {
+	new.createCount = new.createCount - old.createCount
+	new.deleteCount = new.deleteCount - old.deleteCount
+	new.updateCount = new.updateCount - old.updateCount
+	new.createSum = new.createSum - old.createSum
+	new.updateSum = new.updateSum - old.updateSum
+	new.deleteSum = new.deleteSum - old.updateSum
+	if new.createCount != expect.createCount || new.deleteCount != expect.deleteCount || new.updateCount != expect.updateCount {
+		t.Errorf("Got createCount %d, want %d; Got deleteCount %d, want %d; Got updateCount %d, want %d",
+			new.createCount, expect.createCount, new.deleteCount, expect.deleteCount, new.updateCount, expect.updateCount)
+	}
+	createLatency := getLatency(new.createSum, float64(new.createCount))
+	deleteLatency := getLatency(new.deleteSum, float64(new.deleteCount))
+	updateLatency := getLatency(new.updateSum, float64(new.updateCount))
+
+	if createLatency > expect.upperBoundSeconds || deleteLatency > expect.upperBoundSeconds || updateLatency > expect.upperBoundSeconds {
+		t.Errorf("Got createLatency %v, updateLatency %v, deleteLatency %v - atleast one of them is higher than the specified limit %v seconds", createLatency, updateLatency, deleteLatency, expect.upperBoundSeconds)
+	}
+}
+
+func getLatency(latencySum, numPoints float64) float64 {
+	if numPoints == 0 {
+		return 0
+	}
+	return latencySum / numPoints
+}
+
 // TestProcessCreateOrUpdate verifies the processing loop in L4Controller.
 // This test adds a new service, then performs a valid update and then modifies the service type to External and ensures
 // that the status field is as expected in each case.
 func TestProcessCreateOrUpdate(t *testing.T) {
 	l4c := newServiceController(t)
+	prevMetrics := getLatencyMetric(t)
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	addNEG(l4c, newSvc)
@@ -152,6 +230,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(newSvc, true, t)
+	prevMetrics.ValidateDiff(getLatencyMetric(t), &latencyMetricInfo{createCount: 1, upperBoundSeconds: 1}, t)
 
 	// set the TrafficPolicy of the service to Local
 	newSvc.Spec.ExternalTrafficPolicy = api_v1.ServiceExternalTrafficPolicyTypeLocal
@@ -166,7 +245,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(newSvc, true, t)
-
+	prevMetrics.ValidateDiff(getLatencyMetric(t), &latencyMetricInfo{createCount: 1, updateCount: 1, upperBoundSeconds: 1}, t)
 	// Remove the Internal LoadBalancer annotation, this should trigger a cleanup.
 	delete(newSvc.Annotations, gce.ServiceAnnotationLoadBalancerType)
 	updateILBService(l4c, newSvc)
@@ -181,10 +260,12 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(newSvc, false, t)
+	prevMetrics.ValidateDiff(getLatencyMetric(t), &latencyMetricInfo{createCount: 1, updateCount: 1, deleteCount: 1, upperBoundSeconds: 1}, t)
 }
 
 func TestProcessDeletion(t *testing.T) {
 	l4c := newServiceController(t)
+	prevMetrics := getLatencyMetric(t)
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	addNEG(l4c, newSvc)
@@ -198,6 +279,7 @@ func TestProcessDeletion(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(newSvc, true, t)
+	prevMetrics.ValidateDiff(getLatencyMetric(t), &latencyMetricInfo{createCount: 1, upperBoundSeconds: 1}, t)
 
 	// Mark the service for deletion by updating timestamp. Use svc instead of newSvc since that has the finalizer.
 	newSvc.DeletionTimestamp = &v1.Time{}
@@ -216,6 +298,7 @@ func TestProcessDeletion(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(newSvc, false, t)
+	prevMetrics.ValidateDiff(getLatencyMetric(t), &latencyMetricInfo{createCount: 1, deleteCount: 1, upperBoundSeconds: 1}, t)
 	deleteILBService(l4c, newSvc)
 	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if newSvc != nil {
@@ -225,6 +308,7 @@ func TestProcessDeletion(t *testing.T) {
 
 func TestProcessCreateLegacyService(t *testing.T) {
 	l4c := newServiceController(t)
+	prevMetrics := getLatencyMetric(t)
 	newSvc := test.NewL4ILBService(false, 8080)
 	// Set the legacy finalizer
 	newSvc.Finalizers = append(newSvc.Finalizers, common.LegacyILBFinalizer)
@@ -239,10 +323,12 @@ func TestProcessCreateLegacyService(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(svc, false, t)
+	prevMetrics.ValidateDiff(getLatencyMetric(t), &latencyMetricInfo{}, t)
 }
 
 func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 	l4c := newServiceController(t)
+	prevMetrics := getLatencyMetric(t)
 	clusterSvc := &api_v1.Service{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      "testsvc",
@@ -276,4 +362,6 @@ func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(newSvc, true, t)
+	// this will be a create metric since an ILB IP is being assigned for the first time.
+	prevMetrics.ValidateDiff(getLatencyMetric(t), &latencyMetricInfo{createCount: 1, upperBoundSeconds: 1}, t)
 }
