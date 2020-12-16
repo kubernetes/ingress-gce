@@ -583,32 +583,39 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 
 	needUpdate, err := ensureNegCRLabels(negCR, labels)
 	if err != nil {
+		klog.Errorf("failed to ensure labels for neg %s/%s for service %s: %s", negCR.Namespace, negCR.Name, service.Name, err)
 		return err
 	}
 	needUpdate = ensureNegCROwnerRef(negCR, newCR.OwnerReferences) || needUpdate
 
 	if needUpdate {
-		newCR.Status = negCR.Status
-		_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Update(context.Background(), &newCR, metav1.UpdateOptions{})
+		_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Update(context.Background(), negCR, metav1.UpdateOptions{})
 		return err
 	}
 	return nil
 }
 
 func ensureNegCRLabels(negCR *negv1beta1.ServiceNetworkEndpointGroup, labels map[string]string) (bool, error) {
-	//Check that required labels exist and are matching
+	needsUpdate := false
 	existingLabels := negCR.GetLabels()
+	klog.V(4).Infof("existing neg %s/%s labels: %+v", negCR.Namespace, negCR.Name, existingLabels)
+
+	//Check that required labels exist and are matching
 	for key, value := range labels {
-		if existingVal := existingLabels[key]; existingVal != value {
-			return false, fmt.Errorf("Neg already exists with name %s but label %s has value %s instead of %s. Delete previous neg before creating this configuration", negCR.Name, key, existingVal, value)
+		existingVal, ok := existingLabels[key]
+		if !ok {
+			negCR.Labels[key] = value
+			needsUpdate = true
+		} else if existingVal != value {
+			svcName := ""
+			if len(negCR.OwnerReferences) == 1 {
+				svcName = negCR.OwnerReferences[0].Name
+			}
+			return false, fmt.Errorf("Neg %s/%s has a label mismatch. Expected key %s to have the value %s but found %s. Neg is likely taken by % service. Please remove previous neg before creating this configuration", negCR.Namespace, negCR.Name, key, value, existingVal, svcName)
 		}
 	}
 
-	if !reflect.DeepEqual(existingLabels, labels) {
-		negCR.Labels = labels
-		return true, nil
-	}
-	return false, nil
+	return needsUpdate, nil
 }
 
 func ensureNegCROwnerRef(negCR *negv1beta1.ServiceNetworkEndpointGroup, expectedOwnerRef []metav1.OwnerReference) bool {

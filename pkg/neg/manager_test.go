@@ -862,11 +862,16 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 		svcTuple          negtypes.SvcPortTuple
 		markedForDeletion bool
 		expectErr         bool
-		modifyObjectMeta  bool
+		extraLabel        bool
+		incorrectLabel    bool
+		incorrectSvcUID   bool
+		missingLabel      bool
 		crExists          bool
+		expectUpdate      bool
 	}{
 		{desc: "no cr exists yet",
-			crExists: false,
+			crExists:     false,
+			expectUpdate: true,
 		},
 		{desc: "same service, same port configuration, original cr is not marked for deletion",
 			svc:               svc1,
@@ -874,14 +879,16 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 			markedForDeletion: false,
 			expectErr:         false,
 			crExists:          true,
+			expectUpdate:      false,
 		},
-		{desc: "same service, same port configuration, original cr is not marked for deletion and has unexpected labels",
+		{desc: "same service, same port configuration, original cr and has extra labels",
 			svc:               svc1,
 			svcTuple:          svcTuple1,
 			markedForDeletion: false,
 			expectErr:         false,
-			modifyObjectMeta:  true,
+			extraLabel:        true,
 			crExists:          true,
+			expectUpdate:      false,
 		},
 		{desc: "same service, same port configuration, original cr is marked for deletion",
 			svc:               svc1,
@@ -889,20 +896,15 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 			markedForDeletion: true,
 			expectErr:         false,
 			crExists:          true,
+			expectUpdate:      false,
 		},
-		{desc: "same service, different port configuration, original cr is not marked for deletion",
+		{desc: "same service, different port configuration, original cr",
 			svc:               svc1,
 			svcTuple:          svcTuple2,
 			markedForDeletion: false,
 			expectErr:         true,
 			crExists:          true,
-		},
-		{desc: "same service, different port configuration, original cr is marked for deletion",
-			svc:               svc1,
-			svcTuple:          svcTuple2,
-			markedForDeletion: true,
-			expectErr:         true,
-			crExists:          true,
+			expectUpdate:      false,
 		},
 		{desc: "different service name",
 			svc:               svc2,
@@ -910,6 +912,34 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 			markedForDeletion: false,
 			expectErr:         true,
 			crExists:          true,
+			expectUpdate:      false,
+		},
+		{desc: "same service, same port config, incorrect svcUID",
+			svc:               svc1,
+			svcTuple:          svcTuple1,
+			markedForDeletion: false,
+			incorrectSvcUID:   true,
+			expectErr:         false,
+			crExists:          true,
+			expectUpdate:      true,
+		},
+		{desc: "same service, same port config, incorrect label",
+			svc:               svc1,
+			svcTuple:          svcTuple1,
+			markedForDeletion: false,
+			incorrectLabel:    true,
+			expectErr:         true,
+			crExists:          true,
+			expectUpdate:      false,
+		},
+		{desc: "same service, same port config, missing label",
+			svc:               svc1,
+			svcTuple:          svcTuple1,
+			markedForDeletion: false,
+			missingLabel:      true,
+			expectErr:         false,
+			crExists:          true,
+			expectUpdate:      true,
 		},
 	}
 
@@ -934,8 +964,19 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 					testNeg.SetDeletionTimestamp(&deletionTS)
 				}
 
-				if tc.modifyObjectMeta {
+				if tc.extraLabel {
 					testNeg.Labels["extra-label"] = "extra-value"
+				}
+
+				if tc.incorrectLabel {
+					testNeg.Labels[negtypes.NegCRManagedByKey] = "wrong-value"
+				}
+
+				if tc.missingLabel {
+					delete(testNeg.Labels, negtypes.NegCRManagedByKey)
+				}
+
+				if tc.incorrectSvcUID {
 					testNeg.OwnerReferences = append(testNeg.OwnerReferences, metav1.OwnerReference{UID: "extra-uid"})
 				}
 
@@ -969,8 +1010,8 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 				t.Errorf("expected to retrieve one negs, retrieved %d", len(negs.Items))
 			}
 
-			if tc.expectErr || tc.markedForDeletion {
-				// If errored, marked for deletion or neg cr is already correct, no update should occur
+			if !tc.expectUpdate {
+				// If errored or if neg cr is already correct, no update should occur
 				if !reflect.DeepEqual(testNeg, negs.Items[0]) {
 					t.Errorf("test neg should not have been updated")
 				}
@@ -978,6 +1019,12 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 				svcKey := serviceKey{namespace: namespace, name: svc1Name}
 				portInfo := portInfoMap[negtypes.PortInfoMapKey{ServicePort: svcTuple1.Port, Subset: ""}]
 				checkNegCR(t, &negs.Items[0], svcKey, svc1.UID, portInfo)
+				// If update was unnecessary, the resource version should not change.
+				// If upate was necessary, the same CR should be used for an update so the resource
+				// version should be unchanged. API server will change resource version.
+				if negs.Items[0].ResourceVersion != testNeg.ResourceVersion {
+					t.Errorf("neg resource version should not be updated")
+				}
 			}
 
 			// make sure there is no leaking go routine
@@ -1582,7 +1629,6 @@ func createNegCR(service *v1.Service, svcKey serviceKey, portInfo negtypes.PortI
 		negtypes.NegCRServicePortKey: fmt.Sprint(portInfo.PortTuple.Port),
 	}
 
-	// TODO: Add finalizer once NEG CRD GC is implemented
 	return negv1beta1.ServiceNetworkEndpointGroup{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            portInfo.NegName,
