@@ -36,6 +36,9 @@ import (
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
+// maxL4ILBPorts is the maximum number of ports that can be specified in an L4 ILB Forwarding Rule
+const maxL4ILBPorts = 5
+
 func (l *L7) checkHttpForwardingRule() (err error) {
 	if l.tp == nil {
 		return fmt.Errorf("cannot create forwarding rule without proxy")
@@ -261,9 +264,17 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 		AllowGlobalAccess:   options.AllowGlobalAccess,
 		Description:         frDesc,
 	}
+	if len(ports) > maxL4ILBPorts {
+		fr.Ports = nil
+		fr.AllPorts = true
+	}
 
 	if existingFwdRule != nil {
-		if Equal(existingFwdRule, fr) {
+		equal, err := Equal(existingFwdRule, fr)
+		if err != nil {
+			return existingFwdRule, err
+		}
+		if equal {
 			// nothing to do
 			klog.V(2).Infof("ensureForwardingRule: Skipping update of unchanged forwarding rule - %s", fr.Name)
 			return existingFwdRule, nil
@@ -309,14 +320,23 @@ func (l *L4) deleteForwardingRule(name string, version meta.Version) {
 	}
 }
 
-func Equal(fr1, fr2 *composite.ForwardingRule) bool {
+func Equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
+	id1, err := cloud.ParseResourceURL(fr1.BackendService)
+	if err != nil {
+		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from FR, err - %v", err)
+	}
+	id2, err := cloud.ParseResourceURL(fr2.BackendService)
+	if err != nil {
+		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse resource URL from FR, err - %v", err)
+	}
 	return fr1.IPAddress == fr2.IPAddress &&
 		fr1.IPProtocol == fr2.IPProtocol &&
 		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
 		utils.EqualStringSets(fr1.Ports, fr2.Ports) &&
-		fr1.BackendService == fr2.BackendService &&
+		id1.Equal(id2) &&
 		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
-		fr1.Subnetwork == fr2.Subnetwork
+		fr1.AllPorts == fr2.AllPorts &&
+		fr1.Subnetwork == fr2.Subnetwork, nil
 }
 
 // ilbIPToUse determines which IP address needs to be used in the ForwardingRule. If an IP has been
