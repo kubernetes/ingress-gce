@@ -283,8 +283,15 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 	if err = composite.CreateBackendService(fakeGCE, key, existingBS); err != nil {
 		t.Errorf("Failed to create fake backend service %s, err %v", lbName, err)
 	}
-	existingFwdRule.BackendService = existingBS.Name
-
+	key.Name = frName
+	// Set the backend service link correctly, so that forwarding rule comparison works correctly
+	existingFwdRule.BackendService = cloud.SelfLink(meta.VersionGA, vals.ProjectID, "backendServices", meta.RegionalKey(existingBS.Name, vals.Region))
+	if err = composite.DeleteForwardingRule(fakeGCE, key, meta.VersionGA); err != nil {
+		t.Errorf("Failed to delete forwarding rule, err %v", err)
+	}
+	if err = composite.CreateForwardingRule(fakeGCE, key, existingFwdRule); err != nil {
+		t.Errorf("Failed to update forwarding rule with new BS link, err %v", err)
+	}
 	if _, _, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{}); err != nil {
 		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, err)
 	}
@@ -1006,6 +1013,100 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 		t.Errorf("Unexpected protocol value %s, expected UDP", fwdRule.IPProtocol)
 	}
 
+	// Delete the service
+	err = l.EnsureInternalLoadBalancerDeleted(svc)
+	if err != nil {
+		t.Errorf("Unexpected error %v", err)
+	}
+	assertInternalLbResourcesDeleted(t, svc, true, l)
+}
+
+func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
+	t.Parallel()
+
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := getFakeGCECloud(vals)
+	nodeNames := []string{"test-node-1"}
+	svc := test.NewL4ILBService(false, 8080)
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
+	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
+	if err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+	status, annotations, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
+	if err != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	}
+	if len(status.Ingress) == 0 {
+		t.Errorf("Got empty loadBalancer status using handler %v", l)
+	}
+	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	frName := l.getFRNameWithProtocol("TCP")
+	key, err := composite.CreateKey(l.cloud, frName, meta.Regional)
+	if err != nil {
+		t.Errorf("Unexpected error when creating key - %v", err)
+	}
+	fwdRule, err := composite.GetForwardingRule(l.cloud, key, meta.VersionGA)
+	if err != nil {
+		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
+	}
+	if fwdRule.Ports[0] != "8080" {
+		t.Errorf("Unexpected port value %v, expected '8080'", fwdRule.Ports)
+	}
+	// Add more than 5 ports to service spec
+	svc.Spec.Ports = []v1.ServicePort{
+		{Name: "testport", Port: int32(8080), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8090), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8100), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8200), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8300), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8400), Protocol: "TCP"},
+	}
+	status, annotations, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
+	if err != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	}
+	if len(status.Ingress) == 0 {
+		t.Errorf("Got empty loadBalancer status using handler %v", l)
+	}
+	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	fwdRule, err = composite.GetForwardingRule(l.cloud, key, meta.VersionGA)
+	if err != nil {
+		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
+	}
+	if !fwdRule.AllPorts {
+		t.Errorf("Expected AllPorts field to be set in forwarding rule - %+v", fwdRule)
+	}
+	if len(fwdRule.Ports) != 0 {
+		t.Errorf("Unexpected port value %v, expected empty list", fwdRule.Ports)
+	}
+	// Modify the service to use less than 5 ports
+	svc.Spec.Ports = []v1.ServicePort{
+		{Name: "testport", Port: int32(8090), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8100), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8300), Protocol: "TCP"},
+		{Name: "testport", Port: int32(8400), Protocol: "TCP"},
+	}
+	expectPorts := []string{"8090", "8100", "8300", "8400"}
+	status, annotations, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
+	if err != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	}
+	if len(status.Ingress) == 0 {
+		t.Errorf("Got empty loadBalancer status using handler %v", l)
+	}
+	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	fwdRule, err = composite.GetForwardingRule(l.cloud, key, meta.VersionGA)
+	if err != nil {
+		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
+	}
+	if !utils.EqualStringSets(fwdRule.Ports, expectPorts) {
+		t.Errorf("Unexpected port value %v, expected %v", fwdRule.Ports, expectPorts)
+	}
+	if fwdRule.AllPorts {
+		t.Errorf("Expected AllPorts field to be unset in forwarding rule - %+v", fwdRule)
+	}
 	// Delete the service
 	err = l.EnsureInternalLoadBalancerDeleted(svc)
 	if err != nil {
