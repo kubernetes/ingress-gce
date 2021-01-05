@@ -537,7 +537,7 @@ func TestNegCRDErrorEvents(t *testing.T) {
 		}
 
 		// Requesting the same neg name should cause an error event on the second service
-		if err = e2e.WaitForSvcNegErrorEvents(s, svc2, []string{"Neg already exists"}); err != nil {
+		if err = e2e.WaitForSvcNegErrorEvents(s, svc2, []string{"Neg already exists", "Please remove previous neg before creating this configuration"}); err != nil {
 			t.Errorf("error waiting for error events: %s", err)
 		}
 
