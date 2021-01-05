@@ -365,3 +365,26 @@ func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 	// this will be a create metric since an ILB IP is being assigned for the first time.
 	prevMetrics.ValidateDiff(getLatencyMetric(t), &latencyMetricInfo{createCount: 1, upperBoundSeconds: 1}, t)
 }
+
+func TestCheckHealth(t *testing.T) {
+	l4c := newServiceController(t)
+	if err := l4c.checkHealth(); err != nil {
+		// controller should be healthy since no enqueues or syncs have happened.
+		t.Errorf("checkHealth returned error - %v, expected nil", err)
+	}
+	l4c.enqueueTracker.Set(time.Now())
+	l4c.syncTracker.Set(time.Now().Add(2 * time.Minute))
+	if err := l4c.checkHealth(); err != nil {
+		// controller should be healthy since sync happened 2 mins after enqueue, less than the 15 min threshold.
+		t.Errorf("checkHealth returned error - %v, expected nil", err)
+	}
+	l4c.enqueueTracker.Set(time.Now())
+	delayedSyncTime := time.Now().Add(enqueueToSyncDelayThreshold)
+	delayedSyncTime.Add(1 * time.Minute)
+	l4c.syncTracker.Set(delayedSyncTime)
+	if err := l4c.checkHealth(); err == nil {
+		// controller should error out since sync happened 1 minute after the threshold.
+		t.Errorf("checkHealth returned nil, expected error")
+	}
+
+}

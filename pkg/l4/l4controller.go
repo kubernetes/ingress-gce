@@ -47,6 +47,8 @@ const (
 	syncTypeCreate = "create"
 	syncTypeUpdate = "update"
 	syncTypeDelete = "delete"
+	// The max tolerated delay between update being enqueued and sync being invoked.
+	enqueueToSyncDelayThreshold = 15 * time.Minute
 )
 
 // L4Controller manages the create/update delete of all L4 Internal LoadBalancer services.
@@ -61,9 +63,13 @@ type L4Controller struct {
 	// needed for listing the zones in the cluster.
 	translator *translator.Translator
 	// needed for linking the NEG with the backend service for each ILB service.
-	NegLinker           backends.Linker
-	backendPool         *backends.Backends
-	namer               namer.L4ResourcesNamer
+	NegLinker   backends.Linker
+	backendPool *backends.Backends
+	namer       namer.L4ResourcesNamer
+	// enqueueTracker tracks the latest time an update was enqueued
+	enqueueTracker utils.TimeTracker
+	// syncTracker tracks the latest time an enqueued service was synced
+	syncTracker         utils.TimeTracker
 	sharedResourcesLock sync.Mutex
 }
 
@@ -92,6 +98,7 @@ func NewController(ctx *context.ControllerContext, stopCh chan struct{}) *L4Cont
 				klog.V(3).Infof("ILB Service %s added, enqueuing", svcKey)
 				l4c.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
 				l4c.svcQueue.Enqueue(addSvc)
+				l4c.enqueueTracker.Track()
 			} else {
 				klog.V(4).Infof("Ignoring add for non-lb service %s based on %v", svcKey, svcType)
 			}
@@ -106,6 +113,7 @@ func NewController(ctx *context.ControllerContext, stopCh chan struct{}) *L4Cont
 			if needsUpdate || needsDeletion {
 				klog.V(3).Infof("Service %v changed, needsUpdate %v, needsDeletion %v, enqueuing", svcKey, needsUpdate, needsDeletion)
 				l4c.svcQueue.Enqueue(curSvc)
+				l4c.enqueueTracker.Track()
 				return
 			}
 			// Enqueue ILB services periodically for reasserting that resources exist.
@@ -115,13 +123,28 @@ func NewController(ctx *context.ControllerContext, stopCh chan struct{}) *L4Cont
 				// not modified.
 				klog.V(3).Infof("Periodic enqueueing of %v", svcKey)
 				l4c.svcQueue.Enqueue(curSvc)
+				l4c.enqueueTracker.Track()
 			}
 		},
 	})
 	// TODO enhance this by looking at some metric from service controller to ensure it is up.
 	// We cannot use existence of a backend service or other resource, since those are on a per-service basis.
-	ctx.AddHealthCheck("service-controller health", func() error { return nil })
+	ctx.AddHealthCheck("service-controller health", l4c.checkHealth)
 	return l4c
+}
+
+func (l4c *L4Controller) checkHealth() error {
+	lastEnqueueTime := l4c.enqueueTracker.Get()
+	lastSyncTime := l4c.syncTracker.Get()
+	// if lastEnqueue time is more than 30 minutes before the last sync time, the controller is falling behind.
+	// This indicates that the controller was stuck handling a previous update, or sync function did not get invoked.
+	syncTimeLatest := lastEnqueueTime.Add(enqueueToSyncDelayThreshold)
+	if lastSyncTime.After(syncTimeLatest) {
+		msg := fmt.Sprintf("L4 ILB Sync happened at time %v - %v after enqueue time, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), enqueueToSyncDelayThreshold)
+		klog.Error(msg)
+		return fmt.Errorf(msg)
+	}
+	return nil
 }
 
 func (l4c *L4Controller) Run() {
@@ -260,6 +283,7 @@ func (l4c *L4Controller) linkNEG(l4 *loadbalancers.L4) error {
 }
 
 func (l4c *L4Controller) sync(key string) error {
+	l4c.syncTracker.Track()
 	svc, exists, err := l4c.ctx.Services().GetByKey(key)
 	if err != nil {
 		return fmt.Errorf("Failed to lookup service for key %s : %s", key, err)
