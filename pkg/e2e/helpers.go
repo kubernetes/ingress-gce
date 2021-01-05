@@ -864,8 +864,9 @@ func CheckNegFinalizer(svcNeg negv1beta1.ServiceNetworkEndpointGroup) error {
 	return nil
 }
 
-// WaitForSvcNegErrorEvents waits for msgs messages present for namespace:name ConfigMap until timeout.
-func WaitForSvcNegErrorEvents(s *Sandbox, svcName string, expectedMessages []string) error {
+// WaitForSvcNegErrorEvents waits for at least one of the possibles messages to be emitted on the
+// namespace:svcName serice until timeout
+func WaitForSvcNegErrorEvents(s *Sandbox, svcName string, possibleMessages []string) error {
 	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(context.TODO(), svcName, metav1.GetOptions{})
 	if svc == nil || err != nil {
 		return fmt.Errorf("failed to get service %s/%s: %v", s.Namespace, svcName, err)
@@ -876,16 +877,13 @@ func WaitForSvcNegErrorEvents(s *Sandbox, svcName string, expectedMessages []str
 		if err != nil {
 			return false, err
 		}
-		if len(eventList.Items) < len(expectedMessages) {
-			return false, nil
-		}
 
 		// Use set to avoid double counting duplicate messages
 		foundMessages := sets.NewString()
 		for _, event := range eventList.Items {
 			if event.Type == v1.EventTypeWarning {
 
-				for _, msg := range expectedMessages {
+				for _, msg := range possibleMessages {
 					if strings.Contains(event.Message, msg) {
 						foundMessages.Insert(msg)
 						break
@@ -894,8 +892,8 @@ func WaitForSvcNegErrorEvents(s *Sandbox, svcName string, expectedMessages []str
 			}
 		}
 
-		if len(foundMessages) != len(expectedMessages) {
-			klog.Infof("WaitForSvcNegErrorEvents(), expected to find events: %+v, only found: %+v", expectedMessages, foundMessages)
+		if len(foundMessages) == 0 {
+			klog.Infof("WaitForSvcNegErrorEvents(), expected to find at least one event in %+v, but only found: %+v", possibleMessages, foundMessages)
 			return false, nil
 		}
 
