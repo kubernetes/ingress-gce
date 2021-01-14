@@ -73,6 +73,8 @@ var (
 		prometheus.HistogramOpts{
 			Name: "l4_ilb_sync_duration_seconds",
 			Help: "Latency of an L4 ILB Sync",
+			// custom buckets - [30s, 60s, 120s, 240s(4min), 480s(8min), 960s(16m), +Inf]
+			Buckets: prometheus.ExponentialBuckets(30, 2, 6),
 		},
 		l4ILBSyncLatencyMetricsLabels,
 	)
