@@ -1,8 +1,9 @@
 package namer
 
 import (
-	"k8s.io/ingress-gce/pkg/utils/common"
 	"strings"
+
+	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
 // maximumL4CombinedLength is the maximum combined length of namespace and
@@ -15,7 +16,9 @@ import (
 const (
 	maximumL4CombinedLength = 39
 	sharedHcSuffix          = "l4-shared-hc"
-	firewallHcSuffix        = sharedHcSuffix + "-fw"
+	firewallHcSuffix        = "-fw"
+	sharedFirewallHcSuffix  = sharedHcSuffix + firewallHcSuffix
+	maxResourceNameLength   = 63
 )
 
 // L4Namer implements naming scheme for L4 LoadBalancer resources.
@@ -71,10 +74,10 @@ func (namer *L4Namer) L4ForwardingRule(namespace, name, protocol string) string 
 func (namer *L4Namer) L4HealthCheck(namespace, name string, shared bool) (string, string) {
 	if !shared {
 		l4Name, _ := namer.VMIPNEG(namespace, name)
-		return l4Name, l4Name
+		return l4Name, namer.hcFirewallName(l4Name)
 	}
 	return strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, sharedHcSuffix}, "-"),
-		strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, firewallHcSuffix}, "-")
+		strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, sharedFirewallHcSuffix}, "-")
 }
 
 // IsNEG indicates if the given name is a NEG following the L4 naming convention.
@@ -87,4 +90,14 @@ func (namer *L4Namer) IsNEG(name string) bool {
 func (n *L4Namer) suffix(namespace, name string) string {
 	lbString := strings.Join([]string{n.v2ClusterUID, namespace, name}, ";")
 	return common.ContentHash(lbString, 8)
+}
+
+// hcFirewallName generates the firewall name for the given healthcheck.
+// It ensures that the name is atmost 63 chars long.
+func (n *L4Namer) hcFirewallName(hcName string) string {
+	maxHcNameLen := maxResourceNameLength - len(firewallHcSuffix)
+	if len(hcName) > maxHcNameLen {
+		hcName = hcName[:maxHcNameLen]
+	}
+	return hcName + firewallHcSuffix
 }
