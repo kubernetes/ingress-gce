@@ -1131,6 +1131,7 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 		hcFwName,
 	}
 	expectedAnnotations[annotations.FirewallRuleKey] = resourceName
+	expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
 	if hcFwName == resourceName {
 		t.Errorf("Got the same name %q for LB firewall rule and Healthcheck firewall rule", hcFwName)
 	}

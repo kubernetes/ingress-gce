@@ -113,7 +113,7 @@ func validateSvcStatus(svc *api_v1.Service, expectStatus bool, t *testing.T) {
 	}
 
 	expectedAnnotationKeys := []string{annotations.FirewallRuleKey, annotations.BackendServiceKey, annotations.HealthcheckKey,
-		annotations.TCPForwardingRuleKey}
+		annotations.TCPForwardingRuleKey, annotations.FirewallRuleForHealthcheckKey}
 
 	missingKeys := []string{}
 	for _, key := range expectedAnnotationKeys {

@@ -60,7 +60,8 @@ var ILBResourceAnnotationKeys = []string{
 	annotations.TCPForwardingRuleKey,
 	annotations.UDPForwardingRuleKey,
 	annotations.HealthcheckKey,
-	annotations.FirewallRuleKey}
+	annotations.FirewallRuleKey,
+	annotations.FirewallRuleForHealthcheckKey}
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
 func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder, lock *sync.Mutex) *L4 {
@@ -235,6 +236,7 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service,
 	if err != nil {
 		return nil, nil, err
 	}
+	annotationsMap[annotations.FirewallRuleForHealthcheckKey] = hcFwName
 
 	// Check if protocol has changed for this service. In this case, forwarding rule should be deleted before
 	// the backend service can be updated.
