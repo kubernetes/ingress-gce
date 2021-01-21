@@ -86,6 +86,9 @@ const (
 	// HealthcheckKey is the annotation key used by l4 controller to record
 	// GCP Healthcheck name.
 	HealthcheckKey = ServiceStatusPrefix + "/healthcheck"
+	// FirewallRuleForHealthcheckKey is the annotation key used by l4 controller to record
+	// the firewall rule name that allows healthcheck traffic.
+	FirewallRuleForHealthcheckKey = ServiceStatusPrefix + "/firewall-rule-for-hc"
 )
 
 // NegAnnotation is the format of the annotation associated with the
