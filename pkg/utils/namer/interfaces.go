@@ -91,3 +91,9 @@ type L4ResourcesNamer interface {
 	// IsNEG returns if the given name is a VM_IP_NEG name.
 	IsNEG(name string) bool
 }
+
+type ServiceAttachmentNamer interface {
+	// ServiceAttachment returns the name of the GCE Service Attachment resource for the given namespace,
+	// name, and Service Attachment CR UID
+	ServiceAttachment(namespace, name, saUID string) string
+}
