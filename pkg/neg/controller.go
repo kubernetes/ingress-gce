@@ -26,6 +26,7 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	apimachinerytypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -39,6 +40,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
+	svcnegv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -126,7 +128,16 @@ func NewController(
 	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: ctx.KubeClient.CoreV1().Events(""),
 	})
-	recorder := eventBroadcaster.NewRecorder(scheme.Scheme,
+	negScheme := runtime.NewScheme()
+	err := scheme.AddToScheme(negScheme)
+	if err != nil {
+		klog.Errorf("Errored adding default scheme to event recorder: %q", err)
+	}
+	err = svcnegv1beta1.AddToScheme(negScheme)
+	if err != nil {
+		klog.Errorf("Errored adding NEG CRD scheme to event recorder: %q", err)
+	}
+	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
 	var svcNegInformer cache.Indexer
