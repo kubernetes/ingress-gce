@@ -39,6 +39,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
+	svcnegv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
 	usage "k8s.io/ingress-gce/pkg/metrics"
@@ -140,8 +141,13 @@ func NewController(
 	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: kubeClient.CoreV1().Events(""),
 	})
-	recorder := eventBroadcaster.NewRecorder(scheme.Scheme,
+	negScheme := scheme.Scheme
+	err := svcnegv1beta1.AddToScheme(negScheme)
+	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
+	if err != nil {
+		klog.Errorf("Errored adding NEG CRD scheme to event recorder: %q", err)
+	}
 
 	manager := newSyncerManager(
 		namer,
