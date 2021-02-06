@@ -271,6 +271,10 @@ func (ctx *ControllerContext) HasSynced() bool {
 		funcs = append(funcs, ctx.IngParamsInformer.HasSynced)
 	}
 
+	if ctx.SAInformer != nil {
+		funcs = append(funcs, ctx.SAInformer.HasSynced)
+	}
+
 	for _, f := range funcs {
 		if !f() {
 			return false
@@ -349,6 +353,9 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	}
 	if ctx.IngParamsInformer != nil {
 		go ctx.IngParamsInformer.Run(stopCh)
+	}
+	if ctx.SAInformer != nil {
+		go ctx.SAInformer.Run(stopCh)
 	}
 	// Export ingress usage metrics.
 	go ctx.ControllerMetrics.Run(stopCh)
