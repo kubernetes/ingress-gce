@@ -19,6 +19,7 @@ package neg
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"reflect"
 	"sync"
 	"time"
@@ -533,7 +534,11 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string, expectedDesc *utils.NegDescription) error {
 	neg, err := manager.cloud.GetNetworkEndpointGroup(name, zone, meta.VersionGA)
 	if err != nil {
-		return utils.IgnoreHTTPNotFound(err)
+		if utils.IsNotFoundError(err) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
+			klog.V(2).Infof("Ignoring error when querying for neg %s/%s during GC: %q", name, zone, err)
+			return nil
+		}
+		return err
 	}
 
 	if expectedDesc != nil {
