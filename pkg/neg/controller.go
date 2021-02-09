@@ -26,6 +26,7 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	apimachinerytypes "k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -141,13 +142,17 @@ func NewController(
 	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: kubeClient.CoreV1().Events(""),
 	})
-	negScheme := scheme.Scheme
-	err := svcnegv1beta1.AddToScheme(negScheme)
-	recorder := eventBroadcaster.NewRecorder(negScheme,
-		apiv1.EventSource{Component: "neg-controller"})
+	negScheme := runtime.NewScheme()
+	err := scheme.AddToScheme(negScheme)
+	if err != nil {
+		klog.Errorf("Errored adding default scheme to event recorder: %q", err)
+	}
+	err = svcnegv1beta1.AddToScheme(negScheme)
 	if err != nil {
 		klog.Errorf("Errored adding NEG CRD scheme to event recorder: %q", err)
 	}
+	recorder := eventBroadcaster.NewRecorder(negScheme,
+		apiv1.EventSource{Component: "neg-controller"})
 
 	manager := newSyncerManager(
 		namer,
