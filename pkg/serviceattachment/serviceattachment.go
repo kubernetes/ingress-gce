@@ -31,7 +31,6 @@ func CRDMeta() *crd.CRDMeta {
 		[]*crd.Version{
 			crd.NewVersion("v1alpha1", "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1.ServiceAttachment", svcattachv1alpha1.GetOpenAPIDefinitions),
 		},
-		"svcattachments",
 	)
 	return meta
 }
