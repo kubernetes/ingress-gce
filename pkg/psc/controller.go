@@ -42,11 +42,18 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	sautils "k8s.io/ingress-gce/pkg/utils/serviceattachment"
 	"k8s.io/klog"
+	"k8s.io/kubernetes/pkg/util/slice"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (
 	svcKind = "service"
+
+	// SvcAttachmentGCError is the service attachment GC error event reason
+	SvcAttachmentGCError = "ServiceAttachmentGCError"
+	// ServiceAttachmentFinalizer used by the psc controller to ensure Service Attachment CRs
+	// are deleted after the corresponding Service Attachments are deleted
+	ServiceAttachmentFinalizerKey = "networking.gke.io/service-attachment-finalizer"
 )
 
 // Controller is a private service connect (psc) controller
@@ -103,22 +110,26 @@ func (c *Controller) processServiceAttachment(key string) error {
 	klog.V(2).Infof("Processing Service attachment %s/%s", namespace, name)
 
 	svcAttachment := obj.(*sav1alpha1.ServiceAttachment)
-	if err = validateResourceReference(svcAttachment.Spec.ResourceRef); err != nil {
+	updatedCR, err := c.ensureSAFinalizer(svcAttachment)
+	if err != nil {
+		return fmt.Errorf("Errored adding finalizer on ServiceAttachment CR %s/%s: %s", namespace, name, err)
+	}
+	if err = validateResourceReference(updatedCR.Spec.ResourceRef); err != nil {
 		return err
 	}
 
-	frURL, err := c.getForwardingRule(namespace, svcAttachment.Spec.ResourceRef.Name)
+	frURL, err := c.getForwardingRule(namespace, updatedCR.Spec.ResourceRef.Name)
 	if err != nil {
 		return fmt.Errorf("failed to find forwarding rule: %q", err)
 	}
 
-	subnetURLs, err := c.getSubnetURLs(svcAttachment.Spec.NATSubnets)
+	subnetURLs, err := c.getSubnetURLs(updatedCR.Spec.NATSubnets)
 	if err != nil {
 		return fmt.Errorf("failed to find nat subnets: %q", err)
 	}
 
-	saName := c.saNamer.ServiceAttachment(namespace, name, string(svcAttachment.UID))
-	desc := sautils.ServiceAttachmentDesc{URL: svcAttachment.SelfLink}
+	saName := c.saNamer.ServiceAttachment(namespace, name, string(updatedCR.UID))
+	desc := sautils.ServiceAttachmentDesc{URL: updatedCR.SelfLink}
 	gceSvcAttachment := &alpha.ServiceAttachment{
 		ConnectionPreference:   svcAttachment.Spec.ConnectionPreference,
 		Name:                   saName,
@@ -154,9 +165,65 @@ func (c *Controller) processServiceAttachment(key string) error {
 	}
 	klog.V(2).Infof("Created service attachment %s", saName)
 
-	_, err = c.updateServiceAttachmentStatus(svcAttachment, gceSAKey)
-	klog.V(2).Infof("Updated Service Attachment %s/%s status", svcAttachment.Namespace, svcAttachment.Name)
+	_, err = c.updateServiceAttachmentStatus(updatedCR, gceSAKey)
+	klog.V(2).Infof("Updated Service Attachment %s/%s status", updatedCR.Namespace, updatedCR.Name)
 	return err
+}
+
+// garbageCollectServiceAttachments queries for all Service Attachments CR that have been marked
+// for deletion and will delete the corresponding GCE Service Attachment resource. If the GCE
+// resource has successfully been deleted, the finalizer is removed from the service attachment
+// cr.
+func (c *Controller) garbageCollectServiceAttachments() {
+	klog.V(2).Infof("Staring Service Attachment Garbage Collection")
+	defer klog.V(2).Infof("Finished Service Attachment Garbage Collection")
+	crs := c.svcAttachmentLister.List()
+	for _, obj := range crs {
+		sa := obj.(*sav1alpha1.ServiceAttachment)
+		if sa.GetDeletionTimestamp().IsZero() {
+			continue
+		}
+		c.deleteServiceAttachment(sa)
+	}
+}
+
+// deleteServiceAttachment attemps to delete the GCE Service Attachment resource
+// that corresponds to the provided CR. If successful, the finalizer on the CR
+// will be removed.
+func (c *Controller) deleteServiceAttachment(sa *sav1alpha1.ServiceAttachment) {
+	resourceID, err := cloud.ParseResourceURL(sa.Status.ServiceAttachmentURL)
+	var gceName string
+	if err != nil {
+		klog.Errorf("failed to parse service attachment url %s/%s: %s", sa.Namespace, sa.Name, err)
+	} else {
+		gceName = resourceID.Key.Name
+	}
+
+	// If the name was not found from the ServiceAttachmentURL generate it from the service
+	// attachment CR. Since the CR's UID is used, the name found will be unique to this CR
+	// and can safely be deleted if found.
+	if gceName == "" {
+		klog.V(2).Infof("could not find name from service attachment url on %s/%s, generating name based on CR", sa.Namespace, sa.Name)
+		gceName = c.saNamer.ServiceAttachment(sa.Namespace, sa.Name, string(sa.UID))
+	}
+
+	klog.V(2).Infof("Deleting Service Attachment %s", gceName)
+	if err := c.ensureDeleteGCEServiceAttachment(gceName); err != nil {
+		eventMsg := fmt.Sprintf("Failed to Garbage Collect Service Attachment %s/%s: %q", sa.Namespace, sa.Name, err)
+		klog.Errorf(eventMsg)
+		c.recorder(sa.Namespace).Eventf(sa, v1.EventTypeWarning, SvcAttachmentGCError, eventMsg)
+		return
+	}
+	klog.V(2).Infof("Deleted Service Attachment %s", gceName)
+
+	klog.V(2).Infof("Removing finalizer on Service Attachment %s/%s", sa.Namespace, sa.Name)
+	if err := c.ensureSAFinalizerRemoved(sa); err != nil {
+		eventMsg := fmt.Sprintf("Failed to remove finalizer on ServiceAttachment %s/%s: %q", sa.Namespace, sa.Name, err)
+		klog.Errorf(eventMsg)
+		c.recorder(sa.Namespace).Eventf(sa, v1.EventTypeWarning, SvcAttachmentGCError, eventMsg)
+		return
+	}
+	klog.V(2).Infof("Removed finalizer on Service Attachment %s/%s", sa.Namespace, sa.Name)
 }
 
 // getForwardingRule returns the URL of the forwarding rule based by using the service resource
@@ -246,6 +313,54 @@ func (c *Controller) patchServiceAttachment(originalSA, updatedSA *sav1alpha1.Se
 		return originalSA, err
 	}
 	return c.saClient.NetworkingV1alpha1().ServiceAttachments(originalSA.Namespace).Patch(context2.Background(), updatedSA.Name, types.MergePatchType, patchBytes, metav1.PatchOptions{})
+}
+
+// ensureGCEDeleteServiceAttachment deletes the GCE Service Attachment resource with provided
+// name. BadRequest or NotFound errors are ignored and imply the service attachment
+// resource does not exist
+func (c *Controller) ensureDeleteGCEServiceAttachment(name string) error {
+	saKey, err := composite.CreateKey(c.cloud, name, meta.Regional)
+	if err != nil {
+		return fmt.Errorf("failed to create key for service attachment %q", name)
+	}
+	_, err = c.cloud.Compute().AlphaServiceAttachments().Get(context2.Background(), saKey)
+	if err != nil {
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
+			return nil
+		}
+		return fmt.Errorf("failed querying for service attachment %q: %q", name, err)
+	}
+
+	return c.cloud.Compute().AlphaServiceAttachments().Delete(context2.Background(), saKey)
+}
+
+// ensureSAFinalizer ensures that the Service Attachment finalizer exists on the provided
+// CR. If it does not, the CR will be patched with the finalizer
+func (c *Controller) ensureSAFinalizer(saCR *sav1alpha1.ServiceAttachment) (*sav1alpha1.ServiceAttachment, error) {
+	if len(saCR.Finalizers) != 0 {
+		for _, finalizer := range saCR.Finalizers {
+			if finalizer == ServiceAttachmentFinalizerKey {
+				return saCR, nil
+			}
+		}
+	}
+
+	updatedCR := saCR.DeepCopy()
+
+	if updatedCR.Finalizers == nil {
+		updatedCR.Finalizers = []string{}
+	}
+	updatedCR.Finalizers = append(updatedCR.Finalizers, ServiceAttachmentFinalizerKey)
+	return c.patchServiceAttachment(saCR, updatedCR)
+}
+
+// ensureSAFinalizerRemoved ensures that the Service Attachment finalizer is removed
+// from the provided CR.
+func (c *Controller) ensureSAFinalizerRemoved(cr *sav1alpha1.ServiceAttachment) error {
+	updatedCR := cr.DeepCopy()
+	updatedCR.Finalizers = slice.RemoveString(updatedCR.Finalizers, ServiceAttachmentFinalizerKey, nil)
+	_, err := c.patchServiceAttachment(cr, updatedCR)
+	return err
 }
 
 // validateResourceReference will validate that the provided resource reference is
