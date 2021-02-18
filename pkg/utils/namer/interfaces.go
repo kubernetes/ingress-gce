@@ -37,6 +37,8 @@ type IngressFrontendNamer interface {
 	IsLegacySSLCert(certName string) bool
 	// LoadBalancer returns load-balancer name for the ingress.
 	LoadBalancer() LoadBalancerName
+	// IsValidLoadBalancer returns if the derived loadbalancer is valid.
+	IsValidLoadBalancer() bool
 }
 
 // IngressFrontendNamerFactory is an interface to create a front namer for an Ingress

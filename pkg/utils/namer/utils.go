@@ -15,11 +15,14 @@ package namer
 
 import (
 	"fmt"
+	"regexp"
 
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog"
 )
+
+const gceResourceNamePattern = "(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?)"
 
 // TrimFieldsEvenly trims the fields evenly and keeps the total length
 // <= max. Truncation is spread in ratio with their original length,
@@ -81,4 +84,14 @@ func FinalizerForNamingScheme(scheme Scheme) (string, error) {
 	default:
 		return "", fmt.Errorf("unexpected naming scheme: %s", scheme)
 	}
+}
+
+// isValidGCEResourceName returns if given name is a valid GCE resource name.
+func isValidGCEResourceName(name string) bool {
+	if len(name) == 0 {
+		return false
+	}
+	matchedString := regexp.MustCompile(gceResourceNamePattern).FindString(name)
+	// Return true only if the entire string is a match.
+	return matchedString == name
 }

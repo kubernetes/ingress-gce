@@ -115,6 +115,12 @@ func (ln *V1IngressFrontendNamer) LoadBalancer() LoadBalancerName {
 	return ln.lbName
 }
 
+// IsValidLoadBalancer implements IngressFrontendNamer.
+func (ln *V1IngressFrontendNamer) IsValidLoadBalancer() bool {
+	// Verify if URL Map is a valid GCE resource name.
+	return isValidGCEResourceName(ln.UrlMap())
+}
+
 // V2IngressFrontendNamer implements IngressFrontendNamer.
 type V2IngressFrontendNamer struct {
 	ing *v1beta1.Ingress
@@ -208,6 +214,12 @@ func (vn *V2IngressFrontendNamer) IsLegacySSLCert(certName string) bool {
 // Note that this is used for generating GCE resource names.
 func (vn *V2IngressFrontendNamer) LoadBalancer() LoadBalancerName {
 	return vn.lbName
+}
+
+// IsValidLoadBalancer implements IngressFrontendNamer.
+func (vn *V2IngressFrontendNamer) IsValidLoadBalancer() bool {
+	// Verify if URL Map is a valid GCE resource name.
+	return isValidGCEResourceName(vn.UrlMap())
 }
 
 // suffix returns hash string of length 8 of a concatenated string generated from

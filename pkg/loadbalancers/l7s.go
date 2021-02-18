@@ -67,6 +67,12 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 		ingress:     *ri.Ingress,
 	}
 
+	if !lb.namer.IsValidLoadBalancer() {
+		err := fmt.Errorf("invalid loadbalancer name %s, the resource name must comply with RFC1035 (https://www.ietf.org/rfc/rfc1035.txt)", lb.namer.LoadBalancer())
+		klog.Error(err)
+		return nil, err
+	}
+
 	if err := lb.edgeHop(); err != nil {
 		return nil, fmt.Errorf("loadbalancer %v does not exist: %v", lb.String(), err)
 	}
@@ -75,6 +81,10 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 
 // delete deletes a loadbalancer by frontend namer.
 func (l *L7s) delete(namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType) error {
+	if !namer.IsValidLoadBalancer() {
+		klog.V(2).Infof("Loadbalancer name %s invalid, skipping GC", namer.LoadBalancer())
+		return nil
+	}
 	lb := &L7{
 		runtimeInfo: &L7RuntimeInfo{},
 		cloud:       l.cloud,

@@ -70,6 +70,10 @@ func (n *testNamer) LoadBalancer() namer_util.LoadBalancerName {
 	panic("Unimplemented")
 }
 
+func (n *testNamer) IsValidLoadBalancer() bool {
+	panic("Unimplemented")
+}
+
 func TestToComputeURLMap(t *testing.T) {
 	t.Parallel()
 

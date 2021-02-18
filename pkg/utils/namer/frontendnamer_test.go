@@ -58,6 +58,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 		forwardingRuleHTTP  string
 		forwardingRuleHTTPS string
 		urlMap              string
+		isValidName         bool
 	}{
 		{
 			"simple case",
@@ -70,6 +71,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			"%s-fw-namespace-name--uid1",
 			"%s-fws-namespace-name--uid1",
 			"%s-um-namespace-name--uid1",
+			true,
 		},
 		{
 			"62 characters",
@@ -83,6 +85,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			"%s-fw-01234567890123456789012-012345678901234567890123--uid1",
 			"%s-fws-01234567890123456789012-012345678901234567890123--uid1",
 			"%s-um-01234567890123456789012-012345678901234567890123--uid1",
+			true,
 		},
 		{
 			"63 characters",
@@ -96,6 +99,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			"%s-fw-012345678901234567890123-012345678901234567890123--uid1",
 			"%s-fws-012345678901234567890123-012345678901234567890123--uid0",
 			"%s-um-012345678901234567890123-012345678901234567890123--uid1",
+			true,
 		},
 		{
 			"64 characters",
@@ -109,6 +113,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			"%s-fw-012345678901234567890123-0123456789012345678901234--uid0",
 			"%s-fws-012345678901234567890123-0123456789012345678901234--ui0",
 			"%s-um-012345678901234567890123-0123456789012345678901234--uid0",
+			true,
 		},
 		{
 			"long namespace",
@@ -121,6 +126,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			"%s-fw-01234567890123456789012345678901234567890123456789-0--u0",
 			"%s-fws-01234567890123456789012345678901234567890123456789-0--0",
 			"%s-um-01234567890123456789012345678901234567890123456789-0--u0",
+			true,
 		},
 		{
 			"long name",
@@ -133,6 +139,7 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			"%s-fw-0-01234567890123456789012345678901234567890123456789--u0",
 			"%s-fws-0-01234567890123456789012345678901234567890123456789--0",
 			"%s-um-0-01234567890123456789012345678901234567890123456789--u0",
+			true,
 		},
 		{
 			"long name and namespace",
@@ -145,6 +152,20 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 			"%s-fw-01234567890123456789012345678901234567890123456789-01230",
 			"%s-fws-01234567890123456789012345678901234567890123456789-0120",
 			"%s-um-01234567890123456789012345678901234567890123456789-01230",
+			true,
+		},
+		{
+			"invalid name with dot character",
+			"namespace",
+			"test.name",
+			LoadBalancerName("namespace-test.name--uid1"),
+			"%s-tp-namespace-test.name--uid1",
+			"%s-tps-namespace-test.name--uid1",
+			"%s-ssl-574f887d47579c4a-%s--uid1",
+			"%s-fw-namespace-test.name--uid1",
+			"%s-fws-namespace-test.name--uid1",
+			"%s-um-namespace-test.name--uid1",
+			false,
 		},
 	}
 	for _, prefix := range []string{"k8s", "xyz"} {
@@ -191,6 +212,9 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 				if diff := cmp.Diff(tc.urlMap, urlMapName); diff != "" {
 					t.Errorf("namer.UrlMap() mismatch (-want +got):\n%s", diff)
 				}
+				if gotIsValidName := namer.IsValidLoadBalancer(); gotIsValidName != tc.isValidName {
+					t.Errorf("IsValidLoadBalancer(%s) = %t, want %t", key, gotIsValidName, tc.isValidName)
+				}
 
 				// Ensure that V1 Namer returns same values as old namer.
 				lbName := oldNamer.LoadBalancer(key)
@@ -236,6 +260,9 @@ func TestV1IngressFrontendNamer(t *testing.T) {
 				if diff := cmp.Diff(urlMapName, namerFromIngress.UrlMap()); diff != "" {
 					t.Errorf("Got diff url map (-want +got):\n%s", diff)
 				}
+				if gotIsValidName := namerFromIngress.IsValidLoadBalancer(); gotIsValidName != tc.isValidName {
+					t.Errorf("IsValidLoadBalancer(%s) = %t, want %t", key, gotIsValidName, tc.isValidName)
+				}
 			})
 		}
 	}
@@ -256,6 +283,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 		forwardingRuleHTTP  string
 		forwardingRuleHTTPS string
 		urlMap              string
+		isValidName         bool
 	}{
 		{
 			"simple case",
@@ -268,6 +296,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 			"%s2-fr-7kpbhpki-namespace-name-uhmwf5xi",
 			"%s2-fs-7kpbhpki-namespace-name-uhmwf5xi",
 			"%s2-um-7kpbhpki-namespace-name-uhmwf5xi",
+			true,
 		},
 		{
 			"62 characters",
@@ -280,6 +309,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 			"%s2-fr-7kpbhpki-012345678901234567-012345678901234567-hg17g9tx",
 			"%s2-fs-7kpbhpki-012345678901234567-012345678901234567-hg17g9tx",
 			"%s2-um-7kpbhpki-012345678901234567-012345678901234567-hg17g9tx",
+			true,
 		},
 		{
 			"63 characters",
@@ -292,6 +322,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 			"%s2-fr-7kpbhpki-012345678901234567-012345678901234567-o0dahbae",
 			"%s2-fs-7kpbhpki-012345678901234567-012345678901234567-o0dahbae",
 			"%s2-um-7kpbhpki-012345678901234567-012345678901234567-o0dahbae",
+			true,
 		},
 		{
 			"64 characters",
@@ -304,6 +335,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 			"%s2-fr-7kpbhpki-012345678901234567-012345678901234567-sxo4pxda",
 			"%s2-fs-7kpbhpki-012345678901234567-012345678901234567-sxo4pxda",
 			"%s2-um-7kpbhpki-012345678901234567-012345678901234567-sxo4pxda",
+			true,
 		},
 		{
 			"long namespace",
@@ -316,6 +348,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 			"%s2-fr-7kpbhpki-012345678901234567890123456789012345--v8ajgbg3",
 			"%s2-fs-7kpbhpki-012345678901234567890123456789012345--v8ajgbg3",
 			"%s2-um-7kpbhpki-012345678901234567890123456789012345--v8ajgbg3",
+			true,
 		},
 		{
 			"long name",
@@ -328,6 +361,7 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 			"%s2-fr-7kpbhpki-0-01234567890123456789012345678901234-fyhus2f6",
 			"%s2-fs-7kpbhpki-0-01234567890123456789012345678901234-fyhus2f6",
 			"%s2-um-7kpbhpki-0-01234567890123456789012345678901234-fyhus2f6",
+			true,
 		},
 		{
 			"long name and namespace",
@@ -340,6 +374,20 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 			"%s2-fr-7kpbhpki-012345678901234567-012345678901234567-69z4wrm0",
 			"%s2-fs-7kpbhpki-012345678901234567-012345678901234567-69z4wrm0",
 			"%s2-um-7kpbhpki-012345678901234567-012345678901234567-69z4wrm0",
+			true,
+		},
+		{
+			"invalid name with dot character",
+			"namespace",
+			"test.name",
+			LoadBalancerName("7kpbhpki-namespace-test.name-j4wkfxzl"),
+			"%s2-tp-7kpbhpki-namespace-test.name-j4wkfxzl",
+			"%s2-ts-7kpbhpki-namespace-test.name-j4wkfxzl",
+			"%s2-cr-7kpbhpki-2w95dxzgz98fxgw5-%s",
+			"%s2-fr-7kpbhpki-namespace-test.name-j4wkfxzl",
+			"%s2-fs-7kpbhpki-namespace-test.name-j4wkfxzl",
+			"%s2-um-7kpbhpki-namespace-test.name-j4wkfxzl",
+			false,
 		},
 	}
 	for _, prefix := range []string{"k8s", "xyz"} {
@@ -384,6 +432,9 @@ func TestV2IngressFrontendNamer(t *testing.T) {
 				name = namer.UrlMap()
 				if diff := cmp.Diff(tc.urlMap, name); diff != "" {
 					t.Errorf("namer.UrlMap() mismatch (-want +got):\n%s", diff)
+				}
+				if gotIsValidName := namer.IsValidLoadBalancer(); gotIsValidName != tc.isValidName {
+					t.Errorf("namer.IsValidLoadBalancer() = %t, want %t", gotIsValidName, tc.isValidName)
 				}
 			})
 		}
