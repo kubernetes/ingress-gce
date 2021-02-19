@@ -22,10 +22,10 @@ import (
 	"sync"
 	"testing"
 
-	computebeta "google.golang.org/api/compute/v0.beta"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/google/go-cmp/cmp"
+	"google.golang.org/api/compute/v1"
 	"k8s.io/legacy-cloud-providers/gce"
 
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
@@ -34,11 +34,11 @@ import (
 )
 
 func TestEnsureSecurityPolicy(t *testing.T) {
-	mockSecurityPolcies := make(map[string]*computebeta.SecurityPolicyReference)
+	mockSecurityPolicies := make(map[string]*compute.SecurityPolicyReference)
 	mockSecurityPolicyLock := sync.Mutex{}
-	setSecurityPolicyHook := func(_ context.Context, key *meta.Key, ref *computebeta.SecurityPolicyReference, _ *cloud.MockBetaBackendServices) error {
+	setSecurityPolicyHook := func(_ context.Context, key *meta.Key, ref *compute.SecurityPolicyReference, _ *cloud.MockBackendServices) error {
 		mockSecurityPolicyLock.Lock()
-		mockSecurityPolcies[key.Name] = ref
+		mockSecurityPolicies[key.Name] = ref
 		mockSecurityPolicyLock.Unlock()
 		return nil
 	}
@@ -48,10 +48,11 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 		currentBackendService *composite.BackendService
 		desiredConfig         *backendconfigv1.BackendConfig
 		expectSetCall         bool
+		expectError           bool
 	}{
 		{
 			desc:                  "attach-policy",
-			currentBackendService: &composite.BackendService{},
+			currentBackendService: &composite.BackendService{Scope: meta.Global},
 			desiredConfig: &backendconfigv1.BackendConfig{
 				Spec: backendconfigv1.BackendConfigSpec{
 					SecurityPolicy: &backendconfigv1.SecurityPolicyConfig{
@@ -64,7 +65,8 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 		{
 			desc: "update-policy",
 			currentBackendService: &composite.BackendService{
-				SecurityPolicy: "https://www.googleapis.com/compute/beta/projects/test-project/global/securityPolicies/policy-2",
+				Scope:          meta.Global,
+				SecurityPolicy: "https://www.googleapis.com/compute/projects/test-project/global/securityPolicies/policy-2",
 			},
 			desiredConfig: &backendconfigv1.BackendConfig{
 				Spec: backendconfigv1.BackendConfigSpec{
@@ -78,7 +80,8 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 		{
 			desc: "remove-policy",
 			currentBackendService: &composite.BackendService{
-				SecurityPolicy: "https://www.googleapis.com/compute/beta/projects/test-project/global/securityPolicies/policy-1",
+				Scope:          meta.Global,
+				SecurityPolicy: "https://www.googleapis.com/compute/projects/test-project/global/securityPolicies/policy-1",
 			},
 			desiredConfig: &backendconfigv1.BackendConfig{
 				Spec: backendconfigv1.BackendConfigSpec{
@@ -92,7 +95,8 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 		{
 			desc: "same-policy",
 			currentBackendService: &composite.BackendService{
-				SecurityPolicy: "https://www.googleapis.com/compute/beta/projects/test-project/global/securityPolicies/policy-1",
+				Scope:          meta.Global,
+				SecurityPolicy: "https://www.googleapis.com/compute/projects/test-project/global/securityPolicies/policy-1",
 			},
 			desiredConfig: &backendconfigv1.BackendConfig{
 				Spec: backendconfigv1.BackendConfigSpec{
@@ -104,16 +108,32 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 		},
 		{
 			desc:                  "empty-policy",
-			currentBackendService: &composite.BackendService{},
+			currentBackendService: &composite.BackendService{Scope: meta.Global},
 			desiredConfig:         &backendconfigv1.BackendConfig{},
 		},
 		{
 			desc: "no-specified-policy",
 			currentBackendService: &composite.BackendService{
-				SecurityPolicy: "https://www.googleapis.com/compute/beta/projects/test-project/global/securityPolicies/policy-1",
+				Scope:          meta.Global,
+				SecurityPolicy: "https://www.googleapis.com/compute/projects/test-project/global/securityPolicies/policy-1",
 			},
 			desiredConfig: &backendconfigv1.BackendConfig{},
 			expectSetCall: false,
+		},
+		{
+			desc: "regional backend service",
+			currentBackendService: &composite.BackendService{
+				Scope: meta.Regional,
+			},
+			desiredConfig: &backendconfigv1.BackendConfig{
+				Spec: backendconfigv1.BackendConfigSpec{
+					SecurityPolicy: &backendconfigv1.SecurityPolicyConfig{
+						Name: "policy-1",
+					},
+				},
+			},
+			expectSetCall: false,
+			expectError:   true,
 		},
 	}
 
@@ -124,44 +144,45 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 			t.Parallel()
 
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-			fakeBeName := fmt.Sprintf("be-name-XXX-%d", i)
+			tc.currentBackendService.Name = fmt.Sprintf("be-name-XXX-%d", i)
 
-			(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaBackendServices.SetSecurityPolicyHook = setSecurityPolicyHook
+			(fakeGCE.Compute().(*cloud.MockGCE)).MockBackendServices.SetSecurityPolicyHook = setSecurityPolicyHook
 
-			if err := EnsureSecurityPolicy(fakeGCE, utils.ServicePort{BackendConfig: tc.desiredConfig}, tc.currentBackendService, fakeBeName); err != nil {
+			err := EnsureSecurityPolicy(fakeGCE, utils.ServicePort{BackendConfig: tc.desiredConfig}, tc.currentBackendService)
+			if !tc.expectError && err != nil {
 				t.Errorf("EnsureSecurityPolicy()=%v, want nil", err)
+			}
+			if tc.expectError && err == nil {
+				t.Errorf("EnsureSecurityPolicy()=nil, want non-nil error")
 			}
 
 			if tc.expectSetCall {
 				// Verify whether the desired policy is set.
 				mockSecurityPolicyLock.Lock()
-				policyRef, ok := mockSecurityPolcies[fakeBeName]
+				policyRef, ok := mockSecurityPolicies[tc.currentBackendService.Name]
 				mockSecurityPolicyLock.Unlock()
 				if !ok {
-					t.Errorf("policy not set for backend service %s", fakeBeName)
+					t.Errorf("policy not set for backend service %s", tc.currentBackendService.Name)
 					return
 				}
-				policyLink := ""
-				if policyRef != nil {
-					policyLink = policyRef.SecurityPolicy
+				var desiredPolicyRef *compute.SecurityPolicyReference
+				if tc.desiredConfig.Spec.SecurityPolicy != nil && tc.desiredConfig.Spec.SecurityPolicy.Name != "" {
+					desiredPolicyRef = &compute.SecurityPolicyReference{
+						SecurityPolicy: tc.desiredConfig.Spec.SecurityPolicy.Name,
+					}
 				}
-				desiredPolicyName := ""
-				if tc.desiredConfig != nil && tc.desiredConfig.Spec.SecurityPolicy != nil {
-					desiredPolicyName = tc.desiredConfig.Spec.SecurityPolicy.Name
-				}
-				if utils.EqualResourceIDs(policyLink, desiredPolicyName) {
-					t.Errorf("got policy %q, want %q", policyLink, desiredPolicyName)
+				if diff := cmp.Diff(desiredPolicyRef, policyRef); diff != "" {
+					t.Errorf("Got diff for policy reference (-want +got):\n%s", diff)
 				}
 			} else {
 				// Verify no set call is made.
 				mockSecurityPolicyLock.Lock()
-				policyRef, ok := mockSecurityPolcies[fakeBeName]
+				policyRef, ok := mockSecurityPolicies[tc.currentBackendService.Name]
 				mockSecurityPolicyLock.Unlock()
 				if ok {
-					t.Errorf("unexpected policy %q is set for backend service %s", policyRef, fakeBeName)
+					t.Errorf("unexpected policy %v is set for backend service %s", policyRef, tc.currentBackendService.Name)
 				}
 			}
 		})
-
 	}
 }
