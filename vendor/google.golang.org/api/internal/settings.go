@@ -12,30 +12,36 @@ import (
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"google.golang.org/api/internal/impersonate"
 	"google.golang.org/grpc"
 )
 
 // DialSettings holds information needed to establish a connection with a
 // Google API service.
 type DialSettings struct {
-	Endpoint             string
-	DefaultEndpoint      string
-	Scopes               []string
-	TokenSource          oauth2.TokenSource
-	Credentials          *google.Credentials
-	CredentialsFile      string // if set, Token Source is ignored.
-	CredentialsJSON      []byte
-	UserAgent            string
-	APIKey               string
-	Audiences            []string
-	HTTPClient           *http.Client
-	GRPCDialOpts         []grpc.DialOption
-	GRPCConn             *grpc.ClientConn
-	GRPCConnPool         ConnPool
-	GRPCConnPoolSize     int
-	NoAuth               bool
-	TelemetryDisabled    bool
-	GetClientCertificate func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
+	Endpoint            string
+	DefaultEndpoint     string
+	DefaultMTLSEndpoint string
+	Scopes              []string
+	TokenSource         oauth2.TokenSource
+	Credentials         *google.Credentials
+	CredentialsFile     string // if set, Token Source is ignored.
+	CredentialsJSON     []byte
+	UserAgent           string
+	APIKey              string
+	Audiences           []string
+	HTTPClient          *http.Client
+	GRPCDialOpts        []grpc.DialOption
+	GRPCConn            *grpc.ClientConn
+	GRPCConnPool        ConnPool
+	GRPCConnPoolSize    int
+	NoAuth              bool
+	TelemetryDisabled   bool
+	ClientCertSource    func(*tls.CertificateRequestInfo) (*tls.Certificate, error)
+	CustomClaims        map[string]interface{}
+	SkipValidation      bool
+	ImpersonationConfig *impersonate.Config
+	EnableDirectPath    bool
 
 	// Google API system parameters. For more information please read:
 	// https://cloud.google.com/apis/docs/system-parameters
@@ -45,6 +51,9 @@ type DialSettings struct {
 
 // Validate reports an error if ds is invalid.
 func (ds *DialSettings) Validate() error {
+	if ds.SkipValidation {
+		return nil
+	}
 	hasCreds := ds.APIKey != "" || ds.TokenSource != nil || ds.CredentialsFile != "" || ds.Credentials != nil
 	if ds.NoAuth && hasCreds {
 		return errors.New("options.WithoutAuthentication is incompatible with any option that provides credentials")
@@ -93,12 +102,14 @@ func (ds *DialSettings) Validate() error {
 	if ds.HTTPClient != nil && ds.RequestReason != "" {
 		return errors.New("WithHTTPClient is incompatible with RequestReason")
 	}
-	if ds.HTTPClient != nil && ds.GetClientCertificate != nil {
-		return errors.New("WithHTTPClient is incompatible with WithGetClientCertificate")
+	if ds.HTTPClient != nil && ds.ClientCertSource != nil {
+		return errors.New("WithHTTPClient is incompatible with WithClientCertSource")
 	}
-	if ds.GetClientCertificate != nil && (ds.GRPCConn != nil || ds.GRPCConnPool != nil || ds.GRPCConnPoolSize != 0 || ds.GRPCDialOpts != nil) {
-		return errors.New("WithGetClientCertificate is currently only supported for HTTP. GRPC settings are incompatible")
+	if ds.ClientCertSource != nil && (ds.GRPCConn != nil || ds.GRPCConnPool != nil || ds.GRPCConnPoolSize != 0 || ds.GRPCDialOpts != nil) {
+		return errors.New("WithClientCertSource is currently only supported for HTTP. gRPC settings are incompatible")
 	}
-
+	if ds.ImpersonationConfig != nil && len(ds.ImpersonationConfig.Scopes) == 0 && len(ds.Scopes) == 0 {
+		return errors.New("WithImpersonatedCredentials requires scopes being provided")
+	}
 	return nil
 }
