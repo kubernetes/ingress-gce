@@ -153,6 +153,11 @@ func ensureEchoService(s *Sandbox, name string, annotations map[string]string, s
 	return svc, nil
 }
 
+// DeleteEchoService deletes the K8s service
+func DeleteEchoService(s *Sandbox, svcName string) error {
+	return s.f.Clientset.CoreV1().Services(s.Namespace).Delete(context.TODO(), svcName, metav1.DeleteOptions{})
+}
+
 // EnsureEchoDeployment ensures that the Echo deployment with the given description is set up
 func EnsureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment)) error {
 	return ensureEchoDeployment(s, name, numReplicas, modify, Linux)

@@ -555,3 +555,199 @@ func TestNegCRDErrorEvents(t *testing.T) {
 		e2e.WaitForStandaloneNegDeletion(ctx, Framework.Cloud, s, port80.String(), negStatus)
 	})
 }
+
+func TestNegDisruptive(t *testing.T) {
+	t.Parallel()
+	port80 := intstr.FromInt(80)
+	replicas := int32(2)
+	serviceName := "disruptive-neg-service"
+	// gcSvcName is the name of the service used to determine if GC has finished
+	gcSvcName := "gc-service"
+	ctx := context.Background()
+
+	annotation := annotations.NegAnnotation{
+		ExposedPorts: map[int32]annotations.NegAttributes{
+			int32(port80.IntValue()): annotations.NegAttributes{},
+		},
+	}
+
+	ensureGCService := func(s *e2e.Sandbox) annotations.NegStatus {
+		// use gc-service as a way to track if GC has completed or not
+		_, err := e2e.EnsureEchoService(s, "gc-service", map[string]string{
+			annotations.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
+		if err != nil {
+			t.Fatalf("error ensuring gc service: %v", err)
+		}
+		t.Logf("GC service ensured (%s/%s)", s.Namespace, gcSvcName)
+
+		expectedNegAttrs := map[string]string{port80.String(): ""}
+		negStatus, err := e2e.WaitForNegCRs(s, gcSvcName, expectedNegAttrs)
+		if err != nil {
+			t.Fatalf("Error: e2e.WaitForNegCRs(%s,%+v) = %s, want nil", gcSvcName, expectedNegAttrs, err)
+		}
+		for port, negName := range negStatus.NetworkEndpointGroups {
+			err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, negStatus.Zones, false, int(replicas))
+			if err != nil {
+				t.Fatalf("Error: e2e.WaitForNegs service %s/%s neg port/name %s/%s", gcSvcName, s.Namespace, port, negName)
+			}
+		}
+		return negStatus
+	}
+
+	waitForGCSvcDeletion := func(s *e2e.Sandbox, negStatus annotations.NegStatus) {
+		if err := e2e.DeleteEchoService(s, gcSvcName); err != nil {
+			t.Fatalf("Error: e2e.DeleteEchoService %s: %q", gcSvcName, err)
+		}
+		t.Logf("GC service deleted (%s/%s)", s.Namespace, gcSvcName)
+
+		if err := e2e.WaitForStandaloneNegDeletion(ctx, s.ValidatorEnv.Cloud(), s, port80.String(), negStatus); err != nil {
+			t.Fatalf("Error waiting for NEGDeletion: %v", err)
+		}
+	}
+
+	Framework.RunWithSandbox("Disruptive Service Recreations", t, func(t *testing.T, s *e2e.Sandbox) {
+
+		testcases := []struct {
+			desc string
+			// waitForGC waits until the NEG controller finished GC. It will wait at the beginning of the testcase
+			// before processing any service changes
+			waitForGC bool
+			// waitForNeg will occur at the end of the testcase after any deletion and creation is processed
+			waitForNeg bool
+			// waitForNegGC waits to see that the NEG has been deleted
+			waitForNegGC bool
+			// deleteService will delete the service will run be run before createService
+			deleteService bool
+			// createService will create the service will run be run after deleteService
+			createService bool
+			// checkForErrorEvents checks to see that no processing error events have occurred
+			checkErrorEvents bool
+		}{
+			{
+				desc:          "create service and wait for neg creations",
+				createService: true,
+				waitForNeg:    true,
+			},
+			{
+				desc:          "delete service and recreate first time",
+				deleteService: true,
+				createService: true,
+			},
+			{
+				desc:          "delete service and recreate second time",
+				deleteService: true,
+				createService: true,
+			},
+			{
+				desc:          "delete service and recreate third time",
+				deleteService: true,
+				createService: true,
+			},
+			{
+				desc:       "check that neg still exists",
+				waitForNeg: true,
+			},
+			//waitForGC is to ensure that GC doesn't occur after deletion and before the recreation
+			{
+				desc:          "waitForGC, delete service and recreate fourth time",
+				waitForGC:     true,
+				deleteService: true,
+				createService: true,
+			},
+			{
+				desc:          "delete service and recreate fifth time",
+				deleteService: true,
+				createService: true,
+			},
+			{
+				desc:          "delete service and recreate sixth time",
+				deleteService: true,
+				createService: true,
+			},
+			{
+				desc:             "check neg still exists and no processing error events",
+				waitForNeg:       true,
+				checkErrorEvents: true,
+			},
+			{
+				desc:          "delete service and recreate seventh time",
+				deleteService: true,
+				createService: true,
+			},
+			{
+				desc:          "delete service and recreate eight time",
+				deleteService: true,
+				createService: true,
+			},
+			{
+				desc:       "check that neg still exists",
+				waitForNeg: true,
+			},
+			{
+				desc:          "delete service",
+				deleteService: true,
+			},
+			{
+				desc:         "waitForGC to properly delete",
+				waitForNegGC: true,
+			},
+		}
+
+		var previousNegStatus annotations.NegStatus
+		for _, tc := range testcases {
+			t.Log(tc.desc)
+			if tc.waitForGC {
+				negStatus := ensureGCService(s)
+				waitForGCSvcDeletion(s, negStatus)
+			}
+
+			if tc.deleteService {
+				if err := e2e.DeleteEchoService(s, serviceName); err != nil {
+					t.Fatalf("Error: e2e.DeleteEchoService %s: %q", serviceName, err)
+				}
+				t.Logf("Echo service deleted (%s/%s)", s.Namespace, serviceName)
+			}
+
+			if tc.createService {
+				_, err := e2e.EnsureEchoService(s, serviceName, map[string]string{
+					annotations.NEGAnnotationKey: annotation.String()}, v1.ServiceTypeClusterIP, replicas)
+				if err != nil {
+					t.Fatalf("error ensuring echo service: %v", err)
+				}
+				t.Logf("Echo service ensured (%s/%s)", s.Namespace, serviceName)
+			}
+
+			if tc.waitForNeg {
+				expectedNegAttrs := map[string]string{port80.String(): ""}
+				negStatus, err := e2e.WaitForNegCRs(s, serviceName, expectedNegAttrs)
+				if err != nil {
+					t.Fatalf("Error: e2e.WaitForNegCRs(%s,%+v) = %s, want nil", serviceName, expectedNegAttrs, err)
+				}
+
+				for port, negName := range negStatus.NetworkEndpointGroups {
+					err := e2e.WaitForNegs(ctx, Framework.Cloud, negName, negStatus.Zones, false, int(replicas))
+					if err != nil {
+						t.Fatalf("Error: e2e.WaitForNegs service %s/%s neg port/name %s/%s", serviceName, s.Namespace, port, negName)
+					}
+				}
+				previousNegStatus = negStatus
+			}
+
+			if tc.checkErrorEvents {
+				foundEvents, err := e2e.CheckSvcEvents(s, serviceName, v1.EventTypeWarning, "error processing service")
+				if err != nil {
+					t.Fatalf("errored quering for service events: %q", err)
+				}
+				if foundEvents {
+					t.Fatalf("found error events when none were expected")
+				}
+			}
+
+			if tc.waitForNegGC {
+				if err := e2e.WaitForStandaloneNegDeletion(ctx, s.ValidatorEnv.Cloud(), s, port80.String(), previousNegStatus); err != nil {
+					t.Fatalf("Error waiting for NEGDeletion: %v", err)
+				}
+			}
+		}
+	})
+}
