@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2021 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -214,6 +214,22 @@ func TestBackendServiceCdnPolicy(t *testing.T) {
 	}
 }
 
+func TestBackendServiceCdnPolicyBypassCacheOnRequestHeader(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceCdnPolicyBypassCacheOnRequestHeader{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceCdnPolicyBypassCacheOnRequestHeader{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceCdnPolicyNegativeCachingPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceCdnPolicyNegativeCachingPolicy{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceCdnPolicyNegativeCachingPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBackendServiceFailoverPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceFailoverPolicy{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceFailoverPolicy{})
@@ -413,6 +429,22 @@ func TestForwardingRuleToGA(t *testing.T) {
 func TestForwardingRuleReference(t *testing.T) {
 	compositeType := reflect.TypeOf(ForwardingRuleReference{})
 	alphaType := reflect.TypeOf(computealpha.ForwardingRuleReference{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestForwardingRuleServiceDirectoryRegistration(t *testing.T) {
+	compositeType := reflect.TypeOf(ForwardingRuleServiceDirectoryRegistration{})
+	alphaType := reflect.TypeOf(computealpha.ForwardingRuleServiceDirectoryRegistration{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestGRPCHealthCheck(t *testing.T) {
+	compositeType := reflect.TypeOf(GRPCHealthCheck{})
+	alphaType := reflect.TypeOf(computealpha.GRPCHealthCheck{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
@@ -653,6 +685,14 @@ func TestHttpFaultDelay(t *testing.T) {
 func TestHttpFaultInjection(t *testing.T) {
 	compositeType := reflect.TypeOf(HttpFaultInjection{})
 	alphaType := reflect.TypeOf(computealpha.HttpFaultInjection{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestHttpFilterConfig(t *testing.T) {
+	compositeType := reflect.TypeOf(HttpFilterConfig{})
+	alphaType := reflect.TypeOf(computealpha.HttpFilterConfig{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
@@ -1473,6 +1513,14 @@ func TestSslCertificateManagedSslCertificate(t *testing.T) {
 func TestSslCertificateSelfManagedSslCertificate(t *testing.T) {
 	compositeType := reflect.TypeOf(SslCertificateSelfManagedSslCertificate{})
 	alphaType := reflect.TypeOf(computealpha.SslCertificateSelfManagedSslCertificate{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSubsetting(t *testing.T) {
+	compositeType := reflect.TypeOf(Subsetting{})
+	alphaType := reflect.TypeOf(computealpha.Subsetting{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}

@@ -124,6 +124,7 @@ var AllServices = []*ServiceInfo{
 			"GetHealth",
 			"Patch",
 			"Update",
+			"SetSecurityPolicy",
 		},
 	},
 	{
@@ -542,6 +543,14 @@ var AllServices = []*ServiceInfo{
 			"PatchRule",
 			"RemoveRule",
 		},
+	},
+	{
+		Object:      "ServiceAttachment",
+		Service:     "ServiceAttachments",
+		Resource:    "serviceAttachments",
+		version:     VersionAlpha,
+		keyType:     Regional,
+		serviceType: reflect.TypeOf(&alpha.ServiceAttachmentsService{}),
 	},
 	{
 		Object:      "SslCertificate",
