@@ -17,8 +17,8 @@ limitations under the License.
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	core "k8s.io/kubernetes/pkg/apis/core"
 )
 
 const (
@@ -52,7 +52,7 @@ type ServiceAttachmentSpec struct {
 	// ResourceReference is the reference to the K8s resource that created the forwarding rule
 	// Only Services can be used as a reference
 	// +required
-	ResourceReference *core.TypedLocalObjectReference `json:"resourceReference"`
+	ResourceReference *corev1.TypedLocalObjectReference `json:"resourceReference"`
 }
 
 // ServiceAttachmentStatus is the status for a ServiceAttachment resource

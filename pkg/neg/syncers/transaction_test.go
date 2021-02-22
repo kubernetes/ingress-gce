@@ -27,6 +27,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -38,7 +39,6 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -1026,11 +1026,11 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			checkNegCR(t, negCR, creationTS, expectZones, expectedNegRefs, false, tc.expectErr)
 			if tc.expectErr {
 				// If status is already populated, expect no change even when error occurs
-				checkCondition(t, negCR.Status.Conditions, negv1beta1.Initialized, creationTS, core.ConditionFalse, true)
+				checkCondition(t, negCR.Status.Conditions, negv1beta1.Initialized, creationTS, corev1.ConditionFalse, true)
 			} else if tc.crStatusPopulated {
-				checkCondition(t, negCR.Status.Conditions, negv1beta1.Initialized, creationTS, core.ConditionTrue, false)
+				checkCondition(t, negCR.Status.Conditions, negv1beta1.Initialized, creationTS, corev1.ConditionTrue, false)
 			} else {
-				checkCondition(t, negCR.Status.Conditions, negv1beta1.Initialized, creationTS, core.ConditionTrue, true)
+				checkCondition(t, negCR.Status.Conditions, negv1beta1.Initialized, creationTS, corev1.ConditionTrue, true)
 			}
 
 			if tc.expectErr || tc.negExists {
@@ -1174,11 +1174,11 @@ func TestUpdateStatus(t *testing.T) {
 				}
 
 				if syncErr != nil {
-					checkCondition(t, negCR.Status.Conditions, negv1beta1.Synced, creationTS, core.ConditionFalse, true)
+					checkCondition(t, negCR.Status.Conditions, negv1beta1.Synced, creationTS, corev1.ConditionFalse, true)
 				} else if tc.populateConditions[negv1beta1.Synced] {
-					checkCondition(t, negCR.Status.Conditions, negv1beta1.Synced, creationTS, core.ConditionTrue, false)
+					checkCondition(t, negCR.Status.Conditions, negv1beta1.Synced, creationTS, corev1.ConditionTrue, false)
 				} else {
-					checkCondition(t, negCR.Status.Conditions, negv1beta1.Synced, creationTS, core.ConditionTrue, true)
+					checkCondition(t, negCR.Status.Conditions, negv1beta1.Synced, creationTS, corev1.ConditionTrue, true)
 				}
 
 				if syncer.needInit != tc.expectedNeedInit {
@@ -1404,7 +1404,7 @@ func checkNegDescription(t *testing.T, syncer *transactionSyncer, desc string) {
 
 // checkCondition looks for the condition of the specified type and validates it has has the expectedStatus.
 // It will also validate that the transition timestamp is updated as expected, which is specified by expectTransitionTSUpdate.
-func checkCondition(t *testing.T, conditions []negv1beta1.Condition, conditionType string, previousTS metav1.Time, expectedStatus core.ConditionStatus, expectTransitionTSUpdate bool) metav1.Time {
+func checkCondition(t *testing.T, conditions []negv1beta1.Condition, conditionType string, previousTS metav1.Time, expectedStatus corev1.ConditionStatus, expectTransitionTSUpdate bool) metav1.Time {
 	var condition negv1beta1.Condition
 	found := false
 	for _, c := range conditions {
@@ -1435,9 +1435,9 @@ func checkCondition(t *testing.T, conditions []negv1beta1.Condition, conditionTy
 		t.Errorf("condition %s cannot have an empty reason", conditionType)
 	}
 
-	if condition.Message == "" && expectedStatus != core.ConditionTrue {
+	if condition.Message == "" && expectedStatus != corev1.ConditionTrue {
 		t.Errorf("condition %s cannot have an empty message", conditionType)
-	} else if condition.Message != "" && expectedStatus == core.ConditionTrue {
+	} else if condition.Message != "" && expectedStatus == corev1.ConditionTrue {
 		t.Errorf("condition %s should not have a message since status is ConditionTrue", conditionType)
 	}
 	return condition.LastTransitionTime
@@ -1457,7 +1457,7 @@ func createNegCR(testNegName string, creationTS metav1.Time, populateInitialized
 	if populateInitialized {
 		conditions = append(conditions, negv1beta1.Condition{
 			Type:               negv1beta1.Initialized,
-			Status:             core.ConditionTrue,
+			Status:             corev1.ConditionTrue,
 			LastTransitionTime: creationTS,
 			Reason:             negtypes.NegInitializationSuccessful,
 		})
@@ -1465,7 +1465,7 @@ func createNegCR(testNegName string, creationTS metav1.Time, populateInitialized
 	if populateSynced {
 		conditions = append(conditions, negv1beta1.Condition{
 			Type:               negv1beta1.Synced,
-			Status:             core.ConditionTrue,
+			Status:             corev1.ConditionTrue,
 			LastTransitionTime: creationTS,
 			Reason:             negtypes.NegInitializationSuccessful,
 		})

@@ -17,8 +17,8 @@ limitations under the License.
 package v1beta1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	core "k8s.io/kubernetes/pkg/apis/core"
 )
 
 // ServiceNetworkEndpointGroup represents a group of Network Endpoint Groups associated with a service.
@@ -89,7 +89,7 @@ type Condition struct {
 	Type string `json:"type" protobuf:"bytes,1,opt,name=type"`
 	// Status of the condition, one of True, False, Unknown.
 	// +required
-	Status core.ConditionStatus `json:"status" protobuf:"bytes,2,opt,name=status"`
+	Status corev1.ConditionStatus `json:"status" protobuf:"bytes,2,opt,name=status"`
 	// ObservedGeneration will not be set for ServiceNetworkEndpointGroup as the spec is empty.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty" protobuf:"varint,3,opt,name=observedGeneration"`

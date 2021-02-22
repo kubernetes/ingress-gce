@@ -26,6 +26,7 @@ import (
 	"strings"
 
 	apiv1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -40,7 +41,6 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/apis/core"
 )
 
 type transactionSyncer struct {
@@ -575,7 +575,7 @@ func getSyncedCondition(err error) negv1beta1.Condition {
 	if err != nil {
 		return negv1beta1.Condition{
 			Type:               negv1beta1.Synced,
-			Status:             core.ConditionFalse,
+			Status:             corev1.ConditionFalse,
 			Reason:             negtypes.NegSyncFailed,
 			LastTransitionTime: metav1.Now(),
 			Message:            err.Error(),
@@ -584,7 +584,7 @@ func getSyncedCondition(err error) negv1beta1.Condition {
 
 	return negv1beta1.Condition{
 		Type:               negv1beta1.Synced,
-		Status:             core.ConditionTrue,
+		Status:             corev1.ConditionTrue,
 		Reason:             negtypes.NegSyncSuccessful,
 		LastTransitionTime: metav1.Now(),
 	}
@@ -595,7 +595,7 @@ func getInitializedCondition(err error) negv1beta1.Condition {
 	if err != nil {
 		return negv1beta1.Condition{
 			Type:               negv1beta1.Initialized,
-			Status:             core.ConditionFalse,
+			Status:             corev1.ConditionFalse,
 			Reason:             negtypes.NegInitializationFailed,
 			LastTransitionTime: metav1.Now(),
 			Message:            err.Error(),
@@ -604,7 +604,7 @@ func getInitializedCondition(err error) negv1beta1.Condition {
 
 	return negv1beta1.Condition{
 		Type:               negv1beta1.Initialized,
-		Status:             core.ConditionTrue,
+		Status:             corev1.ConditionTrue,
 		Reason:             negtypes.NegInitializationSuccessful,
 		LastTransitionTime: metav1.Now(),
 	}
