@@ -49,10 +49,10 @@ type ServiceAttachmentSpec struct {
 	// +listType=atomic
 	NATSubnets []string `json:"natSubnets"`
 
-	// ResourceReference is the reference to the K8s resource that created the forwarding rule
+	// ResourceRef is the reference to the K8s resource that created the forwarding rule
 	// Only Services can be used as a reference
 	// +required
-	ResourceReference *corev1.TypedLocalObjectReference `json:"resourceReference"`
+	ResourceRef corev1.TypedLocalObjectReference `json:"resourceRef"`
 }
 
 // ServiceAttachmentStatus is the status for a ServiceAttachment resource
