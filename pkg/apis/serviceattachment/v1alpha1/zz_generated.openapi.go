@@ -115,7 +115,7 @@ func schema_pkg_apis_serviceattachment_v1alpha1_ServiceAttachmentSpec(ref common
 					"resourceReference": {
 						SchemaProps: spec.SchemaProps{
 							Description: "ResourceReference is the reference to the K8s resource that created the forwarding rule Only Services can be used as a reference",
-							Ref:         ref("k8s.io/kubernetes/pkg/apis/core.TypedLocalObjectReference"),
+							Ref:         ref("k8s.io/api/core/v1.TypedLocalObjectReference"),
 						},
 					},
 				},
@@ -123,7 +123,7 @@ func schema_pkg_apis_serviceattachment_v1alpha1_ServiceAttachmentSpec(ref common
 			},
 		},
 		Dependencies: []string{
-			"k8s.io/kubernetes/pkg/apis/core.TypedLocalObjectReference"},
+			"k8s.io/api/core/v1.TypedLocalObjectReference"},
 	}
 }
 
