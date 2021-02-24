@@ -182,6 +182,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				epc,
 				string(manager.kubeSystemUID),
 				manager.svcNegClient,
+				!manager.namer.IsNEG(portInfo.NegName),
 			)
 			manager.syncerMap[syncerKey] = syncer
 		}
@@ -526,6 +527,12 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 	}
 
 	if expectedDesc != nil {
+		// Controller managed custom named negs will always have a populated description, so do not delete custom named
+		// negs with empty descriptions.
+		if !manager.namer.IsNEG(name) && neg.Description == "" {
+			klog.V(2).Infof("Skipping deletion of Neg %s in %s because name was not generated and empty description", name, zone)
+			return nil
+		}
 		if matches, err := utils.VerifyDescription(*expectedDesc, neg.Description, name, zone); !matches {
 			klog.V(2).Infof("Skipping deletion of Neg %s in %s because of conflicting description: %s", name, zone, err)
 			return nil

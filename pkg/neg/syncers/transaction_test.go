@@ -77,7 +77,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 	}
 
 	for _, testNegType := range testNegTypes {
-		_, transactionSyncer := newTestTransactionSyncer(fakeCloud, testNegType)
+		_, transactionSyncer := newTestTransactionSyncer(fakeCloud, testNegType, false)
 		if err := transactionSyncer.ensureNetworkEndpointGroups(); err != nil {
 			t.Errorf("Expect error == nil, but got %v", err)
 		}
@@ -234,7 +234,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 
 func TestCommitTransaction(t *testing.T) {
 	t.Parallel()
-	s, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType)
+	s, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
 	// use testSyncer to track the number of Sync got triggered
 	testSyncer := &testSyncer{s.(*syncer), 0}
 	testRetryer := &testRetryHandler{testSyncer, 0}
@@ -647,7 +647,7 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 
 func TestCommitPods(t *testing.T) {
 	t.Parallel()
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType)
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
 	reflector := &testReflector{}
 	transactionSyncer.reflector = reflector
 
@@ -864,6 +864,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 		negExists         bool
 		negDesc           string
 		crStatusPopulated bool
+		customName        bool
 		expectErr         bool
 	}{
 		{
@@ -879,6 +880,14 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			negDesc:           "",
 			crStatusPopulated: true,
 			expectErr:         false,
+		},
+		{
+			desc:              "Neg exists, custom name, without neg description",
+			negExists:         true,
+			negDesc:           "",
+			crStatusPopulated: false,
+			customName:        true,
+			expectErr:         true,
 		},
 		{
 			desc:      "Neg exists, cr has with populated status, with correct neg description",
@@ -975,7 +984,7 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		_, syncer := newTestTransactionSyncerWithNegClient(fakeCloud, testNegType, negClient)
+		_, syncer := newTestTransactionSyncerWithNegClient(fakeCloud, testNegType, negClient, tc.customName)
 		t.Run(tc.desc, func(t *testing.T) {
 
 			expectZones := sets.NewString(testZone1, testZone2)
@@ -1148,7 +1157,7 @@ func TestUpdateStatus(t *testing.T) {
 			t.Run(tc.desc, func(t *testing.T) {
 				svcNegClient := negfake.NewSimpleClientset()
 				fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
-				_, syncer := newTestTransactionSyncerWithNegClient(fakeCloud, testNegType, svcNegClient)
+				_, syncer := newTestTransactionSyncerWithNegClient(fakeCloud, testNegType, svcNegClient, false)
 				syncer.needInit = false
 				if len(tc.negRefs) == 0 {
 					err := fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
@@ -1203,16 +1212,16 @@ func TestUpdateStatus(t *testing.T) {
 }
 
 func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, mode negtypes.EndpointsCalculatorMode) (negtypes.NegSyncer, *transactionSyncer) {
-	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmIpEndpointType)
+	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmIpEndpointType, false)
 	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, mode)
 	return negsyncer, ts
 }
 
-func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType) (negtypes.NegSyncer, *transactionSyncer) {
-	return newTestTransactionSyncerWithNegClient(fakeGCE, negType, nil)
+func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, customName bool) (negtypes.NegSyncer, *transactionSyncer) {
+	return newTestTransactionSyncerWithNegClient(fakeGCE, negType, nil, customName)
 }
 
-func newTestTransactionSyncerWithNegClient(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, negClient svcnegclient.Interface) (negtypes.NegSyncer, *transactionSyncer) {
+func newTestTransactionSyncerWithNegClient(fakeGCE negtypes.NetworkEndpointGroupCloud, negType negtypes.NetworkEndpointType, negClient svcnegclient.Interface, customName bool) (negtypes.NegSyncer, *transactionSyncer) {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	namer := namer_util.NewNamer(clusterID, "")
@@ -1268,6 +1277,7 @@ func newTestTransactionSyncerWithNegClient(fakeGCE negtypes.NetworkEndpointGroup
 			svcPort, mode),
 		string(kubeSystemUID),
 		context.SvcNegClient,
+		customName,
 	)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
 	return negsyncer, transactionSyncer

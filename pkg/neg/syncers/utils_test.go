@@ -386,6 +386,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			nil,
 			nil,
 			tc.apiVersion,
+			false,
 		)
 		if err != nil {
 			t.Errorf("unexpected error: %s", err)
@@ -441,6 +442,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 			nil,
 			nil,
 			tc.apiVersion,
+			false,
 		)
 
 		if err != nil {
@@ -451,7 +453,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 
 func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	t.Parallel()
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType)
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
 	podLister := transactionSyncer.podLister
 
 	// add all pods in default endpoint into podLister
@@ -809,7 +811,7 @@ func TestMakeEndpointBatch(t *testing.T) {
 func TestShouldPodBeInNeg(t *testing.T) {
 	t.Parallel()
 
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType)
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
 
 	podLister := transactionSyncer.podLister
 
@@ -947,6 +949,7 @@ func TestNameUniqueness(t *testing.T) {
 			nil,
 			nil,
 			apiVersion,
+			false,
 		)
 		if err != nil {
 			t.Errorf("Errored while ensuring network endpoint groups: %s", err)
@@ -976,6 +979,7 @@ func TestNameUniqueness(t *testing.T) {
 			nil,
 			nil,
 			apiVersion,
+			false,
 		)
 
 		if tc.expectError && err == nil {
@@ -1023,6 +1027,7 @@ func TestNegObjectCrd(t *testing.T) {
 				nil,
 				nil,
 				apiVersion,
+				false,
 			)
 			if err != nil {
 				t.Errorf("Errored while ensuring network endpoint groups: %s", err)
@@ -1066,6 +1071,7 @@ func TestNegObjectCrd(t *testing.T) {
 				nil,
 				nil,
 				apiVersion,
+				false,
 			)
 
 			if err != nil {
@@ -1118,6 +1124,7 @@ func TestNEGRecreate(t *testing.T) {
 		negDescription string
 		expectRecreate bool
 		expectError    bool
+		customName     bool
 	}{
 		{
 			desc:           "incorrect network, empty neg description, GCP endpoint type",
@@ -1136,6 +1143,16 @@ func TestNEGRecreate(t *testing.T) {
 			negDescription: "",
 			expectRecreate: true,
 			expectError:    false,
+		},
+		{
+			desc:           "correct network, correct subnetwork, customName, empty neg description, GCP endpoint type",
+			network:        testNetwork,
+			subnetwork:     testSubnetwork,
+			negType:        negtypes.VmIpPortEndpointType,
+			negDescription: "",
+			expectRecreate: false,
+			expectError:    true,
+			customName:     true,
 		},
 		{
 			desc:           "incorrect network, matching neg description, GCP endpoint type",
@@ -1220,6 +1237,7 @@ func TestNEGRecreate(t *testing.T) {
 			nil,
 			nil,
 			apiVersion,
+			tc.customName,
 		)
 		if !tc.expectError && err != nil {
 			t.Errorf("TestCase: %s, Errored while ensuring network endpoint groups: %s", tc.desc, err)
