@@ -422,6 +422,28 @@ func WaitForDistinctHosts(ctx context.Context, vip string, expectDistinctHosts i
 	})
 }
 
+// CheckSvcEvents checks to see if the service has an event with the provided msgType and message
+func CheckSvcEvents(s *Sandbox, svcName, msgType, message string) (bool, error) {
+	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(context.TODO(), svcName, metav1.GetOptions{})
+	if svc == nil || err != nil {
+		return false, fmt.Errorf("failed to get service %s/%s: %v", s.Namespace, svcName, err)
+	}
+
+	eventList, err := s.f.Clientset.CoreV1().Events(s.Namespace).Search(Scheme, svc)
+	if err != nil {
+		return false, fmt.Errorf("failed to get events: %q", err)
+	}
+
+	for _, event := range eventList.Items {
+		if event.Type == msgType {
+			if strings.Contains(event.Message, message) {
+				return true, nil
+			}
+		}
+	}
+	return false, nil
+}
+
 // CheckGCLB whitebox testing is OK.
 func CheckGCLB(gclb *fuzz.GCLB, numForwardingRules int, numBackendServices int) error {
 	// Do some cursory checks on the GCP objects.
@@ -893,7 +915,7 @@ func WaitForSvcNegErrorEvents(s *Sandbox, svcName string, possibleMessages []str
 		}
 
 		if len(foundMessages) == 0 {
-			klog.Infof("WaitForSvcNegErrorEvents(), expected to find at least one event in %+v, but only found: %+v", possibleMessages, foundMessages)
+			klog.Infof("WaitForSvcNegErrorEvents(), waiting to find at least one event in %+v, but only found: %+v", possibleMessages, foundMessages)
 			return false, nil
 		}
 
