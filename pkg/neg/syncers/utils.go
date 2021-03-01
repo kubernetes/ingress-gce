@@ -114,7 +114,7 @@ func getService(serviceLister cache.Indexer, namespace, name string) *apiv1.Serv
 }
 
 // ensureNetworkEndpointGroup ensures corresponding NEG is configured correctly in the specified zone.
-func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName, kubeSystemUID, port string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version) (negv1beta1.NegObjectReference, error) {
+func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negServicePortName, kubeSystemUID, port string, networkEndpointType negtypes.NetworkEndpointType, cloud negtypes.NetworkEndpointGroupCloud, serviceLister cache.Indexer, recorder record.EventRecorder, version meta.Version, customName bool) (negv1beta1.NegObjectReference, error) {
 	var negRef negv1beta1.NegObjectReference
 	neg, err := cloud.GetNetworkEndpointGroup(negName, zone, version)
 	if err != nil {
@@ -134,6 +134,10 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 			Namespace:   svcNamespace,
 			ServiceName: svcName,
 			Port:        port,
+		}
+		if customName && neg.Description == "" {
+			klog.Errorf("Found Neg with custom name %s but empty description", negName)
+			return negv1beta1.NegObjectReference{}, fmt.Errorf("neg name %s is already in use, found a custom named neg with an empty description", negName)
 		}
 		if matches, err := utils.VerifyDescription(expectedDesc, neg.Description, negName, zone); !matches {
 			klog.Errorf("Neg Name %s is already in use: %s", negName, err)

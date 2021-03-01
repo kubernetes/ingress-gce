@@ -1187,18 +1187,24 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 		expectCrGC           bool
 		expectErr            bool
 		gcError              error
+
+		// expectGenNamedNegGC indicates that the Neg GC only occurs if using a generated name
+		// expectNegGC will take precedence over this value
+		expectGenNamedNegGC bool
 	}{
 		{desc: "neg config not in svcPortMap, marked for deletion",
 			negsExist:         true,
 			markedForDeletion: true,
 			expectNegGC:       true,
 			expectCrGC:        true,
+			negDesc:           matchingDesc.String(),
 		},
 		{desc: "neg config not in svcPortMap",
 			negsExist:         true,
 			markedForDeletion: false,
 			expectNegGC:       true,
 			expectCrGC:        true,
+			negDesc:           matchingDesc.String(),
 		},
 		{desc: "neg config not in svcPortMap, marked for deletion, empty neg list",
 			negsExist:         true,
@@ -1206,6 +1212,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			emptyNegRefList:   true,
 			expectNegGC:       true,
 			expectCrGC:        true,
+			negDesc:           matchingDesc.String(),
 		},
 		{desc: "neg config not in svcPortMap, empty neg list",
 			negsExist:         true,
@@ -1213,6 +1220,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			emptyNegRefList:   true,
 			expectNegGC:       true,
 			expectCrGC:        true,
+			negDesc:           matchingDesc.String(),
 		},
 		{desc: "neg config not in svcPortMap, malformed neg selflink",
 			negsExist:            true,
@@ -1222,6 +1230,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			expectNegGC:          true,
 			expectCrGC:           true,
 			expectErr:            true,
+			negDesc:              matchingDesc.String(),
 		},
 		{desc: "neg config not in svcPortMap, empty neg list, neg has matching description",
 			negsExist:         true,
@@ -1238,6 +1247,14 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			expectNegGC:       false,
 			expectCrGC:        true,
 			negDesc:           wrongDesc.String(),
+		},
+		{desc: "neg config not in svcPortMap, empty neg list, neg has empty description",
+			negsExist:           true,
+			markedForDeletion:   false,
+			emptyNegRefList:     true,
+			expectGenNamedNegGC: true,
+			expectCrGC:          true,
+			negDesc:             "",
 		},
 		{desc: "neg config in svcPortMap, marked for deletion",
 			negsExist:         true,
@@ -1269,6 +1286,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			expectCrGC:        true,
 			expectErr:         false,
 			gcError:           &googleapi.Error{Code: http.StatusBadRequest},
+			negDesc:           matchingDesc.String(),
 		},
 		{desc: "error during neg gc, config not in svcPortMap",
 			negsExist:         true,
@@ -1276,12 +1294,13 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 			expectCrGC:        true,
 			expectErr:         true,
 			gcError:           fmt.Errorf("gc-error"),
+			negDesc:           matchingDesc.String(),
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			for _, negName := range []string{"test", ""} {
+			for _, customName := range []bool{true, false} {
 				for _, networkEndpointType := range []negtypes.NetworkEndpointType{negtypes.VmIpPortEndpointType, negtypes.NonGCPPrivateEndpointType, negtypes.VmIpEndpointType} {
 
 					kubeClient := fake.NewSimpleClientset()
@@ -1297,8 +1316,9 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 					}
 
 					// Create NEG to be GC'ed
-					if negName == "" {
-						negName = manager.namer.NEG("test", "test", port80)
+					negName := manager.namer.NEG("test", "test", port80)
+					if customName {
+						negName = "test"
 					}
 
 					for _, zone := range zones {
@@ -1370,9 +1390,10 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 
 					numExistingNegs, negsDeleted := checkForNegDeletions(negs, negName)
 
-					if tc.negsExist && tc.expectNegGC && !negsDeleted {
+					expectNegGC := tc.expectNegGC || (tc.expectGenNamedNegGC && !customName)
+					if tc.negsExist && expectNegGC && !negsDeleted {
 						t.Errorf("expected negs to be GCed, but found %d", numExistingNegs)
-					} else if tc.negsExist && !tc.expectNegGC && numExistingNegs != 2 {
+					} else if tc.negsExist && !expectNegGC && numExistingNegs != 2 {
 						t.Errorf("expected two negs in the cloud, but found %d", numExistingNegs)
 					}
 
