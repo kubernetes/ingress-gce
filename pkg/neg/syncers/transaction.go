@@ -82,9 +82,12 @@ type transactionSyncer struct {
 
 	//svcNegClient used to update status on corresponding NEG CRs when not nil
 	svcNegClient svcnegclient.Interface
+
+	// customName indicates whether the NEG name is a generated one or custom one
+	customName bool
 }
 
-func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer, nodeLister cache.Indexer, svcNegLister cache.Indexer, reflector readiness.Reflector, epc negtypes.NetworkEndpointsCalculator, kubeSystemUID string, svcNegClient svcnegclient.Interface) negtypes.NegSyncer {
+func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer, nodeLister cache.Indexer, svcNegLister cache.Indexer, reflector readiness.Reflector, epc negtypes.NetworkEndpointsCalculator, kubeSystemUID string, svcNegClient svcnegclient.Interface, customName bool) negtypes.NegSyncer {
 	// TransactionSyncer implements the syncer core
 	ts := &transactionSyncer{
 		NegSyncerKey:        negSyncerKey,
@@ -102,6 +105,7 @@ func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, recorder record.Ev
 		reflector:           reflector,
 		kubeSystemUID:       kubeSystemUID,
 		svcNegClient:        svcNegClient,
+		customName:          customName,
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts)
@@ -250,6 +254,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 			s.serviceLister,
 			s.recorder,
 			s.NegSyncerKey.GetAPIVersion(),
+			s.customName,
 		)
 		if err != nil {
 			errList = append(errList, err)
