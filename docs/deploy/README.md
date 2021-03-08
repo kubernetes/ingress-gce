@@ -7,3 +7,4 @@ This directory contains information for how to run the Ingress-GCE controller.
 * [Running on GCE](gce/README.md)
 * [Run a self-managed instance on GKE](gke/README.md)
 * [Run locally](local/README.md)
+* [Run on a pre-installed self-managed Kubernetes](resources/README.md)

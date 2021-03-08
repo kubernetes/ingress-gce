@@ -1,4 +1,4 @@
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: l7-lb-controller
@@ -23,7 +23,7 @@ spec:
       terminationGracePeriodSeconds: 600
       hostNetwork: true
       containers:
-      - image: [IMAGE_URL]
+      - image: k8s.gcr.io/ingress-gce-glbc-amd64:v1.9.1
         livenessProbe:
           httpGet:
             path: /healthz
@@ -54,7 +54,7 @@ spec:
         command:
         - /glbc
         - -v2
-        - --config-file-path=/etc/gce/gce.conf.gen
+        - --config-file-path=/etc/gce/gce.conf
         - --healthz-port=8086
         - --logtostderr
         - --sync-period=600s
@@ -63,8 +63,6 @@ spec:
         - --gce-ratelimit=ga.BackendServices.Get,qps,1.8,1
         - --gce-ratelimit=ga.HealthChecks.Get,qps,1.8,1
         - --gce-ratelimit=alpha.HealthChecks.Get,qps,1.8,1
-        - --enable-csm=[ENABLE_CSM]
-        - --csm-service-skip-namespaces=kube-system,istio-system
       volumes:
       - name: google-cloud-key
         secret:
@@ -73,5 +71,5 @@ spec:
         configMap:
           name: gce-config
           items:
-          - key: gce.conf.gen
-            path: gce.conf.gen
+          - key: gce.conf
+            path: gce.conf
