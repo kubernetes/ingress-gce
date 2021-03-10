@@ -423,7 +423,7 @@ func WaitForDistinctHosts(ctx context.Context, vip string, expectDistinctHosts i
 }
 
 // CheckSvcEvents checks to see if the service has an event with the provided msgType and message
-func CheckSvcEvents(s *Sandbox, svcName, msgType, message string) (bool, error) {
+func CheckSvcEvents(s *Sandbox, svcName, msgType, message string, ignoreMessages ...string) (bool, error) {
 	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(context.TODO(), svcName, metav1.GetOptions{})
 	if svc == nil || err != nil {
 		return false, fmt.Errorf("failed to get service %s/%s: %v", s.Namespace, svcName, err)
@@ -434,9 +434,20 @@ func CheckSvcEvents(s *Sandbox, svcName, msgType, message string) (bool, error) 
 		return false, fmt.Errorf("failed to get events: %q", err)
 	}
 
+	// ignoreMessage returns true if the provided message contains on of the ignoreMessages
+	// indicating that the message can be ignored
+	ignoreMessage := func(eventMessage string) bool {
+		for _, ignoreMsg := range ignoreMessages {
+			if strings.Contains(eventMessage, ignoreMsg) {
+				return true
+			}
+		}
+		return false
+	}
+
 	for _, event := range eventList.Items {
 		if event.Type == msgType {
-			if strings.Contains(event.Message, message) {
+			if strings.Contains(event.Message, message) && !ignoreMessage(event.Message) {
 				return true, nil
 			}
 		}

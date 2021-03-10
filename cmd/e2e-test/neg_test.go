@@ -734,7 +734,10 @@ func TestNegDisruptive(t *testing.T) {
 			}
 
 			if tc.checkErrorEvents {
-				foundEvents, err := e2e.CheckSvcEvents(s, serviceName, v1.EventTypeWarning, "error processing service")
+				// check for "error processing service" events that do not include "is shutting down" or "not found"
+				// Error events that are due to syncers shutting down or service not found (due to out of date cache)
+				// are temporary and can be ignored
+				foundEvents, err := e2e.CheckSvcEvents(s, serviceName, v1.EventTypeWarning, "error processing service", "is shutting down", "not found")
 				if err != nil {
 					t.Fatalf("errored quering for service events: %q", err)
 				}
