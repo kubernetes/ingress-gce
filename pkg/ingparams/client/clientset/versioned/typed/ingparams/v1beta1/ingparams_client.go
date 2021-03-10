@@ -26,7 +26,7 @@ import (
 
 type NetworkingV1beta1Interface interface {
 	RESTClient() rest.Interface
-	GCPIngressParamsesGetter
+	GCPIngressParamsGetter
 }
 
 // NetworkingV1beta1Client is used to interact with features provided by the networking.gke.io group.
@@ -34,8 +34,8 @@ type NetworkingV1beta1Client struct {
 	restClient rest.Interface
 }
 
-func (c *NetworkingV1beta1Client) GCPIngressParamses() GCPIngressParamsInterface {
-	return newGCPIngressParamses(c)
+func (c *NetworkingV1beta1Client) GCPIngressParams() GCPIngressParamsInterface {
+	return newGCPIngressParams(c)
 }
 
 // NewForConfig creates a new NetworkingV1beta1Client for the given config.

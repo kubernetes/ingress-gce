@@ -30,10 +30,10 @@ import (
 	scheme "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned/scheme"
 )
 
-// GCPIngressParamsesGetter has a method to return a GCPIngressParamsInterface.
+// GCPIngressParamsGetter has a method to return a GCPIngressParamsInterface.
 // A group's client should implement this interface.
-type GCPIngressParamsesGetter interface {
-	GCPIngressParamses() GCPIngressParamsInterface
+type GCPIngressParamsGetter interface {
+	GCPIngressParams() GCPIngressParamsInterface
 }
 
 // GCPIngressParamsInterface has methods to work with GCPIngressParams resources.
@@ -49,23 +49,23 @@ type GCPIngressParamsInterface interface {
 	GCPIngressParamsExpansion
 }
 
-// gCPIngressParamses implements GCPIngressParamsInterface
-type gCPIngressParamses struct {
+// gCPIngressParams implements GCPIngressParamsInterface
+type gCPIngressParams struct {
 	client rest.Interface
 }
 
-// newGCPIngressParamses returns a GCPIngressParamses
-func newGCPIngressParamses(c *NetworkingV1beta1Client) *gCPIngressParamses {
-	return &gCPIngressParamses{
+// newGCPIngressParams returns a GCPIngressParams
+func newGCPIngressParams(c *NetworkingV1beta1Client) *gCPIngressParams {
+	return &gCPIngressParams{
 		client: c.RESTClient(),
 	}
 }
 
 // Get takes name of the gCPIngressParams, and returns the corresponding gCPIngressParams object, and an error if there is any.
-func (c *gCPIngressParamses) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.GCPIngressParams, err error) {
+func (c *gCPIngressParams) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.GCPIngressParams, err error) {
 	result = &v1beta1.GCPIngressParams{}
 	err = c.client.Get().
-		Resource("gcpingressparamses").
+		Resource("gcpingressparams").
 		Name(name).
 		VersionedParams(&options, scheme.ParameterCodec).
 		Do(ctx).
@@ -73,15 +73,15 @@ func (c *gCPIngressParamses) Get(ctx context.Context, name string, options v1.Ge
 	return
 }
 
-// List takes label and field selectors, and returns the list of GCPIngressParamses that match those selectors.
-func (c *gCPIngressParamses) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.GCPIngressParamsList, err error) {
+// List takes label and field selectors, and returns the list of GCPIngressParams that match those selectors.
+func (c *gCPIngressParams) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.GCPIngressParamsList, err error) {
 	var timeout time.Duration
 	if opts.TimeoutSeconds != nil {
 		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
 	}
 	result = &v1beta1.GCPIngressParamsList{}
 	err = c.client.Get().
-		Resource("gcpingressparamses").
+		Resource("gcpingressparams").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
 		Do(ctx).
@@ -89,25 +89,25 @@ func (c *gCPIngressParamses) List(ctx context.Context, opts v1.ListOptions) (res
 	return
 }
 
-// Watch returns a watch.Interface that watches the requested gCPIngressParamses.
-func (c *gCPIngressParamses) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
+// Watch returns a watch.Interface that watches the requested gCPIngressParams.
+func (c *gCPIngressParams) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	var timeout time.Duration
 	if opts.TimeoutSeconds != nil {
 		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
 	}
 	opts.Watch = true
 	return c.client.Get().
-		Resource("gcpingressparamses").
+		Resource("gcpingressparams").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Timeout(timeout).
 		Watch(ctx)
 }
 
 // Create takes the representation of a gCPIngressParams and creates it.  Returns the server's representation of the gCPIngressParams, and an error, if there is any.
-func (c *gCPIngressParamses) Create(ctx context.Context, gCPIngressParams *v1beta1.GCPIngressParams, opts v1.CreateOptions) (result *v1beta1.GCPIngressParams, err error) {
+func (c *gCPIngressParams) Create(ctx context.Context, gCPIngressParams *v1beta1.GCPIngressParams, opts v1.CreateOptions) (result *v1beta1.GCPIngressParams, err error) {
 	result = &v1beta1.GCPIngressParams{}
 	err = c.client.Post().
-		Resource("gcpingressparamses").
+		Resource("gcpingressparams").
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(gCPIngressParams).
 		Do(ctx).
@@ -116,10 +116,10 @@ func (c *gCPIngressParamses) Create(ctx context.Context, gCPIngressParams *v1bet
 }
 
 // Update takes the representation of a gCPIngressParams and updates it. Returns the server's representation of the gCPIngressParams, and an error, if there is any.
-func (c *gCPIngressParamses) Update(ctx context.Context, gCPIngressParams *v1beta1.GCPIngressParams, opts v1.UpdateOptions) (result *v1beta1.GCPIngressParams, err error) {
+func (c *gCPIngressParams) Update(ctx context.Context, gCPIngressParams *v1beta1.GCPIngressParams, opts v1.UpdateOptions) (result *v1beta1.GCPIngressParams, err error) {
 	result = &v1beta1.GCPIngressParams{}
 	err = c.client.Put().
-		Resource("gcpingressparamses").
+		Resource("gcpingressparams").
 		Name(gCPIngressParams.Name).
 		VersionedParams(&opts, scheme.ParameterCodec).
 		Body(gCPIngressParams).
@@ -129,9 +129,9 @@ func (c *gCPIngressParamses) Update(ctx context.Context, gCPIngressParams *v1bet
 }
 
 // Delete takes name of the gCPIngressParams and deletes it. Returns an error if one occurs.
-func (c *gCPIngressParamses) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
+func (c *gCPIngressParams) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	return c.client.Delete().
-		Resource("gcpingressparamses").
+		Resource("gcpingressparams").
 		Name(name).
 		Body(&opts).
 		Do(ctx).
@@ -139,13 +139,13 @@ func (c *gCPIngressParamses) Delete(ctx context.Context, name string, opts v1.De
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *gCPIngressParamses) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+func (c *gCPIngressParams) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
 	var timeout time.Duration
 	if listOpts.TimeoutSeconds != nil {
 		timeout = time.Duration(*listOpts.TimeoutSeconds) * time.Second
 	}
 	return c.client.Delete().
-		Resource("gcpingressparamses").
+		Resource("gcpingressparams").
 		VersionedParams(&listOpts, scheme.ParameterCodec).
 		Timeout(timeout).
 		Body(&opts).
@@ -154,10 +154,10 @@ func (c *gCPIngressParamses) DeleteCollection(ctx context.Context, opts v1.Delet
 }
 
 // Patch applies the patch and returns the patched gCPIngressParams.
-func (c *gCPIngressParamses) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.GCPIngressParams, err error) {
+func (c *gCPIngressParams) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.GCPIngressParams, err error) {
 	result = &v1beta1.GCPIngressParams{}
 	err = c.client.Patch(pt).
-		Resource("gcpingressparamses").
+		Resource("gcpingressparams").
 		Name(name).
 		SubResource(subresources...).
 		VersionedParams(&opts, scheme.ParameterCodec).
