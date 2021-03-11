@@ -25,10 +25,10 @@ import (
 	v1beta1 "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1"
 )
 
-// GCPIngressParamsLister helps list GCPIngressParamses.
+// GCPIngressParamsLister helps list GCPIngressParams.
 // All objects returned here must be treated as read-only.
 type GCPIngressParamsLister interface {
-	// List lists all GCPIngressParamses in the indexer.
+	// List lists all GCPIngressParams in the indexer.
 	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1beta1.GCPIngressParams, err error)
 	// Get retrieves the GCPIngressParams from the index for a given name.
@@ -47,7 +47,7 @@ func NewGCPIngressParamsLister(indexer cache.Indexer) GCPIngressParamsLister {
 	return &gCPIngressParamsLister{indexer: indexer}
 }
 
-// List lists all GCPIngressParamses in the indexer.
+// List lists all GCPIngressParams in the indexer.
 func (s *gCPIngressParamsLister) List(selector labels.Selector) (ret []*v1beta1.GCPIngressParams, err error) {
 	err = cache.ListAll(s.indexer, selector, func(m interface{}) {
 		ret = append(ret, m.(*v1beta1.GCPIngressParams))

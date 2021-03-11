@@ -97,10 +97,18 @@ ${GOPATH}/bin/openapi-gen \
 
 echo "Performing code generation for GCPIngressParams CRD"
 ${CODEGEN_PKG}/generate-groups.sh \
-  "deepcopy,client,informer,lister" \
+  "deepcopy,informer,lister" \
   k8s.io/ingress-gce/pkg/ingparams/client k8s.io/ingress-gce/pkg/apis \
   "ingparams:v1beta1" \
-  --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
+  --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt \
+
+# Separate client generation to overwrite default Plural name
+${CODEGEN_PKG}/generate-groups.sh \
+  "client, informer, lister" \
+  k8s.io/ingress-gce/pkg/ingparams/client k8s.io/ingress-gce/pkg/apis \
+  "ingparams:v1beta1" \
+  --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt \
+  --plural-exceptions=GCPIngressParams:GCPIngressParams
 
 echo "Generating openapi for GCPIngressParams v1beta1"
 go install ${OPENAPI_PKG}/cmd/openapi-gen

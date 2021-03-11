@@ -30,29 +30,29 @@ import (
 	v1beta1 "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1"
 )
 
-// FakeGCPIngressParamses implements GCPIngressParamsInterface
-type FakeGCPIngressParamses struct {
+// FakeGCPIngressParams implements GCPIngressParamsInterface
+type FakeGCPIngressParams struct {
 	Fake *FakeNetworkingV1beta1
 }
 
-var gcpingressparamsesResource = schema.GroupVersionResource{Group: "networking.gke.io", Version: "v1beta1", Resource: "gcpingressparamses"}
+var gcpingressparamsResource = schema.GroupVersionResource{Group: "networking.gke.io", Version: "v1beta1", Resource: "gcpingressparams"}
 
-var gcpingressparamsesKind = schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1beta1", Kind: "GCPIngressParams"}
+var gcpingressparamsKind = schema.GroupVersionKind{Group: "networking.gke.io", Version: "v1beta1", Kind: "GCPIngressParams"}
 
 // Get takes name of the gCPIngressParams, and returns the corresponding gCPIngressParams object, and an error if there is any.
-func (c *FakeGCPIngressParamses) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.GCPIngressParams, err error) {
+func (c *FakeGCPIngressParams) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1beta1.GCPIngressParams, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootGetAction(gcpingressparamsesResource, name), &v1beta1.GCPIngressParams{})
+		Invokes(testing.NewRootGetAction(gcpingressparamsResource, name), &v1beta1.GCPIngressParams{})
 	if obj == nil {
 		return nil, err
 	}
 	return obj.(*v1beta1.GCPIngressParams), err
 }
 
-// List takes label and field selectors, and returns the list of GCPIngressParamses that match those selectors.
-func (c *FakeGCPIngressParamses) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.GCPIngressParamsList, err error) {
+// List takes label and field selectors, and returns the list of GCPIngressParams that match those selectors.
+func (c *FakeGCPIngressParams) List(ctx context.Context, opts v1.ListOptions) (result *v1beta1.GCPIngressParamsList, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootListAction(gcpingressparamsesResource, gcpingressparamsesKind, opts), &v1beta1.GCPIngressParamsList{})
+		Invokes(testing.NewRootListAction(gcpingressparamsResource, gcpingressparamsKind, opts), &v1beta1.GCPIngressParamsList{})
 	if obj == nil {
 		return nil, err
 	}
@@ -70,16 +70,16 @@ func (c *FakeGCPIngressParamses) List(ctx context.Context, opts v1.ListOptions) 
 	return list, err
 }
 
-// Watch returns a watch.Interface that watches the requested gCPIngressParamses.
-func (c *FakeGCPIngressParamses) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
+// Watch returns a watch.Interface that watches the requested gCPIngressParams.
+func (c *FakeGCPIngressParams) Watch(ctx context.Context, opts v1.ListOptions) (watch.Interface, error) {
 	return c.Fake.
-		InvokesWatch(testing.NewRootWatchAction(gcpingressparamsesResource, opts))
+		InvokesWatch(testing.NewRootWatchAction(gcpingressparamsResource, opts))
 }
 
 // Create takes the representation of a gCPIngressParams and creates it.  Returns the server's representation of the gCPIngressParams, and an error, if there is any.
-func (c *FakeGCPIngressParamses) Create(ctx context.Context, gCPIngressParams *v1beta1.GCPIngressParams, opts v1.CreateOptions) (result *v1beta1.GCPIngressParams, err error) {
+func (c *FakeGCPIngressParams) Create(ctx context.Context, gCPIngressParams *v1beta1.GCPIngressParams, opts v1.CreateOptions) (result *v1beta1.GCPIngressParams, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootCreateAction(gcpingressparamsesResource, gCPIngressParams), &v1beta1.GCPIngressParams{})
+		Invokes(testing.NewRootCreateAction(gcpingressparamsResource, gCPIngressParams), &v1beta1.GCPIngressParams{})
 	if obj == nil {
 		return nil, err
 	}
@@ -87,9 +87,9 @@ func (c *FakeGCPIngressParamses) Create(ctx context.Context, gCPIngressParams *v
 }
 
 // Update takes the representation of a gCPIngressParams and updates it. Returns the server's representation of the gCPIngressParams, and an error, if there is any.
-func (c *FakeGCPIngressParamses) Update(ctx context.Context, gCPIngressParams *v1beta1.GCPIngressParams, opts v1.UpdateOptions) (result *v1beta1.GCPIngressParams, err error) {
+func (c *FakeGCPIngressParams) Update(ctx context.Context, gCPIngressParams *v1beta1.GCPIngressParams, opts v1.UpdateOptions) (result *v1beta1.GCPIngressParams, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootUpdateAction(gcpingressparamsesResource, gCPIngressParams), &v1beta1.GCPIngressParams{})
+		Invokes(testing.NewRootUpdateAction(gcpingressparamsResource, gCPIngressParams), &v1beta1.GCPIngressParams{})
 	if obj == nil {
 		return nil, err
 	}
@@ -97,24 +97,24 @@ func (c *FakeGCPIngressParamses) Update(ctx context.Context, gCPIngressParams *v
 }
 
 // Delete takes name of the gCPIngressParams and deletes it. Returns an error if one occurs.
-func (c *FakeGCPIngressParamses) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
+func (c *FakeGCPIngressParams) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(gcpingressparamsesResource, name), &v1beta1.GCPIngressParams{})
+		Invokes(testing.NewRootDeleteAction(gcpingressparamsResource, name), &v1beta1.GCPIngressParams{})
 	return err
 }
 
 // DeleteCollection deletes a collection of objects.
-func (c *FakeGCPIngressParamses) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
-	action := testing.NewRootDeleteCollectionAction(gcpingressparamsesResource, listOpts)
+func (c *FakeGCPIngressParams) DeleteCollection(ctx context.Context, opts v1.DeleteOptions, listOpts v1.ListOptions) error {
+	action := testing.NewRootDeleteCollectionAction(gcpingressparamsResource, listOpts)
 
 	_, err := c.Fake.Invokes(action, &v1beta1.GCPIngressParamsList{})
 	return err
 }
 
 // Patch applies the patch and returns the patched gCPIngressParams.
-func (c *FakeGCPIngressParamses) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.GCPIngressParams, err error) {
+func (c *FakeGCPIngressParams) Patch(ctx context.Context, name string, pt types.PatchType, data []byte, opts v1.PatchOptions, subresources ...string) (result *v1beta1.GCPIngressParams, err error) {
 	obj, err := c.Fake.
-		Invokes(testing.NewRootPatchSubresourceAction(gcpingressparamsesResource, name, pt, data, subresources...), &v1beta1.GCPIngressParams{})
+		Invokes(testing.NewRootPatchSubresourceAction(gcpingressparamsResource, name, pt, data, subresources...), &v1beta1.GCPIngressParams{})
 	if obj == nil {
 		return nil, err
 	}

@@ -24,8 +24,8 @@ import (
 
 // Interface provides access to all the informers in this group version.
 type Interface interface {
-	// GCPIngressParamses returns a GCPIngressParamsInformer.
-	GCPIngressParamses() GCPIngressParamsInformer
+	// GCPIngressParams returns a GCPIngressParamsInformer.
+	GCPIngressParams() GCPIngressParamsInformer
 }
 
 type version struct {
@@ -39,7 +39,7 @@ func New(f internalinterfaces.SharedInformerFactory, namespace string, tweakList
 	return &version{factory: f, namespace: namespace, tweakListOptions: tweakListOptions}
 }
 
-// GCPIngressParamses returns a GCPIngressParamsInformer.
-func (v *version) GCPIngressParamses() GCPIngressParamsInformer {
+// GCPIngressParams returns a GCPIngressParamsInformer.
+func (v *version) GCPIngressParams() GCPIngressParamsInformer {
 	return &gCPIngressParamsInformer{factory: v.factory, tweakListOptions: v.tweakListOptions}
 }

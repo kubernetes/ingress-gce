@@ -33,7 +33,7 @@ import (
 )
 
 // GCPIngressParamsInformer provides access to a shared informer and lister for
-// GCPIngressParamses.
+// GCPIngressParams.
 type GCPIngressParamsInformer interface {
 	Informer() cache.SharedIndexInformer
 	Lister() v1beta1.GCPIngressParamsLister
@@ -61,13 +61,13 @@ func NewFilteredGCPIngressParamsInformer(client versioned.Interface, resyncPerio
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1beta1().GCPIngressParamses().List(context.TODO(), options)
+				return client.NetworkingV1beta1().GCPIngressParams().List(context.TODO(), options)
 			},
 			WatchFunc: func(options v1.ListOptions) (watch.Interface, error) {
 				if tweakListOptions != nil {
 					tweakListOptions(&options)
 				}
-				return client.NetworkingV1beta1().GCPIngressParamses().Watch(context.TODO(), options)
+				return client.NetworkingV1beta1().GCPIngressParams().Watch(context.TODO(), options)
 			},
 		},
 		&ingparamsv1beta1.GCPIngressParams{},

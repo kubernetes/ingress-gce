@@ -28,8 +28,8 @@ type FakeNetworkingV1beta1 struct {
 	*testing.Fake
 }
 
-func (c *FakeNetworkingV1beta1) GCPIngressParamses() v1beta1.GCPIngressParamsInterface {
-	return &FakeGCPIngressParamses{c}
+func (c *FakeNetworkingV1beta1) GCPIngressParams() v1beta1.GCPIngressParamsInterface {
+	return &FakeGCPIngressParams{c}
 }
 
 // RESTClient returns a RESTClient that is used to communicate
