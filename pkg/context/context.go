@@ -23,6 +23,7 @@ import (
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
@@ -35,6 +36,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	sav1alpha1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/cmconfig"
@@ -288,7 +290,7 @@ func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 	broadcaster.StartRecordingToSink(&corev1.EventSinkImpl{
 		Interface: ctx.KubeClient.CoreV1().Events(ns),
 	})
-	rec := broadcaster.NewRecorder(scheme.Scheme, apiv1.EventSource{Component: "loadbalancer-controller"})
+	rec := broadcaster.NewRecorder(ctx.generateScheme(), apiv1.EventSource{Component: "loadbalancer-controller"})
 	ctx.recorders[ns] = rec
 
 	return rec
@@ -373,4 +375,17 @@ func (ctx *ControllerContext) FrontendConfigs() *typed.FrontendConfigStore {
 		return typed.WrapFrontendConfigStore(nil)
 	}
 	return typed.WrapFrontendConfigStore(ctx.FrontendConfigInformer.GetStore())
+}
+
+// generateScheme creates a scheme and adds relevant CRD schemes that will be used
+// for events
+func (ctx *ControllerContext) generateScheme() *runtime.Scheme {
+	controllerScheme := scheme.Scheme
+
+	if ctx.SAInformer != nil {
+		if err := sav1alpha1.AddToScheme(controllerScheme); err != nil {
+			klog.Errorf("Failed to add ServiceAttachment CRD scheme to event recorder")
+		}
+	}
+	return controllerScheme
 }
