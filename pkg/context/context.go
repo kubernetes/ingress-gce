@@ -44,6 +44,8 @@ import (
 	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
 	informeringparams "k8s.io/ingress-gce/pkg/ingparams/client/informers/externalversions/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/metrics"
+	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
+	informerserviceattachment "k8s.io/ingress-gce/pkg/serviceattachment/client/informers/externalversions/serviceattachment/v1alpha1"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -63,6 +65,7 @@ type ControllerContext struct {
 	KubeClient            kubernetes.Interface
 	SvcNegClient          svcnegclient.Interface
 	DestinationRuleClient dynamic.NamespaceableResourceInterface
+	SAClient              serviceattachmentclient.Interface
 
 	Cloud *gce.Cloud
 
@@ -85,6 +88,7 @@ type ControllerContext struct {
 	SvcNegInformer          cache.SharedIndexInformer
 	IngClassInformer        cache.SharedIndexInformer
 	IngParamsInformer       cache.SharedIndexInformer
+	SAInformer              cache.SharedIndexInformer
 
 	ControllerMetrics *metrics.ControllerMetrics
 
@@ -117,6 +121,7 @@ func NewControllerContext(
 	frontendConfigClient frontendconfigclient.Interface,
 	svcnegClient svcnegclient.Interface,
 	ingParamsClient ingparamsclient.Interface,
+	saClient serviceattachmentclient.Interface,
 	cloud *gce.Cloud,
 	clusterNamer *namer.Namer,
 	kubeSystemUID types.UID,
@@ -126,6 +131,7 @@ func NewControllerContext(
 		KubeConfig:              kubeConfig,
 		KubeClient:              kubeClient,
 		SvcNegClient:            svcnegClient,
+		SAClient:                saClient,
 		Cloud:                   cloud,
 		ClusterNamer:            clusterNamer,
 		L4Namer:                 namer.NewL4Namer(string(kubeSystemUID), clusterNamer),
@@ -150,6 +156,10 @@ func NewControllerContext(
 	if ingParamsClient != nil {
 		context.IngClassInformer = informerv1beta1.NewIngressClassInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
 		context.IngParamsInformer = informeringparams.NewGCPIngressParamsInformer(ingParamsClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	}
+
+	if saClient != nil {
+		context.SAInformer = informerserviceattachment.NewServiceAttachmentInformer(saClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 
 	return context
