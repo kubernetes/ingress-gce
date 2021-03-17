@@ -104,7 +104,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 
 	// Preparing dynamic client if Istio:DestinationRule CRD exisits and matches the required version.
 	// The client is used by the ASM e2e tests.
-	destinationRuleCRD, err := f.crdClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(context.TODO(), destinationRuleCRDName, metav1.GetOptions{})
+	destinationRuleCRD, err := f.crdClient.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), destinationRuleCRDName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			klog.Infof("Cannot load DestinationRule CRD, Istio is disabled on this cluster.")
@@ -112,8 +112,8 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 			klog.Fatalf("Failed to load DestinationRule CRD, error: %s", err)
 		}
 	} else {
-		if destinationRuleCRD.Spec.Version != destinationRuleAPIVersion {
-			klog.Fatalf("The cluster Istio version not meet the testing requirement, want: %s, got: %s.", destinationRuleAPIVersion, destinationRuleCRD.Spec.Version)
+		if destinationRuleCRD.Spec.Versions[0].Name != destinationRuleAPIVersion {
+			klog.Fatalf("The cluster Istio version not meet the testing requirement, want: %s, got: %s.", destinationRuleAPIVersion, destinationRuleCRD.Spec.Versions[0].Name)
 		} else {
 			dynamicClient, err := dynamic.NewForConfig(config)
 			if err != nil {
