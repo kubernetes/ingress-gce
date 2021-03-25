@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"net"
 	"net/http"
 	"reflect"
@@ -33,7 +34,6 @@ import (
 	apps "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
-	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -737,7 +737,7 @@ func WaitConfigMapEvents(s *Sandbox, namespace, name string, msgs []string, time
 // by the ingress controller.
 func waitForBackendConfigCRDEstablish(crdClient *apiextensionsclient.Clientset) error {
 	condition := func() (bool, error) {
-		bcCRD, err := crdClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(context.TODO(), backendConfigCRDName, metav1.GetOptions{})
+		bcCRD, err := crdClient.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), backendConfigCRDName, metav1.GetOptions{})
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				klog.V(3).Infof("CRD %s is not found, retrying", backendConfigCRDName)
@@ -746,7 +746,7 @@ func waitForBackendConfigCRDEstablish(crdClient *apiextensionsclient.Clientset) 
 			return false, err
 		}
 		for _, c := range bcCRD.Status.Conditions {
-			if c.Type == apiextensionsv1beta1.Established && c.Status == apiextensionsv1beta1.ConditionTrue {
+			if c.Type == apiextensionsv1.Established && c.Status == apiextensionsv1.ConditionTrue {
 				return true, nil
 			}
 		}

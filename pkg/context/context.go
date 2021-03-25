@@ -200,7 +200,7 @@ func (ctx *ControllerContext) initEnableASM() {
 		ctx.ASMConfigController.DisableASM()
 		return
 	}
-	destinationRuleCRD, err := apiextensionClient.ApiextensionsV1beta1().CustomResourceDefinitions().Get(context2.TODO(), destinationRuleCRDName, metav1.GetOptions{})
+	destinationRuleCRD, err := apiextensionClient.ApiextensionsV1().CustomResourceDefinitions().Get(context2.TODO(), destinationRuleCRDName, metav1.GetOptions{})
 	if err != nil {
 		if errors.IsNotFound(err) {
 			ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", "Cannot find DestinationRule CRD, disabling ASM Mode, please check Istio setup.")
@@ -210,9 +210,9 @@ func (ctx *ControllerContext) initEnableASM() {
 		ctx.ASMConfigController.DisableASM()
 		return
 	}
-	if destinationRuleCRD.Spec.Version != destinationRuleAPIVersion {
+	if destinationRuleCRD.Spec.Versions[0].Name != destinationRuleAPIVersion {
 		ctx.ASMConfigController.RecordEvent("Warning", "FailedValidateDestinationRuleCRD", fmt.Sprintf("Only Support Istio API: %s, but found %s, disabling the ASM Mode, please check Istio setup.",
-			destinationRuleAPIVersion, destinationRuleCRD.Spec.Version))
+			destinationRuleAPIVersion, destinationRuleCRD.Spec.Versions[0].Name))
 		ctx.ASMConfigController.DisableASM()
 		return
 	}
