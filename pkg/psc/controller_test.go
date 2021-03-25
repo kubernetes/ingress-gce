@@ -18,6 +18,7 @@ package psc
 import (
 	context2 "context"
 	"fmt"
+	"net/http"
 	"reflect"
 	"testing"
 	"time"
@@ -26,7 +27,9 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	alpha "google.golang.org/api/compute/v0.alpha"
 	ga "google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	v1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
@@ -37,6 +40,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	safake "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	sautils "k8s.io/ingress-gce/pkg/utils/serviceattachment"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -237,8 +241,8 @@ func TestServiceAttachmentCreation(t *testing.T) {
 				},
 			}
 
-			controller.svcAttachmentLister.Add(saCR)
 			controller.saClient.NetworkingV1alpha1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
+			syncServiceAttachmentLister(controller)
 
 			err := controller.processServiceAttachment(SvcAttachmentKeyFunc(testNamespace, saName))
 			if tc.expectErr && err == nil {
@@ -249,6 +253,10 @@ func TestServiceAttachmentCreation(t *testing.T) {
 				updatedCR, err := controller.saClient.NetworkingV1alpha1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
 				if err != nil {
 					t.Errorf("unexpected error while querying for service attachment %s: %q", saName, err)
+				}
+
+				if err = verifyServiceAttachmentFinalizer(updatedCR); err != nil {
+					t.Errorf("%s:%s", tc.desc, err)
 				}
 
 				if updatedCR.ResourceVersion != saCR.ResourceVersion {
@@ -291,7 +299,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 	saUID := "serivce-attachment-uid"
 	frIPAddr := "1.2.3.4"
 
-	saCRAnnotation := testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"})
+	saCRAnnotation := testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"}, true)
 	saCRAnnotation.Annotations = map[string]string{"some-key": "some-value"}
 
 	testcases := []struct {
@@ -306,18 +314,23 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 		},
 		{
 			desc:        "updated subnet",
-			updatedSACR: testServiceAttachmentCR(saName, svcName, saUID, []string{"diff-subnet"}),
+			updatedSACR: testServiceAttachmentCR(saName, svcName, saUID, []string{"diff-subnet"}, true),
 			expectErr:   true,
 		},
 		{
 			desc:        "updated service name",
-			updatedSACR: testServiceAttachmentCR(saName, "my-second-service", saUID, []string{"my-subnet"}),
+			updatedSACR: testServiceAttachmentCR(saName, "my-second-service", saUID, []string{"my-subnet"}, true),
 			expectErr:   true,
 		},
 		{
 			desc:        "removed subnet",
-			updatedSACR: testServiceAttachmentCR(saName, svcName, saUID, []string{}),
+			updatedSACR: testServiceAttachmentCR(saName, svcName, saUID, []string{}, true),
 			expectErr:   true,
+		},
+		{
+			desc:        "removed finalizer",
+			updatedSACR: testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"}, false),
+			expectErr:   false,
 		},
 	}
 
@@ -337,15 +350,12 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 				t.Errorf("%s", err)
 			}
 
-			saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"})
-			err = controller.svcAttachmentLister.Add(saCR)
-			if err != nil {
-				t.Fatalf("Failed to add service attachment cr to store: %q", err)
-			}
+			saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"}, false)
 			_, err = controller.saClient.NetworkingV1alpha1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
 			if err != nil {
 				t.Fatalf("Failed to create service attachment cr: %q", err)
 			}
+			syncServiceAttachmentLister(controller)
 
 			if err := controller.processServiceAttachment(SvcAttachmentKeyFunc(testNamespace, saName)); err != nil {
 				t.Fatalf("Unexpected error while processing ServiceAttachment: %q", err)
@@ -365,7 +375,8 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 				}
 			}
 
-			err = controller.svcAttachmentLister.Add(tc.updatedSACR)
+			_, err = controller.saClient.NetworkingV1alpha1().ServiceAttachments(testNamespace).Update(context2.TODO(), tc.updatedSACR, metav1.UpdateOptions{})
+			syncServiceAttachmentLister(controller)
 			if err != nil {
 				t.Fatalf("Failed to add tc.updatedSACR to store: %q", err)
 			}
@@ -388,6 +399,168 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 			saCR, err = controller.saClient.NetworkingV1alpha1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("Failed to get service attachment cr: %q", err)
+			}
+		})
+	}
+}
+
+func TestServiceAttachmentGarbageCollection(t *testing.T) {
+	svcNamePrefix := "my-service"
+	saUIDPrefix := "serivce-attachment-uid"
+	frIPAddr := "1.2.3.4"
+
+	testcases := []struct {
+		desc           string
+		deleteError    error
+		getError       error
+		invalidSAURL   bool
+		saURL          string
+		expectDeletion bool
+	}{
+		{
+			desc:           "regular service attachment deletion",
+			expectDeletion: true,
+		},
+		{
+			desc:           "service attachment not found error during gc",
+			getError:       utils.FakeGoogleAPINotFoundErr(),
+			expectDeletion: true,
+		},
+		{
+			desc:           "service attachment not found error during gc",
+			getError:       &googleapi.Error{Code: http.StatusBadRequest},
+			expectDeletion: true,
+		},
+		{
+			desc:           "service attachment not found error during gc",
+			getError:       fmt.Errorf("deletion error"),
+			expectDeletion: false,
+		},
+		{
+			desc:           "service attachment cr has an empty url",
+			invalidSAURL:   true,
+			saURL:          "",
+			expectDeletion: true,
+		},
+		{
+			desc:           "service attachment cr has a malformed url",
+			invalidSAURL:   true,
+			saURL:          "malformed-url",
+			expectDeletion: true,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+
+			controller := newTestController()
+
+			if _, err := createNatSubnet(controller.cloud, "my-subnet"); err != nil {
+				t.Errorf("failed to create subnet: %s", err)
+			}
+
+			// create a serviceAttachment that should not be deleted as part of GC
+			saToKeep := testServiceAttachmentCR("sa-to-keep", svcNamePrefix+"-keep", saUIDPrefix+"-keep", []string{"my-subnet"}, true)
+			saToBeDeleted := testServiceAttachmentCR("sa-to-be-deleted", svcNamePrefix+"-deleted", saUIDPrefix+"-deleted", []string{"my-subnet"}, true)
+			for _, sa := range []*sav1alpha1.ServiceAttachment{saToKeep, saToBeDeleted} {
+				svcName := sa.Spec.ResourceRef.Name
+				svc, frName, err := createSvc(controller, svcName, string(sa.UID), frIPAddr, annotations.TCPForwardingRuleKey)
+				if err != nil {
+					t.Errorf("%s", err)
+				}
+				controller.serviceLister.Add(svc)
+
+				if _, err = createForwardingRule(controller.cloud, frName, frIPAddr); err != nil {
+					t.Errorf("%s", err)
+				}
+
+				_, err = controller.saClient.NetworkingV1alpha1().ServiceAttachments(sa.Namespace).Create(context2.TODO(), sa, metav1.CreateOptions{})
+				if err != nil {
+					t.Fatalf("failed to add service attachment to client: %q", err)
+				}
+
+				syncServiceAttachmentLister(controller)
+
+				if err = controller.processServiceAttachment(SvcAttachmentKeyFunc(sa.Namespace, sa.Name)); err != nil {
+					t.Fatalf("failed to process service attachment: %q", err)
+				}
+			}
+
+			deletionTS := metav1.Now()
+			saCR, err := controller.saClient.NetworkingV1alpha1().ServiceAttachments(saToBeDeleted.Namespace).Get(context2.TODO(), saToBeDeleted.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Failed to get service attachment cr: %q", err)
+			}
+
+			saCR.DeletionTimestamp = &deletionTS
+			if tc.invalidSAURL {
+				saCR.Status.ServiceAttachmentURL = tc.saURL
+			}
+			_, err = controller.saClient.NetworkingV1alpha1().ServiceAttachments(saToBeDeleted.Namespace).Update(context2.TODO(), saCR, metav1.UpdateOptions{})
+			if err != nil {
+				t.Fatalf("failed to update service attachment to client: %q", err)
+			}
+
+			// sync the controller cache to have have current set of serviceAttachments
+			syncServiceAttachmentLister(controller)
+
+			if tc.getError != nil || tc.deleteError != nil {
+
+				fakeGCE := controller.cloud.Compute().(*cloud.MockGCE)
+				mockSA := fakeGCE.AlphaServiceAttachments().(*cloud.MockAlphaServiceAttachments)
+
+				gceSAName := controller.saNamer.ServiceAttachment(saToBeDeleted.Namespace, saToBeDeleted.Name, string(saToBeDeleted.UID))
+				saKey, _ := composite.CreateKey(controller.cloud, gceSAName, meta.Regional)
+
+				if tc.getError != nil {
+					mockSA.GetError[*saKey] = tc.getError
+				}
+
+				if tc.deleteError != nil {
+					mockSA.DeleteError[*saKey] = tc.deleteError
+				}
+			}
+
+			controller.garbageCollectServiceAttachments()
+
+			if tc.expectDeletion {
+				gceSAName := controller.saNamer.ServiceAttachment(saToBeDeleted.Namespace, saToBeDeleted.Name, string(saToBeDeleted.UID))
+				if err := verifyGCEServiceAttachmentDeletion(controller, saToBeDeleted); err != nil {
+					t.Errorf("Expected gce sa %s to be deleted : %s", gceSAName, err)
+				}
+
+				if err := verifyServiceAttachmentCRDeletion(controller, saToBeDeleted); err != nil {
+					t.Errorf("Expected sa %s to be deleted : %s", saToBeDeleted.Name, err)
+				}
+			} else {
+				currSA, err := controller.saClient.NetworkingV1alpha1().ServiceAttachments(saToBeDeleted.Namespace).Get(context2.TODO(), saToBeDeleted.Name, metav1.GetOptions{})
+				if err != nil {
+					t.Fatalf("failed to query for service attachment %s from client: %q", currSA.Name, err)
+				}
+
+				if err := verifyServiceAttachmentFinalizer(currSA); err != nil {
+					t.Errorf("service attachment %s finalizer should not be removed after gc: %q", currSA.Name, err)
+				}
+			}
+
+			// verify saToKeep was not deleted
+			currSA, err := controller.saClient.NetworkingV1alpha1().ServiceAttachments(saToKeep.Namespace).Get(context2.TODO(), saToKeep.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("failed to query for service attachment %s from client: %q", saToKeep.Name, err)
+			}
+
+			if err = verifyServiceAttachmentFinalizer(currSA); err != nil {
+				t.Errorf("service attachment %s finalizer should not be removed after gc: %q", saToKeep.Name, err)
+			}
+
+			gceSAName := controller.saNamer.ServiceAttachment(saToKeep.Namespace, saToKeep.Name, string(saToKeep.UID))
+			gceSA, err := getServiceAttachment(controller.cloud, gceSAName)
+			if err != nil {
+				t.Errorf("Unexpected error when getting updated GCE ServiceAttachment: %q", err)
+			}
+
+			if gceSA == nil {
+				t.Errorf("service attachment %s should not have been gc'd", saToKeep.Name)
 			}
 		})
 	}
@@ -441,8 +614,8 @@ func createSvc(controller *Controller, svcName, svcUID, ipAddr, forwardingRuleKe
 }
 
 // testServiceAttachmentCR creates a test ServiceAttachment CR with the provided name, uid and subnets
-func testServiceAttachmentCR(saName, svcName, svcUID string, subnets []string) *sav1alpha1.ServiceAttachment {
-	return &sav1alpha1.ServiceAttachment{
+func testServiceAttachmentCR(saName, svcName, svcUID string, subnets []string, withFinalizer bool) *sav1alpha1.ServiceAttachment {
+	cr := &sav1alpha1.ServiceAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: testNamespace,
 			Name:      saName,
@@ -457,6 +630,11 @@ func testServiceAttachmentCR(saName, svcName, svcUID string, subnets []string) *
 			},
 		},
 	}
+
+	if withFinalizer {
+		cr.Finalizers = []string{ServiceAttachmentFinalizerKey}
+	}
+	return cr
 }
 
 // createForwardingRule will create a forwarding rule with the provided name and ip address
@@ -525,6 +703,74 @@ func validateSAStatus(status sav1alpha1.ServiceAttachmentStatus, sa *alpha.Servi
 
 	if status.ForwardingRuleURL != sa.ProducerForwardingRule {
 		return fmt.Errorf("ServiceAttachment.Status.ForwardingRuleURL was %s, but should be %s", status.ForwardingRuleURL, sa.ProducerForwardingRule)
+	}
+	return nil
+}
+
+// verifyServiceAttachmentFinalizer verfies that the provided ServiceAttachment CR
+// has the ServiceAttachmentFinalizerKey, otherwise it will return an error
+func verifyServiceAttachmentFinalizer(cr *sav1alpha1.ServiceAttachment) error {
+	finalizers := cr.GetFinalizers()
+	if len(finalizers) != 1 {
+		return fmt.Errorf("Expected service attachment to have one finalizer, has %d", len(finalizers))
+	} else {
+		if finalizers[0] != ServiceAttachmentFinalizerKey {
+			return fmt.Errorf("Expected service attachment to have finalizer %s, but found %s", ServiceAttachmentFinalizerKey, finalizers[0])
+		}
+	}
+	return nil
+}
+
+// syncServiceAttachmentLister will add all the current ServiceAttachment CRs in the Kubernetes
+// client to the controller's svcAttachmentLister
+func syncServiceAttachmentLister(controller *Controller) error {
+	crs, err := controller.saClient.NetworkingV1alpha1().ServiceAttachments(testNamespace).List(context2.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return err
+	}
+
+	for _, cr := range crs.Items {
+		saCR := cr
+		if err = controller.svcAttachmentLister.Add(&saCR); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// verifyServiceAttachmentCRDeletion will verify that the provicded ServiceAttachment CR
+// does not have the service attachment finalizer and that the deletion timestamp has been
+// set
+func verifyServiceAttachmentCRDeletion(controller *Controller, sa *sav1alpha1.ServiceAttachment) error {
+	currCR, err := controller.saClient.NetworkingV1alpha1().ServiceAttachments(sa.Namespace).Get(context2.TODO(), sa.Name, metav1.GetOptions{})
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to query for service attachment from client: %q", err)
+	}
+
+	if currCR.DeletionTimestamp.IsZero() {
+		return fmt.Errorf("deletion timestamp is not set on %s", sa.Name)
+	}
+
+	if err = verifyServiceAttachmentFinalizer(currCR); err == nil {
+		return fmt.Errorf("service attachment %s finalizer should be removed after gc", sa.Name)
+	}
+	return nil
+}
+
+// verifyGCEServiceAttachmentDeletion verifies that the provided CR's corresponding GCE
+// Service Attachmen resource has been deleted
+func verifyGCEServiceAttachmentDeletion(controller *Controller, sa *sav1alpha1.ServiceAttachment) error {
+	gceSAName := controller.saNamer.ServiceAttachment(sa.Namespace, sa.Name, string(sa.UID))
+	gceSA, err := getServiceAttachment(controller.cloud, gceSAName)
+	if err == nil {
+		return fmt.Errorf("Expected error not found when getting GCE ServiceAttachment for SA CR %s", sa.Name)
+	}
+
+	if gceSA != nil {
+		return fmt.Errorf("Service attachment: %q should have been deleted", gceSAName)
 	}
 	return nil
 }
