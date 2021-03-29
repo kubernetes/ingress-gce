@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -28,9 +29,11 @@ import (
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/util/workqueue"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/ingress-gce/pkg/annotations"
 	sav1alpha1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1"
@@ -54,6 +57,9 @@ const (
 	// ServiceAttachmentFinalizer used by the psc controller to ensure Service Attachment CRs
 	// are deleted after the corresponding Service Attachments are deleted
 	ServiceAttachmentFinalizerKey = "networking.gke.io/service-attachment-finalizer"
+
+	// ServiceAttachmentGCPeriod is the interval at which Service Attachment GC will run
+	ServiceAttachmentGCPeriod = 2 * time.Minute
 )
 
 // Controller is a private service connect (psc) controller
@@ -62,8 +68,9 @@ const (
 type Controller struct {
 	client kubernetes.Interface
 
-	cloud    *gce.Cloud
-	saClient serviceattachmentclient.Interface
+	cloud              *gce.Cloud
+	saClient           serviceattachmentclient.Interface
+	svcAttachmentQueue workqueue.RateLimitingInterface
 
 	saNamer             namer.ServiceAttachmentNamer
 	svcAttachmentLister cache.Indexer
@@ -75,16 +82,101 @@ type Controller struct {
 
 func NewController(ctx *context.ControllerContext) *Controller {
 	saNamer := namer.NewServiceAttachmentNamer(ctx.ClusterNamer, string(ctx.KubeSystemUID))
-	return &Controller{
+	controller := &Controller{
 		client:              ctx.KubeClient,
 		cloud:               ctx.Cloud,
 		saClient:            ctx.SAClient,
 		saNamer:             saNamer,
 		svcAttachmentLister: ctx.SAInformer.GetIndexer(),
+		svcAttachmentQueue:  workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
 		serviceLister:       ctx.ServiceInformer.GetIndexer(),
 		hasSynced:           ctx.HasSynced,
 		recorder:            ctx.Recorder,
 	}
+
+	ctx.SAInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: controller.enqueueServiceAttachment,
+		UpdateFunc: func(old, cur interface{}) {
+			controller.enqueueServiceAttachment(cur)
+		},
+	})
+	return controller
+}
+
+// Run waits for the initial sync and will process keys in the queue and run GC
+// until signaled
+func (c *Controller) Run(stopChan <-chan struct{}) {
+	wait.PollUntil(5*time.Second, func() (bool, error) {
+		klog.V(2).Infof("Waiting for initial sync")
+		return c.hasSynced(), nil
+	}, stopChan)
+
+	klog.V(2).Infof("Starting private service connect controller")
+	defer func() {
+		klog.V(2).Infof("Shutting down private service connect controller")
+		c.svcAttachmentQueue.ShutDown()
+	}()
+
+	go wait.Until(func() { c.serviceAttachmentWorker(stopChan) }, time.Second, stopChan)
+
+	go func() {
+		// Wait a GC period before starting to ensure that resources have enough time to sync
+		time.Sleep(ServiceAttachmentGCPeriod)
+		wait.Until(c.garbageCollectServiceAttachments, ServiceAttachmentGCPeriod, stopChan)
+	}()
+
+	<-stopChan
+}
+
+// serviceAttachmentWorker keeps processing service attachment keys in the queue
+// until stopChan has been signaled
+func (c *Controller) serviceAttachmentWorker(stopChan <-chan struct{}) {
+	processKey := func() {
+		key, quit := c.svcAttachmentQueue.Get()
+		if quit {
+			return
+		}
+		defer c.svcAttachmentQueue.Done(key)
+		err := c.processServiceAttachment(key.(string))
+		c.handleErr(err, key)
+	}
+
+	for {
+		select {
+		case <-stopChan:
+			return
+		default:
+			processKey()
+		}
+	}
+}
+
+// handleErr will check for an error and report it as an event on the provided
+// service attachment cr
+func (c *Controller) handleErr(err error, key interface{}) {
+	if err == nil {
+		c.svcAttachmentQueue.Forget(key)
+		return
+	}
+	eventMsg := fmt.Sprintf("error processing service attachment %q: %q", key, err)
+	klog.Errorf(eventMsg)
+	if obj, exists, err := c.svcAttachmentLister.GetByKey(key.(string)); err != nil {
+		klog.Warningf("failed to retrieve service attachment %q from the store: %q", key.(string), err)
+	} else if exists {
+		svcAttachment := obj.(*sav1alpha1.ServiceAttachment)
+		c.recorder(svcAttachment.Namespace).Eventf(svcAttachment, v1.EventTypeWarning, "ProcessServiceAttachmentFailed", eventMsg)
+	}
+	c.svcAttachmentQueue.AddRateLimited(key)
+}
+
+// enqueueServiceAttachment adds the service attachment object to the queue
+func (c *Controller) enqueueServiceAttachment(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		klog.Errorf("Failed to generate service attachment key: %q", err)
+		return
+	}
+	c.svcAttachmentQueue.Add(key)
 }
 
 // processServiceAttachment will process a service attachment key and will gather all

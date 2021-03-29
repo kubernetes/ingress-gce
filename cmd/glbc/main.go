@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/ingparams"
+	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
 	"k8s.io/ingress-gce/pkg/svcneg"
 	"k8s.io/klog"
@@ -41,6 +42,7 @@ import (
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
+	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 
 	ingctx "k8s.io/ingress-gce/pkg/context"
@@ -141,10 +143,16 @@ func main() {
 		klog.Fatalf("Failed to create NetworkEndpointGroup client: %v", err)
 	}
 
+	var svcAttachmentClient serviceattachmentclient.Interface
 	if flags.F.EnablePSC {
 		serviceAttachmentCRDMeta := serviceattachment.CRDMeta()
 		if _, err := crdHandler.EnsureCRD(serviceAttachmentCRDMeta, true); err != nil {
 			klog.Fatalf("Failed to ensure ServiceAttachment CRD: %v", err)
+		}
+
+		svcAttachmentClient, err = serviceattachmentclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create ServiceAttachment client: %v", err)
 		}
 	}
 
@@ -188,7 +196,7 @@ func main() {
 		ASMConfigMapNamespace: flags.F.ASMConfigMapBasedConfigNamespace,
 		ASMConfigMapName:      flags.F.ASMConfigMapBasedConfigCMName,
 	}
-	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, ingParamsClient, nil, cloud, namer, kubeSystemUID, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, ingParamsClient, svcAttachmentClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
@@ -267,6 +275,13 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		go l4Controller.Run()
 		klog.V(0).Infof("L4 controller started")
 	}
+
+	if flags.F.EnablePSC {
+		pscController := psc.NewController(ctx)
+		go pscController.Run(stopCh)
+		klog.V(0).Infof("PSC Controller started")
+	}
+
 	var zoneGetter negtypes.ZoneGetter
 	zoneGetter = lbc.Translator
 	// In NonGCP mode, use the zone specified in gce.conf directly.
