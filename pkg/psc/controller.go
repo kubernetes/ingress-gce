@@ -330,7 +330,7 @@ func (c *Controller) getForwardingRule(namespace, svcName string) (string, error
 	}
 
 	if !exists {
-		return "", fmt.Errorf("failed to get Service %s/%s: %q", namespace, svcName, err)
+		return "", fmt.Errorf("failed to get Service %s/%s", namespace, svcName)
 	}
 
 	svc := obj.(*v1.Service)
