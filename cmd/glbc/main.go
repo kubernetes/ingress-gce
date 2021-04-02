@@ -156,7 +156,7 @@ func main() {
 		}
 	}
 
-	ingClassEnabled := app.IngressClassEnabled(kubeClient)
+	ingClassEnabled := flags.F.EnableIngressGAFields && app.IngressClassEnabled(kubeClient)
 	var ingParamsClient ingparamsclient.Interface
 	if ingClassEnabled {
 		ingParamsCRDMeta := ingparams.CRDMeta()

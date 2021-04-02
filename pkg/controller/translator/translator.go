@@ -263,7 +263,11 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 // to be ImplementationSpecific. If a non existent path type is provided, an error will be returned.
 func validateAndGetPaths(path v1beta1.HTTPIngressPath) ([]string, error) {
 	pathType := v1beta1.PathTypeImplementationSpecific
+
 	if path.PathType != nil {
+		if !flags.F.EnableIngressGAFields && *path.PathType != v1beta1.PathTypeImplementationSpecific {
+			return nil, fmt.Errorf("only \"ImplementationSpecific\" path type is supported")
+		}
 		pathType = *path.PathType
 	}
 

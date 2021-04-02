@@ -97,6 +97,7 @@ var (
 		FinalizerAdd                   bool // Should have been named Enablexxx.
 		FinalizerRemove                bool // Should have been named Enablexxx.
 		EnablePSC                      bool
+		EnableIngressGAFields          bool
 	}{}
 )
 
@@ -219,6 +220,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.RunL4Controller, "run-l4-controller", false, `Optional, whether or not to run L4 Service Controller as part of glbc. If set to true, services of Type:LoadBalancer with Internal annotation will be processed by this controller.`)
 	flag.BoolVar(&F.EnableBackendConfigHealthCheck, "enable-backendconfig-healthcheck", false, "Enable configuration of HealthChecks from the BackendConfig")
 	flag.BoolVar(&F.EnablePSC, "enable-psc", false, "Enable PSC controller")
+	flag.BoolVar(&F.EnableIngressGAFields, "enable-ingress-ga-fields", false, "Enable using Ingress Class GA features")
 }
 
 type RateLimitSpecs struct {
