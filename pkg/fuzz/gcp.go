@@ -108,6 +108,11 @@ type NetworkEndpoints struct {
 	Endpoints []*compute.NetworkEndpointWithHealthStatus
 }
 
+// ServiceAttachment is a union of the API version types.
+type ServiceAttachment struct {
+	Alpha *computealpha.ServiceAttachment
+}
+
 // GCLB contains the resources for a load balancer.
 type GCLB struct {
 	VIP string
@@ -685,7 +690,7 @@ func GCLBForVIP(ctx context.Context, c cloud.Cloud, params *GCLBForVIPParams) (*
 	return gclb, err
 }
 
-// GCLBForVIP retrieves all of the resources associated with the GCLB for a given VIP.
+// RegionalGCLBForVIP retrieves all of the resources associated with the GCLB for a given VIP.
 func RegionalGCLBForVIP(ctx context.Context, c cloud.Cloud, gclb *GCLB, params *GCLBForVIPParams) error {
 	allRFRs, err := c.ForwardingRules().List(ctx, params.Region, filter.None)
 	if err != nil {
@@ -993,4 +998,48 @@ func CheckStandaloneNEGDeletion(ctx context.Context, c cloud.Cloud, negName, por
 	}
 
 	return true, nil
+}
+
+// GetServiceAttachment gets the GCE service attachment
+func GetServiceAttachment(ctx context.Context, c cloud.Cloud, saURL string) (*ServiceAttachment, error) {
+	resID, err := cloud.ParseResourceURL(saURL)
+	if err != nil {
+		return nil, err
+	}
+
+	sa, err := c.AlphaServiceAttachments().Get(ctx, resID.Key)
+	if err != nil {
+		return nil, err
+	}
+	return &ServiceAttachment{Alpha: sa}, nil
+}
+
+// CheckServiceAttachmentDeletion verfies that the Service Attachment does not exist
+func CheckServiceAttachmentDeletion(ctx context.Context, c cloud.Cloud, saURL string) (bool, error) {
+	resID, err := cloud.ParseResourceURL(saURL)
+	if err != nil {
+		klog.Infof("CheckServiceAttachmentDeletion(), failed")
+		return false, err
+	}
+	_, err = c.AlphaServiceAttachments().Get(ctx, resID.Key)
+	if e, ok := err.(*googleapi.Error); ok && e.Code == http.StatusNotFound {
+		klog.Infof("CheckServiceAttachmnetDeletion(), service attachment was successfully deleted")
+		return true, nil
+	}
+	return false, err
+}
+
+// GetForwardingRule returns the GCE Forwarding Rule
+func GetForwardingRule(ctx context.Context, c cloud.Cloud, frURL string) (*ForwardingRule, error) {
+
+	resID, err := cloud.ParseResourceURL(frURL)
+	if err != nil {
+		return nil, err
+	}
+
+	fr, err := c.ForwardingRules().Get(ctx, resID.Key)
+	if err != nil {
+		return nil, err
+	}
+	return &ForwardingRule{GA: fr}, nil
 }

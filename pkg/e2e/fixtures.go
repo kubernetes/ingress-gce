@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
+	sav1alpha1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -47,12 +48,17 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/cmd/echo/app"
 	"k8s.io/klog"
+	utilpointer "k8s.io/utils/pointer"
 )
 
 const (
 	echoheadersImage        = "gcr.io/k8s-ingress-image-push/ingress-gce-echo-amd64:master"
 	echoheadersImageWindows = "gcr.io/gke-windows-testing/ingress-gce-echo-amd64-windows:master"
 	porterPort              = 80
+	ILBSubnetPurpose        = "INTERNAL_HTTPS_LOAD_BALANCER"
+	ILBSubnetName           = "ilb-subnet-ingress-e2e"
+	PSCSubnetPurpose        = "PRIVATE_SERVICE_CONNECT"
+	PSCSubnetName           = "psc-nat-subnet"
 )
 
 type OS int
@@ -339,13 +345,17 @@ func DeleteGCPAddress(s *Sandbox, name string, region string) error {
 // CreateILBSubnet creates the ILB subnet
 func CreateILBSubnet(s *Sandbox) error {
 	klog.V(2).Info("CreateILBSubnet()")
+	return CreateSubnet(s, ILBSubnetName, ILBSubnetPurpose)
+}
+
+// CreateSubnet creates a subnet with the provided name and purpose
+func CreateSubnet(s *Sandbox, subnetName, purpose string) error {
+	klog.V(2).Infof("CreateSubnet(%s)", subnetName)
 
 	// If no network is provided, we don't try to create the subnet
 	if s.f.Network == "" {
-		return fmt.Errorf("error no network provided, cannot create ILB Subnet")
+		return fmt.Errorf("error no network provided, cannot create Subnet")
 	}
-
-	name := "ilb-subnet-ingress-e2e"
 
 	// Try up to 10 different subnets since we can't conflict with anything in the test project
 	// TODO(shance): find a more reliable way to pick the subnet
@@ -354,7 +364,7 @@ func CreateILBSubnet(s *Sandbox) error {
 	start := rand.Int()
 	for i := 0; i < 10; i++ {
 		ipCidrRange := fmt.Sprintf("192.168.%d.0/24", i+start%256)
-		err = trySubnetCreate(s, name, ipCidrRange)
+		err = trySubnetCreate(s, subnetName, ipCidrRange, purpose)
 		if err == nil || err == ErrSubnetExists {
 			return err
 		}
@@ -363,14 +373,14 @@ func CreateILBSubnet(s *Sandbox) error {
 	return err
 }
 
-// trySubnetCreate is a helper for CreateILBSubnet
-func trySubnetCreate(s *Sandbox, name, ipCidrRange string) error {
+// trySubnetCreate is a helper for CreateSubnet
+func trySubnetCreate(s *Sandbox, name, ipCidrRange, purpose string) error {
 	networkID := cloud.ResourceID{ProjectID: s.f.Project, Resource: "networks", Key: meta.GlobalKey(s.f.Network)}
 
 	subnet := &computebeta.Subnetwork{
 		Name:        name,
 		IpCidrRange: ipCidrRange,
-		Purpose:     "INTERNAL_HTTPS_LOAD_BALANCER",
+		Purpose:     purpose,
 		Network:     networkID.SelfLink(meta.VersionBeta),
 		Role:        "ACTIVE",
 	}
@@ -379,19 +389,19 @@ func trySubnetCreate(s *Sandbox, name, ipCidrRange string) error {
 	if err != nil {
 		// GCE returns a 409 when the subnet *with the same name* already exists
 		if utils.IsHTTPErrorCode(err, http.StatusConflict) {
-			klog.V(3).Infof("ILB subnet already exists: %v", err)
+			klog.V(3).Infof("subnet %s already exists: %v", name, err)
 			return ErrSubnetExists
 		}
-		return fmt.Errorf("Error creating ILB subnet: %v", err)
+		return fmt.Errorf("Error creating subnet %s: %v", name, err)
 	}
 
-	klog.V(3).Infof("ILB Subnet created in region %q: %v", s.f.Region, subnet)
+	klog.V(3).Infof("Subnet %s created in region %q: %v", name, s.f.Region, subnet)
 	return nil
 }
 
-// DeleteILBSubnet deletes the ILB subnet
-func DeleteILBSubnet(s *Sandbox, name string) error {
-	klog.V(2).Infof("Deleting ILB Subnet %q", name)
+// DeleteSubnet deletes the subnet
+func DeleteSubnet(s *Sandbox, name string) error {
+	klog.V(2).Infof("Deleting Subnet %q", name)
 	return s.f.Cloud.BetaSubnetworks().Delete(context.Background(), meta.RegionalKey(name, s.f.Region))
 }
 
@@ -499,4 +509,34 @@ func EnsurePorterDestinationRule(s *Sandbox, name, svcName string, versions []st
 // DeleteDestinationRule deletes the namespace:name DestinationRule.
 func DeleteDestinationRule(s *Sandbox, namespace, name string) error {
 	return s.f.DestinationRuleClient.Namespace(namespace).Delete(context.TODO(), name, metav1.DeleteOptions{})
+}
+
+// EnsureServiceAttachment ensures a ServiceAttachment resource
+func EnsureServiceAttachment(s *Sandbox, saName, svcName, subnetName string) (*sav1alpha1.ServiceAttachment, error) {
+	sa := &sav1alpha1.ServiceAttachment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: saName,
+		},
+		Spec: sav1alpha1.ServiceAttachmentSpec{
+			ConnectionPreference: "ACCEPT_AUTOMATIC",
+			NATSubnets:           []string{subnetName},
+			ResourceRef: v1.TypedLocalObjectReference{
+				APIGroup: utilpointer.StringPtr(""),
+				Kind:     "service",
+				Name:     svcName,
+			},
+		},
+	}
+
+	existingSA, err := s.f.SAClient.NetworkingV1alpha1().ServiceAttachments(s.Namespace).Get(context.TODO(), saName, metav1.GetOptions{})
+	if err != nil && errors.IsNotFound(err) {
+		return s.f.SAClient.NetworkingV1alpha1().ServiceAttachments(s.Namespace).Create(context.TODO(), sa, metav1.CreateOptions{})
+	}
+	existingSA.Spec = sa.Spec
+	return s.f.SAClient.NetworkingV1alpha1().ServiceAttachments(s.Namespace).Update(context.TODO(), existingSA, metav1.UpdateOptions{})
+}
+
+// DeleteServiceAttachment ensures a ServiceAttachment resource
+func DeleteServiceAttachment(s *Sandbox, saName string) error {
+	return s.f.SAClient.NetworkingV1alpha1().ServiceAttachments(s.Namespace).Delete(context.TODO(), saName, metav1.DeleteOptions{})
 }
