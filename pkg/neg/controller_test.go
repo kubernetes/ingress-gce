@@ -26,6 +26,7 @@ import (
 	"testing"
 	"time"
 
+	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/metrics"
 
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -50,6 +51,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -58,6 +60,9 @@ const (
 	testServiceName         = "test-Name"
 	testNamedPort           = "named-Port"
 	testNamedPortWithNumber = "80"
+	l4OnlyMode              = "L4Only"
+	l4AndL7Mode             = " L4 + L7"
+	l7OnlyMode              = "L7Only"
 )
 
 var (
@@ -114,6 +119,30 @@ var (
 	}
 )
 
+func newTestControllerForMode(mode string) (*Controller, error) {
+	var controller *Controller
+	switch mode {
+	case l4OnlyMode:
+		controller = newTestL4OnlyController(fake.NewSimpleClientset())
+	case l4AndL7Mode:
+		controller = newTestController(fake.NewSimpleClientset())
+		controller.runL4 = true
+	case l7OnlyMode:
+		controller = newTestController(fake.NewSimpleClientset())
+	default:
+		return nil, fmt.Errorf("invalid mode %q for NEG Controller", mode)
+	}
+	return controller, nil
+}
+
+func newTestL4OnlyController(kubeClient kubernetes.Interface) *Controller {
+	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+	ctxConfig := ingctx.ControllerContextConfig{ResyncPeriod: testContext.ResyncPeriod}
+	l4Context := ingctx.NewL4ControllerContext(kubeClient, testContext.SvcNegClient, testContext.Cloud, (testContext.NegNamer).(*namer.Namer), KubeSystemUID, ctxConfig)
+
+	return NewL4OnlyController(l4Context, testContext.ResyncPeriod, testContext.ResyncPeriod, negtypes.NewFakeZoneGetter())
+}
+
 func newTestController(kubeClient kubernetes.Interface) *Controller {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
 	dynamicSchema := runtime.NewScheme()
@@ -146,10 +175,9 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		testContext.ResyncPeriod,
 		// TODO(freehan): enable readiness reflector for unit tests
 		false, // enableReadinessReflector
-		true,  // runIngress
 		false, //runL4Controller
 		false, //enableNonGcpMode
-		true,  //eanbleAsm
+		true,  //enableAsm
 		[]string{},
 	)
 
@@ -284,93 +312,131 @@ func TestNewNEGService(t *testing.T) {
 	}
 }
 
+// TestEnableNEGServiceWithIngress verifies processing services that require L7 NEGs.
+// This test verifies that L7 processing works as expected in L4 and L7 modes of the NEG controller.
 func TestEnableNEGServiceWithIngress(t *testing.T) {
 	t.Parallel()
 
-	controller := newTestController(fake.NewSimpleClientset())
-	defer controller.stop()
-	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
-	controller.ingressLister.Add(newTestIngress(testServiceName))
-	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
-	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
-	err := controller.processService(svcKey)
-	if err != nil {
-		t.Fatalf("Failed to process service: %v", err)
-	}
-	validateSyncers(t, controller, 0, true)
-	svc, err := svcClient.Get(context.TODO(), testServiceName, metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
-	}
+	for _, tc := range []string{
+		l4OnlyMode,
+		l4AndL7Mode,
+		l7OnlyMode,
+	} {
+		t.Run(tc, func(t *testing.T) {
+			controller, err := newTestControllerForMode(tc)
+			if err != nil {
+				t.Fatalf("Failed to create test controller: %v", err)
+			}
+			defer controller.stop()
+			controller.serviceLister.Add(newTestService(controller, false, []int32{}))
+			if tc != l4OnlyMode {
+				// ingressLister is nil in l4Only mode.
+				controller.ingressLister.Add(newTestIngress(testServiceName))
+			}
+			svcClient := controller.client.CoreV1().Services(testServiceNamespace)
+			svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+			err = controller.processService(svcKey)
+			if err != nil {
+				t.Fatalf("Failed to process service: %v", err)
+			}
+			validateSyncers(t, controller, 0, true)
+			svc, err := svcClient.Get(context.TODO(), testServiceName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
+			}
 
-	controller.serviceLister.Update(newTestService(controller, true, []int32{}))
-	err = controller.processService(svcKey)
-	if err != nil {
-		t.Fatalf("Failed to process service: %v", err)
+			controller.serviceLister.Update(newTestService(controller, true, []int32{}))
+			err = controller.processService(svcKey)
+			if err != nil {
+				t.Fatalf("Failed to process service: %v", err)
+			}
+			if tc == l4OnlyMode {
+				// No L7 Syncers in L4Only mode.
+				validateSyncers(t, controller, 0, true)
+				return
+			}
+			validateSyncers(t, controller, 3, false)
+			svc, err = svcClient.Get(context.TODO(), testServiceName, metav1.GetOptions{})
+			svcPorts := []int32{80, 8081, 443}
+			if err != nil {
+				t.Fatalf("Service was not created successfully, err: %v", err)
+			}
+			validateServiceStateAnnotation(t, svc, svcPorts, controller.namer)
+		})
 	}
-	validateSyncers(t, controller, 3, false)
-	svc, err = svcClient.Get(context.TODO(), testServiceName, metav1.GetOptions{})
-	svcPorts := []int32{80, 8081, 443}
-	if err != nil {
-		t.Fatalf("Service was not created successfully, err: %v", err)
-	}
-	validateServiceStateAnnotation(t, svc, svcPorts, controller.namer)
 }
 
-//TestEnableNEGSeviceWithL4ILB tests L4 ILB service with NEGs enabled.
-//Also verifies that modifying the TrafficPolicy on the service will
-//take effect.
+// TestEnableNEGServiceWithL4ILB tests L4 ILB service with VM_IP NEGs.
+// Modifying the TrafficPolicy on the service is verified to take effect.
+// This test verifies that L4 ILB processing works as expected in L4 and L7 modes of the NEG controller.
 func TestEnableNEGServiceWithL4ILB(t *testing.T) {
-	controller := newTestController(fake.NewSimpleClientset())
-	manager := controller.manager.(*syncerManager)
-	controller.runL4 = true
-	defer controller.stop()
-	var prevSyncerKey, updatedSyncerKey negtypes.NegSyncerKey
-	localMode := false
-	t.Logf("Creating L4 ILB service with ExternalTrafficPolicy:Cluster")
-	controller.serviceLister.Add(newTestILBService(controller, localMode, 80))
-	svcClient := controller.client.CoreV1().Services(testServiceNamespace)
-	svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
-	err := controller.processService(svcKey)
-	if err != nil {
-		t.Fatalf("Failed to process service: %v", err)
+	t.Parallel()
+	for _, tc := range []string{
+		l4OnlyMode,
+		l4AndL7Mode,
+		l7OnlyMode,
+	} {
+		t.Run(tc, func(t *testing.T) {
+			controller, err := newTestControllerForMode(tc)
+			if err != nil {
+				t.Fatalf("Failed to create test controller: %v", err)
+			}
+			manager := controller.manager.(*syncerManager)
+			defer controller.stop()
+
+			var prevSyncerKey, updatedSyncerKey negtypes.NegSyncerKey
+			localMode := false
+			t.Logf("Creating L4 ILB service with ExternalTrafficPolicy:Cluster")
+			controller.serviceLister.Add(newTestILBService(controller, localMode, 80))
+			svcClient := controller.client.CoreV1().Services(testServiceNamespace)
+			svcKey := utils.ServiceKeyFunc(testServiceNamespace, testServiceName)
+			err = controller.processService(svcKey)
+			if err != nil {
+				t.Fatalf("Failed to process service: %v", err)
+			}
+			svc, err := svcClient.Get(context.TODO(), testServiceName, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
+			}
+			expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName,
+				controller.l4Namer, localMode)
+			// There will be only one entry in the map
+			for key, val := range expectedPortInfoMap {
+				prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
+			}
+			if tc == l7OnlyMode {
+				// There should be no L4 Syncers in L7Only mode.
+				ValidateSyncerByKey(t, controller, 0, negtypes.NegSyncerKey{}, false)
+				return
+			}
+			ValidateSyncerByKey(t, controller, 1, prevSyncerKey, false)
+			validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
+			validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap)
+			// Now Update the service to change the TrafficPolicy
+			t.Logf("Updating L4 ILB service from ExternalTrafficPolicy:Cluster to Local")
+			localMode = true
+			if err = controller.serviceLister.Update(updateTestILBService(controller, localMode, svc)); err != nil {
+				t.Fatalf("Failed to update test L4 ILB service: %v", err)
+			}
+			if err = controller.processService(svcKey); err != nil {
+				t.Fatalf("Failed to process updated L4 ILB srvice: %v", err)
+			}
+			expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName,
+				controller.l4Namer, localMode)
+			// There will be only one entry in the map
+			for key, val := range expectedPortInfoMap {
+				updatedSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
+			}
+			// there should only be 2 syncers - one stopped and one running.
+			ValidateSyncerByKey(t, controller, 2, updatedSyncerKey, false)
+			ValidateSyncerByKey(t, controller, 2, prevSyncerKey, true)
+			time.Sleep(1 * time.Second)
+			controller.manager.(*syncerManager).GC()
+			// check the port info map after all stale syncers have been deleted.
+			validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
+			validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap)
+		})
 	}
-	svc, err := svcClient.Get(context.TODO(), testServiceName, metav1.GetOptions{})
-	if err != nil {
-		t.Fatalf("Service was not created.(*apiv1.Service) successfully, err: %v", err)
-	}
-	expectedPortInfoMap := negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName,
-		controller.l4Namer, localMode)
-	// There will be only one entry in the map
-	for key, val := range expectedPortInfoMap {
-		prevSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
-	}
-	ValidateSyncerByKey(t, controller, 1, prevSyncerKey, false)
-	validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
-	validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap)
-	// Now Update the service to change the TrafficPolicy
-	t.Logf("Updating L4 ILB service from ExternalTrafficPolicy:Cluster to Local")
-	localMode = true
-	if err = controller.serviceLister.Update(updateTestILBService(controller, localMode, svc)); err != nil {
-		t.Fatalf("Failed to update test L4 ILB service: %v", err)
-	}
-	if err = controller.processService(svcKey); err != nil {
-		t.Fatalf("Failed to process updated L4 ILB srvice: %v", err)
-	}
-	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName,
-		controller.l4Namer, localMode)
-	// There will be only one entry in the map
-	for key, val := range expectedPortInfoMap {
-		updatedSyncerKey = manager.getSyncerKey(testServiceNamespace, testServiceName, key, val)
-	}
-	// there should only be 2 syncers - one stopped and one running.
-	ValidateSyncerByKey(t, controller, 2, updatedSyncerKey, false)
-	ValidateSyncerByKey(t, controller, 2, prevSyncerKey, true)
-	time.Sleep(1 * time.Second)
-	controller.manager.(*syncerManager).GC()
-	// check the port info map after all stale syncers have been deleted.
-	validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
-	validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap)
 }
 
 // TestEnableNEGServiceWithILBIngress tests ILB service with NEG enabled
@@ -1201,6 +1267,9 @@ func ValidateSyncerByKey(t *testing.T, controller *Controller, num int, expected
 	t.Helper()
 	if len(controller.manager.(*syncerManager).syncerMap) != num {
 		t.Errorf("got %v syncer, want %v.", len(controller.manager.(*syncerManager).syncerMap), num)
+	}
+	if num == 0 {
+		return
 	}
 	if syncer, ok := controller.manager.(*syncerManager).syncerMap[expectedKey]; ok {
 		if syncer.IsStopped() == stopped {
