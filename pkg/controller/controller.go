@@ -680,16 +680,23 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *u
 		return nil, fmt.Errorf("error initializing translator env: %v", err)
 	}
 
-	tls, err := translator.ToTLSCerts(env)
-	if err != nil {
+	tls, errors := translator.ToTLSCerts(env)
+	for _, err := range errors {
 		if apierrors.IsNotFound(err) {
-			// TODO: this path should be removed when external certificate managers migrate to a better solution.
-			const msg = "Could not find TLS certificates. Continuing setup for the load balancer to serve HTTP. Note: this behavior is deprecated and will be removed in a future version of ingress-gce"
+			msg := fmt.Sprintf("Could not find TLS certificate: %v", err)
 			lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.SyncIngress, msg)
 		} else {
 			klog.Errorf("Could not get certificates for ingress %s/%s: %v", ing.Namespace, ing.Name, err)
 			return nil, err
 		}
+	}
+
+	// Setup HTTP-only if no valid TLS certs
+	// The errors are assumed to be 404s since we short-circuit otherwise
+	if len(tls) == 0 && len(errors) > 0 {
+		// TODO: this path should be removed when external certificate managers migrate to a better solution.
+		const msg = "Could not find any TLS certificates. Continuing setup for the load balancer to serve HTTP only. Note: this behavior is deprecated and will be removed in a future version of ingress-gce"
+		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.SyncIngress, msg)
 	}
 
 	var feConfig *frontendconfigv1beta1.FrontendConfig
