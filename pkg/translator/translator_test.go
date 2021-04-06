@@ -325,6 +325,20 @@ func TestSecrets(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			desc: "ingress-single-secret and missing secret",
+			// TODO(rramkumar): Read Ingress spec from a file.
+			ing: &v1beta1.Ingress{
+				Spec: v1beta1.IngressSpec{
+					TLS: []v1beta1.IngressTLS{
+						{SecretName: "first-secret"},
+						{SecretName: "does-not-exist-secret"},
+					},
+				},
+			},
+			want:    []*api_v1.Secret{secretsMap["first-secret"]},
+			wantErr: true,
+		},
 	}
 
 	for _, tc := range cases {
@@ -343,11 +357,11 @@ func TestSecrets(t *testing.T) {
 				t.Fatalf("NewEnv(): %v", err)
 			}
 
-			got, err := secrets(env)
-			if tc.wantErr && err == nil {
+			got, errors := secrets(env)
+			if tc.wantErr && len(errors) == 0 {
 				t.Fatal("expected Secrets() to return an error")
 			}
-			if !tc.wantErr && err != nil {
+			if !tc.wantErr && len(errors) > 0 {
 				t.Fatalf("Secrets(): %v", err)
 			}
 
