@@ -41,6 +41,7 @@ import (
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	svcnegv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
+	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
 	usage "k8s.io/ingress-gce/pkg/metrics"
@@ -104,6 +105,94 @@ type Controller struct {
 
 	// runL4 indicates whether to run NEG controller that processes L4 ILB services
 	runL4 bool
+	// runL7 indicates whether to run NEG controller that processes L7 ingress
+	runL7 bool
+}
+
+func NewL4OnlyController(
+	ctx *ingctx.ControllerContext,
+	resyncPeriod time.Duration,
+	gcPeriod time.Duration,
+	zoneGetter negtypes.ZoneGetter,
+) *Controller {
+	// init event recorder
+	// TODO: move event recorder initializer to main. Reuse it among controllers.
+	eventBroadcaster := record.NewBroadcaster()
+	eventBroadcaster.StartLogging(klog.Infof)
+	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
+		Interface: ctx.KubeClient.CoreV1().Events(""),
+	})
+	negScheme := runtime.NewScheme()
+	err := scheme.AddToScheme(negScheme)
+	if err != nil {
+		klog.Errorf("Errored adding default scheme to event recorder: %q", err)
+	}
+	recorder := eventBroadcaster.NewRecorder(negScheme,
+		apiv1.EventSource{Component: "neg-controller-l4"})
+
+	manager := newSyncerManager(
+		ctx.ClusterNamer,
+		recorder,
+		negtypes.NewAdapter(ctx.Cloud),
+		zoneGetter,
+		ctx.SvcNegClient,
+		ctx.KubeSystemUID,
+		nil, /* podLister*/
+		ctx.ServiceInformer.GetIndexer(),
+		ctx.EndpointInformer.GetIndexer(),
+		ctx.NodeInformer.GetIndexer(),
+		ctx.SvcNegInformer.GetIndexer(),
+		false)
+
+	manager.reflector = &readiness.NoopReflector{}
+
+	negController := &Controller{
+		client:        ctx.KubeClient,
+		manager:       manager,
+		reflector:     manager.reflector,
+		resyncPeriod:  resyncPeriod,
+		gcPeriod:      gcPeriod,
+		recorder:      recorder,
+		zoneGetter:    zoneGetter,
+		namer:         ctx.ClusterNamer,
+		l4Namer:       ctx.L4Namer,
+		hasSynced:     ctx.HasSynced,
+		ingressLister: nil,
+		serviceLister: ctx.ServiceInformer.GetIndexer(),
+		serviceQueue:  workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		endpointQueue: workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		nodeQueue:     workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		syncTracker:   utils.NewTimeTracker(),
+		collector:     ctx.ControllerMetrics,
+		runL4:         true,
+	}
+
+	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    negController.enqueueService,
+		DeleteFunc: negController.enqueueService,
+		UpdateFunc: func(old, cur interface{}) {
+			negController.enqueueService(cur)
+		},
+	})
+
+	ctx.EndpointInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc:    negController.enqueueEndpoint,
+		DeleteFunc: negController.enqueueEndpoint,
+		UpdateFunc: func(old, cur interface{}) {
+			negController.enqueueEndpoint(cur)
+		},
+	})
+	ctx.NodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			node := obj.(*apiv1.Node)
+			negController.enqueueNode(node)
+		},
+		DeleteFunc: func(obj interface{}) {
+			node := obj.(*apiv1.Node)
+			negController.enqueueNode(node)
+		},
+	})
+	return negController
 }
 
 // NewController returns a network endpoint group controller.
@@ -129,7 +218,6 @@ func NewController(
 	resyncPeriod time.Duration,
 	gcPeriod time.Duration,
 	enableReadinessReflector bool,
-	runIngress bool,
 	runL4Controller bool,
 	enableNonGcpMode bool,
 	enableAsm bool,
@@ -199,51 +287,50 @@ func NewController(
 		reflector:             reflector,
 		collector:             controllerMetrics,
 		runL4:                 runL4Controller,
+		runL7:                 true,
 	}
-	if runIngress {
-		ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				addIng := obj.(*v1beta1.Ingress)
-				if !utils.IsGLBCIngress(addIng) {
-					klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.NamespacedName(addIng), annotations.IngressClassKey)
-					return
-				}
-				negController.enqueueIngressServices(addIng)
-			},
-			DeleteFunc: func(obj interface{}) {
-				delIng := obj.(*v1beta1.Ingress)
-				if !utils.IsGLBCIngress(delIng) {
-					klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.NamespacedName(delIng), annotations.IngressClassKey)
-					return
-				}
-				negController.enqueueIngressServices(delIng)
-			},
-			UpdateFunc: func(old, cur interface{}) {
-				oldIng := cur.(*v1beta1.Ingress)
-				curIng := cur.(*v1beta1.Ingress)
-				if !utils.IsGLBCIngress(curIng) {
-					klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", common.NamespacedName(curIng), annotations.IngressClassKey)
-					return
-				}
-				keys := gatherIngressServiceKeys(oldIng)
-				keys = keys.Union(gatherIngressServiceKeys(curIng))
-				for _, key := range keys.List() {
-					negController.enqueueService(cache.ExplicitKey(key))
-				}
-			},
-		})
+	ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			addIng := obj.(*v1beta1.Ingress)
+			if !utils.IsGLBCIngress(addIng) {
+				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.NamespacedName(addIng), annotations.IngressClassKey)
+				return
+			}
+			negController.enqueueIngressServices(addIng)
+		},
+		DeleteFunc: func(obj interface{}) {
+			delIng := obj.(*v1beta1.Ingress)
+			if !utils.IsGLBCIngress(delIng) {
+				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.NamespacedName(delIng), annotations.IngressClassKey)
+				return
+			}
+			negController.enqueueIngressServices(delIng)
+		},
+		UpdateFunc: func(old, cur interface{}) {
+			oldIng := cur.(*v1beta1.Ingress)
+			curIng := cur.(*v1beta1.Ingress)
+			if !utils.IsGLBCIngress(curIng) {
+				klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", common.NamespacedName(curIng), annotations.IngressClassKey)
+				return
+			}
+			keys := gatherIngressServiceKeys(oldIng)
+			keys = keys.Union(gatherIngressServiceKeys(curIng))
+			for _, key := range keys.List() {
+				negController.enqueueService(cache.ExplicitKey(key))
+			}
+		},
+	})
 
-		podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				pod := obj.(*apiv1.Pod)
-				negController.reflector.SyncPod(pod)
-			},
-			UpdateFunc: func(old, cur interface{}) {
-				pod := cur.(*apiv1.Pod)
-				negController.reflector.SyncPod(pod)
-			},
-		})
-	}
+	podInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			pod := obj.(*apiv1.Pod)
+			negController.reflector.SyncPod(pod)
+		},
+		UpdateFunc: func(old, cur interface{}) {
+			pod := cur.(*apiv1.Pod)
+			negController.reflector.SyncPod(pod)
+		},
+	})
 	serviceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc:    negController.enqueueService,
 		DeleteFunc: negController.enqueueService,
@@ -295,7 +382,7 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 		return c.hasSynced(), nil
 	}, stopCh)
 
-	klog.V(2).Infof("Starting network endpoint group controller")
+	klog.V(2).Infof("Starting network endpoint group controller with runL4=%v, runL7=%v", c.runL4, c.runL7)
 	defer func() {
 		klog.V(2).Infof("Shutting down network endpoint group controller")
 		c.stop()
@@ -428,32 +515,36 @@ func (c *Controller) processService(key string) error {
 	}
 	negUsage := usage.NegServiceState{}
 	svcPortInfoMap := make(negtypes.PortInfoMap)
-	if err := c.mergeDefaultBackendServicePortInfoMap(key, service, svcPortInfoMap); err != nil {
-		return err
-	}
-	negUsage.IngressNeg = len(svcPortInfoMap)
-	if err := c.mergeIngressPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap); err != nil {
-		return err
-	}
-	negUsage.IngressNeg = len(svcPortInfoMap)
-	if err := c.mergeStandaloneNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage); err != nil {
-		return err
-	}
-	negUsage.StandaloneNeg = len(svcPortInfoMap) - negUsage.IngressNeg
-	csmSVCPortInfoMap, destinationRulesPortInfoMap, err := c.getCSMPortInfoMap(namespace, name, service)
-	if err != nil {
-		return err
-	}
-	negUsage.AsmNeg = len(csmSVCPortInfoMap) + len(destinationRulesPortInfoMap)
+	var csmSVCPortInfoMap, destinationRulesPortInfoMap negtypes.PortInfoMap
 
-	// merges csmSVCPortInfoMap, because eventually those NEG will sync with the service annotation.
-	// merges destinationRulesPortInfoMap later, because we only want them sync with the DestinationRule annotation.
-	if err := svcPortInfoMap.Merge(csmSVCPortInfoMap); err != nil {
-		return fmt.Errorf("failed to merge CSM service PortInfoMap: %v, error: %v", csmSVCPortInfoMap, err)
-	}
 	if c.runL4 {
 		if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage); err != nil {
 			return err
+		}
+	}
+	if c.runL7 {
+		if err := c.mergeDefaultBackendServicePortInfoMap(key, service, svcPortInfoMap); err != nil {
+			return err
+		}
+		negUsage.IngressNeg = len(svcPortInfoMap)
+		if err := c.mergeIngressPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap); err != nil {
+			return err
+		}
+		negUsage.IngressNeg = len(svcPortInfoMap)
+		if err := c.mergeStandaloneNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage); err != nil {
+			return err
+		}
+		negUsage.StandaloneNeg = len(svcPortInfoMap) - negUsage.IngressNeg
+		csmSVCPortInfoMap, destinationRulesPortInfoMap, err = c.getCSMPortInfoMap(namespace, name, service)
+		if err != nil {
+			return err
+		}
+		negUsage.AsmNeg = len(csmSVCPortInfoMap) + len(destinationRulesPortInfoMap)
+
+		// merges csmSVCPortInfoMap, because eventually those NEG will sync with the service annotation.
+		// merges destinationRulesPortInfoMap later, because we only want them sync with the DestinationRule annotation.
+		if err := svcPortInfoMap.Merge(csmSVCPortInfoMap); err != nil {
+			return fmt.Errorf("failed to merge CSM service PortInfoMap: %v, error: %v", csmSVCPortInfoMap, err)
 		}
 	}
 	if len(svcPortInfoMap) != 0 || len(destinationRulesPortInfoMap) != 0 {
@@ -669,7 +760,6 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		// service doesn't have the expose NEG annotation and doesn't need update
 		return nil
 	}
-
 	negStatus := annotations.NewNegStatus(zones, portMap.ToPortNegMap())
 	annotation, err := negStatus.Marshal()
 	if err != nil {

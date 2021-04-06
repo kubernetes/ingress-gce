@@ -99,7 +99,8 @@ type ControllerContext struct {
 	lock sync.Mutex
 
 	// Map of namespace => record.EventRecorder.
-	recorders map[string]record.EventRecorder
+	recorders  map[string]record.EventRecorder
+	L4OnlyMode bool
 }
 
 // ControllerContextConfig encapsulates some settings that are tunable via command line flags.
@@ -107,12 +108,40 @@ type ControllerContextConfig struct {
 	Namespace    string
 	ResyncPeriod time.Duration
 	// DefaultBackendSvcPortID is the ServicePort for the system default backend.
-	DefaultBackendSvcPort utils.ServicePort
-	HealthCheckPath       string
-	FrontendConfigEnabled bool
-	EnableASMConfigMap    bool
-	ASMConfigMapNamespace string
-	ASMConfigMapName      string
+	DefaultBackendSvcPort   utils.ServicePort
+	HealthCheckPath         string
+	FrontendConfigEnabled   bool
+	EnableASMConfigMap      bool
+	EnableIngressController bool
+	ASMConfigMapNamespace   string
+	ASMConfigMapName        string
+}
+
+// NewL4ControllerContext returns a new shared set of informers and config for running the controllers needed in L4Only mode.
+func NewL4ControllerContext(
+	kubeClient kubernetes.Interface,
+	svcnegClient svcnegclient.Interface,
+	cloud *gce.Cloud,
+	clusterNamer *namer.Namer,
+	kubeSystemUID types.UID,
+	config ControllerContextConfig) *ControllerContext {
+	return &ControllerContext{
+		KubeClient:              kubeClient,
+		SvcNegClient:            svcnegClient,
+		Cloud:                   cloud,
+		ClusterNamer:            clusterNamer,
+		L4Namer:                 namer.NewL4Namer(string(kubeSystemUID), clusterNamer),
+		KubeSystemUID:           kubeSystemUID,
+		ControllerMetrics:       metrics.NewControllerMetrics(),
+		ControllerContextConfig: config,
+		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		EndpointInformer:        informerv1.NewEndpointsInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		NodeInformer:            informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		recorders:               map[string]record.EventRecorder{},
+		healthChecks:            make(map[string]func() error),
+		L4OnlyMode:              true,
+	}
 }
 
 // NewControllerContext returns a new shared set of informers.
@@ -241,40 +270,27 @@ func (ctx *ControllerContext) initEnableASM() {
 
 // HasSynced returns true if all relevant informers has been synced.
 func (ctx *ControllerContext) HasSynced() bool {
-	funcs := []func() bool{
-		ctx.IngressInformer.HasSynced,
-		ctx.ServiceInformer.HasSynced,
-		ctx.BackendConfigInformer.HasSynced,
-		ctx.PodInformer.HasSynced,
-		ctx.NodeInformer.HasSynced,
-		ctx.EndpointInformer.HasSynced,
-		ctx.SvcNegInformer.HasSynced,
+	informers := []cache.SharedIndexInformer{
+		ctx.IngressInformer,
+		ctx.ServiceInformer,
+		ctx.BackendConfigInformer,
+		ctx.PodInformer,
+		ctx.NodeInformer,
+		ctx.EndpointInformer,
+		ctx.SvcNegInformer,
+		ctx.FrontendConfigInformer,
+		ctx.DestinationRuleInformer,
+		ctx.ConfigMapInformer,
+		ctx.IngClassInformer,
+		ctx.IngParamsInformer,
+		ctx.SAInformer,
 	}
-
-	if ctx.FrontendConfigInformer != nil {
-		funcs = append(funcs, ctx.FrontendConfigInformer.HasSynced)
+	funcs := []func() bool{}
+	for _, informer := range informers {
+		if informer != nil {
+			funcs = append(funcs, informer.HasSynced)
+		}
 	}
-
-	if ctx.DestinationRuleInformer != nil {
-		funcs = append(funcs, ctx.DestinationRuleInformer.HasSynced)
-	}
-
-	if ctx.ConfigMapInformer != nil {
-		funcs = append(funcs, ctx.ConfigMapInformer.HasSynced)
-	}
-
-	if ctx.IngClassInformer != nil {
-		funcs = append(funcs, ctx.IngClassInformer.HasSynced)
-	}
-
-	if ctx.IngParamsInformer != nil {
-		funcs = append(funcs, ctx.IngParamsInformer.HasSynced)
-	}
-
-	if ctx.SAInformer != nil {
-		funcs = append(funcs, ctx.SAInformer.HasSynced)
-	}
-
 	for _, f := range funcs {
 		if !f() {
 			return false
@@ -326,36 +342,27 @@ func (ctx *ControllerContext) HealthCheck() HealthCheckResults {
 
 // Start all of the informers.
 func (ctx *ControllerContext) Start(stopCh chan struct{}) {
-	go ctx.IngressInformer.Run(stopCh)
-	go ctx.ServiceInformer.Run(stopCh)
-	go ctx.PodInformer.Run(stopCh)
-	go ctx.NodeInformer.Run(stopCh)
-	if ctx.EndpointInformer != nil {
-		go ctx.EndpointInformer.Run(stopCh)
+	informersList := []cache.SharedIndexInformer{
+		ctx.IngressInformer,
+		ctx.ServiceInformer,
+		ctx.PodInformer,
+		ctx.NodeInformer,
+		ctx.EndpointInformer,
+		ctx.BackendConfigInformer,
+		ctx.FrontendConfigInformer,
+		ctx.DestinationRuleInformer,
+		ctx.SvcNegInformer,
+		ctx.IngClassInformer,
+		ctx.IngParamsInformer,
+		ctx.SAInformer,
 	}
-	if ctx.BackendConfigInformer != nil {
-		go ctx.BackendConfigInformer.Run(stopCh)
-	}
-	if ctx.FrontendConfigInformer != nil {
-		go ctx.FrontendConfigInformer.Run(stopCh)
-	}
-	if ctx.DestinationRuleInformer != nil {
-		go ctx.DestinationRuleInformer.Run(stopCh)
+	for _, informer := range informersList {
+		if informer != nil {
+			go informer.Run(stopCh)
+		}
 	}
 	if ctx.EnableASMConfigMap && ctx.ConfigMapInformer != nil {
 		go ctx.ConfigMapInformer.Run(stopCh)
-	}
-	if ctx.SvcNegInformer != nil {
-		go ctx.SvcNegInformer.Run(stopCh)
-	}
-	if ctx.IngClassInformer != nil {
-		go ctx.IngClassInformer.Run(stopCh)
-	}
-	if ctx.IngParamsInformer != nil {
-		go ctx.IngParamsInformer.Run(stopCh)
-	}
-	if ctx.SAInformer != nil {
-		go ctx.SAInformer.Run(stopCh)
 	}
 	// Export ingress usage metrics.
 	go ctx.ControllerMetrics.Run(stopCh)

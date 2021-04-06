@@ -52,6 +52,7 @@ import (
 
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	"k8s.io/ingress-gce/pkg/backendconfig"
+	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/crd"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -78,6 +79,11 @@ func main() {
 
 	klog.V(2).Infof("Flags = %+v", flags.F)
 	defer klog.Flush()
+
+	if !flags.F.RunIngressController && !flags.F.RunL4Controller {
+		klog.Fatalf("Neither L7 nor L4 Controller selected, Exiting")
+	}
+
 	// Create kube-config that uses protobufs to communicate with API server.
 	kubeConfigForProtobuf, err := app.NewKubeConfigForProtobuf()
 	if err != nil {
@@ -94,81 +100,6 @@ func main() {
 	if err != nil {
 		klog.Fatalf("Failed to create kubernetes client for leader election: %v", err)
 	}
-
-	// Create kube-config for CRDs.
-	// TODO(smatti): Migrate to use protobuf once CRD supports.
-	kubeConfig, err := app.NewKubeConfig()
-	if err != nil {
-		klog.Fatalf("Failed to create kubernetes client config: %v", err)
-	}
-
-	var backendConfigClient backendconfigclient.Interface
-	crdClient, err := crdclient.NewForConfig(kubeConfig)
-	if err != nil {
-		klog.Fatalf("Failed to create kubernetes CRD client: %v", err)
-	}
-	// TODO(rramkumar): Reuse this CRD handler for other CRD's coming.
-	crdHandler := crd.NewCRDHandler(crdClient)
-	backendConfigCRDMeta := backendconfig.CRDMeta()
-	if _, err := crdHandler.EnsureCRD(backendConfigCRDMeta, true); err != nil {
-		klog.Fatalf("Failed to ensure BackendConfig CRD: %v", err)
-	}
-
-	backendConfigClient, err = backendconfigclient.NewForConfig(kubeConfig)
-	if err != nil {
-		klog.Fatalf("Failed to create BackendConfig client: %v", err)
-	}
-
-	var frontendConfigClient frontendconfigclient.Interface
-	if flags.F.EnableFrontendConfig {
-		frontendConfigCRDMeta := frontendconfig.CRDMeta()
-		if _, err := crdHandler.EnsureCRD(frontendConfigCRDMeta, true); err != nil {
-			klog.Fatalf("Failed to ensure FrontendConfig CRD: %v", err)
-		}
-
-		frontendConfigClient, err = frontendconfigclient.NewForConfig(kubeConfig)
-		if err != nil {
-			klog.Fatalf("Failed to create FrontendConfig client: %v", err)
-		}
-	}
-
-	var svcNegClient svcnegclient.Interface
-	negCRDMeta := svcneg.CRDMeta()
-	if _, err := crdHandler.EnsureCRD(negCRDMeta, true); err != nil {
-		klog.Fatalf("Failed to ensure ServiceNetworkEndpointGroup CRD: %v", err)
-	}
-
-	svcNegClient, err = svcnegclient.NewForConfig(kubeConfig)
-	if err != nil {
-		klog.Fatalf("Failed to create NetworkEndpointGroup client: %v", err)
-	}
-
-	var svcAttachmentClient serviceattachmentclient.Interface
-	if flags.F.EnablePSC {
-		serviceAttachmentCRDMeta := serviceattachment.CRDMeta()
-		if _, err := crdHandler.EnsureCRD(serviceAttachmentCRDMeta, true); err != nil {
-			klog.Fatalf("Failed to ensure ServiceAttachment CRD: %v", err)
-		}
-
-		svcAttachmentClient, err = serviceattachmentclient.NewForConfig(kubeConfig)
-		if err != nil {
-			klog.Fatalf("Failed to create ServiceAttachment client: %v", err)
-		}
-	}
-
-	ingClassEnabled := app.IngressClassEnabled(kubeClient)
-	var ingParamsClient ingparamsclient.Interface
-	if ingClassEnabled {
-		ingParamsCRDMeta := ingparams.CRDMeta()
-		if _, err := crdHandler.EnsureCRD(ingParamsCRDMeta, false); err != nil {
-			klog.Fatalf("Failed to ensure GCPIngressParams CRD: %v", err)
-		}
-
-		if ingParamsClient, err = ingparamsclient.NewForConfig(kubeConfig); err != nil {
-			klog.Fatalf("Failed to create GCPIngressParams client: %v", err)
-		}
-	}
-
 	namer, err := app.NewNamer(kubeClient, flags.F.ClusterName, firewalls.DefaultFirewallName)
 	if err != nil {
 		klog.Fatalf("app.NewNamer(ctx.KubeClient, %q, %q) = %v", flags.F.ClusterName, firewalls.DefaultFirewallName, err)
@@ -185,22 +116,111 @@ func main() {
 	kubeSystemUID := kubeSystemNS.GetUID()
 
 	cloud := app.NewGCEClient()
-	defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
-	ctxConfig := ingctx.ControllerContextConfig{
-		Namespace:             flags.F.WatchNamespace,
-		ResyncPeriod:          flags.F.ResyncPeriod,
-		DefaultBackendSvcPort: defaultBackendServicePort,
-		HealthCheckPath:       flags.F.HealthCheckPath,
-		FrontendConfigEnabled: flags.F.EnableFrontendConfig,
-		EnableASMConfigMap:    flags.F.EnableASMConfigMapBasedConfig,
-		ASMConfigMapNamespace: flags.F.ASMConfigMapBasedConfigNamespace,
-		ASMConfigMapName:      flags.F.ASMConfigMapBasedConfigCMName,
+	// Create kube-config for CRDs.
+	// TODO(smatti): Migrate to use protobuf once CRD supports.
+	kubeConfig, err := app.NewKubeConfig()
+	if err != nil {
+		klog.Fatalf("Failed to create kubernetes client config: %v", err)
 	}
-	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, ingParamsClient, svcAttachmentClient, cloud, namer, kubeSystemUID, ctxConfig)
+	crdClient, err := crdclient.NewForConfig(kubeConfig)
+	if err != nil {
+		klog.Fatalf("Failed to create kubernetes CRD client: %v", err)
+	}
+	crdHandler := crd.NewCRDHandler(crdClient)
+
+	// svcNegClient is needed in L4 and L7 modes in order to garbage-collect NEGs.
+	var svcNegClient svcnegclient.Interface
+	negCRDMeta := svcneg.CRDMeta()
+	if _, err := crdHandler.EnsureCRD(negCRDMeta, true); err != nil {
+		klog.Fatalf("Failed to ensure ServiceNetworkEndpointGroup CRD: %v", err)
+	}
+
+	svcNegClient, err = svcnegclient.NewForConfig(kubeConfig)
+	if err != nil {
+		klog.Fatalf("Failed to create NetworkEndpointGroup client: %v", err)
+	}
+
+	var ctx *ingctx.ControllerContext
+
+	if !flags.F.RunIngressController {
+		// L4Only mode
+		ctxConfig := ingctx.ControllerContextConfig{
+			Namespace:       flags.F.WatchNamespace,
+			ResyncPeriod:    flags.F.ResyncPeriod,
+			HealthCheckPath: flags.F.HealthCheckPath,
+		}
+		ctx = ingctx.NewL4ControllerContext(kubeClient, svcNegClient, cloud, namer, kubeSystemUID, ctxConfig)
+	} else {
+		defaultBackendServicePort := app.DefaultBackendServicePort(kubeClient)
+		var backendConfigClient backendconfigclient.Interface
+		backendConfigCRDMeta := backendconfig.CRDMeta()
+		if _, err := crdHandler.EnsureCRD(backendConfigCRDMeta, true); err != nil {
+			klog.Fatalf("Failed to ensure BackendConfig CRD: %v", err)
+		}
+
+		backendConfigClient, err = backendconfigclient.NewForConfig(kubeConfig)
+		if err != nil {
+			klog.Fatalf("Failed to create BackendConfig client: %v", err)
+		}
+
+		var frontendConfigClient frontendconfigclient.Interface
+		if flags.F.EnableFrontendConfig {
+			frontendConfigCRDMeta := frontendconfig.CRDMeta()
+			if _, err := crdHandler.EnsureCRD(frontendConfigCRDMeta, true); err != nil {
+				klog.Fatalf("Failed to ensure FrontendConfig CRD: %v", err)
+			}
+
+			frontendConfigClient, err = frontendconfigclient.NewForConfig(kubeConfig)
+			if err != nil {
+				klog.Fatalf("Failed to create FrontendConfig client: %v", err)
+			}
+		}
+		var svcAttachmentClient serviceattachmentclient.Interface
+		if flags.F.EnablePSC {
+			serviceAttachmentCRDMeta := serviceattachment.CRDMeta()
+			if _, err := crdHandler.EnsureCRD(serviceAttachmentCRDMeta, true); err != nil {
+				klog.Fatalf("Failed to ensure ServiceAttachment CRD: %v", err)
+			}
+
+			svcAttachmentClient, err = serviceattachmentclient.NewForConfig(kubeConfig)
+			if err != nil {
+				klog.Fatalf("Failed to create ServiceAttachment client: %v", err)
+			}
+		}
+
+		ingClassEnabled := app.IngressClassEnabled(kubeClient)
+		var ingParamsClient ingparamsclient.Interface
+		if ingClassEnabled {
+			ingParamsCRDMeta := ingparams.CRDMeta()
+			if _, err := crdHandler.EnsureCRD(ingParamsCRDMeta, false); err != nil {
+				klog.Fatalf("Failed to ensure GCPIngressParams CRD: %v", err)
+			}
+
+			if ingParamsClient, err = ingparamsclient.NewForConfig(kubeConfig); err != nil {
+				klog.Fatalf("Failed to create GCPIngressParams client: %v", err)
+			}
+		}
+
+		ctxConfig := ingctx.ControllerContextConfig{
+			Namespace:             flags.F.WatchNamespace,
+			ResyncPeriod:          flags.F.ResyncPeriod,
+			DefaultBackendSvcPort: defaultBackendServicePort,
+			HealthCheckPath:       flags.F.HealthCheckPath,
+			FrontendConfigEnabled: flags.F.EnableFrontendConfig,
+			EnableASMConfigMap:    flags.F.EnableASMConfigMapBasedConfig,
+			ASMConfigMapNamespace: flags.F.ASMConfigMapBasedConfigNamespace,
+			ASMConfigMapName:      flags.F.ASMConfigMapBasedConfigCMName,
+		}
+		ctx = ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, ingParamsClient, svcAttachmentClient, cloud, namer, kubeSystemUID, ctxConfig)
+	}
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {
-		runControllers(ctx)
+		if ctx.L4OnlyMode {
+			runL4OnlyControllers(ctx)
+		} else {
+			runControllers(ctx)
+		}
 		return
 	}
 
@@ -235,7 +255,11 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, client clientset.In
 	}
 
 	run := func() {
-		runControllers(ctx)
+		if ctx.L4OnlyMode {
+			runL4OnlyControllers(ctx)
+		} else {
+			runControllers(ctx)
+		}
 		klog.Info("Shutting down leader election")
 		os.Exit(0)
 	}
@@ -256,6 +280,31 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, client clientset.In
 			},
 		},
 	}, nil
+}
+
+// runL4OnlyControllers starts up the controllers that are needed in the L4Only mode.
+// This includes L4 ILB Controller and NEG controller for VM_IP NEGs.
+func runL4OnlyControllers(ctx *ingctx.ControllerContext) {
+	stopCh := make(chan struct{})
+	ctx.Init()
+
+	l4Controller := l4.NewController(ctx, stopCh)
+	go l4Controller.Run()
+	klog.V(0).Infof("L4 controller started in L4Only mode.")
+
+	negController := neg.NewL4OnlyController(
+		ctx,
+		flags.F.ResyncPeriod,
+		flags.F.NegGCPeriod,
+		translator.NewTranslator(ctx),
+	)
+	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
+
+	go negController.Run(stopCh)
+	klog.V(0).Infof("negController started in L4Only mode.")
+	ctx.Start(stopCh)
+	<-stopCh
+	klog.Infof("Shutting down L4 Controllers")
 }
 
 func runControllers(ctx *ingctx.ControllerContext) {
@@ -326,7 +375,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		flags.F.ResyncPeriod,
 		flags.F.NegGCPeriod,
 		flags.F.EnableReadinessReflector,
-		flags.F.RunIngressController,
 		flags.F.RunL4Controller,
 		flags.F.EnableNonGCPMode,
 		enableAsm,
