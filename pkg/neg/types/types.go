@@ -333,8 +333,6 @@ func (key NegSyncerKey) String() string {
 // to create the negType specified in the given NegSyncerKey.
 func (key NegSyncerKey) GetAPIVersion() meta.Version {
 	switch key.NegType {
-	case VmIpEndpointType:
-		return meta.VersionBeta
 	case NonGCPPrivateEndpointType:
 		return meta.VersionAlpha
 	default:
