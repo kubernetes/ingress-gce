@@ -93,14 +93,14 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 			}
 		}
 		for _, neg := range ret {
-			if neg.Name != testNegName {
-				t.Errorf("Unexpected neg %q, expected %q", neg.Name, testNegName)
+			if neg.Name != transactionSyncer.NegName {
+				t.Errorf("Unexpected neg %q, expected %q", neg.Name, transactionSyncer.NegName)
 			}
 			if neg.NetworkEndpointType != string(testNegType) {
 				t.Errorf("Unexpected neg type %q, expected %q", neg.Type, testNegType)
 			}
 			if neg.Description == "" {
-				t.Errorf("Neg Description should  be populated when NEG CRD is enabled")
+				t.Errorf("Neg Description should be populated when NEG CRD is enabled")
 			}
 		}
 
@@ -214,12 +214,12 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 				}
 
 				if !endpoints.Equal(endpointSet) {
-					t.Errorf("For case %q, in zone %q, negType %q, endpointSets endpoints == %v, but got %v, difference %v", tc.desc, zone, testNegType, endpoints, endpointSet, endpoints.Difference(endpointSet))
+					t.Errorf("For case %q, in zone %q, negType %q, endpointSets endpoints == %v, but got %v, difference: \n(want - got) = %v\n(got - want) = %v", tc.desc, zone, testNegType, endpoints, endpointSet, endpoints.Difference(endpointSet), endpointSet.Difference(endpoints))
 				}
 			}
 		}
-		transactionSyncer.cloud.DeleteNetworkEndpointGroup(testNegName, testZone1, transactionSyncer.NegSyncerKey.GetAPIVersion())
-		transactionSyncer.cloud.DeleteNetworkEndpointGroup(testNegName, testZone2, transactionSyncer.NegSyncerKey.GetAPIVersion())
+		transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, testZone1, transactionSyncer.NegSyncerKey.GetAPIVersion())
+		transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, testZone2, transactionSyncer.NegSyncerKey.GetAPIVersion())
 	}
 }
 
@@ -1223,6 +1223,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 
 	var mode negtypes.EndpointsCalculatorMode
 	if negType == negtypes.VmIpEndpointType {
+		svcPort.NegName = testL4NegName
 		svcPort.PortTuple.Port = 0
 		svcPort.PortTuple.TargetPort = ""
 		svcPort.PortTuple.Name = string(negtypes.VmIpEndpointType)
