@@ -31,6 +31,7 @@ import (
 
 const (
 	testNegName          = "test-neg-name"
+	testL4NegName        = "test-neg-name-l4"
 	testServiceNamespace = "test-ns"
 	testServiceName      = "test-name"
 	testNamedPort        = "named-Port"
