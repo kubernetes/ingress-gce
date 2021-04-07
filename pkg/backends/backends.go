@@ -186,6 +186,7 @@ func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType)
 
 	// TODO: Include port, ip in the status, since it's in the health info.
 	// TODO (shance) convert to composite types
+	ret := "Unknown"
 	for _, backend := range be.Backends {
 		var hs *compute.BackendServiceGroupHealth
 		switch scope {
@@ -205,10 +206,15 @@ func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType)
 			continue
 		}
 
-		// TODO: State transition are important, not just the latest.
-		return hs.HealthStatus[0].HealthState, nil
+		for _, instanceStatus := range hs.HealthStatus {
+			ret = instanceStatus.HealthState
+			// return immediately with the value if we found at least one healthy instance
+			if ret == "HEALTHY" {
+				return ret, nil
+			}
+		}
 	}
-	return "Unknown", nil
+	return ret, nil
 }
 
 // List lists all backends managed by this controller.
