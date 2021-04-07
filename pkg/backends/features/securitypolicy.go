@@ -21,9 +21,6 @@ import (
 
 	"k8s.io/klog"
 
-	computebeta "google.golang.org/api/compute/v0.beta"
-
-	gcecloud "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/legacy-cloud-providers/gce"
 
@@ -33,35 +30,28 @@ import (
 
 // EnsureSecurityPolicy ensures the security policy link on backend service.
 // TODO(mrhohn): Emit event when attach/detach security policy to backend service.
-func EnsureSecurityPolicy(cloud *gce.Cloud, sp utils.ServicePort, be *composite.BackendService, beName string) error {
+func EnsureSecurityPolicy(cloud *gce.Cloud, sp utils.ServicePort, be *composite.BackendService) error {
 	if sp.BackendConfig.Spec.SecurityPolicy == nil {
 		return nil
 	}
 
-	needsUpdate, policyRef := securityPolicyNeedsUpdate(cloud, be.SecurityPolicy, sp.BackendConfig.Spec.SecurityPolicy.Name)
-	if !needsUpdate {
+	if be.Scope != meta.Global {
+		return fmt.Errorf("cloud armor security policies not supported for %s backend service %s", be.Scope, be.Name)
+	}
+
+	existingPolicyName, err := utils.KeyName(be.SecurityPolicy)
+	// The parser returns error for empty values.
+	if be.SecurityPolicy != "" && err != nil {
+		return err
+	}
+	desiredPolicyName := sp.BackendConfig.Spec.SecurityPolicy.Name
+	if existingPolicyName == desiredPolicyName {
 		return nil
 	}
 
-	klog.V(2).Infof("Setting security policy %q for backend service %s (%s:%s)", policyRef, beName, sp.ID.Service.String(), sp.ID.Port.String())
-	if err := cloud.SetSecurityPolicyForBetaGlobalBackendService(beName, policyRef); err != nil {
-		return fmt.Errorf("failed to set security policy %q for backend service %s (%s:%s): %v", policyRef, beName, sp.ID.Service.String(), sp.ID.Port.String(), err)
+	klog.V(2).Infof("Set security policy in backend service %s (%s:%s) to %q", be.Name, sp.ID.Service.String(), sp.ID.Port.String(), desiredPolicyName)
+	if err := composite.SetSecurityPolicy(cloud, be, desiredPolicyName); err != nil {
+		return fmt.Errorf("failed to set security policy %q for backend service %s (%s:%s): %v", desiredPolicyName, be.Name, sp.ID.Service.String(), sp.ID.Port.String(), err)
 	}
 	return nil
-}
-
-// securityPolicyNeedsUpdate checks if security policy needs update and
-// returns the desired policy reference.
-func securityPolicyNeedsUpdate(cloud *gce.Cloud, currentLink, desiredName string) (bool, *computebeta.SecurityPolicyReference) {
-	currentName, _ := utils.KeyName(currentLink)
-	if currentName == desiredName {
-		return false, nil
-	}
-	var policyRef *computebeta.SecurityPolicyReference
-	if desiredName != "" {
-		policyRef = &computebeta.SecurityPolicyReference{
-			SecurityPolicy: gcecloud.SelfLink(meta.VersionBeta, cloud.ProjectID(), "securityPolicies", meta.GlobalKey(desiredName)),
-		}
-	}
-	return true, policyRef
 }

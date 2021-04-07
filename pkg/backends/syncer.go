@@ -119,7 +119,7 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	}
 
 	if sp.BackendConfig != nil {
-		if err := features.EnsureSecurityPolicy(s.cloud, sp, be, beName); err != nil {
+		if err := features.EnsureSecurityPolicy(s.cloud, sp, be); err != nil {
 			return err
 		}
 	}
