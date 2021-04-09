@@ -34,6 +34,7 @@ import (
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
@@ -458,11 +459,12 @@ func TestPathValidation(t *testing.T) {
 		}}
 
 	testcases := []struct {
-		desc          string
-		pathType      v1beta1.PathType
-		path          string
-		expectValid   bool
-		expectedPaths []string
+		desc              string
+		pathType          v1beta1.PathType
+		path              string
+		expectValid       bool
+		expectedPaths     []string
+		ingressGADisabled bool
 	}{
 		{
 			desc:          "Valid path for exact path type",
@@ -564,9 +566,34 @@ func TestPathValidation(t *testing.T) {
 			path:        "/test/*",
 			expectValid: false,
 		},
+		{
+			desc:              "IngressGA Disabled, empty path type",
+			pathType:          "",
+			path:              "/test",
+			expectValid:       true,
+			expectedPaths:     []string{"/test"},
+			ingressGADisabled: true,
+		},
+		{
+			desc:              "IngressGA Disabled, ImplementationSpecific path type",
+			pathType:          v1beta1.PathTypeImplementationSpecific,
+			path:              "/test",
+			expectValid:       true,
+			expectedPaths:     []string{"/test"},
+			ingressGADisabled: true,
+		},
+		{
+			desc:              "Invalid IngressGA Disabled, non ImplementationSpecific path type",
+			pathType:          v1beta1.PathTypePrefix,
+			path:              "/test",
+			expectValid:       false,
+			expectedPaths:     []string{"/test"},
+			ingressGADisabled: true,
+		},
 	}
 
 	for _, tc := range testcases {
+		flags.F.EnableIngressGAFields = !tc.ingressGADisabled
 
 		path := v1beta1.HTTPIngressPath{
 			Path: tc.path,
