@@ -76,8 +76,9 @@ const (
 	LabelNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
 	// ToBeDeletedTaint is the taint that the autoscaler adds when a node is scheduled to be deleted
 	// https://github.com/kubernetes/autoscaler/blob/cluster-autoscaler-0.5.2/cluster-autoscaler/utils/deletetaint/delete.go#L33
-	ToBeDeletedTaint    = "ToBeDeletedByClusterAutoscaler"
-	L4ILBServiceDescKey = "networking.gke.io/service-name"
+	ToBeDeletedTaint         = "ToBeDeletedByClusterAutoscaler"
+	L4ILBServiceDescKey      = "networking.gke.io/service-name"
+	L4ILBSharedResourcesDesc = "This resource is shared by all L4 ILB Services using ExternalTrafficPolicy: Cluster."
 
 	// ServiceNodeExclusionFeature is the feature gate name that
 	// enables nodes to exclude themselves from service load balancers
@@ -585,8 +586,9 @@ type L4ILBResourceDescription struct {
 	// ServiceName indicates the name of the service the resource is for.
 	ServiceName string `json:"networking.gke.io/service-name"`
 	// APIVersion stores the version og the compute API used to create this resource.
-	APIVersion meta.Version `json:"networking.gke.io/api-version,omitempty"`
-	ServiceIP  string       `json:"networking.gke.io/service-ip,omitempty"`
+	APIVersion          meta.Version `json:"networking.gke.io/api-version,omitempty"`
+	ServiceIP           string       `json:"networking.gke.io/service-ip,omitempty"`
+	ResourceDescription string       `json:"networking.gke.io/resource-description,omitempty"`
 }
 
 // Marshal returns the description as a JSON-encoded string.
@@ -603,7 +605,10 @@ func (d *L4ILBResourceDescription) Unmarshal(desc string) error {
 	return json.Unmarshal([]byte(desc), d)
 }
 
-func MakeL4ILBServiceDescription(svcName, ip string, version meta.Version) (string, error) {
+func MakeL4ILBServiceDescription(svcName, ip string, version meta.Version, shared bool) (string, error) {
+	if shared {
+		return (&L4ILBResourceDescription{APIVersion: version, ResourceDescription: L4ILBSharedResourcesDesc}).Marshal()
+	}
 	return (&L4ILBResourceDescription{ServiceName: svcName, ServiceIP: ip, APIVersion: version}).Marshal()
 }
 

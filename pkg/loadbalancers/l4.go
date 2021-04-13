@@ -212,9 +212,13 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service,
 		return nil, nil, err
 	}
 	hcSourceRanges := gce.L4LoadBalancerSrcRanges()
-	ensureFunc := func(name, IP string, sourceRanges, portRanges []string, proto string) error {
+	ensureFunc := func(name, IP string, sourceRanges, portRanges []string, proto string, shared bool) error {
+		if shared {
+			l.sharedResourcesLock.Lock()
+			defer l.sharedResourcesLock.Unlock()
+		}
 		nsName := utils.ServiceKeyFunc(l.Service.Namespace, l.Service.Name)
-		err := firewalls.EnsureL4InternalFirewallRule(l.cloud, name, IP, nsName, sourceRanges, portRanges, nodeNames, proto)
+		err := firewalls.EnsureL4InternalFirewallRule(l.cloud, name, IP, nsName, sourceRanges, portRanges, nodeNames, proto, shared)
 		if err != nil {
 			if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
 				l.recorder.Eventf(l.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
@@ -225,14 +229,14 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service,
 		return nil
 	}
 	// Add firewall rule for ILB traffic to nodes
-	err = ensureFunc(name, "", sourceRanges.StringSlice(), portRanges, string(protocol))
+	err = ensureFunc(name, "", sourceRanges.StringSlice(), portRanges, string(protocol), false)
 	if err != nil {
 		return nil, nil, err
 	}
 	annotationsMap[annotations.FirewallRuleKey] = name
 
 	// Add firewall rule for healthchecks to nodes
-	err = ensureFunc(hcFwName, "", hcSourceRanges, []string{strconv.Itoa(int(hcPort))}, string(corev1.ProtocolTCP))
+	err = ensureFunc(hcFwName, "", hcSourceRanges, []string{strconv.Itoa(int(hcPort))}, string(corev1.ProtocolTCP), sharedHC)
 	if err != nil {
 		return nil, nil, err
 	}

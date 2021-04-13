@@ -736,7 +736,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
 	assertInternalLbResources(t, svc, l, nodeNames, annotations)
-	descString, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(svc.Namespace, svc.Name), "1.2.3.0", meta.VersionGA)
+	descString, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(svc.Namespace, svc.Name), "1.2.3.0", meta.VersionGA, false)
 	if err != nil {
 		t.Errorf("Unexpected error when creating description - %v", err)
 	}
@@ -917,7 +917,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 		sourceRange,
 		utils.GetPortRanges(tc.Input),
 		nodeNames,
-		string(v1.ProtocolTCP))
+		string(v1.ProtocolTCP), false)
 	if err != nil {
 		t.Errorf("Unexpected error %v when ensuring firewall rule %s for svc %+v", err, fwName, svc)
 	}
@@ -1119,26 +1119,39 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 	// Check that Firewalls are created for the LoadBalancer and the HealthCheck
 	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(apiService)
 	resourceName, _ := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
-	resourceDesc, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA)
+	resourceDesc, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, false)
 	if err != nil {
 		t.Errorf("Failed to create description for resources, err %v", err)
+	}
+	sharedResourceDesc, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, true)
+	if err != nil {
+		t.Errorf("Failed to create description for shared resources, err %v", err)
 	}
 	_, _, proto := utils.GetPortsAndProtocol(apiService.Spec.Ports)
 	expectedAnnotations := make(map[string]string)
 	hcName, hcFwName := l.namer.L4HealthCheck(apiService.Namespace, apiService.Name, sharedHC)
-	fwNames := []string{
-		resourceName,
-		hcFwName,
+	// hcDesc is the resource description for healthcheck and firewall rule allowing healthcheck.
+	hcDesc := resourceDesc
+	if sharedHC {
+		hcDesc = sharedResourceDesc
+	}
+	type nameAndDesc struct {
+		fwName string
+		fwDesc string
+	}
+	fwNamesAndDesc := []nameAndDesc{
+		{resourceName, resourceDesc},
+		{hcFwName, hcDesc},
 	}
 	expectedAnnotations[annotations.FirewallRuleKey] = resourceName
 	expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
 	if hcFwName == resourceName {
 		t.Errorf("Got the same name %q for LB firewall rule and Healthcheck firewall rule", hcFwName)
 	}
-	for _, fwName := range fwNames {
-		firewall, err := l.cloud.GetFirewall(fwName)
+	for _, info := range fwNamesAndDesc {
+		firewall, err := l.cloud.GetFirewall(info.fwName)
 		if err != nil {
-			t.Fatalf("Failed to fetch firewall rule %s - err %v", fwName, err)
+			t.Fatalf("Failed to fetch firewall rule %q - err %v", info.fwName, err)
 		}
 		if !utils.EqualStringSets(nodeNames, firewall.TargetTags) {
 			t.Fatalf("Expected firewall rule target tags '%v', Got '%v'", nodeNames, firewall.TargetTags)
@@ -1146,8 +1159,8 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 		if len(firewall.SourceRanges) == 0 {
 			t.Fatalf("Unexpected empty source range for firewall rule %v", firewall)
 		}
-		if firewall.Description != resourceDesc {
-			t.Errorf("Unexpected description in firewall - Expected %s, Got %s", firewall.Description, resourceDesc)
+		if firewall.Description != info.fwDesc {
+			t.Errorf("Unexpected description in firewall %q - Expected %s, Got %s", info.fwName, firewall.Description, info.fwDesc)
 		}
 	}
 
@@ -1161,7 +1174,7 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 	}
 	expectedAnnotations[annotations.HealthcheckKey] = hcName
 	// Only non-shared Healthchecks get a description.
-	if !sharedHC && healthcheck.Description != resourceDesc {
+	if healthcheck.Description != hcDesc {
 		t.Errorf("Unexpected description in healthcheck - Expected %s, Got %s", healthcheck.Description, resourceDesc)
 	}
 

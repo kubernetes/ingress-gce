@@ -245,7 +245,7 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	ports, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
 	// Create the forwarding rule
 	frDesc, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(l.Service.Namespace, l.Service.Name), ipToUse,
-		version)
+		version, false)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %v", loadBalancerName,
 			err)
