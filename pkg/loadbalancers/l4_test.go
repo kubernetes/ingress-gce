@@ -131,7 +131,23 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
 	assertInternalLbResources(t, svc, l, nodeNames, annotations)
-	// Simulate a periodic sync
+
+	backendServiceName, _ := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
+	key := meta.RegionalKey(backendServiceName, l.cloud.Region())
+	bs, err := composite.GetBackendService(l.cloud, key, meta.VersionGA)
+	if err != nil {
+		t.Errorf("Failed to lookup backend service, err %v", err)
+	}
+	if len(bs.Backends) != 0 {
+		// Backends are populated by NEG linker.
+		t.Errorf("Unexpected backends list - %v, expected empty", bs.Backends)
+	}
+	// Add a backend list to simulate NEG linker populating the backends.
+	bs.Backends = []*composite.Backend{{Group: "test"}}
+	if err := composite.UpdateBackendService(l.cloud, key, bs); err != nil {
+		t.Errorf("Failed updating backend service, err %v", err)
+	}
+	// Simulate a periodic sync. The backends list should not be reconciled.
 	status, annotations, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
@@ -140,6 +156,13 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
 	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	bs, err = composite.GetBackendService(l.cloud, meta.RegionalKey(backendServiceName, l.cloud.Region()), meta.VersionGA)
+	if err != nil {
+		t.Errorf("Failed to lookup backend service, err %v", err)
+	}
+	if len(bs.Backends) == 0 {
+		t.Errorf("Backends got reconciled by the periodic sync")
+	}
 }
 
 func TestEnsureInternalLoadBalancerTypeChange(t *testing.T) {

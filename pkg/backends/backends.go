@@ -21,7 +21,6 @@ import (
 	"google.golang.org/api/compute/v1"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -307,36 +306,15 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	return composite.GetBackendService(b.cloud, key, meta.VersionGA)
 }
 
-// backendsListEqual asserts that backend lists are equal by group link only
-func backendsListEqual(a, b []*composite.Backend) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	if len(a) == 0 {
-		return true
-	}
-
-	aSet := sets.NewString()
-	for _, v := range a {
-		aSet.Insert(v.Group)
-	}
-	bSet := sets.NewString()
-	for _, v := range b {
-		bSet.Insert(v.Group)
-	}
-
-	return aSet.Equal(bSet)
-}
-
 // backendSvcEqual returns true if the 2 BackendService objects are equal.
 // ConnectionDraining timeout is not checked for equality, if user changes
 // this timeout and no other backendService parameters change, the backend
-// service will not be updated.
+// service will not be updated. The list of backends is not checked either,
+// since that is handled by the neg-linker.
 func backendSvcEqual(a, b *composite.BackendService) bool {
 	return a.Protocol == b.Protocol &&
 		a.Description == b.Description &&
 		a.SessionAffinity == b.SessionAffinity &&
 		a.LoadBalancingScheme == b.LoadBalancingScheme &&
-		utils.EqualStringSets(a.HealthChecks, b.HealthChecks) &&
-		backendsListEqual(a.Backends, b.Backends)
+		utils.EqualStringSets(a.HealthChecks, b.HealthChecks)
 }
