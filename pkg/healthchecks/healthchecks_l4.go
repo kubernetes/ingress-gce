@@ -91,14 +91,10 @@ func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, pa
 		Port:        int64(port),
 		RequestPath: path,
 	}
-	desc := ""
-	var err error
 
-	if !shared {
-		desc, err = utils.MakeL4ILBServiceDescription(svcName.String(), "", meta.VersionGA)
-		if err != nil {
-			klog.Warningf("Failed to generate description for L4HealthCheck %s, err %v", name, err)
-		}
+	desc, err := utils.MakeL4ILBServiceDescription(svcName.String(), "", meta.VersionGA, shared)
+	if err != nil {
+		klog.Warningf("Failed to generate description for L4HealthCheck %s, err %v", name, err)
 	}
 	return &composite.HealthCheck{
 		Name:               name,

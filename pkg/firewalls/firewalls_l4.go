@@ -26,7 +26,7 @@ import (
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
-func EnsureL4InternalFirewallRule(cloud *gce.Cloud, fwName, lbIP, nsName string, sourceRanges, portRanges, nodeNames []string, proto string) error {
+func EnsureL4InternalFirewallRule(cloud *gce.Cloud, fwName, lbIP, nsName string, sourceRanges, portRanges, nodeNames []string, proto string, sharedRule bool) error {
 	existingFw, err := cloud.GetFirewall(fwName)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return err
@@ -36,7 +36,7 @@ func EnsureL4InternalFirewallRule(cloud *gce.Cloud, fwName, lbIP, nsName string,
 	if err != nil {
 		return err
 	}
-	fwDesc, err := utils.MakeL4ILBServiceDescription(nsName, lbIP, meta.VersionGA)
+	fwDesc, err := utils.MakeL4ILBServiceDescription(nsName, lbIP, meta.VersionGA, sharedRule)
 	if err != nil {
 		klog.Warningf("EnsureL4InternalFirewallRule: Failed to generate description for rule %s, err: %v",
 			fwName, err)

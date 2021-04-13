@@ -58,6 +58,7 @@ type L4Controller struct {
 	// kubeClient, needed for attaching finalizer
 	client        kubernetes.Interface
 	svcQueue      utils.TaskQueue
+	numWorkers    int
 	serviceLister cache.Indexer
 	nodeLister    listers.NodeLister
 	stopCh        chan struct{}
@@ -76,19 +77,25 @@ type L4Controller struct {
 
 // NewController creates a new instance of the L4 ILB controller.
 func NewController(ctx *context.ControllerContext, stopCh chan struct{}) *L4Controller {
+	if ctx.NumL4Workers <= 0 {
+		klog.Infof("L4 Worker count has not been set, setting to 1")
+		ctx.NumL4Workers = 1
+	}
 	l4c := &L4Controller{
 		ctx:           ctx,
 		client:        ctx.KubeClient,
 		serviceLister: ctx.ServiceInformer.GetIndexer(),
 		nodeLister:    listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
 		stopCh:        stopCh,
+		numWorkers:    ctx.NumL4Workers,
 	}
 	l4c.namer = ctx.L4Namer
 	l4c.translator = translator.NewTranslator(ctx)
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
 	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud)
 
-	l4c.svcQueue = utils.NewPeriodicTaskQueue("l4", "services", l4c.sync)
+	l4c.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4", "services", l4c.numWorkers, l4c.sync)
+
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addSvc := obj.(*v1.Service)
@@ -150,7 +157,8 @@ func (l4c *L4Controller) checkHealth() error {
 
 func (l4c *L4Controller) Run() {
 	defer l4c.shutdown()
-	go l4c.svcQueue.Run()
+	klog.Infof("Running L4 Controller with %d worker goroutines", l4c.numWorkers)
+	l4c.svcQueue.Run()
 	<-l4c.stopCh
 }
 

@@ -189,6 +189,7 @@ func main() {
 	ctxConfig := ingctx.ControllerContextConfig{
 		Namespace:             flags.F.WatchNamespace,
 		ResyncPeriod:          flags.F.ResyncPeriod,
+		NumL4Workers:          flags.F.NumL4Workers,
 		DefaultBackendSvcPort: defaultBackendServicePort,
 		HealthCheckPath:       flags.F.HealthCheckPath,
 		FrontendConfigEnabled: flags.F.EnableFrontendConfig,
