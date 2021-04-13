@@ -18,6 +18,7 @@ package l4
 
 import (
 	context2 "context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -28,6 +29,7 @@ import (
 	api_v1 "k8s.io/api/core/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
@@ -55,6 +57,7 @@ func newServiceController(t *testing.T) *L4Controller {
 	ctxConfig := context.ControllerContextConfig{
 		Namespace:    api_v1.NamespaceAll,
 		ResyncPeriod: 1 * time.Minute,
+		NumL4Workers: 5,
 	}
 	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
 	// Add some nodes so that NEG linker kicks in during ILB creation.
@@ -364,4 +367,89 @@ func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 	validateSvcStatus(newSvc, true, t)
 	// this will be a create metric since an ILB IP is being assigned for the first time.
 	prevMetrics.ValidateDiff(getLatencyMetric(t), &latencyMetricInfo{createCount: 1, upperBoundSeconds: 1}, t)
+}
+
+func TestProcessMultipleServices(t *testing.T) {
+	for _, onlyLocal := range []bool{true, false} {
+		t.Run(fmt.Sprintf("L4 with LocalMode=%v", onlyLocal), func(t *testing.T) {
+			l4c := newServiceController(t)
+			prevMetrics := getLatencyMetric(t)
+			go l4c.Run()
+			var svcNames []string
+			var testNs string
+			for port := 8000; port < 8020; port++ {
+				newSvc := test.NewL4ILBService(false, port)
+				newSvc.Name = newSvc.Name + fmt.Sprintf("-%d", port)
+				svcNames = append(svcNames, newSvc.Name)
+				testNs = newSvc.Namespace
+				addILBService(l4c, newSvc)
+				// add the NEG so that link to backendService works.
+				addNEG(l4c, newSvc)
+				l4c.svcQueue.Enqueue(newSvc)
+			}
+			if err := retry.OnError(retry.DefaultRetry, func(error) bool { return true }, func() error {
+				for _, name := range svcNames {
+					newSvc, err := l4c.client.CoreV1().Services(testNs).Get(context2.TODO(), name, v1.GetOptions{})
+					if err != nil {
+						return fmt.Errorf("Failed to lookup service %s, err: %v", name, err)
+					}
+					if len(newSvc.Status.LoadBalancer.Ingress) == 0 || newSvc.Annotations[annotations.FirewallRuleKey] == "" {
+						return fmt.Errorf("waiting for valid IP and/or resource annotations for service %q. Got Status - %+v, Annotations - %v", newSvc.Name, newSvc.Status, newSvc.Annotations)
+					}
+				}
+				return nil
+			}); err != nil {
+				t.Error(err)
+			}
+			// Perform a full validation of the service once it is ready.
+			for _, name := range svcNames {
+				newSvc, _ := l4c.client.CoreV1().Services(testNs).Get(context2.TODO(), name, v1.GetOptions{})
+				validateSvcStatus(newSvc, true, t)
+			}
+			// this will be a create metric since an ILB IP is being assigned for the first time.
+			prevMetrics.ValidateDiff(getLatencyMetric(t), &latencyMetricInfo{createCount: 20, upperBoundSeconds: 1}, t)
+
+		})
+	}
+}
+
+func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
+	l4c := newServiceController(t)
+	go l4c.Run()
+	newSvc := test.NewL4ILBService(false, 8080)
+	addILBService(l4c, newSvc)
+	l4c.svcQueue.Enqueue(newSvc)
+
+	if err := retry.OnError(retry.DefaultRetry, func(error) bool { return true }, func() error {
+		if numRequeues := l4c.svcQueue.NumRequeues(newSvc); numRequeues == 0 {
+			return fmt.Errorf("Failed to requeue service with delayed NEG addition.")
+		}
+		return nil
+	}); err != nil {
+		t.Error(err)
+	}
+	time.Sleep(5 * time.Second)
+	// add the NEG with a delay to simulate NEG controller delays. The L4 Controller is multi-threaded with 5 goroutines.
+	// The NEG controller is single-threaded. It is possible for NEG creation to take longer, causing the L4 controller to
+	// error out. This test verifies that the service eventually reaches success state.
+	t.Logf("Adding NEG for service %s", newSvc.Name)
+	addNEG(l4c, newSvc)
+
+	var svcErr error
+	backoff := retry.DefaultRetry
+	// Increase the duration since the requeue time for failed events increases exponentially.
+	backoff.Duration = 10 * time.Second
+	if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
+		if newSvc, svcErr = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{}); svcErr != nil {
+			return fmt.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, svcErr)
+		}
+		// wait until an IP is assigned and resource annotations are available.
+		if len(newSvc.Status.LoadBalancer.Ingress) > 0 && newSvc.Annotations[annotations.FirewallRuleKey] != "" {
+			return nil
+		}
+		return fmt.Errorf("waiting for valid IP and/or resource annotations. Got Status - %+v, Annotations - %v", newSvc.Status, newSvc.Annotations)
+	}); err != nil {
+		t.Error(err)
+	}
+	validateSvcStatus(newSvc, true, t)
 }
