@@ -23,6 +23,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	listers "k8s.io/client-go/listers/core/v1"
@@ -259,7 +260,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) err
 	metrics.PublishL4ILBSyncLatency(true, syncTypeDelete, startTime)
 
 	// Reset the loadbalancer status, Ignore NotFound error since the service can already be deleted at this point.
-	if err := l4c.updateServiceStatus(svc, &v1.LoadBalancerStatus{}); utils.IgnoreHTTPNotFound(err) != nil {
+	if err := l4c.updateServiceStatus(svc, &v1.LoadBalancerStatus{}); err != nil && !errors.IsNotFound(err) {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error reseting load balancer status to empty: %v", err)
 		return fmt.Errorf("failed to reset ILB status, err: %v", err)
