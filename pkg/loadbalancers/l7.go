@@ -254,7 +254,7 @@ func (l *L7) GetIP() string {
 // deleteForwardingRule deletes forwarding rule for given protocol.
 func (l *L7) deleteForwardingRule(versions *features.ResourceVersions, protocol namer.NamerProtocol) error {
 	frName := l.namer.ForwardingRule(protocol)
-	klog.V(2).Infof("Deleting global forwarding rule %v", frName)
+	klog.V(2).Infof("Deleting forwarding rule %v", frName)
 	key, err := l.CreateKey(frName)
 	if err != nil {
 		return err
