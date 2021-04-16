@@ -95,6 +95,10 @@ type LoadBalancerController struct {
 
 	ingClassLister  cache.Indexer
 	ingParamsLister cache.Indexer
+
+	// useV1 signifies whether the networking.k8s.io/v1 API is being used
+	// and if V1 patches should be used with Ingress Patch Requests
+	useV1 bool
 }
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
@@ -125,6 +129,7 @@ func NewLoadBalancerController(
 		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud),
 		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool),
 		metrics:       ctx.ControllerMetrics,
+		useV1:         ctx.UseNetworkingV1,
 	}
 
 	if ctx.IngClassInformer != nil {
@@ -440,7 +445,7 @@ func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1beta1.Ingress, ingSv
 		if err = setInstanceGroupsAnnotation(newAnnotations, igs); err != nil {
 			return err
 		}
-		if err = updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations); err != nil {
+		if err = updateAnnotations(lbc.ctx.KubeClient, lbc.useV1, ing, newAnnotations); err != nil {
 			return err
 		}
 		// This short-circuit will stop the syncer from moving to next step.
@@ -510,7 +515,7 @@ func (lbc *LoadBalancerController) EnsureDeleteV1Finalizers(toCleanup []*v1beta1
 	}
 	for _, ing := range toCleanup {
 		ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
-		if err := common.EnsureDeleteFinalizer(ing, ingClient, common.FinalizerKey); err != nil {
+		if err := common.EnsureDeleteFinalizer(ing, ingClient, lbc.useV1, common.FinalizerKey); err != nil {
 			klog.Errorf("Failed to ensure delete finalizer %s for ingress %s: %v", common.FinalizerKey, common.NamespacedName(ing), err)
 			return err
 		}
@@ -525,7 +530,7 @@ func (lbc *LoadBalancerController) EnsureDeleteV2Finalizer(ing *v1beta1.Ingress)
 		return nil
 	}
 	ingClient := lbc.ctx.KubeClient.NetworkingV1beta1().Ingresses(ing.Namespace)
-	if err := common.EnsureDeleteFinalizer(ing, ingClient, common.FinalizerKeyV2); err != nil {
+	if err := common.EnsureDeleteFinalizer(ing, ingClient, lbc.useV1, common.FinalizerKeyV2); err != nil {
 		klog.Errorf("Failed to ensure delete finalizer %s for ingress %s: %v", common.FinalizerKeyV2, common.NamespacedName(ing), err)
 		return err
 	}
@@ -653,7 +658,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 		lbIPs := ing.Status.LoadBalancer.Ingress
 		if len(lbIPs) == 0 || lbIPs[0].IP != ip {
 			klog.Infof("Updating loadbalancer %v/%v with IP %v", ing.Namespace, ing.Name, ip)
-			if _, err := common.PatchIngressStatus(ingClient, ing, updatedIngStatus); err != nil {
+			if _, err := common.PatchIngressStatus(ingClient, lbc.useV1, ing, updatedIngStatus); err != nil {
 				klog.Errorf("PatchIngressStatus(%s/%s) failed: %v", ing.Namespace, ing.Name, err)
 				return err
 			}
@@ -666,7 +671,7 @@ func (lbc *LoadBalancerController) updateIngressStatus(l7 *loadbalancers.L7, ing
 		return err
 	}
 
-	if err := updateAnnotations(lbc.ctx.KubeClient, ing, newAnnotations); err != nil {
+	if err := updateAnnotations(lbc.ctx.KubeClient, lbc.useV1, ing, newAnnotations); err != nil {
 		return err
 	}
 	return nil
@@ -726,14 +731,14 @@ func (lbc *LoadBalancerController) toRuntimeInfo(ing *v1beta1.Ingress, urlMap *u
 	}, nil
 }
 
-func updateAnnotations(client kubernetes.Interface, ing *v1beta1.Ingress, newAnnotations map[string]string) error {
+func updateAnnotations(client kubernetes.Interface, useV1 bool, ing *v1beta1.Ingress, newAnnotations map[string]string) error {
 	if reflect.DeepEqual(ing.Annotations, newAnnotations) {
 		return nil
 	}
 	ingClient := client.NetworkingV1beta1().Ingresses(ing.Namespace)
 	newObjectMeta := ing.ObjectMeta.DeepCopy()
 	newObjectMeta.Annotations = newAnnotations
-	if _, err := common.PatchIngressObjectMetadata(ingClient, ing, *newObjectMeta); err != nil {
+	if _, err := common.PatchIngressObjectMetadata(ingClient, useV1, ing, *newObjectMeta); err != nil {
 		klog.Errorf("PatchIngressObjectMetadata(%s/%s) failed: %v", ing.Namespace, ing.Name, err)
 		return err
 	}
@@ -796,7 +801,7 @@ func (lbc *LoadBalancerController) ensureFinalizer(ing *v1beta1.Ingress) (*v1bet
 	// Update ingress with finalizer so that load-balancer pool uses correct naming scheme
 	// while ensuring frontend resources. Note that this updates only the finalizer annotation
 	// which may be inconsistent with ingress store for a short period.
-	updatedIng, err := common.EnsureFinalizer(ing, ingClient, finalizerKey)
+	updatedIng, err := common.EnsureFinalizer(ing, ingClient, lbc.useV1, finalizerKey)
 	if err != nil {
 		klog.Errorf("Failed to ensure finalizer %s for ingress %s: %v", finalizerKey, ingKey, err)
 		return nil, err

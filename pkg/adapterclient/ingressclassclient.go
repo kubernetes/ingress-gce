@@ -198,7 +198,7 @@ func (w *v1IngressClassAdapterWatcher) Stop() {
 	w.resultLock.Unlock()
 }
 
-// ResultChan returns the ready only event channel
+// ResultChan returns the read only event channel
 func (w *v1IngressClassAdapterWatcher) ResultChan() <-chan watch.Event {
 	return w.result
 }

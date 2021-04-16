@@ -23,12 +23,14 @@ import (
 	"fmt"
 	"strconv"
 
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	client "k8s.io/client-go/kubernetes/typed/networking/v1beta1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/ingress-gce/pkg/adapterclient"
 	"k8s.io/klog"
 )
 
@@ -98,37 +100,56 @@ func ToIngressKeys(ings []*v1beta1.Ingress) []string {
 
 // PatchIngressObjectMetadata patches the given ingress's metadata based on new
 // ingress metadata.
-func PatchIngressObjectMetadata(ic client.IngressInterface, ing *v1beta1.Ingress, newObjectMetadata metav1.ObjectMeta) (*v1beta1.Ingress, error) {
+func PatchIngressObjectMetadata(ic client.IngressInterface, usesV1 bool, ing *v1beta1.Ingress, newObjectMetadata metav1.ObjectMeta) (*v1beta1.Ingress, error) {
 	newIng := ing.DeepCopy()
 	newIng.ObjectMeta = newObjectMetadata
-	return patchIngress(ic, ing, newIng)
+	return patchIngress(ic, usesV1, ing, newIng)
 }
 
 // PatchIngressStatus patches the given ingress's Status based on new ingress
 // status.
-func PatchIngressStatus(ic client.IngressInterface, ing *v1beta1.Ingress, newStatus v1beta1.IngressStatus) (*v1beta1.Ingress, error) {
+func PatchIngressStatus(ic client.IngressInterface, usesV1 bool, ing *v1beta1.Ingress, newStatus v1beta1.IngressStatus) (*v1beta1.Ingress, error) {
 	newIng := ing.DeepCopy()
 	newIng.Status = newStatus
-	return patchIngress(ic, ing, newIng)
+	return patchIngress(ic, usesV1, ing, newIng)
 }
 
 // patchIngress patches the given ingress's Status or ObjectMetadata based on
 // the old and new ingresses.
 // Note that both Status and ObjectMetadata (annotations and finalizers)
 // can be patched via `status` subresource API endpoint.
-func patchIngress(ic client.IngressInterface, oldIngress, newIngress *v1beta1.Ingress) (*v1beta1.Ingress, error) {
+func patchIngress(ic client.IngressInterface, useV1 bool, oldIngress, newIngress *v1beta1.Ingress) (*v1beta1.Ingress, error) {
 	ingKey := fmt.Sprintf("%s/%s", oldIngress.Namespace, oldIngress.Name)
-	oldData, err := json.Marshal(oldIngress)
+
+	var oldIng, newIng, dataStruct interface{}
+	if useV1 {
+		var err error
+		oldIng, err = adapterclient.GetV1Ingress(oldIngress)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert old ingress: %q", err)
+		}
+		newIng, err = adapterclient.GetV1Ingress(newIngress)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert new ingress: %q", err)
+		}
+		dataStruct = v1.Ingress{}
+	} else {
+		oldIng = oldIngress
+		newIng = newIngress
+		dataStruct = v1beta1.Ingress{}
+	}
+
+	oldData, err := json.Marshal(oldIng)
 	if err != nil {
 		return nil, fmt.Errorf("failed to Marshal oldData for ingress %s: %v", ingKey, err)
 	}
 
-	newData, err := json.Marshal(newIngress)
+	newData, err := json.Marshal(newIng)
 	if err != nil {
 		return nil, fmt.Errorf("failed to Marshal newData for ingress %s: %v", ingKey, err)
 	}
 
-	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, v1beta1.Ingress{})
+	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, dataStruct)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TwoWayMergePatch for ingress %s: %v", ingKey, err)
 	}

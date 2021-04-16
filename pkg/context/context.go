@@ -100,6 +100,9 @@ type ControllerContext struct {
 
 	// Map of namespace => record.EventRecorder.
 	recorders map[string]record.EventRecorder
+
+	// Indicates whether LoadBalancer Controller should use V1 API when patching Ingresses
+	UseNetworkingV1 bool
 }
 
 // ControllerContextConfig encapsulates some settings that are tunable via command line flags.
@@ -128,6 +131,7 @@ func NewControllerContext(
 	cloud *gce.Cloud,
 	clusterNamer *namer.Namer,
 	kubeSystemUID types.UID,
+	useNetworkingV1 bool,
 	config ControllerContextConfig) *ControllerContext {
 
 	context := &ControllerContext{
@@ -150,6 +154,7 @@ func NewControllerContext(
 		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		recorders:               map[string]record.EventRecorder{},
 		healthChecks:            make(map[string]func() error),
+		UseNetworkingV1:         useNetworkingV1,
 	}
 
 	if config.FrontendConfigEnabled {

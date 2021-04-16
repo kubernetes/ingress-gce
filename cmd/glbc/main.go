@@ -25,6 +25,7 @@ import (
 
 	flag "github.com/spf13/pflag"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/ingress-gce/pkg/adapterclient"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/ingparams"
 	"k8s.io/ingress-gce/pkg/psc"
@@ -84,7 +85,7 @@ func main() {
 		klog.Fatalf("Failed to create kubernetes client config for protobuf: %v", err)
 	}
 
-	kubeClient, err := kubernetes.NewForConfig(kubeConfigForProtobuf)
+	client, err := kubernetes.NewForConfig(kubeConfigForProtobuf)
 	if err != nil {
 		klog.Fatalf("Failed to create kubernetes client: %v", err)
 	}
@@ -93,6 +94,12 @@ func main() {
 	leaderElectKubeClient, err := kubernetes.NewForConfig(restclient.AddUserAgent(kubeConfigForProtobuf, "leader-election"))
 	if err != nil {
 		klog.Fatalf("Failed to create kubernetes client for leader election: %v", err)
+	}
+
+	// Use adapter client to use networking.k8s.io/v1 API when available
+	kubeClient, useNetworkingV1, err := adapterclient.NewAdapterKubeClient(client)
+	if err != nil {
+		klog.Fatalf("Failed to create adapter client: %q", err)
 	}
 
 	// Create kube-config for CRDs.
@@ -197,7 +204,7 @@ func main() {
 		ASMConfigMapNamespace: flags.F.ASMConfigMapBasedConfigNamespace,
 		ASMConfigMapName:      flags.F.ASMConfigMapBasedConfigCMName,
 	}
-	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, ingParamsClient, svcAttachmentClient, cloud, namer, kubeSystemUID, ctxConfig)
+	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, ingParamsClient, svcAttachmentClient, cloud, namer, kubeSystemUID, useNetworkingV1, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
 
 	if !flags.F.LeaderElection.LeaderElect {

@@ -24,7 +24,10 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	discoveryfakes "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes/fake"
+	networkingv1beta1 "k8s.io/client-go/kubernetes/typed/networking/v1beta1"
+	"k8s.io/ingress-gce/pkg/adapterclient"
 	"k8s.io/kubernetes/pkg/util/slice"
 )
 
@@ -90,30 +93,36 @@ func TestPatchIngressObjectMetadata(t *testing.T) {
 			},
 		},
 	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			ingKey := fmt.Sprintf("%s/%s", tc.ing.Namespace, tc.ing.Name)
-			ingClient := fake.NewSimpleClientset().NetworkingV1beta1().Ingresses(tc.ing.Namespace)
-			if _, err := ingClient.Create(context.TODO(), tc.ing, metav1.CreateOptions{}); err != nil {
-				t.Fatalf("Create(%s) = %v, want nil", ingKey, err)
-			}
-			// Add an annotation to the ingress resource so that the resource version
-			// is different from the one that will be used to compute patch bytes.
-			updatedIng := tc.ing.DeepCopy()
-			updatedIng.Annotations["readonly-annotation-key"] = "readonly-value"
-			if _, err := ingClient.Update(context.TODO(), updatedIng, metav1.UpdateOptions{}); err != nil {
-				t.Fatalf("Create(%s) = %v, want nil", ingKey, err)
-			}
-			gotIng, err := PatchIngressObjectMetadata(ingClient, tc.ing, tc.newMetaFunc(tc.ing).ObjectMeta)
-			if err != nil {
-				t.Fatalf("PatchIngressObjectMetadata(%s) = %v, want nil", ingKey, err)
-			}
+		for _, useV1 := range []bool{true, false} {
+			t.Run(tc.desc+fmt.Sprintf(", useV1: %t", useV1), func(t *testing.T) {
+				ingKey := fmt.Sprintf("%s/%s", tc.ing.Namespace, tc.ing.Name)
+				ingClient, err := getIngClient(useV1, tc.ing.Namespace)
+				if err != nil {
+					t.Fatalf("failed creating ingress client: %q", err)
+				}
 
-			// Verify that the read only annotation is not overwritten.
-			expectIng := tc.newMetaFunc(updatedIng)
-			if diff := cmp.Diff(expectIng, gotIng); diff != "" {
-				t.Errorf("Got mismatch for Ingress patch (-want +got):\n%s", diff)
-			}
-		})
+				if _, err := ingClient.Create(context.TODO(), tc.ing, metav1.CreateOptions{}); err != nil {
+					t.Fatalf("Create(%s) = %v, want nil", ingKey, err)
+				}
+				// Add an annotation to the ingress resource so that the resource version
+				// is different from the one that will be used to compute patch bytes.
+				updatedIng := tc.ing.DeepCopy()
+				updatedIng.Annotations["readonly-annotation-key"] = "readonly-value"
+				if _, err := ingClient.Update(context.TODO(), updatedIng, metav1.UpdateOptions{}); err != nil {
+					t.Fatalf("Create(%s) = %v, want nil", ingKey, err)
+				}
+				gotIng, err := PatchIngressObjectMetadata(ingClient, useV1, tc.ing, tc.newMetaFunc(tc.ing).ObjectMeta)
+				if err != nil {
+					t.Fatalf("PatchIngressObjectMetadata(%s) = %v, want nil", ingKey, err)
+				}
+
+				// Verify that the read only annotation is not overwritten.
+				expectIng := tc.newMetaFunc(updatedIng)
+				if diff := cmp.Diff(expectIng, gotIng); diff != "" {
+					t.Errorf("Got mismatch for Ingress patch (-want +got):\n%s", diff)
+				}
+			})
+		}
 	}
 }
 
@@ -148,22 +157,28 @@ func TestPatchIngressStatus(t *testing.T) {
 			},
 		},
 	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			ingKey := fmt.Sprintf("%s/%s", tc.ing.Namespace, tc.ing.Name)
-			ingClient := fake.NewSimpleClientset().NetworkingV1beta1().Ingresses(tc.ing.Namespace)
-			if _, err := ingClient.Create(context.TODO(), tc.ing, metav1.CreateOptions{}); err != nil {
-				t.Fatalf("Create(%s) = %v, want nil", ingKey, err)
-			}
-			expectIng := tc.newMetaFunc(tc.ing)
-			gotIng, err := PatchIngressStatus(ingClient, tc.ing, expectIng.Status)
-			if err != nil {
-				t.Fatalf("PatchIngressStatus(%s) = %v, want nil", ingKey, err)
-			}
+		for _, useV1 := range []bool{true, false} {
+			t.Run(tc.desc, func(t *testing.T) {
+				ingKey := fmt.Sprintf("%s/%s,useV1: %t", tc.ing.Namespace, tc.ing.Name, useV1)
+				ingClient, err := getIngClient(useV1, tc.ing.Namespace)
+				if err != nil {
+					t.Fatalf("failed creating ingress client: %q", err)
+				}
 
-			if diff := cmp.Diff(expectIng, gotIng); diff != "" {
-				t.Errorf("Got mismatch for Ingress patch (-want +got):\n%s", diff)
-			}
-		})
+				if _, err = ingClient.Create(context.TODO(), tc.ing, metav1.CreateOptions{}); err != nil {
+					t.Fatalf("Create(%s) = %v, want nil", ingKey, err)
+				}
+				expectIng := tc.newMetaFunc(tc.ing)
+				gotIng, err := PatchIngressStatus(ingClient, false, tc.ing, expectIng.Status)
+				if err != nil {
+					t.Fatalf("PatchIngressStatus(%s) = %v, want nil", ingKey, err)
+				}
+
+				if diff := cmp.Diff(expectIng, gotIng); diff != "" {
+					t.Errorf("Got mismatch for Ingress patch (-want +got):\n%s", diff)
+				}
+			})
+		}
 	}
 }
 
@@ -174,10 +189,6 @@ const (
 
 func newTestIngress(namespace, name string) *v1beta1.Ingress {
 	return &v1beta1.Ingress{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Ingress",
-			APIVersion: "networking/v1beta1",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,
@@ -201,4 +212,37 @@ func newTestIngress(namespace, name string) *v1beta1.Ingress {
 			},
 		},
 	}
+}
+
+func getIngClient(v1Supported bool, namespace string) (networkingv1beta1.IngressInterface, error) {
+	kubeClient := fake.NewSimpleClientset()
+
+	discovery := kubeClient.Discovery().(*discoveryfakes.FakeDiscovery)
+	var v1Resources []metav1.APIResource
+	if v1Supported {
+		v1Resources = []metav1.APIResource{
+			{Kind: "Ingress"}, {Kind: "IngressClass"},
+		}
+	}
+
+	discovery.Resources = []*metav1.APIResourceList{
+		{
+			GroupVersion: "networking.k8s.io/v1",
+			APIResources: v1Resources,
+		},
+		{
+			GroupVersion: "networking.k8s.io/v1beta1",
+			APIResources: []metav1.APIResource{
+				{Kind: "Ingress"}, {Kind: "IngressClass"},
+			},
+		},
+	}
+
+	adapterClient, _, err := adapterclient.NewAdapterKubeClient(kubeClient)
+	if err != nil {
+		return nil, err
+	}
+
+	return adapterClient.NetworkingV1beta1().Ingresses(namespace), nil
+
 }
