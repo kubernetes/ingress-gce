@@ -19,6 +19,7 @@ package composite
 
 import (
 	"fmt"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	computealpha "google.golang.org/api/compute/v0.alpha"
@@ -237,19 +238,22 @@ func SetSecurityPolicy(gceCloud *gce.Cloud, backendService *BackendService, secu
 	case meta.VersionAlpha:
 		var ref *computealpha.SecurityPolicyReference
 		if securityPolicy != "" {
-			ref = &computealpha.SecurityPolicyReference{SecurityPolicy: securityPolicy}
+			securityPolicyLink := cloud.SelfLink(meta.VersionAlpha, gceCloud.ProjectID(), "securityPolicies", meta.GlobalKey(securityPolicy))
+			ref = &computealpha.SecurityPolicyReference{SecurityPolicy: securityPolicyLink}
 		}
 		return mc.Observe(gceCloud.Compute().AlphaBackendServices().SetSecurityPolicy(ctx, key, ref))
 	case meta.VersionBeta:
 		var ref *computebeta.SecurityPolicyReference
 		if securityPolicy != "" {
-			ref = &computebeta.SecurityPolicyReference{SecurityPolicy: securityPolicy}
+			securityPolicyLink := cloud.SelfLink(meta.VersionBeta, gceCloud.ProjectID(), "securityPolicies", meta.GlobalKey(securityPolicy))
+			ref = &computebeta.SecurityPolicyReference{SecurityPolicy: securityPolicyLink}
 		}
 		return mc.Observe(gceCloud.Compute().BetaBackendServices().SetSecurityPolicy(ctx, key, ref))
 	default:
 		var ref *compute.SecurityPolicyReference
 		if securityPolicy != "" {
-			ref = &compute.SecurityPolicyReference{SecurityPolicy: securityPolicy}
+			securityPolicyLink := cloud.SelfLink(meta.VersionGA, gceCloud.ProjectID(), "securityPolicies", meta.GlobalKey(securityPolicy))
+			ref = &compute.SecurityPolicyReference{SecurityPolicy: securityPolicyLink}
 		}
 		return mc.Observe(gceCloud.Compute().BackendServices().SetSecurityPolicy(ctx, key, ref))
 	}

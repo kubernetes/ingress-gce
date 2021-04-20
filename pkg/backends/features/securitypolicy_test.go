@@ -168,7 +168,7 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 				var desiredPolicyRef *compute.SecurityPolicyReference
 				if tc.desiredConfig.Spec.SecurityPolicy != nil && tc.desiredConfig.Spec.SecurityPolicy.Name != "" {
 					desiredPolicyRef = &compute.SecurityPolicyReference{
-						SecurityPolicy: tc.desiredConfig.Spec.SecurityPolicy.Name,
+						SecurityPolicy: cloud.SelfLink(meta.VersionGA, fakeGCE.ProjectID(), "securityPolicies", meta.GlobalKey(tc.desiredConfig.Spec.SecurityPolicy.Name)),
 					}
 				}
 				if diff := cmp.Diff(desiredPolicyRef, policyRef); diff != "" {
