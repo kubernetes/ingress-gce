@@ -108,8 +108,13 @@ type CacheKeyPolicy struct {
 }
 
 // SecurityPolicyConfig contains configuration for CloudArmor-enabled backends.
+// If not specified, the controller will not reconcile the security policy
+// configuration. In other words, users can make changes in GCE without the
+// controller overwriting them.
+// +k8s:openapi-gen=true
 type SecurityPolicyConfig struct {
-	// Name of the security policy that should be associated.
+	// Name of the security policy that should be associated. If set to empty, the
+	// existing security policy on the backend will be removed.
 	Name string `json:"name"`
 }
 
