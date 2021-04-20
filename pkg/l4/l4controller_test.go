@@ -370,6 +370,9 @@ func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 }
 
 func TestProcessMultipleServices(t *testing.T) {
+	backoff := retry.DefaultRetry
+	// Increase the duration since updates take longer on prow.
+	backoff.Duration = 1 * time.Second
 	for _, onlyLocal := range []bool{true, false} {
 		t.Run(fmt.Sprintf("L4 with LocalMode=%v", onlyLocal), func(t *testing.T) {
 			l4c := newServiceController(t)
@@ -387,7 +390,7 @@ func TestProcessMultipleServices(t *testing.T) {
 				addNEG(l4c, newSvc)
 				l4c.svcQueue.Enqueue(newSvc)
 			}
-			if err := retry.OnError(retry.DefaultRetry, func(error) bool { return true }, func() error {
+			if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
 				for _, name := range svcNames {
 					newSvc, err := l4c.client.CoreV1().Services(testNs).Get(context2.TODO(), name, v1.GetOptions{})
 					if err != nil {
