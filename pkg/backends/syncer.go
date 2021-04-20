@@ -119,6 +119,10 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 	}
 
 	if sp.BackendConfig != nil {
+		// Scope is used to validate if cloud armor security policy feature is
+		// available. meta.Key is not needed as security policy supported only for
+		// global backends.
+		be.Scope = scope
 		if err := features.EnsureSecurityPolicy(s.cloud, sp, be); err != nil {
 			return err
 		}
