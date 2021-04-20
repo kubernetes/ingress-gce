@@ -74,8 +74,13 @@ func (t *PeriodicTaskQueueWithMultipleWorkers) runInternal(workerId int) {
 		}
 		klog.V(4).Infof("Worker-%d: Syncing %v (%v)", workerId, key, t.resource)
 		if err := t.sync(key.(string)); err != nil {
-			klog.Errorf("Worker-%d: Requeuing %q due to error: %v (%v)", workerId, key, err, t.resource)
-			t.queue.AddRateLimited(key)
+			if IsRetryableError(err) {
+				klog.Errorf("Worker-%d: Requeuing %q due to error: %v (%v)", workerId, key, err, t.resource)
+				t.queue.AddRateLimited(key)
+			} else {
+				klog.Errorf("Worker-%d: Skipping requeue %q due to non-retryable error: %v (%v)", workerId, key, err, t.resource)
+				t.queue.Forget(key)
+			}
 		} else {
 			klog.V(4).Infof("Worker-%d: Finished syncing %v", workerId, key)
 			t.queue.Forget(key)

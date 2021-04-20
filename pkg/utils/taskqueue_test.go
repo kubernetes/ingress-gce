@@ -79,11 +79,15 @@ func TestPeriodicQueueWithMultipleWorkers(t *testing.T) {
 		switch key {
 		case "err":
 			return errors.New("injected error")
+		case "forbiddenerr":
+			return FakeGoogleAPIForbiddenErr()
 		}
 		return nil
 	}
-	validInputObjs := []string{"a", "b", "c", "d", "e", "f", "g"}
-	inputObjsWithErr := []string{"a", "b", "c", "d", "e", "f", "err", "g"}
+	// Use disjoint keys in each testcase so they can be cleaned up without affecting other testcases.
+	validInputObjs := []string{"a1", "b1", "c1", "d1", "e1", "f1", "g1"}
+	inputObjsWithErr := []string{"a2", "b2", "c2", "d2", "e2", "f2", "err", "g2"}
+	inputObjsWithForbiddenErr := []string{"a3", "b3", "c3", "d3", "e3", "f3", "forbiddenerr", "g3"}
 	testCases := []struct {
 		desc                string
 		numWorkers          int
@@ -95,6 +99,7 @@ func TestPeriodicQueueWithMultipleWorkers(t *testing.T) {
 		{"queue with 1 worker should work", 1, "", validInputObjs, false},
 		{"queue with multiple workers should work", 5, "", validInputObjs, false},
 		{"queue with multiple workers should requeue errors", 5, "err", inputObjsWithErr, false},
+		{"queue with multiple workers should not requeue forbidden errors", 5, "", inputObjsWithForbiddenErr, false},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -121,6 +126,12 @@ func TestPeriodicQueueWithMultipleWorkers(t *testing.T) {
 				if tq.queue.NumRequeues(tc.expectRequeueForKey) == 0 {
 					t.Errorf("Got 0 requeues for %q, expected non-zero requeue on error.", tc.expectRequeueForKey)
 				}
+			} else {
+				for _, obj := range tc.inputObjs {
+					if count := tq.queue.NumRequeues(cache.ExplicitKey(obj)); count != 0 {
+						t.Errorf("Unexpected requeue count %d for key %v, expected 0", count, obj)
+					}
+				}
 			}
 			tq.Shutdown()
 
@@ -140,6 +151,7 @@ func TestPeriodicQueueWithMultipleWorkers(t *testing.T) {
 				if _, ok := synced.Load(key); !ok {
 					t.Errorf("Did not sync input key - %s.", key)
 				}
+				synced.Delete(key)
 			}
 		})
 	}

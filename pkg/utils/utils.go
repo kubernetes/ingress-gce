@@ -174,8 +174,18 @@ func IsNotFoundError(err error) bool {
 }
 
 // IsForbiddenError returns true if the operation was forbidden
+// rateLimitExceeded errors also return the Forbidden status code.
 func IsForbiddenError(err error) bool {
 	return IsHTTPErrorCode(err, http.StatusForbidden)
+}
+
+// IsRetryableError returns true if the given update error can be retried upon.
+func IsRetryableError(err error) bool {
+	if err == nil {
+		return false
+	}
+	// Permission errors and rateLimitExceeded errors need not be requeued. They will be retried by periodic resync by the Informer.
+	return !IsForbiddenError(err)
 }
 
 // PrettyJson marshals an object in a human-friendly format.
