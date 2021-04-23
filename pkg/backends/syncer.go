@@ -22,7 +22,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	lbfeatures "k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -138,25 +137,22 @@ func (s *backendSyncer) GC(svcPorts []utils.ServicePort) error {
 		return err
 	}
 
-	// Only GC L7 ILB backends if it's enabled
-	if flags.F.EnableL7Ilb {
-		// TODO(shance): Refactor out empty key field
-		key, err := composite.CreateKey(s.cloud, "", meta.Regional)
-		if err != nil {
-			return fmt.Errorf("error creating l7 ilb key: %v", err)
-		}
-		ilbBackends, err := s.backendPool.List(key, lbfeatures.L7ILBVersions().BackendService)
-		if err != nil {
-			return fmt.Errorf("error listing regional backends: %v", err)
-		}
-		err = s.gc(ilbBackends, knownPorts)
-		if err != nil {
-			return fmt.Errorf("error GCing regional Backends: %v", err)
-		}
+	// TODO(shance): Refactor out empty key field
+	key, err := composite.CreateKey(s.cloud, "", meta.Regional)
+	if err != nil {
+		return fmt.Errorf("error creating l7 ilb key: %v", err)
+	}
+	ilbBackends, err := s.backendPool.List(key, lbfeatures.L7ILBVersions().BackendService)
+	if err != nil {
+		return fmt.Errorf("error listing regional backends: %v", err)
+	}
+	err = s.gc(ilbBackends, knownPorts)
+	if err != nil {
+		return fmt.Errorf("error GCing regional Backends: %v", err)
 	}
 
 	// Requires an empty name field until it is refactored out
-	key, err := composite.CreateKey(s.cloud, "", meta.Global)
+	key, err = composite.CreateKey(s.cloud, "", meta.Global)
 	if err != nil {
 		return fmt.Errorf("error creating l7 ilb key: %v", err)
 	}

@@ -462,7 +462,6 @@ func TestIsGCEIngress(t *testing.T) {
 		desc             string
 		ingress          *v1beta1.Ingress
 		ingressClassFlag string
-		enableL7IlbFlag  bool
 		expected         bool
 	}{
 		{
@@ -485,25 +484,14 @@ func TestIsGCEIngress(t *testing.T) {
 			expected: false,
 		},
 		{
-			desc: "L7 ILB ingress class with flag disabled",
+			desc: "L7 ILB ingress class",
 			ingress: &v1beta1.Ingress{
 				ObjectMeta: v1.ObjectMeta{
 					Annotations: map[string]string{
 						annotations.IngressClassKey: annotations.GceL7ILBIngressClass},
 				},
 			},
-			expected: false,
-		},
-		{
-			desc: "L7 ILB ingress class with flag enabled",
-			ingress: &v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
-					Annotations: map[string]string{
-						annotations.IngressClassKey: annotations.GceL7ILBIngressClass},
-				},
-			},
-			expected:        true,
-			enableL7IlbFlag: true,
+			expected: true,
 		},
 		{
 			desc: "Set by flag with non-matching class",
@@ -560,10 +548,6 @@ func TestIsGCEIngress(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			if tc.ingressClassFlag != "" {
 				flags.F.IngressClass = tc.ingressClassFlag
-			}
-
-			if tc.enableL7IlbFlag {
-				flags.F.EnableL7Ilb = true
 			}
 
 			result := IsGCEIngress(tc.ingress)

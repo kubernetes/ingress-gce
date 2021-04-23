@@ -46,7 +46,6 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -375,8 +374,8 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 
 // TestEnableNEGServiceWithILBIngress tests ILB service with NEG enabled
 func TestEnableNEGServiceWithILBIngress(t *testing.T) {
-	// Not running in parallel since enabling global flag
-	flags.F.EnableL7Ilb = true
+	t.Parallel()
+
 	controller := newTestController(fake.NewSimpleClientset())
 	defer controller.stop()
 	controller.serviceLister.Add(newTestService(controller, false, []int32{}))
@@ -838,7 +837,7 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 			expectNeg:      false,
 		},
 		{
-			desc: "ing4 is L7 ILB, does not has backend and default backend service does not have NEG annotation",
+			desc: "L7ILB is enabled, ing4 is L7 ILB, does not has backend and default backend service does not have NEG annotation",
 			getIngress: func() *v1beta1.Ingress {
 				ing := newTestIngress("ing4")
 				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7ILBIngressClass}

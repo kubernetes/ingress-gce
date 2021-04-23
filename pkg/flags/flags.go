@@ -91,7 +91,6 @@ var (
 		EnableBackendConfigHealthCheck bool
 		EnableDeleteUnusedFrontends    bool
 		EnableFrontendConfig           bool
-		EnableL7Ilb                    bool
 		EnableNonGCPMode               bool
 		EnableReadinessReflector       bool
 		EnableV2FrontendNamer          bool
@@ -211,8 +210,6 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 		F.FinalizerAdd, "Enable adding Finalizer to Ingress.")
 	flag.BoolVar(&F.FinalizerRemove, "enable-finalizer-remove",
 		F.FinalizerRemove, "Enable removing Finalizer from Ingress.")
-	flag.BoolVar(&F.EnableL7Ilb, "enable-l7-ilb", false,
-		`Optional, whether or not to enable L7-ILB.`)
 	flag.BoolVar(&F.EnableASMConfigMapBasedConfig, "enable-asm-config-map-config", false, "Enable ASMConfigMapBasedConfig")
 	flag.StringVar(&F.ASMConfigMapBasedConfigNamespace, "asm-configmap-based-config-namespace", "kube-system", "ASM Configmap based config: configmap namespace")
 	flag.StringVar(&F.ASMConfigMapBasedConfigCMName, "asm-configmap-based-config-cmname", "ingress-controller-asm-cm-config", "ASM Configmap based config: configmap name")

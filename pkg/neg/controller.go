@@ -42,7 +42,6 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	svcnegv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/controller/translator"
-	"k8s.io/ingress-gce/pkg/flags"
 	usage "k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/metrics"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
@@ -588,11 +587,8 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 		return nil
 	}
 
-	// process default backend service for L7 ILB
-	if flags.F.EnableL7Ilb {
-		if err := scanIngress(utils.IsGCEL7ILBIngress); err != nil {
-			return err
-		}
+	if err := scanIngress(utils.IsGCEL7ILBIngress); err != nil {
+		return err
 	}
 
 	// process default backend service for L7 XLB
@@ -782,7 +778,7 @@ func (c *Controller) enqueueIngressServices(ing *v1beta1.Ingress) {
 	}
 
 	// enqueue default backend service
-	if flags.F.EnableL7Ilb && ing.Spec.Backend == nil {
+	if ing.Spec.Backend == nil {
 		c.enqueueService(cache.ExplicitKey(c.defaultBackendService.ID.Service.String()))
 	}
 }

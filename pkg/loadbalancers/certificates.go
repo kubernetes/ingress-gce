@@ -21,7 +21,6 @@ import (
 	"strings"
 
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -30,7 +29,7 @@ import (
 const SslCertificateMissing = "SslCertificateMissing"
 
 func (l *L7) checkSSLCert() error {
-	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
+	isL7ILB := utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
 	tr := translator.NewTranslator(isL7ILB, l.namer)
 	env := &translator.Env{Region: l.cloud.Region(), Project: l.cloud.ProjectID()}
 	translatorCerts := tr.ToCompositeSSLCertificates(env, l.runtimeInfo.TLSName, l.runtimeInfo.TLS, l.Versions().SslCertificate)

@@ -1833,7 +1833,6 @@ func TestResourceDeletionWithProtocol(t *testing.T) {
 // on updating ingress configuration to change from ELB to ILB or vice versa.
 // This test applies to the V2 naming scheme only
 func TestResourceDeletionWithScopeChange(t *testing.T) {
-	flags.F.EnableL7Ilb = true
 	j := newTestJig(t)
 
 	gceUrlMap := utils.NewGCEURLMap()

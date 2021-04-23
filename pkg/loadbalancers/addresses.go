@@ -81,7 +81,7 @@ func (l *L7) checkStaticIP() (err error) {
 }
 
 func (l *L7) newStaticAddress(name string) *composite.Address {
-	isInternal := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(&l.ingress)
+	isInternal := utils.IsGCEL7ILBIngress(&l.ingress)
 	address := &composite.Address{Name: name, Address: l.fw.IPAddress, Version: meta.VersionGA}
 	if isInternal {
 		// Used for L7 ILB

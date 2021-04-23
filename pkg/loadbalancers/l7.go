@@ -146,7 +146,7 @@ func (l *L7) edgeHop() error {
 	}
 
 	// Check for invalid L7-ILB HTTPS config before attempting sync
-	if flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress) && sslConfigured && l.runtimeInfo.AllowHTTP {
+	if utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress) && sslConfigured && l.runtimeInfo.AllowHTTP {
 		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeWarning, "WillNotConfigureFrontend", "gce-internal Ingress class does not currently support both HTTP and HTTPS served on the same IP (kubernetes.io/ingress.allow-http must be false when using HTTPS).")
 		return fmt.Errorf("error invalid internal ingress https config")
 	}

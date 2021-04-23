@@ -24,7 +24,6 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/flags"
 )
 
 func TestNewStaticAddress(t *testing.T) {
@@ -59,7 +58,6 @@ func TestNewStaticAddress(t *testing.T) {
 			}
 
 			if tc.isInternal {
-				flags.F.EnableL7Ilb = true
 				l7.ingress.Annotations = map[string]string{annotations.IngressClassKey: "gce-internal"}
 			}
 

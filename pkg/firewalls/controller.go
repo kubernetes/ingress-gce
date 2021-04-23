@@ -181,15 +181,13 @@ func (fwc *FirewallController) sync(key string) error {
 	}
 
 	var additionalRanges []string
-	if flags.F.EnableL7Ilb {
-		ilbRange, err := fwc.ilbFirewallSrcRange(gceIngresses)
-		if err != nil {
-			if err != features.ErrSubnetNotFound && err != ErrNoILBIngress {
-				return err
-			}
-		} else {
-			additionalRanges = append(additionalRanges, ilbRange)
+	ilbRange, err := fwc.ilbFirewallSrcRange(gceIngresses)
+	if err != nil {
+		if err != features.ErrSubnetNotFound && err != ErrNoILBIngress {
+			return err
 		}
+	} else {
+		additionalRanges = append(additionalRanges, ilbRange)
 	}
 
 	var additionalPorts []string

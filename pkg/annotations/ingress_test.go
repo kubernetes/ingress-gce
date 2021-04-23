@@ -21,7 +21,6 @@ import (
 
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/ingress-gce/pkg/flags"
 )
 
 func TestIngress(t *testing.T) {
@@ -74,10 +73,6 @@ func TestIngress(t *testing.T) {
 		},
 	} {
 		ing := FromIngress(tc.ing)
-
-		if tc.ingressClass == GceL7ILBIngressClass {
-			flags.F.EnableL7Ilb = true
-		}
 
 		if x := ing.AllowHTTP(); x != tc.allowHTTP {
 			t.Errorf("ingress %+v; AllowHTTP() = %v, want %v", tc.ing, x, tc.allowHTTP)
