@@ -198,7 +198,7 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 	urlMap := utils.NewGCEURLMap()
 
 	params := &getServicePortParams{}
-	params.isL7ILB = flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(ing)
+	params.isL7ILB = utils.IsGCEL7ILBIngress(ing)
 
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {

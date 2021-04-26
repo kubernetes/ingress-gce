@@ -293,8 +293,7 @@ func IsGCEIngress(ing *v1beta1.Ingress) bool {
 	case annotations.GceIngressClass:
 		return true
 	case annotations.GceL7ILBIngressClass:
-		// TODO: (shance) remove flag check for L7-ILB once fully rolled out
-		return flags.F.EnableL7Ilb
+		return true
 	default:
 		return false
 	}

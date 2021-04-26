@@ -53,7 +53,7 @@ func (l *L7) checkProxy() (err error) {
 		return err
 	}
 
-	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
+	isL7ILB := utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
 	tr := translator.NewTranslator(isL7ILB, l.namer)
 
 	description, err := l.description()
@@ -104,7 +104,7 @@ func (l *L7) checkProxy() (err error) {
 }
 
 func (l *L7) checkHttpsProxy() (err error) {
-	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
+	isL7ILB := utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
 	tr := translator.NewTranslator(isL7ILB, l.namer)
 	env := &translator.Env{FrontendConfig: l.runtimeInfo.FrontendConfig}
 

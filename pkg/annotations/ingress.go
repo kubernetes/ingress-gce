@@ -21,7 +21,6 @@ import (
 	"strconv"
 
 	"k8s.io/api/networking/v1beta1"
-	"k8s.io/ingress-gce/pkg/flags"
 )
 
 const (
@@ -147,10 +146,6 @@ func (ing *Ingress) UseNamedTLS() string {
 }
 
 func (ing *Ingress) StaticIPName() (string, error) {
-	if !flags.F.EnableL7Ilb {
-		return ing.GlobalStaticIPName(), nil
-	}
-
 	globalIp := ing.GlobalStaticIPName()
 	regionalIp := ing.RegionalStaticIPName()
 

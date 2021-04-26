@@ -24,7 +24,6 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -86,7 +85,7 @@ func (l *L7) ensureComputeURLMap() error {
 
 func (l *L7) ensureRedirectURLMap() error {
 	feConfig := l.runtimeInfo.FrontendConfig
-	isL7ILB := flags.F.EnableL7Ilb && utils.IsGCEL7ILBIngress(&l.ingress)
+	isL7ILB := utils.IsGCEL7ILBIngress(&l.ingress)
 
 	t := translator.NewTranslator(isL7ILB, l.namer)
 	env := &translator.Env{FrontendConfig: feConfig, Ing: &l.ingress}

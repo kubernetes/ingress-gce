@@ -25,7 +25,6 @@ import (
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -173,23 +172,21 @@ func (l *L7s) GCv1(names []string) error {
 	}
 
 	// GC L7-ILB LBs if enabled
-	if flags.F.EnableL7Ilb {
-		key, err := composite.CreateKey(l.cloud, "", meta.Regional)
-		if err != nil {
-			return fmt.Errorf("error getting regional key: %v", err)
-		}
-		urlMaps, err := l.list(key, features.L7ILBVersions().UrlMap)
-		if err != nil {
-			return fmt.Errorf("error listing regional LBs: %v", err)
-		}
+	key, err := composite.CreateKey(l.cloud, "", meta.Regional)
+	if err != nil {
+		return fmt.Errorf("error getting regional key: %v", err)
+	}
+	urlMaps, err := l.list(key, features.L7ILBVersions().UrlMap)
+	if err != nil {
+		return fmt.Errorf("error listing regional LBs: %v", err)
+	}
 
-		if err := l.gc(urlMaps, knownLoadBalancers, features.L7ILBVersions()); err != nil {
-			return fmt.Errorf("error gc-ing regional LBs: %v", err)
-		}
+	if err := l.gc(urlMaps, knownLoadBalancers, features.L7ILBVersions()); err != nil {
+		return fmt.Errorf("error gc-ing regional LBs: %v", err)
 	}
 
 	// TODO(shance): fix list taking a key
-	urlMaps, err := l.list(meta.GlobalKey(""), meta.VersionGA)
+	urlMaps, err = l.list(meta.GlobalKey(""), meta.VersionGA)
 	if err != nil {
 		return fmt.Errorf("error listing global LBs: %v", err)
 	}

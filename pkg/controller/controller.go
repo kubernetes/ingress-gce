@@ -613,14 +613,12 @@ func (lbc *LoadBalancerController) sync(key string) error {
 
 	// Check for scope change GC
 	var oldScope *meta.KeyType
-	if flags.F.EnableL7Ilb {
-		oldScope, err = lbc.l7Pool.FrontendScopeChangeGC(ing)
-		if err != nil {
-			return err
-		}
-		if oldScope != nil {
-			scope = *oldScope
-		}
+	oldScope, err = lbc.l7Pool.FrontendScopeChangeGC(ing)
+	if err != nil {
+		return err
+	}
+	if oldScope != nil {
+		scope = *oldScope
 	}
 
 	// Garbage collection will occur regardless of an error occurring. If an error occurred,
