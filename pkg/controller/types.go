@@ -17,7 +17,7 @@ limitations under the License.
 package controller
 
 import (
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -25,6 +25,6 @@ import (
 // syncState is used by the controller to maintain state for routines that sync GCP resources of an Ingress.
 type syncState struct {
 	urlMap *utils.GCEURLMap
-	ing    *v1beta1.Ingress
+	ing    *v1.Ingress
 	l7     *loadbalancers.L7
 }

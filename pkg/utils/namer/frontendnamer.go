@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"strings"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog"
@@ -59,13 +59,13 @@ type Scheme string
 
 // V1IngressFrontendNamer implements IngressFrontendNamer. This is a wrapper on top of namer.Namer.
 type V1IngressFrontendNamer struct {
-	ing    *v1beta1.Ingress
+	ing    *v1.Ingress
 	namer  *Namer
 	lbName LoadBalancerName
 }
 
 // newV1IngressFrontendNamer returns v1 frontend namer for given ingress.
-func newV1IngressFrontendNamer(ing *v1beta1.Ingress, namer *Namer) IngressFrontendNamer {
+func newV1IngressFrontendNamer(ing *v1.Ingress, namer *Namer) IngressFrontendNamer {
 	lbName := namer.LoadBalancer(common.IngressKeyFunc(ing))
 	return &V1IngressFrontendNamer{ing: ing, namer: namer, lbName: lbName}
 }
@@ -123,7 +123,7 @@ func (ln *V1IngressFrontendNamer) IsValidLoadBalancer() bool {
 
 // V2IngressFrontendNamer implements IngressFrontendNamer.
 type V2IngressFrontendNamer struct {
-	ing *v1beta1.Ingress
+	ing *v1.Ingress
 	// prefix for all resource names (ex.: "k8s").
 	prefix string
 	// Load balancer name to be included in resource name.
@@ -145,7 +145,7 @@ type V2IngressFrontendNamer struct {
 // Target HTTPS Proxy    : k8s2-ts-uid01234-namespace-ingress-cysix1wq
 // URL Map               : k8s2-um-uid01234-namespace-ingress-cysix1wq
 // SSL Certificate       : k8s2-cr-uid01234-<lb-hash>-<secret-hash>
-func newV2IngressFrontendNamer(ing *v1beta1.Ingress, kubeSystemUID string, prefix string) IngressFrontendNamer {
+func newV2IngressFrontendNamer(ing *v1.Ingress, kubeSystemUID string, prefix string) IngressFrontendNamer {
 	clusterUID := common.ContentHash(kubeSystemUID, clusterUIDLength)
 	namer := &V2IngressFrontendNamer{ing: ing, prefix: prefix, clusterUID: clusterUID}
 	// Initialize lbName.
@@ -248,7 +248,7 @@ func NewFrontendNamerFactory(namer *Namer, kubeSystemUID types.UID) IngressFront
 }
 
 // Namer implements IngressFrontendNamerFactory.
-func (rn *FrontendNamerFactory) Namer(ing *v1beta1.Ingress) IngressFrontendNamer {
+func (rn *FrontendNamerFactory) Namer(ing *v1.Ingress) IngressFrontendNamer {
 	namingScheme := FrontendNamingScheme(ing)
 	switch namingScheme {
 	case V1NamingScheme:

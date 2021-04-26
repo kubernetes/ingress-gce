@@ -28,8 +28,8 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/google/go-cmp/cmp"
-	"k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
@@ -128,7 +128,7 @@ func (a *IngressValidatorAttributes) schemes() []string {
 }
 
 // baseAttributes apply settings for the vanilla Ingress spec.
-func (a *IngressValidatorAttributes) baseAttributes(ing *v1beta1.Ingress) {
+func (a *IngressValidatorAttributes) baseAttributes(ing *networkingv1.Ingress) {
 	// Check HTTP endpoint only if its enabled.
 	if annotations.FromIngress(ing).AllowHTTP() {
 		a.CheckHTTP = true
@@ -142,7 +142,7 @@ func (a *IngressValidatorAttributes) baseAttributes(ing *v1beta1.Ingress) {
 }
 
 // applyFeatures applies the settings for each of the additional features.
-func (a *IngressValidatorAttributes) applyFeatures(env ValidatorEnv, ing *v1beta1.Ingress, features []FeatureValidator) error {
+func (a *IngressValidatorAttributes) applyFeatures(env ValidatorEnv, ing *networkingv1.Ingress, features []FeatureValidator) error {
 	for _, f := range features {
 		klog.V(4).Infof("Applying feature %q", f.Name())
 		if err := f.ConfigureAttributes(env, ing, a); err != nil {
@@ -194,7 +194,7 @@ func DefaultAttributes() *IngressValidatorAttributes {
 // NewIngressValidator returns a new validator for checking the correctness of
 // an Ingress spec against the behavior of the instantiated load balancer.
 // If attribs is nil, then the default set of attributes will be used.
-func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, fc *frontendconfig.FrontendConfig, whiteboxTests []WhiteboxTest, attribs *IngressValidatorAttributes, features []Feature) (*IngressValidator, error) {
+func NewIngressValidator(env ValidatorEnv, ing *networkingv1.Ingress, fc *frontendconfig.FrontendConfig, whiteboxTests []WhiteboxTest, attribs *IngressValidatorAttributes, features []Feature) (*IngressValidator, error) {
 	var fvs []FeatureValidator
 	for _, f := range features {
 		fvs = append(fvs, f.NewValidator())
@@ -230,7 +230,7 @@ func NewIngressValidator(env ValidatorEnv, ing *v1beta1.Ingress, fc *frontendcon
 // IngressValidator encapsulates the logic required to validate a given configuration
 // is behaving correctly.
 type IngressValidator struct {
-	ing           *v1beta1.Ingress
+	ing           *networkingv1.Ingress
 	fc            *frontendconfig.FrontendConfig
 	frontendNamer namer.IngressFrontendNamer
 	features      []FeatureValidator
@@ -309,7 +309,7 @@ func (v *IngressValidator) CheckPaths(ctx context.Context, vr *IngressResult) er
 		wg     sync.WaitGroup
 	)
 	for _, scheme := range v.attribs.schemes() {
-		if v.ing.Spec.Backend != nil {
+		if v.ing.Spec.DefaultBackend != nil {
 			klog.V(2).Infof("Checking default backend for Ingress %s/%s", v.ing.Namespace, v.ing.Name)
 			// Capture variables for the thunk.
 			result := &PathResult{Scheme: scheme}

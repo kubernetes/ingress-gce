@@ -780,7 +780,7 @@ func (c *Controller) enqueueIngressServices(ing *v1.Ingress) {
 	}
 
 	// enqueue default backend service
-	if ing.Spec.Backend == nil {
+	if ing.Spec.DefaultBackend == nil {
 		c.enqueueService(cache.ExplicitKey(c.defaultBackendService.ID.Service.String()))
 	}
 }

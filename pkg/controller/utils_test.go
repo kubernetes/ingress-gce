@@ -23,14 +23,16 @@ import (
 	"google.golang.org/api/compute/v1"
 
 	api_v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+
 	//"k8s.io/apimachinery/pkg/util/sets"
 
-	"k8s.io/apimachinery/pkg/util/intstr"
+	"reflect"
+
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
-	"reflect"
 )
 
 // Pods created in loops start from this time, for routines that
@@ -399,7 +401,7 @@ func testServicePort(namespace, name, port string, servicePort, nodePort int, en
 				Namespace: namespace,
 				Name:      name,
 			},
-			Port: intstr.FromString(port),
+			Port: networkingv1.ServiceBackendPort{Name: port},
 		},
 		Port:       int32(servicePort),
 		NodePort:   int64(nodePort),

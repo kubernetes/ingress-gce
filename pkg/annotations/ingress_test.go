@@ -19,14 +19,14 @@ package annotations
 import (
 	"testing"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestIngress(t *testing.T) {
 	for _, tc := range []struct {
 		desc         string
-		ing          *v1beta1.Ingress
+		ing          *v1.Ingress
 		allowHTTP    bool
 		useNamedTLS  string
 		staticIPName string
@@ -35,12 +35,12 @@ func TestIngress(t *testing.T) {
 	}{
 		{
 			desc:      "Empty ingress",
-			ing:       &v1beta1.Ingress{},
+			ing:       &v1.Ingress{},
 			allowHTTP: true, // defaults to true.
 		},
 		{
 			desc: "Global and Regional StaticIP Specified",
-			ing: &v1beta1.Ingress{
+			ing: &v1.Ingress{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						GlobalStaticIPNameKey:   "1.2.3.4",
@@ -56,7 +56,7 @@ func TestIngress(t *testing.T) {
 		},
 		{
 			desc: "Test most annotations",
-			ing: &v1beta1.Ingress{
+			ing: &v1.Ingress{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						AllowHTTPKey:          "false",

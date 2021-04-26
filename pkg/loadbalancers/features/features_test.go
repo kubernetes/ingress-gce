@@ -17,11 +17,12 @@ limitations under the License.
 package features
 
 import (
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/api/networking/v1beta1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"reflect"
 	"testing"
+
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	networkingv1 "k8s.io/api/networking/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -62,7 +63,7 @@ var (
 		UrlMap: meta.VersionAlpha,
 	}
 
-	emptyIng = v1beta1.Ingress{
+	emptyIng = networkingv1.Ingress{
 		ObjectMeta: v1.ObjectMeta{
 			Annotations: map[string]string{},
 		},
@@ -86,7 +87,7 @@ var (
 func TestScopeFromIngress(t *testing.T) {
 	testCases := []struct {
 		desc  string
-		ing   v1beta1.Ingress
+		ing   networkingv1.Ingress
 		scope meta.KeyType
 	}{
 		{

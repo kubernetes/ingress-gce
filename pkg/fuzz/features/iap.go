@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/klog"
@@ -47,7 +47,7 @@ type iapValidator struct {
 	fuzz.NullValidator
 
 	env fuzz.ValidatorEnv
-	ing *v1beta1.Ingress
+	ing *v1.Ingress
 }
 
 // Name implements fuzz.FeatureValidator.
@@ -56,7 +56,7 @@ func (*iapValidator) Name() string {
 }
 
 // ConfigureAttributes implements fuzz.FeatureValidator.
-func (v *iapValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1beta1.Ingress, a *fuzz.IngressValidatorAttributes) error {
+func (v *iapValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1.Ingress, a *fuzz.IngressValidatorAttributes) error {
 	// Capture the env for use later in CheckResponse.
 	v.ing = ing
 	v.env = env

@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -33,7 +33,7 @@ import (
 )
 
 // ServiceForPath returns the Service and ServicePort associated with the given path.
-func ServiceForPath(host, path string, ing *v1beta1.Ingress, env ValidatorEnv) (*v1.Service, *v1.ServicePort, error) {
+func ServiceForPath(host, path string, ing *networkingv1.Ingress, env ValidatorEnv) (*v1.Service, *v1.ServicePort, error) {
 	sm := ServiceMapFromIngress(ing)
 	if path == pathForDefaultBackend {
 		path = ""
@@ -47,13 +47,13 @@ func ServiceForPath(host, path string, ing *v1beta1.Ingress, env ValidatorEnv) (
 	if err != nil {
 		return nil, nil, err
 	}
-	service, ok := serviceMap[b.ServiceName]
+	service, ok := serviceMap[b.Service.Name]
 	if !ok {
-		return nil, nil, fmt.Errorf("service %q not found in environment", b.ServiceName)
+		return nil, nil, fmt.Errorf("service %q not found in environment", b.Service.Name)
 	}
-	servicePort := translatorutil.ServicePort(*service, b.ServicePort)
+	servicePort := translatorutil.ServicePort(*service, b.Service.Port)
 	if servicePort == nil {
-		return nil, nil, fmt.Errorf("port %+v in Service %q not found", b.ServicePort, b.ServiceName)
+		return nil, nil, fmt.Errorf("port %+v in Service %q not found", b.Service.Port, b.Service.Name)
 	}
 
 	return service, servicePort, nil
@@ -62,7 +62,7 @@ func ServiceForPath(host, path string, ing *v1beta1.Ingress, env ValidatorEnv) (
 // BackendConfigForPath returns the BackendConfig associated with the given path.
 // Note: This function returns an empty object (not nil pointer) if a BackendConfig
 // did not exist in the given environment.
-func BackendConfigForPath(host, path string, ing *v1beta1.Ingress, env ValidatorEnv) (*backendconfig.BackendConfig, error) {
+func BackendConfigForPath(host, path string, ing *networkingv1.Ingress, env ValidatorEnv) (*backendconfig.BackendConfig, error) {
 	service, servicePort, err := ServiceForPath(host, path, ing, env)
 	if err != nil {
 		return nil, err
@@ -106,15 +106,15 @@ type HostPath struct {
 }
 
 // ServiceMap is a map of (host, path) to the appropriate backend.
-type ServiceMap map[HostPath]*v1beta1.IngressBackend
+type ServiceMap map[HostPath]*networkingv1.IngressBackend
 
 // ServiceMapFromIngress creates a service map from the Ingress object. Note:
 // duplicate entries (e.g. invalid configurations) will result in the first
 // entry to be chosen.
-func ServiceMapFromIngress(ing *v1beta1.Ingress) ServiceMap {
+func ServiceMapFromIngress(ing *networkingv1.Ingress) ServiceMap {
 	ret := ServiceMap{}
 
-	if defaultBackend := ing.Spec.Backend; defaultBackend != nil {
+	if defaultBackend := ing.Spec.DefaultBackend; defaultBackend != nil {
 		ret[HostPath{}] = defaultBackend
 	}
 
@@ -135,7 +135,7 @@ func ServiceMapFromIngress(ing *v1beta1.Ingress) ServiceMap {
 	return ret
 }
 
-func FrontendConfigForIngress(ing *v1beta1.Ingress, env ValidatorEnv) (*frontendconfig.FrontendConfig, error) {
+func FrontendConfigForIngress(ing *networkingv1.Ingress, env ValidatorEnv) (*frontendconfig.FrontendConfig, error) {
 	name := annotations.FromIngress(ing).FrontendConfig()
 	if name != "" {
 		fcMap, err := env.FrontendConfigs()
@@ -157,19 +157,19 @@ func FrontendConfigForIngress(ing *v1beta1.Ingress, env ValidatorEnv) (*frontend
 //
 //   ing := NewIngressBuilder("ns1", "name1", "127.0.0.1").Build()
 type IngressBuilder struct {
-	ing *v1beta1.Ingress
+	ing *networkingv1.Ingress
 }
 
 // NewIngressBuilder instantiates a new IngressBuilder.
 func NewIngressBuilder(ns, name, vip string) *IngressBuilder {
-	var ing = &v1beta1.Ingress{
+	var ing = &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: ns,
 		},
 	}
 	if vip != "" {
-		ing.Status = v1beta1.IngressStatus{
+		ing.Status = networkingv1.IngressStatus{
 			LoadBalancer: v1.LoadBalancerStatus{
 				Ingress: []v1.LoadBalancerIngress{
 					{IP: "127.0.0.1"},
@@ -182,21 +182,23 @@ func NewIngressBuilder(ns, name, vip string) *IngressBuilder {
 
 // NewIngressBuilderFromExisting creates a IngressBuilder from an existing
 // Ingress object. The Ingress object will be copied.
-func NewIngressBuilderFromExisting(i *v1beta1.Ingress) *IngressBuilder {
+func NewIngressBuilderFromExisting(i *networkingv1.Ingress) *IngressBuilder {
 	return &IngressBuilder{ing: i.DeepCopy()}
 }
 
 // Build returns a constructed Ingress. The Ingress is a copy, so the Builder
 // can be reused to construct multiple Ingress definitions.
-func (i *IngressBuilder) Build() *v1beta1.Ingress {
+func (i *IngressBuilder) Build() *networkingv1.Ingress {
 	return i.ing.DeepCopy()
 }
 
 // DefaultBackend sets the default backend.
-func (i *IngressBuilder) DefaultBackend(service string, port intstr.IntOrString) *IngressBuilder {
-	i.ing.Spec.Backend = &v1beta1.IngressBackend{
-		ServiceName: service,
-		ServicePort: port,
+func (i *IngressBuilder) DefaultBackend(service string, port networkingv1.ServiceBackendPort) *IngressBuilder {
+	i.ing.Spec.DefaultBackend = &networkingv1.IngressBackend{
+		Service: &networkingv1.IngressServiceBackend{
+			Name: service,
+			Port: port,
+		},
 	}
 	return i
 }
@@ -208,55 +210,59 @@ func (i *IngressBuilder) AddHost(host string) *IngressBuilder {
 }
 
 // Host returns the rule for a host and creates it if it did not exist.
-func (i *IngressBuilder) Host(host string) *v1beta1.IngressRule {
+func (i *IngressBuilder) Host(host string) *networkingv1.IngressRule {
 	for idx := range i.ing.Spec.Rules {
 		if i.ing.Spec.Rules[idx].Host == host {
 			return &i.ing.Spec.Rules[idx]
 		}
 	}
-	i.ing.Spec.Rules = append(i.ing.Spec.Rules, v1beta1.IngressRule{
+	i.ing.Spec.Rules = append(i.ing.Spec.Rules, networkingv1.IngressRule{
 		Host: host,
-		IngressRuleValue: v1beta1.IngressRuleValue{
-			HTTP: &v1beta1.HTTPIngressRuleValue{},
+		IngressRuleValue: networkingv1.IngressRuleValue{
+			HTTP: &networkingv1.HTTPIngressRuleValue{},
 		},
 	})
 	return &i.ing.Spec.Rules[len(i.ing.Spec.Rules)-1]
 }
 
 // AddPath a new path for the given host if it did not already exist.
-func (i *IngressBuilder) AddPath(host, path, service string, port intstr.IntOrString) *IngressBuilder {
+func (i *IngressBuilder) AddPath(host, path, service string, port networkingv1.ServiceBackendPort) *IngressBuilder {
 	i.Path(host, path, service, port)
 	return i
 }
 
 // Path returns the Path matching the (host, path), appending the entry if
 // it does not already exist.
-func (i *IngressBuilder) Path(host, path, service string, port intstr.IntOrString) *v1beta1.HTTPIngressPath {
+func (i *IngressBuilder) Path(host, path, service string, port networkingv1.ServiceBackendPort) *networkingv1.HTTPIngressPath {
 	h := i.Host(host)
 	for idx := range h.HTTP.Paths {
 		if h.HTTP.Paths[idx].Path == path {
 			return &h.HTTP.Paths[idx]
 		}
 	}
-	h.HTTP.Paths = append(h.HTTP.Paths, v1beta1.HTTPIngressPath{
-		Path: path,
-		Backend: v1beta1.IngressBackend{
-			ServiceName: service,
-			ServicePort: port,
+	pathType := networkingv1.PathTypeImplementationSpecific
+	h.HTTP.Paths = append(h.HTTP.Paths, networkingv1.HTTPIngressPath{
+		Path:     path,
+		PathType: &pathType,
+		Backend: networkingv1.IngressBackend{
+			Service: &networkingv1.IngressServiceBackend{
+				Name: service,
+				Port: port,
+			},
 		},
 	})
 	return &h.HTTP.Paths[len(h.HTTP.Paths)-1]
 }
 
 // SetTLS sets TLS certs to given list.
-func (i *IngressBuilder) SetTLS(tlsCerts []v1beta1.IngressTLS) *IngressBuilder {
+func (i *IngressBuilder) SetTLS(tlsCerts []networkingv1.IngressTLS) *IngressBuilder {
 	i.ing.Spec.TLS = tlsCerts
 	return i
 }
 
 // AddTLS adds a TLS secret reference.
 func (i *IngressBuilder) AddTLS(hosts []string, secretName string) *IngressBuilder {
-	i.ing.Spec.TLS = append(i.ing.Spec.TLS, v1beta1.IngressTLS{
+	i.ing.Spec.TLS = append(i.ing.Spec.TLS, networkingv1.IngressTLS{
 		Hosts:      hosts,
 		SecretName: secretName,
 	})

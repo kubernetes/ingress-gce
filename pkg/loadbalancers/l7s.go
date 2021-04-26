@@ -21,7 +21,7 @@ import (
 	"net/http"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
@@ -117,7 +117,7 @@ func (l *L7s) list(key *meta.Key, version meta.Version) ([]*composite.UrlMap, er
 }
 
 // GCv2 implements LoadBalancerPool.
-func (l *L7s) GCv2(ing *v1beta1.Ingress, scope meta.KeyType) error {
+func (l *L7s) GCv2(ing *v1.Ingress, scope meta.KeyType) error {
 	ingKey := common.NamespacedName(ing)
 	klog.V(2).Infof("GCv2(%v)", ingKey)
 	if err := l.delete(l.namerFactory.Namer(ing), features.VersionsFromIngress(ing), scope); err != nil {
@@ -131,7 +131,7 @@ func (l *L7s) GCv2(ing *v1beta1.Ingress, scope meta.KeyType) error {
 // (e.g. when a user migrates from ILB to ELB on the same ingress or vice versa.)
 // This only applies to the V2 Naming Scheme
 // TODO(shance): Refactor to avoid calling GCE every sync loop
-func (l *L7s) FrontendScopeChangeGC(ing *v1beta1.Ingress) (*meta.KeyType, error) {
+func (l *L7s) FrontendScopeChangeGC(ing *v1.Ingress) (*meta.KeyType, error) {
 	if ing == nil {
 		return nil, nil
 	}
@@ -226,14 +226,14 @@ func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers map[namer_util.
 }
 
 // Shutdown implements LoadBalancerPool.
-func (l *L7s) Shutdown(ings []*v1beta1.Ingress) error {
+func (l *L7s) Shutdown(ings []*v1.Ingress) error {
 	// Delete ingresses that use v1 naming scheme.
 	if err := l.GCv1([]string{}); err != nil {
 		return fmt.Errorf("error deleting load-balancers for v1 naming policy: %v", err)
 	}
 	// Delete ingresses that use v2 naming policy.
 	var errs []error
-	v2Ings := operator.Ingresses(ings).Filter(func(ing *v1beta1.Ingress) bool {
+	v2Ings := operator.Ingresses(ings).Filter(func(ing *v1.Ingress) bool {
 		return namer_util.FrontendNamingScheme(ing) == namer_util.V2NamingScheme
 	}).AsList()
 	for _, ing := range v2Ings {
@@ -249,7 +249,7 @@ func (l *L7s) Shutdown(ings []*v1beta1.Ingress) error {
 }
 
 // HasUrlMap implements LoadBalancerPool.
-func (l *L7s) HasUrlMap(ing *v1beta1.Ingress) (bool, error) {
+func (l *L7s) HasUrlMap(ing *v1.Ingress) (bool, error) {
 	namer := l.namerFactory.Namer(ing)
 	key, err := composite.CreateKey(l.cloud, namer.UrlMap(), features.ScopeFromIngress(ing))
 	if err != nil {

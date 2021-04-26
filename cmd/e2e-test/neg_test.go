@@ -19,12 +19,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 
 	apps "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
-	"k8s.io/apimachinery/pkg/util/intstr"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
@@ -41,7 +41,7 @@ func TestNEG(t *testing.T) {
 		ingressName        = "neg-ingress1"
 		replicas           = int32(2)
 	)
-	port80 := intstr.FromInt(80)
+	port80 := networkingv1.ServiceBackendPort{Number: 80}
 
 	type serviceAttr struct {
 		annotations annotations.NegAnnotation
@@ -50,7 +50,7 @@ func TestNEG(t *testing.T) {
 
 	for _, tc := range []struct {
 		desc             string
-		ingress          *v1beta1.Ingress
+		ingress          *networkingv1.Ingress
 		services         map[string]serviceAttr
 		expectNegBackend bool
 		expectIgBackend  bool
@@ -140,7 +140,7 @@ func TestNEG(t *testing.T) {
 func TestNEGTransition(t *testing.T) {
 	t.Parallel()
 
-	port80 := intstr.FromInt(80)
+	port80 := networkingv1.ServiceBackendPort{Number: 80}
 
 	ctx := context.Background()
 
@@ -239,7 +239,7 @@ func TestNEGTransition(t *testing.T) {
 func TestNEGSyncEndpoints(t *testing.T) {
 	t.Parallel()
 
-	port80 := intstr.FromInt(80)
+	port80 := networkingv1.ServiceBackendPort{Number: 80}
 	svcName := "service-1"
 
 	for _, tc := range []struct {
@@ -390,8 +390,8 @@ func TestReadinessReflector(t *testing.T) {
 
 func TestNegCRDTransitions(t *testing.T) {
 	t.Parallel()
-	port80 := intstr.FromInt(80)
-	port443 := intstr.FromInt(443)
+	port80 := networkingv1.ServiceBackendPort{Number: 80}
+	port443 := networkingv1.ServiceBackendPort{Number: 443}
 	serviceName := "neg-service"
 	ctx := context.Background()
 
@@ -410,40 +410,40 @@ func TestNegCRDTransitions(t *testing.T) {
 				annotations: annotations.NegAnnotation{
 					Ingress: false,
 					ExposedPorts: map[int32]annotations.NegAttributes{
-						int32(port80.IntValue()):  annotations.NegAttributes{Name: expectedNEGName},
-						int32(port443.IntValue()): annotations.NegAttributes{},
+						port80.Number:  annotations.NegAttributes{Name: expectedNEGName},
+						port443.Number: annotations.NegAttributes{},
 					}},
 				replicas:         2,
-				expectedNegAttrs: map[string]string{port80.String(): expectedNEGName, port443.String(): ""},
+				expectedNegAttrs: map[string]string{strconv.Itoa(int(port80.Number)): expectedNEGName, strconv.Itoa(int(port443.Number)): ""},
 			},
 			{desc: "remove custom name",
 				annotations: annotations.NegAnnotation{
 					Ingress: false,
 					ExposedPorts: map[int32]annotations.NegAttributes{
-						int32(port80.IntValue()):  annotations.NegAttributes{},
-						int32(port443.IntValue()): annotations.NegAttributes{},
+						port80.Number:  annotations.NegAttributes{},
+						port443.Number: annotations.NegAttributes{},
 					}},
 				replicas:           2,
-				expectedNegAttrs:   map[string]string{port80.String(): "", port443.String(): ""},
-				expectedGCNegPorts: []string{port80.String()},
+				expectedNegAttrs:   map[string]string{strconv.Itoa(int(port80.Number)): "", strconv.Itoa(int(port443.Number)): ""},
+				expectedGCNegPorts: []string{strconv.Itoa(int(port80.Number))},
 			},
 			{desc: "add custom name",
 				annotations: annotations.NegAnnotation{
 					Ingress: false,
 					ExposedPorts: map[int32]annotations.NegAttributes{
-						int32(port80.IntValue()):  annotations.NegAttributes{},
-						int32(port443.IntValue()): annotations.NegAttributes{Name: expectedNEGName},
+						port80.Number:  annotations.NegAttributes{},
+						port443.Number: annotations.NegAttributes{Name: expectedNEGName},
 					}},
 				replicas:           2,
-				expectedNegAttrs:   map[string]string{port80.String(): "", port443.String(): expectedNEGName},
-				expectedGCNegPorts: []string{port443.String()},
+				expectedNegAttrs:   map[string]string{strconv.Itoa(int(port80.Number)): "", strconv.Itoa(int(port443.Number)): expectedNEGName},
+				expectedGCNegPorts: []string{strconv.Itoa(int(port443.Number))},
 			},
 			{desc: "no NEGs",
 				annotations: annotations.NegAnnotation{
 					Ingress:      false,
 					ExposedPorts: map[int32]annotations.NegAttributes{}},
 				replicas:           2,
-				expectedGCNegPorts: []string{port80.String(), port443.String()},
+				expectedGCNegPorts: []string{strconv.Itoa(int(port80.Number)), strconv.Itoa(int(port443.Number))},
 			},
 		} {
 			t.Run(tc.desc, func(t *testing.T) {
@@ -481,7 +481,7 @@ func TestNegCRDTransitions(t *testing.T) {
 
 func TestNegCRDErrorEvents(t *testing.T) {
 	t.Parallel()
-	port80 := intstr.FromInt(80)
+	port80 := networkingv1.ServiceBackendPort{Number: 80}
 	svc1 := "svc1"
 	svc2 := "svc2"
 	replicas := int32(2)
@@ -492,7 +492,7 @@ func TestNegCRDErrorEvents(t *testing.T) {
 		annotation := annotations.NegAnnotation{
 			Ingress: true,
 			ExposedPorts: map[int32]annotations.NegAttributes{
-				int32(port80.IntValue()): annotations.NegAttributes{Name: expectedNEGName},
+				port80.Number: annotations.NegAttributes{Name: expectedNEGName},
 			},
 		}
 
@@ -516,7 +516,7 @@ func TestNegCRDErrorEvents(t *testing.T) {
 		}
 		t.Logf("Echo service ensured (%s/%s)", s.Namespace, svc1)
 
-		expectedNegAttrs := map[string]string{port80.String(): expectedNEGName}
+		expectedNegAttrs := map[string]string{strconv.Itoa(int(port80.Number)): expectedNEGName}
 		negStatus, err := e2e.WaitForNegCRs(s, svc1, expectedNegAttrs)
 		if err != nil {
 			t.Fatalf("Error: e2e.WaitForNegCRs(%s,%+v) = %s, want nil", svc1, expectedNegAttrs, err)
@@ -552,13 +552,13 @@ func TestNegCRDErrorEvents(t *testing.T) {
 			t.Fatalf("error ensuring echo service: %v", err)
 		}
 
-		e2e.WaitForStandaloneNegDeletion(ctx, Framework.Cloud, s, port80.String(), negStatus)
+		e2e.WaitForStandaloneNegDeletion(ctx, Framework.Cloud, s, strconv.Itoa(int(port80.Number)), negStatus)
 	})
 }
 
 func TestNegDisruptive(t *testing.T) {
 	t.Parallel()
-	port80 := intstr.FromInt(80)
+	port80 := networkingv1.ServiceBackendPort{Number: 80}
 	replicas := int32(2)
 	serviceName := "disruptive-neg-service"
 	// gcSvcName is the name of the service used to determine if GC has finished
@@ -567,7 +567,7 @@ func TestNegDisruptive(t *testing.T) {
 
 	annotation := annotations.NegAnnotation{
 		ExposedPorts: map[int32]annotations.NegAttributes{
-			int32(port80.IntValue()): annotations.NegAttributes{},
+			port80.Number: annotations.NegAttributes{},
 		},
 	}
 
@@ -580,7 +580,7 @@ func TestNegDisruptive(t *testing.T) {
 		}
 		t.Logf("GC service ensured (%s/%s)", s.Namespace, gcSvcName)
 
-		expectedNegAttrs := map[string]string{port80.String(): ""}
+		expectedNegAttrs := map[string]string{strconv.Itoa(int(port80.Number)): ""}
 		negStatus, err := e2e.WaitForNegCRs(s, gcSvcName, expectedNegAttrs)
 		if err != nil {
 			t.Fatalf("Error: e2e.WaitForNegCRs(%s,%+v) = %s, want nil", gcSvcName, expectedNegAttrs, err)
@@ -600,7 +600,7 @@ func TestNegDisruptive(t *testing.T) {
 		}
 		t.Logf("GC service deleted (%s/%s)", s.Namespace, gcSvcName)
 
-		if err := e2e.WaitForStandaloneNegDeletion(ctx, s.ValidatorEnv.Cloud(), s, port80.String(), negStatus); err != nil {
+		if err := e2e.WaitForStandaloneNegDeletion(ctx, s.ValidatorEnv.Cloud(), s, strconv.Itoa(int(port80.Number)), negStatus); err != nil {
 			t.Fatalf("Error waiting for NEGDeletion: %v", err)
 		}
 	}
@@ -718,7 +718,7 @@ func TestNegDisruptive(t *testing.T) {
 			}
 
 			if tc.waitForNeg {
-				expectedNegAttrs := map[string]string{port80.String(): ""}
+				expectedNegAttrs := map[string]string{strconv.Itoa(int(port80.Number)): ""}
 				negStatus, err := e2e.WaitForNegCRs(s, serviceName, expectedNegAttrs)
 				if err != nil {
 					t.Fatalf("Error: e2e.WaitForNegCRs(%s,%+v) = %s, want nil", serviceName, expectedNegAttrs, err)
@@ -747,7 +747,7 @@ func TestNegDisruptive(t *testing.T) {
 			}
 
 			if tc.waitForNegGC {
-				if err := e2e.WaitForStandaloneNegDeletion(ctx, s.ValidatorEnv.Cloud(), s, port80.String(), previousNegStatus); err != nil {
+				if err := e2e.WaitForStandaloneNegDeletion(ctx, s.ValidatorEnv.Cloud(), s, strconv.Itoa(int(port80.Number)), previousNegStatus); err != nil {
 					t.Fatalf("Error waiting for NEGDeletion: %v", err)
 				}
 			}

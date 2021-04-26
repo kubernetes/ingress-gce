@@ -25,7 +25,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	api_v1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
@@ -38,7 +38,7 @@ import (
 // Env contains all k8s & GCP configuration needed to perform the translation.
 type Env struct {
 	// Ing is the Ingress we are translating.
-	Ing *v1beta1.Ingress
+	Ing *v1.Ingress
 	// TODO(shance): this should be a map, similar to SecretsMap
 	// FrontendConfig is the frontendconfig associated with the Ingress
 	FrontendConfig *frontendconfigv1beta1.FrontendConfig
@@ -56,7 +56,7 @@ type Env struct {
 }
 
 // NewEnv returns an Env for the given Ingress.
-func NewEnv(ing *v1beta1.Ingress, client kubernetes.Interface, vip, net, subnet string) (*Env, error) {
+func NewEnv(ing *v1.Ingress, client kubernetes.Interface, vip, net, subnet string) (*Env, error) {
 	ret := &Env{Ing: ing, SecretsMap: make(map[string]*api_v1.Secret), VIP: vip, Network: net, Subnetwork: subnet}
 	for _, tlsSpec := range ing.Spec.TLS {
 		if len(tlsSpec.SecretName) == 0 {

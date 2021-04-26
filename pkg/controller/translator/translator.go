@@ -24,7 +24,7 @@ import (
 	"k8s.io/klog"
 
 	api_v1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -193,7 +193,7 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 }
 
 // TranslateIngress converts an Ingress into our internal UrlMap representation.
-func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend utils.ServicePortID, namer namer_util.BackendNamer) (*utils.GCEURLMap, []error) {
+func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend utils.ServicePortID, namer namer_util.BackendNamer) (*utils.GCEURLMap, []error) {
 	var errs []error
 	urlMap := utils.NewGCEURLMap()
 
@@ -237,8 +237,8 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 		urlMap.PutPathRulesForHost(host, pathRules)
 	}
 
-	if ing.Spec.Backend != nil {
-		svcPort, err := t.getServicePort(utils.BackendToServicePortID(*ing.Spec.Backend, ing.Namespace), params, namer)
+	if ing.Spec.DefaultBackend != nil {
+		svcPort, err := t.getServicePort(utils.BackendToServicePortID(*ing.Spec.DefaultBackend, ing.Namespace), params, namer)
 		if err == nil {
 			urlMap.DefaultBackend = svcPort
 			return urlMap, errs
@@ -261,23 +261,23 @@ func (t *Translator) TranslateIngress(ing *v1beta1.Ingress, systemDefaultBackend
 // validateAndGetPaths will validate the path based on the specifed path type and will return the
 // the path rules that should be used. If no path type is provided, the path type will be assumed
 // to be ImplementationSpecific. If a non existent path type is provided, an error will be returned.
-func validateAndGetPaths(path v1beta1.HTTPIngressPath) ([]string, error) {
-	pathType := v1beta1.PathTypeImplementationSpecific
+func validateAndGetPaths(path v1.HTTPIngressPath) ([]string, error) {
+	pathType := v1.PathTypeImplementationSpecific
 
 	if path.PathType != nil {
-		if !flags.F.EnableIngressGAFields && *path.PathType != v1beta1.PathTypeImplementationSpecific {
+		if !flags.F.EnableIngressGAFields && *path.PathType != v1.PathTypeImplementationSpecific {
 			return nil, fmt.Errorf("only \"ImplementationSpecific\" path type is supported")
 		}
 		pathType = *path.PathType
 	}
 
 	switch pathType {
-	case v1beta1.PathTypeImplementationSpecific:
+	case v1.PathTypeImplementationSpecific:
 		// ImplementationSpecific will have no validation to continue backwards compatibility
 		return []string{path.Path}, nil
-	case v1beta1.PathTypeExact:
+	case v1.PathTypeExact:
 		return validateExactPathType(path)
-	case v1beta1.PathTypePrefix:
+	case v1.PathTypePrefix:
 		return validateAndModifyPrefixPathType(path)
 	default:
 		return nil, fmt.Errorf("unsupported path type: %s", pathType)
@@ -286,7 +286,7 @@ func validateAndGetPaths(path v1beta1.HTTPIngressPath) ([]string, error) {
 
 // validateExactPathType will validate the path provided does not have any wildcards and will
 // return the path unmodified. If the path is in valid, an empty list and error is returned.
-func validateExactPathType(path v1beta1.HTTPIngressPath) ([]string, error) {
+func validateExactPathType(path v1.HTTPIngressPath) ([]string, error) {
 	if path.Path == "" {
 		return nil, fmt.Errorf("failed to validate exact path type due to empty path")
 	}
@@ -300,7 +300,7 @@ func validateExactPathType(path v1beta1.HTTPIngressPath) ([]string, error) {
 // validateAndModifyPrefixPathType will validate the path provided does not have any wildcards
 // and will return the path unmodified. If the path is in valid, an empty list and error is
 // returned.
-func validateAndModifyPrefixPathType(path v1beta1.HTTPIngressPath) ([]string, error) {
+func validateAndModifyPrefixPathType(path v1.HTTPIngressPath) ([]string, error) {
 	if path.Path == "" {
 		return nil, fmt.Errorf("failed to validate prefix path type due to empty path")
 	}

@@ -21,8 +21,7 @@ import (
 	"fmt"
 	"testing"
 
-	"k8s.io/api/networking/v1beta1"
-	"k8s.io/apimachinery/pkg/util/intstr"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -41,11 +40,11 @@ func TestBasic(t *testing.T) {
 func testBasicOS(t *testing.T, os e2e.OS) {
 	t.Parallel()
 
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 
 	for _, tc := range []struct {
 		desc string
-		ing  *v1beta1.Ingress
+		ing  *v1.Ingress
 	}{
 		{
 			desc: "http default backend",
@@ -126,7 +125,7 @@ func TestBasicStaticIP(t *testing.T) {
 		defer e2e.DeleteGCPAddress(s, addrName, "")
 
 		testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-			DefaultBackend("service-1", intstr.FromInt(80)).
+			DefaultBackend("service-1", v1.ServiceBackendPort{Number: 80}).
 			AddStaticIP(addrName, false).
 			Build()
 		crud := adapter.IngressCRUD{C: Framework.Clientset}
@@ -166,11 +165,11 @@ func TestBasicStaticIP(t *testing.T) {
 func TestEdge(t *testing.T) {
 	t.Parallel()
 
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 
 	for _, tc := range []struct {
 		desc string
-		ing  *v1beta1.Ingress
+		ing  *v1.Ingress
 	}{
 		{
 			desc: "long ingress name",
@@ -223,7 +222,7 @@ func TestEdge(t *testing.T) {
 // deleted. This also tests that necessary GCP frontend resources exist.
 func TestFrontendResourceDeletion(t *testing.T) {
 	t.Parallel()
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 	svcName := "service-1"
 	host := "foo.com"
 
@@ -319,7 +318,7 @@ func TestFrontendResourceDeletion(t *testing.T) {
 				ingBuilder = ingBuilder.SetAllowHttp(true)
 			}
 			if tc.disableHTTPS {
-				ingBuilder.SetTLS([]v1beta1.IngressTLS{
+				ingBuilder.SetTLS([]v1.IngressTLS{
 					{
 						Hosts:      []string{},
 						SecretName: cert.Name,

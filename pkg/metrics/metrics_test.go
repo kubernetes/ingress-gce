@@ -21,10 +21,9 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"k8s.io/api/networking/v1beta1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/api/networking/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
@@ -41,7 +40,7 @@ var (
 					Name:      "dummy-service",
 					Namespace: defaultNamespace,
 				},
-				Port: intstr.FromInt(80),
+				Port: v1.ServiceBackendPort{Number: 80},
 			},
 			BackendConfig: &backendconfigv1.BackendConfig{
 				Spec: backendconfigv1.BackendConfigSpec{
@@ -69,7 +68,7 @@ var (
 					Name:      "foo-service",
 					Namespace: defaultNamespace,
 				},
-				Port: intstr.FromInt(80),
+				Port: v1.ServiceBackendPort{Number: 80},
 			},
 			NEGEnabled: true,
 			BackendConfig: &backendconfigv1.BackendConfig{
@@ -95,7 +94,7 @@ var (
 					Name:      "dummy-service",
 					Namespace: defaultNamespace,
 				},
-				Port: intstr.FromInt(80),
+				Port: v1.ServiceBackendPort{Number: 80},
 			},
 			NEGEnabled:   true,
 			L7ILBEnabled: true,
@@ -106,7 +105,7 @@ var (
 					Name:      "bar-service",
 					Namespace: defaultNamespace,
 				},
-				Port: intstr.FromInt(5000),
+				Port: v1.ServiceBackendPort{Number: 5000},
 			},
 			NEGEnabled:   true,
 			L7ILBEnabled: true,
@@ -128,7 +127,7 @@ var (
 	}
 	ingressStates = []struct {
 		desc             string
-		ing              *v1beta1.Ingress
+		ing              *v1.Ingress
 		fc               *frontendconfigv1beta1.FrontendConfig
 		frontendFeatures []feature
 		svcPorts         []utils.ServicePort
@@ -136,8 +135,8 @@ var (
 	}{
 		{
 			"empty spec",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress0",
 				},
@@ -149,8 +148,8 @@ var (
 		},
 		{
 			"http disabled",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress1",
 					Annotations: map[string]string{
@@ -164,17 +163,21 @@ var (
 		},
 		{
 			"default backend",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress2",
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{},
+					Rules: []v1.IngressRule{},
 				},
 			},
 			nil,
@@ -185,13 +188,13 @@ var (
 		},
 		{
 			"host rule only",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress3",
 				},
-				Spec: v1beta1.IngressSpec{
-					Rules: []v1beta1.IngressRule{
+				Spec: v1.IngressSpec{
+					Rules: []v1.IngressRule{
 						{
 							Host: "foo.bar",
 						},
@@ -205,23 +208,27 @@ var (
 		},
 		{
 			"both host and path rules",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress4",
 				},
-				Spec: v1beta1.IngressSpec{
-					Rules: []v1beta1.IngressRule{
+				Spec: v1.IngressSpec{
+					Rules: []v1.IngressRule{
 						{
 							Host: "foo.bar",
-							IngressRuleValue: v1beta1.IngressRuleValue{
-								HTTP: &v1beta1.HTTPIngressRuleValue{
-									Paths: []v1beta1.HTTPIngressPath{
+							IngressRuleValue: v1.IngressRuleValue{
+								HTTP: &v1.HTTPIngressRuleValue{
+									Paths: []v1.HTTPIngressPath{
 										{
 											Path: "/foo",
-											Backend: v1beta1.IngressBackend{
-												ServiceName: "foo-service",
-												ServicePort: intstr.FromInt(80),
+											Backend: v1.IngressBackend{
+												Service: &v1.IngressServiceBackend{
+													Name: "foo-service",
+													Port: v1.ServiceBackendPort{
+														Number: int32(80),
+													},
+												},
 											},
 										},
 									},
@@ -240,27 +247,35 @@ var (
 		},
 		{
 			"default backend and host rule",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress5",
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{
+					Rules: []v1.IngressRule{
 						{
 							Host: "foo.bar",
-							IngressRuleValue: v1beta1.IngressRuleValue{
-								HTTP: &v1beta1.HTTPIngressRuleValue{
-									Paths: []v1beta1.HTTPIngressPath{
+							IngressRuleValue: v1.IngressRuleValue{
+								HTTP: &v1.HTTPIngressRuleValue{
+									Paths: []v1.HTTPIngressPath{
 										{
 											Path: "/foo",
-											Backend: v1beta1.IngressBackend{
-												ServiceName: "foo-service",
-												ServicePort: intstr.FromInt(80),
+											Backend: v1.IngressBackend{
+												Service: &v1.IngressServiceBackend{
+													Name: "foo-service",
+													Port: v1.ServiceBackendPort{
+														Number: int32(80),
+													},
+												},
 											},
 										},
 									},
@@ -280,8 +295,8 @@ var (
 		},
 		{
 			"tls termination with pre-shared certs",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress6",
 					Annotations: map[string]string{
@@ -289,12 +304,16 @@ var (
 						SSLCertKey:       "pre-shared-cert1,pre-shared-cert2",
 					},
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{},
+					Rules: []v1.IngressRule{},
 				},
 			},
 			nil,
@@ -306,8 +325,8 @@ var (
 		},
 		{
 			"tls termination with google managed certs",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress7",
 					Annotations: map[string]string{
@@ -315,12 +334,16 @@ var (
 						SSLCertKey:     "managed-cert1,managed-cert2",
 					},
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{},
+					Rules: []v1.IngressRule{},
 				},
 			},
 			nil,
@@ -332,8 +355,8 @@ var (
 		},
 		{
 			"tls termination with pre-shared and google managed certs",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress8",
 					Annotations: map[string]string{
@@ -342,12 +365,16 @@ var (
 						SSLCertKey:       "pre-shared-cert1,pre-shared-cert2,managed-cert1,managed-cert2",
 					},
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{},
+					Rules: []v1.IngressRule{},
 				},
 			},
 			nil,
@@ -359,8 +386,8 @@ var (
 		},
 		{
 			"tls termination with pre-shared and secret based certs",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress9",
 					Annotations: map[string]string{
@@ -368,18 +395,22 @@ var (
 						SSLCertKey:       "pre-shared-cert1,pre-shared-cert2",
 					},
 				},
-				Spec: v1beta1.IngressSpec{
-					Rules: []v1beta1.IngressRule{
+				Spec: v1.IngressSpec{
+					Rules: []v1.IngressRule{
 						{
 							Host: "foo.bar",
-							IngressRuleValue: v1beta1.IngressRuleValue{
-								HTTP: &v1beta1.HTTPIngressRuleValue{
-									Paths: []v1beta1.HTTPIngressPath{
+							IngressRuleValue: v1.IngressRuleValue{
+								HTTP: &v1.HTTPIngressRuleValue{
+									Paths: []v1.HTTPIngressPath{
 										{
 											Path: "/foo",
-											Backend: v1beta1.IngressBackend{
-												ServiceName: "foo-service",
-												ServicePort: intstr.FromInt(80),
+											Backend: v1.IngressBackend{
+												Service: &v1.IngressServiceBackend{
+													Name: "foo-service",
+													Port: v1.ServiceBackendPort{
+														Number: int32(80),
+													},
+												},
 											},
 										},
 									},
@@ -387,7 +418,7 @@ var (
 							},
 						},
 					},
-					TLS: []v1beta1.IngressTLS{
+					TLS: []v1.IngressTLS{
 						{
 							Hosts:      []string{"foo.bar"},
 							SecretName: "secret-1",
@@ -404,8 +435,8 @@ var (
 		},
 		{
 			"global static ip",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress10",
 					Annotations: map[string]string{
@@ -414,12 +445,16 @@ var (
 						staticIPKey:      "10.0.1.2",
 					},
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{},
+					Rules: []v1.IngressRule{},
 				},
 			},
 			nil,
@@ -431,30 +466,39 @@ var (
 		},
 		{
 			"default backend, host rule for internal load-balancer",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress11",
 					Annotations: map[string]string{
 						ingressClassKey: gceL7ILBIngressClass,
 					},
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{
+					Rules: []v1.IngressRule{
 						{
 							Host: "bar",
-							IngressRuleValue: v1beta1.IngressRuleValue{
-								HTTP: &v1beta1.HTTPIngressRuleValue{
-									Paths: []v1beta1.HTTPIngressPath{
+							IngressRuleValue: v1.IngressRuleValue{
+								HTTP: &v1.HTTPIngressRuleValue{
+									Paths: []v1.HTTPIngressPath{
 										{
 											Path: "/bar",
-											Backend: v1beta1.IngressBackend{
-												ServiceName: "bar-service",
-												ServicePort: intstr.FromInt(5000),
+											Backend: v1.IngressBackend{
+												Service: &v1.IngressServiceBackend{
+
+													Name: "bar-service",
+													Port: v1.ServiceBackendPort{
+														Number: int32(5000),
+													},
+												},
 											},
 										},
 									},
@@ -473,20 +517,24 @@ var (
 		},
 		{
 			"non-existent pre-shared cert",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress12",
 					Annotations: map[string]string{
 						preSharedCertKey: "pre-shared-cert1",
 					},
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{},
+					Rules: []v1.IngressRule{},
 				},
 			},
 			nil,
@@ -496,8 +544,8 @@ var (
 		},
 		{
 			"user specified global static IP",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress13",
 					Annotations: map[string]string{
@@ -505,12 +553,16 @@ var (
 						staticIPKey:           "user-spec-static-ip",
 					},
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{},
+					Rules: []v1.IngressRule{},
 				},
 			},
 			nil,
@@ -521,8 +573,8 @@ var (
 		},
 		{
 			"sslpolicy and tls termination with pre-shared certs",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress14",
 					Annotations: map[string]string{
@@ -530,12 +582,16 @@ var (
 						SSLCertKey:       "pre-shared-cert1,pre-shared-cert2",
 					},
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{},
+					Rules: []v1.IngressRule{},
 				},
 			},
 			&frontendconfigv1beta1.FrontendConfig{
@@ -550,8 +606,8 @@ var (
 		},
 		{
 			"user specified regional static IP",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress15",
 					Annotations: map[string]string{
@@ -559,12 +615,16 @@ var (
 						ingressClassKey:                     "gce-internal",
 					},
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{},
+					Rules: []v1.IngressRule{},
 				},
 			},
 			nil,
@@ -575,8 +635,8 @@ var (
 		},
 		{
 			"HTTPS Redirects and tls termination with pre-shared certs",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress16",
 					Annotations: map[string]string{
@@ -584,12 +644,16 @@ var (
 						SSLCertKey:       "pre-shared-cert1,pre-shared-cert2",
 					},
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{},
+					Rules: []v1.IngressRule{},
 				},
 			},
 			&frontendconfigv1beta1.FrontendConfig{
@@ -604,8 +668,8 @@ var (
 		},
 		{
 			"HTTPS Redirects Disabled and tls termination with pre-shared certs",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress17",
 					Annotations: map[string]string{
@@ -613,12 +677,16 @@ var (
 						SSLCertKey:       "pre-shared-cert1,pre-shared-cert2",
 					},
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{},
+					Rules: []v1.IngressRule{},
 				},
 			},
 			&frontendconfigv1beta1.FrontendConfig{
@@ -633,8 +701,8 @@ var (
 		},
 		{
 			"empty sslpolicy and tls termination with pre-shared certs",
-			&v1beta1.Ingress{
-				ObjectMeta: v1.ObjectMeta{
+			&v1.Ingress{
+				ObjectMeta: metav1.ObjectMeta{
 					Namespace: defaultNamespace,
 					Name:      "ingress18",
 					Annotations: map[string]string{
@@ -642,12 +710,16 @@ var (
 						SSLCertKey:       "pre-shared-cert1,pre-shared-cert2",
 					},
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "dummy-service",
-						ServicePort: intstr.FromInt(80),
+				Spec: v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{
+						Service: &v1.IngressServiceBackend{
+							Name: "dummy-service",
+							Port: v1.ServiceBackendPort{
+								Number: int32(80),
+							},
+						},
 					},
-					Rules: []v1beta1.IngressRule{},
+					Rules: []v1.IngressRule{},
 				},
 			},
 			&frontendconfigv1beta1.FrontendConfig{

@@ -21,7 +21,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 )
@@ -53,7 +53,7 @@ func TestNewStaticAddress(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			l7 := &L7{
-				ingress: v1beta1.Ingress{Spec: v1beta1.IngressSpec{}},
+				ingress: v1.Ingress{Spec: v1.IngressSpec{}},
 				fw:      &composite.ForwardingRule{IPAddress: tc.ip},
 			}
 

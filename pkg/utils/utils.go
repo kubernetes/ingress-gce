@@ -31,7 +31,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -278,7 +278,7 @@ func IGLinks(igs []*compute.InstanceGroup) (igLinks []string) {
 
 // IsGCEIngress returns true if the Ingress matches the class managed by this
 // controller.
-func IsGCEIngress(ing *v1beta1.Ingress) bool {
+func IsGCEIngress(ing *networkingv1.Ingress) bool {
 	class := annotations.FromIngress(ing).IngressClass()
 	if flags.F.IngressClass != "" && class == flags.F.IngressClass {
 		return true
@@ -301,20 +301,20 @@ func IsGCEIngress(ing *v1beta1.Ingress) bool {
 
 // IsGCEMultiClusterIngress returns true if the given Ingress has
 // ingress.class annotation set to "gce-multi-cluster".
-func IsGCEMultiClusterIngress(ing *v1beta1.Ingress) bool {
+func IsGCEMultiClusterIngress(ing *networkingv1.Ingress) bool {
 	class := annotations.FromIngress(ing).IngressClass()
 	return class == annotations.GceMultiIngressClass
 }
 
 // IsGCEL7ILBIngress returns true if the given Ingress has
 // ingress.class annotation set to "gce-l7-ilb"
-func IsGCEL7ILBIngress(ing *v1beta1.Ingress) bool {
+func IsGCEL7ILBIngress(ing *networkingv1.Ingress) bool {
 	class := annotations.FromIngress(ing).IngressClass()
 	return class == annotations.GceL7ILBIngressClass
 }
 
 // IsGLBCIngress returns true if the given Ingress should be processed by GLBC
-func IsGLBCIngress(ing *v1beta1.Ingress) bool {
+func IsGLBCIngress(ing *networkingv1.Ingress) bool {
 	return IsGCEIngress(ing) || IsGCEMultiClusterIngress(ing)
 }
 
@@ -438,13 +438,13 @@ func JoinErrs(errs []error) error {
 
 // TraverseIngressBackends traverse thru all backends specified in the input ingress and call process
 // If process return true, then return and stop traversing the backends
-func TraverseIngressBackends(ing *v1beta1.Ingress, process func(id ServicePortID) bool) {
+func TraverseIngressBackends(ing *networkingv1.Ingress, process func(id ServicePortID) bool) {
 	if ing == nil {
 		return
 	}
 	// Check service of default backend
-	if ing.Spec.Backend != nil {
-		if process(ServicePortID{Service: types.NamespacedName{Namespace: ing.Namespace, Name: ing.Spec.Backend.ServiceName}, Port: ing.Spec.Backend.ServicePort}) {
+	if ing.Spec.DefaultBackend != nil {
+		if process(ServicePortID{Service: types.NamespacedName{Namespace: ing.Namespace, Name: ing.Spec.DefaultBackend.Service.Name}, Port: ing.Spec.DefaultBackend.Service.Port}) {
 			return
 		}
 	}
@@ -455,7 +455,7 @@ func TraverseIngressBackends(ing *v1beta1.Ingress, process func(id ServicePortID
 			continue
 		}
 		for _, p := range rule.IngressRuleValue.HTTP.Paths {
-			if process(ServicePortID{Service: types.NamespacedName{Namespace: ing.Namespace, Name: p.Backend.ServiceName}, Port: p.Backend.ServicePort}) {
+			if process(ServicePortID{Service: types.NamespacedName{Namespace: ing.Namespace, Name: p.Backend.Service.Name}, Port: p.Backend.Service.Port}) {
 				return
 			}
 		}
@@ -468,12 +468,12 @@ func ServiceKeyFunc(namespace, name string) string {
 }
 
 // NeedsCleanup returns true if the ingress needs to have its associated resources deleted.
-func NeedsCleanup(ing *v1beta1.Ingress) bool {
+func NeedsCleanup(ing *networkingv1.Ingress) bool {
 	return common.IsDeletionCandidate(ing.ObjectMeta) || !IsGLBCIngress(ing)
 }
 
 // HasVIP returns true if given ingress has a vip.
-func HasVIP(ing *v1beta1.Ingress) bool {
+func HasVIP(ing *networkingv1.Ingress) bool {
 	if ing == nil {
 		return false
 	}

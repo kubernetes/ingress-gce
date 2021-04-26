@@ -18,7 +18,7 @@ package sync
 
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -31,7 +31,7 @@ type Syncer interface {
 	// GC workflow performs frontend resource deletion based on given gc algorithm.
 	// TODO(rramkumar): Do we need to rethink the strategy of GC'ing
 	// all Ingresses at once?
-	GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, frontendGCAlgorithm utils.FrontendGCAlgorithm, scope meta.KeyType) error
+	GC(ings []*v1.Ingress, currIng *v1.Ingress, frontendGCAlgorithm utils.FrontendGCAlgorithm, scope meta.KeyType) error
 }
 
 // Controller is an interface for ingress controllers and declares methods
@@ -40,19 +40,19 @@ type Controller interface {
 	// SyncBackends syncs the backends for a GCLB given some existing state.
 	SyncBackends(state interface{}) error
 	// GCBackends garbage collects backends for all ingresses given a list of ingresses to exclude from GC.
-	GCBackends(toKeep []*v1beta1.Ingress) error
+	GCBackends(toKeep []*v1.Ingress) error
 	// SyncLoadBalancer syncs the front-end load balancer resources for a GCLB given some existing state.
 	SyncLoadBalancer(state interface{}) error
 	// GCv1LoadBalancers garbage collects front-end load balancer resources for all ingresses
 	// given a list of ingresses with v1 naming policy to exclude from GC.
-	GCv1LoadBalancers(toKeep []*v1beta1.Ingress) error
+	GCv1LoadBalancers(toKeep []*v1.Ingress) error
 	// GCv2LoadBalancer garbage collects front-end load balancer resources for given ingress
 	// with v2 naming policy.
-	GCv2LoadBalancer(ing *v1beta1.Ingress, scope meta.KeyType) error
+	GCv2LoadBalancer(ing *v1.Ingress, scope meta.KeyType) error
 	// PostProcess allows for doing some post-processing after an Ingress is synced to a GCLB.
 	PostProcess(state interface{}) error
 	// EnsureDeleteV1Finalizers ensures that v1 finalizers are removed for given list of ingresses.
-	EnsureDeleteV1Finalizers(toCleanup []*v1beta1.Ingress) error
+	EnsureDeleteV1Finalizers(toCleanup []*v1.Ingress) error
 	// EnsureDeleteV2Finalizer ensures that v2 finalizer is removed for given ingress.
-	EnsureDeleteV2Finalizer(ing *v1beta1.Ingress) error
+	EnsureDeleteV2Finalizer(ing *v1.Ingress) error
 }

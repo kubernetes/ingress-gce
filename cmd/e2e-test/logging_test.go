@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/util/intstr"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -118,7 +118,7 @@ func TestLogging(t *testing.T) {
 			t.Logf("Echo service created (%s/%s)", s.Namespace, svcName)
 
 			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-				AddPath("test.com", "/", svcName, intstr.FromInt(80)).
+				AddPath("test.com", "/", svcName, v1.ServiceBackendPort{Number: 80}).
 				Build()
 			ingKey := common.NamespacedName(ing)
 			crud := adapter.IngressCRUD{C: Framework.Clientset}

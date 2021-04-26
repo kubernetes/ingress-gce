@@ -20,8 +20,7 @@ import (
 	"context"
 	"testing"
 
-	"k8s.io/api/networking/v1beta1"
-	"k8s.io/apimachinery/pkg/util/intstr"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -29,7 +28,7 @@ import (
 )
 
 var (
-	port80  = intstr.FromInt(80)
+	port80  = v1.ServiceBackendPort{Number: 80}
 	ingName = "ing1"
 )
 
@@ -39,7 +38,7 @@ type BasicHTTP struct {
 	s         *e2e.Sandbox
 	framework *e2e.Framework
 	crud      adapter.IngressCRUD
-	ing       *v1beta1.Ingress
+	ing       *v1.Ingress
 }
 
 // NewBasicHTTPUpgradeTest returns an upgrade test that tests the basic behavior

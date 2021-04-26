@@ -42,7 +42,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	apps "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -277,7 +277,7 @@ func DeleteSecret(s *Sandbox, name string) error {
 }
 
 // EnsureIngress creates a new Ingress or updates an existing one.
-func EnsureIngress(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
+func EnsureIngress(s *Sandbox, ing *networkingv1.Ingress) (*networkingv1.Ingress, error) {
 	crud := &adapter.IngressCRUD{C: s.f.Clientset}
 	currentIng, err := crud.Get(ing.ObjectMeta.Namespace, ing.ObjectMeta.Name)
 	if currentIng == nil || err != nil {

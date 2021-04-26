@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -31,8 +31,8 @@ const (
 	kubeSystemUID = "kubesystem-uid1"
 )
 
-func newIngress(namespace, name string) *v1beta1.Ingress {
-	return &v1beta1.Ingress{
+func newIngress(namespace, name string) *v1.Ingress {
+	return &v1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: namespace,

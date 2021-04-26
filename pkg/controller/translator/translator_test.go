@@ -24,7 +24,7 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -48,11 +48,12 @@ var (
 				Name:      "default-http-backend",
 				Namespace: "kube-system",
 			},
-			Port: intstr.FromString("http"),
+			Port: v1.ServiceBackendPort{Name: "http"},
 		},
 		TargetPort: "9376",
 	}
 	defaultNamer = namer_util.NewNamer("uid1", "")
+	port80       = v1.ServiceBackendPort{Number: 80}
 )
 
 func fakeTranslator() *Translator {
@@ -99,24 +100,24 @@ func TestTranslateIngress(t *testing.T) {
 
 	cases := []struct {
 		desc          string
-		ing           *v1beta1.Ingress
+		ing           *v1.Ingress
 		wantErrCount  int
 		wantGCEURLMap *utils.GCEURLMap
 	}{
 		{
 			desc: "default backend only",
 			ing: test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
-				v1beta1.IngressSpec{
-					Backend: test.Backend("first-service", intstr.FromInt(80)),
+				v1.IngressSpec{
+					DefaultBackend: test.Backend("first-service", port80),
 				}),
 			wantErrCount:  0,
-			wantGCEURLMap: &utils.GCEURLMap{DefaultBackend: &utils.ServicePort{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "first-service", Namespace: "default"}, Port: intstr.FromInt(80)}}},
+			wantGCEURLMap: &utils.GCEURLMap{DefaultBackend: &utils.ServicePort{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "first-service", Namespace: "default"}, Port: port80}}},
 		},
 		{
 			desc:          "no backend",
-			ing:           test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"}, v1beta1.IngressSpec{}),
+			ing:           test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"}, v1.IngressSpec{}),
 			wantErrCount:  0,
-			wantGCEURLMap: &utils.GCEURLMap{DefaultBackend: &utils.ServicePort{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")}}},
+			wantGCEURLMap: &utils.GCEURLMap{DefaultBackend: &utils.ServicePort{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: v1.ServiceBackendPort{Name: "http"}}}},
 		},
 		{
 			desc:          "no host",
@@ -163,8 +164,8 @@ func TestTranslateIngress(t *testing.T) {
 		{
 			desc: "missing default service",
 			ing: test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
-				v1beta1.IngressSpec{
-					Backend: test.Backend("random-service", intstr.FromInt(80)),
+				v1.IngressSpec{
+					DefaultBackend: test.Backend("random-service", port80),
 				}),
 			wantErrCount:  1,
 			wantGCEURLMap: utils.NewGCEURLMap(),
@@ -202,7 +203,7 @@ func TestGetServicePort(t *testing.T) {
 				Type:  apiv1.ServiceTypeClusterIP,
 				Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
 			},
-			id:       utils.ServicePortID{Port: intstr.FromString("http")},
+			id:       utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "http"}},
 			wantErr:  true,
 			wantPort: false,
 		},
@@ -212,7 +213,7 @@ func TestGetServicePort(t *testing.T) {
 				Type:  apiv1.ServiceTypeNodePort,
 				Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
 			},
-			id:       utils.ServicePortID{Port: intstr.FromString("badport")},
+			id:       utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "badport"}},
 			wantErr:  true,
 			wantPort: false,
 		},
@@ -225,7 +226,7 @@ func TestGetServicePort(t *testing.T) {
 			annotations: map[string]string{
 				"service.alpha.kubernetes.io/app-protocols": "bad-string",
 			},
-			id:       utils.ServicePortID{Port: intstr.FromString("http")},
+			id:       utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "http"}},
 			wantErr:  true,
 			wantPort: true,
 		},
@@ -272,14 +273,14 @@ func TestGetServicePortWithBackendConfigEnabled(t *testing.T) {
 			annotations: map[string]string{
 				annotations.BackendConfigKey: `{"ports":{"https":"config-https"}}`,
 			},
-			id:       utils.ServicePortID{Port: intstr.FromString("https")},
+			id:       utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "https"}},
 			wantErr:  true,
 			wantPort: true,
 		},
 		{
 			desc:        "no backend config annotation",
 			annotations: nil,
-			id:          utils.ServicePortID{Port: intstr.FromString("http")},
+			id:          utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "http"}},
 			wantErr:     false,
 			wantPort:    true,
 		},
@@ -288,7 +289,7 @@ func TestGetServicePortWithBackendConfigEnabled(t *testing.T) {
 			annotations: map[string]string{
 				annotations.BackendConfigKey: `{"ports":{"https":"config-https"}}`,
 			},
-			id:       utils.ServicePortID{Port: intstr.FromString("http")},
+			id:       utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "http"}},
 			wantErr:  false,
 			wantPort: true,
 		},
@@ -297,7 +298,7 @@ func TestGetServicePortWithBackendConfigEnabled(t *testing.T) {
 			annotations: map[string]string{
 				annotations.BackendConfigKey: `{"ports":{"http":"config-http"}}`,
 			},
-			id:       utils.ServicePortID{Port: intstr.FromString("http")},
+			id:       utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "http"}},
 			wantErr:  false,
 			wantPort: true,
 		},
@@ -455,12 +456,12 @@ func TestPathValidation(t *testing.T) {
 	expectedBackend := &utils.ServicePort{
 		ID: utils.ServicePortID{
 			Service: types.NamespacedName{Name: "my-service", Namespace: "default"},
-			Port:    intstr.FromInt(80),
+			Port:    port80,
 		}}
 
 	testcases := []struct {
 		desc              string
-		pathType          v1beta1.PathType
+		pathType          v1.PathType
 		path              string
 		expectValid       bool
 		expectedPaths     []string
@@ -468,66 +469,66 @@ func TestPathValidation(t *testing.T) {
 	}{
 		{
 			desc:          "Valid path for exact path type",
-			pathType:      v1beta1.PathTypeExact,
+			pathType:      v1.PathTypeExact,
 			path:          "/test",
 			expectValid:   true,
 			expectedPaths: []string{"/test"},
 		},
 		{
 			desc:          "Valid path for exact path type with trailing '/'",
-			pathType:      v1beta1.PathTypeExact,
+			pathType:      v1.PathTypeExact,
 			path:          "/test/",
 			expectValid:   true,
 			expectedPaths: []string{"/test/"},
 		},
 		{
 			desc:        "Invalid Exact Path includes a wildcard",
-			pathType:    v1beta1.PathTypeExact,
+			pathType:    v1.PathTypeExact,
 			path:        "/test/*",
 			expectValid: false,
 		},
 		{
 			desc:        "Invalid empty Exact Path",
-			pathType:    v1beta1.PathTypeExact,
+			pathType:    v1.PathTypeExact,
 			path:        "",
 			expectValid: false,
 		},
 		{
 			desc:          "Valid Prefix path without wildcard",
-			pathType:      v1beta1.PathTypePrefix,
+			pathType:      v1.PathTypePrefix,
 			path:          "/test",
 			expectValid:   true,
 			expectedPaths: []string{"/test", "/test/*"},
 		},
 		{
 			desc:          "Valid Prefix path with trailing /",
-			pathType:      v1beta1.PathTypePrefix,
+			pathType:      v1.PathTypePrefix,
 			path:          "/test/",
 			expectValid:   true,
 			expectedPaths: []string{"/test", "/test/*"},
 		},
 		{
 			desc:          "Valid Prefix path /",
-			pathType:      v1beta1.PathTypePrefix,
+			pathType:      v1.PathTypePrefix,
 			path:          "/",
 			expectValid:   true,
 			expectedPaths: []string{"/*"},
 		},
 		{
 			desc:        "Invalid Prefix path with a wildcard",
-			pathType:    v1beta1.PathTypePrefix,
+			pathType:    v1.PathTypePrefix,
 			path:        "/test/*",
 			expectValid: false,
 		},
 		{
 			desc:        "Invalid Prefix empty path",
-			pathType:    v1beta1.PathTypePrefix,
+			pathType:    v1.PathTypePrefix,
 			path:        "",
 			expectValid: false,
 		},
 		{
 			desc:          "Valid ImplementationSpecific path",
-			pathType:      v1beta1.PathTypeImplementationSpecific,
+			pathType:      v1.PathTypeImplementationSpecific,
 			path:          "/test",
 			expectValid:   true,
 			expectedPaths: []string{"/test"},
@@ -562,7 +563,7 @@ func TestPathValidation(t *testing.T) {
 		},
 		{
 			desc:        "Invalid Path Type",
-			pathType:    v1beta1.PathType("InvalidType"),
+			pathType:    v1.PathType("InvalidType"),
 			path:        "/test/*",
 			expectValid: false,
 		},
@@ -576,7 +577,7 @@ func TestPathValidation(t *testing.T) {
 		},
 		{
 			desc:              "IngressGA Disabled, ImplementationSpecific path type",
-			pathType:          v1beta1.PathTypeImplementationSpecific,
+			pathType:          v1.PathTypeImplementationSpecific,
 			path:              "/test",
 			expectValid:       true,
 			expectedPaths:     []string{"/test"},
@@ -584,7 +585,7 @@ func TestPathValidation(t *testing.T) {
 		},
 		{
 			desc:              "Invalid IngressGA Disabled, non ImplementationSpecific path type",
-			pathType:          v1beta1.PathTypePrefix,
+			pathType:          v1.PathTypePrefix,
 			path:              "/test",
 			expectValid:       false,
 			expectedPaths:     []string{"/test"},
@@ -595,26 +596,30 @@ func TestPathValidation(t *testing.T) {
 	for _, tc := range testcases {
 		flags.F.EnableIngressGAFields = !tc.ingressGADisabled
 
-		path := v1beta1.HTTPIngressPath{
+		path := v1.HTTPIngressPath{
 			Path: tc.path,
-			Backend: v1beta1.IngressBackend{
-				ServiceName: "my-service",
-				ServicePort: intstr.FromInt(80),
+			Backend: v1.IngressBackend{
+				Service: &v1.IngressServiceBackend{
+					Name: "my-service",
+					Port: v1.ServiceBackendPort{
+						Number: 80,
+					},
+				},
 			},
 		}
 
 		// Empty Path Types should be nil, not an empty string in the spec
-		if tc.pathType != v1beta1.PathType("") {
+		if tc.pathType != v1.PathType("") {
 			path.PathType = &tc.pathType
 		}
 
-		spec := v1beta1.IngressSpec{
-			Rules: []v1beta1.IngressRule{
+		spec := v1.IngressSpec{
+			Rules: []v1.IngressRule{
 				{
 					Host: hostname,
-					IngressRuleValue: v1beta1.IngressRuleValue{
-						HTTP: &v1beta1.HTTPIngressRuleValue{
-							Paths: []v1beta1.HTTPIngressPath{path},
+					IngressRuleValue: v1.IngressRuleValue{
+						HTTP: &v1.HTTPIngressRuleValue{
+							Paths: []v1.HTTPIngressPath{path},
 						},
 					},
 				},
@@ -624,7 +629,7 @@ func TestPathValidation(t *testing.T) {
 
 		expectedGCEURLMap := &utils.GCEURLMap{
 			DefaultBackend: &utils.ServicePort{
-				ID: utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: intstr.FromString("http")},
+				ID: utils.ServicePortID{Service: types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, Port: v1.ServiceBackendPort{Name: "http"}},
 			},
 		}
 
@@ -637,7 +642,7 @@ func TestPathValidation(t *testing.T) {
 
 		gotGCEURLMap, gotErrs := translator.TranslateIngress(ing, defaultBackend.ID, defaultNamer)
 		if tc.expectValid && len(gotErrs) > 0 {
-			t.Errorf("%s: TranslateIngress() = _, %+v, want no errs", tc.desc, gotErrs)
+			t.Fatalf("%s: TranslateIngress() = _, %+v, want no errs", tc.desc, gotErrs)
 		} else if !tc.expectValid && len(gotErrs) == 0 {
 			t.Errorf("%s: TranslateIngress() should result in errors but got none", tc.desc)
 		}
@@ -810,7 +815,7 @@ func newDefaultEndpoint(name string) *apiv1.Endpoints {
 	}
 }
 
-func ingressFromFile(t *testing.T, filename string) *v1beta1.Ingress {
+func ingressFromFile(t *testing.T, filename string) *v1.Ingress {
 	t.Helper()
 
 	data, err := ioutil.ReadFile("testdata/" + filename)

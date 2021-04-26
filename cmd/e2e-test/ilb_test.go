@@ -19,16 +19,16 @@ package main
 import (
 	"context"
 	"fmt"
-	"k8s.io/api/networking/v1beta1"
+	"testing"
+
+	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/utils"
-	"testing"
 )
 
 var (
@@ -44,11 +44,11 @@ func TestILB(t *testing.T) {
 	ingressPrefix := "ing1-"
 	serviceName := "svc-1"
 
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 
 	for _, tc := range []struct {
 		desc string
-		ing  *v1beta1.Ingress
+		ing  *v1.Ingress
 
 		numForwardingRules int
 		numBackendServices int
@@ -86,6 +86,7 @@ func TestILB(t *testing.T) {
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
 			t.Parallel()
 			t.Logf("Ingress = %s", tc.ing.String())
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 
 			if Framework.CreateILBSubnet {
 				if err := e2e.CreateILBSubnet(s); err != nil && err != e2e.ErrSubnetExists {
@@ -99,7 +100,7 @@ func TestILB(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(context.TODO(), tc.ing, metav1.CreateOptions{}); err != nil {
+			if _, err := crud.Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
@@ -169,12 +170,12 @@ func TestILBStaticIP(t *testing.T) {
 		defer e2e.DeleteGCPAddress(s, addrName, Framework.Region)
 
 		testIngEnabled := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-			DefaultBackend("service-1", intstr.FromInt(80)).
+			DefaultBackend("service-1", v1.ServiceBackendPort{Number: 80}).
 			ConfigureForILB().
 			AddStaticIP(addrName, true).
 			Build()
 		testIngDisabled := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-			DefaultBackend("service-1", intstr.FromInt(80)).
+			DefaultBackend("service-1", v1.ServiceBackendPort{Number: 80}).
 			ConfigureForILB().
 			Build()
 
@@ -187,7 +188,7 @@ func TestILBStaticIP(t *testing.T) {
 		t.Logf("Ingress %s/%s created", s.Namespace, ing.Name)
 
 		var gclb *fuzz.GCLB
-		for i, testIng := range []*v1beta1.Ingress{testIngDisabled, testIngEnabled, testIngDisabled} {
+		for i, testIng := range []*v1.Ingress{testIngDisabled, testIngEnabled, testIngDisabled} {
 			t.Run(fmt.Sprintf("Transition-%d", i), func(t *testing.T) {
 				newIng := ing.DeepCopy()
 				newIng.Spec = testIng.Spec
@@ -227,7 +228,7 @@ func TestILBHttps(t *testing.T) {
 	ingressPrefix := "ing2-"
 	serviceName := "svc-2"
 
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 
 	for _, tc := range []struct {
 		desc       string
@@ -289,6 +290,7 @@ func TestILBHttps(t *testing.T) {
 		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
 			t.Parallel()
 
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if Framework.CreateILBSubnet {
 				if err := e2e.CreateILBSubnet(s); err != nil && err != e2e.ErrSubnetExists {
 					t.Fatalf("e2e.CreateILBSubnet(%+v) = %v", s, err)
@@ -323,7 +325,7 @@ func TestILBHttps(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(context.TODO(), ing, metav1.CreateOptions{}); err != nil {
+			if _, err := crud.Create(ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
@@ -373,12 +375,12 @@ func TestILBUpdate(t *testing.T) {
 	ingressPrefix := "ing3-"
 	serviceName := "svc-3"
 
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 
 	for _, tc := range []struct {
 		desc      string
-		ing       *v1beta1.Ingress
-		ingUpdate *v1beta1.Ingress
+		ing       *v1.Ingress
+		ingUpdate *v1.Ingress
 
 		numForwardingRules       int
 		numBackendServices       int
@@ -462,7 +464,8 @@ func TestILBUpdate(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(context.TODO(), tc.ing, metav1.CreateOptions{}); err != nil {
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
+			if _, err := crud.Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
@@ -496,7 +499,7 @@ func TestILBUpdate(t *testing.T) {
 			}
 
 			// Perform update
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Update(context.TODO(), tc.ingUpdate, metav1.UpdateOptions{}); err != nil {
+			if _, err := crud.Update(tc.ingUpdate); err != nil {
 				t.Fatalf("error updating ingress spec: %v", err)
 			}
 
@@ -536,11 +539,11 @@ func TestILBError(t *testing.T) {
 	ingressPrefix := "ing4-"
 	serviceName := "svc-4"
 
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 
 	for _, tc := range []struct {
 		desc           string
-		ing            *v1beta1.Ingress
+		ing            *v1.Ingress
 		svcAnnotations map[string]string
 	}{
 		{
@@ -570,7 +573,8 @@ func TestILBError(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
-			if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(context.TODO(), tc.ing, metav1.CreateOptions{}); err != nil {
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
+			if _, err := crud.Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
 			t.Logf("Ingress created (%s/%s)", s.Namespace, tc.ing.Name)
@@ -615,12 +619,12 @@ func TestILBShared(t *testing.T) {
 	ingressPrefix := "ing5-"
 	serviceName := "svc-5"
 
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 
 	for _, tc := range []struct {
 		desc               string
-		ilbIng             *v1beta1.Ingress
-		elbIng             *v1beta1.Ingress
+		ilbIng             *v1.Ingress
+		elbIng             *v1.Ingress
 		numForwardingRules int
 		numBackendServices int
 	}{
@@ -680,11 +684,12 @@ func TestILBShared(t *testing.T) {
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
 			var gclb *fuzz.GCLB
-			for _, ing := range []*v1beta1.Ingress{tc.ilbIng, tc.elbIng} {
+			for _, ing := range []*v1.Ingress{tc.ilbIng, tc.elbIng} {
 
 				t.Logf("Ingress = %s", ing.String())
 
-				if _, err := Framework.Clientset.NetworkingV1beta1().Ingresses(s.Namespace).Create(context.TODO(), ing, metav1.CreateOptions{}); err != nil {
+				crud := adapter.IngressCRUD{C: Framework.Clientset}
+				if _, err := crud.Create(ing); err != nil {
 					t.Fatalf("error creating Ingress spec: %v", err)
 				}
 				t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)

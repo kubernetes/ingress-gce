@@ -20,8 +20,8 @@ import (
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -35,7 +35,7 @@ var (
 			Namespace: "testNS",
 			Name:      "testName",
 		},
-		Port: intstr.IntOrString{IntVal: 80},
+		Port: v1.ServiceBackendPort{Number: 80},
 	}
 
 	svcPortDefault = utils.ServicePort{

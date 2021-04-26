@@ -25,10 +25,10 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
@@ -104,7 +104,7 @@ func TestBackendConfigNegatives(t *testing.T) {
 				t.Fatalf("e2e.CreateEchoService(s, service-1, %q) = _, _, %v, want _, _, nil", tc.svcAnnotations, err)
 			}
 
-			port80 := intstr.FromInt(80)
+			port80 := networkingv1.ServiceBackendPort{Number: 80}
 			testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 				AddPath("test.com", "/", "service-1", port80).
 				Build()

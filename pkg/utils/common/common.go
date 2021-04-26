@@ -23,11 +23,11 @@ import (
 	"fmt"
 	"strconv"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
-	client "k8s.io/client-go/kubernetes/typed/networking/v1beta1"
+	client "k8s.io/client-go/kubernetes/typed/networking/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog"
 )
@@ -64,7 +64,7 @@ func ContentHash(s string, n int) string {
 
 // NamespacedName returns namespaced name string of a given ingress.
 // Note: This is used for logging.
-func NamespacedName(ing *v1beta1.Ingress) string {
+func NamespacedName(ing *v1.Ingress) string {
 	if ing == nil {
 		return ""
 	}
@@ -75,7 +75,7 @@ func NamespacedName(ing *v1beta1.Ingress) string {
 // This falls back to utility function in case of an error.
 // Note: Ingress Store and NamespacedName both return same key in general. But, Ingress Store
 // returns <name> where as NamespacedName returns /<name> when <namespace> is empty.
-func IngressKeyFunc(ing *v1beta1.Ingress) string {
+func IngressKeyFunc(ing *v1.Ingress) string {
 	ingKey, err := KeyFunc(ing)
 	if err == nil {
 		return ingKey
@@ -88,7 +88,7 @@ func IngressKeyFunc(ing *v1beta1.Ingress) string {
 }
 
 // ToIngressKeys returns a list of ingress keys for given list of ingresses.
-func ToIngressKeys(ings []*v1beta1.Ingress) []string {
+func ToIngressKeys(ings []*v1.Ingress) []string {
 	ingKeys := make([]string, 0, len(ings))
 	for _, ing := range ings {
 		ingKeys = append(ingKeys, IngressKeyFunc(ing))
@@ -98,7 +98,7 @@ func ToIngressKeys(ings []*v1beta1.Ingress) []string {
 
 // PatchIngressObjectMetadata patches the given ingress's metadata based on new
 // ingress metadata.
-func PatchIngressObjectMetadata(ic client.IngressInterface, ing *v1beta1.Ingress, newObjectMetadata metav1.ObjectMeta) (*v1beta1.Ingress, error) {
+func PatchIngressObjectMetadata(ic client.IngressInterface, ing *v1.Ingress, newObjectMetadata metav1.ObjectMeta) (*v1.Ingress, error) {
 	newIng := ing.DeepCopy()
 	newIng.ObjectMeta = newObjectMetadata
 	return patchIngress(ic, ing, newIng)
@@ -106,7 +106,7 @@ func PatchIngressObjectMetadata(ic client.IngressInterface, ing *v1beta1.Ingress
 
 // PatchIngressStatus patches the given ingress's Status based on new ingress
 // status.
-func PatchIngressStatus(ic client.IngressInterface, ing *v1beta1.Ingress, newStatus v1beta1.IngressStatus) (*v1beta1.Ingress, error) {
+func PatchIngressStatus(ic client.IngressInterface, ing *v1.Ingress, newStatus v1.IngressStatus) (*v1.Ingress, error) {
 	newIng := ing.DeepCopy()
 	newIng.Status = newStatus
 	return patchIngress(ic, ing, newIng)
@@ -116,7 +116,7 @@ func PatchIngressStatus(ic client.IngressInterface, ing *v1beta1.Ingress, newSta
 // the old and new ingresses.
 // Note that both Status and ObjectMetadata (annotations and finalizers)
 // can be patched via `status` subresource API endpoint.
-func patchIngress(ic client.IngressInterface, oldIngress, newIngress *v1beta1.Ingress) (*v1beta1.Ingress, error) {
+func patchIngress(ic client.IngressInterface, oldIngress, newIngress *v1.Ingress) (*v1.Ingress, error) {
 	ingKey := fmt.Sprintf("%s/%s", oldIngress.Namespace, oldIngress.Name)
 	oldData, err := json.Marshal(oldIngress)
 	if err != nil {
@@ -128,7 +128,7 @@ func patchIngress(ic client.IngressInterface, oldIngress, newIngress *v1beta1.In
 		return nil, fmt.Errorf("failed to Marshal newData for ingress %s: %v", ingKey, err)
 	}
 
-	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, v1beta1.Ingress{})
+	patchBytes, err := strategicpatch.CreateTwoWayMergePatch(oldData, newData, v1.Ingress{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create TwoWayMergePatch for ingress %s: %v", ingKey, err)
 	}

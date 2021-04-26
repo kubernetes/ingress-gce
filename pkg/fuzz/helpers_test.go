@@ -21,8 +21,8 @@ import (
 	"testing"
 
 	"github.com/kr/pretty"
-	"k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
@@ -61,43 +61,43 @@ func TestServiceMapFromIngress(t *testing.T) {
 
 	for _, tc := range []struct {
 		desc string
-		ing  *v1beta1.Ingress
+		ing  *networkingv1.Ingress
 		want ServiceMap
 	}{
 		{
 			desc: "one path",
 			ing: NewIngressBuilder("n1", "ing1", "").
-				AddPath("test1.com", "/foo", "s", intstr.FromInt(80)).
+				AddPath("test1.com", "/foo", "s", networkingv1.ServiceBackendPort{Number: 80}).
 				Build(),
 			want: ServiceMap{
-				HostPath{"test1.com", "/foo"}: &v1beta1.IngressBackend{
-					ServiceName: "s", ServicePort: intstr.IntOrString{IntVal: 80},
+				HostPath{"test1.com", "/foo"}: &networkingv1.IngressBackend{
+					Service: &networkingv1.IngressServiceBackend{Name: "s", Port: networkingv1.ServiceBackendPort{Number: 80}},
 				},
 			},
 		},
 		{
 			desc: "multiple paths",
 			ing: NewIngressBuilder("n1", "ing1", "").
-				AddPath("test1.com", "/foo", "s", intstr.FromInt(80)).
-				AddPath("test1.com", "/bar", "s", intstr.FromInt(80)).
+				AddPath("test1.com", "/foo", "s", networkingv1.ServiceBackendPort{Number: 80}).
+				AddPath("test1.com", "/bar", "s", networkingv1.ServiceBackendPort{Number: 80}).
 				Build(),
 			want: ServiceMap{
-				HostPath{"test1.com", "/foo"}: &v1beta1.IngressBackend{
-					ServiceName: "s", ServicePort: intstr.IntOrString{IntVal: 80},
+				HostPath{"test1.com", "/foo"}: &networkingv1.IngressBackend{
+					Service: &networkingv1.IngressServiceBackend{Name: "s", Port: networkingv1.ServiceBackendPort{Number: 80}},
 				},
-				HostPath{"test1.com", "/bar"}: &v1beta1.IngressBackend{
-					ServiceName: "s", ServicePort: intstr.IntOrString{IntVal: 80},
+				HostPath{"test1.com", "/bar"}: &networkingv1.IngressBackend{
+					Service: &networkingv1.IngressServiceBackend{Name: "s", Port: networkingv1.ServiceBackendPort{Number: 80}},
 				},
 			},
 		},
 		{
 			desc: "default backend",
 			ing: NewIngressBuilder("n1", "ing1", "").
-				DefaultBackend("s", intstr.FromInt(80)).
+				DefaultBackend("s", networkingv1.ServiceBackendPort{Number: 80}).
 				Build(),
 			want: ServiceMap{
-				HostPath{}: &v1beta1.IngressBackend{
-					ServiceName: "s", ServicePort: intstr.IntOrString{IntVal: 80},
+				HostPath{}: &networkingv1.IngressBackend{
+					Service: &networkingv1.IngressServiceBackend{Name: "s", Port: networkingv1.ServiceBackendPort{Number: 80}},
 				},
 			},
 		},
@@ -118,37 +118,43 @@ func TestIngressBuilder(t *testing.T) {
 		name = "ing1"
 		ns   = "ns1"
 	)
+	pathType := networkingv1.PathTypeImplementationSpecific
 
 	om := metav1.ObjectMeta{Name: name, Namespace: ns}
 
 	for _, tc := range []struct {
 		desc string
-		want *v1beta1.Ingress
-		got  *v1beta1.Ingress
+		want *networkingv1.Ingress
+		got  *networkingv1.Ingress
 	}{
 		{
 			desc: "empty",
-			want: &v1beta1.Ingress{
+			want: &networkingv1.Ingress{
 				ObjectMeta: om,
 			},
 			got: NewIngressBuilder(ns, name, "").Build(),
 		},
 		{
 			desc: "one path",
-			want: &v1beta1.Ingress{
+			want: &networkingv1.Ingress{
 				ObjectMeta: om,
-				Spec: v1beta1.IngressSpec{
-					Rules: []v1beta1.IngressRule{
+				Spec: networkingv1.IngressSpec{
+					Rules: []networkingv1.IngressRule{
 						{
 							Host: "test.com",
-							IngressRuleValue: v1beta1.IngressRuleValue{
-								HTTP: &v1beta1.HTTPIngressRuleValue{
-									Paths: []v1beta1.HTTPIngressPath{
+							IngressRuleValue: networkingv1.IngressRuleValue{
+								HTTP: &networkingv1.HTTPIngressRuleValue{
+									Paths: []networkingv1.HTTPIngressPath{
 										{
-											Path: "/",
-											Backend: v1beta1.IngressBackend{
-												ServiceName: "svc1",
-												ServicePort: intstr.FromInt(80),
+											Path:     "/",
+											PathType: &pathType,
+											Backend: networkingv1.IngressBackend{
+												Service: &networkingv1.IngressServiceBackend{
+													Name: "svc1",
+													Port: networkingv1.ServiceBackendPort{
+														Number: 80,
+													},
+												},
 											},
 										},
 									},
@@ -159,14 +165,14 @@ func TestIngressBuilder(t *testing.T) {
 				},
 			},
 			got: NewIngressBuilder(ns, name, "").
-				AddPath("test.com", "/", "svc1", intstr.FromInt(80)).
+				AddPath("test.com", "/", "svc1", networkingv1.ServiceBackendPort{Number: 80}).
 				Build(),
 		},
 		{
 			desc: "with VIP",
-			want: &v1beta1.Ingress{
+			want: &networkingv1.Ingress{
 				ObjectMeta: om,
-				Status: v1beta1.IngressStatus{
+				Status: networkingv1.IngressStatus{
 					LoadBalancer: v1.LoadBalancerStatus{
 						Ingress: []v1.LoadBalancerIngress{{IP: "127.0.0.1"}},
 					},

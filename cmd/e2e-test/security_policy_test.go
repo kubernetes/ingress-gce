@@ -24,11 +24,11 @@ import (
 	"time"
 
 	computebeta "google.golang.org/api/compute/v0.beta"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -107,7 +107,7 @@ func TestSecurityPolicyEnable(t *testing.T) {
 		}
 		t.Logf("Backend config %s/%s created", s.Namespace, testBackendConfig.Name)
 
-		port80 := intstr.FromInt(80)
+		port80 := v1.ServiceBackendPort{Number: 80}
 		testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 			DefaultBackend("service-1", port80).
 			AddPath("test.com", "/", "service-1", port80).
@@ -185,7 +185,7 @@ func TestSecurityPolicyTransition(t *testing.T) {
 		}
 		t.Logf("Backend config %s/%s created", s.Namespace, testBackendConfig.Name)
 
-		port80 := intstr.FromInt(80)
+		port80 := v1.ServiceBackendPort{Number: 80}
 		testIng := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
 			DefaultBackend("service-1", port80).
 			AddPath("test.com", "/", "service-1", port80).

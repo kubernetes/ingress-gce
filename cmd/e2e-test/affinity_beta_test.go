@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"testing"
 
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -78,7 +78,7 @@ func TestAffinityBeta(t *testing.T) {
 		t.Logf("Echo service created (%s/%s)", s.Namespace, svcName)
 
 		ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-			AddPath("test.com", "/", svcName, intstr.FromInt(80)).
+			AddPath("test.com", "/", svcName, networkingv1.ServiceBackendPort{Number: 80}).
 			Build()
 		crud := adapter.IngressCRUD{C: Framework.Clientset}
 		if _, err := crud.Create(ing); err != nil {

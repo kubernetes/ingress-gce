@@ -20,7 +20,7 @@ import (
 	"errors"
 	"strconv"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 )
 
 const (
@@ -114,7 +114,7 @@ type Ingress struct {
 }
 
 // FromIngress extracts the annotations from an Ingress definition.
-func FromIngress(ing *v1beta1.Ingress) *Ingress {
+func FromIngress(ing *v1.Ingress) *Ingress {
 	result := &Ingress{}
 	if ing != nil {
 		result.v = ing.Annotations

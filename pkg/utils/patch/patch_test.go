@@ -21,7 +21,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/kubernetes/pkg/util/slice"
@@ -29,13 +29,13 @@ import (
 
 func TestStrategicMergePatchBytes(t *testing.T) {
 	// Patch an Ingress w/ a finalizer
-	ing := &v1beta1.Ingress{}
-	updated := &v1beta1.Ingress{
+	ing := &v1.Ingress{}
+	updated := &v1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Finalizers: []string{"foo"},
 		},
 	}
-	b, err := StrategicMergePatchBytes(ing, updated, v1beta1.Ingress{})
+	b, err := StrategicMergePatchBytes(ing, updated, v1.Ingress{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,8 +46,8 @@ func TestStrategicMergePatchBytes(t *testing.T) {
 
 	// Patch an Ingress with the finalizer removed
 	ing = updated
-	updated = &v1beta1.Ingress{}
-	b, err = StrategicMergePatchBytes(ing, updated, v1beta1.Ingress{})
+	updated = &v1.Ingress{}
+	b, err = StrategicMergePatchBytes(ing, updated, v1.Ingress{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,8 +59,8 @@ func TestStrategicMergePatchBytes(t *testing.T) {
 
 func TestJSONMergePatchBytes(t *testing.T) {
 	// Patch an Ingress w/ a finalizer
-	ing := &v1beta1.Ingress{}
-	updated := &v1beta1.Ingress{
+	ing := &v1.Ingress{}
+	updated := &v1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Finalizers: []string{"foo"},
 		},
@@ -76,7 +76,7 @@ func TestJSONMergePatchBytes(t *testing.T) {
 
 	// Patch an Ingress with an additional finalizer
 	ing = updated
-	updated = &v1beta1.Ingress{
+	updated = &v1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Finalizers: []string{"foo", "bar"},
 		},
@@ -91,7 +91,7 @@ func TestJSONMergePatchBytes(t *testing.T) {
 	}
 	// Patch an Ingress with the finalizer removed
 	ing = updated
-	updated = &v1beta1.Ingress{}
+	updated = &v1.Ingress{}
 	b, err = MergePatchBytes(ing, updated)
 	if err != nil {
 		t.Fatal(err)

@@ -29,7 +29,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	informerv1 "k8s.io/client-go/informers/core/v1"
-	informerv1beta1 "k8s.io/client-go/informers/networking/v1beta1"
+	informernetworking "k8s.io/client-go/informers/networking/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	corev1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -141,7 +141,7 @@ func NewControllerContext(
 		KubeSystemUID:           kubeSystemUID,
 		ControllerMetrics:       metrics.NewControllerMetrics(),
 		ControllerContextConfig: config,
-		IngressInformer:         informerv1beta1.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		IngressInformer:         informernetworking.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		BackendConfigInformer:   informerbackendconfig.NewBackendConfigInformer(backendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		EndpointInformer:        informerv1.NewEndpointsInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
@@ -157,7 +157,7 @@ func NewControllerContext(
 	}
 
 	if ingParamsClient != nil {
-		context.IngClassInformer = informerv1beta1.NewIngressClassInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
+		context.IngClassInformer = informernetworking.NewIngressClassInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
 		context.IngParamsInformer = informeringparams.NewGCPIngressParamsInformer(ingParamsClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 

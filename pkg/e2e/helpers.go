@@ -32,7 +32,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	apps "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	networkingv1 "k8s.io/api/networking/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiextensionsclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -128,7 +128,7 @@ func IsRfc1918Addr(addr string) bool {
 
 // UpgradeTestWaitForIngress waits for ingress to stabilize and set sandbox status to stable.
 // Note that this is used only for upgrade tests.
-func UpgradeTestWaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitForIngressOptions) (*v1beta1.Ingress, error) {
+func UpgradeTestWaitForIngress(s *Sandbox, ing *networkingv1.Ingress, options *WaitForIngressOptions) (*networkingv1.Ingress, error) {
 	ing, err := WaitForIngress(s, ing, nil, options)
 	if err != nil {
 		return nil, err
@@ -140,7 +140,7 @@ func UpgradeTestWaitForIngress(s *Sandbox, ing *v1beta1.Ingress, options *WaitFo
 // WaitForIngress to stabilize.
 // We expect the ingress to be unreachable at first as LB is
 // still programming itself (i.e 404's / 502's)
-func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, options *WaitForIngressOptions) (*v1beta1.Ingress, error) {
+func WaitForIngress(s *Sandbox, ing *networkingv1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, options *WaitForIngressOptions) (*networkingv1.Ingress, error) {
 	err := wait.Poll(ingressPollInterval, ingressPollTimeout, func() (bool, error) {
 		var err error
 		crud := adapter.IngressCRUD{C: s.f.Clientset}
@@ -174,7 +174,7 @@ func WaitForIngress(s *Sandbox, ing *v1beta1.Ingress, fc *frontendconfigv1beta1.
 // validator thinks that http load balancer is configured when https only
 // configuration exists.
 // TODO(smatti): Remove this when the above issue is fixed.
-func WaitForHTTPResourceAnnotations(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
+func WaitForHTTPResourceAnnotations(s *Sandbox, ing *networkingv1.Ingress) (*networkingv1.Ingress, error) {
 	ingKey := fmt.Sprintf("%s/%s", s.Namespace, ing.Name)
 	klog.Infof("Waiting for HTTP annotations to be added on Ingress %s", ingKey)
 	var err error
@@ -200,7 +200,7 @@ func WaitForHTTPResourceAnnotations(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.
 
 // WaitForFinalizer waits for Finalizer to be added.
 // Note that this is used only for upgrade tests.
-func WaitForFinalizer(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error) {
+func WaitForFinalizer(s *Sandbox, ing *networkingv1.Ingress) (*networkingv1.Ingress, error) {
 	ingKey := fmt.Sprintf("%s/%s", s.Namespace, ing.Name)
 	klog.Infof("Waiting for Finalizer to be added for Ingress %s", ingKey)
 	err := wait.Poll(k8sApiPoolInterval, k8sApiPollTimeout, func() (bool, error) {
@@ -227,7 +227,7 @@ func WaitForFinalizer(s *Sandbox, ing *v1beta1.Ingress) (*v1beta1.Ingress, error
 }
 
 // WhiteboxTest retrieves GCP load-balancer for Ingress VIP and runs the whitebox tests.
-func WhiteboxTest(ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, cloud cloud.Cloud, region string, s *Sandbox) (*fuzz.GCLB, error) {
+func WhiteboxTest(ing *networkingv1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, cloud cloud.Cloud, region string, s *Sandbox) (*fuzz.GCLB, error) {
 	if len(ing.Status.LoadBalancer.Ingress) < 1 {
 		return nil, fmt.Errorf("ingress does not have an IP: %+v", ing.Status)
 	}
@@ -251,7 +251,7 @@ func WhiteboxTest(ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig
 }
 
 // performWhiteboxTests runs the whitebox tests against the Ingress.
-func performWhiteboxTests(s *Sandbox, ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, gclb *fuzz.GCLB) error {
+func performWhiteboxTests(s *Sandbox, ing *networkingv1.Ingress, fc *frontendconfigv1beta1.FrontendConfig, gclb *fuzz.GCLB) error {
 	validator, err := fuzz.NewIngressValidator(s.ValidatorEnv, ing, fc, whitebox.AllTests, nil, []fuzz.Feature{})
 	if err != nil {
 		return err
@@ -264,7 +264,7 @@ func performWhiteboxTests(s *Sandbox, ing *v1beta1.Ingress, fc *frontendconfigv1
 
 // WaitForIngressDeletion deletes the given ingress and waits for the
 // resources associated with it to be deleted.
-func WaitForIngressDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ing *v1beta1.Ingress, options *fuzz.GCLBDeleteOptions) error {
+func WaitForIngressDeletion(ctx context.Context, g *fuzz.GCLB, s *Sandbox, ing *networkingv1.Ingress, options *fuzz.GCLBDeleteOptions) error {
 	crud := adapter.IngressCRUD{C: s.f.Clientset}
 	if err := crud.Delete(ing.Namespace, ing.Name); err != nil {
 		return fmt.Errorf("delete(%q) = %v, want nil", ing.Name, err)
@@ -637,7 +637,7 @@ func CheckNameInNegStatus(svc *v1.Service, expectedNegAttrs map[string]string) (
 }
 
 // CheckForAnyFinalizer asserts that an ingress finalizer exists on Ingress.
-func CheckForAnyFinalizer(ing *v1beta1.Ingress) error {
+func CheckForAnyFinalizer(ing *networkingv1.Ingress) error {
 	ingFinalizers := ing.GetFinalizers()
 	if l := len(ingFinalizers); l != 1 {
 		return fmt.Errorf("expected 1 Finalizer but got %d", l)
@@ -649,7 +649,7 @@ func CheckForAnyFinalizer(ing *v1beta1.Ingress) error {
 }
 
 // CheckV1Finalizer asserts that only v1 finalizer exists on Ingress.
-func CheckV1Finalizer(ing *v1beta1.Ingress) error {
+func CheckV1Finalizer(ing *networkingv1.Ingress) error {
 	ingFinalizers := ing.GetFinalizers()
 	if l := len(ingFinalizers); l != 1 {
 		return fmt.Errorf("expected 1 Finalizer but got %d", l)
@@ -661,7 +661,7 @@ func CheckV1Finalizer(ing *v1beta1.Ingress) error {
 }
 
 // CheckV2Finalizer asserts that only v2 finalizer exists on Ingress.
-func CheckV2Finalizer(ing *v1beta1.Ingress) error {
+func CheckV2Finalizer(ing *networkingv1.Ingress) error {
 	ingFinalizers := ing.GetFinalizers()
 	if l := len(ingFinalizers); l != 1 {
 		return fmt.Errorf("expected 1 Finalizer but got %d", l)
