@@ -5,28 +5,19 @@ import (
 	"testing"
 
 	"github.com/kr/pretty"
-	extv1beta1 "k8s.io/api/extensions/v1beta1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/api/networking/v1beta1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestLegacyConversions(t *testing.T) {
 	for _, tc := range []struct {
-		ext *extv1beta1.Ingress
-		net *v1beta1.Ingress
+		netV1beta1 *v1beta1.Ingress
+		netV1      *networkingv1.Ingress
 	}{
 		{
-			ext: &extv1beta1.Ingress{
-				TypeMeta:   v1.TypeMeta{APIVersion: "extensions/v1beta1"},
-				ObjectMeta: v1.ObjectMeta{Namespace: "ns1", Name: "foo"},
-				Spec: extv1beta1.IngressSpec{
-					Backend: &extv1beta1.IngressBackend{
-						ServiceName: "svc1",
-					},
-				},
-			},
-			net: &v1beta1.Ingress{
-				TypeMeta:   v1.TypeMeta{APIVersion: "networking.k8s.io/v1beta1"},
+			netV1beta1: &v1beta1.Ingress{
+				TypeMeta:   v1.TypeMeta{APIVersion: v1beta1GroupVersion},
 				ObjectMeta: v1.ObjectMeta{Namespace: "ns1", Name: "foo"},
 				Spec: v1beta1.IngressSpec{
 					Backend: &v1beta1.IngressBackend{
@@ -34,16 +25,33 @@ func TestLegacyConversions(t *testing.T) {
 					},
 				},
 			},
+			netV1: &networkingv1.Ingress{
+				TypeMeta:   v1.TypeMeta{APIVersion: v1GroupVersion},
+				ObjectMeta: v1.ObjectMeta{Namespace: "ns1", Name: "foo"},
+				Spec: networkingv1.IngressSpec{
+					DefaultBackend: &networkingv1.IngressBackend{
+						Service: &networkingv1.IngressServiceBackend{
+							Name: "svc1",
+						},
+					},
+				},
+			},
 		},
 	} {
-		gotExt := toIngressExtensionsGroup(tc.net)
-		gotNet := toIngressNetworkingGroup(tc.ext)
-
-		if !reflect.DeepEqual(gotExt, tc.ext) {
-			t.Errorf("Got\n%s\nwant\n%s", pretty.Sprint(gotExt), pretty.Sprint(tc.ext))
+		gotV1, err := toIngressV1(tc.netV1beta1)
+		if err != nil {
+			t.Errorf("got error in conversion from v1 to v1beta1: %q", err)
 		}
-		if !reflect.DeepEqual(gotNet, tc.net) {
-			t.Errorf("Got%s\nwant\n%s", pretty.Sprint(gotNet), pretty.Sprint(tc.net))
+		gotV1beta1, err := toIngressV1beta1(tc.netV1)
+		if err != nil {
+			t.Errorf("got error in conversion from v1beta1 to v1: %q", err)
+		}
+
+		if !reflect.DeepEqual(gotV1beta1, tc.netV1beta1) {
+			t.Errorf("Got\n%s\nwant\n%s", pretty.Sprint(gotV1beta1), pretty.Sprint(tc.netV1beta1))
+		}
+		if !reflect.DeepEqual(gotV1, tc.netV1) {
+			t.Errorf("Got\n%s\nwant\n%s", pretty.Sprint(gotV1), pretty.Sprint(tc.netV1))
 		}
 	}
 }
