@@ -23,7 +23,7 @@ import (
 
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -202,7 +202,7 @@ func NewController(
 	if runIngress {
 		ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
-				addIng := obj.(*v1beta1.Ingress)
+				addIng := obj.(*v1.Ingress)
 				if !utils.IsGLBCIngress(addIng) {
 					klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.NamespacedName(addIng), annotations.IngressClassKey)
 					return
@@ -210,7 +210,7 @@ func NewController(
 				negController.enqueueIngressServices(addIng)
 			},
 			DeleteFunc: func(obj interface{}) {
-				delIng := obj.(*v1beta1.Ingress)
+				delIng := obj.(*v1.Ingress)
 				if !utils.IsGLBCIngress(delIng) {
 					klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.NamespacedName(delIng), annotations.IngressClassKey)
 					return
@@ -218,8 +218,8 @@ func NewController(
 				negController.enqueueIngressServices(delIng)
 			},
 			UpdateFunc: func(old, cur interface{}) {
-				oldIng := cur.(*v1beta1.Ingress)
-				curIng := cur.(*v1beta1.Ingress)
+				oldIng := cur.(*v1.Ingress)
+				curIng := cur.(*v1.Ingress)
 				if !utils.IsGLBCIngress(curIng) {
 					klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", common.NamespacedName(curIng), annotations.IngressClassKey)
 					return
@@ -572,13 +572,13 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 		return nil
 	}
 
-	scanIngress := func(qualify func(*v1beta1.Ingress) bool) error {
+	scanIngress := func(qualify func(*v1.Ingress) bool) error {
 		for _, m := range c.ingressLister.List() {
-			ing := *m.(*v1beta1.Ingress)
-			if qualify(&ing) && ing.Spec.Backend == nil {
+			ing := *m.(*v1.Ingress)
+			if qualify(&ing) && ing.Spec.DefaultBackend == nil {
 				svcPortTupleSet := make(negtypes.SvcPortTupleSet)
 				svcPortTupleSet.Insert(negtypes.SvcPortTuple{
-					Name:       c.defaultBackendService.ID.Port.String(),
+					Name:       c.defaultBackendService.ID.Port.Name,
 					Port:       c.defaultBackendService.Port,
 					TargetPort: c.defaultBackendService.TargetPort,
 				})
@@ -772,7 +772,7 @@ func (c *Controller) enqueueService(obj interface{}) {
 	c.serviceQueue.Add(key)
 }
 
-func (c *Controller) enqueueIngressServices(ing *v1beta1.Ingress) {
+func (c *Controller) enqueueIngressServices(ing *v1.Ingress) {
 	// enqueue services referenced by ingress
 	keys := gatherIngressServiceKeys(ing)
 	for key := range keys {
@@ -809,7 +809,7 @@ func (c *Controller) gc() {
 
 // gatherPortMappingUsedByIngress returns a map containing port:targetport
 // of all service ports of the service that are referenced by ingresses
-func gatherPortMappingUsedByIngress(ings []v1beta1.Ingress, svc *apiv1.Service) negtypes.SvcPortTupleSet {
+func gatherPortMappingUsedByIngress(ings []v1.Ingress, svc *apiv1.Service) negtypes.SvcPortTupleSet {
 	ingressSvcPortTuples := make(negtypes.SvcPortTupleSet)
 	for _, ing := range ings {
 		if utils.IsGLBCIngress(&ing) {
@@ -834,7 +834,7 @@ func gatherPortMappingUsedByIngress(ings []v1beta1.Ingress, svc *apiv1.Service) 
 }
 
 // gatherIngressServiceKeys returns all service key (formatted as namespace/name) referenced in the ingress
-func gatherIngressServiceKeys(ing *v1beta1.Ingress) sets.String {
+func gatherIngressServiceKeys(ing *v1.Ingress) sets.String {
 	set := sets.NewString()
 	if ing == nil {
 		return set
@@ -846,9 +846,9 @@ func gatherIngressServiceKeys(ing *v1beta1.Ingress) sets.String {
 	return set
 }
 
-func getIngressServicesFromStore(store cache.Store, svc *apiv1.Service) (ings []v1beta1.Ingress) {
+func getIngressServicesFromStore(store cache.Store, svc *apiv1.Service) (ings []v1.Ingress) {
 	for _, m := range store.List() {
-		ing := *m.(*v1beta1.Ingress)
+		ing := *m.(*v1.Ingress)
 		if ing.Namespace != svc.Namespace {
 			continue
 		}
