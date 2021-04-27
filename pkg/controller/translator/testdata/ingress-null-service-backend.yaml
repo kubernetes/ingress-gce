@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: test-ingress
+  namespace: default
+spec:
+  rules:
+  - host: foo.bar.com
+    http:
+      paths:
+      - path: /empty
+        backend:
+      - path: /testpath
+        backend:
+          service:
+            name: first-service
+            port:
+              number: 80

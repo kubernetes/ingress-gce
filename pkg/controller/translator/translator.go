@@ -207,7 +207,13 @@ func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend util
 
 		pathRules := []utils.PathRule{}
 		for _, p := range rule.HTTP.Paths {
-			svcPort, err := t.getServicePort(utils.BackendToServicePortID(p.Backend, ing.Namespace), params, namer)
+			svcPortID, err := utils.BackendToServicePortID(p.Backend, ing.Namespace)
+			if err != nil {
+				// Only error possible is Backend is not a Service Backend, so move to next path
+				errs = append(errs, err)
+				continue
+			}
+			svcPort, err := t.getServicePort(svcPortID, params, namer)
 			if err != nil {
 				errs = append(errs, err)
 			}
@@ -238,7 +244,12 @@ func (t *Translator) TranslateIngress(ing *v1.Ingress, systemDefaultBackend util
 	}
 
 	if ing.Spec.DefaultBackend != nil {
-		svcPort, err := t.getServicePort(utils.BackendToServicePortID(*ing.Spec.DefaultBackend, ing.Namespace), params, namer)
+		svcPortID, err := utils.BackendToServicePortID(*ing.Spec.DefaultBackend, ing.Namespace)
+		if err != nil {
+			errs = append(errs, err)
+			return urlMap, errs
+		}
+		svcPort, err := t.getServicePort(svcPortID, params, namer)
 		if err == nil {
 			urlMap.DefaultBackend = svcPort
 			return urlMap, errs

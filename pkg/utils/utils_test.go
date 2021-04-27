@@ -19,6 +19,7 @@ package utils
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
@@ -427,6 +428,49 @@ func TestTraverseIngressBackends(t *testing.T) {
 						Name: "b-service",
 						Port: networkingv1.ServiceBackendPort{
 							Number: 85,
+						},
+					},
+				},
+			},
+		},
+		{
+			"non service backend",
+			&networkingv1.Ingress{
+				Spec: networkingv1.IngressSpec{
+					Rules: []networkingv1.IngressRule{
+						{
+							Host: "foo.bar",
+							IngressRuleValue: networkingv1.IngressRuleValue{
+								HTTP: &networkingv1.HTTPIngressRuleValue{
+									Paths: []networkingv1.HTTPIngressPath{
+										{
+											Path: "/foo",
+											Backend: networkingv1.IngressBackend{
+												Service: &networkingv1.IngressServiceBackend{
+													Name: "foo-service",
+													Port: networkingv1.ServiceBackendPort{
+														Number: 80,
+													},
+												},
+											},
+										},
+										{
+											Path:    "/non-service",
+											Backend: networkingv1.IngressBackend{},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			[]networkingv1.IngressBackend{
+				{
+					Service: &networkingv1.IngressServiceBackend{
+						Name: "foo-service",
+						Port: networkingv1.ServiceBackendPort{
+							Number: 80,
 						},
 					},
 				},
@@ -898,5 +942,56 @@ func TestIsHTTPErrorCode(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("IsHTTPErrorCode(%v, %d) = %t; want %t", tc.err, tc.code, got, tc.want)
 		}
+	}
+}
+
+func TestBackendToServicePortID(t *testing.T) {
+	testNS := "test-namespace"
+	for _, tc := range []struct {
+		desc      string
+		backend   networkingv1.IngressBackend
+		expectErr bool
+	}{
+		{
+			desc: "service is populated",
+			backend: networkingv1.IngressBackend{
+				Service: &networkingv1.IngressServiceBackend{
+					Name: "my-svc",
+					Port: networkingv1.ServiceBackendPort{
+						Number: 80,
+					},
+				},
+			},
+		},
+		{
+			desc:      "service is nil",
+			backend:   networkingv1.IngressBackend{},
+			expectErr: true,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+
+			svcPortID, err := BackendToServicePortID(tc.backend, testNS)
+			if !tc.expectErr && err != nil {
+				t.Errorf("unexpected error: %q", err)
+			} else if tc.expectErr && err == nil {
+				t.Errorf("expected an error, but got none")
+			}
+
+			expectedID := ServicePortID{}
+			if !tc.expectErr {
+				expectedID = ServicePortID{
+					Service: types.NamespacedName{
+						Name:      tc.backend.Service.Name,
+						Namespace: testNS,
+					},
+					Port: tc.backend.Service.Port,
+				}
+			}
+
+			if !reflect.DeepEqual(expectedID, svcPortID) {
+				t.Errorf("expected svc port id to be %+v, but got %+v", expectedID, svcPortID)
+			}
+		})
 	}
 }

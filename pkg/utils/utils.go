@@ -443,7 +443,7 @@ func TraverseIngressBackends(ing *networkingv1.Ingress, process func(id ServiceP
 		return
 	}
 	// Check service of default backend
-	if ing.Spec.DefaultBackend != nil {
+	if ing.Spec.DefaultBackend != nil && ing.Spec.DefaultBackend.Service != nil {
 		if process(ServicePortID{Service: types.NamespacedName{Namespace: ing.Namespace, Name: ing.Spec.DefaultBackend.Service.Name}, Port: ing.Spec.DefaultBackend.Service.Port}) {
 			return
 		}
@@ -455,8 +455,10 @@ func TraverseIngressBackends(ing *networkingv1.Ingress, process func(id ServiceP
 			continue
 		}
 		for _, p := range rule.IngressRuleValue.HTTP.Paths {
-			if process(ServicePortID{Service: types.NamespacedName{Namespace: ing.Namespace, Name: p.Backend.Service.Name}, Port: p.Backend.Service.Port}) {
-				return
+			if p.Backend.Service != nil {
+				if process(ServicePortID{Service: types.NamespacedName{Namespace: ing.Namespace, Name: p.Backend.Service.Name}, Port: p.Backend.Service.Port}) {
+					return
+				}
 			}
 		}
 	}

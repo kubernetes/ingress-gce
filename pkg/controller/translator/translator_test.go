@@ -170,6 +170,21 @@ func TestTranslateIngress(t *testing.T) {
 			wantErrCount:  1,
 			wantGCEURLMap: utils.NewGCEURLMap(),
 		},
+		{
+			desc: "null service default backend",
+			ing: test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"},
+				v1.IngressSpec{
+					DefaultBackend: &v1.IngressBackend{},
+				}),
+			wantErrCount:  1,
+			wantGCEURLMap: utils.NewGCEURLMap(),
+		},
+		{
+			desc:          "null service backend",
+			ing:           ingressFromFile(t, "ingress-null-service-backend.yaml"),
+			wantErrCount:  1,
+			wantGCEURLMap: gceURLMapFromFile(t, "ingress-null-service-backend.json"),
+		},
 	}
 
 	for _, tc := range cases {
