@@ -71,6 +71,8 @@ var (
 			Subsystem: negControllerSubsystem,
 			Name:      negOpLatencyKey,
 			Help:      "Latency of a NEG Operation",
+			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
 		negOpLatencyMetricsLabels,
 	)
@@ -89,6 +91,8 @@ var (
 			Subsystem: negControllerSubsystem,
 			Name:      syncerLatencyKey,
 			Help:      "Sync latency for NEG Syncer",
+			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
 		syncerMetricsLabels,
 	)
@@ -98,6 +102,8 @@ var (
 			Subsystem: negControllerSubsystem,
 			Name:      managerProcessLatencyKey,
 			Help:      "Process latency for NEG Manager",
+			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
 		negProcessMetricsLabels,
 	)
@@ -107,6 +113,8 @@ var (
 			Subsystem: negControllerSubsystem,
 			Name:      initLatencyKey,
 			Help:      "Initialization latency of a NEG",
+			// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
+			Buckets: prometheus.ExponentialBuckets(1, 2, 13),
 		},
 	)
 
