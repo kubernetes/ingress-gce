@@ -244,7 +244,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 		} else {
 			if tc.expectEnsureError {
 				if err := wait.Poll(time.Second, 10*time.Second, func() (bool, error) {
-					if err := manager.EnsureSyncers(tc.namespace, tc.name, tc.portInfoMap); err != nil {
+					if _, _, err := manager.EnsureSyncers(tc.namespace, tc.name, tc.portInfoMap); err != nil {
 						return false, nil
 					}
 					return true, nil
@@ -253,7 +253,7 @@ func TestEnsureAndStopSyncer(t *testing.T) {
 				}
 			} else {
 				// Expect EnsureSyncers returns successfully immediately
-				if err := manager.EnsureSyncers(tc.namespace, tc.name, tc.portInfoMap); err != nil {
+				if _, _, err := manager.EnsureSyncers(tc.namespace, tc.name, tc.portInfoMap); err != nil {
 					t.Errorf("For case %q, failed to ensure syncer %s/%s-%v: %v", tc.desc, tc.namespace, tc.name, tc.portInfoMap, err)
 				}
 			}
@@ -338,7 +338,7 @@ func TestGarbageCollectionSyncer(t *testing.T) {
 
 	manager.serviceLister.Add(&v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}})
 
-	if err := manager.EnsureSyncers(namespace, name, portMap); err != nil {
+	if _, _, err := manager.EnsureSyncers(namespace, name, portMap); err != nil {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}
 	manager.StopSyncer(namespace, name)
@@ -372,7 +372,7 @@ func TestGarbageCollectionNEG(t *testing.T) {
 	ports := make(types.PortInfoMap)
 	manager.serviceLister.Add(&v1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: testServiceNamespace, Name: testServiceName}})
 	ports[negtypes.PortInfoMapKey{ServicePort: svcPort, Subset: ""}] = types.PortInfo{PortTuple: negtypes.SvcPortTuple{TargetPort: "namedport"}, NegName: manager.namer.NEG(testServiceNamespace, testServiceName, svcPort)}
-	if err := manager.EnsureSyncers(testServiceNamespace, testServiceName, ports); err != nil {
+	if _, _, err := manager.EnsureSyncers(testServiceNamespace, testServiceName, ports); err != nil {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}
 
@@ -741,7 +741,7 @@ func TestNegCRCreations(t *testing.T) {
 		namer, false,
 		map[negtypes.SvcPortTuple]string{{Port: port1, TargetPort: targetPort1}: customNegName})
 
-	if err := manager.EnsureSyncers(svcNamespace, svcName, expectedPortInfoMap); err != nil {
+	if _, _, err := manager.EnsureSyncers(svcNamespace, svcName, expectedPortInfoMap); err != nil {
 		t.Errorf("failed to ensure syncer %s/%s-%v: %v", svcNamespace, svcName, expectedPortInfoMap, err)
 	}
 
@@ -777,7 +777,7 @@ func TestNegCRCreations(t *testing.T) {
 	}
 
 	// Second call of EnsureSyncers shouldn't cause any changes or errors
-	if err := manager.EnsureSyncers(svcNamespace, svcName, expectedPortInfoMap); err != nil {
+	if _, _, err := manager.EnsureSyncers(svcNamespace, svcName, expectedPortInfoMap); err != nil {
 		t.Errorf("failed to ensure syncer after creating %s/%s-%v: %v", svcNamespace, svcName, expectedPortInfoMap, err)
 	}
 
@@ -800,7 +800,7 @@ func TestNegCRCreations(t *testing.T) {
 	}
 
 	// EnsureSyncers should recreate the deleted CRs
-	if err := manager.EnsureSyncers(svcNamespace, svcName, expectedPortInfoMap); err != nil {
+	if _, _, err := manager.EnsureSyncers(svcNamespace, svcName, expectedPortInfoMap); err != nil {
 		t.Errorf("failed to ensure syncer after creating %s/%s-%v: %v", svcNamespace, svcName, expectedPortInfoMap, err)
 	}
 
@@ -985,7 +985,7 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 				map[negtypes.SvcPortTuple]string{svcTuple1: customNegName},
 			)
 
-			err := manager.EnsureSyncers(namespace, svc1.Name, portInfoMap)
+			_, _, err := manager.EnsureSyncers(namespace, svc1.Name, portInfoMap)
 			if tc.expectErr && err == nil {
 				t.Errorf("expected error when ensuring syncer %s/%s %+v", namespace, svc1.Name, portInfoMap)
 			} else if !tc.expectErr && err != nil {
@@ -1105,7 +1105,7 @@ func TestNegCRDeletions(t *testing.T) {
 				}
 			}
 
-			if err := manager.EnsureSyncers(svcNamespace, svcName, nil); err != nil {
+			if _, _, err := manager.EnsureSyncers(svcNamespace, svcName, nil); err != nil {
 
 				t.Errorf("unexpected error when deleting negs: %s", err)
 			}
