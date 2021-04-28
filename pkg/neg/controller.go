@@ -464,8 +464,10 @@ func (c *Controller) processService(key string) error {
 		if err := svcPortInfoMap.Merge(destinationRulesPortInfoMap); err != nil {
 			return fmt.Errorf("failed to merge service ports referenced by Istio:DestinationRule (%v): %v", destinationRulesPortInfoMap, err)
 		}
+
+		negUsage.SuccessfulNeg, negUsage.ErrorNeg, err = c.manager.EnsureSyncers(namespace, name, svcPortInfoMap)
 		c.collector.SetNegService(key, negUsage)
-		return c.manager.EnsureSyncers(namespace, name, svcPortInfoMap)
+		return err
 	}
 
 	// do not need Neg
