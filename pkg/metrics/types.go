@@ -41,6 +41,10 @@ type NegServiceState struct {
 	VmIpNeg *VmIpNegType
 	// CustomNamedNeg is the count of standalone negs with custom names
 	CustomNamedNeg int
+	// SuccessfulNeg is the count of successful NEG syncer creations
+	SuccessfulNeg int
+	// SuccessfulNeg is the count of errors in NEG syncer creations
+	ErrorNeg int
 }
 
 // VmIpNegType contains whether a GCE_VM_IP NEG is requesting for
