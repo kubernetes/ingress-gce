@@ -564,7 +564,7 @@ func ensureCondition(neg *negv1beta1.ServiceNetworkEndpointGroup, expectedCondit
 	condition, index, exists := findCondition(neg.Status.Conditions, expectedCondition.Type)
 	if !exists {
 		neg.Status.Conditions = append(neg.Status.Conditions, expectedCondition)
-		return negv1beta1.Condition{}
+		return expectedCondition
 	}
 
 	if condition.Status == expectedCondition.Status {
