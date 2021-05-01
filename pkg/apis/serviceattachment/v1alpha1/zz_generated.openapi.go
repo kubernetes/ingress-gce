@@ -29,9 +29,38 @@ import (
 
 func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenAPIDefinition {
 	return map[string]common.OpenAPIDefinition{
+		"k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1.ConsumerForwardingRule":  schema_pkg_apis_serviceattachment_v1alpha1_ConsumerForwardingRule(ref),
 		"k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1.ServiceAttachment":       schema_pkg_apis_serviceattachment_v1alpha1_ServiceAttachment(ref),
 		"k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1.ServiceAttachmentSpec":   schema_pkg_apis_serviceattachment_v1alpha1_ServiceAttachmentSpec(ref),
 		"k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1.ServiceAttachmentStatus": schema_pkg_apis_serviceattachment_v1alpha1_ServiceAttachmentStatus(ref),
+	}
+}
+
+func schema_pkg_apis_serviceattachment_v1alpha1_ConsumerForwardingRule(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "ConsumerForwardingRule is a reference to the PSC consumer forwarding rule",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"forwardingRuleURL": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Forwarding rule consumer created to use ServiceAttachment",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"status": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Status of consumer forwarding rule",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+				Required: []string{"forwardingRuleURL", "status"},
+			},
+		},
 	}
 }
 
@@ -118,6 +147,13 @@ func schema_pkg_apis_serviceattachment_v1alpha1_ServiceAttachmentSpec(ref common
 							Ref:         ref("k8s.io/api/core/v1.TypedLocalObjectReference"),
 						},
 					},
+					"proxyProtocol": {
+						SchemaProps: spec.SchemaProps{
+							Description: "ProxyProtocol when set will expose client information TCP/IP information (BETA Compute API)",
+							Type:        []string{"boolean"},
+							Format:      "",
+						},
+					},
 				},
 				Required: []string{"connectionPreference", "natSubnets", "resourceRef"},
 			},
@@ -148,9 +184,28 @@ func schema_pkg_apis_serviceattachment_v1alpha1_ServiceAttachmentStatus(ref comm
 							Format:      "",
 						},
 					},
+					"consumerForwardingRules": {
+						VendorExtensible: spec.VendorExtensible{
+							Extensions: spec.Extensions{
+								"x-kubernetes-list-type": "atomic",
+							},
+						},
+						SchemaProps: spec.SchemaProps{
+							Description: "Consumer Forwarding Rules using ts Service Attachment (BETA Compute API)",
+							Type:        []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1.ConsumerForwardingRule"),
+									},
+								},
+							},
+						},
+					},
 				},
-				Required: []string{"serviceAttachmentURL", "forwardingRuleURL"},
 			},
 		},
+		Dependencies: []string{
+			"k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1.ConsumerForwardingRule"},
 	}
 }

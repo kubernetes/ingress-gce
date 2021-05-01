@@ -53,17 +53,38 @@ type ServiceAttachmentSpec struct {
 	// Only Services can be used as a reference
 	// +required
 	ResourceRef corev1.TypedLocalObjectReference `json:"resourceRef"`
+
+	// ProxyProtocol when set will expose client information TCP/IP information (BETA Compute API)
+	// +optional
+	ProxyProtocol bool `json:"proxyProtocol"`
 }
 
 // ServiceAttachmentStatus is the status for a ServiceAttachment resource
 // +k8s:openapi-gen=true
 type ServiceAttachmentStatus struct {
 	// ServiceAttachmentURL is the URL for the GCE Service Attachment resource
+	// +optional
 	ServiceAttachmentURL string `json:"serviceAttachmentURL"`
 
 	// ForwardingRuleURL is the URL to the GCE Forwarding Rule resource the
 	// Service Attachment points to
+	// +optional
 	ForwardingRuleURL string `json:"forwardingRuleURL"`
+
+	// Consumer Forwarding Rules using ts Service Attachment (BETA Compute API)
+	// +listType=atomic
+	// +optional
+	ConsumerForwardingRules []ConsumerForwardingRule `json:"consumerForwardingRules"`
+}
+
+// ConsumerForwardingRule is a reference to the PSC consumer forwarding rule
+// +k8s:openapi-gen=true
+type ConsumerForwardingRule struct {
+	// Forwarding rule consumer created to use ServiceAttachment
+	ForwardingRuleURL string `json:"forwardingRuleURL"`
+
+	// Status of consumer forwarding rule
+	Status string `json:"status"`
 }
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
