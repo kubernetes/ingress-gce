@@ -249,6 +249,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 		ProducerForwardingRule: frURL,
 		Region:                 c.cloud.Region(),
 		Description:            desc.String(),
+		EnableProxyProtocol:    updatedCR.Spec.ProxyProtocol,
 	}
 
 	gceSAKey, err := composite.CreateKey(c.cloud, saName, meta.Regional)

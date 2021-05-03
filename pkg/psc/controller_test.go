@@ -73,6 +73,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 		incorrectIPAddr      bool
 		invalidSubnet        bool
 		expectErr            bool
+		proxyProtocol        bool
 	}{
 		{
 			desc:                 "valid service attachment with tcp ILB",
@@ -180,6 +181,16 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			},
 			expectErr: true,
 		},
+		{
+			desc:                 "proxy protocol is true",
+			annotationKey:        annotations.TCPForwardingRuleKey,
+			svcExists:            true,
+			fwdRuleExists:        true,
+			connectionPreference: "ACCEPT_AUTOMATIC",
+			resourceRef:          validRef,
+			proxyProtocol:        true,
+			expectErr:            false,
+		},
 	}
 
 	for _, tc := range testCases {
@@ -238,6 +249,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 					ConnectionPreference: tc.connectionPreference,
 					NATSubnets:           []string{"my-subnet"},
 					ResourceRef:          tc.resourceRef,
+					ProxyProtocol:        tc.proxyProtocol,
 				},
 			}
 
@@ -279,6 +291,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 					ProducerForwardingRule: rule.SelfLink,
 					Region:                 fakeCloud.Region(),
 					SelfLink:               sa.SelfLink,
+					EnableProxyProtocol:    tc.proxyProtocol,
 				}
 
 				if !reflect.DeepEqual(sa, expectedSA) {
