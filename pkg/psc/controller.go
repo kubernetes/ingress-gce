@@ -219,6 +219,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 		return nil
 	}
 	klog.V(2).Infof("Processing Service attachment %s/%s", namespace, name)
+	defer klog.V(4).Infof("Finished processing service attachment %s/%s", namespace, name)
 
 	svcAttachment := obj.(*sav1alpha1.ServiceAttachment)
 	var updatedCR *sav1alpha1.ServiceAttachment
@@ -268,8 +269,10 @@ func (c *Controller) processServiceAttachment(key string) error {
 		if err != nil {
 			return fmt.Errorf("invalid Service Attachment Update: %q", err)
 		}
-		klog.V(4).Infof("Finished processing service attachment %s/%s", namespace, name)
-		return nil
+
+		_, err = c.updateServiceAttachmentStatus(updatedCR, gceSAKey)
+		klog.V(2).Infof("Updated Service Attachment %s/%s status after update", updatedCR.Namespace, updatedCR.Name)
+		return err
 	}
 
 	klog.V(2).Infof("Creating service attachment %s", saName)
@@ -429,6 +432,17 @@ func (c *Controller) updateServiceAttachmentStatus(cr *sav1alpha1.ServiceAttachm
 	updatedSA := cr.DeepCopy()
 	updatedSA.Status.ServiceAttachmentURL = gceSA.SelfLink
 	updatedSA.Status.ForwardingRuleURL = gceSA.ProducerForwardingRule
+
+	var consumers []sav1alpha1.ConsumerForwardingRule
+	for _, c := range gceSA.ConsumerForwardingRules {
+		consumers = append(consumers, sav1alpha1.ConsumerForwardingRule{
+			ForwardingRuleURL: c.ForwardingRule,
+			Status:            c.Status,
+		})
+	}
+
+	updatedSA.Status.ConsumerForwardingRules = consumers
+	updatedSA.Status.LastSyncTimestamp = metav1.Now()
 
 	klog.V(2).Infof("Updating Service Attachment %s/%s status", cr.Namespace, cr.Name)
 	return c.patchServiceAttachment(cr, updatedSA)
