@@ -24,7 +24,7 @@ import (
 	"time"
 
 	apiv1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -41,7 +41,7 @@ import (
 
 var (
 	// queueKey is a "fake" key which can be enqueued to a task queue.
-	queueKey = &v1beta1.Ingress{
+	queueKey = &v1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{Name: "queueKey"},
 	}
 
@@ -77,21 +77,21 @@ func NewFirewallController(
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
-			addIng := obj.(*v1beta1.Ingress)
+			addIng := obj.(*v1.Ingress)
 			if !utils.IsGCEIngress(addIng) && !utils.IsGCEMultiClusterIngress(addIng) {
 				return
 			}
 			fwc.queue.Enqueue(queueKey)
 		},
 		DeleteFunc: func(obj interface{}) {
-			delIng := obj.(*v1beta1.Ingress)
+			delIng := obj.(*v1.Ingress)
 			if !utils.IsGCEIngress(delIng) && !utils.IsGCEMultiClusterIngress(delIng) {
 				return
 			}
 			fwc.queue.Enqueue(queueKey)
 		},
 		UpdateFunc: func(old, cur interface{}) {
-			curIng := cur.(*v1beta1.Ingress)
+			curIng := cur.(*v1.Ingress)
 			if !utils.IsGCEIngress(curIng) && !utils.IsGCEMultiClusterIngress(curIng) {
 				return
 			}
@@ -125,7 +125,7 @@ func NewFirewallController(
 // ToSvcPorts is a helper method over translator.TranslateIngress to process a list of ingresses.
 // TODO(rramkumar): This is a copy of code in controller.go. Extract this into
 // something shared.
-func (fwc *FirewallController) ToSvcPorts(ings []*v1beta1.Ingress) []utils.ServicePort {
+func (fwc *FirewallController) ToSvcPorts(ings []*v1.Ingress) []utils.ServicePort {
 	var knownPorts []utils.ServicePort
 	for _, ing := range ings {
 		urlMap, _ := fwc.translator.TranslateIngress(ing, fwc.ctx.DefaultBackendSvcPort.ID, fwc.ctx.ClusterNamer)
@@ -152,7 +152,7 @@ func (fwc *FirewallController) sync(key string) error {
 	}
 	klog.V(3).Infof("Syncing firewall")
 
-	gceIngresses := operator.Ingresses(fwc.ctx.Ingresses().List()).Filter(func(ing *v1beta1.Ingress) bool {
+	gceIngresses := operator.Ingresses(fwc.ctx.Ingresses().List()).Filter(func(ing *v1.Ingress) bool {
 		return utils.IsGCEIngress(ing)
 	}).AsList()
 
@@ -214,7 +214,7 @@ func (fwc *FirewallController) sync(key string) error {
 	return nil
 }
 
-func (fwc *FirewallController) ilbFirewallSrcRange(gceIngresses []*v1beta1.Ingress) (string, error) {
+func (fwc *FirewallController) ilbFirewallSrcRange(gceIngresses []*v1.Ingress) (string, error) {
 	ilbEnabled := false
 	for _, ing := range gceIngresses {
 		if utils.IsGCEL7ILBIngress(ing) {

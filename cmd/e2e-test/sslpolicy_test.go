@@ -25,9 +25,8 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
-	"k8s.io/api/networking/v1beta1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -39,7 +38,7 @@ const policyName = "e2e-ssl-policy"
 // TestSSLPolicy is a transition test
 func TestSSLPolicy(t *testing.T) {
 	ctx := context.Background()
-	port80 := intstr.FromInt(80)
+	port80 := networkingv1.ServiceBackendPort{Number: 80}
 
 	// Run all test cases in the same sandbox to share certs
 	Framework.RunWithSandbox("sslpolicy_e2e", t, func(t *testing.T, s *e2e.Sandbox) {
@@ -67,7 +66,7 @@ func TestSSLPolicy(t *testing.T) {
 		}
 
 		var gclb *fuzz.GCLB
-		var ing *v1beta1.Ingress
+		var ing *networkingv1.Ingress
 		for _, tc := range []struct {
 			desc             string
 			configPolicyName string

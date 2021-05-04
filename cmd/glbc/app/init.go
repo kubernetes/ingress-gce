@@ -22,9 +22,9 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -53,8 +53,7 @@ func DefaultBackendServicePort(kubeClient kubernetes.Interface) utils.ServicePor
 		klog.Fatalf("Failed to verify default backend service: %v", err)
 	}
 
-	backendPort := intstr.FromString(flags.F.DefaultSvcPortName)
-	svcPort := servicePortForDefaultService(svc, backendPort, name)
+	svcPort := servicePortForDefaultService(svc, flags.F.DefaultSvcPortName, name)
 	if svcPort == nil {
 		klog.Fatalf("could not derive service port for default service: %v", err)
 	}
@@ -91,14 +90,14 @@ func IngressClassEnabled(client kubernetes.Interface) bool {
 }
 
 // servicePortForDefaultService returns the service port for the default service; returns nil if not found.
-func servicePortForDefaultService(svc *v1.Service, svcPort intstr.IntOrString, name types.NamespacedName) *utils.ServicePort {
+func servicePortForDefaultService(svc *v1.Service, svcPortName string, name types.NamespacedName) *utils.ServicePort {
 	// Lookup TargetPort for service port
 	for _, port := range svc.Spec.Ports {
-		if port.Name == svcPort.String() {
+		if port.Name == svcPortName {
 			return &utils.ServicePort{
 				ID: utils.ServicePortID{
 					Service: name,
-					Port:    svcPort,
+					Port:    networkingv1.ServiceBackendPort{Name: svcPortName},
 				},
 				TargetPort: port.TargetPort.StrVal,
 				Port:       port.Port,

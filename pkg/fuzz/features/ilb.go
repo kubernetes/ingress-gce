@@ -17,9 +17,10 @@ limitations under the License.
 package features
 
 import (
-	"k8s.io/api/networking/v1beta1"
-	"k8s.io/ingress-gce/pkg/fuzz"
 	"net/http"
+
+	v1 "k8s.io/api/networking/v1"
+	"k8s.io/ingress-gce/pkg/fuzz"
 )
 
 // ILB is an internal load balancer
@@ -42,7 +43,7 @@ func (*ILBFeature) Name() string {
 type ILBValidator struct {
 	fuzz.NullValidator
 
-	ing *v1beta1.Ingress
+	ing *v1.Ingress
 	env fuzz.ValidatorEnv
 }
 
@@ -52,7 +53,7 @@ func (*ILBValidator) Name() string {
 }
 
 // ConfigureAttributes implements fuzz.FeatureValidator.
-func (v *ILBValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1beta1.Ingress, a *fuzz.IngressValidatorAttributes) error {
+func (v *ILBValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1.Ingress, a *fuzz.IngressValidatorAttributes) error {
 	// Capture the env for use later in CheckResponse.
 	v.ing = ing
 	v.env = env

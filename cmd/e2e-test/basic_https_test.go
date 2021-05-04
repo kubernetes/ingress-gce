@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/util/intstr"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -30,7 +30,7 @@ import (
 func TestBasicHTTPS(t *testing.T) {
 	t.Parallel()
 
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 
 	for _, tc := range []struct {
 		desc       string

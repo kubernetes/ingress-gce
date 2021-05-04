@@ -30,8 +30,8 @@ import (
 	"k8s.io/klog"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -57,7 +57,7 @@ func (*NegFeature) Name() string {
 type negValidator struct {
 	fuzz.NullValidator
 
-	ing    *v1beta1.Ingress
+	ing    *networkingv1.Ingress
 	env    fuzz.ValidatorEnv
 	region string
 }
@@ -68,7 +68,7 @@ func (*negValidator) Name() string {
 }
 
 // ConfigureAttributes implements fuzz.FeatureValidator.
-func (v *negValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1beta1.Ingress, a *fuzz.IngressValidatorAttributes) error {
+func (v *negValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *networkingv1.Ingress, a *fuzz.IngressValidatorAttributes) error {
 	// Capture the env for use later in CheckResponse.
 	v.ing = ing
 	v.env = env

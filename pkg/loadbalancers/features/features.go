@@ -19,7 +19,7 @@ package features
 
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -92,7 +92,7 @@ func (r *ResourceVersions) merge(other *ResourceVersions) *ResourceVersions {
 }
 
 // featuresFromIngress returns the features enabled by an ingress
-func featuresFromIngress(ing *v1beta1.Ingress) []string {
+func featuresFromIngress(ing *v1.Ingress) []string {
 	var result []string
 	if utils.IsGCEL7ILBIngress(ing) {
 		result = append(result, FeatureL7ILB)
@@ -149,11 +149,11 @@ func scopeFromFeatures(features []string) meta.KeyType {
 
 // TODO: (shance) refactor scope to be per-resource
 // ScopeFromIngress returns the required scope of features for an Ingress
-func ScopeFromIngress(ing *v1beta1.Ingress) meta.KeyType {
+func ScopeFromIngress(ing *v1.Ingress) meta.KeyType {
 	return scopeFromFeatures(featuresFromIngress(ing))
 }
 
 // VersionsFromIngress returns a ResourceVersions struct containing all of the resources per version
-func VersionsFromIngress(ing *v1beta1.Ingress) *ResourceVersions {
+func VersionsFromIngress(ing *v1.Ingress) *ResourceVersions {
 	return versionsFromFeatures(featuresFromIngress(ing))
 }

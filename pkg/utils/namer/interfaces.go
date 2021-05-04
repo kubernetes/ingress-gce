@@ -13,9 +13,7 @@ limitations under the License.
 
 package namer
 
-import (
-	"k8s.io/api/networking/v1beta1"
-)
+import v1 "k8s.io/api/networking/v1"
 
 // IngressFrontendNamer is an interface to name GCE frontend resources.
 type IngressFrontendNamer interface {
@@ -45,7 +43,7 @@ type IngressFrontendNamer interface {
 // a load balancer.
 type IngressFrontendNamerFactory interface {
 	// Namer returns IngressFrontendNamer for given ingress.
-	Namer(ing *v1beta1.Ingress) IngressFrontendNamer
+	Namer(ing *v1.Ingress) IngressFrontendNamer
 	// NamerForLoadBalancer returns IngressFrontendNamer given a load-balancer
 	// name. This used only for v1 naming scheme.
 	NamerForLoadBalancer(loadBalancer LoadBalancerName) IngressFrontendNamer

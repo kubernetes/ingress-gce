@@ -20,9 +20,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"k8s.io/api/core/v1"
-	"k8s.io/legacy-cloud-providers/gce"
 	"strings"
+
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (

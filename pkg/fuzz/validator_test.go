@@ -24,22 +24,21 @@ import (
 	"sync"
 	"testing"
 
-	"k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 )
 
-var baseIngress = &v1beta1.Ingress{
+var baseIngress = &networkingv1.Ingress{
 	ObjectMeta: metav1.ObjectMeta{
 		Name:      "ing1",
 		Namespace: "default",
 	},
-	Status: v1beta1.IngressStatus{
+	Status: networkingv1.IngressStatus{
 		LoadBalancer: v1.LoadBalancerStatus{
 			Ingress: []v1.LoadBalancerIngress{
 				{IP: "127.0.0.1"},
@@ -75,7 +74,7 @@ func (m *mockFeature) NewValidator() FeatureValidator {
 	return m
 }
 
-func (m *mockFeature) ConfigureAttributes(env ValidatorEnv, ing *v1beta1.Ingress, a *IngressValidatorAttributes) error {
+func (m *mockFeature) ConfigureAttributes(env ValidatorEnv, ing *networkingv1.Ingress, a *IngressValidatorAttributes) error {
 	switch m.mode {
 	case mockValidatorUnstable:
 		a.CheckHTTP = !a.CheckHTTP
@@ -104,7 +103,7 @@ func TestIngressValidatorAttributes(t *testing.T) {
 
 	for _, tc := range []struct {
 		desc           string
-		ing            *v1beta1.Ingress
+		ing            *networkingv1.Ingress
 		wantCheckHTTP  bool
 		wantCheckHTTPS bool
 	}{
@@ -140,7 +139,7 @@ func TestNewIngressValidator(t *testing.T) {
 
 	for _, tc := range []struct {
 		desc     string
-		ing      *v1beta1.Ingress
+		ing      *networkingv1.Ingress
 		features []Feature
 
 		wantErr bool
@@ -234,11 +233,11 @@ func TestValidatorCheck(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	port80 := intstr.FromInt(80)
+	port80 := networkingv1.ServiceBackendPort{Number: 80}
 
 	for _, tc := range []struct {
 		desc string
-		ing  *v1beta1.Ingress
+		ing  *networkingv1.Ingress
 
 		dontStartServer   bool
 		hasDefaultBackend bool
@@ -340,11 +339,11 @@ func TestValidatorCheckFeature(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	port80 := intstr.FromInt(80)
+	port80 := networkingv1.ServiceBackendPort{Number: 80}
 
 	for _, tc := range []struct {
 		desc    string
-		ing     *v1beta1.Ingress
+		ing     *networkingv1.Ingress
 		feature Feature
 
 		wantNewValidatorErr bool

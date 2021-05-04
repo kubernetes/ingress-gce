@@ -17,14 +17,14 @@ limitations under the License.
 package metrics
 
 import (
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // IngressState defines an ingress and its associated service ports.
 type IngressState struct {
-	ingress        *v1beta1.Ingress
+	ingress        *v1.Ingress
 	frontendconfig *frontendconfigv1beta1.FrontendConfig
 	servicePorts   []utils.ServicePort
 }

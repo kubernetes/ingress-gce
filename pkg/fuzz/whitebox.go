@@ -17,7 +17,7 @@ limitations under the License.
 package fuzz
 
 import (
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 )
 
@@ -27,5 +27,5 @@ type WhiteboxTest interface {
 	// Name of the test.
 	Name() string
 	// Test is the test to run.
-	Test(ing *v1beta1.Ingress, fc *frontendconfig.FrontendConfig, gclb *GCLB) error
+	Test(ing *v1.Ingress, fc *frontendconfig.FrontendConfig, gclb *GCLB) error
 }

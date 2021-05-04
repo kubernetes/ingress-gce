@@ -22,8 +22,8 @@ import (
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	networkingv1 "k8s.io/api/networking/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -98,7 +98,7 @@ func TestHealthCheck(t *testing.T) {
 			}
 
 			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-				DefaultBackend("service-1", intstr.FromInt(80)).
+				DefaultBackend("service-1", networkingv1.ServiceBackendPort{Number: 80}).
 				Build()
 			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {

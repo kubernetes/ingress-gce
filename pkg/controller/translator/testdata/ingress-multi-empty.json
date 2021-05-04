@@ -5,7 +5,9 @@
 				"Namespace": "kube-system",
 				"Name": "default-http-backend"
 			},
-			"Port": "http"
+			"Port": {
+        "Name": "http"
+      }
 		}
 	},
 	"HostRules": [
@@ -19,7 +21,9 @@
 							"Namespace": "default",
 							"Name": "second-service"
 						},
-						"Port": 80
+					  "Port": {
+              "Number": 80
+            }
 					}
 				}
 			}]

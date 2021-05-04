@@ -30,7 +30,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
-	"k8s.io/api/networking/v1beta1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -63,7 +63,7 @@ type testJig struct {
 	fakeGCE *gce.Cloud
 	mock    *cloud.MockGCE
 	namer   *namer_util.Namer
-	ing     *v1beta1.Ingress
+	ing     *networkingv1.Ingress
 	feNamer namer_util.IngressFrontendNamer
 	t       *testing.T
 }
@@ -145,8 +145,8 @@ func (j *testJig) String() string {
 	return "testJig.String() Not implemented"
 }
 
-func newIngress() *v1beta1.Ingress {
-	return &v1beta1.Ingress{
+func newIngress() *networkingv1.Ingress {
+	return &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      ingressName,
 			Namespace: namespace,
@@ -162,8 +162,8 @@ func newFakeLoadBalancerPool(cloud *gce.Cloud, t *testing.T, namer *namer_util.N
 	return L7s{cloud, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer, "")}
 }
 
-func newILBIngress() *v1beta1.Ingress {
-	return &v1beta1.Ingress{
+func newILBIngress() *networkingv1.Ingress {
+	return &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        ingressName,
 			Namespace:   namespace,
@@ -1844,14 +1844,14 @@ func TestResourceDeletionWithScopeChange(t *testing.T) {
 		beforeClass string
 		afterClass  string
 		gcScope     meta.KeyType
-		ing         *v1beta1.Ingress
+		ing         *networkingv1.Ingress
 	}{
 		{
 			desc:        "ELB to ILB",
 			beforeClass: "gce",
 			afterClass:  "gce-internal",
 			gcScope:     meta.Global,
-			ing: &v1beta1.Ingress{
+			ing: &networkingv1.Ingress{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "ing-1",
 					Namespace:   namespace,
@@ -1864,7 +1864,7 @@ func TestResourceDeletionWithScopeChange(t *testing.T) {
 			beforeClass: "gce-internal",
 			afterClass:  "gce",
 			gcScope:     meta.Regional,
-			ing: &v1beta1.Ingress{
+			ing: &networkingv1.Ingress{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "ing-2",
 					Namespace:   namespace,

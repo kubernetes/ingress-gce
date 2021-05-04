@@ -15,26 +15,23 @@ package translator
 
 import (
 	api_v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
+	v1 "k8s.io/api/networking/v1"
 )
 
 // ServicePort is a helper function that retrieves a port of a Service.
-func ServicePort(svc api_v1.Service, port intstr.IntOrString) *api_v1.ServicePort {
+func ServicePort(svc api_v1.Service, port v1.ServiceBackendPort) *api_v1.ServicePort {
 	var svcPort *api_v1.ServicePort
 PortLoop:
 	for _, p := range svc.Spec.Ports {
 		np := p
-		switch port.Type {
-		case intstr.Int:
-			if p.Port == port.IntVal {
+		if port.Name != "" {
+			if p.Name == port.Name {
 				svcPort = &np
 				break PortLoop
 			}
-		default:
-			if p.Name == port.StrVal {
-				svcPort = &np
-				break PortLoop
-			}
+		} else if p.Port == port.Number {
+			svcPort = &np
+			break PortLoop
 		}
 	}
 	return svcPort

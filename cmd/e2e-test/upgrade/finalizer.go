@@ -20,7 +20,7 @@ import (
 	"context"
 	"testing"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -33,7 +33,7 @@ type Finalizer struct {
 	s         *e2e.Sandbox
 	framework *e2e.Framework
 	crud      adapter.IngressCRUD
-	ing       *v1beta1.Ingress
+	ing       *v1.Ingress
 }
 
 // NewFinalizerUpgradeTest returns an upgrade test that asserts that finalizer

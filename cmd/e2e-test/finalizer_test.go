@@ -20,7 +20,7 @@ import (
 	"context"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/util/intstr"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -32,7 +32,7 @@ import (
 func TestFinalizer(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 	svcName := "service-1"
 	ing := fuzz.NewIngressBuilder("", "ingress-1", "").
 		AddPath("foo.com", "/", svcName, port80).
@@ -83,7 +83,7 @@ func TestFinalizer(t *testing.T) {
 func TestFinalizerIngressClassChange(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 	svcName := "service-1"
 	ing := fuzz.NewIngressBuilder("", "ingress-1", "").
 		AddPath("foo.com", "/", svcName, port80).
@@ -143,7 +143,7 @@ func TestFinalizerIngressClassChange(t *testing.T) {
 func TestFinalizerIngressesWithSharedResources(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 	svcName := "service-1"
 	ing := fuzz.NewIngressBuilder("", "ingress-1", "").
 		AddPath("foo.com", "/", svcName, port80).

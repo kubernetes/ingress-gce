@@ -35,7 +35,7 @@ import (
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -66,7 +66,7 @@ var (
 				Name:      "default-http-backend",
 				Namespace: "kube-system",
 			},
-			Port: intstr.FromString("http"),
+			Port: networkingv1.ServiceBackendPort{Name: "http"},
 		},
 		Port:       80,
 		TargetPort: "9376"}
@@ -434,20 +434,24 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 	t.Parallel()
 
 	testCases := []struct {
-		ings   []v1beta1.Ingress
+		ings   []networkingv1.Ingress
 		expect []int32
 		desc   string
 	}{
 		{
-			[]v1beta1.Ingress{{
+			[]networkingv1.Ingress{{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testServiceName,
 					Namespace: testServiceNamespace,
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: "nonExists",
-						ServicePort: intstr.FromString(testNamedPort),
+				Spec: networkingv1.IngressSpec{
+					DefaultBackend: &networkingv1.IngressBackend{
+						Service: &networkingv1.IngressServiceBackend{
+							Name: "nonExists",
+							Port: networkingv1.ServiceBackendPort{
+								Name: testNamedPort,
+							},
+						},
 					},
 				},
 			}},
@@ -455,15 +459,19 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 			"no match",
 		},
 		{
-			[]v1beta1.Ingress{{
+			[]networkingv1.Ingress{{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testServiceName,
 					Namespace: testServiceNamespace,
 				},
-				Spec: v1beta1.IngressSpec{
-					Backend: &v1beta1.IngressBackend{
-						ServiceName: testServiceName,
-						ServicePort: intstr.FromString("NonExisted"),
+				Spec: networkingv1.IngressSpec{
+					DefaultBackend: &networkingv1.IngressBackend{
+						Service: &networkingv1.IngressServiceBackend{
+							Name: testServiceName,
+							Port: networkingv1.ServiceBackendPort{
+								Name: "NonExisted",
+							},
+						},
 					},
 				},
 			}},
@@ -471,29 +479,37 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 			"ingress spec point to non-existed service port",
 		},
 		{
-			[]v1beta1.Ingress{{
+			[]networkingv1.Ingress{{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testServiceName,
 					Namespace: testServiceNamespace,
 				},
-				Spec: v1beta1.IngressSpec{
-					Rules: []v1beta1.IngressRule{
+				Spec: networkingv1.IngressSpec{
+					Rules: []networkingv1.IngressRule{
 						{
-							IngressRuleValue: v1beta1.IngressRuleValue{
-								HTTP: &v1beta1.HTTPIngressRuleValue{
-									Paths: []v1beta1.HTTPIngressPath{
+							IngressRuleValue: networkingv1.IngressRuleValue{
+								HTTP: &networkingv1.HTTPIngressRuleValue{
+									Paths: []networkingv1.HTTPIngressPath{
 										{
 											Path: "/path1",
-											Backend: v1beta1.IngressBackend{
-												ServiceName: testServiceName,
-												ServicePort: intstr.FromInt(80),
+											Backend: networkingv1.IngressBackend{
+												Service: &networkingv1.IngressServiceBackend{
+													Name: testServiceName,
+													Port: networkingv1.ServiceBackendPort{
+														Number: 80,
+													},
+												},
 											},
 										},
 										{
 											Path: "/path2",
-											Backend: v1beta1.IngressBackend{
-												ServiceName: "nonExisted",
-												ServicePort: intstr.FromInt(443),
+											Backend: networkingv1.IngressBackend{
+												Service: &networkingv1.IngressServiceBackend{
+													Name: "nonExisted",
+													Port: networkingv1.ServiceBackendPort{
+														Number: 443,
+													},
+												},
 											},
 										},
 									},
@@ -507,32 +523,37 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 			"ingress point to multiple services",
 		},
 		{
-			[]v1beta1.Ingress{*newTestIngress(testServiceName), *newTestIngress(testServiceName)},
+			[]networkingv1.Ingress{*newTestIngress(testServiceName), *newTestIngress(testServiceName)},
 			[]int32{80, 443, 8081},
 			"two ingresses with multiple different references to service",
 		},
 		{
-			[]v1beta1.Ingress{*newTestIngress(testServiceName)},
+			[]networkingv1.Ingress{*newTestIngress(testServiceName)},
 			[]int32{80, 443, 8081},
 			"one ingress with multiple different references to service",
 		},
 		{
-			[]v1beta1.Ingress{{
+			[]networkingv1.Ingress{{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      testServiceName,
 					Namespace: testServiceNamespace,
 				},
-				Spec: v1beta1.IngressSpec{
-					Rules: []v1beta1.IngressRule{
+				Spec: networkingv1.IngressSpec{
+					Rules: []networkingv1.IngressRule{
 						{
-							IngressRuleValue: v1beta1.IngressRuleValue{
-								HTTP: &v1beta1.HTTPIngressRuleValue{
-									Paths: []v1beta1.HTTPIngressPath{
+							IngressRuleValue: networkingv1.IngressRuleValue{
+								HTTP: &networkingv1.HTTPIngressRuleValue{
+									Paths: []networkingv1.HTTPIngressPath{
 										{
 											Path: "/path1",
-											Backend: v1beta1.IngressBackend{
-												ServiceName: testServiceName,
-												ServicePort: intstr.FromString(testNamedPortWithNumber),
+											Backend: networkingv1.IngressBackend{
+												Service: &networkingv1.IngressServiceBackend{
+
+													Name: testServiceName,
+													Port: networkingv1.ServiceBackendPort{
+														Name: testNamedPortWithNumber,
+													},
+												},
 											},
 										},
 									},
@@ -552,7 +573,7 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 		defer controller.stop()
 		portTupleSet := gatherPortMappingUsedByIngress(tc.ings, newTestService(controller, true, []int32{}))
 		if len(portTupleSet) != len(tc.expect) {
-			t.Errorf("Expect %v ports, but got %v.", len(tc.expect), len(portTupleSet))
+			t.Errorf("For test case %q, expect %d ports, but got %d.", tc.desc, len(tc.expect), len(portTupleSet))
 		}
 
 		for _, exp := range tc.expect {
@@ -566,7 +587,7 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 				}
 			}
 			if !found {
-				t.Errorf("Expect ports to include %v.", exp)
+				t.Errorf("For test case %q, expect ports to include %v.", tc.desc, exp)
 			}
 		}
 	}
@@ -712,7 +733,8 @@ func TestDefaultBackendServicePortInfoMapForL7ILB(t *testing.T) {
 					Service: types.NamespacedName{
 						Namespace: testServiceNamespace, Name: "newDefaultBackend",
 					},
-					Port: intstr.FromInt(80),
+					// Default Backend Service Port is always referenced by name
+					Port: networkingv1.ServiceBackendPort{Name: "80"},
 				},
 				Port:       80,
 				TargetPort: "8888",
@@ -738,10 +760,10 @@ func TestDefaultBackendServicePortInfoMapForL7ILB(t *testing.T) {
 			if tc.defaultOverride {
 				// Override backend service
 				controller.defaultBackendService = tc.defaultBackendServiceServicePort
-				ing.Spec.Backend = nil
+				ing.Spec.DefaultBackend = nil
 			}
 
-			newIng, err := controller.client.NetworkingV1beta1().Ingresses(testServiceNamespace).Create(context.TODO(), ing, metav1.CreateOptions{})
+			newIng, err := controller.client.NetworkingV1().Ingresses(testServiceNamespace).Create(context.TODO(), ing, metav1.CreateOptions{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -776,28 +798,30 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 
 	for _, tc := range []struct {
 		desc           string
-		getIngress     func() *v1beta1.Ingress
+		getIngress     func() *networkingv1.Ingress
 		defaultService *v1.Service
 		expectNeg      bool
 	}{
 		{
 			desc:           "no ingress",
-			getIngress:     func() *v1beta1.Ingress { return nil },
+			getIngress:     func() *networkingv1.Ingress { return nil },
 			defaultService: defaultBackendService,
 			expectNeg:      false,
 		},
 		{
 			desc:           "no ingress and default backend service has NEG annotation",
-			getIngress:     func() *v1beta1.Ingress { return nil },
+			getIngress:     func() *networkingv1.Ingress { return nil },
 			defaultService: defaultBackendServiceWithNeg,
 			expectNeg:      false,
 		},
 		{
 			desc: "ing1 has backend and default backend service does not have NEG annotation",
-			getIngress: func() *v1beta1.Ingress {
+			getIngress: func() *networkingv1.Ingress {
 				ing := newTestIngress("ing1")
-				ing.Spec.Backend = &v1beta1.IngressBackend{
-					ServiceName: "svc1",
+				ing.Spec.DefaultBackend = &networkingv1.IngressBackend{
+					Service: &networkingv1.IngressServiceBackend{
+						Name: "svc1",
+					},
 				}
 				return ing
 			},
@@ -806,15 +830,15 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 		},
 		{
 			desc:           "ing1 has backend and default backend service has NEG annotation",
-			getIngress:     func() *v1beta1.Ingress { return nil },
+			getIngress:     func() *networkingv1.Ingress { return nil },
 			defaultService: defaultBackendServiceWithNeg,
 			expectNeg:      false,
 		},
 		{
 			desc: "ing2 does not backend and default backend service does not have NEG annotation",
-			getIngress: func() *v1beta1.Ingress {
+			getIngress: func() *networkingv1.Ingress {
 				ing := newTestIngress("ing2")
-				ing.Spec.Backend = nil
+				ing.Spec.DefaultBackend = nil
 				return ing
 			},
 			defaultService: defaultBackendService,
@@ -822,13 +846,13 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 		},
 		{
 			desc:           "ing2 does not backend and default backend service has NEG annotation",
-			getIngress:     func() *v1beta1.Ingress { return nil },
+			getIngress:     func() *networkingv1.Ingress { return nil },
 			defaultService: defaultBackendServiceWithNeg,
 			expectNeg:      true,
 		},
 		{
 			desc: "ing3 is L7 ILB, has backend and default backend service does not have NEG annotation",
-			getIngress: func() *v1beta1.Ingress {
+			getIngress: func() *networkingv1.Ingress {
 				ing := newTestIngress("ing3")
 				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7ILBIngressClass}
 				return ing
@@ -838,10 +862,10 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 		},
 		{
 			desc: "L7ILB is enabled, ing4 is L7 ILB, does not has backend and default backend service does not have NEG annotation",
-			getIngress: func() *v1beta1.Ingress {
+			getIngress: func() *networkingv1.Ingress {
 				ing := newTestIngress("ing4")
 				ing.Annotations = map[string]string{annotations.IngressClassKey: annotations.GceL7ILBIngressClass}
-				ing.Spec.Backend = nil
+				ing.Spec.DefaultBackend = nil
 				return ing
 			},
 			defaultService: defaultBackendService,
@@ -849,7 +873,7 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 		},
 		{
 			desc:           "cluster has many ingresses (ILB and XLB) without backend and default backend service has NEG annotation",
-			getIngress:     func() *v1beta1.Ingress { return nil },
+			getIngress:     func() *networkingv1.Ingress { return nil },
 			defaultService: defaultBackendServiceWithNeg,
 			expectNeg:      true,
 		},
@@ -869,7 +893,7 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 
 			if tc.expectNeg {
 				if !reflect.DeepEqual(portMap, expectPortMap) {
-					t.Errorf("for test case %q, expect port map == %v, but got %v", tc.desc, expectPortMap, portMap)
+					t.Errorf("for test case %q, expect port map == \n%+v, but got \n%+v", tc.desc, expectPortMap, portMap)
 				}
 			} else {
 				if !reflect.DeepEqual(portMap, expectEmptyPortmap) {
@@ -1392,41 +1416,57 @@ func generateCustomNamedNegAnnotation(ingress bool, svcPorts map[int32]string) s
 	return string(formattedAnnotation)
 }
 
-func newTestIngress(name string) *v1beta1.Ingress {
-	return &v1beta1.Ingress{
+func newTestIngress(name string) *networkingv1.Ingress {
+	return &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: testServiceNamespace,
 		},
-		Spec: v1beta1.IngressSpec{
-			Backend: &v1beta1.IngressBackend{
-				ServiceName: testServiceName,
-				ServicePort: intstr.FromString(testNamedPort),
+		Spec: networkingv1.IngressSpec{
+			DefaultBackend: &networkingv1.IngressBackend{
+				Service: &networkingv1.IngressServiceBackend{
+					Name: testServiceName,
+					Port: networkingv1.ServiceBackendPort{
+						Name: testNamedPort,
+					},
+				},
 			},
-			Rules: []v1beta1.IngressRule{
+			Rules: []networkingv1.IngressRule{
 				{
-					IngressRuleValue: v1beta1.IngressRuleValue{
-						HTTP: &v1beta1.HTTPIngressRuleValue{
-							Paths: []v1beta1.HTTPIngressPath{
+					IngressRuleValue: networkingv1.IngressRuleValue{
+						HTTP: &networkingv1.HTTPIngressRuleValue{
+							Paths: []networkingv1.HTTPIngressPath{
 								{
 									Path: "/path1",
-									Backend: v1beta1.IngressBackend{
-										ServiceName: testServiceName,
-										ServicePort: intstr.FromInt(80),
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: testServiceName,
+											Port: networkingv1.ServiceBackendPort{
+												Number: 80,
+											},
+										},
 									},
 								},
 								{
 									Path: "/path2",
-									Backend: v1beta1.IngressBackend{
-										ServiceName: testServiceName,
-										ServicePort: intstr.FromInt(443),
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: testServiceName,
+											Port: networkingv1.ServiceBackendPort{
+												Number: 443,
+											},
+										},
 									},
 								},
 								{
 									Path: "/path3",
-									Backend: v1beta1.IngressBackend{
-										ServiceName: testServiceName,
-										ServicePort: intstr.FromString(testNamedPort),
+									Backend: networkingv1.IngressBackend{
+										Service: &networkingv1.IngressServiceBackend{
+											Name: testServiceName,
+											Port: networkingv1.ServiceBackendPort{
+												Name: testNamedPort,
+											},
+										},
 									},
 								},
 							},

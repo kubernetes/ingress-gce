@@ -21,7 +21,7 @@ import (
 	"fmt"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/common/operator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -65,7 +65,7 @@ func (s *IngressSyncer) Sync(state interface{}) error {
 }
 
 // GC implements Syncer.
-func (s *IngressSyncer) GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, frontendGCAlgorithm utils.FrontendGCAlgorithm, scope meta.KeyType) error {
+func (s *IngressSyncer) GC(ings []*v1.Ingress, currIng *v1.Ingress, frontendGCAlgorithm utils.FrontendGCAlgorithm, scope meta.KeyType) error {
 	var lbErr, err error
 	var errs []error
 	switch frontendGCAlgorithm {
@@ -85,7 +85,7 @@ func (s *IngressSyncer) GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, fr
 	case utils.CleanupV1FrontendResources:
 		klog.V(3).Infof("Using algorithm CleanupV1FrontendResources to GC frontend of ingress %s", common.NamespacedName(currIng))
 		// Filter GCE ingresses that use v1 naming scheme.
-		v1Ingresses := operator.Ingresses(ings).Filter(func(ing *v1beta1.Ingress) bool {
+		v1Ingresses := operator.Ingresses(ings).Filter(func(ing *v1.Ingress) bool {
 			return namer.FrontendNamingScheme(ing) == namer.V1NamingScheme
 		})
 		// Partition these into ingresses those need cleanup and those don't.
@@ -113,7 +113,7 @@ func (s *IngressSyncer) GC(ings []*v1beta1.Ingress, currIng *v1beta1.Ingress, fr
 	// 1) It is a GCLB Ingress.
 	// 2) It is not a deletion candidate. A deletion candidate is an ingress
 	//    with deletion stamp and a finalizer.
-	toKeep := operator.Ingresses(ings).Filter(func(ing *v1beta1.Ingress) bool {
+	toKeep := operator.Ingresses(ings).Filter(func(ing *v1.Ingress) bool {
 		return !utils.NeedsCleanup(ing)
 	}).AsList()
 	if beErr := s.controller.GCBackends(toKeep); beErr != nil {

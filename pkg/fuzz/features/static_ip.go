@@ -22,7 +22,7 @@ import (
 	"net/http"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
 )
@@ -50,7 +50,7 @@ type staticIPValidator struct {
 	fuzz.NullValidator
 
 	env fuzz.ValidatorEnv
-	ing *v1beta1.Ingress
+	ing *v1.Ingress
 }
 
 // Name implements fuzz.FeatureValidator
@@ -59,7 +59,7 @@ func (*staticIPValidator) Name() string {
 }
 
 // ConfigureAttributes implements fuzz.Feature.
-func (v *staticIPValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1beta1.Ingress, a *fuzz.IngressValidatorAttributes) error {
+func (v *staticIPValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1.Ingress, a *fuzz.IngressValidatorAttributes) error {
 	// Capture the env for use later in CheckResponse
 	v.ing = ing
 	v.env = env

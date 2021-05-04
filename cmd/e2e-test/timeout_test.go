@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/util/intstr"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
@@ -76,7 +76,7 @@ func TestTimeout(t *testing.T) {
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
 			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-				AddPath("test.com", "/", "service-1", intstr.FromInt(80)).
+				AddPath("test.com", "/", "service-1", v1.ServiceBackendPort{Number: 80}).
 				Build()
 			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {
@@ -166,7 +166,7 @@ func TestILBCT(t *testing.T) {
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
 			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-				AddPath("test.com", "/", "service-1", intstr.FromInt(80)).
+				AddPath("test.com", "/", "service-1", v1.ServiceBackendPort{Number: 80}).
 				ConfigureForILB().
 				Build()
 			crud := adapter.IngressCRUD{C: Framework.Clientset}

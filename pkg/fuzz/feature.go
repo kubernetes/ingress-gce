@@ -19,7 +19,7 @@ package fuzz
 import (
 	"net/http"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 )
 
 // Feature represents an extension to the "vanilla" behavior of Ingress.
@@ -57,7 +57,7 @@ type FeatureValidator interface {
 	Name() string
 	// ConfigureAttributes of the validation for given the environment and
 	// the Ingress object.
-	ConfigureAttributes(env ValidatorEnv, ing *v1beta1.Ingress, a *IngressValidatorAttributes) error
+	ConfigureAttributes(env ValidatorEnv, ing *v1.Ingress, a *IngressValidatorAttributes) error
 	// ModifyRequest adds the appropriate headers for testing the feature, if
 	// necessary.
 	ModifyRequest(host, path string, req *http.Request)
@@ -81,7 +81,7 @@ type NullValidator struct {
 }
 
 // ConfigureAttributes implements Feature.
-func (*NullValidator) ConfigureAttributes(env ValidatorEnv, ing *v1beta1.Ingress, a *IngressValidatorAttributes) error {
+func (*NullValidator) ConfigureAttributes(env ValidatorEnv, ing *v1.Ingress, a *IngressValidatorAttributes) error {
 	return nil
 }
 

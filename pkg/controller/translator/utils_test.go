@@ -18,7 +18,7 @@ import (
 	"testing"
 
 	api_v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
+	networkingv1 "k8s.io/api/networking/v1"
 )
 
 var (
@@ -49,12 +49,12 @@ var (
 func TestServicePort(t *testing.T) {
 	testCases := []struct {
 		desc     string
-		port     intstr.IntOrString
+		port     networkingv1.ServiceBackendPort
 		expected *api_v1.ServicePort
 	}{
 		{
 			desc: "match on port number",
-			port: intstr.FromInt(1000),
+			port: networkingv1.ServiceBackendPort{Number: 1000},
 			expected: &api_v1.ServicePort{
 				Name: "foo",
 				Port: 1000,
@@ -62,7 +62,7 @@ func TestServicePort(t *testing.T) {
 		},
 		{
 			desc: "match on port name",
-			port: intstr.FromString("foo"),
+			port: networkingv1.ServiceBackendPort{Name: "foo"},
 			expected: &api_v1.ServicePort{
 				Name: "foo",
 				Port: 1000,
@@ -70,7 +70,7 @@ func TestServicePort(t *testing.T) {
 		},
 		{
 			desc: "match on last port number",
-			port: intstr.FromInt(1003),
+			port: networkingv1.ServiceBackendPort{Number: 1003},
 			expected: &api_v1.ServicePort{
 				Name: "qux",
 				Port: 1003,
@@ -78,7 +78,7 @@ func TestServicePort(t *testing.T) {
 		},
 		{
 			desc:     "no match",
-			port:     intstr.FromInt(3000),
+			port:     networkingv1.ServiceBackendPort{Number: 3000},
 			expected: nil,
 		},
 	}

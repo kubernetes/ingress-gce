@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -115,7 +115,7 @@ const (
 )
 
 // featuresForIngress returns the list of features for given ingress.
-func featuresForIngress(ing *v1beta1.Ingress, fc *frontendconfigv1beta1.FrontendConfig) []feature {
+func featuresForIngress(ing *v1.Ingress, fc *frontendconfigv1beta1.FrontendConfig) []feature {
 	features := []feature{ingress}
 
 	ingKey := fmt.Sprintf("%s/%s", ing.Namespace, ing.Name)
@@ -235,7 +235,7 @@ func featuresForIngress(ing *v1beta1.Ingress, fc *frontendconfigv1beta1.Frontend
 }
 
 // hasSecretBasedCerts returns true if ingress spec contains a secret based cert.
-func hasSecretBasedCerts(ing *v1beta1.Ingress) bool {
+func hasSecretBasedCerts(ing *v1.Ingress) bool {
 	for _, tlsSecret := range ing.Spec.TLS {
 		if tlsSecret.SecretName == "" {
 			continue

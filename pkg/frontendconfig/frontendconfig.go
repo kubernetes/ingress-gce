@@ -19,7 +19,7 @@ package frontendconfig
 import (
 	"errors"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	apisfrontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
@@ -46,7 +46,7 @@ func CRDMeta() *crd.CRDMeta {
 }
 
 // FrontendConfigForIngress returns the corresponding FrontendConfig for the given Ingress if one was specified.
-func FrontendConfigForIngress(feConfigs []*frontendconfigv1beta1.FrontendConfig, ing *v1beta1.Ingress) (*frontendconfigv1beta1.FrontendConfig, error) {
+func FrontendConfigForIngress(feConfigs []*frontendconfigv1beta1.FrontendConfig, ing *v1.Ingress) (*frontendconfigv1beta1.FrontendConfig, error) {
 	frontendConfigName := annotations.FromIngress(ing).FrontendConfig()
 	if frontendConfigName == "" {
 		// If the user did not provide the annotation at all, then we

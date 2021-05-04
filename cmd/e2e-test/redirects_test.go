@@ -21,10 +21,9 @@ import (
 	"fmt"
 	"testing"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
@@ -34,7 +33,7 @@ import (
 // Does not run in parallel since this is a transition test
 func TestHttpsRedirects(t *testing.T) {
 	ctx := context.Background()
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 
 	// Run all test cases in the same sandbox to share certs
 	Framework.RunWithSandbox("https redirects transition_e2e", t, func(t *testing.T, s *e2e.Sandbox) {
@@ -57,7 +56,7 @@ func TestHttpsRedirects(t *testing.T) {
 
 		// Each test is a transition on the original ingress
 		var gclb *fuzz.GCLB
-		var ing *v1beta1.Ingress
+		var ing *v1.Ingress
 		for _, tc := range []struct {
 			desc       string
 			ingBuilder *fuzz.IngressBuilder

@@ -17,10 +17,10 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	client "k8s.io/client-go/kubernetes/typed/networking/v1beta1"
+	client "k8s.io/client-go/kubernetes/typed/networking/v1"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/util/slice"
@@ -62,7 +62,7 @@ func HasGivenFinalizer(m meta_v1.ObjectMeta, key string) bool {
 }
 
 // EnsureFinalizer ensures that the specified finalizer exists on given Ingress.
-func EnsureFinalizer(ing *v1beta1.Ingress, ingClient client.IngressInterface, finalizerKey string) (*v1beta1.Ingress, error) {
+func EnsureFinalizer(ing *v1.Ingress, ingClient client.IngressInterface, finalizerKey string) (*v1.Ingress, error) {
 	updated := ing.DeepCopy()
 	if needToAddFinalizer(ing.ObjectMeta, finalizerKey) {
 		updated.ObjectMeta.Finalizers = append(updated.ObjectMeta.Finalizers, finalizerKey)
@@ -80,7 +80,7 @@ func needToAddFinalizer(m meta_v1.ObjectMeta, key string) bool {
 }
 
 // EnsureDeleteFinalizer ensures that the specified finalizer is deleted from given Ingress.
-func EnsureDeleteFinalizer(ing *v1beta1.Ingress, ingClient client.IngressInterface, finalizerKey string) error {
+func EnsureDeleteFinalizer(ing *v1.Ingress, ingClient client.IngressInterface, finalizerKey string) error {
 	if HasGivenFinalizer(ing.ObjectMeta, finalizerKey) {
 		updatedObjectMeta := ing.ObjectMeta.DeepCopy()
 		updatedObjectMeta.Finalizers = slice.RemoveString(updatedObjectMeta.Finalizers, finalizerKey, nil)

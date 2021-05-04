@@ -25,7 +25,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
-	"k8s.io/api/networking/v1beta1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -316,27 +316,27 @@ func TestV2GC(t *testing.T) {
 	feNamerFactory := l7sPool.namerFactory
 	testCases := []struct {
 		desc            string
-		ingressToDelete *v1beta1.Ingress
+		ingressToDelete *networkingv1.Ingress
 		addV1Ingresses  bool
-		gcpLBs          []*v1beta1.Ingress
-		expectedLBs     []*v1beta1.Ingress
+		gcpLBs          []*networkingv1.Ingress
+		expectedLBs     []*networkingv1.Ingress
 	}{
 		{
 			desc:            "empty",
 			ingressToDelete: newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKeyV2),
 			addV1Ingresses:  false,
-			gcpLBs:          []*v1beta1.Ingress{},
-			expectedLBs:     []*v1beta1.Ingress{},
+			gcpLBs:          []*networkingv1.Ingress{},
+			expectedLBs:     []*networkingv1.Ingress{},
 		},
 		{
 			desc:            "simple case v2 only",
 			ingressToDelete: newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKeyV2),
-			gcpLBs: []*v1beta1.Ingress{
+			gcpLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:15], longName[:20], common.FinalizerKeyV2),
 			},
-			expectedLBs: []*v1beta1.Ingress{
+			expectedLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:15], longName[:20], common.FinalizerKeyV2),
 			},
@@ -344,7 +344,7 @@ func TestV2GC(t *testing.T) {
 		{
 			desc:            "simple case both v1 and v2",
 			ingressToDelete: newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKeyV2),
-			gcpLBs: []*v1beta1.Ingress{
+			gcpLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:10], longName[:11], common.FinalizerKey),
@@ -352,7 +352,7 @@ func TestV2GC(t *testing.T) {
 				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
 				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
 			},
-			expectedLBs: []*v1beta1.Ingress{
+			expectedLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:10], longName[:11], common.FinalizerKey),
 				newIngressWithFinalizer(longName[:20], longName[:27], common.FinalizerKey),
@@ -363,12 +363,12 @@ func TestV2GC(t *testing.T) {
 		{
 			desc:            "63 characters v2 only",
 			ingressToDelete: newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
-			gcpLBs: []*v1beta1.Ingress{
+			gcpLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:19], longName[:18], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 			},
-			expectedLBs: []*v1beta1.Ingress{
+			expectedLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:19], longName[:18], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 			},
@@ -376,7 +376,7 @@ func TestV2GC(t *testing.T) {
 		{
 			desc:            "63 characters both v1 and v2",
 			ingressToDelete: newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
-			gcpLBs: []*v1beta1.Ingress{
+			gcpLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
@@ -385,7 +385,7 @@ func TestV2GC(t *testing.T) {
 				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
 				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
 			},
-			expectedLBs: []*v1beta1.Ingress{
+			expectedLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
@@ -397,12 +397,12 @@ func TestV2GC(t *testing.T) {
 		{
 			desc:            "longNameSpace v2 only",
 			ingressToDelete: newIngressWithFinalizer(longName, longName[:1], common.FinalizerKeyV2),
-			gcpLBs: []*v1beta1.Ingress{
+			gcpLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName, longName[:1], common.FinalizerKeyV2),
 			},
-			expectedLBs: []*v1beta1.Ingress{
+			expectedLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 			},
@@ -410,7 +410,7 @@ func TestV2GC(t *testing.T) {
 		{
 			desc:            "longNameSpace both v1 and v2",
 			ingressToDelete: newIngressWithFinalizer(longName, longName[:1], common.FinalizerKeyV2),
-			gcpLBs: []*v1beta1.Ingress{
+			gcpLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName, longName[:1], common.FinalizerKeyV2),
@@ -419,7 +419,7 @@ func TestV2GC(t *testing.T) {
 				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
 				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
 			},
-			expectedLBs: []*v1beta1.Ingress{
+			expectedLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
@@ -431,12 +431,12 @@ func TestV2GC(t *testing.T) {
 		{
 			desc:            "longName v2 only",
 			ingressToDelete: newIngressWithFinalizer(longName[:1], longName, common.FinalizerKeyV2),
-			gcpLBs: []*v1beta1.Ingress{
+			gcpLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:1], longName, common.FinalizerKeyV2),
 			},
-			expectedLBs: []*v1beta1.Ingress{
+			expectedLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 			},
@@ -444,7 +444,7 @@ func TestV2GC(t *testing.T) {
 		{
 			desc:            "longName both v1 and v2",
 			ingressToDelete: newIngressWithFinalizer(longName[:1], longName, common.FinalizerKeyV2),
-			gcpLBs: []*v1beta1.Ingress{
+			gcpLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:1], longName, common.FinalizerKeyV2),
@@ -453,7 +453,7 @@ func TestV2GC(t *testing.T) {
 				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
 				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
 			},
-			expectedLBs: []*v1beta1.Ingress{
+			expectedLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
@@ -465,12 +465,12 @@ func TestV2GC(t *testing.T) {
 		{
 			desc:            "longNameSpace and longName v2 only",
 			ingressToDelete: newIngressWithFinalizer(longName, longName, common.FinalizerKeyV2),
-			gcpLBs: []*v1beta1.Ingress{
+			gcpLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName, longName, common.FinalizerKeyV2),
 			},
-			expectedLBs: []*v1beta1.Ingress{
+			expectedLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:18], longName[:18], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 			},
@@ -478,7 +478,7 @@ func TestV2GC(t *testing.T) {
 		{
 			desc:            "longNameSpace and longName both v1 and v2",
 			ingressToDelete: newIngressWithFinalizer(longName, longName, common.FinalizerKeyV2),
-			gcpLBs: []*v1beta1.Ingress{
+			gcpLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName, longName, common.FinalizerKeyV2),
@@ -487,7 +487,7 @@ func TestV2GC(t *testing.T) {
 				newIngressWithFinalizer(longName[:21], longName[:27], common.FinalizerKey),
 				newIngressWithFinalizer(longName, longName, common.FinalizerKey),
 			},
-			expectedLBs: []*v1beta1.Ingress{
+			expectedLBs: []*networkingv1.Ingress{
 				newIngressWithFinalizer(longName[:10], longName[:15], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:30], longName[:30], common.FinalizerKeyV2),
 				newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
@@ -501,7 +501,7 @@ func TestV2GC(t *testing.T) {
 	// Add LBs owned by another cluster.
 	otherNamer := namer_util.NewNamer("clusteruid", "fw1")
 	otherFeNamerFactory := namer_util.NewFrontendNamerFactory(otherNamer, "ksuid234")
-	otherIngresses := []*v1beta1.Ingress{
+	otherIngresses := []*networkingv1.Ingress{
 		// ingresses with v1 naming scheme.
 		newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
 		newIngressWithFinalizer(longName[:20], longName[:27], common.FinalizerKey),
@@ -571,7 +571,7 @@ func TestDoNotLeakV2LB(t *testing.T) {
 
 	type testCase struct {
 		desc string
-		ing  *v1beta1.Ingress
+		ing  *networkingv1.Ingress
 	}
 	var testCases []testCase
 
@@ -583,7 +583,7 @@ func TestDoNotLeakV2LB(t *testing.T) {
 	// Add LBs owned by another cluster.
 	otherNamer := namer_util.NewNamer("clusteruid", "fw1")
 	otherFeNamerFactory := namer_util.NewFrontendNamerFactory(otherNamer, "ksuid234")
-	otherIngresses := []*v1beta1.Ingress{
+	otherIngresses := []*networkingv1.Ingress{
 		// ingresses with v1 naming scheme.
 		newIngressWithFinalizer(longName[:10], longName[:10], common.FinalizerKey),
 		newIngressWithFinalizer(longName[:20], longName[:27], common.FinalizerKey),
@@ -722,8 +722,8 @@ func generateKeyWithLength(length int) string {
 	return fmt.Sprintf("%s/%s", longName[:length/2], longName[:length-length/2])
 }
 
-func newIngressWithFinalizer(namespace, name, finalizer string) *v1beta1.Ingress {
-	return &v1beta1.Ingress{
+func newIngressWithFinalizer(namespace, name, finalizer string) *networkingv1.Ingress {
+	return &networkingv1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       name,
 			Namespace:  namespace,

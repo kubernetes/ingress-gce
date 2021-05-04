@@ -21,8 +21,7 @@ import (
 	"fmt"
 	"testing"
 
-	"k8s.io/api/networking/v1beta1"
-	"k8s.io/apimachinery/pkg/util/intstr"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -34,7 +33,7 @@ import (
 // with  v1 naming scheme.
 func TestV2FrontendNamer(t *testing.T) {
 	t.Parallel()
-	port80 := intstr.FromInt(80)
+	port80 := v1.ServiceBackendPort{Number: 80}
 	svcName := "service-1"
 	v1Ing := fuzz.NewIngressBuilder("", "ing-v1", "").
 		AddPath("foo.com", "/", svcName, port80).
@@ -46,18 +45,18 @@ func TestV2FrontendNamer(t *testing.T) {
 
 	for _, tc := range []struct {
 		desc string
-		ings []*v1beta1.Ingress
+		ings []*v1.Ingress
 	}{
-		{"v2 only", []*v1beta1.Ingress{v2Ing}},
-		{"v1 only", []*v1beta1.Ingress{v1Ing}},
+		{"v2 only", []*v1.Ingress{v2Ing}},
+		{"v1 only", []*v1.Ingress{v1Ing}},
 		// The following test cases create ingresses with both naming schemes. These
 		// test cases assert that GC of v1 naming scheme does not affect ingress with
 		// v2 naming scheme and vice-versa.
 		// Note that the first element in the list of ingresses is deleted first,
 		// which tests that GC of the naming scheme for first ingress does not affect
 		// other naming scheme.
-		{"both v1 and v2, delete v1 first", []*v1beta1.Ingress{v1Ing, v2Ing}},
-		{"both v1 and v2, delete v2 first", []*v1beta1.Ingress{v2Ing, v1Ing}},
+		{"both v1 and v2, delete v1 first", []*v1.Ingress{v1Ing, v2Ing}},
+		{"both v1 and v2, delete v2 first", []*v1.Ingress{v2Ing, v1Ing}},
 	} {
 		tc := tc
 		desc := fmt.Sprintf("v2 frontend namer %s", tc.desc)
@@ -72,7 +71,7 @@ func TestV2FrontendNamer(t *testing.T) {
 
 			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			var gclbs []*fuzz.GCLB
-			var updatedIngs []*v1beta1.Ingress
+			var updatedIngs []*v1.Ingress
 
 			// Create Ingresses.
 			for _, ing := range tc.ings {

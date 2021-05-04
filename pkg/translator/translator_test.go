@@ -22,7 +22,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	api_v1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
@@ -263,16 +263,16 @@ func TestSecrets(t *testing.T) {
 
 	cases := []struct {
 		desc    string
-		ing     *v1beta1.Ingress
+		ing     *v1.Ingress
 		want    []*api_v1.Secret
 		wantErr bool
 	}{
 		{
 			desc: "ingress-single-secret",
 			// TODO(rramkumar): Read Ingress spec from a file.
-			ing: &v1beta1.Ingress{
-				Spec: v1beta1.IngressSpec{
-					TLS: []v1beta1.IngressTLS{
+			ing: &v1.Ingress{
+				Spec: v1.IngressSpec{
+					TLS: []v1.IngressTLS{
 						{SecretName: "first-secret"},
 					},
 				},
@@ -281,9 +281,9 @@ func TestSecrets(t *testing.T) {
 		},
 		{
 			desc: "ingress-multi-secret",
-			ing: &v1beta1.Ingress{
-				Spec: v1beta1.IngressSpec{
-					TLS: []v1beta1.IngressTLS{
+			ing: &v1.Ingress{
+				Spec: v1.IngressSpec{
+					TLS: []v1.IngressTLS{
 						{SecretName: "first-secret"},
 						{SecretName: "second-secret"},
 						{SecretName: "third-secret"},
@@ -294,9 +294,9 @@ func TestSecrets(t *testing.T) {
 		},
 		{
 			desc: "mci-missing-secret",
-			ing: &v1beta1.Ingress{
-				Spec: v1beta1.IngressSpec{
-					TLS: []v1beta1.IngressTLS{
+			ing: &v1.Ingress{
+				Spec: v1.IngressSpec{
+					TLS: []v1.IngressTLS{
 						{SecretName: "does-not-exist-secret"},
 					},
 				},
@@ -305,9 +305,9 @@ func TestSecrets(t *testing.T) {
 		},
 		{
 			desc: "mci-secret-empty-cert",
-			ing: &v1beta1.Ingress{
-				Spec: v1beta1.IngressSpec{
-					TLS: []v1beta1.IngressTLS{
+			ing: &v1.Ingress{
+				Spec: v1.IngressSpec{
+					TLS: []v1.IngressTLS{
 						{SecretName: "secret-no-cert"},
 					},
 				},
@@ -316,9 +316,9 @@ func TestSecrets(t *testing.T) {
 		},
 		{
 			desc: "mci-secret-empty-priv-key",
-			ing: &v1beta1.Ingress{
-				Spec: v1beta1.IngressSpec{
-					TLS: []v1beta1.IngressTLS{
+			ing: &v1.Ingress{
+				Spec: v1.IngressSpec{
+					TLS: []v1.IngressTLS{
 						{SecretName: "secret-no-key"},
 					},
 				},
@@ -328,9 +328,9 @@ func TestSecrets(t *testing.T) {
 		{
 			desc: "ingress-single-secret and missing secret",
 			// TODO(rramkumar): Read Ingress spec from a file.
-			ing: &v1beta1.Ingress{
-				Spec: v1beta1.IngressSpec{
-					TLS: []v1beta1.IngressTLS{
+			ing: &v1.Ingress{
+				Spec: v1.IngressSpec{
+					TLS: []v1.IngressTLS{
 						{SecretName: "first-secret"},
 						{SecretName: "does-not-exist-secret"},
 					},

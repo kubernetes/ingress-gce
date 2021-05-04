@@ -19,7 +19,7 @@ package whitebox
 import (
 	"fmt"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -37,11 +37,11 @@ func (t *numBackendServicesTest) Name() string {
 }
 
 // Test implements WhiteboxTest.
-func (t *numBackendServicesTest) Test(ing *v1beta1.Ingress, fc *frontendconfig.FrontendConfig, gclb *fuzz.GCLB) error {
+func (t *numBackendServicesTest) Test(ing *v1.Ingress, fc *frontendconfig.FrontendConfig, gclb *fuzz.GCLB) error {
 	t.uniqSvcPorts = make(map[utils.ServicePortID]bool)
 	expectedBackendServices := 0
 
-	if ing.Spec.Backend == nil {
+	if ing.Spec.DefaultBackend == nil {
 		expectedBackendServices++
 	}
 

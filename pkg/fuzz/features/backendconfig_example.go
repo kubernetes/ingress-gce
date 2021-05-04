@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/klog"
@@ -48,7 +48,7 @@ type backendConfigExampleValidator struct {
 	fuzz.NullValidator
 
 	env fuzz.ValidatorEnv
-	ing *v1beta1.Ingress
+	ing *v1.Ingress
 }
 
 // Name implements fuzz.FeatureValidator.
@@ -57,7 +57,7 @@ func (*backendConfigExampleValidator) Name() string {
 }
 
 // ConfigureAttributes implements fuzz.FeatureValidator.
-func (v *backendConfigExampleValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1beta1.Ingress, a *fuzz.IngressValidatorAttributes) error {
+func (v *backendConfigExampleValidator) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1.Ingress, a *fuzz.IngressValidatorAttributes) error {
 	// Capture the env for use later in CheckResponse.
 	v.ing = ing
 	v.env = env
@@ -78,9 +78,9 @@ func (v *backendConfigExampleValidator) CheckResponse(host, path string, resp *h
 		return fuzz.CheckResponseContinue, err
 	}
 
-	service, ok := serviceMap[b.ServiceName]
+	service, ok := serviceMap[b.Service.Name]
 	if !ok {
-		return fuzz.CheckResponseContinue, fmt.Errorf("service %q not found in environment", b.ServiceName)
+		return fuzz.CheckResponseContinue, fmt.Errorf("service %q not found in environment", b.Service.Name)
 	}
 
 	anno := annotations.FromService(service)

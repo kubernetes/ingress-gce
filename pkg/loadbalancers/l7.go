@@ -26,7 +26,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -53,7 +53,7 @@ type L7RuntimeInfo struct {
 	// TLSName is the name of the preshared cert to use. Multiple certs can be specified as a comma-separated string
 	TLSName string
 	// Ingress is the processed Ingress API object.
-	Ingress *v1beta1.Ingress
+	Ingress *v1.Ingress
 	// AllowHTTP will not setup :80, if TLS is nil and AllowHTTP is set,
 	// no loadbalancer is created.
 	AllowHTTP bool
@@ -74,7 +74,7 @@ type L7 struct {
 	// runtimeInfo is non-cloudprovider information passed from the controller.
 	runtimeInfo *L7RuntimeInfo
 	// ingress stores the ingress
-	ingress v1beta1.Ingress
+	ingress v1.Ingress
 	// cloud is an interface to manage loadbalancers in the GCE cloud.
 	cloud *gce.Cloud
 	// um is the UrlMap associated with this L7.
@@ -215,7 +215,7 @@ func (l *L7) edgeHopHttps() error {
 }
 
 // requireDeleteFrontend returns true if gce loadbalancer resources needs to deleted for given protocol.
-func requireDeleteFrontend(ing v1beta1.Ingress, protocol namer.NamerProtocol) bool {
+func requireDeleteFrontend(ing v1.Ingress, protocol namer.NamerProtocol) bool {
 	var keys []string
 	switch protocol {
 	case namer.HTTPSProtocol:

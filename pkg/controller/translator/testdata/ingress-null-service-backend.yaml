@@ -8,18 +8,11 @@ spec:
   - host: foo.bar.com
     http:
       paths:
+      - path: /empty
+        backend:
       - path: /testpath
         backend:
           service:
             name: first-service
-            port:
-              number: 80
-  - host: abc.com
-    http:
-      paths:
-      - path: /*
-        backend:
-          service:
-            name: other-service
             port:
               number: 80

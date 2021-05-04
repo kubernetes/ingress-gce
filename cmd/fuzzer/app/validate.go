@@ -127,7 +127,7 @@ func Validate() {
 	fmt.Printf("Features = %v\n\n", fsNames)
 
 	k8s := k8sClientSet(config)
-	ing, err := k8s.NetworkingV1beta1().Ingresses(validateOptions.ns).Get(context.TODO(), validateOptions.name, metav1.GetOptions{})
+	ing, err := k8s.NetworkingV1().Ingresses(validateOptions.ns).Get(context.TODO(), validateOptions.name, metav1.GetOptions{})
 	if err != nil {
 		panic(err)
 	}

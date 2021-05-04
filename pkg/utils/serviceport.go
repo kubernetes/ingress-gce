@@ -19,9 +19,8 @@ package utils
 import (
 	"fmt"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -30,7 +29,7 @@ import (
 // ServicePortID contains the Service and Port fields.
 type ServicePortID struct {
 	Service types.NamespacedName
-	Port    intstr.IntOrString
+	Port    v1.ServiceBackendPort
 }
 
 func (id ServicePortID) String() string {
@@ -79,18 +78,21 @@ func (sp ServicePort) IGName() string {
 }
 
 // BackendToServicePortID creates a ServicePortID from a given IngressBackend and namespace.
-func BackendToServicePortID(be v1beta1.IngressBackend, namespace string) ServicePortID {
+func BackendToServicePortID(be v1.IngressBackend, namespace string) (ServicePortID, error) {
+	if be.Service == nil {
+		return ServicePortID{}, fmt.Errorf("Ingress Backend is not a service")
+	}
 	return ServicePortID{
 		Service: types.NamespacedName{
-			Name:      be.ServiceName,
+			Name:      be.Service.Name,
 			Namespace: namespace,
 		},
-		Port: be.ServicePort,
-	}
+		Port: be.Service.Port,
+	}, nil
 }
 
 // NewServicePortWithID returns a ServicePort with only ID.
-func NewServicePortWithID(svcName, svcNamespace string, port intstr.IntOrString) ServicePort {
+func NewServicePortWithID(svcName, svcNamespace string, port v1.ServiceBackendPort) ServicePort {
 	return ServicePort{
 		ID: ServicePortID{
 			Service: types.NamespacedName{

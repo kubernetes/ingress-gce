@@ -20,7 +20,7 @@ import (
 	"context"
 	"testing"
 
-	"k8s.io/apimachinery/pkg/util/intstr"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/e2e"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
@@ -60,8 +60,8 @@ func TestAppProtocol(t *testing.T) {
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
 			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-				DefaultBackend("service-1", intstr.FromString("https-port")).
-				AddPath("test.com", "/", "service-1", intstr.FromString("https-port")).
+				DefaultBackend("service-1", v1.ServiceBackendPort{Name: "https-port"}).
+				AddPath("test.com", "/", "service-1", v1.ServiceBackendPort{Name: "https-port"}).
 				Build()
 			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {
@@ -130,8 +130,8 @@ func TestAppProtocolTransition(t *testing.T) {
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
 			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
-				DefaultBackend("service-1", intstr.FromString("https-port")).
-				AddPath("test.com", "/", "service-1", intstr.FromString("https-port")).
+				DefaultBackend("service-1", v1.ServiceBackendPort{Name: "https-port"}).
+				AddPath("test.com", "/", "service-1", v1.ServiceBackendPort{Name: "https-port"}).
 				Build()
 			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {

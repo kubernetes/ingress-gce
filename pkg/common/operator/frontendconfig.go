@@ -3,7 +3,7 @@ package operator
 import (
 	"fmt"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 )
@@ -27,7 +27,7 @@ func (op *FrontendConfigsOperator) AsList() []*frontendconfigv1beta1.FrontendCon
 }
 
 // ReferencedByIngress returns the FrontendConfigs that are referenced by the passed in Ingress.
-func (op *FrontendConfigsOperator) ReferencedByIngress(ing *v1beta1.Ingress) *FrontendConfigsOperator {
+func (op *FrontendConfigsOperator) ReferencedByIngress(ing *v1.Ingress) *FrontendConfigsOperator {
 	dupes := map[string]bool{}
 
 	var f []*frontendconfigv1beta1.FrontendConfig
@@ -43,7 +43,7 @@ func (op *FrontendConfigsOperator) ReferencedByIngress(ing *v1beta1.Ingress) *Fr
 
 // doesIngressReferenceFrontendConfig returns true if the passed in Ingress directly references
 // the passed in FrontendConfig.
-func doesIngressReferenceFrontendConfig(ing *v1beta1.Ingress, feConfig *frontendconfigv1beta1.FrontendConfig) bool {
+func doesIngressReferenceFrontendConfig(ing *v1.Ingress, feConfig *frontendconfigv1beta1.FrontendConfig) bool {
 	if ing.Namespace != feConfig.Namespace {
 		return false
 	}

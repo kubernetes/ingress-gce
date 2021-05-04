@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog"
 )
@@ -62,7 +62,7 @@ func TrimFieldsEvenly(max int, fields ...string) []string {
 }
 
 // FrontendNamingScheme returns naming scheme for given ingress based on its finalizer.
-func FrontendNamingScheme(ing *v1beta1.Ingress) Scheme {
+func FrontendNamingScheme(ing *v1.Ingress) Scheme {
 	switch {
 	case common.HasGivenFinalizer(ing.ObjectMeta, common.FinalizerKeyV2):
 		return V2NamingScheme

@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"strings"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/fuzz"
 )
@@ -36,7 +36,7 @@ func (t *redirectURLMapTest) Name() string {
 }
 
 // Test implements WhiteboxTest.
-func (t *redirectURLMapTest) Test(ing *v1beta1.Ingress, fc *frontendconfig.FrontendConfig, gclb *fuzz.GCLB) error {
+func (t *redirectURLMapTest) Test(ing *v1.Ingress, fc *frontendconfig.FrontendConfig, gclb *fuzz.GCLB) error {
 	expectedMaps := 0
 
 	if fc != nil && fc.Spec.RedirectToHttps != nil && fc.Spec.RedirectToHttps.Enabled {

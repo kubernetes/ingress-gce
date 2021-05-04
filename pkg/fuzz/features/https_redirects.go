@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"net/http"
 
-	"k8s.io/api/networking/v1beta1"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/fuzz"
 )
 
@@ -53,7 +53,7 @@ func (f *HTTPSRedirectsFeature) NewValidator() fuzz.FeatureValidator {
 }
 
 // ConfigureAttributes implements fuzz.Feature.
-func (v *HTTPSRedirectsFeature) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1beta1.Ingress, a *fuzz.IngressValidatorAttributes) error {
+func (v *HTTPSRedirectsFeature) ConfigureAttributes(env fuzz.ValidatorEnv, ing *v1.Ingress, a *fuzz.IngressValidatorAttributes) error {
 	fc, err := fuzz.FrontendConfigForIngress(ing, env)
 	if err != nil {
 		return err

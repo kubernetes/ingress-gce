@@ -30,6 +30,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -575,9 +576,9 @@ func TestEnsureBackendServiceProtocol(t *testing.T) {
 	syncer := newTestSyncer(fakeGCE)
 
 	svcPorts := []utils.ServicePort{
-		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}, BackendNamer: defaultNamer},
-		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, ID: utils.ServicePortID{Port: intstr.FromInt(2)}, BackendNamer: defaultNamer},
-		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, ID: utils.ServicePortID{Port: intstr.FromInt(3)}, BackendNamer: defaultNamer},
+		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: networkingv1.ServiceBackendPort{Number: 1}}, BackendNamer: defaultNamer},
+		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, ID: utils.ServicePortID{Port: networkingv1.ServiceBackendPort{Number: 2}}, BackendNamer: defaultNamer},
+		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, ID: utils.ServicePortID{Port: networkingv1.ServiceBackendPort{Number: 3}}, BackendNamer: defaultNamer},
 	}
 
 	for _, oldPort := range svcPorts {
@@ -619,9 +620,9 @@ func TestEnsureBackendServiceDescription(t *testing.T) {
 	syncer := newTestSyncer(fakeGCE)
 
 	svcPorts := []utils.ServicePort{
-		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}, BackendNamer: defaultNamer},
-		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, ID: utils.ServicePortID{Port: intstr.FromInt(2)}, BackendNamer: defaultNamer},
-		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, ID: utils.ServicePortID{Port: intstr.FromInt(3)}, BackendNamer: defaultNamer},
+		{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: networkingv1.ServiceBackendPort{Number: 1}}, BackendNamer: defaultNamer},
+		{NodePort: 443, Protocol: annotations.ProtocolHTTPS, ID: utils.ServicePortID{Port: networkingv1.ServiceBackendPort{Number: 2}}, BackendNamer: defaultNamer},
+		{NodePort: 3000, Protocol: annotations.ProtocolHTTP2, ID: utils.ServicePortID{Port: networkingv1.ServiceBackendPort{Number: 3}}, BackendNamer: defaultNamer},
 	}
 
 	for _, oldPort := range svcPorts {
@@ -656,7 +657,7 @@ func TestEnsureBackendServiceHealthCheckLink(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	syncer := newTestSyncer(fakeGCE)
 
-	p := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: intstr.FromInt(1)}, BackendNamer: defaultNamer}
+	p := utils.ServicePort{NodePort: 80, Protocol: annotations.ProtocolHTTP, ID: utils.ServicePortID{Port: networkingv1.ServiceBackendPort{Number: 1}}, BackendNamer: defaultNamer}
 	syncer.Sync([]utils.ServicePort{p})
 	be, err := syncer.backendPool.Get(p.BackendName(), features.VersionFromServicePort(&p), features.ScopeFromServicePort(&p))
 	if err != nil {
