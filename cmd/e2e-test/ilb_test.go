@@ -466,6 +466,7 @@ func TestILBUpdate(t *testing.T) {
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
 			crud := adapter.IngressCRUD{C: Framework.Clientset}
+			tc.ing.Namespace = s.Namespace
 			if _, err := crud.Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
@@ -499,6 +500,7 @@ func TestILBUpdate(t *testing.T) {
 				t.Error(err)
 			}
 
+			tc.ingUpdate.Namespace = s.Namespace
 			// Perform update
 			if _, err := crud.Update(tc.ingUpdate); err != nil {
 				t.Fatalf("error updating ingress spec: %v", err)
@@ -574,6 +576,7 @@ func TestILBError(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
+			tc.ing.Namespace = s.Namespace
 			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
@@ -690,6 +693,7 @@ func TestILBShared(t *testing.T) {
 				t.Logf("Ingress = %s", ing.String())
 
 				crud := adapter.IngressCRUD{C: Framework.Clientset}
+				ing.Namespace = s.Namespace
 				if _, err := crud.Create(ing); err != nil {
 					t.Fatalf("error creating Ingress spec: %v", err)
 				}
