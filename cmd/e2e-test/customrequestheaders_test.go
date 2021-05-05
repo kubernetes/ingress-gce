@@ -73,6 +73,7 @@ func TestCustomRequestHeaders(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
 
+			ing.Namespace = s.Namespace
 			crud := adapter.IngressCRUD{C: Framework.Clientset}
 			if _, err := crud.Create(ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
