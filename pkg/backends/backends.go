@@ -177,7 +177,7 @@ func (b *Backends) Delete(name string, version meta.Version, scope meta.KeyType)
 func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType) (string, error) {
 	be, err := b.Get(name, version, scope)
 	if err != nil {
-		return "Unknown", fmt.Errorf("error getting backend service %s: %v", name, err)
+		return "Unknown", fmt.Errorf("error getting backend service %s: %w", name, err)
 	}
 	if len(be.Backends) == 0 {
 		return "Unknown", fmt.Errorf("no backends found for backend service %q", name)
@@ -198,7 +198,7 @@ func (b *Backends) Health(name string, version meta.Version, scope meta.KeyType)
 		}
 
 		if err != nil {
-			return "Unknown", fmt.Errorf("error getting health for backend %q: %v", name, err)
+			return "Unknown", fmt.Errorf("error getting health for backend %q: %w", name, err)
 		}
 		if len(hs.HealthStatus) == 0 || hs.HealthStatus[0] == nil {
 			klog.V(3).Infof("backend service %q does not have health status: %v", name, hs.HealthStatus)
