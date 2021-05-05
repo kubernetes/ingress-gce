@@ -85,7 +85,7 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 	for _, group := range groups {
 		ig, err := l.instancePool.Get(sp.IGName(), group.Zone)
 		if err != nil {
-			return fmt.Errorf("error retrieving IG for linking with backend %+v: %v", sp, err)
+			return fmt.Errorf("error retrieving IG for linking with backend %+v: %w", sp, err)
 		}
 		igLinks = append(igLinks, ig.SelfLink)
 	}
@@ -172,7 +172,7 @@ func getInstanceGroupsToAdd(be *composite.BackendService, igLinks []string) ([]s
 	for _, existingBe := range be.Backends {
 		path, err := utils.RelativeResourceName(existingBe.Group)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse instance group: %v", err)
+			return nil, fmt.Errorf("failed to parse instance group: %w", err)
 		}
 		existingIGs.Insert(path)
 	}
@@ -181,7 +181,7 @@ func getInstanceGroupsToAdd(be *composite.BackendService, igLinks []string) ([]s
 	for _, igLink := range igLinks {
 		path, err := utils.RelativeResourceName(igLink)
 		if err != nil {
-			return nil, fmt.Errorf("failed to parse instance group: %v", err)
+			return nil, fmt.Errorf("failed to parse instance group: %w", err)
 		}
 		wantIGs.Insert(path)
 	}

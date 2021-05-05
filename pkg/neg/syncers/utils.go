@@ -141,7 +141,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 		}
 		if matches, err := utils.VerifyDescription(expectedDesc, neg.Description, negName, zone); !matches {
 			klog.Errorf("Neg Name %s is already in use: %s", negName, err)
-			return negv1beta1.NegObjectReference{}, fmt.Errorf("neg name %s is already in use, found conflicting description: %s", negName, err)
+			return negv1beta1.NegObjectReference{}, fmt.Errorf("neg name %s is already in use, found conflicting description: %w", negName, err)
 		}
 
 		if networkEndpointType != negtypes.NonGCPPrivateEndpointType &&
@@ -268,7 +268,7 @@ func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.Zo
 				}
 				zone, err := zoneGetter.GetZoneForNode(*address.NodeName)
 				if err != nil {
-					return fmt.Errorf("failed to retrieve associated zone of node %q: %v", *address.NodeName, err)
+					return fmt.Errorf("failed to retrieve associated zone of node %q: %w", *address.NodeName, err)
 				}
 				if zoneNetworkEndpointMap[zone] == nil {
 					zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
@@ -347,7 +347,7 @@ func makeEndpointBatch(endpoints negtypes.NetworkEndpointSet, negType negtypes.N
 		} else {
 			portNum, err := strconv.Atoi(networkEndpoint.Port)
 			if err != nil {
-				return nil, fmt.Errorf("failed to decode endpoint port %v: %v", networkEndpoint, err)
+				return nil, fmt.Errorf("failed to decode endpoint port %v: %w", networkEndpoint, err)
 			}
 			endpointBatch[networkEndpoint] = &composite.NetworkEndpoint{
 				Instance:  networkEndpoint.Node,
