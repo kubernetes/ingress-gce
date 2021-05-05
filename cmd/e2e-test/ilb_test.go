@@ -100,6 +100,7 @@ func TestILB(t *testing.T) {
 			}
 			t.Logf("Echo service created (%s/%s)", s.Namespace, serviceName)
 
+			tc.ing.Namespace = s.Namespace
 			if _, err := crud.Create(tc.ing); err != nil {
 				t.Fatalf("error creating Ingress spec: %v", err)
 			}
