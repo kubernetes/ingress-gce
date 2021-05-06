@@ -45,7 +45,7 @@ func EnsureL4HealthCheck(cloud *gce.Cloud, name string, svcName types.Namespaced
 	selfLink := ""
 	key, err := composite.CreateKey(cloud, name, meta.Global)
 	if err != nil {
-		return nil, selfLink, fmt.Errorf("Failed to create composite key for healthcheck %s - %v", name, err)
+		return nil, selfLink, fmt.Errorf("Failed to create composite key for healthcheck %s - %w", name, err)
 	}
 	hc, err := composite.GetHealthCheck(cloud, key, meta.VersionGA)
 	if err != nil {
@@ -81,7 +81,7 @@ func EnsureL4HealthCheck(cloud *gce.Cloud, name string, svcName types.Namespaced
 func DeleteHealthCheck(cloud *gce.Cloud, name string) error {
 	key, err := composite.CreateKey(cloud, name, meta.Global)
 	if err != nil {
-		return fmt.Errorf("Failed to create composite key for healthcheck %s - %v", name, err)
+		return fmt.Errorf("Failed to create composite key for healthcheck %s - %w", name, err)
 	}
 	return composite.DeleteHealthCheck(cloud, key, meta.VersionGA)
 }
