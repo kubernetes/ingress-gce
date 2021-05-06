@@ -165,6 +165,17 @@ func (s *transactionSyncer) syncInternal() error {
 	klog.V(2).Infof("Sync NEG %q for %s, Endpoints Calculator mode %s", s.NegSyncerKey.NegName,
 		s.NegSyncerKey.String(), s.endpointsCalculator.Mode())
 
+	currentMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion())
+	if err != nil {
+		return err
+	}
+	s.logStats(currentMap, "current NEG endpoints")
+
+	// Merge the current state from cloud with the transaction table together
+	// The combined state represents the eventual result when all transactions completed
+	mergeTransactionIntoZoneEndpointMap(currentMap, s.transactions)
+	s.logStats(currentMap, "after in-progress operations have completed, NEG endpoints")
+
 	ep, exists, err := s.endpointLister.Get(
 		&apiv1.Endpoints{
 			ObjectMeta: metav1.ObjectMeta{
@@ -181,17 +192,6 @@ func (s *transactionSyncer) syncInternal() error {
 		klog.Warningf("Endpoint %s/%s does not exist. Skipping NEG sync", s.Namespace, s.Name)
 		return nil
 	}
-
-	currentMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion())
-	if err != nil {
-		return err
-	}
-	s.logStats(currentMap, "current NEG endpoints")
-
-	// Merge the current state from cloud with the transaction table together
-	// The combined state represents the eventual result when all transactions completed
-	mergeTransactionIntoZoneEndpointMap(currentMap, s.transactions)
-	s.logStats(currentMap, "after in-progress operations have completed, NEG endpoints")
 
 	targetMap, endpointPodMap, err := s.endpointsCalculator.CalculateEndpoints(ep.(*apiv1.Endpoints), currentMap)
 	if err != nil {
