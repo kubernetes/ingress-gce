@@ -1,5 +1,5 @@
 /*
-Copyright 2020 Google LLC
+Copyright 2021 Google LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -83,6 +83,7 @@ type Cloud interface {
 	Regions() Regions
 	Routes() Routes
 	BetaSecurityPolicies() BetaSecurityPolicies
+	BetaServiceAttachments() BetaServiceAttachments
 	AlphaServiceAttachments() AlphaServiceAttachments
 	SslCertificates() SslCertificates
 	BetaSslCertificates() BetaSslCertificates
@@ -166,6 +167,7 @@ func NewGCE(s *Service) *GCE {
 		gceRegions:                       &GCERegions{s},
 		gceRoutes:                        &GCERoutes{s},
 		gceBetaSecurityPolicies:          &GCEBetaSecurityPolicies{s},
+		gceBetaServiceAttachments:        &GCEBetaServiceAttachments{s},
 		gceAlphaServiceAttachments:       &GCEAlphaServiceAttachments{s},
 		gceSslCertificates:               &GCESslCertificates{s},
 		gceBetaSslCertificates:           &GCEBetaSslCertificates{s},
@@ -253,6 +255,7 @@ type GCE struct {
 	gceRegions                       *GCERegions
 	gceRoutes                        *GCERoutes
 	gceBetaSecurityPolicies          *GCEBetaSecurityPolicies
+	gceBetaServiceAttachments        *GCEBetaServiceAttachments
 	gceAlphaServiceAttachments       *GCEAlphaServiceAttachments
 	gceSslCertificates               *GCESslCertificates
 	gceBetaSslCertificates           *GCEBetaSslCertificates
@@ -513,6 +516,11 @@ func (gce *GCE) BetaSecurityPolicies() BetaSecurityPolicies {
 	return gce.gceBetaSecurityPolicies
 }
 
+// BetaServiceAttachments returns the interface for the beta ServiceAttachments.
+func (gce *GCE) BetaServiceAttachments() BetaServiceAttachments {
+	return gce.gceBetaServiceAttachments
+}
+
 // AlphaServiceAttachments returns the interface for the alpha ServiceAttachments.
 func (gce *GCE) AlphaServiceAttachments() AlphaServiceAttachments {
 	return gce.gceAlphaServiceAttachments
@@ -762,6 +770,7 @@ func NewMockGCE(projectRouter ProjectRouter) *MockGCE {
 		MockRegions:                       NewMockRegions(projectRouter, mockRegionsObjs),
 		MockRoutes:                        NewMockRoutes(projectRouter, mockRoutesObjs),
 		MockBetaSecurityPolicies:          NewMockBetaSecurityPolicies(projectRouter, mockSecurityPoliciesObjs),
+		MockBetaServiceAttachments:        NewMockBetaServiceAttachments(projectRouter, mockServiceAttachmentsObjs),
 		MockAlphaServiceAttachments:       NewMockAlphaServiceAttachments(projectRouter, mockServiceAttachmentsObjs),
 		MockSslCertificates:               NewMockSslCertificates(projectRouter, mockSslCertificatesObjs),
 		MockBetaSslCertificates:           NewMockBetaSslCertificates(projectRouter, mockSslCertificatesObjs),
@@ -849,6 +858,7 @@ type MockGCE struct {
 	MockRegions                       *MockRegions
 	MockRoutes                        *MockRoutes
 	MockBetaSecurityPolicies          *MockBetaSecurityPolicies
+	MockBetaServiceAttachments        *MockBetaServiceAttachments
 	MockAlphaServiceAttachments       *MockAlphaServiceAttachments
 	MockSslCertificates               *MockSslCertificates
 	MockBetaSslCertificates           *MockBetaSslCertificates
@@ -1107,6 +1117,11 @@ func (mock *MockGCE) Routes() Routes {
 // BetaSecurityPolicies returns the interface for the beta SecurityPolicies.
 func (mock *MockGCE) BetaSecurityPolicies() BetaSecurityPolicies {
 	return mock.MockBetaSecurityPolicies
+}
+
+// BetaServiceAttachments returns the interface for the beta ServiceAttachments.
+func (mock *MockGCE) BetaServiceAttachments() BetaServiceAttachments {
+	return mock.MockBetaServiceAttachments
 }
 
 // AlphaServiceAttachments returns the interface for the alpha ServiceAttachments.
@@ -2206,6 +2221,19 @@ func (m *MockServiceAttachmentsObj) ToAlpha() *alpha.ServiceAttachment {
 	ret := &alpha.ServiceAttachment{}
 	if err := copyViaJSON(ret, m.Obj); err != nil {
 		klog.Errorf("Could not convert %T to *alpha.ServiceAttachment via JSON: %v", m.Obj, err)
+	}
+	return ret
+}
+
+// ToBeta retrieves the given version of the object.
+func (m *MockServiceAttachmentsObj) ToBeta() *beta.ServiceAttachment {
+	if ret, ok := m.Obj.(*beta.ServiceAttachment); ok {
+		return ret
+	}
+	// Convert the object via JSON copying to the type that was requested.
+	ret := &beta.ServiceAttachment{}
+	if err := copyViaJSON(ret, m.Obj); err != nil {
+		klog.Errorf("Could not convert %T to *beta.ServiceAttachment via JSON: %v", m.Obj, err)
 	}
 	return ret
 }
@@ -20158,12 +20186,390 @@ func (g *GCEBetaSecurityPolicies) RemoveRule(ctx context.Context, key *meta.Key)
 	return err
 }
 
+// BetaServiceAttachments is an interface that allows for mocking of ServiceAttachments.
+type BetaServiceAttachments interface {
+	Get(ctx context.Context, key *meta.Key) (*beta.ServiceAttachment, error)
+	List(ctx context.Context, region string, fl *filter.F) ([]*beta.ServiceAttachment, error)
+	Insert(ctx context.Context, key *meta.Key, obj *beta.ServiceAttachment) error
+	Delete(ctx context.Context, key *meta.Key) error
+	Patch(context.Context, *meta.Key, *beta.ServiceAttachment) error
+}
+
+// NewMockBetaServiceAttachments returns a new mock for ServiceAttachments.
+func NewMockBetaServiceAttachments(pr ProjectRouter, objs map[meta.Key]*MockServiceAttachmentsObj) *MockBetaServiceAttachments {
+	mock := &MockBetaServiceAttachments{
+		ProjectRouter: pr,
+
+		Objects:     objs,
+		GetError:    map[meta.Key]error{},
+		InsertError: map[meta.Key]error{},
+		DeleteError: map[meta.Key]error{},
+	}
+	return mock
+}
+
+// MockBetaServiceAttachments is the mock for ServiceAttachments.
+type MockBetaServiceAttachments struct {
+	Lock sync.Mutex
+
+	ProjectRouter ProjectRouter
+
+	// Objects maintained by the mock.
+	Objects map[meta.Key]*MockServiceAttachmentsObj
+
+	// If an entry exists for the given key and operation, then the error
+	// will be returned instead of the operation.
+	GetError    map[meta.Key]error
+	ListError   *error
+	InsertError map[meta.Key]error
+	DeleteError map[meta.Key]error
+
+	// xxxHook allow you to intercept the standard processing of the mock in
+	// order to add your own logic. Return (true, _, _) to prevent the normal
+	// execution flow of the mock. Return (false, nil, nil) to continue with
+	// normal mock behavior/ after the hook function executes.
+	GetHook    func(ctx context.Context, key *meta.Key, m *MockBetaServiceAttachments) (bool, *beta.ServiceAttachment, error)
+	ListHook   func(ctx context.Context, region string, fl *filter.F, m *MockBetaServiceAttachments) (bool, []*beta.ServiceAttachment, error)
+	InsertHook func(ctx context.Context, key *meta.Key, obj *beta.ServiceAttachment, m *MockBetaServiceAttachments) (bool, error)
+	DeleteHook func(ctx context.Context, key *meta.Key, m *MockBetaServiceAttachments) (bool, error)
+	PatchHook  func(context.Context, *meta.Key, *beta.ServiceAttachment, *MockBetaServiceAttachments) error
+
+	// X is extra state that can be used as part of the mock. Generated code
+	// will not use this field.
+	X interface{}
+}
+
+// Get returns the object from the mock.
+func (m *MockBetaServiceAttachments) Get(ctx context.Context, key *meta.Key) (*beta.ServiceAttachment, error) {
+	if m.GetHook != nil {
+		if intercept, obj, err := m.GetHook(ctx, key, m); intercept {
+			klog.V(5).Infof("MockBetaServiceAttachments.Get(%v, %s) = %+v, %v", ctx, key, obj, err)
+			return obj, err
+		}
+	}
+	if !key.Valid() {
+		return nil, fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+
+	if err, ok := m.GetError[*key]; ok {
+		klog.V(5).Infof("MockBetaServiceAttachments.Get(%v, %s) = nil, %v", ctx, key, err)
+		return nil, err
+	}
+	if obj, ok := m.Objects[*key]; ok {
+		typedObj := obj.ToBeta()
+		klog.V(5).Infof("MockBetaServiceAttachments.Get(%v, %s) = %+v, nil", ctx, key, typedObj)
+		return typedObj, nil
+	}
+
+	err := &googleapi.Error{
+		Code:    http.StatusNotFound,
+		Message: fmt.Sprintf("MockBetaServiceAttachments %v not found", key),
+	}
+	klog.V(5).Infof("MockBetaServiceAttachments.Get(%v, %s) = nil, %v", ctx, key, err)
+	return nil, err
+}
+
+// List all of the objects in the mock in the given region.
+func (m *MockBetaServiceAttachments) List(ctx context.Context, region string, fl *filter.F) ([]*beta.ServiceAttachment, error) {
+	if m.ListHook != nil {
+		if intercept, objs, err := m.ListHook(ctx, region, fl, m); intercept {
+			klog.V(5).Infof("MockBetaServiceAttachments.List(%v, %q, %v) = [%v items], %v", ctx, region, fl, len(objs), err)
+			return objs, err
+		}
+	}
+
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+
+	if m.ListError != nil {
+		err := *m.ListError
+		klog.V(5).Infof("MockBetaServiceAttachments.List(%v, %q, %v) = nil, %v", ctx, region, fl, err)
+
+		return nil, *m.ListError
+	}
+
+	var objs []*beta.ServiceAttachment
+	for key, obj := range m.Objects {
+		if key.Region != region {
+			continue
+		}
+		if !fl.Match(obj.ToBeta()) {
+			continue
+		}
+		objs = append(objs, obj.ToBeta())
+	}
+
+	klog.V(5).Infof("MockBetaServiceAttachments.List(%v, %q, %v) = [%v items], nil", ctx, region, fl, len(objs))
+	return objs, nil
+}
+
+// Insert is a mock for inserting/creating a new object.
+func (m *MockBetaServiceAttachments) Insert(ctx context.Context, key *meta.Key, obj *beta.ServiceAttachment) error {
+	if m.InsertHook != nil {
+		if intercept, err := m.InsertHook(ctx, key, obj, m); intercept {
+			klog.V(5).Infof("MockBetaServiceAttachments.Insert(%v, %v, %+v) = %v", ctx, key, obj, err)
+			return err
+		}
+	}
+	if !key.Valid() {
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+
+	if err, ok := m.InsertError[*key]; ok {
+		klog.V(5).Infof("MockBetaServiceAttachments.Insert(%v, %v, %+v) = %v", ctx, key, obj, err)
+		return err
+	}
+	if _, ok := m.Objects[*key]; ok {
+		err := &googleapi.Error{
+			Code:    http.StatusConflict,
+			Message: fmt.Sprintf("MockBetaServiceAttachments %v exists", key),
+		}
+		klog.V(5).Infof("MockBetaServiceAttachments.Insert(%v, %v, %+v) = %v", ctx, key, obj, err)
+		return err
+	}
+
+	obj.Name = key.Name
+	projectID := m.ProjectRouter.ProjectID(ctx, "beta", "serviceAttachments")
+	obj.SelfLink = SelfLink(meta.VersionBeta, projectID, "serviceAttachments", key)
+
+	m.Objects[*key] = &MockServiceAttachmentsObj{obj}
+	klog.V(5).Infof("MockBetaServiceAttachments.Insert(%v, %v, %+v) = nil", ctx, key, obj)
+	return nil
+}
+
+// Delete is a mock for deleting the object.
+func (m *MockBetaServiceAttachments) Delete(ctx context.Context, key *meta.Key) error {
+	if m.DeleteHook != nil {
+		if intercept, err := m.DeleteHook(ctx, key, m); intercept {
+			klog.V(5).Infof("MockBetaServiceAttachments.Delete(%v, %v) = %v", ctx, key, err)
+			return err
+		}
+	}
+	if !key.Valid() {
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+
+	m.Lock.Lock()
+	defer m.Lock.Unlock()
+
+	if err, ok := m.DeleteError[*key]; ok {
+		klog.V(5).Infof("MockBetaServiceAttachments.Delete(%v, %v) = %v", ctx, key, err)
+		return err
+	}
+	if _, ok := m.Objects[*key]; !ok {
+		err := &googleapi.Error{
+			Code:    http.StatusNotFound,
+			Message: fmt.Sprintf("MockBetaServiceAttachments %v not found", key),
+		}
+		klog.V(5).Infof("MockBetaServiceAttachments.Delete(%v, %v) = %v", ctx, key, err)
+		return err
+	}
+
+	delete(m.Objects, *key)
+	klog.V(5).Infof("MockBetaServiceAttachments.Delete(%v, %v) = nil", ctx, key)
+	return nil
+}
+
+// Obj wraps the object for use in the mock.
+func (m *MockBetaServiceAttachments) Obj(o *beta.ServiceAttachment) *MockServiceAttachmentsObj {
+	return &MockServiceAttachmentsObj{o}
+}
+
+// Patch is a mock for the corresponding method.
+func (m *MockBetaServiceAttachments) Patch(ctx context.Context, key *meta.Key, arg0 *beta.ServiceAttachment) error {
+	if m.PatchHook != nil {
+		return m.PatchHook(ctx, key, arg0, m)
+	}
+	return nil
+}
+
+// GCEBetaServiceAttachments is a simplifying adapter for the GCE ServiceAttachments.
+type GCEBetaServiceAttachments struct {
+	s *Service
+}
+
+// Get the ServiceAttachment named by key.
+func (g *GCEBetaServiceAttachments) Get(ctx context.Context, key *meta.Key) (*beta.ServiceAttachment, error) {
+	klog.V(5).Infof("GCEBetaServiceAttachments.Get(%v, %v): called", ctx, key)
+
+	if !key.Valid() {
+		klog.V(2).Infof("GCEBetaServiceAttachments.Get(%v, %v): key is invalid (%#v)", ctx, key, key)
+		return nil, fmt.Errorf("invalid GCE key (%#v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "beta", "ServiceAttachments")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "Get",
+		Version:   meta.Version("beta"),
+		Service:   "ServiceAttachments",
+	}
+	klog.V(5).Infof("GCEBetaServiceAttachments.Get(%v, %v): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCEBetaServiceAttachments.Get(%v, %v): RateLimiter error: %v", ctx, key, err)
+		return nil, err
+	}
+	call := g.s.Beta.ServiceAttachments.Get(projectID, key.Region, key.Name)
+	call.Context(ctx)
+	v, err := call.Do()
+	klog.V(4).Infof("GCEBetaServiceAttachments.Get(%v, %v) = %+v, %v", ctx, key, v, err)
+	return v, err
+}
+
+// List all ServiceAttachment objects.
+func (g *GCEBetaServiceAttachments) List(ctx context.Context, region string, fl *filter.F) ([]*beta.ServiceAttachment, error) {
+	klog.V(5).Infof("GCEBetaServiceAttachments.List(%v, %v, %v) called", ctx, region, fl)
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "beta", "ServiceAttachments")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "List",
+		Version:   meta.Version("beta"),
+		Service:   "ServiceAttachments",
+	}
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		return nil, err
+	}
+	klog.V(5).Infof("GCEBetaServiceAttachments.List(%v, %v, %v): projectID = %v, rk = %+v", ctx, region, fl, projectID, rk)
+	call := g.s.Beta.ServiceAttachments.List(projectID, region)
+	if fl != filter.None {
+		call.Filter(fl.String())
+	}
+	var all []*beta.ServiceAttachment
+	f := func(l *beta.ServiceAttachmentList) error {
+		klog.V(5).Infof("GCEBetaServiceAttachments.List(%v, ..., %v): page %+v", ctx, fl, l)
+		all = append(all, l.Items...)
+		return nil
+	}
+	if err := call.Pages(ctx, f); err != nil {
+		klog.V(4).Infof("GCEBetaServiceAttachments.List(%v, ..., %v) = %v, %v", ctx, fl, nil, err)
+		return nil, err
+	}
+
+	if klog.V(4).Enabled() {
+		klog.V(4).Infof("GCEBetaServiceAttachments.List(%v, ..., %v) = [%v items], %v", ctx, fl, len(all), nil)
+	} else if klog.V(5).Enabled() {
+		var asStr []string
+		for _, o := range all {
+			asStr = append(asStr, fmt.Sprintf("%+v", o))
+		}
+		klog.V(5).Infof("GCEBetaServiceAttachments.List(%v, ..., %v) = %v, %v", ctx, fl, asStr, nil)
+	}
+
+	return all, nil
+}
+
+// Insert ServiceAttachment with key of value obj.
+func (g *GCEBetaServiceAttachments) Insert(ctx context.Context, key *meta.Key, obj *beta.ServiceAttachment) error {
+	klog.V(5).Infof("GCEBetaServiceAttachments.Insert(%v, %v, %+v): called", ctx, key, obj)
+	if !key.Valid() {
+		klog.V(2).Infof("GCEBetaServiceAttachments.Insert(%v, %v, ...): key is invalid (%#v)", ctx, key, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "beta", "ServiceAttachments")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "Insert",
+		Version:   meta.Version("beta"),
+		Service:   "ServiceAttachments",
+	}
+	klog.V(5).Infof("GCEBetaServiceAttachments.Insert(%v, %v, ...): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCEBetaServiceAttachments.Insert(%v, %v, ...): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	obj.Name = key.Name
+	call := g.s.Beta.ServiceAttachments.Insert(projectID, key.Region, obj)
+	call.Context(ctx)
+
+	op, err := call.Do()
+	if err != nil {
+		klog.V(4).Infof("GCEBetaServiceAttachments.Insert(%v, %v, ...) = %+v", ctx, key, err)
+		return err
+	}
+
+	err = g.s.WaitForCompletion(ctx, op)
+	klog.V(4).Infof("GCEBetaServiceAttachments.Insert(%v, %v, %+v) = %+v", ctx, key, obj, err)
+	return err
+}
+
+// Delete the ServiceAttachment referenced by key.
+func (g *GCEBetaServiceAttachments) Delete(ctx context.Context, key *meta.Key) error {
+	klog.V(5).Infof("GCEBetaServiceAttachments.Delete(%v, %v): called", ctx, key)
+	if !key.Valid() {
+		klog.V(2).Infof("GCEBetaServiceAttachments.Delete(%v, %v): key is invalid (%#v)", ctx, key, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "beta", "ServiceAttachments")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "Delete",
+		Version:   meta.Version("beta"),
+		Service:   "ServiceAttachments",
+	}
+	klog.V(5).Infof("GCEBetaServiceAttachments.Delete(%v, %v): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCEBetaServiceAttachments.Delete(%v, %v): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	call := g.s.Beta.ServiceAttachments.Delete(projectID, key.Region, key.Name)
+	call.Context(ctx)
+
+	op, err := call.Do()
+	if err != nil {
+		klog.V(4).Infof("GCEBetaServiceAttachments.Delete(%v, %v) = %v", ctx, key, err)
+		return err
+	}
+
+	err = g.s.WaitForCompletion(ctx, op)
+	klog.V(4).Infof("GCEBetaServiceAttachments.Delete(%v, %v) = %v", ctx, key, err)
+	return err
+}
+
+// Patch is a method on GCEBetaServiceAttachments.
+func (g *GCEBetaServiceAttachments) Patch(ctx context.Context, key *meta.Key, arg0 *beta.ServiceAttachment) error {
+	klog.V(5).Infof("GCEBetaServiceAttachments.Patch(%v, %v, ...): called", ctx, key)
+
+	if !key.Valid() {
+		klog.V(2).Infof("GCEBetaServiceAttachments.Patch(%v, %v, ...): key is invalid (%#v)", ctx, key, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "beta", "ServiceAttachments")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "Patch",
+		Version:   meta.Version("beta"),
+		Service:   "ServiceAttachments",
+	}
+	klog.V(5).Infof("GCEBetaServiceAttachments.Patch(%v, %v, ...): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCEBetaServiceAttachments.Patch(%v, %v, ...): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	call := g.s.Beta.ServiceAttachments.Patch(projectID, key.Region, key.Name, arg0)
+	call.Context(ctx)
+	op, err := call.Do()
+	if err != nil {
+		klog.V(4).Infof("GCEBetaServiceAttachments.Patch(%v, %v, ...) = %+v", ctx, key, err)
+		return err
+	}
+	err = g.s.WaitForCompletion(ctx, op)
+	klog.V(4).Infof("GCEBetaServiceAttachments.Patch(%v, %v, ...) = %+v", ctx, key, err)
+	return err
+}
+
 // AlphaServiceAttachments is an interface that allows for mocking of ServiceAttachments.
 type AlphaServiceAttachments interface {
 	Get(ctx context.Context, key *meta.Key) (*alpha.ServiceAttachment, error)
 	List(ctx context.Context, region string, fl *filter.F) ([]*alpha.ServiceAttachment, error)
 	Insert(ctx context.Context, key *meta.Key, obj *alpha.ServiceAttachment) error
 	Delete(ctx context.Context, key *meta.Key) error
+	Patch(context.Context, *meta.Key, *alpha.ServiceAttachment) error
 }
 
 // NewMockAlphaServiceAttachments returns a new mock for ServiceAttachments.
@@ -20203,6 +20609,7 @@ type MockAlphaServiceAttachments struct {
 	ListHook   func(ctx context.Context, region string, fl *filter.F, m *MockAlphaServiceAttachments) (bool, []*alpha.ServiceAttachment, error)
 	InsertHook func(ctx context.Context, key *meta.Key, obj *alpha.ServiceAttachment, m *MockAlphaServiceAttachments) (bool, error)
 	DeleteHook func(ctx context.Context, key *meta.Key, m *MockAlphaServiceAttachments) (bool, error)
+	PatchHook  func(context.Context, *meta.Key, *alpha.ServiceAttachment, *MockAlphaServiceAttachments) error
 
 	// X is extra state that can be used as part of the mock. Generated code
 	// will not use this field.
@@ -20351,6 +20758,14 @@ func (m *MockAlphaServiceAttachments) Obj(o *alpha.ServiceAttachment) *MockServi
 	return &MockServiceAttachmentsObj{o}
 }
 
+// Patch is a mock for the corresponding method.
+func (m *MockAlphaServiceAttachments) Patch(ctx context.Context, key *meta.Key, arg0 *alpha.ServiceAttachment) error {
+	if m.PatchHook != nil {
+		return m.PatchHook(ctx, key, arg0, m)
+	}
+	return nil
+}
+
 // GCEAlphaServiceAttachments is a simplifying adapter for the GCE ServiceAttachments.
 type GCEAlphaServiceAttachments struct {
 	s *Service
@@ -20489,6 +20904,39 @@ func (g *GCEAlphaServiceAttachments) Delete(ctx context.Context, key *meta.Key) 
 
 	err = g.s.WaitForCompletion(ctx, op)
 	klog.V(4).Infof("GCEAlphaServiceAttachments.Delete(%v, %v) = %v", ctx, key, err)
+	return err
+}
+
+// Patch is a method on GCEAlphaServiceAttachments.
+func (g *GCEAlphaServiceAttachments) Patch(ctx context.Context, key *meta.Key, arg0 *alpha.ServiceAttachment) error {
+	klog.V(5).Infof("GCEAlphaServiceAttachments.Patch(%v, %v, ...): called", ctx, key)
+
+	if !key.Valid() {
+		klog.V(2).Infof("GCEAlphaServiceAttachments.Patch(%v, %v, ...): key is invalid (%#v)", ctx, key, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "alpha", "ServiceAttachments")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "Patch",
+		Version:   meta.Version("alpha"),
+		Service:   "ServiceAttachments",
+	}
+	klog.V(5).Infof("GCEAlphaServiceAttachments.Patch(%v, %v, ...): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCEAlphaServiceAttachments.Patch(%v, %v, ...): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	call := g.s.Alpha.ServiceAttachments.Patch(projectID, key.Region, key.Name, arg0)
+	call.Context(ctx)
+	op, err := call.Do()
+	if err != nil {
+		klog.V(4).Infof("GCEAlphaServiceAttachments.Patch(%v, %v, ...) = %+v", ctx, key, err)
+		return err
+	}
+	err = g.s.WaitForCompletion(ctx, op)
+	klog.V(4).Infof("GCEAlphaServiceAttachments.Patch(%v, %v, ...) = %+v", ctx, key, err)
 	return err
 }
 
