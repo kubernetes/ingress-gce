@@ -25,6 +25,7 @@ import (
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
+	pscmetrics "k8s.io/ingress-gce/pkg/psc/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 )
@@ -78,6 +79,13 @@ var (
 		},
 		l4ILBSyncLatencyMetricsLabels,
 	)
+	serviceAttachmentCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "number_of_service_attachments",
+			Help: "Number of Service Attachments",
+		},
+		[]string{label},
+	)
 )
 
 // init registers ingress usage metrics.
@@ -87,6 +95,9 @@ func init() {
 
 	klog.V(3).Infof("Registering L4 ILB usage metrics %v", l4ILBCount)
 	prometheus.MustRegister(l4ILBCount, l4ILBSyncLatency)
+
+	klog.V(3).Infof("Registering PSC usage metrics %v", serviceAttachmentCount)
+	prometheus.MustRegister(serviceAttachmentCount)
 }
 
 // NewIngressState returns ingress state for given ingress and service ports.
@@ -111,6 +122,7 @@ type ControllerMetrics struct {
 	negMap map[string]NegServiceState
 	// l4ILBServiceMap is a map between service key and L4 ILB service state.
 	l4ILBServiceMap map[string]L4ILBServiceState
+	pscMap          map[string]pscmetrics.PSCState
 	sync.Mutex
 }
 
@@ -120,6 +132,7 @@ func NewControllerMetrics() *ControllerMetrics {
 		ingressMap:      make(map[string]IngressState),
 		negMap:          make(map[string]NegServiceState),
 		l4ILBServiceMap: make(map[string]L4ILBServiceState),
+		pscMap:          make(map[string]pscmetrics.PSCState),
 	}
 }
 
@@ -209,6 +222,27 @@ func (im *ControllerMetrics) DeleteL4ILBService(svcKey string) {
 	delete(im.l4ILBServiceMap, svcKey)
 }
 
+// SetServiceAttachment adds sa state to the map to be counted during metrics computation.
+// SetServiceAttachment implments PSCMetricsCollector.
+func (im *ControllerMetrics) SetServiceAttachment(saKey string, state pscmetrics.PSCState) {
+	im.Lock()
+	defer im.Unlock()
+
+	if im.pscMap == nil {
+		klog.Fatalf("Ingress Metrics failed to initialize correctly.")
+	}
+	im.pscMap[saKey] = state
+}
+
+// DeleteServiceAttachment removes sa state to the map to be counted during metrics computation.
+// DeleteServiceAttachment implments PSCMetricsCollector.
+func (im *ControllerMetrics) DeleteServiceAttachment(saKey string) {
+	im.Lock()
+	defer im.Unlock()
+
+	delete(im.pscMap, saKey)
+}
+
 // export computes and exports ingress usage metrics.
 func (im *ControllerMetrics) export() {
 	ingCount, svcPortCount := im.computeIngressMetrics()
@@ -226,6 +260,7 @@ func (im *ControllerMetrics) export() {
 	for feature, count := range negCount {
 		networkEndpointGroupCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
+	klog.V(3).Infof("Ingress usage metrics exported.")
 
 	ilbCount := im.computeL4ILBMetrics()
 	klog.V(3).Infof("Exporting L4 ILB usage metrics: %#v", ilbCount)
@@ -234,7 +269,13 @@ func (im *ControllerMetrics) export() {
 	}
 	klog.V(3).Infof("L4 ILB usage metrics exported.")
 
-	klog.V(3).Infof("Ingress usage metrics exported.")
+	saCount := im.computePSCMetrics()
+	klog.V(3).Infof("Exporting PSC Usage Metrics: %#v", saCount)
+	for feature, count := range saCount {
+		serviceAttachmentCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
+	}
+	klog.V(3).Infof("Exporting PSC Usage Metrics: %#v", saCount)
+
 }
 
 // computeIngressMetrics traverses all ingresses and computes,
@@ -365,6 +406,28 @@ func (im *ControllerMetrics) computeL4ILBMetrics() map[feature]int {
 		}
 	}
 	klog.V(4).Info("L4 ILB usage metrics computed.")
+	return counts
+}
+
+func (im *ControllerMetrics) computePSCMetrics() map[feature]int {
+	im.Lock()
+	defer im.Unlock()
+	klog.V(4).Infof("Compute PSC Usage metrics from psc state map: %+v", im.pscMap)
+
+	counts := map[feature]int{
+		sa:          0,
+		saInSuccess: 0,
+		saInError:   0,
+	}
+
+	for _, state := range im.pscMap {
+		counts[sa]++
+		if state.InSuccess {
+			counts[saInSuccess]++
+		} else {
+			counts[saInError]++
+		}
+	}
 	return counts
 }
 
