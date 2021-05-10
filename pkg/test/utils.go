@@ -3,6 +3,7 @@ package test
 import (
 	"fmt"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -260,7 +261,7 @@ func (_ *FakeRecorderSource) Recorder(ns string) record.EventRecorder {
 	return record.NewFakeRecorder(100)
 }
 
-func GetPrometheusMetric(name string) (*dto.MetricFamily, error) {
+func getPrometheusMetric(name string) (*dto.MetricFamily, error) {
 	metrics, err := prometheus.DefaultGatherer.Gather()
 	if err != nil {
 		return nil, err
@@ -271,4 +272,137 @@ func GetPrometheusMetric(name string) (*dto.MetricFamily, error) {
 		}
 	}
 	return nil, nil
+}
+
+// L4LatencyMetricInfo holds the state of the l4_ilb_sync_duration_seconds metric.
+type L4ILBLatencyMetricInfo struct {
+	CreateCount       uint64
+	DeleteCount       uint64
+	UpdateCount       uint64
+	UpperBoundSeconds float64
+	createSum         float64
+	updateSum         float64
+	deleteSum         float64
+}
+
+// GetL4LatencyMetric gets the current state of the l4_ilb_sync_duration_seconds metric.
+func GetL4LatencyMetric(t *testing.T) *L4ILBLatencyMetricInfo {
+	var createCount, updateCount, deleteCount uint64
+	var createSum, updateSum, deleteSum float64
+	var result L4ILBLatencyMetricInfo
+
+	latencyMetric, err := getPrometheusMetric("l4_ilb_sync_duration_seconds")
+	if err != nil {
+		t.Errorf("Failed to get L4 ILB prometheus metric 'l4_ilb_sync_duration_seconds', err: %v", err)
+		return nil
+	}
+	for _, val := range latencyMetric.GetMetric() {
+		for _, label := range val.Label {
+			if label.GetName() == "sync_type" {
+				switch label.GetValue() {
+				case "create":
+					createCount += val.GetHistogram().GetSampleCount()
+					createSum += val.GetHistogram().GetSampleSum()
+				case "update":
+					updateCount += val.GetHistogram().GetSampleCount()
+					updateSum += val.GetHistogram().GetSampleSum()
+				case "delete":
+					deleteCount += val.GetHistogram().GetSampleCount()
+					deleteSum += val.GetHistogram().GetSampleSum()
+				default:
+					t.Errorf("Invalid label %s:%s", label.GetName(), label.GetValue())
+				}
+			}
+		}
+		result.CreateCount = createCount
+		result.UpdateCount = updateCount
+		result.DeleteCount = deleteCount
+		result.createSum = createSum
+		result.deleteSum = deleteSum
+		result.updateSum = updateSum
+	}
+	return &result
+}
+
+// ValidateDiff ensures that the diff between the old and the new metric is as expected.
+// The test uses diff rather than absolute values since the metrics are cumulative of all test cases.
+func (old *L4ILBLatencyMetricInfo) ValidateDiff(new, expect *L4ILBLatencyMetricInfo, t *testing.T) {
+	new.CreateCount = new.CreateCount - old.CreateCount
+	new.DeleteCount = new.DeleteCount - old.DeleteCount
+	new.UpdateCount = new.UpdateCount - old.UpdateCount
+	new.createSum = new.createSum - old.createSum
+	new.updateSum = new.updateSum - old.updateSum
+	new.deleteSum = new.deleteSum - old.updateSum
+	if new.CreateCount != expect.CreateCount || new.DeleteCount != expect.DeleteCount || new.UpdateCount != expect.UpdateCount {
+		t.Errorf("Got CreateCount %d, want %d; Got DeleteCount %d, want %d; Got UpdateCount %d, want %d",
+			new.CreateCount, expect.CreateCount, new.DeleteCount, expect.DeleteCount, new.UpdateCount, expect.UpdateCount)
+	}
+	createLatency := meanLatency(new.createSum, float64(new.CreateCount))
+	deleteLatency := meanLatency(new.deleteSum, float64(new.DeleteCount))
+	updateLatency := meanLatency(new.updateSum, float64(new.UpdateCount))
+
+	if createLatency > expect.UpperBoundSeconds || deleteLatency > expect.UpperBoundSeconds || updateLatency > expect.UpperBoundSeconds {
+		t.Errorf("Got createLatency %v, updateLatency %v, deleteLatency %v - atleast one of them is higher than the specified limit %v seconds", createLatency, updateLatency, deleteLatency, expect.UpperBoundSeconds)
+	}
+}
+
+func meanLatency(latencySum, numPoints float64) float64 {
+	if numPoints == 0 {
+		return 0
+	}
+	return latencySum / numPoints
+}
+
+// L4ILBErrorMetricInfo holds the state of the l4_ilb_sync_error_count metric.
+type L4ILBErrorMetricInfo struct {
+	ByGCEResource map[string]uint64
+	ByErrorType   map[string]uint64
+}
+
+// GetL4ILBErrorMetric gets the current state of the l4_ilb_sync_error_count metric.
+func GetL4ILBErrorMetric(t *testing.T) *L4ILBErrorMetricInfo {
+	result := &L4ILBErrorMetricInfo{ByErrorType: make(map[string]uint64), ByGCEResource: make(map[string]uint64)}
+
+	errorMetric, err := getPrometheusMetric("l4_ilb_sync_error_count")
+	if err != nil {
+		t.Errorf("Failed to get L4 ILB prometheus metric 'l4_ilb_sync_error_count', err: %v", err)
+		return nil
+	}
+	for _, val := range errorMetric.GetMetric() {
+		for _, label := range val.Label {
+			if label.GetName() == "error_type" {
+				result.ByErrorType[label.GetValue()]++
+			} else if label.GetName() == "gce_resource" {
+				result.ByErrorType[label.GetValue()]++
+			}
+		}
+	}
+	return result
+}
+
+// ValidateDiff ensures that the diff between the old and the new metric is as expected.
+// The test uses diff rather than absolute values since the metrics are cumulative of all test cases.
+func (old *L4ILBErrorMetricInfo) ValidateDiff(new, expect *L4ILBErrorMetricInfo, t *testing.T) {
+	for errType, newVal := range new.ByErrorType {
+		if oldVal, ok := old.ByErrorType[errType]; ok {
+			new.ByErrorType[errType] = newVal - oldVal
+		}
+	}
+	for resource, newVal := range new.ByGCEResource {
+		if oldVal, ok := old.ByErrorType[resource]; ok {
+			new.ByErrorType[resource] = newVal - oldVal
+		}
+	}
+
+	for errType, expectVal := range expect.ByErrorType {
+		if gotVal, ok := new.ByErrorType[errType]; !ok || gotVal != expectVal {
+			t.Errorf("Unexpected error metric count by error type - got %v, want %v", new.ByErrorType, expect.ByErrorType)
+		}
+	}
+	for resource, expectVal := range expect.ByGCEResource {
+		if gotVal, ok := new.ByErrorType[resource]; !ok || gotVal != expectVal {
+			t.Errorf("Unexpected error metric count by GCE resource - got %v, want %v", new.ByGCEResource, expect.ByGCEResource)
+		}
+	}
+
 }
