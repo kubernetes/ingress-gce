@@ -17,6 +17,8 @@ limitations under the License.
 package instances
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -24,12 +26,15 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
-const defaultZone = "default-zone"
+const (
+	defaultZone = "default-zone"
+	basePath    = "/basepath/projects/project-id/"
+)
 
 var defaultNamer = namer.NewNamer("uid1", "fw1")
 
 func newNodePool(f *FakeInstanceGroups, zone string) NodePool {
-	pool := NewNodePool(f, defaultNamer, &test.FakeRecorderSource{})
+	pool := NewNodePool(f, defaultNamer, &test.FakeRecorderSource{}, basePath)
 	pool.Init(&FakeZoneLister{[]string{zone}})
 	return pool
 }
@@ -129,6 +134,26 @@ func TestSetNamedPorts(t *testing.T) {
 			if p.Port != test.expectedPorts[i] {
 				t.Fatalf("unexpected named ports on instance group. expected: %v, got: %v", test.expectedPorts, actualPorts)
 			}
+		}
+	}
+}
+
+func TestGetInstanceReferences(t *testing.T) {
+	pool := newNodePool(NewFakeInstanceGroups(sets.NewString([]string{"ig"}...), defaultNamer), defaultZone)
+	instances := pool.(*Instances)
+
+	nodeNames := []string{"node-1", "node-2", "node-3", "node-4.region.zone"}
+
+	expectedRefs := map[string]struct{}{}
+	for _, nodeName := range nodeNames {
+		name := strings.Split(nodeName, ".")[0]
+		expectedRefs[fmt.Sprintf("%szones/%s/instances/%s", basePath, defaultZone, name)] = struct{}{}
+	}
+
+	refs := instances.getInstanceReferences(defaultZone, nodeNames)
+	for _, ref := range refs {
+		if _, ok := expectedRefs[ref.Instance]; !ok {
+			t.Errorf("found unexpected reference: %s, expected only %+v", ref.Instance, expectedRefs)
 		}
 	}
 }

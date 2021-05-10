@@ -156,7 +156,7 @@ func newIngress() *networkingv1.Ingress {
 
 func newFakeLoadBalancerPool(cloud *gce.Cloud, t *testing.T, namer *namer_util.Namer) L7s {
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
-	nodePool := instances.NewNodePool(fakeIGs, namer, &test.FakeRecorderSource{})
+	nodePool := instances.NewNodePool(fakeIGs, namer, &test.FakeRecorderSource{}, utils.GetBasePath(cloud))
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 
 	return L7s{cloud, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer, "")}
