@@ -17,12 +17,14 @@ limitations under the License.
 package utils
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -881,5 +883,54 @@ func TestGetErrorType(t *testing.T) {
 				t.Errorf("Unexpected errType %q, want %q", errType, tc.errType)
 			}
 		})
+	}
+}
+
+func TestGetBasePath(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	for _, tc := range []struct {
+		desc             string
+		basePath         string
+		expectedBasePath string
+	}{
+		{
+			desc:             "basepath does not end in `/projects/`",
+			basePath:         "path/to/api/",
+			expectedBasePath: fmt.Sprintf("path/to/api/projects/%s/", fakeGCE.ProjectID()),
+		},
+		{
+			desc:             "basepath does not end in `/projects/` and does not have trailing /",
+			basePath:         "path/to/api",
+			expectedBasePath: fmt.Sprintf("path/to/api/projects/%s/", fakeGCE.ProjectID()),
+		},
+		{
+			desc:             "basepath ends in `/projects/`",
+			basePath:         "path/to/api/projects/",
+			expectedBasePath: fmt.Sprintf("path/to/api/projects/%s/", fakeGCE.ProjectID()),
+		},
+		{
+			desc:             "basepath ends in `/projects`, without trailing /",
+			basePath:         "path/to/api/projects",
+			expectedBasePath: fmt.Sprintf("path/to/api/projects/%s/", fakeGCE.ProjectID()),
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			fakeGCE.ComputeServices().GA.BasePath = tc.basePath
+			path := GetBasePath(fakeGCE)
+			if path != tc.expectedBasePath {
+				t.Errorf("wanted %s, but got %s", tc.expectedBasePath, path)
+			}
+		})
+	}
+}
+
+// Unit test is to catch any changes to the base path that could occur in the compute api dependency
+func TestComputeBasePath(t *testing.T) {
+	services, err := compute.NewService(context.TODO())
+	if err != nil {
+		t.Errorf("unexpected error :%s", err)
+	}
+	if services.BasePath != "https://compute.googleapis.com/compute/v1/" {
+		t.Errorf("Compute basePath has changed. Verify selflink generation has not broken and update path in test")
 	}
 }
