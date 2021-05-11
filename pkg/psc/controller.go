@@ -39,6 +39,7 @@ import (
 	sav1alpha1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/psc/metrics"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -48,6 +49,11 @@ import (
 	"k8s.io/kubernetes/pkg/util/slice"
 	"k8s.io/legacy-cloud-providers/gce"
 )
+
+func init() {
+	// register prometheus metrics
+	metrics.RegisterMetrics()
+}
 
 const (
 	svcKind = "service"
@@ -76,6 +82,7 @@ type Controller struct {
 	svcAttachmentLister cache.Indexer
 	serviceLister       cache.Indexer
 	recorder            func(string) record.EventRecorder
+	collector           metrics.PSCMetricsCollector
 
 	hasSynced func() bool
 }
@@ -92,6 +99,7 @@ func NewController(ctx *context.ControllerContext) *Controller {
 		serviceLister:       ctx.ServiceInformer.GetIndexer(),
 		hasSynced:           ctx.HasSynced,
 		recorder:            ctx.Recorder,
+		collector:           ctx.ControllerMetrics,
 	}
 
 	ctx.SAInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -184,7 +192,18 @@ func (c *Controller) enqueueServiceAttachment(obj interface{}) {
 // corresponding GCE Service Attachments. If provided a key that does not exist in the
 // store, processServiceAttachment will return with no error
 func (c *Controller) processServiceAttachment(key string) error {
-	namespace, name, err := cache.SplitMetaNamespaceKey(key)
+	start := time.Now()
+	// NOTE: Error will be used to send metrics about whether the sync loop was successful
+	// Please reuse and set err before returning
+	var err error
+	defer func() {
+		metrics.PublishPSCProcessMetrics(metrics.SyncProcess, err, start)
+		metrics.PublishLastProcessTimestampMetrics(metrics.SyncProcess)
+		c.collector.SetServiceAttachment(key, metrics.PSCState{InSuccess: err == nil})
+	}()
+
+	var namespace, name string
+	namespace, name, err = cache.SplitMetaNamespaceKey(key)
 	if err != nil {
 		return err
 	}
@@ -202,7 +221,8 @@ func (c *Controller) processServiceAttachment(key string) error {
 	klog.V(2).Infof("Processing Service attachment %s/%s", namespace, name)
 
 	svcAttachment := obj.(*sav1alpha1.ServiceAttachment)
-	updatedCR, err := c.ensureSAFinalizer(svcAttachment)
+	var updatedCR *sav1alpha1.ServiceAttachment
+	updatedCR, err = c.ensureSAFinalizer(svcAttachment)
 	if err != nil {
 		return fmt.Errorf("Errored adding finalizer on ServiceAttachment CR %s/%s: %s", namespace, name, err)
 	}
@@ -268,12 +288,21 @@ func (c *Controller) processServiceAttachment(key string) error {
 // cr.
 func (c *Controller) garbageCollectServiceAttachments() {
 	klog.V(2).Infof("Staring Service Attachment Garbage Collection")
-	defer klog.V(2).Infof("Finished Service Attachment Garbage Collection")
+	defer func() {
+		klog.V(2).Infof("Finished Service Attachment Garbage Collection")
+		metrics.PublishLastProcessTimestampMetrics(metrics.GCProcess)
+	}()
 	crs := c.svcAttachmentLister.List()
 	for _, obj := range crs {
 		sa := obj.(*sav1alpha1.ServiceAttachment)
 		if sa.GetDeletionTimestamp().IsZero() {
 			continue
+		}
+		key, err := cache.MetaNamespaceKeyFunc(sa)
+		if err != nil {
+			klog.V(4).Infof("failed to generate key for service attachment: %s/%s: %w", sa.Namespace, sa.Name, err)
+		} else {
+			c.collector.DeleteServiceAttachment(key)
 		}
 		c.deleteServiceAttachment(sa)
 	}
@@ -283,6 +312,10 @@ func (c *Controller) garbageCollectServiceAttachments() {
 // that corresponds to the provided CR. If successful, the finalizer on the CR
 // will be removed.
 func (c *Controller) deleteServiceAttachment(sa *sav1alpha1.ServiceAttachment) {
+	start := time.Now()
+	// NOTE: Error will be used to send metrics about whether the sync loop was successful
+	// Please reuse and set err before returning
+	var err error
 	resourceID, err := cloud.ParseResourceURL(sa.Status.ServiceAttachmentURL)
 	var gceName string
 	if err != nil {
@@ -290,6 +323,8 @@ func (c *Controller) deleteServiceAttachment(sa *sav1alpha1.ServiceAttachment) {
 	} else {
 		gceName = resourceID.Key.Name
 	}
+
+	defer metrics.PublishPSCProcessMetrics(metrics.GCProcess, err, start)
 
 	// If the name was not found from the ServiceAttachmentURL generate it from the service
 	// attachment CR. Since the CR's UID is used, the name found will be unique to this CR
@@ -300,7 +335,7 @@ func (c *Controller) deleteServiceAttachment(sa *sav1alpha1.ServiceAttachment) {
 	}
 
 	klog.V(2).Infof("Deleting Service Attachment %s", gceName)
-	if err := c.ensureDeleteGCEServiceAttachment(gceName); err != nil {
+	if err = c.ensureDeleteGCEServiceAttachment(gceName); err != nil {
 		eventMsg := fmt.Sprintf("Failed to Garbage Collect Service Attachment %s/%s: %q", sa.Namespace, sa.Name, err)
 		klog.Errorf(eventMsg)
 		c.recorder(sa.Namespace).Eventf(sa, v1.EventTypeWarning, SvcAttachmentGCError, eventMsg)
@@ -309,7 +344,7 @@ func (c *Controller) deleteServiceAttachment(sa *sav1alpha1.ServiceAttachment) {
 	klog.V(2).Infof("Deleted Service Attachment %s", gceName)
 
 	klog.V(2).Infof("Removing finalizer on Service Attachment %s/%s", sa.Namespace, sa.Name)
-	if err := c.ensureSAFinalizerRemoved(sa); err != nil {
+	if err = c.ensureSAFinalizerRemoved(sa); err != nil {
 		eventMsg := fmt.Sprintf("Failed to remove finalizer on ServiceAttachment %s/%s: %q", sa.Namespace, sa.Name, err)
 		klog.Errorf(eventMsg)
 		c.recorder(sa.Namespace).Eventf(sa, v1.EventTypeWarning, SvcAttachmentGCError, eventMsg)
