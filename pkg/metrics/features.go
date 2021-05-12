@@ -112,6 +112,11 @@ const (
 	// l4ILBInInError feature specifies that an error had occurred while creating/
 	// updating GCE Load Balancer.
 	l4ILBInError = feature("L4ILBInError")
+
+	// PSC Features
+	sa          = feature("ServiceAttachments")
+	saInSuccess = feature("ServiceAttachmentInSuccess")
+	saInError   = feature("ServiceAttachmentInError")
 )
 
 // featuresForIngress returns the list of features for given ingress.
