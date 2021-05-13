@@ -32,6 +32,7 @@ import (
 	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/networking/v1beta1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -176,6 +177,18 @@ func IsNotFoundError(err error) bool {
 // IsForbiddenError returns true if the operation was forbidden
 func IsForbiddenError(err error) bool {
 	return IsHTTPErrorCode(err, http.StatusForbidden)
+}
+
+func GetErrorType(err error) string {
+	var gerr *googleapi.Error
+	if errors.As(err, &gerr) {
+		return http.StatusText(gerr.Code)
+	}
+	var k8serr *k8serrors.StatusError
+	if errors.As(err, &k8serr) {
+		return "k8s " + string(k8serrors.ReasonForError(k8serr))
+	}
+	return ""
 }
 
 // PrettyJson marshals an object in a human-friendly format.
