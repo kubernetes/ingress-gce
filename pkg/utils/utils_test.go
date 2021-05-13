@@ -25,6 +25,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/googleapi"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -32,8 +33,10 @@ import (
 
 	api_v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/legacy-cloud-providers/gce"
+	"net/http"
 )
 
 func TestResourcePath(t *testing.T) {
@@ -942,6 +945,29 @@ func TestIsHTTPErrorCode(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("IsHTTPErrorCode(%v, %d) = %t; want %t", tc.err, tc.code, got, tc.want)
 		}
+	}
+}
+
+func TestGetErrorType(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		desc    string
+		err     error
+		errType string
+	}{
+		{desc: "nil error", err: nil},
+		{desc: "Forbidden googleapi error", err: &googleapi.Error{Code: http.StatusForbidden}, errType: http.StatusText(http.StatusForbidden)},
+		{desc: "Forbidden googleapi error wrapped", err: fmt.Errorf("Got error: %w", &googleapi.Error{Code: http.StatusForbidden}), errType: http.StatusText(http.StatusForbidden)},
+		{desc: "k8s notFound error", err: k8serrors.NewNotFound(schema.GroupResource{}, ""), errType: "k8s " + string(v1.StatusReasonNotFound)},
+		{desc: "k8s notFound error wrapped", err: fmt.Errorf("Got error: %w", k8serrors.NewNotFound(schema.GroupResource{}, "")), errType: "k8s " + string(v1.StatusReasonNotFound)},
+		{desc: "k8s notFound error embedded with %v", err: fmt.Errorf("Got error: %v", k8serrors.NewNotFound(schema.GroupResource{}, "")), errType: ""},
+		{desc: "unknown error", err: fmt.Errorf("Got unknown error"), errType: ""},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			if errType := GetErrorType(tc.err); errType != tc.errType {
+				t.Errorf("Unexpected errType %q, want %q", errType, tc.errType)
+			}
+		})
 	}
 }
 

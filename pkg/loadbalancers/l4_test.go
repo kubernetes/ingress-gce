@@ -27,7 +27,6 @@ import (
 	"google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/firewalls"
-	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -118,19 +117,18 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
-	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
-	if err != nil {
+	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
 
-	status, annotations, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
 	backendServiceName, _ := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
 	key := meta.RegionalKey(backendServiceName, l.cloud.Region())
@@ -148,14 +146,14 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 		t.Errorf("Failed updating backend service, err %v", err)
 	}
 	// Simulate a periodic sync. The backends list should not be reconciled.
-	status, annotations, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 	bs, err = composite.GetBackendService(l.cloud, meta.RegionalKey(backendServiceName, l.cloud.Region()), meta.VersionGA)
 	if err != nil {
 		t.Errorf("Failed to lookup backend service, err %v", err)
@@ -174,25 +172,23 @@ func TestEnsureInternalLoadBalancerTypeChange(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
-	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
-	if err != nil {
+	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	status, annotations, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Unexpected error %v", err)
+	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Unexpected error %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
 	// Now add the latest annotation and change scheme to external
 	svc.Annotations[gce.ServiceAnnotationLoadBalancerType] = ""
 	// This will be invoked by service_controller
-	err = l.EnsureInternalLoadBalancerDeleted(svc)
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	if result = l.EnsureInternalLoadBalancerDeleted(svc); result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
 	assertInternalLbResourcesDeleted(t, svc, true, l)
 }
@@ -207,8 +203,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
-	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
-	if err != nil {
+	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
 
@@ -227,14 +222,14 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to create backendservice, err %v", err)
 	}
-	status, annotations, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 }
 
 // TestEnsureInternalLoadBalancerClearPreviousResources creates ILB resources with incomplete configuration and verifies
@@ -315,8 +310,8 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 	if err = composite.CreateForwardingRule(fakeGCE, key, existingFwdRule); err != nil {
 		t.Errorf("Failed to update forwarding rule with new BS link, err %v", err)
 	}
-	if _, _, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{}); err != nil {
-		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, err)
+	if result := l.EnsureInternalLoadBalancer(nodeNames, svc); result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, result.Error)
 	}
 	key.Name = frName
 	// Expect new resources with the correct attributes to be created
@@ -407,15 +402,12 @@ func TestUpdateResourceLinks(t *testing.T) {
 	if !reflect.DeepEqual(bs.HealthChecks, []string{"hc1", "hc2"}) {
 		t.Errorf("Unexpected healthchecks in backend service - %v", bs.HealthChecks)
 	}
-	_, annotations, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, err)
-	}
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, result.Error)
 	}
 	// verifies that the right healthcheck is present
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
 	// ensure that the other healthchecks still exist.
 	key.Name = "hc1"
@@ -462,8 +454,8 @@ func TestEnsureInternalLoadBalancerHealthCheckConfigurable(t *testing.T) {
 		t.Errorf("Failed to create fake healthcheck %s, err %v", hcName, err)
 	}
 
-	if _, _, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{}); err != nil {
-		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, err)
+	if result := l.EnsureInternalLoadBalancer(nodeNames, svc); result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, result.Error)
 	}
 
 	newHC, err := composite.GetHealthCheck(fakeGCE, key, meta.VersionGA)
@@ -484,23 +476,22 @@ func TestEnsureInternalLoadBalancerDeleted(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
-	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
-	if err != nil {
+	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	status, annotations, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
 	// Delete the loadbalancer
-	err = l.EnsureInternalLoadBalancerDeleted(svc)
-	if err != nil {
-		t.Errorf("Unexpected error %v", err)
+	result = l.EnsureInternalLoadBalancerDeleted(svc)
+	if result.Error != nil {
+		t.Errorf("Unexpected error %v", result.Error)
 	}
 	assertInternalLbResourcesDeleted(t, svc, true, l)
 }
@@ -514,30 +505,29 @@ func TestEnsureInternalLoadBalancerDeletedTwiceDoesNotError(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
-	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
-	if err != nil {
+	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	status, annotations, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
 	// Delete the loadbalancer
-	err = l.EnsureInternalLoadBalancerDeleted(svc)
-	if err != nil {
-		t.Errorf("Unexpected error %v", err)
+	result = l.EnsureInternalLoadBalancerDeleted(svc)
+	if result.Error != nil {
+		t.Errorf("Unexpected error %v", result.Error)
 	}
 	assertInternalLbResourcesDeleted(t, svc, true, l)
 
 	// Deleting the loadbalancer and resources again should not cause an error.
-	err = l.EnsureInternalLoadBalancerDeleted(svc)
-	if err != nil {
-		t.Errorf("Unexpected error %v", err)
+	result = l.EnsureInternalLoadBalancerDeleted(svc)
+	if result.Error != nil {
+		t.Errorf("Unexpected error %v", result.Error)
 	}
 	assertInternalLbResourcesDeleted(t, svc, true, l)
 }
@@ -549,8 +539,7 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
-	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
-	if err != nil {
+	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
 
@@ -559,14 +548,14 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 	svc.Spec.Type = v1.ServiceTypeLoadBalancer
 	svc.Spec.ExternalTrafficPolicy = v1.ServiceExternalTrafficPolicyTypeLocal
 
-	status, annotations, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
 	lbName, _ := l.namer.VMIPNEG(svc.Namespace, svc.Name)
 	key, err := composite.CreateKey(l.cloud, lbName, meta.Global)
@@ -672,12 +661,12 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 			if tc.injectMock != nil {
 				tc.injectMock(fakeGCE.Compute().(*cloud.MockGCE))
 			}
-			status, _, err := l.EnsureInternalLoadBalancer(nodeNames, params.service, &metrics.L4ILBServiceState{})
-			if err == nil {
+			result := l.EnsureInternalLoadBalancer(nodeNames, params.service)
+			if result.Error == nil {
 				t.Errorf("Expected error when %s", desc)
 			}
-			if status != nil {
-				t.Errorf("Expected empty status when %s, Got %v", desc, status)
+			if result.Status != nil {
+				t.Errorf("Expected empty status when %s, Got %v", desc, result.Status)
 			}
 		})
 	}
@@ -735,30 +724,29 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
-	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
-	if err != nil {
+	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
 	frName := l.GetFRName()
-	status, annotations, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
 	// Change service to include the global access annotation
 	svc.Annotations[gce.ServiceAnnotationILBAllowGlobalAccess] = "true"
-	status, annotations, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 	descString, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(svc.Namespace, svc.Name), "1.2.3.0", meta.VersionGA, false)
 	if err != nil {
 		t.Errorf("Unexpected error when creating description - %v", err)
@@ -779,11 +767,11 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	}
 	// remove the annotation and disable global access.
 	delete(svc.Annotations, gce.ServiceAnnotationILBAllowGlobalAccess)
-	status, annotations, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
 	// make sure GlobalAccess field is off.
@@ -798,10 +786,10 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	if fwdRule.Description != descString {
 		t.Errorf("Expected description %s, Got %s", descString, fwdRule.Description)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 	// Delete the service
-	err = l.EnsureInternalLoadBalancerDeleted(svc)
-	if err != nil {
+	result = l.EnsureInternalLoadBalancerDeleted(svc)
+	if result.Error != nil {
 		t.Errorf("Unexpected error %v", err)
 	}
 	assertInternalLbResourcesDeleted(t, svc, true, l)
@@ -816,18 +804,17 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
-	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
-	if err != nil {
+	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	status, annotations, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
 	frName := l.GetFRName()
 	fwdRule, err := composite.GetForwardingRule(l.cloud, meta.RegionalKey(frName, l.cloud.Region()), meta.VersionGA)
@@ -842,16 +829,16 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	requestedIP := "4.5.6.7"
 	svc.Annotations[gce.ServiceAnnotationILBSubnet] = "test-subnet"
 	svc.Spec.LoadBalancerIP = requestedIP
-	status, annotations, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
+	result = l.EnsureInternalLoadBalancer(nodeNames, svc)
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
-	if status.Ingress[0].IP != requestedIP {
-		t.Fatalf("Reserved IP %s not propagated, Got '%s'", requestedIP, status.Ingress[0].IP)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
+	if result.Status.Ingress[0].IP != requestedIP {
+		t.Fatalf("Reserved IP %s not propagated, Got '%s'", requestedIP, result.Status.Ingress[0].IP)
 	}
 	fwdRule, err = composite.GetForwardingRule(l.cloud, meta.RegionalKey(frName, l.cloud.Region()), meta.VersionGA)
 	if err != nil || fwdRule == nil {
@@ -863,16 +850,16 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 
 	// Change to a different subnet
 	svc.Annotations[gce.ServiceAnnotationILBSubnet] = "another-subnet"
-	status, annotations, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
-	if status.Ingress[0].IP != requestedIP {
-		t.Errorf("Reserved IP %s not propagated, Got %s", requestedIP, status.Ingress[0].IP)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
+	if result.Status.Ingress[0].IP != requestedIP {
+		t.Errorf("Reserved IP %s not propagated, Got %s", requestedIP, result.Status.Ingress[0].IP)
 	}
 	fwdRule, err = composite.GetForwardingRule(l.cloud, meta.RegionalKey(frName, l.cloud.Region()), meta.VersionGA)
 	if err != nil || fwdRule == nil {
@@ -883,12 +870,12 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	}
 	// remove the annotation - ILB should revert to default subnet.
 	delete(svc.Annotations, gce.ServiceAnnotationILBSubnet)
-	status, annotations, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
-	if len(status.Ingress) == 0 {
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
 	fwdRule, err = composite.GetForwardingRule(l.cloud, meta.RegionalKey(frName, l.cloud.Region()), meta.VersionGA)
@@ -899,9 +886,9 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 		t.Errorf("Unexpected subnet value '%s' in ILB ForwardingRule.", fwdRule.Subnetwork)
 	}
 	// Delete the loadbalancer
-	err = l.EnsureInternalLoadBalancerDeleted(svc)
-	if err != nil {
-		t.Errorf("Unexpected error deleting loadbalancer - err %v", err)
+	result = l.EnsureInternalLoadBalancerDeleted(svc)
+	if result.Error != nil {
+		t.Errorf("Unexpected error deleting loadbalancer - err %v", result.Error)
 	}
 	assertInternalLbResourcesDeleted(t, svc, true, l)
 }
@@ -991,14 +978,14 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	}
 
 	frName := l.getFRNameWithProtocol("TCP")
-	status, annotations, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 	key, err := composite.CreateKey(l.cloud, frName, meta.Regional)
 	if err != nil {
 		t.Errorf("Unexpected error when creating key - %v", err)
@@ -1012,14 +999,14 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	}
 	// change the protocol to UDP
 	svc.Spec.Ports[0].Protocol = v1.ProtocolUDP
-	status, annotations, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 	// Make sure the old forwarding rule is deleted
 	fwdRule, err = composite.GetForwardingRule(l.cloud, key, meta.VersionGA)
 	if !utils.IsNotFoundError(err) {
@@ -1037,7 +1024,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	}
 
 	// Delete the service
-	err = l.EnsureInternalLoadBalancerDeleted(svc)
+	result = l.EnsureInternalLoadBalancerDeleted(svc)
 	if err != nil {
 		t.Errorf("Unexpected error %v", err)
 	}
@@ -1053,18 +1040,17 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
-	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
-	if err != nil {
+	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	status, annotations, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 	frName := l.getFRNameWithProtocol("TCP")
 	key, err := composite.CreateKey(l.cloud, frName, meta.Regional)
 	if err != nil {
@@ -1086,14 +1072,14 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 		{Name: "testport", Port: int32(8300), Protocol: "TCP"},
 		{Name: "testport", Port: int32(8400), Protocol: "TCP"},
 	}
-	status, annotations, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 	fwdRule, err = composite.GetForwardingRule(l.cloud, key, meta.VersionGA)
 	if err != nil {
 		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
@@ -1112,14 +1098,14 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 		{Name: "testport", Port: int32(8400), Protocol: "TCP"},
 	}
 	expectPorts := []string{"8090", "8100", "8300", "8400"}
-	status, annotations, err = l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
-	if err != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", err)
+	result = l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if len(status.Ingress) == 0 {
+	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
-	assertInternalLbResources(t, svc, l, nodeNames, annotations)
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 	fwdRule, err = composite.GetForwardingRule(l.cloud, key, meta.VersionGA)
 	if err != nil {
 		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
@@ -1131,9 +1117,9 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 		t.Errorf("Expected AllPorts field to be unset in forwarding rule - %+v", fwdRule)
 	}
 	// Delete the service
-	err = l.EnsureInternalLoadBalancerDeleted(svc)
-	if err != nil {
-		t.Errorf("Unexpected error %v", err)
+	result = l.EnsureInternalLoadBalancerDeleted(svc)
+	if result.Error != nil {
+		t.Errorf("Unexpected error %v", result.Error)
 	}
 	assertInternalLbResourcesDeleted(t, svc, true, l)
 }
