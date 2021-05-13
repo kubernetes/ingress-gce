@@ -19,6 +19,7 @@ package instances
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"google.golang.org/api/compute/v1"
@@ -42,8 +43,9 @@ const (
 type Instances struct {
 	cloud InstanceGroups
 	ZoneLister
-	namer    namer.BackendNamer
-	recorder record.EventRecorder
+	namer              namer.BackendNamer
+	recorder           record.EventRecorder
+	instanceLinkFormat string
 }
 
 type recorderSource interface {
@@ -53,11 +55,12 @@ type recorderSource interface {
 // NewNodePool creates a new node pool.
 // - cloud: implements InstanceGroups, used to sync Kubernetes nodes with
 //   members of the cloud InstanceGroup.
-func NewNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource) NodePool {
+func NewNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource, basePath string) NodePool {
 	return &Instances{
-		cloud:    cloud,
-		namer:    namer,
-		recorder: recorders.Recorder(""), // No namespace
+		cloud:              cloud,
+		namer:              namer,
+		recorder:           recorders.Recorder(""), // No namespace
+		instanceLinkFormat: basePath + "zones/%s/instances/%s",
 	}
 }
 
@@ -257,13 +260,22 @@ func (i *Instances) splitNodesByZone(names []string) map[string][]string {
 	return nodesByZone
 }
 
+// getInstanceReferences creates and returns the instance references by generating the
+// expected instance URLs
+func (i *Instances) getInstanceReferences(zone string, nodeNames []string) (refs []*compute.InstanceReference) {
+	for _, nodeName := range nodeNames {
+		refs = append(refs, &compute.InstanceReference{Instance: fmt.Sprintf(i.instanceLinkFormat, zone, canonicalizeInstanceName(nodeName))})
+	}
+	return refs
+}
+
 // Add adds the given instances to the appropriately zoned Instance Group.
 func (i *Instances) Add(groupName string, names []string) error {
 	events.GlobalEventf(i.recorder, core.EventTypeNormal, events.AddNodes, "Adding %s to InstanceGroup %q", events.TruncatedStringList(names), groupName)
 	var errs []error
 	for zone, nodeNames := range i.splitNodesByZone(names) {
 		klog.V(1).Infof("Adding nodes %v to %v in zone %v", nodeNames, groupName, zone)
-		if err := i.cloud.AddInstancesToInstanceGroup(groupName, zone, i.cloud.ToInstanceReferences(zone, nodeNames)); err != nil {
+		if err := i.cloud.AddInstancesToInstanceGroup(groupName, zone, i.getInstanceReferences(zone, nodeNames)); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -355,4 +367,17 @@ func (i *Instances) Sync(nodes []string) (err error) {
 		}
 	}
 	return nil
+}
+
+// canonicalizeInstanceNeme take a GCE instance 'hostname' and break it down
+// to something that can be fed to the GCE API client library.  Basically
+// this means reducing 'kubernetes-node-2.c.my-proj.internal' to
+// 'kubernetes-node-2' if necessary.
+// Helper function is copied from legacy-cloud-provider gce_utils.go
+func canonicalizeInstanceName(name string) string {
+	ix := strings.Index(name, ".")
+	if ix != -1 {
+		name = name[:ix]
+	}
+	return name
 }

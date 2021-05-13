@@ -44,6 +44,7 @@ import (
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/util/node"
 	"k8s.io/kubernetes/pkg/util/slice"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (
@@ -634,4 +635,22 @@ func NewStringPointer(s string) *string {
 // NewInt64Pointer returns a pointer to the provided int64 literal
 func NewInt64Pointer(i int64) *int64 {
 	return &i
+}
+
+// GetBasePath returns the compute API endpoint with the `projects/<project-id>` element
+// compute API v0.36 changed basepath and dropped the `projects/` suffix, therefore suffix
+// must be added back when generating compute resource urls.
+func GetBasePath(cloud *gce.Cloud) string {
+	basePath := cloud.ComputeServices().GA.BasePath
+
+	if basePath[len(basePath)-1] != '/' {
+		basePath += "/"
+	}
+	// Trim  the trailing /, so that split will not consider the last element as empty
+	elements := strings.Split(strings.TrimSuffix(basePath, "/"), "/")
+
+	if elements[len(elements)-1] != "projects" {
+		return fmt.Sprintf("%sprojects/%s/", basePath, cloud.ProjectID())
+	}
+	return fmt.Sprintf("%s%s/", basePath, cloud.ProjectID())
 }
