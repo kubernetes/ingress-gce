@@ -149,7 +149,7 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 func (h *HealthChecks) createILB(hc *translator.HealthCheck) error {
 	compositeType, err := composite.AlphaToHealthCheck(hc.ToAlphaComputeHealthCheck())
 	if err != nil {
-		return fmt.Errorf("Error converting hc to composite: %v", err)
+		return fmt.Errorf("Error converting hc to composite: %w", err)
 	}
 
 	cloud := h.cloud.(*gce.Cloud)
@@ -162,7 +162,7 @@ func (h *HealthChecks) createILB(hc *translator.HealthCheck) error {
 	compositeType.Region = key.Region
 	err = composite.CreateHealthCheck(cloud, key, compositeType)
 	if err != nil {
-		return fmt.Errorf("Error creating health check %v: %v", compositeType, err)
+		return fmt.Errorf("Error creating health check %v: %w", compositeType, err)
 	}
 
 	return nil
@@ -206,7 +206,7 @@ func (h *HealthChecks) updateILB(hc *translator.HealthCheck) error {
 	// special case ILB to avoid mucking with stable HC code
 	compositeType, err := composite.AlphaToHealthCheck(hc.ToAlphaComputeHealthCheck())
 	if err != nil {
-		return fmt.Errorf("Error converting newHC to composite: %v", err)
+		return fmt.Errorf("Error converting newHC to composite: %w", err)
 	}
 	cloud := h.cloud.(*gce.Cloud)
 	key, err := composite.CreateKey(cloud, hc.Name, features.L7ILBScope())

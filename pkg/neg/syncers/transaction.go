@@ -195,7 +195,7 @@ func (s *transactionSyncer) syncInternal() error {
 
 	targetMap, endpointPodMap, err := s.endpointsCalculator.CalculateEndpoints(ep.(*apiv1.Endpoints), currentMap)
 	if err != nil {
-		err = fmt.Errorf("endpoints calculation error in mode %q, err: %v", s.endpointsCalculator.Mode(), err)
+		err = fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
 		return err
 	}
 	s.logStats(targetMap, "desired NEG endpoints")
@@ -540,7 +540,7 @@ func (s *transactionSyncer) updateStatus(syncErr error) {
 func getNegFromStore(svcNegLister cache.Indexer, namespace, negName string) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
 	n, exists, err := svcNegLister.GetByKey(fmt.Sprintf("%s/%s", namespace, negName))
 	if err != nil {
-		return nil, fmt.Errorf("Error getting neg %s/%s from cache: %s", namespace, negName, err)
+		return nil, fmt.Errorf("Error getting neg %s/%s from cache: %w", namespace, negName, err)
 	}
 	if !exists {
 		return nil, fmt.Errorf("neg %s/%s is not in store", namespace, negName)
@@ -553,7 +553,7 @@ func getNegFromStore(svcNegLister cache.Indexer, namespace, negName string) (*ne
 func patchNegStatus(svcNegClient svcnegclient.Interface, oldStatus, newStatus negv1beta1.ServiceNetworkEndpointGroupStatus, namespace, negName string) (*negv1beta1.ServiceNetworkEndpointGroup, error) {
 	patchBytes, err := patch.MergePatchBytes(negv1beta1.ServiceNetworkEndpointGroup{Status: oldStatus}, negv1beta1.ServiceNetworkEndpointGroup{Status: newStatus})
 	if err != nil {
-		return nil, fmt.Errorf("failed to prepare patch bytes: %s", err)
+		return nil, fmt.Errorf("failed to prepare patch bytes: %w", err)
 	}
 
 	return svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Patch(context.Background(), negName, types.MergePatchType, patchBytes, metav1.PatchOptions{})

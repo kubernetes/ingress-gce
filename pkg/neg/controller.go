@@ -449,7 +449,7 @@ func (c *Controller) processService(key string) error {
 	// merges csmSVCPortInfoMap, because eventually those NEG will sync with the service annotation.
 	// merges destinationRulesPortInfoMap later, because we only want them sync with the DestinationRule annotation.
 	if err := svcPortInfoMap.Merge(csmSVCPortInfoMap); err != nil {
-		return fmt.Errorf("failed to merge CSM service PortInfoMap: %v, error: %v", csmSVCPortInfoMap, err)
+		return fmt.Errorf("failed to merge CSM service PortInfoMap: %v, error: %w", csmSVCPortInfoMap, err)
 	}
 	if c.runL4 {
 		if err := c.mergeVmIpNEGsPortInfo(service, types.NamespacedName{Namespace: namespace, Name: name}, svcPortInfoMap, &negUsage); err != nil {
@@ -463,7 +463,7 @@ func (c *Controller) processService(key string) error {
 		}
 		// Merge destinationRule related NEG after the Service NEGStatus Sync, we don't want DR related NEG status go into service.
 		if err := svcPortInfoMap.Merge(destinationRulesPortInfoMap); err != nil {
-			return fmt.Errorf("failed to merge service ports referenced by Istio:DestinationRule (%v): %v", destinationRulesPortInfoMap, err)
+			return fmt.Errorf("failed to merge service ports referenced by Istio:DestinationRule (%v): %w", destinationRulesPortInfoMap, err)
 		}
 
 		negUsage.SuccessfulNeg, negUsage.ErrorNeg, err = c.manager.EnsureSyncers(namespace, name, svcPortInfoMap)
@@ -498,7 +498,7 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 		ingressSvcPortTuples := gatherPortMappingUsedByIngress(ings, service)
 		ingressPortInfoMap := negtypes.NewPortInfoMap(name.Namespace, name.Name, ingressSvcPortTuples, c.namer, true, nil)
 		if err := portInfoMap.Merge(ingressPortInfoMap); err != nil {
-			return fmt.Errorf("failed to merge service ports referenced by ingress (%v): %v", ingressPortInfoMap, err)
+			return fmt.Errorf("failed to merge service ports referenced by ingress (%v): %w", ingressPortInfoMap, err)
 		}
 	}
 	return nil
@@ -537,7 +537,7 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 		negUsage.CustomNamedNeg = len(customNames)
 
 		if err := portInfoMap.Merge(negtypes.NewPortInfoMap(name.Namespace, name.Name, exposedNegSvcPort, c.namer /*readinessGate*/, true, customNames)); err != nil {
-			return fmt.Errorf("failed to merge service ports exposed as standalone NEGs (%v) into ingress referenced service ports (%v): %v", exposedNegSvcPort, portInfoMap, err)
+			return fmt.Errorf("failed to merge service ports exposed as standalone NEGs (%v) into ingress referenced service ports (%v): %w", exposedNegSvcPort, portInfoMap, err)
 		}
 	}
 
@@ -628,7 +628,7 @@ func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Se
 				klog.Warningf("DestinationRule(%s) contains duplicated subset, creating NEGs for the newer ones. %s", namespacedName.Name, err)
 			}
 			if err := destinationRulesPortInfoMap.Merge(destinationRulePortInfoMap); err != nil {
-				return servicePortInfoMap, destinationRulesPortInfoMap, fmt.Errorf("failed to merge service ports referenced by Istio:DestinationRule (%v): %v", destinationRulePortInfoMap, err)
+				return servicePortInfoMap, destinationRulesPortInfoMap, fmt.Errorf("failed to merge service ports referenced by Istio:DestinationRule (%v): %w", destinationRulePortInfoMap, err)
 			}
 			if err = c.syncDestinationRuleNegStatusAnnotation(namespacedName.Namespace, namespacedName.Name, destinationRulePortInfoMap); err != nil {
 				return servicePortInfoMap, destinationRulesPortInfoMap, err

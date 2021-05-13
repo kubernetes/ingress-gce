@@ -199,7 +199,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 
 	// Ensure v2 finalizer
 	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
-		return fmt.Errorf("Failed to attach finalizer to service %s/%s, err %v", service.Namespace, service.Name, err)
+		return fmt.Errorf("Failed to attach finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)
 	}
 	l4 := loadbalancers.NewL4Handler(service, l4c.ctx.Cloud, meta.Regional, l4c.namer, l4c.ctx.Recorder(service.Namespace), &l4c.sharedResourcesLock)
 	nodeNames, err := utils.GetReadyNodeNames(l4c.nodeLister)
@@ -236,7 +236,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 	if err = l4c.updateAnnotations(service, annotationsMap); err != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Failed to update annotations for load balancer, err: %v", err)
-		return fmt.Errorf("failed to set resource annotations, err: %v", err)
+		return fmt.Errorf("failed to set resource annotations, err: %w", err)
 	}
 	return nil
 }
@@ -254,12 +254,12 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) err
 	if err := l4c.updateAnnotations(svc, nil); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting resource annotations for load balancer: %v", err)
-		return fmt.Errorf("failed to reset resource annotations, err: %v", err)
+		return fmt.Errorf("failed to reset resource annotations, err: %w", err)
 	}
 	if err := common.EnsureDeleteServiceFinalizer(svc, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error removing finalizer from load balancer: %v", err)
-		return fmt.Errorf("failed to remove ILB finalizer, err: %v", err)
+		return fmt.Errorf("failed to remove ILB finalizer, err: %w", err)
 	}
 
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
@@ -271,7 +271,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) err
 	if err := l4c.updateServiceStatus(svc, &v1.LoadBalancerStatus{}); err != nil && !errors.IsNotFound(err) {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error reseting load balancer status to empty: %v", err)
-		return fmt.Errorf("failed to reset ILB status, err: %v", err)
+		return fmt.Errorf("failed to reset ILB status, err: %w", err)
 	}
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletedLoadBalancer", "Deleted load balancer")
 	return nil
@@ -295,7 +295,7 @@ func (l4c *L4Controller) sync(key string) error {
 	l4c.syncTracker.Track()
 	svc, exists, err := l4c.ctx.Services().GetByKey(key)
 	if err != nil {
-		return fmt.Errorf("Failed to lookup service for key %s : %s", key, err)
+		return fmt.Errorf("Failed to lookup service for key %s : %w", key, err)
 	}
 	if !exists || svc == nil {
 		// The service will not exist if its resources and finalizer are handled by the legacy service controller and
