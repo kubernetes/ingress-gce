@@ -301,6 +301,7 @@ func (l4c *L4Controller) sync(key string) error {
 		klog.V(2).Infof("Ensuring ILB resources for service %s managed by L4 controller", key)
 		result = l4c.processServiceCreateOrUpdate(key, svc)
 		if result == nil {
+			// result will be nil if the service was ignored(due to presence of service controller finalizer).
 			return nil
 		}
 		l4c.publishMetrics(result, namespacedName)
