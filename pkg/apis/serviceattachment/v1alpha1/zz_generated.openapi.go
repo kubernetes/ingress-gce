@@ -202,10 +202,16 @@ func schema_pkg_apis_serviceattachment_v1alpha1_ServiceAttachmentStatus(ref comm
 							},
 						},
 					},
+					"LastSyncTimestamp": {
+						SchemaProps: spec.SchemaProps{
+							Description: "LastSyncTimestamp tracks last time Status was updated",
+							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
+						},
+					},
 				},
 			},
 		},
 		Dependencies: []string{
-			"k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1.ConsumerForwardingRule"},
+			"k8s.io/apimachinery/pkg/apis/meta/v1.Time", "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1.ConsumerForwardingRule"},
 	}
 }

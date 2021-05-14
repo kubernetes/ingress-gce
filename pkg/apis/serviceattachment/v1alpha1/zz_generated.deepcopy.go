@@ -131,6 +131,7 @@ func (in *ServiceAttachmentStatus) DeepCopyInto(out *ServiceAttachmentStatus) {
 		*out = make([]ConsumerForwardingRule, len(*in))
 		copy(*out, *in)
 	}
+	in.LastSyncTimestamp.DeepCopyInto(&out.LastSyncTimestamp)
 	return
 }
 
