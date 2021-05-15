@@ -127,13 +127,19 @@ func (g *GCEURLMap) PutPathRulesForHost(hostname string, pathRules []PathRule) {
 
 // AllServicePorts return a list of all ServicePorts contained in the GCEURLMap.
 func (g *GCEURLMap) AllServicePorts() (svcPorts []ServicePort) {
+
+	uniqueServerPorts := make(map[ServicePortID]bool)
 	if g.DefaultBackend != nil {
 		svcPorts = append(svcPorts, *g.DefaultBackend)
+		uniqueServerPorts[*&g.DefaultBackend.ID] = true
 	}
 
 	for _, rules := range g.HostRules {
 		for _, rule := range rules.Paths {
-			svcPorts = append(svcPorts, rule.Backend)
+			if !uniqueServerPorts[rule.Backend.ID] {
+				svcPorts = append(svcPorts, rule.Backend)
+				uniqueServerPorts[rule.Backend.ID] = true
+			}
 		}
 	}
 

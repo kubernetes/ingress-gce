@@ -178,6 +178,29 @@ func TestAllServicePorts(t *testing.T) {
 
 }
 
+func TestAllServicePortsDistinct(t *testing.T) {
+	t.Parallel()
+	m := NewGCEURLMap()
+	b := NewServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
+	b1 := NewServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
+	b2 := NewServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
+	m.DefaultBackend = &b
+	rules := []PathRule{
+		PathRule{Path: "/ex1", Backend: b1},
+		PathRule{Path: "/ex2", Backend: b2},
+	}
+	m.PutPathRulesForHost("example.com", rules)
+
+	wantPorts := []ServicePort{
+		NewServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80}),
+	}
+
+	gotPorts := m.AllServicePorts()
+	if !reflect.DeepEqual(gotPorts, wantPorts) {
+		t.Errorf("AllServicePorts(%+v) = \n%+v\nwant\n%+v", m, gotPorts, wantPorts)
+	}
+}
+
 func newTestMap() *GCEURLMap {
 	m := NewGCEURLMap()
 	b := NewServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
