@@ -111,7 +111,7 @@ func (crud *IngressCRUD) Patch(oldV1Ing, newV1Ing *v1.Ingress) (*v1.Ingress, err
 		if oldIng, err = toIngressV1beta1(oldV1Ing); err != nil {
 			return nil, err
 		}
-		if newIng, err = toIngressV1beta1(oldV1Ing); err != nil {
+		if newIng, err = toIngressV1beta1(newV1Ing); err != nil {
 			return nil, err
 		}
 		dataStruct = v1beta1.Ingress{}
