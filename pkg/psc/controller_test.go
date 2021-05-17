@@ -373,7 +373,7 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 		t.Errorf("%s", err)
 	}
 
-	saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"}, false)
+	saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"}, false, false)
 	beforeTS := metav1.NewTime(time.Time{})
 	saCR.Status.LastModifiedTimestamp = beforeTS
 	_, err = controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
@@ -436,41 +436,48 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 func TestServiceAttachmentUpdate(t *testing.T) {
 	saName := "my-sa"
 	svcName := "my-service"
+	otherServiceName := "my-other-service"
 	saUID := "serivce-attachment-uid"
 	frIPAddr := "1.2.3.4"
 
-	saCRAnnotation := testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"}, true)
-	saCRAnnotation.Annotations = map[string]string{"some-key": "some-value"}
+	subnet1 := "subnet-1"
+	subnet2 := "subnet-2"
+	subnet3 := "subnet-3"
+
+	saCRWithAnnotation := testServiceAttachmentCR(saName, svcName, saUID, []string{subnet1, subnet2}, true, false)
+	saCRWithAnnotation.Annotations = map[string]string{"some-key": "some-value"}
 
 	testcases := []struct {
-		desc        string
-		updatedSACR *sav1beta1.ServiceAttachment
-		expectErr   bool
+		desc            string
+		updatedSACR     *sav1beta1.ServiceAttachment
+		expectSAUpdate  bool
+		expectError     bool
+		expectedSubnets []string
 	}{
 		{
-			desc:        "updated annotation",
-			updatedSACR: saCRAnnotation,
-			expectErr:   false,
+			desc:            "update metadata annotation",
+			updatedSACR:     saCRWithAnnotation,
+			expectSAUpdate:  false,
+			expectedSubnets: []string{subnet1, subnet2},
 		},
 		{
-			desc:        "updated subnet",
-			updatedSACR: testServiceAttachmentCR(saName, svcName, saUID, []string{"diff-subnet"}, true),
-			expectErr:   true,
+			desc:            "update forwarding rule",
+			updatedSACR:     testServiceAttachmentCR(saName, otherServiceName, saUID, []string{subnet1, subnet2}, false, true),
+			expectSAUpdate:  false,
+			expectError:     true,
+			expectedSubnets: []string{subnet1, subnet2},
 		},
 		{
-			desc:        "updated service name",
-			updatedSACR: testServiceAttachmentCR(saName, "my-second-service", saUID, []string{"my-subnet"}, true),
-			expectErr:   true,
+			desc:            "update proxy protocol to false in the spec",
+			updatedSACR:     testServiceAttachmentCR(saName, svcName, saUID, []string{subnet1, subnet2}, false, false),
+			expectSAUpdate:  true,
+			expectedSubnets: []string{subnet1, subnet2},
 		},
-		{
-			desc:        "removed subnet",
-			updatedSACR: testServiceAttachmentCR(saName, svcName, saUID, []string{}, true),
-			expectErr:   true,
-		},
-		{
-			desc:        "removed finalizer",
-			updatedSACR: testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"}, false),
-			expectErr:   false,
+		{ // though this case checks that the SA is updated, this would fail on the GCE update because subnets cannot be removed
+			desc:            "update one of the subnets",
+			updatedSACR:     testServiceAttachmentCR(saName, svcName, saUID, []string{subnet1, subnet3}, false, true),
+			expectSAUpdate:  true,
+			expectedSubnets: []string{subnet1, subnet3},
 		},
 	}
 
@@ -486,11 +493,21 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 				t.Errorf("%s", err)
 			}
 
-			if _, err := createNatSubnet(controller.cloud, "my-subnet"); err != nil {
-				t.Errorf("%s", err)
+			createdSubnets := map[string]string{}
+			for _, subnetName := range []string{subnet1, subnet2, subnet3} {
+				subnet, err := createNatSubnet(controller.cloud, subnetName)
+				if err != nil {
+					t.Errorf("%s", err)
+				}
+				createdSubnets[subnetName] = subnet.SelfLink
 			}
 
-			saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"}, false)
+			var expectedSubnetURLs []string
+			for _, subnetName := range tc.expectedSubnets {
+				expectedSubnetURLs = append(expectedSubnetURLs, createdSubnets[subnetName])
+			}
+
+			saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{subnet1, subnet2}, false, false)
 			_, err = controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
 			if err != nil {
 				t.Fatalf("Failed to create service attachment cr: %q", err)
@@ -531,30 +548,136 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 				t.Fatalf("Failed to add tc.updatedSACR to store: %q", err)
 			}
 			err = controller.processServiceAttachment(SvcAttachmentKeyFunc(testNamespace, saName))
-			if tc.expectErr && err == nil {
-				t.Error("Expected error while processing updated ServiceAttachment")
-			} else if !tc.expectErr && err != nil {
+			if !tc.expectError && err != nil {
 				t.Errorf("Unexpected error while processing updated ServiceAttachment: %q", err)
+			} else if tc.expectError && err == nil {
+				t.Errorf("Expected an error while processing updated ServiceAttachment")
 			}
 
+			var expectedSA *beta.ServiceAttachment
+			if !tc.expectSAUpdate {
+				expectedSA = createdSA
+			} else {
+				expectedSA = &beta.ServiceAttachment{
+					ConnectionPreference: saCR.Spec.ConnectionPreference,
+					Description:          createdSA.Description,
+					Name:                 gceSAName,
+					NatSubnets:           expectedSubnetURLs,
+					TargetService:        createdSA.TargetService,
+					Region:               controller.cloud.Region(),
+					EnableProxyProtocol:  tc.updatedSACR.Spec.ProxyProtocol,
+					SelfLink:             createdSA.SelfLink,
+				}
+			}
 			updatedSA, err := getServiceAttachment(controller.cloud, gceSAName)
 			if err != nil {
-				t.Fatalf("Unexpected error when getting updatd GCE ServiceAttachment: %q", err)
+				t.Fatalf("Unexpected error when getting updated GCE ServiceAttachment: %q", err)
 			}
 
-			if !reflect.DeepEqual(createdSA, updatedSA) {
-				t.Errorf("GCE Service Attachment should not be updated. \nOriginal SA:\n %+v, \nUpdated SA:\n %+v", createdSA, updatedSA)
+			if !reflect.DeepEqual(updatedSA, expectedSA) {
+				t.Errorf("Incorrect GCE Service Attachment \ngot SA:\n%+v,\nwant:\n%+v", updatedSA, expectedSA)
 			}
 
-			saCR, err = controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
+			updatedCR, err := controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("Failed to get service attachment cr: %q", err)
 			}
 
 			// No changes in the GCE SA status so CR status should not be updated
-			err = validateSAStatus(saCR.Status, updatedSA, beforeTS, false)
-			if err != nil {
-				t.Fatalf("Service Attachment Status did not match expected: %s", err)
+			if err = validateSAStatus(updatedCR.Status, expectedSA, beforeTS, false); err != nil {
+				t.Errorf("ServiceAttachment CR does not have correct status: %q", err)
+			}
+		})
+	}
+}
+
+func TestNeedsUpdate(t *testing.T) {
+	subnet1 := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-1"
+	subnet2 := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-2"
+	subnet3 := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-3"
+
+	targetService1 := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/forwardingRules/fr-1"
+	targetService2 := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/forwardingRules/fr-2"
+
+	originalSA := &beta.ServiceAttachment{
+		ConnectionPreference: "ACCEPT_AUTOMATIC",
+		Description:          "my-desc",
+		Name:                 "my-sa",
+		NatSubnets:           []string{subnet1, subnet2},
+		TargetService:        targetService1,
+		Region:               "region",
+		EnableProxyProtocol:  true,
+		SelfLink:             "self-link",
+	}
+
+	saDiffService := &beta.ServiceAttachment{}
+	*saDiffService = *originalSA
+	saDiffService.TargetService = targetService2
+
+	saDiffSubnets := &beta.ServiceAttachment{}
+	*saDiffSubnets = *originalSA
+	saDiffSubnets.NatSubnets = []string{subnet1, subnet3}
+
+	saAddSubnet := &beta.ServiceAttachment{}
+	*saAddSubnet = *originalSA
+	saAddSubnet.NatSubnets = []string{subnet1, subnet2, subnet3}
+
+	saDiffSpec := &beta.ServiceAttachment{}
+	*saDiffSpec = *originalSA
+	saDiffSpec.EnableProxyProtocol = false
+
+	saNoChange := &beta.ServiceAttachment{}
+	*saNoChange = *originalSA
+
+	testcases := []struct {
+		desc         string
+		newSA        *beta.ServiceAttachment
+		expectError  bool
+		expectUpdate bool
+	}{
+		{
+			desc:         "change the target service/forwarding rule",
+			newSA:        saDiffService,
+			expectError:  true,
+			expectUpdate: true,
+		},
+		{
+			desc:         "change a subnet",
+			newSA:        saDiffSubnets,
+			expectError:  false,
+			expectUpdate: true,
+		},
+		{
+			desc:         "add a subnet",
+			newSA:        saAddSubnet,
+			expectError:  false,
+			expectUpdate: true,
+		},
+		{
+			desc:         "change spec",
+			newSA:        saDiffSpec,
+			expectError:  false,
+			expectUpdate: true,
+		},
+		{
+			desc:         "no change",
+			newSA:        saNoChange,
+			expectError:  false,
+			expectUpdate: false,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			needsUpdate, err := needsUpdate(originalSA, tc.newSA)
+			if tc.expectError && err == nil {
+				t.Errorf("expected an error but got none")
+			} else if !tc.expectError && err != nil {
+				t.Errorf("unexpected error: %q", err)
+			}
+
+			if needsUpdate != tc.expectUpdate {
+				t.Errorf("needsUpdate returned %t, expected %t", needsUpdate, tc.expectUpdate)
 			}
 		})
 	}
@@ -616,8 +739,8 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 			}
 
 			// create a serviceAttachment that should not be deleted as part of GC
-			saToKeep := testServiceAttachmentCR("sa-to-keep", svcNamePrefix+"-keep", saUIDPrefix+"-keep", []string{"my-subnet"}, true)
-			saToBeDeleted := testServiceAttachmentCR("sa-to-be-deleted", svcNamePrefix+"-deleted", saUIDPrefix+"-deleted", []string{"my-subnet"}, true)
+			saToKeep := testServiceAttachmentCR("sa-to-keep", svcNamePrefix+"-keep", saUIDPrefix+"-keep", []string{"my-subnet"}, true, false)
+			saToBeDeleted := testServiceAttachmentCR("sa-to-be-deleted", svcNamePrefix+"-deleted", saUIDPrefix+"-deleted", []string{"my-subnet"}, true, false)
 			for _, sa := range []*sav1beta1.ServiceAttachment{saToKeep, saToBeDeleted} {
 				svcName := sa.Spec.ResourceRef.Name
 				svc, frName, err := createSvc(controller, svcName, string(sa.UID), frIPAddr, annotations.TCPForwardingRuleKey)
@@ -724,7 +847,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 
 func TestShouldProcess(t *testing.T) {
 	now := metav1.Now()
-	originalSA := testServiceAttachmentCR("sa", "my-service", "service-attachment-uid", []string{"my-subnet"}, true)
+	originalSA := testServiceAttachmentCR("sa", "my-service", "service-attachment-uid", []string{"my-subnet"}, true, false)
 
 	deletedSA := originalSA.DeepCopy()
 	deletedSA.SetDeletionTimestamp(&now)
@@ -867,7 +990,33 @@ func TestFilterError(t *testing.T) {
 // newTestController returns a test psc controller
 func newTestController(clusterType string) *Controller {
 	kubeClient := fake.NewSimpleClientset()
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	gceClient := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+
+	fakeGCE := gceClient.Compute().(*cloud.MockGCE)
+	mockSA := fakeGCE.BetaServiceAttachments().(*cloud.MockBetaServiceAttachments)
+
+	// Mock has a noop for the Patch. Add the patch hook so GCE SA gets updated when mock patch is called
+	mockSA.PatchHook = func(ctx context2.Context, key *meta.Key, sa *beta.ServiceAttachment, fake *cloud.MockBetaServiceAttachments) error {
+		if !key.Valid() {
+			return fmt.Errorf("PatchHook: invalid GCE key (%+v)", key)
+		}
+
+		sa.Name = key.Name
+		projectID := fake.ProjectRouter.ProjectID(ctx, "beta", "serviceAttachments")
+		sa.SelfLink = cloud.SelfLink(meta.VersionBeta, projectID, "serviceAttachments", key)
+
+		originalObj, ok := fake.Objects[*key]
+		if ok {
+			originalSA := originalObj.Obj.(*beta.ServiceAttachment)
+			if originalSA.Fingerprint != sa.Fingerprint {
+				return fmt.Errorf("Service Attachment resource fingerprint does not match")
+			}
+		}
+
+		fake.Objects[*key] = &cloud.MockServiceAttachmentsObj{Obj: sa}
+		return nil
+	}
+
 	resourceNamer := namer.NewNamer(ClusterID, "")
 	saClient := safake.NewSimpleClientset()
 
@@ -880,7 +1029,7 @@ func newTestController(clusterType string) *Controller {
 
 	flags.F.GKEClusterName = ClusterName
 	flags.F.GKEClusterType = clusterType
-	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, saClient, fakeGCE, resourceNamer, kubeSystemUID, ctxConfig)
+	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, saClient, gceClient, resourceNamer, kubeSystemUID, ctxConfig)
 
 	return NewController(ctx)
 }
@@ -914,7 +1063,7 @@ func createSvc(controller *Controller, svcName, svcUID, ipAddr, forwardingRuleKe
 }
 
 // testServiceAttachmentCR creates a test ServiceAttachment CR with the provided name, uid and subnets
-func testServiceAttachmentCR(saName, svcName, svcUID string, subnets []string, withFinalizer bool) *sav1beta1.ServiceAttachment {
+func testServiceAttachmentCR(saName, svcName, svcUID string, subnets []string, withFinalizer, proxyProtocol bool) *sav1beta1.ServiceAttachment {
 	cr := &sav1beta1.ServiceAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: testNamespace,
@@ -928,6 +1077,7 @@ func testServiceAttachmentCR(saName, svcName, svcUID string, subnets []string, w
 				Kind: "service",
 				Name: svcName,
 			},
+			ProxyProtocol: proxyProtocol,
 		},
 	}
 
