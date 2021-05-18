@@ -202,7 +202,7 @@ func schema_pkg_apis_serviceattachment_v1alpha1_ServiceAttachmentStatus(ref comm
 							},
 						},
 					},
-					"LastSyncTimestamp": {
+					"lastSyncTimestamp": {
 						SchemaProps: spec.SchemaProps{
 							Description: "LastSyncTimestamp tracks last time Status was updated",
 							Ref:         ref("k8s.io/apimachinery/pkg/apis/meta/v1.Time"),
