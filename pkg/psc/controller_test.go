@@ -298,11 +298,94 @@ func TestServiceAttachmentCreation(t *testing.T) {
 					t.Errorf(" Expected service attachment resource to be \n%+v\n, but found \n%+v", expectedSA, sa)
 				}
 
-				if err = validateSAStatus(updatedCR.Status, sa); err != nil {
+				if err = validateSAStatus(updatedCR.Status, sa, metav1.NewTime(time.Time{})); err != nil {
 					t.Errorf("ServiceAttachment CR does not match expected: %s", err)
 				}
 			}
 		})
+	}
+}
+
+func TestServiceAttachmentConsumers(t *testing.T) {
+
+	saName := "my-sa"
+	svcName := "my-service"
+	saUID := "serivce-attachment-uid"
+	frIPAddr := "1.2.3.4"
+	controller := newTestController()
+	gceSAName := controller.saNamer.ServiceAttachment(testNamespace, saName, saUID)
+	_, frName, err := createSvc(controller, svcName, "svc-uid", frIPAddr, annotations.TCPForwardingRuleKey)
+	if err != nil {
+		t.Errorf("%s", err)
+	}
+	rule, err := createForwardingRule(controller.cloud, frName, frIPAddr)
+	if err != nil {
+		t.Errorf("%s", err)
+	}
+
+	subnet, err := createNatSubnet(controller.cloud, "my-subnet")
+	if err != nil {
+		t.Errorf("%s", err)
+	}
+
+	saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"}, false)
+	saCR.SelfLink = "k8s-svc-attachment-selflink"
+	beforeTS := metav1.NewTime(time.Time{})
+	saCR.Status.LastSyncTimestamp = beforeTS
+	_, err = controller.saClient.NetworkingV1alpha1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create service attachment cr: %q", err)
+	}
+	syncServiceAttachmentLister(controller)
+
+	initialConsumerRules := []*alpha.ServiceAttachmentConsumerForwardingRule{
+		{ForwardingRule: "consumer-fwd-rule-1", Status: "ACCEPTED"},
+		{ForwardingRule: "consumer-fwd-rule-2", Status: "PENDING"},
+	}
+
+	updateConsumerRules := []*alpha.ServiceAttachmentConsumerForwardingRule{
+		{ForwardingRule: "consumer-fwd-rule-1", Status: "ACCEPTED"},
+		{ForwardingRule: "consumer-fwd-rule-2", Status: "PENDING"},
+		{ForwardingRule: "consumer-fwd-rule-3", Status: "PENDING"},
+	}
+
+	desc := sautils.ServiceAttachmentDesc{URL: saCR.SelfLink}
+	expectedSA := &alpha.ServiceAttachment{
+		ConnectionPreference:   saCR.Spec.ConnectionPreference,
+		Description:            desc.String(),
+		Name:                   gceSAName,
+		NatSubnets:             []string{subnet.SelfLink},
+		ProducerForwardingRule: rule.SelfLink,
+		Region:                 controller.cloud.Region(),
+		EnableProxyProtocol:    saCR.Spec.ProxyProtocol,
+	}
+
+	for _, consumerRules := range [][]*alpha.ServiceAttachmentConsumerForwardingRule{
+		initialConsumerRules, updateConsumerRules} {
+		expectedSA.ConsumerForwardingRules = consumerRules
+		err = insertServiceAttachment(controller.cloud, expectedSA)
+		if err != nil {
+			t.Errorf("errored adding consumer forwarding rules to gce service attachment: %q", err)
+		}
+
+		err = controller.processServiceAttachment(SvcAttachmentKeyFunc(testNamespace, saName))
+		if err != nil {
+			t.Errorf("unexpected error processing service attachment: %q", err)
+		}
+
+		updatedCR, err := controller.saClient.NetworkingV1alpha1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
+		if err != nil {
+			t.Errorf("unexpected error while querying for service attachment %s: %q", saName, err)
+		}
+		if err = validateSAStatus(updatedCR.Status, expectedSA, beforeTS); err != nil {
+			t.Errorf("ServiceAttachment CR does not have correct consumers: %q", err)
+		}
+
+		// TODO(srepakula): Replace when mock allows updates to SA objects
+		err = deleteServiceAttachment(controller.cloud, gceSAName)
+		if err != nil {
+			t.Errorf("errored deleting gce service attachment: %q", err)
+		}
 	}
 }
 
@@ -707,9 +790,35 @@ func getServiceAttachment(cloud *gce.Cloud, saName string) (*alpha.ServiceAttach
 	return sa, nil
 }
 
+// insertServiceAttachment inserts the given Service Attachment resource in GCE
+func insertServiceAttachment(cloud *gce.Cloud, sa *alpha.ServiceAttachment) error {
+	saKey, err := composite.CreateKey(cloud, sa.Name, meta.Regional)
+	if err != nil {
+		return fmt.Errorf("errored creating a key for service attachment: %q", err)
+	}
+	err = cloud.Compute().AlphaServiceAttachments().Insert(context2.TODO(), saKey, sa)
+	if err != nil {
+		return fmt.Errorf("errored inserting gce service attachment: %q", err)
+	}
+	return nil
+}
+
+// deleteServiceAttachment deletes the ServiceAttachment in GCE
+func deleteServiceAttachment(cloud *gce.Cloud, name string) error {
+	saKey, err := composite.CreateKey(cloud, name, meta.Regional)
+	if err != nil {
+		return fmt.Errorf("errored creating a key for service attachment: %q", err)
+	}
+	err = cloud.Compute().AlphaServiceAttachments().Delete(context2.TODO(), saKey)
+	if err != nil {
+		return fmt.Errorf("errored deleting gce service attachment: %q", err)
+	}
+	return nil
+}
+
 // validateSAStatus validates that the status reports the same information as on the
 // GCE service attachment resource
-func validateSAStatus(status sav1alpha1.ServiceAttachmentStatus, sa *alpha.ServiceAttachment) error {
+func validateSAStatus(status sav1alpha1.ServiceAttachmentStatus, sa *alpha.ServiceAttachment, beforeTS metav1.Time) error {
 	if status.ServiceAttachmentURL != sa.SelfLink {
 		return fmt.Errorf("ServiceAttachment.Status.ServiceAttachmentURL was %s, but should be %s", status.ServiceAttachmentURL, sa.SelfLink)
 	}
@@ -717,6 +826,28 @@ func validateSAStatus(status sav1alpha1.ServiceAttachmentStatus, sa *alpha.Servi
 	if status.ForwardingRuleURL != sa.ProducerForwardingRule {
 		return fmt.Errorf("ServiceAttachment.Status.ForwardingRuleURL was %s, but should be %s", status.ForwardingRuleURL, sa.ProducerForwardingRule)
 	}
+
+	if len(sa.ConsumerForwardingRules) != len(status.ConsumerForwardingRules) {
+		return fmt.Errorf("ServiceAttachment.Status.ConsumerForwardingRules has %d rules, expected %d", len(status.ConsumerForwardingRules), len(sa.ConsumerForwardingRules))
+	}
+	for _, expectedConsumer := range sa.ConsumerForwardingRules {
+		foundConsumer := false
+		for _, consumer := range status.ConsumerForwardingRules {
+			if expectedConsumer.ForwardingRule == consumer.ForwardingRuleURL &&
+				expectedConsumer.Status == consumer.Status {
+				foundConsumer = true
+			}
+		}
+		if !foundConsumer {
+			return fmt.Errorf("ServiceAttachment.Status.ConsumerForwardingRules did not have %+v", expectedConsumer)
+		}
+	}
+
+	if !beforeTS.Before(&status.LastSyncTimestamp) {
+		return fmt.Errorf("ServiceAttachment CR Status should update timestamp after sync. Before: %s, Status: %s",
+			beforeTS.UTC().String(), status.LastSyncTimestamp.UTC().String())
+	}
+
 	return nil
 }
 
