@@ -230,6 +230,14 @@ func TestBackendServiceCdnPolicyNegativeCachingPolicy(t *testing.T) {
 	}
 }
 
+func TestBackendServiceConnectionTrackingPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceConnectionTrackingPolicy{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceConnectionTrackingPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBackendServiceFailoverPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceFailoverPolicy{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceFailoverPolicy{})
@@ -1005,6 +1013,14 @@ func TestNetworkEndpointGroupCloudRun(t *testing.T) {
 func TestNetworkEndpointGroupLbNetworkEndpointGroup(t *testing.T) {
 	compositeType := reflect.TypeOf(NetworkEndpointGroupLbNetworkEndpointGroup{})
 	alphaType := reflect.TypeOf(computealpha.NetworkEndpointGroupLbNetworkEndpointGroup{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNetworkEndpointGroupServerlessDeployment(t *testing.T) {
+	compositeType := reflect.TypeOf(NetworkEndpointGroupServerlessDeployment{})
+	alphaType := reflect.TypeOf(computealpha.NetworkEndpointGroupServerlessDeployment{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
@@ -1805,6 +1821,14 @@ func TestUrlMapToGA(t *testing.T) {
 func TestUrlMapTest(t *testing.T) {
 	compositeType := reflect.TypeOf(UrlMapTest{})
 	alphaType := reflect.TypeOf(computealpha.UrlMapTest{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestUrlMapTestHeader(t *testing.T) {
+	compositeType := reflect.TypeOf(UrlMapTestHeader{})
+	alphaType := reflect.TypeOf(computealpha.UrlMapTestHeader{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
