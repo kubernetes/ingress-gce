@@ -36,6 +36,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1"
 	sav1alpha1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
@@ -105,6 +106,14 @@ func NewController(ctx *context.ControllerContext) *Controller {
 	ctx.SAInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: controller.enqueueServiceAttachment,
 		UpdateFunc: func(old, cur interface{}) {
+			curSA := cur.(*v1alpha1.ServiceAttachment)
+			oldSA := old.(*v1alpha1.ServiceAttachment)
+
+			// Only process ServiceAttachments that are part of periodic requeue or have a spec change.
+			if !shouldProcess(oldSA, curSA) {
+				klog.V(4).Infof("Ignoring status update for ServiceAttachment")
+				return
+			}
 			controller.enqueueServiceAttachment(cur)
 		},
 	})
@@ -562,6 +571,26 @@ func validateUpdate(existingSA, desiredSA *alpha.ServiceAttachment) error {
 		}
 	}
 	return nil
+}
+
+// shouldProcess checks if service attachment should be processed or not.
+// It will ignore status or type meta only updates but will return true for periodic enqueues
+func shouldProcess(old, cur *v1alpha1.ServiceAttachment) bool {
+	specChanged := reflect.DeepEqual(old.Spec, cur.Spec)
+	metaChanged := reflect.DeepEqual(old.ObjectMeta, cur.ObjectMeta) // Ignore changes to TypeMeta and Status. return specChanged || metaChanged
+
+	// If spec changed, the ServiceAttachment should be processed.
+	if specChanged || metaChanged {
+		return true
+	}
+
+	// If Status changed, most likely update was done by the controller and further processing is unnecessary.
+	if reflect.DeepEqual(old.Status, cur.Status) {
+		return false
+	}
+
+	// Periodic enqueues where nothing changed should be processed to update Status
+	return true
 }
 
 // SvcAttachmentKeyFunc provides the service attachment key used
