@@ -548,9 +548,23 @@ var AllServices = []*ServiceInfo{
 		Object:      "ServiceAttachment",
 		Service:     "ServiceAttachments",
 		Resource:    "serviceAttachments",
+		version:     VersionBeta,
+		keyType:     Regional,
+		serviceType: reflect.TypeOf(&beta.ServiceAttachmentsService{}),
+		additionalMethods: []string{
+			"Patch",
+		},
+	},
+	{
+		Object:      "ServiceAttachment",
+		Service:     "ServiceAttachments",
+		Resource:    "serviceAttachments",
 		version:     VersionAlpha,
 		keyType:     Regional,
 		serviceType: reflect.TypeOf(&alpha.ServiceAttachmentsService{}),
+		additionalMethods: []string{
+			"Patch",
+		},
 	},
 	{
 		Object:      "SslCertificate",
