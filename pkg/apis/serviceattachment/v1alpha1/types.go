@@ -78,7 +78,7 @@ type ServiceAttachmentStatus struct {
 
 	// LastSyncTimestamp tracks last time Status was updated
 	// +optional
-	LastSyncTimestamp metav1.Time
+	LastSyncTimestamp metav1.Time `json:"lastSyncTimestamp"`
 }
 
 // ConsumerForwardingRule is a reference to the PSC consumer forwarding rule
