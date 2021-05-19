@@ -109,9 +109,7 @@ func NewController(ctx *context.ControllerContext) *Controller {
 			curSA := cur.(*v1alpha1.ServiceAttachment)
 			oldSA := old.(*v1alpha1.ServiceAttachment)
 
-			// Only process ServiceAttachments that are part of periodic requeue or have a spec change.
 			if !shouldProcess(oldSA, curSA) {
-				klog.V(4).Infof("Ignoring status update for ServiceAttachment")
 				return
 			}
 			controller.enqueueServiceAttachment(cur)
@@ -576,21 +574,27 @@ func validateUpdate(existingSA, desiredSA *alpha.ServiceAttachment) error {
 // shouldProcess checks if service attachment should be processed or not.
 // It will ignore status or type meta only updates but will return true for periodic enqueues
 func shouldProcess(old, cur *v1alpha1.ServiceAttachment) bool {
-	specChanged := reflect.DeepEqual(old.Spec, cur.Spec)
-	metaChanged := reflect.DeepEqual(old.ObjectMeta, cur.ObjectMeta) // Ignore changes to TypeMeta and Status. return specChanged || metaChanged
-
-	// If spec changed, the ServiceAttachment should be processed.
-	if specChanged || metaChanged {
-		return true
-	}
-
-	// If Status changed, most likely update was done by the controller and further processing is unnecessary.
-	if reflect.DeepEqual(old.Status, cur.Status) {
+	if cur.GetDeletionTimestamp() != nil {
+		klog.V(4).Infof("Deletion timestamp is set, skipping service attachment %s/%s", cur.Namespace, cur.Name)
 		return false
 	}
 
-	// Periodic enqueues where nothing changed should be processed to update Status
-	return true
+	// If spec changed, the ServiceAttachment should be processed.
+	if !reflect.DeepEqual(old.Spec, cur.Spec) {
+		klog.V(4).Infof("Spec has changed, queuing service attachment %s/%s", cur.Namespace, cur.Name)
+		return true
+	}
+
+	if reflect.DeepEqual(old.Status, cur.Status) {
+		// Periodic enqueues where nothing changed should be processed to update Status
+		klog.V(4).Infof("Periodic sync, queuing service attachment %s/%s", cur.Namespace, cur.Name)
+		return true
+	}
+
+	// If Status changed, update was done by the controller and further processing is unnecessary.
+	// Status change results in a resource version change, so do not check for metadata changes
+	klog.V(4).Infof("Status only update, skipping service attachment %s/%s", cur.Namespace, cur.Name)
+	return false
 }
 
 // SvcAttachmentKeyFunc provides the service attachment key used

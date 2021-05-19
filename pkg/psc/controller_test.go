@@ -662,6 +662,72 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 	}
 }
 
+func TestShouldProcess(t *testing.T) {
+	now := metav1.Now()
+	originalSA := testServiceAttachmentCR("sa", "my-service", "service-attachment-uid", []string{"my-subnet"}, true)
+
+	deletedSA := originalSA.DeepCopy()
+	deletedSA.SetDeletionTimestamp(&now)
+
+	metadataSA := originalSA.DeepCopy()
+	metadataSA.Labels = map[string]string{"key": "value"}
+
+	metadataWithStatusSA := metadataSA.DeepCopy()
+	metadataWithStatusSA.Status.LastSyncTimestamp = metav1.Now()
+
+	specSA := originalSA.DeepCopy()
+	specSA.Spec.ConnectionPreference = "some-connection-pref"
+
+	statusSA := originalSA.DeepCopy()
+	statusSA.Status.LastSyncTimestamp = metav1.Now()
+
+	testcases := []struct {
+		desc          string
+		newSA         *sav1alpha1.ServiceAttachment
+		shouldProcess bool
+	}{
+		{
+			desc:          "cr has been deleted",
+			newSA:         deletedSA,
+			shouldProcess: false,
+		},
+		{
+			desc:          "metadata has been updated and status has not changed",
+			newSA:         metadataSA,
+			shouldProcess: true,
+		},
+		{
+			desc:          "metadata and status has been updated",
+			newSA:         metadataWithStatusSA,
+			shouldProcess: false,
+		},
+		{
+			desc:          "No changes were made like in a periodic sync",
+			newSA:         originalSA,
+			shouldProcess: true,
+		},
+		{
+			desc:          "Spec has changed",
+			newSA:         specSA,
+			shouldProcess: true,
+		},
+		{
+			desc:          "only status has changed",
+			newSA:         statusSA,
+			shouldProcess: false,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			processSA := shouldProcess(originalSA, tc.newSA)
+			if processSA != tc.shouldProcess {
+				t.Errorf("Expected shouldProcess to return %t, but got %t", tc.shouldProcess, processSA)
+			}
+		})
+	}
+}
+
 // newTestController returns a test psc controller
 func newTestController() *Controller {
 	kubeClient := fake.NewSimpleClientset()
