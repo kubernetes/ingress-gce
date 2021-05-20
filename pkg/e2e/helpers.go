@@ -1032,23 +1032,23 @@ func CheckServiceAttachment(sa *fuzz.ServiceAttachment, cr *sav1alpha1.ServiceAt
 		return "", fmt.Errorf("Service Attachment CR %s/%s status is not populated", cr.Namespace, cr.Name)
 	}
 
-	if sa.Alpha.ConnectionPreference != cr.Spec.ConnectionPreference {
-		return "", fmt.Errorf("service attachment %s connection preference does not CR %s/%s", sa.Alpha.ConnectionPreference, cr.Namespace, cr.Name)
+	if sa.Beta.ConnectionPreference != cr.Spec.ConnectionPreference {
+		return "", fmt.Errorf("service attachment %s connection preference does not CR %s/%s", sa.Beta.ConnectionPreference, cr.Namespace, cr.Name)
 	}
 
 	var subnets []string
-	for _, subnetURL := range sa.Alpha.NatSubnets {
+	for _, subnetURL := range sa.Beta.NatSubnets {
 		resourceID, err := cloud.ParseResourceURL(subnetURL)
 		if err != nil {
-			return "", fmt.Errorf("unparseable subnet url %s in gce service attachment %s", subnetURL, sa.Alpha.Name)
+			return "", fmt.Errorf("unparseable subnet url %s in gce service attachment %s", subnetURL, sa.Beta.Name)
 		}
 		subnets = append(subnets, resourceID.Key.Name)
 	}
 
 	if !utils.EqualStringSets(subnets, cr.Spec.NATSubnets) {
-		return "", fmt.Errorf("subnets in gce service attachment %s does not make CR %s/%s", sa.Alpha.Name, cr.Namespace, cr.Name)
+		return "", fmt.Errorf("subnets in gce service attachment %s does not make CR %s/%s", sa.Beta.Name, cr.Namespace, cr.Name)
 	}
-	return sa.Alpha.SelfLink, nil
+	return sa.Beta.SelfLink, nil
 }
 
 // CheckServiceAttachmentForwardingRule verfies that the forwarding rule used in the GCE Service Attachment creation

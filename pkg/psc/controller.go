@@ -25,7 +25,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	alpha "google.golang.org/api/compute/v0.alpha"
+	beta "google.golang.org/api/compute/v0.beta"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -250,7 +250,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 
 	saName := c.saNamer.ServiceAttachment(namespace, name, string(updatedCR.UID))
 	desc := sautils.ServiceAttachmentDesc{URL: updatedCR.SelfLink}
-	gceSvcAttachment := &alpha.ServiceAttachment{
+	gceSvcAttachment := &beta.ServiceAttachment{
 		ConnectionPreference:   svcAttachment.Spec.ConnectionPreference,
 		Name:                   saName,
 		NatSubnets:             subnetURLs,
@@ -265,7 +265,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 		return fmt.Errorf("failed to create key for GCE Service Attachment: %q", err)
 	}
 
-	existingSA, err := c.cloud.Compute().AlphaServiceAttachments().Get(context2.Background(), gceSAKey)
+	existingSA, err := c.cloud.Compute().BetaServiceAttachments().Get(context2.Background(), gceSAKey)
 	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		return fmt.Errorf("failed querying for GCE Service Attachment: %q", err)
 	}
@@ -283,7 +283,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 	}
 
 	klog.V(2).Infof("Creating service attachment %s", saName)
-	if err = c.cloud.Compute().AlphaServiceAttachments().Insert(context2.Background(), gceSAKey, gceSvcAttachment); err != nil {
+	if err = c.cloud.Compute().BetaServiceAttachments().Insert(context2.Background(), gceSAKey, gceSvcAttachment); err != nil {
 		return fmt.Errorf("failed to create GCE Service Attachment: %q", err)
 	}
 	klog.V(2).Infof("Created service attachment %s", saName)
@@ -431,7 +431,7 @@ func (c *Controller) getSubnetURLs(subnets []string) ([]string, error) {
 // updateServiceAttachmentStatus updates the CR's status with the GCE Service Attachment URL
 // and the producer forwarding rule
 func (c *Controller) updateServiceAttachmentStatus(cr *sav1alpha1.ServiceAttachment, gceSAKey *meta.Key) (*sav1alpha1.ServiceAttachment, error) {
-	gceSA, err := c.cloud.Compute().AlphaServiceAttachments().Get(context2.Background(), gceSAKey)
+	gceSA, err := c.cloud.Compute().BetaServiceAttachments().Get(context2.Background(), gceSAKey)
 	if err != nil {
 		return cr, fmt.Errorf("failed to query GCE Service Attachment: %q", err)
 	}
@@ -472,7 +472,7 @@ func (c *Controller) ensureDeleteGCEServiceAttachment(name string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create key for service attachment %q", name)
 	}
-	_, err = c.cloud.Compute().AlphaServiceAttachments().Get(context2.Background(), saKey)
+	_, err = c.cloud.Compute().BetaServiceAttachments().Get(context2.Background(), saKey)
 	if err != nil {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
 			return nil
@@ -480,7 +480,7 @@ func (c *Controller) ensureDeleteGCEServiceAttachment(name string) error {
 		return fmt.Errorf("failed querying for service attachment %q: %q", name, err)
 	}
 
-	return c.cloud.Compute().AlphaServiceAttachments().Delete(context2.Background(), saKey)
+	return c.cloud.Compute().BetaServiceAttachments().Delete(context2.Background(), saKey)
 }
 
 // ensureSAFinalizer ensures that the Service Attachment finalizer exists on the provided
@@ -528,7 +528,7 @@ func validateResourceReference(ref v1.TypedLocalObjectReference) error {
 // validateUpdate will validate whether ServiceAttachment matches the GCE Service Attachment
 // resource. If not, validateUpdate will return an error, since GCE Service Attachments cannot
 // be updated after creation
-func validateUpdate(existingSA, desiredSA *alpha.ServiceAttachment) error {
+func validateUpdate(existingSA, desiredSA *beta.ServiceAttachment) error {
 	if existingSA.ConnectionPreference != desiredSA.ConnectionPreference {
 		return fmt.Errorf("serviceAttachment connection preference cannot be updated from %s to %s", existingSA.ConnectionPreference, desiredSA.ConnectionPreference)
 	}

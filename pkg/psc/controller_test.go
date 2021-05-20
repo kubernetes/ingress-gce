@@ -25,7 +25,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	alpha "google.golang.org/api/compute/v0.alpha"
+	beta "google.golang.org/api/compute/v0.beta"
 	ga "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	v1 "k8s.io/api/core/v1"
@@ -283,7 +283,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 
 				desc := sautils.ServiceAttachmentDesc{URL: saURL}
 
-				expectedSA := &alpha.ServiceAttachment{
+				expectedSA := &beta.ServiceAttachment{
 					ConnectionPreference:   tc.connectionPreference,
 					Description:            desc.String(),
 					Name:                   gceSAName,
@@ -338,19 +338,19 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 	}
 	syncServiceAttachmentLister(controller)
 
-	initialConsumerRules := []*alpha.ServiceAttachmentConsumerForwardingRule{
+	initialConsumerRules := []*beta.ServiceAttachmentConsumerForwardingRule{
 		{ForwardingRule: "consumer-fwd-rule-1", Status: "ACCEPTED"},
 		{ForwardingRule: "consumer-fwd-rule-2", Status: "PENDING"},
 	}
 
-	updateConsumerRules := []*alpha.ServiceAttachmentConsumerForwardingRule{
+	updateConsumerRules := []*beta.ServiceAttachmentConsumerForwardingRule{
 		{ForwardingRule: "consumer-fwd-rule-1", Status: "ACCEPTED"},
 		{ForwardingRule: "consumer-fwd-rule-2", Status: "PENDING"},
 		{ForwardingRule: "consumer-fwd-rule-3", Status: "PENDING"},
 	}
 
 	desc := sautils.ServiceAttachmentDesc{URL: saCR.SelfLink}
-	expectedSA := &alpha.ServiceAttachment{
+	expectedSA := &beta.ServiceAttachment{
 		ConnectionPreference:   saCR.Spec.ConnectionPreference,
 		Description:            desc.String(),
 		Name:                   gceSAName,
@@ -360,7 +360,7 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 		EnableProxyProtocol:    saCR.Spec.ProxyProtocol,
 	}
 
-	for _, consumerRules := range [][]*alpha.ServiceAttachmentConsumerForwardingRule{
+	for _, consumerRules := range [][]*beta.ServiceAttachmentConsumerForwardingRule{
 		initialConsumerRules, updateConsumerRules} {
 		expectedSA.ConsumerForwardingRules = consumerRules
 		err = insertServiceAttachment(controller.cloud, expectedSA)
@@ -603,7 +603,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 			if tc.getError != nil || tc.deleteError != nil {
 
 				fakeGCE := controller.cloud.Compute().(*cloud.MockGCE)
-				mockSA := fakeGCE.AlphaServiceAttachments().(*cloud.MockAlphaServiceAttachments)
+				mockSA := fakeGCE.BetaServiceAttachments().(*cloud.MockBetaServiceAttachments)
 
 				gceSAName := controller.saNamer.ServiceAttachment(saToBeDeleted.Namespace, saToBeDeleted.Name, string(saToBeDeleted.UID))
 				saKey, _ := composite.CreateKey(controller.cloud, gceSAName, meta.Regional)
@@ -844,12 +844,12 @@ func createNatSubnet(c *gce.Cloud, natSubnet string) (*ga.Subnetwork, error) {
 }
 
 // getServiceAttachment queries for the Service Attachment resource in GCE
-func getServiceAttachment(cloud *gce.Cloud, saName string) (*alpha.ServiceAttachment, error) {
+func getServiceAttachment(cloud *gce.Cloud, saName string) (*beta.ServiceAttachment, error) {
 	saKey, err := composite.CreateKey(cloud, saName, meta.Regional)
 	if err != nil {
 		return nil, fmt.Errorf("errored creating a key for service attachment: %q", err)
 	}
-	sa, err := cloud.Compute().AlphaServiceAttachments().Get(context2.TODO(), saKey)
+	sa, err := cloud.Compute().BetaServiceAttachments().Get(context2.TODO(), saKey)
 	if err != nil {
 		return nil, fmt.Errorf("errored querying for service attachment: %q", err)
 	}
@@ -857,12 +857,12 @@ func getServiceAttachment(cloud *gce.Cloud, saName string) (*alpha.ServiceAttach
 }
 
 // insertServiceAttachment inserts the given Service Attachment resource in GCE
-func insertServiceAttachment(cloud *gce.Cloud, sa *alpha.ServiceAttachment) error {
+func insertServiceAttachment(cloud *gce.Cloud, sa *beta.ServiceAttachment) error {
 	saKey, err := composite.CreateKey(cloud, sa.Name, meta.Regional)
 	if err != nil {
 		return fmt.Errorf("errored creating a key for service attachment: %q", err)
 	}
-	err = cloud.Compute().AlphaServiceAttachments().Insert(context2.TODO(), saKey, sa)
+	err = cloud.Compute().BetaServiceAttachments().Insert(context2.TODO(), saKey, sa)
 	if err != nil {
 		return fmt.Errorf("errored inserting gce service attachment: %q", err)
 	}
@@ -875,7 +875,7 @@ func deleteServiceAttachment(cloud *gce.Cloud, name string) error {
 	if err != nil {
 		return fmt.Errorf("errored creating a key for service attachment: %q", err)
 	}
-	err = cloud.Compute().AlphaServiceAttachments().Delete(context2.TODO(), saKey)
+	err = cloud.Compute().BetaServiceAttachments().Delete(context2.TODO(), saKey)
 	if err != nil {
 		return fmt.Errorf("errored deleting gce service attachment: %q", err)
 	}
@@ -884,7 +884,7 @@ func deleteServiceAttachment(cloud *gce.Cloud, name string) error {
 
 // validateSAStatus validates that the status reports the same information as on the
 // GCE service attachment resource
-func validateSAStatus(status sav1alpha1.ServiceAttachmentStatus, sa *alpha.ServiceAttachment, beforeTS metav1.Time) error {
+func validateSAStatus(status sav1alpha1.ServiceAttachmentStatus, sa *beta.ServiceAttachment, beforeTS metav1.Time) error {
 	if status.ServiceAttachmentURL != sa.SelfLink {
 		return fmt.Errorf("ServiceAttachment.Status.ServiceAttachmentURL was %s, but should be %s", status.ServiceAttachmentURL, sa.SelfLink)
 	}
