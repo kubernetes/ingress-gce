@@ -23,7 +23,6 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 	listers "k8s.io/client-go/listers/core/v1"
@@ -233,6 +232,15 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed", "Error deleting load balancer: %v", result.Error)
 		return result
 	}
+	// Reset the loadbalancer status first, before resetting annotations.
+	// Other controllers(like service-controller) will process the service update if annotations change, but will ignore a service status change.
+	// Following this order avoids a race condition when a service is changed from LoadBalancer type Internal to External.
+	if err := l4c.updateServiceStatus(svc, &v1.LoadBalancerStatus{}); err != nil {
+		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
+			"Error reseting load balancer status to empty: %v", err)
+		result.Error = fmt.Errorf("failed to reset ILB status, err: %w", err)
+		return result
+	}
 	// Also remove any ILB annotations from the service metadata
 	if err := l4c.updateAnnotations(svc, nil); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
@@ -244,14 +252,6 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error removing finalizer from load balancer: %v", err)
 		result.Error = fmt.Errorf("failed to remove ILB finalizer, err: %w", err)
-		return result
-	}
-
-	// Reset the loadbalancer status, Ignore NotFound error since the service can already be deleted at this point.
-	if err := l4c.updateServiceStatus(svc, &v1.LoadBalancerStatus{}); err != nil && !errors.IsNotFound(err) {
-		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-			"Error reseting load balancer status to empty: %v", err)
-		result.Error = fmt.Errorf("failed to reset ILB status, err: %w", err)
 		return result
 	}
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletedLoadBalancer", "Deleted load balancer")
