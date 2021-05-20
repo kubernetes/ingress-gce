@@ -220,7 +220,9 @@ func NewController(
 			UpdateFunc: func(old, cur interface{}) {
 				oldIng := cur.(*v1.Ingress)
 				curIng := cur.(*v1.Ingress)
-				if !utils.IsGLBCIngress(curIng) {
+				// Check if ingress class changed and previous class was a GCE ingress
+				// Ingress class change may require cleanup so enqueue related services
+				if !utils.IsGLBCIngress(curIng) && !utils.IsGLBCIngress(oldIng) {
 					klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", common.NamespacedName(curIng), annotations.IngressClassKey)
 					return
 				}
