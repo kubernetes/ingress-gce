@@ -74,7 +74,7 @@ type ServiceAttachmentStatus struct {
 	// Consumer Forwarding Rules using ts Service Attachment (BETA Compute API)
 	// +listType=atomic
 	// +optional
-	ConsumerForwardingRules []ConsumerForwardingRule `json:"consumerForwardingRules"`
+	ConsumerForwardingRules []ConsumerForwardingRule `json:"consumerForwardingRules,omitempty"`
 
 	// LastSyncTimestamp tracks last time Status was updated
 	// +optional
