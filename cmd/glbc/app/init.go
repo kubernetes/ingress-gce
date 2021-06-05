@@ -99,6 +99,7 @@ func servicePortForDefaultService(svc *v1.Service, svcPortName string, name type
 					Service: name,
 					Port:    networkingv1.ServiceBackendPort{Name: svcPortName},
 				},
+				Name:       port.Name,
 				TargetPort: port.TargetPort.StrVal,
 				Port:       port.Port,
 			}

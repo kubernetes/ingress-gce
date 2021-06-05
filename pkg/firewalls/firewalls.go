@@ -64,7 +64,8 @@ func NewFirewallPool(cloud Firewall, namer *namer_util.Namer, l7SrcRanges []stri
 
 // Sync firewall rules with the cloud.
 func (fr *FirewallRules) Sync(nodeNames, additionalPorts, additionalRanges []string, allowNodePort bool) error {
-	klog.V(4).Infof("Sync(%v)", nodeNames)
+	klog.V(4).Infof("Sync firewall rules: nodes (%v), additionalPorts (%v), additionalRanges (%v), allowNodePort (%v)",
+		nodeNames, additionalPorts, additionalRanges, allowNodePort)
 	name := fr.namer.FirewallRule()
 	existingFirewall, _ := fr.cloud.GetFirewall(name)
 
@@ -86,6 +87,17 @@ func (fr *FirewallRules) Sync(nodeNames, additionalPorts, additionalRanges []str
 	// De-dupe srcRanges
 	ranges := sets.NewString(fr.srcRanges...)
 	ranges.Insert(additionalRanges...)
+
+	// A firewall rule with TCP and an empty port list is equivalent with
+	// Allow TCP on any port. Dangerous!!!
+	// Delete the firewall rule if exists when the ports list is empty
+	if ports.Len() == 0 {
+		if existingFirewall == nil {
+			klog.V(4).Info("Firewall does not need update of ports or source ranges")
+			return nil
+		}
+		return fr.GC()
+	}
 
 	expectedFirewall := &compute.Firewall{
 		Name:         name,

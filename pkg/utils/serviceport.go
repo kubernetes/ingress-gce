@@ -42,6 +42,8 @@ type ServicePort struct {
 	ID ServicePortID
 
 	NodePort int64
+	// The name of the service port, retrieved from the Service
+	Name string
 	// Numerical port of the Service, retrieved from the Service
 	Port           int32
 	Protocol       annotations.AppProtocol

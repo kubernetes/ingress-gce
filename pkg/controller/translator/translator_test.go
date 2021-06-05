@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"reflect"
 	"testing"
 	"time"
 
@@ -28,7 +29,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
@@ -738,36 +738,224 @@ func getProbePath(p *apiv1.Probe) string {
 }
 
 func TestGatherEndpointPorts(t *testing.T) {
-	translator := fakeTranslator()
-
-	ep1 := "ep1"
-	ep2 := "ep2"
-
-	svcPorts := []utils.ServicePort{
-		{NodePort: int64(30001)},
-		{NodePort: int64(30002)},
+	cases := []struct {
+		desc      string
+		svcPorts  []utils.ServicePort
+		endpoints []struct {
+			Name  string
+			Ports []apiv1.EndpointPort
+		}
+		expected []string
+		wantErr  bool
+	}{
 		{
-			ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: ep1}},
-			NodePort:   int64(30003),
-			NEGEnabled: true,
-			TargetPort: "80",
+			desc: "svc without name, numeric target port, endpoints not checked",
+			svcPorts: []utils.ServicePort{
+				{
+					NEGEnabled: true,
+					TargetPort: "80",
+				},
+			},
+			expected: []string{"80"},
 		},
 		{
-			ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: ep2}},
-			NodePort:   int64(30004),
-			NEGEnabled: true,
-			TargetPort: "named-port",
+			desc: "svc with name, numeric target port, endpoints not checked",
+			svcPorts: []utils.ServicePort{
+				{
+					Name:       "svc-named-port",
+					NEGEnabled: true,
+					TargetPort: "80",
+				},
+			},
+			expected: []string{"80"},
+		},
+		{
+			desc: "svc without name, named target port",
+			svcPorts: []utils.ServicePort{
+				{
+					ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: "svc-name"}},
+					NEGEnabled: true,
+					TargetPort: "svc-target-port",
+				},
+			},
+			endpoints: []struct {
+				Name  string
+				Ports []apiv1.EndpointPort
+			}{
+				{
+					Name: "svc-name",
+					Ports: []apiv1.EndpointPort{
+						{Name: "", Port: int32(80), Protocol: apiv1.ProtocolTCP},
+					},
+				},
+			},
+			expected: []string{"80"},
+		},
+		{
+			desc: "svc with name, named target port",
+			svcPorts: []utils.ServicePort{
+				{
+					ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: "svc-name"}},
+					Name:       "svc-named-port",
+					NEGEnabled: true,
+					TargetPort: "svc-target-port",
+				},
+			},
+			endpoints: []struct {
+				Name  string
+				Ports []apiv1.EndpointPort
+			}{
+				{
+					Name: "svc-name",
+					Ports: []apiv1.EndpointPort{
+						{Name: "svc-named-port", Port: int32(80), Protocol: apiv1.ProtocolTCP},
+					},
+				},
+			},
+			expected: []string{"80"},
+		},
+		{
+			desc: "svc with name, named target port, not found in endpoint",
+			svcPorts: []utils.ServicePort{
+				{
+					ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: "svc-name"}},
+					Name:       "svc-named-port",
+					NEGEnabled: true,
+					TargetPort: "svc-target-port",
+				},
+			},
+			endpoints: []struct {
+				Name  string
+				Ports []apiv1.EndpointPort
+			}{
+				{
+					Name: "svc-name",
+					Ports: []apiv1.EndpointPort{
+						{Name: "svc-named-port-not-exists", Port: int32(80), Protocol: apiv1.ProtocolTCP},
+					},
+				},
+			},
+			expected: nil,
+		},
+		{
+			desc: "svc with name, named target port, endpoint missmatch",
+			svcPorts: []utils.ServicePort{
+				{
+					ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: "svc-name"}},
+					Name:       "svc-named-port",
+					NEGEnabled: true,
+					TargetPort: "svc-target-port",
+				},
+			},
+			endpoints: []struct {
+				Name  string
+				Ports []apiv1.EndpointPort
+			}{
+				{
+					Name: "svc-other-name",
+					Ports: []apiv1.EndpointPort{
+						{Name: "svc-named-port", Port: int32(80), Protocol: apiv1.ProtocolTCP},
+					},
+				},
+			},
+			expected: nil,
+		},
+		{
+			desc: "svc multiple with name, named target port, endpoint missmatch",
+			svcPorts: []utils.ServicePort{
+				{
+					ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: "svc-name"}},
+					Name:       "svc-named-port-1",
+					NEGEnabled: true,
+					TargetPort: "svc-target-port",
+				},
+				{
+					ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: "svc-name"}},
+					Name:       "svc-named-port-2",
+					NEGEnabled: true,
+					TargetPort: "svc-target-port",
+				},
+			},
+			endpoints: []struct {
+				Name  string
+				Ports []apiv1.EndpointPort
+			}{
+				{
+					Name: "svc-name",
+					Ports: []apiv1.EndpointPort{
+						{Name: "svc-named-port-1", Port: int32(80), Protocol: apiv1.ProtocolTCP},
+						{Name: "svc-named-port-2", Port: int32(81), Protocol: apiv1.ProtocolTCP},
+						{Name: "svc-named-port-3", Port: int32(82), Protocol: apiv1.ProtocolTCP},
+					},
+				},
+			},
+			expected: []string{"80", "81"},
+		},
+		{
+			desc: "svc multiple with name, same port, remove duplicates",
+			svcPorts: []utils.ServicePort{
+				{
+					NEGEnabled: true,
+					TargetPort: "80",
+				},
+				{
+					ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: "svc-name-1"}},
+					Name:       "svc-named-port-1",
+					NEGEnabled: true,
+					TargetPort: "svc-target-port",
+				},
+				{
+					ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: "svc-name-2"}},
+					Name:       "svc-named-port-1",
+					NEGEnabled: true,
+					TargetPort: "svc-target-port",
+				},
+			},
+			endpoints: []struct {
+				Name  string
+				Ports []apiv1.EndpointPort
+			}{
+				{
+					Name: "svc-name-1",
+					Ports: []apiv1.EndpointPort{
+						{Name: "svc-named-port-1", Port: int32(80), Protocol: apiv1.ProtocolTCP},
+					},
+				},
+				{
+					Name: "svc-name-2",
+					Ports: []apiv1.EndpointPort{
+						{Name: "svc-named-port-1", Port: int32(80), Protocol: apiv1.ProtocolTCP},
+					},
+				},
+			},
+			expected: []string{"80"},
 		},
 	}
 
-	endpointLister := translator.ctx.EndpointInformer.GetIndexer()
-	endpointLister.Add(newDefaultEndpoint(ep1))
-	endpointLister.Add(newDefaultEndpoint(ep2))
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			translator := fakeTranslator()
 
-	expected := []string{"80", "8080", "8081"}
-	got := translator.GatherEndpointPorts(svcPorts)
-	if !sets.NewString(got...).Equal(sets.NewString(expected...)) {
-		t.Errorf("GatherEndpointPorts() = %v, expected %v", got, expected)
+			endpointsLister := translator.ctx.EndpointInformer.GetIndexer()
+			for _, ep := range tc.endpoints {
+				endpointsLister.Add(createEndpoint(ep.Name, ep.Ports))
+			}
+			got := translator.GatherEndpointPorts(tc.svcPorts)
+			if !reflect.DeepEqual(tc.expected, got) {
+				t.Errorf("%v: expected %v but got %v", tc.desc, tc.expected, got)
+			}
+		})
+	}
+}
+
+func createEndpoint(name string, ports []apiv1.EndpointPort) *apiv1.Endpoints {
+	return &apiv1.Endpoints{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns"},
+		Subsets: []apiv1.EndpointSubset{
+			{
+				Ports: ports,
+			},
+		},
 	}
 }
 
@@ -803,30 +991,6 @@ func TestGetZoneForNode(t *testing.T) {
 
 	if zone != ret {
 		t.Errorf("Expect zone = %q, but got %q", zone, ret)
-	}
-}
-
-func newDefaultEndpoint(name string) *apiv1.Endpoints {
-	return &apiv1.Endpoints{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns"},
-		Subsets: []apiv1.EndpointSubset{
-			{
-				Ports: []apiv1.EndpointPort{
-					{Name: "", Port: int32(80), Protocol: apiv1.ProtocolTCP},
-					{Name: "named-port", Port: int32(8080), Protocol: apiv1.ProtocolTCP},
-				},
-			},
-			{
-				Ports: []apiv1.EndpointPort{
-					{Name: "named-port", Port: int32(80), Protocol: apiv1.ProtocolTCP},
-				},
-			},
-			{
-				Ports: []apiv1.EndpointPort{
-					{Name: "named-port", Port: int32(8081), Protocol: apiv1.ProtocolTCP},
-				},
-			},
-		},
 	}
 }
 

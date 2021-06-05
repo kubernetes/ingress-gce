@@ -172,6 +172,7 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 		ID:           id,
 		NodePort:     int64(port.NodePort),
 		Port:         int32(port.Port),
+		Name:         port.Name,
 		TargetPort:   port.TargetPort.String(),
 		L7ILBEnabled: params.isL7ILB,
 		BackendNamer: namer,
@@ -437,9 +438,14 @@ func (t *Translator) GatherEndpointPorts(svcPorts []utils.ServicePort) []string 
 			// For NEG backend, need to open firewall to all endpoint target ports
 			// TODO(mixia): refactor firewall syncing into a separate go routine with different trigger.
 			// With NEG, endpoint changes may cause firewall ports to be different if user specifies inconsistent backends.
-			endpointPorts := listEndpointTargetPorts(t.ctx.EndpointInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.TargetPort)
-			for _, ep := range endpointPorts {
-				portMap[int64(ep)] = true
+			// if targetPort is integer, no need to translate to endpoint ports
+			if i, err := strconv.Atoi(p.TargetPort); err == nil {
+				portMap[int64(i)] = true
+			} else {
+				endpointPorts := listEndpointTargetPorts(t.ctx.EndpointInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.Name)
+				for _, ep := range endpointPorts {
+					portMap[int64(ep)] = true
+				}
 			}
 		}
 	}
@@ -525,11 +531,7 @@ func listAll(store cache.Store, selector labels.Selector, appendFn cache.AppendF
 	return nil
 }
 
-func listEndpointTargetPorts(indexer cache.Indexer, namespace, name, targetPort string) []int {
-	// if targetPort is integer, no need to translate to endpoint ports
-	if i, err := strconv.Atoi(targetPort); err == nil {
-		return []int{i}
-	}
+func listEndpointTargetPorts(indexer cache.Indexer, namespace, name, svcPortName string) []int {
 
 	ep, exists, err := indexer.Get(
 		&api_v1.Endpoints{
@@ -552,7 +554,7 @@ func listEndpointTargetPorts(indexer cache.Indexer, namespace, name, targetPort 
 	ret := []int{}
 	for _, subset := range ep.(*api_v1.Endpoints).Subsets {
 		for _, port := range subset.Ports {
-			if port.Protocol == api_v1.ProtocolTCP && port.Name == targetPort {
+			if port.Protocol == api_v1.ProtocolTCP && port.Name == svcPortName {
 				ret = append(ret, int(port.Port))
 			}
 		}

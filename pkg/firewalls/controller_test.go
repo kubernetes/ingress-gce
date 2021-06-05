@@ -106,6 +106,125 @@ func TestFirewallCreateDelete(t *testing.T) {
 	}
 }
 
+// TestFirewallEmptyPortList assets that a firewall rule will be deleted
+// if the port list is empty. An empty port list should be impossible, except
+// when it is a bug
+func TestFirewallEmptyPortList(t *testing.T) {
+	fwc := newFirewallController()
+
+	// Create the default-backend service.
+	testSvc := test.NewService(types.NamespacedName{Namespace: "default", Name: "service-name"}, api_v1.ServiceSpec{
+		Type: api_v1.ServiceTypeNodePort,
+		Ports: []api_v1.ServicePort{
+			{
+				Name:     "http",
+				Port:     80,
+				NodePort: 30000,
+			},
+		},
+	})
+
+	fwc.ctx.KubeClient.CoreV1().Services(testSvc.Namespace).Create(context2.TODO(), testSvc, meta_v1.CreateOptions{})
+	fwc.ctx.ServiceInformer.GetIndexer().Add(testSvc)
+
+	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"}, networkingv1.IngressSpec{
+		Rules: []networkingv1.IngressRule{
+			{
+				IngressRuleValue: networkingv1.IngressRuleValue{
+					HTTP: &networkingv1.HTTPIngressRuleValue{
+						Paths: []networkingv1.HTTPIngressPath{
+							{
+								Path: "/",
+								Backend: networkingv1.IngressBackend{
+									Service: &networkingv1.IngressServiceBackend{
+										Name: "service-name",
+										Port: networkingv1.ServiceBackendPort{
+											Number: int32(80),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	fwc.ctx.KubeClient.NetworkingV1().Ingresses(ing.Namespace).Create(context2.TODO(), ing, meta_v1.CreateOptions{})
+	fwc.ctx.IngressInformer.GetIndexer().Add(ing)
+
+	key, _ := common.KeyFunc(queueKey)
+	if err := fwc.sync(key); err != nil {
+		t.Fatalf("fwc.sync() = %v, want nil", err)
+	}
+
+	// Verify a firewall rule was created.
+	_, err := fwc.ctx.Cloud.GetFirewall(ruleName)
+	if err != nil {
+		t.Fatalf("cloud.GetFirewall(%v) = _, %v, want _, nil", ruleName, err)
+	}
+
+	// delete the ingress rules
+	ing.Spec.Rules = []networkingv1.IngressRule{}
+	fwc.ctx.KubeClient.NetworkingV1().Ingresses(ing.Namespace).Update(context2.TODO(), ing, meta_v1.UpdateOptions{})
+	fwc.ctx.IngressInformer.GetIndexer().Update(ing)
+
+	if err := fwc.sync(key); err != nil {
+		t.Fatalf("fwc.sync() = %v, want nil", err)
+	}
+
+	// Verify the firewall rule was deleted.
+	_, err = fwc.ctx.Cloud.GetFirewall(ruleName)
+	if !utils.IsNotFoundError(err) {
+		t.Fatalf("cloud.GetFirewall(%v) = _, %v, want _, 404 error", ruleName, err)
+	}
+}
+
+// TestFirewallNoneExistingService asserts that a an empty firewall rule 
+// is not created whe the port list is empty
+func TestFirewallNoneExistingService(t *testing.T) {
+	fwc := newFirewallController()
+
+	ing := test.NewIngress(types.NamespacedName{Name: "my-ingress", Namespace: "default"}, networkingv1.IngressSpec{
+		Rules: []networkingv1.IngressRule{
+			{
+				IngressRuleValue: networkingv1.IngressRuleValue{
+					HTTP: &networkingv1.HTTPIngressRuleValue{
+						Paths: []networkingv1.HTTPIngressPath{
+							{
+								Path: "/",
+								Backend: networkingv1.IngressBackend{
+									Service: &networkingv1.IngressServiceBackend{
+										Name: "service-name",
+										Port: networkingv1.ServiceBackendPort{
+											Number: int32(80),
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	fwc.ctx.KubeClient.NetworkingV1().Ingresses(ing.Namespace).Create(context2.TODO(), ing, meta_v1.CreateOptions{})
+	fwc.ctx.IngressInformer.GetIndexer().Add(ing)
+
+	key, _ := common.KeyFunc(queueKey)
+	if err := fwc.sync(key); err != nil {
+		t.Fatalf("fwc.sync() = %v, want nil", err)
+	}
+
+	// Verify the firewall rule was not created.
+	_, err := fwc.ctx.Cloud.GetFirewall(ruleName)
+	if !utils.IsNotFoundError(err) {
+		t.Fatalf("cloud.GetFirewall(%v) = _, %v, want _, 404 error", ruleName, err)
+	}
+}
+
 func TestGetCustomHealthCheckPorts(t *testing.T) {
 	t.Parallel()
 
