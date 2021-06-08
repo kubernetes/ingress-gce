@@ -1,6 +1,6 @@
 # cloud.google.com/go v0.81.0 => cloud.google.com/go v0.37.4
 cloud.google.com/go/compute/metadata
-# github.com/GoogleCloudPlatform/k8s-cloud-provider v1.15.0
+# github.com/GoogleCloudPlatform/k8s-cloud-provider v1.16.0
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter
 github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta
