@@ -25,6 +25,7 @@ import (
 	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	networkingv1alpha1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1"
+	networkingv1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
 )
 
 var scheme = runtime.NewScheme()
@@ -32,6 +33,7 @@ var codecs = serializer.NewCodecFactory(scheme)
 
 var localSchemeBuilder = runtime.SchemeBuilder{
 	networkingv1alpha1.AddToScheme,
+	networkingv1beta1.AddToScheme,
 }
 
 // AddToScheme adds all types of this clientset into the given scheme. This allows composition
