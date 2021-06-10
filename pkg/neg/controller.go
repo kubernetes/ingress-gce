@@ -218,7 +218,7 @@ func NewController(
 				negController.enqueueIngressServices(delIng)
 			},
 			UpdateFunc: func(old, cur interface{}) {
-				oldIng := cur.(*v1.Ingress)
+				oldIng := old.(*v1.Ingress)
 				curIng := cur.(*v1.Ingress)
 				// Check if ingress class changed and previous class was a GCE ingress
 				// Ingress class change may require cleanup so enqueue related services
