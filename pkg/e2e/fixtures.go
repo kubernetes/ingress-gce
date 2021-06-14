@@ -33,7 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
-	sav1alpha1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1"
+	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -512,12 +512,12 @@ func DeleteDestinationRule(s *Sandbox, namespace, name string) error {
 }
 
 // EnsureServiceAttachment ensures a ServiceAttachment resource
-func EnsureServiceAttachment(s *Sandbox, saName, svcName, subnetName string) (*sav1alpha1.ServiceAttachment, error) {
-	sa := &sav1alpha1.ServiceAttachment{
+func EnsureServiceAttachment(s *Sandbox, saName, svcName, subnetName string) (*sav1beta1.ServiceAttachment, error) {
+	sa := &sav1beta1.ServiceAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: saName,
 		},
-		Spec: sav1alpha1.ServiceAttachmentSpec{
+		Spec: sav1beta1.ServiceAttachmentSpec{
 			ConnectionPreference: "ACCEPT_AUTOMATIC",
 			NATSubnets:           []string{subnetName},
 			ResourceRef: v1.TypedLocalObjectReference{
@@ -528,15 +528,15 @@ func EnsureServiceAttachment(s *Sandbox, saName, svcName, subnetName string) (*s
 		},
 	}
 
-	existingSA, err := s.f.SAClient.NetworkingV1alpha1().ServiceAttachments(s.Namespace).Get(context.TODO(), saName, metav1.GetOptions{})
+	existingSA, err := s.f.SAClient.NetworkingV1beta1().ServiceAttachments(s.Namespace).Get(context.TODO(), saName, metav1.GetOptions{})
 	if err != nil && errors.IsNotFound(err) {
-		return s.f.SAClient.NetworkingV1alpha1().ServiceAttachments(s.Namespace).Create(context.TODO(), sa, metav1.CreateOptions{})
+		return s.f.SAClient.NetworkingV1beta1().ServiceAttachments(s.Namespace).Create(context.TODO(), sa, metav1.CreateOptions{})
 	}
 	existingSA.Spec = sa.Spec
-	return s.f.SAClient.NetworkingV1alpha1().ServiceAttachments(s.Namespace).Update(context.TODO(), existingSA, metav1.UpdateOptions{})
+	return s.f.SAClient.NetworkingV1beta1().ServiceAttachments(s.Namespace).Update(context.TODO(), existingSA, metav1.UpdateOptions{})
 }
 
 // DeleteServiceAttachment ensures a ServiceAttachment resource
 func DeleteServiceAttachment(s *Sandbox, saName string) error {
-	return s.f.SAClient.NetworkingV1alpha1().ServiceAttachments(s.Namespace).Delete(context.TODO(), saName, metav1.DeleteOptions{})
+	return s.f.SAClient.NetworkingV1beta1().ServiceAttachments(s.Namespace).Delete(context.TODO(), saName, metav1.DeleteOptions{})
 }
