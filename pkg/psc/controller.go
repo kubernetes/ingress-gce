@@ -483,6 +483,12 @@ func (c *Controller) updateServiceAttachmentStatus(cr *sav1beta1.ServiceAttachme
 	}
 
 	updatedSA.Status.ConsumerForwardingRules = consumers
+
+	if reflect.DeepEqual(cr.Status, updatedSA.Status) {
+		klog.V(2).Infof("Service Attachment %s/%s has no status update. Skipping patch", cr.Namespace, cr.Name)
+		return cr, nil
+	}
+
 	updatedSA.Status.LastModifiedTimestamp = metav1.Now()
 
 	klog.V(2).Infof("Updating Service Attachment %s/%s status", cr.Namespace, cr.Name)

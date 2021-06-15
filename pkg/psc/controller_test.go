@@ -298,7 +298,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 					t.Errorf(" Expected service attachment resource to be \n%+v\n, but found \n%+v", expectedSA, sa)
 				}
 
-				if err = validateSAStatus(updatedCR.Status, sa, metav1.NewTime(time.Time{})); err != nil {
+				if err = validateSAStatus(updatedCR.Status, sa, metav1.NewTime(time.Time{}), true); err != nil {
 					t.Errorf("ServiceAttachment CR does not match expected: %s", err)
 				}
 			}
@@ -377,7 +377,7 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 		if err != nil {
 			t.Errorf("unexpected error while querying for service attachment %s: %q", saName, err)
 		}
-		if err = validateSAStatus(updatedCR.Status, expectedSA, beforeTS); err != nil {
+		if err = validateSAStatus(updatedCR.Status, expectedSA, beforeTS, true); err != nil {
 			t.Errorf("ServiceAttachment CR does not have correct consumers: %q", err)
 		}
 
@@ -471,6 +471,16 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 				}
 			}
 
+			processedCR, err := controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
+			syncServiceAttachmentLister(controller)
+			if err != nil {
+				t.Fatalf("Failed to get processed SA CR: %q", err)
+			}
+
+			beforeTS := metav1.NewTime(time.Time{})
+			tc.updatedSACR.Status = processedCR.Status
+			tc.updatedSACR.Status.LastModifiedTimestamp = beforeTS
+
 			_, err = controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Update(context2.TODO(), tc.updatedSACR, metav1.UpdateOptions{})
 			syncServiceAttachmentLister(controller)
 			if err != nil {
@@ -495,6 +505,12 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 			saCR, err = controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("Failed to get service attachment cr: %q", err)
+			}
+
+			// No changes in the GCE SA status so CR status should not be updated
+			err = validateSAStatus(saCR.Status, updatedSA, beforeTS, false)
+			if err != nil {
+				t.Fatalf("Service Attachment Status did not match expected: %s", err)
 			}
 		})
 	}
@@ -884,7 +900,7 @@ func deleteServiceAttachment(cloud *gce.Cloud, name string) error {
 
 // validateSAStatus validates that the status reports the same information as on the
 // GCE service attachment resource
-func validateSAStatus(status sav1beta1.ServiceAttachmentStatus, sa *beta.ServiceAttachment, beforeTS metav1.Time) error {
+func validateSAStatus(status sav1beta1.ServiceAttachmentStatus, sa *beta.ServiceAttachment, beforeTS metav1.Time, expectStatusUpdate bool) error {
 	if status.ServiceAttachmentURL != sa.SelfLink {
 		return fmt.Errorf("ServiceAttachment.Status.ServiceAttachmentURL was %s, but should be %s", status.ServiceAttachmentURL, sa.SelfLink)
 	}
@@ -909,11 +925,12 @@ func validateSAStatus(status sav1beta1.ServiceAttachmentStatus, sa *beta.Service
 		}
 	}
 
-	if !beforeTS.Before(&status.LastModifiedTimestamp) {
-		return fmt.Errorf("ServiceAttachment CR Status should update timestamp after sync. Before: %s, Status: %s",
+	if expectStatusUpdate && !beforeTS.Before(&status.LastModifiedTimestamp) {
+		return fmt.Errorf("ServiceAttachment CR Status should update timestamp after status update. Before: %s, Status: %s",
 			beforeTS.UTC().String(), status.LastModifiedTimestamp.UTC().String())
+	} else if !expectStatusUpdate && !beforeTS.Equal(&status.LastModifiedTimestamp) {
+		return fmt.Errorf("ServiceAttachment CR Status should not update timestamp when status update is needed.")
 	}
-
 	return nil
 }
 
