@@ -250,6 +250,25 @@ func TestServiceAttachmentCreation(t *testing.T) {
 					NATSubnets:           []string{"my-subnet"},
 					ResourceRef:          tc.resourceRef,
 					ProxyProtocol:        tc.proxyProtocol,
+					ConsumerAllowList: []sav1beta1.ConsumerProject{
+						{
+							ConnectionLimit: 100,
+							Project:         "consumer-allow-project-1",
+							ForceSendFields: []string{"field-1", "field-2", "field-3"},
+							NullFields:      []string{"null-field-1"},
+						},
+						{
+							ConnectionLimit: 80,
+							Project:         "consumer-allow-project-2",
+						},
+						{
+							Project: "consumer-allow-project-3",
+						},
+					},
+					ConsumerRejectList: []string{
+						"consumer-reject-project-1",
+						"consumer-reject-project-2",
+					},
 				},
 			}
 
@@ -292,6 +311,25 @@ func TestServiceAttachmentCreation(t *testing.T) {
 					Region:               fakeCloud.Region(),
 					SelfLink:             sa.SelfLink,
 					EnableProxyProtocol:  tc.proxyProtocol,
+					ConsumerAcceptLists: []*beta.ServiceAttachmentConsumerProjectLimit{
+						{
+							ConnectionLimit: 100,
+							ProjectIdOrNum:  "consumer-allow-project-1",
+							ForceSendFields: []string{"field-1", "field-2", "field-3"},
+							NullFields:      []string{"null-field-1"},
+						},
+						{
+							ConnectionLimit: 80,
+							ProjectIdOrNum:  "consumer-allow-project-2",
+						},
+						{
+							ProjectIdOrNum: "consumer-allow-project-3",
+						},
+					},
+					ConsumerRejectLists: []string{
+						"consumer-reject-project-1",
+						"consumer-reject-project-2",
+					},
 				}
 
 				if !reflect.DeepEqual(sa, expectedSA) {
