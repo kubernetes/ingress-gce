@@ -1384,3 +1384,60 @@ func newPSCState(inSuccess bool) pscmetrics.PSCState {
 		InSuccess: inSuccess,
 	}
 }
+
+func TestComputeServiceMetrics(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		desc           string
+		services       []string
+		deleteServices []string
+		expectSACount  map[feature]int
+	}{
+		{
+			desc: "empty input",
+			expectSACount: map[feature]int{
+				services: 0,
+			},
+		},
+		{
+			desc:     "one service",
+			services: []string{"service-1"},
+			expectSACount: map[feature]int{
+				services: 1,
+			},
+		},
+		{
+			desc:     "many services",
+			services: []string{"service-1", "service-2", "service-3", "service-4", "service-5", "service-6"},
+			expectSACount: map[feature]int{
+				services: 6,
+			},
+		},
+		{
+			desc:           "some additions, and some deletions",
+			services:       []string{"service-1", "service-2", "service-3", "service-4", "service-5", "service-6"},
+			deleteServices: []string{"service-2", "service-5"},
+			expectSACount: map[feature]int{
+				services: 4,
+			},
+		},
+	} {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			newMetrics := NewControllerMetrics()
+			for _, service := range tc.services {
+				newMetrics.SetService(service)
+			}
+
+			for _, service := range tc.deleteServices {
+				newMetrics.DeleteService(service)
+			}
+
+			got := newMetrics.computeServiceMetrics()
+			if diff := cmp.Diff(tc.expectSACount, got); diff != "" {
+				t.Fatalf("Got diff for service counts (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

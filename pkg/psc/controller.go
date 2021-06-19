@@ -114,6 +114,15 @@ func NewController(ctx *context.ControllerContext) *Controller {
 			controller.enqueueServiceAttachment(cur)
 		},
 	})
+
+	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(service interface{}) {
+			controller.addServiceToMetrics(service)
+		},
+		DeleteFunc: func(service interface{}) {
+			controller.deleteServiceFromMetrics(service)
+		},
+	})
 	return controller
 }
 
@@ -191,6 +200,26 @@ func (c *Controller) enqueueServiceAttachment(obj interface{}) {
 		return
 	}
 	c.svcAttachmentQueue.Add(key)
+}
+
+// addServiceToMetrics adds the metrics collector
+func (c *Controller) addServiceToMetrics(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		klog.Errorf("Failed to generate service: %q", err)
+		return
+	}
+	c.collector.SetService(key)
+}
+
+// deleteServiceFromMetrics deletes the metrics collector
+func (c *Controller) deleteServiceFromMetrics(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		klog.Errorf("Failed to generate service key: %q", err)
+		return
+	}
+	c.collector.DeleteService(key)
 }
 
 // processServiceAttachment will process a service attachment key and will gather all
