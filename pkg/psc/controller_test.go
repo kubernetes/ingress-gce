@@ -284,14 +284,14 @@ func TestServiceAttachmentCreation(t *testing.T) {
 				desc := sautils.ServiceAttachmentDesc{URL: saURL}
 
 				expectedSA := &beta.ServiceAttachment{
-					ConnectionPreference:   tc.connectionPreference,
-					Description:            desc.String(),
-					Name:                   gceSAName,
-					NatSubnets:             []string{subnetURL},
-					ProducerForwardingRule: rule.SelfLink,
-					Region:                 fakeCloud.Region(),
-					SelfLink:               sa.SelfLink,
-					EnableProxyProtocol:    tc.proxyProtocol,
+					ConnectionPreference: tc.connectionPreference,
+					Description:          desc.String(),
+					Name:                 gceSAName,
+					NatSubnets:           []string{subnetURL},
+					TargetService:        rule.SelfLink,
+					Region:               fakeCloud.Region(),
+					SelfLink:             sa.SelfLink,
+					EnableProxyProtocol:  tc.proxyProtocol,
 				}
 
 				if !reflect.DeepEqual(sa, expectedSA) {
@@ -338,31 +338,31 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 	}
 	syncServiceAttachmentLister(controller)
 
-	initialConsumerRules := []*beta.ServiceAttachmentConsumerForwardingRule{
-		{ForwardingRule: "consumer-fwd-rule-1", Status: "ACCEPTED"},
-		{ForwardingRule: "consumer-fwd-rule-2", Status: "PENDING"},
+	initialConsumerRules := []*beta.ServiceAttachmentConnectedEndpoint{
+		{Endpoint: "consumer-fwd-rule-1", Status: "ACCEPTED"},
+		{Endpoint: "consumer-fwd-rule-2", Status: "PENDING"},
 	}
 
-	updateConsumerRules := []*beta.ServiceAttachmentConsumerForwardingRule{
-		{ForwardingRule: "consumer-fwd-rule-1", Status: "ACCEPTED"},
-		{ForwardingRule: "consumer-fwd-rule-2", Status: "PENDING"},
-		{ForwardingRule: "consumer-fwd-rule-3", Status: "PENDING"},
+	updateConsumerRules := []*beta.ServiceAttachmentConnectedEndpoint{
+		{Endpoint: "consumer-fwd-rule-1", Status: "ACCEPTED"},
+		{Endpoint: "consumer-fwd-rule-2", Status: "PENDING"},
+		{Endpoint: "consumer-fwd-rule-3", Status: "PENDING"},
 	}
 
 	desc := sautils.ServiceAttachmentDesc{URL: saCR.SelfLink}
 	expectedSA := &beta.ServiceAttachment{
-		ConnectionPreference:   saCR.Spec.ConnectionPreference,
-		Description:            desc.String(),
-		Name:                   gceSAName,
-		NatSubnets:             []string{subnet.SelfLink},
-		ProducerForwardingRule: rule.SelfLink,
-		Region:                 controller.cloud.Region(),
-		EnableProxyProtocol:    saCR.Spec.ProxyProtocol,
+		ConnectionPreference: saCR.Spec.ConnectionPreference,
+		Description:          desc.String(),
+		Name:                 gceSAName,
+		NatSubnets:           []string{subnet.SelfLink},
+		TargetService:        rule.SelfLink,
+		Region:               controller.cloud.Region(),
+		EnableProxyProtocol:  saCR.Spec.ProxyProtocol,
 	}
 
-	for _, consumerRules := range [][]*beta.ServiceAttachmentConsumerForwardingRule{
+	for _, consumerRules := range [][]*beta.ServiceAttachmentConnectedEndpoint{
 		initialConsumerRules, updateConsumerRules} {
-		expectedSA.ConsumerForwardingRules = consumerRules
+		expectedSA.ConnectedEndpoints = consumerRules
 		err = insertServiceAttachment(controller.cloud, expectedSA)
 		if err != nil {
 			t.Errorf("errored adding consumer forwarding rules to gce service attachment: %q", err)
@@ -889,17 +889,17 @@ func validateSAStatus(status sav1beta1.ServiceAttachmentStatus, sa *beta.Service
 		return fmt.Errorf("ServiceAttachment.Status.ServiceAttachmentURL was %s, but should be %s", status.ServiceAttachmentURL, sa.SelfLink)
 	}
 
-	if status.ForwardingRuleURL != sa.ProducerForwardingRule {
-		return fmt.Errorf("ServiceAttachment.Status.ForwardingRuleURL was %s, but should be %s", status.ForwardingRuleURL, sa.ProducerForwardingRule)
+	if status.ForwardingRuleURL != sa.TargetService {
+		return fmt.Errorf("ServiceAttachment.Status.ForwardingRuleURL was %s, but should be %s", status.ForwardingRuleURL, sa.TargetService)
 	}
 
-	if len(sa.ConsumerForwardingRules) != len(status.ConsumerForwardingRules) {
-		return fmt.Errorf("ServiceAttachment.Status.ConsumerForwardingRules has %d rules, expected %d", len(status.ConsumerForwardingRules), len(sa.ConsumerForwardingRules))
+	if len(sa.ConnectedEndpoints) != len(status.ConsumerForwardingRules) {
+		return fmt.Errorf("ServiceAttachment.Status.ConsumerForwardingRules has %d rules, expected %d", len(status.ConsumerForwardingRules), len(sa.ConnectedEndpoints))
 	}
-	for _, expectedConsumer := range sa.ConsumerForwardingRules {
+	for _, expectedConsumer := range sa.ConnectedEndpoints {
 		foundConsumer := false
 		for _, consumer := range status.ConsumerForwardingRules {
-			if expectedConsumer.ForwardingRule == consumer.ForwardingRuleURL &&
+			if expectedConsumer.Endpoint == consumer.ForwardingRuleURL &&
 				expectedConsumer.Status == consumer.Status {
 				foundConsumer = true
 			}

@@ -250,13 +250,13 @@ func (c *Controller) processServiceAttachment(key string) error {
 	saName := c.saNamer.ServiceAttachment(namespace, name, string(updatedCR.UID))
 	desc := sautils.ServiceAttachmentDesc{URL: updatedCR.SelfLink}
 	gceSvcAttachment := &beta.ServiceAttachment{
-		ConnectionPreference:   svcAttachment.Spec.ConnectionPreference,
-		Name:                   saName,
-		NatSubnets:             subnetURLs,
-		ProducerForwardingRule: frURL,
-		Region:                 c.cloud.Region(),
-		Description:            desc.String(),
-		EnableProxyProtocol:    updatedCR.Spec.ProxyProtocol,
+		ConnectionPreference: svcAttachment.Spec.ConnectionPreference,
+		Name:                 saName,
+		NatSubnets:           subnetURLs,
+		TargetService:        frURL,
+		Region:               c.cloud.Region(),
+		Description:          desc.String(),
+		EnableProxyProtocol:  updatedCR.Spec.ProxyProtocol,
 	}
 
 	gceSAKey, err := composite.CreateKey(c.cloud, saName, meta.Regional)
@@ -437,12 +437,12 @@ func (c *Controller) updateServiceAttachmentStatus(cr *sav1beta1.ServiceAttachme
 
 	updatedSA := cr.DeepCopy()
 	updatedSA.Status.ServiceAttachmentURL = gceSA.SelfLink
-	updatedSA.Status.ForwardingRuleURL = gceSA.ProducerForwardingRule
+	updatedSA.Status.ForwardingRuleURL = gceSA.TargetService
 
 	var consumers []sav1beta1.ConsumerForwardingRule
-	for _, c := range gceSA.ConsumerForwardingRules {
+	for _, c := range gceSA.ConnectedEndpoints {
 		consumers = append(consumers, sav1beta1.ConsumerForwardingRule{
-			ForwardingRuleURL: c.ForwardingRule,
+			ForwardingRuleURL: c.Endpoint,
 			Status:            c.Status,
 		})
 	}
@@ -532,16 +532,18 @@ func validateUpdate(existingSA, desiredSA *beta.ServiceAttachment) error {
 		return fmt.Errorf("serviceAttachment connection preference cannot be updated from %s to %s", existingSA.ConnectionPreference, desiredSA.ConnectionPreference)
 	}
 
-	existingFR, err := cloud.ParseResourceURL(existingSA.ProducerForwardingRule)
+	// The TargetService on the GCE Service Attachment is the self link to the URL of the producer
+	// forwarding rule (L4 ILB).
+	existingFR, err := cloud.ParseResourceURL(existingSA.TargetService)
 	if err != nil {
-		return fmt.Errorf("serviceAttachment existing forwarding rule has malformed URL: %q", err)
+		return fmt.Errorf("serviceAttachment existing target service has malformed URL: %w", err)
 	}
-	desiredFR, err := cloud.ParseResourceURL(desiredSA.ProducerForwardingRule)
+	desiredFR, err := cloud.ParseResourceURL(desiredSA.TargetService)
 	if err != nil {
-		return fmt.Errorf("serviceAttachment desired forwarding rule has malformed URL: %q", err)
+		return fmt.Errorf("serviceAttachment desired target service has malformed URL: %w", err)
 	}
 	if !reflect.DeepEqual(existingFR, desiredFR) {
-		return fmt.Errorf("serviceAttachment forwarding rule cannot be updated from %s to %s", existingSA.ProducerForwardingRule, desiredSA.ProducerForwardingRule)
+		return fmt.Errorf("serviceAttachment target service cannot be updated from %s to %s", existingSA.TargetService, desiredSA.TargetService)
 	}
 
 	if len(existingSA.NatSubnets) != len(desiredSA.NatSubnets) {
