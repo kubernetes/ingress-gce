@@ -224,8 +224,15 @@ func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.Ne
 		}
 	}
 
+	retry := false
+	if target, ok := p.pollMap[key]; ok {
+		if patchCount < len(target.endpointMap) {
+			retry = true
+		}
+	}
+
 	// If we didn't patch all of the endpoints, we must keep polling for health status
-	return patchCount < len(p.pollMap[key].endpointMap), utilerrors.NewAggregate(errList)
+	return retry, utilerrors.NewAggregate(errList)
 }
 
 // getHealthyBackendService returns one of the first backend service key where the endpoint is considered healthy.
