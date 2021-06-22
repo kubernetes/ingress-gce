@@ -74,22 +74,28 @@ const (
 	ServiceStatusPrefix = "service.kubernetes.io"
 	// TCPForwardingRuleKey is the annotation key used by l4 controller to record
 	// GCP TCP forwarding rule name.
-	TCPForwardingRuleKey = ServiceStatusPrefix + "/tcp-forwarding-rule"
+	TCPForwardingRuleKey = ServiceStatusPrefix + "/tcp-" + ForwardingRuleResource
 	// UDPForwardingRuleKey is the annotation key used by l4 controller to record
 	// GCP UDP forwarding rule name.
-	UDPForwardingRuleKey = ServiceStatusPrefix + "/udp-forwarding-rule"
+	UDPForwardingRuleKey = ServiceStatusPrefix + "/udp-" + ForwardingRuleResource
 	// BackendServiceKey is the annotation key used by l4 controller to record
 	// GCP Backend service name.
-	BackendServiceKey = ServiceStatusPrefix + "/backend-service"
+	BackendServiceKey = ServiceStatusPrefix + "/" + BackendServiceResource
 	// FirewallRuleKey is the annotation key used by l4 controller to record
 	// GCP Firewall rule name.
-	FirewallRuleKey = ServiceStatusPrefix + "/firewall-rule"
+	FirewallRuleKey = ServiceStatusPrefix + "/" + FirewallRuleResource
 	// HealthcheckKey is the annotation key used by l4 controller to record
 	// GCP Healthcheck name.
-	HealthcheckKey = ServiceStatusPrefix + "/healthcheck"
+	HealthcheckKey = ServiceStatusPrefix + "/" + HealthcheckResource
 	// FirewallRuleForHealthcheckKey is the annotation key used by l4 controller to record
 	// the firewall rule name that allows healthcheck traffic.
-	FirewallRuleForHealthcheckKey = ServiceStatusPrefix + "/firewall-rule-for-hc"
+	FirewallRuleForHealthcheckKey  = ServiceStatusPrefix + "/" + FirewallForHealthcheckResource
+	ForwardingRuleResource         = "forwarding-rule"
+	BackendServiceResource         = "backend-service"
+	FirewallRuleResource           = "firewall-rule"
+	HealthcheckResource            = "healthcheck"
+	FirewallForHealthcheckResource = "firewall-rule-for-hc"
+	AddressResource                = "address"
 )
 
 // NegAnnotation is the format of the annotation associated with the
