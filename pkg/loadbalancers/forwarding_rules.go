@@ -287,7 +287,7 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 		}
 		l.recorder.Eventf(l.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", key.Name)
 	}
-	klog.V(2).Infof("ensureForwardingRule: Recreating forwarding rule - %s", fr.Name)
+	klog.V(2).Infof("ensureForwardingRule: Creating/Recreating forwarding rule - %s", fr.Name)
 	if err = composite.CreateForwardingRule(l.cloud, key, fr); err != nil {
 		return nil, err
 	}
