@@ -39,6 +39,7 @@ import (
 	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	safake "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -52,6 +53,7 @@ const (
 	ClusterID     = "cluster-id"
 	kubeSystemUID = "kube-system-uid"
 	testNamespace = "test-namespace"
+	ClusterName   = "test-cluster"
 )
 
 func TestServiceAttachmentCreation(t *testing.T) {
@@ -196,7 +198,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := newTestController()
+			controller := newTestController("ZONAL")
 			fakeCloud := controller.cloud
 
 			var frName string
@@ -301,7 +303,11 @@ func TestServiceAttachmentCreation(t *testing.T) {
 					t.Errorf("%s", err)
 				}
 
-				desc := sautils.ServiceAttachmentDesc{URL: saURL}
+				zone, err := fakeCloud.GetZone(context2.TODO())
+				if err != nil {
+					t.Errorf("failed to get zone %q", err)
+				}
+				desc := sautils.NewServiceAttachmentDesc(testNamespace, saName, ClusterName, zone.FailureDomain, false)
 
 				expectedSA := &beta.ServiceAttachment{
 					ConnectionPreference: tc.connectionPreference,
@@ -351,7 +357,7 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 	svcName := "my-service"
 	saUID := "serivce-attachment-uid"
 	frIPAddr := "1.2.3.4"
-	controller := newTestController()
+	controller := newTestController("ZONAL")
 	gceSAName := controller.saNamer.ServiceAttachment(testNamespace, saName, saUID)
 	_, frName, err := createSvc(controller, svcName, "svc-uid", frIPAddr, annotations.TCPForwardingRuleKey)
 	if err != nil {
@@ -368,7 +374,6 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 	}
 
 	saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"}, false)
-	saCR.SelfLink = "k8s-svc-attachment-selflink"
 	beforeTS := metav1.NewTime(time.Time{})
 	saCR.Status.LastModifiedTimestamp = beforeTS
 	_, err = controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
@@ -388,7 +393,7 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 		{Endpoint: "consumer-fwd-rule-3", Status: "PENDING"},
 	}
 
-	desc := sautils.ServiceAttachmentDesc{URL: saCR.SelfLink}
+	desc := sautils.NewServiceAttachmentDesc(saCR.Namespace, saCR.Name, ClusterName, controller.cloud.Region(), true)
 	expectedSA := &beta.ServiceAttachment{
 		ConnectionPreference: saCR.Spec.ConnectionPreference,
 		Description:          desc.String(),
@@ -471,7 +476,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
-			controller := newTestController()
+			controller := newTestController("REGIONAL")
 			gceSAName := controller.saNamer.ServiceAttachment(testNamespace, saName, saUID)
 			_, frName, err := createSvc(controller, svcName, "svc-uid", frIPAddr, annotations.TCPForwardingRuleKey)
 			if err != nil {
@@ -604,7 +609,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 	for _, tc := range testcases {
 		t.Run(tc.desc, func(t *testing.T) {
 
-			controller := newTestController()
+			controller := newTestController("ZONAL")
 
 			if _, err := createNatSubnet(controller.cloud, "my-subnet"); err != nil {
 				t.Errorf("failed to create subnet: %s", err)
@@ -860,7 +865,7 @@ func TestFilterError(t *testing.T) {
 }
 
 // newTestController returns a test psc controller
-func newTestController() *Controller {
+func newTestController(clusterType string) *Controller {
 	kubeClient := fake.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	resourceNamer := namer.NewNamer(ClusterID, "")
@@ -873,6 +878,8 @@ func newTestController() *Controller {
 		HealthCheckPath:       "/",
 	}
 
+	flags.F.GKEClusterName = ClusterName
+	flags.F.GKEClusterType = clusterType
 	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, saClient, fakeGCE, resourceNamer, kubeSystemUID, ctxConfig)
 
 	return NewController(ctx)

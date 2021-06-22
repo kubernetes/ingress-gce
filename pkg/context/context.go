@@ -41,6 +41,7 @@ import (
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/cmconfig"
 	"k8s.io/ingress-gce/pkg/common/typed"
+	"k8s.io/ingress-gce/pkg/flags"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
 	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
@@ -59,6 +60,9 @@ import (
 const (
 	// Frequency to poll on local stores to sync.
 	StoreSyncPollPeriod = 5 * time.Second
+
+	ClusterTypeZonal    = "ZONAL"
+	ClusterTypeRegional = "REGIONAL"
 )
 
 // ControllerContext holds the state needed for the execution of the controller.
@@ -100,6 +104,10 @@ type ControllerContext struct {
 
 	// Map of namespace => record.EventRecorder.
 	recorders map[string]record.EventRecorder
+
+	// NOTE: If the flag GKEClusterType is empty, then cluster will default to zonal. This field should not be used for
+	// controller logic and should only be used for providing additional information to the user.
+	RegionalCluster bool
 }
 
 // ControllerContextConfig encapsulates some settings that are tunable via command line flags.
@@ -166,6 +174,10 @@ func NewControllerContext(
 
 	if saClient != nil {
 		context.SAInformer = informerserviceattachment.NewServiceAttachmentInformer(saClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
+	}
+
+	if flags.F.GKEClusterType == ClusterTypeRegional {
+		context.RegionalCluster = true
 	}
 
 	return context
