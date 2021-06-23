@@ -83,6 +83,9 @@ type LoadBalancerController struct {
 
 	// syncer implementation for backends
 	backendSyncer backends.Syncer
+	// backendLock locks the SyncBackend function to avoid conflicts between
+	// multiple ingress workers.
+	backendLock sync.Mutex
 	// linker implementations for backends
 	negLinker backends.Linker
 	igLinker  backends.Linker
@@ -133,8 +136,7 @@ func NewLoadBalancerController(
 	}
 
 	lbc.ingSyncer = ingsync.NewIngressSyncer(&lbc)
-
-	lbc.ingQueue = utils.NewPeriodicTaskQueue("ingress", "ingresses", lbc.sync)
+	lbc.ingQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("ingress", "ingresses", flags.F.NumIngressWorkers, lbc.sync)
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -360,6 +362,16 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 
 // SyncBackends implements Controller.
 func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
+	// TODO: Only lock per resource
+	// It is incredibly tricky to get an efficient synchronization method here.
+	// For now, we are effectively making backend syncing single-threaded to avoid
+	// any potential bugs such as deadlocks/memory leaks.
+	// This lock is necessary because multiple ingresses may share backend resources
+	// If two threads try to do the same operation, one will fail and mark the Ingress
+	// as being in an error state in the UI
+	lbc.backendLock.Lock()
+	defer lbc.backendLock.Unlock()
+
 	// We expect state to be a syncState
 	syncState, ok := state.(*syncState)
 	if !ok {
