@@ -21,20 +21,20 @@ package fake
 import (
 	rest "k8s.io/client-go/rest"
 	testing "k8s.io/client-go/testing"
-	v1alpha1 "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned/typed/serviceattachment/v1alpha1"
+	v1beta1 "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned/typed/serviceattachment/v1beta1"
 )
 
-type FakeNetworkingV1alpha1 struct {
+type FakeNetworkingV1beta1 struct {
 	*testing.Fake
 }
 
-func (c *FakeNetworkingV1alpha1) ServiceAttachments(namespace string) v1alpha1.ServiceAttachmentInterface {
+func (c *FakeNetworkingV1beta1) ServiceAttachments(namespace string) v1beta1.ServiceAttachmentInterface {
 	return &FakeServiceAttachments{c, namespace}
 }
 
 // RESTClient returns a RESTClient that is used to communicate
 // with API server by this client implementation.
-func (c *FakeNetworkingV1alpha1) RESTClient() rest.Interface {
+func (c *FakeNetworkingV1beta1) RESTClient() rest.Interface {
 	var ret *rest.RESTClient
 	return ret
 }

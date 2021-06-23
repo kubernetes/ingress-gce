@@ -26,4 +26,6 @@ type PSCState struct {
 type PSCMetricsCollector interface {
 	SetServiceAttachment(saKey string, state PSCState)
 	DeleteServiceAttachment(saKey string)
+	SetService(serviceKey string)
+	DeleteService(serviceKey string)
 }

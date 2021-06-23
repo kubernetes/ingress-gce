@@ -23,7 +23,7 @@ import (
 
 	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	cache "k8s.io/client-go/tools/cache"
-	v1alpha1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1"
+	v1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
 )
 
 // GenericInformer is type of SharedIndexInformer which will locate and delegate to other
@@ -52,9 +52,9 @@ func (f *genericInformer) Lister() cache.GenericLister {
 // TODO extend this to unknown resources with a client pool
 func (f *sharedInformerFactory) ForResource(resource schema.GroupVersionResource) (GenericInformer, error) {
 	switch resource {
-	// Group=networking.gke.io, Version=v1alpha1
-	case v1alpha1.SchemeGroupVersion.WithResource("serviceattachments"):
-		return &genericInformer{resource: resource.GroupResource(), informer: f.Networking().V1alpha1().ServiceAttachments().Informer()}, nil
+	// Group=networking.gke.io, Version=v1beta1
+	case v1beta1.SchemeGroupVersion.WithResource("serviceattachments"):
+		return &genericInformer{resource: resource.GroupResource(), informer: f.Networking().V1beta1().ServiceAttachments().Informer()}, nil
 
 	}
 

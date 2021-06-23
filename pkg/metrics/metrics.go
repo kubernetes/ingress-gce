@@ -71,6 +71,13 @@ var (
 		},
 		[]string{label},
 	)
+	serviceCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "number_of_services",
+			Help: "Number of Services",
+		},
+		[]string{label},
+	)
 )
 
 // init registers ingress usage metrics.
@@ -83,6 +90,7 @@ func init() {
 
 	klog.V(3).Infof("Registering PSC usage metrics %v", serviceAttachmentCount)
 	prometheus.MustRegister(serviceAttachmentCount)
+	prometheus.MustRegister(serviceCount)
 }
 
 // NewIngressState returns ingress state for given ingress and service ports.
@@ -98,7 +106,10 @@ type ControllerMetrics struct {
 	negMap map[string]NegServiceState
 	// l4ILBServiceMap is a map between service key and L4 ILB service state.
 	l4ILBServiceMap map[string]L4ILBServiceState
-	pscMap          map[string]pscmetrics.PSCState
+	// pscMap is a map between the service attachment key and PSC state
+	pscMap map[string]pscmetrics.PSCState
+	// ServiceMap track the number of services in this cluster
+	serviceMap map[string]struct{}
 	sync.Mutex
 }
 
@@ -109,6 +120,7 @@ func NewControllerMetrics() *ControllerMetrics {
 		negMap:          make(map[string]NegServiceState),
 		l4ILBServiceMap: make(map[string]L4ILBServiceState),
 		pscMap:          make(map[string]pscmetrics.PSCState),
+		serviceMap:      make(map[string]struct{}),
 	}
 }
 
@@ -205,7 +217,7 @@ func (im *ControllerMetrics) SetServiceAttachment(saKey string, state pscmetrics
 	defer im.Unlock()
 
 	if im.pscMap == nil {
-		klog.Fatalf("Ingress Metrics failed to initialize correctly.")
+		klog.Fatalf("PSC Metrics failed to initialize correctly.")
 	}
 	im.pscMap[saKey] = state
 }
@@ -217,6 +229,27 @@ func (im *ControllerMetrics) DeleteServiceAttachment(saKey string) {
 	defer im.Unlock()
 
 	delete(im.pscMap, saKey)
+}
+
+// SetService adds the service to the map to be counted during metrics computation.
+// SetService implments PSCMetricsCollector.
+func (im *ControllerMetrics) SetService(serviceKey string) {
+	im.Lock()
+	defer im.Unlock()
+
+	if im.serviceMap == nil {
+		klog.Fatalf("PSC Metrics failed to initialize correctly.")
+	}
+	im.serviceMap[serviceKey] = struct{}{}
+}
+
+// DeleteService removes the service from the map to be counted during metrics computation.
+// DeleteService implments PSCMetricsCollector.
+func (im *ControllerMetrics) DeleteService(serviceKey string) {
+	im.Lock()
+	defer im.Unlock()
+
+	delete(im.serviceMap, serviceKey)
 }
 
 // export computes and exports ingress usage metrics.
@@ -250,7 +283,14 @@ func (im *ControllerMetrics) export() {
 	for feature, count := range saCount {
 		serviceAttachmentCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
-	klog.V(3).Infof("Exporting PSC Usage Metrics: %#v", saCount)
+	klog.V(3).Infof("Exported PSC Usage Metrics: %#v", saCount)
+
+	services := im.computeServiceMetrics()
+	klog.V(3).Infof("Exporting Service Metrics: %#v", serviceCount)
+	for feature, count := range services {
+		serviceCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
+	}
+	klog.V(3).Infof("Exported Service Metrics: %#v", saCount)
 
 }
 
@@ -405,6 +445,12 @@ func (im *ControllerMetrics) computePSCMetrics() map[feature]int {
 		}
 	}
 	return counts
+}
+
+func (im *ControllerMetrics) computeServiceMetrics() map[feature]int {
+	return map[feature]int{
+		services: len(im.serviceMap),
+	}
 }
 
 // initializeCounts initializes feature count maps for ingress and service ports.

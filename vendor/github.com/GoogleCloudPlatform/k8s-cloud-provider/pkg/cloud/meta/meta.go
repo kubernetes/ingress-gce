@@ -42,6 +42,8 @@ const (
 	CustomOps = 1 << iota
 	// AggregatedList will generated a method for AggregatedList().
 	AggregatedList = 1 << iota
+	// ListUsable will generate a method for ListUsable().
+	ListUsable = 1 << iota
 
 	// ReadOnly specifies that the given resource is read-only and should not
 	// have insert() or delete() methods generated for the wrapper.
@@ -126,6 +128,7 @@ var AllServices = []*ServiceInfo{
 			"Update",
 			"SetSecurityPolicy",
 		},
+		options:     AggregatedList,
 	},
 	{
 		Object:      "BackendService",
@@ -138,6 +141,7 @@ var AllServices = []*ServiceInfo{
 			"Update",
 			"SetSecurityPolicy",
 		},
+		options:     AggregatedList,
 	},
 	{
 		Object:      "BackendService",
@@ -150,6 +154,7 @@ var AllServices = []*ServiceInfo{
 			"Update",
 			"SetSecurityPolicy",
 		},
+		options:     AggregatedList,
 	},
 	{
 		Object:      "BackendService",
@@ -628,6 +633,7 @@ var AllServices = []*ServiceInfo{
 		version:     VersionAlpha,
 		keyType:     Regional,
 		serviceType: reflect.TypeOf(&alpha.SubnetworksService{}),
+		options: ListUsable,
 	},
 	{
 		Object:      "Subnetwork",
@@ -636,6 +642,7 @@ var AllServices = []*ServiceInfo{
 		version:     VersionBeta,
 		keyType:     Regional,
 		serviceType: reflect.TypeOf(&alpha.SubnetworksService{}),
+		options: ListUsable,
 	},
 	{
 		Object:      "Subnetwork",
@@ -644,6 +651,7 @@ var AllServices = []*ServiceInfo{
 		version:     VersionGA,
 		keyType:     Regional,
 		serviceType: reflect.TypeOf(&alpha.SubnetworksService{}),
+		options: ListUsable,
 	},
 	{
 		Object:      "TargetHttpProxy",

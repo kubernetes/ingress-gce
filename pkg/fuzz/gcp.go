@@ -110,7 +110,7 @@ type NetworkEndpoints struct {
 
 // ServiceAttachment is a union of the API version types.
 type ServiceAttachment struct {
-	Alpha *computealpha.ServiceAttachment
+	Beta *computebeta.ServiceAttachment
 }
 
 // GCLB contains the resources for a load balancer.
@@ -1007,11 +1007,11 @@ func GetServiceAttachment(ctx context.Context, c cloud.Cloud, saURL string) (*Se
 		return nil, err
 	}
 
-	sa, err := c.AlphaServiceAttachments().Get(ctx, resID.Key)
+	sa, err := c.BetaServiceAttachments().Get(ctx, resID.Key)
 	if err != nil {
 		return nil, err
 	}
-	return &ServiceAttachment{Alpha: sa}, nil
+	return &ServiceAttachment{Beta: sa}, nil
 }
 
 // CheckServiceAttachmentDeletion verfies that the Service Attachment does not exist
@@ -1021,7 +1021,7 @@ func CheckServiceAttachmentDeletion(ctx context.Context, c cloud.Cloud, saURL st
 		klog.Infof("CheckServiceAttachmentDeletion(), failed")
 		return false, err
 	}
-	_, err = c.AlphaServiceAttachments().Get(ctx, resID.Key)
+	_, err = c.BetaServiceAttachments().Get(ctx, resID.Key)
 	if e, ok := err.(*googleapi.Error); ok && e.Code == http.StatusNotFound {
 		klog.Infof("CheckServiceAttachmnetDeletion(), service attachment was successfully deleted")
 		return true, nil

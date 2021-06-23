@@ -26,6 +26,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/client-go/util/flowcontrol"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/klog"
 )
 
@@ -56,12 +57,12 @@ func NewGCERateLimiter(specs []string, operationPollInterval time.Duration) (*GC
 			return nil, err
 		}
 		// params[1:] should consist of the rate limiter type and extra params.
-		impl, err := constructRateLimitImpl(params[1:])
+		impl, err := constructRateLimitImpl(params[0], params[1:])
 		if err != nil {
 			return nil, err
 		}
 		rateLimitImpls[key] = impl
-		klog.Infof("Configured rate limiting for: %v", key)
+		klog.Infof("Configured rate limiting for: %v, scale = %f", key, flags.F.GCERateLimitScale)
 	}
 	if len(rateLimitImpls) == 0 {
 		return nil, nil
@@ -138,7 +139,8 @@ func constructRateLimitKey(param string) (cloud.RateLimitKey, error) {
 
 // constructRateLimitImpl parses the slice and returns a flowcontrol.RateLimiter
 // Expected format is [type],[param1],[param2],...
-func constructRateLimitImpl(params []string) (flowcontrol.RateLimiter, error) {
+// `key` is used for logging.
+func constructRateLimitImpl(key string, params []string) (flowcontrol.RateLimiter, error) {
 	// For now, only the "qps" type is supported.
 	rlType := params[0]
 	implArgs := params[1:]
@@ -154,7 +156,17 @@ func constructRateLimitImpl(params []string) (flowcontrol.RateLimiter, error) {
 		if err != nil {
 			return nil, fmt.Errorf("invalid argument for rate limiter type %v. Expected %v to be a int.", rlType, implArgs[1])
 		}
-		return flowcontrol.NewTokenBucketRateLimiter(float32(qps), burst), nil
+		if flags.F.GCERateLimitScale <= 1.0 {
+			klog.Infof("GCERateLimitScale <= 1.0 (is %f), not adjusting rate limits", flags.F.GCERateLimitScale)
+		} else {
+			oldQPS := qps
+			oldBurst := burst
+			qps = qps * flags.F.GCERateLimitScale
+			burst = int(float64(burst) * flags.F.GCERateLimitScale)
+			klog.Infof("Adjusted QPS rate limit according to scale: qps was %f, now %f; burst was %d, now %d", oldQPS, qps, oldBurst, burst)
+		}
+		tokenBucket := flowcontrol.NewTokenBucketRateLimiter(float32(qps), burst)
+		return tokenBucket, nil
 	}
 	return nil, fmt.Errorf("invalid rate limiter type provided: %v", rlType)
 }

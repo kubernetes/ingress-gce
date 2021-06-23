@@ -36,7 +36,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	sav1alpha1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1"
+	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/cmconfig"
@@ -47,7 +47,7 @@ import (
 	informeringparams "k8s.io/ingress-gce/pkg/ingparams/client/informers/externalversions/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/metrics"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
-	informerserviceattachment "k8s.io/ingress-gce/pkg/serviceattachment/client/informers/externalversions/serviceattachment/v1alpha1"
+	informerserviceattachment "k8s.io/ingress-gce/pkg/serviceattachment/client/informers/externalversions/serviceattachment/v1beta1"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -394,7 +394,7 @@ func (ctx *ControllerContext) generateScheme() *runtime.Scheme {
 	controllerScheme := scheme.Scheme
 
 	if ctx.SAInformer != nil {
-		if err := sav1alpha1.AddToScheme(controllerScheme); err != nil {
+		if err := sav1beta1.AddToScheme(controllerScheme); err != nil {
 			klog.Errorf("Failed to add ServiceAttachment CRD scheme to event recorder")
 		}
 	}

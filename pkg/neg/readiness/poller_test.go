@@ -503,3 +503,25 @@ func TestPoll(t *testing.T) {
 	pollAndValidate(step, false, false, 4)
 	pacherTester.Eval(t, fmt.Sprintf("%v/%v", ns, podName), meta.ZonalKey(negName, zone), meta.GlobalKey(bsName))
 }
+
+func TestProcessHealthStatus(t *testing.T) {
+	t.Parallel()
+	poller := newFakePoller()
+
+	// key was not in pollMap
+	key := negMeta{
+		SyncerKey: negtypes.NegSyncerKey{},
+		Name:      "foo",
+		Zone:      "zone",
+	}
+	res := []*composite.NetworkEndpointWithHealthStatus{}
+
+	// processHealthStatus should not crash when pollMap does not have corresponding key.
+	retry, err := poller.processHealthStatus(key, res)
+	if retry != false {
+		t.Errorf("exepect retry == false, but got %v", retry)
+	}
+	if err != nil {
+		t.Errorf("expect err == nil, but got %v", err)
+	}
+}

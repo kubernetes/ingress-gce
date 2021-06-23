@@ -19,6 +19,8 @@ package ratelimit
 import (
 	"testing"
 	"time"
+
+	"k8s.io/ingress-gce/pkg/flags"
 )
 
 func TestGCERateLimiter(t *testing.T) {
@@ -54,4 +56,18 @@ func TestGCERateLimiter(t *testing.T) {
 			t.Errorf("Expected an error for test case: %v", testCase)
 		}
 	}
+}
+
+func TestRateLimitScale(t *testing.T) {
+	// no parallel
+	oldScale := flags.F.GCERateLimitScale
+	defer func() { flags.F.GCERateLimitScale = oldScale }()
+
+	flags.F.GCERateLimitScale = 2
+	const cfg = "ga.Addresses.Get,qps,1,5"
+	_, err := NewGCERateLimiter([]string{cfg}, time.Second)
+	if err != nil {
+		t.Errorf("NewGCERateLimiter([]string{%q}, time.Second) = %v, want nil", cfg, err)
+	}
+	// TODO(bowei) -- this does not actually test the parameters were scaled.
 }

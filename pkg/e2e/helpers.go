@@ -45,7 +45,7 @@ import (
 	"k8s.io/ingress-gce/cmd/echo/app"
 	"k8s.io/ingress-gce/pkg/annotations"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
-	sav1alpha1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1alpha1"
+	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
@@ -963,7 +963,7 @@ func DeleteNegCR(s *Sandbox, negName string) error {
 func WaitForServiceAttachment(s *Sandbox, saName string) (string, error) {
 	var gceSAURL string
 	err := wait.Poll(negPollInterval, negPollTimeout, func() (bool, error) {
-		saCR, err := s.f.SAClient.NetworkingV1alpha1().ServiceAttachments(s.Namespace).Get(context.TODO(), saName, metav1.GetOptions{})
+		saCR, err := s.f.SAClient.NetworkingV1beta1().ServiceAttachments(s.Namespace).Get(context.TODO(), saName, metav1.GetOptions{})
 		if saCR == nil || err != nil {
 			return false, fmt.Errorf("failed to get service attachment %s/%s: %v", s.Namespace, saName, err)
 		}
@@ -1009,7 +1009,7 @@ func WaitForServiceAttachmentDeletion(s *Sandbox, saName, gceSAURL string) error
 
 // CheckServiceAttachmentCRDeletion verifes that the CR does not exist
 func CheckServiceAttachmentCRDeletion(s *Sandbox, saName string) bool {
-	_, err := s.f.SAClient.NetworkingV1alpha1().ServiceAttachments(s.Namespace).Get(context.Background(), saName, metav1.GetOptions{})
+	_, err := s.f.SAClient.NetworkingV1beta1().ServiceAttachments(s.Namespace).Get(context.Background(), saName, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return true
@@ -1023,7 +1023,7 @@ func CheckServiceAttachmentCRDeletion(s *Sandbox, saName string) bool {
 
 // CheckServiceAttachment verifes that the CR spec matches the GCE Service Attachment configuration and
 // that the CR's Status was properly populated
-func CheckServiceAttachment(sa *fuzz.ServiceAttachment, cr *sav1alpha1.ServiceAttachment) (string, error) {
+func CheckServiceAttachment(sa *fuzz.ServiceAttachment, cr *sav1beta1.ServiceAttachment) (string, error) {
 	if err := CheckServiceAttachmentFinalizer(cr); err != nil {
 		return "", fmt.Errorf("failed checking Service Attachment CR %s/%s: %q", cr.Namespace, cr.Name, err)
 	}
@@ -1032,28 +1032,28 @@ func CheckServiceAttachment(sa *fuzz.ServiceAttachment, cr *sav1alpha1.ServiceAt
 		return "", fmt.Errorf("Service Attachment CR %s/%s status is not populated", cr.Namespace, cr.Name)
 	}
 
-	if sa.Alpha.ConnectionPreference != cr.Spec.ConnectionPreference {
-		return "", fmt.Errorf("service attachment %s connection preference does not CR %s/%s", sa.Alpha.ConnectionPreference, cr.Namespace, cr.Name)
+	if sa.Beta.ConnectionPreference != cr.Spec.ConnectionPreference {
+		return "", fmt.Errorf("service attachment %s connection preference does not CR %s/%s", sa.Beta.ConnectionPreference, cr.Namespace, cr.Name)
 	}
 
 	var subnets []string
-	for _, subnetURL := range sa.Alpha.NatSubnets {
+	for _, subnetURL := range sa.Beta.NatSubnets {
 		resourceID, err := cloud.ParseResourceURL(subnetURL)
 		if err != nil {
-			return "", fmt.Errorf("unparseable subnet url %s in gce service attachment %s", subnetURL, sa.Alpha.Name)
+			return "", fmt.Errorf("unparseable subnet url %s in gce service attachment %s", subnetURL, sa.Beta.Name)
 		}
 		subnets = append(subnets, resourceID.Key.Name)
 	}
 
 	if !utils.EqualStringSets(subnets, cr.Spec.NATSubnets) {
-		return "", fmt.Errorf("subnets in gce service attachment %s does not make CR %s/%s", sa.Alpha.Name, cr.Namespace, cr.Name)
+		return "", fmt.Errorf("subnets in gce service attachment %s does not make CR %s/%s", sa.Beta.Name, cr.Namespace, cr.Name)
 	}
-	return sa.Alpha.SelfLink, nil
+	return sa.Beta.SelfLink, nil
 }
 
 // CheckServiceAttachmentForwardingRule verfies that the forwarding rule used in the GCE Service Attachment creation
 // is the same one created by the Service referenced in the CR
-func CheckServiceAttachmentForwardingRule(s *Sandbox, c cloud.Cloud, cr *sav1alpha1.ServiceAttachment) error {
+func CheckServiceAttachmentForwardingRule(s *Sandbox, c cloud.Cloud, cr *sav1beta1.ServiceAttachment) error {
 
 	svc, err := s.f.Clientset.CoreV1().Services(cr.Namespace).Get(context.TODO(), cr.Spec.ResourceRef.Name, metav1.GetOptions{})
 	if err != nil {
@@ -1077,7 +1077,7 @@ func CheckServiceAttachmentForwardingRule(s *Sandbox, c cloud.Cloud, cr *sav1alp
 }
 
 // CheckServiceAttachmentFinalizer verifes that the CR has the ServiceAttachment Finalizer
-func CheckServiceAttachmentFinalizer(cr *sav1alpha1.ServiceAttachment) error {
+func CheckServiceAttachmentFinalizer(cr *sav1beta1.ServiceAttachment) error {
 	finalizers := cr.GetFinalizers()
 	if l := len(finalizers); l != 1 {
 		return fmt.Errorf("expected 1 finalizer on service attachment but got %d", l)

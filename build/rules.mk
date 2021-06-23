@@ -60,7 +60,9 @@ endif
 # These rules MUST be expanded at reference time (hence '=') as BINARY
 # is dynamically scoped.
 CONTAINER_NAME  = $(REGISTRY)/$(CONTAINER_PREFIX)-$(BINARY)-$(ARCH)
+MULTIARCH_CONTAINER_NAME  = $(REGISTRY)/$(CONTAINER_PREFIX)-$(BINARY)
 BUILDSTAMP_NAME = $(subst :,_,$(subst /,_,$(CONTAINER_NAME))_$(VERSION))
+MULTIARCH_BUILDSTAMP_NAME = $(subst :,_,$(subst /,_,$(MULTIARCH_CONTAINER_NAME))_$(VERSION))
 
 ALL_BINARIES += $(BINARIES)
 ALL_BINARIES += $(CONTAINER_BINARIES)
@@ -68,6 +70,7 @@ ALL_BINARIES += $(CONTAINER_BINARIES)
 GO_BINARIES := $(addprefix bin/$(ARCH)/,$(ALL_BINARIES))
 CONTAINER_BUILDSTAMPS := $(foreach BINARY,$(CONTAINER_BINARIES),.$(BUILDSTAMP_NAME)-container)
 PUSH_BUILDSTAMPS := $(foreach BINARY,$(CONTAINER_BINARIES),.$(BUILDSTAMP_NAME)-push)
+PUSH_MULTIARCH_BUILDSTAMPS := $(foreach BINARY,$(CONTAINER_BINARIES),.$(MULTIARCH_BUILDSTAMP_NAME)-push-multiarch)
 
 ifeq ($(VERBOSE), 1)
 	DOCKER_BUILD_FLAGS :=
@@ -96,8 +99,11 @@ all-build: $(addprefix build-, $(ALL_ARCH))
 .PHONY: all-containers
 all-containers: $(addprefix containers-, $(ALL_ARCH))
 
+.PHONY: all-push-multiarch
+all-push-multiarch: $(PUSH_MULTIARCH_BUILDSTAMPS)
+
 .PHONY: all-push
-all-push: $(addprefix push-, $(ALL_ARCH))
+all-push: $(addprefix push-, $(ALL_ARCH)) all-push-multiarch
 
 .PHONY: build
 build: $(GO_BINARIES) images-build
@@ -181,6 +187,17 @@ only-push-$(BINARY): .$(BUILDSTAMP_NAME)-push
 endef
 $(foreach BINARY,$(CONTAINER_BINARIES),$(eval $(PUSH_RULE)))
 
+define PUSH_MULTIARCH_RULE
+.$(MULTIARCH_BUILDSTAMP_NAME)-push-multiarch:
+	@echo "Creating manifest list for $(BINARY)"
+	for arch in $(ALL_ARCH); do \
+		echo "Adding $(MULTIARCH_CONTAINER_NAME)-$$$$arch:$(VERSION) to manifest list"; \
+		docker manifest create --amend $(MULTIARCH_CONTAINER_NAME):$(VERSION) $(MULTIARCH_CONTAINER_NAME)-$$$$arch:$(VERSION) ; \
+		docker manifest annotate --arch $$$$arch $(MULTIARCH_CONTAINER_NAME):$(VERSION) $(MULTIARCH_CONTAINER_NAME)-$$$$arch:$(VERSION) ; \
+	done
+	docker manifest push $(MULTIARCH_CONTAINER_NAME):$(VERSION)
+endef
+$(foreach BINARY,$(CONTAINER_BINARIES),$(eval $(PUSH_MULTIARCH_RULE)))
 
 # Rule for `test`
 .PHONY: test images-test
