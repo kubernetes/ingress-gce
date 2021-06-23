@@ -81,6 +81,7 @@ var (
 		NodePortRanges                   PortRanges
 		ResyncPeriod                     time.Duration
 		NumL4Workers                     int
+		NumIngressWorkers                int
 		RunIngressController             bool
 		RunL4Controller                  bool
 		Version                          bool
@@ -197,6 +198,8 @@ the pod secrets for creating a Kubernetes client.`)
 		`Relist and confirm cloud resources this often.`)
 	flag.IntVar(&F.NumL4Workers, "num-l4-workers", 5,
 		`Number of parallel L4 Service worker goroutines.`)
+	flag.IntVar(&F.NumIngressWorkers, "num-ingress-workers", 1,
+		`Number of Ingress sync-queue worker goroutines.`)
 	flag.StringVar(&F.WatchNamespace, "watch-namespace", v1.NamespaceAll,
 		`Namespace to watch for Ingress/Services/Endpoints.`)
 	flag.BoolVar(&F.Version, "version", false,
