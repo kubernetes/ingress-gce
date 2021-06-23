@@ -114,6 +114,15 @@ func NewController(ctx *context.ControllerContext) *Controller {
 			controller.enqueueServiceAttachment(cur)
 		},
 	})
+
+	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+		AddFunc: func(service interface{}) {
+			controller.addServiceToMetrics(service)
+		},
+		DeleteFunc: func(service interface{}) {
+			controller.deleteServiceFromMetrics(service)
+		},
+	})
 	return controller
 }
 
@@ -193,6 +202,26 @@ func (c *Controller) enqueueServiceAttachment(obj interface{}) {
 	c.svcAttachmentQueue.Add(key)
 }
 
+// addServiceToMetrics adds the metrics collector
+func (c *Controller) addServiceToMetrics(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		klog.Errorf("Failed to generate service key for obj %v: %v", obj, err)
+		return
+	}
+	c.collector.SetService(key)
+}
+
+// deleteServiceFromMetrics deletes the metrics collector
+func (c *Controller) deleteServiceFromMetrics(obj interface{}) {
+	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
+	if err != nil {
+		klog.Errorf("Failed to generate service key for obj %v: %v", obj, err)
+		return
+	}
+	c.collector.DeleteService(key)
+}
+
 // processServiceAttachment will process a service attachment key and will gather all
 // information required (forwarding rule and subnet URLs) and create and update
 // corresponding GCE Service Attachments. If provided a key that does not exist in the
@@ -214,7 +243,9 @@ func (c *Controller) processServiceAttachment(key string) error {
 		return err
 	}
 
-	obj, exists, err := c.svcAttachmentLister.GetByKey(key)
+	var obj interface{}
+	var exists bool
+	obj, exists, err = c.svcAttachmentLister.GetByKey(key)
 	if err != nil {
 		return fmt.Errorf("errored getting service from store: %q", err)
 	}
@@ -237,12 +268,14 @@ func (c *Controller) processServiceAttachment(key string) error {
 		return err
 	}
 
-	frURL, err := c.getForwardingRule(namespace, updatedCR.Spec.ResourceRef.Name)
+	var frURL string
+	frURL, err = c.getForwardingRule(namespace, updatedCR.Spec.ResourceRef.Name)
 	if err != nil {
 		return fmt.Errorf("failed to find forwarding rule: %q", err)
 	}
 
-	subnetURLs, err := c.getSubnetURLs(updatedCR.Spec.NATSubnets)
+	var subnetURLs []string
+	subnetURLs, err = c.getSubnetURLs(updatedCR.Spec.NATSubnets)
 	if err != nil {
 		return fmt.Errorf("failed to find nat subnets: %q", err)
 	}
@@ -259,12 +292,14 @@ func (c *Controller) processServiceAttachment(key string) error {
 		EnableProxyProtocol:    updatedCR.Spec.ProxyProtocol,
 	}
 
-	gceSAKey, err := composite.CreateKey(c.cloud, saName, meta.Regional)
+	var gceSAKey *meta.Key
+	gceSAKey, err = composite.CreateKey(c.cloud, saName, meta.Regional)
 	if err != nil {
 		return fmt.Errorf("failed to create key for GCE Service Attachment: %q", err)
 	}
 
-	existingSA, err := c.cloud.Compute().BetaServiceAttachments().Get(context2.Background(), gceSAKey)
+	var existingSA *beta.ServiceAttachment
+	existingSA, err = c.cloud.Compute().BetaServiceAttachments().Get(context2.Background(), gceSAKey)
 	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		return fmt.Errorf("failed querying for GCE Service Attachment: %q", err)
 	}

@@ -117,6 +117,7 @@ const (
 	sa          = feature("ServiceAttachments")
 	saInSuccess = feature("ServiceAttachmentInSuccess")
 	saInError   = feature("ServiceAttachmentInError")
+	services    = feature("Services")
 )
 
 // featuresForIngress returns the list of features for given ingress.
