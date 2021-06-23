@@ -206,7 +206,7 @@ func (c *Controller) enqueueServiceAttachment(obj interface{}) {
 func (c *Controller) addServiceToMetrics(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		klog.Errorf("Failed to generate service key for obj %v: %v", obj, err)
+		klog.Errorf("Failed to generate service key for obj %v: %q", obj, err)
 		return
 	}
 	c.collector.SetService(key)
@@ -216,7 +216,7 @@ func (c *Controller) addServiceToMetrics(obj interface{}) {
 func (c *Controller) deleteServiceFromMetrics(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		klog.Errorf("Failed to generate service key for obj %v: %v", obj, err)
+		klog.Errorf("Failed to generate service key for obj %v: %q", obj, err)
 		return
 	}
 	c.collector.DeleteService(key)
@@ -247,7 +247,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 	var exists bool
 	obj, exists, err = c.svcAttachmentLister.GetByKey(key)
 	if err != nil {
-		return fmt.Errorf("errored getting service from store: %q", err)
+		return fmt.Errorf("errored getting service from store: %w", err)
 	}
 
 	if !exists {
@@ -262,7 +262,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 	var updatedCR *sav1beta1.ServiceAttachment
 	updatedCR, err = c.ensureSAFinalizer(svcAttachment)
 	if err != nil {
-		return fmt.Errorf("Errored adding finalizer on ServiceAttachment CR %s/%s: %s", namespace, name, err)
+		return fmt.Errorf("Errored adding finalizer on ServiceAttachment CR %s/%s: %w", namespace, name, err)
 	}
 	if err = validateResourceReference(updatedCR.Spec.ResourceRef); err != nil {
 		return err
@@ -271,13 +271,13 @@ func (c *Controller) processServiceAttachment(key string) error {
 	var frURL string
 	frURL, err = c.getForwardingRule(namespace, updatedCR.Spec.ResourceRef.Name)
 	if err != nil {
-		return fmt.Errorf("failed to find forwarding rule: %q", err)
+		return fmt.Errorf("failed to find forwarding rule: %w", err)
 	}
 
 	var subnetURLs []string
 	subnetURLs, err = c.getSubnetURLs(updatedCR.Spec.NATSubnets)
 	if err != nil {
-		return fmt.Errorf("failed to find nat subnets: %q", err)
+		return fmt.Errorf("failed to find nat subnets: %w", err)
 	}
 
 	saName := c.saNamer.ServiceAttachment(namespace, name, string(updatedCR.UID))
@@ -295,20 +295,20 @@ func (c *Controller) processServiceAttachment(key string) error {
 	var gceSAKey *meta.Key
 	gceSAKey, err = composite.CreateKey(c.cloud, saName, meta.Regional)
 	if err != nil {
-		return fmt.Errorf("failed to create key for GCE Service Attachment: %q", err)
+		return fmt.Errorf("failed to create key for GCE Service Attachment: %w", err)
 	}
 
 	var existingSA *beta.ServiceAttachment
 	existingSA, err = c.cloud.Compute().BetaServiceAttachments().Get(context2.Background(), gceSAKey)
 	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-		return fmt.Errorf("failed querying for GCE Service Attachment: %q", err)
+		return fmt.Errorf("failed querying for GCE Service Attachment: %w", err)
 	}
 
 	if existingSA != nil {
 		klog.V(4).Infof("Found existing service attachment %s", existingSA.Name)
 		err = validateUpdate(existingSA, gceSvcAttachment)
 		if err != nil {
-			return fmt.Errorf("invalid Service Attachment Update: %q", err)
+			return fmt.Errorf("invalid Service Attachment Update: %w", err)
 		}
 
 		_, err = c.updateServiceAttachmentStatus(updatedCR, gceSAKey)
@@ -318,7 +318,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 
 	klog.V(2).Infof("Creating service attachment %s", saName)
 	if err = c.cloud.Compute().BetaServiceAttachments().Insert(context2.Background(), gceSAKey, gceSvcAttachment); err != nil {
-		return fmt.Errorf("failed to create GCE Service Attachment: %q", err)
+		return fmt.Errorf("failed to create GCE Service Attachment: %w", err)
 	}
 	klog.V(2).Infof("Created service attachment %s", saName)
 
@@ -345,7 +345,7 @@ func (c *Controller) garbageCollectServiceAttachments() {
 		}
 		key, err := cache.MetaNamespaceKeyFunc(sa)
 		if err != nil {
-			klog.V(4).Infof("failed to generate key for service attachment: %s/%s: %w", sa.Namespace, sa.Name, err)
+			klog.V(4).Infof("failed to generate key for service attachment: %s/%s: %q", sa.Namespace, sa.Name, err)
 		} else {
 			c.collector.DeleteServiceAttachment(key)
 		}
@@ -406,7 +406,7 @@ func (c *Controller) getForwardingRule(namespace, svcName string) (string, error
 	svcKey := fmt.Sprintf("%s/%s", namespace, svcName)
 	obj, exists, err := c.serviceLister.GetByKey(svcKey)
 	if err != nil {
-		return "", fmt.Errorf("errored getting service %s/%s: %q", namespace, svcName, err)
+		return "", fmt.Errorf("errored getting service %s/%s: %w", namespace, svcName, err)
 	}
 
 	if !exists {
@@ -428,7 +428,7 @@ func (c *Controller) getForwardingRule(namespace, svcName string) (string, error
 	}
 	fwdRule, err := c.cloud.Compute().ForwardingRules().Get(context2.Background(), meta.RegionalKey(frName, c.cloud.Region()))
 	if err != nil {
-		return "", fmt.Errorf("failed to get Forwarding Rule %s: %q", frName, err)
+		return "", fmt.Errorf("failed to get Forwarding Rule %s: %w", frName, err)
 	}
 
 	// Verify that the forwarding rule found has the IP expected in Service.Status
@@ -454,7 +454,7 @@ func (c *Controller) getSubnetURLs(subnets []string) ([]string, error) {
 	for _, subnetName := range subnets {
 		subnet, err := c.cloud.Compute().Subnetworks().Get(context2.Background(), meta.RegionalKey(subnetName, c.cloud.Region()))
 		if err != nil {
-			return subnetURLs, fmt.Errorf("failed to find Subnetwork %s/%s: %q", c.cloud.Region(), subnetName, err)
+			return subnetURLs, fmt.Errorf("failed to find Subnetwork %s/%s: %w", c.cloud.Region(), subnetName, err)
 		}
 		subnetURLs = append(subnetURLs, subnet.SelfLink)
 
@@ -467,7 +467,7 @@ func (c *Controller) getSubnetURLs(subnets []string) ([]string, error) {
 func (c *Controller) updateServiceAttachmentStatus(cr *sav1beta1.ServiceAttachment, gceSAKey *meta.Key) (*sav1beta1.ServiceAttachment, error) {
 	gceSA, err := c.cloud.Compute().AlphaServiceAttachments().Get(context2.Background(), gceSAKey)
 	if err != nil {
-		return cr, fmt.Errorf("failed to query GCE Service Attachment: %q", err)
+		return cr, fmt.Errorf("failed to query GCE Service Attachment: %w", err)
 	}
 
 	updatedSA := cr.DeepCopy()
@@ -511,7 +511,7 @@ func (c *Controller) ensureDeleteGCEServiceAttachment(name string) error {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
 			return nil
 		}
-		return fmt.Errorf("failed querying for service attachment %q: %q", name, err)
+		return fmt.Errorf("failed querying for service attachment %q: %w", name, err)
 	}
 
 	return c.cloud.Compute().BetaServiceAttachments().Delete(context2.Background(), saKey)
@@ -588,14 +588,14 @@ func validateUpdate(existingSA, desiredSA *beta.ServiceAttachment) error {
 		for _, subnet := range existingSA.NatSubnets {
 			existingSN, err := cloud.ParseResourceURL(subnet)
 			if err != nil {
-				return fmt.Errorf("serviceAttachment existing subnet has malformed URL: %q", err)
+				return fmt.Errorf("serviceAttachment existing subnet has malformed URL: %w", err)
 			}
 			subnets[existingSN.Key.Name] = existingSN
 
 			for _, subnet := range desiredSA.NatSubnets {
 				desiredSN, err := cloud.ParseResourceURL(subnet)
 				if err != nil {
-					return fmt.Errorf("serviceAttachment desired subnet has malformed URL: %q", err)
+					return fmt.Errorf("serviceAttachment desired subnet has malformed URL: %w", err)
 				}
 
 				if !reflect.DeepEqual(subnets[desiredSN.Key.Name], desiredSN) {
