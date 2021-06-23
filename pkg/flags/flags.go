@@ -71,6 +71,7 @@ var (
 		DeleteAllOnQuit                  bool
 		GCEOperationPollInterval         time.Duration
 		GCERateLimit                     RateLimitSpecs
+		GCERateLimitScale                float64
 		HealthCheckPath                  string
 		HealthzPort                      int
 		InCluster                        bool
@@ -99,7 +100,9 @@ var (
 		FinalizerRemove                bool // Should have been named Enablexxx.
 		EnablePSC                      bool
 		EnableIngressGAFields          bool
-	}{}
+	}{
+		GCERateLimitScale: 1.0,
+	}
 )
 
 type LeaderElectionConfiguration struct {
@@ -176,6 +179,9 @@ specify this flag, the default is to rate limit Operations.Get for all versions.
 If you do specify this flag one or more times, this default will be overwritten.
 If you want to still use the default, simply specify it along with your other
 values.`)
+	flag.Float64Var(&F.GCERateLimitScale, "gce-ratelimit-scale", 1.0,
+		`Optional, scales rate limit options by a constant factor.
+1.0 is no multiplier. 5.0 means increase all rate and capacity by 5x.`)
 	flag.DurationVar(&F.GCEOperationPollInterval, "gce-operation-poll-interval", time.Second,
 		`Minimum time between polling requests to GCE for checking the status of an operation.`)
 	flag.StringVar(&F.HealthCheckPath, "health-check-path", "/",
