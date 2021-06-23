@@ -181,8 +181,8 @@ func TestFirewallEmptyPortList(t *testing.T) {
 	}
 }
 
-// TestFirewallNoneExistingService asserts that a an empty firewall rule 
-// is not created whe the port list is empty
+// TestFirewallNoneExistingService asserts that a an empty firewall rule
+// is not created when the port list is empty
 func TestFirewallNoneExistingService(t *testing.T) {
 	fwc := newFirewallController()
 
