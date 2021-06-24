@@ -17,6 +17,7 @@ package psc
 
 import (
 	context2 "context"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -723,6 +724,82 @@ func TestShouldProcess(t *testing.T) {
 			processSA := shouldProcess(originalSA, tc.newSA)
 			if processSA != tc.shouldProcess {
 				t.Errorf("Expected shouldProcess to return %t, but got %t", tc.shouldProcess, processSA)
+			}
+		})
+	}
+}
+
+func TestFilterError(t *testing.T) {
+	unclassifiedError := errors.New("unclassified error")
+	badGatewayErr := &googleapi.Error{Code: http.StatusBadGateway}
+	wrappedBadGatewayErr := fmt.Errorf("wrap 1: %w", fmt.Errorf("wrap 2: %w", badGatewayErr))
+	testcases := []struct {
+		desc          string
+		err           error
+		expectedError error
+	}{
+		{
+			desc:          "google api status not found error",
+			err:           utils.FakeGoogleAPINotFoundErr(),
+			expectedError: nil,
+		},
+		{
+			desc:          "google api bad request error",
+			err:           &googleapi.Error{Code: http.StatusBadRequest},
+			expectedError: nil,
+		},
+		{
+			desc:          "google api bad gateway error",
+			err:           badGatewayErr,
+			expectedError: badGatewayErr,
+		},
+		{
+			desc:          "service not found",
+			err:           ServiceNotFoundError,
+			expectedError: nil,
+		},
+		{
+			desc:          "mismatched ilb ip",
+			err:           MismatchedILBIPError,
+			expectedError: nil,
+		},
+		{
+			desc:          "wrapped google api status not found error",
+			err:           fmt.Errorf("wrap 1: %w", fmt.Errorf("wrap 2: %w", utils.FakeGoogleAPINotFoundErr())),
+			expectedError: nil,
+		},
+		{
+			desc:          "wrapped google api bad request error",
+			err:           fmt.Errorf("wrap 1: %w", fmt.Errorf("wrap 2: %w", &googleapi.Error{Code: http.StatusBadRequest})),
+			expectedError: nil,
+		},
+		{
+			desc:          "wrapped google api bad gateway error",
+			err:           wrappedBadGatewayErr,
+			expectedError: wrappedBadGatewayErr,
+		},
+		{
+			desc:          "wrapped service not found",
+			err:           fmt.Errorf("wrap 1: %w", fmt.Errorf("wrap 2: %w", ServiceNotFoundError)),
+			expectedError: nil,
+		},
+		{
+			desc:          "wrapped mismatched ilb ip",
+			err:           fmt.Errorf("wrap 1: %w", fmt.Errorf("wrap 2: %w", MismatchedILBIPError)),
+			expectedError: nil,
+		},
+		{
+			desc:          "unclassified error",
+			err:           unclassifiedError,
+			expectedError: unclassifiedError,
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			resultErr := filterError(tc.err)
+			if resultErr != tc.expectedError {
+				t.Errorf("Expected filterError(%+v) to return %+v but got %+v", tc.err, tc.expectedError, resultErr)
 			}
 		})
 	}
