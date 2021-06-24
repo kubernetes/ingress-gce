@@ -17,6 +17,7 @@ package psc
 
 import (
 	context2 "context"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -26,6 +27,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	beta "google.golang.org/api/compute/v0.beta"
+	"google.golang.org/api/googleapi"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -66,6 +68,15 @@ const (
 
 	// ServiceAttachmentGCPeriod is the interval at which Service Attachment GC will run
 	ServiceAttachmentGCPeriod = 2 * time.Minute
+)
+
+var (
+	ServiceNotFoundError = errors.New("service not in store")
+	MismatchedILBIPError = errors.New("Mismatched ILB IP")
+	nonProcessFailures   = []error{
+		ServiceNotFoundError,
+		MismatchedILBIPError,
+	}
 )
 
 // Controller is a private service connect (psc) controller
@@ -232,7 +243,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 	// Please reuse and set err before returning
 	var err error
 	defer func() {
-		metrics.PublishPSCProcessMetrics(metrics.SyncProcess, err, start)
+		metrics.PublishPSCProcessMetrics(metrics.SyncProcess, filterError(err), start)
 		metrics.PublishLastProcessTimestampMetrics(metrics.SyncProcess)
 		c.collector.SetServiceAttachment(key, metrics.PSCState{InSuccess: err == nil})
 	}()
@@ -410,7 +421,7 @@ func (c *Controller) getForwardingRule(namespace, svcName string) (string, error
 	}
 
 	if !exists {
-		return "", fmt.Errorf("failed to get Service %s/%s", namespace, svcName)
+		return "", fmt.Errorf("failed to get Service %s/%s: %w", namespace, svcName, ServiceNotFoundError)
 	}
 
 	svc := obj.(*v1.Service)
@@ -444,12 +455,11 @@ func (c *Controller) getForwardingRule(namespace, svcName string) (string, error
 	if foundMatchingIP {
 		return fwdRule.SelfLink, nil
 	}
-	return "", fmt.Errorf("forwarding rule does not have matching IPAddr")
+	return "", fmt.Errorf("forwarding rule does not have matching IPAddr to specified service: %w", MismatchedILBIPError)
 }
 
 // getSubnetURLs will query GCE and gather all the URLs of the provided subnet names
 func (c *Controller) getSubnetURLs(subnets []string) ([]string, error) {
-
 	var subnetURLs []string
 	for _, subnetName := range subnets {
 		subnet, err := c.cloud.Compute().Subnetworks().Get(context2.Background(), meta.RegionalKey(subnetName, c.cloud.Region()))
@@ -637,4 +647,20 @@ func shouldProcess(old, cur *sav1beta1.ServiceAttachment) bool {
 // by the svcAttachmentLister
 func SvcAttachmentKeyFunc(namespace, name string) string {
 	return fmt.Sprintf("%s/%s", namespace, name)
+}
+
+// filterError filters out errors that should not be considered sync errors for metrics
+func filterError(err error) error {
+	var apiError *googleapi.Error
+	if errors.As(err, &apiError) {
+		if utils.IsHTTPErrorCode(apiError, http.StatusNotFound) || utils.IsHTTPErrorCode(apiError, http.StatusBadRequest) {
+			return nil
+		}
+	}
+	for _, errorType := range nonProcessFailures {
+		if errors.Is(err, errorType) {
+			return nil
+		}
+	}
+	return err
 }
