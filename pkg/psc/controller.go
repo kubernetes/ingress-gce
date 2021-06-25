@@ -293,6 +293,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 
 	saName := c.saNamer.ServiceAttachment(namespace, name, string(updatedCR.UID))
 	desc := sautils.ServiceAttachmentDesc{URL: updatedCR.SelfLink}
+	consumerAcceptLists := convertAllowList(updatedCR.Spec)
 	gceSvcAttachment := &beta.ServiceAttachment{
 		ConnectionPreference: svcAttachment.Spec.ConnectionPreference,
 		Name:                 saName,
@@ -301,6 +302,8 @@ func (c *Controller) processServiceAttachment(key string) error {
 		Region:               c.cloud.Region(),
 		Description:          desc.String(),
 		EnableProxyProtocol:  updatedCR.Spec.ProxyProtocol,
+		ConsumerAcceptLists:  consumerAcceptLists,
+		ConsumerRejectLists:  updatedCR.Spec.ConsumerRejectList,
 	}
 
 	var gceSAKey *meta.Key
@@ -647,6 +650,21 @@ func shouldProcess(old, cur *sav1beta1.ServiceAttachment) bool {
 	// Status change results in a resource version change, so do not check for metadata changes
 	klog.V(4).Infof("Status only update, skipping service attachment %s/%s", cur.Namespace, cur.Name)
 	return false
+}
+
+// convertAllowList converts the allow list in the Service Attachment spec into
+// ConsumerProjectLimits to be used to configure the GCE ServiceAttachment
+func convertAllowList(spec sav1beta1.ServiceAttachmentSpec) []*beta.ServiceAttachmentConsumerProjectLimit {
+	var acceptList []*beta.ServiceAttachmentConsumerProjectLimit
+	for _, consumer := range spec.ConsumerAllowList {
+		acceptList = append(acceptList, &beta.ServiceAttachmentConsumerProjectLimit{
+			ConnectionLimit: consumer.ConnectionLimit,
+			ProjectIdOrNum:  consumer.Project,
+			ForceSendFields: consumer.ForceSendFields,
+			NullFields:      consumer.NullFields,
+		})
+	}
+	return acceptList
 }
 
 // SvcAttachmentKeyFunc provides the service attachment key used
