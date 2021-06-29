@@ -358,8 +358,14 @@ func (c *Controller) processServiceAttachment(key string) error {
 	}
 	klog.V(2).Infof("Created service attachment %s", saName)
 
-	_, err = c.updateServiceAttachmentStatus(updatedCR, gceSAKey)
+	updatedCR, err = c.updateServiceAttachmentStatus(updatedCR, gceSAKey)
 	klog.V(2).Infof("Updated Service Attachment %s/%s status", updatedCR.Namespace, updatedCR.Name)
+
+	if err == nil {
+		c.recorder(svcAttachment.Namespace).Eventf(svcAttachment, v1.EventTypeNormal, "ServiceAttachmentCreated",
+			fmt.Sprintf("Service Attachment %s was successfully created.", updatedCR.Status.ServiceAttachmentURL))
+	}
+
 	return err
 }
 
