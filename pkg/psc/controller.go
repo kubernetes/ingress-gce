@@ -41,6 +41,7 @@ import (
 	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/psc/metrics"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -96,6 +97,16 @@ type Controller struct {
 	collector           metrics.PSCMetricsCollector
 
 	hasSynced func() bool
+
+	// The following are used to generate a cluster link for service attachment descs
+	// These values should only be used for providing information and not for
+	// any controller logic
+	// clusterName is the name of the cluster
+	clusterName string
+	// clusterLoc is the cluster zone or region
+	clusterLoc string
+	// regionalCluster indicates whether the cluster is regional or not.
+	regionalCluster bool
 }
 
 func NewController(ctx *context.ControllerContext) *Controller {
@@ -111,6 +122,17 @@ func NewController(ctx *context.ControllerContext) *Controller {
 		hasSynced:           ctx.HasSynced,
 		recorder:            ctx.Recorder,
 		collector:           ctx.ControllerMetrics,
+		clusterName:         flags.F.GKEClusterName,
+		regionalCluster:     ctx.RegionalCluster,
+	}
+	if controller.regionalCluster {
+		controller.clusterLoc = controller.cloud.Region()
+	} else {
+		zone, err := controller.cloud.GetZone(context2.Background())
+		if err != nil {
+			klog.Errorf("Failed to retrieve zone information from cloud provider: %q", err)
+		}
+		controller.clusterLoc = zone.FailureDomain
 	}
 
 	ctx.SAInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -292,7 +314,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 	}
 
 	saName := c.saNamer.ServiceAttachment(namespace, name, string(updatedCR.UID))
-	desc := sautils.ServiceAttachmentDesc{URL: updatedCR.SelfLink}
+	desc := sautils.NewServiceAttachmentDesc(updatedCR.Namespace, updatedCR.Name, c.clusterName, c.clusterLoc, c.regionalCluster)
 	consumerAcceptLists := convertAllowList(updatedCR.Spec)
 	gceSvcAttachment := &beta.ServiceAttachment{
 		ConnectionPreference: svcAttachment.Spec.ConnectionPreference,

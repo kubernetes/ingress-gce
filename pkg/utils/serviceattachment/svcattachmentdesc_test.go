@@ -21,6 +21,58 @@ import (
 	"testing"
 )
 
+func TestNewServiceAttachmentDesc(t *testing.T) {
+	testCases := []struct {
+		desc            string
+		regional        bool
+		expectedCluster string
+		cluster         string
+		location        string
+	}{
+		{
+			desc:            "regional cluster",
+			regional:        true,
+			expectedCluster: "/regions/loc/clusters/cluster-name",
+			cluster:         "cluster-name",
+			location:        "loc",
+		},
+		{
+			desc:            "zonal cluster",
+			regional:        false,
+			expectedCluster: "/zones/loc/clusters/cluster-name",
+			cluster:         "cluster-name",
+			location:        "loc",
+		},
+		{
+			desc:            "empty cluster name",
+			regional:        false,
+			expectedCluster: "",
+			location:        "loc",
+		},
+		{
+			desc:            "empty location",
+			regional:        false,
+			expectedCluster: "",
+			cluster:         "cluster-name",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			desc := NewServiceAttachmentDesc("ns", "sa-name", tc.cluster, tc.location, tc.regional)
+			expectedDesc := ServiceAttachmentDesc{
+				K8sResource: "/namespaces/ns/serviceattachments/sa-name",
+				K8sCluster:  tc.expectedCluster,
+			}
+
+			if !reflect.DeepEqual(desc, expectedDesc) {
+				t.Errorf("Expected NewServiceAttachmentDesc to return %+v, but got %+v", expectedDesc, desc)
+			}
+		})
+	}
+
+}
+
 func TestServiceAttachmentDescString(t *testing.T) {
 	testCases := []struct {
 		desc           string
@@ -28,11 +80,12 @@ func TestServiceAttachmentDescString(t *testing.T) {
 		expectedString string
 	}{
 		{
-			desc: "populated url",
+			desc: "populated fields",
 			description: ServiceAttachmentDesc{
-				URL: "url",
+				K8sResource: "resource",
+				K8sCluster:  "cluster",
 			},
-			expectedString: `{"url":"url"}`,
+			expectedString: `{"k8sResource":"resource","k8sCluster":"cluster"}`,
 		},
 		{
 			desc:           "empty",
@@ -52,7 +105,7 @@ func TestServiceAttachmentDescString(t *testing.T) {
 func TestServiceAttachmentDescFromString(t *testing.T) {
 	testCases := []struct {
 		desc         string
-		negDesc      string
+		saDesc       string
 		expectedDesc ServiceAttachmentDesc
 		expectError  bool
 	}{
@@ -62,32 +115,33 @@ func TestServiceAttachmentDescFromString(t *testing.T) {
 		},
 		{
 			desc:        "invalid format",
-			negDesc:     "invalid",
+			saDesc:      "invalid",
 			expectError: true,
 		},
 		{
-			desc:    "populated description",
-			negDesc: `{"url":"url"}`,
+			desc:   "populated description",
+			saDesc: `{"k8sResource":"resource","k8sCluster":"cluster"}`,
 			expectedDesc: ServiceAttachmentDesc{
-				URL: "url",
+				K8sResource: "resource",
+				K8sCluster:  "cluster",
 			},
 			expectError: false,
 		},
 		{
 			desc:         "empty description",
-			negDesc:      `{}`,
+			saDesc:       `{}`,
 			expectedDesc: ServiceAttachmentDesc{},
 			expectError:  false,
 		},
 	}
 
 	for _, tc := range testCases {
-		description, err := ServiceAttachmentDescFromString(tc.negDesc)
+		description, err := ServiceAttachmentDescFromString(tc.saDesc)
 		if err != nil && !tc.expectError {
-			t.Errorf("%s: ServiceAttachmentDescFromString(%s) resulted in error: %s", tc.desc, tc.negDesc, err)
+			t.Errorf("%s: ServiceAttachmentDescFromString(%s) resulted in error: %s", tc.desc, tc.saDesc, err)
 		}
 		if !reflect.DeepEqual(*description, tc.expectedDesc) {
-			t.Errorf("%s: ServiceAttachmentDescFromString(%s)=%s, want %s", tc.desc, tc.negDesc, description, tc.expectedDesc)
+			t.Errorf("%s: ServiceAttachmentDescFromString(%s)=%s, want %s", tc.desc, tc.saDesc, description, tc.expectedDesc)
 		}
 	}
 }

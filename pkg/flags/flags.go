@@ -72,6 +72,9 @@ var (
 		GCEOperationPollInterval         time.Duration
 		GCERateLimit                     RateLimitSpecs
 		GCERateLimitScale                float64
+		GKEClusterName                   string
+		GKEClusterHash                   string
+		GKEClusterType                   string
 		HealthCheckPath                  string
 		HealthzPort                      int
 		InCluster                        bool
@@ -230,6 +233,9 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableBackendConfigHealthCheck, "enable-backendconfig-healthcheck", false, "Enable configuration of HealthChecks from the BackendConfig")
 	flag.BoolVar(&F.EnablePSC, "enable-psc", false, "Enable PSC controller")
 	flag.BoolVar(&F.EnableIngressGAFields, "enable-ingress-ga-fields", false, "Enable using Ingress Class GA features")
+	flag.StringVar(&F.GKEClusterName, "gke-cluster-name", "", "The name of the GKE cluster this Ingress Controller will be interacting with")
+	flag.StringVar(&F.GKEClusterHash, "gke-cluster-hash", "", "The cluster hash of the GKE cluster this Ingress Controller will be interacting with")
+	flag.StringVar(&F.GKEClusterType, "gke-cluster-type", "ZONAL", "The cluster type of the GKE cluster this Ingress Controller will be interacting with")
 }
 
 type RateLimitSpecs struct {
