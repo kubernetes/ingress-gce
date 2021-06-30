@@ -20,6 +20,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -89,9 +90,8 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 	}
 
 	// ig_linker only supports L7 HTTP(s) External Load Balancer
-	// Hardcoded here since IGs are not supported for non GA-Global right now
-	// TODO(shance): find a way to remove hardcoded values
-	be, err := l.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Global)
+	// Hardcoded here since IGs are not supported for non Global LBs
+	be, err := l.backendPool.Get(sp.BackendName(), features.VersionFromServicePort(&sp), meta.Global)
 	if err != nil {
 		return err
 	}
