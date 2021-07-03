@@ -19,12 +19,21 @@ package serviceattachment
 import (
 	"encoding/json"
 
+	"k8s.io/ingress-gce/pkg/utils/descutils"
 	"k8s.io/klog"
 )
 
 // ServiceAttachmentDesc stores the description for a Service Attachment.
 type ServiceAttachmentDesc struct {
-	URL string `json:"url,omitempty"`
+	K8sResource string `json:"k8sResource,omitempty"`
+	K8sCluster  string `json:"k8sCluster,omitempty"`
+}
+
+func NewServiceAttachmentDesc(namespace, crName, clusterName, location string, regional bool) ServiceAttachmentDesc {
+	return ServiceAttachmentDesc{
+		K8sResource: descutils.GenerateK8sResourceLink(namespace, "serviceattachments", crName),
+		K8sCluster:  descutils.GenerateClusterLink(clusterName, location, regional),
+	}
 }
 
 // String returns the string representation of a Description.

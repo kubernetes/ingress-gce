@@ -17,6 +17,7 @@ package psc
 
 import (
 	context2 "context"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -26,6 +27,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	beta "google.golang.org/api/compute/v0.beta"
+	"google.golang.org/api/googleapi"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -39,6 +41,7 @@ import (
 	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/psc/metrics"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -68,6 +71,15 @@ const (
 	ServiceAttachmentGCPeriod = 2 * time.Minute
 )
 
+var (
+	ServiceNotFoundError = errors.New("service not in store")
+	MismatchedILBIPError = errors.New("Mismatched ILB IP")
+	nonProcessFailures   = []error{
+		ServiceNotFoundError,
+		MismatchedILBIPError,
+	}
+)
+
 // Controller is a private service connect (psc) controller
 // It watches ServiceAttachment resources and creates, deletes, and manages
 // corresponding GCE Service Attachment resources
@@ -85,6 +97,16 @@ type Controller struct {
 	collector           metrics.PSCMetricsCollector
 
 	hasSynced func() bool
+
+	// The following are used to generate a cluster link for service attachment descs
+	// These values should only be used for providing information and not for
+	// any controller logic
+	// clusterName is the name of the cluster
+	clusterName string
+	// clusterLoc is the cluster zone or region
+	clusterLoc string
+	// regionalCluster indicates whether the cluster is regional or not.
+	regionalCluster bool
 }
 
 func NewController(ctx *context.ControllerContext) *Controller {
@@ -100,6 +122,17 @@ func NewController(ctx *context.ControllerContext) *Controller {
 		hasSynced:           ctx.HasSynced,
 		recorder:            ctx.Recorder,
 		collector:           ctx.ControllerMetrics,
+		clusterName:         flags.F.GKEClusterName,
+		regionalCluster:     ctx.RegionalCluster,
+	}
+	if controller.regionalCluster {
+		controller.clusterLoc = controller.cloud.Region()
+	} else {
+		zone, err := controller.cloud.GetZone(context2.Background())
+		if err != nil {
+			klog.Errorf("Failed to retrieve zone information from cloud provider: %q", err)
+		}
+		controller.clusterLoc = zone.FailureDomain
 	}
 
 	ctx.SAInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -206,7 +239,7 @@ func (c *Controller) enqueueServiceAttachment(obj interface{}) {
 func (c *Controller) addServiceToMetrics(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		klog.Errorf("Failed to generate service key for obj %v: %v", obj, err)
+		klog.Errorf("Failed to generate service key for obj %v: %q", obj, err)
 		return
 	}
 	c.collector.SetService(key)
@@ -216,7 +249,7 @@ func (c *Controller) addServiceToMetrics(obj interface{}) {
 func (c *Controller) deleteServiceFromMetrics(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		klog.Errorf("Failed to generate service key for obj %v: %v", obj, err)
+		klog.Errorf("Failed to generate service key for obj %v: %q", obj, err)
 		return
 	}
 	c.collector.DeleteService(key)
@@ -232,7 +265,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 	// Please reuse and set err before returning
 	var err error
 	defer func() {
-		metrics.PublishPSCProcessMetrics(metrics.SyncProcess, err, start)
+		metrics.PublishPSCProcessMetrics(metrics.SyncProcess, filterError(err), start)
 		metrics.PublishLastProcessTimestampMetrics(metrics.SyncProcess)
 		c.collector.SetServiceAttachment(key, metrics.PSCState{InSuccess: err == nil})
 	}()
@@ -247,7 +280,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 	var exists bool
 	obj, exists, err = c.svcAttachmentLister.GetByKey(key)
 	if err != nil {
-		return fmt.Errorf("errored getting service from store: %q", err)
+		return fmt.Errorf("errored getting service from store: %w", err)
 	}
 
 	if !exists {
@@ -262,7 +295,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 	var updatedCR *sav1beta1.ServiceAttachment
 	updatedCR, err = c.ensureSAFinalizer(svcAttachment)
 	if err != nil {
-		return fmt.Errorf("Errored adding finalizer on ServiceAttachment CR %s/%s: %s", namespace, name, err)
+		return fmt.Errorf("Errored adding finalizer on ServiceAttachment CR %s/%s: %w", namespace, name, err)
 	}
 	if err = validateResourceReference(updatedCR.Spec.ResourceRef); err != nil {
 		return err
@@ -271,59 +304,86 @@ func (c *Controller) processServiceAttachment(key string) error {
 	var frURL string
 	frURL, err = c.getForwardingRule(namespace, updatedCR.Spec.ResourceRef.Name)
 	if err != nil {
-		return fmt.Errorf("failed to find forwarding rule: %q", err)
+		return fmt.Errorf("failed to find forwarding rule: %w", err)
 	}
 
 	var subnetURLs []string
 	subnetURLs, err = c.getSubnetURLs(updatedCR.Spec.NATSubnets)
 	if err != nil {
-		return fmt.Errorf("failed to find nat subnets: %q", err)
+		return fmt.Errorf("failed to find nat subnets: %w", err)
 	}
 
 	saName := c.saNamer.ServiceAttachment(namespace, name, string(updatedCR.UID))
-	desc := sautils.ServiceAttachmentDesc{URL: updatedCR.SelfLink}
-	gceSvcAttachment := &beta.ServiceAttachment{
-		ConnectionPreference: svcAttachment.Spec.ConnectionPreference,
-		Name:                 saName,
-		NatSubnets:           subnetURLs,
-		TargetService:        frURL,
-		Region:               c.cloud.Region(),
-		Description:          desc.String(),
-		EnableProxyProtocol:  updatedCR.Spec.ProxyProtocol,
-	}
-
 	var gceSAKey *meta.Key
 	gceSAKey, err = composite.CreateKey(c.cloud, saName, meta.Regional)
 	if err != nil {
-		return fmt.Errorf("failed to create key for GCE Service Attachment: %q", err)
+		return fmt.Errorf("failed to create key for GCE Service Attachment: %w", err)
 	}
-
 	var existingSA *beta.ServiceAttachment
 	existingSA, err = c.cloud.Compute().BetaServiceAttachments().Get(context2.Background(), gceSAKey)
 	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-		return fmt.Errorf("failed querying for GCE Service Attachment: %q", err)
+		return fmt.Errorf("failed querying for GCE Service Attachment: %w", err)
 	}
 
+	gceSvcAttachment := &beta.ServiceAttachment{}
 	if existingSA != nil {
 		klog.V(4).Infof("Found existing service attachment %s", existingSA.Name)
-		err = validateUpdate(existingSA, gceSvcAttachment)
+		*gceSvcAttachment = *existingSA
+	}
+
+	desc := sautils.NewServiceAttachmentDesc(updatedCR.Namespace, updatedCR.Name, c.clusterName, c.clusterLoc, c.regionalCluster)
+	gceSvcAttachment.ConnectionPreference = svcAttachment.Spec.ConnectionPreference
+	gceSvcAttachment.Name = saName
+	gceSvcAttachment.NatSubnets = subnetURLs
+	gceSvcAttachment.TargetService = frURL
+	gceSvcAttachment.Region = c.cloud.Region()
+	gceSvcAttachment.Description = desc.String()
+	gceSvcAttachment.EnableProxyProtocol = updatedCR.Spec.ProxyProtocol
+	gceSvcAttachment.ConsumerAcceptLists = convertAllowList(updatedCR.Spec)
+	gceSvcAttachment.ConsumerRejectLists = updatedCR.Spec.ConsumerRejectList
+
+	if existingSA != nil {
+		// Most of the validation is left to the GCE Service Attachment API. needsUpdate only checks
+		// to see if the spec has changed and whether an update is necessary.
+		shouldUpdate, err := needsUpdate(existingSA, gceSvcAttachment)
 		if err != nil {
-			return fmt.Errorf("invalid Service Attachment Update: %q", err)
+			return fmt.Errorf("unable to process Service Attachment Update: %w", err)
+		}
+
+		if shouldUpdate {
+			// In order for the update to be successful, the self link in the target service (same resource
+			// as the forwarding rule) must be exactly the same. needsUpdate throws an error in situations
+			// the forwarding rule/targetservice was changed on the spec. GCE API only accepts updates where the
+			// target service/forwarding rule is the same so to ensure the target service is not changed,
+			// set the target service to match the existing. Otherwise, a mismatch between the target services
+			// is possible because the PSC controller generates the GA version of the selflink, while the GCE API
+			// may use a different version causing the selflink to differ even if the resource is the same.
+			gceSvcAttachment.TargetService = existingSA.TargetService
+
+			klog.V(2).Infof("Service Attachment CR %s/%s was updated. %s requires an update", updatedCR.Namespace, updatedCR.Name, saName)
+			if err = c.cloud.Compute().BetaServiceAttachments().Patch(context2.Background(), gceSAKey, gceSvcAttachment); err != nil {
+				return fmt.Errorf("failed to update GCE Service Attachment: %w", err)
+			}
 		}
 
 		_, err = c.updateServiceAttachmentStatus(updatedCR, gceSAKey)
-		klog.V(2).Infof("Updated Service Attachment %s/%s status after update", updatedCR.Namespace, updatedCR.Name)
 		return err
 	}
 
 	klog.V(2).Infof("Creating service attachment %s", saName)
 	if err = c.cloud.Compute().BetaServiceAttachments().Insert(context2.Background(), gceSAKey, gceSvcAttachment); err != nil {
-		return fmt.Errorf("failed to create GCE Service Attachment: %q", err)
+		return fmt.Errorf("failed to create GCE Service Attachment: %w", err)
 	}
 	klog.V(2).Infof("Created service attachment %s", saName)
 
-	_, err = c.updateServiceAttachmentStatus(updatedCR, gceSAKey)
+	updatedCR, err = c.updateServiceAttachmentStatus(updatedCR, gceSAKey)
 	klog.V(2).Infof("Updated Service Attachment %s/%s status", updatedCR.Namespace, updatedCR.Name)
+
+	if err == nil {
+		c.recorder(svcAttachment.Namespace).Eventf(svcAttachment, v1.EventTypeNormal, "ServiceAttachmentCreated",
+			fmt.Sprintf("Service Attachment %s was successfully created.", updatedCR.Status.ServiceAttachmentURL))
+	}
+
 	return err
 }
 
@@ -345,7 +405,7 @@ func (c *Controller) garbageCollectServiceAttachments() {
 		}
 		key, err := cache.MetaNamespaceKeyFunc(sa)
 		if err != nil {
-			klog.V(4).Infof("failed to generate key for service attachment: %s/%s: %w", sa.Namespace, sa.Name, err)
+			klog.V(4).Infof("failed to generate key for service attachment: %s/%s: %q", sa.Namespace, sa.Name, err)
 		} else {
 			c.collector.DeleteServiceAttachment(key)
 		}
@@ -406,11 +466,11 @@ func (c *Controller) getForwardingRule(namespace, svcName string) (string, error
 	svcKey := fmt.Sprintf("%s/%s", namespace, svcName)
 	obj, exists, err := c.serviceLister.GetByKey(svcKey)
 	if err != nil {
-		return "", fmt.Errorf("errored getting service %s/%s: %q", namespace, svcName, err)
+		return "", fmt.Errorf("errored getting service %s/%s: %w", namespace, svcName, err)
 	}
 
 	if !exists {
-		return "", fmt.Errorf("failed to get Service %s/%s", namespace, svcName)
+		return "", fmt.Errorf("failed to get Service %s/%s: %w", namespace, svcName, ServiceNotFoundError)
 	}
 
 	svc := obj.(*v1.Service)
@@ -428,7 +488,7 @@ func (c *Controller) getForwardingRule(namespace, svcName string) (string, error
 	}
 	fwdRule, err := c.cloud.Compute().ForwardingRules().Get(context2.Background(), meta.RegionalKey(frName, c.cloud.Region()))
 	if err != nil {
-		return "", fmt.Errorf("failed to get Forwarding Rule %s: %q", frName, err)
+		return "", fmt.Errorf("failed to get Forwarding Rule %s: %w", frName, err)
 	}
 
 	// Verify that the forwarding rule found has the IP expected in Service.Status
@@ -444,17 +504,16 @@ func (c *Controller) getForwardingRule(namespace, svcName string) (string, error
 	if foundMatchingIP {
 		return fwdRule.SelfLink, nil
 	}
-	return "", fmt.Errorf("forwarding rule does not have matching IPAddr")
+	return "", fmt.Errorf("forwarding rule does not have matching IPAddr to specified service: %w", MismatchedILBIPError)
 }
 
 // getSubnetURLs will query GCE and gather all the URLs of the provided subnet names
 func (c *Controller) getSubnetURLs(subnets []string) ([]string, error) {
-
 	var subnetURLs []string
 	for _, subnetName := range subnets {
 		subnet, err := c.cloud.Compute().Subnetworks().Get(context2.Background(), meta.RegionalKey(subnetName, c.cloud.Region()))
 		if err != nil {
-			return subnetURLs, fmt.Errorf("failed to find Subnetwork %s/%s: %q", c.cloud.Region(), subnetName, err)
+			return subnetURLs, fmt.Errorf("failed to find Subnetwork %s/%s: %w", c.cloud.Region(), subnetName, err)
 		}
 		subnetURLs = append(subnetURLs, subnet.SelfLink)
 
@@ -465,9 +524,9 @@ func (c *Controller) getSubnetURLs(subnets []string) ([]string, error) {
 // updateServiceAttachmentStatus updates the CR's status with the GCE Service Attachment URL
 // and the producer forwarding rule
 func (c *Controller) updateServiceAttachmentStatus(cr *sav1beta1.ServiceAttachment, gceSAKey *meta.Key) (*sav1beta1.ServiceAttachment, error) {
-	gceSA, err := c.cloud.Compute().AlphaServiceAttachments().Get(context2.Background(), gceSAKey)
+	gceSA, err := c.cloud.Compute().BetaServiceAttachments().Get(context2.Background(), gceSAKey)
 	if err != nil {
-		return cr, fmt.Errorf("failed to query GCE Service Attachment: %q", err)
+		return cr, fmt.Errorf("failed to query GCE Service Attachment for key %+v: %w", gceSAKey, err)
 	}
 
 	updatedSA := cr.DeepCopy()
@@ -483,6 +542,12 @@ func (c *Controller) updateServiceAttachmentStatus(cr *sav1beta1.ServiceAttachme
 	}
 
 	updatedSA.Status.ConsumerForwardingRules = consumers
+
+	if reflect.DeepEqual(cr.Status, updatedSA.Status) {
+		klog.V(2).Infof("Service Attachment %s/%s has no status update. Skipping patch", cr.Namespace, cr.Name)
+		return cr, nil
+	}
+
 	updatedSA.Status.LastModifiedTimestamp = metav1.Now()
 
 	klog.V(2).Infof("Updating Service Attachment %s/%s status", cr.Namespace, cr.Name)
@@ -511,7 +576,7 @@ func (c *Controller) ensureDeleteGCEServiceAttachment(name string) error {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
 			return nil
 		}
-		return fmt.Errorf("failed querying for service attachment %q: %q", name, err)
+		return fmt.Errorf("failed querying for service attachment %q: %w", name, err)
 	}
 
 	return c.cloud.Compute().BetaServiceAttachments().Delete(context2.Background(), saKey)
@@ -559,52 +624,68 @@ func validateResourceReference(ref v1.TypedLocalObjectReference) error {
 	return nil
 }
 
-// validateUpdate will validate whether ServiceAttachment matches the GCE Service Attachment
-// resource. If not, validateUpdate will return an error, since GCE Service Attachments cannot
-// be updated after creation
-func validateUpdate(existingSA, desiredSA *beta.ServiceAttachment) error {
-	if existingSA.ConnectionPreference != desiredSA.ConnectionPreference {
-		return fmt.Errorf("serviceAttachment connection preference cannot be updated from %s to %s", existingSA.ConnectionPreference, desiredSA.ConnectionPreference)
-	}
+// needsUpdate will determine whether ServiceAttachment matches the GCE Service Attachment
+// resource. If not, needsUpdate will return true. needsUpdate will not validate whether
+// the update will be successful or not.
+func needsUpdate(existingSA, desiredSA *beta.ServiceAttachment) (bool, error) {
+	// NOTE: The selflinks cannot be directly compared as the selflink we generate may not
+	// be the same as the one that eventually gets stored on the GCE object. For example
+	// the controller takes the forwarding rule from the GA FR resource, however if the GCE
+	// SA uses the Beta FR resource the self links will be different though the resource is
+	// the same. The same is true for the subnets. Due to this discrepency the GCE SA cannot
+	// be compared with a reflect.DeepEqual.
 
 	// The TargetService on the GCE Service Attachment is the self link to the URL of the producer
 	// forwarding rule (L4 ILB).
 	existingFR, err := cloud.ParseResourceURL(existingSA.TargetService)
 	if err != nil {
-		return fmt.Errorf("serviceAttachment existing target service has malformed URL: %w", err)
+		return false, fmt.Errorf("serviceAttachment existing target service URL, %q, is malformed: %w", existingSA.TargetService, err)
 	}
 	desiredFR, err := cloud.ParseResourceURL(desiredSA.TargetService)
 	if err != nil {
-		return fmt.Errorf("serviceAttachment desired target service has malformed URL: %w", err)
+		return false, fmt.Errorf("serviceAttachment desired target service URL, %q, is malformed: %w", desiredSA.TargetService, err)
 	}
 	if !reflect.DeepEqual(existingFR, desiredFR) {
-		return fmt.Errorf("serviceAttachment target service cannot be updated from %s to %s", existingSA.TargetService, desiredSA.TargetService)
+		return true, fmt.Errorf("serviceAttachment target service cannot be updated from %s to %s", existingSA.TargetService, desiredSA.TargetService)
 	}
 
 	if len(existingSA.NatSubnets) != len(desiredSA.NatSubnets) {
-		return fmt.Errorf("serviceAttachment NAT Subnets cannot be updated")
-	} else {
-		subnets := make(map[string]*cloud.ResourceID)
-		for _, subnet := range existingSA.NatSubnets {
-			existingSN, err := cloud.ParseResourceURL(subnet)
-			if err != nil {
-				return fmt.Errorf("serviceAttachment existing subnet has malformed URL: %q", err)
-			}
-			subnets[existingSN.Key.Name] = existingSN
-
-			for _, subnet := range desiredSA.NatSubnets {
-				desiredSN, err := cloud.ParseResourceURL(subnet)
-				if err != nil {
-					return fmt.Errorf("serviceAttachment desired subnet has malformed URL: %q", err)
-				}
-
-				if !reflect.DeepEqual(subnets[desiredSN.Key.Name], desiredSN) {
-					return fmt.Errorf("serviceAttachment NAT Subnets cannot be updated, found new subnet: %s", desiredSN.Key.Name)
-				}
-			}
-		}
+		return true, nil
 	}
-	return nil
+	subnets := make(map[string]*cloud.ResourceID)
+	for _, subnet := range existingSA.NatSubnets {
+		existingSN, err := cloud.ParseResourceURL(subnet)
+		if err != nil {
+			return false, fmt.Errorf("serviceAttachment existing subnet URL, %q, is malformed: %w", subnet, err)
+		}
+		subnets[existingSN.Key.Name] = existingSN
+	}
+
+	for _, desiredSubnet := range desiredSA.NatSubnets {
+		desiredSN, err := cloud.ParseResourceURL(desiredSubnet)
+		if err != nil {
+			return false, fmt.Errorf("serviceAttachment desired subnet has malformed URL: %w", err)
+		}
+
+		if existingSubnet, ok := subnets[desiredSN.Key.Name]; ok {
+			if !reflect.DeepEqual(existingSubnet, desiredSN) {
+				return true, nil
+			}
+			continue
+		}
+		return true, nil
+	}
+
+	// Since forwarding rules and subnets are the same, set them on the desiredCopy to be able to
+	// compare the rest of the fields.
+	desiredCopy := &beta.ServiceAttachment{}
+	*desiredCopy = *desiredSA
+	desiredCopy.TargetService = existingSA.TargetService
+	desiredCopy.NatSubnets = existingSA.NatSubnets
+	// Set region to avoid selflink mismatches
+	desiredCopy.Region = existingSA.Region
+
+	return !reflect.DeepEqual(desiredCopy, existingSA), nil
 }
 
 // shouldProcess checks if service attachment should be processed or not.
@@ -633,8 +714,39 @@ func shouldProcess(old, cur *sav1beta1.ServiceAttachment) bool {
 	return false
 }
 
+// convertAllowList converts the allow list in the Service Attachment spec into
+// ConsumerProjectLimits to be used to configure the GCE ServiceAttachment
+func convertAllowList(spec sav1beta1.ServiceAttachmentSpec) []*beta.ServiceAttachmentConsumerProjectLimit {
+	var acceptList []*beta.ServiceAttachmentConsumerProjectLimit
+	for _, consumer := range spec.ConsumerAllowList {
+		acceptList = append(acceptList, &beta.ServiceAttachmentConsumerProjectLimit{
+			ConnectionLimit: consumer.ConnectionLimit,
+			ProjectIdOrNum:  consumer.Project,
+			ForceSendFields: consumer.ForceSendFields,
+			NullFields:      consumer.NullFields,
+		})
+	}
+	return acceptList
+}
+
 // SvcAttachmentKeyFunc provides the service attachment key used
 // by the svcAttachmentLister
 func SvcAttachmentKeyFunc(namespace, name string) string {
 	return fmt.Sprintf("%s/%s", namespace, name)
+}
+
+// filterError filters out errors that should not be considered sync errors for metrics
+func filterError(err error) error {
+	var apiError *googleapi.Error
+	if errors.As(err, &apiError) {
+		if utils.IsHTTPErrorCode(apiError, http.StatusNotFound) || utils.IsHTTPErrorCode(apiError, http.StatusBadRequest) {
+			return nil
+		}
+	}
+	for _, errorType := range nonProcessFailures {
+		if errors.Is(err, errorType) {
+			return nil
+		}
+	}
+	return err
 }
