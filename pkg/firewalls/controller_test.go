@@ -106,7 +106,7 @@ func TestFirewallCreateDelete(t *testing.T) {
 	}
 }
 
-// TestFirewallEmptyPortList assets that a firewall rule will be deleted
+// TestFirewallEmptyPortList asserts that a firewall rule will be deleted
 // if the port list is empty. An empty port list should be impossible, except
 // when it is a bug
 func TestFirewallEmptyPortList(t *testing.T) {
