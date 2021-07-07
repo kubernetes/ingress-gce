@@ -42,8 +42,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/util/node"
-	"k8s.io/kubernetes/pkg/util/slice"
+	"k8s.io/ingress-gce/pkg/utils/slice"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -429,11 +428,24 @@ func ListWithPredicate(nodeLister listers.NodeLister, predicate NodeConditionPre
 
 // GetNodePrimaryIP returns a primary internal IP address of the node.
 func GetNodePrimaryIP(inputNode *api_v1.Node) string {
-	ip, err := node.GetPreferredNodeAddress(inputNode, []api_v1.NodeAddressType{api_v1.NodeInternalIP})
+	ip, err := getPreferredNodeAddress(inputNode, []api_v1.NodeAddressType{api_v1.NodeInternalIP})
 	if err != nil {
 		klog.Errorf("Failed to get IP address for node %s", inputNode.Name)
 	}
 	return ip
+}
+
+// getPreferredNodeAddress returns the address of the provided node, using the provided preference order.
+// If none of the preferred address types are found, an error is returned.
+func getPreferredNodeAddress(node *api_v1.Node, preferredAddressTypes []api_v1.NodeAddressType) (string, error) {
+	for _, addressType := range preferredAddressTypes {
+		for _, address := range node.Status.Addresses {
+			if address.Type == addressType {
+				return address.Address, nil
+			}
+		}
+	}
+	return "", fmt.Errorf("no matching node IP")
 }
 
 // NewNamespaceIndexer returns a new Indexer for use by SharedIndexInformers

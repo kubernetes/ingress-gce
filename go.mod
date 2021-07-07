@@ -25,7 +25,6 @@ require (
 	k8s.io/component-base v0.19.0
 	k8s.io/klog v1.0.0
 	k8s.io/kube-openapi v0.0.0-20200805222855-6aeccd4b50c6
-	k8s.io/kubernetes v1.19.0
 	k8s.io/legacy-cloud-providers v0.0.0
 	k8s.io/utils v0.0.0-20200729134348-d5654de09c73
 )
