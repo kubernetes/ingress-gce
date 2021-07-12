@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
-
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -29,6 +28,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
@@ -334,39 +334,10 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.SyncResult, namesp
 }
 
 func (l4c *L4Controller) updateServiceStatus(svc *v1.Service, newStatus *v1.LoadBalancerStatus) error {
-	if loadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
+	if helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
 		return nil
 	}
 	return patch.PatchServiceLoadBalancerStatus(l4c.ctx.KubeClient.CoreV1(), svc, *newStatus)
-}
-
-// loadBalancerStatusEqual evaluates the given load balancers' ingress IP addresses
-// and hostnames and returns true if equal or false if otherwise
-// TODO: make method on LoadBalancerStatus?
-func loadBalancerStatusEqual(l, r *v1.LoadBalancerStatus) bool {
-	return ingressSliceEqual(l.Ingress, r.Ingress)
-}
-
-func ingressSliceEqual(lhs, rhs []v1.LoadBalancerIngress) bool {
-	if len(lhs) != len(rhs) {
-		return false
-	}
-	for i := range lhs {
-		if !ingressEqual(&lhs[i], &rhs[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func ingressEqual(lhs, rhs *v1.LoadBalancerIngress) bool {
-	if lhs.IP != rhs.IP {
-		return false
-	}
-	if lhs.Hostname != rhs.Hostname {
-		return false
-	}
-	return true
 }
 
 func (l4c *L4Controller) updateAnnotations(svc *v1.Service, newILBAnnotations map[string]string) error {
