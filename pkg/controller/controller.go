@@ -637,6 +637,8 @@ func (lbc *LoadBalancerController) sync(key string) error {
 	// it could have been caused by quota issues; therefore, garbage collecting now may
 	// free up enough quota for the next sync to pass.
 	frontendGCAlgorithm := frontendGCAlgorithm(ingExists, oldScope != nil, ing)
+	klog.V(4).Infof("Starting GC for ingress %s/%s sync", ing.Namespace, ing.Name)
+	defer klog.V(4).Infof("Finished GC for ingress %s/%s sync", ing.Namespace, ing.Name)
 	if gcErr := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm, scope); gcErr != nil {
 		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.GarbageCollection, "Error during garbage collection: %v", gcErr)
 		return fmt.Errorf("error during sync %v, error during GC %v", syncErr, gcErr)
