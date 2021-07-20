@@ -86,6 +86,10 @@ type LoadBalancerController struct {
 	// backendLock locks the SyncBackend function to avoid conflicts between
 	// multiple ingress workers.
 	backendLock sync.Mutex
+
+	// gcLock locks the GC logics to avoid conflicts between multiple ingress workers.
+	gcLock sync.Mutex
+
 	// linker implementations for backends
 	negLinker backends.Linker
 	igLinker  backends.Linker
@@ -556,23 +560,15 @@ func (lbc *LoadBalancerController) PostProcess(state interface{}) error {
 	return lbc.updateIngressStatus(syncState.l7, syncState.ing)
 }
 
-// sync manages Ingress create/updates/deletes events from queue.
-func (lbc *LoadBalancerController) sync(key string) error {
-	if !lbc.hasSynced() {
-		time.Sleep(context.StoreSyncPollPeriod)
-		return fmt.Errorf("waiting for stores to sync")
-	}
-	klog.V(3).Infof("Syncing %v", key)
+// preSyncGC is intended to execute GC logic before sync if necessary. e.g. Ingress ing has deletion timestamp.
+// preSyncGC returns if the sync needs to take place or not.
+func (lbc *LoadBalancerController) preSyncGC(key string, scope meta.KeyType, ingExists bool, ing *v1.Ingress) (bool, error) {
+	lbc.gcLock.Lock()
+	defer lbc.gcLock.Unlock()
+	klog.V(4).Infof("Running preSyncGC for ingress %q. ", key)
+	defer klog.V(4).Infof("Finish preSyncGC for ingress %q. ", key)
 
-	ing, ingExists, err := lbc.ctx.Ingresses().GetByKey(key)
-	if err != nil {
-		return fmt.Errorf("error getting Ingress for key %s: %v", key, err)
-	}
-
-	// Capture GC state for ingress.
 	allIngresses := lbc.ctx.Ingresses().List()
-	scope := features.ScopeFromIngress(ing)
-
 	// Determine if the ingress needs to be GCed.
 	if !ingExists || utils.NeedsCleanup(ing) {
 		frontendGCAlgorithm := frontendGCAlgorithm(ingExists, false, ing)
@@ -587,7 +583,52 @@ func (lbc *LoadBalancerController) sync(key string) error {
 		if err == nil && ingExists {
 			lbc.metrics.DeleteIngress(key)
 		}
+		return false, err
+	}
+	return true, nil
+}
+
+// postSyncGC cleans up the unnecessary resources (backend-services, frontend resources in wrong scope) after sync.
+func (lbc *LoadBalancerController) postSyncGC(key string, syncErr error, oldScope *meta.KeyType, newScope meta.KeyType, ingExists bool, ing *v1.Ingress) error {
+	lbc.gcLock.Lock()
+	defer lbc.gcLock.Unlock()
+	klog.V(4).Infof("Running postSyncGC for ingress %q. ", key)
+	defer klog.V(4).Infof("Finish postSyncGC for ingress %q. ", key)
+
+	// Garbage collection will occur regardless of an error occurring. If an error occurred,
+	// it could have been caused by quota issues; therefore, garbage collecting now may
+	// free up enough quota for the next sync to pass.
+	allIngresses := lbc.ctx.Ingresses().List()
+	frontendGCAlgorithm := frontendGCAlgorithm(ingExists, oldScope != nil, ing)
+	if gcErr := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm, newScope); gcErr != nil {
+		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.GarbageCollection, "Error during garbage collection: %v", gcErr)
+		return fmt.Errorf("error during sync %v, error during GC %v", syncErr, gcErr)
+	}
+	return syncErr
+}
+
+// sync manages Ingress create/updates/deletes events from queue.
+func (lbc *LoadBalancerController) sync(key string) error {
+	if !lbc.hasSynced() {
+		time.Sleep(context.StoreSyncPollPeriod)
+		return fmt.Errorf("waiting for stores to sync")
+	}
+	klog.V(3).Infof("Syncing %v", key)
+
+	ing, ingExists, err := lbc.ctx.Ingresses().GetByKey(key)
+	if err != nil {
+		return fmt.Errorf("error getting Ingress for key %s: %v", key, err)
+	}
+
+	// Capture GC state for ingress.
+	scope := features.ScopeFromIngress(ing)
+	needSync, err := lbc.preSyncGC(key, scope, ingExists, ing)
+	if err != nil {
 		return err
+	}
+	if !needSync {
+		klog.V(2).Infof("Ingress %q does not need to be synced. Skipping sync", key)
+		return nil
 	}
 
 	// Ensure that a finalizer is attached.
@@ -633,16 +674,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 		scope = *oldScope
 	}
 
-	// Garbage collection will occur regardless of an error occurring. If an error occurred,
-	// it could have been caused by quota issues; therefore, garbage collecting now may
-	// free up enough quota for the next sync to pass.
-	frontendGCAlgorithm := frontendGCAlgorithm(ingExists, oldScope != nil, ing)
-	if gcErr := lbc.ingSyncer.GC(allIngresses, ing, frontendGCAlgorithm, scope); gcErr != nil {
-		lbc.ctx.Recorder(ing.Namespace).Eventf(ing, apiv1.EventTypeWarning, events.GarbageCollection, "Error during garbage collection: %v", gcErr)
-		return fmt.Errorf("error during sync %v, error during GC %v", syncErr, gcErr)
-	}
-
-	return syncErr
+	return lbc.postSyncGC(key, syncErr, oldScope, scope, ingExists, ing)
 }
 
 // updateIngressStatus updates the IP and annotations of a loadbalancer.
