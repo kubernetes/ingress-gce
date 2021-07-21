@@ -48,8 +48,8 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	sautils "k8s.io/ingress-gce/pkg/utils/serviceattachment"
+	"k8s.io/ingress-gce/pkg/utils/slice"
 	"k8s.io/klog"
-	"k8s.io/kubernetes/pkg/util/slice"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
