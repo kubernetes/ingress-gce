@@ -62,7 +62,10 @@ type LoadBalancerController struct {
 	ctx *context.ControllerContext
 
 	nodeLister cache.Indexer
-	nodes      *NodeController
+	// nodes controller is used for syncing nodes in the Instance Group
+	// used by IG-based Ingresses as well as L4 ILBs in a Subsetting cluster,
+	// that have not migrated to L4 NEG yet.
+	nodes *NodeController
 
 	// TODO: Watch secrets
 	ingQueue   utils.TaskQueue
