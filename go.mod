@@ -17,14 +17,14 @@ require (
 	gopkg.in/gcfg.v1 v1.2.3 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	istio.io/api v0.0.0-20190809125725-591cf32c1d0e
-	k8s.io/api v0.19.0
-	k8s.io/apiextensions-apiserver v0.19.0
-	k8s.io/apimachinery v0.19.0
-	k8s.io/client-go v0.19.0
-	k8s.io/cloud-provider v0.19.0
-	k8s.io/component-base v0.19.0
+	k8s.io/api v0.20.0
+	k8s.io/apiextensions-apiserver v0.20.0
+	k8s.io/apimachinery v0.20.0
+	k8s.io/client-go v0.20.0
+	k8s.io/cloud-provider v0.20.0
+	k8s.io/component-base v0.20.0
 	k8s.io/klog v1.0.0
-	k8s.io/kube-openapi v0.0.0-20200805222855-6aeccd4b50c6
-	k8s.io/legacy-cloud-providers v0.19.0
-	k8s.io/utils v0.0.0-20200729134348-d5654de09c73
+	k8s.io/kube-openapi v0.0.0-20201113171705-d219536bb9fd
+	k8s.io/legacy-cloud-providers v0.20.0
+	k8s.io/utils v0.0.0-20201110183641-67b214c5f920
 )
