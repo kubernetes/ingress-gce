@@ -24,7 +24,7 @@ import (
 	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/kubernetes/pkg/util/slice"
+	"k8s.io/ingress-gce/pkg/utils/slice"
 )
 
 func TestPatchIngressObjectMetadata(t *testing.T) {

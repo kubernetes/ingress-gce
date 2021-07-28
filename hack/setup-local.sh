@@ -11,9 +11,9 @@ parseCluster() {
     subnet=$2
     zone=$3
     selfLink=$4
-    net=$(echo ${net} | sed 's+.*networks/\([-a-z]*\).*$+\1+')
-    subnet=$(echo ${subnet} | sed 's+.*subnetworks/\([-a-z]*\)$+\1+')
-    project=$(echo ${selfLink} | sed 's+.*/projects/\([-a-z]*\)/.*+\1+')
+    net=$(echo ${net} | sed 's+.*networks/\([-a-z0-9]*\).*$+\1+')
+    subnet=$(echo ${subnet} | sed 's+.*subnetworks/\([-a-z0-9]*\)$+\1+')
+    project=$(echo ${selfLink} | sed 's+.*/projects/\([-a-z0-9]*\)/.*+\1+')
 }
 
 parseInstance() {
