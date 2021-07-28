@@ -113,8 +113,7 @@ var (
 	}
 )
 
-func newTestController(kubeClient kubernetes.Interface) *Controller {
-	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, testContext *negtypes.TestContext, runL4 bool) *Controller {
 	dynamicSchema := runtime.NewScheme()
 	kubeClient.CoreV1().ConfigMaps("kube-system").Create(context.TODO(), &apiv1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "kube-system", Name: "ingress-controller-config-test"}, Data: map[string]string{"enable-asm": "true"}}, metav1.CreateOptions{})
 	dynamicClient := dynamicfake.NewSimpleDynamicClient(dynamicSchema)
@@ -122,7 +121,7 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 	drDynamicInformer := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, destinationGVR, apiv1.NamespaceAll, testContext.ResyncPeriod,
 		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
 		nil)
-	controller := NewController(
+	return NewController(
 		kubeClient,
 		testContext.SvcNegClient,
 		dynamicClient.Resource(destinationGVR),
@@ -146,13 +145,15 @@ func newTestController(kubeClient kubernetes.Interface) *Controller {
 		// TODO(freehan): enable readiness reflector for unit tests
 		false, // enableReadinessReflector
 		true,  // runIngress
-		false, //runL4Controller
+		runL4, //runL4Controller
 		false, //enableNonGcpMode
 		true,  //eanbleAsm
 		[]string{},
 	)
-
-	return controller
+}
+func newTestController(kubeClient kubernetes.Interface) *Controller {
+	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+	return newTestControllerWithParamsAndContext(kubeClient, testContext, false)
 }
 
 func TestIsHealthy(t *testing.T) {
@@ -320,9 +321,10 @@ func TestEnableNEGServiceWithIngress(t *testing.T) {
 //Also verifies that modifying the TrafficPolicy on the service will
 //take effect.
 func TestEnableNEGServiceWithL4ILB(t *testing.T) {
-	controller := newTestController(fake.NewSimpleClientset())
+	kubeClient := fake.NewSimpleClientset()
+	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true)
 	manager := controller.manager.(*syncerManager)
-	controller.runL4 = true
 	defer controller.stop()
 	var prevSyncerKey, updatedSyncerKey negtypes.NegSyncerKey
 	localMode := false
@@ -370,6 +372,44 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	// check the port info map after all stale syncers have been deleted.
 	validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
 	validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap)
+}
+
+func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
+	kubeClient := fake.NewSimpleClientset()
+	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
+	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true)
+	stopChan := make(chan struct{}, 1)
+	// start the informer directly, without starting the entire controller.
+	go testContext.NodeInformer.Run(stopChan)
+	defer func() {
+		stopChan <- struct{}{}
+		controller.stop()
+	}()
+	ctx := context.Background()
+	nodeClient := controller.client.CoreV1().Nodes()
+	node, err := nodeClient.Create(ctx, newTestNode("node1", true), metav1.CreateOptions{})
+	if err != nil {
+		t.Fatalf("Failed to create test node, error - %v", err)
+	}
+	nodeKey, err := cache.DeletionHandlingMetaNamespaceKeyFunc(node)
+	if err != nil {
+		t.Fatalf("Failed to create node key for test node %v, error - %v", node, err)
+	}
+	time.Sleep(5 * time.Second)
+	if list := testContext.NodeInformer.GetIndexer().List(); len(list) != 1 {
+		t.Errorf("Got nodes list - %v of size %d, want 1 element", list, len(list))
+	}
+	t.Logf("Checking for enqueue of node create event")
+	ensureNodeEnqueue(t, nodeKey, controller)
+	//mimic node moving to ready status.
+	node.Spec.Unschedulable = false
+	node.Status.Conditions = []v1.NodeCondition{{Type: v1.NodeReady, Status: v1.ConditionTrue}}
+	if _, err = nodeClient.Update(ctx, node, metav1.UpdateOptions{}); err != nil {
+		t.Fatalf("Failed to update test node, error - %v", err)
+	}
+	time.Sleep(5 * time.Second)
+	t.Logf("Checking for enqueue of node update event")
+	ensureNodeEnqueue(t, nodeKey, controller)
 }
 
 // TestEnableNEGServiceWithILBIngress tests ILB service with NEG enabled
@@ -1184,6 +1224,35 @@ func TestEnableNegCRD(t *testing.T) {
 	}
 }
 
+func getNodeEvent(controller *Controller, eventChan chan string) {
+	item, quit := controller.nodeQueue.Get()
+	if quit {
+		return
+	}
+	// mark the item as done so that future enqueues will work.
+	controller.nodeQueue.Done(item)
+	eventChan <- item.(string)
+}
+
+func ensureNodeEnqueue(t *testing.T, nodeKey string, controller *Controller) {
+	t.Helper()
+	eventChan := make(chan string)
+	go getNodeEvent(controller, eventChan)
+	for {
+		select {
+		case key := <-eventChan:
+			if key != nodeKey {
+				t.Errorf("Got nodeKey %q, want %q", key, nodeKey)
+			} else {
+				t.Logf("Got expected nodeKey %s", nodeKey)
+				return
+			}
+		case <-time.After(5 * time.Second):
+			t.Errorf("Timed out waiting for node enqueue %v", time.Now())
+			return
+		}
+	}
+}
 func validateNegCRs(t *testing.T, svc *v1.Service, svcNegClient svcnegclient.Interface, namer negtypes.NetworkEndpointGroupNamer, negPortNameMap map[int32]string) {
 	t.Helper()
 
@@ -1590,6 +1659,18 @@ func newTestService(c *Controller, negIngress bool, negSvcPorts []int32) *apiv1.
 
 	c.client.CoreV1().Services(testServiceNamespace).Create(context.TODO(), svc, metav1.CreateOptions{})
 	return svc
+}
+
+func newTestNode(name string, unschedulable bool) *apiv1.Node {
+	return &apiv1.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: apiv1.NodeSpec{
+			Unschedulable: unschedulable,
+		},
+	}
+
 }
 
 func newTestServiceCustomNamedNeg(c *Controller, negSvcPorts map[int32]string, ingress bool) *apiv1.Service {
