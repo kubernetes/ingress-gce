@@ -24,21 +24,22 @@ import (
 	"testing"
 	"time"
 
+	"net/http"
+
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
+	option "google.golang.org/api/option"
+	api_v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
-
-	api_v1 "k8s.io/api/core/v1"
-	networkingv1 "k8s.io/api/networking/v1"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/legacy-cloud-providers/gce"
-	"net/http"
 )
 
 func TestResourcePath(t *testing.T) {
@@ -1064,9 +1065,9 @@ func TestGetBasePath(t *testing.T) {
 
 // Unit test is to catch any changes to the base path that could occur in the compute api dependency
 func TestComputeBasePath(t *testing.T) {
-	services, err := compute.NewService(context.TODO())
+	services, err := compute.NewService(context.TODO(), option.WithoutAuthentication())
 	if err != nil {
-		t.Errorf("unexpected error :%s", err)
+		t.Fatalf("compute.NewService(_) = %s, want nil", err)
 	}
 	if services.BasePath != "https://compute.googleapis.com/compute/v1/" {
 		t.Errorf("Compute basePath has changed. Verify selflink generation has not broken and update path in test")
