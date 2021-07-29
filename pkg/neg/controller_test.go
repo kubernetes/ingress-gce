@@ -395,6 +395,7 @@ func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to create node key for test node %v, error - %v", node, err)
 	}
+	// sleep for the Informer store to pick this up.
 	time.Sleep(5 * time.Second)
 	if list := testContext.NodeInformer.GetIndexer().List(); len(list) != 1 {
 		t.Errorf("Got nodes list - %v of size %d, want 1 element", list, len(list))
@@ -407,7 +408,6 @@ func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
 	if _, err = nodeClient.Update(ctx, node, metav1.UpdateOptions{}); err != nil {
 		t.Fatalf("Failed to update test node, error - %v", err)
 	}
-	time.Sleep(5 * time.Second)
 	t.Logf("Checking for enqueue of node update event")
 	ensureNodeEnqueue(t, nodeKey, controller)
 }
