@@ -84,11 +84,8 @@ const (
 	// exclude from load balancers created by a cloud provider. This label is deprecated and will
 	// be removed in 1.18.
 	LabelAlphaNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
-
-	// LegacyNodeRoleBehaviorFeature is the feature gate name that enables legacy
-	// behavior to vary cluster functionality on the node-role.kubernetes.io
-	// labels.
-	LegacyNodeRoleBehaviorFeature = "LegacyNodeRoleBehavior"
+	GKEUpgradeOperation               = "operation_type: UPGRADE_NODES"
+	GKECurrentOperationAnnotation     = "gke-current-operation"
 )
 
 // FrontendGCAlgorithm species GC algorithm used for ingress frontend resources.
@@ -378,6 +375,10 @@ func GetNodeConditionPredicate() NodeConditionPredicate {
 		}
 
 		if _, hasExcludeBalancerLabel := node.Labels[LabelNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
+			return false
+		}
+		// This node is about to be upgraded.
+		if opVal, _ := node.Annotations[GKECurrentOperationAnnotation]; strings.Contains(opVal, GKEUpgradeOperation) {
 			return false
 		}
 

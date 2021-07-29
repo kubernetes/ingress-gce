@@ -56,8 +56,9 @@ func (l *LocalL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
 	// List all nodes where the service endpoints are running. Get a subset of the desired count.
 	zoneNodeMap := make(map[string][]*v1.Node)
-	nodeNames := sets.String{}
+	processedNodes := sets.String{}
 	numEndpoints := 0
+	candidateNodeCheck := utils.GetNodeConditionPredicate()
 	for _, curEp := range ep.Subsets {
 		for _, addr := range curEp.Addresses {
 			if addr.NodeName == nil {
@@ -69,13 +70,17 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, cur
 				continue
 			}
 			numEndpoints++
-			if nodeNames.Has(*addr.NodeName) {
+			if processedNodes.Has(*addr.NodeName) {
 				continue
 			}
-			nodeNames.Insert(*addr.NodeName)
+			processedNodes.Insert(*addr.NodeName)
 			node, err := l.nodeLister.Get(*addr.NodeName)
 			if err != nil {
 				klog.Errorf("failed to retrieve node object for %q: %v", *addr.NodeName, err)
+				continue
+			}
+			if ok := candidateNodeCheck(node); !ok {
+				klog.Infof("Dropping Node %q from subset since it is not a valid LB candidate", node.Name)
 				continue
 			}
 			zone, err := l.zoneGetter.GetZoneForNode(node.Name)

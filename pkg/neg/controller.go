@@ -276,6 +276,7 @@ func NewController(
 				currentNode := cur.(*apiv1.Node)
 				nodeReadyCheck := utils.GetNodeConditionPredicate()
 				if nodeReadyCheck(oldNode) != nodeReadyCheck(currentNode) {
+					klog.Infof("Node %q has changed, enqueueing", currentNode.Name)
 					negController.enqueueNode(currentNode)
 				}
 			},
