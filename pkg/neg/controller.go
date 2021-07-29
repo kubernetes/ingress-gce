@@ -272,6 +272,14 @@ func NewController(
 				node := obj.(*apiv1.Node)
 				negController.enqueueNode(node)
 			},
+			UpdateFunc: func(old, cur interface{}) {
+				oldNode := old.(*apiv1.Node)
+				currentNode := cur.(*apiv1.Node)
+				nodeReadyCheck := utils.GetNodeConditionPredicate()
+				if nodeReadyCheck(oldNode) != nodeReadyCheck(currentNode) {
+					negController.enqueueNode(currentNode)
+				}
+			},
 		})
 	}
 
@@ -334,6 +342,7 @@ func (c *Controller) stop() {
 	klog.V(2).Infof("Shutting down network endpoint group controller")
 	c.serviceQueue.ShutDown()
 	c.endpointQueue.ShutDown()
+	c.nodeQueue.ShutDown()
 	c.manager.ShutDown()
 }
 
@@ -760,7 +769,7 @@ func (c *Controller) enqueueEndpoint(obj interface{}) {
 func (c *Controller) enqueueNode(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		klog.Errorf("Failed to generate endpoint key: %v", err)
+		klog.Errorf("Failed to generate node key: %v", err)
 		return
 	}
 	c.nodeQueue.Add(key)

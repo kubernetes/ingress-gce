@@ -25,6 +25,7 @@ import (
 	"k8s.io/api/core/v1"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 const (
@@ -169,6 +170,7 @@ func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID 
 	for _, zone := range zoneList {
 		// split the limit across the leftover zones.
 		subsetSize = totalLimit / zonesRemaining
+		klog.Infof("Picking subset of size %d for zone %v, service %s", subsetSize, zone, svcID)
 		result[zone.Name] = negtypes.NewNetworkEndpointSet()
 		if currentMap != nil {
 			if zset, ok := currentMap[zone.Name]; ok && zset != nil {
