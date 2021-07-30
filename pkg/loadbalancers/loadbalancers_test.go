@@ -1809,8 +1809,9 @@ func TestResourceDeletionWithProtocol(t *testing.T) {
 			lb, err = j.pool.Ensure(lbInfo)
 			if tc.disableHTTP && tc.disableHTTPS {
 				// we expect an invalid ingress configuration error here.
-				if err == nil || !strings.Contains(err.Error(), invalidConfigErrorMessage) {
-					t.Fatalf("pool.Ensure(%+v) = %v, want %v", lbInfo, err, fmt.Errorf(invalidConfigErrorMessage))
+				errMsg := errAllProtocolsDisabled.Error()
+				if err == nil || !strings.Contains(err.Error(), errMsg) {
+					t.Fatalf("pool.Ensure(%+v) = %v, want %s", lbInfo, err, errMsg)
 				}
 				return
 			}

@@ -18,6 +18,7 @@ package loadbalancers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -40,8 +41,8 @@ import (
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
-const (
-	invalidConfigErrorMessage = "invalid ingress frontend configuration, please check your usage of the 'kubernetes.io/ingress.allow-http' annotation."
+var (
+	errAllProtocolsDisabled = errors.New("invalid configuration: both HTTP and HTTPS are disabled (kubernetes.io/ingress.allow-http is false and there is no valid TLS configuration); your Ingress will not be able to serve any traffic")
 )
 
 // L7RuntimeInfo is info passed to this module from the controller runtime.
@@ -142,7 +143,7 @@ func (l *L7) edgeHop() error {
 	sslConfigured := l.runtimeInfo.TLS != nil || l.runtimeInfo.TLSName != ""
 	// Return an error if user configuration species that both HTTP & HTTPS are not to be configured.
 	if !l.runtimeInfo.AllowHTTP && !sslConfigured {
-		return fmt.Errorf(invalidConfigErrorMessage)
+		return errAllProtocolsDisabled
 	}
 
 	// Check for invalid L7-ILB HTTPS config before attempting sync
