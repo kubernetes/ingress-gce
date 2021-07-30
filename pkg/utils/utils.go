@@ -71,21 +71,14 @@ const (
 	// kubernetes/kubernetes/pkg/controller/service/service_controller.go
 	LabelNodeRoleMaster = "node-role.kubernetes.io/master"
 	// LabelNodeRoleExcludeBalancer specifies that a node should be excluded from load-balancing
-	// This is a duplicate definition of the constant in:
-	// kubernetes/kubernetes/pkg/controller/service/service_controller.go
-	// This label is feature-gated in kubernetes/kubernetes but we do not have feature gates
-	// This will need to be updated after the end of the alpha
-	LabelNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
+	// This is a duplicate definition of the constant in kubernetes core:
+	//  https://github.com/kubernetes/kubernetes/blob/ea0764452222146c47ec826977f49d7001b0ea8c/staging/src/k8s.io/api/core/v1/well_known_labels.go#L67
+	LabelNodeRoleExcludeBalancer = "node.kubernetes.io/exclude-from-external-load-balancers"
 	// ToBeDeletedTaint is the taint that the autoscaler adds when a node is scheduled to be deleted
 	// https://github.com/kubernetes/autoscaler/blob/cluster-autoscaler-0.5.2/cluster-autoscaler/utils/deletetaint/delete.go#L33
 	ToBeDeletedTaint         = "ToBeDeletedByClusterAutoscaler"
 	L4ILBServiceDescKey      = "networking.gke.io/service-name"
 	L4ILBSharedResourcesDesc = "This resource is shared by all L4 ILB Services using ExternalTrafficPolicy: Cluster."
-
-	// ServiceNodeExclusionFeature is the feature gate name that
-	// enables nodes to exclude themselves from service load balancers
-	// originated from: https://github.com/kubernetes/kubernetes/blob/28e800245e/pkg/features/kube_features.go#L178
-	ServiceNodeExclusionFeature = "ServiceNodeExclusion"
 
 	// LabelAlphaNodeRoleExcludeBalancer specifies that the node should be
 	// exclude from load balancers created by a cloud provider. This label is deprecated and will
