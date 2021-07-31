@@ -51,11 +51,9 @@ type ServicePort struct {
 	L7ILBEnabled   bool
 	BackendConfig  *backendconfigv1.BackendConfig
 	BackendNamer   namer.BackendNamer
-
-	// TODO
-	MaxRatePerEndpoint *int64
-	// TODO
-	CapacityScaler *float64
+	// Traffic policy fields that apply if non-nil.
+	MaxRatePerEndpoint *float64
+	CapacityScaler     *float64
 }
 
 // GetDescription returns a Description for this ServicePort.

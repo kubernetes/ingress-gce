@@ -131,8 +131,8 @@ func setAppProtocol(sp *utils.ServicePort, svc *api_v1.Service, port *api_v1.Ser
 func setTrafficPolicy(sp *utils.ServicePort, svc *api_v1.Service) error {
 	const maxRatePerEndpointKey = "networking.gke.io/max-rate-per-endpoint"
 	if s, ok := svc.Annotations[maxRatePerEndpointKey]; ok {
-		val, err := strconv.ParseInt(s, 10, 64)
-		if err != nil || val < 0 {
+		val, err := strconv.ParseFloat(s, 64)
+		if err != nil || val < 0.0 {
 			return fmt.Errorf(`invalid value for Service annotation %s, should be an integer > 0, got %q`, maxRatePerEndpointKey, s)
 		}
 		sp.MaxRatePerEndpoint = &val

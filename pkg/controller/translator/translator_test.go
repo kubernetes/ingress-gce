@@ -881,7 +881,6 @@ func TestSetTrafficPolicy(t *testing.T) {
 		}
 	}
 
-	i64 := func(x int64) *int64 { return &x }
 	f64 := func(x float64) *float64 { return &x }
 
 	for _, tc := range []struct {
@@ -901,7 +900,7 @@ func TestSetTrafficPolicy(t *testing.T) {
 				"networking.gke.io/max-rate-per-endpoint": "1000",
 			}),
 			want: &utils.ServicePort{
-				MaxRatePerEndpoint: i64(1000),
+				MaxRatePerEndpoint: f64(1000),
 			},
 		},
 		{
@@ -920,7 +919,7 @@ func TestSetTrafficPolicy(t *testing.T) {
 				"networking.gke.io/capacity-scaler":       "0.75",
 			}),
 			want: &utils.ServicePort{
-				MaxRatePerEndpoint: i64(999),
+				MaxRatePerEndpoint: f64(999),
 				CapacityScaler:     f64(0.75),
 			},
 		},
