@@ -296,8 +296,8 @@ func NewController(
 			UpdateFunc: func(old, cur interface{}) {
 				oldNode := old.(*apiv1.Node)
 				currentNode := cur.(*apiv1.Node)
-				nodeReadyCheck := utils.NodeConditionPredicateIncludeUnreadyExcludeUpgradingNodes()
-				if nodeReadyCheck(oldNode) != nodeReadyCheck(currentNode) {
+				candidateNodeCheck := utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
+				if candidateNodeCheck(oldNode) != candidateNodeCheck(currentNode) {
 					klog.Infof("Node %q has changed, enqueueing", currentNode.Name)
 					negController.enqueueNode(currentNode)
 				}
@@ -677,7 +677,7 @@ func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Se
 // syncNegStatusAnnotation syncs the neg status annotation
 // it takes service namespace, name and the expected service ports for NEGs.
 func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap negtypes.PortInfoMap) error {
-	zones, err := c.zoneGetter.ListZones()
+	zones, err := c.zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(portMap.EndpointsCalculatorMode()))
 	if err != nil {
 		return err
 	}
@@ -720,7 +720,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 
 // syncDestinationRuleNegStatusAnnotation syncs the destinationrule related neg status annotation
 func (c *Controller) syncDestinationRuleNegStatusAnnotation(namespace, destinationRuleName string, portmap negtypes.PortInfoMap) error {
-	zones, err := c.zoneGetter.ListZones()
+	zones, err := c.zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(portmap.EndpointsCalculatorMode()))
 	if err != nil {
 		return err
 	}

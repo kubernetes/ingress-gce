@@ -17,6 +17,7 @@ limitations under the License.
 package types
 
 import (
+	"k8s.io/ingress-gce/pkg/utils"
 	"reflect"
 	"testing"
 )
@@ -24,7 +25,7 @@ import (
 func TestSimpleZoneGetter(t *testing.T) {
 	zone := "foo"
 	zoneGetter := NewSimpleZoneGetter(zone)
-	ret, err := zoneGetter.ListZones()
+	ret, err := zoneGetter.ListZones(utils.AllNodesPredicate)
 	if err != nil {
 		t.Errorf("expect err = nil, but got %v", err)
 	}

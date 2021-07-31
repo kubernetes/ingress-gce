@@ -471,7 +471,8 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 	// This would be resolved (sync neg) when the next endpoint update or resync arrives.
 	// TODO: avoid race condition here
 	var errList []error
-	zones, err := manager.zoneGetter.ListZones()
+	// Deletion candidate NEGs should be deleted from all zones, even ones that currently don't have any Ready nodes.
+	zones, err := manager.zoneGetter.ListZones(utils.AllNodesPredicate)
 	if err != nil {
 		errList = append(errList, fmt.Errorf("failed to get zones during garbage collection: %w", err))
 	}

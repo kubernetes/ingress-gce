@@ -18,11 +18,12 @@ package instances
 
 import (
 	compute "google.golang.org/api/compute/v1"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // ZoneLister manages lookups for GCE instance groups/instances to zones.
 type ZoneLister interface {
-	ListZones() ([]string, error)
+	ListZones(predicate utils.NodeConditionPredicate) ([]string, error)
 	GetZoneForNode(name string) (string, error)
 }
 

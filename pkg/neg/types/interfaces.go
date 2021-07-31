@@ -19,11 +19,12 @@ package types
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // ZoneGetter is an interface for retrieve zone related information
 type ZoneGetter interface {
-	ListZones() ([]string, error)
+	ListZones(predicate utils.NodeConditionPredicate) ([]string, error)
 	GetZoneForNode(name string) (string, error)
 }
 
