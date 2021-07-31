@@ -20,9 +20,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"reflect"
 	"testing"
 	"time"
 
+	api_v1 "k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -862,4 +864,114 @@ func int64ToMap(l []int64) map[int64]bool {
 		ret[i] = true
 	}
 	return ret
+}
+
+func TestSetTrafficPolicy(t *testing.T) {
+	// No t.Parallel()
+
+	oldFlag := flags.F.EnableTrafficPolicy
+	flags.F.EnableTrafficPolicy = true
+	defer func() {
+		flags.F.EnableTrafficPolicy = oldFlag
+	}()
+
+	newService := func(ann map[string]string) *api_v1.Service {
+		return &apiv1.Service{
+			ObjectMeta: metav1.ObjectMeta{Annotations: ann},
+		}
+	}
+
+	i64 := func(x int64) *int64 { return &x }
+	f64 := func(x float64) *float64 { return &x }
+
+	for _, tc := range []struct {
+		name    string
+		svc     *apiv1.Service
+		want    *utils.ServicePort
+		wantErr bool
+	}{
+		{
+			name: "no settings",
+			svc:  newService(map[string]string{}),
+			want: &utils.ServicePort{},
+		},
+		{
+			name: "max-rate-per-endpoint",
+			svc: newService(map[string]string{
+				"networking.gke.io/max-rate-per-endpoint": "1000",
+			}),
+			want: &utils.ServicePort{
+				MaxRatePerEndpoint: i64(1000),
+			},
+		},
+		{
+			name: "capacity-scaler",
+			svc: newService(map[string]string{
+				"networking.gke.io/capacity-scaler": "0.5",
+			}),
+			want: &utils.ServicePort{
+				CapacityScaler: f64(0.5),
+			},
+		},
+		{
+			name: "both",
+			svc: newService(map[string]string{
+				"networking.gke.io/max-rate-per-endpoint": "999",
+				"networking.gke.io/capacity-scaler":       "0.75",
+			}),
+			want: &utils.ServicePort{
+				MaxRatePerEndpoint: i64(999),
+				CapacityScaler:     f64(0.75),
+			},
+		},
+		{
+			name: "invalid max-rate-per-endpoint (bad parse)",
+			svc: newService(map[string]string{
+				"networking.gke.io/max-rate-per-endpoint": "abc",
+			}),
+			wantErr: true,
+		},
+		{
+			name: "invalid max-rate-per-endpoint (< 0)",
+			svc: newService(map[string]string{
+				"networking.gke.io/max-rate-per-endpoint": "-10",
+			}),
+			wantErr: true,
+		},
+		{
+			name: "invalid-capacity-scaler (bad parse)",
+			svc: newService(map[string]string{
+				"networking.gke.io/capacity-scaler": "abc",
+			}),
+			wantErr: true,
+		},
+		{
+			name: "invalid-capacity-scaler (bad value)",
+			svc: newService(map[string]string{
+				"networking.gke.io/capacity-scaler": "-1.1",
+			}),
+			wantErr: true,
+		},
+		{
+			name: "invalid-capacity-scaler (bad value)",
+			svc: newService(map[string]string{
+				"networking.gke.io/capacity-scaler": "1.1",
+			}),
+			wantErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got utils.ServicePort
+			err := setTrafficPolicy(&got, tc.svc)
+			if gotErr := err != nil; tc.wantErr != gotErr {
+				t.Fatalf("setTrafficPolicy(_, %+v) = %v; gotErr = %t, want %t", tc.svc, err, gotErr, tc.wantErr)
+			}
+			if err != nil {
+				return
+			}
+			if !reflect.DeepEqual(got, *tc.want) {
+				t.Errorf("setTrafficPolicy(_, %+v); got %+v, want %+v", tc.svc, got, *tc.want)
+			}
+		})
+	}
 }

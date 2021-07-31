@@ -128,6 +128,28 @@ func setAppProtocol(sp *utils.ServicePort, svc *api_v1.Service, port *api_v1.Ser
 	return nil
 }
 
+func setTrafficPolicy(sp *utils.ServicePort, svc *api_v1.Service) error {
+	const maxRatePerEndpointKey = "networking.gke.io/max-rate-per-endpoint"
+	if s, ok := svc.Annotations[maxRatePerEndpointKey]; ok {
+		val, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || val < 0 {
+			return fmt.Errorf(`invalid value for Service annotation %s, should be an integer > 0, got %q`, maxRatePerEndpointKey, s)
+		}
+		sp.MaxRatePerEndpoint = &val
+	}
+
+	const capacityScalerKey = "networking.gke.io/capacity-scaler"
+	if s, ok := svc.Annotations[capacityScalerKey]; ok {
+		val, err := strconv.ParseFloat(s, 64)
+		if err != nil || (val < 0.0 || val > 1.0) {
+			return fmt.Errorf(`invalid value for Service annotation %s, should be a number >= 0.0 and <= 1.0, got %q`, capacityScalerKey, s)
+		}
+		sp.CapacityScaler = &val
+	}
+
+	return nil
+}
+
 // maybeEnableBackendConfig sets the backendConfig for the service port if necessary
 func (t *Translator) maybeEnableBackendConfig(sp *utils.ServicePort, svc *api_v1.Service, port *api_v1.ServicePort) error {
 	var beConfig *backendconfigv1.BackendConfig
@@ -183,6 +205,12 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 
 	if err := setAppProtocol(svcPort, svc, port); err != nil {
 		return svcPort, err
+	}
+
+	if flags.F.EnableTrafficPolicy {
+		if err := setTrafficPolicy(svcPort, svc); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := t.maybeEnableBackendConfig(svcPort, svc, port); err != nil {

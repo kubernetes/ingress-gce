@@ -103,6 +103,7 @@ var (
 		FinalizerRemove                bool // Should have been named Enablexxx.
 		EnablePSC                      bool
 		EnableIngressGAFields          bool
+		EnableTrafficPolicy            bool
 	}{
 		GCERateLimitScale: 1.0,
 	}
@@ -236,6 +237,8 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.GKEClusterName, "gke-cluster-name", "", "The name of the GKE cluster this Ingress Controller will be interacting with")
 	flag.StringVar(&F.GKEClusterHash, "gke-cluster-hash", "", "The cluster hash of the GKE cluster this Ingress Controller will be interacting with")
 	flag.StringVar(&F.GKEClusterType, "gke-cluster-type", "ZONAL", "The cluster type of the GKE cluster this Ingress Controller will be interacting with")
+
+	flag.BoolVar(&F.EnableTrafficPolicy, "enable-traffic-policy", false, "Enable support for Service {max-rate-per-endpoint, capacity-scaler}")
 }
 
 type RateLimitSpecs struct {
