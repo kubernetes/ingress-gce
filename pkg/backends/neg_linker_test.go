@@ -124,7 +124,10 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 }
 
 func TestDiffBackends(t *testing.T) {
-	t.Parallel()
+	// No t.Parallel().
+	oldFlag := flags.F.EnableTrafficScaling
+	flags.F.EnableTrafficScaling = true
+	defer func() { flags.F.EnableTrafficScaling = oldFlag }()
 
 	for _, tc := range []struct {
 		name string
@@ -134,6 +137,7 @@ func TestDiffBackends(t *testing.T) {
 		isEqual  bool
 		toRemove sets.String
 		toAdd    sets.String
+		changed  sets.String
 	}{
 		{
 			name:    "empty",
@@ -170,6 +174,18 @@ func TestDiffBackends(t *testing.T) {
 			toAdd:    sets.NewString("d"),
 			toRemove: sets.NewString("c"),
 		},
+		{
+			name:    "update rate",
+			old:     []*composite.Backend{{Group: "a", MaxRatePerEndpoint: 1}},
+			new:     []*composite.Backend{{Group: "a", MaxRatePerEndpoint: 3}},
+			changed: sets.NewString("a"),
+		},
+		{
+			name:    "update capacity scaler",
+			old:     []*composite.Backend{{Group: "a", CapacityScaler: 1.0}},
+			new:     []*composite.Backend{{Group: "a", CapacityScaler: 0.5}},
+			changed: sets.NewString("a"),
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			diff := diffBackends(tc.old, tc.new)
@@ -177,10 +193,13 @@ func TestDiffBackends(t *testing.T) {
 				t.Errorf("diff := diffBackends(%s, %s); diff.isEqual() = %t, want %t", pretty.Sprint(tc.old), pretty.Sprint(tc.new), got, tc.isEqual)
 			}
 			if got := diff.toRemove(); !got.Equal(tc.toRemove) {
-				t.Errorf("diff := diffBackends(%s, %s); diff.toRemove() = %s, wanht %s", pretty.Sprint(tc.old), pretty.Sprint(tc.new), got, tc.toRemove)
+				t.Errorf("diff := diffBackends(%s, %s); diff.toRemove() = %s, want %s", pretty.Sprint(tc.old), pretty.Sprint(tc.new), got, tc.toRemove)
 			}
 			if got := diff.toAdd(); !got.Equal(tc.toAdd) {
-				t.Errorf("diff := diffBackends(%s, %s); diff.toAdd() = %s, wanht %s", pretty.Sprint(tc.old), pretty.Sprint(tc.new), got, tc.toAdd)
+				t.Errorf("diff := diffBackends(%s, %s); diff.toAdd() = %s, want %s", pretty.Sprint(tc.old), pretty.Sprint(tc.new), got, tc.toAdd)
+			}
+			if got := diff.changed; !got.Equal(tc.changed) {
+				t.Errorf("diff := diffBackends(%s, %s); diff.changed = %s, want %s", pretty.Sprint(tc.old), pretty.Sprint(tc.new), got, tc.changed)
 			}
 		})
 	}
