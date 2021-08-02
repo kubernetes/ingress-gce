@@ -70,9 +70,7 @@ type instanceGroupLinker struct {
 // instanceGroupLinker is a Linker
 var _ Linker = (*instanceGroupLinker)(nil)
 
-func NewInstanceGroupLinker(
-	instancePool instances.NodePool,
-	backendPool Pool) Linker {
+func NewInstanceGroupLinker(instancePool instances.NodePool, backendPool Pool) Linker {
 	return &instanceGroupLinker{
 		instancePool: instancePool,
 		backendPool:  backendPool,
@@ -125,7 +123,7 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 	var errs []string
 	for _, bm := range []BalancingMode{Rate, Utilization} {
 		// Generate backends with given instance groups with a specific mode
-		newBackends := getBackendsForIGs(addIGs, bm)
+		newBackends := backendsForIGs(addIGs, bm, &sp)
 		be.Backends = append(originalIGBackends, newBackends...)
 
 		if err := l.backendPool.Update(be); err != nil {
@@ -147,8 +145,9 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 	return fmt.Errorf("received errors when updating backend service: %v", strings.Join(errs, "\n"))
 }
 
-func getBackendsForIGs(igLinks []string, bm BalancingMode) []*composite.Backend {
+func backendsForIGs(igLinks []string, bm BalancingMode, sp *utils.ServicePort) []*composite.Backend {
 	var backends []*composite.Backend
+
 	for _, igLink := range igLinks {
 		b := &composite.Backend{
 			Group:         igLink,
@@ -157,11 +156,12 @@ func getBackendsForIGs(igLinks []string, bm BalancingMode) []*composite.Backend 
 		switch bm {
 		case Rate:
 			b.MaxRatePerInstance = maxRPS
+			// TODO(bowei) -- we might want to warn that the traffic policy
+			// settings don't work in this context.
 		default:
 			// TODO: Set utilization and connection limits when we accept them
 			// as valid fields.
 		}
-
 		backends = append(backends, b)
 	}
 	return backends

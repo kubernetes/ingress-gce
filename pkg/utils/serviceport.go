@@ -51,10 +51,13 @@ type ServicePort struct {
 	L7ILBEnabled   bool
 	BackendConfig  *backendconfigv1.BackendConfig
 	BackendNamer   namer.BackendNamer
+	// Traffic policy fields that apply if non-nil.
+	MaxRatePerEndpoint *float64
+	CapacityScaler     *float64
 }
 
 // GetDescription returns a Description for this ServicePort.
-func (sp ServicePort) GetDescription() Description {
+func (sp *ServicePort) GetDescription() Description {
 	return Description{
 		ServiceName: sp.ID.Service.String(),
 		ServicePort: sp.ID.Port.String(),
@@ -62,7 +65,7 @@ func (sp ServicePort) GetDescription() Description {
 }
 
 // BackendName returns the name of the backend which would be used for this ServicePort.
-func (sp ServicePort) BackendName() string {
+func (sp *ServicePort) BackendName() string {
 	if sp.NEGEnabled {
 		return sp.BackendNamer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.Port)
 	} else if sp.VMIPNEGEnabled {
@@ -73,7 +76,7 @@ func (sp ServicePort) BackendName() string {
 }
 
 // IGName returns the name of the instance group which would be used for this ServicePort.
-func (sp ServicePort) IGName() string {
+func (sp *ServicePort) IGName() string {
 	return sp.BackendNamer.InstanceGroup()
 }
 
@@ -91,8 +94,7 @@ func BackendToServicePortID(be v1.IngressBackend, namespace string) (ServicePort
 	}, nil
 }
 
-// NewServicePortWithID returns a ServicePort with only ID.
-func NewServicePortWithID(svcName, svcNamespace string, port v1.ServiceBackendPort) ServicePort {
+func newServicePortWithID(svcName, svcNamespace string, port v1.ServiceBackendPort) ServicePort {
 	return ServicePort{
 		ID: ServicePortID{
 			Service: types.NamespacedName{

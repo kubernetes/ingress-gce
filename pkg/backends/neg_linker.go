@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	befeatures "k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -75,42 +76,69 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		return err
 	}
 
-	targetBackends := getBackendsForNEGs(negs)
-	oldBackends := sets.NewString()
-	newBackends := sets.NewString()
+	newBackends := backendsForNEGs(negs, &sp)
+	diff := diffBackends(backendService.Backends, newBackends)
+	if diff.isEqual() {
+		klog.V(2).Infof("No changes in backends for service port %s", sp.ID)
+		return nil
+	}
+	klog.V(2).Infof("Backends changed for service port %s, removing: %s and adding: %s", sp.ID, diff.toRemove(), diff.toAdd())
+	backendService.Backends = newBackends
 
-	// WARNING: the backend link includes api version.
-	// API versions has to match, otherwise backend link will be always different.
-	for _, be := range backendService.Backends {
-		oldBackends.Insert(be.Group)
-	}
-	for _, be := range targetBackends {
-		newBackends.Insert(be.Group)
-	}
-
-	if !oldBackends.Equal(newBackends) {
-		klog.V(2).Infof("Backends changed for service port %s, removing: %s and adding: %s", sp.ID, oldBackends.Difference(newBackends), newBackends.Difference(oldBackends))
-		backendService.Backends = targetBackends
-		return composite.UpdateBackendService(l.cloud, key, backendService)
-	}
-	return nil
+	return composite.UpdateBackendService(l.cloud, key, backendService)
 }
 
-func getBackendsForNEGs(negs []*composite.NetworkEndpointGroup) []*composite.Backend {
+type backendDiff struct {
+	old sets.String
+	new sets.String
+}
+
+func diffBackends(old, new []*composite.Backend) *backendDiff {
+	d := &backendDiff{old: sets.NewString(), new: sets.NewString()}
+	for _, be := range old {
+		d.old.Insert(be.Group)
+	}
+	for _, be := range new {
+		d.new.Insert(be.Group)
+	}
+	return d
+}
+
+func (d *backendDiff) isEqual() bool         { return d.old.Equal((d.new)) }
+func (d *backendDiff) toRemove() sets.String { return d.old.Difference(d.new) }
+func (d *backendDiff) toAdd() sets.String    { return d.new.Difference(d.old) }
+
+func backendsForNEGs(negs []*composite.NetworkEndpointGroup, sp *utils.ServicePort) []*composite.Backend {
 	var backends []*composite.Backend
 	for _, neg := range negs {
-		b := &composite.Backend{
-			Group: neg.SelfLink,
-		}
-		if neg.NetworkEndpointType == string(types.VmIpEndpointType) {
-			// Setting MaxConnectionsPerEndpoint is not supported for L4 ILB - https://cloud.google.com/load-balancing/docs/backend-service#target_capacity
+		newBackend := &composite.Backend{Group: neg.SelfLink}
+
+		switch neg.NetworkEndpointType {
+		case string(types.VmIpEndpointType):
+			// Setting MaxConnectionsPerEndpoint is not supported for L4 ILB
+			// https://cloud.google.com/load-balancing/docs/backend-service#target_capacity
 			// hence only mode is being set.
-			b.BalancingMode = string(Connections)
-		} else {
-			b.BalancingMode = string(Rate)
-			b.MaxRatePerEndpoint = maxRPS
+			newBackend.BalancingMode = string(Connections)
+
+		case string(types.VmIpPortEndpointType):
+			// This preserves the original behavior, but really we should error
+			// when there is a type we don't understand.
+			fallthrough
+		default:
+			newBackend.BalancingMode = string(Rate)
+			newBackend.MaxRatePerEndpoint = maxRPS
+
+			if flags.F.EnableTrafficPolicy {
+				if sp.MaxRatePerEndpoint != nil {
+					newBackend.MaxRatePerEndpoint = float64(*sp.MaxRatePerEndpoint)
+				}
+				if sp.CapacityScaler != nil {
+					newBackend.CapacityScaler = *sp.CapacityScaler
+				}
+			}
 		}
-		backends = append(backends, b)
+
+		backends = append(backends, newBackend)
 	}
 	return backends
 }
