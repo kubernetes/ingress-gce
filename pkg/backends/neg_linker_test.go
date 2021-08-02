@@ -188,9 +188,9 @@ func TestDiffBackends(t *testing.T) {
 
 func TestBackendsForNEG(t *testing.T) {
 	// No t.Parallel().
-	oldFlag := flags.F.EnableTrafficPolicy
-	flags.F.EnableTrafficPolicy = true
-	defer func() { flags.F.EnableTrafficPolicy = oldFlag }()
+	oldFlag := flags.F.EnableTrafficScaling
+	flags.F.EnableTrafficScaling = true
+	defer func() { flags.F.EnableTrafficScaling = oldFlag }()
 
 	f64 := func(x float64) *float64 { return &x }
 

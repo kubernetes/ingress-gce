@@ -128,7 +128,7 @@ func setAppProtocol(sp *utils.ServicePort, svc *api_v1.Service, port *api_v1.Ser
 	return nil
 }
 
-func setTrafficPolicy(sp *utils.ServicePort, svc *api_v1.Service) error {
+func setTrafficScaling(sp *utils.ServicePort, svc *api_v1.Service) error {
 	const maxRatePerEndpointKey = "networking.gke.io/max-rate-per-endpoint"
 	if s, ok := svc.Annotations[maxRatePerEndpointKey]; ok {
 		val, err := strconv.ParseFloat(s, 64)
@@ -207,8 +207,8 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 		return svcPort, err
 	}
 
-	if flags.F.EnableTrafficPolicy {
-		if err := setTrafficPolicy(svcPort, svc); err != nil {
+	if flags.F.EnableTrafficScaling {
+		if err := setTrafficScaling(svcPort, svc); err != nil {
 			return nil, err
 		}
 	}

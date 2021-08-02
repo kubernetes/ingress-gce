@@ -28,7 +28,6 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -132,11 +131,6 @@ func TestLinkWithCreationModeError(t *testing.T) {
 }
 
 func TestBackendsForIG(t *testing.T) {
-	// No t.Parallel().
-	oldFlag := flags.F.EnableTrafficPolicy
-	flags.F.EnableTrafficPolicy = true
-	defer func() { flags.F.EnableTrafficPolicy = oldFlag }()
-
 	for _, tc := range []struct {
 		name    string
 		igLinks []string

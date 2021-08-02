@@ -128,7 +128,7 @@ func backendsForNEGs(negs []*composite.NetworkEndpointGroup, sp *utils.ServicePo
 			newBackend.BalancingMode = string(Rate)
 			newBackend.MaxRatePerEndpoint = maxRPS
 
-			if flags.F.EnableTrafficPolicy {
+			if flags.F.EnableTrafficScaling {
 				if sp.MaxRatePerEndpoint != nil {
 					newBackend.MaxRatePerEndpoint = float64(*sp.MaxRatePerEndpoint)
 				}

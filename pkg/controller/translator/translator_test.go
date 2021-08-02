@@ -866,13 +866,13 @@ func int64ToMap(l []int64) map[int64]bool {
 	return ret
 }
 
-func TestSetTrafficPolicy(t *testing.T) {
+func TestSetTrafficScaling(t *testing.T) {
 	// No t.Parallel()
 
-	oldFlag := flags.F.EnableTrafficPolicy
-	flags.F.EnableTrafficPolicy = true
+	oldFlag := flags.F.EnableTrafficScaling
+	flags.F.EnableTrafficScaling = true
 	defer func() {
-		flags.F.EnableTrafficPolicy = oldFlag
+		flags.F.EnableTrafficScaling = oldFlag
 	}()
 
 	newService := func(ann map[string]string) *api_v1.Service {
@@ -961,15 +961,15 @@ func TestSetTrafficPolicy(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var got utils.ServicePort
-			err := setTrafficPolicy(&got, tc.svc)
+			err := setTrafficScaling(&got, tc.svc)
 			if gotErr := err != nil; tc.wantErr != gotErr {
-				t.Fatalf("setTrafficPolicy(_, %+v) = %v; gotErr = %t, want %t", tc.svc, err, gotErr, tc.wantErr)
+				t.Fatalf("setTrafficScaling(_, %+v) = %v; gotErr = %t, want %t", tc.svc, err, gotErr, tc.wantErr)
 			}
 			if err != nil {
 				return
 			}
 			if !reflect.DeepEqual(got, *tc.want) {
-				t.Errorf("setTrafficPolicy(_, %+v); got %+v, want %+v", tc.svc, got, *tc.want)
+				t.Errorf("setTrafficScaling(_, %+v); got %+v, want %+v", tc.svc, got, *tc.want)
 			}
 		})
 	}
