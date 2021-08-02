@@ -14,7 +14,11 @@ limitations under the License.
 package backends
 
 import (
+	"fmt"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/client-go/tools/cache"
+	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	befeatures "k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -26,9 +30,10 @@ import (
 
 // negLinker handles linking backends to NEG's.
 type negLinker struct {
-	backendPool Pool
-	negGetter   NEGGetter
-	cloud       *gce.Cloud
+	backendPool  Pool
+	negGetter    NEGGetter
+	cloud        *gce.Cloud
+	svcNegLister cache.Indexer
 }
 
 // negLinker is a Linker
@@ -37,18 +42,21 @@ var _ Linker = (*negLinker)(nil)
 func NewNEGLinker(
 	backendPool Pool,
 	negGetter NEGGetter,
-	cloud *gce.Cloud) Linker {
+	cloud *gce.Cloud,
+	svcNegLister cache.Indexer,
+) Linker {
 	return &negLinker{
-		backendPool: backendPool,
-		negGetter:   negGetter,
-		cloud:       cloud,
+		backendPool:  backendPool,
+		negGetter:    negGetter,
+		cloud:        cloud,
+		svcNegLister: svcNegLister,
 	}
 }
 
 // Link implements Link.
 func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	version := befeatures.VersionFromServicePort(&sp)
-	var negs []*composite.NetworkEndpointGroup
+	var negSelfLinks []string
 	var err error
 	for _, group := range groups {
 		// If the group key contains a name, then use that.
@@ -57,11 +65,19 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		if negName == "" {
 			negName = sp.BackendName()
 		}
-		neg, err := l.negGetter.GetNetworkEndpointGroup(negName, group.Zone, version)
-		if err != nil {
-			return err
+
+		negUrl := ""
+		svcNegKey := fmt.Sprintf("%s/%s", sp.ID.Service.Namespace, negName)
+		negUrl, ok := getNegUrlFromSvcneg(svcNegKey, group.Zone, l.svcNegLister)
+		if !ok {
+			klog.V(4).Infof("Falling back to use NEG API to retreive NEG url for NEG %q", negName)
+			neg, err := l.negGetter.GetNetworkEndpointGroup(negName, group.Zone, version)
+			if err != nil {
+				return err
+			}
+			negUrl = neg.SelfLink
 		}
-		negs = append(negs, neg)
+		negSelfLinks = append(negSelfLinks, negUrl)
 	}
 
 	beName := sp.BackendName()
@@ -76,7 +92,7 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		return err
 	}
 
-	newBackends := backendsForNEGs(negs, &sp)
+	newBackends := backendsForNEGs(negSelfLinks, &sp)
 	diff := diffBackends(backendService.Backends, newBackends)
 	if diff.isEqual() {
 		klog.V(2).Infof("No changes in backends for service port %s", sp.ID)
@@ -132,19 +148,19 @@ func (d *backendDiff) isEqual() bool         { return d.old.Equal(d.new) && d.ch
 func (d *backendDiff) toRemove() sets.String { return d.old.Difference(d.new) }
 func (d *backendDiff) toAdd() sets.String    { return d.new.Difference(d.old) }
 
-func backendsForNEGs(negs []*composite.NetworkEndpointGroup, sp *utils.ServicePort) []*composite.Backend {
+func backendsForNEGs(negSelfLinks []string, sp *utils.ServicePort) []*composite.Backend {
 	var backends []*composite.Backend
-	for _, neg := range negs {
-		newBackend := &composite.Backend{Group: neg.SelfLink}
+	for _, neg := range negSelfLinks {
+		newBackend := &composite.Backend{Group: neg}
 
-		switch neg.NetworkEndpointType {
-		case string(types.VmIpEndpointType):
+		switch getNegType(*sp) {
+		case types.VmIpEndpointType:
 			// Setting MaxConnectionsPerEndpoint is not supported for L4 ILB
 			// https://cloud.google.com/load-balancing/docs/backend-service#target_capacity
 			// hence only mode is being set.
 			newBackend.BalancingMode = string(Connections)
 
-		case string(types.VmIpPortEndpointType):
+		case types.VmIpPortEndpointType:
 			// This preserves the original behavior, but really we should error
 			// when there is a type we don't understand.
 			fallthrough
@@ -166,4 +182,37 @@ func backendsForNEGs(negs []*composite.NetworkEndpointGroup, sp *utils.ServicePo
 		backends = append(backends, newBackend)
 	}
 	return backends
+}
+
+// getNegType returns NEG type based on service port config
+func getNegType(sp utils.ServicePort) types.NetworkEndpointType {
+	if sp.VMIPNEGEnabled {
+		return types.VmIpEndpointType
+	}
+	return types.VmIpPortEndpointType
+}
+
+// getNegUrlFromSvcneg return NEG url from svcneg status if found
+func getNegUrlFromSvcneg(key string, zone string, svcNegLister cache.Indexer) (string, bool) {
+	obj, exists, err := svcNegLister.GetByKey(key)
+	if err != nil {
+		klog.Errorf("Failed to retrieve svcneg %s from cache: %v", key, err)
+		return "", false
+	}
+	if !exists {
+		return "", false
+	}
+	svcneg := obj.(*negv1beta1.ServiceNetworkEndpointGroup)
+
+	for _, negRef := range svcneg.Status.NetworkEndpointGroups {
+		key, err := cloud.ParseResourceURL(negRef.SelfLink)
+		if err != nil {
+			klog.Errorf("Failed to parse NEG SelfLink from svcneg %v: %v", svcneg, err)
+			continue
+		}
+		if key.Key.Zone == zone {
+			return negRef.SelfLink, true
+		}
+	}
+	return "", false
 }

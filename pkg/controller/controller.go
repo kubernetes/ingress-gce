@@ -129,7 +129,7 @@ func NewLoadBalancerController(
 		instancePool:  instancePool,
 		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID)),
 		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
-		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud),
+		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer()),
 		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool),
 		metrics:       ctx.ControllerMetrics,
 	}
