@@ -82,29 +82,53 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		klog.V(2).Infof("No changes in backends for service port %s", sp.ID)
 		return nil
 	}
-	klog.V(2).Infof("Backends changed for service port %s, removing: %s and adding: %s", sp.ID, diff.toRemove(), diff.toAdd())
+	klog.V(2).Infof("Backends changed for service port %s, removing: %s, adding: %s, changed: %s", sp.ID, diff.toRemove(), diff.toAdd(), diff.changed)
 	backendService.Backends = newBackends
 
 	return composite.UpdateBackendService(l.cloud, key, backendService)
 }
 
 type backendDiff struct {
-	old sets.String
-	new sets.String
+	old     sets.String
+	new     sets.String
+	changed sets.String
 }
 
 func diffBackends(old, new []*composite.Backend) *backendDiff {
-	d := &backendDiff{old: sets.NewString(), new: sets.NewString()}
+	d := &backendDiff{
+		old:     sets.NewString(),
+		new:     sets.NewString(),
+		changed: sets.NewString(),
+	}
+
+	oldMap := map[string]*composite.Backend{}
 	for _, be := range old {
 		d.old.Insert(be.Group)
+		oldMap[be.Group] = be
 	}
 	for _, be := range new {
 		d.new.Insert(be.Group)
+
+		if oldBe, ok := oldMap[be.Group]; ok {
+			// Note: if you are comparing a value that has a non-zero default
+			// value (e.g. CapacityScaler is 1.0), you will need to set that
+			// value when creating a new Backend to avoid a false positive when
+			// computing diffs.
+			if flags.F.EnableTrafficScaling {
+				var changed bool
+				changed = changed || oldBe.MaxRatePerEndpoint != be.MaxRatePerEndpoint
+				changed = changed || oldBe.CapacityScaler != be.CapacityScaler
+				if changed {
+					d.changed.Insert(be.Group)
+				}
+			}
+		}
 	}
+
 	return d
 }
 
-func (d *backendDiff) isEqual() bool         { return d.old.Equal((d.new)) }
+func (d *backendDiff) isEqual() bool         { return d.old.Equal(d.new) && d.changed.Len() == 0 }
 func (d *backendDiff) toRemove() sets.String { return d.old.Difference(d.new) }
 func (d *backendDiff) toAdd() sets.String    { return d.new.Difference(d.old) }
 
@@ -127,6 +151,7 @@ func backendsForNEGs(negs []*composite.NetworkEndpointGroup, sp *utils.ServicePo
 		default:
 			newBackend.BalancingMode = string(Rate)
 			newBackend.MaxRatePerEndpoint = maxRPS
+			newBackend.CapacityScaler = 1.0
 
 			if flags.F.EnableTrafficScaling {
 				if sp.MaxRatePerEndpoint != nil {
