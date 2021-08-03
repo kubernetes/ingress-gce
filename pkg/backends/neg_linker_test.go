@@ -186,6 +186,12 @@ func TestDiffBackends(t *testing.T) {
 			new:     []*composite.Backend{{Group: "a", CapacityScaler: 0.5}},
 			changed: sets.NewString("a"),
 		},
+		{
+			name:    "no change",
+			old:     []*composite.Backend{{Group: "a", CapacityScaler: 1.0}},
+			new:     []*composite.Backend{{Group: "a", CapacityScaler: 1.0}},
+			isEqual: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			diff := diffBackends(tc.old, tc.new)
@@ -272,6 +278,7 @@ func TestBackendsForNEG(t *testing.T) {
 				{
 					BalancingMode:      "RATE",
 					MaxRatePerEndpoint: maxRPS,
+					CapacityScaler:     1.0,
 					Group:              "/neg1",
 				},
 			},
@@ -291,6 +298,7 @@ func TestBackendsForNEG(t *testing.T) {
 				{
 					BalancingMode:      "RATE",
 					MaxRatePerEndpoint: 1234,
+					CapacityScaler:     1.0,
 					Group:              "/neg1",
 				},
 			},

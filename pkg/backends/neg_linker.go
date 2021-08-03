@@ -110,6 +110,10 @@ func diffBackends(old, new []*composite.Backend) *backendDiff {
 		d.new.Insert(be.Group)
 
 		if oldBe, ok := oldMap[be.Group]; ok {
+			// Note: if you are comparing a value that has a non-zero default
+			// value (e.g. CapacityScaler is 1.0), you will need to set that
+			// value when creating a new Backend to avoid a false positive when
+			// computing diffs.
 			if flags.F.EnableTrafficScaling {
 				var changed bool
 				changed = changed || oldBe.MaxRatePerEndpoint != be.MaxRatePerEndpoint
@@ -147,6 +151,7 @@ func backendsForNEGs(negs []*composite.NetworkEndpointGroup, sp *utils.ServicePo
 		default:
 			newBackend.BalancingMode = string(Rate)
 			newBackend.MaxRatePerEndpoint = maxRPS
+			newBackend.CapacityScaler = 1.0
 
 			if flags.F.EnableTrafficScaling {
 				if sp.MaxRatePerEndpoint != nil {
