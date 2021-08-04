@@ -584,35 +584,9 @@ func TestPathValidation(t *testing.T) {
 			path:        "/test/*",
 			expectValid: false,
 		},
-		{
-			desc:              "IngressGA Disabled, empty path type",
-			pathType:          "",
-			path:              "/test",
-			expectValid:       true,
-			expectedPaths:     []string{"/test"},
-			ingressGADisabled: true,
-		},
-		{
-			desc:              "IngressGA Disabled, ImplementationSpecific path type",
-			pathType:          v1.PathTypeImplementationSpecific,
-			path:              "/test",
-			expectValid:       true,
-			expectedPaths:     []string{"/test"},
-			ingressGADisabled: true,
-		},
-		{
-			desc:              "Invalid IngressGA Disabled, non ImplementationSpecific path type",
-			pathType:          v1.PathTypePrefix,
-			path:              "/test",
-			expectValid:       false,
-			expectedPaths:     []string{"/test"},
-			ingressGADisabled: true,
-		},
 	}
 
 	for _, tc := range testcases {
-		flags.F.EnableIngressGAFields = !tc.ingressGADisabled
-
 		path := v1.HTTPIngressPath{
 			Path: tc.path,
 			Backend: v1.IngressBackend{

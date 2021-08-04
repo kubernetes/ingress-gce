@@ -19,8 +19,6 @@ import (
 	"strconv"
 	"strings"
 
-	"k8s.io/ingress-gce/pkg/flags"
-
 	"k8s.io/klog"
 
 	api_v1 "k8s.io/api/core/v1"
@@ -38,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backendconfig"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/errors"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -304,9 +303,6 @@ func validateAndGetPaths(path v1.HTTPIngressPath) ([]string, error) {
 	pathType := v1.PathTypeImplementationSpecific
 
 	if path.PathType != nil {
-		if !flags.F.EnableIngressGAFields && *path.PathType != v1.PathTypeImplementationSpecific {
-			return nil, fmt.Errorf("only \"ImplementationSpecific\" path type is supported")
-		}
 		pathType = *path.PathType
 	}
 
