@@ -1240,6 +1240,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		testContext.PodInformer.GetIndexer(),
 		testContext.ServiceInformer.GetIndexer(),
 		testContext.EndpointInformer.GetIndexer(),
+		testContext.EndpointSliceInformer.GetIndexer(),
 		testContext.NodeInformer.GetIndexer(),
 		testContext.SvcNegInformer.GetIndexer(),
 		reflector,
@@ -1248,6 +1249,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		string(kubeSystemUID),
 		testContext.SvcNegClient,
 		customName,
+		false, //enableEndpointSlices
 	)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
 	return negsyncer, transactionSyncer

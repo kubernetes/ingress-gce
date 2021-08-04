@@ -304,7 +304,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		enableAsm = cmconfig.EnableASM
 		asmServiceNEGSkipNamespaces = cmconfig.ASMServiceNEGSkipNamespaces
 	}
-
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
 	negController := neg.NewController(
 		ctx.KubeClient,
@@ -316,6 +315,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		ctx.PodInformer,
 		ctx.NodeInformer,
 		ctx.EndpointInformer,
+		ctx.EndpointSliceInformer,
 		ctx.DestinationRuleInformer,
 		ctx.SvcNegInformer,
 		ctx.HasSynced,
@@ -333,6 +333,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		flags.F.EnableNonGCPMode,
 		enableAsm,
 		asmServiceNEGSkipNamespaces,
+		flags.F.EnableEndpointSlices,
 	)
 
 	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)
