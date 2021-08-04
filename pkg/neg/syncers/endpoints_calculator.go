@@ -53,19 +53,19 @@ func (l *LocalL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
 	// List all nodes where the service endpoints are running. Get a subset of the desired count.
 	zoneNodeMap := make(map[string][]*v1.Node)
 	nodeNames := sets.String{}
 	numEndpoints := 0
-	for _, curEp := range ep.Subsets {
-		for _, addr := range curEp.Addresses {
+	for _, ed := range eds {
+		for _, addr := range ed.Addresses {
 			if addr.NodeName == nil {
-				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", addr.IP, ep.Namespace, ep.Name)
+				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", addr.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
 			}
 			if addr.TargetRef == nil {
-				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", addr.IP, ep.Namespace, ep.Name)
+				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", addr.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 				continue
 			}
 			numEndpoints++
@@ -123,7 +123,7 @@ func (l *ClusterL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
 	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
 	nodes, _ := utils.ListWithPredicate(l.nodeLister, utils.GetNodeConditionPredicate())
 
@@ -167,8 +167,8 @@ func (l *L7EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *L7EndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
-	return toZoneNetworkEndpointMap(ep, l.zoneGetter, l.servicePortName, l.podLister, l.subsetLabels, l.networkEndpointType)
+func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+	return toZoneNetworkEndpointMap(eds, l.zoneGetter, l.servicePortName, l.podLister, l.subsetLabels, l.networkEndpointType)
 }
 
 func nodeMapToString(nodeMap map[string][]*v1.Node) string {

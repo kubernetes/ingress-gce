@@ -193,7 +193,8 @@ func (s *transactionSyncer) syncInternal() error {
 		return nil
 	}
 
-	targetMap, endpointPodMap, err := s.endpointsCalculator.CalculateEndpoints(ep.(*apiv1.Endpoints), currentMap)
+	endpointsData := negtypes.EndpointsDataFromEndpoints(ep.(*apiv1.Endpoints))
+	targetMap, endpointPodMap, err := s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
 	if err != nil {
 		err = fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
 		return err
