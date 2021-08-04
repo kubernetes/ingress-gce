@@ -196,6 +196,7 @@ func main() {
 		EnableASMConfigMap:    flags.F.EnableASMConfigMapBasedConfig,
 		ASMConfigMapNamespace: flags.F.ASMConfigMapBasedConfigNamespace,
 		ASMConfigMapName:      flags.F.ASMConfigMapBasedConfigCMName,
+		EndpointSlicesEnabled: flags.F.EnableEndpointSlices,
 	}
 	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, ingParamsClient, svcAttachmentClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
