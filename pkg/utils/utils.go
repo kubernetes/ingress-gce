@@ -358,12 +358,6 @@ type NodeConditionPredicate func(node *api_v1.Node) bool
 // kubernetes/kubernetes/pkg/controller/service/service_controller.go
 func GetNodeConditionPredicate() NodeConditionPredicate {
 	return func(node *api_v1.Node) bool {
-		// We add the master to the node list, but its unschedulable.  So we use this to filter
-		// the master.
-		if node.Spec.Unschedulable {
-			return false
-		}
-
 		// Get all nodes that have a taint with NoSchedule effect
 		for _, taint := range node.Spec.Taints {
 			if taint.Key == ToBeDeletedTaint {
