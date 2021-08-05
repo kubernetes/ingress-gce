@@ -202,7 +202,7 @@ func (s *transactionSyncer) syncInternal() error {
 	var endpointPodMap negtypes.EndpointPodMap
 
 	if s.enableEndpointSlices {
-		slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.EndpointSlicesByServiceKey(s.Namespace, s.Name))
+		slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
 		if err != nil {
 			return err
 		}

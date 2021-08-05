@@ -17,8 +17,6 @@ limitations under the License.
 package endpointslices
 
 import (
-	"fmt"
-
 	discovery "k8s.io/api/discovery/v1beta1"
 )
 
@@ -26,14 +24,6 @@ const (
 	// The name of the by service index in the EndpointSlices.
 	EndpointSlicesByServiceIndex = "by-service-index"
 )
-
-/*
-Prepares Endpoint Slices by Service index key.
-The key is just normal formatting "namespace/name".
-*/
-func EndpointSlicesByServiceKey(namespace, serviceName string) string {
-	return fmt.Sprintf("%s/%s", namespace, serviceName)
-}
 
 /*
 Index function. If applied for an EndpointSlice with an associated service
@@ -46,9 +36,9 @@ func EndpointSlicesByServiceFunc(obj interface{}) ([]string, error) {
 	if !ok {
 		return []string{}, nil
 	}
-	serviceName, ok := es.Labels[discovery.LabelServiceName]
-	if !ok {
+	key, err := EndpointSlicesServiceKey(es)
+	if err != nil {
 		return []string{}, nil
 	}
-	return []string{EndpointSlicesByServiceKey(es.Namespace, serviceName)}, nil
+	return []string{key}, nil
 }

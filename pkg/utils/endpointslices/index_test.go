@@ -23,15 +23,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestEndpointSlicesByServiceKey(t *testing.T) {
-	t.Parallel()
-	key := EndpointSlicesByServiceKey("nmspc", "srvc")
-	correctKey := "nmspc/srvc"
-	if key != correctKey {
-		t.Errorf("Incorrect key, got: %s, expected: %s", key, correctKey)
-	}
-}
-
 func TestEndpointSlicesByServiceFunc(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {

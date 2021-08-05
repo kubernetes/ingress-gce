@@ -50,6 +50,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	namer2 "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
@@ -787,27 +788,20 @@ func (c *Controller) enqueueEndpointSlice(obj interface{}) {
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
-			klog.Errorf("unexpected object type: %T", obj)
+			klog.Errorf("Unexpected object type: %T, expected cache.DeletedFinalStateUnknown", obj)
 			return
 		}
 		if endpointSlice, ok = tombstone.Obj.(*discovery.EndpointSlice); !ok {
-			klog.Errorf("unexpected object type: %T", obj)
+			klog.Errorf("Unexpected tombstone object type: %T, expected *discovery.EndpointSlice", obj)
 			return
 		}
 	}
-	serviceName, ok := endpointSlice.Labels[discovery.LabelServiceName]
-	// Check if serviceName contains a namespace
-	serviceNamespace, _, err := cache.SplitMetaNamespaceKey(serviceName)
+	key, err := endpointslices.EndpointSlicesServiceKey(endpointSlice)
 	if err != nil {
-		klog.Errorf("Failed to split service name: %v", err)
+		klog.Errorf("Failed to find a service label inside endpoint slice %v: %v", endpointSlice, err)
 		return
 	}
-	if len(serviceNamespace) > 0 || len(endpointSlice.GetNamespace()) == 0 {
-		c.endpointQueue.Add(serviceName)
-		return
-	}
-	// Prepend serviceName with the namespace of the EndpointSlice
-	c.endpointQueue.Add(endpointSlice.GetNamespace() + "/" + serviceName)
+	c.endpointQueue.Add(key)
 }
 
 func (c *Controller) enqueueNode(obj interface{}) {
