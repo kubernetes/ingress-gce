@@ -526,7 +526,7 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 					},
 				},
 			},
-			expectAccept: false,
+			expectAccept: true,
 			name:         "unschedulable",
 		}, {
 			node: api_v1.Node{
