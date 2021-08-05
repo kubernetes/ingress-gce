@@ -273,11 +273,8 @@ func (ctx *ControllerContext) HasSynced() bool {
 		ctx.BackendConfigInformer.HasSynced,
 		ctx.PodInformer.HasSynced,
 		ctx.NodeInformer.HasSynced,
+		ctx.EndpointInformer.HasSynced,
 		ctx.SvcNegInformer.HasSynced,
-	}
-
-	if ctx.EndpointInformer != nil {
-		funcs = append(funcs, ctx.EndpointInformer.HasSynced)
 	}
 
 	if ctx.EndpointSliceInformer != nil {
