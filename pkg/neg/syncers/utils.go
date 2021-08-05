@@ -219,7 +219,7 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object and Istio:DestinationRule subset into zone and endpoints map
-func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, podLister cache.Indexer, subsetLables string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
+func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, podLister cache.Indexer, subsetLabels string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
 	if eds == nil {
@@ -247,13 +247,13 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 		// processAddressFunc adds the qualified endpoints from the input list into the endpointSet group by zone
 		for _, endpointAddress := range ed.Addresses {
 			// Apply the selector if Istio:DestinationRule subset labels provided.
-			if subsetLables != "" {
+			if subsetLabels != "" {
 				if endpointAddress.TargetRef == nil || endpointAddress.TargetRef.Kind != "Pod" {
 					klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have a Pod as the TargetRef object. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 					continue
 				}
 				// Skip if the endpoint's pod not matching the subset lables.
-				if !shouldPodBeInDestinationRuleSubset(podLister, endpointAddress.TargetRef.Namespace, endpointAddress.TargetRef.Name, subsetLables) {
+				if !shouldPodBeInDestinationRuleSubset(podLister, endpointAddress.TargetRef.Namespace, endpointAddress.TargetRef.Name, subsetLabels) {
 					continue
 				}
 			}
@@ -388,7 +388,7 @@ func shouldPodBeInNeg(podLister cache.Indexer, namespace, name string) bool {
 }
 
 // shouldPodBeInDestinationRuleSubset return ture if pod match the DestinationRule subset lables.
-func shouldPodBeInDestinationRuleSubset(podLister cache.Indexer, namespace, name string, subsetLables string) bool {
+func shouldPodBeInDestinationRuleSubset(podLister cache.Indexer, namespace, name string, subsetLabels string) bool {
 	if podLister == nil {
 		return false
 	}
@@ -407,7 +407,7 @@ func shouldPodBeInDestinationRuleSubset(podLister cache.Indexer, namespace, name
 		return false
 	}
 
-	selector, err := labels.Parse(subsetLables)
+	selector, err := labels.Parse(subsetLabels)
 	if err != nil {
 		klog.Errorf("Failed to parse the subset selectors.")
 		return false
