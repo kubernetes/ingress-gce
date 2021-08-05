@@ -345,6 +345,9 @@ func (key NegSyncerKey) GetAPIVersion() meta.Version {
 // EndpointPodMap is a map from network endpoint to a namespaced name of a pod
 type EndpointPodMap map[NetworkEndpoint]types.NamespacedName
 
+// Abstraction over Endpoints and EndpointSlices.
+// It contains all the information needed to set up
+// GCP Load Balancer.
 type EndpointsData struct {
 	Meta      *metav1.ObjectMeta
 	Ports     []PortData
@@ -356,9 +359,6 @@ type PortData struct {
 	Port int32
 }
 
-// Abstraction over Endpoints and EndpointSlices.
-// It contains all the information needed to set up
-// GCP Load Balancer.
 type AddressData struct {
 	TargetRef *apiv1.ObjectReference
 	NodeName  *string
@@ -366,6 +366,8 @@ type AddressData struct {
 	Ready     bool
 }
 
+// Converts API Endpoints to the EndpointsData abstraction.
+// All endpoints are converted, not ready addresses are converted with Reade=false.
 func EndpointsDataFromEndpoints(ep *apiv1.Endpoints) []EndpointsData {
 	result := make([]EndpointsData, 0, len(ep.Subsets))
 	for _, subset := range ep.Subsets {
@@ -385,6 +387,9 @@ func EndpointsDataFromEndpoints(ep *apiv1.Endpoints) []EndpointsData {
 	return result
 }
 
+// Converts API EndpointSlice list to the EndpointsData abstraction.
+// Terminating endpoints are ignored.
+//
 func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []EndpointsData {
 	result := make([]EndpointsData, 0, len(slices))
 	for _, slice := range slices {
