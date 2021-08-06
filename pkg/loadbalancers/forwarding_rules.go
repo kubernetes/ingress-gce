@@ -294,7 +294,7 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	return composite.GetForwardingRule(l.cloud, key, fr.Version)
 }
 
-func (l *L4) getForwardingRule(name string, version meta.Version) *composite.ForwardingRule {
+func (l *L4) GetForwardingRule(name string, version meta.Version) *composite.ForwardingRule {
 	key, err := l.CreateKey(name)
 	if err != nil {
 		klog.Errorf("Failed to create key for fetching existing forwarding rule %s, err: %v", name, err)
