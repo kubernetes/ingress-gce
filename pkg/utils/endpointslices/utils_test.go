@@ -75,18 +75,6 @@ func TestEndpointSlicesServiceKey(t *testing.T) {
 			expectedError: false,
 		},
 		{
-			desc: "Proper key with namespace from the label",
-			slice: &discovery.EndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "slice",
-					Namespace: "nmspc1",
-					Labels:    map[string]string{discovery.LabelServiceName: "nmspc2/svc"},
-				},
-			},
-			expectedKey:   "nmspc2/svc",
-			expectedError: false,
-		},
-		{
 			desc: "Proper key without namespace",
 			slice: &discovery.EndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
@@ -105,17 +93,6 @@ func TestEndpointSlicesServiceKey(t *testing.T) {
 					Name:      "slice",
 					Namespace: "",
 					Labels:    map[string]string{},
-				},
-			},
-			expectedError: true,
-		},
-		{
-			desc: "Error with slice with invalid service name label",
-			slice: &discovery.EndpointSlice{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "slice",
-					Namespace: "",
-					Labels:    map[string]string{discovery.LabelServiceName: "a/b/c"},
 				},
 			},
 			expectedError: true,

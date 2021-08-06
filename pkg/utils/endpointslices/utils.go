@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	discovery "k8s.io/api/discovery/v1beta1"
-	"k8s.io/client-go/tools/cache"
 )
 
 func FormatEndpointSlicesServiceKey(namespace, name string) string {
@@ -38,14 +37,6 @@ func EndpointSlicesServiceKey(slice *discovery.EndpointSlice) (string, error) {
 	serviceName, ok := slice.Labels[discovery.LabelServiceName]
 	if !ok {
 		return "", errors.New(fmt.Sprintf("Failed to find a service label inside endpoint slice %v", slice))
-	}
-	// Check if serviceName contains a namespace
-	serviceNamespace, serviceName, err := cache.SplitMetaNamespaceKey(serviceName)
-	if err != nil {
-		return "", errors.New(fmt.Sprintf("Failed to find a service label inside endpoint slice %v", slice))
-	}
-	if len(serviceNamespace) > 0 || len(slice.GetNamespace()) == 0 {
-		return FormatEndpointSlicesServiceKey(serviceNamespace, serviceName), nil
 	}
 	return FormatEndpointSlicesServiceKey(slice.GetNamespace(), serviceName), nil
 }

@@ -1248,14 +1248,13 @@ func TestEnableNegCRD(t *testing.T) {
 func TestEnqueueEndpoints(t *testing.T) {
 	namespace := "nmspc"
 	service := "svc"
-	key := namespace + "/" + service
 	t.Parallel()
 	testCases := []struct {
 		desc          string
 		useSlices     bool
 		endpoints     *v1.Endpoints
 		endpointSlice *discovery.EndpointSlice
-		expectFailure bool
+		expectedKey   string
 	}{
 		{
 			desc:      "Enqueue endpoint",
@@ -1266,6 +1265,7 @@ func TestEnqueueEndpoints(t *testing.T) {
 					Namespace: namespace,
 				},
 			},
+			expectedKey: fmt.Sprintf("%s/%s", namespace, service),
 		},
 		{
 			desc:      "Enqueue endpoint slices",
@@ -1277,6 +1277,7 @@ func TestEnqueueEndpoints(t *testing.T) {
 					Labels:    map[string]string{discovery.LabelServiceName: service},
 				},
 			},
+			expectedKey: fmt.Sprintf("%s/%s", namespace, service),
 		},
 		{
 			desc:      "Enqueue malformed endpoint slices",
@@ -1288,7 +1289,7 @@ func TestEnqueueEndpoints(t *testing.T) {
 					Labels:    map[string]string{discovery.LabelServiceName: "a/b/c/d"},
 				},
 			},
-			expectFailure: true,
+			expectedKey: fmt.Sprintf("%s/%s", namespace, "a/b/c/d"),
 		},
 	}
 	for _, tc := range testCases {
@@ -1329,7 +1330,7 @@ func TestEnqueueEndpoints(t *testing.T) {
 				t.Errorf("Got list - %v of size %d, want 1 element", list, len(list))
 			}
 			t.Logf("Checking for enqueue of endopoint create event")
-			ensureEndpointEnqueue(t, key, controller, tc.expectFailure)
+			ensureEndpointEnqueue(t, tc.expectedKey, controller)
 		})
 	}
 }
@@ -1344,16 +1345,13 @@ func getEvent(eventChan chan string, queue *workqueue.RateLimitingInterface) {
 	eventChan <- item.(string)
 }
 
-func ensureEnqueue(t *testing.T, wantedKey string, queue *workqueue.RateLimitingInterface, expectFailure bool) {
+func ensureEnqueue(t *testing.T, wantedKey string, queue *workqueue.RateLimitingInterface) {
 	t.Helper()
 	eventChan := make(chan string)
 	go getEvent(eventChan, queue)
 	for {
 		select {
 		case gotKey := <-eventChan:
-			if expectFailure {
-				t.Errorf("Got key %q, expected nothing", gotKey)
-			}
 			if gotKey != wantedKey {
 				t.Errorf("Got key %q, want %q", gotKey, wantedKey)
 			} else {
@@ -1361,20 +1359,18 @@ func ensureEnqueue(t *testing.T, wantedKey string, queue *workqueue.RateLimiting
 				return
 			}
 		case <-time.After(5 * time.Second):
-			if !expectFailure {
-				t.Errorf("Timed out waiting for enqueue %v", time.Now())
-			}
+			t.Errorf("Timed out waiting for enqueue %v", time.Now())
 			return
 		}
 	}
 }
 
 func ensureNodeEnqueue(t *testing.T, nodeKey string, controller *Controller) {
-	ensureEnqueue(t, nodeKey, &controller.nodeQueue, false)
+	ensureEnqueue(t, nodeKey, &controller.nodeQueue)
 }
 
-func ensureEndpointEnqueue(t *testing.T, endpointKey string, controller *Controller, expectFailure bool) {
-	ensureEnqueue(t, endpointKey, &controller.endpointQueue, expectFailure)
+func ensureEndpointEnqueue(t *testing.T, endpointKey string, controller *Controller) {
+	ensureEnqueue(t, endpointKey, &controller.endpointQueue)
 }
 
 func validateNegCRs(t *testing.T, svc *v1.Service, svcNegClient svcnegclient.Interface, namer negtypes.NetworkEndpointGroupNamer, negPortNameMap map[int32]string) {
