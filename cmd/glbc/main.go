@@ -196,6 +196,7 @@ func main() {
 		EnableASMConfigMap:    flags.F.EnableASMConfigMapBasedConfig,
 		ASMConfigMapNamespace: flags.F.ASMConfigMapBasedConfigNamespace,
 		ASMConfigMapName:      flags.F.ASMConfigMapBasedConfigCMName,
+		EndpointSlicesEnabled: flags.F.EnableEndpointSlices,
 	}
 	ctx := ingctx.NewControllerContext(kubeConfig, kubeClient, backendConfigClient, frontendConfigClient, svcNegClient, ingParamsClient, svcAttachmentClient, cloud, namer, kubeSystemUID, ctxConfig)
 	go app.RunHTTPServer(ctx.HealthCheck)
@@ -303,7 +304,6 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		enableAsm = cmconfig.EnableASM
 		asmServiceNEGSkipNamespaces = cmconfig.ASMServiceNEGSkipNamespaces
 	}
-
 	// TODO: Refactor NEG to use cloud mocks so ctx.Cloud can be referenced within NewController.
 	negController := neg.NewController(
 		ctx.KubeClient,
@@ -315,6 +315,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		ctx.PodInformer,
 		ctx.NodeInformer,
 		ctx.EndpointInformer,
+		ctx.EndpointSliceInformer,
 		ctx.DestinationRuleInformer,
 		ctx.SvcNegInformer,
 		ctx.HasSynced,
@@ -332,6 +333,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		flags.F.EnableNonGCPMode,
 		enableAsm,
 		asmServiceNEGSkipNamespaces,
+		flags.F.EnableEndpointSlices,
 	)
 
 	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)

@@ -18,15 +18,16 @@ package syncers
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"time"
 
-	"fmt"
-
-	"strings"
-
 	apiv1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
+	discovery "k8s.io/api/discovery/v1beta1"
+	"k8s.io/ingress-gce/pkg/utils/endpointslices"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -64,6 +65,7 @@ type transactionSyncer struct {
 	podLister           cache.Indexer
 	serviceLister       cache.Indexer
 	endpointLister      cache.Indexer
+	endpointSliceLister cache.Indexer
 	nodeLister          cache.Indexer
 	svcNegLister        cache.Indexer
 	recorder            record.EventRecorder
@@ -85,27 +87,47 @@ type transactionSyncer struct {
 
 	// customName indicates whether the NEG name is a generated one or custom one
 	customName bool
+
+	enableEndpointSlices bool
 }
 
-func NewTransactionSyncer(negSyncerKey negtypes.NegSyncerKey, recorder record.EventRecorder, cloud negtypes.NetworkEndpointGroupCloud, zoneGetter negtypes.ZoneGetter, podLister cache.Indexer, serviceLister cache.Indexer, endpointLister cache.Indexer, nodeLister cache.Indexer, svcNegLister cache.Indexer, reflector readiness.Reflector, epc negtypes.NetworkEndpointsCalculator, kubeSystemUID string, svcNegClient svcnegclient.Interface, customName bool) negtypes.NegSyncer {
+func NewTransactionSyncer(
+	negSyncerKey negtypes.NegSyncerKey,
+	recorder record.EventRecorder,
+	cloud negtypes.NetworkEndpointGroupCloud,
+	zoneGetter negtypes.ZoneGetter,
+	podLister cache.Indexer,
+	serviceLister cache.Indexer,
+	endpointLister cache.Indexer,
+	endpointSliceLister cache.Indexer,
+	nodeLister cache.Indexer,
+	svcNegLister cache.Indexer,
+	reflector readiness.Reflector,
+	epc negtypes.NetworkEndpointsCalculator,
+	kubeSystemUID string,
+	svcNegClient svcnegclient.Interface,
+	customName bool,
+	enableEndpointSlices bool) negtypes.NegSyncer {
 	// TransactionSyncer implements the syncer core
 	ts := &transactionSyncer{
-		NegSyncerKey:        negSyncerKey,
-		needInit:            true,
-		transactions:        NewTransactionTable(),
-		nodeLister:          nodeLister,
-		podLister:           podLister,
-		serviceLister:       serviceLister,
-		endpointLister:      endpointLister,
-		svcNegLister:        svcNegLister,
-		recorder:            recorder,
-		cloud:               cloud,
-		zoneGetter:          zoneGetter,
-		endpointsCalculator: epc,
-		reflector:           reflector,
-		kubeSystemUID:       kubeSystemUID,
-		svcNegClient:        svcNegClient,
-		customName:          customName,
+		NegSyncerKey:         negSyncerKey,
+		needInit:             true,
+		transactions:         NewTransactionTable(),
+		nodeLister:           nodeLister,
+		podLister:            podLister,
+		serviceLister:        serviceLister,
+		endpointLister:       endpointLister,
+		endpointSliceLister:  endpointSliceLister,
+		svcNegLister:         svcNegLister,
+		recorder:             recorder,
+		cloud:                cloud,
+		zoneGetter:           zoneGetter,
+		endpointsCalculator:  epc,
+		reflector:            reflector,
+		kubeSystemUID:        kubeSystemUID,
+		svcNegClient:         svcNegClient,
+		customName:           customName,
+		enableEndpointSlices: enableEndpointSlices,
 	}
 	// Syncer implements life cycle logic
 	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts)
@@ -176,24 +198,44 @@ func (s *transactionSyncer) syncInternal() error {
 	mergeTransactionIntoZoneEndpointMap(currentMap, s.transactions)
 	s.logStats(currentMap, "after in-progress operations have completed, NEG endpoints")
 
-	ep, exists, err := s.endpointLister.Get(
-		&apiv1.Endpoints{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      s.Name,
-				Namespace: s.Namespace,
+	var targetMap map[string]negtypes.NetworkEndpointSet
+	var endpointPodMap negtypes.EndpointPodMap
+
+	if s.enableEndpointSlices {
+		slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
+		if err != nil {
+			return err
+		}
+		if len(slices) < 1 {
+			klog.Warningf("Endpoint slices for service %s/%s don't exist. Skipping NEG sync", s.Namespace, s.Name)
+			return nil
+		}
+		endpointSlices := make([]*discovery.EndpointSlice, len(slices))
+		for i, slice := range slices {
+			endpointSlices[i] = slice.(*discovery.EndpointSlice)
+		}
+		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
+		targetMap, endpointPodMap, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+	} else {
+		ep, exists, err := s.endpointLister.Get(
+			&apiv1.Endpoints{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      s.Name,
+					Namespace: s.Namespace,
+				},
 			},
-		},
-	)
-	if err != nil {
-		return err
+		)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			klog.Warningf("Endpoint %s/%s does not exist. Skipping NEG sync", s.Namespace, s.Name)
+			return nil
+		}
+		endpointsData := negtypes.EndpointsDataFromEndpoints(ep.(*apiv1.Endpoints))
+		targetMap, endpointPodMap, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
 	}
 
-	if !exists {
-		klog.Warningf("Endpoint %s/%s does not exist. Skipping NEG sync", s.Namespace, s.Name)
-		return nil
-	}
-
-	targetMap, endpointPodMap, err := s.endpointsCalculator.CalculateEndpoints(ep.(*apiv1.Endpoints), currentMap)
 	if err != nil {
 		err = fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
 		return err

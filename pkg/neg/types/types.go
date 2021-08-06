@@ -23,8 +23,10 @@ import (
 	"strings"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
+	apiv1 "k8s.io/api/core/v1"
+	discovery "k8s.io/api/discovery/v1beta1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -342,3 +344,70 @@ func (key NegSyncerKey) GetAPIVersion() meta.Version {
 
 // EndpointPodMap is a map from network endpoint to a namespaced name of a pod
 type EndpointPodMap map[NetworkEndpoint]types.NamespacedName
+
+// Abstraction over Endpoints and EndpointSlices.
+// It contains all the information needed to set up
+// GCP Load Balancer.
+type EndpointsData struct {
+	Meta      *metav1.ObjectMeta
+	Ports     []PortData
+	Addresses []AddressData
+}
+
+type PortData struct {
+	Name string
+	Port int32
+}
+
+type AddressData struct {
+	TargetRef *apiv1.ObjectReference
+	NodeName  *string
+	Addresses []string
+	Ready     bool
+}
+
+// Converts API Endpoints to the EndpointsData abstraction.
+// All endpoints are converted, not ready addresses are converted with Reade=false.
+func EndpointsDataFromEndpoints(ep *apiv1.Endpoints) []EndpointsData {
+	result := make([]EndpointsData, 0, len(ep.Subsets))
+	for _, subset := range ep.Subsets {
+		ports := make([]PortData, 0)
+		addresses := make([]AddressData, 0)
+		for _, port := range subset.Ports {
+			ports = append(ports, PortData{Name: port.Name, Port: port.Port})
+		}
+		for _, addr := range subset.Addresses {
+			addresses = append(addresses, AddressData{TargetRef: addr.TargetRef, NodeName: addr.NodeName, Addresses: []string{addr.IP}, Ready: true})
+		}
+		for _, addr := range subset.NotReadyAddresses {
+			addresses = append(addresses, AddressData{TargetRef: addr.TargetRef, NodeName: addr.NodeName, Addresses: []string{addr.IP}, Ready: false})
+		}
+		result = append(result, EndpointsData{Meta: &ep.ObjectMeta, Ports: ports, Addresses: addresses})
+	}
+	return result
+}
+
+// Converts API EndpointSlice list to the EndpointsData abstraction.
+// Terminating endpoints are ignored.
+//
+func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []EndpointsData {
+	result := make([]EndpointsData, 0, len(slices))
+	for _, slice := range slices {
+		ports := make([]PortData, 0)
+		addresses := make([]AddressData, 0)
+		for _, port := range slice.Ports {
+			ports = append(ports, PortData{Name: *port.Name, Port: *port.Port})
+		}
+		for _, ep := range slice.Endpoints {
+			// Ignore terminating endpoints. Nil means that endpoint is not terminating.
+			if ep.Conditions.Terminating != nil && *ep.Conditions.Terminating {
+				continue
+			}
+			// Endpoint is ready when the Ready is nil or when it's value is true.
+			ready := ep.Conditions.Ready == nil || *ep.Conditions.Ready
+			addresses = append(addresses, AddressData{TargetRef: ep.TargetRef, NodeName: ep.NodeName, Addresses: ep.Addresses, Ready: ready})
+		}
+		result = append(result, EndpointsData{Meta: &slice.ObjectMeta, Ports: ports, Addresses: addresses})
+	}
+	return result
+}

@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	informerv1 "k8s.io/client-go/informers/core/v1"
+	discoveryinformer "k8s.io/client-go/informers/discovery/v1beta1"
 	informernetworking "k8s.io/client-go/informers/networking/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -52,6 +53,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	informersvcneg "k8s.io/ingress-gce/pkg/svcneg/client/informers/externalversions/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -89,6 +91,7 @@ type ControllerContext struct {
 	PodInformer             cache.SharedIndexInformer
 	NodeInformer            cache.SharedIndexInformer
 	EndpointInformer        cache.SharedIndexInformer
+	EndpointSliceInformer   cache.SharedIndexInformer
 	DestinationRuleInformer cache.SharedIndexInformer
 	ConfigMapInformer       cache.SharedIndexInformer
 	SvcNegInformer          cache.SharedIndexInformer
@@ -122,6 +125,7 @@ type ControllerContextConfig struct {
 	EnableASMConfigMap    bool
 	ASMConfigMapNamespace string
 	ASMConfigMapName      string
+	EndpointSlicesEnabled bool
 }
 
 // NewControllerContext returns a new shared set of informers.
@@ -137,7 +141,6 @@ func NewControllerContext(
 	clusterNamer *namer.Namer,
 	kubeSystemUID types.UID,
 	config ControllerContextConfig) *ControllerContext {
-
 	context := &ControllerContext{
 		KubeConfig:              kubeConfig,
 		KubeClient:              kubeClient,
@@ -162,11 +165,9 @@ func NewControllerContext(
 		recorders:        map[string]record.EventRecorder{},
 		healthChecks:     make(map[string]func() error),
 	}
-
 	if config.FrontendConfigEnabled {
 		context.FrontendConfigInformer = informerfrontendconfig.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
-
 	if ingParamsClient != nil {
 		context.IngClassInformer = informernetworking.NewIngressClassInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
 		context.IngParamsInformer = informeringparams.NewGCPIngressParamsInformer(ingParamsClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
@@ -178,6 +179,15 @@ func NewControllerContext(
 
 	if flags.F.GKEClusterType == ClusterTypeRegional {
 		context.RegionalCluster = true
+	}
+
+	// TODO: Remove pkg/controller/translator/translator.go dependency on Endpoints.
+	if config.EndpointSlicesEnabled {
+		// Do not trigger periodic resync on EndpointSlice object.
+		// This aims improve NEG controller performance by avoiding unnecessary NEG sync that triggers for each NEG syncer.
+		// As periodic resync may temporary starve NEG API ratelimit quota.
+		context.EndpointSliceInformer = discoveryinformer.NewEndpointSliceInformer(kubeClient, config.Namespace, 0,
+			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc, endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc})
 	}
 
 	return context
@@ -267,6 +277,10 @@ func (ctx *ControllerContext) HasSynced() bool {
 		ctx.SvcNegInformer.HasSynced,
 	}
 
+	if ctx.EndpointSliceInformer != nil {
+		funcs = append(funcs, ctx.EndpointSliceInformer.HasSynced)
+	}
+
 	if ctx.FrontendConfigInformer != nil {
 		funcs = append(funcs, ctx.FrontendConfigInformer.HasSynced)
 	}
@@ -348,6 +362,9 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	go ctx.NodeInformer.Run(stopCh)
 	if ctx.EndpointInformer != nil {
 		go ctx.EndpointInformer.Run(stopCh)
+	}
+	if ctx.EndpointSliceInformer != nil {
+		go ctx.EndpointSliceInformer.Run(stopCh)
 	}
 	if ctx.BackendConfigInformer != nil {
 		go ctx.BackendConfigInformer.Run(stopCh)

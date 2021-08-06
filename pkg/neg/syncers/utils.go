@@ -219,19 +219,19 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 }
 
 // toZoneNetworkEndpointMap translates addresses in endpoints object and Istio:DestinationRule subset into zone and endpoints map
-func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.ZoneGetter, servicePortName string, podLister cache.Indexer, subsetLables string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
+func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, podLister cache.Indexer, subsetLabels string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
-	if endpoints == nil {
+	if eds == nil {
 		klog.Errorf("Endpoint object is nil")
 		return zoneNetworkEndpointMap, networkEndpointPodMap, nil
 	}
 	var foundMatchingPort bool
-	for _, subset := range endpoints.Subsets {
+	for _, ed := range eds {
 		matchPort := ""
 		// service spec allows target Port to be a named Port.
 		// support both explicit Port and named Port.
-		for _, port := range subset.Ports {
+		for _, port := range ed.Ports {
 			if port.Name == servicePortName {
 				matchPort = strconv.Itoa(int(port.Port))
 				break
@@ -245,61 +245,58 @@ func toZoneNetworkEndpointMap(endpoints *apiv1.Endpoints, zoneGetter negtypes.Zo
 		foundMatchingPort = true
 
 		// processAddressFunc adds the qualified endpoints from the input list into the endpointSet group by zone
-		processAddressFunc := func(addresses []v1.EndpointAddress, includeAllEndpoints bool) error {
-			for _, address := range addresses {
-				// Apply the selector if Istio:DestinationRule subset labels provided.
-				if subsetLables != "" {
-					if address.TargetRef == nil || address.TargetRef.Kind != "Pod" {
-						klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have a Pod as the TargetRef object. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
-						continue
-					}
-					// Skip if the endpoint's pod not matching the subset lables.
-					if !shouldPodBeInDestinationRuleSubset(podLister, address.TargetRef.Namespace, address.TargetRef.Name, subsetLables) {
-						continue
-					}
-				}
-				if address.NodeName == nil {
-					klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
+		for _, endpointAddress := range ed.Addresses {
+			// Apply the selector if Istio:DestinationRule subset labels provided.
+			if subsetLabels != "" {
+				if endpointAddress.TargetRef == nil || endpointAddress.TargetRef.Kind != "Pod" {
+					klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have a Pod as the TargetRef object. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
 					continue
 				}
-				if address.TargetRef == nil {
-					klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", address.IP, endpoints.Namespace, endpoints.Name)
+				// Skip if the endpoint's pod not matching the subset lables.
+				if !shouldPodBeInDestinationRuleSubset(podLister, endpointAddress.TargetRef.Namespace, endpointAddress.TargetRef.Name, subsetLabels) {
 					continue
 				}
-				zone, err := zoneGetter.GetZoneForNode(*address.NodeName)
-				if err != nil {
-					return fmt.Errorf("failed to retrieve associated zone of node %q: %w", *address.NodeName, err)
-				}
-				if zoneNetworkEndpointMap[zone] == nil {
-					zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
-				}
+			}
+			if endpointAddress.NodeName == nil {
+				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				continue
+			}
+			if endpointAddress.TargetRef == nil {
+				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", endpointAddress.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				continue
+			}
+			zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to retrieve associated zone of node %q: %w", *endpointAddress.NodeName, err)
+			}
+			if zoneNetworkEndpointMap[zone] == nil {
+				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
+			}
 
-				if includeAllEndpoints || shouldPodBeInNeg(podLister, address.TargetRef.Namespace, address.TargetRef.Name) {
-					networkEndpoint := negtypes.NetworkEndpoint{IP: address.IP, Port: matchPort, Node: *address.NodeName}
+			// TODO: This check and EndpoinsData.Ready field may be deleted once Endpoints support is removed.
+			// The purpose of this check is to handle endpoints in terminating state.
+			// The Endpoints API doesn't have terminating field. Terminating endpoints are marked as not ready.
+			// This check support this case. For not ready endpoints it checks if the endpoint is not yet ready or terminating.
+			// The EndpointSlices API has terminating field which solves this problem.
+			if endpointAddress.Ready || shouldPodBeInNeg(podLister, endpointAddress.TargetRef.Namespace, endpointAddress.TargetRef.Name) {
+				for _, address := range endpointAddress.Addresses {
+					networkEndpoint := negtypes.NetworkEndpoint{IP: address, Port: matchPort, Node: *endpointAddress.NodeName}
 					if networkEndpointType == negtypes.NonGCPPrivateEndpointType {
 						// Non-GCP network endpoints don't have associated nodes.
 						networkEndpoint.Node = ""
 					}
 					zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
-					networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: address.TargetRef.Namespace, Name: address.TargetRef.Name}
+					networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
 				}
 			}
-			return nil
-		}
-
-		if err := processAddressFunc(subset.Addresses, true); err != nil {
-			return nil, nil, err
-		}
-		if err := processAddressFunc(subset.NotReadyAddresses, false); err != nil {
-			return nil, nil, err
 		}
 	}
 	if !foundMatchingPort {
-		klog.Errorf("Service port name %q was not found in the endpoints object %+v", servicePortName, endpoints)
+		klog.Errorf("Service port name %q was not found in the endpoints object %+v", servicePortName, eds)
 	}
 
 	if len(zoneNetworkEndpointMap) == 0 || len(networkEndpointPodMap) == 0 {
-		klog.V(3).Infof("Generated empty endpoint maps (zoneNetworkEndpointMap: %+v, networkEndpointPodMap: %v) from Endpoints object: %+v", zoneNetworkEndpointMap, networkEndpointPodMap, endpoints)
+		klog.V(3).Infof("Generated empty endpoint maps (zoneNetworkEndpointMap: %+v, networkEndpointPodMap: %v) from Endpoints object: %+v", zoneNetworkEndpointMap, networkEndpointPodMap, eds)
 	}
 	return zoneNetworkEndpointMap, networkEndpointPodMap, nil
 }
@@ -391,7 +388,7 @@ func shouldPodBeInNeg(podLister cache.Indexer, namespace, name string) bool {
 }
 
 // shouldPodBeInDestinationRuleSubset return ture if pod match the DestinationRule subset lables.
-func shouldPodBeInDestinationRuleSubset(podLister cache.Indexer, namespace, name string, subsetLables string) bool {
+func shouldPodBeInDestinationRuleSubset(podLister cache.Indexer, namespace, name string, subsetLabels string) bool {
 	if podLister == nil {
 		return false
 	}
@@ -410,7 +407,7 @@ func shouldPodBeInDestinationRuleSubset(podLister cache.Indexer, namespace, name
 		return false
 	}
 
-	selector, err := labels.Parse(subsetLables)
+	selector, err := labels.Parse(subsetLabels)
 	if err != nil {
 		klog.Errorf("Failed to parse the subset selectors.")
 		return false

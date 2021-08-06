@@ -65,11 +65,12 @@ type syncerManager struct {
 	cloud      negtypes.NetworkEndpointGroupCloud
 	zoneGetter negtypes.ZoneGetter
 
-	nodeLister     cache.Indexer
-	podLister      cache.Indexer
-	serviceLister  cache.Indexer
-	endpointLister cache.Indexer
-	svcNegLister   cache.Indexer
+	nodeLister          cache.Indexer
+	podLister           cache.Indexer
+	serviceLister       cache.Indexer
+	endpointLister      cache.Indexer
+	endpointSliceLister cache.Indexer
+	svcNegLister        cache.Indexer
 
 	// TODO: lock per service instead of global lock
 	mu sync.Mutex
@@ -90,7 +91,8 @@ type syncerManager struct {
 
 	// enableNonGcpMode indicates whether nonGcpMode have been enabled
 	// This will make all NEGs created by NEG controller to be NON_GCP_PRIVATE_IP_PORT type.
-	enableNonGcpMode bool
+	enableNonGcpMode     bool
+	enableEndpointSlices bool
 }
 
 func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
@@ -99,27 +101,31 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	zoneGetter negtypes.ZoneGetter,
 	svcNegClient svcnegclient.Interface,
 	kubeSystemUID types.UID,
-	podLister,
-	serviceLister,
-	endpointLister,
-	nodeLister,
+	podLister cache.Indexer,
+	serviceLister cache.Indexer,
+	endpointLister cache.Indexer,
+	endpointSliceLister cache.Indexer,
+	nodeLister cache.Indexer,
 	svcNegLister cache.Indexer,
-	enableNonGcpMode bool) *syncerManager {
+	enableNonGcpMode bool,
+	enableEndpointSlices bool) *syncerManager {
 	return &syncerManager{
-		namer:            namer,
-		recorder:         recorder,
-		cloud:            cloud,
-		zoneGetter:       zoneGetter,
-		nodeLister:       nodeLister,
-		podLister:        podLister,
-		serviceLister:    serviceLister,
-		endpointLister:   endpointLister,
-		svcNegLister:     svcNegLister,
-		svcPortMap:       make(map[serviceKey]negtypes.PortInfoMap),
-		syncerMap:        make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
-		svcNegClient:     svcNegClient,
-		kubeSystemUID:    kubeSystemUID,
-		enableNonGcpMode: enableNonGcpMode,
+		namer:                namer,
+		recorder:             recorder,
+		cloud:                cloud,
+		zoneGetter:           zoneGetter,
+		nodeLister:           nodeLister,
+		podLister:            podLister,
+		serviceLister:        serviceLister,
+		endpointLister:       endpointLister,
+		endpointSliceLister:  endpointSliceLister,
+		svcNegLister:         svcNegLister,
+		svcPortMap:           make(map[serviceKey]negtypes.PortInfoMap),
+		syncerMap:            make(map[negtypes.NegSyncerKey]negtypes.NegSyncer),
+		svcNegClient:         svcNegClient,
+		kubeSystemUID:        kubeSystemUID,
+		enableNonGcpMode:     enableNonGcpMode,
+		enableEndpointSlices: enableEndpointSlices,
 	}
 }
 
@@ -143,7 +149,6 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	// By removing the duplicate ports in removes and adds, this prevents disruption of NEG syncer due to the config changes
 	// Hence, Existing NEG syncer for the service port will always work
 	manager.removeCommonPorts(adds, removes)
-
 	manager.svcPortMap[key] = newPorts
 	klog.V(3).Infof("EnsureSyncer %v/%v: syncing %v ports, removing %v ports, adding %v ports", namespace, name, newPorts, removes, adds)
 
@@ -199,6 +204,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.podLister,
 				manager.serviceLister,
 				manager.endpointLister,
+				manager.endpointSliceLister,
 				manager.nodeLister,
 				manager.svcNegLister,
 				manager.reflector,
@@ -206,6 +212,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				string(manager.kubeSystemUID),
 				manager.svcNegClient,
 				!manager.namer.IsNEG(portInfo.NegName),
+				manager.enableEndpointSlices,
 			)
 			manager.syncerMap[syncerKey] = syncer
 		}
