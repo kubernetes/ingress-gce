@@ -38,6 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/cloud-provider"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -591,6 +592,15 @@ func TranslateAffinityType(affinityType string) string {
 // IsLegacyL4ILBService returns true if the given LoadBalancer service is managed by service controller.
 func IsLegacyL4ILBService(svc *api_v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.LegacyILBFinalizer, nil)
+}
+
+// IsSubsettingL4ILBService returns true if the given LoadBalancer service is managed by NEG and L4 controller.
+func IsSubsettingL4ILBService(svc *api_v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.ILBFinalizerV2, nil)
+}
+
+func LegacyForwardingRuleName(svc *api_v1.Service) string {
+	return cloudprovider.DefaultLoadBalancerName(svc)
 }
 
 // L4ILBResourceDescription stores the description fields for L4 ILB resources.
