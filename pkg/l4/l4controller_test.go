@@ -31,6 +31,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/cloud-provider"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
@@ -151,6 +152,28 @@ func validateSvcStatus(svc *api_v1.Service, expectStatus bool, t *testing.T) {
 	}
 }
 
+func createLegacyForwardingRule(t *testing.T, svc *api_v1.Service, cloud *gce.Cloud) {
+	t.Helper()
+	frName := cloudprovider.DefaultLoadBalancerName(svc)
+	key, err := composite.CreateKey(cloud, frName, meta.Regional)
+	if err != nil {
+		t.Errorf("Unexpected error when creating key - %v", err)
+	}
+	var ip string
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		ip = svc.Status.LoadBalancer.Ingress[0].IP
+	}
+	existingFwdRule := &composite.ForwardingRule{
+		Name:       frName,
+		IPAddress:  ip,
+		Ports:      []string{"123"},
+		IPProtocol: "TCP",
+	}
+	if err = composite.CreateForwardingRule(cloud, key, existingFwdRule); err != nil {
+		t.Errorf("Failed to create fake forwarding rule %s, err %v", frName, err)
+	}
+}
+
 // TestProcessCreateOrUpdate verifies the processing loop in L4Controller.
 // This test adds a new service, then performs a valid update and then modifies the service type to External and ensures
 // that the status field is as expected in each case.
@@ -253,6 +276,28 @@ func TestProcessCreateLegacyService(t *testing.T) {
 	// Set the legacy finalizer
 	newSvc.Finalizers = append(newSvc.Finalizers, common.LegacyILBFinalizer)
 	addILBService(l4c, newSvc)
+	err := l4c.sync(getKeyForSvc(newSvc, t))
+	if err != nil {
+		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
+	}
+	// List the service and ensure that the status field is not updated.
+	svc, err := l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
+	}
+	validateSvcStatus(svc, false, t)
+	prevMetrics.ValidateDiff(test.GetL4LatencyMetric(t), &test.L4ILBLatencyMetricInfo{}, t)
+}
+
+func TestProcessCreateServiceWithLegacyForwardingRule(t *testing.T) {
+	l4c := newServiceController(t, newFakeGCE())
+	prevMetrics := test.GetL4LatencyMetric(t)
+	newSvc := test.NewL4ILBService(false, 8080)
+	addILBService(l4c, newSvc)
+	// Create legacy forwarding rule to mimic service controller.
+	// A service can have the v1 finalizer reset due to a buggy script/manual operation.
+	// Subsetting controller should only process the service if it doesn't already have a forwarding rule.
+	createLegacyForwardingRule(t, newSvc, l4c.ctx.Cloud)
 	err := l4c.sync(getKeyForSvc(newSvc, t))
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
