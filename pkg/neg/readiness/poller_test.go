@@ -481,6 +481,23 @@ func TestPoll(t *testing.T) {
 	pollAndValidate(step, false, true, 2)
 	pollAndValidate(step, false, true, 2)
 
+	step = "NE has unsupported health"
+	negtypes.GetNetworkEndpointStore(negCloud).AddNetworkEndpointHealthStatus(*meta.ZonalKey(negName, zone), []negtypes.NetworkEndpointEntry{
+		{
+			NetworkEndpoint: ne,
+			Healths: []*composite.HealthStatusForNetworkEndpoint{
+				{
+					HealthCheckService: &composite.HealthCheckServiceReference{
+						HealthCheckService: negName,
+					},
+					HealthState: "HEALTHY",
+				},
+			},
+		},
+	})
+	pollAndValidate(step, false, false, 3)
+	pollAndValidate(step, false, false, 4)
+
 	step = "NE has healthy status"
 	bsName := "bar"
 	backendServiceUrl := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/foo/global/backendServices/%v", bsName)
@@ -498,9 +515,9 @@ func TestPoll(t *testing.T) {
 		},
 		irrelevantEntry,
 	})
-	pollAndValidate(step, false, false, 3)
+	pollAndValidate(step, false, false, 5)
 	pacherTester.Eval(t, fmt.Sprintf("%v/%v", ns, podName), meta.ZonalKey(negName, zone), meta.GlobalKey(bsName))
-	pollAndValidate(step, false, false, 4)
+	pollAndValidate(step, false, false, 6)
 	pacherTester.Eval(t, fmt.Sprintf("%v/%v", ns, podName), meta.ZonalKey(negName, zone), meta.GlobalKey(bsName))
 }
 
