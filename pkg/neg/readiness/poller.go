@@ -18,6 +18,9 @@ package readiness
 
 import (
 	"fmt"
+	"strconv"
+	"sync"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/types"
@@ -26,8 +29,6 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/klog"
-	"strconv"
-	"sync"
 )
 
 const (
@@ -182,7 +183,7 @@ func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.Ne
 			continue
 		}
 
-		healthChecked = healthChecked || hasHealthStatus(healthStatus)
+		healthChecked = healthChecked || hasSupportedHealthStatus(healthStatus)
 
 		ne := negtypes.NetworkEndpoint{
 			IP:   healthStatus.NetworkEndpoint.IpAddress,
@@ -261,9 +262,19 @@ func getHealthyBackendService(healthStatus *composite.NetworkEndpointWithHealthS
 	return nil
 }
 
-// hasHealthStatus returns true if there is at least 1 health status associated with the endpoint.
-func hasHealthStatus(healthStatus *composite.NetworkEndpointWithHealthStatus) bool {
-	return healthStatus != nil && len(healthStatus.Healths) > 0
+// hasSupportedHealthStatus returns true if there is at least 1 backendService health status associated with the endpoint.
+func hasSupportedHealthStatus(healthStatus *composite.NetworkEndpointWithHealthStatus) bool {
+	if healthStatus == nil {
+		return false
+	}
+
+	for _, health := range healthStatus.Healths {
+		// TODO(freehan): Support more types of health status associated NEGs.
+		if health.BackendService != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // getPod returns the namespaced name of a pod corresponds to an endpoint and whether the pod is registered
