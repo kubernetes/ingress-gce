@@ -519,6 +519,55 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 		},
 		{
 			node: api_v1.Node{
+				ObjectMeta: v1.ObjectMeta{
+					Name:   "node1",
+					Labels: map[string]string{LabelNodeRoleExcludeBalancer: "true"},
+				},
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept: false,
+			name:         "ready node, excluded from loadbalancers",
+		},
+		{
+			node: api_v1.Node{
+				ObjectMeta: v1.ObjectMeta{
+					Name: "node1",
+					Annotations: map[string]string{
+						GKECurrentOperationAnnotation: fmt.Sprintf("{'Timestamp': '12345', 'Operation': '%s'}", GKEUpgradeOperation),
+					},
+				},
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept: false,
+			name:         "ready node, upgrade in progress",
+		},
+		{
+			node: api_v1.Node{
+				ObjectMeta: v1.ObjectMeta{
+					Name: "node1",
+					Annotations: map[string]string{
+						GKECurrentOperationAnnotation: "{'Timestamp': '12345', 'Operation': 'random'}",
+					},
+				},
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionTrue},
+					},
+				},
+			},
+			expectAccept: true,
+			name:         "ready node, non-upgrade operation",
+		},
+		{
+			node: api_v1.Node{
 				Spec: api_v1.NodeSpec{Unschedulable: true},
 				Status: api_v1.NodeStatus{
 					Conditions: []api_v1.NodeCondition{
@@ -528,7 +577,8 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 			},
 			expectAccept: true,
 			name:         "unschedulable",
-		}, {
+		},
+		{
 			node: api_v1.Node{
 				Spec: api_v1.NodeSpec{
 					Taints: []api_v1.Taint{
