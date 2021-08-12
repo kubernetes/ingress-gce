@@ -46,6 +46,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 		networkEndpointType negtypes.NetworkEndpointType
 		nodeLabelsMap       map[string]map[string]string
 		nodeAnnotationsMap  map[string]map[string]string
+		nodeReadyStatusMap  map[string]v1.ConditionStatus
 		nodeNames           []string
 	}{
 		{
@@ -58,6 +59,20 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			},
 			networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+		},
+		{
+			desc:          "default endpoints, all nodes unready",
+			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
+			// all nodes are picked since, in this mode, endpoints running do not need to run on the selected node.
+			endpointSets: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
+			},
+			networkEndpointType: negtypes.VmIpEndpointType,
+			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			nodeReadyStatusMap: map[string]v1.ConditionStatus{
+				testInstance1: v1.ConditionFalse, testInstance2: v1.ConditionFalse, testInstance3: v1.ConditionFalse, testInstance4: v1.ConditionFalse, testInstance5: v1.ConditionFalse, testInstance6: v1.ConditionFalse,
+			},
 		},
 		{
 			desc:          "default endpoints, some nodes marked as non-candidates",
@@ -90,7 +105,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	ec := NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey)
 	for _, tc := range testCases {
-		createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, transactionSyncer.nodeLister)
+		createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, transactionSyncer.nodeLister)
 		retSet, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
@@ -116,6 +131,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 		networkEndpointType negtypes.NetworkEndpointType
 		nodeLabelsMap       map[string]map[string]string
 		nodeAnnotationsMap  map[string]map[string]string
+		nodeReadyStatusMap  map[string]v1.ConditionStatus
 		nodeNames           []string
 	}{
 		{
@@ -129,6 +145,21 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			},
 			networkEndpointType: negtypes.VmIpEndpointType,
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+		},
+		{
+			desc:          "default endpoints, all nodes unready",
+			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
+			// all nodes are picked since, in this mode, endpoints running do not need to run on the selected node.
+			endpointSets: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
+					negtypes.NetworkEndpoint{IP: "1.2.3.5", Node: testInstance5}, negtypes.NetworkEndpoint{IP: "1.2.3.6", Node: testInstance6}),
+			},
+			networkEndpointType: negtypes.VmIpEndpointType,
+			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
+			nodeReadyStatusMap: map[string]v1.ConditionStatus{
+				testInstance1: v1.ConditionFalse, testInstance2: v1.ConditionFalse, testInstance3: v1.ConditionFalse, testInstance4: v1.ConditionFalse, testInstance5: v1.ConditionFalse, testInstance6: v1.ConditionFalse,
+			},
 		},
 		{
 			desc:          "default endpoints, some nodes marked as non-candidates",
@@ -167,7 +198,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	ec := NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey)
 	for _, tc := range testCases {
-		createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, transactionSyncer.nodeLister)
+		createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, transactionSyncer.nodeLister)
 		retSet, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
@@ -179,14 +210,24 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	}
 }
 
-func createNodes(t *testing.T, nodeNames []string, nodeLabels, nodeAnnotations map[string]map[string]string, nodeIndexer cache.Indexer) {
+func createNodes(t *testing.T, nodeNames []string, nodeLabels, nodeAnnotations map[string]map[string]string, nodeReadyStatus map[string]v1.ConditionStatus, nodeIndexer cache.Indexer) {
 	t.Helper()
 	for i, nodeName := range nodeNames {
 		var labels, annotations map[string]string
+		readyStatus := v1.ConditionTrue
 		if nodeLabels != nil {
 			labels = nodeLabels[nodeName]
+		}
+		if nodeAnnotations != nil {
 			annotations = nodeAnnotations[nodeName]
 		}
+		if nodeReadyStatus != nil {
+			status, ok := nodeReadyStatus[nodeName]
+			if ok {
+				readyStatus = status
+			}
+		}
+
 		err := nodeIndexer.Add(&v1.Node{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        nodeName,
@@ -203,7 +244,7 @@ func createNodes(t *testing.T, nodeNames []string, nodeLabels, nodeAnnotations m
 				Conditions: []v1.NodeCondition{
 					{
 						Type:   v1.NodeReady,
-						Status: v1.ConditionTrue,
+						Status: readyStatus,
 					},
 				},
 			},

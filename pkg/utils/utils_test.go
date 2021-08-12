@@ -498,14 +498,15 @@ func TestTraverseIngressBackends(t *testing.T) {
 
 func TestGetNodeConditionPredicate(t *testing.T) {
 	tests := []struct {
-		node         api_v1.Node
-		expectAccept bool
-		name         string
+		node                                             api_v1.Node
+		expectAccept, expectAcceptByUnreadyNodePredicate bool
+		name                                             string
 	}{
 		{
 			node:         api_v1.Node{},
 			expectAccept: false,
-			name:         "empty",
+
+			name: "empty",
 		},
 		{
 			node: api_v1.Node{
@@ -515,8 +516,33 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 					},
 				},
 			},
-			expectAccept: true,
-			name:         "basic",
+			expectAccept:                       true,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "ready node",
+		},
+		{
+			node: api_v1.Node{
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionFalse},
+					},
+				},
+			},
+			expectAccept:                       false,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "uneady node",
+		},
+		{
+			node: api_v1.Node{
+				Status: api_v1.NodeStatus{
+					Conditions: []api_v1.NodeCondition{
+						{Type: api_v1.NodeReady, Status: api_v1.ConditionUnknown},
+					},
+				},
+			},
+			expectAccept:                       false,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "ready status unknown",
 		},
 		{
 			node: api_v1.Node{
@@ -530,8 +556,9 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 					},
 				},
 			},
-			expectAccept: false,
-			name:         "ready node, excluded from loadbalancers",
+			expectAccept:                       false,
+			expectAcceptByUnreadyNodePredicate: false,
+			name:                               "ready node, excluded from loadbalancers",
 		},
 		{
 			node: api_v1.Node{
@@ -547,8 +574,9 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 					},
 				},
 			},
-			expectAccept: false,
-			name:         "ready node, upgrade in progress",
+			expectAccept:                       false,
+			expectAcceptByUnreadyNodePredicate: false,
+			name:                               "ready node, upgrade in progress",
 		},
 		{
 			node: api_v1.Node{
@@ -564,8 +592,9 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 					},
 				},
 			},
-			expectAccept: true,
-			name:         "ready node, non-upgrade operation",
+			expectAccept:                       true,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "ready node, non-upgrade operation",
 		},
 		{
 			node: api_v1.Node{
@@ -576,8 +605,9 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 					},
 				},
 			},
-			expectAccept: true,
-			name:         "unschedulable",
+			expectAccept:                       true,
+			expectAcceptByUnreadyNodePredicate: true,
+			name:                               "unschedulable",
 		},
 		{
 			node: api_v1.Node{
@@ -596,15 +626,21 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 					},
 				},
 			},
-			expectAccept: false,
-			name:         "ToBeDeletedByClusterAutoscaler-taint",
+			expectAccept:                       false,
+			expectAcceptByUnreadyNodePredicate: false,
+			name:                               "ToBeDeletedByClusterAutoscaler-taint",
 		},
 	}
 	pred := GetNodeConditionPredicate()
+	unreadyPred := NodeConditionPredicateIncludeUnreadyNodes()
 	for _, test := range tests {
 		accept := pred(&test.node)
 		if accept != test.expectAccept {
-			t.Errorf("Test failed for %s, expected %v, saw %v", test.name, test.expectAccept, accept)
+			t.Errorf("Test failed for %s, got %v, want %v", test.name, accept, test.expectAccept)
+		}
+		unreadyAccept := unreadyPred(&test.node)
+		if unreadyAccept != test.expectAcceptByUnreadyNodePredicate {
+			t.Errorf("Test failed for unreadyNodesPredicate in case %s, got %v, want %v", test.name, unreadyAccept, test.expectAcceptByUnreadyNodePredicate)
 		}
 	}
 }
