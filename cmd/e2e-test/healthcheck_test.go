@@ -125,7 +125,16 @@ func TestHealthCheck(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
 			}
-			if err := verifyHealthCheck(t, gclb, tc.want); err != nil {
+			want := &healthCheckConfig{
+				checkIntervalSec:   tc.want.CheckIntervalSec,
+				timeoutSec:         tc.want.TimeoutSec,
+				healthyThreshold:   tc.want.HealthyThreshold,
+				unhealthyThreshold: tc.want.UnhealthyThreshold,
+				port:               tc.want.Port,
+				hType:              tc.want.Type,
+				requestPath:        tc.want.RequestPath,
+			}
+			if err := verifyHealthCheck(t, gclb, want); err != nil {
 				t.Fatal(err)
 			}
 
@@ -146,7 +155,7 @@ func TestHealthCheck(t *testing.T) {
 			}
 
 			if err := wait.Poll(transitionPollInterval, transitionPollTimeout, func() (bool, error) {
-				err := verifyHealthCheck(t, gclb, tc.want)
+				err := verifyHealthCheck(t, gclb, want)
 				if err == nil {
 					return true, nil
 				}
@@ -173,7 +182,12 @@ func TestHealthCheck(t *testing.T) {
 	}
 }
 
-func verifyHealthCheck(t *testing.T, gclb *fuzz.GCLB, want *backendconfig.HealthCheckConfig) error {
+type healthCheckConfig struct {
+	checkIntervalSec, timeoutSec, healthyThreshold, unhealthyThreshold, port *int64
+	hType, requestPath                                                       *string
+}
+
+func verifyHealthCheck(t *testing.T, gclb *fuzz.GCLB, want *healthCheckConfig) error {
 	// We assume there is a single service for now. The logic will have to be
 	// changed if there is more than one backend service.
 	for _, bs := range gclb.BackendService {
@@ -205,26 +219,26 @@ func verifyHealthCheck(t *testing.T, gclb *fuzz.GCLB, want *backendconfig.Health
 				common.requestPath = hc.GA.HttpsHealthCheck.RequestPath
 			}
 
-			if want.CheckIntervalSec != nil && hc.GA.CheckIntervalSec != *want.CheckIntervalSec {
-				return fmt.Errorf("HealthCheck %v checkIntervalSec = %d, want %d", rID.Key, hc.GA.CheckIntervalSec, *want.CheckIntervalSec)
+			if want.checkIntervalSec != nil && hc.GA.CheckIntervalSec != *want.checkIntervalSec {
+				return fmt.Errorf("HealthCheck %v checkIntervalSec = %d, want %d", rID.Key, hc.GA.CheckIntervalSec, *want.checkIntervalSec)
 			}
-			if want.TimeoutSec != nil && hc.GA.TimeoutSec != *want.TimeoutSec {
-				return fmt.Errorf("HealthCheck %v timeoutSec = %d, want %d", rID.Key, hc.GA.TimeoutSec, *want.TimeoutSec)
+			if want.timeoutSec != nil && hc.GA.TimeoutSec != *want.timeoutSec {
+				return fmt.Errorf("HealthCheck %v timeoutSec = %d, want %d", rID.Key, hc.GA.TimeoutSec, *want.timeoutSec)
 			}
-			if want.HealthyThreshold != nil && hc.GA.HealthyThreshold != *want.HealthyThreshold {
-				return fmt.Errorf("HealthCheck %v healthyThreshold = %d, want %d", rID.Key, hc.GA.HealthyThreshold, *want.HealthyThreshold)
+			if want.healthyThreshold != nil && hc.GA.HealthyThreshold != *want.healthyThreshold {
+				return fmt.Errorf("HealthCheck %v healthyThreshold = %d, want %d", rID.Key, hc.GA.HealthyThreshold, *want.healthyThreshold)
 			}
-			if want.UnhealthyThreshold != nil && hc.GA.UnhealthyThreshold != *want.UnhealthyThreshold {
-				return fmt.Errorf("HealthCheck %v unhealthThreshold = %d, want %d", rID.Key, hc.GA.UnhealthyThreshold, *want.UnhealthyThreshold)
+			if want.unhealthyThreshold != nil && hc.GA.UnhealthyThreshold != *want.unhealthyThreshold {
+				return fmt.Errorf("HealthCheck %v unhealthThreshold = %d, want %d", rID.Key, hc.GA.UnhealthyThreshold, *want.unhealthyThreshold)
 			}
-			if want.Type != nil {
-				return fmt.Errorf("HealthCheck %v type = %s, want %s", rID.Key, hc.GA.Type, *want.Type)
+			if want.hType != nil {
+				return fmt.Errorf("HealthCheck %v type = %s, want %s", rID.Key, hc.GA.Type, *want.hType)
 			}
-			if want.Port != nil && common.port != *want.Port {
-				return fmt.Errorf("HealthCheck %v port = %d, want %d", rID.Key, common.port, *want.Port)
+			if want.port != nil && common.port != *want.port {
+				return fmt.Errorf("HealthCheck %v port = %d, want %d", rID.Key, common.port, *want.port)
 			}
-			if want.RequestPath != nil && common.requestPath != *want.RequestPath {
-				return fmt.Errorf("HealthCheck %v requestPath = %q, want %q", rID.Key, common.requestPath, *want.RequestPath)
+			if want.requestPath != nil && common.requestPath != *want.requestPath {
+				return fmt.Errorf("HealthCheck %v requestPath = %q, want %q", rID.Key, common.requestPath, *want.requestPath)
 			}
 		}
 	}

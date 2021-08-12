@@ -95,7 +95,8 @@ func TestCustomRequestHeaders(t *testing.T) {
 			}
 
 			if tc.beConfig.Spec.CustomRequestHeaders != nil {
-				verifyHeaders(t, gclb, s.Namespace, "service-1", tc.beConfig.Spec.CustomRequestHeaders)
+				verifyHeaders(t, gclb, s.Namespace, "service-1", &customRequestHeadersConfig{
+					headers: tc.beConfig.Spec.CustomRequestHeaders.Headers})
 			}
 
 			// Wait for GCLB resources to be deleted.
@@ -115,7 +116,11 @@ func TestCustomRequestHeaders(t *testing.T) {
 	}
 }
 
-func verifyHeaders(t *testing.T, gclb *fuzz.GCLB, svcNamespace, svcName string, expectedCustomRequestHeaders *backendconfig.CustomRequestHeadersConfig) error {
+type customRequestHeadersConfig struct {
+	headers []string
+}
+
+func verifyHeaders(t *testing.T, gclb *fuzz.GCLB, svcNamespace, svcName string, expectedCustomRequestHeaders *customRequestHeadersConfig) error {
 	numBsWithCRH := 0
 	for _, bs := range gclb.BackendService {
 		desc := utils.DescriptionFromString(bs.GA.Description)
@@ -123,8 +128,8 @@ func verifyHeaders(t *testing.T, gclb *fuzz.GCLB, svcNamespace, svcName string, 
 			continue
 		}
 		headers := bs.GA.CustomRequestHeaders
-		if !reflect.DeepEqual(headers, expectedCustomRequestHeaders.Headers) {
-			return fmt.Errorf("backend service %q has custom request headers %v, want %v", bs.GA.Name, headers, expectedCustomRequestHeaders.Headers)
+		if !reflect.DeepEqual(headers, expectedCustomRequestHeaders.headers) {
+			return fmt.Errorf("backend service %q has custom request headers %v, want %v", bs.GA.Name, headers, expectedCustomRequestHeaders.headers)
 		}
 
 		t.Logf("Backend service %q has expected custom request headers", bs.GA.Name)

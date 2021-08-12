@@ -118,7 +118,14 @@ func TestCDN(t *testing.T) {
 
 			// If needed, verify the cache policies were applied.
 			if tc.beConfig.Spec.Cdn.CachePolicy != nil {
-				verifyCachePolicies(t, gclb, s.Namespace, "service-1", tc.beConfig.Spec.Cdn.CachePolicy)
+				cachePolicy := &cachePolicy{
+					includeHost:          tc.beConfig.Spec.Cdn.CachePolicy.IncludeHost,
+					includeProtocol:      tc.beConfig.Spec.Cdn.CachePolicy.IncludeProtocol,
+					includeQueryString:   tc.beConfig.Spec.Cdn.CachePolicy.IncludeQueryString,
+					queryStringBlacklist: tc.beConfig.Spec.Cdn.CachePolicy.QueryStringBlacklist,
+					queryStringWhitelist: tc.beConfig.Spec.Cdn.CachePolicy.QueryStringWhitelist,
+				}
+				verifyCachePolicies(t, gclb, s.Namespace, "service-1", cachePolicy)
 			}
 
 			// Wait for GCLB resources to be deleted.
@@ -833,9 +840,14 @@ func TestCdnSignedUrls(t *testing.T) {
 	})
 }
 
+type cachePolicy struct {
+	includeHost, includeProtocol, includeQueryString bool
+	queryStringBlacklist, queryStringWhitelist       []string
+}
+
 // helper functions
 
-func verifyCachePolicies(t *testing.T, gclb *fuzz.GCLB, svcNamespace, svcName string, expectedCachePolicies *backendconfig.CacheKeyPolicy) error {
+func verifyCachePolicies(t *testing.T, gclb *fuzz.GCLB, svcNamespace, svcName string, expectedCachePolicies *cachePolicy) error {
 	numBsWithPolicy := 0
 	for _, bs := range gclb.BackendService {
 		desc := utils.DescriptionFromString(bs.GA.Description)
@@ -846,11 +858,11 @@ func verifyCachePolicies(t *testing.T, gclb *fuzz.GCLB, svcNamespace, svcName st
 			return fmt.Errorf("backend service %q has no cache policy", bs.GA.Name)
 		}
 		cachePolicy := bs.GA.CdnPolicy.CacheKeyPolicy
-		if expectedCachePolicies.IncludeHost != cachePolicy.IncludeHost ||
-			expectedCachePolicies.IncludeProtocol != cachePolicy.IncludeProtocol ||
-			expectedCachePolicies.IncludeQueryString != cachePolicy.IncludeQueryString ||
-			!reflect.DeepEqual(expectedCachePolicies.QueryStringBlacklist, cachePolicy.QueryStringBlacklist) ||
-			!reflect.DeepEqual(expectedCachePolicies.QueryStringWhitelist, cachePolicy.QueryStringWhitelist) {
+		if expectedCachePolicies.includeHost != cachePolicy.IncludeHost ||
+			expectedCachePolicies.includeProtocol != cachePolicy.IncludeProtocol ||
+			expectedCachePolicies.includeQueryString != cachePolicy.IncludeQueryString ||
+			!reflect.DeepEqual(expectedCachePolicies.queryStringBlacklist, cachePolicy.QueryStringBlacklist) ||
+			!reflect.DeepEqual(expectedCachePolicies.queryStringWhitelist, cachePolicy.QueryStringWhitelist) {
 			return fmt.Errorf("backend service %q has cache policy %v, want %v", bs.GA.Name, cachePolicy, expectedCachePolicies)
 		}
 		t.Logf("Backend service %q has expected cache policy", bs.GA.Name)
