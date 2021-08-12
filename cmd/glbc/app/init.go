@@ -66,7 +66,7 @@ func IngressClassEnabled(client kubernetes.Interface) bool {
 	klog.V(2).Info("Checking if Ingress Class API exists")
 
 	err := wait.Poll(3*time.Second, 5*time.Minute, func() (bool, error) {
-		resourceList, err := client.Discovery().ServerResourcesForGroupVersion("networking.k8s.io/v1beta1")
+		resourceList, err := client.Discovery().ServerResourcesForGroupVersion("networking.k8s.io/v1")
 		if err != nil {
 			klog.Errorf("errored checking for Ingress Class API: %s", err)
 			return false, nil

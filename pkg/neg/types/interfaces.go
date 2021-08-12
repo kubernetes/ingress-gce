@@ -18,7 +18,6 @@ package types
 
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	v1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 )
 
@@ -85,7 +84,7 @@ type NegSyncerManager interface {
 type NetworkEndpointsCalculator interface {
 	// CalculateEndpoints computes the NEG endpoints based on service endpoints and the current NEG state and returns a
 	// map of zone name to network endpoint set
-	CalculateEndpoints(ep *v1.Endpoints, currentMap map[string]NetworkEndpointSet) (map[string]NetworkEndpointSet, EndpointPodMap, error)
+	CalculateEndpoints(eds []EndpointsData, currentMap map[string]NetworkEndpointSet) (map[string]NetworkEndpointSet, EndpointPodMap, error)
 	// Mode indicates the mode that the EndpointsCalculator is operating in.
 	Mode() EndpointsCalculatorMode
 }

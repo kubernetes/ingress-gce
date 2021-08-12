@@ -120,7 +120,7 @@ func TestGCEURLMapEquals(t *testing.T) {
 
 	// Test different DefaultBackend.
 	diffDefault := newTestMap()
-	b := NewServicePortWithID("svc-Y", "ns", v1.ServiceBackendPort{Number: 80})
+	b := newServicePortWithID("svc-Y", "ns", v1.ServiceBackendPort{Number: 80})
 	diffDefault.DefaultBackend = &b
 	if EqualMapping(someMap, diffDefault) {
 		t.Errorf("EqualMapping(%+v, %+v) = true, want false", someMap, diffDefault)
@@ -148,7 +148,7 @@ func TestGCEURLMapEquals(t *testing.T) {
 		t.Errorf("EqualMapping(%+v, %+v) = true, want false", someMap, diffPaths)
 	}
 	// Change a PathRule's backend.
-	diffPaths.HostRules[0].Paths[0] = PathRule{Path: "/ex1", Backend: NewServicePortWithID("svc-M", "ns", v1.ServiceBackendPort{Number: 80})}
+	diffPaths.HostRules[0].Paths[0] = PathRule{Path: "/ex1", Backend: newServicePortWithID("svc-M", "ns", v1.ServiceBackendPort{Number: 80})}
 	if EqualMapping(someMap, diffPaths) {
 		t.Errorf("EqualMapping(%+v, %+v) = true, want false", someMap, diffPaths)
 	}
@@ -163,11 +163,11 @@ func TestAllServicePorts(t *testing.T) {
 	t.Parallel()
 	m := newTestMap()
 	wantPorts := []ServicePort{
-		NewServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80}),
-		NewServicePortWithID("svc-A", "ns", v1.ServiceBackendPort{Number: 80}),
-		NewServicePortWithID("svc-B", "ns", v1.ServiceBackendPort{Number: 80}),
-		NewServicePortWithID("svc-C", "ns", v1.ServiceBackendPort{Number: 80}),
-		NewServicePortWithID("svc-D", "ns", v1.ServiceBackendPort{Number: 80}),
+		newServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80}),
+		newServicePortWithID("svc-A", "ns", v1.ServiceBackendPort{Number: 80}),
+		newServicePortWithID("svc-B", "ns", v1.ServiceBackendPort{Number: 80}),
+		newServicePortWithID("svc-C", "ns", v1.ServiceBackendPort{Number: 80}),
+		newServicePortWithID("svc-D", "ns", v1.ServiceBackendPort{Number: 80}),
 	}
 
 	gotPorts := m.AllServicePorts()
@@ -181,9 +181,9 @@ func TestAllServicePorts(t *testing.T) {
 func TestAllServicePortsDistinct(t *testing.T) {
 	t.Parallel()
 	m := NewGCEURLMap()
-	b := NewServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
-	b1 := NewServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
-	b2 := NewServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
+	b := newServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
+	b1 := newServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
+	b2 := newServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
 	m.DefaultBackend = &b
 	rules := []PathRule{
 		PathRule{Path: "/ex1", Backend: b1},
@@ -192,7 +192,7 @@ func TestAllServicePortsDistinct(t *testing.T) {
 	m.PutPathRulesForHost("example.com", rules)
 
 	wantPorts := []ServicePort{
-		NewServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80}),
+		newServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80}),
 	}
 
 	gotPorts := m.AllServicePorts()
@@ -203,16 +203,16 @@ func TestAllServicePortsDistinct(t *testing.T) {
 
 func newTestMap() *GCEURLMap {
 	m := NewGCEURLMap()
-	b := NewServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
+	b := newServicePortWithID("svc-X", "ns", v1.ServiceBackendPort{Number: 80})
 	m.DefaultBackend = &b
 	rules := []PathRule{
-		PathRule{Path: "/ex1", Backend: NewServicePortWithID("svc-A", "ns", v1.ServiceBackendPort{Number: 80})},
-		PathRule{Path: "/ex2", Backend: NewServicePortWithID("svc-B", "ns", v1.ServiceBackendPort{Number: 80})},
+		PathRule{Path: "/ex1", Backend: newServicePortWithID("svc-A", "ns", v1.ServiceBackendPort{Number: 80})},
+		PathRule{Path: "/ex2", Backend: newServicePortWithID("svc-B", "ns", v1.ServiceBackendPort{Number: 80})},
 	}
 	m.PutPathRulesForHost("example.com", rules)
 	rules = []PathRule{
-		PathRule{Path: "/foo1", Backend: NewServicePortWithID("svc-C", "ns", v1.ServiceBackendPort{Number: 80})},
-		PathRule{Path: "/foo2", Backend: NewServicePortWithID("svc-D", "ns", v1.ServiceBackendPort{Number: 80})},
+		PathRule{Path: "/foo1", Backend: newServicePortWithID("svc-C", "ns", v1.ServiceBackendPort{Number: 80})},
+		PathRule{Path: "/foo2", Backend: newServicePortWithID("svc-D", "ns", v1.ServiceBackendPort{Number: 80})},
 	}
 	m.PutPathRulesForHost("foo.bar.com", rules)
 	return m

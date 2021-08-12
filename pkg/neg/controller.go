@@ -23,6 +23,7 @@ import (
 
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	apiv1 "k8s.io/api/core/v1"
+	discovery "k8s.io/api/discovery/v1beta1"
 	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -49,6 +50,7 @@ import (
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	namer2 "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
@@ -116,6 +118,7 @@ func NewController(
 	podInformer cache.SharedIndexInformer,
 	nodeInformer cache.SharedIndexInformer,
 	endpointInformer cache.SharedIndexInformer,
+	endpointSliceInformer cache.SharedIndexInformer,
 	destinationRuleInformer cache.SharedIndexInformer,
 	svcNegInformer cache.SharedIndexInformer,
 	hasSynced func() bool,
@@ -133,6 +136,7 @@ func NewController(
 	enableNonGcpMode bool,
 	enableAsm bool,
 	asmServiceNEGSkipNamespaces []string,
+	enableEndpointSlices bool,
 ) *Controller {
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
@@ -153,6 +157,13 @@ func NewController(
 	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
 
+	var endpointIndexer, endpointSliceIndexer cache.Indexer
+	if enableEndpointSlices {
+		endpointSliceIndexer = endpointSliceInformer.GetIndexer()
+	} else {
+		endpointIndexer = endpointInformer.GetIndexer()
+	}
+
 	manager := newSyncerManager(
 		namer,
 		recorder,
@@ -162,10 +173,12 @@ func NewController(
 		kubeSystemUID,
 		podInformer.GetIndexer(),
 		serviceInformer.GetIndexer(),
-		endpointInformer.GetIndexer(),
+		endpointIndexer,
+		endpointSliceIndexer,
 		nodeInformer.GetIndexer(),
 		svcNegInformer.GetIndexer(),
-		enableNonGcpMode)
+		enableNonGcpMode,
+		enableEndpointSlices)
 
 	var reflector readiness.Reflector
 	if enableReadinessReflector {
@@ -252,14 +265,23 @@ func NewController(
 			negController.enqueueService(cur)
 		},
 	})
-
-	endpointInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    negController.enqueueEndpoint,
-		DeleteFunc: negController.enqueueEndpoint,
-		UpdateFunc: func(old, cur interface{}) {
-			negController.enqueueEndpoint(cur)
-		},
-	})
+	if enableEndpointSlices {
+		endpointSliceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    negController.enqueueEndpointSlice,
+			DeleteFunc: negController.enqueueEndpointSlice,
+			UpdateFunc: func(old, cur interface{}) {
+				negController.enqueueEndpointSlice(cur)
+			},
+		})
+	} else {
+		endpointInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc:    negController.enqueueEndpoint,
+			DeleteFunc: negController.enqueueEndpoint,
+			UpdateFunc: func(old, cur interface{}) {
+				negController.enqueueEndpoint(cur)
+			},
+		})
+	}
 
 	if negController.runL4 {
 		nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -270,6 +292,14 @@ func NewController(
 			DeleteFunc: func(obj interface{}) {
 				node := obj.(*apiv1.Node)
 				negController.enqueueNode(node)
+			},
+			UpdateFunc: func(old, cur interface{}) {
+				oldNode := old.(*apiv1.Node)
+				currentNode := cur.(*apiv1.Node)
+				nodeReadyCheck := utils.GetNodeConditionPredicate()
+				if nodeReadyCheck(oldNode) != nodeReadyCheck(currentNode) {
+					negController.enqueueNode(currentNode)
+				}
 			},
 		})
 	}
@@ -333,6 +363,7 @@ func (c *Controller) stop() {
 	klog.V(2).Infof("Shutting down network endpoint group controller")
 	c.serviceQueue.ShutDown()
 	c.endpointQueue.ShutDown()
+	c.nodeQueue.ShutDown()
 	c.manager.ShutDown()
 }
 
@@ -412,7 +443,6 @@ func (c *Controller) processService(key string) error {
 	if err != nil {
 		return err
 	}
-
 	obj, exists, err := c.serviceLister.GetByKey(key)
 	if err != nil {
 		return err
@@ -422,7 +452,6 @@ func (c *Controller) processService(key string) error {
 		c.manager.StopSyncer(namespace, name)
 		return nil
 	}
-
 	service := obj.(*apiv1.Service)
 	if service == nil {
 		return fmt.Errorf("cannot convert to Service (%T)", obj)
@@ -466,12 +495,10 @@ func (c *Controller) processService(key string) error {
 		if err := svcPortInfoMap.Merge(destinationRulesPortInfoMap); err != nil {
 			return fmt.Errorf("failed to merge service ports referenced by Istio:DestinationRule (%v): %w", destinationRulesPortInfoMap, err)
 		}
-
 		negUsage.SuccessfulNeg, negUsage.ErrorNeg, err = c.manager.EnsureSyncers(namespace, name, svcPortInfoMap)
 		c.collector.SetNegService(key, negUsage)
 		return err
 	}
-
 	// do not need Neg
 	klog.V(4).Infof("Service %q does not need any NEG. Skipping", key)
 	c.collector.DeleteNegService(key)
@@ -756,10 +783,31 @@ func (c *Controller) enqueueEndpoint(obj interface{}) {
 	c.endpointQueue.Add(key)
 }
 
+func (c *Controller) enqueueEndpointSlice(obj interface{}) {
+	endpointSlice, ok := obj.(*discovery.EndpointSlice)
+	if !ok {
+		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
+		if !ok {
+			klog.Errorf("Unexpected object type: %T, expected cache.DeletedFinalStateUnknown", obj)
+			return
+		}
+		if endpointSlice, ok = tombstone.Obj.(*discovery.EndpointSlice); !ok {
+			klog.Errorf("Unexpected tombstone object type: %T, expected *discovery.EndpointSlice", obj)
+			return
+		}
+	}
+	key, err := endpointslices.EndpointSlicesServiceKey(endpointSlice)
+	if err != nil {
+		klog.Errorf("Failed to find a service label inside endpoint slice %v: %v", endpointSlice, err)
+		return
+	}
+	c.endpointQueue.Add(key)
+}
+
 func (c *Controller) enqueueNode(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		klog.Errorf("Failed to generate endpoint key: %v", err)
+		klog.Errorf("Failed to generate node key: %v", err)
 		return
 	}
 	c.nodeQueue.Add(key)

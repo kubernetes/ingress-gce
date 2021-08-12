@@ -26,6 +26,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
+	discovery "k8s.io/api/discovery/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -440,7 +441,7 @@ func TestEnsureNetworkEndpointGroup(t *testing.T) {
 
 func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	t.Parallel()
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, false)
 	podLister := transactionSyncer.podLister
 
 	// add all pods in default endpoint into podLister
@@ -550,7 +551,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		retSet, retMap, err := toZoneNetworkEndpointMap(getDefaultEndpoint(), zoneGetter, tc.portName, podLister, "", tc.networkEndpointType)
+		retSet, retMap, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpoints(getDefaultEndpoint()), zoneGetter, tc.portName, podLister, "", tc.networkEndpointType)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}
@@ -798,7 +799,7 @@ func TestMakeEndpointBatch(t *testing.T) {
 func TestShouldPodBeInNeg(t *testing.T) {
 	t.Parallel()
 
-	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false)
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, false)
 
 	podLister := transactionSyncer.podLister
 
@@ -1247,6 +1248,170 @@ func genTestEndpoints(num int, epType negtypes.NetworkEndpointType) (negtypes.Ne
 func networkEndpointFromEncodedEndpoint(encodedEndpoint string) negtypes.NetworkEndpoint {
 	ip, node, port := decodeEndpoint(encodedEndpoint)
 	return negtypes.NetworkEndpoint{IP: ip, Node: node, Port: port}
+}
+
+func getDefaultEndpointSlices() []*discovery.EndpointSlice {
+	instance1 := negtypes.TestInstance1
+	instance2 := negtypes.TestInstance2
+	instance3 := negtypes.TestInstance3
+	instance4 := negtypes.TestInstance4
+	notReady := false
+	emptyNamedPort := ""
+	testNamedPort := testNamedPort
+	port80 := int32(80)
+	port81 := int32(81)
+	port8081 := int32(8081)
+	protocolTCP := v1.ProtocolTCP
+	return []*discovery.EndpointSlice{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testServiceName + "-1",
+				Namespace: testServiceNamespace,
+			},
+			AddressType: "IPv4",
+			Endpoints: []discovery.Endpoint{
+				{
+					Addresses: []string{"10.100.1.1"},
+					NodeName:  &instance1,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod1",
+					},
+				},
+				{
+					Addresses: []string{"10.100.1.2"},
+					NodeName:  &instance1,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod2",
+					},
+				},
+				{
+					Addresses: []string{"10.100.2.1"},
+					NodeName:  &instance2,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod3",
+					},
+				},
+				{
+					Addresses: []string{"10.100.3.1"},
+					NodeName:  &instance3,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod4",
+					},
+				},
+				{
+					Addresses: []string{"10.100.1.3"},
+					NodeName:  &instance1,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod5",
+					},
+					Conditions: discovery.EndpointConditions{Ready: &notReady},
+				},
+				{
+					Addresses: []string{"10.100.1.4"},
+					NodeName:  &instance1,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod6",
+					},
+					Conditions: discovery.EndpointConditions{Ready: &notReady},
+				},
+			},
+			Ports: []discovery.EndpointPort{
+				{
+					Name:     &emptyNamedPort,
+					Port:     &port80,
+					Protocol: &protocolTCP,
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testServiceName + "-2",
+				Namespace: testServiceNamespace,
+			},
+			AddressType: "IPv4",
+			Endpoints: []discovery.Endpoint{
+				{
+					Addresses: []string{"10.100.2.2"},
+					NodeName:  &instance2,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod7",
+					},
+				},
+				{
+					Addresses: []string{"10.100.4.1"},
+					NodeName:  &instance4,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod8",
+					},
+				},
+				{
+					Addresses: []string{"10.100.4.3"},
+					NodeName:  &instance4,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod9",
+					},
+					Conditions: discovery.EndpointConditions{Ready: &notReady},
+				},
+			},
+			Ports: []discovery.EndpointPort{
+				{
+					Name:     &testNamedPort,
+					Port:     &port81,
+					Protocol: &protocolTCP,
+				},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testServiceName + "-3",
+				Namespace: testServiceNamespace,
+			},
+			AddressType: "IPv4",
+			Endpoints: []discovery.Endpoint{
+				{
+					Addresses: []string{"10.100.3.2"},
+					NodeName:  &instance3,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod10",
+					},
+				},
+				{
+					Addresses: []string{"10.100.4.2"},
+					NodeName:  &instance4,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod11",
+					},
+				},
+				{
+					Addresses: []string{"10.100.4.4"},
+					NodeName:  &instance4,
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod12",
+					},
+					Conditions: discovery.EndpointConditions{Ready: &notReady},
+				},
+			},
+			Ports: []discovery.EndpointPort{
+				{
+					Name:     &testNamedPort,
+					Port:     &port8081,
+					Protocol: &protocolTCP,
+				},
+			},
+		},
+	}
 }
 
 func getDefaultEndpoint() *v1.Endpoints {

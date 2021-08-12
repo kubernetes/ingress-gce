@@ -294,7 +294,7 @@ func (i *Instances) Remove(groupName string, names []string) error {
 	var errs []error
 	for zone, nodeNames := range i.splitNodesByZone(names) {
 		klog.V(1).Infof("Removing nodes %v from %v in zone %v", nodeNames, groupName, zone)
-		if err := i.cloud.RemoveInstancesFromInstanceGroup(groupName, zone, i.cloud.ToInstanceReferences(zone, nodeNames)); err != nil {
+		if err := i.cloud.RemoveInstancesFromInstanceGroup(groupName, zone, i.getInstanceReferences(zone, nodeNames)); err != nil {
 			errs = append(errs, err)
 		}
 	}

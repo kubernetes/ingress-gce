@@ -21,11 +21,13 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends/features"
+	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -125,5 +127,41 @@ func TestLinkWithCreationModeError(t *testing.T) {
 			}
 		}
 		linker.backendPool.Delete(sp.BackendName(), features.VersionFromServicePort(&sp), features.ScopeFromServicePort(&sp))
+	}
+}
+
+func TestBackendsForIG(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		igLinks []string
+		sp      utils.ServicePort
+
+		want []*composite.Backend
+	}{
+		{
+			name: "no backends",
+		},
+		{
+			name:    "default",
+			igLinks: []string{"backend1"},
+			want: []*composite.Backend{
+				{BalancingMode: "RATE", Group: "backend1", MaxRatePerInstance: 1},
+			},
+		},
+		{
+			name:    "multiple",
+			igLinks: []string{"backend1", "backend2"},
+			want: []*composite.Backend{
+				{BalancingMode: "RATE", Group: "backend1", MaxRatePerInstance: 1},
+				{BalancingMode: "RATE", Group: "backend2", MaxRatePerInstance: 1},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := backendsForIGs(tc.igLinks, Rate, &tc.sp)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("backendsForIGs(_), diff(-tc.want +got) = %s", diff)
+			}
+		})
 	}
 }

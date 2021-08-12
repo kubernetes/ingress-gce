@@ -17,13 +17,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	"github.com/google/go-cmp/cmp"
+	"github.com/kr/pretty"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
 	befeatures "k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
-
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
-	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/ingress-gce/pkg/flags"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -117,5 +120,267 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestDiffBackends(t *testing.T) {
+	// No t.Parallel().
+	oldFlag := flags.F.EnableTrafficScaling
+	flags.F.EnableTrafficScaling = true
+	defer func() { flags.F.EnableTrafficScaling = oldFlag }()
+
+	for _, tc := range []struct {
+		name string
+		old  []*composite.Backend
+		new  []*composite.Backend
+
+		isEqual  bool
+		toRemove sets.String
+		toAdd    sets.String
+		changed  sets.String
+	}{
+		{
+			name:    "empty",
+			isEqual: true,
+		},
+		{
+			name:    "same",
+			old:     []*composite.Backend{{Group: "a"}},
+			new:     []*composite.Backend{{Group: "a"}},
+			isEqual: true,
+		},
+		{
+			name:    "same (multiple)",
+			old:     []*composite.Backend{{Group: "a"}, {Group: "b"}},
+			new:     []*composite.Backend{{Group: "b"}, {Group: "a"}},
+			isEqual: true,
+		},
+		{
+			name:  "add backend",
+			old:   []*composite.Backend{{Group: "a"}},
+			new:   []*composite.Backend{{Group: "b"}, {Group: "a"}},
+			toAdd: sets.NewString("b"),
+		},
+		{
+			name:     "remove backend",
+			old:      []*composite.Backend{{Group: "a"}, {Group: "b"}},
+			new:      []*composite.Backend{{Group: "b"}},
+			toRemove: sets.NewString("a"),
+		},
+		{
+			name:     "add and remove",
+			old:      []*composite.Backend{{Group: "a"}, {Group: "b"}, {Group: "c"}},
+			new:      []*composite.Backend{{Group: "b"}, {Group: "a"}, {Group: "d"}},
+			toAdd:    sets.NewString("d"),
+			toRemove: sets.NewString("c"),
+		},
+		{
+			name:    "update rate",
+			old:     []*composite.Backend{{Group: "a", MaxRatePerEndpoint: 1}},
+			new:     []*composite.Backend{{Group: "a", MaxRatePerEndpoint: 3}},
+			changed: sets.NewString("a"),
+		},
+		{
+			name:    "update capacity scaler",
+			old:     []*composite.Backend{{Group: "a", CapacityScaler: 1.0}},
+			new:     []*composite.Backend{{Group: "a", CapacityScaler: 0.5}},
+			changed: sets.NewString("a"),
+		},
+		{
+			name:    "no change",
+			old:     []*composite.Backend{{Group: "a", CapacityScaler: 1.0}},
+			new:     []*composite.Backend{{Group: "a", CapacityScaler: 1.0}},
+			isEqual: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			diff := diffBackends(tc.old, tc.new)
+			if got := diff.isEqual(); got != tc.isEqual {
+				t.Errorf("diff := diffBackends(%s, %s); diff.isEqual() = %t, want %t", pretty.Sprint(tc.old), pretty.Sprint(tc.new), got, tc.isEqual)
+			}
+			if got := diff.toRemove(); !got.Equal(tc.toRemove) {
+				t.Errorf("diff := diffBackends(%s, %s); diff.toRemove() = %s, want %s", pretty.Sprint(tc.old), pretty.Sprint(tc.new), got, tc.toRemove)
+			}
+			if got := diff.toAdd(); !got.Equal(tc.toAdd) {
+				t.Errorf("diff := diffBackends(%s, %s); diff.toAdd() = %s, want %s", pretty.Sprint(tc.old), pretty.Sprint(tc.new), got, tc.toAdd)
+			}
+			if got := diff.changed; !got.Equal(tc.changed) {
+				t.Errorf("diff := diffBackends(%s, %s); diff.changed = %s, want %s", pretty.Sprint(tc.old), pretty.Sprint(tc.new), got, tc.changed)
+			}
+		})
+	}
+}
+
+func TestBackendsForNEG(t *testing.T) {
+	// No t.Parallel().
+	oldFlag := flags.F.EnableTrafficScaling
+	flags.F.EnableTrafficScaling = true
+	defer func() { flags.F.EnableTrafficScaling = oldFlag }()
+
+	f64 := func(x float64) *float64 { return &x }
+
+	for _, tc := range []struct {
+		name string
+		negs []*composite.NetworkEndpointGroup
+		sp   *utils.ServicePort
+		want []*composite.Backend
+	}{
+		{
+			name: "vm ip endpoint uses connections balancing mode",
+			negs: []*composite.NetworkEndpointGroup{
+				{
+					NetworkEndpointType: string(negtypes.VmIpEndpointType),
+					SelfLink:            "/neg1",
+				},
+			},
+			sp: &utils.ServicePort{},
+			want: []*composite.Backend{
+				{
+					BalancingMode: "CONNECTION",
+					Group:         "/neg1",
+				},
+			},
+		},
+		{
+			name: "vm ip endpoint (multiple)",
+			negs: []*composite.NetworkEndpointGroup{
+				{
+					NetworkEndpointType: string(negtypes.VmIpEndpointType),
+					SelfLink:            "/neg1",
+				},
+				{
+					NetworkEndpointType: string(negtypes.VmIpEndpointType),
+					SelfLink:            "/neg2",
+				},
+			},
+			sp: &utils.ServicePort{},
+			want: []*composite.Backend{
+				{
+					BalancingMode: "CONNECTION",
+					Group:         "/neg1",
+				},
+				{
+					BalancingMode: "CONNECTION",
+					Group:         "/neg2",
+				},
+			},
+		},
+		{
+			name: "neg endpoint defaults",
+			negs: []*composite.NetworkEndpointGroup{
+				{
+					NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
+					SelfLink:            "/neg1",
+				},
+			},
+			sp: &utils.ServicePort{},
+			want: []*composite.Backend{
+				{
+					BalancingMode:      "RATE",
+					MaxRatePerEndpoint: maxRPS,
+					CapacityScaler:     1.0,
+					Group:              "/neg1",
+				},
+			},
+		},
+		{
+			name: "neg endpoint (traffic policy rate)",
+			negs: []*composite.NetworkEndpointGroup{
+				{
+					NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
+					SelfLink:            "/neg1",
+				},
+			},
+			sp: &utils.ServicePort{
+				MaxRatePerEndpoint: f64(1234),
+			},
+			want: []*composite.Backend{
+				{
+					BalancingMode:      "RATE",
+					MaxRatePerEndpoint: 1234,
+					CapacityScaler:     1.0,
+					Group:              "/neg1",
+				},
+			},
+		},
+		{
+			name: "neg endpoint (traffic policy capacity scaler)",
+			negs: []*composite.NetworkEndpointGroup{
+				{
+					NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
+					SelfLink:            "/neg1",
+				},
+			},
+			sp: &utils.ServicePort{
+				CapacityScaler: f64(0.5),
+			},
+			want: []*composite.Backend{
+				{
+					BalancingMode:      "RATE",
+					MaxRatePerEndpoint: maxRPS,
+					CapacityScaler:     0.5,
+					Group:              "/neg1",
+				},
+			},
+		},
+		{
+			name: "neg endpoint (traffic policy)",
+			negs: []*composite.NetworkEndpointGroup{
+				{
+					NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
+					SelfLink:            "/neg1",
+				},
+			},
+			sp: &utils.ServicePort{
+				MaxRatePerEndpoint: f64(1234),
+				CapacityScaler:     f64(0.5),
+			},
+			want: []*composite.Backend{
+				{
+					BalancingMode:      "RATE",
+					MaxRatePerEndpoint: 1234,
+					CapacityScaler:     0.5,
+					Group:              "/neg1",
+				},
+			},
+		},
+		{
+			name: "neg endpoint (multiple, traffic policy)",
+			negs: []*composite.NetworkEndpointGroup{
+				{
+					NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
+					SelfLink:            "/neg1",
+				},
+				{
+					NetworkEndpointType: string(negtypes.VmIpPortEndpointType),
+					SelfLink:            "/neg2",
+				},
+			},
+			sp: &utils.ServicePort{
+				MaxRatePerEndpoint: f64(1234),
+				CapacityScaler:     f64(0.5),
+			},
+			want: []*composite.Backend{
+				{
+					BalancingMode:      "RATE",
+					MaxRatePerEndpoint: 1234,
+					CapacityScaler:     0.5,
+					Group:              "/neg1",
+				},
+				{
+					BalancingMode:      "RATE",
+					MaxRatePerEndpoint: 1234,
+					CapacityScaler:     0.5,
+					Group:              "/neg2",
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := backendsForNEGs(tc.negs, tc.sp)
+			if diff := cmp.Diff(tc.want, got); diff != "" {
+				t.Errorf("backendForNEGs(_), diff(-tc.want +got) = %s", diff)
+			}
+		})
 	}
 }

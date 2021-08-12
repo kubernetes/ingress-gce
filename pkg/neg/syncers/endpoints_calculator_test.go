@@ -33,7 +33,7 @@ import (
 func TestLocalGetEndpointSet(t *testing.T) {
 	t.Parallel()
 	mode := negtypes.L4LocalMode
-	_, transactionSyncer := newL4ILBTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), mode)
+	_, transactionSyncer := newL4ILBTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), mode, false)
 	nodeNames := []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6}
 	for i := 0; i < len(nodeNames); i++ {
 		err := transactionSyncer.nodeLister.Add(&v1.Node{
@@ -65,13 +65,13 @@ func TestLocalGetEndpointSet(t *testing.T) {
 
 	testCases := []struct {
 		desc                string
-		endpoints           *v1.Endpoints
+		endpointsData       []negtypes.EndpointsData
 		endpointSets        map[string]negtypes.NetworkEndpointSet
 		networkEndpointType negtypes.NetworkEndpointType
 	}{
 		{
-			desc:      "default endpoints",
-			endpoints: getDefaultEndpoint(),
+			desc:          "default endpoints",
+			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			// only 4 out of 6 nodes are picked since there are > 4 endpoints, but they are found only on 4 nodes.
 			endpointSets: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
@@ -80,8 +80,8 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			networkEndpointType: negtypes.VmIpEndpointType,
 		},
 		{
-			desc:      "no endpoints",
-			endpoints: &v1.Endpoints{},
+			desc:          "no endpoints",
+			endpointsData: []negtypes.EndpointsData{},
 			// No nodes are picked as there are no service endpoints.
 			endpointSets:        nil,
 			networkEndpointType: negtypes.VmIpEndpointType,
@@ -90,7 +90,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	ec := NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey)
 	for _, tc := range testCases {
-		retSet, _, err := ec.CalculateEndpoints(tc.endpoints, nil)
+		retSet, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}
@@ -104,7 +104,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 func TestClusterGetEndpointSet(t *testing.T) {
 	t.Parallel()
 	mode := negtypes.L4ClusterMode
-	_, transactionSyncer := newL4ILBTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), mode)
+	_, transactionSyncer := newL4ILBTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), mode, false)
 	nodeNames := []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6}
 	for i := 0; i < len(nodeNames); i++ {
 		err := transactionSyncer.nodeLister.Add(&v1.Node{
@@ -134,13 +134,13 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	nodeLister := listers.NewNodeLister(transactionSyncer.nodeLister)
 	testCases := []struct {
 		desc                string
-		endpoints           *v1.Endpoints
+		endpointsData       []negtypes.EndpointsData
 		endpointSets        map[string]negtypes.NetworkEndpointSet
 		networkEndpointType negtypes.NetworkEndpointType
 	}{
 		{
-			desc:      "default endpoints",
-			endpoints: getDefaultEndpoint(),
+			desc:          "default endpoints",
+			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 			// all nodes are picked since, in this mode, endpoints running do not need to run on the selected node.
 			endpointSets: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
@@ -153,7 +153,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			desc: "no endpoints",
 			// all nodes are picked since, in this mode, endpoints running do not need to run on the selected node.
 			// Even when there are no service endpoints, nodes are selected at random.
-			endpoints: &v1.Endpoints{},
+			endpointsData: []negtypes.EndpointsData{},
 			endpointSets: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4},
@@ -165,7 +165,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	ec := NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey)
 	for _, tc := range testCases {
-		retSet, _, err := ec.CalculateEndpoints(tc.endpoints, nil)
+		retSet, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}

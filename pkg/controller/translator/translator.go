@@ -19,8 +19,6 @@ import (
 	"strconv"
 	"strings"
 
-	"k8s.io/ingress-gce/pkg/flags"
-
 	"k8s.io/klog"
 
 	api_v1 "k8s.io/api/core/v1"
@@ -38,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backendconfig"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/errors"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -128,6 +127,28 @@ func setAppProtocol(sp *utils.ServicePort, svc *api_v1.Service, port *api_v1.Ser
 	return nil
 }
 
+func setTrafficScaling(sp *utils.ServicePort, svc *api_v1.Service) error {
+	const maxRatePerEndpointKey = "networking.gke.io/max-rate-per-endpoint"
+	if s, ok := svc.Annotations[maxRatePerEndpointKey]; ok {
+		val, err := strconv.ParseFloat(s, 64)
+		if err != nil || val < 0.0 {
+			return fmt.Errorf(`invalid value for Service annotation %s, should be an integer > 0, got %q`, maxRatePerEndpointKey, s)
+		}
+		sp.MaxRatePerEndpoint = &val
+	}
+
+	const capacityScalerKey = "networking.gke.io/capacity-scaler"
+	if s, ok := svc.Annotations[capacityScalerKey]; ok {
+		val, err := strconv.ParseFloat(s, 64)
+		if err != nil || (val < 0.0 || val > 1.0) {
+			return fmt.Errorf(`invalid value for Service annotation %s, should be a number >= 0.0 and <= 1.0, got %q`, capacityScalerKey, s)
+		}
+		sp.CapacityScaler = &val
+	}
+
+	return nil
+}
+
 // maybeEnableBackendConfig sets the backendConfig for the service port if necessary
 func (t *Translator) maybeEnableBackendConfig(sp *utils.ServicePort, svc *api_v1.Service, port *api_v1.ServicePort) error {
 	var beConfig *backendconfigv1.BackendConfig
@@ -184,6 +205,12 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 
 	if err := setAppProtocol(svcPort, svc, port); err != nil {
 		return svcPort, err
+	}
+
+	if flags.F.EnableTrafficScaling {
+		if err := setTrafficScaling(svcPort, svc); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := t.maybeEnableBackendConfig(svcPort, svc, port); err != nil {
@@ -277,9 +304,6 @@ func validateAndGetPaths(path v1.HTTPIngressPath) ([]string, error) {
 	pathType := v1.PathTypeImplementationSpecific
 
 	if path.PathType != nil {
-		if !flags.F.EnableIngressGAFields && *path.PathType != v1.PathTypeImplementationSpecific {
-			return nil, fmt.Errorf("only \"ImplementationSpecific\" path type is supported")
-		}
 		pathType = *path.PathType
 	}
 
