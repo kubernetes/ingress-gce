@@ -63,7 +63,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 		{
 			desc:          "default endpoints, all nodes unready",
 			endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
-			// all nodes are picked since, in this mode, endpoints running do not need to run on the selected node.
+			// only 4 out of 6 nodes are picked since there are > 4 endpoints, but they are found only on 4 nodes.
 			endpointSets: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.1", Node: testInstance1}, negtypes.NetworkEndpoint{IP: "1.2.3.2", Node: testInstance2}),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: "1.2.3.3", Node: testInstance3}, negtypes.NetworkEndpoint{IP: "1.2.3.4", Node: testInstance4}),
