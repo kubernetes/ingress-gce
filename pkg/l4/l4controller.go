@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -175,7 +176,9 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service, l4 *loadbalan
 		return false
 	}
 	frName := utils.LegacyForwardingRuleName(service)
-	if fr := l4.GetForwardingRule(frName, meta.VersionGA); fr != nil {
+	// Processing should continue if an external forwarding rule exists. This can happen if the service is transitioning from External to Internal.
+	// The external forwarding rule might not be deleted by the time this controller starts processing the service.
+	if fr := l4.GetForwardingRule(frName, meta.VersionGA); fr != nil && fr.LoadBalancingScheme == string(cloud.SchemeInternal) {
 		klog.Warningf("Ignoring update for service %s:%s as it contains legacy forwarding rule %q", service.Namespace, service.Name, frName)
 		return false
 	}
