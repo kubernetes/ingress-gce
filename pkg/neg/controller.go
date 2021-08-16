@@ -575,6 +575,9 @@ func (c *Controller) mergeStandaloneNEGsPortInfo(service *apiv1.Service, name ty
 
 // mergeVmIpNEGsPortInfo merges the PortInfo for ILB services using GCE_VM_IP NEGs into portInfoMap
 func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.NamespacedName, portInfoMap negtypes.PortInfoMap, negUsage *usage.NegServiceState) error {
+	if wantsILB, _ := annotations.WantsL4ILB(service); !wantsILB {
+		return nil
+	}
 	// Only process ILB services after L4 controller has marked it with v2 finalizer.
 	if !utils.IsSubsettingL4ILBService(service) {
 		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it does not have the v2 finalizer", service.Name, service.Namespace)
