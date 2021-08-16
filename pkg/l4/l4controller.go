@@ -172,15 +172,11 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service, l4 *loadbalan
 	// skip services that are being handled by the legacy service controller.
 	if utils.IsLegacyL4ILBService(service) {
 		klog.Warningf("Ignoring update for service %s:%s managed by service controller", service.Namespace, service.Name)
-		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerSkipped",
-			fmt.Sprintf("skipping l4 load balancer sync as service contains '%s' finalizer", common.LegacyILBFinalizer))
 		return false
 	}
 	frName := utils.LegacyForwardingRuleName(service)
 	if fr := l4.GetForwardingRule(frName, meta.VersionGA); fr != nil {
 		klog.Warningf("Ignoring update for service %s:%s as it contains legacy forwarding rule %q", service.Namespace, service.Name, frName)
-		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerSkipped",
-			fmt.Sprintf("skipping l4 load balancer sync as service contains legacy forwarding rule %q", frName))
 		return false
 	}
 	return true
