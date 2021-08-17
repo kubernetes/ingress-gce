@@ -28,6 +28,7 @@ func TestEndpointSlicesByServiceFunc(t *testing.T) {
 	testCases := []struct {
 		desc         string
 		obj          interface{}
+		expectError  bool
 		expectedKeys []string
 	}{
 		{
@@ -36,14 +37,14 @@ func TestEndpointSlicesByServiceFunc(t *testing.T) {
 			expectedKeys: []string{},
 		},
 		{
-			desc: "ReturnsEmptyForSlicesWithoutService",
+			desc: "ReturnsErrorForSlicesWithoutService",
 			obj: &discovery.EndpointSlice{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "slice",
 					Namespace: "nmspc",
 				},
 			},
-			expectedKeys: []string{},
+			expectError: true,
 		},
 		{
 			desc: "ReturnsKeyForProperSlices",
@@ -60,11 +61,14 @@ func TestEndpointSlicesByServiceFunc(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			keys, e := EndpointSlicesByServiceFunc(tc.obj)
+			if tc.expectError && e == nil {
+				t.Errorf("Expected error, got no error and keys %s", keys)
+			}
+			if !tc.expectError && e != nil {
+				t.Errorf("Incorrect error, got: %v, expected nil", e)
+			}
 			if len(keys) != len(tc.expectedKeys) || (len(tc.expectedKeys) == 1 && keys[0] != tc.expectedKeys[0]) {
 				t.Errorf("Incorrect keys, got: %s, expected %s", keys, tc.expectedKeys)
-			}
-			if e != nil {
-				t.Errorf("Incorrect error, got: %v, expected nil", e)
 			}
 		})
 	}

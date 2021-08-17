@@ -38,7 +38,7 @@ func EndpointSlicesByServiceFunc(obj interface{}) ([]string, error) {
 	}
 	key, err := EndpointSlicesServiceKey(es)
 	if err != nil {
-		return []string{}, nil
+		return []string{}, err
 	}
 	return []string{key}, nil
 }

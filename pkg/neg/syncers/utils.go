@@ -244,7 +244,6 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 		}
 		foundMatchingPort = true
 
-		// processAddressFunc adds the qualified endpoints from the input list into the endpointSet group by zone
 		for _, endpointAddress := range ed.Addresses {
 			// Apply the selector if Istio:DestinationRule subset labels provided.
 			if subsetLabels != "" {
@@ -273,7 +272,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 			}
 
-			// TODO: This check and EndpoinsData.Ready field may be deleted once Endpoints support is removed.
+			// TODO: This check and EndpointsData.Ready field may be deleted once Endpoints support is removed.
 			// The purpose of this check is to handle endpoints in terminating state.
 			// The Endpoints API doesn't have terminating field. Terminating endpoints are marked as not ready.
 			// This check support this case. For not ready endpoints it checks if the endpoint is not yet ready or terminating.

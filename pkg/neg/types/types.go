@@ -349,8 +349,9 @@ type EndpointPodMap map[NetworkEndpoint]types.NamespacedName
 // It contains all the information needed to set up
 // GCP Load Balancer.
 type EndpointsData struct {
-	Meta      *metav1.ObjectMeta
-	Ports     []PortData
+	Meta  *metav1.ObjectMeta
+	Ports []PortData
+	// Addresses contains both ready and not ready addresses even when it is converted from Endpoints.
 	Addresses []AddressData
 }
 
@@ -367,7 +368,7 @@ type AddressData struct {
 }
 
 // Converts API Endpoints to the EndpointsData abstraction.
-// All endpoints are converted, not ready addresses are converted with Reade=false.
+// All endpoints are converted, not ready addresses are converted with Ready=false.
 func EndpointsDataFromEndpoints(ep *apiv1.Endpoints) []EndpointsData {
 	result := make([]EndpointsData, 0, len(ep.Subsets))
 	for _, subset := range ep.Subsets {
