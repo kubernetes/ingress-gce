@@ -26,6 +26,7 @@ import (
 
 	api_v1 "k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
+	discoveryapi "k8s.io/api/discovery/v1beta1"
 	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -59,6 +60,10 @@ var (
 )
 
 func fakeTranslator() *Translator {
+	return configuredFakeTranslator(false)
+}
+
+func configuredFakeTranslator(useEndpointSlices bool) *Translator {
 	client := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 
@@ -67,6 +72,7 @@ func fakeTranslator() *Translator {
 		ResyncPeriod:          1 * time.Second,
 		DefaultBackendSvcPort: defaultBackend,
 		HealthCheckPath:       "/",
+		EndpointSlicesEnabled: useEndpointSlices,
 	}
 	ctx := context.NewControllerContext(nil, client, backendConfigClient, nil, nil, nil, nil, nil, defaultNamer, "" /*kubeSystemUID*/, ctxConfig)
 	gce := &Translator{
@@ -714,36 +720,49 @@ func getProbePath(p *apiv1.Probe) string {
 }
 
 func TestGatherEndpointPorts(t *testing.T) {
-	translator := fakeTranslator()
+	for _, useSlices := range []bool{false, true} {
 
-	ep1 := "ep1"
-	ep2 := "ep2"
+		translator := configuredFakeTranslator(useSlices)
 
-	svcPorts := []utils.ServicePort{
-		{NodePort: int64(30001)},
-		{NodePort: int64(30002)},
-		{
-			ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: ep1}},
-			NodePort:   int64(30003),
-			NEGEnabled: true,
-			TargetPort: "80",
-		},
-		{
-			ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: ep2}},
-			NodePort:   int64(30004),
-			NEGEnabled: true,
-			TargetPort: "named-port",
-		},
-	}
+		ep1 := "ep1"
+		ep2 := "ep2"
 
-	endpointLister := translator.ctx.EndpointInformer.GetIndexer()
-	endpointLister.Add(newDefaultEndpoint(ep1))
-	endpointLister.Add(newDefaultEndpoint(ep2))
+		svcPorts := []utils.ServicePort{
+			{NodePort: int64(30001)},
+			{NodePort: int64(30002)},
+			{
+				ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: ep1}},
+				NodePort:   int64(30003),
+				NEGEnabled: true,
+				TargetPort: "80",
+			},
+			{
+				ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: ep2}},
+				NodePort:   int64(30004),
+				NEGEnabled: true,
+				TargetPort: "named-port",
+			},
+		}
 
-	expected := []string{"80", "8080", "8081"}
-	got := translator.GatherEndpointPorts(svcPorts)
-	if !sets.NewString(got...).Equal(sets.NewString(expected...)) {
-		t.Errorf("GatherEndpointPorts() = %v, expected %v", got, expected)
+		if useSlices {
+			endpointSliceLister := translator.ctx.EndpointSliceInformer.GetIndexer()
+			for _, slice := range newDefaultEndpointSlices(ep1) {
+				endpointSliceLister.Add(slice)
+			}
+			for _, slice := range newDefaultEndpointSlices(ep2) {
+				endpointSliceLister.Add(slice)
+			}
+		} else {
+			endpointLister := translator.ctx.EndpointInformer.GetIndexer()
+			endpointLister.Add(newDefaultEndpoint(ep1))
+			endpointLister.Add(newDefaultEndpoint(ep2))
+		}
+
+		expected := []string{"80", "8080", "8081"}
+		got := translator.GatherEndpointPorts(svcPorts)
+		if !sets.NewString(got...).Equal(sets.NewString(expected...)) {
+			t.Errorf("GatherEndpointPorts() = %v, expected %v", got, expected)
+		}
 	}
 }
 
@@ -801,6 +820,48 @@ func newDefaultEndpoint(name string) *apiv1.Endpoints {
 				Ports: []apiv1.EndpointPort{
 					{Name: "named-port", Port: int32(8081), Protocol: apiv1.ProtocolTCP},
 				},
+			},
+		},
+	}
+}
+
+func newDefaultEndpointSlices(name string) []*discoveryapi.EndpointSlice {
+	emptyName := ""
+	namedPortName := "named-port"
+	port80 := int32(80)
+	port8080 := int32(8080)
+	port8081 := int32(8081)
+	tcpProtocol := apiv1.ProtocolTCP
+	return []*discoveryapi.EndpointSlice{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name + "-1",
+				Namespace: "ns",
+				Labels:    map[string]string{discoveryapi.LabelServiceName: name},
+			},
+			Ports: []discoveryapi.EndpointPort{
+				{Name: &emptyName, Port: &port80, Protocol: &tcpProtocol},
+				{Name: &namedPortName, Port: &port8080, Protocol: &tcpProtocol},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name + "-2",
+				Namespace: "ns",
+				Labels:    map[string]string{discoveryapi.LabelServiceName: name},
+			},
+			Ports: []discoveryapi.EndpointPort{
+				{Name: &namedPortName, Port: &port80, Protocol: &tcpProtocol},
+			},
+		},
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      name + "-3",
+				Namespace: "ns",
+				Labels:    map[string]string{discoveryapi.LabelServiceName: name},
+			},
+			Ports: []discoveryapi.EndpointPort{
+				{Name: &namedPortName, Port: &port8081, Protocol: &tcpProtocol},
 			},
 		},
 	}
