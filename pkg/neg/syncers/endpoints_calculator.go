@@ -56,8 +56,9 @@ func (l *LocalL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
 	// List all nodes where the service endpoints are running. Get a subset of the desired count.
 	zoneNodeMap := make(map[string][]*v1.Node)
-	nodeNames := sets.String{}
+	processedNodes := sets.String{}
 	numEndpoints := 0
+	candidateNodeCheck := utils.NodeConditionPredicateIncludeUnreadyNodes()
 	for _, ed := range eds {
 		for _, addr := range ed.Addresses {
 			if addr.NodeName == nil {
@@ -69,13 +70,17 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 				continue
 			}
 			numEndpoints++
-			if nodeNames.Has(*addr.NodeName) {
+			if processedNodes.Has(*addr.NodeName) {
 				continue
 			}
-			nodeNames.Insert(*addr.NodeName)
+			processedNodes.Insert(*addr.NodeName)
 			node, err := l.nodeLister.Get(*addr.NodeName)
 			if err != nil {
 				klog.Errorf("failed to retrieve node object for %q: %v", *addr.NodeName, err)
+				continue
+			}
+			if ok := candidateNodeCheck(node); !ok {
+				klog.Infof("Dropping Node %q from subset since it is not a valid LB candidate", node.Name)
 				continue
 			}
 			zone, err := l.zoneGetter.GetZoneForNode(node.Name)
@@ -125,7 +130,7 @@ func (l *ClusterL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
 	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
-	nodes, _ := utils.ListWithPredicate(l.nodeLister, utils.GetNodeConditionPredicate())
+	nodes, _ := utils.ListWithPredicate(l.nodeLister, utils.NodeConditionPredicateIncludeUnreadyNodes())
 
 	zoneNodeMap := make(map[string][]*v1.Node)
 	for _, node := range nodes {

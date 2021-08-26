@@ -38,6 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/cloud-provider"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -83,11 +84,8 @@ const (
 	// exclude from load balancers created by a cloud provider. This label is deprecated and will
 	// be removed in 1.18.
 	LabelAlphaNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
-
-	// LegacyNodeRoleBehaviorFeature is the feature gate name that enables legacy
-	// behavior to vary cluster functionality on the node-role.kubernetes.io
-	// labels.
-	LegacyNodeRoleBehaviorFeature = "LegacyNodeRoleBehavior"
+	GKEUpgradeOperation               = "operation_type: UPGRADE_NODES"
+	GKECurrentOperationAnnotation     = "gke-current-operation"
 )
 
 // FrontendGCAlgorithm species GC algorithm used for ingress frontend resources.
@@ -358,42 +356,61 @@ type NodeConditionPredicate func(node *api_v1.Node) bool
 // kubernetes/kubernetes/pkg/controller/service/service_controller.go
 func GetNodeConditionPredicate() NodeConditionPredicate {
 	return func(node *api_v1.Node) bool {
-		// Get all nodes that have a taint with NoSchedule effect
-		for _, taint := range node.Spec.Taints {
-			if taint.Key == ToBeDeletedTaint {
-				return false
-			}
-		}
+		return nodePredicateInternal(node, false)
+	}
+}
 
-		// As of 1.6, we will taint the master, but not necessarily mark it unschedulable.
-		// Recognize nodes labeled as master, and filter them also, as we were doing previously.
-		if _, hasMasterRoleLabel := node.Labels[LabelNodeRoleMaster]; hasMasterRoleLabel {
+// NodeConditionPredicateIncludeUnreadyNodes returns a predicate function that tolerates unready nodes.
+func NodeConditionPredicateIncludeUnreadyNodes() NodeConditionPredicate {
+	return func(node *api_v1.Node) bool {
+		return nodePredicateInternal(node, true)
+	}
+}
+
+func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes bool) bool {
+	// Get all nodes that have a taint with NoSchedule effect
+	for _, taint := range node.Spec.Taints {
+		if taint.Key == ToBeDeletedTaint {
 			return false
 		}
+	}
 
-		// Will be removed in 1.18
-		if _, hasExcludeBalancerLabel := node.Labels[LabelAlphaNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
-			return false
-		}
+	// As of 1.6, we will taint the master, but not necessarily mark it unschedulable.
+	// Recognize nodes labeled as master, and filter them also, as we were doing previously.
+	if _, hasMasterRoleLabel := node.Labels[LabelNodeRoleMaster]; hasMasterRoleLabel {
+		return false
+	}
 
-		if _, hasExcludeBalancerLabel := node.Labels[LabelNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
-			return false
-		}
+	// Will be removed in 1.18
+	if _, hasExcludeBalancerLabel := node.Labels[LabelAlphaNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
+		return false
+	}
 
-		// If we have no info, don't accept
-		if len(node.Status.Conditions) == 0 {
-			return false
-		}
-		for _, cond := range node.Status.Conditions {
-			// We consider the node for load balancing only when its NodeReady condition status
-			// is ConditionTrue
-			if cond.Type == api_v1.NodeReady && cond.Status != api_v1.ConditionTrue {
-				klog.V(4).Infof("Ignoring node %v with %v condition status %v", node.Name, cond.Type, cond.Status)
-				return false
-			}
-		}
+	if _, hasExcludeBalancerLabel := node.Labels[LabelNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
+		return false
+	}
+	// This node is about to be upgraded.
+	if opVal, _ := node.Annotations[GKECurrentOperationAnnotation]; strings.Contains(opVal, GKEUpgradeOperation) {
+		return false
+	}
+
+	// If we have no info, don't accept
+	if len(node.Status.Conditions) == 0 {
+		return false
+	}
+	if includeUnreadyNodes {
 		return true
 	}
+	for _, cond := range node.Status.Conditions {
+		// We consider the node for load balancing only when its NodeReady condition status
+		// is ConditionTrue
+		if cond.Type == api_v1.NodeReady && cond.Status != api_v1.ConditionTrue {
+			klog.V(4).Infof("Ignoring node %v with %v condition status %v", node.Name, cond.Type, cond.Status)
+			return false
+		}
+	}
+	return true
+
 }
 
 // ListWithPredicate gets nodes that matches predicate function.
@@ -592,6 +609,15 @@ func TranslateAffinityType(affinityType string) string {
 // IsLegacyL4ILBService returns true if the given LoadBalancer service is managed by service controller.
 func IsLegacyL4ILBService(svc *api_v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.LegacyILBFinalizer, nil)
+}
+
+// IsSubsettingL4ILBService returns true if the given LoadBalancer service is managed by NEG and L4 controller.
+func IsSubsettingL4ILBService(svc *api_v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.ILBFinalizerV2, nil)
+}
+
+func LegacyForwardingRuleName(svc *api_v1.Service) string {
+	return cloudprovider.DefaultLoadBalancerName(svc)
 }
 
 // L4ILBResourceDescription stores the description fields for L4 ILB resources.

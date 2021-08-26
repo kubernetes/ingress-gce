@@ -18,6 +18,7 @@ package translator
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"reflect"
@@ -26,6 +27,7 @@ import (
 
 	api_v1 "k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
+	discoveryapi "k8s.io/api/discovery/v1beta1"
 	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -39,7 +41,16 @@ import (
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog"
 )
+
+func init() {
+	// Init klog flags so we can see the V logs.
+	klog.InitFlags(nil)
+	var logLevel string
+	flag.StringVar(&logLevel, "logLevel", "4", "test")
+	flag.Lookup("v").Value.Set("1")
+}
 
 var (
 	firstPodCreationTime = time.Date(2006, 01, 02, 15, 04, 05, 0, time.UTC)
@@ -58,6 +69,10 @@ var (
 )
 
 func fakeTranslator() *Translator {
+	return configuredFakeTranslator(false)
+}
+
+func configuredFakeTranslator(useEndpointSlices bool) *Translator {
 	client := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 
@@ -66,6 +81,7 @@ func fakeTranslator() *Translator {
 		ResyncPeriod:          1 * time.Second,
 		DefaultBackendSvcPort: defaultBackend,
 		HealthCheckPath:       "/",
+		EndpointSlicesEnabled: useEndpointSlices,
 	}
 	ctx := context.NewControllerContext(nil, client, backendConfigClient, nil, nil, nil, nil, nil, defaultNamer, "" /*kubeSystemUID*/, ctxConfig)
 	gce := &Translator{
@@ -908,18 +924,27 @@ func TestGatherEndpointPorts(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.desc, func(t *testing.T) {
-			translator := fakeTranslator()
+		for _, useSlices := range []bool{false, true} {
+			t.Run(fmt.Sprintf("slices:%v,%s", useSlices, tc.desc), func(t *testing.T) {
+				translator := configuredFakeTranslator(useSlices)
+				if useSlices {
+					endpointSliceLister := translator.ctx.EndpointSliceInformer.GetIndexer()
+					for _, ep := range tc.endpoints {
+						endpointSliceLister.Add(createEndpointSlice(ep.Name, ep.Ports))
+					}
+				} else {
+					endpointsLister := translator.ctx.EndpointInformer.GetIndexer()
+					for _, ep := range tc.endpoints {
+						endpointsLister.Add(createEndpoint(ep.Name, ep.Ports))
+					}
+				}
+				got := translator.GatherEndpointPorts(tc.svcPorts)
+				if !reflect.DeepEqual(tc.expected, got) {
+					t.Errorf("%v, %v: expected %v but got %v", tc.desc, useSlices, tc.expected, got)
+				}
 
-			endpointsLister := translator.ctx.EndpointInformer.GetIndexer()
-			for _, ep := range tc.endpoints {
-				endpointsLister.Add(createEndpoint(ep.Name, ep.Ports))
-			}
-			got := translator.GatherEndpointPorts(tc.svcPorts)
-			if !reflect.DeepEqual(tc.expected, got) {
-				t.Errorf("%v: expected %v but got %v", tc.desc, tc.expected, got)
-			}
-		})
+			})
+		}
 	}
 }
 
@@ -931,6 +956,28 @@ func createEndpoint(name string, ports []apiv1.EndpointPort) *apiv1.Endpoints {
 				Ports: ports,
 			},
 		},
+	}
+}
+
+func createEndpointSlice(name string, ports []apiv1.EndpointPort) *discoveryapi.EndpointSlice {
+	endpointPortSlice := []discoveryapi.EndpointPort{}
+	for _, p := range ports {
+		// we need to copy "p" here otherwise we will get the same reference for all
+		p2 := p
+		endpointPortSlice = append(endpointPortSlice, discoveryapi.EndpointPort{
+			Name:     &p2.Name,
+			Port:     &p2.Port,
+			Protocol: &p2.Protocol,
+		},
+		)
+	}
+	return &discoveryapi.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: "ns",
+			Labels:    map[string]string{discoveryapi.LabelServiceName: name},
+		},
+		Ports: endpointPortSlice,
 	}
 }
 

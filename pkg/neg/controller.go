@@ -296,8 +296,9 @@ func NewController(
 			UpdateFunc: func(old, cur interface{}) {
 				oldNode := old.(*apiv1.Node)
 				currentNode := cur.(*apiv1.Node)
-				nodeReadyCheck := utils.GetNodeConditionPredicate()
+				nodeReadyCheck := utils.NodeConditionPredicateIncludeUnreadyNodes()
 				if nodeReadyCheck(oldNode) != nodeReadyCheck(currentNode) {
+					klog.Infof("Node %q has changed, enqueueing", currentNode.Name)
 					negController.enqueueNode(currentNode)
 				}
 			},
@@ -577,10 +578,11 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 	if wantsILB, _ := annotations.WantsL4ILB(service); !wantsILB {
 		return nil
 	}
-	if utils.IsLegacyL4ILBService(service) {
-		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it contains legacy resources created by service controller", service.Name, service.Namespace)
+	// Only process ILB services after L4 controller has marked it with v2 finalizer.
+	if !utils.IsSubsettingL4ILBService(service) {
+		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it does not have the v2 finalizer", service.Name, service.Namespace)
 		klog.Warning(msg)
-		c.recorder.Eventf(service, apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
+		c.recorder.Eventf(service, apiv1.EventTypeWarning, "ProcessServiceSkipped", msg)
 		return nil
 	}
 

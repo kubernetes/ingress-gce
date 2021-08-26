@@ -92,6 +92,7 @@ type ControllerContext struct {
 	NodeInformer            cache.SharedIndexInformer
 	EndpointInformer        cache.SharedIndexInformer
 	EndpointSliceInformer   cache.SharedIndexInformer
+	UseEndpointSlices       bool
 	DestinationRuleInformer cache.SharedIndexInformer
 	ConfigMapInformer       cache.SharedIndexInformer
 	SvcNegInformer          cache.SharedIndexInformer
@@ -155,15 +156,11 @@ func NewControllerContext(
 		IngressInformer:         informernetworking.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		BackendConfigInformer:   informerbackendconfig.NewBackendConfigInformer(backendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		// Do not trigger periodic resync on Endpoints object.
-		// This aims improve NEG controller performance by avoiding unnecessary NEG sync that triggers for each NEG syncer.
-		// As periodic resync may temporary starve NEG API ratelimit quota.
-		EndpointInformer: informerv1.NewEndpointsInformer(kubeClient, config.Namespace, 0, utils.NewNamespaceIndexer()),
-		PodInformer:      informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		NodeInformer:     informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		SvcNegInformer:   informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
-		recorders:        map[string]record.EventRecorder{},
-		healthChecks:     make(map[string]func() error),
+		PodInformer:             informerv1.NewPodInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		NodeInformer:            informerv1.NewNodeInformer(kubeClient, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
+		recorders:               map[string]record.EventRecorder{},
+		healthChecks:            make(map[string]func() error),
 	}
 	if config.FrontendConfigEnabled {
 		context.FrontendConfigInformer = informerfrontendconfig.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
@@ -181,13 +178,15 @@ func NewControllerContext(
 		context.RegionalCluster = true
 	}
 
-	// TODO: Remove pkg/controller/translator/translator.go dependency on Endpoints.
+	context.UseEndpointSlices = config.EndpointSlicesEnabled
+	// Do not trigger periodic resync on Endpoints or EndpointSlices object.
+	// This aims improve NEG controller performance by avoiding unnecessary NEG sync that triggers for each NEG syncer.
+	// As periodic resync may temporary starve NEG API ratelimit quota.
 	if config.EndpointSlicesEnabled {
-		// Do not trigger periodic resync on EndpointSlice object.
-		// This aims improve NEG controller performance by avoiding unnecessary NEG sync that triggers for each NEG syncer.
-		// As periodic resync may temporary starve NEG API ratelimit quota.
 		context.EndpointSliceInformer = discoveryinformer.NewEndpointSliceInformer(kubeClient, config.Namespace, 0,
 			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc, endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc})
+	} else {
+		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, config.Namespace, 0, utils.NewNamespaceIndexer())
 	}
 
 	return context
@@ -273,8 +272,11 @@ func (ctx *ControllerContext) HasSynced() bool {
 		ctx.BackendConfigInformer.HasSynced,
 		ctx.PodInformer.HasSynced,
 		ctx.NodeInformer.HasSynced,
-		ctx.EndpointInformer.HasSynced,
 		ctx.SvcNegInformer.HasSynced,
+	}
+
+	if ctx.EndpointInformer != nil {
+		funcs = append(funcs, ctx.EndpointInformer.HasSynced)
 	}
 
 	if ctx.EndpointSliceInformer != nil {
