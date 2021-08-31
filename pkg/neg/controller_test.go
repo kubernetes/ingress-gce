@@ -1378,7 +1378,7 @@ func ensureEnqueue(t *testing.T, wantedKey string, queue *workqueue.RateLimiting
 				return
 			}
 		case <-time.After(5 * time.Second):
-			t.Errorf("Timed out waiting for enqueue %v", time.Now())
+			t.Errorf("Timed out waiting for enqueue of key %s", wantedKey)
 			return
 		}
 	}
