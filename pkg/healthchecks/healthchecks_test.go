@@ -257,11 +257,14 @@ func TestHTTP2HealthCheckDelete(t *testing.T) {
 	hc := translator.DefaultHealthCheck(1234, annotations.ProtocolHTTP2)
 	hc.Name = testNamer.IGBackend(1234)
 
-	alphahc := hc.ToAlphaComputeHealthCheck()
+	alphahc, err := hc.ToAlphaComputeHealthCheck()
+	if err != nil {
+		t.Error(err)
+	}
 	fakeGCE.CreateAlphaHealthCheck(alphahc)
 
 	// Delete only HTTP2 1234
-	err := healthChecks.Delete(testNamer.IGBackend(1234), meta.Global)
+	err = healthChecks.Delete(testNamer.IGBackend(1234), meta.Global)
 	if err != nil {
 		t.Errorf("unexpected error when deleting health check, err: %v", err)
 	}

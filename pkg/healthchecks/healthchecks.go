@@ -147,7 +147,11 @@ func (h *HealthChecks) sync(hc *translator.HealthCheck, bchcc *backendconfigv1.H
 
 // TODO(shance): merge with existing hc code
 func (h *HealthChecks) createILB(hc *translator.HealthCheck) error {
-	compositeType, err := composite.AlphaToHealthCheck(hc.ToAlphaComputeHealthCheck())
+	alpha, err := hc.ToAlphaComputeHealthCheck()
+	if err != nil {
+		return err
+	}
+	compositeType, err := composite.AlphaToHealthCheck(alpha)
 	if err != nil {
 		return fmt.Errorf("Error converting hc to composite: %w", err)
 	}
@@ -181,7 +185,11 @@ func (h *HealthChecks) create(hc *translator.HealthCheck, bchcc *backendconfigv1
 	switch hc.Version() {
 	case meta.VersionAlpha:
 		klog.V(2).Infof("Creating alpha health check with protocol %v", hc.Type)
-		return h.cloud.CreateAlphaHealthCheck(hc.ToAlphaComputeHealthCheck())
+		alphaHC, err := hc.ToAlphaComputeHealthCheck()
+		if err != nil {
+			return err
+		}
+		return h.cloud.CreateAlphaHealthCheck(alphaHC)
 	case meta.VersionBeta:
 		klog.V(2).Infof("Creating beta health check with protocol %v", hc.Type)
 		betaHC, err := hc.ToBetaComputeHealthCheck()
@@ -204,7 +212,11 @@ func (h *HealthChecks) create(hc *translator.HealthCheck, bchcc *backendconfigv1
 // TODO(shance): merge with existing hc code
 func (h *HealthChecks) updateILB(hc *translator.HealthCheck) error {
 	// special case ILB to avoid mucking with stable HC code
-	compositeType, err := composite.AlphaToHealthCheck(hc.ToAlphaComputeHealthCheck())
+	alpha, err := hc.ToAlphaComputeHealthCheck()
+	if err != nil {
+		return err
+	}
+	compositeType, err := composite.AlphaToHealthCheck(alpha)
 	if err != nil {
 		return fmt.Errorf("Error converting newHC to composite: %w", err)
 	}
@@ -225,7 +237,11 @@ func (h *HealthChecks) update(hc *translator.HealthCheck) error {
 	switch hc.Version() {
 	case meta.VersionAlpha:
 		klog.V(2).Infof("Updating alpha health check with protocol %v", hc.Type)
-		return h.cloud.UpdateAlphaHealthCheck(hc.ToAlphaComputeHealthCheck())
+		alpha, err := hc.ToAlphaComputeHealthCheck()
+		if err != nil {
+			return err
+		}
+		return h.cloud.UpdateAlphaHealthCheck(alpha)
 	case meta.VersionBeta:
 		klog.V(2).Infof("Updating beta health check with protocol %v", hc.Type)
 		beta, err := hc.ToBetaComputeHealthCheck()
