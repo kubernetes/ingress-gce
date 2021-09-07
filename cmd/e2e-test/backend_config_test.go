@@ -18,21 +18,24 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	v1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/ingress-gce/pkg/e2e/adapter"
-
-	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	backendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/e2e"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	"k8s.io/ingress-gce/pkg/fuzz"
+	"k8s.io/ingress-gce/pkg/test"
 )
 
 var (
@@ -147,4 +150,73 @@ func TestBackendConfigNegatives(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestBackendConfigAPI creates a backend config resource with v1 API and
+// retrieves it with the v1beta1 API clientset. Also, tests v1beta1 => v1.
+func TestBackendConfigAPI(t *testing.T) {
+	t.Parallel()
+	pstring := func(x string) *string { return &x }
+	Framework.RunWithSandbox("API conversion", t, func(t *testing.T, s *e2e.Sandbox) {
+		backendConfig := fuzz.NewBackendConfigBuilder(s.Namespace, "bc1").
+			SetSessionAffinity("GENERATED_COOKIE").SetAffinityCookieTtlSec(60).
+			EnableCDN(true).
+			SetCachePolicy(&backendconfigv1.CacheKeyPolicy{
+				IncludeHost:        true,
+				IncludeProtocol:    false,
+				IncludeQueryString: true,
+			}).
+			AddCustomRequestHeader("X-Client-Geo-Location:{client_region},{client_city}").
+			SetConnectionDrainingTimeout(60).
+			SetIAPConfig(true, "bar").
+			SetSecurityPolicy("secpol1").SetTimeout(42).Build()
+		backendConfig.Spec.HealthCheck = &backendconfigv1.HealthCheckConfig{
+			CheckIntervalSec:   test.Int64ToPtr(7),
+			TimeoutSec:         test.Int64ToPtr(3),
+			HealthyThreshold:   test.Int64ToPtr(3),
+			UnhealthyThreshold: test.Int64ToPtr(5),
+			Port:               test.Int64ToPtr(8080),
+			RequestPath:        pstring("/my-path"),
+		}
+		bcKey := fmt.Sprintf("%s/%s", backendConfig.Namespace, backendConfig.Name)
+		bcData, err := json.Marshal(backendConfig)
+		if err != nil {
+			t.Fatalf("Failed to marshall backendconfig %s: %v", bcKey, err)
+		}
+		v1beta1BackendConfig := &backendconfigv1beta1.BackendConfig{}
+		if err := json.Unmarshal(bcData, v1beta1BackendConfig); err != nil {
+			t.Fatalf("Failed to unmarshall backendconfig %s into v1beta1: %v", bcKey, err)
+		}
+
+		// Create BackendConfig using v1 API and retrieve it using v1beta1 API.
+		v1BcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+		if _, err := v1BcCRUD.Create(backendConfig); err != nil {
+			t.Fatalf("Error creating v1 backendconfig %s: %v", bcKey, err)
+		}
+		t.Logf("BackendConfig %s created using V1 API", bcKey)
+		gotV1beta1BC, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(backendConfig.Namespace).
+			Get(context.Background(), backendConfig.Name, metav1.GetOptions{})
+		if err != nil {
+			t.Fatalf("Error getting v1beta1 backendconfig %s: %v", bcKey, err)
+		}
+
+		if diff := cmp.Diff(v1beta1BackendConfig.Spec, gotV1beta1BC.Spec); diff != "" {
+			t.Fatalf("Unexpected v1beta1 backendconfig spec (-want +got):\n%s", diff)
+		}
+		// Create BackendConfig using v1beta1 API and retrieve it using v1 API.
+		backendConfig.Name = "bc2"
+		v1beta1BackendConfig.Name = backendConfig.Name
+		bcKey = fmt.Sprintf("%s/%s", backendConfig.Namespace, backendConfig.Name)
+		if _, err := Framework.BackendConfigClient.CloudV1beta1().BackendConfigs(v1beta1BackendConfig.Namespace).
+			Create(context.Background(), v1beta1BackendConfig, metav1.CreateOptions{}); err != nil {
+			t.Fatalf("Error creating v1beta1 backendconfig %s: %v", bcKey, err)
+		}
+		gotV1BC, err := v1BcCRUD.Get(backendConfig.Namespace, backendConfig.Name)
+		if err != nil {
+			t.Fatalf("Error getting v1 backendconfig %s: %v", bcKey, err)
+		}
+		if diff := cmp.Diff(backendConfig.Spec, gotV1BC.Spec); diff != "" {
+			t.Fatalf("Unexpected v1 backendconfig spec (-want +got):\n%s", diff)
+		}
+	})
 }
