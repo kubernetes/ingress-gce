@@ -18,6 +18,8 @@ package syncers
 
 import (
 	"fmt"
+	"strings"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
@@ -25,7 +27,6 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
-	"strings"
 )
 
 // LocalL4ILBEndpointGetter implements the NetworkEndpointsCalculator interface.
@@ -58,7 +59,7 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, cur
 	zoneNodeMap := make(map[string][]*v1.Node)
 	processedNodes := sets.String{}
 	numEndpoints := 0
-	candidateNodeCheck := utils.NodeConditionPredicateIncludeUnreadyNodes()
+	candidateNodeCheck := utils.NodeConditionPredicateIncludeUnreadyExcludeUpgradingNodes()
 	for _, curEp := range ep.Subsets {
 		for _, addr := range curEp.Addresses {
 			if addr.NodeName == nil {
@@ -130,7 +131,7 @@ func (l *ClusterL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
 func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(ep *v1.Endpoints, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
 	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
-	nodes, _ := utils.ListWithPredicate(l.nodeLister, utils.NodeConditionPredicateIncludeUnreadyNodes())
+	nodes, _ := utils.ListWithPredicate(l.nodeLister, utils.NodeConditionPredicateIncludeUnreadyExcludeUpgradingNodes())
 
 	zoneNodeMap := make(map[string][]*v1.Node)
 	for _, node := range nodes {

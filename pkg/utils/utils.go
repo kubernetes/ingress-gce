@@ -354,21 +354,22 @@ func NodeIsReady(node *api_v1.Node) bool {
 type NodeConditionPredicate func(node *api_v1.Node) bool
 
 // This is a duplicate definition of the function in:
-// kubernetes/kubernetes/pkg/controller/service/service_controller.go
+// https://github.com/kubernetes/kubernetes/blob/3723713c550f649b6ba84964edef9da6cc334f9d/staging/src/k8s.io/cloud-provider/controllers/service/controller.go#L668
 func GetNodeConditionPredicate() NodeConditionPredicate {
 	return func(node *api_v1.Node) bool {
-		return nodePredicateInternal(node, false)
+		return nodePredicateInternal(node, false, false)
 	}
 }
 
-// NodeConditionPredicateIncludeUnreadyNodes returns a predicate function that tolerates unready nodes.
-func NodeConditionPredicateIncludeUnreadyNodes() NodeConditionPredicate {
+// NodeConditionPredicateIncludeUnreadyExcludeUpgradingNodes returns a predicate function that tolerates unready nodes and excludes nodes that are being upgraded.
+// Skipping nodes that are about to be upgraded allows the
+func NodeConditionPredicateIncludeUnreadyExcludeUpgradingNodes() NodeConditionPredicate {
 	return func(node *api_v1.Node) bool {
-		return nodePredicateInternal(node, true)
+		return nodePredicateInternal(node, true, true)
 	}
 }
 
-func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes bool) bool {
+func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool) bool {
 	// Get all nodes that have a taint with NoSchedule effect
 	for _, taint := range node.Spec.Taints {
 		if taint.Key == ToBeDeletedTaint {
@@ -390,9 +391,11 @@ func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes bool) bool {
 	if _, hasExcludeBalancerLabel := node.Labels[LabelNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
 		return false
 	}
-	// This node is about to be upgraded.
-	if opVal, _ := node.Annotations[GKECurrentOperationAnnotation]; strings.Contains(opVal, GKEUpgradeOperation) {
-		return false
+	if excludeUpgradingNodes {
+		// This node is about to be upgraded.
+		if opVal, _ := node.Annotations[GKECurrentOperationAnnotation]; strings.Contains(opVal, GKEUpgradeOperation) {
+			return false
+		}
 	}
 
 	// If we have no info, don't accept
