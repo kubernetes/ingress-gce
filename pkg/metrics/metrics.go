@@ -18,6 +18,7 @@ package metrics
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -27,11 +28,16 @@ import (
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	pscmetrics "k8s.io/ingress-gce/pkg/psc/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/version"
 	"k8s.io/klog"
 )
 
 const (
 	label = "feature"
+	// Env variable for ingress version
+	versionVar = "INGRESS_VERSION"
+	// Dummy float so we can used bool based timeseries
+	versionValue = 1.0
 )
 
 var (
@@ -78,6 +84,13 @@ var (
 		},
 		[]string{label},
 	)
+	componentVersion = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "component_version",
+			Help: "Metric for exposing the component version",
+		},
+		[]string{"component_version"},
+	)
 )
 
 // init registers ingress usage metrics.
@@ -91,6 +104,11 @@ func init() {
 	klog.V(3).Infof("Registering PSC usage metrics %v", serviceAttachmentCount)
 	prometheus.MustRegister(serviceAttachmentCount)
 	prometheus.MustRegister(serviceCount)
+
+	klog.V(3).Infof("Registering Component Version metrics %v", componentVersion)
+	prometheus.MustRegister(componentVersion)
+	// Component version only needs to be recorded once
+	recordComponentVersion()
 }
 
 // NewIngressState returns ingress state for given ingress and service ports.
@@ -522,4 +540,14 @@ func isServiceFeature(ftr feature) bool {
 		internalServicePort: true,
 	}
 	return serviceFeatures[ftr]
+}
+
+func recordComponentVersion() {
+	var v string
+	v, ok := os.LookupEnv(versionVar)
+	if !ok {
+		klog.V(2).Infof("%q env variable does not exist", versionVar)
+		v = version.Version
+	}
+	componentVersion.WithLabelValues(v).Set(versionValue)
 }
