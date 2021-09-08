@@ -574,7 +574,7 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 					},
 				},
 			},
-			expectAccept:                       false,
+			expectAccept:                       true,
 			expectAcceptByUnreadyNodePredicate: false,
 			name:                               "ready node, upgrade in progress",
 		},
@@ -632,7 +632,7 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 		},
 	}
 	pred := GetNodeConditionPredicate()
-	unreadyPred := NodeConditionPredicateIncludeUnreadyNodes()
+	unreadyPred := NodeConditionPredicateIncludeUnreadyExcludeUpgradingNodes()
 	for _, test := range tests {
 		accept := pred(&test.node)
 		if accept != test.expectAccept {
