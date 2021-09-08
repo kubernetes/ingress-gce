@@ -102,10 +102,10 @@ type ControllerContext struct {
 
 	ControllerMetrics *metrics.ControllerMetrics
 
+	hcLock       sync.Mutex
 	healthChecks map[string]func() error
 
-	hcLock, recorderLock sync.Mutex
-
+	recorderLock sync.Mutex
 	// Map of namespace => record.EventRecorder.
 	recorders map[string]record.EventRecorder
 
