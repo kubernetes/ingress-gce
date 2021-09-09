@@ -15,9 +15,11 @@ package backends
 
 import (
 	"fmt"
-	"k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"strings"
 	"testing"
+
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
@@ -82,7 +84,7 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 					Port:         80,
 					NodePort:     30001,
 					Protocol:     annotations.ProtocolHTTP,
-					TargetPort:   port,
+					TargetPort:   intstr.FromString(port),
 					NEGEnabled:   true,
 					BackendNamer: defaultNamer},
 			} {

@@ -23,6 +23,7 @@ import (
 
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/record"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -48,7 +49,7 @@ var (
 			},
 			Port: v1.ServiceBackendPort{Name: "http"},
 		},
-		TargetPort: "9376",
+		TargetPort: intstr.FromInt(9376),
 	}
 )
 

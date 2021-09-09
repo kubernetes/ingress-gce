@@ -194,8 +194,9 @@ func (t *Translator) getServicePort(id utils.ServicePortID, params *getServicePo
 	svcPort := &utils.ServicePort{
 		ID:           id,
 		NodePort:     int64(port.NodePort),
-		Port:         int32(port.Port),
-		TargetPort:   port.TargetPort.String(),
+		Port:         port.Port,
+		PortName:     port.Name,
+		TargetPort:   port.TargetPort,
 		L7ILBEnabled: params.isL7ILB,
 		BackendNamer: namer,
 	}
@@ -464,10 +465,15 @@ func (t *Translator) GatherEndpointPorts(svcPorts []utils.ServicePort) []string 
 			// TODO(mixia): refactor firewall syncing into a separate go routine with different trigger.
 			// With NEG, endpoint changes may cause firewall ports to be different if user specifies inconsistent backends.
 			var endpointPorts []int
-			if t.ctx.UseEndpointSlices {
-				endpointPorts = listEndpointTargetPortsFromEndpointSlices(t.ctx.EndpointSliceInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.TargetPort)
+			// if targetPort is integer, no need to look for ports from endpoints
+			if p.TargetPort.Type == intstr.Int {
+				endpointPorts = []int{p.TargetPort.IntValue()}
 			} else {
-				endpointPorts = listEndpointTargetPortsFromEndpoints(t.ctx.EndpointInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.TargetPort)
+				if t.ctx.UseEndpointSlices {
+					endpointPorts = listEndpointTargetPortsFromEndpointSlices(t.ctx.EndpointSliceInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.PortName)
+				} else {
+					endpointPorts = listEndpointTargetPortsFromEndpoints(t.ctx.EndpointInformer.GetIndexer(), p.ID.Service.Namespace, p.ID.Service.Name, p.PortName)
+				}
 			}
 			for _, ep := range endpointPorts {
 				portMap[int64(ep)] = true
@@ -556,12 +562,8 @@ func listAll(store cache.Store, selector labels.Selector, appendFn cache.AppendF
 	return nil
 }
 
-// returns target port if port number is specified, finds the actual target port behind the named target port
-func listEndpointTargetPortsFromEndpointSlices(indexer cache.Indexer, namespace, name, targetPort string) []int {
-	// if targetPort is integer, no need to translate to endpoint slices ports
-	if i, err := strconv.Atoi(targetPort); err == nil {
-		return []int{i}
-	}
+// finds the actual target port behind named target port, the name of the target port is the same as service port name
+func listEndpointTargetPortsFromEndpointSlices(indexer cache.Indexer, namespace, name, svcPortName string) []int {
 	slices, err := indexer.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(namespace, name))
 	if len(slices) == 0 {
 		klog.Errorf("No Endpoint Slices found for service %s/%s.", namespace, name)
@@ -576,7 +578,7 @@ func listEndpointTargetPortsFromEndpointSlices(indexer cache.Indexer, namespace,
 	for _, sliceObj := range slices {
 		slice := sliceObj.(*discoveryapi.EndpointSlice)
 		for _, port := range slice.Ports {
-			if port.Protocol != nil && *port.Protocol == api_v1.ProtocolTCP && port.Name != nil && *port.Name == targetPort && port.Port != nil {
+			if port.Protocol != nil && *port.Protocol == api_v1.ProtocolTCP && port.Name != nil && *port.Name == svcPortName && port.Port != nil {
 				ret = append(ret, int(*port.Port))
 			}
 		}
@@ -584,13 +586,8 @@ func listEndpointTargetPortsFromEndpointSlices(indexer cache.Indexer, namespace,
 	return ret
 }
 
-// returns target port if port number is specified, finds the actual target port behind the named target port
-func listEndpointTargetPortsFromEndpoints(indexer cache.Indexer, namespace, name, targetPort string) []int {
-	// if targetPort is integer, no need to translate to endpoint ports
-	if i, err := strconv.Atoi(targetPort); err == nil {
-		return []int{i}
-	}
-
+// finds the actual target port behind named target port, the name of the target port is the same as service port name
+func listEndpointTargetPortsFromEndpoints(indexer cache.Indexer, namespace, name, svcPortName string) []int {
 	ep, exists, err := indexer.Get(
 		&api_v1.Endpoints{
 			ObjectMeta: meta_v1.ObjectMeta{
@@ -612,7 +609,7 @@ func listEndpointTargetPortsFromEndpoints(indexer cache.Indexer, namespace, name
 	ret := []int{}
 	for _, subset := range ep.(*api_v1.Endpoints).Subsets {
 		for _, port := range subset.Ports {
-			if port.Protocol == api_v1.ProtocolTCP && port.Name == targetPort {
+			if port.Protocol == api_v1.ProtocolTCP && port.Name == svcPortName {
 				ret = append(ret, int(port.Port))
 			}
 		}
