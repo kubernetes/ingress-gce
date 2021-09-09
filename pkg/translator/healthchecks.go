@@ -127,24 +127,30 @@ func (hc *HealthCheck) Protocol() annotations.AppProtocol {
 
 // ToComputeHealthCheck returns a valid compute.HealthCheck object
 func (hc *HealthCheck) ToComputeHealthCheck() (*compute.HealthCheck, error) {
-	hc.merge()
+	if err := hc.merge(); err != nil {
+		return nil, err
+	}
 	return utils.ToV1HealthCheck(&hc.HealthCheck)
 }
 
 // ToBetaComputeHealthCheck returns a valid computebeta.HealthCheck object
 func (hc *HealthCheck) ToBetaComputeHealthCheck() (*computebeta.HealthCheck, error) {
-	hc.merge()
+	if err := hc.merge(); err != nil {
+		return nil, err
+	}
 	return utils.ToBetaHealthCheck(&hc.HealthCheck)
 }
 
 // ToAlphaComputeHealthCheck returns a valid computealpha.HealthCheck object
-func (hc *HealthCheck) ToAlphaComputeHealthCheck() *computealpha.HealthCheck {
-	hc.merge()
+func (hc *HealthCheck) ToAlphaComputeHealthCheck() (*computealpha.HealthCheck, error) {
+	if err := hc.merge(); err != nil {
+		return nil, err
+	}
 	x := hc.HealthCheck // Make a copy to ensure no aliasing.
-	return &x
+	return &x, nil
 }
 
-func (hc *HealthCheck) merge() {
+func (hc *HealthCheck) merge() error {
 	// Cannot specify both portSpecification and port field unless fixed port is specified.
 	// This can happen if the user overrides the port using backendconfig
 	if hc.PortSpecification != "" && hc.PortSpecification != "USE_FIXED_PORT" {
@@ -167,7 +173,12 @@ func (hc *HealthCheck) merge() {
 	case annotations.ProtocolHTTP2:
 		http2 := computealpha.HTTP2HealthCheck(hc.HTTPHealthCheck)
 		hc.HealthCheck.Http2HealthCheck = &http2
+	default:
+		return fmt.Errorf("Protocol %q is not valid, must be one of [%q,%q,%q]",
+			hc.Protocol(), annotations.ProtocolHTTP, annotations.ProtocolHTTPS, annotations.ProtocolHTTP2,
+		)
 	}
+	return nil
 }
 
 // Version returns the appropriate API version to handle the health check
