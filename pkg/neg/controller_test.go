@@ -69,7 +69,7 @@ var (
 			Port: networkingv1.ServiceBackendPort{Name: "http"},
 		},
 		Port:       80,
-		TargetPort: "9376"}
+		TargetPort: intstr.FromInt(9376)}
 
 	defaultBackendService = &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -797,7 +797,7 @@ func TestDefaultBackendServicePortInfoMapForL7ILB(t *testing.T) {
 			want: negtypes.NewPortInfoMap(
 				defaultBackend.ID.Service.Namespace,
 				defaultBackend.ID.Service.Name,
-				negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort}),
+				negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort.String()}),
 				controller.namer,
 				false,
 				nil,
@@ -817,7 +817,7 @@ func TestDefaultBackendServicePortInfoMapForL7ILB(t *testing.T) {
 					Port: networkingv1.ServiceBackendPort{Name: "80"},
 				},
 				Port:       80,
-				TargetPort: "8888",
+				TargetPort: intstr.FromInt(8888),
 			},
 			want: negtypes.NewPortInfoMap(
 				testServiceNamespace,
@@ -869,7 +869,7 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 	expectPortMap := negtypes.NewPortInfoMap(
 		defaultBackend.ID.Service.Namespace,
 		defaultBackend.ID.Service.Name,
-		negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort}),
+		negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort.String()}),
 		controller.namer,
 		false,
 		nil,

@@ -611,7 +611,7 @@ func (c *Controller) mergeDefaultBackendServicePortInfoMap(key string, service *
 				svcPortTupleSet.Insert(negtypes.SvcPortTuple{
 					Name:       c.defaultBackendService.ID.Port.Name,
 					Port:       c.defaultBackendService.Port,
-					TargetPort: c.defaultBackendService.TargetPort,
+					TargetPort: c.defaultBackendService.TargetPort.String(),
 				})
 				defaultServicePortInfoMap := negtypes.NewPortInfoMap(c.defaultBackendService.ID.Service.Namespace, c.defaultBackendService.ID.Service.Name, svcPortTupleSet, c.namer, false, nil)
 				return portInfoMap.Merge(defaultServicePortInfoMap)

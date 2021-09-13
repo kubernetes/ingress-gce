@@ -24,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	api_v1 "k8s.io/api/core/v1"
 	apiv1 "k8s.io/api/core/v1"
 	discoveryapi "k8s.io/api/discovery/v1beta1"
 	v1 "k8s.io/api/networking/v1"
@@ -53,7 +52,7 @@ var (
 			},
 			Port: v1.ServiceBackendPort{Name: "http"},
 		},
-		TargetPort: "9376",
+		TargetPort: intstr.FromInt(9376),
 	}
 	defaultNamer = namer_util.NewNamer("uid1", "")
 	port80       = v1.ServiceBackendPort{Number: 80}
@@ -219,6 +218,7 @@ func TestGetServicePort(t *testing.T) {
 		wantErr     bool
 		wantPort    bool
 		params      getServicePortParams
+		wantedPort  apiv1.ServicePort
 	}{
 		{
 			desc: "clusterIP service",
@@ -226,9 +226,10 @@ func TestGetServicePort(t *testing.T) {
 				Type:  apiv1.ServiceTypeClusterIP,
 				Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
 			},
-			id:       utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "http"}},
-			wantErr:  true,
-			wantPort: false,
+			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "http"}},
+			wantErr:    true,
+			wantPort:   false,
+			wantedPort: apiv1.ServicePort{Name: "http", Port: 80},
 		},
 		{
 			desc: "missing port",
@@ -236,9 +237,10 @@ func TestGetServicePort(t *testing.T) {
 				Type:  apiv1.ServiceTypeNodePort,
 				Ports: []apiv1.ServicePort{{Name: "http", Port: 80}},
 			},
-			id:       utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "badport"}},
-			wantErr:  true,
-			wantPort: false,
+			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "badport"}},
+			wantErr:    true,
+			wantPort:   false,
+			wantedPort: apiv1.ServicePort{Name: "http", Port: 80},
 		},
 		{
 			desc: "app protocols malformed",
@@ -249,9 +251,83 @@ func TestGetServicePort(t *testing.T) {
 			annotations: map[string]string{
 				"service.alpha.kubernetes.io/app-protocols": "bad-string",
 			},
-			id:       utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "http"}},
-			wantErr:  true,
-			wantPort: true,
+			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "http"}},
+			wantErr:    true,
+			wantPort:   true,
+			wantedPort: apiv1.ServicePort{Name: "http", Port: 80},
+		},
+		{
+			desc: "find port by name",
+			spec: apiv1.ServiceSpec{
+				Type: apiv1.ServiceTypeNodePort,
+				Ports: []apiv1.ServicePort{
+					{Name: "http", Port: 80},
+					{Name: "https", Port: 443},
+					{Name: "otherPort", Port: 12345},
+				},
+			},
+			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "https"}},
+			wantErr:    false,
+			wantPort:   true,
+			wantedPort: apiv1.ServicePort{Name: "https", Port: 443},
+		},
+		{
+			desc: "find port by number",
+			spec: apiv1.ServiceSpec{
+				Type: apiv1.ServiceTypeNodePort,
+				Ports: []apiv1.ServicePort{
+					{Name: "http", Port: 80},
+					{Name: "https", Port: 443},
+					{Name: "otherPort", Port: 12345},
+				},
+			},
+			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Number: 443}},
+			wantErr:    false,
+			wantPort:   true,
+			wantedPort: apiv1.ServicePort{Name: "https", Port: 443},
+		},
+		{
+			desc: "correct port spec",
+			spec: apiv1.ServiceSpec{
+				Type: apiv1.ServiceTypeNodePort,
+				Ports: []apiv1.ServicePort{
+					{Name: "http", Port: 80, NodePort: 123, TargetPort: intstr.FromString("podport")},
+				},
+			},
+			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Number: 80}},
+			wantErr:    false,
+			wantPort:   true,
+			wantedPort: apiv1.ServicePort{Name: "http", Port: 80, NodePort: 123, TargetPort: intstr.FromString("podport")},
+		},
+		{
+			desc: "handle duplicated target port name by name",
+			spec: apiv1.ServiceSpec{
+				Type: apiv1.ServiceTypeNodePort,
+				Ports: []apiv1.ServicePort{
+					{Name: "http", Port: 80, TargetPort: intstr.FromString("pod-http")},
+					{Name: "https", Port: 443, TargetPort: intstr.FromString("pod-https")},
+					{Name: "otherPort", Port: 12345, TargetPort: intstr.FromString("pod-otherPort")},
+				},
+			},
+			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Name: "https"}},
+			wantErr:    false,
+			wantPort:   true,
+			wantedPort: apiv1.ServicePort{Name: "https", Port: 443, TargetPort: intstr.FromString("pod-https")},
+		},
+		{
+			desc: "handle duplicated target port name by number",
+			spec: apiv1.ServiceSpec{
+				Type: apiv1.ServiceTypeNodePort,
+				Ports: []apiv1.ServicePort{
+					{Name: "http", Port: 80, TargetPort: intstr.FromString("pod-http")},
+					{Name: "https", Port: 443, TargetPort: intstr.FromString("pod-https")},
+					{Name: "otherPort", Port: 12345, TargetPort: intstr.FromString("pod-otherPort")},
+				},
+			},
+			id:         utils.ServicePortID{Port: v1.ServiceBackendPort{Number: 443}},
+			wantErr:    false,
+			wantPort:   true,
+			wantedPort: apiv1.ServicePort{Name: "https", Port: 443, TargetPort: intstr.FromString("pod-https")},
 		},
 	}
 	for _, tc := range cases {
@@ -271,6 +347,20 @@ func TestGetServicePort(t *testing.T) {
 			}
 			if (port != nil) != tc.wantPort {
 				t.Errorf("translator.getServicePort(%+v) = %v, want port? %v", tc.id, port, tc.wantPort)
+			}
+			if tc.wantPort && port != nil {
+				if port.Port != tc.wantedPort.Port {
+					t.Errorf("Expected port.Port %d, got %d", port.Port, tc.wantedPort.Port)
+				}
+				if port.NodePort != int64(tc.wantedPort.NodePort) {
+					t.Errorf("Expected port.NodePort %d, got %d", port.NodePort, tc.wantedPort.NodePort)
+				}
+				if port.PortName != tc.wantedPort.Name {
+					t.Errorf("Expected port.PortName %s, got %s", port.PortName, tc.wantedPort.Name)
+				}
+				if port.TargetPort != tc.wantedPort.TargetPort {
+					t.Errorf("Expected port.TargetPort %v, got %v", port.TargetPort, tc.wantedPort.TargetPort)
+				}
 			}
 		})
 	}
@@ -720,49 +810,134 @@ func getProbePath(p *apiv1.Probe) string {
 }
 
 func TestGatherEndpointPorts(t *testing.T) {
-	for _, useSlices := range []bool{false, true} {
-
-		translator := configuredFakeTranslator(useSlices)
-
-		ep1 := "ep1"
-		ep2 := "ep2"
-
-		svcPorts := []utils.ServicePort{
-			{NodePort: int64(30001)},
-			{NodePort: int64(30002)},
-			{
-				ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: ep1}},
-				NodePort:   int64(30003),
-				NEGEnabled: true,
-				TargetPort: "80",
+	serviceName1 := "svc"
+	serviceName2 := "svc2"
+	serviceName3 := "svc3"
+	serviceName4 := "svc4"
+	emptyPortName := ""
+	testPortName := "test-port"
+	anotherTestPortName := "another-test-port"
+	port6001 := int32(6001)
+	port6002 := int32(6002)
+	port6003 := int32(6003)
+	port7101 := int32(7101)
+	port7102 := int32(7102)
+	port7103 := int32(7103)
+	protocolTcp := apiv1.ProtocolTCP
+	testCases := []struct {
+		desc           string
+		svcPorts       []utils.ServicePort
+		endpoints      []*apiv1.Endpoints
+		endpointSlices []*discoveryapi.EndpointSlice
+		expectedPorts  []string
+	}{
+		{
+			desc:           "Target port is a number so it is used instead",
+			svcPorts:       []utils.ServicePort{createSvcPort(serviceName1, "", intstr.FromInt(80), true)},
+			endpoints:      []*apiv1.Endpoints{},
+			endpointSlices: []*discoveryapi.EndpointSlice{},
+			expectedPorts:  []string{"80"},
+		},
+		{
+			desc:           "Target port is not a number so ports is taken from endpoints by port name",
+			svcPorts:       []utils.ServicePort{createSvcPort(serviceName1, "port", intstr.FromString("some-other-port"), true)},
+			endpoints:      []*apiv1.Endpoints{createEndpoints(serviceName1, []apiv1.EndpointSubset{createSubset("port", 8080)})},
+			endpointSlices: []*discoveryapi.EndpointSlice{createEndpointSlice(serviceName1, "-1", "port", 8080)},
+			expectedPorts:  []string{"8080"},
+		},
+		{
+			desc: "More complex test with multiple endpoints and services",
+			svcPorts: []utils.ServicePort{
+				createSvcPort(serviceName1, "", intstr.FromInt(80), true),
+				createSvcPort(serviceName2, "test-port", intstr.FromString("some-other-port"), true),
+				createSvcPort(serviceName3, "", intstr.FromInt(8081), false),
+				createSvcPort(serviceName4, "another-test-port", intstr.FromString("some-other-port"), false),
 			},
-			{
-				ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: ep2}},
-				NodePort:   int64(30004),
-				NEGEnabled: true,
-				TargetPort: "named-port",
+			endpoints: []*apiv1.Endpoints{
+				createEndpoints(serviceName1, []apiv1.EndpointSubset{createSubset(emptyPortName, 12345)}),
+				createEndpoints(serviceName2, []apiv1.EndpointSubset{
+					{
+						Ports: []apiv1.EndpointPort{
+							{Name: testPortName, Port: 6001, Protocol: apiv1.ProtocolTCP},
+							{Name: emptyPortName, Port: 6002, Protocol: apiv1.ProtocolTCP},
+							{Name: anotherTestPortName, Port: 6003, Protocol: apiv1.ProtocolTCP},
+						},
+					},
+					createSubset(emptyPortName, 6101),
+					createSubset(testPortName, 6201),
+				}),
+				createEndpoints(serviceName3, []apiv1.EndpointSubset{createSubset(emptyPortName, 23456)}),
+				createEndpoints(serviceName4, []apiv1.EndpointSubset{
+					{
+						Ports: []apiv1.EndpointPort{
+							{Name: testPortName, Port: 7001, Protocol: apiv1.ProtocolTCP},
+							{Name: emptyPortName, Port: 7002, Protocol: apiv1.ProtocolTCP},
+							{Name: anotherTestPortName, Port: 7003, Protocol: apiv1.ProtocolTCP},
+						},
+					},
+					createSubset(emptyPortName, 7101),
+					createSubset(anotherTestPortName, 7201),
+				}),
 			},
-		}
+			endpointSlices: []*discoveryapi.EndpointSlice{
+				createEndpointSlice(serviceName1, "-1", emptyPortName, 12345),
+				&discoveryapi.EndpointSlice{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      serviceName2 + "-1",
+						Namespace: "ns",
+						Labels:    map[string]string{discoveryapi.LabelServiceName: serviceName2},
+					},
+					Ports: []discoveryapi.EndpointPort{
+						{Name: &testPortName, Port: &port6001, Protocol: &protocolTcp},
+						{Name: &emptyPortName, Port: &port6002, Protocol: &protocolTcp},
+						{Name: &anotherTestPortName, Port: &port6003, Protocol: &protocolTcp},
+					},
+				},
+				createEndpointSlice(serviceName2, "-2", "", 6101),
+				createEndpointSlice(serviceName2, "-3", testPortName, 6201),
+				createEndpointSlice(serviceName3, "-1", "", 23456),
+				&discoveryapi.EndpointSlice{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      serviceName4 + "-1",
+						Namespace: "ns",
+						Labels:    map[string]string{discoveryapi.LabelServiceName: serviceName4},
+					},
+					Ports: []discoveryapi.EndpointPort{
+						{Name: &testPortName, Port: &port7101, Protocol: &protocolTcp},
+						{Name: &emptyPortName, Port: &port7102, Protocol: &protocolTcp},
+						{Name: &anotherTestPortName, Port: &port7103, Protocol: &protocolTcp},
+					},
+				},
+				createEndpointSlice(serviceName4, "-2", emptyPortName, 7101),
+				createEndpointSlice(serviceName4, "-3", anotherTestPortName, 7201),
+			},
+			expectedPorts: []string{"80", "6001", "6201"},
+		},
+	}
 
-		if useSlices {
-			endpointSliceLister := translator.ctx.EndpointSliceInformer.GetIndexer()
-			for _, slice := range newDefaultEndpointSlices(ep1) {
-				endpointSliceLister.Add(slice)
-			}
-			for _, slice := range newDefaultEndpointSlices(ep2) {
-				endpointSliceLister.Add(slice)
-			}
-		} else {
-			endpointLister := translator.ctx.EndpointInformer.GetIndexer()
-			endpointLister.Add(newDefaultEndpoint(ep1))
-			endpointLister.Add(newDefaultEndpoint(ep2))
-		}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			for _, useSlices := range []bool{false, true} {
+				translator := configuredFakeTranslator(useSlices)
+				// Add endpoints or endpoint slices to informers.
+				if useSlices {
+					endpointSliceLister := translator.ctx.EndpointSliceInformer.GetIndexer()
+					for _, slice := range tc.endpointSlices {
+						endpointSliceLister.Add(slice)
+					}
+				} else {
+					endpointLister := translator.ctx.EndpointInformer.GetIndexer()
+					for _, ep := range tc.endpoints {
+						endpointLister.Add(ep)
+					}
+				}
 
-		expected := []string{"80", "8080", "8081"}
-		got := translator.GatherEndpointPorts(svcPorts)
-		if !sets.NewString(got...).Equal(sets.NewString(expected...)) {
-			t.Errorf("GatherEndpointPorts() = %v, expected %v", got, expected)
-		}
+				gotPorts := translator.GatherEndpointPorts(tc.svcPorts)
+				if !sets.NewString(gotPorts...).Equal(sets.NewString(tc.expectedPorts...)) {
+					t.Errorf("GatherEndpointPorts() = %v, expected %v (using slices: %v)", gotPorts, tc.expectedPorts, useSlices)
+				}
+			}
+		})
 	}
 }
 
@@ -801,68 +976,46 @@ func TestGetZoneForNode(t *testing.T) {
 	}
 }
 
-func newDefaultEndpoint(name string) *apiv1.Endpoints {
+func createSvcPort(serviceName string, portName string, targetPort intstr.IntOrString, negEnabled bool) utils.ServicePort {
+	return utils.ServicePort{
+		ID:         utils.ServicePortID{Service: types.NamespacedName{Namespace: "ns", Name: serviceName}},
+		NodePort:   int64(30003),
+		NEGEnabled: negEnabled,
+		TargetPort: targetPort,
+		PortName:   portName,
+	}
+}
+
+func createEndpoints(serviceName string, subsets []apiv1.EndpointSubset) *apiv1.Endpoints {
 	return &apiv1.Endpoints{
-		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "ns"},
-		Subsets: []apiv1.EndpointSubset{
+		ObjectMeta: metav1.ObjectMeta{Name: serviceName, Namespace: "ns"},
+		Subsets:    subsets,
+	}
+}
+
+func createSubset(portName string, port int) apiv1.EndpointSubset {
+	return apiv1.EndpointSubset{
+		Ports: []apiv1.EndpointPort{
 			{
-				Ports: []apiv1.EndpointPort{
-					{Name: "", Port: int32(80), Protocol: apiv1.ProtocolTCP},
-					{Name: "named-port", Port: int32(8080), Protocol: apiv1.ProtocolTCP},
-				},
-			},
-			{
-				Ports: []apiv1.EndpointPort{
-					{Name: "named-port", Port: int32(80), Protocol: apiv1.ProtocolTCP},
-				},
-			},
-			{
-				Ports: []apiv1.EndpointPort{
-					{Name: "named-port", Port: int32(8081), Protocol: apiv1.ProtocolTCP},
-				},
+				Name:     portName,
+				Port:     int32(port),
+				Protocol: apiv1.ProtocolTCP,
 			},
 		},
 	}
 }
 
-func newDefaultEndpointSlices(name string) []*discoveryapi.EndpointSlice {
-	emptyName := ""
-	namedPortName := "named-port"
-	port80 := int32(80)
-	port8080 := int32(8080)
-	port8081 := int32(8081)
+func createEndpointSlice(serviceName string, sliceSuffix string, portName string, port int) *discoveryapi.EndpointSlice {
+	portNumber := int32(port)
 	tcpProtocol := apiv1.ProtocolTCP
-	return []*discoveryapi.EndpointSlice{
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name + "-1",
-				Namespace: "ns",
-				Labels:    map[string]string{discoveryapi.LabelServiceName: name},
-			},
-			Ports: []discoveryapi.EndpointPort{
-				{Name: &emptyName, Port: &port80, Protocol: &tcpProtocol},
-				{Name: &namedPortName, Port: &port8080, Protocol: &tcpProtocol},
-			},
+	return &discoveryapi.EndpointSlice{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      serviceName + sliceSuffix,
+			Namespace: "ns",
+			Labels:    map[string]string{discoveryapi.LabelServiceName: serviceName},
 		},
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name + "-2",
-				Namespace: "ns",
-				Labels:    map[string]string{discoveryapi.LabelServiceName: name},
-			},
-			Ports: []discoveryapi.EndpointPort{
-				{Name: &namedPortName, Port: &port80, Protocol: &tcpProtocol},
-			},
-		},
-		{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      name + "-3",
-				Namespace: "ns",
-				Labels:    map[string]string{discoveryapi.LabelServiceName: name},
-			},
-			Ports: []discoveryapi.EndpointPort{
-				{Name: &namedPortName, Port: &port8081, Protocol: &tcpProtocol},
-			},
+		Ports: []discoveryapi.EndpointPort{
+			{Name: &portName, Port: &portNumber, Protocol: &tcpProtocol},
 		},
 	}
 }
@@ -910,7 +1063,7 @@ func TestSetTrafficScaling(t *testing.T) {
 		flags.F.EnableTrafficScaling = oldFlag
 	}()
 
-	newService := func(ann map[string]string) *api_v1.Service {
+	newService := func(ann map[string]string) *apiv1.Service {
 		return &apiv1.Service{
 			ObjectMeta: metav1.ObjectMeta{Annotations: ann},
 		}
