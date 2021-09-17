@@ -406,7 +406,15 @@ func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []Endpoi
 			}
 			// Endpoint is ready when the Ready is nil or when it's value is true.
 			ready := ep.Conditions.Ready == nil || *ep.Conditions.Ready
-			addresses = append(addresses, AddressData{TargetRef: ep.TargetRef, NodeName: ep.NodeName, Addresses: ep.Addresses, Ready: ready})
+
+			// The following code is here to support old version of EndpointSlices in
+			// which the NodeName field was not yet present.
+			nodeName := ep.NodeName
+			if nodeName == nil || len(*nodeName) == 0 {
+				nodeNameFromTopology := ep.Topology[apiv1.LabelHostname]
+				nodeName = &nodeNameFromTopology
+			}
+			addresses = append(addresses, AddressData{TargetRef: ep.TargetRef, NodeName: nodeName, Addresses: ep.Addresses, Ready: ready})
 		}
 		result = append(result, EndpointsData{Meta: &slice.ObjectMeta, Ports: ports, Addresses: addresses})
 	}

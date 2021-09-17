@@ -767,6 +767,57 @@ func TestEndpointsDataFromEndpointSlices(t *testing.T) {
 	}
 }
 
+// The following test is here to test the support old version of EndpointSlices in
+// which the NodeName field was not yet present.
+func TestEndpointsDataFromEndpointSlicesNodeNameFromTopology(t *testing.T) {
+	t.Parallel()
+	testServiceName := "service"
+	testServiceNamespace := "namespace"
+	emptyNamedPort := ""
+	port80 := int32(80)
+	protocolTCP := v1.ProtocolTCP
+	endpointSlices := []*discovery.EndpointSlice{
+		{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      testServiceName + "-1",
+				Namespace: testServiceNamespace,
+			},
+			AddressType: "IPv4",
+			Endpoints: []discovery.Endpoint{
+				{
+					Addresses: []string{"10.100.1.1"},
+					Topology:  map[string]string{v1.LabelHostname: TestInstance1},
+					TargetRef: &v1.ObjectReference{
+						Namespace: testServiceNamespace,
+						Name:      "pod1",
+					},
+				},
+			},
+			Ports: []discovery.EndpointPort{
+				{
+					Name:     &emptyNamedPort,
+					Port:     &port80,
+					Protocol: &protocolTCP,
+				},
+			},
+		},
+	}
+
+	endpointsData := EndpointsDataFromEndpointSlices(endpointSlices)
+	if len(endpointsData) != 1 {
+		t.Errorf("Expected 1 endpoints data, got %d (%v)", len(endpointsData), endpointsData)
+	}
+	if len(endpointsData[0].Addresses) != 1 {
+		t.Errorf("Expected 1 endpoints data addresses, got %d (%v)", len(endpointsData[0].Addresses), endpointsData[0].Addresses)
+	}
+	if endpointsData[0].Addresses[0].NodeName == nil {
+		t.Errorf("Expected NodeName=%s, got nil", TestInstance1)
+	}
+	if *endpointsData[0].Addresses[0].NodeName != TestInstance1 {
+		t.Errorf("Expected NodeName=%s, got %s", TestInstance1, *endpointsData[0].Addresses[0].NodeName)
+	}
+}
+
 func ValidatePortData(portData PortData, port int32, name string, t *testing.T) {
 	if portData.Port != port {
 		t.Errorf("Invalid port number, got %d expected %d", portData.Port, port)
