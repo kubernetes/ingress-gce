@@ -83,7 +83,7 @@ func SpreadPodAcrossZones(deployment *apps.Deployment) {
 					Weight: int32(1),
 					PodAffinityTerm: v1.PodAffinityTerm{
 						LabelSelector: metav1.SetAsLabelSelector(labels.Set(podLabels)),
-						TopologyKey:   v1.LabelZoneFailureDomain,
+						TopologyKey:   v1.LabelZoneFailureDomainStable,
 					},
 				},
 			},

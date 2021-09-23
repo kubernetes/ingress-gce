@@ -65,7 +65,7 @@ const (
 	GceL7ILBIngressClass = "gce-internal"
 
 	// Label key to denote which GCE zone a Kubernetes node is in.
-	ZoneKey     = "failure-domain.beta.kubernetes.io/zone"
+	ZoneKey     = "topology.kubernetes.io/zone"
 	DefaultZone = ""
 
 	// InstanceGroupsAnnotationKey is the annotation key used by controller to

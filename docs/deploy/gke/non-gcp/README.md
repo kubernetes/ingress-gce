@@ -10,10 +10,10 @@ following commands to label ALL nodes in the GKE On-Prem cluster:
 
 ```sh
 kubectl label nodes <node-name> \
-  failure-domain.beta.kubernetes.io/zone=<GCP_ZONE>
+  topology.kubernetes.io/zone=<GCP_ZONE>
 
 kubectl label nodes <node-name> \
-  failure-domain.beta.kubernetes.io/region=<GCP_REGION>
+  topology.kubernetes.io/region=<GCP_REGION>
 ```
 
 # Create a service account
