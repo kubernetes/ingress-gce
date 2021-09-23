@@ -444,8 +444,7 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 		}
 	}
 	if !reflect.DeepEqual(oldService.Annotations, newService.Annotations) {
-		// Ignore update if only ilb resources annotations changed, these are added by the l4 controller.
-		// Annotations added/modified by the NEG controller will still trigger an update.
+		// Ignore update if only neg or ilb resources annotations changed, these are added by the neg/l4 controller.
 		if !annotations.OnlyStatusAnnotationsChanged(oldService, newService) {
 			recorder.Eventf(newService, v1.EventTypeNormal, "Annotations", "%v -> %v",
 				oldService.Annotations, newService.Annotations)

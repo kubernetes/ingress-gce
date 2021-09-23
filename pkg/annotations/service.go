@@ -212,21 +212,22 @@ func WantsL4ILB(service *v1.Service) (bool, string) {
 	return false, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
 }
 
-// OnlyStatusAnnotationsChanged returns true if the only annotation change between the 2 services is in ILB resources annotations.
+// OnlyStatusAnnotationsChanged returns true if the only annotation change between the 2 services is the NEG or ILB
+// resources annotations.
 // Note : This assumes that the annotations in old and new service are different. If they are identical, this will
 // return true.
 func OnlyStatusAnnotationsChanged(oldService, newService *v1.Service) bool {
 	return onlyStatusAnnotationsChanged(oldService, newService) && onlyStatusAnnotationsChanged(newService, oldService)
 }
 
-// onlyStatusAnnotationsChanged returns true if the ILB resources annotations are the only extra annotations present
-// in the new service but not in the old service.
+// onlyStatusAnnotationsChanged returns true if the NEG Status or ILB resources annotations are the only extra
+// annotations present in the new service but not in the old service.
 // Note : This assumes that the annotations in old and new service are different. If they are identical, this will
 // return true.
 func onlyStatusAnnotationsChanged(oldService, newService *v1.Service) bool {
 	for key, val := range newService.ObjectMeta.Annotations {
 		if oldVal, ok := oldService.ObjectMeta.Annotations[key]; !ok || oldVal != val {
-			if strings.HasPrefix(key, ServiceStatusPrefix) {
+			if key == NEGStatusKey || strings.HasPrefix(key, ServiceStatusPrefix) {
 				continue
 			}
 			return false

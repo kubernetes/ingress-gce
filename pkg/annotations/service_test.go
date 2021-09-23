@@ -482,50 +482,10 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: false,
-		},
-		{
-			desc: "Test new zone in neg annotation",
-			service1: &v1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "service1",
-					Annotations: map[string]string{
-						NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
-					},
-				},
-			},
-			service2: &v1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "service2",
-					Annotations: map[string]string{
-						NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a", "us-central1-b"]}`,
-					},
-				},
-			},
-			expectedResult: false,
-		},
-		{
-			desc: "Test no change in neg annotation",
-			service1: &v1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "service1",
-					Annotations: map[string]string{
-						NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
-					},
-				},
-			},
-			service2: &v1.Service{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "service2",
-					Annotations: map[string]string{
-						NEGStatusKey: `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
-					},
-				},
-			},
 			expectedResult: true,
 		},
 		{
-			desc: "Test new annotation added",
+			desc: "Test valid diff",
 			service1: &v1.Service{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "service1",
@@ -538,7 +498,6 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "service2",
 					Annotations: map[string]string{
-						NEGStatusKey:       `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
 						"RandomAnnotation": "abcde",
 					},
 				},
@@ -584,7 +543,7 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 					},
 				},
 			},
-			expectedResult: false,
+			expectedResult: true,
 		},
 		{
 			desc: "Test only ILB ForwardingRule annotation diff",
@@ -629,7 +588,6 @@ func TestOnlyStatusAnnotationsChanged(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "service2",
 					Annotations: map[string]string{
-						NEGStatusKey:       `{"network_endpoint_groups":{"80":"neg-name"},"zones":["us-central1-a"]}`,
 						"RandomAnnotation": "abcde",
 					},
 				},
