@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
@@ -298,6 +299,16 @@ func (p1 PortInfoMap) NegsWithReadinessGate() sets.String {
 	return ret
 }
 
+// EndpointsCalculatorMode returns the endpoints calculator mode for this portInfoMap. This indicates the type of NEG used.
+func (p1 PortInfoMap) EndpointsCalculatorMode() EndpointsCalculatorMode {
+	for _, portInfo := range p1 {
+		if portInfo.EpCalculatorMode != "" {
+			return portInfo.EpCalculatorMode
+		}
+	}
+	return L7Mode
+}
+
 // NegSyncerKey includes information to uniquely identify a NEG syncer
 type NegSyncerKey struct {
 	// Namespace of service
@@ -419,4 +430,13 @@ func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []Endpoi
 		result = append(result, EndpointsData{Meta: &slice.ObjectMeta, Ports: ports, Addresses: addresses})
 	}
 	return result
+}
+
+// NodePredicateForEndpointCalculatorMode returns the predicate function to select candidate nodes, given the endpoints calculator mode.
+func NodePredicateForEndpointCalculatorMode(mode EndpointsCalculatorMode) utils.NodeConditionPredicate {
+	// VM_IP NEGs can include unready and upgrading nodes.
+	if mode == L4ClusterMode || mode == L4LocalMode {
+		return utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
+	}
+	return utils.CandidateNodesPredicate
 }

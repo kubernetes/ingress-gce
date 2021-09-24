@@ -818,6 +818,52 @@ func TestEndpointsDataFromEndpointSlicesNodeNameFromTopology(t *testing.T) {
 	}
 }
 
+func TestEndpointsCalculatorMode(t *testing.T) {
+	testContext := NewTestContext()
+	for _, tc := range []struct {
+		desc        string
+		portInfoMap PortInfoMap
+		expectMode  EndpointsCalculatorMode
+	}{
+		{"L4 Local Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, true), L4LocalMode},
+		{"L4 Cluster Mode", NewPortInfoMapForVMIPNEG("testns", "testsvc", testContext.L4Namer, false), L4ClusterMode},
+		{"L7 Mode", NewPortInfoMap("testns", "testsvc", NewSvcPortTupleSet(SvcPortTuple{Name: "http", Port: 80, TargetPort: "targetPort"}), testContext.NegNamer, false, nil), L7Mode},
+		{"Empty tupleset returns L7 Mode", NewPortInfoMap("testns", "testsvc", nil, testContext.NegNamer, false, nil), L7Mode},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			mode := tc.portInfoMap.EndpointsCalculatorMode()
+			if mode != tc.expectMode {
+				t.Errorf("Unexpected calculator mode, got %v, want %v", mode, tc.expectMode)
+			}
+		})
+	}
+
+}
+
+func TestNodePredicateForEndpointCalculatorMode(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		desc             string
+		epCalculatorMode EndpointsCalculatorMode
+		expectZones      []string
+	}{
+		{"L4 Local mode, includes unready, excludes upgrading", L4LocalMode, []string{TestZone1, TestZone2, TestZone3}},
+		{"L4 Cluster mode, includes unready, excludes upgrading", L4ClusterMode, []string{TestZone1, TestZone2, TestZone3}},
+		{"L7 mode, includes upgrading, excludes unready", L7Mode, []string{TestZone1, TestZone2, TestZone4}},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			predicate := NodePredicateForEndpointCalculatorMode(tc.epCalculatorMode)
+			zones, err := NewFakeZoneGetter().ListZones(predicate)
+			if err != nil {
+				t.Errorf("Failed listing zones with predicate, err - %v", err)
+			}
+			if !sets.NewString(zones...).Equal(sets.NewString(tc.expectZones...)) {
+				t.Errorf("Unexpected zones list, got %v, want %v", zones, tc.expectZones)
+			}
+		})
+	}
+}
+
 func ValidatePortData(portData PortData, port int32, name string, t *testing.T) {
 	if portData.Port != port {
 		t.Errorf("Invalid port number, got %d expected %d", portData.Port, port)

@@ -187,7 +187,7 @@ func (s *transactionSyncer) syncInternal() error {
 	klog.V(2).Infof("Sync NEG %q for %s, Endpoints Calculator mode %s", s.NegSyncerKey.NegName,
 		s.NegSyncerKey.String(), s.endpointsCalculator.Mode())
 
-	currentMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion())
+	currentMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode())
 	if err != nil {
 		return err
 	}
@@ -274,7 +274,8 @@ func (s *transactionSyncer) syncInternal() error {
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
 func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 	var err error
-	zones, err := s.zoneGetter.ListZones()
+	// NEGs should be created in zones with candidate nodes only.
+	zones, err := s.zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(s.EpCalculatorMode))
 	if err != nil {
 		return err
 	}

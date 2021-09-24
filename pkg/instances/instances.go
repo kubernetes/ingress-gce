@@ -75,7 +75,8 @@ func (i *Instances) Init(zl ZoneLister) {
 // and adds the given ports to it. Returns a list of one instance group per zone,
 // all of which have the exact same named ports.
 func (i *Instances) EnsureInstanceGroupsAndPorts(name string, ports []int64) (igs []*compute.InstanceGroup, err error) {
-	zones, err := i.ListZones()
+	// Instance groups need to be created only in zones that have ready nodes.
+	zones, err := i.ListZones(utils.CandidateNodesPredicate)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +156,7 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 func (i *Instances) DeleteInstanceGroup(name string) error {
 	errs := []error{}
 
-	zones, err := i.ListZones()
+	zones, err := i.ListZones(utils.AllNodesPredicate)
 	if err != nil {
 		return err
 	}
@@ -181,7 +182,7 @@ func (i *Instances) DeleteInstanceGroup(name string) error {
 // list lists all instances in all zones.
 func (i *Instances) list(name string) (sets.String, error) {
 	nodeNames := sets.NewString()
-	zones, err := i.ListZones()
+	zones, err := i.ListZones(utils.AllNodesPredicate)
 	if err != nil {
 		return nodeNames, err
 	}
@@ -216,7 +217,7 @@ func (i *Instances) Get(name, zone string) (*compute.InstanceGroup, error) {
 func (i *Instances) List() ([]string, error) {
 	var igs []*compute.InstanceGroup
 
-	zones, err := i.ListZones()
+	zones, err := i.ListZones(utils.AllNodesPredicate)
 	if err != nil {
 		return nil, err
 	}

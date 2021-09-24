@@ -399,9 +399,9 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 	}
 
 	// Get the zones our groups live in.
-	zones, err := lbc.Translator.ListZones()
+	zones, err := lbc.Translator.ListZones(utils.CandidateNodesPredicate)
 	if err != nil {
-		klog.Errorf("lbc.Translator.ListZones() = %v", err)
+		klog.Errorf("lbc.Translator.ListZones(utils.CandidateNodesPredicate) = %v", err)
 		return err
 	}
 	var groupKeys []backends.GroupKey

@@ -23,24 +23,34 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 const (
-	TestZone1     = "zone1"
-	TestZone2     = "zone2"
-	TestInstance1 = "instance1"
-	TestInstance2 = "instance2"
-	TestInstance3 = "instance3"
-	TestInstance4 = "instance4"
-	TestInstance5 = "instance5"
-	TestInstance6 = "instance6"
+	TestZone1            = "zone1"
+	TestZone2            = "zone2"
+	TestZone3            = "zone3"
+	TestZone4            = "zone4"
+	TestInstance1        = "instance1"
+	TestInstance2        = "instance2"
+	TestInstance3        = "instance3"
+	TestInstance4        = "instance4"
+	TestInstance5        = "instance5"
+	TestInstance6        = "instance6"
+	TestUnreadyInstance1 = "unready-instance1"
+	TestUnreadyInstance2 = "unready-instance2"
+	TestUpgradeInstance1 = "upgrade-instance1"
+	TestUpgradeInstance2 = "upgrade-instance2"
 )
 
 type fakeZoneGetter struct {
-	zoneInstanceMap map[string]sets.String
+	zoneInstanceMap     map[string]sets.String
+	unreadyInstancesMap map[string]sets.String
+	upgradeInstancesMap map[string]sets.String
 }
 
 func NewFakeZoneGetter() *fakeZoneGetter {
@@ -49,18 +59,53 @@ func NewFakeZoneGetter() *fakeZoneGetter {
 			TestZone1: sets.NewString(TestInstance1, TestInstance2),
 			TestZone2: sets.NewString(TestInstance3, TestInstance4, TestInstance5, TestInstance6),
 		},
+		unreadyInstancesMap: map[string]sets.String{
+			TestZone3: sets.NewString(TestUnreadyInstance1, TestUnreadyInstance2),
+		},
+		upgradeInstancesMap: map[string]sets.String{
+			TestZone4: sets.NewString(TestUpgradeInstance1, TestUpgradeInstance2),
+		},
 	}
 }
 
-func (f *fakeZoneGetter) ListZones() ([]string, error) {
+func (f *fakeZoneGetter) ListZones(predicate utils.NodeConditionPredicate) ([]string, error) {
 	ret := []string{}
-	for key := range f.zoneInstanceMap {
-		ret = append(ret, key)
+	for zone := range f.zoneInstanceMap {
+		node := &v1.Node{
+			Status: v1.NodeStatus{
+				Conditions: []v1.NodeCondition{v1.NodeCondition{Type: v1.NodeReady, Status: v1.ConditionTrue}}}}
+		if predicate(node) {
+			ret = append(ret, zone)
+		}
+	}
+	for zone := range f.unreadyInstancesMap {
+		node := &v1.Node{
+			Status: v1.NodeStatus{
+				Conditions: []v1.NodeCondition{v1.NodeCondition{Type: v1.NodeReady, Status: v1.ConditionFalse}}}}
+		if predicate(node) {
+			ret = append(ret, zone)
+		}
+	}
+	for zone := range f.upgradeInstancesMap {
+		node := &v1.Node{
+			ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{utils.GKECurrentOperationAnnotation: utils.GKEUpgradeOperation},
+			},
+			Status: v1.NodeStatus{
+				Conditions: []v1.NodeCondition{v1.NodeCondition{Type: v1.NodeReady, Status: v1.ConditionTrue}}}}
+		if predicate(node) {
+			ret = append(ret, zone)
+		}
 	}
 	return ret, nil
 }
 func (f *fakeZoneGetter) GetZoneForNode(name string) (string, error) {
 	for zone, instances := range f.zoneInstanceMap {
+		if instances.Has(name) {
+			return zone, nil
+		}
+	}
+	for zone, instances := range f.unreadyInstancesMap {
 		if instances.Has(name) {
 			return zone, nil
 		}

@@ -387,19 +387,19 @@ func (t *Translator) GetZoneForNode(name string) (string, error) {
 	return "", fmt.Errorf("node not found %v", name)
 }
 
-// ListZones returns a list of zones this Kubernetes cluster spans.
-func (t *Translator) ListZones() ([]string, error) {
+// ListZones returns a list of zones containing nodes that satisfy the given predicate.
+func (t *Translator) ListZones(predicate utils.NodeConditionPredicate) ([]string, error) {
 	nodeLister := t.ctx.NodeInformer.GetIndexer()
-	return t.listZonesWithLister(listers.NewNodeLister(nodeLister))
+	return t.listZones(listers.NewNodeLister(nodeLister), predicate)
 }
 
-func (t *Translator) listZonesWithLister(lister listers.NodeLister) ([]string, error) {
+func (t *Translator) listZones(lister listers.NodeLister, predicate utils.NodeConditionPredicate) ([]string, error) {
 	zones := sets.String{}
-	readyNodes, err := utils.ListWithPredicate(lister, utils.GetNodeConditionPredicate())
+	nodes, err := utils.ListWithPredicate(lister, predicate)
 	if err != nil {
 		return zones.List(), err
 	}
-	for _, n := range readyNodes {
+	for _, n := range nodes {
 		zones.Insert(getZone(n))
 	}
 	return zones.List(), nil

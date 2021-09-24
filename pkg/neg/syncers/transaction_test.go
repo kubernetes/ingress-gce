@@ -44,6 +44,7 @@ import (
 
 const (
 	// test zone and instances in the zones
+	// TODO - use negtypes.TestZone consts instead.
 	testZone1     = "zone1"
 	testInstance1 = "instance1"
 	testInstance2 = "instance2"
@@ -80,7 +81,13 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 
 			// Verify the NEGs are created as expected
 			ret, _ := transactionSyncer.cloud.AggregatedListNetworkEndpointGroup(transactionSyncer.NegSyncerKey.GetAPIVersion())
-			expectZones := []string{testZone1, testZone2}
+			// Though the test cases below only add instances in zone1 and zone2, NEGs will be created in zone3 or zone4 as well since fakeZoneGetter includes those zones.
+			var expectZones []string
+			if testNegType == negtypes.VmIpEndpointType {
+				expectZones = []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
+			} else {
+				expectZones = []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone4}
+			}
 			retZones := sets.NewString()
 
 			for key := range ret {
@@ -89,7 +96,7 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 			for _, zone := range expectZones {
 				_, ok := retZones[zone]
 				if !ok {
-					t.Errorf("Failed to find zone %q from ret %v", zone, ret)
+					t.Errorf("Failed to find zone %q from ret %v for negType %v", zone, ret, testNegType)
 					continue
 				}
 			}
@@ -219,8 +226,10 @@ func TestTransactionSyncNetworkEndpoints(t *testing.T) {
 					}
 				}
 			}
-			transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, testZone1, transactionSyncer.NegSyncerKey.GetAPIVersion())
-			transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, testZone2, transactionSyncer.NegSyncerKey.GetAPIVersion())
+			transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone1, transactionSyncer.NegSyncerKey.GetAPIVersion())
+			transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone2, transactionSyncer.NegSyncerKey.GetAPIVersion())
+			transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone3, transactionSyncer.NegSyncerKey.GetAPIVersion())
+			transactionSyncer.cloud.DeleteNetworkEndpointGroup(transactionSyncer.NegName, negtypes.TestZone4, transactionSyncer.NegSyncerKey.GetAPIVersion())
 		}
 	}
 }
@@ -985,8 +994,8 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 			_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, tc.customName, enableEndpointSlices)
 			negClient := syncer.svcNegClient
 			t.Run(tc.desc, func(t *testing.T) {
-
-				expectZones := sets.NewString(testZone1, testZone2)
+				// fakeZoneGetter will list 3 zones for VM_IP_PORT NEGs.
+				expectZones := sets.NewString(negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone4)
 
 				var expectedNegRefs map[string]negv1beta1.NegObjectReference
 				if tc.negExists {
@@ -1074,8 +1083,10 @@ func TestTransactionSyncerWithNegCR(t *testing.T) {
 
 			negClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(testNamespace).Delete(context2.TODO(), testNegName, v1.DeleteOptions{})
 
-			syncer.cloud.DeleteNetworkEndpointGroup(testNegName, testZone1, syncer.NegSyncerKey.GetAPIVersion())
-			syncer.cloud.DeleteNetworkEndpointGroup(testNegName, testZone2, syncer.NegSyncerKey.GetAPIVersion())
+			syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone1, syncer.NegSyncerKey.GetAPIVersion())
+			syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone2, syncer.NegSyncerKey.GetAPIVersion())
+			syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone3, syncer.NegSyncerKey.GetAPIVersion())
+			syncer.cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone4, syncer.NegSyncerKey.GetAPIVersion())
 
 		}
 	}
@@ -1238,6 +1249,7 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		svcPort.PortTuple.TargetPort = ""
 		svcPort.PortTuple.Name = string(negtypes.VmIpEndpointType)
 		mode = negtypes.L4LocalMode
+		svcPort.EpCalculatorMode = mode
 	}
 
 	// TODO(freehan): use real readiness reflector
