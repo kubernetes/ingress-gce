@@ -420,7 +420,8 @@ func CreatePorterDeployment(s *Sandbox, name string, replics int32, version stri
 					Containers: []apiv1.Container{
 						{
 							Name:  "hostname",
-							Image: "gcr.io/kubernetes-e2e-test-images/porter-alpine:1.0",
+							Image: "k8s.gcr.io/e2e-test-images/agnhost:2.32",
+							Args:  []string{"porter"},
 							Env:   []apiv1.EnvVar{{Name: env, Value: env}},
 							Ports: []apiv1.ContainerPort{{Name: "server", ContainerPort: porterPort}},
 						},
