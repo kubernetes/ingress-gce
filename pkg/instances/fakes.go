@@ -46,7 +46,7 @@ type FakeZoneLister struct {
 }
 
 // ListZones returns the list of zones.
-func (z *FakeZoneLister) ListZones() ([]string, error) {
+func (z *FakeZoneLister) ListZones(_ utils.NodeConditionPredicate) ([]string, error) {
 	return z.Zones, nil
 }
 

@@ -181,8 +181,8 @@ func CreateAndInsertNodes(gce *gce.Cloud, nodeNames []string, zoneName string) (
 				ObjectMeta: meta_v1.ObjectMeta{
 					Name: name,
 					Labels: map[string]string{
-						api_v1.LabelHostname:          name,
-						api_v1.LabelZoneFailureDomain: zoneName,
+						api_v1.LabelHostname:                name,
+						api_v1.LabelZoneFailureDomainStable: zoneName,
 					},
 				},
 				Status: api_v1.NodeStatus{

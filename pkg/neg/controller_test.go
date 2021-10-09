@@ -69,7 +69,7 @@ var (
 			Port: networkingv1.ServiceBackendPort{Name: "http"},
 		},
 		Port:       80,
-		TargetPort: "9376"}
+		TargetPort: intstr.FromInt(9376)}
 
 	defaultBackendService = &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
@@ -346,6 +346,8 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	testContext := negtypes.NewTestContextWithKubeClient(kubeClient)
 	controller := newTestControllerWithParamsAndContext(kubeClient, testContext, true, false)
 	manager := controller.manager.(*syncerManager)
+	// L4 ILB NEGs will be created in zones with ready and unready nodes. Zones with upgrading nodes will be skipped.
+	expectZones := []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone3}
 	defer controller.stop()
 	var prevSyncerKey, updatedSyncerKey negtypes.NegSyncerKey
 	t.Logf("Creating L4 ILB service with ExternalTrafficPolicy:Cluster")
@@ -385,7 +387,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	}
 	ValidateSyncerByKey(t, controller, 1, prevSyncerKey, false)
 	validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
-	validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap)
+	validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap, expectZones)
 	// Now Update the service to change the TrafficPolicy
 	t.Logf("Updating L4 ILB service from ExternalTrafficPolicy:Cluster to Local")
 	svc.Spec.ExternalTrafficPolicy = apiv1.ServiceExternalTrafficPolicyTypeLocal
@@ -411,7 +413,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 	controller.manager.(*syncerManager).GC()
 	// check the port info map after all stale syncers have been deleted.
 	validateSyncerManagerWithPortInfoMap(t, controller, testServiceNamespace, testServiceName, expectedPortInfoMap)
-	validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap)
+	validateServiceAnnotationWithPortInfoMap(t, svc, expectedPortInfoMap, expectZones)
 }
 
 func TestEnqueueNodeWithILBSubsetting(t *testing.T) {
@@ -797,7 +799,7 @@ func TestDefaultBackendServicePortInfoMapForL7ILB(t *testing.T) {
 			want: negtypes.NewPortInfoMap(
 				defaultBackend.ID.Service.Namespace,
 				defaultBackend.ID.Service.Name,
-				negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort}),
+				negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort.String()}),
 				controller.namer,
 				false,
 				nil,
@@ -817,7 +819,7 @@ func TestDefaultBackendServicePortInfoMapForL7ILB(t *testing.T) {
 					Port: networkingv1.ServiceBackendPort{Name: "80"},
 				},
 				Port:       80,
-				TargetPort: "8888",
+				TargetPort: intstr.FromInt(8888),
 			},
 			want: negtypes.NewPortInfoMap(
 				testServiceNamespace,
@@ -869,7 +871,7 @@ func TestMergeDefaultBackendServicePortInfoMap(t *testing.T) {
 	expectPortMap := negtypes.NewPortInfoMap(
 		defaultBackend.ID.Service.Namespace,
 		defaultBackend.ID.Service.Name,
-		negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort}),
+		negtypes.NewSvcPortTupleSet(negtypes.SvcPortTuple{Name: "http", Port: 80, TargetPort: defaultBackend.TargetPort.String()}),
 		controller.namer,
 		false,
 		nil,
@@ -1073,7 +1075,8 @@ func TestNewDestinationRule(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Service was not created successfully, err: %v", err)
 			}
-			validateServiceAnnotationWithPortInfoMap(t, svc, tc.wantSvcPortMap)
+			// zones with unready nodes will be skipped.
+			validateServiceAnnotationWithPortInfoMap(t, svc, tc.wantSvcPortMap, []string{negtypes.TestZone1, negtypes.TestZone2, negtypes.TestZone4})
 			if tc.usDestinationRule != nil {
 				usdr, err := controller.destinationRuleClient.Namespace(tc.usDestinationRule.GetNamespace()).Get(context.TODO(), tc.usDestinationRule.GetName(), metav1.GetOptions{})
 				if err != nil {
@@ -1378,7 +1381,7 @@ func ensureEnqueue(t *testing.T, wantedKey string, queue *workqueue.RateLimiting
 				return
 			}
 		case <-time.After(5 * time.Second):
-			t.Errorf("Timed out waiting for enqueue %v", time.Now())
+			t.Errorf("Timed out waiting for enqueue of key %s", wantedKey)
 			return
 		}
 	}
@@ -1456,24 +1459,25 @@ func validateSyncerManagerWithPortInfoMap(t *testing.T, controller *Controller, 
 	}
 }
 
-func validateServiceAnnotationWithPortInfoMap(t *testing.T, svc *apiv1.Service, portInfoMap negtypes.PortInfoMap) {
+func validateServiceAnnotationWithPortInfoMap(t *testing.T, svc *apiv1.Service, portInfoMap negtypes.PortInfoMap, expectZones []string) {
 	v, ok := svc.Annotations[annotations.NEGStatusKey]
 	if !ok {
 		t.Fatalf("Failed to apply the NEG service state annotation, got %+v", svc.Annotations)
 	}
 
 	zoneGetter := negtypes.NewFakeZoneGetter()
-	zones, _ := zoneGetter.ListZones()
-	for _, zone := range zones {
-		if !strings.Contains(v, zone) {
-			t.Fatalf("Expected NEG service state annotation to contain zone %v, got %v", zone, v)
-		}
+	zones, _ := zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(portInfoMap.EndpointsCalculatorMode()))
+	if !sets.NewString(expectZones...).Equal(sets.NewString(zones...)) {
+		t.Errorf("Unexpected zones listed by the predicate function, got %v, want %v", zones, expectZones)
 	}
 
 	// negStatus validation
 	negStatus, err := annotations.ParseNegStatus(v)
 	if err != nil {
 		t.Fatalf("Failed to parse neg status annotation %q: %v", v, err)
+	}
+	if !sets.NewString(negStatus.Zones...).Equal(sets.NewString(zones...)) {
+		t.Errorf("Unexpected zones in NEG service state annotation, got %v, want %v", negStatus.Zones, zones)
 	}
 
 	wantNegStatus := annotations.NewNegStatus(zones, portInfoMap.ToPortNegMap())
@@ -1489,17 +1493,14 @@ func validateDestinationRuleAnnotationWithPortInfoMap(t *testing.T, usdr *unstru
 	}
 
 	zoneGetter := negtypes.NewFakeZoneGetter()
-	zones, _ := zoneGetter.ListZones()
-	for _, zone := range zones {
-		if !strings.Contains(v, zone) {
-			t.Fatalf("Expected NEG service state annotation to contain zone %v, got %v", zone, v)
-		}
-	}
-
+	zones, _ := zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(portInfoMap.EndpointsCalculatorMode()))
 	// negStatus validation
 	negStatus, err := annotations.ParseDestinationRuleNEGStatus(v)
 	if err != nil {
 		t.Fatalf("Failed to parse DestinationRule NEG status annotation %q: %v", v, err)
+	}
+	if !sets.NewString(negStatus.Zones...).Equal(sets.NewString(zones...)) {
+		t.Errorf("Unexpected zones in NEG service state annotation, got %v, want %v", negStatus.Zones, zones)
 	}
 
 	wantNegStatus := annotations.NewDestinationRuleNegStatus(zones, portInfoMap.ToPortSubsetNegMap())
@@ -1568,17 +1569,16 @@ func validateServiceStateAnnotationExceptNames(t *testing.T, svc *apiv1.Service,
 	}
 
 	zoneGetter := negtypes.NewFakeZoneGetter()
-	zones, _ := zoneGetter.ListZones()
-	for _, zone := range zones {
-		if !strings.Contains(v, zone) {
-			t.Fatalf("Expected NEG service state annotation to contain zone %v, got %v", zone, v)
-		}
-	}
+	// This routine is called from tests verifying L7 NEGs.
+	zones, _ := zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(negtypes.L7Mode))
 
 	// negStatus validation
 	negStatus, err := annotations.ParseNegStatus(v)
 	if err != nil {
 		t.Fatalf("Failed to parse neg status annotation %q: %v", v, err)
+	}
+	if !sets.NewString(negStatus.Zones...).Equal(sets.NewString(zones...)) {
+		t.Errorf("Unexpected zones in NEG service state annotation, got %v, want %v", negStatus.Zones, zones)
 	}
 
 	if len(negStatus.NetworkEndpointGroups) != len(svcPorts) {

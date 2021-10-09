@@ -244,7 +244,6 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 		}
 		foundMatchingPort = true
 
-		// processAddressFunc adds the qualified endpoints from the input list into the endpointSet group by zone
 		for _, endpointAddress := range ed.Addresses {
 			// Apply the selector if Istio:DestinationRule subset labels provided.
 			if subsetLabels != "" {
@@ -273,7 +272,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 			}
 
-			// TODO: This check and EndpoinsData.Ready field may be deleted once Endpoints support is removed.
+			// TODO: This check and EndpointsData.Ready field may be deleted once Endpoints support is removed.
 			// The purpose of this check is to handle endpoints in terminating state.
 			// The Endpoints API doesn't have terminating field. Terminating endpoints are marked as not ready.
 			// This check support this case. For not ready endpoints it checks if the endpoint is not yet ready or terminating.
@@ -302,19 +301,33 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map
-func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version) (map[string]negtypes.NetworkEndpointSet, error) {
-	zones, err := zoneGetter.ListZones()
+func retrieveExistingZoneNetworkEndpointMap(negName string, zoneGetter negtypes.ZoneGetter, cloud negtypes.NetworkEndpointGroupCloud, version meta.Version, mode negtypes.EndpointsCalculatorMode) (map[string]negtypes.NetworkEndpointSet, error) {
+	// Include zones that have non-candidate nodes currently. It is possible that NEGs were created in those zones previously and the endpoints now became non-candidates.
+	// Endpoints in those NEGs now need to be removed. This mostly applies to VM_IP_NEGs where the endpoints are nodes.
+	zones, err := zoneGetter.ListZones(utils.AllNodesPredicate)
 	if err != nil {
 		return nil, err
 	}
 
+	candidateNodeZones, err := zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(mode))
+	if err != nil {
+		return nil, err
+	}
+	candidateZonesMap := sets.NewString(candidateNodeZones...)
+
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	for _, zone := range zones {
-		zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 		networkEndpointsWithHealthStatus, err := cloud.ListNetworkEndpoints(negName, zone, false, version)
 		if err != nil {
-			return nil, err
+			// It is possible for a NEG to be missing in a zone without candidate nodes. Log and ignore this error.
+			// NEG not found in a candidate zone is an error.
+			if utils.IsNotFoundError(err) && !candidateZonesMap.Has(zone) {
+				klog.Infof("Ignoring NotFound error for NEG %q in zone %q", negName, zone)
+				continue
+			}
+			return nil, fmt.Errorf("Failed to lookup NEG in zone %q, candidate zones %v, err - %v", zone, candidateZonesMap, err)
 		}
+		zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
 		for _, ne := range networkEndpointsWithHealthStatus {
 			newNE := negtypes.NetworkEndpoint{IP: ne.NetworkEndpoint.IpAddress, Node: ne.NetworkEndpoint.Instance}
 			if ne.NetworkEndpoint.Port != 0 {

@@ -14,8 +14,12 @@ limitations under the License.
 package backends
 
 import (
+	"fmt"
 	"strings"
 	"testing"
+
+	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
@@ -34,6 +38,7 @@ import (
 
 func newTestNEGLinker(fakeNEG negtypes.NetworkEndpointGroupCloud, fakeGCE *gce.Cloud) *negLinker {
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
+	ctx := negtypes.NewTestContext()
 
 	// Add standard hooks for mocking update calls. Each test can set a update different hook if it chooses to.
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceHook
@@ -42,85 +47,112 @@ func newTestNEGLinker(fakeNEG negtypes.NetworkEndpointGroupCloud, fakeGCE *gce.C
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaRegionBackendServices.UpdateHook = mock.UpdateAlphaRegionBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockBetaRegionBackendServices.UpdateHook = mock.UpdateBetaRegionBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
-	return &negLinker{fakeBackendPool, fakeNEG, fakeGCE}
+	return &negLinker{fakeBackendPool, fakeNEG, fakeGCE, ctx.SvcNegInformer.GetIndexer()}
 }
 
 func TestLinkBackendServiceToNEG(t *testing.T) {
-	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	fakeNEG := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
-	linker := newTestNEGLinker(fakeNEG, fakeGCE)
-
-	zones := []GroupKey{{Zone: "zone1"}, {Zone: "zone2"}}
-	namespace, name, port := "ns", "name", "port"
-	svc := types.NamespacedName{Namespace: namespace, Name: name}
-
-	for _, svcPort := range []utils.ServicePort{
-		utils.ServicePort{
-			ID:             utils.ServicePortID{Service: svc},
-			BackendNamer:   defaultNamer,
-			VMIPNEGEnabled: true},
-		utils.ServicePort{
-			ID:           utils.ServicePortID{Service: svc},
-			Port:         80,
-			NodePort:     30001,
-			Protocol:     annotations.ProtocolHTTP,
-			TargetPort:   port,
-			NEGEnabled:   true,
-			BackendNamer: defaultNamer},
+	for _, tc := range []struct {
+		name           string
+		populateSvcNeg bool
+	}{
+		{
+			name:           "Get NEG URL via API",
+			populateSvcNeg: false,
+		},
+		{
+			name:           "Get NEG URL via SvcNeg",
+			populateSvcNeg: true,
+		},
 	} {
-		// Mimic how the syncer would create the backend.
-		if _, err := linker.backendPool.Create(svcPort, "fake-healthcheck-link"); err != nil {
-			t.Fatalf("Failed to create backend service to NEG for svcPort %v: %v", svcPort, err)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			fakeNEG := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+			linker := newTestNEGLinker(fakeNEG, fakeGCE)
 
-		version := befeatures.VersionFromServicePort(&svcPort)
+			zones := []GroupKey{{Zone: "zone1"}, {Zone: "zone2"}}
+			namespace, name, port := "ns", "name", "port"
+			svc := types.NamespacedName{Namespace: namespace, Name: name}
 
-		for _, key := range zones {
-			neg := &composite.NetworkEndpointGroup{
-				Name:    svcPort.BackendName(),
-				Version: version,
-			}
-			if svcPort.VMIPNEGEnabled {
-				neg.NetworkEndpointType = string(negtypes.VmIpEndpointType)
-			}
-			err := fakeNEG.CreateNetworkEndpointGroup(neg, key.Zone)
-			if err != nil {
-				t.Fatalf("unexpected error creating NEG for svcPort %v: %v", svcPort, err)
-			}
-		}
+			// validate different service port for both L4 ILB and L7 LBs
+			for _, svcPort := range []utils.ServicePort{
+				{
+					ID:             utils.ServicePortID{Service: svc},
+					BackendNamer:   defaultNamer,
+					VMIPNEGEnabled: true},
+				{
+					ID:           utils.ServicePortID{Service: svc},
+					Port:         80,
+					NodePort:     30001,
+					Protocol:     annotations.ProtocolHTTP,
+					TargetPort:   intstr.FromString(port),
+					NEGEnabled:   true,
+					BackendNamer: defaultNamer},
+			} {
+				// Mimic how the syncer would create the backend.
+				if _, err := linker.backendPool.Create(svcPort, "fake-healthcheck-link"); err != nil {
+					t.Fatalf("Failed to create backend service to NEG for svcPort %v: %v", svcPort, err)
+				}
 
-		if err := linker.Link(svcPort, zones); err != nil {
-			t.Fatalf("Failed to link backend service to NEG for svcPort %v: %v", svcPort, err)
-		}
+				version := befeatures.VersionFromServicePort(&svcPort)
 
-		beName := svcPort.BackendName()
-		scope := befeatures.ScopeFromServicePort(&svcPort)
+				if tc.populateSvcNeg {
+					linker.svcNegLister.Add(v1beta1.ServiceNetworkEndpointGroup{Status: v1beta1.ServiceNetworkEndpointGroupStatus{
+						NetworkEndpointGroups: []v1beta1.NegObjectReference{
+							{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/zone1/networkEndpointGroups/%s", svcPort.BackendName())},
+							{SelfLink: fmt.Sprintf("https://www.googleapis.com/compute/alpha/projects/mock-project/zones/zone2/networkEndpointGroups/%s", svcPort.BackendName())},
+						},
+					}})
+				}
+				for _, key := range zones {
+					neg := &composite.NetworkEndpointGroup{
+						Name:    svcPort.BackendName(),
+						Version: version,
+					}
+					if svcPort.VMIPNEGEnabled {
+						neg.NetworkEndpointType = string(negtypes.VmIpEndpointType)
+					}
+					err := fakeNEG.CreateNetworkEndpointGroup(neg, key.Zone)
+					if err != nil {
+						t.Fatalf("unexpected error creating NEG for svcPort %v: %v", svcPort, err)
+					}
+				}
 
-		key, err := composite.CreateKey(fakeGCE, beName, scope)
-		if err != nil {
-			t.Fatalf("Failed to create composite key - %v", err)
-		}
-		bs, err := composite.GetBackendService(fakeGCE, key, version)
-		if err != nil {
-			t.Fatalf("Failed to retrieve backend service using key %+v for svcPort %v: %v", key, svcPort, err)
-		}
-		if len(bs.Backends) != len(zones) {
-			t.Errorf("Expect %v backends in backend service %s, but got %v.key %+v %+v", len(zones), beName, len(bs.Backends), key, bs)
-		}
+				if err := linker.Link(svcPort, zones); err != nil {
+					t.Fatalf("Failed to link backend service to NEG for svcPort %v: %v", svcPort, err)
+				}
 
-		for _, be := range bs.Backends {
-			neg := "networkEndpointGroups"
-			if !strings.Contains(be.Group, neg) {
-				t.Errorf("Got backend link %q, want containing %q", be.Group, neg)
-			}
-			if svcPort.VMIPNEGEnabled {
-				// Balancing mode should be connection, rate should be unset
-				if be.BalancingMode != string(Connections) || be.MaxRatePerEndpoint != 0 {
-					t.Errorf("Only 'Connection' balancing mode is supported with VM_IP NEGs, Got %q with max rate %v", be.BalancingMode, be.MaxRatePerEndpoint)
+				beName := svcPort.BackendName()
+				scope := befeatures.ScopeFromServicePort(&svcPort)
+
+				key, err := composite.CreateKey(fakeGCE, beName, scope)
+				if err != nil {
+					t.Fatalf("Failed to create composite key - %v", err)
+				}
+				bs, err := composite.GetBackendService(fakeGCE, key, version)
+				if err != nil {
+					t.Fatalf("Failed to retrieve backend service using key %+v for svcPort %v: %v", key, svcPort, err)
+				}
+				if len(bs.Backends) != len(zones) {
+					t.Errorf("Expect %v backends in backend service %s, but got %v.key %+v %+v", len(zones), beName, len(bs.Backends), key, bs)
+				}
+
+				for _, be := range bs.Backends {
+					neg := "networkEndpointGroups"
+					if !strings.Contains(be.Group, neg) {
+						t.Errorf("Got backend link %q, want containing %q", be.Group, neg)
+					}
+					if svcPort.VMIPNEGEnabled {
+						// Balancing mode should be connection, rate should be unset
+						if be.BalancingMode != string(Connections) || be.MaxRatePerEndpoint != 0 {
+							t.Errorf("Only 'Connection' balancing mode is supported with VM_IP NEGs, Got %q with max rate %v", be.BalancingMode, be.MaxRatePerEndpoint)
+						}
+					}
 				}
 			}
-		}
+		})
+
 	}
+
 }
 
 func TestDiffBackends(t *testing.T) {
@@ -233,7 +265,9 @@ func TestBackendsForNEG(t *testing.T) {
 					SelfLink:            "/neg1",
 				},
 			},
-			sp: &utils.ServicePort{},
+			sp: &utils.ServicePort{
+				VMIPNEGEnabled: true,
+			},
 			want: []*composite.Backend{
 				{
 					BalancingMode: "CONNECTION",
@@ -253,7 +287,9 @@ func TestBackendsForNEG(t *testing.T) {
 					SelfLink:            "/neg2",
 				},
 			},
-			sp: &utils.ServicePort{},
+			sp: &utils.ServicePort{
+				VMIPNEGEnabled: true,
+			},
 			want: []*composite.Backend{
 				{
 					BalancingMode: "CONNECTION",
@@ -377,7 +413,11 @@ func TestBackendsForNEG(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := backendsForNEGs(tc.negs, tc.sp)
+			negUrls := []string{}
+			for _, neg := range tc.negs {
+				negUrls = append(negUrls, neg.SelfLink)
+			}
+			got := backendsForNEGs(negUrls, tc.sp)
 			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("backendForNEGs(_), diff(-tc.want +got) = %s", diff)
 			}

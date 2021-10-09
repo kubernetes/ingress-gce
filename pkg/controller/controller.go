@@ -129,7 +129,7 @@ func NewLoadBalancerController(
 		instancePool:  instancePool,
 		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID)),
 		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
-		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud),
+		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer()),
 		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool),
 		metrics:       ctx.ControllerMetrics,
 	}
@@ -399,9 +399,9 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 	}
 
 	// Get the zones our groups live in.
-	zones, err := lbc.Translator.ListZones()
+	zones, err := lbc.Translator.ListZones(utils.CandidateNodesPredicate)
 	if err != nil {
-		klog.Errorf("lbc.Translator.ListZones() = %v", err)
+		klog.Errorf("lbc.Translator.ListZones(utils.CandidateNodesPredicate) = %v", err)
 		return err
 	}
 	var groupKeys []backends.GroupKey

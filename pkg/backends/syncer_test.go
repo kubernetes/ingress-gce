@@ -351,7 +351,7 @@ func TestGCMixed(t *testing.T) {
 		{NodePort: 84, Protocol: annotations.ProtocolHTTP, NEGEnabled: true, L7ILBEnabled: true, BackendNamer: defaultNamer},
 		{NodePort: 85, Protocol: annotations.ProtocolHTTPS, NEGEnabled: true, L7ILBEnabled: true, BackendNamer: defaultNamer},
 		{NodePort: 86, Protocol: annotations.ProtocolHTTP, NEGEnabled: true, L7ILBEnabled: true, BackendNamer: defaultNamer},
-		{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "testsvc"}}, VMIPNEGEnabled: true, BackendNamer: defaultNamer},
+		{ID: utils.ServicePortID{Service: types.NamespacedName{Name: "testsvc"}}, VMIPNEGEnabled: true, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP},
 	}
 	ps := newPortset(svcNodePorts)
 	if err := ps.add(svcNodePorts); err != nil {
@@ -397,62 +397,62 @@ func TestSyncQuota(t *testing.T) {
 		desc          string
 	}{
 		{
-			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}},
-			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}},
 			false,
 			"Same port",
 		},
 		{
-			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}},
-			[]utils.ServicePort{{NodePort: 9000, BackendNamer: defaultNamer}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}},
+			[]utils.ServicePort{{NodePort: 9000, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}},
 			true,
 			"Different port",
 		},
 		{
-			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}},
-			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}, {NodePort: 443, BackendNamer: defaultNamer}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}, {NodePort: 443, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}},
 			false,
 			"Same port plus additional port",
 		},
 		{
-			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}},
-			[]utils.ServicePort{{NodePort: 3000, BackendNamer: defaultNamer}, {NodePort: 4000, BackendNamer: defaultNamer}, {NodePort: 5000, BackendNamer: defaultNamer}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}},
+			[]utils.ServicePort{{NodePort: 3000, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}, {NodePort: 4000, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}, {NodePort: 5000, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}},
 			true,
 			"New set of ports not including the same port",
 		},
 		// Need to fill the TargetPort field on ServicePort to make sure
 		// NEG Backend naming is unique
 		{
-			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer}, {NodePort: 443, BackendNamer: defaultNamer}},
+			[]utils.ServicePort{{NodePort: 8080, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}, {NodePort: 443, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}},
 			[]utils.ServicePort{
-				{Port: 8080, NodePort: 8080, NEGEnabled: true, BackendNamer: defaultNamer},
-				{Port: 443, NodePort: 443, NEGEnabled: true, BackendNamer: defaultNamer},
+				{Port: 8080, NodePort: 8080, NEGEnabled: true, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP},
+				{Port: 443, NodePort: 443, NEGEnabled: true, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP},
 			},
 			true,
 			"Same port converted to NEG, plus one new NEG port",
 		},
 		{
 			[]utils.ServicePort{
-				{Port: 80, NodePort: 80, NEGEnabled: true, BackendNamer: defaultNamer},
-				{Port: 90, NodePort: 90, BackendNamer: defaultNamer},
+				{Port: 80, NodePort: 80, NEGEnabled: true, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP},
+				{Port: 90, NodePort: 90, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP},
 			},
 			[]utils.ServicePort{
-				{Port: 80, BackendNamer: defaultNamer},
-				{Port: 90, NEGEnabled: true, BackendNamer: defaultNamer},
+				{Port: 80, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP},
+				{Port: 90, NEGEnabled: true, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP},
 			},
 			true,
 			"Mixed NEG and non-NEG ports",
 		},
 		{
 			[]utils.ServicePort{
-				{Port: 100, NodePort: 100, NEGEnabled: true, BackendNamer: defaultNamer},
-				{Port: 110, NodePort: 110, NEGEnabled: true, BackendNamer: defaultNamer},
-				{Port: 120, NodePort: 120, NEGEnabled: true, BackendNamer: defaultNamer},
+				{Port: 100, NodePort: 100, NEGEnabled: true, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP},
+				{Port: 110, NodePort: 110, NEGEnabled: true, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP},
+				{Port: 120, NodePort: 120, NEGEnabled: true, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP},
 			},
 			[]utils.ServicePort{
-				{Port: 100, NodePort: 100, BackendNamer: defaultNamer},
-				{Port: 110, NodePort: 110, BackendNamer: defaultNamer},
-				{Port: 120, NodePort: 120, BackendNamer: defaultNamer},
+				{Port: 100, NodePort: 100, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP},
+				{Port: 110, NodePort: 110, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP},
+				{Port: 120, NodePort: 120, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP},
 			},
 			true,
 			"Same ports as NEG, then non-NEG",

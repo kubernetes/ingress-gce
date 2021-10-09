@@ -16,6 +16,8 @@ limitations under the License.
 
 package types
 
+import "k8s.io/ingress-gce/pkg/utils"
+
 // simpleZoneGetter implements ZoneGetter interface
 // It always return its one single stored zone
 type simpleZoneGetter struct {
@@ -26,7 +28,7 @@ func (s *simpleZoneGetter) GetZoneForNode(string) (string, error) {
 	return s.zone, nil
 }
 
-func (s *simpleZoneGetter) ListZones() ([]string, error) {
+func (s *simpleZoneGetter) ListZones(_ utils.NodeConditionPredicate) ([]string, error) {
 	return []string{s.zone}, nil
 }
 

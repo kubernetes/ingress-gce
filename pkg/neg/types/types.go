@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
@@ -298,6 +299,16 @@ func (p1 PortInfoMap) NegsWithReadinessGate() sets.String {
 	return ret
 }
 
+// EndpointsCalculatorMode returns the endpoints calculator mode for this portInfoMap. This indicates the type of NEG used.
+func (p1 PortInfoMap) EndpointsCalculatorMode() EndpointsCalculatorMode {
+	for _, portInfo := range p1 {
+		if portInfo.EpCalculatorMode != "" {
+			return portInfo.EpCalculatorMode
+		}
+	}
+	return L7Mode
+}
+
 // NegSyncerKey includes information to uniquely identify a NEG syncer
 type NegSyncerKey struct {
 	// Namespace of service
@@ -349,8 +360,9 @@ type EndpointPodMap map[NetworkEndpoint]types.NamespacedName
 // It contains all the information needed to set up
 // GCP Load Balancer.
 type EndpointsData struct {
-	Meta      *metav1.ObjectMeta
-	Ports     []PortData
+	Meta  *metav1.ObjectMeta
+	Ports []PortData
+	// Addresses contains both ready and not ready addresses even when it is converted from Endpoints.
 	Addresses []AddressData
 }
 
@@ -367,7 +379,7 @@ type AddressData struct {
 }
 
 // Converts API Endpoints to the EndpointsData abstraction.
-// All endpoints are converted, not ready addresses are converted with Reade=false.
+// All endpoints are converted, not ready addresses are converted with Ready=false.
 func EndpointsDataFromEndpoints(ep *apiv1.Endpoints) []EndpointsData {
 	result := make([]EndpointsData, 0, len(ep.Subsets))
 	for _, subset := range ep.Subsets {
@@ -405,9 +417,26 @@ func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []Endpoi
 			}
 			// Endpoint is ready when the Ready is nil or when it's value is true.
 			ready := ep.Conditions.Ready == nil || *ep.Conditions.Ready
-			addresses = append(addresses, AddressData{TargetRef: ep.TargetRef, NodeName: ep.NodeName, Addresses: ep.Addresses, Ready: ready})
+
+			// The following code is here to support old version of EndpointSlices in
+			// which the NodeName field was not yet present.
+			nodeName := ep.NodeName
+			if nodeName == nil || len(*nodeName) == 0 {
+				nodeNameFromTopology := ep.Topology[apiv1.LabelHostname]
+				nodeName = &nodeNameFromTopology
+			}
+			addresses = append(addresses, AddressData{TargetRef: ep.TargetRef, NodeName: nodeName, Addresses: ep.Addresses, Ready: ready})
 		}
 		result = append(result, EndpointsData{Meta: &slice.ObjectMeta, Ports: ports, Addresses: addresses})
 	}
 	return result
+}
+
+// NodePredicateForEndpointCalculatorMode returns the predicate function to select candidate nodes, given the endpoints calculator mode.
+func NodePredicateForEndpointCalculatorMode(mode EndpointsCalculatorMode) utils.NodeConditionPredicate {
+	// VM_IP NEGs can include unready and upgrading nodes.
+	if mode == L4ClusterMode || mode == L4LocalMode {
+		return utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
+	}
+	return utils.CandidateNodesPredicate
 }

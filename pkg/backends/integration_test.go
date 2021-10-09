@@ -69,7 +69,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	jig := newTestJig(fakeGCE)
 
-	sp := utils.ServicePort{NodePort: 80, BackendNamer: defaultNamer}
+	sp := utils.ServicePort{NodePort: 80, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}
 	_, err := jig.fakeInstancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
 	if err != nil {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)

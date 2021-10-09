@@ -575,16 +575,20 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	testIP2 := "1.2.3.5"
 	testIP3 := "1.2.3.6"
 	testIP4 := "1.2.3.7"
+	testIP5 := "1.2.3.8"
+	testIP6 := "1.2.3.9"
+	testIP7 := "1.2.3.10"
 	testPort := int64(80)
 
 	testCases := []struct {
 		desc      string
 		mutate    func(cloud negtypes.NetworkEndpointGroupCloud)
+		mode      negtypes.EndpointsCalculatorMode
 		expect    map[string]negtypes.NetworkEndpointSet
 		expectErr bool
 	}{
 		{
-			desc:      "neg not exists",
+			desc:      "neg does not exist",
 			mutate:    func(cloud negtypes.NetworkEndpointGroupCloud) {},
 			expectErr: true,
 		},
@@ -603,18 +607,20 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			desc: "empty negs exists in both zones",
+			desc: "empty negs exists in all 3 zones",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
 				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone2)
+				cloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, negtypes.TestZone4)
 			},
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(),
+				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(),
 			},
 			expectErr: false,
 		},
 		{
-			desc: "one empty and one non-empty negs",
+			desc: "one empty and two non-empty negs",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
 				cloud.AttachNetworkEndpoints(testNegName, negtypes.TestZone1, []*composite.NetworkEndpoint{
 					{
@@ -627,6 +633,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 			expect: map[string]negtypes.NetworkEndpointSet{
 				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))}),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(),
+				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(),
 			},
 			expectErr: false,
 		},
@@ -647,11 +654,12 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 					negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance2, Port: strconv.Itoa(int(testPort))},
 				),
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(),
+				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(),
 			},
 			expectErr: false,
 		},
 		{
-			desc: "both negs with multiple endpoints",
+			desc: "2 negs with multiple endpoints",
 			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
 				cloud.AttachNetworkEndpoints(testNegName, negtypes.TestZone2, []*composite.NetworkEndpoint{
 					{
@@ -674,6 +682,39 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
 					negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))},
 					negtypes.NetworkEndpoint{IP: testIP4, Node: negtypes.TestInstance4, Port: strconv.Itoa(int(testPort))},
+				),
+				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(),
+			},
+			expectErr: false,
+		},
+		{
+			desc: "all 3 negs with multiple endpoints",
+			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
+				cloud.AttachNetworkEndpoints(testNegName, negtypes.TestZone4, []*composite.NetworkEndpoint{
+					{
+						Instance:  negtypes.TestUpgradeInstance1,
+						IpAddress: testIP6,
+						Port:      testPort,
+					},
+					{
+						Instance:  negtypes.TestUpgradeInstance2,
+						IpAddress: testIP7,
+						Port:      testPort,
+					},
+				}, meta.VersionGA)
+			},
+			expect: map[string]negtypes.NetworkEndpointSet{
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))},
+					negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance2, Port: strconv.Itoa(int(testPort))},
+				),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))},
+					negtypes.NetworkEndpoint{IP: testIP4, Node: negtypes.TestInstance4, Port: strconv.Itoa(int(testPort))},
+				),
+				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testIP6, Node: negtypes.TestUpgradeInstance1, Port: strconv.Itoa(int(testPort))},
+					negtypes.NetworkEndpoint{IP: testIP7, Node: negtypes.TestUpgradeInstance2, Port: strconv.Itoa(int(testPort))},
 				),
 			},
 			expectErr: false,
@@ -698,14 +739,60 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 					negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))},
 					negtypes.NetworkEndpoint{IP: testIP4, Node: negtypes.TestInstance4, Port: strconv.Itoa(int(testPort))},
 				),
+				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testIP6, Node: negtypes.TestUpgradeInstance1, Port: strconv.Itoa(int(testPort))},
+					negtypes.NetworkEndpoint{IP: testIP7, Node: negtypes.TestUpgradeInstance2, Port: strconv.Itoa(int(testPort))},
+				),
 			},
 			expectErr: false,
+		},
+		{
+			desc: "non-empty negs in 4 zones, zone3 has no ready nodes, zone4 has upgrading nodes, but all NEGs are returned",
+			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
+				// attach also creates the NEG in the fake implementation.
+				cloud.AttachNetworkEndpoints(testNegName, negtypes.TestZone3, []*composite.NetworkEndpoint{
+					{
+						Instance:  negtypes.TestUnreadyInstance1,
+						IpAddress: testIP5,
+						Port:      testPort,
+					},
+				}, meta.VersionGA)
+			},
+			// set mode to L4 since this scenario applies more to VM_IP NEGs.
+			mode: negtypes.L4LocalMode,
+			expect: map[string]negtypes.NetworkEndpointSet{
+				// NEGs in zone1, zone2 and zone4 are created from previous test case.
+				negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))},
+					negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance2, Port: strconv.Itoa(int(testPort))},
+				),
+				negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))},
+					negtypes.NetworkEndpoint{IP: testIP4, Node: negtypes.TestInstance4, Port: strconv.Itoa(int(testPort))},
+				),
+				negtypes.TestZone3: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testIP5, Node: negtypes.TestUnreadyInstance1, Port: strconv.Itoa(int(testPort))},
+				),
+				negtypes.TestZone4: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{IP: testIP6, Node: negtypes.TestUpgradeInstance1, Port: strconv.Itoa(int(testPort))},
+					negtypes.NetworkEndpoint{IP: testIP7, Node: negtypes.TestUpgradeInstance2, Port: strconv.Itoa(int(testPort))},
+				),
+			},
+			expectErr: false,
+		},
+		{
+			desc: "NEG does not exist in a zone where endpoints exist(mimics user deleting NEG manually)",
+			mutate: func(cloud negtypes.NetworkEndpointGroupCloud) {
+				cloud.DeleteNetworkEndpointGroup(testNegName, negtypes.TestZone2, meta.VersionGA)
+			},
+			expectErr: true,
 		},
 	}
 
 	for _, tc := range testCases {
 		tc.mutate(negCloud)
-		out, err := retrieveExistingZoneNetworkEndpointMap(negName, zoneGetter, negCloud, meta.VersionGA)
+		// tc.mode of "" will result in the default node predicate being selected, which is ok for this test.
+		out, err := retrieveExistingZoneNetworkEndpointMap(negName, zoneGetter, negCloud, meta.VersionGA, tc.mode)
 
 		if tc.expectErr {
 			if err == nil {
@@ -719,7 +806,7 @@ func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 
 		if !tc.expectErr {
 			if !reflect.DeepEqual(out, tc.expect) {
-				t.Errorf("For test case %q, endpointSets output = %+v, but got %+v", tc.desc, tc.expect, out)
+				t.Errorf("For test case %q, endpointSets output = %+v, but want %+v", tc.desc, tc.expect, out)
 			}
 		}
 	}

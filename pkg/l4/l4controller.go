@@ -89,7 +89,7 @@ func NewController(ctx *context.ControllerContext, stopCh chan struct{}) *L4Cont
 	l4c.namer = ctx.L4Namer
 	l4c.translator = translator.NewTranslator(ctx)
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
-	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud)
+	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer())
 
 	l4c.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4", "services", l4c.numWorkers, l4c.sync)
 
@@ -277,7 +277,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 // linkNEG associates the NEG to the backendService for the given L4 ILB service.
 func (l4c *L4Controller) linkNEG(l4 *loadbalancers.L4) error {
 	// link neg to backend service
-	zones, err := l4c.translator.ListZones()
+	zones, err := l4c.translator.ListZones(utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes)
 	if err != nil {
 		return nil
 	}

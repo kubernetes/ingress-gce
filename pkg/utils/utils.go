@@ -327,7 +327,7 @@ func IsGLBCIngress(ing *networkingv1.Ingress) bool {
 // TODO(rramkumar): Add a test for this.
 func GetReadyNodeNames(lister listers.NodeLister) ([]string, error) {
 	var nodeNames []string
-	nodes, err := ListWithPredicate(lister, GetNodeConditionPredicate())
+	nodes, err := ListWithPredicate(lister, CandidateNodesPredicate)
 	if err != nil {
 		return nodeNames, err
 	}
@@ -352,22 +352,23 @@ func NodeIsReady(node *api_v1.Node) bool {
 // some set of criteria defined by the function.
 type NodeConditionPredicate func(node *api_v1.Node) bool
 
-// This is a duplicate definition of the function in:
-// kubernetes/kubernetes/pkg/controller/service/service_controller.go
-func GetNodeConditionPredicate() NodeConditionPredicate {
-	return func(node *api_v1.Node) bool {
-		return nodePredicateInternal(node, false)
+var (
+	// AllNodesPredicate selects all nodes.
+	AllNodesPredicate = func(node *api_v1.Node) bool { return true }
+	// CandidateNodesPredicate selects all nodes that are in ready state and devoid of any exclude labels.
+	// This is a duplicate definition of the function in:
+	// https://github.com/kubernetes/kubernetes/blob/3723713c550f649b6ba84964edef9da6cc334f9d/staging/src/k8s.io/cloud-provider/controllers/service/controller.go#L668
+	CandidateNodesPredicate = func(node *api_v1.Node) bool {
+		return nodePredicateInternal(node, false, false)
 	}
-}
-
-// NodeConditionPredicateIncludeUnreadyNodes returns a predicate function that tolerates unready nodes.
-func NodeConditionPredicateIncludeUnreadyNodes() NodeConditionPredicate {
-	return func(node *api_v1.Node) bool {
-		return nodePredicateInternal(node, true)
+	// CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes selects all nodes except ones that are upgradind and/or have any exclude labels. This function tolerates unready nodes.
+	// TODO(prameshj) - Once the kubernetes/kubernetes Predicate function includes Unready nodes and the GKE nodepool code sets exclude labels on upgrade, this can be replaced with CandidateNodesPredicate.
+	CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes = func(node *api_v1.Node) bool {
+		return nodePredicateInternal(node, true, true)
 	}
-}
+)
 
-func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes bool) bool {
+func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgradingNodes bool) bool {
 	// Get all nodes that have a taint with NoSchedule effect
 	for _, taint := range node.Spec.Taints {
 		if taint.Key == ToBeDeletedTaint {
@@ -389,9 +390,11 @@ func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes bool) bool {
 	if _, hasExcludeBalancerLabel := node.Labels[LabelNodeRoleExcludeBalancer]; hasExcludeBalancerLabel {
 		return false
 	}
-	// This node is about to be upgraded.
-	if opVal, _ := node.Annotations[GKECurrentOperationAnnotation]; strings.Contains(opVal, GKEUpgradeOperation) {
-		return false
+	if excludeUpgradingNodes {
+		// This node is about to be upgraded.
+		if opVal, _ := node.Annotations[GKECurrentOperationAnnotation]; strings.Contains(opVal, GKEUpgradeOperation) {
+			return false
+		}
 	}
 
 	// If we have no info, don't accept

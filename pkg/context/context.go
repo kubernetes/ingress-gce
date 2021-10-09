@@ -102,10 +102,10 @@ type ControllerContext struct {
 
 	ControllerMetrics *metrics.ControllerMetrics
 
+	hcLock       sync.Mutex
 	healthChecks map[string]func() error
 
-	lock sync.Mutex
-
+	recorderLock sync.Mutex
 	// Map of namespace => record.EventRecorder.
 	recorders map[string]record.EventRecorder
 
@@ -192,7 +192,7 @@ func NewControllerContext(
 	return context
 }
 
-// Init inits the Context, so that we can defers some config until the main thread enter actually get the leader lock.
+// Init inits the Context, so that we can defers some config until the main thread enter actually get the leader hcLock.
 func (ctx *ControllerContext) Init() {
 	klog.V(2).Infof("Controller Context initializing with %+v", ctx.ControllerContextConfig)
 	// Initialize controller context internals based on ASMConfigMap
@@ -317,6 +317,8 @@ func (ctx *ControllerContext) HasSynced() bool {
 
 // Recorder return the event recorder for the given namespace.
 func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
+	ctx.recorderLock.Lock()
+	defer ctx.recorderLock.Unlock()
 	if rec, ok := ctx.recorders[ns]; ok {
 		return rec
 	}
@@ -334,8 +336,8 @@ func (ctx *ControllerContext) Recorder(ns string) record.EventRecorder {
 
 // AddHealthCheck registers function to be called for healthchecking.
 func (ctx *ControllerContext) AddHealthCheck(id string, hc func() error) {
-	ctx.lock.Lock()
-	defer ctx.lock.Unlock()
+	ctx.hcLock.Lock()
+	defer ctx.hcLock.Unlock()
 
 	ctx.healthChecks[id] = hc
 }
@@ -345,8 +347,8 @@ type HealthCheckResults map[string]error
 
 // HealthCheck runs all registered healthcheck functions.
 func (ctx *ControllerContext) HealthCheck() HealthCheckResults {
-	ctx.lock.Lock()
-	defer ctx.lock.Unlock()
+	ctx.hcLock.Lock()
+	defer ctx.hcLock.Unlock()
 
 	healthChecks := make(map[string]error)
 	for component, f := range ctx.healthChecks {
