@@ -117,6 +117,44 @@ func (s *backendSyncer) ensureBackendService(sp utils.ServicePort) error {
 		}
 	}
 
+	// Sync SignedUrlKeys. Why here? This is the only place where I have access to the key values (sp)
+	existingKeyNames := map[string]bool{}
+	if be.CdnPolicy != nil && be.CdnPolicy.SignedUrlKeyNames != nil {
+		for _, key := range be.CdnPolicy.SignedUrlKeyNames {
+			existingKeyNames[key] = false
+		}
+	}
+	// there is a hard limit of maximum 3 keys per bakend, if you add before remove you will hit the limit
+	// find existing and the new keys first
+	newSignedUrlKeys := []*composite.SignedUrlKey{}
+	if sp.BackendConfig != nil && sp.BackendConfig.Spec.Cdn != nil && sp.BackendConfig.Spec.Cdn.SignedUrlKeys != nil {
+		for _, key := range sp.BackendConfig.Spec.Cdn.SignedUrlKeys {
+			klog.V(5).Infof("Search for SignedUrlKey %q in backend %q", key.KeyName, be.Name)
+			if _, found := existingKeyNames[key.KeyName]; !found {
+				newSignedUrlKeys = append(newSignedUrlKeys, &composite.SignedUrlKey{KeyName: key.KeyName, KeyValue: key.KeyValue})
+			} else {
+				klog.V(5).Infof("SignedUrlKey %q found on backend %q, no update needed", key.KeyName, be.Name)
+				existingKeyNames[key.KeyName] = true
+			}
+		}
+	}
+	// delete all removed keys
+	for keyName, found := range existingKeyNames {
+		if !found {
+			klog.V(5).Infof("Removing SignedUrlKey %q from backend %q", keyName, be.Name)
+			if err = s.backendPool.DeleteSignedUrlKey(be, keyName); err != nil {
+				return err
+			}
+		}
+	}
+	// add all apended keys
+	for _, key := range newSignedUrlKeys {
+		klog.V(5).Infof("Adding SignedUrlKey %q to backend %q", key.KeyName, be.Name)
+		if err = s.backendPool.AddSignedUrlKey(be, key); err != nil {
+			return err
+		}
+	}
+
 	if sp.BackendConfig != nil {
 		// Scope is used to validate if cloud armor security policy feature is
 		// available. meta.Key is not needed as security policy supported only for

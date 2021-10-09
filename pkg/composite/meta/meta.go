@@ -51,6 +51,7 @@ var MainServices = map[string]string{
 	"NetworkEndpointGroupsAttachEndpointsRequest": "NetworkEndpointGroupsAttachEndpointsRequests",
 	"NetworkEndpointGroupsDetachEndpointsRequest": "NetworkEndpointGroupsDetachEndpointsRequests",
 	"NetworkEndpointGroupsListEndpointsRequest":   "NetworkEndpointGroupsListEndpointsRequests",
+	"SignedUrlKey": "SignedUrlKey",
 }
 
 // TODO: (shance) Replace this with data gathered from meta.AllServices
@@ -65,6 +66,7 @@ var NoUpdate = sets.NewString(
 	"NetworkEndpointGroup",
 	"NetworkEndpoint",
 	"NetworkEndpointWithHealthStatus",
+	"SignedUrlKey",
 )
 
 // Services in NoCRUD will not have Create, Get, Delete, Update, methods generated for them
@@ -75,6 +77,7 @@ var NoCRUD = sets.NewString(
 	"NetworkEndpointGroupsListEndpointsRequest",
 	"NetworkEndpoint",
 	"NetworkEndpointWithHealthStatus",
+	"SignedUrlKey",
 )
 
 // TODO: This should be a list, not a map so the generated code ordering is stable

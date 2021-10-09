@@ -2965,6 +2965,30 @@ type SecuritySettings struct {
 	NullFields      []string `json:"-"`
 }
 
+// SignedUrlKey is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
+type SignedUrlKey struct {
+	// Version keeps track of the intended compute version for this SignedUrlKey.
+	// Note that the compute API's do not contain this field. It is for our
+	// own bookkeeping purposes.
+	Version meta.Version `json:"-"`
+	// Scope keeps track of the intended type of the service (e.g. Global)
+	// This is also an internal field purely for bookkeeping purposes
+	Scope meta.KeyType `json:"-"`
+
+	// Name of the key. The name must be 1-63 characters long, and comply
+	// with RFC1035. Specifically, the name must be 1-63 characters long and
+	// match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])?` which means
+	// the first character must be a lowercase letter, and all following
+	// characters must be a dash, lowercase letter, or digit, except the
+	// last character, which cannot be a dash.
+	KeyName string `json:"keyName,omitempty"`
+	// 128-bit key value used for signing the URL. The key value must be a
+	// valid RFC 4648 Section 5 base64url encoded string.
+	KeyValue        string   `json:"keyValue,omitempty"`
+	ForceSendFields []string `json:"-"`
+	NullFields      []string `json:"-"`
+}
+
 // SslCertificate is a composite type wrapping the Alpha, Beta, and GA methods for its GCE equivalent
 type SslCertificate struct {
 	// Version keeps track of the intended compute version for this SslCertificate.
@@ -4148,8 +4172,11 @@ func (backendService *BackendService) ToAlpha() (*computealpha.BackendService, e
 		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", backendService, err)
 	}
 	// Set force send fields. This is a temporary hack.
-	if alpha.CdnPolicy != nil && alpha.CdnPolicy.CacheKeyPolicy != nil {
-		alpha.CdnPolicy.CacheKeyPolicy.ForceSendFields = []string{"IncludeHost", "IncludeProtocol", "IncludeQueryString", "QueryStringBlacklist", "QueryStringWhitelist"}
+	if alpha.CdnPolicy != nil {
+		if alpha.CdnPolicy.CacheKeyPolicy != nil {
+			alpha.CdnPolicy.CacheKeyPolicy.ForceSendFields = []string{"IncludeHost", "IncludeProtocol", "IncludeQueryString", "QueryStringBlacklist", "QueryStringWhitelist"}
+		}
+		alpha.CdnPolicy.ForceSendFields = append(backendService.CdnPolicy.ForceSendFields, []string{"NegativeCaching", "RequestCoalescing", "SignedUrlCacheMaxAgeSec", "ServeWhileStale"}...)
 	}
 	if alpha.Iap != nil {
 		alpha.Iap.ForceSendFields = []string{"Enabled", "Oauth2ClientId", "Oauth2ClientSecret"}
@@ -4173,8 +4200,11 @@ func (backendService *BackendService) ToBeta() (*computebeta.BackendService, err
 		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", backendService, err)
 	}
 	// Set force send fields. This is a temporary hack.
-	if beta.CdnPolicy != nil && beta.CdnPolicy.CacheKeyPolicy != nil {
-		beta.CdnPolicy.CacheKeyPolicy.ForceSendFields = []string{"IncludeHost", "IncludeProtocol", "IncludeQueryString", "QueryStringBlacklist", "QueryStringWhitelist"}
+	if beta.CdnPolicy != nil {
+		if beta.CdnPolicy.CacheKeyPolicy != nil {
+			beta.CdnPolicy.CacheKeyPolicy.ForceSendFields = []string{"IncludeHost", "IncludeProtocol", "IncludeQueryString", "QueryStringBlacklist", "QueryStringWhitelist"}
+		}
+		beta.CdnPolicy.ForceSendFields = append(backendService.CdnPolicy.ForceSendFields, []string{"NegativeCaching", "RequestCoalescing", "SignedUrlCacheMaxAgeSec", "ServeWhileStale"}...)
 	}
 	if beta.Iap != nil {
 		beta.Iap.ForceSendFields = []string{"Enabled", "Oauth2ClientId", "Oauth2ClientSecret"}
@@ -4198,8 +4228,11 @@ func (backendService *BackendService) ToGA() (*compute.BackendService, error) {
 		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", backendService, err)
 	}
 	// Set force send fields. This is a temporary hack.
-	if ga.CdnPolicy != nil && ga.CdnPolicy.CacheKeyPolicy != nil {
-		ga.CdnPolicy.CacheKeyPolicy.ForceSendFields = []string{"IncludeHost", "IncludeProtocol", "IncludeQueryString", "QueryStringBlacklist", "QueryStringWhitelist"}
+	if ga.CdnPolicy != nil {
+		if ga.CdnPolicy.CacheKeyPolicy != nil {
+			ga.CdnPolicy.CacheKeyPolicy.ForceSendFields = []string{"IncludeHost", "IncludeProtocol", "IncludeQueryString", "QueryStringBlacklist", "QueryStringWhitelist"}
+		}
+		ga.CdnPolicy.ForceSendFields = append(backendService.CdnPolicy.ForceSendFields, []string{"NegativeCaching", "RequestCoalescing", "SignedUrlCacheMaxAgeSec", "ServeWhileStale"}...)
 	}
 	if ga.Iap != nil {
 		ga.Iap.ForceSendFields = []string{"Enabled", "Oauth2ClientId", "Oauth2ClientSecret"}
@@ -5763,6 +5796,97 @@ func (networkEndpointWithHealthStatus *NetworkEndpointWithHealthStatus) ToGA() (
 	err := copyViaJSON(ga, networkEndpointWithHealthStatus)
 	if err != nil {
 		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", networkEndpointWithHealthStatus, err)
+	}
+
+	return ga, nil
+}
+
+// toSignedUrlKeyList converts a list of compute alpha, beta or GA
+// SignedUrlKey into a list of our composite type.
+func toSignedUrlKeyList(objs interface{}) ([]*SignedUrlKey, error) {
+	result := []*SignedUrlKey{}
+
+	err := copyViaJSON(&result, objs)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %v to %T via JSON: %v", objs, result, err)
+	}
+	return result, nil
+}
+
+// toSignedUrlKey is for package internal use only (not type-safe).
+func toSignedUrlKey(obj interface{}) (*SignedUrlKey, error) {
+	x := &SignedUrlKey{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// Users external to the package need to pass in the correct type to create a
+// composite.
+
+// AlphaToSignedUrlKey convert to a composite type.
+func AlphaToSignedUrlKey(obj *computealpha.SignedUrlKey) (*SignedUrlKey, error) {
+	x := &SignedUrlKey{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// BetaToSignedUrlKey convert to a composite type.
+func BetaToSignedUrlKey(obj *computebeta.SignedUrlKey) (*SignedUrlKey, error) {
+	x := &SignedUrlKey{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// GAToSignedUrlKey convert to a composite type.
+func GAToSignedUrlKey(obj *compute.SignedUrlKey) (*SignedUrlKey, error) {
+	x := &SignedUrlKey{}
+	err := copyViaJSON(x, obj)
+	if err != nil {
+		return nil, fmt.Errorf("could not copy object %+v to %T via JSON: %v", obj, x, err)
+	}
+	return x, nil
+}
+
+// ToAlpha converts our composite type into an alpha type.
+// This alpha type can be used in GCE API calls.
+func (signedUrlKey *SignedUrlKey) ToAlpha() (*computealpha.SignedUrlKey, error) {
+	alpha := &computealpha.SignedUrlKey{}
+	err := copyViaJSON(alpha, signedUrlKey)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute alpha type via JSON: %v", signedUrlKey, err)
+	}
+
+	return alpha, nil
+}
+
+// ToBeta converts our composite type into an beta type.
+// This beta type can be used in GCE API calls.
+func (signedUrlKey *SignedUrlKey) ToBeta() (*computebeta.SignedUrlKey, error) {
+	beta := &computebeta.SignedUrlKey{}
+	err := copyViaJSON(beta, signedUrlKey)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute beta type via JSON: %v", signedUrlKey, err)
+	}
+
+	return beta, nil
+}
+
+// ToGA converts our composite type into an ga type.
+// This ga type can be used in GCE API calls.
+func (signedUrlKey *SignedUrlKey) ToGA() (*compute.SignedUrlKey, error) {
+	ga := &compute.SignedUrlKey{}
+	err := copyViaJSON(ga, signedUrlKey)
+	if err != nil {
+		return nil, fmt.Errorf("error converting %T to compute ga type via JSON: %v", signedUrlKey, err)
 	}
 
 	return ga, nil

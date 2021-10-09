@@ -244,6 +244,44 @@ func (b *Backends) List(key *meta.Key, version meta.Version) ([]*composite.Backe
 	return clusterBackends, nil
 }
 
+// AddSignedUrlKey adds a SignedUrlKey to a BackendService
+func (b *Backends) AddSignedUrlKey(be *composite.BackendService, signedurlkey *composite.SignedUrlKey) error {
+	klog.V(2).Infof("Adding SignedUrlKey %q to backend service %q", signedurlkey.KeyName, be.Name)
+
+	scope, err := composite.ScopeFromSelfLink(be.SelfLink)
+	if err != nil {
+		return err
+	}
+
+	key, err := composite.CreateKey(b.cloud, be.Name, scope)
+	if err != nil {
+		return err
+	}
+	if err := composite.AddSignedUrlKey(b.cloud, key, be, signedurlkey); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DeleteSignedUrlKey deletes a SignedUrlKey from BackendService
+func (b *Backends) DeleteSignedUrlKey(be *composite.BackendService, keyName string) error {
+	klog.V(2).Infof("Deleting SignedUrlKey %q from backend service %q", keyName, be.Name)
+
+	scope, err := composite.ScopeFromSelfLink(be.SelfLink)
+	if err != nil {
+		return err
+	}
+
+	key, err := composite.CreateKey(b.cloud, be.Name, scope)
+	if err != nil {
+		return err
+	}
+	if err := composite.DeleteSignedUrlKey(b.cloud, key, be, keyName); err != nil {
+		return err
+	}
+	return nil
+}
+
 // EnsureL4BackendService creates or updates the backend service with the given name.
 func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, nm types.NamespacedName, version meta.Version) (*composite.BackendService, error) {
 	klog.V(2).Infof("EnsureL4BackendService(%v, %v, %v): checking existing backend service", name, scheme, protocol)

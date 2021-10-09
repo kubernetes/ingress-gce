@@ -45,6 +45,10 @@ type Pool interface {
 	Health(name string, version meta.Version, scope meta.KeyType) (string, error)
 	// Get a list of BackendService names that are managed by this pool.
 	List(key *meta.Key, version meta.Version) ([]*composite.BackendService, error)
+	// Add a SignedUrlKey to a BackendService
+	AddSignedUrlKey(be *composite.BackendService, signedurlkey *composite.SignedUrlKey) error
+	// Deletes a SignedUrlKey from BackendService
+	DeleteSignedUrlKey(be *composite.BackendService, keyName string) error
 }
 
 // Syncer is an interface to sync Kubernetes services to GCE BackendServices.

@@ -205,9 +205,6 @@ func (f *Framework) CatchSIGINT() {
 	}()
 }
 func (f *Framework) sigintHandler() {
-	if !f.destroySandboxes {
-		return
-	}
 	klog.Warningf("SIGINT received, shutting down (disable with -handleSIGINT=false)")
 	f.shutdown(1)
 }
@@ -216,10 +213,13 @@ func (f *Framework) shutdown(exitCode int) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	klog.V(2).Infof("Cleaning up sandboxes...")
-	for _, s := range f.sandboxes {
-		s.Destroy()
+	if f.destroySandboxes {
+		klog.V(2).Infof("Cleaning up sandboxes...")
+		for _, s := range f.sandboxes {
+			s.Destroy()
+		}
 	}
+
 	f.statusManager.shutdown()
 	os.Exit(exitCode)
 }

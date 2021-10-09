@@ -1441,6 +1441,82 @@ func TestSecuritySettings(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+func TestSignedUrlKey(t *testing.T) {
+	// Use reflection to verify that our composite type contains all the
+	// same fields as the alpha type.
+	compositeType := reflect.TypeOf(SignedUrlKey{})
+	alphaType := reflect.TypeOf(computealpha.SignedUrlKey{})
+	betaType := reflect.TypeOf(computebeta.SignedUrlKey{})
+	gaType := reflect.TypeOf(compute.SignedUrlKey{})
+
+	// For the composite type, remove the Version field from consideration
+	compositeTypeNumFields := compositeType.NumField() - 2
+	if compositeTypeNumFields != alphaType.NumField() {
+		t.Fatalf("%v should contain %v fields. Got %v", alphaType.Name(), alphaType.NumField(), compositeTypeNumFields)
+	}
+
+	// Compare all the fields by doing a lookup since we can't guarantee that they'll be in the same order
+	// Make sure that composite type is strictly alpha fields + internal bookkeeping
+	for i := 2; i < compositeType.NumField(); i++ {
+		lookupField, found := alphaType.FieldByName(compositeType.Field(i).Name)
+		if !found {
+			t.Fatal(fmt.Errorf("Field %v not present in alpha type %v", compositeType.Field(i), alphaType))
+		}
+		if err := compareFields(compositeType.Field(i), lookupField); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Verify that all beta fields are in composite type
+	if err := typeEquality(betaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify that all GA fields are in composite type
+	if err := typeEquality(gaType, compositeType, false); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TODO: these tests don't do anything as they are currently structured.
+// func TestToSignedUrlKey(t *testing.T)
+
+func TestSignedUrlKeyToAlpha(t *testing.T) {
+	composite := SignedUrlKey{}
+	expected := &computealpha.SignedUrlKey{}
+	result, err := composite.ToAlpha()
+	if err != nil {
+		t.Fatalf("SignedUrlKey.ToAlpha() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("SignedUrlKey.ToAlpha() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestSignedUrlKeyToBeta(t *testing.T) {
+	composite := SignedUrlKey{}
+	expected := &computebeta.SignedUrlKey{}
+	result, err := composite.ToBeta()
+	if err != nil {
+		t.Fatalf("SignedUrlKey.ToBeta() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("SignedUrlKey.ToBeta() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
+func TestSignedUrlKeyToGA(t *testing.T) {
+	composite := SignedUrlKey{}
+	expected := &compute.SignedUrlKey{}
+	result, err := composite.ToGA()
+	if err != nil {
+		t.Fatalf("SignedUrlKey.ToGA() error: %v", err)
+	}
+
+	if !reflect.DeepEqual(result, expected) {
+		t.Fatalf("SignedUrlKey.ToGA() = \ninput = %s\n%s\nwant = \n%s", pretty.Sprint(composite), pretty.Sprint(result), pretty.Sprint(expected))
+	}
+}
 func TestSslCertificate(t *testing.T) {
 	// Use reflection to verify that our composite type contains all the
 	// same fields as the alpha type.
