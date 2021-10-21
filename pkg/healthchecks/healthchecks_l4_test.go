@@ -17,9 +17,11 @@ limitations under the License.
 package healthchecks
 
 import (
+	"testing"
+
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/composite"
-	"testing"
+	"k8s.io/ingress-gce/pkg/utils"
 )
 
 func TestMergeHealthChecks(t *testing.T) {
@@ -46,7 +48,7 @@ func TestMergeHealthChecks(t *testing.T) {
 		{"unhealthy threshold - user configured - should keep", gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold + 1, gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold + 1},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345)
+			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB)
 			hc := &composite.HealthCheck{
 				CheckIntervalSec:   tc.checkIntervalSec,
 				TimeoutSec:         tc.timeoutSec,
@@ -92,8 +94,8 @@ func TestCompareHealthChecks(t *testing.T) {
 		{"unhealthy threshold does not need update", func(hc *composite.HealthCheck) { hc.UnhealthyThreshold = gceHcUnhealthyThreshold + 1 }, false},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			hc := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345)
-			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345)
+			hc := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB)
+			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB)
 			if tc.modifier != nil {
 				tc.modifier(hc)
 			}
