@@ -53,7 +53,7 @@ func EnsureL4HealthCheck(cloud *gce.Cloud, name string, svcName types.Namespaced
 			return nil, selfLink, err
 		}
 	}
-	expectedHC := NewL4HealthCheck(name, svcName, shared, path, port)
+	expectedHC := NewL4HealthCheck(name, svcName, shared, path, port, utils.ILB)
 	if hc == nil {
 		// Create the healthcheck
 		klog.V(2).Infof("Creating healthcheck %s for service %s, shared = %v", name, svcName, shared)
@@ -86,13 +86,13 @@ func DeleteHealthCheck(cloud *gce.Cloud, name string) error {
 	return composite.DeleteHealthCheck(cloud, key, meta.VersionGA)
 }
 
-func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, path string, port int32) *composite.HealthCheck {
+func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, path string, port int32, l4Type utils.L4LBType) *composite.HealthCheck {
 	httpSettings := composite.HTTPHealthCheck{
 		Port:        int64(port),
 		RequestPath: path,
 	}
 
-	desc, err := utils.MakeL4ILBServiceDescription(svcName.String(), "", meta.VersionGA, shared)
+	desc, err := utils.MakeL4LBServiceDescription(svcName.String(), "", meta.VersionGA, shared, l4Type)
 	if err != nil {
 		klog.Warningf("Failed to generate description for L4HealthCheck %s, err %v", name, err)
 	}
