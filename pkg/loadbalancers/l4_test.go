@@ -217,7 +217,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 			l.sharedResourcesLock.Lock()
 			defer l.sharedResourcesLock.Unlock()
 		}
-		return healthchecks.EnsureL4HealthCheck(l.cloud, l.Service, l.namer, sharedHC, meta.Global)
+		return healthchecks.EnsureL4HealthCheck(l.cloud, l.Service, l.namer, sharedHC, meta.Global, utils.ILB)
 	}
 
 	hcLink, _, _, _, err := ensureHCFunc()
