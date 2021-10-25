@@ -919,7 +919,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	c.MockFirewalls.UpdateHook = nil
 
 	sourceRange := []string{"10.0.0.0/20"}
-	firewalls.EnsureL4InternalFirewallRule(
+	firewalls.EnsureL4FirewallRule(
 		l.cloud,
 		fwName,
 		"1.2.3.4",

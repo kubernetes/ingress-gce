@@ -26,7 +26,7 @@ import (
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
-func EnsureL4InternalFirewallRule(cloud *gce.Cloud, fwName, lbIP, nsName string, sourceRanges, portRanges, nodeNames []string, proto string, sharedRule bool) error {
+func EnsureL4FirewallRule(cloud *gce.Cloud, fwName, lbIP, nsName string, sourceRanges, portRanges, nodeNames []string, proto string, sharedRule bool) error {
 	existingFw, err := cloud.GetFirewall(fwName)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return err
@@ -38,7 +38,7 @@ func EnsureL4InternalFirewallRule(cloud *gce.Cloud, fwName, lbIP, nsName string,
 	}
 	fwDesc, err := utils.MakeL4LBServiceDescription(nsName, lbIP, meta.VersionGA, sharedRule, utils.ILB)
 	if err != nil {
-		klog.Warningf("EnsureL4InternalFirewallRule: Failed to generate description for rule %s, err: %v",
+		klog.Warningf("EnsureL4FirewallRule: Failed to generate description for rule %s, err: %v",
 			fwName, err)
 	}
 	expectedFw := &compute.Firewall{
@@ -55,12 +55,12 @@ func EnsureL4InternalFirewallRule(cloud *gce.Cloud, fwName, lbIP, nsName string,
 		},
 	}
 	if existingFw == nil {
-		klog.V(2).Infof("EnsureL4InternalFirewallRule(%v): creating firewall", fwName)
+		klog.V(2).Infof("EnsureL4FirewallRule(%v): creating firewall", fwName)
 		err = cloud.CreateFirewall(expectedFw)
 		if utils.IsForbiddenError(err) && cloud.OnXPN() {
 			gcloudCmd := gce.FirewallToGCloudCreateCmd(expectedFw, cloud.NetworkProjectID())
 
-			klog.V(3).Infof("EnsureL4InternalFirewallRule(%v): Could not create L4 firewall on XPN cluster: %v. Raising event for cmd: %q", fwName, err, gcloudCmd)
+			klog.V(3).Infof("EnsureL4FirewallRule(%v): Could not create L4 firewall on XPN cluster: %v. Raising event for cmd: %q", fwName, err, gcloudCmd)
 			return newFirewallXPNError(err, gcloudCmd)
 		}
 		return err
@@ -68,21 +68,21 @@ func EnsureL4InternalFirewallRule(cloud *gce.Cloud, fwName, lbIP, nsName string,
 	if firewallRuleEqual(expectedFw, existingFw) {
 		return nil
 	}
-	klog.V(2).Infof("EnsureL4InternalFirewallRule(%v): updating firewall", fwName)
+	klog.V(2).Infof("EnsureL4FirewallRule(%v): updating firewall", fwName)
 	err = cloud.UpdateFirewall(expectedFw)
 	if utils.IsForbiddenError(err) && cloud.OnXPN() {
 		gcloudCmd := gce.FirewallToGCloudUpdateCmd(expectedFw, cloud.NetworkProjectID())
-		klog.V(3).Infof("EnsureL4InternalFirewallRule(%v): Could not update L4 firewall on XPN cluster: %v. Raising event for cmd: %q", fwName, err, gcloudCmd)
+		klog.V(3).Infof("EnsureL4FirewallRule(%v): Could not update L4 firewall on XPN cluster: %v. Raising event for cmd: %q", fwName, err, gcloudCmd)
 		return newFirewallXPNError(err, gcloudCmd)
 	}
 	return err
 }
 
-func EnsureL4InternalFirewallRuleDeleted(cloud *gce.Cloud, fwName string) error {
+func EnsureL4FirewallRuleDeleted(cloud *gce.Cloud, fwName string) error {
 	if err := utils.IgnoreHTTPNotFound(cloud.DeleteFirewall(fwName)); err != nil {
 		if utils.IsForbiddenError(err) && cloud.OnXPN() {
 			gcloudCmd := gce.FirewallToGCloudDeleteCmd(fwName, cloud.NetworkProjectID())
-			klog.V(3).Infof("EnsureL4InternalFirewallRuleDeleted(%v): could not delete traffic firewall on XPN cluster. Raising event.", fwName)
+			klog.V(3).Infof("EnsureL4FirewallRuleDeleted(%v): could not delete traffic firewall on XPN cluster. Raising event.", fwName)
 			return newFirewallXPNError(err, gcloudCmd)
 		}
 		return err

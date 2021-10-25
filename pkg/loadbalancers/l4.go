@@ -22,6 +22,8 @@ import (
 	"sync"
 
 	"fmt"
+	"time"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
@@ -38,7 +40,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
-	"time"
 )
 
 const (
@@ -135,7 +136,7 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *SyncResult 
 	hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	// delete fw rules
 	deleteFunc := func(name string) error {
-		err := firewalls.EnsureL4InternalFirewallRuleDeleted(l.cloud, name)
+		err := firewalls.EnsureL4FirewallRuleDeleted(l.cloud, name)
 		if err != nil {
 			if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
 				l.recorder.Eventf(l.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
@@ -261,7 +262,7 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 			defer l.sharedResourcesLock.Unlock()
 		}
 		nsName := utils.ServiceKeyFunc(l.Service.Namespace, l.Service.Name)
-		err := firewalls.EnsureL4InternalFirewallRule(l.cloud, name, IP, nsName, sourceRanges, portRanges, nodeNames, proto, shared)
+		err := firewalls.EnsureL4FirewallRule(l.cloud, name, IP, nsName, sourceRanges, portRanges, nodeNames, proto, shared)
 		if err != nil {
 			if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
 				l.recorder.Eventf(l.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
