@@ -211,9 +211,16 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 
 	// Create the expected resources necessary for an Internal Load Balancer
 	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(svc)
-	hcName, _ := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
-	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
-	_, hcLink, err := healthchecks.EnsureL4HealthCheck(l.cloud, hcName, l.NamespacedName, sharedHC, hcPath, hcPort)
+	ensureHCFunc := func() (string, string, int32, string, error) {
+		if sharedHC {
+			// Take the lock when creating the shared healthcheck
+			l.sharedResourcesLock.Lock()
+			defer l.sharedResourcesLock.Unlock()
+		}
+		return healthchecks.EnsureL4HealthCheck(l.cloud, l.Service, l.namer, sharedHC, meta.Global)
+	}
+
+	hcLink, _, _, _, err := ensureHCFunc()
 	if err != nil {
 		t.Errorf("Failed to create healthcheck, err %v", err)
 	}
@@ -919,7 +926,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	c.MockFirewalls.UpdateHook = nil
 
 	sourceRange := []string{"10.0.0.0/20"}
-	firewalls.EnsureL4InternalFirewallRule(
+	firewalls.EnsureL4FirewallRule(
 		l.cloud,
 		fwName,
 		"1.2.3.4",
@@ -927,7 +934,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 		sourceRange,
 		utils.GetPortRanges(tc.Input),
 		nodeNames,
-		string(v1.ProtocolTCP), false)
+		string(v1.ProtocolTCP), false, utils.ILB)
 	if err != nil {
 		t.Errorf("Unexpected error %v when ensuring firewall rule %s for svc %+v", err, fwName, svc)
 	}

@@ -19,6 +19,7 @@ package healthchecks
 import (
 	"testing"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -48,7 +49,8 @@ func TestMergeHealthChecks(t *testing.T) {
 		{"unhealthy threshold - user configured - should keep", gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold + 1, gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold + 1},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB)
+			// healthcheck intervals and thresholds are common for Global and Regional healthchecks. Hence testing only Global case.
+			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
 			hc := &composite.HealthCheck{
 				CheckIntervalSec:   tc.checkIntervalSec,
 				TimeoutSec:         tc.timeoutSec,
@@ -94,8 +96,9 @@ func TestCompareHealthChecks(t *testing.T) {
 		{"unhealthy threshold does not need update", func(hc *composite.HealthCheck) { hc.UnhealthyThreshold = gceHcUnhealthyThreshold + 1 }, false},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			hc := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB)
-			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB)
+			// healthcheck intervals and thresholds are common for Global and Regional healthchecks. Hence testing only Global case.
+			hc := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
+			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
 			if tc.modifier != nil {
 				tc.modifier(hc)
 			}
@@ -104,4 +107,26 @@ func TestCompareHealthChecks(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCreateHealthCheck(t *testing.T) {
+	t.Parallel()
+	namespaceName := types.NamespacedName{Name: "svc", Namespace: "default"}
+
+	for _, v := range []struct {
+		scope  meta.KeyType
+		region string
+	}{
+		{meta.Global, ""},
+		{meta.Regional, "us-central1"},
+	} {
+		hc := NewL4HealthCheck("hc", namespaceName, false, "/", 12345, utils.ILB, v.scope, v.region)
+		if hc.Region != v.region {
+			t.Errorf("HealthCheck Region mismatch! %v != %v", hc.Region, v.region)
+		}
+		if hc.Scope != v.scope {
+			t.Errorf("HealthCheck Scope mismatch! %v != %v", hc.Scope, v.scope)
+		}
+	}
+
 }
