@@ -1143,7 +1143,7 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 	if err != nil {
 		t.Errorf("Failed to create description for shared resources, err %v", err)
 	}
-	_, _, proto := utils.GetPortsAndProtocol(apiService.Spec.Ports)
+	_, _, _, proto := utils.GetPortsAndProtocol(apiService.Spec.Ports)
 	expectedAnnotations := make(map[string]string)
 	hcName, hcFwName := l.namer.L4HealthCheck(apiService.Namespace, apiService.Name, sharedHC)
 	// hcDesc is the resource description for healthcheck and firewall rule allowing healthcheck.

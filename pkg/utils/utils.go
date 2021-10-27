@@ -595,9 +595,9 @@ func GetPortRanges(ports []int) (ranges []string) {
 }
 
 // GetPortsAndProtocol returns the list of ports, list of port ranges and the protocol given the list of k8s port info.
-func GetPortsAndProtocol(svcPorts []api_v1.ServicePort) (ports []string, portRanges []string, protocol api_v1.Protocol) {
+func GetPortsAndProtocol(svcPorts []api_v1.ServicePort) (ports []string, portRanges []string, nodePorts []int64, protocol api_v1.Protocol) {
 	if len(svcPorts) == 0 {
-		return []string{}, []string{}, api_v1.ProtocolTCP
+		return []string{}, []string{}, []int64{}, api_v1.ProtocolTCP
 	}
 
 	// GCP doesn't support multiple protocols for a single load balancer
@@ -606,9 +606,10 @@ func GetPortsAndProtocol(svcPorts []api_v1.ServicePort) (ports []string, portRan
 	for _, p := range svcPorts {
 		ports = append(ports, strconv.Itoa(int(p.Port)))
 		portInts = append(portInts, int(p.Port))
+		nodePorts = append(nodePorts, int64(p.NodePort))
 	}
 
-	return ports, GetPortRanges(portInts), protocol
+	return ports, GetPortRanges(portInts), nodePorts, protocol
 }
 
 // TranslateAffinityType converts the k8s affinity type to the GCE affinity type.

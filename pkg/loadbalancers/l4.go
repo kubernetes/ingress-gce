@@ -192,7 +192,7 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *SyncResult 
 // This appends the protocol to the forwarding rule name, which will help supporting multiple protocols in the same ILB
 // service.
 func (l *L4) GetFRName() string {
-	_, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
+	_, _, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
 	return l.getFRNameWithProtocol(string(protocol))
 }
 
@@ -243,7 +243,7 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	}
 	result.Annotations[annotations.HealthcheckKey] = hcName
 
-	_, portRanges, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
+	_, portRanges, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
 
 	// ensure firewalls
 	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l.Service)
