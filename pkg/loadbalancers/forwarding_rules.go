@@ -215,12 +215,12 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	if options.SubnetName != "" {
 		subnetKey := *key
 		subnetKey.Name = options.SubnetName
-		subnetworkURL = cloud.SelfLink(meta.VersionGA, l.cloud.ProjectID(), "subnetworks", &subnetKey)
+		subnetworkURL = cloud.SelfLink(meta.VersionGA, l.cloud.NetworkProjectID(), "subnetworks", &subnetKey)
 	}
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
 	ipToUse := ilbIPToUse(l.Service, existingFwdRule, subnetworkURL)
-	klog.V(2).Infof("ensureForwardingRule(%v): Using subnet %s for LoadBalancer IP %s", loadBalancerName, options.SubnetName, ipToUse)
+	klog.V(2).Infof("ensureForwardingRule(%v): Using subnet %q for LoadBalancer IP %s", loadBalancerName, subnetworkURL, ipToUse)
 
 	var addrMgr *addressManager
 	// If the network is not a legacy network, use the address manager
