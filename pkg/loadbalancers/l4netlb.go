@@ -79,8 +79,10 @@ func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, n
 		backendPool:         backends.NewPool(cloud, namer),
 	}
 	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
-	l4netlb.ServicePort = utils.ServicePort{ID: portId,
+	l4netlb.ServicePort = utils.ServicePort{
+		ID:           portId,
 		BackendNamer: l4netlb.namer,
+		NodePort:     int64(service.Spec.Ports[0].NodePort),
 	}
 	return l4netlb
 }

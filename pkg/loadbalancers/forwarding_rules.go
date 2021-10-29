@@ -336,7 +336,7 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string, existingFwdR
 	ipToUse := ilbIPToUse(l4netlb.Service, existingFwdRule, "")
 	klog.V(2).Infof("ensureExternalForwardingRule(%v): LoadBalancer IP %s", loadBalancerName, ipToUse)
 
-	_, portRange, _, protocol := utils.GetPortsAndProtocol(l4netlb.Service.Spec.Ports)
+	portRange, protocol := utils.MinMaxPortRangeAndProtocol(l4netlb.Service.Spec.Ports)
 
 	serviceKey := utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	frDesc, err := utils.MakeL4LBServiceDescription(serviceKey, ipToUse, version, false, utils.XLB)
@@ -348,8 +348,8 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string, existingFwdR
 		Name:                loadBalancerName,
 		Description:         frDesc,
 		IPAddress:           ipToUse,
-		IPProtocol:          string(protocol),
-		PortRange:           portRange[0],
+		IPProtocol:          protocol,
+		PortRange:           portRange,
 		LoadBalancingScheme: string(cloud.SchemeExternal),
 		BackendService:      bsLink,
 	}
