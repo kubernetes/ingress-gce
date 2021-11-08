@@ -38,7 +38,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/cloud-provider"
+	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -76,9 +76,9 @@ const (
 	LabelNodeRoleExcludeBalancer = "node.kubernetes.io/exclude-from-external-load-balancers"
 	// ToBeDeletedTaint is the taint that the autoscaler adds when a node is scheduled to be deleted
 	// https://github.com/kubernetes/autoscaler/blob/cluster-autoscaler-0.5.2/cluster-autoscaler/utils/deletetaint/delete.go#L33
-	ToBeDeletedTaint         = "ToBeDeletedByClusterAutoscaler"
-	L4ILBServiceDescKey      = "networking.gke.io/service-name"
-	L4ILBSharedResourcesDesc = "This resource is shared by all L4 ILB Services using ExternalTrafficPolicy: Cluster."
+	ToBeDeletedTaint        = "ToBeDeletedByClusterAutoscaler"
+	L4ILBServiceDescKey     = "networking.gke.io/service-name"
+	L4LBSharedResourcesDesc = "This resource is shared by all L4 %s Services using ExternalTrafficPolicy: Cluster."
 
 	// LabelAlphaNodeRoleExcludeBalancer specifies that the node should be
 	// exclude from load balancers created by a cloud provider. This label is deprecated and will
@@ -87,6 +87,21 @@ const (
 	GKEUpgradeOperation               = "operation_type: UPGRADE_NODES"
 	GKECurrentOperationAnnotation     = "gke-current-operation"
 )
+
+// L4LBType indicates if L4 LoadBalancer is Internal or External
+type L4LBType int
+
+const (
+	ILB L4LBType = iota
+	XLB
+)
+
+func (lbType L4LBType) ToString() string {
+	if lbType == ILB {
+		return "ILB"
+	}
+	return "XLB"
+}
 
 // FrontendGCAlgorithm species GC algorithm used for ingress frontend resources.
 type FrontendGCAlgorithm int
@@ -580,9 +595,9 @@ func GetPortRanges(ports []int) (ranges []string) {
 }
 
 // GetPortsAndProtocol returns the list of ports, list of port ranges and the protocol given the list of k8s port info.
-func GetPortsAndProtocol(svcPorts []api_v1.ServicePort) (ports []string, portRanges []string, protocol api_v1.Protocol) {
+func GetPortsAndProtocol(svcPorts []api_v1.ServicePort) (ports []string, portRanges []string, nodePorts []int64, protocol api_v1.Protocol) {
 	if len(svcPorts) == 0 {
-		return []string{}, []string{}, api_v1.ProtocolTCP
+		return []string{}, []string{}, []int64{}, api_v1.ProtocolTCP
 	}
 
 	// GCP doesn't support multiple protocols for a single load balancer
@@ -591,9 +606,10 @@ func GetPortsAndProtocol(svcPorts []api_v1.ServicePort) (ports []string, portRan
 	for _, p := range svcPorts {
 		ports = append(ports, strconv.Itoa(int(p.Port)))
 		portInts = append(portInts, int(p.Port))
+		nodePorts = append(nodePorts, int64(p.NodePort))
 	}
 
-	return ports, GetPortRanges(portInts), protocol
+	return ports, GetPortRanges(portInts), nodePorts, protocol
 }
 
 // TranslateAffinityType converts the k8s affinity type to the GCE affinity type.
@@ -623,9 +639,9 @@ func LegacyForwardingRuleName(svc *api_v1.Service) string {
 	return cloudprovider.DefaultLoadBalancerName(svc)
 }
 
-// L4ILBResourceDescription stores the description fields for L4 ILB resources.
-// This is useful to indetify which resources correspond to which L4 ILB service.
-type L4ILBResourceDescription struct {
+// L4LBResourceDescription stores the description fields for L4 ILB or NetLB resources.
+// This is useful to indetify which resources correspond to which L4 LB service.
+type L4LBResourceDescription struct {
 	// ServiceName indicates the name of the service the resource is for.
 	ServiceName string `json:"networking.gke.io/service-name"`
 	// APIVersion stores the version og the compute API used to create this resource.
@@ -635,7 +651,7 @@ type L4ILBResourceDescription struct {
 }
 
 // Marshal returns the description as a JSON-encoded string.
-func (d *L4ILBResourceDescription) Marshal() (string, error) {
+func (d *L4LBResourceDescription) Marshal() (string, error) {
 	out, err := json.Marshal(d)
 	if err != nil {
 		return "", err
@@ -644,15 +660,15 @@ func (d *L4ILBResourceDescription) Marshal() (string, error) {
 }
 
 // Unmarshal converts the JSON-encoded description string into the struct.
-func (d *L4ILBResourceDescription) Unmarshal(desc string) error {
+func (d *L4LBResourceDescription) Unmarshal(desc string) error {
 	return json.Unmarshal([]byte(desc), d)
 }
 
-func MakeL4ILBServiceDescription(svcName, ip string, version meta.Version, shared bool) (string, error) {
+func MakeL4LBServiceDescription(svcName, ip string, version meta.Version, shared bool, lbType L4LBType) (string, error) {
 	if shared {
-		return (&L4ILBResourceDescription{APIVersion: version, ResourceDescription: L4ILBSharedResourcesDesc}).Marshal()
+		return (&L4LBResourceDescription{APIVersion: version, ResourceDescription: fmt.Sprintf(L4LBSharedResourcesDesc, lbType.ToString())}).Marshal()
 	}
-	return (&L4ILBResourceDescription{ServiceName: svcName, ServiceIP: ip, APIVersion: version}).Marshal()
+	return (&L4LBResourceDescription{ServiceName: svcName, ServiceIP: ip, APIVersion: version}).Marshal()
 }
 
 // NewStringPointer returns a pointer to the provided string literal

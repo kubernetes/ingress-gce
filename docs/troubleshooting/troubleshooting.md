@@ -234,7 +234,7 @@ spec:
 ---
 
 kind: Deployment
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 metadata:
   name: nginx-default-backend
   labels:
@@ -305,7 +305,7 @@ spec:
 ---
 
 kind: Deployment
-apiVersion: extensions/v1beta1
+apiVersion: apps/v1
 metadata:
   name: ingress-nginx
   labels:

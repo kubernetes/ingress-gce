@@ -211,9 +211,16 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 
 	// Create the expected resources necessary for an Internal Load Balancer
 	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(svc)
-	hcName, _ := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
-	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
-	_, hcLink, err := healthchecks.EnsureL4HealthCheck(l.cloud, hcName, l.NamespacedName, sharedHC, hcPath, hcPort)
+	ensureHCFunc := func() (string, string, int32, string, error) {
+		if sharedHC {
+			// Take the lock when creating the shared healthcheck
+			l.sharedResourcesLock.Lock()
+			defer l.sharedResourcesLock.Unlock()
+		}
+		return healthchecks.EnsureL4HealthCheck(l.cloud, l.Service, l.namer, sharedHC, meta.Global)
+	}
+
+	hcLink, _, _, _, err := ensureHCFunc()
 	if err != nil {
 		t.Errorf("Failed to create healthcheck, err %v", err)
 	}
@@ -747,7 +754,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
 	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
-	descString, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(svc.Namespace, svc.Name), "1.2.3.0", meta.VersionGA, false)
+	descString, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(svc.Namespace, svc.Name), "1.2.3.0", meta.VersionGA, false, utils.ILB)
 	if err != nil {
 		t.Errorf("Unexpected error when creating description - %v", err)
 	}
@@ -919,7 +926,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	c.MockFirewalls.UpdateHook = nil
 
 	sourceRange := []string{"10.0.0.0/20"}
-	firewalls.EnsureL4InternalFirewallRule(
+	firewalls.EnsureL4FirewallRule(
 		l.cloud,
 		fwName,
 		"1.2.3.4",
@@ -927,7 +934,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 		sourceRange,
 		utils.GetPortRanges(tc.Input),
 		nodeNames,
-		string(v1.ProtocolTCP), false)
+		string(v1.ProtocolTCP), false, utils.ILB)
 	if err != nil {
 		t.Errorf("Unexpected error %v when ensuring firewall rule %s for svc %+v", err, fwName, svc)
 	}
@@ -1128,15 +1135,15 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 	// Check that Firewalls are created for the LoadBalancer and the HealthCheck
 	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(apiService)
 	resourceName, _ := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
-	resourceDesc, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, false)
+	resourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, false, utils.ILB)
 	if err != nil {
 		t.Errorf("Failed to create description for resources, err %v", err)
 	}
-	sharedResourceDesc, err := utils.MakeL4ILBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, true)
+	sharedResourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, true, utils.ILB)
 	if err != nil {
 		t.Errorf("Failed to create description for shared resources, err %v", err)
 	}
-	_, _, proto := utils.GetPortsAndProtocol(apiService.Spec.Ports)
+	_, _, _, proto := utils.GetPortsAndProtocol(apiService.Spec.Ports)
 	expectedAnnotations := make(map[string]string)
 	hcName, hcFwName := l.namer.L4HealthCheck(apiService.Namespace, apiService.Name, sharedHC)
 	// hcDesc is the resource description for healthcheck and firewall rule allowing healthcheck.

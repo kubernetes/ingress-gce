@@ -212,6 +212,19 @@ func WantsL4ILB(service *v1.Service) (bool, string) {
 	return false, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
 }
 
+// WantsL4NetLB checks if the given service requires L4 NetLb.
+func WantsL4NetLB(service *v1.Service) (bool, string) {
+	//TODO(kl52752) Add check to distinct between RBS and target-pool based external LoadBalancer
+	if service == nil {
+		return false, ""
+	}
+	if service.Spec.Type != v1.ServiceTypeLoadBalancer {
+		return false, fmt.Sprintf("Type : %s", service.Spec.Type)
+	}
+	ltype := gce.GetLoadBalancerAnnotationType(service)
+	return ltype != gce.LBTypeInternal, fmt.Sprintf("Type : %s, LBType : %s", service.Spec.Type, ltype)
+}
+
 // OnlyStatusAnnotationsChanged returns true if the only annotation change between the 2 services is the NEG or ILB
 // resources annotations.
 // Note : This assumes that the annotations in old and new service are different. If they are identical, this will
