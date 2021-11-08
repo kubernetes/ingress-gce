@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	bcnf "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	v1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
@@ -367,6 +368,76 @@ func TestEnsureCDN(t *testing.T) {
 			be:             newDefaultBackendService().build(),
 			updateExpected: false,
 			beAfter:        newDefaultBackendService().build(),
+		},
+		{
+			desc: "SignedUrlKeyNames must be ignored from current",
+			sp: newServicePort().setProp(func(cdn *bcnf.CDNConfig) {
+				defCdn := defaultCdnPolicyCopy()
+				cdn.CacheMode = &defaultCdnPolicy.CacheMode
+				cdn.CachePolicy = &bcnf.CacheKeyPolicy{
+					IncludeHost:          defCdn.CacheKeyPolicy.IncludeHost,
+					IncludeProtocol:      defCdn.CacheKeyPolicy.IncludeProtocol,
+					IncludeQueryString:   defCdn.CacheKeyPolicy.IncludeQueryString,
+					QueryStringWhitelist: defCdn.CacheKeyPolicy.QueryStringWhitelist,
+					QueryStringBlacklist: defCdn.CacheKeyPolicy.QueryStringBlacklist,
+				}
+				cdn.MaxTtl = createInt64(defCdn.MaxTtl)
+				cdn.ClientTtl = createInt64(defCdn.ClientTtl)
+				cdn.DefaultTtl = createInt64(defCdn.DefaultTtl)
+				cdn.NegativeCaching = createBool(defCdn.NegativeCaching)
+				cdn.ServeWhileStale = createInt64(defCdn.ServeWhileStale)
+				cdn.RequestCoalescing = createBool(defCdn.RequestCoalescing)
+				cdn.SignedUrlCacheMaxAgeSec = createInt64(defCdn.SignedUrlCacheMaxAgeSec)
+			}).build(),
+			be: newDefaultBackendService().setProp(func(cdn *composite.BackendServiceCdnPolicy) {
+				cdn.SignedUrlKeyNames = []string{"key1"}
+			}).build(),
+			updateExpected: false,
+			beAfter: newDefaultBackendService().setProp(func(cdn *composite.BackendServiceCdnPolicy) {
+				cdn.SignedUrlKeyNames = []string{"key1"}
+			}).build(),
+		},
+		{
+			desc: "SignedUrlKeyNames must be ignored from new",
+			sp: newServicePort().setProp(func(cdn *bcnf.CDNConfig) {
+				defCdn := defaultCdnPolicyCopy()
+				cdn.CacheMode = &defaultCdnPolicy.CacheMode
+				cdn.CachePolicy = &bcnf.CacheKeyPolicy{
+					IncludeHost:          defCdn.CacheKeyPolicy.IncludeHost,
+					IncludeProtocol:      defCdn.CacheKeyPolicy.IncludeProtocol,
+					IncludeQueryString:   defCdn.CacheKeyPolicy.IncludeQueryString,
+					QueryStringWhitelist: defCdn.CacheKeyPolicy.QueryStringWhitelist,
+					QueryStringBlacklist: defCdn.CacheKeyPolicy.QueryStringBlacklist,
+				}
+				cdn.MaxTtl = createInt64(defCdn.MaxTtl)
+				cdn.ClientTtl = createInt64(defCdn.ClientTtl)
+				cdn.DefaultTtl = createInt64(defCdn.DefaultTtl)
+				cdn.NegativeCaching = createBool(defCdn.NegativeCaching)
+				cdn.ServeWhileStale = createInt64(defCdn.ServeWhileStale)
+				cdn.RequestCoalescing = createBool(defCdn.RequestCoalescing)
+				cdn.SignedUrlCacheMaxAgeSec = createInt64(defCdn.SignedUrlCacheMaxAgeSec)
+				cdn.SignedUrlKeys = []*v1.SignedUrlKey{{KeyName: "key1", KeyValue: "value"}}
+			}).build(),
+			be:             newDefaultBackendService().build(),
+			updateExpected: false,
+			beAfter:        newDefaultBackendService().build(),
+		},
+		{
+			desc: "SignedUrlKeyNames must be preserved after update",
+			sp: newServicePort().setProp(func(cdn *bcnf.CDNConfig) {
+				cdn.CacheMode = &useOriginHeaders
+			}).build(),
+			be: newDefaultBackendService().setProp(func(cdn *composite.BackendServiceCdnPolicy) {
+				cdn.SignedUrlKeyNames = []string{"key1"}
+			}).build(),
+			updateExpected: true,
+			beAfter: newDefaultBackendService().setProp(func(cdn *composite.BackendServiceCdnPolicy) {
+				cdn.CacheMode = useOriginHeaders
+				cdn.ClientTtl = 0
+				cdn.DefaultTtl = 0
+				cdn.MaxTtl = 0
+				cdn.SignedUrlKeyNames = []string{"key1"}
+			}).build(),
 		},
 	}
 
@@ -737,7 +808,7 @@ func TestEnsureCDNCacheKeyPolicy(t *testing.T) {
 				cdn.CacheKeyPolicy.IncludeProtocol = false
 				cdn.CacheKeyPolicy.IncludeQueryString = false
 				cdn.CacheKeyPolicy.QueryStringBlacklist = []string{"query1"}
-				cdn.CacheKeyPolicy.QueryStringBlacklist = []string{"query1"}
+				cdn.CacheKeyPolicy.QueryStringWhitelist = []string{"query1"}
 			}).build(),
 			updateExpected: true,
 			beAfter:        newDefaultBackendService().build(),
