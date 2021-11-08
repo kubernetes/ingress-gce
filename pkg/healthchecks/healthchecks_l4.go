@@ -21,9 +21,12 @@ import (
 
 	cloudprovider "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -41,9 +44,20 @@ const (
 
 // EnsureL4HealthCheck creates a new HTTP health check for an L4 LoadBalancer service, based on the parameters provided.
 // If the healthcheck already exists, it is updated as needed.
-func EnsureL4HealthCheck(cloud *gce.Cloud, name string, svcName types.NamespacedName, shared bool, path string, port int32) (*composite.HealthCheck, string, error) {
+func EnsureL4HealthCheck(cloud *gce.Cloud, svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType) (string, string, int32, string, error) {
+	hcName, hcFwName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
+	if !sharedHC {
+		hcPath, hcPort = helpers.GetServiceHealthCheckPathPort(svc)
+	}
+	nn := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
+	_, hcLink, err := ensureL4HealthCheckInternal(cloud, hcName, nn, sharedHC, hcPath, hcPort, scope)
+	return hcLink, hcFwName, hcPort, hcName, err
+}
+
+func ensureL4HealthCheckInternal(cloud *gce.Cloud, name string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType) (*composite.HealthCheck, string, error) {
 	selfLink := ""
-	key, err := composite.CreateKey(cloud, name, meta.Global)
+	key, err := composite.CreateKey(cloud, name, scope)
 	if err != nil {
 		return nil, selfLink, fmt.Errorf("Failed to create composite key for healthcheck %s - %w", name, err)
 	}
@@ -53,7 +67,11 @@ func EnsureL4HealthCheck(cloud *gce.Cloud, name string, svcName types.Namespaced
 			return nil, selfLink, err
 		}
 	}
-	expectedHC := NewL4HealthCheck(name, svcName, shared, path, port)
+	var region string
+	if scope == meta.Regional {
+		region = cloud.Region()
+	}
+	expectedHC := NewL4HealthCheck(name, svcName, shared, path, port, utils.ILB, scope, region)
 	if hc == nil {
 		// Create the healthcheck
 		klog.V(2).Infof("Creating healthcheck %s for service %s, shared = %v", name, svcName, shared)
@@ -78,21 +96,21 @@ func EnsureL4HealthCheck(cloud *gce.Cloud, name string, svcName types.Namespaced
 	return expectedHC, selfLink, err
 }
 
-func DeleteHealthCheck(cloud *gce.Cloud, name string) error {
-	key, err := composite.CreateKey(cloud, name, meta.Global)
+func DeleteHealthCheck(cloud *gce.Cloud, name string, scope meta.KeyType) error {
+	key, err := composite.CreateKey(cloud, name, scope)
 	if err != nil {
 		return fmt.Errorf("Failed to create composite key for healthcheck %s - %w", name, err)
 	}
 	return composite.DeleteHealthCheck(cloud, key, meta.VersionGA)
 }
 
-func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, path string, port int32) *composite.HealthCheck {
+func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, path string, port int32, l4Type utils.L4LBType, scope meta.KeyType, region string) *composite.HealthCheck {
 	httpSettings := composite.HTTPHealthCheck{
 		Port:        int64(port),
 		RequestPath: path,
 	}
 
-	desc, err := utils.MakeL4ILBServiceDescription(svcName.String(), "", meta.VersionGA, shared)
+	desc, err := utils.MakeL4LBServiceDescription(svcName.String(), "", meta.VersionGA, shared, l4Type)
 	if err != nil {
 		klog.Warningf("Failed to generate description for L4HealthCheck %s, err %v", name, err)
 	}
@@ -105,6 +123,9 @@ func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, pa
 		HttpHealthCheck:    &httpSettings,
 		Type:               "HTTP",
 		Description:        desc,
+		Scope:              scope,
+		// Region will be omited by GCP API if Scope is set to Global
+		Region: region,
 	}
 }
 

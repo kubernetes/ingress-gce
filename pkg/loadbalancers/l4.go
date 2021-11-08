@@ -17,11 +17,12 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
-	"fmt"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
@@ -38,7 +39,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
-	"time"
 )
 
 const (
@@ -135,7 +135,7 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *SyncResult 
 	hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	// delete fw rules
 	deleteFunc := func(name string) error {
-		err := firewalls.EnsureL4InternalFirewallRuleDeleted(l.cloud, name)
+		err := firewalls.EnsureL4FirewallRuleDeleted(l.cloud, name)
 		if err != nil {
 			if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
 				l.recorder.Eventf(l.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
@@ -173,7 +173,7 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *SyncResult 
 		l.sharedResourcesLock.Lock()
 		defer l.sharedResourcesLock.Unlock()
 	}
-	err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l.cloud, hcName))
+	err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l.cloud, hcName, meta.Global))
 	if err != nil {
 		if !utils.IsInUsedByError(err) {
 			klog.Errorf("Failed to delete healthcheck for internal loadbalancer service %s, err %v", l.NamespacedName.String(), err)
@@ -192,7 +192,7 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *SyncResult 
 // This appends the protocol to the forwarding rule name, which will help supporting multiple protocols in the same ILB
 // service.
 func (l *L4) GetFRName() string {
-	_, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
+	_, _, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
 	return l.getFRNameWithProtocol(string(protocol))
 }
 
@@ -226,19 +226,16 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 
 	// create healthcheck
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l.Service)
-	hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
-	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
-	if !sharedHC {
-		hcPath, hcPort = helpers.GetServiceHealthCheckPathPort(l.Service)
-	} else {
-		// Take the lock when creating the shared healthcheck
-		l.sharedResourcesLock.Lock()
+	ensureHCFunc := func() (string, string, int32, string, error) {
+		if sharedHC {
+			// Take the lock when creating the shared healthcheck
+			l.sharedResourcesLock.Lock()
+			defer l.sharedResourcesLock.Unlock()
+		}
+		return healthchecks.EnsureL4HealthCheck(l.cloud, l.Service, l.namer, sharedHC, meta.Global)
 	}
-	_, hcLink, err := healthchecks.EnsureL4HealthCheck(l.cloud, hcName, l.NamespacedName, sharedHC, hcPath, hcPort)
-	if sharedHC {
-		// unlock here so rest of the resource creation API can be called without unnecessarily holding the lock.
-		l.sharedResourcesLock.Unlock()
-	}
+
+	hcLink, hcFwName, hcPort, hcName, err := ensureHCFunc()
 	if err != nil {
 		result.GCEResourceInError = annotations.HealthcheckResource
 		result.Error = err
@@ -246,7 +243,7 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	}
 	result.Annotations[annotations.HealthcheckKey] = hcName
 
-	_, portRanges, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
+	_, portRanges, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
 
 	// ensure firewalls
 	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l.Service)
@@ -261,7 +258,7 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 			defer l.sharedResourcesLock.Unlock()
 		}
 		nsName := utils.ServiceKeyFunc(l.Service.Namespace, l.Service.Name)
-		err := firewalls.EnsureL4InternalFirewallRule(l.cloud, name, IP, nsName, sourceRanges, portRanges, nodeNames, proto, shared)
+		err := firewalls.EnsureL4FirewallRule(l.cloud, name, IP, nsName, sourceRanges, portRanges, nodeNames, proto, shared, utils.ILB)
 		if err != nil {
 			if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
 				l.recorder.Eventf(l.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
