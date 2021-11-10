@@ -93,6 +93,10 @@ type syncerManager struct {
 	// This will make all NEGs created by NEG controller to be NON_GCP_PRIVATE_IP_PORT type.
 	enableNonGcpMode     bool
 	enableEndpointSlices bool
+
+	// zoneMap keeps track of the last set of zones the neg controller
+	// has seen. zoneMap is protected by the mu mutex.
+	zoneMap map[string]struct{}
 }
 
 func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
@@ -109,6 +113,15 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	svcNegLister cache.Indexer,
 	enableNonGcpMode bool,
 	enableEndpointSlices bool) *syncerManager {
+
+	zones, err := zoneGetter.ListZones(utils.AllNodesPredicate)
+	if err != nil {
+		klog.V(3).Infof("Unable to initialize zone map in neg manager: %s", err)
+	}
+	zoneMap := make(map[string]struct{})
+	for _, zone := range zones {
+		zoneMap[zone] = struct{}{}
+	}
 	return &syncerManager{
 		namer:                namer,
 		recorder:             recorder,
@@ -126,6 +139,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		kubeSystemUID:        kubeSystemUID,
 		enableNonGcpMode:     enableNonGcpMode,
 		enableEndpointSlices: enableEndpointSlices,
+		zoneMap:              zoneMap,
 	}
 }
 
@@ -268,11 +282,34 @@ func (manager *syncerManager) Sync(namespace, name string) {
 func (manager *syncerManager) SyncNodes() {
 	manager.mu.Lock()
 	defer manager.mu.Unlock()
+
+	// When a zone change occurs (new zone is added or deleted), a sync should be triggered
+	isZoneChange := manager.updateZoneMap()
 	for key, syncer := range manager.syncerMap {
-		if key.NegType == negtypes.VmIpEndpointType && !syncer.IsStopped() {
+		needSync := isZoneChange || key.NegType == negtypes.VmIpEndpointType
+		if needSync && !syncer.IsStopped() {
 			syncer.Sync()
 		}
 	}
+}
+
+// updateZoneMap updates the manager's zone map with the current zones and returns true if the
+// zones have changed. The caller must obtain mu mutex before calling this function
+func (manager *syncerManager) updateZoneMap() bool {
+	zones, err := manager.zoneGetter.ListZones(utils.AllNodesPredicate)
+	if err != nil {
+		klog.Warningf("Unable to list zones: %s", err)
+		return false
+	}
+
+	newZoneMap := make(map[string]struct{})
+	for _, zone := range zones {
+		newZoneMap[zone] = struct{}{}
+	}
+
+	zoneChange := !reflect.DeepEqual(manager.zoneMap, newZoneMap)
+	manager.zoneMap = newZoneMap
+	return zoneChange
 }
 
 // ShutDown signals all syncers to stop

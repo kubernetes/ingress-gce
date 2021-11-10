@@ -79,8 +79,10 @@ func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, n
 		backendPool:         backends.NewPool(cloud, namer),
 	}
 	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
-	l4netlb.ServicePort = utils.ServicePort{ID: portId,
+	l4netlb.ServicePort = utils.ServicePort{
+		ID:           portId,
 		BackendNamer: l4netlb.namer,
+		NodePort:     int64(service.Spec.Ports[0].NodePort),
 	}
 	return l4netlb
 }
@@ -108,7 +110,17 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	l4netlb.Service = svc
 	// TODO(kl52752) Add unit tests for ExternalTrafficPolicy
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
-	hcLink, hcFwName, hcPort, _, err := healthchecks.EnsureL4HealthCheck(l4netlb.cloud, l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope)
+
+	ensureHCFunc := func() (string, string, int32, string, error) {
+		if sharedHC {
+			// Take the lock when creating the shared healthcheck
+			l4netlb.sharedResourcesLock.Lock()
+			defer l4netlb.sharedResourcesLock.Unlock()
+		}
+		return healthchecks.EnsureL4HealthCheck(l4netlb.cloud, l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB)
+	}
+	hcLink, hcFwName, hcPort, _, err := ensureHCFunc()
+
 	if err != nil {
 		result.GCEResourceInError = annotations.HealthcheckResource
 		result.Error = err
@@ -142,6 +154,91 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	}
 
 	result.Status = &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}
+	return result
+}
+
+// EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
+// It is health check, firewall rules and backend service
+func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *SyncResult {
+	result := &SyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
+
+	frName := l4netlb.GetFRName()
+	key, err := l4netlb.createKey(frName)
+	if err != nil {
+		klog.Errorf("Failed to create key for forwarding rule resources with name %s for service %s - %v", frName, l4netlb.NamespacedName.String(), err)
+		result.Error = err
+		return result
+	}
+	// If any resource deletion fails, log the error and continue cleanup.
+	if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l4netlb.cloud, key, meta.VersionGA)); err != nil {
+		klog.Errorf("Failed to delete forwarding rule %s for service %s - %v", frName, l4netlb.NamespacedName.String(), err)
+		result.Error = err
+		result.GCEResourceInError = annotations.ForwardingRuleResource
+	}
+	name := l4netlb.ServicePort.BackendName()
+	if err = ensureAddressDeleted(l4netlb.cloud, name, l4netlb.cloud.Region()); err != nil {
+		klog.Errorf("Failed to delete address for service %s - %v", l4netlb.NamespacedName.String(), err)
+		result.Error = err
+		result.GCEResourceInError = annotations.AddressResource
+	}
+	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
+	hcName, hcFwName := l4netlb.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+
+	deleteFirewallFunc := func(name string) error {
+		err := firewalls.EnsureL4FirewallRuleDeleted(l4netlb.cloud, name)
+		if err != nil {
+			if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
+				l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
+				return nil
+			}
+			return err
+		}
+		return nil
+	}
+	// delete firewall rule allowing load balancer source ranges
+	err = deleteFirewallFunc(name)
+	if err != nil {
+		klog.Errorf("Failed to delete firewall rule %s for service %s - %v", name, l4netlb.NamespacedName.String(), err)
+		result.GCEResourceInError = annotations.FirewallRuleResource
+		result.Error = err
+	}
+
+	// delete firewall rule allowing healthcheck source ranges
+	err = deleteFirewallFunc(hcFwName)
+	if err != nil {
+		klog.Errorf("Failed to delete firewall rule %s for service %s - %v", hcFwName, l4netlb.NamespacedName.String(), err)
+		result.GCEResourceInError = annotations.FirewallForHealthcheckResource
+		result.Error = err
+	}
+	// delete backend service
+	err = utils.IgnoreHTTPNotFound(l4netlb.backendPool.Delete(name, meta.VersionGA, meta.Regional))
+	if err != nil {
+		klog.Errorf("Failed to delete backends for L4 External LoadBalancer service %s - %v", l4netlb.NamespacedName.String(), err)
+		result.GCEResourceInError = annotations.BackendServiceResource
+		result.Error = err
+	}
+
+	// Delete healthcheck
+	if sharedHC {
+		l4netlb.sharedResourcesLock.Lock()
+		defer l4netlb.sharedResourcesLock.Unlock()
+	}
+	// TODO(kl52752) Add deletion for shared and dedicated HC despise the bool value.
+	// We need because in case of update ExternalTrafficPolicy from Local to Cluster
+	// there may be some old HC that have not been deleted.
+	// Add this check also to L4 ILB
+	err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l4netlb.cloud, hcName, l4netlb.scope))
+	if err != nil {
+		if !utils.IsInUsedByError(err) {
+			klog.Errorf("Failed to delete healthcheck for service %s - %v", l4netlb.NamespacedName.String(), err)
+			result.GCEResourceInError = annotations.HealthcheckResource
+			result.Error = err
+			return result
+		}
+		// Ignore deletion error due to health check in use by another resource.
+		// This will be hit if this is a shared healthcheck.
+		klog.V(2).Infof("Failed to delete healthcheck %s: health check in use.", hcName)
+	}
 	return result
 }
 

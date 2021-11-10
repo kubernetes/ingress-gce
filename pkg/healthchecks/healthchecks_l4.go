@@ -44,18 +44,18 @@ const (
 
 // EnsureL4HealthCheck creates a new HTTP health check for an L4 LoadBalancer service, based on the parameters provided.
 // If the healthcheck already exists, it is updated as needed.
-func EnsureL4HealthCheck(cloud *gce.Cloud, svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType) (string, string, int32, string, error) {
+func EnsureL4HealthCheck(cloud *gce.Cloud, svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType) (string, string, int32, string, error) {
 	hcName, hcFwName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
 	if !sharedHC {
 		hcPath, hcPort = helpers.GetServiceHealthCheckPathPort(svc)
 	}
 	nn := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
-	_, hcLink, err := ensureL4HealthCheckInternal(cloud, hcName, nn, sharedHC, hcPath, hcPort, scope)
+	_, hcLink, err := ensureL4HealthCheckInternal(cloud, hcName, nn, sharedHC, hcPath, hcPort, scope, l4Type)
 	return hcLink, hcFwName, hcPort, hcName, err
 }
 
-func ensureL4HealthCheckInternal(cloud *gce.Cloud, name string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType) (*composite.HealthCheck, string, error) {
+func ensureL4HealthCheckInternal(cloud *gce.Cloud, name string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, l4Type utils.L4LBType) (*composite.HealthCheck, string, error) {
 	selfLink := ""
 	key, err := composite.CreateKey(cloud, name, scope)
 	if err != nil {
@@ -71,7 +71,7 @@ func ensureL4HealthCheckInternal(cloud *gce.Cloud, name string, svcName types.Na
 	if scope == meta.Regional {
 		region = cloud.Region()
 	}
-	expectedHC := NewL4HealthCheck(name, svcName, shared, path, port, utils.ILB, scope, region)
+	expectedHC := NewL4HealthCheck(name, svcName, shared, path, port, l4Type, scope, region)
 	if hc == nil {
 		// Create the healthcheck
 		klog.V(2).Infof("Creating healthcheck %s for service %s, shared = %v", name, svcName, shared)

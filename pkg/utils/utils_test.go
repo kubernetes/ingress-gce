@@ -1159,3 +1159,65 @@ func TestComputeBasePath(t *testing.T) {
 		t.Errorf("Compute basePath has changed. Verify selflink generation has not broken and update path in test")
 	}
 }
+
+func TestMinMaxPortRangeAndProtocol(t *testing.T) {
+
+	for _, tc := range []struct {
+		svcPorts         []api_v1.ServicePort
+		expectedRange    string
+		expectedProtocol string
+	}{
+		{
+			svcPorts: []api_v1.ServicePort{
+				{Port: 1, Protocol: "TCP"},
+				{Port: 10, Protocol: "TCP"},
+				{Port: 100, Protocol: "TCP"}},
+			expectedRange:    "1-100",
+			expectedProtocol: "TCP",
+		},
+		{
+			svcPorts: []api_v1.ServicePort{
+				{Port: 10, Protocol: "TCP"},
+				{Port: 1, Protocol: "TCP"},
+				{Port: 50, Protocol: "TCP"},
+				{Port: 100, Protocol: "TCP"},
+				{Port: 90, Protocol: "TCP"}},
+			expectedRange:    "1-100",
+			expectedProtocol: "TCP",
+		},
+		{
+			svcPorts: []api_v1.ServicePort{
+				{Port: 10, Protocol: "TCP"}},
+			expectedRange:    "10-10",
+			expectedProtocol: "TCP",
+		},
+		{
+			svcPorts: []api_v1.ServicePort{
+				{Port: 100, Protocol: "TCP"},
+				{Port: 10, Protocol: "TCP"}},
+			expectedRange:    "10-100",
+			expectedProtocol: "TCP",
+		},
+		{
+			svcPorts: []api_v1.ServicePort{
+				{Port: 100, Protocol: "TCP"},
+				{Port: 50, Protocol: "TCP"},
+				{Port: 10, Protocol: "TCP"}},
+			expectedRange:    "10-100",
+			expectedProtocol: "TCP",
+		},
+		{
+			svcPorts:         []api_v1.ServicePort{},
+			expectedRange:    "",
+			expectedProtocol: "",
+		},
+	} {
+		portsRange, protocol := MinMaxPortRangeAndProtocol(tc.svcPorts)
+		if portsRange != tc.expectedRange {
+			t.Errorf("PortRange mismatch %v != %v", tc.expectedRange, portsRange)
+		}
+		if protocol != tc.expectedProtocol {
+			t.Errorf("protocol mismatch %v != %v", protocol, tc.expectedProtocol)
+		}
+	}
+}

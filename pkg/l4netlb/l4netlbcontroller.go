@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
 	listers "k8s.io/client-go/listers/core/v1"
@@ -33,6 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
@@ -91,24 +93,71 @@ func NewL4NetLBController(
 		AddFunc: func(obj interface{}) {
 			addSvc := obj.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(addSvc.Namespace, addSvc.Name)
-			needsNetLB, svcType := annotations.WantsL4NetLB(addSvc)
-			//TODO (kl52752) Add check for deletion
-			if needsNetLB {
+			if l4netLBc.shouldProcessService(addSvc, nil) {
 				klog.V(3).Infof("L4 External LoadBalancer Service %s added, enqueuing", svcKey)
 				l4netLBc.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
 				l4netLBc.svcQueue.Enqueue(addSvc)
 				l4netLBc.enqueueTracker.Track()
 			} else {
-				klog.V(4).Infof("Ignoring add for non external lb service %s based on %v", svcKey, svcType)
+				klog.V(4).Infof("Ignoring add for non external lb service %s", svcKey)
 			}
 		},
 		// Deletes will be handled in the Update when the deletion timestamp is set.
 		UpdateFunc: func(old, cur interface{}) {
-			//TODO(kl52752) add implementation and check for deletion
+			//TODO(kl52752) add implementation for update
+			curSvc := cur.(*v1.Service)
+			oldSvc := old.(*v1.Service)
+			svcKey := utils.ServiceKeyFunc(curSvc.Namespace, curSvc.Name)
+			if l4netLBc.shouldProcessService(curSvc, oldSvc) {
+				klog.V(3).Infof("L4 External LoadBalancer Service %s updated, enqueuing", svcKey)
+				l4netLBc.svcQueue.Enqueue(curSvc)
+				l4netLBc.enqueueTracker.Track()
+			}
 		},
 	})
 	ctx.AddHealthCheck("service-controller health", l4netLBc.checkHealth)
 	return l4netLBc
+}
+
+// needsAddition checks if given service should be added by controller
+func needsAddition(newSvc, oldSvc *v1.Service) bool {
+	if oldSvc != nil {
+		return false
+	}
+	needsNetLB, _ := annotations.WantsL4NetLB(newSvc)
+	return needsNetLB
+}
+
+func (lc *L4NetLBController) needsUpdate(newSvc, oldSvc *v1.Service) bool {
+	if oldSvc == nil {
+		return false
+	}
+	//TODO(kl52752) Implement a condition to compare services
+	return false
+}
+
+// shouldProcessUpdate checks if given service should be process by controller
+func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service) bool {
+	//TODO(kl52752) add check for update
+	if needsAddition(newSvc, oldSvc) || lc.needsUpdate(newSvc, oldSvc) || needsDeletion(newSvc) {
+		l4netlb := loadbalancers.NewL4NetLB(newSvc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(newSvc.Namespace), &lc.sharedResourcesLock)
+		return lc.isRbsBasedLBService(newSvc, l4netlb)
+	}
+	return false
+}
+
+// isRbsBasedLBService returns if the given LoadBalancer service is not legacy target pool based LoadBalancer.
+func (lc *L4NetLBController) isRbsBasedLBService(svc *v1.Service, l4 *loadbalancers.L4NetLB) bool {
+	// skip services that are being handled by the legacy service controller.
+	if utils.IsLegacyL4NetLBService(svc) {
+		klog.Warningf("Ignoring update for service %s:%s managed by service controller", svc.Namespace, svc.Name)
+		return false
+	}
+	if lc.hasLegacyForwardingRule(svc) {
+		klog.Warningf("Ignoring update for service %s:%s which have legacy forwarding rule", svc.Namespace, svc.Name)
+		return false
+	}
+	return true
 }
 
 func (lc *L4NetLBController) checkHealth() error {
@@ -153,9 +202,17 @@ func (lc *L4NetLBController) sync(key string) error {
 		klog.V(3).Infof("Ignoring sync of non-existent service %s", key)
 		return nil
 	}
-	var result *loadbalancers.SyncResultNetLB
+	if needsDeletion(svc) {
+		klog.V(3).Infof("Deleting L4 External LoadBalancer resources for service %s", key)
+		result := lc.garbageCollectRBSNetLB(key, svc)
+		if result == nil {
+			return nil
+		}
+		return result.Error
+	}
+
 	if wantsNetLB, _ := annotations.WantsL4NetLB(svc); wantsNetLB {
-		result = lc.syncInternal(svc)
+		result := lc.syncInternal(svc)
 		if result == nil {
 			// result will be nil if the service was ignored(due to presence of service controller finalizer).
 			return nil
@@ -170,11 +227,14 @@ func (lc *L4NetLBController) sync(key string) error {
 // Returns an error if processing the service update failed.
 func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.SyncResultNetLB {
 	l4netlb := loadbalancers.NewL4NetLB(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace), &lc.sharedResourcesLock)
-	if !lc.shouldProcessService(service, l4netlb) {
+	if !lc.isRbsBasedLBService(service, l4netlb) {
 		return nil
 	}
 
-	// #TODO(kl52752) Add ensure finalizer for NetLB
+	if err := common.EnsureServiceFinalizer(service, common.NetLBFinalizerV2, lc.ctx.KubeClient); err != nil {
+		return &loadbalancers.SyncResultNetLB{Error: fmt.Errorf("Failed to attach L4 External LoadBalancer finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
+	}
+
 	nodeNames, err := utils.GetReadyNodeNames(lc.nodeLister)
 	if err != nil {
 		return &loadbalancers.SyncResultNetLB{Error: err}
@@ -182,7 +242,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.Sy
 
 	if err := lc.ensureInstanceGroups(service, nodeNames); err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncInstanceGroupsFailed",
-			"Error syncing instance group: %v", err)
+			"Error syncing instance group, err: %v", err)
 		return &loadbalancers.SyncResultNetLB{Error: err}
 	}
 
@@ -191,13 +251,13 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.Sy
 	syncResult := l4netlb.EnsureFrontend(nodeNames, service)
 	if syncResult.Error != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
-			"Error ensuring Resource for L4 External LoadBalancer: %v", syncResult.Error)
+			"Error ensuring Resource for L4 External LoadBalancer, err: %v", syncResult.Error)
 		return syncResult
 	}
 
 	if err = lc.ensureBackendLinking(l4netlb.ServicePort); err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
-			"Error linking instance groups to backend service: %v", err)
+			"Error linking instance groups to backend service, err: %v", err)
 		syncResult.Error = err
 		return syncResult
 	}
@@ -205,7 +265,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.Sy
 	err = lc.ensureServiceStatus(service, syncResult.Status)
 	if err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
-			"Error updating L4 External LoadBalancer: %v", err)
+			"Error updating L4 External LoadBalancer, err: %v", err)
 		syncResult.Error = err
 		return syncResult
 	}
@@ -220,12 +280,6 @@ func (lc *L4NetLBController) ensureBackendLinking(port utils.ServicePort) error 
 		return err
 	}
 	return lc.igLinker.Link(port, lc.ctx.Cloud.ProjectID(), zones)
-}
-
-// shouldProcessService returns if the given LoadBalancer service should be processed by this controller.
-func (lc *L4NetLBController) shouldProcessService(service *v1.Service, l4 *loadbalancers.L4NetLB) bool {
-	//TODO(kl52752) add implementation
-	return true
 }
 
 func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames []string) error {
@@ -245,4 +299,51 @@ func (lc *L4NetLBController) ensureServiceStatus(svc *v1.Service, newStatus *v1.
 		return nil
 	}
 	return patch.PatchServiceLoadBalancerStatus(lc.ctx.KubeClient.CoreV1(), svc, *newStatus)
+}
+
+// hasLegacyForwardingRule return true if forwarding rule is target pool based
+func (lc *L4NetLBController) hasLegacyForwardingRule(svc *v1.Service) bool {
+	l4netlb := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace), &lc.sharedResourcesLock)
+	frName := utils.LegacyForwardingRuleName(svc)
+	existingFR := l4netlb.GetForwardingRule(frName, meta.VersionGA)
+	return existingFR != nil && existingFR.LoadBalancingScheme == string(cloud.SchemeExternal) && existingFR.Target != ""
+}
+
+// needsDeletion return true if svc required deleting RBS based NetLB
+func needsDeletion(svc *v1.Service) bool {
+	if !utils.IsL4NetLBService(svc) {
+		return false
+	}
+	if common.IsDeletionCandidateForGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
+		return true
+	}
+	needsNetLB, _ := annotations.WantsL4NetLB(svc)
+	return !needsNetLB
+}
+
+// garbageCollectRBSNetLB cleans-up all gce resources related to service and removes NetLB finalizer
+func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service) *loadbalancers.SyncResult {
+	l4netLB := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace), &lc.sharedResourcesLock)
+	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
+		"Deleting L4 External LoadBalancer for %s", key)
+	result := l4netLB.EnsureLoadBalancerDeleted(svc)
+	if result.Error != nil {
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
+			"Error deleting L4 External LoadBalancer, err: %v", result.Error)
+		return result
+	}
+	if err := lc.ensureServiceStatus(svc, &v1.LoadBalancerStatus{}); err != nil {
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
+			"Error reseting L4 External LoadBalancer status to empty, err: %v", err)
+		result.Error = fmt.Errorf("Failed to reset L4 External LoadBalancer status, err: %w", err)
+		return result
+	}
+	if err := common.EnsureDeleteServiceFinalizer(svc, common.NetLBFinalizerV2, lc.ctx.KubeClient); err != nil {
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
+			"Error removing finalizer from L4 External LoadBalancer, err: %v", err)
+		result.Error = fmt.Errorf("Failed to remove L4 External LoadBalancer finalizer, err: %w", err)
+		return result
+	}
+	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletedLoadBalancer", "Deleted L4 External LoadBalancer")
+	return result
 }

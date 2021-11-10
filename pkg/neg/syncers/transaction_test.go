@@ -1223,6 +1223,83 @@ func TestUpdateStatus(t *testing.T) {
 	}
 }
 
+func TestIsZoneChange(t *testing.T) {
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+	testNegType := negtypes.VmIpPortEndpointType
+
+	testCases := []struct {
+		desc           string
+		zoneDeleted    bool
+		zoneAdded      bool
+		expectedResult bool
+	}{
+		{
+			desc:           "zone was added",
+			zoneAdded:      true,
+			expectedResult: true,
+		},
+		{
+			desc:           "zone was deleted",
+			zoneDeleted:    true,
+			expectedResult: true,
+		},
+		{
+			desc:           "no zone change occurred",
+			expectedResult: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, false, false)
+
+			fakeZoneGetter := syncer.zoneGetter.(*negtypes.FakeZoneGetter)
+			origZones, err := fakeZoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(syncer.EpCalculatorMode))
+			if err != nil {
+				t.Errorf("errored when retrieving zones: %s", err)
+			}
+
+			for _, zone := range origZones {
+				fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+					Version:             syncer.NegSyncerKey.GetAPIVersion(),
+					Name:                testNegName,
+					NetworkEndpointType: string(syncer.NegSyncerKey.NegType),
+					Network:             fakeCloud.NetworkURL(),
+					Subnetwork:          fakeCloud.SubnetworkURL(),
+				}, zone)
+			}
+			ret, _ := fakeCloud.AggregatedListNetworkEndpointGroup(syncer.NegSyncerKey.GetAPIVersion())
+			negRefMap := negObjectReferences(ret)
+			var refs []negv1beta1.NegObjectReference
+			for _, neg := range negRefMap {
+				refs = append(refs, neg)
+			}
+			negCR := createNegCR(syncer.NegName, v1.Now(), true, true, refs)
+			if err = syncer.svcNegLister.Add(negCR); err != nil {
+				t.Errorf("failed to add neg to store:%s", err)
+			}
+
+			if tc.zoneDeleted {
+				fakeZoneGetter.DeleteZone("zone1")
+			}
+
+			if tc.zoneAdded {
+				if err := fakeZoneGetter.AddZone("zoneA", "instance-1"); err != nil {
+					t.Errorf("failed to add zone:%s", err)
+				}
+			}
+
+			isZoneChange := syncer.isZoneChange()
+			if isZoneChange != tc.expectedResult {
+				t.Errorf("isZoneChange() returned %t, wanted %t", isZoneChange, tc.expectedResult)
+			}
+		})
+
+	}
+}
+
 func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, mode negtypes.EndpointsCalculatorMode, enableEndpointSlices bool) (negtypes.NegSyncer, *transactionSyncer) {
 	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmIpEndpointType, false, enableEndpointSlices)
 	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, mode)
@@ -1484,6 +1561,7 @@ func createNegCR(testNegName string, creationTS metav1.Time, populateInitialized
 	neg := &negv1beta1.ServiceNetworkEndpointGroup{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              testNegName,
+			Namespace:         testNamespace,
 			CreationTimestamp: creationTS,
 		},
 	}

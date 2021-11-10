@@ -28,6 +28,7 @@ const (
 	FinalizerRemoveFlag       = flag("enable-finalizer-remove")
 	EnableV2FrontendNamerFlag = flag("enable-v2-frontend-namer")
 	testServiceName           = "ilbtest"
+	netLbServiceName          = "netbtest"
 	testServiceNamespace      = "default"
 )
 
@@ -93,19 +94,38 @@ func NewL4ILBService(onlyLocal bool, port int) *api_v1.Service {
 }
 
 // NewL4NetLBService creates a Service of type LoadBalancer.
-func NewL4NetLBService(port int) *api_v1.Service {
+func NewL4NetLBService(port int, nodePort int32) *api_v1.Service {
 	svc := &api_v1.Service{
 		ObjectMeta: meta_v1.ObjectMeta{
-			Name:      testServiceName,
+			Name:      netLbServiceName,
 			Namespace: testServiceNamespace,
 		},
 		Spec: api_v1.ServiceSpec{
 			Type:            api_v1.ServiceTypeLoadBalancer,
 			SessionAffinity: api_v1.ServiceAffinityClientIP,
 			Ports: []api_v1.ServicePort{
-				{Name: "testport", Port: int32(port), Protocol: "TCP"},
+				{Name: "testport", Port: int32(port), Protocol: "TCP", NodePort: nodePort},
 			},
 		},
+	}
+	return svc
+}
+
+// NewL4NetLBService creates a Service of type LoadBalancer with multiple named ports.
+func NewL4NetLBServiceMultiplePorts(name string, ports []int32) *api_v1.Service {
+	svc := &api_v1.Service{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:      name,
+			Namespace: testServiceNamespace,
+		},
+		Spec: api_v1.ServiceSpec{
+			Type:            api_v1.ServiceTypeLoadBalancer,
+			SessionAffinity: api_v1.ServiceAffinityClientIP,
+		},
+	}
+	for _, port := range ports {
+		svcPort := api_v1.ServicePort{Name: fmt.Sprintf("testport-%d", port), Port: int32(port), Protocol: "TCP", NodePort: int32(30000 + port)}
+		svc.Spec.Ports = append(svc.Spec.Ports, svcPort)
 	}
 	return svc
 }
