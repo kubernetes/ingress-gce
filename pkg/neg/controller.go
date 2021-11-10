@@ -263,26 +263,28 @@ func NewController(
 		},
 	})
 
-	if negController.runL4 {
-		nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				node := obj.(*apiv1.Node)
-				negController.enqueueNode(node)
-			},
-			DeleteFunc: func(obj interface{}) {
-				node := obj.(*apiv1.Node)
-				negController.enqueueNode(node)
-			},
-			UpdateFunc: func(old, cur interface{}) {
-				oldNode := old.(*apiv1.Node)
-				currentNode := cur.(*apiv1.Node)
-				nodeReadyCheck := utils.GetNodeConditionPredicate()
-				if nodeReadyCheck(oldNode) != nodeReadyCheck(currentNode) {
-					negController.enqueueNode(currentNode)
-				}
-			},
-		})
+	nodeEventHandler := cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			node := obj.(*apiv1.Node)
+			negController.enqueueNode(node)
+		},
+		DeleteFunc: func(obj interface{}) {
+			node := obj.(*apiv1.Node)
+			negController.enqueueNode(node)
+		},
 	}
+
+	if negController.runL4 {
+		nodeEventHandler.UpdateFunc = func(old, cur interface{}) {
+			oldNode := old.(*apiv1.Node)
+			currentNode := cur.(*apiv1.Node)
+			nodeReadyCheck := utils.GetNodeConditionPredicate()
+			if nodeReadyCheck(oldNode) != nodeReadyCheck(currentNode) {
+				negController.enqueueNode(currentNode)
+			}
+		}
+	}
+	nodeInformer.AddEventHandler(nodeEventHandler)
 
 	if enableAsm {
 		negController.enableASM = enableAsm
