@@ -39,12 +39,12 @@ const (
 	TestInstance6 = "instance6"
 )
 
-type fakeZoneGetter struct {
+type FakeZoneGetter struct {
 	zoneInstanceMap map[string]sets.String
 }
 
-func NewFakeZoneGetter() *fakeZoneGetter {
-	return &fakeZoneGetter{
+func NewFakeZoneGetter() *FakeZoneGetter {
+	return &FakeZoneGetter{
 		zoneInstanceMap: map[string]sets.String{
 			TestZone1: sets.NewString(TestInstance1, TestInstance2),
 			TestZone2: sets.NewString(TestInstance3, TestInstance4, TestInstance5, TestInstance6),
@@ -52,20 +52,34 @@ func NewFakeZoneGetter() *fakeZoneGetter {
 	}
 }
 
-func (f *fakeZoneGetter) ListZones() ([]string, error) {
+func (f *FakeZoneGetter) ListZones() ([]string, error) {
 	ret := []string{}
 	for key := range f.zoneInstanceMap {
 		ret = append(ret, key)
 	}
 	return ret, nil
 }
-func (f *fakeZoneGetter) GetZoneForNode(name string) (string, error) {
+func (f *FakeZoneGetter) GetZoneForNode(name string) (string, error) {
 	for zone, instances := range f.zoneInstanceMap {
 		if instances.Has(name) {
 			return zone, nil
 		}
 	}
 	return "", NotFoundError
+}
+
+// Adds a zone with the given instances to the zone getter
+func (f *FakeZoneGetter) AddZone(newZone string, instances ...string) error {
+	if _, ok := f.zoneInstanceMap[newZone]; ok {
+		return fmt.Errorf("zone already exists")
+	}
+	f.zoneInstanceMap[newZone] = sets.NewString(instances...)
+	return nil
+}
+
+// Deletes a zone in the zoneInstanceMap
+func (f *FakeZoneGetter) DeleteZone(newZone string) {
+	delete(f.zoneInstanceMap, newZone)
 }
 
 type FakeNetworkEndpointGroupCloud struct {
