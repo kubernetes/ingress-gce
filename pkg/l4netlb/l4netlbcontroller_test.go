@@ -47,12 +47,19 @@ const (
 	testGCEZone          = "us-central1-b"
 	FwIPAddress          = "10.0.0.1"
 	testServiceNamespace = "default"
+	defaultNodePort      = 30234
 )
 
 func addNetLBService(lc *L4NetLBController, svc *v1.Service) {
 	lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Create(context.TODO(), svc, metav1.CreateOptions{})
 	lc.ctx.ServiceInformer.GetIndexer().Add(svc)
 }
+
+func updateNetLBService(lc *L4NetLBController, svc *v1.Service) {
+	lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Update(context.TODO(), svc, metav1.UpdateOptions{})
+	lc.ctx.ServiceInformer.GetIndexer().Update(svc)
+}
+
 func deleteNetLBService(lc *L4NetLBController, svc *v1.Service) {
 	lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Delete(context.TODO(), svc.Name, metav1.DeleteOptions{})
 	lc.ctx.ServiceInformer.GetIndexer().Delete(svc)
@@ -71,6 +78,23 @@ func checkForwardingRule(lc *L4NetLBController, svc *v1.Service, expectedPortRan
 		return fmt.Errorf("Port Range Mismatch %v != %v", expectedPortRange, fwdRule.PortRange)
 	}
 	return nil
+}
+
+func createAndSyncNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController) {
+	lc = newL4NetLBServiceController()
+	svc = test.NewL4NetLBService(8080, defaultNodePort)
+	addNetLBService(lc, svc)
+	key, _ := common.KeyFunc(svc)
+	err := lc.sync(key)
+	if err != nil {
+		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
+	}
+	svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+	}
+	validateSvcStatus(svc, t)
+	return
 }
 
 func checkBackendService(lc *L4NetLBController, nodePort int32) error {
@@ -174,9 +198,9 @@ func TestProcessMultipleNetLBServices(t *testing.T) {
 			go lc.Run()
 			var svcNames []string
 			for port := 8000; port < 8020; port++ {
-				newSvc := test.NewL4NetLBService(port)
+				nodePort := int32(30000 + port)
+				newSvc := test.NewL4NetLBService(port, nodePort)
 				newSvc.Name = newSvc.Name + fmt.Sprintf("-%d", port)
-				newSvc.Spec.Ports[0].NodePort = int32(30000 + port)
 				svcNames = append(svcNames, newSvc.Name)
 				addNetLBService(lc, newSvc)
 				lc.svcQueue.Enqueue(newSvc)
@@ -263,5 +287,130 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 			t.Errorf("Check forwarding rule error: %v", err)
 		}
 		deleteNetLBService(lc, svc)
+	}
+}
+
+func TestProcessServiceCreate(t *testing.T) {
+	svc, lc := createAndSyncNetLBSvc(t)
+	if err := checkBackendService(lc, defaultNodePort); err != nil {
+		t.Errorf("UnexpectedError %v", err)
+	}
+	deleteNetLBService(lc, svc)
+}
+
+func TestProcessServiceDeletion(t *testing.T) {
+	svc, lc := createAndSyncNetLBSvc(t)
+	if !common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
+		t.Fatalf("Expected L4 External LoadBalancer finalizer")
+	}
+	if needsDeletion(svc) {
+		t.Fatalf("Service should not be marked for deletion")
+	}
+	// Mark the service for deletion by updating timestamp
+	svc.DeletionTimestamp = &metav1.Time{}
+	updateNetLBService(lc, svc)
+	if !needsDeletion(svc) {
+		t.Fatalf("Service should be marked for deletion")
+	}
+	key, _ := common.KeyFunc(svc)
+	err := lc.sync(key)
+	if err != nil {
+		t.Errorf("Failed to sync service %s, err %v", svc.Name, err)
+	}
+	svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+	}
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		t.Fatalf("Expected LoadBalancer status be deleted - %+v", svc.Status.LoadBalancer)
+	}
+	if common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
+		t.Fatalf("Unexpected LoadBalancer finalizer %v", svc.ObjectMeta.Finalizers)
+	}
+	deleteNetLBService(lc, svc)
+}
+
+func TestInternalLoadBalancerShouldNotBeProcessByL4NetLBController(t *testing.T) {
+	lc := newL4NetLBServiceController()
+	ilbSvc := test.NewL4ILBService(false, 8080)
+	addNetLBService(lc, ilbSvc)
+	key, _ := common.KeyFunc(ilbSvc)
+	err := lc.sync(key)
+	if err != nil {
+		t.Errorf("Failed to sync service %s, err %v", ilbSvc.Name, err)
+	}
+	ilbSvc, err = lc.ctx.KubeClient.CoreV1().Services(ilbSvc.Namespace).Get(context.TODO(), ilbSvc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err %v", ilbSvc.Name, err)
+	}
+
+	// Mark the service for deletion by updating timestamp
+	ilbSvc.DeletionTimestamp = &metav1.Time{}
+	updateNetLBService(lc, ilbSvc)
+	if needsDeletion(ilbSvc) {
+		t.Fatalf("Service should not be marked for deletion!")
+	}
+}
+
+func TestProcessServiceCreationFailed(t *testing.T) {
+	for _, param := range []struct {
+		addMockFunc   func(*cloud.MockGCE)
+		expectedError string
+	}{{addMockFunc: func(c *cloud.MockGCE) { c.MockInstanceGroups.GetHook = test.GetErrorInstanceGroupHook },
+		expectedError: "GetErrorInstanceGroupHook"},
+		{addMockFunc: func(c *cloud.MockGCE) { c.MockInstanceGroups.ListHook = test.ListErrorHook },
+			expectedError: "ListErrorHook"},
+		{addMockFunc: func(c *cloud.MockGCE) { c.MockInstanceGroups.InsertHook = test.InsertErrorHook },
+			expectedError: "InsertErrorHook"},
+
+		{addMockFunc: func(c *cloud.MockGCE) { c.MockInstanceGroups.AddInstancesHook = test.AddInstancesErrorHook },
+			expectedError: "AddInstances: [AddInstancesErrorHook]"},
+		{addMockFunc: func(c *cloud.MockGCE) { c.MockInstanceGroups.ListInstancesHook = test.ListInstancesWithErrorHook },
+			expectedError: "ListInstancesWithErrorHook"},
+		{addMockFunc: func(c *cloud.MockGCE) { c.MockInstanceGroups.SetNamedPortsHook = test.SetNamedPortsErrorHook },
+			expectedError: "SetNamedPortsErrorHook"},
+	} {
+		lc := newL4NetLBServiceController()
+		param.addMockFunc((lc.ctx.Cloud.Compute().(*cloud.MockGCE)))
+		svc := test.NewL4NetLBService(8080, defaultNodePort)
+		addNetLBService(lc, svc)
+		key, _ := common.KeyFunc(svc)
+		err := lc.sync(key)
+		if err == nil || err.Error() != param.expectedError {
+			t.Errorf("Error mismatch '%v' != '%v'", err.Error(), param.expectedError)
+		}
+	}
+}
+func TestProcessServiceDeletionFailed(t *testing.T) {
+	for _, param := range []struct {
+		addMockFunc   func(*cloud.MockGCE)
+		expectedError string
+	}{
+		{addMockFunc: func(c *cloud.MockGCE) { c.MockForwardingRules.DeleteHook = test.DeleteForwardingRulesErrorHook },
+			expectedError: "DeleteForwardingRulesErrorHook"},
+		{addMockFunc: func(c *cloud.MockGCE) { c.MockAddresses.DeleteHook = test.DeleteAddressErrorHook },
+			expectedError: "DeleteAddressErrorHook"},
+		{addMockFunc: func(c *cloud.MockGCE) { c.MockFirewalls.DeleteHook = test.DeleteFirewallsErrorHook },
+			expectedError: "DeleteFirewallsErrorHook"},
+		{addMockFunc: func(c *cloud.MockGCE) { c.MockRegionBackendServices.DeleteHook = test.DeleteBackendServicesErrorHook },
+			expectedError: "DeleteBackendServicesErrorHook"},
+		{addMockFunc: func(c *cloud.MockGCE) { c.MockRegionHealthChecks.DeleteHook = test.DeleteHealthCheckErrorHook },
+			expectedError: "DeleteHealthCheckErrorHook"},
+	} {
+		svc, lc := createAndSyncNetLBSvc(t)
+		if !common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
+			t.Fatalf("Expected L4 External LoadBalancer finalizer")
+		}
+		svc.DeletionTimestamp = &metav1.Time{}
+		updateNetLBService(lc, svc)
+		if !needsDeletion(svc) {
+			t.Fatalf("Service should be marked for deletion")
+		}
+		param.addMockFunc((lc.ctx.Cloud.Compute().(*cloud.MockGCE)))
+		key, _ := common.KeyFunc(svc)
+		err := lc.sync(key)
+		if err == nil || err.Error() != param.expectedError {
+			t.Errorf("Error mismatch '%v' != '%v'", err, param.expectedError)
+		}
 	}
 }

@@ -39,6 +39,10 @@ const (
 	ILBFinalizerV2 = "gke.networking.io/l4-ilb-v2"
 	// NegFinalizerKey is the finalizer used by neg controller to ensure NEG CRs are deleted after corresponding negs are deleted
 	NegFinalizerKey = "networking.gke.io/neg-finalizer"
+	// LegacyNetLBFinalizer key is used to identify L4 External LoadBalancer services whose resources are managed by service controller.
+	LegacyNetLBFinalizer = "gke.networking.io/l4-netlb-v1"
+	// NetLBFinalizerV2 is the finalizer used by newer controllers that manage L4 External LoadBalancer services.
+	NetLBFinalizerV2 = "gke.networking.io/l4-netlb-v2"
 )
 
 // IsDeletionCandidate is true if the passed in meta contains an ingress finalizer.

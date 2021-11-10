@@ -94,7 +94,7 @@ func NewL4ILBService(onlyLocal bool, port int) *api_v1.Service {
 }
 
 // NewL4NetLBService creates a Service of type LoadBalancer.
-func NewL4NetLBService(port int) *api_v1.Service {
+func NewL4NetLBService(port int, nodePort int32) *api_v1.Service {
 	svc := &api_v1.Service{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      netLbServiceName,
@@ -104,7 +104,7 @@ func NewL4NetLBService(port int) *api_v1.Service {
 			Type:            api_v1.ServiceTypeLoadBalancer,
 			SessionAffinity: api_v1.ServiceAffinityClientIP,
 			Ports: []api_v1.ServicePort{
-				{Name: "testport", Port: int32(port), Protocol: "TCP"},
+				{Name: "testport", Port: int32(port), Protocol: "TCP", NodePort: nodePort},
 			},
 		},
 	}

@@ -658,6 +658,16 @@ func IsSubsettingL4ILBService(svc *api_v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.ILBFinalizerV2, nil)
 }
 
+// IsL4NetLBService returns true if the given LoadBalancer service is managed by L4NetLBController.
+func IsL4NetLBService(svc *api_v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV2, nil)
+}
+
+// IsLegacyL4NetLBService returns true if the given LoadBalancer service is managed by service controller.
+func IsLegacyL4NetLBService(svc *api_v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.LegacyNetLBFinalizer, nil)
+}
+
 func LegacyForwardingRuleName(svc *api_v1.Service) string {
 	return cloudprovider.DefaultLoadBalancerName(svc)
 }
