@@ -93,7 +93,7 @@ func NewL4NetLBController(
 		AddFunc: func(obj interface{}) {
 			addSvc := obj.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(addSvc.Namespace, addSvc.Name)
-			if shouldProcess(addSvc) {
+			if l4netLBc.shouldProcessService(addSvc, nil) {
 				klog.V(3).Infof("L4 External LoadBalancer Service %s added, enqueuing", svcKey)
 				l4netLBc.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
 				l4netLBc.svcQueue.Enqueue(addSvc)
@@ -108,7 +108,7 @@ func NewL4NetLBController(
 			curSvc := cur.(*v1.Service)
 			oldSvc := old.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(curSvc.Namespace, curSvc.Name)
-			if shouldProcessUpdate(oldSvc, curSvc) {
+			if l4netLBc.shouldProcessService(curSvc, oldSvc) {
 				klog.V(3).Infof("L4 External LoadBalancer Service %s updated, enqueuing", svcKey)
 				l4netLBc.svcQueue.Enqueue(curSvc)
 				l4netLBc.enqueueTracker.Track()
@@ -119,16 +119,45 @@ func NewL4NetLBController(
 	return l4netLBc
 }
 
-// shouldProcess checks if given service should be process by controller
-func shouldProcess(svc *v1.Service) bool {
-	needsNetLB, _ := annotations.WantsL4NetLB(svc)
-	return needsNetLB || needsDeletion(svc)
+// needsAddition checks if given service should be added by controller
+func needsAddition(newSvc, oldSvc *v1.Service) bool {
+	if oldSvc != nil {
+		return false
+	}
+	needsNetLB, _ := annotations.WantsL4NetLB(newSvc)
+	return needsNetLB
+}
+
+func (lc *L4NetLBController) needsUpdate(newSvc, oldSvc *v1.Service) bool {
+	if oldSvc == nil {
+		return false
+	}
+	//TODO(kl52752) Implement a condition to compare services
+	return false
 }
 
 // shouldProcessUpdate checks if given service should be process by controller
-func shouldProcessUpdate(oldSvc, newSvc *v1.Service) bool {
+func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service) bool {
 	//TODO(kl52752) add check for update
-	return needsDeletion(newSvc)
+	if needsAddition(newSvc, oldSvc) || lc.needsUpdate(newSvc, oldSvc) || needsDeletion(newSvc) {
+		l4netlb := loadbalancers.NewL4NetLB(newSvc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(newSvc.Namespace), &lc.sharedResourcesLock)
+		return lc.isRbsBasedLBService(newSvc, l4netlb)
+	}
+	return false
+}
+
+// isRbsBasedLBService returns if the given LoadBalancer service is not legacy target pool based LoadBalancer.
+func (lc *L4NetLBController) isRbsBasedLBService(svc *v1.Service, l4 *loadbalancers.L4NetLB) bool {
+	// skip services that are being handled by the legacy service controller.
+	if utils.IsLegacyL4NetLBService(svc) {
+		klog.Warningf("Ignoring update for service %s:%s managed by service controller", svc.Namespace, svc.Name)
+		return false
+	}
+	if lc.hasLegacyForwardingRule(svc) {
+		klog.Warningf("Ignoring update for service %s:%s which have legacy forwarding rule", svc.Namespace, svc.Name)
+		return false
+	}
+	return true
 }
 
 func (lc *L4NetLBController) checkHealth() error {
@@ -198,7 +227,7 @@ func (lc *L4NetLBController) sync(key string) error {
 // Returns an error if processing the service update failed.
 func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.SyncResultNetLB {
 	l4netlb := loadbalancers.NewL4NetLB(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace), &lc.sharedResourcesLock)
-	if !lc.shouldProcessService(service, l4netlb) {
+	if !lc.isRbsBasedLBService(service, l4netlb) {
 		return nil
 	}
 
@@ -251,20 +280,6 @@ func (lc *L4NetLBController) ensureBackendLinking(port utils.ServicePort) error 
 		return err
 	}
 	return lc.igLinker.Link(port, lc.ctx.Cloud.ProjectID(), zones)
-}
-
-// shouldProcessService returns if the given LoadBalancer service should be processed by this controller.
-func (lc *L4NetLBController) shouldProcessService(svc *v1.Service, l4 *loadbalancers.L4NetLB) bool {
-	// skip services that are being handled by the legacy service controller.
-	if utils.IsLegacyL4NetLBService(svc) {
-		klog.Warningf("Ignoring update for service %s:%s managed by service controller", svc.Namespace, svc.Name)
-		return false
-	}
-	if lc.hasLegacyForwardingRule(svc) {
-		klog.Warningf("Ignoring update for service %s:%s which have legacy forwarding rule", svc.Namespace, svc.Name)
-		return false
-	}
-	return true
 }
 
 func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames []string) error {
