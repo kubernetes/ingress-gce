@@ -32,7 +32,7 @@ var (
 	crdMeta = &CRDMeta{
 		groupName: "test.group.com",
 		versions: []*Version{
-			NewVersion("v1alpha1", "pkg/apis/test/v1alpha1.Test", testGetOpenAPIDefinitions),
+			NewVersion("v1alpha1", "pkg/apis/test/v1alpha1.Test", testGetOpenAPIDefinitions, false),
 		},
 		kind:     "Test",
 		listKind: "TestList",

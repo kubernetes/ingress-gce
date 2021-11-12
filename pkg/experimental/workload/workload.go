@@ -30,7 +30,7 @@ func CRDMeta() *crd.CRDMeta {
 		"workload",
 		"workloads",
 		[]*crd.Version{
-			crd.NewVersion("v1alpha1", "k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.Workload", workloadv1a1.GetOpenAPIDefinitions),
+			crd.NewVersion("v1alpha1", "k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1.Workload", workloadv1a1.GetOpenAPIDefinitions, false),
 		},
 		"wl",
 	)
