@@ -39,6 +39,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	utilslb "k8s.io/ingress-gce/pkg/utils/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
@@ -415,7 +416,7 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 		return true
 	}
 
-	if !portsEqualForLBService(oldService, newService) || oldService.Spec.SessionAffinity != newService.Spec.SessionAffinity {
+	if !utilslb.PortsEqualForLBService(oldService, newService) || oldService.Spec.SessionAffinity != newService.Spec.SessionAffinity {
 		recorder.Eventf(newService, v1.EventTypeNormal, "Ports/SessionAffinity", "Ports %v, SessionAffinity %v -> Ports %v, SessionAffinity  %v",
 			oldService.Spec.Ports, oldService.Spec.SessionAffinity, newService.Spec.Ports, newService.Spec.SessionAffinity)
 		return true
@@ -467,57 +468,4 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 		return true
 	}
 	return false
-}
-
-func getPortsForLB(service *v1.Service) []*v1.ServicePort {
-	ports := []*v1.ServicePort{}
-	for i := range service.Spec.Ports {
-		sp := &service.Spec.Ports[i]
-		ports = append(ports, sp)
-	}
-	return ports
-}
-
-func portsEqualForLBService(x, y *v1.Service) bool {
-	xPorts := getPortsForLB(x)
-	yPorts := getPortsForLB(y)
-	return portSlicesEqualForLB(xPorts, yPorts)
-}
-
-func portSlicesEqualForLB(x, y []*v1.ServicePort) bool {
-	if len(x) != len(y) {
-		return false
-	}
-
-	for i := range x {
-		if !portEqualForLB(x[i], y[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-func portEqualForLB(x, y *v1.ServicePort) bool {
-	// TODO: Should we check name?  (In theory, an LB could expose it)
-	if x.Name != y.Name {
-		return false
-	}
-
-	if x.Protocol != y.Protocol {
-		return false
-	}
-
-	if x.Port != y.Port {
-		return false
-	}
-
-	if x.NodePort != y.NodePort {
-		return false
-	}
-
-	if x.TargetPort != y.TargetPort {
-		return false
-	}
-
-	return true
 }

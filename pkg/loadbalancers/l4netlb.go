@@ -45,8 +45,7 @@ type L4NetLB struct {
 	cloud       *gce.Cloud
 	backendPool *backends.Backends
 	scope       meta.KeyType
-	// TODO(52752) change namer for proper NetLB Namer
-	namer namer.L4ResourcesNamer
+	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
 	recorder            record.EventRecorder
 	Service             *corev1.Service
@@ -108,7 +107,6 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	}
 
 	l4netlb.Service = svc
-	// TODO(kl52752) Add unit tests for ExternalTrafficPolicy
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
 
 	ensureHCFunc := func() (string, string, int32, string, error) {
