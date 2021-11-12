@@ -511,6 +511,12 @@ func (c *Controller) getForwardingRule(namespace, svcName string) (string, error
 func (c *Controller) getSubnetURLs(subnets []string) ([]string, error) {
 	var subnetURLs []string
 	for _, subnetName := range subnets {
+		// For shared vpc cases, users must specify full resource path of the subnet
+		_, err := cloud.ParseResourceURL(subnetName)
+		if err == nil {
+			subnetURLs = append(subnetURLs, subnetName)
+			continue
+		}
 		subnet, err := c.cloud.Compute().Subnetworks().Get(context2.Background(), meta.RegionalKey(subnetName, c.cloud.Region()))
 		if err != nil {
 			return subnetURLs, fmt.Errorf("failed to find Subnetwork %s/%s: %w", c.cloud.Region(), subnetName, err)

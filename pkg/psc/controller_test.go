@@ -987,6 +987,73 @@ func TestFilterError(t *testing.T) {
 	}
 }
 
+func TestGetSubnetURLs(t *testing.T) {
+	testcases := []struct {
+		desc           string
+		subnet         string
+		createSubnet   bool
+		expectErr      bool
+		expectedSubnet string
+	}{
+		{
+			desc:           "subnet is in the host project",
+			subnet:         "my-subnet",
+			createSubnet:   true,
+			expectErr:      false,
+			expectedSubnet: "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/my-subnet",
+		},
+		{
+			desc:           "subnet is the resource url path",
+			subnet:         "projects/test-project/regions/us-central1/subnetworks/subnet-1",
+			createSubnet:   false,
+			expectErr:      false,
+			expectedSubnet: "projects/test-project/regions/us-central1/subnetworks/subnet-1",
+		},
+		{
+			desc:           "subnet is a fully qualified resource url",
+			subnet:         "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-1",
+			createSubnet:   false,
+			expectErr:      false,
+			expectedSubnet: "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-1",
+		},
+		{
+			desc:         "subnet does not exist in host project",
+			subnet:       "my-subnet",
+			createSubnet: false,
+			expectErr:    true,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			controller := newTestController("ZONAL")
+
+			if tc.createSubnet {
+				_, err := createNatSubnet(controller.cloud, tc.subnet)
+				if err != nil {
+					t.Errorf("failed to create nat subnet: %s", err)
+				}
+			}
+
+			subnets, err := controller.getSubnetURLs([]string{tc.subnet})
+			if err == nil && tc.expectErr {
+				t.Fatalf("getSubnetURLs() returned no error, but expected an error")
+			} else if err != nil && !tc.expectErr {
+				t.Fatalf("getSubnetURLs() returned unexpected error: %s", err)
+			}
+
+			if tc.expectedSubnet != "" && !tc.expectErr {
+				if len(subnets) != 1 {
+					t.Fatalf("got %d subnets, should be 1", len(subnets))
+				}
+
+				if subnets[0] != tc.expectedSubnet {
+					t.Fatalf("getSubnetURLs() returned %s, but wanted %s", subnets[0], tc.expectedSubnet)
+				}
+			}
+		})
+	}
+}
+
 // newTestController returns a test psc controller
 func newTestController(clusterType string) *Controller {
 	kubeClient := fake.NewSimpleClientset()
