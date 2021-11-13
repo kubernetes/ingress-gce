@@ -23,7 +23,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -47,14 +47,14 @@ const (
 	TestUpgradeInstance2 = "upgrade-instance2"
 )
 
-type fakeZoneGetter struct {
+type FakeZoneGetter struct {
 	zoneInstanceMap     map[string]sets.String
 	unreadyInstancesMap map[string]sets.String
 	upgradeInstancesMap map[string]sets.String
 }
 
-func NewFakeZoneGetter() *fakeZoneGetter {
-	return &fakeZoneGetter{
+func NewFakeZoneGetter() *FakeZoneGetter {
+	return &FakeZoneGetter{
 		zoneInstanceMap: map[string]sets.String{
 			TestZone1: sets.NewString(TestInstance1, TestInstance2),
 			TestZone2: sets.NewString(TestInstance3, TestInstance4, TestInstance5, TestInstance6),
@@ -68,7 +68,7 @@ func NewFakeZoneGetter() *fakeZoneGetter {
 	}
 }
 
-func (f *fakeZoneGetter) ListZones(predicate utils.NodeConditionPredicate) ([]string, error) {
+func (f *FakeZoneGetter) ListZones(predicate utils.NodeConditionPredicate) ([]string, error) {
 	ret := []string{}
 	for zone := range f.zoneInstanceMap {
 		node := &v1.Node{
@@ -99,7 +99,7 @@ func (f *fakeZoneGetter) ListZones(predicate utils.NodeConditionPredicate) ([]st
 	}
 	return ret, nil
 }
-func (f *fakeZoneGetter) GetZoneForNode(name string) (string, error) {
+func (f *FakeZoneGetter) GetZoneForNode(name string) (string, error) {
 	for zone, instances := range f.zoneInstanceMap {
 		if instances.Has(name) {
 			return zone, nil
@@ -111,6 +111,20 @@ func (f *fakeZoneGetter) GetZoneForNode(name string) (string, error) {
 		}
 	}
 	return "", NotFoundError
+}
+
+// Adds a zone with the given instances to the zone getter
+func (f *FakeZoneGetter) AddZone(newZone string, instances ...string) error {
+	if _, ok := f.zoneInstanceMap[newZone]; ok {
+		return fmt.Errorf("zone already exists")
+	}
+	f.zoneInstanceMap[newZone] = sets.NewString(instances...)
+	return nil
+}
+
+// Deletes a zone in the zoneInstanceMap
+func (f *FakeZoneGetter) DeleteZone(newZone string) {
+	delete(f.zoneInstanceMap, newZone)
 }
 
 type FakeNetworkEndpointGroupCloud struct {
