@@ -17,13 +17,13 @@ limitations under the License.
 package main
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"reflect"
 	"testing"
 
+	"github.com/kr/pretty"
 	"google.golang.org/api/compute/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -72,7 +72,7 @@ func TestCDNEnable(t *testing.T) {
 					SetCDNConfig(&backendconfig.CDNConfig{
 						Enabled: true,
 					}).Build(),
-				expected: newBSWithDefaults().build(),
+				expected: newBSBuilder().build(),
 			},
 			// disable cdn when backend config is removed is not supported for now
 		} {
@@ -123,7 +123,7 @@ func TestCDNCacheMode(t *testing.T) {
 						DefaultTtl: createInt64(1234),
 						MaxTtl:     createInt64(1234),
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.CacheMode = cacheAllStatic
 					cdn.ClientTtl = 1234
 					cdn.DefaultTtl = 1234
@@ -139,7 +139,7 @@ func TestCDNCacheMode(t *testing.T) {
 						DefaultTtl: createInt64(0),
 						MaxTtl:     createInt64(0),
 					}).Build(),
-				expected: newBSWithDefaults().
+				expected: newBSBuilder().
 					setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 						cdn.CacheMode = cacheAllStatic
 						cdn.ClientTtl = 0
@@ -154,7 +154,7 @@ func TestCDNCacheMode(t *testing.T) {
 						Enabled:   true,
 						CacheMode: &useOriginHeaders,
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.CacheMode = useOriginHeaders
 					cdn.ClientTtl = 0
 					cdn.DefaultTtl = 0
@@ -168,7 +168,7 @@ func TestCDNCacheMode(t *testing.T) {
 						Enabled:   true,
 						CacheMode: &forceCacheAll,
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.CacheMode = forceCacheAll
 					cdn.MaxTtl = 0
 				}).build(),
@@ -180,7 +180,7 @@ func TestCDNCacheMode(t *testing.T) {
 						Enabled:   true,
 						CacheMode: &useOriginHeaders,
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.CacheMode = useOriginHeaders
 					cdn.ClientTtl = 0
 					cdn.DefaultTtl = 0
@@ -194,7 +194,7 @@ func TestCDNCacheMode(t *testing.T) {
 						Enabled:   true,
 						CacheMode: &cacheAllStatic,
 					}).Build(),
-				expected: newBSWithDefaults().
+				expected: newBSBuilder().
 					setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 						cdn.CacheMode = cacheAllStatic
 					}).build(),
@@ -206,7 +206,7 @@ func TestCDNCacheMode(t *testing.T) {
 						Enabled:   true,
 						CacheMode: &forceCacheAll,
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.CacheMode = forceCacheAll
 					cdn.MaxTtl = 0
 				}).build(),
@@ -221,7 +221,7 @@ func TestCDNCacheMode(t *testing.T) {
 						DefaultTtl: createInt64(0),
 						MaxTtl:     createInt64(0),
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.CacheMode = forceCacheAll
 					cdn.ClientTtl = 0
 					cdn.DefaultTtl = 0
@@ -235,7 +235,7 @@ func TestCDNCacheMode(t *testing.T) {
 						Enabled:   true,
 						CacheMode: &cacheAllStatic,
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.CacheMode = cacheAllStatic
 				}).build(),
 			},
@@ -283,7 +283,7 @@ func TestCDNCacheKeyPolicy(t *testing.T) {
 							IncludeQueryString: false,
 						},
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.CacheKeyPolicy.IncludeHost = false
 					cdn.CacheKeyPolicy.IncludeProtocol = false
 					cdn.CacheKeyPolicy.IncludeQueryString = false
@@ -301,7 +301,7 @@ func TestCDNCacheKeyPolicy(t *testing.T) {
 							QueryStringWhitelist: []string{"query1", "query2"},
 						},
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.CacheKeyPolicy.IncludeHost = true
 					cdn.CacheKeyPolicy.IncludeProtocol = false
 					cdn.CacheKeyPolicy.IncludeQueryString = true
@@ -320,7 +320,7 @@ func TestCDNCacheKeyPolicy(t *testing.T) {
 							QueryStringBlacklist: []string{"query3", "query4"},
 						},
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.CacheKeyPolicy.IncludeHost = true
 					cdn.CacheKeyPolicy.IncludeProtocol = false
 					cdn.CacheKeyPolicy.IncludeQueryString = true
@@ -339,7 +339,7 @@ func TestCDNCacheKeyPolicy(t *testing.T) {
 							QueryStringWhitelist: []string{"query1", "query2"},
 						},
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.CacheKeyPolicy.IncludeHost = true
 					cdn.CacheKeyPolicy.IncludeProtocol = false
 					cdn.CacheKeyPolicy.IncludeQueryString = false
@@ -357,7 +357,7 @@ func TestCDNCacheKeyPolicy(t *testing.T) {
 							QueryStringBlacklist: []string{"query3", "query4"},
 						},
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.CacheKeyPolicy.IncludeHost = true
 					cdn.CacheKeyPolicy.IncludeProtocol = false
 					cdn.CacheKeyPolicy.IncludeQueryString = false
@@ -369,7 +369,7 @@ func TestCDNCacheKeyPolicy(t *testing.T) {
 					SetCDNConfig(&backendconfig.CDNConfig{
 						Enabled: true,
 					}).Build(),
-				expected: newBSWithDefaults().build(),
+				expected: newBSBuilder().build(),
 			},
 		} {
 			t.Run(tc.desc, func(t *testing.T) {
@@ -414,7 +414,7 @@ func TestCDNNegativeCaching(t *testing.T) {
 							{Code: 404, Ttl: 1800},
 						},
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.NegativeCaching = true
 					cdn.NegativeCachingPolicy = []*compute.BackendServiceCdnPolicyNegativeCachingPolicy{
 						{Code: 301, Ttl: 600},
@@ -433,7 +433,7 @@ func TestCDNNegativeCaching(t *testing.T) {
 							{Code: 404, Ttl: 1800},
 						},
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.NegativeCaching = false
 				}).build(),
 			},
@@ -443,7 +443,7 @@ func TestCDNNegativeCaching(t *testing.T) {
 					SetCDNConfig(&backendconfig.CDNConfig{
 						Enabled: true,
 					}).Build(),
-				expected: newBSWithDefaults().build(),
+				expected: newBSBuilder().build(),
 			},
 		} {
 			t.Run(tc.desc, func(t *testing.T) {
@@ -487,7 +487,7 @@ func TestCDNBypassCache(t *testing.T) {
 							{HeaderName: "X-Bypass-Cache-2"},
 						},
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.BypassCacheOnRequestHeaders = []*compute.BackendServiceCdnPolicyBypassCacheOnRequestHeader{
 						{HeaderName: "X-Bypass-Cache-1"},
 						{HeaderName: "X-Bypass-Cache-2"},
@@ -504,7 +504,7 @@ func TestCDNBypassCache(t *testing.T) {
 							{HeaderName: "X-Bypass-Cache-4"},
 						},
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.BypassCacheOnRequestHeaders = []*compute.BackendServiceCdnPolicyBypassCacheOnRequestHeader{
 						{HeaderName: "X-Bypass-Cache-3"},
 						{HeaderName: "X-Bypass-Cache-4"},
@@ -517,7 +517,7 @@ func TestCDNBypassCache(t *testing.T) {
 					SetCDNConfig(&backendconfig.CDNConfig{
 						Enabled: true,
 					}).Build(),
-				expected: newBSWithDefaults().build(),
+				expected: newBSBuilder().build(),
 			},
 		} {
 			t.Run(tc.desc, func(t *testing.T) {
@@ -559,7 +559,7 @@ func TestCDNServeWhileStale(t *testing.T) {
 						Enabled:         true,
 						ServeWhileStale: createInt64(1234),
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.ServeWhileStale = 1234
 				}).build(),
 			},
@@ -570,7 +570,7 @@ func TestCDNServeWhileStale(t *testing.T) {
 						Enabled:         true,
 						ServeWhileStale: createInt64(4321),
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.ServeWhileStale = 4321
 				}).build(),
 			},
@@ -580,7 +580,7 @@ func TestCDNServeWhileStale(t *testing.T) {
 					SetCDNConfig(&backendconfig.CDNConfig{
 						Enabled: true,
 					}).Build(),
-				expected: newBSWithDefaults().build(),
+				expected: newBSBuilder().build(),
 			},
 		} {
 			t.Run(tc.desc, func(t *testing.T) {
@@ -622,7 +622,7 @@ func TestCDNRequestCoalescing(t *testing.T) {
 						Enabled:           true,
 						RequestCoalescing: createBool(false),
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.RequestCoalescing = false
 				}).build(),
 			},
@@ -633,7 +633,7 @@ func TestCDNRequestCoalescing(t *testing.T) {
 						Enabled:           true,
 						RequestCoalescing: createBool(true),
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.RequestCoalescing = true
 				}).build(),
 			},
@@ -643,7 +643,7 @@ func TestCDNRequestCoalescing(t *testing.T) {
 					SetCDNConfig(&backendconfig.CDNConfig{
 						Enabled: true,
 					}).Build(),
-				expected: newBSWithDefaults().build(),
+				expected: newBSBuilder().build(),
 			},
 		} {
 			t.Run(tc.desc, func(t *testing.T) {
@@ -690,7 +690,7 @@ func TestCDNSignedUrls(t *testing.T) {
 							{KeyName: "key3", KeyValue: "MH5PnJa2HCKM232GxJ3z0g=="},
 						},
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.SignedUrlCacheMaxAgeSec = 1234
 					cdn.SignedUrlKeyNames = []string{"key1", "key2", "key3"}
 				}).build(),
@@ -707,7 +707,7 @@ func TestCDNSignedUrls(t *testing.T) {
 							{KeyName: "key6", KeyValue: "MH5PnJa2HCKM232GxJ3z0g=="},
 						},
 					}).Build(),
-				expected: newBSWithDefaults().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
+				expected: newBSBuilder().setProp(func(cdn *compute.BackendServiceCdnPolicy) {
 					cdn.SignedUrlCacheMaxAgeSec = 3421
 					cdn.SignedUrlKeyNames = []string{"key4", "key5", "key6"}
 				}).build(),
@@ -718,7 +718,7 @@ func TestCDNSignedUrls(t *testing.T) {
 					SetCDNConfig(&backendconfig.CDNConfig{
 						Enabled: true,
 					}).Build(),
-				expected: newBSWithDefaults().build(),
+				expected: newBSBuilder().build(),
 			},
 		} {
 			t.Run(tc.desc, func(t *testing.T) {
@@ -742,23 +742,11 @@ func createBool(a bool) *bool {
 	return &a
 }
 
-func prettyJSON(data interface{}) string {
-	buffer := new(bytes.Buffer)
-	encoder := json.NewEncoder(buffer)
-	encoder.SetIndent("", "\t")
-
-	err := encoder.Encode(data)
-	if err != nil {
-		panic(err)
-	}
-	return buffer.String()
-}
-
 type backendServiceBuilder struct {
 	CdnPolicy *compute.BackendServiceCdnPolicy
 }
 
-func newBSWithDefaults() *backendServiceBuilder {
+func newBSBuilder() *backendServiceBuilder {
 	return &backendServiceBuilder{
 		CdnPolicy: &compute.BackendServiceCdnPolicy{
 			CacheKeyPolicy: &compute.CacheKeyPolicy{
@@ -821,7 +809,7 @@ func setupIngress(s *e2e.Sandbox, ingressName, serviceName1, backendconfig1 stri
 		return nil, fmt.Errorf("error waiting for Ingress to stabilize: %v", err)
 	}
 	// validate the default cdn setup
-	err = validateBackend(ing, s.Namespace, serviceName1, newBSWithDefaults().build())
+	err = validateBackend(ing, s.Namespace, serviceName1, newBSBuilder().build())
 	if err != nil {
 		return nil, fmt.Errorf("error validate backend: %v", err)
 	}
@@ -829,8 +817,12 @@ func setupIngress(s *e2e.Sandbox, ingressName, serviceName1, backendconfig1 stri
 	return ing, nil
 }
 
-func updateConfigAndValidate(ing *networkingv1.Ingress, namespace, serviceName string,
-	beConfig *backendconfig.BackendConfig, expected *compute.BackendServiceCdnPolicy) error {
+func updateConfigAndValidate(
+	ing *networkingv1.Ingress,
+	namespace,
+	serviceName string,
+	beConfig *backendconfig.BackendConfig,
+	expected *compute.BackendServiceCdnPolicy) error {
 
 	// update the backend configuration
 	bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
@@ -904,8 +896,8 @@ func validateBackend(ing *networkingv1.Ingress, namespace, serviceName string, e
 
 		if !reflect.DeepEqual(expCdnPolicy, bsCdnPolicy) {
 			return fmt.Errorf("expected %s, but got %s",
-				prettyJSON(expected), // use the original values for error reporting
-				prettyJSON(bs.GA.CdnPolicy))
+				pretty.Sprint(expected), // use the original values for error reporting
+				pretty.Sprint(bs.GA.CdnPolicy))
 		}
 	}
 
@@ -919,21 +911,15 @@ func sliceEqual(x, y []*compute.BackendServiceCdnPolicyNegativeCachingPolicy) bo
 	if len(x) != len(y) {
 		return false
 	}
-	diff := make(map[string]int, len(x))
+	xMap := map[int64]int64{}
+	yMap := map[int64]int64{}
 	for _, v := range x {
-		diff[fmt.Sprintf("%d-%d", v.Code, v.Ttl)]++
+		xMap[v.Code] = v.Ttl
 	}
 	for _, v := range y {
-		key := fmt.Sprintf("%d-%d", v.Code, v.Ttl)
-		if _, ok := diff[key]; !ok {
-			return false
-		}
-		diff[key]--
-		if diff[key] == 0 {
-			delete(diff, key)
-		}
+		yMap[v.Code] = v.Ttl
 	}
-	return len(diff) == 0
+	return reflect.DeepEqual(xMap, yMap)
 }
 
 func copyViaJSON(dst, src interface{}) error {

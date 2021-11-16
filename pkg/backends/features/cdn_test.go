@@ -342,7 +342,6 @@ func TestEnsureCDN(t *testing.T) {
 			updateExpected: true,
 			beAfter: &composite.BackendService{
 				EnableCDN: false,
-				CdnPolicy: deepCopyCdnPolicy(&defaultCdnPolicy),
 			},
 		},
 		{

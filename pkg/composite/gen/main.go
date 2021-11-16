@@ -818,7 +818,7 @@ func ({{$type.VarName}} *{{$type.Name}}) To{{$version}}() (*compute{{$extension}
 
 	{{- if eq $type.Name "BackendService"}}
 	// Set force send fields. This is a temporary hack.
-	if {{$lower}}.CdnPolicy != nil { 
+	if {{$lower}}.CdnPolicy != nil {
 		if {{$lower}}.CdnPolicy.CacheKeyPolicy != nil {
 		{{$lower}}.CdnPolicy.CacheKeyPolicy.ForceSendFields = []string{"IncludeHost", "IncludeProtocol", "IncludeQueryString", "QueryStringBlacklist", "QueryStringWhitelist"}
 		}

@@ -64,6 +64,8 @@ spec:
         - --gce-ratelimit=ga.HealthChecks.Get,qps,1.8,1
         - --gce-ratelimit=alpha.HealthChecks.Get,qps,1.8,1
         - --enable-backendconfig-healthcheck
+        - --enable-frontend-config
+        - --enable-endpoint-slices
       volumes:
       - name: google-cloud-key
         secret:

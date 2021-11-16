@@ -84,6 +84,10 @@ func renderConfig(sp utils.ServicePort) *composite.BackendService {
 	be := &composite.BackendService{}
 	be.EnableCDN = cdnConfig.Enabled
 
+	if !be.EnableCDN {
+		return be
+	}
+
 	be.CdnPolicy = &composite.BackendServiceCdnPolicy{}
 
 	if cdnConfig.CachePolicy != nil {
@@ -207,6 +211,10 @@ func hasDiff(new *composite.BackendService, current *composite.BackendService) b
 
 	if new.EnableCDN != current.EnableCDN {
 		return true
+	}
+
+	if !new.EnableCDN {
+		return false
 	}
 
 	if current.CdnPolicy == nil {
