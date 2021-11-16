@@ -96,10 +96,12 @@ func renderConfig(sp utils.ServicePort) *composite.BackendService {
 		beCacheKeyPolicy.IncludeProtocol = cdnConfig.CachePolicy.IncludeProtocol
 		beCacheKeyPolicy.IncludeQueryString = cdnConfig.CachePolicy.IncludeQueryString
 		if cdnConfig.CachePolicy.IncludeQueryString {
-			if cdnConfig.CachePolicy.QueryStringBlacklist != nil && len(cdnConfig.CachePolicy.QueryStringBlacklist) > 0 {
+			// we must check for an empty list here as the user might set  'queryStringBlacklist:[]' and compare with DeepEqual will fail
+			if len(cdnConfig.CachePolicy.QueryStringBlacklist) > 0 {
 				beCacheKeyPolicy.QueryStringBlacklist = cdnConfig.CachePolicy.QueryStringBlacklist
 			}
-			if cdnConfig.CachePolicy.QueryStringWhitelist != nil && len(cdnConfig.CachePolicy.QueryStringWhitelist) > 0 {
+			// we must check for an empty list here as the user might set  'queryStringWhitelist:[]' and compare with DeepEqual will fail
+			if len(cdnConfig.CachePolicy.QueryStringWhitelist) > 0 {
 				beCacheKeyPolicy.QueryStringWhitelist = cdnConfig.CachePolicy.QueryStringWhitelist
 			}
 		}
