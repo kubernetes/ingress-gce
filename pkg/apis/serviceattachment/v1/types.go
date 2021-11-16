@@ -40,7 +40,7 @@ type ServiceAttachmentSpec struct {
 	// +required
 	ConnectionPreference string `json:"connectionPreference,omitempty"`
 
-	// NATSubnets contains the list of subnet names for PSC
+	// NATSubnets contains the list of subnet names for PSC or nat subnet resource urls
 	// +required
 	// +listType=atomic
 	NATSubnets []string `json:"natSubnets,omitempty"`
