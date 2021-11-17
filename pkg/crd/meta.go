@@ -55,13 +55,15 @@ type Version struct {
 	name       string
 	typeSource string
 	fn         common.GetOpenAPIDefinitions
+	deprecated bool
 }
 
 // NewVersion returns a CRD API version with validation metadata.
-func NewVersion(name, typeSource string, fn common.GetOpenAPIDefinitions) *Version {
+func NewVersion(name, typeSource string, fn common.GetOpenAPIDefinitions, deprecated bool) *Version {
 	return &Version{
 		name:       name,
 		typeSource: typeSource,
 		fn:         fn,
+		deprecated: deprecated,
 	}
 }

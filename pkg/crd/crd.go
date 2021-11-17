@@ -129,10 +129,11 @@ func crd(meta *CRDMeta, namespacedScoped bool) *apiextensionsv1.CustomResourceDe
 			klog.Errorf("No validation schema exists for for %v CRD(%s API)", meta.kind, v.name)
 		}
 		version := apiextensionsv1.CustomResourceDefinitionVersion{
-			Name:    v.name,
-			Served:  true,
-			Storage: false,
-			Schema:  validationSchema,
+			Name:       v.name,
+			Served:     true,
+			Storage:    false,
+			Schema:     validationSchema,
+			Deprecated: v.deprecated,
 		}
 		// Set storage to true for the latest version.
 		if i == 0 {

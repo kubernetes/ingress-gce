@@ -44,8 +44,8 @@ func CRDMeta() *crd.CRDMeta {
 		"backendconfig",
 		"backendconfigs",
 		[]*crd.Version{
-			crd.NewVersion("v1", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.BackendConfig", backendconfigv1.GetOpenAPIDefinitions),
-			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.BackendConfig", backendconfigv1beta1.GetOpenAPIDefinitions),
+			crd.NewVersion("v1", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.BackendConfig", backendconfigv1.GetOpenAPIDefinitions, false),
+			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1.BackendConfig", backendconfigv1beta1.GetOpenAPIDefinitions, false),
 		},
 		"bc",
 	)
