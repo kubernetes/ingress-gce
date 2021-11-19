@@ -117,19 +117,22 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		}
 		return healthchecks.EnsureL4HealthCheck(l4netlb.cloud, l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB)
 	}
-	hcLink, hcFwName, hcPort, _, err := ensureHCFunc()
-
+	hcLink, hcFwName, hcPort, hcName, err := ensureHCFunc()
 	if err != nil {
 		result.GCEResourceInError = annotations.HealthcheckResource
 		result.Error = err
 		return result
 	}
+	result.Annotations[annotations.HealthcheckKey] = hcName
 
 	name := l4netlb.ServicePort.BackendName()
 	protocol, res := l4netlb.createFirewalls(name, hcLink, hcFwName, hcPort, nodeNames, sharedHC)
 	if res.Error != nil {
 		return res
 	}
+	result.Annotations[annotations.FirewallRuleKey] = name
+	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
+
 	existingFR := &composite.ForwardingRule{}
 	existingFR, result.Error = l4netlb.cleanupForwardingRuleIfProtocolChanged(name, protocol)
 	if result.Error != nil {
@@ -142,7 +145,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		result.Error = fmt.Errorf("Failed to ensure backend service - %v", err)
 		return result
 	}
-
+	result.Annotations[annotations.BackendServiceKey] = name
 	fr, err := l4netlb.ensureExternalForwardingRule(bs.SelfLink, existingFR)
 	if err != nil {
 
@@ -150,7 +153,11 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		result.Error = fmt.Errorf("Failed to ensure forwarding rule - %v", err)
 		return result
 	}
-
+	if fr.IPProtocol == string(corev1.ProtocolTCP) {
+		result.Annotations[annotations.TCPForwardingRuleKey] = fr.Name
+	} else {
+		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
+	}
 	result.Status = &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}
 	return result
 }
@@ -278,12 +285,11 @@ func (l4netlb *L4NetLB) createFirewalls(name, hcLink, hcFwName string, hcPort in
 	}
 
 	// Add firewall rule for L4 External LoadBalncer traffic to nodes
-	result.Error = ensureFunc(name, hcLink, sourceRanges.StringSlice(), portRanges, string(protocol), sharedHC)
+	result.Error = ensureFunc(name, "", sourceRanges.StringSlice(), portRanges, string(protocol), sharedHC)
 	if result.Error != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		return "", result
 	}
-
 	// Add firewall rule for healthchecks to nodes
 	result.Error = ensureFunc(hcFwName, "", hcSourceRanges, []string{strconv.Itoa(int(hcPort))}, string(corev1.ProtocolTCP), sharedHC)
 	if result.Error != nil {

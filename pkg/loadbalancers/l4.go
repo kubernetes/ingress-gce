@@ -74,14 +74,6 @@ type SyncResult struct {
 	StartTime          time.Time
 }
 
-var ILBResourceAnnotationKeys = []string{
-	annotations.BackendServiceKey,
-	annotations.TCPForwardingRuleKey,
-	annotations.UDPForwardingRuleKey,
-	annotations.HealthcheckKey,
-	annotations.FirewallRuleKey,
-	annotations.FirewallRuleForHealthcheckKey}
-
 // NewL4Handler creates a new L4Handler for the given L4 service.
 func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder, lock *sync.Mutex) *L4 {
 	l := &L4{cloud: cloud, scope: scope, namer: namer, recorder: recorder, Service: service, sharedResourcesLock: lock}
