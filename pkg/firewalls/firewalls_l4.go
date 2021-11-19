@@ -36,7 +36,7 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, fwName, lbIP, nsName string, sourceR
 	if err != nil {
 		return err
 	}
-	fwDesc, err := utils.MakeL4LBServiceDescription(nsName, lbIP, meta.VersionGA, sharedRule, l4Type)
+	fwDesc, err := utils.MakeL4LBServiceDescription(nsName, lbIP, meta.VersionGA, sharedRule)
 	if err != nil {
 		klog.Warningf("EnsureL4FirewallRule(%v): failed to generate description for L4 %s rule, err: %v", fwName, l4Type.ToString(), err)
 	}

@@ -22,7 +22,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/utils"
 )
 
 func TestMergeHealthChecks(t *testing.T) {
@@ -50,7 +49,7 @@ func TestMergeHealthChecks(t *testing.T) {
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			// healthcheck intervals and thresholds are common for Global and Regional healthchecks. Hence testing only Global case.
-			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
+			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, meta.Global, "")
 			hc := &composite.HealthCheck{
 				CheckIntervalSec:   tc.checkIntervalSec,
 				TimeoutSec:         tc.timeoutSec,
@@ -97,8 +96,8 @@ func TestCompareHealthChecks(t *testing.T) {
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			// healthcheck intervals and thresholds are common for Global and Regional healthchecks. Hence testing only Global case.
-			hc := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
-			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
+			hc := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, meta.Global, "")
+			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, meta.Global, "")
 			if tc.modifier != nil {
 				tc.modifier(hc)
 			}
@@ -120,7 +119,7 @@ func TestCreateHealthCheck(t *testing.T) {
 		{meta.Global, ""},
 		{meta.Regional, "us-central1"},
 	} {
-		hc := NewL4HealthCheck("hc", namespaceName, false, "/", 12345, utils.ILB, v.scope, v.region)
+		hc := NewL4HealthCheck("hc", namespaceName, false, "/", 12345, v.scope, v.region)
 		if hc.Region != v.region {
 			t.Errorf("HealthCheck Region mismatch! %v != %v", hc.Region, v.region)
 		}
