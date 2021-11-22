@@ -46,7 +46,6 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			endpointSets        map[string]negtypes.NetworkEndpointSet
 			networkEndpointType negtypes.NetworkEndpointType
 			nodeLabelsMap       map[string]map[string]string
-			nodeAnnotationsMap  map[string]map[string]string
 			nodeReadyStatusMap  map[string]v1.ConditionStatus
 			nodeNames           []string
 		}{
@@ -80,11 +79,9 @@ func TestLocalGetEndpointSet(t *testing.T) {
 				endpointsData: negtypes.EndpointsDataFromEndpointSlices(getDefaultEndpointSlices()),
 				nodeLabelsMap: map[string]map[string]string{
 					testInstance1: {utils.LabelNodeRoleExcludeBalancer: "true"},
-				},
-				nodeAnnotationsMap: map[string]map[string]string{
-					testInstance3: {utils.GKECurrentOperationAnnotation: fmt.Sprintf("{'Timestamp': '12345', 'Operation': '%s'}", utils.GKEUpgradeOperation)},
-					// annotation for testInstance4 will not remove it from endpoints list, since operation value is "random".
-					testInstance4: {utils.GKECurrentOperationAnnotation: "{'Timestamp': '12345', 'Operation': 'random'}"},
+					testInstance3: {utils.GKECurrentOperationLabel: utils.NodeDrain},
+					// label for testInstance4 will not remove it from endpoints list, since operation value is "random".
+					testInstance4: {utils.GKECurrentOperationLabel: "random"},
 				},
 				nodeNames: []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 				// only 2 out of 6 nodes are picked since there are > 4 endpoints, but they are found only on 4 nodes. 2 out of those 4 are non-candidates.
@@ -106,7 +103,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 		svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 		ec := NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey)
 		for _, tc := range testCases {
-			createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, transactionSyncer.nodeLister)
+			createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeReadyStatusMap, transactionSyncer.nodeLister)
 			retSet, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 			if err != nil {
 				t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
@@ -177,11 +174,9 @@ func TestClusterGetEndpointSet(t *testing.T) {
 			nodeNames:           []string{testInstance1, testInstance2, testInstance3, testInstance4, testInstance5, testInstance6},
 			nodeLabelsMap: map[string]map[string]string{
 				testInstance1: {utils.LabelNodeRoleExcludeBalancer: "true"},
-			},
-			nodeAnnotationsMap: map[string]map[string]string{
-				testInstance3: {utils.GKECurrentOperationAnnotation: fmt.Sprintf("{'Timestamp': '12345', 'Operation': '%s'}", utils.GKEUpgradeOperation)},
-				// annotation for testInstance4 will not remove it from endpoints list, since operation value is "random".
-				testInstance4: {utils.GKECurrentOperationAnnotation: "{'Timestamp': '12345', 'Operation': 'random'}"},
+				testInstance3: {utils.GKECurrentOperationLabel: utils.NodeDrain},
+				// label for testInstance4 will not remove it from endpoints list, since operation value is "random".
+				testInstance4: {utils.GKECurrentOperationLabel: "random"},
 			},
 		},
 		{
@@ -201,7 +196,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
 	ec := NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey)
 	for _, tc := range testCases {
-		createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeAnnotationsMap, tc.nodeReadyStatusMap, transactionSyncer.nodeLister)
+		createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeReadyStatusMap, transactionSyncer.nodeLister)
 		retSet, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
@@ -213,16 +208,13 @@ func TestClusterGetEndpointSet(t *testing.T) {
 	}
 }
 
-func createNodes(t *testing.T, nodeNames []string, nodeLabels, nodeAnnotations map[string]map[string]string, nodeReadyStatus map[string]v1.ConditionStatus, nodeIndexer cache.Indexer) {
+func createNodes(t *testing.T, nodeNames []string, nodeLabels map[string]map[string]string, nodeReadyStatus map[string]v1.ConditionStatus, nodeIndexer cache.Indexer) {
 	t.Helper()
 	for i, nodeName := range nodeNames {
 		var labels, annotations map[string]string
 		readyStatus := v1.ConditionTrue
 		if nodeLabels != nil {
 			labels = nodeLabels[nodeName]
-		}
-		if nodeAnnotations != nil {
-			annotations = nodeAnnotations[nodeName]
 		}
 		if nodeReadyStatus != nil {
 			status, ok := nodeReadyStatus[nodeName]
