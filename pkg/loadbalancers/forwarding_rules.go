@@ -219,7 +219,7 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	}
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
-	ipToUse := ilbIPToUse(l.Service, existingFwdRule, subnetworkURL)
+	ipToUse := l4lbIPToUse(l.Service, existingFwdRule, subnetworkURL)
 	klog.V(2).Infof("ensureForwardingRule(%v): Using subnet %q for LoadBalancer IP %s", loadBalancerName, subnetworkURL, ipToUse)
 
 	var addrMgr *addressManager
@@ -333,8 +333,28 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string, existingFwdR
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
-	ipToUse := ilbIPToUse(l4netlb.Service, existingFwdRule, "")
+	// TODO(kl52752) Add support for NetworkTier
+	ipToUse := l4lbIPToUse(l4netlb.Service, existingFwdRule, "")
 	klog.V(2).Infof("ensureExternalForwardingRule(%v): LoadBalancer IP %s", loadBalancerName, ipToUse)
+
+	var addrMgr *addressManager
+	// If the network is not a legacy network, use the address manager
+	if !l4netlb.cloud.IsLegacyNetwork() {
+		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
+		addrMgr = newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region(), "", loadBalancerName, ipToUse, cloud.SchemeExternal)
+		ipToUse, err = addrMgr.HoldAddress()
+		if err != nil {
+			return nil, err
+		}
+		klog.V(2).Infof("ensureForwardingRule(%v): reserved IP %q for the forwarding rule", loadBalancerName, ipToUse)
+		defer func() {
+			// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
+			// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
+			if err := addrMgr.ReleaseAddress(); err != nil {
+				klog.Errorf("ensureExternalForwardingRule: failed to release address reservation, possibly causing an orphan: %v", err)
+			}
+		}()
+	}
 
 	portRange, protocol := utils.MinMaxPortRangeAndProtocol(l4netlb.Service.Spec.Ports)
 
@@ -424,10 +444,10 @@ func Equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 		fr1.Subnetwork == fr2.Subnetwork, nil
 }
 
-// ilbIPToUse determines which IP address needs to be used in the ForwardingRule. If an IP has been
+// l4lbIPToUse determines which IP address needs to be used in the ForwardingRule. If an IP has been
 // specified by the user, that is used. If there is an existing ForwardingRule, the ip address from
 // that is reused. In case a subnetwork change is requested, the existing ForwardingRule IP is ignored.
-func ilbIPToUse(svc *v1.Service, fwdRule *composite.ForwardingRule, requestedSubnet string) string {
+func l4lbIPToUse(svc *v1.Service, fwdRule *composite.ForwardingRule, requestedSubnet string) string {
 	if svc.Spec.LoadBalancerIP != "" {
 		return svc.Spec.LoadBalancerIP
 	}
