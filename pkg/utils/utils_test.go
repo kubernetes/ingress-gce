@@ -564,8 +564,8 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 			node: api_v1.Node{
 				ObjectMeta: v1.ObjectMeta{
 					Name: "node1",
-					Annotations: map[string]string{
-						GKECurrentOperationAnnotation: fmt.Sprintf("{'Timestamp': '12345', 'Operation': '%s'}", GKEUpgradeOperation),
+					Labels: map[string]string{
+						GKECurrentOperationLabel: NodeDrain,
 					},
 				},
 				Status: api_v1.NodeStatus{
@@ -576,14 +576,14 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 			},
 			expectAccept:                       true,
 			expectAcceptByUnreadyNodePredicate: false,
-			name:                               "ready node, upgrade in progress",
+			name:                               "ready node, upgrade/drain in progress",
 		},
 		{
 			node: api_v1.Node{
 				ObjectMeta: v1.ObjectMeta{
 					Name: "node1",
-					Annotations: map[string]string{
-						GKECurrentOperationAnnotation: "{'Timestamp': '12345', 'Operation': 'random'}",
+					Labels: map[string]string{
+						GKECurrentOperationLabel: "random",
 					},
 				},
 				Status: api_v1.NodeStatus{
@@ -594,7 +594,7 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 			},
 			expectAccept:                       true,
 			expectAcceptByUnreadyNodePredicate: true,
-			name:                               "ready node, non-upgrade operation",
+			name:                               "ready node, non-drain operation",
 		},
 		{
 			node: api_v1.Node{
