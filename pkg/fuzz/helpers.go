@@ -397,6 +397,12 @@ func (b *BackendConfigBuilder) SetCachePolicy(cachePolicy *backendconfig.CacheKe
 	return b
 }
 
+// SetCDNConfig specifies the cache policy on the BackendConfig.
+func (b *BackendConfigBuilder) SetCDNConfig(cdnConfig *backendconfig.CDNConfig) *BackendConfigBuilder {
+	b.backendConfig.Spec.Cdn = cdnConfig
+	return b
+}
+
 // SetIAPConfig enables or disables IAP on the BackendConfig and also sets
 // the secret which contains the OAuth credentials.
 func (b *BackendConfigBuilder) SetIAPConfig(enabled bool, secret string) *BackendConfigBuilder {

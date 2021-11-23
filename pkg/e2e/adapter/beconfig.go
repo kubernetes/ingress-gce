@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
@@ -79,6 +80,24 @@ func (crud *BackendConfigCRUD) Update(bc *v1.BackendConfig) (*v1.BackendConfig, 
 	legacyBC := toV1beta1(bc)
 	legacyBC, err = crud.C.CloudV1beta1().BackendConfigs(bc.Namespace).Update(context.TODO(), legacyBC, metav1.UpdateOptions{})
 	return toV1(legacyBC), err
+}
+
+// Ensure creates or updates the backend config
+func (crud *BackendConfigCRUD) Ensure(bc *v1.BackendConfig) (*v1.BackendConfig, error) {
+	existingBc, err := crud.Get(bc.Namespace, bc.Name)
+	if err != nil {
+		if strings.HasSuffix(err.Error(), "not found") {
+			existingBc = nil
+		} else {
+			return nil, err
+		}
+	}
+
+	if existingBc == nil {
+		return crud.Create(bc)
+	}
+	bc.ObjectMeta.ResourceVersion = existingBc.ObjectMeta.ResourceVersion
+	return crud.Update(bc)
 }
 
 // Delete BackendConfig resource.

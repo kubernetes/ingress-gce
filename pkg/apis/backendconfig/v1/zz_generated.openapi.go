@@ -31,6 +31,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 	return map[string]common.OpenAPIDefinition{
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.BackendConfig":              schema_pkg_apis_backendconfig_v1_BackendConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.BackendConfigSpec":          schema_pkg_apis_backendconfig_v1_BackendConfigSpec(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.BypassCacheOnRequestHeader": schema_pkg_apis_backendconfig_v1_BypassCacheOnRequestHeader(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CDNConfig":                  schema_pkg_apis_backendconfig_v1_CDNConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CacheKeyPolicy":             schema_pkg_apis_backendconfig_v1_CacheKeyPolicy(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.ConnectionDrainingConfig":   schema_pkg_apis_backendconfig_v1_ConnectionDrainingConfig(ref),
@@ -38,9 +39,11 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.HealthCheckConfig":          schema_pkg_apis_backendconfig_v1_HealthCheckConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.IAPConfig":                  schema_pkg_apis_backendconfig_v1_IAPConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.LogConfig":                  schema_pkg_apis_backendconfig_v1_LogConfig(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.NegativeCachingPolicy":      schema_pkg_apis_backendconfig_v1_NegativeCachingPolicy(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.OAuthClientCredentials":     schema_pkg_apis_backendconfig_v1_OAuthClientCredentials(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SecurityPolicyConfig":       schema_pkg_apis_backendconfig_v1_SecurityPolicyConfig(ref),
 		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SessionAffinityConfig":      schema_pkg_apis_backendconfig_v1_SessionAffinityConfig(ref),
+		"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SignedUrlKey":               schema_pkg_apis_backendconfig_v1_SignedUrlKey(ref),
 	}
 }
 
@@ -149,6 +152,26 @@ func schema_pkg_apis_backendconfig_v1_BackendConfigSpec(ref common.ReferenceCall
 	}
 }
 
+func schema_pkg_apis_backendconfig_v1_BypassCacheOnRequestHeader(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "BypassCacheOnRequestHeader contains configuration for how requests containing specific request headers bypass the cache, even if the content was previously cached.",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"headerName": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The header field name to match on when bypassing cache. Values are case-insensitive.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func schema_pkg_apis_backendconfig_v1_CDNConfig(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -162,9 +185,93 @@ func schema_pkg_apis_backendconfig_v1_CDNConfig(ref common.ReferenceCallback) co
 							Format: "",
 						},
 					},
+					"bypassCacheOnRequestHeaders": {
+						SchemaProps: spec.SchemaProps{
+							Type: []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.BypassCacheOnRequestHeader"),
+									},
+								},
+							},
+						},
+					},
 					"cachePolicy": {
 						SchemaProps: spec.SchemaProps{
 							Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CacheKeyPolicy"),
+						},
+					},
+					"cacheMode": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
+					"clientTtl": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"integer"},
+							Format: "int64",
+						},
+					},
+					"defaultTtl": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"integer"},
+							Format: "int64",
+						},
+					},
+					"maxTtl": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"integer"},
+							Format: "int64",
+						},
+					},
+					"negativeCaching": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"boolean"},
+							Format: "",
+						},
+					},
+					"negativeCachingPolicy": {
+						SchemaProps: spec.SchemaProps{
+							Type: []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.NegativeCachingPolicy"),
+									},
+								},
+							},
+						},
+					},
+					"requestCoalescing": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"boolean"},
+							Format: "",
+						},
+					},
+					"serveWhileStale": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"integer"},
+							Format: "int64",
+						},
+					},
+					"signedUrlCacheMaxAgeSec": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"integer"},
+							Format: "int64",
+						},
+					},
+					"signedUrlKeys": {
+						SchemaProps: spec.SchemaProps{
+							Type: []string{"array"},
+							Items: &spec.SchemaOrArray{
+								Schema: &spec.Schema{
+									SchemaProps: spec.SchemaProps{
+										Ref: ref("k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SignedUrlKey"),
+									},
+								},
+							},
 						},
 					},
 				},
@@ -172,7 +279,7 @@ func schema_pkg_apis_backendconfig_v1_CDNConfig(ref common.ReferenceCallback) co
 			},
 		},
 		Dependencies: []string{
-			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CacheKeyPolicy"},
+			"k8s.io/ingress-gce/pkg/apis/backendconfig/v1.BypassCacheOnRequestHeader", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.CacheKeyPolicy", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.NegativeCachingPolicy", "k8s.io/ingress-gce/pkg/apis/backendconfig/v1.SignedUrlKey"},
 	}
 }
 
@@ -400,6 +507,33 @@ func schema_pkg_apis_backendconfig_v1_LogConfig(ref common.ReferenceCallback) co
 	}
 }
 
+func schema_pkg_apis_backendconfig_v1_NegativeCachingPolicy(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "NegativeCachingPolicy contains configuration for how negative caching is applied.",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"code": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The HTTP status code to define a TTL against. Only HTTP status codes 300, 301, 308, 404, 405, 410, 421, 451 and 501 are can be specified as values, and you cannot specify a status code more than once.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+					"ttl": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The TTL (in seconds) for which to cache responses with the corresponding status code. The maximum allowed value is 1800s (30 minutes), noting that infrequently accessed objects may be evicted from the cache before the defined TTL.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func schema_pkg_apis_backendconfig_v1_OAuthClientCredentials(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -473,6 +607,40 @@ func schema_pkg_apis_backendconfig_v1_SessionAffinityConfig(ref common.Reference
 						SchemaProps: spec.SchemaProps{
 							Type:   []string{"integer"},
 							Format: "int64",
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+func schema_pkg_apis_backendconfig_v1_SignedUrlKey(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Description: "SignedUrlKey represents a customer-supplied Signing Key used by Cloud CDN Signed URLs",
+				Type:        []string{"object"},
+				Properties: map[string]spec.Schema{
+					"keyName": {
+						SchemaProps: spec.SchemaProps{
+							Description: "KeyName: Name of the key. The name must be 1-63 characters long, and comply with RFC1035. Specifically, the name must be 1-63 characters long and match the regular expression `[a-z]([-a-z0-9]*[a-z0-9])?` which means the first character must be a lowercase letter, and all following characters must be a dash, lowercase letter, or digit, except the last character, which cannot be a dash.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"keyValue": {
+						SchemaProps: spec.SchemaProps{
+							Description: "KeyValue: 128-bit key value used for signing the URL. The key value must be a valid RFC 4648 Section 5 base64url encoded string.",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"secretName": {
+						SchemaProps: spec.SchemaProps{
+							Description: "The name of a k8s secret which stores the 128-bit key value used for signing the URL. The key value must be a valid RFC 4648 Section 5 base64url encoded string",
+							Type:        []string{"string"},
+							Format:      "",
 						},
 					},
 				},

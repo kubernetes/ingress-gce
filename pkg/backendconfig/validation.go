@@ -26,8 +26,9 @@ import (
 )
 
 const (
-	OAuthClientIDKey     = "client_id"
-	OAuthClientSecretKey = "client_secret"
+	OAuthClientIDKey      = "client_id"
+	OAuthClientSecretKey  = "client_secret"
+	SignedUrlKeySecretKey = "key_value"
 )
 
 var supportedAffinities = map[string]bool{
@@ -42,6 +43,10 @@ func Validate(kubeClient kubernetes.Interface, beConfig *backendconfigv1.Backend
 	}
 
 	if err := validateIAP(kubeClient, beConfig); err != nil {
+		return err
+	}
+
+	if err := validateCDN(kubeClient, beConfig); err != nil {
 		return err
 	}
 
@@ -118,6 +123,28 @@ func validateLogging(beConfig *backendconfigv1.BackendConfig) error {
 	if *beConfig.Spec.Logging.SampleRate < 0.0 || *beConfig.Spec.Logging.SampleRate > 1.0 {
 		return fmt.Errorf("unsupported SampleRate: %f, should be between 0.0 and 1.0",
 			*beConfig.Spec.Logging.SampleRate)
+	}
+
+	return nil
+}
+
+func validateCDN(kubeClient kubernetes.Interface, beConfig *backendconfigv1.BackendConfig) error {
+	if beConfig.Spec.Cdn == nil || beConfig.Spec.Cdn.Enabled == false {
+		return nil
+	}
+
+	for _, key := range beConfig.Spec.Cdn.SignedUrlKeys {
+		if key.SecretName != "" {
+			secret, err := kubeClient.CoreV1().Secrets(beConfig.Namespace).Get(context.TODO(), key.SecretName, meta_v1.GetOptions{})
+			if err != nil {
+				return fmt.Errorf("error retrieving secret %v: %v", key.SecretName, err)
+			}
+			keyValue, ok := secret.Data[SignedUrlKeySecretKey]
+			if !ok {
+				return fmt.Errorf("secret %v missing %v data", key.SecretName, SignedUrlKeySecretKey)
+			}
+			key.KeyValue = string(keyValue)
+		}
 	}
 
 	return nil

@@ -121,12 +121,13 @@ function cleanup() {
   run_maybe_dry kubectl delete clusterrolebinding one-binding-to-rule-them-all
   run_maybe_dry kubectl delete -f ../resources/rbac.yaml
   run_maybe_dry kubectl delete configmap gce-config -n kube-system
-  run_maybe_dry gcloud iam service-accounts delete ${GCLOUD_EXTRA_FLAGS} glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com
   run_maybe_dry gcloud projects remove-iam-policy-binding ${GCLOUD_EXTRA_FLAGS} ${PROJECT_ID} \
     --member serviceAccount:glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com \
     --role roles/compute.admin
+  run_maybe_dry gcloud iam service-accounts delete ${GCLOUD_EXTRA_FLAGS} glbc-service-account@${PROJECT_ID}.iam.gserviceaccount.com
   run_maybe_dry kubectl delete secret glbc-gcp-key -n kube-system
-  run_maybe_dry kubectl delete -f ../resources/glbc.yaml
+  run_maybe_dry kubectl delete -f ../resources/glbc.yaml.gen
+  run_maybe_dry kubectl delete -f ../resources/default-http-backend.yaml.gen
   # Ask if user wants to reenable GLBC on the GKE master.
   while [[ $CONFIRM -eq 1 ]]; do
     echo -e "${GREEN}Script-bot: Do you want to reenable GLBC on the GKE master?${NC}"
@@ -265,7 +266,7 @@ if [[ -z $NETWORK_TAGS ]]; then
       cut -d ':' -f2)
   INSTANCE=$(gcloud compute instance-groups list-instances $INSTANCE_GROUP \
       --zone=$ZONE --format="value(instance)" --limit 1)
-  NETWORK_TAGS=$(gcloud compute instances describe $INSTANCE --format="value(tags.items)")
+  NETWORK_TAGS=$(gcloud compute instances describe $INSTANCE --zone=$ZONE --format="value(tags.items)")
 fi
 
 echo
@@ -295,12 +296,16 @@ if [[ -n $BUILD_AND_PUSH ]]; then
   fi
   # Extract just the URL (with tag) from the `make push` output. `sed -n` makes it
   # not print normally while the `/../../p` makes it print just what it matched.
-  MAKE_COMMAND="cd ../../../; REGISTRY=\"$REGISTRY\" make push 2>&1"
+  MAKE_COMMAND="cd ../../../; REGISTRY=\"$REGISTRY\" make only-push-glbc 2>&1"
   echo "Make command is: ${MAKE_COMMAND}"
   MAKE_PUSH_OUTPUT=$(eval "${MAKE_COMMAND}")
   MAKE_PUSH_CODE=$?
   if [[ $MAKE_PUSH_CODE -eq 0 ]]; then
-    IMAGE_URL=$(sed -rn 's/pushing\s+:\s+(.+ingress-gce-glbc-.+)/\1/p' <<< $MAKE_PUSH_OUTPUT)
+    IMAGE_URL=$(head -n 1 $(ls -t ../../../.*_ingress-gce-glbc-*-push | head -1))
+    if [[ $? -eq 1 ]];
+    then
+        error_exit "Error-bot: Issue geting the image url consider providing --image-url yourself"
+    fi
     echo "Pushed new glbc image to: $IMAGE_URL"
   else
     error_exit "Error-bot: Issue building and pushing image. Make exited with code $MAKE_PUSH_CODE. If a push error, consider setting REGISTRY or providing --image-url yourself. Output from make:\n$MAKE_PUSH_OUTPUT"
@@ -316,17 +321,12 @@ sed -e "s|\[ENABLE_CSM\]|$ENABLE_CSM|" > ../resources/glbc.yaml.gen
 run_maybe_dry_kubectl kubectl create clusterrolebinding one-binding-to-rule-them-all --clusterrole=cluster-admin --user=${GCP_USER}
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating a k8s ClusterRoleBinding. ${PERMISSION_ISSUE} ${NO_CLEANUP}"
 
-# Create a new service account for glbc and give it a
-# ClusterRole allowing it access to API objects it needs.
-run_maybe_dry_kubectl kubectl create -f ../resources/rbac.yaml
-[[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating the RBAC spec. ${CLEANUP_HELP}"
-
 # Inject gce.conf onto the user node as a ConfigMap.
 # This config map is mounted as a volume in glbc.yaml
 run_maybe_dry_kubectl kubectl create configmap gce-config --from-file=../resources/gce.conf.gen -n kube-system
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating gce.conf ConfigMap. ${CLEANUP_HELP}"
 
-# Create new GCP service acccount.
+# Create new GCP service account.
 run_maybe_dry gcloud iam service-accounts create glbc-service-account ${GCLOUD_EXTRA_FLAGS} \
   --display-name \"Service Account for GLBC\"
 [[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating a GCP service account. ${PERMISSION_ISSUE} ${CLEANUP_HELP}"
@@ -373,6 +373,12 @@ Failure to do so may result in the script creating a broken state."
     * ) echo -e "${GREEN}Script-bot: Press [C | c] to continue.${NC}"
   esac
 done
+
+
+# Create a new service account for glbc and give it a
+# ClusterRole allowing it access to API objects it needs.
+run_maybe_dry_kubectl kubectl apply -f ../resources/rbac.yaml
+[[ $? -eq 0 ]] || error_exit "Error-bot: Issue creating the RBAC spec. ${CLEANUP_HELP}"
 
 # Recreate the default-http-backend k8s service with the same NodePort as the
 # service which was removed when turning of the glbc previously. This is to
