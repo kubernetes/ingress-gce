@@ -76,7 +76,12 @@ const (
 	LabelNodeRoleExcludeBalancer = "node.kubernetes.io/exclude-from-external-load-balancers"
 	// ToBeDeletedTaint is the taint that the autoscaler adds when a node is scheduled to be deleted
 	// https://github.com/kubernetes/autoscaler/blob/cluster-autoscaler-0.5.2/cluster-autoscaler/utils/deletetaint/delete.go#L33
-	ToBeDeletedTaint        = "ToBeDeletedByClusterAutoscaler"
+	ToBeDeletedTaint = "ToBeDeletedByClusterAutoscaler"
+	// GKECurrentOperationLabel is added by the GKE control plane, to nodes that are about to be drained as a result of an upgrade/resize operation.
+	// The operation value is "drain".
+	GKECurrentOperationLabel = "operation.gke.io/type"
+	// NodeDrain is the string used to indicate the Node Draining operation.
+	NodeDrain               = "drain"
 	L4ILBServiceDescKey     = "networking.gke.io/service-name"
 	L4LBSharedResourcesDesc = "This resource is shared by all L4 %s Services using ExternalTrafficPolicy: Cluster."
 
@@ -84,8 +89,6 @@ const (
 	// exclude from load balancers created by a cloud provider. This label is deprecated and will
 	// be removed in 1.18.
 	LabelAlphaNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
-	GKEUpgradeOperation               = "operation_type: UPGRADE_NODES"
-	GKECurrentOperationAnnotation     = "gke-current-operation"
 )
 
 // L4LBType indicates if L4 LoadBalancer is Internal or External
@@ -406,8 +409,8 @@ func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgrad
 		return false
 	}
 	if excludeUpgradingNodes {
-		// This node is about to be upgraded.
-		if opVal, _ := node.Annotations[GKECurrentOperationAnnotation]; strings.Contains(opVal, GKEUpgradeOperation) {
+		// This node is about to be upgraded or deleted as part of resize.
+		if operation, _ := node.Labels[GKECurrentOperationLabel]; operation == NodeDrain {
 			return false
 		}
 	}
