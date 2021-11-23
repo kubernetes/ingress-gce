@@ -18,6 +18,7 @@ package l4netlb
 
 import (
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
@@ -35,6 +36,7 @@ import (
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
+	utilslb "k8s.io/ingress-gce/pkg/utils/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/klog"
@@ -104,7 +106,6 @@ func NewL4NetLBController(
 		},
 		// Deletes will be handled in the Update when the deletion timestamp is set.
 		UpdateFunc: func(old, cur interface{}) {
-			//TODO(kl52752) add implementation for update
 			curSvc := cur.(*v1.Service)
 			oldSvc := old.(*v1.Service)
 			svcKey := utils.ServiceKeyFunc(curSvc.Namespace, curSvc.Name)
@@ -112,6 +113,7 @@ func NewL4NetLBController(
 				klog.V(3).Infof("L4 External LoadBalancer Service %s updated, enqueuing", svcKey)
 				l4netLBc.svcQueue.Enqueue(curSvc)
 				l4netLBc.enqueueTracker.Track()
+				return
 			}
 		},
 	})
@@ -128,22 +130,101 @@ func needsAddition(newSvc, oldSvc *v1.Service) bool {
 	return needsNetLB
 }
 
+// needsDeletion return true if svc required deleting RBS based NetLB
+func needsDeletion(svc *v1.Service) bool {
+	if !utils.IsL4NetLBService(svc) {
+		return false
+	}
+	if common.IsDeletionCandidateForGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
+		return true
+	}
+	needsNetLB, _ := annotations.WantsL4NetLB(svc)
+	return !needsNetLB
+}
+
+// needsPeriodicEnqueue return true if svc required periodic enqueue
+func needsPeriodicEnqueue(newSvc, oldSvc *v1.Service) bool {
+	if oldSvc == nil {
+		return false
+	}
+	needsNetLb, _ := annotations.WantsL4NetLB(newSvc)
+	return needsNetLb && reflect.DeepEqual(oldSvc, newSvc)
+}
+
+// needsUpdate checks if load balancer needs to be updated due to change in attributes.
 func (lc *L4NetLBController) needsUpdate(newSvc, oldSvc *v1.Service) bool {
 	if oldSvc == nil {
 		return false
 	}
-	//TODO(kl52752) Implement a condition to compare services
+	oldSvcWantsILB, oldType := annotations.WantsL4NetLB(oldSvc)
+	newSvcWantsILB, newType := annotations.WantsL4NetLB(newSvc)
+	recorder := lc.ctx.Recorder(oldSvc.Namespace)
+	if oldSvcWantsILB != newSvcWantsILB {
+		recorder.Eventf(newSvc, v1.EventTypeNormal, "Type", "%v -> %v", oldType, newType)
+		return true
+	}
+	if !newSvcWantsILB && !oldSvcWantsILB {
+		// Ignore any other changes if both the previous and new service do not need L4 External LB.
+		return false
+	}
+	if !reflect.DeepEqual(oldSvc.Spec.LoadBalancerSourceRanges, newSvc.Spec.LoadBalancerSourceRanges) {
+		recorder.Eventf(newSvc, v1.EventTypeNormal, "LoadBalancerSourceRanges", "%v -> %v",
+			oldSvc.Spec.LoadBalancerSourceRanges, newSvc.Spec.LoadBalancerSourceRanges)
+		return true
+	}
+
+	if !utilslb.PortsEqualForLBService(oldSvc, newSvc) || oldSvc.Spec.SessionAffinity != newSvc.Spec.SessionAffinity {
+		recorder.Eventf(newSvc, v1.EventTypeNormal, "Ports/SessionAffinity", "Ports %v, SessionAffinity %v -> Ports %v, SessionAffinity  %v",
+			oldSvc.Spec.Ports, oldSvc.Spec.SessionAffinity, newSvc.Spec.Ports, newSvc.Spec.SessionAffinity)
+		return true
+	}
+	if !reflect.DeepEqual(oldSvc.Spec.SessionAffinityConfig, newSvc.Spec.SessionAffinityConfig) {
+		recorder.Eventf(newSvc, v1.EventTypeNormal, "SessionAffinityConfig", "%v -> %v",
+			oldSvc.Spec.SessionAffinityConfig, newSvc.Spec.SessionAffinityConfig)
+		return true
+	}
+	if oldSvc.Spec.LoadBalancerIP != newSvc.Spec.LoadBalancerIP {
+		recorder.Eventf(newSvc, v1.EventTypeNormal, "LoadbalancerIP", "%v -> %v",
+			oldSvc.Spec.LoadBalancerIP, newSvc.Spec.LoadBalancerIP)
+		return true
+	}
+	if len(oldSvc.Spec.ExternalIPs) != len(newSvc.Spec.ExternalIPs) {
+		recorder.Eventf(newSvc, v1.EventTypeNormal, "ExternalIP", "Count: %v -> %v",
+			len(oldSvc.Spec.ExternalIPs), len(newSvc.Spec.ExternalIPs))
+		return true
+	}
+	for i := range oldSvc.Spec.ExternalIPs {
+		if oldSvc.Spec.ExternalIPs[i] != newSvc.Spec.ExternalIPs[i] {
+			recorder.Eventf(newSvc, v1.EventTypeNormal, "ExternalIP", "Added: %v",
+				newSvc.Spec.ExternalIPs[i])
+			return true
+		}
+	}
+	if !reflect.DeepEqual(oldSvc.Annotations, newSvc.Annotations) {
+		recorder.Eventf(newSvc, v1.EventTypeNormal, "Annotations", "%v -> %v",
+			oldSvc.Annotations, newSvc.Annotations)
+		return true
+	}
+	if oldSvc.Spec.ExternalTrafficPolicy != newSvc.Spec.ExternalTrafficPolicy {
+		recorder.Eventf(newSvc, v1.EventTypeNormal, "ExternalTrafficPolicy", "%v -> %v",
+			oldSvc.Spec.ExternalTrafficPolicy, newSvc.Spec.ExternalTrafficPolicy)
+		return true
+	}
+	if oldSvc.Spec.HealthCheckNodePort != newSvc.Spec.HealthCheckNodePort {
+		recorder.Eventf(newSvc, v1.EventTypeNormal, "HealthCheckNodePort", "%v -> %v",
+			oldSvc.Spec.HealthCheckNodePort, newSvc.Spec.HealthCheckNodePort)
+		return true
+	}
 	return false
 }
 
 // shouldProcessUpdate checks if given service should be process by controller
 func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service) bool {
-	//TODO(kl52752) add check for update
 	if needsAddition(newSvc, oldSvc) || lc.needsUpdate(newSvc, oldSvc) || needsDeletion(newSvc) {
 		l4netlb := loadbalancers.NewL4NetLB(newSvc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(newSvc.Namespace), &lc.sharedResourcesLock)
 		return lc.isRbsBasedLBService(newSvc, l4netlb)
 	}
-	return false
+	return needsPeriodicEnqueue(newSvc, oldSvc)
 }
 
 // isRbsBasedLBService returns if the given LoadBalancer service is not legacy target pool based LoadBalancer.
@@ -227,6 +308,7 @@ func (lc *L4NetLBController) sync(key string) error {
 // Returns an error if processing the service update failed.
 func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.SyncResultNetLB {
 	l4netlb := loadbalancers.NewL4NetLB(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace), &lc.sharedResourcesLock)
+	// check again that it's not legacy service
 	if !lc.isRbsBasedLBService(service, l4netlb) {
 		return nil
 	}
@@ -303,22 +385,11 @@ func (lc *L4NetLBController) ensureServiceStatus(svc *v1.Service, newStatus *v1.
 
 // hasLegacyForwardingRule return true if forwarding rule is target pool based
 func (lc *L4NetLBController) hasLegacyForwardingRule(svc *v1.Service) bool {
+	//TODO(kl52752) Add check for service annotation first to reduce GCE API calls
 	l4netlb := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace), &lc.sharedResourcesLock)
 	frName := utils.LegacyForwardingRuleName(svc)
 	existingFR := l4netlb.GetForwardingRule(frName, meta.VersionGA)
 	return existingFR != nil && existingFR.LoadBalancingScheme == string(cloud.SchemeExternal) && existingFR.Target != ""
-}
-
-// needsDeletion return true if svc required deleting RBS based NetLB
-func needsDeletion(svc *v1.Service) bool {
-	if !utils.IsL4NetLBService(svc) {
-		return false
-	}
-	if common.IsDeletionCandidateForGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
-		return true
-	}
-	needsNetLB, _ := annotations.WantsL4NetLB(svc)
-	return !needsNetLB
 }
 
 // garbageCollectRBSNetLB cleans-up all gce resources related to service and removes NetLB finalizer

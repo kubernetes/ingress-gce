@@ -106,6 +106,7 @@ func NewL4NetLBService(port int, nodePort int32) *api_v1.Service {
 			Ports: []api_v1.ServicePort{
 				{Name: "testport", Port: int32(port), Protocol: "TCP", NodePort: nodePort},
 			},
+			ExternalTrafficPolicy: api_v1.ServiceExternalTrafficPolicyTypeCluster,
 		},
 	}
 	return svc

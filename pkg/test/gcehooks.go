@@ -79,3 +79,8 @@ func DeleteBackendServicesErrorHook(ctx context.Context, key *meta.Key, m *cloud
 func DeleteHealthCheckErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockRegionHealthChecks) (bool, error) {
 	return true, fmt.Errorf("DeleteHealthCheckErrorHook")
 }
+
+func GetLegacyForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, *compute.ForwardingRule, error) {
+	fwRule := compute.ForwardingRule{Target: "some_target", LoadBalancingScheme: string(cloud.SchemeExternal)}
+	return true, &fwRule, nil
+}
