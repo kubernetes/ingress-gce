@@ -349,7 +349,9 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	ctx.Start(stopCh)
 
-	if flags.F.RunL4NetLBController {
+	// The L4NetLbController will be run when RbsMode flag is Set
+	if flags.F.L4elbRbsMode != flags.DISABLED {
+		//TODO (kl52752) Implement RbsModes in L4NetLBController
 		l4netlbController := l4netlb.NewL4NetLBController(ctx, stopCh)
 
 		// Before we can Run controller we need to init instance Pool with translator
