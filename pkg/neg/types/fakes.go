@@ -89,7 +89,7 @@ func (f *FakeZoneGetter) ListZones(predicate utils.NodeConditionPredicate) ([]st
 	for zone := range f.upgradeInstancesMap {
 		node := &v1.Node{
 			ObjectMeta: metav1.ObjectMeta{
-				Annotations: map[string]string{utils.GKECurrentOperationAnnotation: utils.GKEUpgradeOperation},
+				Labels: map[string]string{utils.GKECurrentOperationLabel: utils.NodeDrain},
 			},
 			Status: v1.NodeStatus{
 				Conditions: []v1.NodeCondition{v1.NodeCondition{Type: v1.NodeReady, Status: v1.ConditionTrue}}}}
