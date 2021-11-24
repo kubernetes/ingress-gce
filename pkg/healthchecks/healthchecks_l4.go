@@ -17,8 +17,6 @@ limitations under the License.
 package healthchecks
 
 import (
-	"fmt"
-
 	cloudprovider "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
@@ -42,43 +40,32 @@ const (
 	gceHcUnhealthyThreshold = int64(3)
 )
 
-// EnsureL4HealthCheck creates a new HTTP health check for an L4 LoadBalancer service, based on the parameters provided.
+// EnsureL4HealthCheck creates a new regional HTTP health check for an L4 LoadBalancer service, based on the parameters provided.
 // If the healthcheck already exists, it is updated as needed.
-// If ExternalTrafficPolicy is Cluster then health check is shared among all ILBs and XLBs
-func EnsureL4HealthCheck(cloud *gce.Cloud, svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType) (string, string, int32, string, error) {
+// If ExternalTrafficPolicy is Cluster then health check is shared among all ILBs and XLBs.
+// Regional healthcheck is supported by ILB and XLB.
+// https://cloud.google.com/load-balancing/docs/health-check-concepts#lb_guide
+func EnsureL4HealthCheck(cloud *gce.Cloud, svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, l4Type utils.L4LBType) (string, string, int32, string, error) {
 	hcName, hcFwName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
 	if !sharedHC {
 		hcPath, hcPort = helpers.GetServiceHealthCheckPathPort(svc)
 	}
 	nn := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
-	_, hcLink, err := ensureL4HealthCheckInternal(cloud, hcName, nn, sharedHC, hcPath, hcPort, scope, l4Type)
+	_, hcLink, err := ensureL4HealthCheckInternal(cloud, hcName, nn, sharedHC, hcPath, hcPort, l4Type)
 	return hcLink, hcFwName, hcPort, hcName, err
 }
 
-func ensureL4HealthCheckInternal(cloud *gce.Cloud, name string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, l4Type utils.L4LBType) (*composite.HealthCheck, string, error) {
+func ensureL4HealthCheckInternal(cloud *gce.Cloud, name string, svcName types.NamespacedName, shared bool, path string, port int32, l4Type utils.L4LBType) (*composite.HealthCheck, string, error) {
 	selfLink := ""
-	key, err := composite.CreateKey(cloud, name, scope)
-	if err != nil {
-		return nil, selfLink, fmt.Errorf("Failed to create composite key for healthcheck %s of type %v - %w", name, l4Type.ToString(), err)
-	}
+	key := meta.RegionalKey(name, cloud.Region())
 	hc, err := composite.GetHealthCheck(cloud, key, meta.VersionGA)
 	if err != nil {
 		if !utils.IsNotFoundError(err) {
 			return nil, selfLink, err
 		}
 	}
-	var region string
-	if scope == meta.Regional {
-		region = cloud.Region()
-	}
-
-	// If TrafficPolicyLocal is equal to "Cluster" then ILBs and XLBs should share HC
-	// but because they use HC with different scope there will be 2 health checks with the same name
-	// one Global and other one Regional.
-	// Since ILB supports Regional HC also it is recommended to change ILB HC scope to Regional to limit HC resources.
-	// https://cloud.google.com/load-balancing/docs/health-check-concepts#lb_guide
-	expectedHC := NewL4HealthCheck(name, svcName, shared, path, port, scope, region)
+	expectedHC := NewL4HealthCheck(name, svcName, shared, path, port, cloud.Region())
 	if hc == nil {
 		// Create the healthcheck
 		klog.V(2).Infof("Creating healthcheck %s for service %s of type %v, shared = %v", name, svcName, l4Type.ToString(), shared)
@@ -103,15 +90,12 @@ func ensureL4HealthCheckInternal(cloud *gce.Cloud, name string, svcName types.Na
 	return expectedHC, selfLink, err
 }
 
-func DeleteHealthCheck(cloud *gce.Cloud, name string, scope meta.KeyType) error {
-	key, err := composite.CreateKey(cloud, name, scope)
-	if err != nil {
-		return fmt.Errorf("Failed to create composite key for healthcheck %s - %w", name, err)
-	}
+func DeleteHealthCheck(cloud *gce.Cloud, name string) error {
+	key := meta.RegionalKey(name, cloud.Region())
 	return composite.DeleteHealthCheck(cloud, key, meta.VersionGA)
 }
 
-func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, region string) *composite.HealthCheck {
+func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, path string, port int32, region string) *composite.HealthCheck {
 	httpSettings := composite.HTTPHealthCheck{
 		Port:        int64(port),
 		RequestPath: path,
@@ -130,9 +114,8 @@ func NewL4HealthCheck(name string, svcName types.NamespacedName, shared bool, pa
 		HttpHealthCheck:    &httpSettings,
 		Type:               "HTTP",
 		Description:        desc,
-		Scope:              scope,
-		// Region will be omited by GCP API if Scope is set to Global
-		Region: region,
+		Scope:              meta.Regional,
+		Region:             region,
 	}
 }
 

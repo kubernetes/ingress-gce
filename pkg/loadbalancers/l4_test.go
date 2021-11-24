@@ -57,7 +57,7 @@ func getFakeGCECloud(vals gce.TestClusterValues) *gce.Cloud {
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertFwdRuleHook
 
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.UpdateHook = mock.UpdateHealthCheckHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionHealthChecks.UpdateHook = mock.UpdateRegionHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockFirewalls.UpdateHook = mock.UpdateFirewallHook
 	return fakeGCE
 }
@@ -217,7 +217,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 			l.sharedResourcesLock.Lock()
 			defer l.sharedResourcesLock.Unlock()
 		}
-		return healthchecks.EnsureL4HealthCheck(l.cloud, l.Service, l.namer, sharedHC, meta.Global, utils.ILB)
+		return healthchecks.EnsureL4HealthCheck(l.cloud, l.Service, l.namer, sharedHC, utils.ILB)
 	}
 
 	hcLink, _, _, _, err := ensureHCFunc()
@@ -565,10 +565,7 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
 	lbName, _ := l.namer.VMIPNEG(svc.Namespace, svc.Name)
-	key, err := composite.CreateKey(l.cloud, lbName, meta.Global)
-	if err != nil {
-		t.Errorf("Unexpected error when creating key - %v", err)
-	}
+	key := meta.RegionalKey(lbName, l.cloud.Region())
 	hc, err := composite.GetHealthCheck(l.cloud, key, meta.VersionGA)
 	if err != nil || hc == nil {
 		t.Errorf("Failed to get healthcheck, err %v", err)
@@ -1181,13 +1178,17 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 	}
 
 	// Check that HealthCheck is created
-	healthcheck, err := composite.GetHealthCheck(l.cloud, meta.GlobalKey(hcName), meta.VersionGA)
+	healthcheck, err := composite.GetHealthCheck(l.cloud, meta.RegionalKey(hcName, l.cloud.Region()), meta.VersionGA)
 	if err != nil {
 		t.Errorf("Failed to fetch healthcheck %s - err %v", hcName, err)
 	}
 	if healthcheck.Name != hcName {
 		t.Errorf("Unexpected name for healthcheck '%s' - expected '%s'", healthcheck.Name, hcName)
 	}
+	if healthcheck.Region != l.cloud.Region() {
+		t.Errorf("Health check scope mismatch '%v %s' - expected 'regional %s'", healthcheck.Scope, healthcheck.Region, l.cloud.Region())
+	}
+
 	expectedAnnotations[annotations.HealthcheckKey] = hcName
 	// Only non-shared Healthchecks get a description.
 	if healthcheck.Description != hcDesc {
