@@ -37,7 +37,108 @@ import (
 	"k8s.io/klog"
 )
 
-func TestCDNEnable(t *testing.T) {
+// TestCDN is for ingress versions before the CDN config was expanded
+func TestCDN(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		desc     string
+		beConfig *backendconfig.BackendConfig
+	}{
+		{
+			desc: "http one path w/ CDN.",
+			beConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
+				EnableCDN(true).
+				Build(),
+		},
+		{
+			desc: "http one path w/ CDN & cache policies.",
+			beConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
+				EnableCDN(true).
+				SetCachePolicy(&backendconfig.CacheKeyPolicy{
+					IncludeHost:        true,
+					IncludeProtocol:    false,
+					IncludeQueryString: true,
+				}).
+				Build(),
+		},
+		{
+			desc: "http one path w/ no CDN.",
+			beConfig: fuzz.NewBackendConfigBuilder("", "backendconfig-1").
+				EnableCDN(false).
+				Build(),
+		},
+	} {
+		tc := tc // Capture tc as we are running this in parallel.
+		Framework.RunWithSandbox(tc.desc, t, func(t *testing.T, s *e2e.Sandbox) {
+			t.Parallel()
+
+			ctx := context.Background()
+
+			backendConfigAnnotation := map[string]string{
+				annotations.BetaBackendConfigKey: `{"default":"backendconfig-1"}`,
+			}
+
+			bcCRUD := adapter.BackendConfigCRUD{C: Framework.BackendConfigClient}
+			tc.beConfig.Namespace = s.Namespace
+
+			if _, err := bcCRUD.Create(tc.beConfig); err != nil {
+				t.Fatalf("error creating BackendConfig: %v", err)
+			}
+			t.Logf("BackendConfig created (%s/%s) ", s.Namespace, tc.beConfig.Name)
+
+			_, err := e2e.CreateEchoService(s, "service-1", backendConfigAnnotation)
+			if err != nil {
+				t.Fatalf("error creating echo service: %v", err)
+			}
+			t.Logf("Echo service created (%s/%s)", s.Namespace, "service-1")
+
+			ing := fuzz.NewIngressBuilder(s.Namespace, "ingress-1", "").
+				AddPath("test.com", "/", "service-1", networkingv1.ServiceBackendPort{Number: 80}).
+				Build()
+			crud := adapter.IngressCRUD{C: Framework.Clientset}
+			if _, err := crud.Create(ing); err != nil {
+				t.Fatalf("error creating Ingress spec: %v", err)
+			}
+			t.Logf("Ingress created (%s/%s)", s.Namespace, ing.Name)
+
+			ing, err = e2e.WaitForIngress(s, ing, nil, nil)
+			if err != nil {
+				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
+			}
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, ing.Name)
+
+			vip := ing.Status.LoadBalancer.Ingress[0].IP
+			t.Logf("Ingress %s/%s VIP = %s", s.Namespace, ing.Name, vip)
+			params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All)}
+			gclb, err := fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+			if err != nil {
+				t.Fatalf("Error getting GCP resources for LB with IP = %q: %v", vip, err)
+			}
+
+			// If needed, verify the cache policies were applied.
+			if tc.beConfig.Spec.Cdn.CachePolicy != nil {
+				verifyCachePolicies(t, gclb, s.Namespace, "service-1", tc.beConfig.Spec.Cdn.CachePolicy)
+			}
+
+			// Wait for GCLB resources to be deleted.
+			if err := crud.Delete(s.Namespace, ing.Name); err != nil {
+				t.Errorf("Delete(%q) = %v, want nil", ing.Name, err)
+			}
+
+			deleteOptions := &fuzz.GCLBDeleteOptions{
+				SkipDefaultBackend: true,
+			}
+			t.Logf("Waiting for GCLB resources to be deleted (%s/%s)", s.Namespace, ing.Name)
+			if err := e2e.WaitForGCLBDeletion(ctx, Framework.Cloud, gclb, deleteOptions); err != nil {
+				t.Errorf("e2e.WaitForGCLBDeletion(...) = %v, want nil", err)
+			}
+			t.Logf("GCLB resources deleted (%s/%s)", s.Namespace, ing.Name)
+		})
+	}
+}
+
+func TestExpandedCDNEnable(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -87,7 +188,7 @@ func TestCDNEnable(t *testing.T) {
 	})
 }
 
-func TestCDNCacheMode(t *testing.T) {
+func TestExpandedCDNCacheMode(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -251,7 +352,7 @@ func TestCDNCacheMode(t *testing.T) {
 	})
 }
 
-func TestCDNCacheKeyPolicy(t *testing.T) {
+func TestExpandedCDNCacheKeyPolicy(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -383,7 +484,7 @@ func TestCDNCacheKeyPolicy(t *testing.T) {
 	})
 }
 
-func TestCDNNegativeCaching(t *testing.T) {
+func TestExpandedCDNNegativeCaching(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -456,7 +557,7 @@ func TestCDNNegativeCaching(t *testing.T) {
 	})
 }
 
-func TestCDNBypassCache(t *testing.T) {
+func TestExpandedCDNBypassCache(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -531,7 +632,7 @@ func TestCDNBypassCache(t *testing.T) {
 	})
 }
 
-func TestCDNServeWhileStale(t *testing.T) {
+func TestExpandedCDNServeWhileStale(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -594,7 +695,7 @@ func TestCDNServeWhileStale(t *testing.T) {
 	})
 }
 
-func TestCDNRequestCoalescing(t *testing.T) {
+func TestExpandedCDNRequestCoalescing(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -657,7 +758,7 @@ func TestCDNRequestCoalescing(t *testing.T) {
 	})
 }
 
-func TestCDNSignedUrls(t *testing.T) {
+func TestExpandedCDNSignedUrls(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -733,6 +834,33 @@ func TestCDNSignedUrls(t *testing.T) {
 }
 
 // helper functions
+
+func verifyCachePolicies(t *testing.T, gclb *fuzz.GCLB, svcNamespace, svcName string, expectedCachePolicies *backendconfig.CacheKeyPolicy) error {
+	numBsWithPolicy := 0
+	for _, bs := range gclb.BackendService {
+		desc := utils.DescriptionFromString(bs.GA.Description)
+		if desc.ServiceName != fmt.Sprintf("%s/%s", svcNamespace, svcName) {
+			continue
+		}
+		if bs.GA.CdnPolicy == nil || bs.GA.CdnPolicy.CacheKeyPolicy == nil {
+			return fmt.Errorf("backend service %q has no cache policy", bs.GA.Name)
+		}
+		cachePolicy := bs.GA.CdnPolicy.CacheKeyPolicy
+		if expectedCachePolicies.IncludeHost != cachePolicy.IncludeHost ||
+			expectedCachePolicies.IncludeProtocol != cachePolicy.IncludeProtocol ||
+			expectedCachePolicies.IncludeQueryString != cachePolicy.IncludeQueryString ||
+			!reflect.DeepEqual(expectedCachePolicies.QueryStringBlacklist, cachePolicy.QueryStringBlacklist) ||
+			!reflect.DeepEqual(expectedCachePolicies.QueryStringWhitelist, cachePolicy.QueryStringWhitelist) {
+			return fmt.Errorf("backend service %q has cache policy %v, want %v", bs.GA.Name, cachePolicy, expectedCachePolicies)
+		}
+		t.Logf("Backend service %q has expected cache policy", bs.GA.Name)
+		numBsWithPolicy = numBsWithPolicy + 1
+	}
+	if numBsWithPolicy != 1 {
+		return fmt.Errorf("unexpected number of backend service has cache policy attached: got %d, want 1", numBsWithPolicy)
+	}
+	return nil
+}
 
 func createInt64(a int64) *int64 {
 	return &a
