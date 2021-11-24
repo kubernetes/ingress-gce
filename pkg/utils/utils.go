@@ -83,7 +83,7 @@ const (
 	// NodeDrain is the string used to indicate the Node Draining operation.
 	NodeDrain               = "drain"
 	L4ILBServiceDescKey     = "networking.gke.io/service-name"
-	L4LBSharedResourcesDesc = "This resource is shared by all L4 %s Services using ExternalTrafficPolicy: Cluster."
+	L4LBSharedResourcesDesc = "This resource is shared by all L4 ILB and XLB Services using ExternalTrafficPolicy: Cluster."
 
 	// LabelAlphaNodeRoleExcludeBalancer specifies that the node should be
 	// exclude from load balancers created by a cloud provider. This label is deprecated and will
@@ -700,9 +700,9 @@ func (d *L4LBResourceDescription) Unmarshal(desc string) error {
 	return json.Unmarshal([]byte(desc), d)
 }
 
-func MakeL4LBServiceDescription(svcName, ip string, version meta.Version, shared bool, lbType L4LBType) (string, error) {
+func MakeL4LBServiceDescription(svcName, ip string, version meta.Version, shared bool) (string, error) {
 	if shared {
-		return (&L4LBResourceDescription{APIVersion: version, ResourceDescription: fmt.Sprintf(L4LBSharedResourcesDesc, lbType.ToString())}).Marshal()
+		return (&L4LBResourceDescription{APIVersion: version, ResourceDescription: L4LBSharedResourcesDesc}).Marshal()
 	}
 	return (&L4LBResourceDescription{ServiceName: svcName, ServiceIP: ip, APIVersion: version}).Marshal()
 }
