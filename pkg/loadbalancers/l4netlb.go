@@ -187,7 +187,7 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *SyncResu
 		result.GCEResourceInError = annotations.AddressResource
 	}
 
-	deleteFirewallFunc := func(name string) error {
+	deleteFwFunc := func(name string) error {
 		err := firewalls.EnsureL4FirewallRuleDeleted(l4netlb.cloud, name)
 		if err != nil {
 			if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
@@ -199,13 +199,12 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *SyncResu
 		return nil
 	}
 	// delete firewall rule allowing load balancer source ranges
-	err = deleteFirewallFunc(name)
+	err = deleteFwFunc(name)
 	if err != nil {
 		klog.Errorf("Failed to delete firewall rule %s for service %s - %v", name, l4netlb.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 	}
-
 	// delete backend service
 	err = utils.IgnoreHTTPNotFound(l4netlb.backendPool.Delete(name, meta.VersionGA, meta.Regional))
 	if err != nil {
@@ -213,37 +212,41 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *SyncResu
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err
 	}
-	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
-	hcName, hcFwName := l4netlb.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
-
 	// Delete healthcheck
-	if sharedHC {
-		l4netlb.sharedResourcesLock.Lock()
-		defer l4netlb.sharedResourcesLock.Unlock()
-	}
-	// TODO(kl52752) Add deletion for shared and dedicated HC despise the bool value.
-	// We need because in case of update ExternalTrafficPolicy from Local to Cluster
-	// there may be some old HC that have not been deleted.
-	// Add this check also to L4 ILB
-	err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l4netlb.cloud, hcName, l4netlb.scope))
-	if err != nil {
-		if !utils.IsInUsedByError(err) {
-			klog.Errorf("Failed to delete healthcheck for service %s - %v", l4netlb.NamespacedName.String(), err)
-			result.GCEResourceInError = annotations.HealthcheckResource
-			result.Error = err
-			return result
+	// We don't delete health check during service update so
+	// it is possible that there might be some health check leak
+	// when externalTrafficPolicy is changed from Local to Cluster and new a health check was created.
+	// When service is deleted we need to check both health checks shared and non-shared
+	// and delete them if needed.
+	deleteHcFunc := func(sharedHC bool) {
+		hcName, hcFwName := l4netlb.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+		if sharedHC {
+			l4netlb.sharedResourcesLock.Lock()
+			defer l4netlb.sharedResourcesLock.Unlock()
 		}
-		// Ignore deletion error due to health check in use by another resource.
-		// This will be hit if this is a shared healthcheck.
-		klog.V(2).Infof("Failed to delete healthcheck %s: health check in use.", hcName)
-	} else {
-		// Delete healthcheck firewall rule if healthcheck deletion is successful.
-		err = deleteFirewallFunc(hcFwName)
+		err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l4netlb.cloud, hcName, meta.Regional))
 		if err != nil {
-			klog.Errorf("Failed to delete firewall rule %s for service %s, err %v", hcFwName, l4netlb.NamespacedName.String(), err)
-			result.GCEResourceInError = annotations.FirewallForHealthcheckResource
-			result.Error = err
+			if !utils.IsInUsedByError(err) {
+				klog.Errorf("Failed to delete healthcheck for service %s - %v", l4netlb.NamespacedName.String(), err)
+				result.GCEResourceInError = annotations.HealthcheckResource
+				result.Error = err
+				return
+			}
+			// Ignore deletion error due to health check in use by another resource.
+			// This will be hit if this is a shared healthcheck.
+			klog.V(2).Infof("Failed to delete healthcheck %s: health check in use.", hcName)
+		} else {
+			// Delete healthcheck firewall rule if healthcheck deletion is successful.
+			err = deleteFwFunc(hcFwName)
+			if err != nil {
+				klog.Errorf("Failed to delete firewall rule %s for service %s - %v", hcFwName, l4netlb.NamespacedName.String(), err)
+				result.GCEResourceInError = annotations.FirewallForHealthcheckResource
+				result.Error = err
+			}
 		}
+	}
+	for _, isShared := range []bool{true, false} {
+		deleteHcFunc(isShared)
 	}
 	return result
 }

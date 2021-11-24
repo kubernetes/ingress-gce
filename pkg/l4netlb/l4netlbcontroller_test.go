@@ -702,6 +702,18 @@ func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error asserthing shared health check %v", err)
 	}
+	newSvc.DeletionTimestamp = &metav1.Time{}
+	updateNetLBService(lc, newSvc)
+	key, _ := common.KeyFunc(newSvc)
+	if err = lc.sync(key); err != nil {
+		t.Errorf("Failed to sync deleted service %s, err %v", key, err)
+	}
+	if !isHealthCheckDeleted(lc, hcNameNonShared) {
+		t.Errorf("Health check %s should be deleted", hcNameNonShared)
+	}
+	if !isHealthCheckDeleted(lc, hcNameShared) {
+		t.Errorf("Health check %s should be deleted", hcNameShared)
+	}
 	deleteNetLBService(lc, svc)
 }
 
@@ -722,6 +734,11 @@ func updateAndAssertExternalTrafficPolicy(newSvc *v1.Service, lc *L4NetLBControl
 		return fmt.Errorf("Error getting health check %v", err)
 	}
 	return nil
+}
+
+func isHealthCheckDeleted(lc *L4NetLBController, hcName string) bool {
+	_, err := composite.GetHealthCheck(lc.ctx.Cloud, meta.RegionalKey(hcName, lc.ctx.Cloud.Region()), meta.VersionGA)
+	return utils.IsNotFoundError(err)
 }
 
 func TestControllerShouldNotProcessServicesWithLegacyFwR(t *testing.T) {

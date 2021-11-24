@@ -1308,15 +1308,16 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 
 func assertInternalLbResourcesDeleted(t *testing.T, apiService *v1.Service, firewallsDeleted bool, l *L4) {
 	frName := l.GetFRName()
-	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(apiService)
 	resourceName, _ := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
-	hcName, hcFwName := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, sharedHC)
+	hcNameShared, hcFwNameShared := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, true)
+	hcNameNonShared, hcFwNameNonShared := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, false)
 
 	if firewallsDeleted {
 		// Check that Firewalls are deleted for the LoadBalancer and the HealthCheck
 		fwNames := []string{
 			resourceName,
-			hcFwName,
+			hcFwNameShared,
+			hcFwNameNonShared,
 		}
 
 		for _, fwName := range fwNames {
@@ -1333,10 +1334,14 @@ func assertInternalLbResourcesDeleted(t *testing.T, apiService *v1.Service, fire
 		t.Errorf("Expected error when looking up forwarding rule after deletion")
 	}
 
-	// Check that HealthCheck is deleted
-	healthcheck, err := l.cloud.GetHealthCheck(hcName)
+	// Check that HealthChecks are deleted
+	healthcheck, err := l.cloud.GetHealthCheck(hcNameShared)
 	if err == nil || healthcheck != nil {
-		t.Errorf("Expected error when looking up healthcheck after deletion")
+		t.Errorf("Expected error when looking up shared healthcheck after deletion")
+	}
+	healthcheck, err = l.cloud.GetHealthCheck(hcNameNonShared)
+	if err == nil || healthcheck != nil {
+		t.Errorf("Expected error when looking up non-shared healthcheck after deletion")
 	}
 	bs, err := l.cloud.GetRegionBackendService(resourceName, l.cloud.Region())
 	if err == nil || bs != nil {
