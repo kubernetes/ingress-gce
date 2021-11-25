@@ -138,7 +138,7 @@ func TestCDN(t *testing.T) {
 	}
 }
 
-func TestExpandedCDNEnable(t *testing.T) {
+func TestCdnEnable(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -188,7 +188,7 @@ func TestExpandedCDNEnable(t *testing.T) {
 	})
 }
 
-func TestExpandedCDNCacheMode(t *testing.T) {
+func TestCdnCacheMode(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -352,7 +352,7 @@ func TestExpandedCDNCacheMode(t *testing.T) {
 	})
 }
 
-func TestExpandedCDNCacheKeyPolicy(t *testing.T) {
+func TestCdnCacheKeyPolicy(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -484,7 +484,7 @@ func TestExpandedCDNCacheKeyPolicy(t *testing.T) {
 	})
 }
 
-func TestExpandedCDNNegativeCaching(t *testing.T) {
+func TestCdnNegativeCaching(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -557,7 +557,7 @@ func TestExpandedCDNNegativeCaching(t *testing.T) {
 	})
 }
 
-func TestExpandedCDNBypassCache(t *testing.T) {
+func TestCdnBypassCache(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -632,7 +632,7 @@ func TestExpandedCDNBypassCache(t *testing.T) {
 	})
 }
 
-func TestExpandedCDNServeWhileStale(t *testing.T) {
+func TestCdnServeWhileStale(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -695,7 +695,7 @@ func TestExpandedCDNServeWhileStale(t *testing.T) {
 	})
 }
 
-func TestExpandedCDNRequestCoalescing(t *testing.T) {
+func TestCdnRequestCoalescing(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -758,7 +758,7 @@ func TestExpandedCDNRequestCoalescing(t *testing.T) {
 	})
 }
 
-func TestExpandedCDNSignedUrls(t *testing.T) {
+func TestCdnSignedUrls(t *testing.T) {
 	t.Parallel()
 
 	const (
