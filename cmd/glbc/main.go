@@ -349,6 +349,9 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	ctx.Start(stopCh)
 
+	nodeController := controller.NewNodeController(ctx, stopCh)
+	go nodeController.Run()
+
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.L4elbRbsMode != flags.DISABLED {
 		//TODO (kl52752) Implement RbsModes in L4NetLBController
