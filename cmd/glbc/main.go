@@ -27,10 +27,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/ingparams"
+	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/l4netlb"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
 	"k8s.io/ingress-gce/pkg/svcneg"
+	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
@@ -348,6 +350,10 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	klog.V(0).Infof("firewall controller started")
 
 	ctx.Start(stopCh)
+
+	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer, ctx, utils.GetBasePath(ctx.Cloud))
+	nodeController := controller.NewNodeController(ctx, instancePool)
+	go nodeController.Run()
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.L4elbRbsMode != flags.DISABLED {

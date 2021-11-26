@@ -62,7 +62,6 @@ type LoadBalancerController struct {
 	ctx *context.ControllerContext
 
 	nodeLister cache.Indexer
-	nodes      *NodeController
 
 	// TODO: Watch secrets
 	ingQueue   utils.TaskQueue
@@ -125,7 +124,6 @@ func NewLoadBalancerController(
 		Translator:    legacytranslator.NewTranslator(ctx),
 		stopCh:        stopCh,
 		hasSynced:     ctx.HasSynced,
-		nodes:         NewNodeController(ctx, instancePool),
 		instancePool:  instancePool,
 		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID)),
 		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
@@ -328,7 +326,6 @@ func (lbc *LoadBalancerController) Init() {
 func (lbc *LoadBalancerController) Run() {
 	klog.Infof("Starting loadbalancer controller")
 	go lbc.ingQueue.Run()
-	go lbc.nodes.Run()
 
 	<-lbc.stopCh
 	klog.Infof("Shutting down Loadbalancer Controller")
@@ -346,7 +343,6 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 		close(lbc.stopCh)
 		klog.Infof("Shutting down controller queues.")
 		lbc.ingQueue.Shutdown()
-		lbc.nodes.Shutdown()
 		lbc.shutdown = true
 	}
 
