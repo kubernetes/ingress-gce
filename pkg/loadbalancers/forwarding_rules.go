@@ -244,7 +244,7 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	ports, _, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
 	// Create the forwarding rule
 	frDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l.Service.Namespace, l.Service.Name), ipToUse,
-		version, false)
+		version, false, utils.ILB)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", loadBalancerName,
 			err)
@@ -339,7 +339,7 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string, existingFwdR
 	portRange, protocol := utils.MinMaxPortRangeAndProtocol(l4netlb.Service.Spec.Ports)
 
 	serviceKey := utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name)
-	frDesc, err := utils.MakeL4LBServiceDescription(serviceKey, ipToUse, version, false)
+	frDesc, err := utils.MakeL4LBServiceDescription(serviceKey, ipToUse, version, false, utils.XLB)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", loadBalancerName,
 			err)

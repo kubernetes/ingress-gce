@@ -115,7 +115,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 			l4netlb.sharedResourcesLock.Lock()
 			defer l4netlb.sharedResourcesLock.Unlock()
 		}
-		return healthchecks.EnsureL4HealthCheck(l4netlb.cloud, l4netlb.Service, l4netlb.namer, sharedHC, utils.XLB)
+		return healthchecks.EnsureL4HealthCheck(l4netlb.cloud, l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB)
 	}
 	hcLink, hcFwName, hcPort, _, err := ensureHCFunc()
 
@@ -225,7 +225,7 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *SyncResu
 	// We need because in case of update ExternalTrafficPolicy from Local to Cluster
 	// there may be some old HC that have not been deleted.
 	// Add this check also to L4 ILB
-	err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l4netlb.cloud, hcName))
+	err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l4netlb.cloud, hcName, l4netlb.scope))
 	if err != nil {
 		if !utils.IsInUsedByError(err) {
 			klog.Errorf("Failed to delete healthcheck for service %s - %v", l4netlb.NamespacedName.String(), err)
