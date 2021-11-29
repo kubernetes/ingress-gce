@@ -57,7 +57,7 @@ func getFakeGCECloud(vals gce.TestClusterValues) *gce.Cloud {
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertFwdRuleHook
 
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionHealthChecks.UpdateHook = mock.UpdateRegionHealthCheckHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.UpdateHook = mock.UpdateHealthCheckHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockFirewalls.UpdateHook = mock.UpdateFirewallHook
 	return fakeGCE
 }
@@ -217,7 +217,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 			l.sharedResourcesLock.Lock()
 			defer l.sharedResourcesLock.Unlock()
 		}
-		return healthchecks.EnsureL4HealthCheck(l.cloud, l.Service, l.namer, sharedHC, utils.ILB)
+		return healthchecks.EnsureL4HealthCheck(l.cloud, l.Service, l.namer, sharedHC, meta.Global, utils.ILB)
 	}
 
 	hcLink, _, _, _, err := ensureHCFunc()
@@ -565,7 +565,10 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
 	lbName, _ := l.namer.VMIPNEG(svc.Namespace, svc.Name)
-	key := meta.RegionalKey(lbName, l.cloud.Region())
+	key, err := composite.CreateKey(l.cloud, lbName, meta.Global)
+	if err != nil {
+		t.Errorf("Unexpected error when creating key - %v", err)
+	}
 	hc, err := composite.GetHealthCheck(l.cloud, key, meta.VersionGA)
 	if err != nil || hc == nil {
 		t.Errorf("Failed to get healthcheck, err %v", err)
@@ -751,7 +754,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 		t.Errorf("Got empty loadBalancer status using handler %v", l)
 	}
 	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
-	descString, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(svc.Namespace, svc.Name), "1.2.3.0", meta.VersionGA, false)
+	descString, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(svc.Namespace, svc.Name), "1.2.3.0", meta.VersionGA, false, utils.ILB)
 	if err != nil {
 		t.Errorf("Unexpected error when creating description - %v", err)
 	}
@@ -1132,11 +1135,11 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 	// Check that Firewalls are created for the LoadBalancer and the HealthCheck
 	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(apiService)
 	resourceName, _ := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
-	resourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, false)
+	resourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, false, utils.ILB)
 	if err != nil {
 		t.Errorf("Failed to create description for resources, err %v", err)
 	}
-	sharedResourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, true)
+	sharedResourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, true, utils.ILB)
 	if err != nil {
 		t.Errorf("Failed to create description for shared resources, err %v", err)
 	}
@@ -1178,17 +1181,13 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 	}
 
 	// Check that HealthCheck is created
-	healthcheck, err := composite.GetHealthCheck(l.cloud, meta.RegionalKey(hcName, l.cloud.Region()), meta.VersionGA)
+	healthcheck, err := composite.GetHealthCheck(l.cloud, meta.GlobalKey(hcName), meta.VersionGA)
 	if err != nil {
 		t.Errorf("Failed to fetch healthcheck %s - err %v", hcName, err)
 	}
 	if healthcheck.Name != hcName {
 		t.Errorf("Unexpected name for healthcheck '%s' - expected '%s'", healthcheck.Name, hcName)
 	}
-	if healthcheck.Region != l.cloud.Region() {
-		t.Errorf("Health check scope mismatch '%v %s' - expected 'regional %s'", healthcheck.Scope, healthcheck.Region, l.cloud.Region())
-	}
-
 	expectedAnnotations[annotations.HealthcheckKey] = hcName
 	// Only non-shared Healthchecks get a description.
 	if healthcheck.Description != hcDesc {

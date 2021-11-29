@@ -293,7 +293,7 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	if err != nil && !utils.IsNotFoundError(err) {
 		return nil, err
 	}
-	desc, err := utils.MakeL4LBServiceDescription(nm.String(), "", meta.VersionGA, false)
+	desc, err := utils.MakeL4LBServiceDescription(nm.String(), "", meta.VersionGA, false, utils.ILB)
 	if err != nil {
 		klog.Warningf("EnsureL4BackendService: Failed to generate description for BackendService %s, err %v",
 			name, err)

@@ -160,9 +160,6 @@ func assertNetLbResources(t *testing.T, apiService *v1.Service, l4NetLb *L4NetLB
 	if healthcheck.Name != hcName {
 		t.Errorf("Unexpected name for healthcheck '%s' - expected '%s'", healthcheck.Name, hcName)
 	}
-	if healthcheck.Region != l4NetLb.cloud.Region() {
-		t.Errorf("Health check region mismatch '%s' - expected '%s'", healthcheck.Region, l4NetLb.cloud.Region())
-	}
 
 	// Check that BackendService exists
 	backendServiceName := resourceName
