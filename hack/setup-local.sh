@@ -1,4 +1,4 @@
-#/bin/bash
+#!/bin/bash
 
 # Setup the environment for running the e2e tests from your
 # desktop.
@@ -48,7 +48,9 @@ if [ -z  "${clusters}" ]; then
     exit 1
 fi
 
-instance=$(gcloud compute instances list --format='value(name,zone)' | grep ${clusterName} | tail -n 1)
+# VM instances names created by gke are truncated up to 24 characters
+nodesPrefix=$(echo "gke-$clusterName" | head -c 24)
+instance=$(gcloud compute instances list --format='value(name,zone)' | grep "${nodesPrefix}" | tail -n 1)
 parseInstance ${instance}
 if [ -z  "${instance}" ]; then
     echo "ERROR: No nodes matching '${clusterName}' found"
@@ -64,7 +66,7 @@ token-url = nil
 project-id = ${project}
 network-name = ${net}
 subnetwork-name = ${subnet}
-node-instance-prefix = ${clusterName}
+node-instance-prefix = ${nodesPrefix}
 node-tags = ${nodeTag}
 local-zone = ${zone}
 EOF
