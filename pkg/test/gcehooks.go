@@ -19,11 +19,13 @@ package test
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/filter"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 )
 
 const (
@@ -78,6 +80,13 @@ func DeleteBackendServicesErrorHook(ctx context.Context, key *meta.Key, m *cloud
 
 func DeleteHealthCheckErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockRegionHealthChecks) (bool, error) {
 	return true, fmt.Errorf("DeleteHealthCheckErrorHook")
+}
+
+func DeleteRegionalHealthCheckResourceInUseErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockRegionHealthChecks) (bool, error) {
+	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "Cannot delete health check resource being used by another service"}
+}
+func DeleteHealthCheckResourceInUseErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockHealthChecks) (bool, error) {
+	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "Cannot delete health check resource being used by another service"}
 }
 
 func GetLegacyForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, *compute.ForwardingRule, error) {
