@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -28,8 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	//"k8s.io/apimachinery/pkg/util/sets"
-
-	"reflect"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -113,7 +112,6 @@ func addNodes(lbc *LoadBalancerController, zoneToNode map[string][]string) {
 			lbc.nodeLister.Add(n)
 		}
 	}
-	lbc.instancePool.Init(lbc.Translator)
 }
 
 func getProbePath(p *api_v1.Probe) string {

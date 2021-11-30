@@ -22,22 +22,17 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	ga "google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/util/retry"
-	"k8s.io/klog"
-	"k8s.io/legacy-cloud-providers/gce"
-
-	"testing"
-
-	"google.golang.org/api/compute/v1"
-	ga "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	ingctx "k8s.io/ingress-gce/pkg/context"
@@ -47,6 +42,8 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
+	"k8s.io/klog"
+	"k8s.io/legacy-cloud-providers/gce"
 )
 
 const (
@@ -219,9 +216,7 @@ func newL4NetLBServiceController() *L4NetLBController {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
 
-	lc := NewL4NetLBController(ctx, stopCh)
-	lc.Init()
-	return lc
+	return NewL4NetLBController(ctx, stopCh)
 }
 
 func validateSvcStatus(svc *v1.Service, t *testing.T) {
@@ -407,7 +402,7 @@ func addUsersStaticAddress(lc *L4NetLBController) {
 	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = mock.InsertAddressHook
 	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAlphaAddresses.X = mock.AddressAttributes{}
 	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAddresses.X = mock.AddressAttributes{}
-	newAddr := &compute.Address{
+	newAddr := &ga.Address{
 		Name:        userAddrName,
 		Description: fmt.Sprintf(`{"kubernetes.io/service-name":"%s"}`, userAddrName),
 		Address:     usersIP,

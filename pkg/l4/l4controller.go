@@ -86,9 +86,9 @@ func NewController(ctx *context.ControllerContext, stopCh chan struct{}) *L4Cont
 		nodeLister:    listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
 		stopCh:        stopCh,
 		numWorkers:    ctx.NumL4Workers,
+		namer:         ctx.L4Namer,
+		translator:    ctx.Translator,
 	}
-	l4c.namer = ctx.L4Namer
-	l4c.translator = translator.NewTranslator(ctx)
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
 	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer())
 

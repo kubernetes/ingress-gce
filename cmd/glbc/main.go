@@ -356,11 +356,9 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 		// Before we can Run controller we need to init instance Pool with translator
 		// transaltor is created in context so we need to do this after context is created
-		l4netlbController.Init()
 		klog.V(0).Infof("L4NetLB controller started")
 		go l4netlbController.Run()
 	}
-	lbc.Init()
 	lbc.Run()
 	for {
 		klog.Warning("Handled quit, awaiting pod deletion.")

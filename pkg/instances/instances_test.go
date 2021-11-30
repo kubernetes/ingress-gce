@@ -34,8 +34,8 @@ const (
 var defaultNamer = namer.NewNamer("uid1", "fw1")
 
 func newNodePool(f *FakeInstanceGroups, zone string) NodePool {
-	pool := NewNodePool(f, defaultNamer, &test.FakeRecorderSource{}, basePath)
-	pool.Init(&FakeZoneLister{[]string{zone}})
+	fakeZL := &FakeZoneLister{[]string{zone}}
+	pool := NewNodePool(f, defaultNamer, &test.FakeRecorderSource{}, basePath, fakeZL)
 	return pool
 }
 

@@ -55,20 +55,19 @@ type recorderSource interface {
 // NewNodePool creates a new node pool.
 // - cloud: implements InstanceGroups, used to sync Kubernetes nodes with
 //   members of the cloud InstanceGroup.
-func NewNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource, basePath string) NodePool {
+func NewNodePool(
+	cloud InstanceGroups,
+	namer namer.BackendNamer,
+	recorders recorderSource,
+	basePath string,
+	zl ZoneLister) NodePool {
 	return &Instances{
 		cloud:              cloud,
 		namer:              namer,
 		recorder:           recorders.Recorder(""), // No namespace
 		instanceLinkFormat: basePath + "zones/%s/instances/%s",
+		ZoneLister:         zl,
 	}
-}
-
-// Init initializes the instance pool. The given zoneLister is used to list
-// all zones that require an instance group, and to lookup which zone a
-// given Kubernetes node is in so we can add it to the right instance group.
-func (i *Instances) Init(zl ZoneLister) {
-	i.ZoneLister = zl
 }
 
 // EnsureInstanceGroupsAndPorts creates or gets an instance group if it doesn't exist

@@ -31,14 +31,18 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+	informerv1 "k8s.io/client-go/informers/core/v1"
+	discoveryinformer "k8s.io/client-go/informers/discovery/v1beta1"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
-	"k8s.io/ingress-gce/pkg/context"
+	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 )
 
@@ -65,24 +69,36 @@ func fakeTranslator() *Translator {
 func configuredFakeTranslator(useEndpointSlices bool) *Translator {
 	client := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
+	namespace := apiv1.NamespaceAll
+	resyncPeriod := 1 * time.Second
 
-	ctxConfig := context.ControllerContextConfig{
-		Namespace:             apiv1.NamespaceAll,
-		ResyncPeriod:          1 * time.Second,
-		DefaultBackendSvcPort: defaultBackend,
-		HealthCheckPath:       "/",
-		EndpointSlicesEnabled: useEndpointSlices,
+	ServiceInformer := informerv1.NewServiceInformer(client, namespace, resyncPeriod, utils.NewNamespaceIndexer())
+	BackendConfigInformer := informerbackendconfig.NewBackendConfigInformer(backendConfigClient, namespace, resyncPeriod, utils.NewNamespaceIndexer())
+	PodInformer := informerv1.NewPodInformer(client, namespace, resyncPeriod, utils.NewNamespaceIndexer())
+	NodeInformer := informerv1.NewNodeInformer(client, resyncPeriod, utils.NewNamespaceIndexer())
+	var EndpointSliceInformer cache.SharedIndexInformer
+	var EndpointInformer cache.SharedIndexInformer
+	if useEndpointSlices {
+		EndpointSliceInformer = discoveryinformer.NewEndpointSliceInformer(client, namespace, 0,
+			cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc, endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc})
+	} else {
+		EndpointInformer = informerv1.NewEndpointsInformer(client, namespace, 0, utils.NewNamespaceIndexer())
 	}
-	ctx := context.NewControllerContext(nil, client, backendConfigClient, nil, nil, nil, nil, nil, defaultNamer, "" /*kubeSystemUID*/, ctxConfig)
-	gce := &Translator{
-		ctx: ctx,
-	}
-	return gce
+	return NewTranslator(
+		ServiceInformer,
+		BackendConfigInformer,
+		NodeInformer,
+		PodInformer,
+		EndpointInformer,
+		EndpointSliceInformer,
+		useEndpointSlices,
+		client,
+	)
 }
 
 func TestTranslateIngress(t *testing.T) {
 	translator := fakeTranslator()
-	svcLister := translator.ctx.ServiceInformer.GetIndexer()
+	svcLister := translator.ServiceInformer.GetIndexer()
 
 	// default backend
 	svc := test.NewService(types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, apiv1.ServiceSpec{
@@ -333,7 +349,7 @@ func TestGetServicePort(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.desc, func(t *testing.T) {
 			translator := fakeTranslator()
-			svcLister := translator.ctx.ServiceInformer.GetIndexer()
+			svcLister := translator.ServiceInformer.GetIndexer()
 
 			svcName := types.NamespacedName{Name: "foo", Namespace: "default"}
 			svc := test.NewService(svcName, tc.spec)
@@ -419,8 +435,8 @@ func TestGetServicePortWithBackendConfigEnabled(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			translator := fakeTranslator()
-			svcLister := translator.ctx.ServiceInformer.GetIndexer()
-			backendConfigLister := translator.ctx.BackendConfigInformer.GetIndexer()
+			svcLister := translator.ServiceInformer.GetIndexer()
+			backendConfigLister := translator.BackendConfigInformer.GetIndexer()
 			svcName := types.NamespacedName{Name: "foo", Namespace: "default"}
 			svc := test.NewService(svcName, apiv1.ServiceSpec{
 				Type:  apiv1.ServiceTypeNodePort,
@@ -453,10 +469,10 @@ func TestGetProbe(t *testing.T) {
 			ID: utils.ServicePortID{Service: types.NamespacedName{Name: "svc0", Namespace: apiv1.NamespaceDefault}}}: "/bar",
 	}
 	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
-		translator.ctx.ServiceInformer.GetIndexer().Add(svc)
+		translator.ServiceInformer.GetIndexer().Add(svc)
 	}
 	for _, pod := range makePods(nodePortToHealthCheck, apiv1.NamespaceDefault) {
-		translator.ctx.PodInformer.GetIndexer().Add(pod)
+		translator.PodInformer.GetIndexer().Add(pod)
 	}
 
 	for p, exp := range nodePortToHealthCheck {
@@ -475,12 +491,12 @@ func TestGetProbeNamedPort(t *testing.T) {
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
 	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
-		translator.ctx.ServiceInformer.GetIndexer().Add(svc)
+		translator.ServiceInformer.GetIndexer().Add(svc)
 	}
 	for _, pod := range makePods(nodePortToHealthCheck, apiv1.NamespaceDefault) {
 		pod.Spec.Containers[0].Ports[0].Name = "test"
 		pod.Spec.Containers[0].ReadinessProbe.Handler.HTTPGet.Port = intstr.IntOrString{Type: intstr.String, StrVal: "test"}
-		translator.ctx.PodInformer.GetIndexer().Add(pod)
+		translator.PodInformer.GetIndexer().Add(pod)
 	}
 	for p, exp := range nodePortToHealthCheck {
 		got, err := translator.GetProbe(p)
@@ -525,17 +541,17 @@ func TestGetProbeCrossNamespace(t *testing.T) {
 			},
 		},
 	}
-	translator.ctx.PodInformer.GetIndexer().Add(firstPod)
+	translator.PodInformer.GetIndexer().Add(firstPod)
 	nodePortToHealthCheck := map[utils.ServicePort]string{
 		{NodePort: 3001, Protocol: annotations.ProtocolHTTP}: "/healthz",
 	}
 	for _, svc := range makeServices(nodePortToHealthCheck, apiv1.NamespaceDefault) {
-		translator.ctx.ServiceInformer.GetIndexer().Add(svc)
+		translator.ServiceInformer.GetIndexer().Add(svc)
 	}
 	for _, pod := range makePods(nodePortToHealthCheck, apiv1.NamespaceDefault) {
 		pod.Spec.Containers[0].Ports[0].Name = "test"
 		pod.Spec.Containers[0].ReadinessProbe.Handler.HTTPGet.Port = intstr.IntOrString{Type: intstr.String, StrVal: "test"}
-		translator.ctx.PodInformer.GetIndexer().Add(pod)
+		translator.PodInformer.GetIndexer().Add(pod)
 	}
 
 	for p, exp := range nodePortToHealthCheck {
@@ -551,7 +567,7 @@ func TestGetProbeCrossNamespace(t *testing.T) {
 func TestPathValidation(t *testing.T) {
 	hostname := "foo.bar.com"
 	translator := fakeTranslator()
-	svcLister := translator.ctx.ServiceInformer.GetIndexer()
+	svcLister := translator.ServiceInformer.GetIndexer()
 
 	// default backend
 	svc := test.NewService(types.NamespacedName{Name: "default-http-backend", Namespace: "kube-system"}, apiv1.ServiceSpec{
@@ -921,12 +937,12 @@ func TestGatherEndpointPorts(t *testing.T) {
 				translator := configuredFakeTranslator(useSlices)
 				// Add endpoints or endpoint slices to informers.
 				if useSlices {
-					endpointSliceLister := translator.ctx.EndpointSliceInformer.GetIndexer()
+					endpointSliceLister := translator.EndpointSliceInformer.GetIndexer()
 					for _, slice := range tc.endpointSlices {
 						endpointSliceLister.Add(slice)
 					}
 				} else {
-					endpointLister := translator.ctx.EndpointInformer.GetIndexer()
+					endpointLister := translator.EndpointInformer.GetIndexer()
 					for _, ep := range tc.endpoints {
 						endpointLister.Add(ep)
 					}
@@ -945,7 +961,7 @@ func TestGetZoneForNode(t *testing.T) {
 	nodeName := "node"
 	zone := "us-central1-a"
 	translator := fakeTranslator()
-	translator.ctx.NodeInformer.GetIndexer().Add(&apiv1.Node{
+	translator.NodeInformer.GetIndexer().Add(&apiv1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: "ns",
 			Name:      nodeName,
