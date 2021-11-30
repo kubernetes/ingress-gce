@@ -37,6 +37,7 @@ import (
 	"testing"
 
 	ga "google.golang.org/api/compute/v1"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	ingctx "k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/healthchecks"
@@ -226,6 +227,22 @@ func validateSvcStatus(svc *v1.Service, t *testing.T) {
 	}
 }
 
+func validateAnnotations(svc *v1.Service) error {
+	expectedAnnotationKeys := []string{annotations.FirewallRuleKey, annotations.BackendServiceKey, annotations.HealthcheckKey,
+		annotations.TCPForwardingRuleKey, annotations.FirewallRuleForHealthcheckKey}
+
+	missingKeys := []string{}
+	for _, key := range expectedAnnotationKeys {
+		if _, ok := svc.Annotations[key]; !ok {
+			missingKeys = append(missingKeys, key)
+		}
+	}
+	if len(missingKeys) > 0 {
+		return fmt.Errorf("Cannot find annotations %v in ILB service, Got %v", missingKeys, svc.Annotations)
+	}
+	return nil
+}
+
 func TestProcessMultipleNetLBServices(t *testing.T) {
 	backoff := retry.DefaultRetry
 	backoff.Duration = 1 * time.Second
@@ -263,6 +280,9 @@ func TestProcessMultipleNetLBServices(t *testing.T) {
 				validateSvcStatus(svc, t)
 				if err := checkBackendService(lc, svc.Spec.Ports[0].NodePort); err != nil {
 					t.Errorf("Check backend service err: %v", err)
+				}
+				if err := validateAnnotations(svc); err != nil {
+					t.Errorf("%v", err)
 				}
 				expectedPortRange := fmt.Sprintf("%d-%d", svc.Spec.Ports[0].Port, svc.Spec.Ports[0].Port)
 				if err := checkForwardingRule(lc, svc, expectedPortRange); err != nil {
@@ -332,6 +352,9 @@ func TestProcessServiceCreate(t *testing.T) {
 	svc, lc := createAndSyncNetLBSvc(t)
 	if err := checkBackendService(lc, defaultNodePort); err != nil {
 		t.Errorf("UnexpectedError %v", err)
+	}
+	if err := validateAnnotations(svc); err != nil {
+		t.Errorf("%v", err)
 	}
 	deleteNetLBService(lc, svc)
 }
@@ -562,8 +585,11 @@ func TestProcessServiceUpdate(t *testing.T) {
 		{
 			Update: func(s *v1.Service) { s.Annotations = getAnnotations() },
 			CheckResult: func(l4netController *L4NetLBController, svc *v1.Service) error {
-				if !reflect.DeepEqual(svc.Annotations, getAnnotations()) {
-					return fmt.Errorf("Annotations mismatch %v != %v", svc.Annotations, getAnnotations())
+				expAddedAnnotations := getAnnotations()
+				for name, value := range expAddedAnnotations {
+					if svc.Annotations[name] != value {
+						return fmt.Errorf("Annotation mismatch %v != %v", svc.Annotations[name], value)
+					}
 				}
 				return nil
 			},

@@ -16,6 +16,7 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +26,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	servicehelper "k8s.io/cloud-provider/service/helpers"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -57,7 +59,30 @@ func TestEnsureL4NetLoadBalancer(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4netlb)
 	}
+	if err := checkAnnotations(result, l4netlb); err != nil {
+		t.Errorf("Annotations error: %v", err)
+	}
 	assertNetLbResources(t, svc, l4netlb, nodeNames)
+}
+
+func checkAnnotations(result *SyncResultNetLB, l4netlb *L4NetLB) error {
+	expBackendName := l4netlb.ServicePort.BackendName()
+	if result.Annotations[annotations.BackendServiceKey] != expBackendName {
+		return fmt.Errorf("BackendServiceKey mismatch %v != %v", expBackendName, result.Annotations[annotations.BackendServiceKey])
+	}
+	expTcpFR := l4netlb.GetFRName()
+	if result.Annotations[annotations.TCPForwardingRuleKey] != expTcpFR {
+		return fmt.Errorf("TCPForwardingRuleKey mismatch %v != %v", expTcpFR, result.Annotations[annotations.TCPForwardingRuleKey])
+	}
+	expFwRule := expBackendName
+	if result.Annotations[annotations.FirewallRuleKey] != expFwRule {
+		return fmt.Errorf("FirewallRuleKey mismatch %v != %v", expFwRule, result.Annotations[annotations.FirewallRuleKey])
+	}
+	_, expHcFwName := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, true)
+	if result.Annotations[annotations.FirewallRuleForHealthcheckKey] != expHcFwName {
+		return fmt.Errorf("FirewallRuleForHealthcheckKey mismatch %v != %v", expHcFwName, result.Annotations[annotations.FirewallRuleForHealthcheckKey])
+	}
+	return nil
 }
 
 func TestDeleteL4NetLoadBalancer(t *testing.T) {

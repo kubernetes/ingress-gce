@@ -353,7 +353,22 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.Sy
 	}
 	lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
 		"Successfully ensured L4 External LoadBalancer resources")
+	if err = lc.updateAnnotations(service, syncResult.Annotations); err != nil {
+		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
+			"Failed to update annotations for load balancer, err: %v", err)
+		syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
+		return syncResult
+	}
 	return nil
+}
+
+func (lc *L4NetLBController) updateAnnotations(svc *v1.Service, newAnnotations map[string]string) error {
+	newObjectMeta := utilslb.ComputeNewAnnotationsIfNeeded(svc, newAnnotations)
+	if newObjectMeta == nil {
+		return nil
+	}
+	klog.V(3).Infof("Patching annotations of service %v/%v", svc.Namespace, svc.Name)
+	return patch.PatchServiceObjectMetadata(lc.ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
 func (lc *L4NetLBController) ensureBackendLinking(port utils.ServicePort) error {

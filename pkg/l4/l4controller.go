@@ -358,30 +358,12 @@ func (l4c *L4Controller) updateServiceStatus(svc *v1.Service, newStatus *v1.Load
 }
 
 func (l4c *L4Controller) updateAnnotations(svc *v1.Service, newILBAnnotations map[string]string) error {
-	newObjectMeta := svc.ObjectMeta.DeepCopy()
-	newObjectMeta.Annotations = mergeAnnotations(newObjectMeta.Annotations, newILBAnnotations)
-	if reflect.DeepEqual(svc.Annotations, newObjectMeta.Annotations) {
+	newObjectMeta := utilslb.ComputeNewAnnotationsIfNeeded(svc, newILBAnnotations)
+	if newObjectMeta == nil {
 		return nil
 	}
 	klog.V(3).Infof("Patching annotations of service %v/%v", svc.Namespace, svc.Name)
 	return patch.PatchServiceObjectMetadata(l4c.ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
-}
-
-// mergeAnnotations merges the new set of ilb resource annotations with the pre-existing service annotations.
-// Existing ILB resource annotation values will be replaced with the values in the new map.
-func mergeAnnotations(existing, ilbAnnotations map[string]string) map[string]string {
-	if existing == nil {
-		existing = make(map[string]string)
-	}
-	// Delete existing ILB annotations.
-	for _, key := range loadbalancers.ILBResourceAnnotationKeys {
-		delete(existing, key)
-	}
-	// merge existing annotations with the newly added annotations
-	for key, val := range ilbAnnotations {
-		existing[key] = val
-	}
-	return existing
 }
 
 func needsDeletion(svc *v1.Service) bool {
