@@ -113,6 +113,44 @@ func TestDeleteL4NetLoadBalancer(t *testing.T) {
 	}
 	ensureNetLBResourceDeleted(t, svc, l4NetLB)
 }
+
+func TestDeleteL4NetLoadBalancerWithSharedHC(t *testing.T) {
+	t.Parallel()
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := getFakeGCECloud(vals)
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionHealthChecks.DeleteHook = test.DeleteRegionalHealthCheckResourceInUseErrorHook
+
+	_, _ = ensureLoadBalancer(8080, vals, fakeGCE, t)
+	svc, l4NetLB := ensureLoadBalancer(8081, vals, fakeGCE, t)
+
+	if err := l4NetLB.EnsureLoadBalancerDeleted(svc); err.Error != nil {
+		t.Errorf("UnexpectedError %v", err.Error)
+	}
+	// Health check is in used by second service
+	// we expect that firewall rule will not be deleted
+	_, hcFwName := l4NetLB.namer.L4HealthCheck(svc.Namespace, svc.Name, true)
+	firewall, err := l4NetLB.cloud.GetFirewall(hcFwName)
+	if err != nil || firewall == nil {
+		t.Fatalf("Firewall rule should not be deleted err: %v", err)
+	}
+}
+
+func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud, t *testing.T) (*v1.Service, *L4NetLB) {
+	svc := test.NewL4NetLBService(port, defaultNodePort)
+	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw"))
+	emptyNodes := []string{}
+	l4NetLB := NewL4NetLB(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
+	result := l4NetLB.EnsureFrontend(emptyNodes, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	if len(result.Status.Ingress) == 0 {
+		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
+	}
+	assertNetLbResources(t, svc, l4NetLB, emptyNodes)
+	return svc, l4NetLB
+}
+
 func ensureNetLBResourceDeleted(t *testing.T, apiService *v1.Service, l4NetLb *L4NetLB) {
 	t.Helper()
 

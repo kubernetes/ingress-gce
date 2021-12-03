@@ -186,8 +186,6 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *SyncResu
 		result.Error = err
 		result.GCEResourceInError = annotations.AddressResource
 	}
-	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
-	hcName, hcFwName := l4netlb.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 
 	deleteFirewallFunc := func(name string) error {
 		err := firewalls.EnsureL4FirewallRuleDeleted(l4netlb.cloud, name)
@@ -208,13 +206,6 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *SyncResu
 		result.Error = err
 	}
 
-	// delete firewall rule allowing healthcheck source ranges
-	err = deleteFirewallFunc(hcFwName)
-	if err != nil {
-		klog.Errorf("Failed to delete firewall rule %s for service %s - %v", hcFwName, l4netlb.NamespacedName.String(), err)
-		result.GCEResourceInError = annotations.FirewallForHealthcheckResource
-		result.Error = err
-	}
 	// delete backend service
 	err = utils.IgnoreHTTPNotFound(l4netlb.backendPool.Delete(name, meta.VersionGA, meta.Regional))
 	if err != nil {
@@ -222,6 +213,8 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *SyncResu
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err
 	}
+	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
+	hcName, hcFwName := l4netlb.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 
 	// Delete healthcheck
 	if sharedHC {
@@ -243,6 +236,14 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *SyncResu
 		// Ignore deletion error due to health check in use by another resource.
 		// This will be hit if this is a shared healthcheck.
 		klog.V(2).Infof("Failed to delete healthcheck %s: health check in use.", hcName)
+	} else {
+		// Delete healthcheck firewall rule if healthcheck deletion is successful.
+		err = deleteFirewallFunc(hcFwName)
+		if err != nil {
+			klog.Errorf("Failed to delete firewall rule %s for service %s, err %v", hcFwName, l4netlb.NamespacedName.String(), err)
+			result.GCEResourceInError = annotations.FirewallForHealthcheckResource
+			result.Error = err
+		}
 	}
 	return result
 }
