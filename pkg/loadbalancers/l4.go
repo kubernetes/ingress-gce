@@ -22,6 +22,8 @@ import (
 	"sync"
 
 	"fmt"
+	"time"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
@@ -38,7 +40,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
-	"time"
 )
 
 const (
@@ -132,9 +133,8 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *SyncResult 
 		result.Error = err
 		result.GCEResourceInError = annotations.AddressResource
 	}
-	hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	// delete fw rules
-	deleteFunc := func(name string) error {
+	deleteFwFunc := func(name string) error {
 		err := firewalls.EnsureL4InternalFirewallRuleDeleted(l.cloud, name)
 		if err != nil {
 			if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
@@ -146,21 +146,13 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *SyncResult 
 		return nil
 	}
 	// delete firewall rule allowing load balancer source ranges
-	err = deleteFunc(name)
+	err = deleteFwFunc(name)
 	if err != nil {
 		klog.Errorf("Failed to delete firewall rule %s for internal loadbalancer service %s, err %v", name, l.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 	}
-
-	// delete firewall rule allowing healthcheck source ranges
-	err = deleteFunc(hcFwName)
-	if err != nil {
-		klog.Errorf("Failed to delete firewall rule %s for internal loadbalancer service %s, err %v", hcFwName, l.NamespacedName.String(), err)
-		result.GCEResourceInError = annotations.FirewallForHealthcheckResource
-		result.Error = err
-	}
-	// delete backend service
+	// Delete backend service
 	err = utils.IgnoreHTTPNotFound(l.backendPool.Delete(name, meta.VersionGA, meta.Regional))
 	if err != nil {
 		klog.Errorf("Failed to delete backends for internal loadbalancer service %s, err  %v", l.NamespacedName.String(), err)
@@ -173,6 +165,7 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *SyncResult 
 		l.sharedResourcesLock.Lock()
 		defer l.sharedResourcesLock.Unlock()
 	}
+	hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l.cloud, hcName))
 	if err != nil {
 		if !utils.IsInUsedByError(err) {
@@ -184,6 +177,14 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *SyncResult 
 		// Ignore deletion error due to health check in use by another resource.
 		// This will be hit if this is a shared healthcheck.
 		klog.V(2).Infof("Failed to delete healthcheck %s: health check in use.", hcName)
+	} else {
+		// Delete healthcheck firewall rule if healthcheck deletion is successful.
+		err = deleteFwFunc(hcFwName)
+		if err != nil {
+			klog.Errorf("Failed to delete healthcheck firewall rule %s for internal loadbalancer service %s, err %v", hcFwName, l.NamespacedName.String(), err)
+			result.GCEResourceInError = annotations.FirewallForHealthcheckResource
+			result.Error = err
+		}
 	}
 	return result
 }
