@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package loadbalancers
+package l4lb
 
 import (
 	"testing"
@@ -118,7 +118,7 @@ func TestPortsEqualForLBService(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			svc1.Spec.Ports = tc.ports1
 			svc2.Spec.Ports = tc.ports2
-			if PortsEqualForLBService(&svc1, &svc2) != tc.expectedResult {
+			if portsEqualForLBService(&svc1, &svc2) != tc.expectedResult {
 				t.Errorf("Unexpected result %v, %v should be equal: %v", tc.ports1, tc.ports2, tc.expectedResult)
 			}
 		})

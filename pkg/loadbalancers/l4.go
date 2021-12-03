@@ -34,17 +34,10 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/healthchecks"
-	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
-)
-
-const (
-	SyncTypeCreate = "create"
-	SyncTypeUpdate = "update"
-	SyncTypeDelete = "delete"
 )
 
 // Many of the functions in this file are re-implemented from gce_loadbalancer_internal.go
@@ -60,18 +53,6 @@ type L4 struct {
 	ServicePort         utils.ServicePort
 	NamespacedName      types.NamespacedName
 	sharedResourcesLock *sync.Mutex
-}
-
-// SyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
-// sync error, the GCE resource that hit the error along with the error type and more fields.
-type SyncResult struct {
-	Annotations        map[string]string
-	Error              error
-	GCEResourceInError string
-	Status             *corev1.LoadBalancerStatus
-	MetricsState       metrics.L4ILBServiceState
-	SyncType           string
-	StartTime          time.Time
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -96,9 +77,9 @@ func getILBOptions(svc *corev1.Service) gce.ILBOptions {
 }
 
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
-func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *SyncResult {
+func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4LbSyncResult {
 	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): attempting delete of load balancer resources", l.NamespacedName.String())
-	result := &SyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
+	result := &L4LbSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
 	// All resources use the NEG Name, except forwarding rule.
 	name, ok := l.namer.VMIPNEG(svc.Namespace, svc.Name)
 	if !ok {
@@ -203,8 +184,8 @@ func (l *L4) getFRNameWithProtocol(protocol string) string {
 
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
-func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *SyncResult {
-	result := &SyncResult{
+func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4LbSyncResult {
+	result := &L4LbSyncResult{
 		Annotations: make(map[string]string),
 		StartTime:   time.Now(),
 		SyncType:    SyncTypeCreate}

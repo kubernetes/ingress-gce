@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package loadbalancers
+package l4lb
 
 import v1 "k8s.io/api/core/v1"
 
@@ -27,8 +27,8 @@ func getPortsForLB(service *v1.Service) []*v1.ServicePort {
 	return ports
 }
 
-// PortsEqualForLBService checks if ports in loadbalancer are equal
-func PortsEqualForLBService(x, y *v1.Service) bool {
+// portsEqualForLBService checks if ports in loadbalancer are equal
+func portsEqualForLBService(x, y *v1.Service) bool {
 	xPorts := getPortsForLB(x)
 	yPorts := getPortsForLB(y)
 	return portSlicesEqualForLB(xPorts, yPorts)
