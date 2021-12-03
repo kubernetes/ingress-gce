@@ -19,6 +19,7 @@ limitations under the License.
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"reflect"
 	"strings"
 	"sync"
@@ -32,6 +33,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	"google.golang.org/api/googleapi"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	servicehelper "k8s.io/cloud-provider/service/helpers"
@@ -47,6 +49,10 @@ const (
 // TODO Uncomment after https://github.com/kubernetes/kubernetes/pull/87667 is available in vendor.
 // eventMsgFirewallChange = "XPN Firewall change required by network admin"
 )
+
+func deleteHealthCheckResourceInUseErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockHealthChecks) (bool, error) {
+	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "Cannot delete health check resource being used by another service"}
+}
 
 func getFakeGCECloud(vals gce.TestClusterValues) *gce.Cloud {
 	fakeGCE := gce.NewFakeGCECloud(vals)
@@ -488,7 +494,7 @@ func TestEnsureInternalLoadBalancerDeleted(t *testing.T) {
 	}
 	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
-	// Delete the loadbalancer
+	// Delete the loadbalancer.
 	result = l.EnsureInternalLoadBalancerDeleted(svc)
 	if result.Error != nil {
 		t.Errorf("Unexpected error %v", result.Error)
@@ -530,6 +536,55 @@ func TestEnsureInternalLoadBalancerDeletedTwiceDoesNotError(t *testing.T) {
 		t.Errorf("Unexpected error %v", result.Error)
 	}
 	assertInternalLbResourcesDeleted(t, svc, true, l)
+}
+
+func TestEnsureInternalLoadBalancerDeletedWithSharedHC(t *testing.T) {
+	t.Parallel()
+
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := getFakeGCECloud(vals)
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.DeleteHook = deleteHealthCheckResourceInUseErrorHook
+	nodeNames := []string{"test-node-1"}
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	_, _, result := ensureService(fakeGCE, namer, nodeNames, vals.ZoneName, 8080, t)
+	if result != nil && result.Error != nil {
+		t.Fatalf("Error ensuring service err: %v", result.Error)
+	}
+	svc2, l, result := ensureService(fakeGCE, namer, nodeNames, vals.ZoneName, 8081, t)
+	if result != nil && result.Error != nil {
+		t.Fatalf("Error ensuring service err: %v", result.Error)
+	}
+
+	// Delete the loadbalancer.
+	result = l.EnsureInternalLoadBalancerDeleted(svc2)
+	if result.Error != nil {
+		t.Errorf("Unexpected error %v", result.Error)
+	}
+	// When health check is shared we expect that hc firewall rule will not be deleted.
+	_, hcFwName := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, true)
+	firewall, err := l.cloud.GetFirewall(hcFwName)
+	if err != nil || firewall == nil {
+		t.Errorf("Expected firewall exists err: %v, fwR: %v", err, firewall)
+	}
+}
+
+func ensureService(fakeGCE *gce.Cloud, namer *namer_util.L4Namer, nodeNames []string, zoneName string, port int, t *testing.T) (*v1.Service, *L4, *SyncResult) {
+	svc := test.NewL4ILBService(false, 8080)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
+	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, zoneName); err != nil {
+		return nil, nil, &SyncResult{Error: fmt.Errorf("Unexpected error when adding nodes %v", err)}
+	}
+	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		return nil, nil, result
+	}
+	if len(result.Status.Ingress) == 0 {
+		result.Error = fmt.Errorf("Got empty loadBalancer status using handler %v", l)
+		return nil, nil, result
+	}
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
+	return svc, l, nil
 }
 
 func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
@@ -657,7 +712,7 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 			if err = composite.CreateForwardingRule(l.cloud, key, &composite.ForwardingRule{Name: frName}); err != nil {
 				t.Errorf("Failed to create fake forwarding rule %s, err %v", frName, err)
 			}
-			// Inject error hooks after creating the forwarding rule
+			// Inject error hooks after creating the forwarding rule.
 			if tc.injectMock != nil {
 				tc.injectMock(fakeGCE.Compute().(*cloud.MockGCE))
 			}
