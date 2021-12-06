@@ -19,7 +19,6 @@ package loadbalancers
 import (
 	"fmt"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -121,12 +120,6 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	result.Annotations[annotations.FirewallRuleKey] = name
 	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
 
-	existingFR := &composite.ForwardingRule{}
-	existingFR, result.Error = l4netlb.cleanupForwardingRuleIfProtocolChanged(name, protocol)
-	if result.Error != nil {
-		return result
-	}
-
 	bs, err := l4netlb.backendPool.EnsureL4BackendService(name, hcLink, protocol, string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
@@ -134,7 +127,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		return result
 	}
 	result.Annotations[annotations.BackendServiceKey] = name
-	fr, err := l4netlb.ensureExternalForwardingRule(bs.SelfLink, existingFR)
+	fr, err := l4netlb.ensureExternalForwardingRule(bs.SelfLink)
 	if err != nil {
 
 		result.GCEResourceInError = annotations.ForwardingRuleResource
@@ -240,14 +233,10 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4LbSync
 }
 
 // GetFRName returns the name of the forwarding rule for the given L4 External LoadBalancer service.
-// This appends the protocol to the forwarding rule name, which will help supporting multiple protocols in the same service.
+// This name should align with legacy forwarding rule name because we use forwarding rule to determine
+// which controller should process the service Ingress-GCE or k/k service controller.
 func (l4netlb *L4NetLB) GetFRName() string {
-	_, _, _, protocol := utils.GetPortsAndProtocol(l4netlb.Service.Spec.Ports)
-	return l4netlb.getFRNameWithProtocol(string(protocol))
-}
-
-func (l4netlb *L4NetLB) getFRNameWithProtocol(protocol string) string {
-	return l4netlb.namer.L4ForwardingRule(l4netlb.Service.Namespace, l4netlb.Service.Name, strings.ToLower(protocol))
+	return utils.LegacyForwardingRuleName(l4netlb.Service)
 }
 
 func (l4netlb *L4NetLB) createFirewalls(name, hcLink, hcFwName string, hcPort int32, nodeNames []string, sharedHC bool) (string, *L4LbSyncResult) {
@@ -288,23 +277,4 @@ func (l4netlb *L4NetLB) createFirewalls(name, hcLink, hcFwName string, hcPort in
 		result.GCEResourceInError = annotations.FirewallForHealthcheckResource
 	}
 	return string(protocol), result
-}
-
-func (l4netlb *L4NetLB) cleanupForwardingRuleIfProtocolChanged(name, protocol string) (*composite.ForwardingRule, error) {
-	// Check if protocol has changed for this service. In this case, forwarding rule should be deleted before
-	// the backend service can be updated.
-	existingBS, err := l4netlb.backendPool.Get(name, meta.VersionGA, l4netlb.scope)
-	err = utils.IgnoreHTTPNotFound(err)
-	if err != nil {
-		klog.Errorf("Failed to lookup existing backend service, ignoring err: %v", err)
-		return nil, err
-	}
-	existingFR := l4netlb.GetForwardingRule(l4netlb.GetFRName(), meta.VersionGA)
-	if existingBS != nil && existingBS.Protocol != protocol {
-		klog.Infof("Protocol changed from %q to %q for service %s", existingBS.Protocol, protocol, l4netlb.NamespacedName)
-		// Delete forwarding rule if it exists
-		existingFR = l4netlb.GetForwardingRule(l4netlb.getFRNameWithProtocol(existingBS.Protocol), meta.VersionGA)
-		l4netlb.deleteForwardingRule(l4netlb.getFRNameWithProtocol(existingBS.Protocol), meta.VersionGA)
-	}
-	return existingFR, nil
 }
