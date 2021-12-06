@@ -36,6 +36,7 @@ import (
 
 	"testing"
 
+	"google.golang.org/api/compute/v1"
 	ga "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -53,9 +54,11 @@ const (
 	testGCEZone          = "us-central1-b"
 	FwIPAddress          = "10.0.0.1"
 	loadBalancerIP       = "10.0.0.10"
+	usersIP              = "35.10.211.60"
 	testServiceNamespace = "default"
 	defaultNodePort      = int32(30234)
 	hcNodePort           = int32(10111)
+	userAddrName         = "UserStaticAddress"
 )
 
 func getExternalIPS() []string {
@@ -357,6 +360,60 @@ func TestProcessServiceCreate(t *testing.T) {
 		t.Errorf("%v", err)
 	}
 	deleteNetLBService(lc, svc)
+}
+
+func TestProcessServiceCreateWithUsersProvidedIP(t *testing.T) {
+	lc := newL4NetLBServiceController()
+
+	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = test.InsertAddressErrorHook
+	svc := test.NewL4NetLBService(8080, defaultNodePort)
+	svc.Spec.LoadBalancerIP = usersIP
+	addNetLBService(lc, svc)
+	key, _ := common.KeyFunc(svc)
+	if err := lc.sync(key); err == nil {
+		t.Errorf("Expected sync error when address reservation fails.")
+	}
+	addUsersStaticAddress(lc)
+	if err := lc.sync(key); err != nil {
+		t.Errorf("Un expected Error when trying to sync service with user's address, err: %v", err)
+	}
+	svc, err := lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+	}
+	if len(svc.Status.LoadBalancer.Ingress) == 0 {
+		t.Fatalf("Invalid LoadBalancer Status %+v", svc.Status.LoadBalancer.Ingress)
+	}
+	if svc.Status.LoadBalancer.Ingress[0].IP != usersIP {
+		t.Fatalf("Invalid LoadBalancer IP Address %v should be %s ", svc.Status.LoadBalancer.Ingress[0].IP, usersIP)
+	}
+	// Mark the service for deletion by updating timestamp
+	svc.DeletionTimestamp = &metav1.Time{}
+	updateNetLBService(lc, svc)
+	if err := lc.sync(key); err != nil {
+		t.Errorf("Unexpected Error when trying to sync service after deletion, err: %v", err)
+	}
+	adr, err := lc.ctx.Cloud.GetRegionAddress(userAddrName, lc.ctx.Cloud.Region())
+	if err != nil {
+		t.Errorf("Unexpected error when trying to get regiona address, err: %v", err)
+	}
+	if adr == nil {
+		t.Errorf("Address should not be deleted after service deletion")
+	}
+	deleteNetLBService(lc, svc)
+}
+
+func addUsersStaticAddress(lc *L4NetLBController) {
+	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = mock.InsertAddressHook
+	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAlphaAddresses.X = mock.AddressAttributes{}
+	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAddresses.X = mock.AddressAttributes{}
+	newAddr := &compute.Address{
+		Name:        userAddrName,
+		Description: fmt.Sprintf(`{"kubernetes.io/service-name":"%s"}`, userAddrName),
+		Address:     usersIP,
+		AddressType: string(cloud.SchemeExternal),
+	}
+	lc.ctx.Cloud.ReserveRegionAddress(newAddr, lc.ctx.Cloud.Region())
 }
 
 func TestProcessServiceDeletion(t *testing.T) {

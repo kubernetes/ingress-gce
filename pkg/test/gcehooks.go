@@ -93,3 +93,7 @@ func GetLegacyForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockFo
 	fwRule := compute.ForwardingRule{Target: "some_target", LoadBalancingScheme: string(cloud.SchemeExternal)}
 	return true, &fwRule, nil
 }
+
+func InsertAddressErrorHook(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses) (bool, error) {
+	return true, fmt.Errorf("InsertAddressError")
+}
