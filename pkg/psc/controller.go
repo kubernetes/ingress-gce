@@ -26,7 +26,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	beta "google.golang.org/api/compute/v0.beta"
+	ga "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -319,13 +319,13 @@ func (c *Controller) processServiceAttachment(key string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create key for GCE Service Attachment: %w", err)
 	}
-	var existingSA *beta.ServiceAttachment
-	existingSA, err = c.cloud.Compute().BetaServiceAttachments().Get(context2.Background(), gceSAKey)
+	var existingSA *ga.ServiceAttachment
+	existingSA, err = c.cloud.Compute().ServiceAttachments().Get(context2.Background(), gceSAKey)
 	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		return fmt.Errorf("failed querying for GCE Service Attachment: %w", err)
 	}
 
-	gceSvcAttachment := &beta.ServiceAttachment{}
+	gceSvcAttachment := &ga.ServiceAttachment{}
 	if existingSA != nil {
 		klog.V(4).Infof("Found existing service attachment %s", existingSA.Name)
 		*gceSvcAttachment = *existingSA
@@ -361,7 +361,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 			gceSvcAttachment.TargetService = existingSA.TargetService
 
 			klog.V(2).Infof("Service Attachment CR %s/%s was updated. %s requires an update", updatedCR.Namespace, updatedCR.Name, saName)
-			if err = c.cloud.Compute().BetaServiceAttachments().Patch(context2.Background(), gceSAKey, gceSvcAttachment); err != nil {
+			if err = c.cloud.Compute().ServiceAttachments().Patch(context2.Background(), gceSAKey, gceSvcAttachment); err != nil {
 				return fmt.Errorf("failed to update GCE Service Attachment: %w", err)
 			}
 		}
@@ -371,7 +371,7 @@ func (c *Controller) processServiceAttachment(key string) error {
 	}
 
 	klog.V(2).Infof("Creating service attachment %s", saName)
-	if err = c.cloud.Compute().BetaServiceAttachments().Insert(context2.Background(), gceSAKey, gceSvcAttachment); err != nil {
+	if err = c.cloud.Compute().ServiceAttachments().Insert(context2.Background(), gceSAKey, gceSvcAttachment); err != nil {
 		return fmt.Errorf("failed to create GCE Service Attachment: %w", err)
 	}
 	klog.V(2).Infof("Created service attachment %s", saName)
@@ -530,7 +530,7 @@ func (c *Controller) getSubnetURLs(subnets []string) ([]string, error) {
 // updateServiceAttachmentStatus updates the CR's status with the GCE Service Attachment URL
 // and the producer forwarding rule
 func (c *Controller) updateServiceAttachmentStatus(cr *sav1.ServiceAttachment, gceSAKey *meta.Key) (*sav1.ServiceAttachment, error) {
-	gceSA, err := c.cloud.Compute().BetaServiceAttachments().Get(context2.Background(), gceSAKey)
+	gceSA, err := c.cloud.Compute().ServiceAttachments().Get(context2.Background(), gceSAKey)
 	if err != nil {
 		return cr, fmt.Errorf("failed to query GCE Service Attachment for key %+v: %w", gceSAKey, err)
 	}
@@ -577,7 +577,7 @@ func (c *Controller) ensureDeleteGCEServiceAttachment(name string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create key for service attachment %q", name)
 	}
-	_, err = c.cloud.Compute().BetaServiceAttachments().Get(context2.Background(), saKey)
+	_, err = c.cloud.Compute().ServiceAttachments().Get(context2.Background(), saKey)
 	if err != nil {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
 			return nil
@@ -585,7 +585,7 @@ func (c *Controller) ensureDeleteGCEServiceAttachment(name string) error {
 		return fmt.Errorf("failed querying for service attachment %q: %w", name, err)
 	}
 
-	return c.cloud.Compute().BetaServiceAttachments().Delete(context2.Background(), saKey)
+	return c.cloud.Compute().ServiceAttachments().Delete(context2.Background(), saKey)
 }
 
 // ensureSAFinalizer ensures that the Service Attachment finalizer exists on the provided
@@ -633,7 +633,7 @@ func validateResourceReference(ref v1.TypedLocalObjectReference) error {
 // needsUpdate will determine whether ServiceAttachment matches the GCE Service Attachment
 // resource. If not, needsUpdate will return true. needsUpdate will not validate whether
 // the update will be successful or not.
-func needsUpdate(existingSA, desiredSA *beta.ServiceAttachment) (bool, error) {
+func needsUpdate(existingSA, desiredSA *ga.ServiceAttachment) (bool, error) {
 	// NOTE: The selflinks cannot be directly compared as the selflink we generate may not
 	// be the same as the one that eventually gets stored on the GCE object. For example
 	// the controller takes the forwarding rule from the GA FR resource, however if the GCE
@@ -684,7 +684,7 @@ func needsUpdate(existingSA, desiredSA *beta.ServiceAttachment) (bool, error) {
 
 	// Since forwarding rules and subnets are the same, set them on the desiredCopy to be able to
 	// compare the rest of the fields.
-	desiredCopy := &beta.ServiceAttachment{}
+	desiredCopy := &ga.ServiceAttachment{}
 	*desiredCopy = *desiredSA
 	desiredCopy.TargetService = existingSA.TargetService
 	desiredCopy.NatSubnets = existingSA.NatSubnets
@@ -722,10 +722,10 @@ func shouldProcess(old, cur *sav1.ServiceAttachment) bool {
 
 // convertAllowList converts the allow list in the Service Attachment spec into
 // ConsumerProjectLimits to be used to configure the GCE ServiceAttachment
-func convertAllowList(spec sav1.ServiceAttachmentSpec) []*beta.ServiceAttachmentConsumerProjectLimit {
-	var acceptList []*beta.ServiceAttachmentConsumerProjectLimit
+func convertAllowList(spec sav1.ServiceAttachmentSpec) []*ga.ServiceAttachmentConsumerProjectLimit {
+	var acceptList []*ga.ServiceAttachmentConsumerProjectLimit
 	for _, consumer := range spec.ConsumerAllowList {
-		acceptList = append(acceptList, &beta.ServiceAttachmentConsumerProjectLimit{
+		acceptList = append(acceptList, &ga.ServiceAttachmentConsumerProjectLimit{
 			ConnectionLimit: consumer.ConnectionLimit,
 			ProjectIdOrNum:  consumer.Project,
 			ForceSendFields: consumer.ForceSendFields,

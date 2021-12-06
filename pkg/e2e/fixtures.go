@@ -531,8 +531,11 @@ func EnsureServiceAttachment(s *Sandbox, saName, svcName, subnetName string) (*s
 	}
 
 	existingSA, err := s.f.SAClient.Get(s.Namespace, saName)
-	if err != nil && errors.IsNotFound(err) {
-		return s.f.SAClient.Create(sa)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return s.f.SAClient.Create(sa)
+		}
+		return nil, fmt.Errorf("failed to get sa %s/%s: %w", s.Namespace, saName, err)
 	}
 	existingSA.Spec = sa.Spec
 	return s.f.SAClient.Update(existingSA)
