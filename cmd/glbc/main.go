@@ -224,7 +224,9 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, client clientset.In
 	}
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
 	id := fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6))
-	rl, err := resourcelock.New(resourcelock.ConfigMapsResourceLock,
+	// TODO(#1590): Migrate to LeasesResourceLock two releases after the
+	//  migration to ConfigMapsLeases were done.
+	rl, err := resourcelock.New(resourcelock.ConfigMapsLeasesResourceLock,
 		flags.F.LeaderElection.LockObjectNamespace,
 		flags.F.LeaderElection.LockObjectName,
 		client.CoreV1(),
