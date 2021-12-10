@@ -93,8 +93,7 @@ func NewL4ILBService(onlyLocal bool, port int) *api_v1.Service {
 	return svc
 }
 
-// NewL4NetLBService creates a Service of type LoadBalancer.
-func NewL4NetLBService(port int) *api_v1.Service {
+func NewL4LegacyNetLBServiceWithoutPorts() *api_v1.Service {
 	svc := &api_v1.Service{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:        netLbServiceName,
@@ -102,31 +101,40 @@ func NewL4NetLBService(port int) *api_v1.Service {
 			Annotations: make(map[string]string),
 		},
 		Spec: api_v1.ServiceSpec{
-			Type:            api_v1.ServiceTypeLoadBalancer,
-			SessionAffinity: api_v1.ServiceAffinityClientIP,
-			Ports: []api_v1.ServicePort{
-				{Name: "testport", Port: int32(port), Protocol: "TCP"},
-			},
+			Type:                  api_v1.ServiceTypeLoadBalancer,
+			SessionAffinity:       api_v1.ServiceAffinityClientIP,
 			ExternalTrafficPolicy: api_v1.ServiceExternalTrafficPolicyTypeCluster,
 		},
 	}
 	return svc
 }
 
-// NewL4NetLBService creates a Service of type LoadBalancer with multiple named ports.
-func NewL4NetLBServiceMultiplePorts(name string, ports []int32) *api_v1.Service {
-	svc := &api_v1.Service{
-		ObjectMeta: meta_v1.ObjectMeta{
-			Name:      name,
-			Namespace: testServiceNamespace,
-		},
-		Spec: api_v1.ServiceSpec{
-			Type:            api_v1.ServiceTypeLoadBalancer,
-			SessionAffinity: api_v1.ServiceAffinityClientIP,
-		},
+// NewL4LegacyNetLBService creates a Legacy Service of type LoadBalancer without the RBS Annotation
+func NewL4LegacyNetLBService(port int, nodePort int32) *api_v1.Service {
+	svc := NewL4LegacyNetLBServiceWithoutPorts()
+	svc.Spec.Ports = []api_v1.ServicePort{
+		{Name: "testport", Port: int32(port), Protocol: "TCP", NodePort: nodePort},
 	}
+	return svc
+}
+
+// NewL4NetLBRBSService creates a Service of type LoadBalancer with RBS Annotation
+func NewL4NetLBRBSService(port int) *api_v1.Service {
+	svc := NewL4LegacyNetLBServiceWithoutPorts()
+	svc.ObjectMeta.Annotations[annotations.RBSAnnotationKey] = annotations.RBSEnabled
+	svc.Spec.Ports = []api_v1.ServicePort{
+		{Name: "testport", Port: int32(port), Protocol: "TCP"},
+	}
+	return svc
+}
+
+// NewL4NetLBRBSServiceMultiplePorts creates a Service of type LoadBalancer with multiple named ports.
+func NewL4NetLBRBSServiceMultiplePorts(name string, ports []int32) *api_v1.Service {
+	svc := NewL4LegacyNetLBServiceWithoutPorts()
+	svc.ObjectMeta.Name = name
+	svc.ObjectMeta.Annotations[annotations.RBSAnnotationKey] = annotations.RBSEnabled
 	for _, port := range ports {
-		svcPort := api_v1.ServicePort{Name: fmt.Sprintf("testport-%d", port), Port: int32(port), Protocol: "TCP", NodePort: int32(30000 + port)}
+		svcPort := api_v1.ServicePort{Name: fmt.Sprintf("testport-%d", port), Port: port, Protocol: "TCP", NodePort: 30000 + port}
 		svc.Spec.Ports = append(svc.Spec.Ports, svcPort)
 	}
 	return svc

@@ -100,6 +100,9 @@ const (
 	HealthcheckResource            = "healthcheck"
 	FirewallForHealthcheckResource = "firewall-rule-for-hc"
 	AddressResource                = "address"
+	// TODO(slavik): import this from gce_annotations when it will be merged in k8s
+	RBSAnnotationKey = "cloud.google.com/l4-rbs"
+	RBSEnabled       = "enabled"
 )
 
 // NegAnnotation is the format of the annotation associated with the
@@ -218,7 +221,6 @@ func WantsL4ILB(service *v1.Service) (bool, string) {
 
 // WantsL4NetLB checks if the given service requires L4 NetLb.
 func WantsL4NetLB(service *v1.Service) (bool, string) {
-	//TODO(kl52752) Add check to distinct between RBS and target-pool based external LoadBalancer
 	if service == nil {
 		return false, ""
 	}

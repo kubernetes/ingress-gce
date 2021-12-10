@@ -114,7 +114,7 @@ func checkForwardingRule(lc *L4NetLBController, svc *v1.Service, expectedPortRan
 
 func createAndSyncNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController) {
 	lc = newL4NetLBServiceController()
-	svc = test.NewL4NetLBService(8080)
+	svc = test.NewL4NetLBRBSService(8080)
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
 	err := lc.sync(key)
@@ -126,6 +126,17 @@ func createAndSyncNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController
 		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
 	}
 	validateNetLBSvcStatus(svc, t)
+	return
+}
+
+func createAndSyncLegacyNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController) {
+	lc = newL4NetLBServiceController()
+	svc = test.NewL4LegacyNetLBService(8080, 30234)
+	addNetLBService(lc, svc)
+	svc, err := lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+	}
 	return
 }
 
@@ -235,7 +246,7 @@ func validateAnnotations(svc *v1.Service) error {
 		}
 	}
 	if len(missingKeys) > 0 {
-		return fmt.Errorf("Cannot find annotations %v in ILB service, Got %v", missingKeys, svc.Annotations)
+		return fmt.Errorf("Cannot find annotations %v in ELB service, Got %v", missingKeys, svc.Annotations)
 	}
 	return nil
 }
@@ -250,7 +261,7 @@ func TestProcessMultipleNetLBServices(t *testing.T) {
 			go lc.Run()
 			var svcNames []string
 			for port := 8000; port < 8020; port++ {
-				newSvc := test.NewL4NetLBService(port)
+				newSvc := test.NewL4NetLBRBSService(port)
 				newSvc.Name = newSvc.Name + fmt.Sprintf("-%d", port)
 				newSvc.UID = types.UID(newSvc.Name)
 				svcNames = append(svcNames, newSvc.Name)
@@ -320,7 +331,7 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 			expectedPortRange: "80-8081",
 		},
 	} {
-		svc := test.NewL4NetLBServiceMultiplePorts(tc.svcName, tc.ports)
+		svc := test.NewL4NetLBRBSServiceMultiplePorts(tc.svcName, tc.ports)
 		svc.UID = types.UID(svc.Name + fmt.Sprintf("-%d", rand.Intn(1001)))
 		addNetLBService(lc, svc)
 		key, _ := common.KeyFunc(svc)
@@ -361,7 +372,7 @@ func TestProcessServiceCreateWithUsersProvidedIP(t *testing.T) {
 	lc := newL4NetLBServiceController()
 
 	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = test.InsertAddressErrorHook
-	svc := test.NewL4NetLBService(8080)
+	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.LoadBalancerIP = usersIP
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
@@ -486,7 +497,7 @@ func TestProcessServiceCreationFailed(t *testing.T) {
 	} {
 		lc := newL4NetLBServiceController()
 		param.addMockFunc((lc.ctx.Cloud.Compute().(*cloud.MockGCE)))
-		svc := test.NewL4NetLBService(8080)
+		svc := test.NewL4NetLBRBSService(8080)
 		addNetLBService(lc, svc)
 		key, _ := common.KeyFunc(svc)
 		err := lc.sync(key)
@@ -737,28 +748,10 @@ func updateAndAssertExternalTrafficPolicy(newSvc *v1.Service, lc *L4NetLBControl
 	return nil
 }
 
-func TestControllerShouldNotProcessServicesWithLegacyFwR(t *testing.T) {
-	svc, l4netController := createAndSyncNetLBSvc(t)
-	// Add Forwarding Rule pointing to Target
-	l4netController.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = test.GetLegacyForwardingRule
-
-	newSvc, err := l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
-	if err != nil {
-		t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
-	}
-	newSvc.Spec.ExternalTrafficPolicy = v1.ServiceExternalTrafficPolicyTypeLocal
-	updateNetLBService(l4netController, svc)
-	if !l4netController.hasLegacyForwardingRule(newSvc) {
-		t.Errorf("Service should detect legacy forwarding rule")
-	}
-	if l4netController.shouldProcessService(svc, newSvc) {
-		t.Errorf("Service should not be marked for update")
-	}
-}
-
 func isWrongNetworkTierError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "does not have the expected network tier")
 }
+
 func TestControllerUserIPWithStandardNetworkTier(t *testing.T) {
 	// Network Tier from User Static Address should match network tier from forwarding rule.
 	// Premium Network Tier is default for creating forwarding rule so if User wants to use Standard Network Tier for Static Address
@@ -766,7 +759,7 @@ func TestControllerUserIPWithStandardNetworkTier(t *testing.T) {
 
 	lc := newL4NetLBServiceController()
 
-	svc := test.NewL4NetLBService(8080)
+	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.LoadBalancerIP = usersIP
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
@@ -779,5 +772,142 @@ func TestControllerUserIPWithStandardNetworkTier(t *testing.T) {
 	updateNetLBService(lc, svc)
 	if err := lc.sync(key); err != nil {
 		t.Errorf("Unexpected error when trying to ensure service with STANDARD Network Tier, err: %v", err)
+	}
+}
+
+func TestIsRBSBasedService(t *testing.T) {
+	for _, testCase := range []struct {
+		createControllerAndService func() (*L4NetLBController, *v1.Service)
+		isRBSService               bool
+		desc                       string
+	}{
+		{
+			createControllerAndService: func() (*L4NetLBController, *v1.Service) {
+				svc, l4netController := createAndSyncLegacyNetLBSvc(t)
+				return l4netController, svc
+			},
+			isRBSService: false,
+			desc:         "Legacy service should not be marked as RBS",
+		},
+		{
+			createControllerAndService: func() (*L4NetLBController, *v1.Service) {
+				svc, l4netController := createAndSyncLegacyNetLBSvc(t)
+				svc.ObjectMeta.Finalizers = append(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV2)
+				return l4netController, svc
+			},
+			isRBSService: true,
+			desc:         "Should detect RBS by finalizer",
+		},
+		{
+			createControllerAndService: func() (*L4NetLBController, *v1.Service) {
+				svc, l4netController := createAndSyncLegacyNetLBSvc(t)
+				svc.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
+				return l4netController, svc
+			},
+			isRBSService: true,
+			desc:         "Should detect RBS by annotation",
+		},
+		{
+			createControllerAndService: func() (*L4NetLBController, *v1.Service) {
+				svc, l4netController := createAndSyncLegacyNetLBSvc(t)
+				// Add Forwarding Rule pointing to RBS backend
+				l4netController.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = test.GetRBSForwardingRule
+				return l4netController, svc
+			},
+			isRBSService: true,
+			desc:         "Should detect RBS by forwarding rule",
+		},
+		{
+			createControllerAndService: func() (*L4NetLBController, *v1.Service) {
+				svc, l4netController := createAndSyncLegacyNetLBSvc(t)
+				// Add Forwarding Rule pointing to Target Pool
+				l4netController.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = test.GetLegacyForwardingRule
+				return l4netController, svc
+			},
+			isRBSService: false,
+			desc:         "Should not detect RBS by forwarding rule pointed to target pool",
+		},
+	} {
+		controller, svc := testCase.createControllerAndService()
+		result := controller.isRBSBasedService(svc)
+		if result != testCase.isRBSService {
+			t.Errorf("Service %v. Expected result: %t, got: %t. Description: %s", svc, testCase.isRBSService, result, testCase.desc)
+		}
+	}
+}
+
+func TestShouldProcessService(t *testing.T) {
+	legacyNetLBSvc, l4netController := createAndSyncLegacyNetLBSvc(t)
+
+	svcWithRBSFinalizer, err := l4netController.ctx.KubeClient.CoreV1().Services(legacyNetLBSvc.Namespace).Get(context.TODO(), legacyNetLBSvc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", legacyNetLBSvc.Name, err)
+	}
+	svcWithRBSFinalizer.ObjectMeta.Finalizers = append(svcWithRBSFinalizer.ObjectMeta.Finalizers, common.NetLBFinalizerV2)
+
+	svcWithRBSAnnotation, err := l4netController.ctx.KubeClient.CoreV1().Services(legacyNetLBSvc.Namespace).Get(context.TODO(), legacyNetLBSvc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", legacyNetLBSvc.Name, err)
+	}
+	svcWithRBSAnnotation.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
+
+	svcWithRBSAnnotationAndFinalizer, err := l4netController.ctx.KubeClient.CoreV1().Services(legacyNetLBSvc.Namespace).Get(context.TODO(), legacyNetLBSvc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", legacyNetLBSvc.Name, err)
+	}
+	svcWithRBSAnnotationAndFinalizer.ObjectMeta.Finalizers = append(svcWithRBSAnnotationAndFinalizer.ObjectMeta.Finalizers, common.NetLBFinalizerV2)
+	svcWithRBSAnnotationAndFinalizer.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
+
+	for _, testCase := range []struct {
+		oldSvc        *v1.Service
+		newSvc        *v1.Service
+		shouldProcess bool
+	}{
+		{
+			oldSvc:        nil,
+			newSvc:        legacyNetLBSvc,
+			shouldProcess: false,
+		},
+		{
+			oldSvc:        nil,
+			newSvc:        svcWithRBSFinalizer,
+			shouldProcess: true,
+		},
+		{
+			oldSvc:        nil,
+			newSvc:        svcWithRBSAnnotation,
+			shouldProcess: true,
+		},
+		{
+			oldSvc:        nil,
+			newSvc:        svcWithRBSAnnotationAndFinalizer,
+			shouldProcess: true,
+		},
+		{
+			// We do not support migration only by finalizer
+			oldSvc:        legacyNetLBSvc,
+			newSvc:        svcWithRBSFinalizer,
+			shouldProcess: false,
+		},
+		{
+			oldSvc:        legacyNetLBSvc,
+			newSvc:        svcWithRBSAnnotation,
+			shouldProcess: true,
+		},
+		{
+			oldSvc:        legacyNetLBSvc,
+			newSvc:        svcWithRBSAnnotationAndFinalizer,
+			shouldProcess: true,
+		},
+		{
+			oldSvc:        svcWithRBSAnnotationAndFinalizer,
+			newSvc:        svcWithRBSAnnotationAndFinalizer,
+			shouldProcess: true,
+		},
+	} {
+		result := l4netController.shouldProcessService(testCase.newSvc, testCase.oldSvc)
+		if result != testCase.shouldProcess {
+			t.Errorf("Old service %v. New service %v. Expected shouldProcess: %t, got: %t", testCase.oldSvc, testCase.newSvc, testCase.shouldProcess, result)
+		}
 	}
 }
