@@ -37,7 +37,6 @@ import (
 const defaultZone = "zone-a"
 
 func newTestIGLinker(fakeGCE *gce.Cloud, fakeInstancePool instances.NodePool) *instanceGroupLinker {
-	fakeInstancePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
 	// Add standard hooks for mocking update calls. Each test can set a different update hook if it chooses to.
@@ -51,7 +50,8 @@ func newTestIGLinker(fakeGCE *gce.Cloud, fakeInstancePool instances.NodePool) *i
 func TestLink(t *testing.T) {
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE))
+	fakeZL := &instances.FakeZoneLister{Zones: []string{defaultZone}}
+	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE), fakeZL)
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
@@ -81,7 +81,8 @@ func TestLink(t *testing.T) {
 func TestLinkWithCreationModeError(t *testing.T) {
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE))
+	fakeZL := &instances.FakeZoneLister{Zones: []string{defaultZone}}
+	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE), fakeZL)
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}

@@ -43,11 +43,13 @@ import (
 	informerbackendconfig "k8s.io/ingress-gce/pkg/backendconfig/client/informers/externalversions/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/cmconfig"
 	"k8s.io/ingress-gce/pkg/common/typed"
+	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/flags"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
 	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
 	informeringparams "k8s.io/ingress-gce/pkg/ingparams/client/informers/externalversions/ingparams/v1beta1"
+	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/metrics"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	informerserviceattachment "k8s.io/ingress-gce/pkg/serviceattachment/client/informers/externalversions/serviceattachment/v1"
@@ -113,6 +115,9 @@ type ControllerContext struct {
 	// NOTE: If the flag GKEClusterType is empty, then cluster will default to zonal. This field should not be used for
 	// controller logic and should only be used for providing additional information to the user.
 	RegionalCluster bool
+
+	InstancePool instances.NodePool
+	Translator   *translator.Translator
 }
 
 // ControllerContextConfig encapsulates some settings that are tunable via command line flags.
@@ -189,6 +194,23 @@ func NewControllerContext(
 	} else {
 		context.EndpointInformer = informerv1.NewEndpointsInformer(kubeClient, config.Namespace, 0, utils.NewNamespaceIndexer())
 	}
+
+	context.Translator = translator.NewTranslator(
+		context.ServiceInformer,
+		context.BackendConfigInformer,
+		context.NodeInformer,
+		context.PodInformer,
+		context.EndpointInformer,
+		context.EndpointSliceInformer,
+		context.UseEndpointSlices,
+		context.KubeClient,
+	)
+	context.InstancePool = instances.NewNodePool(context.Cloud,
+		context.ClusterNamer,
+		context,
+		utils.GetBasePath(context.Cloud),
+		context.Translator,
+	)
 
 	return context
 }

@@ -77,17 +77,16 @@ func NewL4NetLBController(
 	}
 
 	backendPool := backends.NewPool(ctx.Cloud, ctx.L4Namer)
-	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer, ctx, utils.GetBasePath(ctx.Cloud))
 	l4netLBc := &L4NetLBController{
 		ctx:           ctx,
 		serviceLister: ctx.ServiceInformer.GetIndexer(),
 		nodeLister:    listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
 		stopCh:        stopCh,
-		translator:    translator.NewTranslator(ctx),
+		translator:    ctx.Translator,
 		backendPool:   backendPool,
 		namer:         ctx.L4Namer,
-		instancePool:  instancePool,
-		igLinker:      backends.NewRegionalInstanceGroupLinker(instancePool, backendPool),
+		instancePool:  ctx.InstancePool,
+		igLinker:      backends.NewRegionalInstanceGroupLinker(ctx.InstancePool, backendPool),
 	}
 	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4Workers, l4netLBc.sync)
 
@@ -252,11 +251,6 @@ func (lc *L4NetLBController) checkHealth() error {
 		klog.Error(msg)
 	}
 	return nil
-}
-
-//Init inits instance Pool
-func (lc *L4NetLBController) Init() {
-	lc.instancePool.Init(lc.translator)
 }
 
 // Run starts the loadbalancer controller.

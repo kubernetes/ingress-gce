@@ -43,10 +43,10 @@ type NodeController struct {
 }
 
 // NewNodeController returns a new node update controller.
-func NewNodeController(ctx *context.ControllerContext, instancePool instances.NodePool) *NodeController {
+func NewNodeController(ctx *context.ControllerContext) *NodeController {
 	c := &NodeController{
 		lister:       ctx.NodeInformer.GetIndexer(),
-		instancePool: instancePool,
+		instancePool: ctx.InstancePool,
 		hasSynced:    ctx.HasSynced,
 	}
 	c.queue = utils.NewPeriodicTaskQueue("", "nodes", c.sync)

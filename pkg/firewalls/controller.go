@@ -67,7 +67,7 @@ func NewFirewallController(
 	fwc := &FirewallController{
 		ctx:          ctx,
 		firewallPool: firewallPool,
-		translator:   translator.NewTranslator(ctx),
+		translator:   ctx.Translator,
 		nodeLister:   ctx.NodeInformer.GetIndexer(),
 		hasSynced:    ctx.HasSynced,
 	}
