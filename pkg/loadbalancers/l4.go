@@ -98,7 +98,6 @@ func getILBOptions(svc *corev1.Service) gce.ILBOptions {
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
 func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *SyncResult {
 	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): attempting delete of load balancer resources", l.NamespacedName.String())
-	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
 	result := &SyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
 	// All resources use the NEG Name, except forwarding rule.
 	name, ok := l.namer.VMIPNEG(svc.Namespace, svc.Name)
@@ -152,30 +151,40 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *SyncResult 
 	}
 
 	// Delete healthcheck
-	if sharedHC {
-		l.sharedResourcesLock.Lock()
-		defer l.sharedResourcesLock.Unlock()
-	}
-	hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
-	err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l.cloud, hcName, meta.Global))
-	if err != nil {
-		if !utils.IsInUsedByError(err) {
-			klog.Errorf("Failed to delete healthcheck for internal loadbalancer service %s, err %v", l.NamespacedName.String(), err)
-			result.GCEResourceInError = annotations.HealthcheckResource
-			result.Error = err
-			return result
+	// We don't delete health check during service update so
+	// it is possible that there might be some health check leak
+	// when externalTrafficPolicy is changed from Local to Cluster and a new health check was created.
+	// When service is deleted we need to check both health checks shared and non-shared
+	// and delete them if needed.
+	deleteHcFunc := func(sharedHC bool) {
+		hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+		if sharedHC {
+			l.sharedResourcesLock.Lock()
+			defer l.sharedResourcesLock.Unlock()
 		}
-		// Ignore deletion error due to health check in use by another resource.
-		// This will be hit if this is a shared healthcheck.
-		klog.V(2).Infof("Failed to delete healthcheck %s: health check in use.", hcName)
-	} else {
-		// Delete healthcheck firewall rule if healthcheck deletion is successful.
-		err = deleteFwFunc(hcFwName)
+		err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l.cloud, hcName, meta.Global))
 		if err != nil {
-			klog.Errorf("Failed to delete firewall rule %s for internal loadbalancer service %s, err %v", hcFwName, l.NamespacedName.String(), err)
-			result.GCEResourceInError = annotations.FirewallForHealthcheckResource
-			result.Error = err
+			if !utils.IsInUsedByError(err) {
+				klog.Errorf("Failed to delete healthcheck for internal loadbalancer service %s - %v", l.NamespacedName.String(), err)
+				result.GCEResourceInError = annotations.HealthcheckResource
+				result.Error = err
+				return
+			}
+			// Ignore deletion error due to health check in use by another resource.
+			// This will be hit if this is a shared healthcheck.
+			klog.V(2).Infof("Failed to delete healthcheck %s: health check in use.", hcName)
+		} else {
+			// Delete healthcheck firewall rule if healthcheck deletion is successful.
+			err = deleteFwFunc(hcFwName)
+			if err != nil {
+				klog.Errorf("Failed to delete firewall rule %s for internal loadbalancer service %s, err %v", hcFwName, l.NamespacedName.String(), err)
+				result.GCEResourceInError = annotations.FirewallForHealthcheckResource
+				result.Error = err
+			}
 		}
+	}
+	for _, isShared := range []bool{true, false} {
+		deleteHcFunc(isShared)
 	}
 	return result
 }

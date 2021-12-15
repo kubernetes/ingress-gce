@@ -23,6 +23,9 @@ import (
 	"time"
 
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/utils"
+
+	"net/http"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -31,7 +34,7 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/util/retry"
-	"k8s.io/cloud-provider"
+	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
@@ -39,7 +42,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
-	"net/http"
 )
 
 const (
@@ -225,6 +227,80 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 	}
 	validateSvcStatus(newSvc, false, t)
 	prevMetrics.ValidateDiff(test.GetL4LatencyMetric(t), &test.L4ILBLatencyMetricInfo{CreateCount: 1, UpdateCount: 1, DeleteCount: 1, UpperBoundSeconds: 1}, t)
+	newSvc.DeletionTimestamp = &v1.Time{}
+	updateILBService(l4c, newSvc)
+	key, _ := common.KeyFunc(newSvc)
+	if err = l4c.sync(key); err != nil {
+		t.Errorf("Failed to sync deleted service %s, err %v", key, err)
+	}
+	for _, isShared := range []bool{true, false} {
+		hcName, _ := l4c.namer.L4HealthCheck(newSvc.Namespace, newSvc.Name, isShared)
+		if !isHealthCheckDeleted(l4c, hcName) {
+			t.Errorf("Health check %s should be deleted", hcName)
+		}
+	}
+}
+
+// TestProcessUpdateExternalTrafficPolicy verifies the processing loop in L4Controller.
+// In this test we check that when ExternalTrafficPolicy is updated new health check will be created.
+// If health check is not shared among services then there is a leak.
+// When service is deleted all health checks should be cleaned up to prevent the leak.
+func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
+	l4c := newServiceController(t, newFakeGCE())
+	// Create svc with ExternalTrafficPolicy Local.
+	svc := test.NewL4ILBService(true, 8080)
+	addILBService(l4c, svc)
+	addNEG(l4c, svc)
+	err := l4c.sync(getKeyForSvc(svc, t))
+	if err != nil {
+		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
+	}
+	// List the service and ensure that it contains the finalizer as well as Status field.
+	svc, err = l4c.client.CoreV1().Services(svc.Namespace).Get(context2.TODO(), svc.Name, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
+	}
+	validateSvcStatus(svc, true, t)
+
+	// Set ExternalTrafficPolicy to Cluster.
+	svc.Spec.ExternalTrafficPolicy = api_v1.ServiceExternalTrafficPolicyTypeCluster
+	updateILBService(l4c, svc)
+	err = l4c.sync(getKeyForSvc(svc, t))
+	if err != nil {
+		t.Errorf("Failed to sync updated service %s, err %v", svc.Name, err)
+	}
+	// List the service and ensure that it contains the finalizer as well as Status field.
+	svc, err = l4c.client.CoreV1().Services(svc.Namespace).Get(context2.TODO(), svc.Name, v1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
+	}
+	validateSvcStatus(svc, true, t)
+	// Verify that both health checks were created.
+	for _, isShared := range []bool{true, false} {
+		hcName, _ := l4c.namer.L4HealthCheck(svc.Namespace, svc.Name, isShared)
+		if isHealthCheckDeleted(l4c, hcName) {
+			t.Errorf("Health check %s should be created", hcName)
+		}
+	}
+	// Delete service.
+	svc.DeletionTimestamp = &v1.Time{}
+	updateILBService(l4c, svc)
+	key, _ := common.KeyFunc(svc)
+	if err = l4c.sync(key); err != nil {
+		t.Errorf("Failed to sync deleted service %s, err %v", key, err)
+	}
+	// Verify that both health checks were deleted.
+	for _, isShared := range []bool{true, false} {
+		hcName, _ := l4c.namer.L4HealthCheck(svc.Namespace, svc.Name, isShared)
+		if !isHealthCheckDeleted(l4c, hcName) {
+			t.Errorf("Health check %s should be deleted", hcName)
+		}
+	}
+}
+
+func isHealthCheckDeleted(l4c *L4Controller, hcName string) bool {
+	_, err := composite.GetHealthCheck(l4c.ctx.Cloud, meta.GlobalKey(hcName), meta.VersionGA)
+	return utils.IsNotFoundError(err)
 }
 
 func TestProcessDeletion(t *testing.T) {
