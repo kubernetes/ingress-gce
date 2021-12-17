@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/ingparams"
-	"k8s.io/ingress-gce/pkg/l4netlb"
+	"k8s.io/ingress-gce/pkg/l4lb"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
 	"k8s.io/ingress-gce/pkg/svcneg"
@@ -57,7 +57,6 @@ import (
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
 	_ "k8s.io/ingress-gce/pkg/klog"
-	"k8s.io/ingress-gce/pkg/l4"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
@@ -274,7 +273,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values())
 
 	if flags.F.RunL4Controller {
-		l4Controller := l4.NewController(ctx, stopCh)
+		l4Controller := l4lb.NewController(ctx, stopCh)
 		go l4Controller.Run()
 		klog.V(0).Infof("L4 controller started")
 	}
@@ -355,7 +354,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.L4elbRbsMode != flags.DISABLED {
 		//TODO (kl52752) Implement RbsModes in L4NetLBController
-		l4netlbController := l4netlb.NewL4NetLBController(ctx, stopCh)
+		l4netlbController := l4lb.NewL4NetLBController(ctx, stopCh)
 
 		// Before we can Run controller we need to init instance Pool with translator
 		// transaltor is created in context so we need to do this after context is created

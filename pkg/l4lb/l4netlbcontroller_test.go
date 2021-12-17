@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package l4netlb
+package l4lb
 
 import (
 	"context"
@@ -47,8 +47,6 @@ import (
 )
 
 const (
-	clusterUID           = "aaaaa"
-	testGCEZone          = "us-central1-b"
 	FwIPAddress          = "10.0.0.1"
 	loadBalancerIP       = "10.0.0.10"
 	usersIP              = "35.10.211.60"
@@ -126,7 +124,7 @@ func createAndSyncNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
 	}
-	validateSvcStatus(svc, t)
+	validateNelLBSvcStatus(svc, t)
 	return
 }
 
@@ -219,7 +217,7 @@ func newL4NetLBServiceController() *L4NetLBController {
 	return NewL4NetLBController(ctx, stopCh)
 }
 
-func validateSvcStatus(svc *v1.Service, t *testing.T) {
+func validateNelLBSvcStatus(svc *v1.Service, t *testing.T) {
 	if len(svc.Status.LoadBalancer.Ingress) == 0 || svc.Status.LoadBalancer.Ingress[0].IP != FwIPAddress {
 		t.Fatalf("Invalid LoadBalancer status field in service - %+v", svc.Status.LoadBalancer)
 	}
@@ -275,7 +273,7 @@ func TestProcessMultipleNetLBServices(t *testing.T) {
 			// Perform a full validation of the service once it is ready.
 			for _, name := range svcNames {
 				svc, _ := lc.ctx.KubeClient.CoreV1().Services(testServiceNamespace).Get(context.TODO(), name, metav1.GetOptions{})
-				validateSvcStatus(svc, t)
+				validateNelLBSvcStatus(svc, t)
 				if err := checkBackendService(lc, svc.Spec.Ports[0].NodePort); err != nil {
 					t.Errorf("Check backend service err: %v", err)
 				}
@@ -416,13 +414,13 @@ func TestProcessServiceDeletion(t *testing.T) {
 	if !common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
 		t.Fatalf("Expected L4 External LoadBalancer finalizer")
 	}
-	if needsDeletion(svc) {
+	if lc.needsDeletion(svc) {
 		t.Fatalf("Service should not be marked for deletion")
 	}
 	// Mark the service for deletion by updating timestamp
 	svc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, svc)
-	if !needsDeletion(svc) {
+	if !lc.needsDeletion(svc) {
 		t.Fatalf("Service should be marked for deletion")
 	}
 	key, _ := common.KeyFunc(svc)
@@ -460,7 +458,7 @@ func TestInternalLoadBalancerShouldNotBeProcessByL4NetLBController(t *testing.T)
 	// Mark the service for deletion by updating timestamp
 	ilbSvc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, ilbSvc)
-	if needsDeletion(ilbSvc) {
+	if lc.needsDeletion(ilbSvc) {
 		t.Fatalf("Service should not be marked for deletion!")
 	}
 }
@@ -516,7 +514,7 @@ func TestProcessServiceDeletionFailed(t *testing.T) {
 		}
 		svc.DeletionTimestamp = &metav1.Time{}
 		updateNetLBService(lc, svc)
-		if !needsDeletion(svc) {
+		if !lc.needsDeletion(svc) {
 			t.Fatalf("Service should be marked for deletion")
 		}
 		param.addMockFunc((lc.ctx.Cloud.Compute().(*cloud.MockGCE)))
@@ -708,10 +706,10 @@ func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
 	if err = lc.sync(key); err != nil {
 		t.Errorf("Failed to sync deleted service %s, err %v", key, err)
 	}
-	if !isHealthCheckDeleted(lc, hcNameNonShared) {
+	if !isHealthCheckDeleted(lc.ctx.Cloud, hcNameNonShared) {
 		t.Errorf("Health check %s should be deleted", hcNameNonShared)
 	}
-	if !isHealthCheckDeleted(lc, hcNameShared) {
+	if !isHealthCheckDeleted(lc.ctx.Cloud, hcNameShared) {
 		t.Errorf("Health check %s should be deleted", hcNameShared)
 	}
 	deleteNetLBService(lc, svc)
@@ -734,11 +732,6 @@ func updateAndAssertExternalTrafficPolicy(newSvc *v1.Service, lc *L4NetLBControl
 		return fmt.Errorf("Error getting health check %v", err)
 	}
 	return nil
-}
-
-func isHealthCheckDeleted(lc *L4NetLBController, hcName string) bool {
-	_, err := composite.GetHealthCheck(lc.ctx.Cloud, meta.RegionalKey(hcName, lc.ctx.Cloud.Region()), meta.VersionGA)
-	return utils.IsNotFoundError(err)
 }
 
 func TestControllerShouldNotProcessServicesWithLegacyFwR(t *testing.T) {

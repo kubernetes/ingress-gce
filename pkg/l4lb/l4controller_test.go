@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package l4
+package l4lb
 
 import (
 	context2 "context"
@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"k8s.io/ingress-gce/pkg/loadbalancers"
-	"k8s.io/ingress-gce/pkg/utils"
 
 	"net/http"
 
@@ -235,7 +234,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 	}
 	for _, isShared := range []bool{true, false} {
 		hcName, _ := l4c.namer.L4HealthCheck(newSvc.Namespace, newSvc.Name, isShared)
-		if !isHealthCheckDeleted(l4c, hcName) {
+		if !isHealthCheckDeleted(l4c.ctx.Cloud, hcName) {
 			t.Errorf("Health check %s should be deleted", hcName)
 		}
 	}
@@ -278,7 +277,7 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 	// Verify that both health checks were created.
 	for _, isShared := range []bool{true, false} {
 		hcName, _ := l4c.namer.L4HealthCheck(svc.Namespace, svc.Name, isShared)
-		if isHealthCheckDeleted(l4c, hcName) {
+		if isHealthCheckDeleted(l4c.ctx.Cloud, hcName) {
 			t.Errorf("Health check %s should be created", hcName)
 		}
 	}
@@ -292,15 +291,10 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 	// Verify that both health checks were deleted.
 	for _, isShared := range []bool{true, false} {
 		hcName, _ := l4c.namer.L4HealthCheck(svc.Namespace, svc.Name, isShared)
-		if !isHealthCheckDeleted(l4c, hcName) {
+		if !isHealthCheckDeleted(l4c.ctx.Cloud, hcName) {
 			t.Errorf("Health check %s should be deleted", hcName)
 		}
 	}
-}
-
-func isHealthCheckDeleted(l4c *L4Controller, hcName string) bool {
-	_, err := composite.GetHealthCheck(l4c.ctx.Cloud, meta.GlobalKey(hcName), meta.VersionGA)
-	return utils.IsNotFoundError(err)
 }
 
 func TestProcessDeletion(t *testing.T) {
@@ -324,7 +318,7 @@ func TestProcessDeletion(t *testing.T) {
 	// Mark the service for deletion by updating timestamp. Use svc instead of newSvc since that has the finalizer.
 	newSvc.DeletionTimestamp = &v1.Time{}
 	updateILBService(l4c, newSvc)
-	if !needsDeletion(newSvc) {
+	if !l4c.needsDeletion(newSvc) {
 		t.Errorf("Incorrectly marked service %v as not needing ILB deletion", newSvc)
 	}
 	err = l4c.sync(getKeyForSvc(newSvc, t))
@@ -428,7 +422,7 @@ func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 	if needsILB, _ := annotations.WantsL4ILB(clusterSvc); needsILB {
 		t.Errorf("Incorrectly marked service %v as needing ILB", clusterSvc)
 	}
-	if needsDeletion(clusterSvc) {
+	if l4c.needsDeletion(clusterSvc) {
 		t.Errorf("Incorrectly marked service %v as needing ILB deletion", clusterSvc)
 	}
 	// Change to Internal LoadBalancer type
