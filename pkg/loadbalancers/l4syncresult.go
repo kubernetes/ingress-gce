@@ -29,9 +29,9 @@ const (
 	SyncTypeDelete = "delete"
 )
 
-// L4LbSyncResult contains information about the outcome of an L4 LB sync. It stores the list of resource name annotations,
+// L4LBSyncResult contains information about the outcome of an L4 LB sync. It stores the list of resource name annotations,
 // sync error, the GCE resource that hit the error along with the error type and more fields.
-type L4LbSyncResult struct {
+type L4LBSyncResult struct {
 	Annotations        map[string]string
 	Error              error
 	GCEResourceInError string

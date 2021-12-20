@@ -291,7 +291,7 @@ func (lc *L4NetLBController) sync(key string) error {
 
 // syncInternal ensures load balancer resources for the given service, as needed.
 // Returns an error if processing the service update failed.
-func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4LbSyncResult {
+func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4LBSyncResult {
 	l4netlb := loadbalancers.NewL4NetLB(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace), &lc.sharedResourcesLock)
 	// check again that it's not legacy service
 	if !lc.isRbsBasedLBService(service, l4netlb) {
@@ -299,18 +299,18 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 	}
 
 	if err := common.EnsureServiceFinalizer(service, common.NetLBFinalizerV2, lc.ctx.KubeClient); err != nil {
-		return &loadbalancers.L4LbSyncResult{Error: fmt.Errorf("Failed to attach L4 External LoadBalancer finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
+		return &loadbalancers.L4LBSyncResult{Error: fmt.Errorf("Failed to attach L4 External LoadBalancer finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
 	}
 
 	nodeNames, err := utils.GetReadyNodeNames(lc.nodeLister)
 	if err != nil {
-		return &loadbalancers.L4LbSyncResult{Error: err}
+		return &loadbalancers.L4LBSyncResult{Error: err}
 	}
 
 	if err := lc.ensureInstanceGroups(service, nodeNames); err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncInstanceGroupsFailed",
 			"Error syncing instance group, err: %v", err)
-		return &loadbalancers.L4LbSyncResult{Error: err}
+		return &loadbalancers.L4LBSyncResult{Error: err}
 	}
 
 	// Use the same function for both create and updates. If controller crashes and restarts,
@@ -377,7 +377,7 @@ func (lc *L4NetLBController) hasLegacyForwardingRule(svc *v1.Service) bool {
 }
 
 // garbageCollectRBSNetLB cleans-up all gce resources related to service and removes NetLB finalizer
-func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service) *loadbalancers.L4LbSyncResult {
+func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service) *loadbalancers.L4LBSyncResult {
 	l4netLB := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace), &lc.sharedResourcesLock)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
 		"Deleting L4 External LoadBalancer for %s", key)

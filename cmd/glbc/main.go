@@ -273,7 +273,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values())
 
 	if flags.F.RunL4Controller {
-		l4Controller := l4lb.NewController(ctx, stopCh)
+		l4Controller := l4lb.NewILBController(ctx, stopCh)
 		go l4Controller.Run()
 		klog.V(0).Infof("L4 controller started")
 	}

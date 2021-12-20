@@ -70,7 +70,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	return NewController(ctx, stopCh)
+	return NewILBController(ctx, stopCh)
 }
 
 func newFakeGCE() *gce.Cloud {

@@ -83,8 +83,8 @@ func (l4netlb *L4NetLB) createKey(name string) (*meta.Key, error) {
 // been created. It is health check, firewall rules, backend service and forwarding rule.
 // It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 // This function does not link instances to Backend Service.
-func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) *L4LbSyncResult {
-	result := &L4LbSyncResult{
+func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) *L4LBSyncResult {
+	result := &L4LBSyncResult{
 		Annotations: make(map[string]string),
 		StartTime:   time.Now(),
 		SyncType:    SyncTypeCreate}
@@ -152,8 +152,8 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 
 // EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
 // It is health check, firewall rules and backend service
-func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4LbSyncResult {
-	result := &L4LbSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
+func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4LBSyncResult {
+	result := &L4LBSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
 
 	frName := l4netlb.GetFRName()
 	key, err := l4netlb.createKey(frName)
@@ -250,9 +250,9 @@ func (l4netlb *L4NetLB) getFRNameWithProtocol(protocol string) string {
 	return l4netlb.namer.L4ForwardingRule(l4netlb.Service.Namespace, l4netlb.Service.Name, strings.ToLower(protocol))
 }
 
-func (l4netlb *L4NetLB) createFirewalls(name, hcLink, hcFwName string, hcPort int32, nodeNames []string, sharedHC bool) (string, *L4LbSyncResult) {
+func (l4netlb *L4NetLB) createFirewalls(name, hcLink, hcFwName string, hcPort int32, nodeNames []string, sharedHC bool) (string, *L4LBSyncResult) {
 	_, portRanges, _, protocol := utils.GetPortsAndProtocol(l4netlb.Service.Spec.Ports)
-	result := &L4LbSyncResult{}
+	result := &L4LBSyncResult{}
 	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l4netlb.Service)
 	if err != nil {
 		result.Error = err

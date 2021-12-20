@@ -77,9 +77,9 @@ func getILBOptions(svc *corev1.Service) gce.ILBOptions {
 }
 
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
-func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4LbSyncResult {
+func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4LBSyncResult {
 	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): attempting delete of load balancer resources", l.NamespacedName.String())
-	result := &L4LbSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
+	result := &L4LBSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
 	// All resources use the NEG Name, except forwarding rule.
 	name, ok := l.namer.VMIPNEG(svc.Namespace, svc.Name)
 	if !ok {
@@ -184,8 +184,8 @@ func (l *L4) getFRNameWithProtocol(protocol string) string {
 
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
-func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4LbSyncResult {
-	result := &L4LbSyncResult{
+func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4LBSyncResult {
+	result := &L4LBSyncResult{
 		Annotations: make(map[string]string),
 		StartTime:   time.Now(),
 		SyncType:    SyncTypeCreate}
