@@ -178,7 +178,7 @@ func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNam
 		if local {
 			mode = L4LocalMode
 		}
-		negName, _ := namer.VMIPNEG(namespace, name)
+		negName, _ := namer.L4Backend(namespace, name)
 		ret[PortInfoMapKey{svcPortTuple.Port, ""}] = PortInfo{
 			PortTuple:        svcPortTuple,
 			NegName:          negName,

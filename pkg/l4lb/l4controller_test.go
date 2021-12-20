@@ -104,7 +104,7 @@ func deleteILBService(l4c *L4Controller, svc *api_v1.Service) {
 
 func addNEG(l4c *L4Controller, svc *api_v1.Service) {
 	// Also create a fake NEG for this service since the sync code will try to link the backend service to NEG
-	negName, _ := l4c.namer.VMIPNEG(svc.Namespace, svc.Name)
+	negName, _ := l4c.namer.L4Backend(svc.Namespace, svc.Name)
 	neg := &composite.NetworkEndpointGroup{Name: negName}
 	key := meta.ZonalKey(negName, testGCEZone)
 	composite.CreateNetworkEndpointGroup(l4c.ctx.Cloud, key, neg)

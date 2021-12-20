@@ -69,7 +69,7 @@ func TestL4Namer(t *testing.T) {
 	newNamer := NewL4Namer(kubeSystemUID, nil)
 	for _, tc := range testCases {
 		frName := newNamer.L4ForwardingRule(tc.namespace, tc.name, strings.ToLower(tc.proto))
-		negName, ok := newNamer.VMIPNEG(tc.namespace, tc.name)
+		negName, ok := newNamer.L4Backend(tc.namespace, tc.name)
 		hcName, hcFwName := newNamer.L4HealthCheck(tc.namespace, tc.name, tc.sharedHC)
 		if !ok {
 			t.Errorf("Namer does not support VMIPNEG")

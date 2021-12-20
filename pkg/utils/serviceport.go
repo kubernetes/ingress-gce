@@ -51,6 +51,7 @@ type ServicePort struct {
 	TargetPort     intstr.IntOrString
 	NEGEnabled     bool
 	VMIPNEGEnabled bool
+	L4RBSEnabled   bool
 	L7ILBEnabled   bool
 	BackendConfig  *backendconfigv1.BackendConfig
 	BackendNamer   namer.BackendNamer
@@ -71,9 +72,10 @@ func (sp *ServicePort) GetDescription() Description {
 func (sp *ServicePort) BackendName() string {
 	if sp.NEGEnabled {
 		return sp.BackendNamer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.Port)
-	} else if sp.VMIPNEGEnabled {
-		negName, _ := sp.BackendNamer.VMIPNEG(sp.ID.Service.Namespace, sp.ID.Service.Name)
-		return negName
+	} else if sp.VMIPNEGEnabled || sp.L4RBSEnabled {
+		// Use L4 Backend name for both Internal and External LoadBalancers
+		backendName, _ := sp.BackendNamer.L4Backend(sp.ID.Service.Namespace, sp.ID.Service.Name)
+		return backendName
 	}
 	return sp.BackendNamer.IGBackend(sp.NodePort)
 }
