@@ -121,38 +121,115 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 					t.Fatalf("Failed to link backend service to NEG for svcPort %v: %v", svcPort, err)
 				}
 
-				beName := svcPort.BackendName()
-				scope := befeatures.ScopeFromServicePort(&svcPort)
-
-				key, err := composite.CreateKey(fakeGCE, beName, scope)
-				if err != nil {
-					t.Fatalf("Failed to create composite key - %v", err)
-				}
-				bs, err := composite.GetBackendService(fakeGCE, key, version)
-				if err != nil {
-					t.Fatalf("Failed to retrieve backend service using key %+v for svcPort %v: %v", key, svcPort, err)
-				}
-				if len(bs.Backends) != len(zones) {
-					t.Errorf("Expect %v backends in backend service %s, but got %v.key %+v %+v", len(zones), beName, len(bs.Backends), key, bs)
-				}
-
-				for _, be := range bs.Backends {
-					neg := "networkEndpointGroups"
-					if !strings.Contains(be.Group, neg) {
-						t.Errorf("Got backend link %q, want containing %q", be.Group, neg)
+				// validate function validates if the state is expected
+				validate := func() {
+					beName := svcPort.BackendName()
+					scope := befeatures.ScopeFromServicePort(&svcPort)
+					key, err := composite.CreateKey(fakeGCE, beName, scope)
+					if err != nil {
+						t.Fatalf("Failed to create composite key - %v", err)
 					}
-					if svcPort.VMIPNEGEnabled {
-						// Balancing mode should be connection, rate should be unset
-						if be.BalancingMode != string(Connections) || be.MaxRatePerEndpoint != 0 {
-							t.Errorf("Only 'Connection' balancing mode is supported with VM_IP NEGs, Got %q with max rate %v", be.BalancingMode, be.MaxRatePerEndpoint)
+					bs, err := composite.GetBackendService(fakeGCE, key, version)
+					if err != nil {
+						t.Fatalf("Failed to retrieve backend service using key %+v for svcPort %v: %v", key, svcPort, err)
+					}
+					if len(bs.Backends) != len(zones) {
+						t.Errorf("Expect %v backends in backend service %s, but got %v.key %+v %+v", len(zones), beName, len(bs.Backends), key, bs)
+					}
+
+					for _, be := range bs.Backends {
+						neg := "networkEndpointGroups"
+						if !strings.Contains(be.Group, neg) {
+							t.Errorf("Got backend link %q, want containing %q", be.Group, neg)
+						}
+						if svcPort.VMIPNEGEnabled {
+							// Balancing mode should be connection, rate should be unset
+							if be.BalancingMode != string(Connections) || be.MaxRatePerEndpoint != 0 {
+								t.Errorf("Only 'Connection' balancing mode is supported with VM_IP NEGs, Got %q with max rate %v", be.BalancingMode, be.MaxRatePerEndpoint)
+							}
 						}
 					}
 				}
+
+				validate()
+
+				// mimic cluster node shrinks to one of the zone
+				shrinkZone := []GroupKey{zones[0]}
+				if err := linker.Link(svcPort, shrinkZone); err != nil {
+					t.Fatalf("Failed to link backend service to NEG for svcPort %v: %v", svcPort, err)
+				}
+
+				validate()
 			}
 		})
 
 	}
 
+}
+
+func TestMergeBackends(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		old    []*composite.Backend
+		new    []*composite.Backend
+		expect []*composite.Backend
+	}{
+		{
+			name:   "empty",
+			expect: []*composite.Backend{},
+		},
+		{
+			name:   "empty old",
+			new:    []*composite.Backend{{Group: "a"}},
+			expect: []*composite.Backend{{Group: "a"}},
+		},
+		{
+			name:   "same",
+			old:    []*composite.Backend{{Group: "a"}},
+			new:    []*composite.Backend{{Group: "a"}},
+			expect: []*composite.Backend{{Group: "a"}},
+		},
+		{
+			name:   "same (multiple)",
+			old:    []*composite.Backend{{Group: "a"}, {Group: "b"}},
+			new:    []*composite.Backend{{Group: "b"}, {Group: "a"}},
+			expect: []*composite.Backend{{Group: "a"}, {Group: "b"}},
+		},
+		{
+			name:   "new has more backend than old",
+			old:    []*composite.Backend{{Group: "a"}},
+			new:    []*composite.Backend{{Group: "b"}, {Group: "a"}},
+			expect: []*composite.Backend{{Group: "a"}, {Group: "b"}},
+		},
+		{
+			name:   "old has more backend than new",
+			old:    []*composite.Backend{{Group: "a"}, {Group: "b"}},
+			new:    []*composite.Backend{{Group: "b"}},
+			expect: []*composite.Backend{{Group: "a"}, {Group: "b"}},
+		},
+		{
+			name:   "diff between old and new",
+			old:    []*composite.Backend{{Group: "a"}, {Group: "b"}, {Group: "c"}},
+			new:    []*composite.Backend{{Group: "b"}, {Group: "a"}, {Group: "d"}},
+			expect: []*composite.Backend{{Group: "a"}, {Group: "b"}, {Group: "c"}, {Group: "d"}},
+		},
+		{
+			name:   "update rate",
+			old:    []*composite.Backend{{Group: "a", MaxRatePerEndpoint: 1}},
+			new:    []*composite.Backend{{Group: "a", MaxRatePerEndpoint: 3}},
+			expect: []*composite.Backend{{Group: "a", MaxRatePerEndpoint: 3}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ret := mergeBackends(tc.old, tc.new)
+
+			diffBackend := diffBackends(tc.expect, ret)
+			if !diffBackend.isEqual() {
+				t.Errorf("Expect tc.expect == ret, howevever got, tc.expect = %v, ret = %v", tc.expect, ret)
+			}
+		})
+	}
 }
 
 func TestDiffBackends(t *testing.T) {
