@@ -321,32 +321,33 @@ func (l *L4) deleteForwardingRule(name string, version meta.Version) {
 
 // ensureExternalForwardingRule creates a forwarding rule with the given name for L4NetLB,
 // if it does not exist. It updates the existing forwarding rule if needed.
-func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string, existingFwdRule *composite.ForwardingRule) (*composite.ForwardingRule, error) {
+func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.ForwardingRule, error) {
 	// TODO(kl52752) extract common logic for ILB and NetLB and remove code duplicates
-	loadBalancerName := l4netlb.GetFRName()
-	key, err := l4netlb.createKey(loadBalancerName)
+	frName := l4netlb.GetFRName()
+	key, err := l4netlb.createKey(frName)
 	if err != nil {
 		return nil, err
 	}
 	// version used for creating the existing forwarding rule.
 	version := meta.VersionGA
+	existingFwdRule := l4netlb.GetForwardingRule(frName, version)
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
 	// TODO(kl52752) Add support for NetworkTier
 	ipToUse := l4lbIPToUse(l4netlb.Service, existingFwdRule, "")
-	klog.V(2).Infof("ensureExternalForwardingRule(%v): LoadBalancer IP %s", loadBalancerName, ipToUse)
+	klog.V(2).Infof("ensureExternalForwardingRule(%s): LoadBalancer IP %s", frName, ipToUse)
 
 	var addrMgr *addressManager
 	// If the network is not a legacy network, use the address manager
 	if !l4netlb.cloud.IsLegacyNetwork() {
 		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
-		addrMgr = newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region(), "", loadBalancerName, ipToUse, cloud.SchemeExternal)
+		addrMgr = newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region() /*subnetURL = */, "", frName, ipToUse, cloud.SchemeExternal)
 		ipToUse, err = addrMgr.HoldAddress()
 		if err != nil {
 			return nil, err
 		}
-		klog.V(2).Infof("ensureForwardingRule(%v): reserved IP %q for the forwarding rule", loadBalancerName, ipToUse)
+		klog.V(2).Infof("ensureForwardingRule(%v): reserved IP %q for the forwarding rule", frName, ipToUse)
 		defer func() {
 			// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
 			// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
@@ -361,11 +362,11 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string, existingFwdR
 	serviceKey := utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	frDesc, err := utils.MakeL4LBServiceDescription(serviceKey, ipToUse, version, false, utils.XLB)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", loadBalancerName,
+		return nil, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", frName,
 			err)
 	}
 	fr := &composite.ForwardingRule{
-		Name:                loadBalancerName,
+		Name:                frName,
 		Description:         frDesc,
 		IPAddress:           ipToUse,
 		IPProtocol:          protocol,

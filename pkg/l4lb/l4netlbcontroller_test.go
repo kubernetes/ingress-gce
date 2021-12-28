@@ -19,6 +19,7 @@ package l4lb
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"sort"
 	"strings"
@@ -31,6 +32,7 @@ import (
 	ga "google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -100,7 +102,7 @@ func checkForwardingRule(lc *L4NetLBController, svc *v1.Service, expectedPortRan
 	if len(svc.Spec.Ports) == 0 {
 		return fmt.Errorf("There are no ports in service!")
 	}
-	frName := lc.namer.L4ForwardingRule(svc.Namespace, svc.Name, strings.ToLower(string(svc.Spec.Ports[0].Protocol)))
+	frName := utils.LegacyForwardingRuleName(svc)
 	fwdRule, err := composite.GetForwardingRule(lc.ctx.Cloud, meta.RegionalKey(frName, lc.ctx.Cloud.Region()), meta.VersionGA)
 	if err != nil {
 		return fmt.Errorf("Error getting forwarding rule: %v", err)
@@ -252,6 +254,7 @@ func TestProcessMultipleNetLBServices(t *testing.T) {
 				nodePort := int32(30000 + port)
 				newSvc := test.NewL4NetLBService(port, nodePort)
 				newSvc.Name = newSvc.Name + fmt.Sprintf("-%d", port)
+				newSvc.UID = types.UID(newSvc.Name)
 				svcNames = append(svcNames, newSvc.Name)
 				addNetLBService(lc, newSvc)
 				lc.svcQueue.Enqueue(newSvc)
@@ -320,6 +323,7 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 		},
 	} {
 		svc := test.NewL4NetLBServiceMultiplePorts(tc.svcName, tc.ports)
+		svc.UID = types.UID(svc.Name + fmt.Sprintf("-%d", rand.Intn(1001)))
 		addNetLBService(lc, svc)
 		key, _ := common.KeyFunc(svc)
 		if err := lc.sync(key); err != nil {
@@ -585,7 +589,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 		{
 			Update: func(s *v1.Service) { s.Spec.LoadBalancerIP = loadBalancerIP },
 			CheckResult: func(lc *L4NetLBController, svc *v1.Service) error {
-				frName := lc.namer.L4ForwardingRule(svc.Namespace, svc.Name, strings.ToLower(string(svc.Spec.Ports[0].Protocol)))
+				frName := utils.LegacyForwardingRuleName(svc)
 				fwdRule, err := composite.GetForwardingRule(lc.ctx.Cloud, meta.RegionalKey(frName, lc.ctx.Cloud.Region()), meta.VersionGA)
 				if err != nil {
 					return fmt.Errorf("Error getting forwarding rule %v", err)
