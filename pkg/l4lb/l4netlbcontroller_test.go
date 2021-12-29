@@ -126,7 +126,7 @@ func createAndSyncNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
 	}
-	validateNelLBSvcStatus(svc, t)
+	validateNetLBSvcStatus(svc, t)
 	return
 }
 
@@ -219,7 +219,7 @@ func newL4NetLBServiceController() *L4NetLBController {
 	return NewL4NetLBController(ctx, stopCh)
 }
 
-func validateNelLBSvcStatus(svc *v1.Service, t *testing.T) {
+func validateNetLBSvcStatus(svc *v1.Service, t *testing.T) {
 	if len(svc.Status.LoadBalancer.Ingress) == 0 || svc.Status.LoadBalancer.Ingress[0].IP != FwIPAddress {
 		t.Fatalf("Invalid LoadBalancer status field in service - %+v", svc.Status.LoadBalancer)
 	}
@@ -276,7 +276,7 @@ func TestProcessMultipleNetLBServices(t *testing.T) {
 			// Perform a full validation of the service once it is ready.
 			for _, name := range svcNames {
 				svc, _ := lc.ctx.KubeClient.CoreV1().Services(testServiceNamespace).Get(context.TODO(), name, metav1.GetOptions{})
-				validateNelLBSvcStatus(svc, t)
+				validateNetLBSvcStatus(svc, t)
 				if err := checkBackendService(lc, svc.Spec.Ports[0].NodePort); err != nil {
 					t.Errorf("Check backend service err: %v", err)
 				}

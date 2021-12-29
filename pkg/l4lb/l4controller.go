@@ -70,8 +70,8 @@ type L4Controller struct {
 	sharedResourcesLock sync.Mutex
 }
 
-// NewController creates a new instance of the L4 ILB controller.
-func NewController(ctx *context.ControllerContext, stopCh chan struct{}) *L4Controller {
+// NewILBController creates a new instance of the L4 ILB controller.
+func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4Controller {
 	if ctx.NumL4Workers <= 0 {
 		klog.Infof("L4 Worker count has not been set, setting to 1")
 		ctx.NumL4Workers = 1
@@ -185,18 +185,18 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service, l4 *loadbalan
 
 // processServiceCreateOrUpdate ensures load balancer resources for the given service, as needed.
 // Returns an error if processing the service update failed.
-func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Service) *loadbalancers.L4LbSyncResult {
+func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Service) *loadbalancers.L4LBSyncResult {
 	l4 := loadbalancers.NewL4Handler(service, l4c.ctx.Cloud, meta.Regional, l4c.namer, l4c.ctx.Recorder(service.Namespace), &l4c.sharedResourcesLock)
 	if !l4c.shouldProcessService(service, l4) {
 		return nil
 	}
 	// Ensure v2 finalizer
 	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
-		return &loadbalancers.L4LbSyncResult{Error: fmt.Errorf("Failed to attach finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
+		return &loadbalancers.L4LBSyncResult{Error: fmt.Errorf("Failed to attach finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
 	}
 	nodeNames, err := utils.GetReadyNodeNames(l4c.nodeLister)
 	if err != nil {
-		return &loadbalancers.L4LbSyncResult{Error: err}
+		return &loadbalancers.L4LBSyncResult{Error: err}
 	}
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
@@ -238,7 +238,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 	return syncResult
 }
 
-func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *loadbalancers.L4LbSyncResult {
+func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *loadbalancers.L4LBSyncResult {
 	l4 := loadbalancers.NewL4Handler(svc, l4c.ctx.Cloud, meta.Regional, l4c.namer, l4c.ctx.Recorder(svc.Namespace), &l4c.sharedResourcesLock)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
 	result := l4.EnsureInternalLoadBalancerDeleted(svc)
@@ -299,7 +299,7 @@ func (l4c *L4Controller) sync(key string) error {
 		return nil
 	}
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}.String()
-	var result *loadbalancers.L4LbSyncResult
+	var result *loadbalancers.L4LBSyncResult
 	if l4c.needsDeletion(svc) {
 		klog.V(2).Infof("Deleting ILB resources for service %s managed by L4 controller", key)
 		result = l4c.processServiceDeletion(key, svc)
@@ -412,7 +412,7 @@ func (l4c *L4Controller) needsUpdate(oldService *v1.Service, newService *v1.Serv
 }
 
 // publishMetrics this function sets controller metrics for ILB services and pushed ILB metrics based on sync type.
-func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4LbSyncResult, namespacedName string) {
+func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4LBSyncResult, namespacedName string) {
 	//TODO(kl752752) refactor this function so we can use it by ILB and XLB
 	if result == nil {
 		return

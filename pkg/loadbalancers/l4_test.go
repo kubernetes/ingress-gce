@@ -570,11 +570,11 @@ func TestEnsureInternalLoadBalancerDeletedWithSharedHC(t *testing.T) {
 	}
 }
 
-func ensureService(fakeGCE *gce.Cloud, namer *namer_util.L4Namer, nodeNames []string, zoneName string, port int, t *testing.T) (*v1.Service, *L4, *L4LbSyncResult) {
+func ensureService(fakeGCE *gce.Cloud, namer *namer_util.L4Namer, nodeNames []string, zoneName string, port int, t *testing.T) (*v1.Service, *L4, *L4LBSyncResult) {
 	svc := test.NewL4ILBService(false, 8080)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
 	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, zoneName); err != nil {
-		return nil, nil, &L4LbSyncResult{Error: fmt.Errorf("Unexpected error when adding nodes %v", err)}
+		return nil, nil, &L4LBSyncResult{Error: fmt.Errorf("Unexpected error when adding nodes %v", err)}
 	}
 	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
 	if result.Error != nil {
