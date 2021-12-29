@@ -974,16 +974,16 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	c.MockFirewalls.InsertHook = nil
 	c.MockFirewalls.UpdateHook = nil
 
-	sourceRange := []string{"10.0.0.0/20"}
-	firewalls.EnsureL4FirewallRule(
-		l.cloud,
-		fwName,
-		"1.2.3.4",
-		utils.ServiceKeyFunc(svc.Namespace, svc.Name),
-		sourceRange,
-		utils.GetPortRanges(tc.Input),
-		nodeNames,
-		string(v1.ProtocolTCP), false, utils.ILB)
+	fwrParams := firewalls.FirewallParams{
+		Name:         fwName,
+		SourceRanges: []string{"10.0.0.0/20"},
+		PortRanges:   utils.GetPortRanges(tc.Input),
+		NodeNames:    nodeNames,
+		Protocol:     string(v1.ProtocolTCP),
+		L4Type:       utils.ILB,
+		IP:           "1.2.3.4",
+	}
+	firewalls.EnsureL4FirewallRule(l.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false)
 	if err != nil {
 		t.Errorf("Unexpected error %v when ensuring firewall rule %s for svc %+v", err, fwName, svc)
 	}

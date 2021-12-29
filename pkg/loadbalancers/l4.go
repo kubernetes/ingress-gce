@@ -233,26 +233,17 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 		result.Error = err
 		return result
 	}
-	hcSourceRanges := gce.L4LoadBalancerSrcRanges()
-	ensureFunc := func(name, IP string, sourceRanges, portRanges []string, proto string, shared bool) error {
-		if shared {
-			l.sharedResourcesLock.Lock()
-			defer l.sharedResourcesLock.Unlock()
-		}
-		nsName := utils.ServiceKeyFunc(l.Service.Namespace, l.Service.Name)
-		err := firewalls.EnsureL4FirewallRule(l.cloud, name, IP, nsName, sourceRanges, portRanges, nodeNames, proto, shared, utils.ILB)
-		if err != nil {
-			if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
-				l.recorder.Eventf(l.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
-				return nil
-			}
-			return err
-		}
-		return nil
-	}
 	// Add firewall rule for ILB traffic to nodes
-	err = ensureFunc(name, "", sourceRanges.StringSlice(), portRanges, string(protocol), false)
-	if err != nil {
+	nodesFWRParams := firewalls.FirewallParams{
+		PortRanges:   portRanges,
+		SourceRanges: sourceRanges.StringSlice(),
+		Protocol:     string(protocol),
+		Name:         name,
+		NodeNames:    nodeNames,
+		L4Type:       utils.ILB,
+	}
+
+	if err := firewalls.EnsureL4LBFirewallForNodes(l.Service, &nodesFWRParams, l.cloud, l.recorder); err != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 		return result
@@ -260,7 +251,15 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	result.Annotations[annotations.FirewallRuleKey] = name
 
 	// Add firewall rule for healthchecks to nodes
-	err = ensureFunc(hcFwName, "", hcSourceRanges, []string{strconv.Itoa(int(hcPort))}, string(corev1.ProtocolTCP), sharedHC)
+	hcFWRParams := firewalls.FirewallParams{
+		PortRanges:   []string{strconv.Itoa(int(hcPort))},
+		SourceRanges: gce.L4LoadBalancerSrcRanges(),
+		Protocol:     string(corev1.ProtocolTCP),
+		Name:         hcFwName,
+		NodeNames:    nodeNames,
+		L4Type:       utils.ILB,
+	}
+	err = firewalls.EnsureL4LBFirewallForHc(l.Service, sharedHC, &hcFWRParams, l.cloud, l.sharedResourcesLock, l.recorder)
 	if err != nil {
 		result.GCEResourceInError = annotations.FirewallForHealthcheckResource
 		result.Error = err
