@@ -105,6 +105,8 @@ var (
 		EnableIngressGAFields          bool
 		EnableTrafficScaling           bool
 		EnableEndpointSlices           bool
+		EnableMultipleIgs              bool
+		MaxIgSize                      int
 	}{
 		GCERateLimitScale: 1.0,
 	}
@@ -245,6 +247,8 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.StringVar(&F.GKEClusterType, "gke-cluster-type", "ZONAL", "The cluster type of the GKE cluster this Ingress Controller will be interacting with")
 	flag.BoolVar(&F.EnableTrafficScaling, "enable-traffic-scaling", false, "Enable support for Service {max-rate-per-endpoint, capacity-scaler}")
 	flag.BoolVar(&F.EnableEndpointSlices, "enable-endpoint-slices", false, "Enable using Endpoint Slices API instead of Endpoints API")
+	flag.BoolVar(&F.EnableMultipleIgs, "enable-multiple-igs", false, "Enable using unmanaged instance group management")
+	flag.IntVar(&F.MaxIgSize, "max-ig-size", 1000, "Max number of instances in Instance Group")
 }
 
 type RateLimitSpecs struct {
