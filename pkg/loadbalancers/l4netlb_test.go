@@ -34,17 +34,13 @@ import (
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
-const (
-	defaultNodePort = 30234
-)
-
 func TestEnsureL4NetLoadBalancer(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
 	vals := gce.DefaultTestClusterValues()
 	fakeGCE := getFakeGCECloud(vals)
 
-	svc := test.NewL4NetLBService(8080, defaultNodePort)
+	svc := test.NewL4NetLBService(8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw"))
 
 	l4netlb := NewL4NetLB(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
@@ -91,7 +87,7 @@ func TestDeleteL4NetLoadBalancer(t *testing.T) {
 	vals := gce.DefaultTestClusterValues()
 	fakeGCE := getFakeGCECloud(vals)
 
-	svc := test.NewL4NetLBService(8080, defaultNodePort)
+	svc := test.NewL4NetLBService(8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw"))
 
 	l4NetLB := NewL4NetLB(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
@@ -136,7 +132,7 @@ func TestDeleteL4NetLoadBalancerWithSharedHC(t *testing.T) {
 }
 
 func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud, t *testing.T) (*v1.Service, *L4NetLB) {
-	svc := test.NewL4NetLBService(port, defaultNodePort)
+	svc := test.NewL4NetLBService(port)
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw"))
 	emptyNodes := []string{}
 	l4NetLB := NewL4NetLB(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})

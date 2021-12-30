@@ -80,10 +80,10 @@ func getILBOptions(svc *corev1.Service) gce.ILBOptions {
 func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4LBSyncResult {
 	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): attempting delete of load balancer resources", l.NamespacedName.String())
 	result := &L4LBSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
-	// All resources use the NEG Name, except forwarding rule.
-	name, ok := l.namer.VMIPNEG(svc.Namespace, svc.Name)
+	// All resources use the L4Backend Name, except forwarding rule.
+	name, ok := l.namer.L4Backend(svc.Namespace, svc.Name)
 	if !ok {
-		result.Error = fmt.Errorf("Namer does not support L4 VMIPNEGs")
+		result.Error = fmt.Errorf("Namer does not support L4 Backends")
 		return result
 	}
 	frName := l.GetFRName()
@@ -198,8 +198,8 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	}
 
 	l.Service = svc
-	// Use the same resource name for NEG, BackendService as well as FR, FWRule.
-	name, ok := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
+	// All resources use the L4Backend name, except forwarding rule.
+	name, ok := l.namer.L4Backend(l.Service.Namespace, l.Service.Name)
 	if !ok {
 		result.Error = fmt.Errorf("Namer does not support L4 VMIPNEGs")
 		return result

@@ -69,6 +69,7 @@ func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, n
 		ID:           portId,
 		BackendNamer: l4netlb.namer,
 		NodePort:     int64(service.Spec.Ports[0].NodePort),
+		L4RBSEnabled: true,
 	}
 	return l4netlb
 }

@@ -57,9 +57,10 @@ type BackendNamer interface {
 	// NEG returns the gce neg name based on the service namespace, name
 	// and target port.
 	NEG(namespace, name string, Port int32) string
-	// VMIPNEG returns the gce neg name based on the service namespace and name.
-	// The second output parameter indicates if the namer supports VM_IP_NEGs.
-	VMIPNEG(namespace, name string) (string, bool)
+	// L4Backend returns the name for L4 LB backend resources, based on the service namespace and name.
+	// It supports ILB with subsetting enabled (VM_IP_NEGs) and NetLB with RBS enabled.
+	// The second output parameter indicates if the namer is supported.
+	L4Backend(namespace, name string) (string, bool)
 	// InstanceGroup constructs the name for an Instance Group.
 	InstanceGroup() string
 	// NamedPort returns the name for a named port.

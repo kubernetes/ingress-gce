@@ -53,7 +53,6 @@ const (
 	loadBalancerIP       = "10.0.0.10"
 	usersIP              = "35.10.211.60"
 	testServiceNamespace = "default"
-	defaultNodePort      = int32(30234)
 	hcNodePort           = int32(10111)
 	userAddrName         = "UserStaticAddress"
 )
@@ -115,7 +114,7 @@ func checkForwardingRule(lc *L4NetLBController, svc *v1.Service, expectedPortRan
 
 func createAndSyncNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController) {
 	lc = newL4NetLBServiceController()
-	svc = test.NewL4NetLBService(8080, defaultNodePort)
+	svc = test.NewL4NetLBService(8080)
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
 	err := lc.sync(key)
@@ -130,9 +129,9 @@ func createAndSyncNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController
 	return
 }
 
-func checkBackendService(lc *L4NetLBController, nodePort int32) error {
+func checkBackendService(lc *L4NetLBController, svc *v1.Service) error {
 
-	backendServiceLink, bs, err := getBackend(lc, nodePort)
+	backendServiceLink, bs, err := getBackend(lc, svc)
 	if err != nil {
 		return fmt.Errorf("Failed to fetch backend service, err %v", err)
 	}
@@ -176,8 +175,8 @@ func updateRegionBackendServiceWithLockHook(ctx context.Context, key *meta.Key, 
 	return nil
 }
 
-func getBackend(l4netController *L4NetLBController, nodePort int32) (string, *composite.BackendService, error) {
-	backendServiceName := l4netController.namer.IGBackend(int64(nodePort))
+func getBackend(l4netController *L4NetLBController, svc *v1.Service) (string, *composite.BackendService, error) {
+	backendServiceName, _ := l4netController.namer.L4Backend(svc.Namespace, svc.Name)
 	key := meta.RegionalKey(backendServiceName, l4netController.ctx.Cloud.Region())
 	backendServiceLink := cloud.SelfLink(meta.VersionGA, l4netController.ctx.Cloud.ProjectID(), "backendServices", key)
 	bs, err := composite.GetBackendService(l4netController.ctx.Cloud, key, meta.VersionGA)
@@ -251,8 +250,7 @@ func TestProcessMultipleNetLBServices(t *testing.T) {
 			go lc.Run()
 			var svcNames []string
 			for port := 8000; port < 8020; port++ {
-				nodePort := int32(30000 + port)
-				newSvc := test.NewL4NetLBService(port, nodePort)
+				newSvc := test.NewL4NetLBService(port)
 				newSvc.Name = newSvc.Name + fmt.Sprintf("-%d", port)
 				newSvc.UID = types.UID(newSvc.Name)
 				svcNames = append(svcNames, newSvc.Name)
@@ -277,7 +275,7 @@ func TestProcessMultipleNetLBServices(t *testing.T) {
 			for _, name := range svcNames {
 				svc, _ := lc.ctx.KubeClient.CoreV1().Services(testServiceNamespace).Get(context.TODO(), name, metav1.GetOptions{})
 				validateNetLBSvcStatus(svc, t)
-				if err := checkBackendService(lc, svc.Spec.Ports[0].NodePort); err != nil {
+				if err := checkBackendService(lc, svc); err != nil {
 					t.Errorf("Check backend service err: %v", err)
 				}
 				if err := validateAnnotations(svc); err != nil {
@@ -338,7 +336,7 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 			t.Errorf("Waiting for valid IP for service %q. Got Status - %+v", tc.svcName, newSvc.Status)
 		}
 
-		if err := checkBackendService(lc, svc.Spec.Ports[0].NodePort); err != nil {
+		if err := checkBackendService(lc, svc); err != nil {
 			t.Errorf("Check backend service err: %v", err)
 		}
 		if err := checkForwardingRule(lc, newSvc, tc.expectedPortRange); err != nil {
@@ -350,7 +348,7 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 
 func TestProcessServiceCreate(t *testing.T) {
 	svc, lc := createAndSyncNetLBSvc(t)
-	if err := checkBackendService(lc, defaultNodePort); err != nil {
+	if err := checkBackendService(lc, svc); err != nil {
 		t.Errorf("UnexpectedError %v", err)
 	}
 	if err := validateAnnotations(svc); err != nil {
@@ -363,7 +361,7 @@ func TestProcessServiceCreateWithUsersProvidedIP(t *testing.T) {
 	lc := newL4NetLBServiceController()
 
 	lc.ctx.Cloud.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = test.InsertAddressErrorHook
-	svc := test.NewL4NetLBService(8080, defaultNodePort)
+	svc := test.NewL4NetLBService(8080)
 	svc.Spec.LoadBalancerIP = usersIP
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
@@ -487,7 +485,7 @@ func TestProcessServiceCreationFailed(t *testing.T) {
 	} {
 		lc := newL4NetLBServiceController()
 		param.addMockFunc((lc.ctx.Cloud.Compute().(*cloud.MockGCE)))
-		svc := test.NewL4NetLBService(8080, defaultNodePort)
+		svc := test.NewL4NetLBService(8080)
 		addNetLBService(lc, svc)
 		key, _ := common.KeyFunc(svc)
 		err := lc.sync(key)
@@ -538,7 +536,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 		{
 			Update: func(s *v1.Service) { s.Spec.SessionAffinity = v1.ServiceAffinityNone },
 			CheckResult: func(l4netController *L4NetLBController, svc *v1.Service) error {
-				_, bs, err := getBackend(l4netController, defaultNodePort)
+				_, bs, err := getBackend(l4netController, svc)
 				if err != nil {
 					return fmt.Errorf("Failed to fetch backend service: %v", err)
 				}
@@ -554,7 +552,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 				if len(svc.Spec.Ports) == 0 {
 					return fmt.Errorf("No Ports in service")
 				}
-				name := (l4netController.namer.(namer.BackendNamer)).IGBackend(int64(svc.Spec.Ports[0].NodePort))
+				name, _ := (l4netController.namer.(namer.BackendNamer)).L4Backend(svc.Namespace, svc.Name)
 				fw, err := l4netController.ctx.Cloud.GetFirewall(name)
 				if err != nil {
 					return fmt.Errorf("Failed to fetch firewall service: %v", err)
