@@ -226,7 +226,8 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	// If the network is not a legacy network, use the address manager
 	if !l.cloud.IsLegacyNetwork() {
 		nm := types.NamespacedName{Namespace: l.Service.Namespace, Name: l.Service.Name}.String()
-		addrMgr = newAddressManager(l.cloud, nm, l.cloud.Region(), subnetworkURL, loadBalancerName, ipToUse, cloud.SchemeInternal)
+		// ILB can be created only in Premium Tier
+		addrMgr = newAddressManager(l.cloud, nm, l.cloud.Region(), subnetworkURL, loadBalancerName, ipToUse, cloud.SchemeInternal, cloud.NetworkTierPremium)
 		ipToUse, err = addrMgr.HoldAddress()
 		if err != nil {
 			return nil, err
@@ -258,6 +259,7 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 		LoadBalancingScheme: string(cloud.SchemeInternal),
 		Subnetwork:          subnetworkURL,
 		Network:             l.cloud.NetworkURL(),
+		NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
 		Version:             version,
 		BackendService:      bsLink,
 		AllowGlobalAccess:   options.AllowGlobalAccess,
@@ -334,15 +336,25 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
-	// TODO(kl52752) Add support for NetworkTier
 	ipToUse := l4lbIPToUse(l4netlb.Service, existingFwdRule, "")
 	klog.V(2).Infof("ensureExternalForwardingRule(%s): LoadBalancer IP %s", frName, ipToUse)
 
-	var addrMgr *addressManager
+	netTier, isFromAnnotation := utils.GetNetworkTier(l4netlb.Service)
+
 	// If the network is not a legacy network, use the address manager
 	if !l4netlb.cloud.IsLegacyNetwork() {
 		nm := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}.String()
-		addrMgr = newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region() /*subnetURL = */, "", frName, ipToUse, cloud.SchemeExternal)
+		addrMgr := newAddressManager(l4netlb.cloud, nm, l4netlb.cloud.Region() /*subnetURL = */, "", frName, ipToUse, cloud.SchemeExternal, netTier)
+
+		// If network tier annotation in Service Spec is present
+		// check if it match network tiers from forwarding rule and external ip Address.
+		// If they do not match, tear down the existing resources with the wrong tier.
+		if isFromAnnotation {
+			if err := l4netlb.tearDownResourcesWithWrongNetworkTier(existingFwdRule, netTier, addrMgr); err != nil {
+				return nil, err
+			}
+		}
+
 		ipToUse, err = addrMgr.HoldAddress()
 		if err != nil {
 			return nil, err
@@ -373,6 +385,7 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.
 		PortRange:           portRange,
 		LoadBalancingScheme: string(cloud.SchemeExternal),
 		BackendService:      bsLink,
+		NetworkTier:         netTier.ToGCEValue(),
 	}
 
 	if existingFwdRule != nil {
@@ -399,6 +412,14 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.
 		return nil, err
 	}
 	return composite.GetForwardingRule(l4netlb.cloud, key, fr.Version)
+}
+
+// tearDownResourcesWithWrongNetworkTier removes forwarding rule or IP address if its Network Tier differs from desired.
+func (l4netlb *L4NetLB) tearDownResourcesWithWrongNetworkTier(existingFwdRule *composite.ForwardingRule, svcNetTier cloud.NetworkTier, am *addressManager) error {
+	if existingFwdRule != nil && existingFwdRule.NetworkTier != svcNetTier.ToGCEValue() {
+		l4netlb.deleteForwardingRule(existingFwdRule.Name, meta.VersionGA)
+	}
+	return am.TearDownAddressIPIfNetworkTierMismatch()
 }
 
 func (l4netlb *L4NetLB) GetForwardingRule(name string, version meta.Version) *composite.ForwardingRule {
@@ -442,7 +463,8 @@ func Equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 		id1.Equal(id2) &&
 		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
 		fr1.AllPorts == fr2.AllPorts &&
-		fr1.Subnetwork == fr2.Subnetwork, nil
+		fr1.Subnetwork == fr2.Subnetwork &&
+		fr1.NetworkTier == fr2.NetworkTier, nil
 }
 
 // l4lbIPToUse determines which IP address needs to be used in the ForwardingRule. If an IP has been

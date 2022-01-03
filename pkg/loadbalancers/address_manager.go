@@ -18,9 +18,10 @@ package loadbalancers
 
 import (
 	"fmt"
+	"net/http"
+
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/legacy-cloud-providers/gce"
-	"net/http"
 
 	compute "google.golang.org/api/compute/v1"
 
@@ -39,9 +40,10 @@ type addressManager struct {
 	region      string
 	subnetURL   string
 	tryRelease  bool
+	networkTier cloud.NetworkTier
 }
 
-func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme) *addressManager {
+func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetURL, name, targetIP string, addressType cloud.LbScheme, networkTier cloud.NetworkTier) *addressManager {
 	return &addressManager{
 		svc:         svc,
 		logPrefix:   fmt.Sprintf("AddressManager(%q)", name),
@@ -52,6 +54,7 @@ func newAddressManager(svc gce.CloudAddressService, serviceName, region, subnetU
 		addressType: addressType,
 		tryRelease:  true,
 		subnetURL:   subnetURL,
+		networkTier: networkTier,
 	}
 }
 
@@ -129,6 +132,10 @@ func (am *addressManager) ensureAddressReservation() (string, error) {
 		AddressType: string(am.addressType),
 		Subnetwork:  am.subnetURL,
 	}
+	// NetworkTier is supported only for External IP Address
+	if am.addressType == cloud.SchemeExternal {
+		newAddr.NetworkTier = am.networkTier.ToGCEValue()
+	}
 
 	reserveErr := am.svc.ReserveRegionAddress(newAddr, am.region)
 	if reserveErr == nil {
@@ -192,7 +199,9 @@ func (am *addressManager) validateAddress(addr *compute.Address) error {
 	if addr.AddressType != string(am.addressType) {
 		return fmt.Errorf("address %q does not have the expected address type %q, actual: %q", addr.Name, am.addressType, addr.AddressType)
 	}
-
+	if addr.NetworkTier != am.networkTier.ToGCEValue() {
+		return fmt.Errorf("address %q does not have the expected network tier %q, actual: %q", addr.Name, am.networkTier.ToGCEValue(), addr.NetworkTier)
+	}
 	return nil
 }
 
@@ -202,4 +211,26 @@ func (am *addressManager) isManagedAddress(addr *compute.Address) bool {
 
 func ensureAddressDeleted(svc gce.CloudAddressService, name, region string) error {
 	return utils.IgnoreHTTPNotFound(svc.DeleteRegionAddress(name, region))
+}
+
+// TearDownAddressIPIfNetworkTierMismatch this function tear down controller managed address IP if it has a wrong Network Tier
+func (am *addressManager) TearDownAddressIPIfNetworkTierMismatch() error {
+	if am.targetIP == "" {
+		return nil
+	}
+	addr, err := am.svc.GetRegionAddressByIP(am.region, am.targetIP)
+	if utils.IsNotFoundError(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if addr != nil && addr.NetworkTier != am.networkTier.ToGCEValue() {
+		if !am.isManagedAddress(addr) {
+			return fmt.Errorf("User specific address IP (%v) network tier mismatch %v != %v ", am.targetIP, addr.NetworkTier, am.networkTier)
+		}
+		klog.V(3).Infof("Deleting IP address %v because has wrong network tier", am.targetIP)
+		am.svc.DeleteRegionAddress(addr.Name, am.targetIP)
+	}
+	return nil
 }
