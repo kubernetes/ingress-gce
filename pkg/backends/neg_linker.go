@@ -98,8 +98,10 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		klog.V(2).Infof("No changes in backends for service port %s", sp.ID)
 		return nil
 	}
-	klog.V(2).Infof("Backends changed for service port %s, removing: %s, adding: %s, changed: %s", sp.ID, diff.toRemove(), diff.toAdd(), diff.changed)
-	backendService.Backends = newBackends
+	// merge backends
+	mergedBackend := mergeBackends(backendService.Backends, newBackends)
+	klog.V(2).Infof("Backends changed for service port %s, existing : %s, adding: %s, changed: %s", sp.ID, diff.old, diff.toAdd(), diff.changed)
+	backendService.Backends = mergedBackend
 
 	return composite.UpdateBackendService(l.cloud, key, backendService)
 }
@@ -108,6 +110,27 @@ type backendDiff struct {
 	old     sets.String
 	new     sets.String
 	changed sets.String
+}
+
+// mergeBackends merges the both input list of backends into one
+func mergeBackends(old, new []*composite.Backend) []*composite.Backend {
+	backendMap := map[string]*composite.Backend{}
+	for _, be := range new {
+		backendMap[be.Group] = be
+	}
+
+	for _, be := range old {
+		if _, ok := backendMap[be.Group]; !ok {
+			backendMap[be.Group] = be
+		}
+	}
+
+	ret := []*composite.Backend{}
+
+	for _, be := range backendMap {
+		ret = append(ret, be)
+	}
+	return ret
 }
 
 func diffBackends(old, new []*composite.Backend) *backendDiff {
