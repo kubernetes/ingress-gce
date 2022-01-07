@@ -95,5 +95,5 @@ func GetLegacyForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockFo
 }
 
 func InsertAddressErrorHook(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses) (bool, error) {
-	return true, fmt.Errorf("InsertAddressError")
+	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "Cannot reserve region address, the resource already exist"}
 }

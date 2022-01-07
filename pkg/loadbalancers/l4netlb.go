@@ -96,7 +96,6 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 
 	l4netlb.Service = svc
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
-
 	ensureHCFunc := func() (string, string, int32, string, error) {
 		if sharedHC {
 			// Take the lock when creating the shared healthcheck

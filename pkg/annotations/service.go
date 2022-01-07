@@ -61,6 +61,10 @@ const (
 
 	// BackendConfigKey is GA version of backend config key.
 	BackendConfigKey = "cloud.google.com/backend-config"
+	// NetworkTierAnnotationKey is annotated on a Service object to indicate which
+	// network tier a GCP LB should use.
+	// The valid values are "Standard" and "Premium" (default, if unspecified).
+	NetworkTierAnnotationKey = "cloud.google.com/network-tier"
 
 	// ProtocolHTTP protocol for a service
 	ProtocolHTTP AppProtocol = "HTTP"
