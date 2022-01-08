@@ -169,64 +169,91 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 
 func TestMergeBackends(t *testing.T) {
 	t.Parallel()
+
+	negUrl11 := "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-c/networkEndpointGroups/k8s1-325ba033-kube-system-default-http-backend-80-4520b6d9"
+	negUrl12 := "https://www.googleapis.com/compute/beta/projects/test-project/zones/us-central1-c/networkEndpointGroups/k8s1-325ba033-kube-system-default-http-backend-80-4520b6d9"
+	negUrl2 := "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-c/networkEndpointGroups/neg2"
+	negUrl3 := "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-c/networkEndpointGroups/neg3"
+	negUrl4 := "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-c/networkEndpointGroups/neg4"
+
 	for _, tc := range []struct {
-		name   string
-		old    []*composite.Backend
-		new    []*composite.Backend
-		expect []*composite.Backend
+		name        string
+		old         []*composite.Backend
+		new         []*composite.Backend
+		expect      []*composite.Backend
+		expectError bool
 	}{
 		{
 			name:   "empty",
 			expect: []*composite.Backend{},
 		},
 		{
-			name:   "empty old",
-			new:    []*composite.Backend{{Group: "a"}},
-			expect: []*composite.Backend{{Group: "a"}},
+			name:        "mal formed NEG url in old",
+			old:         []*composite.Backend{{Group: "malformed"}},
+			expectError: true,
+		},
+		{
+			name:        "mal formed NEG url in new",
+			old:         []*composite.Backend{{Group: negUrl11}},
+			new:         []*composite.Backend{{Group: "malformed"}},
+			expectError: true,
 		},
 		{
 			name:   "same",
-			old:    []*composite.Backend{{Group: "a"}},
-			new:    []*composite.Backend{{Group: "a"}},
-			expect: []*composite.Backend{{Group: "a"}},
+			old:    []*composite.Backend{{Group: negUrl12}},
+			new:    []*composite.Backend{{Group: negUrl12}},
+			expect: []*composite.Backend{{Group: negUrl12}},
 		},
 		{
 			name:   "same (multiple)",
-			old:    []*composite.Backend{{Group: "a"}, {Group: "b"}},
-			new:    []*composite.Backend{{Group: "b"}, {Group: "a"}},
-			expect: []*composite.Backend{{Group: "a"}, {Group: "b"}},
+			old:    []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}},
+			new:    []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}},
+			expect: []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}},
 		},
 		{
 			name:   "new has more backend than old",
-			old:    []*composite.Backend{{Group: "a"}},
-			new:    []*composite.Backend{{Group: "b"}, {Group: "a"}},
-			expect: []*composite.Backend{{Group: "a"}, {Group: "b"}},
+			old:    []*composite.Backend{{Group: negUrl2}},
+			new:    []*composite.Backend{{Group: negUrl3}, {Group: negUrl2}},
+			expect: []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}},
 		},
 		{
 			name:   "old has more backend than new",
-			old:    []*composite.Backend{{Group: "a"}, {Group: "b"}},
-			new:    []*composite.Backend{{Group: "b"}},
-			expect: []*composite.Backend{{Group: "a"}, {Group: "b"}},
+			old:    []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}},
+			new:    []*composite.Backend{{Group: negUrl2}},
+			expect: []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}},
 		},
 		{
 			name:   "diff between old and new",
-			old:    []*composite.Backend{{Group: "a"}, {Group: "b"}, {Group: "c"}},
-			new:    []*composite.Backend{{Group: "b"}, {Group: "a"}, {Group: "d"}},
-			expect: []*composite.Backend{{Group: "a"}, {Group: "b"}, {Group: "c"}, {Group: "d"}},
+			old:    []*composite.Backend{{Group: negUrl12}, {Group: negUrl2}, {Group: negUrl3}},
+			new:    []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}, {Group: negUrl4}},
+			expect: []*composite.Backend{{Group: negUrl12}, {Group: negUrl2}, {Group: negUrl3}, {Group: negUrl4}},
 		},
 		{
 			name:   "update rate",
-			old:    []*composite.Backend{{Group: "a", MaxRatePerEndpoint: 1}},
-			new:    []*composite.Backend{{Group: "a", MaxRatePerEndpoint: 3}},
-			expect: []*composite.Backend{{Group: "a", MaxRatePerEndpoint: 3}},
+			old:    []*composite.Backend{{Group: negUrl2, MaxRatePerEndpoint: 1}},
+			new:    []*composite.Backend{{Group: negUrl2, MaxRatePerEndpoint: 3}},
+			expect: []*composite.Backend{{Group: negUrl2, MaxRatePerEndpoint: 3}},
+		},
+		{
+			name:   "beta url and v1 url ",
+			old:    []*composite.Backend{{Group: negUrl11, MaxRatePerEndpoint: 1}},
+			new:    []*composite.Backend{{Group: negUrl12, MaxRatePerEndpoint: 1}},
+			expect: []*composite.Backend{{Group: negUrl12, MaxRatePerEndpoint: 1}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			ret := mergeBackends(tc.old, tc.new)
+			ret, err := mergeBackends(tc.old, tc.new)
+			if tc.expectError && err == nil {
+				t.Errorf("Expect err != nil, however got err == nil")
+			} else if !tc.expectError && err != nil {
+				t.Errorf("Exptect err == nil, however got %v", err)
+			}
 
-			diffBackend := diffBackends(tc.expect, ret)
-			if !diffBackend.isEqual() {
-				t.Errorf("Expect tc.expect == ret, howevever got, tc.expect = %v, ret = %v", tc.expect, ret)
+			if !tc.expectError {
+				diffBackend := diffBackends(tc.expect, ret)
+				if !diffBackend.isEqual() {
+					t.Errorf("Expect tc.expect == ret, howevever got, tc.expect = %v, ret = %v", tc.expect, ret)
+				}
 			}
 		})
 	}
