@@ -94,12 +94,6 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	}
 
 	newBackends := backendsForNEGs(negSelfLinks, &sp)
-	diff := diffBackends(backendService.Backends, newBackends)
-	if diff.isEqual() {
-		klog.V(2).Infof("No changes in backends for service port %s", sp.ID)
-		return nil
-	}
-	klog.V(2).Infof("Backends changed for service port %s, existing : %s, adding: %s, changed: %s", sp.ID, diff.old, diff.toAdd(), diff.changed)
 	// merge backends
 	mergedBackend, err := mergeBackends(backendService.Backends, newBackends)
 	if err != nil {
@@ -107,6 +101,14 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 		klog.Infof("Fall back to ensure backend service with newBackends.")
 		mergedBackend = newBackends
 	}
+
+	diff := diffBackends(backendService.Backends, mergedBackend)
+	if diff.isEqual() {
+		klog.V(2).Infof("No changes in backends for service port %s", sp.ID)
+		return nil
+	}
+	klog.V(2).Infof("Backends changed for service port %s, removing: %s, adding: %s, changed: %s", sp.ID, diff.toRemove(), diff.toAdd(), diff.changed)
+
 	backendService.Backends = mergedBackend
 	return composite.UpdateBackendService(l.cloud, key, backendService)
 }
