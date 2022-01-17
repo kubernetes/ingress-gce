@@ -208,15 +208,23 @@ func NewControllerContext(
 		context.UseEndpointSlices,
 		context.KubeClient,
 	)
-	context.InstancePool = instances.NewNodePool(&instances.NodePoolConfig{
-		Cloud:      context.Cloud,
-		Namer:      context.ClusterNamer,
-		Recorders:  context,
-		BasePath:   utils.GetBasePath(context.Cloud),
-		ZoneLister: context.Translator,
-		MaxIGSize:  config.MaxIGSize,
-	})
 
+	if flags.F.EnableMultipleIGs {
+		context.InstancePool = instances.NewMultiIGInstances(context.Cloud,
+			context.ClusterNamer,
+			context,
+			utils.GetBasePath(context.Cloud),
+			context.Translator,
+		)
+	} else {
+		context.InstancePool = instances.NewNodePool(&instances.NodePoolConfig{
+			Cloud:      context.Cloud,
+			Namer:      context.ClusterNamer,
+			Recorders:  context,
+			BasePath:   utils.GetBasePath(context.Cloud),
+			ZoneLister: context.Translator,
+		})
+	}
 	return context
 }
 

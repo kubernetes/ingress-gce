@@ -481,6 +481,8 @@ func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames
 	// TODO(kl52752) Move instance creation and deletion logic to NodeController
 	// to avoid race condition between controllers
 	nodePorts := utils.GetNodePorts(service.Spec.Ports)
+	// TODO(cezarygerard) ignore named ports in the L4, they are not needed
+	// TODO(cezarygerard) return instance groups from this function to be used for IG Linker
 	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
 	if err != nil {
 		return err
@@ -505,6 +507,10 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error reseting L4 External LoadBalancer status to empty, err: %v", err)
 		result.Error = fmt.Errorf("Failed to reset L4 External LoadBalancer status, err: %w", err)
+		return result
+	}
+	if err := lc.deleteIG(svc); err != nil {
+		result.Error = fmt.Errorf("Failed to remove L4 External LoadBalancer Instance Group, err: %w", err)
 		return result
 	}
 
@@ -562,4 +568,13 @@ func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyn
 		return
 	}
 	metrics.PublishL4NetLBSyncError(result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+}
+
+func (lc *L4NetLBController) deleteIG(svc *v1.Service) error {
+	if err := lc.instancePool.DeleteInstanceGroup(lc.ctx.ClusterNamer.InstanceGroup()); err != nil && !utils.IsInUsedByError(err) {
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
+			"Error Instance Group, err: %v", err)
+		return err
+	}
+	return nil
 }
