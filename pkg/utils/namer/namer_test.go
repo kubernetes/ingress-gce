@@ -133,6 +133,8 @@ func TestNameBelongsToCluster(t *testing.T) {
 			// short names
 			newNamer.IGBackend(80),
 			newNamer.InstanceGroup(),
+			newNamer.InstanceGroup() + "-1",
+			newNamer.InstanceGroup() + "-23",
 			newNamer.TargetProxy(lbName, HTTPProtocol),
 			newNamer.TargetProxy(lbName, HTTPSProtocol),
 			newNamer.SSLCertName("default/my-ing", secretHash),

@@ -43,6 +43,7 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 
 	for _, zone := range zones {
 		key := meta.ZonalKey(sp.IGName(), zone)
+		//TODO (cezarygerard): link all IGs by reusing []*compute.InstanceGroup returned from instancepool in the l4 controller
 		igSelfLink := cloudprovider.SelfLink(meta.VersionGA, projectID, "instanceGroups", key)
 		igLinks = append(igLinks, igSelfLink)
 	}

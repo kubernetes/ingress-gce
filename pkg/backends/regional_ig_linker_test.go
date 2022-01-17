@@ -84,7 +84,7 @@ func TestRegionalLink(t *testing.T) {
 		t.Fatalf("Expected Backends to be created")
 	}
 	ig, _ := linker.instancePool.Get(sp.IGName(), uscentralzone)
-	expectedLink, _ := utils.RelativeResourceName(ig.SelfLink)
+	expectedLink, _ := utils.RelativeResourceName(ig[0].SelfLink)
 	if be.Backends[0].Group != expectedLink {
 		t.Fatalf("Expected Backend Group: %s received: %s", expectedLink, be.Backends[0].Group)
 	}

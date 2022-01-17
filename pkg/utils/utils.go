@@ -356,6 +356,16 @@ func NodeIsReady(node *api_v1.Node) bool {
 	return false
 }
 
+func NodeStatusChanged(old, cur *api_v1.Node) bool {
+	if old.Spec.Unschedulable != cur.Spec.Unschedulable {
+		return true
+	}
+	if NodeIsReady(old) != NodeIsReady(cur) {
+		return true
+	}
+	return false
+}
+
 // NodeConditionPredicate is a function that indicates whether the given node's conditions meet
 // some set of criteria defined by the function.
 type NodeConditionPredicate func(node *api_v1.Node) bool

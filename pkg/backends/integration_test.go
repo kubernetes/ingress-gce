@@ -199,9 +199,9 @@ func TestSyncChaosMonkey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to find instance group %v", defaultNamer.InstanceGroup())
 	}
-	groupPath, err := utils.RelativeResourceName(gotGroup.SelfLink)
+	groupPath, err := utils.RelativeResourceName(gotGroup[0].SelfLink)
 	if err != nil {
-		t.Fatalf("Failed to get resource path from %q", gotGroup.SelfLink)
+		t.Fatalf("Failed to get resource path from %q", gotGroup[0].SelfLink)
 	}
 
 	for _, be := range gotBackend.Backends {

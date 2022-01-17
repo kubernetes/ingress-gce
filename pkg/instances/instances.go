@@ -81,19 +81,19 @@ func (i *Instances) EnsureInstanceGroupsAndPorts(name string, ports []int64) (ig
 			return nil, err
 		}
 
-		igs = append(igs, ig)
+		igs = append(igs, ig...)
 	}
 	return igs, nil
 }
 
-func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64) (*compute.InstanceGroup, error) {
-	ig, err := i.Get(name, zone)
+func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64) ([]*compute.InstanceGroup, error) {
+	igs, err := i.Get(name, zone)
 	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		klog.Errorf("Failed to get instance group %v/%v, err: %v", zone, name, err)
 		return nil, err
 	}
 
-	if ig == nil {
+	if igs == nil {
 		klog.V(3).Infof("Creating instance group %v/%v.", zone, name)
 		if err = i.cloud.CreateInstanceGroup(&compute.InstanceGroup{Name: name}, zone); err != nil {
 			// Error may come back with StatusConflict meaning the instance group was created by another controller
@@ -105,26 +105,40 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 				return nil, err
 			}
 		}
-		ig, err = i.cloud.GetInstanceGroup(name, zone)
+		ig, err := i.cloud.GetInstanceGroup(name, zone)
 		if err != nil {
 			klog.Errorf("Failed to get instance group %v/%v after ensuring existence, err: %v", zone, name, err)
 			return nil, err
 		}
+		igs = []*compute.InstanceGroup{ig}
 	} else {
 		klog.V(5).Infof("Instance group %v/%v already exists.", zone, name)
 	}
+	err = i.setPorts(igs, name, zone, ports)
+	if err != nil {
+		return nil, err
+	}
+	return igs, nil
+}
 
+// setPorts adds named ports to the instance group
+func (i *Instances) setPorts(igs []*compute.InstanceGroup, name, zone string, ports []int64) error {
+	if len(ports) == 0 {
+		return nil
+	}
 	// Build map of existing ports
 	existingPorts := map[int64]bool{}
-	for _, np := range ig.NamedPorts {
-		existingPorts[np.Port] = true
+	for _, ig := range igs {
+		for _, np := range ig.NamedPorts {
+			existingPorts[np.Port] = true
+		}
 	}
 
 	// Determine which ports need to be added
 	var newPorts []int64
 	for _, p := range ports {
 		if existingPorts[p] {
-			klog.V(5).Infof("Instance group %v/%v already has named port %v", zone, ig.Name, p)
+			klog.V(5).Infof("Instance group %v/%v already has named port %v", zone, name, p)
 			continue
 		}
 		newPorts = append(newPorts, p)
@@ -138,12 +152,14 @@ func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64
 
 	if len(newNamedPorts) > 0 {
 		klog.V(3).Infof("Instance group %v/%v does not have ports %+v, adding them now.", zone, name, newPorts)
-		if err := i.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, newNamedPorts...)); err != nil {
-			return nil, err
+		for _, ig := range igs {
+			if err := i.cloud.SetNamedPortsOfInstanceGroup(ig.Name, zone, append(ig.NamedPorts, newNamedPorts...)); err != nil {
+				return err
+			}
 		}
 	}
 
-	return ig, nil
+	return nil
 }
 
 // DeleteInstanceGroup deletes the given IG by name, from all zones.
@@ -198,13 +214,12 @@ func (i *Instances) list(name string) (sets.String, error) {
 }
 
 // Get returns the Instance Group by name.
-func (i *Instances) Get(name, zone string) (*compute.InstanceGroup, error) {
+func (i *Instances) Get(name, zone string) ([]*compute.InstanceGroup, error) {
 	ig, err := i.cloud.GetInstanceGroup(name, zone)
 	if err != nil {
 		return nil, err
 	}
-
-	return ig, nil
+	return []*compute.InstanceGroup{ig}, nil
 }
 
 // List lists the names of all InstanceGroups belonging to this cluster.
@@ -264,8 +279,8 @@ func (i *Instances) getInstanceReferences(zone string, nodeNames []string) (refs
 	return refs
 }
 
-// Add adds the given instances to the appropriately zoned Instance Group.
-func (i *Instances) Add(groupName string, names []string) error {
+// add adds the given instances to the appropriately zoned Instance Group.
+func (i *Instances) add(groupName string, names []string) error {
 	events.GlobalEventf(i.recorder, core.EventTypeNormal, events.AddNodes, "Adding %s to InstanceGroup %q", events.TruncatedStringList(names), groupName)
 	var errs []error
 	for zone, nodeNames := range i.splitNodesByZone(names) {
@@ -283,8 +298,8 @@ func (i *Instances) Add(groupName string, names []string) error {
 	return err
 }
 
-// Remove removes the given instances from the appropriately zoned Instance Group.
-func (i *Instances) Remove(groupName string, names []string) error {
+// remove removes the given instances from the appropriately zoned Instance Group.
+func (i *Instances) remove(groupName string, names []string) error {
 	events.GlobalEventf(i.recorder, core.EventTypeNormal, events.RemoveNodes, "Removing %s from InstanceGroup %q", events.TruncatedStringList(names), groupName)
 	var errs []error
 	for zone, nodeNames := range i.splitNodesByZone(names) {
@@ -345,7 +360,7 @@ func (i *Instances) Sync(nodes []string) (err error) {
 
 		start := time.Now()
 		if len(removeNodes) != 0 {
-			err = i.Remove(igName, removeNodes)
+			err = i.remove(igName, removeNodes)
 			klog.V(2).Infof("Remove(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), removeNodes)
 			if err != nil {
 				return err
@@ -354,7 +369,7 @@ func (i *Instances) Sync(nodes []string) (err error) {
 
 		start = time.Now()
 		if len(addNodes) != 0 {
-			err = i.Add(igName, addNodes)
+			err = i.add(igName, addNodes)
 			klog.V(2).Infof("Add(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), addNodes)
 			if err != nil {
 				return err
