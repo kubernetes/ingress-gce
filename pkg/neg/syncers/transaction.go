@@ -229,9 +229,8 @@ func (s *transactionSyncer) syncInternal() error {
 				},
 			},
 		)
-		if err2 != nil {
-			err = err2
-			return err2
+		if err != nil {
+			return err
 		}
 		if !exists {
 			klog.Warningf("Endpoint %s/%s does not exist. Skipping NEG sync", s.Namespace, s.Name)
