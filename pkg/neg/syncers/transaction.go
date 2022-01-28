@@ -168,13 +168,15 @@ func (s *transactionSyncer) syncInternal() error {
 	s.syncLock.Lock()
 	defer s.syncLock.Unlock()
 
-	// NOTE: Error will be used to update the status on corresponding Neg CR if Neg CRD is enabled
-	// Please reuse and set err before returning
-	var err error
-	defer s.updateStatus(err)
 	start := time.Now()
-	defer metrics.PublishNegSyncMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), err, start)
+	err := s.syncInternalImpl()
 
+	s.updateStatus(err)
+	metrics.PublishNegSyncMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), err, start)
+	return err
+}
+
+func (s *transactionSyncer) syncInternalImpl() error {
 	if s.needInit || s.isZoneChange() {
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
 			return err
@@ -218,6 +220,9 @@ func (s *transactionSyncer) syncInternal() error {
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 		targetMap, endpointPodMap, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		if err != nil {
+			return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
+		}
 	} else {
 		ep, exists, err := s.endpointLister.Get(
 			&apiv1.Endpoints{
@@ -236,12 +241,11 @@ func (s *transactionSyncer) syncInternal() error {
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpoints(ep.(*apiv1.Endpoints))
 		targetMap, endpointPodMap, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		if err != nil {
+			return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
+		}
 	}
 
-	if err != nil {
-		err = fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
-		return err
-	}
 	s.logStats(targetMap, "desired NEG endpoints")
 
 	// Calculate the endpoints to add and delete to transform the current state to desire state
@@ -268,9 +272,7 @@ func (s *transactionSyncer) syncInternal() error {
 	s.logEndpoints(addEndpoints, "adding endpoint")
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
-	// set err instead of returning directly so that synced condition on neg crd is properly updated in defer
-	err = s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
-	return err
+	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
 }
 
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
