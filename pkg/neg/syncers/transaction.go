@@ -187,9 +187,10 @@ func (s *transactionSyncer) syncInternal() error {
 	klog.V(2).Infof("Sync NEG %q for %s, Endpoints Calculator mode %s", s.NegSyncerKey.NegName,
 		s.NegSyncerKey.String(), s.endpointsCalculator.Mode())
 
-	currentMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode())
-	if err != nil {
-		return err
+	currentMap, err2 := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode())
+	if err2 != nil {
+		err = err2
+		return err2
 	}
 	s.logStats(currentMap, "current NEG endpoints")
 
@@ -202,9 +203,10 @@ func (s *transactionSyncer) syncInternal() error {
 	var endpointPodMap negtypes.EndpointPodMap
 
 	if s.enableEndpointSlices {
-		slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
-		if err != nil {
-			return err
+		slices, err2 := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
+		if err2 != nil {
+			err = err2
+			return err2
 		}
 		if len(slices) < 1 {
 			klog.Warningf("Endpoint slices for service %s/%s don't exist. Skipping NEG sync", s.Namespace, s.Name)
@@ -217,7 +219,7 @@ func (s *transactionSyncer) syncInternal() error {
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 		targetMap, endpointPodMap, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
 	} else {
-		ep, exists, err := s.endpointLister.Get(
+		ep, exists, err2 := s.endpointLister.Get(
 			&apiv1.Endpoints{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      s.Name,
@@ -225,8 +227,9 @@ func (s *transactionSyncer) syncInternal() error {
 				},
 			},
 		)
-		if err != nil {
-			return err
+		if err2 != nil {
+			err = err2
+			return err2
 		}
 		if !exists {
 			klog.Warningf("Endpoint %s/%s does not exist. Skipping NEG sync", s.Namespace, s.Name)
