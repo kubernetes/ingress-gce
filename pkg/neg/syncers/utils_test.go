@@ -1338,6 +1338,10 @@ func networkEndpointFromEncodedEndpoint(encodedEndpoint string) negtypes.Network
 }
 
 func getDefaultEndpointSlices() []*discovery.EndpointSlice {
+	return getTestEndpointSlices(testServiceName, testServiceNamespace)
+}
+
+func getTestEndpointSlices(name, namespace string) []*discovery.EndpointSlice {
 	instance1 := negtypes.TestInstance1
 	instance2 := negtypes.TestInstance2
 	instance3 := negtypes.TestInstance3
@@ -1352,8 +1356,11 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 	return []*discovery.EndpointSlice{
 		{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      testServiceName + "-1",
-				Namespace: testServiceNamespace,
+				Name:      name + "-1",
+				Namespace: namespace,
+				Labels: map[string]string{
+					discovery.LabelServiceName: name,
+				},
 			},
 			AddressType: "IPv4",
 			Endpoints: []discovery.Endpoint{
@@ -1361,7 +1368,7 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 					Addresses: []string{"10.100.1.1"},
 					NodeName:  &instance1,
 					TargetRef: &v1.ObjectReference{
-						Namespace: testServiceNamespace,
+						Namespace: namespace,
 						Name:      "pod1",
 					},
 				},
@@ -1369,7 +1376,7 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 					Addresses: []string{"10.100.1.2"},
 					NodeName:  &instance1,
 					TargetRef: &v1.ObjectReference{
-						Namespace: testServiceNamespace,
+						Namespace: namespace,
 						Name:      "pod2",
 					},
 				},
@@ -1377,7 +1384,7 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 					Addresses: []string{"10.100.2.1"},
 					NodeName:  &instance2,
 					TargetRef: &v1.ObjectReference{
-						Namespace: testServiceNamespace,
+						Namespace: namespace,
 						Name:      "pod3",
 					},
 				},
@@ -1385,7 +1392,7 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 					Addresses: []string{"10.100.3.1"},
 					NodeName:  &instance3,
 					TargetRef: &v1.ObjectReference{
-						Namespace: testServiceNamespace,
+						Namespace: namespace,
 						Name:      "pod4",
 					},
 				},
@@ -1393,7 +1400,7 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 					Addresses: []string{"10.100.1.3"},
 					NodeName:  &instance1,
 					TargetRef: &v1.ObjectReference{
-						Namespace: testServiceNamespace,
+						Namespace: namespace,
 						Name:      "pod5",
 					},
 					Conditions: discovery.EndpointConditions{Ready: &notReady},
@@ -1402,7 +1409,7 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 					Addresses: []string{"10.100.1.4"},
 					NodeName:  &instance1,
 					TargetRef: &v1.ObjectReference{
-						Namespace: testServiceNamespace,
+						Namespace: namespace,
 						Name:      "pod6",
 					},
 					Conditions: discovery.EndpointConditions{Ready: &notReady},
@@ -1418,8 +1425,11 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      testServiceName + "-2",
-				Namespace: testServiceNamespace,
+				Name:      name + "-2",
+				Namespace: namespace,
+				Labels: map[string]string{
+					discovery.LabelServiceName: name,
+				},
 			},
 			AddressType: "IPv4",
 			Endpoints: []discovery.Endpoint{
@@ -1427,7 +1437,7 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 					Addresses: []string{"10.100.2.2"},
 					NodeName:  &instance2,
 					TargetRef: &v1.ObjectReference{
-						Namespace: testServiceNamespace,
+						Namespace: namespace,
 						Name:      "pod7",
 					},
 				},
@@ -1435,7 +1445,7 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 					Addresses: []string{"10.100.4.1"},
 					NodeName:  &instance4,
 					TargetRef: &v1.ObjectReference{
-						Namespace: testServiceNamespace,
+						Namespace: namespace,
 						Name:      "pod8",
 					},
 				},
@@ -1443,7 +1453,7 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 					Addresses: []string{"10.100.4.3"},
 					NodeName:  &instance4,
 					TargetRef: &v1.ObjectReference{
-						Namespace: testServiceNamespace,
+						Namespace: namespace,
 						Name:      "pod9",
 					},
 					Conditions: discovery.EndpointConditions{Ready: &notReady},
@@ -1459,8 +1469,11 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      testServiceName + "-3",
-				Namespace: testServiceNamespace,
+				Name:      name + "-3",
+				Namespace: namespace,
+				Labels: map[string]string{
+					discovery.LabelServiceName: name,
+				},
 			},
 			AddressType: "IPv4",
 			Endpoints: []discovery.Endpoint{
@@ -1468,7 +1481,7 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 					Addresses: []string{"10.100.3.2"},
 					NodeName:  &instance3,
 					TargetRef: &v1.ObjectReference{
-						Namespace: testServiceNamespace,
+						Namespace: namespace,
 						Name:      "pod10",
 					},
 				},
@@ -1476,7 +1489,7 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 					Addresses: []string{"10.100.4.2"},
 					NodeName:  &instance4,
 					TargetRef: &v1.ObjectReference{
-						Namespace: testServiceNamespace,
+						Namespace: namespace,
 						Name:      "pod11",
 					},
 				},
@@ -1484,7 +1497,7 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 					Addresses: []string{"10.100.4.4"},
 					NodeName:  &instance4,
 					TargetRef: &v1.ObjectReference{
-						Namespace: testServiceNamespace,
+						Namespace: namespace,
 						Name:      "pod12",
 					},
 					Conditions: discovery.EndpointConditions{Ready: &notReady},
@@ -1501,15 +1514,15 @@ func getDefaultEndpointSlices() []*discovery.EndpointSlice {
 	}
 }
 
-func getDefaultEndpoint() *v1.Endpoints {
+func getTestEndpoint(name, namespace string) *v1.Endpoints {
 	instance1 := negtypes.TestInstance1
 	instance2 := negtypes.TestInstance2
 	instance3 := negtypes.TestInstance3
 	instance4 := negtypes.TestInstance4
 	return &v1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      testServiceName,
-			Namespace: testServiceNamespace,
+			Name:      name,
+			Namespace: namespace,
 		},
 		Subsets: []v1.EndpointSubset{
 			{
@@ -1518,7 +1531,7 @@ func getDefaultEndpoint() *v1.Endpoints {
 						IP:       "10.100.1.1",
 						NodeName: &instance1,
 						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
+							Namespace: namespace,
 							Name:      "pod1",
 						},
 					},
@@ -1526,7 +1539,7 @@ func getDefaultEndpoint() *v1.Endpoints {
 						IP:       "10.100.1.2",
 						NodeName: &instance1,
 						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
+							Namespace: namespace,
 							Name:      "pod2",
 						},
 					},
@@ -1534,7 +1547,7 @@ func getDefaultEndpoint() *v1.Endpoints {
 						IP:       "10.100.2.1",
 						NodeName: &instance2,
 						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
+							Namespace: namespace,
 							Name:      "pod3",
 						},
 					},
@@ -1542,7 +1555,7 @@ func getDefaultEndpoint() *v1.Endpoints {
 						IP:       "10.100.3.1",
 						NodeName: &instance3,
 						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
+							Namespace: namespace,
 							Name:      "pod4",
 						},
 					},
@@ -1552,7 +1565,7 @@ func getDefaultEndpoint() *v1.Endpoints {
 						IP:       "10.100.1.3",
 						NodeName: &instance1,
 						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
+							Namespace: namespace,
 							Name:      "pod5",
 						},
 					},
@@ -1560,7 +1573,7 @@ func getDefaultEndpoint() *v1.Endpoints {
 						IP:       "10.100.1.4",
 						NodeName: &instance1,
 						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
+							Namespace: namespace,
 							Name:      "pod6",
 						},
 					},
@@ -1579,7 +1592,7 @@ func getDefaultEndpoint() *v1.Endpoints {
 						IP:       "10.100.2.2",
 						NodeName: &instance2,
 						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
+							Namespace: namespace,
 							Name:      "pod7",
 						},
 					},
@@ -1587,7 +1600,7 @@ func getDefaultEndpoint() *v1.Endpoints {
 						IP:       "10.100.4.1",
 						NodeName: &instance4,
 						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
+							Namespace: namespace,
 							Name:      "pod8",
 						},
 					},
@@ -1597,7 +1610,7 @@ func getDefaultEndpoint() *v1.Endpoints {
 						IP:       "10.100.4.3",
 						NodeName: &instance4,
 						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
+							Namespace: namespace,
 							Name:      "pod9",
 						},
 					},
@@ -1616,7 +1629,7 @@ func getDefaultEndpoint() *v1.Endpoints {
 						IP:       "10.100.3.2",
 						NodeName: &instance3,
 						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
+							Namespace: namespace,
 							Name:      "pod10",
 						},
 					},
@@ -1624,7 +1637,7 @@ func getDefaultEndpoint() *v1.Endpoints {
 						IP:       "10.100.4.2",
 						NodeName: &instance4,
 						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
+							Namespace: namespace,
 							Name:      "pod11",
 						},
 					},
@@ -1634,7 +1647,7 @@ func getDefaultEndpoint() *v1.Endpoints {
 						IP:       "10.100.4.4",
 						NodeName: &instance4,
 						TargetRef: &v1.ObjectReference{
-							Namespace: testServiceNamespace,
+							Namespace: namespace,
 							Name:      "pod12",
 						},
 					},
@@ -1649,4 +1662,8 @@ func getDefaultEndpoint() *v1.Endpoints {
 			},
 		},
 	}
+}
+
+func getDefaultEndpoint() *v1.Endpoints {
+	return getTestEndpoint(testServiceName, testServiceNamespace)
 }
