@@ -419,8 +419,8 @@ func (l4c *L4Controller) publishMetrics(result *loadbalancers.L4LBSyncResult, na
 	}
 	switch result.SyncType {
 	case loadbalancers.SyncTypeCreate, loadbalancers.SyncTypeUpdate:
-		klog.V(6).Infof("Internal L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
-		l4c.ctx.ControllerMetrics.SetL4ILBService(namespacedName, result.MetricsState)
+		klog.V(6).Infof("Internal L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.L4MetricsState)
+		l4c.ctx.ControllerMetrics.SetL4ILBService(namespacedName, result.L4MetricsState)
 		l4metrics.PublishILBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
 
 	case loadbalancers.SyncTypeDelete:

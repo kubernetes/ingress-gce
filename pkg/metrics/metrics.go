@@ -123,7 +123,7 @@ type ControllerMetrics struct {
 	// negMap is a map between service key to neg state
 	negMap map[string]NegServiceState
 	// l4ILBServiceMap is a map between service key and L4 ILB service state.
-	l4ILBServiceMap map[string]L4ILBServiceState
+	l4ILBServiceMap map[string]L4ServiceState
 	// pscMap is a map between the service attachment key and PSC state
 	pscMap map[string]pscmetrics.PSCState
 	// ServiceMap track the number of services in this cluster
@@ -136,7 +136,7 @@ func NewControllerMetrics() *ControllerMetrics {
 	return &ControllerMetrics{
 		ingressMap:      make(map[string]IngressState),
 		negMap:          make(map[string]NegServiceState),
-		l4ILBServiceMap: make(map[string]L4ILBServiceState),
+		l4ILBServiceMap: make(map[string]L4ServiceState),
 		pscMap:          make(map[string]pscmetrics.PSCState),
 		serviceMap:      make(map[string]struct{}),
 	}
@@ -210,7 +210,7 @@ func (im *ControllerMetrics) DeleteNegService(svcKey string) {
 }
 
 // SetL4ILBService implements L4ILBMetricsCollector.
-func (im *ControllerMetrics) SetL4ILBService(svcKey string, state L4ILBServiceState) {
+func (im *ControllerMetrics) SetL4ILBService(svcKey string, state L4ServiceState) {
 	im.Lock()
 	defer im.Unlock()
 
@@ -424,21 +424,26 @@ func (im *ControllerMetrics) computeL4ILBMetrics() map[feature]int {
 	}
 
 	for key, state := range im.l4ILBServiceMap {
-		klog.V(6).Infof("ILB Service %s has EnabledGlobalAccess: %t, EnabledCustomSubnet: %t, InSuccess: %t", key, state.EnabledGlobalAccess, state.EnabledCustomSubnet, state.InSuccess)
+		klog.V(6).Infof("ILB Service %s has metrics %+v", key, state.Metrics)
+		if err := state.validateILBMetrics(); err != nil {
+			klog.Warningf("ILB service %s state metrics validation failed err: %v", key, err)
+			continue
+		}
 		counts[l4ILBService]++
-		if !state.InSuccess {
+		if !state.Metrics[InSuccessKey] {
 			counts[l4ILBInError]++
 			// Skip counting other features if the service is in error state.
 			continue
 		}
 		counts[l4ILBInSuccess]++
-		if state.EnabledGlobalAccess {
+		if state.Metrics[EnabledGlobalAccessKey] {
 			counts[l4ILBGlobalAccess]++
 		}
-		if state.EnabledCustomSubnet {
+		if state.Metrics[EnabledCustomSubnetKey] {
 			counts[l4ILBCustomSubnet]++
 		}
 	}
+
 	klog.V(4).Info("L4 ILB usage metrics computed.")
 	return counts
 }

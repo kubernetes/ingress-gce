@@ -17,9 +17,26 @@ limitations under the License.
 package metrics
 
 import (
+	"fmt"
+
 	v1 "k8s.io/api/networking/v1"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
+)
+
+const (
+	// L4 LB metrics key
+	// ManagedStaticIP specifies if Static IP for L4 NetLB service is managed.
+	ManagedStaticIPKey = "ManagedStaticIP"
+	// PremiumNetworkTier defines if NetworkTier for L4 NetLB service is Premium
+	PremiumNetworkTierKey = "PremiumNetworkTier"
+	// EnabledGlobalAccess specifies if Global Access for L4 ILB is enabled.
+	EnabledGlobalAccessKey = "EnabledGlobalAccess"
+	// EnabledCustomSubNet specifies if Custom Subnet is enabled for L4 ILB.
+	EnabledCustomSubnetKey = "EnabledCustomSubnet"
+	// InSuccess specifies if the ILB service VIP is configured for L4 LB.
+	InSuccessKey = "InSuccess"
 )
 
 // IngressState defines an ingress and its associated service ports.
@@ -58,15 +75,71 @@ func NewVmIpNegType(trafficPolicyLocal bool) *VmIpNegType {
 	return &VmIpNegType{trafficPolicyLocal: trafficPolicyLocal}
 }
 
-// L4ILBServiceState defines if global access and subnet features are enabled
-// for an L4 ILB service.
-type L4ILBServiceState struct {
-	// EnabledGlobalAccess specifies if Global Access is enabled.
-	EnabledGlobalAccess bool
-	// EnabledCustomSubNet specifies if Custom Subnet is enabled.
-	EnabledCustomSubnet bool
-	// InSuccess specifies if the ILB service VIP is configured.
-	InSuccess bool
+// L4ServiceState stores metrics for L4 LB Service
+type L4ServiceState struct {
+	Metrics map[string]bool
+}
+
+// SetMetic set metric with a given key to true
+func (m L4ServiceState) SetMetric(key string) {
+	if m.Metrics == nil {
+		klog.Errorf("No metric map set for service")
+		return
+	}
+	if _, ok := m.Metrics[key]; !ok {
+		klog.Errorf("Service does not support this metric key %s", key)
+	}
+	m.Metrics[key] = true
+}
+
+// validateILBMetrics checks if Service Status map contains all keys related to L4 ILB
+func (m L4ServiceState) validateILBMetrics() error {
+	if _, ok := m.Metrics[InSuccessKey]; !ok {
+		return fmt.Errorf("ILB Service State should have metric key %s in map", InSuccessKey)
+	}
+	if _, ok := m.Metrics[EnabledGlobalAccessKey]; !ok {
+		return fmt.Errorf("ILB Service State should have metric key %s in map", EnabledGlobalAccessKey)
+	}
+	if _, ok := m.Metrics[EnabledCustomSubnetKey]; !ok {
+		return fmt.Errorf("ILB Service State should have metric key %s in map", EnabledCustomSubnetKey)
+	}
+	return nil
+}
+
+// validateNetLBMetrics checks if Service Status map contains all keys related to L4 NetLB
+func (m L4ServiceState) validateNetLBMetrics() error {
+	if _, ok := m.Metrics[InSuccessKey]; !ok {
+		return fmt.Errorf("L4 Net Service State should have metric key %s in map", InSuccessKey)
+	}
+	if _, ok := m.Metrics[PremiumNetworkTierKey]; !ok {
+		return fmt.Errorf("L4 Net Service State should have metric key %s in map", PremiumNetworkTierKey)
+	}
+	if _, ok := m.Metrics[ManagedStaticIPKey]; !ok {
+		return fmt.Errorf("L4 Net Service State should have metric key %s in map", ManagedStaticIPKey)
+	}
+	return nil
+}
+
+// NewL4NetLBMetricsStates creates new Metrics map for L4 ILB
+func NewL4ILBMetricsStates() L4ServiceState {
+	return L4ServiceState{
+		Metrics: map[string]bool{
+			EnabledGlobalAccessKey: false,
+			EnabledCustomSubnetKey: false,
+			InSuccessKey:           false,
+		},
+	}
+}
+
+// NewL4NetLBMetricsStates creates new Metrics map for L4 NetLB
+func NewL4NetLBMetricsStates() L4ServiceState {
+	return L4ServiceState{
+		Metrics: map[string]bool{
+			PremiumNetworkTierKey: false,
+			ManagedStaticIPKey:    false,
+			InSuccessKey:          false,
+		},
+	}
 }
 
 // IngressMetricsCollector is an interface to update/delete ingress states in the cache
@@ -87,11 +160,11 @@ type NegMetricsCollector interface {
 	DeleteNegService(svcKey string)
 }
 
-// L4ILBMetricsCollector is an interface to update/delete L4 ILb service states
-// in the cache that is used for computing L4 ILB usage metrics.
-type L4ILBMetricsCollector interface {
-	// SetL4ILBService adds/updates L4 ILB service state for given service key.
-	SetL4ILBService(svcKey string, state L4ILBServiceState)
-	// DeleteL4ILBService removes the given L4 ILB service key.
-	DeleteL4ILBService(svcKey string)
+// L4LBMetricsCollector is an interface to update/delete L4 Lb service states
+// in the cache that is used for computing L4 LB usage metrics.
+type L4LBMetricsCollector interface {
+	// SetL4LBService adds/updates L4 LB service state for given service key.
+	SetL4LBService(svcKey string, state L4ServiceState)
+	// DeleteL4LBService removes the given L4 LB service key.
+	DeleteL4LBService(svcKey string)
 }

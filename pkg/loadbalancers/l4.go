@@ -21,7 +21,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -34,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/healthchecks"
+	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -79,7 +79,7 @@ func getILBOptions(svc *corev1.Service) gce.ILBOptions {
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
 func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4LBSyncResult {
 	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): attempting delete of load balancer resources", l.NamespacedName.String())
-	result := &L4LBSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
+	result := newL4ILBSyncResult(SyncTypeDelete)
 	// All resources use the L4Backend Name, except forwarding rule.
 	name, ok := l.namer.L4Backend(svc.Namespace, svc.Name)
 	if !ok {
@@ -185,10 +185,7 @@ func (l *L4) getFRNameWithProtocol(protocol string) string {
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4LBSyncResult {
-	result := &L4LBSyncResult{
-		Annotations: make(map[string]string),
-		StartTime:   time.Now(),
-		SyncType:    SyncTypeCreate}
+	result := newL4ILBSyncResult(SyncTypeCreate)
 
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
@@ -306,15 +303,15 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 		result.Annotations[annotations.UDPForwardingRuleKey] = frName
 	}
 
-	result.MetricsState.InSuccess = true
+	result.L4MetricsState.SetMetric(metrics.InSuccessKey)
 	if options.AllowGlobalAccess {
-		result.MetricsState.EnabledGlobalAccess = true
+		result.L4MetricsState.SetMetric(metrics.EnabledGlobalAccessKey)
 	}
 	// SubnetName is overwritten to nil value if Alpha feature gate for custom subnet
 	// is not enabled. So, a non empty subnet name at this point implies that the
 	// feature is in use.
 	if options.SubnetName != "" {
-		result.MetricsState.EnabledCustomSubnet = true
+		result.L4MetricsState.SetMetric(metrics.EnabledCustomSubnetKey)
 	}
 	result.Status = &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}
 	return result

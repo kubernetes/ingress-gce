@@ -36,10 +36,29 @@ type L4LBSyncResult struct {
 	Error              error
 	GCEResourceInError string
 	Status             *corev1.LoadBalancerStatus
-	//TODO(kl52752) change metrics to support ILB and XLB
-	MetricsState metrics.L4ILBServiceState
-	SyncType     string
-	StartTime    time.Time
+	L4MetricsState     metrics.L4ServiceState
+	SyncType           string
+	StartTime          time.Time
+}
+
+// newL4ILBSyncResult initalize SyncResult for L4 ILB
+func newL4ILBSyncResult(syncType string) *L4LBSyncResult {
+	return &L4LBSyncResult{
+		SyncType:       syncType,
+		StartTime:      time.Now(),
+		L4MetricsState: metrics.NewL4ILBMetricsStates(),
+		Annotations:    make(map[string]string),
+	}
+}
+
+// newL4NetLBSyncResult initalize SyncResult for L4 NetLB
+func newL4NetLBSyncResult(syncType string) *L4LBSyncResult {
+	return &L4LBSyncResult{
+		SyncType:       syncType,
+		StartTime:      time.Now(),
+		L4MetricsState: metrics.NewL4NetLBMetricsStates(),
+		Annotations:    make(map[string]string),
+	}
 }
 
 var L4LBResourceAnnotationKeys = []string{
