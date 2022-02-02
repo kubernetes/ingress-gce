@@ -219,12 +219,12 @@ func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service) bo
 	return lc.needsPeriodicEnqueue(newSvc, oldSvc)
 }
 
-// hasRBSForwardingRuleAnnotation checks if service has TCPForwardingRule or UDPForwardingRule annotation
-func (lc *L4NetLBController) hasRBSForwardingRuleAnnotation(svc *v1.Service) bool {
-	if _, ok := svc.Annotations[annotations.TCPForwardingRuleKey]; ok {
+// hasForwardingRuleAnnotation checks if service has forwarding rule with matching name
+func (lc *L4NetLBController) hasForwardingRuleAnnotation(svc *v1.Service, frName string) bool {
+	if val, ok := svc.Annotations[annotations.TCPForwardingRuleKey]; ok && val == frName {
 		return true
 	}
-	if _, ok := svc.Annotations[annotations.UDPForwardingRuleKey]; ok {
+	if val, ok := svc.Annotations[annotations.UDPForwardingRuleKey]; ok && val == frName {
 		return true
 	}
 	return false
@@ -233,7 +233,11 @@ func (lc *L4NetLBController) hasRBSForwardingRuleAnnotation(svc *v1.Service) boo
 // hasRBSForwardingRule checks if services loadbalancer has forwarding rule pointing to backend service
 func (lc *L4NetLBController) hasRBSForwardingRule(svc *v1.Service) bool {
 	l4netlb := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace), &lc.sharedResourcesLock)
-	frName := utils.LegacyForwardingRuleName(svc)
+	frName := l4netlb.GetFRName()
+	// to optimize number of api calls, at first, check if forwarding rule exists in annotation
+	if lc.hasForwardingRuleAnnotation(svc, frName) {
+		return true
+	}
 	existingFR := l4netlb.GetForwardingRule(frName, meta.VersionGA)
 	return existingFR != nil && existingFR.LoadBalancingScheme == string(cloud.SchemeExternal) && existingFR.BackendService != ""
 }
@@ -246,7 +250,7 @@ func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service) bool {
 	if val, ok := svc.Annotations[annotations.RBSAnnotationKey]; ok && val == annotations.RBSEnabled {
 		return true
 	}
-	return utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRuleAnnotation(svc) || lc.hasRBSForwardingRule(svc)
+	return utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc)
 }
 
 func (lc *L4NetLBController) checkHealth() error {
