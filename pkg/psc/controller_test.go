@@ -41,7 +41,6 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	safake "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
-	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	sautils "k8s.io/ingress-gce/pkg/utils/serviceattachment"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -701,7 +700,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 		},
 		{
 			desc:           "service attachment not found error during gc",
-			getError:       utils.FakeGoogleAPINotFoundErr(),
+			getError:       test.FakeGoogleAPINotFoundErr(),
 			expectDeletion: true,
 		},
 		{
@@ -921,7 +920,7 @@ func TestFilterError(t *testing.T) {
 	}{
 		{
 			desc:          "google api status not found error",
-			err:           utils.FakeGoogleAPINotFoundErr(),
+			err:           test.FakeGoogleAPINotFoundErr(),
 			expectedError: nil,
 		},
 		{
@@ -946,7 +945,7 @@ func TestFilterError(t *testing.T) {
 		},
 		{
 			desc:          "wrapped google api status not found error",
-			err:           fmt.Errorf("wrap 1: %w", fmt.Errorf("wrap 2: %w", utils.FakeGoogleAPINotFoundErr())),
+			err:           fmt.Errorf("wrap 1: %w", fmt.Errorf("wrap 2: %w", test.FakeGoogleAPINotFoundErr())),
 			expectedError: nil,
 		},
 		{

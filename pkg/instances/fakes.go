@@ -24,21 +24,23 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
-// NewFakeInstanceGroups creates a new FakeInstanceGroups.
-func NewFakeInstanceGroups(nodes sets.String, namer *namer.Namer) *FakeInstanceGroups {
+// NewEmptyFakeInstanceGroups creates a new FakeInstanceGroups without zones, igs or instances.
+func NewEmptyFakeInstanceGroups() *FakeInstanceGroups {
 	return &FakeInstanceGroups{
-		instances:        nodes,
-		listResult:       getInstanceList(nodes),
-		namer:            namer,
-		zonesToInstances: map[string][]string{},
+		zonesToIGsToInstances: map[string]IGsToInstances{},
 	}
 }
 
-// InstanceGroup fakes
+// NewFakeInstanceGroups creates a new FakeInstanceGroups.
+func NewFakeInstanceGroups(zonesToIGsToInstances map[string]IGsToInstances) *FakeInstanceGroups {
+	return &FakeInstanceGroups{
+		zonesToIGsToInstances: zonesToIGsToInstances,
+	}
+}
 
 // FakeZoneLister records zones for nodes.
 type FakeZoneLister struct {
@@ -58,115 +60,105 @@ func (z *FakeZoneLister) GetZoneForNode(name string) (string, error) {
 	return z.Zones[0], nil
 }
 
+type IGsToInstances map[*compute.InstanceGroup]sets.String
+
 // FakeInstanceGroups fakes out the instance groups api.
 type FakeInstanceGroups struct {
-	instances        sets.String
-	instanceGroups   []*compute.InstanceGroup
-	getResult        *compute.InstanceGroup
-	listResult       *compute.InstanceGroupsListInstances
-	calls            []int
-	namer            *namer.Namer
-	zonesToInstances map[string][]string
+	getResult             *compute.InstanceGroup
+	calls                 []int
+	zonesToIGsToInstances map[string]IGsToInstances
+}
+
+// getInstanceGroup implements fake getting ig by name in zone
+func (f *FakeInstanceGroups) getInstanceGroup(name, zone string) (*compute.InstanceGroup, error) {
+	for ig := range f.zonesToIGsToInstances[zone] {
+		if ig.Name == name {
+			return ig, nil
+		}
+	}
+
+	return nil, test.FakeGoogleAPINotFoundErr()
 }
 
 // GetInstanceGroup fakes getting an instance group from the cloud.
 func (f *FakeInstanceGroups) GetInstanceGroup(name, zone string) (*compute.InstanceGroup, error) {
 	f.calls = append(f.calls, utils.Get)
-	for _, ig := range f.instanceGroups {
-		if ig.Name == name && ig.Zone == zone {
-			return ig, nil
-		}
-	}
-
-	return nil, utils.FakeGoogleAPINotFoundErr()
+	return f.getInstanceGroup(name, zone)
 }
 
 // CreateInstanceGroup fakes instance group creation.
 func (f *FakeInstanceGroups) CreateInstanceGroup(ig *compute.InstanceGroup, zone string) error {
+	if _, ok := f.zonesToIGsToInstances[zone]; !ok {
+		f.zonesToIGsToInstances[zone] = map[*compute.InstanceGroup]sets.String{}
+	}
+	if _, ok := f.zonesToIGsToInstances[zone][ig]; ok {
+		return test.FakeGoogleAPIConflictErr()
+	}
+
 	ig.SelfLink = cloud.NewInstanceGroupsResourceID("mock-project", zone, ig.Name).SelfLink(meta.VersionGA)
 	ig.Zone = zone
-	f.instanceGroups = append(f.instanceGroups, ig)
+	f.zonesToIGsToInstances[zone][ig] = sets.NewString()
 	return nil
 }
 
 // DeleteInstanceGroup fakes instance group deletion.
 func (f *FakeInstanceGroups) DeleteInstanceGroup(name, zone string) error {
-	newGroups := []*compute.InstanceGroup{}
-	found := false
-	for _, ig := range f.instanceGroups {
-		if ig.Name == name {
-			found = true
-			continue
-		}
-		newGroups = append(newGroups, ig)
+	ig, err := f.getInstanceGroup(name, zone)
+	if err != nil {
+		return err
 	}
-	if !found {
-		return fmt.Errorf("instance group %v not found", name)
-	}
-	f.instanceGroups = newGroups
+	delete(f.zonesToIGsToInstances[zone], ig)
 	return nil
 }
 
 // ListInstancesInInstanceGroup fakes listing instances in an instance group.
 func (f *FakeInstanceGroups) ListInstancesInInstanceGroup(name, zone string, state string) ([]*compute.InstanceWithNamedPorts, error) {
-	return f.listResult.Items, nil
+	ig, err := f.getInstanceGroup(name, zone)
+	if err != nil {
+		return nil, err
+	}
+	return getInstanceList(f.zonesToIGsToInstances[zone][ig]).Items, nil
 }
 
-// ListInstanceGroups fakes listing instancegroups in a zone
+// ListInstanceGroups fakes listing instance groups in a zone
 func (f *FakeInstanceGroups) ListInstanceGroups(zone string) ([]*compute.InstanceGroup, error) {
-	return f.instanceGroups, nil
+	igs := []*compute.InstanceGroup{}
+	for ig := range f.zonesToIGsToInstances[zone] {
+		igs = append(igs, ig)
+	}
+	return igs, nil
 }
 
 // AddInstancesToInstanceGroup fakes adding instances to an instance group.
 func (f *FakeInstanceGroups) AddInstancesToInstanceGroup(name, zone string, instanceRefs []*compute.InstanceReference) error {
 	instanceNames := toInstanceNames(instanceRefs)
 	f.calls = append(f.calls, utils.AddInstances)
-	f.instances.Insert(instanceNames...)
-	if _, ok := f.zonesToInstances[zone]; !ok {
-		f.zonesToInstances[zone] = []string{}
+	ig, err := f.getInstanceGroup(name, zone)
+	if err != nil {
+		return err
 	}
-	f.zonesToInstances[zone] = append(f.zonesToInstances[zone], instanceNames...)
-	return nil
-}
 
-// GetInstancesByZone returns the zone to instances map.
-func (f *FakeInstanceGroups) GetInstancesByZone() map[string][]string {
-	return f.zonesToInstances
+	f.zonesToIGsToInstances[zone][ig].Insert(instanceNames...)
+	return nil
 }
 
 // RemoveInstancesFromInstanceGroup fakes removing instances from an instance group.
 func (f *FakeInstanceGroups) RemoveInstancesFromInstanceGroup(name, zone string, instanceRefs []*compute.InstanceReference) error {
 	instanceNames := toInstanceNames(instanceRefs)
 	f.calls = append(f.calls, utils.RemoveInstances)
-	f.instances.Delete(instanceNames...)
-	l, ok := f.zonesToInstances[zone]
-	if !ok {
-		return nil
+	ig, err := f.getInstanceGroup(name, zone)
+	if err != nil {
+		return err
 	}
-	newIns := []string{}
-	delIns := sets.NewString(instanceNames...)
-	for _, oldIns := range l {
-		if delIns.Has(oldIns) {
-			continue
-		}
-		newIns = append(newIns, oldIns)
-	}
-	f.zonesToInstances[zone] = newIns
+	f.zonesToIGsToInstances[zone][ig].Delete(instanceNames...)
 	return nil
 }
 
 func (f *FakeInstanceGroups) SetNamedPortsOfInstanceGroup(igName, zone string, namedPorts []*compute.NamedPort) error {
-	var ig *compute.InstanceGroup
-	for _, igp := range f.instanceGroups {
-		if igp.Name == igName && igp.Zone == zone {
-			ig = igp
-			break
-		}
+	ig, err := f.getInstanceGroup(igName, zone)
+	if err != nil {
+		return err
 	}
-	if ig == nil {
-		return fmt.Errorf("failed to find instance group %q in zone %q", igName, zone)
-	}
-
 	ig.NamedPorts = namedPorts
 	return nil
 }

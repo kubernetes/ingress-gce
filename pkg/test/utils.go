@@ -2,6 +2,7 @@ package test
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -11,10 +12,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -453,4 +456,31 @@ func (old *L4ILBErrorMetricInfo) ValidateDiff(new, expect *L4ILBErrorMetricInfo,
 		}
 	}
 
+}
+
+// FakeGoogleAPIForbiddenErr creates a Forbidden error with type googleapi.Error
+func FakeGoogleAPIForbiddenErr() *googleapi.Error {
+	return &googleapi.Error{Code: http.StatusForbidden}
+}
+
+// FakeGoogleAPINotFoundErr creates a NotFound error with type googleapi.Error
+func FakeGoogleAPINotFoundErr() *googleapi.Error {
+	return &googleapi.Error{Code: http.StatusNotFound}
+}
+
+// FakeGoogleAPIConflictErr creates a StatusConflict error with type googleapi.Error
+func FakeGoogleAPIConflictErr() *googleapi.Error {
+	return &googleapi.Error{Code: http.StatusConflict}
+}
+
+func InstancesListToNameSet(instancesList []*compute.InstanceWithNamedPorts) (sets.String, error) {
+	instancesSet := sets.NewString()
+	for _, instance := range instancesList {
+		parsedInstanceURL, err := cloud.ParseResourceURL(instance.Instance)
+		if err != nil {
+			return nil, err
+		}
+		instancesSet.Insert(parsedInstanceURL.Key.Name)
+	}
+	return instancesSet, nil
 }
