@@ -35,6 +35,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	ingctx "k8s.io/ingress-gce/pkg/context"
@@ -775,64 +776,69 @@ func TestControllerUserIPWithStandardNetworkTier(t *testing.T) {
 	}
 }
 
+type getForwardingRuleHook func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, *ga.ForwardingRule, error)
+
 func TestIsRBSBasedService(t *testing.T) {
-	for _, testCase := range []struct {
-		createControllerAndService func() (*L4NetLBController, *v1.Service)
-		isRBSService               bool
-		desc                       string
+	testCases := []struct {
+		desc             string
+		finalizers       []string
+		annotations      map[string]string
+		frHook           getForwardingRuleHook
+		expectRBSService bool
 	}{
 		{
-			createControllerAndService: func() (*L4NetLBController, *v1.Service) {
-				svc, l4netController := createAndSyncLegacyNetLBSvc(t)
-				return l4netController, svc
-			},
-			isRBSService: false,
-			desc:         "Legacy service should not be marked as RBS",
+			desc:             "Service without finalizers, annotations and forwarding rule should not be marked as RBS",
+			expectRBSService: false,
 		},
 		{
-			createControllerAndService: func() (*L4NetLBController, *v1.Service) {
-				svc, l4netController := createAndSyncLegacyNetLBSvc(t)
-				svc.ObjectMeta.Finalizers = append(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV2)
-				return l4netController, svc
-			},
-			isRBSService: true,
-			desc:         "Should detect RBS by finalizer",
+			desc:             "Legacy service should not be marked as RBS",
+			finalizers:       []string{helpers.LoadBalancerCleanupFinalizer},
+			expectRBSService: false,
 		},
 		{
-			createControllerAndService: func() (*L4NetLBController, *v1.Service) {
-				svc, l4netController := createAndSyncLegacyNetLBSvc(t)
-				svc.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
-				return l4netController, svc
-			},
-			isRBSService: true,
-			desc:         "Should detect RBS by annotation",
+			desc:             "Should detect RBS by finalizer",
+			finalizers:       []string{common.NetLBFinalizerV2},
+			expectRBSService: true,
 		},
 		{
-			createControllerAndService: func() (*L4NetLBController, *v1.Service) {
-				svc, l4netController := createAndSyncLegacyNetLBSvc(t)
-				// Add Forwarding Rule pointing to RBS backend
-				l4netController.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = test.GetRBSForwardingRule
-				return l4netController, svc
-			},
-			isRBSService: true,
-			desc:         "Should detect RBS by forwarding rule",
+			desc:             "Should detect RBS by finalizer when service contains legacy finalizer",
+			finalizers:       []string{helpers.LoadBalancerCleanupFinalizer, common.NetLBFinalizerV2},
+			expectRBSService: true,
 		},
 		{
-			createControllerAndService: func() (*L4NetLBController, *v1.Service) {
-				svc, l4netController := createAndSyncLegacyNetLBSvc(t)
-				// Add Forwarding Rule pointing to Target Pool
-				l4netController.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = test.GetLegacyForwardingRule
-				return l4netController, svc
-			},
-			isRBSService: false,
-			desc:         "Should not detect RBS by forwarding rule pointed to target pool",
+			desc:             "Should detect RBS by annotation",
+			annotations:      map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled},
+			expectRBSService: true,
 		},
-	} {
-		controller, svc := testCase.createControllerAndService()
-		result := controller.isRBSBasedService(svc)
-		if result != testCase.isRBSService {
-			t.Errorf("Service %v. Expected result: %t, got: %t. Description: %s", svc, testCase.isRBSService, result, testCase.desc)
-		}
+		{
+			desc:             "Should detect RBS by forwarding rule",
+			frHook:           test.GetRBSForwardingRule,
+			expectRBSService: true,
+		},
+		{
+			desc:             "Should not detect RBS by forwarding rule pointed to target pool",
+			frHook:           test.GetLegacyForwardingRule,
+			expectRBSService: false,
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.desc, func(t *testing.T) {
+			// Setup
+			svc := test.NewL4LegacyNetLBService(8080, 30234)
+			controller := newL4NetLBServiceController()
+			svc.Annotations = testCase.annotations
+			svc.ObjectMeta.Finalizers = testCase.finalizers
+			controller.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = testCase.frHook
+			addNetLBService(controller, svc)
+
+			// When
+			result := controller.isRBSBasedService(svc)
+
+			// Then
+			if result != testCase.expectRBSService {
+				t.Errorf("isRBSBasedService(%v) = %v, want %v", svc, result, testCase.expectRBSService)
+			}
+		})
 	}
 }
 
