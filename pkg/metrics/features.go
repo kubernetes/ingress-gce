@@ -113,6 +113,16 @@ const (
 	// updating GCE Load Balancer.
 	l4ILBInError = feature("L4ILBInError")
 
+	l4NetLBService            = feature("L4NetLBService")
+	l4NetLBPremiumNetworkTier = feature("L4NetLBPremiumNetworkTier")
+	l4NetLBManagedStaticIP    = feature("L4NetLBManagedStaticIP")
+	l4NetLBStaticIP           = feature("L4NetLBStaticIP")
+	// l4NetLBInSuccess feature specifies that NetLB VIP is configured.
+	l4NetLBInSuccess = feature("L4NetLBInSuccess")
+	// l4NetLBInInError feature specifies that an error had occurred while creating/
+	// updating GCE Load Balancer.
+	l4NetLBInError = feature("L4NetLBInError")
+
 	// PSC Features
 	sa          = feature("ServiceAttachments")
 	saInSuccess = feature("ServiceAttachmentInSuccess")

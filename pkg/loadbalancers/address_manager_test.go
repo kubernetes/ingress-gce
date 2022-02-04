@@ -125,9 +125,10 @@ func TestAddressManagerExternallyOwned(t *testing.T) {
 	require.NoError(t, err)
 
 	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium)
-	ipToUse, err := mgr.HoldAddress()
+	ipToUse, isManaged, err := mgr.HoldAddress()
 	require.NoError(t, err)
 	assert.NotEmpty(t, ipToUse)
+	assert.False(t, isManaged, "IP Address should not be marked as controller's managed")
 
 	ad, err := svc.GetRegionAddress(testLBName, vals.Region)
 	assert.True(t, utils.IsNotFoundError(err))
@@ -147,7 +148,7 @@ func TestAddressManagerExternallyOwnedWrongNetworkTier(t *testing.T) {
 	err = svc.ReserveRegionAddress(addr, vals.Region)
 	require.NoError(t, err, "")
 	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium)
-	_, err = mgr.HoldAddress()
+	_, _, err = mgr.HoldAddress()
 	require.Error(t, err, "does not have the expected network tier")
 }
 
@@ -163,15 +164,16 @@ func TestAddressManagerBadExternallyOwned(t *testing.T) {
 	require.NoError(t, err)
 
 	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium)
-	ad, err := mgr.HoldAddress()
+	ad, _, err := mgr.HoldAddress()
 	assert.NotNil(t, err) // FIXME
 	require.Equal(t, ad, "")
 }
 
 func testHoldAddress(t *testing.T, mgr *addressManager, svc gce.CloudAddressService, name, region, targetIP, scheme, netTier string) {
-	ipToUse, err := mgr.HoldAddress()
+	ipToUse, isManaged, err := mgr.HoldAddress()
 	require.NoError(t, err)
 	assert.NotEmpty(t, ipToUse)
+	assert.True(t, isManaged, "IP Address should be marked as controller's managed")
 
 	addr, err := svc.GetRegionAddress(name, region)
 	require.NoError(t, err)

@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"reflect"
 	"sort"
 	"strings"
@@ -49,12 +50,14 @@ import (
 )
 
 const (
-	FwIPAddress          = "10.0.0.1"
-	loadBalancerIP       = "10.0.0.10"
-	usersIP              = "35.10.211.60"
-	testServiceNamespace = "default"
-	hcNodePort           = int32(10111)
-	userAddrName         = "UserStaticAddress"
+	FwIPAddress              = "10.0.0.1"
+	loadBalancerIP           = "10.0.0.10"
+	usersIP                  = "35.10.211.60"
+	testServiceNamespace     = "default"
+	hcNodePort               = int32(10111)
+	userAddrName             = "UserStaticAddress"
+	l4netlbLatencyMetricName = "l4_netlb_sync_duration_seconds"
+	l4netlbErrorMetricName   = "l4_netlb_sync_error_count"
 )
 
 func getExternalIPS() []string {
@@ -358,7 +361,25 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 }
 
 func TestProcessServiceCreate(t *testing.T) {
-	svc, lc := createAndSyncNetLBSvc(t)
+	lc := newL4NetLBServiceController()
+	svc := test.NewL4NetLBRBSService(8080)
+	addNetLBService(lc, svc)
+	prevMetrics := test.GetL4LatencyMetric(t, l4netlbLatencyMetricName)
+	if prevMetrics == nil {
+		t.Fatalf("Cannot get prometheus metrics for L4NetLB latency")
+	}
+	key, _ := common.KeyFunc(svc)
+	err := lc.sync(key)
+	if err != nil {
+		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
+	}
+	svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+	}
+	prevMetrics.ValidateDiff(test.GetL4LatencyMetric(t, l4netlbLatencyMetricName), &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
+
+	validateNetLBSvcStatus(svc, t)
 	if err := checkBackendService(lc, svc); err != nil {
 		t.Errorf("UnexpectedError %v", err)
 	}
@@ -506,6 +527,26 @@ func TestProcessServiceCreationFailed(t *testing.T) {
 		}
 	}
 }
+
+func TestMetricsWithSyncError(t *testing.T) {
+	lc := newL4NetLBServiceController()
+	(lc.ctx.Cloud.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertForwardingRulesInternalErrHook
+	prevMetrics := test.GetL4LBErrorMetric(t, l4netlbErrorMetricName)
+	svc := test.NewL4NetLBRBSService(8080)
+	addNetLBService(lc, svc)
+
+	key, _ := common.KeyFunc(svc)
+	err := lc.sync(key)
+	if err == nil {
+		t.Errorf("Expected error in sync controller")
+	}
+	expectMetrics := &test.L4LBErrorMetricInfo{
+		ByGCEResource: map[string]uint64{annotations.ForwardingRuleResource: 1},
+		ByErrorType:   map[string]uint64{http.StatusText(http.StatusInternalServerError): 1}}
+	received := test.GetL4LBErrorMetric(t, l4netlbErrorMetricName)
+	prevMetrics.ValidateDiff(received, expectMetrics, t)
+}
+
 func TestProcessServiceDeletionFailed(t *testing.T) {
 	for _, param := range []struct {
 		addMockFunc   func(*cloud.MockGCE)

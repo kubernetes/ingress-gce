@@ -322,8 +322,8 @@ func getPrometheusMetric(name string) (*dto.MetricFamily, error) {
 	return nil, nil
 }
 
-// L4LatencyMetricInfo holds the state of the l4_ilb_sync_duration_seconds metric.
-type L4ILBLatencyMetricInfo struct {
+// L4LatencyMetricInfo holds the state of the sync_duration_seconds metric for ILB or NetLB.
+type L4LBLatencyMetricInfo struct {
 	CreateCount       uint64
 	DeleteCount       uint64
 	UpdateCount       uint64
@@ -333,15 +333,15 @@ type L4ILBLatencyMetricInfo struct {
 	deleteSum         float64
 }
 
-// GetL4LatencyMetric gets the current state of the l4_ilb_sync_duration_seconds metric.
-func GetL4LatencyMetric(t *testing.T) *L4ILBLatencyMetricInfo {
+// GetL4LatencyMetric gets the current state of the sync_duration_seconds metric for ILB or NetLB.
+func GetL4LatencyMetric(t *testing.T, metricName string) *L4LBLatencyMetricInfo {
 	var createCount, updateCount, deleteCount uint64
 	var createSum, updateSum, deleteSum float64
-	var result L4ILBLatencyMetricInfo
+	var result L4LBLatencyMetricInfo
 
-	latencyMetric, err := getPrometheusMetric("l4_ilb_sync_duration_seconds")
+	latencyMetric, err := getPrometheusMetric(metricName)
 	if err != nil {
-		t.Errorf("Failed to get L4 ILB prometheus metric 'l4_ilb_sync_duration_seconds', err: %v", err)
+		t.Errorf("Failed to get L4 LB prometheus metric '%s', err: %v", metricName, err)
 		return nil
 	}
 	for _, val := range latencyMetric.GetMetric() {
@@ -374,7 +374,7 @@ func GetL4LatencyMetric(t *testing.T) *L4ILBLatencyMetricInfo {
 
 // ValidateDiff ensures that the diff between the old and the new metric is as expected.
 // The test uses diff rather than absolute values since the metrics are cumulative of all test cases.
-func (old *L4ILBLatencyMetricInfo) ValidateDiff(new, expect *L4ILBLatencyMetricInfo, t *testing.T) {
+func (old *L4LBLatencyMetricInfo) ValidateDiff(new, expect *L4LBLatencyMetricInfo, t *testing.T) {
 	new.CreateCount = new.CreateCount - old.CreateCount
 	new.DeleteCount = new.DeleteCount - old.DeleteCount
 	new.UpdateCount = new.UpdateCount - old.UpdateCount
@@ -390,7 +390,7 @@ func (old *L4ILBLatencyMetricInfo) ValidateDiff(new, expect *L4ILBLatencyMetricI
 	updateLatency := meanLatency(new.updateSum, float64(new.UpdateCount))
 
 	if createLatency > expect.UpperBoundSeconds || deleteLatency > expect.UpperBoundSeconds || updateLatency > expect.UpperBoundSeconds {
-		t.Errorf("Got createLatency %v, updateLatency %v, deleteLatency %v - atleast one of them is higher than the specified limit %v seconds", createLatency, updateLatency, deleteLatency, expect.UpperBoundSeconds)
+		t.Errorf("Got createLatency %v, updateLatency %v, deleteLatency %v - at least one of them is higher than the specified limit %v seconds", createLatency, updateLatency, deleteLatency, expect.UpperBoundSeconds)
 	}
 }
 
@@ -401,19 +401,19 @@ func meanLatency(latencySum, numPoints float64) float64 {
 	return latencySum / numPoints
 }
 
-// L4ILBErrorMetricInfo holds the state of the l4_ilb_sync_error_count metric.
-type L4ILBErrorMetricInfo struct {
+// L4LBErrorMetricInfo holds the state of the sync_error_count metric for ILB or NetLB.
+type L4LBErrorMetricInfo struct {
 	ByGCEResource map[string]uint64
 	ByErrorType   map[string]uint64
 }
 
-// GetL4ILBErrorMetric gets the current state of the l4_ilb_sync_error_count metric.
-func GetL4ILBErrorMetric(t *testing.T) *L4ILBErrorMetricInfo {
-	result := &L4ILBErrorMetricInfo{ByErrorType: make(map[string]uint64), ByGCEResource: make(map[string]uint64)}
+// GetL4LBErrorMetric gets the current state of the error_count metric for ILb or NetLB.
+func GetL4LBErrorMetric(t *testing.T, metricName string) *L4LBErrorMetricInfo {
+	result := &L4LBErrorMetricInfo{ByErrorType: make(map[string]uint64), ByGCEResource: make(map[string]uint64)}
 
-	errorMetric, err := getPrometheusMetric("l4_ilb_sync_error_count")
+	errorMetric, err := getPrometheusMetric(metricName)
 	if err != nil {
-		t.Errorf("Failed to get L4 ILB prometheus metric 'l4_ilb_sync_error_count', err: %v", err)
+		t.Errorf("Failed to get L4 LB prometheus metric %s, err: %v", metricName, err)
 		return nil
 	}
 	for _, val := range errorMetric.GetMetric() {
@@ -430,7 +430,7 @@ func GetL4ILBErrorMetric(t *testing.T) *L4ILBErrorMetricInfo {
 
 // ValidateDiff ensures that the diff between the old and the new metric is as expected.
 // The test uses diff rather than absolute values since the metrics are cumulative of all test cases.
-func (old *L4ILBErrorMetricInfo) ValidateDiff(new, expect *L4ILBErrorMetricInfo, t *testing.T) {
+func (old *L4LBErrorMetricInfo) ValidateDiff(new, expect *L4LBErrorMetricInfo, t *testing.T) {
 	for errType, newVal := range new.ByErrorType {
 		if oldVal, ok := old.ByErrorType[errType]; ok {
 			new.ByErrorType[errType] = newVal - oldVal
