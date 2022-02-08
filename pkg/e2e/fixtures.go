@@ -159,6 +159,52 @@ func ensureEchoService(s *Sandbox, name string, annotations map[string]string, s
 	return svc, nil
 }
 
+// EnsureL4NetLBEchoService that the Echo service with the given description is set up
+func EnsureL4NetLBEchoService(s *Sandbox, name string, annotations map[string]string, numReplicas int32, extPolicy v1.ServiceExternalTrafficPolicyType) (*v1.Service, error) {
+	if err := ensureEchoDeployment(s, name, numReplicas, NoopModify, Linux); err != nil {
+		return nil, err
+	}
+
+	expectedSvc := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+			Annotations: annotations,
+		},
+		Spec: v1.ServiceSpec{
+			Ports: []v1.ServicePort{
+				{
+					Name:       "http-port",
+					Protocol:   v1.ProtocolTCP,
+					Port:       80,
+					TargetPort: intstr.FromInt(8080),
+				},
+			},
+			Type:                  v1.ServiceTypeLoadBalancer,
+			ExternalTrafficPolicy: extPolicy,
+		},
+	}
+	svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Get(context.TODO(), name, metav1.GetOptions{})
+	if svc == nil || err != nil {
+		if svc, err = s.f.Clientset.CoreV1().Services(s.Namespace).Create(context.TODO(), expectedSvc, metav1.CreateOptions{}); err != nil {
+			return nil, err
+		}
+		return svc, err
+	}
+
+	if !reflect.DeepEqual(svc.Spec, expectedSvc.Spec) {
+		// Update the fields individually since we don't want to override everything
+		svc.ObjectMeta.Annotations = expectedSvc.ObjectMeta.Annotations
+		svc.Spec.Ports = expectedSvc.Spec.Ports
+		svc.Spec.Type = expectedSvc.Spec.Type
+		svc.Spec.ExternalTrafficPolicy = extPolicy
+
+		if svc, err := s.f.Clientset.CoreV1().Services(s.Namespace).Update(context.TODO(), svc, metav1.UpdateOptions{}); err != nil {
+			return nil, fmt.Errorf("svc: %v\nexpectedSvc: %v\nerr: %v", svc, expectedSvc, err)
+		}
+	}
+	return svc, nil
+}
+
 // DeleteEchoService deletes the K8s service
 func DeleteEchoService(s *Sandbox, svcName string) error {
 	return s.f.Clientset.CoreV1().Services(s.Namespace).Delete(context.TODO(), svcName, metav1.DeleteOptions{})
