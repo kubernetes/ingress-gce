@@ -34,6 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/healthchecks"
+	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -53,6 +54,18 @@ type L4 struct {
 	ServicePort         utils.ServicePort
 	NamespacedName      types.NamespacedName
 	sharedResourcesLock *sync.Mutex
+}
+
+// L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
+// sync error, the GCE resource that hit the error along with the error type, metrics and more fields.
+type L4ILBSyncResult struct {
+	Annotations        map[string]string
+	Error              error
+	GCEResourceInError string
+	Status             *corev1.LoadBalancerStatus
+	MetricsState       metrics.L4ILBServiceState
+	SyncType           string
+	StartTime          time.Time
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
@@ -77,9 +90,9 @@ func getILBOptions(svc *corev1.Service) gce.ILBOptions {
 }
 
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
-func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4LBSyncResult {
+func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncResult {
 	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): attempting delete of load balancer resources", l.NamespacedName.String())
-	result := &L4LBSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
+	result := &L4ILBSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
 	// All resources use the L4Backend Name, except forwarding rule.
 	name, ok := l.namer.L4Backend(svc.Namespace, svc.Name)
 	if !ok {
@@ -184,8 +197,8 @@ func (l *L4) getFRNameWithProtocol(protocol string) string {
 
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
-func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4LBSyncResult {
-	result := &L4LBSyncResult{
+func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4ILBSyncResult {
+	result := &L4ILBSyncResult{
 		Annotations: make(map[string]string),
 		StartTime:   time.Now(),
 		SyncType:    SyncTypeCreate}

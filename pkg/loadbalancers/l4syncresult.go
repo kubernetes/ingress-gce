@@ -16,11 +16,7 @@ limitations under the License.
 package loadbalancers
 
 import (
-	"time"
-
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/metrics"
 )
 
 const (
@@ -28,19 +24,6 @@ const (
 	SyncTypeUpdate = "update"
 	SyncTypeDelete = "delete"
 )
-
-// L4LBSyncResult contains information about the outcome of an L4 LB sync. It stores the list of resource name annotations,
-// sync error, the GCE resource that hit the error along with the error type and more fields.
-type L4LBSyncResult struct {
-	Annotations        map[string]string
-	Error              error
-	GCEResourceInError string
-	Status             *corev1.LoadBalancerStatus
-	//TODO(kl52752) change metrics to support ILB and XLB
-	MetricsState metrics.L4ILBServiceState
-	SyncType     string
-	StartTime    time.Time
-}
 
 var L4LBResourceAnnotationKeys = []string{
 	annotations.BackendServiceKey,
