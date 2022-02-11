@@ -19,10 +19,11 @@ limitations under the License.
 import (
 	"context"
 	"fmt"
-	"k8s.io/ingress-gce/pkg/healthchecks"
 	"reflect"
 	"strings"
 	"testing"
+
+	"k8s.io/ingress-gce/pkg/healthchecks"
 
 	"google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -1060,12 +1061,13 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	c.MockFirewalls.UpdateHook = nil
 
 	fwrParams := firewalls.FirewallParams{
-		Name:         fwName,
-		SourceRanges: []string{"10.0.0.0/20"},
-		PortRanges:   utils.GetPortRanges(tc.Input),
-		NodeNames:    nodeNames,
-		Protocol:     string(v1.ProtocolTCP),
-		IP:           "1.2.3.4",
+		Name:              fwName,
+		SourceRanges:      []string{"10.0.0.0/20"},
+		DestinationRanges: []string{"20.0.0.0/20"},
+		PortRanges:        utils.GetPortRanges(tc.Input),
+		NodeNames:         nodeNames,
+		Protocol:          string(v1.ProtocolTCP),
+		IP:                "1.2.3.4",
 	}
 	firewalls.EnsureL4FirewallRule(l.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false)
 	if err != nil {
