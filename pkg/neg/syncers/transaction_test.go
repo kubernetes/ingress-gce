@@ -1383,7 +1383,6 @@ func TestUnknownNodes(t *testing.T) {
 		if err == nil {
 			t.Errorf("syncInternal returned nil, expected an error")
 		}
-		fmt.Printf("REMOVE ME: error: %s\n", err)
 
 		// Check that unknown zone did not cause endpoints to be removed
 		out, err := retrieveExistingZoneNetworkEndpointMap(testNegName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode)
