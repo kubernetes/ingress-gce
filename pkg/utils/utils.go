@@ -128,16 +128,6 @@ const (
 	gceAffinityTypeClientIP = "CLIENT_IP"
 )
 
-// FakeGoogleAPIForbiddenErr creates a Forbidden error with type googleapi.Error
-func FakeGoogleAPIForbiddenErr() *googleapi.Error {
-	return &googleapi.Error{Code: http.StatusForbidden}
-}
-
-// FakeGoogleAPINotFoundErr creates a NotFound error with type googleapi.Error
-func FakeGoogleAPINotFoundErr() *googleapi.Error {
-	return &googleapi.Error{Code: http.StatusNotFound}
-}
-
 // IsHTTPErrorCode checks if the given error matches the given HTTP Error code.
 // For this to work the error must be a googleapi Error.
 func IsHTTPErrorCode(err error, code int) bool {

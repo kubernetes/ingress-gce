@@ -21,8 +21,7 @@ import (
 	"fmt"
 
 	compute "google.golang.org/api/compute/v1"
-
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/test"
 )
 
 type fakeFirewallsProvider struct {
@@ -49,7 +48,7 @@ func (ff *fakeFirewallsProvider) GetFirewall(name string) (*compute.Firewall, er
 	if exists {
 		return rule, nil
 	}
-	return nil, utils.FakeGoogleAPINotFoundErr()
+	return nil, test.FakeGoogleAPINotFoundErr()
 }
 
 func (ff *fakeFirewallsProvider) doCreateFirewall(f *compute.Firewall) error {
@@ -66,7 +65,7 @@ func (ff *fakeFirewallsProvider) doCreateFirewall(f *compute.Firewall) error {
 
 func (ff *fakeFirewallsProvider) CreateFirewall(f *compute.Firewall) error {
 	if ff.fwReadOnly {
-		return utils.FakeGoogleAPIForbiddenErr()
+		return test.FakeGoogleAPIForbiddenErr()
 	}
 
 	return ff.doCreateFirewall(f)
@@ -76,7 +75,7 @@ func (ff *fakeFirewallsProvider) doDeleteFirewall(name string) error {
 	// We need the full name for the same reason as CreateFirewall.
 	_, exists := ff.fw[name]
 	if !exists {
-		return utils.FakeGoogleAPINotFoundErr()
+		return test.FakeGoogleAPINotFoundErr()
 	}
 
 	delete(ff.fw, name)
@@ -85,7 +84,7 @@ func (ff *fakeFirewallsProvider) doDeleteFirewall(name string) error {
 
 func (ff *fakeFirewallsProvider) DeleteFirewall(name string) error {
 	if ff.fwReadOnly {
-		return utils.FakeGoogleAPIForbiddenErr()
+		return test.FakeGoogleAPIForbiddenErr()
 	}
 
 	return ff.doDeleteFirewall(name)
@@ -108,7 +107,7 @@ func (ff *fakeFirewallsProvider) doUpdateFirewall(f *compute.Firewall) error {
 
 func (ff *fakeFirewallsProvider) UpdateFirewall(f *compute.Firewall) error {
 	if ff.fwReadOnly {
-		return utils.FakeGoogleAPIForbiddenErr()
+		return test.FakeGoogleAPIForbiddenErr()
 	}
 
 	return ff.doUpdateFirewall(f)

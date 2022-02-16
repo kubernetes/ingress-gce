@@ -21,6 +21,7 @@ import (
 	"strings"
 	"testing"
 
+	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -40,57 +41,90 @@ func newNodePool(f *FakeInstanceGroups, zone string) NodePool {
 }
 
 func TestNodePoolSync(t *testing.T) {
-	f := NewFakeInstanceGroups(sets.NewString([]string{"n1", "n2"}...), defaultNamer)
-	pool := newNodePool(f, defaultZone)
+	ig := &compute.InstanceGroup{Name: defaultNamer.InstanceGroup()}
+	fakeIGs := NewFakeInstanceGroups(map[string]IGsToInstances{
+		defaultZone: {
+			ig: sets.NewString("n1", "n2"),
+		},
+	})
+	pool := newNodePool(fakeIGs, defaultZone)
 	pool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{80})
 
 	// KubeNodes: n1
 	// GCENodes: n1, n2
 	// Remove n2 from the instance group.
 
-	f.calls = []int{}
-	kubeNodes := sets.NewString([]string{"n1"}...)
+	fakeIGs.calls = []int{}
+	kubeNodes := sets.NewString("n1")
 	pool.Sync(kubeNodes.List())
-	if f.instances.Len() != kubeNodes.Len() || !kubeNodes.IsSuperset(f.instances) {
-		t.Fatalf("%v != %v", kubeNodes, f.instances)
+	instancesList, err := fakeIGs.ListInstancesInInstanceGroup(ig.Name, defaultZone, allInstances)
+	if err != nil {
+		t.Fatalf("Error while listing instances in instance group: %v", err)
+	}
+	instances, err := test.InstancesListToNameSet(instancesList)
+	if err != nil {
+		t.Fatalf("Error while getting instances in instance group. IG: %v Error: %v", ig, err)
+	}
+	if instances.Len() != kubeNodes.Len() || !kubeNodes.IsSuperset(instances) {
+		t.Fatalf("%v != %v", kubeNodes, instances)
 	}
 
 	// KubeNodes: n1, n2
 	// GCENodes: n1
 	// Try to add n2 to the instance group.
 
-	f = NewFakeInstanceGroups(sets.NewString([]string{"n1"}...), defaultNamer)
-	pool = newNodePool(f, defaultZone)
+	fakeIGs = NewFakeInstanceGroups(map[string]IGsToInstances{
+		defaultZone: {
+			ig: sets.NewString("n1"),
+		},
+	})
+	pool = newNodePool(fakeIGs, defaultZone)
 	pool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{80})
 
-	f.calls = []int{}
-	kubeNodes = sets.NewString([]string{"n1", "n2"}...)
+	fakeIGs.calls = []int{}
+	kubeNodes = sets.NewString("n1", "n2")
 	pool.Sync(kubeNodes.List())
-	if f.instances.Len() != kubeNodes.Len() ||
-		!kubeNodes.IsSuperset(f.instances) {
-		t.Fatalf("%v != %v", kubeNodes, f.instances)
+	instancesList, err = fakeIGs.ListInstancesInInstanceGroup(ig.Name, defaultZone, allInstances)
+	if err != nil {
+		t.Fatalf("Error while listing instances in instance group: %v", err)
+	}
+	instances, err = test.InstancesListToNameSet(instancesList)
+	if err != nil {
+		t.Fatalf("Error while getting instances in instance group. IG: %v Error: %v", ig, err)
+	}
+	if instances.Len() != kubeNodes.Len() ||
+		!kubeNodes.IsSuperset(instances) {
+		t.Fatalf("%v != %v", kubeNodes, instances)
 	}
 
 	// KubeNodes: n1, n2
 	// GCENodes: n1, n2
 	// Do nothing.
 
-	f = NewFakeInstanceGroups(sets.NewString([]string{"n1", "n2"}...), defaultNamer)
-	pool = newNodePool(f, defaultZone)
+	fakeIGs = NewFakeInstanceGroups(map[string]IGsToInstances{
+		defaultZone: {
+			ig: sets.NewString("n1", "n2"),
+		},
+	})
+	pool = newNodePool(fakeIGs, defaultZone)
 	pool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{80})
 
-	f.calls = []int{}
-	kubeNodes = sets.NewString([]string{"n1", "n2"}...)
+	fakeIGs.calls = []int{}
+	kubeNodes = sets.NewString("n1", "n2")
 	pool.Sync(kubeNodes.List())
-	if len(f.calls) != 0 {
+	if len(fakeIGs.calls) != 0 {
 		t.Fatalf(
-			"Did not expect any calls, got %+v", f.calls)
+			"Did not expect any calls, got %+v", fakeIGs.calls)
 	}
 }
 
 func TestSetNamedPorts(t *testing.T) {
-	f := NewFakeInstanceGroups(sets.NewString([]string{"ig"}...), defaultNamer)
-	pool := newNodePool(f, defaultZone)
+	fakeIGs := NewFakeInstanceGroups(map[string]IGsToInstances{
+		defaultZone: {
+			&compute.InstanceGroup{Name: "ig"}: sets.NewString("ig"),
+		},
+	})
+	pool := newNodePool(fakeIGs, defaultZone)
 
 	testCases := []struct {
 		activePorts   []int64
@@ -118,28 +152,32 @@ func TestSetNamedPorts(t *testing.T) {
 		},
 		// TODO: Add tests to remove named ports when we support that.
 	}
-	for _, test := range testCases {
-		igs, err := pool.EnsureInstanceGroupsAndPorts("ig", test.activePorts)
+	for _, testCase := range testCases {
+		igs, err := pool.EnsureInstanceGroupsAndPorts("ig", testCase.activePorts)
 		if err != nil {
-			t.Fatalf("unexpected error in setting ports %v to instance group: %s", test.activePorts, err)
+			t.Fatalf("unexpected error in setting ports %v to instance group: %s", testCase.activePorts, err)
 		}
 		if len(igs) != 1 {
 			t.Fatalf("expected a single instance group, got: %v", igs)
 		}
 		actualPorts := igs[0].NamedPorts
-		if len(actualPorts) != len(test.expectedPorts) {
-			t.Fatalf("unexpected named ports on instance group. expected: %v, got: %v", test.expectedPorts, actualPorts)
+		if len(actualPorts) != len(testCase.expectedPorts) {
+			t.Fatalf("unexpected named ports on instance group. expected: %v, got: %v", testCase.expectedPorts, actualPorts)
 		}
 		for i, p := range igs[0].NamedPorts {
-			if p.Port != test.expectedPorts[i] {
-				t.Fatalf("unexpected named ports on instance group. expected: %v, got: %v", test.expectedPorts, actualPorts)
+			if p.Port != testCase.expectedPorts[i] {
+				t.Fatalf("unexpected named ports on instance group. expected: %v, got: %v", testCase.expectedPorts, actualPorts)
 			}
 		}
 	}
 }
 
 func TestGetInstanceReferences(t *testing.T) {
-	pool := newNodePool(NewFakeInstanceGroups(sets.NewString([]string{"ig"}...), defaultNamer), defaultZone)
+	pool := newNodePool(NewFakeInstanceGroups(map[string]IGsToInstances{
+		defaultZone: {
+			&compute.InstanceGroup{Name: "ig"}: sets.NewString("ig"),
+		},
+	}), defaultZone)
 	instances := pool.(*Instances)
 
 	nodeNames := []string{"node-1", "node-2", "node-3", "node-4.region.zone"}

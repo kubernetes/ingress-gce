@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -110,7 +111,7 @@ func (f *FakeZoneGetter) GetZoneForNode(name string) (string, error) {
 			return zone, nil
 		}
 	}
-	return "", NotFoundError
+	return "", test.FakeGoogleAPINotFoundErr()
 }
 
 // Adds a zone with the given instances to the zone getter
@@ -145,8 +146,6 @@ func NewFakeNetworkEndpointGroupCloud(subnetwork, network string) NetworkEndpoin
 	}
 }
 
-var NotFoundError = utils.FakeGoogleAPINotFoundErr()
-
 func (f *FakeNetworkEndpointGroupCloud) GetNetworkEndpointGroup(name string, zone string, version meta.Version) (*composite.NetworkEndpointGroup, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -158,7 +157,7 @@ func (f *FakeNetworkEndpointGroupCloud) GetNetworkEndpointGroup(name string, zon
 			}
 		}
 	}
-	return nil, NotFoundError
+	return nil, test.FakeGoogleAPINotFoundErr()
 }
 
 func networkEndpointKey(name, zone string) string {
@@ -210,7 +209,7 @@ func (f *FakeNetworkEndpointGroupCloud) DeleteNetworkEndpointGroup(name string, 
 		newList = append(newList, neg)
 	}
 	if !found {
-		return NotFoundError
+		return test.FakeGoogleAPINotFoundErr()
 	}
 	f.NetworkEndpointGroups[zone] = newList
 	return nil
@@ -250,7 +249,7 @@ func (f *FakeNetworkEndpointGroupCloud) ListNetworkEndpoints(name, zone string, 
 	ret := []*composite.NetworkEndpointWithHealthStatus{}
 	nes, ok := f.NetworkEndpoints[networkEndpointKey(name, zone)]
 	if !ok {
-		return nil, NotFoundError
+		return nil, test.FakeGoogleAPINotFoundErr()
 	}
 	for _, ne := range nes {
 		ret = append(ret, &composite.NetworkEndpointWithHealthStatus{NetworkEndpoint: ne})

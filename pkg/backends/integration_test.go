@@ -45,7 +45,7 @@ func newTestJig(fakeGCE *gce.Cloud) *Jig {
 	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
-	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
+	fakeIGs := instances.NewEmptyFakeInstanceGroups()
 	fakeZL := &instances.FakeZoneLister{Zones: []string{defaultZone}}
 	fakeInstancePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE), fakeZL)
 
