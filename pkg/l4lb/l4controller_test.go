@@ -181,7 +181,7 @@ func createLegacyForwardingRule(t *testing.T, svc *api_v1.Service, cloud *gce.Cl
 // that the status field is as expected in each case.
 func TestProcessCreateOrUpdate(t *testing.T) {
 	l4c := newServiceController(t, newFakeGCE())
-	prevMetrics := test.GetL4LatencyMetric(t)
+	prevMetrics := test.GetL4ILBLatencyMetric(t)
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	addNEG(l4c, newSvc)
@@ -195,7 +195,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(newSvc, true, t)
-	prevMetrics.ValidateDiff(test.GetL4LatencyMetric(t), &test.L4ILBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
+	prevMetrics.ValidateDiff(test.GetL4ILBLatencyMetric(t), &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
 
 	// set the TrafficPolicy of the service to Local
 	newSvc.Spec.ExternalTrafficPolicy = api_v1.ServiceExternalTrafficPolicyTypeLocal
@@ -210,7 +210,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(newSvc, true, t)
-	prevMetrics.ValidateDiff(test.GetL4LatencyMetric(t), &test.L4ILBLatencyMetricInfo{CreateCount: 1, UpdateCount: 1, UpperBoundSeconds: 1}, t)
+	prevMetrics.ValidateDiff(test.GetL4ILBLatencyMetric(t), &test.L4LBLatencyMetricInfo{CreateCount: 1, UpdateCount: 1, UpperBoundSeconds: 1}, t)
 	// Remove the Internal LoadBalancer annotation, this should trigger a cleanup.
 	delete(newSvc.Annotations, gce.ServiceAnnotationLoadBalancerType)
 	updateILBService(l4c, newSvc)
@@ -225,7 +225,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(newSvc, false, t)
-	prevMetrics.ValidateDiff(test.GetL4LatencyMetric(t), &test.L4ILBLatencyMetricInfo{CreateCount: 1, UpdateCount: 1, DeleteCount: 1, UpperBoundSeconds: 1}, t)
+	prevMetrics.ValidateDiff(test.GetL4ILBLatencyMetric(t), &test.L4LBLatencyMetricInfo{CreateCount: 1, UpdateCount: 1, DeleteCount: 1, UpperBoundSeconds: 1}, t)
 	newSvc.DeletionTimestamp = &v1.Time{}
 	updateILBService(l4c, newSvc)
 	key, _ := common.KeyFunc(newSvc)
@@ -299,7 +299,7 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 
 func TestProcessDeletion(t *testing.T) {
 	l4c := newServiceController(t, newFakeGCE())
-	prevMetrics := test.GetL4LatencyMetric(t)
+	prevMetrics := test.GetL4ILBLatencyMetric(t)
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	addNEG(l4c, newSvc)
@@ -313,7 +313,7 @@ func TestProcessDeletion(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(newSvc, true, t)
-	prevMetrics.ValidateDiff(test.GetL4LatencyMetric(t), &test.L4ILBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
+	prevMetrics.ValidateDiff(test.GetL4ILBLatencyMetric(t), &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
 
 	// Mark the service for deletion by updating timestamp. Use svc instead of newSvc since that has the finalizer.
 	newSvc.DeletionTimestamp = &v1.Time{}
@@ -332,7 +332,7 @@ func TestProcessDeletion(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(newSvc, false, t)
-	prevMetrics.ValidateDiff(test.GetL4LatencyMetric(t), &test.L4ILBLatencyMetricInfo{CreateCount: 1, DeleteCount: 1, UpperBoundSeconds: 1}, t)
+	prevMetrics.ValidateDiff(test.GetL4ILBLatencyMetric(t), &test.L4LBLatencyMetricInfo{CreateCount: 1, DeleteCount: 1, UpperBoundSeconds: 1}, t)
 	deleteILBService(l4c, newSvc)
 	newSvc, err = l4c.client.CoreV1().Services(newSvc.Namespace).Get(context2.TODO(), newSvc.Name, v1.GetOptions{})
 	if newSvc != nil {
@@ -342,7 +342,7 @@ func TestProcessDeletion(t *testing.T) {
 
 func TestProcessCreateLegacyService(t *testing.T) {
 	l4c := newServiceController(t, newFakeGCE())
-	prevMetrics := test.GetL4LatencyMetric(t)
+	prevMetrics := test.GetL4ILBLatencyMetric(t)
 	newSvc := test.NewL4ILBService(false, 8080)
 	// Set the legacy finalizer
 	newSvc.Finalizers = append(newSvc.Finalizers, common.LegacyILBFinalizer)
@@ -357,12 +357,12 @@ func TestProcessCreateLegacyService(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(svc, false, t)
-	prevMetrics.ValidateDiff(test.GetL4LatencyMetric(t), &test.L4ILBLatencyMetricInfo{}, t)
+	prevMetrics.ValidateDiff(test.GetL4ILBLatencyMetric(t), &test.L4LBLatencyMetricInfo{}, t)
 }
 
 func TestProcessCreateServiceWithLegacyInternalForwardingRule(t *testing.T) {
 	l4c := newServiceController(t, newFakeGCE())
-	prevMetrics := test.GetL4LatencyMetric(t)
+	prevMetrics := test.GetL4ILBLatencyMetric(t)
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	// Mimic addition of NEG. This will not actually happen, but this test verifies that sync is skipped
@@ -382,12 +382,12 @@ func TestProcessCreateServiceWithLegacyInternalForwardingRule(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(svc, false, t)
-	prevMetrics.ValidateDiff(test.GetL4LatencyMetric(t), &test.L4ILBLatencyMetricInfo{}, t)
+	prevMetrics.ValidateDiff(test.GetL4ILBLatencyMetric(t), &test.L4LBLatencyMetricInfo{}, t)
 }
 
 func TestProcessCreateServiceWithLegacyExternalForwardingRule(t *testing.T) {
 	l4c := newServiceController(t, newFakeGCE())
-	prevMetrics := test.GetL4LatencyMetric(t)
+	prevMetrics := test.GetL4ILBLatencyMetric(t)
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	// Mimic addition of NEG. This will happen in parallel with ILB sync, by the NEG controller.
@@ -406,12 +406,12 @@ func TestProcessCreateServiceWithLegacyExternalForwardingRule(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
 	validateSvcStatus(svc, true, t)
-	prevMetrics.ValidateDiff(test.GetL4LatencyMetric(t), &test.L4ILBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
+	prevMetrics.ValidateDiff(test.GetL4ILBLatencyMetric(t), &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
 }
 
 func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 	l4c := newServiceController(t, newFakeGCE())
-	prevMetrics := test.GetL4LatencyMetric(t)
+	prevMetrics := test.GetL4ILBLatencyMetric(t)
 	clusterSvc := &api_v1.Service{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      "testsvc",
@@ -446,7 +446,7 @@ func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 	}
 	validateSvcStatus(newSvc, true, t)
 	// this will be a create metric since an ILB IP is being assigned for the first time.
-	prevMetrics.ValidateDiff(test.GetL4LatencyMetric(t), &test.L4ILBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
+	prevMetrics.ValidateDiff(test.GetL4ILBLatencyMetric(t), &test.L4LBLatencyMetricInfo{CreateCount: 1, UpperBoundSeconds: 1}, t)
 }
 
 func TestProcessMultipleServices(t *testing.T) {
@@ -456,7 +456,7 @@ func TestProcessMultipleServices(t *testing.T) {
 	for _, onlyLocal := range []bool{true, false} {
 		t.Run(fmt.Sprintf("L4 with LocalMode=%v", onlyLocal), func(t *testing.T) {
 			l4c := newServiceController(t, newFakeGCE())
-			prevMetrics := test.GetL4LatencyMetric(t)
+			prevMetrics := test.GetL4ILBLatencyMetric(t)
 			go l4c.Run()
 			var svcNames []string
 			var testNs string
@@ -490,7 +490,7 @@ func TestProcessMultipleServices(t *testing.T) {
 				validateSvcStatus(newSvc, true, t)
 			}
 			// this will be a create metric since an ILB IP is being assigned for the first time.
-			prevMetrics.ValidateDiff(test.GetL4LatencyMetric(t), &test.L4ILBLatencyMetricInfo{CreateCount: 20, UpperBoundSeconds: 1}, t)
+			prevMetrics.ValidateDiff(test.GetL4ILBLatencyMetric(t), &test.L4LBLatencyMetricInfo{CreateCount: 20, UpperBoundSeconds: 1}, t)
 
 		})
 	}
@@ -547,7 +547,7 @@ func TestProcessServiceOnError(t *testing.T) {
 	if err == nil {
 		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
 	}
-	expectMetrics := &test.L4ILBErrorMetricInfo{
+	expectMetrics := &test.L4LBErrorMetricInfo{
 		ByGCEResource: map[string]uint64{annotations.ForwardingRuleResource: 1},
 		ByErrorType:   map[string]uint64{http.StatusText(http.StatusInternalServerError): 1}}
 	prevMetrics.ValidateDiff(test.GetL4ILBErrorMetric(t), expectMetrics, t)

@@ -24,16 +24,18 @@ import (
 )
 
 const (
-	statusSuccess = "success"
-	statusError   = "error"
+	statusSuccess          = "success"
+	statusError            = "error"
+	L4ilbLatencyMetricName = "l4_ilb_sync_duration_seconds"
+	L4ilbErrorMetricName   = "l4_ilb_sync_error_count"
 )
 
 var (
-	l4ILBSyncLatencyMetricsLabels = []string{
+	l4LBSyncLatencyMetricsLabels = []string{
 		"sync_result", // result of the sync
 		"sync_type",   // whether this is a new service, update or delete
 	}
-	l4ILBSyncErrorMetricLabels = []string{
+	l4LBSyncErrorMetricLabels = []string{
 		"sync_type",    // whether this is a new service, update or delete
 		"gce_resource", // The GCE resource whose update caused the error
 		// max number of values for error_type = 18 k8s error reasons + 60 http status errors.
@@ -42,19 +44,19 @@ var (
 	}
 	l4ILBSyncLatency = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name: "l4_ilb_sync_duration_seconds",
+			Name: L4ilbLatencyMetricName,
 			Help: "Latency of an L4 ILB Sync",
 			// custom buckets - [30s, 60s, 120s, 240s(4min), 480s(8min), 960s(16m), +Inf]
 			Buckets: prometheus.ExponentialBuckets(30, 2, 6),
 		},
-		l4ILBSyncLatencyMetricsLabels,
+		l4LBSyncLatencyMetricsLabels,
 	)
 	l4ILBSyncErrorCount = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "l4_ilb_sync_error_count",
+			Name: L4ilbErrorMetricName,
 			Help: "Count of L4 ILB Sync errors",
 		},
-		l4ILBSyncErrorMetricLabels,
+		l4LBSyncErrorMetricLabels,
 	)
 )
 

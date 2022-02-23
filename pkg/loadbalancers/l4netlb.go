@@ -33,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/healthchecks"
+	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
@@ -51,6 +52,19 @@ type L4NetLB struct {
 	ServicePort         utils.ServicePort
 	NamespacedName      types.NamespacedName
 	sharedResourcesLock *sync.Mutex
+}
+
+// L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
+// sync error, the GCE resource that hit the error along with the error type, metrics and more fields.
+type L4NetLBSyncResult struct {
+	Annotations        map[string]string
+	Error              error
+	GCEResourceInError string
+	Status             *corev1.LoadBalancerStatus
+	// TODO(kl52752) Change metric service state to NetLB
+	MetricsState metrics.L4ILBServiceState
+	SyncType     string
+	StartTime    time.Time
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
@@ -83,8 +97,8 @@ func (l4netlb *L4NetLB) createKey(name string) (*meta.Key, error) {
 // been created. It is health check, firewall rules, backend service and forwarding rule.
 // It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 // This function does not link instances to Backend Service.
-func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) *L4LBSyncResult {
-	result := &L4LBSyncResult{
+func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) *L4NetLBSyncResult {
+	result := &L4NetLBSyncResult{
 		Annotations: make(map[string]string),
 		StartTime:   time.Now(),
 		SyncType:    SyncTypeCreate}
@@ -107,7 +121,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	hcLink, hcFwName, hcPort, hcName, err := ensureHCFunc()
 	if err != nil {
 		result.GCEResourceInError = annotations.HealthcheckResource
-		result.Error = err
+		result.Error = fmt.Errorf("Failed to ensure health check %s - %w", hcName, err)
 		return result
 	}
 	result.Annotations[annotations.HealthcheckKey] = hcName
@@ -123,15 +137,14 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	bs, err := l4netlb.backendPool.EnsureL4BackendService(name, hcLink, protocol, string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
-		result.Error = fmt.Errorf("Failed to ensure backend service - %v", err)
+		result.Error = fmt.Errorf("Failed to ensure backend service %s - %w", name, err)
 		return result
 	}
 	result.Annotations[annotations.BackendServiceKey] = name
 	fr, err := l4netlb.ensureExternalForwardingRule(bs.SelfLink)
 	if err != nil {
-
 		result.GCEResourceInError = annotations.ForwardingRuleResource
-		result.Error = fmt.Errorf("Failed to ensure forwarding rule - %v", err)
+		result.Error = fmt.Errorf("Failed to ensure forwarding rule - %w", err)
 		return result
 	}
 	if fr.IPProtocol == string(corev1.ProtocolTCP) {
@@ -145,8 +158,8 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 
 // EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
 // It is health check, firewall rules and backend service
-func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4LBSyncResult {
-	result := &L4LBSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
+func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBSyncResult {
+	result := &L4NetLBSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
 
 	frName := l4netlb.GetFRName()
 	key, err := l4netlb.createKey(frName)
@@ -239,9 +252,9 @@ func (l4netlb *L4NetLB) GetFRName() string {
 	return utils.LegacyForwardingRuleName(l4netlb.Service)
 }
 
-func (l4netlb *L4NetLB) createFirewalls(name, hcLink, hcFwName string, hcPort int32, nodeNames []string, sharedHC bool) (string, *L4LBSyncResult) {
+func (l4netlb *L4NetLB) createFirewalls(name, hcLink, hcFwName string, hcPort int32, nodeNames []string, sharedHC bool) (string, *L4NetLBSyncResult) {
 	_, portRanges, _, protocol := utils.GetPortsAndProtocol(l4netlb.Service.Spec.Ports)
-	result := &L4LBSyncResult{}
+	result := &L4NetLBSyncResult{}
 	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l4netlb.Service)
 	if err != nil {
 		result.Error = err
@@ -261,6 +274,7 @@ func (l4netlb *L4NetLB) createFirewalls(name, hcLink, hcFwName string, hcPort in
 	result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder)
 	if result.Error != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
+		result.Error = err
 		return "", result
 	}
 	// Add firewall rule for healthchecks to nodes
