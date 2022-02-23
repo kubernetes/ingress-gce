@@ -141,7 +141,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		return result
 	}
 	result.Annotations[annotations.BackendServiceKey] = name
-	fr, err := l4netlb.ensureExternalForwardingRule(bs.SelfLink)
+	fr, _, err := l4netlb.ensureExternalForwardingRule(bs.SelfLink)
 	if err != nil {
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 		result.Error = fmt.Errorf("Failed to ensure forwarding rule - %w", err)
