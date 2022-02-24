@@ -338,19 +338,23 @@ type L4LBLatencyMetricInfo struct {
 }
 
 // GetL4ILBLatencyMetric gets the current state of the l4_ilb_sync_duration_seconds metric.
-func GetL4ILBLatencyMetric(t *testing.T) *L4LBLatencyMetricInfo {
-	return getL4LatencyMetric(t, metrics.L4ilbLatencyMetricName)
+func GetL4ILBLatencyMetric() (*L4LBLatencyMetricInfo, error) {
+	return getL4LatencyMetric(metrics.L4ilbLatencyMetricName)
 }
 
-func getL4LatencyMetric(t *testing.T, metricName string) *L4LBLatencyMetricInfo {
+// GetL4NetLBLatencyMetric gets the current state of the l4_netlb_sync_duration_seconds metric.
+func GetL4NetLBLatencyMetric() (*L4LBLatencyMetricInfo, error) {
+	return getL4LatencyMetric(metrics.L4netlbLatencyMetricName)
+}
+
+func getL4LatencyMetric(metricName string) (*L4LBLatencyMetricInfo, error) {
 	var createCount, updateCount, deleteCount uint64
 	var createSum, updateSum, deleteSum float64
 	var result L4LBLatencyMetricInfo
 
 	latencyMetric, err := getPrometheusMetric(metricName)
 	if err != nil {
-		t.Errorf("Failed to get L4 LB prometheus metric '%s', err: %v", metricName, err)
-		return nil
+		return nil, fmt.Errorf("Failed to get L4 LB prometheus metric '%s', err: %v", metricName, err)
 	}
 	for _, val := range latencyMetric.GetMetric() {
 		for _, label := range val.Label {
@@ -366,7 +370,7 @@ func getL4LatencyMetric(t *testing.T, metricName string) *L4LBLatencyMetricInfo 
 					deleteCount += val.GetHistogram().GetSampleCount()
 					deleteSum += val.GetHistogram().GetSampleSum()
 				default:
-					t.Errorf("Invalid label %s:%s", label.GetName(), label.GetValue())
+					return nil, fmt.Errorf("Invalid label %s:%s", label.GetName(), label.GetValue())
 				}
 			}
 		}
@@ -377,7 +381,7 @@ func getL4LatencyMetric(t *testing.T, metricName string) *L4LBLatencyMetricInfo 
 		result.deleteSum = deleteSum
 		result.updateSum = updateSum
 	}
-	return &result
+	return &result, nil
 }
 
 // ValidateDiff ensures that the diff between the old and the new metric is as expected.
@@ -416,16 +420,21 @@ type L4LBErrorMetricInfo struct {
 }
 
 // GetL4ILBErrorMetric gets the current state of the l4_ilb_sync_error_count.
-func GetL4ILBErrorMetric(t *testing.T) *L4LBErrorMetricInfo {
-	return getL4LBErrorMetric(t, metrics.L4ilbErrorMetricName)
+func GetL4ILBErrorMetric() (*L4LBErrorMetricInfo, error) {
+	return getL4lbErrorMetric(metrics.L4ilbErrorMetricName)
 }
-func getL4LBErrorMetric(t *testing.T, metricName string) *L4LBErrorMetricInfo {
+
+// GetL4NetLBErrorMetric gets the current state of the l4_netlb_sync_error_count.
+func GetL4NetLBErrorMetric() (*L4LBErrorMetricInfo, error) {
+	return getL4lbErrorMetric(metrics.L4netlbErrorMetricName)
+}
+
+func getL4lbErrorMetric(metricName string) (*L4LBErrorMetricInfo, error) {
 	result := &L4LBErrorMetricInfo{ByErrorType: make(map[string]uint64), ByGCEResource: make(map[string]uint64)}
 
 	errorMetric, err := getPrometheusMetric(metricName)
 	if err != nil {
-		t.Errorf("Failed to get L4 LB prometheus metric %s, err: %v", metricName, err)
-		return nil
+		return nil, fmt.Errorf("Failed to get L4 LB prometheus metric %s, err: %v", metricName, err)
 	}
 	for _, val := range errorMetric.GetMetric() {
 		for _, label := range val.Label {
@@ -436,7 +445,7 @@ func getL4LBErrorMetric(t *testing.T, metricName string) *L4LBErrorMetricInfo {
 			}
 		}
 	}
-	return result
+	return result, nil
 }
 
 // ValidateDiff ensures that the diff between the old and the new metric is as expected.

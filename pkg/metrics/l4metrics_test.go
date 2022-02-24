@@ -23,6 +23,10 @@ import (
 )
 
 const (
+	premium             = true
+	standard            = false
+	managed             = true
+	unmanaged           = false
 	isSuccess           = true
 	isError             = false
 	enableGlobalAccess  = true
@@ -169,5 +173,155 @@ func newL4ILBServiceState(globalAccess, customSubnet, inSuccess bool) L4ILBServi
 		EnabledGlobalAccess: globalAccess,
 		EnabledCustomSubnet: customSubnet,
 		InSuccess:           inSuccess,
+	}
+}
+
+func TestComputeL4NetLBMetrics(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		desc               string
+		serviceStates      []L4NetLBServiceState
+		expectL4NetLBCount map[feature]int
+	}{
+		{
+			desc:          "empty input",
+			serviceStates: []L4NetLBServiceState{},
+			expectL4NetLBCount: map[feature]int{
+				l4NetLBService:            0,
+				l4NetLBManagedStaticIP:    0,
+				l4NetLBStaticIP:           0,
+				l4NetLBPremiumNetworkTier: 0,
+				l4NetLBInSuccess:          0,
+				l4NetLBInError:            0,
+			},
+		},
+		{
+			desc: "one l4 Netlb service",
+			serviceStates: []L4NetLBServiceState{
+				newL4NetLBServiceState(isSuccess, unmanaged, standard),
+			},
+			expectL4NetLBCount: map[feature]int{
+				l4NetLBService:            1,
+				l4NetLBManagedStaticIP:    0,
+				l4NetLBStaticIP:           1,
+				l4NetLBPremiumNetworkTier: 0,
+				l4NetLBInSuccess:          1,
+				l4NetLBInError:            0,
+			},
+		},
+		{
+			desc: "one l4 Netlb service in premium network tier",
+			serviceStates: []L4NetLBServiceState{
+				newL4NetLBServiceState(isSuccess, unmanaged, premium),
+			},
+			expectL4NetLBCount: map[feature]int{
+				l4NetLBService:            1,
+				l4NetLBManagedStaticIP:    0,
+				l4NetLBStaticIP:           1,
+				l4NetLBPremiumNetworkTier: 1,
+				l4NetLBInSuccess:          1,
+				l4NetLBInError:            0,
+			},
+		},
+		{
+			desc: "one l4 Netlb service in premium network tier and managed static ip",
+			serviceStates: []L4NetLBServiceState{
+				newL4NetLBServiceState(isSuccess, managed, premium),
+			},
+			expectL4NetLBCount: map[feature]int{
+				l4NetLBService:            1,
+				l4NetLBManagedStaticIP:    1,
+				l4NetLBStaticIP:           1,
+				l4NetLBPremiumNetworkTier: 1,
+				l4NetLBInSuccess:          1,
+				l4NetLBInError:            0,
+			},
+		},
+		{
+			desc: "l4 Netlb service in error state",
+			serviceStates: []L4NetLBServiceState{
+				newL4NetLBServiceState(isError, unmanaged, standard),
+			},
+			expectL4NetLBCount: map[feature]int{
+				l4NetLBService:            1,
+				l4NetLBManagedStaticIP:    0,
+				l4NetLBStaticIP:           0,
+				l4NetLBPremiumNetworkTier: 0,
+				l4NetLBInSuccess:          0,
+				l4NetLBInError:            1,
+			},
+		},
+		{
+			desc: "l4 Netlb service in error state should not count static ip and network tier",
+			serviceStates: []L4NetLBServiceState{
+				newL4NetLBServiceState(isError, unmanaged, standard),
+				newL4NetLBServiceState(isError, managed, premium),
+			},
+			expectL4NetLBCount: map[feature]int{
+				l4NetLBService:            2,
+				l4NetLBManagedStaticIP:    0,
+				l4NetLBStaticIP:           0,
+				l4NetLBPremiumNetworkTier: 0,
+				l4NetLBInSuccess:          0,
+				l4NetLBInError:            2,
+			},
+		},
+		{
+			desc: "two l4 Netlb services with different network tier",
+			serviceStates: []L4NetLBServiceState{
+				newL4NetLBServiceState(isSuccess, unmanaged, standard),
+				newL4NetLBServiceState(isSuccess, unmanaged, premium),
+			},
+			expectL4NetLBCount: map[feature]int{
+				l4NetLBService:            2,
+				l4NetLBManagedStaticIP:    0,
+				l4NetLBStaticIP:           2,
+				l4NetLBPremiumNetworkTier: 1,
+				l4NetLBInSuccess:          2,
+				l4NetLBInError:            0,
+			},
+		},
+		{
+			desc: "multi l4 Netlb services",
+			serviceStates: []L4NetLBServiceState{
+				newL4NetLBServiceState(isSuccess, unmanaged, standard),
+				newL4NetLBServiceState(isSuccess, unmanaged, premium),
+				newL4NetLBServiceState(isSuccess, unmanaged, premium),
+				newL4NetLBServiceState(isSuccess, managed, premium),
+				newL4NetLBServiceState(isSuccess, managed, premium),
+				newL4NetLBServiceState(isSuccess, managed, standard),
+				newL4NetLBServiceState(isError, managed, premium),
+				newL4NetLBServiceState(isError, managed, standard),
+			},
+			expectL4NetLBCount: map[feature]int{
+				l4NetLBService:            8,
+				l4NetLBManagedStaticIP:    3,
+				l4NetLBStaticIP:           6,
+				l4NetLBPremiumNetworkTier: 4,
+				l4NetLBInSuccess:          6,
+				l4NetLBInError:            2,
+			},
+		},
+	} {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+			newMetrics := NewControllerMetrics()
+			for i, serviceState := range tc.serviceStates {
+				newMetrics.SetL4NetLBService(string(i), serviceState)
+			}
+			got := newMetrics.computeL4NetLBMetrics()
+			if diff := cmp.Diff(tc.expectL4NetLBCount, got); diff != "" {
+				t.Fatalf("Got diff for L4 NetLB service counts (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func newL4NetLBServiceState(inSuccess, managed, premium bool) L4NetLBServiceState {
+	return L4NetLBServiceState{
+		IsPremiumTier: premium,
+		IsManagedIP:   managed,
+		InSuccess:     inSuccess,
 	}
 }

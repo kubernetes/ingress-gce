@@ -70,6 +70,13 @@ var (
 		},
 		[]string{label},
 	)
+	l4NetLBCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "number_of_l4_netlbs",
+			Help: "Number of L4 NetLBs",
+		},
+		[]string{label},
+	)
 	serviceAttachmentCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "number_of_service_attachments",
@@ -101,6 +108,9 @@ func init() {
 	klog.V(3).Infof("Registering L4 ILB usage metrics %v", l4ILBCount)
 	prometheus.MustRegister(l4ILBCount)
 
+	klog.V(3).Infof("Registering L4 NetLB usage metrics %v", l4NetLBCount)
+	prometheus.MustRegister(l4NetLBCount)
+
 	klog.V(3).Infof("Registering PSC usage metrics %v", serviceAttachmentCount)
 	prometheus.MustRegister(serviceAttachmentCount)
 	prometheus.MustRegister(serviceCount)
@@ -124,21 +134,25 @@ type ControllerMetrics struct {
 	negMap map[string]NegServiceState
 	// l4ILBServiceMap is a map between service key and L4 ILB service state.
 	l4ILBServiceMap map[string]L4ILBServiceState
+	// l4NetLBServiceMap is a map between service key and L4 NetLB service state.
+	l4NetLBServiceMap map[string]L4NetLBServiceState
 	// pscMap is a map between the service attachment key and PSC state
 	pscMap map[string]pscmetrics.PSCState
 	// ServiceMap track the number of services in this cluster
 	serviceMap map[string]struct{}
+	//TODO(kl52752) remove mutex and change map to sync.map
 	sync.Mutex
 }
 
 // NewControllerMetrics initializes ControllerMetrics and starts a go routine to compute and export metrics periodically.
 func NewControllerMetrics() *ControllerMetrics {
 	return &ControllerMetrics{
-		ingressMap:      make(map[string]IngressState),
-		negMap:          make(map[string]NegServiceState),
-		l4ILBServiceMap: make(map[string]L4ILBServiceState),
-		pscMap:          make(map[string]pscmetrics.PSCState),
-		serviceMap:      make(map[string]struct{}),
+		ingressMap:        make(map[string]IngressState),
+		negMap:            make(map[string]NegServiceState),
+		l4ILBServiceMap:   make(map[string]L4ILBServiceState),
+		l4NetLBServiceMap: make(map[string]L4NetLBServiceState),
+		pscMap:            make(map[string]pscmetrics.PSCState),
+		serviceMap:        make(map[string]struct{}),
 	}
 }
 
@@ -228,6 +242,25 @@ func (im *ControllerMetrics) DeleteL4ILBService(svcKey string) {
 	delete(im.l4ILBServiceMap, svcKey)
 }
 
+// SetL4NetLBService adds metric state for given service to map.
+func (im *ControllerMetrics) SetL4NetLBService(svcKey string, state L4NetLBServiceState) {
+	im.Lock()
+	defer im.Unlock()
+
+	if im.l4NetLBServiceMap == nil {
+		klog.Fatalf("L4 Net LB Metrics failed to initialize correctly.")
+	}
+	im.l4NetLBServiceMap[svcKey] = state
+}
+
+// DeleteL4NetLBService deletes service from metrics map.
+func (im *ControllerMetrics) DeleteL4NetLBService(svcKey string) {
+	im.Lock()
+	defer im.Unlock()
+
+	delete(im.l4NetLBServiceMap, svcKey)
+}
+
 // SetServiceAttachment adds sa state to the map to be counted during metrics computation.
 // SetServiceAttachment implments PSCMetricsCollector.
 func (im *ControllerMetrics) SetServiceAttachment(saKey string, state pscmetrics.PSCState) {
@@ -295,6 +328,13 @@ func (im *ControllerMetrics) export() {
 		l4ILBCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
 	klog.V(3).Infof("L4 ILB usage metrics exported.")
+
+	netlbCount := im.computeL4NetLBMetrics()
+	klog.V(3).Infof("Exporting L4 NetLB usage metrics: %#v", netlbCount)
+	for feature, count := range netlbCount {
+		l4NetLBCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
+	}
+	klog.V(3).Infof("L4 NetLB usage metrics exported.")
 
 	saCount := im.computePSCMetrics()
 	klog.V(3).Infof("Exporting PSC Usage Metrics: %#v", saCount)
@@ -440,6 +480,41 @@ func (im *ControllerMetrics) computeL4ILBMetrics() map[feature]int {
 		}
 	}
 	klog.V(4).Info("L4 ILB usage metrics computed.")
+	return counts
+}
+
+// computeL4NetLBMetrics aggregates L4 NetLB metrics in the cache.
+func (im *ControllerMetrics) computeL4NetLBMetrics() map[feature]int {
+	im.Lock()
+	defer im.Unlock()
+	klog.V(4).Infof("Computing L4 NetLB usage metrics from service state map: %#v", im.l4NetLBServiceMap)
+	counts := map[feature]int{
+		l4NetLBService:            0,
+		l4NetLBStaticIP:           0,
+		l4NetLBManagedStaticIP:    0,
+		l4NetLBPremiumNetworkTier: 0,
+		l4NetLBInSuccess:          0,
+		l4NetLBInError:            0,
+	}
+
+	for key, state := range im.l4NetLBServiceMap {
+		klog.V(6).Infof("NetLB Service %s has metrics %+v", key, state)
+		counts[l4NetLBService]++
+		if !state.InSuccess {
+			counts[l4NetLBInError]++
+			// Skip counting other features if the service is in error state.
+			continue
+		}
+		counts[l4NetLBInSuccess]++
+		counts[l4NetLBStaticIP]++
+		if state.IsManagedIP {
+			counts[l4NetLBManagedStaticIP]++
+		}
+		if state.IsPremiumTier {
+			counts[l4NetLBPremiumNetworkTier]++
+		}
+	}
+	klog.V(4).Info("L4 NetLB usage metrics computed.")
 	return counts
 }
 

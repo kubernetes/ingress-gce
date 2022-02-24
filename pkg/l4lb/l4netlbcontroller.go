@@ -24,6 +24,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -31,6 +32,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/instances"
+	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -107,6 +109,7 @@ func NewL4NetLBController(
 			}
 		},
 	})
+	//TODO change to component name "l4netlb-controller"
 	ctx.AddHealthCheck("service-controller health", l4netLBc.checkHealth)
 	return l4netLBc
 }
@@ -290,12 +293,14 @@ func (lc *L4NetLBController) sync(key string) error {
 		klog.V(3).Infof("Ignoring sync of non-existent service %s", key)
 		return nil
 	}
+	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}.String()
 	if lc.needsDeletion(svc) {
 		klog.V(3).Infof("Deleting L4 External LoadBalancer resources for service %s", key)
 		result := lc.garbageCollectRBSNetLB(key, svc)
 		if result == nil {
 			return nil
 		}
+		lc.publishMetrics(result, namespacedName)
 		return result.Error
 	}
 
@@ -305,6 +310,7 @@ func (lc *L4NetLBController) sync(key string) error {
 			// result will be nil if the service was ignored(due to presence of service controller finalizer).
 			return nil
 		}
+		lc.publishMetrics(result, namespacedName)
 		return result.Error
 	}
 	klog.V(3).Infof("Ignoring sync of service %s, neither delete nor ensure needed.", key)
@@ -367,6 +373,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
 		return syncResult
 	}
+	syncResult.MetricsState.InSuccess = true
 	return syncResult
 }
 
@@ -415,4 +422,27 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 	}
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletedLoadBalancer", "Deleted L4 External LoadBalancer")
 	return result
+}
+
+// publishMetrics sets controller metrics for NetLB services and pushes NetLB metrics based on sync type.
+func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncResult, namespacedName string) {
+	if result == nil {
+		return
+	}
+	switch result.SyncType {
+	case loadbalancers.SyncTypeCreate, loadbalancers.SyncTypeUpdate:
+		klog.V(4).Infof("External L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
+		lc.ctx.ControllerMetrics.SetL4NetLBService(namespacedName, result.MetricsState)
+		l4metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+
+	case loadbalancers.SyncTypeDelete:
+		// if service is successfully deleted, remove it from cache
+		if result.Error == nil {
+			klog.V(4).Infof("External L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
+			lc.ctx.ControllerMetrics.DeleteL4NetLBService(namespacedName)
+		}
+		l4metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+	default:
+		klog.Warningf("Unknown sync type %q, skipping metrics", result.SyncType)
+	}
 }
