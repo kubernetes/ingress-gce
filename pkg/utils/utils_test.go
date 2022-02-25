@@ -564,8 +564,8 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 			node: api_v1.Node{
 				ObjectMeta: v1.ObjectMeta{
 					Name: "node1",
-					Annotations: map[string]string{
-						GKECurrentOperationAnnotation: fmt.Sprintf("{'Timestamp': '12345', 'Operation': '%s'}", GKEUpgradeOperation),
+					Labels: map[string]string{
+						GKECurrentOperationLabel: NodeDrain,
 					},
 				},
 				Status: api_v1.NodeStatus{
@@ -576,14 +576,14 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 			},
 			expectAccept:                       true,
 			expectAcceptByUnreadyNodePredicate: false,
-			name:                               "ready node, upgrade in progress",
+			name:                               "ready node, upgrade/drain in progress",
 		},
 		{
 			node: api_v1.Node{
 				ObjectMeta: v1.ObjectMeta{
 					Name: "node1",
-					Annotations: map[string]string{
-						GKECurrentOperationAnnotation: "{'Timestamp': '12345', 'Operation': 'random'}",
+					Labels: map[string]string{
+						GKECurrentOperationLabel: "random",
 					},
 				},
 				Status: api_v1.NodeStatus{
@@ -594,7 +594,7 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 			},
 			expectAccept:                       true,
 			expectAcceptByUnreadyNodePredicate: true,
-			name:                               "ready node, non-upgrade operation",
+			name:                               "ready node, non-drain operation",
 		},
 		{
 			node: api_v1.Node{
@@ -1157,5 +1157,67 @@ func TestComputeBasePath(t *testing.T) {
 	}
 	if services.BasePath != "https://compute.googleapis.com/compute/v1/" {
 		t.Errorf("Compute basePath has changed. Verify selflink generation has not broken and update path in test")
+	}
+}
+
+func TestMinMaxPortRangeAndProtocol(t *testing.T) {
+
+	for _, tc := range []struct {
+		svcPorts         []api_v1.ServicePort
+		expectedRange    string
+		expectedProtocol string
+	}{
+		{
+			svcPorts: []api_v1.ServicePort{
+				{Port: 1, Protocol: "TCP"},
+				{Port: 10, Protocol: "TCP"},
+				{Port: 100, Protocol: "TCP"}},
+			expectedRange:    "1-100",
+			expectedProtocol: "TCP",
+		},
+		{
+			svcPorts: []api_v1.ServicePort{
+				{Port: 10, Protocol: "TCP"},
+				{Port: 1, Protocol: "TCP"},
+				{Port: 50, Protocol: "TCP"},
+				{Port: 100, Protocol: "TCP"},
+				{Port: 90, Protocol: "TCP"}},
+			expectedRange:    "1-100",
+			expectedProtocol: "TCP",
+		},
+		{
+			svcPorts: []api_v1.ServicePort{
+				{Port: 10, Protocol: "TCP"}},
+			expectedRange:    "10-10",
+			expectedProtocol: "TCP",
+		},
+		{
+			svcPorts: []api_v1.ServicePort{
+				{Port: 100, Protocol: "TCP"},
+				{Port: 10, Protocol: "TCP"}},
+			expectedRange:    "10-100",
+			expectedProtocol: "TCP",
+		},
+		{
+			svcPorts: []api_v1.ServicePort{
+				{Port: 100, Protocol: "TCP"},
+				{Port: 50, Protocol: "TCP"},
+				{Port: 10, Protocol: "TCP"}},
+			expectedRange:    "10-100",
+			expectedProtocol: "TCP",
+		},
+		{
+			svcPorts:         []api_v1.ServicePort{},
+			expectedRange:    "",
+			expectedProtocol: "",
+		},
+	} {
+		portsRange, protocol := MinMaxPortRangeAndProtocol(tc.svcPorts)
+		if portsRange != tc.expectedRange {
+			t.Errorf("PortRange mismatch %v != %v", tc.expectedRange, portsRange)
+		}
+		if protocol != tc.expectedProtocol {
+			t.Errorf("protocol mismatch %v != %v", protocol, tc.expectedProtocol)
+		}
 	}
 }

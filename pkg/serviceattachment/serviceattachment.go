@@ -17,6 +17,7 @@ package serviceattachment
 
 import (
 	apisserviceattachment "k8s.io/ingress-gce/pkg/apis/serviceattachment"
+	svcattachv1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
 	svcattachv1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
 	"k8s.io/ingress-gce/pkg/crd"
 )
@@ -29,7 +30,9 @@ func CRDMeta() *crd.CRDMeta {
 		"serviceattachment",
 		"serviceattachments",
 		[]*crd.Version{
-			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1.ServiceAttachment", svcattachv1beta1.GetOpenAPIDefinitions),
+			// latest version should be the first version
+			crd.NewVersion("v1", "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1.ServiceAttachment", svcattachv1.GetOpenAPIDefinitions, false),
+			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1.ServiceAttachment", svcattachv1beta1.GetOpenAPIDefinitions, true),
 		},
 	)
 	return meta

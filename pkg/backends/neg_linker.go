@@ -16,6 +16,7 @@ package backends
 import (
 	"fmt"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/tools/cache"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
@@ -93,14 +94,22 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	}
 
 	newBackends := backendsForNEGs(negSelfLinks, &sp)
-	diff := diffBackends(backendService.Backends, newBackends)
+	// merge backends
+	mergedBackend, err := mergeBackends(backendService.Backends, newBackends)
+	if err != nil {
+		klog.Errorf("Failed to merge backends from %#v and %#v due to %v", backendService.Backends, newBackends, err)
+		klog.Infof("Fall back to ensure backend service with newBackends.")
+		mergedBackend = newBackends
+	}
+
+	diff := diffBackends(backendService.Backends, mergedBackend)
 	if diff.isEqual() {
 		klog.V(2).Infof("No changes in backends for service port %s", sp.ID)
 		return nil
 	}
 	klog.V(2).Infof("Backends changed for service port %s, removing: %s, adding: %s, changed: %s", sp.ID, diff.toRemove(), diff.toAdd(), diff.changed)
-	backendService.Backends = newBackends
 
+	backendService.Backends = mergedBackend
 	return composite.UpdateBackendService(l.cloud, key, backendService)
 }
 
@@ -108,6 +117,44 @@ type backendDiff struct {
 	old     sets.String
 	new     sets.String
 	changed sets.String
+}
+
+// getNegMergeGroupKey takes the resource url of  NEG and return the merge key to uniquely identify a NEG in $zone/$NEG format
+func getNegMergeGroupKey(negUrl string) (meta.Key, error) {
+	id, err := cloud.ParseResourceURL(negUrl)
+	if err != nil {
+		return meta.Key{}, err
+	}
+	return *id.Key, nil
+}
+
+// mergeBackends merges the both input list of backends into one
+func mergeBackends(old, new []*composite.Backend) ([]*composite.Backend, error) {
+	backendMap := map[meta.Key]*composite.Backend{}
+	for _, be := range new {
+		key, err := getNegMergeGroupKey(be.Group)
+		if err != nil {
+			return []*composite.Backend{}, err
+		}
+		backendMap[key] = be
+	}
+
+	for _, be := range old {
+		key, err := getNegMergeGroupKey(be.Group)
+		if err != nil {
+			return []*composite.Backend{}, err
+		}
+		if _, ok := backendMap[key]; !ok {
+			backendMap[key] = be
+		}
+	}
+
+	ret := []*composite.Backend{}
+
+	for _, be := range backendMap {
+		ret = append(ret, be)
+	}
+	return ret, nil
 }
 
 func diffBackends(old, new []*composite.Backend) *backendDiff {

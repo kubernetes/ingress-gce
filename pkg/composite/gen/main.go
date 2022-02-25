@@ -818,8 +818,11 @@ func ({{$type.VarName}} *{{$type.Name}}) To{{$version}}() (*compute{{$extension}
 
 	{{- if eq $type.Name "BackendService"}}
 	// Set force send fields. This is a temporary hack.
-	if {{$lower}}.CdnPolicy != nil && {{$lower}}.CdnPolicy.CacheKeyPolicy != nil {
+	if {{$lower}}.CdnPolicy != nil {
+		if {{$lower}}.CdnPolicy.CacheKeyPolicy != nil {
 		{{$lower}}.CdnPolicy.CacheKeyPolicy.ForceSendFields = []string{"IncludeHost", "IncludeProtocol", "IncludeQueryString", "QueryStringBlacklist", "QueryStringWhitelist"}
+		}
+		{{$lower}}.CdnPolicy.ForceSendFields = append({{$type.VarName}}.CdnPolicy.ForceSendFields, []string{"NegativeCaching", "RequestCoalescing","SignedUrlCacheMaxAgeSec","ServeWhileStale"}...)
 	}
 	if {{$lower}}.Iap != nil {
 		{{$lower}}.Iap.ForceSendFields = []string{"Enabled", "Oauth2ClientId", "Oauth2ClientSecret"}

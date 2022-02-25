@@ -2,6 +2,7 @@ package test
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -11,14 +12,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfig "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
+	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -28,6 +32,7 @@ const (
 	FinalizerRemoveFlag       = flag("enable-finalizer-remove")
 	EnableV2FrontendNamerFlag = flag("enable-v2-frontend-namer")
 	testServiceName           = "ilbtest"
+	netLbServiceName          = "netbtest"
 	testServiceNamespace      = "default"
 )
 
@@ -92,20 +97,49 @@ func NewL4ILBService(onlyLocal bool, port int) *api_v1.Service {
 	return svc
 }
 
-// NewL4NetLBService creates a Service of type LoadBalancer.
-func NewL4NetLBService(port int) *api_v1.Service {
+func NewL4LegacyNetLBServiceWithoutPorts() *api_v1.Service {
 	svc := &api_v1.Service{
 		ObjectMeta: meta_v1.ObjectMeta{
-			Name:      testServiceName,
-			Namespace: testServiceNamespace,
+			Name:        netLbServiceName,
+			Namespace:   testServiceNamespace,
+			Annotations: make(map[string]string),
 		},
 		Spec: api_v1.ServiceSpec{
-			Type:            api_v1.ServiceTypeLoadBalancer,
-			SessionAffinity: api_v1.ServiceAffinityClientIP,
-			Ports: []api_v1.ServicePort{
-				{Name: "testport", Port: int32(port), Protocol: "TCP"},
-			},
+			Type:                  api_v1.ServiceTypeLoadBalancer,
+			SessionAffinity:       api_v1.ServiceAffinityClientIP,
+			ExternalTrafficPolicy: api_v1.ServiceExternalTrafficPolicyTypeCluster,
 		},
+	}
+	return svc
+}
+
+// NewL4LegacyNetLBService creates a Legacy Service of type LoadBalancer without the RBS Annotation
+func NewL4LegacyNetLBService(port int, nodePort int32) *api_v1.Service {
+	svc := NewL4LegacyNetLBServiceWithoutPorts()
+	svc.Spec.Ports = []api_v1.ServicePort{
+		{Name: "testport", Port: int32(port), Protocol: "TCP", NodePort: nodePort},
+	}
+	return svc
+}
+
+// NewL4NetLBRBSService creates a Service of type LoadBalancer with RBS Annotation
+func NewL4NetLBRBSService(port int) *api_v1.Service {
+	svc := NewL4LegacyNetLBServiceWithoutPorts()
+	svc.ObjectMeta.Annotations[annotations.RBSAnnotationKey] = annotations.RBSEnabled
+	svc.Spec.Ports = []api_v1.ServicePort{
+		{Name: "testport", Port: int32(port), Protocol: "TCP"},
+	}
+	return svc
+}
+
+// NewL4NetLBRBSServiceMultiplePorts creates a Service of type LoadBalancer with multiple named ports.
+func NewL4NetLBRBSServiceMultiplePorts(name string, ports []int32) *api_v1.Service {
+	svc := NewL4LegacyNetLBServiceWithoutPorts()
+	svc.ObjectMeta.Name = name
+	svc.ObjectMeta.Annotations[annotations.RBSAnnotationKey] = annotations.RBSEnabled
+	for _, port := range ports {
+		svcPort := api_v1.ServicePort{Name: fmt.Sprintf("testport-%d", port), Port: port, Protocol: "TCP", NodePort: 30000 + port}
+		svc.Spec.Ports = append(svc.Spec.Ports, svcPort)
 	}
 	return svc
 }
@@ -292,8 +326,8 @@ func getPrometheusMetric(name string) (*dto.MetricFamily, error) {
 	return nil, nil
 }
 
-// L4LatencyMetricInfo holds the state of the l4_ilb_sync_duration_seconds metric.
-type L4ILBLatencyMetricInfo struct {
+// L4LatencyMetricInfo holds the state of the sync_duration_seconds metric for ILB or NetLB.
+type L4LBLatencyMetricInfo struct {
 	CreateCount       uint64
 	DeleteCount       uint64
 	UpdateCount       uint64
@@ -303,15 +337,19 @@ type L4ILBLatencyMetricInfo struct {
 	deleteSum         float64
 }
 
-// GetL4LatencyMetric gets the current state of the l4_ilb_sync_duration_seconds metric.
-func GetL4LatencyMetric(t *testing.T) *L4ILBLatencyMetricInfo {
+// GetL4ILBLatencyMetric gets the current state of the l4_ilb_sync_duration_seconds metric.
+func GetL4ILBLatencyMetric(t *testing.T) *L4LBLatencyMetricInfo {
+	return getL4LatencyMetric(t, metrics.L4ilbLatencyMetricName)
+}
+
+func getL4LatencyMetric(t *testing.T, metricName string) *L4LBLatencyMetricInfo {
 	var createCount, updateCount, deleteCount uint64
 	var createSum, updateSum, deleteSum float64
-	var result L4ILBLatencyMetricInfo
+	var result L4LBLatencyMetricInfo
 
-	latencyMetric, err := getPrometheusMetric("l4_ilb_sync_duration_seconds")
+	latencyMetric, err := getPrometheusMetric(metricName)
 	if err != nil {
-		t.Errorf("Failed to get L4 ILB prometheus metric 'l4_ilb_sync_duration_seconds', err: %v", err)
+		t.Errorf("Failed to get L4 LB prometheus metric '%s', err: %v", metricName, err)
 		return nil
 	}
 	for _, val := range latencyMetric.GetMetric() {
@@ -344,7 +382,7 @@ func GetL4LatencyMetric(t *testing.T) *L4ILBLatencyMetricInfo {
 
 // ValidateDiff ensures that the diff between the old and the new metric is as expected.
 // The test uses diff rather than absolute values since the metrics are cumulative of all test cases.
-func (old *L4ILBLatencyMetricInfo) ValidateDiff(new, expect *L4ILBLatencyMetricInfo, t *testing.T) {
+func (old *L4LBLatencyMetricInfo) ValidateDiff(new, expect *L4LBLatencyMetricInfo, t *testing.T) {
 	new.CreateCount = new.CreateCount - old.CreateCount
 	new.DeleteCount = new.DeleteCount - old.DeleteCount
 	new.UpdateCount = new.UpdateCount - old.UpdateCount
@@ -360,7 +398,7 @@ func (old *L4ILBLatencyMetricInfo) ValidateDiff(new, expect *L4ILBLatencyMetricI
 	updateLatency := meanLatency(new.updateSum, float64(new.UpdateCount))
 
 	if createLatency > expect.UpperBoundSeconds || deleteLatency > expect.UpperBoundSeconds || updateLatency > expect.UpperBoundSeconds {
-		t.Errorf("Got createLatency %v, updateLatency %v, deleteLatency %v - atleast one of them is higher than the specified limit %v seconds", createLatency, updateLatency, deleteLatency, expect.UpperBoundSeconds)
+		t.Errorf("Got createLatency %v, updateLatency %v, deleteLatency %v - at least one of them is higher than the specified limit %v seconds", createLatency, updateLatency, deleteLatency, expect.UpperBoundSeconds)
 	}
 }
 
@@ -371,19 +409,22 @@ func meanLatency(latencySum, numPoints float64) float64 {
 	return latencySum / numPoints
 }
 
-// L4ILBErrorMetricInfo holds the state of the l4_ilb_sync_error_count metric.
-type L4ILBErrorMetricInfo struct {
+// L4LBErrorMetricInfo holds the state of the sync_error_count metric for ILB or NetLB.
+type L4LBErrorMetricInfo struct {
 	ByGCEResource map[string]uint64
 	ByErrorType   map[string]uint64
 }
 
-// GetL4ILBErrorMetric gets the current state of the l4_ilb_sync_error_count metric.
-func GetL4ILBErrorMetric(t *testing.T) *L4ILBErrorMetricInfo {
-	result := &L4ILBErrorMetricInfo{ByErrorType: make(map[string]uint64), ByGCEResource: make(map[string]uint64)}
+// GetL4ILBErrorMetric gets the current state of the l4_ilb_sync_error_count.
+func GetL4ILBErrorMetric(t *testing.T) *L4LBErrorMetricInfo {
+	return getL4LBErrorMetric(t, metrics.L4ilbErrorMetricName)
+}
+func getL4LBErrorMetric(t *testing.T, metricName string) *L4LBErrorMetricInfo {
+	result := &L4LBErrorMetricInfo{ByErrorType: make(map[string]uint64), ByGCEResource: make(map[string]uint64)}
 
-	errorMetric, err := getPrometheusMetric("l4_ilb_sync_error_count")
+	errorMetric, err := getPrometheusMetric(metricName)
 	if err != nil {
-		t.Errorf("Failed to get L4 ILB prometheus metric 'l4_ilb_sync_error_count', err: %v", err)
+		t.Errorf("Failed to get L4 LB prometheus metric %s, err: %v", metricName, err)
 		return nil
 	}
 	for _, val := range errorMetric.GetMetric() {
@@ -400,7 +441,7 @@ func GetL4ILBErrorMetric(t *testing.T) *L4ILBErrorMetricInfo {
 
 // ValidateDiff ensures that the diff between the old and the new metric is as expected.
 // The test uses diff rather than absolute values since the metrics are cumulative of all test cases.
-func (old *L4ILBErrorMetricInfo) ValidateDiff(new, expect *L4ILBErrorMetricInfo, t *testing.T) {
+func (old *L4LBErrorMetricInfo) ValidateDiff(new, expect *L4LBErrorMetricInfo, t *testing.T) {
 	for errType, newVal := range new.ByErrorType {
 		if oldVal, ok := old.ByErrorType[errType]; ok {
 			new.ByErrorType[errType] = newVal - oldVal
@@ -423,4 +464,31 @@ func (old *L4ILBErrorMetricInfo) ValidateDiff(new, expect *L4ILBErrorMetricInfo,
 		}
 	}
 
+}
+
+// FakeGoogleAPIForbiddenErr creates a Forbidden error with type googleapi.Error
+func FakeGoogleAPIForbiddenErr() *googleapi.Error {
+	return &googleapi.Error{Code: http.StatusForbidden}
+}
+
+// FakeGoogleAPINotFoundErr creates a NotFound error with type googleapi.Error
+func FakeGoogleAPINotFoundErr() *googleapi.Error {
+	return &googleapi.Error{Code: http.StatusNotFound}
+}
+
+// FakeGoogleAPIConflictErr creates a StatusConflict error with type googleapi.Error
+func FakeGoogleAPIConflictErr() *googleapi.Error {
+	return &googleapi.Error{Code: http.StatusConflict}
+}
+
+func InstancesListToNameSet(instancesList []*compute.InstanceWithNamedPorts) (sets.String, error) {
+	instancesSet := sets.NewString()
+	for _, instance := range instancesList {
+		parsedInstanceURL, err := cloud.ParseResourceURL(instance.Instance)
+		if err != nil {
+			return nil, err
+		}
+		instancesSet.Insert(parsedInstanceURL.Key.Name)
+	}
+	return instancesSet, nil
 }

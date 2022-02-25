@@ -62,7 +62,6 @@ type LoadBalancerController struct {
 	ctx *context.ControllerContext
 
 	nodeLister cache.Indexer
-	nodes      *NodeController
 
 	// TODO: Watch secrets
 	ingQueue   utils.TaskQueue
@@ -116,21 +115,19 @@ func NewLoadBalancerController(
 	})
 
 	healthChecker := healthchecks.NewHealthChecker(ctx.Cloud, ctx.HealthCheckPath, ctx.DefaultBackendSvcPort.ID.Service)
-	instancePool := instances.NewNodePool(ctx.Cloud, ctx.ClusterNamer, ctx, utils.GetBasePath(ctx.Cloud))
 	backendPool := backends.NewPool(ctx.Cloud, ctx.ClusterNamer)
 
 	lbc := LoadBalancerController{
 		ctx:           ctx,
 		nodeLister:    ctx.NodeInformer.GetIndexer(),
-		Translator:    legacytranslator.NewTranslator(ctx),
+		Translator:    ctx.Translator,
 		stopCh:        stopCh,
 		hasSynced:     ctx.HasSynced,
-		nodes:         NewNodeController(ctx, instancePool),
-		instancePool:  instancePool,
+		instancePool:  ctx.InstancePool,
 		l7Pool:        loadbalancers.NewLoadBalancerPool(ctx.Cloud, ctx.ClusterNamer, ctx, namer.NewFrontendNamerFactory(ctx.ClusterNamer, ctx.KubeSystemUID)),
 		backendSyncer: backends.NewBackendSyncer(backendPool, healthChecker, ctx.Cloud),
 		negLinker:     backends.NewNEGLinker(backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer()),
-		igLinker:      backends.NewInstanceGroupLinker(instancePool, backendPool),
+		igLinker:      backends.NewInstanceGroupLinker(ctx.InstancePool, backendPool),
 		metrics:       ctx.ControllerMetrics,
 	}
 
@@ -141,6 +138,7 @@ func NewLoadBalancerController(
 
 	lbc.ingSyncer = ingsync.NewIngressSyncer(&lbc)
 	lbc.ingQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("ingress", "ingresses", flags.F.NumIngressWorkers, lbc.sync)
+	lbc.backendSyncer.Init(lbc.Translator)
 
 	// Ingress event handlers.
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -317,18 +315,10 @@ func NewLoadBalancerController(
 	return &lbc
 }
 
-// Init the controller
-func (lbc *LoadBalancerController) Init() {
-	// TODO(rramkumar): Try to get rid of this "Init".
-	lbc.instancePool.Init(lbc.Translator)
-	lbc.backendSyncer.Init(lbc.Translator)
-}
-
 // Run starts the loadbalancer controller.
 func (lbc *LoadBalancerController) Run() {
 	klog.Infof("Starting loadbalancer controller")
 	go lbc.ingQueue.Run()
-	go lbc.nodes.Run()
 
 	<-lbc.stopCh
 	klog.Infof("Shutting down Loadbalancer Controller")
@@ -346,7 +336,6 @@ func (lbc *LoadBalancerController) Stop(deleteAll bool) error {
 		close(lbc.stopCh)
 		klog.Infof("Shutting down controller queues.")
 		lbc.ingQueue.Shutdown()
-		lbc.nodes.Shutdown()
 		lbc.shutdown = true
 	}
 

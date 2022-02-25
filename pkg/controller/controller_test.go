@@ -33,7 +33,6 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
@@ -62,7 +61,7 @@ func newLoadBalancerController() *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-
+	fakeZL := &instances.FakeZoneLister{Zones: []string{fakeZone}}
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockGlobalForwardingRules.InsertHook = loadbalancers.InsertGlobalForwardingRuleHook
 	namer := namer_util.NewNamer(clusterUID, "")
 
@@ -76,9 +75,8 @@ func newLoadBalancerController() *LoadBalancerController {
 	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
 	lbc := NewLoadBalancerController(ctx, stopCh)
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
-	lbc.instancePool = instances.NewNodePool(instances.NewFakeInstanceGroups(sets.NewString(), namer), namer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE))
+	lbc.instancePool = instances.NewNodePool(instances.NewEmptyFakeInstanceGroups(), namer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE), fakeZL)
 	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(fakeGCE, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer, ""))
-	lbc.instancePool.Init(&instances.FakeZoneLister{Zones: []string{fakeZone}})
 
 	lbc.hasSynced = func() bool { return true }
 

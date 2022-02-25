@@ -18,48 +18,62 @@ package firewalls
 
 import (
 	"strings"
+	"sync"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
-func EnsureL4FirewallRule(cloud *gce.Cloud, fwName, lbIP, nsName string, sourceRanges, portRanges, nodeNames []string, proto string, sharedRule bool, l4Type utils.L4LBType) error {
-	existingFw, err := cloud.GetFirewall(fwName)
+// FirewallParams holds all data needed to create firewall for L4 LB
+type FirewallParams struct {
+	Name         string
+	IP           string
+	SourceRanges []string
+	PortRanges   []string
+	NodeNames    []string
+	Protocol     string
+	L4Type       utils.L4LBType
+}
+
+func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParams, sharedRule bool) error {
+	existingFw, err := cloud.GetFirewall(params.Name)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return err
 	}
 
-	nodeTags, err := cloud.GetNodeTags(nodeNames)
+	nodeTags, err := cloud.GetNodeTags(params.NodeNames)
 	if err != nil {
 		return err
 	}
-	fwDesc, err := utils.MakeL4LBServiceDescription(nsName, lbIP, meta.VersionGA, sharedRule, l4Type)
+	fwDesc, err := utils.MakeL4LBServiceDescription(nsName, params.IP, meta.VersionGA, sharedRule, params.L4Type)
 	if err != nil {
-		klog.Warningf("EnsureL4FirewallRule(%v): failed to generate description for L4 %s rule, err: %v", fwName, l4Type.ToString(), err)
+		klog.Warningf("EnsureL4FirewallRule(%v): failed to generate description for L4 %s rule, err: %v", params.Name, params.L4Type.ToString(), err)
 	}
 	expectedFw := &compute.Firewall{
-		Name:         fwName,
+		Name:         params.Name,
 		Description:  fwDesc,
 		Network:      cloud.NetworkURL(),
-		SourceRanges: sourceRanges,
+		SourceRanges: params.SourceRanges,
 		TargetTags:   nodeTags,
 		Allowed: []*compute.FirewallAllowed{
 			{
-				IPProtocol: strings.ToLower(proto),
-				Ports:      portRanges,
+				IPProtocol: strings.ToLower(params.Protocol),
+				Ports:      params.PortRanges,
 			},
 		},
 	}
 	if existingFw == nil {
-		klog.V(2).Infof("EnsureL4FirewallRule(%v): creating L4 %s firewall rule", fwName, l4Type.ToString())
+		klog.V(2).Infof("EnsureL4FirewallRule(%v): creating L4 %s firewall rule", params.Name, params.L4Type.ToString())
 		err = cloud.CreateFirewall(expectedFw)
 		if utils.IsForbiddenError(err) && cloud.OnXPN() {
 			gcloudCmd := gce.FirewallToGCloudCreateCmd(expectedFw, cloud.NetworkProjectID())
 
-			klog.V(3).Infof("EnsureL4FirewallRule(%v): Could not create L4 %s firewall on XPN cluster: %v. Raising event for cmd: %q", fwName, l4Type.ToString(), err, gcloudCmd)
+			klog.V(3).Infof("EnsureL4FirewallRule(%v): Could not create L4 %s firewall on XPN cluster: %v. Raising event for cmd: %q", params.Name, params.L4Type.ToString(), err, gcloudCmd)
 			return newFirewallXPNError(err, gcloudCmd)
 		}
 		return err
@@ -67,11 +81,11 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, fwName, lbIP, nsName string, sourceR
 	if firewallRuleEqual(expectedFw, existingFw) {
 		return nil
 	}
-	klog.V(2).Infof("EnsureL4FirewallRule(%v): updating L4 %s firewall", fwName, l4Type.ToString())
+	klog.V(2).Infof("EnsureL4FirewallRule(%v): updating L4 %s firewall", params.Name, params.L4Type.ToString())
 	err = cloud.UpdateFirewall(expectedFw)
 	if utils.IsForbiddenError(err) && cloud.OnXPN() {
 		gcloudCmd := gce.FirewallToGCloudUpdateCmd(expectedFw, cloud.NetworkProjectID())
-		klog.V(3).Infof("EnsureL4FirewallRule(%v): Could not update L4 %s firewall on XPN cluster: %v. Raising event for cmd: %q", fwName, l4Type.ToString(), err, gcloudCmd)
+		klog.V(3).Infof("EnsureL4FirewallRule(%v): Could not update L4 %s firewall on XPN cluster: %v. Raising event for cmd: %q", params.Name, params.L4Type.ToString(), err, gcloudCmd)
 		return newFirewallXPNError(err, gcloudCmd)
 	}
 	return err
@@ -96,4 +110,32 @@ func firewallRuleEqual(a, b *compute.Firewall) bool {
 		utils.EqualStringSets(a.Allowed[0].Ports, b.Allowed[0].Ports) &&
 		utils.EqualStringSets(a.SourceRanges, b.SourceRanges) &&
 		utils.EqualStringSets(a.TargetTags, b.TargetTags)
+}
+
+func ensureFirewall(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder) error {
+	nsName := utils.ServiceKeyFunc(svc.Namespace, svc.Name)
+	err := EnsureL4FirewallRule(cloud, nsName, params, shared)
+	if err != nil {
+		if fwErr, ok := err.(*FirewallXPNError); ok {
+			recorder.Eventf(svc, v1.EventTypeNormal, "XPN", fwErr.Message)
+			return nil
+		}
+		return err
+	}
+	return nil
+}
+
+// EnsureL4LBFirewallForHc creates or updates firewall rule for shared or non-shared health check to nodes
+func EnsureL4LBFirewallForHc(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, sharedResourcesLock *sync.Mutex, recorder record.EventRecorder) error {
+	params.SourceRanges = gce.L4LoadBalancerSrcRanges()
+	if shared {
+		sharedResourcesLock.Lock()
+		defer sharedResourcesLock.Unlock()
+	}
+	return ensureFirewall(svc, shared, params, cloud, recorder)
+}
+
+// EnsureFirewallForHc creates or updates firewall rule for LB traffic to nodes
+func EnsureL4LBFirewallForNodes(svc *v1.Service, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder) error {
+	return ensureFirewall(svc /*shared = */, false, params, cloud, recorder)
 }

@@ -45,9 +45,9 @@ func newTestJig(fakeGCE *gce.Cloud) *Jig {
 	fakeHealthChecks := healthchecks.NewHealthChecker(fakeGCE, "/", defaultBackendSvc)
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
-	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
-	fakeInstancePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE))
-	fakeInstancePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
+	fakeIGs := instances.NewEmptyFakeInstanceGroups()
+	fakeZL := &instances.FakeZoneLister{Zones: []string{defaultZone}}
+	fakeInstancePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE), fakeZL)
 
 	// Add standard hooks for mocking update calls. Each test can set a different update hook if it chooses to.
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockAlphaBackendServices.UpdateHook = mock.UpdateAlphaBackendServiceHook

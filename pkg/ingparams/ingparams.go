@@ -29,7 +29,7 @@ func CRDMeta() *crd.CRDMeta {
 		"gcpingressparams",
 		"gcpingressparams", // use `gcpingressparams` as singular and plural names
 		[]*crd.Version{
-			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1.GCPIngressParams", ingparamsv1beta1.GetOpenAPIDefinitions),
+			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1.GCPIngressParams", ingparamsv1beta1.GetOpenAPIDefinitions, false),
 		},
 		"gcpingparams",
 	)

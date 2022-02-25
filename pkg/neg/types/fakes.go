@@ -23,10 +23,11 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -47,14 +48,14 @@ const (
 	TestUpgradeInstance2 = "upgrade-instance2"
 )
 
-type fakeZoneGetter struct {
+type FakeZoneGetter struct {
 	zoneInstanceMap     map[string]sets.String
 	unreadyInstancesMap map[string]sets.String
 	upgradeInstancesMap map[string]sets.String
 }
 
-func NewFakeZoneGetter() *fakeZoneGetter {
-	return &fakeZoneGetter{
+func NewFakeZoneGetter() *FakeZoneGetter {
+	return &FakeZoneGetter{
 		zoneInstanceMap: map[string]sets.String{
 			TestZone1: sets.NewString(TestInstance1, TestInstance2),
 			TestZone2: sets.NewString(TestInstance3, TestInstance4, TestInstance5, TestInstance6),
@@ -68,7 +69,7 @@ func NewFakeZoneGetter() *fakeZoneGetter {
 	}
 }
 
-func (f *fakeZoneGetter) ListZones(predicate utils.NodeConditionPredicate) ([]string, error) {
+func (f *FakeZoneGetter) ListZones(predicate utils.NodeConditionPredicate) ([]string, error) {
 	ret := []string{}
 	for zone := range f.zoneInstanceMap {
 		node := &v1.Node{
@@ -89,7 +90,7 @@ func (f *fakeZoneGetter) ListZones(predicate utils.NodeConditionPredicate) ([]st
 	for zone := range f.upgradeInstancesMap {
 		node := &v1.Node{
 			ObjectMeta: metav1.ObjectMeta{
-				Annotations: map[string]string{utils.GKECurrentOperationAnnotation: utils.GKEUpgradeOperation},
+				Labels: map[string]string{utils.GKECurrentOperationLabel: utils.NodeDrain},
 			},
 			Status: v1.NodeStatus{
 				Conditions: []v1.NodeCondition{v1.NodeCondition{Type: v1.NodeReady, Status: v1.ConditionTrue}}}}
@@ -99,7 +100,7 @@ func (f *fakeZoneGetter) ListZones(predicate utils.NodeConditionPredicate) ([]st
 	}
 	return ret, nil
 }
-func (f *fakeZoneGetter) GetZoneForNode(name string) (string, error) {
+func (f *FakeZoneGetter) GetZoneForNode(name string) (string, error) {
 	for zone, instances := range f.zoneInstanceMap {
 		if instances.Has(name) {
 			return zone, nil
@@ -110,7 +111,21 @@ func (f *fakeZoneGetter) GetZoneForNode(name string) (string, error) {
 			return zone, nil
 		}
 	}
-	return "", NotFoundError
+	return "", test.FakeGoogleAPINotFoundErr()
+}
+
+// Adds a zone with the given instances to the zone getter
+func (f *FakeZoneGetter) AddZone(newZone string, instances ...string) error {
+	if _, ok := f.zoneInstanceMap[newZone]; ok {
+		return fmt.Errorf("zone already exists")
+	}
+	f.zoneInstanceMap[newZone] = sets.NewString(instances...)
+	return nil
+}
+
+// Deletes a zone in the zoneInstanceMap
+func (f *FakeZoneGetter) DeleteZone(newZone string) {
+	delete(f.zoneInstanceMap, newZone)
 }
 
 type FakeNetworkEndpointGroupCloud struct {
@@ -131,8 +146,6 @@ func NewFakeNetworkEndpointGroupCloud(subnetwork, network string) NetworkEndpoin
 	}
 }
 
-var NotFoundError = utils.FakeGoogleAPINotFoundErr()
-
 func (f *FakeNetworkEndpointGroupCloud) GetNetworkEndpointGroup(name string, zone string, version meta.Version) (*composite.NetworkEndpointGroup, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -144,7 +157,7 @@ func (f *FakeNetworkEndpointGroupCloud) GetNetworkEndpointGroup(name string, zon
 			}
 		}
 	}
-	return nil, NotFoundError
+	return nil, test.FakeGoogleAPINotFoundErr()
 }
 
 func networkEndpointKey(name, zone string) string {
@@ -196,7 +209,7 @@ func (f *FakeNetworkEndpointGroupCloud) DeleteNetworkEndpointGroup(name string, 
 		newList = append(newList, neg)
 	}
 	if !found {
-		return NotFoundError
+		return test.FakeGoogleAPINotFoundErr()
 	}
 	f.NetworkEndpointGroups[zone] = newList
 	return nil
@@ -236,7 +249,7 @@ func (f *FakeNetworkEndpointGroupCloud) ListNetworkEndpoints(name, zone string, 
 	ret := []*composite.NetworkEndpointWithHealthStatus{}
 	nes, ok := f.NetworkEndpoints[networkEndpointKey(name, zone)]
 	if !ok {
-		return nil, NotFoundError
+		return nil, test.FakeGoogleAPINotFoundErr()
 	}
 	for _, ne := range nes {
 		ret = append(ret, &composite.NetworkEndpointWithHealthStatus{NetworkEndpoint: ne})

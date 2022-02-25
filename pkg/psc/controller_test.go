@@ -26,7 +26,6 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	beta "google.golang.org/api/compute/v0.beta"
 	ga "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	v1 "k8s.io/api/core/v1"
@@ -36,13 +35,12 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/ingress-gce/pkg/annotations"
-	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
+	sav1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/flags"
 	safake "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned/fake"
 	"k8s.io/ingress-gce/pkg/test"
-	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	sautils "k8s.io/ingress-gce/pkg/utils/serviceattachment"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -240,7 +238,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			}
 
 			saURL := saName + "-url"
-			saCR := &sav1beta1.ServiceAttachment{
+			saCR := &sav1.ServiceAttachment{
 				ObjectMeta: metav1.ObjectMeta{
 					Namespace:       testNamespace,
 					Name:            saName,
@@ -248,12 +246,12 @@ func TestServiceAttachmentCreation(t *testing.T) {
 					ResourceVersion: "resource-version",
 					SelfLink:        saURL,
 				},
-				Spec: sav1beta1.ServiceAttachmentSpec{
+				Spec: sav1.ServiceAttachmentSpec{
 					ConnectionPreference: tc.connectionPreference,
 					NATSubnets:           []string{"my-subnet"},
 					ResourceRef:          tc.resourceRef,
 					ProxyProtocol:        tc.proxyProtocol,
-					ConsumerAllowList: []sav1beta1.ConsumerProject{
+					ConsumerAllowList: []sav1.ConsumerProject{
 						{
 							ConnectionLimit: 100,
 							Project:         "consumer-allow-project-1",
@@ -275,7 +273,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 				},
 			}
 
-			controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
+			controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
 			syncServiceAttachmentLister(controller)
 
 			err := controller.processServiceAttachment(SvcAttachmentKeyFunc(testNamespace, saName))
@@ -284,7 +282,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 			} else if !tc.expectErr && err != nil {
 				t.Errorf("unexpected error processing Service Attachment: %s", err)
 			} else if !tc.expectErr {
-				updatedCR, err := controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
+				updatedCR, err := controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
 				if err != nil {
 					t.Errorf("unexpected error while querying for service attachment %s: %q", saName, err)
 				}
@@ -309,7 +307,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 				}
 				desc := sautils.NewServiceAttachmentDesc(testNamespace, saName, ClusterName, zone.FailureDomain, false)
 
-				expectedSA := &beta.ServiceAttachment{
+				expectedSA := &ga.ServiceAttachment{
 					ConnectionPreference: tc.connectionPreference,
 					Description:          desc.String(),
 					Name:                 gceSAName,
@@ -318,7 +316,7 @@ func TestServiceAttachmentCreation(t *testing.T) {
 					Region:               fakeCloud.Region(),
 					SelfLink:             sa.SelfLink,
 					EnableProxyProtocol:  tc.proxyProtocol,
-					ConsumerAcceptLists: []*beta.ServiceAttachmentConsumerProjectLimit{
+					ConsumerAcceptLists: []*ga.ServiceAttachmentConsumerProjectLimit{
 						{
 							ConnectionLimit: 100,
 							ProjectIdOrNum:  "consumer-allow-project-1",
@@ -376,25 +374,25 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 	saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{"my-subnet"}, false, false)
 	beforeTS := metav1.NewTime(time.Time{})
 	saCR.Status.LastModifiedTimestamp = beforeTS
-	_, err = controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
+	_, err = controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
 	if err != nil {
 		t.Fatalf("Failed to create service attachment cr: %q", err)
 	}
 	syncServiceAttachmentLister(controller)
 
-	initialConsumerRules := []*beta.ServiceAttachmentConnectedEndpoint{
+	initialConsumerRules := []*ga.ServiceAttachmentConnectedEndpoint{
 		{Endpoint: "consumer-fwd-rule-1", Status: "ACCEPTED"},
 		{Endpoint: "consumer-fwd-rule-2", Status: "PENDING"},
 	}
 
-	updateConsumerRules := []*beta.ServiceAttachmentConnectedEndpoint{
+	updateConsumerRules := []*ga.ServiceAttachmentConnectedEndpoint{
 		{Endpoint: "consumer-fwd-rule-1", Status: "ACCEPTED"},
 		{Endpoint: "consumer-fwd-rule-2", Status: "PENDING"},
 		{Endpoint: "consumer-fwd-rule-3", Status: "PENDING"},
 	}
 
 	desc := sautils.NewServiceAttachmentDesc(saCR.Namespace, saCR.Name, ClusterName, controller.cloud.Region(), true)
-	expectedSA := &beta.ServiceAttachment{
+	expectedSA := &ga.ServiceAttachment{
 		ConnectionPreference: saCR.Spec.ConnectionPreference,
 		Description:          desc.String(),
 		Name:                 gceSAName,
@@ -404,7 +402,7 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 		EnableProxyProtocol:  saCR.Spec.ProxyProtocol,
 	}
 
-	for _, consumerRules := range [][]*beta.ServiceAttachmentConnectedEndpoint{
+	for _, consumerRules := range [][]*ga.ServiceAttachmentConnectedEndpoint{
 		initialConsumerRules, updateConsumerRules} {
 		expectedSA.ConnectedEndpoints = consumerRules
 		err = insertServiceAttachment(controller.cloud, expectedSA)
@@ -417,7 +415,7 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 			t.Errorf("unexpected error processing service attachment: %q", err)
 		}
 
-		updatedCR, err := controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
+		updatedCR, err := controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
 		if err != nil {
 			t.Errorf("unexpected error while querying for service attachment %s: %q", saName, err)
 		}
@@ -449,7 +447,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 
 	testcases := []struct {
 		desc            string
-		updatedSACR     *sav1beta1.ServiceAttachment
+		updatedSACR     *sav1.ServiceAttachment
 		expectSAUpdate  bool
 		expectError     bool
 		expectedSubnets []string
@@ -508,7 +506,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 			}
 
 			saCR := testServiceAttachmentCR(saName, svcName, saUID, []string{subnet1, subnet2}, false, false)
-			_, err = controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
+			_, err = controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Create(context2.TODO(), saCR, metav1.CreateOptions{})
 			if err != nil {
 				t.Fatalf("Failed to create service attachment cr: %q", err)
 			}
@@ -532,7 +530,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 				}
 			}
 
-			processedCR, err := controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
+			processedCR, err := controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
 			syncServiceAttachmentLister(controller)
 			if err != nil {
 				t.Fatalf("Failed to get processed SA CR: %q", err)
@@ -542,7 +540,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 			tc.updatedSACR.Status = processedCR.Status
 			tc.updatedSACR.Status.LastModifiedTimestamp = beforeTS
 
-			_, err = controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Update(context2.TODO(), tc.updatedSACR, metav1.UpdateOptions{})
+			_, err = controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Update(context2.TODO(), tc.updatedSACR, metav1.UpdateOptions{})
 			syncServiceAttachmentLister(controller)
 			if err != nil {
 				t.Fatalf("Failed to add tc.updatedSACR to store: %q", err)
@@ -554,11 +552,11 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 				t.Errorf("Expected an error while processing updated ServiceAttachment")
 			}
 
-			var expectedSA *beta.ServiceAttachment
+			var expectedSA *ga.ServiceAttachment
 			if !tc.expectSAUpdate {
 				expectedSA = createdSA
 			} else {
-				expectedSA = &beta.ServiceAttachment{
+				expectedSA = &ga.ServiceAttachment{
 					ConnectionPreference: saCR.Spec.ConnectionPreference,
 					Description:          createdSA.Description,
 					Name:                 gceSAName,
@@ -578,7 +576,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 				t.Errorf("Incorrect GCE Service Attachment \ngot SA:\n%+v,\nwant:\n%+v", updatedSA, expectedSA)
 			}
 
-			updatedCR, err := controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
+			updatedCR, err := controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).Get(context2.TODO(), saName, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("Failed to get service attachment cr: %q", err)
 			}
@@ -599,7 +597,7 @@ func TestNeedsUpdate(t *testing.T) {
 	targetService1 := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/forwardingRules/fr-1"
 	targetService2 := "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/forwardingRules/fr-2"
 
-	originalSA := &beta.ServiceAttachment{
+	originalSA := &ga.ServiceAttachment{
 		ConnectionPreference: "ACCEPT_AUTOMATIC",
 		Description:          "my-desc",
 		Name:                 "my-sa",
@@ -610,28 +608,28 @@ func TestNeedsUpdate(t *testing.T) {
 		SelfLink:             "self-link",
 	}
 
-	saDiffService := &beta.ServiceAttachment{}
+	saDiffService := &ga.ServiceAttachment{}
 	*saDiffService = *originalSA
 	saDiffService.TargetService = targetService2
 
-	saDiffSubnets := &beta.ServiceAttachment{}
+	saDiffSubnets := &ga.ServiceAttachment{}
 	*saDiffSubnets = *originalSA
 	saDiffSubnets.NatSubnets = []string{subnet1, subnet3}
 
-	saAddSubnet := &beta.ServiceAttachment{}
+	saAddSubnet := &ga.ServiceAttachment{}
 	*saAddSubnet = *originalSA
 	saAddSubnet.NatSubnets = []string{subnet1, subnet2, subnet3}
 
-	saDiffSpec := &beta.ServiceAttachment{}
+	saDiffSpec := &ga.ServiceAttachment{}
 	*saDiffSpec = *originalSA
 	saDiffSpec.EnableProxyProtocol = false
 
-	saNoChange := &beta.ServiceAttachment{}
+	saNoChange := &ga.ServiceAttachment{}
 	*saNoChange = *originalSA
 
 	testcases := []struct {
 		desc         string
-		newSA        *beta.ServiceAttachment
+		newSA        *ga.ServiceAttachment
 		expectError  bool
 		expectUpdate bool
 	}{
@@ -702,7 +700,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 		},
 		{
 			desc:           "service attachment not found error during gc",
-			getError:       utils.FakeGoogleAPINotFoundErr(),
+			getError:       test.FakeGoogleAPINotFoundErr(),
 			expectDeletion: true,
 		},
 		{
@@ -741,7 +739,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 			// create a serviceAttachment that should not be deleted as part of GC
 			saToKeep := testServiceAttachmentCR("sa-to-keep", svcNamePrefix+"-keep", saUIDPrefix+"-keep", []string{"my-subnet"}, true, false)
 			saToBeDeleted := testServiceAttachmentCR("sa-to-be-deleted", svcNamePrefix+"-deleted", saUIDPrefix+"-deleted", []string{"my-subnet"}, true, false)
-			for _, sa := range []*sav1beta1.ServiceAttachment{saToKeep, saToBeDeleted} {
+			for _, sa := range []*sav1.ServiceAttachment{saToKeep, saToBeDeleted} {
 				svcName := sa.Spec.ResourceRef.Name
 				svc, frName, err := createSvc(controller, svcName, string(sa.UID), frIPAddr, annotations.TCPForwardingRuleKey)
 				if err != nil {
@@ -753,7 +751,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 					t.Errorf("%s", err)
 				}
 
-				_, err = controller.saClient.NetworkingV1beta1().ServiceAttachments(sa.Namespace).Create(context2.TODO(), sa, metav1.CreateOptions{})
+				_, err = controller.saClient.NetworkingV1().ServiceAttachments(sa.Namespace).Create(context2.TODO(), sa, metav1.CreateOptions{})
 				if err != nil {
 					t.Fatalf("failed to add service attachment to client: %q", err)
 				}
@@ -766,7 +764,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 			}
 
 			deletionTS := metav1.Now()
-			saCR, err := controller.saClient.NetworkingV1beta1().ServiceAttachments(saToBeDeleted.Namespace).Get(context2.TODO(), saToBeDeleted.Name, metav1.GetOptions{})
+			saCR, err := controller.saClient.NetworkingV1().ServiceAttachments(saToBeDeleted.Namespace).Get(context2.TODO(), saToBeDeleted.Name, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("Failed to get service attachment cr: %q", err)
 			}
@@ -775,7 +773,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 			if tc.invalidSAURL {
 				saCR.Status.ServiceAttachmentURL = tc.saURL
 			}
-			_, err = controller.saClient.NetworkingV1beta1().ServiceAttachments(saToBeDeleted.Namespace).Update(context2.TODO(), saCR, metav1.UpdateOptions{})
+			_, err = controller.saClient.NetworkingV1().ServiceAttachments(saToBeDeleted.Namespace).Update(context2.TODO(), saCR, metav1.UpdateOptions{})
 			if err != nil {
 				t.Fatalf("failed to update service attachment to client: %q", err)
 			}
@@ -786,7 +784,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 			if tc.getError != nil || tc.deleteError != nil {
 
 				fakeGCE := controller.cloud.Compute().(*cloud.MockGCE)
-				mockSA := fakeGCE.BetaServiceAttachments().(*cloud.MockBetaServiceAttachments)
+				mockSA := fakeGCE.ServiceAttachments().(*cloud.MockServiceAttachments)
 
 				gceSAName := controller.saNamer.ServiceAttachment(saToBeDeleted.Namespace, saToBeDeleted.Name, string(saToBeDeleted.UID))
 				saKey, _ := composite.CreateKey(controller.cloud, gceSAName, meta.Regional)
@@ -812,7 +810,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 					t.Errorf("Expected sa %s to be deleted : %s", saToBeDeleted.Name, err)
 				}
 			} else {
-				currSA, err := controller.saClient.NetworkingV1beta1().ServiceAttachments(saToBeDeleted.Namespace).Get(context2.TODO(), saToBeDeleted.Name, metav1.GetOptions{})
+				currSA, err := controller.saClient.NetworkingV1().ServiceAttachments(saToBeDeleted.Namespace).Get(context2.TODO(), saToBeDeleted.Name, metav1.GetOptions{})
 				if err != nil {
 					t.Fatalf("failed to query for service attachment %s from client: %q", currSA.Name, err)
 				}
@@ -823,7 +821,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 			}
 
 			// verify saToKeep was not deleted
-			currSA, err := controller.saClient.NetworkingV1beta1().ServiceAttachments(saToKeep.Namespace).Get(context2.TODO(), saToKeep.Name, metav1.GetOptions{})
+			currSA, err := controller.saClient.NetworkingV1().ServiceAttachments(saToKeep.Namespace).Get(context2.TODO(), saToKeep.Name, metav1.GetOptions{})
 			if err != nil {
 				t.Fatalf("failed to query for service attachment %s from client: %q", saToKeep.Name, err)
 			}
@@ -866,7 +864,7 @@ func TestShouldProcess(t *testing.T) {
 
 	testcases := []struct {
 		desc          string
-		newSA         *sav1beta1.ServiceAttachment
+		newSA         *sav1.ServiceAttachment
 		shouldProcess bool
 	}{
 		{
@@ -922,7 +920,7 @@ func TestFilterError(t *testing.T) {
 	}{
 		{
 			desc:          "google api status not found error",
-			err:           utils.FakeGoogleAPINotFoundErr(),
+			err:           test.FakeGoogleAPINotFoundErr(),
 			expectedError: nil,
 		},
 		{
@@ -947,7 +945,7 @@ func TestFilterError(t *testing.T) {
 		},
 		{
 			desc:          "wrapped google api status not found error",
-			err:           fmt.Errorf("wrap 1: %w", fmt.Errorf("wrap 2: %w", utils.FakeGoogleAPINotFoundErr())),
+			err:           fmt.Errorf("wrap 1: %w", fmt.Errorf("wrap 2: %w", test.FakeGoogleAPINotFoundErr())),
 			expectedError: nil,
 		},
 		{
@@ -987,27 +985,94 @@ func TestFilterError(t *testing.T) {
 	}
 }
 
+func TestGetSubnetURLs(t *testing.T) {
+	testcases := []struct {
+		desc           string
+		subnet         string
+		createSubnet   bool
+		expectErr      bool
+		expectedSubnet string
+	}{
+		{
+			desc:           "subnet is in the host project",
+			subnet:         "my-subnet",
+			createSubnet:   true,
+			expectErr:      false,
+			expectedSubnet: "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/my-subnet",
+		},
+		{
+			desc:           "subnet is the resource url path",
+			subnet:         "projects/test-project/regions/us-central1/subnetworks/subnet-1",
+			createSubnet:   false,
+			expectErr:      false,
+			expectedSubnet: "projects/test-project/regions/us-central1/subnetworks/subnet-1",
+		},
+		{
+			desc:           "subnet is a fully qualified resource url",
+			subnet:         "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-1",
+			createSubnet:   false,
+			expectErr:      false,
+			expectedSubnet: "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/subnetworks/subnet-1",
+		},
+		{
+			desc:         "subnet does not exist in host project",
+			subnet:       "my-subnet",
+			createSubnet: false,
+			expectErr:    true,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			controller := newTestController("ZONAL")
+
+			if tc.createSubnet {
+				_, err := createNatSubnet(controller.cloud, tc.subnet)
+				if err != nil {
+					t.Errorf("failed to create nat subnet: %s", err)
+				}
+			}
+
+			subnets, err := controller.getSubnetURLs([]string{tc.subnet})
+			if err == nil && tc.expectErr {
+				t.Fatalf("getSubnetURLs() returned no error, but expected an error")
+			} else if err != nil && !tc.expectErr {
+				t.Fatalf("getSubnetURLs() returned unexpected error: %s", err)
+			}
+
+			if tc.expectedSubnet != "" && !tc.expectErr {
+				if len(subnets) != 1 {
+					t.Fatalf("got %d subnets, should be 1", len(subnets))
+				}
+
+				if subnets[0] != tc.expectedSubnet {
+					t.Fatalf("getSubnetURLs() returned %s, but wanted %s", subnets[0], tc.expectedSubnet)
+				}
+			}
+		})
+	}
+}
+
 // newTestController returns a test psc controller
 func newTestController(clusterType string) *Controller {
 	kubeClient := fake.NewSimpleClientset()
 	gceClient := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
 	fakeGCE := gceClient.Compute().(*cloud.MockGCE)
-	mockSA := fakeGCE.BetaServiceAttachments().(*cloud.MockBetaServiceAttachments)
+	mockSA := fakeGCE.ServiceAttachments().(*cloud.MockServiceAttachments)
 
 	// Mock has a noop for the Patch. Add the patch hook so GCE SA gets updated when mock patch is called
-	mockSA.PatchHook = func(ctx context2.Context, key *meta.Key, sa *beta.ServiceAttachment, fake *cloud.MockBetaServiceAttachments) error {
+	mockSA.PatchHook = func(ctx context2.Context, key *meta.Key, sa *ga.ServiceAttachment, fake *cloud.MockServiceAttachments) error {
 		if !key.Valid() {
 			return fmt.Errorf("PatchHook: invalid GCE key (%+v)", key)
 		}
 
 		sa.Name = key.Name
-		projectID := fake.ProjectRouter.ProjectID(ctx, "beta", "serviceAttachments")
-		sa.SelfLink = cloud.SelfLink(meta.VersionBeta, projectID, "serviceAttachments", key)
+		projectID := fake.ProjectRouter.ProjectID(ctx, "v1", "serviceAttachments")
+		sa.SelfLink = cloud.SelfLink(meta.VersionGA, projectID, "serviceAttachments", key)
 
 		originalObj, ok := fake.Objects[*key]
 		if ok {
-			originalSA := originalObj.Obj.(*beta.ServiceAttachment)
+			originalSA := originalObj.Obj.(*ga.ServiceAttachment)
 			if originalSA.Fingerprint != sa.Fingerprint {
 				return fmt.Errorf("Service Attachment resource fingerprint does not match")
 			}
@@ -1063,14 +1128,14 @@ func createSvc(controller *Controller, svcName, svcUID, ipAddr, forwardingRuleKe
 }
 
 // testServiceAttachmentCR creates a test ServiceAttachment CR with the provided name, uid and subnets
-func testServiceAttachmentCR(saName, svcName, svcUID string, subnets []string, withFinalizer, proxyProtocol bool) *sav1beta1.ServiceAttachment {
-	cr := &sav1beta1.ServiceAttachment{
+func testServiceAttachmentCR(saName, svcName, svcUID string, subnets []string, withFinalizer, proxyProtocol bool) *sav1.ServiceAttachment {
+	cr := &sav1.ServiceAttachment{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: testNamespace,
 			Name:      saName,
 			UID:       types.UID(svcUID),
 		},
-		Spec: sav1beta1.ServiceAttachmentSpec{
+		Spec: sav1.ServiceAttachmentSpec{
 			ConnectionPreference: "ACCEPT_AUTOMATIC",
 			NATSubnets:           subnets,
 			ResourceRef: v1.TypedLocalObjectReference{
@@ -1132,12 +1197,12 @@ func createNatSubnet(c *gce.Cloud, natSubnet string) (*ga.Subnetwork, error) {
 }
 
 // getServiceAttachment queries for the Service Attachment resource in GCE
-func getServiceAttachment(cloud *gce.Cloud, saName string) (*beta.ServiceAttachment, error) {
+func getServiceAttachment(cloud *gce.Cloud, saName string) (*ga.ServiceAttachment, error) {
 	saKey, err := composite.CreateKey(cloud, saName, meta.Regional)
 	if err != nil {
 		return nil, fmt.Errorf("errored creating a key for service attachment: %q", err)
 	}
-	sa, err := cloud.Compute().BetaServiceAttachments().Get(context2.TODO(), saKey)
+	sa, err := cloud.Compute().ServiceAttachments().Get(context2.TODO(), saKey)
 	if err != nil {
 		return nil, fmt.Errorf("errored querying for service attachment: %q", err)
 	}
@@ -1145,12 +1210,12 @@ func getServiceAttachment(cloud *gce.Cloud, saName string) (*beta.ServiceAttachm
 }
 
 // insertServiceAttachment inserts the given Service Attachment resource in GCE
-func insertServiceAttachment(cloud *gce.Cloud, sa *beta.ServiceAttachment) error {
+func insertServiceAttachment(cloud *gce.Cloud, sa *ga.ServiceAttachment) error {
 	saKey, err := composite.CreateKey(cloud, sa.Name, meta.Regional)
 	if err != nil {
 		return fmt.Errorf("errored creating a key for service attachment: %q", err)
 	}
-	err = cloud.Compute().BetaServiceAttachments().Insert(context2.TODO(), saKey, sa)
+	err = cloud.Compute().ServiceAttachments().Insert(context2.TODO(), saKey, sa)
 	if err != nil {
 		return fmt.Errorf("errored inserting gce service attachment: %q", err)
 	}
@@ -1163,7 +1228,7 @@ func deleteServiceAttachment(cloud *gce.Cloud, name string) error {
 	if err != nil {
 		return fmt.Errorf("errored creating a key for service attachment: %q", err)
 	}
-	err = cloud.Compute().BetaServiceAttachments().Delete(context2.TODO(), saKey)
+	err = cloud.Compute().ServiceAttachments().Delete(context2.TODO(), saKey)
 	if err != nil {
 		return fmt.Errorf("errored deleting gce service attachment: %q", err)
 	}
@@ -1172,7 +1237,7 @@ func deleteServiceAttachment(cloud *gce.Cloud, name string) error {
 
 // validateSAStatus validates that the status reports the same information as on the
 // GCE service attachment resource
-func validateSAStatus(status sav1beta1.ServiceAttachmentStatus, sa *beta.ServiceAttachment, beforeTS metav1.Time, expectStatusUpdate bool) error {
+func validateSAStatus(status sav1.ServiceAttachmentStatus, sa *ga.ServiceAttachment, beforeTS metav1.Time, expectStatusUpdate bool) error {
 	if status.ServiceAttachmentURL != sa.SelfLink {
 		return fmt.Errorf("ServiceAttachment.Status.ServiceAttachmentURL was %s, but should be %s", status.ServiceAttachmentURL, sa.SelfLink)
 	}
@@ -1208,7 +1273,7 @@ func validateSAStatus(status sav1beta1.ServiceAttachmentStatus, sa *beta.Service
 
 // verifyServiceAttachmentFinalizer verfies that the provided ServiceAttachment CR
 // has the ServiceAttachmentFinalizerKey, otherwise it will return an error
-func verifyServiceAttachmentFinalizer(cr *sav1beta1.ServiceAttachment) error {
+func verifyServiceAttachmentFinalizer(cr *sav1.ServiceAttachment) error {
 	finalizers := cr.GetFinalizers()
 	if len(finalizers) != 1 {
 		return fmt.Errorf("Expected service attachment to have one finalizer, has %d", len(finalizers))
@@ -1223,7 +1288,7 @@ func verifyServiceAttachmentFinalizer(cr *sav1beta1.ServiceAttachment) error {
 // syncServiceAttachmentLister will add all the current ServiceAttachment CRs in the Kubernetes
 // client to the controller's svcAttachmentLister
 func syncServiceAttachmentLister(controller *Controller) error {
-	crs, err := controller.saClient.NetworkingV1beta1().ServiceAttachments(testNamespace).List(context2.TODO(), metav1.ListOptions{})
+	crs, err := controller.saClient.NetworkingV1().ServiceAttachments(testNamespace).List(context2.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return err
 	}
@@ -1240,8 +1305,8 @@ func syncServiceAttachmentLister(controller *Controller) error {
 // verifyServiceAttachmentCRDeletion will verify that the provicded ServiceAttachment CR
 // does not have the service attachment finalizer and that the deletion timestamp has been
 // set
-func verifyServiceAttachmentCRDeletion(controller *Controller, sa *sav1beta1.ServiceAttachment) error {
-	currCR, err := controller.saClient.NetworkingV1beta1().ServiceAttachments(sa.Namespace).Get(context2.TODO(), sa.Name, metav1.GetOptions{})
+func verifyServiceAttachmentCRDeletion(controller *Controller, sa *sav1.ServiceAttachment) error {
+	currCR, err := controller.saClient.NetworkingV1().ServiceAttachments(sa.Namespace).Get(context2.TODO(), sa.Name, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil
@@ -1261,7 +1326,7 @@ func verifyServiceAttachmentCRDeletion(controller *Controller, sa *sav1beta1.Ser
 
 // verifyGCEServiceAttachmentDeletion verifies that the provided CR's corresponding GCE
 // Service Attachmen resource has been deleted
-func verifyGCEServiceAttachmentDeletion(controller *Controller, sa *sav1beta1.ServiceAttachment) error {
+func verifyGCEServiceAttachmentDeletion(controller *Controller, sa *sav1.ServiceAttachment) error {
 	gceSAName := controller.saNamer.ServiceAttachment(sa.Namespace, sa.Name, string(sa.UID))
 	gceSA, err := getServiceAttachment(controller.cloud, gceSAName)
 	if err == nil {

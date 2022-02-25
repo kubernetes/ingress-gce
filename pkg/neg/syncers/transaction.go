@@ -23,6 +23,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	apiv1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1beta1"
@@ -31,6 +32,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
@@ -166,14 +168,16 @@ func (s *transactionSyncer) syncInternal() error {
 	s.syncLock.Lock()
 	defer s.syncLock.Unlock()
 
-	// NOTE: Error will be used to update the status on corresponding Neg CR if Neg CRD is enabled
-	// Please reuse and set err before returning
-	var err error
-	defer s.updateStatus(err)
 	start := time.Now()
-	defer metrics.PublishNegSyncMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), err, start)
+	err := s.syncInternalImpl()
 
-	if s.needInit {
+	s.updateStatus(err)
+	metrics.PublishNegSyncMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), err, start)
+	return err
+}
+
+func (s *transactionSyncer) syncInternalImpl() error {
+	if s.needInit || s.isZoneChange() {
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
 			return err
 		}
@@ -216,6 +220,9 @@ func (s *transactionSyncer) syncInternal() error {
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 		targetMap, endpointPodMap, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		if err != nil {
+			return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
+		}
 	} else {
 		ep, exists, err := s.endpointLister.Get(
 			&apiv1.Endpoints{
@@ -234,12 +241,11 @@ func (s *transactionSyncer) syncInternal() error {
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpoints(ep.(*apiv1.Endpoints))
 		targetMap, endpointPodMap, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		if err != nil {
+			return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
+		}
 	}
 
-	if err != nil {
-		err = fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
-		return err
-	}
 	s.logStats(targetMap, "desired NEG endpoints")
 
 	// Calculate the endpoints to add and delete to transform the current state to desire state
@@ -266,9 +272,7 @@ func (s *transactionSyncer) syncInternal() error {
 	s.logEndpoints(addEndpoints, "adding endpoint")
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
-	// set err instead of returning directly so that synced condition on neg crd is properly updated in defer
-	err = s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
-	return err
+	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
 }
 
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
@@ -464,6 +468,35 @@ func (s *transactionSyncer) commitPods(endpointMap map[string]negtypes.NetworkEn
 		}
 		s.reflector.CommitPods(s.NegSyncerKey, s.NegSyncerKey.NegName, zone, zoneEndpointMap)
 	}
+}
+
+// isZoneChange returns true if a zone change has occurred by comparing which zones the nodes are in
+// with the zones that NEGs are initialized in
+func (s *transactionSyncer) isZoneChange() bool {
+	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
+	if err != nil {
+		klog.Warningf("unable to retrieve neg %s/%s from the store: %s", s.Namespace, s.NegName, err)
+		return false
+	}
+
+	existingZones := sets.NewString()
+	for _, ref := range negCR.Status.NetworkEndpointGroups {
+		id, err := cloud.ParseResourceURL(ref.SelfLink)
+		if err != nil {
+			klog.Warningf("unable to parse selflink %s", ref.SelfLink)
+			continue
+		}
+		existingZones.Insert(id.Key.Zone)
+	}
+
+	zones, err := s.zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(s.EpCalculatorMode))
+	if err != nil {
+		klog.Errorf("unable to list zones: %s", err)
+		return false
+	}
+	currZones := sets.NewString(zones...)
+
+	return !currZones.Equal(existingZones)
 }
 
 // filterEndpointByTransaction removes the all endpoints from endpoint map if they exists in the transaction table

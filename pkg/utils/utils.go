@@ -76,7 +76,12 @@ const (
 	LabelNodeRoleExcludeBalancer = "node.kubernetes.io/exclude-from-external-load-balancers"
 	// ToBeDeletedTaint is the taint that the autoscaler adds when a node is scheduled to be deleted
 	// https://github.com/kubernetes/autoscaler/blob/cluster-autoscaler-0.5.2/cluster-autoscaler/utils/deletetaint/delete.go#L33
-	ToBeDeletedTaint        = "ToBeDeletedByClusterAutoscaler"
+	ToBeDeletedTaint = "ToBeDeletedByClusterAutoscaler"
+	// GKECurrentOperationLabel is added by the GKE control plane, to nodes that are about to be drained as a result of an upgrade/resize operation.
+	// The operation value is "drain".
+	GKECurrentOperationLabel = "operation.gke.io/type"
+	// NodeDrain is the string used to indicate the Node Draining operation.
+	NodeDrain               = "drain"
 	L4ILBServiceDescKey     = "networking.gke.io/service-name"
 	L4LBSharedResourcesDesc = "This resource is shared by all L4 %s Services using ExternalTrafficPolicy: Cluster."
 
@@ -84,8 +89,6 @@ const (
 	// exclude from load balancers created by a cloud provider. This label is deprecated and will
 	// be removed in 1.18.
 	LabelAlphaNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
-	GKEUpgradeOperation               = "operation_type: UPGRADE_NODES"
-	GKECurrentOperationAnnotation     = "gke-current-operation"
 )
 
 // L4LBType indicates if L4 LoadBalancer is Internal or External
@@ -124,16 +127,6 @@ const (
 	// AffinityTypeClientIP - affinity based on Client IP.
 	gceAffinityTypeClientIP = "CLIENT_IP"
 )
-
-// FakeGoogleAPIForbiddenErr creates a Forbidden error with type googleapi.Error
-func FakeGoogleAPIForbiddenErr() *googleapi.Error {
-	return &googleapi.Error{Code: http.StatusForbidden}
-}
-
-// FakeGoogleAPINotFoundErr creates a NotFound error with type googleapi.Error
-func FakeGoogleAPINotFoundErr() *googleapi.Error {
-	return &googleapi.Error{Code: http.StatusNotFound}
-}
 
 // IsHTTPErrorCode checks if the given error matches the given HTTP Error code.
 // For this to work the error must be a googleapi Error.
@@ -406,8 +399,8 @@ func nodePredicateInternal(node *api_v1.Node, includeUnreadyNodes, excludeUpgrad
 		return false
 	}
 	if excludeUpgradingNodes {
-		// This node is about to be upgraded.
-		if opVal, _ := node.Annotations[GKECurrentOperationAnnotation]; strings.Contains(opVal, GKEUpgradeOperation) {
+		// This node is about to be upgraded or deleted as part of resize.
+		if operation, _ := node.Labels[GKECurrentOperationLabel]; operation == NodeDrain {
 			return false
 		}
 	}
@@ -612,6 +605,29 @@ func GetPortsAndProtocol(svcPorts []api_v1.ServicePort) (ports []string, portRan
 	return ports, GetPortRanges(portInts), nodePorts, protocol
 }
 
+func minMaxPort(svcPorts []api_v1.ServicePort) (int32, int32) {
+	minPort := int32(65536)
+	maxPort := int32(0)
+	for _, svcPort := range svcPorts {
+		if svcPort.Port < minPort {
+			minPort = svcPort.Port
+		}
+		if svcPort.Port > maxPort {
+			maxPort = svcPort.Port
+		}
+	}
+	return minPort, maxPort
+}
+
+func MinMaxPortRangeAndProtocol(svcPorts []api_v1.ServicePort) (portRange, protocol string) {
+	if len(svcPorts) == 0 {
+		return "", ""
+	}
+
+	minPort, maxPort := minMaxPort(svcPorts)
+	return fmt.Sprintf("%d-%d", minPort, maxPort), string(svcPorts[0].Protocol)
+}
+
 // TranslateAffinityType converts the k8s affinity type to the GCE affinity type.
 func TranslateAffinityType(affinityType string) string {
 	switch affinityType {
@@ -633,6 +649,11 @@ func IsLegacyL4ILBService(svc *api_v1.Service) bool {
 // IsSubsettingL4ILBService returns true if the given LoadBalancer service is managed by NEG and L4 controller.
 func IsSubsettingL4ILBService(svc *api_v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.ILBFinalizerV2, nil)
+}
+
+// HasL4NetLBFinalizerV2 returns true if the given Service has NetLBFinalizerV2
+func HasL4NetLBFinalizerV2(svc *api_v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV2, nil)
 }
 
 func LegacyForwardingRuleName(svc *api_v1.Service) string {
@@ -697,4 +718,23 @@ func GetBasePath(cloud *gce.Cloud) string {
 		return fmt.Sprintf("%sprojects/%s/", basePath, cloud.ProjectID())
 	}
 	return fmt.Sprintf("%s%s/", basePath, cloud.ProjectID())
+}
+
+// GetNetworkTier returns Network Tier from service and stays if this is a service annotation.
+// If the annotation is not present then default Network Tier is returned.
+func GetNetworkTier(service *api_v1.Service) (cloud.NetworkTier, bool) {
+	l, ok := service.Annotations[annotations.NetworkTierAnnotationKey]
+	if !ok {
+		return cloud.NetworkTierDefault, false
+	}
+
+	v := cloud.NetworkTier(l)
+	switch v {
+	case cloud.NetworkTierStandard:
+		return v, true
+	case cloud.NetworkTierPremium:
+		return v, true
+	default:
+		return cloud.NetworkTierDefault, false
+	}
 }

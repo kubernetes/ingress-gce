@@ -121,38 +121,142 @@ func TestLinkBackendServiceToNEG(t *testing.T) {
 					t.Fatalf("Failed to link backend service to NEG for svcPort %v: %v", svcPort, err)
 				}
 
-				beName := svcPort.BackendName()
-				scope := befeatures.ScopeFromServicePort(&svcPort)
-
-				key, err := composite.CreateKey(fakeGCE, beName, scope)
-				if err != nil {
-					t.Fatalf("Failed to create composite key - %v", err)
-				}
-				bs, err := composite.GetBackendService(fakeGCE, key, version)
-				if err != nil {
-					t.Fatalf("Failed to retrieve backend service using key %+v for svcPort %v: %v", key, svcPort, err)
-				}
-				if len(bs.Backends) != len(zones) {
-					t.Errorf("Expect %v backends in backend service %s, but got %v.key %+v %+v", len(zones), beName, len(bs.Backends), key, bs)
-				}
-
-				for _, be := range bs.Backends {
-					neg := "networkEndpointGroups"
-					if !strings.Contains(be.Group, neg) {
-						t.Errorf("Got backend link %q, want containing %q", be.Group, neg)
+				// validate function validates if the state is expected
+				validate := func() {
+					beName := svcPort.BackendName()
+					scope := befeatures.ScopeFromServicePort(&svcPort)
+					key, err := composite.CreateKey(fakeGCE, beName, scope)
+					if err != nil {
+						t.Fatalf("Failed to create composite key - %v", err)
 					}
-					if svcPort.VMIPNEGEnabled {
-						// Balancing mode should be connection, rate should be unset
-						if be.BalancingMode != string(Connections) || be.MaxRatePerEndpoint != 0 {
-							t.Errorf("Only 'Connection' balancing mode is supported with VM_IP NEGs, Got %q with max rate %v", be.BalancingMode, be.MaxRatePerEndpoint)
+					bs, err := composite.GetBackendService(fakeGCE, key, version)
+					if err != nil {
+						t.Fatalf("Failed to retrieve backend service using key %+v for svcPort %v: %v", key, svcPort, err)
+					}
+					if len(bs.Backends) != len(zones) {
+						t.Errorf("Expect %v backends in backend service %s, but got %v.key %+v %+v", len(zones), beName, len(bs.Backends), key, bs)
+					}
+
+					for _, be := range bs.Backends {
+						neg := "networkEndpointGroups"
+						if !strings.Contains(be.Group, neg) {
+							t.Errorf("Got backend link %q, want containing %q", be.Group, neg)
+						}
+						if svcPort.VMIPNEGEnabled {
+							// Balancing mode should be connection, rate should be unset
+							if be.BalancingMode != string(Connections) || be.MaxRatePerEndpoint != 0 {
+								t.Errorf("Only 'Connection' balancing mode is supported with VM_IP NEGs, Got %q with max rate %v", be.BalancingMode, be.MaxRatePerEndpoint)
+							}
 						}
 					}
 				}
+
+				validate()
+
+				// mimic cluster node shrinks to one of the zone
+				shrinkZone := []GroupKey{zones[0]}
+				if err := linker.Link(svcPort, shrinkZone); err != nil {
+					t.Fatalf("Failed to link backend service to NEG for svcPort %v: %v", svcPort, err)
+				}
+
+				validate()
 			}
 		})
 
 	}
 
+}
+
+func TestMergeBackends(t *testing.T) {
+	t.Parallel()
+
+	negUrl11 := "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-c/networkEndpointGroups/k8s1-325ba033-kube-system-default-http-backend-80-4520b6d9"
+	negUrl12 := "https://www.googleapis.com/compute/beta/projects/test-project/zones/us-central1-c/networkEndpointGroups/k8s1-325ba033-kube-system-default-http-backend-80-4520b6d9"
+	negUrl2 := "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-c/networkEndpointGroups/neg2"
+	negUrl3 := "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-c/networkEndpointGroups/neg3"
+	negUrl4 := "https://www.googleapis.com/compute/v1/projects/test-project/zones/us-central1-c/networkEndpointGroups/neg4"
+
+	for _, tc := range []struct {
+		name        string
+		old         []*composite.Backend
+		new         []*composite.Backend
+		expect      []*composite.Backend
+		expectError bool
+	}{
+		{
+			name:   "empty",
+			expect: []*composite.Backend{},
+		},
+		{
+			name:        "mal formed NEG url in old",
+			old:         []*composite.Backend{{Group: "malformed"}},
+			expectError: true,
+		},
+		{
+			name:        "mal formed NEG url in new",
+			old:         []*composite.Backend{{Group: negUrl11}},
+			new:         []*composite.Backend{{Group: "malformed"}},
+			expectError: true,
+		},
+		{
+			name:   "same",
+			old:    []*composite.Backend{{Group: negUrl12}},
+			new:    []*composite.Backend{{Group: negUrl12}},
+			expect: []*composite.Backend{{Group: negUrl12}},
+		},
+		{
+			name:   "same (multiple)",
+			old:    []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}},
+			new:    []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}},
+			expect: []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}},
+		},
+		{
+			name:   "new has more backend than old",
+			old:    []*composite.Backend{{Group: negUrl2}},
+			new:    []*composite.Backend{{Group: negUrl3}, {Group: negUrl2}},
+			expect: []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}},
+		},
+		{
+			name:   "old has more backend than new",
+			old:    []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}},
+			new:    []*composite.Backend{{Group: negUrl2}},
+			expect: []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}},
+		},
+		{
+			name:   "diff between old and new",
+			old:    []*composite.Backend{{Group: negUrl12}, {Group: negUrl2}, {Group: negUrl3}},
+			new:    []*composite.Backend{{Group: negUrl2}, {Group: negUrl3}, {Group: negUrl4}},
+			expect: []*composite.Backend{{Group: negUrl12}, {Group: negUrl2}, {Group: negUrl3}, {Group: negUrl4}},
+		},
+		{
+			name:   "update rate",
+			old:    []*composite.Backend{{Group: negUrl2, MaxRatePerEndpoint: 1}},
+			new:    []*composite.Backend{{Group: negUrl2, MaxRatePerEndpoint: 3}},
+			expect: []*composite.Backend{{Group: negUrl2, MaxRatePerEndpoint: 3}},
+		},
+		{
+			name:   "beta url and v1 url ",
+			old:    []*composite.Backend{{Group: negUrl11, MaxRatePerEndpoint: 1}},
+			new:    []*composite.Backend{{Group: negUrl12, MaxRatePerEndpoint: 1}},
+			expect: []*composite.Backend{{Group: negUrl12, MaxRatePerEndpoint: 1}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ret, err := mergeBackends(tc.old, tc.new)
+			if tc.expectError && err == nil {
+				t.Errorf("Expect err != nil, however got err == nil")
+			} else if !tc.expectError && err != nil {
+				t.Errorf("Exptect err == nil, however got %v", err)
+			}
+
+			if !tc.expectError {
+				diffBackend := diffBackends(tc.expect, ret)
+				if !diffBackend.isEqual() {
+					t.Errorf("Expect tc.expect == ret, howevever got, tc.expect = %v, ret = %v", tc.expect, ret)
+				}
+			}
+		})
+	}
 }
 
 func TestDiffBackends(t *testing.T) {

@@ -70,6 +70,12 @@ rules:
 - apiGroups: ["networking.gke.io"]
   resources: ["frontendconfigs"]
   verbs: ["get", "list", "watch", "update", "create", "patch"]
+- apiGroups: ["networking.gke.io"]
+  resources: ["servicenetworkendpointgroups","gcpingressparams"]
+  verbs: ["get", "list", "watch", "update", "create", "patch", "delete"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingressclasses"]
+  verbs: ["get", "list", "watch", "update", "create", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

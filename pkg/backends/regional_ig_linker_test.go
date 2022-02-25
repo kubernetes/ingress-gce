@@ -20,7 +20,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -44,9 +43,9 @@ func linkerTestClusterValues() gce.TestClusterValues {
 }
 
 func newTestRegionalIgLinker(fakeGCE *gce.Cloud, backendPool *Backends, l4Namer *namer.L4Namer) *RegionalInstanceGroupLinker {
-	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), l4Namer.Namer)
-	fakeInstancePool := instances.NewNodePool(fakeIGs, l4Namer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE))
-	fakeInstancePool.Init(&instances.FakeZoneLister{Zones: []string{uscentralzone}})
+	fakeIGs := instances.NewEmptyFakeInstanceGroups()
+	fakeZL := &instances.FakeZoneLister{Zones: []string{uscentralzone}}
+	fakeInstancePool := instances.NewNodePool(fakeIGs, l4Namer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE), fakeZL)
 
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
 

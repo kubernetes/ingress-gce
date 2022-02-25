@@ -29,7 +29,7 @@ func CRDMeta() *crd.CRDMeta {
 		"servicenetworkendpointgroup",
 		"servicenetworkendpointgroups",
 		[]*crd.Version{
-			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1.ServiceNetworkEndpointGroup", negv1beta1.GetOpenAPIDefinitions),
+			crd.NewVersion("v1beta1", "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1.ServiceNetworkEndpointGroup", negv1beta1.GetOpenAPIDefinitions, false),
 		},
 		"svcneg",
 	)

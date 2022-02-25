@@ -1413,6 +1413,127 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 	}
 }
 
+func TestSyncNodesConditions(t *testing.T) {
+	testcases := []struct {
+		desc          string
+		syncerStopped bool
+		negType       negtypes.NetworkEndpointType
+		expectSync    bool
+		addZones      map[string][]string
+		deleteZones   []string
+	}{
+		{
+			desc:       "vm ip port neg, zones added",
+			expectSync: true,
+			negType:    negtypes.VmIpPortEndpointType,
+			addZones: map[string][]string{
+				"zoneA": []string{"added-instance"},
+			},
+		},
+		{
+			desc:        "vm ip port neg, zones deleted",
+			expectSync:  true,
+			negType:     negtypes.VmIpPortEndpointType,
+			deleteZones: []string{"zone1"},
+		},
+		{
+			desc:       "vm ip port neg, zones are the same",
+			expectSync: false,
+			negType:    negtypes.VmIpPortEndpointType,
+		},
+		{
+			desc:       "vm ip neg, zones added",
+			expectSync: true,
+			negType:    negtypes.VmIpEndpointType,
+			addZones: map[string][]string{
+				"zoneA": []string{"added-instance"},
+			},
+		},
+		{
+			desc:        "vm ip neg, zones deleted",
+			expectSync:  true,
+			negType:     negtypes.VmIpEndpointType,
+			deleteZones: []string{"zone1"},
+		},
+		{
+			desc:       "vm ip neg, zones are the same",
+			expectSync: true,
+			negType:    negtypes.VmIpEndpointType,
+		},
+		{
+			desc:          "vm ip neg syncer is stopped",
+			expectSync:    false,
+			syncerStopped: true,
+			negType:       negtypes.VmIpEndpointType,
+		},
+		{
+			desc:          "vm ip port neg syncer is stopped",
+			expectSync:    false,
+			syncerStopped: true,
+			negType:       negtypes.VmIpPortEndpointType,
+			deleteZones:   []string{"zone1"},
+		},
+	}
+
+	for _, tc := range testcases {
+		t.Run(tc.desc, func(t *testing.T) {
+			syncCalled := false
+			syncFunc := func() bool {
+				syncCalled = true
+				return false
+			}
+
+			manager, _ := NewTestSyncerManager(fake.NewSimpleClientset())
+
+			syncer := &fakeSyncer{
+				isStopped: tc.syncerStopped,
+				syncFunc:  syncFunc,
+			}
+			key := negtypes.NegSyncerKey{
+				NegType: tc.negType,
+			}
+			manager.syncerMap = map[negtypes.NegSyncerKey]negtypes.NegSyncer{
+				key: syncer,
+			}
+			fakeZoneGetter := manager.zoneGetter.(*negtypes.FakeZoneGetter)
+			for zone, instances := range tc.addZones {
+				err := fakeZoneGetter.AddZone(zone, instances...)
+				if err != nil {
+					t.Errorf("failed to add zone: %s", err)
+				}
+			}
+
+			for _, zone := range tc.deleteZones {
+				fakeZoneGetter.DeleteZone(zone)
+			}
+
+			manager.SyncNodes()
+			if syncCalled != tc.expectSync {
+				t.Errorf("syncCalled is %t, expected %t", syncCalled, tc.expectSync)
+			}
+
+			if tc.negType == negtypes.VmIpPortEndpointType {
+				syncCalled = false
+				manager.SyncNodes()
+				if syncCalled {
+					t.Errorf("no zone change, sync should not have been called again")
+				}
+			}
+		})
+	}
+}
+
+type fakeSyncer struct {
+	isStopped bool
+	syncFunc  func() bool
+}
+
+func (s *fakeSyncer) Start() error         { return nil }
+func (s *fakeSyncer) Stop()                {}
+func (s *fakeSyncer) Sync() bool           { return s.syncFunc() }
+func (s *fakeSyncer) IsStopped() bool      { return s.isStopped }
+func (s *fakeSyncer) IsShuttingDown() bool { return false }
+
 // getNegObjectRefs generates the NegObjectReference list of all negs with the specified negName in the specified zones
 func getNegObjectRefs(t *testing.T, cloud negtypes.NetworkEndpointGroupCloud, zones []string, negName string, version meta.Version) []negv1beta1.NegObjectReference {
 	var negRefs []negv1beta1.NegObjectReference

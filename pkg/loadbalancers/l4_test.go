@@ -68,7 +68,7 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
-	bsName, _ := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
+	bsName, _ := l.namer.L4Backend(l.Service.Namespace, l.Service.Name)
 	_, err := l.backendPool.EnsureL4BackendService(bsName, "", "TCP", string(svc.Spec.SessionAffinity), string(cloud.SchemeInternal), l.NamespacedName, meta.VersionGA)
 	if err != nil {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
@@ -130,7 +130,7 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 	}
 	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
-	backendServiceName, _ := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
+	backendServiceName, _ := l.namer.L4Backend(l.Service.Namespace, l.Service.Name)
 	key := meta.RegionalKey(backendServiceName, l.cloud.Region())
 	bs, err := composite.GetBackendService(l.cloud, key, meta.VersionGA)
 	if err != nil {
@@ -207,7 +207,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
 
-	lbName, _ := l.namer.VMIPNEG(svc.Namespace, svc.Name)
+	lbName, _ := l.namer.L4Backend(svc.Namespace, svc.Name)
 
 	// Create the expected resources necessary for an Internal Load Balancer
 	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(svc)
@@ -217,7 +217,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 			l.sharedResourcesLock.Lock()
 			defer l.sharedResourcesLock.Unlock()
 		}
-		return healthchecks.EnsureL4HealthCheck(l.cloud, l.Service, l.namer, sharedHC, meta.Global)
+		return healthchecks.EnsureL4HealthCheck(l.cloud, l.Service, l.namer, sharedHC, meta.Global, utils.ILB)
 	}
 
 	hcLink, _, _, _, err := ensureHCFunc()
@@ -256,7 +256,7 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
 
-	lbName, _ := l.namer.VMIPNEG(svc.Namespace, svc.Name)
+	lbName, _ := l.namer.L4Backend(svc.Namespace, svc.Name)
 	frName := l.GetFRName()
 	key, err := composite.CreateKey(l.cloud, frName, meta.Regional)
 	if err != nil {
@@ -373,7 +373,7 @@ func TestUpdateResourceLinks(t *testing.T) {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
 
-	lbName, _ := l.namer.VMIPNEG(svc.Namespace, svc.Name)
+	lbName, _ := l.namer.L4Backend(svc.Namespace, svc.Name)
 	key, err := composite.CreateKey(l.cloud, lbName, meta.Regional)
 	if err != nil {
 		t.Errorf("Unexpected error when creating key - %v", err)
@@ -447,7 +447,7 @@ func TestEnsureInternalLoadBalancerHealthCheckConfigurable(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	lbName, _ := l.namer.VMIPNEG(svc.Namespace, svc.Name)
+	lbName, _ := l.namer.L4Backend(svc.Namespace, svc.Name)
 	key, err := composite.CreateKey(l.cloud, lbName, meta.Regional)
 	if err != nil {
 		t.Errorf("Unexpected error when creating key - %v", err)
@@ -495,7 +495,7 @@ func TestEnsureInternalLoadBalancerDeleted(t *testing.T) {
 	}
 	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
-	// Delete the loadbalancer
+	// Delete the loadbalancer.
 	result = l.EnsureInternalLoadBalancerDeleted(svc)
 	if result.Error != nil {
 		t.Errorf("Unexpected error %v", result.Error)
@@ -539,6 +539,55 @@ func TestEnsureInternalLoadBalancerDeletedTwiceDoesNotError(t *testing.T) {
 	assertInternalLbResourcesDeleted(t, svc, true, l)
 }
 
+func TestEnsureInternalLoadBalancerDeletedWithSharedHC(t *testing.T) {
+	t.Parallel()
+
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := getFakeGCECloud(vals)
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.DeleteHook = test.DeleteHealthCheckResourceInUseErrorHook
+	nodeNames := []string{"test-node-1"}
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	_, _, result := ensureService(fakeGCE, namer, nodeNames, vals.ZoneName, 8080, t)
+	if result != nil && result.Error != nil {
+		t.Fatalf("Error ensuring service err: %v", result.Error)
+	}
+	svc2, l, result := ensureService(fakeGCE, namer, nodeNames, vals.ZoneName, 8081, t)
+	if result != nil && result.Error != nil {
+		t.Fatalf("Error ensuring service err: %v", result.Error)
+	}
+
+	// Delete the loadbalancer.
+	result = l.EnsureInternalLoadBalancerDeleted(svc2)
+	if result.Error != nil {
+		t.Errorf("Unexpected error %v", result.Error)
+	}
+	// When health check is shared we expect that hc firewall rule will not be deleted.
+	_, hcFwName := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, true)
+	firewall, err := l.cloud.GetFirewall(hcFwName)
+	if err != nil || firewall == nil {
+		t.Errorf("Expected firewall exists err: %v, fwR: %v", err, firewall)
+	}
+}
+
+func ensureService(fakeGCE *gce.Cloud, namer *namer_util.L4Namer, nodeNames []string, zoneName string, port int, t *testing.T) (*v1.Service, *L4, *L4ILBSyncResult) {
+	svc := test.NewL4ILBService(false, 8080)
+	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
+	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, zoneName); err != nil {
+		return nil, nil, &L4ILBSyncResult{Error: fmt.Errorf("Unexpected error when adding nodes %v", err)}
+	}
+	result := l.EnsureInternalLoadBalancer(nodeNames, svc)
+	if result.Error != nil {
+		return nil, nil, result
+	}
+	if len(result.Status.Ingress) == 0 {
+		result.Error = fmt.Errorf("Got empty loadBalancer status using handler %v", l)
+		return nil, nil, result
+	}
+	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
+	return svc, l, nil
+}
+
 func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 	vals := gce.DefaultTestClusterValues()
 	fakeGCE := getFakeGCECloud(vals)
@@ -564,7 +613,7 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 	}
 	assertInternalLbResources(t, svc, l, nodeNames, result.Annotations)
 
-	lbName, _ := l.namer.VMIPNEG(svc.Namespace, svc.Name)
+	lbName, _ := l.namer.L4Backend(svc.Namespace, svc.Name)
 	key, err := composite.CreateKey(l.cloud, lbName, meta.Global)
 	if err != nil {
 		t.Errorf("Unexpected error when creating key - %v", err)
@@ -650,7 +699,7 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 			}
 			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 			l := NewL4Handler(params.service, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
-			//lbName := l.namer.VMIPNEG(params.service.Namespace, params.service.Name)
+			//lbName := l.namer.L4Backend(params.service.Namespace, params.service.Name)
 			frName := l.GetFRName()
 			key, err := composite.CreateKey(l.cloud, frName, meta.Regional)
 			if err != nil {
@@ -664,7 +713,7 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 			if err = composite.CreateForwardingRule(l.cloud, key, &composite.ForwardingRule{Name: frName}); err != nil {
 				t.Errorf("Failed to create fake forwarding rule %s, err %v", frName, err)
 			}
-			// Inject error hooks after creating the forwarding rule
+			// Inject error hooks after creating the forwarding rule.
 			if tc.injectMock != nil {
 				tc.injectMock(fakeGCE.Compute().(*cloud.MockGCE))
 			}
@@ -696,7 +745,7 @@ func TestEnsureLoadBalancerDeletedSucceedsOnXPN(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	fwName := l.namer.VMIPNEG(svc.Namespace, svc.Name)
+	fwName := l.namer.L4Backend(svc.Namespace, svc.Name)
 	status, err := l.EnsureInternalLoadBalancer(nodeNames, svc, &metrics.L4ILBServiceState{})
 	if err != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", err)
@@ -906,7 +955,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
-	fwName, _ := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
+	fwName, _ := l.namer.L4Backend(l.Service.Namespace, l.Service.Name)
 	tc := struct {
 		Input  []int
 		Result []string
@@ -925,16 +974,16 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	c.MockFirewalls.InsertHook = nil
 	c.MockFirewalls.UpdateHook = nil
 
-	sourceRange := []string{"10.0.0.0/20"}
-	firewalls.EnsureL4FirewallRule(
-		l.cloud,
-		fwName,
-		"1.2.3.4",
-		utils.ServiceKeyFunc(svc.Namespace, svc.Name),
-		sourceRange,
-		utils.GetPortRanges(tc.Input),
-		nodeNames,
-		string(v1.ProtocolTCP), false, utils.ILB)
+	fwrParams := firewalls.FirewallParams{
+		Name:         fwName,
+		SourceRanges: []string{"10.0.0.0/20"},
+		PortRanges:   utils.GetPortRanges(tc.Input),
+		NodeNames:    nodeNames,
+		Protocol:     string(v1.ProtocolTCP),
+		L4Type:       utils.ILB,
+		IP:           "1.2.3.4",
+	}
+	firewalls.EnsureL4FirewallRule(l.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false)
 	if err != nil {
 		t.Errorf("Unexpected error %v when ensuring firewall rule %s for svc %+v", err, fwName, svc)
 	}
@@ -1134,7 +1183,7 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, nodeNames []string, resourceAnnotations map[string]string) {
 	// Check that Firewalls are created for the LoadBalancer and the HealthCheck
 	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(apiService)
-	resourceName, _ := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
+	resourceName, _ := l.namer.L4Backend(l.Service.Namespace, l.Service.Name)
 	resourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, false, utils.ILB)
 	if err != nil {
 		t.Errorf("Failed to create description for resources, err %v", err)
@@ -1259,15 +1308,16 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 
 func assertInternalLbResourcesDeleted(t *testing.T, apiService *v1.Service, firewallsDeleted bool, l *L4) {
 	frName := l.GetFRName()
-	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(apiService)
-	resourceName, _ := l.namer.VMIPNEG(l.Service.Namespace, l.Service.Name)
-	hcName, hcFwName := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, sharedHC)
+	resourceName, _ := l.namer.L4Backend(l.Service.Namespace, l.Service.Name)
+	hcNameShared, hcFwNameShared := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, true)
+	hcNameNonShared, hcFwNameNonShared := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, false)
 
 	if firewallsDeleted {
 		// Check that Firewalls are deleted for the LoadBalancer and the HealthCheck
 		fwNames := []string{
 			resourceName,
-			hcFwName,
+			hcFwNameShared,
+			hcFwNameNonShared,
 		}
 
 		for _, fwName := range fwNames {
@@ -1284,10 +1334,14 @@ func assertInternalLbResourcesDeleted(t *testing.T, apiService *v1.Service, fire
 		t.Errorf("Expected error when looking up forwarding rule after deletion")
 	}
 
-	// Check that HealthCheck is deleted
-	healthcheck, err := l.cloud.GetHealthCheck(hcName)
+	// Check that HealthChecks are deleted
+	healthcheck, err := l.cloud.GetHealthCheck(hcNameShared)
 	if err == nil || healthcheck != nil {
-		t.Errorf("Expected error when looking up healthcheck after deletion")
+		t.Errorf("Expected error when looking up shared healthcheck after deletion")
+	}
+	healthcheck, err = l.cloud.GetHealthCheck(hcNameNonShared)
+	if err == nil || healthcheck != nil {
+		t.Errorf("Expected error when looking up non-shared healthcheck after deletion")
 	}
 	bs, err := l.cloud.GetRegionBackendService(resourceName, l.cloud.Region())
 	if err == nil || bs != nil {

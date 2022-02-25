@@ -24,7 +24,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends/features"
 	"k8s.io/ingress-gce/pkg/composite"
@@ -37,7 +36,6 @@ import (
 const defaultZone = "zone-a"
 
 func newTestIGLinker(fakeGCE *gce.Cloud, fakeInstancePool instances.NodePool) *instanceGroupLinker {
-	fakeInstancePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	fakeBackendPool := NewPool(fakeGCE, defaultNamer)
 
 	// Add standard hooks for mocking update calls. Each test can set a different update hook if it chooses to.
@@ -49,9 +47,10 @@ func newTestIGLinker(fakeGCE *gce.Cloud, fakeInstancePool instances.NodePool) *i
 }
 
 func TestLink(t *testing.T) {
-	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
+	fakeIGs := instances.NewEmptyFakeInstanceGroups()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE))
+	fakeZL := &instances.FakeZoneLister{Zones: []string{defaultZone}}
+	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE), fakeZL)
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
@@ -79,9 +78,10 @@ func TestLink(t *testing.T) {
 }
 
 func TestLinkWithCreationModeError(t *testing.T) {
-	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), defaultNamer)
+	fakeIGs := instances.NewEmptyFakeInstanceGroups()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE))
+	fakeZL := &instances.FakeZoneLister{Zones: []string{defaultZone}}
+	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE), fakeZL)
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}

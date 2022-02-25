@@ -27,7 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/ingparams"
-	"k8s.io/ingress-gce/pkg/l4netlb"
+	"k8s.io/ingress-gce/pkg/l4lb"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
 	"k8s.io/ingress-gce/pkg/svcneg"
@@ -57,7 +57,6 @@ import (
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/flags"
 	_ "k8s.io/ingress-gce/pkg/klog"
-	"k8s.io/ingress-gce/pkg/l4"
 	"k8s.io/ingress-gce/pkg/version"
 )
 
@@ -224,7 +223,9 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, client clientset.In
 	}
 	// add a uniquifier so that two processes on the same host don't accidentally both become active
 	id := fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6))
-	rl, err := resourcelock.New(resourcelock.ConfigMapsResourceLock,
+	// TODO(#1590): Migrate to LeasesResourceLock two releases after the
+	//  migration to ConfigMapsLeases were done.
+	rl, err := resourcelock.New(resourcelock.ConfigMapsLeasesResourceLock,
 		flags.F.LeaderElection.LockObjectNamespace,
 		flags.F.LeaderElection.LockObjectName,
 		client.CoreV1(),
@@ -274,7 +275,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values())
 
 	if flags.F.RunL4Controller {
-		l4Controller := l4.NewController(ctx, stopCh)
+		l4Controller := l4lb.NewILBController(ctx, stopCh)
 		go l4Controller.Run()
 		klog.V(0).Infof("L4 controller started")
 	}
@@ -349,16 +350,16 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	ctx.Start(stopCh)
 
-	if flags.F.RunL4NetLBController {
-		l4netlbController := l4netlb.NewL4NetLBController(ctx, stopCh)
+	nodeController := controller.NewNodeController(ctx, stopCh)
+	go nodeController.Run()
 
-		// Before we can Run controller we need to init instance Pool with translator
-		// transaltor is created in context so we need to do this after context is created
-		l4netlbController.Init()
+	// The L4NetLbController will be run when RbsMode flag is Set
+	if flags.F.RunL4NetLBController {
+		l4netlbController := l4lb.NewL4NetLBController(ctx, stopCh)
+
 		klog.V(0).Infof("L4NetLB controller started")
 		go l4netlbController.Run()
 	}
-	lbc.Init()
 	lbc.Run()
 	for {
 		klog.Warning("Handled quit, awaiting pod deletion.")

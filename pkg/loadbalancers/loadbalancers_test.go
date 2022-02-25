@@ -32,15 +32,12 @@ import (
 	"google.golang.org/api/googleapi"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
-	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -155,10 +152,6 @@ func newIngress() *networkingv1.Ingress {
 }
 
 func newFakeLoadBalancerPool(cloud *gce.Cloud, t *testing.T, namer *namer_util.Namer) L7s {
-	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
-	nodePool := instances.NewNodePool(fakeIGs, namer, &test.FakeRecorderSource{}, utils.GetBasePath(cloud))
-	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
-
 	return L7s{cloud, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer, "")}
 }
 

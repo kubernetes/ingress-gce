@@ -283,27 +283,29 @@ func NewController(
 		})
 	}
 
-	if negController.runL4 {
-		nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-			AddFunc: func(obj interface{}) {
-				node := obj.(*apiv1.Node)
-				negController.enqueueNode(node)
-			},
-			DeleteFunc: func(obj interface{}) {
-				node := obj.(*apiv1.Node)
-				negController.enqueueNode(node)
-			},
-			UpdateFunc: func(old, cur interface{}) {
-				oldNode := old.(*apiv1.Node)
-				currentNode := cur.(*apiv1.Node)
-				candidateNodeCheck := utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
-				if candidateNodeCheck(oldNode) != candidateNodeCheck(currentNode) {
-					klog.Infof("Node %q has changed, enqueueing", currentNode.Name)
-					negController.enqueueNode(currentNode)
-				}
-			},
-		})
+	nodeEventHandler := cache.ResourceEventHandlerFuncs{
+		AddFunc: func(obj interface{}) {
+			node := obj.(*apiv1.Node)
+			negController.enqueueNode(node)
+		},
+		DeleteFunc: func(obj interface{}) {
+			node := obj.(*apiv1.Node)
+			negController.enqueueNode(node)
+		},
 	}
+
+	if negController.runL4 {
+		nodeEventHandler.UpdateFunc = func(old, cur interface{}) {
+			oldNode := old.(*apiv1.Node)
+			currentNode := cur.(*apiv1.Node)
+			candidateNodeCheck := utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
+			if candidateNodeCheck(oldNode) != candidateNodeCheck(currentNode) {
+				klog.Infof("Node %q has changed, enqueueing", currentNode.Name)
+				negController.enqueueNode(currentNode)
+			}
+		}
+	}
+	nodeInformer.AddEventHandler(nodeEventHandler)
 
 	if enableAsm {
 		negController.enableASM = enableAsm

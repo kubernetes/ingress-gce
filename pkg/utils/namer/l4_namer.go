@@ -45,11 +45,11 @@ func NewL4Namer(kubeSystemUID string, namer *Namer) *L4Namer {
 	return &L4Namer{v2Prefix: defaultPrefix + schemaVersionV2, v2ClusterUID: clusterUID, Namer: namer}
 }
 
-// VMIPNEG returns the gce VM_IP_NEG name based on the service namespace and name
-// NEG naming convention:
+// L4Backend returns the gce L4 Backend name based on the service namespace and name
+// Naming convention:
 //   k8s2-{uid}-{ns}-{name}-{suffix}
 // Output name is at most 63 characters.
-func (namer *L4Namer) VMIPNEG(namespace, name string) (string, bool) {
+func (namer *L4Namer) L4Backend(namespace, name string) (string, bool) {
 	truncFields := TrimFieldsEvenly(maximumL4CombinedLength, namespace, name)
 	truncNamespace := truncFields[0]
 	truncName := truncFields[1]
@@ -70,10 +70,10 @@ func (namer *L4Namer) L4ForwardingRule(namespace, name, protocol string) string 
 	return strings.Join([]string{namer.v2Prefix, protocol, namer.v2ClusterUID, truncNamespace, truncName, namer.suffix(namespace, name)}, "-")
 }
 
-// L4HealthCheck returns the name of the L4 ILB Healthcheck and the associated firewall rule.
+// L4HealthCheck returns the name of the L4 LB Healthcheck and the associated firewall rule.
 func (namer *L4Namer) L4HealthCheck(namespace, name string, shared bool) (string, string) {
 	if !shared {
-		l4Name, _ := namer.VMIPNEG(namespace, name)
+		l4Name, _ := namer.L4Backend(namespace, name)
 		return l4Name, namer.hcFirewallName(l4Name)
 	}
 	return strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, sharedHcSuffix}, "-"),

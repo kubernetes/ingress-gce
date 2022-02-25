@@ -33,13 +33,16 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negv1beta1 "k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/neg/readiness"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	"k8s.io/legacy-cloud-providers/gce"
+	utilpointer "k8s.io/utils/pointer"
 )
 
 const (
@@ -1223,6 +1226,189 @@ func TestUpdateStatus(t *testing.T) {
 	}
 }
 
+func TestIsZoneChange(t *testing.T) {
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+	testNegType := negtypes.VmIpPortEndpointType
+
+	testCases := []struct {
+		desc           string
+		zoneDeleted    bool
+		zoneAdded      bool
+		expectedResult bool
+	}{
+		{
+			desc:           "zone was added",
+			zoneAdded:      true,
+			expectedResult: true,
+		},
+		{
+			desc:           "zone was deleted",
+			zoneDeleted:    true,
+			expectedResult: true,
+		},
+		{
+			desc:           "no zone change occurred",
+			expectedResult: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			_, syncer := newTestTransactionSyncer(fakeCloud, testNegType, false, false)
+
+			fakeZoneGetter := syncer.zoneGetter.(*negtypes.FakeZoneGetter)
+			origZones, err := fakeZoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(syncer.EpCalculatorMode))
+			if err != nil {
+				t.Errorf("errored when retrieving zones: %s", err)
+			}
+
+			for _, zone := range origZones {
+				fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{
+					Version:             syncer.NegSyncerKey.GetAPIVersion(),
+					Name:                testNegName,
+					NetworkEndpointType: string(syncer.NegSyncerKey.NegType),
+					Network:             fakeCloud.NetworkURL(),
+					Subnetwork:          fakeCloud.SubnetworkURL(),
+				}, zone)
+			}
+			ret, _ := fakeCloud.AggregatedListNetworkEndpointGroup(syncer.NegSyncerKey.GetAPIVersion())
+			negRefMap := negObjectReferences(ret)
+			var refs []negv1beta1.NegObjectReference
+			for _, neg := range negRefMap {
+				refs = append(refs, neg)
+			}
+			negCR := createNegCR(syncer.NegName, v1.Now(), true, true, refs)
+			if err = syncer.svcNegLister.Add(negCR); err != nil {
+				t.Errorf("failed to add neg to store:%s", err)
+			}
+
+			if tc.zoneDeleted {
+				fakeZoneGetter.DeleteZone("zone1")
+			}
+
+			if tc.zoneAdded {
+				if err := fakeZoneGetter.AddZone("zoneA", "instance-1"); err != nil {
+					t.Errorf("failed to add zone:%s", err)
+				}
+			}
+
+			isZoneChange := syncer.isZoneChange()
+			if isZoneChange != tc.expectedResult {
+				t.Errorf("isZoneChange() returned %t, wanted %t", isZoneChange, tc.expectedResult)
+			}
+		})
+
+	}
+}
+
+func TestUnknownNodes(t *testing.T) {
+	zoneGetter := negtypes.NewFakeZoneGetter()
+	testNetwork := cloud.ResourcePath("network", &meta.Key{Name: "test-network"})
+	testSubnetwork := cloud.ResourcePath("subnetwork", &meta.Key{Name: "test-subnetwork"})
+	fakeCloud := negtypes.NewFakeNetworkEndpointGroupCloud(testSubnetwork, testNetwork)
+
+	testIP1 := "10.100.1.1"
+	testIP2 := "10.100.1.2"
+	testIP3 := "10.100.2.1"
+	testPort := int64(80)
+
+	testEndpoint := getTestEndpoint(testService, testNamespace)
+	testEndpoint.Subsets[0].Addresses[0].NodeName = utilpointer.StringPtr("unknown-node")
+
+	testEndpointSlices := getTestEndpointSlices(testService, testNamespace)
+	testEndpointSlices[0].Endpoints[0].NodeName = utilpointer.StringPtr("unknown-node")
+	testEndpointMap := map[string]*composite.NetworkEndpoint{
+		negtypes.TestZone1: &composite.NetworkEndpoint{
+			Instance:  negtypes.TestInstance1,
+			IpAddress: testIP1,
+			Port:      testPort,
+		},
+
+		negtypes.TestZone2: &composite.NetworkEndpoint{
+			Instance:  negtypes.TestInstance3,
+			IpAddress: testIP2,
+			Port:      testPort,
+		},
+
+		negtypes.TestZone4: &composite.NetworkEndpoint{
+			Instance:  negtypes.TestUpgradeInstance1,
+			IpAddress: testIP3,
+			Port:      testPort,
+		},
+	}
+
+	// Create initial NetworkEndpointGroups in cloud
+	var objRefs []negv1beta1.NegObjectReference
+	for zone, endpoint := range testEndpointMap {
+		fakeCloud.CreateNetworkEndpointGroup(&composite.NetworkEndpointGroup{Name: testNegName, Version: meta.VersionGA}, zone)
+		fakeCloud.AttachNetworkEndpoints(testNegName, zone, []*composite.NetworkEndpoint{endpoint}, meta.VersionGA)
+		neg, err := fakeCloud.GetNetworkEndpointGroup(testNegName, zone, meta.VersionGA)
+		if err != nil {
+			t.Fatalf("failed to get neg from fake cloud: %s", err)
+		}
+
+		objRefs = append(objRefs, negv1beta1.NegObjectReference{SelfLink: neg.SelfLink})
+	}
+	neg := &negv1beta1.ServiceNetworkEndpointGroup{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      testNegName,
+			Namespace: testNamespace,
+		},
+		Status: negv1beta1.ServiceNetworkEndpointGroupStatus{
+			NetworkEndpointGroups: objRefs,
+		},
+	}
+
+	for _, enableEndpointSlice := range []bool{true, false} {
+		_, s := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, false, enableEndpointSlice)
+		s.needInit = false
+		if enableEndpointSlice {
+			for _, e := range testEndpointSlices {
+				s.endpointSliceLister.Add(e)
+			}
+		} else {
+			s.endpointLister.Add(testEndpoint)
+		}
+
+		for _, eps := range testEndpointSlices {
+			s.endpointSliceLister.Add(eps)
+		}
+		s.svcNegLister.Add(neg)
+		// mark syncer as started without starting the syncer routine
+		(s.syncer.(*syncer)).stopped = false
+
+		err := s.syncInternal()
+		if err == nil {
+			t.Errorf("syncInternal returned nil, expected an error")
+		}
+		fmt.Printf("REMOVE ME: error: %s\n", err)
+
+		// Check that unknown zone did not cause endpoints to be removed
+		out, err := retrieveExistingZoneNetworkEndpointMap(testNegName, zoneGetter, fakeCloud, meta.VersionGA, negtypes.L7Mode)
+		if err != nil {
+			t.Errorf("errored retrieving existing network endpoints")
+		}
+
+		expectedEndpoints := map[string]negtypes.NetworkEndpointSet{
+			negtypes.TestZone1: negtypes.NewNetworkEndpointSet(
+				negtypes.NetworkEndpoint{IP: testIP1, Node: negtypes.TestInstance1, Port: strconv.Itoa(int(testPort))},
+			),
+			negtypes.TestZone2: negtypes.NewNetworkEndpointSet(
+				negtypes.NetworkEndpoint{IP: testIP2, Node: negtypes.TestInstance3, Port: strconv.Itoa(int(testPort))},
+			),
+			negtypes.TestZone4: negtypes.NewNetworkEndpointSet(
+				negtypes.NetworkEndpoint{IP: testIP3, Node: negtypes.TestUpgradeInstance1, Port: strconv.Itoa(int(testPort))},
+			),
+		}
+
+		if !reflect.DeepEqual(expectedEndpoints, out) {
+			t.Errorf("endpoints were modified after syncInteral:\ngot %+v,\n expected %+v", out, expectedEndpoints)
+		}
+	}
+}
+
 func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, mode negtypes.EndpointsCalculatorMode, enableEndpointSlices bool) (negtypes.NegSyncer, *transactionSyncer) {
 	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmIpEndpointType, false, enableEndpointSlices)
 	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, mode)
@@ -1274,6 +1460,10 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		enableEndpointSlices,
 	)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
+	indexers := map[string]cache.IndexFunc{
+		endpointslices.EndpointSlicesByServiceIndex: endpointslices.EndpointSlicesByServiceFunc,
+	}
+	transactionSyncer.endpointSliceLister.AddIndexers(indexers)
 	return negsyncer, transactionSyncer
 }
 
@@ -1484,6 +1674,7 @@ func createNegCR(testNegName string, creationTS metav1.Time, populateInitialized
 	neg := &negv1beta1.ServiceNetworkEndpointGroup{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:              testNegName,
+			Namespace:         testNamespace,
 			CreationTimestamp: creationTS,
 		},
 	}

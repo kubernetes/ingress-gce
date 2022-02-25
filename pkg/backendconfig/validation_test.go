@@ -45,6 +45,20 @@ var (
 			},
 		},
 	}
+
+	defaultBeConfigForCdn = &backendconfigv1.BackendConfig{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Namespace: "default",
+		},
+		Spec: backendconfigv1.BackendConfigSpec{
+			Cdn: &backendconfigv1.CDNConfig{
+				Enabled: true,
+				SignedUrlKeys: []*backendconfigv1.SignedUrlKey{
+					{KeyName: "key", SecretName: "foo"},
+				},
+			},
+		},
+	}
 )
 
 func TestValidateIAP(t *testing.T) {
@@ -326,5 +340,75 @@ func TestValidateLogging(t *testing.T) {
 				t.Errorf("Did not expect error but got: %v", err)
 			}
 		})
+	}
+}
+
+func TestValidateCDN(t *testing.T) {
+	testCases := []struct {
+		desc        string
+		init        func(kubeClient kubernetes.Interface)
+		beConfig    *backendconfigv1.BackendConfig
+		expectError bool
+	}{
+		{
+			desc:     "secret does not exist",
+			beConfig: defaultBeConfigForCdn,
+			init: func(kubeClient kubernetes.Interface) {
+				secret := &v1.Secret{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Namespace: "wrong-namespace",
+						Name:      "foo",
+					},
+				}
+				kubeClient.CoreV1().Secrets("wrong-namespace").Create(context.TODO(), secret, meta_v1.CreateOptions{})
+			},
+			expectError: true,
+		},
+		{
+			desc:     "secret does not contain key_value",
+			beConfig: defaultBeConfigForCdn,
+			init: func(kubeClient kubernetes.Interface) {
+				secret := &v1.Secret{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Namespace: "default",
+						Name:      "foo",
+					},
+					Data: map[string][]byte{
+						"any_key_value": []byte("my-secret"),
+					},
+				}
+				kubeClient.CoreV1().Secrets("default").Create(context.TODO(), secret, meta_v1.CreateOptions{})
+			},
+			expectError: true,
+		},
+		{
+			desc:     "validation passes",
+			beConfig: defaultBeConfigForCdn,
+			init: func(kubeClient kubernetes.Interface) {
+				secret := &v1.Secret{
+					ObjectMeta: meta_v1.ObjectMeta{
+						Namespace: "default",
+						Name:      "foo",
+					},
+					Data: map[string][]byte{
+						"key_value": []byte("my-secret"),
+					},
+				}
+				kubeClient.CoreV1().Secrets("default").Create(context.TODO(), secret, meta_v1.CreateOptions{})
+			},
+			expectError: false,
+		},
+	}
+
+	for _, testCase := range testCases {
+		kubeClient := fake.NewSimpleClientset()
+		testCase.init(kubeClient)
+		err := Validate(kubeClient, testCase.beConfig)
+		if testCase.expectError && err == nil {
+			t.Errorf("%v: Expected error but got nil", testCase.desc)
+		}
+		if !testCase.expectError && err != nil {
+			t.Errorf("%v: Did not expect error but got: %v", testCase.desc, err)
+		}
 	}
 }

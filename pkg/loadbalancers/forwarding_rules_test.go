@@ -144,6 +144,25 @@ func TestForwardingRulesEqual(t *testing.T) {
 			IPProtocol:          "UDP",
 			LoadBalancingScheme: string(cloud.SchemeInternal),
 			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+			NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
+		},
+		{
+			Name:                "fwd-rule-bs-link2-standard-ntier",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+			NetworkTier:         string(cloud.NetworkTierStandard),
+		},
+		{
+			Name:                "fwd-rule-bs-link2-premium-ntier",
+			IPAddress:           "10.0.0.0",
+			Ports:               []string{"123"},
+			IPProtocol:          "TCP",
+			LoadBalancingScheme: string(cloud.SchemeInternal),
+			BackendService:      "http://www.googleapis.com/projects/test/regions/us-central1/backendServices/bs1",
+			NetworkTier:         cloud.NetworkTierPremium.ToGCEValue(),
 		},
 	}
 
@@ -187,6 +206,12 @@ func TestForwardingRulesEqual(t *testing.T) {
 			desc:       "same forwarding rule, one uses ALL keyword for ports",
 			oldFwdRule: fwdRules[2],
 			newFwdRule: fwdRules[6],
+			expect:     false,
+		},
+		{
+			desc:       "network tier mismatch",
+			oldFwdRule: fwdRules[6],
+			newFwdRule: fwdRules[7],
 			expect:     false,
 		},
 	} {

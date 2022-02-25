@@ -40,6 +40,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
+	"k8s.io/ingress-gce/pkg/e2e/adapter"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	serviceattachment "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
@@ -98,7 +99,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		FrontendConfigClient: frontendConfigClient,
 		BackendConfigClient:  backendConfigClient,
 		SvcNegClient:         svcNegClient,
-		SAClient:             saClient,
+		SAClient:             &adapter.ServiceAttachmentCRUD{C: saClient},
 		Project:              options.Project,
 		Region:               options.Region,
 		Network:              options.Network,
@@ -142,7 +143,7 @@ type Framework struct {
 	BackendConfigClient   *backendconfigclient.Clientset
 	FrontendConfigClient  *frontendconfigclient.Clientset
 	SvcNegClient          *svcnegclient.Clientset
-	SAClient              *serviceattachment.Clientset
+	SAClient              *adapter.ServiceAttachmentCRUD
 	Project               string
 	Region                string
 	Network               string
@@ -205,9 +206,6 @@ func (f *Framework) CatchSIGINT() {
 	}()
 }
 func (f *Framework) sigintHandler() {
-	if !f.destroySandboxes {
-		return
-	}
 	klog.Warningf("SIGINT received, shutting down (disable with -handleSIGINT=false)")
 	f.shutdown(1)
 }
@@ -216,10 +214,13 @@ func (f *Framework) shutdown(exitCode int) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	klog.V(2).Infof("Cleaning up sandboxes...")
-	for _, s := range f.sandboxes {
-		s.Destroy()
+	if f.destroySandboxes {
+		klog.V(2).Infof("Cleaning up sandboxes...")
+		for _, s := range f.sandboxes {
+			s.Destroy()
+		}
 	}
+
 	f.statusManager.shutdown()
 	os.Exit(exitCode)
 }
