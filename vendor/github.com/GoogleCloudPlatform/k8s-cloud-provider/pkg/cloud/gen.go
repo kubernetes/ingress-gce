@@ -1,5 +1,5 @@
 /*
-Copyright 2021 Google LLC
+Copyright 2022 Google LLC
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -8985,6 +8985,7 @@ type AlphaFirewalls interface {
 	List(ctx context.Context, fl *filter.F) ([]*alpha.Firewall, error)
 	Insert(ctx context.Context, key *meta.Key, obj *alpha.Firewall) error
 	Delete(ctx context.Context, key *meta.Key) error
+	Patch(context.Context, *meta.Key, *alpha.Firewall) error
 	Update(context.Context, *meta.Key, *alpha.Firewall) error
 }
 
@@ -9025,6 +9026,7 @@ type MockAlphaFirewalls struct {
 	ListHook   func(ctx context.Context, fl *filter.F, m *MockAlphaFirewalls) (bool, []*alpha.Firewall, error)
 	InsertHook func(ctx context.Context, key *meta.Key, obj *alpha.Firewall, m *MockAlphaFirewalls) (bool, error)
 	DeleteHook func(ctx context.Context, key *meta.Key, m *MockAlphaFirewalls) (bool, error)
+	PatchHook  func(context.Context, *meta.Key, *alpha.Firewall, *MockAlphaFirewalls) error
 	UpdateHook func(context.Context, *meta.Key, *alpha.Firewall, *MockAlphaFirewalls) error
 
 	// X is extra state that can be used as part of the mock. Generated code
@@ -9169,6 +9171,14 @@ func (m *MockAlphaFirewalls) Delete(ctx context.Context, key *meta.Key) error {
 // Obj wraps the object for use in the mock.
 func (m *MockAlphaFirewalls) Obj(o *alpha.Firewall) *MockFirewallsObj {
 	return &MockFirewallsObj{o}
+}
+
+// Patch is a mock for the corresponding method.
+func (m *MockAlphaFirewalls) Patch(ctx context.Context, key *meta.Key, arg0 *alpha.Firewall) error {
+	if m.PatchHook != nil {
+		return m.PatchHook(ctx, key, arg0, m)
+	}
+	return nil
 }
 
 // Update is a mock for the corresponding method.
@@ -9321,6 +9331,39 @@ func (g *GCEAlphaFirewalls) Delete(ctx context.Context, key *meta.Key) error {
 	return err
 }
 
+// Patch is a method on GCEAlphaFirewalls.
+func (g *GCEAlphaFirewalls) Patch(ctx context.Context, key *meta.Key, arg0 *alpha.Firewall) error {
+	klog.V(5).Infof("GCEAlphaFirewalls.Patch(%v, %v, ...): called", ctx, key)
+
+	if !key.Valid() {
+		klog.V(2).Infof("GCEAlphaFirewalls.Patch(%v, %v, ...): key is invalid (%#v)", ctx, key, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "alpha", "Firewalls")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "Patch",
+		Version:   meta.Version("alpha"),
+		Service:   "Firewalls",
+	}
+	klog.V(5).Infof("GCEAlphaFirewalls.Patch(%v, %v, ...): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCEAlphaFirewalls.Patch(%v, %v, ...): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	call := g.s.Alpha.Firewalls.Patch(projectID, key.Name, arg0)
+	call.Context(ctx)
+	op, err := call.Do()
+	if err != nil {
+		klog.V(4).Infof("GCEAlphaFirewalls.Patch(%v, %v, ...) = %+v", ctx, key, err)
+		return err
+	}
+	err = g.s.WaitForCompletion(ctx, op)
+	klog.V(4).Infof("GCEAlphaFirewalls.Patch(%v, %v, ...) = %+v", ctx, key, err)
+	return err
+}
+
 // Update is a method on GCEAlphaFirewalls.
 func (g *GCEAlphaFirewalls) Update(ctx context.Context, key *meta.Key, arg0 *alpha.Firewall) error {
 	klog.V(5).Infof("GCEAlphaFirewalls.Update(%v, %v, ...): called", ctx, key)
@@ -9360,6 +9403,7 @@ type BetaFirewalls interface {
 	List(ctx context.Context, fl *filter.F) ([]*beta.Firewall, error)
 	Insert(ctx context.Context, key *meta.Key, obj *beta.Firewall) error
 	Delete(ctx context.Context, key *meta.Key) error
+	Patch(context.Context, *meta.Key, *beta.Firewall) error
 	Update(context.Context, *meta.Key, *beta.Firewall) error
 }
 
@@ -9400,6 +9444,7 @@ type MockBetaFirewalls struct {
 	ListHook   func(ctx context.Context, fl *filter.F, m *MockBetaFirewalls) (bool, []*beta.Firewall, error)
 	InsertHook func(ctx context.Context, key *meta.Key, obj *beta.Firewall, m *MockBetaFirewalls) (bool, error)
 	DeleteHook func(ctx context.Context, key *meta.Key, m *MockBetaFirewalls) (bool, error)
+	PatchHook  func(context.Context, *meta.Key, *beta.Firewall, *MockBetaFirewalls) error
 	UpdateHook func(context.Context, *meta.Key, *beta.Firewall, *MockBetaFirewalls) error
 
 	// X is extra state that can be used as part of the mock. Generated code
@@ -9544,6 +9589,14 @@ func (m *MockBetaFirewalls) Delete(ctx context.Context, key *meta.Key) error {
 // Obj wraps the object for use in the mock.
 func (m *MockBetaFirewalls) Obj(o *beta.Firewall) *MockFirewallsObj {
 	return &MockFirewallsObj{o}
+}
+
+// Patch is a mock for the corresponding method.
+func (m *MockBetaFirewalls) Patch(ctx context.Context, key *meta.Key, arg0 *beta.Firewall) error {
+	if m.PatchHook != nil {
+		return m.PatchHook(ctx, key, arg0, m)
+	}
+	return nil
 }
 
 // Update is a mock for the corresponding method.
@@ -9696,6 +9749,39 @@ func (g *GCEBetaFirewalls) Delete(ctx context.Context, key *meta.Key) error {
 	return err
 }
 
+// Patch is a method on GCEBetaFirewalls.
+func (g *GCEBetaFirewalls) Patch(ctx context.Context, key *meta.Key, arg0 *beta.Firewall) error {
+	klog.V(5).Infof("GCEBetaFirewalls.Patch(%v, %v, ...): called", ctx, key)
+
+	if !key.Valid() {
+		klog.V(2).Infof("GCEBetaFirewalls.Patch(%v, %v, ...): key is invalid (%#v)", ctx, key, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "beta", "Firewalls")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "Patch",
+		Version:   meta.Version("beta"),
+		Service:   "Firewalls",
+	}
+	klog.V(5).Infof("GCEBetaFirewalls.Patch(%v, %v, ...): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCEBetaFirewalls.Patch(%v, %v, ...): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	call := g.s.Beta.Firewalls.Patch(projectID, key.Name, arg0)
+	call.Context(ctx)
+	op, err := call.Do()
+	if err != nil {
+		klog.V(4).Infof("GCEBetaFirewalls.Patch(%v, %v, ...) = %+v", ctx, key, err)
+		return err
+	}
+	err = g.s.WaitForCompletion(ctx, op)
+	klog.V(4).Infof("GCEBetaFirewalls.Patch(%v, %v, ...) = %+v", ctx, key, err)
+	return err
+}
+
 // Update is a method on GCEBetaFirewalls.
 func (g *GCEBetaFirewalls) Update(ctx context.Context, key *meta.Key, arg0 *beta.Firewall) error {
 	klog.V(5).Infof("GCEBetaFirewalls.Update(%v, %v, ...): called", ctx, key)
@@ -9735,6 +9821,7 @@ type Firewalls interface {
 	List(ctx context.Context, fl *filter.F) ([]*ga.Firewall, error)
 	Insert(ctx context.Context, key *meta.Key, obj *ga.Firewall) error
 	Delete(ctx context.Context, key *meta.Key) error
+	Patch(context.Context, *meta.Key, *ga.Firewall) error
 	Update(context.Context, *meta.Key, *ga.Firewall) error
 }
 
@@ -9775,6 +9862,7 @@ type MockFirewalls struct {
 	ListHook   func(ctx context.Context, fl *filter.F, m *MockFirewalls) (bool, []*ga.Firewall, error)
 	InsertHook func(ctx context.Context, key *meta.Key, obj *ga.Firewall, m *MockFirewalls) (bool, error)
 	DeleteHook func(ctx context.Context, key *meta.Key, m *MockFirewalls) (bool, error)
+	PatchHook  func(context.Context, *meta.Key, *ga.Firewall, *MockFirewalls) error
 	UpdateHook func(context.Context, *meta.Key, *ga.Firewall, *MockFirewalls) error
 
 	// X is extra state that can be used as part of the mock. Generated code
@@ -9919,6 +10007,14 @@ func (m *MockFirewalls) Delete(ctx context.Context, key *meta.Key) error {
 // Obj wraps the object for use in the mock.
 func (m *MockFirewalls) Obj(o *ga.Firewall) *MockFirewallsObj {
 	return &MockFirewallsObj{o}
+}
+
+// Patch is a mock for the corresponding method.
+func (m *MockFirewalls) Patch(ctx context.Context, key *meta.Key, arg0 *ga.Firewall) error {
+	if m.PatchHook != nil {
+		return m.PatchHook(ctx, key, arg0, m)
+	}
+	return nil
 }
 
 // Update is a mock for the corresponding method.
@@ -10068,6 +10164,39 @@ func (g *GCEFirewalls) Delete(ctx context.Context, key *meta.Key) error {
 
 	err = g.s.WaitForCompletion(ctx, op)
 	klog.V(4).Infof("GCEFirewalls.Delete(%v, %v) = %v", ctx, key, err)
+	return err
+}
+
+// Patch is a method on GCEFirewalls.
+func (g *GCEFirewalls) Patch(ctx context.Context, key *meta.Key, arg0 *ga.Firewall) error {
+	klog.V(5).Infof("GCEFirewalls.Patch(%v, %v, ...): called", ctx, key)
+
+	if !key.Valid() {
+		klog.V(2).Infof("GCEFirewalls.Patch(%v, %v, ...): key is invalid (%#v)", ctx, key, key)
+		return fmt.Errorf("invalid GCE key (%+v)", key)
+	}
+	projectID := g.s.ProjectRouter.ProjectID(ctx, "ga", "Firewalls")
+	rk := &RateLimitKey{
+		ProjectID: projectID,
+		Operation: "Patch",
+		Version:   meta.Version("ga"),
+		Service:   "Firewalls",
+	}
+	klog.V(5).Infof("GCEFirewalls.Patch(%v, %v, ...): projectID = %v, rk = %+v", ctx, key, projectID, rk)
+
+	if err := g.s.RateLimiter.Accept(ctx, rk); err != nil {
+		klog.V(4).Infof("GCEFirewalls.Patch(%v, %v, ...): RateLimiter error: %v", ctx, key, err)
+		return err
+	}
+	call := g.s.GA.Firewalls.Patch(projectID, key.Name, arg0)
+	call.Context(ctx)
+	op, err := call.Do()
+	if err != nil {
+		klog.V(4).Infof("GCEFirewalls.Patch(%v, %v, ...) = %+v", ctx, key, err)
+		return err
+	}
+	err = g.s.WaitForCompletion(ctx, op)
+	klog.V(4).Infof("GCEFirewalls.Patch(%v, %v, ...) = %+v", ctx, key, err)
 	return err
 }
 

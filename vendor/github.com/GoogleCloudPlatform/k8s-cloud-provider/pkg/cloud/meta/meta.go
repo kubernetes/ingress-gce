@@ -228,6 +228,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&alpha.FirewallsService{}),
 		additionalMethods: []string{
 			"Update",
+			"Patch",
 		},
 	},
 	{
@@ -239,6 +240,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&beta.FirewallsService{}),
 		additionalMethods: []string{
 			"Update",
+			"Patch",
 		},
 	},
 	{
@@ -249,6 +251,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&ga.FirewallsService{}),
 		additionalMethods: []string{
 			"Update",
+			"Patch",
 		},
 	},
 	{
