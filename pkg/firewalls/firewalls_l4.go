@@ -42,7 +42,8 @@ type FirewallParams struct {
 }
 
 func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParams, sharedRule bool) error {
-	existingFw, err := cloud.GetFirewall(params.Name)
+	fa := NewFirewallAdapter(cloud)
+	existingFw, err := fa.GetFirewall(params.Name)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return err
 	}
@@ -73,7 +74,7 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 	}
 	if existingFw == nil {
 		klog.V(2).Infof("EnsureL4FirewallRule(%v): creating L4 %s firewall rule", params.Name, params.L4Type.ToString())
-		err = cloud.CreateFirewall(expectedFw)
+		err = fa.CreateFirewall(expectedFw)
 		if utils.IsForbiddenError(err) && cloud.OnXPN() {
 			gcloudCmd := gce.FirewallToGCloudCreateCmd(expectedFw, cloud.NetworkProjectID())
 
@@ -87,8 +88,9 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 	if firewallRuleEqual(expectedFw, existingFw, sharedRule) {
 		return nil
 	}
+
 	klog.V(2).Infof("EnsureL4FirewallRule(%v): patching L4 %s firewall", params.Name, params.L4Type.ToString())
-	err = cloud.UpdateFirewall(expectedFw)
+	err = fa.PatchFirewall(expectedFw)
 	if utils.IsForbiddenError(err) && cloud.OnXPN() {
 		gcloudCmd := gce.FirewallToGCloudUpdateCmd(expectedFw, cloud.NetworkProjectID())
 		klog.V(3).Infof("EnsureL4FirewallRule(%v): Could not patch L4 %s firewall on XPN cluster: %v. Raising event for cmd: %q", params.Name, params.L4Type.ToString(), err, gcloudCmd)
@@ -98,7 +100,8 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 }
 
 func EnsureL4FirewallRuleDeleted(cloud *gce.Cloud, fwName string) error {
-	if err := utils.IgnoreHTTPNotFound(cloud.DeleteFirewall(fwName)); err != nil {
+	fa := NewFirewallAdapter(cloud)
+	if err := utils.IgnoreHTTPNotFound(fa.DeleteFirewall(fwName)); err != nil {
 		if utils.IsForbiddenError(err) && cloud.OnXPN() {
 			gcloudCmd := gce.FirewallToGCloudDeleteCmd(fwName, cloud.NetworkProjectID())
 			klog.V(3).Infof("EnsureL4FirewallRuleDeleted(%v): could not delete traffic firewall on XPN cluster. Raising event.", fwName)

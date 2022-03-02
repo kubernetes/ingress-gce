@@ -830,7 +830,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 		},
 	} {
 		svc, l4netController := createAndSyncNetLBSvc(t)
-		(l4netController.ctx.Cloud.Compute().(*cloud.MockGCE)).MockFirewalls.UpdateHook = mock.UpdateFirewallHook
+		(l4netController.ctx.Cloud.Compute().(*cloud.MockGCE)).MockFirewalls.PatchHook = mock.UpdateFirewallHook
 		(l4netController.ctx.Cloud.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
 		newSvc, err := l4netController.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
 		if err != nil {

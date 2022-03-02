@@ -58,7 +58,7 @@ func getFakeGCECloud(vals gce.TestClusterValues) *gce.Cloud {
 
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.UpdateHook = mock.UpdateHealthCheckHook
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockFirewalls.UpdateHook = mock.UpdateFirewallHook
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockFirewalls.PatchHook = mock.UpdateFirewallHook
 	return fakeGCE
 }
 
@@ -1050,7 +1050,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	}
 	c := fakeGCE.Compute().(*cloud.MockGCE)
 	c.MockFirewalls.InsertHook = nil
-	c.MockFirewalls.UpdateHook = nil
+	c.MockFirewalls.PatchHook = nil
 
 	nodeNames := []string{"test-node-1"}
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
@@ -1058,7 +1058,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
 	c.MockFirewalls.InsertHook = nil
-	c.MockFirewalls.UpdateHook = nil
+	c.MockFirewalls.PatchHook = nil
 
 	fwrParams := firewalls.FirewallParams{
 		Name:              fwName,
