@@ -23,15 +23,27 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	ga "google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	servicehelper "k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/legacy-cloud-providers/gce"
+)
+
+const (
+	managedIP    = true
+	unmanagedIP  = false
+	premiumTier  = true
+	standardTier = false
+	usersIP      = "35.10.211.60"
+	userAddrName = "UserStaticAddress"
 )
 
 func TestEnsureL4NetLoadBalancer(t *testing.T) {
@@ -59,6 +71,9 @@ func TestEnsureL4NetLoadBalancer(t *testing.T) {
 		t.Errorf("Annotations error: %v", err)
 	}
 	assertNetLbResources(t, svc, l4netlb, nodeNames)
+	if err := checkMetrics(result.MetricsState, managedIP, premiumTier); err != nil {
+		t.Errorf("Metrics error: %v", err)
+	}
 }
 
 func checkAnnotations(result *L4NetLBSyncResult, l4netlb *L4NetLB) error {
@@ -262,4 +277,53 @@ func assertNetLbResources(t *testing.T, apiService *v1.Service, l4NetLb *L4NetLB
 	if err == nil || addr != nil {
 		t.Errorf("Expected error when looking up ephemeral address, got %v", addr)
 	}
+}
+
+func TestMetricsForUserStaticService(t *testing.T) {
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := getFakeGCECloud(vals)
+	createUserStaticIP(fakeGCE, vals.Region)
+
+	svc := test.NewL4NetLBRBSService(8080)
+	svc.Spec.LoadBalancerIP = usersIP
+	svc.ObjectMeta.Annotations[annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierStandard)
+	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw"))
+
+	l4netlb := NewL4NetLB(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
+
+	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+	result := l4netlb.EnsureFrontend(nodeNames, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	if err := checkMetrics(result.MetricsState, unmanagedIP, standardTier); err != nil {
+		t.Errorf("Metrics error: %v", err)
+	}
+}
+
+func createUserStaticIP(fakeGCE *gce.Cloud, region string) {
+	fakeGCE.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = mock.InsertAddressHook
+	fakeGCE.Compute().(*cloud.MockGCE).MockAlphaAddresses.X = mock.AddressAttributes{}
+	fakeGCE.Compute().(*cloud.MockGCE).MockAddresses.X = mock.AddressAttributes{}
+	newAddr := &ga.Address{
+		Name:        "userAddrName",
+		Description: fmt.Sprintf(`{"kubernetes.io/service-name":"%s"}`, "userAddrName"),
+		Address:     usersIP,
+		AddressType: string(cloud.SchemeExternal),
+		NetworkTier: cloud.NetworkTierStandard.ToGCEValue(),
+	}
+	fakeGCE.ReserveRegionAddress(newAddr, region)
+}
+
+func checkMetrics(m metrics.L4NetLBServiceState, isManaged, isPremium bool) error {
+	if m.IsPremiumTier != isPremium {
+		return fmt.Errorf("L4 NetLB metric premium tier should be %v", isPremium)
+	}
+	if m.IsManagedIP != isManaged {
+		return fmt.Errorf("L4 NetLB metric is managed ip should be %v", isManaged)
+	}
+	return nil
 }

@@ -113,6 +113,18 @@ const (
 	// updating GCE Load Balancer.
 	l4ILBInError = feature("L4ILBInError")
 
+	l4NetLBService = feature("L4NetLBService")
+	// L4NetLBPremiumNetworkTier feature specifies that NetLB VIP is configured in Premium Network Tier.
+	l4NetLBPremiumNetworkTier = feature("L4NetLBPremiumNetworkTier")
+	// L4NetLBPremiumNetworkTier feature specifies that static IP Address is managed by controller.
+	l4NetLBManagedStaticIP = feature("L4NetLBManagedStaticIP")
+	// L4NetLBPremiumNetworkTier feature specifies number of all static IP Address managed by controller and by user.
+	l4NetLBStaticIP = feature("L4NetLBStaticIP")
+	// l4NetLBInSuccess feature specifies that NetLB VIP is configured.
+	l4NetLBInSuccess = feature("L4NetLBInSuccess")
+	// l4NetLBInInError feature specifies that an error had occurred while creating/updating GCE Load Balancer.
+	l4NetLBInError = feature("L4NetLBInError")
+
 	// PSC Features
 	sa          = feature("ServiceAttachments")
 	saInSuccess = feature("ServiceAttachmentInSuccess")

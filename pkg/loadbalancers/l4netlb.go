@@ -61,10 +61,9 @@ type L4NetLBSyncResult struct {
 	Error              error
 	GCEResourceInError string
 	Status             *corev1.LoadBalancerStatus
-	// TODO(kl52752) Change metric service state to NetLB
-	MetricsState metrics.L4ILBServiceState
-	SyncType     string
-	StartTime    time.Time
+	MetricsState       metrics.L4NetLBServiceState
+	SyncType           string
+	StartTime          time.Time
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
@@ -141,7 +140,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		return result
 	}
 	result.Annotations[annotations.BackendServiceKey] = name
-	fr, _, err := l4netlb.ensureExternalForwardingRule(bs.SelfLink)
+	fr, ipAddrType, err := l4netlb.ensureExternalForwardingRule(bs.SelfLink)
 	if err != nil {
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 		result.Error = fmt.Errorf("Failed to ensure forwarding rule - %w", err)
@@ -153,6 +152,12 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
 	}
 	result.Status = &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}
+	if fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
+		result.MetricsState.IsPremiumTier = true
+	}
+	if ipAddrType == IPAddrManaged {
+		result.MetricsState.IsManagedIP = true
+	}
 	return result
 }
 
