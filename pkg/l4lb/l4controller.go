@@ -132,7 +132,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4C
 	})
 	// TODO enhance this by looking at some metric from service controller to ensure it is up.
 	// We cannot use existence of a backend service or other resource, since those are on a per-service basis.
-	ctx.AddHealthCheck("service-controller health", l4c.checkHealth)
+	ctx.AddHealthCheck("l4-ilb-subsetting-controller", l4c.checkHealth)
 	return l4c
 }
 
@@ -144,8 +144,9 @@ func (l4c *L4Controller) checkHealth() error {
 	syncTimeLatest := lastEnqueueTime.Add(enqueueToSyncDelayThreshold)
 	if lastSyncTime.After(syncTimeLatest) {
 		msg := fmt.Sprintf("L4 ILB Sync happened at time %v - %v after enqueue time, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), enqueueToSyncDelayThreshold)
+		// Log here, context/http handler do no log the error.
 		klog.Error(msg)
-		// TODO return error here
+		return fmt.Errorf(msg)
 	}
 	return nil
 }
