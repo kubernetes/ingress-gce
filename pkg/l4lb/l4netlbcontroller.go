@@ -32,7 +32,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/instances"
-	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
+	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
@@ -267,7 +267,7 @@ func (lc *L4NetLBController) checkHealth() error {
 		msg := fmt.Sprintf("L4 External LoadBalancer Sync happened at time %v - %v after enqueue time, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
 		klog.Error(msg)
-		l4metrics.PublishL4FailedHealthCheckCount(l4NetLBControllerName)
+		metrics.PublishL4FailedHealthCheckCount(l4NetLBControllerName)
 	}
 	return nil
 }
@@ -296,14 +296,13 @@ func (lc *L4NetLBController) sync(key string) error {
 		klog.V(3).Infof("Ignoring sync of non-existent service %s", key)
 		return nil
 	}
-	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}.String()
 	if lc.needsDeletion(svc) {
 		klog.V(3).Infof("Deleting L4 External LoadBalancer resources for service %s", key)
 		result := lc.garbageCollectRBSNetLB(key, svc)
 		if result == nil {
 			return nil
 		}
-		lc.publishMetrics(result, namespacedName)
+		lc.publishMetrics(result, svc.Name, svc.Namespace)
 		return result.Error
 	}
 
@@ -313,7 +312,7 @@ func (lc *L4NetLBController) sync(key string) error {
 			// result will be nil if the service was ignored(due to presence of service controller finalizer).
 			return nil
 		}
-		lc.publishMetrics(result, namespacedName)
+		lc.publishMetrics(result, svc.Name, svc.Namespace)
 		return result.Error
 	}
 	klog.V(3).Infof("Ignoring sync of service %s, neither delete nor ensure needed.", key)
@@ -449,24 +448,29 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 }
 
 // publishMetrics sets controller metrics for NetLB services and pushes NetLB metrics based on sync type.
-func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncResult, namespacedName string) {
-	if result == nil {
-		return
-	}
+func (lc *L4NetLBController) publishMetrics(result *loadbalancers.L4NetLBSyncResult, name, namespace string) {
+	namespacedName := types.NamespacedName{Name: name, Namespace: namespace}.String()
 	switch result.SyncType {
 	case loadbalancers.SyncTypeCreate, loadbalancers.SyncTypeUpdate:
 		klog.V(4).Infof("External L4 Loadbalancer for Service %s ensured, updating its state %v in metrics cache", namespacedName, result.MetricsState)
 		lc.ctx.ControllerMetrics.SetL4NetLBService(namespacedName, result.MetricsState)
-		l4metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
-
+		lc.publishSyncMetrics(result)
 	case loadbalancers.SyncTypeDelete:
 		// if service is successfully deleted, remove it from cache
 		if result.Error == nil {
 			klog.V(4).Infof("External L4 Loadbalancer for Service %s deleted, removing its state from metrics cache", namespacedName)
 			lc.ctx.ControllerMetrics.DeleteL4NetLBService(namespacedName)
 		}
-		l4metrics.PublishNetLBSyncMetrics(result.Error == nil, result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
+		lc.publishSyncMetrics(result)
 	default:
 		klog.Warningf("Unknown sync type %q, skipping metrics", result.SyncType)
 	}
+}
+
+func (lc *L4NetLBController) publishSyncMetrics(result *loadbalancers.L4NetLBSyncResult) {
+	if result.Error == nil {
+		metrics.PublishL4NetLBSyncSuccess(result.SyncType, result.StartTime)
+		return
+	}
+	metrics.PublishL4NetLBSyncError(result.SyncType, result.GCEResourceInError, utils.GetErrorType(result.Error), result.StartTime)
 }

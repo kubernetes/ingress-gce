@@ -26,49 +26,49 @@ import (
 
 // Metrics subsystem and keys used by the workqueue.
 const (
-	WorkQueueSubsystem         = "workqueue"
-	DepthKey                   = "depth"
-	AddsKey                    = "adds_total"
-	QueueLatencyKey            = "queue_duration_seconds"
-	WorkDurationKey            = "work_duration_seconds"
-	UnfinishedWorkKey          = "unfinished_work_seconds"
-	LongestRunningProcessorKey = "longest_running_processor_seconds"
-	RetriesKey                 = "retries_total"
+	workQueueSubsystem         = "workqueue"
+	depthKey                   = "depth"
+	addsKey                    = "adds_total"
+	queueLatencyKey            = "queue_duration_seconds"
+	workDurationKey            = "work_duration_seconds"
+	unfinishedWorkKey          = "unfinished_work_seconds"
+	longestRunningProcessorKey = "longest_running_processor_seconds"
+	retriesKey                 = "retries_total"
 	nameLabel                  = "name"
 )
 
 var (
 	depth = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: WorkQueueSubsystem,
-		Name:      DepthKey,
-		Help:      "Current depth of workqueue",
+		Subsystem: workQueueSubsystem,
+		Name:      depthKey,
+		Help:      "Current size of workqueue",
 	}, []string{nameLabel})
 
 	adds = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Subsystem: WorkQueueSubsystem,
-		Name:      AddsKey,
+		Subsystem: workQueueSubsystem,
+		Name:      addsKey,
 		Help:      "Total number of adds handled by workqueue",
 	}, []string{nameLabel})
 
 	latency = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Subsystem: WorkQueueSubsystem,
-		Name:      QueueLatencyKey,
-		Help:      "How long in seconds an item stays in workqueue before being requested.",
-		// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), 8192(~136min), 16384(~272min)  +Inf]
-		Buckets: prometheus.ExponentialBuckets(1, 2, 15),
+		Subsystem: workQueueSubsystem,
+		Name:      queueLatencyKey,
+		Help:      "Time item remains in the workqueue before processing (seconds).",
+		// custom buckets - [1.75s,3.06s, 5.35s, 9.37s, 16.41s, 28.72s, 50.26s, 87.96s(1,5min), 153.93s(2,5min), 269.38s(4,5min),	471.43s(~8min), 825s(~14), 1443.75s(~24min), 2526.57s(~42min), 4421.51s(~73min), 7737.64s(~129min), 13540.87s(225min), +Inf]
+		Buckets: prometheus.ExponentialBuckets(1, 1.75, 18),
 	}, []string{nameLabel})
 
 	workDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
-		Subsystem: WorkQueueSubsystem,
-		Name:      WorkDurationKey,
-		Help:      "How long in seconds processing an item from workqueue takes.",
-		// custom buckets - [1s, 2s, 4s, 8s, 16s, 32s, 64s, 128s, 256s(~4min), 512s(~8min), 1024s(~17min), 2048 (~34min), 4096(~68min), +Inf]
-		Buckets: prometheus.ExponentialBuckets(1, 2, 13),
+		Subsystem: workQueueSubsystem,
+		Name:      workDurationKey,
+		Help:      "Time item takes to reconcile after dequeuing from the workqueue (seconds).",
+		// custom buckets - [1.75s,3.06s, 5.35s, 9.37s, 16.41s, 28.72s, 50.26s, 87.96s(1,5min), 153.93s(2,5min), 269.38s(4,5min),	471.43s(~8min), 825s(~14), 1443.75s(~24min), 2526.57s(~42min), 4421.51s(~73min), 7737.64s(~129min), 13540.87s(225min), +Inf]
+		Buckets: prometheus.ExponentialBuckets(1, 1.75, 18),
 	}, []string{nameLabel})
 
 	unfinished = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: WorkQueueSubsystem,
-		Name:      UnfinishedWorkKey,
+		Subsystem: workQueueSubsystem,
+		Name:      unfinishedWorkKey,
 		Help: "How many seconds of work has done that " +
 			"is in progress and hasn't been observed by work_duration. Large " +
 			"values indicate stuck threads. One can deduce the number of stuck " +
@@ -76,15 +76,15 @@ var (
 	}, []string{nameLabel})
 
 	longestRunningProcessor = prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Subsystem: WorkQueueSubsystem,
-		Name:      LongestRunningProcessorKey,
+		Subsystem: workQueueSubsystem,
+		Name:      longestRunningProcessorKey,
 		Help: "How many seconds has the longest running " +
 			"processor for workqueue been running.",
 	}, []string{nameLabel})
 
 	retries = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Subsystem: WorkQueueSubsystem,
-		Name:      RetriesKey,
+		Subsystem: workQueueSubsystem,
+		Name:      retriesKey,
 		Help:      "Total number of retries handled by workqueue",
 	}, []string{nameLabel})
 )

@@ -67,8 +67,8 @@ var (
 		prometheus.HistogramOpts{
 			Name: L4netlbLatencyMetricName,
 			Help: "Latency of an L4 NetLB Sync",
-			// custom buckets - [15s, 30s, 60s, 120s, 240s(4min), 480s(8min), 960s(16m), +Inf]
-			Buckets: prometheus.ExponentialBuckets(15, 2, 6),
+			// custom buckets - [15s, 30s, 60s, 120s, 240s(4min), 480s(8min), 960s(16m), 1920s(32min), 3840s(64min), 7680s(128m) +Inf]
+			Buckets: prometheus.ExponentialBuckets(15, 2, 10),
 		},
 		l4LBSyncLatencyMetricsLabels,
 	)
@@ -122,26 +122,15 @@ func publishL4ILBSyncErrorCount(syncType, gceResource, errorType string) {
 	l4ILBSyncErrorCount.WithLabelValues(syncType, gceResource, errorType).Inc()
 }
 
-// PublishL4NetLBSyncMetrics exports metrics related to the L4 NetLB sync.
-func PublishNetLBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time) {
-	publishL4NetLBSyncLatency(success, syncType, startTime)
-	if !success {
-		publishL4NetLBSyncErrorCount(syncType, gceResource, errType)
-	}
+// PublishL4NetLBSyncSuccess exports latency metrics for L4 NetLB service after successful sync.
+func PublishL4NetLBSyncSuccess(syncType string, startTime time.Time) {
+	l4NetLBSyncLatency.WithLabelValues(statusSuccess, syncType).Observe(time.Since(startTime).Seconds())
 }
 
-// publishL4NetLBSyncLatency exports the given sync latency datapoint.
-func publishL4NetLBSyncLatency(success bool, syncType string, startTime time.Time) {
-	status := statusSuccess
-	if !success {
-		status = statusError
-	}
-	l4NetLBSyncLatency.WithLabelValues(status, syncType).Observe(time.Since(startTime).Seconds())
-}
-
-// publishL4NetLBSyncLatency exports the given sync latency datapoint.
-func publishL4NetLBSyncErrorCount(syncType, gceResource, errorType string) {
-	l4NetLBSyncErrorCount.WithLabelValues(syncType, gceResource, errorType).Inc()
+// PublishL4NetLBSyncError exports latency and error count metrics for L4 NetLB after error sync.
+func PublishL4NetLBSyncError(syncType, gceResource, errType string, startTime time.Time) {
+	l4NetLBSyncLatency.WithLabelValues(statusError, syncType).Observe(time.Since(startTime).Seconds())
+	l4NetLBSyncErrorCount.WithLabelValues(syncType, gceResource, errType).Inc()
 }
 
 // PublishL4FailedHealthCheckCount observers failed healt check from controller.
