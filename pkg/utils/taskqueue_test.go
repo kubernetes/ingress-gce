@@ -21,9 +21,14 @@ import (
 	"reflect"
 	"testing"
 
-	"k8s.io/client-go/tools/cache"
 	"sync"
 	"time"
+
+	"k8s.io/client-go/tools/cache"
+)
+
+var (
+	enqueuTime = time.Now()
 )
 
 func TestPeriodicTaskQueue(t *testing.T) {
@@ -74,9 +79,9 @@ func TestPeriodicQueueWithMultipleWorkers(t *testing.T) {
 	t.Parallel()
 	// Use a sync map since multiple goroutines will write to disjoint keys in parallel.
 	synced := sync.Map{}
-	sync := func(key string) error {
-		synced.Store(key, true)
-		switch key {
+	sync := func(task TimestampTask) error {
+		synced.Store(task.Key, true)
+		switch task.Key {
 		case "err":
 			return errors.New("injected error")
 		}
@@ -110,7 +115,7 @@ func TestPeriodicQueueWithMultipleWorkers(t *testing.T) {
 			tq.Run()
 
 			for _, obj := range tc.inputObjs {
-				tq.Enqueue(cache.ExplicitKey(obj))
+				tq.Enqueue(TimestampTask{EnqueueTime: enqueuTime, Key: obj})
 			}
 
 			for tq.Len() > 0 {
@@ -118,14 +123,14 @@ func TestPeriodicQueueWithMultipleWorkers(t *testing.T) {
 			}
 
 			if tc.expectRequeueForKey != "" {
-				if tq.queue.NumRequeues(tc.expectRequeueForKey) == 0 {
+				if tq.queue.NumRequeues(TimestampTask{EnqueueTime: enqueuTime, Key: tc.expectRequeueForKey}) == 0 {
 					t.Errorf("Got 0 requeues for %q, expected non-zero requeue on error.", tc.expectRequeueForKey)
 				}
 			}
 			tq.Shutdown()
 
 			// Enqueue after Shutdown isn't going to be synced.
-			tq.Enqueue(cache.ExplicitKey("more"))
+			tq.Enqueue(TimestampTask{EnqueueTime: time.Now(), Key: "more"})
 
 			syncedLen := 0
 			synced.Range(func(_, _ interface{}) bool {

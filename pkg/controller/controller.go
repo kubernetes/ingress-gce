@@ -144,14 +144,15 @@ func NewLoadBalancerController(
 	ctx.IngressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			addIng := obj.(*v1.Ingress)
+			ingKey := common.NamespacedName(addIng)
 			if !utils.IsGLBCIngress(addIng) {
-				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.NamespacedName(addIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", ingKey, annotations.IngressClassKey)
 				return
 			}
 
-			klog.V(2).Infof("Ingress %v added, enqueuing", common.NamespacedName(addIng))
+			klog.V(2).Infof("Ingress %v added, enqueuing", ingKey)
 			lbc.ctx.Recorder(addIng.Namespace).Eventf(addIng, apiv1.EventTypeNormal, events.SyncIngress, "Scheduled for sync")
-			lbc.ingQueue.Enqueue(obj)
+			lbc.ingQueue.Enqueue(utils.NewTask(ingKey))
 		},
 		DeleteFunc: func(obj interface{}) {
 			delIng := obj.(*v1.Ingress)
@@ -159,21 +160,23 @@ func NewLoadBalancerController(
 				klog.Errorf("Invalid object type: %T", obj)
 				return
 			}
+			ingKey := common.NamespacedName(delIng)
 			if delIng.ObjectMeta.DeletionTimestamp != nil {
-				klog.V(2).Infof("Ignoring delete event for Ingress %v, deletion will be handled via the finalizer", common.NamespacedName(delIng))
+				klog.V(2).Infof("Ignoring delete event for Ingress %v, deletion will be handled via the finalizer", ingKey)
 				return
 			}
 
 			if !utils.IsGLBCIngress(delIng) {
-				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.NamespacedName(delIng), annotations.IngressClassKey)
+				klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", ingKey, annotations.IngressClassKey)
 				return
 			}
 
-			klog.V(3).Infof("Ingress %v deleted, enqueueing", common.NamespacedName(delIng))
-			lbc.ingQueue.Enqueue(obj)
+			klog.V(3).Infof("Ingress %v deleted, enqueueing", ingKey)
+			lbc.ingQueue.Enqueue(utils.NewTask(ingKey))
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			curIng := cur.(*v1.Ingress)
+			ingKey := common.NamespacedName(curIng)
 			if !utils.IsGLBCIngress(curIng) {
 				// Ingress needs to be enqueued if a ingress finalizer exists.
 				// An existing finalizer means that
@@ -181,8 +184,8 @@ func NewLoadBalancerController(
 				// 2. Ingress cleanup failed and re-queued.
 				// 3. Finalizer remove failed and re-queued.
 				if common.HasFinalizer(curIng.ObjectMeta) {
-					klog.V(2).Infof("Ingress %s class was changed but has a glbc finalizer, enqueuing", common.NamespacedName(curIng))
-					lbc.ingQueue.Enqueue(cur)
+					klog.V(2).Infof("Ingress %s class was changed but has a glbc finalizer, enqueuing", ingKey)
+					lbc.ingQueue.Enqueue(utils.NewTask(ingKey))
 					return
 				}
 				return
@@ -193,7 +196,7 @@ func NewLoadBalancerController(
 				klog.V(2).Infof("Ingress %s changed, enqueuing", common.NamespacedName(curIng))
 			}
 			lbc.ctx.Recorder(curIng.Namespace).Eventf(curIng, apiv1.EventTypeNormal, events.SyncIngress, "Scheduled for sync")
-			lbc.ingQueue.Enqueue(cur)
+			lbc.ingQueue.Enqueue(utils.NewTask(ingKey))
 		},
 	})
 
@@ -202,13 +205,13 @@ func NewLoadBalancerController(
 		AddFunc: func(obj interface{}) {
 			svc := obj.(*apiv1.Service)
 			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesService(svc).AsList()
-			lbc.ingQueue.Enqueue(convert(ings)...)
+			lbc.ingQueue.Enqueue(convertToTask(ings)...)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
 				svc := cur.(*apiv1.Service)
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesService(svc).AsList()
-				lbc.ingQueue.Enqueue(convert(ings)...)
+				lbc.ingQueue.Enqueue(convertToTask(ings)...)
 			}
 		},
 		// Ingress deletes matter, service deletes don't.
@@ -220,14 +223,14 @@ func NewLoadBalancerController(
 			klog.V(3).Infof("obj(type %T) added", obj)
 			beConfig := obj.(*backendconfigv1.BackendConfig)
 			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
-			lbc.ingQueue.Enqueue(convert(ings)...)
+			lbc.ingQueue.Enqueue(convertToTask(ings)...)
 		},
 		UpdateFunc: func(old, cur interface{}) {
 			if !reflect.DeepEqual(old, cur) {
 				klog.V(3).Infof("obj(type %T) updated", cur)
 				beConfig := cur.(*backendconfigv1.BackendConfig)
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
-				lbc.ingQueue.Enqueue(convert(ings)...)
+				lbc.ingQueue.Enqueue(convertToTask(ings)...)
 			}
 		},
 		DeleteFunc: func(obj interface{}) {
@@ -251,7 +254,7 @@ func NewLoadBalancerController(
 			}
 
 			ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesBackendConfig(beConfig, operator.Services(ctx.Services().List())).AsList()
-			lbc.ingQueue.Enqueue(convert(ings)...)
+			lbc.ingQueue.Enqueue(convertToTask(ings)...)
 		},
 	})
 
@@ -261,14 +264,14 @@ func NewLoadBalancerController(
 			AddFunc: func(obj interface{}) {
 				feConfig := obj.(*frontendconfigv1beta1.FrontendConfig)
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
-				lbc.ingQueue.Enqueue(convert(ings)...)
+				lbc.ingQueue.Enqueue(convertToTask(ings)...)
 
 			},
 			UpdateFunc: func(old, cur interface{}) {
 				if !reflect.DeepEqual(old, cur) {
 					feConfig := cur.(*frontendconfigv1beta1.FrontendConfig)
 					ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
-					lbc.ingQueue.Enqueue(convert(ings)...)
+					lbc.ingQueue.Enqueue(convertToTask(ings)...)
 				}
 			},
 			DeleteFunc: func(obj interface{}) {
@@ -291,7 +294,7 @@ func NewLoadBalancerController(
 				}
 
 				ings := operator.Ingresses(ctx.Ingresses().List()).ReferencesFrontendConfig(feConfig).AsList()
-				lbc.ingQueue.Enqueue(convert(ings)...)
+				lbc.ingQueue.Enqueue(convertToTask(ings)...)
 			},
 		})
 	}
@@ -597,26 +600,26 @@ func (lbc *LoadBalancerController) postSyncGC(key string, syncErr error, oldScop
 }
 
 // sync manages Ingress create/updates/deletes events from queue.
-func (lbc *LoadBalancerController) sync(key string) error {
+func (lbc *LoadBalancerController) sync(task utils.TimestampTask) error {
 	if !lbc.hasSynced() {
 		time.Sleep(context.StoreSyncPollPeriod)
 		return fmt.Errorf("waiting for stores to sync")
 	}
-	klog.V(3).Infof("Syncing %v", key)
+	klog.V(3).Infof("Syncing %v", task.Key)
 
-	ing, ingExists, err := lbc.ctx.Ingresses().GetByKey(key)
+	ing, ingExists, err := lbc.ctx.Ingresses().GetByKey(task.Key)
 	if err != nil {
-		return fmt.Errorf("error getting Ingress for key %s: %v", key, err)
+		return fmt.Errorf("error getting Ingress for key %s: %v", task.Key, err)
 	}
 
 	// Capture GC state for ingress.
 	scope := features.ScopeFromIngress(ing)
-	needSync, err := lbc.preSyncGC(key, scope, ingExists, ing)
+	needSync, err := lbc.preSyncGC(task.Key, scope, ingExists, ing)
 	if err != nil {
 		return err
 	}
 	if !needSync {
-		klog.V(2).Infof("Ingress %q does not need to be synced. Skipping sync", key)
+		klog.V(2).Infof("Ingress %q does not need to be synced. Skipping sync", task.Key)
 		return nil
 	}
 
@@ -650,7 +653,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 				return err
 			}
 		}
-		lbc.metrics.SetIngress(key, metrics.NewIngressState(ing, fc, urlMap.AllServicePorts()))
+		lbc.metrics.SetIngress(task.Key, metrics.NewIngressState(ing, fc, urlMap.AllServicePorts()))
 	}
 
 	// Check for scope change GC
@@ -663,7 +666,7 @@ func (lbc *LoadBalancerController) sync(key string) error {
 		scope = *oldScope
 	}
 
-	return lbc.postSyncGC(key, syncErr, oldScope, scope, ingExists, ing)
+	return lbc.postSyncGC(task.Key, syncErr, oldScope, scope, ingExists, ing)
 }
 
 // updateIngressStatus updates the IP and annotations of a loadbalancer.

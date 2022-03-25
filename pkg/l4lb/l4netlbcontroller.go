@@ -90,7 +90,7 @@ func NewL4NetLBController(
 			if l4netLBc.shouldProcessService(addSvc, nil) {
 				klog.V(3).Infof("L4 External LoadBalancer Service %s added, enqueuing", svcKey)
 				l4netLBc.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
-				l4netLBc.svcQueue.Enqueue(addSvc)
+				l4netLBc.svcQueue.Enqueue(utils.NewTask(svcKey))
 				l4netLBc.enqueueTracker.Track()
 			} else {
 				klog.V(4).Infof("Ignoring add for non external lb service %s", svcKey)
@@ -103,7 +103,7 @@ func NewL4NetLBController(
 			svcKey := utils.ServiceKeyFunc(curSvc.Namespace, curSvc.Name)
 			if l4netLBc.shouldProcessService(curSvc, oldSvc) {
 				klog.V(3).Infof("L4 External LoadBalancer Service %s updated, enqueuing", svcKey)
-				l4netLBc.svcQueue.Enqueue(curSvc)
+				l4netLBc.svcQueue.Enqueue(utils.NewTask(svcKey))
 				l4netLBc.enqueueTracker.Track()
 				return
 			}
@@ -283,20 +283,20 @@ func (lc *L4NetLBController) shutdown() {
 	lc.svcQueue.Shutdown()
 }
 
-func (lc *L4NetLBController) sync(key string) error {
+func (lc *L4NetLBController) sync(task utils.TimestampTask) error {
 	lc.syncTracker.Track()
-	svc, exists, err := lc.ctx.Services().GetByKey(key)
+	svc, exists, err := lc.ctx.Services().GetByKey(task.Key)
 	if err != nil {
-		return fmt.Errorf("Failed to lookup L4 External LoadBalancer service for key %s : %w", key, err)
+		return fmt.Errorf("Failed to lookup L4 External LoadBalancer service for key %s : %w", task.Key, err)
 	}
 	if !exists || svc == nil {
-		klog.V(3).Infof("Ignoring sync of non-existent service %s", key)
+		klog.V(3).Infof("Ignoring sync of non-existent service %s", task.Key)
 		return nil
 	}
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}.String()
 	if lc.needsDeletion(svc) {
-		klog.V(3).Infof("Deleting L4 External LoadBalancer resources for service %s", key)
-		result := lc.garbageCollectRBSNetLB(key, svc)
+		klog.V(3).Infof("Deleting L4 External LoadBalancer resources for service %s", task.Key)
+		result := lc.garbageCollectRBSNetLB(task.Key, svc)
 		if result == nil {
 			return nil
 		}
@@ -313,7 +313,7 @@ func (lc *L4NetLBController) sync(key string) error {
 		lc.publishMetrics(result, namespacedName)
 		return result.Error
 	}
-	klog.V(3).Infof("Ignoring sync of service %s, neither delete nor ensure needed.", key)
+	klog.V(3).Infof("Ignoring sync of service %s, neither delete nor ensure needed.", task.Key)
 	return nil
 }
 

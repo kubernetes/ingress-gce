@@ -167,7 +167,7 @@ func TestIngressSyncError(t *testing.T) {
 	addIngress(lbc, ing)
 
 	ingStoreKey := getKey(ing, t)
-	err := lbc.sync(ingStoreKey)
+	err := lbc.sync(utils.NewTask(ingStoreKey))
 	if err == nil {
 		t.Fatalf("lbc.sync(%v) = nil, want error", ingStoreKey)
 	}
@@ -198,7 +198,7 @@ func TestNEGOnlyIngress(t *testing.T) {
 	addIngress(lbc, ing)
 
 	ingStoreKey := getKey(ing, t)
-	err := lbc.sync(ingStoreKey)
+	err := lbc.sync(utils.NewTask(ingStoreKey))
 	if err != nil {
 		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 	}
@@ -268,7 +268,7 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 				addIngress(lbc, ing)
 
 				ingStoreKey := getKey(ing, t)
-				if err := lbc.sync(ingStoreKey); err != nil {
+				if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 					t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 				}
 
@@ -295,7 +295,7 @@ func TestIngressCreateDeleteFinalizer(t *testing.T) {
 				setDeletionTimestamp(lbc, ing)
 
 				ingStoreKey := getKey(ing, t)
-				if err := lbc.sync(ingStoreKey); err != nil {
+				if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 					t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 				}
 
@@ -360,7 +360,7 @@ func TestIngressClassChangeWithFinalizer(t *testing.T) {
 	addIngress(lbc, ing)
 
 	ingStoreKey := getKey(ing, t)
-	if err := lbc.sync(ingStoreKey); err != nil {
+	if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 	}
 	// Check if finalizer is added when an Ingress resource is created with finalizer enabled.
@@ -377,7 +377,7 @@ func TestIngressClassChangeWithFinalizer(t *testing.T) {
 	updatedIng.ObjectMeta.Annotations = anns
 	updateIngress(lbc, updatedIng)
 
-	if err := lbc.sync(ingStoreKey); err != nil {
+	if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 	}
 	// Check if finalizer is removed after class changes.
@@ -421,12 +421,11 @@ func TestIngressesWithSharedResourcesWithFinalizer(t *testing.T) {
 
 	ingStoreKey := getKey(ing, t)
 	otherIngStoreKey := getKey(otherIng, t)
-	if err1, err2 := lbc.sync(ingStoreKey), lbc.sync(otherIngStoreKey); err1 != nil || err2 != nil {
-		if err1 != nil {
-			t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err1)
-		} else {
-			t.Fatalf("lbc.sync(%v) = %v, want nil", otherIngStoreKey, err2)
-		}
+	if err1 := lbc.sync(utils.NewTask(ingStoreKey)); err1 != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err1)
+	}
+	if err2 := lbc.sync(utils.NewTask(otherIngStoreKey)); err2 != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", otherIngStoreKey, err2)
 	}
 
 	// Assert service ports are being shared.
@@ -442,12 +441,11 @@ func TestIngressesWithSharedResourcesWithFinalizer(t *testing.T) {
 	deleteIngress(lbc, ing)
 	deleteIngress(lbc, otherIng)
 
-	if err1, err2 := lbc.sync(ingStoreKey), lbc.sync(otherIngStoreKey); err1 != nil || err2 != nil {
-		if err1 != nil {
-			t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err1)
-		} else {
-			t.Fatalf("lbc.sync(%v) = %v, want nil", otherIngStoreKey, err2)
-		}
+	if err1 := lbc.sync(utils.NewTask(ingStoreKey)); err1 != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err1)
+	}
+	if err2 := lbc.sync(utils.NewTask(otherIngStoreKey)); err2 != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", otherIngStoreKey, err2)
 	}
 
 	remainingIngresses, err := lbc.ctx.KubeClient.NetworkingV1().Ingresses("default").List(context2.TODO(), meta_v1.ListOptions{})
@@ -482,7 +480,7 @@ func TestEnableFinalizer(t *testing.T) {
 	addIngress(lbc, ing)
 
 	ingStoreKey := getKey(ing, t)
-	if err := lbc.sync(ingStoreKey); err != nil {
+	if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 	}
 
@@ -498,7 +496,7 @@ func TestEnableFinalizer(t *testing.T) {
 	// enable finalizer
 	flags.F.FinalizerAdd = true
 
-	if err := lbc.sync(ingStoreKey); err != nil {
+	if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 	}
 
@@ -531,13 +529,13 @@ func TestIngressClassChange(t *testing.T) {
 	addIngress(lbc, ing)
 
 	ingStoreKey := getKey(ing, t)
-	if err := lbc.sync(ingStoreKey); err != nil {
+	if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
 	}
 	ing.ObjectMeta.Annotations = map[string]string{"kubernetes.io/ingress.class": "new-class"}
 	updateIngress(lbc, ing)
 
-	if err := lbc.sync(ingStoreKey); err != nil {
+	if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
 	}
 
@@ -567,7 +565,7 @@ func TestEnsureMCIngress(t *testing.T) {
 	addIngress(lbc, ing)
 
 	ingStoreKey := getKey(ing, t)
-	if err := lbc.sync(ingStoreKey); err != nil {
+	if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 		t.Fatalf("lbc.sync(%v) = err %v", ingStoreKey, err)
 	}
 
@@ -607,12 +605,11 @@ func TestMCIngressIG(t *testing.T) {
 
 	ingStoreKey := getKey(ing, t)
 	mcIngStoreKey := getKey(mcIng, t)
-	if err1, err2 := lbc.sync(ingStoreKey), lbc.sync(mcIngStoreKey); err1 != nil || err2 != nil {
-		if err1 != nil {
-			t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err1)
-		} else {
-			t.Fatalf("lbc.sync(%v) = %v, want nil", mcIngStoreKey, err2)
-		}
+	if err1 := lbc.sync(utils.NewTask(ingStoreKey)); err1 != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err1)
+	}
+	if err2 := lbc.sync(utils.NewTask(mcIngStoreKey)); err2 != nil {
+		t.Fatalf("lbc.sync(%v) = %v, want nil", mcIngStoreKey, err2)
 	}
 
 	// Check multi-cluster Ingress has annotations noting the instance group name.
@@ -640,7 +637,7 @@ func TestMCIngressIG(t *testing.T) {
 
 	// Delete GCE ingress resource ing, ensure that instance group is not deleted.
 	deleteIngress(lbc, ing)
-	if err := lbc.sync(ingStoreKey); err != nil {
+	if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 	}
 
@@ -655,7 +652,7 @@ func TestMCIngressIG(t *testing.T) {
 
 	// Delete GCE multi-cluster ingress mcIng and verify that instance group is deleted.
 	deleteIngress(lbc, updatedMcIng)
-	if err := lbc.sync(mcIngStoreKey); err != nil {
+	if err := lbc.sync(utils.NewTask(mcIngStoreKey)); err != nil {
 		t.Fatalf("lbc.sync(%v) = %v, want nil", mcIngStoreKey, err)
 	}
 
@@ -780,7 +777,7 @@ func TestIngressTagging(t *testing.T) {
 			}
 
 			ingStoreKey := getKey(ing, t)
-			if err := lbc.sync(ingStoreKey); err != nil {
+			if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 				t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 			}
 
@@ -847,7 +844,7 @@ func TestGCMultiple(t *testing.T) {
 	}
 	// Sync on the last ingress.
 	ingStoreKey := getKey(updatedIngs[len(updatedIngs)-1], t)
-	if err := lbc.sync(ingStoreKey); err != nil {
+	if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 	}
 
@@ -946,7 +943,7 @@ func TestGC(t *testing.T) {
 				v1Ingresses[i].SetDeletionTimestamp(&timestamp)
 				updateIngress(lbc, v1Ingresses[i])
 				ingStoreKey := getKey(v1Ingresses[i], t)
-				if err := lbc.sync(ingStoreKey); err != nil {
+				if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 					t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 				}
 			}
@@ -958,7 +955,7 @@ func TestGC(t *testing.T) {
 				v2Ingresses[i].SetDeletionTimestamp(&timestamp)
 				updateIngress(lbc, v2Ingresses[i])
 				ingStoreKey := getKey(v2Ingresses[i], t)
-				if err := lbc.sync(ingStoreKey); err != nil {
+				if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 					t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 				}
 			}
@@ -1010,7 +1007,7 @@ func ensureIngress(t *testing.T, lbc *LoadBalancerController, namespace, name st
 	addIngress(lbc, ing)
 
 	ingStoreKey := getKey(ing, t)
-	if err := lbc.sync(ingStoreKey); err != nil {
+	if err := lbc.sync(utils.NewTask(ingStoreKey)); err != nil {
 		t.Fatalf("lbc.sync(%v) = %v, want nil", ingStoreKey, err)
 	}
 

@@ -25,6 +25,7 @@ import (
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/common"
 )
 
 // setInstanceGroupsAnnotation sets the instance-groups annotation with names of the given instance groups.
@@ -68,9 +69,9 @@ func nodeStatusChanged(old, cur *api_v1.Node) bool {
 	return false
 }
 
-func convert(ings []*v1.Ingress) (retVal []interface{}) {
+func convertToTask(ings []*v1.Ingress) (retVal []interface{}) {
 	for _, ing := range ings {
-		retVal = append(retVal, ing)
+		retVal = append(retVal, utils.NewTask(common.NamespacedName(ing)))
 	}
 	return
 }

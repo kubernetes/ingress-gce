@@ -121,7 +121,7 @@ func createAndSyncNetLBSvc(t *testing.T) (svc *v1.Service, lc *L4NetLBController
 	svc = test.NewL4NetLBRBSService(8080)
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
-	err := lc.sync(key)
+	err := lc.sync(utils.NewTask(key))
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
 	}
@@ -270,7 +270,7 @@ func TestProcessMultipleNetLBServices(t *testing.T) {
 				newSvc.UID = types.UID(newSvc.Name)
 				svcNames = append(svcNames, newSvc.Name)
 				addNetLBService(lc, newSvc)
-				lc.svcQueue.Enqueue(newSvc)
+				lc.svcQueue.Enqueue(utils.NewTask(getKeyForSvc(newSvc, t)))
 			}
 			if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
 				for _, name := range svcNames {
@@ -339,7 +339,8 @@ func TestForwardingRuleWithPortRange(t *testing.T) {
 		svc.UID = types.UID(svc.Name + fmt.Sprintf("-%d", rand.Intn(1001)))
 		addNetLBService(lc, svc)
 		key, _ := common.KeyFunc(svc)
-		if err := lc.sync(key); err != nil {
+		task := utils.NewTask(key)
+		if err := lc.sync(task); err != nil {
 			t.Errorf("Failed to sync service %s, err: %v", key, err)
 		}
 
@@ -373,7 +374,7 @@ func TestProcessServiceCreate(t *testing.T) {
 		t.Fatalf("Cannot get prometheus metrics for L4NetLB latency")
 	}
 	key, _ := common.KeyFunc(svc)
-	err = lc.sync(key)
+	err = lc.sync(utils.NewTask(key))
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
 	}
@@ -405,11 +406,11 @@ func TestProcessServiceCreateWithUsersProvidedIP(t *testing.T) {
 	svc.Spec.LoadBalancerIP = usersIP
 	addNetLBService(lc, svc)
 	key, _ := common.KeyFunc(svc)
-	if err := lc.sync(key); err == nil {
+	if err := lc.sync(utils.NewTask(key)); err == nil {
 		t.Errorf("Expected sync error when address reservation fails.")
 	}
 	addUsersStaticAddress(lc, cloud.NetworkTierDefault)
-	if err := lc.sync(key); err != nil {
+	if err := lc.sync(utils.NewTask(key)); err != nil {
 		t.Errorf("Un expected Error when trying to sync service with user's address, err: %v", err)
 	}
 	svc, err := lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
@@ -425,7 +426,7 @@ func TestProcessServiceCreateWithUsersProvidedIP(t *testing.T) {
 	// Mark the service for deletion by updating timestamp
 	svc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, svc)
-	if err := lc.sync(key); err != nil {
+	if err := lc.sync(utils.NewTask(key)); err != nil {
 		t.Errorf("Unexpected Error when trying to sync service after deletion, err: %v", err)
 	}
 	adr, err := lc.ctx.Cloud.GetRegionAddress(userAddrName, lc.ctx.Cloud.Region())
@@ -467,7 +468,7 @@ func TestProcessServiceDeletion(t *testing.T) {
 		t.Fatalf("Service should be marked for deletion")
 	}
 	key, _ := common.KeyFunc(svc)
-	err := lc.sync(key)
+	err := lc.sync(utils.NewTask(key))
 	if err != nil {
 		t.Errorf("Failed to sync service %s, err %v", svc.Name, err)
 	}
@@ -489,7 +490,7 @@ func TestInternalLoadBalancerShouldNotBeProcessByL4NetLBController(t *testing.T)
 	ilbSvc := test.NewL4ILBService(false, 8080)
 	addNetLBService(lc, ilbSvc)
 	key, _ := common.KeyFunc(ilbSvc)
-	err := lc.sync(key)
+	err := lc.sync(utils.NewTask(key))
 	if err != nil {
 		t.Errorf("Failed to sync service %s, err %v", ilbSvc.Name, err)
 	}
@@ -529,7 +530,7 @@ func TestProcessServiceCreationFailed(t *testing.T) {
 		svc := test.NewL4NetLBRBSService(8080)
 		addNetLBService(lc, svc)
 		key, _ := common.KeyFunc(svc)
-		err := lc.sync(key)
+		err := lc.sync(utils.NewTask(key))
 		if err == nil || err.Error() != param.expectedError {
 			t.Errorf("Error mismatch '%v' != '%v'", err.Error(), param.expectedError)
 		}
@@ -547,7 +548,7 @@ func TestMetricsWithSyncError(t *testing.T) {
 	addNetLBService(lc, svc)
 
 	key, _ := common.KeyFunc(svc)
-	err = lc.sync(key)
+	err = lc.sync(utils.NewTask(key))
 	if err == nil {
 		t.Errorf("Expected error in sync controller")
 	}
@@ -588,7 +589,7 @@ func TestProcessServiceDeletionFailed(t *testing.T) {
 		}
 		param.addMockFunc((lc.ctx.Cloud.Compute().(*cloud.MockGCE)))
 		key, _ := common.KeyFunc(svc)
-		err := lc.sync(key)
+		err := lc.sync(utils.NewTask(key))
 		if err == nil || err.Error() != param.expectedError {
 			t.Errorf("Error mismatch '%v' != '%v'", err, param.expectedError)
 		}
@@ -730,7 +731,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 		}
 
 		key, _ := common.KeyFunc(newSvc)
-		err = l4netController.sync(key)
+		err = l4netController.sync(utils.NewTask(key))
 		if err != nil {
 			t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
 		}
@@ -772,7 +773,7 @@ func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
 	newSvc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, newSvc)
 	key, _ := common.KeyFunc(newSvc)
-	if err = lc.sync(key); err != nil {
+	if err = lc.sync(utils.NewTask(key)); err != nil {
 		t.Errorf("Failed to sync deleted service %s, err %v", key, err)
 	}
 	if !isHealthCheckDeleted(lc.ctx.Cloud, hcNameNonShared) {
@@ -788,7 +789,7 @@ func updateAndAssertExternalTrafficPolicy(newSvc *v1.Service, lc *L4NetLBControl
 	newSvc.Spec.ExternalTrafficPolicy = newPolicy
 	updateNetLBService(lc, newSvc)
 	key, _ := common.KeyFunc(newSvc)
-	err := lc.sync(key)
+	err := lc.sync(utils.NewTask(key))
 	if err != nil {
 		return fmt.Errorf("Failed to sync updated service %s, err %v", key, err)
 	}
@@ -820,12 +821,12 @@ func TestControllerUserIPWithStandardNetworkTier(t *testing.T) {
 	key, _ := common.KeyFunc(svc)
 	addUsersStaticAddress(lc, cloud.NetworkTierStandard)
 	// Sync should return error that Network Tier mismatch because we cannot tear User Managed Address.
-	if err := lc.sync(key); !isWrongNetworkTierError(err) {
+	if err := lc.sync(utils.NewTask(key)); !isWrongNetworkTierError(err) {
 		t.Errorf("Expected error when trying to ensure service with wrong Network Tier, err: %v", err)
 	}
 	svc.Annotations[annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierStandard)
 	updateNetLBService(lc, svc)
-	if err := lc.sync(key); err != nil {
+	if err := lc.sync(utils.NewTask(key)); err != nil {
 		t.Errorf("Unexpected error when trying to ensure service with STANDARD Network Tier, err: %v", err)
 	}
 }

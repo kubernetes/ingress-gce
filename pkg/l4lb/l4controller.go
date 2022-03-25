@@ -100,7 +100,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4C
 			if needsILB || l4c.needsDeletion(addSvc) {
 				klog.V(3).Infof("ILB Service %s added, enqueuing", svcKey)
 				l4c.ctx.Recorder(addSvc.Namespace).Eventf(addSvc, v1.EventTypeNormal, "ADD", svcKey)
-				l4c.svcQueue.Enqueue(addSvc)
+				l4c.svcQueue.Enqueue(utils.TimestampTask{EnqueueTime: time.Now(), Key: svcKey})
 				l4c.enqueueTracker.Track()
 			} else {
 				klog.V(4).Infof("Ignoring add for non-lb service %s based on %v", svcKey, svcType)
@@ -115,7 +115,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4C
 			needsDeletion := l4c.needsDeletion(curSvc)
 			if needsUpdate || needsDeletion {
 				klog.V(3).Infof("Service %v changed, needsUpdate %v, needsDeletion %v, enqueuing", svcKey, needsUpdate, needsDeletion)
-				l4c.svcQueue.Enqueue(curSvc)
+				l4c.svcQueue.Enqueue(utils.TimestampTask{EnqueueTime: time.Now(), Key: svcKey})
 				l4c.enqueueTracker.Track()
 				return
 			}
@@ -125,7 +125,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4C
 				// this will happen when informers run a resync on all the existing services even when the object is
 				// not modified.
 				klog.V(3).Infof("Periodic enqueueing of %v", svcKey)
-				l4c.svcQueue.Enqueue(curSvc)
+				l4c.svcQueue.Enqueue(utils.TimestampTask{EnqueueTime: time.Now(), Key: svcKey})
 				l4c.enqueueTracker.Track()
 			}
 		},
@@ -286,23 +286,23 @@ func (l4c *L4Controller) linkNEG(l4 *loadbalancers.L4) error {
 	return l4c.NegLinker.Link(l4.ServicePort, groupKeys)
 }
 
-func (l4c *L4Controller) sync(key string) error {
+func (l4c *L4Controller) sync(task utils.TimestampTask) error {
 	l4c.syncTracker.Track()
-	svc, exists, err := l4c.ctx.Services().GetByKey(key)
+	svc, exists, err := l4c.ctx.Services().GetByKey(task.Key)
 	if err != nil {
-		return fmt.Errorf("Failed to lookup service for key %s : %w", key, err)
+		return fmt.Errorf("Failed to lookup service for key %s : %w", task.Key, err)
 	}
 	if !exists || svc == nil {
 		// The service will not exist if its resources and finalizer are handled by the legacy service controller and
 		// it has been deleted. As long as the V2 finalizer is present, the service will not be deleted by apiserver.
-		klog.V(3).Infof("Ignoring delete of service %s not managed by L4 controller", key)
+		klog.V(3).Infof("Ignoring delete of service %s not managed by L4 controller", task.Key)
 		return nil
 	}
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}.String()
 	var result *loadbalancers.L4ILBSyncResult
 	if l4c.needsDeletion(svc) {
-		klog.V(2).Infof("Deleting ILB resources for service %s managed by L4 controller", key)
-		result = l4c.processServiceDeletion(key, svc)
+		klog.V(2).Infof("Deleting ILB resources for service %s managed by L4 controller", task.Key)
+		result = l4c.processServiceDeletion(task.Key, svc)
 		if result == nil {
 			return nil
 		}
@@ -312,8 +312,8 @@ func (l4c *L4Controller) sync(key string) error {
 	// Check again here, to avoid time-of check, time-of-use race. A service queued by informer could have changed, no
 	// longer needing an ILB.
 	if wantsILB, _ := annotations.WantsL4ILB(svc); wantsILB {
-		klog.V(2).Infof("Ensuring ILB resources for service %s managed by L4 controller", key)
-		result = l4c.processServiceCreateOrUpdate(key, svc)
+		klog.V(2).Infof("Ensuring ILB resources for service %s managed by L4 controller", task.Key)
+		result = l4c.processServiceCreateOrUpdate(task.Key, svc)
 		if result == nil {
 			// result will be nil if the service was ignored(due to presence of service controller finalizer).
 			return nil
@@ -321,7 +321,7 @@ func (l4c *L4Controller) sync(key string) error {
 		l4c.publishMetrics(result, namespacedName)
 		return result.Error
 	}
-	klog.V(3).Infof("Ignoring sync of service %s, neither delete nor ensure needed.", key)
+	klog.V(3).Infof("Ignoring sync of service %s, neither delete nor ensure needed.", task.Key)
 	return nil
 }
 

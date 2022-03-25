@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	"net/http"
 
@@ -188,7 +189,8 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	addNEG(l4c, newSvc)
-	err = l4c.sync(getKeyForSvc(newSvc, t))
+	task := utils.NewTask(getKeyForSvc(newSvc, t))
+	err = l4c.sync(task)
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
 	}
@@ -207,7 +209,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 	// set the TrafficPolicy of the service to Local
 	newSvc.Spec.ExternalTrafficPolicy = api_v1.ServiceExternalTrafficPolicyTypeLocal
 	updateILBService(l4c, newSvc)
-	err = l4c.sync(getKeyForSvc(newSvc, t))
+	err = l4c.sync(utils.NewTask(getKeyForSvc(newSvc, t)))
 	if err != nil {
 		t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
 	}
@@ -225,7 +227,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 	// Remove the Internal LoadBalancer annotation, this should trigger a cleanup.
 	delete(newSvc.Annotations, gce.ServiceAnnotationLoadBalancerType)
 	updateILBService(l4c, newSvc)
-	err = l4c.sync(getKeyForSvc(newSvc, t))
+	err = l4c.sync(utils.NewTask(getKeyForSvc(newSvc, t)))
 	if err != nil {
 		t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
 	}
@@ -243,9 +245,8 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 	prevMetrics.ValidateDiff(currMetrics, &test.L4LBLatencyMetricInfo{CreateCount: 1, UpdateCount: 1, DeleteCount: 1, UpperBoundSeconds: 1}, t)
 	newSvc.DeletionTimestamp = &v1.Time{}
 	updateILBService(l4c, newSvc)
-	key, _ := common.KeyFunc(newSvc)
-	if err = l4c.sync(key); err != nil {
-		t.Errorf("Failed to sync deleted service %s, err %v", key, err)
+	if err = l4c.sync(utils.NewTask(getKeyForSvc(newSvc, t))); err != nil {
+		t.Errorf("Failed to sync deleted service %s, err %v", task.Key, err)
 	}
 	for _, isShared := range []bool{true, false} {
 		hcName, _ := l4c.namer.L4HealthCheck(newSvc.Namespace, newSvc.Name, isShared)
@@ -265,7 +266,7 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 	svc := test.NewL4ILBService(true, 8080)
 	addILBService(l4c, svc)
 	addNEG(l4c, svc)
-	err := l4c.sync(getKeyForSvc(svc, t))
+	err := l4c.sync(utils.NewTask(getKeyForSvc(svc, t)))
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", svc.Name, err)
 	}
@@ -279,7 +280,7 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 	// Set ExternalTrafficPolicy to Cluster.
 	svc.Spec.ExternalTrafficPolicy = api_v1.ServiceExternalTrafficPolicyTypeCluster
 	updateILBService(l4c, svc)
-	err = l4c.sync(getKeyForSvc(svc, t))
+	err = l4c.sync(utils.NewTask(getKeyForSvc(svc, t)))
 	if err != nil {
 		t.Errorf("Failed to sync updated service %s, err %v", svc.Name, err)
 	}
@@ -299,9 +300,8 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 	// Delete service.
 	svc.DeletionTimestamp = &v1.Time{}
 	updateILBService(l4c, svc)
-	key, _ := common.KeyFunc(svc)
-	if err = l4c.sync(key); err != nil {
-		t.Errorf("Failed to sync deleted service %s, err %v", key, err)
+	if err = l4c.sync(utils.NewTask(getKeyForSvc(svc, t))); err != nil {
+		t.Errorf("Failed to sync deleted service %s/%s, err %v", svc.Namespace, svc.Name, err)
 	}
 	// Verify that both health checks were deleted.
 	for _, isShared := range []bool{true, false} {
@@ -321,7 +321,7 @@ func TestProcessDeletion(t *testing.T) {
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	addNEG(l4c, newSvc)
-	err = l4c.sync(getKeyForSvc(newSvc, t))
+	err = l4c.sync(utils.NewTask(getKeyForSvc(newSvc, t)))
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
 	}
@@ -343,7 +343,7 @@ func TestProcessDeletion(t *testing.T) {
 	if !l4c.needsDeletion(newSvc) {
 		t.Errorf("Incorrectly marked service %v as not needing ILB deletion", newSvc)
 	}
-	err = l4c.sync(getKeyForSvc(newSvc, t))
+	err = l4c.sync(utils.NewTask(getKeyForSvc(newSvc, t)))
 	if err != nil {
 		t.Errorf("Failed to sync updated service %s, err %v", newSvc.Name, err)
 	}
@@ -376,7 +376,7 @@ func TestProcessCreateLegacyService(t *testing.T) {
 	// Set the legacy finalizer
 	newSvc.Finalizers = append(newSvc.Finalizers, common.LegacyILBFinalizer)
 	addILBService(l4c, newSvc)
-	err = l4c.sync(getKeyForSvc(newSvc, t))
+	err = l4c.sync(utils.NewTask(getKeyForSvc(newSvc, t)))
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
 	}
@@ -408,7 +408,7 @@ func TestProcessCreateServiceWithLegacyInternalForwardingRule(t *testing.T) {
 	// A service can have the v1 finalizer reset due to a buggy script/manual operation.
 	// Subsetting controller should only process the service if it doesn't already have a forwarding rule.
 	createLegacyForwardingRule(t, newSvc, l4c.ctx.Cloud, string(cloud.SchemeInternal))
-	err = l4c.sync(getKeyForSvc(newSvc, t))
+	err = l4c.sync(utils.NewTask(getKeyForSvc(newSvc, t)))
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
 	}
@@ -439,7 +439,7 @@ func TestProcessCreateServiceWithLegacyExternalForwardingRule(t *testing.T) {
 	// Service processing should succeed in that case. The external forwarding rule will be deleted
 	// by service controller.
 	createLegacyForwardingRule(t, newSvc, l4c.ctx.Cloud, string(cloud.SchemeExternal))
-	err = l4c.sync(getKeyForSvc(newSvc, t))
+	err = l4c.sync(utils.NewTask(getKeyForSvc(newSvc, t)))
 	if err != nil {
 		t.Errorf("Failed to sync newly added service %s, err %v", newSvc.Name, err)
 	}
@@ -485,7 +485,7 @@ func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 		t.Errorf("Incorrectly marked service %v as not needing update", newSvc)
 	}
 	addNEG(l4c, newSvc)
-	err = l4c.sync(getKeyForSvc(newSvc, t))
+	err = l4c.sync(utils.NewTask(getKeyForSvc(newSvc, t)))
 	if err != nil {
 		t.Errorf("Failed to sync newly updated service %s, err %v", newSvc.Name, err)
 	}
@@ -525,7 +525,7 @@ func TestProcessMultipleServices(t *testing.T) {
 				addILBService(l4c, newSvc)
 				// add the NEG so that link to backendService works.
 				addNEG(l4c, newSvc)
-				l4c.svcQueue.Enqueue(newSvc)
+				l4c.svcQueue.Enqueue(utils.NewTask(getKeyForSvc(newSvc, t)))
 			}
 			if err := retry.OnError(backoff, func(error) bool { return true }, func() error {
 				for _, name := range svcNames {
@@ -562,10 +562,11 @@ func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
 	go l4c.Run()
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
-	l4c.svcQueue.Enqueue(newSvc)
+	task := utils.NewTask(getKeyForSvc(newSvc, t))
+	l4c.svcQueue.Enqueue(task)
 
 	if err := retry.OnError(retry.DefaultRetry, func(error) bool { return true }, func() error {
-		if numRequeues := l4c.svcQueue.NumRequeues(newSvc); numRequeues == 0 {
+		if numRequeues := l4c.svcQueue.NumRequeues(task); numRequeues == 0 {
 			return fmt.Errorf("Failed to requeue service with delayed NEG addition.")
 		}
 		return nil
@@ -607,7 +608,7 @@ func TestProcessServiceOnError(t *testing.T) {
 	newSvc := test.NewL4ILBService(false, 8080)
 	addILBService(l4c, newSvc)
 	addNEG(l4c, newSvc)
-	err = l4c.sync(getKeyForSvc(newSvc, t))
+	err = l4c.sync(utils.NewTask(getKeyForSvc(newSvc, t)))
 	if err == nil {
 		t.Fatalf("Failed to generate error when syncing service %s", newSvc.Name)
 	}
