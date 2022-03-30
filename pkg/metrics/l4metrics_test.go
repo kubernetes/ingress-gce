@@ -17,6 +17,7 @@ limitations under the License.
 package metrics
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -158,7 +159,7 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 			t.Parallel()
 			newMetrics := NewControllerMetrics()
 			for i, serviceState := range tc.serviceStates {
-				newMetrics.SetL4ILBService(string(i), serviceState)
+				newMetrics.SetL4ILBService(fmt.Sprint(i), serviceState)
 			}
 			got := newMetrics.computeL4ILBMetrics()
 			if diff := cmp.Diff(tc.expectL4ILBCount, got); diff != "" {
@@ -308,7 +309,7 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 			t.Parallel()
 			newMetrics := NewControllerMetrics()
 			for i, serviceState := range tc.serviceStates {
-				newMetrics.SetL4NetLBService(string(i), serviceState)
+				newMetrics.SetL4NetLBService(fmt.Sprint(i), serviceState)
 			}
 			got := newMetrics.computeL4NetLBMetrics()
 			if diff := cmp.Diff(tc.expectL4NetLBCount, got); diff != "" {
