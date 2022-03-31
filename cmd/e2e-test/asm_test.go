@@ -227,6 +227,25 @@ func TestASMServiceAndDestinationRule(t *testing.T) {
 
 				})
 			}
+
+			negStatus, err := e2e.WaitForNegStatus(s, svcName, []string{strconv.Itoa(int(porterPort))}, false)
+			if err != nil {
+				t.Fatalf("Error: e2e.WaitForNegStatus %s: %q", svcName, err)
+			}
+
+			if err := e2e.DeleteService(s, svcName); err != nil {
+				t.Fatalf("Error: e2e.DeleteService %s: %q", svcName, err)
+			}
+			t.Logf("GC service deleted (%s/%s)", s.Namespace, svcName)
+
+			if err := e2e.DeleteService(s, svcSkipName); err != nil {
+				t.Fatalf("Error: e2e.DeleteService %s: %q", svcSkipName, err)
+			}
+			t.Logf("GC service deleted (%s/%s)", s.Namespace, svcSkipName)
+
+			if err := e2e.WaitForStandaloneNegDeletion(ctx, s.ValidatorEnv.Cloud(), s, strconv.Itoa(int(porterPort)), *negStatus); err != nil {
+				t.Fatalf("Error waiting for NEGDeletion: %v", err)
+			}
 		})
 	})
 }
