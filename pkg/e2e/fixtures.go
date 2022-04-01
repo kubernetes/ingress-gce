@@ -159,8 +159,8 @@ func ensureEchoService(s *Sandbox, name string, annotations map[string]string, s
 	return svc, nil
 }
 
-// DeleteEchoService deletes the K8s service
-func DeleteEchoService(s *Sandbox, svcName string) error {
+// DeleteService deletes the K8s service
+func DeleteService(s *Sandbox, svcName string) error {
 	return s.f.Clientset.CoreV1().Services(s.Namespace).Delete(context.TODO(), svcName, metav1.DeleteOptions{})
 }
 

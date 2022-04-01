@@ -595,8 +595,8 @@ func TestNegDisruptive(t *testing.T) {
 	}
 
 	waitForGCSvcDeletion := func(s *e2e.Sandbox, negStatus annotations.NegStatus) {
-		if err := e2e.DeleteEchoService(s, gcSvcName); err != nil {
-			t.Fatalf("Error: e2e.DeleteEchoService %s: %q", gcSvcName, err)
+		if err := e2e.DeleteService(s, gcSvcName); err != nil {
+			t.Fatalf("Error: e2e.DeleteService %s: %q", gcSvcName, err)
 		}
 		t.Logf("GC service deleted (%s/%s)", s.Namespace, gcSvcName)
 
@@ -702,8 +702,8 @@ func TestNegDisruptive(t *testing.T) {
 			}
 
 			if tc.deleteService {
-				if err := e2e.DeleteEchoService(s, serviceName); err != nil {
-					t.Fatalf("Error: e2e.DeleteEchoService %s: %q", serviceName, err)
+				if err := e2e.DeleteService(s, serviceName); err != nil {
+					t.Fatalf("Error: e2e.DeleteService %s: %q", serviceName, err)
 				}
 				t.Logf("Echo service deleted (%s/%s)", s.Namespace, serviceName)
 			}
