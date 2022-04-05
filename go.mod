@@ -1,6 +1,6 @@
 module k8s.io/ingress-gce
 
-go 1.13
+go 1.16
 
 require (
 	github.com/GoogleCloudPlatform/k8s-cloud-provider v1.18.0

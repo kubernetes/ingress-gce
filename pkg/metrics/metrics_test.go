@@ -1124,7 +1124,7 @@ func TestComputeNegMetrics(t *testing.T) {
 			t.Parallel()
 			newMetrics := NewControllerMetrics()
 			for i, negState := range tc.negStates {
-				newMetrics.SetNegService(string(i), negState)
+				newMetrics.SetNegService(fmt.Sprint(i), negState)
 			}
 
 			gotNegCount := newMetrics.computeNegMetrics()

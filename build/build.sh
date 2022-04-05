@@ -48,5 +48,5 @@ LD_FLAGS="-X ${PKG}/pkg/version.Version=${VERSION} -X ${PKG}/pkg/version.GitComm
 if echo "${TARGET}" | grep '.*-test$'; then
   go test -c -ldflags "${LD_FLAGS}" -o "${TARGET}" "${BIN_PKG}"
 else
-  go install -i -installsuffix "static" -ldflags "${LD_FLAGS}" "${BIN_PKG}"
+  go install -installsuffix "static" -ldflags "${LD_FLAGS}" "${BIN_PKG}"
 fi
