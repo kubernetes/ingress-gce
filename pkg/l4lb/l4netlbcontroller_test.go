@@ -19,6 +19,7 @@ package l4lb
 import (
 	"context"
 	"fmt"
+	"google.golang.org/api/googleapi"
 	"math/rand"
 	"net/http"
 	"reflect"
@@ -59,6 +60,16 @@ const (
 	testServiceNamespace = "default"
 	hcNodePort           = int32(10111)
 	userAddrName         = "UserStaticAddress"
+)
+
+var (
+	serviceAnnotationKeys = []string{
+		annotations.FirewallRuleKey,
+		annotations.BackendServiceKey,
+		annotations.HealthcheckKey,
+		annotations.TCPForwardingRuleKey,
+		annotations.FirewallRuleForHealthcheckKey,
+	}
 )
 
 func getExternalIPS() []string {
@@ -240,17 +251,27 @@ func validateNetLBSvcStatus(svc *v1.Service, t *testing.T) {
 }
 
 func validateAnnotations(svc *v1.Service) error {
-	expectedAnnotationKeys := []string{annotations.FirewallRuleKey, annotations.BackendServiceKey, annotations.HealthcheckKey,
-		annotations.TCPForwardingRuleKey, annotations.FirewallRuleForHealthcheckKey}
-
 	missingKeys := []string{}
-	for _, key := range expectedAnnotationKeys {
+	for _, key := range serviceAnnotationKeys {
 		if _, ok := svc.Annotations[key]; !ok {
 			missingKeys = append(missingKeys, key)
 		}
 	}
 	if len(missingKeys) > 0 {
 		return fmt.Errorf("Cannot find annotations %v in ELB service, Got %v", missingKeys, svc.Annotations)
+	}
+	return nil
+}
+
+func validateAnnotationsDeleted(svc *v1.Service) error {
+	unexpectedKeys := []string{}
+	for _, key := range serviceAnnotationKeys {
+		if _, exists := svc.Annotations[key]; exists {
+			unexpectedKeys = append(unexpectedKeys, key)
+		}
+	}
+	if len(unexpectedKeys) != 0 {
+		return fmt.Errorf("Unexpeceted annotations: %v, Service annotations %v", unexpectedKeys, svc.Annotations)
 	}
 	return nil
 }
@@ -454,17 +475,18 @@ func addUsersStaticAddress(lc *L4NetLBController, netTier cloud.NetworkTier) {
 
 func TestProcessServiceDeletion(t *testing.T) {
 	svc, lc := createAndSyncNetLBSvc(t)
+
 	if !common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
-		t.Fatalf("Expected L4 External LoadBalancer finalizer")
+		t.Errorf("Expected L4 External LoadBalancer finalizer")
 	}
 	if lc.needsDeletion(svc) {
-		t.Fatalf("Service should not be marked for deletion")
+		t.Errorf("Service should not be marked for deletion")
 	}
 	// Mark the service for deletion by updating timestamp
 	svc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, svc)
 	if !lc.needsDeletion(svc) {
-		t.Fatalf("Service should be marked for deletion")
+		t.Errorf("Service should be marked for deletion")
 	}
 	key, _ := common.KeyFunc(svc)
 	err := lc.sync(key)
@@ -476,12 +498,63 @@ func TestProcessServiceDeletion(t *testing.T) {
 		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
 	}
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
-		t.Fatalf("Expected LoadBalancer status be deleted - %+v", svc.Status.LoadBalancer)
+		t.Errorf("Expected LoadBalancer status be deleted - %+v", svc.Status.LoadBalancer)
 	}
 	if common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
-		t.Fatalf("Unexpected LoadBalancer finalizer %v", svc.ObjectMeta.Finalizers)
+		t.Errorf("Unexpected LoadBalancer finalizer %v", svc.ObjectMeta.Finalizers)
 	}
+
+	if err = validateAnnotationsDeleted(svc); err != nil {
+		t.Errorf("RBS Service annotations have NOT been deleted. Error: %v", err)
+	}
+
+	igName := lc.namer.InstanceGroup()
+	_, err = lc.ctx.Cloud.GetInstanceGroup(igName, testGCEZone)
+	if !utils.IsNotFoundError(err) {
+		t.Errorf("Failed to delete Instance Group %v, err: %v", igName, err)
+	}
+
 	deleteNetLBService(lc, svc)
+}
+
+func TestServiceDeletionWhenInstanceGroupInUse(t *testing.T) {
+	svc, lc := createAndSyncNetLBSvc(t)
+
+	(lc.ctx.Cloud.Compute().(*cloud.MockGCE)).MockInstanceGroups.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockInstanceGroups) (bool, error) {
+		err := &googleapi.Error{
+			Code:    http.StatusBadRequest,
+			Message: "GetErrorInstanceGroupHook: Cannot delete instance group being used by another service",
+		}
+		return true, err
+	}
+
+	svc.DeletionTimestamp = &metav1.Time{}
+	updateNetLBService(lc, svc)
+	key, _ := common.KeyFunc(svc)
+	err := lc.sync(key)
+	if err != nil {
+		t.Errorf("Failed to sync service %s, err %v", svc.Name, err)
+	}
+	svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+	if err != nil {
+		t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+	}
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		t.Errorf("Expected LoadBalancer status be deleted - %+v", svc.Status.LoadBalancer)
+	}
+	if common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
+		t.Errorf("Unexpected LoadBalancer finalizer %v", svc.ObjectMeta.Finalizers)
+	}
+
+	if err = validateAnnotationsDeleted(svc); err != nil {
+		t.Errorf("RBS Service annotations have NOT been deleted. Error: %v", err)
+	}
+
+	igName := lc.namer.InstanceGroup()
+	_, err = lc.ctx.Cloud.GetInstanceGroup(igName, testGCEZone)
+	if err != nil {
+		t.Errorf("Failed to get Instance Group named %v. Group should be present. Error: %v", igName, err)
+	}
 }
 
 func TestInternalLoadBalancerShouldNotBeProcessByL4NetLBController(t *testing.T) {
