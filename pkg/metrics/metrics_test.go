@@ -1004,7 +1004,7 @@ func TestComputeIngressMetrics(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			newMetrics := NewControllerMetrics()
+			newMetrics := FakeControllerMetrics()
 			for _, ingState := range tc.ingressStates {
 				ingKey := fmt.Sprintf("%s/%s", defaultNamespace, ingState.ingress.Name)
 				newMetrics.SetIngress(ingKey, ingState)
@@ -1122,7 +1122,7 @@ func TestComputeNegMetrics(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			newMetrics := NewControllerMetrics()
+			newMetrics := FakeControllerMetrics()
 			for i, negState := range tc.negStates {
 				newMetrics.SetNegService(fmt.Sprint(i), negState)
 			}
@@ -1222,7 +1222,7 @@ func TestComputePSCMetrics(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			newMetrics := NewControllerMetrics()
+			newMetrics := FakeControllerMetrics()
 			for i, serviceState := range tc.saStates {
 				newMetrics.SetServiceAttachment(strconv.Itoa(i), serviceState)
 			}
@@ -1284,7 +1284,7 @@ func TestComputeServiceMetrics(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			newMetrics := NewControllerMetrics()
+			newMetrics := FakeControllerMetrics()
 			for _, service := range tc.services {
 				newMetrics.SetService(service)
 			}
