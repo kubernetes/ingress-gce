@@ -403,24 +403,45 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 	l4netLB := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace), &lc.sharedResourcesLock)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
 		"Deleting L4 External LoadBalancer for %s", key)
+
 	result := l4netLB.EnsureLoadBalancerDeleted(svc)
 	if result.Error != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error deleting L4 External LoadBalancer, err: %v", result.Error)
 		return result
 	}
+
 	if err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{}); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error reseting L4 External LoadBalancer status to empty, err: %v", err)
 		result.Error = fmt.Errorf("Failed to reset L4 External LoadBalancer status, err: %w", err)
 		return result
 	}
+
+	// Remove LB annotations from the Service when processing the finalizer.
+	if err := updateAnnotations(lc.ctx, svc, nil); err != nil {
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
+			"Error removing resource annotations: %v: %v", err)
+		result.Error = fmt.Errorf("Failed to reset resource annotations, err: %w", err)
+		return result
+	}
+
 	if err := common.EnsureDeleteServiceFinalizer(svc, common.NetLBFinalizerV2, lc.ctx.KubeClient); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error removing finalizer from L4 External LoadBalancer, err: %v", err)
 		result.Error = fmt.Errorf("Failed to remove L4 External LoadBalancer finalizer, err: %w", err)
 		return result
 	}
+
+	// Try to delete instance group, instancePool.DeleteInstanceGroup ignores errors if resource is in use or not found.
+	// TODO(cezarygerard) replace with multi-IG management
+	if err := lc.instancePool.DeleteInstanceGroup(lc.namer.InstanceGroup()); err != nil {
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteInstanceGroupFailed",
+			"Error deleting delete Instance Group from L4 External LoadBalancer, err: %v", err)
+		result.Error = fmt.Errorf("Failed to delete Instance Group, err: %w", err)
+		return result
+	}
+
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletedLoadBalancer", "Deleted L4 External LoadBalancer")
 	return result
 }
