@@ -40,6 +40,8 @@ import (
 	"k8s.io/klog"
 )
 
+const l4NetLBControllerName = "l4netlb-controller"
+
 type L4NetLBController struct {
 	ctx           *context.ControllerContext
 	svcQueue      utils.TaskQueue
@@ -109,7 +111,7 @@ func NewL4NetLBController(
 			}
 		},
 	})
-	ctx.AddHealthCheck("l4netlb-controller", l4netLBc.checkHealth)
+	ctx.AddHealthCheck(l4NetLBControllerName, l4netLBc.checkHealth)
 	return l4netLBc
 }
 
@@ -265,7 +267,7 @@ func (lc *L4NetLBController) checkHealth() error {
 		msg := fmt.Sprintf("L4 External LoadBalancer Sync happened at time %v - %v after enqueue time, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
 		klog.Error(msg)
-		return fmt.Errorf(msg)
+		l4metrics.PublishL4FailedHealthCheckCount(l4NetLBControllerName)
 	}
 	return nil
 }

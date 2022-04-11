@@ -45,6 +45,7 @@ import (
 const (
 	// The max tolerated delay between update being enqueued and sync being invoked.
 	enqueueToSyncDelayThreshold = 15 * time.Minute
+	l4ILBControllerName         = "l4-ilb-subsetting-controller"
 )
 
 // L4Controller manages the create/update delete of all L4 Internal LoadBalancer services.
@@ -132,7 +133,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4C
 	})
 	// TODO enhance this by looking at some metric from service controller to ensure it is up.
 	// We cannot use existence of a backend service or other resource, since those are on a per-service basis.
-	ctx.AddHealthCheck("l4-ilb-subsetting-controller", l4c.checkHealth)
+	ctx.AddHealthCheck(l4ILBControllerName, l4c.checkHealth)
 	return l4c
 }
 
@@ -146,7 +147,7 @@ func (l4c *L4Controller) checkHealth() error {
 		msg := fmt.Sprintf("L4 ILB Sync happened at time %v - %v after enqueue time, threshold is %v", lastSyncTime, lastSyncTime.Sub(lastEnqueueTime), enqueueToSyncDelayThreshold)
 		// Log here, context/http handler do no log the error.
 		klog.Error(msg)
-		return fmt.Errorf(msg)
+		l4metrics.PublishL4FailedHealthCheckCount(l4ILBControllerName)
 	}
 	return nil
 }
