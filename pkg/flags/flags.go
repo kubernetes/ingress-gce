@@ -90,6 +90,7 @@ var (
 		Version                          bool
 		WatchNamespace                   string
 		LeaderElection                   LeaderElectionConfiguration
+		MetricsExportInterval            time.Duration
 
 		// Feature flags should be named Enablexxx.
 		EnableASMConfigMapBasedConfig  bool
@@ -245,6 +246,7 @@ L7 load balancing. CSV values accepted. Example: -node-port-ranges=80,8080,400-5
 	flag.BoolVar(&F.EnableEndpointSlices, "enable-endpoint-slices", false, "Enable using Endpoint Slices API instead of Endpoints API")
 	flag.BoolVar(&F.EnableMultipleIgs, "enable-multiple-igs", false, "Enable using unmanaged instance group management")
 	flag.IntVar(&F.MaxIgSize, "max-ig-size", 1000, "Max number of instances in Instance Group")
+	flag.DurationVar(&F.MetricsExportInterval, "metrics-export-interval", 10*time.Minute, `Period for calculating and exporting metrics related to state of managed objects.`)
 }
 
 type RateLimitSpecs struct {

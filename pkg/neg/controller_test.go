@@ -60,7 +60,8 @@ const (
 )
 
 var (
-	defaultBackend = utils.ServicePort{
+	metricsInterval = 10 * time.Minute
+	defaultBackend  = utils.ServicePort{
 		ID: utils.ServicePortID{
 			Service: types.NamespacedName{
 				Name:      "default-http-backend",
@@ -135,7 +136,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		drDynamicInformer.Informer(),
 		testContext.SvcNegInformer,
 		func() bool { return true },
-		metrics.NewControllerMetrics(),
+		metrics.FakeControllerMetrics(),
 		testContext.L4Namer,
 		defaultBackend,
 		negtypes.NewAdapter(testContext.Cloud),

@@ -41,8 +41,7 @@ const (
 )
 
 var (
-	metricsInterval = 10 * time.Minute
-	ingressCount    = prometheus.NewGaugeVec(
+	ingressCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "number_of_ingresses",
 			Help: "Number of Ingresses",
@@ -142,10 +141,12 @@ type ControllerMetrics struct {
 	serviceMap map[string]struct{}
 	//TODO(kl52752) remove mutex and change map to sync.map
 	sync.Mutex
+	// duration between metrics exports
+	metricsInterval time.Duration
 }
 
 // NewControllerMetrics initializes ControllerMetrics and starts a go routine to compute and export metrics periodically.
-func NewControllerMetrics() *ControllerMetrics {
+func NewControllerMetrics(exportInterval time.Duration) *ControllerMetrics {
 	return &ControllerMetrics{
 		ingressMap:        make(map[string]IngressState),
 		negMap:            make(map[string]NegServiceState),
@@ -153,7 +154,13 @@ func NewControllerMetrics() *ControllerMetrics {
 		l4NetLBServiceMap: make(map[string]L4NetLBServiceState),
 		pscMap:            make(map[string]pscmetrics.PSCState),
 		serviceMap:        make(map[string]struct{}),
+		metricsInterval:   exportInterval,
 	}
+}
+
+// FakeControllerMetrics creates new ControllerMetrics with fixed 10 minutes metricsInterval, to be used in tests
+func FakeControllerMetrics() *ControllerMetrics {
+	return NewControllerMetrics(10 * time.Minute)
 }
 
 // servicePortKey defines a service port uniquely.
@@ -175,12 +182,12 @@ func (spk servicePortKey) string() string {
 }
 
 func (im *ControllerMetrics) Run(stopCh <-chan struct{}) {
-	klog.V(3).Infof("Ingress Metrics initialized. Metrics will be exported at an interval of %v", metricsInterval)
+	klog.V(3).Infof("Ingress Metrics initialized. Metrics will be exported at an interval of %v", im.metricsInterval)
 	// Compute and export metrics periodically.
 	go func() {
 		// Wait for ingress states to be populated in the cache before computing metrics.
-		time.Sleep(metricsInterval)
-		wait.Until(im.export, metricsInterval, stopCh)
+		time.Sleep(im.metricsInterval)
+		wait.Until(im.export, im.metricsInterval, stopCh)
 	}()
 	<-stopCh
 }

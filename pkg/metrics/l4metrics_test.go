@@ -157,7 +157,7 @@ func TestComputeL4ILBMetrics(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			newMetrics := NewControllerMetrics()
+			newMetrics := FakeControllerMetrics()
 			for i, serviceState := range tc.serviceStates {
 				newMetrics.SetL4ILBService(fmt.Sprint(i), serviceState)
 			}
@@ -307,7 +307,7 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 		tc := tc
 		t.Run(tc.desc, func(t *testing.T) {
 			t.Parallel()
-			newMetrics := NewControllerMetrics()
+			newMetrics := FakeControllerMetrics()
 			for i, serviceState := range tc.serviceStates {
 				newMetrics.SetL4NetLBService(fmt.Sprint(i), serviceState)
 			}

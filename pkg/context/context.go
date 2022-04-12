@@ -148,6 +148,7 @@ func NewControllerContext(
 	clusterNamer *namer.Namer,
 	kubeSystemUID types.UID,
 	config ControllerContextConfig) *ControllerContext {
+
 	context := &ControllerContext{
 		KubeConfig:              kubeConfig,
 		KubeClient:              kubeClient,
@@ -157,7 +158,7 @@ func NewControllerContext(
 		ClusterNamer:            clusterNamer,
 		L4Namer:                 namer.NewL4Namer(string(kubeSystemUID), clusterNamer),
 		KubeSystemUID:           kubeSystemUID,
-		ControllerMetrics:       metrics.NewControllerMetrics(),
+		ControllerMetrics:       metrics.NewControllerMetrics(flags.F.MetricsExportInterval),
 		ControllerContextConfig: config,
 		IngressInformer:         informernetworking.NewIngressInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		ServiceInformer:         informerv1.NewServiceInformer(kubeClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
