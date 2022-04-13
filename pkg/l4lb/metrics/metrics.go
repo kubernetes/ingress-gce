@@ -30,6 +30,7 @@ const (
 	L4ilbErrorMetricName     = "l4_ilb_sync_error_count"
 	L4netlbLatencyMetricName = "l4_netlb_sync_duration_seconds"
 	L4netlbErrorMetricName   = "l4_netlb_sync_error_count"
+	l4failedHealthCheckName  = "l4_failed_healthcheck_count"
 )
 
 var (
@@ -80,6 +81,13 @@ var (
 		},
 		l4LBSyncErrorMetricLabels,
 	)
+	l4FailedHealthCheckCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: l4failedHealthCheckName,
+			Help: "Count l4 controller healthcheck failures",
+		},
+		[]string{"controller_name"},
+	)
 )
 
 // init registers l4 ilb nad netlb sync metrics.
@@ -88,6 +96,8 @@ func init() {
 	prometheus.MustRegister(l4ILBSyncLatency, l4ILBSyncErrorCount)
 	klog.V(3).Infof("Registering L4 NetLB controller metrics %v, %v", l4NetLBSyncLatency, l4NetLBSyncErrorCount)
 	prometheus.MustRegister(l4NetLBSyncLatency, l4NetLBSyncErrorCount)
+	klog.V(3).Infof("Registering L4 healthcheck failures count metric: %v", l4FailedHealthCheckCount)
+	prometheus.MustRegister(l4FailedHealthCheckCount)
 }
 
 // PublishL4ILBSyncMetrics exports metrics related to the L4 ILB sync.
@@ -132,4 +142,9 @@ func publishL4NetLBSyncLatency(success bool, syncType string, startTime time.Tim
 // publishL4NetLBSyncLatency exports the given sync latency datapoint.
 func publishL4NetLBSyncErrorCount(syncType, gceResource, errorType string) {
 	l4NetLBSyncErrorCount.WithLabelValues(syncType, gceResource, errorType).Inc()
+}
+
+// PublishL4FailedHealthCheckCount observers failed healt check from controller.
+func PublishL4FailedHealthCheckCount(controllerName string) {
+	l4FailedHealthCheckCount.WithLabelValues(controllerName).Inc()
 }
