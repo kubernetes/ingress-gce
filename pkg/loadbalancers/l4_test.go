@@ -570,6 +570,48 @@ func TestEnsureInternalLoadBalancerDeletedWithSharedHC(t *testing.T) {
 	}
 }
 
+func TestHealthCheckFirewallDeletionWhithNetLB(t *testing.T) {
+	t.Parallel()
+	vals := gce.DefaultTestClusterValues()
+	fakeGCE := getFakeGCECloud(vals)
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.DeleteHook = test.DeleteHealthCheckResourceInUseErrorHook
+	nodeNames := []string{"test-node-1"}
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	// Create ILB Service
+	ilbSvc, l, result := ensureService(fakeGCE, namer, nodeNames, vals.ZoneName, 8081, t)
+	if result != nil && result.Error != nil {
+		t.Fatalf("Error ensuring service err: %v", result.Error)
+	}
+
+	// Create NetLB Service
+	netlbSvc := test.NewL4NetLBRBSService(8080)
+	l4NetLB := NewL4NetLB(netlbSvc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})
+	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
+		t.Errorf("Unexpected error when adding nodes %v", err)
+	}
+	xlbResult := l4NetLB.EnsureFrontend(nodeNames, netlbSvc)
+	if xlbResult.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", xlbResult.Error)
+	}
+	if len(xlbResult.Status.Ingress) == 0 {
+		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
+	}
+	assertNetLbResources(t, netlbSvc, l4NetLB, nodeNames)
+
+	// Delete the ILB loadbalancer
+	result = l.EnsureInternalLoadBalancerDeleted(ilbSvc)
+	if result.Error != nil {
+		t.Errorf("Unexpected error %v", result.Error)
+	}
+	// When NetLB health check uses the same firewall rules we expect that hc firewall rule will not be deleted.
+	_, hcFwName := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, true)
+	firewall, err := l.cloud.GetFirewall(hcFwName)
+	if err != nil || firewall == nil {
+		t.Errorf("Expected firewall exists err: %v, fwR: %v", err, firewall)
+	}
+}
+
 func ensureService(fakeGCE *gce.Cloud, namer *namer_util.L4Namer, nodeNames []string, zoneName string, port int, t *testing.T) (*v1.Service, *L4, *L4ILBSyncResult) {
 	svc := test.NewL4ILBService(false, 8080)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100), &sync.Mutex{})

@@ -50,9 +50,19 @@ func EnsureL4HealthCheck(cloud *gce.Cloud, svc *corev1.Service, namer namer.L4Re
 	if !sharedHC {
 		hcPath, hcPort = helpers.GetServiceHealthCheckPathPort(svc)
 	}
-	nn := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
-	_, hcLink, err := ensureL4HealthCheckInternal(cloud, hcName, nn, sharedHC, hcPath, hcPort, scope, l4Type)
+	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
+	_, hcLink, err := ensureL4HealthCheckInternal(cloud, hcName, namespacedName, sharedHC, hcPath, hcPort, scope, l4Type)
 	return hcLink, hcFwName, hcPort, hcName, err
+}
+
+// HealthCheckDeleted checks if given health check was deleted
+func HealthCheckDeleted(cloud *gce.Cloud, hcName string, scope meta.KeyType) (bool, error) {
+	key, err := composite.CreateKey(cloud, hcName, scope)
+	if err != nil {
+		return false, fmt.Errorf("Failed to create composite key for healthcheck %s - %w", hcName, err)
+	}
+	_, err = composite.GetHealthCheck(cloud, key, meta.VersionGA)
+	return utils.IsNotFoundError(err), nil
 }
 
 func ensureL4HealthCheckInternal(cloud *gce.Cloud, name string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, l4Type utils.L4LBType) (*composite.HealthCheck, string, error) {
