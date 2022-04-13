@@ -26,7 +26,6 @@ import (
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
 )
@@ -42,9 +41,13 @@ const (
 	gceHcUnhealthyThreshold = int64(3)
 )
 
+type healthCheckNamer interface {
+	L4HealthCheck(namespace, name string, shared bool) (string, string)
+}
+
 // EnsureL4HealthCheck creates a new HTTP health check for an L4 LoadBalancer service, based on the parameters provided.
 // If the healthcheck already exists, it is updated as needed.
-func EnsureL4HealthCheck(cloud *gce.Cloud, svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType) (string, string, int32, string, error) {
+func EnsureL4HealthCheck(cloud *gce.Cloud, svc *corev1.Service, namer healthCheckNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType) (string, string, int32, string, error) {
 	hcName, hcFwName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
 	if !sharedHC {

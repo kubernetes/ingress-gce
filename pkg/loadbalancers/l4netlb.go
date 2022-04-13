@@ -45,7 +45,7 @@ type L4NetLB struct {
 	cloud       *gce.Cloud
 	backendPool *backends.Backends
 	scope       meta.KeyType
-	namer       namer.L4ResourcesNamer
+	namer       *namer.L4RegionalHealthCheckNamer
 	// recorder is used to generate k8s Events.
 	recorder            record.EventRecorder
 	Service             *corev1.Service
@@ -67,20 +67,20 @@ type L4NetLBSyncResult struct {
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
-func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder, lock *sync.Mutex) *L4NetLB {
+func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, l4namer namer.L4ResourcesNamer, recorder record.EventRecorder, lock *sync.Mutex) *L4NetLB {
 	l4netlb := &L4NetLB{cloud: cloud,
 		scope:               scope,
-		namer:               namer,
+		namer:               namer.NewL4RegionalHealthCheckNamer(l4namer),
 		recorder:            recorder,
 		Service:             service,
 		sharedResourcesLock: lock,
 		NamespacedName:      types.NamespacedName{Name: service.Name, Namespace: service.Namespace},
-		backendPool:         backends.NewPool(cloud, namer),
+		backendPool:         backends.NewPool(cloud, l4namer),
 	}
 	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
 	l4netlb.ServicePort = utils.ServicePort{
 		ID:           portId,
-		BackendNamer: l4netlb.namer,
+		BackendNamer: l4namer,
 		NodePort:     int64(service.Spec.Ports[0].NodePort),
 		L4RBSEnabled: true,
 	}
