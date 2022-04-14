@@ -105,6 +105,7 @@ type netLBFeatureCount struct {
 	managedStaticIP    int
 	premiumNetworkTier int
 	success            int
+	inUserError        int
 }
 
 func (netlbCount *netLBFeatureCount) record() {
@@ -112,6 +113,7 @@ func (netlbCount *netLBFeatureCount) record() {
 	l4NetLBCount.With(prometheus.Labels{label: l4NetLBStaticIP.String()}).Set(float64(netlbCount.success))
 	l4NetLBCount.With(prometheus.Labels{label: l4NetLBManagedStaticIP.String()}).Set(float64(netlbCount.managedStaticIP))
 	l4NetLBCount.With(prometheus.Labels{label: l4NetLBInSuccess.String()}).Set(float64(netlbCount.success))
+	l4NetLBCount.With(prometheus.Labels{label: l4NetLBInUserError.String()}).Set(float64(netlbCount.inUserError))
 	l4NetLBCount.With(prometheus.Labels{label: l4NetLBInError.String()}).Set(float64(netlbCount.service - netlbCount.success))
 }
 
@@ -515,6 +517,11 @@ func (im *ControllerMetrics) computeL4NetLBMetrics() netLBFeatureCount {
 	for key, state := range im.l4NetLBServiceMap {
 		klog.V(6).Infof("NetLB Service %s has metrics %+v", key, state)
 		counts.service++
+		if state.IsUserError {
+			counts.inUserError++
+			// Skip counting other features if the service is in error state.
+			continue
+		}
 		if !state.InSuccess {
 			// Skip counting other features if the service is in error state.
 			continue

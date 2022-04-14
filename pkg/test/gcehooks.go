@@ -30,6 +30,9 @@ import (
 
 const (
 	FwIPAddress = "10.0.0.1"
+	// backend-service url, was created based on project and region set in test function DefaultTestClusterValues().
+	// We need whole url for forwarding rule validation.
+	bsUrl = "https://www.googleapis.com/compute/v1/projects/test-project/regions/us-central1/backendServices/k8s2-axyqjz2d-default-netbtest-hgray14h"
 )
 
 func ListErrorHook(ctx context.Context, zone string, fl *filter.F, m *cloud.MockInstanceGroups) (bool, []*compute.InstanceGroup, error) {
@@ -99,6 +102,15 @@ func GetRBSForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwa
 	return true, &fwRule, nil
 }
 
+func GetRBSForwardingRuleInStandardTier(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, *compute.ForwardingRule, error) {
+	fwRule := compute.ForwardingRule{BackendService: bsUrl, LoadBalancingScheme: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierStandard.ToGCEValue()}
+	return true, &fwRule, nil
+}
+
 func InsertAddressErrorHook(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses) (bool, error) {
 	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "Cannot reserve region address, the resource already exist"}
+}
+
+func InsertAddressNetworkErrorHook(ctx context.Context, key *meta.Key, obj *compute.Address, m *cloud.MockAddresses) (bool, error) {
+	return true, &googleapi.Error{Code: http.StatusBadRequest, Message: "The network tier of external IP is STANDARD, that of Address must be the same."}
 }

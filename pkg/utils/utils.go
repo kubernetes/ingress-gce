@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -90,6 +91,24 @@ const (
 	// be removed in 1.18.
 	LabelAlphaNodeRoleExcludeBalancer = "alpha.service-controller.kubernetes.io/exclude-balancer"
 )
+
+var networkTierErrorRegexp = regexp.MustCompile(`The network tier of external IP is STANDARD|PREMIUM, that of Address must be the same.`)
+
+// NetworkTierError is a struct to define error caused by User misconfiguration of Network Tier.
+type NetworkTierError struct {
+	resource   string
+	desiredNT  string
+	receivedNT string
+}
+
+// Error function prints out Network Tier error.
+func (e *NetworkTierError) Error() string {
+	return fmt.Sprintf("Network tier mismatch for resource %s, desired: %s, received: %s", e.resource, e.desiredNT, e.receivedNT)
+}
+
+func NewNetworkTierErr(resourceInErr, desired, received string) *NetworkTierError {
+	return &NetworkTierError{resource: resourceInErr, desiredNT: desired, receivedNT: received}
+}
 
 // L4LBType indicates if L4 LoadBalancer is Internal or External
 type L4LBType int
@@ -166,6 +185,24 @@ func IsInUsedByError(err error) bool {
 		return false
 	}
 	return strings.Contains(apiErr.Message, "being used by")
+}
+
+// IsNetworkTierMismatchGCEError checks if error is a GCE network tier mismatch for external IP
+func IsNetworkTierMismatchGCEError(err error) bool {
+	return networkTierErrorRegexp.MatchString(err.Error())
+}
+
+// IsNetworkTierError checks if wrapped error is a Network Tier Mismatch error
+func IsNetworkTierError(err error) bool {
+	var netTierError *NetworkTierError
+	return errors.As(err, &netTierError)
+}
+
+// IsUserError checks if given error is cause by User.
+// Right now User Error might be cause by Network Tier misconfiguration
+// but this list might get longer.
+func IsUserError(err error) bool {
+	return IsNetworkTierError(err)
 }
 
 // IsNotFoundError returns true if the resource does not exist

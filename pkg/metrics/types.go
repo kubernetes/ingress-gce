@@ -79,6 +79,8 @@ type L4NetLBServiceState struct {
 	IsPremiumTier bool
 	// InSuccess specifies if the NetLB service VIP is configured.
 	InSuccess bool
+	// IsUserError specifies if the error was caused by User misconfiguration.
+	IsUserError bool
 }
 
 // IngressMetricsCollector is an interface to update/delete ingress states in the cache

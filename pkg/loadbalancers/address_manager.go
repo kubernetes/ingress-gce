@@ -165,6 +165,19 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 		return addr.Address, IPAddrManaged, nil
 	}
 
+	if utils.IsNetworkTierMismatchGCEError(reserveErr) {
+		receivedNetworkTier := cloud.NetworkTierPremium
+		if receivedNetworkTier == am.networkTier {
+			// We don't have information of current ephemeral IP address Network Tier since
+			// we try to reserve the address so we need to check against desired Network Tier and set the opposite one.
+			// This is just for error message.
+			receivedNetworkTier = cloud.NetworkTierStandard
+		}
+		resource := fmt.Sprintf("Reserved static IP (%v)", am.name)
+		networkTierError := utils.NewNetworkTierErr(resource, string(am.networkTier), string(receivedNetworkTier))
+		return "", IPAddrUndefined, networkTierError
+	}
+
 	if !utils.IsHTTPErrorCode(reserveErr, http.StatusConflict) && !utils.IsHTTPErrorCode(reserveErr, http.StatusBadRequest) {
 		// If the IP is already reserved:
 		//    by an internal address: a StatusConflict is returned
@@ -187,7 +200,7 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 
 	// Check that the address attributes are as required.
 	if err := am.validateAddress(addr); err != nil {
-		return "", IPAddrUndefined, err
+		return "", IPAddrUndefined, fmt.Errorf("address (%q) validation failed, err: %w", addr.Name, err)
 	}
 
 	if am.isManagedAddress(addr) {
@@ -205,13 +218,13 @@ func (am *addressManager) ensureAddressReservation() (string, IPAddressType, err
 
 func (am *addressManager) validateAddress(addr *compute.Address) error {
 	if am.targetIP != "" && am.targetIP != addr.Address {
-		return fmt.Errorf("address %q does not have the expected IP %q, actual: %q", addr.Name, am.targetIP, addr.Address)
+		return fmt.Errorf("IP mismatch, expected %q, actual: %q", am.targetIP, addr.Address)
 	}
 	if addr.AddressType != string(am.addressType) {
-		return fmt.Errorf("address %q does not have the expected address type %q, actual: %q", addr.Name, am.addressType, addr.AddressType)
+		return fmt.Errorf("address type mismatch, expected %q, actual: %q", am.addressType, addr.AddressType)
 	}
 	if addr.NetworkTier != am.networkTier.ToGCEValue() {
-		return fmt.Errorf("address %q does not have the expected network tier %q, actual: %q", addr.Name, am.networkTier.ToGCEValue(), addr.NetworkTier)
+		return utils.NewNetworkTierErr(fmt.Sprintf("Static IP (%v)", am.name), am.networkTier.ToGCEValue(), addr.NetworkTier)
 	}
 	return nil
 }
@@ -238,7 +251,7 @@ func (am *addressManager) TearDownAddressIPIfNetworkTierMismatch() error {
 	}
 	if addr != nil && addr.NetworkTier != am.networkTier.ToGCEValue() {
 		if !am.isManagedAddress(addr) {
-			return fmt.Errorf("User specific address IP (%v) network tier mismatch %v != %v ", am.targetIP, addr.NetworkTier, am.networkTier)
+			return utils.NewNetworkTierErr(fmt.Sprintf("User specific address IP (%v)", am.name), string(am.networkTier), addr.NetworkTier)
 		}
 		klog.V(3).Infof("Deleting IP address %v because has wrong network tier", am.targetIP)
 		am.svc.DeleteRegionAddress(addr.Name, am.targetIP)

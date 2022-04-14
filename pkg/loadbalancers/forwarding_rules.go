@@ -388,6 +388,11 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.
 	}
 
 	if existingFwdRule != nil {
+		if existingFwdRule.NetworkTier != fr.NetworkTier {
+			resource := fmt.Sprintf("Forwarding rule (%v)", frName)
+			networkTierMismatchError := utils.NewNetworkTierErr(resource, existingFwdRule.NetworkTier, fr.NetworkTier)
+			return nil, IPAddrUndefined, networkTierMismatchError
+		}
 		equal, err := Equal(existingFwdRule, fr)
 		if err != nil {
 			return existingFwdRule, IPAddrUndefined, err

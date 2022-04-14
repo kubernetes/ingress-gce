@@ -142,6 +142,8 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	result.Annotations[annotations.BackendServiceKey] = name
 	fr, ipAddrType, err := l4netlb.ensureExternalForwardingRule(bs.SelfLink)
 	if err != nil {
+		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
+		result.MetricsState.IsUserError = utils.IsUserError(err)
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 		result.Error = fmt.Errorf("Failed to ensure forwarding rule - %w", err)
 		return result
