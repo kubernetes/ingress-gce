@@ -982,6 +982,47 @@ func TestIsRBSBasedServiceWithILBServices(t *testing.T) {
 	}
 }
 
+func TestIsRBSBasedServiceForSvcTypes(t *testing.T) {
+	testCases := []struct {
+		//desc             string
+		scvType      v1.ServiceType
+		wantRBSBased bool
+	}{
+		{
+			scvType:      v1.ServiceTypeClusterIP,
+			wantRBSBased: false,
+		},
+		{
+			scvType:      v1.ServiceTypeClusterIP,
+			wantRBSBased: false,
+		},
+		{
+			scvType:      v1.ServiceTypeNodePort,
+			wantRBSBased: false,
+		},
+		{
+			scvType:      v1.ServiceTypeLoadBalancer,
+			wantRBSBased: true,
+		},
+		{
+			scvType:      v1.ServiceTypeExternalName,
+			wantRBSBased: false,
+		},
+	}
+	for _, testCase := range testCases {
+		t.Run(string(testCase.scvType), func(t *testing.T) {
+			controller := newL4NetLBServiceController()
+			svc := test.NewL4NetLBRBSService(8080)
+			svc.Spec.Type = testCase.scvType
+			result := controller.isRBSBasedService(svc)
+			if result != testCase.wantRBSBased {
+				t.Errorf("Service Type: %v, isRBSBasedService(_) want: %v, got %v", testCase.scvType, testCase.wantRBSBased, result)
+			}
+		})
+	}
+
+}
+
 func TestIsRBSBasedServiceByForwardingRuleAnnotation(t *testing.T) {
 	svc := test.NewL4LegacyNetLBService(8080, 30234)
 	controller := newL4NetLBServiceController()
@@ -1033,10 +1074,20 @@ func TestShouldProcessService(t *testing.T) {
 	svcWithRBSAnnotationAndFinalizer.ObjectMeta.Finalizers = append(svcWithRBSAnnotationAndFinalizer.ObjectMeta.Finalizers, common.NetLBFinalizerV2)
 	svcWithRBSAnnotationAndFinalizer.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
 
+	svcILBWithRBSFinalizer := test.NewL4ILBService(false, 8080)
+	svcILBWithRBSFinalizer.ObjectMeta.Finalizers = append(svcWithRBSFinalizer.ObjectMeta.Finalizers, common.NetLBFinalizerV2)
+
+	svcWithFwdRuleAnnotation := test.NewL4LegacyNetLBService(8080, 8080)
+	svcWithFwdRuleAnnotation.UID = "123"
+	svcWithFwdRuleAnnotation.ObjectMeta.Annotations[annotations.TCPForwardingRuleKey] = "a123"
+
+	svcWithFwdRuleInGCP := test.NewL4LegacyNetLBService(8080, 8080)
+
 	for _, testCase := range []struct {
 		oldSvc        *v1.Service
 		newSvc        *v1.Service
 		shouldProcess bool
+		frHook        getForwardingRuleHook
 	}{
 		{
 			oldSvc:        nil,
@@ -1079,10 +1130,100 @@ func TestShouldProcessService(t *testing.T) {
 			newSvc:        svcWithRBSAnnotationAndFinalizer,
 			shouldProcess: true,
 		},
+		{
+			oldSvc:        nil,
+			newSvc:        svcILBWithRBSFinalizer,
+			shouldProcess: true,
+		},
+		{
+			oldSvc:        nil,
+			newSvc:        svcWithFwdRuleAnnotation,
+			shouldProcess: true,
+		},
+		{
+			oldSvc:        nil,
+			newSvc:        svcWithFwdRuleInGCP,
+			shouldProcess: true,
+			frHook:        test.GetRBSForwardingRule,
+		},
+		{
+			oldSvc:        nil,
+			newSvc:        svcWithFwdRuleInGCP,
+			shouldProcess: false,
+			frHook:        test.GetLegacyForwardingRule,
+		},
 	} {
+		l4netController.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = testCase.frHook
+
 		result := l4netController.shouldProcessService(testCase.newSvc, testCase.oldSvc)
 		if result != testCase.shouldProcess {
 			t.Errorf("Old service %v. New service %v. Expected shouldProcess: %t, got: %t", testCase.oldSvc, testCase.newSvc, testCase.shouldProcess, result)
+		}
+	}
+}
+
+func TestNeedsDeletion(t *testing.T) {
+	legacyNetLBSvc, l4netController := createAndSyncLegacyNetLBSvc(t)
+
+	svcWithRBSFinalizer, _ := l4netController.ctx.KubeClient.CoreV1().Services(legacyNetLBSvc.Namespace).Get(context.TODO(), legacyNetLBSvc.Name, metav1.GetOptions{})
+	svcWithRBSFinalizer.ObjectMeta.Finalizers = append(svcWithRBSFinalizer.ObjectMeta.Finalizers, common.NetLBFinalizerV2)
+
+	svcWithRBSAnnotation, _ := l4netController.ctx.KubeClient.CoreV1().Services(legacyNetLBSvc.Namespace).Get(context.TODO(), legacyNetLBSvc.Name, metav1.GetOptions{})
+	svcWithRBSAnnotation.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
+
+	svcWithRBSAnnotationAndFinalizer, _ := l4netController.ctx.KubeClient.CoreV1().Services(legacyNetLBSvc.Namespace).Get(context.TODO(), legacyNetLBSvc.Name, metav1.GetOptions{})
+	svcWithRBSAnnotationAndFinalizer.ObjectMeta.Finalizers = append(svcWithRBSAnnotationAndFinalizer.ObjectMeta.Finalizers, common.NetLBFinalizerV2)
+	svcWithRBSAnnotationAndFinalizer.Annotations = map[string]string{annotations.RBSAnnotationKey: annotations.RBSEnabled}
+
+	svcILBWithRBSFinalizer := test.NewL4ILBService(false, 8080)
+	svcILBWithRBSFinalizer.ObjectMeta.Finalizers = append(svcWithRBSFinalizer.ObjectMeta.Finalizers, common.NetLBFinalizerV2)
+
+	svcWithFwdRuleAnnotation := test.NewL4LegacyNetLBService(8080, 8080)
+	svcWithFwdRuleAnnotation.UID = "123"
+	svcWithFwdRuleAnnotation.ObjectMeta.Annotations[annotations.TCPForwardingRuleKey] = "a123"
+
+	svcWithFwdRuleInGCP := test.NewL4LegacyNetLBService(8080, 8080)
+
+	for _, testCase := range []struct {
+		newSvc        *v1.Service
+		needsDeletion bool
+		frHook        getForwardingRuleHook
+	}{
+		{
+			newSvc:        legacyNetLBSvc,
+			needsDeletion: false,
+		},
+		{
+			newSvc:        svcWithRBSFinalizer,
+			needsDeletion: false,
+		},
+		{
+			newSvc:        svcWithRBSAnnotation,
+			needsDeletion: false,
+		},
+		{
+			newSvc:        svcWithRBSAnnotationAndFinalizer,
+			needsDeletion: false,
+		},
+		{
+			newSvc:        svcILBWithRBSFinalizer,
+			needsDeletion: true,
+		},
+		{
+			newSvc:        svcWithFwdRuleAnnotation,
+			needsDeletion: false,
+		},
+		{
+			newSvc:        svcWithFwdRuleInGCP,
+			needsDeletion: false,
+			frHook:        test.GetRBSForwardingRule,
+		},
+	} {
+		l4netController.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = testCase.frHook
+
+		result := l4netController.needsDeletion(testCase.newSvc)
+		if result != testCase.needsDeletion {
+			t.Errorf("Service %v. Expected needsDeletion: %t, got: %t", testCase.newSvc, testCase.needsDeletion, result)
 		}
 	}
 }

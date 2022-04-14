@@ -247,14 +247,28 @@ func (lc *L4NetLBController) hasRBSForwardingRule(svc *v1.Service) bool {
 }
 
 // isRBSBasedService checks if service has either RBS annotation, finalizer or RBSForwardingRule
+// tries to filter out all other service types before proceeding to checking forwarding rule
 func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service) bool {
-	if svc == nil {
+	if !annotations.IsLoadBalancerType(svc) {
 		return false
 	}
+
 	if val, ok := svc.Annotations[annotations.RBSAnnotationKey]; ok && val == annotations.RBSEnabled {
 		return true
 	}
-	return utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc)
+
+	if utils.HasL4NetLBFinalizerV2(svc) {
+		return true
+	}
+
+	if utils.IsLegacyL4ILBService(svc) {
+		return false
+	}
+
+	if utils.IsSubsettingL4ILBService(svc) {
+		return false
+	}
+	return lc.hasRBSForwardingRule(svc)
 }
 
 func (lc *L4NetLBController) checkHealth() error {
