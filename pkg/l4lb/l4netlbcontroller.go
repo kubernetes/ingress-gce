@@ -375,7 +375,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
 		return syncResult
 	}
-	syncResult.MetricsState.InSuccess = true
+	syncResult.SetMetricsForSuccessfulService()
 	return syncResult
 }
 

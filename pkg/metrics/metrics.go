@@ -106,6 +106,7 @@ type netLBFeatureCount struct {
 	premiumNetworkTier int
 	success            int
 	inUserError        int
+	inError            int
 }
 
 func (netlbCount *netLBFeatureCount) record() {
@@ -114,7 +115,7 @@ func (netlbCount *netLBFeatureCount) record() {
 	l4NetLBCount.With(prometheus.Labels{label: l4NetLBManagedStaticIP.String()}).Set(float64(netlbCount.managedStaticIP))
 	l4NetLBCount.With(prometheus.Labels{label: l4NetLBInSuccess.String()}).Set(float64(netlbCount.success))
 	l4NetLBCount.With(prometheus.Labels{label: l4NetLBInUserError.String()}).Set(float64(netlbCount.inUserError))
-	l4NetLBCount.With(prometheus.Labels{label: l4NetLBInError.String()}).Set(float64(netlbCount.service - netlbCount.success))
+	l4NetLBCount.With(prometheus.Labels{label: l4NetLBInError.String()}).Set(float64(netlbCount.inError))
 }
 
 // init registers ingress usage metrics.
@@ -161,24 +162,27 @@ type ControllerMetrics struct {
 	sync.Mutex
 	// duration between metrics exports
 	metricsInterval time.Duration
+	// Time during which the L4 NetLB service should be provision.
+	l4NetLBProvisionDeadline time.Duration
 }
 
 // NewControllerMetrics initializes ControllerMetrics and starts a go routine to compute and export metrics periodically.
-func NewControllerMetrics(exportInterval time.Duration) *ControllerMetrics {
+func NewControllerMetrics(exportInterval, l4NetLBProvisionDeadline time.Duration) *ControllerMetrics {
 	return &ControllerMetrics{
-		ingressMap:        make(map[string]IngressState),
-		negMap:            make(map[string]NegServiceState),
-		l4ILBServiceMap:   make(map[string]L4ILBServiceState),
-		l4NetLBServiceMap: make(map[string]L4NetLBServiceState),
-		pscMap:            make(map[string]pscmetrics.PSCState),
-		serviceMap:        make(map[string]struct{}),
-		metricsInterval:   exportInterval,
+		ingressMap:               make(map[string]IngressState),
+		negMap:                   make(map[string]NegServiceState),
+		l4ILBServiceMap:          make(map[string]L4ILBServiceState),
+		l4NetLBServiceMap:        make(map[string]L4NetLBServiceState),
+		pscMap:                   make(map[string]pscmetrics.PSCState),
+		serviceMap:               make(map[string]struct{}),
+		metricsInterval:          exportInterval,
+		l4NetLBProvisionDeadline: l4NetLBProvisionDeadline,
 	}
 }
 
 // FakeControllerMetrics creates new ControllerMetrics with fixed 10 minutes metricsInterval, to be used in tests
 func FakeControllerMetrics() *ControllerMetrics {
-	return NewControllerMetrics(10 * time.Minute)
+	return NewControllerMetrics(10*time.Minute, 20*time.Minute)
 }
 
 // servicePortKey defines a service port uniquely.
@@ -274,6 +278,13 @@ func (im *ControllerMetrics) SetL4NetLBService(svcKey string, state L4NetLBServi
 
 	if im.l4NetLBServiceMap == nil {
 		klog.Fatalf("L4 Net LB Metrics failed to initialize correctly.")
+	}
+
+	if !state.InSuccess {
+		if previousState, ok := im.l4NetLBServiceMap[svcKey]; ok && previousState.FirstSyncErrorTime != nil {
+			// If service is in Error state and retry timestamp was set then do not update it.
+			state.FirstSyncErrorTime = previousState.FirstSyncErrorTime
+		}
 	}
 	im.l4NetLBServiceMap[svcKey] = state
 }
@@ -523,6 +534,9 @@ func (im *ControllerMetrics) computeL4NetLBMetrics() netLBFeatureCount {
 			continue
 		}
 		if !state.InSuccess {
+			if time.Since(*state.FirstSyncErrorTime) > im.l4NetLBProvisionDeadline {
+				counts.inError++
+			}
 			// Skip counting other features if the service is in error state.
 			continue
 		}
