@@ -99,6 +99,22 @@ var (
 	)
 )
 
+// netLBFeatureCount define metric feature count for L4NetLB controller
+type netLBFeatureCount struct {
+	service            int
+	managedStaticIP    int
+	premiumNetworkTier int
+	success            int
+}
+
+func (netlbCount *netLBFeatureCount) record() {
+	l4NetLBCount.With(prometheus.Labels{label: l4NetLBService.String()}).Set(float64(netlbCount.service))
+	l4NetLBCount.With(prometheus.Labels{label: l4NetLBStaticIP.String()}).Set(float64(netlbCount.success))
+	l4NetLBCount.With(prometheus.Labels{label: l4NetLBManagedStaticIP.String()}).Set(float64(netlbCount.managedStaticIP))
+	l4NetLBCount.With(prometheus.Labels{label: l4NetLBInSuccess.String()}).Set(float64(netlbCount.success))
+	l4NetLBCount.With(prometheus.Labels{label: l4NetLBInError.String()}).Set(float64(netlbCount.service - netlbCount.success))
+}
+
 // init registers ingress usage metrics.
 func init() {
 	klog.V(3).Infof("Registering Ingress usage metrics %v and %v, NEG usage metrics %v", ingressCount, servicePortCount, networkEndpointGroupCount)
@@ -338,9 +354,8 @@ func (im *ControllerMetrics) export() {
 
 	netlbCount := im.computeL4NetLBMetrics()
 	klog.V(3).Infof("Exporting L4 NetLB usage metrics: %#v", netlbCount)
-	for feature, count := range netlbCount {
-		l4NetLBCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
-	}
+	netlbCount.record()
+
 	klog.V(3).Infof("L4 NetLB usage metrics exported.")
 
 	saCount := im.computePSCMetrics()
@@ -491,34 +506,25 @@ func (im *ControllerMetrics) computeL4ILBMetrics() map[feature]int {
 }
 
 // computeL4NetLBMetrics aggregates L4 NetLB metrics in the cache.
-func (im *ControllerMetrics) computeL4NetLBMetrics() map[feature]int {
+func (im *ControllerMetrics) computeL4NetLBMetrics() netLBFeatureCount {
 	im.Lock()
 	defer im.Unlock()
 	klog.V(4).Infof("Computing L4 NetLB usage metrics from service state map: %#v", im.l4NetLBServiceMap)
-	counts := map[feature]int{
-		l4NetLBService:            0,
-		l4NetLBStaticIP:           0,
-		l4NetLBManagedStaticIP:    0,
-		l4NetLBPremiumNetworkTier: 0,
-		l4NetLBInSuccess:          0,
-		l4NetLBInError:            0,
-	}
+	var counts netLBFeatureCount
 
 	for key, state := range im.l4NetLBServiceMap {
 		klog.V(6).Infof("NetLB Service %s has metrics %+v", key, state)
-		counts[l4NetLBService]++
+		counts.service++
 		if !state.InSuccess {
-			counts[l4NetLBInError]++
 			// Skip counting other features if the service is in error state.
 			continue
 		}
-		counts[l4NetLBInSuccess]++
-		counts[l4NetLBStaticIP]++
+		counts.success++
 		if state.IsManagedIP {
-			counts[l4NetLBManagedStaticIP]++
+			counts.managedStaticIP++
 		}
 		if state.IsPremiumTier {
-			counts[l4NetLBPremiumNetworkTier]++
+			counts.premiumNetworkTier++
 		}
 	}
 	klog.V(4).Info("L4 NetLB usage metrics computed.")

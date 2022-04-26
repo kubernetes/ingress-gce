@@ -182,18 +182,16 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 	for _, tc := range []struct {
 		desc               string
 		serviceStates      []L4NetLBServiceState
-		expectL4NetLBCount map[feature]int
+		expectL4NetLBCount netLBFeatureCount
 	}{
 		{
 			desc:          "empty input",
 			serviceStates: []L4NetLBServiceState{},
-			expectL4NetLBCount: map[feature]int{
-				l4NetLBService:            0,
-				l4NetLBManagedStaticIP:    0,
-				l4NetLBStaticIP:           0,
-				l4NetLBPremiumNetworkTier: 0,
-				l4NetLBInSuccess:          0,
-				l4NetLBInError:            0,
+			expectL4NetLBCount: netLBFeatureCount{
+				service:            0,
+				managedStaticIP:    0,
+				premiumNetworkTier: 0,
+				success:            0,
 			},
 		},
 		{
@@ -201,13 +199,11 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 			serviceStates: []L4NetLBServiceState{
 				newL4NetLBServiceState(isSuccess, unmanaged, standard),
 			},
-			expectL4NetLBCount: map[feature]int{
-				l4NetLBService:            1,
-				l4NetLBManagedStaticIP:    0,
-				l4NetLBStaticIP:           1,
-				l4NetLBPremiumNetworkTier: 0,
-				l4NetLBInSuccess:          1,
-				l4NetLBInError:            0,
+			expectL4NetLBCount: netLBFeatureCount{
+				service:            1,
+				managedStaticIP:    0,
+				premiumNetworkTier: 0,
+				success:            1,
 			},
 		},
 		{
@@ -215,13 +211,11 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 			serviceStates: []L4NetLBServiceState{
 				newL4NetLBServiceState(isSuccess, unmanaged, premium),
 			},
-			expectL4NetLBCount: map[feature]int{
-				l4NetLBService:            1,
-				l4NetLBManagedStaticIP:    0,
-				l4NetLBStaticIP:           1,
-				l4NetLBPremiumNetworkTier: 1,
-				l4NetLBInSuccess:          1,
-				l4NetLBInError:            0,
+			expectL4NetLBCount: netLBFeatureCount{
+				service:            1,
+				managedStaticIP:    0,
+				premiumNetworkTier: 1,
+				success:            1,
 			},
 		},
 		{
@@ -229,13 +223,11 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 			serviceStates: []L4NetLBServiceState{
 				newL4NetLBServiceState(isSuccess, managed, premium),
 			},
-			expectL4NetLBCount: map[feature]int{
-				l4NetLBService:            1,
-				l4NetLBManagedStaticIP:    1,
-				l4NetLBStaticIP:           1,
-				l4NetLBPremiumNetworkTier: 1,
-				l4NetLBInSuccess:          1,
-				l4NetLBInError:            0,
+			expectL4NetLBCount: netLBFeatureCount{
+				service:            1,
+				managedStaticIP:    1,
+				premiumNetworkTier: 1,
+				success:            1,
 			},
 		},
 		{
@@ -243,13 +235,11 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 			serviceStates: []L4NetLBServiceState{
 				newL4NetLBServiceState(isError, unmanaged, standard),
 			},
-			expectL4NetLBCount: map[feature]int{
-				l4NetLBService:            1,
-				l4NetLBManagedStaticIP:    0,
-				l4NetLBStaticIP:           0,
-				l4NetLBPremiumNetworkTier: 0,
-				l4NetLBInSuccess:          0,
-				l4NetLBInError:            1,
+			expectL4NetLBCount: netLBFeatureCount{
+				service:            1,
+				managedStaticIP:    0,
+				premiumNetworkTier: 0,
+				success:            0,
 			},
 		},
 		{
@@ -258,13 +248,11 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 				newL4NetLBServiceState(isError, unmanaged, standard),
 				newL4NetLBServiceState(isError, managed, premium),
 			},
-			expectL4NetLBCount: map[feature]int{
-				l4NetLBService:            2,
-				l4NetLBManagedStaticIP:    0,
-				l4NetLBStaticIP:           0,
-				l4NetLBPremiumNetworkTier: 0,
-				l4NetLBInSuccess:          0,
-				l4NetLBInError:            2,
+			expectL4NetLBCount: netLBFeatureCount{
+				service:            2,
+				managedStaticIP:    0,
+				premiumNetworkTier: 0,
+				success:            0,
 			},
 		},
 		{
@@ -273,13 +261,11 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 				newL4NetLBServiceState(isSuccess, unmanaged, standard),
 				newL4NetLBServiceState(isSuccess, unmanaged, premium),
 			},
-			expectL4NetLBCount: map[feature]int{
-				l4NetLBService:            2,
-				l4NetLBManagedStaticIP:    0,
-				l4NetLBStaticIP:           2,
-				l4NetLBPremiumNetworkTier: 1,
-				l4NetLBInSuccess:          2,
-				l4NetLBInError:            0,
+			expectL4NetLBCount: netLBFeatureCount{
+				service:            2,
+				managedStaticIP:    0,
+				premiumNetworkTier: 1,
+				success:            2,
 			},
 		},
 		{
@@ -294,13 +280,11 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 				newL4NetLBServiceState(isError, managed, premium),
 				newL4NetLBServiceState(isError, managed, standard),
 			},
-			expectL4NetLBCount: map[feature]int{
-				l4NetLBService:            8,
-				l4NetLBManagedStaticIP:    3,
-				l4NetLBStaticIP:           6,
-				l4NetLBPremiumNetworkTier: 4,
-				l4NetLBInSuccess:          6,
-				l4NetLBInError:            2,
+			expectL4NetLBCount: netLBFeatureCount{
+				service:            8,
+				managedStaticIP:    3,
+				premiumNetworkTier: 4,
+				success:            6,
 			},
 		},
 	} {
@@ -312,7 +296,7 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 				newMetrics.SetL4NetLBService(fmt.Sprint(i), serviceState)
 			}
 			got := newMetrics.computeL4NetLBMetrics()
-			if diff := cmp.Diff(tc.expectL4NetLBCount, got); diff != "" {
+			if diff := cmp.Diff(tc.expectL4NetLBCount, got, cmp.AllowUnexported(netLBFeatureCount{})); diff != "" {
 				t.Fatalf("Got diff for L4 NetLB service counts (-want +got):\n%s", diff)
 			}
 		})
