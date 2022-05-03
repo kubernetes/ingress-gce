@@ -23,7 +23,7 @@ under [core]/project is the one that contains your cluster. Second, ensure that
 the current logged-in account listed under [core]/account is the owner of the project.
 In other words, this account should have full project ownership permissions and be listed as
 having the "Owner" role on the IAM page of your GCP project. You might ask why this
-is needed? Well, the reason is that our [script](../resources/gke-self-managed.sh) invokes a kubectl command which
+is needed? Well, the reason is that our [script](gke-self-managed.sh) invokes a kubectl command which
 creates a new k8s RBAC role (see below for explanation why). In order to do this, the
 current user must be the project owner. The "Owner" role also gives the account
 permission to do basically anything so all commands the script runs should
