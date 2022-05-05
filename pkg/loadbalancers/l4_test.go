@@ -68,7 +68,7 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	bsName, _ := l.namer.L4Backend(l.Service.Namespace, l.Service.Name)
 	_, err := l.backendPool.EnsureL4BackendService(bsName, "", "TCP", string(svc.Spec.SessionAffinity), string(cloud.SchemeInternal), l.NamespacedName, meta.VersionGA)
@@ -119,7 +119,7 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -176,7 +176,7 @@ func TestEnsureInternalLoadBalancerTypeChange(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -210,7 +210,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -253,7 +253,7 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 	svc := test.NewL4ILBService(true, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
@@ -373,7 +373,7 @@ func TestUpdateResourceLinks(t *testing.T) {
 	svc := test.NewL4ILBService(true, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
@@ -451,7 +451,7 @@ func TestEnsureInternalLoadBalancerHealthCheckConfigurable(t *testing.T) {
 	svc := test.NewL4ILBService(true, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
@@ -494,7 +494,7 @@ func TestEnsureInternalLoadBalancerDeleted(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -526,7 +526,7 @@ func TestEnsureInternalLoadBalancerDeletedTwiceDoesNotError(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -592,7 +592,6 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 	vals := gce.DefaultTestClusterValues()
 	fakeGCE := getFakeGCECloud(vals)
 
-	(fakeGCE.Compute().(*cloud.MockGCE)).MockHealthChecks.DeleteHook = test.DeleteHealthCheckResourceInUseErrorHook
 	nodeNames := []string{"test-node-1"}
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 
@@ -605,11 +604,10 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 	// Create NetLB Service
 	netlbSvc := test.NewL4NetLBRBSService(8080)
 	l4NetLB := NewL4NetLB(netlbSvc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l4NetLB.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	// make sure both ilb and netlb use the same l4 healtcheck instance
+	l4NetLB.l4HealthChecks = l.l4HealthChecks
 
-	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
-		t.Errorf("Unexpected error when adding nodes %v", err)
-	}
+	// create netlb resources
 	xlbResult := l4NetLB.EnsureFrontend(nodeNames, netlbSvc)
 	if xlbResult.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", xlbResult.Error)
@@ -624,18 +622,25 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("Unexpected error %v", result.Error)
 	}
+
 	// When NetLB health check uses the same firewall rules we expect that hc firewall rule will not be deleted.
-	_, hcFwName := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, true)
+	haName, hcFwName := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, true)
 	firewall, err := l.cloud.GetFirewall(hcFwName)
 	if err != nil || firewall == nil {
 		t.Errorf("Expected firewall exists err: %v, fwR: %v", err, firewall)
+	}
+
+	// The healthcheck itself should be deleted.
+	healthcheck, err := l.cloud.GetHealthCheck(haName)
+	if err == nil || healthcheck != nil {
+		t.Errorf("Expected error when looking up shared healthcheck after deletion")
 	}
 }
 
 func ensureService(fakeGCE *gce.Cloud, namer *namer_util.L4Namer, nodeNames []string, zoneName string, port int, t *testing.T) (*v1.Service, *L4, *L4ILBSyncResult) {
 	svc := test.NewL4ILBService(false, 8080)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, zoneName); err != nil {
 		return nil, nil, &L4ILBSyncResult{Error: fmt.Errorf("Unexpected error when adding nodes %v", err)}
@@ -660,7 +665,7 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -767,7 +772,7 @@ func TestEnsureInternalLoadBalancerErrors(t *testing.T) {
 			fakeGCE := getFakeGCECloud(gce.DefaultTestClusterValues())
 
 			l := NewL4Handler(params.service, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-			l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+			l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 			//lbName := l.namer.L4Backend(params.service.Namespace, params.service.Name)
 			frName := l.GetFRName()
@@ -850,7 +855,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -932,7 +937,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -1030,7 +1035,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	fwName, _ := l.namer.L4Backend(l.Service.Namespace, l.Service.Name)
 	tc := struct {
@@ -1084,7 +1089,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	_, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName)
 	if err != nil {
@@ -1176,7 +1181,7 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 	svc := test.NewL4ILBService(false, 8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 	l := NewL4Handler(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
-	l.l4HealthChecks = healthchecks.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -1309,9 +1314,9 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 		if len(firewall.SourceRanges) == 0 {
 			t.Fatalf("Unexpected empty source range for firewall rule %v", firewall)
 		}
-		//if firewall.Description != info.fwDesc {
-		//	t.Errorf("Unexpected description in firewall %q - Expected %s, Got %s", info.fwName, firewall.Description, info.fwDesc)
-		//}
+		if !sharedHC && firewall.Description != info.fwDesc {
+			t.Errorf("Unexpected description in firewall %q - Expected %s, Got %s", info.fwName, firewall.Description, info.fwDesc)
+		}
 	}
 
 	// Check that HealthCheck is created

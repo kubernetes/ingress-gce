@@ -76,7 +76,9 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 		}
 		return err
 	}
-	if firewallRuleEqual(expectedFw, existingFw) {
+
+	// Don't compare the "description" field for shared firewall rules
+	if firewallRuleEqual(expectedFw, existingFw, sharedRule) {
 		return nil
 	}
 	klog.V(2).Infof("EnsureL4FirewallRule(%v): updating L4 %s firewall", params.Name, params.L4Type.ToString())
@@ -101,13 +103,19 @@ func EnsureL4FirewallRuleDeleted(cloud *gce.Cloud, fwName string) error {
 	return nil
 }
 
-func firewallRuleEqual(a, b *compute.Firewall) bool {
-	// let's skip description not to trigger flood of updates
-	return len(a.Allowed) == 1 && len(a.Allowed) == len(b.Allowed) &&
+func firewallRuleEqual(a, b *compute.Firewall, skipDescription bool) bool {
+	fwrEqual := len(a.Allowed) == 1 &&
+		len(a.Allowed) == len(b.Allowed) &&
 		a.Allowed[0].IPProtocol == b.Allowed[0].IPProtocol &&
 		utils.EqualStringSets(a.Allowed[0].Ports, b.Allowed[0].Ports) &&
 		utils.EqualStringSets(a.SourceRanges, b.SourceRanges) &&
 		utils.EqualStringSets(a.TargetTags, b.TargetTags)
+
+	// Don't compare the "description" field for shared firewall rules
+	if skipDescription {
+		return fwrEqual
+	}
+	return fwrEqual && a.Description == b.Description
 }
 
 func ensureFirewall(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder) error {

@@ -41,7 +41,7 @@ type LoadBalancerPool interface {
 	HasUrlMap(ing *v1.Ingress) (bool, error)
 }
 
-// L4HealthChecks defines methods for creating adn deleting health checks (and their firewall rules) for l4 services
+// L4HealthChecks defines methods for creating and deleting health checks (and their firewall rules) for l4 services
 type L4HealthChecks interface {
 	// EnsureL4HealthCheck creates health check (and firewall rule) for l4 service
 	EnsureL4HealthCheck(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string) (string, string, string, string, error)
