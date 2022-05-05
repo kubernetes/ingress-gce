@@ -24,7 +24,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -242,7 +241,7 @@ func newL4NetLBServiceController() *L4NetLBController {
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-
+	healthchecks.FakeL4(ctx.Cloud, ctx)
 	return NewL4NetLBController(ctx, stopCh)
 }
 
@@ -842,7 +841,7 @@ func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
 	// delete shared health check if is created, update service to Cluster and
 	// check that non-shared health check was created
 	hcNameShared, _ := lc.namer.L4HealthCheck(svc.Namespace, svc.Name, true)
-	healthchecks.DeleteHealthCheck(lc.ctx.Cloud, hcNameShared, meta.Regional)
+	healthchecks.FakeL4(lc.ctx.Cloud, lc.ctx).DeleteHealthCheck(svc, lc.namer, true, meta.Regional, utils.XLB)
 	// Update ExternalTrafficPolicy to Cluster check if shared HC was created
 	err = updateAndAssertExternalTrafficPolicy(newSvc, lc, v1.ServiceExternalTrafficPolicyTypeCluster, hcNameShared)
 	if err != nil {
@@ -974,7 +973,7 @@ func TestIsRBSBasedService(t *testing.T) {
 func TestIsRBSBasedServiceWithILBServices(t *testing.T) {
 	controller := newL4NetLBServiceController()
 	ilbSvc := test.NewL4ILBService(false, 8080)
-	ilbFrName := loadbalancers.NewL4Handler(ilbSvc, controller.ctx.Cloud, meta.Regional, controller.namer, record.NewFakeRecorder(100), &sync.Mutex{}).GetFRName()
+	ilbFrName := loadbalancers.NewL4Handler(ilbSvc, controller.ctx.Cloud, meta.Regional, controller.namer, record.NewFakeRecorder(100)).GetFRName()
 	ilbSvc.Annotations = map[string]string{
 		annotations.TCPForwardingRuleKey: ilbFrName,
 		annotations.UDPForwardingRuleKey: ilbFrName,

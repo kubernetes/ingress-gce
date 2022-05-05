@@ -18,9 +18,7 @@ package loadbalancers
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -49,11 +47,11 @@ type L4 struct {
 	scope       meta.KeyType
 	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
-	recorder            record.EventRecorder
-	Service             *corev1.Service
-	ServicePort         utils.ServicePort
-	NamespacedName      types.NamespacedName
-	sharedResourcesLock *sync.Mutex
+	recorder       record.EventRecorder
+	Service        *corev1.Service
+	ServicePort    utils.ServicePort
+	NamespacedName types.NamespacedName
+	l4HealthChecks L4HealthChecks
 }
 
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
@@ -69,8 +67,15 @@ type L4ILBSyncResult struct {
 }
 
 // NewL4Handler creates a new L4Handler for the given L4 service.
-func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder, lock *sync.Mutex) *L4 {
-	l := &L4{cloud: cloud, scope: scope, namer: namer, recorder: recorder, Service: service, sharedResourcesLock: lock}
+func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder) *L4 {
+	l := &L4{
+		cloud:          cloud,
+		scope:          scope,
+		namer:          namer,
+		recorder:       recorder,
+		Service:        service,
+		l4HealthChecks: healthchecks.GetL4(),
+	}
 	l.NamespacedName = types.NamespacedName{Name: service.Name, Namespace: service.Namespace}
 	l.backendPool = backends.NewPool(l.cloud, l.namer)
 	l.ServicePort = utils.ServicePort{ID: utils.ServicePortID{Service: l.NamespacedName}, BackendNamer: l.namer,
@@ -150,37 +155,26 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncRe
 	// when externalTrafficPolicy is changed from Local to Cluster and a new health check was created.
 	// When service is deleted we need to check both health checks shared and non-shared
 	// and delete them if needed.
-	deleteHcFunc := func(sharedHC bool) {
-		hcName, hcFwName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
-		if sharedHC {
-			l.sharedResourcesLock.Lock()
-			defer l.sharedResourcesLock.Unlock()
-		}
-		err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l.cloud, hcName, meta.Global))
-		if err != nil {
-			if !utils.IsInUsedByError(err) {
-				klog.Errorf("Failed to delete healthcheck for internal loadbalancer service %s - %v", l.NamespacedName.String(), err)
-				result.GCEResourceInError = annotations.HealthcheckResource
-				result.Error = err
-				return
-			}
-			// Ignore deletion error due to health check in use by another resource.
-			// This will be hit if this is a shared healthcheck.
-			klog.V(2).Infof("Failed to delete healthcheck %s: health check in use.", hcName)
-		} else {
-			// Delete healthcheck firewall rule if healthcheck deletion is successful.
-			err = deleteFwFunc(hcFwName)
-			if err != nil {
-				klog.Errorf("Failed to delete firewall rule %s for internal loadbalancer service %s, err %v", hcFwName, l.NamespacedName.String(), err)
-				result.GCEResourceInError = annotations.FirewallForHealthcheckResource
-				result.Error = err
-			}
-		}
-	}
 	for _, isShared := range []bool{true, false} {
-		deleteHcFunc(isShared)
+		resourceInError, err := l.l4HealthChecks.DeleteHealthCheck(svc, l.namer, isShared, meta.Global, utils.ILB)
+		if err != nil {
+			result.GCEResourceInError = resourceInError
+			result.Error = err
+		}
 	}
 	return result
+}
+
+func (l *L4) deleteFirewall(name string) error {
+	err := firewalls.EnsureL4FirewallRuleDeleted(l.cloud, name)
+	if err != nil {
+		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
+			l.recorder.Eventf(l.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // GetFRName returns the name of the forwarding rule for the given ILB service.
@@ -221,18 +215,10 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 
 	// create healthcheck
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l.Service)
-	ensureHCFunc := func() (string, string, int32, string, error) {
-		if sharedHC {
-			// Take the lock when creating the shared healthcheck
-			l.sharedResourcesLock.Lock()
-			defer l.sharedResourcesLock.Unlock()
-		}
-		return healthchecks.EnsureL4HealthCheck(l.cloud, l.Service, l.namer, sharedHC, meta.Global, utils.ILB)
-	}
+	hcLink, hcFwName, hcName, resourceInErr, err := l.l4HealthChecks.EnsureL4HealthCheck(l.Service, l.namer, sharedHC, meta.Global, utils.ILB, nodeNames)
 
-	hcLink, hcFwName, hcPort, hcName, err := ensureHCFunc()
 	if err != nil {
-		result.GCEResourceInError = annotations.HealthcheckResource
+		result.GCEResourceInError = resourceInErr
 		result.Error = err
 		return result
 	}
@@ -253,7 +239,6 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 		Protocol:     string(protocol),
 		Name:         name,
 		NodeNames:    nodeNames,
-		L4Type:       utils.ILB,
 	}
 
 	if err := firewalls.EnsureL4LBFirewallForNodes(l.Service, &nodesFWRParams, l.cloud, l.recorder); err != nil {
@@ -262,22 +247,6 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 		return result
 	}
 	result.Annotations[annotations.FirewallRuleKey] = name
-
-	// Add firewall rule for healthchecks to nodes
-	hcFWRParams := firewalls.FirewallParams{
-		PortRanges:   []string{strconv.Itoa(int(hcPort))},
-		SourceRanges: gce.L4LoadBalancerSrcRanges(),
-		Protocol:     string(corev1.ProtocolTCP),
-		Name:         hcFwName,
-		NodeNames:    nodeNames,
-		L4Type:       utils.ILB,
-	}
-	err = firewalls.EnsureL4LBFirewallForHc(l.Service, sharedHC, &hcFWRParams, l.cloud, l.sharedResourcesLock, l.recorder)
-	if err != nil {
-		result.GCEResourceInError = annotations.FirewallForHealthcheckResource
-		result.Error = err
-		return result
-	}
 	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
 
 	// Check if protocol has changed for this service. In this case, forwarding rule should be deleted before

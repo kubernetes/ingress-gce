@@ -17,9 +17,6 @@ limitations under the License.
 package firewalls
 
 import (
-	"strings"
-	"sync"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
@@ -27,6 +24,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
+	"strings"
 )
 
 // FirewallParams holds all data needed to create firewall for L4 LB
@@ -50,7 +48,7 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 	if err != nil {
 		return err
 	}
-	fwDesc, err := utils.MakeL4LBServiceDescription(nsName, params.IP, meta.VersionGA, sharedRule, params.L4Type)
+	fwDesc, err := utils.MakeL4LBFirewallDescription(nsName, params.IP, meta.VersionGA, sharedRule)
 	if err != nil {
 		klog.Warningf("EnsureL4FirewallRule(%v): failed to generate description for L4 %s rule, err: %v", params.Name, params.L4Type.ToString(), err)
 	}
@@ -78,7 +76,9 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 		}
 		return err
 	}
-	if firewallRuleEqual(expectedFw, existingFw) {
+
+	// Don't compare the "description" field for shared firewall rules
+	if firewallRuleEqual(expectedFw, existingFw, sharedRule) {
 		return nil
 	}
 	klog.V(2).Infof("EnsureL4FirewallRule(%v): updating L4 %s firewall", params.Name, params.L4Type.ToString())
@@ -103,13 +103,19 @@ func EnsureL4FirewallRuleDeleted(cloud *gce.Cloud, fwName string) error {
 	return nil
 }
 
-func firewallRuleEqual(a, b *compute.Firewall) bool {
-	return a.Description == b.Description &&
-		len(a.Allowed) == 1 && len(a.Allowed) == len(b.Allowed) &&
+func firewallRuleEqual(a, b *compute.Firewall, skipDescription bool) bool {
+	fwrEqual := len(a.Allowed) == 1 &&
+		len(a.Allowed) == len(b.Allowed) &&
 		a.Allowed[0].IPProtocol == b.Allowed[0].IPProtocol &&
 		utils.EqualStringSets(a.Allowed[0].Ports, b.Allowed[0].Ports) &&
 		utils.EqualStringSets(a.SourceRanges, b.SourceRanges) &&
 		utils.EqualStringSets(a.TargetTags, b.TargetTags)
+
+	// Don't compare the "description" field for shared firewall rules
+	if skipDescription {
+		return fwrEqual
+	}
+	return fwrEqual && a.Description == b.Description
 }
 
 func ensureFirewall(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder) error {
@@ -126,12 +132,8 @@ func ensureFirewall(svc *v1.Service, shared bool, params *FirewallParams, cloud 
 }
 
 // EnsureL4LBFirewallForHc creates or updates firewall rule for shared or non-shared health check to nodes
-func EnsureL4LBFirewallForHc(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, sharedResourcesLock *sync.Mutex, recorder record.EventRecorder) error {
+func EnsureL4LBFirewallForHc(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder) error {
 	params.SourceRanges = gce.L4LoadBalancerSrcRanges()
-	if shared {
-		sharedResourcesLock.Lock()
-		defer sharedResourcesLock.Unlock()
-	}
 	return ensureFirewall(svc, shared, params, cloud, recorder)
 }
 
