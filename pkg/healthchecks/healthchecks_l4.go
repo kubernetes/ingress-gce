@@ -61,6 +61,7 @@ func Initialize(cloud *gce.Cloud, recorderFactory events.RecorderProducer) {
 		recorderFactory: recorderFactory,
 	}
 }
+
 func Fake(cloud *gce.Cloud, recorderFactory events.RecorderProducer) *l4HealthChecks {
 	return &l4HealthChecks{
 		cloud:           cloud,
@@ -75,15 +76,17 @@ func GetL4() *l4HealthChecks {
 // EnsureL4HealthCheck creates a new HTTP health check for an L4 LoadBalancer service, based on the parameters provided.
 // If the healthcheck already exists, it is updated as needed.
 func (l4hc *l4HealthChecks) EnsureL4HealthCheck(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string) (string, string, string, string, error) {
-	// mutex?
 	hcName, hcFwName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	hcPath, hcPort := gce.GetNodesHealthCheckPath(), gce.GetNodesHealthCheckPort()
-	if !sharedHC {
-		hcPath, hcPort = helpers.GetServiceHealthCheckPathPort(svc)
+
+	if sharedHC {
+		// lock out entire EnsureL4HealthCheck process
 		l4hc.mutex.Lock()
 		defer l4hc.mutex.Unlock()
-
+	} else {
+		hcPath, hcPort = helpers.GetServiceHealthCheckPathPort(svc)
 	}
+
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
 	_, hcLink, err := l4hc.ensureL4HealthCheckInternal(hcName, namespacedName, sharedHC, hcPath, hcPort, scope, l4Type)
 	if err != nil {
@@ -98,16 +101,18 @@ func (l4hc *l4HealthChecks) EnsureL4HealthCheck(svc *corev1.Service, namer namer
 }
 
 func (l4hc *l4HealthChecks) DeleteHealthCheck(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType) (string, error) {
-	hcName, hcFwName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
 	if sharedHC {
+		// lock out entire DeleteHealthCheck process
 		l4hc.mutex.Lock()
 		defer l4hc.mutex.Unlock()
 	}
-	NamespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
+
+	hcName, hcFwName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
 	err := utils.IgnoreHTTPNotFound(l4hc.deleteHealthCheck(hcName, scope))
 	if err != nil {
 		if !utils.IsInUsedByError(err) {
-			klog.Errorf("Failed to delete healthcheck for service %s - %v", NamespacedName.String(), err)
+			klog.Errorf("Failed to delete healthcheck for service %s - %v", namespacedName.String(), err)
 			return annotations.HealthcheckResource, err
 		}
 		// Ignore deletion error due to health check in use by another resource.
@@ -169,7 +174,7 @@ func (l4hc *l4HealthChecks) ensureFirewall(svc *corev1.Service, hcFwName string,
 		Name:         hcFwName,
 		NodeNames:    nodeNames,
 	}
-	err := firewalls.EnsureL4LBFirewallForHc(svc, sharedHC, &hcFWRParams, l4hc.cloud, &l4hc.mutex, l4hc.recorderFactory.Recorder(svc.Namespace))
+	err := firewalls.EnsureL4LBFirewallForHc(svc, sharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorderFactory.Recorder(svc.Namespace))
 	if err != nil {
 		return err
 	}
