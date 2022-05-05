@@ -626,8 +626,11 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 	// When NetLB health check uses the same firewall rules we expect that hc firewall rule will not be deleted.
 	haName, hcFwName := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, true)
 	firewall, err := l.cloud.GetFirewall(hcFwName)
-	if err != nil || firewall == nil {
-		t.Errorf("Expected firewall exists err: %v, fwR: %v", err, firewall)
+	if err != nil {
+		t.Errorf("Expected error: firewall exists, got %v", err)
+	}
+	if firewall == nil {
+		t.Error("Healthcheck Firewall should still exist, got nil")
 	}
 
 	// The healthcheck itself should be deleted.
