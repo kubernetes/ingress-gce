@@ -18,9 +18,6 @@ package l4lb
 
 import (
 	"fmt"
-	"reflect"
-	"sync"
-
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
@@ -38,6 +35,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
+	"reflect"
 )
 
 const l4NetLBControllerName = "l4netlb-controller"
@@ -54,8 +52,7 @@ type L4NetLBController struct {
 	// enqueueTracker tracks the latest time an update was enqueued
 	enqueueTracker utils.TimeTracker
 	// syncTracker tracks the latest time an enqueued service was synced
-	syncTracker         utils.TimeTracker
-	sharedResourcesLock sync.Mutex
+	syncTracker utils.TimeTracker
 
 	backendPool  *backends.Backends
 	instancePool instances.NodePool
@@ -236,7 +233,7 @@ func (lc *L4NetLBController) hasForwardingRuleAnnotation(svc *v1.Service, frName
 
 // hasRBSForwardingRule checks if services loadbalancer has forwarding rule pointing to backend service
 func (lc *L4NetLBController) hasRBSForwardingRule(svc *v1.Service) bool {
-	l4netlb := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace), &lc.sharedResourcesLock)
+	l4netlb := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace))
 	frName := l4netlb.GetFRName()
 	// to optimize number of api calls, at first, check if forwarding rule exists in annotation
 	if lc.hasForwardingRuleAnnotation(svc, frName) {
@@ -323,7 +320,7 @@ func (lc *L4NetLBController) sync(key string) error {
 // syncInternal ensures load balancer resources for the given service, as needed.
 // Returns an error if processing the service update failed.
 func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4NetLBSyncResult {
-	l4netlb := loadbalancers.NewL4NetLB(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace), &lc.sharedResourcesLock)
+	l4netlb := loadbalancers.NewL4NetLB(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace))
 	// check again that rbs is enabled.
 	if !lc.isRBSBasedService(service) {
 		klog.Infof("Skipping syncInternal. Service %s does not have RBS enabled", service.Name)
@@ -402,7 +399,7 @@ func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames
 
 // garbageCollectRBSNetLB cleans-up all gce resources related to service and removes NetLB finalizer
 func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service) *loadbalancers.L4NetLBSyncResult {
-	l4netLB := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace), &lc.sharedResourcesLock)
+	l4netLB := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace))
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
 		"Deleting L4 External LoadBalancer for %s", key)
 

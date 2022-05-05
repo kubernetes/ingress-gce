@@ -50,7 +50,7 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 	if err != nil {
 		return err
 	}
-	fwDesc, err := utils.MakeL4LBServiceDescription(nsName, params.IP, meta.VersionGA, sharedRule, params.L4Type)
+	fwDesc, err := utils.MakeL4LBFirewallDescription(nsName, params.IP, meta.VersionGA, sharedRule)
 	if err != nil {
 		klog.Warningf("EnsureL4FirewallRule(%v): failed to generate description for L4 %s rule, err: %v", params.Name, params.L4Type.ToString(), err)
 	}
@@ -104,8 +104,8 @@ func EnsureL4FirewallRuleDeleted(cloud *gce.Cloud, fwName string) error {
 }
 
 func firewallRuleEqual(a, b *compute.Firewall) bool {
-	return a.Description == b.Description &&
-		len(a.Allowed) == 1 && len(a.Allowed) == len(b.Allowed) &&
+	// let's skip description not to trigger flood of updates
+	return len(a.Allowed) == 1 && len(a.Allowed) == len(b.Allowed) &&
 		a.Allowed[0].IPProtocol == b.Allowed[0].IPProtocol &&
 		utils.EqualStringSets(a.Allowed[0].Ports, b.Allowed[0].Ports) &&
 		utils.EqualStringSets(a.SourceRanges, b.SourceRanges) &&

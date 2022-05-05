@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"k8s.io/ingress-gce/pkg/healthchecks"
 	"math/rand"
 	"os"
 	"time"
@@ -273,6 +274,8 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	}
 
 	fwc := firewalls.NewFirewallController(ctx, flags.F.NodePortRanges.Values())
+
+	healthchecks.Initialize(ctx.Cloud, ctx)
 
 	if flags.F.RunL4Controller {
 		l4Controller := l4lb.NewILBController(ctx, stopCh)

@@ -18,7 +18,10 @@ package loadbalancers
 
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
+	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/utils/namer"
 )
 
 // LoadBalancerPool is an interface to manage the cloud resources associated
@@ -36,4 +39,12 @@ type LoadBalancerPool interface {
 	Shutdown(ings []*v1.Ingress) error
 	// HasUrlMap returns true if an URL map exists in GCE for given ingress.
 	HasUrlMap(ing *v1.Ingress) (bool, error)
+}
+
+// L4HealthChecks defines methods for creating adn deleting health checks (and their firewall rules) for l4 services
+type L4HealthChecks interface {
+	// EnsureL4HealthCheck creates health check (and firewall rule) for l4 service
+	EnsureL4HealthCheck(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string) (string, string, string, string, error)
+	// DeleteHealthCheck deletes health check (and firewall rule) for l4 service
+	DeleteHealthCheck(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType) (string, error)
 }

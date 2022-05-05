@@ -685,6 +685,13 @@ func (d *L4LBResourceDescription) Unmarshal(desc string) error {
 	return json.Unmarshal([]byte(desc), d)
 }
 
+func MakeL4LBFirewallDescription(svcName, ip string, version meta.Version, shared bool) (string, error) {
+	if shared {
+		return (&L4LBResourceDescription{APIVersion: version, ResourceDescription: fmt.Sprintf(L4LBSharedResourcesDesc, "")}).Marshal()
+	}
+	return (&L4LBResourceDescription{ServiceName: svcName, ServiceIP: ip, APIVersion: version}).Marshal()
+}
+
 func MakeL4LBServiceDescription(svcName, ip string, version meta.Version, shared bool, lbType L4LBType) (string, error) {
 	if shared {
 		return (&L4LBResourceDescription{APIVersion: version, ResourceDescription: fmt.Sprintf(L4LBSharedResourcesDesc, lbType.ToString())}).Marshal()

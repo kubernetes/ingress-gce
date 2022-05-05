@@ -19,6 +19,7 @@ package l4lb
 import (
 	context2 "context"
 	"fmt"
+	"k8s.io/ingress-gce/pkg/healthchecks"
 	"testing"
 	"time"
 
@@ -70,6 +71,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
+	healthchecks.Initialize(ctx.Cloud, ctx)
 	return NewILBController(ctx, stopCh)
 }
 
