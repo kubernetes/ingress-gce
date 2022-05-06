@@ -18,6 +18,7 @@ package loadbalancers
 
 import (
 	"fmt"
+	"k8s.io/ingress-gce/pkg/test"
 	"net/http"
 	"strings"
 	"testing"
@@ -29,7 +30,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
@@ -624,8 +624,7 @@ func TestDoNotLeakV2LB(t *testing.T) {
 func newTestLoadBalancerPool() LoadBalancerPool {
 	namer := namer_util.NewNamer(testClusterName, "fw1")
 	fakeGCECloud := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-	ctx := &context.ControllerContext{}
-	return NewLoadBalancerPool(fakeGCECloud, namer, ctx, namer_util.NewFrontendNamerFactory(namer, kubeSystemUID))
+	return NewLoadBalancerPool(fakeGCECloud, namer, &test.FakeRecorderSource{}, namer_util.NewFrontendNamerFactory(namer, kubeSystemUID))
 }
 
 func createFakeLoadbalancer(cloud *gce.Cloud, namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType) {

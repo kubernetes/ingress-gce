@@ -46,45 +46,18 @@ const (
 	gceHcUnhealthyThreshold = int64(3)
 )
 
-var (
-	// instance is a sinngleton instance, created by InitializeL4
-	instance *l4HealthChecks
-	// mutex for preventing multiple initialization
-	initLock = &sync.Mutex{}
-)
-
 type l4HealthChecks struct {
 	mutex           sync.Mutex
 	cloud           *gce.Cloud
 	recorderFactory events.RecorderProducer
 }
 
-// InitializeL4 creates singleton instance, must be run before GetL4() func
-func InitializeL4(cloud *gce.Cloud, recorderFactory events.RecorderProducer) {
-	if instance == nil {
-		initLock.Lock()
-		defer initLock.Unlock()
-
-		if instance == nil {
-			instance = &l4HealthChecks{
-				cloud:           cloud,
-				recorderFactory: recorderFactory,
-			}
-		}
-	}
-}
-
-// FakeL4 creates instance of l4HealthChecks> USe for test only.
-func FakeL4(cloud *gce.Cloud, recorderFactory events.RecorderProducer) *l4HealthChecks {
-	instance = &l4HealthChecks{
+// NewL4 creates instance of l4HealthChecks> USe for test only.
+func NewL4(cloud *gce.Cloud, recorderFactory events.RecorderProducer) *l4HealthChecks {
+	instance := &l4HealthChecks{
 		cloud:           cloud,
 		recorderFactory: recorderFactory,
 	}
-	return instance
-}
-
-// GetL4 returns singleton instance, must be run after InitializeL4
-func GetL4() *l4HealthChecks {
 	return instance
 }
 

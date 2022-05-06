@@ -16,9 +16,6 @@ package context
 import (
 	context2 "context"
 	"fmt"
-	"sync"
-	"time"
-
 	apiv1 "k8s.io/api/core/v1"
 	apiextensionsclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -47,6 +44,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
+	"k8s.io/ingress-gce/pkg/healthcheckinterface"
 	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
 	informeringparams "k8s.io/ingress-gce/pkg/ingparams/client/informers/externalversions/ingparams/v1beta1"
 	"k8s.io/ingress-gce/pkg/instances"
@@ -60,6 +58,8 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
+	"sync"
+	"time"
 )
 
 const (
@@ -80,9 +80,10 @@ type ControllerContext struct {
 
 	Cloud *gce.Cloud
 
-	ClusterNamer  *namer.Namer
-	KubeSystemUID types.UID
-	L4Namer       namer.L4ResourcesNamer
+	ClusterNamer   *namer.Namer
+	KubeSystemUID  types.UID
+	L4Namer        namer.L4ResourcesNamer
+	L4HealthChecks healthcheckinterface.L4HealthChecks
 
 	ControllerContextConfig
 	ASMConfigController *cmconfig.ConfigMapConfigController

@@ -63,6 +63,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 		NumL4Workers: 5,
 	}
 	ctx := context.NewControllerContext(nil, kubeClient, nil, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
+	ctx.L4HealthChecks = healthchecks.NewL4(fakeGCE, &test.FakeRecorderSource{})
 	// Add some nodes so that NEG linker kicks in during ILB creation.
 	nodes, err := test.CreateAndInsertNodes(ctx.Cloud, []string{"instance-1"}, vals.ZoneName)
 	if err != nil {
@@ -71,7 +72,6 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	healthchecks.FakeL4(ctx.Cloud, ctx)
 	return NewILBController(ctx, stopCh)
 }
 

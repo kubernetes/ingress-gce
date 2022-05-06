@@ -233,7 +233,7 @@ func (lc *L4NetLBController) hasForwardingRuleAnnotation(svc *v1.Service, frName
 
 // hasRBSForwardingRule checks if services loadbalancer has forwarding rule pointing to backend service
 func (lc *L4NetLBController) hasRBSForwardingRule(svc *v1.Service) bool {
-	l4netlb := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace))
+	l4netlb := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace), lc.ctx.L4HealthChecks)
 	frName := l4netlb.GetFRName()
 	// to optimize number of api calls, at first, check if forwarding rule exists in annotation
 	if lc.hasForwardingRuleAnnotation(svc, frName) {
@@ -320,7 +320,7 @@ func (lc *L4NetLBController) sync(key string) error {
 // syncInternal ensures load balancer resources for the given service, as needed.
 // Returns an error if processing the service update failed.
 func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4NetLBSyncResult {
-	l4netlb := loadbalancers.NewL4NetLB(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace))
+	l4netlb := loadbalancers.NewL4NetLB(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace), lc.ctx.L4HealthChecks)
 	// check again that rbs is enabled.
 	if !lc.isRBSBasedService(service) {
 		klog.Infof("Skipping syncInternal. Service %s does not have RBS enabled", service.Name)
@@ -399,7 +399,7 @@ func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames
 
 // garbageCollectRBSNetLB cleans-up all gce resources related to service and removes NetLB finalizer
 func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service) *loadbalancers.L4NetLBSyncResult {
-	l4netLB := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace))
+	l4netLB := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace), lc.ctx.L4HealthChecks)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
 		"Deleting L4 External LoadBalancer for %s", key)
 

@@ -18,6 +18,7 @@ package loadbalancers
 
 import (
 	"fmt"
+	"k8s.io/ingress-gce/pkg/healthcheckinterface"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -30,7 +31,6 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
-	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -49,7 +49,7 @@ type L4NetLB struct {
 	Service        *corev1.Service
 	ServicePort    utils.ServicePort
 	NamespacedName types.NamespacedName
-	l4HealthChecks L4HealthChecks
+	l4HealthChecks healthcheckinterface.L4HealthChecks
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -65,7 +65,7 @@ type L4NetLBSyncResult struct {
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
-func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder) *L4NetLB {
+func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder, l4HealthChecks healthcheckinterface.L4HealthChecks) *L4NetLB {
 	l4netlb := &L4NetLB{cloud: cloud,
 		scope:          scope,
 		namer:          namer,
@@ -73,7 +73,7 @@ func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, n
 		Service:        service,
 		NamespacedName: types.NamespacedName{Name: service.Name, Namespace: service.Namespace},
 		backendPool:    backends.NewPool(cloud, namer),
-		l4HealthChecks: healthchecks.GetL4(),
+		l4HealthChecks: l4HealthChecks,
 	}
 	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
 	l4netlb.ServicePort = utils.ServicePort{
