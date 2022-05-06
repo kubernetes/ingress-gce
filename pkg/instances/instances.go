@@ -25,6 +25,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/events"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 
@@ -333,6 +334,23 @@ func (i *Instances) Sync(nodes []string) (err error) {
 			return err
 		}
 		kubeNodes := sets.NewString(nodes...)
+
+		// Individual InstanceGroup has a limit for 1000 instances in it.
+		// As a result, it's not possible to add more to it.
+		if len(kubeNodes) > flags.F.MaxIgSize {
+			// List() will return a sorted list so the kubeNodesList truncation will have a stable set of nodes.
+			kubeNodesList := kubeNodes.List()
+
+			// Store first 10 truncated nodes for logging
+			truncatedNodesSample := kubeNodesList[flags.F.MaxIgSize:]
+			maxTruncatedNodesSampleSize := 10
+			if len(truncatedNodesSample) > maxTruncatedNodesSampleSize {
+				truncatedNodesSample = truncatedNodesSample[:maxTruncatedNodesSampleSize]
+			}
+
+			klog.Warningf("Total number of kubeNodes: %d, truncating to maximum Instance Group size = %d. Instance group name: %s. First %d truncated instances: %v", len(kubeNodesList), flags.F.MaxIgSize, igName, len(truncatedNodesSample), truncatedNodesSample)
+			kubeNodes = sets.NewString(kubeNodesList[:flags.F.MaxIgSize]...)
+		}
 
 		// A node deleted via kubernetes could still exist as a gce vm. We don't
 		// want to route requests to it. Similarly, a node added to kubernetes
