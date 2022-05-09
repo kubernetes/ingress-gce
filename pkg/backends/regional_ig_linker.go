@@ -18,10 +18,10 @@ import (
 
 	cloudprovider "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog"
 )
 
 // RegionalInstanceGroupLinker handles linking backends to InstanceGroups.
@@ -39,40 +39,38 @@ func NewRegionalInstanceGroupLinker(instancePool instances.NodePool, backendPool
 
 // Link performs linking instance groups to regional backend service
 func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID string, zones []string) error {
-	var igLinks []string
+	klog.V(2).Infof("Link(%v, %q, %v)", sp, projectID, zones)
 
+	var igLinks []string
 	for _, zone := range zones {
 		key := meta.ZonalKey(sp.IGName(), zone)
 		igSelfLink := cloudprovider.SelfLink(meta.VersionGA, projectID, "instanceGroups", key)
 		igLinks = append(igLinks, igSelfLink)
 	}
-
-	addIGs := sets.String{}
-	for _, igLink := range igLinks {
-		path, err := utils.RelativeResourceName(igLink)
-		if err != nil {
-			return fmt.Errorf("failed to parse instance group %s: %w", igLink, err)
-		}
-		addIGs.Insert(path)
+	bs, err := linker.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Regional)
+	if err != nil {
+		return err
+	}
+	addIGs, err := getInstanceGroupsToAdd(bs, igLinks)
+	if err != nil {
+		return err
 	}
 	if len(addIGs) == 0 {
+		klog.V(3).Infof("No backends to add for %s, skipping update.", sp.BackendName())
 		return nil
 	}
-	// TODO(kl52752) Check for existing links and add only new one
+
 	var newBackends []*composite.Backend
-	for _, igLink := range addIGs.List() {
+	for _, igLink := range addIGs {
 		b := &composite.Backend{
 			Group: igLink,
 		}
 		newBackends = append(newBackends, b)
 	}
-	be, err := linker.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Regional)
-	if err != nil {
-		return err
-	}
-	be.Backends = newBackends
 
-	if err := linker.backendPool.Update(be); err != nil {
+	bs.Backends = newBackends
+	klog.V(3).Infof("Update Backend %s, with %d backends.", sp.BackendName(), len(addIGs))
+	if err := linker.backendPool.Update(bs); err != nil {
 		return fmt.Errorf("updating backend service %s for IG failed, err:%w", sp.BackendName(), err)
 	}
 	return nil

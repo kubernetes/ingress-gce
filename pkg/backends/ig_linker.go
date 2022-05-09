@@ -191,6 +191,5 @@ func getInstanceGroupsToAdd(be *composite.BackendService, igLinks []string) ([]s
 		klog.V(2).Infof("Backend service %q has instance groups %+v, want %+v",
 			be.Name, existingIGs.List(), wantIGs.List())
 	}
-
 	return missingIGs.List(), nil
 }
