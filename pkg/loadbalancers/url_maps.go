@@ -119,7 +119,10 @@ func (l *L7) ensureRedirectURLMap() error {
 			return nil
 		} else {
 			if err := composite.DeleteUrlMap(l.cloud, key, l.Versions().UrlMap); err != nil {
-				return err
+				// Do not block LB sync if this fails
+				klog.Errorf("DeleteUrlMap(%s) = %v", key, err)
+				// Signal to the rest of the controller that the UrlMap still exists
+				l.redirectUm = &composite.UrlMap{Name: key.Name}
 			}
 		}
 		return nil
