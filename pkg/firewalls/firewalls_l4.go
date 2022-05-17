@@ -104,18 +104,32 @@ func EnsureL4FirewallRuleDeleted(cloud *gce.Cloud, fwName string) error {
 }
 
 func firewallRuleEqual(a, b *compute.Firewall, skipDescription bool) bool {
-	fwrEqual := len(a.Allowed) == 1 &&
-		len(a.Allowed) == len(b.Allowed) &&
-		a.Allowed[0].IPProtocol == b.Allowed[0].IPProtocol &&
-		utils.EqualStringSets(a.Allowed[0].Ports, b.Allowed[0].Ports) &&
-		utils.EqualStringSets(a.SourceRanges, b.SourceRanges) &&
-		utils.EqualStringSets(a.TargetTags, b.TargetTags)
-
-	// Don't compare the "description" field for shared firewall rules
-	if skipDescription {
-		return fwrEqual
+	if len(a.Allowed) != len(b.Allowed) {
+		return false
 	}
-	return fwrEqual && a.Description == b.Description
+	for i := range a.Allowed {
+		if !allowRulesEqual(a.Allowed[i], b.Allowed[i]) {
+			return false
+		}
+	}
+
+	if !utils.EqualStringSets(a.SourceRanges, b.SourceRanges) {
+		return false
+	}
+
+	if !utils.EqualStringSets(a.TargetTags, b.TargetTags) {
+		return false
+	}
+
+	if !skipDescription && a.Description != b.Description {
+		return false
+	}
+	return true
+}
+
+func allowRulesEqual(a *compute.FirewallAllowed, b *compute.FirewallAllowed) bool {
+	return a.IPProtocol == b.IPProtocol &&
+		utils.EqualStringSets(a.Ports, b.Ports)
 }
 
 func ensureFirewall(svc *v1.Service, shared bool, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder) error {

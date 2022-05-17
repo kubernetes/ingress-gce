@@ -49,7 +49,7 @@ type L4NetLB struct {
 	Service        *corev1.Service
 	ServicePort    utils.ServicePort
 	NamespacedName types.NamespacedName
-	l4HealthChecks L4HealthChecks
+	l4HealthChecks healthchecks.L4HealthChecks
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -73,7 +73,7 @@ func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, n
 		Service:        service,
 		NamespacedName: types.NamespacedName{Name: service.Name, Namespace: service.Namespace},
 		backendPool:    backends.NewPool(cloud, namer),
-		l4HealthChecks: healthchecks.GetL4(),
+		l4HealthChecks: healthchecks.L4(),
 	}
 	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
 	l4netlb.ServicePort = utils.ServicePort{
@@ -108,14 +108,14 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	l4netlb.Service = svc
 
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
-	hcLink, hcFwName, hcName, resourceInErr, err := l4netlb.l4HealthChecks.EnsureL4HealthCheck(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames)
+	hcResult := l4netlb.l4HealthChecks.EnsureL4HealthCheck(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames)
 
-	if err != nil {
-		result.GCEResourceInError = resourceInErr
-		result.Error = fmt.Errorf("Failed to ensure health check %s - %w", hcName, err)
+	if hcResult.Err != nil {
+		result.GCEResourceInError = hcResult.GceResourceInError
+		result.Error = fmt.Errorf("Failed to ensure health check %s - %w", hcResult.HCName, hcResult.Err)
 		return result
 	}
-	result.Annotations[annotations.HealthcheckKey] = hcName
+	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
 
 	name := l4netlb.ServicePort.BackendName()
 	protocol, res := l4netlb.createFirewalls(name, nodeNames)
@@ -123,9 +123,9 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 		return res
 	}
 	result.Annotations[annotations.FirewallRuleKey] = name
-	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
+	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
 
-	bs, err := l4netlb.backendPool.EnsureL4BackendService(name, hcLink, protocol, string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
+	bs, err := l4netlb.backendPool.EnsureL4BackendService(name, hcResult.HCLink, protocol, string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = fmt.Errorf("Failed to ensure backend service %s - %w", name, err)
@@ -201,6 +201,7 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 		if err != nil {
 			result.GCEResourceInError = resourceInError
 			result.Error = err
+			// continue with deletion of the non-shared Healthcheck regardless of the error, both healthchecks may need to be deleted,
 		}
 	}
 	return result

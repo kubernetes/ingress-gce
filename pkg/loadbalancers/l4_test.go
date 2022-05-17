@@ -220,12 +220,12 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 
 	// Create the expected resources necessary for an Internal Load Balancer
 	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(svc)
-	hcLink, _, _, _, err := l.l4HealthChecks.EnsureL4HealthCheck(l.Service, l.namer, sharedHC, meta.Global, utils.ILB, []string{})
+	hcResult := l.l4HealthChecks.EnsureL4HealthCheck(l.Service, l.namer, sharedHC, meta.Global, utils.ILB, []string{})
 
-	if err != nil {
-		t.Errorf("Failed to create healthcheck, err %v", err)
+	if hcResult.Err != nil {
+		t.Errorf("Failed to create healthcheck, err %v", hcResult.Err)
 	}
-	_, err = l.backendPool.EnsureL4BackendService(lbName, hcLink, "TCP", string(l.Service.Spec.SessionAffinity),
+	_, err := l.backendPool.EnsureL4BackendService(lbName, hcResult.HCLink, "TCP", string(l.Service.Spec.SessionAffinity),
 		string(cloud.SchemeInternal), l.NamespacedName, meta.VersionGA)
 	if err != nil {
 		t.Errorf("Failed to create backendservice, err %v", err)

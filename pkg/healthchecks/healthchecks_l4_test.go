@@ -50,7 +50,7 @@ func TestMergeHealthChecks(t *testing.T) {
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			// healthcheck intervals and thresholds are common for Global and Regional healthchecks. Hence testing only Global case.
-			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
+			wantHC := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
 			hc := &composite.HealthCheck{
 				CheckIntervalSec:   tc.checkIntervalSec,
 				TimeoutSec:         tc.timeoutSec,
@@ -97,8 +97,8 @@ func TestCompareHealthChecks(t *testing.T) {
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			// healthcheck intervals and thresholds are common for Global and Regional healthchecks. Hence testing only Global case.
-			hc := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
-			wantHC := NewL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
+			hc := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
+			wantHC := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
 			if tc.modifier != nil {
 				tc.modifier(hc)
 			}
@@ -120,7 +120,7 @@ func TestCreateHealthCheck(t *testing.T) {
 		{meta.Global, ""},
 		{meta.Regional, "us-central1"},
 	} {
-		hc := NewL4HealthCheck("hc", namespaceName, false, "/", 12345, utils.ILB, v.scope, v.region)
+		hc := newL4HealthCheck("hc", namespaceName, false, "/", 12345, utils.ILB, v.scope, v.region)
 		if hc.Region != v.region {
 			t.Errorf("HealthCheck Region mismatch! %v != %v", hc.Region, v.region)
 		}
