@@ -185,7 +185,7 @@ func SetUrlMapForTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpP
 	}
 }
 
-// SetProxyForForwardingRule() sets the target proxy for a forwarding rule
+// SetProxyForForwardingRule sets the target proxy for a forwarding rule
 func SetProxyForForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *ForwardingRule, targetProxyLink string) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()

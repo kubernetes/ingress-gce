@@ -26,7 +26,9 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/tools/record"
+	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -294,4 +296,63 @@ func (l4netlb *L4NetLB) createFirewalls(name, hcLink, hcFwName string, hcPort in
 		result.GCEResourceInError = annotations.FirewallForHealthcheckResource
 	}
 	return string(protocol), result
+}
+
+// cleanLegacyServiceResources deletes resources, used only by legacy L4 NetLB, based on Target Pools and implemented in service controller
+func (l4netlb *L4NetLB) cleanLegacyServiceResources() error {
+	loadBalancerName := cloudprovider.DefaultLoadBalancerName(l4netlb.Service)
+	serviceName := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}
+	lbRefStr := fmt.Sprintf("%v(%v)", loadBalancerName, serviceName)
+
+	errs := utilerrors.AggregateGoroutines(
+		func() error {
+			klog.Infof("cleanLegacyServiceResources(%s): Deleting firewall rule.", lbRefStr)
+			fwName := gce.MakeFirewallName(loadBalancerName)
+			err := utils.IgnoreHTTPNotFound(l4netlb.cloud.DeleteFirewall(fwName))
+			return err
+		},
+		func() error {
+			klog.Infof("cleanLegacyServiceResources(%s): Deleting target pool", lbRefStr)
+
+			err := utils.IgnoreHTTPNotFound(l4netlb.cloud.DeleteTargetPool(loadBalancerName, l4netlb.cloud.Region()))
+			if err != nil {
+				klog.Errorf("cleanLegacyServiceResources(%v): Failed to delete target pool, got error %s", lbRefStr, err.Error())
+				return err
+			}
+
+			// Deletion of health checks is allowed only after the TargetPool reference is deleted
+			// Try to delete 2 types of health checks -- used for local traffic policy, and external
+			// They both use legacy naming scheme, so they are not useful for RBS service, and it is safe to delete them
+			healthChecksToDelete := []string{loadBalancerName, gce.MakeNodesHealthCheckName(l4netlb.namer.ClusterID())}
+
+			for _, hcToDelete := range healthChecksToDelete {
+				klog.Infof("cleanLegacyServiceResources(%v): Deleting health check %v", lbRefStr, hcToDelete)
+				err := utils.IgnoreHTTPNotFound(l4netlb.cloud.DeleteHTTPHealthCheck(hcToDelete))
+				if err != nil {
+					// Delete nodes health checks will fail if any other target pool is using it.
+					if utils.IsInUsedByError(err) {
+						klog.V(4).Infof("cleanLegacyServiceResources(%v): Health check %v is in use: %v", lbRefStr, hcToDelete, err)
+						return nil
+					}
+					return err
+				}
+
+				// If health check is deleted without error, it means no load-balancer is using it.
+				// So we should delete the health check firewall as well.
+				fwName := gce.MakeHealthCheckFirewallName(l4netlb.namer.ClusterID(), hcToDelete, hcToDelete != loadBalancerName)
+
+				klog.Infof("cleanLegacyServiceResources(%v): Deleting health check firewall rule %v", lbRefStr, fwName)
+				err = utils.IgnoreHTTPNotFound(l4netlb.cloud.DeleteFirewall(fwName))
+				if err != nil {
+					klog.Errorf("cleanLegacyServiceResources(%v): Failed to delete health check %v firewall rule %v: %v", lbRefStr, hcToDelete, fwName, err)
+					return err
+				}
+			}
+			return nil
+		},
+	)
+	if errs != nil {
+		return utilerrors.Flatten(errs)
+	}
+	return nil
 }

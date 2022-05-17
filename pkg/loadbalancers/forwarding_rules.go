@@ -393,6 +393,23 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.
 			networkTierMismatchError := utils.NewNetworkTierErr(resource, existingFwdRule.NetworkTier, fr.NetworkTier)
 			return nil, IPAddrUndefined, networkTierMismatchError
 		}
+
+		if existingFwdRule.Target != "" {
+			// If transitioning from Legacy L4 Net LB Service to RBS,
+			// instead of forwarding rule recreation, call set-target
+			// on forwarding rule, to minimize down-time
+			err = composite.SetProxyForForwardingRule(l4netlb.cloud, key, existingFwdRule, bsLink)
+			if err != nil {
+				return nil, IPAddrUndefined, err
+			}
+			err = l4netlb.cleanLegacyServiceResources()
+			if err != nil {
+				return nil, IPAddrUndefined, err
+			}
+			createdFr, err := composite.GetForwardingRule(l4netlb.cloud, key, fr.Version)
+			return createdFr, isIPManaged, err
+		}
+
 		equal, err := Equal(existingFwdRule, fr)
 		if err != nil {
 			return existingFwdRule, IPAddrUndefined, err
