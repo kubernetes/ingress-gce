@@ -90,6 +90,42 @@ func TestRegionalLink(t *testing.T) {
 	}
 }
 
+func TestRegionalUpdateLink(t *testing.T) {
+	t.Parallel()
+	fakeGCE := gce.NewFakeGCECloud(linkerTestClusterValues())
+	clusterID, _ := fakeGCE.ClusterID.GetID()
+	l4Namer := namer.NewL4Namer("uid1", namer.NewNamer(clusterID, ""))
+	sp := utils.ServicePort{NodePort: 8080, BackendNamer: l4Namer}
+	fakeBackendPool := NewPool(fakeGCE, l4Namer)
+	linker := newTestRegionalIgLinker(fakeGCE, fakeBackendPool, l4Namer)
+	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+		t.Fatalf("Unexpected error when ensuring IG for ServicePort %+v: %v", sp, err)
+	}
+	createBackendService(t, sp, fakeBackendPool)
+
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{uscentralzone}); err != nil {
+		t.Fatalf("Unexpected error in Link(_). Error: %v", err)
+	}
+	// Add error hook to check that Link function will not call Backend Service Update when no IG was added
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = test.UpdateRegionBackendServiceWithErrorHookUpdate
+
+	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{uscentralzone}); err != nil {
+		t.Fatalf("Unexpected error in Link(_). Error: %v", err)
+	}
+	be, err := fakeGCE.GetRegionBackendService(sp.BackendName(), fakeGCE.Region())
+	if err != nil {
+		t.Fatalf("Get Regional Backend Service failed %v", err)
+	}
+	if len(be.Backends) == 0 {
+		t.Fatalf("Expected Backends to be created")
+	}
+	ig, _ := linker.instancePool.Get(sp.IGName(), uscentralzone)
+	expectedLink, _ := utils.RelativeResourceName(ig.SelfLink)
+	if be.Backends[0].Group != expectedLink {
+		t.Fatalf("Expected Backend Group: %s received: %s", expectedLink, be.Backends[0].Group)
+	}
+}
+
 func createBackendService(t *testing.T, sp utils.ServicePort, backendPool *Backends) {
 	t.Helper()
 	namespacedName := types.NamespacedName{Name: "service.Name", Namespace: "service.Namespace"}

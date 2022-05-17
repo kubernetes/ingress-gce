@@ -15,7 +15,10 @@ package backends
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -164,4 +167,87 @@ func TestBackendsForIG(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestGetIGLinksToAdd(t *testing.T) {
+	url := "https://googleapis.com/v1/compute/projects/my-project/global/backendServices/%s"
+	link := "projects/my-project/global/backendServices/%s"
+	for _, tc := range []struct {
+		name           string
+		igLinks        []string
+		currentIGLinks []string
+		want           []string
+	}{
+		{
+			name:           "empty",
+			igLinks:        []string{},
+			currentIGLinks: []string{},
+			want:           []string{},
+		},
+		{
+			name:           "No IGs to add",
+			igLinks:        []string{fmt.Sprintf(url, "same-backend")},
+			currentIGLinks: []string{fmt.Sprintf(url, "same-backend")},
+			want:           []string{},
+		},
+		{
+			name:           "same IGs in wrong order",
+			igLinks:        []string{fmt.Sprintf(url, "same-backend2"), fmt.Sprintf(url, "same-backend")},
+			currentIGLinks: []string{fmt.Sprintf(url, "same-backend"), fmt.Sprintf(url, "same-backend2")},
+			want:           []string{},
+		},
+		{
+			name:           "one IG to add",
+			igLinks:        []string{fmt.Sprintf(url, "same-backend"), fmt.Sprintf(url, "same-backend2"), fmt.Sprintf(url, "same-backend3")},
+			currentIGLinks: []string{fmt.Sprintf(url, "same-backend"), fmt.Sprintf(url, "same-backend2")},
+			want:           []string{fmt.Sprintf(link, "same-backend3")},
+		},
+		{
+			name:           "IGs in wrong order",
+			igLinks:        []string{fmt.Sprintf(url, "same-backend2"), fmt.Sprintf(url, "same-backend")},
+			currentIGLinks: []string{fmt.Sprintf(url, "same-backend3"), fmt.Sprintf(url, "same-backend2")},
+			want:           []string{fmt.Sprintf(link, "same-backend")},
+		},
+		{
+			name:           "different IGs",
+			igLinks:        []string{fmt.Sprintf(url, "same-backend"), fmt.Sprintf(url, "same-backend2")},
+			currentIGLinks: []string{fmt.Sprintf(url, "same-backend3"), fmt.Sprintf(url, "same-backend4")},
+			want:           []string{fmt.Sprintf(link, "same-backend"), fmt.Sprintf(link, "same-backend2")},
+		},
+		{
+			name:           "empty current",
+			igLinks:        []string{fmt.Sprintf(url, "same-backend"), fmt.Sprintf(url, "same-backend2")},
+			currentIGLinks: []string{},
+			want:           []string{fmt.Sprintf(link, "same-backend"), fmt.Sprintf(link, "same-backend2")},
+		},
+		{
+			name:           "empty IGs and non-empty current",
+			igLinks:        []string{},
+			currentIGLinks: []string{fmt.Sprintf(url, "same-backend"), fmt.Sprintf(url, "same-backend2")},
+			want:           []string{},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			be := composite.BackendService{}
+			var newBackends []*composite.Backend
+			for _, igLink := range tc.currentIGLinks {
+				b := &composite.Backend{
+					Group: igLink,
+				}
+				newBackends = append(newBackends, b)
+			}
+			be.Backends = newBackends
+			toAdd, err := getInstanceGroupsToAdd(&be, tc.igLinks)
+			if err != nil {
+				t.Fatalf("getInstanceGroupsToAdd(_,_): err:%v ", err)
+			}
+			sort.Slice(toAdd, func(i, j int) bool {
+				return toAdd[i] <= toAdd[j]
+			})
+			if !reflect.DeepEqual(toAdd, tc.want) {
+				t.Fatalf("getInstanceGroupsToAdd(_,_) error. Got:%v, Want:%v", toAdd, tc.want)
+			}
+		})
+	}
+
 }

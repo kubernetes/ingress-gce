@@ -78,6 +78,10 @@ func DeleteBackendServicesErrorHook(ctx context.Context, key *meta.Key, m *cloud
 	return true, fmt.Errorf("DeleteBackendServicesErrorHook")
 }
 
+func UpdateRegionBackendServiceWithErrorHookUpdate(context.Context, *meta.Key, *compute.BackendService, *cloud.MockRegionBackendServices) error {
+	return fmt.Errorf("Undefined error")
+}
+
 func DeleteHealthCheckErrorHook(ctx context.Context, key *meta.Key, m *cloud.MockRegionHealthChecks) (bool, error) {
 	return true, fmt.Errorf("DeleteHealthCheckErrorHook")
 }
