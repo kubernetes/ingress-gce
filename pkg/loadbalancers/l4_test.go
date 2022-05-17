@@ -609,7 +609,7 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 	l4NetLB.l4HealthChecks = l.l4HealthChecks
 
 	// create netlb resources
-	l4NetLB.EnsureFrontend(nodeNames)
+	ensureFrontend(l4NetLB, nodeNames)
 	if l4NetLB.SyncResult.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", l4NetLB.SyncResult.Error)
 	}

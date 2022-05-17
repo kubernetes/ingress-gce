@@ -167,6 +167,26 @@ func (l4hc *l4HealthChecks) DeleteHealthCheck(svc *corev1.Service, namer namer.L
 	return l4hc.deleteHealthCheckFirewall(svc, hcName, hcFwName, sharedHC, l4Type)
 }
 
+// DeleteLegacyHealthCheck deletes legacy http health check (and firewall rule) for l4 service.
+func (l4hc *l4HealthChecks) DeleteLegacyHealthCheck(svc *corev1.Service, hcName, clusterID, loadBalancerName string) error {
+	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
+	hcFwName := gce.MakeHealthCheckFirewallName(clusterID, hcName, hcName != loadBalancerName)
+
+	klog.V(3).Infof("Trying to delete legacy L4 HTTP healthcheck: %s and firewall rule %s from service %s", hcName, hcFwName, namespacedName.String())
+	err := utils.IgnoreHTTPNotFound(l4hc.deleteLegacyHealthCheck(hcName))
+	if err != nil {
+		// Ignore deletion error due to health check in use by another resource.
+		if !utils.IsInUsedByError(err) {
+			klog.Errorf("Failed to delete legacy HTTP healthcheck for service %s - %v", namespacedName.String(), err)
+			return err
+		}
+		klog.V(2).Infof("Legacy HTTP healthcheck %s is used by other service, skipping deleting healthcheck firewall rule %s.", hcName, hcFwName)
+		return nil
+	}
+	// Health check deleted, now delete the firewall rule
+	return l4hc.deleteFirewall(hcFwName, svc)
+}
+
 func (l4hc *l4HealthChecks) ensureL4HealthCheckInternal(hcName string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, l4Type utils.L4LBType) (*composite.HealthCheck, string, error) {
 	selfLink := ""
 	key, err := composite.CreateKey(l4hc.cloud, hcName, scope)
@@ -232,6 +252,10 @@ func (l4hc *l4HealthChecks) deleteHealthCheck(name string, scope meta.KeyType) e
 		return fmt.Errorf("Failed to create composite key for healthcheck %s - %w", name, err)
 	}
 	return composite.DeleteHealthCheck(l4hc.cloud, key, meta.VersionGA)
+}
+
+func (l4hc *l4HealthChecks) deleteLegacyHealthCheck(name string) error {
+	return l4hc.cloud.DeleteHTTPHealthCheck(name)
 }
 
 func (l4hc *l4HealthChecks) deleteHealthCheckFirewall(svc *corev1.Service, hcName, hcFwName string, sharedHC bool, l4Type utils.L4LBType) (string, error) {

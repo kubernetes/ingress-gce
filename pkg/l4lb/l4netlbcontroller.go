@@ -249,10 +249,7 @@ func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service) bool {
 	if svc == nil {
 		return false
 	}
-	if val, ok := svc.Annotations[annotations.RBSAnnotationKey]; ok && val == annotations.RBSEnabled {
-		return true
-	}
-	return utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc)
+	return utils.HasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc)
 }
 
 func (lc *L4NetLBController) checkHealth() error {
@@ -331,6 +328,16 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		return &loadbalancers.L4NetLBSyncResult{Error: fmt.Errorf("Failed to attach L4 External LoadBalancer finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
 	}
 
+	needsLegacyL4Cleanup := utils.HasLegacyL4CleanupFinalizer(service)
+	frName := l4netlb.GetFRName()
+	existingForwardingRule := l4netlb.GetForwardingRule(frName, meta.VersionGA)
+	if existingForwardingRule != nil && existingForwardingRule.Target != "" {
+		if err := common.EnsureServiceFinalizer(service, common.LegacyL4CleanupFinalizer, lc.ctx.KubeClient); err != nil {
+			return &loadbalancers.L4NetLBSyncResult{Error: fmt.Errorf("Failed to attach LegacyL4CleanupFinalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
+		}
+		needsLegacyL4Cleanup = true
+	}
+
 	nodeNames, err := utils.GetReadyNodeNames(lc.nodeLister)
 	if err != nil {
 		return &loadbalancers.L4NetLBSyncResult{Error: err}
@@ -344,7 +351,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
-	l4netlb.EnsureFrontend(nodeNames)
+	l4netlb.EnsureFrontendWithExistingFwRule(nodeNames, existingForwardingRule)
 	if l4netlb.SyncResult.Error != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error ensuring Resource for L4 External LoadBalancer, err: %v", l4netlb.SyncResult.Error)
@@ -374,6 +381,22 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		l4netlb.SyncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
 		return l4netlb.SyncResult
 	}
+
+	if needsLegacyL4Cleanup {
+		err = l4netlb.CleanLegacyServiceResources()
+		if err != nil {
+			lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "CleanLegacyServiceResourcesFailed",
+				"Error deleting Legacy L4 External LoadBalancer resources, err: %v", err)
+		} else {
+			err = common.EnsureDeleteServiceFinalizer(service, common.LegacyL4CleanupFinalizer, lc.ctx.KubeClient)
+			if err != nil {
+				return &loadbalancers.L4NetLBSyncResult{Error: fmt.Errorf("Failed to delete LegacyL4CleanupFinalizer from service %s/%s, err %w", service.Namespace, service.Name, err)}
+			}
+			lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "L4LegacyCleanupSuccessful",
+				"Successfully deleted Legacy L4 External LoadBalancer resources")
+		}
+	}
+
 	l4netlb.SyncResult.MetricsState.InSuccess = true
 	return l4netlb.SyncResult
 }

@@ -216,7 +216,7 @@ func TestForwardingRulesEqual(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			got, err := Equal(tc.oldFwdRule, tc.newFwdRule)
+			got, err := equal(tc.oldFwdRule, tc.newFwdRule)
 			if err != nil {
 				t.Errorf("forwardingRulesEqual(_, _) = %v, want nil error", err)
 			}

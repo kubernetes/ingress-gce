@@ -91,6 +91,8 @@ type L4ResourcesNamer interface {
 	L4HealthCheck(namespace, name string, shared bool) (string, string)
 	// IsNEG returns if the given name is a VM_IP_NEG name.
 	IsNEG(name string) bool
+	// ClusterID returns cluster's id
+	ClusterID() string
 }
 
 type ServiceAttachmentNamer interface {

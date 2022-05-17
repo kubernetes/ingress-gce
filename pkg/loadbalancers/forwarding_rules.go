@@ -142,7 +142,7 @@ func (l *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, 
 		if err != nil {
 			return nil, err
 		}
-		if err := composite.SetProxyForForwardingRule(l.cloud, key, existing, proxyLink); err != nil {
+		if err := composite.SetTargetForForwardingRule(l.cloud, key, existing, proxyLink); err != nil {
 			return nil, err
 		}
 	}
@@ -270,11 +270,11 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	}
 
 	if existingFwdRule != nil {
-		equal, err := Equal(existingFwdRule, fr)
+		same, err := equal(existingFwdRule, fr)
 		if err != nil {
 			return existingFwdRule, err
 		}
-		if equal {
+		if same {
 			// nothing to do
 			klog.V(2).Infof("ensureForwardingRule: Skipping update of unchanged forwarding rule - %s", fr.Name)
 			return existingFwdRule, nil
@@ -322,7 +322,7 @@ func (l *L4) deleteForwardingRule(name string, version meta.Version) {
 
 // ensureExternalForwardingRule creates a forwarding rule with the given name for L4NetLB,
 // if it does not exist. It updates the existing forwarding rule if needed.
-func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.ForwardingRule, IPAddressType, error) {
+func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string, existingFwdRule *composite.ForwardingRule) (*composite.ForwardingRule, IPAddressType, error) {
 	frName := l4netlb.GetFRName()
 	key, err := l4netlb.createKey(frName)
 	if err != nil {
@@ -330,7 +330,6 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.
 	}
 	// version used for creating the existing forwarding rule.
 	version := meta.VersionGA
-	existingFwdRule := l4netlb.GetForwardingRule(frName, version)
 
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
@@ -392,11 +391,26 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.
 			networkTierMismatchError := utils.NewNetworkTierErr(resource, existingFwdRule.NetworkTier, fr.NetworkTier)
 			return nil, IPAddrUndefined, networkTierMismatchError
 		}
-		equal, err := Equal(existingFwdRule, fr)
+
+		// Check if we transition from Target Pool Legacy Service to RBS based one.
+		// If configs are not equal, we should delete forwarding rule and recreate.
+		if existingFwdRule.Target != "" && configsEqual(fr, existingFwdRule) {
+			// If transitioning from Legacy L4 Net LB Service to RBS,
+			// instead of forwarding rule recreation, call set-target
+			// on forwarding rule, to minimize down-time
+			err = composite.SetTargetForForwardingRule(l4netlb.cloud, key, existingFwdRule, bsLink)
+			if err != nil {
+				return nil, IPAddrUndefined, err
+			}
+			createdFr, err := composite.GetForwardingRule(l4netlb.cloud, key, fr.Version)
+			return createdFr, isIPManaged, err
+		}
+
+		same, err := equal(existingFwdRule, fr)
 		if err != nil {
 			return existingFwdRule, IPAddrUndefined, err
 		}
-		if equal {
+		if same {
 			// nothing to do
 			klog.V(2).Infof("ensureExternalForwardingRule: Skipping update of unchanged forwarding rule - %s", fr.Name)
 			return existingFwdRule, isIPManaged, nil
@@ -451,7 +465,24 @@ func (l4netlb *L4NetLB) deleteForwardingRule(name string, version meta.Version) 
 	}
 }
 
-func Equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
+// configsEqual check if two forwarding rules are equal in configurations, except for backend targets and description
+func configsEqual(fr1, fr2 *composite.ForwardingRule) bool {
+	return fr1.IPAddress == fr2.IPAddress &&
+		fr1.IPProtocol == fr2.IPProtocol &&
+		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
+		utils.EqualStringSets(fr1.Ports, fr2.Ports) &&
+		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
+		fr1.AllPorts == fr2.AllPorts &&
+		fr1.Subnetwork == fr2.Subnetwork &&
+		fr1.NetworkTier == fr2.NetworkTier
+}
+
+// equal checks if two forwarding rules are equal both in configs and in backend targets
+func equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
+	if fr1.Target != "" {
+		return false, nil
+	}
+
 	id1, err := cloud.ParseResourceURL(fr1.BackendService)
 	if err != nil {
 		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse backend resource URL from FR, err - %w", err)
@@ -460,15 +491,7 @@ func Equal(fr1, fr2 *composite.ForwardingRule) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("forwardingRulesEqual(): failed to parse resource URL from FR, err - %w", err)
 	}
-	return fr1.IPAddress == fr2.IPAddress &&
-		fr1.IPProtocol == fr2.IPProtocol &&
-		fr1.LoadBalancingScheme == fr2.LoadBalancingScheme &&
-		utils.EqualStringSets(fr1.Ports, fr2.Ports) &&
-		id1.Equal(id2) &&
-		fr1.AllowGlobalAccess == fr2.AllowGlobalAccess &&
-		fr1.AllPorts == fr2.AllPorts &&
-		fr1.Subnetwork == fr2.Subnetwork &&
-		fr1.NetworkTier == fr2.NetworkTier, nil
+	return configsEqual(fr1, fr2) && id1.Equal(id2), nil
 }
 
 // l4lbIPToUse determines which IP address needs to be used in the ForwardingRule. If an IP has been

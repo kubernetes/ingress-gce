@@ -713,6 +713,19 @@ func HasL4NetLBFinalizerV2(svc *api_v1.Service) bool {
 	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.NetLBFinalizerV2, nil)
 }
 
+// HasLegacyL4CleanupFinalizer returns true if the given Service has LegacyL4CleanupFinalizer
+func HasLegacyL4CleanupFinalizer(svc *api_v1.Service) bool {
+	return slice.ContainsString(svc.ObjectMeta.Finalizers, common.LegacyL4CleanupFinalizer, nil)
+}
+
+// HasRBSAnnotation return true if the given service has RBS Annotation equals to "enabled"
+func HasRBSAnnotation(svc *api_v1.Service) bool {
+	if val, ok := svc.Annotations[annotations.RBSAnnotationKey]; ok && val == annotations.RBSEnabled {
+		return true
+	}
+	return false
+}
+
 func LegacyForwardingRuleName(svc *api_v1.Service) string {
 	return cloudprovider.DefaultLoadBalancerName(svc)
 }

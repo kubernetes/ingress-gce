@@ -101,3 +101,8 @@ func (n *L4Namer) hcFirewallName(hcName string) string {
 	}
 	return hcName + firewallHcSuffix
 }
+
+// ClusterID returns cluster's id
+func (n *L4Namer) ClusterID() string {
+	return n.v2ClusterUID
+}

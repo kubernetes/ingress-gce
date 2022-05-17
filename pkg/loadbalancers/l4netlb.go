@@ -24,7 +24,9 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/client-go/tools/record"
+	cloudprovider "k8s.io/cloud-provider"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -102,13 +104,12 @@ func (l4netlb *L4NetLB) createKey(name string) (*meta.Key, error) {
 	return composite.CreateKey(l4netlb.cloud, name, l4netlb.scope)
 }
 
-// EnsureFrontend ensures that all frontend resources for the given loadbalancer service have
+// EnsureFrontendWithExistingFwRule ensures that all frontend resources for the given loadbalancer service have
 // been created. It is health check, firewall rules, backend service and forwarding rule.
 // It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 // This function does not link instances to Backend Service.
-func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string) {
+func (l4netlb *L4NetLB) EnsureFrontendWithExistingFwRule(nodeNames []string, existingForwardingRule *composite.ForwardingRule) {
 	l4netlb.clearSyncResult()
-
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	if len(l4netlb.Service.Status.LoadBalancer.Ingress) > 0 {
 		l4netlb.SyncResult.SyncType = SyncTypeUpdate
@@ -129,7 +130,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string) {
 		return
 	}
 
-	l4netlb.syncForwardingRule(backendServiceLink)
+	l4netlb.syncForwardingRule(backendServiceLink, existingForwardingRule)
 }
 
 // EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
@@ -292,8 +293,8 @@ func (l4netlb *L4NetLB) syncBackendService(healthCheckLink string) string {
 	return bs.SelfLink
 }
 
-func (l4netlb *L4NetLB) syncForwardingRule(backendServiceLink string) {
-	fr, ipAddrType, err := l4netlb.ensureExternalForwardingRule(backendServiceLink)
+func (l4netlb *L4NetLB) syncForwardingRule(backendServiceLink string, existingForwardingRule *composite.ForwardingRule) {
+	fr, ipAddrType, err := l4netlb.ensureExternalForwardingRule(backendServiceLink, existingForwardingRule)
 	if err != nil {
 		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
 		l4netlb.SyncResult.MetricsState.IsUserError = utils.IsUserError(err)
@@ -309,4 +310,47 @@ func (l4netlb *L4NetLB) syncForwardingRule(backendServiceLink string) {
 	l4netlb.SyncResult.Status = &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}
 	l4netlb.SyncResult.MetricsState.IsPremiumTier = fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue()
 	l4netlb.SyncResult.MetricsState.IsManagedIP = ipAddrType == IPAddrManaged
+}
+
+func (l4netlb *L4NetLB) ensureTargetPoolDeleted(targetPoolName string) error {
+	return utils.IgnoreHTTPNotFound(l4netlb.cloud.DeleteTargetPool(targetPoolName, l4netlb.cloud.Region()))
+}
+
+// CleanLegacyServiceResources deletes resources, used only by legacy L4 NetLB, based on Target Pools and implemented in service controller
+func (l4netlb *L4NetLB) CleanLegacyServiceResources() error {
+	loadBalancerName := cloudprovider.DefaultLoadBalancerName(l4netlb.Service)
+	serviceName := types.NamespacedName{Namespace: l4netlb.Service.Namespace, Name: l4netlb.Service.Name}
+
+	errs := utilerrors.AggregateGoroutines(
+		func() error {
+			klog.Infof("cleanLegacyServiceResources(%s): Deleting firewall rule.", serviceName.String())
+			return l4netlb.deleteFirewall(gce.MakeFirewallName(loadBalancerName))
+		},
+		func() error {
+			klog.Infof("cleanLegacyServiceResources(%s): Deleting target pool", serviceName.String())
+
+			err := l4netlb.ensureTargetPoolDeleted(loadBalancerName)
+			if err != nil {
+				klog.Errorf("cleanLegacyServiceResources(%v): Failed to delete target pool, got error %s", serviceName.String(), err)
+				return err
+			}
+
+			// Deletion of health checks is allowed only after the TargetPool reference is deleted
+			// Try to delete 2 types of health checks -- used for local traffic policy, and external
+			// They both use legacy naming scheme, so they are not useful for RBS service, and it is safe to delete them
+			deleteInternalHealthCheck := func() error {
+				internalHCName := loadBalancerName
+				return l4netlb.l4HealthChecks.DeleteLegacyHealthCheck(l4netlb.Service, internalHCName, l4netlb.namer.ClusterID(), loadBalancerName)
+			}
+			deleteExternalHealthCheck := func() error {
+				externalHCName := gce.MakeNodesHealthCheckName(l4netlb.namer.ClusterID())
+				return l4netlb.l4HealthChecks.DeleteLegacyHealthCheck(l4netlb.Service, externalHCName, l4netlb.namer.ClusterID(), loadBalancerName)
+			}
+			return utilerrors.AggregateGoroutines(deleteInternalHealthCheck, deleteExternalHealthCheck)
+		},
+	)
+	if errs != nil {
+		return utilerrors.Flatten(errs)
+	}
+	return nil
 }

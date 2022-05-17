@@ -43,6 +43,9 @@ const (
 	LegacyNetLBFinalizer = "gke.networking.io/l4-netlb-v1"
 	// NetLBFinalizerV2 is the finalizer used by newer controllers that manage L4 External LoadBalancer services.
 	NetLBFinalizerV2 = "gke.networking.io/l4-netlb-v2"
+	// LegacyL4CleanupFinalizer is the finalizer used to indicate,
+	// that Ingress-GCE should clean up GCE resources used for Legacy L4 Target-Pool based Service
+	LegacyL4CleanupFinalizer = "gke.networking.io/legacy-l4-cleanup"
 )
 
 // IsDeletionCandidate is true if the passed in meta contains an ingress finalizer.

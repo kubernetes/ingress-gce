@@ -30,7 +30,7 @@ import (
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
-// SetUrlMapForTargetHttpsProxy() sets the UrlMap for a target https proxy
+// SetUrlMapForTargetHttpsProxy sets the UrlMap for a target https proxy
 func SetUrlMapForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, urlMapLink string) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
@@ -68,7 +68,7 @@ func SetUrlMapForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttp
 	}
 }
 
-// SetSslCertificateForTargetHttpsProxy() sets the SSL Certificate for a target https proxy
+// SetSslCertificateForTargetHttpsProxy sets the SSL Certificate for a target https proxy
 func SetSslCertificateForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, sslCertURLs []string) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
@@ -109,7 +109,7 @@ func SetSslCertificateForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, ta
 	}
 }
 
-// SetSslPolicyForTargetHttpsProxy() sets the url map for a target proxy
+// SetSslPolicyForTargetHttpsProxy sets the url map for a target proxy
 func SetSslPolicyForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpsProxy *TargetHttpsProxy, SslPolicyLink string) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
@@ -147,7 +147,7 @@ func SetSslPolicyForTargetHttpsProxy(gceCloud *gce.Cloud, key *meta.Key, targetH
 	}
 }
 
-// SetUrlMapForTargetHttpProxy() sets the url map for a target proxy
+// SetUrlMapForTargetHttpProxy sets the url map for a target proxy
 func SetUrlMapForTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpProxy *TargetHttpProxy, urlMapLink string) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
@@ -185,8 +185,8 @@ func SetUrlMapForTargetHttpProxy(gceCloud *gce.Cloud, key *meta.Key, targetHttpP
 	}
 }
 
-// SetProxyForForwardingRule() sets the target proxy for a forwarding rule
-func SetProxyForForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *ForwardingRule, targetProxyLink string) error {
+// SetTargetForForwardingRule sets the target proxy for a forwarding rule
+func SetTargetForForwardingRule(gceCloud *gce.Cloud, key *meta.Key, forwardingRule *ForwardingRule, targetProxyLink string) error {
 	ctx, cancel := cloud.ContextWithCallTimeout()
 	defer cancel()
 	mc := metrics.NewMetricContext("ForwardingRule", "set_proxy", key.Region, key.Zone, string(forwardingRule.Version))

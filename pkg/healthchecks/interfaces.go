@@ -65,6 +65,8 @@ type L4HealthChecks interface {
 	EnsureL4HealthCheck(svc *v1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string) *EnsureL4HealthCheckResult
 	// DeleteHealthCheck deletes health check (and firewall rule) for l4 service
 	DeleteHealthCheck(svc *v1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType) (string, error)
+	// DeleteLegacyHealthCheck deletes legacy http health check (and firewall rule) for l4 service
+	DeleteLegacyHealthCheck(svc *v1.Service, hcName, clusterID, loadBalancerName string) error
 }
 
 type EnsureL4HealthCheckResult struct {
