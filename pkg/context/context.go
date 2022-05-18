@@ -206,12 +206,13 @@ func NewControllerContext(
 		context.UseEndpointSlices,
 		context.KubeClient,
 	)
-	context.InstancePool = instances.NewNodePool(context.Cloud,
-		context.ClusterNamer,
-		context,
-		utils.GetBasePath(context.Cloud),
-		context.Translator,
-	)
+	context.InstancePool = instances.NewNodePool(instances.NodePoolConfig{
+		Cloud:      context.Cloud,
+		Namer:      context.ClusterNamer,
+		Recorders:  context,
+		BasePath:   utils.GetBasePath(context.Cloud),
+		ZoneLister: context.Translator,
+	})
 
 	return context
 }

@@ -52,16 +52,24 @@ type recorderSource interface {
 	Recorder(ns string) record.EventRecorder
 }
 
-// NewNodePool creates a new node pool.
-// - cloud: implements InstanceGroups, used to sync Kubernetes nodes with
-//   members of the cloud InstanceGroup.
-func NewNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource, basePath string, zl ZoneLister) NodePool {
+// NodePoolConfig is used for NodePool constructor.
+type NodePoolConfig struct {
+	// Cloud implements InstanceGroups, used to sync Kubernetes nodes with members of the cloud InstanceGroup.
+	Cloud      InstanceGroups
+	Namer      namer.BackendNamer
+	Recorders  recorderSource
+	BasePath   string
+	ZoneLister ZoneLister
+}
+
+// NewNodePool creates a new node pool using NodePoolConfig.
+func NewNodePool(config NodePoolConfig) NodePool {
 	return &Instances{
-		cloud:              cloud,
-		namer:              namer,
-		recorder:           recorders.Recorder(""), // No namespace
-		instanceLinkFormat: basePath + "zones/%s/instances/%s",
-		ZoneLister:         zl,
+		cloud:              config.Cloud,
+		namer:              config.Namer,
+		recorder:           config.Recorders.Recorder(""), // No namespace
+		instanceLinkFormat: config.BasePath + "zones/%s/instances/%s",
+		ZoneLister:         config.ZoneLister,
 	}
 }
 

@@ -45,7 +45,13 @@ func linkerTestClusterValues() gce.TestClusterValues {
 func newTestRegionalIgLinker(fakeGCE *gce.Cloud, backendPool *Backends, l4Namer *namer.L4Namer) *RegionalInstanceGroupLinker {
 	fakeIGs := instances.NewEmptyFakeInstanceGroups()
 	fakeZL := &instances.FakeZoneLister{Zones: []string{uscentralzone}}
-	fakeInstancePool := instances.NewNodePool(fakeIGs, l4Namer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE), fakeZL)
+	fakeInstancePool := instances.NewNodePool(instances.NodePoolConfig{
+		Cloud:      fakeIGs,
+		Namer:      l4Namer,
+		Recorders:  &test.FakeRecorderSource{},
+		BasePath:   utils.GetBasePath(fakeGCE),
+		ZoneLister: fakeZL,
+	})
 
 	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegionBackendServices.UpdateHook = mock.UpdateRegionBackendServiceHook
 
