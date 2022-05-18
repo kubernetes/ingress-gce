@@ -23,7 +23,6 @@ import (
 
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -35,17 +34,23 @@ const (
 
 var defaultNamer = namer.NewNamer("uid1", "fw1")
 
-func newNodePool(f *FakeInstanceGroups, zone string) NodePool {
-	fakeZL := &FakeZoneLister{[]string{zone}}
-	pool := NewNodePool(f, defaultNamer, &test.FakeRecorderSource{}, basePath, fakeZL)
+func newNodePool(f *FakeInstanceGroups, zone string, maxIGSize int) NodePool {
+	pool := NewNodePool(&NodePoolConfig{
+		Cloud:      f,
+		Namer:      defaultNamer,
+		Recorders:  &test.FakeRecorderSource{},
+		BasePath:   basePath,
+		ZoneLister: &FakeZoneLister{[]string{zone}},
+		MaxIGSize:  maxIGSize,
+	})
 	return pool
 }
 
 func TestNodePoolSync(t *testing.T) {
-	flags.F.MaxIgSize = 1000
+	maxIGSize := 1000
 
-	names1001 := make([]string, flags.F.MaxIgSize+1)
-	for i := 1; i <= flags.F.MaxIgSize+1; i++ {
+	names1001 := make([]string, maxIGSize+1)
+	for i := 1; i <= maxIGSize+1; i++ {
 		names1001[i-1] = fmt.Sprintf("n%d", i)
 	}
 
@@ -80,13 +85,14 @@ func TestNodePoolSync(t *testing.T) {
 	for _, testCase := range testCases {
 		// create fake gce node pool with existing gceNodes
 		ig := &compute.InstanceGroup{Name: defaultNamer.InstanceGroup()}
-		fakeGCEInstanceGroups := NewFakeInstanceGroups(map[string]IGsToInstances{
+		zonesToIGs := map[string]IGsToInstances{
 			defaultZone: {
 				ig: testCase.gceNodes,
 			},
-		})
+		}
+		fakeGCEInstanceGroups := NewFakeInstanceGroups(zonesToIGs, maxIGSize)
 
-		pool := newNodePool(fakeGCEInstanceGroups, defaultZone)
+		pool := newNodePool(fakeGCEInstanceGroups, defaultZone, maxIGSize)
 
 		igName := defaultNamer.InstanceGroup()
 		ports := []int64{80}
@@ -118,10 +124,10 @@ func TestNodePoolSync(t *testing.T) {
 		}
 
 		expectedInstancesSize := testCase.kubeNodes.Len()
-		if testCase.kubeNodes.Len() > flags.F.MaxIgSize {
+		if testCase.kubeNodes.Len() > maxIGSize {
 			// If kubeNodes bigger than maximum instance group size, resulted instances
 			// should be truncated to flags.F.MaxIgSize
-			expectedInstancesSize = flags.F.MaxIgSize
+			expectedInstancesSize = maxIGSize
 		}
 		if instances.Len() != expectedInstancesSize {
 			t.Errorf("instances.Len() = %d not equal expectedInstancesSize = %d", instances.Len(), expectedInstancesSize)
@@ -144,12 +150,14 @@ func TestNodePoolSync(t *testing.T) {
 }
 
 func TestSetNamedPorts(t *testing.T) {
-	fakeIGs := NewFakeInstanceGroups(map[string]IGsToInstances{
+	maxIGSize := 1000
+	zonesToIGs := map[string]IGsToInstances{
 		defaultZone: {
 			&compute.InstanceGroup{Name: "ig"}: sets.NewString("ig"),
 		},
-	})
-	pool := newNodePool(fakeIGs, defaultZone)
+	}
+	fakeIGs := NewFakeInstanceGroups(zonesToIGs, maxIGSize)
+	pool := newNodePool(fakeIGs, defaultZone, maxIGSize)
 
 	testCases := []struct {
 		activePorts   []int64
@@ -198,11 +206,13 @@ func TestSetNamedPorts(t *testing.T) {
 }
 
 func TestGetInstanceReferences(t *testing.T) {
-	pool := newNodePool(NewFakeInstanceGroups(map[string]IGsToInstances{
+	maxIGSize := 1000
+	zonesToIGs := map[string]IGsToInstances{
 		defaultZone: {
 			&compute.InstanceGroup{Name: "ig"}: sets.NewString("ig"),
 		},
-	}), defaultZone)
+	}
+	pool := newNodePool(NewFakeInstanceGroups(zonesToIGs, maxIGSize), defaultZone, maxIGSize)
 	instances := pool.(*Instances)
 
 	nodeNames := []string{"node-1", "node-2", "node-3", "node-4.region.zone"}

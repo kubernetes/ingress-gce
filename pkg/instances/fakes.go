@@ -24,7 +24,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -37,9 +36,10 @@ func NewEmptyFakeInstanceGroups() *FakeInstanceGroups {
 }
 
 // NewFakeInstanceGroups creates a new FakeInstanceGroups.
-func NewFakeInstanceGroups(zonesToIGsToInstances map[string]IGsToInstances) *FakeInstanceGroups {
+func NewFakeInstanceGroups(zonesToIGsToInstances map[string]IGsToInstances, maxIGSize int) *FakeInstanceGroups {
 	return &FakeInstanceGroups{
 		zonesToIGsToInstances: zonesToIGsToInstances,
+		maxIGSize:             maxIGSize,
 	}
 }
 
@@ -68,6 +68,7 @@ type FakeInstanceGroups struct {
 	getResult             *compute.InstanceGroup
 	calls                 []int
 	zonesToIGsToInstances map[string]IGsToInstances
+	maxIGSize             int
 }
 
 // getInstanceGroup implements fake getting ig by name in zone
@@ -142,7 +143,7 @@ func (f *FakeInstanceGroups) AddInstancesToInstanceGroup(name, zone string, inst
 	newValue := sets.NewString(f.zonesToIGsToInstances[zone][ig].List()...)
 	newValue.Insert(instanceNames...)
 
-	if len(newValue) > flags.F.MaxIgSize {
+	if len(newValue) > f.maxIGSize {
 		return test.FakeGoogleAPIRequestEntityTooLargeError()
 	}
 

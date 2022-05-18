@@ -75,7 +75,14 @@ func newLoadBalancerController() *LoadBalancerController {
 	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, fakeGCE, namer, "" /*kubeSystemUID*/, ctxConfig)
 	lbc := NewLoadBalancerController(ctx, stopCh)
 	// TODO(rramkumar): Fix this so we don't have to override with our fake
-	lbc.instancePool = instances.NewNodePool(instances.NewEmptyFakeInstanceGroups(), namer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE), fakeZL)
+	lbc.instancePool = instances.NewNodePool(&instances.NodePoolConfig{
+		Cloud:      instances.NewEmptyFakeInstanceGroups(),
+		Namer:      namer,
+		Recorders:  &test.FakeRecorderSource{},
+		BasePath:   utils.GetBasePath(fakeGCE),
+		ZoneLister: fakeZL,
+		MaxIGSize:  1000,
+	})
 	lbc.l7Pool = loadbalancers.NewLoadBalancerPool(fakeGCE, namer, events.RecorderProducerMock{}, namer_util.NewFrontendNamerFactory(namer, ""))
 
 	lbc.hasSynced = func() bool { return true }
