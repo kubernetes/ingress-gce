@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -148,8 +149,11 @@ func TestAddressManagerExternallyOwnedWrongNetworkTier(t *testing.T) {
 	err = svc.ReserveRegionAddress(addr, vals.Region)
 	require.NoError(t, err, "")
 	mgr := newAddressManager(svc, testSvcName, vals.Region, testSubnet, testLBName, targetIP, cloud.SchemeInternal, cloud.NetworkTierPremium)
+	svc.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = test.InsertAddressNetworkErrorHook
 	_, _, err = mgr.HoldAddress()
-	require.Error(t, err, "does not have the expected network tier")
+	if err == nil || !utils.IsNetworkTierError(err) {
+		t.Fatalf("mgr.HoldAddress() = %v, utils.IsNetworkTierError(err) = %t, want %t", err, utils.IsNetworkTierError(err), true)
+	}
 }
 
 // TestAddressManagerExternallyOwned tests the case where the address exists but isn't

@@ -124,6 +124,8 @@ const (
 	l4NetLBInSuccess = feature("L4NetLBInSuccess")
 	// l4NetLBInInError feature specifies that an error had occurred while creating/updating GCE Load Balancer.
 	l4NetLBInError = feature("L4NetLBInError")
+	// l4NetLBInInUserError feature specifies that an error cause by User misconfiguration had occurred while creating/updating GCE Load Balancer.
+	l4NetLBInUserError = feature("L4NetLBInUserError")
 
 	// PSC Features
 	sa          = feature("ServiceAttachments")

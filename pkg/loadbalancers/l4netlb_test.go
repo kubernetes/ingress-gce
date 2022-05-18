@@ -38,12 +38,9 @@ import (
 )
 
 const (
-	managedIP    = true
-	unmanagedIP  = false
-	premiumTier  = true
-	standardTier = false
-	usersIP      = "35.10.211.60"
-	userAddrName = "UserStaticAddress"
+	usersIP        = "35.10.211.60"
+	usersIPPremium = "35.10.211.70"
+	userAddrName   = "UserStaticAddress"
 )
 
 func TestEnsureL4NetLoadBalancer(t *testing.T) {
@@ -71,7 +68,7 @@ func TestEnsureL4NetLoadBalancer(t *testing.T) {
 		t.Errorf("Annotations error: %v", err)
 	}
 	assertNetLbResources(t, svc, l4netlb, nodeNames)
-	if err := checkMetrics(result.MetricsState, managedIP, premiumTier); err != nil {
+	if err := checkMetrics(result.MetricsState /*isManaged = */, true /*isPremium = */, true /*isUserError =*/, false); err != nil {
 		t.Errorf("Metrics error: %v", err)
 	}
 }
@@ -279,11 +276,12 @@ func assertNetLbResources(t *testing.T, apiService *v1.Service, l4NetLb *L4NetLB
 	}
 }
 
-func TestMetricsForUserStaticService(t *testing.T) {
+func TestMetricsForStandardNetworkTier(t *testing.T) {
 	nodeNames := []string{"test-node-1"}
 	vals := gce.DefaultTestClusterValues()
 	fakeGCE := getFakeGCECloud(vals)
-	createUserStaticIP(fakeGCE, vals.Region)
+	createUserStaticIPInStandardTier(fakeGCE, vals.Region)
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockForwardingRules.GetHook = test.GetRBSForwardingRuleInStandardTier
 
 	svc := test.NewL4NetLBRBSService(8080)
 	svc.Spec.LoadBalancerIP = usersIP
@@ -299,12 +297,37 @@ func TestMetricsForUserStaticService(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	if err := checkMetrics(result.MetricsState, unmanagedIP, standardTier); err != nil {
+	if err := checkMetrics(result.MetricsState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, false); err != nil {
+		t.Errorf("Metrics error: %v", err)
+	}
+	// Check that service sync will return error if User Address IP Network Tier mismatch with service Network Tier.
+	svc.ObjectMeta.Annotations[annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierPremium)
+	result = l4netlb.EnsureFrontend(nodeNames, svc)
+	if result.Error == nil || !utils.IsNetworkTierError(result.Error) {
+		t.Errorf("LoadBalancer sync should return Network Tier error, err %v", result.Error)
+	}
+	if err := checkMetrics(result.MetricsState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, true); err != nil {
+		t.Errorf("Metrics error: %v", err)
+	}
+	// Check that when network tier annotation will be deleted which will change desired service Network Tier to PREMIUM
+	// service sync will return User Error because we do not support updating forwarding rule.
+	// Forwarding rule with wrong tier should be tear down and it can be done only via annotation change.
+
+	// Crete new Static IP in Premium Network Tier to match default service Network Tier.
+	createUserStaticIPInPremiumTier(fakeGCE, vals.Region)
+	svc.Spec.LoadBalancerIP = usersIPPremium
+	delete(svc.ObjectMeta.Annotations, annotations.NetworkTierAnnotationKey)
+
+	result = l4netlb.EnsureFrontend(nodeNames, svc)
+	if result.Error == nil || !utils.IsNetworkTierError(result.Error) {
+		t.Errorf("LoadBalancer sync should return Network Tier error, err %v", result.Error)
+	}
+	if err := checkMetrics(result.MetricsState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, true); err != nil {
 		t.Errorf("Metrics error: %v", err)
 	}
 }
 
-func createUserStaticIP(fakeGCE *gce.Cloud, region string) {
+func createUserStaticIPInStandardTier(fakeGCE *gce.Cloud, region string) {
 	fakeGCE.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = mock.InsertAddressHook
 	fakeGCE.Compute().(*cloud.MockGCE).MockAlphaAddresses.X = mock.AddressAttributes{}
 	fakeGCE.Compute().(*cloud.MockGCE).MockAddresses.X = mock.AddressAttributes{}
@@ -317,13 +340,29 @@ func createUserStaticIP(fakeGCE *gce.Cloud, region string) {
 	}
 	fakeGCE.ReserveRegionAddress(newAddr, region)
 }
+func createUserStaticIPInPremiumTier(fakeGCE *gce.Cloud, region string) {
+	fakeGCE.Compute().(*cloud.MockGCE).MockAddresses.InsertHook = mock.InsertAddressHook
+	fakeGCE.Compute().(*cloud.MockGCE).MockAlphaAddresses.X = mock.AddressAttributes{}
+	fakeGCE.Compute().(*cloud.MockGCE).MockAddresses.X = mock.AddressAttributes{}
+	newAddr := &ga.Address{
+		Name:        "userAddrNamePremium",
+		Description: fmt.Sprintf(`{"kubernetes.io/service-name":"%s"}`, "userAddrName"),
+		Address:     usersIPPremium,
+		AddressType: string(cloud.SchemeExternal),
+		NetworkTier: cloud.NetworkTierPremium.ToGCEValue(),
+	}
+	fakeGCE.ReserveRegionAddress(newAddr, region)
+}
 
-func checkMetrics(m metrics.L4NetLBServiceState, isManaged, isPremium bool) error {
+func checkMetrics(m metrics.L4NetLBServiceState, isManaged, isPremium, isUserError bool) error {
 	if m.IsPremiumTier != isPremium {
 		return fmt.Errorf("L4 NetLB metric premium tier should be %v", isPremium)
 	}
 	if m.IsManagedIP != isManaged {
 		return fmt.Errorf("L4 NetLB metric is managed ip should be %v", isManaged)
+	}
+	if m.IsUserError != isUserError {
+		return fmt.Errorf("L4 NetLB metric is user error should be %v", isUserError)
 	}
 	return nil
 }

@@ -1221,3 +1221,64 @@ func TestMinMaxPortRangeAndProtocol(t *testing.T) {
 		}
 	}
 }
+
+func TestIsNetworkMismatchGCEError(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want bool
+	}{
+		{
+			err:  fmt.Errorf("The network tier of external IP is STANDARD, that of Address must be the same."),
+			want: true,
+		},
+		{
+			err:  fmt.Errorf("The network tier of external IP is PREMIUM, that of Address must be the same."),
+			want: true,
+		},
+		{
+			err:  fmt.Errorf("The network tier of external IP is , that of Address must be the same."),
+			want: false,
+		},
+		{
+			err:  fmt.Errorf("The network tier of external IP is"),
+			want: false,
+		},
+		{
+			err:  fmt.Errorf("Some dummy string"),
+			want: false,
+		},
+	} {
+		if got := IsNetworkTierMismatchGCEError(tc.err); got != tc.want {
+			t.Errorf("IsNetworkTierMismatchGCEError(%v) = %v, want %v", tc.err, got, tc.want)
+		}
+	}
+}
+
+func TestIsNetworkMismatchError(t *testing.T) {
+	netTierMismatchError := NewNetworkTierErr("forwarding-rule", "premium", "standard")
+	for _, tc := range []struct {
+		description string
+		err         error
+		want        bool
+	}{
+		{
+			description: "Good error is wrapped",
+			err:         fmt.Errorf("err: %w", netTierMismatchError),
+			want:        true,
+		},
+		{
+			description: "Good error is NetworkTierErr type",
+			err:         netTierMismatchError,
+			want:        true,
+		},
+		{
+			description: "Wrong error is not NetworkTierErr type",
+			err:         fmt.Errorf("Wrong error."),
+			want:        false,
+		},
+	} {
+		if got := IsNetworkTierError(tc.err); got != tc.want {
+			t.Errorf("IsNetworkTierError(%v) = %v, want %v", tc.err, got, tc.want)
+		}
+	}
+}
