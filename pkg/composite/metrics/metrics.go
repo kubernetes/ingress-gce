@@ -84,8 +84,9 @@ func registerAPIMetrics(attributes ...string) *apiCallMetrics {
 	metrics := &apiCallMetrics{
 		latency: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name: "gce_api_request_duration_seconds", // TODO: (shance) reconcile with cloudprovider
-				Help: "Latency of a GCE API call",
+				Name:    "gce_api_request_duration_seconds", // TODO: (shance) reconcile with cloudprovider
+				Help:    "Latency of a GCE API call",
+				Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 20, 40, 80, 160, 320},
 			},
 			attributes,
 		),
