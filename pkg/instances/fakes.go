@@ -24,6 +24,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -138,7 +139,14 @@ func (f *FakeInstanceGroups) AddInstancesToInstanceGroup(name, zone string, inst
 		return err
 	}
 
-	f.zonesToIGsToInstances[zone][ig].Insert(instanceNames...)
+	newValue := sets.NewString(f.zonesToIGsToInstances[zone][ig].List()...)
+	newValue.Insert(instanceNames...)
+
+	if len(newValue) > flags.F.MaxIgSize {
+		return test.FakeGoogleAPIRequestEntityTooLargeError()
+	}
+
+	f.zonesToIGsToInstances[zone][ig] = newValue
 	return nil
 }
 

@@ -490,6 +490,11 @@ func FakeGoogleAPIConflictErr() *googleapi.Error {
 	return &googleapi.Error{Code: http.StatusConflict}
 }
 
+// FakeGoogleAPIRequestEntityTooLargeError creates a StatusRequestEntityTooLarge error with type googleapi.Error
+func FakeGoogleAPIRequestEntityTooLargeError() *googleapi.Error {
+	return &googleapi.Error{Code: http.StatusRequestEntityTooLarge}
+}
+
 func InstancesListToNameSet(instancesList []*compute.InstanceWithNamedPorts) (sets.String, error) {
 	instancesSet := sets.NewString()
 	for _, instance := range instancesList {

@@ -23,6 +23,7 @@ import (
 
 	"google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/test"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 )
@@ -41,80 +42,104 @@ func newNodePool(f *FakeInstanceGroups, zone string) NodePool {
 }
 
 func TestNodePoolSync(t *testing.T) {
-	ig := &compute.InstanceGroup{Name: defaultNamer.InstanceGroup()}
-	fakeIGs := NewFakeInstanceGroups(map[string]IGsToInstances{
-		defaultZone: {
-			ig: sets.NewString("n1", "n2"),
+	flags.F.MaxIgSize = 1000
+
+	names1001 := make([]string, flags.F.MaxIgSize+1)
+	for i := 1; i <= flags.F.MaxIgSize+1; i++ {
+		names1001[i-1] = fmt.Sprintf("n%d", i)
+	}
+
+	testCases := []struct {
+		gceNodes       sets.String
+		kubeNodes      sets.String
+		shouldSkipSync bool
+	}{
+		{
+			gceNodes:  sets.NewString("n1"),
+			kubeNodes: sets.NewString("n1", "n2"),
 		},
-	})
-	pool := newNodePool(fakeIGs, defaultZone)
-	pool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{80})
-
-	// KubeNodes: n1
-	// GCENodes: n1, n2
-	// Remove n2 from the instance group.
-
-	fakeIGs.calls = []int{}
-	kubeNodes := sets.NewString("n1")
-	pool.Sync(kubeNodes.List())
-	instancesList, err := fakeIGs.ListInstancesInInstanceGroup(ig.Name, defaultZone, allInstances)
-	if err != nil {
-		t.Fatalf("Error while listing instances in instance group: %v", err)
-	}
-	instances, err := test.InstancesListToNameSet(instancesList)
-	if err != nil {
-		t.Fatalf("Error while getting instances in instance group. IG: %v Error: %v", ig, err)
-	}
-	if instances.Len() != kubeNodes.Len() || !kubeNodes.IsSuperset(instances) {
-		t.Fatalf("%v != %v", kubeNodes, instances)
-	}
-
-	// KubeNodes: n1, n2
-	// GCENodes: n1
-	// Try to add n2 to the instance group.
-
-	fakeIGs = NewFakeInstanceGroups(map[string]IGsToInstances{
-		defaultZone: {
-			ig: sets.NewString("n1"),
+		{
+			gceNodes:  sets.NewString("n1, n2"),
+			kubeNodes: sets.NewString("n1"),
 		},
-	})
-	pool = newNodePool(fakeIGs, defaultZone)
-	pool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{80})
-
-	fakeIGs.calls = []int{}
-	kubeNodes = sets.NewString("n1", "n2")
-	pool.Sync(kubeNodes.List())
-	instancesList, err = fakeIGs.ListInstancesInInstanceGroup(ig.Name, defaultZone, allInstances)
-	if err != nil {
-		t.Fatalf("Error while listing instances in instance group: %v", err)
-	}
-	instances, err = test.InstancesListToNameSet(instancesList)
-	if err != nil {
-		t.Fatalf("Error while getting instances in instance group. IG: %v Error: %v", ig, err)
-	}
-	if instances.Len() != kubeNodes.Len() ||
-		!kubeNodes.IsSuperset(instances) {
-		t.Fatalf("%v != %v", kubeNodes, instances)
-	}
-
-	// KubeNodes: n1, n2
-	// GCENodes: n1, n2
-	// Do nothing.
-
-	fakeIGs = NewFakeInstanceGroups(map[string]IGsToInstances{
-		defaultZone: {
-			ig: sets.NewString("n1", "n2"),
+		{
+			gceNodes:       sets.NewString("n1", "n2"),
+			kubeNodes:      sets.NewString("n1", "n2"),
+			shouldSkipSync: true,
 		},
-	})
-	pool = newNodePool(fakeIGs, defaultZone)
-	pool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{80})
+		{
+			gceNodes:  sets.NewString(),
+			kubeNodes: sets.NewString(names1001...),
+		},
+		{
+			gceNodes:  sets.NewString("n0", "n1"),
+			kubeNodes: sets.NewString(names1001...),
+		},
+	}
 
-	fakeIGs.calls = []int{}
-	kubeNodes = sets.NewString("n1", "n2")
-	pool.Sync(kubeNodes.List())
-	if len(fakeIGs.calls) != 0 {
-		t.Fatalf(
-			"Did not expect any calls, got %+v", fakeIGs.calls)
+	for _, testCase := range testCases {
+		// create fake gce node pool with existing gceNodes
+		ig := &compute.InstanceGroup{Name: defaultNamer.InstanceGroup()}
+		fakeGCEInstanceGroups := NewFakeInstanceGroups(map[string]IGsToInstances{
+			defaultZone: {
+				ig: testCase.gceNodes,
+			},
+		})
+
+		pool := newNodePool(fakeGCEInstanceGroups, defaultZone)
+
+		igName := defaultNamer.InstanceGroup()
+		ports := []int64{80}
+		_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports)
+		if err != nil {
+			t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
+		}
+
+		// run sync with expected kubeNodes
+		apiCallsCountBeforeSync := len(fakeGCEInstanceGroups.calls)
+		err = pool.Sync(testCase.kubeNodes.List())
+		if err != nil {
+			t.Fatalf("pool.Sync(%v) returned error %v, want nil", testCase.kubeNodes.List(), err)
+		}
+
+		// run assertions
+		apiCallsCountAfterSync := len(fakeGCEInstanceGroups.calls)
+		if testCase.shouldSkipSync && apiCallsCountBeforeSync != apiCallsCountAfterSync {
+			t.Errorf("Should skip sync. apiCallsCountBeforeSync = %d, apiCallsCountAfterSync = %d", apiCallsCountBeforeSync, apiCallsCountAfterSync)
+		}
+
+		instancesList, err := fakeGCEInstanceGroups.ListInstancesInInstanceGroup(ig.Name, defaultZone, allInstances)
+		if err != nil {
+			t.Fatalf("fakeGCEInstanceGroups.ListInstancesInInstanceGroup(%s, %s, %s) returned error %v, want nil", ig.Name, defaultZone, allInstances, err)
+		}
+		instances, err := test.InstancesListToNameSet(instancesList)
+		if err != nil {
+			t.Fatalf("test.InstancesListToNameSet(%v) returned error %v, want nil", ig, err)
+		}
+
+		expectedInstancesSize := testCase.kubeNodes.Len()
+		if testCase.kubeNodes.Len() > flags.F.MaxIgSize {
+			// If kubeNodes bigger than maximum instance group size, resulted instances
+			// should be truncated to flags.F.MaxIgSize
+			expectedInstancesSize = flags.F.MaxIgSize
+		}
+		if instances.Len() != expectedInstancesSize {
+			t.Errorf("instances.Len() = %d not equal expectedInstancesSize = %d", instances.Len(), expectedInstancesSize)
+		}
+		if !testCase.kubeNodes.IsSuperset(instances) {
+			t.Errorf("kubeNodes = %v is not superset of instances = %v", testCase.kubeNodes, instances)
+		}
+
+		// call sync one more time and check that it will be no-op and will not cause any api calls
+		apiCallsCountBeforeSync = len(fakeGCEInstanceGroups.calls)
+		err = pool.Sync(testCase.kubeNodes.List())
+		if err != nil {
+			t.Fatalf("pool.Sync(%v) returned error %v, want nil", testCase.kubeNodes.List(), err)
+		}
+		apiCallsCountAfterSync = len(fakeGCEInstanceGroups.calls)
+		if apiCallsCountBeforeSync != apiCallsCountAfterSync {
+			t.Errorf("Should skip sync if called second time with the same kubeNodes. apiCallsCountBeforeSync = %d, apiCallsCountAfterSync = %d", apiCallsCountBeforeSync, apiCallsCountAfterSync)
+		}
 	}
 }
 

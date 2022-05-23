@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"google.golang.org/api/googleapi"
+	"k8s.io/ingress-gce/pkg/flags"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -581,6 +582,8 @@ func TestInternalLoadBalancerShouldNotBeProcessByL4NetLBController(t *testing.T)
 }
 
 func TestProcessServiceCreationFailed(t *testing.T) {
+	flags.F.MaxIgSize = 1000
+
 	for _, param := range []struct {
 		addMockFunc   func(*cloud.MockGCE)
 		expectedError string
@@ -670,6 +673,8 @@ func TestProcessServiceDeletionFailed(t *testing.T) {
 }
 
 func TestProcessServiceUpdate(t *testing.T) {
+	flags.F.MaxIgSize = 1000
+
 	for _, param := range []struct {
 		Update      func(*v1.Service)
 		CheckResult func(*L4NetLBController, *v1.Service) error
