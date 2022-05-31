@@ -19,6 +19,7 @@ package metrics
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -181,6 +182,11 @@ func newL4ILBServiceState(globalAccess, customSubnet, inSuccess bool) L4ILBServi
 
 func TestComputeL4NetLBMetrics(t *testing.T) {
 	t.Parallel()
+
+	currTime := time.Now()
+	before5min := currTime.Add(-5 * time.Minute)
+	before25min := currTime.Add(-25 * time.Minute)
+
 	for _, tc := range []struct {
 		desc               string
 		serviceStates      []L4NetLBServiceState
@@ -195,12 +201,13 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 				premiumNetworkTier: 0,
 				success:            0,
 				inUserError:        0,
+				inError:            0,
 			},
 		},
 		{
 			desc: "one l4 Netlb service",
 			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isSuccess, unmanaged, standard, noUserError),
+				newL4NetLBServiceState(isSuccess, unmanaged, noUserError, standard /*resyncTime = */, nil),
 			},
 			expectL4NetLBCount: netLBFeatureCount{
 				service:            1,
@@ -208,12 +215,13 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 				premiumNetworkTier: 0,
 				success:            1,
 				inUserError:        0,
+				inError:            0,
 			},
 		},
 		{
 			desc: "one l4 Netlb service in premium network tier",
 			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isSuccess, unmanaged, premium, noUserError),
+				newL4NetLBServiceState(isSuccess, unmanaged, premium, noUserError /*resyncTime = */, nil),
 			},
 			expectL4NetLBCount: netLBFeatureCount{
 				service:            1,
@@ -221,12 +229,13 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 				premiumNetworkTier: 1,
 				success:            1,
 				inUserError:        0,
+				inError:            0,
 			},
 		},
 		{
 			desc: "one l4 Netlb service in premium network tier and managed static ip",
 			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isSuccess, managed, premium, noUserError),
+				newL4NetLBServiceState(isSuccess, managed, premium, noUserError /*resyncTime = */, nil),
 			},
 			expectL4NetLBCount: netLBFeatureCount{
 				service:            1,
@@ -234,12 +243,13 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 				premiumNetworkTier: 1,
 				success:            1,
 				inUserError:        0,
+				inError:            0,
 			},
 		},
 		{
-			desc: "l4 Netlb service in error state",
+			desc: "l4 Netlb service in error state with timestamp greater than resync period",
 			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isError, unmanaged, standard, noUserError),
+				newL4NetLBServiceState(isError, unmanaged, standard, noUserError, &before25min),
 			},
 			expectL4NetLBCount: netLBFeatureCount{
 				service:            1,
@@ -247,13 +257,14 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 				premiumNetworkTier: 0,
 				success:            0,
 				inUserError:        0,
+				inError:            1,
 			},
 		},
 		{
 			desc: "l4 Netlb service in error state should not count static ip and network tier",
 			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isError, unmanaged, standard, noUserError),
-				newL4NetLBServiceState(isError, managed, premium, noUserError),
+				newL4NetLBServiceState(isError, unmanaged, standard, noUserError, &before25min),
+				newL4NetLBServiceState(isError, managed, premium, noUserError, &before25min),
 			},
 			expectL4NetLBCount: netLBFeatureCount{
 				service:            2,
@@ -261,13 +272,14 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 				premiumNetworkTier: 0,
 				success:            0,
 				inUserError:        0,
+				inError:            2,
 			},
 		},
 		{
 			desc: "two l4 Netlb services with different network tier",
 			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isSuccess, unmanaged, standard, noUserError),
-				newL4NetLBServiceState(isSuccess, unmanaged, premium, noUserError),
+				newL4NetLBServiceState(isSuccess, unmanaged, standard, noUserError /*resyncTime = */, nil),
+				newL4NetLBServiceState(isSuccess, unmanaged, premium, noUserError, nil),
 			},
 			expectL4NetLBCount: netLBFeatureCount{
 				service:            2,
@@ -280,8 +292,8 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 		{
 			desc: "two l4 Netlb services with user error should not count others features",
 			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isError, unmanaged, standard, isUserError),
-				newL4NetLBServiceState(isError, unmanaged, premium, isUserError),
+				newL4NetLBServiceState(isError, unmanaged, standard, isUserError /*resyncTime = */, nil),
+				newL4NetLBServiceState(isError, unmanaged, premium, isUserError, nil),
 			},
 			expectL4NetLBCount: netLBFeatureCount{
 				service:            2,
@@ -289,19 +301,34 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 				premiumNetworkTier: 0,
 				success:            0,
 				inUserError:        2,
+				inError:            0,
+			},
+		},
+		{
+			desc: "Error should be measure only after retry time period",
+			serviceStates: []L4NetLBServiceState{
+				newL4NetLBServiceState(isError, unmanaged, premium, noUserError, &before5min),
+			},
+			expectL4NetLBCount: netLBFeatureCount{
+				service:            1,
+				managedStaticIP:    0,
+				premiumNetworkTier: 0,
+				success:            0,
+				inUserError:        0,
+				inError:            0,
 			},
 		},
 		{
 			desc: "multi l4 Netlb services",
 			serviceStates: []L4NetLBServiceState{
-				newL4NetLBServiceState(isSuccess, unmanaged, standard, noUserError),
-				newL4NetLBServiceState(isSuccess, unmanaged, premium, noUserError),
-				newL4NetLBServiceState(isSuccess, unmanaged, premium, noUserError),
-				newL4NetLBServiceState(isSuccess, managed, premium, noUserError),
-				newL4NetLBServiceState(isSuccess, managed, premium, noUserError),
-				newL4NetLBServiceState(isSuccess, managed, standard, noUserError),
-				newL4NetLBServiceState(isError, managed, premium, noUserError),
-				newL4NetLBServiceState(isError, managed, standard, noUserError),
+				newL4NetLBServiceState(isSuccess, unmanaged, standard, noUserError /*resyncTime = */, nil),
+				newL4NetLBServiceState(isSuccess, unmanaged, premium, noUserError, nil),
+				newL4NetLBServiceState(isSuccess, unmanaged, premium, noUserError, nil),
+				newL4NetLBServiceState(isSuccess, managed, premium, noUserError, nil),
+				newL4NetLBServiceState(isSuccess, managed, premium, noUserError, nil),
+				newL4NetLBServiceState(isSuccess, managed, standard, noUserError, nil),
+				newL4NetLBServiceState(isError, managed, premium, noUserError, &before25min),
+				newL4NetLBServiceState(isError, managed, standard, noUserError, &before25min),
 			},
 			expectL4NetLBCount: netLBFeatureCount{
 				service:            8,
@@ -309,6 +336,7 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 				premiumNetworkTier: 4,
 				success:            6,
 				inUserError:        0,
+				inError:            2,
 			},
 		},
 	} {
@@ -327,11 +355,54 @@ func TestComputeL4NetLBMetrics(t *testing.T) {
 	}
 }
 
-func newL4NetLBServiceState(inSuccess, managed, premium, userError bool) L4NetLBServiceState {
+func newL4NetLBServiceState(inSuccess, managed, premium, userError bool, errorTimestamp *time.Time) L4NetLBServiceState {
 	return L4NetLBServiceState{
-		IsPremiumTier: premium,
-		IsManagedIP:   managed,
-		InSuccess:     inSuccess,
-		IsUserError:   userError,
+		IsPremiumTier:      premium,
+		IsManagedIP:        managed,
+		InSuccess:          inSuccess,
+		IsUserError:        userError,
+		FirstSyncErrorTime: errorTimestamp,
 	}
+}
+
+func TestRetryPeriodForL4NetLBServices(t *testing.T) {
+	t.Parallel()
+	currTime := time.Now()
+	before5min := currTime.Add(-5 * time.Minute)
+	before25min := currTime.Add(-25 * time.Minute)
+
+	svcName1 := "svc1"
+	svcName2 := "svc2"
+	newMetrics := FakeControllerMetrics()
+	errorState := newL4NetLBServiceState(isError, managed, premium, noUserError, &currTime)
+	newMetrics.SetL4NetLBService(svcName1, errorState)
+
+	if err := checkMetricsComputation(newMetrics /*expErrorCount =*/, 0 /*expSvcCount =*/, 1); err != nil {
+		t.Fatalf("Check metrics computation failed err: %v", err)
+	}
+	errorState.FirstSyncErrorTime = &before5min
+	newMetrics.SetL4NetLBService(svcName1, errorState)
+	state, ok := newMetrics.l4NetLBServiceMap[svcName1]
+	if !ok {
+		t.Fatalf("state should be set")
+	}
+	if *state.FirstSyncErrorTime == before5min {
+		t.Fatal("Time Should Not be rewrite")
+	}
+	errorState.FirstSyncErrorTime = &before25min
+	newMetrics.SetL4NetLBService(svcName2, errorState)
+	if err := checkMetricsComputation(newMetrics /*expErrorCount =*/, 1 /*expSvcCount =*/, 2); err != nil {
+		t.Fatalf("Check metrics computation failed err: %v", err)
+	}
+}
+
+func checkMetricsComputation(newMetrics *ControllerMetrics, expErrorCount, expSvcCount int) error {
+	got := newMetrics.computeL4NetLBMetrics()
+	if got.inError != expErrorCount {
+		return fmt.Errorf("Error count mismatch expected: %v got: %v", expErrorCount, got.inError)
+	}
+	if got.service != expSvcCount {
+		return fmt.Errorf("Service count mismatch expected: %v got: %v", expSvcCount, got.service)
+	}
+	return nil
 }

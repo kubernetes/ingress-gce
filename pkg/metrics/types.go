@@ -17,6 +17,8 @@ limitations under the License.
 package metrics
 
 import (
+	"time"
+
 	v1 "k8s.io/api/networking/v1"
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -81,6 +83,8 @@ type L4NetLBServiceState struct {
 	InSuccess bool
 	// IsUserError specifies if the error was caused by User misconfiguration.
 	IsUserError bool
+	// FirstSyncErrorTime specifies the time timestamp when the service sync ended up with error for the first time.
+	FirstSyncErrorTime *time.Time
 }
 
 // IngressMetricsCollector is an interface to update/delete ingress states in the cache

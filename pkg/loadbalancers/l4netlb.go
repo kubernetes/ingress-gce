@@ -66,6 +66,12 @@ type L4NetLBSyncResult struct {
 	StartTime          time.Time
 }
 
+// SetMetricsForSuccessfulService should be call after successful sync.
+func (r *L4NetLBSyncResult) SetMetricsForSuccessfulService() {
+	r.MetricsState.FirstSyncErrorTime = nil
+	r.MetricsState.InSuccess = true
+}
+
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
 func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder, lock *sync.Mutex) *L4NetLB {
 	l4netlb := &L4NetLB{cloud: cloud,
@@ -100,7 +106,8 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	result := &L4NetLBSyncResult{
 		Annotations: make(map[string]string),
 		StartTime:   time.Now(),
-		SyncType:    SyncTypeCreate}
+		SyncType:    SyncTypeCreate,
+	}
 
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
