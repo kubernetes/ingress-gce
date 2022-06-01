@@ -581,8 +581,8 @@ func EqualStringSets(x, y []string) bool {
 	return xString.Equal(yString)
 }
 
-// GetPortRanges returns a list of port ranges, given a list of ports.
-func GetPortRanges(ports []int) (ranges []string) {
+// ConvertPortsToRanges returns a list of port ranges, given a list of ports.
+func ConvertPortsToRanges(ports []int) (ranges []string) {
 	if len(ports) < 1 {
 		return ranges
 	}
@@ -624,22 +624,42 @@ func GetPortRanges(ports []int) (ranges []string) {
 	return ranges
 }
 
-// GetPortsAndProtocol returns the list of ports, list of port ranges and the protocol given the list of k8s port info.
-func GetPortsAndProtocol(svcPorts []api_v1.ServicePort) (ports []string, portRanges []string, nodePorts []int64, protocol api_v1.Protocol) {
-	if len(svcPorts) == 0 {
-		return []string{}, []string{}, []int64{}, api_v1.ProtocolTCP
+// GetProtocol returns protocol given the list of k8s port info.
+func GetProtocol(servicePorts []api_v1.ServicePort) api_v1.Protocol {
+	if len(servicePorts) == 0 {
+		return api_v1.ProtocolTCP
 	}
 
 	// GCP doesn't support multiple protocols for a single load balancer
-	protocol = svcPorts[0].Protocol
-	portInts := []int{}
-	for _, p := range svcPorts {
+	return servicePorts[0].Protocol
+}
+
+// GetStringPorts returns string list of ports given the list of k8s port info.
+func GetStringPorts(servicePorts []api_v1.ServicePort) []string {
+	var ports []string
+	for _, p := range servicePorts {
 		ports = append(ports, strconv.Itoa(int(p.Port)))
-		portInts = append(portInts, int(p.Port))
-		nodePorts = append(nodePorts, int64(p.NodePort))
 	}
 
-	return ports, GetPortRanges(portInts), nodePorts, protocol
+	return ports
+}
+
+// GetPortRanges returns string list of ports given the list of k8s port info.
+func GetPortRanges(servicePorts []api_v1.ServicePort) []string {
+	var ports []int
+	for _, p := range servicePorts {
+		ports = append(ports, int(p.Port))
+	}
+	return ConvertPortsToRanges(ports)
+}
+
+// GetNodePorts returns list of node ports given the list of k8s port info.
+func GetNodePorts(servicePorts []api_v1.ServicePort) []int64 {
+	var nodePorts []int64
+	for _, p := range servicePorts {
+		nodePorts = append(nodePorts, int64(p.NodePort))
+	}
+	return nodePorts
 }
 
 func minMaxPort(svcPorts []api_v1.ServicePort) (int32, int32) {

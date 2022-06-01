@@ -18,6 +18,8 @@ package l4lb
 
 import (
 	"fmt"
+	"reflect"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
@@ -35,7 +37,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
-	"reflect"
 )
 
 const l4NetLBControllerName = "l4netlb-controller"
@@ -343,37 +344,39 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
-	syncResult := l4netlb.EnsureFrontend(nodeNames, service)
-	if syncResult.Error != nil {
+	l4netlb.EnsureFrontend(nodeNames)
+	if l4netlb.SyncResult.Error != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
-			"Error ensuring Resource for L4 External LoadBalancer, err: %v", syncResult.Error)
-		return syncResult
+			"Error ensuring Resource for L4 External LoadBalancer, err: %v", l4netlb.SyncResult.Error)
+		return l4netlb.SyncResult
 	}
 
 	if err = lc.ensureBackendLinking(l4netlb.ServicePort); err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error linking instance groups to backend service, err: %v", err)
-		syncResult.Error = err
-		return syncResult
+		l4netlb.SyncResult.Error = err
+		return l4netlb.SyncResult
 	}
 
-	err = updateServiceStatus(lc.ctx, service, syncResult.Status)
+	err = updateServiceStatus(lc.ctx, service, l4netlb.SyncResult.Status)
 	if err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error updating L4 External LoadBalancer, err: %v", err)
-		syncResult.Error = err
-		return syncResult
+		l4netlb.SyncResult.Error = err
+		return l4netlb.SyncResult
 	}
 	lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
 		"Successfully ensured L4 External LoadBalancer resources")
-	if err = updateAnnotations(lc.ctx, service, syncResult.Annotations); err != nil {
+
+	if err = updateAnnotations(lc.ctx, service, l4netlb.SyncResult.Annotations); err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Failed to update annotations for load balancer, err: %v", err)
-		syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
-		return syncResult
+		l4netlb.SyncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
+		return l4netlb.SyncResult
 	}
-	syncResult.SetMetricsForSuccessfulService()
-	return syncResult
+
+	l4netlb.SyncResult.SetMetricsForSuccessfulService()
+	return l4netlb.SyncResult
 }
 
 func (lc *L4NetLBController) ensureBackendLinking(port utils.ServicePort) error {
@@ -385,9 +388,7 @@ func (lc *L4NetLBController) ensureBackendLinking(port utils.ServicePort) error 
 }
 
 func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames []string) error {
-	// TODO(kl52752) Move instance creation and deletion logic to NodeController
-	// to avoid race condition between controllers
-	_, _, nodePorts, _ := utils.GetPortsAndProtocol(service.Spec.Ports)
+	nodePorts := utils.GetNodePorts(service.Spec.Ports)
 	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
 	if err != nil {
 		return err
@@ -401,33 +402,33 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
 		"Deleting L4 External LoadBalancer for %s", key)
 
-	result := l4netLB.EnsureLoadBalancerDeleted(svc)
-	if result.Error != nil {
+	l4netLB.EnsureLoadBalancerDeleted()
+	if l4netLB.SyncResult.Error != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
-			"Error deleting L4 External LoadBalancer, err: %v", result.Error)
-		return result
+			"Error deleting L4 External LoadBalancer, err: %v", l4netLB.SyncResult.Error)
+		return l4netLB.SyncResult
 	}
 
 	if err := updateServiceStatus(lc.ctx, svc, &v1.LoadBalancerStatus{}); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error reseting L4 External LoadBalancer status to empty, err: %v", err)
-		result.Error = fmt.Errorf("Failed to reset L4 External LoadBalancer status, err: %w", err)
-		return result
+		l4netLB.SyncResult.Error = fmt.Errorf("Failed to reset L4 External LoadBalancer status, err: %w", err)
+		return l4netLB.SyncResult
 	}
 
 	// Remove LB annotations from the Service when processing the finalizer.
 	if err := updateAnnotations(lc.ctx, svc, nil); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error removing resource annotations: %v: %v", err)
-		result.Error = fmt.Errorf("Failed to reset resource annotations, err: %w", err)
-		return result
+		l4netLB.SyncResult.Error = fmt.Errorf("Failed to reset resource annotations, err: %w", err)
+		return l4netLB.SyncResult
 	}
 
 	if err := common.EnsureDeleteServiceFinalizer(svc, common.NetLBFinalizerV2, lc.ctx.KubeClient); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",
 			"Error removing finalizer from L4 External LoadBalancer, err: %v", err)
-		result.Error = fmt.Errorf("Failed to remove L4 External LoadBalancer finalizer, err: %w", err)
-		return result
+		l4netLB.SyncResult.Error = fmt.Errorf("Failed to remove L4 External LoadBalancer finalizer, err: %w", err)
+		return l4netLB.SyncResult
 	}
 
 	// Try to delete instance group, instancePool.DeleteInstanceGroup ignores errors if resource is in use or not found.
@@ -435,12 +436,12 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 	if err := lc.instancePool.DeleteInstanceGroup(lc.namer.InstanceGroup()); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteInstanceGroupFailed",
 			"Error deleting delete Instance Group from L4 External LoadBalancer, err: %v", err)
-		result.Error = fmt.Errorf("Failed to delete Instance Group, err: %w", err)
-		return result
+		l4netLB.SyncResult.Error = fmt.Errorf("Failed to delete Instance Group, err: %w", err)
+		return l4netLB.SyncResult
 	}
 
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletedLoadBalancer", "Deleted L4 External LoadBalancer")
-	return result
+	return l4netLB.SyncResult
 }
 
 // publishMetrics sets controller metrics for NetLB services and pushes NetLB metrics based on sync type.

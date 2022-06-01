@@ -20,11 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"testing"
 	"time"
-
-	"net/http"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
@@ -992,7 +991,7 @@ func TestIsLegacyL4ILBService(t *testing.T) {
 	}
 }
 
-func TestGetPortRanges(t *testing.T) {
+func TestConvertPortToRanges(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		Desc   string
@@ -1010,9 +1009,9 @@ func TestGetPortRanges(t *testing.T) {
 		{Desc: "One value", Input: []int{12}, Result: []string{"12"}},
 		{Desc: "Empty", Input: []int{}, Result: nil},
 	} {
-		result := GetPortRanges(tc.Input)
+		result := ConvertPortsToRanges(tc.Input)
 		if diff := cmp.Diff(result, tc.Result); diff != "" {
-			t.Errorf("GetPortRanges(%s) mismatch, (-want +got): \n%s", tc.Desc, diff)
+			t.Errorf("ConvertPortsToRanges(%s) mismatch, (-want +got): \n%s", tc.Desc, diff)
 		}
 	}
 }

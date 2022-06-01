@@ -17,9 +17,10 @@ package loadbalancers
 
 import (
 	"fmt"
-	"k8s.io/ingress-gce/pkg/healthchecks"
 	"strings"
 	"testing"
+
+	"k8s.io/ingress-gce/pkg/healthchecks"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -58,18 +59,18 @@ func TestEnsureL4NetLoadBalancer(t *testing.T) {
 	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	result := l4netlb.EnsureFrontend(nodeNames, svc)
-	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	l4netlb.EnsureFrontend(nodeNames)
+	if l4netlb.SyncResult.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", l4netlb.SyncResult.Error)
 	}
-	if len(result.Status.Ingress) == 0 {
+	if len(l4netlb.SyncResult.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4netlb)
 	}
-	if err := checkAnnotations(result, l4netlb); err != nil {
+	if err := checkAnnotations(l4netlb.SyncResult, l4netlb); err != nil {
 		t.Errorf("Annotations error: %v", err)
 	}
 	assertNetLbResources(t, svc, l4netlb, nodeNames)
-	if err := checkMetrics(result.MetricsState /*isManaged = */, true /*isPremium = */, true /*isUserError =*/, false); err != nil {
+	if err := checkMetrics(l4netlb.SyncResult.MetricsState /*isManaged = */, true /*isPremium = */, true /*isUserError =*/, false); err != nil {
 		t.Errorf("Metrics error: %v", err)
 	}
 }
@@ -109,17 +110,18 @@ func TestDeleteL4NetLoadBalancer(t *testing.T) {
 	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	result := l4NetLB.EnsureFrontend(nodeNames, svc)
-	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	l4NetLB.EnsureFrontend(nodeNames)
+	if l4NetLB.SyncResult.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", l4NetLB.SyncResult.Error)
 	}
-	if len(result.Status.Ingress) == 0 {
+	if len(l4NetLB.SyncResult.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 	}
 	assertNetLbResources(t, svc, l4NetLB, nodeNames)
 
-	if err := l4NetLB.EnsureLoadBalancerDeleted(svc); err.Error != nil {
-		t.Errorf("UnexpectedError %v", err.Error)
+	l4NetLB.EnsureLoadBalancerDeleted()
+	if l4NetLB.SyncResult.Error != nil {
+		t.Errorf("UnexpectedError %v", l4NetLB.SyncResult.Error)
 	}
 	ensureNetLBResourceDeleted(t, svc, l4NetLB)
 }
@@ -133,8 +135,9 @@ func TestDeleteL4NetLoadBalancerWithSharedHC(t *testing.T) {
 	_, _ = ensureLoadBalancer(8080, vals, fakeGCE, t)
 	svc, l4NetLB := ensureLoadBalancer(8081, vals, fakeGCE, t)
 
-	if err := l4NetLB.EnsureLoadBalancerDeleted(svc); err.Error != nil {
-		t.Errorf("UnexpectedError %v", err.Error)
+	l4NetLB.EnsureLoadBalancerDeleted()
+	if l4NetLB.SyncResult.Error != nil {
+		t.Errorf("UnexpectedError %v", l4NetLB.SyncResult.Error)
 	}
 	// Health check is in used by second service
 	// we expect that firewall rule will not be deleted
@@ -168,18 +171,19 @@ func TestHealthCheckFirewallDeletionWithILB(t *testing.T) {
 	l4NetLB.l4HealthChecks = l4ilb.l4HealthChecks
 
 	// create netlb resources
-	result := l4NetLB.EnsureFrontend(nodeNames, netlbSvc)
-	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	l4NetLB.EnsureFrontend(nodeNames)
+	if l4NetLB.SyncResult.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", l4NetLB.SyncResult.Error)
 	}
-	if len(result.Status.Ingress) == 0 {
+	if len(l4NetLB.SyncResult.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 	}
 	assertNetLbResources(t, netlbSvc, l4NetLB, nodeNames)
 
 	// Delete the NetLB loadbalancer.
-	if err := l4NetLB.EnsureLoadBalancerDeleted(netlbSvc); err.Error != nil {
-		t.Errorf("UnexpectedError %v", err.Error)
+	l4NetLB.EnsureLoadBalancerDeleted()
+	if l4NetLB.SyncResult.Error != nil {
+		t.Errorf("UnexpectedError %v", l4NetLB.SyncResult.Error)
 	}
 
 	// When ILB health check uses the same firewall rules we expect that hc firewall rule will not be deleted.
@@ -208,11 +212,11 @@ func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud
 	l4NetLB := NewL4NetLB(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
 	l4NetLB.l4HealthChecks = healthchecks.FakeL4(fakeGCE, &test.FakeRecorderSource{})
 
-	result := l4NetLB.EnsureFrontend(emptyNodes, svc)
-	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	l4NetLB.EnsureFrontend(emptyNodes)
+	if l4NetLB.SyncResult.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", l4NetLB.SyncResult.Error)
 	}
-	if len(result.Status.Ingress) == 0 {
+	if len(l4NetLB.SyncResult.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 	}
 	assertNetLbResources(t, svc, l4NetLB, emptyNodes)
@@ -261,7 +265,7 @@ func assertNetLbResources(t *testing.T, apiService *v1.Service, l4NetLb *L4NetLB
 	// Check that Firewalls are created for the LoadBalancer and the HealthCheck
 	resourceName := l4NetLb.ServicePort.BackendName()
 
-	_, _, _, proto := utils.GetPortsAndProtocol(apiService.Spec.Ports)
+	proto := utils.GetProtocol(apiService.Spec.Ports)
 
 	hcName, hcFwName := l4NetLb.namer.L4HealthCheck(apiService.Namespace, apiService.Name, true)
 
@@ -354,20 +358,20 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
 	}
-	result := l4netlb.EnsureFrontend(nodeNames, svc)
-	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	l4netlb.EnsureFrontend(nodeNames)
+	if l4netlb.SyncResult.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", l4netlb.SyncResult.Error)
 	}
-	if err := checkMetrics(result.MetricsState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, false); err != nil {
+	if err := checkMetrics(l4netlb.SyncResult.MetricsState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, false); err != nil {
 		t.Errorf("Metrics error: %v", err)
 	}
 	// Check that service sync will return error if User Address IP Network Tier mismatch with service Network Tier.
 	svc.ObjectMeta.Annotations[annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierPremium)
-	result = l4netlb.EnsureFrontend(nodeNames, svc)
-	if result.Error == nil || !utils.IsNetworkTierError(result.Error) {
-		t.Errorf("LoadBalancer sync should return Network Tier error, err %v", result.Error)
+	l4netlb.EnsureFrontend(nodeNames)
+	if l4netlb.SyncResult.Error == nil || !utils.IsNetworkTierError(l4netlb.SyncResult.Error) {
+		t.Errorf("LoadBalancer sync should return Network Tier error, err %v", l4netlb.SyncResult.Error)
 	}
-	if err := checkMetrics(result.MetricsState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, true); err != nil {
+	if err := checkMetrics(l4netlb.SyncResult.MetricsState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, true); err != nil {
 		t.Errorf("Metrics error: %v", err)
 	}
 	// Check that when network tier annotation will be deleted which will change desired service Network Tier to PREMIUM
@@ -379,11 +383,11 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 	svc.Spec.LoadBalancerIP = usersIPPremium
 	delete(svc.ObjectMeta.Annotations, annotations.NetworkTierAnnotationKey)
 
-	result = l4netlb.EnsureFrontend(nodeNames, svc)
-	if result.Error == nil || !utils.IsNetworkTierError(result.Error) {
-		t.Errorf("LoadBalancer sync should return Network Tier error, err %v", result.Error)
+	l4netlb.EnsureFrontend(nodeNames)
+	if l4netlb.SyncResult.Error == nil || !utils.IsNetworkTierError(l4netlb.SyncResult.Error) {
+		t.Errorf("LoadBalancer sync should return Network Tier error, err %v", l4netlb.SyncResult.Error)
 	}
-	if err := checkMetrics(result.MetricsState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, true); err != nil {
+	if err := checkMetrics(l4netlb.SyncResult.MetricsState /*isManaged = */, false /*isPremium = */, false /*isUserError =*/, true); err != nil {
 		t.Errorf("Metrics error: %v", err)
 	}
 }

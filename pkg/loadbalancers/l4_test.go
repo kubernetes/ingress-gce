@@ -19,10 +19,11 @@ limitations under the License.
 import (
 	"context"
 	"fmt"
-	"k8s.io/ingress-gce/pkg/healthchecks"
 	"reflect"
 	"strings"
 	"testing"
+
+	"k8s.io/ingress-gce/pkg/healthchecks"
 
 	"google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -608,11 +609,11 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 	l4NetLB.l4HealthChecks = l.l4HealthChecks
 
 	// create netlb resources
-	xlbResult := l4NetLB.EnsureFrontend(nodeNames, netlbSvc)
-	if xlbResult.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", xlbResult.Error)
+	l4NetLB.EnsureFrontend(nodeNames)
+	if l4NetLB.SyncResult.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", l4NetLB.SyncResult.Error)
 	}
-	if len(xlbResult.Status.Ingress) == 0 {
+	if len(l4NetLB.SyncResult.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 	}
 	assertNetLbResources(t, netlbSvc, l4NetLB, nodeNames)
@@ -1062,7 +1063,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 	fwrParams := firewalls.FirewallParams{
 		Name:         fwName,
 		SourceRanges: []string{"10.0.0.0/20"},
-		PortRanges:   utils.GetPortRanges(tc.Input),
+		PortRanges:   utils.ConvertPortsToRanges(tc.Input),
 		NodeNames:    nodeNames,
 		Protocol:     string(v1.ProtocolTCP),
 		IP:           "1.2.3.4",
@@ -1284,7 +1285,7 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 	if err != nil {
 		t.Errorf("Failed to create description for shared resources, err %v", err)
 	}
-	_, _, _, proto := utils.GetPortsAndProtocol(apiService.Spec.Ports)
+	proto := utils.GetProtocol(apiService.Spec.Ports)
 	expectedAnnotations := make(map[string]string)
 	hcName, hcFwName := l.namer.L4HealthCheck(apiService.Namespace, apiService.Name, sharedHC)
 	// hcDesc is the resource description for healthcheck and firewall rule allowing healthcheck.
