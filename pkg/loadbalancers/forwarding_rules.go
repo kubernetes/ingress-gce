@@ -242,7 +242,6 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 		}()
 	}
 
-	ports, _, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
 	// Create the forwarding rule
 	frDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l.Service.Namespace, l.Service.Name), ipToUse,
 		version, false, utils.ILB)
@@ -254,8 +253,8 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	fr := &composite.ForwardingRule{
 		Name:                loadBalancerName,
 		IPAddress:           ipToUse,
-		Ports:               ports,
-		IPProtocol:          string(protocol),
+		Ports:               utils.GetStringPorts(l.Service.Spec.Ports),
+		IPProtocol:          string(utils.GetProtocol(l.Service.Spec.Ports)),
 		LoadBalancingScheme: string(cloud.SchemeInternal),
 		Subnetwork:          subnetworkURL,
 		Network:             l.cloud.NetworkURL(),
@@ -265,7 +264,7 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 		AllowGlobalAccess:   options.AllowGlobalAccess,
 		Description:         frDesc,
 	}
-	if len(ports) > maxL4ILBPorts {
+	if len(l.Service.Spec.Ports) > maxL4ILBPorts {
 		fr.Ports = nil
 		fr.AllPorts = true
 	}

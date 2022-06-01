@@ -300,11 +300,11 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	}
 	expectedBS := &composite.BackendService{
 		Name:                name,
-		Protocol:            string(protocol),
+		Protocol:            protocol,
 		Description:         desc,
 		HealthChecks:        []string{hcLink},
 		SessionAffinity:     utils.TranslateAffinityType(sessionAffinity),
-		LoadBalancingScheme: string(scheme),
+		LoadBalancingScheme: scheme,
 	}
 	if protocol == string(api_v1.ProtocolTCP) {
 		expectedBS.ConnectionDraining = &composite.ConnectionDraining{DrainingTimeoutSec: DefaultConnectionDrainingTimeoutSeconds}
