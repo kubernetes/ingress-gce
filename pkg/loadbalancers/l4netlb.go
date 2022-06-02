@@ -18,8 +18,6 @@ package loadbalancers
 
 import (
 	"fmt"
-	"strconv"
-	"sync"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -47,11 +45,11 @@ type L4NetLB struct {
 	scope       meta.KeyType
 	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
-	recorder            record.EventRecorder
-	Service             *corev1.Service
-	ServicePort         utils.ServicePort
-	NamespacedName      types.NamespacedName
-	sharedResourcesLock *sync.Mutex
+	recorder       record.EventRecorder
+	Service        *corev1.Service
+	ServicePort    utils.ServicePort
+	NamespacedName types.NamespacedName
+	l4HealthChecks healthchecks.L4HealthChecks
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -73,15 +71,15 @@ func (r *L4NetLBSyncResult) SetMetricsForSuccessfulService() {
 }
 
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
-func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder, lock *sync.Mutex) *L4NetLB {
+func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder) *L4NetLB {
 	l4netlb := &L4NetLB{cloud: cloud,
-		scope:               scope,
-		namer:               namer,
-		recorder:            recorder,
-		Service:             service,
-		sharedResourcesLock: lock,
-		NamespacedName:      types.NamespacedName{Name: service.Name, Namespace: service.Namespace},
-		backendPool:         backends.NewPool(cloud, namer),
+		scope:          scope,
+		namer:          namer,
+		recorder:       recorder,
+		Service:        service,
+		NamespacedName: types.NamespacedName{Name: service.Name, Namespace: service.Namespace},
+		backendPool:    backends.NewPool(cloud, namer),
+		l4HealthChecks: healthchecks.L4(),
 	}
 	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
 	l4netlb.ServicePort = utils.ServicePort{
@@ -115,32 +113,26 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	}
 
 	l4netlb.Service = svc
+
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
-	ensureHCFunc := func() (string, string, int32, string, error) {
-		if sharedHC {
-			// Take the lock when creating the shared healthcheck
-			l4netlb.sharedResourcesLock.Lock()
-			defer l4netlb.sharedResourcesLock.Unlock()
-		}
-		return healthchecks.EnsureL4HealthCheck(l4netlb.cloud, l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB)
-	}
-	hcLink, hcFwName, hcPort, hcName, err := ensureHCFunc()
-	if err != nil {
-		result.GCEResourceInError = annotations.HealthcheckResource
-		result.Error = fmt.Errorf("Failed to ensure health check %s - %w", hcName, err)
+	hcResult := l4netlb.l4HealthChecks.EnsureL4HealthCheck(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames)
+
+	if hcResult.Err != nil {
+		result.GCEResourceInError = hcResult.GceResourceInError
+		result.Error = fmt.Errorf("Failed to ensure health check %s - %w", hcResult.HCName, hcResult.Err)
 		return result
 	}
-	result.Annotations[annotations.HealthcheckKey] = hcName
+	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
 
 	name := l4netlb.ServicePort.BackendName()
-	protocol, res := l4netlb.createFirewalls(name, hcLink, hcFwName, hcPort, nodeNames, sharedHC)
+	protocol, res := l4netlb.createFirewalls(name, nodeNames)
 	if res.Error != nil {
 		return res
 	}
 	result.Annotations[annotations.FirewallRuleKey] = name
-	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
+	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
 
-	bs, err := l4netlb.backendPool.EnsureL4BackendService(name, hcLink, protocol, string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
+	bs, err := l4netlb.backendPool.EnsureL4BackendService(name, hcResult.HCLink, protocol, string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = fmt.Errorf("Failed to ensure backend service %s - %w", name, err)
@@ -191,19 +183,7 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 		result.GCEResourceInError = annotations.AddressResource
 	}
 
-	deleteFwFunc := func(name string) error {
-		err := firewalls.EnsureL4FirewallRuleDeleted(l4netlb.cloud, name)
-		if err != nil {
-			if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
-				l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
-				return nil
-			}
-			return err
-		}
-		return nil
-	}
-	// delete firewall rule allowing load balancer source ranges
-	err = deleteFwFunc(name)
+	err = l4netlb.deleteFirewall(name)
 	if err != nil {
 		klog.Errorf("Failed to delete firewall rule %s for service %s - %v", name, l4netlb.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.FirewallRuleResource
@@ -216,43 +196,34 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err
 	}
+
 	// Delete healthcheck
 	// We don't delete health check during service update so
 	// it is possible that there might be some health check leak
 	// when externalTrafficPolicy is changed from Local to Cluster and new a health check was created.
 	// When service is deleted we need to check both health checks shared and non-shared
 	// and delete them if needed.
-	deleteHcFunc := func(sharedHC bool) {
-		hcName, hcFwName := l4netlb.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
-		if sharedHC {
-			l4netlb.sharedResourcesLock.Lock()
-			defer l4netlb.sharedResourcesLock.Unlock()
-		}
-		err = utils.IgnoreHTTPNotFound(healthchecks.DeleteHealthCheck(l4netlb.cloud, hcName, meta.Regional))
-		if err != nil {
-			if !utils.IsInUsedByError(err) {
-				klog.Errorf("Failed to delete healthcheck for service %s - %v", l4netlb.NamespacedName.String(), err)
-				result.GCEResourceInError = annotations.HealthcheckResource
-				result.Error = err
-				return
-			}
-			// Ignore deletion error due to health check in use by another resource.
-			// This will be hit if this is a shared healthcheck.
-			klog.V(2).Infof("Failed to delete healthcheck %s: health check in use.", hcName)
-		} else {
-			// Delete healthcheck firewall rule if healthcheck deletion is successful.
-			err = deleteFwFunc(hcFwName)
-			if err != nil {
-				klog.Errorf("Failed to delete firewall rule %s for service %s - %v", hcFwName, l4netlb.NamespacedName.String(), err)
-				result.GCEResourceInError = annotations.FirewallForHealthcheckResource
-				result.Error = err
-			}
-		}
-	}
 	for _, isShared := range []bool{true, false} {
-		deleteHcFunc(isShared)
+		resourceInError, err := l4netlb.l4HealthChecks.DeleteHealthCheck(svc, l4netlb.namer, isShared, meta.Regional, utils.XLB)
+		if err != nil {
+			result.GCEResourceInError = resourceInError
+			result.Error = err
+			// continue with deletion of the non-shared Healthcheck regardless of the error, both healthchecks may need to be deleted,
+		}
 	}
 	return result
+}
+
+func (l4netlb *L4NetLB) deleteFirewall(name string) error {
+	err := firewalls.EnsureL4FirewallRuleDeleted(l4netlb.cloud, name)
+	if err != nil {
+		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
+			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // GetFRName returns the name of the forwarding rule for the given L4 External LoadBalancer service.
@@ -262,7 +233,7 @@ func (l4netlb *L4NetLB) GetFRName() string {
 	return utils.LegacyForwardingRuleName(l4netlb.Service)
 }
 
-func (l4netlb *L4NetLB) createFirewalls(name, hcLink, hcFwName string, hcPort int32, nodeNames []string, sharedHC bool) (string, *L4NetLBSyncResult) {
+func (l4netlb *L4NetLB) createFirewalls(name string, nodeNames []string) (string, *L4NetLBSyncResult) {
 	_, portRanges, _, protocol := utils.GetPortsAndProtocol(l4netlb.Service.Spec.Ports)
 	result := &L4NetLBSyncResult{}
 	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l4netlb.Service)
@@ -279,26 +250,12 @@ func (l4netlb *L4NetLB) createFirewalls(name, hcLink, hcFwName string, hcPort in
 		Name:         name,
 		IP:           l4netlb.Service.Spec.LoadBalancerIP,
 		NodeNames:    nodeNames,
-		L4Type:       utils.XLB,
 	}
 	result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder)
 	if result.Error != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 		return "", result
-	}
-	// Add firewall rule for healthchecks to nodes
-	hcFWRParams := firewalls.FirewallParams{
-		PortRanges:   []string{strconv.Itoa(int(hcPort))},
-		SourceRanges: gce.L4LoadBalancerSrcRanges(),
-		Protocol:     string(corev1.ProtocolTCP),
-		Name:         hcFwName,
-		NodeNames:    nodeNames,
-		L4Type:       utils.XLB,
-	}
-	result.Error = firewalls.EnsureL4LBFirewallForHc(l4netlb.Service, sharedHC, &hcFWRParams, l4netlb.cloud, l4netlb.sharedResourcesLock, l4netlb.recorder)
-	if result.Error != nil {
-		result.GCEResourceInError = annotations.FirewallForHealthcheckResource
 	}
 	return string(protocol), result
 }
