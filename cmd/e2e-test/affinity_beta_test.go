@@ -125,19 +125,19 @@ func TestAffinityBeta(t *testing.T) {
 				}); err != nil {
 					t.Errorf("CloudV1beta1().BackendConfigs(%q).Update(%#v) = %v, want nil", s.Namespace, transition, err)
 				}
-
+				var logicErr error
 				if waitErr := wait.Poll(transitionPollInterval, transitionPollTimeout, func() (bool, error) {
-					gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
-					if err != nil {
-						t.Logf("Error getting GCP resources for LB with IP(%q): %v", vip, err)
+					gclb, logicErr = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
+					if logicErr != nil {
+						t.Logf("Error getting GCP resources for LB with IP(%q): %v", vip, logicErr)
 						return false, nil
 					}
-					if err := verifyAffinity(t, gclb, s.Namespace, svcName, transition.affinity, transition.ttl); err != nil {
+					if logicErr = verifyAffinity(t, gclb, s.Namespace, svcName, transition.affinity, transition.ttl); logicErr != nil {
 						return false, nil
 					}
 					return true, nil
 				}); waitErr != nil {
-					t.Errorf("Error waiting for BackendConfig affinity transition propagation to GCLB, last seen error: %v", err)
+					t.Errorf("Error waiting for BackendConfig affinity transition propagation to GCLB, last seen error: %v", logicErr)
 				}
 			})
 		}
