@@ -19,8 +19,8 @@ package crd
 import (
 	"testing"
 
-	"github.com/go-openapi/spec"
 	"k8s.io/kube-openapi/pkg/common"
+	spec "k8s.io/kube-openapi/pkg/validation/spec"
 )
 
 var (

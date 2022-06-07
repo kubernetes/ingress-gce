@@ -20,10 +20,10 @@ import (
 	"encoding/json"
 	"fmt"
 
-	spec "github.com/go-openapi/spec"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/kube-openapi/pkg/common"
+	spec "k8s.io/kube-openapi/pkg/validation/spec"
 )
 
 var metav1OpenAPISpec = map[string]common.OpenAPIDefinition{

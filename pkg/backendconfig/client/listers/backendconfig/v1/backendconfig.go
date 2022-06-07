@@ -1,5 +1,5 @@
 /*
-Copyright 2021 The Kubernetes Authors.
+Copyright 2022 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,8 +26,10 @@ import (
 )
 
 // BackendConfigLister helps list BackendConfigs.
+// All objects returned here must be treated as read-only.
 type BackendConfigLister interface {
 	// List lists all BackendConfigs in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.BackendConfig, err error)
 	// BackendConfigs returns an object that can list and get BackendConfigs.
 	BackendConfigs(namespace string) BackendConfigNamespaceLister
@@ -58,10 +60,13 @@ func (s *backendConfigLister) BackendConfigs(namespace string) BackendConfigName
 }
 
 // BackendConfigNamespaceLister helps list and get BackendConfigs.
+// All objects returned here must be treated as read-only.
 type BackendConfigNamespaceLister interface {
 	// List lists all BackendConfigs in the indexer for a given namespace.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1.BackendConfig, err error)
 	// Get retrieves the BackendConfig from the indexer for a given namespace and name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1.BackendConfig, error)
 	BackendConfigNamespaceListerExpansion
 }

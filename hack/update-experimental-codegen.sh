@@ -35,7 +35,6 @@ ${CODEGEN_PKG}/generate-groups.sh \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
 
 echo "Generating openapi for Workload v1alpha1"
-go install ${OPENAPI_PKG}/cmd/openapi-gen
 ${GOPATH}/bin/openapi-gen \
   --output-file-base zz_generated.openapi \
   --input-dirs k8s.io/ingress-gce/pkg/experimental/apis/workload/v1alpha1 \

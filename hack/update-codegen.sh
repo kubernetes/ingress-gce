@@ -35,7 +35,6 @@ ${CODEGEN_PKG}/generate-groups.sh \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
 
 echo "Generating openapi for BackendConfig v1beta1"
-go install ${OPENAPI_PKG}/cmd/openapi-gen
 ${GOPATH}/bin/openapi-gen \
   --output-file-base zz_generated.openapi \
   --input-dirs k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1\
@@ -43,7 +42,6 @@ ${GOPATH}/bin/openapi-gen \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
 
 echo "Generating openapi for BackendConfig v1"
-go install ${OPENAPI_PKG}/cmd/openapi-gen
 ${GOPATH}/bin/openapi-gen \
   --output-file-base zz_generated.openapi \
   --input-dirs k8s.io/ingress-gce/pkg/apis/backendconfig/v1\
@@ -58,7 +56,6 @@ ${CODEGEN_PKG}/generate-groups.sh \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
 
 echo "Generating openapi for FrontendConfig v1beta1"
-go install ${OPENAPI_PKG}/cmd/openapi-gen
 ${GOPATH}/bin/openapi-gen \
   --output-file-base zz_generated.openapi \
   --input-dirs k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1\
@@ -73,7 +70,6 @@ ${CODEGEN_PKG}/generate-groups.sh \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
 
 echo "Generating openapi for ServiceNetworkEndpointGroup v1beta1"
-go install ${OPENAPI_PKG}/cmd/openapi-gen
 ${GOPATH}/bin/openapi-gen \
   --output-file-base zz_generated.openapi \
   --input-dirs k8s.io/ingress-gce/pkg/apis/svcneg/v1beta1\
@@ -88,7 +84,6 @@ ${CODEGEN_PKG}/generate-groups.sh \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
 
 echo "Generating openapi for ServiceAttachment v1beta1"
-go install ${OPENAPI_PKG}/cmd/openapi-gen
 ${GOPATH}/bin/openapi-gen \
   --output-file-base zz_generated.openapi \
   --input-dirs k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1\
@@ -96,7 +91,6 @@ ${GOPATH}/bin/openapi-gen \
   --go-header-file ${SCRIPT_ROOT}/hack/boilerplate.go.txt
 
 echo "Generating openapi for ServiceAttachment v1"
-go install ${OPENAPI_PKG}/cmd/openapi-gen
 ${GOPATH}/bin/openapi-gen \
   --output-file-base zz_generated.openapi \
   --input-dirs k8s.io/ingress-gce/pkg/apis/serviceattachment/v1\
@@ -119,7 +113,6 @@ ${CODEGEN_PKG}/generate-groups.sh \
   --plural-exceptions=GCPIngressParams:GCPIngressParams
 
 echo "Generating openapi for GCPIngressParams v1beta1"
-go install ${OPENAPI_PKG}/cmd/openapi-gen
 ${GOPATH}/bin/openapi-gen \
   --output-file-base zz_generated.openapi \
   --input-dirs k8s.io/ingress-gce/pkg/apis/ingparams/v1beta1\
