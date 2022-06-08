@@ -325,11 +325,11 @@ func verifyAffinity(t *testing.T, gclb *fuzz.GCLB, svcNamespace, svcName string,
 			continue
 		}
 		if bs.GA.SessionAffinity != expect {
-			return fmt.Errorf("verifyAffinity(..., %q, %q, ...) = %s, want %s (SessionAffinity)",
+			return fmt.Errorf("Backend Service %s verifyAffinity(..., %q, %q, ...) = %s, want %s (SessionAffinity)", bs.GA.Name,
 				svcNamespace, svcName, bs.GA.SessionAffinity, expect)
 		}
 		if bs.GA.AffinityCookieTtlSec != ttl {
-			return fmt.Errorf("verifyAffinity(..., %q, %q, ...) = %v, want %v (AffinityCookieTtlSec)",
+			return fmt.Errorf("Backend Service %s verifyAffinity(..., %q, %q, ...) = %v, want %v (AffinityCookieTtlSec)", bs.GA.Name,
 				svcNamespace, svcName, bs.GA.AffinityCookieTtlSec, ttl)
 		}
 	}
