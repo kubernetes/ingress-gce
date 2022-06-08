@@ -87,6 +87,11 @@ type L4NetLBServiceState struct {
 	FirstSyncErrorTime *time.Time
 }
 
+// InitL4NetLBServiceState sets FirstSyncErrorTime
+func InitL4NetLBServiceState(syncTime *time.Time) L4NetLBServiceState {
+	return L4NetLBServiceState{FirstSyncErrorTime: syncTime}
+}
+
 // IngressMetricsCollector is an interface to update/delete ingress states in the cache
 // that is used for computing ingress usage metrics.
 type IngressMetricsCollector interface {
