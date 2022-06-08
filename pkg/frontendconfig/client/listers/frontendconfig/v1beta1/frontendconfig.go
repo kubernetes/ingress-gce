@@ -1,5 +1,5 @@
 /*
-Copyright 2020 The Kubernetes Authors.
+Copyright 2022 The Kubernetes Authors.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,8 +26,10 @@ import (
 )
 
 // FrontendConfigLister helps list FrontendConfigs.
+// All objects returned here must be treated as read-only.
 type FrontendConfigLister interface {
 	// List lists all FrontendConfigs in the indexer.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1beta1.FrontendConfig, err error)
 	// FrontendConfigs returns an object that can list and get FrontendConfigs.
 	FrontendConfigs(namespace string) FrontendConfigNamespaceLister
@@ -58,10 +60,13 @@ func (s *frontendConfigLister) FrontendConfigs(namespace string) FrontendConfigN
 }
 
 // FrontendConfigNamespaceLister helps list and get FrontendConfigs.
+// All objects returned here must be treated as read-only.
 type FrontendConfigNamespaceLister interface {
 	// List lists all FrontendConfigs in the indexer for a given namespace.
+	// Objects returned here must be treated as read-only.
 	List(selector labels.Selector) (ret []*v1beta1.FrontendConfig, err error)
 	// Get retrieves the FrontendConfig from the indexer for a given namespace and name.
+	// Objects returned here must be treated as read-only.
 	Get(name string) (*v1beta1.FrontendConfig, error)
 	FrontendConfigNamespaceListerExpansion
 }
