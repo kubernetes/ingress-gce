@@ -22,7 +22,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
-	discovery "k8s.io/api/discovery/v1beta1"
+	discovery "k8s.io/api/discovery/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -30,7 +30,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	informerv1 "k8s.io/client-go/informers/core/v1"
-	disinformer "k8s.io/client-go/informers/discovery/v1beta1"
+	disinformer "k8s.io/client-go/informers/discovery/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -306,7 +306,7 @@ func (c *Controller) processService(key string) error {
 	var curEs *discovery.EndpointSlice
 	if exists {
 		if len(subsets) == 0 {
-			err := c.kubeClient.DiscoveryV1beta1().EndpointSlices(namespace).Delete(context.Background(), sliceName, metav1.DeleteOptions{})
+			err := c.kubeClient.DiscoveryV1().EndpointSlices(namespace).Delete(context.Background(), sliceName, metav1.DeleteOptions{})
 			if err != nil {
 				klog.Errorf("error deleting EndpointSlice %q: %+v", sliceName, err)
 			} else {
@@ -330,9 +330,9 @@ func (c *Controller) processService(key string) error {
 	newEs.Endpoints = subsets
 
 	if !exists {
-		_, err = c.kubeClient.DiscoveryV1beta1().EndpointSlices(namespace).Create(context.Background(), newEs, metav1.CreateOptions{})
+		_, err = c.kubeClient.DiscoveryV1().EndpointSlices(namespace).Create(context.Background(), newEs, metav1.CreateOptions{})
 	} else {
-		_, err = c.kubeClient.DiscoveryV1beta1().EndpointSlices(namespace).Update(context.Background(), newEs, metav1.UpdateOptions{})
+		_, err = c.kubeClient.DiscoveryV1().EndpointSlices(namespace).Update(context.Background(), newEs, metav1.UpdateOptions{})
 	}
 	if err != nil {
 		klog.Errorf("error updating EndpointSlice %q: %+v", sliceName, err)
@@ -350,7 +350,6 @@ func workloadToEndpoint(workload *workloadv1a1.Workload, service *corev1.Service
 		Conditions: discovery.EndpointConditions{
 			Ready: &ready,
 		},
-		Topology: nil,
 		TargetRef: &corev1.ObjectReference{
 			Kind:            "Pod",
 			Namespace:       workload.Namespace,

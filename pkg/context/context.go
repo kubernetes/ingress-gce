@@ -29,7 +29,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
 	informerv1 "k8s.io/client-go/informers/core/v1"
-	discoveryinformer "k8s.io/client-go/informers/discovery/v1beta1"
+	discoveryinformer "k8s.io/client-go/informers/discovery/v1"
 	informernetworking "k8s.io/client-go/informers/networking/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"

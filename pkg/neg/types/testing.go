@@ -22,7 +22,7 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	informerv1 "k8s.io/client-go/informers/core/v1"
-	discoveryinformer "k8s.io/client-go/informers/discovery/v1beta1"
+	discoveryinformer "k8s.io/client-go/informers/discovery/v1"
 	informernetworking "k8s.io/client-go/informers/networking/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"

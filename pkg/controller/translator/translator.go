@@ -24,7 +24,7 @@ import (
 	"k8s.io/klog"
 
 	api_v1 "k8s.io/api/core/v1"
-	discoveryapi "k8s.io/api/discovery/v1beta1"
+	discoveryapi "k8s.io/api/discovery/v1"
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"

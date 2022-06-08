@@ -20,7 +20,7 @@ import (
 	"errors"
 	"fmt"
 
-	discovery "k8s.io/api/discovery/v1beta1"
+	discovery "k8s.io/api/discovery/v1"
 )
 
 func FormatEndpointSlicesServiceKey(namespace, name string) string {
