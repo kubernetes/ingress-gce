@@ -25,7 +25,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	apiv1 "k8s.io/api/core/v1"
-	discovery "k8s.io/api/discovery/v1beta1"
+	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
@@ -422,7 +422,7 @@ func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []Endpoi
 			// which the NodeName field was not yet present.
 			nodeName := ep.NodeName
 			if nodeName == nil || len(*nodeName) == 0 {
-				nodeNameFromTopology := ep.Topology[apiv1.LabelHostname]
+				nodeNameFromTopology := ep.DeprecatedTopology[apiv1.LabelHostname]
 				nodeName = &nodeNameFromTopology
 			}
 			addresses = append(addresses, AddressData{TargetRef: ep.TargetRef, NodeName: nodeName, Addresses: ep.Addresses, Ready: ready})

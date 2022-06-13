@@ -29,7 +29,7 @@ import (
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
-	discovery "k8s.io/api/discovery/v1beta1"
+	discovery "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -1334,7 +1334,7 @@ func TestEnqueueEndpoints(t *testing.T) {
 			ctx := context.Background()
 			var informer cache.SharedIndexInformer
 			if tc.useSlices {
-				endpointSliceClient := controller.client.DiscoveryV1beta1().EndpointSlices(namespace)
+				endpointSliceClient := controller.client.DiscoveryV1().EndpointSlices(namespace)
 				_, err := endpointSliceClient.Create(ctx, tc.endpointSlice, metav1.CreateOptions{})
 				if err != nil {
 					t.Fatalf("Failed to create test endpoint slice, error - %v", err)

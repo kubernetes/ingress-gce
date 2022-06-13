@@ -23,7 +23,7 @@ import (
 
 	istioV1alpha3 "istio.io/api/networking/v1alpha3"
 	v1 "k8s.io/api/core/v1"
-	discovery "k8s.io/api/discovery/v1beta1"
+	discovery "k8s.io/api/discovery/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -781,8 +781,8 @@ func TestEndpointsDataFromEndpointSlicesNodeNameFromTopology(t *testing.T) {
 			AddressType: "IPv4",
 			Endpoints: []discovery.Endpoint{
 				{
-					Addresses: []string{"10.100.1.1"},
-					Topology:  map[string]string{v1.LabelHostname: TestInstance1},
+					Addresses:          []string{"10.100.1.1"},
+					DeprecatedTopology: map[string]string{v1.LabelHostname: TestInstance1},
 					TargetRef: &v1.ObjectReference{
 						Namespace: testServiceNamespace,
 						Name:      "pod1",

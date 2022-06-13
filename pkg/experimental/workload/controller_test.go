@@ -71,7 +71,7 @@ func deleteWorkload(wlc *Controller, wl *workloadv1a1.Workload) {
 
 func getEndpointSliceAddr(wlc *Controller, svc *corev1.Service, t *testing.T) []string {
 	sliceName := endpointsliceName(svc.Name)
-	eps, err := wlc.ctx.KubeClient.DiscoveryV1beta1().EndpointSlices(svc.Namespace).Get(
+	eps, err := wlc.ctx.KubeClient.DiscoveryV1().EndpointSlices(svc.Namespace).Get(
 		context.Background(),
 		sliceName,
 		metav1.GetOptions{},
@@ -93,7 +93,7 @@ func getEndpointSliceAddr(wlc *Controller, svc *corev1.Service, t *testing.T) []
 // addEndpointSliceToLister adds the EndpointSlice to the lister so the controller knows the existance of it.
 func addEndpointSliceToLister(wlc *Controller, svc *corev1.Service, t *testing.T) {
 	sliceName := endpointsliceName(svc.Name)
-	eps, err := wlc.ctx.KubeClient.DiscoveryV1beta1().EndpointSlices(svc.Namespace).Get(
+	eps, err := wlc.ctx.KubeClient.DiscoveryV1().EndpointSlices(svc.Namespace).Get(
 		context.Background(),
 		sliceName,
 		metav1.GetOptions{},

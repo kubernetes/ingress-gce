@@ -17,7 +17,7 @@ limitations under the License.
 package endpointslices
 
 import (
-	discovery "k8s.io/api/discovery/v1beta1"
+	discovery "k8s.io/api/discovery/v1"
 )
 
 const (
