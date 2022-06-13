@@ -671,6 +671,43 @@ func TestProcessServiceDeletionFailed(t *testing.T) {
 	}
 }
 
+func TestServiceStatusForErrorSync(t *testing.T) {
+	lc := newL4NetLBServiceController()
+	(lc.ctx.Cloud.Compute().(*cloud.MockGCE)).MockForwardingRules.InsertHook = mock.InsertForwardingRulesInternalErrHook
+
+	svc := test.NewL4NetLBRBSService(8080)
+	addNetLBService(lc, svc)
+
+	syncResult := lc.syncInternal(svc)
+	if syncResult.Error == nil {
+		t.Errorf("Expected error in sync controller")
+	}
+	if syncResult.MetricsState.InSuccess == true {
+		t.Fatalf("Metric status InSuccess for service %s/%s mismatch, expected: true, received: false", svc.Namespace, svc.Name)
+	}
+	if syncResult.MetricsState.FirstSyncErrorTime == nil {
+		t.Fatalf("Metric status FirstSyncErrorTime for service %s/%s mismatch, expected: not nil, received: nil", svc.Namespace, svc.Name)
+	}
+}
+
+func TestServiceStatusForSuccessSync(t *testing.T) {
+	lc := newL4NetLBServiceController()
+
+	svc := test.NewL4NetLBRBSService(8080)
+	addNetLBService(lc, svc)
+
+	syncResult := lc.syncInternal(svc)
+	if syncResult.Error != nil {
+		t.Errorf("Unexpected error in sync controller")
+	}
+	if syncResult.MetricsState.InSuccess != true {
+		t.Fatalf("Metric status InSuccess for service %s/%s mismatch, expected: false, received: true", svc.Namespace, svc.Name)
+	}
+	if syncResult.MetricsState.FirstSyncErrorTime != nil {
+		t.Fatalf("Metric status FirstSyncErrorTime for service %s/%s mismatch, expected: nil, received: %v", svc.Namespace, svc.Name, syncResult.MetricsState.FirstSyncErrorTime)
+	}
+}
+
 func TestProcessServiceUpdate(t *testing.T) {
 	flags.F.MaxIgSize = 1000
 

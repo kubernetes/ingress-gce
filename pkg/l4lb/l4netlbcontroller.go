@@ -18,6 +18,8 @@ package l4lb
 
 import (
 	"fmt"
+	"reflect"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/core/v1"
@@ -35,7 +37,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
-	"reflect"
 )
 
 const l4NetLBControllerName = "l4netlb-controller"
@@ -372,7 +373,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
 		return syncResult
 	}
-	syncResult.SetMetricsForSuccessfulService()
+	syncResult.SetMetricsForSuccessfulServiceSync()
 	return syncResult
 }
 
