@@ -38,7 +38,8 @@ func EndpointSlicesByServiceFunc(obj interface{}) ([]string, error) {
 	}
 	key, err := EndpointSlicesServiceKey(es)
 	if err != nil {
-		return []string{}, err
+		// Do not return error, otherwise store will panic.
+		return []string{}, nil
 	}
 	return []string{key}, nil
 }
