@@ -232,6 +232,65 @@ func (lc *L4NetLBController) hasForwardingRuleAnnotation(svc *v1.Service, frName
 	return false
 }
 
+// isRBSBasedService checks if service has either RBS annotation, finalizer or RBSForwardingRule
+func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service) bool {
+	if svc == nil {
+		return false
+	}
+
+	return lc.hasRBSAnnotation(svc) || utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc)
+}
+
+func (lc *L4NetLBController) hasRBSAnnotation(service *v1.Service) bool {
+	if service == nil {
+		return false
+	}
+
+	if val, ok := service.Annotations[annotations.RBSAnnotationKey]; ok && val == annotations.RBSEnabled {
+		return true
+	}
+	return false
+}
+
+// Target Pool to RBS migration is NOT yet supported and causes service to break (for now).
+// If we detect such case, we remove RBS annotation, so service stays with Legacy Target Pool implementation
+func (lc *L4NetLBController) preventTargetPoolToRBSMigration(service *v1.Service) {
+	if lc.hasRBSAnnotation(service) && lc.hasTargetPoolForwardingRule(service) {
+		lc.revertToTargetPool(service)
+	}
+}
+
+func (lc *L4NetLBController) hasTargetPoolForwardingRule(service *v1.Service) bool {
+	l4netlb := loadbalancers.NewL4NetLB(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace))
+	frName := l4netlb.GetFRName()
+	if lc.hasForwardingRuleAnnotation(service, frName) {
+		return false
+	}
+
+	existingFR := l4netlb.GetForwardingRule(frName, meta.VersionGA)
+	if existingFR != nil && existingFR.Target != "" {
+		return true
+	}
+	return false
+}
+
+func (lc *L4NetLBController) revertToTargetPool(service *v1.Service) {
+	lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "CanNotMigrateTargetPoolToRBS",
+		"RBS annotation was attached to the Legacy Target Pool service. Migration is not supported. Removing annotation")
+	metrics.IncreaseL4NetLBLegacyToRBSMigrationAttempts()
+
+	err := lc.deleteRBSAnnotation(service)
+	if err != nil {
+		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "RemoveRBSAnnotationOnTargetPoolServiceFailed",
+			"Failed to delete rbs annotation for load balancer with target pool, err: %v", err)
+	}
+}
+
+func (lc *L4NetLBController) deleteRBSAnnotation(service *v1.Service) error {
+	delete(service.Annotations, annotations.RBSAnnotationKey)
+	return updateAnnotations(lc.ctx, service, service.Annotations)
+}
+
 // hasRBSForwardingRule checks if services loadbalancer has forwarding rule pointing to backend service
 func (lc *L4NetLBController) hasRBSForwardingRule(svc *v1.Service) bool {
 	l4netlb := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace))
@@ -242,17 +301,6 @@ func (lc *L4NetLBController) hasRBSForwardingRule(svc *v1.Service) bool {
 	}
 	existingFR := l4netlb.GetForwardingRule(frName, meta.VersionGA)
 	return existingFR != nil && existingFR.LoadBalancingScheme == string(cloud.SchemeExternal) && existingFR.BackendService != ""
-}
-
-// isRBSBasedService checks if service has either RBS annotation, finalizer or RBSForwardingRule
-func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service) bool {
-	if svc == nil {
-		return false
-	}
-	if val, ok := svc.Annotations[annotations.RBSAnnotationKey]; ok && val == annotations.RBSEnabled {
-		return true
-	}
-	return utils.HasL4NetLBFinalizerV2(svc) || lc.hasRBSForwardingRule(svc)
 }
 
 func (lc *L4NetLBController) checkHealth() error {
@@ -294,6 +342,9 @@ func (lc *L4NetLBController) sync(key string) error {
 		klog.V(3).Infof("Ignoring sync of non-existent service %s", key)
 		return nil
 	}
+
+	lc.preventTargetPoolToRBSMigration(svc)
+
 	if lc.needsDeletion(svc) {
 		klog.V(3).Infof("Deleting L4 External LoadBalancer resources for service %s", key)
 		result := lc.garbageCollectRBSNetLB(key, svc)
