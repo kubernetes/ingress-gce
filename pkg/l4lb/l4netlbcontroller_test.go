@@ -1126,6 +1126,8 @@ func TestShouldProcessService(t *testing.T) {
 }
 
 func TestPreventTargetPoolToRBSMigration(t *testing.T) {
+	flags.F.MaxIgSize = 1000
+
 	testCases := []struct {
 		desc                         string
 		frHook                       getForwardingRuleHook
@@ -1155,8 +1157,8 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 			controller.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = testCase.frHook
 			addNetLBService(controller, svc)
 
+			// test only preventTargetPoolToRBSMigration
 			controller.preventTargetPoolToRBSMigration(svc)
-			updateNetLBService(controller, svc)
 
 			resultSvc, err := controller.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
 			if err != nil {
@@ -1164,7 +1166,30 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 			}
 			hasRBSAnnotation := controller.hasRBSAnnotation(resultSvc)
 			if hasRBSAnnotation != testCase.expectRBSAnnotationAfterSync {
-				t.Errorf("hasRBSAnnotation = %t, testCase.expectRBSAnnotationAfterSync = %t, want equal", hasRBSAnnotation, testCase.expectRBSAnnotationAfterSync)
+				t.Errorf("After preventTargetPoolToRBSMigration, hasRBSAnnotation = %t, testCase.expectRBSAnnotationAfterSync = %t, want equal", hasRBSAnnotation, testCase.expectRBSAnnotationAfterSync)
+			}
+
+			// test that whole sync process is skipped
+			svc2 := test.NewL4NetLBRBSServiceMultiplePorts("test-2", []int32{30234})
+			addNetLBService(controller, svc2)
+
+			key, err := common.KeyFunc(svc2)
+			if err != nil {
+				t.Fatalf("common.KeyFunc(%v) returned error %v, want nil", svc2, err)
+			}
+
+			err = controller.sync(key)
+			if err != nil {
+				t.Fatalf("controller.sync(%s) returned error %v, want nil", key, err)
+			}
+
+			resultSvc, err = controller.ctx.KubeClient.CoreV1().Services(svc2.Namespace).Get(context.TODO(), svc2.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("controller.ctx.KubeClient.CoreV1().Services(%s).Get(_, %s, _) returned error %v, want nil", svc2.Namespace, svc2.Name, err)
+			}
+			hasRBSAnnotation = controller.hasRBSAnnotation(resultSvc)
+			if hasRBSAnnotation != testCase.expectRBSAnnotationAfterSync {
+				t.Errorf("After sync, hasRBSAnnotation = %t, testCase.expectRBSAnnotationAfterSync = %t, want equal", hasRBSAnnotation, testCase.expectRBSAnnotationAfterSync)
 			}
 		})
 	}

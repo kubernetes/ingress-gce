@@ -287,8 +287,13 @@ func (lc *L4NetLBController) revertToTargetPool(service *v1.Service) {
 }
 
 func (lc *L4NetLBController) deleteRBSAnnotation(service *v1.Service) error {
+	err := deleteAnnotation(lc.ctx, service, annotations.RBSAnnotationKey)
+	if err != nil {
+		return fmt.Errorf("deleteAnnotation(_, %v, %s) returned error %v, want nil", service, annotations.RBSAnnotationKey, err)
+	}
+	// update current object annotations, so we do not treat it as RBS after
 	delete(service.Annotations, annotations.RBSAnnotationKey)
-	return updateAnnotations(lc.ctx, service, service.Annotations)
+	return nil
 }
 
 // hasRBSForwardingRule checks if services loadbalancer has forwarding rule pointing to backend service
