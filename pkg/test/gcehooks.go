@@ -97,12 +97,12 @@ func DeleteHealthCheckResourceInUseErrorHook(ctx context.Context, key *meta.Key,
 }
 
 func GetLegacyForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, *compute.ForwardingRule, error) {
-	fwRule := compute.ForwardingRule{Target: "some_target", LoadBalancingScheme: string(cloud.SchemeExternal)}
+	fwRule := compute.ForwardingRule{Target: "some_target", LoadBalancingScheme: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierDefault.ToGCEValue()}
 	return true, &fwRule, nil
 }
 
 func GetRBSForwardingRule(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, *compute.ForwardingRule, error) {
-	fwRule := compute.ForwardingRule{BackendService: "some_rbs", LoadBalancingScheme: string(cloud.SchemeExternal)}
+	fwRule := compute.ForwardingRule{BackendService: bsUrl, LoadBalancingScheme: string(cloud.SchemeExternal), NetworkTier: cloud.NetworkTierDefault.ToGCEValue()}
 	return true, &fwRule, nil
 }
 

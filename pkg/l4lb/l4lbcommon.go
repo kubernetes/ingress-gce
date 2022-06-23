@@ -73,6 +73,17 @@ func updateAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBA
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
+func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string) error {
+	newObjectMeta := svc.ObjectMeta.DeepCopy()
+	if _, ok := newObjectMeta.Annotations[annotationKey]; !ok {
+		return nil
+	}
+
+	klog.V(3).Infof("Removing annotation %s from service %v/%v", annotationKey, svc.Namespace, svc.Name)
+	delete(newObjectMeta.Annotations, annotationKey)
+	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+}
+
 // updateServiceStatus this faction checks if LoadBalancer status changed and patch service if needed.
 func updateServiceStatus(ctx *context.ControllerContext, svc *v1.Service, newStatus *v1.LoadBalancerStatus) error {
 	if helpers.LoadBalancerStatusEqual(&svc.Status.LoadBalancer, newStatus) {
