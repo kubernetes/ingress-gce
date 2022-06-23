@@ -452,7 +452,7 @@ func TestProcessServiceCreateWithUsersProvidedIP(t *testing.T) {
 	}
 	adr, err := lc.ctx.Cloud.GetRegionAddress(userAddrName, lc.ctx.Cloud.Region())
 	if err != nil {
-		t.Errorf("Unexpected error when trying to get regiona address, err: %v", err)
+		t.Errorf("Unexpected error when trying to get regional address, err: %v", err)
 	}
 	if adr == nil {
 		t.Errorf("Address should not be deleted after service deletion")
@@ -1122,5 +1122,50 @@ func TestShouldProcessService(t *testing.T) {
 		if result != testCase.shouldProcess {
 			t.Errorf("Old service %v. New service %v. Expected shouldProcess: %t, got: %t", testCase.oldSvc, testCase.newSvc, testCase.shouldProcess, result)
 		}
+	}
+}
+
+func TestPreventTargetPoolToRBSMigration(t *testing.T) {
+	testCases := []struct {
+		desc                         string
+		frHook                       getForwardingRuleHook
+		expectRBSAnnotationAfterSync bool
+	}{
+		{
+			desc:                         "Should remove annotation from target pool service",
+			frHook:                       test.GetLegacyForwardingRule,
+			expectRBSAnnotationAfterSync: false,
+		},
+		{
+			desc:                         "Should not remove annotation from RBS based service",
+			frHook:                       test.GetRBSForwardingRule,
+			expectRBSAnnotationAfterSync: true,
+		},
+		{
+			desc:                         "Should not remove annotation from RBS service without forwarding rule",
+			expectRBSAnnotationAfterSync: true,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.desc, func(t *testing.T) {
+			svc := test.NewL4NetLBRBSServiceMultiplePorts("test", []int32{30234})
+			controller := newL4NetLBServiceController()
+
+			controller.ctx.Cloud.Compute().(*cloud.MockGCE).MockForwardingRules.GetHook = testCase.frHook
+			addNetLBService(controller, svc)
+
+			controller.preventTargetPoolToRBSMigration(svc)
+			updateNetLBService(controller, svc)
+
+			resultSvc, err := controller.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Fatalf("controller.ctx.KubeClient.CoreV1().Services(%s).Get(_, %s, _) returned error %v, want nil", svc.Namespace, svc.Name, err)
+			}
+			hasRBSAnnotation := controller.hasRBSAnnotation(resultSvc)
+			if hasRBSAnnotation != testCase.expectRBSAnnotationAfterSync {
+				t.Errorf("hasRBSAnnotation = %t, testCase.expectRBSAnnotationAfterSync = %t, want equal", hasRBSAnnotation, testCase.expectRBSAnnotationAfterSync)
+			}
+		})
 	}
 }

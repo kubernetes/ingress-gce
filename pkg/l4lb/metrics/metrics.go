@@ -24,13 +24,14 @@ import (
 )
 
 const (
-	statusSuccess            = "success"
-	statusError              = "error"
-	L4ilbLatencyMetricName   = "l4_ilb_sync_duration_seconds"
-	L4ilbErrorMetricName     = "l4_ilb_sync_error_count"
-	L4netlbLatencyMetricName = "l4_netlb_sync_duration_seconds"
-	L4netlbErrorMetricName   = "l4_netlb_sync_error_count"
-	l4failedHealthCheckName  = "l4_failed_healthcheck_count"
+	statusSuccess                                 = "success"
+	statusError                                   = "error"
+	L4ilbLatencyMetricName                        = "l4_ilb_sync_duration_seconds"
+	L4ilbErrorMetricName                          = "l4_ilb_sync_error_count"
+	L4netlbLatencyMetricName                      = "l4_netlb_sync_duration_seconds"
+	L4netlbErrorMetricName                        = "l4_netlb_sync_error_count"
+	L4netlbLegacyToRBSMigrationAttemptsMetricName = "l4_netlb_legacy_to_rbs_migration_attempts_count"
+	l4failedHealthCheckName                       = "l4_failed_healthcheck_count"
 )
 
 var (
@@ -88,6 +89,12 @@ var (
 		},
 		[]string{"controller_name"},
 	)
+	l4NetLBLegacyToRBSMigrationAttempts = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: L4netlbLegacyToRBSMigrationAttemptsMetricName,
+			Help: "Count of customer attempts to migrate legacy service to RBS by adding rbs annotation",
+		},
+	)
 )
 
 // init registers l4 ilb nad netlb sync metrics.
@@ -133,7 +140,12 @@ func PublishL4NetLBSyncError(syncType, gceResource, errType string, startTime ti
 	l4NetLBSyncErrorCount.WithLabelValues(syncType, gceResource, errType).Inc()
 }
 
-// PublishL4FailedHealthCheckCount observers failed healt check from controller.
+// PublishL4FailedHealthCheckCount observers failed health check from controller.
 func PublishL4FailedHealthCheckCount(controllerName string) {
 	l4FailedHealthCheckCount.WithLabelValues(controllerName).Inc()
+}
+
+// IncreaseL4NetLBLegacyToRBSMigrationAttempts increases l4NetLBLegacyToRBSMigrationAttempts metric
+func IncreaseL4NetLBLegacyToRBSMigrationAttempts() {
+	l4NetLBLegacyToRBSMigrationAttempts.Inc()
 }
