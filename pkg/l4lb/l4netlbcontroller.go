@@ -252,12 +252,21 @@ func (lc *L4NetLBController) hasRBSAnnotation(service *v1.Service) bool {
 	return false
 }
 
-// Target Pool to RBS migration is NOT yet supported and causes service to break (for now).
-// If we detect such case, we remove RBS annotation, so service stays with Legacy Target Pool implementation
-func (lc *L4NetLBController) preventTargetPoolToRBSMigration(service *v1.Service) {
+func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, key string) (bool, error) {
 	if lc.hasRBSAnnotation(service) && lc.hasTargetPoolForwardingRule(service) {
-		lc.revertToTargetPool(service)
+		if utils.HasL4NetLBFinalizerV2(service) {
+			// If we found that RBS finalizer was attached to service, it means that RBS controller
+			// had a race condition on Service creation with Legacy Controller.
+			// It should only happen during service creation and we should clean up RBS resources
+			return true, lc.preventTargetPoolRaceWithRBSOnCreation(service, key)
+		} else {
+			// Target Pool to RBS migration is NOT yet supported and causes service to break (for now).
+			// If we detect RBS annotation on legacy service, we remove RBS annotation,
+			// so service stays with Legacy Target Pool implementation
+			return true, lc.preventExistingTargetPoolToRBSMigration(service)
+		}
 	}
+	return false, nil
 }
 
 func (lc *L4NetLBController) hasTargetPoolForwardingRule(service *v1.Service) bool {
@@ -274,16 +283,26 @@ func (lc *L4NetLBController) hasTargetPoolForwardingRule(service *v1.Service) bo
 	return false
 }
 
-func (lc *L4NetLBController) revertToTargetPool(service *v1.Service) {
+func (lc *L4NetLBController) preventTargetPoolRaceWithRBSOnCreation(service *v1.Service, key string) error {
+	lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "TargetPoolRaceWithRBS",
+		"Target Pool found on provisioned RBS service. Deleting RBS resources")
+
+	metrics.IncreaseL4NetLBTargetPoolRaceWithRBS()
+	result := lc.garbageCollectRBSNetLB(key, service)
+	if result.Error != nil {
+		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "CleanRBSResourcesForLegacyService",
+			"Failed to clean RBS resources for load balancer with target pool, err: %v", result.Error)
+		return result.Error
+	}
+	return nil
+}
+
+func (lc *L4NetLBController) preventExistingTargetPoolToRBSMigration(service *v1.Service) error {
 	lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "CanNotMigrateTargetPoolToRBS",
 		"RBS annotation was attached to the Legacy Target Pool service. Migration is not supported. Removing annotation")
 	metrics.IncreaseL4NetLBLegacyToRBSMigrationAttempts()
 
-	err := lc.deleteRBSAnnotation(service)
-	if err != nil {
-		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "RemoveRBSAnnotationOnTargetPoolServiceFailed",
-			"Failed to delete rbs annotation for load balancer with target pool, err: %v", err)
-	}
+	return lc.deleteRBSAnnotation(service)
 }
 
 func (lc *L4NetLBController) deleteRBSAnnotation(service *v1.Service) error {
@@ -348,7 +367,15 @@ func (lc *L4NetLBController) sync(key string) error {
 		return nil
 	}
 
-	lc.preventTargetPoolToRBSMigration(svc)
+	isLegacyService, err := lc.preventLegacyServiceHandling(svc, key)
+	if err != nil {
+		klog.Warningf("lc.preventLegacyServiceHandling(%v, %s) returned error %v, want nil", svc, key, err)
+		return err
+	}
+	if isLegacyService {
+		klog.V(3).Infof("Ignoring sync of legacy target pool service %s", key)
+		return nil
+	}
 
 	if lc.needsDeletion(svc) {
 		klog.V(3).Infof("Deleting L4 External LoadBalancer resources for service %s", key)
@@ -423,7 +450,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 	}
 	lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
 		"Successfully ensured L4 External LoadBalancer resources")
-	if err = updateAnnotations(lc.ctx, service, syncResult.Annotations); err != nil {
+	if err = updateL4ResourcesAnnotations(lc.ctx, service, syncResult.Annotations); err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Failed to update annotations for load balancer, err: %v", err)
 		syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
@@ -473,7 +500,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 	}
 
 	// Remove LB annotations from the Service when processing the finalizer.
-	if err := updateAnnotations(lc.ctx, svc, nil); err != nil {
+	if err := deleteL4RBSAnnotations(lc.ctx, svc); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error removing resource annotations: %v: %v", err)
 		result.Error = fmt.Errorf("Failed to reset resource annotations, err: %w", err)

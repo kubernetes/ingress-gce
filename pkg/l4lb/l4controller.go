@@ -231,7 +231,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 	}
 	l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
 		"Successfully ensured load balancer resources")
-	if err = updateAnnotations(l4c.ctx, service, syncResult.Annotations); err != nil {
+	if err = updateL4ResourcesAnnotations(l4c.ctx, service, syncResult.Annotations); err != nil {
 		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
 			"Failed to update annotations for load balancer, err: %v", err)
 		syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
@@ -258,7 +258,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 		return result
 	}
 	// Also remove any ILB annotations from the service metadata
-	if err := updateAnnotations(l4c.ctx, svc, nil); err != nil {
+	if err := updateL4ResourcesAnnotations(l4c.ctx, svc, nil); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
 			"Error resetting resource annotations for load balancer: %v", err)
 		result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)

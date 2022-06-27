@@ -24,14 +24,14 @@ import (
 )
 
 const (
-	statusSuccess                                 = "success"
-	statusError                                   = "error"
-	L4ilbLatencyMetricName                        = "l4_ilb_sync_duration_seconds"
-	L4ilbErrorMetricName                          = "l4_ilb_sync_error_count"
-	L4netlbLatencyMetricName                      = "l4_netlb_sync_duration_seconds"
-	L4netlbErrorMetricName                        = "l4_netlb_sync_error_count"
-	L4netlbLegacyToRBSMigrationAttemptsMetricName = "l4_netlb_legacy_to_rbs_migration_attempts_count"
-	l4failedHealthCheckName                       = "l4_failed_healthcheck_count"
+	statusSuccess                                  = "success"
+	statusError                                    = "error"
+	L4ilbLatencyMetricName                         = "l4_ilb_sync_duration_seconds"
+	L4ilbErrorMetricName                           = "l4_ilb_sync_error_count"
+	L4netlbLatencyMetricName                       = "l4_netlb_sync_duration_seconds"
+	L4netlbErrorMetricName                         = "l4_netlb_sync_error_count"
+	L4netlbLegacyToRBSMigrationPreventedMetricName = "l4_netlb_legacy_to_rbs_migration_prevented_count"
+	l4failedHealthCheckName                        = "l4_failed_healthcheck_count"
 )
 
 var (
@@ -89,15 +89,16 @@ var (
 		},
 		[]string{"controller_name"},
 	)
-	l4NetLBLegacyToRBSMigrationAttempts = prometheus.NewCounter(
+	l4NetLBLegacyToRBSPrevented = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: L4netlbLegacyToRBSMigrationAttemptsMetricName,
-			Help: "Count of customer attempts to migrate legacy service to RBS by adding rbs annotation",
+			Name: L4netlbLegacyToRBSMigrationPreventedMetricName,
+			Help: "Count of times legacy to rbs migration was prevented",
 		},
+		[]string{"type"}, // currently, can be migration or race
 	)
 )
 
-// init registers l4 ilb nad netlb sync metrics.
+// init registers l4 ilb and netlb sync metrics.
 func init() {
 	klog.V(3).Infof("Registering L4 ILB controller metrics %v, %v", l4ILBSyncLatency, l4ILBSyncErrorCount)
 	prometheus.MustRegister(l4ILBSyncLatency, l4ILBSyncErrorCount)
@@ -107,7 +108,7 @@ func init() {
 	prometheus.MustRegister(l4FailedHealthCheckCount)
 }
 
-// PublishL4ILBSyncMetrics exports metrics related to the L4 ILB sync.
+// PublishILBSyncMetrics exports metrics related to the L4 ILB sync.
 func PublishILBSyncMetrics(success bool, syncType, gceResource, errType string, startTime time.Time) {
 	publishL4ILBSyncLatency(success, syncType, startTime)
 	if !success {
@@ -145,7 +146,12 @@ func PublishL4FailedHealthCheckCount(controllerName string) {
 	l4FailedHealthCheckCount.WithLabelValues(controllerName).Inc()
 }
 
-// IncreaseL4NetLBLegacyToRBSMigrationAttempts increases l4NetLBLegacyToRBSMigrationAttempts metric
+// IncreaseL4NetLBLegacyToRBSMigrationAttempts increases l4NetLBLegacyToRBSPrevented metric for stopped migration
 func IncreaseL4NetLBLegacyToRBSMigrationAttempts() {
-	l4NetLBLegacyToRBSMigrationAttempts.Inc()
+	l4NetLBLegacyToRBSPrevented.WithLabelValues("migration").Inc()
+}
+
+// IncreaseL4NetLBTargetPoolRaceWithRBS increases l4NetLBLegacyToRBSPrevented metric for race condition between controllers
+func IncreaseL4NetLBTargetPoolRaceWithRBS() {
+	l4NetLBLegacyToRBSPrevented.WithLabelValues("race").Inc()
 }

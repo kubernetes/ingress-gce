@@ -17,6 +17,8 @@ limitations under the License.
 package firewalls
 
 import (
+	"strings"
+
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
@@ -24,7 +26,6 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
-	"strings"
 )
 
 // FirewallParams holds all data needed to create firewall for L4 LB
@@ -151,7 +152,7 @@ func EnsureL4LBFirewallForHc(svc *v1.Service, shared bool, params *FirewallParam
 	return ensureFirewall(svc, shared, params, cloud, recorder)
 }
 
-// EnsureFirewallForHc creates or updates firewall rule for LB traffic to nodes
+// EnsureL4LBFirewallForNodes creates or updates firewall rule for LB traffic to nodes
 func EnsureL4LBFirewallForNodes(svc *v1.Service, params *FirewallParams, cloud *gce.Cloud, recorder record.EventRecorder) error {
 	return ensureFirewall(svc /*shared = */, false, params, cloud, recorder)
 }

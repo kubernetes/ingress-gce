@@ -35,9 +35,9 @@ import (
 // computeNewAnnotationsIfNeeded checks if new annotations should be added to service.
 // If needed creates new service meta object.
 // This function is used by External and Internal L4 LB controllers.
-func computeNewAnnotationsIfNeeded(svc *v1.Service, newAnnotations map[string]string) *metav1.ObjectMeta {
+func computeNewAnnotationsIfNeeded(svc *v1.Service, newAnnotations map[string]string, keysToRemove []string) *metav1.ObjectMeta {
 	newObjectMeta := svc.ObjectMeta.DeepCopy()
-	newObjectMeta.Annotations = mergeAnnotations(newObjectMeta.Annotations, newAnnotations)
+	newObjectMeta.Annotations = mergeAnnotations(newObjectMeta.Annotations, newAnnotations, keysToRemove)
 	if reflect.DeepEqual(svc.Annotations, newObjectMeta.Annotations) {
 		return nil
 	}
@@ -47,12 +47,12 @@ func computeNewAnnotationsIfNeeded(svc *v1.Service, newAnnotations map[string]st
 // mergeAnnotations merges the new set of l4lb resource annotations with the pre-existing service annotations.
 // Existing L4 resource annotation values will be replaced with the values in the new map.
 // This function is used by External and Internal L4 LB controllers.
-func mergeAnnotations(existing, lbAnnotations map[string]string) map[string]string {
+func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []string) map[string]string {
 	if existing == nil {
 		existing = make(map[string]string)
 	} else {
-		// Delete existing L4 annotations.
-		for _, key := range loadbalancers.L4LBResourceAnnotationKeys {
+		// Delete existing annotations.
+		for _, key := range keysToRemove {
 			delete(existing, key)
 		}
 	}
@@ -63,13 +63,23 @@ func mergeAnnotations(existing, lbAnnotations map[string]string) map[string]stri
 	return existing
 }
 
-// updateAnnotations this function checks if new annotations should be added to service and patch service metadata if needed.
-func updateAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string) error {
-	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations)
+// updateL4ResourcesAnnotations this function checks if new annotations should be added to service and patch service metadata if needed.
+func updateL4ResourcesAnnotations(ctx *context.ControllerContext, svc *v1.Service, newL4LBAnnotations map[string]string) error {
+	newObjectMeta := computeNewAnnotationsIfNeeded(svc, newL4LBAnnotations, loadbalancers.L4LBResourceAnnotationKeys)
 	if newObjectMeta == nil {
 		return nil
 	}
 	klog.V(3).Infof("Patching annotations of service %v/%v", svc.Namespace, svc.Name)
+	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+}
+
+// deleteL4RBSAnnotations deletes all annotations which could be added by L4 ELB RBS controller
+func deleteL4RBSAnnotations(ctx *context.ControllerContext, svc *v1.Service) error {
+	newObjectMeta := computeNewAnnotationsIfNeeded(svc, nil, loadbalancers.L4RBSAnnotations)
+	if newObjectMeta == nil {
+		return nil
+	}
+	klog.V(3).Infof("Deleting all annotations for L4 ELB RBS service %v/%v", svc.Namespace, svc.Name)
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
