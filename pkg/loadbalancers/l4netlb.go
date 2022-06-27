@@ -133,7 +133,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	name := l4netlb.ServicePort.BackendName()
 	_, portRanges, _, protocol := utils.GetPortsAndProtocol(l4netlb.Service.Spec.Ports)
 
-	bs, err := l4netlb.backendPool.EnsureL4BackendService(name, hcResult.HCLink, protocol, string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
+	bs, err := l4netlb.backendPool.EnsureL4BackendService(name, hcResult.HCLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = fmt.Errorf("Failed to ensure backend service %s - %w", name, err)
@@ -248,7 +248,7 @@ func (l4netlb *L4NetLB) GetFRName() string {
 	return utils.LegacyForwardingRuleName(l4netlb.Service)
 }
 
-func (l4netlb *L4NetLB) createFirewalls(name, nodeNames []string, ipAddress string, portRanges []string, protocol string) *L4NetLBSyncResult {
+func (l4netlb *L4NetLB) createFirewalls(name string, nodeNames []string, ipAddress string, portRanges []string, protocol string) *L4NetLBSyncResult {
 	result := &L4NetLBSyncResult{}
 	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l4netlb.Service)
 	if err != nil {
@@ -272,5 +272,5 @@ func (l4netlb *L4NetLB) createFirewalls(name, nodeNames []string, ipAddress stri
 		result.Error = err
 		return result
 	}
-	return string(protocol), result
+	return result
 }
