@@ -215,29 +215,6 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 
 	_, portRanges, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
 
-	// ensure firewalls
-	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l.Service)
-	if err != nil {
-		result.Error = err
-		return result
-	}
-	// Add firewall rule for ILB traffic to nodes
-	nodesFWRParams := firewalls.FirewallParams{
-		PortRanges:   portRanges,
-		SourceRanges: sourceRanges.StringSlice(),
-		Protocol:     string(protocol),
-		Name:         name,
-		NodeNames:    nodeNames,
-	}
-
-	if err := firewalls.EnsureL4LBFirewallForNodes(l.Service, &nodesFWRParams, l.cloud, l.recorder); err != nil {
-		result.GCEResourceInError = annotations.FirewallRuleResource
-		result.Error = err
-		return result
-	}
-	result.Annotations[annotations.FirewallRuleKey] = name
-	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
-
 	// Check if protocol has changed for this service. In this case, forwarding rule should be deleted before
 	// the backend service can be updated.
 	existingBS, err := l.backendPool.Get(name, meta.VersionGA, l.scope)
@@ -276,6 +253,31 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	} else {
 		result.Annotations[annotations.UDPForwardingRuleKey] = frName
 	}
+
+	// ensure firewalls
+	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l.Service)
+	if err != nil {
+		result.Error = err
+		return result
+	}
+	// Add firewall rule for ILB traffic to nodes
+	nodesFWRParams := firewalls.FirewallParams{
+		PortRanges:        portRanges,
+		SourceRanges:      sourceRanges.StringSlice(),
+		DestinationRanges: []string{fr.IPAddress},
+		Protocol:          string(protocol),
+		Name:              name,
+		NodeNames:         nodeNames,
+		L4Type:            utils.ILB,
+	}
+
+	if err := firewalls.EnsureL4LBFirewallForNodes(l.Service, &nodesFWRParams, l.cloud, l.recorder); err != nil {
+		result.GCEResourceInError = annotations.FirewallRuleResource
+		result.Error = err
+		return result
+	}
+	result.Annotations[annotations.FirewallRuleKey] = name
+	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
 
 	result.MetricsState.InSuccess = true
 	if options.AllowGlobalAccess {

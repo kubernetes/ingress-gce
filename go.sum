@@ -67,6 +67,8 @@ github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym
 github.com/GoogleCloudPlatform/k8s-cloud-provider v0.0.0-20200415212048-7901bc822317/go.mod h1:DF8FZRxMHMGv/vP2lQP6h+dYzzjpuRn24VeRiYn3qjQ=
 github.com/GoogleCloudPlatform/k8s-cloud-provider v1.18.0 h1:bmLVE4VV8Zcx5iRDkCVsWhP3DOQHfnkUs8jGp3kOJKc=
 github.com/GoogleCloudPlatform/k8s-cloud-provider v1.18.0/go.mod h1:FNj4KYEAAHfYu68kRYolGoxkaJn+6mdEsaM12VTwuI0=
+github.com/GoogleCloudPlatform/k8s-cloud-provider v1.18.1-0.20220218231025-f11817397a1b h1:Heo1J/ttaQFgGJSVnCZquy3e5eH5j1nqxBuomztB3P0=
+github.com/GoogleCloudPlatform/k8s-cloud-provider v1.18.1-0.20220218231025-f11817397a1b/go.mod h1:FNj4KYEAAHfYu68kRYolGoxkaJn+6mdEsaM12VTwuI0=
 github.com/NYTimes/gziphandler v0.0.0-20170623195520-56545f4a5d46/go.mod h1:3wb06e3pkSAbeQ52E9H9iFoQsEEwGN64994WTCIhntQ=
 github.com/OneOfOne/xxhash v1.2.2 h1:KMrpdQIwFcEqXDklaen+P1axHaj9BSKzvpUUfnHldSE=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
@@ -979,6 +981,8 @@ k8s.io/client-go v0.22.2 h1:DaSQgs02aCC1QcwUdkKZWOeaVsQjYvWv8ZazcZ6JcHc=
 k8s.io/client-go v0.22.2/go.mod h1:sAlhrkVDf50ZHx6z4K0S40wISNTarf1r800F+RlCF6U=
 k8s.io/cloud-provider v0.20.0 h1:CVPQ66iyfNgeGomUq2jE/TWrfzE77bdCpemhFS8955U=
 k8s.io/cloud-provider v0.20.0/go.mod h1:Lz/luSVD5BrHDDhtVdjFh0C2qQCRYdf0b9BHQ9L+bXc=
+k8s.io/cloud-provider-gcp v0.21.0 h1:dZUWxMltT/PLYmvmA00O5M4ug+8bDFmA054aVa9tna0=
+k8s.io/cloud-provider-gcp/providers v0.21.1 h1:eUgGWakdxS7+yNrldf5zcY+3SfFRiVltnV/mBof/fsw=
 k8s.io/code-generator v0.20.0/go.mod h1:UsqdF+VX4PU2g46NC2JRs4gc+IfrctnwHb76RNbWHJg=
 k8s.io/component-base v0.20.0 h1:BXGL8iitIQD+0NgW49UsM7MraNUUGDU3FBmrfUAtmVQ=
 k8s.io/component-base v0.20.0/go.mod h1:wKPj+RHnAr8LW2EIBIK7AxOHPde4gme2lzXwVSoRXeA=

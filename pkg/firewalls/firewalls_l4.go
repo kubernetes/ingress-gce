@@ -23,6 +23,7 @@ import (
 	"google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog"
 	"k8s.io/legacy-cloud-providers/gce"
@@ -30,17 +31,19 @@ import (
 
 // FirewallParams holds all data needed to create firewall for L4 LB
 type FirewallParams struct {
-	Name         string
-	IP           string
-	SourceRanges []string
-	PortRanges   []string
-	NodeNames    []string
-	Protocol     string
-	L4Type       utils.L4LBType
+	Name              string
+	IP                string
+	SourceRanges      []string
+	DestinationRanges []string
+	PortRanges        []string
+	NodeNames         []string
+	Protocol          string
+	L4Type            utils.L4LBType
 }
 
 func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParams, sharedRule bool) error {
-	existingFw, err := cloud.GetFirewall(params.Name)
+	fa := NewFirewallAdapter(cloud)
+	existingFw, err := fa.GetFirewall(params.Name)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return err
 	}
@@ -66,9 +69,12 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 			},
 		},
 	}
+	if flags.F.EnablePinhole {
+		expectedFw.DestinationRanges = params.DestinationRanges
+	}
 	if existingFw == nil {
 		klog.V(2).Infof("EnsureL4FirewallRule(%v): creating L4 %s firewall rule", params.Name, params.L4Type.ToString())
-		err = cloud.CreateFirewall(expectedFw)
+		err = fa.CreateFirewall(expectedFw)
 		if utils.IsForbiddenError(err) && cloud.OnXPN() {
 			gcloudCmd := gce.FirewallToGCloudCreateCmd(expectedFw, cloud.NetworkProjectID())
 
@@ -82,18 +88,20 @@ func EnsureL4FirewallRule(cloud *gce.Cloud, nsName string, params *FirewallParam
 	if firewallRuleEqual(expectedFw, existingFw, sharedRule) {
 		return nil
 	}
-	klog.V(2).Infof("EnsureL4FirewallRule(%v): updating L4 %s firewall", params.Name, params.L4Type.ToString())
-	err = cloud.UpdateFirewall(expectedFw)
+
+	klog.V(2).Infof("EnsureL4FirewallRule(%v): patching L4 %s firewall", params.Name, params.L4Type.ToString())
+	err = fa.PatchFirewall(expectedFw)
 	if utils.IsForbiddenError(err) && cloud.OnXPN() {
 		gcloudCmd := gce.FirewallToGCloudUpdateCmd(expectedFw, cloud.NetworkProjectID())
-		klog.V(3).Infof("EnsureL4FirewallRule(%v): Could not update L4 %s firewall on XPN cluster: %v. Raising event for cmd: %q", params.Name, params.L4Type.ToString(), err, gcloudCmd)
+		klog.V(3).Infof("EnsureL4FirewallRule(%v): Could not patch L4 %s firewall on XPN cluster: %v. Raising event for cmd: %q", params.Name, params.L4Type.ToString(), err, gcloudCmd)
 		return newFirewallXPNError(err, gcloudCmd)
 	}
 	return err
 }
 
 func EnsureL4FirewallRuleDeleted(cloud *gce.Cloud, fwName string) error {
-	if err := utils.IgnoreHTTPNotFound(cloud.DeleteFirewall(fwName)); err != nil {
+	fa := NewFirewallAdapter(cloud)
+	if err := utils.IgnoreHTTPNotFound(fa.DeleteFirewall(fwName)); err != nil {
 		if utils.IsForbiddenError(err) && cloud.OnXPN() {
 			gcloudCmd := gce.FirewallToGCloudDeleteCmd(fwName, cloud.NetworkProjectID())
 			klog.V(3).Infof("EnsureL4FirewallRuleDeleted(%v): could not delete traffic firewall on XPN cluster. Raising event.", fwName)

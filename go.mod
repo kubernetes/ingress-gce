@@ -3,8 +3,9 @@ module k8s.io/ingress-gce
 go 1.16
 
 require (
-	github.com/GoogleCloudPlatform/k8s-cloud-provider v1.18.0
 	github.com/go-openapi/jsonpointer v0.19.5 // indirect
+	github.com/GoogleCloudPlatform/k8s-cloud-provider v1.18.1-0.20220218231025-f11817397a1b
+	github.com/go-openapi/spec v0.19.3
 	github.com/google/go-cmp v0.5.6
 	github.com/imdario/mergo v0.3.7 // indirect
 	github.com/kr/pretty v0.2.0

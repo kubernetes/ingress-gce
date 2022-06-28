@@ -131,14 +131,9 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
 
 	name := l4netlb.ServicePort.BackendName()
-	protocol, res := l4netlb.createFirewalls(name, nodeNames)
-	if res.Error != nil {
-		return res
-	}
-	result.Annotations[annotations.FirewallRuleKey] = name
-	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+	_, portRanges, _, protocol := utils.GetPortsAndProtocol(l4netlb.Service.Spec.Ports)
 
-	bs, err := l4netlb.backendPool.EnsureL4BackendService(name, hcResult.HCLink, protocol, string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
+	bs, err := l4netlb.backendPool.EnsureL4BackendService(name, hcResult.HCLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = fmt.Errorf("Failed to ensure backend service %s - %w", name, err)
@@ -161,6 +156,20 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	result.Status = &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}
 	result.MetricsState.IsPremiumTier = fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue()
 	result.MetricsState.IsManagedIP = ipAddrType == IPAddrManaged
+	if fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
+		result.MetricsState.IsPremiumTier = true
+	}
+	if ipAddrType == IPAddrManaged {
+		result.MetricsState.IsManagedIP = true
+	}
+
+	res := l4netlb.createFirewalls(name, nodeNames, fr.IPAddress, portRanges, string(protocol))
+	if res.Error != nil {
+		return res
+	}
+	result.Annotations[annotations.FirewallRuleKey] = name
+	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+
 	return result
 }
 
@@ -239,29 +248,29 @@ func (l4netlb *L4NetLB) GetFRName() string {
 	return utils.LegacyForwardingRuleName(l4netlb.Service)
 }
 
-func (l4netlb *L4NetLB) createFirewalls(name string, nodeNames []string) (string, *L4NetLBSyncResult) {
-	_, portRanges, _, protocol := utils.GetPortsAndProtocol(l4netlb.Service.Spec.Ports)
+func (l4netlb *L4NetLB) createFirewalls(name string, nodeNames []string, ipAddress string, portRanges []string, protocol string) *L4NetLBSyncResult {
 	result := &L4NetLBSyncResult{}
 	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l4netlb.Service)
 	if err != nil {
 		result.Error = err
-		return "", result
+		return result
 	}
 
 	// Add firewall rule for L4 External LoadBalancer traffic to nodes
 	nodesFWRParams := firewalls.FirewallParams{
-		PortRanges:   portRanges,
-		SourceRanges: sourceRanges.StringSlice(),
-		Protocol:     string(protocol),
-		Name:         name,
-		IP:           l4netlb.Service.Spec.LoadBalancerIP,
-		NodeNames:    nodeNames,
+		PortRanges:        portRanges,
+		SourceRanges:      sourceRanges.StringSlice(),
+		DestinationRanges: []string{ipAddress},
+		Protocol:          string(protocol),
+		Name:              name,
+		IP:                l4netlb.Service.Spec.LoadBalancerIP,
+		NodeNames:         nodeNames,
 	}
 	result.Error = firewalls.EnsureL4LBFirewallForNodes(l4netlb.Service, &nodesFWRParams, l4netlb.cloud, l4netlb.recorder)
 	if result.Error != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
-		return "", result
+		return result
 	}
-	return string(protocol), result
+	return result
 }
