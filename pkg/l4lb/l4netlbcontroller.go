@@ -499,11 +499,12 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 		return result
 	}
 
-	// Remove LB annotations from the Service when processing the finalizer.
-	if err := deleteL4RBSAnnotations(lc.ctx, svc); err != nil {
-		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-			"Error removing resource annotations: %v: %v", err)
-		result.Error = fmt.Errorf("Failed to reset resource annotations, err: %w", err)
+	// Try to delete instance group, instancePool.DeleteInstanceGroup ignores errors if resource is in use or not found.
+	// TODO(cezarygerard) replace with multi-IG management
+	if err := lc.instancePool.DeleteInstanceGroup(lc.namer.InstanceGroup()); err != nil {
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteInstanceGroupFailed",
+			"Error deleting delete Instance Group from L4 External LoadBalancer, err: %v", err)
+		result.Error = fmt.Errorf("Failed to delete Instance Group, err: %w", err)
 		return result
 	}
 
@@ -514,12 +515,11 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 		return result
 	}
 
-	// Try to delete instance group, instancePool.DeleteInstanceGroup ignores errors if resource is in use or not found.
-	// TODO(cezarygerard) replace with multi-IG management
-	if err := lc.instancePool.DeleteInstanceGroup(lc.namer.InstanceGroup()); err != nil {
-		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteInstanceGroupFailed",
-			"Error deleting delete Instance Group from L4 External LoadBalancer, err: %v", err)
-		result.Error = fmt.Errorf("Failed to delete Instance Group, err: %w", err)
+	// IMPORTANT: Remove LB annotations from the Service LAST, cause changing service fields are emitted as service update to other controllers
+	if err := deleteL4RBSAnnotations(lc.ctx, svc); err != nil {
+		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
+			"Error removing resource annotations: %v: %v", err)
+		result.Error = fmt.Errorf("Failed to reset resource annotations, err: %w", err)
 		return result
 	}
 
