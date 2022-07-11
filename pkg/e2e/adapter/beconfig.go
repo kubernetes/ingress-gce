@@ -27,7 +27,7 @@ import (
 	v1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/apis/backendconfig/v1beta1"
 	client "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // BackendConfigCRUD wraps basic CRUD to allow use of v1beta and v1 APIs.

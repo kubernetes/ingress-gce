@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 
 	"k8s.io/ingress-gce/pkg/utils/descutils"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // ServiceAttachmentDesc stores the description for a Service Attachment.

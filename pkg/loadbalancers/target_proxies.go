@@ -24,7 +24,7 @@ import (
 	"k8s.io/ingress-gce/pkg/translator"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const (

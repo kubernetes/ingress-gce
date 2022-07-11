@@ -20,7 +20,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	// Register the GCP authorization provider.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"

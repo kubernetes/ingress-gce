@@ -20,7 +20,7 @@ import (
 	"context"
 	"fmt"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	clientset "k8s.io/client-go/kubernetes"
@@ -28,7 +28,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
 	"k8s.io/ingress-gce/pkg/utils/patch"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // NegReadinessConditionStatus return (cond, true) if neg condition exists, otherwise (_, false)

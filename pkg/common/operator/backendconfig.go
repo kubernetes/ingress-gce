@@ -1,7 +1,7 @@
 package operator
 
 import (
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"

@@ -19,14 +19,15 @@ package e2e
 import (
 	"context"
 	"fmt"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"time"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // IngressStability denotes the stabilization status of all Ingresses in a sandbox.

@@ -30,7 +30,7 @@ import (
 	"k8s.io/ingress-gce/pkg/e2e"
 	_ "k8s.io/ingress-gce/pkg/klog"
 	"k8s.io/ingress-gce/pkg/version"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	// Pull in the auth library for GCP.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"

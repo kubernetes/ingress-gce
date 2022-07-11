@@ -29,7 +29,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // DefaultBackendServicePort returns the ServicePort which will be

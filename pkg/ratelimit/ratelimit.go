@@ -27,7 +27,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/client-go/util/flowcontrol"
 	"k8s.io/ingress-gce/pkg/flags"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // GCERateLimiter implements cloud.RateLimiter

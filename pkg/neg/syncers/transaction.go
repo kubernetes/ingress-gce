@@ -43,7 +43,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/patch"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 type transactionSyncer struct {

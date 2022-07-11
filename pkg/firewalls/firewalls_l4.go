@@ -25,7 +25,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 

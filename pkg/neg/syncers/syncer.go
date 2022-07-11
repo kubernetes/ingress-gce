@@ -26,7 +26,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 type syncerCore interface {

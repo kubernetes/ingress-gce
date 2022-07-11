@@ -27,7 +27,7 @@ import (
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/namer"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	core "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"

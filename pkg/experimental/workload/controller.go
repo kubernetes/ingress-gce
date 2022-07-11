@@ -38,7 +38,7 @@ import (
 	workloadclient "k8s.io/ingress-gce/pkg/experimental/workload/client/clientset/versioned"
 	informerworkload "k8s.io/ingress-gce/pkg/experimental/workload/client/informers/externalversions/workload/v1alpha1"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const controllerName = "workload-controller.k8s.io"

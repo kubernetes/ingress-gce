@@ -32,7 +32,7 @@ import (
 	"k8s.io/client-go/util/homedir"
 	"k8s.io/ingress-gce/pkg/experimental/metadata"
 	daemonutils "k8s.io/ingress-gce/pkg/experimental/workload/daemon/utils"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // VM represents a VM instance running on Google Cloud.

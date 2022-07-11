@@ -18,10 +18,11 @@ package readiness
 
 import (
 	"fmt"
-	"k8s.io/apimachinery/pkg/util/clock"
 	"strconv"
 	"sync"
 	"time"
+
+	"k8s.io/apimachinery/pkg/util/clock"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -30,7 +31,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/composite"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const (

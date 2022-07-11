@@ -32,7 +32,7 @@ import (
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
 	"k8s.io/ingress-gce/pkg/svcneg"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	"k8s.io/client-go/kubernetes"

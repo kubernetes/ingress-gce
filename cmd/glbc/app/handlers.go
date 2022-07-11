@@ -27,7 +27,7 @@ import (
 	"syscall"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"

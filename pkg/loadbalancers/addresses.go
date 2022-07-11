@@ -26,7 +26,7 @@ import (
 	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // checkStaticIP reserves a regional or global static IP allocated to the Forwarding Rule.

@@ -31,7 +31,7 @@ import (
 	backendconfigv1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	"k8s.io/ingress-gce/pkg/loadbalancers/features"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const (

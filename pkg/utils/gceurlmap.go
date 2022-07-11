@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"strings"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // GCEURLMap is a simplified representation of a UrlMap somewhere

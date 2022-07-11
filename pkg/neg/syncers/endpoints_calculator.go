@@ -18,14 +18,15 @@ package syncers
 
 import (
 	"fmt"
+	"strings"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog"
-	"strings"
+	"k8s.io/klog/v2"
 )
 
 // LocalL4ILBEndpointGetter implements the NetworkEndpointsCalculator interface.

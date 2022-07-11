@@ -29,7 +29,7 @@ import (
 	pscmetrics "k8s.io/ingress-gce/pkg/psc/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/version"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const (

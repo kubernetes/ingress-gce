@@ -25,7 +25,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // NodeController synchronizes the state of the nodes to the unmanaged instance
