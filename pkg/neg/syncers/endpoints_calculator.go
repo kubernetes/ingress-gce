@@ -42,10 +42,17 @@ type LocalL4ILBEndpointsCalculator struct {
 	zoneGetter      types.ZoneGetter
 	subsetSizeLimit int
 	svcId           string
+	logger          klog.Logger
 }
 
-func NewLocalL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter types.ZoneGetter, svcId string) *LocalL4ILBEndpointsCalculator {
-	return &LocalL4ILBEndpointsCalculator{nodeLister: nodeLister, zoneGetter: zoneGetter, subsetSizeLimit: maxSubsetSizeLocal, svcId: svcId}
+func NewLocalL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter types.ZoneGetter, svcId string, logger klog.Logger) *LocalL4ILBEndpointsCalculator {
+	return &LocalL4ILBEndpointsCalculator{
+		nodeLister:      nodeLister,
+		zoneGetter:      zoneGetter,
+		subsetSizeLimit: maxSubsetSizeLocal,
+		svcId:           svcId,
+		logger:          logger.WithName("LocalL4ILBEndpointsCalculator"),
+	}
 }
 
 // Mode indicates the mode that the EndpointsCalculator is operating in.
@@ -63,11 +70,11 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 	for _, ed := range eds {
 		for _, addr := range ed.Addresses {
 			if addr.NodeName == nil {
-				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated node. Skipping", addr.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				l.logger.V(2).Info("Address inside Endpoints does not have an associated node. Skipping", "address", addr.Addresses, "endpoints", klog.KRef(ed.Meta.Namespace, ed.Meta.Name))
 				continue
 			}
 			if addr.TargetRef == nil {
-				klog.V(2).Infof("Endpoint %q in Endpoints %s/%s does not have an associated pod. Skipping", addr.Addresses, ed.Meta.Namespace, ed.Meta.Name)
+				l.logger.V(2).Info("Address inside Endpoints does not have an associated pod. Skipping", "address", addr.Addresses, "endpoints", klog.KRef(ed.Meta.Namespace, ed.Meta.Name))
 				continue
 			}
 			numEndpoints++
@@ -77,16 +84,16 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 			processedNodes.Insert(*addr.NodeName)
 			node, err := l.nodeLister.Get(*addr.NodeName)
 			if err != nil {
-				klog.Errorf("failed to retrieve node object for %q: %v", *addr.NodeName, err)
+				l.logger.Error(err, "failed to retrieve node object", "nodeName", *addr.NodeName)
 				continue
 			}
 			if ok := candidateNodeCheck(node); !ok {
-				klog.Infof("Dropping Node %q from subset since it is not a valid LB candidate", node.Name)
+				l.logger.Info("Dropping Node from subset since it is not a valid LB candidate", "nodeName", node.Name)
 				continue
 			}
 			zone, err := l.zoneGetter.GetZoneForNode(node.Name)
 			if err != nil {
-				klog.Errorf("Unable to find zone for node %s, err %v, skipping", node.Name, err)
+				l.logger.Error(err, "Unable to find zone for node, skipping", "nodeName", node.Name)
 				continue
 			}
 			zoneNodeMap[zone] = append(zoneNodeMap[zone], node)
@@ -97,8 +104,8 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 		return nil, nil, nil
 	}
 	// Compute the networkEndpoints, with total endpoints count <= l.subsetSizeLimit
-	klog.V(2).Infof("LocalL4ILBEndpointsCalculator - Got zoneNodeMap %q as input for service ID %v", nodeMapToString(zoneNodeMap), l.svcId)
-	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap)
+	klog.V(2).Infof("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
+	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger)
 	return subsetMap, nil, err
 }
 
@@ -116,11 +123,17 @@ type ClusterL4ILBEndpointsCalculator struct {
 	subsetSizeLimit int
 	// svcId is the unique identifier for the service, that is used as a salt when hashing nodenames.
 	svcId string
+
+	logger klog.Logger
 }
 
-func NewClusterL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter types.ZoneGetter, svcId string) *ClusterL4ILBEndpointsCalculator {
-	return &ClusterL4ILBEndpointsCalculator{nodeLister: nodeLister, zoneGetter: zoneGetter,
-		subsetSizeLimit: maxSubsetSizeDefault, svcId: svcId}
+func NewClusterL4ILBEndpointsCalculator(nodeLister listers.NodeLister, zoneGetter types.ZoneGetter, svcId string, logger klog.Logger) *ClusterL4ILBEndpointsCalculator {
+	return &ClusterL4ILBEndpointsCalculator{
+		nodeLister:      nodeLister,
+		zoneGetter:      zoneGetter,
+		subsetSizeLimit: maxSubsetSizeDefault,
+		svcId:           svcId,
+		logger:          logger.WithName("ClusterL4ILBEndpointsCalculator")}
 }
 
 // Mode indicates the mode that the EndpointsCalculator is operating in.
@@ -137,14 +150,14 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.Endpoints
 	for _, node := range nodes {
 		zone, err := l.zoneGetter.GetZoneForNode(node.Name)
 		if err != nil {
-			klog.Errorf("Unable to find zone for node %s, err %v, skipping", node.Name, err)
+			l.logger.Error(err, "Unable to find zone for node skipping", "nodeName", node.Name)
 			continue
 		}
 		zoneNodeMap[zone] = append(zoneNodeMap[zone], node)
 	}
-	klog.V(2).Infof("ClusterL4ILBEndpointsCalculator - Got zoneNodeMap %q as input for service ID %v", nodeMapToString(zoneNodeMap), l.svcId)
+	klog.V(2).Infof("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
 	// Compute the networkEndpoints, with total endpoints <= l.subsetSizeLimit.
-	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap)
+	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger)
 	return subsetMap, nil, err
 }
 
@@ -155,15 +168,17 @@ type L7EndpointsCalculator struct {
 	podLister           cache.Indexer
 	subsetLabels        string
 	networkEndpointType types.NetworkEndpointType
+	logger              klog.Logger
 }
 
-func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister cache.Indexer, svcPortName, subsetLabels string, endpointType types.NetworkEndpointType) *L7EndpointsCalculator {
+func NewL7EndpointsCalculator(zoneGetter types.ZoneGetter, podLister cache.Indexer, svcPortName, subsetLabels string, endpointType types.NetworkEndpointType, logger klog.Logger) *L7EndpointsCalculator {
 	return &L7EndpointsCalculator{
 		zoneGetter:          zoneGetter,
 		servicePortName:     svcPortName,
 		podLister:           podLister,
 		subsetLabels:        subsetLabels,
 		networkEndpointType: endpointType,
+		logger:              logger.WithName("L7EndpointsCalculator"),
 	}
 }
 

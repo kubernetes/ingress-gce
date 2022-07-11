@@ -97,6 +97,8 @@ type syncerManager struct {
 	// zoneMap keeps track of the last set of zones the neg controller
 	// has seen. zoneMap is protected by the mu mutex.
 	zoneMap map[string]struct{}
+
+	logger klog.Logger
 }
 
 func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
@@ -112,11 +114,12 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	nodeLister cache.Indexer,
 	svcNegLister cache.Indexer,
 	enableNonGcpMode bool,
-	enableEndpointSlices bool) *syncerManager {
+	enableEndpointSlices bool,
+	logger klog.Logger) *syncerManager {
 
 	zones, err := zoneGetter.ListZones(utils.AllNodesPredicate)
 	if err != nil {
-		klog.V(3).Infof("Unable to initialize zone map in neg manager: %s", err)
+		logger.V(3).Info("Unable to initialize zone map in neg manager", "err", err)
 	}
 	zoneMap := make(map[string]struct{})
 	for _, zone := range zones {
@@ -140,6 +143,7 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		enableNonGcpMode:     enableNonGcpMode,
 		enableEndpointSlices: enableEndpointSlices,
 		zoneMap:              zoneMap,
+		logger:               logger,
 	}
 }
 
@@ -164,7 +168,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 	// Hence, Existing NEG syncer for the service port will always work
 	manager.removeCommonPorts(adds, removes)
 	manager.svcPortMap[key] = newPorts
-	klog.V(3).Infof("EnsureSyncer %v/%v: syncing %v ports, removing %v ports, adding %v ports", namespace, name, newPorts, removes, adds)
+	manager.logger.V(3).Info("EnsureSyncer is syncing ports", "service", klog.KRef(namespace, name), "ports", newPorts, "portsToRemove", removes, "portsToAdd", adds)
 
 	errList := []error{}
 	successfulSyncers := 0
@@ -209,7 +213,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 
 			// determine the implementation that calculates NEG endpoints on each sync.
 			epc := negsyncer.GetEndpointsCalculator(manager.nodeLister, manager.podLister, manager.zoneGetter,
-				syncerKey, portInfo.EpCalculatorMode)
+				syncerKey, portInfo.EpCalculatorMode, manager.logger.WithValues("service", klog.KRef(syncerKey.Namespace, syncerKey.Name), "negName", syncerKey.NegName))
 			syncer = negsyncer.NewTransactionSyncer(
 				syncerKey,
 				manager.recorder,
@@ -227,6 +231,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 				manager.svcNegClient,
 				!manager.namer.IsNEG(portInfo.NegName),
 				manager.enableEndpointSlices,
+				manager.logger,
 			)
 			manager.syncerMap[syncerKey] = syncer
 		}
@@ -298,7 +303,7 @@ func (manager *syncerManager) SyncNodes() {
 func (manager *syncerManager) updateZoneMap() bool {
 	zones, err := manager.zoneGetter.ListZones(utils.AllNodesPredicate)
 	if err != nil {
-		klog.Warningf("Unable to list zones: %s", err)
+		manager.logger.Error(err, "Unable to list zones")
 		return false
 	}
 
@@ -323,8 +328,8 @@ func (manager *syncerManager) ShutDown() {
 
 // GC garbage collects syncers and NEGs.
 func (manager *syncerManager) GC() error {
-	klog.V(2).Infof("Start NEG garbage collection.")
-	defer klog.V(2).Infof("NEG garbage collection finished.")
+	manager.logger.V(2).Info("Start NEG garbage collection.")
+	defer manager.logger.V(2).Info("NEG garbage collection finished.")
 	start := time.Now()
 	// Garbage collect Syncers
 	manager.garbageCollectSyncer()
@@ -355,7 +360,7 @@ func (manager *syncerManager) ReadinessGateEnabledNegs(namespace string, podLabe
 
 		obj, exists, err := manager.serviceLister.GetByKey(svcKey.Key())
 		if err != nil {
-			klog.Errorf("Failed to retrieve service %s from store: %v", svcKey.Key(), err)
+			manager.logger.Error(err, "Failed to retrieve service from store", "service", svcKey.Key())
 			continue
 		}
 
@@ -410,7 +415,7 @@ func (manager *syncerManager) ensureDeleteSvcNegCR(namespace, negName string) er
 		if err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).Delete(context.Background(), negName, metav1.DeleteOptions{}); err != nil {
 			return fmt.Errorf("errored while deleting neg cr %s/%s: %w", negName, namespace, err)
 		}
-		klog.V(2).Infof("Deleted neg cr %s/%s", negName, namespace)
+		manager.logger.V(2).Info("Deleted neg cr", "svcneg", klog.KRef(namespace, negName))
 	}
 	return nil
 }
@@ -438,7 +443,7 @@ func (manager *syncerManager) garbageCollectNEG() error {
 	for key, neg := range negList {
 		if key.Type() != meta.Zonal {
 			// covers the case when key.Zone is not populated
-			klog.V(4).Infof("Ignoring key %v as it is not zonal", key)
+			manager.logger.V(4).Info("Ignoring key as it is not zonal", "key", key)
 			continue
 		}
 		if manager.namer.IsNEG(neg.Name) {
@@ -539,7 +544,7 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 	for _, cr := range deletionCandidates {
 		shouldDeleteNegCR := true
 		deleteByZone := len(cr.Status.NetworkEndpointGroups) == 0
-		klog.V(2).Infof("Deletion candidate %s/%s has %d NEG references", cr.Namespace, cr.Name, len(cr.Status.NetworkEndpointGroups))
+		manager.logger.V(2).Info("Count of NEG references for deletion candidate", "count", len(cr.Status.NetworkEndpointGroups), "svcneg", klog.KObj(cr))
 		for _, negRef := range cr.Status.NetworkEndpointGroups {
 			resourceID, err := cloud.ParseResourceURL(negRef.SelfLink)
 			if err != nil {
@@ -552,7 +557,7 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 		}
 
 		if deleteByZone {
-			klog.V(2).Infof("Deletion candidate %s/%s has 0 NEG reference: %+v", cr.Namespace, cr.Name, cr)
+			manager.logger.V(2).Info("Deletion candidate has 0 NEG reference", "svcneg", klog.KObj(cr), "cr", cr)
 			for _, zone := range zones {
 				shouldDeleteNegCR = shouldDeleteNegCR && deleteNegOrReportErr(cr.Name, zone, cr)
 			}
@@ -572,13 +577,13 @@ func (manager *syncerManager) garbageCollectNEGWithCRD() error {
 			portInfoMap := manager.svcPortMap[svcKey]
 			for _, portInfo := range portInfoMap {
 				if portInfo.NegName == cr.Name {
-					klog.V(2).Infof("NEG CR %s/%s is still desired, skipping deletion", cr.Namespace, cr.Name)
+					manager.logger.V(2).Info("NEG CR is still desired, skipping deletion", "svcneg", klog.KObj(cr))
 					return
 				}
 			}
 
-			klog.V(2).Infof("Deleting NEG CR %s/%s", cr.Namespace, cr.Name)
-			if err := deleteSvcNegCR(manager.svcNegClient, cr); err != nil {
+			manager.logger.V(2).Info("Deleting NEG CR", "svcneg", klog.KObj(cr))
+			if err := deleteSvcNegCR(manager.svcNegClient, cr, manager.logger); err != nil {
 				errList = append(errList, err)
 			}
 		}()
@@ -592,7 +597,7 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 	neg, err := manager.cloud.GetNetworkEndpointGroup(name, zone, meta.VersionGA)
 	if err != nil {
 		if utils.IsNotFoundError(err) || utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
-			klog.V(2).Infof("Ignoring error when querying for neg %s/%s during GC: %q", name, zone, err)
+			manager.logger.V(2).Info("Ignoring error when querying for neg during GC", "negName", name, "zone", zone, "err", err)
 			return nil
 		}
 		return err
@@ -602,16 +607,16 @@ func (manager *syncerManager) ensureDeleteNetworkEndpointGroup(name, zone string
 		// Controller managed custom named negs will always have a populated description, so do not delete custom named
 		// negs with empty descriptions.
 		if !manager.namer.IsNEG(name) && neg.Description == "" {
-			klog.V(2).Infof("Skipping deletion of Neg %s in %s because name was not generated and empty description", name, zone)
+			manager.logger.V(2).Info("Skipping deletion of Neg because name was not generated and empty description", "negName", name, "zone", zone)
 			return nil
 		}
 		if matches, err := utils.VerifyDescription(*expectedDesc, neg.Description, name, zone); !matches {
-			klog.V(2).Infof("Skipping deletion of Neg %s in %s because of conflicting description: %s", name, zone, err)
+			manager.logger.V(2).Info("Skipping deletion of Neg because of conflicting description", "negName", name, "zone", zone, "err", err)
 			return nil
 		}
 	}
 
-	klog.V(2).Infof("Deleting NEG %q in %q.", name, zone)
+	manager.logger.V(2).Info("Deleting NEG", "negName", name, "zone", zone)
 	return manager.cloud.DeleteNetworkEndpointGroup(name, zone, meta.VersionGA)
 }
 
@@ -625,7 +630,7 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 
 	obj, exists, err := manager.serviceLister.GetByKey(svcKey.Key())
 	if err != nil {
-		klog.Errorf("Failed to retrieve service %s from store: %v", svcKey.Key(), err)
+		manager.logger.Error(err, "Failed to retrieve service from store", "service", svcKey.Key())
 	}
 
 	if !exists {
@@ -661,13 +666,13 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 
 		// Neg does not exist so create it
 		_, err = manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Create(context.Background(), &newCR, metav1.CreateOptions{})
-		klog.V(2).Infof("Created ServiceNetworkEndpointGroup CR for neg %s/%s", svcKey.namespace, portInfo.NegName)
+		manager.logger.V(2).Info("Created ServiceNetworkEndpointGroup CR for neg", "svcneg", klog.KRef(svcKey.namespace, portInfo.NegName))
 		return err
 	}
 
-	needUpdate, err := ensureNegCRLabels(negCR, labels)
+	needUpdate, err := ensureNegCRLabels(negCR, labels, manager.logger)
 	if err != nil {
-		klog.Errorf("failed to ensure labels for neg %s/%s for service %s: %s", negCR.Namespace, negCR.Name, service.Name, err)
+		manager.logger.Error(err, "failed to ensure labels for neg", "svcneg", klog.KRef(negCR.Namespace, negCR.Name), "service", service.Name)
 		return err
 	}
 	needUpdate = ensureNegCROwnerRef(negCR, newCR.OwnerReferences) || needUpdate
@@ -679,10 +684,10 @@ func (manager *syncerManager) ensureSvcNegCR(svcKey serviceKey, portInfo negtype
 	return nil
 }
 
-func ensureNegCRLabels(negCR *negv1beta1.ServiceNetworkEndpointGroup, labels map[string]string) (bool, error) {
+func ensureNegCRLabels(negCR *negv1beta1.ServiceNetworkEndpointGroup, labels map[string]string, logger klog.Logger) (bool, error) {
 	needsUpdate := false
 	existingLabels := negCR.GetLabels()
-	klog.V(4).Infof("existing neg %s/%s labels: %+v", negCR.Namespace, negCR.Name, existingLabels)
+	logger.V(4).Info("Ensuring NEG CR labels", "svcneg", klog.KRef(negCR.Namespace, negCR.Name), "existingLabels", existingLabels)
 
 	//Check that required labels exist and are matching
 	for key, value := range labels {
@@ -711,18 +716,18 @@ func ensureNegCROwnerRef(negCR *negv1beta1.ServiceNetworkEndpointGroup, expected
 }
 
 // deleteSvcNegCR will remove finalizers on the given negCR and if deletion timestamp is not set, will delete it as well
-func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.ServiceNetworkEndpointGroup) error {
+func deleteSvcNegCR(svcNegClient svcnegclient.Interface, negCR *negv1beta1.ServiceNetworkEndpointGroup, logger klog.Logger) error {
 	updatedCR := negCR.DeepCopy()
 	updatedCR.Finalizers = []string{}
 	if _, err := patchNegStatus(svcNegClient, *negCR, *updatedCR); err != nil {
 		return err
 	}
 
-	klog.V(2).Infof("Removed finalizer on ServiceNetworkEndpointGroup CR %s/%s", negCR.Namespace, negCR.Name)
+	logger.V(2).Info("Removed finalizer on ServiceNetworkEndpointGroup CR", "svcneg", klog.KRef(negCR.Namespace, negCR.Name))
 
 	// If CR does not have a deletion timestamp, delete
 	if negCR.GetDeletionTimestamp().IsZero() {
-		klog.V(2).Infof("Deleting ServiceNetworkEndpointGroup CR %s/%s", negCR.Namespace, negCR.Name)
+		logger.V(2).Info("Deleting ServiceNetworkEndpointGroup CR", "svcneg", klog.KRef(negCR.Namespace, negCR.Name))
 		return svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(negCR.Namespace).Delete(context.Background(), negCR.Name, metav1.DeleteOptions{})
 	}
 	return nil

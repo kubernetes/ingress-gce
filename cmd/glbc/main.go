@@ -339,6 +339,7 @@ func runControllers(ctx *ingctx.ControllerContext) {
 		enableAsm,
 		asmServiceNEGSkipNamespaces,
 		flags.F.EnableEndpointSlices,
+		klog.TODO(), // TODO(#1761): Replace this with a top level logger configuration once one is available.
 	)
 
 	ctx.AddHealthCheck("neg-controller", negController.IsHealthy)

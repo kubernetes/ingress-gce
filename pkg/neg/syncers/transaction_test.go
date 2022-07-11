@@ -41,6 +41,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
+	"k8s.io/klog/v2"
 	"k8s.io/legacy-cloud-providers/gce"
 	utilpointer "k8s.io/utils/pointer"
 )
@@ -578,7 +579,7 @@ func TestMergeTransactionIntoZoneEndpointMap(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		mergeTransactionIntoZoneEndpointMap(tc.endpointMap, tc.table())
+		mergeTransactionIntoZoneEndpointMap(tc.endpointMap, tc.table(), klog.TODO())
 		if !reflect.DeepEqual(tc.endpointMap, tc.expectEndpointMap) {
 			t.Errorf("For test case %q, endpointSets endpoint map to be %+v, but got %+v", tc.desc, tc.expectEndpointMap, tc.endpointMap)
 		}
@@ -645,7 +646,7 @@ func TestFilterEndpointByTransaction(t *testing.T) {
 
 	for _, tc := range testCases {
 		input := tc.endpointMap
-		filterEndpointByTransaction(input, tc.table())
+		filterEndpointByTransaction(input, tc.table(), klog.TODO())
 		if !reflect.DeepEqual(tc.endpointMap, tc.expectEndpointMap) {
 			t.Errorf("For test case %q, endpointSets endpoint map to be %+v, but got %+v", tc.desc, tc.expectEndpointMap, tc.endpointMap)
 		}
@@ -1410,7 +1411,7 @@ func TestUnknownNodes(t *testing.T) {
 
 func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, mode negtypes.EndpointsCalculatorMode, enableEndpointSlices bool) (negtypes.NegSyncer, *transactionSyncer) {
 	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmIpEndpointType, false, enableEndpointSlices)
-	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, mode)
+	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, mode, klog.TODO())
 	return negsyncer, ts
 }
 
@@ -1452,11 +1453,12 @@ func newTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, negTyp
 		testContext.SvcNegInformer.GetIndexer(),
 		reflector,
 		GetEndpointsCalculator(testContext.NodeInformer.GetIndexer(), testContext.PodInformer.GetIndexer(), negtypes.NewFakeZoneGetter(),
-			svcPort, mode),
+			svcPort, mode, klog.TODO()),
 		string(kubeSystemUID),
 		testContext.SvcNegClient,
 		customName,
 		enableEndpointSlices,
+		klog.TODO(),
 	)
 	transactionSyncer := negsyncer.(*syncer).core.(*transactionSyncer)
 	indexers := map[string]cache.IndexFunc{

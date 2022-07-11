@@ -27,6 +27,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -101,7 +102,7 @@ func TestLocalGetEndpointSet(t *testing.T) {
 			},
 		}
 		svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
-		ec := NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey)
+		ec := NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey, klog.TODO())
 		for _, tc := range testCases {
 			createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeReadyStatusMap, transactionSyncer.nodeLister)
 			retSet, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)
@@ -194,7 +195,7 @@ func TestClusterGetEndpointSet(t *testing.T) {
 		},
 	}
 	svcKey := fmt.Sprintf("%s/%s", testServiceName, testServiceNamespace)
-	ec := NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey)
+	ec := NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, svcKey, klog.TODO())
 	for _, tc := range testCases {
 		createNodes(t, tc.nodeNames, tc.nodeLabelsMap, tc.nodeReadyStatusMap, transactionSyncer.nodeLister)
 		retSet, _, err := ec.CalculateEndpoints(tc.endpointsData, nil)

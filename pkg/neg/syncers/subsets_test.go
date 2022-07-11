@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"k8s.io/ingress-gce/pkg/neg/types"
+	"k8s.io/klog/v2"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -188,7 +189,7 @@ func TestUnevenNodesInZones(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		subsetMap, err := getSubsetPerZone(tc.nodesMap, tc.subsetLimit, tc.svcKey, nil)
+		subsetMap, err := getSubsetPerZone(tc.nodesMap, tc.subsetLimit, tc.svcKey, nil, klog.TODO())
 		if err != nil {
 			t.Errorf("Failed to get subset for test '%s', err %v", tc.description, err)
 		}

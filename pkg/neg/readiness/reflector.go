@@ -72,15 +72,18 @@ type readinessReflector struct {
 	eventRecorder    record.EventRecorder
 
 	queue workqueue.RateLimitingInterface
+
+	logger klog.Logger
 }
 
-func NewReadinessReflector(kubeClient kubernetes.Interface, podLister cache.Indexer, negCloud negtypes.NetworkEndpointGroupCloud, lookup NegLookup) Reflector {
+func NewReadinessReflector(kubeClient kubernetes.Interface, podLister cache.Indexer, negCloud negtypes.NetworkEndpointGroupCloud, lookup NegLookup, logger klog.Logger) Reflector {
 	broadcaster := record.NewBroadcaster()
 	broadcaster.StartLogging(klog.Infof)
 	broadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: kubeClient.CoreV1().Events(""),
 	})
 	recorder := broadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "neg-readiness-reflector"})
+	logger = logger.WithName("ReadinessReflector")
 	reflector := &readinessReflector{
 		client:           kubeClient,
 		podLister:        podLister,
@@ -89,16 +92,17 @@ func NewReadinessReflector(kubeClient kubernetes.Interface, podLister cache.Inde
 		eventBroadcaster: broadcaster,
 		eventRecorder:    recorder,
 		queue:            workqueue.NewRateLimitingQueue(workqueue.DefaultControllerRateLimiter()),
+		logger:           logger,
 	}
-	poller := NewPoller(podLister, lookup, reflector, negCloud)
+	poller := NewPoller(podLister, lookup, reflector, negCloud, logger)
 	reflector.poller = poller
 	return reflector
 }
 
 func (r *readinessReflector) Run(stopCh <-chan struct{}) {
 	defer r.queue.ShutDown()
-	klog.V(2).Infof("Starting NEG readiness reflector")
-	defer klog.V(2).Infof("Shutting down NEG readiness reflector")
+	r.logger.V(2).Info("Starting NEG readiness reflector")
+	defer r.logger.V(2).Info("Shutting down NEG readiness reflector")
 
 	go wait.Until(r.worker, time.Second, stopCh)
 	<-stopCh
@@ -129,12 +133,12 @@ func (r *readinessReflector) handleErr(err error, key interface{}) {
 	}
 
 	if r.queue.NumRequeues(key) < maxRetries {
-		klog.V(2).Infof("Error syncing pod %q, retrying. Error: %v", key, err)
+		r.logger.V(2).Info("Error syncing pod. Retrying.", "pod", key, "err", err)
 		r.queue.AddRateLimited(key)
 		return
 	}
 
-	klog.Warningf("Dropping pod %q out of the queue: %v", key, err)
+	r.logger.Info("Dropping pod out of the queue", "pod", key, "err", err)
 	r.queue.Forget(key)
 }
 
@@ -155,7 +159,7 @@ func (r *readinessReflector) syncPod(podKey string, neg, backendService *meta.Ke
 		return err
 	}
 	if !exists {
-		klog.V(5).Infof("Pod %q is no longer exists. Skipping", podKey)
+		r.logger.V(3).Info("Pod no longer exists. Skipping", "pod", podKey)
 		return nil
 	}
 
@@ -164,7 +168,7 @@ func (r *readinessReflector) syncPod(podKey string, neg, backendService *meta.Ke
 		return nil
 	}
 
-	klog.V(4).Infof("syncPod(%q, %v, %v)", podKey, neg, backendService)
+	r.logger.V(3).Info("Syncing pod", "pod", podKey, "neg", neg, "backendService", backendService)
 	expectedCondition := r.getExpectedNegCondition(pod, neg, backendService)
 	return r.ensurePodNegCondition(pod, expectedCondition)
 }
@@ -220,12 +224,12 @@ func (r *readinessReflector) getExpectedNegCondition(pod *v1.Pod, neg, backendSe
 func (r *readinessReflector) SyncPod(pod *v1.Pod) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(pod)
 	if err != nil {
-		klog.Errorf("Failed to generate pod key: %v", err)
+		r.logger.Error(err, "Failed to generate pod key")
 		return
 	}
 
 	if !needToProcess(pod) {
-		klog.V(6).Infof("Skip processing pod %q", key)
+		r.logger.V(3).Info("Skip processing pod", "pod", key)
 	}
 	r.queue.Add(key)
 }
@@ -252,10 +256,10 @@ func (r *readinessReflector) poll() {
 
 // pollNeg polls a NEG
 func (r *readinessReflector) pollNeg(key negMeta) {
-	klog.V(4).Infof("Polling NEG %q", key.String())
+	r.logger.V(3).Info("Polling NEG", "neg", key.String())
 	retry, err := r.poller.Poll(key)
 	if err != nil {
-		klog.Errorf("Failed to poll %q: %v", key, err)
+		r.logger.Error(err, "Failed to poll neg", "neg", key)
 	}
 	if retry {
 		r.poll()
@@ -271,7 +275,7 @@ func (r *readinessReflector) ensurePodNegCondition(pod *v1.Pod, expectedConditio
 	// check if it is necessary to patch
 	condition, ok := NegReadinessConditionStatus(pod)
 	if ok && reflect.DeepEqual(expectedCondition, condition) {
-		klog.V(4).Infof("NEG condition for pod %s/%s is expected, skip patching", pod.Namespace, pod.Name)
+		r.logger.V(3).Info("NEG condition for pod is expected, skip patching", "pod", klog.KRef(pod.Namespace, pod.Name))
 		return nil
 	}
 

@@ -87,9 +87,11 @@ type poller struct {
 	negCloud  negtypes.NetworkEndpointGroupCloud
 
 	clock clock.Clock
+
+	logger klog.Logger
 }
 
-func NewPoller(podLister cache.Indexer, lookup NegLookup, patcher podStatusPatcher, negCloud negtypes.NetworkEndpointGroupCloud) *poller {
+func NewPoller(podLister cache.Indexer, lookup NegLookup, patcher podStatusPatcher, negCloud negtypes.NetworkEndpointGroupCloud, logger klog.Logger) *poller {
 	return &poller{
 		pollMap:   make(map[negMeta]*pollTarget),
 		podLister: podLister,
@@ -97,6 +99,7 @@ func NewPoller(podLister cache.Indexer, lookup NegLookup, patcher podStatusPatch
 		patcher:   patcher,
 		negCloud:  negCloud,
 		clock:     clock.RealClock{},
+		logger:    logger.WithName("Poller"),
 	}
 }
 
@@ -145,12 +148,12 @@ func (p *poller) ScanForWork() []negMeta {
 // This function is threadsafe.
 func (p *poller) Poll(key negMeta) (retry bool, err error) {
 	if !p.markPolling(key) {
-		klog.V(4).Infof("NEG %q in zone %q as is already being polled or no longer needed to be polled.", key.Name, key.Zone)
+		p.logger.V(4).Info("NEG is already being polled or no longer needed to be polled.", "neg", key.Name, "negZone", key.Zone)
 		return true, nil
 	}
 	defer p.unMarkPolling(key)
 
-	klog.V(2).Infof("polling NEG %q in zone %q", key.Name, key.Zone)
+	p.logger.V(2).Info("polling NEG", "neg", key.Name, "negZone", key.Zone)
 	// TODO(freehan): filter the NEs that are in interest once the API supports it
 	res, err := p.negCloud.ListNetworkEndpoints(key.Name, key.Zone /*showHealthStatus*/, true, key.SyncerKey.GetAPIVersion())
 	if err != nil {
@@ -160,7 +163,7 @@ func (p *poller) Poll(key negMeta) (retry bool, err error) {
 		// until the next status poll is executed. However, the pods are not marked as Ready and still passes the LB health check will
 		// serve LB traffic. The side effect during the delay period is the workload (depending on rollout strategy) might slow down rollout.
 		// TODO(freehan): enable exponential backoff.
-		klog.Errorf("Failed to ListNetworkEndpoint in NEG %q, retry in %v", key.String(), retryDelay.String())
+		p.logger.Error(err, "Failed to ListNetworkEndpoint in NEG. Retrying after some time.", "neg", key.String(), "retryDelay", retryDelay.String())
 		<-p.clock.After(retryDelay)
 		return true, err
 	}
@@ -177,7 +180,7 @@ func (p *poller) Poll(key negMeta) (retry bool, err error) {
 func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.NetworkEndpointWithHealthStatus) (bool, error) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
-	klog.V(4).Infof("processHealthStatus(%q, %+v)", key.String(), healthStatuses)
+	p.logger.V(4).Info("Executing processHealthStatus", "neg", key.String(), "healthStatuses", healthStatuses)
 
 	var (
 		errList []error
@@ -194,12 +197,12 @@ func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.Ne
 
 	for _, healthStatus := range healthStatuses {
 		if healthStatus == nil {
-			klog.Warningf("healthStatus is nil from response %+v", healthStatuses)
+			p.logger.Error(nil, "healthStatus is nil from response", "healthStatuses", healthStatuses)
 			continue
 		}
 
 		if healthStatus.NetworkEndpoint == nil {
-			klog.Warningf("Health status has nil associated network endpoint: %v", healthStatus)
+			p.logger.Error(nil, "Health status has nil associated network endpoint", "healthStatus", healthStatus)
 			continue
 		}
 
@@ -217,7 +220,7 @@ func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.Ne
 			continue
 		}
 
-		bsKey := getHealthyBackendService(healthStatus)
+		bsKey := getHealthyBackendService(healthStatus, p.logger)
 		if bsKey == nil {
 			unhealthyPods = append(unhealthyPods, podName)
 			continue
@@ -257,21 +260,21 @@ func (p *poller) processHealthStatus(key negMeta, healthStatuses []*composite.Ne
 }
 
 // getHealthyBackendService returns one of the first backend service key where the endpoint is considered healthy.
-func getHealthyBackendService(healthStatus *composite.NetworkEndpointWithHealthStatus) *meta.Key {
+func getHealthyBackendService(healthStatus *composite.NetworkEndpointWithHealthStatus, logger klog.Logger) *meta.Key {
 	for _, hs := range healthStatus.Healths {
 		if hs == nil {
-			klog.Errorf("Health status is nil in health status of network endpoint %v ", healthStatus)
+			logger.Error(nil, "Health status is nil in health status of network endpoint", "healthStatus", healthStatus)
 			continue
 		}
 		if hs.BackendService == nil {
-			klog.Errorf("Backend service is nil in health status of network endpoint %v", healthStatus)
+			logger.Error(nil, "Backend service is nil in health status of network endpoint", "healthStatus", healthStatus)
 			continue
 		}
 
 		if hs.HealthState == healthyState {
 			id, err := cloud.ParseResourceURL(hs.BackendService.BackendService)
 			if err != nil {
-				klog.Errorf("Failed to parse backend service reference from a Network Endpoint health status %v: %v", healthStatus, err)
+				logger.Error(err, "Failed to parse backend service reference from a Network Endpoint health status", "healthStatus", healthStatus)
 				continue
 			}
 			if id != nil {

@@ -29,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/clock"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/neg/types/shared"
+	"k8s.io/klog/v2"
 )
 
 // fakeLookUp implements LookUp interface
@@ -47,7 +48,7 @@ func (f *fakeLookUp) ReadinessGateEnabled(syncerKey negtypes.NegSyncerKey) bool 
 }
 
 func newTestReadinessReflector(testContext *negtypes.TestContext) *readinessReflector {
-	reflector := NewReadinessReflector(testContext.KubeClient, testContext.PodInformer.GetIndexer(), negtypes.NewAdapter(testContext.Cloud), &fakeLookUp{})
+	reflector := NewReadinessReflector(testContext.KubeClient, testContext.PodInformer.GetIndexer(), negtypes.NewAdapter(testContext.Cloud), &fakeLookUp{}, klog.TODO())
 	ret := reflector.(*readinessReflector)
 	return ret
 }

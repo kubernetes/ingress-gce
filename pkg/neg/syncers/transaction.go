@@ -91,6 +91,8 @@ type transactionSyncer struct {
 	customName bool
 
 	enableEndpointSlices bool
+
+	logger klog.Logger
 }
 
 func NewTransactionSyncer(
@@ -109,7 +111,11 @@ func NewTransactionSyncer(
 	kubeSystemUID string,
 	svcNegClient svcnegclient.Interface,
 	customName bool,
-	enableEndpointSlices bool) negtypes.NegSyncer {
+	enableEndpointSlices bool,
+	l klog.Logger) negtypes.NegSyncer {
+
+	logger := l.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name), "negName", negSyncerKey.NegName)
+
 	// TransactionSyncer implements the syncer core
 	ts := &transactionSyncer{
 		NegSyncerKey:         negSyncerKey,
@@ -130,28 +136,29 @@ func NewTransactionSyncer(
 		svcNegClient:         svcNegClient,
 		customName:           customName,
 		enableEndpointSlices: enableEndpointSlices,
+		logger:               logger,
 	}
 	// Syncer implements life cycle logic
-	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts)
+	syncer := newSyncer(negSyncerKey, serviceLister, recorder, ts, logger)
 	// transactionSyncer needs syncer interface for internals
 	ts.syncer = syncer
 	ts.retry = NewDelayRetryHandler(func() { syncer.Sync() }, NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay))
 	return syncer
 }
 
-func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode) negtypes.NetworkEndpointsCalculator {
+func GetEndpointsCalculator(nodeLister, podLister cache.Indexer, zoneGetter negtypes.ZoneGetter, syncerKey negtypes.NegSyncerKey, mode negtypes.EndpointsCalculatorMode, logger klog.Logger) negtypes.NetworkEndpointsCalculator {
 	serviceKey := strings.Join([]string{syncerKey.Name, syncerKey.Namespace}, "/")
 	if syncerKey.NegType == negtypes.VmIpEndpointType {
 		nodeLister := listers.NewNodeLister(nodeLister)
 		switch mode {
 		case negtypes.L4LocalMode:
-			return NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey)
+			return NewLocalL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger)
 		default:
-			return NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey)
+			return NewClusterL4ILBEndpointsCalculator(nodeLister, zoneGetter, serviceKey, logger)
 		}
 	}
 	return NewL7EndpointsCalculator(zoneGetter, podLister, syncerKey.PortTuple.Name,
-		syncerKey.SubsetLabels, syncerKey.NegType)
+		syncerKey.SubsetLabels, syncerKey.NegType, logger)
 }
 
 func (s *transactionSyncer) sync() error {
@@ -185,11 +192,10 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	}
 
 	if s.syncer.IsStopped() || s.syncer.IsShuttingDown() {
-		klog.V(4).Infof("Skip syncing NEG %q for %s.", s.NegSyncerKey.NegName, s.NegSyncerKey.String())
+		s.logger.V(3).Info("Skip syncing NEG", "negSyncerKey", s.NegSyncerKey.String())
 		return nil
 	}
-	klog.V(2).Infof("Sync NEG %q for %s, Endpoints Calculator mode %s", s.NegSyncerKey.NegName,
-		s.NegSyncerKey.String(), s.endpointsCalculator.Mode())
+	s.logger.V(2).Info("Sync NEG", "negSyncerKey", s.NegSyncerKey.String(), "endpointsCalculatorMode", s.endpointsCalculator.Mode())
 
 	currentMap, err := retrieveExistingZoneNetworkEndpointMap(s.NegSyncerKey.NegName, s.zoneGetter, s.cloud, s.NegSyncerKey.GetAPIVersion(), s.endpointsCalculator.Mode())
 	if err != nil {
@@ -199,7 +205,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	// Merge the current state from cloud with the transaction table together
 	// The combined state represents the eventual result when all transactions completed
-	mergeTransactionIntoZoneEndpointMap(currentMap, s.transactions)
+	mergeTransactionIntoZoneEndpointMap(currentMap, s.transactions, s.logger)
 	s.logStats(currentMap, "after in-progress operations have completed, NEG endpoints")
 
 	var targetMap map[string]negtypes.NetworkEndpointSet
@@ -211,7 +217,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			return err
 		}
 		if len(slices) < 1 {
-			klog.Warningf("Endpoint slices for service %s/%s don't exist. Skipping NEG sync", s.Namespace, s.Name)
+			s.logger.Error(nil, "Endpoint slices for the service doesn't exist. Skipping NEG sync")
 			return nil
 		}
 		endpointSlices := make([]*discovery.EndpointSlice, len(slices))
@@ -236,7 +242,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			return err
 		}
 		if !exists {
-			klog.Warningf("Endpoint %s/%s does not exist. Skipping NEG sync", s.Namespace, s.Name)
+			s.logger.Info("Endpoint does not exist. Skipping NEG sync", "endpoint", klog.KRef(s.Namespace, s.Name))
 			return nil
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpoints(ep.(*apiv1.Endpoints))
@@ -256,17 +262,17 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	// This mostly happens when transaction entry require reconciliation but the transaction is still progress
 	// e.g. endpoint A is in the process of adding to NEG N, and the new desire state is not to have A in N.
 	// This ensures the endpoint that requires reconciliation to wait till the existing transaction to complete.
-	filterEndpointByTransaction(addEndpoints, s.transactions)
-	filterEndpointByTransaction(removeEndpoints, s.transactions)
+	filterEndpointByTransaction(addEndpoints, s.transactions, s.logger)
+	filterEndpointByTransaction(removeEndpoints, s.transactions, s.logger)
 	// filter out the endpoints that are in transaction
-	filterEndpointByTransaction(committedEndpoints, s.transactions)
+	filterEndpointByTransaction(committedEndpoints, s.transactions, s.logger)
 
 	if s.needCommit() {
 		s.commitPods(committedEndpoints, endpointPodMap)
 	}
 
 	if len(addEndpoints) == 0 && len(removeEndpoints) == 0 {
-		klog.V(4).Infof("No endpoint change for %s/%s, skip syncing NEG. ", s.Namespace, s.Name)
+		s.logger.V(3).Info("No endpoint change. Skip syncing NEG. ", s.Namespace, s.Name)
 		return nil
 	}
 	s.logEndpoints(addEndpoints, "adding endpoint")
@@ -321,7 +327,7 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 	syncFunc := func(endpointMap map[string]negtypes.NetworkEndpointSet, operation transactionOp) error {
 		for zone, endpointSet := range endpointMap {
 			if endpointSet.Len() == 0 {
-				klog.V(2).Infof("0 endpoint for %v operation for %s in NEG %s at %s. Skipping", attachOp, s.NegSyncerKey.String(), s.NegSyncerKey.NegName, zone)
+				s.logger.V(2).Info("0 endpoints in the endpoint list. Skipping operation", "operation", attachOp, "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
 				continue
 			}
 
@@ -362,13 +368,13 @@ func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints m
 
 // attachNetworkEndpoints creates go routine to run operations for attaching network endpoints
 func (s *transactionSyncer) attachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
-	klog.V(2).Infof("Attaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpointMap), s.NegSyncerKey.String(), s.NegSyncerKey.NegName, zone)
+	s.logger.V(2).Info("Attaching endpoints to NEG.", "countOfEndpointsBeingAttached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
 	go s.operationInternal(attachOp, zone, networkEndpointMap)
 }
 
 // detachNetworkEndpoints creates go routine to run operations for detaching network endpoints
 func (s *transactionSyncer) detachNetworkEndpoints(zone string, networkEndpointMap map[negtypes.NetworkEndpoint]*composite.NetworkEndpoint) {
-	klog.V(2).Infof("Detaching %d endpoint(s) for %s in NEG %s at %s.", len(networkEndpointMap), s.NegSyncerKey.String(), s.NegSyncerKey.NegName, zone)
+	s.logger.V(2).Info("Detaching endpoints from NEG.", "countOfEndpointsBeingDetached", len(networkEndpointMap), "negSyncerKey", s.NegSyncerKey.String(), "zone", zone)
 	go s.operationInternal(detachOp, zone, networkEndpointMap)
 }
 
@@ -431,7 +437,7 @@ func (s *transactionSyncer) commitTransaction(err error, networkEndpointMap map[
 		_, ok := s.transactions.Get(networkEndpoint)
 		// clear transaction
 		if !ok {
-			klog.Errorf("Endpoint %q was not found in the transaction table.", networkEndpoint)
+			s.logger.Error(nil, "Endpoint was not found in the transaction table.", "endpoint", networkEndpoint)
 			continue
 		}
 		s.transactions.Delete(networkEndpoint)
@@ -461,7 +467,7 @@ func (s *transactionSyncer) commitPods(endpointMap map[string]negtypes.NetworkEn
 		for _, endpoint := range endpointSet.List() {
 			podName, ok := endpointPodMap[endpoint]
 			if !ok {
-				klog.Warningf("Endpoint %v is not included in the endpointPodMap %v", endpoint, endpointPodMap)
+				s.logger.Error(nil, "Endpoint is not included in the endpointPodMap", "endpoint", endpoint, "endpointPodMap", endpointPodMap)
 				continue
 			}
 			zoneEndpointMap[endpoint] = podName
@@ -475,7 +481,7 @@ func (s *transactionSyncer) commitPods(endpointMap map[string]negtypes.NetworkEn
 func (s *transactionSyncer) isZoneChange() bool {
 	negCR, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
-		klog.Warningf("unable to retrieve neg %s/%s from the store: %s", s.Namespace, s.NegName, err)
+		s.logger.Error(err, "unable to retrieve neg from the store", "neg", klog.KRef(s.Namespace, s.NegName))
 		return false
 	}
 
@@ -483,7 +489,7 @@ func (s *transactionSyncer) isZoneChange() bool {
 	for _, ref := range negCR.Status.NetworkEndpointGroups {
 		id, err := cloud.ParseResourceURL(ref.SelfLink)
 		if err != nil {
-			klog.Warningf("unable to parse selflink %s", ref.SelfLink)
+			s.logger.Error(err, "unable to parse selflink", "selfLink", ref.SelfLink)
 			continue
 		}
 		existingZones.Insert(id.Key.Zone)
@@ -491,7 +497,7 @@ func (s *transactionSyncer) isZoneChange() bool {
 
 	zones, err := s.zoneGetter.ListZones(negtypes.NodePredicateForEndpointCalculatorMode(s.EpCalculatorMode))
 	if err != nil {
-		klog.Errorf("unable to list zones: %s", err)
+		s.logger.Error(err, "unable to list zones")
 		return false
 	}
 	currZones := sets.NewString(zones...)
@@ -500,11 +506,11 @@ func (s *transactionSyncer) isZoneChange() bool {
 }
 
 // filterEndpointByTransaction removes the all endpoints from endpoint map if they exists in the transaction table
-func filterEndpointByTransaction(endpointMap map[string]negtypes.NetworkEndpointSet, table networkEndpointTransactionTable) {
+func filterEndpointByTransaction(endpointMap map[string]negtypes.NetworkEndpointSet, table networkEndpointTransactionTable, logger klog.Logger) {
 	for _, endpointSet := range endpointMap {
 		for _, endpoint := range endpointSet.List() {
 			if entry, ok := table.Get(endpoint); ok {
-				klog.V(2).Infof("Endpoint %q is removed from the endpoint set as transaction %v still exists.", endpoint, entry)
+				logger.V(2).Info("Endpoint is removed from the endpoint set as transaction still exists.", "endpoint", endpoint, "transactionEntry", entry)
 				endpointSet.Delete(endpoint)
 			}
 		}
@@ -513,12 +519,12 @@ func filterEndpointByTransaction(endpointMap map[string]negtypes.NetworkEndpoint
 
 // mergeTransactionIntoZoneEndpointMap merges the ongoing transaction into the endpointMap.
 // This converts the existing endpointMap to the state when all transactions completed
-func mergeTransactionIntoZoneEndpointMap(endpointMap map[string]negtypes.NetworkEndpointSet, transactions networkEndpointTransactionTable) {
+func mergeTransactionIntoZoneEndpointMap(endpointMap map[string]negtypes.NetworkEndpointSet, transactions networkEndpointTransactionTable, logger klog.Logger) {
 	for _, endpointKey := range transactions.Keys() {
 		entry, ok := transactions.Get(endpointKey)
 		// If called in syncInternal, as the transaction table
 		if !ok {
-			klog.V(2).Infof("Transaction entry of key %q was not found.", endpointKey)
+			logger.V(2).Info("Transaction entry of key was not found.", "endpointKey", endpointKey)
 			continue
 		}
 		// Add endpoints in attach transaction
@@ -541,16 +547,17 @@ func mergeTransactionIntoZoneEndpointMap(endpointMap map[string]negtypes.Network
 
 // logStats logs aggregated stats of the input endpointMap
 func (s *transactionSyncer) logStats(endpointMap map[string]negtypes.NetworkEndpointSet, desc string) {
-	stats := []string{}
+	var stats []interface{}
+	stats = append(stats, "description", desc)
 	for zone, endpointSet := range endpointMap {
-		stats = append(stats, fmt.Sprintf("%d endpoints in zone %q", endpointSet.Len(), zone))
+		stats = append(stats, zone, fmt.Sprintf("%d endpoints", endpointSet.Len()))
 	}
-	klog.V(3).Infof("For NEG %q, %s: %s.", s.NegSyncerKey.NegName, desc, strings.Join(stats, ","))
+	s.logger.V(3).Info("Stats for NEG", stats...)
 }
 
 // logEndpoints logs individual endpoint in the input endpointMap
 func (s *transactionSyncer) logEndpoints(endpointMap map[string]negtypes.NetworkEndpointSet, desc string) {
-	klog.V(3).Infof("For NEG %q, %s: %+v", s.NegSyncerKey.NegName, desc, endpointMap)
+	s.logger.V(3).Info("Endpoints for NEG", "description", desc, "endpointMap", endpointMap)
 }
 
 // updateInitStatus queries the k8s api server for the current NEG CR and updates the Initialized condition and neg objects as appropriate.
@@ -562,7 +569,7 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 
 	origNeg, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
-		klog.Errorf("Error updating init status for neg %s, failed getting neg from store: %s", s.NegSyncerKey.NegName, err)
+		s.logger.Error(err, "Error updating init status for neg, failed to get neg from store.")
 		return
 	}
 
@@ -578,7 +585,7 @@ func (s *transactionSyncer) updateInitStatus(negObjRefs []negv1beta1.NegObjectRe
 
 	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
-		klog.Errorf("Error updating Neg CR %s : %s", s.NegSyncerKey.NegName, err)
+		s.logger.Error(err, "Error updating Neg CR")
 	}
 }
 
@@ -589,7 +596,7 @@ func (s *transactionSyncer) updateStatus(syncErr error) {
 	}
 	origNeg, err := getNegFromStore(s.svcNegLister, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
-		klog.Errorf("Error updating status for neg %s, failed getting neg from store: %s", s.NegSyncerKey.NegName, err)
+		s.logger.Error(err, "Error updating status for neg, failed to get neg from store")
 		return
 	}
 	neg := origNeg.DeepCopy()
@@ -608,7 +615,7 @@ func (s *transactionSyncer) updateStatus(syncErr error) {
 
 	_, err = patchNegStatus(s.svcNegClient, origNeg.Status, neg.Status, s.Namespace, s.NegSyncerKey.NegName)
 	if err != nil {
-		klog.Errorf("Error updating Neg CR %s : %s", s.NegSyncerKey.NegName, err)
+		s.logger.Error(err, "Error updating Neg CR")
 	}
 }
 

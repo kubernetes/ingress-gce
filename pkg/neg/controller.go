@@ -49,7 +49,6 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/endpointslices"
 	namer2 "k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/ingress-gce/pkg/utils/patch"
@@ -105,6 +104,8 @@ type Controller struct {
 
 	// runL4 indicates whether to run NEG controller that processes L4 ILB services
 	runL4 bool
+
+	logger klog.Logger
 }
 
 // NewController returns a network endpoint group controller.
@@ -137,22 +138,25 @@ func NewController(
 	enableAsm bool,
 	asmServiceNEGSkipNamespaces []string,
 	enableEndpointSlices bool,
+	logger klog.Logger,
 ) *Controller {
+	logger = logger.WithName("NEGController")
+
 	// init event recorder
 	// TODO: move event recorder initializer to main. Reuse it among controllers.
 	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartLogging(klog.Infof)
+	eventBroadcaster.StartStructuredLogging(0)
 	eventBroadcaster.StartRecordingToSink(&unversionedcore.EventSinkImpl{
 		Interface: kubeClient.CoreV1().Events(""),
 	})
 	negScheme := runtime.NewScheme()
 	err := scheme.AddToScheme(negScheme)
 	if err != nil {
-		klog.Errorf("Errored adding default scheme to event recorder: %q", err)
+		logger.Error(err, "Errored adding default scheme to event recorder")
 	}
 	err = svcnegv1beta1.AddToScheme(negScheme)
 	if err != nil {
-		klog.Errorf("Errored adding NEG CRD scheme to event recorder: %q", err)
+		logger.Error(err, "Errored adding NEG CRD scheme to event recorder")
 	}
 	recorder := eventBroadcaster.NewRecorder(negScheme,
 		apiv1.EventSource{Component: "neg-controller"})
@@ -178,14 +182,18 @@ func NewController(
 		nodeInformer.GetIndexer(),
 		svcNegInformer.GetIndexer(),
 		enableNonGcpMode,
-		enableEndpointSlices)
+		enableEndpointSlices,
+		logger)
 
 	var reflector readiness.Reflector
 	if enableReadinessReflector {
 		reflector = readiness.NewReadinessReflector(
 			kubeClient,
 			podInformer.GetIndexer(),
-			cloud, manager)
+			cloud,
+			manager,
+			logger,
+		)
 	} else {
 		reflector = &readiness.NoopReflector{}
 	}
@@ -211,13 +219,14 @@ func NewController(
 		reflector:             reflector,
 		collector:             controllerMetrics,
 		runL4:                 runL4Controller,
+		logger:                logger,
 	}
 	if runIngress {
 		ingressInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 			AddFunc: func(obj interface{}) {
 				addIng := obj.(*v1.Ingress)
 				if !utils.IsGLBCIngress(addIng) {
-					klog.V(4).Infof("Ignoring add for ingress %v based on annotation %v", common.NamespacedName(addIng), annotations.IngressClassKey)
+					logger.V(4).Info("Ignoring add for ingress based on annotation", "ingress", klog.KObj(addIng), "annotation", annotations.IngressClassKey)
 					return
 				}
 				negController.enqueueIngressServices(addIng)
@@ -225,7 +234,7 @@ func NewController(
 			DeleteFunc: func(obj interface{}) {
 				delIng := obj.(*v1.Ingress)
 				if !utils.IsGLBCIngress(delIng) {
-					klog.V(4).Infof("Ignoring delete for ingress %v based on annotation %v", common.NamespacedName(delIng), annotations.IngressClassKey)
+					logger.V(4).Info("Ignoring delete for ingress based on annotation", "ingress", klog.KObj(delIng), "annotation", annotations.IngressClassKey)
 					return
 				}
 				negController.enqueueIngressServices(delIng)
@@ -236,7 +245,7 @@ func NewController(
 				// Check if ingress class changed and previous class was a GCE ingress
 				// Ingress class change may require cleanup so enqueue related services
 				if !utils.IsGLBCIngress(curIng) && !utils.IsGLBCIngress(oldIng) {
-					klog.V(4).Infof("Ignoring update for ingress %v based on annotation %v", common.NamespacedName(curIng), annotations.IngressClassKey)
+					logger.V(4).Info("Ignoring update for ingress based on annotation", "ingress", klog.KObj(curIng), "annotation", annotations.IngressClassKey)
 					return
 				}
 				keys := gatherIngressServiceKeys(oldIng)
@@ -300,7 +309,7 @@ func NewController(
 			currentNode := cur.(*apiv1.Node)
 			candidateNodeCheck := utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
 			if candidateNodeCheck(oldNode) != candidateNodeCheck(currentNode) {
-				klog.Infof("Node %q has changed, enqueueing", currentNode.Name)
+				logger.Info("Node has changed, enqueueing", "node", klog.KObj(currentNode))
 				negController.enqueueNode(currentNode)
 			}
 		}
@@ -325,13 +334,13 @@ func NewController(
 
 func (c *Controller) Run(stopCh <-chan struct{}) {
 	wait.PollUntil(5*time.Second, func() (bool, error) {
-		klog.V(2).Infof("Waiting for initial sync")
+		c.logger.V(2).Info("Waiting for initial sync")
 		return c.hasSynced(), nil
 	}, stopCh)
 
-	klog.V(2).Infof("Starting network endpoint group controller")
+	c.logger.V(2).Info("Starting network endpoint group controller")
 	defer func() {
-		klog.V(2).Infof("Shutting down network endpoint group controller")
+		c.logger.V(2).Info("Shutting down network endpoint group controller")
 		c.stop()
 	}()
 
@@ -350,20 +359,20 @@ func (c *Controller) Run(stopCh <-chan struct{}) {
 
 func (c *Controller) IsHealthy() error {
 	// log the last node sync
-	klog.V(5).Infof("Last node sync was at %v", c.nodeSyncTracker.Get())
+	c.logger.V(5).Info("Last node sync time", "time", c.nodeSyncTracker.Get())
 	// check if last seen service and endpoint processing is more than an hour ago
 	if c.syncTracker.Get().Before(time.Now().Add(-time.Hour)) {
 		msg := fmt.Sprintf("NEG controller has not processed any service "+
 			"and endpoint updates for more than an hour. Something went wrong. "+
 			"Last sync was on %v", c.syncTracker.Get())
-		klog.Error(msg)
+		c.logger.Error(nil, msg)
 		return fmt.Errorf(msg)
 	}
 	return nil
 }
 
 func (c *Controller) stop() {
-	klog.V(2).Infof("Shutting down network endpoint group controller")
+	c.logger.V(2).Info("Shutting down network endpoint group controller")
 	c.serviceQueue.ShutDown()
 	c.endpointQueue.ShutDown()
 	c.nodeQueue.ShutDown()
@@ -415,7 +424,7 @@ func (c *Controller) processEndpoint(key string) {
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
 	if err != nil {
-		klog.Errorf("Failed to split endpoint namespaced key %q: %v", key, err)
+		c.logger.Error(err, "Failed to split endpoint namespaced key", "key", key)
 		return
 	}
 	c.manager.Sync(namespace, name)
@@ -490,7 +499,7 @@ func (c *Controller) processService(key string) error {
 		}
 	}
 	if len(svcPortInfoMap) != 0 || len(destinationRulesPortInfoMap) != 0 {
-		klog.V(2).Infof("Syncing service %q", key)
+		c.logger.V(2).Info("Syncing service", "service", key)
 		if err = c.syncNegStatusAnnotation(namespace, name, svcPortInfoMap); err != nil {
 			return err
 		}
@@ -503,7 +512,7 @@ func (c *Controller) processService(key string) error {
 		return err
 	}
 	// do not need Neg
-	klog.V(4).Infof("Service %q does not need any NEG. Skipping", key)
+	c.logger.V(3).Info("Service does not need any NEG. Skipping", "service", key)
 	c.collector.DeleteNegService(key)
 	// neg annotation is not found or NEG is not enabled
 	c.manager.StopSyncer(namespace, name)
@@ -526,7 +535,7 @@ func (c *Controller) mergeIngressPortInfo(service *apiv1.Service, name types.Nam
 	if negAnnotation != nil && negAnnotation.NEGEnabledForIngress() {
 		// Only service ports referenced by ingress are synced for NEG
 		ings := getIngressServicesFromStore(c.ingressLister, service)
-		ingressSvcPortTuples := gatherPortMappingUsedByIngress(ings, service)
+		ingressSvcPortTuples := gatherPortMappingUsedByIngress(ings, service, c.logger)
 		ingressPortInfoMap := negtypes.NewPortInfoMap(name.Namespace, name.Name, ingressSvcPortTuples, c.namer, true, nil)
 		if err := portInfoMap.Merge(ingressPortInfoMap); err != nil {
 			return fmt.Errorf("failed to merge service ports referenced by ingress (%v): %w", ingressPortInfoMap, err)
@@ -583,7 +592,7 @@ func (c *Controller) mergeVmIpNEGsPortInfo(service *apiv1.Service, name types.Na
 	// Only process ILB services after L4 controller has marked it with v2 finalizer.
 	if !utils.IsSubsettingL4ILBService(service) {
 		msg := fmt.Sprintf("Ignoring ILB Service %s, namespace %s as it does not have the v2 finalizer", service.Name, service.Namespace)
-		klog.Warning(msg)
+		c.logger.Info(msg)
 		c.recorder.Eventf(service, apiv1.EventTypeWarning, "ProcessServiceSkipped", msg)
 		return nil
 	}
@@ -648,13 +657,13 @@ func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Se
 	servicePortInfoMap := make(negtypes.PortInfoMap)
 	if c.enableASM {
 		// Find all destination rules that using this service.
-		destinationRules := getDestinationRulesFromStore(c.destinationRuleLister, service)
+		destinationRules := getDestinationRulesFromStore(c.destinationRuleLister, service, c.logger)
 		// Fill all service ports into portinfomap
 		servicePorts := gatherPortMappingFromService(service)
 		for namespacedName, destinationRule := range destinationRules {
 			destinationRulePortInfoMap, err := negtypes.NewPortInfoMapWithDestinationRule(namespace, name, servicePorts, c.namer, false, destinationRule)
 			if err != nil {
-				klog.Warningf("DestinationRule(%s) contains duplicated subset, creating NEGs for the newer ones. %s", namespacedName.Name, err)
+				c.logger.Error(err, "DestinationRule contains duplicated subset, creating NEGs for the newer ones.", "destinationRule", namespacedName.Name)
 			}
 			if err := destinationRulesPortInfoMap.Merge(destinationRulePortInfoMap); err != nil {
 				return servicePortInfoMap, destinationRulesPortInfoMap, fmt.Errorf("failed to merge service ports referenced by Istio:DestinationRule (%v): %w", destinationRulePortInfoMap, err)
@@ -665,9 +674,9 @@ func (c *Controller) getCSMPortInfoMap(namespace, name string, service *apiv1.Se
 		}
 		// Create NEGs for every ports of the services.
 		if service.Spec.Selector == nil || len(service.Spec.Selector) == 0 {
-			klog.Infof("Skip NEG creation for services that with no selector: %s:%s", namespace, name)
+			c.logger.Info("Skip NEG creation for services that with no selector", "service", klog.KRef(namespace, name))
 		} else if contains(c.asmServiceNEGSkipNamespaces, namespace) {
-			klog.Infof("Skip NEG creation for services in namespace: %s", namespace)
+			c.logger.Info("Skip NEG creation for services in namespace", "namespace", namespace)
 		} else {
 			servicePortInfoMap = negtypes.NewPortInfoMap(namespace, name, servicePorts, c.namer, false, nil)
 		}
@@ -694,7 +703,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		if _, ok := service.Annotations[annotations.NEGStatusKey]; ok {
 			newSvcObjectMeta := service.ObjectMeta.DeepCopy()
 			delete(newSvcObjectMeta.Annotations, annotations.NEGStatusKey)
-			klog.V(2).Infof("Removing NEG status annotation from service: %s/%s", namespace, name)
+			c.logger.V(2).Info("Removing NEG status annotation from service", "service", klog.KRef(namespace, name))
 			return patch.PatchServiceObjectMetadata(coreClient, service, *newSvcObjectMeta)
 		}
 		// service doesn't have the expose NEG annotation and doesn't need update
@@ -716,7 +725,7 @@ func (c *Controller) syncNegStatusAnnotation(namespace, name string, portMap neg
 		newSvcObjectMeta.Annotations = make(map[string]string)
 	}
 	newSvcObjectMeta.Annotations[annotations.NEGStatusKey] = annotation
-	klog.V(2).Infof("Updating NEG visibility annotation %q on service %s/%s.", annotation, namespace, name)
+	c.logger.V(2).Info("Updating NEG visibility annotation on service", "annotation", annotation, "service", klog.KRef(namespace, name))
 	return patch.PatchServiceObjectMetadata(coreClient, service, *newSvcObjectMeta)
 }
 
@@ -734,7 +743,7 @@ func (c *Controller) syncDestinationRuleNegStatusAnnotation(namespace, destinati
 	}
 	if len(portmap) == 0 {
 		delete(drAnnotations, annotations.NEGStatusKey)
-		klog.V(2).Infof("Removing NEG status annotation from DestinationRule: %s/%s", namespace, destinationRule)
+		c.logger.V(2).Info("Removing NEG status annotation from DestinationRule", "namespace", namespace, "destinationRule", destinationRule)
 	} else {
 		negStatus := annotations.NewDestinationRuleNegStatus(zones, portmap.ToPortSubsetNegMap())
 		negStatuAnnotation, err := negStatus.Marshal()
@@ -757,7 +766,7 @@ func (c *Controller) syncDestinationRuleNegStatusAnnotation(namespace, destinati
 	if err != nil {
 		return err
 	}
-	klog.V(2).Infof("Updating NEG visibility annotation %q on Istio:DestinationRule %s/%s.", string(patchBytes), namespace, destinationRuleName)
+	c.logger.V(2).Info("Updating NEG visibility annotation on Istio:DestinationRule", "annotation", string(patchBytes), "namespace", namespace, "destinationRuleName", destinationRuleName)
 	_, err = dsClient.Patch(context.TODO(), destinationRuleName, apimachinerytypes.MergePatchType, patchBytes, metav1.PatchOptions{})
 	return err
 }
@@ -769,9 +778,9 @@ func (c *Controller) handleErr(err error, key interface{}) {
 	}
 
 	msg := fmt.Sprintf("error processing service %q: %v", key, err)
-	klog.Errorf(msg)
+	c.logger.Error(nil, msg)
 	if service, exists, err := c.serviceLister.GetByKey(key.(string)); err != nil {
-		klog.Warningf("Failed to retrieve service %q from store: %v", key.(string), err)
+		c.logger.Error(err, "Failed to retrieve service from store", "service", key.(string))
 	} else if exists {
 		c.recorder.Eventf(service.(*apiv1.Service), apiv1.EventTypeWarning, "ProcessServiceFailed", msg)
 	}
@@ -781,7 +790,7 @@ func (c *Controller) handleErr(err error, key interface{}) {
 func (c *Controller) enqueueEndpoint(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		klog.Errorf("Failed to generate endpoint key: %v", err)
+		c.logger.Error(err, "Failed to generate endpoint key")
 		return
 	}
 	c.endpointQueue.Add(key)
@@ -792,17 +801,17 @@ func (c *Controller) enqueueEndpointSlice(obj interface{}) {
 	if !ok {
 		tombstone, ok := obj.(cache.DeletedFinalStateUnknown)
 		if !ok {
-			klog.Errorf("Unexpected object type: %T, expected cache.DeletedFinalStateUnknown", obj)
+			c.logger.Error(nil, "Unexpected object type, expected cache.DeletedFinalStateUnknown", "objectTypeFound", fmt.Sprintf("%T", obj))
 			return
 		}
 		if endpointSlice, ok = tombstone.Obj.(*discovery.EndpointSlice); !ok {
-			klog.Errorf("Unexpected tombstone object type: %T, expected *discovery.EndpointSlice", obj)
+			c.logger.Error(nil, "Unexpected tombstone object, expected *discovery.EndpointSlice", "objectTypeFound", fmt.Sprintf("%T", obj))
 			return
 		}
 	}
 	key, err := endpointslices.EndpointSlicesServiceKey(endpointSlice)
 	if err != nil {
-		klog.Errorf("Failed to find a service label inside endpoint slice %v: %v", endpointSlice, err)
+		c.logger.Error(err, "Failed to find a service label inside endpoint slice", "endpointSlice", klog.KObj(endpointSlice))
 		return
 	}
 	c.endpointQueue.Add(key)
@@ -811,7 +820,7 @@ func (c *Controller) enqueueEndpointSlice(obj interface{}) {
 func (c *Controller) enqueueNode(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		klog.Errorf("Failed to generate node key: %v", err)
+		c.logger.Error(err, "Failed to generate node key")
 		return
 	}
 	c.nodeQueue.Add(key)
@@ -820,7 +829,7 @@ func (c *Controller) enqueueNode(obj interface{}) {
 func (c *Controller) enqueueService(obj interface{}) {
 	key, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
-		klog.Errorf("Failed to generate service key: %v", err)
+		c.logger.Error(err, "Failed to generate service key")
 		return
 	}
 	c.serviceQueue.Add(key)
@@ -843,12 +852,12 @@ func (c *Controller) enqueueIngressServices(ing *v1.Ingress) {
 func (c *Controller) enqueueDestinationRule(obj interface{}) {
 	drus, ok := obj.(*unstructured.Unstructured)
 	if !ok {
-		klog.Errorf("Failed to convert informer object to Unstructured object")
+		c.logger.Error(nil, "Failed to convert informer object to Unstructured object")
 		return
 	}
 	targetServiceNamespace, drHost, _, err := castToDestinationRule(drus)
 	if err != nil {
-		klog.Errorf("Failed to convert informer object to DestinationRule")
+		c.logger.Error(nil, "Failed to convert informer object to DestinationRule")
 		return
 	}
 	svcKey := utils.ServiceKeyFunc(targetServiceNamespace, drHost)
@@ -857,13 +866,13 @@ func (c *Controller) enqueueDestinationRule(obj interface{}) {
 
 func (c *Controller) gc() {
 	if err := c.manager.GC(); err != nil {
-		klog.Errorf("NEG controller garbage collection failed: %v", err)
+		c.logger.Error(err, "NEG controller garbage collection failed")
 	}
 }
 
 // gatherPortMappingUsedByIngress returns a map containing port:targetport
 // of all service ports of the service that are referenced by ingresses
-func gatherPortMappingUsedByIngress(ings []v1.Ingress, svc *apiv1.Service) negtypes.SvcPortTupleSet {
+func gatherPortMappingUsedByIngress(ings []v1.Ingress, svc *apiv1.Service, logger klog.Logger) negtypes.SvcPortTupleSet {
 	ingressSvcPortTuples := make(negtypes.SvcPortTupleSet)
 	for _, ing := range ings {
 		if utils.IsGLBCIngress(&ing) {
@@ -871,7 +880,7 @@ func gatherPortMappingUsedByIngress(ings []v1.Ingress, svc *apiv1.Service) negty
 				if id.Service.Name == svc.Name && id.Service.Namespace == svc.Namespace {
 					servicePort := translator.ServicePort(*svc, id.Port)
 					if servicePort == nil {
-						klog.Warningf("Port %+v in Service %q not found", id.Port, id.Service.String())
+						logger.Error(nil, "Port not found in service", "port", fmt.Sprintf("%+v", id.Port), "service", id.Service.String())
 						return false
 					}
 					ingressSvcPortTuples.Insert(negtypes.SvcPortTuple{
@@ -937,13 +946,13 @@ func gatherPortMappingFromService(svc *apiv1.Service) negtypes.SvcPortTupleSet {
 
 // getDestinationRulesFromStore returns all DestinationRules that referring service svc.
 // Please notice that a DestionationRule can point to a service in a different namespace.
-func getDestinationRulesFromStore(store cache.Store, svc *apiv1.Service) (drs map[apimachinerytypes.NamespacedName]*istioV1alpha3.DestinationRule) {
+func getDestinationRulesFromStore(store cache.Store, svc *apiv1.Service, logger klog.Logger) (drs map[apimachinerytypes.NamespacedName]*istioV1alpha3.DestinationRule) {
 	drs = make(map[apimachinerytypes.NamespacedName]*istioV1alpha3.DestinationRule)
 	for _, obj := range store.List() {
 		drUnstructed := obj.(*unstructured.Unstructured)
 		targetServiceNamespace, drHost, dr, err := castToDestinationRule(drUnstructed)
 		if err != nil {
-			klog.Errorf("Failed to cast Unstructured DestinationRule to DestinationRule.")
+			logger.Error(err, "Failed to cast Unstructured DestinationRule to DestinationRule")
 			continue
 		}
 
