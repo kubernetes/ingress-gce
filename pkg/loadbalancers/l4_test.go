@@ -1069,7 +1069,7 @@ func TestEnsureInternalFirewallPortRanges(t *testing.T) {
 		Protocol:          string(v1.ProtocolTCP),
 		IP:                "1.2.3.4",
 	}
-	firewalls.EnsureL4FirewallRule(l.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false)
+	err = firewalls.EnsureL4FirewallRule(l.cloud, utils.ServiceKeyFunc(svc.Namespace, svc.Name), &fwrParams /*sharedRule = */, false)
 	if err != nil {
 		t.Errorf("Unexpected error %v when ensuring firewall rule %s for svc %+v", err, fwName, svc)
 	}

@@ -122,6 +122,10 @@ func firewallRuleEqual(a, b *compute.Firewall, skipDescription bool) bool {
 		}
 	}
 
+	if !utils.EqualStringSets(a.DestinationRanges, b.DestinationRanges) {
+		return false
+	}
+
 	if !utils.EqualStringSets(a.SourceRanges, b.SourceRanges) {
 		return false
 	}
