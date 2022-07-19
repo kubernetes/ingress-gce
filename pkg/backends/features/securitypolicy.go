@@ -31,12 +31,11 @@ import (
 // EnsureSecurityPolicy ensures the security policy link on backend service.
 // TODO(mrhohn): Emit event when attach/detach security policy to backend service.
 func EnsureSecurityPolicy(cloud *gce.Cloud, sp utils.ServicePort, be *composite.BackendService) error {
-	if sp.BackendConfig.Spec.SecurityPolicy == nil {
-		return nil
-	}
-
-	if be.Scope != meta.Global {
-		return fmt.Errorf("cloud armor security policies not supported for %s backend service %s", be.Scope, be.Name)
+	var desiredPolicyName string
+	if sp.BackendConfig.Spec.SecurityPolicy != nil {
+		desiredPolicyName = sp.BackendConfig.Spec.SecurityPolicy.Name
+	} else {
+		desiredPolicyName = ""
 	}
 
 	existingPolicyName, err := utils.KeyName(be.SecurityPolicy)
@@ -44,9 +43,13 @@ func EnsureSecurityPolicy(cloud *gce.Cloud, sp utils.ServicePort, be *composite.
 	if be.SecurityPolicy != "" && err != nil {
 		return err
 	}
-	desiredPolicyName := sp.BackendConfig.Spec.SecurityPolicy.Name
+
 	if existingPolicyName == desiredPolicyName {
 		return nil
+	}
+
+	if be.Scope != meta.Global {
+		return fmt.Errorf("cloud armor security policies not supported for %s backend service %s", be.Scope, be.Name)
 	}
 
 	klog.V(2).Infof("Set security policy in backend service %s (%s:%s) to %q", be.Name, sp.ID.Service.String(), sp.ID.Port.String(), desiredPolicyName)
