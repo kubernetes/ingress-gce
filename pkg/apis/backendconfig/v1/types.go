@@ -36,14 +36,15 @@ type BackendConfig struct {
 // BackendConfigSpec is the spec for a BackendConfig resource
 // +k8s:openapi-gen=true
 type BackendConfigSpec struct {
-	Iap                  *IAPConfig                  `json:"iap,omitempty"`
-	Cdn                  *CDNConfig                  `json:"cdn,omitempty"`
-	SecurityPolicy       *SecurityPolicyConfig       `json:"securityPolicy,omitempty"`
-	TimeoutSec           *int64                      `json:"timeoutSec,omitempty"`
-	ConnectionDraining   *ConnectionDrainingConfig   `json:"connectionDraining,omitempty"`
-	SessionAffinity      *SessionAffinityConfig      `json:"sessionAffinity,omitempty"`
-	CustomRequestHeaders *CustomRequestHeadersConfig `json:"customRequestHeaders,omitempty"`
-	HealthCheck          *HealthCheckConfig          `json:"healthCheck,omitempty"`
+	Iap                   *IAPConfig                   `json:"iap,omitempty"`
+	Cdn                   *CDNConfig                   `json:"cdn,omitempty"`
+	SecurityPolicy        *SecurityPolicyConfig        `json:"securityPolicy,omitempty"`
+	TimeoutSec            *int64                       `json:"timeoutSec,omitempty"`
+	ConnectionDraining    *ConnectionDrainingConfig    `json:"connectionDraining,omitempty"`
+	SessionAffinity       *SessionAffinityConfig       `json:"sessionAffinity,omitempty"`
+	CustomRequestHeaders  *CustomRequestHeadersConfig  `json:"customRequestHeaders,omitempty"`
+	CustomResponseHeaders *CustomResponseHeadersConfig `json:"customResponseHeaders,omitempty"`
+	HealthCheck           *HealthCheckConfig           `json:"healthCheck,omitempty"`
 	// Logging specifies the configuration for access logs.
 	Logging *LogConfig `json:"logging,omitempty"`
 }
@@ -194,6 +195,12 @@ type SessionAffinityConfig struct {
 // CustomRequestHeadersConfig contains configuration for custom request headers
 // +k8s:openapi-gen=true
 type CustomRequestHeadersConfig struct {
+	Headers []string `json:"headers,omitempty"`
+}
+
+// CustomResponseHeadersConfig contains configuration for custom response headers
+// +k8s:openapi-gen=true
+type CustomResponseHeadersConfig struct {
 	Headers []string `json:"headers,omitempty"`
 }
 
