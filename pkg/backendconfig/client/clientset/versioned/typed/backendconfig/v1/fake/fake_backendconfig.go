@@ -105,7 +105,7 @@ func (c *FakeBackendConfigs) Update(ctx context.Context, backendConfig *backendc
 // Delete takes name of the backendConfig and deletes it. Returns an error if one occurs.
 func (c *FakeBackendConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(backendconfigsResource, c.ns, name), &backendconfigv1.BackendConfig{})
+		Invokes(testing.NewDeleteActionWithOptions(backendconfigsResource, c.ns, name, opts), &backendconfigv1.BackendConfig{})
 
 	return err
 }

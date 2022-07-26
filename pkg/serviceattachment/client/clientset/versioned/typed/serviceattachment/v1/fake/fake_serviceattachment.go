@@ -117,7 +117,7 @@ func (c *FakeServiceAttachments) UpdateStatus(ctx context.Context, serviceAttach
 // Delete takes name of the serviceAttachment and deletes it. Returns an error if one occurs.
 func (c *FakeServiceAttachments) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(serviceattachmentsResource, c.ns, name), &serviceattachmentv1.ServiceAttachment{})
+		Invokes(testing.NewDeleteActionWithOptions(serviceattachmentsResource, c.ns, name, opts), &serviceattachmentv1.ServiceAttachment{})
 
 	return err
 }

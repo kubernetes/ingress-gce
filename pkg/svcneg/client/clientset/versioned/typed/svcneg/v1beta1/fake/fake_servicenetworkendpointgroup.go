@@ -117,7 +117,7 @@ func (c *FakeServiceNetworkEndpointGroups) UpdateStatus(ctx context.Context, ser
 // Delete takes name of the serviceNetworkEndpointGroup and deletes it. Returns an error if one occurs.
 func (c *FakeServiceNetworkEndpointGroups) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(servicenetworkendpointgroupsResource, c.ns, name), &v1beta1.ServiceNetworkEndpointGroup{})
+		Invokes(testing.NewDeleteActionWithOptions(servicenetworkendpointgroupsResource, c.ns, name, opts), &v1beta1.ServiceNetworkEndpointGroup{})
 
 	return err
 }

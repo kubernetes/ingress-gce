@@ -99,7 +99,7 @@ func (c *FakeGCPIngressParams) Update(ctx context.Context, gCPIngressParams *v1b
 // Delete takes name of the gCPIngressParams and deletes it. Returns an error if one occurs.
 func (c *FakeGCPIngressParams) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewRootDeleteAction(gcpingressparamsResource, name), &v1beta1.GCPIngressParams{})
+		Invokes(testing.NewRootDeleteActionWithOptions(gcpingressparamsResource, name, opts), &v1beta1.GCPIngressParams{})
 	return err
 }
 

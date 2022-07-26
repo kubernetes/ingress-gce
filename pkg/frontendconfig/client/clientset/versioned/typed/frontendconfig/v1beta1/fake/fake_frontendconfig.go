@@ -105,7 +105,7 @@ func (c *FakeFrontendConfigs) Update(ctx context.Context, frontendConfig *v1beta
 // Delete takes name of the frontendConfig and deletes it. Returns an error if one occurs.
 func (c *FakeFrontendConfigs) Delete(ctx context.Context, name string, opts v1.DeleteOptions) error {
 	_, err := c.Fake.
-		Invokes(testing.NewDeleteAction(frontendconfigsResource, c.ns, name), &v1beta1.FrontendConfig{})
+		Invokes(testing.NewDeleteActionWithOptions(frontendconfigsResource, c.ns, name, opts), &v1beta1.FrontendConfig{})
 
 	return err
 }
