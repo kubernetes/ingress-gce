@@ -83,6 +83,7 @@ func TestGetEffectiveIP(t *testing.T) {
 		})
 	}
 }
+
 func TestForwardingRulesEqual(t *testing.T) {
 	t.Parallel()
 

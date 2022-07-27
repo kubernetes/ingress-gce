@@ -151,7 +151,7 @@ func TestDeleteL4NetLoadBalancerWithSharedHC(t *testing.T) {
 		t.Errorf("UnexpectedError %v", err.Error)
 	}
 	// Health check is in used by second service
-	// we expect that firewall rule will not be deleted
+	// we expectEqual that firewall rule will not be deleted
 	hcFwName := l4NetLB.namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, true)
 	firewall, err := l4NetLB.cloud.GetFirewall(hcFwName)
 	if err != nil || firewall == nil {
@@ -201,7 +201,7 @@ func TestHealthCheckFirewallDeletionWithILB(t *testing.T) {
 		t.Errorf("UnexpectedError %v", err.Error)
 	}
 
-	// When ILB health check uses the same firewall rules we expect that hc firewall rule will not be deleted.
+	// When ILB health check uses the same firewall rules we expectEqual that hc firewall rule will not be deleted.
 	hcName := l4NetLB.namer.L4HealthCheck(l4NetLB.Service.Namespace, l4NetLB.Service.Name, true)
 	hcFwName := l4NetLB.namer.L4HealthCheckFirewall(l4NetLB.Service.Namespace, l4NetLB.Service.Name, true)
 	firewall, err := l4NetLB.cloud.GetFirewall(hcFwName)

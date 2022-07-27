@@ -97,6 +97,27 @@ func NewL4ILBService(onlyLocal bool, port int) *api_v1.Service {
 	return svc
 }
 
+// NewL4ILBDualStackService creates a Service of type LoadBalancer with the Internal annotation and provided ipFamilies and ipFamilyPolicy
+func NewL4ILBDualStackService(port int, protocol api_v1.Protocol, ipFamilies []api_v1.IPFamily, externalTrafficPolicy api_v1.ServiceExternalTrafficPolicyType) *api_v1.Service {
+	svc := &api_v1.Service{
+		ObjectMeta: meta_v1.ObjectMeta{
+			Name:        testServiceName,
+			Namespace:   testServiceNamespace,
+			Annotations: map[string]string{gce.ServiceAnnotationLoadBalancerType: string(gce.LBTypeInternal)},
+		},
+		Spec: api_v1.ServiceSpec{
+			Type:            api_v1.ServiceTypeLoadBalancer,
+			SessionAffinity: api_v1.ServiceAffinityClientIP,
+			Ports: []api_v1.ServicePort{
+				{Name: "testport", Port: int32(port), Protocol: protocol},
+			},
+			ExternalTrafficPolicy: externalTrafficPolicy,
+			IPFamilies:            ipFamilies,
+		},
+	}
+	return svc
+}
+
 func NewL4LegacyNetLBServiceWithoutPorts() *api_v1.Service {
 	svc := &api_v1.Service{
 		ObjectMeta: meta_v1.ObjectMeta{

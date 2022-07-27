@@ -430,5 +430,4 @@ func TestNewHealthCheck(t *testing.T) {
 			t.Errorf("HealthCheck Scope mismatch! %v != %v", hc.Scope, v.scope)
 		}
 	}
-
 }

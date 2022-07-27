@@ -876,7 +876,7 @@ func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
 	// Update ExternalTrafficPolicy to Cluster check if shared HC was created
 	err = updateAndAssertExternalTrafficPolicy(newSvc, lc, v1.ServiceExternalTrafficPolicyTypeCluster, hcNameShared)
 	if err != nil {
-		t.Errorf("Error asserthing shared health check %v", err)
+		t.Errorf("Error asserting shared health check %v", err)
 	}
 	newSvc.DeletionTimestamp = &metav1.Time{}
 	updateNetLBService(lc, newSvc)

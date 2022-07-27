@@ -35,3 +35,11 @@ var L4LBResourceAnnotationKeys = []string{
 }
 
 var L4RBSAnnotations = append(L4LBResourceAnnotationKeys, annotations.RBSAnnotationKey)
+
+var l4IPv6AnnotationKeys = []string{
+	annotations.FirewallRuleIPv6Key,
+	annotations.FirewallRuleForHealthcheckIPv6Key,
+	annotations.TCPForwardingRuleIPv6Key,
+	annotations.UDPForwardingRuleIPv6Key,
+}
+var L4DualStackResourceAnnotationKeys = append(L4LBResourceAnnotationKeys, l4IPv6AnnotationKeys...)

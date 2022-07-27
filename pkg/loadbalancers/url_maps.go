@@ -111,7 +111,7 @@ func (l7 *L7) ensureRedirectURLMap() error {
 		return err
 	}
 
-	// Do not expect to have a RedirectUrlMap
+	// Do not expectEqual to have a RedirectUrlMap
 	if expectedMap == nil {
 		// Check if we need to GC
 		status, ok := l7.ingress.Annotations[annotations.RedirectUrlMapKey]

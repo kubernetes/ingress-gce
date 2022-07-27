@@ -19,6 +19,7 @@ package l4lb
 import (
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"time"
 
@@ -71,6 +72,7 @@ type L4Controller struct {
 	syncTracker         utils.TimeTracker
 	forwardingRules     ForwardingRulesGetter
 	sharedResourcesLock sync.Mutex
+	enableDualStack     bool
 }
 
 // NewILBController creates a new instance of the L4 ILB controller.
@@ -89,6 +91,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4C
 		namer:           ctx.L4Namer,
 		translator:      ctx.Translator,
 		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
+		enableDualStack: ctx.EnableL4ILBDualStack,
 	}
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
 	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer())
@@ -209,10 +212,11 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
 	l4ilbParams := &loadbalancers.L4ILBParams{
-		Service:  service,
-		Cloud:    l4c.ctx.Cloud,
-		Namer:    l4c.namer,
-		Recorder: l4c.ctx.Recorder(service.Namespace),
+		Service:          service,
+		Cloud:            l4c.ctx.Cloud,
+		Namer:            l4c.namer,
+		Recorder:         l4c.ctx.Recorder(service.Namespace),
+		DualStackEnabled: l4c.enableDualStack,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams)
 	syncResult := l4.EnsureInternalLoadBalancer(nodeNames, service)
@@ -242,23 +246,43 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 		syncResult.Error = err
 		return syncResult
 	}
-	l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
-		"Successfully ensured load balancer resources")
-	if err = updateL4ResourcesAnnotations(l4c.ctx, service, syncResult.Annotations); err != nil {
-		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
-			"Failed to update annotations for load balancer, err: %v", err)
-		syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
-		return syncResult
+	if l4c.enableDualStack {
+		l4c.emitEnsuredDualStackEvent(service)
+		if err = updateL4DualStackResourcesAnnotations(l4c.ctx, service, syncResult.Annotations); err != nil {
+			l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
+				"Failed to update Dual Stack annotations for load balancer, err: %v", err)
+			syncResult.Error = fmt.Errorf("failed to set Dual Stack resource annotations, err: %w", err)
+			return syncResult
+		}
+	} else {
+		l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
+			"Successfully ensured load balancer resources")
+		if err = updateL4ResourcesAnnotations(l4c.ctx, service, syncResult.Annotations); err != nil {
+			l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncLoadBalancerFailed",
+				"Failed to update annotations for load balancer, err: %v", err)
+			syncResult.Error = fmt.Errorf("failed to set resource annotations, err: %w", err)
+			return syncResult
+		}
 	}
 	return syncResult
 }
 
+func (l4c *L4Controller) emitEnsuredDualStackEvent(service *v1.Service) {
+	var ipFamilies []string
+	for _, ipFamily := range service.Spec.IPFamilies {
+		ipFamilies = append(ipFamilies, string(ipFamily))
+	}
+	l4c.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeNormal, "SyncLoadBalancerSuccessful",
+		"Successfully ensured %v load balancer resources", strings.Join(ipFamilies, " "))
+}
+
 func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *loadbalancers.L4ILBSyncResult {
 	l4ilbParams := &loadbalancers.L4ILBParams{
-		Service:  svc,
-		Cloud:    l4c.ctx.Cloud,
-		Namer:    l4c.namer,
-		Recorder: l4c.ctx.Recorder(svc.Namespace),
+		Service:          svc,
+		Cloud:            l4c.ctx.Cloud,
+		Namer:            l4c.namer,
+		Recorder:         l4c.ctx.Recorder(svc.Namespace),
+		DualStackEnabled: l4c.enableDualStack,
 	}
 	l4 := loadbalancers.NewL4Handler(l4ilbParams)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
@@ -277,11 +301,20 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 		return result
 	}
 	// Also remove any ILB annotations from the service metadata
-	if err := updateL4ResourcesAnnotations(l4c.ctx, svc, nil); err != nil {
-		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-			"Error resetting resource annotations for load balancer: %v", err)
-		result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
-		return result
+	if l4c.enableDualStack {
+		if err := updateL4DualStackResourcesAnnotations(l4c.ctx, svc, nil); err != nil {
+			l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
+				"Error resetting resource annotations for load balancer: %v", err)
+			result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
+			return result
+		}
+	} else {
+		if err := updateL4ResourcesAnnotations(l4c.ctx, svc, nil); err != nil {
+			l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
+				"Error resetting resource annotations for load balancer: %v", err)
+			result.Error = fmt.Errorf("failed to reset resource annotations, err: %w", err)
+			return result
+		}
 	}
 	if err := common.EnsureDeleteServiceFinalizer(svc, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancerFailed",

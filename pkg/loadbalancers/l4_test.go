@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -638,7 +639,7 @@ func TestEnsureInternalLoadBalancerDeletedWithSharedHC(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("Unexpected error %v", result.Error)
 	}
-	// When health check is shared we expect that hc firewall rule will not be deleted.
+	// When health check is shared we expectEqual that hc firewall rule will not be deleted.
 	hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, true)
 	firewall, err := l4.cloud.GetFirewall(hcFwName)
 	if err != nil || firewall == nil {
@@ -688,7 +689,7 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 		t.Errorf("Unexpected error %v", result.Error)
 	}
 
-	// When NetLB health check uses the same firewall rules we expect that hc firewall rule will not be deleted.
+	// When NetLB health check uses the same firewall rules we expectEqual that hc firewall rule will not be deleted.
 	hcName := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, true)
 	hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, true)
 	firewall, err := l4.cloud.GetFirewall(hcFwName)
@@ -1311,6 +1312,211 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	assertILBResourcesDeleted(t, l4)
 }
 
+func TestDualStackInternalLoadBalancerModifyProtocol(t *testing.T) {
+	t.Parallel()
+
+	vals := gce.DefaultTestClusterValues()
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+	nodeNames := []string{"test-node-1"}
+
+	testCases := []struct {
+		desc       string
+		ipFamilies []v1.IPFamily
+	}{
+		{
+			desc:       "Test ipv4 ipv6 service protocol change",
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+		},
+		{
+			desc:       "Test ipv4 ipv6 local service protocol change",
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+		},
+		{
+			desc:       "Test ipv6 ipv4 service protocol change",
+			ipFamilies: []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+		},
+		{
+			desc:       "Test ipv4 service protocol change",
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol},
+		},
+		{
+			desc:       "Test ipv6 service protocol change",
+			ipFamilies: []v1.IPFamily{v1.IPv6Protocol},
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			fakeGCE := getFakeGCECloud(vals)
+
+			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
+
+			l4ilbParams := &L4ILBParams{
+				Service:          svc,
+				Cloud:            fakeGCE,
+				Namer:            namer,
+				Recorder:         record.NewFakeRecorder(100),
+				DualStackEnabled: true,
+			}
+			l4 := NewL4Handler(l4ilbParams)
+			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
+
+			// This function simulates the error where backend service protocol cannot be changed
+			// before deleting the forwarding rule.
+			c := fakeGCE.Compute().(*cloud.MockGCE)
+			c.MockRegionBackendServices.UpdateHook = func(ctx context.Context, key *meta.Key, bs *compute.BackendService, m *cloud.MockRegionBackendServices) error {
+				// Check FR names with both protocols to make sure there is no leak or incorrect update.
+				frNames := []string{l4.getFRNameWithProtocol("TCP"), l4.getFRNameWithProtocol("UDP"), l4.getIPv6FRNameWithProtocol("TCP"), l4.getIPv6FRNameWithProtocol("UDP")}
+				for _, name := range frNames {
+					key, err := composite.CreateKey(fakeGCE, name, meta.Regional)
+					if err != nil {
+						return fmt.Errorf("unexpected error when creating key - %v", err)
+					}
+					fr, err := c.MockForwardingRules.Get(ctx, key)
+					if utils.IgnoreHTTPNotFound(err) != nil {
+						return err
+					}
+					if fr != nil && fr.IPProtocol != bs.Protocol {
+						return fmt.Errorf("protocol mismatch between Forwarding Rule value %q and Backend service value %q", fr.IPProtocol, bs.Protocol)
+					}
+
+				}
+				return mock.UpdateRegionBackendServiceHook(ctx, key, bs, m)
+			}
+			// Before deleting forwarding rule, check, that the address was reserved
+			c.MockForwardingRules.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, error) {
+				fr, err := c.MockForwardingRules.Get(ctx, key)
+				// if forwarding rule not exists, don't need to check if address reserved
+				if utils.IsNotFoundError(err) {
+					return false, nil
+				}
+				if err != nil {
+					return false, err
+				}
+				// we don't reserve addresses for IPv6 forwarding rules
+				if fr.IpVersion == "IPV6" {
+					return false, nil
+				}
+
+				addr, err := l4.cloud.GetRegionAddressByIP(fr.Region, fr.IPAddress)
+				if utils.IgnoreHTTPNotFound(err) != nil {
+					return true, err
+				}
+				if addr == nil || utils.IsNotFoundError(err) {
+					t.Errorf("Address not reserved before deleting forwarding rule +%v", fr)
+				}
+
+				return false, nil
+			}
+
+			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+			}
+			l4.Service.Annotations = result.Annotations
+			assertDualStackILBResources(t, l4, nodeNames)
+
+			// Change Protocol and trigger sync
+			svc.Spec.Ports[0].Protocol = v1.ProtocolUDP
+			result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+			}
+			l4.Service.Annotations = result.Annotations
+			assertDualStackILBResources(t, l4, nodeNames)
+
+			c.MockForwardingRules.DeleteHook = nil
+			l4.EnsureInternalLoadBalancerDeleted(l4.Service)
+			assertDualStackILBResourcesDeleted(t, l4)
+		})
+	}
+}
+
+func TestDualStackInternalLoadBalancerModifyPorts(t *testing.T) {
+	t.Parallel()
+
+	vals := gce.DefaultTestClusterValues()
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+	nodeNames := []string{"test-node-1"}
+
+	testCases := []struct {
+		desc       string
+		ipFamilies []v1.IPFamily
+	}{
+		{
+			desc:       "Test ipv4 ipv6 service port change",
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+		},
+		{
+			desc:       "Test ipv4 ipv6 local service port change",
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+		},
+		{
+			desc:       "Test ipv6 ipv4 service port change",
+			ipFamilies: []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+		},
+		{
+			desc:       "Test ipv4 service port change",
+			ipFamilies: []v1.IPFamily{v1.IPv4Protocol},
+		},
+		{
+			desc:       "Test ipv6 service port change",
+			ipFamilies: []v1.IPFamily{v1.IPv6Protocol},
+		},
+	}
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			fakeGCE := getFakeGCECloud(vals)
+
+			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, v1.ServiceExternalTrafficPolicyTypeCluster)
+
+			l4ilbParams := &L4ILBParams{
+				Service:          svc,
+				Cloud:            fakeGCE,
+				Namer:            namer,
+				Recorder:         record.NewFakeRecorder(100),
+				DualStackEnabled: true,
+			}
+			l4 := NewL4Handler(l4ilbParams)
+			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
+
+			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+			}
+			l4.Service.Annotations = result.Annotations
+			assertDualStackILBResources(t, l4, nodeNames)
+
+			// Change Protocol and trigger sync
+			svc.Spec.Ports[0].Port = 80
+			result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+			}
+			l4.Service.Annotations = result.Annotations
+			assertDualStackILBResources(t, l4, nodeNames)
+
+			l4.EnsureInternalLoadBalancerDeleted(l4.Service)
+			assertDualStackILBResourcesDeleted(t, l4)
+		})
+	}
+}
+
 func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 	t.Parallel()
 
@@ -1414,17 +1620,304 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 	assertILBResourcesDeleted(t, l4)
 }
 
+func TestEnsureInternalDualStackLoadBalancer(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	testCases := []struct {
+		desc          string
+		ipFamilies    []v1.IPFamily
+		trafficPolicy v1.ServiceExternalTrafficPolicyType
+	}{
+		{
+			desc:          "Test ipv4 ipv6 service",
+			ipFamilies:    []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			trafficPolicy: v1.ServiceExternalTrafficPolicyTypeCluster,
+		},
+		{
+			desc:          "Test ipv4 ipv6 local service",
+			ipFamilies:    []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			trafficPolicy: v1.ServiceExternalTrafficPolicyTypeLocal,
+		},
+		{
+			desc:          "Test ipv6 ipv4 service",
+			ipFamilies:    []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+			trafficPolicy: v1.ServiceExternalTrafficPolicyTypeCluster,
+		},
+		{
+			desc:          "Test ipv4 service",
+			ipFamilies:    []v1.IPFamily{v1.IPv4Protocol},
+			trafficPolicy: v1.ServiceExternalTrafficPolicyTypeCluster,
+		},
+		{
+			desc:          "Test ipv6 service",
+			ipFamilies:    []v1.IPFamily{v1.IPv6Protocol},
+			trafficPolicy: v1.ServiceExternalTrafficPolicyTypeCluster,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			fakeGCE := getFakeGCECloud(vals)
+
+			svc := test.NewL4ILBDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, tc.trafficPolicy)
+
+			l4ilbParams := &L4ILBParams{
+				Service:          svc,
+				Cloud:            fakeGCE,
+				Namer:            namer,
+				Recorder:         record.NewFakeRecorder(100),
+				DualStackEnabled: true,
+			}
+			l4 := NewL4Handler(l4ilbParams)
+			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
+
+			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			if result.Error != nil {
+				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+			}
+			if len(result.Status.Ingress) == 0 {
+				t.Errorf("Got empty loadBalancer status using handler %v", l4)
+			}
+			l4.Service.Annotations = result.Annotations
+			assertDualStackILBResources(t, l4, nodeNames)
+
+			l4.EnsureInternalLoadBalancerDeleted(l4.Service)
+			assertDualStackILBResourcesDeleted(t, l4)
+		})
+	}
+}
+
+// This is exhaustive test that checks for all possible transitions of
+// - ServiceExternalTrafficPolicy
+// - Protocol
+// - IPFamilies
+// for dual-stack service. In total 401 combinations
+func TestDualStackLoadBalancerTransitions(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	trafficPolicyStates := []v1.ServiceExternalTrafficPolicyType{v1.ServiceExternalTrafficPolicyTypeLocal, v1.ServiceExternalTrafficPolicyTypeCluster}
+	protocols := []v1.Protocol{v1.ProtocolTCP, v1.ProtocolUDP}
+	ipFamiliesStates := [][]v1.IPFamily{
+		{v1.IPv4Protocol},
+		{v1.IPv4Protocol, v1.IPv6Protocol},
+		{v1.IPv6Protocol},
+		{v1.IPv6Protocol, v1.IPv4Protocol},
+		{},
+	}
+
+	for _, initialIPFamily := range ipFamiliesStates {
+		for _, finalIPFamily := range ipFamiliesStates {
+			for _, initialTrafficPolicy := range trafficPolicyStates {
+				for _, finalTrafficPolicy := range trafficPolicyStates {
+					for _, initialProtocol := range protocols {
+						for _, finalProtocol := range protocols {
+							initialIPFamily := initialIPFamily
+							finalIPFamily := finalIPFamily
+							initialTrafficPolicy := initialTrafficPolicy
+							finalTrafficPolicy := finalTrafficPolicy
+							initialProtocol := initialProtocol
+							finalProtocol := finalProtocol
+
+							var stringInitialIPFamily []string
+							for _, f := range initialIPFamily {
+								stringInitialIPFamily = append(stringInitialIPFamily, string(f))
+							}
+
+							var stringFinalIPFamily []string
+							for _, f := range finalIPFamily {
+								stringFinalIPFamily = append(stringFinalIPFamily, string(f))
+							}
+							desc := struct {
+								fromIPFamily      string
+								toIPFamily        string
+								fromTrafficPolicy string
+								toTrafficPolicy   string
+								fromProtocol      string
+								toProtocol        string
+							}{
+								strings.Join(stringInitialIPFamily, ","),
+								strings.Join(stringFinalIPFamily, ","),
+								string(initialTrafficPolicy),
+								string(finalTrafficPolicy),
+								string(initialProtocol),
+								string(finalProtocol),
+							}
+
+							t.Run(fmt.Sprintf("+%v", desc), func(t *testing.T) {
+								t.Parallel()
+
+								fakeGCE := getFakeGCECloud(vals)
+
+								svc := test.NewL4ILBDualStackService(8080, initialProtocol, initialIPFamily, initialTrafficPolicy)
+								l4ilbParams := &L4ILBParams{
+									Service:          svc,
+									Cloud:            fakeGCE,
+									Namer:            namer,
+									Recorder:         record.NewFakeRecorder(100),
+									DualStackEnabled: true,
+								}
+								l4 := NewL4Handler(l4ilbParams)
+								l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
+
+								if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
+									t.Errorf("Unexpected error when adding nodes %v", err)
+								}
+
+								result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+								svc.Annotations = result.Annotations
+								assertDualStackILBResources(t, l4, nodeNames)
+
+								finalSvc := test.NewL4ILBDualStackService(8080, finalProtocol, finalIPFamily, finalTrafficPolicy)
+								finalSvc.Annotations = svc.Annotations
+								l4.Service = finalSvc
+
+								result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+								finalSvc.Annotations = result.Annotations
+								assertDualStackILBResources(t, l4, nodeNames)
+
+								l4.EnsureInternalLoadBalancerDeleted(l4.Service)
+								assertDualStackILBResourcesDeleted(t, l4)
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestDualStackLBCleansOnlyAnnotationResources(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+
+	testCases := []struct {
+		desc                      string
+		ipFamiliesStates          [2][]v1.IPFamily
+		annotationsToDelete       []string
+		verifyResourcesNotDeleted func(l4 *L4) error
+	}{
+		{
+			desc:                "Should not delete IPv6 resources if they not exist in annotation",
+			ipFamiliesStates:    [2][]v1.IPFamily{{v1.IPv4Protocol, v1.IPv6Protocol}, {v1.IPv4Protocol}},
+			annotationsToDelete: []string{annotations.TCPForwardingRuleIPv6Key, annotations.FirewallRuleIPv6Key, annotations.FirewallRuleForHealthcheckIPv6Key},
+			verifyResourcesNotDeleted: func(l4 *L4) error {
+				// Verify IPv6 Firewall was not deleted
+				ipv6FWName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
+				err := verifyFirewallNotExists(l4.cloud, ipv6FWName)
+				if err == nil {
+					return fmt.Errorf("firewall rule %s was deleted, expected not", ipv6FWName)
+				}
+
+				// Verify IPv6 Forwarding Rule was not deleted
+				ipv6FRName := l4.getIPv6FRName()
+				err = verifyForwardingRuleNotExists(l4.cloud, ipv6FRName)
+				if err == nil {
+					return fmt.Errorf("forwarding rule %s was deleted, expected not", ipv6FRName)
+				}
+				return nil
+			},
+		},
+		{
+			desc:                "Should not delete IPv4 resources if they not exist in annotation",
+			ipFamiliesStates:    [2][]v1.IPFamily{{v1.IPv6Protocol, v1.IPv4Protocol}, {v1.IPv6Protocol}},
+			annotationsToDelete: []string{annotations.TCPForwardingRuleKey, annotations.FirewallRuleKey, annotations.FirewallRuleForHealthcheckKey},
+			verifyResourcesNotDeleted: func(l4 *L4) error {
+				// Verify IPv6 Firewall was not deleted
+				backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+				err := verifyFirewallNotExists(l4.cloud, backendServiceName)
+				if err == nil {
+					return fmt.Errorf("firewall rule %s was deleted, expected not", backendServiceName)
+				}
+
+				// Verify IPv6 Forwarding Rule was not deleted
+				ipv4FRName := l4.GetFRName()
+				err = verifyForwardingRuleNotExists(l4.cloud, ipv4FRName)
+				if err == nil {
+					return fmt.Errorf("forwarding rule %s was deleted, expected not", ipv4FRName)
+				}
+				return nil
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+			fakeGCE := getFakeGCECloud(vals)
+
+			svc := test.NewL4ILBService(false, 8080)
+			l4ilbParams := &L4ILBParams{
+				Service:          svc,
+				Cloud:            fakeGCE,
+				Namer:            namer,
+				Recorder:         record.NewFakeRecorder(100),
+				DualStackEnabled: true,
+			}
+			l4 := NewL4Handler(l4ilbParams)
+			l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
+
+			if _, err := test.CreateAndInsertNodes(l4.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			svc.Spec.IPFamilies = tc.ipFamiliesStates[0]
+			result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			svc.Annotations = result.Annotations
+			assertDualStackILBResources(t, l4, nodeNames)
+
+			// Delete resources annotation
+			for _, annotationToDelete := range tc.annotationsToDelete {
+				delete(svc.Annotations, annotationToDelete)
+			}
+			svc.Spec.IPFamilies = tc.ipFamiliesStates[1]
+
+			// Run new sync. Controller should not delete resources, if they don't exist in annotation
+			result = l4.EnsureInternalLoadBalancer(nodeNames, svc)
+			svc.Annotations = result.Annotations
+
+			err := tc.verifyResourcesNotDeleted(l4)
+			if err != nil {
+				t.Errorf("tc.verifyResourcesNotDeleted(_) returned error %v, want nil", err)
+			}
+
+			l4.EnsureInternalLoadBalancerDeleted(l4.Service)
+			// After complete deletion, IPv6 and IPv4 resources should be cleaned up, even if the were leaked
+			assertDualStackILBResourcesDeleted(t, l4)
+		})
+	}
+}
+
 func assertILBResources(t *testing.T, l4 *L4, nodeNames []string, resourceAnnotations map[string]string) {
 	t.Helper()
 
-	err := verifyILBNodesFirewall(l4, nodeNames)
+	err := verifyILBIPv4NodesFirewall(l4, nodeNames)
 	if err != nil {
-		t.Errorf("verifyILBNodesFirewall(_, %v) returned error %v, want nil", nodeNames, err)
+		t.Errorf("verifyILBIPv4NodesFirewall(_, %v) returned error %v, want nil", nodeNames, err)
 	}
 
-	err = verifyILBHealthCheckFirewall(l4, nodeNames)
+	err = verifyILBIPv4HealthCheckFirewall(l4, nodeNames)
 	if err != nil {
-		t.Errorf("verifyILBHealthCheckFirewall(_, %v) returned error %v, want nil", nodeNames, err)
+		t.Errorf("verifyILBIPv4HealthCheckFirewall(_, %v) returned error %v, want nil", nodeNames, err)
 	}
 
 	healthCheck, err := getAndVerifyILBHealthCheck(l4)
@@ -1437,7 +1930,7 @@ func assertILBResources(t *testing.T, l4 *L4, nodeNames []string, resourceAnnota
 		t.Errorf("getAndVerifyILBBackendService(_, %v) returned error %v, want nil", healthCheck, err)
 	}
 
-	err = verifyILBForwardingRule(l4, backendService.SelfLink)
+	err = verifyILBIPv4ForwardingRule(l4, backendService.SelfLink)
 	if err != nil {
 		t.Errorf("getAndVerifyILBForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
 	}
@@ -1446,6 +1939,111 @@ func assertILBResources(t *testing.T, l4 *L4, nodeNames []string, resourceAnnota
 	if !reflect.DeepEqual(expectedAnnotations, resourceAnnotations) {
 		t.Fatalf("Expected annotations %v, got %v", expectedAnnotations, resourceAnnotations)
 	}
+}
+
+func assertDualStackILBResources(t *testing.T, l4 *L4, nodeNames []string) {
+	t.Helper()
+
+	healthCheck, err := getAndVerifyILBHealthCheck(l4)
+	if err != nil {
+		t.Errorf("getAndVerifyHealthCheck(_) returned error %v, want nil", err)
+	}
+
+	backendService, err := getAndVerifyILBBackendService(l4, healthCheck)
+	if err != nil {
+		t.Errorf("getAndVerifyBackendService(_, %v) returned error %v, want nil", healthCheck, err)
+	}
+
+	if utils.NeedsIPv4(l4.Service) {
+		err = verifyILBIPv4ForwardingRule(l4, backendService.SelfLink)
+		if err != nil {
+			t.Errorf("verifyILBIPv4ForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
+		}
+
+		err = verifyILBIPv4NodesFirewall(l4, nodeNames)
+		if err != nil {
+			t.Errorf("verifyILBIPv4NodesFirewall(_, %s) returned error %v, want nil", nodeNames, err)
+		}
+
+		err = verifyILBIPv4HealthCheckFirewall(l4, nodeNames)
+		if err != nil {
+			t.Errorf("verifyILBIPv4HealthCheckFirewall(_, %s) returned error %v, want nil", nodeNames, err)
+		}
+	} else {
+		err = verifyILBIPv4ResourcesDeletedOnSync(l4)
+		if err != nil {
+			t.Errorf("verifyILBIPv4ResourcesDeletedOnSync(_) returned error %v, want nil", err)
+		}
+	}
+	if utils.NeedsIPv6(l4.Service) {
+		err = verifyILBIPv6ForwardingRule(l4, backendService.SelfLink)
+		if err != nil {
+			t.Errorf("verifyILBIPv6ForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
+		}
+
+		err = verifyILBIPv6NodesFirewall(l4, nodeNames)
+		if err != nil {
+			t.Errorf("verifyILBIPv6NodesFirewall(_, %v) returned error %v, want nil", nodeNames, err)
+		}
+
+		err = verifyILBIPv6HealthCheckFirewall(l4, nodeNames)
+		if err != nil {
+			t.Errorf("verifyILBIPv6HealthCheckFirewall(_, %v) returned error %v, want nil", nodeNames, err)
+		}
+	} else {
+		err = verifyILBIPv6ResourcesDeletedOnSync(l4)
+		if err != nil {
+			t.Errorf("verifyILBIPv6ResourcesDeletedOnSync(_) returned error %v, want nil", err)
+		}
+	}
+
+	expectedAnnotations := buildExpectedAnnotations(l4)
+	if !reflect.DeepEqual(expectedAnnotations, l4.Service.Annotations) {
+		diff := cmp.Diff(expectedAnnotations, l4.Service.Annotations)
+		t.Errorf("Expected annotations %v, got %v, diff %v", expectedAnnotations, l4.Service.Annotations, diff)
+	}
+}
+
+func buildExpectedAnnotations(l4 *L4) map[string]string {
+	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
+	proto := utils.GetProtocol(l4.Service.Spec.Ports)
+
+	backendName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+	hcName := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, isSharedHC)
+
+	expectedAnnotations := map[string]string{
+		annotations.BackendServiceKey: backendName,
+		annotations.HealthcheckKey:    hcName,
+	}
+
+	if utils.NeedsIPv4(l4.Service) {
+		hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
+
+		expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
+		expectedAnnotations[annotations.FirewallRuleKey] = backendName
+
+		ipv4FRName := l4.GetFRName()
+		if proto == v1.ProtocolTCP {
+			expectedAnnotations[annotations.TCPForwardingRuleKey] = ipv4FRName
+		} else {
+			expectedAnnotations[annotations.UDPForwardingRuleKey] = ipv4FRName
+		}
+	}
+	if utils.NeedsIPv6(l4.Service) {
+		ipv6hcFwName := l4.namer.L4IPv6HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
+		ipv6FirewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
+
+		expectedAnnotations[annotations.FirewallRuleForHealthcheckIPv6Key] = ipv6hcFwName
+		expectedAnnotations[annotations.FirewallRuleIPv6Key] = ipv6FirewallName
+
+		ipv6FRName := l4.getIPv6FRName()
+		if proto == v1.ProtocolTCP {
+			expectedAnnotations[annotations.TCPForwardingRuleIPv6Key] = ipv6FRName
+		} else {
+			expectedAnnotations[annotations.UDPForwardingRuleIPv6Key] = ipv6FRName
+		}
+	}
+	return expectedAnnotations
 }
 
 func getAndVerifyILBHealthCheck(l4 *L4) (*composite.HealthCheck, error) {
@@ -1501,8 +2099,17 @@ func getAndVerifyILBBackendService(l4 *L4, healthCheck *composite.HealthCheck) (
 	return bs, nil
 }
 
-func verifyILBForwardingRule(l4 *L4, backendServiceLink string) error {
+func verifyILBIPv4ForwardingRule(l4 *L4, backendServiceLink string) error {
 	frName := l4.GetFRName()
+	return verifyILBForwardingRule(l4, frName, backendServiceLink)
+}
+
+func verifyILBIPv6ForwardingRule(l4 *L4, backendServiceLink string) error {
+	ipv6FrName := l4.getIPv6FRName()
+	return verifyILBForwardingRule(l4, ipv6FrName, backendServiceLink)
+}
+
+func verifyILBForwardingRule(l4 *L4, frName string, backendServiceLink string) error {
 	fwdRule, err := composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA)
 	if err != nil {
 		return fmt.Errorf("failed to fetch forwarding rule %s - err %w", frName, err)
@@ -1542,7 +2149,7 @@ func verifyILBForwardingRule(l4 *L4, backendServiceLink string) error {
 	return nil
 }
 
-func verifyILBNodesFirewall(l4 *L4, nodeNames []string) error {
+func verifyILBIPv4NodesFirewall(l4 *L4, nodeNames []string) error {
 	fwName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
 	fwDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), "", meta.VersionGA, false, utils.ILB)
 	if err != nil {
@@ -1556,7 +2163,18 @@ func verifyILBNodesFirewall(l4 *L4, nodeNames []string) error {
 	return verifyFirewall(l4.cloud, nodeNames, fwName, fwDesc, sourceRanges.StringSlice())
 }
 
-func verifyILBHealthCheckFirewall(l4 *L4, nodeNames []string) error {
+func verifyILBIPv6NodesFirewall(l4 *L4, nodeNames []string) error {
+	ipv6FirewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
+
+	fwDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), "", meta.VersionGA, false, utils.ILB)
+	if err != nil {
+		return fmt.Errorf("failed to create description for resources, err %w", err)
+	}
+
+	return verifyFirewall(l4.cloud, nodeNames, ipv6FirewallName, fwDesc, []string{"0::0/0"})
+}
+
+func verifyILBIPv4HealthCheckFirewall(l4 *L4, nodeNames []string) error {
 	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
 
 	hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
@@ -1568,31 +2186,16 @@ func verifyILBHealthCheckFirewall(l4 *L4, nodeNames []string) error {
 	return verifyFirewall(l4.cloud, nodeNames, hcFwName, hcFwDesc, gce.L4LoadBalancerSrcRanges())
 }
 
-func buildExpectedAnnotations(l4 *L4) map[string]string {
+func verifyILBIPv6HealthCheckFirewall(l4 *L4, nodeNames []string) error {
 	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
-	proto := utils.GetProtocol(l4.Service.Spec.Ports)
 
-	backendName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
-	hcName := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, isSharedHC)
-
-	expectedAnnotations := map[string]string{
-		annotations.BackendServiceKey: backendName,
-		annotations.HealthcheckKey:    hcName,
+	ipv6hcFwName := l4.namer.L4IPv6HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
+	hcFwDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), "", meta.VersionGA, isSharedHC)
+	if err != nil {
+		return fmt.Errorf("failed to calculate decsription for health check for service %v, error %v", l4.Service, err)
 	}
 
-	hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
-	expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
-
-	fwName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
-	expectedAnnotations[annotations.FirewallRuleKey] = fwName
-
-	frName := l4.GetFRName()
-	if proto == v1.ProtocolTCP {
-		expectedAnnotations[annotations.TCPForwardingRuleKey] = frName
-	} else {
-		expectedAnnotations[annotations.UDPForwardingRuleKey] = frName
-	}
-	return expectedAnnotations
+	return verifyFirewall(l4.cloud, nodeNames, ipv6hcFwName, hcFwDesc, []string{healthchecksl4.L4ILBIPv6HCRange})
 }
 
 func assertILBResourcesDeleted(t *testing.T, l4 *L4) {
@@ -1642,4 +2245,110 @@ func assertILBResourcesDeleted(t *testing.T, l4 *L4) {
 	if err != nil {
 		t.Errorf("verifyAddressNotExists(_, %s)", frName)
 	}
+}
+
+func assertDualStackILBResourcesDeleted(t *testing.T, l4 *L4) {
+	t.Helper()
+
+	err := verifyILBCommonDualStackResourcesDeleted(l4)
+	if err != nil {
+		t.Errorf("verifyCommonDualStackResourcesDeleted(_) returned erorr %v, want nil", err)
+	}
+
+	err = verifyILBIPv4ResourcesDeletedOnSync(l4)
+	if err != nil {
+		t.Errorf("verifyILBIPv4ResourcesDeletedOnSync(_) returned erorr %v, want nil", err)
+	}
+
+	err = verifyILBIPv6ResourcesDeletedOnSync(l4)
+	if err != nil {
+		t.Errorf("verifyILBIPv4ResourcesDeletedOnSync(_) returned erorr %v, want nil", err)
+	}
+
+	// Check health check firewalls separately, because we don't clean them on sync, only on final deletion
+	ipv4HcFwNameShared := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, true)
+	ipv6HcFwNameShared := l4.namer.L4IPv6HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, true)
+	ipv4HcFwNameNonShared := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, false)
+	ipv6HcFwNameNonShared := l4.namer.L4IPv6HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, false)
+
+	fwNames := []string{
+		ipv4HcFwNameShared,
+		ipv4HcFwNameNonShared,
+		ipv6HcFwNameShared,
+		ipv6HcFwNameNonShared,
+	}
+
+	for _, fwName := range fwNames {
+		err = verifyFirewallNotExists(l4.cloud, fwName)
+		if err != nil {
+			t.Errorf("verifyFirewallNotExists(_, %s) returned error %v, want nil", fwName, err)
+		}
+	}
+}
+
+func verifyILBCommonDualStackResourcesDeleted(l4 *L4) error {
+	backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+
+	err := verifyBackendServiceNotExists(l4.cloud, backendServiceName)
+	if err != nil {
+		return fmt.Errorf("verifyBackendServiceNotExists(_, %s)", backendServiceName)
+	}
+
+	hcNameShared := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, true)
+	err = verifyHealthCheckNotExists(l4.cloud, hcNameShared, meta.Global)
+	if err != nil {
+		return fmt.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameShared)
+	}
+
+	hcNameNonShared := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, false)
+	err = verifyHealthCheckNotExists(l4.cloud, hcNameNonShared, meta.Global)
+	if err != nil {
+		return fmt.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameNonShared)
+	}
+
+	err = verifyAddressNotExists(l4.cloud, backendServiceName)
+	if err != nil {
+		return fmt.Errorf("verifyAddressNotExists(_, %s)", backendServiceName)
+	}
+	return nil
+}
+
+// we don't delete ipv4 health check firewall on sync
+func verifyILBIPv4ResourcesDeletedOnSync(l4 *L4) error {
+	ipv4FwName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+	err := verifyFirewallNotExists(l4.cloud, ipv4FwName)
+	if err != nil {
+		return fmt.Errorf("verifyFirewallNotExists(_, %s) returned error %w, want nil", ipv4FwName, err)
+	}
+
+	ipv4FrName := l4.GetFRName()
+	err = verifyForwardingRuleNotExists(l4.cloud, ipv4FrName)
+	if err != nil {
+		return fmt.Errorf("verifyForwardingRuleNotExists(_, %s) returned error %w, want nil", ipv4FrName, err)
+	}
+
+	addressName := ipv4FwName
+	err = verifyAddressNotExists(l4.cloud, addressName)
+	if err != nil {
+		return fmt.Errorf("verifyAddressNotExists(_, %s)", addressName)
+	}
+
+	return nil
+}
+
+// we don't delete ipv6 health check firewall on sync
+func verifyILBIPv6ResourcesDeletedOnSync(l4 *L4) error {
+	ipv6FwName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
+	err := verifyFirewallNotExists(l4.cloud, ipv6FwName)
+	if err != nil {
+		return fmt.Errorf("verifyFirewallNotExists(_, %s) returned error %w, want nil", ipv6FwName, err)
+	}
+
+	ipv6FrName := l4.getIPv6FRName()
+	err = verifyForwardingRuleNotExists(l4.cloud, ipv6FrName)
+	if err != nil {
+		return fmt.Errorf("verifyForwardingRuleNotExists(_, %s) returned error %w, want nil", ipv6FrName, err)
+	}
+
+	return nil
 }

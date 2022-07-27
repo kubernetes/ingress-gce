@@ -1522,3 +1522,47 @@ func TestGetServicePortRanges(t *testing.T) {
 		})
 	}
 }
+
+func TestAddIPToLBStatus(t *testing.T) {
+	testCases := []struct {
+		desc           string
+		status         *api_v1.LoadBalancerStatus
+		ipsToAdd       []string
+		expectedStatus *api_v1.LoadBalancerStatus
+	}{
+		{
+			desc:           "Should create empty status ingress if no IPs provided",
+			status:         nil,
+			ipsToAdd:       []string{},
+			expectedStatus: &api_v1.LoadBalancerStatus{Ingress: []api_v1.LoadBalancerIngress{}},
+		},
+		{
+			desc:     "Should add IPs to the empty status",
+			status:   nil,
+			ipsToAdd: []string{"1.1.1.1", "0::0"},
+			expectedStatus: &api_v1.LoadBalancerStatus{Ingress: []api_v1.LoadBalancerIngress{
+				{IP: "1.1.1.1"}, {IP: "0::0"},
+			}},
+		},
+		{
+			desc: "Should add IP to the existing status",
+			status: &api_v1.LoadBalancerStatus{Ingress: []api_v1.LoadBalancerIngress{
+				{IP: "0::0"},
+			}},
+			ipsToAdd: []string{"1.1.1.1"},
+			expectedStatus: &api_v1.LoadBalancerStatus{Ingress: []api_v1.LoadBalancerIngress{
+				{IP: "0::0"}, {IP: "1.1.1.1"},
+			}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			newStatus := AddIPToLBStatus(tc.status, tc.ipsToAdd...)
+
+			if !reflect.DeepEqual(tc.expectedStatus, newStatus) {
+				t.Errorf("newStatus = %v, not equal to expectedStatus = %v", newStatus, tc.expectedStatus)
+			}
+		})
+	}
+}
