@@ -31,6 +31,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -47,11 +48,12 @@ type L4 struct {
 	scope       meta.KeyType
 	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
-	recorder       record.EventRecorder
-	Service        *corev1.Service
-	ServicePort    utils.ServicePort
-	NamespacedName types.NamespacedName
-	l4HealthChecks healthchecks.L4HealthChecks
+	recorder        record.EventRecorder
+	Service         *corev1.Service
+	ServicePort     utils.ServicePort
+	NamespacedName  types.NamespacedName
+	l4HealthChecks  healthchecks.L4HealthChecks
+	forwardingRules ForwardingRulesProvider
 }
 
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
@@ -69,12 +71,13 @@ type L4ILBSyncResult struct {
 // NewL4Handler creates a new L4Handler for the given L4 service.
 func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder) *L4 {
 	l := &L4{
-		cloud:          cloud,
-		scope:          scope,
-		namer:          namer,
-		recorder:       recorder,
-		Service:        service,
-		l4HealthChecks: healthchecks.L4(),
+		cloud:           cloud,
+		scope:           scope,
+		namer:           namer,
+		recorder:        recorder,
+		Service:         service,
+		l4HealthChecks:  healthchecks.L4(),
+		forwardingRules: forwardingrules.New(cloud, meta.VersionGA, scope),
 	}
 	l.NamespacedName = types.NamespacedName{Name: service.Name, Namespace: service.Namespace}
 	l.backendPool = backends.NewPool(l.cloud, l.namer)
@@ -224,12 +227,19 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	if err != nil {
 		klog.Errorf("Failed to lookup existing backend service, ignoring err: %v", err)
 	}
-	existingFR := l.GetForwardingRule(l.GetFRName(), meta.VersionGA)
+	existingFR, err := l.forwardingRules.Get(l.GetFRName())
 	if existingBS != nil && existingBS.Protocol != string(protocol) {
 		klog.Infof("Protocol changed from %q to %q for service %s", existingBS.Protocol, string(protocol), l.NamespacedName)
 		// Delete forwarding rule if it exists
-		existingFR = l.GetForwardingRule(l.getFRNameWithProtocol(existingBS.Protocol), meta.VersionGA)
-		l.deleteForwardingRule(l.getFRNameWithProtocol(existingBS.Protocol), meta.VersionGA)
+		frName := l.getFRNameWithProtocol(existingBS.Protocol)
+		existingFR, err = l.forwardingRules.Get(frName)
+		if err != nil {
+			klog.Errorf("Failed to get forwarding rule %s, err %v", frName, err)
+		}
+		err = l.forwardingRules.Delete(frName)
+		if err != nil {
+			klog.Errorf("Failed to delete forwarding rule %s, err %v", frName, err)
+		}
 	}
 
 	// ensure backend service

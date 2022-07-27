@@ -30,6 +30,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -45,11 +46,12 @@ type L4NetLB struct {
 	scope       meta.KeyType
 	namer       namer.L4ResourcesNamer
 	// recorder is used to generate k8s Events.
-	recorder       record.EventRecorder
-	Service        *corev1.Service
-	ServicePort    utils.ServicePort
-	NamespacedName types.NamespacedName
-	l4HealthChecks healthchecks.L4HealthChecks
+	recorder        record.EventRecorder
+	Service         *corev1.Service
+	ServicePort     utils.ServicePort
+	NamespacedName  types.NamespacedName
+	l4HealthChecks  healthchecks.L4HealthChecks
+	forwardingRules ForwardingRulesProvider
 }
 
 // L4NetLBSyncResult contains information about the outcome of an L4 NetLB sync. It stores the list of resource name annotations,
@@ -83,13 +85,14 @@ func (r *L4NetLBSyncResult) SetMetricsForSuccessfulServiceSync() {
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
 func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder) *L4NetLB {
 	l4netlb := &L4NetLB{cloud: cloud,
-		scope:          scope,
-		namer:          namer,
-		recorder:       recorder,
-		Service:        service,
-		NamespacedName: types.NamespacedName{Name: service.Name, Namespace: service.Namespace},
-		backendPool:    backends.NewPool(cloud, namer),
-		l4HealthChecks: healthchecks.L4(),
+		scope:           scope,
+		namer:           namer,
+		recorder:        recorder,
+		Service:         service,
+		NamespacedName:  types.NamespacedName{Name: service.Name, Namespace: service.Namespace},
+		backendPool:     backends.NewPool(cloud, namer),
+		l4HealthChecks:  healthchecks.L4(),
+		forwardingRules: forwardingrules.New(cloud, meta.VersionGA, scope),
 	}
 	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
 	l4netlb.ServicePort = utils.ServicePort{
