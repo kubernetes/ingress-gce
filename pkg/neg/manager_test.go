@@ -1459,7 +1459,7 @@ func TestSyncNodesConditions(t *testing.T) {
 		},
 		{
 			desc:       "vm ip neg, zones are the same",
-			expectSync: true,
+			expectSync: false,
 			negType:    negtypes.VmIpEndpointType,
 		},
 		{

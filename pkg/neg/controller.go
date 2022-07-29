@@ -292,7 +292,7 @@ func NewController(
 		})
 	}
 
-	nodeEventHandler := cache.ResourceEventHandlerFuncs{
+	nodeInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
 			node := obj.(*apiv1.Node)
 			negController.enqueueNode(node)
@@ -301,20 +301,20 @@ func NewController(
 			node := obj.(*apiv1.Node)
 			negController.enqueueNode(node)
 		},
-	}
-
-	if negController.runL4 {
-		nodeEventHandler.UpdateFunc = func(old, cur interface{}) {
+		UpdateFunc: func(old, cur interface{}) {
 			oldNode := old.(*apiv1.Node)
 			currentNode := cur.(*apiv1.Node)
-			candidateNodeCheck := utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
-			if candidateNodeCheck(oldNode) != candidateNodeCheck(currentNode) {
-				logger.Info("Node has changed, enqueueing", "node", klog.KObj(currentNode))
+
+			vmIpCandidateNodeCheck := negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpEndpointType)
+			vmIpPortCandidateNodeCheck := negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpPortEndpointType)
+
+			if vmIpCandidateNodeCheck(oldNode) != vmIpCandidateNodeCheck(currentNode) ||
+				vmIpPortCandidateNodeCheck(oldNode) != vmIpPortCandidateNodeCheck(currentNode) {
+				logger.Info("Node has changed, enqueueing", "node", currentNode.Name)
 				negController.enqueueNode(currentNode)
 			}
-		}
-	}
-	nodeInformer.AddEventHandler(nodeEventHandler)
+		},
+	})
 
 	if enableAsm {
 		negController.enableASM = enableAsm

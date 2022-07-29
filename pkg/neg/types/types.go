@@ -435,6 +435,14 @@ func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []Endpoi
 func NodePredicateForEndpointCalculatorMode(mode EndpointsCalculatorMode) utils.NodeConditionPredicate {
 	// VM_IP NEGs can include unready and upgrading nodes.
 	if mode == L4ClusterMode || mode == L4LocalMode {
+		return NodePredicateForNetworkEndpointType(VmIpEndpointType)
+	}
+	return NodePredicateForNetworkEndpointType(VmIpPortEndpointType)
+}
+
+// NodePredicateForNetworkEndpointType returns the predicate function to select candidate nodes, given the NEG type.
+func NodePredicateForNetworkEndpointType(negType NetworkEndpointType) utils.NodeConditionPredicate {
+	if negType == VmIpEndpointType {
 		return utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes
 	}
 	return utils.CandidateNodesPredicate
