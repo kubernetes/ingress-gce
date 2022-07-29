@@ -627,22 +627,39 @@ func GetPortRanges(ports []int) (ranges []string) {
 	return ranges
 }
 
-// GetPortsAndProtocol returns the list of ports, list of port ranges and the protocol given the list of k8s port info.
-func GetPortsAndProtocol(svcPorts []api_v1.ServicePort) (ports []string, portRanges []string, nodePorts []int64, protocol api_v1.Protocol) {
+func GetProtocol(svcPorts []api_v1.ServicePort) api_v1.Protocol {
 	if len(svcPorts) == 0 {
-		return []string{}, []string{}, []int64{}, api_v1.ProtocolTCP
+		return api_v1.ProtocolTCP
 	}
 
-	// GCP doesn't support multiple protocols for a single load balancer
-	protocol = svcPorts[0].Protocol
-	portInts := []int{}
+	return svcPorts[0].Protocol
+}
+
+func GetNodePorts(svcPorts []api_v1.ServicePort) []int64 {
+	nodePorts := []int64{}
 	for _, p := range svcPorts {
-		ports = append(ports, strconv.Itoa(int(p.Port)))
-		portInts = append(portInts, int(p.Port))
 		nodePorts = append(nodePorts, int64(p.NodePort))
 	}
 
-	return ports, GetPortRanges(portInts), nodePorts, protocol
+	return nodePorts
+}
+
+func GetPorts(svcPorts []api_v1.ServicePort) []string {
+	ports := []string{}
+	for _, p := range svcPorts {
+		ports = append(ports, strconv.Itoa(int(p.Port)))
+	}
+
+	return ports
+}
+
+func GetServicePortRanges(svcPorts []api_v1.ServicePort) []string {
+	portInts := []int{}
+	for _, p := range svcPorts {
+		portInts = append(portInts, int(p.Port))
+	}
+
+	return GetPortRanges(portInts)
 }
 
 func minMaxPort(svcPorts []api_v1.ServicePort) (int32, int32) {

@@ -242,7 +242,9 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 		}()
 	}
 
-	ports, _, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
+	servicePorts := l.Service.Spec.Ports
+	ports := utils.GetPorts(servicePorts)
+	protocol := utils.GetProtocol(servicePorts)
 	// Create the forwarding rule
 	frDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l.Service.Namespace, l.Service.Name), ipToUse,
 		version, false, utils.ILB)
