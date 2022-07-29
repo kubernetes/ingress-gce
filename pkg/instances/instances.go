@@ -25,7 +25,6 @@ import (
 	"google.golang.org/api/compute/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/events"
-	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog"
 
@@ -47,22 +46,33 @@ type Instances struct {
 	namer              namer.BackendNamer
 	recorder           record.EventRecorder
 	instanceLinkFormat string
+	maxIGSize          int
 }
 
 type recorderSource interface {
 	Recorder(ns string) record.EventRecorder
 }
 
-// NewNodePool creates a new node pool.
-// - cloud: implements InstanceGroups, used to sync Kubernetes nodes with
-//   members of the cloud InstanceGroup.
-func NewNodePool(cloud InstanceGroups, namer namer.BackendNamer, recorders recorderSource, basePath string, zl ZoneLister) NodePool {
+// NodePoolConfig is used for NodePool constructor.
+type NodePoolConfig struct {
+	// Cloud implements InstanceGroups, used to sync Kubernetes nodes with members of the cloud InstanceGroup.
+	Cloud      InstanceGroups
+	Namer      namer.BackendNamer
+	Recorders  recorderSource
+	BasePath   string
+	ZoneLister ZoneLister
+	MaxIGSize  int
+}
+
+// NewNodePool creates a new node pool using NodePoolConfig.
+func NewNodePool(config *NodePoolConfig) NodePool {
 	return &Instances{
-		cloud:              cloud,
-		namer:              namer,
-		recorder:           recorders.Recorder(""), // No namespace
-		instanceLinkFormat: basePath + "zones/%s/instances/%s",
-		ZoneLister:         zl,
+		cloud:              config.Cloud,
+		namer:              config.Namer,
+		recorder:           config.Recorders.Recorder(""), // No namespace
+		instanceLinkFormat: config.BasePath + "zones/%s/instances/%s",
+		ZoneLister:         config.ZoneLister,
+		maxIGSize:          config.MaxIGSize,
 	}
 }
 
@@ -337,19 +347,21 @@ func (i *Instances) Sync(nodes []string) (err error) {
 
 		// Individual InstanceGroup has a limit for 1000 instances in it.
 		// As a result, it's not possible to add more to it.
-		if len(kubeNodes) > flags.F.MaxIgSize {
+		if len(kubeNodes) > i.maxIGSize {
 			// List() will return a sorted list so the kubeNodesList truncation will have a stable set of nodes.
 			kubeNodesList := kubeNodes.List()
 
 			// Store first 10 truncated nodes for logging
-			truncatedNodesSample := kubeNodesList[flags.F.MaxIgSize:]
-			maxTruncatedNodesSampleSize := 10
-			if len(truncatedNodesSample) > maxTruncatedNodesSampleSize {
-				truncatedNodesSample = truncatedNodesSample[:maxTruncatedNodesSampleSize]
+			truncateForLogs := func(nodes []string) []string {
+				maxLogsSampleSize := 10
+				if len(nodes) <= maxLogsSampleSize {
+					return nodes
+				}
+				return nodes[:maxLogsSampleSize]
 			}
 
-			klog.Warningf("Total number of kubeNodes: %d, truncating to maximum Instance Group size = %d. Instance group name: %s. First %d truncated instances: %v", len(kubeNodesList), flags.F.MaxIgSize, igName, len(truncatedNodesSample), truncatedNodesSample)
-			kubeNodes = sets.NewString(kubeNodesList[:flags.F.MaxIgSize]...)
+			klog.Warningf("Total number of kubeNodes: %d, truncating to maximum Instance Group size = %d. Instance group name: %s. First truncated instances: %v", len(kubeNodesList), i.maxIGSize, igName, truncateForLogs(nodes[i.maxIGSize:]))
+			kubeNodes = sets.NewString(kubeNodesList[:i.maxIGSize]...)
 		}
 
 		// A node deleted via kubernetes could still exist as a gce vm. We don't

@@ -53,7 +53,14 @@ func TestLink(t *testing.T) {
 	fakeIGs := instances.NewEmptyFakeInstanceGroups()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	fakeZL := &instances.FakeZoneLister{Zones: []string{defaultZone}}
-	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE), fakeZL)
+	fakeNodePool := instances.NewNodePool(&instances.NodePoolConfig{
+		Cloud:      fakeIGs,
+		Namer:      defaultNamer,
+		Recorders:  &test.FakeRecorderSource{},
+		BasePath:   utils.GetBasePath(fakeGCE),
+		ZoneLister: fakeZL,
+		MaxIGSize:  1000,
+	})
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
@@ -84,7 +91,14 @@ func TestLinkWithCreationModeError(t *testing.T) {
 	fakeIGs := instances.NewEmptyFakeInstanceGroups()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	fakeZL := &instances.FakeZoneLister{Zones: []string{defaultZone}}
-	fakeNodePool := instances.NewNodePool(fakeIGs, defaultNamer, &test.FakeRecorderSource{}, utils.GetBasePath(fakeGCE), fakeZL)
+	fakeNodePool := instances.NewNodePool(&instances.NodePoolConfig{
+		Cloud:      fakeIGs,
+		Namer:      defaultNamer,
+		Recorders:  &test.FakeRecorderSource{},
+		BasePath:   utils.GetBasePath(fakeGCE),
+		ZoneLister: fakeZL,
+		MaxIGSize:  1000,
+	})
 	linker := newTestIGLinker(fakeGCE, fakeNodePool)
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
