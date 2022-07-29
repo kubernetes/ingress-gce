@@ -80,7 +80,7 @@ github.com/envoyproxy/go-control-plane/envoy/type/v3
 github.com/envoyproxy/protoc-gen-validate/validate
 # github.com/evanphx/json-patch v4.11.0+incompatible
 github.com/evanphx/json-patch
-# github.com/go-logr/logr v0.4.0
+# github.com/go-logr/logr v1.2.0
 github.com/go-logr/logr
 # github.com/go-openapi/jsonpointer v0.19.5
 ## explicit
@@ -804,11 +804,12 @@ k8s.io/component-base/config/options
 k8s.io/component-base/metrics
 k8s.io/component-base/metrics/legacyregistry
 k8s.io/component-base/version
-# k8s.io/klog v1.0.0
+# k8s.io/klog/v2 v2.50.2
 ## explicit
-k8s.io/klog
-# k8s.io/klog/v2 v2.9.0
 k8s.io/klog/v2
+k8s.io/klog/v2/internal/buffer
+k8s.io/klog/v2/internal/serialize
+k8s.io/klog/v2/internal/severity
 # k8s.io/kube-openapi v0.0.0-20210421082810-95288971da7e
 ## explicit
 k8s.io/kube-openapi/pkg/common
@@ -817,9 +818,10 @@ k8s.io/kube-openapi/pkg/validation/spec
 # k8s.io/legacy-cloud-providers v0.20.0
 ## explicit
 k8s.io/legacy-cloud-providers/gce
-# k8s.io/utils v0.0.0-20210819203725-bdf08cb9a70a
+# k8s.io/utils v0.0.0-20220210201930-3a6ce19ff2f9
 ## explicit
 k8s.io/utils/buffer
+k8s.io/utils/clock
 k8s.io/utils/integer
 k8s.io/utils/internal/third_party/forked/golang/net
 k8s.io/utils/net

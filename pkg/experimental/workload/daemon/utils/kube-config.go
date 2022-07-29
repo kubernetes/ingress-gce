@@ -22,7 +22,7 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // GenKubeConfigForKSA generates a KubeConfig to access the cluster using a Kubernetes service account

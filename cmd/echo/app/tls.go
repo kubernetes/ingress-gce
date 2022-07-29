@@ -27,7 +27,7 @@ import (
 	"math/big"
 	"time"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // createCert creates a certificate and key in temporary files and returns their paths.

@@ -35,7 +35,7 @@ import (
 	frontendconfig "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // pathForDefaultBackend is a unique string that will not match any path.

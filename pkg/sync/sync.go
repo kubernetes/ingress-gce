@@ -26,7 +26,7 @@ import (
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/common"
 	"k8s.io/ingress-gce/pkg/utils/namer"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // ErrSkipBackendsSync is an error that can be returned by a Controller to

@@ -14,7 +14,7 @@ import (
 	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils/patch"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const (

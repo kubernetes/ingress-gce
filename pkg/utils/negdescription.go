@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // Description stores the description for a BackendService.

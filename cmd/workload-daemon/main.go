@@ -24,7 +24,7 @@ import (
 
 	daemon "k8s.io/ingress-gce/pkg/experimental/workload/daemon"
 	gce "k8s.io/ingress-gce/pkg/experimental/workload/daemon/provider/gce"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 
 	// GCP Authentication
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"

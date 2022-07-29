@@ -34,7 +34,7 @@ import (
 	"k8s.io/ingress-gce/pkg/fuzz"
 	"k8s.io/ingress-gce/pkg/fuzz/features"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // TestCDN is for ingress versions before the CDN config was expanded

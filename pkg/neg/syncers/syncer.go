@@ -26,7 +26,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 type syncerCore interface {
@@ -55,9 +55,11 @@ type syncer struct {
 	syncCh  chan interface{}
 	clock   clock.Clock
 	backoff backoffHandler
+
+	logger klog.Logger
 }
 
-func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, recorder record.EventRecorder, core syncerCore) *syncer {
+func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, recorder record.EventRecorder, core syncerCore, logger klog.Logger) *syncer {
 	return &syncer{
 		NegSyncerKey:  negSyncerKey,
 		core:          core,
@@ -67,6 +69,7 @@ func newSyncer(negSyncerKey negtypes.NegSyncerKey, serviceLister cache.Indexer, 
 		shuttingDown:  false,
 		clock:         clock.RealClock{},
 		backoff:       NewExponentialBackendOffHandler(maxRetries, minRetryDelay, maxRetryDelay),
+		logger:        logger,
 	}
 }
 
@@ -78,7 +81,7 @@ func (s *syncer) Start() error {
 		return fmt.Errorf("NEG syncer for %s is shutting down. ", s.NegSyncerKey.String())
 	}
 
-	klog.V(2).Infof("Starting NEG syncer for service port %s", s.NegSyncerKey.String())
+	s.logger.V(2).Info("Starting NEG syncer for service port", "negSynckerKey", s.NegSyncerKey.String())
 	s.init()
 	go func() {
 		for {
@@ -108,7 +111,7 @@ func (s *syncer) Start() error {
 					s.stateLock.Lock()
 					s.shuttingDown = false
 					s.stateLock.Unlock()
-					klog.V(2).Infof("Stopping NEG syncer for %s", s.NegSyncerKey.String())
+					s.logger.V(2).Info("Stopping NEG syncer", "negSynckerKey", s.NegSyncerKey.String())
 					return
 				}
 			case <-retryCh:
@@ -130,7 +133,7 @@ func (s *syncer) Stop() {
 	s.stateLock.Lock()
 	defer s.stateLock.Unlock()
 	if !s.stopped {
-		klog.V(2).Infof("Stopping NEG syncer for service port %s", s.NegSyncerKey.String())
+		s.logger.V(2).Info("Stopping NEG syncer for service port", "negSynckerKey", s.NegSyncerKey.String())
 		s.stopped = true
 		s.shuttingDown = true
 		close(s.syncCh)
@@ -139,7 +142,7 @@ func (s *syncer) Stop() {
 
 func (s *syncer) Sync() bool {
 	if s.IsStopped() {
-		klog.Warningf("NEG syncer for %s is already stopped.", s.NegSyncerKey.String())
+		s.logger.Info("NEG syncer is already stopped.", "negSynckerKey", s.NegSyncerKey.String())
 		return false
 	}
 	select {

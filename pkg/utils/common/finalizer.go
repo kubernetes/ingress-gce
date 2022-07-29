@@ -23,7 +23,7 @@ import (
 	client "k8s.io/client-go/kubernetes/typed/networking/v1"
 	"k8s.io/ingress-gce/pkg/utils/patch"
 	"k8s.io/ingress-gce/pkg/utils/slice"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const (

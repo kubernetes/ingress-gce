@@ -32,7 +32,7 @@ import (
 	workloadclient "k8s.io/ingress-gce/pkg/experimental/workload/client/clientset/versioned"
 	daemonutils "k8s.io/ingress-gce/pkg/experimental/workload/daemon/utils"
 	"k8s.io/ingress-gce/pkg/utils/patch"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // RunDaemon executes the workload daemon

@@ -24,7 +24,7 @@ import (
 	"github.com/kr/pretty"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // This values are copied from GCP Load balancer

@@ -29,6 +29,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 	"k8s.io/legacy-cloud-providers/gce"
 
 	apiv1 "k8s.io/api/core/v1"
@@ -92,6 +93,7 @@ func NewTestSyncerManager(kubeClient kubernetes.Interface) (*syncerManager, *gce
 		testContext.SvcNegInformer.GetIndexer(),
 		false, //enableNonGcpMode
 		false, //enableEndpointSlices
+		klog.TODO(),
 	)
 	return manager, testContext.Cloud
 }

@@ -28,6 +28,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 )
 
 const (
@@ -101,6 +102,7 @@ func newSyncerTester() *syncerTester {
 		testContext.ServiceInformer.GetIndexer(),
 		record.NewFakeRecorder(100),
 		st,
+		klog.TODO(),
 	)
 	st.syncer = s
 	return st

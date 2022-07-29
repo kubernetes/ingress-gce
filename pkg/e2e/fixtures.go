@@ -47,7 +47,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/ingress-gce/cmd/echo/app"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 	utilpointer "k8s.io/utils/pointer"
 )
 

@@ -19,7 +19,7 @@ import (
 
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/utils/common"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 const gceResourceNamePattern = "(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?)"

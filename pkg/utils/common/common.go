@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	client "k8s.io/client-go/kubernetes/typed/networking/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 var (

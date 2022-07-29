@@ -49,6 +49,7 @@ import (
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
 	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/klog/v2"
 	"k8s.io/legacy-cloud-providers/gce"
 )
 
@@ -152,6 +153,7 @@ func newTestControllerWithParamsAndContext(kubeClient kubernetes.Interface, test
 		true,  //enableAsm
 		[]string{},
 		enableEndpointSlices,
+		klog.TODO(),
 	)
 }
 func newTestController(kubeClient kubernetes.Interface) *Controller {
@@ -654,7 +656,7 @@ func TestGatherPortMappingUsedByIngress(t *testing.T) {
 	for _, tc := range testCases {
 		controller := newTestController(fake.NewSimpleClientset())
 		defer controller.stop()
-		portTupleSet := gatherPortMappingUsedByIngress(tc.ings, newTestService(controller, true, []int32{}))
+		portTupleSet := gatherPortMappingUsedByIngress(tc.ings, newTestService(controller, true, []int32{}), klog.TODO())
 		if len(portTupleSet) != len(tc.expect) {
 			t.Errorf("For test case %q, expect %d ports, but got %d.", tc.desc, len(tc.expect), len(portTupleSet))
 		}

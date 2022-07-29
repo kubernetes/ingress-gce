@@ -44,7 +44,7 @@ import (
 	frontendconfigclient "k8s.io/ingress-gce/pkg/frontendconfig/client/clientset/versioned"
 	serviceattachment "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	svcnegclient "k8s.io/ingress-gce/pkg/svcneg/client/clientset/versioned"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 // Options for the test framework.

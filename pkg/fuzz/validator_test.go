@@ -30,7 +30,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/ingress-gce/cmd/glbc/app"
 	"k8s.io/ingress-gce/pkg/utils/namer"
-	"k8s.io/klog"
+	"k8s.io/klog/v2"
 )
 
 var baseIngress = &networkingv1.Ingress{
