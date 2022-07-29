@@ -31,7 +31,7 @@ import (
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
-	"k8s.io/ingress-gce/pkg/healthchecks"
+	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
@@ -51,8 +51,8 @@ type L4 struct {
 	Service         *corev1.Service
 	ServicePort     utils.ServicePort
 	NamespacedName  types.NamespacedName
-	healthChecks    healthchecks.L4HealthChecks
 	forwardingRules ForwardingRulesProvider
+	healthChecks    healthchecksl4.L4HealthChecks
 }
 
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
@@ -83,7 +83,7 @@ func NewL4Handler(params *L4ILBParams) *L4 {
 		namer:           params.Namer,
 		recorder:        params.Recorder,
 		Service:         params.Service,
-		healthChecks:    healthchecks.L4(),
+		healthChecks:    healthchecksl4.GetInstance(),
 		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, scope),
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
@@ -201,7 +201,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	// create healthcheck
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4.Service)
-	hcResult := l4.healthChecks.EnsureL4HealthCheck(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames)
+	hcResult := l4.healthChecks.EnsureHealthCheck(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames)
 
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
