@@ -446,9 +446,11 @@ func (c *Controller) serviceWorker() {
 
 // processService takes a service and determines whether it needs NEGs or not.
 func (c *Controller) processService(key string) error {
+	c.logger.V(3).Info("Processing service", "service", key)
 	defer func() {
 		now := c.syncTracker.Track()
 		metrics.LastSyncTimestamp.Set(float64(now.UTC().UnixNano()))
+		c.logger.V(3).Info("Finished processing service", "service", key)
 	}()
 
 	namespace, name, err := cache.SplitMetaNamespaceKey(key)
@@ -793,6 +795,7 @@ func (c *Controller) enqueueEndpoint(obj interface{}) {
 		c.logger.Error(err, "Failed to generate endpoint key")
 		return
 	}
+	c.logger.V(3).Info("Adding Endpoints to endpointQueue for processing", "endpoints", key)
 	c.endpointQueue.Add(key)
 }
 
@@ -814,6 +817,7 @@ func (c *Controller) enqueueEndpointSlice(obj interface{}) {
 		c.logger.Error(err, "Failed to find a service label inside endpoint slice", "endpointSlice", klog.KObj(endpointSlice))
 		return
 	}
+	c.logger.V(3).Info("Adding EndpointSlice to endpointQueue for processing", "endpointSlice", key)
 	c.endpointQueue.Add(key)
 }
 
@@ -823,6 +827,7 @@ func (c *Controller) enqueueNode(obj interface{}) {
 		c.logger.Error(err, "Failed to generate node key")
 		return
 	}
+	c.logger.V(3).Info("Adding Node to nodeQueue for processing", "node", key)
 	c.nodeQueue.Add(key)
 }
 
@@ -832,6 +837,7 @@ func (c *Controller) enqueueService(obj interface{}) {
 		c.logger.Error(err, "Failed to generate service key")
 		return
 	}
+	c.logger.V(3).Info("Adding Service to serviceQueue for processing", "service", key)
 	c.serviceQueue.Add(key)
 }
 
