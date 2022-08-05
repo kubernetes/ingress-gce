@@ -782,3 +782,11 @@ func GetNetworkTier(service *api_v1.Service) (cloud.NetworkTier, bool) {
 		return cloud.NetworkTierDefault, false
 	}
 }
+
+// IsLoadBalancerService checks if kubernetes service is type of LoadBalancer.
+func IsLoadBalancerService(service *api_v1.Service) bool {
+	if service == nil {
+		return false
+	}
+	return service.Spec.Type == api_v1.ServiceTypeLoadBalancer
+}

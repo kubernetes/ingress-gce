@@ -80,6 +80,13 @@ func (r *L4NetLBSyncResult) SetMetricsForSuccessfulServiceSync() {
 	r.MetricsState.InSuccess = true
 }
 
+func getNodePort(service *corev1.Service) int64 {
+	if len(service.Spec.Ports) == 0 {
+		return 0
+	}
+	return int64(service.Spec.Ports[0].NodePort)
+}
+
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
 func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder) *L4NetLB {
 	l4netlb := &L4NetLB{cloud: cloud,
@@ -95,7 +102,7 @@ func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, n
 	l4netlb.ServicePort = utils.ServicePort{
 		ID:           portId,
 		BackendNamer: l4netlb.namer,
-		NodePort:     int64(service.Spec.Ports[0].NodePort),
+		NodePort:     getNodePort(service),
 		L4RBSEnabled: true,
 	}
 	return l4netlb
