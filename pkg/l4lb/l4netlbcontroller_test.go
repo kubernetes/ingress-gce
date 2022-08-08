@@ -1210,3 +1210,58 @@ func TestPreventTargetPoolToRBSMigration(t *testing.T) {
 		})
 	}
 }
+
+func TestIsRBSBasedServiceForNonLoadBalancersType(t *testing.T) {
+	testCases := []struct {
+		desc    string
+		ports   []v1.ServicePort
+		svcType v1.ServiceType
+	}{
+		{
+			desc: "Service ClusterIP with ports should not be marked as RBS",
+			ports: []v1.ServicePort{
+				{Name: "testport", Port: 8080, Protocol: "TCP", NodePort: 32999},
+			},
+			svcType: v1.ServiceTypeClusterIP,
+		},
+		{
+			desc:    "Service ClusterIP with empty ports array should not be marked as RBS",
+			ports:   []v1.ServicePort{},
+			svcType: v1.ServiceTypeClusterIP,
+		},
+		{
+			desc:    "Service ClusterIP without ports should not be marked as RBS",
+			ports:   nil,
+			svcType: v1.ServiceTypeClusterIP,
+		},
+		{
+			desc:    "Service NodePort should not be marked as RBS",
+			svcType: v1.ServiceTypeNodePort,
+		},
+		{
+			desc:    "Service ExternalName should not be marked as RBS",
+			svcType: v1.ServiceTypeExternalName,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// Setup
+			svc := &v1.Service{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "example-svc",
+					Annotations: make(map[string]string),
+				},
+				Spec: v1.ServiceSpec{
+					Type:  tc.svcType,
+					Ports: tc.ports,
+				},
+			}
+			controller := newL4NetLBServiceController()
+
+			if controller.isRBSBasedService(svc) {
+				t.Errorf("isRBSBasedService(%v) = true, want false", svc)
+			}
+		})
+	}
+}
