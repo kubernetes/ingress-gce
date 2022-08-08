@@ -447,6 +447,15 @@ func (b *BackendConfigBuilder) AddCustomRequestHeader(header string) *BackendCon
 	return b
 }
 
+// AddCustomResponseHeader adds a custom response header to the BackendConfig.
+func (b *BackendConfigBuilder) AddCustomResponseHeader(header string) *BackendConfigBuilder {
+	if b.backendConfig.Spec.CustomResponseHeaders == nil {
+		b.backendConfig.Spec.CustomResponseHeaders = &backendconfig.CustomResponseHeadersConfig{}
+	}
+	b.backendConfig.Spec.CustomResponseHeaders.Headers = append(b.backendConfig.Spec.CustomResponseHeaders.Headers, header)
+	return b
+}
+
 // SetHealthCheckPath adds a health check path override.
 func (b *BackendConfigBuilder) SetHealthCheckPath(path string) *BackendConfigBuilder {
 	if b.backendConfig.Spec.HealthCheck == nil {
