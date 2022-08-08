@@ -242,8 +242,9 @@ func PrettyJson(data interface{}) (string, error) {
 
 // KeyName returns the name portion from a full or partial GCP resource URL.
 // Example:
-//  Input:  https://googleapis.com/v1/compute/projects/my-project/global/backendServices/my-backend
-//  Output: my-backend
+//
+//	Input:  https://googleapis.com/v1/compute/projects/my-project/global/backendServices/my-backend
+//	Output: my-backend
 func KeyName(url string) (string, error) {
 	id, err := cloud.ParseResourceURL(url)
 	if err != nil {
@@ -261,8 +262,9 @@ func KeyName(url string) (string, error) {
 // RelativeResourceName returns the project, location, resource, and name from a full/partial GCP
 // resource URL. This removes the endpoint prefix and version.
 // Example:
-//  Input:  https://googleapis.com/v1/compute/projects/my-project/global/backendServices/my-backend
-//  Output: projects/my-project/global/backendServices/my-backend
+//
+//	Input:  https://googleapis.com/v1/compute/projects/my-project/global/backendServices/my-backend
+//	Output: projects/my-project/global/backendServices/my-backend
 func RelativeResourceName(url string) (string, error) {
 	resID, err := cloud.ParseResourceURL(url)
 	if err != nil {
@@ -274,8 +276,9 @@ func RelativeResourceName(url string) (string, error) {
 // ResourcePath returns the location, resource and name portion from a
 // full or partial GCP resource URL. This removes the endpoint prefix, version, and project.
 // Example:
-//  Input:  https://googleapis.com/v1/compute/projects/my-project/global/backendServices/my-backend
-//  Output: global/backendServices/my-backend
+//
+//	Input:  https://googleapis.com/v1/compute/projects/my-project/global/backendServices/my-backend
+//	Output: global/backendServices/my-backend
 func ResourcePath(url string) (string, error) {
 	resID, err := cloud.ParseResourceURL(url)
 	if err != nil {
@@ -781,4 +784,21 @@ func GetNetworkTier(service *api_v1.Service) (cloud.NetworkTier, bool) {
 	default:
 		return cloud.NetworkTierDefault, false
 	}
+}
+
+// IsLoadBalancerServiceType checks if kubernetes service is type of LoadBalancer.
+func IsLoadBalancerServiceType(service *api_v1.Service) bool {
+	if service == nil {
+		return false
+	}
+	return service.Spec.Type == api_v1.ServiceTypeLoadBalancer
+}
+
+// GetServiceNodePort safely gets service's first node port,
+// even if they are empty, which can happen for headless services
+func GetServiceNodePort(service *api_v1.Service) int64 {
+	if len(service.Spec.Ports) == 0 {
+		return 0
+	}
+	return int64(service.Spec.Ports[0].NodePort)
 }
