@@ -234,7 +234,7 @@ func (lc *L4NetLBController) hasForwardingRuleAnnotation(svc *v1.Service, frName
 
 // isRBSBasedService checks if service has either RBS annotation, finalizer or RBSForwardingRule
 func (lc *L4NetLBController) isRBSBasedService(svc *v1.Service) bool {
-	if svc == nil {
+	if !utils.IsLoadBalancerServiceType(svc) {
 		return false
 	}
 

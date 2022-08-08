@@ -20,11 +20,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"reflect"
 	"testing"
 	"time"
-
-	"net/http"
 
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
@@ -613,7 +612,7 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 			node: api_v1.Node{
 				Spec: api_v1.NodeSpec{
 					Taints: []api_v1.Taint{
-						api_v1.Taint{
+						{
 							Key:    ToBeDeletedTaint,
 							Value:  fmt.Sprint(time.Now().Unix()),
 							Effect: api_v1.TaintEffectNoSchedule,
@@ -1280,5 +1279,87 @@ func TestIsNetworkMismatchError(t *testing.T) {
 		if got := IsNetworkTierError(tc.err); got != tc.want {
 			t.Errorf("IsNetworkTierError(%v) = %v, want %v", tc.err, got, tc.want)
 		}
+	}
+}
+
+func TestIsLoadBalancerType(t *testing.T) {
+	testCases := []struct {
+		serviceType            api_v1.ServiceType
+		wantIsLoadBalancerType bool
+	}{
+		{
+			serviceType:            api_v1.ServiceTypeClusterIP,
+			wantIsLoadBalancerType: false,
+		},
+		{
+			serviceType:            api_v1.ServiceTypeNodePort,
+			wantIsLoadBalancerType: false,
+		},
+		{
+			serviceType:            api_v1.ServiceTypeExternalName,
+			wantIsLoadBalancerType: false,
+		},
+		{
+			serviceType:            api_v1.ServiceTypeLoadBalancer,
+			wantIsLoadBalancerType: true,
+		},
+		{
+			serviceType:            "",
+			wantIsLoadBalancerType: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		desc := fmt.Sprintf("Test if is load balancer for type %v", tc.serviceType)
+		t.Run(desc, func(t *testing.T) {
+			svc := &api_v1.Service{
+				Spec: api_v1.ServiceSpec{
+					Type: tc.serviceType,
+				},
+			}
+
+			isLoadBalancer := IsLoadBalancerServiceType(svc)
+
+			if isLoadBalancer != tc.wantIsLoadBalancerType {
+				t.Errorf("IsLoadBalancerServiceType(%v) returned %t, expected %t", svc, isLoadBalancer, tc.wantIsLoadBalancerType)
+			}
+		})
+	}
+}
+
+func TestGetServiceNodePort(t *testing.T) {
+	testCases := []struct {
+		ports        []api_v1.ServicePort
+		wantNodePort int64
+	}{
+		{
+			ports: []api_v1.ServicePort{
+				{
+					NodePort: 123,
+				},
+			},
+			wantNodePort: 123,
+		},
+		{
+			ports:        []api_v1.ServicePort{},
+			wantNodePort: 0,
+		},
+	}
+
+	for _, tc := range testCases {
+		desc := fmt.Sprintf("Get Service Port for ports %v", tc.ports)
+		t.Run(desc, func(t *testing.T) {
+			svc := &api_v1.Service{
+				Spec: api_v1.ServiceSpec{
+					Ports: tc.ports,
+				},
+			}
+
+			nodePort := GetServiceNodePort(svc)
+
+			if nodePort != tc.wantNodePort {
+				t.Errorf("GetServiceNodePort(%v) returned %v, wantNodePort = %v", svc, nodePort, tc.wantNodePort)
+			}
+		})
 	}
 }
