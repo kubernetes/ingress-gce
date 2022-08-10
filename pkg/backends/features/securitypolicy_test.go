@@ -78,7 +78,7 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 			expectSetCall: true,
 		},
 		{
-			desc: "remove-policy",
+			desc: "unset-policy-empty-policy-string",
 			currentBackendService: &composite.BackendService{
 				Scope:          meta.Global,
 				SecurityPolicy: "https://www.googleapis.com/compute/projects/test-project/global/securityPolicies/policy-1",
@@ -90,6 +90,15 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 					},
 				},
 			},
+			expectSetCall: true,
+		},
+		{
+			desc: "unset-policy-no-specified-policy",
+			currentBackendService: &composite.BackendService{
+				Scope:          meta.Global,
+				SecurityPolicy: "https://www.googleapis.com/compute/projects/test-project/global/securityPolicies/policy-1",
+			},
+			desiredConfig: &backendconfigv1.BackendConfig{},
 			expectSetCall: true,
 		},
 		{
@@ -112,15 +121,6 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 			desiredConfig:         &backendconfigv1.BackendConfig{},
 		},
 		{
-			desc: "no-specified-policy",
-			currentBackendService: &composite.BackendService{
-				Scope:          meta.Global,
-				SecurityPolicy: "https://www.googleapis.com/compute/projects/test-project/global/securityPolicies/policy-1",
-			},
-			desiredConfig: &backendconfigv1.BackendConfig{},
-			expectSetCall: false,
-		},
-		{
 			desc: "regional backend service",
 			currentBackendService: &composite.BackendService{
 				Scope: meta.Regional,
@@ -134,6 +134,13 @@ func TestEnsureSecurityPolicy(t *testing.T) {
 			},
 			expectSetCall: false,
 			expectError:   true,
+		},
+		{
+			desc:                  "regional backend service with no specified security policy",
+			currentBackendService: &composite.BackendService{Scope: meta.Regional},
+			desiredConfig:         &backendconfigv1.BackendConfig{},
+			expectSetCall:         false,
+			expectError:           false,
 		},
 	}
 
