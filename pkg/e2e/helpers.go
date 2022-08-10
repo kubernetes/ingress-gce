@@ -71,7 +71,7 @@ const (
 
 	negPollInterval  = 5 * time.Second
 	negPollTimeout   = 3 * time.Minute
-	negGCPollTimeout = 5 * time.Minute
+	negGCPollTimeout = 6 * time.Minute
 
 	k8sApiPoolInterval = 10 * time.Second
 	k8sApiPollTimeout  = 30 * time.Minute
@@ -84,6 +84,9 @@ const (
 	backendConfigCRDName            = "backendconfigs.cloud.google.com"
 
 	redirectURLMapPollTimeout = 10 * time.Minute
+
+	// timeout for ILB creation + SA creation
+	saPollTimeout = 10 * time.Minute
 
 	healthyState = "HEALTHY"
 )
@@ -962,7 +965,7 @@ func DeleteNegCR(s *Sandbox, negName string) error {
 // created and properly configured
 func WaitForServiceAttachment(s *Sandbox, saName string) (string, error) {
 	var gceSAURL string
-	err := wait.Poll(negPollInterval, negPollTimeout, func() (bool, error) {
+	err := wait.Poll(negPollInterval, saPollTimeout, func() (bool, error) {
 		saCR, err := s.f.SAClient.Get(s.Namespace, saName)
 		if saCR == nil || err != nil {
 			return false, fmt.Errorf("failed to get service attachment %s/%s: %v", s.Namespace, saName, err)
