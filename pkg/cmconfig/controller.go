@@ -90,11 +90,13 @@ func (c *ConfigMapConfigController) DisableASM() {
 
 // SetASMReadyTrue update the ASMReady to True.
 func (c *ConfigMapConfigController) SetASMReadyTrue() {
+	klog.V(0).Info("SetASMReadyTrue")
 	c.updateASMReady(trueValue)
 }
 
 // SetASMReadyFalse update the ASMReady to False.
 func (c *ConfigMapConfigController) SetASMReadyFalse() {
+	klog.V(0).Info("SetASMReadyFalse")
 	c.updateASMReady(falseValue)
 }
 
@@ -125,10 +127,15 @@ func (c *ConfigMapConfigController) RegisterInformer(configMapInformer cache.Sha
 }
 
 func (c *ConfigMapConfigController) processItem(obj interface{}, cancel func()) {
+	klog.V(4).Infof("ConfigMapConfigController.processItem()")
+
 	configMap, ok := obj.(*v1.ConfigMap)
 	if !ok {
 		klog.Errorf("ConfigMapConfigController: failed to convert informer object to ConfigMap.")
 	}
+
+	klog.V(3).Infof("ConfigMapConfigController.processItem '%s.%s'", configMap.Namespace, configMap.Name)
+
 	if configMap.Namespace != c.configMapNamespace || configMap.Name != c.configMapName {
 		return
 	}

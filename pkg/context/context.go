@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
+	informers "k8s.io/client-go/informers"
 	informerv1 "k8s.io/client-go/informers/core/v1"
 	discoveryinformer "k8s.io/client-go/informers/discovery/v1"
 	informernetworking "k8s.io/client-go/informers/networking/v1"
@@ -224,8 +225,10 @@ func (ctx *ControllerContext) Init() {
 	klog.V(2).Infof("Controller Context initializing with %+v", ctx.ControllerContextConfig)
 	// Initialize controller context internals based on ASMConfigMap
 	if ctx.EnableASMConfigMap {
-		configMapInformer := informerv1.NewConfigMapInformer(ctx.KubeClient, ctx.Namespace, ctx.ResyncPeriod, utils.NewNamespaceIndexer())
-		ctx.ConfigMapInformer = configMapInformer
+		klog.Infof("ASMConfigMap is enabled")
+
+		informerFactory := informers.NewSharedInformerFactoryWithOptions(ctx.KubeClient, ctx.ResyncPeriod, informers.WithNamespace(ctx.ASMConfigMapNamespace))
+		ctx.ConfigMapInformer = informerFactory.Core().V1().ConfigMaps().Informer()
 		ctx.ASMConfigController = cmconfig.NewConfigMapConfigController(ctx.KubeClient, ctx.Recorder(ctx.ASMConfigMapNamespace), ctx.ASMConfigMapNamespace, ctx.ASMConfigMapName)
 
 		cmConfig := ctx.ASMConfigController.GetConfig()
@@ -235,7 +238,6 @@ func (ctx *ControllerContext) Init() {
 			ctx.ASMConfigController.SetASMReadyFalse()
 		}
 	}
-
 }
 
 func (ctx *ControllerContext) initEnableASM() {
@@ -246,6 +248,8 @@ func (ctx *ControllerContext) initEnableASM() {
 		// This must match the spec fields below, and be in the form: <plural>.<group>
 		destinationRuleCRDName = "destinationrules.networking.istio.io"
 	)
+
+	klog.V(0).Infof("ASM mode is enabled from ConfigMap")
 
 	apiextensionClient, err := apiextensionsclientset.NewForConfig(ctx.KubeConfig)
 	if err != nil {
