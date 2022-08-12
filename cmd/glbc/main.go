@@ -227,7 +227,7 @@ func makeLeaderElectionConfig(ctx *ingctx.ControllerContext, client clientset.In
 	id := fmt.Sprintf("%v_%x", hostname, rand.Intn(1e6))
 	// TODO(#1590): Migrate to LeasesResourceLock two releases after the
 	//  migration to ConfigMapsLeases were done.
-	rl, err := resourcelock.New(resourcelock.ConfigMapsLeasesResourceLock,
+	rl, err := resourcelock.New(resourcelock.LeasesResourceLock,
 		flags.F.LeaderElection.LockObjectNamespace,
 		flags.F.LeaderElection.LockObjectName,
 		client.CoreV1(),
