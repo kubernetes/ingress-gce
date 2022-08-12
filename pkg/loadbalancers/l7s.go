@@ -45,7 +45,8 @@ type L7s struct {
 
 // NewLoadBalancerPool returns a new loadbalancer pool.
 // - cloud: implements LoadBalancers. Used to sync L7 loadbalancer resources
-//	 with the cloud.
+//
+//	with the cloud.
 func NewLoadBalancerPool(cloud *gce.Cloud, v1NamerHelper namer_util.V1FrontendNamer, recorderProducer events.RecorderProducer, namerFactory namer_util.IngressFrontendNamerFactory) LoadBalancerPool {
 	return &L7s{
 		cloud:            cloud,

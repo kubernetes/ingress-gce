@@ -177,7 +177,7 @@ func TestNEGServicePorts(t *testing.T) {
 				},
 			},
 			expectedCustomNameMap: map[types.SvcPortTuple]string{
-				types.SvcPortTuple{Name: portName0, Port: 80, TargetPort: "namedport"}: "neg-name",
+				{Name: portName0, Port: 80, TargetPort: "namedport"}: "neg-name",
 			},
 		},
 	}

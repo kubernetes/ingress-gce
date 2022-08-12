@@ -60,7 +60,7 @@ func newPortset(ports []utils.ServicePort) *portset {
 
 func (p *portset) existingPorts() []utils.ServicePort {
 	var result []utils.ServicePort
-	for sp, _ := range p.existing {
+	for sp := range p.existing {
 		result = append(result, sp)
 	}
 	return result
@@ -93,7 +93,7 @@ func (p *portset) del(ports []utils.ServicePort) error {
 // check() iterates through all and checks that the ports in 'existing' exist in gce, and that those
 // that are not in 'existing' do not exist
 func (p *portset) check(fakeGCE *gce.Cloud) error {
-	for sp, _ := range p.all {
+	for sp := range p.all {
 		_, found := p.existing[sp]
 		beName := sp.BackendName()
 		key, err := composite.CreateKey(fakeGCE, beName, features.ScopeFromServicePort(&sp))

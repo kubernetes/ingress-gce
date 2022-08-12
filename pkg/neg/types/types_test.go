@@ -234,7 +234,7 @@ func TestPortInfoMapMerge(t *testing.T) {
 		},
 		{
 			"error on inconsistent neg name",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "foo", TargetPort: "3000"}), namer, false, map[SvcPortTuple]string{SvcPortTuple{Port: 80, Name: "foo", TargetPort: "3000"}: "neg-1"}),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "foo", TargetPort: "3000"}), namer, false, map[SvcPortTuple]string{{Port: 80, Name: "foo", TargetPort: "3000"}: "neg-1"}),
 			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, Name: "bar", TargetPort: "3000"}, SvcPortTuple{Port: 8000, TargetPort: "9000"}), namer, false, nil),
 			PortInfoMap{},
 			true,
@@ -345,9 +345,9 @@ func TestPortInfoMapDifference(t *testing.T) {
 		},
 		{
 			"difference of two non-empty maps with a key in common but different neg names",
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}), namer, true, map[SvcPortTuple]string{SvcPortTuple{Port: 80, TargetPort: "8080"}: "neg-1"}),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}), namer, true, map[SvcPortTuple]string{{Port: 80, TargetPort: "8080"}: "neg-1"}),
 			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}, SvcPortTuple{Port: 8080, TargetPort: "9000"}), namer, false, nil),
-			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}), namer, true, map[SvcPortTuple]string{SvcPortTuple{Port: 80, TargetPort: "8080"}: "neg-1"}),
+			NewPortInfoMap(namespace, name, NewSvcPortTupleSet(SvcPortTuple{Port: 80, TargetPort: "8080"}), namer, true, map[SvcPortTuple]string{{Port: 80, TargetPort: "8080"}: "neg-1"}),
 		},
 	}
 

@@ -682,7 +682,7 @@ func TestMCIngressIG(t *testing.T) {
 func TestToRuntimeInfoCerts(t *testing.T) {
 	lbc := newLoadBalancerController()
 	secretsMap := map[string]*api_v1.Secret{
-		"tlsCert": &api_v1.Secret{
+		"tlsCert": {
 			ObjectMeta: meta_v1.ObjectMeta{
 				Name: "tlsCert",
 			},

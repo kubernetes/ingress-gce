@@ -116,13 +116,13 @@ func TestGetCustomHealthCheckPorts(t *testing.T) {
 	}{
 		{
 			desc:     "One service port with custom port",
-			svcPorts: []utils.ServicePort{utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}}},
+			svcPorts: []utils.ServicePort{{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}}},
 			expect:   []string{"8000"},
 		},
 		{
 			desc: "Two service ports with custom port",
-			svcPorts: []utils.ServicePort{utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}},
-				utils.ServicePort{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(9000)}}}}},
+			svcPorts: []utils.ServicePort{{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(8000)}}}},
+				{BackendConfig: &v1.BackendConfig{Spec: v1.BackendConfigSpec{HealthCheck: &v1.HealthCheckConfig{Port: utils.NewInt64Pointer(9000)}}}}},
 			expect: []string{"8000", "9000"},
 		},
 		{

@@ -74,7 +74,7 @@ func (f *FakeZoneGetter) ListZones(predicate utils.NodeConditionPredicate) ([]st
 	for zone := range f.zoneInstanceMap {
 		node := &v1.Node{
 			Status: v1.NodeStatus{
-				Conditions: []v1.NodeCondition{v1.NodeCondition{Type: v1.NodeReady, Status: v1.ConditionTrue}}}}
+				Conditions: []v1.NodeCondition{{Type: v1.NodeReady, Status: v1.ConditionTrue}}}}
 		if predicate(node) {
 			ret = append(ret, zone)
 		}
@@ -82,7 +82,7 @@ func (f *FakeZoneGetter) ListZones(predicate utils.NodeConditionPredicate) ([]st
 	for zone := range f.unreadyInstancesMap {
 		node := &v1.Node{
 			Status: v1.NodeStatus{
-				Conditions: []v1.NodeCondition{v1.NodeCondition{Type: v1.NodeReady, Status: v1.ConditionFalse}}}}
+				Conditions: []v1.NodeCondition{{Type: v1.NodeReady, Status: v1.ConditionFalse}}}}
 		if predicate(node) {
 			ret = append(ret, zone)
 		}
@@ -93,7 +93,7 @@ func (f *FakeZoneGetter) ListZones(predicate utils.NodeConditionPredicate) ([]st
 				Labels: map[string]string{utils.GKECurrentOperationLabel: utils.NodeDrain},
 			},
 			Status: v1.NodeStatus{
-				Conditions: []v1.NodeCondition{v1.NodeCondition{Type: v1.NodeReady, Status: v1.ConditionTrue}}}}
+				Conditions: []v1.NodeCondition{{Type: v1.NodeReady, Status: v1.ConditionTrue}}}}
 		if predicate(node) {
 			ret = append(ret, zone)
 		}

@@ -840,13 +840,13 @@ func (lbc *LoadBalancerController) ensureFinalizer(ing *v1.Ingress) (*v1.Ingress
 // GC path is
 // If ingress does not exist :   v1 frontends and all backends
 // If ingress exists
-//    - Needs cleanup
-//      - If v1 naming scheme  :    v1 frontends and all backends
-//      - If v2 naming scheme  :    v2 frontends and all backends
-//    - Does not need cleanup
-//      - Finalizer enabled    :    all backends
-//      - Finalizer disabled   :    v1 frontends and all backends
-//      - Scope changed        :    v2 frontends for all scope
+//   - Needs cleanup
+//   - If v1 naming scheme  :    v1 frontends and all backends
+//   - If v2 naming scheme  :    v2 frontends and all backends
+//   - Does not need cleanup
+//   - Finalizer enabled    :    all backends
+//   - Finalizer disabled   :    v1 frontends and all backends
+//   - Scope changed        :    v2 frontends for all scope
 func frontendGCAlgorithm(ingExists bool, scopeChange bool, ing *v1.Ingress) utils.FrontendGCAlgorithm {
 	// If ingress does not exist, that means its pre-finalizer era.
 	// Run GC via v1 naming scheme.

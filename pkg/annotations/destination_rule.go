@@ -2,19 +2,21 @@ package annotations
 
 import "encoding/json"
 
-//PortSubsetNegMap is the mapping between subset to NEG name.
+// PortSubsetNegMap is the mapping between subset to NEG name.
 type PortSubsetNegMap map[string]map[string]string
 
 // DestinationRuleNEGStatus holds the NEGs Zones info.
 // NetworkEndpointGroups(PortSubsetNegMap) is the mapping between subset to NEG name.
 // Structure:
 // {
-// 	"subsetv1": {
-// 				 "9080": "somehash-default-reviews-v1-9080",
-// 	  }
-// 	 "v2": {
-// 				"9080": "somehash-default-reviews-v2-9080",
-// 	   }
+//
+//	"subsetv1": {
+//				 "9080": "somehash-default-reviews-v1-9080",
+//	  }
+//	 "v2": {
+//				"9080": "somehash-default-reviews-v2-9080",
+//	   }
+//
 // }
 type DestinationRuleNEGStatus struct {
 	NetworkEndpointGroups PortSubsetNegMap `json:"network_endpoint_groups,omitempty"`

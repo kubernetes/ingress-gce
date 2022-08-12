@@ -23,9 +23,9 @@ import (
 // GCEURLMap is a simplified representation of a UrlMap somewhere
 // in the middle of a compute.UrlMap and rules in an Ingress spec.
 // This representation maintains three invariants/rules:
-//       1. All hostnames are unique
-//       2. All paths for a specific host are unique.
-//       3. Adding paths for a hostname replaces existing for that host.
+//  1. All hostnames are unique
+//  2. All paths for a specific host are unique.
+//  3. Adding paths for a hostname replaces existing for that host.
 type GCEURLMap struct {
 	DefaultBackend *ServicePort
 	// HostRules is an ordered list of hostnames, path rule tuples.

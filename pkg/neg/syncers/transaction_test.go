@@ -1321,19 +1321,19 @@ func TestUnknownNodes(t *testing.T) {
 	testEndpointSlices := getTestEndpointSlices(testService, testNamespace)
 	testEndpointSlices[0].Endpoints[0].NodeName = utilpointer.StringPtr("unknown-node")
 	testEndpointMap := map[string]*composite.NetworkEndpoint{
-		negtypes.TestZone1: &composite.NetworkEndpoint{
+		negtypes.TestZone1: {
 			Instance:  negtypes.TestInstance1,
 			IpAddress: testIP1,
 			Port:      testPort,
 		},
 
-		negtypes.TestZone2: &composite.NetworkEndpoint{
+		negtypes.TestZone2: {
 			Instance:  negtypes.TestInstance3,
 			IpAddress: testIP2,
 			Port:      testPort,
 		},
 
-		negtypes.TestZone4: &composite.NetworkEndpoint{
+		negtypes.TestZone4: {
 			Instance:  negtypes.TestUpgradeInstance1,
 			IpAddress: testIP3,
 			Port:      testPort,

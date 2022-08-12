@@ -116,7 +116,7 @@ type GroupResourceInfo struct {
 // GroupResourceServices support adding/removing objects from them. Examples are Instance Groups, NetworkEndpointGroups.
 // Additional APIs to Attach/Detach objects will be created for these services.
 var GroupResourceServices = map[string]*GroupResourceInfo{
-	"NetworkEndpointGroup": &GroupResourceInfo{
+	"NetworkEndpointGroup": {
 		AttachFuncName:  "AttachNetworkEndpoints",
 		DetachFuncName:  "DetachNetworkEndpoints",
 		AttachReqName:   "NetworkEndpointGroupsAttachEndpointsRequest",

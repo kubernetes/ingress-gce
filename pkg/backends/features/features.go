@@ -48,7 +48,7 @@ var (
 	}
 	// TODO: (shance) refactor all scope to be above the serviceport level
 	scopeToFeatures = map[meta.KeyType][]string{
-		meta.Regional: []string{FeatureL7ILB, FeatureVMIPNEG},
+		meta.Regional: {FeatureL7ILB, FeatureVMIPNEG},
 	}
 )
 

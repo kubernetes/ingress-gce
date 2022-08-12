@@ -74,8 +74,8 @@ func init() {
 			for _, mode := range []string{"reg", "neg", "ilb"} {
 				for bck, bc := range map[string]*backendconfigv1.HealthCheckConfig{
 					"nil": nil,
-					"bc":  &backendconfigv1.HealthCheckConfig{RequestPath: &path},
-					"bcall": &backendconfigv1.HealthCheckConfig{
+					"bc":  {RequestPath: &path},
+					"bcall": {
 						RequestPath:        &path,
 						CheckIntervalSec:   &num,
 						TimeoutSec:         &num,

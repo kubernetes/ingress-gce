@@ -897,7 +897,7 @@ func TestGatherEndpointPorts(t *testing.T) {
 			},
 			endpointSlices: []*discoveryapi.EndpointSlice{
 				createEndpointSlice(serviceName1, "-1", emptyPortName, 12345),
-				&discoveryapi.EndpointSlice{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      serviceName2 + "-1",
 						Namespace: "ns",
@@ -912,7 +912,7 @@ func TestGatherEndpointPorts(t *testing.T) {
 				createEndpointSlice(serviceName2, "-2", "", 6101),
 				createEndpointSlice(serviceName2, "-3", testPortName, 6201),
 				createEndpointSlice(serviceName3, "-1", "", 23456),
-				&discoveryapi.EndpointSlice{
+				{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      serviceName4 + "-1",
 						Namespace: "ns",
