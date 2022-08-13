@@ -35,7 +35,7 @@ import (
 )
 
 const (
-	drainingTransitionPollTimeout = 10 * time.Minute
+	drainingTransitionPollTimeout = 15 * time.Minute
 	drainingTansitionPollInterval = 30 * time.Second
 )
 
