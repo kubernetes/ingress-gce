@@ -27,6 +27,7 @@ CONTAINER_BINARIES ?= \
 	404-server-with-metrics \
 	e2e-test \
 	echo \
+	echo-plus \
 	fuzzer \
 	glbc \
 	workload-controller \
