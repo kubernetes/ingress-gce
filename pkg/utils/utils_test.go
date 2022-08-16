@@ -1326,39 +1326,198 @@ func TestIsLoadBalancerType(t *testing.T) {
 		})
 	}
 }
+func TestGetProtocol(t *testing.T) {
+	tcpPort := api_v1.ServicePort{
+		Name:     "TCP Port",
+		Protocol: api_v1.ProtocolTCP,
+	}
+	udpPort := api_v1.ServicePort{
+		Name:     "UDP Port",
+		Protocol: api_v1.ProtocolUDP,
+	}
 
-func TestGetServiceNodePort(t *testing.T) {
 	testCases := []struct {
-		ports        []api_v1.ServicePort
-		wantNodePort int64
+		ports            []api_v1.ServicePort
+		expectedProtocol api_v1.Protocol
+		desc             string
 	}{
 		{
-			ports: []api_v1.ServicePort{
-				{
-					NodePort: 123,
-				},
-			},
-			wantNodePort: 123,
+			ports:            []api_v1.ServicePort{},
+			expectedProtocol: api_v1.ProtocolTCP,
+			desc:             "Empty ports should resolve to TCP",
 		},
 		{
-			ports:        []api_v1.ServicePort{},
-			wantNodePort: 0,
+			ports: []api_v1.ServicePort{
+				udpPort,
+				tcpPort,
+			},
+			expectedProtocol: api_v1.ProtocolUDP,
+			desc:             "Mixed protocols, first UDP",
+		},
+		{
+			ports: []api_v1.ServicePort{
+				tcpPort,
+				udpPort,
+			},
+			expectedProtocol: api_v1.ProtocolTCP,
+			desc:             "Mixed protocols, first TCP",
 		},
 	}
 
 	for _, tc := range testCases {
-		desc := fmt.Sprintf("Get Service Port for ports %v", tc.ports)
-		t.Run(desc, func(t *testing.T) {
-			svc := &api_v1.Service{
-				Spec: api_v1.ServiceSpec{
-					Ports: tc.ports,
-				},
+		t.Run(tc.desc, func(t *testing.T) {
+			protocol := GetProtocol(tc.ports)
+
+			if protocol != tc.expectedProtocol {
+				t.Errorf("GetProtocol returned %v, not equal to expected protocol = %v", protocol, tc.expectedProtocol)
 			}
+		})
+	}
+}
 
-			nodePort := GetServiceNodePort(svc)
+func TestGetNodePorts(t *testing.T) {
+	testCases := []struct {
+		ports             []api_v1.ServicePort
+		expectedNodePorts []int64
+		desc              string
+	}{
+		{
+			ports:             []api_v1.ServicePort{},
+			expectedNodePorts: []int64{},
+			desc:              "Empty ports should return empty node ports",
+		},
+		{
+			ports: []api_v1.ServicePort{
+				{NodePort: 80}, {NodePort: 81}, {NodePort: 3000},
+			},
+			expectedNodePorts: []int64{80, 81, 3000},
+			desc:              "Multiple ports",
+		},
+	}
 
-			if nodePort != tc.wantNodePort {
-				t.Errorf("GetServiceNodePort(%v) returned %v, wantNodePort = %v", svc, nodePort, tc.wantNodePort)
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			nodePorts := GetNodePorts(tc.ports)
+
+			if !reflect.DeepEqual(nodePorts, tc.expectedNodePorts) {
+				t.Errorf("GetNodePorts returned %v, not equal to expected node ports = %v", nodePorts, tc.expectedNodePorts)
+			}
+		})
+	}
+}
+
+func TestGetPorts(t *testing.T) {
+	testCases := []struct {
+		ports         []api_v1.ServicePort
+		expectedPorts []string
+		desc          string
+	}{
+		{
+			ports:         []api_v1.ServicePort{},
+			expectedPorts: []string{},
+			desc:          "Empty ports should return empty slice",
+		},
+		{
+			ports: []api_v1.ServicePort{
+				{Port: 80}, {Port: 81}, {Port: 3000},
+			},
+			expectedPorts: []string{"80", "81", "3000"},
+			desc:          "Multiple ports",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			ports := GetPorts(tc.ports)
+
+			if !reflect.DeepEqual(ports, tc.expectedPorts) {
+				t.Errorf("GetPorts returned %v, not equal to expected ports = %v", ports, tc.expectedPorts)
+			}
+		})
+	}
+}
+
+func TestGetServicePortRanges(t *testing.T) {
+	testCases := []struct {
+		ports          []api_v1.ServicePort
+		expectedRanges []string
+		desc           string
+	}{
+		{
+			desc: "All Unique",
+			ports: []api_v1.ServicePort{
+				{Port: 8}, {Port: 66}, {Port: 23}, {Port: 13}, {Port: 89},
+			},
+			expectedRanges: []string{"8", "13", "23", "66", "89"},
+		},
+		{
+			desc: "All Unique Sorted",
+			ports: []api_v1.ServicePort{
+				{Port: 1}, {Port: 7}, {Port: 9}, {Port: 16}, {Port: 26},
+			},
+			expectedRanges: []string{"1", "7", "9", "16", "26"},
+		},
+		{
+			desc: "Ranges",
+			ports: []api_v1.ServicePort{
+				{Port: 56}, {Port: 78}, {Port: 67}, {Port: 79}, {Port: 21}, {Port: 80}, {Port: 12},
+			},
+			expectedRanges: []string{"12", "21", "56", "67", "78-80"},
+		},
+		{
+			desc: "Ranges Sorted",
+			ports: []api_v1.ServicePort{
+				{Port: 5}, {Port: 7}, {Port: 90}, {Port: 1002}, {Port: 1003},
+				{Port: 1004}, {Port: 1005}, {Port: 2501},
+			},
+			expectedRanges: []string{"5", "7", "90", "1002-1005", "2501"},
+		},
+		{
+			desc: "Ranges Duplicates",
+			ports: []api_v1.ServicePort{
+				{Port: 15}, {Port: 37}, {Port: 900}, {Port: 2002}, {Port: 2003},
+				{Port: 2003}, {Port: 2004}, {Port: 2004},
+			},
+			expectedRanges: []string{"15", "37", "900", "2002-2004"},
+		},
+		{
+			desc: "Duplicates", ports: []api_v1.ServicePort{
+				{Port: 10}, {Port: 10}, {Port: 10}, {Port: 10}, {Port: 10}},
+			expectedRanges: []string{"10"},
+		},
+		{
+			desc: "Only ranges",
+			ports: []api_v1.ServicePort{
+				{Port: 18}, {Port: 19}, {Port: 20}, {Port: 21}, {Port: 22}, {Port: 55},
+				{Port: 56}, {Port: 77}, {Port: 78}, {Port: 79}, {Port: 3504}, {Port: 3505}, {Port: 3506},
+			},
+			expectedRanges: []string{"18-22", "55-56", "77-79", "3504-3506"},
+		},
+		{
+			desc: "Single Range", ports: []api_v1.ServicePort{
+				{Port: 6000}, {Port: 6001}, {Port: 6002}, {Port: 6003}, {Port: 6004}, {Port: 6005},
+			},
+			expectedRanges: []string{"6000-6005"}},
+		{
+			desc: "One value",
+			ports: []api_v1.ServicePort{
+				{Port: 12},
+			},
+			expectedRanges: []string{"12"},
+		},
+		{
+			desc:           "Empty",
+			ports:          []api_v1.ServicePort{},
+			expectedRanges: nil,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			ranges := GetServicePortRanges(tc.ports)
+
+			if !reflect.DeepEqual(ranges, tc.expectedRanges) {
+				t.Errorf("GetServicePortRanges returned %v, not equal to expected ranges = %v", ranges, tc.expectedRanges)
 			}
 		})
 	}

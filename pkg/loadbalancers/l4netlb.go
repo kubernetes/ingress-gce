@@ -131,7 +131,9 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
 
 	name := l4netlb.ServicePort.BackendName()
-	_, portRanges, _, protocol := utils.GetPortsAndProtocol(l4netlb.Service.Spec.Ports)
+	servicePorts := l4netlb.Service.Spec.Ports
+	portRanges := utils.GetServicePortRanges(servicePorts)
+	protocol := utils.GetProtocol(servicePorts)
 
 	bs, err := l4netlb.backendPool.EnsureL4BackendService(name, hcResult.HCLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
 	if err != nil {

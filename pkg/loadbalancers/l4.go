@@ -170,7 +170,7 @@ func (l *L4) deleteFirewall(name string) error {
 // This appends the protocol to the forwarding rule name, which will help supporting multiple protocols in the same ILB
 // service.
 func (l *L4) GetFRName() string {
-	_, _, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
+	protocol := utils.GetProtocol(l.Service.Spec.Ports)
 	return l.getFRNameWithProtocol(string(protocol))
 }
 
@@ -213,7 +213,9 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	}
 	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
 
-	_, portRanges, _, protocol := utils.GetPortsAndProtocol(l.Service.Spec.Ports)
+	servicePorts := l.Service.Spec.Ports
+	portRanges := utils.GetServicePortRanges(servicePorts)
+	protocol := utils.GetProtocol(servicePorts)
 
 	// Check if protocol has changed for this service. In this case, forwarding rule should be deleted before
 	// the backend service can be updated.

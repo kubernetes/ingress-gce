@@ -471,7 +471,7 @@ func (lc *L4NetLBController) ensureBackendLinking(port utils.ServicePort) error 
 func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames []string) error {
 	// TODO(kl52752) Move instance creation and deletion logic to NodeController
 	// to avoid race condition between controllers
-	_, _, nodePorts, _ := utils.GetPortsAndProtocol(service.Spec.Ports)
+	nodePorts := utils.GetNodePorts(service.Spec.Ports)
 	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
 	if err != nil {
 		return err
