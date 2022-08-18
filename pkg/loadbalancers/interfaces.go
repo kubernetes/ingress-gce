@@ -19,6 +19,7 @@ package loadbalancers
 import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	v1 "k8s.io/api/networking/v1"
+	"k8s.io/ingress-gce/pkg/composite"
 )
 
 // LoadBalancerPool is an interface to manage the cloud resources associated
@@ -36,4 +37,11 @@ type LoadBalancerPool interface {
 	Shutdown(ings []*v1.Ingress) error
 	// HasUrlMap returns true if an URL map exists in GCE for given ingress.
 	HasUrlMap(ing *v1.Ingress) (bool, error)
+}
+
+// ForwardingRulesProvider is an interface to manage Google Cloud Forwarding Rules
+type ForwardingRulesProvider interface {
+	Get(name string) (*composite.ForwardingRule, error)
+	Create(forwardingRule *composite.ForwardingRule) error
+	Delete(name string) error
 }

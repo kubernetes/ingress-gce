@@ -30,6 +30,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
+	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
@@ -55,9 +56,10 @@ type L4NetLBController struct {
 	// syncTracker tracks the latest time an enqueued service was synced
 	syncTracker utils.TimeTracker
 
-	backendPool  *backends.Backends
-	instancePool instances.NodePool
-	igLinker     *backends.RegionalInstanceGroupLinker
+	backendPool     *backends.Backends
+	instancePool    instances.NodePool
+	igLinker        *backends.RegionalInstanceGroupLinker
+	forwardingRules ForwardingRulesGetter
 }
 
 // NewL4NetLBController creates a controller for l4 external loadbalancer.
@@ -71,15 +73,16 @@ func NewL4NetLBController(
 
 	backendPool := backends.NewPool(ctx.Cloud, ctx.L4Namer)
 	l4netLBc := &L4NetLBController{
-		ctx:           ctx,
-		serviceLister: ctx.ServiceInformer.GetIndexer(),
-		nodeLister:    listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
-		stopCh:        stopCh,
-		translator:    ctx.Translator,
-		backendPool:   backendPool,
-		namer:         ctx.L4Namer,
-		instancePool:  ctx.InstancePool,
-		igLinker:      backends.NewRegionalInstanceGroupLinker(ctx.InstancePool, backendPool),
+		ctx:             ctx,
+		serviceLister:   ctx.ServiceInformer.GetIndexer(),
+		nodeLister:      listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
+		stopCh:          stopCh,
+		translator:      ctx.Translator,
+		backendPool:     backendPool,
+		namer:           ctx.L4Namer,
+		instancePool:    ctx.InstancePool,
+		igLinker:        backends.NewRegionalInstanceGroupLinker(ctx.InstancePool, backendPool),
+		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
 	}
 	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4Workers, l4netLBc.sync)
 
@@ -270,13 +273,16 @@ func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, k
 }
 
 func (lc *L4NetLBController) hasTargetPoolForwardingRule(service *v1.Service) bool {
-	l4netlb := loadbalancers.NewL4NetLB(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace))
-	frName := l4netlb.GetFRName()
+	frName := utils.LegacyForwardingRuleName(service)
 	if lc.hasForwardingRuleAnnotation(service, frName) {
 		return false
 	}
 
-	existingFR := l4netlb.GetForwardingRule(frName, meta.VersionGA)
+	existingFR, err := lc.forwardingRules.Get(frName)
+	if err != nil {
+		klog.Errorf("Error getting forwarding rule %s", frName)
+		return false
+	}
 	if existingFR != nil && existingFR.Target != "" {
 		return true
 	}
@@ -317,13 +323,16 @@ func (lc *L4NetLBController) deleteRBSAnnotation(service *v1.Service) error {
 
 // hasRBSForwardingRule checks if services loadbalancer has forwarding rule pointing to backend service
 func (lc *L4NetLBController) hasRBSForwardingRule(svc *v1.Service) bool {
-	l4netlb := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace))
-	frName := l4netlb.GetFRName()
+	frName := utils.LegacyForwardingRuleName(svc)
 	// to optimize number of api calls, at first, check if forwarding rule exists in annotation
 	if lc.hasForwardingRuleAnnotation(svc, frName) {
 		return true
 	}
-	existingFR := l4netlb.GetForwardingRule(frName, meta.VersionGA)
+	existingFR, err := lc.forwardingRules.Get(frName)
+	if err != nil {
+		klog.Errorf("Error getting forwarding rule %s", frName)
+		return false
+	}
 	return existingFR != nil && existingFR.LoadBalancingScheme == string(cloud.SchemeExternal) && existingFR.BackendService != ""
 }
 

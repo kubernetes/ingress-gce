@@ -33,6 +33,7 @@ import (
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
+	"k8s.io/ingress-gce/pkg/forwardingrules"
 	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -68,6 +69,7 @@ type L4Controller struct {
 	enqueueTracker utils.TimeTracker
 	// syncTracker tracks the latest time an enqueued service was synced
 	syncTracker         utils.TimeTracker
+	forwardingRules     ForwardingRulesGetter
 	sharedResourcesLock sync.Mutex
 }
 
@@ -78,14 +80,15 @@ func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4C
 		ctx.NumL4Workers = 1
 	}
 	l4c := &L4Controller{
-		ctx:           ctx,
-		client:        ctx.KubeClient,
-		serviceLister: ctx.ServiceInformer.GetIndexer(),
-		nodeLister:    listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
-		stopCh:        stopCh,
-		numWorkers:    ctx.NumL4Workers,
-		namer:         ctx.L4Namer,
-		translator:    ctx.Translator,
+		ctx:             ctx,
+		client:          ctx.KubeClient,
+		serviceLister:   ctx.ServiceInformer.GetIndexer(),
+		nodeLister:      listers.NewNodeLister(ctx.NodeInformer.GetIndexer()),
+		stopCh:          stopCh,
+		numWorkers:      ctx.NumL4Workers,
+		namer:           ctx.L4Namer,
+		translator:      ctx.Translator,
+		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
 	}
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
 	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer())
@@ -169,7 +172,7 @@ func (l4c *L4Controller) shutdown() {
 // If the service has either the v1 finalizer or the forwarding rule created by v1 implementation(service controller),
 // the subsetting controller will not process it. Processing it will fail forwarding rule creation with the same IP anyway.
 // This check prevents processing of v1-implemented services whose finalizer field got wiped out.
-func (l4c *L4Controller) shouldProcessService(service *v1.Service, l4 *loadbalancers.L4) bool {
+func (l4c *L4Controller) shouldProcessService(service *v1.Service) bool {
 	// skip services that are being handled by the legacy service controller.
 	if utils.IsLegacyL4ILBService(service) {
 		klog.Warningf("Ignoring update for service %s:%s managed by service controller", service.Namespace, service.Name)
@@ -178,7 +181,11 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service, l4 *loadbalan
 	frName := utils.LegacyForwardingRuleName(service)
 	// Processing should continue if an external forwarding rule exists. This can happen if the service is transitioning from External to Internal.
 	// The external forwarding rule might not be deleted by the time this controller starts processing the service.
-	if fr := l4.GetForwardingRule(frName, meta.VersionGA); fr != nil && fr.LoadBalancingScheme == string(cloud.SchemeInternal) {
+	fr, err := l4c.forwardingRules.Get(frName)
+	if err != nil {
+		klog.Errorf("Error getting l4 forwarding rule %s", frName)
+	}
+	if fr != nil && fr.LoadBalancingScheme == string(cloud.SchemeInternal) {
 		klog.Warningf("Ignoring update for service %s:%s as it contains legacy forwarding rule %q", service.Namespace, service.Name, frName)
 		return false
 	}
@@ -188,8 +195,7 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service, l4 *loadbalan
 // processServiceCreateOrUpdate ensures load balancer resources for the given service, as needed.
 // Returns an error if processing the service update failed.
 func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Service) *loadbalancers.L4ILBSyncResult {
-	l4 := loadbalancers.NewL4Handler(service, l4c.ctx.Cloud, meta.Regional, l4c.namer, l4c.ctx.Recorder(service.Namespace))
-	if !l4c.shouldProcessService(service, l4) {
+	if !l4c.shouldProcessService(service) {
 		return nil
 	}
 	// Ensure v2 finalizer
@@ -202,6 +208,7 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 	}
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
+	l4 := loadbalancers.NewL4Handler(service, l4c.ctx.Cloud, meta.Regional, l4c.namer, l4c.ctx.Recorder(service.Namespace))
 	syncResult := l4.EnsureInternalLoadBalancer(nodeNames, service)
 	// syncResult will not be nil
 	if syncResult.Error != nil {
