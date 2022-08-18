@@ -1277,8 +1277,7 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(apiService)
 	resourceName, _ := l.namer.L4Backend(l.Service.Namespace, l.Service.Name)
 	resourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, false, utils.ILB)
-	// todo fix this shit.
-	//firewallDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, false, utils.ILB)
+
 	if err != nil {
 		t.Errorf("Failed to create description for resources, err %v", err)
 	}
