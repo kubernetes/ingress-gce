@@ -155,7 +155,7 @@ func FrontendConfigForIngress(ing *networkingv1.Ingress, env ValidatorEnv) (*fro
 // IngressBuilder is syntactic sugar for creating Ingress specs for testing
 // purposes.
 //
-//   ing := NewIngressBuilder("ns1", "name1", "127.0.0.1").Build()
+//	ing := NewIngressBuilder("ns1", "name1", "127.0.0.1").Build()
 type IngressBuilder struct {
 	ing *networkingv1.Ingress
 }
@@ -333,7 +333,7 @@ func (i *IngressBuilder) SetFrontendConfig(name string) *IngressBuilder {
 // BackendConfigBuilder is syntactic sugar for creating BackendConfig specs for testing
 // purposes.
 //
-//   backendConfig := NewBackendConfigBuilder("ns1", "name1").Build()
+//	backendConfig := NewBackendConfigBuilder("ns1", "name1").Build()
 type BackendConfigBuilder struct {
 	backendConfig *backendconfig.BackendConfig
 }
@@ -477,7 +477,7 @@ func (b *BackendConfigBuilder) SetSampleRate(sampleRate *float64) *BackendConfig
 // FrontendConfigBuilder is syntactic sugar for creating FrontendConfig specs for testing
 // purposes.
 //
-//   frontendConfig := NewFrontendConfigBuilder("ns1", "name1").Build()
+//	frontendConfig := NewFrontendConfigBuilder("ns1", "name1").Build()
 type FrontendConfigBuilder struct {
 	frontendConfig *frontendconfig.FrontendConfig
 }

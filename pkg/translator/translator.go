@@ -139,34 +139,40 @@ const hostRulePrefix = "host"
 // PathRule: Maps a single path regex to a backend.
 //
 // The GCE url map allows multiple hosts to share url->backend mappings without duplication, eg:
-//   Host: foo(PathMatcher1), bar(PathMatcher1,2)
-//   PathMatcher1:
-//     /a -> b1
-//     /b -> b2
-//   PathMatcher2:
-//     /c -> b1
+//
+//	Host: foo(PathMatcher1), bar(PathMatcher1,2)
+//	PathMatcher1:
+//	  /a -> b1
+//	  /b -> b2
+//	PathMatcher2:
+//	  /c -> b1
+//
 // This leads to a lot of complexity in the common case, where all we want is a mapping of
 // host->{/path: backend}.
 //
 // Consider some alternatives:
 // 1. Using a single backend per PathMatcher:
-//   Host: foo(PathMatcher1,3) bar(PathMatcher1,2,3)
-//   PathMatcher1:
-//     /a -> b1
-//   PathMatcher2:
-//     /c -> b1
-//   PathMatcher3:
-//     /b -> b2
+//
+//	Host: foo(PathMatcher1,3) bar(PathMatcher1,2,3)
+//	PathMatcher1:
+//	  /a -> b1
+//	PathMatcher2:
+//	  /c -> b1
+//	PathMatcher3:
+//	  /b -> b2
+//
 // 2. Using a single host per PathMatcher:
-//   Host: foo(PathMatcher1)
-//   PathMatcher1:
-//     /a -> b1
-//     /b -> b2
-//   Host: bar(PathMatcher2)
-//   PathMatcher2:
-//     /a -> b1
-//     /b -> b2
-//     /c -> b1
+//
+//	Host: foo(PathMatcher1)
+//	PathMatcher1:
+//	  /a -> b1
+//	  /b -> b2
+//	Host: bar(PathMatcher2)
+//	PathMatcher2:
+//	  /a -> b1
+//	  /b -> b2
+//	  /c -> b1
+//
 // In the context of kubernetes services, 2 makes more sense, because we
 // rarely want to lookup backends (service:nodeport). When a service is
 // deleted, we need to find all host PathMatchers that have the backend
@@ -296,7 +302,7 @@ func (t *Translator) ToCompositeTargetHttpProxy(description string, version meta
 	return proxy
 }
 
-//TODO(shance): find a way to remove the second return value for sslPolicySet.  We currently need to this to maintain the behavior where we do not update the policy if the frontendconfig is empty/deleted
+// TODO(shance): find a way to remove the second return value for sslPolicySet.  We currently need to this to maintain the behavior where we do not update the policy if the frontendconfig is empty/deleted
 func (t *Translator) ToCompositeTargetHttpsProxy(env *Env, description string, version meta.Version, urlMapKey *meta.Key, sslCerts []*composite.SslCertificate) (*composite.TargetHttpsProxy, bool, error) {
 	resourceID := cloud.ResourceID{ProjectID: "", Resource: "urlMaps", Key: urlMapKey}
 	urlMapLink := resourceID.ResourcePath()

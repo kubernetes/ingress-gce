@@ -152,11 +152,12 @@ func sortZones(nodesPerZone map[string][]*v1.Node) []ZoneInfo {
 // In order to pick as many nodes as possible given the total limit, the following algorithm is used:
 // 1) The zones are sorted in increasing order of the total number of nodes.
 // 2) The number of nodes to be selected is divided equally among the zones. If there are 4 zones and the limit is 250,
-//    the algorithm attempts to pick 250/4 from the first zone. If 'n' nodes were selected from zone1, the limit for
-//    zone2 is (250 - n)/3. For the third zone, it is (250 - n - m)/2, if m nodes were picked from zone2.
-//    Since the number of nodes will keep increasing in successive zones due to the sorting, even if fewer nodes were
-//    present in some zones, more nodes will be picked from other nodes, taking the total subset size to the given limit
-//    whenever possible.
+//
+//	the algorithm attempts to pick 250/4 from the first zone. If 'n' nodes were selected from zone1, the limit for
+//	zone2 is (250 - n)/3. For the third zone, it is (250 - n - m)/2, if m nodes were picked from zone2.
+//	Since the number of nodes will keep increasing in successive zones due to the sorting, even if fewer nodes were
+//	present in some zones, more nodes will be picked from other nodes, taking the total subset size to the given limit
+//	whenever possible.
 func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID string, currentMap map[string]negtypes.NetworkEndpointSet, logger klog.Logger) (map[string]negtypes.NetworkEndpointSet, error) {
 	result := make(map[string]negtypes.NetworkEndpointSet)
 	var currentList []negtypes.NetworkEndpoint
