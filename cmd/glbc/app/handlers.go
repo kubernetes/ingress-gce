@@ -141,7 +141,9 @@ func getFlagPage(w http.ResponseWriter, r *http.Request) {
 		Version:   version.Version,
 		Verbosity: flag.Lookup("v").Value.String(),
 	}
-	flagPageTemplate.Execute(w, s)
+	if err := flagPageTemplate.Execute(w, s); err != nil {
+		klog.Errorf("Unable to apply flag page template: %v", err)
+	}
 }
 
 var flagPageTemplate = template.Must(template.New("").Parse(`GCE Ingress Controller "GLBC"

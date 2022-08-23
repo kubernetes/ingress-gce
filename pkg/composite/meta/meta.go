@@ -221,7 +221,9 @@ func populateApiServices() {
 	}
 
 	var result map[string]interface{}
-	json.Unmarshal([]byte(byteValue), &result)
+	if err := json.Unmarshal([]byte(byteValue), &result); err != nil {
+		panic(err)
+	}
 
 	// Queue of ApiService names for BFS
 	typesQueue := []string{}

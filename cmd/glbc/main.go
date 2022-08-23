@@ -270,7 +270,10 @@ func runControllers(ctx *ingctx.ControllerContext) {
 	lbc := controller.NewLoadBalancerController(ctx, stopCh)
 	if ctx.EnableASMConfigMap {
 		ctx.ASMConfigController.RegisterInformer(ctx.ConfigMapInformer, func() {
-			lbc.Stop(false) // We want to trigger a restart, don't have to clean up all the resources.
+			// We want to trigger a restart, don't have to clean up all the resources.
+			if err := lbc.Stop(false); err != nil {
+				klog.Errorf("Failed to stop the load balancer controller: %v", err)
+			}
 		})
 	}
 

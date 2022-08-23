@@ -104,7 +104,9 @@ var Scheme = runtime.NewScheme()
 
 func init() {
 	// Register external types for Scheme
-	v1.AddToScheme(Scheme)
+	if err := v1.AddToScheme(Scheme); err != nil {
+		klog.Errorf("Failed to register types to scheme: %v", err)
+	}
 }
 
 // IsRfc1918Addr returns true if the address supplied is an RFC1918 address

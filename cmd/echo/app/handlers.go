@@ -136,7 +136,9 @@ func process(w http.ResponseWriter, r *http.Request, b []byte) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to compress data: %v", err)
 		}
-		zw.Close()
+		if err := zw.Close(); err != nil {
+			return nil, fmt.Errorf("failed to close gzip writer: %v", err)
+		}
 		w.Header().Set("Content-Encoding", "gzip")
 		return compressed.Bytes(), nil
 	}
