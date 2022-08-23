@@ -552,7 +552,7 @@ func TestMultipleCertRetentionAfterRestart(t *testing.T) {
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 }
 
-//TestUpgradeToNewCertNames verifies that certs uploaded using the old naming convention
+// TestUpgradeToNewCertNames verifies that certs uploaded using the old naming convention
 // are picked up and deleted when upgrading to the new scheme.
 func TestUpgradeToNewCertNames(t *testing.T) {
 	j := newTestJig(t)

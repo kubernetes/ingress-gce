@@ -401,7 +401,6 @@ func EndpointsDataFromEndpoints(ep *apiv1.Endpoints) []EndpointsData {
 
 // Converts API EndpointSlice list to the EndpointsData abstraction.
 // Terminating endpoints are ignored.
-//
 func EndpointsDataFromEndpointSlices(slices []*discovery.EndpointSlice) []EndpointsData {
 	result := make([]EndpointsData, 0, len(slices))
 	for _, slice := range slices {
