@@ -209,13 +209,11 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 	// Changes to subnet annotation will be picked up and reflected in the forwarding rule.
 	// Removing the annotation will set the forwarding rule to use the default subnet.
 	if options.SubnetName != "" {
-		key, err := l.CreateKey(loadBalancerName)
+		var err error
+		subnetworkURL, err = l.getSubnetworkURLByName(options.SubnetName)
 		if err != nil {
 			return nil, err
 		}
-		subnetKey := *key
-		subnetKey.Name = options.SubnetName
-		subnetworkURL = cloud.SelfLink(meta.VersionGA, l.cloud.NetworkProjectID(), "subnetworks", &subnetKey)
 	}
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".

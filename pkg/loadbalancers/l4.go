@@ -304,3 +304,11 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	result.Status = &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}
 	return result
 }
+
+func (l4 *L4) getSubnetworkURLByName(subnetName string) (string, error) {
+	subnetKey, err := l4.CreateKey(subnetName)
+	if err != nil {
+		return "", err
+	}
+	return cloud.SelfLink(meta.VersionGA, l4.cloud.NetworkProjectID(), "subnetworks", subnetKey), nil
+}
