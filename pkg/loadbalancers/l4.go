@@ -68,18 +68,26 @@ type L4ILBSyncResult struct {
 	StartTime          time.Time
 }
 
+type L4ILBParams struct {
+	Service  *corev1.Service
+	Cloud    *gce.Cloud
+	Namer    namer.L4ResourcesNamer
+	Recorder record.EventRecorder
+}
+
 // NewL4Handler creates a new L4Handler for the given L4 service.
-func NewL4Handler(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder) *L4 {
+func NewL4Handler(params *L4ILBParams) *L4 {
+	var scope meta.KeyType = meta.Regional
 	l := &L4{
-		cloud:           cloud,
+		cloud:           params.Cloud,
 		scope:           scope,
-		namer:           namer,
-		recorder:        recorder,
-		Service:         service,
+		namer:           params.Namer,
+		recorder:        params.Recorder,
+		Service:         params.Service,
 		l4HealthChecks:  healthchecks.L4(),
-		forwardingRules: forwardingrules.New(cloud, meta.VersionGA, scope),
+		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, scope),
 	}
-	l.NamespacedName = types.NamespacedName{Name: service.Name, Namespace: service.Namespace}
+	l.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l.backendPool = backends.NewPool(l.cloud, l.namer)
 	l.ServicePort = utils.ServicePort{ID: utils.ServicePortID{Service: l.NamespacedName}, BackendNamer: l.namer,
 		VMIPNEGEnabled: true}

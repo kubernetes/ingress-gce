@@ -1005,7 +1005,13 @@ func TestIsRBSBasedService(t *testing.T) {
 func TestIsRBSBasedServiceWithILBServices(t *testing.T) {
 	controller := newL4NetLBServiceController()
 	ilbSvc := test.NewL4ILBService(false, 8080)
-	ilbFrName := loadbalancers.NewL4Handler(ilbSvc, controller.ctx.Cloud, meta.Regional, controller.namer, record.NewFakeRecorder(100)).GetFRName()
+	l4ilbParams := &loadbalancers.L4ILBParams{
+		Service:  ilbSvc,
+		Cloud:    controller.ctx.Cloud,
+		Namer:    controller.namer,
+		Recorder: record.NewFakeRecorder(100),
+	}
+	ilbFrName := loadbalancers.NewL4Handler(l4ilbParams).GetFRName()
 	ilbSvc.Annotations = map[string]string{
 		annotations.TCPForwardingRuleKey: ilbFrName,
 		annotations.UDPForwardingRuleKey: ilbFrName,
