@@ -78,7 +78,7 @@ func InitializeL4(cloud *gce.Cloud, recorderFactory events.RecorderProducer) {
 	klog.V(3).Infof("Initialized L4 Healthchecks")
 }
 
-// FakeL4 creates instance of l4HealthChecks> USe for test only.
+// FakeL4 creates instance of l4HealthChecks. Use for test only.
 func FakeL4(cloud *gce.Cloud, recorderFactory events.RecorderProducer) *l4HealthChecks {
 	instance = &l4HealthChecks{
 		cloud:           cloud,
@@ -106,7 +106,8 @@ func L4() *l4HealthChecks {
 func (l4hc *l4HealthChecks) EnsureL4HealthCheck(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string) *EnsureL4HealthCheckResult {
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
 
-	hcName, hcFwName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+	hcName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+	hcFwName := namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, sharedHC)
 	hcPath, hcPort := helpers.GetServiceHealthCheckPathPort(svc)
 	klog.V(3).Infof("Ensuring L4 healthcheck: %s and firewall rule %s from service %s, shared: %v.", hcName, hcFwName, namespacedName.String(), sharedHC)
 
@@ -143,8 +144,8 @@ func (l4hc *l4HealthChecks) EnsureL4HealthCheck(svc *corev1.Service, namer namer
 
 // DeleteHealthCheck deletes health check (and firewall rule) for l4 service. Checks if shared resources are safe to delete.
 func (l4hc *l4HealthChecks) DeleteHealthCheck(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType) (string, error) {
-
-	hcName, hcFwName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+	hcName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+	hcFwName := namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, sharedHC)
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
 	klog.V(3).Infof("Trying to delete L4 healthcheck: %s and firewall rule %s from service %s, shared: %v", hcName, hcFwName, namespacedName.String(), sharedHC)
 	if sharedHC {

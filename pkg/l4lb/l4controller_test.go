@@ -19,13 +19,13 @@ package l4lb
 import (
 	context2 "context"
 	"fmt"
-	"k8s.io/ingress-gce/pkg/healthchecks"
+	"net/http"
 	"testing"
 	"time"
 
-	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/healthchecks"
 
-	"net/http"
+	"k8s.io/ingress-gce/pkg/loadbalancers"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -250,7 +250,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 		t.Errorf("Failed to sync deleted service %s, err %v", key, err)
 	}
 	for _, isShared := range []bool{true, false} {
-		hcName, _ := l4c.namer.L4HealthCheck(newSvc.Namespace, newSvc.Name, isShared)
+		hcName := l4c.namer.L4HealthCheck(newSvc.Namespace, newSvc.Name, isShared)
 		if !isHealthCheckDeleted(l4c.ctx.Cloud, hcName) {
 			t.Errorf("Health check %s should be deleted", hcName)
 		}
@@ -293,7 +293,7 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 	validateSvcStatus(svc, true, t)
 	// Verify that both health checks were created.
 	for _, isShared := range []bool{true, false} {
-		hcName, _ := l4c.namer.L4HealthCheck(svc.Namespace, svc.Name, isShared)
+		hcName := l4c.namer.L4HealthCheck(svc.Namespace, svc.Name, isShared)
 		if isHealthCheckDeleted(l4c.ctx.Cloud, hcName) {
 			t.Errorf("Health check %s should be created", hcName)
 		}
@@ -307,7 +307,7 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 	}
 	// Verify that both health checks were deleted.
 	for _, isShared := range []bool{true, false} {
-		hcName, _ := l4c.namer.L4HealthCheck(svc.Namespace, svc.Name, isShared)
+		hcName := l4c.namer.L4HealthCheck(svc.Namespace, svc.Name, isShared)
 		if !isHealthCheckDeleted(l4c.ctx.Cloud, hcName) {
 			t.Errorf("Health check %s should be deleted", hcName)
 		}

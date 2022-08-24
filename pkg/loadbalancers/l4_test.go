@@ -324,7 +324,7 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 	fakeGCE.CreateFirewall(existingFirewall)
 
 	sharedHealthCheck := !servicehelper.RequestsOnlyLocalTraffic(svc)
-	hcName, _ := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHealthCheck)
+	hcName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHealthCheck)
 
 	// Create a healthcheck with an incomplete fields
 	existingHC := &composite.HealthCheck{Name: hcName}
@@ -506,7 +506,7 @@ func TestEnsureInternalLoadBalancerHealthCheckConfigurable(t *testing.T) {
 		t.Errorf("Unexpected error when creating key - %v", err)
 	}
 	sharedHealthCheck := !servicehelper.RequestsOnlyLocalTraffic(svc)
-	hcName, _ := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHealthCheck)
+	hcName := l.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHealthCheck)
 
 	// Create a healthcheck with an incorrect threshold, default value is 8s.
 	existingHC := &composite.HealthCheck{Name: hcName, CheckIntervalSec: 6000}
@@ -635,7 +635,7 @@ func TestEnsureInternalLoadBalancerDeletedWithSharedHC(t *testing.T) {
 		t.Errorf("Unexpected error %v", result.Error)
 	}
 	// When health check is shared we expect that hc firewall rule will not be deleted.
-	_, hcFwName := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, true)
+	hcFwName := l.namer.L4HealthCheckFirewall(l.Service.Namespace, l.Service.Name, true)
 	firewall, err := l.cloud.GetFirewall(hcFwName)
 	if err != nil || firewall == nil {
 		t.Errorf("Expected firewall exists err: %v, fwR: %v", err, firewall)
@@ -679,7 +679,8 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 	}
 
 	// When NetLB health check uses the same firewall rules we expect that hc firewall rule will not be deleted.
-	haName, hcFwName := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, true)
+	hcName := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, true)
+	hcFwName := l.namer.L4HealthCheckFirewall(l.Service.Namespace, l.Service.Name, true)
 	firewall, err := l.cloud.GetFirewall(hcFwName)
 	if err != nil {
 		t.Errorf("Expected error: firewall exists, got %v", err)
@@ -689,7 +690,7 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 	}
 
 	// The healthcheck itself should be deleted.
-	healthcheck, err := l.cloud.GetHealthCheck(haName)
+	healthcheck, err := l.cloud.GetHealthCheck(hcName)
 	if err == nil || healthcheck != nil {
 		t.Errorf("Expected error when looking up shared healthcheck after deletion")
 	}
@@ -1388,7 +1389,8 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 	}
 	proto := utils.GetProtocol(apiService.Spec.Ports)
 	expectedAnnotations := make(map[string]string)
-	hcName, hcFwName := l.namer.L4HealthCheck(apiService.Namespace, apiService.Name, sharedHC)
+	hcName := l.namer.L4HealthCheck(apiService.Namespace, apiService.Name, sharedHC)
+	hcFwName := l.namer.L4HealthCheckFirewall(apiService.Namespace, apiService.Name, sharedHC)
 	// hcDesc is the resource description for healthcheck and firewall rule allowing healthcheck.
 	hcDesc := resourceDesc
 	if sharedHC {
@@ -1504,8 +1506,10 @@ func assertInternalLbResources(t *testing.T, apiService *v1.Service, l *L4, node
 func assertInternalLbResourcesDeleted(t *testing.T, apiService *v1.Service, firewallsDeleted bool, l *L4) {
 	frName := l.GetFRName()
 	resourceName, _ := l.namer.L4Backend(l.Service.Namespace, l.Service.Name)
-	hcNameShared, hcFwNameShared := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, true)
-	hcNameNonShared, hcFwNameNonShared := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, false)
+	hcNameShared := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, true)
+	hcFwNameShared := l.namer.L4HealthCheckFirewall(l.Service.Namespace, l.Service.Name, true)
+	hcNameNonShared := l.namer.L4HealthCheck(l.Service.Namespace, l.Service.Name, false)
+	hcFwNameNonShared := l.namer.L4HealthCheckFirewall(l.Service.Namespace, l.Service.Name, false)
 
 	if firewallsDeleted {
 		// Check that Firewalls are deleted for the LoadBalancer and the HealthCheck

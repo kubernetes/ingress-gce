@@ -74,14 +74,22 @@ func (namer *L4Namer) L4ForwardingRule(namespace, name, protocol string) string 
 	return strings.Join([]string{namer.v2Prefix, protocol, namer.v2ClusterUID, truncNamespace, truncName, namer.suffix(namespace, name)}, "-")
 }
 
-// L4HealthCheck returns the name of the L4 LB Healthcheck and the associated firewall rule.
-func (namer *L4Namer) L4HealthCheck(namespace, name string, shared bool) (string, string) {
+// L4HealthCheck returns the name of the L4 LB Healthcheck
+func (namer *L4Namer) L4HealthCheck(namespace, name string, shared bool) string {
+	if shared {
+		return strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, sharedHcSuffix}, "-")
+	}
+	l4Name, _ := namer.L4Backend(namespace, name)
+	return l4Name
+}
+
+// L4HealthCheckFirewall returns the name of the L4 LB Healthcheck Firewall
+func (namer *L4Namer) L4HealthCheckFirewall(namespace, name string, shared bool) string {
 	if !shared {
 		l4Name, _ := namer.L4Backend(namespace, name)
-		return l4Name, namer.hcFirewallName(l4Name)
+		return namer.hcFirewallName(l4Name)
 	}
-	return strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, sharedHcSuffix}, "-"),
-		strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, sharedFirewallHcSuffix}, "-")
+	return strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, sharedFirewallHcSuffix}, "-")
 }
 
 // IsNEG indicates if the given name is a NEG following the L4 naming convention.

@@ -70,7 +70,8 @@ func TestL4Namer(t *testing.T) {
 	for _, tc := range testCases {
 		frName := newNamer.L4ForwardingRule(tc.namespace, tc.name, strings.ToLower(tc.proto))
 		negName, ok := newNamer.L4Backend(tc.namespace, tc.name)
-		hcName, hcFwName := newNamer.L4HealthCheck(tc.namespace, tc.name, tc.sharedHC)
+		hcName := newNamer.L4HealthCheck(tc.namespace, tc.name, tc.sharedHC)
+		hcFwName := newNamer.L4HealthCheckFirewall(tc.namespace, tc.name, tc.sharedHC)
 		if !ok {
 			t.Errorf("Namer does not support VMIPNEG")
 		}
