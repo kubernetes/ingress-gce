@@ -208,7 +208,13 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 	}
 	// Use the same function for both create and updates. If controller crashes and restarts,
 	// all existing services will show up as Service Adds.
-	l4 := loadbalancers.NewL4Handler(service, l4c.ctx.Cloud, meta.Regional, l4c.namer, l4c.ctx.Recorder(service.Namespace))
+	l4ilbParams := &loadbalancers.L4ILBParams{
+		Service:  service,
+		Cloud:    l4c.ctx.Cloud,
+		Namer:    l4c.namer,
+		Recorder: l4c.ctx.Recorder(service.Namespace),
+	}
+	l4 := loadbalancers.NewL4Handler(l4ilbParams)
 	syncResult := l4.EnsureInternalLoadBalancer(nodeNames, service)
 	// syncResult will not be nil
 	if syncResult.Error != nil {
@@ -248,7 +254,13 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Se
 }
 
 func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *loadbalancers.L4ILBSyncResult {
-	l4 := loadbalancers.NewL4Handler(svc, l4c.ctx.Cloud, meta.Regional, l4c.namer, l4c.ctx.Recorder(svc.Namespace))
+	l4ilbParams := &loadbalancers.L4ILBParams{
+		Service:  svc,
+		Cloud:    l4c.ctx.Cloud,
+		Namer:    l4c.namer,
+		Recorder: l4c.ctx.Recorder(svc.Namespace),
+	}
+	l4 := loadbalancers.NewL4Handler(l4ilbParams)
 	l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer", "Deleting load balancer for %s", key)
 	result := l4.EnsureInternalLoadBalancerDeleted(svc)
 	if result.Error != nil {
