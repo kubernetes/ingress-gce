@@ -87,8 +87,10 @@ type L4ResourcesNamer interface {
 	BackendNamer
 	// L4ForwardingRule returns the name of the forwarding rule for the given service and protocol.
 	L4ForwardingRule(namespace, name, protocol string) string
-	// L4HealthCheck returns the names of the Healthcheck and HC-firewall rule.
-	L4HealthCheck(namespace, name string, shared bool) (string, string)
+	// L4HealthCheck returns the names of the Healthcheck
+	L4HealthCheck(namespace, name string, shared bool) string
+	// L4HealthCheckFirewall returns the names of the Healthcheck Firewall
+	L4HealthCheckFirewall(namespace, name string, shared bool) string
 	// IsNEG returns if the given name is a VM_IP_NEG name.
 	IsNEG(name string) bool
 }

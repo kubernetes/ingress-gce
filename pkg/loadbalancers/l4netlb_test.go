@@ -91,7 +91,7 @@ func checkAnnotations(result *L4NetLBSyncResult, l4netlb *L4NetLB) error {
 	if result.Annotations[annotations.FirewallRuleKey] != expFwRule {
 		return fmt.Errorf("FirewallRuleKey mismatch %v != %v", expFwRule, result.Annotations[annotations.FirewallRuleKey])
 	}
-	_, expHcFwName := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, true)
+	expHcFwName := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, true)
 	if result.Annotations[annotations.FirewallRuleForHealthcheckKey] != expHcFwName {
 		return fmt.Errorf("FirewallRuleForHealthcheckKey mismatch %v != %v", expHcFwName, result.Annotations[annotations.FirewallRuleForHealthcheckKey])
 	}
@@ -142,7 +142,7 @@ func TestDeleteL4NetLoadBalancerWithSharedHC(t *testing.T) {
 	}
 	// Health check is in used by second service
 	// we expect that firewall rule will not be deleted
-	_, hcFwName := l4NetLB.namer.L4HealthCheck(svc.Namespace, svc.Name, true)
+	hcFwName := l4NetLB.namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, true)
 	firewall, err := l4NetLB.cloud.GetFirewall(hcFwName)
 	if err != nil || firewall == nil {
 		t.Errorf("Expected firewall exists err: %v, fwR: %v", err, firewall)
@@ -187,7 +187,8 @@ func TestHealthCheckFirewallDeletionWithILB(t *testing.T) {
 	}
 
 	// When ILB health check uses the same firewall rules we expect that hc firewall rule will not be deleted.
-	hcName, hcFwName := l4NetLB.namer.L4HealthCheck(l4NetLB.Service.Namespace, l4NetLB.Service.Name, true)
+	hcName := l4NetLB.namer.L4HealthCheck(l4NetLB.Service.Namespace, l4NetLB.Service.Name, true)
+	hcFwName := l4NetLB.namer.L4HealthCheckFirewall(l4NetLB.Service.Namespace, l4NetLB.Service.Name, true)
 	firewall, err := l4NetLB.cloud.GetFirewall(hcFwName)
 	if err != nil {
 		t.Errorf("Expected error: firewall exists, got %v", err)
@@ -228,8 +229,8 @@ func ensureNetLBResourceDeleted(t *testing.T, apiService *v1.Service, l4NetLb *L
 
 	resourceName := l4NetLb.ServicePort.BackendName()
 	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(apiService)
-	hcName, hcFwName := l4NetLb.namer.L4HealthCheck(apiService.Namespace, apiService.Name, sharedHC)
-
+	hcName := l4NetLb.namer.L4HealthCheck(apiService.Namespace, apiService.Name, sharedHC)
+	hcFwName := l4NetLb.namer.L4HealthCheckFirewall(apiService.Namespace, apiService.Name, sharedHC)
 	for _, fwName := range []string{resourceName, hcFwName} {
 		_, err := l4NetLb.cloud.GetFirewall(fwName)
 		if err == nil || !utils.IsNotFoundError(err) {
@@ -267,8 +268,8 @@ func assertNetLbResources(t *testing.T, apiService *v1.Service, l4NetLb *L4NetLB
 
 	proto := utils.GetProtocol(apiService.Spec.Ports)
 
-	hcName, hcFwName := l4NetLb.namer.L4HealthCheck(apiService.Namespace, apiService.Name, true)
-
+	hcName := l4NetLb.namer.L4HealthCheck(apiService.Namespace, apiService.Name, true)
+	hcFwName := l4NetLb.namer.L4HealthCheckFirewall(apiService.Namespace, apiService.Name, true)
 	fwNamesAndDesc := []string{resourceName, hcFwName}
 
 	if hcFwName == resourceName {
