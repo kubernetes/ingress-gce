@@ -195,37 +195,37 @@ func (l *L7) getEffectiveIP() (string, bool, error) {
 
 // ensureForwardingRule creates a forwarding rule with the given name, if it does not exist. It updates the existing
 // forwarding rule if needed.
-func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.ILBOptions, existingFwdRule *composite.ForwardingRule) (*composite.ForwardingRule, error) {
+func (l4 *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.ILBOptions, existingFwdRule *composite.ForwardingRule) (*composite.ForwardingRule, error) {
 	// version used for creating the existing forwarding rule.
 	version := meta.VersionGA
 
-	if l.cloud.IsLegacyNetwork() {
-		l.recorder.Event(l.Service, v1.EventTypeWarning, "ILBOptionsIgnored", "Internal LoadBalancer options are not supported with Legacy Networks.")
+	if l4.cloud.IsLegacyNetwork() {
+		l4.recorder.Event(l4.Service, v1.EventTypeWarning, "ILBOptionsIgnored", "Internal LoadBalancer options are not supported with Legacy Networks.")
 		options = gce.ILBOptions{}
 	}
-	subnetworkURL := l.cloud.SubnetworkURL()
+	subnetworkURL := l4.cloud.SubnetworkURL()
 
 	// Custom subnet feature is always enabled when running L4 controller.
 	// Changes to subnet annotation will be picked up and reflected in the forwarding rule.
 	// Removing the annotation will set the forwarding rule to use the default subnet.
 	if options.SubnetName != "" {
 		var err error
-		subnetworkURL, err = l.getSubnetworkURLByName(options.SubnetName)
+		subnetworkURL, err = l4.getSubnetworkURLByName(options.SubnetName)
 		if err != nil {
 			return nil, err
 		}
 	}
 	// Determine IP which will be used for this LB. If no forwarding rule has been established
 	// or specified in the Service spec, then requestedIP = "".
-	ipToUse := l4lbIPToUse(l.Service, existingFwdRule, subnetworkURL)
+	ipToUse := l4lbIPToUse(l4.Service, existingFwdRule, subnetworkURL)
 	klog.V(2).Infof("ensureForwardingRule(%v): Using subnet %q for LoadBalancer IP %s", loadBalancerName, subnetworkURL, ipToUse)
 
 	var addrMgr *addressManager
 	// If the network is not a legacy network, use the address manager
-	if !l.cloud.IsLegacyNetwork() {
-		nm := types.NamespacedName{Namespace: l.Service.Namespace, Name: l.Service.Name}.String()
+	if !l4.cloud.IsLegacyNetwork() {
+		nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
 		// ILB can be created only in Premium Tier
-		addrMgr = newAddressManager(l.cloud, nm, l.cloud.Region(), subnetworkURL, loadBalancerName, ipToUse, cloud.SchemeInternal, cloud.NetworkTierPremium)
+		addrMgr = newAddressManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, loadBalancerName, ipToUse, cloud.SchemeInternal, cloud.NetworkTierPremium)
 		var err error
 		ipToUse, _, err = addrMgr.HoldAddress()
 		if err != nil {
@@ -241,11 +241,11 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 		}()
 	}
 
-	servicePorts := l.Service.Spec.Ports
+	servicePorts := l4.Service.Spec.Ports
 	ports := utils.GetPorts(servicePorts)
 	protocol := utils.GetProtocol(servicePorts)
 	// Create the forwarding rule
-	frDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l.Service.Namespace, l.Service.Name), ipToUse,
+	frDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), ipToUse,
 		version, false, utils.ILB)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to compute description for forwarding rule %s, err: %w", loadBalancerName,
@@ -259,7 +259,7 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 		IPProtocol:          string(protocol),
 		LoadBalancingScheme: string(cloud.SchemeInternal),
 		Subnetwork:          subnetworkURL,
-		Network:             l.cloud.NetworkURL(),
+		Network:             l4.cloud.NetworkURL(),
 		NetworkTier:         cloud.NetworkTierDefault.ToGCEValue(),
 		Version:             version,
 		BackendService:      bsLink,
@@ -285,17 +285,17 @@ func (l *L4) ensureForwardingRule(loadBalancerName, bsLink string, options gce.I
 		// If the forwarding rule pointed to a backend service which does not match the controller naming scheme,
 		// that resouce could be leaked. It is not being deleted here because that is a user-managed resource.
 		klog.V(2).Infof("ensureForwardingRule: forwarding rule changed - Existing - %+v\n, New - %+v\n, Diff(-existing, +new) - %s\n. Deleting existing forwarding rule.", existingFwdRule, fr, frDiff)
-		if err = l.forwardingRules.Delete(existingFwdRule.Name); err != nil {
+		if err = l4.forwardingRules.Delete(existingFwdRule.Name); err != nil {
 			return nil, err
 		}
-		l.recorder.Eventf(l.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", existingFwdRule.Name)
+		l4.recorder.Eventf(l4.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", existingFwdRule.Name)
 	}
 	klog.V(2).Infof("ensureForwardingRule: Creating/Recreating forwarding rule - %s", fr.Name)
-	if err = l.forwardingRules.Create(fr); err != nil {
+	if err = l4.forwardingRules.Create(fr); err != nil {
 		return nil, err
 	}
 
-	fr, err = l.forwardingRules.Get(fr.Name)
+	fr, err = l4.forwardingRules.Get(fr.Name)
 	if err != nil {
 		return nil, err
 	}
