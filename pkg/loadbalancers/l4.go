@@ -95,8 +95,8 @@ func NewL4Handler(params *L4ILBParams) *L4 {
 }
 
 // CreateKey generates a meta.Key for a given GCE resource name.
-func (l *L4) CreateKey(name string) (*meta.Key, error) {
-	return composite.CreateKey(l.cloud, name, l.scope)
+func (l4 *L4) CreateKey(name string) (*meta.Key, error) {
+	return composite.CreateKey(l4.cloud, name, l4.scope)
 }
 
 // getILBOptions fetches the optional features requested on the given ILB service.
@@ -106,45 +106,45 @@ func getILBOptions(svc *corev1.Service) gce.ILBOptions {
 }
 
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
-func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncResult {
-	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): attempting delete of load balancer resources", l.NamespacedName.String())
+func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncResult {
+	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): attempting delete of load balancer resources", l4.NamespacedName.String())
 	result := &L4ILBSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
 	// All resources use the L4Backend Name, except forwarding rule.
-	name, ok := l.namer.L4Backend(svc.Namespace, svc.Name)
+	name, ok := l4.namer.L4Backend(svc.Namespace, svc.Name)
 	if !ok {
 		result.Error = fmt.Errorf("Namer does not support L4 Backends")
 		return result
 	}
-	frName := l.GetFRName()
-	key, err := l.CreateKey(frName)
+	frName := l4.GetFRName()
+	key, err := l4.CreateKey(frName)
 	if err != nil {
-		klog.Errorf("Failed to create key for LoadBalancer resources with name %s for service %s, err %v", frName, l.NamespacedName.String(), err)
+		klog.Errorf("Failed to create key for LoadBalancer resources with name %s for service %s, err %v", frName, l4.NamespacedName.String(), err)
 		result.Error = err
 		return result
 	}
 	// If any resource deletion fails, log the error and continue cleanup.
-	if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, meta.VersionGA)); err != nil {
-		klog.Errorf("Failed to delete forwarding rule for internal loadbalancer service %s, err %v", l.NamespacedName.String(), err)
+	if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l4.cloud, key, meta.VersionGA)); err != nil {
+		klog.Errorf("Failed to delete forwarding rule for internal loadbalancer service %s, err %v", l4.NamespacedName.String(), err)
 		result.Error = err
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 	}
-	if err = ensureAddressDeleted(l.cloud, name, l.cloud.Region()); err != nil {
-		klog.Errorf("Failed to delete address for internal loadbalancer service %s, err %v", l.NamespacedName.String(), err)
+	if err = ensureAddressDeleted(l4.cloud, name, l4.cloud.Region()); err != nil {
+		klog.Errorf("Failed to delete address for internal loadbalancer service %s, err %v", l4.NamespacedName.String(), err)
 		result.Error = err
 		result.GCEResourceInError = annotations.AddressResource
 	}
 
 	// delete firewall rule allowing load balancer source ranges
-	err = l.deleteFirewall(name)
+	err = l4.deleteFirewall(name)
 	if err != nil {
-		klog.Errorf("Failed to delete firewall rule %s for internal loadbalancer service %s, err %v", name, l.NamespacedName.String(), err)
+		klog.Errorf("Failed to delete firewall rule %s for internal loadbalancer service %s, err %v", name, l4.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 	}
 	// Delete backend service
-	err = utils.IgnoreHTTPNotFound(l.backendPool.Delete(name, meta.VersionGA, meta.Regional))
+	err = utils.IgnoreHTTPNotFound(l4.backendPool.Delete(name, meta.VersionGA, meta.Regional))
 	if err != nil {
-		klog.Errorf("Failed to delete backends for internal loadbalancer service %s, err  %v", l.NamespacedName.String(), err)
+		klog.Errorf("Failed to delete backends for internal loadbalancer service %s, err  %v", l4.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err
 	}
@@ -156,7 +156,7 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncRe
 	// When service is deleted we need to check both health checks shared and non-shared
 	// and delete them if needed.
 	for _, isShared := range []bool{true, false} {
-		resourceInError, err := l.l4HealthChecks.DeleteHealthCheck(svc, l.namer, isShared, meta.Global, utils.ILB)
+		resourceInError, err := l4.l4HealthChecks.DeleteHealthCheck(svc, l4.namer, isShared, meta.Global, utils.ILB)
 		if err != nil {
 			result.GCEResourceInError = resourceInError
 			result.Error = err
@@ -165,11 +165,11 @@ func (l *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncRe
 	return result
 }
 
-func (l *L4) deleteFirewall(name string) error {
-	err := firewalls.EnsureL4FirewallRuleDeleted(l.cloud, name)
+func (l4 *L4) deleteFirewall(name string) error {
+	err := firewalls.EnsureL4FirewallRuleDeleted(l4.cloud, name)
 	if err != nil {
 		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
-			l.recorder.Eventf(l.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
+			l4.recorder.Eventf(l4.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
 			return nil
 		}
 		return err
@@ -180,18 +180,18 @@ func (l *L4) deleteFirewall(name string) error {
 // GetFRName returns the name of the forwarding rule for the given ILB service.
 // This appends the protocol to the forwarding rule name, which will help supporting multiple protocols in the same ILB
 // service.
-func (l *L4) GetFRName() string {
-	protocol := utils.GetProtocol(l.Service.Spec.Ports)
-	return l.getFRNameWithProtocol(string(protocol))
+func (l4 *L4) GetFRName() string {
+	protocol := utils.GetProtocol(l4.Service.Spec.Ports)
+	return l4.getFRNameWithProtocol(string(protocol))
 }
 
-func (l *L4) getFRNameWithProtocol(protocol string) string {
-	return l.namer.L4ForwardingRule(l.Service.Namespace, l.Service.Name, strings.ToLower(protocol))
+func (l4 *L4) getFRNameWithProtocol(protocol string) string {
+	return l4.namer.L4ForwardingRule(l4.Service.Namespace, l4.Service.Name, strings.ToLower(protocol))
 }
 
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
-func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4ILBSyncResult {
+func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4ILBSyncResult {
 	result := &L4ILBSyncResult{
 		Annotations: make(map[string]string),
 		StartTime:   time.Now(),
@@ -204,18 +204,18 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 		result.SyncType = SyncTypeUpdate
 	}
 
-	l.Service = svc
+	l4.Service = svc
 	// All resources use the L4Backend name, except forwarding rule.
-	name, ok := l.namer.L4Backend(l.Service.Namespace, l.Service.Name)
+	name, ok := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
 	if !ok {
 		result.Error = fmt.Errorf("Namer does not support L4 VMIPNEGs")
 		return result
 	}
-	options := getILBOptions(l.Service)
+	options := getILBOptions(l4.Service)
 
 	// create healthcheck
-	sharedHC := !helpers.RequestsOnlyLocalTraffic(l.Service)
-	hcResult := l.l4HealthChecks.EnsureL4HealthCheck(l.Service, l.namer, sharedHC, meta.Global, utils.ILB, nodeNames)
+	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4.Service)
+	hcResult := l4.l4HealthChecks.EnsureL4HealthCheck(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames)
 
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
@@ -224,35 +224,35 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	}
 	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
 
-	servicePorts := l.Service.Spec.Ports
+	servicePorts := l4.Service.Spec.Ports
 	portRanges := utils.GetServicePortRanges(servicePorts)
 	protocol := utils.GetProtocol(servicePorts)
 
 	// Check if protocol has changed for this service. In this case, forwarding rule should be deleted before
 	// the backend service can be updated.
-	existingBS, err := l.backendPool.Get(name, meta.VersionGA, l.scope)
+	existingBS, err := l4.backendPool.Get(name, meta.VersionGA, l4.scope)
 	err = utils.IgnoreHTTPNotFound(err)
 	if err != nil {
 		klog.Errorf("Failed to lookup existing backend service, ignoring err: %v", err)
 	}
-	existingFR, err := l.forwardingRules.Get(l.GetFRName())
+	existingFR, err := l4.forwardingRules.Get(l4.GetFRName())
 	if existingBS != nil && existingBS.Protocol != string(protocol) {
-		klog.Infof("Protocol changed from %q to %q for service %s", existingBS.Protocol, string(protocol), l.NamespacedName)
+		klog.Infof("Protocol changed from %q to %q for service %s", existingBS.Protocol, string(protocol), l4.NamespacedName)
 		// Delete forwarding rule if it exists
-		frName := l.getFRNameWithProtocol(existingBS.Protocol)
-		existingFR, err = l.forwardingRules.Get(frName)
+		frName := l4.getFRNameWithProtocol(existingBS.Protocol)
+		existingFR, err = l4.forwardingRules.Get(frName)
 		if err != nil {
 			klog.Errorf("Failed to get forwarding rule %s, err %v", frName, err)
 		}
-		err = l.forwardingRules.Delete(frName)
+		err = l4.forwardingRules.Delete(frName)
 		if err != nil {
 			klog.Errorf("Failed to delete forwarding rule %s, err %v", frName, err)
 		}
 	}
 
 	// ensure backend service
-	bs, err := l.backendPool.EnsureL4BackendService(name, hcResult.HCLink, string(protocol), string(l.Service.Spec.SessionAffinity),
-		string(cloud.SchemeInternal), l.NamespacedName, meta.VersionGA)
+	bs, err := l4.backendPool.EnsureL4BackendService(name, hcResult.HCLink, string(protocol), string(l4.Service.Spec.SessionAffinity),
+		string(cloud.SchemeInternal), l4.NamespacedName, meta.VersionGA)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err
@@ -260,8 +260,8 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	}
 	result.Annotations[annotations.BackendServiceKey] = name
 	// create fr rule
-	frName := l.GetFRName()
-	fr, err := l.ensureForwardingRule(frName, bs.SelfLink, options, existingFR)
+	frName := l4.GetFRName()
+	fr, err := l4.ensureForwardingRule(frName, bs.SelfLink, options, existingFR)
 	if err != nil {
 		klog.Errorf("EnsureInternalLoadBalancer: Failed to create forwarding rule - %v", err)
 		result.GCEResourceInError = annotations.ForwardingRuleResource
@@ -275,7 +275,7 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 	}
 
 	// ensure firewalls
-	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l.Service)
+	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l4.Service)
 	if err != nil {
 		result.Error = err
 		return result
@@ -291,7 +291,7 @@ func (l *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service)
 		L4Type:            utils.ILB,
 	}
 
-	if err := firewalls.EnsureL4LBFirewallForNodes(l.Service, &nodesFWRParams, l.cloud, l.recorder); err != nil {
+	if err := firewalls.EnsureL4LBFirewallForNodes(l4.Service, &nodesFWRParams, l4.cloud, l4.recorder); err != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 		return result
