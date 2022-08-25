@@ -51,12 +51,13 @@ func NewL4Namer(kubeSystemUID string, namer *Namer) *L4Namer {
 //	k8s2-{uid}-{ns}-{name}-{suffix}
 //
 // Output name is at most 63 characters.
-func (namer *L4Namer) L4Backend(namespace, name string) (string, bool) {
-	truncFields := TrimFieldsEvenly(maximumL4CombinedLength, namespace, name)
-	truncNamespace := truncFields[0]
-	truncName := truncFields[1]
-	return strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, truncNamespace, truncName, namer.suffix(namespace, name)}, "-"), true
-
+func (namer *L4Namer) L4Backend(namespace, name string) string {
+	return strings.Join([]string{
+		namer.v2Prefix,
+		namer.v2ClusterUID,
+		getTrimmedNamespacedName(namespace, name, maximumL4CombinedLength),
+		namer.getClusterSuffix(namespace, name),
+	}, "-")
 }
 
 // L4ForwardingRule returns the name of the L4 forwarding rule name based on the service namespace, name and protocol.
@@ -68,10 +69,13 @@ func (namer *L4Namer) L4Backend(namespace, name string) (string, bool) {
 func (namer *L4Namer) L4ForwardingRule(namespace, name, protocol string) string {
 	// add 1 for hyphen
 	protoLen := len(protocol) + 1
-	truncFields := TrimFieldsEvenly(maximumL4CombinedLength-protoLen, namespace, name)
-	truncNamespace := truncFields[0]
-	truncName := truncFields[1]
-	return strings.Join([]string{namer.v2Prefix, protocol, namer.v2ClusterUID, truncNamespace, truncName, namer.suffix(namespace, name)}, "-")
+	return strings.Join([]string{
+		namer.v2Prefix,
+		protocol,
+		namer.v2ClusterUID,
+		getTrimmedNamespacedName(namespace, name, maximumL4CombinedLength-protoLen),
+		namer.getClusterSuffix(namespace, name),
+	}, "-")
 }
 
 // L4HealthCheck returns the name of the L4 LB Healthcheck
@@ -79,14 +83,14 @@ func (namer *L4Namer) L4HealthCheck(namespace, name string, shared bool) string 
 	if shared {
 		return strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, sharedHcSuffix}, "-")
 	}
-	l4Name, _ := namer.L4Backend(namespace, name)
+	l4Name := namer.L4Backend(namespace, name)
 	return l4Name
 }
 
 // L4HealthCheckFirewall returns the name of the L4 LB Healthcheck Firewall
 func (namer *L4Namer) L4HealthCheckFirewall(namespace, name string, shared bool) string {
 	if !shared {
-		l4Name, _ := namer.L4Backend(namespace, name)
+		l4Name := namer.L4Backend(namespace, name)
 		return namer.hcFirewallName(l4Name)
 	}
 	return strings.Join([]string{namer.v2Prefix, namer.v2ClusterUID, sharedFirewallHcSuffix}, "-")
@@ -97,19 +101,32 @@ func (namer *L4Namer) IsNEG(name string) bool {
 	return strings.HasPrefix(name, namer.v2Prefix+"-"+namer.v2ClusterUID)
 }
 
-// suffix returns hash string of length 8 of a concatenated string generated from
+// getClusterSuffix returns hash string of length 8 of a concatenated string generated from
 // kube-system uid, namespace and name. These fields in combination define an l4 load-balancer uniquely.
-func (n *L4Namer) suffix(namespace, name string) string {
+func (n *L4Namer) getClusterSuffix(namespace, name string) string {
 	lbString := strings.Join([]string{n.v2ClusterUID, namespace, name}, ";")
 	return common.ContentHash(lbString, 8)
 }
 
 // hcFirewallName generates the firewall name for the given healthcheck.
-// It ensures that the name is atmost 63 chars long.
+// It ensures that the name is at most 63 chars long.
 func (n *L4Namer) hcFirewallName(hcName string) string {
-	maxHcNameLen := maxResourceNameLength - len(firewallHcSuffix)
-	if len(hcName) > maxHcNameLen {
-		hcName = hcName[:maxHcNameLen]
+	return getSuffixedName(hcName, firewallHcSuffix)
+}
+
+func getSuffixedName(name string, suffix string) string {
+	trimmedName := ensureSpaceForSuffix(name, suffix)
+	return trimmedName + suffix
+}
+
+func ensureSpaceForSuffix(name string, suffix string) string {
+	maxRealNameLen := maxResourceNameLength - len(suffix)
+	if len(name) > maxRealNameLen {
+		name = name[:maxRealNameLen]
 	}
-	return hcName + firewallHcSuffix
+	return name
+}
+
+func getTrimmedNamespacedName(namespace, name string, maxLength int) string {
+	return strings.Join(TrimFieldsEvenly(maxLength, namespace, name), "-")
 }

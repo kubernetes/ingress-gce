@@ -74,8 +74,7 @@ func (sp *ServicePort) BackendName() string {
 		return sp.BackendNamer.NEG(sp.ID.Service.Namespace, sp.ID.Service.Name, sp.Port)
 	} else if sp.VMIPNEGEnabled || sp.L4RBSEnabled {
 		// Use L4 Backend name for both Internal and External LoadBalancers
-		backendName, _ := sp.BackendNamer.L4Backend(sp.ID.Service.Namespace, sp.ID.Service.Name)
-		return backendName
+		return sp.BackendNamer.L4Backend(sp.ID.Service.Namespace, sp.ID.Service.Name)
 	}
 	return sp.BackendNamer.IGBackend(sp.NodePort)
 }

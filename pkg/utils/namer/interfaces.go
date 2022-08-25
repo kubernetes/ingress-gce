@@ -60,7 +60,7 @@ type BackendNamer interface {
 	// L4Backend returns the name for L4 LB backend resources, based on the service namespace and name.
 	// It supports ILB with subsetting enabled (VM_IP_NEGs) and NetLB with RBS enabled.
 	// The second output parameter indicates if the namer is supported.
-	L4Backend(namespace, name string) (string, bool)
+	L4Backend(namespace, name string) string
 	// InstanceGroup constructs the name for an Instance Group.
 	InstanceGroup() string
 	// NamedPort returns the name for a named port.

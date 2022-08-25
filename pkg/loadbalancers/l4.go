@@ -17,7 +17,6 @@ limitations under the License.
 package loadbalancers
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -110,11 +109,7 @@ func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncR
 	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): attempting delete of load balancer resources", l4.NamespacedName.String())
 	result := &L4ILBSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
 	// All resources use the L4Backend Name, except forwarding rule.
-	name, ok := l4.namer.L4Backend(svc.Namespace, svc.Name)
-	if !ok {
-		result.Error = fmt.Errorf("Namer does not support L4 Backends")
-		return result
-	}
+	name := l4.namer.L4Backend(svc.Namespace, svc.Name)
 	frName := l4.GetFRName()
 	key, err := l4.CreateKey(frName)
 	if err != nil {
@@ -206,11 +201,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	l4.Service = svc
 	// All resources use the L4Backend name, except forwarding rule.
-	name, ok := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
-	if !ok {
-		result.Error = fmt.Errorf("Namer does not support L4 VMIPNEGs")
-		return result
-	}
+	name := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
 	options := getILBOptions(l4.Service)
 
 	// create healthcheck
