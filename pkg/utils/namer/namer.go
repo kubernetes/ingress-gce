@@ -479,8 +479,8 @@ func (n *Namer) IsNEG(name string) bool {
 }
 
 // L4Backend is only supported by L4Namer.
-func (namer *Namer) L4Backend(namespace, name string) (string, bool) {
-	return "", false
+func (namer *Namer) L4Backend(namespace, name string) string {
+	return ""
 }
 
 func (n *Namer) negPrefix() string {

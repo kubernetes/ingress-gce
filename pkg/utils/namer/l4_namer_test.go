@@ -69,12 +69,9 @@ func TestL4Namer(t *testing.T) {
 	newNamer := NewL4Namer(kubeSystemUID, nil)
 	for _, tc := range testCases {
 		frName := newNamer.L4ForwardingRule(tc.namespace, tc.name, strings.ToLower(tc.proto))
-		negName, ok := newNamer.L4Backend(tc.namespace, tc.name)
+		negName := newNamer.L4Backend(tc.namespace, tc.name)
 		hcName := newNamer.L4HealthCheck(tc.namespace, tc.name, tc.sharedHC)
 		hcFwName := newNamer.L4HealthCheckFirewall(tc.namespace, tc.name, tc.sharedHC)
-		if !ok {
-			t.Errorf("Namer does not support VMIPNEG")
-		}
 		if len(frName) > maxResourceNameLength || len(negName) > maxResourceNameLength || len(hcName) > maxResourceNameLength || len(hcFwName) > maxResourceNameLength {
 			t.Errorf("%s: got len(frName) == %v, len(negName) == %v, len(hcName) == %v, len(hcFwName) == %v want <= 63", tc.desc, len(frName), len(negName), len(hcName), len(hcFwName))
 		}

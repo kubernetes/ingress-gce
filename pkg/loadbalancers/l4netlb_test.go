@@ -408,7 +408,7 @@ func TestEnsureNetLBFirewallDestinations(t *testing.T) {
 	}
 
 	flags.F.EnablePinhole = true
-	fwName, _ := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	fwName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 
 	fwrParams := firewalls.FirewallParams{
 		Name:              fwName,

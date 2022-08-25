@@ -201,7 +201,7 @@ func updateRegionBackendServiceWithLockHook(ctx context.Context, key *meta.Key, 
 }
 
 func getBackend(l4netController *L4NetLBController, svc *v1.Service) (string, *composite.BackendService, error) {
-	backendServiceName, _ := l4netController.namer.L4Backend(svc.Namespace, svc.Name)
+	backendServiceName := l4netController.namer.L4Backend(svc.Namespace, svc.Name)
 	key := meta.RegionalKey(backendServiceName, l4netController.ctx.Cloud.Region())
 	backendServiceLink := cloud.SelfLink(meta.VersionGA, l4netController.ctx.Cloud.ProjectID(), "backendServices", key)
 	bs, err := composite.GetBackendService(l4netController.ctx.Cloud, key, meta.VersionGA)
@@ -729,7 +729,7 @@ func TestProcessServiceUpdate(t *testing.T) {
 				if len(svc.Spec.Ports) == 0 {
 					return fmt.Errorf("No Ports in service")
 				}
-				name, _ := (l4netController.namer.(namer.BackendNamer)).L4Backend(svc.Namespace, svc.Name)
+				name := (l4netController.namer.(namer.BackendNamer)).L4Backend(svc.Namespace, svc.Name)
 				fw, err := l4netController.ctx.Cloud.GetFirewall(name)
 				if err != nil {
 					return fmt.Errorf("Failed to fetch firewall service: %v", err)
