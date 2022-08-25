@@ -112,9 +112,9 @@ func NewTransactionSyncer(
 	svcNegClient svcnegclient.Interface,
 	customName bool,
 	enableEndpointSlices bool,
-	l klog.Logger) negtypes.NegSyncer {
+	log klog.Logger) negtypes.NegSyncer {
 
-	logger := l.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name), "negName", negSyncerKey.NegName)
+	logger := log.WithName("Syncer").WithValues("service", klog.KRef(negSyncerKey.Namespace, negSyncerKey.Name), "negName", negSyncerKey.NegName)
 
 	// TransactionSyncer implements the syncer core
 	ts := &transactionSyncer{

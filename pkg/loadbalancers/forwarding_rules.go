@@ -38,66 +38,66 @@ import (
 // maxL4ILBPorts is the maximum number of ports that can be specified in an L4 ILB Forwarding Rule
 const maxL4ILBPorts = 5
 
-func (l *L7) checkHttpForwardingRule() (err error) {
-	if l.tp == nil {
+func (l7 *L7) checkHttpForwardingRule() (err error) {
+	if l7.tp == nil {
 		return fmt.Errorf("cannot create forwarding rule without proxy")
 	}
-	name := l.namer.ForwardingRule(namer.HTTPProtocol)
-	address, _, err := l.getEffectiveIP()
+	name := l7.namer.ForwardingRule(namer.HTTPProtocol)
+	address, _, err := l7.getEffectiveIP()
 	if err != nil {
 		return err
 	}
-	fw, err := l.checkForwardingRule(namer.HTTPProtocol, name, l.tp.SelfLink, address)
+	fw, err := l7.checkForwardingRule(namer.HTTPProtocol, name, l7.tp.SelfLink, address)
 	if err != nil {
 		return err
 	}
-	l.fw = fw
+	l7.fw = fw
 	return nil
 }
 
-func (l *L7) checkHttpsForwardingRule() (err error) {
-	if l.tps == nil {
-		klog.V(3).Infof("No https target proxy for %v, not created https forwarding rule", l)
+func (l7 *L7) checkHttpsForwardingRule() (err error) {
+	if l7.tps == nil {
+		klog.V(3).Infof("No https target proxy for %v, not created https forwarding rule", l7)
 		return nil
 	}
-	name := l.namer.ForwardingRule(namer.HTTPSProtocol)
-	address, _, err := l.getEffectiveIP()
+	name := l7.namer.ForwardingRule(namer.HTTPSProtocol)
+	address, _, err := l7.getEffectiveIP()
 	if err != nil {
 		return err
 	}
-	fws, err := l.checkForwardingRule(namer.HTTPSProtocol, name, l.tps.SelfLink, address)
+	fws, err := l7.checkForwardingRule(namer.HTTPSProtocol, name, l7.tps.SelfLink, address)
 	if err != nil {
 		return err
 	}
-	l.fws = fws
+	l7.fws = fws
 	return nil
 }
 
-func (l *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, ip string) (existing *composite.ForwardingRule, err error) {
-	key, err := l.CreateKey(name)
+func (l7 *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, ip string) (existing *composite.ForwardingRule, err error) {
+	key, err := l7.CreateKey(name)
 	if err != nil {
 		return nil, err
 	}
-	version := l.Versions().ForwardingRule
-	description, err := l.description()
+	version := l7.Versions().ForwardingRule
+	description, err := l7.description()
 	if err != nil {
 		return nil, err
 	}
 
-	isL7ILB := utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
-	tr := translator.NewTranslator(isL7ILB, l.namer)
-	env := &translator.Env{VIP: ip, Network: l.cloud.NetworkURL(), Subnetwork: l.cloud.SubnetworkURL()}
-	fr := tr.ToCompositeForwardingRule(env, protocol, version, proxyLink, description, l.runtimeInfo.StaticIPSubnet)
+	isL7ILB := utils.IsGCEL7ILBIngress(l7.runtimeInfo.Ingress)
+	tr := translator.NewTranslator(isL7ILB, l7.namer)
+	env := &translator.Env{VIP: ip, Network: l7.cloud.NetworkURL(), Subnetwork: l7.cloud.SubnetworkURL()}
+	fr := tr.ToCompositeForwardingRule(env, protocol, version, proxyLink, description, l7.runtimeInfo.StaticIPSubnet)
 
-	existing, _ = composite.GetForwardingRule(l.cloud, key, version)
+	existing, _ = composite.GetForwardingRule(l7.cloud, key, version)
 	if existing != nil && (fr.IPAddress != "" && existing.IPAddress != fr.IPAddress || existing.PortRange != fr.PortRange) {
 		klog.Warningf("Recreating forwarding rule %v(%v), so it has %v(%v)",
 			existing.IPAddress, existing.PortRange, fr.IPAddress, fr.PortRange)
-		if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l.cloud, key, version)); err != nil {
+		if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l7.cloud, key, version)); err != nil {
 			return nil, err
 		}
 		existing = nil
-		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", key.Name)
+		l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", key.Name)
 	}
 	if existing == nil {
 		// This is a special case where exactly one of http or https forwarding rule
@@ -105,11 +105,11 @@ func (l *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, 
 		// In this case, the forwarding rule needs to be created with the same static ip.
 		// Note that this is not needed when user specifies a static IP.
 		if ip == "" {
-			managedStaticIPName := l.namer.ForwardingRule(namer.HTTPProtocol)
+			managedStaticIPName := l7.namer.ForwardingRule(namer.HTTPProtocol)
 			// Get static IP address if ingress has static IP annotation.
 			// Note that this Static IP annotation is applied by ingress controller.
-			if currentIPName, exists := l.ingress.Annotations[annotations.StaticIPKey]; exists && currentIPName == managedStaticIPName {
-				currentIP, _ := l.cloud.GetGlobalAddress(managedStaticIPName)
+			if currentIPName, exists := l7.ingress.Annotations[annotations.StaticIPKey]; exists && currentIPName == managedStaticIPName {
+				currentIP, _ := l7.cloud.GetGlobalAddress(managedStaticIPName)
 				if currentIP != nil {
 					klog.V(3).Infof("Ingress managed static IP %s(%s) exists, using it to create forwarding rule %s", currentIPName, currentIP.Address, name)
 					fr.IPAddress = currentIP.Address
@@ -118,16 +118,16 @@ func (l *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, 
 		}
 		klog.V(3).Infof("Creating forwarding rule for proxy %q and ip %v:%v", proxyLink, ip, protocol)
 
-		if err = composite.CreateForwardingRule(l.cloud, key, fr); err != nil {
+		if err = composite.CreateForwardingRule(l7.cloud, key, fr); err != nil {
 			return nil, err
 		}
-		l.recorder.Eventf(l.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q created", key.Name)
+		l7.recorder.Eventf(l7.runtimeInfo.Ingress, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q created", key.Name)
 
-		key, err = l.CreateKey(name)
+		key, err = l7.CreateKey(name)
 		if err != nil {
 			return nil, err
 		}
-		existing, err = composite.GetForwardingRule(l.cloud, key, version)
+		existing, err = composite.GetForwardingRule(l7.cloud, key, version)
 		if err != nil {
 			return nil, err
 		}
@@ -138,11 +138,11 @@ func (l *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, 
 	} else {
 		klog.V(3).Infof("Forwarding rule %v has the wrong proxy, setting %v overwriting %v",
 			existing.Name, existing.Target, proxyLink)
-		key, err := l.CreateKey(existing.Name)
+		key, err := l7.CreateKey(existing.Name)
 		if err != nil {
 			return nil, err
 		}
-		if err := composite.SetProxyForForwardingRule(l.cloud, key, existing, proxyLink); err != nil {
+		if err := composite.SetProxyForForwardingRule(l7.cloud, key, existing, proxyLink); err != nil {
 			return nil, err
 		}
 	}
@@ -152,7 +152,7 @@ func (l *L7) checkForwardingRule(protocol namer.NamerProtocol, name, proxyLink, 
 // getEffectiveIP returns a string with the IP to use in the HTTP and HTTPS
 // forwarding rules, a boolean indicating if this is an IP the controller
 // should manage or not and an error if the specified IP was not found.
-func (l *L7) getEffectiveIP() (string, bool, error) {
+func (l7 *L7) getEffectiveIP() (string, bool, error) {
 
 	// A note on IP management:
 	// User specifies a different IP on startup:
@@ -170,8 +170,8 @@ func (l *L7) getEffectiveIP() (string, bool, error) {
 	//    or deletes/modifies the Ingress.
 	// TODO: Handle the last case better.
 
-	if l.runtimeInfo.StaticIPName != "" {
-		key, err := l.CreateKey(l.runtimeInfo.StaticIPName)
+	if l7.runtimeInfo.StaticIPName != "" {
+		key, err := l7.CreateKey(l7.runtimeInfo.StaticIPName)
 		if err != nil {
 			return "", false, err
 		}
@@ -179,16 +179,16 @@ func (l *L7) getEffectiveIP() (string, bool, error) {
 		// Existing static IPs allocated to forwarding rules will get orphaned
 		// till the Ingress is torn down.
 		// TODO(shance): Replace version
-		if ip, err := composite.GetAddress(l.cloud, key, meta.VersionGA); err != nil || ip == nil {
+		if ip, err := composite.GetAddress(l7.cloud, key, meta.VersionGA); err != nil || ip == nil {
 			return "", false, fmt.Errorf("the given static IP name %v doesn't translate to an existing static IP.",
-				l.runtimeInfo.StaticIPName)
+				l7.runtimeInfo.StaticIPName)
 		} else {
-			l.runtimeInfo.StaticIPSubnet = ip.Subnetwork
+			l7.runtimeInfo.StaticIPSubnet = ip.Subnetwork
 			return ip.Address, false, nil
 		}
 	}
-	if l.ip != nil {
-		return l.ip.Address, true, nil
+	if l7.ip != nil {
+		return l7.ip.Address, true, nil
 	}
 	return "", true, nil
 }

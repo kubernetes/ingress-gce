@@ -74,10 +74,10 @@ func NewGCERateLimiter(specs []string, operationPollInterval time.Duration) (*GC
 }
 
 // Accept looks up the associated flowcontrol.RateLimiter (if exists) and waits on it.
-func (l *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) error {
+func (grl *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) error {
 	var rl cloud.RateLimiter
 
-	impl := l.rateLimitImpl(key)
+	impl := grl.rateLimitImpl(key)
 	if impl != nil {
 		// Wrap the flowcontrol.RateLimiter with a AcceptRateLimiter and handle context.
 		rl = &cloud.AcceptRateLimiter{Acceptor: impl}
@@ -95,7 +95,7 @@ func (l *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) er
 		// Wait a minimum amount of time regardless of rate limiter.
 		rl = &cloud.MinimumRateLimiter{
 			RateLimiter: rl,
-			Minimum:     l.operationPollInterval,
+			Minimum:     grl.operationPollInterval,
 		}
 	}
 
@@ -104,7 +104,7 @@ func (l *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) er
 
 // rateLimitImpl returns the flowcontrol.RateLimiter implementation
 // associated with the passed in key.
-func (l *GCERateLimiter) rateLimitImpl(key *cloud.RateLimitKey) flowcontrol.RateLimiter {
+func (grl *GCERateLimiter) rateLimitImpl(key *cloud.RateLimitKey) flowcontrol.RateLimiter {
 	// Since the passed in key will have the ProjectID field filled in, we need to
 	// create a copy which does not, so that retreiving the rate limiter implementation
 	// through the map works as expected.
@@ -114,7 +114,7 @@ func (l *GCERateLimiter) rateLimitImpl(key *cloud.RateLimitKey) flowcontrol.Rate
 		Version:   key.Version,
 		Service:   key.Service,
 	}
-	return l.rateLimitImpls[keyCopy]
+	return grl.rateLimitImpls[keyCopy]
 }
 
 // Expected format of param is [version].[service].[operation]

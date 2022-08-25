@@ -169,7 +169,7 @@ func TestHealthCheckFirewallDeletionWithILB(t *testing.T) {
 	l4NetLB := NewL4NetLB(netlbSvc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
 
 	// make sure both ilb and netlb use the same l4 healtcheck instance
-	l4NetLB.l4HealthChecks = l4ilb.l4HealthChecks
+	l4NetLB.l4HealthChecks = l4ilb.healthChecks
 
 	// create netlb resources
 	result := l4NetLB.EnsureFrontend(nodeNames, netlbSvc)
