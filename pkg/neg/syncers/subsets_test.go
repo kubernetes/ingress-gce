@@ -189,7 +189,13 @@ func TestUnevenNodesInZones(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		subsetMap, err := getSubsetPerZone(tc.nodesMap, tc.subsetLimit, tc.svcKey, nil, klog.TODO())
+		l4calc := l4EndpointsCalculator{
+			subsetSizeLimit: tc.subsetLimit,
+			svcId:           tc.svcKey,
+			logger:          klog.TODO(),
+		}
+
+		subsetMap, err := l4calc.getSubsetPerZone(tc.nodesMap, nil)
 		if err != nil {
 			t.Errorf("Failed to get subset for test '%s', err %v", tc.description, err)
 		}

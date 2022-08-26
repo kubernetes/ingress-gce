@@ -24,8 +24,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
-	"k8s.io/ingress-gce/pkg/utils"
-	"k8s.io/klog/v2"
 )
 
 const (
@@ -145,47 +143,4 @@ func sortZones(nodesPerZone map[string][]*v1.Node) []ZoneInfo {
 	}
 	sort.Sort(ByNodeCount(input))
 	return input
-}
-
-// getSubsetPerZone creates a subset of nodes from the given list of nodes, for each zone provided.
-// The output is a map of zone string to NEG subset.
-// In order to pick as many nodes as possible given the total limit, the following algorithm is used:
-// 1) The zones are sorted in increasing order of the total number of nodes.
-// 2) The number of nodes to be selected is divided equally among the zones. If there are 4 zones and the limit is 250,
-//
-//	the algorithm attempts to pick 250/4 from the first zone. If 'n' nodes were selected from zone1, the limit for
-//	zone2 is (250 - n)/3. For the third zone, it is (250 - n - m)/2, if m nodes were picked from zone2.
-//	Since the number of nodes will keep increasing in successive zones due to the sorting, even if fewer nodes were
-//	present in some zones, more nodes will be picked from other nodes, taking the total subset size to the given limit
-//	whenever possible.
-func getSubsetPerZone(nodesPerZone map[string][]*v1.Node, totalLimit int, svcID string, currentMap map[string]negtypes.NetworkEndpointSet, logger klog.Logger) (map[string]negtypes.NetworkEndpointSet, error) {
-	result := make(map[string]negtypes.NetworkEndpointSet)
-	var currentList []negtypes.NetworkEndpoint
-
-	subsetSize := 0
-	// initialize zonesRemaining to the total number of zones.
-	zonesRemaining := len(nodesPerZone)
-	// Sort zones in increasing order of node count.
-	zoneList := sortZones(nodesPerZone)
-
-	for _, zone := range zoneList {
-		// split the limit across the leftover zones.
-		subsetSize = totalLimit / zonesRemaining
-		logger.Info("Picking subset for a zone", "subsetSize", subsetSize, "zone", zone, "svcID", svcID)
-		result[zone.Name] = negtypes.NewNetworkEndpointSet()
-		if currentMap != nil {
-			if zset, ok := currentMap[zone.Name]; ok && zset != nil {
-				currentList = zset.List()
-			} else {
-				currentList = nil
-			}
-		}
-		subset := pickSubsetsMinRemovals(nodesPerZone[zone.Name], svcID, subsetSize, currentList)
-		for _, node := range subset {
-			result[zone.Name].Insert(negtypes.NetworkEndpoint{Node: node.Name, IP: utils.GetNodePrimaryIP(node)})
-		}
-		totalLimit -= len(subset)
-		zonesRemaining--
-	}
-	return result, nil
 }
