@@ -94,11 +94,12 @@ type syncerManager struct {
 	enableNonGcpMode     bool
 	enableEndpointSlices bool
 
-	// zoneMap keeps track of the last set of zones the neg controller
-	// has seen. zoneMap is protected by the mu mutex.
-	zoneMap map[string]struct{}
-
 	logger klog.Logger
+
+	// zone maps keep track of the last set of zones the neg controller has seen
+	// for their respective NEG types. zone maps are protected by the mu mutex.
+	vmIpZoneMap     map[string]struct{}
+	vmIpPortZoneMap map[string]struct{}
 }
 
 func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
@@ -117,14 +118,10 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 	enableEndpointSlices bool,
 	logger klog.Logger) *syncerManager {
 
-	zones, err := zoneGetter.ListZones(utils.AllNodesPredicate)
-	if err != nil {
-		logger.V(3).Info("Unable to initialize zone map in neg manager", "err", err)
-	}
-	zoneMap := make(map[string]struct{})
-	for _, zone := range zones {
-		zoneMap[zone] = struct{}{}
-	}
+	var vmIpZoneMap, vmIpPortZoneMap map[string]struct{}
+	updateZoneMap(&vmIpZoneMap, negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpEndpointType), zoneGetter, logger)
+	updateZoneMap(&vmIpPortZoneMap, negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpPortEndpointType), zoneGetter, logger)
+
 	return &syncerManager{
 		namer:                namer,
 		recorder:             recorder,
@@ -142,8 +139,9 @@ func newSyncerManager(namer negtypes.NetworkEndpointGroupNamer,
 		kubeSystemUID:        kubeSystemUID,
 		enableNonGcpMode:     enableNonGcpMode,
 		enableEndpointSlices: enableEndpointSlices,
-		zoneMap:              zoneMap,
 		logger:               logger,
+		vmIpZoneMap:          vmIpZoneMap,
+		vmIpPortZoneMap:      vmIpPortZoneMap,
 	}
 }
 
@@ -289,21 +287,40 @@ func (manager *syncerManager) SyncNodes() {
 	defer manager.mu.Unlock()
 
 	// When a zone change occurs (new zone is added or deleted), a sync should be triggered
-	isZoneChange := manager.updateZoneMap()
+	isVmIpZoneChange := updateZoneMap(&manager.vmIpZoneMap, negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpEndpointType), manager.zoneGetter, manager.logger)
+	isVmIpPortZoneChange := updateZoneMap(&manager.vmIpPortZoneMap, negtypes.NodePredicateForNetworkEndpointType(negtypes.VmIpPortEndpointType), manager.zoneGetter, manager.logger)
+
 	for key, syncer := range manager.syncerMap {
-		needSync := isZoneChange || key.NegType == negtypes.VmIpEndpointType
-		if needSync && !syncer.IsStopped() {
-			syncer.Sync()
+		if syncer.IsStopped() {
+			continue
+		}
+
+		switch key.NegType {
+
+		case negtypes.VmIpEndpointType:
+			if isVmIpZoneChange {
+				syncer.Sync()
+			}
+
+		case negtypes.VmIpPortEndpointType, negtypes.NonGCPPrivateEndpointType:
+			if isVmIpPortZoneChange {
+				syncer.Sync()
+			}
+
+		default:
+			manager.logger.Error(nil, "Not triggering sync for syncer of unknown type", "syncerType", key.NegType)
 		}
 	}
 }
 
-// updateZoneMap updates the manager's zone map with the current zones and returns true if the
-// zones have changed. The caller must obtain mu mutex before calling this function
-func (manager *syncerManager) updateZoneMap() bool {
-	zones, err := manager.zoneGetter.ListZones(utils.AllNodesPredicate)
+// updateZoneMap updates the existingZoneMap with the latest zones and returns
+// true if the zones have changed. The caller must obtain mu mutex of the
+// manager before calling this function since it modifies the passed
+// existingZoneMap.
+func updateZoneMap(existingZoneMap *map[string]struct{}, candidateNodePredicate utils.NodeConditionPredicate, zoneGetter negtypes.ZoneGetter, logger klog.Logger) bool {
+	zones, err := zoneGetter.ListZones(candidateNodePredicate)
 	if err != nil {
-		manager.logger.Error(err, "Unable to list zones")
+		logger.Error(err, "Unable to list zones")
 		return false
 	}
 
@@ -312,8 +329,9 @@ func (manager *syncerManager) updateZoneMap() bool {
 		newZoneMap[zone] = struct{}{}
 	}
 
-	zoneChange := !reflect.DeepEqual(manager.zoneMap, newZoneMap)
-	manager.zoneMap = newZoneMap
+	zoneChange := !reflect.DeepEqual(*existingZoneMap, newZoneMap)
+	*existingZoneMap = newZoneMap
+
 	return zoneChange
 }
 
