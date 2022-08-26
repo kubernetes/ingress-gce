@@ -78,10 +78,10 @@ func NewInstanceGroupLinker(instancePool instances.NodePool, backendPool Pool) L
 }
 
 // Link implements Link.
-func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
+func (igl *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	var igLinks []string
 	for _, group := range groups {
-		ig, err := l.instancePool.Get(sp.IGName(), group.Zone)
+		ig, err := igl.instancePool.Get(sp.IGName(), group.Zone)
 		if err != nil {
 			return fmt.Errorf("error retrieving IG for linking with backend %+v: %w", sp, err)
 		}
@@ -91,7 +91,7 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 	// ig_linker only supports L7 HTTP(s) External Load Balancer
 	// Hardcoded here since IGs are not supported for non GA-Global right now
 	// TODO(shance): find a way to remove hardcoded values
-	be, err := l.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Global)
+	be, err := igl.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Global)
 	if err != nil {
 		return err
 	}
@@ -126,7 +126,7 @@ func (l *instanceGroupLinker) Link(sp utils.ServicePort, groups []GroupKey) erro
 		newBackends := backendsForIGs(addIGs, bm, &sp)
 		be.Backends = append(originalIGBackends, newBackends...)
 
-		if err := l.backendPool.Update(be); err != nil {
+		if err := igl.backendPool.Update(be); err != nil {
 			if utils.IsHTTPErrorCode(err, http.StatusBadRequest) {
 				klog.V(2).Infof("Updating backend service backends with balancing mode %v failed, will try another mode. err:%v", bm, err)
 				errs = append(errs, err.Error())

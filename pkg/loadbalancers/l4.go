@@ -51,7 +51,7 @@ type L4 struct {
 	Service         *corev1.Service
 	ServicePort     utils.ServicePort
 	NamespacedName  types.NamespacedName
-	l4HealthChecks  healthchecks.L4HealthChecks
+	healthChecks    healthchecks.L4HealthChecks
 	forwardingRules ForwardingRulesProvider
 }
 
@@ -77,20 +77,20 @@ type L4ILBParams struct {
 // NewL4Handler creates a new L4Handler for the given L4 service.
 func NewL4Handler(params *L4ILBParams) *L4 {
 	var scope meta.KeyType = meta.Regional
-	l := &L4{
+	l4 := &L4{
 		cloud:           params.Cloud,
 		scope:           scope,
 		namer:           params.Namer,
 		recorder:        params.Recorder,
 		Service:         params.Service,
-		l4HealthChecks:  healthchecks.L4(),
+		healthChecks:    healthchecks.L4(),
 		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, scope),
 	}
-	l.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
-	l.backendPool = backends.NewPool(l.cloud, l.namer)
-	l.ServicePort = utils.ServicePort{ID: utils.ServicePortID{Service: l.NamespacedName}, BackendNamer: l.namer,
+	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
+	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)
+	l4.ServicePort = utils.ServicePort{ID: utils.ServicePortID{Service: l4.NamespacedName}, BackendNamer: l4.namer,
 		VMIPNEGEnabled: true}
-	return l
+	return l4
 }
 
 // CreateKey generates a meta.Key for a given GCE resource name.
@@ -151,7 +151,7 @@ func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncR
 	// When service is deleted we need to check both health checks shared and non-shared
 	// and delete them if needed.
 	for _, isShared := range []bool{true, false} {
-		resourceInError, err := l4.l4HealthChecks.DeleteHealthCheck(svc, l4.namer, isShared, meta.Global, utils.ILB)
+		resourceInError, err := l4.healthChecks.DeleteHealthCheck(svc, l4.namer, isShared, meta.Global, utils.ILB)
 		if err != nil {
 			result.GCEResourceInError = resourceInError
 			result.Error = err
@@ -206,7 +206,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 
 	// create healthcheck
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4.Service)
-	hcResult := l4.l4HealthChecks.EnsureL4HealthCheck(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames)
+	hcResult := l4.healthChecks.EnsureL4HealthCheck(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames)
 
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError

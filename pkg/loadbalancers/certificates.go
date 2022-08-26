@@ -28,30 +28,30 @@ import (
 
 const SslCertificateMissing = "SslCertificateMissing"
 
-func (l *L7) checkSSLCert() error {
-	isL7ILB := utils.IsGCEL7ILBIngress(l.runtimeInfo.Ingress)
-	tr := translator.NewTranslator(isL7ILB, l.namer)
-	env := &translator.Env{Region: l.cloud.Region(), Project: l.cloud.ProjectID()}
-	translatorCerts := tr.ToCompositeSSLCertificates(env, l.runtimeInfo.TLSName, l.runtimeInfo.TLS, l.Versions().SslCertificate)
+func (l7 *L7) checkSSLCert() error {
+	isL7ILB := utils.IsGCEL7ILBIngress(l7.runtimeInfo.Ingress)
+	tr := translator.NewTranslator(isL7ILB, l7.namer)
+	env := &translator.Env{Region: l7.cloud.Region(), Project: l7.cloud.ProjectID()}
+	translatorCerts := tr.ToCompositeSSLCertificates(env, l7.runtimeInfo.TLSName, l7.runtimeInfo.TLS, l7.Versions().SslCertificate)
 
 	// Use both pre-shared and secret-based certs if available,
 	// combining encountered errors.
 	errs := []error{}
 
 	// Get updated value of certificate for comparison
-	existingSecretsSslCerts, err := l.getIngressManagedSslCerts()
+	existingSecretsSslCerts, err := l7.getIngressManagedSslCerts()
 	if err != nil {
 		errs = append(errs, err)
 		// Do not continue if getIngressManagedSslCerts() failed.
 		return utils.JoinErrs(errs)
 	}
 
-	l.oldSSLCerts = existingSecretsSslCerts
-	sslCerts, err := l.createSslCertificates(existingSecretsSslCerts, translatorCerts)
+	l7.oldSSLCerts = existingSecretsSslCerts
+	sslCerts, err := l7.createSslCertificates(existingSecretsSslCerts, translatorCerts)
 	if err != nil {
 		errs = append(errs, err)
 	}
-	l.sslCerts = sslCerts
+	l7.sslCerts = sslCerts
 	if len(errs) > 0 {
 		return utils.JoinErrs(errs)
 	}
@@ -59,7 +59,7 @@ func (l *L7) checkSSLCert() error {
 }
 
 // createSslCertificates creates SslCertificates based on kubernetes secrets in Ingress configuration.
-func (l *L7) createSslCertificates(existingCerts, translatorCerts []*composite.SslCertificate) ([]*composite.SslCertificate, error) {
+func (l7 *L7) createSslCertificates(existingCerts, translatorCerts []*composite.SslCertificate) ([]*composite.SslCertificate, error) {
 	var result []*composite.SslCertificate
 
 	existingCertsMap := getMapfromCertList(existingCerts)
@@ -95,23 +95,23 @@ func (l *L7) createSslCertificates(existingCerts, translatorCerts []*composite.S
 		}
 		// Controller needs to create the certificate, no need to check if it exists and delete. If it did exist, it
 		// would have been listed in the populateSSLCert function and matched in the check above.
-		klog.V(2).Infof("Creating new sslCertificate %q for LB %q", translatorCert.Name, l)
-		translatorCert.Version = l.Versions().SslCertificate
-		key, err := l.CreateKey(translatorCert.Name)
+		klog.V(2).Infof("Creating new sslCertificate %q for LB %q", translatorCert.Name, l7)
+		translatorCert.Version = l7.Versions().SslCertificate
+		key, err := l7.CreateKey(translatorCert.Name)
 		if err != nil {
-			klog.Errorf("l.CreateKey(%s) = %v", translatorCert.Name, err)
+			klog.Errorf("l7.CreateKey(%s) = %v", translatorCert.Name, err)
 			return nil, err
 		}
-		err = composite.CreateSslCertificate(l.cloud, key, translatorCert)
+		err = composite.CreateSslCertificate(l7.cloud, key, translatorCert)
 		if err != nil {
-			klog.Errorf("Failed to create new sslCertificate %q for %q - %v", translatorCert.Name, l, err)
+			klog.Errorf("Failed to create new sslCertificate %q for %q - %v", translatorCert.Name, l7, err)
 			failedCerts = append(failedCerts, translatorCert.Name+" Error:"+err.Error())
 			continue
 		}
 		visitedCertMap[translatorCert.Name] = fmt.Sprintf("secret cert:%q", translatorCert.Certificate)
 
 		// Get SSLCert
-		cert, err := composite.GetSslCertificate(l.cloud, key, translatorCert.Version)
+		cert, err := composite.GetSslCertificate(l7.cloud, key, translatorCert.Version)
 		if err != nil {
 			klog.Errorf("GetSslCertificate(_, %v, %v) = %v", key, translatorCert.Version, err)
 			return nil, err
@@ -140,7 +140,7 @@ func getMapfromCertList(certs []*composite.SslCertificate) map[string]*composite
 // getIngressManagedSslCerts fetches SslCertificate resources created and managed by this load balancer
 // instance. These SslCertificate resources were created based on kubernetes secrets in Ingress
 // configuration.
-func (l *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
+func (l7 *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 	var result []*composite.SslCertificate
 
 	// Currently we list all certs available in gcloud and filter the ones managed by this loadbalancer instance. This is
@@ -148,25 +148,25 @@ func (l *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 	// Can be a performance issue if there are too many global certs, default quota is only 10.
 	// Use an empty name parameter since we only care about the scope
 	// TODO: (shance) refactor this so we don't need an empty arg
-	key, err := l.CreateKey("")
+	key, err := l7.CreateKey("")
 	if err != nil {
 		return nil, err
 	}
-	version := l.Versions().SslCertificate
-	certs, err := composite.ListSslCertificates(l.cloud, key, version)
+	version := l7.Versions().SslCertificate
+	certs, err := composite.ListSslCertificates(l7.cloud, key, version)
 	if err != nil {
 		return nil, err
 	}
 	for _, c := range certs {
-		if l.namer.IsCertNameForLB(c.Name) {
-			klog.V(4).Infof("Populating ssl cert %s for l7 %s", c.Name, l)
+		if l7.namer.IsCertNameForLB(c.Name) {
+			klog.V(4).Infof("Populating ssl cert %s for l7 %s", c.Name, l7)
 			result = append(result, c)
 		}
 	}
 	if len(result) == 0 {
 		// Check for legacy cert since that follows a different naming convention
 		klog.V(4).Infof("Looking for legacy ssl certs")
-		expectedCertLinks, err := l.getSslCertLinkInUse()
+		expectedCertLinks, err := l7.getSslCertLinkInUse()
 		if err != nil {
 			// Return nil if target proxy doesn't exist.
 			return nil, utils.IgnoreHTTPNotFound(err)
@@ -179,16 +179,16 @@ func (l *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 				continue
 			}
 
-			if !l.namer.IsLegacySSLCert(name) {
+			if !l7.namer.IsLegacySSLCert(name) {
 				continue
 			}
-			key, err := l.CreateKey(name)
+			key, err := l7.CreateKey(name)
 			if err != nil {
 				return nil, err
 			}
-			cert, _ := composite.GetSslCertificate(l.cloud, key, version)
+			cert, _ := composite.GetSslCertificate(l7.cloud, key, version)
 			if cert != nil {
-				klog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l)
+				klog.V(4).Infof("Populating legacy ssl cert %s for l7 %s", cert.Name, l7)
 				result = append(result, cert)
 			}
 		}
@@ -196,13 +196,13 @@ func (l *L7) getIngressManagedSslCerts() ([]*composite.SslCertificate, error) {
 	return result, nil
 }
 
-func (l *L7) deleteOldSSLCerts() {
-	if len(l.oldSSLCerts) == 0 {
+func (l7 *L7) deleteOldSSLCerts() {
+	if len(l7.oldSSLCerts) == 0 {
 		return
 	}
-	certsMap := getMapfromCertList(l.sslCerts)
-	for _, cert := range l.oldSSLCerts {
-		if !l.namer.IsCertNameForLB(cert.Name) && !l.namer.IsLegacySSLCert(cert.Name) {
+	certsMap := getMapfromCertList(l7.sslCerts)
+	for _, cert := range l7.oldSSLCerts {
+		if !l7.namer.IsCertNameForLB(cert.Name) && !l7.namer.IsLegacySSLCert(cert.Name) {
 			// retain cert if it is managed by GCE(non-ingress)
 			continue
 		}
@@ -211,8 +211,8 @@ func (l *L7) deleteOldSSLCerts() {
 			continue
 		}
 		klog.V(3).Infof("Cleaning up old SSL Certificate %s", cert.Name)
-		key, _ := l.CreateKey(cert.Name)
-		if certErr := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l.cloud, key, l.Versions().SslCertificate)); certErr != nil {
+		key, _ := l7.CreateKey(cert.Name)
+		if certErr := utils.IgnoreHTTPNotFound(composite.DeleteSslCertificate(l7.cloud, key, l7.Versions().SslCertificate)); certErr != nil {
 			klog.Errorf("Old cert %s delete failed - %v", cert.Name, certErr)
 		}
 	}
@@ -220,8 +220,8 @@ func (l *L7) deleteOldSSLCerts() {
 
 // Returns true if the input array of certs is identical to the certs in the L7 config.
 // Returns false if there is any mismatch
-func (l *L7) compareCerts(certLinks []string) bool {
-	certsMap := getMapfromCertList(l.sslCerts)
+func (l7 *L7) compareCerts(certLinks []string) bool {
+	certsMap := getMapfromCertList(l7.sslCerts)
 	if len(certLinks) != len(certsMap) {
 		klog.V(4).Infof("Loadbalancer has %d certs, target proxy has %d certs", len(certsMap), len(certLinks))
 		return false

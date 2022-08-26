@@ -56,7 +56,7 @@ func NewNEGLinker(
 }
 
 // Link implements Link.
-func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
+func (nl *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	version := befeatures.VersionFromServicePort(&sp)
 	var negSelfLinks []string
 	var err error
@@ -70,10 +70,10 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 
 		negUrl := ""
 		svcNegKey := fmt.Sprintf("%s/%s", sp.ID.Service.Namespace, negName)
-		negUrl, ok := getNegUrlFromSvcneg(svcNegKey, group.Zone, l.svcNegLister)
+		negUrl, ok := getNegUrlFromSvcneg(svcNegKey, group.Zone, nl.svcNegLister)
 		if !ok {
 			klog.V(4).Infof("Falling back to use NEG API to retreive NEG url for NEG %q", negName)
-			neg, err := l.negGetter.GetNetworkEndpointGroup(negName, group.Zone, version)
+			neg, err := nl.negGetter.GetNetworkEndpointGroup(negName, group.Zone, version)
 			if err != nil {
 				return err
 			}
@@ -85,11 +85,11 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	beName := sp.BackendName()
 	scope := befeatures.ScopeFromServicePort(&sp)
 
-	key, err := composite.CreateKey(l.cloud, beName, scope)
+	key, err := composite.CreateKey(nl.cloud, beName, scope)
 	if err != nil {
 		return err
 	}
-	backendService, err := composite.GetBackendService(l.cloud, key, version)
+	backendService, err := composite.GetBackendService(nl.cloud, key, version)
 	if err != nil {
 		return err
 	}
@@ -111,7 +111,7 @@ func (l *negLinker) Link(sp utils.ServicePort, groups []GroupKey) error {
 	klog.V(2).Infof("Backends changed for service port %s, removing: %s, adding: %s, changed: %s", sp.ID, diff.toRemove(), diff.toAdd(), diff.changed)
 
 	backendService.Backends = mergedBackend
-	return composite.UpdateBackendService(l.cloud, key, backendService)
+	return composite.UpdateBackendService(nl.cloud, key, backendService)
 }
 
 type backendDiff struct {

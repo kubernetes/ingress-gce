@@ -57,12 +57,12 @@ func NewLoadBalancerPool(cloud *gce.Cloud, v1NamerHelper namer_util.V1FrontendNa
 }
 
 // Ensure implements LoadBalancerPool.
-func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
+func (l7s *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 	lb := &L7{
 		runtimeInfo: ri,
-		cloud:       l.cloud,
-		namer:       l.namerFactory.Namer(ri.Ingress),
-		recorder:    l.recorderProducer.Recorder(ri.Ingress.Namespace),
+		cloud:       l7s.cloud,
+		namer:       l7s.namerFactory.Namer(ri.Ingress),
+		recorder:    l7s.recorderProducer.Recorder(ri.Ingress.Namespace),
 		scope:       features.ScopeFromIngress(ri.Ingress),
 		ingress:     *ri.Ingress,
 	}
@@ -80,14 +80,14 @@ func (l *L7s) Ensure(ri *L7RuntimeInfo) (*L7, error) {
 }
 
 // delete deletes a loadbalancer by frontend namer.
-func (l *L7s) delete(namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType) error {
+func (l7s *L7s) delete(namer namer_util.IngressFrontendNamer, versions *features.ResourceVersions, scope meta.KeyType) error {
 	if !namer.IsValidLoadBalancer() {
 		klog.V(2).Infof("Loadbalancer name %s invalid, skipping GC", namer.LoadBalancer())
 		return nil
 	}
 	lb := &L7{
 		runtimeInfo: &L7RuntimeInfo{},
-		cloud:       l.cloud,
+		cloud:       l7s.cloud,
 		namer:       namer,
 		scope:       scope,
 	}
@@ -101,15 +101,15 @@ func (l *L7s) delete(namer namer_util.IngressFrontendNamer, versions *features.R
 }
 
 // list returns a list of urlMaps (the top level LB resource) that belong to the cluster.
-func (l *L7s) list(key *meta.Key, version meta.Version) ([]*composite.UrlMap, error) {
+func (l7s *L7s) list(key *meta.Key, version meta.Version) ([]*composite.UrlMap, error) {
 	var result []*composite.UrlMap
-	urlMaps, err := composite.ListUrlMaps(l.cloud, key, version)
+	urlMaps, err := composite.ListUrlMaps(l7s.cloud, key, version)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, um := range urlMaps {
-		if l.v1NamerHelper.NameBelongsToCluster(um.Name) {
+		if l7s.v1NamerHelper.NameBelongsToCluster(um.Name) {
 			result = append(result, um)
 		}
 	}
@@ -118,10 +118,10 @@ func (l *L7s) list(key *meta.Key, version meta.Version) ([]*composite.UrlMap, er
 }
 
 // GCv2 implements LoadBalancerPool.
-func (l *L7s) GCv2(ing *v1.Ingress, scope meta.KeyType) error {
+func (l7s *L7s) GCv2(ing *v1.Ingress, scope meta.KeyType) error {
 	ingKey := common.NamespacedName(ing)
 	klog.V(2).Infof("GCv2(%v)", ingKey)
-	if err := l.delete(l.namerFactory.Namer(ing), features.VersionsFromIngress(ing), scope); err != nil {
+	if err := l7s.delete(l7s.namerFactory.Namer(ing), features.VersionsFromIngress(ing), scope); err != nil {
 		return err
 	}
 	klog.V(2).Infof("GCv2(%v) ok", ingKey)
@@ -132,24 +132,24 @@ func (l *L7s) GCv2(ing *v1.Ingress, scope meta.KeyType) error {
 // (e.g. when a user migrates from ILB to ELB on the same ingress or vice versa.)
 // This only applies to the V2 Naming Scheme
 // TODO(shance): Refactor to avoid calling GCE every sync loop
-func (l *L7s) FrontendScopeChangeGC(ing *v1.Ingress) (*meta.KeyType, error) {
+func (l7s *L7s) FrontendScopeChangeGC(ing *v1.Ingress) (*meta.KeyType, error) {
 	if ing == nil {
 		return nil, nil
 	}
 
-	namer := l.namerFactory.Namer(ing)
+	namer := l7s.namerFactory.Namer(ing)
 	urlMapName := namer.UrlMap()
 	currentScope := features.ScopeFromIngress(ing)
 
 	for _, scope := range []meta.KeyType{meta.Global, meta.Regional} {
 		if scope != currentScope {
-			key, err := composite.CreateKey(l.cloud, urlMapName, scope)
+			key, err := composite.CreateKey(l7s.cloud, urlMapName, scope)
 			if err != nil {
 				return nil, err
 			}
 
 			// Look for existing LBs with the same name but of a different scope
-			_, err = composite.GetUrlMap(l.cloud, key, features.VersionsFromIngress(ing).UrlMap)
+			_, err = composite.GetUrlMap(l7s.cloud, key, features.VersionsFromIngress(ing).UrlMap)
 			if err == nil {
 				klog.V(2).Infof("GC'ing ing %v for scope %q", ing, scope)
 				return &scope, nil
@@ -164,35 +164,35 @@ func (l *L7s) FrontendScopeChangeGC(ing *v1.Ingress) (*meta.KeyType, error) {
 
 // GCv1 implements LoadBalancerPool.
 // TODO(shance): Update to handle regional and global LB with same name
-func (l *L7s) GCv1(names []string) error {
+func (l7s *L7s) GCv1(names []string) error {
 	klog.V(2).Infof("GCv1(%v)", names)
 
 	knownLoadBalancers := make(map[namer_util.LoadBalancerName]bool)
 	for _, n := range names {
-		knownLoadBalancers[l.v1NamerHelper.LoadBalancer(n)] = true
+		knownLoadBalancers[l7s.v1NamerHelper.LoadBalancer(n)] = true
 	}
 
 	// GC L7-ILB LBs if enabled
-	key, err := composite.CreateKey(l.cloud, "", meta.Regional)
+	key, err := composite.CreateKey(l7s.cloud, "", meta.Regional)
 	if err != nil {
 		return fmt.Errorf("error getting regional key: %v", err)
 	}
-	urlMaps, err := l.list(key, features.L7ILBVersions().UrlMap)
+	urlMaps, err := l7s.list(key, features.L7ILBVersions().UrlMap)
 	if err != nil {
 		return fmt.Errorf("error listing regional LBs: %v", err)
 	}
 
-	if err := l.gc(urlMaps, knownLoadBalancers, features.L7ILBVersions()); err != nil {
+	if err := l7s.gc(urlMaps, knownLoadBalancers, features.L7ILBVersions()); err != nil {
 		return fmt.Errorf("error gc-ing regional LBs: %v", err)
 	}
 
 	// TODO(shance): fix list taking a key
-	urlMaps, err = l.list(meta.GlobalKey(""), meta.VersionGA)
+	urlMaps, err = l7s.list(meta.GlobalKey(""), meta.VersionGA)
 	if err != nil {
 		return fmt.Errorf("error listing global LBs: %v", err)
 	}
 
-	if errors := l.gc(urlMaps, knownLoadBalancers, features.GAResourceVersions); errors != nil {
+	if errors := l7s.gc(urlMaps, knownLoadBalancers, features.GAResourceVersions); errors != nil {
 		return fmt.Errorf("error gcing global LBs: %v", errors)
 	}
 
@@ -201,12 +201,12 @@ func (l *L7s) GCv1(names []string) error {
 
 // gc is a helper for GCv1.
 // TODO(shance): get versions from description
-func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers map[namer_util.LoadBalancerName]bool, versions *features.ResourceVersions) []error {
+func (l7s *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers map[namer_util.LoadBalancerName]bool, versions *features.ResourceVersions) []error {
 	var errors []error
 
 	// Delete unknown loadbalancers
 	for _, um := range urlMaps {
-		l7Name := l.v1NamerHelper.LoadBalancerForURLMap(um.Name)
+		l7Name := l7s.v1NamerHelper.LoadBalancerForURLMap(um.Name)
 
 		if knownLoadBalancers[l7Name] {
 			klog.V(3).Infof("Load balancer %v is still valid, not GC'ing", l7Name)
@@ -219,7 +219,7 @@ func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers map[namer_util.
 			continue
 		}
 
-		if err := l.delete(l.namerFactory.NamerForLoadBalancer(l7Name), versions, scope); err != nil {
+		if err := l7s.delete(l7s.namerFactory.NamerForLoadBalancer(l7Name), versions, scope); err != nil {
 			errors = append(errors, fmt.Errorf("error deleting loadbalancer %q: %v", l7Name, err))
 		}
 	}
@@ -227,9 +227,9 @@ func (l *L7s) gc(urlMaps []*composite.UrlMap, knownLoadBalancers map[namer_util.
 }
 
 // Shutdown implements LoadBalancerPool.
-func (l *L7s) Shutdown(ings []*v1.Ingress) error {
+func (l7s *L7s) Shutdown(ings []*v1.Ingress) error {
 	// Delete ingresses that use v1 naming scheme.
-	if err := l.GCv1([]string{}); err != nil {
+	if err := l7s.GCv1([]string{}); err != nil {
 		return fmt.Errorf("error deleting load-balancers for v1 naming policy: %v", err)
 	}
 	// Delete ingresses that use v2 naming policy.
@@ -238,7 +238,7 @@ func (l *L7s) Shutdown(ings []*v1.Ingress) error {
 		return namer_util.FrontendNamingScheme(ing) == namer_util.V2NamingScheme
 	}).AsList()
 	for _, ing := range v2Ings {
-		if err := l.GCv2(ing, features.ScopeFromIngress(ing)); err != nil {
+		if err := l7s.GCv2(ing, features.ScopeFromIngress(ing)); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -250,13 +250,13 @@ func (l *L7s) Shutdown(ings []*v1.Ingress) error {
 }
 
 // HasUrlMap implements LoadBalancerPool.
-func (l *L7s) HasUrlMap(ing *v1.Ingress) (bool, error) {
-	namer := l.namerFactory.Namer(ing)
-	key, err := composite.CreateKey(l.cloud, namer.UrlMap(), features.ScopeFromIngress(ing))
+func (l7s *L7s) HasUrlMap(ing *v1.Ingress) (bool, error) {
+	namer := l7s.namerFactory.Namer(ing)
+	key, err := composite.CreateKey(l7s.cloud, namer.UrlMap(), features.ScopeFromIngress(ing))
 	if err != nil {
 		return false, err
 	}
-	if _, err := composite.GetUrlMap(l.cloud, key, features.VersionsFromIngress(ing).UrlMap); err != nil {
+	if _, err := composite.GetUrlMap(l7s.cloud, key, features.VersionsFromIngress(ing).UrlMap); err != nil {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			return false, nil
 		}

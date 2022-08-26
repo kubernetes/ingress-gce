@@ -50,7 +50,7 @@ type L4NetLB struct {
 	Service         *corev1.Service
 	ServicePort     utils.ServicePort
 	NamespacedName  types.NamespacedName
-	l4HealthChecks  healthchecks.L4HealthChecks
+	healthChecks    healthchecks.L4HealthChecks
 	forwardingRules ForwardingRulesProvider
 }
 
@@ -91,7 +91,7 @@ func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, n
 		Service:         service,
 		NamespacedName:  types.NamespacedName{Name: service.Name, Namespace: service.Namespace},
 		backendPool:     backends.NewPool(cloud, namer),
-		l4HealthChecks:  healthchecks.L4(),
+		healthChecks:    healthchecks.L4(),
 		forwardingRules: forwardingrules.New(cloud, meta.VersionGA, scope),
 	}
 	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
@@ -124,7 +124,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	l4netlb.Service = svc
 
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
-	hcResult := l4netlb.l4HealthChecks.EnsureL4HealthCheck(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames)
+	hcResult := l4netlb.healthChecks.EnsureL4HealthCheck(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames)
 
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
@@ -224,7 +224,7 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 	// When service is deleted we need to check both health checks shared and non-shared
 	// and delete them if needed.
 	for _, isShared := range []bool{true, false} {
-		resourceInError, err := l4netlb.l4HealthChecks.DeleteHealthCheck(svc, l4netlb.namer, isShared, meta.Regional, utils.XLB)
+		resourceInError, err := l4netlb.healthChecks.DeleteHealthCheck(svc, l4netlb.namer, isShared, meta.Regional, utils.XLB)
 		if err != nil {
 			result.GCEResourceInError = resourceInError
 			result.Error = err

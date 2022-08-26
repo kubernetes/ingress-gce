@@ -31,23 +31,23 @@ import (
 
 // ensureComputeURLMap retrieves the current URLMap and overwrites it if incorrect. If the resource
 // does not exist, the map is created.
-func (l *L7) ensureComputeURLMap() error {
-	if l.runtimeInfo.UrlMap == nil {
+func (l7 *L7) ensureComputeURLMap() error {
+	if l7.runtimeInfo.UrlMap == nil {
 		return fmt.Errorf("cannot create urlmap without internal representation")
 	}
 
 	// Every update replaces the entire urlmap.
 	// Use an empty name parameter since we only care about the scope
 	// TODO: (shance) refactor this so we don't need an empty arg
-	key, err := l.CreateKey("")
+	key, err := l7.CreateKey("")
 	if err != nil {
 		return err
 	}
-	expectedMap := translator.ToCompositeURLMap(l.runtimeInfo.UrlMap, l.namer, key)
+	expectedMap := translator.ToCompositeURLMap(l7.runtimeInfo.UrlMap, l7.namer, key)
 	key.Name = expectedMap.Name
 
-	expectedMap.Version = l.Versions().UrlMap
-	currentMap, err := composite.GetUrlMap(l.cloud, key, expectedMap.Version)
+	expectedMap.Version = l7.Versions().UrlMap
+	currentMap, err := composite.GetUrlMap(l7.cloud, key, expectedMap.Version)
 	if utils.IgnoreHTTPNotFound(err) != nil {
 		return err
 	}
@@ -56,42 +56,42 @@ func (l *L7) ensureComputeURLMap() error {
 		// Check for transitions between elb and ilb
 
 		klog.V(2).Infof("Creating URLMap %q", expectedMap.Name)
-		if err := composite.CreateUrlMap(l.cloud, key, expectedMap); err != nil {
+		if err := composite.CreateUrlMap(l7.cloud, key, expectedMap); err != nil {
 			return fmt.Errorf("CreateUrlMap: %v", err)
 		}
-		l.recorder.Eventf(&l.ingress, apiv1.EventTypeNormal, events.SyncIngress, "UrlMap %q created", key.Name)
-		l.um = expectedMap
+		l7.recorder.Eventf(&l7.ingress, apiv1.EventTypeNormal, events.SyncIngress, "UrlMap %q created", key.Name)
+		l7.um = expectedMap
 
 		return nil
 	}
 
 	if mapsEqual(currentMap, expectedMap) {
-		klog.V(4).Infof("URLMap for %q is unchanged", l)
-		l.um = currentMap
+		klog.V(4).Infof("URLMap for %q is unchanged", l7)
+		l7.um = currentMap
 		return nil
 	}
 
-	klog.V(2).Infof("Updating URLMap for %q", l)
+	klog.V(2).Infof("Updating URLMap for %q", l7)
 	expectedMap.Fingerprint = currentMap.Fingerprint
-	if err := composite.UpdateUrlMap(l.cloud, key, expectedMap); err != nil {
+	if err := composite.UpdateUrlMap(l7.cloud, key, expectedMap); err != nil {
 		return fmt.Errorf("UpdateURLMap: %v", err)
 	}
 
-	l.recorder.Eventf(&l.ingress, apiv1.EventTypeNormal, events.SyncIngress, "UrlMap %q updated", key.Name)
-	l.um = expectedMap
+	l7.recorder.Eventf(&l7.ingress, apiv1.EventTypeNormal, events.SyncIngress, "UrlMap %q updated", key.Name)
+	l7.um = expectedMap
 
 	return nil
 }
 
-func (l *L7) ensureRedirectURLMap() error {
-	feConfig := l.runtimeInfo.FrontendConfig
-	isL7ILB := utils.IsGCEL7ILBIngress(&l.ingress)
+func (l7 *L7) ensureRedirectURLMap() error {
+	feConfig := l7.runtimeInfo.FrontendConfig
+	isL7ILB := utils.IsGCEL7ILBIngress(&l7.ingress)
 
-	t := translator.NewTranslator(isL7ILB, l.namer)
-	env := &translator.Env{FrontendConfig: feConfig, Ing: &l.ingress}
+	t := translator.NewTranslator(isL7ILB, l7.namer)
+	env := &translator.Env{FrontendConfig: feConfig, Ing: &l7.ingress}
 
-	name, namerSupported := l.namer.RedirectUrlMap()
-	expectedMap := t.ToRedirectUrlMap(env, l.Versions().UrlMap)
+	name, namerSupported := l7.namer.RedirectUrlMap()
+	expectedMap := t.ToRedirectUrlMap(env, l7.Versions().UrlMap)
 
 	// Cannot enable for internal ingress
 	if expectedMap != nil && isL7ILB {
@@ -106,7 +106,7 @@ func (l *L7) ensureRedirectURLMap() error {
 		return nil
 	}
 
-	key, err := l.CreateKey(name)
+	key, err := l7.CreateKey(name)
 	if err != nil {
 		return err
 	}
@@ -114,37 +114,37 @@ func (l *L7) ensureRedirectURLMap() error {
 	// Do not expect to have a RedirectUrlMap
 	if expectedMap == nil {
 		// Check if we need to GC
-		status, ok := l.ingress.Annotations[annotations.RedirectUrlMapKey]
+		status, ok := l7.ingress.Annotations[annotations.RedirectUrlMapKey]
 		if !ok || status == "" {
 			return nil
 		} else {
-			if err := composite.DeleteUrlMap(l.cloud, key, l.Versions().UrlMap); err != nil {
+			if err := composite.DeleteUrlMap(l7.cloud, key, l7.Versions().UrlMap); err != nil {
 				// Do not block LB sync if this fails
 				klog.Errorf("DeleteUrlMap(%s) = %v", key, err)
 				// Signal to the rest of the controller that the UrlMap still exists
-				l.redirectUm = &composite.UrlMap{Name: key.Name}
+				l7.redirectUm = &composite.UrlMap{Name: key.Name}
 			}
 		}
 		return nil
 	}
 
-	currentMap, err := composite.GetUrlMap(l.cloud, key, l.Versions().UrlMap)
+	currentMap, err := composite.GetUrlMap(l7.cloud, key, l7.Versions().UrlMap)
 	if utils.IgnoreHTTPNotFound(err) != nil {
 		return err
 	}
 
 	if currentMap == nil {
-		if err := composite.CreateUrlMap(l.cloud, key, expectedMap); err != nil {
+		if err := composite.CreateUrlMap(l7.cloud, key, expectedMap); err != nil {
 			return err
 		}
 	} else if compareRedirectUrlMaps(expectedMap, currentMap) {
 		expectedMap.Fingerprint = currentMap.Fingerprint
-		if err := composite.UpdateUrlMap(l.cloud, key, expectedMap); err != nil {
+		if err := composite.UpdateUrlMap(l7.cloud, key, expectedMap); err != nil {
 			return err
 		}
 	}
 
-	l.redirectUm = expectedMap
+	l7.redirectUm = expectedMap
 	return nil
 }
 
