@@ -17,6 +17,8 @@ limitations under the License.
 package syncers
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
@@ -426,4 +428,20 @@ func shouldPodBeInDestinationRuleSubset(podLister cache.Indexer, namespace, name
 		return false
 	}
 	return selector.Matches(labels.Set(pod.Labels))
+}
+
+// saltHasher implements hasher
+type saltHasher struct {
+	salt string
+}
+
+func newSaltHasher(salt string) *saltHasher {
+	return &saltHasher{
+		salt: salt,
+	}
+}
+
+func (sh *saltHasher) hash(s string) string {
+	hashSum := sha256.Sum256([]byte(s + ":" + sh.salt))
+	return hex.EncodeToString(hashSum[:])
 }

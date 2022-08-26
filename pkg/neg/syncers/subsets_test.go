@@ -38,15 +38,18 @@ func TestBasicSubset(t *testing.T) {
 		{ObjectMeta: metav1.ObjectMeta{Name: "node25"}},
 	}
 	count := 3
-	subset1 := pickSubsetsMinRemovals(nodes, "svc123", count, nil)
+	subsetsCalculator1 := newL4SubsetPerZoneCalculator("svc123", count, klog.TODO())
+	subset1 := subsetsCalculator1.pickSubsetMinRemovals(nodes, nil, count)
 	if len(subset1) < 3 {
 		t.Errorf("Expected %d subsets, got only %d - %v", count, len(subset1), subset1)
 	}
 	if !validateSubset(subset1, nodes) {
 		t.Errorf("Invalid subset list %v from %v", subset1, nodes)
 	}
-	subset2 := pickSubsetsMinRemovals(nodes, "svc345", count, nil)
-	subset3 := pickSubsetsMinRemovals(nodes, "svc56", count, nil)
+	subsetsCalculator2 := newL4SubsetPerZoneCalculator("svc345", count, klog.TODO())
+	subset2 := subsetsCalculator2.pickSubsetMinRemovals(nodes, nil, count)
+	subsetsCalculator3 := newL4SubsetPerZoneCalculator("svc56", count, klog.TODO())
+	subset3 := subsetsCalculator3.pickSubsetMinRemovals(nodes, nil, count)
 	t.Logf("Subset2 is %s", nodeNames(subset2))
 	t.Logf("Subset3 is %s", nodeNames(subset3))
 	if isIdentical(subset1, subset2) || isIdentical(subset3, subset2) || isIdentical(subset1, subset3) {
@@ -57,7 +60,9 @@ func TestBasicSubset(t *testing.T) {
 func TestEmptyNodes(t *testing.T) {
 	t.Parallel()
 	count := 3
-	subset1 := pickSubsetsMinRemovals(nil, "svc123", count, nil)
+
+	subsetsCalculator := newL4SubsetPerZoneCalculator("svc123", count, klog.TODO())
+	subset1 := subsetsCalculator.pickSubsetMinRemovals(nil, nil, count)
 	if len(subset1) != 0 {
 		t.Errorf("Expected empty subset, got - %s", nodeNames(subset1))
 	}
@@ -68,7 +73,8 @@ func TestFewerNodes(t *testing.T) {
 	t.Parallel()
 	nodes := makeNodes(0, 5)
 	count := 10
-	subset1 := pickSubsetsMinRemovals(nodes, "svc123", count, nil)
+	subsetsCalculator := newL4SubsetPerZoneCalculator("svc123", count, klog.TODO())
+	subset1 := subsetsCalculator.pickSubsetMinRemovals(nodes, nil, count)
 	if len(subset1) != len(nodes) {
 		t.Errorf("Expected subset of length %d, got %d, subsets - %s", len(nodes), len(subset1), nodeNames(subset1))
 	}
@@ -189,10 +195,8 @@ func TestUnevenNodesInZones(t *testing.T) {
 		},
 	}
 	for _, tc := range testCases {
-		subsetMap, err := getSubsetPerZone(tc.nodesMap, tc.subsetLimit, tc.svcKey, nil, klog.TODO())
-		if err != nil {
-			t.Errorf("Failed to get subset for test '%s', err %v", tc.description, err)
-		}
+		subsetsCalculator := newL4SubsetPerZoneCalculator(tc.svcKey, tc.subsetLimit, klog.TODO())
+		subsetMap := subsetsCalculator.calculateSubsetsPerZone(tc.nodesMap, nil)
 		if len(subsetMap) != len(tc.nodesMap) {
 			t.Errorf("Not all input zones were included in the subset.  subset map - %v, nodesMap %v, test '%s'",
 				subsetMap, tc.nodesMap, tc.description)
@@ -224,14 +228,16 @@ func TestNoRemovals(t *testing.T) {
 	// pick a random startIndex which is used to construct nodeName.
 	nodes := makeNodes(78, 5)
 	count := 5
-	subset1 := pickSubsetsMinRemovals(nodes, "svc123", count, nil)
+
+	subsetsCalculator := newL4SubsetPerZoneCalculator("svc123", count, klog.TODO())
+	subset1 := subsetsCalculator.pickSubsetMinRemovals(nodes, nil, count)
 	if len(subset1) < 5 {
 		t.Errorf("Expected %d subsets, got only %d - %v", count, len(subset1), subset1)
 	}
 	// nodeName abcd shows up 2nd in the sorted list for the given salt. So picking a subset of 5 will remove one of the
 	// existing nodes.
 	nodes = append(nodes, &v1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node:abcd"}})
-	subset2 := pickSubsetsMinRemovals(nodes, "svc123", count, nil)
+	subset2 := subsetsCalculator.pickSubsetMinRemovals(nodes, nil, count)
 	if len(subset2) < 5 {
 		t.Errorf("Expected %d subsets, got only %d - %v", count, len(subset2), subset2)
 	}
@@ -242,7 +248,7 @@ func TestNoRemovals(t *testing.T) {
 	for _, node := range subset1 {
 		existingEp = append(existingEp, types.NetworkEndpoint{Node: node.Name})
 	}
-	subset3 := pickSubsetsMinRemovals(nodes, "svc123", count, existingEp)
+	subset3 := subsetsCalculator.pickSubsetMinRemovals(nodes, existingEp, count)
 	if len(subset3) < 5 {
 		t.Errorf("Expected %d subsets, got only %d - %v", count, len(subset3), subset3)
 	}
