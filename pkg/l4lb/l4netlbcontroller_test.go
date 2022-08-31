@@ -640,7 +640,7 @@ func TestProcessServiceDeletionFailed(t *testing.T) {
 		expectedError string
 	}{
 		{addMockFunc: func(c *cloud.MockGCE) { c.MockForwardingRules.DeleteHook = test.DeleteForwardingRulesErrorHook },
-			expectedError: "DeleteForwardingRulesErrorHook"},
+			expectedError: "Failed to delete forwarding rule a, err: DeleteForwardingRulesErrorHook"},
 		{addMockFunc: func(c *cloud.MockGCE) { c.MockAddresses.DeleteHook = test.DeleteAddressErrorHook },
 			expectedError: "DeleteAddressErrorHook"},
 		{addMockFunc: func(c *cloud.MockGCE) { c.MockFirewalls.DeleteHook = test.DeleteFirewallsErrorHook },
