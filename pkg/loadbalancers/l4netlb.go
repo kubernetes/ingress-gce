@@ -161,12 +161,6 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	result.Status = &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}
 	result.MetricsState.IsPremiumTier = fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue()
 	result.MetricsState.IsManagedIP = ipAddrType == IPAddrManaged
-	if fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue() {
-		result.MetricsState.IsPremiumTier = true
-	}
-	if ipAddrType == IPAddrManaged {
-		result.MetricsState.IsManagedIP = true
-	}
 
 	res := l4netlb.createFirewalls(name, nodeNames, fr.IPAddress, portRanges, string(protocol))
 	if res.Error != nil {
