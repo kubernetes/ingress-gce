@@ -66,7 +66,7 @@ type L4NetLBSyncResult struct {
 	StartTime          time.Time
 }
 
-func NewL4SynResult(syncType string) *L4NetLBSyncResult {
+func NewL4SyncResult(syncType string) *L4NetLBSyncResult {
 	result := &L4NetLBSyncResult{
 		Annotations: make(map[string]string),
 		StartTime:   time.Now(),
@@ -114,7 +114,7 @@ func (l4netlb *L4NetLB) createKey(name string) (*meta.Key, error) {
 // It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 // This function does not link instances to Backend Service.
 func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) *L4NetLBSyncResult {
-	result := NewL4SynResult(SyncTypeCreate)
+	result := NewL4SyncResult(SyncTypeCreate)
 
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
@@ -181,7 +181,7 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 // EnsureLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
 // It is health check, firewall rules and backend service
 func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBSyncResult {
-	result := NewL4SynResult(SyncTypeDelete)
+	result := NewL4SyncResult(SyncTypeDelete)
 
 	frName := l4netlb.GetFRName()
 	key, err := l4netlb.createKey(frName)
