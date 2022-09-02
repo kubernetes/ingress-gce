@@ -88,5 +88,5 @@ $ sed 's/k8s-ingress-image-push/my-reg/g' cmd/e2e-test/e2e-test.yaml > my-e2e-te
 $ kubectl apply -f my-e2e-test.yaml
 
 # Check the test results:
-$ kubectl log -n default ingress-e2e
+$ kubectl logs -n default ingress-e2e
 ```
