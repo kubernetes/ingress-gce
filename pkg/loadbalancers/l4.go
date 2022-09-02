@@ -111,14 +111,9 @@ func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncR
 	// All resources use the L4Backend Name, except forwarding rule.
 	name := l4.namer.L4Backend(svc.Namespace, svc.Name)
 	frName := l4.GetFRName()
-	key, err := l4.CreateKey(frName)
-	if err != nil {
-		klog.Errorf("Failed to create key for LoadBalancer resources with name %s for service %s, err %v", frName, l4.NamespacedName.String(), err)
-		result.Error = err
-		return result
-	}
 	// If any resource deletion fails, log the error and continue cleanup.
-	if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l4.cloud, key, meta.VersionGA)); err != nil {
+	err := l4.forwardingRules.Delete(frName)
+	if err != nil {
 		klog.Errorf("Failed to delete forwarding rule for internal loadbalancer service %s, err %v", l4.NamespacedName.String(), err)
 		result.Error = err
 		result.GCEResourceInError = annotations.ForwardingRuleResource

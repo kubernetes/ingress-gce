@@ -178,14 +178,9 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 	result := NewL4SyncResult(SyncTypeDelete)
 
 	frName := l4netlb.GetFRName()
-	key, err := l4netlb.createKey(frName)
-	if err != nil {
-		klog.Errorf("Failed to create key for forwarding rule resources with name %s for service %s - %v", frName, l4netlb.NamespacedName.String(), err)
-		result.Error = err
-		return result
-	}
 	// If any resource deletion fails, log the error and continue cleanup.
-	if err = utils.IgnoreHTTPNotFound(composite.DeleteForwardingRule(l4netlb.cloud, key, meta.VersionGA)); err != nil {
+	err := l4netlb.forwardingRules.Delete(frName)
+	if err != nil {
 		klog.Errorf("Failed to delete forwarding rule %s for service %s - %v", frName, l4netlb.NamespacedName.String(), err)
 		result.Error = err
 		result.GCEResourceInError = annotations.ForwardingRuleResource
