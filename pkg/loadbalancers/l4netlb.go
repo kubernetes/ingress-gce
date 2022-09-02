@@ -190,13 +190,13 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 		result.Error = err
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 	}
-	name := l4netlb.ServicePort.BackendName()
-	if err = ensureAddressDeleted(l4netlb.cloud, name, l4netlb.cloud.Region()); err != nil {
+	if err = ensureAddressDeleted(l4netlb.cloud, frName, l4netlb.cloud.Region()); err != nil {
 		klog.Errorf("Failed to delete address for service %s - %v", l4netlb.NamespacedName.String(), err)
 		result.Error = err
 		result.GCEResourceInError = annotations.AddressResource
 	}
 
+	name := l4netlb.ServicePort.BackendName()
 	err = l4netlb.deleteFirewall(name)
 	if err != nil {
 		klog.Errorf("Failed to delete firewall rule %s for service %s - %v", name, l4netlb.NamespacedName.String(), err)
