@@ -23,14 +23,14 @@ func TestCreateForwardingRule(t *testing.T) {
 				Name:                "NetLB",
 				LoadBalancingScheme: string(cloud.SchemeExternal),
 			},
-			desc: "Test creating external forwarding rule",
+			desc: "Create external forwarding rule",
 		},
 		{
 			frRule: &composite.ForwardingRule{
 				Name:                "ILB",
 				LoadBalancingScheme: string(cloud.SchemeInternal),
 			},
-			desc: "Test creating internal forwarding rule",
+			desc: "Create internal forwarding rule",
 		},
 	}
 
@@ -76,19 +76,19 @@ func TestGetForwardingRule(t *testing.T) {
 			existingFwdRules: []*composite.ForwardingRule{elbForwardingRule, ilbForwardingRule},
 			getFwdRuleName:   elbForwardingRule.Name,
 			expectedFwdRule:  elbForwardingRule,
-			desc:             "Test getting external forwarding rule",
+			desc:             "Get external forwarding rule",
 		},
 		{
 			existingFwdRules: []*composite.ForwardingRule{elbForwardingRule, ilbForwardingRule},
 			getFwdRuleName:   ilbForwardingRule.Name,
 			expectedFwdRule:  ilbForwardingRule,
-			desc:             "Test getting internal forwarding rule",
+			desc:             "Get internal forwarding rule",
 		},
 		{
 			existingFwdRules: []*composite.ForwardingRule{elbForwardingRule, ilbForwardingRule},
 			getFwdRuleName:   "non-existent-rule",
 			expectedFwdRule:  nil,
-			desc:             "Test getting non existent forwarding rule",
+			desc:             "Get non existent forwarding rule",
 		},
 	}
 
@@ -123,34 +123,34 @@ func TestDeleteForwardingRule(t *testing.T) {
 	}
 
 	testCases := []struct {
-		existingFwdRules    []*composite.ForwardingRule
-		deleteFwdRuleName   string
-		shouldExistFwdRules []*composite.ForwardingRule
-		desc                string
+		existingFwdRules        []*composite.ForwardingRule
+		deleteFwdRuleName       string
+		shouldNotDeleteFwdRules []*composite.ForwardingRule
+		desc                    string
 	}{
 		{
-			existingFwdRules:    []*composite.ForwardingRule{elbForwardingRule, ilbForwardingRule},
-			deleteFwdRuleName:   elbForwardingRule.Name,
-			shouldExistFwdRules: []*composite.ForwardingRule{ilbForwardingRule},
-			desc:                "Delete elb forwarding rule",
+			existingFwdRules:        []*composite.ForwardingRule{elbForwardingRule, ilbForwardingRule},
+			deleteFwdRuleName:       elbForwardingRule.Name,
+			shouldNotDeleteFwdRules: []*composite.ForwardingRule{ilbForwardingRule},
+			desc:                    "Delete elb forwarding rule",
 		},
 		{
-			existingFwdRules:    []*composite.ForwardingRule{elbForwardingRule, ilbForwardingRule},
-			deleteFwdRuleName:   ilbForwardingRule.Name,
-			shouldExistFwdRules: []*composite.ForwardingRule{elbForwardingRule},
-			desc:                "Delete ilb forwarding rule",
+			existingFwdRules:        []*composite.ForwardingRule{elbForwardingRule, ilbForwardingRule},
+			deleteFwdRuleName:       ilbForwardingRule.Name,
+			shouldNotDeleteFwdRules: []*composite.ForwardingRule{elbForwardingRule},
+			desc:                    "Delete ilb forwarding rule",
 		},
 		{
-			existingFwdRules:    []*composite.ForwardingRule{elbForwardingRule},
-			deleteFwdRuleName:   elbForwardingRule.Name,
-			shouldExistFwdRules: []*composite.ForwardingRule{},
-			desc:                "Delete single elb forwarding rule",
+			existingFwdRules:        []*composite.ForwardingRule{elbForwardingRule},
+			deleteFwdRuleName:       elbForwardingRule.Name,
+			shouldNotDeleteFwdRules: []*composite.ForwardingRule{},
+			desc:                    "Delete single elb forwarding rule",
 		},
 		{
-			existingFwdRules:    []*composite.ForwardingRule{elbForwardingRule, ilbForwardingRule},
-			deleteFwdRuleName:   "non-existent",
-			shouldExistFwdRules: []*composite.ForwardingRule{elbForwardingRule, ilbForwardingRule},
-			desc:                "Delete non existent forwarding rule",
+			existingFwdRules:        []*composite.ForwardingRule{elbForwardingRule, ilbForwardingRule},
+			deleteFwdRuleName:       "non-existent",
+			shouldNotDeleteFwdRules: []*composite.ForwardingRule{elbForwardingRule, ilbForwardingRule},
+			desc:                    "Delete non existent forwarding rule",
 		},
 	}
 
@@ -169,7 +169,7 @@ func TestDeleteForwardingRule(t *testing.T) {
 			if err != nil {
 				t.Errorf("verifyForwardingRuleNotExists(_, %s) returned error %v, want nil", tc.deleteFwdRuleName, err)
 			}
-			for _, fw := range tc.shouldExistFwdRules {
+			for _, fw := range tc.shouldNotDeleteFwdRules {
 				err = verifyForwardingRuleExists(fakeGCE, fw.Name)
 				if err != nil {
 					t.Errorf("verifyForwardingRuleExists(_, %s) returned error %v, want nil", fw.Name, err)

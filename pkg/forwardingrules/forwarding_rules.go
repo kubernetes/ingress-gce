@@ -24,10 +24,6 @@ func New(cloud *gce.Cloud, version meta.Version, scope meta.KeyType) *Forwarding
 	}
 }
 
-func (frc *ForwardingRules) createKey(name string) (*meta.Key, error) {
-	return composite.CreateKey(frc.cloud, name, frc.scope)
-}
-
 func (frc *ForwardingRules) Create(forwardingRule *composite.ForwardingRule) error {
 	key, err := frc.createKey(forwardingRule.Name)
 	if err != nil {
@@ -59,4 +55,8 @@ func (frc *ForwardingRules) Delete(name string) error {
 		return fmt.Errorf("Failed to delete forwarding rule %s, err: %w", name, err)
 	}
 	return nil
+}
+
+func (frc *ForwardingRules) createKey(name string) (*meta.Key, error) {
+	return composite.CreateKey(frc.cloud, name, frc.scope)
 }
