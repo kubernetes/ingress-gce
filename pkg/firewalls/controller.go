@@ -158,7 +158,9 @@ func (fwc *FirewallController) sync(key string) error {
 
 	// If there are no more ingresses, then delete the firewall rule.
 	if len(gceIngresses) == 0 {
-		fwc.firewallPool.GC()
+		if err := fwc.firewallPool.GC(); err != nil {
+			klog.Errorf("Could not garbage collect firewall pool, got error: %v", err)
+		}
 		return nil
 	}
 

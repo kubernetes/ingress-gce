@@ -1,0 +1,28 @@
+linters:
+  # Disable all linters.
+  # Default: false
+  disable-all: true
+  # Enable specific linter
+  # https://golangci-lint.run/usage/linters/#enabled-by-default-linters
+  enable:
+    - errcheck
+
+issues:
+  exclude-rules:
+    # Exclude some linters from running on tests files.
+    - path: _test\.go
+      linters:
+        - errcheck
+
+linters-settings:
+  errcheck:
+    exclude-functions:
+      - fmt.Fprintf
+      - fmt.Fprint
+      - (net/http.ResponseWriter).Write
+      - (*net/http.Server).Shutdown
+      - (*flag.FlagSet).Parse
+      - (*os.File).Close
+      - (io.Closer).Close
+      - (flag.Value).Set
+      - k8s.io/apimachinery/pkg/util/wait.PollUntil

@@ -254,7 +254,9 @@ func (am *addressManager) TearDownAddressIPIfNetworkTierMismatch() error {
 			return utils.NewNetworkTierErr(fmt.Sprintf("User specific address IP (%v)", am.name), string(am.networkTier), addr.NetworkTier)
 		}
 		klog.V(3).Infof("Deleting IP address %v because has wrong network tier", am.targetIP)
-		am.svc.DeleteRegionAddress(addr.Name, am.targetIP)
+		if err := am.svc.DeleteRegionAddress(addr.Name, am.targetIP); err != nil {
+			klog.Errorf("Unable to delete region address %s on target ip %s, err: %v", addr.Name, am.targetIP, err)
+		}
 	}
 	return nil
 }

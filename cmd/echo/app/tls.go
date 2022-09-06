@@ -93,11 +93,15 @@ func generateInsecureCertAndKey(organization string, validFrom time.Time, validF
 		klog.Fatalf("Failed to create certificate: %s", err)
 	}
 	var certBytes bytes.Buffer
-	pem.Encode(&certBytes, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	if err := pem.Encode(&certBytes, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}); err != nil {
+		klog.Fatalf("Failed to encode certificate: %v", err)
+	}
 
 	var keyBytes bytes.Buffer
 	pb := &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)}
-	pem.Encode(&keyBytes, pb)
+	if err := pem.Encode(&keyBytes, pb); err != nil {
+		klog.Fatalf("Failed to encode RSA Key: %v", err)
+	}
 
 	return certBytes.Bytes(), keyBytes.Bytes(), nil
 }
