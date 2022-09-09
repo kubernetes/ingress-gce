@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package healthchecks
+package healthchecksl4
 
 import (
 	"testing"
@@ -109,7 +109,7 @@ func TestCompareHealthChecks(t *testing.T) {
 	}
 }
 
-func TestCreateHealthCheck(t *testing.T) {
+func TestNewHealthCheck(t *testing.T) {
 	t.Parallel()
 	namespaceName := types.NamespacedName{Name: "svc", Namespace: "default"}
 

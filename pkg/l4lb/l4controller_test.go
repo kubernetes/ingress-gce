@@ -23,8 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"k8s.io/ingress-gce/pkg/healthchecks"
-
+	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
@@ -71,7 +70,7 @@ func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	for _, n := range nodes {
 		ctx.NodeInformer.GetIndexer().Add(n)
 	}
-	healthchecks.FakeL4(ctx.Cloud, ctx)
+	healthchecksl4.Fake(ctx.Cloud, ctx)
 	return NewILBController(ctx, stopCh)
 }
 
