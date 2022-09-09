@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"google.golang.org/api/compute/v1"
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
@@ -35,7 +36,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	servicehelper "k8s.io/cloud-provider/service/helpers"
-	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/test"
 	namer_util "k8s.io/ingress-gce/pkg/utils/namer"
@@ -145,7 +145,7 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 
 	backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
 	key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
@@ -170,7 +170,7 @@ func TestEnsureInternalLoadBalancer(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 	bs, err = composite.GetBackendService(l4.cloud, meta.RegionalKey(backendServiceName, l4.cloud.Region()), meta.VersionGA)
 	if err != nil {
 		t.Errorf("Failed to lookup backend service, err %v", err)
@@ -208,7 +208,7 @@ func TestEnsureInternalLoadBalancerTypeChange(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 
 	// Now add the latest annotation and change scheme to external
 	svc.Annotations[gce.ServiceAnnotationLoadBalancerType] = ""
@@ -263,7 +263,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 }
 
 // TestEnsureInternalLoadBalancerClearPreviousResources creates ILB resources with incomplete configuration and verifies
@@ -461,7 +461,7 @@ func TestUpdateResourceLinks(t *testing.T) {
 		t.Errorf("Failed to ensure loadBalancer %s, err %v", lbName, result.Error)
 	}
 	// verifies that the right healthcheck is present
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 
 	// ensure that the other healthchecks still exist.
 	key.Name = "hc1"
@@ -560,7 +560,7 @@ func TestEnsureInternalLoadBalancerDeleted(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 
 	// Delete the loadbalancer.
 	result = l4.EnsureInternalLoadBalancerDeleted(svc)
@@ -599,7 +599,7 @@ func TestEnsureInternalLoadBalancerDeletedTwiceDoesNotError(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 
 	// Delete the loadbalancer
 	result = l4.EnsureInternalLoadBalancerDeleted(svc)
@@ -725,7 +725,7 @@ func ensureService(fakeGCE *gce.Cloud, namer *namer_util.L4Namer, nodeNames []st
 		result.Error = fmt.Errorf("Got empty loadBalancer status using handler %v", l4)
 		return nil, nil, result
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 	return svc, l4, nil
 }
 
@@ -762,7 +762,7 @@ func TestEnsureInternalLoadBalancerWithSpecialHealthCheck(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 
 	lbName := l4.namer.L4Backend(svc.Namespace, svc.Name)
 	key, err := composite.CreateKey(l4.cloud, lbName, meta.Global)
@@ -959,7 +959,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 
 	// Change service to include the global access annotation
 	svc.Annotations[gce.ServiceAnnotationILBAllowGlobalAccess] = "true"
@@ -970,7 +970,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 	descString, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(svc.Namespace, svc.Name), "1.2.3.0", meta.VersionGA, false, utils.ILB)
 	if err != nil {
 		t.Errorf("Unexpected error when creating description - %v", err)
@@ -1010,7 +1010,7 @@ func TestEnsureInternalLoadBalancerEnableGlobalAccess(t *testing.T) {
 	if fwdRule.Description != descString {
 		t.Errorf("Expected description %s, Got %s", descString, fwdRule.Description)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 	// Delete the service
 	result = l4.EnsureInternalLoadBalancerDeleted(svc)
 	if result.Error != nil {
@@ -1047,7 +1047,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 
 	frName := l4.GetFRName()
 	fwdRule, err := composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA)
@@ -1069,7 +1069,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 	if result.Status.Ingress[0].IP != requestedIP {
 		t.Fatalf("Reserved IP %s not propagated, Got '%s'", requestedIP, result.Status.Ingress[0].IP)
 	}
@@ -1090,7 +1090,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 	if result.Status.Ingress[0].IP != requestedIP {
 		t.Errorf("Reserved IP %s not propagated, Got %s", requestedIP, result.Status.Ingress[0].IP)
 	}
@@ -1107,7 +1107,7 @@ func TestEnsureInternalLoadBalancerCustomSubnet(t *testing.T) {
 	if result.Error != nil {
 		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
@@ -1238,7 +1238,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 	key, err := composite.CreateKey(l4.cloud, frName, meta.Regional)
 	if err != nil {
 		t.Errorf("Unexpected error when creating key - %v", err)
@@ -1259,7 +1259,7 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 	// Make sure the old forwarding rule is deleted
 	fwdRule, err = composite.GetForwardingRule(l4.cloud, key, meta.VersionGA)
 	if !utils.IsNotFoundError(err) {
@@ -1313,7 +1313,7 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 	frName := l4.getFRNameWithProtocol("TCP")
 	key, err := composite.CreateKey(l4.cloud, frName, meta.Regional)
 	if err != nil {
@@ -1342,7 +1342,7 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 	fwdRule, err = composite.GetForwardingRule(l4.cloud, key, meta.VersionGA)
 	if err != nil {
 		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
@@ -1368,7 +1368,7 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4)
 	}
-	assertInternalLbResources(t, svc, l4, nodeNames, result.Annotations)
+	assertInternalLbResources(t, l4, nodeNames, result.Annotations)
 	fwdRule, err = composite.GetForwardingRule(l4.cloud, key, meta.VersionGA)
 	if err != nil {
 		t.Errorf("Unexpected error when looking up forwarding rule - %v", err)
@@ -1387,133 +1387,192 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 	assertInternalLbResourcesDeleted(t, l4)
 }
 
-func assertInternalLbResources(t *testing.T, apiService *v1.Service, l4 *L4, nodeNames []string, resourceAnnotations map[string]string) {
-	// Check that Firewalls are created for the LoadBalancer and the HealthCheck
-	sharedHC := !servicehelper.RequestsOnlyLocalTraffic(apiService)
-	resourceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
-	resourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, false, utils.ILB)
-
+func assertInternalLbResources(t *testing.T, l4 *L4, nodeNames []string, resourceAnnotations map[string]string) {
+	err := verifyNodesFirewall(l4, nodeNames)
 	if err != nil {
-		t.Errorf("Failed to create description for resources, err %v", err)
+		t.Errorf("verifyNodesFirewall(_, %v) returned error %v, want nil", nodeNames, err)
 	}
-	sharedResourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(apiService.Namespace, apiService.Name), "", meta.VersionGA, true, utils.ILB)
+
+	err = verifyHealthCheckFirewall(l4, nodeNames)
 	if err != nil {
-		t.Errorf("Failed to create description for shared resources, err %v", err)
-	}
-	proto := utils.GetProtocol(apiService.Spec.Ports)
-	expectedAnnotations := make(map[string]string)
-	hcName := l4.namer.L4HealthCheck(apiService.Namespace, apiService.Name, sharedHC)
-	hcFwName := l4.namer.L4HealthCheckFirewall(apiService.Namespace, apiService.Name, sharedHC)
-	// hcDesc is the resource description for healthcheck and firewall rule allowing healthcheck.
-	hcDesc := resourceDesc
-	if sharedHC {
-		hcDesc = sharedResourceDesc
+		t.Errorf("verifyHealthCheckFirewall(_, %v) returned error %v, want nil", nodeNames, err)
 	}
 
-	type nameAndDesc struct {
-		fwName string
-		fwDesc string
-	}
-	fwNamesAndDesc := []nameAndDesc{
-		{resourceName, resourceDesc},
-		{hcFwName, hcDesc},
-	}
-	expectedAnnotations[annotations.FirewallRuleKey] = resourceName
-	expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
-	if hcFwName == resourceName {
-		t.Errorf("Got the same name %q for LB firewall rule and Healthcheck firewall rule", hcFwName)
-	}
-	for _, info := range fwNamesAndDesc {
-		firewall, err := l4.cloud.GetFirewall(info.fwName)
-		if err != nil {
-			t.Fatalf("Failed to fetch firewall rule %q - err %v", info.fwName, err)
-		}
-		if !utils.EqualStringSets(nodeNames, firewall.TargetTags) {
-			t.Fatalf("Expected firewall rule target tags '%v', Got '%v'", nodeNames, firewall.TargetTags)
-		}
-		if len(firewall.SourceRanges) == 0 {
-			t.Fatalf("Unexpected empty source range for firewall rule %v", firewall)
-		}
-		if !sharedHC && firewall.Description != info.fwDesc {
-			t.Errorf("Unexpected description in firewall %q - Expected %s, Got %s", info.fwName, firewall.Description, info.fwDesc)
-		}
+	healthCheck, err := getAndVerifyHealthCheck(l4)
+	if err != nil {
+		t.Errorf("getAndVerifyHealthCheck(_) returned error %v, want nil", err)
 	}
 
-	// Check that HealthCheck is created
+	backendService, err := getAndVerifyBackendService(l4, healthCheck)
+	if err != nil {
+		t.Errorf("getAndVerifyBackendService(_, %v) returned error %v, want nil", healthCheck, err)
+	}
+
+	err = verifyForwardingRule(l4, backendService.SelfLink)
+	if err != nil {
+		t.Errorf("verifyForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
+	}
+
+	expectedAnnotations := buildExpectedAnnotations(l4)
+	if !reflect.DeepEqual(expectedAnnotations, resourceAnnotations) {
+		t.Fatalf("Expected annotations %v, got %v", expectedAnnotations, resourceAnnotations)
+	}
+}
+
+func getAndVerifyHealthCheck(l4 *L4) (*composite.HealthCheck, error) {
+	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
+	hcName := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, isSharedHC)
+
 	healthcheck, err := composite.GetHealthCheck(l4.cloud, meta.GlobalKey(hcName), meta.VersionGA)
 	if err != nil {
-		t.Errorf("Failed to fetch healthcheck %s - err %v", hcName, err)
-	}
-	if healthcheck.Name != hcName {
-		t.Errorf("Unexpected name for healthcheck '%s' - expected '%s'", healthcheck.Name, hcName)
-	}
-	expectedAnnotations[annotations.HealthcheckKey] = hcName
-	// Only non-shared Healthchecks get a description.
-	if healthcheck.Description != hcDesc {
-		t.Errorf("Unexpected description in healthcheck - Expected %s, Got %s", healthcheck.Description, resourceDesc)
+		return nil, fmt.Errorf("failed to fetch healthcheck %s - err %w", hcName, err)
 	}
 
-	// Check that BackendService exists
-	backendServiceName := resourceName
+	if healthcheck.Name != hcName {
+		return nil, fmt.Errorf("unexpected name for healthcheck '%s' - expected '%s'", healthcheck.Name, hcName)
+	}
+
+	expectedDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), "", meta.VersionGA, isSharedHC, utils.ILB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate Health Check description")
+	}
+	if healthcheck.Description != expectedDesc {
+		return nil, fmt.Errorf("unexpected description in healthcheck - Expected %s, Got %s", healthcheck.Description, expectedDesc)
+	}
+	return healthcheck, nil
+}
+
+func getAndVerifyBackendService(l4 *L4, healthCheck *composite.HealthCheck) (*composite.BackendService, error) {
+	backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
 	key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
-	backendServiceLink := cloud.SelfLink(meta.VersionGA, l4.cloud.ProjectID(), "backendServices", key)
 	bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA)
 	if err != nil {
-		t.Errorf("Failed to fetch backend service %s - err %v", backendServiceName, err)
+		return nil, fmt.Errorf("failed to fetch backend service %s - err %w", backendServiceName, err)
 	}
+	proto := utils.GetProtocol(l4.Service.Spec.Ports)
 	if bs.Protocol != string(proto) {
-		t.Errorf("Unexpected protocol '%s' for backend service %v", bs.Protocol, bs)
+		return nil, fmt.Errorf("unexpected protocol '%s' for backend service %v", bs.Protocol, bs)
 	}
+	backendServiceLink := cloud.SelfLink(meta.VersionGA, l4.cloud.ProjectID(), "backendServices", key)
 	if bs.SelfLink != backendServiceLink {
-		t.Errorf("Unexpected self link in backend service - Expected %s, Got %s", bs.SelfLink, backendServiceLink)
+		return nil, fmt.Errorf("unexpected self link in backend service - Expected %s, Got %s", bs.SelfLink, backendServiceLink)
+	}
+
+	resourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), "", meta.VersionGA, false, utils.ILB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create description for resources, err %w", err)
 	}
 	if bs.Description != resourceDesc {
-		t.Errorf("Unexpected description in backend service - Expected %s, Got %s", bs.Description, resourceDesc)
+		return nil, fmt.Errorf("unexpected description in backend service - Expected %s, Got %s", bs.Description, resourceDesc)
 	}
-	if !utils.EqualStringSets(bs.HealthChecks, []string{healthcheck.SelfLink}) {
-		t.Errorf("Unexpected healthcheck reference '%v' in backend service, expected '%s'", bs.HealthChecks,
-			healthcheck.SelfLink)
+	if !utils.EqualStringSets(bs.HealthChecks, []string{healthCheck.SelfLink}) {
+		return nil, fmt.Errorf("unexpected healthcheck reference '%v' in backend service, expected '%s'", bs.HealthChecks,
+			healthCheck.SelfLink)
 	}
-	expectedAnnotations[annotations.BackendServiceKey] = backendServiceName
-	// Check that ForwardingRule is created
+	return bs, nil
+}
+
+func verifyForwardingRule(l4 *L4, backendServiceLink string) error {
 	frName := l4.GetFRName()
 	fwdRule, err := composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA)
 	if err != nil {
-		t.Errorf("Failed to fetch forwarding rule %s - err %v", frName, err)
-
+		return fmt.Errorf("failed to fetch forwarding rule %s - err %w", frName, err)
 	}
 	if fwdRule.Name != frName {
-		t.Errorf("Unexpected name for forwarding rule '%s' - expected '%s'", fwdRule.Name, frName)
+		return fmt.Errorf("unexpected name for forwarding rule '%s' - expected '%s'", fwdRule.Name, frName)
 	}
+
+	proto := utils.GetProtocol(l4.Service.Spec.Ports)
 	if fwdRule.IPProtocol != string(proto) {
-		t.Errorf("Unexpected protocol '%s' for forwarding rule %v", fwdRule.IPProtocol, fwdRule)
+		return fmt.Errorf("unexpected protocol '%s' for forwarding rule %v", fwdRule.IPProtocol, fwdRule)
 	}
+
 	if fwdRule.BackendService != backendServiceLink {
-		t.Errorf("Unexpected backend service link '%s' for forwarding rule, expected '%s'", fwdRule.BackendService, backendServiceLink)
+		return fmt.Errorf("unexpected backend service link '%s' for forwarding rule, expected '%s'", fwdRule.BackendService, backendServiceLink)
 	}
-	subnet := apiService.Annotations[gce.ServiceAnnotationILBSubnet]
+
+	subnet := l4.Service.Annotations[gce.ServiceAnnotationILBSubnet]
 	if subnet == "" {
 		subnet = l4.cloud.SubnetworkURL()
 	} else {
-		key.Name = subnet
+		key := meta.RegionalKey(subnet, l4.cloud.Region())
 		subnet = cloud.SelfLink(meta.VersionGA, l4.cloud.ProjectID(), "subnetworks", key)
 	}
 	if fwdRule.Subnetwork != subnet {
-		t.Errorf("Unexpected subnetwork %q in forwarding rule, expected %q",
+		return fmt.Errorf("unexpected subnetwork %q in forwarding rule, expected %q",
 			fwdRule.Subnetwork, subnet)
 	}
+
+	addr, err := l4.cloud.GetRegionAddress(frName, l4.cloud.Region())
+	if err == nil || addr != nil {
+		return fmt.Errorf("expected error when looking up ephemeral address, got %v", addr)
+	}
+	return nil
+}
+
+func verifyNodesFirewall(l4 *L4, nodeNames []string) error {
+	fwName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+	fwDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), "", meta.VersionGA, false, utils.ILB)
+	if err != nil {
+		return fmt.Errorf("failed to create description for resources, err %w", err)
+	}
+
+	return verifyFirewall(l4, nodeNames, fwName, fwDesc)
+}
+
+func verifyHealthCheckFirewall(l4 *L4, nodeNames []string) error {
+	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
+
+	hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
+	hcFwDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), "", meta.VersionGA, isSharedHC)
+	if err != nil {
+		return fmt.Errorf("failed to calculate decsription for health check for service %v, error %v", l4.Service, err)
+	}
+
+	return verifyFirewall(l4, nodeNames, hcFwName, hcFwDesc)
+}
+
+func verifyFirewall(l4 *L4, nodeNames []string, firewallName, expectedDescription string) error {
+	firewall, err := l4.cloud.GetFirewall(firewallName)
+	if err != nil {
+		return fmt.Errorf("failed to fetch firewall rule %q - err %w", firewallName, err)
+	}
+	if !utils.EqualStringSets(nodeNames, firewall.TargetTags) {
+		return fmt.Errorf("expected firewall rule target tags '%v', Got '%v'", nodeNames, firewall.TargetTags)
+	}
+	if len(firewall.SourceRanges) == 0 {
+		return fmt.Errorf("unexpected empty source range for firewall rule %v", firewall)
+	}
+	if firewall.Description != expectedDescription {
+		return fmt.Errorf("unexpected description in firewall %q - Expected %s, Got %s", firewallName, expectedDescription, firewall.Description)
+	}
+	return nil
+}
+
+func buildExpectedAnnotations(l4 *L4) map[string]string {
+	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
+	proto := utils.GetProtocol(l4.Service.Spec.Ports)
+
+	backendName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+	hcName := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, isSharedHC)
+
+	expectedAnnotations := map[string]string{
+		annotations.BackendServiceKey: backendName,
+		annotations.HealthcheckKey:    hcName,
+	}
+
+	hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
+
+	expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
+	expectedAnnotations[annotations.FirewallRuleKey] = backendName
+
+	frName := l4.GetFRName()
 	if proto == v1.ProtocolTCP {
 		expectedAnnotations[annotations.TCPForwardingRuleKey] = frName
 	} else {
 		expectedAnnotations[annotations.UDPForwardingRuleKey] = frName
 	}
-	addr, err := l4.cloud.GetRegionAddress(frName, l4.cloud.Region())
-	if err == nil || addr != nil {
-		t.Errorf("Expected error when looking up ephemeral address, got %v", addr)
-	}
-	if !reflect.DeepEqual(expectedAnnotations, resourceAnnotations) {
-		t.Fatalf("Expected annotations %v, got %v", expectedAnnotations, resourceAnnotations)
-	}
+	return expectedAnnotations
 }
 
 func assertInternalLbResourcesDeleted(t *testing.T, l4 *L4) {
