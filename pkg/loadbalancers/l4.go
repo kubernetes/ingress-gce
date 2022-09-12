@@ -125,9 +125,10 @@ func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncR
 	}
 
 	// delete firewall rule allowing load balancer source ranges
-	err = l4.deleteFirewall(name)
+	firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
+	err = l4.deleteFirewall(firewallName)
 	if err != nil {
-		klog.Errorf("Failed to delete firewall rule %s for internal loadbalancer service %s, err %v", name, l4.NamespacedName.String(), err)
+		klog.Errorf("Failed to delete firewall rule %s for internal loadbalancer service %s, err %v", firewallName, l4.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 	}
@@ -267,12 +268,13 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		return result
 	}
 	// Add firewall rule for ILB traffic to nodes
+	firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
 	nodesFWRParams := firewalls.FirewallParams{
 		PortRanges:        portRanges,
 		SourceRanges:      sourceRanges.StringSlice(),
 		DestinationRanges: []string{fr.IPAddress},
 		Protocol:          string(protocol),
-		Name:              name,
+		Name:              firewallName,
 		NodeNames:         nodeNames,
 		L4Type:            utils.ILB,
 	}
@@ -282,7 +284,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		result.Error = err
 		return result
 	}
-	result.Annotations[annotations.FirewallRuleKey] = name
+	result.Annotations[annotations.FirewallRuleKey] = firewallName
 	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
 
 	result.MetricsState.InSuccess = true

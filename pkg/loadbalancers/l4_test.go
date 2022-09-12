@@ -1513,7 +1513,7 @@ func verifyForwardingRule(l4 *L4, backendServiceLink string) error {
 }
 
 func verifyNodesFirewall(l4 *L4, nodeNames []string) error {
-	fwName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+	fwName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
 	fwDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), "", meta.VersionGA, false, utils.ILB)
 	if err != nil {
 		return fmt.Errorf("failed to create description for resources, err %w", err)
@@ -1564,9 +1564,10 @@ func buildExpectedAnnotations(l4 *L4) map[string]string {
 	}
 
 	hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
-
 	expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
-	expectedAnnotations[annotations.FirewallRuleKey] = backendName
+
+	fwName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
+	expectedAnnotations[annotations.FirewallRuleKey] = fwName
 
 	frName := l4.GetFRName()
 	if proto == v1.ProtocolTCP {
@@ -1580,12 +1581,12 @@ func buildExpectedAnnotations(l4 *L4) map[string]string {
 func assertILBResourcesDeleted(t *testing.T, l4 *L4) {
 	t.Helper()
 
-	resourceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+	nodesFwName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
 	hcFwNameShared := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, true)
 	hcFwNameNonShared := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, false)
 
 	fwNames := []string{
-		resourceName,
+		nodesFwName,
 		hcFwNameShared,
 		hcFwNameNonShared,
 	}
@@ -1615,14 +1616,14 @@ func assertILBResourcesDeleted(t *testing.T, l4 *L4) {
 		t.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameNonShared)
 	}
 
-	err = verifyBackendServiceNotExists(l4, resourceName)
+	err = verifyBackendServiceNotExists(l4, nodesFwName)
 	if err != nil {
-		t.Errorf("verifyBackendServiceNotExists(_, %s)", resourceName)
+		t.Errorf("verifyBackendServiceNotExists(_, %s)", nodesFwName)
 	}
 
-	err = verifyAddressNotExists(l4, resourceName)
+	err = verifyAddressNotExists(l4, nodesFwName)
 	if err != nil {
-		t.Errorf("verifyAddressNotExists(_, %s)", resourceName)
+		t.Errorf("verifyAddressNotExists(_, %s)", nodesFwName)
 	}
 }
 
