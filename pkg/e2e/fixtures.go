@@ -317,6 +317,7 @@ func NewGCPAddress(s *Sandbox, name string, region string) error {
 		klog.V(2).Infof("Global static IP %s created", name)
 	} else {
 		addr.AddressType = "INTERNAL"
+		addr.Purpose = "SHARED_LOADBALANCER_VIP"
 		if err := s.f.Cloud.Addresses().Insert(context.Background(), meta.RegionalKey(addr.Name, region), addr); err != nil {
 			return err
 		}
