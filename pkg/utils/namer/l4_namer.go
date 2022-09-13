@@ -60,6 +60,17 @@ func (namer *L4Namer) L4Backend(namespace, name string) string {
 	}, "-")
 }
 
+// L4Firewall returns the gce Firewall name based on the service namespace and name
+// Naming convention:
+//
+//	k8s2-{uid}-{ns}-{name}-{suffix}
+//
+// Output name is at most 63 characters.
+// This name is identical to L4Backend.
+func (namer *L4Namer) L4Firewall(namespace, name string) string {
+	return namer.L4Backend(namespace, name)
+}
+
 // L4ForwardingRule returns the name of the L4 forwarding rule name based on the service namespace, name and protocol.
 // Naming convention:
 //

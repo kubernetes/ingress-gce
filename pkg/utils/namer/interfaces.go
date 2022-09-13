@@ -87,6 +87,8 @@ type L4ResourcesNamer interface {
 	BackendNamer
 	// L4ForwardingRule returns the name of the forwarding rule for the given service and protocol.
 	L4ForwardingRule(namespace, name, protocol string) string
+	// L4Firewall returns the name of the firewall rule for the given service
+	L4Firewall(namespace, name string) string
 	// L4HealthCheck returns the names of the Healthcheck
 	L4HealthCheck(namespace, name string, shared bool) string
 	// L4HealthCheckFirewall returns the names of the Healthcheck Firewall
