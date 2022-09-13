@@ -85,11 +85,17 @@ func healthCheckHandler(checker func() context.HealthCheckResults) http.HandlerF
 		}
 
 		if s.Len() == 0 {
-			w.Write([]byte("OK - no running controllers"))
+			_, err := w.Write([]byte("OK - no running controllers"))
+			if err != nil {
+				klog.Errorf("Error writing bytes: %v", err)
+			}
 			return
 		}
 
-		w.Write([]byte(s.String()))
+		_, err := w.Write([]byte(s.String()))
+		if err != nil {
+			klog.Errorf("Error writing bytes: %v", err)
+		}
 		return
 	}
 }
@@ -129,8 +135,11 @@ func putFlag(w http.ResponseWriter, r *http.Request) {
 }
 
 func setVerbosity(v string) {
-	flag.Lookup("v").Value.Set(v)
 	klog.V(0).Infof("Setting verbosity level to %q", v)
+	err := flag.Lookup("v").Value.Set(v)
+	if err != nil {
+		klog.Errorf("flag.Lookup(\"v\").Value.Set(%v) returned error: %v", v, err)
+	}
 }
 
 func getFlagPage(w http.ResponseWriter, r *http.Request) {

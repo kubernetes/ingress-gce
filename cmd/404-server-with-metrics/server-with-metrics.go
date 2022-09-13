@@ -259,6 +259,12 @@ func gracefulShutdown(s *server) {
 		klog.Infof("received /shutdown message, doing a graceful shutdown of http and metrics servers: \n")
 	}
 
-	s.httpServer.Shutdown(context.Background())
-	s.metricsServer.Shutdown(context.Background())
+	err := s.httpServer.Shutdown(context.Background())
+	if err != nil {
+		klog.Errorf("Error shutting down httpServer: %v", err)
+	}
+	err = s.metricsServer.Shutdown(context.Background())
+	if err != nil {
+		klog.Errorf("Error shutting down metricsServer: %v", err)
+	}
 }
