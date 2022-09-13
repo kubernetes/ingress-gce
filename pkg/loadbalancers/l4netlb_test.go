@@ -61,7 +61,7 @@ func TestEnsureL4NetLoadBalancer(t *testing.T) {
 		Recorder: record.NewFakeRecorder(100),
 	}
 	l4netlb := NewL4NetLB(l4NetLBParams)
-	l4netlb.healthChecks = healthchecksl4.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l4netlb.healthChecks = healthchecksl4.Fake(fakeGCE, l4netlb.recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -118,7 +118,7 @@ func TestDeleteL4NetLoadBalancer(t *testing.T) {
 		Recorder: record.NewFakeRecorder(100),
 	}
 	l4NetLB := NewL4NetLB(l4NetLBParams)
-	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLB.recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -232,7 +232,7 @@ func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud
 		Recorder: record.NewFakeRecorder(100),
 	}
 	l4NetLB := NewL4NetLB(l4NetLBParams)
-	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLB.recorder)
 
 	result := l4NetLB.EnsureFrontend(emptyNodes, svc)
 	if result.Error != nil {
@@ -448,7 +448,7 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 		Recorder: record.NewFakeRecorder(100),
 	}
 	l4netlb := NewL4NetLB(l4NetLBParams)
-	l4netlb.healthChecks = healthchecksl4.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l4netlb.healthChecks = healthchecksl4.Fake(fakeGCE, l4netlb.recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)
@@ -501,7 +501,7 @@ func TestEnsureNetLBFirewallDestinations(t *testing.T) {
 		Recorder: record.NewFakeRecorder(100),
 	}
 	l4netlb := NewL4NetLB(l4NetLBParams)
-	l4netlb.healthChecks = healthchecksl4.Fake(fakeGCE, &test.FakeRecorderSource{})
+	l4netlb.healthChecks = healthchecksl4.Fake(fakeGCE, l4netlb.recorder)
 
 	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
 		t.Errorf("Unexpected error when adding nodes %v", err)

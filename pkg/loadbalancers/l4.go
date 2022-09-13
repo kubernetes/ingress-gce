@@ -83,7 +83,7 @@ func NewL4Handler(params *L4ILBParams) *L4 {
 		namer:           params.Namer,
 		recorder:        params.Recorder,
 		Service:         params.Service,
-		healthChecks:    healthchecksl4.GetInstance(),
+		healthChecks:    healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder),
 		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, scope),
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
