@@ -23,7 +23,6 @@ export CGO_ENABLED=0
 TARGETS=$(for d in "$@"; do echo ./$d/...; done)
 
 echo "Running tests:"
-go test -i -installsuffix "static" ${TARGETS}
 go test -installsuffix "static" ${TARGETS}
 echo
 
@@ -55,7 +54,6 @@ echo
 cd "hack/tools"
 export GOBIN=$PWD/bin
 export PATH=$GOBIN:$PATH
-export CGO_ENABLED=0
 # Install golangci-lint
 echo "Installing golangci-lint"
 echo
