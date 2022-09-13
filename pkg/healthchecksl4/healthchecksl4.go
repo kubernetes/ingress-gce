@@ -95,7 +95,7 @@ func GetInstance() *l4HealthChecks {
 	return instance
 }
 
-// EnsureHealthCheck and firewall rules exist for the L4
+// EnsureHealthCheckWithFirewall exist for the L4
 // LoadBalancer Service.
 //
 // The healthcheck and firewall will be shared between different K8s
@@ -105,7 +105,7 @@ func GetInstance() *l4HealthChecks {
 // Firewall rules are always created at in the Global scope (vs
 // Regional). This means that one Firewall rule is created for
 // Services of different scope (Global vs Regional).
-func (l4hc *l4HealthChecks) EnsureHealthCheck(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string) *EnsureL4HealthCheckResult {
+func (l4hc *l4HealthChecks) EnsureHealthCheckWithFirewall(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType, nodeNames []string) *EnsureL4HealthCheckResult {
 	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
 
 	hcName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
@@ -121,7 +121,7 @@ func (l4hc *l4HealthChecks) EnsureHealthCheck(svc *corev1.Service, namer namer.L
 	}
 	klog.V(3).Infof("L4 Healthcheck %s, path: %q, port %d", hcName, hcPath, hcPort)
 
-	_, hcLink, err := l4hc.ensureL4HealthCheckInternal(hcName, namespacedName, sharedHC, hcPath, hcPort, scope, l4Type)
+	hcLink, err := l4hc.ensureHealthCheck(hcName, namespacedName, sharedHC, hcPath, hcPort, scope, l4Type)
 	if err != nil {
 		return &EnsureL4HealthCheckResult{
 			GceResourceInError: annotations.HealthcheckResource,
@@ -144,36 +144,10 @@ func (l4hc *l4HealthChecks) EnsureHealthCheck(svc *corev1.Service, namer namer.L
 	}
 }
 
-// DeleteHealthCheck deletes health check (and firewall rule) for l4 service. Checks if shared resources are safe to delete.
-func (l4hc *l4HealthChecks) DeleteHealthCheck(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType) (string, error) {
-	hcName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
-	hcFwName := namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, sharedHC)
-	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
-	klog.V(3).Infof("Trying to delete L4 healthcheck: %s and firewall rule %s from service %s, shared: %v", hcName, hcFwName, namespacedName.String(), sharedHC)
-	if sharedHC {
-		// We need to acquire a controller-wide mutex to ensure that in the case of a healthcheck shared between loadbalancers that the sync of the GCE resources is not performed in parallel.
-		l4hc.sharedResourcesLock.Lock()
-		defer l4hc.sharedResourcesLock.Unlock()
-	}
-
-	err := l4hc.hcProvider.Delete(hcName, scope)
-	if err != nil {
-		// Ignore deletion error due to health check in use by another resource.
-		if !utils.IsInUsedByError(err) {
-			klog.Errorf("Failed to delete healthcheck for service %s - %v", namespacedName.String(), err)
-			return annotations.HealthcheckResource, err
-		}
-		klog.V(2).Infof("Failed to delete healthcheck %s: shared health check in use.", hcName)
-		return "", nil
-	}
-	// Health check deleted, now delete the firewall rule
-	return l4hc.deleteHealthCheckFirewall(svc, hcName, hcFwName, sharedHC, l4Type)
-}
-
-func (l4hc *l4HealthChecks) ensureL4HealthCheckInternal(hcName string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, l4Type utils.L4LBType) (*composite.HealthCheck, string, error) {
+func (l4hc *l4HealthChecks) ensureHealthCheck(hcName string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, l4Type utils.L4LBType) (string, error) {
 	hc, err := l4hc.hcProvider.Get(hcName, scope)
 	if err != nil {
-		return nil, "", err
+		return "", err
 	}
 
 	var region string
@@ -187,27 +161,27 @@ func (l4hc *l4HealthChecks) ensureL4HealthCheckInternal(hcName string, svcName t
 		klog.V(2).Infof("Creating healthcheck %s for service %s, shared = %v. Expected healthcheck: %v", hcName, svcName, shared, expectedHC)
 		err = l4hc.hcProvider.Create(expectedHC)
 		if err != nil {
-			return nil, "", err
+			return "", err
 		}
 		selfLink, err := l4hc.hcProvider.SelfLink(expectedHC.Name, scope)
 		if err != nil {
-			return nil, "", err
+			return "", err
 		}
-		return expectedHC, selfLink, nil
+		return selfLink, nil
 	}
 	selfLink := hc.SelfLink
 	if !needToUpdateHealthChecks(hc, expectedHC) {
 		// nothing to do
 		klog.V(3).Infof("Healthcheck %v already exists", hcName)
-		return hc, selfLink, nil
+		return selfLink, nil
 	}
 	mergeHealthChecks(hc, expectedHC)
 	klog.V(2).Infof("Updating healthcheck %s for service %s, updated healthcheck: %v", hcName, svcName, expectedHC)
 	err = l4hc.hcProvider.Update(expectedHC.Name, scope, expectedHC)
 	if err != nil {
-		return nil, selfLink, err
+		return selfLink, err
 	}
-	return expectedHC, selfLink, err
+	return selfLink, err
 }
 
 // ensureFirewall rule for `svc`.
@@ -226,23 +200,62 @@ func (l4hc *l4HealthChecks) ensureFirewall(svc *corev1.Service, hcFwName string,
 	return firewalls.EnsureL4LBFirewallForHc(svc, sharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorderFactory.Recorder(svc.Namespace))
 }
 
-func (l4hc *l4HealthChecks) deleteHealthCheckFirewall(svc *corev1.Service, hcName, hcFwName string, sharedHC bool, l4Type utils.L4LBType) (string, error) {
-	namespacedName := types.NamespacedName{Name: svc.Name, Namespace: svc.Namespace}
+// DeleteHealthCheckWithFirewall deletes health check (and firewall rule) for l4 service. Checks if shared resources are safe to delete.
+func (l4hc *l4HealthChecks) DeleteHealthCheckWithFirewall(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType, l4Type utils.L4LBType) (string, error) {
+	if sharedHC {
+		// We need to acquire a controller-wide mutex to ensure that in the case of a healthcheck shared between loadbalancers that the sync of the GCE resources is not performed in parallel.
+		l4hc.sharedResourcesLock.Lock()
+		defer l4hc.sharedResourcesLock.Unlock()
+	}
+
+	klog.V(3).Infof("Trying to delete L4 healthcheck and firewall rule for service %s/%s, shared: %v, scope: %v", svc.Namespace, svc.Name, sharedHC, scope)
+	hcWasDeleted, err := l4hc.deleteHealthCheck(svc, namer, sharedHC, scope)
+	if err != nil {
+		return annotations.HealthcheckResource, err
+	}
+	if !hcWasDeleted {
+		return "", nil
+	}
+
+	// Health check deleted, now delete the firewall rule
+	return l4hc.deleteHealthCheckFirewall(svc, namer, sharedHC, l4Type)
+}
+
+func (l4hc *l4HealthChecks) deleteHealthCheck(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, scope meta.KeyType) (bool, error) {
+	hcName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+	klog.V(3).Infof("Deleting L4 healthcheck %s for service %s/%s, shared: %v, scope: %v", hcName, svc.Namespace, svc.Name, sharedHC, scope)
+
+	err := l4hc.hcProvider.Delete(hcName, scope)
+	if err != nil {
+		// Ignore deletion error due to health check in use by another resource.
+		if !utils.IsInUsedByError(err) {
+			klog.Errorf("Failed to delete healthcheck %s for service %s/%s - %v", hcName, svc.Namespace, svc.Name, err)
+			return false, err
+		}
+		klog.V(2).Infof("Failed to delete healthcheck %s: shared health check in use.", hcName)
+		return false, nil
+	}
+	return true, nil
+}
+
+func (l4hc *l4HealthChecks) deleteHealthCheckFirewall(svc *corev1.Service, namer namer.L4ResourcesNamer, sharedHC bool, l4Type utils.L4LBType) (string, error) {
+	hcName := namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHC)
+	hcFwName := namer.L4HealthCheckFirewall(svc.Namespace, svc.Name, sharedHC)
 
 	safeToDelete, err := l4hc.healthCheckFirewallSafeToDelete(hcName, sharedHC, l4Type)
 	if err != nil {
-		klog.Errorf("Failed to delete health check firewall rule %s for service %s - %v", hcFwName, namespacedName.String(), err)
+		klog.Errorf("Failed to delete health check firewall rule %s for service %s/%s - %v", hcFwName, svc.Namespace, svc.Name, err)
 		return annotations.HealthcheckResource, err
 	}
 	if !safeToDelete {
-		klog.V(3).Infof("Failed to delete health check firewall rule %s: health check in use.", hcName)
+		klog.V(3).Infof("Failed to delete health check firewall rule %s: health check is in use.", hcName)
 		return "", nil
 	}
-	klog.V(3).Infof("Deleting healthcheck firewall rule named: %s", hcFwName)
+	klog.V(3).Infof("Deleting healthcheck firewall rule %s for health check %s", hcFwName, hcName)
 	// Delete healthcheck firewall rule if no healthcheck uses the firewall rule.
 	err = l4hc.deleteFirewall(hcFwName, svc)
 	if err != nil {
-		klog.Errorf("Failed to delete firewall rule %s for loadbalancer service %s, err %v", hcFwName, namespacedName.String(), err)
+		klog.Errorf("Failed to delete firewall rule %s for loadbalancer service %s/%s, err %v", hcFwName, svc.Namespace, svc.Name, err)
 		return annotations.FirewallForHealthcheckResource, err
 	}
 	return "", nil
