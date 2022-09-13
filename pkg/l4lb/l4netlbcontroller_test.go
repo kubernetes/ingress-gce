@@ -873,7 +873,7 @@ func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
 	// delete shared health check if is created, update service to Cluster and
 	// check that non-shared health check was created
 	hcNameShared := lc.namer.L4HealthCheck(svc.Namespace, svc.Name, true)
-	healthchecksl4.Fake(lc.ctx.Cloud, lc.ctx).DeleteHealthCheck(svc, lc.namer, true, meta.Regional, utils.XLB)
+	healthchecksl4.Fake(lc.ctx.Cloud, lc.ctx).DeleteHealthCheckWithFirewall(svc, lc.namer, true, meta.Regional, utils.XLB)
 	// Update ExternalTrafficPolicy to Cluster check if shared HC was created
 	err = updateAndAssertExternalTrafficPolicy(newSvc, lc, v1.ServiceExternalTrafficPolicyTypeCluster, hcNameShared)
 	if err != nil {
