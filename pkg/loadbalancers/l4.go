@@ -118,7 +118,7 @@ func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncR
 		result.Error = err
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 	}
-	if err = ensureAddressDeleted(l4.cloud, name, l4.cloud.Region()); err != nil {
+	if err = ensureAddressDeleted(l4.cloud, frName, l4.cloud.Region()); err != nil {
 		klog.Errorf("Failed to delete address for internal loadbalancer service %s, err %v", l4.NamespacedName.String(), err)
 		result.Error = err
 		result.GCEResourceInError = annotations.AddressResource
@@ -247,8 +247,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 	result.Annotations[annotations.BackendServiceKey] = name
 	// create fr rule
-	frName := l4.GetFRName()
-	fr, err := l4.ensureForwardingRule(frName, bs.SelfLink, options, existingFR)
+	fr, err := l4.ensureForwardingRule(bs.SelfLink, options, existingFR)
 	if err != nil {
 		klog.Errorf("EnsureInternalLoadBalancer: Failed to create forwarding rule - %v", err)
 		result.GCEResourceInError = annotations.ForwardingRuleResource
@@ -256,9 +255,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 		return result
 	}
 	if fr.IPProtocol == string(corev1.ProtocolTCP) {
-		result.Annotations[annotations.TCPForwardingRuleKey] = frName
+		result.Annotations[annotations.TCPForwardingRuleKey] = fr.Name
 	} else {
-		result.Annotations[annotations.UDPForwardingRuleKey] = frName
+		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
 	}
 
 	// ensure firewalls
