@@ -232,7 +232,7 @@ func (l4hc *l4HealthChecks) deleteHealthCheck(svc *corev1.Service, namer namer.L
 			klog.Errorf("Failed to delete healthcheck %s for service %s/%s - %v", hcName, svc.Namespace, svc.Name, err)
 			return false, err
 		}
-		klog.V(2).Infof("Failed to delete healthcheck %s: shared health check in use.", hcName)
+		klog.V(2).Infof("Failed to delete healthcheck %s is in use by other resource. Health check is shared in GKE = %t", hcName, sharedHC)
 		return false, nil
 	}
 	return true, nil
