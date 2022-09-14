@@ -67,7 +67,10 @@ func RunHTTPServer(ctx context.Context) {
 		}
 
 		<-ctx.Done()
-		server.Shutdown(ctx)
+		err = server.Shutdown(ctx)
+		if err != nil {
+			klog.Infof("Error on server shutdown %v", err)
+		}
 	}()
 
 	go func() {
@@ -82,7 +85,11 @@ func RunHTTPServer(ctx context.Context) {
 		}
 
 		<-ctx.Done()
-		server.Shutdown(ctx)
+
+		err = server.Shutdown(ctx)
+		if err != nil {
+			klog.Errorf("Error on server shutdown %v", err)
+		}
 	}()
 
 	<-ctx.Done()
@@ -90,7 +97,11 @@ func RunHTTPServer(ctx context.Context) {
 
 func healthCheck(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("health: OK"))
+	_, err := w.Write([]byte("health: OK"))
+	if err != nil {
+		klog.Errorf("Error writing bytes: %v, UserAgent: %v, RemoteAddr: %v", err, r.UserAgent(), r.RemoteAddr)
+		return
+	}
 	klog.V(3).Infof("healthcheck: %v, %v, %v", time.Now(), r.UserAgent(), r.RemoteAddr)
 }
 
@@ -123,7 +134,11 @@ func echo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Write(processedData)
+	_, err = w.Write(processedData)
+	if err != nil {
+		klog.Errorf("Error writing data: %v, UserAgent: %v, RemoteAddr: %v", err, r.UserAgent(), r.RemoteAddr)
+		return
+	}
 	klog.V(3).Infof("echo: %v, %v, %v", time.Now(), r.UserAgent(), r.RemoteAddr)
 }
 

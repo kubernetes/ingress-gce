@@ -24,12 +24,7 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 	"k8s.io/ingress-gce/cmd/fuzzer/app"
-)
-
-var (
-	kubeconfig       *string
-	ingressNamespace *string
-	ingressName      *string
+	"k8s.io/klog/v2"
 )
 
 func main() {
@@ -43,7 +38,10 @@ func main() {
 
 	switch os.Args[1] {
 	case "validate":
-		app.ValidateFlagSet.Parse(os.Args[2:])
+		err := app.ValidateFlagSet.Parse(os.Args[2:])
+		if err != nil {
+			klog.Errorf("app.ValidateFlagSet.Parse(%v) returned error: %v", os.Args[2:], err)
+		}
 	default:
 		flag.Usage()
 		os.Exit(1)

@@ -17,12 +17,5 @@ issues:
 linters-settings:
   errcheck:
     exclude-functions:
-      - fmt.Fprintf
-      - fmt.Fprint
-      - (net/http.ResponseWriter).Write
-      - (*net/http.Server).Shutdown
       - (*flag.FlagSet).Parse
-      - (*os.File).Close
-      - (io.Closer).Close
-      - (flag.Value).Set
       - k8s.io/apimachinery/pkg/util/wait.PollUntil

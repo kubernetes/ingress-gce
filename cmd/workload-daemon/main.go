@@ -39,7 +39,10 @@ func main() {
 		outputHelp()
 		return
 	}
-	cmdSet.Parse(os.Args[2:])
+	err := cmdSet.Parse(os.Args[2:])
+	if err != nil {
+		klog.Errorf("cmdSet.Parse(%v) returned error: %v", os.Args[2:], err)
+	}
 	if *provider != "gce" {
 		klog.Fatalf("Current implementation only supports gce provider.")
 	}
