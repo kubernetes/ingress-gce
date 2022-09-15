@@ -49,6 +49,16 @@ const (
 	testGCEZone = "us-central1-b"
 )
 
+var (
+	ilbAnnotationKeys = []string{
+		annotations.FirewallRuleKey,
+		annotations.BackendServiceKey,
+		annotations.HealthcheckKey,
+		annotations.TCPForwardingRuleKey,
+		annotations.FirewallRuleForHealthcheckKey,
+	}
+)
+
 func newServiceController(t *testing.T, fakeGCE *gce.Cloud) *L4Controller {
 	kubeClient := fake.NewSimpleClientset()
 
@@ -119,38 +129,46 @@ func getKeyForSvc(svc *api_v1.Service, t *testing.T) string {
 	return key
 }
 
-func validateSvcStatus(svc *api_v1.Service, expectStatus bool, t *testing.T) {
-	if common.HasGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) != expectStatus {
-		t.Fatalf("Expected L4 finalizer present to be %v, but it was %v", expectStatus, !expectStatus)
+func verifyILBServiceProvisioned(t *testing.T, svc *api_v1.Service) {
+	t.Helper()
+
+	if !common.HasGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) {
+		t.Errorf("ILB v2 finalizer is not found, expected to exist, svc %+v", svc)
 	}
 	if len(svc.Status.LoadBalancer.Ingress) == 0 || svc.Status.LoadBalancer.Ingress[0].IP == "" {
-		if expectStatus {
-			t.Fatalf("Invalid LoadBalancer status field in service - %+v", svc.Status.LoadBalancer)
-		}
-	}
-	if len(svc.Status.LoadBalancer.Ingress) > 0 && !expectStatus {
-		t.Fatalf("Expected LoadBalancer status to be empty, Got %v", svc.Status.LoadBalancer)
+		t.Errorf("Invalid LoadBalancer status field in service - %+v", svc.Status.LoadBalancer)
 	}
 
-	expectedAnnotationKeys := []string{annotations.FirewallRuleKey, annotations.BackendServiceKey, annotations.HealthcheckKey,
-		annotations.TCPForwardingRuleKey, annotations.FirewallRuleForHealthcheckKey}
-
-	missingKeys := []string{}
-	for _, key := range expectedAnnotationKeys {
+	var missingKeys []string
+	for _, key := range ilbAnnotationKeys {
 		if _, ok := svc.Annotations[key]; !ok {
 			missingKeys = append(missingKeys, key)
 		}
 	}
-	if expectStatus {
-		// All annotations are expected to be present in this case
-		if len(missingKeys) > 0 {
-			t.Fatalf("Cannot find annotations %v in ILB service, Got %v", missingKeys, svc.Annotations)
+	if len(missingKeys) > 0 {
+		t.Errorf("Cannot find annotations %v in ILB service, Got %v", missingKeys, svc.Annotations)
+	}
+}
+
+func verifyILBServiceNotProvisioned(t *testing.T, svc *api_v1.Service) {
+	t.Helper()
+
+	if common.HasGivenFinalizer(svc.ObjectMeta, common.ILBFinalizerV2) {
+		t.Errorf("ILB v2 finalizer should not exist on service %+v", svc)
+	}
+
+	if len(svc.Status.LoadBalancer.Ingress) > 0 {
+		t.Errorf("Expected LoadBalancer status to be empty, Got %v", svc.Status.LoadBalancer)
+	}
+
+	var missingKeys []string
+	for _, key := range ilbAnnotationKeys {
+		if _, ok := svc.Annotations[key]; !ok {
+			missingKeys = append(missingKeys, key)
 		}
-	} else {
-		//None of the ILB keys should be present since the ILB has been deleted.
-		if len(missingKeys) != len(expectedAnnotationKeys) {
-			t.Fatalf("Unexpected ILB annotations still present, Got %v", svc.Annotations)
-		}
+	}
+	if len(missingKeys) != len(ilbAnnotationKeys) {
+		t.Errorf("Unexpected ILB annotations present, Got %v", svc.Annotations)
 	}
 }
 
@@ -198,7 +216,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
-	validateSvcStatus(newSvc, true, t)
+	verifyILBServiceProvisioned(t, newSvc)
 	currMetrics, metricErr := test.GetL4ILBLatencyMetric()
 	if metricErr != nil {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
@@ -217,7 +235,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
-	validateSvcStatus(newSvc, true, t)
+	verifyILBServiceProvisioned(t, newSvc)
 	currMetrics, metricErr = test.GetL4ILBLatencyMetric()
 	if metricErr != nil {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
@@ -236,7 +254,7 @@ func TestProcessCreateOrUpdate(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
-	validateSvcStatus(newSvc, false, t)
+	verifyILBServiceNotProvisioned(t, newSvc)
 	currMetrics, metricErr = test.GetL4ILBLatencyMetric()
 	if metricErr != nil {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
@@ -275,7 +293,7 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
 	}
-	validateSvcStatus(svc, true, t)
+	verifyILBServiceProvisioned(t, svc)
 
 	// Set ExternalTrafficPolicy to Cluster.
 	svc.Spec.ExternalTrafficPolicy = api_v1.ServiceExternalTrafficPolicyTypeCluster
@@ -289,7 +307,7 @@ func TestProcessUpdateExternalTrafficPolicy(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", svc.Name, err)
 	}
-	validateSvcStatus(svc, true, t)
+	verifyILBServiceProvisioned(t, svc)
 	// Verify that both health checks were created.
 	for _, isShared := range []bool{true, false} {
 		hcName := l4c.namer.L4HealthCheck(svc.Namespace, svc.Name, isShared)
@@ -331,7 +349,7 @@ func TestProcessDeletion(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
-	validateSvcStatus(newSvc, true, t)
+	verifyILBServiceProvisioned(t, newSvc)
 	currMetrics, metricErr := test.GetL4ILBLatencyMetric()
 	if metricErr != nil {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
@@ -354,7 +372,7 @@ func TestProcessDeletion(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
-	validateSvcStatus(newSvc, false, t)
+	verifyILBServiceNotProvisioned(t, newSvc)
 	currMetrics, metricErr = test.GetL4ILBLatencyMetric()
 	if metricErr != nil {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
@@ -386,7 +404,7 @@ func TestProcessCreateLegacyService(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
-	validateSvcStatus(svc, false, t)
+	verifyILBServiceNotProvisioned(t, svc)
 	currMetrics, metricErr := test.GetL4ILBLatencyMetric()
 	if metricErr != nil {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
@@ -418,7 +436,7 @@ func TestProcessCreateServiceWithLegacyInternalForwardingRule(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
-	validateSvcStatus(svc, false, t)
+	verifyILBServiceNotProvisioned(t, svc)
 	currMetrics, metricErr := test.GetL4ILBLatencyMetric()
 	if metricErr != nil {
 		t.Errorf("Error getting L4 ILB latency metrics err: %v", metricErr)
@@ -449,7 +467,7 @@ func TestProcessCreateServiceWithLegacyExternalForwardingRule(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
-	validateSvcStatus(svc, true, t)
+	verifyILBServiceProvisioned(t, svc)
 	currMetrics, metricErr := test.GetL4ILBLatencyMetric()
 	if metricErr != nil {
 		t.Errorf("Error getting L4 ILB latency metrics %v", metricErr)
@@ -495,7 +513,7 @@ func TestProcessUpdateClusterIPToILBService(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to lookup service %s, err: %v", newSvc.Name, err)
 	}
-	validateSvcStatus(newSvc, true, t)
+	verifyILBServiceProvisioned(t, newSvc)
 	// this will be a create metric since an ILB IP is being assigned for the first time.
 	currMetrics, metricErr := test.GetL4ILBLatencyMetric()
 	if metricErr != nil {
@@ -545,7 +563,7 @@ func TestProcessMultipleServices(t *testing.T) {
 			// Perform a full validation of the service once it is ready.
 			for _, name := range svcNames {
 				newSvc, _ := l4c.client.CoreV1().Services(testNs).Get(context2.TODO(), name, v1.GetOptions{})
-				validateSvcStatus(newSvc, true, t)
+				verifyILBServiceProvisioned(t, newSvc)
 			}
 			// this will be a create metric since an ILB IP is being assigned for the first time.
 			currMetrics, metricErr := test.GetL4ILBLatencyMetric()
@@ -596,7 +614,7 @@ func TestProcessServiceWithDelayedNEGAdd(t *testing.T) {
 	}); err != nil {
 		t.Error(err)
 	}
-	validateSvcStatus(newSvc, true, t)
+	verifyILBServiceProvisioned(t, newSvc)
 }
 
 func TestProcessServiceOnError(t *testing.T) {
