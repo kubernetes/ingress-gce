@@ -407,13 +407,13 @@ func DeleteSubnet(s *Sandbox, name string) error {
 }
 
 // CreatePorterDeployment creates a Deployment with porter image.
-func CreatePorterDeployment(s *Sandbox, name string, replics int32, version string) error {
+func CreatePorterDeployment(s *Sandbox, name string, replicas int32, version string) error {
 	env := fmt.Sprintf("SERVE_PORT_%d", porterPort)
 	labels := map[string]string{"app": "porter", "version": version}
 	deployment := apiappsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Namespace: s.Namespace, Name: name},
 		Spec: apiappsv1.DeploymentSpec{
-			Replicas: &replics,
+			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
 			Template: apiv1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: labels},
@@ -462,7 +462,7 @@ func GetConfigMap(s *Sandbox, namespace, name string) (map[string]string, error)
 	return cm.Data, nil
 }
 
-// EnsureConfigMap ensures the namespace:name ConfigMap Data fieled, create if the target not exist.
+// EnsureConfigMap ensures the namespace:name ConfigMap Data field, create if the target not exist.
 func EnsureConfigMap(s *Sandbox, namespace, name string, data map[string]string) error {
 	cm := v1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}, Data: data}
 	_, err := s.f.Clientset.CoreV1().ConfigMaps(namespace).Update(context.TODO(), &cm, metav1.UpdateOptions{})

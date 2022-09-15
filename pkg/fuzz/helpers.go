@@ -515,7 +515,7 @@ func (f *FrontendConfigBuilder) Build() *frontendconfig.FrontendConfig {
 	return f.frontendConfig.DeepCopy()
 }
 
-// SetSslPolicy Sets ths SslPolicy on the FrontendConfig.
+// SetSslPolicy Sets the SslPolicy on the FrontendConfig.
 func (f *FrontendConfigBuilder) SetSslPolicy(policy string) *FrontendConfigBuilder {
 	f.frontendConfig.Spec.SslPolicy = &policy
 	return f

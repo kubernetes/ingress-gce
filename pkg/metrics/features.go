@@ -101,7 +101,7 @@ const (
 	customNamedNeg = feature("CustomNamedNEG")
 	// negInSuccess feature specifies that syncers were created for the Neg
 	negInSuccess = feature("NegInSuccess")
-	// negInError feature specifies that an error occuring in ensuring Neg Syncer
+	// negInError feature specifies that an error occurring in ensuring Neg Syncer
 	negInError = feature("NegInError")
 
 	l4ILBService      = feature("L4ILBService")

@@ -353,7 +353,7 @@ func TestServiceAttachmentConsumers(t *testing.T) {
 
 	saName := "my-sa"
 	svcName := "my-service"
-	saUID := "serivce-attachment-uid"
+	saUID := "service-attachment-uid"
 	frIPAddr := "1.2.3.4"
 	controller := newTestController("ZONAL")
 	gceSAName := controller.saNamer.ServiceAttachment(testNamespace, saName, saUID)
@@ -435,7 +435,7 @@ func TestServiceAttachmentUpdate(t *testing.T) {
 	saName := "my-sa"
 	svcName := "my-service"
 	otherServiceName := "my-other-service"
-	saUID := "serivce-attachment-uid"
+	saUID := "service-attachment-uid"
 	frIPAddr := "1.2.3.4"
 
 	subnet1 := "subnet-1"
@@ -683,7 +683,7 @@ func TestNeedsUpdate(t *testing.T) {
 
 func TestServiceAttachmentGarbageCollection(t *testing.T) {
 	svcNamePrefix := "my-service"
-	saUIDPrefix := "serivce-attachment-uid"
+	saUIDPrefix := "service-attachment-uid"
 	frIPAddr := "1.2.3.4"
 
 	testcases := []struct {
@@ -778,7 +778,7 @@ func TestServiceAttachmentGarbageCollection(t *testing.T) {
 				t.Fatalf("failed to update service attachment to client: %q", err)
 			}
 
-			// sync the controller cache to have have current set of serviceAttachments
+			// sync the controller cache to have current set of serviceAttachments
 			syncServiceAttachmentLister(controller)
 
 			if tc.getError != nil || tc.deleteError != nil {
@@ -1271,7 +1271,7 @@ func validateSAStatus(status sav1.ServiceAttachmentStatus, sa *ga.ServiceAttachm
 	return nil
 }
 
-// verifyServiceAttachmentFinalizer verfies that the provided ServiceAttachment CR
+// verifyServiceAttachmentFinalizer verifies that the provided ServiceAttachment CR
 // has the ServiceAttachmentFinalizerKey, otherwise it will return an error
 func verifyServiceAttachmentFinalizer(cr *sav1.ServiceAttachment) error {
 	finalizers := cr.GetFinalizers()
@@ -1302,7 +1302,7 @@ func syncServiceAttachmentLister(controller *Controller) error {
 	return nil
 }
 
-// verifyServiceAttachmentCRDeletion will verify that the provicded ServiceAttachment CR
+// verifyServiceAttachmentCRDeletion will verify that the provided ServiceAttachment CR
 // does not have the service attachment finalizer and that the deletion timestamp has been
 // set
 func verifyServiceAttachmentCRDeletion(controller *Controller, sa *sav1.ServiceAttachment) error {
@@ -1325,7 +1325,7 @@ func verifyServiceAttachmentCRDeletion(controller *Controller, sa *sav1.ServiceA
 }
 
 // verifyGCEServiceAttachmentDeletion verifies that the provided CR's corresponding GCE
-// Service Attachmen resource has been deleted
+// Service Attachment resource has been deleted
 func verifyGCEServiceAttachmentDeletion(controller *Controller, sa *sav1.ServiceAttachment) error {
 	gceSAName := controller.saNamer.ServiceAttachment(sa.Namespace, sa.Name, string(sa.UID))
 	gceSA, err := getServiceAttachment(controller.cloud, gceSAName)

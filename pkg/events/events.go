@@ -44,7 +44,7 @@ func (r RecorderProducerMock) Recorder(ns string) record.EventRecorder {
 	return &record.FakeRecorder{}
 }
 
-// GloablEventf records a Cluster level event not attached to a given object.
+// GlobalEventf records a Cluster level event not attached to a given object.
 func GlobalEventf(r record.EventRecorder, eventtype, reason, messageFmt string, args ...interface{}) {
 	// Using an empty ObjectReference to indicate no associated
 	// resource. This apparently works, see the package
@@ -57,7 +57,7 @@ func GlobalEventf(r record.EventRecorder, eventtype, reason, messageFmt string, 
 var truncatedStringListMax = 2000
 
 // TruncateStringList will render the list of items as a string,
-// eliding elements with elipsis at the end if there are more than a
+// eliding elements with ellipsis at the end if there are more than a
 // reasonable number of characters in the resulting string. This is
 // used to prevent accidentally dumping enormous strings into the
 // Event description.

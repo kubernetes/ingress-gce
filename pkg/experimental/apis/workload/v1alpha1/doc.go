@@ -14,6 +14,6 @@ limitations under the License.
 // +k8s:deepcopy-gen=package
 
 // TODO: Change group name to discovery.k8s.io after approved
-// Package v1aplha1 is the v1aplha1 version of the API.
+// Package v1alpha1 is the v1alpha1 version of the API.
 // +groupName=networking.gke.io
 package v1alpha1

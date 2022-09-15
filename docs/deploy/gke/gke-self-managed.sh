@@ -211,7 +211,7 @@ case $key in
   --no-confirm)
   CONFIRM=0
 
-  # --quiet flag makes gloud prompts non-interactive, ensuring this script can be
+  # --quiet flag makes gcloud prompts non-interactive, ensuring this script can be
   # used in automated flows (user can also use this to provide extra, arbitrary flags).
   GCLOUD_EXTRA_FLAGS="${GCLOUD_EXTRA_FLAGS} --quiet"
   shift
@@ -304,7 +304,7 @@ if [[ -n $BUILD_AND_PUSH ]]; then
     IMAGE_URL=$(head -n 1 $(ls -t ../../../.*_ingress-gce-glbc-*-push | head -1))
     if [[ $? -eq 1 ]];
     then
-        error_exit "Error-bot: Issue geting the image url consider providing --image-url yourself"
+        error_exit "Error-bot: Issue getting the image url consider providing --image-url yourself"
     fi
     echo "Pushed new glbc image to: $IMAGE_URL"
   else

@@ -267,7 +267,7 @@ func TestDoNotGCWantedLB(t *testing.T) {
 	}
 }
 
-// This should not leak at all, but verfies existing behavior
+// This should not leak at all, but verifies existing behavior
 // TODO: remove this test after the GC resource leaking is fixed.
 func TestGCToLeakLB(t *testing.T) {
 	t.Parallel()

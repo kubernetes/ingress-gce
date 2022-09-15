@@ -76,7 +76,7 @@ Here is an explanation of each script dependency.
       deployment and service. This is no different than what you are used to
       seeing in your cluster. In this case, we need to recreate the default
       backend since turning off the GLBC on the master removes it. Note that we
-      modify the file to use the same node port as before before we create the resource.
+      modify the file to use the same node port as before we create the resource.
 3. [rbac.yaml](../resources/rbac.yaml)
     * This file contains specification for an RBAC role which gives the GLBC
       access to the resources it needs from the k8s API server.

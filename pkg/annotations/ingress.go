@@ -70,7 +70,7 @@ const (
 
 	// InstanceGroupsAnnotationKey is the annotation key used by controller to
 	// specify the name and zone of instance groups created for the ingress.
-	// This is read only for users. Controller will overrite any user updates.
+	// This is read only for users. Controller will overwrite any user updates.
 	// This is only set for ingresses with ingressClass = "gce-multi-cluster"
 	InstanceGroupsAnnotationKey = "ingress.gcp.kubernetes.io/instance-groups"
 

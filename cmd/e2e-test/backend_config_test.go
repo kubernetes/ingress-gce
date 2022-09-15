@@ -185,7 +185,7 @@ func TestBackendConfigAPI(t *testing.T) {
 		}
 		v1beta1BackendConfig := &backendconfigv1beta1.BackendConfig{}
 		if err := json.Unmarshal(bcData, v1beta1BackendConfig); err != nil {
-			t.Fatalf("Failed to unmarshall backendconfig %s into v1beta1: %v", bcKey, err)
+			t.Fatalf("Failed to unmarshal backendconfig %s into v1beta1: %v", bcKey, err)
 		}
 
 		// Create BackendConfig using v1 API and retrieve it using v1beta1 API.

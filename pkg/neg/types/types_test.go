@@ -612,7 +612,7 @@ func TestEndpointsDataFromEndpoints(t *testing.T) {
 		ValidateAddressDataForEndpointsAddresses(endpointsData[i].Addresses, subset.Addresses, true, t)
 		ValidateAddressDataForEndpointsAddresses(endpointsData[i].Addresses, subset.NotReadyAddresses, false, t)
 		if len(endpointsData[i].Addresses) != len(subset.Addresses)+len(subset.NotReadyAddresses) {
-			t.Errorf("Unexpected len of endpointsData adresses, got %d, expected %d", len(endpointsData[i].Addresses), len(subset.Addresses)+len(subset.NotReadyAddresses))
+			t.Errorf("Unexpected len of endpointsData addresses, got %d, expected %d", len(endpointsData[i].Addresses), len(subset.Addresses)+len(subset.NotReadyAddresses))
 		}
 	}
 }
@@ -758,7 +758,7 @@ func TestEndpointsDataFromEndpointSlices(t *testing.T) {
 			}
 		}
 		if len(endpointsData[i].Addresses) != len(slice.Endpoints)-terminatingEndpointsNumber {
-			t.Errorf("Unexpected len of endpointsData adresses, got %d, expected %d", len(endpointsData[i].Addresses), len(slice.Endpoints)-1)
+			t.Errorf("Unexpected len of endpointsData addresses, got %d, expected %d", len(endpointsData[i].Addresses), len(slice.Endpoints)-1)
 		}
 	}
 }

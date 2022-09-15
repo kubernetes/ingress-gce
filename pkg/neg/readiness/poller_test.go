@@ -561,7 +561,7 @@ func TestProcessHealthStatus(t *testing.T) {
 	// processHealthStatus should not crash when pollMap does not have corresponding key.
 	retry, err := poller.processHealthStatus(key, res)
 	if retry != false {
-		t.Errorf("exepect retry == false, but got %v", retry)
+		t.Errorf("expect retry == false, but got %v", retry)
 	}
 	if err != nil {
 		t.Errorf("expect err == nil, but got %v", err)

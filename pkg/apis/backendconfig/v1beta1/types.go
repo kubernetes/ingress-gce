@@ -126,7 +126,7 @@ type ConnectionDrainingConfig struct {
 	DrainingTimeoutSec int64 `json:"drainingTimeoutSec,omitempty"`
 }
 
-// SessionAffinityConfig contains configuration for stickyness parameters.
+// SessionAffinityConfig contains configuration for stickiness parameters.
 // +k8s:openapi-gen=true
 type SessionAffinityConfig struct {
 	AffinityType         string `json:"affinityType,omitempty"`

@@ -159,7 +159,7 @@ func (vm *VM) getCluster() (cluster *gkev1.Cluster, err error) {
 	oauthClient, _, err := transport.NewHTTPClient(context.Background(),
 		option.WithScopes(gkev1.CloudPlatformScope))
 	if err != nil {
-		klog.Errorf("failed to initalize http client: %+v", err)
+		klog.Errorf("failed to initialize http client: %+v", err)
 		return
 	}
 	gkeSvc, err := gkev1.New(oauthClient)
@@ -193,7 +193,7 @@ func (vm *VM) KubeConfig() (config *rest.Config, err error) {
 		return
 	}
 
-	// Get contianer master address and CA
+	// Get container master address and CA
 	cluster, err := vm.getCluster()
 	if err != nil {
 		klog.Errorf("unable to get the cluster info: %+v", err)
@@ -288,7 +288,7 @@ func NewVM() (vm *VM, err error) {
 		if strings.HasPrefix(name, labelPrefix) {
 			val, err := metadata.InstanceAttributeValue(name)
 			if err != nil {
-				klog.Errorf("faild to fetch label %s: %+v", name, err)
+				klog.Errorf("failed to fetch label %s: %+v", name, err)
 			}
 			vm.vmLabels[name[prefixLen:]] = val
 		}

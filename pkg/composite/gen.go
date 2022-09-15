@@ -241,7 +241,7 @@ type Backend struct {
 	// Not available if the backend's balancingMode is CONNECTION.
 	MaxRatePerInstance float64 `json:"maxRatePerInstance,omitempty"`
 	// Optional parameter to define a target capacity for the
-	// UTILIZATIONbalancing mode. The valid range is [0.0, 1.0]. For usage
+	// UTILIZATION balancing mode. The valid range is [0.0, 1.0]. For usage
 	// guidelines, see Utilization balancing mode.
 	MaxUtilization  float64  `json:"maxUtilization,omitempty"`
 	ForceSendFields []string `json:"-"`
@@ -897,7 +897,7 @@ type CorsPolicy struct {
 	AllowHeaders []string `json:"allowHeaders,omitempty"`
 	// Specifies the content for the Access-Control-Allow-Methods header.
 	AllowMethods []string `json:"allowMethods,omitempty"`
-	// Specifies the regualar expression patterns that match allowed
+	// Specifies the regular expression patterns that match allowed
 	// origins. For regular expression grammar please see
 	// github.com/google/re2/wiki/Syntax An origin is allowed if it matches
 	// either an item in allowOrigins or an item in allowOriginRegexes.
@@ -1034,7 +1034,7 @@ type ForwardingRule struct {
 	// its filterLabels must match with corresponding labels provided in the
 	// metadata. If multiple metadataFilters are specified, all of them need
 	// to be satisfied in order to be considered a match. metadataFilters
-	// specified here will be applifed before those specified in the UrlMap
+	// specified here will be applied before those specified in the UrlMap
 	// that this ForwardingRule references. metadataFilters only applies to
 	// Loadbalancers that have their loadBalancingScheme set to
 	// INTERNAL_SELF_MANAGED.

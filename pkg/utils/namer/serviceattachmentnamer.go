@@ -24,7 +24,7 @@ const (
 	// maxSADescriptiveLabel is the max length for prefix, namespace, and name for
 	// service attachment. 63 - 1 (naming schema version prefix)
 	// - 2 (service attachment identifier prefix) - 8 (truncated kube system id) - 8 (suffix hash)
-	// - 5 (hyphn connectors) = 39
+	// - 5 (hyphen connectors) = 39
 	maxSADescriptiveLabel = 39
 
 	// serviceAttachmentPrefix is the prefix used in service attachment naming scheme

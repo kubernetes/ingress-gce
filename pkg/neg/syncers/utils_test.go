@@ -568,7 +568,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 
 func TestRetrieveExistingZoneNetworkEndpointMap(t *testing.T) {
 	zoneGetter := negtypes.NewFakeZoneGetter()
-	negCloud := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-newtork")
+	negCloud := negtypes.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
 	negName := "test-neg-name"
 	irrelevantNegName := "irrelevant"
 	testIP1 := "1.2.3.4"

@@ -3,7 +3,7 @@
 This doc outlines the steps needed to run Ingress-GCE binary locally:
 * Setup of a dev GKE cluster.
 * Authorization configuration to it.
-* Buldinging and running the Ingress-GCE bibnary locally.
+* Building and running the Ingress-GCE binary locally.
 
 ## Create the cluster
 
@@ -16,7 +16,7 @@ Once the cluster is ready you need to disable HTTP Load Balancing.
 $ gcloud container clusters update CLUSTER_NAME --update-addons=HttpLoadBalancing=DISABLED
 ```
 You can also do this from the Cloud Console.
-The HTTP Load Balancing option is avaialbe under Networking section.
+The HTTP Load Balancing option is available under Networking section.
 
 ## Authorize gcloud and kubectl
 

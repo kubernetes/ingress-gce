@@ -77,7 +77,7 @@ type HealthCheck struct {
 	ForNEG bool
 	ForILB bool
 
-	// As the {HTTP, HTTPS, HTTP2} settings are identical, we mantain the
+	// As the {HTTP, HTTPS, HTTP2} settings are identical, we maintain the
 	// settings at the outer-level and copy into the appropriate struct
 	// in the HealthCheck embedded struct (see `merge()`) when getting the
 	// compute struct back.

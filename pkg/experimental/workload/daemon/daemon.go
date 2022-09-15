@@ -96,7 +96,7 @@ func updateCR(
 		select {
 		case <-ticker.C:
 			newStatus := generateHeartbeatStatus()
-			patch, err := preparePatchBytesforWorkloadStatus(oldStatus, newStatus)
+			patch, err := preparePatchBytesForWorkloadStatus(oldStatus, newStatus)
 			if err != nil {
 				klog.Errorf("failed to prepare the patch for workload resource: %+v", err)
 				continue
@@ -175,8 +175,8 @@ func OutputCredentials(credentials daemonutils.ClusterCredentials) {
 	fmt.Println(string(ret))
 }
 
-// preparePatchBytesforWorkloadStatus generates patch bytes based on the old and new workload status
-func preparePatchBytesforWorkloadStatus(oldStatus, newStatus workloadv1a1.WorkloadStatus) ([]byte, error) {
+// preparePatchBytesForWorkloadStatus generates patch bytes based on the old and new workload status
+func preparePatchBytesForWorkloadStatus(oldStatus, newStatus workloadv1a1.WorkloadStatus) ([]byte, error) {
 	patchBytes, err := patch.StrategicMergePatchBytes(
 		workloadv1a1.Workload{Status: oldStatus},
 		workloadv1a1.Workload{Status: newStatus},

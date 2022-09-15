@@ -16,7 +16,7 @@ limitations under the License.
 
 // This package contains the implementations of backend service
 // features.
-// For features that requrie non-GA compute API, please make sure to
+// For features that require non-GA compute API, please make sure to
 // update `versionToFeatures` and `featuresFromServicePort()` in
 // features.go (upon both feature addition and promotion). It will make
 // sure the controller interacts with compute service using the proper

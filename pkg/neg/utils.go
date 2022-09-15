@@ -28,7 +28,7 @@ import (
 	"k8s.io/ingress-gce/pkg/neg/types"
 )
 
-// NegSyncerType represents the the neg syncer type
+// NegSyncerType represents the neg syncer type
 type NegSyncerType string
 
 // negServicePorts returns the SvcPortTupleSet that matches the exposed service port in the NEG annotation.
@@ -55,7 +55,7 @@ func negServicePorts(ann *annotations.NegAnnotation, knownSvcTupleSet types.SvcP
 }
 
 // castToDestinationRule cast Unstructured obj to istioV1alpha3.DestinationRule
-// Return targetServiceNamespace, targetSeriveName(DestinationRule.Host), DestionationRule and error.
+// Return targetServiceNamespace, targetServiceName(DestinationRule.Host), DestinationRule and error.
 func castToDestinationRule(drus *unstructured.Unstructured) (string, string, *istioV1alpha3.DestinationRule, error) {
 	drJSON, err := json.Marshal(drus.Object["spec"])
 	if err != nil {

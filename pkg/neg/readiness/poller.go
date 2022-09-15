@@ -39,7 +39,7 @@ const (
 
 	// retryDelay is the delay to retry health status polling.
 	// GCE NEG API RPS quota is rate limited per every 100 seconds.
-	// Make this retry delay to match the ratelimiting interval.
+	// Make this retry delay to match the rate limiting interval.
 	// More detail: https://cloud.google.com/compute/docs/api-rate-limits
 	retryDelay = 100 * time.Second
 )

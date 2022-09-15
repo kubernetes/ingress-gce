@@ -36,7 +36,7 @@ type WorkloadInfo interface {
 
 // ConnectionHelper provides the identity and config used to connect to the cluster
 type ConnectionHelper interface {
-	// Credentials contain the credentials used for the deamon to access the cluster.
+	// Credentials contain the credentials used for the daemon to access the cluster.
 	// This is output to stdout, for Kubernetes clients to use.
 	Credentials() (ClusterCredentials, error)
 	// KubeConfig yields the config used to create Kubernetes clientset.

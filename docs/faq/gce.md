@@ -175,7 +175,7 @@ grained control over the algorithm, you should deploy the [nginx controller](htt
 ## Is there a maximum number of Endpoints I can add to the Ingress?
 
 This limit is directly related to the maximum number of endpoints allowed in a
-Kubernetes cluster, not the the HTTP LB configuration, since the HTTP LB sends
+Kubernetes cluster, not the HTTP LB configuration, since the HTTP LB sends
 packets to VMs. Ingress is not yet supported on single zone clusters of size >
 1000 nodes ([issue](https://github.com/kubernetes/contrib/issues/1724)). If
 you'd like to use Ingress on a large cluster, spread it across 2 or more zones

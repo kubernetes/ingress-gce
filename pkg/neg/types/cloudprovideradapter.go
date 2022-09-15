@@ -54,7 +54,7 @@ type cloudProviderAdapter struct {
 	subnetworkURL string
 }
 
-// GetNetworkEndpointGroup inmplements NetworkEndpointGroupCloud.
+// GetNetworkEndpointGroup implements NetworkEndpointGroupCloud.
 func (a *cloudProviderAdapter) GetNetworkEndpointGroup(name string, zone string, version meta.Version) (*composite.NetworkEndpointGroup, error) {
 	return composite.GetNetworkEndpointGroup(a.c, meta.ZonalKey(name, zone), version)
 

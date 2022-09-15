@@ -216,7 +216,7 @@ func TestNEGOnlyIngress(t *testing.T) {
 	}
 }
 
-// TestIngressCreateDeleteFinalizer asserts that `sync` will will not return an
+// TestIngressCreateDeleteFinalizer asserts that `sync` will not return an
 // error for a good ingress config. It also tests garbage collection for
 // Ingresses that need to be deleted, and keep the ones that don't, depending
 // on whether Finalizer Adds and/or Removes are enabled.

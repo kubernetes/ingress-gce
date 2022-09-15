@@ -1404,7 +1404,7 @@ func TestUnknownNodes(t *testing.T) {
 		}
 
 		if !reflect.DeepEqual(expectedEndpoints, out) {
-			t.Errorf("endpoints were modified after syncInteral:\ngot %+v,\n expected %+v", out, expectedEndpoints)
+			t.Errorf("endpoints were modified after syncInternal:\ngot %+v,\n expected %+v", out, expectedEndpoints)
 		}
 	}
 }
@@ -1628,7 +1628,7 @@ func checkNegDescription(t *testing.T, syncer *transactionSyncer, desc string) {
 	}
 }
 
-// checkCondition looks for the condition of the specified type and validates it has has the expectedStatus.
+// checkCondition looks for the condition of the specified type and validates it has the expectedStatus.
 // It will also validate that the transition timestamp is updated as expected, which is specified by expectTransitionTSUpdate.
 func checkCondition(t *testing.T, conditions []negv1beta1.Condition, conditionType string, previousTS metav1.Time, expectedStatus corev1.ConditionStatus, expectTransitionTSUpdate bool) metav1.Time {
 	var condition negv1beta1.Condition
@@ -1704,7 +1704,7 @@ func createNegCR(testNegName string, creationTS metav1.Time, populateInitialized
 	return neg
 }
 
-// checkNegCR validates the the NegObjectReferences and the LastSyncTime. It will not validate the conditions fields but ensures at most 2 conditions exist
+// checkNegCR validates the NegObjectReferences and the LastSyncTime. It will not validate the conditions fields but ensures at most 2 conditions exist
 func checkNegCR(t *testing.T, negCR *negv1beta1.ServiceNetworkEndpointGroup, previousLastSyncTime metav1.Time, expectZones sets.String, expectedNegRefs map[string]negv1beta1.NegObjectReference, expectSyncTimeUpdate, expectErr bool) {
 	if expectSyncTimeUpdate && !previousLastSyncTime.Before(&negCR.Status.LastSyncTime) {
 		t.Errorf("Expected Neg CR to have an updated LastSyncTime")

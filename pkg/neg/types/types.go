@@ -127,7 +127,7 @@ type PortInfo struct {
 	NegName string
 	// ReadinessGate indicates if the NEG associated with the port has NEG readiness gate enabled
 	// This is enabled with service port is reference by ingress.
-	// If the service port is only exposed as stand alone NEG, it should not be enbled.
+	// If the service port is only exposed as stand alone NEG, it should not be enabled.
 	ReadinessGate bool
 	// EpCalculatorMode indicates if the endpoints for the NEG associated with this port need to
 	// be selected at random(L4ClusterMode), or by following service endpoints(L4LocalMode).
@@ -188,7 +188,7 @@ func NewPortInfoMapForVMIPNEG(namespace, name string, namer namer.L4ResourcesNam
 	return ret
 }
 
-// NewPortInfoMapWithDestinationRule create PortInfoMap based on a gaven DesinationRule.
+// NewPortInfoMapWithDestinationRule create PortInfoMap based on a given DestinationRule.
 // Return error message if the DestinationRule contains duplicated subsets.
 func NewPortInfoMapWithDestinationRule(namespace, name string, svcPortTupleSet SvcPortTupleSet, namer NetworkEndpointGroupNamer, readinessGate bool,
 	destinationRule *istioV1alpha3.DestinationRule) (PortInfoMap, error) {

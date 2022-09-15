@@ -182,7 +182,7 @@ func (a *APIServerconfigMapStore) Delete(obj interface{}) error {
 func (a *APIServerconfigMapStore) GetByKey(key string) (item interface{}, exists bool, err error) {
 	nsName := strings.Split(key, "/")
 	if len(nsName) != 2 {
-		return nil, false, fmt.Errorf("failed to get key %v, unexpecte format, expecting ns/name", key)
+		return nil, false, fmt.Errorf("failed to get key %v, unexpected format, expecting ns/name", key)
 	}
 	ns, name := nsName[0], nsName[1]
 	cfg, err := a.client.CoreV1().ConfigMaps(ns).Get(context.TODO(), name, metav1.GetOptions{})

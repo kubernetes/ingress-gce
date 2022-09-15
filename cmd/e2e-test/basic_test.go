@@ -89,7 +89,7 @@ func testBasicOS(t *testing.T, os e2e.OS) {
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
-			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
 			gclb, err := e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)
@@ -200,7 +200,7 @@ func TestEdge(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error waiting for Ingress to stabilize: %v", err)
 			}
-			t.Logf("GCLB resources createdd (%s/%s)", s.Namespace, tc.ing.Name)
+			t.Logf("GCLB resources created (%s/%s)", s.Namespace, tc.ing.Name)
 
 			// Perform whitebox testing.
 			gclb, err := e2e.WhiteboxTest(ing, nil, Framework.Cloud, "", s)

@@ -81,7 +81,7 @@ const (
 	maxNEGDescriptiveLabel = 38
 
 	// maxNEGDescriptiveLabelASM is the max length for namespace, name,
-	// port and DestinationRule subset for neg name. It use one more hypen
+	// port and DestinationRule subset for neg name. It use one more hyphen
 	// connector compared to maxNEGDescriptiveLabel
 	maxNEGDescriptiveLabelASM = maxNEGDescriptiveLabel - 1
 
@@ -204,7 +204,7 @@ func (n *Namer) Firewall() string {
 func truncate(key string) string {
 	if len(key) > nameLenLimit {
 		// GCE requires names to end with an alphanumeric, but allows
-		// characters like '-', so make sure the trucated name ends
+		// characters like '-', so make sure the truncated name ends
 		// legally.
 		return fmt.Sprintf("%v%v", key[:nameLenLimit], alphaNumericChar)
 	}
@@ -344,7 +344,7 @@ func (n *Namer) FirewallRule() string {
 func (n *Namer) LoadBalancer(key string) LoadBalancerName {
 	// TODO: Pipe the clusterName through, for now it saves code churn
 	// to just grab it globally, especially since we haven't decided how
-	// to handle namespace conflicts in the Ubernetes context.
+	// to handle namespace conflicts in the Kubernetes context.
 	parts := strings.Split(key, clusterNameDelimiter)
 	scrubbedName := strings.Replace(key, "/", "-", -1)
 	clusterName := n.UID()

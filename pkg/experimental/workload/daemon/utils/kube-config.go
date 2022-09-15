@@ -30,7 +30,7 @@ func GenKubeConfigForKSA(clusterCa, clusterIP, clusterName, saName, accessToken 
 	var kubeConfig bytes.Buffer
 	t, err := template.New("user").Parse(kubeConfigUserTemp)
 	if err != nil {
-		klog.Fatalf("unablt to create KubeConfig template: %+v", err)
+		klog.Fatalf("unable to create KubeConfig template: %+v", err)
 	}
 	err = t.Execute(&kubeConfig, map[string]string{
 		"clusterCa":   clusterCa,
@@ -40,7 +40,7 @@ func GenKubeConfigForKSA(clusterCa, clusterIP, clusterName, saName, accessToken 
 		"accessToken": accessToken,
 	})
 	if err != nil {
-		klog.Fatalf("unablt to execute KubeConfig template: %+v", err)
+		klog.Fatalf("unable to execute KubeConfig template: %+v", err)
 	}
 	return kubeConfig.Bytes()
 }
@@ -56,7 +56,7 @@ func GenKubeConfigForUser(clusterCa, clusterIP, clusterName, authProvider string
 	var kubeConfig bytes.Buffer
 	t, err := template.New("user").Parse(kubeConfigUserTemp)
 	if err != nil {
-		klog.Fatalf("unablt to create KubeConfig template: %+v", err)
+		klog.Fatalf("unable to create KubeConfig template: %+v", err)
 	}
 	err = t.Execute(&kubeConfig, map[string]string{
 		"clusterCa":    clusterCa,
@@ -66,7 +66,7 @@ func GenKubeConfigForUser(clusterCa, clusterIP, clusterName, authProvider string
 		"authProvider": authProvider,
 	})
 	if err != nil {
-		klog.Fatalf("unablt to execute KubeConfig template: %+v", err)
+		klog.Fatalf("unable to execute KubeConfig template: %+v", err)
 	}
 	return kubeConfig.Bytes()
 }

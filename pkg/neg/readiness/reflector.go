@@ -48,7 +48,7 @@ const (
 	// negNotReadyReason is the pod condition reason when pod is not healthy in NEG
 	negNotReadyReason = "LoadBalancerNegNotReady"
 	// unreadyTimeout is the timeout for health status feedback for pod readiness. If load balancer health
-	// check is still not showing as Healthy for long than the time out since the pod is created. Skip wating and mark
+	// check is still not showing as Healthy for long than the time out since the pod is created. Skip waiting and mark
 	// the pod as load balancer ready.
 	// This is a fail-safe in case that should be longer than any reasonable amount of time for the healthy infrastructure catch up.
 	unreadyTimeout = 10 * time.Minute
@@ -177,7 +177,7 @@ func (r *readinessReflector) syncPod(podKey string, neg, backendService *meta.Ke
 func (r *readinessReflector) getExpectedNegCondition(pod *v1.Pod, neg, backendService *meta.Key) v1.PodCondition {
 	expectedCondition := v1.PodCondition{Type: shared.NegReadinessGate}
 	if pod == nil {
-		expectedCondition.Message = fmt.Sprintf("Unkown status for unkown pod.")
+		expectedCondition.Message = fmt.Sprintf("Unknown status for unknown pod.")
 		return expectedCondition
 	}
 

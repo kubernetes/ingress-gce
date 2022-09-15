@@ -7,11 +7,11 @@ This document will deploy the self managed Ingress-GCE controller in CSM(Cloud S
 
 The cluster should satisfy the following restrictions:
  * GKE version 1.14+
- * [IP Alias](https://cloud.google.com/kubernetes-engine/docs/how-to/alias-ips) eanbeld
+ * [IP Alias](https://cloud.google.com/kubernetes-engine/docs/how-to/alias-ips) enabled
  * Default Ingress-GCE Controller disabled.
  * [GKE Workload Identity](https://cloud.google.com/kubernetes-engine/docs/how-to/workload-identity) enabled.
 
-## [Option 1] Ceate a new Cluster
+## [Option 1] Create a new Cluster
 
 ```sh
 gcloud container clusters create $CLUSTER --enable-ip-alias --cluster-version 1.14 \
