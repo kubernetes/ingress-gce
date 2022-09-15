@@ -20,9 +20,11 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -1519,7 +1521,11 @@ func verifyNodesFirewall(l4 *L4, nodeNames []string) error {
 		return fmt.Errorf("failed to create description for resources, err %w", err)
 	}
 
-	return verifyFirewall(l4, nodeNames, fwName, fwDesc)
+	sourceRanges, err := servicehelper.GetLoadBalancerSourceRanges(l4.Service)
+	if err != nil {
+		return fmt.Errorf("servicehelper.GetLoadBalancerSourceRanges(%+v) returned error %v, want nil", l4.Service, err)
+	}
+	return verifyFirewall(l4, nodeNames, fwName, fwDesc, sourceRanges.StringSlice())
 }
 
 func verifyHealthCheckFirewall(l4 *L4, nodeNames []string) error {
@@ -1531,10 +1537,10 @@ func verifyHealthCheckFirewall(l4 *L4, nodeNames []string) error {
 		return fmt.Errorf("failed to calculate decsription for health check for service %v, error %v", l4.Service, err)
 	}
 
-	return verifyFirewall(l4, nodeNames, hcFwName, hcFwDesc)
+	return verifyFirewall(l4, nodeNames, hcFwName, hcFwDesc, gce.L4LoadBalancerSrcRanges())
 }
 
-func verifyFirewall(l4 *L4, nodeNames []string, firewallName, expectedDescription string) error {
+func verifyFirewall(l4 *L4, nodeNames []string, firewallName, expectedDescription string, expectedSourceRanges []string) error {
 	firewall, err := l4.cloud.GetFirewall(firewallName)
 	if err != nil {
 		return fmt.Errorf("failed to fetch firewall rule %q - err %w", firewallName, err)
@@ -1542,8 +1548,10 @@ func verifyFirewall(l4 *L4, nodeNames []string, firewallName, expectedDescriptio
 	if !utils.EqualStringSets(nodeNames, firewall.TargetTags) {
 		return fmt.Errorf("expected firewall rule target tags '%v', Got '%v'", nodeNames, firewall.TargetTags)
 	}
-	if len(firewall.SourceRanges) == 0 {
-		return fmt.Errorf("unexpected empty source range for firewall rule %v", firewall)
+	sort.Strings(expectedSourceRanges)
+	sort.Strings(firewall.SourceRanges)
+	if diff := cmp.Diff(expectedSourceRanges, firewall.SourceRanges); diff != "" {
+		return fmt.Errorf("expected firewall source ranges %v, got %v, diff %v", expectedSourceRanges, firewall.SourceRanges, diff)
 	}
 	if firewall.Description != expectedDescription {
 		return fmt.Errorf("unexpected description in firewall %q - Expected %s, Got %s", firewallName, expectedDescription, firewall.Description)
