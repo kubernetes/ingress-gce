@@ -1629,9 +1629,9 @@ func assertILBResourcesDeleted(t *testing.T, l4 *L4) {
 		t.Errorf("verifyBackendServiceNotExists(_, %s)", nodesFwName)
 	}
 
-	err = verifyAddressNotExists(l4, nodesFwName)
+	err = verifyAddressNotExists(l4, frName)
 	if err != nil {
-		t.Errorf("verifyAddressNotExists(_, %s)", nodesFwName)
+		t.Errorf("verifyAddressNotExists(_, %s)", frName)
 	}
 }
 
