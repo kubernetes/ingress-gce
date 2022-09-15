@@ -60,13 +60,14 @@ type L4 struct {
 // L4ILBSyncResult contains information about the outcome of an L4 ILB sync. It stores the list of resource name annotations,
 // sync error, the GCE resource that hit the error along with the error type, metrics and more fields.
 type L4ILBSyncResult struct {
-	Annotations        map[string]string
-	Error              error
-	GCEResourceInError string
-	Status             *corev1.LoadBalancerStatus
-	MetricsState       metrics.L4ILBServiceState
-	SyncType           string
-	StartTime          time.Time
+	Annotations           map[string]string
+	Error                 error
+	GCEResourceInError    string
+	Status                *corev1.LoadBalancerStatus
+	MetricsState          metrics.L4ILBServiceState
+	DualStackMetricsState metrics.L4ILBDualStackServiceState
+	SyncType              string
+	StartTime             time.Time
 }
 
 type L4ILBParams struct {
@@ -278,10 +279,13 @@ func (l4 *L4) getFRNameWithProtocol(protocol string) string {
 // EnsureInternalLoadBalancer ensures that all GCE resources for the given loadbalancer service have
 // been created. It returns a LoadBalancerStatus with the updated ForwardingRule IP address.
 func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service) *L4ILBSyncResult {
+	l4.Service = svc
+
 	result := &L4ILBSyncResult{
-		Annotations: make(map[string]string),
-		StartTime:   time.Now(),
-		SyncType:    SyncTypeCreate,
+		Annotations:           make(map[string]string),
+		StartTime:             time.Now(),
+		SyncType:              SyncTypeCreate,
+		DualStackMetricsState: l4.getInitialDualStackMetricsState(),
 	}
 
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
@@ -290,8 +294,6 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	if len(svc.Status.LoadBalancer.Ingress) > 0 {
 		result.SyncType = SyncTypeUpdate
 	}
-
-	l4.Service = svc
 
 	hcLink := l4.provideHealthChecks(nodeNames, result)
 	if result.Error != nil {
@@ -381,6 +383,9 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	// feature is in use.
 	if options.SubnetName != "" {
 		result.MetricsState.EnabledCustomSubnet = true
+	}
+	if l4.enableDualStack {
+		result.DualStackMetricsState.Status = metrics.StatusSuccess
 	}
 	return result
 }
@@ -525,6 +530,26 @@ func (l4 *L4) hasAnnotation(annotationKey string) bool {
 		return true
 	}
 	return false
+}
+
+func (l4 *L4) getInitialDualStackMetricsState() metrics.L4ILBDualStackServiceState {
+	// Always init stats with error, and update with Success when service was provisioned
+	state := metrics.L4ILBDualStackServiceState{
+		Status: metrics.StatusError,
+	}
+
+	var ipFamiliesStrings []string
+	for _, ipFamily := range l4.Service.Spec.IPFamilies {
+		ipFamiliesStrings = append(ipFamiliesStrings, string(ipFamily))
+	}
+	state.IPFamilies = strings.Join(ipFamiliesStrings, ",")
+
+	state.IPFamilyPolicy = ""
+	if l4.Service.Spec.IPFamilyPolicy != nil {
+		state.IPFamilyPolicy = string(*l4.Service.Spec.IPFamilyPolicy)
+	}
+
+	return state
 }
 
 func (l4 *L4) getOldForwardingRule() (*composite.ForwardingRule, error) {

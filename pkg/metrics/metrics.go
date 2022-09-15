@@ -69,6 +69,13 @@ var (
 		},
 		[]string{label},
 	)
+	l4ILBDualStackCount = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "number_of_l4_dual_stack_ilbs",
+			Help: "Number of L4 ILBs with DualStack enabled",
+		},
+		[]string{"ipFamilies", "ipFamilyPolicy", "status"},
+	)
 	l4NetLBCount = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "number_of_l4_netlbs",
@@ -127,6 +134,9 @@ func init() {
 	klog.V(3).Infof("Registering L4 ILB usage metrics %v", l4ILBCount)
 	prometheus.MustRegister(l4ILBCount)
 
+	klog.V(3).Infof("Registering L4 ILB Dual Stack usage metrics %v", l4ILBDualStackCount)
+	prometheus.MustRegister(l4ILBDualStackCount)
+
 	klog.V(3).Infof("Registering L4 NetLB usage metrics %v", l4NetLBCount)
 	prometheus.MustRegister(l4NetLBCount)
 
@@ -153,6 +163,8 @@ type ControllerMetrics struct {
 	negMap map[string]NegServiceState
 	// l4ILBServiceMap is a map between service key and L4 ILB service state.
 	l4ILBServiceMap map[string]L4ILBServiceState
+	// l4ILBDualStackServiceMap is a map between service key and L4 ILB DualStack service state.
+	l4ILBDualStackServiceMap map[string]L4ILBDualStackServiceState
 	// l4NetLBServiceMap is a map between service key and L4 NetLB service state.
 	l4NetLBServiceMap map[string]L4NetLBServiceState
 	// pscMap is a map between the service attachment key and PSC state
@@ -173,6 +185,7 @@ func NewControllerMetrics(exportInterval, l4NetLBProvisionDeadline time.Duration
 		ingressMap:               make(map[string]IngressState),
 		negMap:                   make(map[string]NegServiceState),
 		l4ILBServiceMap:          make(map[string]L4ILBServiceState),
+		l4ILBDualStackServiceMap: make(map[string]L4ILBDualStackServiceState),
 		l4NetLBServiceMap:        make(map[string]L4NetLBServiceState),
 		pscMap:                   make(map[string]pscmetrics.PSCState),
 		serviceMap:               make(map[string]struct{}),
@@ -272,6 +285,25 @@ func (im *ControllerMetrics) DeleteL4ILBService(svcKey string) {
 	delete(im.l4ILBServiceMap, svcKey)
 }
 
+// SetL4ILBDualStackService implements L4ILBMetricsCollector.
+func (im *ControllerMetrics) SetL4ILBDualStackService(svcKey string, state L4ILBDualStackServiceState) {
+	im.Lock()
+	defer im.Unlock()
+
+	if im.l4ILBDualStackServiceMap == nil {
+		klog.Fatalf("L4 ILB DualStack Metrics failed to initialize correctly.")
+	}
+	im.l4ILBDualStackServiceMap[svcKey] = state
+}
+
+// DeleteL4ILBDualStackService implements L4ILBMetricsCollector.
+func (im *ControllerMetrics) DeleteL4ILBDualStackService(svcKey string) {
+	im.Lock()
+	defer im.Unlock()
+
+	delete(im.l4ILBDualStackServiceMap, svcKey)
+}
+
 // SetL4NetLBService adds metric state for given service to map.
 func (im *ControllerMetrics) SetL4NetLBService(svcKey string, state L4NetLBServiceState) {
 	im.Lock()
@@ -365,6 +397,17 @@ func (im *ControllerMetrics) export() {
 		l4ILBCount.With(prometheus.Labels{label: feature.String()}).Set(float64(count))
 	}
 	klog.V(3).Infof("L4 ILB usage metrics exported.")
+
+	ilbDualStackCount := im.computeL4ILBDualStackMetrics()
+	klog.V(3).Infof("Exporting L4 ILB DualStack usage metrics: %#v", ilbDualStackCount)
+	for state, count := range ilbDualStackCount {
+		l4ILBDualStackCount.With(prometheus.Labels{
+			"ipFamilies":     state.IPFamilies,
+			"ipFamilyPolicy": state.IPFamilyPolicy,
+			"status":         string(state.Status),
+		}).Set(float64(count))
+	}
+	klog.V(3).Infof("L4 ILB DualStack usage metrics exported.")
 
 	netlbCount := im.computeL4NetLBMetrics()
 	klog.V(3).Infof("Exporting L4 NetLB usage metrics: %#v", netlbCount)
@@ -514,6 +557,21 @@ func (im *ControllerMetrics) computeL4ILBMetrics() map[feature]int {
 		if state.EnabledCustomSubnet {
 			counts[l4ILBCustomSubnet]++
 		}
+	}
+	klog.V(4).Info("L4 ILB usage metrics computed.")
+	return counts
+}
+
+// computeL4ILBDualStackMetrics aggregates L4 ILB DualStack metrics in the cache.
+func (im *ControllerMetrics) computeL4ILBDualStackMetrics() map[L4ILBDualStackServiceState]int {
+	im.Lock()
+	defer im.Unlock()
+	klog.V(4).Infof("Computing L4 DualStack ILB usage metrics from service state map: %#v", im.l4ILBDualStackServiceMap)
+	counts := map[L4ILBDualStackServiceState]int{}
+
+	for key, state := range im.l4ILBDualStackServiceMap {
+		klog.V(6).Infof("ILB Service %s has IPFamilies: %v, IPFamilyPolicy: %t, Status: %v", key, state.IPFamilies, state.IPFamilyPolicy, state.Status)
+		counts[state]++
 	}
 	klog.V(4).Info("L4 ILB usage metrics computed.")
 	return counts
