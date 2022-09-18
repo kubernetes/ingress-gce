@@ -412,7 +412,13 @@ func (lc *L4NetLBController) sync(key string) error {
 // syncInternal ensures load balancer resources for the given service, as needed.
 // Returns an error if processing the service update failed.
 func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4NetLBSyncResult {
-	l4netlb := loadbalancers.NewL4NetLB(service, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(service.Namespace))
+	l4NetLBParams := &loadbalancers.L4NetLBParams{
+		Service:  service,
+		Cloud:    lc.ctx.Cloud,
+		Namer:    lc.namer,
+		Recorder: lc.ctx.Recorder(service.Namespace),
+	}
+	l4netlb := loadbalancers.NewL4NetLB(l4NetLBParams)
 	// check again that rbs is enabled.
 	if !lc.isRBSBasedService(service) {
 		klog.Infof("Skipping syncInternal. Service %s does not have RBS enabled", service.Name)
@@ -490,7 +496,13 @@ func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames
 
 // garbageCollectRBSNetLB cleans-up all gce resources related to service and removes NetLB finalizer
 func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service) *loadbalancers.L4NetLBSyncResult {
-	l4netLB := loadbalancers.NewL4NetLB(svc, lc.ctx.Cloud, meta.Regional, lc.namer, lc.ctx.Recorder(svc.Namespace))
+	l4NetLBParams := &loadbalancers.L4NetLBParams{
+		Service:  svc,
+		Cloud:    lc.ctx.Cloud,
+		Namer:    lc.namer,
+		Recorder: lc.ctx.Recorder(svc.Namespace),
+	}
+	l4netLB := loadbalancers.NewL4NetLB(l4NetLBParams)
 	lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeNormal, "DeletingLoadBalancer",
 		"Deleting L4 External LoadBalancer for %s", key)
 
