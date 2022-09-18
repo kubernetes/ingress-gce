@@ -48,7 +48,6 @@ type L4NetLB struct {
 	// recorder is used to generate k8s Events.
 	recorder        record.EventRecorder
 	Service         *corev1.Service
-	ServicePort     utils.ServicePort
 	NamespacedName  types.NamespacedName
 	healthChecks    healthchecksl4.L4HealthChecks
 	forwardingRules ForwardingRulesProvider
@@ -102,13 +101,6 @@ func NewL4NetLB(params *L4NetLBParams) *L4NetLB {
 		healthChecks:    healthchecksl4.GetInstance(),
 		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional),
 	}
-	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
-	l4netlb.ServicePort = utils.ServicePort{
-		ID:           portId,
-		BackendNamer: l4netlb.namer,
-		NodePort:     utils.GetServiceNodePort(params.Service),
-		L4RBSEnabled: true,
-	}
 	return l4netlb
 }
 
@@ -133,26 +125,25 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(svc)
 	hcResult := l4netlb.healthChecks.EnsureHealthCheckWithFirewall(l4netlb.Service, l4netlb.namer, sharedHC, l4netlb.scope, utils.XLB, nodeNames)
-
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = fmt.Errorf("Failed to ensure health check %s - %w", hcResult.HCName, hcResult.Err)
 		return result
 	}
 	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
+	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
 
-	name := l4netlb.ServicePort.BackendName()
+	bsName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	servicePorts := l4netlb.Service.Spec.Ports
-	portRanges := utils.GetServicePortRanges(servicePorts)
 	protocol := utils.GetProtocol(servicePorts)
-
-	bs, err := l4netlb.backendPool.EnsureL4BackendService(name, hcResult.HCLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
+	bs, err := l4netlb.backendPool.EnsureL4BackendService(bsName, hcResult.HCLink, string(protocol), string(l4netlb.Service.Spec.SessionAffinity), string(cloud.SchemeExternal), l4netlb.NamespacedName, meta.VersionGA)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
-		result.Error = fmt.Errorf("Failed to ensure backend service %s - %w", name, err)
+		result.Error = fmt.Errorf("Failed to ensure backend service %s - %w", bsName, err)
 		return result
 	}
-	result.Annotations[annotations.BackendServiceKey] = name
+	result.Annotations[annotations.BackendServiceKey] = bsName
+
 	fr, ipAddrType, err := l4netlb.ensureExternalForwardingRule(bs.SelfLink)
 	if err != nil {
 		// User can misconfigure the forwarding rule if Network Tier will not match service level Network Tier.
@@ -170,12 +161,13 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	result.MetricsState.IsPremiumTier = fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue()
 	result.MetricsState.IsManagedIP = ipAddrType == IPAddrManaged
 
-	res := l4netlb.createFirewalls(name, nodeNames, fr.IPAddress, portRanges, string(protocol))
+	firewallName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	portRanges := utils.GetServicePortRanges(servicePorts)
+	res := l4netlb.createFirewalls(firewallName, nodeNames, fr.IPAddress, portRanges, string(protocol))
 	if res.Error != nil {
 		return res
 	}
-	result.Annotations[annotations.FirewallRuleKey] = name
-	result.Annotations[annotations.FirewallRuleForHealthcheckKey] = hcResult.HCFirewallRuleName
+	result.Annotations[annotations.FirewallRuleKey] = firewallName
 
 	return result
 }
@@ -185,8 +177,8 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBSyncResult {
 	result := NewL4SyncResult(SyncTypeDelete)
 
-	frName := l4netlb.GetFRName()
 	// If any resource deletion fails, log the error and continue cleanup.
+	frName := l4netlb.GetFRName()
 	err := l4netlb.forwardingRules.Delete(frName)
 	if err != nil {
 		klog.Errorf("Failed to delete forwarding rule %s for service %s - %v", frName, l4netlb.NamespacedName.String(), err)
@@ -199,15 +191,17 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 		result.GCEResourceInError = annotations.AddressResource
 	}
 
-	name := l4netlb.ServicePort.BackendName()
-	err = l4netlb.deleteFirewall(name)
+	firewallName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	err = l4netlb.deleteFirewall(firewallName)
 	if err != nil {
-		klog.Errorf("Failed to delete firewall rule %s for service %s - %v", name, l4netlb.NamespacedName.String(), err)
+		klog.Errorf("Failed to delete firewall rule %s for service %s - %v", firewallName, l4netlb.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 	}
+
 	// delete backend service
-	err = utils.IgnoreHTTPNotFound(l4netlb.backendPool.Delete(name, meta.VersionGA, meta.Regional))
+	bsName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	err = utils.IgnoreHTTPNotFound(l4netlb.backendPool.Delete(bsName, meta.VersionGA, meta.Regional))
 	if err != nil {
 		klog.Errorf("Failed to delete backends for L4 External LoadBalancer service %s - %v", l4netlb.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.BackendServiceResource

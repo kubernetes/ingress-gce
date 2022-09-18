@@ -449,7 +449,7 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 		return syncResult
 	}
 
-	if err = lc.ensureBackendLinking(l4netlb.ServicePort); err != nil {
+	if err = lc.ensureBackendLinking(service); err != nil {
 		lc.ctx.Recorder(service.Namespace).Eventf(service, v1.EventTypeWarning, "SyncExternalLoadBalancerFailed",
 			"Error linking instance groups to backend service, err: %v", err)
 		syncResult.Error = err
@@ -475,12 +475,22 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 	return syncResult
 }
 
-func (lc *L4NetLBController) ensureBackendLinking(port utils.ServicePort) error {
+func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service) error {
 	zones, err := lc.translator.ListZones(utils.CandidateNodesPredicate)
 	if err != nil {
 		return err
 	}
-	return lc.igLinker.Link(port, lc.ctx.Cloud.ProjectID(), zones)
+
+	namespacedName := types.NamespacedName{Name: service.Name, Namespace: service.Namespace}
+	portId := utils.ServicePortID{Service: namespacedName}
+	servicePort := utils.ServicePort{
+		ID:           portId,
+		BackendNamer: lc.namer,
+		NodePort:     utils.GetServiceNodePort(service),
+		L4RBSEnabled: true,
+	}
+
+	return lc.igLinker.Link(servicePort, lc.ctx.Cloud.ProjectID(), zones)
 }
 
 func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames []string) error {
