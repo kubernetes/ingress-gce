@@ -24,6 +24,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
+	"github.com/google/go-cmp/cmp"
 	ga "google.golang.org/api/compute/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
@@ -73,33 +74,11 @@ func TestEnsureL4NetLoadBalancer(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4netlb)
 	}
-	if err := checkAnnotations(result, l4netlb); err != nil {
-		t.Errorf("Annotations error: %v", err)
-	}
+	l4netlb.Service.Annotations = result.Annotations
 	assertNetLBResources(t, l4netlb, nodeNames)
 	if err := checkMetrics(result.MetricsState /*isManaged = */, true /*isPremium = */, true /*isUserError =*/, false); err != nil {
 		t.Errorf("Metrics error: %v", err)
 	}
-}
-
-func checkAnnotations(result *L4NetLBSyncResult, l4netlb *L4NetLB) error {
-	expBackendName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
-	if result.Annotations[annotations.BackendServiceKey] != expBackendName {
-		return fmt.Errorf("BackendServiceKey mismatch %v != %v", expBackendName, result.Annotations[annotations.BackendServiceKey])
-	}
-	expTcpFR := l4netlb.GetFRName()
-	if result.Annotations[annotations.TCPForwardingRuleKey] != expTcpFR {
-		return fmt.Errorf("TCPForwardingRuleKey mismatch %v != %v", expTcpFR, result.Annotations[annotations.TCPForwardingRuleKey])
-	}
-	expFwRule := expBackendName
-	if result.Annotations[annotations.FirewallRuleKey] != expFwRule {
-		return fmt.Errorf("FirewallRuleKey mismatch %v != %v", expFwRule, result.Annotations[annotations.FirewallRuleKey])
-	}
-	expHcFwName := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, true)
-	if result.Annotations[annotations.FirewallRuleForHealthcheckKey] != expHcFwName {
-		return fmt.Errorf("FirewallRuleForHealthcheckKey mismatch %v != %v", expHcFwName, result.Annotations[annotations.FirewallRuleForHealthcheckKey])
-	}
-	return nil
 }
 
 func TestDeleteL4NetLoadBalancer(t *testing.T) {
@@ -130,6 +109,7 @@ func TestDeleteL4NetLoadBalancer(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 	}
+	l4NetLB.Service.Annotations = result.Annotations
 	assertNetLBResources(t, l4NetLB, nodeNames)
 
 	if err := l4NetLB.EnsureLoadBalancerDeleted(svc); err.Error != nil {
@@ -194,6 +174,7 @@ func TestHealthCheckFirewallDeletionWithILB(t *testing.T) {
 	if len(result.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 	}
+	l4NetLB.Service.Annotations = result.Annotations
 	assertNetLBResources(t, l4NetLB, nodeNames)
 
 	// Delete the NetLB loadbalancer.
@@ -217,216 +198,6 @@ func TestHealthCheckFirewallDeletionWithILB(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "not found") {
 		t.Errorf("Healthcheck %s should be deleted", hcName)
 	}
-
-}
-
-func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud, t *testing.T) (*v1.Service, *L4NetLB) {
-	svc := test.NewL4NetLBRBSService(port)
-	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw"))
-	emptyNodes := []string{}
-
-	l4NetLBParams := &L4NetLBParams{
-		Service:  svc,
-		Cloud:    fakeGCE,
-		Namer:    namer,
-		Recorder: record.NewFakeRecorder(100),
-	}
-	l4NetLB := NewL4NetLB(l4NetLBParams)
-	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLB.recorder)
-
-	result := l4NetLB.EnsureFrontend(emptyNodes, svc)
-	if result.Error != nil {
-		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
-	}
-	if len(result.Status.Ingress) == 0 {
-		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
-	}
-	assertNetLBResources(t, l4NetLB, emptyNodes)
-	return svc, l4NetLB
-}
-
-func assertNetLBResourcesDeleted(t *testing.T, l4netlb *L4NetLB) {
-	t.Helper()
-
-	nodesFwName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
-	hcFwNameShared := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, true)
-	hcFwNameNonShared := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, false)
-
-	fwNames := []string{
-		nodesFwName,
-		hcFwNameShared,
-		hcFwNameNonShared,
-	}
-
-	for _, fwName := range fwNames {
-		err := verifyFirewallNotExists(l4netlb.cloud, fwName)
-		if err != nil {
-			t.Errorf("verifyFirewallNotExists(_, %s) returned error %v, want nil", fwName, err)
-		}
-	}
-
-	frName := l4netlb.GetFRName()
-	err := verifyForwardingRuleNotExists(l4netlb.cloud, frName)
-	if err != nil {
-		t.Errorf("verifyForwardingRuleNotExists(_, %s) returned error %v, want nil", frName, err)
-	}
-
-	hcNameShared := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, true)
-	err = verifyHealthCheckNotExists(l4netlb.cloud, hcNameShared, meta.Regional)
-	if err != nil {
-		t.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameShared)
-	}
-
-	hcNameNonShared := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, false)
-	err = verifyHealthCheckNotExists(l4netlb.cloud, hcNameNonShared, meta.Regional)
-	if err != nil {
-		t.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameNonShared)
-	}
-
-	err = verifyBackendServiceNotExists(l4netlb.cloud, nodesFwName)
-	if err != nil {
-		t.Errorf("verifyBackendServiceNotExists(_, %s)", nodesFwName)
-	}
-
-	err = verifyAddressNotExists(l4netlb.cloud, frName)
-	if err != nil {
-		t.Errorf("verifyAddressNotExists(_, %s)", frName)
-	}
-}
-
-func assertNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
-	t.Helper()
-
-	err := verifyNetLBNodesFirewall(l4NetLB, nodeNames)
-	if err != nil {
-		t.Errorf("verifyNetLBNodesFirewall(_, %v) returned error %v, want nil", nodeNames, err)
-	}
-
-	err = verifyNetLBHealthCheckFirewall(l4NetLB, nodeNames)
-	if err != nil {
-		t.Errorf("verifyNetLBHealthCheckFirewall(_, %v) returned error %v, want nil", nodeNames, err)
-	}
-
-	// Check that HealthCheck is created
-	healthcheck, err := getAndVerifyNetLBHealthCheck(l4NetLB)
-	if err != nil {
-		t.Errorf("getAndVerifyNetLBHealthCheck(_) returned error %v, want nil", err)
-	}
-
-	backendService, err := getAndVerifyNetLBBackendService(l4NetLB, healthcheck)
-	if err != nil {
-		t.Errorf("getAndVerifyNetLBBackendService(_, %v) returned error %v, want nil", healthcheck, err)
-	}
-
-	err = verifyNetLBForwardingRule(l4NetLB, backendService.SelfLink)
-	if err != nil {
-		t.Errorf("verifyNetLBForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
-	}
-}
-
-func verifyNetLBNodesFirewall(l4netlb *L4NetLB, nodeNames []string) error {
-	fwName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
-	fwDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name), "", meta.VersionGA, false, utils.XLB)
-	if err != nil {
-		return fmt.Errorf("failed to create description for resources, err %w", err)
-	}
-
-	sourceRanges, err := utils.IPv4ServiceSourceRanges(l4netlb.Service)
-	if err != nil {
-		return fmt.Errorf("servicehelper.GetLoadBalancerSourceRanges(%+v) returned error %v, want nil", l4netlb.Service, err)
-	}
-	return verifyFirewall(l4netlb.cloud, nodeNames, fwName, fwDesc, sourceRanges)
-}
-
-func verifyNetLBHealthCheckFirewall(l4netlb *L4NetLB, nodeNames []string) error {
-	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4netlb.Service)
-
-	hcFwName := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
-	hcFwDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name), "", meta.VersionGA, isSharedHC)
-	if err != nil {
-		return fmt.Errorf("failed to calculate decsription for health check for service %v, error %v", l4netlb.Service, err)
-	}
-
-	return verifyFirewall(l4netlb.cloud, nodeNames, hcFwName, hcFwDesc, gce.L4LoadBalancerSrcRanges())
-}
-
-func getAndVerifyNetLBHealthCheck(l4netlb *L4NetLB) (*composite.HealthCheck, error) {
-	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4netlb.Service)
-	hcName := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
-
-	healthcheck, err := composite.GetHealthCheck(l4netlb.cloud, meta.RegionalKey(hcName, l4netlb.cloud.Region()), meta.VersionGA)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch healthcheck %s - err %w", hcName, err)
-	}
-
-	if healthcheck.Name != hcName {
-		return nil, fmt.Errorf("unexpected name for healthcheck '%s' - expected '%s'", healthcheck.Name, hcName)
-	}
-
-	expectedDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name), "", meta.VersionGA, isSharedHC, utils.XLB)
-	if err != nil {
-		return nil, fmt.Errorf("failed to calculate Health Check description")
-	}
-	if healthcheck.Description != expectedDesc {
-		return nil, fmt.Errorf("unexpected description in healthcheck - Expected %s, Got %s", healthcheck.Description, expectedDesc)
-	}
-	return healthcheck, nil
-}
-
-func getAndVerifyNetLBBackendService(l4netlb *L4NetLB, healthCheck *composite.HealthCheck) (*composite.BackendService, error) {
-	backendServiceName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
-	key := meta.RegionalKey(backendServiceName, l4netlb.cloud.Region())
-	bs, err := composite.GetBackendService(l4netlb.cloud, key, meta.VersionGA)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch backend service %s - err %w", backendServiceName, err)
-	}
-	proto := utils.GetProtocol(l4netlb.Service.Spec.Ports)
-	if bs.Protocol != string(proto) {
-		return nil, fmt.Errorf("unexpected protocol '%s' for backend service %v", bs.Protocol, bs)
-	}
-	backendServiceLink := cloud.SelfLink(meta.VersionGA, l4netlb.cloud.ProjectID(), "backendServices", key)
-	if bs.SelfLink != backendServiceLink {
-		return nil, fmt.Errorf("unexpected self link in backend service with name %s - Expected %s, Got %s", backendServiceName, bs.SelfLink, backendServiceLink)
-	}
-
-	resourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name), "", meta.VersionGA, false, utils.XLB)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create description for resources, err %w", err)
-	}
-	if bs.Description != resourceDesc {
-		return nil, fmt.Errorf("unexpected description in backend service - Expected %s, Got %s", bs.Description, resourceDesc)
-	}
-	if !utils.EqualStringSets(bs.HealthChecks, []string{healthCheck.SelfLink}) {
-		return nil, fmt.Errorf("unexpected healthcheck reference '%v' in backend service, expected '%s'", bs.HealthChecks,
-			healthCheck.SelfLink)
-	}
-	return bs, nil
-}
-
-func verifyNetLBForwardingRule(l4netlb *L4NetLB, backendServiceLink string) error {
-	frName := l4netlb.GetFRName()
-	fwdRule, err := composite.GetForwardingRule(l4netlb.cloud, meta.RegionalKey(frName, l4netlb.cloud.Region()), meta.VersionGA)
-	if err != nil {
-		return fmt.Errorf("failed to fetch forwarding rule %s - err %w", frName, err)
-	}
-	if fwdRule.LoadBalancingScheme != string(cloud.SchemeExternal) {
-		return fmt.Errorf("unexpected LoadBalancingScheme for forwarding rule '%s' - expected '%s'", fwdRule.LoadBalancingScheme, cloud.SchemeExternal)
-	}
-
-	proto := utils.GetProtocol(l4netlb.Service.Spec.Ports)
-	if fwdRule.IPProtocol != string(proto) {
-		return fmt.Errorf("expected protocol '%s', got '%s' for forwarding rule %v", proto, fwdRule.IPProtocol, fwdRule)
-	}
-
-	if fwdRule.BackendService != backendServiceLink {
-		return fmt.Errorf("unexpected backend service link '%s' for forwarding rule, expected '%s'", fwdRule.BackendService, backendServiceLink)
-	}
-
-	addr, err := l4netlb.cloud.GetRegionAddress(frName, l4netlb.cloud.Region())
-	if err == nil || addr != nil {
-		return fmt.Errorf("expected error when looking up ephemeral address, got %v", addr)
-	}
-	return nil
 }
 
 func TestMetricsForStandardNetworkTier(t *testing.T) {
@@ -543,6 +314,754 @@ func TestEnsureNetLBFirewallDestinations(t *testing.T) {
 	if reflect.DeepEqual(oldDestinationRanges, updatedFirewall.DestinationRanges) {
 		t.Errorf("DestinationRanges is not updated. oldDestinationRanges:%v, updatedFirewall.DestinationRanges:%v", oldDestinationRanges, updatedFirewall.DestinationRanges)
 	}
+}
+
+func TestEnsureExternalDualStackLoadBalancer(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	testCases := []struct {
+		ipFamilies    []v1.IPFamily
+		trafficPolicy v1.ServiceExternalTrafficPolicyType
+		desc          string
+	}{
+		{
+			desc:          "Test ipv4 ipv6 service",
+			ipFamilies:    []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			trafficPolicy: v1.ServiceExternalTrafficPolicyTypeCluster,
+		},
+		{
+			desc:          "Test ipv4 ipv6 local service",
+			ipFamilies:    []v1.IPFamily{v1.IPv4Protocol, v1.IPv6Protocol},
+			trafficPolicy: v1.ServiceExternalTrafficPolicyTypeLocal,
+		},
+		{
+			desc:          "Test ipv6 ipv4 service",
+			ipFamilies:    []v1.IPFamily{v1.IPv6Protocol, v1.IPv4Protocol},
+			trafficPolicy: v1.ServiceExternalTrafficPolicyTypeCluster,
+		},
+		{
+			desc:          "Test ipv4 service",
+			ipFamilies:    []v1.IPFamily{v1.IPv4Protocol},
+			trafficPolicy: v1.ServiceExternalTrafficPolicyTypeCluster,
+		},
+		{
+			desc:          "Test ipv6 service",
+			ipFamilies:    []v1.IPFamily{v1.IPv6Protocol},
+			trafficPolicy: v1.ServiceExternalTrafficPolicyTypeCluster,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			fakeGCE := getFakeGCECloud(vals)
+
+			svc := test.NewL4NetLBRBSDualStackService(8080, v1.ProtocolTCP, tc.ipFamilies, tc.trafficPolicy)
+
+			l4NetLBParams := &L4NetLBParams{
+				Service:          svc,
+				Cloud:            fakeGCE,
+				Namer:            namer,
+				Recorder:         record.NewFakeRecorder(100),
+				DualStackEnabled: true,
+			}
+			l4NetLB := NewL4NetLB(l4NetLBParams)
+			l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
+
+			if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			if result.Error != nil {
+				t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+			}
+			if len(result.Status.Ingress) == 0 {
+				t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
+			}
+			l4NetLB.Service.Annotations = result.Annotations
+			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+			l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
+			assertDualStackNetLBResourcesDeleted(t, l4NetLB)
+		})
+	}
+}
+
+// This is exhaustive test that checks for all possible transitions of
+// - ServiceExternalTrafficPolicy
+// - Protocol
+// - IPFamilies
+// for dual-stack service. In total 400 combinations
+func TestDualStackNetLBLoadBalancerTransitions(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+
+	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+
+	trafficPolicyStates := []v1.ServiceExternalTrafficPolicyType{v1.ServiceExternalTrafficPolicyTypeLocal, v1.ServiceExternalTrafficPolicyTypeCluster}
+	protocols := []v1.Protocol{v1.ProtocolTCP, v1.ProtocolUDP}
+	ipFamiliesStates := [][]v1.IPFamily{
+		{v1.IPv4Protocol},
+		{v1.IPv4Protocol, v1.IPv6Protocol},
+		{v1.IPv6Protocol},
+		{v1.IPv6Protocol, v1.IPv4Protocol},
+		{},
+	}
+
+	for _, initialIPFamily := range ipFamiliesStates {
+		for _, finalIPFamily := range ipFamiliesStates {
+			for _, initialTrafficPolicy := range trafficPolicyStates {
+				for _, finalTrafficPolicy := range trafficPolicyStates {
+					for _, initialProtocol := range protocols {
+						for _, finalProtocol := range protocols {
+							initialIPFamily := initialIPFamily
+							finalIPFamily := finalIPFamily
+							initialTrafficPolicy := initialTrafficPolicy
+							finalTrafficPolicy := finalTrafficPolicy
+							initialProtocol := initialProtocol
+							finalProtocol := finalProtocol
+
+							var stringInitialIPFamily []string
+							for _, f := range initialIPFamily {
+								stringInitialIPFamily = append(stringInitialIPFamily, string(f))
+							}
+
+							var stringFinalIPFamily []string
+							for _, f := range finalIPFamily {
+								stringFinalIPFamily = append(stringFinalIPFamily, string(f))
+							}
+							desc := struct {
+								fromIPFamily      string
+								toIPFamily        string
+								fromTrafficPolicy string
+								toTrafficPolicy   string
+								fromProtocol      string
+								toProtocol        string
+							}{
+								strings.Join(stringInitialIPFamily, ","),
+								strings.Join(stringFinalIPFamily, ","),
+								string(initialTrafficPolicy),
+								string(finalTrafficPolicy),
+								string(initialProtocol),
+								string(finalProtocol),
+							}
+
+							t.Run(fmt.Sprintf("+%v", desc), func(t *testing.T) {
+								t.Parallel()
+
+								fakeGCE := getFakeGCECloud(vals)
+
+								svc := test.NewL4NetLBRBSDualStackService(8080, initialProtocol, initialIPFamily, initialTrafficPolicy)
+								l4NetLBParams := &L4NetLBParams{
+									Service:          svc,
+									Cloud:            fakeGCE,
+									Namer:            namer,
+									Recorder:         record.NewFakeRecorder(100),
+									DualStackEnabled: true,
+								}
+								l4NetLB := NewL4NetLB(l4NetLBParams)
+								l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
+
+								if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
+									t.Errorf("Unexpected error when adding nodes %v", err)
+								}
+
+								result := l4NetLB.EnsureFrontend(nodeNames, svc)
+								if result.Error != nil {
+									t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+								}
+								if len(result.Status.Ingress) == 0 {
+									t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
+								}
+								l4NetLB.Service.Annotations = result.Annotations
+								assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+								l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
+								assertDualStackNetLBResourcesDeleted(t, l4NetLB)
+							})
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestDualStackNetLBCleansOnlyAnnotationResources(t *testing.T) {
+	t.Parallel()
+	nodeNames := []string{"test-node-1"}
+	vals := gce.DefaultTestClusterValues()
+
+	testCases := []struct {
+		desc                      string
+		ipFamiliesStates          [2][]v1.IPFamily
+		annotationsToDelete       []string
+		verifyResourcesNotDeleted func(l4netlb *L4NetLB) error
+	}{
+		{
+			desc:                "Should not delete IPv6 resources if they not exist in annotation",
+			ipFamiliesStates:    [2][]v1.IPFamily{{v1.IPv4Protocol, v1.IPv6Protocol}, {v1.IPv4Protocol}},
+			annotationsToDelete: []string{annotations.TCPForwardingRuleIPv6Key, annotations.FirewallRuleIPv6Key, annotations.FirewallRuleForHealthcheckIPv6Key},
+			verifyResourcesNotDeleted: func(l4netlb *L4NetLB) error {
+				// Verify IPv6 Firewall was not deleted
+				ipv6FWName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+				err := verifyFirewallNotExists(l4netlb.cloud, ipv6FWName)
+				if err == nil {
+					return fmt.Errorf("firewall rule %s was deleted, expected not", ipv6FWName)
+				}
+
+				// Verify IPv6 Forwarding Rule was not deleted
+				ipv6FRName := l4netlb.ipv6FRName()
+				err = verifyForwardingRuleNotExists(l4netlb.cloud, ipv6FRName)
+				if err == nil {
+					return fmt.Errorf("forwarding rule %s was deleted, expected not", ipv6FRName)
+				}
+				return nil
+			},
+		},
+		{
+			desc:                "Should not delete IPv4 resources if they not exist in annotation",
+			ipFamiliesStates:    [2][]v1.IPFamily{{v1.IPv6Protocol, v1.IPv4Protocol}, {v1.IPv6Protocol}},
+			annotationsToDelete: []string{annotations.TCPForwardingRuleKey, annotations.FirewallRuleKey, annotations.FirewallRuleForHealthcheckKey},
+			verifyResourcesNotDeleted: func(l4netlb *L4NetLB) error {
+				// Verify IPv6 Firewall was not deleted
+				backendServiceName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
+				err := verifyFirewallNotExists(l4netlb.cloud, backendServiceName)
+				if err == nil {
+					return fmt.Errorf("firewall rule %s was deleted, expected not", backendServiceName)
+				}
+
+				// Verify IPv6 Forwarding Rule was not deleted
+				ipv4FRName := l4netlb.frName()
+				err = verifyForwardingRuleNotExists(l4netlb.cloud, ipv4FRName)
+				if err == nil {
+					return fmt.Errorf("forwarding rule %s was deleted, expected not", ipv4FRName)
+				}
+				return nil
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.desc, func(t *testing.T) {
+			t.Parallel()
+
+			namer := namer_util.NewL4Namer(kubeSystemUID, nil)
+			fakeGCE := getFakeGCECloud(vals)
+
+			svc := test.NewL4NetLBRBSService(8080)
+			l4NetLBParams := &L4NetLBParams{
+				Service:          svc,
+				Cloud:            fakeGCE,
+				Namer:            namer,
+				Recorder:         record.NewFakeRecorder(100),
+				DualStackEnabled: true,
+			}
+			l4NetLB := NewL4NetLB(l4NetLBParams)
+			l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
+
+			if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
+				t.Errorf("Unexpected error when adding nodes %v", err)
+			}
+
+			svc.Spec.IPFamilies = tc.ipFamiliesStates[0]
+			result := l4NetLB.EnsureFrontend(nodeNames, svc)
+			svc.Annotations = result.Annotations
+			assertDualStackNetLBResources(t, l4NetLB, nodeNames)
+
+			// Delete resources annotation
+			for _, annotationToDelete := range tc.annotationsToDelete {
+				delete(svc.Annotations, annotationToDelete)
+			}
+			svc.Spec.IPFamilies = tc.ipFamiliesStates[1]
+
+			// Run new sync. Controller should not delete resources, if they don't exist in annotation
+			result = l4NetLB.EnsureFrontend(nodeNames, svc)
+			svc.Annotations = result.Annotations
+
+			err := tc.verifyResourcesNotDeleted(l4NetLB)
+			if err != nil {
+				t.Errorf("tc.verifyResourcesNotDeleted(_) returned error %v, want nil", err)
+			}
+
+			l4NetLB.EnsureLoadBalancerDeleted(l4NetLB.Service)
+			// After complete deletion, IPv6 and IPv4 resources should be cleaned up, even if the were leaked
+			assertDualStackNetLBResourcesDeleted(t, l4NetLB)
+		})
+	}
+}
+
+func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud, t *testing.T) (*v1.Service, *L4NetLB) {
+	svc := test.NewL4NetLBRBSService(port)
+	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw"))
+	emptyNodes := []string{}
+
+	l4NetLBParams := &L4NetLBParams{
+		Service:  svc,
+		Cloud:    fakeGCE,
+		Namer:    namer,
+		Recorder: record.NewFakeRecorder(100),
+	}
+	l4NetLB := NewL4NetLB(l4NetLBParams)
+	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, l4NetLBParams.Recorder)
+
+	result := l4NetLB.EnsureFrontend(emptyNodes, svc)
+	if result.Error != nil {
+		t.Errorf("Failed to ensure loadBalancer, err %v", result.Error)
+	}
+	if len(result.Status.Ingress) == 0 {
+		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
+	}
+	l4NetLB.Service.Annotations = result.Annotations
+	assertNetLBResources(t, l4NetLB, emptyNodes)
+	return svc, l4NetLB
+}
+
+func assertNetLBResourcesDeleted(t *testing.T, l4netlb *L4NetLB) {
+	t.Helper()
+
+	nodesFwName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	hcFwNameShared := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, true)
+	hcFwNameNonShared := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, false)
+
+	fwNames := []string{
+		nodesFwName,
+		hcFwNameShared,
+		hcFwNameNonShared,
+	}
+
+	for _, fwName := range fwNames {
+		err := verifyFirewallNotExists(l4netlb.cloud, fwName)
+		if err != nil {
+			t.Errorf("verifyFirewallNotExists(_, %s) returned error %v, want nil", fwName, err)
+		}
+	}
+
+	frName := l4netlb.frName()
+	err := verifyForwardingRuleNotExists(l4netlb.cloud, frName)
+	if err != nil {
+		t.Errorf("verifyForwardingRuleNotExists(_, %s) returned error %v, want nil", frName, err)
+	}
+
+	hcNameShared := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, true)
+	err = verifyHealthCheckNotExists(l4netlb.cloud, hcNameShared, meta.Regional)
+	if err != nil {
+		t.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameShared)
+	}
+
+	hcNameNonShared := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, false)
+	err = verifyHealthCheckNotExists(l4netlb.cloud, hcNameNonShared, meta.Regional)
+	if err != nil {
+		t.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameNonShared)
+	}
+
+	err = verifyBackendServiceNotExists(l4netlb.cloud, nodesFwName)
+	if err != nil {
+		t.Errorf("verifyBackendServiceNotExists(_, %s)", nodesFwName)
+	}
+
+	err = verifyAddressNotExists(l4netlb.cloud, frName)
+	if err != nil {
+		t.Errorf("verifyAddressNotExists(_, %s)", frName)
+	}
+}
+
+func assertDualStackNetLBResourcesDeleted(t *testing.T, l4netlb *L4NetLB) {
+	t.Helper()
+
+	err := verifyNetLBCommonDualStackResourcesDeleted(l4netlb)
+	if err != nil {
+		t.Errorf("verifyNetLBCommonDualStackResourcesDeleted(_) returned erorr %v, want nil", err)
+	}
+
+	err = verifyNetLBIPv4ResourcesDeletedOnSync(l4netlb)
+	if err != nil {
+		t.Errorf("verifyNetLBIPv4ResourcesDeletedOnSync(_) returned erorr %v, want nil", err)
+	}
+
+	err = verifyNetLBIPv6ResourcesDeletedOnSync(l4netlb)
+	if err != nil {
+		t.Errorf("verifyNetLBIPv6ResourcesDeletedOnSync(_) returned erorr %v, want nil", err)
+	}
+
+	// Check health check firewalls separately, because we don't clean them on sync, only on final deletion
+	ipv4HcFwNameShared := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, true)
+	ipv6HcFwNameShared := l4netlb.namer.L4IPv6HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, true)
+	ipv4HcFwNameNonShared := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, false)
+	ipv6HcFwNameNonShared := l4netlb.namer.L4IPv6HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, false)
+
+	fwNames := []string{
+		ipv4HcFwNameShared,
+		ipv4HcFwNameNonShared,
+		ipv6HcFwNameShared,
+		ipv6HcFwNameNonShared,
+	}
+
+	for _, fwName := range fwNames {
+		err = verifyFirewallNotExists(l4netlb.cloud, fwName)
+		if err != nil {
+			t.Errorf("verifyFirewallNotExists(_, %s) returned error %v, want nil", fwName, err)
+		}
+	}
+}
+
+func verifyNetLBCommonDualStackResourcesDeleted(l4netlb *L4NetLB) error {
+	backendServiceName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
+
+	err := verifyBackendServiceNotExists(l4netlb.cloud, backendServiceName)
+	if err != nil {
+		return fmt.Errorf("verifyBackendServiceNotExists(_, %s)", backendServiceName)
+	}
+
+	hcNameShared := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, true)
+	err = verifyHealthCheckNotExists(l4netlb.cloud, hcNameShared, meta.Regional)
+	if err != nil {
+		return fmt.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameShared)
+	}
+
+	hcNameNonShared := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, false)
+	err = verifyHealthCheckNotExists(l4netlb.cloud, hcNameNonShared, meta.Regional)
+	if err != nil {
+		return fmt.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameNonShared)
+	}
+
+	err = verifyAddressNotExists(l4netlb.cloud, backendServiceName)
+	if err != nil {
+		return fmt.Errorf("verifyAddressNotExists(_, %s)", backendServiceName)
+	}
+	return nil
+}
+
+func assertNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
+	t.Helper()
+
+	err := verifyNetLBIPv4NodesFirewall(l4NetLB, nodeNames)
+	if err != nil {
+		t.Errorf("verifyNetLBIPv4NodesFirewall(_, %v) returned error %v, want nil", nodeNames, err)
+	}
+
+	err = verifyNetLBIPv4HealthCheckFirewall(l4NetLB, nodeNames)
+	if err != nil {
+		t.Errorf("verifyNetLBIPv4HealthCheckFirewall(_, %v) returned error %v, want nil", nodeNames, err)
+	}
+
+	// Check that HealthCheck is created
+	healthcheck, err := getAndVerifyNetLBHealthCheck(l4NetLB)
+	if err != nil {
+		t.Errorf("getAndVerifyNetLBHealthCheck(_) returned error %v, want nil", err)
+	}
+
+	backendService, err := getAndVerifyNetLBBackendService(l4NetLB, healthcheck)
+	if err != nil {
+		t.Errorf("getAndVerifyNetLBBackendService(_, %v) returned error %v, want nil", healthcheck, err)
+	}
+
+	err = verifyNetLBIPv4ForwardingRule(l4NetLB, backendService.SelfLink)
+	if err != nil {
+		t.Errorf("verifyNetLBIPv4ForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
+	}
+
+	expectedAnnotations := buildExpectedNetLBAnnotations(l4NetLB)
+	if !reflect.DeepEqual(expectedAnnotations, l4NetLB.Service.Annotations) {
+		diff := cmp.Diff(expectedAnnotations, l4NetLB.Service.Annotations)
+		t.Errorf("Expected annotations %v, got %v, diff %v", expectedAnnotations, l4NetLB.Service.Annotations, diff)
+	}
+}
+
+func assertDualStackNetLBResources(t *testing.T, l4NetLB *L4NetLB, nodeNames []string) {
+	t.Helper()
+
+	// Check that HealthCheck is created
+	healthCheck, err := getAndVerifyNetLBHealthCheck(l4NetLB)
+	if err != nil {
+		t.Errorf("getAndVerifyNetLBHealthCheck(_) returned error %v, want nil", err)
+	}
+
+	backendService, err := getAndVerifyNetLBBackendService(l4NetLB, healthCheck)
+	if err != nil {
+		t.Fatalf("getAndVerifyNetLBBackendService(_, %v) returned error %v, want nil", healthCheck, err)
+	}
+
+	if utils.NeedsIPv4(l4NetLB.Service) {
+		err = verifyNetLBIPv4ForwardingRule(l4NetLB, backendService.SelfLink)
+		if err != nil {
+			t.Errorf("verifyNetLBIPv4ForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
+		}
+
+		err = verifyNetLBIPv4NodesFirewall(l4NetLB, nodeNames)
+		if err != nil {
+			t.Errorf("verifyNetLBIPv4NodesFirewall(_, %v) returned error %v, want nil", nodeNames, err)
+		}
+
+		err = verifyNetLBIPv4HealthCheckFirewall(l4NetLB, nodeNames)
+		if err != nil {
+			t.Errorf("verifyNetLBIPv4HealthCheckFirewall(_, %v) returned error %v, want nil", nodeNames, err)
+		}
+	} else {
+		err = verifyNetLBIPv4ResourcesDeletedOnSync(l4NetLB)
+		if err != nil {
+			t.Errorf("verifyNetLBIPv4ResourcesDeletedOnSync(_) returned error %v, want nil", err)
+		}
+	}
+	if utils.NeedsIPv6(l4NetLB.Service) {
+		err = verifyNetLBIPv6ForwardingRule(l4NetLB, backendService.SelfLink)
+		if err != nil {
+			t.Errorf("verifyNetLBIPv6ForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
+		}
+
+		err = verifyNetLBIPv6NodesFirewall(l4NetLB, nodeNames)
+		if err != nil {
+			t.Errorf("verifyNetLBIPv6NodesFirewall(_, %v) returned error %v, want nil", nodeNames, err)
+		}
+
+		err = verifyNetLBIPv6HealthCheckFirewall(l4NetLB, nodeNames)
+		if err != nil {
+			t.Errorf("verifyNetLBIPv6HealthCheckFirewall(_, %v) returned error %v, want nil", nodeNames, err)
+		}
+	} else {
+		err = verifyNetLBIPv6ResourcesDeletedOnSync(l4NetLB)
+		if err != nil {
+			t.Errorf("verifyNetLBIPv6ResourcesDeletedOnSync(_) returned error %v, want nil", err)
+		}
+	}
+
+	expectedAnnotations := buildExpectedNetLBAnnotations(l4NetLB)
+	if !reflect.DeepEqual(expectedAnnotations, l4NetLB.Service.Annotations) {
+		diff := cmp.Diff(expectedAnnotations, l4NetLB.Service.Annotations)
+		t.Errorf("Expected annotations %v, got %v, diff %v", expectedAnnotations, l4NetLB.Service.Annotations, diff)
+	}
+}
+
+func verifyNetLBIPv4NodesFirewall(l4netlb *L4NetLB, nodeNames []string) error {
+	fwName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	fwDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name), "", meta.VersionGA, false, utils.XLB)
+	if err != nil {
+		return fmt.Errorf("failed to create description for resources, err %w", err)
+	}
+
+	sourceRanges, err := servicehelper.GetLoadBalancerSourceRanges(l4netlb.Service)
+	if err != nil {
+		return fmt.Errorf("servicehelper.GetLoadBalancerSourceRanges(%+v) returned error %v, want nil", l4netlb.Service, err)
+	}
+	return verifyFirewall(l4netlb.cloud, nodeNames, fwName, fwDesc, sourceRanges.StringSlice())
+}
+
+func verifyNetLBIPv6NodesFirewall(l4netlb *L4NetLB, nodeNames []string) error {
+	ipv6FirewallName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+
+	fwDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name), "", meta.VersionGA, false, utils.XLB)
+	if err != nil {
+		return fmt.Errorf("failed to create description for resources, err %w", err)
+	}
+
+	return verifyFirewall(l4netlb.cloud, nodeNames, ipv6FirewallName, fwDesc, []string{"0::0/0"})
+}
+
+func verifyNetLBIPv4HealthCheckFirewall(l4netlb *L4NetLB, nodeNames []string) error {
+	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4netlb.Service)
+
+	hcFwName := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
+	hcFwDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name), "", meta.VersionGA, isSharedHC)
+	if err != nil {
+		return fmt.Errorf("failed to calculate decsription for health check for service %v, error %v", l4netlb.Service, err)
+	}
+
+	return verifyFirewall(l4netlb.cloud, nodeNames, hcFwName, hcFwDesc, gce.L4LoadBalancerSrcRanges())
+}
+
+func verifyNetLBIPv6HealthCheckFirewall(l4netlb *L4NetLB, nodeNames []string) error {
+	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4netlb.Service)
+
+	ipv6hcFwName := l4netlb.namer.L4IPv6HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
+	hcFwDesc, err := utils.MakeL4LBFirewallDescription(utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name), "", meta.VersionGA, isSharedHC)
+	if err != nil {
+		return fmt.Errorf("failed to calculate decsription for health check for service %v, error %v", l4netlb.Service, err)
+	}
+
+	return verifyFirewall(l4netlb.cloud, nodeNames, ipv6hcFwName, hcFwDesc, []string{healthchecksl4.L4NetLBIPv6HCRange})
+}
+
+func getAndVerifyNetLBHealthCheck(l4netlb *L4NetLB) (*composite.HealthCheck, error) {
+	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4netlb.Service)
+	hcName := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
+
+	healthcheck, err := composite.GetHealthCheck(l4netlb.cloud, meta.RegionalKey(hcName, l4netlb.cloud.Region()), meta.VersionGA)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch healthcheck %s - err %w", hcName, err)
+	}
+
+	if healthcheck.Name != hcName {
+		return nil, fmt.Errorf("unexpected name for healthcheck '%s' - expected '%s'", healthcheck.Name, hcName)
+	}
+
+	expectedDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name), "", meta.VersionGA, isSharedHC, utils.XLB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to calculate Health Check description")
+	}
+	if healthcheck.Description != expectedDesc {
+		return nil, fmt.Errorf("unexpected description in healthcheck - Expected %s, Got %s", healthcheck.Description, expectedDesc)
+	}
+	return healthcheck, nil
+}
+
+func getAndVerifyNetLBBackendService(l4netlb *L4NetLB, healthCheck *composite.HealthCheck) (*composite.BackendService, error) {
+	backendServiceName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	key := meta.RegionalKey(backendServiceName, l4netlb.cloud.Region())
+	bs, err := composite.GetBackendService(l4netlb.cloud, key, meta.VersionGA)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch backend service %s - err %w", backendServiceName, err)
+	}
+	proto := utils.GetProtocol(l4netlb.Service.Spec.Ports)
+	if bs.Protocol != string(proto) {
+		return nil, fmt.Errorf("unexpected protocol '%s' for backend service %v", bs.Protocol, bs)
+	}
+	backendServiceLink := cloud.SelfLink(meta.VersionGA, l4netlb.cloud.ProjectID(), "backendServices", key)
+	if bs.SelfLink != backendServiceLink {
+		return nil, fmt.Errorf("unexpected self link in backend service - Expected %s, Got %s", bs.SelfLink, backendServiceLink)
+	}
+
+	resourceDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4netlb.Service.Namespace, l4netlb.Service.Name), "", meta.VersionGA, false, utils.XLB)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create description for resources, err %w", err)
+	}
+	if bs.Description != resourceDesc {
+		return nil, fmt.Errorf("unexpected description in backend service - Expected %s, Got %s", bs.Description, resourceDesc)
+	}
+	if !utils.EqualStringSets(bs.HealthChecks, []string{healthCheck.SelfLink}) {
+		return nil, fmt.Errorf("unexpected healthcheck reference '%v' in backend service, expected '%s'", bs.HealthChecks,
+			healthCheck.SelfLink)
+	}
+	return bs, nil
+}
+
+func verifyNetLBIPv4ForwardingRule(l4netlb *L4NetLB, backendServiceLink string) error {
+	frName := l4netlb.frName()
+	return verifyNetLBForwardingRule(l4netlb, frName, backendServiceLink)
+}
+
+func verifyNetLBIPv6ForwardingRule(l4netlb *L4NetLB, backendServiceLink string) error {
+	ipv6FrName := l4netlb.ipv6FRName()
+	return verifyNetLBForwardingRule(l4netlb, ipv6FrName, backendServiceLink)
+}
+
+func verifyNetLBForwardingRule(l4netlb *L4NetLB, frName string, backendServiceLink string) error {
+	fwdRule, err := composite.GetForwardingRule(l4netlb.cloud, meta.RegionalKey(frName, l4netlb.cloud.Region()), meta.VersionGA)
+	if err != nil {
+		return fmt.Errorf("failed to fetch forwarding rule %s - err %w", frName, err)
+	}
+	if fwdRule.Name != frName {
+		return fmt.Errorf("unexpected name for forwarding rule '%s' - expected '%s'", fwdRule.Name, frName)
+	}
+	if fwdRule.LoadBalancingScheme != string(cloud.SchemeExternal) {
+		return fmt.Errorf("unexpected LoadBalancingScheme for forwarding rule '%s' - expected '%s'", fwdRule.LoadBalancingScheme, cloud.SchemeExternal)
+	}
+
+	proto := utils.GetProtocol(l4netlb.Service.Spec.Ports)
+	if fwdRule.IPProtocol != string(proto) {
+		return fmt.Errorf("unexpected protocol '%s' for forwarding rule %v", fwdRule.IPProtocol, fwdRule)
+	}
+
+	if fwdRule.BackendService != backendServiceLink {
+		return fmt.Errorf("unexpected backend service link '%s' for forwarding rule, expected '%s'", fwdRule.BackendService, backendServiceLink)
+	}
+
+	addr, err := l4netlb.cloud.GetRegionAddress(frName, l4netlb.cloud.Region())
+	if err == nil || addr != nil {
+		return fmt.Errorf("expected error when looking up ephemeral address, got %v", addr)
+	}
+	return nil
+}
+
+// we don't delete ipv4 health check firewall on sync
+func verifyNetLBIPv4ResourcesDeletedOnSync(l4netlb *L4NetLB) error {
+	ipv4FwName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	err := verifyFirewallNotExists(l4netlb.cloud, ipv4FwName)
+	if err != nil {
+		return fmt.Errorf("verifyFirewallNotExists(_, %s) returned error %w, want nil", ipv4FwName, err)
+	}
+
+	ipv4FrName := l4netlb.frName()
+	err = verifyForwardingRuleNotExists(l4netlb.cloud, ipv4FrName)
+	if err != nil {
+		return fmt.Errorf("verifyForwardingRuleNotExists(_, %s) returned error %w, want nil", ipv4FrName, err)
+	}
+
+	addressName := ipv4FwName
+	err = verifyAddressNotExists(l4netlb.cloud, addressName)
+	if err != nil {
+		return fmt.Errorf("verifyAddressNotExists(_, %s)", addressName)
+	}
+
+	return nil
+}
+
+// we don't delete ipv6 health check firewall on sync
+func verifyNetLBIPv6ResourcesDeletedOnSync(l4netlb *L4NetLB) error {
+	ipv6FwName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	err := verifyFirewallNotExists(l4netlb.cloud, ipv6FwName)
+	if err != nil {
+		return fmt.Errorf("verifyFirewallNotExists(_, %s) returned error %w, want nil", ipv6FwName, err)
+	}
+
+	ipv6FrName := l4netlb.ipv6FRName()
+	err = verifyForwardingRuleNotExists(l4netlb.cloud, ipv6FrName)
+	if err != nil {
+		return fmt.Errorf("verifyForwardingRuleNotExists(_, %s) returned error %w, want nil", ipv6FrName, err)
+	}
+
+	return nil
+}
+
+func buildExpectedNetLBAnnotations(l4netlb *L4NetLB) map[string]string {
+	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4netlb.Service)
+	proto := utils.GetProtocol(l4netlb.Service.Spec.Ports)
+
+	backendName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
+	hcName := l4netlb.namer.L4HealthCheck(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
+
+	expectedAnnotations := map[string]string{
+		annotations.BackendServiceKey: backendName,
+		annotations.HealthcheckKey:    hcName,
+	}
+
+	if utils.NeedsIPv4(l4netlb.Service) {
+		hcFwName := l4netlb.namer.L4HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
+
+		expectedAnnotations[annotations.FirewallRuleForHealthcheckKey] = hcFwName
+		expectedAnnotations[annotations.FirewallRuleKey] = backendName
+
+		ipv4FRName := l4netlb.frName()
+		if proto == v1.ProtocolTCP {
+			expectedAnnotations[annotations.TCPForwardingRuleKey] = ipv4FRName
+		} else {
+			expectedAnnotations[annotations.UDPForwardingRuleKey] = ipv4FRName
+		}
+	}
+	if utils.NeedsIPv6(l4netlb.Service) {
+		ipv6hcFwName := l4netlb.namer.L4IPv6HealthCheckFirewall(l4netlb.Service.Namespace, l4netlb.Service.Name, isSharedHC)
+		ipv6FirewallName := l4netlb.namer.L4IPv6Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
+
+		expectedAnnotations[annotations.FirewallRuleForHealthcheckIPv6Key] = ipv6hcFwName
+		expectedAnnotations[annotations.FirewallRuleIPv6Key] = ipv6FirewallName
+
+		ipv6FRName := l4netlb.ipv6FRName()
+		if proto == v1.ProtocolTCP {
+			expectedAnnotations[annotations.TCPForwardingRuleIPv6Key] = ipv6FRName
+		} else {
+			expectedAnnotations[annotations.UDPForwardingRuleIPv6Key] = ipv6FRName
+		}
+	}
+	return expectedAnnotations
 }
 
 func createUserStaticIPInStandardTier(fakeGCE *gce.Cloud, region string) {

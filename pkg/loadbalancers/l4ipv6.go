@@ -83,7 +83,6 @@ func (l4 *L4) deleteIPv6ResourcesOnDelete(syncResult *L4ILBSyncResult) {
 // if resource exists in Service annotation, if shouldIgnoreAnnotations not set to true
 // IPv6 Specific resources:
 // - IPv6 Forwarding Rule
-// - IPv6 Address
 // - IPv6 Firewall
 // This function does not delete Backend Service and Health Check, because they are shared between IPv4 and IPv6.
 // IPv6 Firewall Rule for Health Check also will not be deleted here, and will be left till the Service Deletion.

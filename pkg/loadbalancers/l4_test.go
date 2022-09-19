@@ -680,6 +680,7 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 	if len(xlbResult.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 	}
+	l4NetLB.Service.Annotations = xlbResult.Annotations
 	assertNetLBResources(t, l4NetLB, nodeNames)
 
 	// Delete the ILB loadbalancer
@@ -1801,7 +1802,7 @@ func TestDualStackLoadBalancerTransitions(t *testing.T) {
 	}
 }
 
-func TestDualStackLBCleansOnlyAnnotationResources(t *testing.T) {
+func TestDualStackILBCleansOnlyAnnotationResources(t *testing.T) {
 	t.Parallel()
 	nodeNames := []string{"test-node-1"}
 	vals := gce.DefaultTestClusterValues()

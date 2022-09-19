@@ -118,15 +118,16 @@ type ControllerContextConfig struct {
 	NumL4Workers      int
 	NumL4NetLBWorkers int
 	// DefaultBackendSvcPortID is the ServicePort for the system default backend.
-	DefaultBackendSvcPort utils.ServicePort
-	HealthCheckPath       string
-	FrontendConfigEnabled bool
-	EnableASMConfigMap    bool
-	ASMConfigMapNamespace string
-	ASMConfigMapName      string
-	EndpointSlicesEnabled bool
-	MaxIGSize             int
-	EnableL4ILBDualStack  bool
+	DefaultBackendSvcPort  utils.ServicePort
+	HealthCheckPath        string
+	FrontendConfigEnabled  bool
+	EnableASMConfigMap     bool
+	ASMConfigMapNamespace  string
+	ASMConfigMapName       string
+	EndpointSlicesEnabled  bool
+	MaxIGSize              int
+	EnableL4ILBDualStack   bool
+	EnableL4NetLBDualStack bool
 }
 
 // NewControllerContext returns a new shared set of informers.

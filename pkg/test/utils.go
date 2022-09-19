@@ -153,6 +153,18 @@ func NewL4NetLBRBSService(port int) *api_v1.Service {
 	return svc
 }
 
+// NewL4NetLBRBSDualStackService creates a Service of type LoadBalancer with RBS Annotation and provided ipFamilies and ipFamilyPolicy
+func NewL4NetLBRBSDualStackService(port int, protocol api_v1.Protocol, ipFamilies []api_v1.IPFamily, externalTrafficPolicy api_v1.ServiceExternalTrafficPolicyType) *api_v1.Service {
+	svc := NewL4LegacyNetLBServiceWithoutPorts()
+	svc.ObjectMeta.Annotations[annotations.RBSAnnotationKey] = annotations.RBSEnabled
+	svc.Spec.Ports = []api_v1.ServicePort{
+		{Name: "testport", Port: int32(port), Protocol: protocol},
+	}
+	svc.Spec.IPFamilies = ipFamilies
+	svc.Spec.ExternalTrafficPolicy = externalTrafficPolicy
+	return svc
+}
+
 // NewL4NetLBRBSServiceMultiplePorts creates a Service of type LoadBalancer with multiple named ports.
 func NewL4NetLBRBSServiceMultiplePorts(name string, ports []int32) *api_v1.Service {
 	svc := NewL4LegacyNetLBServiceWithoutPorts()

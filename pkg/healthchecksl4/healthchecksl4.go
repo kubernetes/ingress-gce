@@ -47,6 +47,7 @@ const (
 	gceSharedHcUnhealthyThreshold = int64(3) // 3  * 8 = 24 seconds before the LB will steer traffic away
 	gceLocalHcUnhealthyThreshold  = int64(2) // 2  * 3 = 6 seconds before the LB will steer traffic away
 	L4ILBIPv6HCRange              = "2600:2d00:1:b029::/64"
+	L4NetLBIPv6HCRange            = "2600:1901:8001::/48"
 )
 
 var (
@@ -150,7 +151,7 @@ func (l4hc *l4HealthChecks) EnsureHealthCheckWithDualStackFirewalls(svc *corev1.
 
 	if needsIPv6 {
 		klog.V(3).Infof("Ensuring IPv6 firewall rule for health check %s for service %s", hcName, namespacedName.String())
-		l4hc.ensureIPv6Firewall(svc, namer, hcPort, sharedHC, nodeNames, hcResult)
+		l4hc.ensureIPv6Firewall(svc, namer, hcPort, sharedHC, nodeNames, l4Type, hcResult)
 	}
 
 	return hcResult
@@ -232,7 +233,7 @@ func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.
 	hcResult.HCFirewallRuleName = hcFwName
 }
 
-func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.L4ResourcesNamer, hcPort int32, isSharedHC bool, nodeNames []string, hcResult *EnsureHealthCheckResult) {
+func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.L4ResourcesNamer, hcPort int32, isSharedHC bool, nodeNames []string, l4Type utils.L4LBType, hcResult *EnsureHealthCheckResult) {
 	ipv6HCFWName := namer.L4IPv6HealthCheckFirewall(svc.Namespace, svc.Name, isSharedHC)
 
 	start := time.Now()
@@ -243,7 +244,7 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 
 	hcFWRParams := firewalls.FirewallParams{
 		PortRanges:   []string{strconv.Itoa(int(hcPort))},
-		SourceRanges: []string{L4ILBIPv6HCRange},
+		SourceRanges: getIPv6HCFirewallSourceRanges(l4Type),
 		Protocol:     string(corev1.ProtocolTCP),
 		Name:         ipv6HCFWName,
 		NodeNames:    nodeNames,
@@ -462,4 +463,11 @@ func needToUpdateHealthChecks(hc, newHC *composite.HealthCheck) bool {
 		hc.TimeoutSec < newHC.TimeoutSec ||
 		hc.UnhealthyThreshold < newHC.UnhealthyThreshold ||
 		hc.HealthyThreshold < newHC.HealthyThreshold
+}
+
+func getIPv6HCFirewallSourceRanges(l4Type utils.L4LBType) []string {
+	if l4Type == utils.XLB {
+		return []string{L4NetLBIPv6HCRange}
+	}
+	return []string{L4ILBIPv6HCRange}
 }

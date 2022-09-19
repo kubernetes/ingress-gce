@@ -95,6 +95,16 @@ func deleteL4RBSAnnotations(ctx *context.ControllerContext, svc *v1.Service) err
 	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
 }
 
+// deleteL4RBSDualStackAnnotations deletes all annotations which could be added by L4 ELB RBS controller
+func deleteL4RBSDualStackAnnotations(ctx *context.ControllerContext, svc *v1.Service) error {
+	newObjectMeta := computeNewAnnotationsIfNeeded(svc, nil, loadbalancers.L4DualStackResourceRBSAnnotationKeys)
+	if newObjectMeta == nil {
+		return nil
+	}
+	klog.V(3).Infof("Deleting all DualStack annotations for L4 ELB RBS service %v/%v", svc.Namespace, svc.Name)
+	return patch.PatchServiceObjectMetadata(ctx.KubeClient.CoreV1(), svc, *newObjectMeta)
+}
+
 func deleteAnnotation(ctx *context.ControllerContext, svc *v1.Service, annotationKey string) error {
 	newObjectMeta := svc.ObjectMeta.DeepCopy()
 	if _, ok := newObjectMeta.Annotations[annotationKey]; !ok {
