@@ -1,4 +1,4 @@
-package healthchecksprovider
+package compositeproviders
 
 import (
 	"fmt"

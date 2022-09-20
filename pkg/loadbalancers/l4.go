@@ -29,8 +29,8 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/compositeproviders"
 	"k8s.io/ingress-gce/pkg/firewalls"
-	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -84,7 +84,7 @@ func NewL4Handler(params *L4ILBParams) *L4 {
 		recorder:        params.Recorder,
 		Service:         params.Service,
 		healthChecks:    healthchecksl4.GetInstance(),
-		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, scope),
+		forwardingRules: compositeproviders.NewForwardingRules(params.Cloud, meta.VersionGA, scope),
 	}
 	l4.NamespacedName = types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace}
 	l4.backendPool = backends.NewPool(l4.cloud, l4.namer)

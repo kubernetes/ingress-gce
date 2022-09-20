@@ -29,8 +29,8 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/compositeproviders"
 	"k8s.io/ingress-gce/pkg/firewalls"
-	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/metrics"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -100,7 +100,7 @@ func NewL4NetLB(params *L4NetLBParams) *L4NetLB {
 		NamespacedName:  types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
 		backendPool:     backends.NewPool(params.Cloud, params.Namer),
 		healthChecks:    healthchecksl4.GetInstance(),
-		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional),
+		forwardingRules: compositeproviders.NewForwardingRules(params.Cloud, meta.VersionGA, meta.Regional),
 	}
 	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
 	l4netlb.ServicePort = utils.ServicePort{

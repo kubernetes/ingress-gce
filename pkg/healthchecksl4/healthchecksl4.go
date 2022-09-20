@@ -27,9 +27,9 @@ import (
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
+	"k8s.io/ingress-gce/pkg/compositeproviders"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/firewalls"
-	"k8s.io/ingress-gce/pkg/healthchecksprovider"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/ingress-gce/pkg/utils/namer"
 	"k8s.io/klog/v2"
@@ -75,7 +75,7 @@ func Initialize(cloud *gce.Cloud, recorderFactory events.RecorderProducer) {
 	instance = &l4HealthChecks{
 		cloud:           cloud,
 		recorderFactory: recorderFactory,
-		hcProvider:      healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA),
+		hcProvider:      compositeproviders.NewHealthChecks(cloud, meta.VersionGA),
 	}
 	klog.V(3).Infof("Initialized L4 Healthchecks")
 }
@@ -85,7 +85,7 @@ func Fake(cloud *gce.Cloud, recorderFactory events.RecorderProducer) *l4HealthCh
 	instance = &l4HealthChecks{
 		cloud:           cloud,
 		recorderFactory: recorderFactory,
-		hcProvider:      healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA),
+		hcProvider:      compositeproviders.NewHealthChecks(cloud, meta.VersionGA),
 	}
 	return instance
 }

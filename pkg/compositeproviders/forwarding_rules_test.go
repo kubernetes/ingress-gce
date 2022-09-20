@@ -1,4 +1,4 @@
-package forwardingrules
+package compositeproviders
 
 import (
 	"fmt"
@@ -37,7 +37,7 @@ func TestCreateForwardingRule(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-			frc := New(fakeGCE, meta.VersionGA, meta.Regional)
+			frc := NewForwardingRules(fakeGCE, meta.VersionGA, meta.Regional)
 
 			err := frc.Create(tc.frRule)
 			if err != nil {
@@ -95,7 +95,7 @@ func TestGetForwardingRule(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-			frc := New(fakeGCE, meta.VersionGA, meta.Regional)
+			frc := NewForwardingRules(fakeGCE, meta.VersionGA, meta.Regional)
 			mustCreateForwardingRules(t, fakeGCE, tc.existingFwdRules)
 
 			fr, err := frc.Get(tc.getFwdRuleName)
@@ -157,7 +157,7 @@ func TestDeleteForwardingRule(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
-			frc := New(fakeGCE, meta.VersionGA, meta.Regional)
+			frc := NewForwardingRules(fakeGCE, meta.VersionGA, meta.Regional)
 			mustCreateForwardingRules(t, fakeGCE, tc.existingFwdRules)
 
 			err := frc.Delete(tc.deleteFwdRuleName)

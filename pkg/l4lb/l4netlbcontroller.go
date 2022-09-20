@@ -28,9 +28,9 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/compositeproviders"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
-	"k8s.io/ingress-gce/pkg/forwardingrules"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
@@ -82,7 +82,7 @@ func NewL4NetLBController(
 		namer:           ctx.L4Namer,
 		instancePool:    ctx.InstancePool,
 		igLinker:        backends.NewRegionalInstanceGroupLinker(ctx.InstancePool, backendPool),
-		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
+		forwardingRules: compositeproviders.NewForwardingRules(ctx.Cloud, meta.VersionGA, meta.Regional),
 	}
 	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4NetLBWorkers, l4netLBc.sync)
 

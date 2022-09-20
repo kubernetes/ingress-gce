@@ -31,9 +31,9 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/compositeproviders"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
-	"k8s.io/ingress-gce/pkg/forwardingrules"
 	l4metrics "k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	negtypes "k8s.io/ingress-gce/pkg/neg/types"
@@ -88,7 +88,7 @@ func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4C
 		numWorkers:      ctx.NumL4Workers,
 		namer:           ctx.L4Namer,
 		translator:      ctx.Translator,
-		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
+		forwardingRules: compositeproviders.NewForwardingRules(ctx.Cloud, meta.VersionGA, meta.Regional),
 	}
 	l4c.backendPool = backends.NewPool(ctx.Cloud, l4c.namer)
 	l4c.NegLinker = backends.NewNEGLinker(l4c.backendPool, negtypes.NewAdapter(ctx.Cloud), ctx.Cloud, ctx.SvcNegInformer.GetIndexer())
