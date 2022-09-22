@@ -26,6 +26,7 @@ import (
 	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes/fake"
+	firewallclient "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/fake"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	v1 "k8s.io/ingress-gce/pkg/apis/backendconfig/v1"
 	backendconfigclient "k8s.io/ingress-gce/pkg/backendconfig/client/clientset/versioned/fake"
@@ -41,6 +42,7 @@ import (
 func newFirewallController() *FirewallController {
 	kubeClient := fake.NewSimpleClientset()
 	backendConfigClient := backendconfigclient.NewSimpleClientset()
+	firewallClient := firewallclient.NewSimpleClientset()
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 
 	ctxConfig := context.ControllerContextConfig{
@@ -48,9 +50,8 @@ func newFirewallController() *FirewallController {
 		ResyncPeriod:          1 * time.Minute,
 		DefaultBackendSvcPort: test.DefaultBeSvcPort,
 	}
-
-	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, nil, nil, nil, fakeGCE, defaultNamer, "" /*kubeSystemUID*/, ctxConfig)
-	fwc := NewFirewallController(ctx, []string{"30000-32767"})
+	ctx := context.NewControllerContext(nil, kubeClient, backendConfigClient, nil, firewallClient, nil, nil, nil, fakeGCE, defaultNamer, "" /*kubeSystemUID*/, ctxConfig)
+	fwc := NewFirewallController(ctx, []string{"30000-32767"}, false, false)
 	fwc.hasSynced = func() bool { return true }
 
 	return fwc

@@ -30,6 +30,8 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	firewallclient "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned"
+	informerfirewall "k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/gcpfirewall/v1beta1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	sav1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1"
 	sav1beta1 "k8s.io/ingress-gce/pkg/apis/serviceattachment/v1beta1"
@@ -65,10 +67,11 @@ const (
 
 // ControllerContext holds the state needed for the execution of the controller.
 type ControllerContext struct {
-	KubeConfig   *rest.Config
-	KubeClient   kubernetes.Interface
-	SvcNegClient svcnegclient.Interface
-	SAClient     serviceattachmentclient.Interface
+	KubeConfig     *rest.Config
+	KubeClient     kubernetes.Interface
+	SvcNegClient   svcnegclient.Interface
+	SAClient       serviceattachmentclient.Interface
+	FirewallClient firewallclient.Interface
 
 	Cloud *gce.Cloud
 
@@ -91,6 +94,7 @@ type ControllerContext struct {
 	IngClassInformer       cache.SharedIndexInformer
 	IngParamsInformer      cache.SharedIndexInformer
 	SAInformer             cache.SharedIndexInformer
+	FirewallInformer       cache.SharedIndexInformer
 
 	ControllerMetrics *metrics.ControllerMetrics
 
@@ -133,6 +137,7 @@ func NewControllerContext(
 	kubeClient kubernetes.Interface,
 	backendConfigClient backendconfigclient.Interface,
 	frontendConfigClient frontendconfigclient.Interface,
+	firewallClient firewallclient.Interface,
 	svcnegClient svcnegclient.Interface,
 	ingParamsClient ingparamsclient.Interface,
 	saClient serviceattachmentclient.Interface,
@@ -144,6 +149,7 @@ func NewControllerContext(
 	context := &ControllerContext{
 		KubeConfig:              kubeConfig,
 		KubeClient:              kubeClient,
+		FirewallClient:          firewallClient,
 		SvcNegClient:            svcnegClient,
 		SAClient:                saClient,
 		Cloud:                   cloud,
@@ -160,6 +166,9 @@ func NewControllerContext(
 		SvcNegInformer:          informersvcneg.NewServiceNetworkEndpointGroupInformer(svcnegClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer()),
 		recorders:               map[string]record.EventRecorder{},
 		healthChecks:            make(map[string]func() error),
+	}
+	if firewallClient != nil {
+		context.FirewallInformer = informerfirewall.NewGCPFirewallInformer(firewallClient, config.ResyncPeriod, utils.NewNamespaceIndexer())
 	}
 	if config.FrontendConfigEnabled {
 		context.FrontendConfigInformer = informerfrontendconfig.NewFrontendConfigInformer(frontendConfigClient, config.Namespace, config.ResyncPeriod, utils.NewNamespaceIndexer())
@@ -262,6 +271,10 @@ func (ctx *ControllerContext) HasSynced() bool {
 		funcs = append(funcs, ctx.SAInformer.HasSynced)
 	}
 
+	if ctx.FirewallInformer != nil {
+		funcs = append(funcs, ctx.FirewallInformer.HasSynced)
+	}
+
 	for _, f := range funcs {
 		if !f() {
 			return false
@@ -321,6 +334,9 @@ func (ctx *ControllerContext) Start(stopCh chan struct{}) {
 	go ctx.NodeInformer.Run(stopCh)
 	go ctx.EndpointSliceInformer.Run(stopCh)
 
+	if ctx.FirewallInformer != nil {
+		go ctx.FirewallInformer.Run(stopCh)
+	}
 	if ctx.BackendConfigInformer != nil {
 		go ctx.BackendConfigInformer.Run(stopCh)
 	}

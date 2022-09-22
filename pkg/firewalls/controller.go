@@ -26,8 +26,10 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	listers "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1beta1"
 	"k8s.io/cloud-provider-gcp/providers/gce"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/common/operator"
@@ -58,15 +60,52 @@ type FirewallController struct {
 	hasSynced    func() bool
 }
 
+type compositeFirewallPool struct {
+	pools []SingleFirewallPool
+}
+
+func (comp *compositeFirewallPool) Sync(nodeNames, additionalPorts, additionalRanges []string, allowNodePort bool) error {
+	var errList []error
+	for _, singlePool := range comp.pools {
+		err := singlePool.Sync(nodeNames, additionalPorts, additionalRanges, allowNodePort)
+		if err != nil {
+			errList = append(errList, err)
+		}
+	}
+	return utilerrors.NewAggregate(errList)
+
+}
+
+func (comp *compositeFirewallPool) GC() error {
+	var errList []error
+	for _, singlePool := range comp.pools {
+		err := singlePool.GC()
+		if err != nil {
+			errList = append(errList, err)
+		}
+	}
+	return utilerrors.NewAggregate(errList)
+}
+
 // NewFirewallController returns a new firewall controller.
 func NewFirewallController(
 	ctx *context.ControllerContext,
-	portRanges []string) *FirewallController {
-	firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges)
+	portRanges []string,
+	enableCR, disableFWEnforcement bool) *FirewallController {
+
+	compositeFirewallPool := &compositeFirewallPool{}
+	if enableCR {
+		firewallCRPool := NewFirewallCRPool(ctx.FirewallClient, ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges, disableFWEnforcement)
+		compositeFirewallPool.pools = append(compositeFirewallPool.pools, firewallCRPool)
+	}
+	if !disableFWEnforcement {
+		firewallPool := NewFirewallPool(ctx.Cloud, ctx.ClusterNamer, gce.L7LoadBalancerSrcRanges(), portRanges)
+		compositeFirewallPool.pools = append(compositeFirewallPool.pools, firewallPool)
+	}
 
 	fwc := &FirewallController{
 		ctx:          ctx,
-		firewallPool: firewallPool,
+		firewallPool: compositeFirewallPool,
 		translator:   ctx.Translator,
 		nodeLister:   ctx.NodeInformer.GetIndexer(),
 		hasSynced:    ctx.HasSynced,
@@ -118,6 +157,29 @@ func NewFirewallController(
 			}
 		},
 	})
+
+	if enableCR {
+		// FW CRs will be updated/deleted by the PFW controller or the user. Ingress controller need to watch such events
+		// and act accordingly.
+		ctx.FirewallInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			// We enqueue the sync task for all update events for these two reasons:
+			// 1. Make sure the CR is consistent with the FW configuration.
+			// 2. Force the controller to read the CR status and populate proper errors.
+			UpdateFunc: func(old, cur interface{}) {
+				curFW := cur.(*v1beta1.GCPFirewall)
+				name := fwc.ctx.ClusterNamer.FirewallRule()
+				if name != curFW.Name {
+					return
+				}
+				fwc.queue.Enqueue(queueKey)
+			},
+			// In case the firewall CR is deleted accidentally, we need to reconcile the firewall CR.
+			// If no ingress is left, nothing will be added.
+			DeleteFunc: func(obj interface{}) {
+				fwc.queue.Enqueue(queueKey)
+			},
+		})
+	}
 
 	return fwc
 }
