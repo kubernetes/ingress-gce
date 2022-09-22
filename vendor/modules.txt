@@ -791,6 +791,17 @@ k8s.io/cloud-provider/service/helpers
 k8s.io/cloud-provider/volume
 k8s.io/cloud-provider/volume/errors
 k8s.io/cloud-provider/volume/helpers
+# k8s.io/cloud-provider-gcp/crd v0.0.0-20230411231432-6ab330834e4e
+## explicit; go 1.19
+k8s.io/cloud-provider-gcp/crd/apis/gcpfirewall/v1beta1
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/fake
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/scheme
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfirewall/v1beta1
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/clientset/versioned/typed/gcpfirewall/v1beta1/fake
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/gcpfirewall/v1beta1
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/informers/externalversions/internalinterfaces
+k8s.io/cloud-provider-gcp/crd/client/gcpfirewall/listers/gcpfirewall/v1beta1
 # k8s.io/cloud-provider-gcp/providers v0.26.3-0.20230322202223-f7280f55e36f
 ## explicit; go 1.19
 k8s.io/cloud-provider-gcp/providers/gce
