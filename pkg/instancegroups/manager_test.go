@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package instances
+package instancegroups
 
 import (
 	"fmt"
@@ -34,8 +34,8 @@ const (
 
 var defaultNamer = namer.NewNamer("uid1", "fw1")
 
-func newNodePool(f *FakeInstanceGroups, zone string, maxIGSize int) NodePool {
-	pool := NewNodePool(&NodePoolConfig{
+func newNodePool(f *FakeInstanceGroups, zone string, maxIGSize int) Manager {
+	pool := NewManager(&ManagerConfig{
 		Cloud:      f,
 		Namer:      defaultNamer,
 		Recorders:  &test.FakeRecorderSource{},
@@ -213,7 +213,7 @@ func TestGetInstanceReferences(t *testing.T) {
 		},
 	}
 	pool := newNodePool(NewFakeInstanceGroups(zonesToIGs, maxIGSize), defaultZone, maxIGSize)
-	instances := pool.(*Instances)
+	instances := pool.(*manager)
 
 	nodeNames := []string{"node-1", "node-2", "node-3", "node-4.region.zone"}
 

@@ -28,6 +28,7 @@ import (
 	"k8s.io/ingress-gce/pkg/frontendconfig"
 	"k8s.io/ingress-gce/pkg/healthchecksl4"
 	"k8s.io/ingress-gce/pkg/ingparams"
+	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb"
 	"k8s.io/ingress-gce/pkg/psc"
 	"k8s.io/ingress-gce/pkg/serviceattachment"
@@ -358,8 +359,14 @@ func runControllers(ctx *ingctx.ControllerContext) {
 
 	ctx.Start(stopCh)
 
-	nodeController := controller.NewNodeController(ctx, stopCh)
-	go nodeController.Run()
+	igControllerParams := &instancegroups.ControllerConfig{
+		NodeInformer: ctx.NodeInformer,
+		IGManager:    ctx.InstancePool,
+		HasSynced:    ctx.HasSynced,
+		StopCh:       stopCh,
+	}
+	igController := instancegroups.NewController(igControllerParams)
+	go igController.Run()
 
 	// The L4NetLbController will be run when RbsMode flag is Set
 	if flags.F.RunL4NetLBController {

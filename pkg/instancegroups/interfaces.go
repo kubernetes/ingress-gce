@@ -14,12 +14,24 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package instances
+package instancegroups
 
 import (
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/utils"
 )
+
+// Manager is an interface to sync kubernetes nodes to google cloud instance groups
+// through the Provider interface. It handles zones opaquely using the zoneLister.
+type Manager interface {
+	EnsureInstanceGroupsAndPorts(name string, ports []int64) ([]*compute.InstanceGroup, error)
+	DeleteInstanceGroup(name string) error
+
+	Get(name, zone string) (*compute.InstanceGroup, error)
+	List() ([]string, error)
+
+	Sync(nodeNames []string) error
+}
 
 // ZoneLister manages lookups for GCE instance groups/instances to zones.
 type ZoneLister interface {
@@ -27,23 +39,8 @@ type ZoneLister interface {
 	GetZoneForNode(name string) (string, error)
 }
 
-// NodePool is an interface to manage a pool of kubernetes nodes synced with vm instances in the cloud
-// through the InstanceGroups interface. It handles zones opaquely using the zoneLister.
-type NodePool interface {
-	// The following 2 methods operate on instance groups.
-	EnsureInstanceGroupsAndPorts(name string, ports []int64) ([]*compute.InstanceGroup, error)
-	DeleteInstanceGroup(name string) error
-
-	// TODO: Refactor for modularity
-	Add(groupName string, nodeNames []string) error
-	Remove(groupName string, nodeNames []string) error
-	Sync(nodeNames []string) error
-	Get(name, zone string) (*compute.InstanceGroup, error)
-	List() ([]string, error)
-}
-
-// InstanceGroups is an interface for managing gce instances groups, and the instances therein.
-type InstanceGroups interface {
+// Provider is an interface for managing gce instances groups, and the instances therein.
+type Provider interface {
 	GetInstanceGroup(name, zone string) (*compute.InstanceGroup, error)
 	CreateInstanceGroup(ig *compute.InstanceGroup, zone string) error
 	DeleteInstanceGroup(name, zone string) error

@@ -31,7 +31,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/forwardingrules"
-	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/l4lb/metrics"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -57,7 +57,7 @@ type L4NetLBController struct {
 	syncTracker utils.TimeTracker
 
 	backendPool     *backends.Backends
-	instancePool    instances.NodePool
+	instancePool    instancegroups.Manager
 	igLinker        *backends.RegionalInstanceGroupLinker
 	forwardingRules ForwardingRulesGetter
 }

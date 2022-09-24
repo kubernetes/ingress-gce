@@ -21,7 +21,6 @@ import (
 	"fmt"
 
 	compute "google.golang.org/api/compute/v1"
-	api_v1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/networking/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -56,16 +55,6 @@ func uniq(svcPorts []utils.ServicePort) []utils.ServicePort {
 		svcPorts = append(svcPorts, sp)
 	}
 	return svcPorts
-}
-
-func nodeStatusChanged(old, cur *api_v1.Node) bool {
-	if old.Spec.Unschedulable != cur.Spec.Unschedulable {
-		return true
-	}
-	if utils.NodeIsReady(old) != utils.NodeIsReady(cur) {
-		return true
-	}
-	return false
 }
 
 func convert(ings []*v1.Ingress) (retVal []interface{}) {

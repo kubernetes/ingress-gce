@@ -50,7 +50,7 @@ import (
 	informerfrontendconfig "k8s.io/ingress-gce/pkg/frontendconfig/client/informers/externalversions/frontendconfig/v1beta1"
 	ingparamsclient "k8s.io/ingress-gce/pkg/ingparams/client/clientset/versioned"
 	informeringparams "k8s.io/ingress-gce/pkg/ingparams/client/informers/externalversions/ingparams/v1beta1"
-	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/metrics"
 	serviceattachmentclient "k8s.io/ingress-gce/pkg/serviceattachment/client/clientset/versioned"
 	informerserviceattachment "k8s.io/ingress-gce/pkg/serviceattachment/client/informers/externalversions/serviceattachment/v1"
@@ -117,7 +117,7 @@ type ControllerContext struct {
 	// controller logic and should only be used for providing additional information to the user.
 	RegionalCluster bool
 
-	InstancePool instances.NodePool
+	InstancePool instancegroups.Manager
 	Translator   *translator.Translator
 }
 
@@ -208,7 +208,7 @@ func NewControllerContext(
 		context.UseEndpointSlices,
 		context.KubeClient,
 	)
-	context.InstancePool = instances.NewNodePool(&instances.NodePoolConfig{
+	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
 		Cloud:      context.Cloud,
 		Namer:      context.ClusterNamer,
 		Recorders:  context,

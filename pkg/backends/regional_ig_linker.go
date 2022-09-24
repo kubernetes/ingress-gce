@@ -19,18 +19,18 @@ import (
 	cloudprovider "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/instancegroups"
 	"k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/klog/v2"
 )
 
 // RegionalInstanceGroupLinker handles linking backends to InstanceGroups.
 type RegionalInstanceGroupLinker struct {
-	instancePool instances.NodePool
+	instancePool instancegroups.Manager
 	backendPool  Pool
 }
 
-func NewRegionalInstanceGroupLinker(instancePool instances.NodePool, backendPool Pool) *RegionalInstanceGroupLinker {
+func NewRegionalInstanceGroupLinker(instancePool instancegroups.Manager, backendPool Pool) *RegionalInstanceGroupLinker {
 	return &RegionalInstanceGroupLinker{
 		instancePool: instancePool,
 		backendPool:  backendPool,
