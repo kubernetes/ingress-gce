@@ -603,7 +603,7 @@ func TestProcessServiceCreationFailed(t *testing.T) {
 		addNetLBService(lc, svc)
 		key, _ := common.KeyFunc(svc)
 		err := lc.sync(key)
-		if err == nil || err.Error() != param.expectedError {
+		if err == nil || !strings.Contains(err.Error(), param.expectedError) {
 			t.Errorf("Error mismatch '%v' != '%v'", err, param.expectedError)
 		}
 	}

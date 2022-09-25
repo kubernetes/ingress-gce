@@ -49,10 +49,6 @@ type manager struct {
 	maxIGSize          int
 }
 
-type recorderSource interface {
-	Recorder(ns string) record.EventRecorder
-}
-
 // ManagerConfig is used for Manager constructor.
 type ManagerConfig struct {
 	// Cloud implements Provider, used to sync Kubernetes nodes with members of the cloud InstanceGroup.
@@ -64,7 +60,7 @@ type ManagerConfig struct {
 	MaxIGSize  int
 }
 
-// NewManager creates a new node pool using ManagerConfig.
+// NewManager creates a new Instance Groups Manager using ManagerConfig.
 func NewManager(config *ManagerConfig) Manager {
 	return &manager{
 		cloud:              config.Cloud,
@@ -79,15 +75,16 @@ func NewManager(config *ManagerConfig) Manager {
 // EnsureInstanceGroupsAndPorts creates or gets an instance group if it doesn't exist
 // and adds the given ports to it. Returns a list of one instance group per zone,
 // all of which have the exact same named ports.
-func (m *manager) EnsureInstanceGroupsAndPorts(name string, ports []int64) (igs []*compute.InstanceGroup, err error) {
+func (m *manager) EnsureInstanceGroupsAndPorts(ports []int64) (igs []*compute.InstanceGroup, err error) {
 	// Instance groups need to be created only in zones that have ready nodes.
 	zones, err := m.ListZones(utils.CandidateNodesPredicate)
 	if err != nil {
 		return nil, err
 	}
 
+	igName := m.namer.InstanceGroup()
 	for _, zone := range zones {
-		ig, err := m.ensureInstanceGroupAndPorts(name, zone, ports)
+		ig, err := m.ensureInstanceGroupAndPorts(igName, zone, ports)
 		if err != nil {
 			return nil, err
 		}
@@ -157,25 +154,27 @@ func (m *manager) ensureInstanceGroupAndPorts(name, zone string, ports []int64) 
 	return ig, nil
 }
 
-// DeleteInstanceGroup deletes the given IG by name, from all zones.
-func (m *manager) DeleteInstanceGroup(name string) error {
+// DeleteInstanceGroup deletes the IG from all zones.
+func (m *manager) DeleteInstanceGroup() error {
 	var errs []error
 
 	zones, err := m.ListZones(utils.AllNodesPredicate)
 	if err != nil {
 		return err
 	}
+
+	igName := m.namer.InstanceGroup()
 	for _, zone := range zones {
-		if err := m.cloud.DeleteInstanceGroup(name, zone); err != nil {
+		if err := m.cloud.DeleteInstanceGroup(igName, zone); err != nil {
 			if utils.IsNotFoundError(err) {
-				klog.V(3).Infof("Instance group %v in zone %v did not exist", name, zone)
+				klog.V(3).Infof("Instance group %v in zone %v did not exist", igName, zone)
 			} else if utils.IsInUsedByError(err) {
-				klog.V(3).Infof("Could not delete instance group %v in zone %v because it's still in use. Ignoring: %v", name, zone, err)
+				klog.V(3).Infof("Could not delete instance group %v in zone %v because it's still in use. Ignoring: %v", igName, zone, err)
 			} else {
 				errs = append(errs, err)
 			}
 		} else {
-			klog.V(3).Infof("Deleted instance group %v in zone %v", name, zone)
+			klog.V(3).Infof("Deleted instance group %v in zone %v", igName, zone)
 		}
 	}
 	if len(errs) == 0 {
@@ -218,34 +217,42 @@ func (m *manager) Get(name, zone string) (*compute.InstanceGroup, error) {
 	return ig, nil
 }
 
-// List lists the names of all Instance Groups belonging to this cluster.
-func (m *manager) List() ([]string, error) {
-	var igs []*compute.InstanceGroup
-
+// List lists all instance groups belonging to this cluster.
+func (m *manager) List() ([]*compute.InstanceGroup, error) {
 	zones, err := m.ListZones(utils.AllNodesPredicate)
 	if err != nil {
 		return nil, err
 	}
 
+	var clusterIGs []*compute.InstanceGroup
 	for _, zone := range zones {
-		igsForZone, err := m.cloud.ListInstanceGroups(zone)
+		zonalIGs, err := m.ListZonal(zone)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("m.ListZonal(%s) returned error %w", zone, err)
 		}
 
-		for _, ig := range igsForZone {
-			igs = append(igs, ig)
+		for _, ig := range zonalIGs {
+			clusterIGs = append(clusterIGs, ig)
 		}
 	}
 
-	var names []string
-	for _, ig := range igs {
+	return clusterIGs, nil
+}
+
+func (m *manager) ListZonal(zone string) ([]*compute.InstanceGroup, error) {
+	zonalIGs, err := m.cloud.ListInstanceGroups(zone)
+	if err != nil {
+		return nil, fmt.Errorf("m.cloud.ListInstanceGroups(%s) returned error %w", zone, err)
+	}
+
+	var clusterZonalIGs []*compute.InstanceGroup
+	for _, ig := range zonalIGs {
 		if m.namer.NameBelongsToCluster(ig.Name) {
-			names = append(names, ig.Name)
+			clusterZonalIGs = append(clusterZonalIGs, ig)
 		}
 	}
 
-	return names, nil
+	return clusterZonalIGs, nil
 }
 
 // splitNodesByZones takes a list of node names and returns a map of zone:node names.
@@ -276,12 +283,12 @@ func (m *manager) getInstanceReferences(zone string, nodeNames []string) (refs [
 }
 
 // Add adds the given instances to the appropriately zoned Instance Group.
-func (m *manager) add(groupName string, names []string) error {
-	events.GlobalEventf(m.recorder, core.EventTypeNormal, events.AddNodes, "Adding %s to InstanceGroup %q", events.TruncatedStringList(names), groupName)
+func (m *manager) add(igName string, names []string) error {
+	events.GlobalEventf(m.recorder, core.EventTypeNormal, events.AddNodes, "Adding %s to InstanceGroup %q", events.TruncatedStringList(names), igName)
 	var errs []error
 	for zone, nodeNames := range m.splitNodesByZone(names) {
-		klog.V(1).Infof("Adding nodes %v to %v in zone %v", nodeNames, groupName, zone)
-		if err := m.cloud.AddInstancesToInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames)); err != nil {
+		klog.V(1).Infof("Adding nodes %v to %v in zone %v", nodeNames, igName, zone)
+		if err := m.cloud.AddInstancesToInstanceGroup(igName, zone, m.getInstanceReferences(zone, nodeNames)); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -290,17 +297,17 @@ func (m *manager) add(groupName string, names []string) error {
 	}
 
 	err := fmt.Errorf("AddInstances: %v", errs)
-	events.GlobalEventf(m.recorder, core.EventTypeWarning, events.AddNodes, "Error adding %s to InstanceGroup %q: %v", events.TruncatedStringList(names), groupName, err)
+	events.GlobalEventf(m.recorder, core.EventTypeWarning, events.AddNodes, "Error adding %s to InstanceGroup %q: %v", events.TruncatedStringList(names), igName, err)
 	return err
 }
 
 // Remove removes the given instances from the appropriately zoned Instance Group.
-func (m *manager) remove(groupName string, names []string) error {
-	events.GlobalEventf(m.recorder, core.EventTypeNormal, events.RemoveNodes, "Removing %s from InstanceGroup %q", events.TruncatedStringList(names), groupName)
+func (m *manager) remove(igName string, names []string) error {
+	events.GlobalEventf(m.recorder, core.EventTypeNormal, events.RemoveNodes, "Removing %s from InstanceGroup %q", events.TruncatedStringList(names), igName)
 	var errs []error
 	for zone, nodeNames := range m.splitNodesByZone(names) {
-		klog.V(1).Infof("Removing nodes %v from %v in zone %v", nodeNames, groupName, zone)
-		if err := m.cloud.RemoveInstancesFromInstanceGroup(groupName, zone, m.getInstanceReferences(zone, nodeNames)); err != nil {
+		klog.V(1).Infof("Removing nodes %v from %v in zone %v", nodeNames, igName, zone)
+		if err := m.cloud.RemoveInstancesFromInstanceGroup(igName, zone, m.getInstanceReferences(zone, nodeNames)); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -309,7 +316,7 @@ func (m *manager) remove(groupName string, names []string) error {
 	}
 
 	err := fmt.Errorf("RemoveInstances: %v", errs)
-	events.GlobalEventf(m.recorder, core.EventTypeWarning, events.RemoveNodes, "Error removing nodes %s from InstanceGroup %q: %v", events.TruncatedStringList(names), groupName, err)
+	events.GlobalEventf(m.recorder, core.EventTypeWarning, events.RemoveNodes, "Error removing nodes %s from InstanceGroup %q: %v", events.TruncatedStringList(names), igName, err)
 	return err
 }
 
@@ -336,11 +343,11 @@ func (m *manager) Sync(nodes []string) (err error) {
 		return err
 	}
 
-	for _, igName := range pool {
+	for _, instanceGroup := range pool {
 		gceNodes := sets.NewString()
-		gceNodes, err = m.listIGInstances(igName)
+		gceNodes, err = m.listIGInstances(instanceGroup.Name)
 		if err != nil {
-			klog.Errorf("list(%q) error: %v", igName, err)
+			klog.Errorf("list(%q) error: %v", instanceGroup, err)
 			return err
 		}
 		kubeNodes := sets.NewString(nodes...)
@@ -360,7 +367,7 @@ func (m *manager) Sync(nodes []string) (err error) {
 				return nodes[:maxLogsSampleSize]
 			}
 
-			klog.Warningf("Total number of kubeNodes: %d, truncating to maximum Instance Group size = %d. Instance group name: %s. First truncated instances: %v", len(kubeNodesList), m.maxIGSize, igName, truncateForLogs(nodes[m.maxIGSize:]))
+			klog.Warningf("Total number of kubeNodes: %d, truncating to maximum Instance Group size = %d. Instance group name: %s. First truncated instances: %v", len(kubeNodesList), m.maxIGSize, instanceGroup, truncateForLogs(nodes[m.maxIGSize:]))
 			kubeNodes = sets.NewString(kubeNodesList[:m.maxIGSize]...)
 		}
 
@@ -375,8 +382,8 @@ func (m *manager) Sync(nodes []string) (err error) {
 
 		start := time.Now()
 		if len(removeNodes) != 0 {
-			err = m.remove(igName, removeNodes)
-			klog.V(2).Infof("Remove(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), removeNodes)
+			err = m.remove(instanceGroup.Name, removeNodes)
+			klog.V(2).Infof("Remove(%q, _) = %v (took %s); nodes = %v", instanceGroup.Name, err, time.Now().Sub(start), removeNodes)
 			if err != nil {
 				return err
 			}
@@ -384,8 +391,8 @@ func (m *manager) Sync(nodes []string) (err error) {
 
 		start = time.Now()
 		if len(addNodes) != 0 {
-			err = m.add(igName, addNodes)
-			klog.V(2).Infof("Add(%q, _) = %v (took %s); nodes = %v", igName, err, time.Now().Sub(start), addNodes)
+			err = m.add(instanceGroup.Name, addNodes)
+			klog.V(2).Infof("Add(%q, _) = %v (took %s); nodes = %v", instanceGroup.Name, err, time.Now().Sub(start), addNodes)
 			if err != nil {
 				return err
 			}

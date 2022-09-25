@@ -294,8 +294,13 @@ func (n *Namer) NameBelongsToCluster(name string) bool {
 	// The cluster name is 16a1467191ad30 which is longer than clusterNameEvalThreshold.
 	// Case 2: k8s-fws-test-sandbox-50a6f22a4cd34e91-ingress-1111111111111--10
 	// The cluster name is 10 which is shorter than clusterNameEvalThreshold.
-	return len(componentClusterName) > clusterNameEvalThreshold && strings.HasPrefix(fullClusterName, componentClusterName)
-
+	//
+	// The component belongs to cluster if  componentClusterName is a prefix of cluster name [1]
+	// or when full  cluster name is a prefix componentClusterName [2]
+	// [1] takes place when long component name is (optionally truncated) cluster name
+	// [2] takes place when component name is a  cluster name with suffix, e.g. 0123456789abcdef-1 (extracted from "k8s-ig--0123456789abcdef-1")
+	return len(componentClusterName) > clusterNameEvalThreshold &&
+		(strings.HasPrefix(fullClusterName, componentClusterName) || strings.HasPrefix(componentClusterName, fullClusterName))
 }
 
 // IGBackend constructs the name for a backend service targeting instance groups.
@@ -320,6 +325,15 @@ func (n *Namer) IGBackendPort(beName string) (string, error) {
 // InstanceGroup constructs the name for an Instance Group.
 func (n *Namer) InstanceGroup() string {
 	return n.decorateName(n.prefix + "-" + igPrefix)
+}
+
+// InstanceGroupByIndex constructs the name for an Instance Group when multiple Instance Groups are in use.
+func (n *Namer) InstanceGroupByIndex(index int) string {
+	name := n.InstanceGroup()
+	if index == 0 {
+		return name
+	}
+	return fmt.Sprintf("%s-%d", name, index)
 }
 
 // firewallRuleSuffix constructs the glbc specific suffix for the FirewallRule.

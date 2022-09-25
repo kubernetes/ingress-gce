@@ -63,6 +63,8 @@ type BackendNamer interface {
 	L4Backend(namespace, name string) string
 	// InstanceGroup constructs the name for an Instance Group.
 	InstanceGroup() string
+	// InstanceGroupByIndex constructs the name for an Instance Group when multiple Instance Groups are in use.
+	InstanceGroupByIndex(index int) string
 	// NamedPort returns the name for a named port.
 	NamedPort(port int64) string
 	// NameBelongsToCluster checks if a given backend resource name is tagged with

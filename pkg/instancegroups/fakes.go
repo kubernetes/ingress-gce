@@ -188,6 +188,17 @@ func getInstanceList(nodeNames sets.String) *compute.InstanceGroupsListInstances
 	}
 }
 
+func (f *FakeInstanceGroups) ToIGNames() map[string]map[string]sets.String {
+	zonesToIGsNamesToInstances := map[string]map[string]sets.String{}
+	for zone, igs := range f.zonesToIGsToInstances {
+		zonesToIGsNamesToInstances[zone] = map[string]sets.String{}
+		for ig, instances := range igs {
+			zonesToIGsNamesToInstances[zone][ig.Name] = instances
+		}
+	}
+	return zonesToIGsNamesToInstances
+}
+
 func (f *FakeInstanceGroups) ToInstanceReferences(zone string, instanceNames []string) (refs []*compute.InstanceReference) {
 	for _, ins := range instanceNames {
 		instanceLink := getInstanceUrl(ins)

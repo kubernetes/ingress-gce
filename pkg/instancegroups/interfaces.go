@@ -18,17 +18,19 @@ package instancegroups
 
 import (
 	compute "google.golang.org/api/compute/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 // Manager is an interface to sync kubernetes nodes to google cloud instance groups
 // through the Provider interface. It handles zones opaquely using the zoneLister.
 type Manager interface {
-	EnsureInstanceGroupsAndPorts(name string, ports []int64) ([]*compute.InstanceGroup, error)
-	DeleteInstanceGroup(name string) error
+	EnsureInstanceGroupsAndPorts(ports []int64) ([]*compute.InstanceGroup, error)
+	DeleteInstanceGroup() error
 
 	Get(name, zone string) (*compute.InstanceGroup, error)
-	List() ([]string, error)
+	List() ([]*compute.InstanceGroup, error)
+	ListZonal(zone string) ([]*compute.InstanceGroup, error)
 
 	Sync(nodeNames []string) error
 }
@@ -52,4 +54,8 @@ type Provider interface {
 	RemoveInstancesFromInstanceGroup(name, zone string, instanceRefs []*compute.InstanceReference) error
 	ToInstanceReferences(zone string, instanceNames []string) (refs []*compute.InstanceReference)
 	SetNamedPortsOfInstanceGroup(igName, zone string, namedPorts []*compute.NamedPort) error
+}
+
+type recorderSource interface {
+	Recorder(ns string) record.EventRecorder
 }

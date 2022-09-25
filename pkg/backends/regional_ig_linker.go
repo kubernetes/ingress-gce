@@ -16,7 +16,6 @@ package backends
 import (
 	"fmt"
 
-	cloudprovider "github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"k8s.io/ingress-gce/pkg/composite"
 	"k8s.io/ingress-gce/pkg/instancegroups"
@@ -43,9 +42,13 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 
 	var igLinks []string
 	for _, zone := range zones {
-		key := meta.ZonalKey(sp.IGName(), zone)
-		igSelfLink := cloudprovider.SelfLink(meta.VersionGA, projectID, "instanceGroups", key)
-		igLinks = append(igLinks, igSelfLink)
+		igs, err := linker.instancePool.ListZonal(zone)
+		if err != nil {
+			return fmt.Errorf("error listing zonal instance groups for regional linking with backend %+v: %w", sp, err)
+		}
+		for _, ig := range igs {
+			igLinks = append(igLinks, ig.SelfLink)
+		}
 	}
 	bs, err := linker.backendPool.Get(sp.BackendName(), meta.VersionGA, meta.Regional)
 	if err != nil {
@@ -60,15 +63,13 @@ func (linker *RegionalInstanceGroupLinker) Link(sp utils.ServicePort, projectID 
 		return nil
 	}
 
-	var newBackends []*composite.Backend
 	for _, igLink := range addIGs {
 		b := &composite.Backend{
 			Group: igLink,
 		}
-		newBackends = append(newBackends, b)
+		bs.Backends = append(bs.Backends, b)
 	}
 
-	bs.Backends = newBackends
 	klog.V(3).Infof("Update Backend %s, with %d backends.", sp.BackendName(), len(addIGs))
 	if err := linker.backendPool.Update(bs); err != nil {
 		return fmt.Errorf("updating backend service %s for IG failed, err:%w", sp.BackendName(), err)

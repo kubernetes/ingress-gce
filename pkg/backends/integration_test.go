@@ -77,7 +77,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	jig := newTestJig(fakeGCE)
 
 	sp := utils.ServicePort{NodePort: 80, BackendNamer: defaultNamer, Protocol: annotations.ProtocolHTTP}
-	_, err := jig.fakeInstancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
+	_, err := jig.fakeInstancePool.EnsureInstanceGroupsAndPorts([]int64{sp.NodePort})
 	if err != nil {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
@@ -105,7 +105,7 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	}
 
 	// Make sure repeated adds don't clobber the inserted instance group
-	_, err = jig.fakeInstancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
+	_, err = jig.fakeInstancePool.EnsureInstanceGroupsAndPorts([]int64{sp.NodePort})
 	if err != nil {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
@@ -150,7 +150,7 @@ func TestSyncChaosMonkey(t *testing.T) {
 
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
 
-	_, err := jig.fakeInstancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
+	_, err := jig.fakeInstancePool.EnsureInstanceGroupsAndPorts([]int64{sp.NodePort})
 	if err != nil {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v, err %v", sp, err)
 	}
@@ -183,7 +183,7 @@ func TestSyncChaosMonkey(t *testing.T) {
 		return false, nil
 	}
 
-	_, err = jig.fakeInstancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort})
+	_, err = jig.fakeInstancePool.EnsureInstanceGroupsAndPorts([]int64{sp.NodePort})
 	if err != nil {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}

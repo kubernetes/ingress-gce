@@ -641,8 +641,11 @@ func TestMCIngressIG(t *testing.T) {
 	if err != nil {
 		t.Errorf("lbc.instancePool.List() = _, %v, want nil", err)
 	}
-	if diff := cmp.Diff([]string{instanceGroupName}, instanceGroups); diff != "" {
-		t.Errorf("lbc.instancePool.List()() mismatch (-want +got):\n%s", diff)
+	if len(instanceGroups) != 1 {
+		t.Errorf("len(instanceGroups) = %d, want %d", len(instanceGroups), 1)
+	}
+	if instanceGroups[0].Name != instanceGroupName {
+		t.Errorf("instanceGroups[0].Name = %s, want %s", instanceGroups[0].Name, instanceGroupName)
 	}
 
 	// Delete GCE ingress resource ing, ensure that instance group is not deleted.
@@ -656,8 +659,11 @@ func TestMCIngressIG(t *testing.T) {
 	if err != nil {
 		t.Errorf("lbc.instancePool.List() = _, %v, want nil", err)
 	}
-	if diff := cmp.Diff([]string{instanceGroupName}, instanceGroups); diff != "" {
-		t.Errorf("lbc.instancePool.List()() mismatch (-want +got):\n%s", diff)
+	if len(instanceGroups) != 1 {
+		t.Errorf("len(instanceGroups) = %d, want %d", len(instanceGroups), 1)
+	}
+	if instanceGroups[0].Name != instanceGroupName {
+		t.Errorf("instanceGroups[0].Name = %s, want %s", instanceGroups[0].Name, instanceGroupName)
 	}
 
 	// Delete GCE multi-cluster ingress mcIng and verify that instance group is deleted.
@@ -671,7 +677,7 @@ func TestMCIngressIG(t *testing.T) {
 	if err != nil {
 		t.Errorf("lbc.instancePool.List() = _, %v, want nil", err)
 	}
-	var wantInstanceGroups []string
+	var wantInstanceGroups []*compute.InstanceGroup
 	if diff := cmp.Diff(wantInstanceGroups, instanceGroups); diff != "" {
 		t.Errorf("lbc.instancePool.List()() mismatch (-want +got):\n%s", diff)
 	}

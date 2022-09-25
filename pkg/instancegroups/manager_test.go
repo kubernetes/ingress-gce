@@ -96,7 +96,7 @@ func TestNodePoolSync(t *testing.T) {
 
 		igName := defaultNamer.InstanceGroup()
 		ports := []int64{80}
-		_, err := pool.EnsureInstanceGroupsAndPorts(igName, ports)
+		_, err := pool.EnsureInstanceGroupsAndPorts(ports)
 		if err != nil {
 			t.Fatalf("pool.EnsureInstanceGroupsAndPorts(%s, %v) returned error %v, want nil", igName, ports, err)
 		}
@@ -186,7 +186,7 @@ func TestSetNamedPorts(t *testing.T) {
 		// TODO: Add tests to remove named ports when we support that.
 	}
 	for _, testCase := range testCases {
-		igs, err := pool.EnsureInstanceGroupsAndPorts("ig", testCase.activePorts)
+		igs, err := pool.EnsureInstanceGroupsAndPorts(testCase.activePorts)
 		if err != nil {
 			t.Fatalf("unexpected error in setting ports %v to instance group: %s", testCase.activePorts, err)
 		}

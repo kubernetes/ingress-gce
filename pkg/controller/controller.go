@@ -420,7 +420,7 @@ func (lbc *LoadBalancerController) SyncBackends(state interface{}) error {
 func (lbc *LoadBalancerController) syncInstanceGroup(ing *v1.Ingress, ingSvcPorts []utils.ServicePort) error {
 	nodePorts := nodePorts(ingSvcPorts)
 	klog.V(2).Infof("Syncing Instance Group for ingress %v/%v with nodeports %v", ing.Namespace, ing.Name, nodePorts)
-	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(lbc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
+	igs, err := lbc.instancePool.EnsureInstanceGroupsAndPorts(nodePorts)
 	if err != nil {
 		return err
 	}
@@ -467,7 +467,7 @@ func (lbc *LoadBalancerController) GCBackends(toKeep []*v1.Ingress) error {
 	if len(toKeep) == 0 {
 		igName := lbc.ctx.ClusterNamer.InstanceGroup()
 		klog.Infof("Deleting instance group %v", igName)
-		if err := lbc.instancePool.DeleteInstanceGroup(igName); err != err {
+		if err := lbc.instancePool.DeleteInstanceGroup(); err != err {
 			return err
 		}
 	}

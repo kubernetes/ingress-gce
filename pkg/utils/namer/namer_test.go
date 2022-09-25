@@ -133,6 +133,8 @@ func TestNameBelongsToCluster(t *testing.T) {
 			// short names
 			newNamer.IGBackend(80),
 			newNamer.InstanceGroup(),
+			newNamer.InstanceGroup() + "-1",
+			newNamer.InstanceGroup() + "-23",
 			newNamer.TargetProxy(lbName, HTTPProtocol),
 			newNamer.TargetProxy(lbName, HTTPSProtocol),
 			newNamer.SSLCertName("default/my-ing", secretHash),
@@ -278,6 +280,44 @@ func TestNamerInstanceGroup(t *testing.T) {
 	name = newNamer.InstanceGroup()
 	if name != "mci-ig--uid1" {
 		t.Errorf("newNamer.InstanceGroup() = %q, want %q", name, "mci-ig--uid1")
+	}
+}
+func TestNamerInstanceGroupByIndex(t *testing.T) {
+	namer := NewNamer("uid1", "fw1")
+	testCases := []struct {
+		index        int
+		expectedName string
+		desc         string
+	}{
+		{
+			index:        0,
+			expectedName: "k8s-ig--uid1",
+			desc:         "IG number 0 should not be suffixed",
+		},
+		{
+			index:        1,
+			expectedName: "k8s-ig--uid1-1",
+			desc:         "IG number 1 should be suffixed",
+		},
+		{
+			index:        2,
+			expectedName: "k8s-ig--uid1-2",
+			desc:         "IG number 2 should be suffixed",
+		},
+		{
+			index:        15,
+			expectedName: "k8s-ig--uid1-15",
+			desc:         "IG number 15 should be suffixed",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			name := namer.InstanceGroupByIndex(tc.index)
+			if tc.expectedName != name {
+				t.Errorf("Expected IG name: %s. Got %s", tc.expectedName, name)
+			}
+		})
 	}
 }
 

@@ -481,7 +481,7 @@ func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames
 	// TODO(kl52752) Move instance creation and deletion logic to NodeController
 	// to avoid race condition between controllers
 	nodePorts := utils.GetNodePorts(service.Spec.Ports)
-	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
+	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(nodePorts)
 	if err != nil {
 		return err
 	}
@@ -510,7 +510,7 @@ func (lc *L4NetLBController) garbageCollectRBSNetLB(key string, svc *v1.Service)
 
 	// Try to delete instance group, instancePool.DeleteInstanceGroup ignores errors if resource is in use or not found.
 	// TODO(cezarygerard) replace with multi-IG management
-	if err := lc.instancePool.DeleteInstanceGroup(lc.namer.InstanceGroup()); err != nil {
+	if err := lc.instancePool.DeleteInstanceGroup(); err != nil {
 		lc.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteInstanceGroupFailed",
 			"Error deleting delete Instance Group from L4 External LoadBalancer, err: %v", err)
 		result.Error = fmt.Errorf("Failed to delete Instance Group, err: %w", err)

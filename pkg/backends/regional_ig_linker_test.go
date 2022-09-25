@@ -73,7 +73,7 @@ func TestRegionalLink(t *testing.T) {
 	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{uscentralzone}); err == nil {
 		t.Fatalf("Linking when instances does not exist should return error")
 	}
-	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts([]int64{sp.NodePort}); err != nil {
 		t.Fatalf("Unexpected error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
 	if err := linker.Link(sp, fakeGCE.ProjectID(), []string{uscentralzone}); err == nil {
@@ -107,7 +107,7 @@ func TestRegionalUpdateLink(t *testing.T) {
 	sp := utils.ServicePort{NodePort: 8080, BackendNamer: l4Namer}
 	fakeBackendPool := NewPool(fakeGCE, l4Namer)
 	linker := newTestRegionalIgLinker(fakeGCE, fakeBackendPool, l4Namer)
-	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(l4Namer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts([]int64{sp.NodePort}); err != nil {
 		t.Fatalf("Unexpected error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
 	createBackendService(t, sp, fakeBackendPool)

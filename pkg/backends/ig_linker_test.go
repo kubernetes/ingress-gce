@@ -66,7 +66,7 @@ func TestLink(t *testing.T) {
 	sp := utils.ServicePort{NodePort: 8080, Protocol: annotations.ProtocolHTTP, BackendNamer: defaultNamer}
 
 	// Mimic the instance group being created
-	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+	if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts([]int64{sp.NodePort}); err != nil {
 		t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 	}
 
@@ -118,7 +118,7 @@ func TestLinkWithCreationModeError(t *testing.T) {
 		}
 
 		// Mimic the instance group being created
-		if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts(defaultNamer.InstanceGroup(), []int64{sp.NodePort}); err != nil {
+		if _, err := linker.instancePool.EnsureInstanceGroupsAndPorts([]int64{sp.NodePort}); err != nil {
 			t.Fatalf("Did not expect error when ensuring IG for ServicePort %+v: %v", sp, err)
 		}
 

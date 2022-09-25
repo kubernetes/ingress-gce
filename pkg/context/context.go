@@ -208,14 +208,25 @@ func NewControllerContext(
 		context.UseEndpointSlices,
 		context.KubeClient,
 	)
-	context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
-		Cloud:      context.Cloud,
-		Namer:      context.ClusterNamer,
-		Recorders:  context,
-		BasePath:   utils.GetBasePath(context.Cloud),
-		ZoneLister: context.Translator,
-		MaxIGSize:  config.MaxIGSize,
-	})
+	if flags.F.EnableMultipleIGs {
+		context.InstancePool = instancegroups.NewMultiIGManager(&instancegroups.MultiIGManagerConfig{
+			Cloud:      context.Cloud,
+			Namer:      context.ClusterNamer,
+			Recorders:  context,
+			BasePath:   utils.GetBasePath(context.Cloud),
+			ZoneLister: context.Translator,
+			MaxIGSize:  config.MaxIGSize,
+		})
+	} else {
+		context.InstancePool = instancegroups.NewManager(&instancegroups.ManagerConfig{
+			Cloud:      context.Cloud,
+			Namer:      context.ClusterNamer,
+			Recorders:  context,
+			BasePath:   utils.GetBasePath(context.Cloud),
+			ZoneLister: context.Translator,
+			MaxIGSize:  config.MaxIGSize,
+		})
+	}
 
 	return context
 }
