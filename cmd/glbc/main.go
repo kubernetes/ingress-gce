@@ -191,6 +191,7 @@ func main() {
 		Namespace:             flags.F.WatchNamespace,
 		ResyncPeriod:          flags.F.ResyncPeriod,
 		NumL4Workers:          flags.F.NumL4Workers,
+		NumL4NetLBWorkers:     flags.F.NumL4NetLBWorkers,
 		DefaultBackendSvcPort: defaultBackendServicePort,
 		HealthCheckPath:       flags.F.HealthCheckPath,
 		FrontendConfigEnabled: flags.F.EnableFrontendConfig,

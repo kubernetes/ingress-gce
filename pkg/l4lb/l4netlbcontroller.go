@@ -66,9 +66,9 @@ type L4NetLBController struct {
 func NewL4NetLBController(
 	ctx *context.ControllerContext,
 	stopCh chan struct{}) *L4NetLBController {
-	if ctx.NumL4Workers <= 0 {
-		klog.Infof("L4 Worker count has not been set, setting to 1")
-		ctx.NumL4Workers = 1
+	if ctx.NumL4NetLBWorkers <= 0 {
+		klog.Infof("External L4 worker count has not been set, setting to 1")
+		ctx.NumL4NetLBWorkers = 1
 	}
 
 	backendPool := backends.NewPool(ctx.Cloud, ctx.L4Namer)
@@ -84,7 +84,7 @@ func NewL4NetLBController(
 		igLinker:        backends.NewRegionalInstanceGroupLinker(ctx.InstancePool, backendPool),
 		forwardingRules: forwardingrules.New(ctx.Cloud, meta.VersionGA, meta.Regional),
 	}
-	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4Workers, l4netLBc.sync)
+	l4netLBc.svcQueue = utils.NewPeriodicTaskQueueWithMultipleWorkers("l4netLB", "services", ctx.NumL4NetLBWorkers, l4netLBc.sync)
 
 	ctx.ServiceInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {

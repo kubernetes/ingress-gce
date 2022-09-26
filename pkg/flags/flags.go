@@ -84,6 +84,7 @@ var (
 		ResyncPeriod                     time.Duration
 		L4NetLBProvisionDeadline         time.Duration
 		NumL4Workers                     int
+		NumL4NetLBWorkers                int
 		NumIngressWorkers                int
 		RunIngressController             bool
 		RunL4Controller                  bool
@@ -209,7 +210,9 @@ the pod secrets for creating a Kubernetes client.`)
 	flag.DurationVar(&F.L4NetLBProvisionDeadline, "l4-netlb-provision-deadline", 20*time.Minute,
 		`Deadline latency for L4 NetLB provisioning.`)
 	flag.IntVar(&F.NumL4Workers, "num-l4-workers", 5,
-		`Number of parallel L4 Service worker goroutines.`)
+		`Number of parallel L4 Internal Load Balancer Service worker goroutines.`)
+	flag.IntVar(&F.NumL4NetLBWorkers, "num-l4-net-workers", 5,
+		`Number of parallel L4 External Load Balancer Service worker goroutines.`)
 	flag.IntVar(&F.NumIngressWorkers, "num-ingress-workers", 1,
 		`Number of Ingress sync-queue worker goroutines.`)
 	flag.StringVar(&F.WatchNamespace, "watch-namespace", v1.NamespaceAll,

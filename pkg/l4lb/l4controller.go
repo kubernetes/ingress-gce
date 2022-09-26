@@ -76,7 +76,7 @@ type L4Controller struct {
 // NewILBController creates a new instance of the L4 ILB controller.
 func NewILBController(ctx *context.ControllerContext, stopCh chan struct{}) *L4Controller {
 	if ctx.NumL4Workers <= 0 {
-		klog.Infof("L4 Worker count has not been set, setting to 1")
+		klog.Infof("L4 Internal LB Service worker count has not been set, setting to 1")
 		ctx.NumL4Workers = 1
 	}
 	l4c := &L4Controller{
