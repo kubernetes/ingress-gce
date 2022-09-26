@@ -123,9 +123,10 @@ type ControllerContext struct {
 
 // ControllerContextConfig encapsulates some settings that are tunable via command line flags.
 type ControllerContextConfig struct {
-	Namespace    string
-	ResyncPeriod time.Duration
-	NumL4Workers int
+	Namespace         string
+	ResyncPeriod      time.Duration
+	NumL4Workers      int
+	NumL4NetLBWorkers int
 	// DefaultBackendSvcPortID is the ServicePort for the system default backend.
 	DefaultBackendSvcPort utils.ServicePort
 	HealthCheckPath       string
