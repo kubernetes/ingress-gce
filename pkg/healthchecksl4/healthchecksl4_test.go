@@ -27,7 +27,7 @@ import (
 
 func TestMergeHealthChecks(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
+	testCases := []struct {
 		desc                   string
 		checkIntervalSec       int64
 		timeoutSec             int64
@@ -38,16 +38,107 @@ func TestMergeHealthChecks(t *testing.T) {
 		wantHealthyThreshold   int64
 		wantUnhealthyThreshold int64
 	}{
-		{"unchanged", gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold, gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold},
-		{"interval - too small - should reconcile", gceHcCheckIntervalSeconds - 1, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold, gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold},
-		{"timeout - too small - should reconcile", gceHcCheckIntervalSeconds, gceHcTimeoutSeconds - 1, gceHcHealthyThreshold, gceHcUnhealthyThreshold, gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold},
-		{"healthy threshold - too small - should reconcile", gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold - 1, gceHcUnhealthyThreshold, gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold},
-		{"unhealthy threshold - too small - should reconcile", gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold - 1, gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold},
-		{"interval - user configured - should keep", gceHcCheckIntervalSeconds + 1, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold, gceHcCheckIntervalSeconds + 1, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold},
-		{"timeout - user configured - should keep", gceHcCheckIntervalSeconds, gceHcTimeoutSeconds + 1, gceHcHealthyThreshold, gceHcUnhealthyThreshold, gceHcCheckIntervalSeconds, gceHcTimeoutSeconds + 1, gceHcHealthyThreshold, gceHcUnhealthyThreshold},
-		{"healthy threshold - user configured - should keep", gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold + 1, gceHcUnhealthyThreshold, gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold + 1, gceHcUnhealthyThreshold},
-		{"unhealthy threshold - user configured - should keep", gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold + 1, gceHcCheckIntervalSeconds, gceHcTimeoutSeconds, gceHcHealthyThreshold, gceHcUnhealthyThreshold + 1},
-	} {
+		{
+			desc:                   "unchanged",
+			checkIntervalSec:       gceLocalHcCheckIntervalSeconds,
+			timeoutSec:             gceHcTimeoutSeconds,
+			healthyThreshold:       gceHcHealthyThreshold,
+			unhealthyThreshold:     gceLocalHcUnhealthyThreshold,
+			wantCheckIntervalSec:   gceLocalHcCheckIntervalSeconds,
+			wantTimeoutSec:         gceHcTimeoutSeconds,
+			wantHealthyThreshold:   gceHcHealthyThreshold,
+			wantUnhealthyThreshold: gceLocalHcUnhealthyThreshold,
+		},
+		{
+			desc:                   "interval - too small - should reconcile",
+			checkIntervalSec:       gceLocalHcCheckIntervalSeconds - 1,
+			timeoutSec:             gceHcTimeoutSeconds,
+			healthyThreshold:       gceHcHealthyThreshold,
+			unhealthyThreshold:     gceLocalHcUnhealthyThreshold,
+			wantCheckIntervalSec:   gceLocalHcCheckIntervalSeconds,
+			wantTimeoutSec:         gceHcTimeoutSeconds,
+			wantHealthyThreshold:   gceHcHealthyThreshold,
+			wantUnhealthyThreshold: gceLocalHcUnhealthyThreshold,
+		},
+		{
+			desc:                   "timeout - too small - should reconcile",
+			checkIntervalSec:       gceLocalHcCheckIntervalSeconds,
+			timeoutSec:             gceHcTimeoutSeconds - 1,
+			healthyThreshold:       gceHcHealthyThreshold,
+			unhealthyThreshold:     gceLocalHcUnhealthyThreshold,
+			wantCheckIntervalSec:   gceLocalHcCheckIntervalSeconds,
+			wantTimeoutSec:         gceHcTimeoutSeconds,
+			wantHealthyThreshold:   gceHcHealthyThreshold,
+			wantUnhealthyThreshold: gceLocalHcUnhealthyThreshold,
+		},
+		{
+			desc:                   "healthy threshold - too small - should reconcil",
+			checkIntervalSec:       gceLocalHcCheckIntervalSeconds,
+			timeoutSec:             gceHcTimeoutSeconds,
+			healthyThreshold:       gceHcHealthyThreshold - 1,
+			unhealthyThreshold:     gceLocalHcUnhealthyThreshold,
+			wantCheckIntervalSec:   gceLocalHcCheckIntervalSeconds,
+			wantTimeoutSec:         gceHcTimeoutSeconds,
+			wantHealthyThreshold:   gceHcHealthyThreshold,
+			wantUnhealthyThreshold: gceLocalHcUnhealthyThreshold,
+		},
+		{
+			desc:                   "unhealthy threshold - too small - should reconcile",
+			checkIntervalSec:       gceLocalHcCheckIntervalSeconds,
+			timeoutSec:             gceHcTimeoutSeconds,
+			healthyThreshold:       gceHcHealthyThreshold,
+			unhealthyThreshold:     gceLocalHcUnhealthyThreshold - 1,
+			wantCheckIntervalSec:   gceLocalHcCheckIntervalSeconds,
+			wantTimeoutSec:         gceHcTimeoutSeconds,
+			wantHealthyThreshold:   gceHcHealthyThreshold,
+			wantUnhealthyThreshold: gceLocalHcUnhealthyThreshold,
+		},
+		{
+			desc:                   "interval - user configured - should keep",
+			checkIntervalSec:       gceLocalHcCheckIntervalSeconds + 1,
+			timeoutSec:             gceHcTimeoutSeconds,
+			healthyThreshold:       gceHcHealthyThreshold,
+			unhealthyThreshold:     gceLocalHcUnhealthyThreshold,
+			wantCheckIntervalSec:   gceLocalHcCheckIntervalSeconds + 1,
+			wantTimeoutSec:         gceHcTimeoutSeconds,
+			wantHealthyThreshold:   gceHcHealthyThreshold,
+			wantUnhealthyThreshold: gceLocalHcUnhealthyThreshold,
+		},
+		{
+			desc:                   "timeout - user configured - should keep",
+			checkIntervalSec:       gceLocalHcCheckIntervalSeconds,
+			timeoutSec:             gceHcTimeoutSeconds + 1,
+			healthyThreshold:       gceHcHealthyThreshold,
+			unhealthyThreshold:     gceLocalHcUnhealthyThreshold,
+			wantCheckIntervalSec:   gceLocalHcCheckIntervalSeconds,
+			wantTimeoutSec:         gceHcTimeoutSeconds + 1,
+			wantHealthyThreshold:   gceHcHealthyThreshold,
+			wantUnhealthyThreshold: gceLocalHcUnhealthyThreshold,
+		},
+		{
+			desc:                   "healthy threshold - user configured - should keep",
+			checkIntervalSec:       gceLocalHcCheckIntervalSeconds,
+			timeoutSec:             gceHcTimeoutSeconds,
+			healthyThreshold:       gceHcHealthyThreshold + 1,
+			unhealthyThreshold:     gceLocalHcUnhealthyThreshold,
+			wantCheckIntervalSec:   gceLocalHcCheckIntervalSeconds,
+			wantTimeoutSec:         gceHcTimeoutSeconds,
+			wantHealthyThreshold:   gceHcHealthyThreshold + 1,
+			wantUnhealthyThreshold: gceLocalHcUnhealthyThreshold,
+		},
+		{
+			desc:                   "unhealthy threshold - user configured - should keep",
+			checkIntervalSec:       gceLocalHcCheckIntervalSeconds,
+			timeoutSec:             gceHcTimeoutSeconds,
+			healthyThreshold:       gceHcHealthyThreshold,
+			unhealthyThreshold:     gceLocalHcUnhealthyThreshold + 1,
+			wantCheckIntervalSec:   gceLocalHcCheckIntervalSeconds,
+			wantTimeoutSec:         gceHcTimeoutSeconds,
+			wantHealthyThreshold:   gceHcHealthyThreshold,
+			wantUnhealthyThreshold: gceLocalHcUnhealthyThreshold + 1,
+		},
+	}
+	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			// healthcheck intervals and thresholds are common for Global and Regional healthchecks. Hence testing only Global case.
 			wantHC := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
@@ -76,25 +167,78 @@ func TestMergeHealthChecks(t *testing.T) {
 
 func TestCompareHealthChecks(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
+	testCases := []struct {
 		desc        string
 		modifier    func(*composite.HealthCheck)
 		wantChanged bool
 	}{
-		{"unchanged", nil, false},
-		{"nil HttpHealthCheck", func(hc *composite.HealthCheck) { hc.HttpHealthCheck = nil }, true},
-		{"desc does not match", func(hc *composite.HealthCheck) { hc.Description = "bad-desc" }, true},
-		{"port does not match", func(hc *composite.HealthCheck) { hc.HttpHealthCheck.Port = 54321 }, true},
-		{"requestPath does not match", func(hc *composite.HealthCheck) { hc.HttpHealthCheck.RequestPath = "/anotherone" }, true},
-		{"interval needs update", func(hc *composite.HealthCheck) { hc.CheckIntervalSec = gceHcCheckIntervalSeconds - 1 }, true},
-		{"timeout needs update", func(hc *composite.HealthCheck) { hc.TimeoutSec = gceHcTimeoutSeconds - 1 }, true},
-		{"healthy threshold needs update", func(hc *composite.HealthCheck) { hc.HealthyThreshold = gceHcHealthyThreshold - 1 }, true},
-		{"unhealthy threshold needs update", func(hc *composite.HealthCheck) { hc.UnhealthyThreshold = gceHcUnhealthyThreshold - 1 }, true},
-		{"interval does not need update", func(hc *composite.HealthCheck) { hc.CheckIntervalSec = gceHcCheckIntervalSeconds + 1 }, false},
-		{"timeout does not need update", func(hc *composite.HealthCheck) { hc.TimeoutSec = gceHcTimeoutSeconds + 1 }, false},
-		{"healthy threshold does not need update", func(hc *composite.HealthCheck) { hc.HealthyThreshold = gceHcHealthyThreshold + 1 }, false},
-		{"unhealthy threshold does not need update", func(hc *composite.HealthCheck) { hc.UnhealthyThreshold = gceHcUnhealthyThreshold + 1 }, false},
-	} {
+		{
+			desc:        "unchanged",
+			modifier:    nil,
+			wantChanged: false,
+		},
+		{
+			desc:        "nil HttpHealthCheck",
+			modifier:    func(hc *composite.HealthCheck) { hc.HttpHealthCheck = nil },
+			wantChanged: true,
+		},
+		{
+			desc:        "desc does not match",
+			modifier:    func(hc *composite.HealthCheck) { hc.Description = "bad-desc" },
+			wantChanged: true,
+		},
+		{
+			desc:        "port does not match",
+			modifier:    func(hc *composite.HealthCheck) { hc.HttpHealthCheck.Port = 54321 },
+			wantChanged: true,
+		},
+		{
+			desc:        "requestPath does not match",
+			modifier:    func(hc *composite.HealthCheck) { hc.HttpHealthCheck.RequestPath = "/anotherone" },
+			wantChanged: true,
+		},
+		{
+			desc:        "interval needs update",
+			modifier:    func(hc *composite.HealthCheck) { hc.CheckIntervalSec = gceLocalHcCheckIntervalSeconds - 1 },
+			wantChanged: true,
+		},
+		{
+			desc:        "timeout needs update",
+			modifier:    func(hc *composite.HealthCheck) { hc.TimeoutSec = gceHcTimeoutSeconds - 1 },
+			wantChanged: true,
+		},
+		{
+			desc:        "healthy threshold needs update",
+			modifier:    func(hc *composite.HealthCheck) { hc.HealthyThreshold = gceHcHealthyThreshold - 1 },
+			wantChanged: true,
+		},
+		{
+			desc:        "unhealthy threshold needs update",
+			modifier:    func(hc *composite.HealthCheck) { hc.UnhealthyThreshold = gceLocalHcUnhealthyThreshold - 1 },
+			wantChanged: true,
+		},
+		{
+			desc:        "interval does not need update",
+			modifier:    func(hc *composite.HealthCheck) { hc.CheckIntervalSec = gceLocalHcCheckIntervalSeconds + 1 },
+			wantChanged: false,
+		},
+		{
+			desc:        "timeout does not need update",
+			modifier:    func(hc *composite.HealthCheck) { hc.TimeoutSec = gceHcTimeoutSeconds + 1 },
+			wantChanged: false,
+		},
+		{
+			desc:        "healthy threshold does not need update",
+			modifier:    func(hc *composite.HealthCheck) { hc.HealthyThreshold = gceHcHealthyThreshold + 1 },
+			wantChanged: false,
+		},
+		{
+			desc:        "unhealthy threshold does not need update",
+			modifier:    func(hc *composite.HealthCheck) { hc.UnhealthyThreshold = gceLocalHcUnhealthyThreshold + 1 },
+			wantChanged: false,
+		},
+	}
+	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			// healthcheck intervals and thresholds are common for Global and Regional healthchecks. Hence testing only Global case.
 			hc := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, false, "/", 12345, utils.ILB, meta.Global, "")
@@ -104,6 +248,100 @@ func TestCompareHealthChecks(t *testing.T) {
 			}
 			if gotChanged := needToUpdateHealthChecks(hc, wantHC); gotChanged != tc.wantChanged {
 				t.Errorf("needToUpdateHealthChecks(%#v, %#v) = %t; want changed = %t", hc, wantHC, gotChanged, tc.wantChanged)
+			}
+		})
+	}
+}
+
+func TestHealthcheckInterval(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc                 string
+		shared               bool
+		wantCheckIntervalSec int64
+	}{
+		{
+			desc:                 "shared - check interval function",
+			shared:               true,
+			wantCheckIntervalSec: gceSharedHcCheckIntervalSeconds,
+		},
+		{
+			desc:                 "local - check interval function",
+			shared:               false,
+			wantCheckIntervalSec: gceLocalHcCheckIntervalSeconds,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			gotInterval := healthcheckInterval(tc.shared)
+			if gotInterval != tc.wantCheckIntervalSec {
+				t.Errorf("got Health Check Interval: %d, want: %d", gotInterval, tc.wantCheckIntervalSec)
+			}
+		})
+	}
+}
+
+func TestHealthcheckUnhealthyThreshold(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		desc                   string
+		shared                 bool
+		wantUnhealthyThreshold int64
+	}{
+		{
+			desc:                   "shared - check unhealthy threshold function",
+			shared:                 true,
+			wantUnhealthyThreshold: gceSharedHcUnhealthyThreshold,
+		},
+		{
+			desc:                   "local - check unhealthy threshold function",
+			shared:                 false,
+			wantUnhealthyThreshold: gceLocalHcUnhealthyThreshold,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			gotUnhealthyThreshold := healthcheckUnhealthyThreshold(tc.shared)
+			if gotUnhealthyThreshold != tc.wantUnhealthyThreshold {
+				t.Errorf("got Unhealthy Threshold: %d, want: %d", gotUnhealthyThreshold, tc.wantUnhealthyThreshold)
+			}
+		})
+	}
+}
+
+// Checks that newL4HealthCheck() returns correct CheckInterval and UnhealthyThreshold
+func TestSharedHealthChecks(t *testing.T) {
+
+	t.Parallel()
+	testCases := []struct {
+		desc                   string
+		shared                 bool
+		wantCheckIntervalSec   int64
+		wantUnhealthyThreshold int64
+	}{
+		{
+			desc:                   "shared - check interval and unhealthy threshold",
+			shared:                 true,
+			wantCheckIntervalSec:   gceSharedHcCheckIntervalSeconds,
+			wantUnhealthyThreshold: gceSharedHcUnhealthyThreshold,
+		},
+		{
+			desc:                   "local - check interval and unhealthy threshold",
+			shared:                 false,
+			wantCheckIntervalSec:   gceLocalHcCheckIntervalSeconds,
+			wantUnhealthyThreshold: gceLocalHcUnhealthyThreshold,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			// healthcheck intervals and thresholds are common for Global and Regional healthchecks. Hence testing only Global case.
+			gotHC := newL4HealthCheck("hc", types.NamespacedName{Name: "svc", Namespace: "default"}, tc.shared, "/", 12345, utils.ILB, meta.Global, "")
+			if gotHC.CheckIntervalSec != tc.wantCheckIntervalSec {
+				t.Errorf("gotHC.CheckIntervalSec = %d; want %d", gotHC.CheckIntervalSec, tc.wantCheckIntervalSec)
+			}
+			if gotHC.UnhealthyThreshold != tc.wantUnhealthyThreshold {
+				t.Errorf("gotHC.UnhealthyThreshold = %d; want %d", gotHC.UnhealthyThreshold, tc.wantUnhealthyThreshold)
 			}
 		})
 	}
