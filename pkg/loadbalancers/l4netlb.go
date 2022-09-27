@@ -255,7 +255,7 @@ func (l4netlb *L4NetLB) createFirewalls(name string, nodeNames []string, ipAddre
 		PortRanges:        portRanges,
 		SourceRanges:      sourceRanges.StringSlice(),
 		DestinationRanges: []string{ipAddress},
-		Protocol:          string(protocol),
+		Protocol:          protocol,
 		Name:              name,
 		IP:                l4netlb.Service.Spec.LoadBalancerIP,
 		NodeNames:         nodeNames,

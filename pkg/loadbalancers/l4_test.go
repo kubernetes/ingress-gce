@@ -20,11 +20,9 @@ import (
 	"context"
 	"fmt"
 	"reflect"
-	"sort"
 	"strings"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
@@ -325,7 +323,9 @@ func TestEnsureInternalLoadBalancerClearPreviousResources(t *testing.T) {
 			},
 		},
 	}
-	fakeGCE.CreateFirewall(existingFirewall)
+	if err = fakeGCE.CreateFirewall(existingFirewall); err != nil {
+		t.Errorf("fakeGCE.CreateFirewall(%v) returned error %v", existingFirewall, err)
+	}
 
 	sharedHealthCheck := !servicehelper.RequestsOnlyLocalTraffic(svc)
 	hcName := l4.namer.L4HealthCheck(svc.Namespace, svc.Name, sharedHealthCheck)
@@ -628,17 +628,13 @@ func TestEnsureInternalLoadBalancerDeletedWithSharedHC(t *testing.T) {
 	nodeNames := []string{"test-node-1"}
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
 
-	_, _, result := ensureService(fakeGCE, namer, nodeNames, vals.ZoneName, 8080, t)
-	if result != nil && result.Error != nil {
-		t.Fatalf("Error ensuring service err: %v", result.Error)
-	}
-	svc2, l4, result := ensureService(fakeGCE, namer, nodeNames, vals.ZoneName, 8081, t)
+	svc, l4, result := ensureService(fakeGCE, namer, nodeNames, vals.ZoneName, 8080, t)
 	if result != nil && result.Error != nil {
 		t.Fatalf("Error ensuring service err: %v", result.Error)
 	}
 
 	// Delete the loadbalancer.
-	result = l4.EnsureInternalLoadBalancerDeleted(svc2)
+	result = l4.EnsureInternalLoadBalancerDeleted(svc)
 	if result.Error != nil {
 		t.Errorf("Unexpected error %v", result.Error)
 	}
@@ -678,7 +674,7 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 	if len(xlbResult.Status.Ingress) == 0 {
 		t.Errorf("Got empty loadBalancer status using handler %v", l4NetLB)
 	}
-	assertNetLbResources(t, netlbSvc, l4NetLB, nodeNames)
+	assertNetLBResources(t, l4NetLB, nodeNames)
 
 	// Delete the ILB loadbalancer
 	result = l4.EnsureInternalLoadBalancerDeleted(ilbSvc)
@@ -705,7 +701,7 @@ func TestHealthCheckFirewallDeletionWithNetLB(t *testing.T) {
 }
 
 func ensureService(fakeGCE *gce.Cloud, namer *namer_util.L4Namer, nodeNames []string, zoneName string, port int, t *testing.T) (*v1.Service, *L4, *L4ILBSyncResult) {
-	svc := test.NewL4ILBService(false, 8080)
+	svc := test.NewL4ILBService(false, port)
 
 	l4ilbParams := &L4ILBParams{
 		Service:  svc,
@@ -1392,29 +1388,29 @@ func TestEnsureInternalLoadBalancerAllPorts(t *testing.T) {
 func assertILBResources(t *testing.T, l4 *L4, nodeNames []string, resourceAnnotations map[string]string) {
 	t.Helper()
 
-	err := verifyNodesFirewall(l4, nodeNames)
+	err := verifyILBNodesFirewall(l4, nodeNames)
 	if err != nil {
-		t.Errorf("verifyNodesFirewall(_, %v) returned error %v, want nil", nodeNames, err)
+		t.Errorf("verifyILBNodesFirewall(_, %v) returned error %v, want nil", nodeNames, err)
 	}
 
-	err = verifyHealthCheckFirewall(l4, nodeNames)
+	err = verifyILBHealthCheckFirewall(l4, nodeNames)
 	if err != nil {
-		t.Errorf("verifyHealthCheckFirewall(_, %v) returned error %v, want nil", nodeNames, err)
+		t.Errorf("verifyILBHealthCheckFirewall(_, %v) returned error %v, want nil", nodeNames, err)
 	}
 
-	healthCheck, err := getAndVerifyHealthCheck(l4)
+	healthCheck, err := getAndVerifyILBHealthCheck(l4)
 	if err != nil {
-		t.Errorf("getAndVerifyHealthCheck(_) returned error %v, want nil", err)
+		t.Errorf("getAndVerifyILBHealthCheck(_) returned error %v, want nil", err)
 	}
 
-	backendService, err := getAndVerifyBackendService(l4, healthCheck)
+	backendService, err := getAndVerifyILBBackendService(l4, healthCheck)
 	if err != nil {
-		t.Errorf("getAndVerifyBackendService(_, %v) returned error %v, want nil", healthCheck, err)
+		t.Errorf("getAndVerifyILBBackendService(_, %v) returned error %v, want nil", healthCheck, err)
 	}
 
-	err = verifyForwardingRule(l4, backendService.SelfLink)
+	err = verifyILBForwardingRule(l4, backendService.SelfLink)
 	if err != nil {
-		t.Errorf("verifyForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
+		t.Errorf("getAndVerifyILBForwardingRule(_, %s) returned error %v, want nil", backendService.SelfLink, err)
 	}
 
 	expectedAnnotations := buildExpectedAnnotations(l4)
@@ -1423,7 +1419,7 @@ func assertILBResources(t *testing.T, l4 *L4, nodeNames []string, resourceAnnota
 	}
 }
 
-func getAndVerifyHealthCheck(l4 *L4) (*composite.HealthCheck, error) {
+func getAndVerifyILBHealthCheck(l4 *L4) (*composite.HealthCheck, error) {
 	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
 	hcName := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, isSharedHC)
 
@@ -1446,7 +1442,7 @@ func getAndVerifyHealthCheck(l4 *L4) (*composite.HealthCheck, error) {
 	return healthcheck, nil
 }
 
-func getAndVerifyBackendService(l4 *L4, healthCheck *composite.HealthCheck) (*composite.BackendService, error) {
+func getAndVerifyILBBackendService(l4 *L4, healthCheck *composite.HealthCheck) (*composite.BackendService, error) {
 	backendServiceName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
 	key := meta.RegionalKey(backendServiceName, l4.cloud.Region())
 	bs, err := composite.GetBackendService(l4.cloud, key, meta.VersionGA)
@@ -1476,7 +1472,7 @@ func getAndVerifyBackendService(l4 *L4, healthCheck *composite.HealthCheck) (*co
 	return bs, nil
 }
 
-func verifyForwardingRule(l4 *L4, backendServiceLink string) error {
+func verifyILBForwardingRule(l4 *L4, backendServiceLink string) error {
 	frName := l4.GetFRName()
 	fwdRule, err := composite.GetForwardingRule(l4.cloud, meta.RegionalKey(frName, l4.cloud.Region()), meta.VersionGA)
 	if err != nil {
@@ -1484,6 +1480,9 @@ func verifyForwardingRule(l4 *L4, backendServiceLink string) error {
 	}
 	if fwdRule.Name != frName {
 		return fmt.Errorf("unexpected name for forwarding rule '%s' - expected '%s'", fwdRule.Name, frName)
+	}
+	if fwdRule.LoadBalancingScheme != string(cloud.SchemeInternal) {
+		return fmt.Errorf("unexpected LoadBalancingScheme for forwarding rule '%s' - expected '%s'", fwdRule.LoadBalancingScheme, cloud.SchemeInternal)
 	}
 
 	proto := utils.GetProtocol(l4.Service.Spec.Ports)
@@ -1514,7 +1513,7 @@ func verifyForwardingRule(l4 *L4, backendServiceLink string) error {
 	return nil
 }
 
-func verifyNodesFirewall(l4 *L4, nodeNames []string) error {
+func verifyILBNodesFirewall(l4 *L4, nodeNames []string) error {
 	fwName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
 	fwDesc, err := utils.MakeL4LBServiceDescription(utils.ServiceKeyFunc(l4.Service.Namespace, l4.Service.Name), "", meta.VersionGA, false, utils.ILB)
 	if err != nil {
@@ -1525,10 +1524,10 @@ func verifyNodesFirewall(l4 *L4, nodeNames []string) error {
 	if err != nil {
 		return fmt.Errorf("servicehelper.GetLoadBalancerSourceRanges(%+v) returned error %v, want nil", l4.Service, err)
 	}
-	return verifyFirewall(l4, nodeNames, fwName, fwDesc, sourceRanges.StringSlice())
+	return verifyFirewall(l4.cloud, nodeNames, fwName, fwDesc, sourceRanges.StringSlice())
 }
 
-func verifyHealthCheckFirewall(l4 *L4, nodeNames []string) error {
+func verifyILBHealthCheckFirewall(l4 *L4, nodeNames []string) error {
 	isSharedHC := !servicehelper.RequestsOnlyLocalTraffic(l4.Service)
 
 	hcFwName := l4.namer.L4HealthCheckFirewall(l4.Service.Namespace, l4.Service.Name, isSharedHC)
@@ -1537,26 +1536,7 @@ func verifyHealthCheckFirewall(l4 *L4, nodeNames []string) error {
 		return fmt.Errorf("failed to calculate decsription for health check for service %v, error %v", l4.Service, err)
 	}
 
-	return verifyFirewall(l4, nodeNames, hcFwName, hcFwDesc, gce.L4LoadBalancerSrcRanges())
-}
-
-func verifyFirewall(l4 *L4, nodeNames []string, firewallName, expectedDescription string, expectedSourceRanges []string) error {
-	firewall, err := l4.cloud.GetFirewall(firewallName)
-	if err != nil {
-		return fmt.Errorf("failed to fetch firewall rule %q - err %w", firewallName, err)
-	}
-	if !utils.EqualStringSets(nodeNames, firewall.TargetTags) {
-		return fmt.Errorf("expected firewall rule target tags '%v', Got '%v'", nodeNames, firewall.TargetTags)
-	}
-	sort.Strings(expectedSourceRanges)
-	sort.Strings(firewall.SourceRanges)
-	if diff := cmp.Diff(expectedSourceRanges, firewall.SourceRanges); diff != "" {
-		return fmt.Errorf("expected firewall source ranges %v, got %v, diff %v", expectedSourceRanges, firewall.SourceRanges, diff)
-	}
-	if firewall.Description != expectedDescription {
-		return fmt.Errorf("unexpected description in firewall %q - Expected %s, Got %s", firewallName, expectedDescription, firewall.Description)
-	}
-	return nil
+	return verifyFirewall(l4.cloud, nodeNames, hcFwName, hcFwDesc, gce.L4LoadBalancerSrcRanges())
 }
 
 func buildExpectedAnnotations(l4 *L4) map[string]string {
@@ -1600,77 +1580,37 @@ func assertILBResourcesDeleted(t *testing.T, l4 *L4) {
 	}
 
 	for _, fwName := range fwNames {
-		err := verifyFirewallNotExists(l4, fwName)
+		err := verifyFirewallNotExists(l4.cloud, fwName)
 		if err != nil {
 			t.Errorf("verifyFirewallNotExists(_, %s) returned error %v, want nil", fwName, err)
 		}
 	}
 
 	frName := l4.GetFRName()
-	err := verifyForwardingRuleNotExists(l4, frName)
+	err := verifyForwardingRuleNotExists(l4.cloud, frName)
 	if err != nil {
 		t.Errorf("verifyForwardingRuleNotExists(_, %s) returned error %v, want nil", frName, err)
 	}
 
 	hcNameShared := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, true)
-	err = verifyHealthCheckNotExists(l4, hcNameShared)
+	err = verifyHealthCheckNotExists(l4.cloud, hcNameShared, meta.Global)
 	if err != nil {
 		t.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameShared)
 	}
 
 	hcNameNonShared := l4.namer.L4HealthCheck(l4.Service.Namespace, l4.Service.Name, false)
-	err = verifyHealthCheckNotExists(l4, hcNameNonShared)
+	err = verifyHealthCheckNotExists(l4.cloud, hcNameNonShared, meta.Global)
 	if err != nil {
 		t.Errorf("verifyHealthCheckNotExists(_, %s)", hcNameNonShared)
 	}
 
-	err = verifyBackendServiceNotExists(l4, nodesFwName)
+	err = verifyBackendServiceNotExists(l4.cloud, nodesFwName)
 	if err != nil {
 		t.Errorf("verifyBackendServiceNotExists(_, %s)", nodesFwName)
 	}
 
-	err = verifyAddressNotExists(l4, frName)
+	err = verifyAddressNotExists(l4.cloud, frName)
 	if err != nil {
 		t.Errorf("verifyAddressNotExists(_, %s)", frName)
 	}
-}
-
-func verifyFirewallNotExists(l4 *L4, fwName string) error {
-	firewall, err := l4.cloud.GetFirewall(fwName)
-	if !utils.IsNotFoundError(err) || firewall != nil {
-		return fmt.Errorf("firewall %s exists, expected not", fwName)
-	}
-	return nil
-}
-
-func verifyForwardingRuleNotExists(l4 *L4, frName string) error {
-	fwdRule, err := l4.cloud.GetRegionForwardingRule(frName, l4.cloud.Region())
-	if !utils.IsNotFoundError(err) || fwdRule != nil {
-		return fmt.Errorf("forwarding rule %s exists, expected not", frName)
-	}
-	return nil
-}
-
-func verifyHealthCheckNotExists(l4 *L4, hcName string) error {
-	healthCheck, err := l4.cloud.GetHealthCheck(hcName)
-	if !utils.IsNotFoundError(err) || healthCheck != nil {
-		return fmt.Errorf("health check %s exists, expected not", hcName)
-	}
-	return nil
-}
-
-func verifyBackendServiceNotExists(l4 *L4, bsName string) error {
-	bs, err := l4.cloud.GetRegionBackendService(bsName, l4.cloud.Region())
-	if !utils.IsNotFoundError(err) || bs != nil {
-		return fmt.Errorf("backend service %s exists, expected not", bsName)
-	}
-	return nil
-}
-
-func verifyAddressNotExists(l4 *L4, addressName string) error {
-	addr, err := l4.cloud.GetRegionAddress(addressName, l4.cloud.Region())
-	if !utils.IsNotFoundError(err) || addr != nil {
-		return fmt.Errorf("address %s exists, expected not", addressName)
-	}
-	return nil
 }
