@@ -82,23 +82,31 @@ func (r *L4NetLBSyncResult) SetMetricsForSuccessfulServiceSync() {
 	r.MetricsState.InSuccess = true
 }
 
+type L4NetLBParams struct {
+	Service  *corev1.Service
+	Cloud    *gce.Cloud
+	Namer    namer.L4ResourcesNamer
+	Recorder record.EventRecorder
+}
+
 // NewL4NetLB creates a new Handler for the given L4NetLB service.
-func NewL4NetLB(service *corev1.Service, cloud *gce.Cloud, scope meta.KeyType, namer namer.L4ResourcesNamer, recorder record.EventRecorder) *L4NetLB {
-	l4netlb := &L4NetLB{cloud: cloud,
-		scope:           scope,
-		namer:           namer,
-		recorder:        recorder,
-		Service:         service,
-		NamespacedName:  types.NamespacedName{Name: service.Name, Namespace: service.Namespace},
-		backendPool:     backends.NewPool(cloud, namer),
+func NewL4NetLB(params *L4NetLBParams) *L4NetLB {
+	l4netlb := &L4NetLB{
+		cloud:           params.Cloud,
+		scope:           meta.Regional,
+		namer:           params.Namer,
+		recorder:        params.Recorder,
+		Service:         params.Service,
+		NamespacedName:  types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
+		backendPool:     backends.NewPool(params.Cloud, params.Namer),
 		healthChecks:    healthchecksl4.GetInstance(),
-		forwardingRules: forwardingrules.New(cloud, meta.VersionGA, scope),
+		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional),
 	}
 	portId := utils.ServicePortID{Service: l4netlb.NamespacedName}
 	l4netlb.ServicePort = utils.ServicePort{
 		ID:           portId,
 		BackendNamer: l4netlb.namer,
-		NodePort:     utils.GetServiceNodePort(service),
+		NodePort:     utils.GetServiceNodePort(params.Service),
 		L4RBSEnabled: true,
 	}
 	return l4netlb

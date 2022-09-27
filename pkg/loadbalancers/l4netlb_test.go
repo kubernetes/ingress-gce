@@ -54,7 +54,13 @@ func TestEnsureL4NetLoadBalancer(t *testing.T) {
 	svc := test.NewL4NetLBRBSService(8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw"))
 
-	l4netlb := NewL4NetLB(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
+	l4NetLBParams := &L4NetLBParams{
+		Service:  svc,
+		Cloud:    fakeGCE,
+		Namer:    namer,
+		Recorder: record.NewFakeRecorder(100),
+	}
+	l4netlb := NewL4NetLB(l4NetLBParams)
 	l4netlb.healthChecks = healthchecksl4.Fake(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
@@ -105,7 +111,13 @@ func TestDeleteL4NetLoadBalancer(t *testing.T) {
 	svc := test.NewL4NetLBRBSService(8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw"))
 
-	l4NetLB := NewL4NetLB(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
+	l4NetLBParams := &L4NetLBParams{
+		Service:  svc,
+		Cloud:    fakeGCE,
+		Namer:    namer,
+		Recorder: record.NewFakeRecorder(100),
+	}
+	l4NetLB := NewL4NetLB(l4NetLBParams)
 	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l4NetLB.cloud, nodeNames, vals.ZoneName); err != nil {
@@ -163,8 +175,13 @@ func TestHealthCheckFirewallDeletionWithILB(t *testing.T) {
 
 	// Create NetLB Service
 	netlbSvc := test.NewL4NetLBRBSService(8080)
-
-	l4NetLB := NewL4NetLB(netlbSvc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
+	l4NetlbParams := &L4NetLBParams{
+		Service:  netlbSvc,
+		Cloud:    fakeGCE,
+		Namer:    namer,
+		Recorder: record.NewFakeRecorder(100),
+	}
+	l4NetLB := NewL4NetLB(l4NetlbParams)
 
 	// make sure both ilb and netlb use the same l4 healtcheck instance
 	l4NetLB.healthChecks = l4ilb.healthChecks
@@ -208,7 +225,13 @@ func ensureLoadBalancer(port int, vals gce.TestClusterValues, fakeGCE *gce.Cloud
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw"))
 	emptyNodes := []string{}
 
-	l4NetLB := NewL4NetLB(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
+	l4NetLBParams := &L4NetLBParams{
+		Service:  svc,
+		Cloud:    fakeGCE,
+		Namer:    namer,
+		Recorder: record.NewFakeRecorder(100),
+	}
+	l4NetLB := NewL4NetLB(l4NetLBParams)
 	l4NetLB.healthChecks = healthchecksl4.Fake(fakeGCE, &test.FakeRecorderSource{})
 
 	result := l4NetLB.EnsureFrontend(emptyNodes, svc)
@@ -418,7 +441,13 @@ func TestMetricsForStandardNetworkTier(t *testing.T) {
 	svc.ObjectMeta.Annotations[annotations.NetworkTierAnnotationKey] = string(cloud.NetworkTierStandard)
 	namer := namer_util.NewL4Namer(kubeSystemUID, namer_util.NewNamer(vals.ClusterName, "cluster-fw"))
 
-	l4netlb := NewL4NetLB(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
+	l4NetLBParams := &L4NetLBParams{
+		Service:  svc,
+		Cloud:    fakeGCE,
+		Namer:    namer,
+		Recorder: record.NewFakeRecorder(100),
+	}
+	l4netlb := NewL4NetLB(l4NetLBParams)
 	l4netlb.healthChecks = healthchecksl4.Fake(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
@@ -465,7 +494,13 @@ func TestEnsureNetLBFirewallDestinations(t *testing.T) {
 
 	svc := test.NewL4NetLBRBSService(8080)
 	namer := namer_util.NewL4Namer(kubeSystemUID, nil)
-	l4netlb := NewL4NetLB(svc, fakeGCE, meta.Regional, namer, record.NewFakeRecorder(100))
+	l4NetLBParams := &L4NetLBParams{
+		Service:  svc,
+		Cloud:    fakeGCE,
+		Namer:    namer,
+		Recorder: record.NewFakeRecorder(100),
+	}
+	l4netlb := NewL4NetLB(l4NetLBParams)
 	l4netlb.healthChecks = healthchecksl4.Fake(fakeGCE, &test.FakeRecorderSource{})
 
 	if _, err := test.CreateAndInsertNodes(l4netlb.cloud, nodeNames, vals.ZoneName); err != nil {
