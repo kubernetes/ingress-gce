@@ -83,7 +83,7 @@ func TestEnsureL4NetLoadBalancer(t *testing.T) {
 }
 
 func checkAnnotations(result *L4NetLBSyncResult, l4netlb *L4NetLB) error {
-	expBackendName := l4netlb.ServicePort.BackendName()
+	expBackendName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
 	if result.Annotations[annotations.BackendServiceKey] != expBackendName {
 		return fmt.Errorf("BackendServiceKey mismatch %v != %v", expBackendName, result.Annotations[annotations.BackendServiceKey])
 	}
