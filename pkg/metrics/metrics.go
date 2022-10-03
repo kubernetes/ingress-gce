@@ -112,6 +112,7 @@ type netLBFeatureCount struct {
 func (netlbCount *netLBFeatureCount) record() {
 	l4NetLBCount.With(prometheus.Labels{label: l4NetLBService.String()}).Set(float64(netlbCount.service))
 	l4NetLBCount.With(prometheus.Labels{label: l4NetLBStaticIP.String()}).Set(float64(netlbCount.success))
+	l4NetLBCount.With(prometheus.Labels{label: l4NetLBPremiumNetworkTier.String()}).Set(float64(netlbCount.premiumNetworkTier))
 	l4NetLBCount.With(prometheus.Labels{label: l4NetLBManagedStaticIP.String()}).Set(float64(netlbCount.managedStaticIP))
 	l4NetLBCount.With(prometheus.Labels{label: l4NetLBInSuccess.String()}).Set(float64(netlbCount.success))
 	l4NetLBCount.With(prometheus.Labels{label: l4NetLBInUserError.String()}).Set(float64(netlbCount.inUserError))
