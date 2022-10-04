@@ -263,7 +263,7 @@ func TestCreateHTTPSILBLoadBalancer(t *testing.T) {
 	verifyHTTPSForwardingRuleAndProxyLinks(t, j, l7)
 }
 
-// Test case with HTTPS ILB Load balancer and AllowHttp set to true (not currently supported)
+// Test case with HTTPS ILB Load balancer and AllowHttp set to true
 // Ensure should throw an error
 func TestCreateHTTPSILBLoadBalancerAllowHTTP(t *testing.T) {
 	j := newTestJig(t)
@@ -280,6 +280,38 @@ func TestCreateHTTPSILBLoadBalancerAllowHTTP(t *testing.T) {
 
 	if _, err := j.pool.Ensure(lbInfo); err == nil {
 		t.Fatalf("j.pool.Ensure(%v) = nil, want err", lbInfo)
+	}
+}
+
+// Test case with HTTPS ILB Load balancer and AllowHttp set to true and static IP specified
+// Ensure no error thrown
+func TestCreateHTTPSILBLoadBalancerAllowHTTPSharedVIP(t *testing.T) {
+	j := newTestJig(t)
+
+	ipName := "test-ilb-static-ip"
+	ip := "10.1.2.3"
+	key, err := composite.CreateKey(j.fakeGCE, ipName, features.L7ILBScope())
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = composite.CreateAddress(j.fakeGCE, key, &composite.Address{Name: ipName, Version: meta.VersionGA, Address: ip})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	gceUrlMap := utils.NewGCEURLMap()
+	gceUrlMap.DefaultBackend = &utils.ServicePort{NodePort: 31234, BackendNamer: j.namer}
+	gceUrlMap.PutPathRulesForHost("bar.example.com", []utils.PathRule{{Path: "/bar", Backend: utils.ServicePort{NodePort: 30000, BackendNamer: j.namer}}})
+	lbInfo := &L7RuntimeInfo{
+		AllowHTTP:    true,
+		TLS:          []*translator.TLSCerts{createCert("key", "cert", "name")},
+		UrlMap:       gceUrlMap,
+		Ingress:      newILBIngress(),
+		StaticIPName: ipName,
+	}
+
+	if _, err := j.pool.Ensure(lbInfo); err != nil {
+		t.Fatalf("j.pool.Ensure(%v) = %v, want nil", lbInfo, err)
 	}
 }
 
