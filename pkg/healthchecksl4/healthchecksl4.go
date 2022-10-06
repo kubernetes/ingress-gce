@@ -38,12 +38,13 @@ import (
 
 const (
 	// L4 Load Balancer parameters
-	gceHcCheckIntervalSeconds = int64(8)
-	gceHcTimeoutSeconds       = int64(1)
+	gceSharedHcCheckIntervalSeconds = int64(8) // Shared Health check Interval
+	gceLocalHcCheckIntervalSeconds  = int64(3) // Local Health check Interval
+	gceHcTimeoutSeconds             = int64(1)
 	// Start sending requests as soon as one healthcheck succeeds.
-	gceHcHealthyThreshold = int64(1)
-	// Defaults to 3 * 8 = 24 seconds before the LB will steer traffic away.
-	gceHcUnhealthyThreshold = int64(3)
+	gceHcHealthyThreshold         = int64(1)
+	gceSharedHcUnhealthyThreshold = int64(3) // 3  * 8 = 24 seconds before the LB will steer traffic away
+	gceLocalHcUnhealthyThreshold  = int64(2) // 2  * 3 = 6 seconds before the LB will steer traffic away
 )
 
 var (
@@ -76,6 +77,24 @@ func Fake(cloud *gce.Cloud, recorder record.EventRecorder) *l4HealthChecks {
 		cloud:               cloud,
 		recorder:            recorder,
 		hcProvider:          healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA),
+	}
+}
+
+// Returns an interval constant based of shared/local status
+func healthcheckInterval(isShared bool) int64 {
+	if isShared {
+		return gceSharedHcCheckIntervalSeconds
+	} else {
+		return gceLocalHcCheckIntervalSeconds
+	}
+}
+
+// Returns a threshold for unhealthy instance based of shared/local status
+func healthcheckUnhealthyThreshold(isShared bool) int64 {
+	if isShared {
+		return gceSharedHcUnhealthyThreshold
+	} else {
+		return gceLocalHcUnhealthyThreshold
 	}
 }
 
@@ -285,12 +304,16 @@ func newL4HealthCheck(name string, svcName types.NamespacedName, shared bool, pa
 	if err != nil {
 		klog.Warningf("Failed to generate description for L4HealthCheck %s, err %v", name, err)
 	}
+	// Get constant values based on shared/local status
+	interval := healthcheckInterval(shared)
+	unhealthyThreshold := healthcheckUnhealthyThreshold(shared)
+
 	return &composite.HealthCheck{
 		Name:               name,
-		CheckIntervalSec:   gceHcCheckIntervalSeconds,
+		CheckIntervalSec:   interval,
 		TimeoutSec:         gceHcTimeoutSeconds,
 		HealthyThreshold:   gceHcHealthyThreshold,
-		UnhealthyThreshold: gceHcUnhealthyThreshold,
+		UnhealthyThreshold: unhealthyThreshold,
 		HttpHealthCheck:    &httpSettings,
 		Type:               "HTTP",
 		Description:        desc,
