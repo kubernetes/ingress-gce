@@ -24,10 +24,10 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/cloud-provider/service/helpers"
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/composite"
-	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/healthchecksprovider"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -47,52 +47,36 @@ const (
 )
 
 var (
-	// instanceLock to prevent duplicate initialization.
-	instanceLock = &sync.Mutex{}
-	// instance is a singleton instance, created by Initialize
-	instance *l4HealthChecks
+	// sharedLock used to prevent race condition between shared health checks and firewalls.
+	sharedLock = &sync.Mutex{}
 )
 
 type l4HealthChecks struct {
 	// sharedResourceLock serializes operations on the healthcheck and firewall
 	// resources shared across multiple Services.
-	sharedResourcesLock sync.Mutex
+	sharedResourcesLock *sync.Mutex
 	hcProvider          healthChecksProvider
 	cloud               *gce.Cloud
-	recorderFactory     events.RecorderProducer
+	recorder            record.EventRecorder
 }
 
-// Initialize creates singleton instance, must be run before GetInstance() func
-func Initialize(cloud *gce.Cloud, recorderFactory events.RecorderProducer) {
-	instanceLock.Lock()
-	defer instanceLock.Unlock()
-
-	if instance != nil {
-		klog.Error("Multiple L4 Healthchecks initialization attempts")
-		return
+func NewL4HealthChecks(cloud *gce.Cloud, recorder record.EventRecorder) *l4HealthChecks {
+	return &l4HealthChecks{
+		sharedResourcesLock: sharedLock,
+		cloud:               cloud,
+		recorder:            recorder,
+		hcProvider:          healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA),
 	}
-
-	instance = &l4HealthChecks{
-		cloud:           cloud,
-		recorderFactory: recorderFactory,
-		hcProvider:      healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA),
-	}
-	klog.V(3).Infof("Initialized L4 Healthchecks")
 }
 
-// Fake creates instance of l4HealthChecks. Use for test only.
-func Fake(cloud *gce.Cloud, recorderFactory events.RecorderProducer) *l4HealthChecks {
-	instance = &l4HealthChecks{
-		cloud:           cloud,
-		recorderFactory: recorderFactory,
-		hcProvider:      healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA),
+// Fake creates instance of l4HealthChecks with independent lock. Use for test only.
+func Fake(cloud *gce.Cloud, recorder record.EventRecorder) *l4HealthChecks {
+	return &l4HealthChecks{
+		sharedResourcesLock: &sync.Mutex{},
+		cloud:               cloud,
+		recorder:            recorder,
+		hcProvider:          healthchecksprovider.NewHealthChecks(cloud, meta.VersionGA),
 	}
-	return instance
-}
-
-// GetInstance returns singleton instance, must be run after Initialize
-func GetInstance() *l4HealthChecks {
-	return instance
 }
 
 // EnsureHealthCheckWithFirewall exist for the L4
@@ -197,7 +181,7 @@ func (l4hc *l4HealthChecks) ensureFirewall(svc *corev1.Service, hcFwName string,
 		Name:         hcFwName,
 		NodeNames:    nodeNames,
 	}
-	return firewalls.EnsureL4LBFirewallForHc(svc, sharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorderFactory.Recorder(svc.Namespace))
+	return firewalls.EnsureL4LBFirewallForHc(svc, sharedHC, &hcFWRParams, l4hc.cloud, l4hc.recorder)
 }
 
 // DeleteHealthCheckWithFirewall deletes health check (and firewall rule) for l4 service. Checks if shared resources are safe to delete.
@@ -285,8 +269,7 @@ func (l4hc *l4HealthChecks) deleteFirewall(name string, svc *corev1.Service) err
 	}
 	// Suppress Firewall XPN error, as this is no retryable and requires action by security admin
 	if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
-		recorder := l4hc.recorderFactory.Recorder(svc.Namespace)
-		recorder.Eventf(svc, corev1.EventTypeNormal, "XPN", fwErr.Message)
+		l4hc.recorder.Eventf(svc, corev1.EventTypeNormal, "XPN", fwErr.Message)
 		return nil
 	}
 	return err

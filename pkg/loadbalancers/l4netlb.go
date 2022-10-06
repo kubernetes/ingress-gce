@@ -98,7 +98,7 @@ func NewL4NetLB(params *L4NetLBParams) *L4NetLB {
 		Service:         params.Service,
 		NamespacedName:  types.NamespacedName{Name: params.Service.Name, Namespace: params.Service.Namespace},
 		backendPool:     backends.NewPool(params.Cloud, params.Namer),
-		healthChecks:    healthchecksl4.GetInstance(),
+		healthChecks:    healthchecksl4.NewL4HealthChecks(params.Cloud, params.Recorder),
 		forwardingRules: forwardingrules.New(params.Cloud, meta.VersionGA, meta.Regional),
 	}
 	return l4netlb
