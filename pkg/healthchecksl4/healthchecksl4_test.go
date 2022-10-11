@@ -253,62 +253,6 @@ func TestCompareHealthChecks(t *testing.T) {
 	}
 }
 
-func TestHealthcheckInterval(t *testing.T) {
-	t.Parallel()
-	testCases := []struct {
-		desc                 string
-		shared               bool
-		wantCheckIntervalSec int64
-	}{
-		{
-			desc:                 "shared - check interval function",
-			shared:               true,
-			wantCheckIntervalSec: gceSharedHcCheckIntervalSeconds,
-		},
-		{
-			desc:                 "local - check interval function",
-			shared:               false,
-			wantCheckIntervalSec: gceLocalHcCheckIntervalSeconds,
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			gotInterval := healthcheckInterval(tc.shared)
-			if gotInterval != tc.wantCheckIntervalSec {
-				t.Errorf("got Health Check Interval: %d, want: %d", gotInterval, tc.wantCheckIntervalSec)
-			}
-		})
-	}
-}
-
-func TestHealthcheckUnhealthyThreshold(t *testing.T) {
-	t.Parallel()
-	testCases := []struct {
-		desc                   string
-		shared                 bool
-		wantUnhealthyThreshold int64
-	}{
-		{
-			desc:                   "shared - check unhealthy threshold function",
-			shared:                 true,
-			wantUnhealthyThreshold: gceSharedHcUnhealthyThreshold,
-		},
-		{
-			desc:                   "local - check unhealthy threshold function",
-			shared:                 false,
-			wantUnhealthyThreshold: gceLocalHcUnhealthyThreshold,
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			gotUnhealthyThreshold := healthcheckUnhealthyThreshold(tc.shared)
-			if gotUnhealthyThreshold != tc.wantUnhealthyThreshold {
-				t.Errorf("got Unhealthy Threshold: %d, want: %d", gotUnhealthyThreshold, tc.wantUnhealthyThreshold)
-			}
-		})
-	}
-}
-
 // Checks that newL4HealthCheck() returns correct CheckInterval and UnhealthyThreshold
 func TestSharedHealthChecks(t *testing.T) {
 
