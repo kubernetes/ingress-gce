@@ -50,8 +50,9 @@ var (
 		prometheus.HistogramOpts{
 			Name: L4ilbLatencyMetricName,
 			Help: "Latency of an L4 ILB Sync",
-			// custom buckets - [30s, 60s, 120s, 240s(4min), 480s(8min), 960s(16m), +Inf]
-			Buckets: prometheus.ExponentialBuckets(30, 2, 7),
+			// custom buckets - [0.9375s, 1.875s, 3.75s, 7.5s, 30s, 60s, 120s, 240s(4min), 480s(8min), 960s(16m), 3840s(64min), 7680s(128m) +Inf]
+			// using funny starter bucket, 0.9375s will only add buckets to existing metric, this is a safe operation in most time series db
+			Buckets: prometheus.ExponentialBuckets(0.9375, 2, 12),
 		},
 		l4LBSyncLatencyMetricsLabels,
 	)
@@ -68,8 +69,9 @@ var (
 		prometheus.HistogramOpts{
 			Name: L4netlbLatencyMetricName,
 			Help: "Latency of an L4 NetLB Sync",
-			// custom buckets - [15s, 30s, 60s, 120s, 240s(4min), 480s(8min), 960s(16m), 1920s(32min), 3840s(64min), 7680s(128m) +Inf]
-			Buckets: prometheus.ExponentialBuckets(15, 2, 10),
+			// custom buckets - [0.9375s, 1.875s, 3.75s, 7.5s, 30s, 60s, 120s, 240s(4min), 480s(8min), 960s(16m), 3840s(64min), 7680s(128m) +Inf]
+			// using funny starter bucket, 0.9375s will only add buckets to existing metric, this is a safe operation in most time series db
+			Buckets: prometheus.ExponentialBuckets(0.9375, 2, 12),
 		},
 		l4LBSyncLatencyMetricsLabels,
 	)
