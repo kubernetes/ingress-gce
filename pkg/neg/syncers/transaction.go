@@ -93,6 +93,14 @@ type transactionSyncer struct {
 	enableEndpointSlices bool
 
 	logger klog.Logger
+
+	// inError indicates if the syncer is in any of 4 error scenarios
+	// 1. Endpoint counts from EPS is different from calculated endpoint list
+	// 2. EndpontSlice has missing or invalid data
+	// 3. Attach/Detach EP fails due to incorrect batch information
+	// 4. Endpoint count from EPS or calculated endpoint list is 0
+	// Need to grab syncLock first for any reads or writes based on this value
+	inError bool
 }
 
 func NewTransactionSyncer(
@@ -136,6 +144,7 @@ func NewTransactionSyncer(
 		svcNegClient:         svcNegClient,
 		customName:           customName,
 		enableEndpointSlices: enableEndpointSlices,
+		inError:              false,
 		logger:               logger,
 	}
 	// Syncer implements life cycle logic
@@ -184,6 +193,12 @@ func (s *transactionSyncer) syncInternal() error {
 }
 
 func (s *transactionSyncer) syncInternalImpl() error {
+	// TODO(cheungdavid): for now we reset the boolean so it is a no-op, but
+	// in the future, it will be used to trigger degraded mode if the syncer is in error state.
+	if s.inErrorState() {
+		s.resetErrorState()
+	}
+
 	if s.needInit || s.isZoneChange() {
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
 			return err
@@ -279,6 +294,21 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
 	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
+}
+
+// syncLock must already be acquired before execution
+func (s *transactionSyncer) inErrorState() bool {
+	return s.inError
+}
+
+// syncLock must already be acquired before execution
+func (s *transactionSyncer) setErrorState() {
+	s.inError = true
+}
+
+// syncLock must already be acquired before execution
+func (s *transactionSyncer) resetErrorState() {
+	s.inError = false
 }
 
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
