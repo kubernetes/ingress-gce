@@ -93,6 +93,9 @@ type transactionSyncer struct {
 	enableEndpointSlices bool
 
 	logger klog.Logger
+
+	// grab syncLock first if any decision needs to be based on this value
+	inError bool
 }
 
 func NewTransactionSyncer(
@@ -136,6 +139,7 @@ func NewTransactionSyncer(
 		svcNegClient:         svcNegClient,
 		customName:           customName,
 		enableEndpointSlices: enableEndpointSlices,
+		inError:              false,
 		logger:               logger,
 	}
 	// Syncer implements life cycle logic
@@ -184,6 +188,11 @@ func (s *transactionSyncer) syncInternal() error {
 }
 
 func (s *transactionSyncer) syncInternalImpl() error {
+	// TODO: enter degraded mode before reset and sync
+	if s.inErrorState() {
+		s.resetErrorState()
+	}
+
 	if s.needInit || s.isZoneChange() {
 		if err := s.ensureNetworkEndpointGroups(); err != nil {
 			return err
@@ -279,6 +288,21 @@ func (s *transactionSyncer) syncInternalImpl() error {
 	s.logEndpoints(removeEndpoints, "removing endpoint")
 
 	return s.syncNetworkEndpoints(addEndpoints, removeEndpoints)
+}
+
+// syncLock must already be acquired before execution
+func (s *transactionSyncer) inErrorState() bool {
+	return s.inError
+}
+
+// syncLock must already be acquired before execution
+func (s *transactionSyncer) setErrorState() {
+	s.inError = true
+}
+
+// syncLock must already be acquired before execution
+func (s *transactionSyncer) resetErrorState() {
+	s.inError = false
 }
 
 // ensureNetworkEndpointGroups ensures NEGs are created and configured correctly in the corresponding zones.
