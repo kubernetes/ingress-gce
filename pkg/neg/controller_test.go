@@ -1689,32 +1689,35 @@ func newTestIngress(name string) *networkingv1.Ingress {
 	}
 }
 
-var ports = []apiv1.ServicePort{
-	{
-		Port:       80,
-		TargetPort: intstr.FromInt(8080),
-	},
-	{
-		Port:       443,
-		TargetPort: intstr.FromString(testNamedPort),
-	},
-	{
-		Name:       testNamedPort,
-		Port:       8081,
-		TargetPort: intstr.FromInt(8081),
-	},
-	{
-		Port:       8888,
-		TargetPort: intstr.FromInt(8888),
-	},
-	{
-		Name:       testNamedPortWithNumber,
-		Port:       8881,
-		TargetPort: intstr.FromInt(8882),
-	},
+func servicePorts() []apiv1.ServicePort {
+	return []apiv1.ServicePort{
+		{
+			Port:       80,
+			TargetPort: intstr.FromInt(8080),
+		},
+		{
+			Port:       443,
+			TargetPort: intstr.FromString(testNamedPort),
+		},
+		{
+			Name:       testNamedPort,
+			Port:       8081,
+			TargetPort: intstr.FromInt(8081),
+		},
+		{
+			Port:       8888,
+			TargetPort: intstr.FromInt(8888),
+		},
+		{
+			Name:       testNamedPortWithNumber,
+			Port:       8881,
+			TargetPort: intstr.FromInt(8882),
+		},
+	}
 }
 
 func getTestSvcPortTuple(svcPort int32) negtypes.SvcPortTuple {
+	ports := servicePorts()
 	for _, port := range ports {
 		if port.Port == svcPort {
 			return negtypes.SvcPortTuple{
@@ -1756,6 +1759,7 @@ func newTestService(c *Controller, negIngress bool, negSvcPorts []int32) *apiv1.
 	}
 
 	// append additional ports if the service does not contain the service port
+	ports := servicePorts()
 	for _, port := range negSvcPorts {
 		exists := false
 
@@ -1812,6 +1816,7 @@ func newTestServiceCustomNamedNeg(c *Controller, negSvcPorts map[int32]string, i
 	}
 
 	// append additional ports if the service does not contain the service port
+	ports := servicePorts()
 	for port := range negSvcPorts {
 		exists := false
 
