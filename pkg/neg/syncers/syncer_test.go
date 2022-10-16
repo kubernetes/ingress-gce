@@ -18,6 +18,7 @@ package syncers
 
 import (
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -55,6 +56,8 @@ var (
 )
 
 type syncerTester struct {
+	mu sync.Mutex
+
 	syncer negtypes.NegSyncer
 	// keep track of the number of syncs
 	syncCount int
@@ -67,12 +70,17 @@ type syncerTester struct {
 
 // sync sleeps for 3 seconds
 func (t *syncerTester) sync() error {
+	t.mu.Lock()
 	t.syncCount += 1
 	if t.syncError {
+		t.mu.Unlock()
 		return fmt.Errorf("sync error")
 	}
 	if t.blockSync {
+		t.mu.Unlock()
 		<-t.ch
+	} else {
+		t.mu.Unlock()
 	}
 	return nil
 }
@@ -128,7 +136,9 @@ func TestStartAndStopNoopSyncer(t *testing.T) {
 	}
 
 	// blocks sync function
+	syncerTester.mu.Lock()
 	syncerTester.blockSync = true
+	syncerTester.mu.Unlock()
 	syncerTester.syncer.Stop()
 	if !syncerTester.syncer.IsShuttingDown() {
 		// assume syncer needs 5 second for sync
@@ -174,6 +184,8 @@ func TestRetryOnSyncError(t *testing.T) {
 
 	if err := wait.PollImmediate(time.Second, 5*time.Second, func() (bool, error) {
 		// In 5 seconds, syncer should be able to retry 3 times.
+		syncerTester.mu.Lock()
+		defer syncerTester.mu.Unlock()
 		return syncerTester.syncCount == maxRetry+1, nil
 	}); err != nil {
 		t.Errorf("Syncer failed to retry and record error: %v", err)
