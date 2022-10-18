@@ -18,12 +18,13 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-export CGO_ENABLED=0
+# go: -race requires cgo; enable cgo by setting CGO_ENABLED=1
+export CGO_ENABLED=1
 
 TARGETS=$(for d in "$@"; do echo ./$d/...; done)
 
 echo "Running tests:"
-go test -v -installsuffix "static" ${TARGETS}
+go test -race -v ${TARGETS}
 echo
 
 echo -n "Checking gofmt: "
