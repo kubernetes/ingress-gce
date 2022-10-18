@@ -254,7 +254,7 @@ func (s *server) notFoundHandler() http.HandlerFunc {
 // If URL path does not contain a valid status code, returns 404 (NotFound).
 func (s *server) statusCodeHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-	        p := strings.TrimPrefix(r.URL.Path, statusCodePrefix)
+		p := strings.TrimPrefix(r.URL.Path, statusCodePrefix)
 		code, err := strconv.Atoi(p)
 		if err != nil {
 			code = http.StatusNotFound
