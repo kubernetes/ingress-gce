@@ -40,22 +40,6 @@ SRC_DIRS := cmd pkg
 
 ALL_ARCH ?= amd64 arm arm64 ppc64le s390x
 NOBODY ?= nobody
-# Set default base image dynamically for each arch
-ifeq ($(ARCH),amd64)
-    BASEIMAGE?=alpine
-endif
-ifeq ($(ARCH),arm)
-    BASEIMAGE?=arm32v6/alpine
-endif
-ifeq ($(ARCH),arm64)
-    BASEIMAGE?=arm64v8/alpine
-endif
-ifeq ($(ARCH),ppc64le)
-    BASEIMAGE?=ppc64le/alpine
-endif
-ifeq ($(ARCH),s390x)
-    BASEIMAGE?=s390x/alpine
-endif
 
 # These rules MUST be expanded at reference time (hence '=') as BINARY
 # is dynamically scoped.
@@ -141,7 +125,6 @@ define DOCKERFILE_RULE
 	    -e 's|ARG_ARCH|$(ARCH)|g' \
 	    -e 's|ARG_BIN|$(BINARY)|g' \
 	    -e 's|ARG_REGISTRY|$(REGISTRY)|g' \
-	    -e 's|ARG_FROM|$(BASEIMAGE)|g' \
 	    -e 's|ARG_NOBODY|$(NOBODY)|g' \
 	    -e 's|ARG_VERSION|$(VERSION)|g' \
 	    $$< > $$@
@@ -154,7 +137,6 @@ $(foreach BINARY,$(CONTAINER_BINARIES),$(eval $(DOCKERFILE_RULE)))
 define CONTAINER_RULE
 .$(BUILDSTAMP_NAME)-container: bin/$(ARCH)/$(BINARY)
 	@echo "container: bin/$(ARCH)/$(BINARY) ($(CONTAINER_NAME))"
-	@docker pull $(BASEIMAGE)
 	@docker build					\
 		$(DOCKER_BUILD_FLAGS)			\
 		-t $(CONTAINER_NAME):$(VERSION)		\
