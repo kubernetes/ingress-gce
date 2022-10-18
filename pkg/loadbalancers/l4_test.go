@@ -1233,6 +1233,27 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 		}
 		return mock.UpdateRegionBackendServiceHook(ctx, key, be, m)
 	}
+	// Before deleting forwarding rule, check, that the address was reserved
+	c.MockForwardingRules.DeleteHook = func(ctx context.Context, key *meta.Key, m *cloud.MockForwardingRules) (bool, error) {
+		fr, err := c.MockForwardingRules.Get(ctx, key)
+		// if forwarding rule not exists, don't need to check if address reserved
+		if utils.IsNotFoundError(err) {
+			return false, nil
+		}
+		if err != nil {
+			return false, err
+		}
+
+		addr, err := l4.cloud.GetRegionAddressByIP(fr.Region, fr.IPAddress)
+		if utils.IgnoreHTTPNotFound(err) != nil {
+			return true, err
+		}
+		if addr == nil || utils.IsNotFoundError(err) {
+			t.Errorf("Address not reserved before deleting forwarding rule +%v", fr)
+		}
+
+		return false, nil
+	}
 
 	frName := l4.getFRNameWithProtocol("TCP")
 	result := l4.EnsureInternalLoadBalancer(nodeNames, svc)
@@ -1280,6 +1301,8 @@ func TestEnsureInternalLoadBalancerModifyProtocol(t *testing.T) {
 		t.Errorf("Unexpected protocol value %s, expected UDP", fwdRule.IPProtocol)
 	}
 
+	// on final deletion of Load Balancer we don't need to check if address was reserved (which was happening in the hook)
+	c.MockForwardingRules.DeleteHook = nil
 	// Delete the service
 	result = l4.EnsureInternalLoadBalancerDeleted(svc)
 	if err != nil {

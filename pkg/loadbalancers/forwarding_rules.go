@@ -195,52 +195,10 @@ func (l7 *L7) getEffectiveIP() (string, bool, error) {
 
 // ensureForwardingRule creates a forwarding rule with the given name, if it does not exist. It updates the existing
 // forwarding rule if needed.
-func (l4 *L4) ensureForwardingRule(bsLink string, options gce.ILBOptions, existingFwdRule *composite.ForwardingRule) (*composite.ForwardingRule, error) {
+func (l4 *L4) ensureForwardingRule(bsLink string, options gce.ILBOptions, existingFwdRule *composite.ForwardingRule, subnetworkURL, ipToUse string) (*composite.ForwardingRule, error) {
 	// version used for creating the existing forwarding rule.
 	version := meta.VersionGA
 	frName := l4.GetFRName()
-
-	if l4.cloud.IsLegacyNetwork() {
-		l4.recorder.Event(l4.Service, v1.EventTypeWarning, "ILBOptionsIgnored", "Internal LoadBalancer options are not supported with Legacy Networks.")
-		options = gce.ILBOptions{}
-	}
-	subnetworkURL := l4.cloud.SubnetworkURL()
-
-	// Custom subnet feature is always enabled when running L4 controller.
-	// Changes to subnet annotation will be picked up and reflected in the forwarding rule.
-	// Removing the annotation will set the forwarding rule to use the default subnet.
-	if options.SubnetName != "" {
-		var err error
-		subnetworkURL, err = l4.getSubnetworkURLByName(options.SubnetName)
-		if err != nil {
-			return nil, err
-		}
-	}
-	// Determine IP which will be used for this LB. If no forwarding rule has been established
-	// or specified in the Service spec, then requestedIP = "".
-	ipToUse := l4lbIPToUse(l4.Service, existingFwdRule, subnetworkURL)
-	klog.V(2).Infof("ensureForwardingRule(%v): Using subnet %q for LoadBalancer IP %s", frName, subnetworkURL, ipToUse)
-
-	var addrMgr *addressManager
-	// If the network is not a legacy network, use the address manager
-	if !l4.cloud.IsLegacyNetwork() {
-		nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
-		// ILB can be created only in Premium Tier
-		addrMgr = newAddressManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, frName, ipToUse, cloud.SchemeInternal, cloud.NetworkTierPremium)
-		var err error
-		ipToUse, _, err = addrMgr.HoldAddress()
-		if err != nil {
-			return nil, err
-		}
-		klog.V(2).Infof("ensureForwardingRule(%v): reserved IP %q for the forwarding rule", frName, ipToUse)
-		defer func() {
-			// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
-			// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
-			if err := addrMgr.ReleaseAddress(); err != nil {
-				klog.Errorf("ensureForwardingRule: failed to release address reservation, possibly causing an orphan: %v", err)
-			}
-		}()
-	}
 
 	servicePorts := l4.Service.Spec.Ports
 	ports := utils.GetPorts(servicePorts)
@@ -275,7 +233,7 @@ func (l4 *L4) ensureForwardingRule(bsLink string, options gce.ILBOptions, existi
 	if existingFwdRule != nil {
 		equal, err := Equal(existingFwdRule, fr)
 		if err != nil {
-			return existingFwdRule, err
+			return nil, err
 		}
 		if equal {
 			// nothing to do

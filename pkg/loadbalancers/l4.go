@@ -17,6 +17,7 @@ limitations under the License.
 package loadbalancers
 
 import (
+	"fmt"
 	"strings"
 	"time"
 
@@ -99,9 +100,14 @@ func (l4 *L4) CreateKey(name string) (*meta.Key, error) {
 }
 
 // getILBOptions fetches the optional features requested on the given ILB service.
-func getILBOptions(svc *corev1.Service) gce.ILBOptions {
-	return gce.ILBOptions{AllowGlobalAccess: gce.GetLoadBalancerAnnotationAllowGlobalAccess(svc),
-		SubnetName: gce.GetLoadBalancerAnnotationSubnet(svc)}
+func (l4 *L4) getILBOptions() gce.ILBOptions {
+	if l4.cloud.IsLegacyNetwork() {
+		l4.recorder.Event(l4.Service, corev1.EventTypeWarning, "ILBOptionsIgnored", "Internal LoadBalancer options are not supported with Legacy Networks.")
+		return gce.ILBOptions{}
+	}
+
+	return gce.ILBOptions{AllowGlobalAccess: gce.GetLoadBalancerAnnotationAllowGlobalAccess(l4.Service),
+		SubnetName: gce.GetLoadBalancerAnnotationSubnet(l4.Service)}
 }
 
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
@@ -186,7 +192,8 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	result := &L4ILBSyncResult{
 		Annotations: make(map[string]string),
 		StartTime:   time.Now(),
-		SyncType:    SyncTypeCreate}
+		SyncType:    SyncTypeCreate,
+	}
 
 	// If service already has an IP assigned, treat it as an update instead of a new Loadbalancer.
 	// This will also cover cases where an external LB is updated to an ILB, which is technically a create for ILB.
@@ -196,14 +203,10 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 
 	l4.Service = svc
-	// All resources use the L4Backend name, except forwarding rule.
-	name := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
-	options := getILBOptions(l4.Service)
 
 	// create healthcheck
 	sharedHC := !helpers.RequestsOnlyLocalTraffic(l4.Service)
 	hcResult := l4.healthChecks.EnsureHealthCheckWithFirewall(l4.Service, l4.namer, sharedHC, meta.Global, utils.ILB, nodeNames)
-
 	if hcResult.Err != nil {
 		result.GCEResourceInError = hcResult.GceResourceInError
 		result.Error = hcResult.Err
@@ -211,43 +214,55 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 	result.Annotations[annotations.HealthcheckKey] = hcResult.HCName
 
-	servicePorts := l4.Service.Spec.Ports
-	portRanges := utils.GetServicePortRanges(servicePorts)
-	protocol := utils.GetProtocol(servicePorts)
-
-	// Check if protocol has changed for this service. In this case, forwarding rule should be deleted before
-	// the backend service can be updated.
-	existingBS, err := l4.backendPool.Get(name, meta.VersionGA, l4.scope)
-	err = utils.IgnoreHTTPNotFound(err)
-	if err != nil {
-		klog.Errorf("Failed to lookup existing backend service, ignoring err: %v", err)
-	}
-	existingFR, err := l4.forwardingRules.Get(l4.GetFRName())
-	if existingBS != nil && existingBS.Protocol != string(protocol) {
-		klog.Infof("Protocol changed from %q to %q for service %s", existingBS.Protocol, string(protocol), l4.NamespacedName)
-		// Delete forwarding rule if it exists
-		frName := l4.getFRNameWithProtocol(existingBS.Protocol)
-		existingFR, err = l4.forwardingRules.Get(frName)
+	// Reserve existing IP address before making any changes
+	existingFR, err := l4.getOldForwardingRule()
+	options := l4.getILBOptions()
+	subnetworkURL, err := l4.getServiceSubnetworkURL(options)
+	ipToUse := l4lbIPToUse(l4.Service, existingFR, subnetworkURL)
+	expectedFRName := l4.GetFRName()
+	if !l4.cloud.IsLegacyNetwork() {
+		nm := types.NamespacedName{Namespace: l4.Service.Namespace, Name: l4.Service.Name}.String()
+		// ILB can be created only in Premium Tier
+		addrMgr := newAddressManager(l4.cloud, nm, l4.cloud.Region(), subnetworkURL, expectedFRName, ipToUse, cloud.SchemeInternal, cloud.NetworkTierPremium)
+		ipToUse, _, err = addrMgr.HoldAddress()
 		if err != nil {
-			klog.Errorf("Failed to get forwarding rule %s, err %v", frName, err)
+			result.Error = fmt.Errorf("EnsureInternalLoadBalancer error: addrMgr.HoldAddress() returned error %w", err)
+			return result
 		}
-		err = l4.forwardingRules.Delete(frName)
+		klog.V(2).Infof("EnsureInternalLoadBalancer(%v): reserved IP %q", nm, ipToUse)
+		defer func() {
+			// Release the address that was reserved, in all cases. If the forwarding rule was successfully created,
+			// the ephemeral IP is not needed anymore. If it was not created, the address should be released to prevent leaks.
+			if err := addrMgr.ReleaseAddress(); err != nil {
+				klog.Errorf("EnsureInternalLoadBalancer: failed to release address reservation, possibly causing an orphan: %v", err)
+			}
+		}()
+	}
+
+	// if Service protocol changed, we must delete forwarding rule before changing backend service,
+	// otherwise, on updating backend service, google cloud api will return error
+	servicePorts := l4.Service.Spec.Ports
+	protocol := utils.GetProtocol(servicePorts)
+	if existingFR != nil && existingFR.IPProtocol != string(protocol) {
+		err = l4.forwardingRules.Delete(existingFR.Name)
 		if err != nil {
-			klog.Errorf("Failed to delete forwarding rule %s, err %v", frName, err)
+			klog.Errorf("Failed to delete forwarding rule %s, err %v", existingFR.Name, err)
 		}
 	}
 
 	// ensure backend service
-	bs, err := l4.backendPool.EnsureL4BackendService(name, hcResult.HCLink, string(protocol), string(l4.Service.Spec.SessionAffinity),
+	bsName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+	bs, err := l4.backendPool.EnsureL4BackendService(bsName, hcResult.HCLink, string(protocol), string(l4.Service.Spec.SessionAffinity),
 		string(cloud.SchemeInternal), l4.NamespacedName, meta.VersionGA)
 	if err != nil {
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err
 		return result
 	}
-	result.Annotations[annotations.BackendServiceKey] = name
+	result.Annotations[annotations.BackendServiceKey] = bsName
+
 	// create fr rule
-	fr, err := l4.ensureForwardingRule(bs.SelfLink, options, existingFR)
+	fr, err := l4.ensureForwardingRule(bs.SelfLink, options, existingFR, subnetworkURL, ipToUse)
 	if err != nil {
 		klog.Errorf("EnsureInternalLoadBalancer: Failed to create forwarding rule - %v", err)
 		result.GCEResourceInError = annotations.ForwardingRuleResource
@@ -268,6 +283,7 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	}
 	// Add firewall rule for ILB traffic to nodes
 	firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
+	portRanges := utils.GetServicePortRanges(servicePorts)
 	nodesFWRParams := firewalls.FirewallParams{
 		PortRanges:        portRanges,
 		SourceRanges:      sourceRanges.StringSlice(),
@@ -300,10 +316,41 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 	return result
 }
 
+func (l4 *L4) getServiceSubnetworkURL(options gce.ILBOptions) (string, error) {
+	// Custom subnet feature is always enabled when running L4 controller.
+	// Changes to subnet annotation will be picked up and reflected in the forwarding rule.
+	// Removing the annotation will set the forwarding rule to use the default subnet.
+	if options.SubnetName != "" {
+		return l4.getSubnetworkURLByName(options.SubnetName)
+	}
+	return l4.cloud.SubnetworkURL(), nil
+}
+
 func (l4 *L4) getSubnetworkURLByName(subnetName string) (string, error) {
 	subnetKey, err := l4.CreateKey(subnetName)
 	if err != nil {
 		return "", err
 	}
 	return cloud.SelfLink(meta.VersionGA, l4.cloud.NetworkProjectID(), "subnetworks", subnetKey), nil
+}
+
+func (l4 *L4) getOldForwardingRule() (*composite.ForwardingRule, error) {
+	bsName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
+	// Check if protocol has changed for this service. In this case, forwarding rule has different protocol and name
+	existingBS, err := l4.backendPool.Get(bsName, meta.VersionGA, l4.scope)
+	err = utils.IgnoreHTTPNotFound(err)
+	if err != nil {
+		klog.Errorf("Failed to lookup existing backend service, ignoring err: %v", err)
+	}
+
+	servicePorts := l4.Service.Spec.Ports
+	protocol := utils.GetProtocol(servicePorts)
+	if existingBS != nil && existingBS.Protocol != string(protocol) {
+		klog.Infof("Protocol changed from %q to %q for service %s", existingBS.Protocol, string(protocol), l4.NamespacedName)
+		// Delete forwarding rule if it exists
+		oldProtocolFRRName := l4.getFRNameWithProtocol(existingBS.Protocol)
+		return l4.forwardingRules.Get(oldProtocolFRRName)
+	}
+
+	return l4.forwardingRules.Get(l4.GetFRName())
 }
