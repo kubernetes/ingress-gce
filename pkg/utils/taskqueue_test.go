@@ -20,10 +20,11 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
+
+	"sync"
 
 	"k8s.io/client-go/tools/cache"
-	"sync"
-	"time"
 )
 
 func TestPeriodicTaskQueue(t *testing.T) {
@@ -112,12 +113,13 @@ func TestPeriodicQueueWithMultipleWorkers(t *testing.T) {
 			for _, obj := range tc.inputObjs {
 				tq.Enqueue(cache.ExplicitKey(obj))
 			}
-
 			for tq.Len() > 0 {
 				time.Sleep(1 * time.Second)
 			}
 
 			if tc.expectRequeueForKey != "" {
+				// the item is requeued with a delay, by default is 5 ms in DefaultControllerRateLimiter()
+				time.Sleep(10 * time.Millisecond)
 				if tq.queue.NumRequeues(tc.expectRequeueForKey) == 0 {
 					t.Errorf("Got 0 requeues for %q, expected non-zero requeue on error.", tc.expectRequeueForKey)
 				}
