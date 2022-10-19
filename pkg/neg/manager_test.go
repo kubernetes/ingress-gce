@@ -379,10 +379,13 @@ func TestGarbageCollectionNEG(t *testing.T) {
 	if _, _, err := manager.EnsureSyncers(testServiceNamespace, testServiceName, ports); err != nil {
 		t.Fatalf("Failed to ensure syncer: %v", err)
 	}
+	// avoid the syncer racing when we CreateNetworkEndpointGroup later
+	// ideally the mocked cloud should guarntee that CreateNetworkEndpointGroup and GetNetworkEndpointGroup()
+	// (and all the mocked API calls) are safe to call concurrently.
+	time.Sleep(100 * time.Millisecond)
 
 	version := meta.VersionGA
 	for _, networkEndpointType := range []negtypes.NetworkEndpointType{negtypes.VmIpPortEndpointType, negtypes.NonGCPPrivateEndpointType, negtypes.VmIpEndpointType} {
-
 		if networkEndpointType == negtypes.VmIpEndpointType {
 			version = meta.VersionAlpha
 		}
@@ -405,7 +408,6 @@ func TestGarbageCollectionNEG(t *testing.T) {
 		}
 		manager.svcNegLister.Add(svcNeg)
 		manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups("test").Create(context.Background(), svcNeg, metav1.CreateOptions{})
-
 		if err := manager.GC(); err != nil {
 			t.Fatalf("Failed to GC: %v", err)
 		}
