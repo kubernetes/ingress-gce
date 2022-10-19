@@ -52,13 +52,12 @@ import (
 )
 
 const (
-	echoheadersImage        = "gcr.io/k8s-ingress-image-push/ingress-gce-echo-amd64:master"
-	echoheadersImageWindows = "gcr.io/gke-windows-testing/ingress-gce-echo-amd64-windows:master"
-	porterPort              = 80
-	ILBSubnetPurpose        = "INTERNAL_HTTPS_LOAD_BALANCER"
-	ILBSubnetName           = "ilb-subnet-ingress-e2e"
-	PSCSubnetPurpose        = "PRIVATE_SERVICE_CONNECT"
-	PSCSubnetName           = "psc-nat-subnet"
+	echoheadersImage = "registry.k8s.io/e2e-test-images/agnhost:2.39"
+	porterPort       = 80
+	ILBSubnetPurpose = "INTERNAL_HTTPS_LOAD_BALANCER"
+	ILBSubnetName    = "ilb-subnet-ingress-e2e"
+	PSCSubnetPurpose = "PRIVATE_SERVICE_CONNECT"
+	PSCSubnetName    = "psc-nat-subnet"
 )
 
 type OS int
@@ -170,10 +169,8 @@ func EnsureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify fun
 }
 
 func ensureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify func(deployment *apps.Deployment), os OS) error {
-	image := echoheadersImage
 	var nodeSelector map[string]string
 	if os == Windows {
-		image = echoheadersImageWindows
 		nodeSelector = map[string]string{"kubernetes.io/os": "windows"}
 	}
 	podTemplate := v1.PodTemplateSpec{
@@ -185,10 +182,54 @@ func ensureEchoDeployment(s *Sandbox, name string, numReplicas int32, modify fun
 			NodeSelector: nodeSelector,
 			Containers: []v1.Container{
 				{
-					Name:  "echoheaders",
-					Image: image,
+					Name:  "echoheaders-http",
+					Image: echoheadersImage,
+					Command: []string{
+						"/agnhost",
+						"netexec",
+						"--http-port=8080",
+					},
 					Ports: []v1.ContainerPort{
 						{ContainerPort: 8080, Name: "http-port"},
+					},
+					Env: []v1.EnvVar{
+						{
+							Name: app.HostEnvVar,
+							ValueFrom: &v1.EnvVarSource{
+								FieldRef: &v1.ObjectFieldSelector{
+									FieldPath: "spec.nodeName",
+								},
+							},
+						},
+						{
+							Name: app.PodEnvVar,
+							ValueFrom: &v1.EnvVarSource{
+								FieldRef: &v1.ObjectFieldSelector{
+									FieldPath: "metadata.name",
+								},
+							},
+						},
+						{
+							Name: app.NamespaceEnvVar,
+							ValueFrom: &v1.EnvVarSource{
+								FieldRef: &v1.ObjectFieldSelector{
+									FieldPath: "metadata.namespace",
+								},
+							},
+						},
+					},
+				},
+				{
+					Name:  "echoheaders-https",
+					Image: echoheadersImage,
+					Command: []string{
+						"/agnhost",
+						"netexec",
+						"--http-port=8443",
+						"--tls-cert-file=/localhost.crt",
+						"--tls-private-key-file=/localhost.key",
+					},
+					Ports: []v1.ContainerPort{
 						{ContainerPort: 8443, Name: "https-port"},
 					},
 					Env: []v1.EnvVar{
