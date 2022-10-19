@@ -17,7 +17,7 @@ limitations under the License.
 package neg
 
 import (
-	context2 "context"
+	"context"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -368,7 +368,7 @@ func TestGarbageCollectionSyncer(t *testing.T) {
 func TestGarbageCollectionNEG(t *testing.T) {
 	t.Parallel()
 	kubeClient := fake.NewSimpleClientset()
-	if _, err := kubeClient.CoreV1().Endpoints(testServiceNamespace).Create(context2.TODO(), getDefaultEndpoint(), metav1.CreateOptions{}); err != nil {
+	if _, err := kubeClient.CoreV1().Endpoints(testServiceNamespace).Create(context.TODO(), getDefaultEndpoint(), metav1.CreateOptions{}); err != nil {
 		t.Fatalf("Failed to create endpoint: %v", err)
 	}
 	manager, _ := NewTestSyncerManager(kubeClient)
@@ -404,7 +404,7 @@ func TestGarbageCollectionNEG(t *testing.T) {
 			Status:     negv1beta1.ServiceNetworkEndpointGroupStatus{},
 		}
 		manager.svcNegLister.Add(svcNeg)
-		manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups("test").Create(context2.Background(), svcNeg, metav1.CreateOptions{})
+		manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups("test").Create(context.Background(), svcNeg, metav1.CreateOptions{})
 
 		if err := manager.GC(); err != nil {
 			t.Fatalf("Failed to GC: %v", err)
@@ -769,7 +769,7 @@ func TestNegCRCreations(t *testing.T) {
 				t.Errorf("expected port %d of service %q to be registered", key.ServicePort, svcKey.Key())
 			}
 
-			neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Get(context2.TODO(), expectedInfo.NegName, metav1.GetOptions{})
+			neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Get(context.TODO(), expectedInfo.NegName, metav1.GetOptions{})
 			if err != nil {
 				t.Errorf("error getting neg from neg client: %s", err)
 			}
@@ -786,7 +786,7 @@ func TestNegCRCreations(t *testing.T) {
 	}
 
 	for _, expectedInfo := range expectedPortInfoMap {
-		neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Get(context2.TODO(), expectedInfo.NegName, metav1.GetOptions{})
+		neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Get(context.TODO(), expectedInfo.NegName, metav1.GetOptions{})
 		if err != nil {
 			t.Errorf("error getting neg from neg client: %s", err)
 			continue
@@ -796,7 +796,7 @@ func TestNegCRCreations(t *testing.T) {
 
 	// Delete Neg CRs
 	for _, expectedInfo := range expectedPortInfoMap {
-		err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace1).Delete(context2.TODO(), expectedInfo.NegName, metav1.DeleteOptions{})
+		err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace1).Delete(context.TODO(), expectedInfo.NegName, metav1.DeleteOptions{})
 		if err != nil {
 			t.Errorf("error deleting neg from neg client: %s", err)
 			continue
@@ -809,7 +809,7 @@ func TestNegCRCreations(t *testing.T) {
 	}
 
 	for _, expectedInfo := range expectedPortInfoMap {
-		neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Get(context2.TODO(), expectedInfo.NegName, metav1.GetOptions{})
+		neg, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Get(context.TODO(), expectedInfo.NegName, metav1.GetOptions{})
 		if err != nil {
 			t.Errorf("error getting neg from neg client: %s", err)
 			continue
@@ -971,7 +971,7 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 					testNeg.OwnerReferences = append(testNeg.OwnerReferences, metav1.OwnerReference{UID: "extra-uid"})
 				}
 
-				_, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace1).Create(context2.TODO(), &testNeg, metav1.CreateOptions{})
+				_, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace1).Create(context.TODO(), &testNeg, metav1.CreateOptions{})
 				if err != nil {
 					t.Errorf("error creating test neg")
 				}
@@ -996,7 +996,7 @@ func TestNegCRDuplicateCreations(t *testing.T) {
 				t.Errorf("unexpected error when ensuring syncer %s/%s %+v: %s", namespace, svc1.Name, portInfoMap, err)
 			}
 
-			negs, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).List(context2.TODO(), metav1.ListOptions{})
+			negs, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).List(context.TODO(), metav1.ListOptions{})
 			if len(negs.Items) != 1 {
 				t.Errorf("expected to retrieve one negs, retrieved %d", len(negs.Items))
 			}
@@ -1103,7 +1103,7 @@ func TestNegCRDeletions(t *testing.T) {
 						neg.SetDeletionTimestamp(&deletionTS)
 					}
 					manager.svcNegLister.Add(&neg)
-					if _, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Create(context2.TODO(), &neg, metav1.CreateOptions{}); err != nil {
+					if _, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Create(context.TODO(), &neg, metav1.CreateOptions{}); err != nil {
 						t.Errorf("failed adding neg %s to fake neg client: %s", portInfo.NegName, err)
 					}
 				}
@@ -1114,7 +1114,7 @@ func TestNegCRDeletions(t *testing.T) {
 				t.Errorf("unexpected error when deleting negs: %s", err)
 			}
 
-			negs, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).List(context2.TODO(), metav1.ListOptions{})
+			negs, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).List(context.TODO(), metav1.ListOptions{})
 			if err != nil {
 				t.Errorf("error retrieving negs : %s", err)
 			}
@@ -1133,7 +1133,7 @@ func TestNegCRDeletions(t *testing.T) {
 				}
 				//clear all existing neg CRs
 				for _, portInfo := range expectedPortInfoMap {
-					if err = svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Delete(context2.TODO(), portInfo.NegName, metav1.DeleteOptions{}); err != nil {
+					if err = svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(svcKey.namespace).Delete(context.TODO(), portInfo.NegName, metav1.DeleteOptions{}); err != nil {
 						t.Errorf("failed deleting neg %s in fake neg client: %s", portInfo.NegName, err)
 					}
 				}
@@ -1349,7 +1349,7 @@ func TestGarbageCollectionNegCrdEnabled(t *testing.T) {
 						}
 					}
 
-					if _, err := manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(cr.Namespace).Create(context2.TODO(), &cr, metav1.CreateOptions{}); err != nil {
+					if _, err := manager.svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(cr.Namespace).Create(context.TODO(), &cr, metav1.CreateOptions{}); err != nil {
 						t.Fatalf("failed to create neg cr")
 					}
 
@@ -1802,7 +1802,7 @@ func createNegCR(service *v1.Service, svcKey serviceKey, portInfo negtypes.PortI
 
 // getNegCRs returns a list of NEG CRs under the specified namespace using the svcNegClient provided.
 func getNegCRs(t *testing.T, svcNegClient svcnegclient.Interface, namespace string) []negv1beta1.ServiceNetworkEndpointGroup {
-	crs, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).List(context2.TODO(), metav1.ListOptions{})
+	crs, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		t.Errorf("failed to get neg crs")
 	}
@@ -1812,7 +1812,7 @@ func getNegCRs(t *testing.T, svcNegClient svcnegclient.Interface, namespace stri
 // populateSvcNegCache takes all the NEG CRs under the specified namespace using the provided the svcNegClient
 // and use them to populate the manager's svcNeg cache.
 func populateSvcNegCache(t *testing.T, manager *syncerManager, svcNegClient svcnegclient.Interface, namespace string) {
-	crs, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).List(context2.TODO(), metav1.ListOptions{})
+	crs, err := svcNegClient.NetworkingV1beta1().ServiceNetworkEndpointGroups(namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		t.Errorf("failed to get neg crs")
 	}
