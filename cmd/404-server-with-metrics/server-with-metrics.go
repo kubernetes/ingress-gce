@@ -26,6 +26,8 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -47,6 +49,8 @@ var (
 	isProd            = flag.Bool("is_prod", true, "Indicates if the server is running in production.")
 )
 
+const statusCodePrefix string = "/statuscode/"
+
 func main() {
 	flag.Parse()
 	klog.InitFlags(nil)
@@ -61,7 +65,7 @@ func main() {
 	server.registerHandlers()
 	klog.Infof("Default 404 server is running with GOMAXPROCS(%d) on %s:%d\n", runtime.GOMAXPROCS(-1), hostName, *port)
 
-	// The main http server for handling NotFound, InternalServerError and healthz requests
+	// The main http server for handling NotFound, StatusCode and healthz requests
 	go func() {
 		err := server.httpServer.ListenAndServe()
 		if err != nil {
@@ -186,13 +190,13 @@ func (s *server) registerHandlers() {
 	httpMux := http.NewServeMux()
 	metricsMux := http.NewServeMux()
 
-	// Register the default notFoundHandler, internalServerErrorHandler, healthz with the main http server
+	// Register the default notFoundHandler, statusCodeHandler, healthz with the main http server
 	httpMux.HandleFunc("/", s.notFoundHandler())
 	// enable shutdown handler only for non-prod environments
 	if *isProd == false {
 		httpMux.HandleFunc("/shutdown", s.shutdownHandler())
 	}
-	httpMux.HandleFunc("/servererror", s.internalServerErrorHandler())
+	httpMux.HandleFunc(statusCodePrefix, s.statusCodeHandler())
 	httpMux.HandleFunc("/healthz", s.healthzHandler())
 
 	// Register the healthz and metrics handlers with the metrics server
@@ -246,17 +250,22 @@ func (s *server) notFoundHandler() http.HandlerFunc {
 	}
 }
 
-// internalServerErrorHandler returns a 500 status code
-func (s *server) internalServerErrorHandler() http.HandlerFunc {
-	rand.Seed(1)
+// statusCodeHandler returns a status code given by URL path in the request.
+// If URL path does not contain a valid status code, returns 404 (NotFound).
+func (s *server) statusCodeHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
-		w.WriteHeader(http.StatusInternalServerError)
-		// we log 1 out of 10 requests (by default) to the logs
-		fmt.Fprintf(w, "response 500 (InternalServerError), service rule for the path has non-existent or invalid backend \n")
-		if rand.Float64() < *logSampleRequests {
-			klog.Infof("response 500 (InternalServerError), service rule for [ %s ] has non-existent or invalid backend \n", path)
+	        p := strings.TrimPrefix(r.URL.Path, statusCodePrefix)
+		code, err := strconv.Atoi(p)
+		if err != nil {
+			code = http.StatusNotFound
 		}
+		statusText := http.StatusText(code)
+		if statusText == "" {
+			code = http.StatusNotFound
+			statusText = http.StatusText(code)
+		}
+		w.WriteHeader(code)
+		fmt.Fprintf(w, "response %d (%s) \n", code, statusText)
 	}
 }
 
