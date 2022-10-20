@@ -225,6 +225,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 
 	var targetMap map[string]negtypes.NetworkEndpointSet
 	var endpointPodMap negtypes.EndpointPodMap
+	var dupCount int
 
 	if s.enableEndpointSlices {
 		slices, err := s.endpointSliceLister.ByIndex(endpointslices.EndpointSlicesByServiceIndex, endpointslices.FormatEndpointSlicesServiceKey(s.Namespace, s.Name))
@@ -240,7 +241,10 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			endpointSlices[i] = slice.(*discovery.EndpointSlice)
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
-		targetMap, endpointPodMap, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		if s.invalidEndpointInfo(endpointsData, endpointPodMap, dupCount) {
+			s.setErrorState()
+		}
 		if err != nil {
 			return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
 		}
@@ -261,7 +265,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 			return nil
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpoints(ep.(*apiv1.Endpoints))
-		targetMap, endpointPodMap, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		targetMap, endpointPodMap, _, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
 		if err != nil {
 			return fmt.Errorf("endpoints calculation error in mode %q, err: %w", s.endpointsCalculator.Mode(), err)
 		}
@@ -350,6 +354,28 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 
 	s.updateInitStatus(negObjRefs, errList)
 	return utilerrors.NewAggregate(errList)
+}
+
+// invalidEndpointInfo checks if endpoint information is correct.
+// It returns true if any of the following checks fails:
+//
+//  1. The endpoint count from endpointData doesn't equal to the one from endpointPodMap:
+//     endpiontPodMap removes the duplicated endpoints, and dupCount stores the number of duplicated it removed
+//     and we compare the endpoint counts with duplicates
+func (s *transactionSyncer) invalidEndpointInfo(eds []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap, dupCount int) bool {
+	// Endpoint count from EndpointPodMap
+	countFromPodMap := len(endpointPodMap) + dupCount
+
+	// Endpoint count from EndpointData
+	countFromEndpointData := 0
+	for _, ed := range eds {
+		countFromEndpointData += len(ed.Addresses)
+	}
+	if countFromEndpointData != countFromPodMap {
+		s.logger.Info("Detected error when comparing endpoint counts, marking syncer in error state", "endpointData", eds, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
+		return true
+	}
+	return false
 }
 
 // syncNetworkEndpoints spins off go routines to execute NEG operations
