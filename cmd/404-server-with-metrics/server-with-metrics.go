@@ -61,7 +61,7 @@ func main() {
 	server.registerHandlers()
 	klog.Infof("Default 404 server is running with GOMAXPROCS(%d) on %s:%d\n", runtime.GOMAXPROCS(-1), hostName, *port)
 
-	// The main http server for handling NotFound and healthzrequests
+	// The main http server for handling NotFound, InternalServerError and healthz requests
 	go func() {
 		err := server.httpServer.ListenAndServe()
 		if err != nil {
@@ -186,12 +186,13 @@ func (s *server) registerHandlers() {
 	httpMux := http.NewServeMux()
 	metricsMux := http.NewServeMux()
 
-	// Register the default notFoundHandler, healthz with the main http server
+	// Register the default notFoundHandler, internalServerErrorHandler, healthz with the main http server
 	httpMux.HandleFunc("/", s.notFoundHandler())
 	// enable shutdown handler only for non-prod environments
 	if *isProd == false {
 		httpMux.HandleFunc("/shutdown", s.shutdownHandler())
 	}
+	httpMux.HandleFunc("/servererror", s.internalServerErrorHandler())
 	httpMux.HandleFunc("/healthz", s.healthzHandler())
 
 	// Register the healthz and metrics handlers with the metrics server
@@ -241,6 +242,20 @@ func (s *server) notFoundHandler() http.HandlerFunc {
 		s.idleChannel <- true
 		if rand.Float64() < *logSampleRequests {
 			klog.Infof("response 404 (backend NotFound), service rules for [ %s ] non-existent \n", path)
+		}
+	}
+}
+
+// internalServerErrorHandler returns a 500 status code
+func (s *server) internalServerErrorHandler() http.HandlerFunc {
+	rand.Seed(1)
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		w.WriteHeader(http.StatusInternalServerError)
+		// we log 1 out of 10 requests (by default) to the logs
+		fmt.Fprintf(w, "response 500 (InternalServerError), service rule for the path has non-existent or invalid backend \n")
+		if rand.Float64() < *logSampleRequests {
+			klog.Infof("response 500 (InternalServerError), service rule for [ %s ] has non-existent or invalid backend \n", path)
 		}
 	}
 }
