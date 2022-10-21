@@ -756,6 +756,10 @@ func MakeL4LBServiceDescription(svcName, ip string, version meta.Version, shared
 	return (&L4LBResourceDescription{ServiceName: svcName, ServiceIP: ip, APIVersion: version}).Marshal()
 }
 
+func MakeL4IPv6ForwardingRuleDescription(service *api_v1.Service) (string, error) {
+	return (&L4LBResourceDescription{ServiceName: ServiceKeyFunc(service.Namespace, service.Name)}).Marshal()
+}
+
 // NewStringPointer returns a pointer to the provided string literal
 func NewStringPointer(s string) *string {
 	return &s
@@ -818,4 +822,17 @@ func GetServiceNodePort(service *api_v1.Service) int64 {
 		return 0
 	}
 	return int64(service.Spec.Ports[0].NodePort)
+}
+
+func AddIPToLBStatus(status *api_v1.LoadBalancerStatus, ips ...string) *api_v1.LoadBalancerStatus {
+	if status == nil {
+		status = &api_v1.LoadBalancerStatus{
+			Ingress: []api_v1.LoadBalancerIngress{},
+		}
+	}
+
+	for _, ip := range ips {
+		status.Ingress = append(status.Ingress, api_v1.LoadBalancerIngress{IP: ip})
+	}
+	return status
 }

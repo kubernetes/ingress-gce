@@ -136,6 +136,7 @@ type ControllerContextConfig struct {
 	ASMConfigMapName      string
 	EndpointSlicesEnabled bool
 	MaxIGSize             int
+	EnableL4ILBDualStack  bool
 }
 
 // NewControllerContext returns a new shared set of informers.

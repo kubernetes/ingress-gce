@@ -639,7 +639,7 @@ func TestUpgradeToNewCertNames(t *testing.T) {
 	if _, err := j.pool.Ensure(lbInfo); err != nil {
 		t.Fatalf("pool.Ensure() = err %v", err)
 	}
-	// We expect to see only the new cert linked to the proxy and available in the load balancer.
+	// We expectEqual to see only the new cert linked to the proxy and available in the load balancer.
 	expectCerts := map[string]string{newCertName: tlsCert.Cert}
 	verifyCertAndProxyLink(expectCerts, expectCerts, j, t)
 }
@@ -1833,7 +1833,7 @@ func TestResourceDeletionWithProtocol(t *testing.T) {
 
 			lb, err = j.pool.Ensure(lbInfo)
 			if tc.disableHTTP && tc.disableHTTPS {
-				// we expect an invalid ingress configuration error here.
+				// we expectEqual an invalid ingress configuration error here.
 				errMsg := errAllProtocolsDisabled.Error()
 				if err == nil || !strings.Contains(err.Error(), errMsg) {
 					t.Fatalf("pool.Ensure(%+v) = %v, want %s", lbInfo, err, errMsg)

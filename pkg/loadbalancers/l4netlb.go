@@ -157,7 +157,8 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 	} else {
 		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
 	}
-	result.Status = &corev1.LoadBalancerStatus{Ingress: []corev1.LoadBalancerIngress{{IP: fr.IPAddress}}}
+
+	result.Status = utils.AddIPToLBStatus(result.Status, fr.IPAddress)
 	result.MetricsState.IsPremiumTier = fr.NetworkTier == cloud.NetworkTierPremium.ToGCEValue()
 	result.MetricsState.IsManagedIP = ipAddrType == IPAddrManaged
 
