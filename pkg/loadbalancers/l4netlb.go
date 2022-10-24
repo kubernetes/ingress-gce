@@ -177,37 +177,72 @@ func (l4netlb *L4NetLB) EnsureFrontend(nodeNames []string, svc *corev1.Service) 
 // It is health check, firewall rules and backend service
 func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBSyncResult {
 	result := NewL4SyncResult(SyncTypeDelete)
+	l4netlb.Service = svc
 
 	// If any resource deletion fails, log the error and continue cleanup.
-	frName := l4netlb.GetFRName()
-	err := l4netlb.forwardingRules.Delete(frName)
-	if err != nil {
-		klog.Errorf("Failed to delete forwarding rule %s for service %s - %v", frName, l4netlb.NamespacedName.String(), err)
-		result.Error = err
-		result.GCEResourceInError = annotations.ForwardingRuleResource
-	}
-	if err = ensureAddressDeleted(l4netlb.cloud, frName, l4netlb.cloud.Region()); err != nil {
-		klog.Errorf("Failed to delete address for service %s - %v", l4netlb.NamespacedName.String(), err)
-		result.Error = err
-		result.GCEResourceInError = annotations.AddressResource
-	}
+	l4netlb.deleteExternalForwardingRule(result)
+	l4netlb.deleteAddress(result)
+	l4netlb.deleteNodesFirewall(result)
+	l4netlb.deleteBackendService(result)
+	l4netlb.deleteHealthChecksWithFirewall(result)
 
+	return result
+}
+
+func (l4netlb *L4NetLB) deleteNodesFirewall(result *L4NetLBSyncResult) {
 	firewallName := l4netlb.namer.L4Firewall(l4netlb.Service.Namespace, l4netlb.Service.Name)
-	err = l4netlb.deleteFirewall(firewallName)
+
+	start := time.Now()
+	klog.V(2).Infof("Deleting nodes firewall %s for L4 NetLB Service %s/%s", firewallName, l4netlb.Service.Namespace, l4netlb.Service.Name)
+	defer klog.V(2).Infof("Finished deleting nodes firewall %s for L4 NetLB Service %s/%s, time taken: %v", firewallName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start), time.Since(start))
+
+	err := firewalls.EnsureL4FirewallRuleDeleted(l4netlb.cloud, firewallName)
 	if err != nil {
+		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
+			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
+			return
+		}
+
 		klog.Errorf("Failed to delete firewall rule %s for service %s - %v", firewallName, l4netlb.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 	}
+}
 
-	// delete backend service
+func (l4netlb *L4NetLB) deleteAddress(result *L4NetLBSyncResult) {
+	addressName := l4netlb.GetFRName()
+
+	start := time.Now()
+	klog.V(2).Infof("Deleting external static address %s for L4 NetLB service %s/%s", addressName, l4netlb.Service.Namespace, l4netlb.Service.Name)
+	defer klog.V(2).Infof("Finished deleting external static address %s for L4 NetLB service %s/%s, time taken: %v", addressName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+
+	err := ensureAddressDeleted(l4netlb.cloud, addressName, l4netlb.cloud.Region())
+	if err != nil {
+		klog.Errorf("Failed to delete address for service %s - %v", l4netlb.NamespacedName.String(), err)
+		result.Error = err
+		result.GCEResourceInError = annotations.AddressResource
+	}
+}
+
+func (l4netlb *L4NetLB) deleteBackendService(result *L4NetLBSyncResult) {
 	bsName := l4netlb.namer.L4Backend(l4netlb.Service.Namespace, l4netlb.Service.Name)
-	err = utils.IgnoreHTTPNotFound(l4netlb.backendPool.Delete(bsName, meta.VersionGA, meta.Regional))
+
+	start := time.Now()
+	klog.V(2).Infof("Deleting backend service %s, for L4 NetLB Service %s/%s", bsName, l4netlb.Service.Namespace, l4netlb.Service.Name)
+	defer klog.V(2).Infof("Finished deleting backend service %s, for L4 NetLB Service %s/%s, time taken", bsName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+
+	err := utils.IgnoreHTTPNotFound(l4netlb.backendPool.Delete(bsName, meta.VersionGA, meta.Regional))
 	if err != nil {
 		klog.Errorf("Failed to delete backends for L4 External LoadBalancer service %s - %v", l4netlb.NamespacedName.String(), err)
 		result.GCEResourceInError = annotations.BackendServiceResource
 		result.Error = err
 	}
+}
+
+func (l4netlb *L4NetLB) deleteHealthChecksWithFirewall(result *L4NetLBSyncResult) {
+	start := time.Now()
+	klog.V(2).Infof("Deleting all health checks and firewalls for health checks for service %s/%s", l4netlb.Service.Namespace, l4netlb.Service.Name)
+	defer klog.V(2).Infof("Finished deleting all health checks and firewalls for health checks for service %s/%s, time taken: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
 
 	// Delete healthcheck
 	// We don't delete health check during service update so
@@ -216,26 +251,13 @@ func (l4netlb *L4NetLB) EnsureLoadBalancerDeleted(svc *corev1.Service) *L4NetLBS
 	// When service is deleted we need to check both health checks shared and non-shared
 	// and delete them if needed.
 	for _, isShared := range []bool{true, false} {
-		resourceInError, err := l4netlb.healthChecks.DeleteHealthCheckWithFirewall(svc, l4netlb.namer, isShared, meta.Regional, utils.XLB)
+		resourceInError, err := l4netlb.healthChecks.DeleteHealthCheckWithFirewall(l4netlb.Service, l4netlb.namer, isShared, meta.Regional, utils.XLB)
 		if err != nil {
 			result.GCEResourceInError = resourceInError
 			result.Error = err
 			// continue with deletion of the non-shared Healthcheck regardless of the error, both healthchecks may need to be deleted,
 		}
 	}
-	return result
-}
-
-func (l4netlb *L4NetLB) deleteFirewall(name string) error {
-	err := firewalls.EnsureL4FirewallRuleDeleted(l4netlb.cloud, name)
-	if err != nil {
-		if fwErr, ok := err.(*firewalls.FirewallXPNError); ok {
-			l4netlb.recorder.Eventf(l4netlb.Service, corev1.EventTypeNormal, "XPN", fwErr.Message)
-			return nil
-		}
-		return err
-	}
-	return nil
 }
 
 // GetFRName returns the name of the forwarding rule for the given L4 External LoadBalancer service.
