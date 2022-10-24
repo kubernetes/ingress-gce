@@ -16,6 +16,7 @@ package backends
 import (
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"google.golang.org/api/compute/v1"
@@ -284,6 +285,12 @@ func (b *Backends) DeleteSignedUrlKey(be *composite.BackendService, keyName stri
 
 // EnsureL4BackendService creates or updates the backend service with the given name.
 func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, nm types.NamespacedName) (*composite.BackendService, error) {
+	start := time.Now()
+	klog.V(2).Infof("EnsureL4BackendService(%v, %v, %v): started", name, scheme, protocol)
+	defer func() {
+		klog.V(2).Infof("EnsureL4BackendService(%v, %v, %v): finished, time taken: %v", name, scheme, protocol, time.Since(start))
+	}()
+
 	klog.V(2).Infof("EnsureL4BackendService(%v, %v, %v): checking existing backend service", name, scheme, protocol)
 	key, err := composite.CreateKey(b.cloud, name, meta.Regional)
 	if err != nil {
@@ -328,6 +335,7 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	}
 
 	if backendSvcEqual(expectedBS, bs) {
+		klog.V(2).Infof("EnsureL4BackendService: backend service %s did not change, skipping update", name)
 		return bs, nil
 	}
 	if bs.ConnectionDraining != nil && bs.ConnectionDraining.DrainingTimeoutSec > 0 && protocol == string(api_v1.ProtocolTCP) {

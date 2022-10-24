@@ -269,6 +269,13 @@ func (l4 *L4) ensureForwardingRule(bsLink string, options gce.ILBOptions, existi
 // if it does not exist. It updates the existing forwarding rule if needed.
 func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.ForwardingRule, IPAddressType, error) {
 	frName := l4netlb.GetFRName()
+
+	start := time.Now()
+	klog.V(2).Infof("Ensuring external forwarding rule %s, backend service link: %s", frName, bsLink)
+	defer func() {
+		klog.V(2).Infof("Finished ensuring external forwarding rule %s, time taken: %v", frName, time.Since(start))
+	}()
+
 	// version used for creating the existing forwarding rule.
 	version := meta.VersionGA
 	existingFwdRule, err := l4netlb.forwardingRules.Get(frName)
@@ -374,7 +381,9 @@ func (l4netlb *L4NetLB) deleteExternalForwardingRule(result *L4NetLBSyncResult) 
 
 	start := time.Now()
 	klog.V(2).Infof("Deleting external forwarding rule %s for service %s/%s", frName, l4netlb.Service.Namespace, l4netlb.Service.Name)
-	defer klog.V(2).Infof("Finished deleting external forwarding rule %s for service %s/%s, time taken: %v", frName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+	defer func() {
+		klog.V(2).Infof("Finished deleting external forwarding rule %s for service %s/%s, time taken: %v", frName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+	}()
 
 	err := l4netlb.forwardingRules.Delete(frName)
 	if err != nil {

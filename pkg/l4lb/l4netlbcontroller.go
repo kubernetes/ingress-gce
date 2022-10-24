@@ -19,6 +19,7 @@ package l4lb
 import (
 	"fmt"
 	"reflect"
+	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -106,6 +107,7 @@ func NewL4NetLBController(
 			svcKey := utils.ServiceKeyFunc(curSvc.Namespace, curSvc.Name)
 			if l4netLBc.shouldProcessService(curSvc, oldSvc) {
 				klog.V(3).Infof("L4 External LoadBalancer Service %s updated, enqueuing", svcKey)
+				l4netLBc.ctx.Recorder(curSvc.Namespace).Eventf(curSvc, v1.EventTypeNormal, "UPDATE", svcKey)
 				l4netLBc.svcQueue.Enqueue(curSvc)
 				l4netLBc.enqueueTracker.Track()
 				return
@@ -213,7 +215,7 @@ func (lc *L4NetLBController) needsUpdate(newSvc, oldSvc *v1.Service) bool {
 	return false
 }
 
-// shouldProcessUpdate checks if given service should be process by controller
+// shouldProcessService checks if given service should be process by controller
 func (lc *L4NetLBController) shouldProcessService(newSvc, oldSvc *v1.Service) bool {
 	if !lc.isRBSBasedService(newSvc) {
 		return false
@@ -260,7 +262,7 @@ func (lc *L4NetLBController) preventLegacyServiceHandling(service *v1.Service, k
 		if utils.HasL4NetLBFinalizerV2(service) {
 			// If we found that RBS finalizer was attached to service, it means that RBS controller
 			// had a race condition on Service creation with Legacy Controller.
-			// It should only happen during service creation and we should clean up RBS resources
+			// It should only happen during service creation, and we should clean up RBS resources
 			return true, lc.preventTargetPoolRaceWithRBSOnCreation(service, key)
 		} else {
 			// Target Pool to RBS migration is NOT yet supported and causes service to break (for now).
@@ -369,7 +371,7 @@ func (lc *L4NetLBController) sync(key string) error {
 	lc.syncTracker.Track()
 	svc, exists, err := lc.ctx.Services().GetByKey(key)
 	if err != nil {
-		return fmt.Errorf("Failed to lookup L4 External LoadBalancer service for key %s : %w", key, err)
+		return fmt.Errorf("failed to lookup L4 External LoadBalancer service for key %s : %w", key, err)
 	}
 	if !exists || svc == nil {
 		klog.V(3).Infof("Ignoring sync of non-existent service %s", key)
@@ -476,6 +478,12 @@ func (lc *L4NetLBController) syncInternal(service *v1.Service) *loadbalancers.L4
 }
 
 func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service) error {
+	start := time.Now()
+	klog.V(2).Infof("Linking backend service with instance groups for service %s/%s", service.Namespace, service.Name)
+	defer func() {
+		klog.V(2).Infof("Finished linking backend service with instance groups for service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(start))
+	}()
+
 	zones, err := lc.translator.ListZones(utils.CandidateNodesPredicate)
 	if err != nil {
 		return err
@@ -496,6 +504,12 @@ func (lc *L4NetLBController) ensureBackendLinking(service *v1.Service) error {
 func (lc *L4NetLBController) ensureInstanceGroups(service *v1.Service, nodeNames []string) error {
 	// TODO(kl52752) Move instance creation and deletion logic to NodeController
 	// to avoid race condition between controllers
+	start := time.Now()
+	klog.V(2).Infof("Ensuring instance groups for L4 NetLB Service %s/%s, len(nodeNames): %v", service.Namespace, service.Name, len(nodeNames))
+	defer func() {
+		klog.V(2).Infof("Finished ensuring instance groups for L4 NetLB Service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(start))
+	}()
+
 	nodePorts := utils.GetNodePorts(service.Spec.Ports)
 	_, err := lc.instancePool.EnsureInstanceGroupsAndPorts(lc.ctx.ClusterNamer.InstanceGroup(), nodePorts)
 	if err != nil {

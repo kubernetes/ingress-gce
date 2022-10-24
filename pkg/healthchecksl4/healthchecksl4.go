@@ -159,7 +159,9 @@ func (l4hc *l4HealthChecks) EnsureHealthCheckWithDualStackFirewalls(svc *corev1.
 func (l4hc *l4HealthChecks) ensureHealthCheck(hcName string, svcName types.NamespacedName, shared bool, path string, port int32, scope meta.KeyType, l4Type utils.L4LBType) (string, error) {
 	start := time.Now()
 	klog.V(2).Infof("Ensuring healthcheck %s for service %s, shared = %v, path = %s, port = %d, scope = %s, l4Type = %s", hcName, svcName, shared, path, port, scope, l4Type)
-	defer klog.V(2).Infof("Finished ensuring healthcheck %s for service %s, time taken: %v", hcName, svcName, time.Since(start))
+	defer func() {
+		klog.V(2).Infof("Finished ensuring healthcheck %s for service %s, time taken: %v", hcName, svcName, time.Since(start))
+	}()
 
 	hc, err := l4hc.hcProvider.Get(hcName, scope)
 	if err != nil {
@@ -209,7 +211,9 @@ func (l4hc *l4HealthChecks) ensureIPv4Firewall(svc *corev1.Service, namer namer.
 
 	start := time.Now()
 	klog.V(2).Infof("Ensuring IPv4 Firewall %s for health check for service %s/%s, health check port %s, shared health check: %t, len(nodeNames): %d", hcFwName, svc.Namespace, svc.Name, hcPort, isSharedHC, len(nodeNames))
-	defer klog.V(2).Infof("Finished ensuring IPv4 firewall %s for service %s/%s, time taken %v", hcFwName, svc.Namespace, svc.Name, time.Since(start))
+	defer func() {
+		klog.V(2).Infof("Finished ensuring IPv4 firewall %s for service %s/%s, time taken %v", hcFwName, svc.Namespace, svc.Name, time.Since(start))
+	}()
 
 	hcFWRParams := firewalls.FirewallParams{
 		PortRanges:   []string{strconv.Itoa(int(hcPort))},
@@ -233,7 +237,9 @@ func (l4hc *l4HealthChecks) ensureIPv6Firewall(svc *corev1.Service, namer namer.
 
 	start := time.Now()
 	klog.V(2).Infof("Ensuring IPv6 Firewall %s for health check for service %s/%s, health check port %s, shared health check: %t, len(nodeNames): %d", ipv6HCFWName, svc.Namespace, svc.Name, hcPort, isSharedHC, len(nodeNames))
-	defer klog.V(2).Infof("Finished ensuring IPv6 firewall %s for service %s/%s, time taken %v", ipv6HCFWName, svc.Namespace, svc.Name, time.Since(start))
+	defer func() {
+		klog.V(2).Infof("Finished ensuring IPv6 firewall %s for service %s/%s, time taken %v", ipv6HCFWName, svc.Namespace, svc.Name, time.Since(start))
+	}()
 
 	hcFWRParams := firewalls.FirewallParams{
 		PortRanges:   []string{strconv.Itoa(int(hcPort))},
@@ -299,7 +305,9 @@ func (l4hc *l4HealthChecks) deleteHealthCheck(svc *corev1.Service, namer namer.L
 
 	start := time.Now()
 	klog.V(3).Infof("Deleting L4 healthcheck %s for service %s/%s, shared: %v, scope: %v", hcName, svc.Namespace, svc.Name, sharedHC, scope)
-	defer klog.V(3).Infof("Finished deleting L4 healthcheck %s for service %s/%s, time taken: %v", hcName, svc.Namespace, svc.Name, time.Since(start))
+	defer func() {
+		klog.V(3).Infof("Finished deleting L4 healthcheck %s for service %s/%s, time taken: %v", hcName, svc.Namespace, svc.Name, time.Since(start))
+	}()
 
 	err := l4hc.hcProvider.Delete(hcName, scope)
 	if err != nil {
@@ -320,7 +328,9 @@ func (l4hc *l4HealthChecks) deleteIPv4HealthCheckFirewall(svc *corev1.Service, n
 
 	start := time.Now()
 	klog.V(3).Infof("Deleting IPv4 Firewall %s for health check %s", hcFwName, hcName)
-	defer klog.V(3).Infof("Finished deleting IPv4 Firewall %s for health check %s, time taken: %v", hcFwName, hcName, time.Since(start))
+	defer func() {
+		klog.V(3).Infof("Finished deleting IPv4 Firewall %s for health check %s, time taken: %v", hcFwName, hcName, time.Since(start))
+	}()
 
 	return l4hc.deleteHealthCheckFirewall(svc, hcName, hcFwName, isSharedHC, l4type)
 }
@@ -331,7 +341,9 @@ func (l4hc *l4HealthChecks) deleteIPv6HealthCheckFirewall(svc *corev1.Service, n
 
 	start := time.Now()
 	klog.V(3).Infof("Deleting IPv6 Firewall %s for health check %s", ipv6hcFwName, hcName)
-	defer klog.V(3).Infof("Finished deleting IPv6 Firewall %s for health check %s, time taken: %v", ipv6hcFwName, hcName, time.Since(start))
+	defer func() {
+		klog.V(3).Infof("Finished deleting IPv6 Firewall %s for health check %s, time taken: %v", ipv6hcFwName, hcName, time.Since(start))
+	}()
 
 	return l4hc.deleteHealthCheckFirewall(svc, hcName, ipv6hcFwName, isSharedHC, l4type)
 }
