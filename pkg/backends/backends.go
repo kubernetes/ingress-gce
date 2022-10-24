@@ -283,7 +283,7 @@ func (b *Backends) DeleteSignedUrlKey(be *composite.BackendService, keyName stri
 }
 
 // EnsureL4BackendService creates or updates the backend service with the given name.
-func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, nm types.NamespacedName, version meta.Version) (*composite.BackendService, error) {
+func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinity, scheme string, nm types.NamespacedName) (*composite.BackendService, error) {
 	klog.V(2).Infof("EnsureL4BackendService(%v, %v, %v): checking existing backend service", name, scheme, protocol)
 	key, err := composite.CreateKey(b.cloud, name, meta.Regional)
 	if err != nil {
@@ -300,11 +300,11 @@ func (b *Backends) EnsureL4BackendService(name, hcLink, protocol, sessionAffinit
 	}
 	expectedBS := &composite.BackendService{
 		Name:                name,
-		Protocol:            string(protocol),
+		Protocol:            protocol,
 		Description:         desc,
 		HealthChecks:        []string{hcLink},
 		SessionAffinity:     utils.TranslateAffinityType(sessionAffinity),
-		LoadBalancingScheme: string(scheme),
+		LoadBalancingScheme: scheme,
 	}
 	if protocol == string(api_v1.ProtocolTCP) {
 		expectedBS.ConnectionDraining = &composite.ConnectionDraining{DrainingTimeoutSec: DefaultConnectionDrainingTimeoutSeconds}

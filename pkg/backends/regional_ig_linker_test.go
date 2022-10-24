@@ -18,7 +18,6 @@ import (
 	"testing"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
-	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/mock"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -139,7 +138,7 @@ func createBackendService(t *testing.T, sp utils.ServicePort, backendPool *Backe
 	t.Helper()
 	namespacedName := types.NamespacedName{Name: "service.Name", Namespace: "service.Namespace"}
 	protocol := string(apiv1.ProtocolTCP)
-	if _, err := backendPool.EnsureL4BackendService(sp.BackendName(), hcLink, protocol, string(apiv1.ServiceAffinityNone), string(cloud.SchemeExternal), namespacedName, meta.VersionGA); err != nil {
+	if _, err := backendPool.EnsureL4BackendService(sp.BackendName(), hcLink, protocol, string(apiv1.ServiceAffinityNone), string(cloud.SchemeExternal), namespacedName); err != nil {
 		t.Fatalf("Error creating backend service %v", err)
 	}
 }
