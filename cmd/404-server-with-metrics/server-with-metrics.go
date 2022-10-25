@@ -26,6 +26,8 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"k8s.io/klog/v2"
@@ -47,6 +49,8 @@ var (
 	isProd            = flag.Bool("is_prod", true, "Indicates if the server is running in production.")
 )
 
+const statusCodePrefix string = "/statuscode/"
+
 func main() {
 	flag.Parse()
 	klog.InitFlags(nil)
@@ -61,7 +65,7 @@ func main() {
 	server.registerHandlers()
 	klog.Infof("Default 404 server is running with GOMAXPROCS(%d) on %s:%d\n", runtime.GOMAXPROCS(-1), hostName, *port)
 
-	// The main http server for handling NotFound and healthzrequests
+	// The main http server for handling NotFound, StatusCode and healthz requests
 	go func() {
 		err := server.httpServer.ListenAndServe()
 		if err != nil {
@@ -186,12 +190,13 @@ func (s *server) registerHandlers() {
 	httpMux := http.NewServeMux()
 	metricsMux := http.NewServeMux()
 
-	// Register the default notFoundHandler, healthz with the main http server
+	// Register the default notFoundHandler, statusCodeHandler, healthz with the main http server
 	httpMux.HandleFunc("/", s.notFoundHandler())
 	// enable shutdown handler only for non-prod environments
 	if *isProd == false {
 		httpMux.HandleFunc("/shutdown", s.shutdownHandler())
 	}
+	httpMux.HandleFunc(statusCodePrefix, s.statusCodeHandler())
 	httpMux.HandleFunc("/healthz", s.healthzHandler())
 
 	// Register the healthz and metrics handlers with the metrics server
@@ -242,6 +247,33 @@ func (s *server) notFoundHandler() http.HandlerFunc {
 		if rand.Float64() < *logSampleRequests {
 			klog.Infof("response 404 (backend NotFound), service rules for [ %s ] non-existent \n", path)
 		}
+	}
+}
+
+// statusCodeHandler returns a status code given by URL path in the request.
+// If URL path does not contain a valid status code, returns 404 (NotFound).
+func (s *server) statusCodeHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		p := strings.TrimPrefix(r.URL.Path, statusCodePrefix)
+		code, err := strconv.Atoi(p)
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprintf(w, "response 404, service rules for [ %s ] non-existent, [ %s ] cannot be converted into status code \n", r.URL.Path, p)
+			return
+		}
+		if code < 400 || code > 599 {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprintf(w, "response 404, service rules for [ %s ] non-existent, [ %s ] is unsupported, status code must be in range [400, 599] \n", r.URL.Path, p)
+			return
+		}
+		statusText := http.StatusText(code)
+		if statusText == "" {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprintf(w, "response 404, service rules for [ %s ] non-existent, [ %s ] is an unknown status code \n", r.URL.Path, p)
+			return
+		}
+		w.WriteHeader(code)
+		fmt.Fprintf(w, "response %d \n", code)
 	}
 }
 
