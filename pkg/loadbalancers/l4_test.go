@@ -78,13 +78,13 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 	l4.healthChecks = healthchecksl4.Fake(fakeGCE, l4ilbParams.Recorder)
 
 	bsName := l4.namer.L4Backend(l4.Service.Namespace, l4.Service.Name)
-	_, err := l4.backendPool.EnsureL4BackendService(bsName, "", "TCP", string(svc.Spec.SessionAffinity), string(cloud.SchemeInternal), l4.NamespacedName, meta.VersionGA)
+	_, err := l4.backendPool.EnsureL4BackendService(bsName, "", "TCP", string(svc.Spec.SessionAffinity), string(cloud.SchemeInternal), l4.NamespacedName)
 	if err != nil {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
 	}
 
 	// Update the Internal Backend Service with a new ServiceAffinity
-	_, err = l4.backendPool.EnsureL4BackendService(bsName, "", "TCP", string(v1.ServiceAffinityNone), string(cloud.SchemeInternal), l4.NamespacedName, meta.VersionGA)
+	_, err = l4.backendPool.EnsureL4BackendService(bsName, "", "TCP", string(v1.ServiceAffinityNone), string(cloud.SchemeInternal), l4.NamespacedName)
 	if err != nil {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
 	}
@@ -105,7 +105,7 @@ func TestEnsureInternalBackendServiceUpdates(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to update backend service with new connection draining timeout - err %v", err)
 	}
-	bs, err = l4.backendPool.EnsureL4BackendService(bsName, "", "TCP", string(v1.ServiceAffinityNone), string(cloud.SchemeInternal), l4.NamespacedName, meta.VersionGA)
+	bs, err = l4.backendPool.EnsureL4BackendService(bsName, "", "TCP", string(v1.ServiceAffinityNone), string(cloud.SchemeInternal), l4.NamespacedName)
 	if err != nil {
 		t.Errorf("Failed to ensure backend service  %s - err %v", bsName, err)
 	}
@@ -252,8 +252,7 @@ func TestEnsureInternalLoadBalancerWithExistingResources(t *testing.T) {
 	if hcResult.Err != nil {
 		t.Errorf("Failed to create healthcheck, err %v", hcResult.Err)
 	}
-	_, err := l4.backendPool.EnsureL4BackendService(lbName, hcResult.HCLink, "TCP", string(l4.Service.Spec.SessionAffinity),
-		string(cloud.SchemeInternal), l4.NamespacedName, meta.VersionGA)
+	_, err := l4.backendPool.EnsureL4BackendService(lbName, hcResult.HCLink, "TCP", string(l4.Service.Spec.SessionAffinity), string(cloud.SchemeInternal), l4.NamespacedName)
 	if err != nil {
 		t.Errorf("Failed to create backendservice, err %v", err)
 	}

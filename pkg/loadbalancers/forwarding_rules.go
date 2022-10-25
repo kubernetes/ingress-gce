@@ -18,6 +18,7 @@ package loadbalancers
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
@@ -268,6 +269,13 @@ func (l4 *L4) ensureForwardingRule(bsLink string, options gce.ILBOptions, existi
 // if it does not exist. It updates the existing forwarding rule if needed.
 func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.ForwardingRule, IPAddressType, error) {
 	frName := l4netlb.GetFRName()
+
+	start := time.Now()
+	klog.V(2).Infof("Ensuring external forwarding rule %s, backend service link: %s", frName, bsLink)
+	defer func() {
+		klog.V(2).Infof("Finished ensuring external forwarding rule %s, time taken: %v", frName, time.Since(start))
+	}()
+
 	// version used for creating the existing forwarding rule.
 	version := meta.VersionGA
 	existingFwdRule, err := l4netlb.forwardingRules.Get(frName)
@@ -366,6 +374,23 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.
 		return nil, IPAddrUndefined, fmt.Errorf("forwarding rule %s not found", fr.Name)
 	}
 	return createdFr, isIPManaged, err
+}
+
+func (l4netlb *L4NetLB) deleteExternalForwardingRule(result *L4NetLBSyncResult) {
+	frName := l4netlb.GetFRName()
+
+	start := time.Now()
+	klog.V(2).Infof("Deleting external forwarding rule %s for service %s/%s", frName, l4netlb.Service.Namespace, l4netlb.Service.Name)
+	defer func() {
+		klog.V(2).Infof("Finished deleting external forwarding rule %s for service %s/%s, time taken: %v", frName, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+	}()
+
+	err := l4netlb.forwardingRules.Delete(frName)
+	if err != nil {
+		klog.Errorf("Failed to delete forwarding rule %s for service %s - %v", frName, l4netlb.NamespacedName.String(), err)
+		result.Error = err
+		result.GCEResourceInError = annotations.ForwardingRuleResource
+	}
 }
 
 // tearDownResourcesWithWrongNetworkTier removes forwarding rule or IP address if its Network Tier differs from desired.

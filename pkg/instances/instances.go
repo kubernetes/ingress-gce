@@ -98,6 +98,7 @@ func (i *Instances) EnsureInstanceGroupsAndPorts(name string, ports []int64) (ig
 }
 
 func (i *Instances) ensureInstanceGroupAndPorts(name, zone string, ports []int64) (*compute.InstanceGroup, error) {
+	klog.V(3).Infof("Ensuring instance group %s in zone %s. Ports: %v", name, zone, ports)
 	ig, err := i.Get(name, zone)
 	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		klog.Errorf("Failed to get instance group %v/%v, err: %v", zone, name, err)
