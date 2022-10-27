@@ -53,7 +53,7 @@ Either shutdown the controller satisfying the Ingress, or use the
 `ingress.class` annotation:
 
 ```yaml
-apiVersion: extensions/v1beta1
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: test
