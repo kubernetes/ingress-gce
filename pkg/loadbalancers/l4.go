@@ -352,9 +352,8 @@ func (l4 *L4) EnsureInternalLoadBalancer(nodeNames []string, svc *corev1.Service
 func (l4 *L4) provideHealthChecks(nodeNames []string, result *L4ILBSyncResult) string {
 	if l4.enableDualStack {
 		return l4.provideDualStackHealthChecks(nodeNames, result)
-	} else {
-		return l4.provideIPv4HealthChecks(nodeNames, result)
 	}
+	return l4.provideIPv4HealthChecks(nodeNames, result)
 }
 
 func (l4 *L4) provideDualStackHealthChecks(nodeNames []string, result *L4ILBSyncResult) string {
@@ -419,6 +418,16 @@ func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, o
 		result.Annotations[annotations.UDPForwardingRuleKey] = fr.Name
 	}
 
+	l4.ensureIPv4NodesFirewall(nodeNames, fr.IPAddress, result)
+	if result.Error != nil {
+		return
+	}
+
+	result.Status = utils.AddIPToLBStatus(result.Status, fr.IPAddress)
+}
+
+func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, result *L4ILBSyncResult) {
+	firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
 	// ensure firewalls
 	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l4.Service)
 	if err != nil {
@@ -426,7 +435,6 @@ func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, o
 		return
 	}
 
-	firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
 	servicePorts := l4.Service.Spec.Ports
 	protocol := utils.GetProtocol(servicePorts)
 	portRanges := utils.GetServicePortRanges(servicePorts)
@@ -434,21 +442,20 @@ func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, o
 	nodesFWRParams := firewalls.FirewallParams{
 		PortRanges:        portRanges,
 		SourceRanges:      sourceRanges.StringSlice(),
-		DestinationRanges: []string{fr.IPAddress},
+		DestinationRanges: []string{ipAddress},
 		Protocol:          string(protocol),
 		Name:              firewallName,
 		NodeNames:         nodeNames,
 		L4Type:            utils.ILB,
 	}
 
-	if err := firewalls.EnsureL4LBFirewallForNodes(l4.Service, &nodesFWRParams, l4.cloud, l4.recorder); err != nil {
+	err = firewalls.EnsureL4LBFirewallForNodes(l4.Service, &nodesFWRParams, l4.cloud, l4.recorder)
+	if err != nil {
 		result.GCEResourceInError = annotations.FirewallRuleResource
 		result.Error = err
 		return
 	}
 	result.Annotations[annotations.FirewallRuleKey] = firewallName
-
-	result.Status = utils.AddIPToLBStatus(result.Status, fr.IPAddress)
 }
 
 func (l4 *L4) getServiceSubnetworkURL(options gce.ILBOptions) (string, error) {

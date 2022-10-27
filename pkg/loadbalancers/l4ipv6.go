@@ -47,14 +47,10 @@ func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []strin
 		syncResult.Annotations[annotations.UDPForwardingRuleIPv6Key] = ipv6fr.Name
 	}
 
-	firewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
-	err = l4.ensureIPv6Firewall(ipv6fr, firewallName, nodeNames)
-	if err != nil {
-		syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
-		syncResult.Error = err
+	l4.ensureIPv6NodesFirewall(ipv6fr, nodeNames, syncResult)
+	if syncResult.Error != nil {
 		return
 	}
-	syncResult.Annotations[annotations.FirewallRuleIPv6Key] = firewallName
 
 	trimmedIPv6Address := strings.Split(ipv6fr.IPAddress, "/")[0]
 	syncResult.Status = utils.AddIPToLBStatus(syncResult.Status, trimmedIPv6Address)
@@ -116,7 +112,9 @@ func (l4 *L4) getIPv6FRNameWithProtocol(protocol string) string {
 	return l4.namer.L4IPv6ForwardingRule(l4.Service.Namespace, l4.Service.Name, strings.ToLower(protocol))
 }
 
-func (l4 *L4) ensureIPv6Firewall(forwardingRule *composite.ForwardingRule, firewallName string, nodeNames []string) error {
+func (l4 *L4) ensureIPv6NodesFirewall(forwardingRule *composite.ForwardingRule, nodeNames []string, result *L4ILBSyncResult) {
+	firewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
+
 	svcPorts := l4.Service.Spec.Ports
 	portRanges := utils.GetServicePortRanges(svcPorts)
 	protocol := utils.GetProtocol(svcPorts)
@@ -132,7 +130,13 @@ func (l4 *L4) ensureIPv6Firewall(forwardingRule *composite.ForwardingRule, firew
 		L4Type:            utils.ILB,
 	}
 
-	return firewalls.EnsureL4LBFirewallForNodes(l4.Service, &ipv6nodesFWRParams, l4.cloud, l4.recorder)
+	err := firewalls.EnsureL4LBFirewallForNodes(l4.Service, &ipv6nodesFWRParams, l4.cloud, l4.recorder)
+	if err != nil {
+		result.GCEResourceInError = annotations.FirewallRuleIPv6Resource
+		result.Error = err
+		return
+	}
+	result.Annotations[annotations.FirewallRuleIPv6Key] = firewallName
 }
 
 func (l4 *L4) deleteIPv6ForwardingRule() error {
