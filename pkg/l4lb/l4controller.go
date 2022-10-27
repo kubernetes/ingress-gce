@@ -197,7 +197,7 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service) bool {
 
 // processServiceCreateOrUpdate ensures load balancer resources for the given service, as needed.
 // Returns an error if processing the service update failed.
-func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Service) *loadbalancers.L4ILBSyncResult {
+func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *loadbalancers.L4ILBSyncResult {
 	if !l4c.shouldProcessService(service) {
 		return nil
 	}
@@ -367,7 +367,7 @@ func (l4c *L4Controller) sync(key string) error {
 	// longer needing an ILB.
 	if wantsILB, _ := annotations.WantsL4ILB(svc); wantsILB {
 		klog.V(2).Infof("Ensuring ILB resources for service %s managed by L4 controller", key)
-		result = l4c.processServiceCreateOrUpdate(key, svc)
+		result = l4c.processServiceCreateOrUpdate(svc)
 		if result == nil {
 			// result will be nil if the service was ignored(due to presence of service controller finalizer).
 			return nil
