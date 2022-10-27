@@ -107,7 +107,6 @@ func NewL4NetLBController(
 			svcKey := utils.ServiceKeyFunc(curSvc.Namespace, curSvc.Name)
 			if l4netLBc.shouldProcessService(curSvc, oldSvc) {
 				klog.V(3).Infof("L4 External LoadBalancer Service %s updated, enqueuing", svcKey)
-				l4netLBc.ctx.Recorder(curSvc.Namespace).Eventf(curSvc, v1.EventTypeNormal, "UPDATE", svcKey)
 				l4netLBc.svcQueue.Enqueue(curSvc)
 				l4netLBc.enqueueTracker.Track()
 				return
