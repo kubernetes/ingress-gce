@@ -184,9 +184,8 @@ func (l4 *L4) deleteIPv4ResourcesOnDelete(result *L4ILBSyncResult) {
 // This function does not delete Backend Service and Health Check, because they are shared between IPv4 and IPv6.
 // IPv4 Firewall Rule for Health Check also will not be deleted here, and will be left till the Service Deletion.
 func (l4 *L4) deleteIPv4ResourcesAnnotationBased(result *L4ILBSyncResult, shouldIgnoreAnnotations bool) {
-	frName := l4.GetFRName()
 	if shouldIgnoreAnnotations || l4.hasAnnotation(annotations.TCPForwardingRuleKey) || l4.hasAnnotation(annotations.UDPForwardingRuleKey) {
-		err := l4.forwardingRules.Delete(frName)
+		err := l4.deleteIPv4ForwardingRule()
 		if err != nil {
 			klog.Errorf("Failed to delete forwarding rule for internal loadbalancer service %s, err %v", l4.NamespacedName.String(), err)
 			result.Error = err
@@ -196,7 +195,7 @@ func (l4 *L4) deleteIPv4ResourcesAnnotationBased(result *L4ILBSyncResult, should
 
 	// Deleting non-existent address do not print error audit logs, and we don't store address in annotations
 	// that's why we can delete it without checking annotation
-	err := ensureAddressDeleted(l4.cloud, frName, l4.cloud.Region())
+	err := l4.deleteIPv4Address()
 	if err != nil {
 		klog.Errorf("Failed to delete address for internal loadbalancer service %s, err %v", l4.NamespacedName.String(), err)
 		result.Error = err
@@ -205,14 +204,28 @@ func (l4 *L4) deleteIPv4ResourcesAnnotationBased(result *L4ILBSyncResult, should
 
 	// delete firewall rule allowing load balancer source ranges
 	if shouldIgnoreAnnotations || l4.hasAnnotation(annotations.FirewallRuleKey) {
-		firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
-		err = l4.deleteFirewall(firewallName)
+		err := l4.deleteIPv4NodesFirewall()
 		if err != nil {
-			klog.Errorf("Failed to delete firewall rule %s for internal loadbalancer service %s, err %v", firewallName, l4.NamespacedName.String(), err)
+			klog.Errorf("Failed to delete firewall rule for internal loadbalancer service %s, err %v", l4.NamespacedName.String(), err)
 			result.GCEResourceInError = annotations.FirewallRuleResource
 			result.Error = err
 		}
 	}
+}
+
+func (l4 *L4) deleteIPv4ForwardingRule() error {
+	frName := l4.GetFRName()
+	return l4.forwardingRules.Delete(frName)
+}
+
+func (l4 *L4) deleteIPv4Address() error {
+	addressName := l4.GetFRName()
+	return ensureAddressDeleted(l4.cloud, addressName, l4.cloud.Region())
+}
+
+func (l4 *L4) deleteIPv4NodesFirewall() error {
+	firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
+	return l4.deleteFirewall(firewallName)
 }
 
 func (l4 *L4) deleteFirewall(name string) error {
@@ -405,7 +418,7 @@ func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []stri
 // - IPv4 Forwarding Rule
 // - IPv4 Firewall
 func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingFR *composite.ForwardingRule, subnetworkURL, ipToUse string) {
-	fr, err := l4.ensureForwardingRule(bs.SelfLink, options, existingFR, subnetworkURL, ipToUse)
+	fr, err := l4.ensureIPv4ForwardingRule(bs.SelfLink, options, existingFR, subnetworkURL, ipToUse)
 	if err != nil {
 		klog.Errorf("EnsureInternalLoadBalancer: Failed to create forwarding rule - %v", err)
 		result.GCEResourceInError = annotations.ForwardingRuleResource

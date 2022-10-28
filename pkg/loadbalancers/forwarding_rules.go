@@ -194,9 +194,9 @@ func (l7 *L7) getEffectiveIP() (string, bool, error) {
 	return "", true, nil
 }
 
-// ensureForwardingRule creates a forwarding rule with the given name, if it does not exist. It updates the existing
+// ensureIPv4ForwardingRule creates a forwarding rule with the given name, if it does not exist. It updates the existing
 // forwarding rule if needed.
-func (l4 *L4) ensureForwardingRule(bsLink string, options gce.ILBOptions, existingFwdRule *composite.ForwardingRule, subnetworkURL, ipToUse string) (*composite.ForwardingRule, error) {
+func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, existingFwdRule *composite.ForwardingRule, subnetworkURL, ipToUse string) (*composite.ForwardingRule, error) {
 	// version used for creating the existing forwarding rule.
 	version := meta.VersionGA
 	frName := l4.GetFRName()
@@ -238,19 +238,19 @@ func (l4 *L4) ensureForwardingRule(bsLink string, options gce.ILBOptions, existi
 		}
 		if equal {
 			// nothing to do
-			klog.V(2).Infof("ensureForwardingRule: Skipping update of unchanged forwarding rule - %s", fr.Name)
+			klog.V(2).Infof("ensureIPv4ForwardingRule: Skipping update of unchanged forwarding rule - %s", fr.Name)
 			return existingFwdRule, nil
 		}
 		frDiff := cmp.Diff(existingFwdRule, fr)
 		// If the forwarding rule pointed to a backend service which does not match the controller naming scheme,
 		// that resouce could be leaked. It is not being deleted here because that is a user-managed resource.
-		klog.V(2).Infof("ensureForwardingRule: forwarding rule changed - Existing - %+v\n, New - %+v\n, Diff(-existing, +new) - %s\n. Deleting existing forwarding rule.", existingFwdRule, fr, frDiff)
+		klog.V(2).Infof("ensureIPv4ForwardingRule: forwarding rule changed - Existing - %+v\n, New - %+v\n, Diff(-existing, +new) - %s\n. Deleting existing forwarding rule.", existingFwdRule, fr, frDiff)
 		if err = l4.forwardingRules.Delete(existingFwdRule.Name); err != nil {
 			return nil, err
 		}
 		l4.recorder.Eventf(l4.Service, corev1.EventTypeNormal, events.SyncIngress, "ForwardingRule %q deleted", existingFwdRule.Name)
 	}
-	klog.V(2).Infof("ensureForwardingRule: Creating/Recreating forwarding rule - %s", fr.Name)
+	klog.V(2).Infof("ensureIPv4ForwardingRule: Creating/Recreating forwarding rule - %s", fr.Name)
 	if err = l4.forwardingRules.Create(fr); err != nil {
 		return nil, err
 	}
