@@ -18,6 +18,7 @@ package loadbalancers
 
 import (
 	"strings"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -35,7 +36,7 @@ import (
 func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bsLink string) {
 	ipv6fr, err := l4.ensureIPv6ForwardingRule(bsLink, options)
 	if err != nil {
-		klog.Errorf("ensureIPv6Resources: Failed to create ipv6 forwarding rule - %v", err)
+		klog.Errorf("ensureIPv6Resources: Failed to ensure ipv6 forwarding rule - %v", err)
 		syncResult.GCEResourceInError = annotations.ForwardingRuleIPv6Resource
 		syncResult.Error = err
 		return
@@ -47,14 +48,11 @@ func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []strin
 		syncResult.Annotations[annotations.UDPForwardingRuleIPv6Key] = ipv6fr.Name
 	}
 
-	firewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
-	err = l4.ensureIPv6Firewall(ipv6fr, firewallName, nodeNames)
-	if err != nil {
-		syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
-		syncResult.Error = err
+	l4.ensureIPv6NodesFirewall(ipv6fr, nodeNames, syncResult)
+	if syncResult.Error != nil {
+		klog.Errorf("ensureIPv6Resources: Failed to ensure ipv6 nodes firewall for L4 ILB - %v", err)
 		return
 	}
-	syncResult.Annotations[annotations.FirewallRuleIPv6Key] = firewallName
 
 	trimmedIPv6Address := strings.Split(ipv6fr.IPAddress, "/")[0]
 	syncResult.Status = utils.AddIPToLBStatus(syncResult.Status, trimmedIPv6Address)
@@ -67,6 +65,7 @@ func (l4 *L4) ensureIPv6Resources(syncResult *L4ILBSyncResult, nodeNames []strin
 // If annotation was deleted, but resource still exists, it will be left till the Service deletion,
 // where we delete all resources, no matter if they exist in annotations.
 func (l4 *L4) deleteIPv6ResourcesOnSync(syncResult *L4ILBSyncResult) {
+	klog.Infof("Deleting IPv6 resources for L4 ILB Service %s/%s on sync, with checking for existence in annotation", l4.Service.Namespace, l4.Service.Name)
 	l4.deleteIPv6ResourcesAnnotationBased(syncResult, true)
 }
 
@@ -76,6 +75,7 @@ func (l4 *L4) deleteIPv6ResourcesOnSync(syncResult *L4ILBSyncResult) {
 // so they could be leaked, if annotation was deleted.
 // That's why on service deletion we delete all IPv4 resources, ignoring their existence in annotations
 func (l4 *L4) deleteIPv6ResourcesOnDelete(syncResult *L4ILBSyncResult) {
+	klog.Infof("Deleting IPv6 resources for L4 ILB Service %s/%s on delete, without checking for existence in annotation", l4.Service.Namespace, l4.Service.Name)
 	l4.deleteIPv6ResourcesAnnotationBased(syncResult, false)
 }
 
@@ -98,7 +98,7 @@ func (l4 *L4) deleteIPv6ResourcesAnnotationBased(syncResult *L4ILBSyncResult, sh
 	}
 
 	if !shouldCheckAnnotations || l4.hasAnnotation(annotations.FirewallRuleIPv6Key) {
-		err := l4.deleteIPv6Firewall()
+		err := l4.deleteIPv6NodesFirewall()
 		if err != nil {
 			klog.Errorf("Failed to delete ipv6 firewall rule for internal loadbalancer service %s, err %v", l4.NamespacedName.String(), err)
 			syncResult.GCEResourceInError = annotations.FirewallRuleIPv6Resource
@@ -116,10 +116,19 @@ func (l4 *L4) getIPv6FRNameWithProtocol(protocol string) string {
 	return l4.namer.L4IPv6ForwardingRule(l4.Service.Namespace, l4.Service.Name, strings.ToLower(protocol))
 }
 
-func (l4 *L4) ensureIPv6Firewall(forwardingRule *composite.ForwardingRule, firewallName string, nodeNames []string) error {
+func (l4 *L4) ensureIPv6NodesFirewall(forwardingRule *composite.ForwardingRule, nodeNames []string, result *L4ILBSyncResult) {
+	start := time.Now()
+
+	firewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
+
 	svcPorts := l4.Service.Spec.Ports
 	portRanges := utils.GetServicePortRanges(svcPorts)
 	protocol := utils.GetProtocol(svcPorts)
+
+	klog.V(2).Infof("Ensuring IPv6 nodes firewall %s for L4 ILB Service %s/%s, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", firewallName, l4.Service.Namespace, l4.Service.Name, forwardingRule.IPAddress, protocol, len(nodeNames), portRanges)
+	defer func() {
+		klog.V(2).Infof("Finished ensuring IPv6 nodes firewall %s for L4 ILB Service %s/%s, time taken: %v", l4.Service.Namespace, l4.Service.Name, firewallName, time.Since(start))
+	}()
 
 	ipv6nodesFWRParams := firewalls.FirewallParams{
 		PortRanges: portRanges,
@@ -132,15 +141,35 @@ func (l4 *L4) ensureIPv6Firewall(forwardingRule *composite.ForwardingRule, firew
 		L4Type:            utils.ILB,
 	}
 
-	return firewalls.EnsureL4LBFirewallForNodes(l4.Service, &ipv6nodesFWRParams, l4.cloud, l4.recorder)
+	err := firewalls.EnsureL4LBFirewallForNodes(l4.Service, &ipv6nodesFWRParams, l4.cloud, l4.recorder)
+	if err != nil {
+		result.GCEResourceInError = annotations.FirewallRuleIPv6Resource
+		result.Error = err
+		return
+	}
+	result.Annotations[annotations.FirewallRuleIPv6Key] = firewallName
 }
 
 func (l4 *L4) deleteIPv6ForwardingRule() error {
 	ipv6FrName := l4.getIPv6FRName()
+
+	start := time.Now()
+	klog.V(2).Infof("Deleting IPv6 forwarding rule %s for L4 ILB Service %s/%s", ipv6FrName, l4.Service.Namespace, l4.Service.Name)
+	defer func() {
+		klog.V(2).Infof("Finished deleting IPv6 forwarding rule %s for L4 ILB Service %s/%s, time taken: %v", ipv6FrName, l4.Service.Namespace, l4.Service.Name, time.Since(start))
+	}()
+
 	return l4.forwardingRules.Delete(ipv6FrName)
 }
 
-func (l4 *L4) deleteIPv6Firewall() error {
+func (l4 *L4) deleteIPv6NodesFirewall() error {
 	ipv6FirewallName := l4.namer.L4IPv6Firewall(l4.Service.Namespace, l4.Service.Name)
+
+	start := time.Now()
+	klog.V(2).Infof("Deleting IPv6 nodes firewall %s for L4 ILB Service %s/%s", ipv6FirewallName, l4.Service.Namespace, l4.Service.Name)
+	defer func() {
+		klog.V(2).Infof("Finished deleting IPv6 nodes firewall %s for L4 ILB Service %s/%s, time taken: %v", ipv6FirewallName, l4.Service.Namespace, l4.Service.Name, time.Since(start))
+	}()
+
 	return l4.deleteFirewall(ipv6FirewallName)
 }

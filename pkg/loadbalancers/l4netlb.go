@@ -248,9 +248,9 @@ func (l4netlb *L4NetLB) deleteBackendService(result *L4NetLBSyncResult) {
 
 func (l4netlb *L4NetLB) deleteHealthChecksWithFirewall(result *L4NetLBSyncResult) {
 	start := time.Now()
-	klog.V(2).Infof("Deleting all health checks and firewalls for health checks for service %s/%s", l4netlb.Service.Namespace, l4netlb.Service.Name)
+	klog.V(2).Infof("Deleting all health checks and firewalls for health checks for L4 NetLB service %s/%s", l4netlb.Service.Namespace, l4netlb.Service.Name)
 	defer func() {
-		klog.V(2).Infof("Finished deleting all health checks and firewalls for health checks for service %s/%s, time taken: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
+		klog.V(2).Infof("Finished deleting all health checks and firewalls for health checks for for L4 NetLB service %s/%s, time taken: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
 	}()
 
 	// Delete healthcheck
@@ -278,9 +278,9 @@ func (l4netlb *L4NetLB) GetFRName() string {
 
 func (l4netlb *L4NetLB) ensureNodesFirewall(name string, nodeNames []string, ipAddress string, portRanges []string, protocol string) *L4NetLBSyncResult {
 	start := time.Now()
-	klog.V(2).Infof("Ensuring l4 NetLB nodes firewall %s, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", name, ipAddress, protocol, len(nodeNames), portRanges)
+	klog.V(2).Infof("Ensuring nodes firewall %s for L4 NetLB Service, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", name, l4netlb.Service.Namespace, l4netlb.Service.Name, ipAddress, protocol, len(nodeNames), portRanges)
 	defer func() {
-		klog.V(2).Infof("Finished ensuring l4 NetLB nodes firewall %s, time taken: %v", name, time.Since(start))
+		klog.V(2).Infof("Finished ensuring nodes firewall %s for L4 NetLB Service, time taken: %v", name, l4netlb.Service.Namespace, l4netlb.Service.Name, time.Since(start))
 	}()
 
 	result := &L4NetLBSyncResult{}

@@ -197,10 +197,17 @@ func (l4c *L4Controller) shouldProcessService(service *v1.Service) bool {
 
 // processServiceCreateOrUpdate ensures load balancer resources for the given service, as needed.
 // Returns an error if processing the service update failed.
-func (l4c *L4Controller) processServiceCreateOrUpdate(key string, service *v1.Service) *loadbalancers.L4ILBSyncResult {
+func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *loadbalancers.L4ILBSyncResult {
 	if !l4c.shouldProcessService(service) {
 		return nil
 	}
+
+	startTime := time.Now()
+	klog.Infof("Syncing L4 ILB service %s/%s", service.Namespace, service.Name)
+	defer func() {
+		klog.Infof("Finished syncing L4 ILB service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(startTime))
+	}()
+
 	// Ensure v2 finalizer
 	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
 		return &loadbalancers.L4ILBSyncResult{Error: fmt.Errorf("Failed to attach finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
@@ -277,6 +284,12 @@ func (l4c *L4Controller) emitEnsuredDualStackEvent(service *v1.Service) {
 }
 
 func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *loadbalancers.L4ILBSyncResult {
+	startTime := time.Now()
+	klog.Infof("Deleting L4 ILB service %s/%s", svc.Namespace, svc.Name)
+	defer func() {
+		klog.Infof("Finished deleting L4 ILB service %s/%s, time taken: %v", svc.Namespace, svc.Name, time.Since(startTime))
+	}()
+
 	l4ilbParams := &loadbalancers.L4ILBParams{
 		Service:          svc,
 		Cloud:            l4c.ctx.Cloud,
@@ -367,7 +380,7 @@ func (l4c *L4Controller) sync(key string) error {
 	// longer needing an ILB.
 	if wantsILB, _ := annotations.WantsL4ILB(svc); wantsILB {
 		klog.V(2).Infof("Ensuring ILB resources for service %s managed by L4 controller", key)
-		result = l4c.processServiceCreateOrUpdate(key, svc)
+		result = l4c.processServiceCreateOrUpdate(svc)
 		if result == nil {
 			// result will be nil if the service was ignored(due to presence of service controller finalizer).
 			return nil
