@@ -115,7 +115,7 @@ func (l4 *L4) getILBOptions() gce.ILBOptions {
 
 // EnsureInternalLoadBalancerDeleted performs a cleanup of all GCE resources for the given loadbalancer service.
 func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncResult {
-	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): attempting delete of load balancer resources", l4.NamespacedName.String())
+	klog.V(2).Infof("EnsureInternalLoadBalancerDeleted(%s): deleting L4 ILB LoadBalancer resources", l4.NamespacedName.String())
 	result := &L4ILBSyncResult{SyncType: SyncTypeDelete, StartTime: time.Now()}
 
 	l4.deleteIPv4ResourcesOnDelete(result)
@@ -163,6 +163,7 @@ func (l4 *L4) EnsureInternalLoadBalancerDeleted(svc *corev1.Service) *L4ILBSyncR
 // If annotation was deleted, but resource still exists, it will be left till the Service deletion,
 // where we delete all resources, no matter if they exist in annotations.
 func (l4 *L4) deleteIPv4ResourcesOnSync(result *L4ILBSyncResult) {
+	klog.Infof("Deleting IPv4 resources for L4 ILB Service %s/%s on sync, with checking for existence in annotation", l4.Service.Namespace, l4.Service.Name)
 	l4.deleteIPv4ResourcesAnnotationBased(result, false)
 }
 
@@ -172,6 +173,7 @@ func (l4 *L4) deleteIPv4ResourcesOnSync(result *L4ILBSyncResult) {
 // so they could be leaked, if annotation was deleted.
 // That's why on service deletion we delete all IPv4 resources, ignoring their existence in annotations
 func (l4 *L4) deleteIPv4ResourcesOnDelete(result *L4ILBSyncResult) {
+	klog.Infof("Deleting IPv4 resources for L4 ILB Service %s/%s on delete, without checking for existence in annotation", l4.Service.Namespace, l4.Service.Name)
 	l4.deleteIPv4ResourcesAnnotationBased(result, true)
 }
 
@@ -215,16 +217,37 @@ func (l4 *L4) deleteIPv4ResourcesAnnotationBased(result *L4ILBSyncResult, should
 
 func (l4 *L4) deleteIPv4ForwardingRule() error {
 	frName := l4.GetFRName()
+
+	start := time.Now()
+	klog.Infof("Deleting IPv4 forwarding rule %s for L4 ILB Service %s/%s", frName, l4.Service.Namespace, l4.Service.Name)
+	defer func() {
+		klog.Infof("Finished deleting IPv4 forwarding rule %s for L4 ILB Service %s/%s, time taken: %v", frName, l4.Service.Namespace, l4.Service.Name, time.Since(start))
+	}()
+
 	return l4.forwardingRules.Delete(frName)
 }
 
 func (l4 *L4) deleteIPv4Address() error {
 	addressName := l4.GetFRName()
+
+	start := time.Now()
+	klog.Infof("Deleting IPv4 address %s for L4 ILB Service %s/%s", addressName, l4.Service.Namespace, l4.Service.Name)
+	defer func() {
+		klog.Infof("Finished deleting IPv4 address %s for L4 ILB Service %s/%s, time taken: %v", addressName, l4.Service.Namespace, l4.Service.Name, time.Since(start))
+	}()
+
 	return ensureAddressDeleted(l4.cloud, addressName, l4.cloud.Region())
 }
 
 func (l4 *L4) deleteIPv4NodesFirewall() error {
 	firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
+
+	start := time.Now()
+	klog.Infof("Deleting IPv4 nodes firewall %s for L4 ILB Service %s/%s", firewallName, l4.Service.Namespace, l4.Service.Name)
+	defer func() {
+		klog.Infof("Finished deleting IPv4 nodes firewall %s for L4 ILB Service %s/%s, time taken: %v", firewallName, l4.Service.Namespace, l4.Service.Name, time.Since(start))
+	}()
+
 	return l4.deleteFirewall(firewallName)
 }
 
@@ -420,7 +443,7 @@ func (l4 *L4) ensureDualStackResources(result *L4ILBSyncResult, nodeNames []stri
 func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, options gce.ILBOptions, bs *composite.BackendService, existingFR *composite.ForwardingRule, subnetworkURL, ipToUse string) {
 	fr, err := l4.ensureIPv4ForwardingRule(bs.SelfLink, options, existingFR, subnetworkURL, ipToUse)
 	if err != nil {
-		klog.Errorf("EnsureInternalLoadBalancer: Failed to create forwarding rule - %v", err)
+		klog.Errorf("ensureIPv4Resources: Failed to ensure forwarding rule for L4 ILB Service %s/%s, error: %v", l4.Service.Namespace, l4.Service.Name, err)
 		result.GCEResourceInError = annotations.ForwardingRuleResource
 		result.Error = err
 		return
@@ -433,6 +456,7 @@ func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, o
 
 	l4.ensureIPv4NodesFirewall(nodeNames, fr.IPAddress, result)
 	if result.Error != nil {
+		klog.Errorf("ensureIPv4Resources: Failed to ensure nodes firewall for L4 ILB Service %s/%s, error: %v", l4.Service.Namespace, l4.Service.Name, err)
 		return
 	}
 
@@ -440,17 +464,24 @@ func (l4 *L4) ensureIPv4Resources(result *L4ILBSyncResult, nodeNames []string, o
 }
 
 func (l4 *L4) ensureIPv4NodesFirewall(nodeNames []string, ipAddress string, result *L4ILBSyncResult) {
+	start := time.Now()
+
 	firewallName := l4.namer.L4Firewall(l4.Service.Namespace, l4.Service.Name)
+	servicePorts := l4.Service.Spec.Ports
+	protocol := utils.GetProtocol(servicePorts)
+	portRanges := utils.GetServicePortRanges(servicePorts)
+
+	klog.V(2).Infof("Ensuring IPv4 nodes firewall %s for L4 ILB Service %s/%s, ipAddress: %s, protocol: %s, len(nodeNames): %v, portRanges: %v", firewallName, l4.Service.Namespace, l4.Service.Name, ipAddress, protocol, len(nodeNames), portRanges)
+	defer func() {
+		klog.V(2).Infof("Finished ensuring IPv4 nodes firewall %s for L4 ILB Service %s/%s, time taken: %v", firewallName, l4.Service.Namespace, l4.Service.Name, time.Since(start))
+	}()
+
 	// ensure firewalls
 	sourceRanges, err := helpers.GetLoadBalancerSourceRanges(l4.Service)
 	if err != nil {
 		result.Error = err
 		return
 	}
-
-	servicePorts := l4.Service.Spec.Ports
-	protocol := utils.GetProtocol(servicePorts)
-	portRanges := utils.GetServicePortRanges(servicePorts)
 	// Add firewall rule for ILB traffic to nodes
 	nodesFWRParams := firewalls.FirewallParams{
 		PortRanges:        portRanges,

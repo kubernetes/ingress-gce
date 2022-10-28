@@ -201,6 +201,12 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 	version := meta.VersionGA
 	frName := l4.GetFRName()
 
+	start := time.Now()
+	klog.V(2).Infof("Ensuring internal forwarding rule %s for L4 ILB Service %s/%s, backend service link: %s", frName, l4.Service.Namespace, l4.Service.Name, bsLink)
+	defer func() {
+		klog.V(2).Infof("Finished ensuring internal forwarding rule %s for L4 ILB Service %s/%s, time taken: %v", frName, l4.Service.Namespace, l4.Service.Name, time.Since(start))
+	}()
+
 	servicePorts := l4.Service.Spec.Ports
 	ports := utils.GetPorts(servicePorts)
 	protocol := utils.GetProtocol(servicePorts)
@@ -271,9 +277,9 @@ func (l4netlb *L4NetLB) ensureExternalForwardingRule(bsLink string) (*composite.
 	frName := l4netlb.GetFRName()
 
 	start := time.Now()
-	klog.V(2).Infof("Ensuring external forwarding rule %s, backend service link: %s", frName, bsLink)
+	klog.V(2).Infof("Ensuring external forwarding rule %s for L4 NetLB Service %s/%s, backend service link: %s", l4netlb.Service.Namespace, l4netlb.Service.Name, frName, bsLink)
 	defer func() {
-		klog.V(2).Infof("Finished ensuring external forwarding rule %s, time taken: %v", frName, time.Since(start))
+		klog.V(2).Infof("Finished ensuring external forwarding rule %s for L4 NetLB Service %s/%s, time taken: %v", l4netlb.Service.Namespace, l4netlb.Service.Name, frName, time.Since(start))
 	}()
 
 	// version used for creating the existing forwarding rule.

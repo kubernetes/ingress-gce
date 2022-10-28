@@ -201,6 +201,13 @@ func (l4c *L4Controller) processServiceCreateOrUpdate(service *v1.Service) *load
 	if !l4c.shouldProcessService(service) {
 		return nil
 	}
+
+	startTime := time.Now()
+	klog.Infof("Syncing L4 ILB service %s/%s", service.Namespace, service.Name)
+	defer func() {
+		klog.Infof("Finished syncing L4 ILB service %s/%s, time taken: %v", service.Namespace, service.Name, time.Since(startTime))
+	}()
+
 	// Ensure v2 finalizer
 	if err := common.EnsureServiceFinalizer(service, common.ILBFinalizerV2, l4c.ctx.KubeClient); err != nil {
 		return &loadbalancers.L4ILBSyncResult{Error: fmt.Errorf("Failed to attach finalizer to service %s/%s, err %w", service.Namespace, service.Name, err)}
@@ -277,6 +284,12 @@ func (l4c *L4Controller) emitEnsuredDualStackEvent(service *v1.Service) {
 }
 
 func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *loadbalancers.L4ILBSyncResult {
+	startTime := time.Now()
+	klog.Infof("Deleting L4 ILB service %s/%s", svc.Namespace, svc.Name)
+	defer func() {
+		klog.Infof("Finished deleting L4 ILB service %s/%s, time taken: %v", svc.Namespace, svc.Name, time.Since(startTime))
+	}()
+
 	l4ilbParams := &loadbalancers.L4ILBParams{
 		Service:          svc,
 		Cloud:            l4c.ctx.Cloud,
