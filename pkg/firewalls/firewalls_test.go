@@ -295,7 +295,7 @@ func verifyFirewallRule(fwp *fakeFirewallsProvider, ruleName string, expectedNod
 	}
 
 	if !sets.NewString(f.TargetTags...).Equal(sets.NewString(expectedNodes...)) {
-		t.Errorf("target tags doesn't equal expected taget tags. Actual: %v, Expected: %v", f.TargetTags, expectedNodes)
+		t.Errorf("target tags doesn't equal expected target tags. Actual: %v, Expected: %v", f.TargetTags, expectedNodes)
 	}
 
 	if !sets.NewString(f.SourceRanges...).Equal(sets.NewString(expectedCIDRs...)) {

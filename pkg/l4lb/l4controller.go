@@ -309,7 +309,7 @@ func (l4c *L4Controller) processServiceDeletion(key string, svc *v1.Service) *lo
 	// Following this order avoids a race condition when a service is changed from LoadBalancer type Internal to External.
 	if err := updateServiceStatus(l4c.ctx, svc, &v1.LoadBalancerStatus{}); err != nil {
 		l4c.ctx.Recorder(svc.Namespace).Eventf(svc, v1.EventTypeWarning, "DeleteLoadBalancer",
-			"Error reseting load balancer status to empty: %v", err)
+			"Error resetting load balancer status to empty: %v", err)
 		result.Error = fmt.Errorf("failed to reset ILB status, err: %w", err)
 		return result
 	}

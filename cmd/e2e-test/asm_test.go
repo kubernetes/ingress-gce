@@ -41,9 +41,9 @@ func TestASMConfig(t *testing.T) {
 			},
 			{
 				desc:                "Invalid ConfigMap filed equals to disable",
-				configMap:           map[string]string{"enable-unknow-feild": "INVALID1"},
+				configMap:           map[string]string{"enable-unknow-field": "INVALID1"},
 				wantASMReady:        false,
-				wantConfigMapEvents: []string{"The map contains a unknown key-value pair: enable-unknow-feild:INVALID1"},
+				wantConfigMapEvents: []string{"The map contains a unknown key-value pair: enable-unknow-field:INVALID1"},
 			},
 			{
 				desc:         "Set enable-asm to true should restart the controller",
@@ -124,14 +124,14 @@ func TestASMServiceAndDestinationRule(t *testing.T) {
 			// Different versions will be used as DestinationRule: subset
 			for _, deployment := range []struct {
 				deploymentName string
-				replics        int32
+				replicas       int32
 				version        string
 			}{
-				{deploymentName: "deployment-v1", replics: 1, version: "v1"},
-				{deploymentName: "deployment-v2", replics: 2, version: "v2"},
-				{deploymentName: "deployment-v3", replics: 3, version: "v3"},
+				{deploymentName: "deployment-v1", replicas: 1, version: "v1"},
+				{deploymentName: "deployment-v2", replicas: 2, version: "v2"},
+				{deploymentName: "deployment-v3", replicas: 3, version: "v3"},
 			} {
-				if err := e2e.CreatePorterDeployment(s, deployment.deploymentName, deployment.replics, deployment.version); err != nil {
+				if err := e2e.CreatePorterDeployment(s, deployment.deploymentName, deployment.replicas, deployment.version); err != nil {
 					t.Errorf("Failed to create deployment, Error: %s", err)
 				}
 			}
@@ -163,7 +163,7 @@ func TestASMServiceAndDestinationRule(t *testing.T) {
 				}
 				if svc.inSkipNamespace {
 					if negStatus != nil {
-						t.Errorf("Service: %s/%s is in the ASM skip namespace, shoudln't have NEG Status. ASM Config: %v, NEGStatus got: %v",
+						t.Errorf("Service: %s/%s is in the ASM skip namespace, shouldn't have NEG Status. ASM Config: %v, NEGStatus got: %v",
 							sandbox.Namespace, svc.svcName, asmConfig, negStatus)
 					}
 				} else {
@@ -190,7 +190,7 @@ func TestASMServiceAndDestinationRule(t *testing.T) {
 				t.Run(tc.desc, func(t *testing.T) {
 					sandbox := s
 					drHost := svcName
-					// crossNamespace will test DestinationRules that refering a serive located in a different namespace
+					// crossNamespace will test DestinationRules that referring a service located in a different namespace
 					if tc.crossNamespace {
 						sandbox = sSkip
 						drHost = fmt.Sprintf("%s.%s.svc.cluster.local", svcName, s.Namespace)

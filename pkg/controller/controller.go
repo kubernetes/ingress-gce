@@ -835,7 +835,7 @@ func (lbc *LoadBalancerController) ensureFinalizer(ing *v1.Ingress) (*v1.Ingress
 	return updatedIng, nil
 }
 
-// frontendGCAlgorithm returns the naming scheme using which frontend resources needs to be cleanedup.
+// frontendGCAlgorithm returns the naming scheme using which frontend resources needs to be cleaned-up.
 // This also returns a boolean to specify if we need to delete frontend resources.
 // GC path is
 // If ingress does not exist :   v1 frontends and all backends

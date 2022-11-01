@@ -183,7 +183,7 @@ func TestHealthCheckFirewallDeletionWithILB(t *testing.T) {
 	}
 	l4NetLB := NewL4NetLB(l4NetlbParams)
 
-	// make sure both ilb and netlb use the same l4 healtcheck instance
+	// make sure both ilb and netlb use the same l4 healthcheck instance
 	l4NetLB.healthChecks = l4ilb.healthChecks
 
 	// create netlb resources
@@ -541,7 +541,7 @@ func TestEnsureNetLBFirewallDestinations(t *testing.T) {
 	}
 
 	if reflect.DeepEqual(oldDestinationRanges, updatedFirewall.DestinationRanges) {
-		t.Errorf("DestinationRanges is not udpated. oldDestinationRanges:%v, updatedFirewall.DestinationRanges:%v", oldDestinationRanges, updatedFirewall.DestinationRanges)
+		t.Errorf("DestinationRanges is not updated. oldDestinationRanges:%v, updatedFirewall.DestinationRanges:%v", oldDestinationRanges, updatedFirewall.DestinationRanges)
 	}
 }
 

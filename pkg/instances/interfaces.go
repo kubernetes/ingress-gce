@@ -49,7 +49,7 @@ type InstanceGroups interface {
 	DeleteInstanceGroup(name, zone string) error
 	ListInstanceGroups(zone string) ([]*compute.InstanceGroup, error)
 
-	// TODO: Refactor for modulatiry.
+	// TODO: Refactor for modularity.
 	ListInstancesInInstanceGroup(name, zone string, state string) ([]*compute.InstanceWithNamedPorts, error)
 	AddInstancesToInstanceGroup(name, zone string, instanceRefs []*compute.InstanceReference) error
 	RemoveInstancesFromInstanceGroup(name, zone string, instanceRefs []*compute.InstanceReference) error

@@ -44,7 +44,7 @@ func computeNewAnnotationsIfNeeded(svc *v1.Service, newAnnotations map[string]st
 	return newObjectMeta
 }
 
-// mergeAnnotations merges the new set of l4lb resource annotations with the pre-existing service annotations.
+// mergeAnnotations merges the new set of l4lb resource annotations with the preexisting service annotations.
 // Existing L4 resource annotation values will be replaced with the values in the new map.
 // This function is used by External and Internal L4 LB controllers.
 func mergeAnnotations(existing, lbAnnotations map[string]string, keysToRemove []string) map[string]string {

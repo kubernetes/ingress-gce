@@ -38,7 +38,7 @@ type V2FrontendNamer struct {
 
 // NewV2FrontendNamerTest returns upgrade test for v2 frontend namer.
 // This test asserts that v1 finalizer is retained/attached and ingress continues
-// to use v1 naming naming scheme when master is upgraded to a gke version that use v1.8.
+// to use v1 naming scheme when master is upgraded to a gke version that use v1.8.
 func NewV2FrontendNamerTest() e2e.UpgradeTest {
 	return &V2FrontendNamer{}
 }

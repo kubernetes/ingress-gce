@@ -287,12 +287,12 @@ func (ctx *ControllerContext) initEnableASM() {
 	}
 
 	klog.V(2).Infof("The supported DestinationRule group version is %s in group %s. Need to update as istio API graduates.", destinationRuleAPIVersion, destinationRuleGroup)
-	destrinationGVR := schema.GroupVersionResource{Group: destinationRuleGroup, Version: destinationRuleAPIVersion, Resource: destinationRulePlural}
-	drDynamicInformer := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, destrinationGVR, ctx.Namespace, ctx.ResyncPeriod,
+	destinationGVR := schema.GroupVersionResource{Group: destinationRuleGroup, Version: destinationRuleAPIVersion, Resource: destinationRulePlural}
+	drDynamicInformer := dynamicinformer.NewFilteredDynamicInformer(dynamicClient, destinationGVR, ctx.Namespace, ctx.ResyncPeriod,
 		cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc},
 		nil)
 	ctx.DestinationRuleInformer = drDynamicInformer.Informer()
-	ctx.DestinationRuleClient = dynamicClient.Resource(destrinationGVR)
+	ctx.DestinationRuleClient = dynamicClient.Resource(destinationGVR)
 	ctx.ASMConfigController.RecordEvent("Normal", "ASMModeOn", fmt.Sprintf("NEG controller is running in ASM Mode with Istio API: %s.", destinationRuleAPIVersion))
 	ctx.ASMConfigController.SetASMReadyTrue()
 }

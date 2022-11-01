@@ -126,7 +126,7 @@ func crd(meta *CRDMeta, namespacedScoped bool) *apiextensionsv1.CustomResourceDe
 			klog.Errorf("Error adding simple validation for %v CRD(%s API): %v", meta.kind, v.name, err)
 		}
 		if validationSchema == nil {
-			klog.Errorf("No validation schema exists for for %v CRD(%s API)", meta.kind, v.name)
+			klog.Errorf("No validation schema exists for %v CRD(%s API)", meta.kind, v.name)
 		}
 		version := apiextensionsv1.CustomResourceDefinitionVersion{
 			Name:       v.name,

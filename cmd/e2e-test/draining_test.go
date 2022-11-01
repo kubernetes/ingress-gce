@@ -35,8 +35,8 @@ import (
 )
 
 const (
-	drainingTransitionPollTimeout = 15 * time.Minute
-	drainingTansitionPollInterval = 30 * time.Second
+	drainingTransitionPollTimeout  = 15 * time.Minute
+	drainingTransitionPollInterval = 30 * time.Second
 )
 
 func TestDraining(t *testing.T) {
@@ -134,7 +134,7 @@ func TestDraining(t *testing.T) {
 				t.Errorf("Failed to update BackendConfig ConnectionDraining settings for %s: %v", t.Name(), err)
 			}
 
-			if err := wait.Poll(drainingTansitionPollInterval, drainingTransitionPollTimeout, func() (bool, error) {
+			if err := wait.Poll(drainingTransitionPollInterval, drainingTransitionPollTimeout, func() (bool, error) {
 				params := &fuzz.GCLBForVIPParams{VIP: vip, Validators: fuzz.FeatureValidators(features.All)}
 				gclb, err = fuzz.GCLBForVIP(context.Background(), Framework.Cloud, params)
 				if err != nil {

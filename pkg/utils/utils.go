@@ -61,7 +61,7 @@ const (
 	Create
 	// Update used to record updates in a sync pool.
 	Update
-	// Delete used to record deltions from a sync pool.
+	// Delete used to record deletions from a sync pool.
 	Delete
 	// AddInstances used to record a call to AddInstances.
 	AddInstances
@@ -409,7 +409,7 @@ var (
 	CandidateNodesPredicate = func(node *api_v1.Node) bool {
 		return nodePredicateInternal(node, false, false)
 	}
-	// CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes selects all nodes except ones that are upgradind and/or have any exclude labels. This function tolerates unready nodes.
+	// CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes selects all nodes except ones that are upgrading and/or have any exclude labels. This function tolerates unready nodes.
 	// TODO(prameshj) - Once the kubernetes/kubernetes Predicate function includes Unready nodes and the GKE nodepool code sets exclude labels on upgrade, this can be replaced with CandidateNodesPredicate.
 	CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes = func(node *api_v1.Node) bool {
 		return nodePredicateInternal(node, true, true)
@@ -718,7 +718,7 @@ func LegacyForwardingRuleName(svc *api_v1.Service) string {
 }
 
 // L4LBResourceDescription stores the description fields for L4 ILB or NetLB resources.
-// This is useful to indetify which resources correspond to which L4 LB service.
+// This is useful to identify which resources correspond to which L4 LB service.
 type L4LBResourceDescription struct {
 	// ServiceName indicates the name of the service the resource is for.
 	ServiceName string `json:"networking.gke.io/service-name"`

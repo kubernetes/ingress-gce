@@ -172,7 +172,7 @@ func checkBackendService(lc *L4NetLBController, svc *v1.Service) error {
 	igName := lc.namer.InstanceGroup()
 	for _, b := range bs.Backends {
 		if !strings.Contains(b.Group, igName) {
-			return fmt.Errorf("Backend Ingstance Group Link mismatch: %s != %s", igName, b.Group)
+			return fmt.Errorf("Backend Instance Group Link mismatch: %s != %s", igName, b.Group)
 		}
 	}
 	ig, err := lc.ctx.Cloud.GetInstanceGroup(igName, testGCEZone)
@@ -270,7 +270,7 @@ func validateAnnotationsDeleted(svc *v1.Service) error {
 		}
 	}
 	if len(unexpectedKeys) != 0 {
-		return fmt.Errorf("Unexpeceted annotations: %v, Service annotations %v", unexpectedKeys, svc.Annotations)
+		return fmt.Errorf("Unexpected annotations: %v, Service annotations %v", unexpectedKeys, svc.Annotations)
 	}
 	return nil
 }
@@ -867,7 +867,7 @@ func TestHealthCheckWhenExternalTrafficPolicyWasUpdated(t *testing.T) {
 	hcNameNonShared := lc.namer.L4HealthCheck(svc.Namespace, svc.Name, false)
 	err = updateAndAssertExternalTrafficPolicy(newSvc, lc, v1.ServiceExternalTrafficPolicyTypeLocal, hcNameNonShared)
 	if err != nil {
-		t.Errorf("Error asserthing nonshared health check %v", err)
+		t.Errorf("Error asserting nonshared health check %v", err)
 	}
 	// delete shared health check if is created, update service to Cluster and
 	// check that non-shared health check was created

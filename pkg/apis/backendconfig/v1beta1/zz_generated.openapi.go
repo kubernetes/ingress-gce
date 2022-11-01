@@ -436,7 +436,7 @@ func schema_pkg_apis_backendconfig_v1beta1_SessionAffinityConfig(ref common.Refe
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
 			SchemaProps: spec.SchemaProps{
-				Description: "SessionAffinityConfig contains configuration for stickyness parameters.",
+				Description: "SessionAffinityConfig contains configuration for stickiness parameters.",
 				Type:        []string{"object"},
 				Properties: map[string]spec.Schema{
 					"affinityType": {

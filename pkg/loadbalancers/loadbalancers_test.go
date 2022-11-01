@@ -953,7 +953,7 @@ func verifyCertAndProxyLink(expectCerts map[string]string, expectCertsProxy map[
 		}
 	}
 
-	// httpsproxy needs to contain only the certs in expectCerts, nothing more, nothing less
+	// https proxy needs to contain only the certs in expectCerts, nothing more, nothing less
 	key, err = composite.CreateKey(j.fakeGCE, j.feNamer.TargetProxy(namer_util.HTTPSProtocol), defaultScope)
 	if err != nil {
 		t.Fatal(err)

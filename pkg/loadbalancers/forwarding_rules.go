@@ -249,7 +249,7 @@ func (l4 *L4) ensureIPv4ForwardingRule(bsLink string, options gce.ILBOptions, ex
 		}
 		frDiff := cmp.Diff(existingFwdRule, fr)
 		// If the forwarding rule pointed to a backend service which does not match the controller naming scheme,
-		// that resouce could be leaked. It is not being deleted here because that is a user-managed resource.
+		// that resource could be leaked. It is not being deleted here because that is a user-managed resource.
 		klog.V(2).Infof("ensureIPv4ForwardingRule: forwarding rule changed - Existing - %+v\n, New - %+v\n, Diff(-existing, +new) - %s\n. Deleting existing forwarding rule.", existingFwdRule, fr, frDiff)
 		if err = l4.forwardingRules.Delete(existingFwdRule.Name); err != nil {
 			return nil, err

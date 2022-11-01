@@ -106,7 +106,7 @@ func (grl *GCERateLimiter) Accept(ctx context.Context, key *cloud.RateLimitKey) 
 // associated with the passed in key.
 func (grl *GCERateLimiter) rateLimitImpl(key *cloud.RateLimitKey) flowcontrol.RateLimiter {
 	// Since the passed in key will have the ProjectID field filled in, we need to
-	// create a copy which does not, so that retreiving the rate limiter implementation
+	// create a copy which does not, so that retrieving the rate limiter implementation
 	// through the map works as expected.
 	keyCopy := cloud.RateLimitKey{
 		ProjectID: "",

@@ -401,7 +401,7 @@ func TestEnableNEGServiceWithL4ILB(t *testing.T) {
 		t.Fatalf("Failed to update service lister: %v", err)
 	}
 	if err = controller.processService(svcKey); err != nil {
-		t.Fatalf("Failed to process updated L4 ILB srvice: %v", err)
+		t.Fatalf("Failed to process updated L4 ILB service: %v", err)
 	}
 	expectedPortInfoMap = negtypes.NewPortInfoMapForVMIPNEG(testServiceNamespace, testServiceName,
 		controller.l4Namer, true)
@@ -1097,7 +1097,7 @@ func TestMergeCSMPortInfoMap(t *testing.T) {
 	defer controller.stop()
 	n1s1 := newTestServiceCus(t, controller, "namespace1", "service1", []int32{80, 90})
 	n2s1 := newTestServiceCus(t, controller, "namespace2", "service1", []int32{90})
-	ds1, usDr1 := newTestDestinationRule(t, controller, "namespac2", "test-destination-rule", "service1.namespace1", []string{"v1", "v2"})
+	ds1, usDr1 := newTestDestinationRule(t, controller, "name-space2", "test-destination-rule", "service1.namespace1", []string{"v1", "v2"})
 	if err := controller.destinationRuleLister.Add(usDr1); err != nil {
 		t.Fatal(err)
 	}
@@ -1354,7 +1354,7 @@ func TestEnqueueEndpoints(t *testing.T) {
 			if list := informer.GetIndexer().List(); len(list) != 1 {
 				t.Errorf("Got list - %v of size %d, want 1 element", list, len(list))
 			}
-			t.Logf("Checking for enqueue of endopoint create event")
+			t.Logf("Checking for enqueue of endpoint create event")
 			ensureEndpointEnqueue(t, tc.expectedKey, controller)
 		})
 	}
@@ -1513,7 +1513,7 @@ func validateDestinationRuleAnnotationWithPortInfoMap(t *testing.T, usdr *unstru
 }
 
 // validateServiceStateAnnotationWithPortNameMap validates all aspects of the service annotation
-// and also checks for custon names if specified in given portNameMap
+// and also checks for custom names if specified in given portNameMap
 func validateServiceStateAnnotationWithPortNameMap(t *testing.T, svc *apiv1.Service, svcPorts []int32, namer negtypes.NetworkEndpointGroupNamer, portNameMap map[int32]string) {
 
 	negStatus := validateServiceStateAnnotationExceptNames(t, svc, svcPorts)

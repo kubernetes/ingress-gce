@@ -59,7 +59,7 @@ func NewDelayRetryHandler(retryFunc func(), backoff backoffHandler) *backoffRetr
 }
 
 // Retry triggers retry with back off
-// At any time, there is only one onging retry allowed.
+// At any time, there is only one ongoing retry allowed.
 func (h *backoffRetryHandler) Retry() error {
 	h.stateLock.Lock()
 	defer h.stateLock.Unlock()

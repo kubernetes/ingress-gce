@@ -95,7 +95,7 @@ ab -n 10000000 -c 10000 http://localhost:8080/page.html > /tmp/ab_get_test.log &
 
 * Results 
   * default MAXGOPROCS = 12
-  * around 1K requests/sec each (GET and POST)over 2m  (combine througput of 2K requests/sec)
+  * around 1K requests/sec each (GET and POST)over 2m  (combine throughput of 2K requests/sec)
   * max go routines peaked to 17K and oscillates between 5K to 15K 
   * server over 20M GET + POST requests
 
@@ -248,7 +248,7 @@ ab -n 10000000 -c 1000 http://localhost:8080/page.html > /tmp/ab_get_test.log &
 
 * Results
   * default MAXGOPROCS = 12
-  * around 18K requests/sec each (GET and POST) over 20m requests  (combine througput of 36K requests/sec)
+  * around 18K requests/sec each (GET and POST) over 20m requests  (combine throughput of 36K requests/sec)
   * max go routines peaked to 1.5K and oscillates between 500 to 1.5K
   * server over 20M GET requests
   * http processing delay over 1m, low: 0.075ms, avg: 0.125ms and max: 0.2ms

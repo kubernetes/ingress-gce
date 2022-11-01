@@ -200,7 +200,7 @@ func (manager *syncerManager) EnsureSyncers(namespace, name string, newPorts neg
 		syncer, ok := manager.syncerMap[syncerKey]
 		if !ok {
 
-			// To ensure that a NEG CR always exists during the lifecyle of a NEG, do not create a
+			// To ensure that a NEG CR always exists during the lifecycle of a NEG, do not create a
 			// syncer for the NEG until the NEG CR is successfully created. This will reduce the
 			// possibility of invalid states and reduces complexity of garbage collection
 			if err := manager.ensureSvcNegCR(key, portInfo); err != nil {

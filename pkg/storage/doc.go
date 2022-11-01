@@ -19,7 +19,7 @@ limitations under the License.
 // 1. There is only so much information we can pack into 64 chars allowed
 //    by GCE for resource names.
 // 2. An Ingress controller cannot assume total control over a project, in
-//    fact in a majority of cases (ubernetes, tests, multiple gke clusters in
+//    fact in a majority of cases (kubernetes, tests, multiple gke clusters in
 //    same project) there *will* be multiple controllers in a project.
 // 3. If the Ingress controller pod is killed, an Ingress is deleted while
 //    the pod is down, and then the controller is re-scheduled on another node,

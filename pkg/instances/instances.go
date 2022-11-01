@@ -395,7 +395,7 @@ func (i *Instances) Sync(nodes []string) (err error) {
 	return nil
 }
 
-// canonicalizeInstanceNeme take a GCE instance 'hostname' and break it down
+// canonicalizeInstanceName take a GCE instance 'hostname' and break it down
 // to something that can be fed to the GCE API client library.  Basically
 // this means reducing 'kubernetes-node-2.c.my-proj.internal' to
 // 'kubernetes-node-2' if necessary.

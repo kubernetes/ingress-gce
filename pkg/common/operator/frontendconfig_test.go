@@ -26,7 +26,7 @@ func TestDoesIngressReferenceFrontendConfig(t *testing.T) {
 			expected: false,
 		},
 		{
-			desc:     "ingress in different namspace",
+			desc:     "ingress in different namespace",
 			ing:      test.IngressWithFrontendConfigOtherNamespace,
 			expected: false,
 		},

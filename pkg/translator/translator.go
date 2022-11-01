@@ -178,7 +178,7 @@ const hostRulePrefix = "host"
 // deleted, we need to find all host PathMatchers that have the backend
 // and remove the mapping. When a new path is added to a host (happens
 // more frequently than service deletion) we just need to lookup the 1
-// pathmatcher of the host.
+// path matcher of the host.
 func ToCompositeURLMap(g *utils.GCEURLMap, namer namer.IngressFrontendNamer, key *meta.Key) *composite.UrlMap {
 	defaultBackendName := g.DefaultBackend.BackendName()
 	key.Name = defaultBackendName

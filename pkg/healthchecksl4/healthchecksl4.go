@@ -424,7 +424,7 @@ func newL4HealthCheck(name string, svcName types.NamespacedName, shared bool, pa
 		Type:               "HTTP",
 		Description:        desc,
 		Scope:              scope,
-		// Region will be omited by GCP API if Scope is set to Global
+		// Region will be omitted by GCP API if Scope is set to Global
 		Region: region,
 	}
 }

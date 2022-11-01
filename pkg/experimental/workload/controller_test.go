@@ -90,7 +90,7 @@ func getEndpointSliceAddr(wlc *Controller, svc *corev1.Service, t *testing.T) []
 	return ret
 }
 
-// addEndpointSliceToLister adds the EndpointSlice to the lister so the controller knows the existance of it.
+// addEndpointSliceToLister adds the EndpointSlice to the lister so the controller knows the existence of it.
 func addEndpointSliceToLister(wlc *Controller, svc *corev1.Service, t *testing.T) {
 	sliceName := endpointsliceName(svc.Name)
 	eps, err := wlc.ctx.KubeClient.DiscoveryV1().EndpointSlices(svc.Namespace).Get(

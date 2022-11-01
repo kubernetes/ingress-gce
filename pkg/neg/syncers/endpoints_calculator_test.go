@@ -257,7 +257,7 @@ func deleteNodes(t *testing.T, nodeNames []string, nodeIndexer cache.Indexer) {
 	for _, nodeName := range nodeNames {
 		node, exists, err := nodeIndexer.GetByKey(nodeName)
 		if err != nil || !exists {
-			t.Errorf("Could not lookuo node %q, err - %v", nodeName, err)
+			t.Errorf("Could not lookup node %q, err - %v", nodeName, err)
 			continue
 		}
 		if err := nodeIndexer.Delete(node); err != nil {

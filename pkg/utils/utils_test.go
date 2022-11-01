@@ -529,7 +529,7 @@ func TestGetNodeConditionPredicate(t *testing.T) {
 			},
 			expectAccept:                       false,
 			expectAcceptByUnreadyNodePredicate: true,
-			name:                               "uneady node",
+			name:                               "unready node",
 		},
 		{
 			node: api_v1.Node{
