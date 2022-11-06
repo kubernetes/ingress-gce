@@ -36,6 +36,7 @@ type FrontendConfig struct {
 // +k8s:openapi-gen=true
 type FrontendConfigSpec struct {
 	SslPolicy       *string              `json:"sslPolicy,omitempty"`
+	QuicOverride    *string              `json:"quicOverride,omitempty"`
 	RedirectToHttps *HttpsRedirectConfig `json:"redirectToHttps,omitempty"`
 }
 

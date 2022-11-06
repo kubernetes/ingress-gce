@@ -117,6 +117,10 @@ func (l7 *L7) checkHttpsProxy() (err error) {
 		return err
 	}
 	description, err := l7.description()
+	if err != nil {
+		return err
+	}
+
 	version := l7.Versions().TargetHttpProxy
 	proxy, sslPolicySet, err := tr.ToCompositeTargetHttpsProxy(env, description, version, urlMapKey, l7.sslCerts)
 	if err != nil {

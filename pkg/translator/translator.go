@@ -320,6 +320,7 @@ func (t *Translator) ToCompositeTargetHttpsProxy(env *Env, description string, v
 		SslCertificates: certs,
 		Version:         version,
 	}
+
 	var sslPolicySet bool
 	if flags.F.EnableFrontendConfig {
 		sslPolicy, err := sslPolicyLink(env)
@@ -330,6 +331,11 @@ func (t *Translator) ToCompositeTargetHttpsProxy(env *Env, description string, v
 			proxy.SslPolicy = *sslPolicy
 			sslPolicySet = true
 		}
+		quicOverride, err := quicOverride(env)
+		if err != nil {
+			return nil, sslPolicySet, err
+		}
+		proxy.QuicOverride = *quicOverride
 	}
 
 	return proxy, sslPolicySet, nil
@@ -399,6 +405,24 @@ func sslPolicyLink(env *Env) (*string, error) {
 	resID := resourceID.ResourcePath()
 
 	return &resID, nil
+}
+
+func quicOverride(env *Env) (*string, error) {
+	quicNone := "NONE"
+
+	if env.FrontendConfig == nil {
+		return nil, nil
+	}
+
+	quicStatus := env.FrontendConfig.Spec.QuicOverride
+	if quicStatus == nil {
+		return &quicNone, nil
+	}
+	if *quicStatus == "" {
+		return &quicNone, nil
+	}
+
+	return quicStatus, nil
 }
 
 // TODO(shance): find a way to unexport this

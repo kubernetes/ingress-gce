@@ -542,22 +542,24 @@ func TestToCompositeTargetHttpsProxy(t *testing.T) {
 	description := "foo"
 
 	testCases := []struct {
-		desc      string
-		urlMapKey *meta.Key
-		sslCerts  []*composite.SslCertificate
-		sslPolicy *string
-		version   meta.Version
-		want      *composite.TargetHttpsProxy
+		desc         string
+		urlMapKey    *meta.Key
+		sslCerts     []*composite.SslCertificate
+		sslPolicy    *string
+		quicOverride *string
+		version      meta.Version
+		want         *composite.TargetHttpsProxy
 	}{
 		{
 			desc:      "https xlb",
 			urlMapKey: meta.GlobalKey("my-url-map"),
 			version:   meta.VersionGA,
 			want: &composite.TargetHttpsProxy{
-				Name:        "foo-tp",
-				Description: description,
-				Version:     meta.VersionGA,
-				UrlMap:      "global/urlMaps/my-url-map",
+				Name:         "foo-tp",
+				Description:  description,
+				Version:      meta.VersionGA,
+				UrlMap:       "global/urlMaps/my-url-map",
+				QuicOverride: "NONE",
 			},
 		},
 		{
@@ -565,10 +567,11 @@ func TestToCompositeTargetHttpsProxy(t *testing.T) {
 			urlMapKey: meta.RegionalKey("my-url-map", "fakeRegion"),
 			version:   meta.VersionGA,
 			want: &composite.TargetHttpsProxy{
-				Name:        "foo-tp",
-				Description: description,
-				Version:     meta.VersionGA,
-				UrlMap:      "regions/fakeRegion/urlMaps/my-url-map",
+				Name:         "foo-tp",
+				Description:  description,
+				Version:      meta.VersionGA,
+				UrlMap:       "regions/fakeRegion/urlMaps/my-url-map",
+				QuicOverride: "NONE",
 			},
 		},
 		{
@@ -576,23 +579,40 @@ func TestToCompositeTargetHttpsProxy(t *testing.T) {
 			urlMapKey: meta.GlobalKey("my-url-map"),
 			version:   meta.VersionBeta,
 			want: &composite.TargetHttpsProxy{
-				Name:        "foo-tp",
-				Description: description,
-				Version:     meta.VersionBeta,
-				UrlMap:      "global/urlMaps/my-url-map",
+				Name:         "foo-tp",
+				Description:  description,
+				Version:      meta.VersionBeta,
+				UrlMap:       "global/urlMaps/my-url-map",
+				QuicOverride: "NONE",
 			},
 		},
 		{
-			desc:      "https xlb with ssl policy",
+			desc:      "toto1 https xlb1 with ssl policy",
 			urlMapKey: meta.GlobalKey("my-url-map"),
 			version:   meta.VersionGA,
 			sslPolicy: utils.NewStringPointer("test-policy"),
 			want: &composite.TargetHttpsProxy{
-				Name:        "foo-tp",
-				Description: description,
-				Version:     meta.VersionGA,
-				UrlMap:      "global/urlMaps/my-url-map",
-				SslPolicy:   "global/sslPolicies/test-policy",
+				Name:         "foo-tp",
+				Description:  description,
+				Version:      meta.VersionGA,
+				UrlMap:       "global/urlMaps/my-url-map",
+				SslPolicy:    "global/sslPolicies/test-policy",
+				QuicOverride: "NONE",
+			},
+		},
+		{
+			desc:         "toto2 https xlb2 with ssl policy & quic override",
+			urlMapKey:    meta.GlobalKey("my-url-map"),
+			version:      meta.VersionGA,
+			sslPolicy:    utils.NewStringPointer("test-policy"),
+			quicOverride: utils.NewStringPointer("DISABLE"),
+			want: &composite.TargetHttpsProxy{
+				Name:         "foo-tp",
+				Description:  description,
+				Version:      meta.VersionGA,
+				UrlMap:       "global/urlMaps/my-url-map",
+				SslPolicy:    "global/sslPolicies/test-policy",
+				QuicOverride: "DISABLE",
 			},
 		},
 	}
@@ -601,7 +621,7 @@ func TestToCompositeTargetHttpsProxy(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			// isL7ILB doesn't affect the outcome here since the key is creating during ensure
 			tr := NewTranslator(false, &testNamer{"foo"})
-			env := &Env{FrontendConfig: &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: tc.sslPolicy}}}
+			env := &Env{FrontendConfig: &frontendconfigv1beta1.FrontendConfig{Spec: frontendconfigv1beta1.FrontendConfigSpec{SslPolicy: tc.sslPolicy, QuicOverride: tc.quicOverride}}}
 			got, sslPolicySet, err := tr.ToCompositeTargetHttpsProxy(env, description, tc.version, tc.urlMapKey, tc.sslCerts)
 			if err != nil {
 				t.Fatal(err)
