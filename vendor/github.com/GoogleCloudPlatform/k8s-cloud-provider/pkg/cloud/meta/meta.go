@@ -306,6 +306,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&ga.ForwardingRulesService{}),
 		additionalMethods: []string{
 			"SetTarget",
+			"SetLabels",
 		},
 	},
 	{
@@ -317,6 +318,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&alpha.ForwardingRulesService{}),
 		additionalMethods: []string{
 			"SetTarget",
+			"SetLabels",
 		},
 	},
 	{
@@ -328,6 +330,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&beta.ForwardingRulesService{}),
 		additionalMethods: []string{
 			"SetTarget",
+			"SetLabels",
 		},
 	},
 	{
@@ -339,6 +342,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&alpha.GlobalForwardingRulesService{}),
 		additionalMethods: []string{
 			"SetTarget",
+			"SetLabels",
 		},
 	},
 	{
@@ -350,6 +354,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&beta.GlobalForwardingRulesService{}),
 		additionalMethods: []string{
 			"SetTarget",
+			"SetLabels",
 		},
 	},
 	{
@@ -360,6 +365,7 @@ var AllServices = []*ServiceInfo{
 		serviceType: reflect.TypeOf(&ga.GlobalForwardingRulesService{}),
 		additionalMethods: []string{
 			"SetTarget",
+			"SetLabels",
 		},
 	},
 	{
@@ -889,6 +895,7 @@ var AllServices = []*ServiceInfo{
 		keyType:     Global,
 		serviceType: reflect.TypeOf(&ga.TargetHttpsProxiesService{}),
 		additionalMethods: []string{
+			"SetCertificateMap",
 			"SetSslCertificates",
 			"SetSslPolicy",
 			"SetUrlMap",
@@ -916,6 +923,7 @@ var AllServices = []*ServiceInfo{
 		keyType:     Global,
 		serviceType: reflect.TypeOf(&beta.TargetHttpsProxiesService{}),
 		additionalMethods: []string{
+			"SetCertificateMap",
 			"SetSslCertificates",
 			"SetSslPolicy",
 			"SetUrlMap",
