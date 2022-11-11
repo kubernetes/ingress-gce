@@ -262,6 +262,30 @@ func TestBackendServiceIAPOAuth2ClientInfo(t *testing.T) {
 	}
 }
 
+func TestBackendServiceLocalityLoadBalancingPolicyConfig(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceLocalityLoadBalancingPolicyConfig{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceLocalityLoadBalancingPolicyConfig{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceLocalityLoadBalancingPolicyConfigCustomPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceLocalityLoadBalancingPolicyConfigCustomPolicy{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceLocalityLoadBalancingPolicyConfigCustomPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBackendServiceLocalityLoadBalancingPolicyConfigPolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(BackendServiceLocalityLoadBalancingPolicyConfigPolicy{})
+	alphaType := reflect.TypeOf(computealpha.BackendServiceLocalityLoadBalancingPolicyConfigPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBackendServiceLogConfig(t *testing.T) {
 	compositeType := reflect.TypeOf(BackendServiceLogConfig{})
 	alphaType := reflect.TypeOf(computealpha.BackendServiceLogConfig{})
@@ -345,6 +369,22 @@ func TestConsistentHashLoadBalancerSettingsHttpCookie(t *testing.T) {
 func TestCorsPolicy(t *testing.T) {
 	compositeType := reflect.TypeOf(CorsPolicy{})
 	alphaType := reflect.TypeOf(computealpha.CorsPolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCustomErrorResponsePolicy(t *testing.T) {
+	compositeType := reflect.TypeOf(CustomErrorResponsePolicy{})
+	alphaType := reflect.TypeOf(computealpha.CustomErrorResponsePolicy{})
+	if err := typeEquality(compositeType, alphaType, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCustomErrorResponsePolicyCustomErrorResponseRule(t *testing.T) {
+	compositeType := reflect.TypeOf(CustomErrorResponsePolicyCustomErrorResponseRule{})
+	alphaType := reflect.TypeOf(computealpha.CustomErrorResponsePolicyCustomErrorResponseRule{})
 	if err := typeEquality(compositeType, alphaType, true); err != nil {
 		t.Fatal(err)
 	}
