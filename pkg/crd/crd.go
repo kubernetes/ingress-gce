@@ -31,6 +31,10 @@ import (
 )
 
 const (
+	// Sleep interval to check the CRD is present.
+	checkCRDPresentInterval = time.Second
+	// Timeout to check the CRD is present.
+	checkCRDPresentTimeout = 60 * time.Second
 	// Sleep interval to check the Established condition of CRD.
 	checkCRDEstablishedInterval = time.Second
 	// Timeout for checking the Established condition of CRD.
@@ -78,16 +82,33 @@ func (h *CRDHandler) EnsureCRD(meta *CRDMeta, namespacedScoped bool) (*apiextens
 }
 
 func (h *CRDHandler) createOrUpdateCRD(meta *CRDMeta, namespacedScoped bool) (*apiextensionsv1.CustomResourceDefinition, error) {
+	updateCRD := false
 	crd := crd(meta, namespacedScoped)
-	existingCRD, err := h.client.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), crd.Name, metav1.GetOptions{})
-	if err != nil && !apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to verify the existence of %v CRD: %v", meta.kind, err)
+	if err := wait.PollImmediate(checkCRDPresentInterval, checkCRDPresentTimeout, func() (bool, error) {
+		existingCRD, err := h.client.ApiextensionsV1().CustomResourceDefinitions().Get(context.TODO(), crd.Name, metav1.GetOptions{})
+		// Retry until the RBAC permissions are propagated to be able to read the CRD
+		if apierrors.IsForbidden(err) {
+			return false, nil
+		}
+		// CRD doesn't exist, create it
+		if apierrors.IsNotFound(err) {
+			return true, nil
+		}
+		// Fail on any other error
+		if err != nil {
+			return false, fmt.Errorf("failed to verify the existence of %v CRD: %v", meta.kind, err)
+		}
+		// CRD exists, get current resource version and update it
+		updateCRD = true
+		crd.ResourceVersion = existingCRD.ResourceVersion
+		return true, nil
+	}); err != nil {
+		return nil, fmt.Errorf("timed out waiting to Get %v CRD: %v", meta.kind, err)
 	}
 
 	// Update CRD if already present.
-	if err == nil {
+	if updateCRD {
 		klog.V(0).Infof("Updating existing %v CRD...", meta.kind)
-		crd.ResourceVersion = existingCRD.ResourceVersion
 		return h.client.ApiextensionsV1().CustomResourceDefinitions().Update(context.TODO(), crd, metav1.UpdateOptions{})
 	}
 
