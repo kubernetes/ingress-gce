@@ -283,8 +283,10 @@ func EnsureIngress(s *Sandbox, ing *networkingv1.Ingress) (*networkingv1.Ingress
 	if currentIng == nil || err != nil {
 		return crud.Create(ing)
 	}
-	// Update ingress spec if they are not equal
-	if !reflect.DeepEqual(ing.Spec, currentIng.Spec) {
+
+	// Update ingress spec if they are not equal.
+	// Comparing annotations will almost always result in a diff due to the status annotations added by the controller.
+	if !reflect.DeepEqual(ing.Spec, currentIng.Spec) || !reflect.DeepEqual(ing.Annotations, currentIng.Annotations) {
 		newIng := currentIng.DeepCopy()
 		newIng.Spec = ing.Spec
 		return crud.Patch(currentIng, newIng)
