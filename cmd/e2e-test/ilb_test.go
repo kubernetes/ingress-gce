@@ -191,9 +191,7 @@ func TestILBStaticIP(t *testing.T) {
 		var gclb *fuzz.GCLB
 		for i, testIng := range []*v1.Ingress{testIngDisabled, testIngEnabled, testIngDisabled} {
 			t.Run(fmt.Sprintf("Transition-%d", i), func(t *testing.T) {
-				newIng := ing.DeepCopy()
-				newIng.Spec = testIng.Spec
-				ing, err = crud.Patch(ing, newIng)
+				ing, err = e2e.EnsureIngress(s, testIng)
 				if err != nil {
 					t.Fatalf("error patching Ingress spec: %v", err)
 				}
