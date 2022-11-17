@@ -18,13 +18,17 @@ package crd
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	crdclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	crdclientfake "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/fake"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/kube-openapi/pkg/common"
 )
 
@@ -48,8 +52,9 @@ func testGetOpenAPIDefinitions(common.ReferenceCallback) map[string]common.OpenA
 
 func TestCreateOrUpdateCRD(t *testing.T) {
 	testCases := []struct {
-		desc     string
-		initFunc func(clientset crdclient.Interface, namespaceScoped bool) error
+		desc             string
+		initFunc         func(clientset crdclient.Interface, namespaceScoped bool) error
+		retryOnForbidden bool
 	}{
 		{
 			desc: "Create CRD when not exist",
@@ -77,12 +82,41 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 				return nil
 			},
 		},
+		{
+			desc:             "Create CRD when not exist after receiving a forbidden error the first time",
+			retryOnForbidden: true,
+		},
+		{
+			desc: "Update CRD when exist with wrongname after receiving a forbidden error the first time",
+			initFunc: func(clientset crdclient.Interface, namespaceScoped bool) error {
+				crd := crd(crdMeta, namespaceScoped)
+				crd.Spec.Names.Kind = "wrongname"
+				crd.Spec.Names.ListKind = "wrongnameList"
+				if _, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{}); err != nil {
+					return err
+				}
+				return nil
+			},
+			retryOnForbidden: true,
+		},
+		{
+			desc: "Update CRD when pruning is not enabled after receiving a forbidden error the first time",
+			initFunc: func(clientset crdclient.Interface, namespaceScoped bool) error {
+				crd := crd(crdMeta, namespaceScoped)
+				crd.Spec.PreserveUnknownFields = trueValue
+				if _, err := clientset.ApiextensionsV1().CustomResourceDefinitions().Create(context.TODO(), crd, metav1.CreateOptions{}); err != nil {
+					return err
+				}
+				return nil
+			},
+			retryOnForbidden: true,
+		},
 	}
 
 	for _, namespacedScoped := range []bool{true, false} {
 		expectedCRD := crd(crdMeta, namespacedScoped)
 		for _, tc := range testCases {
-			t.Run(tc.desc, func(t *testing.T) {
+			t.Run(tc.desc+fmt.Sprintf(" namespaced scoped %v", namespacedScoped), func(t *testing.T) {
 				fakeCRDClient := crdclientfake.NewSimpleClientset()
 				fakeCRDHandler := NewCRDHandler(fakeCRDClient)
 				if tc.initFunc != nil {
@@ -90,7 +124,20 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 						t.Errorf("Unexpected error in initFunc(): %v", err)
 					}
 				}
+				// test createOrUpdateCRD retries on http forbidden errors
+				numRetries := 3
+				if tc.retryOnForbidden {
+					counter := 0
+					fakeCRDClient.PrependReactor("get", "customresourcedefinitions", k8stesting.ReactionFunc(func(a k8stesting.Action) (bool, runtime.Object, error) {
+						counter++
+						if counter < numRetries {
+							return true, &apiextensionsv1.CustomResourceDefinition{}, apierrors.NewForbidden(a.GetResource().GroupResource(), a.(k8stesting.GetAction).GetName(), fmt.Errorf(`User "system:controller:glbc" cannot get resource`))
+						}
 
+						// delegate to the next reactor in the chain
+						return false, &apiextensionsv1.CustomResourceDefinition{}, nil
+					}))
+				}
 				crd, err := fakeCRDHandler.createOrUpdateCRD(crdMeta, namespacedScoped)
 				if err != nil {
 					t.Errorf("Unexpected error in createOrUpdateCRD(): %v", err)
@@ -121,6 +168,21 @@ func TestCreateOrUpdateCRD(t *testing.T) {
 					t.Errorf("CRD should be namespaced scoped but found %s", crd.Spec.Scope)
 				} else if !namespacedScoped && crd.Spec.Scope != apiextensionsv1.ClusterScoped {
 					t.Errorf("CRD should be cluster scoped but found %s", crd.Spec.Scope)
+				}
+
+				getActions := 0
+				for _, a := range fakeCRDClient.Actions() {
+					if a.GetVerb() == "get" && a.GetResource().Resource == "customresourcedefinitions" {
+						getActions++
+					}
+				}
+				expectedGetActions := 1
+				if tc.retryOnForbidden {
+					expectedGetActions = numRetries
+				}
+
+				if getActions != expectedGetActions {
+					t.Errorf("Unexpected number of Get requests, got %d expected %d", getActions, expectedGetActions)
 				}
 
 				// Nuke CRD status before comparing.
