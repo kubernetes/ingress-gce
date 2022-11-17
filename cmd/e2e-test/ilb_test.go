@@ -159,7 +159,7 @@ func TestILBStaticIP(t *testing.T) {
 			}
 		}
 
-		_, err := e2e.CreateEchoService(s, "service-1", nil)
+		_, err := e2e.CreateEchoService(s, "service-1", negAnnotation)
 		if err != nil {
 			t.Fatalf("e2e.CreateEchoService(s, service-1, nil) = _, %v; want _, nil", err)
 		}
