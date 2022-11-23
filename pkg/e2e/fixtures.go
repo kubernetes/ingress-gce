@@ -320,6 +320,10 @@ func NewGCPAddress(s *Sandbox, name string, region string) error {
 	} else {
 		addr.AddressType = "INTERNAL"
 		addr.Purpose = "SHARED_LOADBALANCER_VIP"
+		// Regional addresses need a Subnet if the cluster network is not "default"
+		if s.f.Subnet != "" {
+			addr.Subnetwork = s.f.Subnet
+		}
 		if err := s.f.Cloud.Addresses().Insert(context.Background(), meta.RegionalKey(addr.Name, region), addr); err != nil {
 			return err
 		}

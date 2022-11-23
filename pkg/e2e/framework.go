@@ -52,6 +52,7 @@ type Options struct {
 	Project             string
 	Region              string
 	Network             string
+	Subnet              string
 	Seed                int64
 	DestroySandboxes    bool
 	GceEndpointOverride string
@@ -103,6 +104,7 @@ func NewFramework(config *rest.Config, options Options) *Framework {
 		Project:              options.Project,
 		Region:               options.Region,
 		Network:              options.Network,
+		Subnet:               options.Subnet,
 		Cloud:                theCloud,
 		Rand:                 rand.New(rand.NewSource(options.Seed)),
 		destroySandboxes:     options.DestroySandboxes,
@@ -147,6 +149,7 @@ type Framework struct {
 	Project               string
 	Region                string
 	Network               string
+	Subnet                string
 	Cloud                 cloud.Cloud
 	Rand                  *rand.Rand
 	statusManager         *StatusManager

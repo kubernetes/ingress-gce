@@ -45,6 +45,7 @@ var (
 		project             string
 		region              string
 		network             string
+		subnet              string
 		seed                int64
 		destroySandboxes    bool
 		handleSIGINT        bool
@@ -67,6 +68,7 @@ func init() {
 	flag.StringVar(&flags.project, "project", "", "GCP project")
 	flag.StringVar(&flags.region, "region", "", "GCP Region (e.g. us-central1)")
 	flag.StringVar(&flags.network, "network", "", "GCP network name (e.g. default)")
+	flag.StringVar(&flags.subnet, "subnet", "", "Optional GCP subnet name.  Parsed from custom metadata key 'cluster-subnet'")
 	flag.Int64Var(&flags.seed, "seed", -1, "random seed")
 	flag.BoolVar(&flags.destroySandboxes, "destroySandboxes", true, "set to false to leave sandboxed resources for debugging")
 	flag.BoolVar(&flags.handleSIGINT, "handleSIGINT", true, "catch SIGINT to perform clean")
@@ -125,6 +127,7 @@ func TestMain(m *testing.M) {
 		Project:             flags.project,
 		Region:              flags.region,
 		Network:             flags.network,
+		Subnet:              flags.subnet,
 		Seed:                flags.seed,
 		DestroySandboxes:    flags.destroySandboxes,
 		GceEndpointOverride: flags.gceEndpointOverride,

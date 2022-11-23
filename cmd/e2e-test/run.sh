@@ -81,6 +81,25 @@ if [[ -z "${NETWORK}" ]]; then
 fi
 echo "Using Network: ${NETWORK}"
 
+# Get subnet  information
+# We expect the custom metadata field 'cluster-subnet' on all VMs.
+for ATTEMPT in $(seq 60); do
+  SUBNET=$(curl -H'Metadata-Flavor:Google' metadata.google.internal/computeMetadata/v1/instance/attributes/cluster-subnet)
+  if [[ -n "${SUBNET}" ]]; then
+    break
+  fi
+  echo "Error: could not get subnet from the metadata server (attempt ${ATTEMPT})"
+  sleep 1
+done
+
+if [[ -z "${SUBNET}" ]]; then
+  echo "Error: could not get subnet"
+  echo "Result: 2"
+  exit
+fi
+echo "Using Subnet: ${SUBNET}"
+
+
 echo
 echo ==============================================================================
 echo "PROJECT: ${PROJECT}"
