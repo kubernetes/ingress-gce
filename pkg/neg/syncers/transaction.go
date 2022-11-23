@@ -242,7 +242,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 		targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
-		if s.invalidEndpointInfo(endpointsData, endpointPodMap, dupCount) {
+		if s.invalidEndpointInfo(endpointsData, endpointPodMap, dupCount) || s.isZoneMissing(targetMap) {
 			s.setErrorState()
 		}
 		if err != nil {
@@ -362,6 +362,7 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 //  1. The endpoint count from endpointData doesn't equal to the one from endpointPodMap:
 //     endpiontPodMap removes the duplicated endpoints, and dupCount stores the number of duplicated it removed
 //     and we compare the endpoint counts with duplicates
+//  2. There is at least one endpoint in endpointData with missing nodeName
 func (s *transactionSyncer) invalidEndpointInfo(eds []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap, dupCount int) bool {
 	// Endpoint count from EndpointPodMap
 	countFromPodMap := len(endpointPodMap) + dupCount
@@ -370,9 +371,26 @@ func (s *transactionSyncer) invalidEndpointInfo(eds []negtypes.EndpointsData, en
 	countFromEndpointData := 0
 	for _, ed := range eds {
 		countFromEndpointData += len(ed.Addresses)
+		for _, endpointAddress := range ed.Addresses {
+			nodeName := endpointAddress.NodeName
+			if nodeName == nil || len(*nodeName) == 0 {
+				s.logger.Info("Detected error when checking nodeName", "endpoint", endpointAddress, "endpointData", eds)
+				return true
+			}
+		}
 	}
+
 	if countFromEndpointData != countFromPodMap {
-		s.logger.Info("Detected error when comparing endpoint counts, marking syncer in error state", "endpointData", eds, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
+		s.logger.Info("Detected error when comparing endpoint counts", "endpointData", eds, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
+		return true
+	}
+	return false
+}
+
+// isZoneMissing returns true if there is invalid(empty) zone in zoneNetworkEndpointMap
+func (s *transactionSyncer) isZoneMissing(zoneNetworkEndpointMap map[string]negtypes.NetworkEndpointSet) bool {
+	if _, isPresent := zoneNetworkEndpointMap[""]; isPresent {
+		s.logger.Info("Detected error when checking missing zone", "zoneNetworkEndpointMap", zoneNetworkEndpointMap)
 		return true
 	}
 	return false

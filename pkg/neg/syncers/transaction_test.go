@@ -1409,7 +1409,7 @@ func TestUnknownNodes(t *testing.T) {
 	}
 }
 
-func TestInvalidEndpointInfoEndpointCountsDiffer(t *testing.T) {
+func TestInvalidEndpointInfo(t *testing.T) {
 	t.Parallel()
 	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, true)
 
@@ -1754,12 +1754,228 @@ func TestInvalidEndpointInfoEndpointCountsDiffer(t *testing.T) {
 			dupCount: 1,
 			expect:   true,
 		},
+		{
+			desc: "no missing nodeNames",
+			endpointsData: []negtypes.EndpointsData{
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port80,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName1,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP1},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName2,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP2},
+							Ready:     true,
+						},
+					},
+				},
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-2",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port81,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName3,
+							},
+							NodeName:  &instance2,
+							Addresses: []string{testIP3},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName4,
+							},
+							NodeName:  &instance4,
+							Addresses: []string{testIP4},
+							Ready:     true,
+						},
+					},
+				},
+			},
+			dupCount: 0,
+			expect:   false,
+		},
+		{
+			desc: "at least one endpoint is missing a nodeName",
+			endpointsData: []negtypes.EndpointsData{
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port80,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName1,
+							},
+							NodeName:  nil,
+							Addresses: []string{testIP1},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName2,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP2},
+							Ready:     true,
+						},
+					},
+				},
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-2",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port81,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName3,
+							},
+							NodeName:  &instance2,
+							Addresses: []string{testIP3},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName4,
+							},
+							NodeName:  &instance4,
+							Addresses: []string{testIP4},
+							Ready:     true,
+						},
+					},
+				},
+			},
+			dupCount: 0,
+			expect:   true,
+		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
 			if got := transactionSyncer.invalidEndpointInfo(tc.endpointsData, endpointPodMap, tc.dupCount); got != tc.expect {
 				t.Errorf("invalidEndpointInfo() = %t,  expected %t", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestIsZoneMissing(t *testing.T) {
+	t.Parallel()
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, true)
+	instance1 := testInstance1
+	instance2 := testInstance2
+
+	zone1 := "us-central1-a"
+	zone2 := "us-central1-b"
+
+	testCases := []struct {
+		desc                   string
+		zoneNetworkEndpointMap map[string]negtypes.NetworkEndpointSet
+		expect                 bool
+	}{
+		{
+			desc: "no missing zones",
+			zoneNetworkEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				zone1: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{
+						IP:   "10.100.1.2",
+						Port: "80",
+						Node: instance1,
+					},
+					negtypes.NetworkEndpoint{
+						IP:   "10.100.1.3",
+						Port: "80",
+						Node: instance1,
+					},
+				),
+				zone2: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{
+						IP:   "10.100.2.2",
+						Port: "81",
+						Node: instance2,
+					},
+				),
+			},
+			expect: false,
+		},
+		{
+			desc: "contains one missing zone",
+			zoneNetworkEndpointMap: map[string]negtypes.NetworkEndpointSet{
+				zone1: negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{
+						IP:   "10.100.1.2",
+						Port: "80",
+						Node: instance1,
+					},
+					negtypes.NetworkEndpoint{
+						IP:   "10.100.1.3",
+						Port: "80",
+						Node: instance1,
+					},
+				),
+				"": negtypes.NewNetworkEndpointSet(
+					negtypes.NetworkEndpoint{
+						IP:   "10.100.2.2",
+						Port: "81",
+						Node: instance2,
+					},
+				),
+			},
+			expect: true,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := transactionSyncer.isZoneMissing(tc.zoneNetworkEndpointMap); got != tc.expect {
+				t.Errorf("isZoneMissing() = %t, expected %t", got, tc.expect)
 			}
 		})
 	}
