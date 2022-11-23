@@ -54,8 +54,3 @@ VERBOSE ?= 0
 
 # Include standard build rules.
 include build/rules.mk
-
-# Additional rule to build an image of glbc for e2e testing.
-# TODO(rramkumar): Find a way not to use "latest" as the tag.
-push-e2e:
-	@$(MAKE) --no-print-directory containers push
