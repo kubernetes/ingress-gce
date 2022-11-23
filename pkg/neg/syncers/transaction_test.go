@@ -1429,7 +1429,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 	testPodName3 := "pod3"
 	testPodName4 := "pod4"
 
-	endpointPodMap := map[negtypes.NetworkEndpoint]types.NamespacedName{
+	testEndpointPodMap := map[negtypes.NetworkEndpoint]types.NamespacedName{
 		{
 			IP:   testIP1,
 			Port: "80",
@@ -1465,10 +1465,11 @@ func TestInvalidEndpointInfo(t *testing.T) {
 	}
 
 	testCases := []struct {
-		desc          string
-		endpointsData []negtypes.EndpointsData
-		dupCount      int
-		expect        bool
+		desc           string
+		endpointsData  []negtypes.EndpointsData
+		endpointPodMap map[negtypes.NetworkEndpoint]types.NamespacedName
+		dupCount       int
+		expect         bool
 	}{
 		{
 			desc: "counts equal, endpointData has no duplicated endpoints",
@@ -1538,8 +1539,9 @@ func TestInvalidEndpointInfo(t *testing.T) {
 					},
 				},
 			},
-			dupCount: 0,
-			expect:   false,
+			endpointPodMap: testEndpointPodMap,
+			dupCount:       0,
+			expect:         false,
 		},
 		{
 			desc: "counts equal, endpointData has duplicated endpoints",
@@ -1618,8 +1620,9 @@ func TestInvalidEndpointInfo(t *testing.T) {
 					},
 				},
 			},
-			dupCount: 1,
-			expect:   false,
+			endpointPodMap: testEndpointPodMap,
+			dupCount:       1,
+			expect:         false,
 		},
 		{
 			desc: "counts not equal, endpointData has no duplicated endpoints",
@@ -1680,8 +1683,9 @@ func TestInvalidEndpointInfo(t *testing.T) {
 					},
 				},
 			},
-			dupCount: 0,
-			expect:   true,
+			endpointPodMap: testEndpointPodMap,
+			dupCount:       0,
+			expect:         true,
 		},
 		{
 			desc: "counts not equal, endpointData has duplicated endpoints",
@@ -1751,8 +1755,9 @@ func TestInvalidEndpointInfo(t *testing.T) {
 					},
 				},
 			},
-			dupCount: 1,
-			expect:   true,
+			endpointPodMap: testEndpointPodMap,
+			dupCount:       1,
+			expect:         true,
 		},
 		{
 			desc: "no missing nodeNames",
@@ -1822,8 +1827,9 @@ func TestInvalidEndpointInfo(t *testing.T) {
 					},
 				},
 			},
-			dupCount: 0,
-			expect:   false,
+			endpointPodMap: testEndpointPodMap,
+			dupCount:       0,
+			expect:         false,
 		},
 		{
 			desc: "at least one endpoint is missing a nodeName",
@@ -1893,14 +1899,227 @@ func TestInvalidEndpointInfo(t *testing.T) {
 					},
 				},
 			},
-			dupCount: 0,
-			expect:   true,
+			endpointPodMap: testEndpointPodMap,
+			dupCount:       0,
+			expect:         true,
+		},
+		{
+			desc: "endpointData has zero endpoint",
+			endpointsData: []negtypes.EndpointsData{
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port80,
+						},
+					},
+					Addresses: []negtypes.AddressData{},
+				},
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-2",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port81,
+						},
+					},
+					Addresses: []negtypes.AddressData{},
+				},
+			},
+			endpointPodMap: testEndpointPodMap,
+			dupCount:       0,
+			expect:         true,
+		},
+		{
+			desc: "endpointPodMap has zero endpoint",
+			endpointsData: []negtypes.EndpointsData{
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port80,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName1,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP1},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName2,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP2},
+							Ready:     true,
+						},
+					},
+				},
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-2",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port81,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName3,
+							},
+							NodeName:  &instance2,
+							Addresses: []string{testIP3},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName4,
+							},
+							NodeName:  &instance4,
+							Addresses: []string{testIP4},
+							Ready:     true,
+						},
+					},
+				},
+			},
+			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
+			dupCount:       0,
+			expect:         true,
+		},
+		{
+			desc: "endpointData and endpointPodMap both have zero endpoint",
+			endpointsData: []negtypes.EndpointsData{
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port80,
+						},
+					},
+					Addresses: []negtypes.AddressData{},
+				},
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-2",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port81,
+						},
+					},
+					Addresses: []negtypes.AddressData{},
+				},
+			},
+			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
+			dupCount:       0,
+			expect:         true,
+		},
+		{
+			desc: "endpointData and endpointPodMap both have non-zero endpoints",
+			endpointsData: []negtypes.EndpointsData{
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port80,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName1,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP1},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName2,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP2},
+							Ready:     true,
+						},
+					},
+				},
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-2",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port81,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName3,
+							},
+							NodeName:  &instance2,
+							Addresses: []string{testIP3},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName4,
+							},
+							NodeName:  &instance4,
+							Addresses: []string{testIP4},
+							Ready:     true,
+						},
+					},
+				},
+			},
+			endpointPodMap: testEndpointPodMap,
+			dupCount:       0,
+			expect:         false,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if got := transactionSyncer.invalidEndpointInfo(tc.endpointsData, endpointPodMap, tc.dupCount); got != tc.expect {
+			if got := transactionSyncer.invalidEndpointInfo(tc.endpointsData, tc.endpointPodMap, tc.dupCount); got != tc.expect {
 				t.Errorf("invalidEndpointInfo() = %t,  expected %t", got, tc.expect)
 			}
 		})

@@ -363,9 +363,14 @@ func (s *transactionSyncer) ensureNetworkEndpointGroups() error {
 //     endpiontPodMap removes the duplicated endpoints, and dupCount stores the number of duplicated it removed
 //     and we compare the endpoint counts with duplicates
 //  2. There is at least one endpoint in endpointData with missing nodeName
+//  3. The endpoint count from endpointData or the one from endpointPodMap is 0
 func (s *transactionSyncer) invalidEndpointInfo(eds []negtypes.EndpointsData, endpointPodMap negtypes.EndpointPodMap, dupCount int) bool {
 	// Endpoint count from EndpointPodMap
 	countFromPodMap := len(endpointPodMap) + dupCount
+	if countFromPodMap == 0 {
+		s.logger.Info("Detected endpoint count from endpointPodMap going to zero", "endpointPodMap", endpointPodMap)
+		return true
+	}
 
 	// Endpoint count from EndpointData
 	countFromEndpointData := 0
@@ -378,6 +383,10 @@ func (s *transactionSyncer) invalidEndpointInfo(eds []negtypes.EndpointsData, en
 				return true
 			}
 		}
+	}
+	if countFromEndpointData == 0 {
+		s.logger.Info("Detected endpoint count from endpointData going to zero", "endpointData", eds)
+		return true
 	}
 
 	if countFromEndpointData != countFromPodMap {
