@@ -218,13 +218,14 @@ func ensureNetworkEndpointGroup(svcNamespace, svcName, negName, zone, negService
 	return negRef, nil
 }
 
-// toZoneNetworkEndpointMap translates addresses in endpoints object and Istio:DestinationRule subset into zone and endpoints map
-func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, podLister cache.Indexer, subsetLabels string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, error) {
+// toZoneNetworkEndpointMap translates addresses in endpoints object and Istio:DestinationRule subset into zone and endpoints map, and also return the count for duplicated endpoints
+func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.ZoneGetter, servicePortName string, podLister cache.Indexer, subsetLabels string, networkEndpointType negtypes.NetworkEndpointType) (map[string]negtypes.NetworkEndpointSet, negtypes.EndpointPodMap, int, error) {
 	zoneNetworkEndpointMap := map[string]negtypes.NetworkEndpointSet{}
 	networkEndpointPodMap := negtypes.EndpointPodMap{}
+	dupCount := 0
 	if eds == nil {
 		klog.Errorf("Endpoint object is nil")
-		return zoneNetworkEndpointMap, networkEndpointPodMap, nil
+		return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, nil
 	}
 	var foundMatchingPort bool
 	for _, ed := range eds {
@@ -266,7 +267,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 			}
 			zone, err := zoneGetter.GetZoneForNode(*endpointAddress.NodeName)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to retrieve associated zone of node %q: %w", *endpointAddress.NodeName, err)
+				return nil, nil, dupCount, fmt.Errorf("failed to retrieve associated zone of node %q: %w", *endpointAddress.NodeName, err)
 			}
 			if zoneNetworkEndpointMap[zone] == nil {
 				zoneNetworkEndpointMap[zone] = negtypes.NewNetworkEndpointSet()
@@ -285,6 +286,11 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 						networkEndpoint.Node = ""
 					}
 					zoneNetworkEndpointMap[zone].Insert(networkEndpoint)
+
+					// increment the count for duplicated endpoint
+					if _, contains := networkEndpointPodMap[networkEndpoint]; contains {
+						dupCount += 1
+					}
 					networkEndpointPodMap[networkEndpoint] = types.NamespacedName{Namespace: endpointAddress.TargetRef.Namespace, Name: endpointAddress.TargetRef.Name}
 				}
 			}
@@ -297,7 +303,7 @@ func toZoneNetworkEndpointMap(eds []negtypes.EndpointsData, zoneGetter negtypes.
 	if len(zoneNetworkEndpointMap) == 0 || len(networkEndpointPodMap) == 0 {
 		klog.V(3).Infof("Generated empty endpoint maps (zoneNetworkEndpointMap: %+v, networkEndpointPodMap: %v) from Endpoints object: %+v", zoneNetworkEndpointMap, networkEndpointPodMap, eds)
 	}
-	return zoneNetworkEndpointMap, networkEndpointPodMap, nil
+	return zoneNetworkEndpointMap, networkEndpointPodMap, dupCount, nil
 }
 
 // retrieveExistingZoneNetworkEndpointMap lists existing network endpoints in the neg and return the zone and endpoints map

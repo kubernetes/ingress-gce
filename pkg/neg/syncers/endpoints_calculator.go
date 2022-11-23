@@ -61,7 +61,7 @@ func (l *LocalL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	// List all nodes where the service endpoints are running. Get a subset of the desired count.
 	zoneNodeMap := make(map[string][]*v1.Node)
 	processedNodes := sets.String{}
@@ -101,12 +101,12 @@ func (l *LocalL4ILBEndpointsCalculator) CalculateEndpoints(eds []types.Endpoints
 	}
 	if numEndpoints == 0 {
 		// Not having backends will cause clients to see connection timeout instead of an "ICMP ConnectionRefused".
-		return nil, nil, nil
+		return nil, nil, 0, nil
 	}
 	// Compute the networkEndpoints, with total endpoints count <= l.subsetSizeLimit
 	klog.V(2).Infof("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
 	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger)
-	return subsetMap, nil, err
+	return subsetMap, nil, 0, err
 }
 
 // ClusterL4ILBEndpointGetter implements the NetworkEndpointsCalculator interface.
@@ -142,7 +142,7 @@ func (l *ClusterL4ILBEndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.EndpointsData, currentMap map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	// In this mode, any of the cluster nodes can be part of the subset, whether or not a matching pod runs on it.
 	nodes, _ := utils.ListWithPredicate(l.nodeLister, utils.CandidateNodesPredicateIncludeUnreadyExcludeUpgradingNodes)
 
@@ -158,7 +158,7 @@ func (l *ClusterL4ILBEndpointsCalculator) CalculateEndpoints(_ []types.Endpoints
 	klog.V(2).Infof("Got zoneNodeMap as input for service", "zoneNodeMap", nodeMapToString(zoneNodeMap), "serviceID", l.svcId)
 	// Compute the networkEndpoints, with total endpoints <= l.subsetSizeLimit.
 	subsetMap, err := getSubsetPerZone(zoneNodeMap, l.subsetSizeLimit, l.svcId, currentMap, l.logger)
-	return subsetMap, nil, err
+	return subsetMap, nil, 0, err
 }
 
 // L7EndpointsCalculator implements methods to calculate Network endpoints for VM_IP_PORT NEGs
@@ -188,7 +188,7 @@ func (l *L7EndpointsCalculator) Mode() types.EndpointsCalculatorMode {
 }
 
 // CalculateEndpoints determines the endpoints in the NEGs based on the current service endpoints and the current NEGs.
-func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, error) {
+func (l *L7EndpointsCalculator) CalculateEndpoints(eds []types.EndpointsData, _ map[string]types.NetworkEndpointSet) (map[string]types.NetworkEndpointSet, types.EndpointPodMap, int, error) {
 	return toZoneNetworkEndpointMap(eds, l.zoneGetter, l.servicePortName, l.podLister, l.subsetLabels, l.networkEndpointType)
 }
 

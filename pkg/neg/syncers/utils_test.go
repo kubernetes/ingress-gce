@@ -551,7 +551,7 @@ func TestToZoneNetworkEndpointMapUtil(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		retSet, retMap, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpoints(getDefaultEndpoint()), zoneGetter, tc.portName, podLister, "", tc.networkEndpointType)
+		retSet, retMap, _, err := toZoneNetworkEndpointMap(negtypes.EndpointsDataFromEndpoints(getDefaultEndpoint()), zoneGetter, tc.portName, podLister, "", tc.networkEndpointType)
 		if err != nil {
 			t.Errorf("For case %q, expect nil error, but got %v.", tc.desc, err)
 		}

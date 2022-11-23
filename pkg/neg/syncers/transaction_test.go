@@ -1409,6 +1409,362 @@ func TestUnknownNodes(t *testing.T) {
 	}
 }
 
+func TestInvalidEndpointInfoEndpointCountsDiffer(t *testing.T) {
+	t.Parallel()
+	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, true)
+
+	instance1 := testInstance1
+	instance2 := testInstance2
+	instance4 := testInstance4
+	testPortName := "port1"
+	testServiceNamespace := "namespace"
+	port80 := int32(80)
+	port81 := int32(81)
+	testIP1 := "10.100.1.1"
+	testIP2 := "10.100.1.2"
+	testIP3 := "10.100.2.2"
+	testIP4 := "10.100.4.1"
+	testPodName1 := "pod1"
+	testPodName2 := "pod2"
+	testPodName3 := "pod3"
+	testPodName4 := "pod4"
+
+	endpointPodMap := map[negtypes.NetworkEndpoint]types.NamespacedName{
+		{
+			IP:   testIP1,
+			Port: "80",
+			Node: instance1,
+		}: {
+			Namespace: testServiceNamespace,
+			Name:      testPodName1,
+		},
+		{
+			IP:   testIP2,
+			Port: "80",
+			Node: instance1,
+		}: {
+			Namespace: testServiceNamespace,
+			Name:      testPodName2,
+		},
+		{
+			IP:   testIP3,
+			Port: "81",
+			Node: instance2,
+		}: {
+			Namespace: testServiceNamespace,
+			Name:      testPodName3,
+		},
+		{
+			IP:   testIP4,
+			Port: "81",
+			Node: instance4,
+		}: {
+			Namespace: testServiceNamespace,
+			Name:      testPodName4,
+		},
+	}
+
+	testCases := []struct {
+		desc          string
+		endpointsData []negtypes.EndpointsData
+		dupCount      int
+		expect        bool
+	}{
+		{
+			desc: "counts equal, endpointData has no duplicated endpoints",
+			endpointsData: []negtypes.EndpointsData{
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port80,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName1,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP1},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName2,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP2},
+							Ready:     true,
+						},
+					},
+				},
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-2",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port81,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName3,
+							},
+							NodeName:  &instance2,
+							Addresses: []string{testIP3},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName4,
+							},
+							NodeName:  &instance4,
+							Addresses: []string{testIP4},
+							Ready:     true,
+						},
+					},
+				},
+			},
+			dupCount: 0,
+			expect:   false,
+		},
+		{
+			desc: "counts equal, endpointData has duplicated endpoints",
+			endpointsData: []negtypes.EndpointsData{
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port80,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName1,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP1},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName2,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP2},
+							Ready:     true,
+						},
+					},
+				},
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-2",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port81,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName2,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP2},
+							Ready:     true,
+						}, // this is a duplicated endpoint
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName3,
+							},
+							NodeName:  &instance2,
+							Addresses: []string{testIP3},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName4,
+							},
+							NodeName:  &instance4,
+							Addresses: []string{testIP4},
+							Ready:     true,
+						},
+					},
+				},
+			},
+			dupCount: 1,
+			expect:   false,
+		},
+		{
+			desc: "counts not equal, endpointData has no duplicated endpoints",
+			endpointsData: []negtypes.EndpointsData{
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port80,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName2,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP2},
+							Ready:     true,
+						},
+					},
+				},
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-2",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port81,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName3,
+							},
+							NodeName:  &instance2,
+							Addresses: []string{testIP3},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName4,
+							},
+							NodeName:  &instance4,
+							Addresses: []string{testIP4},
+							Ready:     true,
+						},
+					},
+				},
+			},
+			dupCount: 0,
+			expect:   true,
+		},
+		{
+			desc: "counts not equal, endpointData has duplicated endpoints",
+			endpointsData: []negtypes.EndpointsData{
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-1",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port80,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName2,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP2},
+							Ready:     true,
+						},
+					},
+				},
+				{
+					Meta: &metav1.ObjectMeta{
+						Name:      testServiceName + "-2",
+						Namespace: testServiceNamespace,
+					},
+					Ports: []negtypes.PortData{
+						{
+							Name: testPortName,
+							Port: port81,
+						},
+					},
+					Addresses: []negtypes.AddressData{
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName2,
+							},
+							NodeName:  &instance1,
+							Addresses: []string{testIP2},
+							Ready:     true,
+						}, // this is a duplicated endpoint
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName3,
+							},
+							NodeName:  &instance2,
+							Addresses: []string{testIP3},
+							Ready:     true,
+						},
+						{
+							TargetRef: &corev1.ObjectReference{
+								Namespace: testServiceNamespace,
+								Name:      testPodName4,
+							},
+							NodeName:  &instance4,
+							Addresses: []string{testIP4},
+							Ready:     true,
+						},
+					},
+				},
+			},
+			dupCount: 1,
+			expect:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			if got := transactionSyncer.invalidEndpointInfo(tc.endpointsData, endpointPodMap, tc.dupCount); got != tc.expect {
+				t.Errorf("invalidEndpointInfo() = %t,  expected %t", got, tc.expect)
+			}
+		})
+	}
+}
+
 func newL4ILBTestTransactionSyncer(fakeGCE negtypes.NetworkEndpointGroupCloud, mode negtypes.EndpointsCalculatorMode, enableEndpointSlices bool) (negtypes.NegSyncer, *transactionSyncer) {
 	negsyncer, ts := newTestTransactionSyncer(fakeGCE, negtypes.VmIpEndpointType, false, enableEndpointSlices)
 	ts.endpointsCalculator = GetEndpointsCalculator(ts.nodeLister, ts.podLister, ts.zoneGetter, ts.NegSyncerKey, mode, klog.TODO())
