@@ -15,9 +15,16 @@
 FROM debian:9
 
 ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
+ARG CLOUD_SDK_VERSION=412.0.0
+ENV CLOUD_SDK_VERSION=$CLOUD_SDK_VERSION
 
 COPY cmd/e2e-test/run.sh /run.sh
-RUN apt-get update && apt-get install -y curl python
-RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-206.0.0-linux-x86_64.tar.gz | tar -zxf -
+RUN apt-get update && apt-get install -y curl python \
+    && if [ `uname -m` = 'x86_64' ]; then echo -n "x86_64" > /tmp/arch; else echo -n "arm" > /tmp/arch; fi;
+
+RUN ARCH=`cat /tmp/arch` \
+    && curl -fsSL https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-${CLOUD_SDK_VERSION}-linux-${ARCH}.tar.gz --output google-cloud-sdk.tar.gz \
+    && tar xzf google-cloud-sdk.tar.gz -C / \
+    && rm google-cloud-sdk.tar.gz
 
 ENTRYPOINT ["/run.sh"]
