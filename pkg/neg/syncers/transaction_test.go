@@ -1412,7 +1412,7 @@ func TestUnknownNodes(t *testing.T) {
 	}
 }
 
-func TestInvalidEndpointInfo(t *testing.T) {
+func TestIsValidEndpointInfo(t *testing.T) {
 	t.Parallel()
 	_, transactionSyncer := newTestTransactionSyncer(negtypes.NewAdapter(gce.NewFakeGCECloud(gce.DefaultTestClusterValues())), negtypes.VmIpPortEndpointType, false, true)
 
@@ -1544,7 +1544,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         false,
+			expect:         true,
 		},
 		{
 			desc: "counts equal, endpointData has duplicated endpoints",
@@ -1625,7 +1625,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       1,
-			expect:         false,
+			expect:         true,
 		},
 		{
 			desc: "counts not equal, endpointData has no duplicated endpoints",
@@ -1688,7 +1688,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         true,
+			expect:         false,
 		},
 		{
 			desc: "counts not equal, endpointData has duplicated endpoints",
@@ -1760,7 +1760,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       1,
-			expect:         true,
+			expect:         false,
 		},
 		{
 			desc: "no missing nodeNames",
@@ -1832,7 +1832,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         false,
+			expect:         true,
 		},
 		{
 			desc: "at least one endpoint is missing a nodeName",
@@ -1904,7 +1904,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         true,
+			expect:         false,
 		},
 		{
 			desc: "endpointData has zero endpoint",
@@ -1938,7 +1938,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         true,
+			expect:         false,
 		},
 		{
 			desc: "endpointPodMap has zero endpoint",
@@ -2010,7 +2010,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
 			dupCount:       0,
-			expect:         true,
+			expect:         false,
 		},
 		{
 			desc: "endpointData and endpointPodMap both have zero endpoint",
@@ -2044,7 +2044,7 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: map[negtypes.NetworkEndpoint]types.NamespacedName{},
 			dupCount:       0,
-			expect:         true,
+			expect:         false,
 		},
 		{
 			desc: "endpointData and endpointPodMap both have non-zero endpoints",
@@ -2116,13 +2116,13 @@ func TestInvalidEndpointInfo(t *testing.T) {
 			},
 			endpointPodMap: testEndpointPodMap,
 			dupCount:       0,
-			expect:         false,
+			expect:         true,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {
-			if got := transactionSyncer.invalidEndpointInfo(tc.endpointsData, tc.endpointPodMap, tc.dupCount); got != tc.expect {
+			if got := transactionSyncer.isValidEndpointInfo(tc.endpointsData, tc.endpointPodMap, tc.dupCount); got != tc.expect {
 				t.Errorf("invalidEndpointInfo() = %t,  expected %t", got, tc.expect)
 			}
 		})
@@ -2203,7 +2203,7 @@ func TestIsZoneMissing(t *testing.T) {
 	}
 }
 
-func TestIsInvalidEPBatch(t *testing.T) {
+func TestIsValidEPBatch(t *testing.T) {
 	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
 	fakeCloud := negtypes.NewAdapter(fakeGCE)
 	zone := "us-central1-a"
@@ -2217,12 +2217,12 @@ func TestIsInvalidEPBatch(t *testing.T) {
 		{
 			desc:           "NEG API call no error, status code 200",
 			HttpStatusCode: http.StatusOK,
-			expect:         false,
+			expect:         true,
 		},
 		{
 			desc:           "NEG API call error, status code 400",
 			HttpStatusCode: http.StatusBadRequest,
-			expect:         true,
+			expect:         false,
 		},
 	}
 
@@ -2237,7 +2237,7 @@ func TestIsInvalidEPBatch(t *testing.T) {
 			_, transactionSyncer := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, false, true)
 
 			err := transactionSyncer.cloud.AttachNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, zone, networkEndpoints, transactionSyncer.NegSyncerKey.GetAPIVersion())
-			if got := transactionSyncer.isInvalidEPBatch(err, attachOp, networkEndpoints); got != tc.expect {
+			if got := transactionSyncer.isValidEPBatch(err, attachOp, networkEndpoints); got != tc.expect {
 				t.Errorf("isInvalidEPBatch() = %t, expected %t", got, tc.expect)
 			}
 		})
