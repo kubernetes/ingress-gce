@@ -19,11 +19,13 @@ package syncers
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"google.golang.org/api/googleapi"
 	apiv1 "k8s.io/api/core/v1"
 	corev1 "k8s.io/api/core/v1"
 	discovery "k8s.io/api/discovery/v1"
@@ -405,6 +407,20 @@ func (s *transactionSyncer) isZoneMissing(zoneNetworkEndpointMap map[string]negt
 	return false
 }
 
+func (s *transactionSyncer) isInvalidEPBatch(err error, operation transactionOp, networkEndpoints []*composite.NetworkEndpoint) bool {
+	apiErr, ok := err.(*googleapi.Error)
+	if !ok {
+		s.logger.Info("Detected error when parsing batch request error", "operation", operation, "error", err)
+		return true
+	}
+	errCode := apiErr.Code
+	if errCode == http.StatusBadRequest {
+		s.logger.Info("Detected error when sending endpoint batch information", "operation", operation, "errorCode", errCode)
+		return true
+	}
+	return false
+}
+
 // syncNetworkEndpoints spins off go routines to execute NEG operations
 func (s *transactionSyncer) syncNetworkEndpoints(addEndpoints, removeEndpoints map[string]negtypes.NetworkEndpointSet) error {
 	syncFunc := func(endpointMap map[string]negtypes.NetworkEndpointSet, operation transactionOp) error {
@@ -483,6 +499,9 @@ func (s *transactionSyncer) operationInternal(operation transactionOp, zone stri
 		s.recordEvent(apiv1.EventTypeNormal, operation.String(), fmt.Sprintf("%s %d network endpoint(s) (NEG %q in zone %q)", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone))
 	} else {
 		s.recordEvent(apiv1.EventTypeWarning, operation.String()+"Failed", fmt.Sprintf("Failed to %s %d network endpoint(s) (NEG %q in zone %q): %v", operation.String(), len(networkEndpointMap), s.NegSyncerKey.NegName, zone, err))
+		if s.isInvalidEPBatch(err, operation, networkEndpoints) {
+			s.setErrorState()
+		}
 	}
 
 	// WARNING: commitTransaction must be called at last for analyzing the operation result

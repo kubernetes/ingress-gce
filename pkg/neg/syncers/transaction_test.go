@@ -20,6 +20,7 @@ import (
 	context2 "context"
 	"fmt"
 	"net"
+	"net/http"
 	"reflect"
 	"strconv"
 	"testing"
@@ -27,6 +28,8 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
+	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -2195,6 +2198,47 @@ func TestIsZoneMissing(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			if got := transactionSyncer.isZoneMissing(tc.zoneNetworkEndpointMap); got != tc.expect {
 				t.Errorf("isZoneMissing() = %t, expected %t", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestIsInvalidEPBatch(t *testing.T) {
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	fakeCloud := negtypes.NewAdapter(fakeGCE)
+	zone := "us-central1-a"
+	networkEndpoints := []*composite.NetworkEndpoint{}
+
+	testCases := []struct {
+		desc           string
+		HttpStatusCode int
+		expect         bool
+	}{
+		{
+			desc:           "NEG API call no error, status code 200",
+			HttpStatusCode: http.StatusOK,
+			expect:         false,
+		},
+		{
+			desc:           "NEG API call error, status code 400",
+			HttpStatusCode: http.StatusBadRequest,
+			expect:         true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			mockGCE := fakeGCE.Compute().(*cloud.MockGCE)
+			mockGCE.MockNetworkEndpointGroups.AttachNetworkEndpointsHook = func(ctx context2.Context, key *meta.Key, arg0 *compute.NetworkEndpointGroupsAttachEndpointsRequest, neg *cloud.MockNetworkEndpointGroups) error {
+				return &googleapi.Error{
+					Code: tc.HttpStatusCode,
+				}
+			}
+			_, transactionSyncer := newTestTransactionSyncer(fakeCloud, negtypes.VmIpPortEndpointType, false, true)
+
+			err := transactionSyncer.cloud.AttachNetworkEndpoints(transactionSyncer.NegSyncerKey.NegName, zone, networkEndpoints, transactionSyncer.NegSyncerKey.GetAPIVersion())
+			if got := transactionSyncer.isInvalidEPBatch(err, attachOp, networkEndpoints); got != tc.expect {
+				t.Errorf("isInvalidEPBatch() = %t, expected %t", got, tc.expect)
 			}
 		})
 	}
