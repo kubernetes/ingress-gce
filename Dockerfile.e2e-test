@@ -17,15 +17,4 @@ FROM debian:9
 ADD bin/ARG_ARCH/ARG_BIN /ARG_BIN
 
 COPY cmd/e2e-test/run.sh /run.sh
-RUN apt-get update && apt-get install -y curl python
-RUN echo "Installing gcloud SDK, kubectl ..." \
-    && curl -fsSL https://dl.google.com/dl/cloudsdk/channels/rapid/google-cloud-sdk.tar.gz --output google-cloud-sdk.tar.gz \
-    && tar xzf google-cloud-sdk.tar.gz -C / \
-    && rm google-cloud-sdk.tar.gz \
-    && /google-cloud-sdk/install.sh \
-        --disable-installation-options \
-        --bash-completion=false \
-        --path-update=false \
-        --usage-reporting=false
-
-ENTRYPOINT ["/run.sh"]
+ENTRYPOINT [/run.sh"]

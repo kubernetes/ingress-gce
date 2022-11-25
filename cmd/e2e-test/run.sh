@@ -18,6 +18,14 @@
 # Kubernetes cluster.
 echo '--- BEGIN ---'
 
+/usr/bin/env bash
+apt-get update && apt-get install -y curl python
+export CLOUD_SDK_VERSION=410.0.0
+export ARCH=$(uname -m)
+curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-"$CLOUD_SDK_VERSION"-linux-"$ARCH".tar.gz && \
+        tar xzf google-cloud-cli-${CLOUD_SDK_VERSION}-linux-"$ARCH".tar.gz && \
+        rm google-cloud-cli-${CLOUD_SDK_VERSION}-linux-"$ARCH".tar.gz
+
 for ATTEMPT in $(seq 60); do
   PROJECT=$(curl -H'Metadata-Flavor:Google' metadata.google.internal/computeMetadata/v1/project/project-id 2>/dev/null)
   if [[ -n "$PROJECT" ]]; then
