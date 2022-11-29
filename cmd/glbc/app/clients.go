@@ -110,7 +110,11 @@ func NewGCEClient() *gce.Cloud {
 			// user has no need for Ingress in this case. If they grant
 			// permissions to the node they will have to restart the controller
 			// manually to re-create the client.
-			// TODO: why do we bail with success out if there is a permission error???
+			//
+			// Our aim here is not to validate if we have an IAM permission but just
+			// to ensure that gce client is working properly and able to make API
+			// calls. The choice of fetching BackendServices below is completely
+			// arbitrary.
 			if _, err = cloud.ListGlobalBackendServices(); err == nil || utils.IsHTTPErrorCode(err, http.StatusForbidden) {
 				return cloud
 			}

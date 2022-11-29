@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -37,7 +38,7 @@ import (
 	frontendconfigv1beta1 "k8s.io/ingress-gce/pkg/apis/frontendconfig/v1beta1"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/common/operator"
-	"k8s.io/ingress-gce/pkg/context"
+	ingcontext "k8s.io/ingress-gce/pkg/context"
 	legacytranslator "k8s.io/ingress-gce/pkg/controller/translator"
 	"k8s.io/ingress-gce/pkg/events"
 	"k8s.io/ingress-gce/pkg/flags"
@@ -56,10 +57,15 @@ import (
 	"k8s.io/klog/v2"
 )
 
+const (
+	LoadBalancerControllerName     = "loadbalancer-controller"
+	lastSuccessfulGCEPingThreshold = 1 * time.Minute
+)
+
 // LoadBalancerController watches the kubernetes api and adds/removes services
 // from the loadbalancer, via loadBalancerConfig.
 type LoadBalancerController struct {
-	ctx *context.ControllerContext
+	ctx *ingcontext.ControllerContext
 
 	nodeLister cache.Indexer
 
@@ -105,7 +111,7 @@ type LoadBalancerController struct {
 
 // NewLoadBalancerController creates a controller for gce loadbalancers.
 func NewLoadBalancerController(
-	ctx *context.ControllerContext,
+	ctx *ingcontext.ControllerContext,
 	stopCh chan struct{}) *LoadBalancerController {
 
 	broadcaster := record.NewBroadcaster()
@@ -297,18 +303,7 @@ func NewLoadBalancerController(
 	}
 
 	// Register health check on controller context.
-	ctx.AddHealthCheck("ingress", func() error {
-		_, err := backendPool.Get("k8s-ingress-svc-acct-permission-check-probe", meta.VersionGA, meta.Global)
-
-		// If this container is scheduled on a node without compute/rw it is
-		// effectively useless, but it is healthy. Reporting it as unhealthy
-		// will lead to container crashlooping.
-		if utils.IsHTTPErrorCode(err, http.StatusForbidden) {
-			klog.Infof("Reporting cluster as healthy, but unable to list backends: %v", err)
-			return nil
-		}
-		return utils.IgnoreHTTPNotFound(err)
-	})
+	ctx.AddHealthCheck(LoadBalancerControllerName, lbcHealthCheck(ctx, lastSuccessfulGCEPingThreshold))
 
 	klog.V(3).Infof("Created new loadbalancer controller")
 
@@ -599,7 +594,7 @@ func (lbc *LoadBalancerController) postSyncGC(key string, syncErr error, oldScop
 // sync manages Ingress create/updates/deletes events from queue.
 func (lbc *LoadBalancerController) sync(key string) error {
 	if !lbc.hasSynced() {
-		time.Sleep(context.StoreSyncPollPeriod)
+		time.Sleep(ingcontext.StoreSyncPollPeriod)
 		return fmt.Errorf("waiting for stores to sync")
 	}
 	klog.V(3).Infof("Syncing %v", key)
@@ -873,5 +868,52 @@ func frontendGCAlgorithm(ingExists bool, scopeChange bool, ing *v1.Ingress) util
 	default:
 		klog.Errorf("Unexpected naming scheme %v", namingScheme)
 		return utils.NoCleanUpNeeded
+	}
+}
+
+// lbcHealthCheck returns a health check function that can verify if regional
+// GCE APIs are reachable. An invocation of the returned function will only
+// reach out to GCE if there is a gap of `lastSuccessfulGCEPingThreshold` from
+// the previous GCE ping.
+func lbcHealthCheck(ingCtx *ingcontext.ControllerContext, lastSuccessfulGCEPingThreshold time.Duration) func() error {
+	regionKey := &meta.Key{
+		Name:   ingCtx.Cloud.Region(),
+		Zone:   "",
+		Region: ingCtx.Cloud.Region(),
+	}
+	lastSuccessfulGCEPingTracker := utils.NewTimeTracker()
+	// Ensures that first invocation always results in reaching out to GCE.
+	lastSuccessfulGCEPingTracker.Set(time.Now().Add(-lastSuccessfulGCEPingThreshold))
+
+	return func() error {
+		if lastSuccessfulGCEPingTracker.Get().After(time.Now().Add(-lastSuccessfulGCEPingThreshold)) {
+			// Last successful reach out was within the desired threshold, hence we
+			// don't reach out to GCE.
+			return nil
+		}
+
+		// We don't want to wait for calls older than
+		// `lastSuccessfulGCEPingThreshold` since they are useless.
+		ctx, cancel := context.WithTimeout(context.Background(), lastSuccessfulGCEPingThreshold)
+		defer cancel()
+
+		// Our aim here is not to validate if we have an IAM permission but just
+		// to ensure that gce client is working properly and able to make API
+		// calls.
+		if _, err := ingCtx.Cloud.Compute().Regions().Get(ctx, regionKey); err != nil {
+			// If this container is scheduled on a node without compute/rw it is
+			// effectively useless, but it is healthy. Reporting it as unhealthy
+			// will lead to container crashlooping.
+			if utils.IsHTTPErrorCode(err, http.StatusForbidden) {
+				klog.Infof("Reporting cluster as healthy, but unable to fetch Region resource for region %q: %v", regionKey.Region, err)
+				lastSuccessfulGCEPingTracker.Track()
+				return nil
+			}
+
+			return err
+		}
+
+		lastSuccessfulGCEPingTracker.Track()
+		return nil
 	}
 }

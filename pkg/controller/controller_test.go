@@ -27,8 +27,10 @@ import (
 	"time"
 
 	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud"
+	"github.com/GoogleCloudPlatform/k8s-cloud-provider/pkg/cloud/meta"
 	"github.com/google/go-cmp/cmp"
 	"google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -1030,4 +1032,86 @@ func getUpdatedIngress(t *testing.T, lbc *LoadBalancerController, ing *networkin
 		t.Fatalf("lbc.ctx.KubeClient...Get(%v) = %v, want nil", getKey(ing, t), err)
 	}
 	return updatedIng
+}
+
+func TestLbcHealthCheck(t *testing.T) {
+	testCases := []struct {
+		name string
+		// getHook func(context2.Context, *filter.F, m *cloud.MockRegions) (bool, []*compute.Region, error)
+		getHook func(context2.Context, *meta.Key, *cloud.MockRegions) (bool, *compute.Region, error)
+		wantErr bool
+	}{
+		{
+			name: "normal case",
+			getHook: func(context2.Context, *meta.Key, *cloud.MockRegions) (bool, *compute.Region, error) {
+				return true, nil, nil
+			},
+		},
+		{
+			name: "gce permission error but no health check error",
+			getHook: func(context2.Context, *meta.Key, *cloud.MockRegions) (bool, *compute.Region, error) {
+				return true, nil, &googleapi.Error{
+					Code: http.StatusForbidden,
+				}
+			},
+		},
+		{
+			name: "bad gateway error with health check error",
+			getHook: func(context2.Context, *meta.Key, *cloud.MockRegions) (bool, *compute.Region, error) {
+				return true, nil, &googleapi.Error{
+					Code: http.StatusBadGateway,
+				}
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+			(fakeGCE.Compute().(*cloud.MockGCE)).MockRegions.GetHook = tc.getHook
+			ingCtx := &context.ControllerContext{
+				Cloud: fakeGCE,
+			}
+
+			err := lbcHealthCheck(ingCtx, 1*time.Nanosecond)()
+
+			if (err != nil) != tc.wantErr {
+				t.Errorf("lbcHealthCheck()() returned err=%v; wantErr=%v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestLbcHealthCheck_EnsureGapBetweenGCEPing(t *testing.T) {
+	// timestamps slice records the times when the GCE API gets invoked.
+	var timestamps []time.Time
+	fakeGCE := gce.NewFakeGCECloud(gce.DefaultTestClusterValues())
+	(fakeGCE.Compute().(*cloud.MockGCE)).MockRegions.GetHook = func(ctx context2.Context, key *meta.Key, m *cloud.MockRegions) (bool, *compute.Region, error) {
+		timestamps = append(timestamps, time.Now())
+		return true, nil, nil
+	}
+	ingCtx := &context.ControllerContext{
+		Cloud: fakeGCE,
+	}
+	lastSuccessfulGCEPingThreshold := 3 * time.Second
+
+	healthCheck := lbcHealthCheck(ingCtx, lastSuccessfulGCEPingThreshold)
+	for i := 0; i < 5; i++ {
+		// We invoke healthCheck every second but GCE API should only get invoked
+		// after every 3 seconds
+		healthCheck()
+		time.Sleep(1 * time.Second)
+	}
+
+	// There should atleast be 2 GCE Pings.
+	if len(timestamps) < 2 {
+		t.Errorf("Got GCE pings = %v; want atleast 2", len(timestamps))
+	}
+
+	for i := 0; i+1 < len(timestamps); i++ {
+		if diff := timestamps[i+1].Sub(timestamps[i]); diff <= lastSuccessfulGCEPingThreshold {
+			t.Errorf("GCE API pinged consecutively at %v and %v having a difference of %v; want time difference of atleast %v", timestamps[i].UnixMicro(), timestamps[i+1].UnixMicro(), diff, lastSuccessfulGCEPingThreshold)
+		}
+	}
 }
