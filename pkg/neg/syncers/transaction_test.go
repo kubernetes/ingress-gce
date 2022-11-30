@@ -2215,9 +2215,9 @@ func TestIsValidEPBatch(t *testing.T) {
 		expect         bool
 	}{
 		{
-			desc:           "NEG API call no error, status code 200",
-			HttpStatusCode: http.StatusOK,
-			expect:         true,
+			desc:           "NEG API call server error, status code 500",
+			HttpStatusCode: http.StatusInternalServerError,
+			expect:         false,
 		},
 		{
 			desc:           "NEG API call error, status code 400",
