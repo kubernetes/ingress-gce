@@ -32,6 +32,7 @@ const (
 	negOpEndpointsKey        = "neg_operation_endpoints"
 	lastSyncTimestampKey     = "sync_timestamp"
 	syncerErrorStateKey      = "syncer_error_state_count"
+	duplicatedEndpointsKey   = "neg_duplicated_endpoints"
 
 	resultSuccess = "success"
 	resultError   = "error"
@@ -78,6 +79,11 @@ var (
 		"neg_type",                 //type of neg
 		"endpoint_calculator_mode", // type of endpoint calculator used
 		"error_type",               // what type of error it was. Must be one of the seven error defined above
+	}
+
+	duplicatedEndpointsLabels = []string{
+		"neg_type",                 //type of neg
+		"endpoint_calculator_mode", // type of endpoint calculator used
 	}
 
 	NegOperationLatency = prometheus.NewHistogramVec(
@@ -148,6 +154,16 @@ var (
 			Help:      "The timestamp of the last execution of NEG controller sync loop.",
 		},
 	)
+
+	DuplicatedEndpoints = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      duplicatedEndpointsKey,
+			Help:      "Number of duplicated endpionts in the EPS",
+			Buckets:   prometheus.ExponentialBuckets(1, 2, 13),
+		},
+		duplicatedEndpointsLabels,
+	)
 )
 
 var register sync.Once
@@ -161,6 +177,7 @@ func RegisterMetrics() {
 		prometheus.MustRegister(LastSyncTimestamp)
 		prometheus.MustRegister(InitializationLatency)
 		prometheus.MustRegister(SyncerErrorState)
+		prometheus.MustRegister(DuplicatedEndpoints)
 	})
 }
 
@@ -193,6 +210,10 @@ func PublishNegInitializationMetrics(latency time.Duration) {
 // PublishNegErrorStateMetrics publishes collected metrics for the number of occurance of each error state
 func PublishNegErrorStateMetrics(negType, endpointCalculator string, errorState string) {
 	SyncerErrorState.WithLabelValues(negType, endpointCalculator, errorState).Inc()
+}
+
+func PublishNegDuplicateEPMetrics(negType, endpointCalculator string, dupCount int) {
+	DuplicatedEndpoints.WithLabelValues(negType, endpointCalculator).Observe(float64(dupCount))
 }
 
 func getResult(err error) string {

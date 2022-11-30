@@ -245,6 +245,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 		targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
+		metrics.PublishNegDuplicateEPMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), dupCount)
 		if s.isZoneMissing(err) || !s.isValidEndpointInfo(endpointsData, endpointPodMap, dupCount) {
 			s.setErrorState()
 		}
