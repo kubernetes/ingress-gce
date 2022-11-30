@@ -31,12 +31,20 @@ const (
 	negOpLatencyKey          = "neg_operation_duration_seconds"
 	negOpEndpointsKey        = "neg_operation_endpoints"
 	lastSyncTimestampKey     = "sync_timestamp"
+	syncerErrorStateKey      = "syncer_error_state_count"
 
 	resultSuccess = "success"
 	resultError   = "error"
 
 	GCProcess   = "GC"
 	SyncProcess = "Sync"
+
+	ErrorEPCountsDiffer     = "EPCountsDiffer"
+	ErrorEPSMissingNodeName = "EPSMissingNodeName"
+	ErrorEPSMissingZone     = "EPSMissingZone"
+	ErrorInvalidEPBatch     = "InvalidEPBatch"
+	ErrorEPDataCountZero    = "EPDataCountZero"
+	ErrorEPPodMapCountZero  = "EPPodMapCountZero"
 )
 
 type syncType string
@@ -64,6 +72,12 @@ var (
 		"neg_type",                 //type of neg
 		"endpoint_calculator_mode", // type of endpoint calculator used
 		"result",                   // result of the sync
+	}
+
+	errorStateMetricsLabels = []string{
+		"neg_type",                 //type of neg
+		"endpoint_calculator_mode", // type of endpoint calculator used
+		"error_type",               // what type of error it was. Must be one of the seven error defined above
 	}
 
 	NegOperationLatency = prometheus.NewHistogramVec(
@@ -118,6 +132,15 @@ var (
 		},
 	)
 
+	SyncerErrorState = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Subsystem: negControllerSubsystem,
+			Name:      syncerErrorStateKey,
+			Help:      "Error State occurance for NEG Syncer",
+		},
+		errorStateMetricsLabels,
+	)
+
 	LastSyncTimestamp = prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Subsystem: negControllerSubsystem,
@@ -137,6 +160,7 @@ func RegisterMetrics() {
 		prometheus.MustRegister(SyncerSyncLatency)
 		prometheus.MustRegister(LastSyncTimestamp)
 		prometheus.MustRegister(InitializationLatency)
+		prometheus.MustRegister(SyncerErrorState)
 	})
 }
 
@@ -164,6 +188,11 @@ func PublishNegManagerProcessMetrics(process string, err error, start time.Time)
 // PublishNegInitializationMetrics publishes collected metrics for time from request to initialization of NEG
 func PublishNegInitializationMetrics(latency time.Duration) {
 	InitializationLatency.Observe(latency.Seconds())
+}
+
+// PublishNegErrorStateMetrics publishes collected metrics for the number of occurance of each error state
+func PublishNegErrorStateMetrics(negType, endpointCalculator string, errorState string) {
+	SyncerErrorState.WithLabelValues(negType, endpointCalculator, errorState).Inc()
 }
 
 func getResult(err error) string {

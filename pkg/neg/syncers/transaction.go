@@ -371,6 +371,7 @@ func (s *transactionSyncer) isValidEndpointInfo(eds []negtypes.EndpointsData, en
 	countFromPodMap := len(endpointPodMap) + dupCount
 	if countFromPodMap == 0 {
 		s.logger.Info("Detected endpoint count from endpointPodMap going to zero", "endpointPodMap", endpointPodMap)
+		metrics.PublishNegErrorStateMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), metrics.ErrorEPPodMapCountZero)
 		return false
 	}
 
@@ -382,17 +383,20 @@ func (s *transactionSyncer) isValidEndpointInfo(eds []negtypes.EndpointsData, en
 			nodeName := endpointAddress.NodeName
 			if nodeName == nil || len(*nodeName) == 0 {
 				s.logger.Info("Detected error when checking nodeName", "endpoint", endpointAddress, "endpointData", eds)
+				metrics.PublishNegErrorStateMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), metrics.ErrorEPSMissingNodeName)
 				return false
 			}
 		}
 	}
 	if countFromEndpointData == 0 {
 		s.logger.Info("Detected endpoint count from endpointData going to zero", "endpointData", eds)
+		metrics.PublishNegErrorStateMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), metrics.ErrorEPDataCountZero)
 		return false
 	}
 
 	if countFromEndpointData != countFromPodMap {
 		s.logger.Info("Detected error when comparing endpoint counts", "endpointData", eds, "endpointPodMap", endpointPodMap, "dupCount", dupCount)
+		metrics.PublishNegErrorStateMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), metrics.ErrorEPCountsDiffer)
 		return false
 	}
 	return true
@@ -402,6 +406,7 @@ func (s *transactionSyncer) isValidEndpointInfo(eds []negtypes.EndpointsData, en
 func (s *transactionSyncer) isZoneMissing(zoneNetworkEndpointMap map[string]negtypes.NetworkEndpointSet) bool {
 	if _, isPresent := zoneNetworkEndpointMap[""]; isPresent {
 		s.logger.Info("Detected error when checking missing zone", "zoneNetworkEndpointMap", zoneNetworkEndpointMap)
+		metrics.PublishNegErrorStateMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), metrics.ErrorEPSMissingZone)
 		return true
 	}
 	return false
@@ -413,11 +418,13 @@ func (s *transactionSyncer) isValidEPBatch(err error, operation transactionOp, n
 	apiErr, ok := err.(*googleapi.Error)
 	if !ok {
 		s.logger.Info("Detected error when parsing batch response error", "operation", operation, "error", err)
+		metrics.PublishNegErrorStateMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), metrics.ErrorInvalidEPBatch)
 		return false
 	}
 	errCode := apiErr.Code
 	if errCode == http.StatusBadRequest {
 		s.logger.Info("Detected error when sending endpoint batch information", "operation", operation, "errorCode", errCode)
+		metrics.PublishNegErrorStateMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), metrics.ErrorInvalidEPBatch)
 		return false
 	}
 	return true
