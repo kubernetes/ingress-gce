@@ -18,6 +18,7 @@ package syncers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -244,7 +245,7 @@ func (s *transactionSyncer) syncInternalImpl() error {
 		}
 		endpointsData := negtypes.EndpointsDataFromEndpointSlices(endpointSlices)
 		targetMap, endpointPodMap, dupCount, err = s.endpointsCalculator.CalculateEndpoints(endpointsData, currentMap)
-		if !s.isValidEndpointInfo(endpointsData, endpointPodMap, dupCount) || s.isZoneMissing(targetMap) {
+		if s.isZoneMissing(err) || !s.isValidEndpointInfo(endpointsData, endpointPodMap, dupCount) {
 			s.setErrorState()
 		}
 		if err != nil {
@@ -402,10 +403,10 @@ func (s *transactionSyncer) isValidEndpointInfo(eds []negtypes.EndpointsData, en
 	return true
 }
 
-// isZoneMissing returns true if there is invalid(empty) zone in zoneNetworkEndpointMap
-func (s *transactionSyncer) isZoneMissing(zoneNetworkEndpointMap map[string]negtypes.NetworkEndpointSet) bool {
-	if _, isPresent := zoneNetworkEndpointMap[""]; isPresent {
-		s.logger.Info("Detected error when checking missing zone", "zoneNetworkEndpointMap", zoneNetworkEndpointMap)
+// isZoneMissing returns true if the error returned from CalculateEndpoint is ErrEPMissingZone
+func (s *transactionSyncer) isZoneMissing(err error) bool {
+	if errors.Is(err, ErrEPMissingZone) {
+		s.logger.Info("Detected unexpected error when checking missing zone", "error", err)
 		metrics.PublishNegErrorStateMetrics(string(s.NegSyncerKey.NegType), string(s.endpointsCalculator.Mode()), metrics.ErrorEPSMissingZone)
 		return true
 	}
