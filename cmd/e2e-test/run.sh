@@ -103,7 +103,7 @@ echo "Using Subnet: ${SUBNET}"
 echo
 echo ==============================================================================
 echo "PROJECT: ${PROJECT}"
-CMD="/e2e-test -test.v -test.parallel=100 -run -project ${PROJECT} -region ${REGION} -network ${NETWORK} -logtostderr -inCluster -v=2"
+CMD="/e2e-test -test.v -test.parallel=100 -run -project ${PROJECT} -region ${REGION} -network ${NETWORK} -subnet ${SUBNET} -logtostderr -inCluster -v=2"
 echo "CMD: ${CMD}" $@
 echo
 
