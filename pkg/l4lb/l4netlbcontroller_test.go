@@ -516,6 +516,65 @@ func TestProcessServiceDeletion(t *testing.T) {
 	deleteNetLBService(lc, svc)
 }
 
+func TestProcessRBSServiceTypeTransition(t *testing.T) {
+	testCases := []struct {
+		desc      string
+		finalType v1.ServiceType
+	}{
+		{
+			desc:      "Change RBS to ClusterIP should delete RBS resources",
+			finalType: v1.ServiceTypeClusterIP,
+		},
+		{
+			desc:      "Change RBS to NodePort should delete RBS resources",
+			finalType: v1.ServiceTypeNodePort,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			svc, lc := createAndSyncNetLBSvc(t)
+			if lc.needsDeletion(svc) {
+				t.Errorf("Service should not be marked for deletion")
+			}
+
+			svc.Spec.Type = tc.finalType
+			updateNetLBService(lc, svc)
+			if !lc.needsDeletion(svc) {
+				t.Errorf("RBS after switching to %v should be marked for deletion", tc.finalType)
+			}
+
+			key, _ := common.KeyFunc(svc)
+			err := lc.sync(key)
+			if err != nil {
+				t.Errorf("Failed to sync service %s, err %v", svc.Name, err)
+			}
+			svc, err = lc.ctx.KubeClient.CoreV1().Services(svc.Namespace).Get(context.TODO(), svc.Name, metav1.GetOptions{})
+			if err != nil {
+				t.Errorf("Failed to lookup service %s, err %v", svc.Name, err)
+			}
+			if len(svc.Status.LoadBalancer.Ingress) > 0 {
+				t.Errorf("Expected LoadBalancer status be deleted - %+v", svc.Status.LoadBalancer)
+			}
+			if common.HasGivenFinalizer(svc.ObjectMeta, common.NetLBFinalizerV2) {
+				t.Errorf("Unexpected LoadBalancer finalizer %v", svc.ObjectMeta.Finalizers)
+			}
+
+			if err = validateAnnotationsDeleted(svc); err != nil {
+				t.Errorf("RBS Service annotations have NOT been deleted. Error: %v", err)
+			}
+
+			igName := lc.namer.InstanceGroup()
+			_, err = lc.ctx.Cloud.GetInstanceGroup(igName, testGCEZone)
+			if !utils.IsNotFoundError(err) {
+				t.Errorf("Failed to delete Instance Group %v, err: %v", igName, err)
+			}
+
+			deleteNetLBService(lc, svc)
+		})
+	}
+}
+
 func TestServiceDeletionWhenInstanceGroupInUse(t *testing.T) {
 	svc, lc := createAndSyncNetLBSvc(t)
 
